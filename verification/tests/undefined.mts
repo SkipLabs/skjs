@@ -246,7 +246,7 @@ try {
       const input = path.join(tmp, "boundary.ts");
       fs.writeFileSync(input, text);
       const result = run(process.execPath, [
-        path.resolve(__dirname, "../tools/parse-source.mts"),
+        path.resolve(__dirname, "../tools/fragment-parse.mts"),
         input,
       ]);
       assert.notEqual(result.status, 0, text);

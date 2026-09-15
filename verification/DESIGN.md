@@ -720,7 +720,7 @@ and preservation of both aliases' contracts after a write. This export mapping
 is explicit but is not a proved correspondence with SKJS's internal semantics.
 
 Cell programs now pass through source extraction, certificate production and
-independent consumption. [SourceInput.lean](lean/Verification/ExperimentState/SourceInput.lean)
+independent consumption. [Fragment.lean](lean/Verification/ExperimentState/Fragment.lean)
 decodes the source AST and routes record types through the contract gate. Every nested expression retains
 its own supplied claim. Expression lowering saves intermediate values in
 anonymous slots and evaluates the receiver before the RHS. A write uses the
@@ -729,7 +729,7 @@ semantics; temporary slots are discarded by explicit edge maps. An execution
 regression checks the extracted alias-assignment graph's heap and result.
 
 Closure contracts are decoded by
-[SourceInput.lean](lean/Verification/ExperimentState/SourceInput.lean).
+[Fragment.lean](lean/Verification/ExperimentState/Fragment.lean).
 `callableType` checks ordered required-parameter signature shapes and recursively lowers primitive
 and callable arguments and results, including every union and overload arm.
 Bodies compose literals, variables, cell allocation, reads, assignments and
@@ -1308,11 +1308,11 @@ refinements and closure loops remain outside this slice.
 
 ### Compositional unions at the source boundary
 
-`SourceInput.translate` now decodes each union atom through its existing primitive,
+`Fragment.translate` now decodes each union atom through its existing primitive,
 cell or function decoder, then canonicalizes the combined labels. It rejects the
 entire type if any arm fails. This needs no new graph label or semantic rule:
 label lists already denote unions. Required cell fields and arrow arguments and
-results admit primitive/callable unions through `SourceInput.callableType`;
+results admit primitive/callable unions through `Fragment.callableType`;
 nested records remain outside this fragment.
 
 Locally allocated nullable cells and optional checked-closure results exercise

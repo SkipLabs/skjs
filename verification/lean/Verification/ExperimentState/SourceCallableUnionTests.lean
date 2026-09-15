@@ -14,7 +14,7 @@ private def union : Json := Json.mkObj [("top",toJson false),("atoms",toJson
   [arrow (primitive "null") (literal true),arrow (primitive "null") (literal false)])]
 private def table : SourceTypes.Table := SourceTypes.initial ++
   [[.arrs [([[0]],[1])]], [.arrs [([[0]],[2])]], [.arrs [([[0]],[1,2])]]]
-private def source : SourceInput.Fn :=
+private def source : Fragment.Fn :=
   ⟨"invoke",(0,1),[⟨"f",union⟩],primitive "boolean",
    [.ret (2,16) (.app (3,16)
      (.lam (3,12) "unit" (primitive "null") (primitive "boolean")
@@ -28,10 +28,10 @@ private def claims : SourceClaims.Function :=
 
 -- Primitive-only function unions decode and acquire direct recipes inside
 -- closures, preserving all alternatives and the source consumer checks.
-#guard ((SourceInput.translate union).run' SourceTypes.initial).toOption == some [4,5]
+#guard ((Fragment.translate union).run' SourceTypes.initial).toOption == some [4,5]
 #guard (extractNormalizedFn table source claims).toOption.isSome
 
-private def checkWith (T : SourceTypes.Table) (f : SourceInput.Fn) (c : SourceClaims.Function) : Except String Unit := do
+private def checkWith (T : SourceTypes.Table) (f : Fragment.Fn) (c : SourceClaims.Function) : Except String Unit := do
   let r ← extractNormalizedFn T f c
   let proofs ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
     r.searchLabels r.types.length 0 r.obligations
@@ -46,7 +46,7 @@ private def ok (x : Except String α) : Bool := match x with | .ok _ => true | .
 #guard !ok (check source {claims with exprs := claims.exprs.map fun (pos,c) =>
   if pos == (7,12) then (pos,.ok [1]) else (pos,c)})
 -- Every possible callee must accept the argument.
-private def wrongArgument : SourceInput.Fn := {source with body :=
+private def wrongArgument : Fragment.Fn := {source with body :=
   [.ret (2,16) (.app (3,16)
     (.lam (3,12) "unit" (primitive "null") (primitive "boolean")
       (.app (7,12) (.var (7,8) "f") (.lit (9,10) (.vbool true))))
@@ -95,7 +95,7 @@ private def overloadUnion (missingNull : Bool := false) : Json := Json.mkObj
      else overloaded (primitive "boolean") (literal true) (primitive "null") (literal false)])]
 private def overloadTable : SourceTypes.Table :=
   (table.set 4 [.arrs [([[0]],[1]),([[1,2]],[2])]]).set 5 [.arrs [([[1,2]],[1]),([[0]],[2])]]
-private def overloadSource (booleanArg : Bool) : SourceInput.Fn :=
+private def overloadSource (booleanArg : Bool) : Fragment.Fn :=
   {(if booleanArg then wrongArgument else source) with params := [⟨"f",overloadUnion⟩]}
 private def overloadClaims (booleanArg : Bool) : SourceClaims.Function :=
   {claims with exprs := claims.exprs.map fun (pos,c) =>
@@ -107,7 +107,7 @@ private def overloadClaims (booleanArg : Bool) : SourceClaims.Function :=
     {(overloadClaims booleanArg) with exprs := (overloadClaims booleanArg).exprs.map fun (pos,c) =>
       if pos == (7,12) then (pos,.ok [1]) else (pos,c)})
 -- A sibling's null overload cannot rescue a Boolean-only alternative.
-private def incompleteOverloadSource : SourceInput.Fn :=
+private def incompleteOverloadSource : Fragment.Fn :=
   {source with params := [⟨"f",overloadUnion true⟩]}
 private def incompleteOverloadTable := overloadTable.set 5 [.arrs [([[1,2]],[1])]]
 #guard (extractNormalizedFn incompleteOverloadTable incompleteOverloadSource claims).toOption.isSome

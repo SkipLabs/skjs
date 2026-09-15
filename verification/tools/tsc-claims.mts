@@ -6,7 +6,7 @@
  * compiler's own checker believes at the same sites, so the two can be run
  * through the same independent verifier and compared.
  *
- * Sites come from the trusted parser's own AST (parse-source.mts), walked with
+ * Sites come from the trusted parser's own AST (fragment-parse.mts), walked with
  * the same rule the verifier uses to decide what is an entry and what is an
  * expression (SourceClaimJson.functionSites / exprSites, in
  * verification/lean/Verification/ExperimentState/SourceClaimJson.lean). A site
@@ -30,14 +30,14 @@ import * as ts from "typescript/unstable/ast";
 import type { Node, SourceFile } from "typescript/unstable/ast";
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { close, parseFile, projectFor } from "./parse-source.mts";
+import { close, parseFile, projectFor } from "./fragment-parse.mts";
 import type {
   ClaimType,
   FunctionClaims,
   Row,
   SourceClaims,
 } from "./source-claims.mts";
-import type { Ast, Expr, FunctionAst, Span, Stmt } from "./parse-source.mts";
+import type { Ast, Expr, FunctionAst, Span, Stmt } from "./fragment.mts";
 
 /* ------------------------------------------------------------- refusal -- */
 // A type this producer will not state. The reason is a short slug; the

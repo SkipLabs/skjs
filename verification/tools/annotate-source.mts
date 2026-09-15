@@ -14,7 +14,7 @@ import obligationReader, { presentObligation } from "../tools/diagnostic-view.mt
 import { readDiagnostic } from "./diagnostic.mts";
 // The source annotation encoding has exactly one implementation; a second
 // would be a second opinion about what a source type means.
-import * as parseSource from "./parse-source.mts";
+import * as fragmentParse from "./fragment-parse.mts";
 import type {
   Labels,
   NamedPoint,
@@ -319,7 +319,7 @@ function attachConversion(
 // report is rendered over a source in memory — the original, or an annotated
 // rendering of it — and its spans have to be spans of that text.
 function parse(source: string, file: string) {
-  return parseSource.openText(path.resolve(file), source);
+  return fragmentParse.openText(path.resolve(file), source);
 }
 /**
  * `identity` carries the report-level fingerprints and edit records into the
@@ -502,7 +502,7 @@ function verifySkjs(
   depth: number,
   normalized = false,
 ) {
-  const parser=path.join(__dirname,"parse-source.mts"), temp=fs.mkdtempSync(path.join(os.tmpdir(),"annotated-source-"));
+  const parser=path.join(__dirname,"fragment-parse.mts"), temp=fs.mkdtempSync(path.join(os.tmpdir(),"annotated-source-"));
   try {
     // Called rather than spawned: a node start costs more than the parse, and
     // this runs once per source. The parser's own file is still hashed into the
@@ -510,7 +510,7 @@ function verifySkjs(
     const identity={verifierSha256:hash(fs.readFileSync(verifier)),parserSha256:hash(fs.readFileSync(parser))};
     let ast;
     try {
-      ast=parseSource.parseFile(sourcePath);
+      ast=fragmentParse.parseFile(sourcePath);
     } catch(error) {
       const detail=String((error as Error)?.message||error);
       if(!detail.startsWith("gate:"))throw Error(`source parser failed: ${detail}`);
@@ -620,7 +620,7 @@ function checkFresh(output: string) {
   if(m.baselinePath)checks.push([m.baselinePath,m.baselineSha256]);
   if(m.diagnosticsPath)checks.push([m.diagnosticsPath,m.diagnosticsSha256]);
   if(m.verifierPath)checks.push([m.verifierPath,m.verifierSha256]);
-  if(m.parserSha256)checks.push([path.join(__dirname,"parse-source.mts"),m.parserSha256]);
+  if(m.parserSha256)checks.push([path.join(__dirname,"fragment-parse.mts"),m.parserSha256]);
   for(const [file,digest] of checks)if(hash(fs.readFileSync(file))!==digest)throw Error(`stale report: ${file}`);
   console.log("Snapshot fingerprints match. This is not proof verification.");
 }
@@ -635,7 +635,7 @@ function checkFresh(output: string) {
 // as undecoded rather than guessing at.
 const namedBinding=(name: string, typeNode: any)=>{
   let type=null;
-  try{type=typeNode?parseSource.typeOf(typeNode):null;}catch(e){type=null;}
+  try{type=typeNode?fragmentParse.typeOf(typeNode):null;}catch(e){type=null;}
   return {name,type};
 };
 const identifiers=(nodes: any): [string, any][]=>

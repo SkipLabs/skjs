@@ -12,7 +12,7 @@ const check = spawnSync(path.resolve("verification/tools/node_modules/.bin/tsc")
   ["--strict", "--noEmit", "--target", "es2020", "--skipLibCheck", file], {encoding: "utf8"});
 assert(!check.error && !check.signal, String(check.error || check.signal));
 assert.equal(check.status, 0, check.stdout + check.stderr);
-const parsed = spawnSync(process.execPath, ["verification/tools/parse-source.mts", file], {encoding: "utf8"});
+const parsed = spawnSync(process.execPath, ["verification/tools/fragment-parse.mts", file], {encoding: "utf8"});
 assert(!parsed.error && !parsed.signal, String(parsed.error || parsed.signal));
 assert.equal(parsed.status, 1);
 assert.match(parsed.stderr, /expected plain single-field allocation/);

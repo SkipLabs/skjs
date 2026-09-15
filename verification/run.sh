@@ -121,7 +121,7 @@ skjs_start || echo "warning: no shared container; each check will start its own"
 # nothing to run, so a failure here stops the run instead of being counted.
 fixture() { # name source-path
   local name="$1" path="$2"
-  if ! { node verification/tools/parse-source.mts "$path" > "$WORK/$name.ast" &&
+  if ! { node verification/tools/fragment-parse.mts "$path" > "$WORK/$name.ast" &&
          skjs_check "$path" > "$WORK/$name.claims"; } 2> "$WORK/$name.err"; then
     echo "FAIL: fixture setup for $path"
     cat "$WORK/$name.err"
@@ -134,7 +134,7 @@ fixture() { # name source-path
 # kind of rejection is itself the point.
 rejected_fixture() { # name source-path [expected status]
   local name="$1" path="$2" want="${3:-}"
-  node verification/tools/parse-source.mts "$path" > "$WORK/$name.ast" || exit 1
+  node verification/tools/fragment-parse.mts "$path" > "$WORK/$name.ast" || exit 1
   skjs_check "$path" > "$WORK/$name.claims" 2> "$WORK/$name.err"
   local got=$?
   if [ "$got" -eq 0 ] || { [ -n "$want" ] && [ "$got" -ne "$want" ]; }; then

@@ -10,7 +10,7 @@
  */
 import { DiagnosticCategory } from "typescript/unstable/sync";
 import { resolve } from "node:path";
-import { projectFor } from "./parse-source.mts";
+import { projectFor } from "./fragment-parse.mts";
 
 export interface TypeError {
   file: string;

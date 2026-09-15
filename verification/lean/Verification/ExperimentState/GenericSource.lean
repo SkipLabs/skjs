@@ -1,4 +1,4 @@
-import Verification.ExperimentState.SourceInput
+import Verification.ExperimentState.Fragment
 import Verification.ExperimentState.CellClaims
 import Verification.ExperimentState.GenericBounds
 
@@ -37,7 +37,7 @@ def typeIndex (params : List String) (j : Json) : Except String Nat := do
   let some index := params.idxOf? name | throw s!"undeclared type parameter '{name}'"
   return index + 1
 
-def boundEdges (params : List SourceInput.TypeParam) : Except String (List (Nat × Nat)) := do
+def boundEdges (params : List Fragment.TypeParam) : Except String (List (Nat × Nat)) := do
   let mut seen : List String := []
   let mut edges := []
   for tp in params do
@@ -51,7 +51,7 @@ def boundEdges (params : List SourceInput.TypeParam) : Except String (List (Nat 
     seen := seen ++ [tp.name]
   return edges
 
-def variableType (env : List (String × Nat)) : SourceInput.Expr → Except String Nat
+def variableType (env : List (String × Nat)) : Fragment.Expr → Except String Nat
   | .var _ name =>
     match env.find? (fun p => p.1 == name) with
     | some p => return p.2
@@ -64,7 +64,7 @@ def subtype (edges : List (Nat × Nat)) (a b : Nat) : Bool :=
   GenericBounds.follows edges (edges.length + 1) a b
 
 partial def copyBody (params : List String) (edges : List (Nat × Nat))
-    (env : List (String × Nat)) (result : Nat) : List SourceInput.Stmt → Except String Unit
+    (env : List (String × Nat)) (result : Nat) : List Fragment.Stmt → Except String Unit
   | [] => throw "generic identity requires an explicit return"
   | [.ret _ e] => do
     let actual ← match e with
@@ -88,8 +88,8 @@ partial def copyBody (params : List String) (edges : List (Nat × Nat))
 /-- Check generic variable-copy bodies using distinct rigid parameters and
 forward upper bounds, including dependent chains. Producer signatures must
 match source annotations exactly; bounds never identify their endpoints. -/
-def checkScheme (f : SourceInput.Fn) (typeParams : List SourceInput.TypeParam)
-    (fc : SourceInput.Claims) : Except String Unit := do
+def checkScheme (f : Fragment.Fn) (typeParams : List Fragment.TypeParam)
+    (fc : Fragment.Claims) : Except String Unit := do
   if f.name != fc.name || f.namePos != fc.namePos then
     throw "function claim identity mismatch"
   if typeParams.isEmpty then throw "generic body requires type parameters"
@@ -130,7 +130,7 @@ private def claimedType (params : List String) (pos : Span) (role : String)
   | .error reason => throw s!"generic {role} at [{pos.1},{pos.2}): {reason}"
 
 private def entryClaims (params : List String) (edges : List (Nat × Nat))
-    (fc : SourceInput.Claims) (env : List (String × Nat)) (pos : Span) :
+    (fc : Fragment.Claims) (env : List (String × Nat)) (pos : Span) :
     Except String (List (String × Nat)) := do
   let some raw := fc.envs.lookup pos.1
     | throw s!"generic entry claim at [{pos.1},{pos.2}): missing statement environment"
@@ -147,7 +147,7 @@ private def entryClaims (params : List String) (edges : List (Nat × Nat))
     return (name,expected)
 
 private def expressionClaim (params : List String) (edges : List (Nat × Nat))
-    (fc : SourceInput.Claims) (env : List (String × Nat)) (e : SourceInput.Expr) :
+    (fc : Fragment.Claims) (env : List (String × Nat)) (e : Fragment.Expr) :
     Except String Nat := do
   let some ty := fc.exprs.lookup e.span
     | throw s!"generic expression claim at [{e.span.1},{e.span.2}): missing expression claim"
@@ -157,7 +157,7 @@ private def expressionClaim (params : List String) (edges : List (Nat × Nat))
   requireSubtype params edges env e.span "expression claim" subject actual expected
   return expected
 
-private def claimSites : List SourceInput.Stmt → List Nat × List Span
+private def claimSites : List Fragment.Stmt → List Nat × List Span
   | [] => ([],[])
   | .ret pos e :: rest =>
     let (entries,expressions) := claimSites rest
@@ -168,8 +168,8 @@ private def claimSites : List SourceInput.Stmt → List Nat × List Span
   | _ :: rest => claimSites rest
 
 private def bodyClaims (params : List String) (edges : List (Nat × Nat))
-    (fc : SourceInput.Claims) (env : List (String × Nat)) (result : Nat) :
-    List SourceInput.Stmt → Except String Unit
+    (fc : Fragment.Claims) (env : List (String × Nat)) (result : Nat) :
+    List Fragment.Stmt → Except String Unit
   | [.ret pos e] => do
     let H ← entryClaims params edges fc env pos
     let actual ← expressionClaim params edges fc H e
@@ -185,8 +185,8 @@ private def bodyClaims (params : List String) (edges : List (Nat × Nat))
 /-- Both production and independent consumption reconstruct these obligations.
 Every source entry and expression must occur exactly once; no supplied point is
 silently ignored. Subtyping uses the proved rigid-bound relation. -/
-def check (f : SourceInput.Fn) (typeParams : List SourceInput.TypeParam)
-    (fc : SourceInput.Claims) : Except String Unit := do
+def check (f : Fragment.Fn) (typeParams : List Fragment.TypeParam)
+    (fc : Fragment.Claims) : Except String Unit := do
   checkScheme f typeParams fc
   let params := typeParams.map (·.name)
   let edges ← boundEdges typeParams
@@ -206,20 +206,20 @@ private def paramT : Json :=
   Json.mkObj [("top", toJson false),
     ("atoms", toJson [Json.mkObj [("a", toJson "param"), ("name", toJson "T")]])]
 
-private def idFn : SourceInput.Fn :=
+private def idFn : Fragment.Fn :=
   ⟨"id", (0, 2), [⟨"x", paramT⟩], paramT, [.ret (10, 18) (.var (17, 18) "x")]⟩
 
-private def idClaims : SourceInput.Claims :=
+private def idClaims : Fragment.Claims :=
   ⟨"id", (0, 2), [("x", paramT)], paramT, [], []⟩
 
-private def tpT : SourceInput.TypeParam := ⟨"T", none⟩
+private def tpT : Fragment.TypeParam := ⟨"T", none⟩
 
-private def tpTbool : SourceInput.TypeParam := ⟨"T", some booleanType⟩
+private def tpTbool : Fragment.TypeParam := ⟨"T", some booleanType⟩
 
-private def asBoolFn : SourceInput.Fn :=
+private def asBoolFn : Fragment.Fn :=
   ⟨"asBoolean", (0, 2), [⟨"x", paramT⟩], booleanType, [.ret (10, 18) (.var (17, 18) "x")]⟩
 
-private def asBoolClaims : SourceInput.Claims :=
+private def asBoolClaims : Fragment.Claims :=
   ⟨"asBoolean", (0, 2), [("x", paramT)], booleanType, [], []⟩
 
 #guard (match checkScheme idFn [tpT] idClaims with | .ok () => true | _ => false)
@@ -238,19 +238,19 @@ private def asBoolClaims : SourceInput.Claims :=
   | .error e => "an upper bound does not justify true".isPrefixOf e
   | _ => false)
 
-private def bindFn : SourceInput.Fn :=
+private def bindFn : Fragment.Fn :=
   ⟨"bind", (0, 2), [⟨"x", paramT⟩], paramT,
     [.cst (2, 3) "y" (some paramT) (.var (4, 5) "x"),
      .ret (6, 7) (.var (8, 9) "y")]⟩
 
-private def bindClaims : SourceInput.Claims :=
+private def bindClaims : Fragment.Claims :=
   ⟨"bind", (0, 2), [("x", paramT)], paramT, [], []⟩
 
-private def fstFn : SourceInput.Fn :=
+private def fstFn : Fragment.Fn :=
   ⟨"fst", (0, 2), [⟨"x", paramT⟩, ⟨"y", paramT⟩], paramT,
     [.ret (10, 18) (.var (17, 18) "x")]⟩
 
-private def fstClaims : SourceInput.Claims :=
+private def fstClaims : Fragment.Claims :=
   ⟨"fst", (0, 2), [("x", paramT), ("y", paramT)], paramT, [], []⟩
 
 #guard (match checkScheme bindFn [tpT] bindClaims with | .ok () => true | _ => false)

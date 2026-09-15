@@ -38,7 +38,7 @@ try {
   for (const [name, reason] of Object.entries(cases)) {
     const file = dir + "/" + name;
     let result = run(process.execPath, [
-      "verification/tools/parse-source.mts",
+      "verification/tools/fragment-parse.mts",
       file,
     ]);
     if (result.status === 0) {

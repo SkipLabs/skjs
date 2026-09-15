@@ -1,9 +1,16 @@
 import Verification.ExperimentState.CellUnion
 
-/-! Stateful source syntax and raw claims. Types remain JSON until consumed, so
+/-! # The fragment language
+
+The subset of TypeScript this pipeline accepts, as an abstract syntax tree:
+functions, statements, expressions and type parameters. The tree is declared on
+the producer side in `tools/fragment.mts` and written by `tools/fragment-parse.mts`;
+the decoders here read that JSON, so the two files describe one language.
+
+Raw claims travel alongside the tree. Types remain JSON until consumed, so
 unsupported unused claims do not become invented types. Cell annotations and
 claims use the same bounded contract decoder. -/
-namespace Verification.ExperimentState.SourceInput
+namespace Verification.ExperimentState.Fragment
 open Lean ProgramTyping PositiveRules
 
 /-- Validate a free required-parameter signature without projecting away object requirements. -/
@@ -296,4 +303,4 @@ def decodeTypeClaims (j : Json) (fileKey : String) : Except String (List Claims)
       return ← (← jArr f "functions").mapM decodeClaims
   throw "missing claim file"
 
-end Verification.ExperimentState.SourceInput
+end Verification.ExperimentState.Fragment

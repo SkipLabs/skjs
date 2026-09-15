@@ -6,7 +6,7 @@ never replaced by guessed types. This does not check evidence or complete gaps. 
 namespace Verification.ExperimentState.SourceClaimExport
 open Lean ProgramTyping SourceClaimJson
 
-private def issue (f : SourceInput.Fn) (site raw : Json) (reason : String) : Json :=
+private def issue (f : Fragment.Fn) (site raw : Json) (reason : String) : Json :=
   Json.mkObj [("function",toJson f.name),("namePos",toJson f.namePos),
     ("site",site),("raw",raw),("reason",toJson reason)]
 private def bindingSite (kind name : String) (start : Nat := 0) : Json :=
@@ -14,7 +14,7 @@ private def bindingSite (kind name : String) (start : Nat := 0) : Json :=
 
 /-- Native encoding ends here. Unavailable candidates remain at their original
 sites, so conversion cannot make a failed claim disappear. -/
-private def convertFunction (f : SourceInput.Fn) (c : SourceInput.Claims) (generic : Bool) (modeled : Bool := true) :
+private def convertFunction (f : Fragment.Fn) (c : Fragment.Claims) (generic : Bool) (modeled : Bool := true) :
     SourceTypes.Lowering (Function × List Json) := do
   let mut issues : List Json := []
   let candidate := fun (raw : Json) (point : Bool) => do
@@ -31,8 +31,8 @@ private def convertFunction (f : SourceInput.Fn) (c : SourceInput.Claims) (gener
     match rigid with
     | .ok A => return (A,none)
     | .error _ =>
-      let p ← SourceTypes.attempt (if point then SourceInput.translatePoint raw else do
-        return ⟨← SourceInput.translate raw,none⟩)
+      let p ← SourceTypes.attempt (if point then Fragment.translatePoint raw else do
+        return ⟨← Fragment.translate raw,none⟩)
       match p with
       | .ok p => return (.labels p.type,p.current)
       | .error e => return (.unavailable e,none)
@@ -82,9 +82,9 @@ def convert (ast claims : Json) (fileKey : String) : Except String Json := do
   if selected.length != 1 then throw "expected exactly one matching claim file"
   let aliases ← GenericAlias.decodeAliases ast
   for a in aliases do GenericAlias.admit a
-  let decoded ← SourceInput.decodeAstWithParams ast
+  let decoded ← Fragment.decodeAstWithParams ast
   let fs ← decoded.mapM fun (f,_) => GenericAlias.expandFn aliases f
-  let cs ← SourceInput.decodeTypeClaims claims fileKey
+  let cs ← Fragment.decodeTypeClaims claims fileKey
   let cs ← cs.mapM (GenericAlias.expandClaims aliases)
   if (fs.map (fun f => (f.name,f.namePos))).eraseDups.length != fs.length ||
       (cs.map (fun f => (f.name,f.namePos))).eraseDups.length != cs.length then
@@ -115,12 +115,12 @@ def convert (ast claims : Json) (fileKey : String) : Except String Json := do
 fabricated and no proof is attempted; verification still requires the real parser.
 All sites are kept because there is no lowering with which to associate them. -/
 def inspect (claims : Json) (fileKey digest : String) : Except String Json := do
-  let cs ← SourceInput.decodeTypeClaims claims fileKey
+  let cs ← Fragment.decodeTypeClaims claims fileKey
   let mut functions := []
   let mut issues := []
   let mut types := SourceTypes.initial
   for c in cs do
-    let identity : SourceInput.Fn := ⟨c.name,c.namePos,[],.null,[]⟩
+    let identity : Fragment.Fn := ⟨c.name,c.namePos,[],.null,[]⟩
     let ((f,notes),grown) ← (convertFunction identity c false false).run types
     functions := functions ++ [f]
     issues := issues ++ notes

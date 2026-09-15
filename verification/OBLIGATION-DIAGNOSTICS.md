@@ -188,7 +188,7 @@ a binding pattern rather than as a value (`exprTypes`'s `isLValue` key) — and 
 `envs[i].vars[j]` binding object carries `mutable` (`true` for `let`/`var`/a
 parameter/a catch variable, `false` for `const` and for `this`) and, only when it
 differs from the narrowed `type`, `declared` (the binding's declared type).
-`SourceInput.decodeClaims` and `annotate-source.mts`'s `fromSkjs` read this
+`Fragment.decodeClaims` and `annotate-source.mts`'s `fromSkjs` read this
 export by field name, so the additions reach both as soon as the field is
 declared in the type they share.
 

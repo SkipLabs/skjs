@@ -32,7 +32,7 @@
 <!-- stage 1 -->
 <rect class="reviewed" x="300" y="60" width="200" height="64" rx="10" stroke-width="1.5"/>
 <text x="400" y="88" text-anchor="middle" class="h">Parser</text>
-<text x="400" y="110" text-anchor="middle" class="lbl">parse-source.js</text>
+<text x="400" y="110" text-anchor="middle" class="lbl">fragment-parse.js</text>
 
 <rect class="data" x="300" y="220" width="200" height="64" rx="10" stroke-width="1.5"/>
 <text x="400" y="248" text-anchor="middle" class="h">Claims</text>

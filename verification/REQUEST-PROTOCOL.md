@@ -289,7 +289,7 @@ graph request. No per-site generic evidence is serialized yet. The neutral
 source sidecar also accepts function-scoped `{ "param": "T" }` claims from
 TypeScript, checked by the same generic checker against source binders and bounds.
 
-Generate an AST with `tools/parse-source.mts`, and claims with SKJS's
+Generate an AST with `tools/fragment-parse.mts`, and claims with SKJS's
 `--emit-skjs-type-claims`. Then run:
 
 ```sh
@@ -448,14 +448,14 @@ atoms in the same `atoms` list. Every branch must export successfully; one
 unsupported branch makes the whole type unavailable. No new JSON constructor is
 needed, and the report retains the alternatives exactly.
 
-`SourceInput` validates and lowers all record atoms. `CellUnion.lower` absorbs a non-invariant
+`Fragment` validates and lowers all record atoms. `CellUnion.lower` absorbs a non-invariant
 contract only into an existing invariant arm with weaker read requirements and
 the same write invariant. Remaining arms must satisfy the invariant-cell check;
 [Source claims](SOURCE-CLAIMS.md#record-alternative-absorption) specifies the
 exact normalization law and its proof scope. This is not a widening
 of a standalone refined cell claim.
 
-`CellClaims.decodeShape` validates each single-record shape. `SourceInput`
+`CellClaims.decodeShape` validates each single-record shape. `Fragment`
 lowers read and write operands, including callables, to the same graph table and
 requires equal invariant label lists after union absorption. Unknown fields and
 unsupported operands reject the whole contract. `CellClaims.translate` retains
@@ -472,7 +472,7 @@ Their source correspondence remains a reviewed compilation obligation.
 
 ## Cell source lowering
 
-Use `parse-source.mts <file.ts>` for the extended source gate. It accepts
+Use `fragment-parse.mts <file.ts>` for the extended source gate. It accepts
 only plain `{ value: e }` allocations, `.value` reads and assignments, with the
 required invariant-cell contracts above. Methods, accessors, computed keys,
 spreads, extra fields and optional access are rejected. Cell parameters are
@@ -515,7 +515,7 @@ supported primitives null, undefined, true and false. The SKJS exporter uses
 bounded recursion, and the tsc producer applies a depth limit when translating
 nested operands. No unsupported union alternative is discarded.
 
-`SourceInput.callableType` lowers every supported operand to graph labels.
+`Fragment.callableType` lowers every supported operand to graph labels.
 See [callable integration](DESIGN.md#callable-integration) for the proof boundary.
 
 Source lambda ASTs carry `"params": [{"name": "x", "type": T}, ...]`;

@@ -74,7 +74,7 @@ try {
   for (const text of probes) {
     const probe = path.join(work, "probe.ts");
     fs.writeFileSync(probe, text);
-    const r = spawnSync(process.execPath, ["verification/tools/parse-source.mts", probe], {encoding: "utf8"});
+    const r = spawnSync(process.execPath, ["verification/tools/fragment-parse.mts", probe], {encoding: "utf8"});
     if (r.error || r.signal) throw r.error || Error(String(r.signal));
     assert.notEqual(r.status, 0, text);
     assert.match(r.stderr, /\.call requires a known local arrow/);

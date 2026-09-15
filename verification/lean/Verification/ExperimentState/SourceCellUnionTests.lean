@@ -15,15 +15,15 @@ private def record (T : Json) : Json := Json.mkObj
 private def union : Json := Json.mkObj [("top",toJson false),("atoms",toJson [record result,record null])]
 private def table : SourceTypes.Table := SourceTypes.initial ++
   [[.refs [0,1,2] []],[.refs [0] []],[.arrs [([[0]],[0,1,2])]]]
-private def read : SourceInput.Expr := .read (24,27) (.var (24,25) "cell")
-private def write : SourceInput.Expr := .write (12,20) (.var (12,13) "cell") (.var (19,20) "unit")
-private def withBody (body : SourceInput.Expr) : SourceInput.Fn :=
+private def read : Fragment.Expr := .read (24,27) (.var (24,25) "cell")
+private def write : Fragment.Expr := .write (12,20) (.var (12,13) "cell") (.var (19,20) "unit")
+private def withBody (body : Fragment.Expr) : Fragment.Fn :=
   ⟨"cells",(0,1),[],result,
    [.cst (2,3) "cell" (some union) (.alloc (4,7) (.lit (5,6) .vnull)),
     .ret (8,30) (.app (9,30)
       (.lam (9,27) "unit" null result body)
       (.lit (29,30) .vnull))]⟩
-private def source (mutate : Bool) : SourceInput.Fn :=
+private def source (mutate : Bool) : Fragment.Fn :=
   withBody (if mutate then .seqBody (12,27) write read else read)
 private def claims : SourceClaims.Function :=
   ⟨"cells",(0,1),[],.ok [0,1,2],[(2,[]),(8,[("cell",.ok [4,5])])],
@@ -33,10 +33,10 @@ private def claims : SourceClaims.Function :=
 
 -- Both alternatives are locally allocated invariant cells. Closure recipes
 -- eliminate the saved receiver's union while retaining all operand checks.
-#guard ((SourceInput.translate union).run' SourceTypes.initial).toOption == some [4,5]
+#guard ((Fragment.translate union).run' SourceTypes.initial).toOption == some [4,5]
 #guard [false,true].all fun mutate => (extractNormalizedFn table (source mutate) claims).toOption.isSome
 
-private def check (f : SourceInput.Fn) (c : SourceClaims.Function) : Except String Unit := do
+private def check (f : Fragment.Fn) (c : SourceClaims.Function) : Except String Unit := do
   let r ← extractNormalizedFn table f c
   let proofs ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
     r.searchLabels r.types.length 0 r.obligations
@@ -101,10 +101,10 @@ private def wrongClaims : SourceClaims.Function := {claims with
 -- Statement-entry observations name the captured binding. Nested closures and
 -- preceding expression statements add parameter and anonymous evaluation slots;
 -- projecting the named environment must preserve both kinds of slot.
-private def entrySource (mutate nested : Bool) : SourceInput.Fn :=
-  let body := SourceInput.Expr.atEnv (23,28) read
+private def entrySource (mutate nested : Bool) : Fragment.Fn :=
+  let body := Fragment.Expr.atEnv (23,28) read
   let body := if nested then
-    SourceInput.Expr.app (14,28)
+    Fragment.Expr.app (14,28)
       (.lam (15,28) "inner" null result body) (.lit (21,22) .vnull)
     else body
   withBody (if mutate then .seqBody (12,28) write body else body)

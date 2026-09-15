@@ -32,7 +32,7 @@ export function main(args: string[]) {
   const output=opts.out||sourcePath.replace(/\.ts$/,"")+".source-claims.json",manifest=output+".conversion.json";
   if(fs.existsSync(output)||fs.existsSync(manifest))throw Error("output already exists; choose another --out path");
   const source=fs.readFileSync(sourcePath,"utf8"),raw=fs.readFileSync(opts.claims,"utf8"),originalClaims=JSON.parse(raw);
-  const parser=path.resolve(__dirname,"parse-source.mts"),temp=fs.mkdtempSync(path.join(os.tmpdir(),"source-export-"));
+  const parser=path.resolve(__dirname,"fragment-parse.mts"),temp=fs.mkdtempSync(path.join(os.tmpdir(),"source-export-"));
   const diagnostics=opts.diagnostics?fs.readFileSync(opts.diagnostics,"utf8"):null;
   try {
     const file=opts["file-key"]||sourcePath;

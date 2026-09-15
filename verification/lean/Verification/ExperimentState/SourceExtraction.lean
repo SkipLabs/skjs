@@ -16,7 +16,7 @@ Active-name shadowing is not yet supported. This compiler remains a reviewed
 extraction boundary, not a proved TypeScript semantics. Its output is checked by the proved calculus consumer. -/
 namespace Verification.ExperimentState.SourceExtraction
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
-open SourceInput
+open Fragment
 
 private def distinct [BEq α] (xs : List α) : Bool := xs.eraseDups.length == xs.length
 
@@ -65,7 +65,7 @@ private def env (fc : SourceClaims.Function) (pos : Nat) (scope : List Descripto
   (envCore (← table).length fc pos scope).mapError fun msg =>
     s!"source environment obligation at {pos}: {msg}"
 
-private def exprType (fc : SourceClaims.Function) (e : SourceInput.Expr) : Compiler (Ty Nat) := do
+private def exprType (fc : SourceClaims.Function) (e : Fragment.Expr) : Compiler (Ty Nat) := do
   match fc.exprs.lookup e.span with
   | some t => (SourceClaims.resolve (← table).length t).mapError fun msg =>
       s!"source expression obligation at [{e.span.1},{e.span.2}): {msg}"
@@ -73,10 +73,10 @@ private def exprType (fc : SourceClaims.Function) (e : SourceInput.Expr) : Compi
 
 /-- A terminal branch uses the enclosing source result annotation, not a
 fabricated expression claim at the if statement's span. -/
-private def closureType (fc : SourceClaims.Function) : SourceInput.Expr → Compiler (Ty Nat)
+private def closureType (fc : SourceClaims.Function) : Fragment.Expr → Compiler (Ty Nat)
   | .atEnv _ b | .letBody _ _ _ _ b | .seqBody _ _ b => closureType fc b
   | .done _ => pure [0]
-  | .ifBody _ (some result) _ _ _ => do lower (SourceInput.callableType result)
+  | .ifBody _ (some result) _ _ _ => do lower (Fragment.callableType result)
   | e => exprType fc e
 
 private def emit (t : Tm) (k : Continuation) (Γ : List (Ty Nat)) (A : Ty Nat) :
@@ -170,7 +170,7 @@ private def observed (scope : List Descriptor) (Γ : List (Ty Nat))
 
 /-- A saved read is usable only in a subtree with no possible heap effects or
 escaping closure. Reads are plain modeled cells, never JavaScript accessors. -/
-private def readOnly : SourceInput.Expr → Bool
+private def readOnly : Fragment.Expr → Bool
   | .var .. | .lit .. | .done .. => true
   | .not _ e | .read _ e | .shapeTest _ _ _ e | .atEnv _ e => readOnly e
   | .unitTest _ _ _ _ a b | .logical _ _ a b | .coalesce _ a b
@@ -181,7 +181,7 @@ private def readOnly : SourceInput.Expr → Bool
 
 /-- Save the plain read in a null/undefined comparison. The other operand is
 necessarily a literal; moving that literal across the read has no effect. -/
-private def readGuard : SourceInput.Expr → Option (String × SourceInput.Expr × SourceInput.Expr)
+private def readGuard : Fragment.Expr → Option (String × Fragment.Expr × Fragment.Expr)
   | .not pos e => (readGuard e).map fun (name,r,c) => (name,r,.not pos c)
   | .unitTest pos tag equal true (r@(.read rp (.var _ name))) (lit@(.lit ..)) =>
     some (name,r,.unitTest pos tag equal true (.var rp (snapshotName name)) lit)
@@ -207,14 +207,14 @@ private def closureEnv (fc : SourceClaims.Function) (pos : Nat) (scope : List De
 
 /-- Negations of an immutable variable retain its identity and reverse the
 branch polarity. Arbitrary expressions deliberately carry no alias refinement. -/
-private def conditionVariable (scope : List Descriptor) : SourceInput.Expr → Option (Nat × Bool)
+private def conditionVariable (scope : List Descriptor) : Fragment.Expr → Option (Nat × Bool)
   | .var _ name => ((names scope).idxOf? name).map (·, false)
   | .not _ e => (conditionVariable scope e).map fun (i, reversed) => (i, !reversed)
   | _ => none
 
 /-- Only a syntactic immutable variable retains an alias to the observed value.
 Reads and calls deliberately do not qualify, even if their types look stable. -/
-private def tagConditionVariable (scope : List Descriptor) : SourceInput.Expr → Option (Nat × Tag × Bool)
+private def tagConditionVariable (scope : List Descriptor) : Fragment.Expr → Option (Nat × Tag × Bool)
   | .not _ e => (tagConditionVariable scope e).map fun (i, tag, equal) => (i, tag, !equal)
   | .shapeTest _ tag equal (.var _ name) =>
     ((names scope).idxOf? name).map (·, tag, equal)
@@ -247,7 +247,7 @@ private def tagTestPlan (G : PositiveGraphs.NormalGraph Nat) (tag : Tag) (Γ : L
 short-circuit operators. Branch builders retain their own source claims; a
 logical operator's constant arm is administrative and needs no invented claim. -/
 private def conditionalPlan (scope : List Descriptor) (H : List (Ty Nat)) (A : Ty Nat)
-    (cond : SourceInput.Expr) (c : DirectProof.Plan)
+    (cond : Fragment.Expr) (c : DirectProof.Plan)
     (yesBranch noBranch : List Descriptor → List (Ty Nat) → Compiler DirectProof.Plan) :
     Compiler DirectProof.Plan := do
   let G := SourceTypes.graph (← table)
@@ -310,7 +310,7 @@ private def allocationChild : DirectProof.Plan → Option DirectProof.Plan
 losing their individual claims. Requirements use the lexical context at the occurrence; synthetic let
 slots are introduced only after the operand supplying their type is checked. -/
 private partial def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (Γ : List (Ty Nat))
-    (e : SourceInput.Expr) : Compiler DirectProof.Plan := do
+    (e : Fragment.Expr) : Compiler DirectProof.Plan := do
   let A ← closureType fc e
   let G := SourceTypes.graph (← table)
   if let some R := fc.exprCurrent.lookup e.span then
@@ -526,7 +526,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Descr
       obligation pos ⟨Γ,.var i,B⟩ (some (DirectProof.var Γ i B)) "closure-entry" scope
     let I ← exprType fc init
     let B ← match annot with
-      | some ty => lower (SourceInput.translate ty)
+      | some ty => lower (Fragment.translate ty)
       | none => pure I
     let a ← closureExpr fc scope H init
     let annotation := DirectProof.cast H B a
@@ -566,8 +566,8 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Descr
   | .withValue pos fn initial functionType bagType => do
     let f ← closureExpr fc scope Γ fn
     let property ← closureExpr fc scope Γ initial
-    let F ← lower (SourceInput.translate functionType)
-    let PRef ← lower (SourceInput.translate bagType)
+    let F ← lower (Fragment.translate functionType)
+    let PRef ← lower (Fragment.translate bagType)
     let G := SourceTypes.graph (← table)
     let [.arrs L] := PositiveRules.expand G F | throw "initializer requires a free function annotation"
     let [.refs P []] := PositiveRules.expand G PRef | throw "initializer requires one invariant field"
@@ -585,8 +585,8 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Descr
     let paramNames := params.map Prod.fst
     if !distinct paramNames || paramNames.any (fun name => name == "" || name == "undefined" || (names scope).contains name) then
       throw "shadowing or duplicate closure parameter is outside the source slice"
-    let Ds ← params.mapM fun p => lower (SourceInput.callableType p.2)
-    let R ← lower (SourceInput.callableType ret)
+    let Ds ← params.mapM fun p => lower (Fragment.callableType p.2)
+    let R ← lower (Fragment.callableType ret)
     let inner := (paramNames.map fun name => ⟨name,some pos⟩) ++ scope
     let [.arrs L] := PositiveRules.expand G A | throw "closure claim must name a source arrow"
     if L.isEmpty || !L.all (fun (Di,_) => Di.length == Ds.length && (Di.zip Ds).all (fun (D,A) => D.all A.contains)) then
@@ -612,7 +612,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Descr
 slots after it. Anonymous temporary slots cannot be named by source identifiers.
 Mappings discard only the temporaries introduced by this expression. -/
 private def compileExpr (fc : SourceClaims.Function) (scope : List Descriptor) (Γ : List (Ty Nat))
-    (e : SourceInput.Expr) (next : Target) : Compiler Target := do
+    (e : Fragment.Expr) (next : Target) : Compiler Target := do
   let A ← exprType fc e
   let next ← match fc.exprCurrent.lookup e.span with
     | none => pure next
@@ -721,7 +721,7 @@ private def branchMapping (width : Nat) (tested : Option Nat) (target : Target) 
 /-- Keep a pre-existing singleton fact rather than replacing it with the
 branch witness. In particular, an impossible opposite edge must not force a
 contradictory replacement of an otherwise valid immutable binding. -/
-private def testedSlot (scope : List Descriptor) (Γ : List (Ty Nat)) (cond : SourceInput.Expr) : Option Nat :=
+private def testedSlot (scope : List Descriptor) (Γ : List (Ty Nat)) (cond : Fragment.Expr) : Option Nat :=
   do
     let (i, _) ← conditionVariable scope cond
     if Γ[i]? == some [1] || Γ[i]? == some [2] then none else some i
@@ -729,7 +729,7 @@ private def testedSlot (scope : List Descriptor) (Γ : List (Ty Nat)) (cond : So
 /-- Share polarity handling between conditionals and loop heads. The saved
 condition is in slot zero. Only a syntactically identified immutable variable
 may be replaced by the recovered Boolean witness. -/
-private def emitBranch (scope : List Descriptor) (Γ : List (Ty Nat)) (cond : SourceInput.Expr)
+private def emitBranch (scope : List Descriptor) (Γ : List (Ty Nat)) (cond : Fragment.Expr)
     (A : Ty Nat) (yes no : Target) : Compiler Target := do
   if let some (i, tag, equal) := tagConditionVariable scope cond then
     let some C := Γ[i]? | throw "internal tag-guard slot mismatch"
@@ -760,7 +760,7 @@ source bindings are refined; every generated edge checks this candidate context.
 A true conjunction / false disjunction establishes both operand outcomes. The
 other outcomes deliberately retain the input context rather than compute a join. -/
 private def conditionContext (G : PositiveGraphs.NormalGraph Nat) (scope : List Descriptor) (Γ : List (Ty Nat))
-    (cond : SourceInput.Expr) (answer : Bool) : List (Ty Nat) :=
+    (cond : Fragment.Expr) (answer : Bool) : List (Ty Nat) :=
   match cond with
   | .not _ e => conditionContext G scope Γ e (!answer)
   | .logical _ andOp left right =>
@@ -778,7 +778,7 @@ private def conditionContext (G : PositiveGraphs.NormalGraph Nat) (scope : List 
 expression still has an independent claimed typing obligation; the runtime
 traverses its operands once instead of evaluating it and then replaying it. -/
 private def compileCondition (fc : SourceClaims.Function) (scope : List Descriptor)
-    (Γ : List (Ty Nat)) (cond : SourceInput.Expr) (yes no : Target) : Compiler Target := do
+    (Γ : List (Ty Nat)) (cond : Fragment.Expr) (yes no : Target) : Compiler Target := do
   let simple := do
     let A ← exprType fc cond
     let node ← emitBranch scope Γ cond A yes no
@@ -803,7 +803,7 @@ private structure LoopTargets where
 /-- Compile the continuation once, then point both arms at it. Allocation order
 is intentionally independent of source order; `start` records the real entry.
 Fuel bounds structural traversal, not execution or certificate search. -/
-private def body : Nat → SourceClaims.Function → Ty Nat → List Descriptor → List SourceInput.Stmt →
+private def body : Nat → SourceClaims.Function → Ty Nat → List Descriptor → List Fragment.Stmt →
     Option (Target × List Descriptor) → Option LoopTargets → Compiler Target
   | 0, _, _, _, _, _, _ => throw "internal extraction error: exhausted structural traversal"
   | fuel+1, fc, R, scope, stmts, tail, loopTargets => do
@@ -830,7 +830,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List Descriptor 
       if (names scope).contains name then throw s!"duplicate or shadowing local declaration '{name}'"
       let Γ ← env fc pos.1 scope
       let A ← exprType fc e
-      let B ← match annot with | none => pure A | some ty => lower (SourceInput.translate ty)
+      let B ← match annot with | none => pure A | some ty => lower (Fragment.translate ty)
       let next ← body fuel fc R (⟨name,some pos⟩::scope) rest tail loopTargets
       let annotation ← emitAt e.span (.var 0) (.effect next) (A::Γ) B "binding-annotation" (some pos.1)
         (scope := ⟨name,some e.span⟩::scope)
@@ -877,7 +877,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List Descriptor 
       modify fun s => { s with cuts := entry.label :: s.cuts }
       return entry
 
-private def traversalBudget : List SourceInput.Stmt → Nat
+private def traversalBudget : List Fragment.Stmt → Nat
   | [] => 1
   | .brk .. :: rest | .cont .. :: rest | .ret .. :: rest | .cst .. :: rest | .effect .. :: rest => 1 + traversalBudget rest
   | .loop _ _ loopBody :: rest => 1 + traversalBudget loopBody + traversalBudget rest
@@ -904,7 +904,7 @@ def SourceRequest.searchLabels (r : SourceRequest) : List Nat :=
 
 /-- The table is the one the claims were lowered into; annotations the claims
 did not mention grow it, and the request carries the result. -/
-def extractNormalizedFn (T : SourceTypes.Table) (f : SourceInput.Fn) (fc : SourceClaims.Function) :
+def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceClaims.Function) :
     Except String SourceRequest := do
   if f.name != fc.name || f.namePos != fc.namePos then throw "function claim identity mismatch"
   let scope : List Descriptor := f.params.map (fun p => ⟨p.name,none⟩)
@@ -915,7 +915,7 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : SourceInput.Fn) (fc : Sourc
   if !distinct (fc.envs.map Prod.fst) || !distinct (fc.exprs.map Prod.fst) then
     throw "duplicate statement or expression claim"
   let ((inputs, R, entry), built) ← (do
-    let inputs ← f.params.mapM (fun (p : SourceInput.Param) => lower (SourceInput.translate p.ty))
+    let inputs ← f.params.mapM (fun (p : Fragment.Param) => lower (Fragment.translate p.ty))
     -- A parameter's annotation is the assumption its caller makes, and the
     -- soundness theorem takes it as given for every value meeting it. A
     -- primitive or an arrow can be assumed. Callable arguments may expose
@@ -932,7 +932,7 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : SourceInput.Fn) (fc : Sourc
       if p.name != name then throw "parameter claim name or order mismatch"
       let B ← SourceClaims.resolve (← table).length claimed
       if A != B then throw s!"claimed parameter type differs from the source annotation for '{name}'"
-    let R ← lower (SourceInput.translate f.ret)
+    let R ← lower (Fragment.translate f.ret)
     let claimedR ← SourceClaims.resolve (← table).length fc.ret
     if R != claimedR then throw "claimed return type differs from the source annotation"
     let first ← body (traversalBudget f.body) fc R scope f.body none none
@@ -943,7 +943,7 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : SourceInput.Fn) (fc : Sourc
 
 /-- One function's wire claims, lowered into a fresh table. Other producers can
 supply normalized candidates directly to extractNormalizedFn. -/
-def extractFn (f : SourceInput.Fn) (fc : SourceInput.Claims) : Except String SourceRequest := do
+def extractFn (f : Fragment.Fn) (fc : Fragment.Claims) : Except String SourceRequest := do
   let (fc, T) ← (SkjsSourceClaims.translate fc).run SourceTypes.initial
   extractNormalizedFn T f fc
 

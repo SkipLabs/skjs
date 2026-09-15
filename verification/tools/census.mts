@@ -23,7 +23,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { close, parseFile } from "./parse-source.mts";
+import { close, parseFile } from "./fragment-parse.mts";
 import { listFunctions } from "./extract-functions.mts";
 
 /* A corpus states how to find its sources, not which they are. The resolved

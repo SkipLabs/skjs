@@ -1,4 +1,4 @@
-import Verification.ExperimentState.SourceInput
+import Verification.ExperimentState.Fragment
 import Verification.ExperimentState.CellClaims
 
 /-! Source extraction of first-order generic aliases.
@@ -51,7 +51,7 @@ def decodeAlias (j : Json) : Except String Alias := do
   let name ← jStr (← jField j "name")
   if name.isEmpty then throw "empty alias name"
   if name == "undefined" then throw "shadowing undefined is outside the source slice"
-  let [p] ← (← jArr j "typeParams").mapM SourceInput.decodeTypeParam
+  let [p] ← (← jArr j "typeParams").mapM Fragment.decodeTypeParam
     | throw "only one type parameter is in the fragment"
   if p.name == "undefined" then throw "shadowing undefined is outside the source slice"
   if p.bound.isSome then throw "type parameter bounds on aliases are outside the fragment"
@@ -171,7 +171,7 @@ def expandNamed (aliases : List Alias) (n : String) (t : Json) : Except String (
   let t ← expandType aliases t
   return (n, t)
 
-partial def expandExpr (aliases : List Alias) (e : SourceInput.Expr) : Except String SourceInput.Expr := do
+partial def expandExpr (aliases : List Alias) (e : Fragment.Expr) : Except String Fragment.Expr := do
   match e with
   | .var p n => return .var p n
   | .lit p v => return .lit p v
@@ -214,7 +214,7 @@ partial def expandExpr (aliases : List Alias) (e : SourceInput.Expr) : Except St
     let annot' ← expandOpt aliases annot
     return .letBody p n annot' (← expandExpr aliases i) (← expandExpr aliases b)
 
-partial def expandStmt (aliases : List Alias) (s : SourceInput.Stmt) : Except String SourceInput.Stmt := do
+partial def expandStmt (aliases : List Alias) (s : Fragment.Stmt) : Except String Fragment.Stmt := do
   match s with
   | .ret p e => return .ret p (← expandExpr aliases e)
   | .cst p n annot i =>
@@ -232,7 +232,7 @@ partial def expandStmt (aliases : List Alias) (s : SourceInput.Stmt) : Except St
     return .loop p (← expandExpr aliases c) (← b.mapM (expandStmt aliases))
   | .effect p e => return .effect p (← expandExpr aliases e)
 
-def expandFn (aliases : List Alias) (f : SourceInput.Fn) : Except String SourceInput.Fn := do
+def expandFn (aliases : List Alias) (f : Fragment.Fn) : Except String Fragment.Fn := do
   let params ← f.params.mapM fun p => do
     let ty ← expandType aliases p.ty
     return { p with ty }
@@ -240,8 +240,8 @@ def expandFn (aliases : List Alias) (f : SourceInput.Fn) : Except String SourceI
   let body ← f.body.mapM (expandStmt aliases)
   return { f with params, ret, body }
 
-def expandClaims (aliases : List Alias) (c : SourceInput.Claims) :
-    Except String SourceInput.Claims := do
+def expandClaims (aliases : List Alias) (c : Fragment.Claims) :
+    Except String Fragment.Claims := do
   let params ← c.params.mapM fun (n, t) => expandNamed aliases n t
   let envs ← c.envs.mapM fun (pos, vars) => do
     let vars ← vars.mapM fun (n, t) => expandNamed aliases n t

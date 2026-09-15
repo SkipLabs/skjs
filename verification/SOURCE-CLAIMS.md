@@ -7,7 +7,7 @@ interface for the existing source fragment, not support for arbitrary graphs,
 TypeScript types, shadowing or recursive source aliases.
 
 ```sh
-node verification/tools/parse-source.mts input.ts > ast.json
+node verification/tools/fragment-parse.mts input.ts > ast.json
 verification/lean/.lake/build/bin/verifier --produce-source-claims \
   ast.json source-claims.json input.ts evidence.json 10
 verification/lean/.lake/build/bin/verifier --check-source-claims \
@@ -183,7 +183,7 @@ ordinary arrows do not acquire creation-time heap assumptions or postconditions.
 Numbers, nested predicates, and correlated unions of differently refined
 references remain outside this profile.
 
-`SourceInput.translatePoint` preserves a supported standalone record refinement
+`Fragment.translatePoint` preserves a supported standalone record refinement
 as its write-invariant reference plus its read-content predicate. Conversion does
 not manufacture stronger producer claims. Both raw SKJS and sidecar consumers
 bind current predicates to statement-entry or expression-result graph checkpoints.

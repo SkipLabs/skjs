@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as ts from "typescript/unstable/ast";
-import { projectFor } from "./parse-source.mts";
+import { projectFor } from "./fragment-parse.mts";
 
 /** Every named top-level function, with its exact source text. One project
  * open per file: callers that want many functions must not ask one at a time.

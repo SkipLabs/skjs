@@ -63,7 +63,7 @@ try {
   ]) {
     const probe = path.join(work, "probe.ts");
     fs.writeFileSync(probe, text);
-    const result = spawnSync(process.execPath, ["verification/tools/parse-source.mts", probe], {encoding: "utf8"});
+    const result = spawnSync(process.execPath, ["verification/tools/fragment-parse.mts", probe], {encoding: "utf8"});
     if (result.error || result.signal) throw result.error || Error(String(result.signal));
     assert.notEqual(result.status, 0, name);
   }

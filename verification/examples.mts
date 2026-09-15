@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { fromSkjs, verifySkjs } from "./tools/annotate-source.mts";
 import * as tscClaims from "./tools/tsc-claims.mts";
-import { definedFunctions } from "./tools/parse-source.mts";
+import { definedFunctions } from "./tools/fragment-parse.mts";
 
 const __filename = import.meta.filename;
 const __dirname = path.dirname(__filename);

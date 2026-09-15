@@ -28,7 +28,7 @@ make viewer                      # the claim report reader on http://localhost:8
 One file end to end, with `$F` a repository-relative path:
 
 ```sh
-node verification/tools/parse-source.mts $F > ast.json
+node verification/tools/fragment-parse.mts $F > ast.json
 bash verification/skjs.sh --emit-skjs-type-claims $F > claims.json
 verification/lean/.lake/build/bin/verifier --produce-stateful-source ast.json claims.json $F evidence.json 10
 verification/lean/.lake/build/bin/verifier --check-skjs-operations claims.json

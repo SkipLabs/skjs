@@ -2,10 +2,11 @@
 /*
  * Trusted front end for the verification experiment (see verification/DESIGN.md).
  *
- * Reads a .ts file and emits its abstract syntax tree as JSON, with every node
- * carrying its [start, end) offsets in UTF-16 code units. This program is the
- * SYNTACTIC GATE: a construct outside the fragment is an error, so a program it
- * rejects can never be certified. Anything it accepts, it describes exactly.
+ * Reads a .ts file and emits a tree of the fragment language (fragment.mts) as
+ * JSON, with every node carrying its [start, end) offsets in UTF-16 code units.
+ * This program is the SYNTACTIC GATE: a construct outside the fragment is an
+ * error, so a program it rejects can never be certified. Anything it accepts,
+ * it describes exactly.
  *
  * This program is TRUSTED. It defines what the source text means; the verifier
  * never sees the producer's own parse. The fragment it accepts is stated in
@@ -17,100 +18,16 @@ import type { Node, SourceFile } from "typescript/unstable/ast";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-
-/* ------------------------------------------------------------ the tree -- */
-// What the verifier decodes (SourceInput.decodeAst). The shapes are structural
-// on purpose: this is a wire format, and its field names are the contract.
-
-/** A half-open span of the source, in UTF-16 code units. */
-export type Span = [start: number, end: number];
-
 import type { ClaimType, Atom } from "./claim.mts";
-export type { ClaimType, Atom } from "./claim.mts";
-
-export type Expr =
-  | { k: "id"; pos: Span; name: string }
-  | { k: "lit"; pos: Span; lit: Atom }
-  | { k: "not" | "alloc" | "read" | "typeof"; pos: Span; e: Expr }
-  | { k: "bin"; pos: Span; op: string; l: Expr; r: Expr }
-  | { k: "coalesce"; pos: Span; left: Expr; right: Expr }
-  | { k: "write"; pos: Span; receiver: Expr; rhs: Expr }
-  | { k: "withValue"; pos: Span; fn: Expr; initial: Expr; functionType: ClaimType; bagType: ClaimType }
-  | { k: "functionTest"; pos: Span; equal: boolean; e: Expr }
-  | { k: "apply"; pos: Span; callee: Expr; args: Expr[] }
-  | { k: "callWithReceiver" | "bindWithReceiver"; pos: Span; callee: Expr; receiver: Expr; args: Expr[] }
-  | { k: "conditional"; pos: Span; cond: Expr; then: Expr; else_: Expr }
-  | {
-      k: "lambda";
-      pos: Span;
-      params: { name: string; type: ClaimType }[];
-      result: ClaimType;
-      body: Expr;
-    }
-  /* A block-bodied closure, lowered to nested expressions: the calculus has no
-     statements inside a closure, so the parser does the lowering the verifier
-     would otherwise have to invent. */
-  | { k: "doneBody"; pos: Span }
-  | { k: "returnBody"; pos: Span; e: Expr }
-  | { k: "seqBody"; pos: Span; init: Expr; body: Expr }
-  | {
-      k: "letBody";
-      pos: Span;
-      name: string;
-      annot: ClaimType | null;
-      init: Expr;
-      body: Expr;
-    }
-  | {
-      k: "ifBody";
-      pos: Span;
-      result: ClaimType;
-      cond: Expr;
-      then: Expr;
-      else_: Expr;
-    };
-
-export type Stmt =
-  | { k: "effect"; pos: Span; e: Expr }
-  | { k: "return"; pos: Span; e: Expr }
-  | { k: "break" | "continue"; pos: Span }
-  | { k: "while"; pos: Span; cond: Expr; body: Stmt[] }
-  | { k: "if"; pos: Span; cond: Expr; then: Stmt[]; else_: Stmt[] | null }
-  | {
-      k: "const";
-      pos: Span;
-      name: string;
-      namePos: Span;
-      annot: ClaimType | null;
-      init: Expr;
-    };
-
-export interface TypeParamAst {
-  name: string;
-  bound: ClaimType | null;
-}
-
-export interface FunctionAst {
-  name: string;
-  namePos: Span;
-  typeParams: TypeParamAst[];
-  params: { name: string; pos: Span; type: ClaimType }[];
-  retType: ClaimType;
-  body: Stmt[];
-}
-
-export interface TypeAliasAst {
-  name: string;
-  typeParams: TypeParamAst[];
-  body: ClaimType;
-}
-
-export interface Ast {
-  file: string;
-  sourceSha256: string;
-  aliases: TypeAliasAst[];
-  functions: FunctionAst[];
-}
+import type {
+  Ast,
+  Expr,
+  FunctionAst,
+  Span,
+  Stmt,
+  TypeAliasAst,
+  TypeParamAst,
+} from "./fragment.mts";
 
 /* --------------------------------------------------------- the compiler -- */
 // The compiler runs out of process and is addressed through one API instance.
@@ -1095,7 +1012,7 @@ export function typeOf(node: any): ClaimType {
 if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
   const file = process.argv[2];
   if (!file) {
-    process.stderr.write("usage: parse-source.ts <file.ts>\n");
+    process.stderr.write("usage: fragment-parse.ts <file.ts>\n");
     process.exit(2);
   }
   try {

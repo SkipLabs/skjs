@@ -175,7 +175,7 @@ Avoid temporary paths, task handoffs and duplicate field tables in maintained
 docs. Lean definitions and tests remain the implementation evidence; cite them.
 
 The source boundary starts in
-[SourceInput.lean](lean/Verification/ExperimentState/SourceInput.lean) and
+[Fragment.lean](lean/Verification/ExperimentState/Fragment.lean) and
 [SourceExtraction.lean](lean/Verification/ExperimentState/SourceExtraction.lean);
 [RequestJson.lean](lean/Verification/ExperimentState/RequestJson.lean) checks the
 resulting requests and evidence.

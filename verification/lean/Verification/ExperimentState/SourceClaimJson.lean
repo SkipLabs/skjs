@@ -110,7 +110,7 @@ def decode (j : Json) : Except String Document := do
 
 private abbrev Sites := List Nat × List Span
 private def joinSites (a b : Sites) : Sites := (a.1 ++ b.1,a.2 ++ b.2)
-private def exprSites : SourceInput.Expr → Sites
+private def exprSites : Fragment.Expr → Sites
   | .var p _ | .lit p _ => ([],[p])
   | .shapeTest p _ _ e | .not p e | .alloc p e | .read p e | .lambda p _ _ e => joinSites ([],[p]) (exprSites e)
   | .withValue p a b _ _ | .write p a b | .unitTest p _ _ _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
@@ -121,7 +121,7 @@ private def exprSites : SourceInput.Expr → Sites
   | .done _ => ([],[])
   | .seqBody p a b | .letBody p _ _ a b => joinSites ([p.1],[]) (joinSites (exprSites a) (exprSites b))
   | .ifBody p result a b c => joinSites (if result.isSome then ([p.1],[]) else ([],[p])) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
-private partial def stmtSites : SourceInput.Stmt → Sites
+private partial def stmtSites : Fragment.Stmt → Sites
   | .brk p | .cont p => ([p.1],[])
   | .ret p e | .cst p _ _ e | .effect p e => joinSites ([p.1],[]) (exprSites e)
   | .loop p c body => joinSites ([p.1],[]) (joinSites (exprSites c)
@@ -130,7 +130,7 @@ private partial def stmtSites : SourceInput.Stmt → Sites
     joinSites ([p.1],[]) (joinSites (exprSites c)
       ((a ++ b.getD []).foldl (fun s st => joinSites s (stmtSites st)) ([],[])))
 
-def functionSites (f : SourceInput.Fn) : List Nat × List Span :=
+def functionSites (f : Fragment.Fn) : List Nat × List Span :=
   f.body.foldl (fun s st => joinSites s (stmtSites st)) ([],[])
 
 private def genericType (T : SourceTypes.Table) : ClaimType → Except String Json
@@ -141,7 +141,7 @@ private def genericType (T : SourceTypes.Table) : ClaimType → Except String Js
     if rows != [.bool] && rows != [.boolLit true,.boolLit false] && rows != [.boolLit false,.boolLit true] then
       throw "generic claim requires a rigid parameter or boolean"
     return Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj [("a",toJson "boolean")]])]
-private def Function.genericClaims (T : SourceTypes.Table) (c : Function) : Except String SourceInput.Claims := do
+private def Function.genericClaims (T : SourceTypes.Table) (c : Function) : Except String Fragment.Claims := do
   if c.entries.any (fun e => e.bindings.any (fun b => b.current.isSome)) ||
       c.expressions.any (fun e => e.current.isSome) then throw "generic claims cannot assert current contents"
   return ⟨c.name,c.namePos,← c.params.mapM (fun b => do return (b.name,← genericType T b.type)),
@@ -155,7 +155,7 @@ def extract (ast claims : Json) (fileKey : String) : Except String (List SourceR
   if (← jStr (← jField ast "sourceSha256")) != d.sourceSha256 then throw "source claim fingerprint mismatch"
   let aliases ← GenericAlias.decodeAliases ast
   for a in aliases do GenericAlias.admit a
-  let decoded ← SourceInput.decodeAstWithParams ast
+  let decoded ← Fragment.decodeAstWithParams ast
   let decoded ← decoded.mapM fun (f,tps) => do
     return (← GenericAlias.expandFn aliases f,tps)
   let fs := decoded.map Prod.fst

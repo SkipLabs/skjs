@@ -5,7 +5,7 @@ open Lean SourceExtraction ProgramTyping
 
 private def boolean : Json := Json.mkObj [("top",toJson false),
   ("atoms",toJson [Json.mkObj [("a",toJson "boolean")]])]
-private def source : SourceInput.Fn :=
+private def source : Fragment.Fn :=
   ⟨"identity",(0,1),[⟨"flag",boolean⟩],boolean,
    [.ret (2,5) (.var (3,4) "flag")]⟩
 -- These claims have no SKJS type atoms, implicit bindings or function modes.
@@ -40,7 +40,7 @@ private def checkAgainst (c : SourceClaims.Function) : Except String Unit := do
 #guard !ok (checkAgainst { claims with envs := [(2,[("flag",.ok [2])])] })
 #guard !ok (checkAgainst { claims with exprs := [((3,4),.ok [2])] })
 
-private def skjs : SourceInput.Claims :=
+private def skjs : Fragment.Claims :=
   ⟨"identity",(0,1),[("flag",boolean)],boolean,
    [(2,[("flag",boolean)])],[((3,4),boolean)]⟩
 #guard ((extractFn source skjs).map (fun r => toJson r.toRequest)).toOption ==

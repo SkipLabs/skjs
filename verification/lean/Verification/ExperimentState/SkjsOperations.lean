@@ -1,5 +1,5 @@
 import Verification.ExperimentState.CertificateProducer
-import Verification.ExperimentState.SourceInput
+import Verification.ExperimentState.Fragment
 import Verification.ExperimentState.CellClaims
 
 /-! Independent checking of SKJS's closed subtype and expansion judgments.
@@ -27,10 +27,10 @@ def pair (kind : String) (source target : Json) : Except String Outcome := do
   match kind with
   | "subtype" | "expand" => pure ()
   | other => throw s!"unknown operation kind '{other}'"
-  match (SourceInput.translate source).run initial with
+  match (Fragment.translate source).run initial with
   | .error e => return .skipped e
   | .ok (A, T₁) =>
-    match (SourceInput.translate target).run T₁ with
+    match (Fragment.translate target).run T₁ with
     | .error e => return .skipped e
     | .ok (B, T) =>
       let forward := inclusion A B T

@@ -90,7 +90,7 @@ for (const [name, want] of Object.entries(expected)) {
     evidence = path.join(tmp, "evidence.json");
   let got, detail = "";
   const parsed = run(process.execPath, [
-    "verification/tools/parse-source.mts",
+    "verification/tools/fragment-parse.mts",
     file,
   ]);
   if (parsed.status !== 0) {

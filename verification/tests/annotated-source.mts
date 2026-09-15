@@ -8,7 +8,7 @@ import { hash,render,fromSkjs,compareClaims,typeText } from "../tools/annotate-s
 import { createRequire } from "node:module";
 import { parseReport } from "../report-viewer/model.mts";
 import surface from "../tools/claim-text.mts";
-import { parseFile } from "../tools/parse-source.mts";
+import { parseFile } from "../tools/fragment-parse.mts";
 // Plain JavaScript modules; the reader loads these in a browser too.
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(import.meta.filename);
@@ -228,7 +228,7 @@ try {
   // proof search that failed, and the report must say which one happened.
   test("an absent required claim is located as a missing claim",()=>{
     const c=structuredClone(claims), f=c.find((f: any) =>f.file===fileKey).functions.find((f: any) =>f.name==="capturedRead");
-    const parsed=spawnSync(process.execPath,[path.resolve(__dirname,"../tools/parse-source.mts"),fileKey],{encoding:"utf8"});
+    const parsed=spawnSync(process.execPath,[path.resolve(__dirname,"../tools/fragment-parse.mts"),fileKey],{encoding:"utf8"});
     assert.equal(parsed.status,0,parsed.stderr);
     const body=JSON.parse(parsed.stdout).functions.find((f: any) =>f.name==="capturedRead").body[1].init.body;
     const removed=f.exprs.find((e: any) =>e.pos[0]===body.pos[0] && e.pos[1]===body.pos[1]);assert(removed);
@@ -280,7 +280,7 @@ try {
   });
   test("false claim is not called refuted or verified",()=>{
     const c=structuredClone(claims), f=c.find((f: any) =>f.file===fileKey).functions.find((f: any) =>f.name==="capturedRead");
-    const parsed=spawnSync(process.execPath,[path.resolve(__dirname,"../tools/parse-source.mts"),fileKey],{encoding:"utf8"});
+    const parsed=spawnSync(process.execPath,[path.resolve(__dirname,"../tools/fragment-parse.mts"),fileKey],{encoding:"utf8"});
     assert.equal(parsed.status,0,parsed.stderr);
     const body=JSON.parse(parsed.stdout).functions.find((f: any) =>f.name==="capturedRead").body[1].init.body;
     const p=f.exprs.find((e: any) =>e.pos[0]===body.pos[0] && e.pos[1]===body.pos[1]);assert(p);

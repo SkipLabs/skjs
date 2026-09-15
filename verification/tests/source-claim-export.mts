@@ -12,7 +12,7 @@ const script=path.resolve(__dirname,"../tools/export-source-claims.mts");
 let passed=0;
 const test=(name: string,f: any)=>{f();passed++;console.log(`  ${name}: OK`);};
 const convert=(source: string,claims: any,out: any,extra: string[]=[])=>run(process.execPath,[script,source,"--claims",claims,"--out",out,"--verifier",verifier,...extra]);
-const parse=(source: string,ap: any)=>{const r=run(process.execPath,[path.resolve(__dirname,"../tools/parse-source.mts"),source]);assert.equal(r.status,0,r.stderr);fs.writeFileSync(ap,r.stdout);};
+const parse=(source: string,ap: any)=>{const r=run(process.execPath,[path.resolve(__dirname,"../tools/fragment-parse.mts"),source]);assert.equal(r.status,0,r.stderr);fs.writeFileSync(ap,r.stdout);};
 try {
   const out=path.join(tmp,"closures.json"),ap=path.join(tmp,"closures.ast.json"),ep=path.join(tmp,"evidence.json");
   test("real SKJS closure claims convert",()=>{const r=convert(file,claimsPath,out);assert.equal(r.status,0,r.stderr);});

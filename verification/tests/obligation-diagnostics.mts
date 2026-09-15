@@ -24,7 +24,7 @@ try {
   fs.writeFileSync(file, source);
   const parsed = spawnSync(
     process.execPath,
-    [path.resolve(__dirname, "../tools/parse-source.mts"), file],
+    [path.resolve(__dirname, "../tools/fragment-parse.mts"), file],
     { encoding: "utf8" },
   );
   assert.equal(parsed.status, 0, parsed.stderr);
