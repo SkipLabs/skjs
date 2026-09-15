@@ -14,11 +14,14 @@ the tests, and keep the “done when” criterion true. `make test-in-docker` mu
 stay green.
 
 Put a repair's regressions in [`tests/expect-error/`](../tests/expect-error).
-The verification corpus is a slice of that directory and a new test joins it,
-so a test placed there is measured and one placed elsewhere is not.
+The verification corpus is the functions that arc introduced in that directory,
+so a test placed there is measured and one placed elsewhere is not. Appending a
+case to an older file adds that case, not the file's existing contents.
 `make verify-census` reports how many of its functions the pipeline can verify
 and why the rest are refused; adding tests moves the recorded baseline, which
-`make verify-census UPDATE=1` accepts. The census is a measurement, not a gate:
+`make verify-census UPDATE=1` accepts. It counts against the functions SKJS
+accepts, not against every function: a regression SKJS rejects is stating
+nothing to check, and is reported separately rather than as a shortfall. The census is a measurement, not a gate:
 a refusal names a boundary of the verified fragment and says nothing about
 whether SKJS is right.
 

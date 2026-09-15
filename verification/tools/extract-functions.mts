@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as ts from "typescript/unstable/ast";
-import { projectFor } from "./fragment-parse.mts";
+import { openText, projectFor } from "./fragment-parse.mts";
 
 /** Every named top-level function, with its exact source text. One project
  * open per file: callers that want many functions must not ask one at a time.
@@ -14,4 +14,13 @@ export function listFunctions(file: string): { name: string; text: string }[] {
   return sf.statements.filter(ts.isFunctionDeclaration)
     .filter(f => f.name && f.body)
     .map(f => ({ name: f.name!.text, text: source.slice(f.getStart(sf), f.end) }));
+}
+
+/** The named top-level functions of a version of a file that is not on disk,
+ * so a corpus can ask what a file held before a commit. The path is a label
+ * the compiler keys the text by; nothing reads it back. */
+export function listFunctionsOf(label: string, text: string): string[] {
+  const sf = openText(path.resolve(label), text);
+  return sf.statements.filter(ts.isFunctionDeclaration)
+    .filter(f => f.name && f.body).map(f => f.name!.text);
 }

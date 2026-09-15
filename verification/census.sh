@@ -36,5 +36,8 @@ skjs_check "$DIR"/*.ts > "$WORK/census.claims" 2> "$WORK/census.err" || true
 if [ ! -s "$WORK/census.claims" ]; then
   echo "FAIL: no claims exported"; cat "$WORK/census.err"; exit 1
 fi
+# The producer's own diagnostics go with the claims: a function it rejected
+# states nothing to check, and is not a boundary of the verified fragment.
 node verification/tools/census.mts --report "$CORPUS" "$DIR" \
-  "$WORK/census.claims" "$VERIFIER" --baseline "$BASELINE" "${UPDATE[@]+"${UPDATE[@]}"}"
+  "$WORK/census.claims" "$VERIFIER" --producer-errors "$WORK/census.err" \
+  --baseline "$BASELINE" "${UPDATE[@]+"${UPDATE[@]}"}"

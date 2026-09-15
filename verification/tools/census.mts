@@ -24,7 +24,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { close, parseFile } from "./fragment-parse.mts";
-import { listFunctions } from "./extract-functions.mts";
+import { listFunctions, listFunctionsOf } from "./extract-functions.mts";
 
 /* A corpus states how to find its sources, not which they are. The resolved
  * list is a derived fact and lives in the baseline, where every row names its
@@ -44,6 +44,25 @@ type Entry = { slug: string; source: string; fn: string };
  * heuristic because refusals are English sentences; a stable code from each
  * producer would replace it. */
 const GATE = "gate", CLAIMS = "claims", UNPROVED = "unproved", OK = "verified";
+/* A function the producer itself rejected states nothing to check, so it is
+ * not a boundary of the verified fragment and does not belong in the same
+ * count. Corpus sources are error tests: most functions in them are wrong on
+ * purpose, and counting those as unverified reports the corpus's design as
+ * this pipeline's shortfall. */
+const REJECTED = "skjs-rejected";
+
+/** Which functions the producer reported an error in, by slug, read from its
+ * own diagnostics. A warning is not a rejection: the claims are still good. */
+function producerRejected(errPath: string | undefined): Set<string> {
+  const out = new Set<string>();
+  if (!errPath || !fs.existsSync(errPath)) return out;
+  for (const block of fs.readFileSync(errPath, "utf8").split(/(?=^File ")/m)) {
+    const named = /^File "([^"]+)"/.exec(block);
+    if (named && /^error:/m.test(block))
+      out.add(path.basename(named[1]).replace(/\.ts$/, ""));
+  }
+  return out;
+}
 
 function reason(text: string): string {
   const first = (text.split("\n").find(l => l.trim()) ?? "unknown").trim();
@@ -72,14 +91,28 @@ function resolve(corpus: Corpus): string[] {
   return sources;
 }
 
+/* A file the range only appended a case to still holds everything it held
+ * before, and those functions are not what the corpus is about: they were not
+ * introduced by this work, so their coverage says nothing about it. Only the
+ * functions the range added are censused; a file that did not exist then
+ * contributes all of its own. */
+function introduced(source: string, since: string): { name: string; text: string }[] {
+  const now = listFunctions(source);
+  const before = spawnSync("git", ["show", `${since}~1:${source}`], { encoding: "utf8" });
+  if (before.status !== 0) return now;
+  const had = new Set(listFunctionsOf(`${source}.before.ts`, before.stdout));
+  return now.filter(f => !had.has(f.name));
+}
+
 function extract(corpus: Corpus, dir: string): void {
   fs.writeFileSync(`${dir}/tsconfig.json`, JSON.stringify({
     extends: "../tsconfig.json", include: ["*.ts"],
   }));
   const index: Entry[] = [];
   const taken = new Set<string>();
+  const { since } = corpus.select;
   for (const source of resolve(corpus)) {
-    for (const { name, text } of listFunctions(source)) {
+    for (const { name, text } of introduced(source, since)) {
       const slug = `${path.basename(source, ".ts")}__${name}`;
       if (taken.has(slug)) throw Error(`duplicate census slug ${slug}`);
       taken.add(slug);
@@ -92,14 +125,17 @@ function extract(corpus: Corpus, dir: string): void {
   console.error(`census: extracted ${index.length} functions from ${new Set(index.map(e => e.source)).size} sources since ${corpus.select.since}`);
 }
 
-function report(dir: string, claimsPath: string, verifier: string): Entry_Result[] {
+function report(dir: string, claimsPath: string, verifier: string,
+                errPath?: string): Entry_Result[] {
   const index: Entry[] = JSON.parse(fs.readFileSync(`${dir}/index.json`, "utf8"));
   const raw: any[] = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
   const byFile = new Map(raw.map(f => [f.file, f]));
+  const rejected = producerRejected(errPath);
   const results: Entry_Result[] = [];
   for (const e of index) {
     const file = `${dir}/${e.slug}.ts`;
-    results.push({ ...e, outcome: outcomeFor(file, e, byFile, verifier, dir) });
+    results.push({ ...e, outcome: rejected.has(e.slug) ? REJECTED
+      : outcomeFor(file, e, byFile, verifier, dir) });
   }
   return results;
 }
@@ -143,13 +179,17 @@ function render(name: string, results: Entry_Result[]): string {
   const rows = results.map(r => `${r.outcome}\t${r.source}\t${r.fn}`).sort();
   const counts = new Map<string, number>();
   for (const r of results) {
-    const stage = r.outcome === OK ? OK : r.outcome.slice(0, r.outcome.indexOf(":"));
+    // Both outcomes without a reason are whole stages; everything else is
+    // `stage:reason` and the stage is what precedes the colon.
+    const stage = r.outcome === OK || r.outcome === REJECTED
+      ? r.outcome : r.outcome.slice(0, r.outcome.indexOf(":"));
     counts.set(stage, (counts.get(stage) ?? 0) + 1);
   }
   const verified = counts.get(OK) ?? 0;
+  const reachable = results.length - (counts.get(REJECTED) ?? 0);
   const head = [
     `# census: ${name}`,
-    `# ${verified}/${results.length} verified`,
+    `# ${verified}/${reachable} verified, of ${results.length} functions`,
     ...[...counts].sort((a, b) => b[1] - a[1]).map(([k, v]) => `#   ${k}: ${v}`),
     "#",
   ];
@@ -160,7 +200,7 @@ function render(name: string, results: Entry_Result[]): string {
 function histogram(results: Entry_Result[]): string {
   const counts = new Map<string, number>();
   for (const r of results) {
-    if (r.outcome === OK) continue;
+    if (r.outcome === OK || r.outcome === REJECTED) continue;
     counts.set(r.outcome, (counts.get(r.outcome) ?? 0) + 1);
   }
   return [...counts].sort((a, b) => b[1] - a[1]).slice(0, 15)
@@ -172,13 +212,18 @@ const corpus: Corpus = JSON.parse(fs.readFileSync(corpusPath, "utf8"));
 if (mode === "--extract") {
   extract(corpus, dir);
 } else if (mode === "--report") {
-  const results = report(dir, claimsPath, verifier);
+  const errFlag = rest.indexOf("--producer-errors");
+  const results = report(dir, claimsPath, verifier,
+    errFlag < 0 ? undefined : rest[errFlag + 1]);
   const rendered = render(corpus.name, results);
   const baselineFlag = rest.indexOf("--baseline");
   const baseline = baselineFlag < 0 ? null : rest[baselineFlag + 1];
   const verified = results.filter(r => r.outcome === OK).length;
+  const rejected = results.filter(r => r.outcome === REJECTED).length;
+  process.stdout.write(`${verified}/${results.length - rejected} verified` +
+    ` (${rejected} of ${results.length} rejected by the producer, nothing to check)` +
+    `\n\nTop refusals:\n${histogram(results)}\n`);
   const broken = results.filter(r => r.outcome.startsWith("INCONSISTENT"));
-  process.stdout.write(`${verified}/${results.length} verified\n\nTop refusals:\n${histogram(results)}\n`);
   if (!baseline) {
     process.stdout.write(`\n${rendered}`);
   } else if (rest.includes("--update") || !fs.existsSync(baseline)) {
