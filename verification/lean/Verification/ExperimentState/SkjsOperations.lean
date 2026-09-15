@@ -85,10 +85,21 @@ private def boolTy : Json :=
 #guard (match pair "subtype" trueTy boolTy with | .ok .checked => true | _ => false)
 #guard (match pair "subtype" trueTy falseTy with | .ok .unproved => true | _ => false)
 #guard (match pair "expand" boolTy boolTy with | .ok .checked => true | _ => false)
-#guard (match pair "subtype"
-    (Json.mkObj [("top", toJson false), ("atoms", toJson [Json.mkObj [("a", toJson "number")]])])
-    boolTy with
-  | .ok (.skipped _) => true
-  | _ => false)
+private def numTy : Json :=
+  Json.mkObj [("top", toJson false),
+    ("atoms", toJson [Json.mkObj [("a", toJson "number")]])]
+
+private def oneTy : Json :=
+  Json.mkObj [("top", toJson false),
+    ("atoms", toJson [Json.mkObj [("a", toJson "numberlit"), ("v", toJson "1")]])]
+
+-- Numbers are in the slice now, so this is decided rather than skipped: no
+-- number is a boolean, and the judgment is refused on the merits.
+#guard (match pair "subtype" numTy boolTy with | .ok .unproved => true | _ => false)
+-- A numeric singleton is below the family, and distinct singletons are not
+-- comparable. `1.0` is `1`: the literal's identity is the double it denotes.
+#guard (match pair "subtype" oneTy numTy with | .ok .checked => true | _ => false)
+#guard (match pair "subtype" numTy oneTy with | .ok .unproved => true | _ => false)
+#guard (match pair "expand" numTy numTy with | .ok .checked => true | _ => false)
 
 end Verification.ExperimentState.SkjsOperations

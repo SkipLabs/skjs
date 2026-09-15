@@ -39,13 +39,14 @@ inductive Tm where
   | undef
   | tru
   | fls
-  /-- A number, carried as its canonical JavaScript spelling. The fragment has
-  no arithmetic and no numeric comparison, so a number is opaque here: it is
-  bound, passed, stored and shape-tested, never computed with. Equality of
-  these strings is equality of the numbers they spell only because the trusted
-  codec canonicalizes every literal through `String(Number(v))` before it
-  reaches this language; that obligation is the adapter's, not this module's. -/
-  | num (v : String)
+  /-- A number, carried as the bit pattern of the double it denotes, which is
+  the identity `Wire.numBits` already assigns a numeric literal. The fragment
+  has no arithmetic and no numeric comparison, so a number is opaque here: it
+  is bound, passed, stored and shape-tested, never computed with. Two patterns
+  that denote the same double are equal, so singletons cannot be confused; two
+  that denote it differently would be distinct singletons, which costs
+  completeness and never soundness. -/
+  | num (bits : UInt64)
   /-- An object identity with an optional, immutable invocation descriptor. -/
   | obj (l : Nat) (call : CallCode)
   /-- Allocate one object with immutable call code and initial bag contents `a`.

@@ -5,8 +5,10 @@
  */
 export type Labels = number[];
 export type Arrow = [domains: Labels[], result: Labels];
-export type Clause = "nul" | "bool" | "undef"
+export type Clause = "nul" | "bool" | "undef" | "num"
   | { boolLit: { value: boolean } }
+  /** The double's bit pattern, decimal, as the consumer's UInt64. */
+  | { numLit: { bits: string } }
   | { refs: { first: Labels; rest: Labels[] } }
   | { arrs: { arrows: Arrow[] } }
   | { callable: { first: Labels; rest: Labels[]; arrows: Arrow[] } };
@@ -33,11 +35,17 @@ export function decodeGraph(value: unknown): TypeGraph {
     array(pair[0]).forEach(labels); labels(pair[1]);
   });
   rows.forEach(row => array(row).forEach(c => {
-    if (c === "nul" || c === "bool" || c === "undef") return;
+    if (c === "nul" || c === "bool" || c === "undef" || c === "num") return;
     if (!c || typeof c !== "object" || Array.isArray(c)) throw Error("unknown graph clause");
     const key = Object.keys(c)[0]; const o = obj(c,[key]);
     if (key === "boolLit") {
       if (typeof obj(o[key],["value"]).value !== "boolean") throw Error("invalid Boolean literal");
+    } else if (key === "numLit") {
+      // The identity is the double's bit pattern, decimal, as an unsigned 64.
+      const bits = obj(o[key],["bits"]).bits;
+      if (typeof bits !== "string" || !/^[0-9]+$/.test(bits) ||
+          BigInt(bits) > 0xffffffffffffffffn)
+        throw Error("invalid numeric literal");
     } else if (key === "refs" || key === "callable") {
       const r = obj(o[key],key === "refs" ? ["first","rest"] : ["first","rest","arrows"]);
       labels(r.first); array(r.rest).forEach(labels); if (key === "callable") arrows(r.arrows);
@@ -52,8 +60,15 @@ export const printGraph = (graph: TypeGraph): string => JSON.stringify(decodeGra
 export const printLabels = (labels: Labels): string => labels.length ? labels.map(l => `#${l}`).join(" | ") : "never";
 const arrowText = ([domains,result]: Arrow) => `(${domains.map(printLabels).join(", ")}) => ${printLabels(result)}`;
 function clauseText(c: Clause): string {
-  if (typeof c === "string") return {nul:"null",bool:"boolean",undef:"undefined"}[c];
+  if (typeof c === "string")
+    return {nul:"null",bool:"boolean",undef:"undefined",num:"number"}[c];
   if ("boolLit" in c) return String(c.boolLit.value);
+  // The reader shows the number, not the bit pattern that identifies it.
+  if ("numLit" in c) {
+    const view = new DataView(new ArrayBuffer(8));
+    view.setBigUint64(0, BigInt(c.numLit.bits));
+    return String(view.getFloat64(0));
+  }
   if ("refs" in c) return [c.refs.first,...c.refs.rest].map(a => `ref(${printLabels(a)})`).join(" & ");
   if ("arrs" in c) return `calls[${c.arrs.arrows.map(arrowText).join("; ")}]`;
   return `object[${[c.callable.first,...c.callable.rest].map(a => `value: ${printLabels(a)}`).join(" & ")}; calls[${c.callable.arrows.map(arrowText).join("; ")}]]`;

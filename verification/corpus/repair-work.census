@@ -1,8 +1,8 @@
 # census: repair-work
-# 6/824 verified
+# 11/824 verified
 #   gate: 799
-#   unproved: 19
-#   verified: 6
+#   unproved: 14
+#   verified: 11
 #
 gate:binary operator outside the fragment (*)	tests/expect-error/algebraic-data-types-comprehensive.ts	doubleNumber
 gate:binary operator outside the fragment (+)	tests/expect-error/algebraic-data-types-comprehensive.ts	deltaFn
@@ -806,21 +806,16 @@ gate:unknown type parameter	tests/expect-error/this-parameter-implicit-class.ts	
 unproved:reject: cell parameters need an external-value boundary, which is outside the source slice	tests/expect-error/captured-read-stability.ts	aliasThenNarrow
 unproved:reject: cell parameters need an external-value boundary, which is outside the source slice	tests/expect-error/captured-read-stability.ts	inferredAliasCapture
 unproved:reject: cell parameters need an external-value boundary, which is outside the source slice	tests/expect-error/captured-read-stability.ts	staleCapturedField
-unproved:reject: expected a single type-parameter atom	tests/expect-error/nullish-coalescing.ts	paramTop
+unproved:reject: no claimed type for the expression at [120,124)	tests/expect-error/binding-initialization.ts	laterStatement
+unproved:reject: no claimed type for the expression at [120,124)	tests/expect-error/binding-initialization.ts	selfInitializer
 unproved:reject: no claimed type for the expression at [56,82)	tests/expect-error/captured-read-stability.ts	narrowedCallResult
 unproved:reject: source environment obligation at 325: missing statement environment at 325	tests/expect-error/captured-read-stability.ts	inferredObjectCapture
 unproved:reject: source environment obligation at 355: missing statement environment at 355	tests/expect-error/captured-read-stability.ts	staleAnnotatedConstField
-unproved:reject: source type outside the null/undefined/boolean/singleton source slice	tests/expect-error/binding-initialization.ts	laterStatement
-unproved:reject: source type outside the null/undefined/boolean/singleton source slice	tests/expect-error/binding-initialization.ts	selfInitializer
 unproved:reject: source type outside the null/undefined/boolean/singleton source slice	tests/expect-error/call-effect-boundaries.ts	clearEffect
 unproved:reject: source type outside the null/undefined/boolean/singleton source slice	tests/expect-error/field-refinement.ts	testLocalNullRefinement
 unproved:reject: source type outside the null/undefined/boolean/singleton source slice	tests/expect-error/field-refinement.ts	testLocalUndefinedRefinement
-unproved:reject: source type outside the null/undefined/boolean/singleton source slice	tests/expect-error/nullish-coalescing.ts	uselessNoNull
-unproved:reject: source type outside the null/undefined/boolean/singleton source slice	tests/expect-error/nullish-coalescing.ts	uselessNull
-unproved:reject: source type outside the null/undefined/boolean/singleton source slice	tests/expect-error/nullish-coalescing.ts	uselessNullOrUndefined
-unproved:reject: source type outside the null/undefined/boolean/singleton source slice	tests/expect-error/nullish-coalescing.ts	uselessUndefined
 unproved:reject: source type outside the null/undefined/boolean/singleton source slice	tests/expect-error/nullish-coalescing.ts	withAnotherType
-unproved:reject: source type outside the null/undefined/boolean/singleton source slice	tests/expect-error/nullish-coalescing.ts	withSameType
+unproved:reject: type claim unavailable from producer	tests/expect-error/nullish-coalescing.ts	paramTop
 unproved:reject: unsupported source expression at [48,58): equality requires a null or undefined li	tests/expect-error/binding-initialization.ts	conditionBeforeLocal
 verified	tests/expect-error/captured-read-stability.ts	checkedAnnotatedConstField
 verified	tests/expect-error/captured-read-stability.ts	checkedInferredObject
@@ -828,3 +823,8 @@ verified	tests/expect-error/captured-read-stability.ts	neverReassigned
 verified	tests/expect-error/captured-read-stability.ts	stableAnnotatedConstValue
 verified	tests/expect-error/field-refinement.ts	testBoolTernary
 verified	tests/expect-error/field-refinement.ts	testBoolTernary2
+verified	tests/expect-error/nullish-coalescing.ts	uselessNoNull
+verified	tests/expect-error/nullish-coalescing.ts	uselessNull
+verified	tests/expect-error/nullish-coalescing.ts	uselessNullOrUndefined
+verified	tests/expect-error/nullish-coalescing.ts	uselessUndefined
+verified	tests/expect-error/nullish-coalescing.ts	withSameType

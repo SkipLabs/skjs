@@ -273,6 +273,43 @@ function internRow(types: Row[], row: Row): number {
 }
 
 /**
+ * The bit pattern of the double a numeric literal denotes, which is the
+ * identity the consumer's `Wire.numBits` assigns it: `1`, `1.0` and `1e0` are
+ * one literal, and `-0` is `0`. Produced as a decimal string because the
+ * consumer reads a `UInt64`.
+ */
+function numberBits(value: number): string {
+  const view = new DataView(new ArrayBuffer(8));
+  view.setFloat64(0, value === 0 ? 0 : value);
+  return view.getBigUint64(0).toString();
+}
+
+/**
+ * Numbers have no fixed rows, because the singletons are unbounded: each is
+ * interned on use, exactly as the consumer interns them. Returns null when the
+ * type is not a number or a union of numbers with primitives.
+ */
+function numberLabelsOf(type: Type, types: Row[]): number[] | null {
+  const f = type.flags;
+  if (f & TypeFlags.NumberLiteral) {
+    const value = (type as { value?: unknown }).value;
+    if (typeof value !== "number" || !Number.isFinite(value)) return null;
+    return [internRow(types, [{ numLit: { bits: numberBits(value) } }])];
+  }
+  if (f & TypeFlags.Number) return [internRow(types, ["num"])];
+  if (isUnionType(type)) {
+    const acc: number[] = [];
+    for (const t of type.getTypes()) {
+      const sub = primitiveLabelsOf(t) ?? numberLabelsOf(t, types);
+      if (sub === null) return null;
+      acc.push(...sub);
+    }
+    return dedupSortInts(acc);
+  }
+  return null;
+}
+
+/**
  * A type built only from null/true/false/undefined/boolean/never, as a sorted,
  * duplicate-free list of primitive labels, or null when the type (or some
  * union member) is none of those.
@@ -472,6 +509,8 @@ function translateType(type: Type, checker: Checker, types: Row[], records = tru
   if (fuel <= 0) throw new Refusal("type-depth", checker.typeToString(type));
   const prim = primitiveLabelsOf(type);
   if (prim !== null) return prim;
+  const nums = numberLabelsOf(type, types);
+  if (nums !== null) return nums;
   if (!records && (checker.getPropertiesOfType(type).length || checker.getIndexInfosOfType(type).length))
     throw new Refusal("callable-operand-properties", checker.typeToString(type));
   if (records && checker.getSignaturesOfType(type, SignatureKind.Call).length &&

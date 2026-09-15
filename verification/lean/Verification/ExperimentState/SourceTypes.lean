@@ -113,7 +113,24 @@ def value : Wire.Val → Except String Tm
   | .vundef => .ok .undef
   | .vbool true => .ok .tru
   | .vbool false => .ok .fls
-  | _ => .error "source literal outside the null/undefined/boolean source slice"
+  | .vnum b => .ok (.num b)
+  | _ => .error "source literal outside the null/undefined/boolean/number source slice"
+
+/-- Numbers are interned rather than given fixed rows, because the singletons
+are unbounded: the first four labels stay exactly the four primitive values,
+so every existing label and every proof about them is untouched. -/
+def numberLabels (t : Wire.Ty) : Lowering (Ty Nat) := do
+  let mut out := []
+  for a in t.atoms do
+    match a with
+    | .num => out := out ++ [← use .num]
+    | .numLit b => out := out ++ [← use (.numLit b)]
+    | _ => pure ()
+  return out
+
+def isNumberAtom : Wire.Atom → Bool
+  | .num | .numLit _ => true
+  | _ => false
 
 /-- This characterization also rules out extra nonprimitive modeled values. -/
 theorem encode_meaning {T : Table} (h : initial <+: T) (t : Wire.Ty) (n W v) :
@@ -130,6 +147,13 @@ theorem encode_meaning {T : Table} (h : initial <+: T) (t : Wire.Ty) (n W v) :
   cases hn : admits t .vnull <;> cases ht : admits t (.vbool true) <;>
     cases hf : admits t (.vbool false) <;> cases hu : admits t .vundef <;>
     simp [encode, hn, ht, hf, hu, expand, h0, h1, h2, h3, semList, Tower.setSem, sem, nulT, undefT]
+
+/-- No atom of the primitive slice admits a number, so a numeric value is
+outside every type that slice can state. `value` decodes one because the
+number labels are interned elsewhere; this keeps the pure path exact. -/
+theorem supported_not_num {a : Wire.Atom} (h : supportedAtom a = true) (b : UInt64) :
+    Wire.inhabits (.vnum b) a = false := by
+  cases a <;> simp_all [supportedAtom, Wire.inhabits]
 
 /-- Supported wire-value membership is preserved in both directions. -/
 theorem translate_exact {T : Table} (hT : initial <+: T) {t : Wire.Ty} {A u v}
@@ -148,6 +172,15 @@ theorem translate_exact {T : Table} (hT : initial <+: T) {t : Wire.Ty} {A u v}
       simp [Wire.mem, htop, admits, List.any_eq_true]
     · cases hv
       simp [Wire.mem, htop, admits, List.any_eq_true]
+    · -- A number: neither side holds, for the same reason.
+      rename_i b
+      cases hv
+      have hall := List.all_eq_true.mp h.2
+      have hno : ∀ a ∈ t.atoms, Wire.inhabits (.vnum b) a = false :=
+        fun a ha => supported_not_num (hall a ha) b
+      simp only [Wire.mem, htop, admits, List.any_eq_true, Bool.false_eq_true,
+        false_or, encode, not_exists]
+      simpa using hno
     · rename_i b
       cases b <;> cases hv <;> simp [Wire.mem, htop, admits, List.any_eq_true]
   · contradiction

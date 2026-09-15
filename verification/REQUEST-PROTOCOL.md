@@ -83,8 +83,13 @@ recursion. The request already contains normalized clauses: this grammar has no 
 above the clause level, so nothing here needs normalizing. A producer that does
 hold positive formulas has a
 [proved normalization interface](POSITIVE-TYPES.md#recursive-normalization) to
-translate them; no current extractor uses it. No string, number, generic or unsupported-type
-fallback is supplied by this protocol.
+translate them; no current extractor uses it. No string, generic or unsupported-type
+fallback is supplied by this protocol. `number` and `numberlit` are carried:
+`number` is one clause and each `numberlit` is its own, interned on use rather
+than given a fixed row, since the singletons are unbounded. A literal's identity
+is the bit pattern of the double it denotes, so distinct spellings of one value
+are one clause; two spellings a codec failed to identify would be two
+singletons, which costs completeness and never soundness.
 
 ## Terms, targets and evidence
 

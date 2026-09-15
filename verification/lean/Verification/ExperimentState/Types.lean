@@ -52,7 +52,7 @@ def boolT : Fam := fun _ _ v => v = .tru ∨ v = .fls
 
 /-- Every number, at any spelling. The fragment computes with none of them, so
 this family is the union of its singletons and nothing more. -/
-def numT : Fam := fun _ _ v => ∃ s, v = .num s
+def numT : Fam := fun _ _ v => ∃ b, v = .num b
 
 /-! ### A rigid parameter under a reference -/
 

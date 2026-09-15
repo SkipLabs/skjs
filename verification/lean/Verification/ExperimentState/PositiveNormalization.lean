@@ -15,7 +15,7 @@ inductive Clause (α : Type) where
   /-- Numbers, and one number. The spelling is canonical, so `numLit` singletons
   are distinct exactly when the numbers are. -/
   | num
-  | numLit (value : String)
+  | numLit (bits : UInt64)
   /-- The value a body produces by completing rather than returning. -/
   | undef
   | callable (first : α) (rest : List α) (arrows : List (List α × α))
@@ -27,7 +27,7 @@ def sem (X : α → Fam) : Clause α → Fam
   | .bool => boolT
   | .boolLit b => fun _ _ v => v = (if b then .tru else .fls)
   | .num => numT
-  | .numLit s => fun _ _ v => v = .num s
+  | .numLit b => fun _ _ v => v = .num b
   | .refs a bs => refsT (X a) (bs.map X)
   | .arrs L => callsT (L.map fun p => (p.1.map X, X p.2))
   | .callable a bs L => CallableConjunctions.objectsT (X a) (bs.map X) (L.map fun p => (p.1.map X,X p.2))
@@ -55,7 +55,7 @@ def meet : Clause α → Clause α → List (Clause α)
   | .bool, .boolLit b | .boolLit b, .bool => [.boolLit b]
   | .boolLit a, .boolLit b => if a == b then [.boolLit a] else []
   | .num, .num => [.num]
-  | .num, .numLit s | .numLit s, .num => [.numLit s]
+  | .num, .numLit b | .numLit b, .num => [.numLit b]
   | .numLit a, .numLit b => if a == b then [.numLit a] else []
   | .refs a bs, .refs c ds => [.refs a (bs ++ c :: ds)]
   | .arrs L, .arrs M => [.arrs (L ++ M)]
@@ -95,8 +95,8 @@ theorem sem_shape {X : α → Fam} {c : Clause α} {n W v}
   | nul => cases h; rfl
   | bool => rcases h with h | h <;> cases h <;> rfl
   | boolLit b => cases b <;> cases h <;> rfl
-  | num => obtain ⟨s, rfl⟩ := h; rfl
-  | numLit s => cases h; rfl
+  | num => obtain ⟨b, rfl⟩ := h; rfl
+  | numLit b => cases h; rfl
   | refs a bs => obtain ⟨l, _, rfl, _⟩ := h.1; rfl
   | arrs L => rcases callsT_callable h with ⟨arity, b, l, rfl, _⟩; rfl
   | undef => cases h; rfl
@@ -127,13 +127,13 @@ theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (
     · -- num ∩ num
       simp [meet, singleton_sem, sem, interT, numT]
     · -- num ∩ numLit: the singleton already implies the family
-      rename_i s
+      rename_i b
       simp [meet, singleton_sem, sem, interT, numT]
-      intro hv; subst v; exact ⟨s, rfl⟩
+      intro hv; subst v; exact ⟨b, rfl⟩
     · -- numLit ∩ num
-      rename_i s
+      rename_i b
       simp [meet, singleton_sem, sem, interT, numT]
-      intro hv; subst v; exact ⟨s, rfl⟩
+      intro hv; subst v; exact ⟨b, rfl⟩
     · -- numLit ∩ numLit: equal spellings are equal numbers
       rename_i a b
       by_cases hab : a = b
@@ -185,7 +185,7 @@ theorem sem_adm (X : α → Fam) (c : Clause α) : Adm (sem X c) := by
   | bool => exact boolT_adm
   | boolLit b => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | num => exact numT_adm
-  | numLit s => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+  | numLit b => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | refs a bs => exact adm _ _
   | arrs L => exact callsT_adm _
   | callable a bs L => exact CallableConjunctions.adm _ _ _

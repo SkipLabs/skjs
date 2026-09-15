@@ -35,8 +35,8 @@ theorem meaning_value {G : NormalGraph ι} {A n W v} (h : meaning G A n W v) :
   | nul => subst v; exact ⟨rfl, trivial⟩
   | bool => rcases hc with rfl | rfl <;> exact ⟨rfl, trivial⟩
   | boolLit b => cases b <;> cases hc <;> exact ⟨rfl, trivial⟩
-  | num => obtain ⟨s, rfl⟩ := hc; exact ⟨rfl, trivial⟩
-  | numLit s => subst v; exact ⟨rfl, trivial⟩
+  | num => obtain ⟨b, rfl⟩ := hc; exact ⟨rfl, trivial⟩
+  | numLit b => subst v; exact ⟨rfl, trivial⟩
   | refs a rest => obtain ⟨l, _, rfl, _⟩ := hc.1; exact ⟨rfl, trivial⟩
   | arrs L => exact ⟨(callsT_callable hc).val, (callsT_callable hc).scoped⟩
   | callable a bs L => exact ⟨(callsT_callable hc.2).val,(callsT_callable hc.2).scoped⟩
@@ -237,6 +237,7 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   | fls : Represents G A .bool → HasTy G Γ .fls A
   | truLit : Represents G A (.boolLit true) → HasTy G Γ .tru A
   | flsLit : Represents G A (.boolLit false) → HasTy G Γ .fls A
+  | numLit : Represents G A (.numLit b) → HasTy G Γ (.num b) A
   | funE : Represents G F (.arrs L) → (∀ p ∈ L, p.1.length = arity) →
       (∀ p ∈ L, HasTy G (p.1 ++ Γ) b p.2) → HasTy G Γ (.make (.closure arity b) .nul) F
   | makeCallable : Represents G F (.callable P [] L) → HasTy G Γ a P →
@@ -292,6 +293,9 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     intro n W h ρ he hw hh
     exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr (Or.inr rfl))
   | truLit hr | flsLit hr =>
+    intro n W h ρ he hw hh
+    exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr rfl)
+  | numLit hr =>
     intro n W h ρ he hw hh
     exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr rfl)
   | @funE F L arity Γ b hr hlen hb ih =>

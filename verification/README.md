@@ -94,8 +94,13 @@ partial binding; the [incompleteness example](tests/skjs-incomplete/bound-argume
 verifies using TypeScript’s claims.
 
 Mutable bindings, loops inside closures, external cell parameters,
-labeled transfers, active-name shadowing, other `typeof` comparisons, general strings and numbers,
-and overloads are outside it. Generic variable-copy bodies admit distinct type parameters and bounds to
+labeled transfers, active-name shadowing, other `typeof` comparisons, general strings,
+and overloads are outside it. Numbers are in it, but opaquely: a number is
+bound, passed, returned, held in a union and shape-tested, never computed with,
+because the fragment has no arithmetic and no numeric comparison. A numeric
+literal is its own singleton and is below `number`; its identity is the double
+it denotes, so `1`, `1.0` and `1e0` are one literal. Numbers inside a mutable
+cell are still outside. Generic variable-copy bodies admit distinct type parameters and bounds to
 `boolean` or an earlier parameter, including transitive chains. Parameters,
 annotated `const` copies and results use those rigid types or `boolean`;
 conversions follow declared bounds only. Dependent parameters retain their rigid identity in raw SKJS exports. First-order aliases

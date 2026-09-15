@@ -126,6 +126,11 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         let r := if expand G B = [.boolLit true] && t == .tru then Rule.truLit
           else if expand G B = [.boolLit false] && t == .fls then Rule.flsLit else r
         if checkTree G (leaf B r) then coerce G pool (leaf B r) A else none
+    -- A number has one rule: its own singleton. Reaching `number`, or any
+    -- union above it, is the coercion's job, exactly as for a boolean literal.
+    | .num _ =>
+      return (A :: pool).findSome? fun B =>
+        if checkTree G (leaf B .numLit) then coerce G pool (leaf B .numLit) A else none
     | .make (.closure arity b) .nul =>
       return (A :: pool).findSome? fun F => do
         match expand G F with

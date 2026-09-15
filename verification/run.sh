@@ -198,6 +198,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   GENERIC_ALIASES=verification/tests/stateful-source/generic-aliases.ts
   GENERIC_EXTENDS=verification/tests/stateful-source/generic-extends.ts
   GENERIC_BODIES=verification/tests/stateful-source/generic-bodies.ts
+  NUMBERS=verification/tests/stateful-source/numbers.ts
 
   # Fixtures are independent and each is dominated by a container start, so
   # they are built at once rather than in turn. Every one writes under its own
@@ -235,6 +236,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   build fixture generic_aliases "$GENERIC_ALIASES"
   build fixture generic_extends "$GENERIC_EXTENDS"
   build fixture generic_bodies "$GENERIC_BODIES"
+  build fixture numbers "$NUMBERS"
   build rejected_fixture loop-exit "$LOOP_EXIT"
   build rejected_fixture singleton "$SINGLETON"
   build rejected_fixture null-exit "$NULL_EXIT"
@@ -293,6 +295,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Generic identity source" node verification/tests/generic-source.mts "$WORK/generic_id.ast" "$WORK/generic_id.claims" "$GENERIC_ID" "$VERIFIER"
   run_test "Generic alias source" node verification/tests/generic-aliases.mts "$WORK/generic_aliases.ast" "$WORK/generic_aliases.claims" "$GENERIC_ALIASES" "$VERIFIER"
   run_test "Generic extends source" node verification/tests/generic-extends.mts "$WORK/generic_extends.ast" "$WORK/generic_extends.claims" "$GENERIC_EXTENDS" "$VERIFIER"
+  run_test "Numbers" node verification/tests/numbers.mts "$WORK/numbers.ast" "$WORK/numbers.claims" "$NUMBERS" "$VERIFIER"
   run_test "Generic body source" node verification/tests/generic-bodies.mts "$WORK/generic_bodies.ast" "$WORK/generic_bodies.claims" "$GENERIC_BODIES" "$VERIFIER"
   run_test "TypeScript claims" node verification/tests/tsc-claims.mts "$VERIFIER"
   # The drafts kept beside corpus sources: still about those sources, and still

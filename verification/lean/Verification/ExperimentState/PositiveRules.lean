@@ -192,6 +192,9 @@ def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
   | .bool, .bool => True
   | .boolLit _, .bool => True
   | .boolLit a, .boolLit b => a = b
+  | .num, .num => True
+  | .numLit _, .num => True
+  | .numLit a, .numLit b => a = b
   | .refs a bs, .refs c ds => ∀ b ∈ c :: ds, ∃ x ∈ a :: bs, R x b ∧ R b x
   | .arrs L, .arrs M | .callable _ _ L, .arrs M => ∀ p ∈ M, CallArrow G R L p.1 p.2
   | .callable a bs L, .callable c ds M =>
@@ -227,6 +230,13 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
     · exact Or.inr rfl
     · exact Or.inl rfl
   · cases hc; exact id
+  · -- num ≤ num
+    exact id
+  · -- numLit ≤ num: the singleton inhabits the family
+    rename_i b
+    intro hv; cases hv; exact ⟨b, rfl⟩
+  · -- numLit ≤ numLit at equal spellings
+    cases hc; exact id
   · exact id
   · intro hv
     apply callsT_of_signatures (callsT_callable hv.2)

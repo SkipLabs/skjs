@@ -82,6 +82,9 @@ def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs
   | .bool, .bool => true
   | .boolLit _, .bool => true
   | .boolLit a, .boolLit b => decide (a = b)
+  | .num, .num => true
+  | .numLit _, .num => true
+  | .numLit a, .numLit b => decide (a = b)
   | .refs a bs, .refs c ds => decide (∀ b ∈ c :: ds,
       ∃ x ∈ a :: bs, Rel table x b ∧ Rel table b x)
   | .arrs L, .arrs M | .callable _ _ L, .arrs M => decide (∀ p ∈ M, ∃ e ∈ proofs,
@@ -104,6 +107,8 @@ theorem checkClause_sound [DecidableEq ι] {G : NormalGraph ι} {table proofs a 
     obtain ⟨e, _, _, _, he⟩ := hh p hp
     exact checkArrow_sound he
   · exact of_decide_eq_true h
+  · -- numLit ≤ numLit
+    exact of_decide_eq_true h
   · have hh := of_decide_eq_true h
     intro p hp
     obtain ⟨e,_,_,_,he⟩ := hh p hp
@@ -166,6 +171,12 @@ theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table a b}
     exact ⟨es,by simpa only [checkClause,decide_eq_true_eq] using he⟩
   · exact ⟨[], rfl⟩
   · exact ⟨[], by simpa [checkClause] using h⟩
+  · -- num ≤ num
+    exact ⟨[], rfl⟩
+  · -- numLit ≤ num
+    exact ⟨[], rfl⟩
+  · -- numLit ≤ numLit
+    exact ⟨[], by simpa [checkClause] using h⟩
   · exact ⟨[], rfl⟩
   · obtain ⟨es,he⟩ := arrow_evidence_complete h
     exact ⟨es,by simpa only [checkClause,decide_eq_true_eq] using he⟩

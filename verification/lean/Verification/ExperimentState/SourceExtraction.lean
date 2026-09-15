@@ -329,6 +329,10 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Descr
       | .undef => pure ([3],ProgramCertificates.Rule.undef)
       | .tru => pure ([1],ProgramCertificates.Rule.truLit)
       | .fls => pure ([2],ProgramCertificates.Rule.flsLit)
+      -- A number has no fixed row: its singleton is interned like any other
+      -- clause the program mentions.
+      | .num b => do pure ([← lower (SourceTypes.use (.numLit b))],
+          ProgramCertificates.Rule.numLit)
       | _ => throw "unsupported closure literal"
     pure (DirectProof.node Γ t B r)
   | .shapeTest _ tag equal e => do
