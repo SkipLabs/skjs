@@ -459,7 +459,7 @@ of a standalone refined cell claim.
 lowers read and write operands, including callables, to the same graph table and
 requires equal invariant label lists after union absorption. Unknown fields and
 unsupported operands reject the whole contract. `CellClaims.translate` retains
-the primitive specialization and its exact wire-membership theorem, also used
+the primitive specialization and its exact claim-membership theorem, also used
 for primitive current-content observations. The reference-label theorem applies
 to arbitrary graph operands; neither theorem establishes TypeScript
 record-to-reference correspondence or excludes accessor-backed runtime objects.
@@ -667,7 +667,7 @@ and nested callable objects are outside this slice.
 
 The initialization AST is
 `{"k":"withValue","pos":[start,end],"fn":arrow,"initial":objectLiteral,"functionType":F,"bagType":B}`.
-Here the annotation fields are wire types, not atoms. The parser emits this only
+Here the annotation fields are claim types, not atoms. The parser emits this only
 for standard `Object.assign<F, B>(freshArrow, {value: initializer})`, with no
 shadowed `Object`, extra arguments, spread or accessors. Both explicit type
 arguments and both source expression claims are independently checked before

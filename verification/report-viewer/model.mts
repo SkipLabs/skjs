@@ -116,7 +116,7 @@ export interface Report {
 }
 
 
-import SURFACE from "../tools/claim-type-text.mts";
+import SURFACE from "../tools/claim-text.mts";
 const printSurface = (type: any) => SURFACE.printType(type);
 
 /* ---------- reading the annotated format ---------- */

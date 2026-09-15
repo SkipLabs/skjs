@@ -7,7 +7,7 @@
  * exercise it without a browser.
  */
 
-import surface from "./claim-type-text.mts";
+import surface from "./claim-text.mts";
 import { decodeGraph, graphDefinitions, printLabels, type GraphDefinition } from "./type-graph.mts";
 import type { ObligationDiagnostic } from "./diagnostic.mts";
 import { printTerm } from "./calculus.mts";

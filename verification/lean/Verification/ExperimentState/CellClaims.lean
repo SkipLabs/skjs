@@ -16,7 +16,7 @@ private def plainMode (j : Json) (name : String) : Except String Unit := do
   let mode ← jStr (← jField j name)
   if mode != "unknown" && mode != "absent" then throw s!"unsupported cell object mode: {name}"
 
-def primitive (j : Json) : Except String Wire.Ty := do
+def primitive (j : Json) : Except String Claim.Ty := do
   fieldsExactly j ["top","atoms"]
   for atom in ← jArr j "atoms" do
     let tag ← jStr (← jField atom "a")
@@ -26,8 +26,8 @@ def primitive (j : Json) : Except String Wire.Ty := do
   decodeTy j
 
 structure FieldClaim where
-  read : Wire.Ty
-  write : Wire.Ty
+  read : Claim.Ty
+  write : Claim.Ty
 
 /-- The accepted record is interpreted as one required slot named `value`.
 The schema cannot distinguish data properties from accessors; the source gate
@@ -64,14 +64,14 @@ def decodeShape (j : Json) : Except String (Json × Json) := do
   if ← (← jField field "optional").getBool? then throw "optional fields are not invariant cells"
   return (← jField field "read", ← jField field "write")
 
-/-- Primitive contracts also support exact wire membership and point observations. -/
+/-- Primitive contracts also support exact claim membership and point observations. -/
 def decode (j : Json) : Except String FieldClaim := do
   let (read, write) ← decodeShape j
   return ⟨← primitive read, ← primitive write⟩
 
 /-- Equality is after exact primitive normalization. No widening of either side
 is allowed; readonly fields and different read/write contracts are rejected. -/
-def agreeContract (read write : Wire.Ty) : Except String (Ty Nat) := do
+def agreeContract (read write : Claim.Ty) : Except String (Ty Nat) := do
   let A ← SourceTypes.translate read
   let B ← SourceTypes.translate write
   if A = B then return A
@@ -81,7 +81,7 @@ def translate (j : Json) : Except String (Ty Nat) := do
   let f ← decode j
   agreeContract f.read f.write
 
-theorem agreeContract_checked {read write : Wire.Ty} {A}
+theorem agreeContract_checked {read write : Claim.Ty} {A}
     (h : agreeContract read write = .ok A) :
     SourceTypes.translate read = .ok A ∧ SourceTypes.translate write = .ok A := by
   unfold agreeContract at h
@@ -113,18 +113,18 @@ def interpretation (T : Table) (A : Ty Nat) : Fam := refT (meaning (graph T) A)
 
 /-- The accepted invariant preserves both supplied primitive membership tests,
 using the existing exact translation theorem. No new semantic axioms are used. -/
-theorem agreeContract_exact {T : Table} (hT : initial <+: T) {read write : Wire.Ty} {A u v}
+theorem agreeContract_exact {T : Table} (hT : initial <+: T) {read write : Claim.Ty} {A u v}
     (h : agreeContract read write = .ok A) (hv : SourceTypes.value u = .ok v) (n W) :
-    (Wire.mem u read ↔ meaning (graph T) A n W v) ∧
-    (Wire.mem u write ↔ meaning (graph T) A n W v) := by
+    (Claim.mem u read ↔ meaning (graph T) A n W v) ∧
+    (Claim.mem u write ↔ meaning (graph T) A n W v) := by
   obtain ⟨hr,hw⟩ := agreeContract_checked h
   exact ⟨SourceTypes.translate_exact hT hr hv n W, SourceTypes.translate_exact hT hw hv n W⟩
 
 theorem translate_exact {T : Table} (hT : initial <+: T) {j : Json} {A u v}
     (h : translate j = .ok A) (hv : SourceTypes.value u = .ok v) (n W) :
     ∃ f, decode j = .ok f ∧
-      (Wire.mem u f.read ↔ meaning (graph T) A n W v) ∧
-      (Wire.mem u f.write ↔ meaning (graph T) A n W v) := by
+      (Claim.mem u f.read ↔ meaning (graph T) A n W v) ∧
+      (Claim.mem u f.write ↔ meaning (graph T) A n W v) := by
   obtain ⟨f,hf,hc⟩ := translate_checked h
   exact ⟨f,hf,agreeContract_exact hT hc hv n W⟩
 

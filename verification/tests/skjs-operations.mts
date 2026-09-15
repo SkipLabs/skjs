@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { decodeClosedOperation } from "../tools/skjs-claims.mts";
-import { decodeClaimType } from "../tools/claim-language.mts";
+import { decodeClaimType } from "../tools/claim.mts";
 // Independent checking of SKJS's closed subtype and expansion judgments.
 
 

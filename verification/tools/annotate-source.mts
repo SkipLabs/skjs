@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import * as ts from "typescript/unstable/ast";
 import { createScanner } from "typescript/unstable/ast/scanner";
 import { createRequire } from "node:module";
-import surface from "./claim-type-text.mts";
+import surface from "./claim-text.mts";
 import obligationReader, { presentObligation } from "../tools/diagnostic-view.mts";
 import { readDiagnostic } from "./diagnostic.mts";
 // The source annotation encoding has exactly one implementation; a second

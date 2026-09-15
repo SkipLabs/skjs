@@ -44,7 +44,7 @@ private def request (t : Tm) (A : Ty Nat) : Request :=
 #guard !PositiveCertificates.checkClause G0 [] [] (.boolLit true) (.boolLit false)
 
 -- Primitive fixture types use the same JSON schema as real source claims.
-private def wireTy (t : Wire.Ty) : Json := Json.mkObj [("top", toJson t.top),
+private def wireTy (t : Claim.Ty) : Json := Json.mkObj [("top", toJson t.top),
   ("atoms", toJson (t.atoms.map fun a => match a with
     | .null => Json.mkObj [("a",toJson "null")]
     | .bool => Json.mkObj [("a",toJson "boolean")]
@@ -650,12 +650,12 @@ private def conjoined (j : Json) (others : List Json) : Json :=
   let more := others.map fun o => ((jArr o "atoms").toOption.getD []).headD .null
   Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj
     (((atom.getObj?).toOption.map (·.toList)).getD [] ++ [("and",toJson more)])])]
-private def cellOf (A : Wire.Ty) : Json := Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj
+private def cellOf (A : Claim.Ty) : Json := Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj
   [("a",toJson "record"),("fields",toJson [Json.mkObj [("name",toJson "value"),
     ("optional",toJson false),("read",wireTy A),("write",wireTy A)]]),
    ("indexes",Json.mkObj [("string",toJson "absent"),("number",toJson "absent"),("symbol",toJson "absent")]),
    ("call",toJson "unknown"),("construct",toJson "unknown"),("array",toJson "unknown")]])]
-private def arrowOf (D R : Wire.Ty) : Json := Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj
+private def arrowOf (D R : Claim.Ty) : Json := Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj
   [("a",toJson "function"),("params",toJson [wireTy D]),
    ("result",wireTy R),("construct",toJson "unknown"),("array",toJson "unknown")]])]
 private def rowOf (j : Json) : Option (List (Clause (List Nat))) :=

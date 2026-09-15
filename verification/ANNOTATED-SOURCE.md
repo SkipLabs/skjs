@@ -55,8 +55,8 @@ Types use the self-contained [viewer language](VIEWER-LANGUAGE.md): primitive
 names, literals, unions, records with optional fields, function signatures, and
 callable objects. `{ value: boolean = (true) }` states both a storage invariant
 and current contents. Nondefault object modes appear explicitly after `@`.
-`tools/claim-type-text.mts` parses and prints this language for both reports and the
-editor; `tools/claim-language.mts` declares and validates its types.
+`tools/claim-text.mts` parses and prints this language for both reports and the
+editor; `tools/claim.mts` declares and validates its types.
 
 Objects and functions can be entered from scratch, including missing or
 unavailable expression claims and unavailable environment bindings. Editing

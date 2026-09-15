@@ -40,7 +40,7 @@ inductive Tm where
   | tru
   | fls
   /-- A number, carried as the bit pattern of the double it denotes, which is
-  the identity `Wire.numBits` already assigns a numeric literal. The fragment
+  the identity `numBits` already assigns a numeric literal. The fragment
   has no arithmetic and no numeric comparison, so a number is opaque here: it
   is bound, passed, stored and shape-tested, never computed with. Two patterns
   that denote the same double are equal, so singletons cannot be confused; two

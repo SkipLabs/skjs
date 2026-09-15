@@ -1,4 +1,4 @@
-import Verification.ExperimentState.SourceEncoding
+import Verification.ExperimentState.Claim
 import Verification.ExperimentState.RequestJson
 
 /-! Source types and the graph they are checked against. A program's graph is a
@@ -92,23 +92,23 @@ theorem graph_initial {T : Table} (h : initial <+: T) {i : Nat} (hi : i < initia
   obtain ⟨l, rfl⟩ := h
   simp [graph, List.getElem?_append_left hi, List.getElem?_eq_getElem hi]
 
-def admits (t : Wire.Ty) (v : Wire.Val) : Bool := t.atoms.any (Wire.inhabits v)
+def admits (t : Claim.Ty) (v : Claim.Val) : Bool := t.atoms.any (Claim.inhabits v)
 
-def encode (t : Wire.Ty) : Ty Nat :=
+def encode (t : Claim.Ty) : Ty Nat :=
   (if admits t .vnull then [0] else []) ++
   (if admits t (.vbool true) then [1] else []) ++
   (if admits t (.vbool false) then [2] else []) ++
   (if admits t .vundef then [3] else [])
 
-def supportedAtom : Wire.Atom → Bool
+def supportedAtom : Claim.Atom → Bool
   | .null | .undef | .bool | .boolLit _ => true
   | _ => false
 
-def translate (t : Wire.Ty) : Except String (Ty Nat) :=
+def translate (t : Claim.Ty) : Except String (Ty Nat) :=
   if !t.top && t.atoms.all supportedAtom then .ok (encode t)
   else .error "source type outside the null/undefined/boolean/singleton source slice"
 
-def value : Wire.Val → Except String Tm
+def value : Claim.Val → Except String Tm
   | .vnull => .ok .nul
   | .vundef => .ok .undef
   | .vbool true => .ok .tru
@@ -119,7 +119,7 @@ def value : Wire.Val → Except String Tm
 /-- Numbers are interned rather than given fixed rows, because the singletons
 are unbounded: the first four labels stay exactly the four primitive values,
 so every existing label and every proof about them is untouched. -/
-def numberLabels (t : Wire.Ty) : Lowering (Ty Nat) := do
+def numberLabels (t : Claim.Ty) : Lowering (Ty Nat) := do
   let mut out := []
   for a in t.atoms do
     match a with
@@ -128,12 +128,12 @@ def numberLabels (t : Wire.Ty) : Lowering (Ty Nat) := do
     | _ => pure ()
   return out
 
-def isNumberAtom : Wire.Atom → Bool
+def isNumberAtom : Claim.Atom → Bool
   | .num | .numLit _ => true
   | _ => false
 
 /-- This characterization also rules out extra nonprimitive modeled values. -/
-theorem encode_meaning {T : Table} (h : initial <+: T) (t : Wire.Ty) (n W v) :
+theorem encode_meaning {T : Table} (h : initial <+: T) (t : Claim.Ty) (n W v) :
     meaning (graph T) (encode t) n W v ↔
       (admits t .vnull = true ∧ v = .nul) ∨
       (admits t (.vbool true) = true ∧ v = .tru) ∨
@@ -151,14 +151,14 @@ theorem encode_meaning {T : Table} (h : initial <+: T) (t : Wire.Ty) (n W v) :
 /-- No atom of the primitive slice admits a number, so a numeric value is
 outside every type that slice can state. `value` decodes one because the
 number labels are interned elsewhere; this keeps the pure path exact. -/
-theorem supported_not_num {a : Wire.Atom} (h : supportedAtom a = true) (b : UInt64) :
-    Wire.inhabits (.vnum b) a = false := by
-  cases a <;> simp_all [supportedAtom, Wire.inhabits]
+theorem supported_not_num {a : Claim.Atom} (h : supportedAtom a = true) (b : UInt64) :
+    Claim.inhabits (.vnum b) a = false := by
+  cases a <;> simp_all [supportedAtom, Claim.inhabits]
 
-/-- Supported wire-value membership is preserved in both directions. -/
-theorem translate_exact {T : Table} (hT : initial <+: T) {t : Wire.Ty} {A u v}
+/-- Supported claim-value membership is preserved in both directions. -/
+theorem translate_exact {T : Table} (hT : initial <+: T) {t : Claim.Ty} {A u v}
     (ht : translate t = .ok A) (hv : value u = .ok v) (n W) :
-    Wire.mem u t ↔ meaning (graph T) A n W v := by
+    Claim.mem u t ↔ meaning (graph T) A n W v := by
   unfold translate at ht
   split at ht
   · rename_i h
@@ -169,20 +169,20 @@ theorem translate_exact {T : Table} (hT : initial <+: T) {t : Wire.Ty} {A u v}
     cases u <;> simp only [value] at hv
     all_goals try contradiction
     · cases hv
-      simp [Wire.mem, htop, admits, List.any_eq_true]
+      simp [Claim.mem, htop, admits, List.any_eq_true]
     · cases hv
-      simp [Wire.mem, htop, admits, List.any_eq_true]
+      simp [Claim.mem, htop, admits, List.any_eq_true]
     · -- A number: neither side holds, for the same reason.
       rename_i b
       cases hv
       have hall := List.all_eq_true.mp h.2
-      have hno : ∀ a ∈ t.atoms, Wire.inhabits (.vnum b) a = false :=
+      have hno : ∀ a ∈ t.atoms, Claim.inhabits (.vnum b) a = false :=
         fun a ha => supported_not_num (hall a ha) b
-      simp only [Wire.mem, htop, admits, List.any_eq_true, Bool.false_eq_true,
+      simp only [Claim.mem, htop, admits, List.any_eq_true, Bool.false_eq_true,
         false_or, encode, not_exists]
       simpa using hno
     · rename_i b
-      cases b <;> cases hv <;> simp [Wire.mem, htop, admits, List.any_eq_true]
+      cases b <;> cases hv <;> simp [Claim.mem, htop, admits, List.any_eq_true]
   · contradiction
 
 /-- Exact arrow interpretation, including its contravariant domain, over any

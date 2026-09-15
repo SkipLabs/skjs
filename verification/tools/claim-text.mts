@@ -1,8 +1,8 @@
-/* Surface text for the claim language declared in claim-language.mts, printed
- * and read back here so reports and the editor share one syntax. @ followed by
- * a JSON object states nondefault object modes and conjunction metadata
- * explicitly. The text always determines its type. */
-import { decodeClaimType, type WireType } from "./claim-language.mts";
+/* Surface text for the claim language declared in claim.mts, printed and read
+ * back here so reports and the editor share one syntax. @ followed by a JSON
+ * object states nondefault object modes and conjunction metadata explicitly.
+ * The text always determines its type. */
+import { decodeClaimType, type ClaimType } from "./claim.mts";
 import { numberOfBits, type ClauseKey, type StringClause } from "./type-graph.mts";
 
 const PRIMITIVE = ["null", "boolean", "string", "number", "undefined"];
@@ -126,7 +126,7 @@ function tokenize(text: string) {
   return tokens;
 }
 
-function parseType(text: string): WireType {
+function parseType(text: string): ClaimType {
   const tokens = tokenize(String(text));
   let i = 0;
   const peek = () => tokens[i];

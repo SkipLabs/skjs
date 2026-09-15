@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fromSkjs, verifySkjs } from "../tools/annotate-source.mts";
-import { decodeClaimType } from "../tools/claim-language.mts";
+import { decodeClaimType } from "../tools/claim.mts";
 // Source extraction of generic bodies that copy T through const and fst.
 
 const [astPath, claimsPath, fileKey, verifier] = process.argv.slice(2);

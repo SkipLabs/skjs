@@ -1107,7 +1107,7 @@ statement entry still fails source verification.
 `CertificateProducer.lean` accepts an actual graph, its declared result type and
 start label, and one `PointClaim` per node. Each claim fixes both the entry
 context and the expression result type. These are annotations in this Lean
-interface, not SKJS wire types. The source adapter supplies them for the supported
+interface, not SKJS claim types. The source adapter supplies them for the supported
 slice; new source forms require the corresponding extraction obligations.
 
 `produce` builds expression derivation trees and per-slot subtype evidence for

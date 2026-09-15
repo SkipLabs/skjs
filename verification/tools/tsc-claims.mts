@@ -274,7 +274,7 @@ function internRow(types: Row[], row: Row): number {
 
 /**
  * The bit pattern of the double a numeric literal denotes, which is the
- * identity the consumer's `Wire.numBits` assigns it: `1`, `1.0` and `1e0` are
+ * identity the consumer's `numBits` assigns it: `1`, `1.0` and `1e0` are
  * one literal, and `-0` is `0`. Produced as a decimal string because the
  * consumer reads a `UInt64`.
  */

@@ -25,8 +25,8 @@ import { dirname, resolve } from "node:path";
 /** A half-open span of the source, in UTF-16 code units. */
 export type Span = [start: number, end: number];
 
-import type { WireType, Atom } from "./claim-language.mts";
-export type { WireType, Atom } from "./claim-language.mts";
+import type { ClaimType, Atom } from "./claim.mts";
+export type { ClaimType, Atom } from "./claim.mts";
 
 export type Expr =
   | { k: "id"; pos: Span; name: string }
@@ -35,7 +35,7 @@ export type Expr =
   | { k: "bin"; pos: Span; op: string; l: Expr; r: Expr }
   | { k: "coalesce"; pos: Span; left: Expr; right: Expr }
   | { k: "write"; pos: Span; receiver: Expr; rhs: Expr }
-  | { k: "withValue"; pos: Span; fn: Expr; initial: Expr; functionType: WireType; bagType: WireType }
+  | { k: "withValue"; pos: Span; fn: Expr; initial: Expr; functionType: ClaimType; bagType: ClaimType }
   | { k: "functionTest"; pos: Span; equal: boolean; e: Expr }
   | { k: "apply"; pos: Span; callee: Expr; args: Expr[] }
   | { k: "callWithReceiver" | "bindWithReceiver"; pos: Span; callee: Expr; receiver: Expr; args: Expr[] }
@@ -43,8 +43,8 @@ export type Expr =
   | {
       k: "lambda";
       pos: Span;
-      params: { name: string; type: WireType }[];
-      result: WireType;
+      params: { name: string; type: ClaimType }[];
+      result: ClaimType;
       body: Expr;
     }
   /* A block-bodied closure, lowered to nested expressions: the calculus has no
@@ -57,14 +57,14 @@ export type Expr =
       k: "letBody";
       pos: Span;
       name: string;
-      annot: WireType | null;
+      annot: ClaimType | null;
       init: Expr;
       body: Expr;
     }
   | {
       k: "ifBody";
       pos: Span;
-      result: WireType;
+      result: ClaimType;
       cond: Expr;
       then: Expr;
       else_: Expr;
@@ -81,28 +81,28 @@ export type Stmt =
       pos: Span;
       name: string;
       namePos: Span;
-      annot: WireType | null;
+      annot: ClaimType | null;
       init: Expr;
     };
 
 export interface TypeParamAst {
   name: string;
-  bound: WireType | null;
+  bound: ClaimType | null;
 }
 
 export interface FunctionAst {
   name: string;
   namePos: Span;
   typeParams: TypeParamAst[];
-  params: { name: string; pos: Span; type: WireType }[];
-  retType: WireType;
+  params: { name: string; pos: Span; type: ClaimType }[];
+  retType: ClaimType;
   body: Stmt[];
 }
 
 export interface TypeAliasAst {
   name: string;
   typeParams: TypeParamAst[];
-  body: WireType;
+  body: ClaimType;
 }
 
 export interface Ast {
@@ -213,7 +213,7 @@ const isPropertySignature = (n: Node) =>
 // (hex, binary, octal, separators, bigint) is outside it.
 const DECIMAL = /^[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?$/;
 
-const NULL_TYPE: WireType = { top: false, atoms: [{ a: "null" }] };
+const NULL_TYPE: ClaimType = { top: false, atoms: [{ a: "null" }] };
 
 class Gate {
   // Written out rather than a parameter property: node strips types, it does
@@ -423,7 +423,7 @@ class Gate {
     }
   }
 
-  typeOf(node: any): WireType {
+  typeOf(node: any): ClaimType {
     if (!node) this.fail(null, "missing type annotation");
     const atoms: Atom[] = [];
     this.atomsOf(node, atoms);
@@ -712,7 +712,7 @@ class Gate {
   private closureBlock(
     at: Node,
     statements: Stmt[],
-    result: () => WireType,
+    result: () => ClaimType,
   ): Expr {
     const hasReturn = (xs: Stmt[]): boolean =>
       xs.some(
@@ -966,7 +966,7 @@ class Gate {
           this.fail(tp, "expected a type-parameter name");
         if (this.typeParams.has(tp.name.text))
           this.fail(tp, "duplicate type parameter");
-        let bound: WireType | null = null;
+        let bound: ClaimType | null = null;
         if (tp.constraint) {
           const earlier = tp.constraint.kind === ts.SyntaxKind.TypeReference &&
             tp.constraint.typeName.kind === ts.SyntaxKind.Identifier &&
@@ -1083,7 +1083,7 @@ export function definedFunctions(
  * node and needs the type the gate would give it. The annotation's own file is
  * the place a rejection names, which is why the node carries it.
  */
-export function typeOf(node: any): WireType {
+export function typeOf(node: any): ClaimType {
   return new Gate(node.getSourceFile()).typeOf(node);
 }
 

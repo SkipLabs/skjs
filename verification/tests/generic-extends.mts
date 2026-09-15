@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { decodeClaimType } from "../tools/claim-language.mts";
+import { decodeClaimType } from "../tools/claim.mts";
 // Source extraction of T extends boolean: T ≤ boolean, not true ≤ T.
 
 const [astPath, claimsPath, fileKey, verifier] = process.argv.slice(2);

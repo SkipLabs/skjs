@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import surface from "../tools/claim-type-text.mts";
+import surface from "../tools/claim-text.mts";
 import vm from "node:vm";
 import { stripTypes } from "../tools/strip-types.mts";
 

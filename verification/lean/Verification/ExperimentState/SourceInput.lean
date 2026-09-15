@@ -110,7 +110,7 @@ def translatePoint (j : Json) : SourceTypes.Lowering PointType := do
 
 inductive Expr where
   | var (pos : Span) (name : String)
-  | lit (pos : Span) (v : Wire.Val)
+  | lit (pos : Span) (v : Claim.Val)
   | logical (pos : Span) (andOp : Bool) (left right : Expr)
   | coalesce (pos : Span) (left right : Expr)
   | shapeTest (pos : Span) (tag : Tag) (equal : Bool) (e : Expr)

@@ -1,23 +1,24 @@
-/** Structural claim language at the producer/viewer boundary.
- * Source annotations use the same types. Runtime data is decoded before it is
- * accepted as text; unsupported producer shapes stay in the raw JSON editor.
+/** Structural claim language at the producer/viewer boundary, mirroring
+ * Claim.lean. Source annotations use the same types. Runtime data is decoded
+ * before it is accepted as text; unsupported producer shapes stay in the raw
+ * JSON editor. Its surface text is in claim-text.mts.
  */
-export interface WireType { top: boolean; atoms: Atom[] }
-export interface Field { name: string; optional: boolean; read: WireType; write: WireType }
+export interface ClaimType { top: boolean; atoms: Atom[] }
+export interface Field { name: string; optional: boolean; read: ClaimType; write: ClaimType }
 export interface RecordAtom {
   a: "record"; fields: Field[];
   indexes: { string: string; number: string; symbol: string };
   call: string; construct: string; array: string; and?: Atom[];
 }
 export interface FunctionAtom {
-  a: "function"; params: WireType[]; result: WireType;
+  a: "function"; params: ClaimType[]; result: ClaimType;
   construct: string; array: string; and?: Atom[];
 }
 export type Atom =
   | { a: "null" | "undefined" | "boolean" | "string" | "number" }
   | { a: "stringlit" | "numberlit" | "booleanlit"; v: string }
   | { a: "param"; name: string }
-  | { a: "alias"; name: string; args: WireType[] }
+  | { a: "alias"; name: string; args: ClaimType[] }
   | RecordAtom | FunctionAtom
   | { a: "callable"; function: FunctionAtom; bag: RecordAtom };
 
@@ -75,8 +76,8 @@ function atom(v: unknown): void {
     default: throw Error("unknown claim atom");
   }
 }
-export function decodeClaimType(v: unknown): WireType {
+export function decodeClaimType(v: unknown): ClaimType {
   const o = object(v); keys(o,["top","atoms"]); bool(o.top); list(o.atoms).forEach(atom);
   if (o.top && list(o.atoms).length) throw Error("unknown cannot also carry atoms");
-  return v as WireType;
+  return v as ClaimType;
 }

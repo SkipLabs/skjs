@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { hash,render,fromSkjs,compareClaims,typeText } from "../tools/annotate-source.mts";
 import { createRequire } from "node:module";
 import { parseReport } from "../report-viewer/model.mts";
-import surface from "../tools/claim-type-text.mts";
+import surface from "../tools/claim-text.mts";
 import { parseFile } from "../tools/parse-source.mts";
 // Plain JavaScript modules; the reader loads these in a browser too.
 const require = createRequire(import.meta.url);

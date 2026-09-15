@@ -8,7 +8,7 @@
    * which are invented here either. Fresh verification checks the contract
    * against the source's own annotations.
    */
-  import surface from "../../../tools/claim-type-text.mts";
+  import surface from "../../../tools/claim-text.mts";
   import type { ShownFunction } from "../../model.mts";
 
   let {

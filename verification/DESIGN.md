@@ -511,10 +511,10 @@ statements mean.
 spans, claimed signatures, expression types and statement-entry environments.
 The adapter compares signatures with independently parsed source annotations.
 Expression lookup uses full spans; environment lookup uses statement starts
-because the parsers differ on trailing semicolons. Primitive wire decoding lives
-in [SourceEncoding.lean](lean/Verification/ExperimentState/SourceEncoding.lean);
-cell and function contracts have separate bounded decoders. This input encoding
-is not a second calculus or an executable source model.
+because the parsers differ on trailing semicolons. Primitive claim decoding lives
+in [Claim.lean](lean/Verification/ExperimentState/Claim.lean); cell and function
+contracts have separate bounded decoders. This claim language is not a second
+calculus or an executable source model.
 
 Required unsupported types cause rejection. Extra unused producer data can remain
 visible in reports without becoming verified facts. Positions associate claims

@@ -1,14 +1,21 @@
 import Lean.Data.Json
 
-/-! Primitive source/claim wire data and JSON helpers. This is an input encoding,
-not a second program calculus. The source adapter rejects unsupported primitives;
-its exact-translation lemmas relate accepted encodings to the current semantics. -/
+/-! # The claim language
+
+What a producer says a type is, and what a source annotation is written in:
+primitive values, the atoms that denote them, and the types built from those
+atoms. A claim surface, not a second program calculus. The source adapter
+rejects unsupported primitives; its exact-translation lemmas relate accepted
+claims to the current semantics.
+
+`Span`, `numBits` and the JSON helpers below sit outside the `Claim` namespace:
+they are shared decoding plumbing, not part of the language. -/
 namespace Verification
 
 abbrev Span := Nat × Nat
 def spanStr (p : Span) : String := s!"[{p.1},{p.2})"
 
-namespace Wire
+namespace Claim
 
 inductive Val where
   | vnull
@@ -36,7 +43,7 @@ structure Ty where
   atoms : List Atom
   deriving DecidableEq, Repr
 
-/-! Primitive wire membership used by exact-translation lemmas. -/
+/-! Primitive claim membership used by exact-translation lemmas. -/
 
 /-- `inhabits v a` : the value `v` is one of the values the atom `a` denotes. -/
 def inhabits : Val → Atom → Bool
@@ -54,8 +61,8 @@ def inhabits : Val → Atom → Bool
 def mem (v : Val) (t : Ty) : Prop :=
   t.top = true ∨ ∃ a ∈ t.atoms, inhabits v a = true
 
-end Wire
-open Lean Wire
+end Claim
+open Lean Claim
 
 /-- The canonical identity of a numeric literal: the bit pattern of the double
 it denotes, with `-0` normalised to `+0`. Numeric wire data remains decodable,

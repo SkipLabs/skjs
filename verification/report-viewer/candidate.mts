@@ -1,5 +1,5 @@
 
-import surface from "../tools/claim-type-text.mts";
+import surface from "../tools/claim-text.mts";
 
 /** Where a claim sits, in the terms the candidate is addressed by. */
 export interface ClaimSite {

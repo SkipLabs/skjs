@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { decodeClaimType } from "../tools/claim-language.mts";
+import { decodeClaimType } from "../tools/claim.mts";
 // Source extraction of generic identity: rigid T, return the parameter.
 
 

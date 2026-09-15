@@ -11,7 +11,7 @@ import {
   renderType,
 } from "../report-viewer/model.mts";
 import * as marks from "../report-viewer/marks.mts";
-import surface from "../tools/claim-type-text.mts";
+import surface from "../tools/claim-text.mts";
 import { decodeGraph, parseGraph, printGraph, graphDefinitions } from "../tools/type-graph.mts";
 import { decodeTerm, parseTerm, printTerm } from "../tools/calculus.mts";
 import ob from "../tools/diagnostic-view.mts";

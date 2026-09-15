@@ -69,7 +69,7 @@ export interface DisplayClaim {
   /** Stable within one snapshot, not across edits. `f0x3`, `f1e2`, `g0`. */
   id: string;
   pos: Span;
-  /** Printed by tools/claim-type-text.mts. Falls back to the producer's own text. */
+  /** Printed by tools/claim-text.mts. Falls back to the producer's own text. */
   type: string;
   /** The producer's encoding, which the surface text may not name in full. */
   raw?: unknown;

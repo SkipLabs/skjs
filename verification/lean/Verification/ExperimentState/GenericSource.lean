@@ -12,7 +12,7 @@ extra parameters (`fst`), along `letE_safeP` and `var_safeP`.
 that inclusion. It does not justify `true ≤ T`. Other generic shapes remain
 outside the fragment. Producer claims enter through the shared source interface. -/
 namespace Verification.ExperimentState.GenericSource
-open Lean Wire
+open Lean Claim
 
 def paramName (j : Json) : Except String String := do
   CellClaims.fieldsExactly j ["top", "atoms"]
