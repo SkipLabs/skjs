@@ -529,7 +529,7 @@ context bindings in the words of the source. Source maps are explanatory, have n
 decoder, and never reach a request or certificate; they are what lets a reader
 speak about `cell` rather than a slot number. See
 [Obligation diagnostics](OBLIGATION-DIAGNOSTICS.md#node-and-expression-obligations). Active-name shadowing is rejected. Statements after unconditional
-`return`, `break` or `continue` are outside the current source slice. The graph
+`return`, `break` or `continue` are outside the fragment. The graph
 consumer checks every node supplied to it, even unreachable ones; that theorem
 does not by itself justify changing the source adapter's policy.
 
@@ -600,7 +600,7 @@ plain `{ value: e }` allocation, `.value` reads and `.value = e` assignments,
 and the bounded local closures and calls described below. Every syntactic exit
 path must reach an explicit return; loops may diverge.
 It rejects active-name shadowing, calls to named top-level functions, statements after
-an explicit return, and unsupported types. This is a coverage gate for this slice, not the intended final dead-code policy.
+an explicit return, and unsupported types. This is a coverage gate for the fragment, not the intended final dead-code policy.
 The identity scheme `id<T>(x: T): T { return x }` is checked under a rigid
 parameter and omitted from the graph request; the same path admits variable-copy
 bodies with distinct parameters and directed dependent bounds. See [GenericSource.lean](lean/Verification/ExperimentState/GenericSource.lean).
@@ -972,7 +972,7 @@ Already-known immutable Boolean singleton facts are preserved when forming a
 branch map, rather than overwritten with an opposite-branch witness. This avoids
 unnecessary rejection on impossible edges and uses existing transfer rules.
 Unlabeled transfers are supported; labels, transfers outside a loop, and statements
-after an unconditional transfer remain gated in this source slice.
+after an unconditional transfer remain gated in the fragment.
 
 The real `loop-transfers.ts` fixture checks writes before break/continue,
 conditional transfers, and the nearest target in nested loops. Negative tests

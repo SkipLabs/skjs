@@ -275,7 +275,7 @@ try {
       params:[{name:"x",type:{top:false,atoms:[{a:"string"}]}}],retType:{top:false,atoms:[{a:"string"}]},envs:[],exprs:[]}]}]));
     const r=cli([input,"--claims",cp,"--verify",verifier,"--out",out]);assert.equal(r.status,0,r.stderr);
     const result=JSON.parse(fs.readFileSync(out+".json", "utf8")).results[0];
-    if(/outside the .*slice/.test(result.detail||""))assert.deepEqual(result.location,{kind:"source-limitation"});
+    if(/outside the .*fragment/.test(result.detail||""))assert.deepEqual(result.location,{kind:"source-limitation"});
     else assert.equal(result.status,"unsupported");
   });
   test("false claim is not called refuted or verified",()=>{

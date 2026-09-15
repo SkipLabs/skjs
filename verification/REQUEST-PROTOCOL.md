@@ -260,7 +260,7 @@ function results can additionally contain cell contracts. Every union arm is
 decoded strictly. A redundant record arm may be absorbed into an existing invariant
 alternative by the checked read/write rule below; unsupported encodings are
 never omitted. Other constructs
-are covered by the cell and closure extensions below or rejected by the slice
+are covered by the cell and closure extensions below or rejected by the fragment
 gate, including active-name shadowing and statements after an explicit return. This restriction is not a final dead-code policy.
 The identity scheme `id<T>(x: T): T { return x }` is also accepted, with
 each distinct type parameter exported as a `param` atom. Function AST objects always
@@ -278,7 +278,7 @@ through annotated consts and return a variable. Parameters and annotations may
 name distinct declared parameters or boolean. A conversion requires identity
 or a forward path through the declared bounds, so `U extends T` permits `U`
 to `T` but never the reverse. A const retains its annotation after conversion.
-Generic callbacks and source call-site instantiation remain outside the slice. A file of
+Generic callbacks and source call-site instantiation remain outside the fragment. A file of
 only these schemes still produces an empty graph evidence bundle. Both production
 and consumption nevertheless check the source body, signature, and every source
 entry/expression claim. Sites must match exactly, without duplicates or missing
@@ -363,7 +363,7 @@ Source extraction remains trusted for evaluation order, lexical binding and
 claim association. The all-budget safety theorem applies to the extracted
 graph, not directly to TypeScript execution. The parser is still the existing
 independent parser; its format and the claim export can change as the broader
-stateful slice requires. There is no compatibility obligation to a retired fragment.
+stateful fragment requires. There is no compatibility obligation to a retired fragment.
 
 `make verify` runs the real-export integration suite. To run only that suite:
 
@@ -623,7 +623,7 @@ rule derivation using `ExpressionClaims.checkAll`. Dropping a proof, adding a
 proof or substituting a valid proof of a different judgment is rejected.
 The whole lambda is also checked by the ordinary program certificate.
 Callable parameters are admitted at their source annotations; named top-level
-calls and external cell parameters remain outside the slice. Evaluation order,
+calls and external cell parameters remain outside the fragment. Evaluation order,
 capture lowering and assignment temporaries are described in
 [source integration](DESIGN.md#source-integration-current-slice-and-next-milestone).
 
@@ -663,7 +663,7 @@ A function with one required invariant `value` field is exported as
 atom above and `B` is a bounded record atom with `call: "unknown"`. Both describe
 the same object. The source decoder requires equal read/write field contracts
 and lowers to the native graph callable clause; current-content field assertions
-and nested callable objects are outside this slice.
+and nested callable objects are outside the fragment.
 
 The initialization AST is
 `{"k":"withValue","pos":[start,end],"fn":arrow,"initial":objectLiteral,"functionType":F,"bagType":B}`.

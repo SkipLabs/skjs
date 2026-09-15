@@ -93,7 +93,7 @@ private def oneTy : Json :=
   Json.mkObj [("top", toJson false),
     ("atoms", toJson [Json.mkObj [("a", toJson "numberlit"), ("v", toJson "1")]])]
 
--- Numbers are in the slice now, so this is decided rather than skipped: no
+-- Numbers are in the fragment now, so this is decided rather than skipped: no
 -- number is a boolean, and the judgment is refused on the merits.
 #guard (match pair "subtype" numTy boolTy with | .ok .unproved => true | _ => false)
 -- A numeric singleton is below the family, and distinct singletons are not

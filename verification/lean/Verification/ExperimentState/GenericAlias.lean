@@ -50,10 +50,10 @@ def decodeAlias (j : Json) : Except String Alias := do
   CellClaims.fieldsExactly j ["name", "typeParams", "body"]
   let name ← jStr (← jField j "name")
   if name.isEmpty then throw "empty alias name"
-  if name == "undefined" then throw "shadowing undefined is outside the source slice"
+  if name == "undefined" then throw "shadowing undefined is outside the fragment"
   let [p] ← (← jArr j "typeParams").mapM Fragment.decodeTypeParam
     | throw "only one type parameter is in the fragment"
-  if p.name == "undefined" then throw "shadowing undefined is outside the source slice"
+  if p.name == "undefined" then throw "shadowing undefined is outside the fragment"
   if p.bound.isSome then throw "type parameter bounds on aliases are outside the fragment"
   return ⟨name, p.name, ← jField j "body"⟩
 

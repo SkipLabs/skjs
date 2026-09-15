@@ -576,7 +576,7 @@ function verifySkjs(
         // The producer's parameter claim contradicts the annotation the caller
         // is held to: a finding about the claim, before any obligation is tried.
         const parameterClaim=/claimed parameter type differs from the source annotation for '([^']*)'$/.exec(detail);
-        const outsideSlice=/outside the [^:]*slice\.?$/.test(detail);
+        const outsideFragment=/outside the [^:]*fragment\.?$/.test(detail);
         const location=genericPoint ? (genericPoint[1]==="entry claim" ?
           {kind:"environment-obligation",start:Number(genericPoint[2])} :
           {kind:"expression-obligation",pos:[Number(genericPoint[2]),Number(genericPoint[3])]}) : parameterClaim ? {kind:"parameter-claim",binding:parameterClaim[1]} : unavailableType ? {kind:"unavailable-type-claim",
@@ -587,7 +587,7 @@ function verifySkjs(
           absentEnv ? {kind:"missing-environment-claim",start:Number(environment[1])} :
           absentBinding ? {kind:"missing-environment-claim",start:Number(environment[1]),binding:absentBinding[1]} :
           environment ? {kind:"environment-obligation",start:Number(environment[1])} :
-          outsideSlice ? {kind:"source-limitation"} : null;
+          outsideFragment ? {kind:"source-limitation"} : null;
 
         // One shape for every branch above: a place (a span or an entry start),
         // the binding it concerns where there is one, and the producer's own

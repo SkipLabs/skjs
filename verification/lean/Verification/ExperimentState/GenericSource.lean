@@ -41,7 +41,7 @@ def boundEdges (params : List Fragment.TypeParam) : Except String (List (Nat × 
   let mut seen : List String := []
   let mut edges := []
   for tp in params do
-    if tp.name == "undefined" then throw "shadowing undefined is outside the source slice"
+    if tp.name == "undefined" then throw "shadowing undefined is outside the fragment"
     if tp.name ∈ seen then throw "duplicate type parameter"
     if let some bound := tp.bound then
       let upper ← match typeIndex seen bound with
@@ -75,8 +75,8 @@ partial def copyBody (params : List String) (edges : List (Nat × Nat))
     unless subtype edges actual result do
       throw "generic return is not justified by the declared upper bounds (returning T as boolean requires T extends boolean)"
   | .cst _ name annot init :: rest => do
-    if name == "undefined" then throw "shadowing undefined is outside the source slice"
-    if env.any (fun p => p.1 == name) then throw "active-name shadowing is outside the source slice"
+    if name == "undefined" then throw "shadowing undefined is outside the fragment"
+    if env.any (fun p => p.1 == name) then throw "active-name shadowing is outside the fragment"
     let some annot := annot | throw "generic const requires a type annotation"
     let expected ← typeIndex params annot
     let actual ← variableType env init
@@ -99,7 +99,7 @@ def checkScheme (f : Fragment.Fn) (typeParams : List Fragment.TypeParam)
   let names := f.params.map (·.name)
   if names.eraseDups.length != names.length then throw "duplicate source parameter"
   let env ← f.params.mapM fun p => do
-    if p.name == "undefined" then throw "shadowing undefined is outside the source slice"
+    if p.name == "undefined" then throw "shadowing undefined is outside the fragment"
     return (p.name, ← typeIndex params p.ty)
   let result ← typeIndex params f.ret
   copyBody params edges env result f.body

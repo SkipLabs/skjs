@@ -181,7 +181,7 @@ class Gate {
 
       case ts.SyntaxKind.FunctionType: {
         if (node.typeParameters?.length)
-          this.fail(node, "generic function types are outside the source slice");
+          this.fail(node, "generic function types are outside the fragment");
         for (const p of node.parameters) {
           if (
             !ts.isIdentifier(p.name) ||
@@ -703,7 +703,7 @@ class Gate {
         } else
           this.fail(
             at,
-            "statements after an unconditional return are outside the closure slice",
+            "statements after an unconditional return are outside the fragment",
           );
       }
       return tail;

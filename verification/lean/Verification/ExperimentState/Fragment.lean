@@ -75,7 +75,7 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
   if j == Json.mkObj [("unsupported", toJson true)] then
     throw "type claim unavailable from producer"
   CellClaims.fieldsExactly j ["top","atoms"]
-  if ← (← jField j "top").getBool? then throw "top is outside the source slice"
+  if ← (← jField j "top").getBool? then throw "top is outside the fragment"
   let atoms ← jArr j "atoms"
   let tagged ← atoms.mapM fun atom => do return (← jStr (← jField atom "a"),atom)
   -- A conjunction is one arm of the union, not a union of its own, so each
@@ -240,7 +240,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     return .call p (← decodeExpr (← jField j "callee"))
       (← (← jArr j "args").mapM decodeExpr)
   | "write" => return .write p (← decodeExpr (← jField j "receiver")) (← decodeExpr (← jField j "rhs"))
-  | _ => throw s!"unsupported source expression at [{p.1},{p.2}): expression outside the stateful source slice"
+  | _ => throw s!"unsupported source expression at [{p.1},{p.2}): expression outside the stateful fragment"
 
 partial def decodeStmt (j : Json) : Except String Stmt := do
   let p ← jSpan j "pos"
@@ -261,7 +261,7 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
       | .arr a => pure (some (← a.toList.mapM decodeStmt))
       | _ => throw "malformed else branch"
     return .ite p (← decodeExpr (← jField j "cond")) thn els
-  | _ => throw "statement outside the stateful source slice"
+  | _ => throw "statement outside the stateful fragment"
 
 structure TypeParam where
   name : String

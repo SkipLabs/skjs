@@ -128,7 +128,7 @@ correct or authenticate the producer.
 
 ## Types and obligations
 
-The initial textual type notation should cover the implemented source slice:
+The initial textual type notation should cover the implemented fragment:
 `null`, `boolean`, `true`, `false`, `never`, primitive unions, supported invariant
 cells, and supported unary arrows. Type notation is interpreted in the claim
 language, not by TypeScript's alias lookup or SKJS's internal normalization.

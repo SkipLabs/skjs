@@ -74,7 +74,7 @@ private def observed (R : Ty Nat) : SourceClaims.Function :=
 -- The source parameter boundary must still reject externally supplied cells.
 #guard match extractNormalizedFn table {(source false) with params := [⟨"external",union⟩]}
     {claims with params := [("external",.ok [4,5])]} with
-  | .error e => e == "cell parameters need an external-value boundary, which is outside the source slice"
+  | .error e => e == "cell parameters need an external-value boundary, which is outside the fragment"
   | .ok _ => false
 -- A Boolean write fits the first cell but not the null-only alternative.
 -- Extraction succeeds; its independently checked write obligation must fail.

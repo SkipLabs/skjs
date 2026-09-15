@@ -5,7 +5,7 @@ subtype rules. [State assertions](#state-assertion-grammar) extend point claims;
 they are separate from ordinary types and their normalization. Lean
 proves positive normalization preserves recursive type semantics, the declarative
 rules are sound, and the certificate checker is sound and complete for those
-rules. A first closed null/undefined/boolean source slice is connected to this consumer. Its foundation and integration boundary are in [SEMANTICS.md](SEMANTICS.md).
+rules. A first closed null/undefined/boolean fragment is connected to this consumer. Its foundation and integration boundary are in [SEMANTICS.md](SEMANTICS.md).
 
 ## Representation and mathematical rules
 

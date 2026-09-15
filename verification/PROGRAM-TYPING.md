@@ -463,7 +463,7 @@ merge narrowing, missing or extra node evidence, changed code and invalid starts
 
 The graph layer does not change the type-family or expression semantics.
 Closures still contain expression-language bodies, not graph-backed function
-bodies. Boolean result refinement is proved as described below. A primitive source slice with parameters
+bodies. Boolean result refinement is proved as described below. A primitive fragment with parameters
 is connected; broader source extraction remains integration work. The next section supplies
 an in-memory certificate producer; [REQUEST-PROTOCOL.md](REQUEST-PROTOCOL.md)
 describes its serialized consumer boundary. No graph-level completeness theorem is claimed here; the
@@ -1108,7 +1108,7 @@ statement entry still fails source verification.
 start label, and one `PointClaim` per node. Each claim fixes both the entry
 context and the expression result type. These are annotations in this Lean
 interface, not SKJS claim types. The source adapter supplies them for the supported
-slice; new source forms require the corresponding extraction obligations.
+fragment; new source forms require the corresponding extraction obligations.
 
 `produce` builds expression derivation trees and per-slot subtype evidence for
 every actual edge. It does not infer or repair point invariants. Its inputs also

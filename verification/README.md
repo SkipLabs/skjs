@@ -21,7 +21,7 @@ cell fields, and callbacks with ordered required parameters. The
 [undefined examples](tests/stateful-source/undefined.ts) exercise contracts, alias
 writes, strict comparisons and nullish coalescing. This does not imply support
 for `void`, optional properties or implicit returns; see the
-[current source slice](DESIGN.md#source-integration-current-slice-and-next-milestone).
+[current fragment](DESIGN.md#source-integration-current-slice-and-next-milestone).
 
 ## Run
 

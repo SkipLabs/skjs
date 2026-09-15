@@ -106,7 +106,7 @@ def supportedAtom : Claim.Atom → Bool
 
 def translate (t : Claim.Ty) : Except String (Ty Nat) :=
   if !t.top && t.atoms.all supportedAtom then .ok (encode t)
-  else .error "source type outside the null/undefined/boolean/singleton source slice"
+  else .error "source type outside the null/undefined/boolean/singleton fragment"
 
 def value : Claim.Val → Except String Tm
   | .vnull => .ok .nul
@@ -114,7 +114,7 @@ def value : Claim.Val → Except String Tm
   | .vbool true => .ok .tru
   | .vbool false => .ok .fls
   | .vnum b => .ok (.num b)
-  | _ => .error "source literal outside the null/undefined/boolean/number source slice"
+  | _ => .error "source literal outside the null/undefined/boolean/number fragment"
 
 /-- Numbers are interned rather than given fixed rows, because the singletons
 are unbounded: the first four labels stay exactly the four primitive values,
@@ -148,8 +148,8 @@ theorem encode_meaning {T : Table} (h : initial <+: T) (t : Claim.Ty) (n W v) :
     cases hf : admits t (.vbool false) <;> cases hu : admits t .vundef <;>
     simp [encode, hn, ht, hf, hu, expand, h0, h1, h2, h3, semList, Tower.setSem, sem, nulT, undefT]
 
-/-- No atom of the primitive slice admits a number, so a numeric value is
-outside every type that slice can state. `value` decodes one because the
+/-- No atom of the primitive fragment admits a number, so a numeric value is
+outside every type that fragment can state. `value` decodes one because the
 number labels are interned elsewhere; this keeps the pure path exact. -/
 theorem supported_not_num {a : Claim.Atom} (h : supportedAtom a = true) (b : UInt64) :
     Claim.inhabits (.vnum b) a = false := by

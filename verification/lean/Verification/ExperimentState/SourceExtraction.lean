@@ -8,7 +8,7 @@ initialized local bindings. Supplied expression types and source annotations
 become distinct obligations. The consumer reconstructs the request from source
 and claims; evidence never supplies the program it is checked against.
 
-The currently supported source slice is deliberately small: primitive/callable parameters,
+The currently supported fragment is deliberately small: primitive/callable parameters,
 initialized consts, branches, variables, null/boolean literals and local plain
 cells (allocation, reads and assignments), expression-bodied closures and calls,
 with every path returning. Boolean variable tests, including negations, refine the tested binding.
@@ -518,7 +518,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Descr
     let b ← closureExpr fc (⟨"",some init.span⟩::scope) (a.type::Γ) body
     pure (DirectProof.letE Γ a b)
   | .letBody pos name annot init body => do
-    if name == "undefined" then throw "shadowing undefined is outside the source slice"
+    if name == "undefined" then throw "shadowing undefined is outside the fragment"
     if name != "" && (names scope).contains name then
       throw "duplicate or shadowing closure local"
     let H ← closureEnv fc pos.1 scope Γ
@@ -584,7 +584,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Descr
   | .lambda pos params ret body => do
     let paramNames := params.map Prod.fst
     if !distinct paramNames || paramNames.any (fun name => name == "" || name == "undefined" || (names scope).contains name) then
-      throw "shadowing or duplicate closure parameter is outside the source slice"
+      throw "shadowing or duplicate closure parameter is outside the fragment"
     let Ds ← params.mapM fun p => lower (Fragment.callableType p.2)
     let R ← lower (Fragment.callableType ret)
     let inner := (paramNames.map fun name => ⟨name,some pos⟩) ++ scope
@@ -810,7 +810,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List Descriptor 
     let target ← match stmts with
     | [] => leave fc.namePos R scope tail
     | .brk pos :: rest | .cont pos :: rest =>
-      if !rest.isEmpty then throw "statements after break or continue are outside the current source slice"
+      if !rest.isEmpty then throw "statements after break or continue are outside the fragment"
       let some targets := loopTargets | throw "break or continue outside a source loop"
       let Γ ← env fc pos.1 scope
       let destination := match stmts with
@@ -819,14 +819,14 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List Descriptor 
       let next ← leave fc.namePos R scope destination
       emitAt pos .nul (.effect next) Γ [0] (scope := scope)
     | .ret pos e :: rest =>
-      if !rest.isEmpty then throw "statements after return are outside the current source slice"
+      if !rest.isEmpty then throw "statements after return are outside the fragment"
       let Γ ← env fc pos.1 scope
       let A ← exprType fc e
       let done ← emitAt e.span (.var 0) .ret (A::Γ) R "return-contract" (some pos.1)
         (scope := ⟨"",some e.span⟩::scope)
       compileExpr fc scope Γ e done
     | .cst pos name annot e :: rest =>
-      if name == "undefined" then throw "shadowing undefined is outside the source slice"
+      if name == "undefined" then throw "shadowing undefined is outside the fragment"
       if (names scope).contains name then throw s!"duplicate or shadowing local declaration '{name}'"
       let Γ ← env fc pos.1 scope
       let A ← exprType fc e
@@ -909,7 +909,7 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
   if f.name != fc.name || f.namePos != fc.namePos then throw "function claim identity mismatch"
   let scope : List Descriptor := f.params.map (fun p => ⟨p.name,none⟩)
   if f.name == "undefined" || (names scope).contains "undefined" then
-    throw "shadowing undefined is outside the source slice"
+    throw "shadowing undefined is outside the fragment"
   if !distinct (names scope) then throw "duplicate source parameter name"
   if f.params.length != fc.params.length then throw "parameter claim count mismatch"
   if !distinct (fc.envs.map Prod.fst) || !distinct (fc.exprs.map Prod.fst) then
@@ -927,7 +927,7 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
     let G := SourceTypes.graph (← table)
     if inputs.any (fun A => A.any fun i => match PositiveRules.expand G [i] with
         | [.refs _ _] => true | _ => false) then
-      throw "cell parameters need an external-value boundary, which is outside the source slice"
+      throw "cell parameters need an external-value boundary, which is outside the fragment"
     for ((p, A), (name, claimed)) in (f.params.zip inputs).zip fc.params do
       if p.name != name then throw "parameter claim name or order mismatch"
       let B ← SourceClaims.resolve (← table).length claimed

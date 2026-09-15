@@ -614,7 +614,7 @@ private def lowered (j : Json) : Except String (Ty Nat) :=
 #guard (match extractFn
     { branchFn true with params := [⟨"external",joined [wireTy ⟨false,[.null]⟩,cellWire]⟩] }
     { branchClaims true with params := [("external",joined [wireTy ⟨false,[.null]⟩,cellWire])] } with
-  | .error e => e == "cell parameters need an external-value boundary, which is outside the source slice"
+  | .error e => e == "cell parameters need an external-value boundary, which is outside the fragment"
   | .ok _ => false)
 #guard !ok (lowered (joined [wireTy ⟨false,[.str]⟩,cellWire]))
 
@@ -708,7 +708,7 @@ private def overloadClaims : Fragment.Claims :=
 
 -- An arrow parameter is assumed at its annotation and may be called; a claim
 -- that contradicts the annotation is refused by name, and a cell parameter is
--- still outside the slice.
+-- still outside the fragment.
 private def callerFn : Fragment.Fn :=
   ⟨"caller",(0,1),[⟨"a",trueToNull⟩],wireTy ⟨false,[.null]⟩,
     [.ret (2,9) (.app (4,9) (.var (4,5) "a") (.lit (6,7) (.vbool true)))]⟩

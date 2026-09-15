@@ -1,6 +1,6 @@
 import Verification.ExperimentState.SourceTypes
 
-/-! Producer-independent claims for the current bounded source slice. Candidates
+/-! Producer-independent claims for the current bounded fragment. Candidates
 contain calculus type labels, never producer JSON. A decoding failure is retained
 until a claim is used: exporters may include unrelated unsupported bindings such
 as implicit `this`; those failures must never be interpreted as a type. -/
