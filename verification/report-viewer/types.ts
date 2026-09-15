@@ -111,6 +111,12 @@ export interface Collection {
   completion: "complete" | "aborted";
   quality: "unverified" | "recovery";
   mode: "normal" | "keep-going" | "backtrace";
+  /**
+   * Original spans expression checking entered, including expressions that
+   * failed before a result could be recorded (ANNOTATED-SOURCE.md). A gap is
+   * one of these with no claim against it.
+   */
+  visitedExpressions?: Span[];
 }
 
 export interface ReportFunction {
