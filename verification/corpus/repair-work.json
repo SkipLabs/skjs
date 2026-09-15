@@ -1,0 +1,8 @@
+{
+  "name": "repair-work",
+  "description": "Regression tests added or extended by the SKJS checker repair arc. These are not in the pipeline corpus that `make verify-examples` reports on, so this is the only thing that measures them. The arc begins at aad730c9 (2026-09-13 03:34), the first repair test, paired with checker repair 875d9501; everything earlier on this branch is verification infrastructure rather than checker repair.",
+  "select": {
+    "since": "aad730c9",
+    "paths": ["tests/expect-error/*.ts"]
+  }
+}

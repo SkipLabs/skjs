@@ -15,10 +15,19 @@ const stateful = [
 ].map((name) => `verification/tests/stateful-source/${name}.ts`);
 const callables = ["unions", "factories", "arguments", "cells", "thunks", "arity", "guards", "function-field", "receiver-call"].map((name) => `verification/tests/callables/${name}.ts`);
 const callableBoundaries = ["verification/tests/callables/call-objects.ts"];
-const supported = [...stateful, ...callables];
+// Rigid type parameters and their bounds. Checked under the source generic
+// rules rather than the graph request, and verified like any other example.
+const generics = [
+  "generic-identity",
+  "generic-aliases",
+  "generic-extends",
+  "generic-bodies",
+].map((name) => `verification/tests/stateful-source/${name}.ts`);
+const supported = [...stateful, ...callables, ...generics];
 const groups = [
   { label: "Current verifier examples", files: stateful },
   { label: "Callables", files: [...callables, ...callableBoundaries] },
+  { label: "Generics · rigid parameters and bounds", files: generics },
   {
     label: "Claim repair · producer rejects",
     files: ["verification/tests/partial-claims.ts"],

@@ -88,7 +88,7 @@ check-file-in-docker:
 
 # Verification (verification/DESIGN.md, verification/README.md).
 # Use VERBOSE=1 for detailed diagnostics and build output.
-.PHONY: verify verify-test verify-examples
+.PHONY: verify verify-test verify-examples verify-census
 # Both halves check the same sources, so they share one container rather than
 # starting one each. Whoever starts it removes it; the halves only borrow it.
 verify:
@@ -117,6 +117,15 @@ verify-examples-skjs:
 
 verify-examples-tsc:
 	@node verification/examples.mts --only tsc $(if $(filter 1,$(VERBOSE)),--verbose)
+
+# How much of a corpus the pipeline verifies, one row per function, diffed
+# against a recorded baseline. Unlike the targets above this asserts nothing
+# about the corpus: a refusal is a reported outcome with its reason, not a
+# failure, so the reasons can be counted and the largest one chosen as the next
+# thing to widen. CORPUS= picks the set, from verification/corpus/; UPDATE=1
+# accepts a baseline that moved.
+verify-census:
+	@./verification/census.sh $(if $(CORPUS),$(CORPUS),verification/corpus/repair-work.json) $(if $(filter 1,$(UPDATE)),--update)
 
 # install the repo pre-commit hook locally
 .git/hooks/pre-commit: bin/git_hooks/check_format.sh
