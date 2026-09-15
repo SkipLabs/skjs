@@ -14,7 +14,12 @@
  */
 import { API } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
-import type { Node, SourceFile } from "typescript/unstable/ast";
+import type {
+  FunctionDeclaration,
+  Node,
+  SourceFile,
+  TypeAliasDeclaration,
+} from "typescript/unstable/ast";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -873,7 +878,7 @@ class Gate {
     if (!node.typeParameters || node.typeParameters.length !== 1)
       this.fail(node, "only one type parameter is in the fragment");
     const tp = node.typeParameters[0];
-    if (tp.constraint || tp.default)
+    if (tp.constraint || tp.defaultType)
       this.fail(
         tp,
         "type parameter bounds and defaults are outside the fragment",
@@ -909,7 +914,7 @@ class Gate {
     const typeParams: TypeParamAst[] = [];
     if (node.typeParameters?.length) {
       for (const tp of node.typeParameters) {
-        if (tp.default)
+        if (tp.defaultType)
           this.fail(tp, "type parameter defaults are outside the fragment");
         if (tp.name.kind !== ts.SyntaxKind.Identifier)
           this.fail(tp, "expected a type-parameter name");
@@ -968,30 +973,55 @@ class Gate {
  * The whole file, or a gate rejection. A rejection is an Error whose message
  * begins "gate: ", which is what the command writes to stderr, so a caller and
  * the command report one wording.
+ *
+ * `carriesContext` is for a caller that assembled the file itself and put
+ * declarations beside the function it is asking about — the census does, so
+ * that a function is typed with the names its own file declares rather than
+ * failing for what extracting it left behind. Those declarations are then not
+ * the subject: they are skipped rather than rejected, and nothing about them
+ * is verified. A type they introduce still has to be sayable in a claim, so a
+ * function that depends on one fails on that claim, in its own words.
  */
-export function parseFile(file: string): Ast {
+export function parseFile(file: string, carriesContext = false): Ast {
   const absolute = resolve(file);
   const text = readFileSync(absolute, "utf8");
   const source = openFile(absolute, text);
   const gate = new Gate(source);
-  const aliasNodes: any[] = [];
-  const fnNodes: any[] = [];
-  for (const s of source.statements as readonly any[]) {
-    if (s.kind === ts.SyntaxKind.TypeAliasDeclaration) aliasNodes.push(s);
-    else if (s.kind === ts.SyntaxKind.FunctionDeclaration) fnNodes.push(s);
+  const aliasNodes: TypeAliasDeclaration[] = [];
+  const fnNodes: FunctionDeclaration[] = [];
+  for (const s of source.statements) {
+    if (ts.isTypeAliasDeclaration(s)) aliasNodes.push(s);
+    else if (ts.isFunctionDeclaration(s)) fnNodes.push(s);
+    else if (carriesContext) continue;
     else
       gate.fail(
         s,
         `top-level statement outside the fragment (${ts.SyntaxKind[s.kind]})`,
       );
   }
-  for (const node of aliasNodes) {
+  // Carried context holds aliases this fragment cannot state — more than one
+  // parameter, a bound, none at all. They are skipped rather than rejected,
+  // on the same terms as the other declarations: unregistered, so a function
+  // that names one fails on that name instead of on its neighbour's shape.
+  const statable = (n: TypeAliasDeclaration): boolean => {
+    const tp = n.typeParameters;
+    return (
+      !n.modifiers?.length &&
+      tp?.length === 1 &&
+      !tp[0].constraint &&
+      !tp[0].defaultType
+    );
+  };
+  const stated = carriesContext ? aliasNodes.filter(statable) : aliasNodes;
+  for (const node of stated) {
     if (!node.name) gate.fail(node, "anonymous type alias");
     gate.registerAlias(node.name.text, node);
   }
-  const aliases = aliasNodes.map((s) => gate.aliasDecl(s));
+  const aliases = stated.map((s) => gate.aliasDecl(s));
   gate.enableAliasApps();
-  const functions = fnNodes.map((s) => gate.functionDecl(s));
+  // A function without a body is a declaration, not an example of one.
+  const declared = carriesContext ? fnNodes.filter((s) => s.body) : fnNodes;
+  const functions = declared.map((s) => gate.functionDecl(s));
   if (functions.length === 0) gate.fail(null, "no functions in file");
   return {
     file,

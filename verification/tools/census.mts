@@ -24,7 +24,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { close, parseFile } from "./fragment-parse.mts";
-import { listFunctions, listFunctionsOf } from "./extract-functions.mts";
+import { listContext, listFunctions, listFunctionsOf } from "./extract-functions.mts";
 
 /* A corpus states how to find its sources, not which they are. The resolved
  * list is a derived fact and lives in the baseline, where every row names its
@@ -112,11 +112,16 @@ function extract(corpus: Corpus, dir: string): void {
   const taken = new Set<string>();
   const { since } = corpus.select;
   for (const source of resolve(corpus)) {
+    // The file's own declarations travel with each function it declares, so a
+    // censused function fails for what it says rather than for what
+    // extracting it left behind.
+    const context = listContext(source);
     for (const { name, text } of introduced(source, since)) {
       const slug = `${path.basename(source, ".ts")}__${name}`;
       if (taken.has(slug)) throw Error(`duplicate census slug ${slug}`);
       taken.add(slug);
-      fs.writeFileSync(`${dir}/${slug}.ts`, text + "\n");
+      fs.writeFileSync(`${dir}/${slug}.ts`,
+        (context ? context + "\n\n" : "") + text + "\n");
       index.push({ slug, source, fn: name });
     }
   }
@@ -146,7 +151,7 @@ function outcomeFor(file: string, e: Entry, byFile: Map<string, any>,
                     verifier: string, dir: string): string {
   let ast;
   try {
-    ast = parseFile(file);
+    ast = parseFile(file, true);
   } catch (err: any) {
     return `${GATE}:${reason(String(err?.message ?? err))}`;
   }

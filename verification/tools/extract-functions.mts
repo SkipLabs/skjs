@@ -16,6 +16,22 @@ export function listFunctions(file: string): { name: string; text: string }[] {
     .map(f => ({ name: f.name!.text, text: source.slice(f.getStart(sf), f.end) }));
 }
 
+/** Everything at the top level of a file that is not a function with a body:
+ * ambient declarations, type aliases, interfaces and classes. A censused
+ * function is extracted alone, and without these it can fail for want of a
+ * name its own file declares — an error about the extraction rather than
+ * about the program. They are context, never examples. */
+export function listContext(file: string): string {
+  const source = fs.readFileSync(file, "utf8");
+  const absolute = path.resolve(file);
+  const sf = projectFor(absolute).program.getSourceFile(absolute);
+  if (!sf) throw Error(`missing compiler source for ${file}`);
+  return sf.statements
+    .filter(s => !(ts.isFunctionDeclaration(s) && s.name && s.body))
+    .map(s => source.slice(s.getStart(sf), s.end))
+    .join("\n\n");
+}
+
 /** The named top-level functions of a version of a file that is not on disk,
  * so a corpus can ask what a file held before a commit. The path is a label
  * the compiler keys the text by; nothing reads it back. */
