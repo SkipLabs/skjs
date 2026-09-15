@@ -160,6 +160,7 @@ owner; other documents link to them and give only the context their readers need
 | [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md) | Calculus request/evidence JSON, verifier CLI, and SKJS source AST/export encoding. |
 | [SOURCE-CLAIMS](SOURCE-CLAIMS.md) | Implemented independent sidecar schemas, conversion, source identity and repair workflow. |
 | [CLAIM-INTERFACE](CLAIM-INTERFACE.md) | Explicitly unimplemented arbitrary-graph and comment-input proposals; links to implemented subsets. |
+| [LANGUAGES](LANGUAGES.md) | Every representation data crosses, which file owns each on both sides, the naming convention, and where it does not hold. |
 | [ANNOTATED-SOURCE](ANNOTATED-SOURCE.md) | Report output, manifest, annotations, provenance and freshness. |
 | [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md) | Failure records, source maps, outcome classification and reason vocabulary. |
 | [Viewer README](report-viewer/README.md) | Viewer/editor UX, local server, implementation structure and browser integration. |
