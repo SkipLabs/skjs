@@ -18,6 +18,6 @@ regenerate:
 UPDATE_EXPECT=1 node verification/tests/export-snapshots.mts claims.json verification/tests/export-snapshots
 ```
 
-The printed syntax is `printFull` in `tools/claim-types.mts`: the viewer's
+The printed syntax is `printFull` in `tools/claim-type-text.mts`: the viewer's
 surface syntax plus the parts it leaves out, so that two encodings that
 differ never print the same.

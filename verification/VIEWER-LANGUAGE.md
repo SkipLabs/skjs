@@ -10,7 +10,7 @@ than erase a requirement.
 
 `tools/claim-language.mts` declares `WireType`, `Atom`, `Field`, `RecordAtom`, and
 `FunctionAtom`; the source parser imports these same declarations.
-`decodeClaimType` checks fields recursively. `tools/claim-types.mts` supplies
+`decodeClaimType` checks fields recursively. `tools/claim-type-text.mts` supplies
 `parseType` and `printType`. Text determines the type without a previous claim.
 
 | Form | Meaning |

@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import vm from "node:vm";
 import { spawnSync } from "node:child_process";
-import surface from "../tools/claim-types.mts";
+import surface from "../tools/claim-type-text.mts";
 import { stripTypes } from "../tools/strip-types.mts";
 
 const [astPath, claimsPath, file, verifier, tscPath] = process.argv.slice(2);

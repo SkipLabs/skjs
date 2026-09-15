@@ -1,6 +1,7 @@
-/* Shared, self-contained claim text. @ followed by a JSON object states
- * nondefault object modes and conjunction metadata explicitly. The
- * text always determines its type. */
+/* Surface text for the claim language declared in claim-language.mts, printed
+ * and read back here so reports and the editor share one syntax. @ followed by
+ * a JSON object states nondefault object modes and conjunction metadata
+ * explicitly. The text always determines its type. */
 import { decodeClaimType, type WireType } from "./claim-language.mts";
 import { numberOfBits, type ClauseKey, type StringClause } from "./type-graph.mts";
 

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
-import surface from "../tools/claim-types.mts";
+import surface from "../tools/claim-type-text.mts";
 // Plain JavaScript modules; the reader loads these in a browser too.
 const require = createRequire(import.meta.url);
 // Export snapshots. SKJS's claims for each probe source, printed in the syntax

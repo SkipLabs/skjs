@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import surface from "../tools/claim-types.mts";
+import surface from "../tools/claim-type-text.mts";
 const [astPath, claimsPath, file, verifier] = process.argv.slice(2);
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "function-field-"));
 try {

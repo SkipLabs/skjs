@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { createHash } from "node:crypto";
-import surface from "../tools/claim-types.mts";
+import surface from "../tools/claim-type-text.mts";
 import {
   claimValue,
   editable,

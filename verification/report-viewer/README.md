@@ -177,7 +177,7 @@ end and exercised by `tests/report-viewer.mts` without a browser:
 - `../tools/obligation-view.mts` — builds a typed obligation presentation when the report is generated; the panel renders it.
 - `candidate.mts` — immutable candidate edits. Candidate inputs and stored
   results are never trusted proof evidence.
-- `../tools/claim-types.mts` — claim types in surface syntax, printed and read
+- `../tools/claim-type-text.mts` — claim types in surface syntax, printed and read
   back, and the lift and lowering between the normalized encoding and the
   structural one the surface reads. `report-viewer.mts` checks that printing
   and reading back returns the same encoding for every shape, and

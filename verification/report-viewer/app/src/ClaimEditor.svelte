@@ -18,7 +18,7 @@
    * This is the one editor. A candidate in the normalized encoding reaches it
    * lifted into the encoding the surface reads, and is lowered back on apply.
    */
-  import surface from "../../../tools/claim-types.mts";
+  import surface from "../../../tools/claim-type-text.mts";
   import type { ClaimSite } from "../../candidate.mts";
 
   let {
