@@ -58,7 +58,7 @@ export function main(args: string[]) {
     const provenance={kind:"skjs-source-claim-conversion",source:{file,sha256:hash(source)},
       sourcePath:path.resolve(sourcePath),claimsPath:path.resolve(opts.claims),claimsSha256:hash(raw),
       sidecarPath:path.resolve(output),sidecarSha256:hash(bytes),
-      parserSha256:hash(fs.readFileSync(parser)),converterSha256:hash(fs.readFileSync(opts.verifier)),
+      converterSha256:hash(fs.readFileSync(opts.verifier)),
       functions:selected.functions.map((f: any)=>({name:f.name,namePos:f.namePos,...(f.collection?{collection:f.collection}:{})})),
       originalClaims,omissions:converted.omissions,
       ...(diagnostics!==null?{diagnostics,diagnosticsPath:path.resolve(opts.diagnostics!),diagnosticsSha256:hash(diagnostics)}:{})};

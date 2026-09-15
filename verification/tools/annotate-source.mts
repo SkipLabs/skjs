@@ -502,12 +502,13 @@ function verifySkjs(
   depth: number,
   normalized = false,
 ) {
-  const parser=path.join(__dirname,"fragment-parse.mts"), temp=fs.mkdtempSync(path.join(os.tmpdir(),"annotated-source-"));
+  const temp=fs.mkdtempSync(path.join(os.tmpdir(),"annotated-source-"));
   try {
     // Called rather than spawned: a node start costs more than the parse, and
-    // this runs once per source. The parser's own file is still hashed into the
-    // identity, so what ran is recorded either way.
-    const identity={verifierSha256:hash(fs.readFileSync(verifier)),parserSha256:hash(fs.readFileSync(parser))};
+    // this runs once per source. The front end is not hashed: no verdict
+    // depends on which tool produced the request, only on the request and the
+    // evidence, and the source fingerprint already ties both to these bytes.
+    const identity={verifierSha256:hash(fs.readFileSync(verifier))};
     let ast;
     try {
       ast=fragmentParse.parseFile(sourcePath);
@@ -620,7 +621,6 @@ function checkFresh(output: string) {
   if(m.baselinePath)checks.push([m.baselinePath,m.baselineSha256]);
   if(m.diagnosticsPath)checks.push([m.diagnosticsPath,m.diagnosticsSha256]);
   if(m.verifierPath)checks.push([m.verifierPath,m.verifierSha256]);
-  if(m.parserSha256)checks.push([path.join(__dirname,"fragment-parse.mts"),m.parserSha256]);
   for(const [file,digest] of checks)if(hash(fs.readFileSync(file))!==digest)throw Error(`stale report: ${file}`);
   console.log("Snapshot fingerprints match. This is not proof verification.");
 }

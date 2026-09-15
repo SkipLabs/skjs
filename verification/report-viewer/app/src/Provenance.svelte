@@ -26,7 +26,6 @@
           ["source", m.source?.sha256],
           ["claims", m.claimsSha256],
           ["verifier", m.verifierSha256],
-          ["parser", m.parserSha256],
         ].filter(([, v]) => v) as [string, string][])
       : [],
   );

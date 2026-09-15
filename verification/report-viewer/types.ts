@@ -170,7 +170,6 @@ export interface Manifest {
   /** Fingerprints of what produced this report, for provenance only. */
   claimsSha256?: string;
   verifierSha256?: string;
-  parserSha256?: string;
   annotatedSha256?: string;
   sourcePath?: string;
   claimsPath?: string;
