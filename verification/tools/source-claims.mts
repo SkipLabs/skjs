@@ -15,6 +15,9 @@ export type Span = [start: number, end: number];
 import type { Labels, Row } from "./type-graph.mts";
 export type { Labels, Row } from "./type-graph.mts";
 
+/** Ground graph labels or a reference to the enclosing function's source binder. */
+export type ClaimType = Labels | { param: string };
+
 /**
  * What a producer believes at one site: the type it claims, and — where the
  * site is a cell read and the producer tracks cell contents — what the cell
@@ -22,7 +25,7 @@ export type { Labels, Row } from "./type-graph.mts";
  * such assertion is made, so silence is stated rather than inferred.
  */
 export interface Point {
-  type: Labels;
+  type: ClaimType;
   current: Labels | null;
 }
 
@@ -45,7 +48,7 @@ export interface FunctionClaims {
   name: string;
   namePos: Span;
   params: NamedPoint[];
-  result: Labels;
+  result: ClaimType;
   entries: EntryClaim[];
   expressions: ExpressionClaim[];
 }

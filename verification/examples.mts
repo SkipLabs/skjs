@@ -290,7 +290,7 @@ try {
             ? "✓"
             : "✗"
           : "·";
-        const tscOwn = tscAccepted === null ? "·" : tscAccepted ? "✓" : "✗";
+        const tscOwn = tscAccepted?.has(f.name) ? (tscAccepted.get(f.name) ? "✓" : "✗") : "·";
         const pair = (own: string, proof: string, flag: boolean) =>
           `${marked(own, own)}→${marked(proof, proof)}` +
           (flag && own === "✓" && proof === "✗" ? color(33, " ⚠") : "");

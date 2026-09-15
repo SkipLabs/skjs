@@ -280,7 +280,9 @@ entry/expression claim. Sites must match exactly, without duplicates or missing
 claims. Entry inclusions, expression inclusions and binding/return contracts
 are checked under rigid parameters and the declared bounds; failure reports the
 source span and named inclusion. The scheme is then omitted from the ground
-graph request. No per-site generic evidence is serialized yet.
+graph request. No per-site generic evidence is serialized yet. The neutral
+source sidecar also accepts function-scoped `{ "param": "T" }` claims from
+TypeScript, checked by the same generic checker against source binders and bounds.
 
 Generate an AST with `tools/parse-source.mts`, and claims with SKJS's
 `--emit-skjs-type-claims`. Then run:

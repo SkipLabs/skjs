@@ -247,7 +247,11 @@ function fromSourceClaims(
     throw Error("source-claim source identity mismatch");
   const types=input.types;
   if(!Array.isArray(types)||types.length<4)throw Error("invalid source type table");
-  const type=(A: Labels)=> {
+  const type=(A: import("./source-claims.mts").ClaimType)=> {
+    if(!Array.isArray(A)) {
+      if(Object.keys(A).join()!=="param" || typeof A.param!=="string" || !A.param)throw Error("invalid rigid parameter claim");
+      return A.param;
+    }
     if(!Array.isArray(A)||A.some((i,k)=>!Number.isInteger(i)||i<0||i>=types.length||(k&&A[k-1]>=i)))throw Error("invalid source type labels");
     return obligationReader.typeText(types,A);
   };
@@ -256,6 +260,7 @@ function fromSourceClaims(
     const ordinary=type(b.type);
     if(b.current==null)return {type:ordinary,raw:b.type};
     if(!Array.isArray(b.current)||b.current.some((i: number)=>!Number.isInteger(i)||i<0||i>=4))throw Error("invalid current-content assertion");
+    if(!Array.isArray(b.type))throw Error("rigid parameters cannot carry current contents");
     const lifted=surface.lift(types,b.type,b.current);
     if(!lifted)throw Error("invalid current-content assertion");
     return {type:surface.printType(lifted).text,raw:{type:b.type,current:b.current}};

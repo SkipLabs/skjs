@@ -10,7 +10,7 @@ import {
   addClaim,
   addFunction,
 } from "../report-viewer/candidate.mts";
-import { candidateReport } from "../report-viewer/serve.mts";
+import { candidateReport, analyse } from "../report-viewer/serve.mts";
 import { fromBundle } from "../report-viewer/model.mts";
 process.env.SKJS_BIN = "/no-producer-in-candidate-tests";
 
@@ -362,3 +362,15 @@ for (const params of [
   console.error(e);
   process.exitCode = 1;
 });
+
+// Normalized generic edits retain binder identity, and TS outcomes survive collection.
+const genericBundle = await analyse("verification/tests/stateful-source/generic-identity.ts", "tsc");
+const genericCandidate = genericBundle.candidate;
+const genericFn = genericCandidate.claims.functions[0];
+const genericItem = {kind:"expression",pos:genericFn.expressions[0].pos};
+const parameterT = {top:false,atoms:[{a:"param",name:"T"}]};
+assert.equal(genericBundle.manifest.functions[0].collection.completion,"complete");
+assert.deepEqual(editable(genericCandidate,genericFn,genericItem),parameterT);
+assert.deepEqual(claimValue(editClaim(genericCandidate,genericFn,genericItem,parameterT),genericFn,genericItem),{param:"T"});
+const genericModel = fromBundle(genericBundle);
+assert.equal(genericModel.functions[0].collection,"complete");

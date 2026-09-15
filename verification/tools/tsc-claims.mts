@@ -32,6 +32,7 @@ import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { close, parseFile, projectFor } from "./parse-source.mts";
 import type {
+  ClaimType,
   FunctionClaims,
   Row,
   SourceClaims,
@@ -1095,6 +1096,48 @@ function omissionRecord(fn: string, site: unknown, err: unknown): Omission {
   };
 }
 
+/** Rigid references are scoped to this declaration; names are emitted only
+ * after matching the compiler symbol identity, never by printed type text. */
+function processGenericFunction(fn: FunctionAst, node: any, checker: Checker,
+  sf: SourceFile, types: Row[], indices: Indices): FunctionClaims {
+  const parameters = new Map<number, string>();
+  for (const p of node.typeParameters ?? []) {
+    const symbol = checker.getSymbolAtLocation(p.name);
+    if (!symbol) throw new Refusal("generic-parameter-symbol", p.name.text);
+    parameters.set(symbol.id, p.name.text);
+  }
+  const claim = (t: Type): ClaimType => {
+    if (t.flags & TypeFlags.TypeParameter) {
+      const symbol = t.getSymbol();
+      const name = symbol && parameters.get(symbol.id);
+      if (!name) throw new Refusal("out-of-scope-type-parameter", checker.typeToString(t));
+      return {param: name};
+    }
+    return translateType(t, checker, types);
+  };
+  const at = (n: any) => claim(must(checker.getTypeAtLocation(n), "generic-site-type"));
+  const sites = functionSites(fn);
+  const sig = checker.getSignatureFromDeclaration(node);
+  if (!sig) throw new Refusal("no-signature", "");
+  return {
+    name: fn.name, namePos: fn.namePos,
+    params: node.parameters.map((p: any) => ({name:p.name.text,type:at(p.name),current:null})),
+    result: claim(must(checker.getReturnTypeOfSignature(sig), "return-type")),
+    entries: [...sites.entries].sort((a,b)=>a-b).map(start => {
+      const stmt = indices.stmtByStart.get(start);
+      if (!stmt) throw new Refusal("site-not-found", "");
+      return {start, bindings:envAtEntry(stmt,start,checker,sf).map(b=>({
+        name:b.name, type:claim(must(checker.getTypeOfSymbolAtLocation(b.sym,stmt),"binding-type")),current:null,
+      }))};
+    }),
+    expressions:[...sites.exprs].map(([key,{pos}])=> {
+      const expression=indices.exprBySpan.get(key);
+      if (!expression) throw new Refusal("site-not-found", "");
+      return {pos,type:at(expression),current:null};
+    }),
+  };
+}
+
 function processFunction(
   fnJson: FunctionAst,
   fnNode: any,
@@ -1104,6 +1147,7 @@ function processFunction(
   indices: Indices,
   omissions: Omission[],
 ): FunctionClaims | null {
+  if (fnNode.typeParameters?.length) return processGenericFunction(fnJson,fnNode,checker,sf,types,indices);
   const before = omissions.length;
   const name = fnJson.name;
   const params = fnNode.parameters.map((p: any) => {
@@ -1316,7 +1360,8 @@ if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
     process.exit(1);
   }
   try {
-    const { doc, omissions } = produce(file);
+    const { doc, omissions, accepted } = produce(file);
+    writeFileSync(out + ".outcomes.json", JSON.stringify(Object.fromEntries(accepted)) + "\n");
     writeFileSync(out, JSON.stringify(doc, null, 2) + "\n");
     writeFileSync(out + ".omissions.json", JSON.stringify(omissions, null, 2) + "\n");
     process.stderr.write(

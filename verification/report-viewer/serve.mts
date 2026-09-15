@@ -155,6 +155,13 @@ async function tscAnalyse(relative: any, source: string, tmp: any, options: any)
     if (verify) args.push("--verify", VERIFIER);
     const result = await execFile(process.execPath, args, options);
     const bundle = JSON.parse(String(result.stdout));
+    const outcomes = JSON.parse(await fs.readFile(claims + ".outcomes.json", "utf8"));
+    for (const fn of bundle.manifest.functions) {
+      if (typeof outcomes[fn.name] === "boolean") fn.collection = {
+        completion: outcomes[fn.name] ? "complete" : "aborted",
+        quality: "unverified", mode: "normal",
+      };
+    }
     const digest = crypto
       .createHash("sha256")
       .update(source)
@@ -560,4 +567,4 @@ if (process.argv[1] && import.meta.filename === path.resolve(process.argv[1])) {
   });
 }
 
-export { candidateReport };
+export { candidateReport, analyse };

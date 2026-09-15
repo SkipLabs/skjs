@@ -382,7 +382,9 @@ obligations. Located failures print the bounds, named environment and required
 inclusion, and the report points to the entry or expression. Valid weakening is
 allowed. These generic checks still run directly rather than emitting a ground
 graph or serialized per-site evidence; an empty graph bundle no longer skips
-body-claim validation. TypeScript's normalized producer still refuses generics.
+body-claim validation. Both producers support this fragment. The TS exporter
+preserves compiler symbol identity as a function-scoped `{param: "T"}` source
+claim; the neutral consumer checks it against the source binders and bounds.
 This checks variable-copy bodies; generic callbacks, source call-site
 instantiation, higher-rank and parameter-changing forms remain later work.
 

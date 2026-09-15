@@ -1,7 +1,7 @@
 # Producer-independent source sidecars
 
-The sidecar supplies types directly as calculus labels into a type table the
-document carries. It contains no SKJS type atoms, inferred bounds or stored
+The sidecar supplies ground types as calculus labels into a type table the
+document carries, and rigid parameters as function-scoped references. It contains no SKJS type atoms, inferred bounds or stored
 proof results. A human or another producer can write it. This is a bounded
 interface for the existing source fragment, not support for arbitrary graphs,
 TypeScript types, shadowing or recursive source aliases.
@@ -19,6 +19,15 @@ from the AST and sidecar. It checks evidence using the same `checkRequests`
 function and soundness theorems as SKJS-backed source checking.
 `SourceClaimJson.checkJson_checked` ties acceptance of this interface to those
 checks. No SKJS invocation or `--keep-going` is needed.
+
+Generic variable-copy functions use the same sidecar: any `type` or `result`
+may be `{"param":"T"}`, referring to that function's source type parameter.
+The TS exporter matches compiler symbol identities before emitting this name.
+Bounds come from the source, never from producer assertions. Generic claims are
+checked directly by `GenericSource` on both production and consumption; they
+still do not emit graph certificates. Ground functions cannot use rigid claims,
+and rigid claims cannot carry current-content assertions. Within this fragment,
+other types must denote Boolean; no parameter is replaced by its bound.
 
 ## Encoding
 

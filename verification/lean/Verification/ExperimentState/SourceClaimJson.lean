@@ -7,9 +7,30 @@ or the parser's semantic correctness. Saved statuses are not part of the schema.
 namespace Verification.ExperimentState.SourceClaimJson
 open Lean ProgramTyping RequestJson SourceExtraction
 
+/-- A rigid name refers to the enclosing source function's binder. It is never
+interpreted as a ground graph label or replaced with its upper bound. -/
+inductive ClaimType where
+  | labels : List Nat → ClaimType
+  | param : String → ClaimType
+instance : Coe (List Nat) ClaimType := ⟨ClaimType.labels⟩
+instance : ToJson ClaimType where
+  toJson
+    | .labels A => toJson A
+    | .param name => Json.mkObj [("param",toJson name)]
+instance : FromJson ClaimType where
+  fromJson? j := match j with
+    | .arr _ => ClaimType.labels <$> fromJson? j
+    | _ => do
+      let name ← jStr (← jField j "param")
+      if j != Json.mkObj [("param",toJson name)] || name.isEmpty then throw "invalid rigid parameter claim"
+      return .param name
+private def ClaimType.ground : ClaimType → SourceClaims.Candidate
+  | .labels A => .ok A
+  | .param _ => .error "rigid parameter outside generic function"
+
 structure Binding where
   name : String
-  type : List Nat
+  type : ClaimType
   current : Option (List Nat) := none
   deriving ToJson, FromJson
 structure Entry where
@@ -18,14 +39,14 @@ structure Entry where
   deriving ToJson, FromJson
 structure Expression where
   pos : Span
-  type : List Nat
+  type : ClaimType
   current : Option (List Nat) := none
   deriving ToJson, FromJson
 structure Function where
   name : String
   namePos : Span
   params : List Binding
-  result : List Nat
+  result : ClaimType
   entries : List Entry
   expressions : List Expression
   deriving ToJson, FromJson
@@ -38,23 +59,24 @@ structure Document where
 
 
 def Function.normalized (f : Function) : SourceClaims.Function :=
-  ⟨f.name,f.namePos,f.params.map (fun b => (b.name,.ok b.type)),.ok f.result,
-    f.entries.map (fun e => (e.start,e.bindings.map (fun b => (b.name,.ok b.type)))),
-    f.expressions.map (fun e => (e.pos,.ok e.type)),
+  ⟨f.name,f.namePos,f.params.map (fun b => (b.name,b.type.ground)),f.result.ground,
+    f.entries.map (fun e => (e.start,e.bindings.map (fun b => (b.name,b.type.ground)))),
+    f.expressions.map (fun e => (e.pos,e.type.ground)),
     f.entries.map (fun e => (e.start,e.bindings.filterMap fun b => b.current.map (b.name,·))),
     f.expressions.filterMap (fun e => e.current.map (e.pos,·))⟩
 
 /-- The table starts with the primitives and refers only to its own labels. -/
 private def validTable (T : SourceTypes.Table) : Bool :=
   SourceTypes.initial.isPrefixOf T && (T.flatMap id |>.flatMap clauseTypes).all (validTy T.length)
-private def validType (T : SourceTypes.Table) (A : List Nat) : Bool :=
-  validTy T.length A && A == A.mergeSort (· ≤ ·) && A.eraseDups == A
-private def validCurrent (T : SourceTypes.Table) (A : List Nat) (current : Option (List Nat)) : Bool :=
+private def validType (T : SourceTypes.Table) : ClaimType → Bool
+  | .param name => !name.isEmpty
+  | .labels A => validTy T.length A && A == A.mergeSort (· ≤ ·) && A.eraseDups == A
+private def validCurrent (T : SourceTypes.Table) (A : ClaimType) (current : Option (List Nat)) : Bool :=
   match current with
   | none => true
   | some R =>
-    (match PositiveRules.expand (SourceTypes.graph T) A with | [.refs _ []] => true | _ => false) &&
-      validType T R && R.all SourceTypes.isPrimitive
+    (match PositiveRules.expand (SourceTypes.graph T) (A.ground.toOption.getD []) with | [.refs _ []] => true | _ => false) &&
+      validType T (.labels R) && R.all SourceTypes.isPrimitive
 private def validBindings (T : SourceTypes.Table) (bs : List Binding) : Bool :=
   (bs.map (·.name)).eraseDups.length == bs.length &&
     bs.all (fun b => !b.name.isEmpty && validType T b.type && validCurrent T b.type b.current)
@@ -104,15 +126,35 @@ private partial def stmtSites : SourceInput.Stmt → Sites
 def functionSites (f : SourceInput.Fn) : List Nat × List Span :=
   f.body.foldl (fun s st => joinSites s (stmtSites st)) ([],[])
 
+private def genericType (T : SourceTypes.Table) : ClaimType → Except String Json
+  | .param name => pure (Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj [("a",toJson "param"),("name",toJson name)]])])
+  | .labels A => do
+    let rows := PositiveRules.expand (SourceTypes.graph T) A
+    if rows != [.bool] && rows != [.boolLit true,.boolLit false] && rows != [.boolLit false,.boolLit true] then
+      throw "generic claim requires a rigid parameter or boolean"
+    return Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj [("a",toJson "boolean")]])]
+private def Function.genericClaims (T : SourceTypes.Table) (c : Function) : Except String SourceInput.Claims := do
+  if c.entries.any (fun e => e.bindings.any (fun b => b.current.isSome)) ||
+      c.expressions.any (fun e => e.current.isSome) then throw "generic claims cannot assert current contents"
+  return ⟨c.name,c.namePos,← c.params.mapM (fun b => do return (b.name,← genericType T b.type)),
+    ← genericType T c.result,
+    ← c.entries.mapM (fun e => do return (e.start,← e.bindings.mapM (fun b => do return (b.name,← genericType T b.type)))),
+    ← c.expressions.mapM (fun e => do return (e.pos,← genericType T e.type))⟩
+
 def extract (ast claims : Json) (fileKey : String) : Except String (List SourceRequest) := do
   let d ← decode claims
   if d.file != fileKey || (← jStr (← jField ast "file")) != fileKey then throw "source claim file identity mismatch"
   if (← jStr (← jField ast "sourceSha256")) != d.sourceSha256 then throw "source claim fingerprint mismatch"
-  let fs ← SourceInput.decodeAst ast
+  let aliases ← GenericAlias.decodeAliases ast
+  for a in aliases do GenericAlias.admit a
+  let decoded ← SourceInput.decodeAstWithParams ast
+  let decoded ← decoded.mapM fun (f,tps) => do
+    return (← GenericAlias.expandFn aliases f,tps)
+  let fs := decoded.map Prod.fst
   if fs.isEmpty then throw "no source functions to verify"
   if (fs.map (fun f => (f.name,f.namePos))).eraseDups.length != fs.length then throw "duplicate source function identities"
   if fs.length != d.functions.length then throw "function claim count mismatch"
-  fs.mapM fun f => do
+  let rs ← decoded.mapM fun (f,tps) => do
     let c ← match d.functions.find? (fun c => c.name == f.name && c.namePos == f.namePos) with
       | some c => pure c
       | none => throw s!"missing claims for '{f.name}'"
@@ -120,7 +162,11 @@ def extract (ast claims : Json) (fileKey : String) : Except String (List SourceR
     if !c.entries.all (fun e => sites.1.contains e.start) ||
         !c.expressions.all (fun e => sites.2.contains e.pos) then
       throw "claim site is not an entry or expression of the named source function"
-    extractNormalizedFn d.types f c.normalized
+    if !tps.isEmpty then
+      GenericSource.check f tps (← c.genericClaims d.types)
+      return none
+    return some (← extractNormalizedFn d.types f c.normalized)
+  return rs.filterMap id
 
 def checkJson (ast claims : Json) (fileKey : String) (evidence : Json) : Except String Unit := do
   let rs ← extract ast claims fileKey

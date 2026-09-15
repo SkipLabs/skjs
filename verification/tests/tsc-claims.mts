@@ -25,6 +25,10 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tsc-claims-"));
 // Why each file lands where it does. A verified file says tsc's claims are
 // derivable in the calculus; a failing one names what stops them.
 const expected = {
+  "stateful-source/generic-identity": "verified",
+  "stateful-source/generic-extends": "verified",
+  "stateful-source/generic-aliases": "verified",
+  "stateful-source/generic-bodies": "verified",
   // A stateful callback crosses a higher-order parameter boundary.
   "callables/arguments": "verified",
   "callables/cells": "verified",
@@ -112,6 +116,7 @@ for (const [name, want] of Object.entries(expected)) {
         const callee = escaped.body[2].e.body.callee;
         const calleeClaim = escapedClaims.expressions.find((p) => p.pos[0] === callee.pos[0] && p.pos[1] === callee.pos[1]);
         assert.ok(calleeClaim);
+        assert.ok(Array.isArray(calleeClaim.type));
         assert.equal(calleeClaim.type.length, 1);
         assert(!calleeClaim.type.includes(0), "returned closure retains its immutable capture refinement");
         const later = parsed.functions.find((f: any) => f.name === "laterGuardedCallback");
@@ -119,12 +124,14 @@ for (const [name, want] of Object.entries(expected)) {
         const test = later.body[1].init.body.cond.l;
         const testClaim = laterClaims.expressions.find((p) => p.pos[0] === test.pos[0] && p.pos[1] === test.pos[1]);
         assert.ok(testClaim);
+        assert.ok(Array.isArray(testClaim.type));
         assert(testClaim.type.includes(0), "a later outer guard cannot refine an earlier closure capture");
         const absent = parsed.functions.find((f: any) => f.name === "twoAbsenceCapture");
         const absentClaims = normalized.functions.find((f) => f.name === absent.name)!;
         const absentRef = absent.body[2].e.body.cond.l;
         const absentClaim = absentClaims.expressions.find((p) => p.pos[0] === absentRef.pos[0] && p.pos[1] === absentRef.pos[1]);
         assert.ok(absentClaim);
+        assert.ok(Array.isArray(absentClaim.type));
         assert(absentClaim.type.includes(0), "eliminating undefined must retain null");
         assert(!absentClaim.type.includes(3), "returned capture retains the outer undefined exclusion");
         const compound = parsed.functions.find((f: any) => f.name === "compoundAbsenceCapture");
@@ -132,6 +139,7 @@ for (const [name, want] of Object.entries(expected)) {
         const compoundCallee = compound.body[2].e.body.callee;
         const compoundClaim = compoundClaims.expressions.find((p) => p.pos[0] === compoundCallee.pos[0] && p.pos[1] === compoundCallee.pos[1]);
         assert.ok(compoundClaim);
+        assert.ok(Array.isArray(compoundClaim.type));
         assert.equal(compoundClaim.type.length, 1);
         assert(!compoundClaim.type.includes(0) && !compoundClaim.type.includes(3),
           "the compound guard excludes both absence tags before capture");
@@ -140,6 +148,7 @@ for (const [name, want] of Object.entries(expected)) {
         const ambiguousRef = ambiguous.body[1].then[0].e.body.cond.l;
         const ambiguousClaim = ambiguousClaims.expressions.find((p) => p.pos[0] === ambiguousRef.pos[0] && p.pos[1] === ambiguousRef.pos[1]);
         assert.ok(ambiguousClaim);
+        assert.ok(Array.isArray(ambiguousClaim.type));
         assert(ambiguousClaim.type.includes(0), "a successful disjunction must retain the path admitted by flag");
         assert.equal(ambiguousClaim.type.length, 2, "capture retains both null and the callable");
         const probe = parsed.functions.find((f: any) => f.name === "callbackProbeDoesNotNarrow");
@@ -147,6 +156,7 @@ for (const [name, want] of Object.entries(expected)) {
         const probedRef = probe.body[2].then[0].e.cond.l;
         const probedClaim = probeClaims.expressions.find((p) => p.pos[0] === probedRef.pos[0] && p.pos[1] === probedRef.pos[1]);
         assert.ok(probedClaim);
+        assert.ok(Array.isArray(probedClaim.type));
         assert(probedClaim.type.includes(0), "a Boolean probe result does not refine the captured callback");
         const fn = parsed.functions.find((f: any) => f.name === "distinctNullableCallbacks");
         const fc = normalized.functions.find((f) => f.name === fn.name)!;
@@ -154,6 +164,7 @@ for (const [name, want] of Object.entries(expected)) {
         const at = (e: any) => {
           const site = fc.expressions.find((p) => p.pos[0] === e.pos[0] && p.pos[1] === e.pos[1]);
           assert.ok(site);
+        assert.ok(Array.isArray(site.type));
           return site.type;
         };
         assert.equal(fn.body[3].cond.l.name, "second");
@@ -187,6 +198,31 @@ for (const [name, want] of Object.entries(expected)) {
           got = "consumer-failed";
           detail = consumed.stderr;
         }
+      }
+      if (got === "verified" && ["stateful-source/generic-identity","stateful-source/generic-bodies"].includes(name)) {
+        const original: SourceClaims = JSON.parse(fs.readFileSync(claims,"utf8"));
+        const consume = (doc: SourceClaims) => {
+          fs.writeFileSync(claims,JSON.stringify(doc));
+          return run(verifier,["--check-source-claims",ast,claims,file,evidence]);
+        };
+        assert.equal(consume(original).status,0,"independent generic consumer");
+        const mutate = (change: (doc: SourceClaims)=>void) => {
+          const doc=structuredClone(original); change(doc);
+          assert.notEqual(consume(doc).status,0,"saved evidence must reject changed generic claims");
+        };
+        mutate(d=>{d.functions[0].expressions[0].type=[1,2];});
+        mutate(d=>{d.functions[0].entries[0].bindings[0].type={param:"NotInScope"};});
+        mutate(d=>{d.functions[0].expressions.pop();});
+        mutate(d=>{d.functions[0].expressions[0].current=[1];});
+        if(name.endsWith("generic-bodies")) {
+          mutate(d=>{d.functions.find(f=>f.name==="second")!.result={param:"T"};});
+          const weak=structuredClone(original);
+          const chain=weak.functions.find(f=>f.name==="boundChain")!;
+          chain.entries[0].bindings[0].type=[1,2];
+          chain.expressions[0].type=[1,2];
+          assert.equal(consume(weak).status,0,"declared bound chain permits Boolean weakening");
+        }
+        fs.writeFileSync(claims,JSON.stringify(original));
       }
       if (got === "failed")
         detail = (checked.stderr || "").split("\n")[0].replace(/^reject: /, "");

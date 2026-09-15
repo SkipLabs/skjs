@@ -62,3 +62,14 @@ checks both reference and entry claims. No heap-content
 refinement is inferred from these guards.
 Where `tsc` rejects the program outright, its claims describe something it does
 not accept, and the verifier refusing them says nothing about either checker.
+
+Generic identity, annotated copies, distinct rigid parameters and directed bound
+chains are exported with function-scoped parameter references and checked by the
+same generic source checker as SKJS claims. Saved-evidence mutations test that
+false entry/expression claims, unknown binders and missing sites reject.
+
+The corpus configuration uses `moduleDetection: "force"`: separate examples are
+independent modules, so repeated function names do not create cross-file overloads
+or duplicate implementations. TS acceptance is recorded per function separately
+from claim-export availability and proof outcomes. The viewer reads the exported
+`.outcomes.json` metadata; it is not admitted as verification evidence.

@@ -52,7 +52,7 @@ const claimedType = (t: any) =>
     ? t.every((label) => Number.isInteger(label) && label >= 0)
     : Boolean(t) &&
       typeof t === "object" &&
-      (t.unsupported === true ||
+      (typeof t.param === "string" || t.unsupported === true ||
         (typeof t.top === "boolean" && Array.isArray(t.atoms)));
 // There is one editor and it speaks the producer's structural encoding. A
 // candidate in the normalized encoding is lowered here on the way in, interning
@@ -61,7 +61,9 @@ const claimedType = (t: any) =>
 // assertion, `null` for none.
 const point = (types: any, value: any, current: any = null) => ({
   current,
-  ...surface.lower(types, value),
+  ...(value?.param ? {type:value} : value?.top === false && Object.keys(value).length === 2 && value.atoms?.length === 1 &&
+    value.atoms[0].a === "param" && Object.keys(value.atoms[0]).length === 2 ?
+    {type:{param:value.atoms[0].name}} : surface.lower(types, value)),
 });
 const bindings = (types: any, value: any[]) =>
   value.map((b) => ({ name: b.name, ...point(types, b.type, b.current) }));
@@ -182,7 +184,7 @@ function editable(candidate: any, fn: any, item: any) {
   if (candidate.format === "skjs") return value;
   const types = candidate.claims.types;
   const lifted = (labels: any, current: any) => {
-    const type = surface.lift(types, labels, current);
+    const type = labels?.param ? {top:false,atoms:[{a:"param",name:labels.param}]} : surface.lift(types, labels, current);
     return type && surface.roundTrips(type) ? type : labels;
   };
   if (item.kind === "expression")

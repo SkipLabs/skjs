@@ -153,8 +153,8 @@ const outcomeGroup = (f: any) => {
 };
 
 const PRODUCER_MARK: Record<string, string[]> = {
-  complete: ["✓", "SKJS finished checking this function"],
-  aborted: ["✗", "SKJS stopped inside this function"],
+  complete: ["✓", "Producer accepted this function"],
+  aborted: ["✗", "Producer rejected this function"],
 };
 
 // Both outcomes, and whether they disagree. SKJS reads only the source, so its
