@@ -1,6 +1,7 @@
-/** SKJS `--emit-skjs-type-claims` export. Tools that read this document are
- * typed against this shape; an added or removed field is a compile error at
- * those sites. This is SKJS's own encoding, not the independent sidecar. */
+/** The closed subtype and expansion judgments SKJS records in its
+ * `--emit-skjs-type-claims` export. Tools that read these judgments are typed
+ * against this shape; an added or removed field is a compile error at those
+ * sites. This is SKJS's own encoding, not the independent sidecar. */
 import { decodeClaimType, type ClaimType } from "./claim.mts";
 
 export type Span = [start: number, end: number];
