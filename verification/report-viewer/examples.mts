@@ -13,6 +13,7 @@ const stateful = [
   "null-tests",
   "null-guards",
   "numbers",
+  "mutable-locals",
 ].map((name) => `verification/tests/stateful-source/${name}.ts`);
 const callables = ["unions", "factories", "arguments", "cells", "thunks", "arity", "guards", "function-field", "receiver-call"].map((name) => `verification/tests/callables/${name}.ts`);
 const callableBoundaries = ["verification/tests/callables/call-objects.ts"];

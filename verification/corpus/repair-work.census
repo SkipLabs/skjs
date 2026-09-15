@@ -1,16 +1,29 @@
 # census: repair-work
 # 4/89 verified, of 315 functions
 #   skjs-rejected: 226
-#   gate: 84
+#   gate: 80
+#   unproved: 5
 #   verified: 4
-#   unproved: 1
 #
+gate:a `let` needs a type annotation in the fragment	tests/expect-error/captured-read-stability.ts	checkedEvolvingCapture
+gate:a `let` needs a type annotation in the fragment	tests/expect-error/captured-read-stability.ts	checkedMutableObjectReplacement
+gate:a `let` needs a type annotation in the fragment	tests/expect-error/captured-read-stability.ts	evolvedInferredSnapshotStillString
+gate:a `let` needs a type annotation in the fragment	tests/expect-error/captured-read-stability.ts	inferredPrimitiveCompatibleWrite
+gate:a `let` needs a type annotation in the fragment	tests/expect-error/compound-computed-key.ts	annotatedCompoundKey
+gate:a `let` needs a type annotation in the fragment	tests/expect-error/increment-narrowing.ts	computedUpdate
+gate:a `let` needs a type annotation in the fragment	tests/expect-error/logical-compound-computed-key.ts	computedAnd
+gate:a `let` needs a type annotation in the fragment	tests/expect-error/logical-compound-computed-key.ts	computedFallback
+gate:a `let` needs a type annotation in the fragment	tests/expect-error/obj-literal-var-field-growth.ts	retainedReceiver
+gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
+gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofUndefinedFieldAdmitsInitialValue
+gate:a `let` needs an initializer	tests/expect-error/test_ternary_refinements.ts	bothBranchesInitialize
 gate:binary operator outside the fragment (+=)	tests/expect-error/assignment-receivers.ts	temporaryReceiver
 gate:binary operator outside the fragment (??=)	tests/expect-error/logical-compound-flow.ts	localFallback
 gate:binary operator outside the fragment (||=)	tests/expect-error/assignment-receivers.ts	selectedReceiver
 gate:default parameters are outside the fragment	tests/expect-error/arrow-default-param-optional.ts	earlierGenericDefault
 gate:default parameters are outside the fragment	tests/expect-error/arrow-default-param-optional.ts	initializedDefault
 gate:default parameters are outside the fragment	tests/expect-error/captured-read-stability.ts	stablePattern
+gate:destructuring is outside the fragment	tests/expect-error/destructuring.ts	checkedStateAfterDefault
 gate:destructuring is outside the fragment	tests/expect-error/destructuring.ts	inferredFieldDefault
 gate:destructuring parameter	tests/expect-error/arrow-default-param-optional.ts	defaultObject
 gate:destructuring parameter	tests/expect-error/arrow-default-param-optional.ts	extractedGeneric
@@ -35,7 +48,9 @@ gate:expected a single cell field	tests/expect-error/unsound-refinement.ts	stabl
 gate:expected plain single-field allocation	tests/expect-error/accessor-declarations.ts	ordinaryMethods
 gate:expected plain single-field allocation	tests/expect-error/local-vs-local-refinement.ts	inferredReadSingleton
 gate:expected plain value property; no accessors, methods or spreads	tests/expect-error/field-refinement.ts	inferredFieldComparison
+gate:expected plain value property; no accessors, methods or spreads	tests/expect-error/obj-literal-var-field-growth.ts	keyInitializesRhs
 gate:expected required mutable value field	tests/expect-error/captured-read-stability.ts	checkedPropertyResult
+gate:expected required mutable value field	tests/expect-error/destructuring-assignment.ts	keyBeforeDefault
 gate:expected required mutable value field	tests/expect-error/destructuring.ts	checkedNestedPattern
 gate:expected required mutable value field	tests/expect-error/destructuring.ts	identityPatternScalar
 gate:expected required mutable value field	tests/expect-error/index-signatures.ts	constructIndexedOwnField
@@ -55,26 +70,7 @@ gate:expression outside the fragment (PostfixUnaryExpression)	tests/expect-error
 gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/promise-object.ts	testAwaitScalarSnapshot
 gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/unsound-refinement.ts	freshReturnSnapshot
 gate:one binding per `const` in the fragment	tests/expect-error/binding-initialization.ts	earlierDeclarator
-gate:only `const` bindings are in the fragment	tests/expect-error/captured-read-stability.ts	checkedCapturedLocal
-gate:only `const` bindings are in the fragment	tests/expect-error/captured-read-stability.ts	checkedEvolvingCapture
-gate:only `const` bindings are in the fragment	tests/expect-error/captured-read-stability.ts	checkedMutableObjectReplacement
-gate:only `const` bindings are in the fragment	tests/expect-error/captured-read-stability.ts	evolvedInferredSnapshotStillString
-gate:only `const` bindings are in the fragment	tests/expect-error/captured-read-stability.ts	inferredPrimitiveCompatibleWrite
-gate:only `const` bindings are in the fragment	tests/expect-error/captured-read-stability.ts	snapshotCapturedLocal
-gate:only `const` bindings are in the fragment	tests/expect-error/compound-computed-key.ts	annotatedCompoundKey
-gate:only `const` bindings are in the fragment	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
-gate:only `const` bindings are in the fragment	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofUndefinedFieldAdmitsInitialValue
-gate:only `const` bindings are in the fragment	tests/expect-error/destructuring-assignment.ts	keyBeforeDefault
-gate:only `const` bindings are in the fragment	tests/expect-error/destructuring.ts	checkedStateAfterDefault
-gate:only `const` bindings are in the fragment	tests/expect-error/increment-narrowing.ts	computedUpdate
-gate:only `const` bindings are in the fragment	tests/expect-error/logical-compound-computed-key.ts	computedAnd
-gate:only `const` bindings are in the fragment	tests/expect-error/logical-compound-computed-key.ts	computedFallback
-gate:only `const` bindings are in the fragment	tests/expect-error/nullish-coalescing.ts	resultOfFallback
-gate:only `const` bindings are in the fragment	tests/expect-error/obj-literal-var-field-growth.ts	keyInitializesRhs
-gate:only `const` bindings are in the fragment	tests/expect-error/obj-literal-var-field-growth.ts	retainedReceiver
-gate:only `const` bindings are in the fragment	tests/expect-error/test_ternary_refinements.ts	bothBranchesInitialize
 gate:only `extends boolean` or an earlier type parameter is in the fragment	tests/expect-error/freeze-window-stale-cache.ts	frozenNumbers
-gate:only cell.value assignments are supported	tests/expect-error/issue-89-and-or-narrowing.ts	unrelatedFact
 gate:rest parameters are outside the fragment	tests/expect-error/iterator-effects.ts	consumeNumbers
 gate:type outside the fragment (ArrayType)	tests/expect-error/array-isarray-refinement.ts	restArrayEntries
 gate:type outside the fragment (TupleType)	tests/expect-error/destructuring-tuple-rest-union.ts	assignedRest
@@ -315,6 +311,10 @@ skjs-rejected	tests/expect-error/unsound-refinement.ts	stableSpreadMember
 skjs-rejected	tests/expect-error/unsound-refinement.ts	storedLocalAlias
 skjs-rejected	tests/expect-error/unsound-refinement.ts	storedNarrowAlias
 skjs-rejected	tests/expect-error/unsound-refinement.ts	tupleDeclarationDefault
+unproved:reject: assignment to '_', which is not a mutable local	tests/expect-error/issue-89-and-or-narrowing.ts	unrelatedFact
+unproved:reject: closure expression claim at [163,164): evidence search failed	tests/expect-error/captured-read-stability.ts	checkedCapturedLocal
+unproved:reject: current-content predicate must be a finite primitive type	tests/expect-error/nullish-coalescing.ts	resultOfFallback
+unproved:reject: source incoming edge obligation at [198,211): evidence search failed (unsupported 	tests/expect-error/captured-read-stability.ts	snapshotCapturedLocal
 unproved:reject: source type outside the null/undefined/boolean/singleton fragment	tests/expect-error/call-effect-boundaries.ts	clearEffect
 verified	tests/expect-error/captured-read-stability.ts	checkedAnnotatedConstField
 verified	tests/expect-error/captured-read-stability.ts	checkedInferredObject

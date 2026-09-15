@@ -544,12 +544,26 @@ class Gate {
         right: this.expr(node.right),
       };
     if (node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      // Assigning a name is assigning a mutable local. Whether one was
+      // declared is the adapter's to check: it builds the scope, and a name
+      // that is not a mutable local there has no slot to write.
+      if (ts.isIdentifier(node.left)) {
+        if (node.left.text === "undefined")
+          this.fail(node.left, "shadowing undefined is outside the fragment");
+        return {
+          k: "assign",
+          pos: this.span(node),
+          name: node.left.text,
+          namePos: this.span(node.left),
+          rhs: this.expr(node.right),
+        };
+      }
       if (
         !ts.isPropertyAccessExpression(node.left) ||
         node.left.questionDotToken ||
         node.left.name.text !== "value"
       )
-        this.fail(node.left, "only cell.value assignments are supported");
+        this.fail(node.left, "only cell.value and local assignments are supported");
       return {
         k: "write",
         pos: this.span(node),
@@ -757,16 +771,34 @@ class Gate {
 
       case ts.SyntaxKind.VariableStatement: {
         const list = node.declarationList;
-        if (!(list.flags & ts.NodeFlags.Const))
-          this.fail(node, "only `const` bindings are in the fragment");
+        const mutable = !(list.flags & ts.NodeFlags.Const);
+        // `var` is function-scoped and hoisted, so it is not this binding form.
+        if (mutable && !(list.flags & ts.NodeFlags.Let))
+          this.fail(node, "`var` is outside the fragment");
+        const kindWord = mutable ? "let" : "const";
         if (list.declarations.length !== 1)
-          this.fail(node, "one binding per `const` in the fragment");
+          this.fail(node, `one binding per \`${kindWord}\` in the fragment`);
         const d = list.declarations[0];
         if (d.name.kind !== ts.SyntaxKind.Identifier)
           this.fail(d, "destructuring is outside the fragment");
         if (d.name.text === "undefined")
           this.fail(d, "shadowing undefined is outside the fragment");
-        if (!d.initializer) this.fail(d, "a `const` needs an initializer");
+        if (!d.initializer)
+          this.fail(d, `a \`${kindWord}\` needs an initializer`);
+        if (mutable) {
+          // The storage contract is what every later assignment is checked
+          // against, so it is stated rather than inferred from the first value.
+          if (!d.type)
+            this.fail(d, "a `let` needs a type annotation in the fragment");
+          return {
+            k: "let",
+            pos: this.span(node),
+            name: d.name.text,
+            namePos: this.span(d.name),
+            annot: this.typeOf(d.type),
+            init: this.expr(d.initializer),
+          };
+        }
         return {
           k: "const",
           pos: this.span(node),

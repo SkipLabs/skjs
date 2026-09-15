@@ -179,6 +179,7 @@ partial def expandExpr (aliases : List Alias) (e : Fragment.Expr) : Except Strin
     return .logical p a (← expandExpr aliases l) (← expandExpr aliases r)
   | .coalesce p l r =>
     return .coalesce p (← expandExpr aliases l) (← expandExpr aliases r)
+  | .assign p n np r => return .assign p n np (← expandExpr aliases r)
   | .shapeTest p tag equal e =>
     return .shapeTest p tag equal (← expandExpr aliases e)
   | .unitTest p t eq tl l r =>
@@ -220,6 +221,8 @@ partial def expandStmt (aliases : List Alias) (s : Fragment.Stmt) : Except Strin
   | .cst p n annot i =>
     let annot' ← expandOpt aliases annot
     return .cst p n annot' (← expandExpr aliases i)
+  | .mut p n np annot i =>
+    return .mut p n np (← expandType aliases annot) (← expandExpr aliases i)
   | .ite p c t e =>
     let t' ← t.mapM (expandStmt aliases)
     let e' ← match e with

@@ -113,6 +113,11 @@ function walkExpr(e: Expr, out: Sites): void {
       walkExpr(e.receiver, out);
       walkExpr(e.rhs, out);
       return;
+    // The assignment is a site; the name it assigns is a location, not one.
+    case "assign":
+      addExpr(out, e.pos, "assign");
+      walkExpr(e.rhs, out);
+      return;
     case "bindWithReceiver":
     case "callWithReceiver":
       addExpr(out, e.pos, e.k);
@@ -180,6 +185,7 @@ function walkStmt(s: Stmt, out: Sites): void {
       walkExpr(s.e, out);
       return;
     case "const":
+    case "let":
       walkExpr(s.init, out);
       return;
     case "while":
@@ -798,6 +804,13 @@ interface Authoritative {
 }
 type DeclCache = Map<number, Authoritative>;
 
+function isMutableDeclaration(decl: any): boolean {
+  return !!decl &&
+    ts.isVariableDeclaration(decl) &&
+    ts.isVariableDeclarationList(decl.parent) &&
+    (decl.parent.flags & ts.NodeFlags.Const) === 0;
+}
+
 /**
  * The one place every reference to a local binding is priced: a real guard
  * wins outright (it is what the calculus itself would derive); failing that, a
@@ -815,6 +828,14 @@ function bestLabelsForReference(
   declCache: DeclCache | null,
   sf: SourceFile,
 ): number[] {
+  const symbol = checker.getSymbolAtLocation(node);
+  if (symbol && isMutableDeclaration(declarationOf(symbol))) {
+    // A mutable read describes this point's contents. Neither an initializer
+    // cache nor a syntactic guard survives arbitrary intervening writes.
+    return translateType(
+      must(checker.getTypeAtLocation(node), "reference-type"), checker, types,
+    );
+  }
   const guard = truthyGuardLabels(node, checker);
   if (guard) return guard;
   if (declCache) {
@@ -881,9 +902,8 @@ function declarationExprKind(node: any): string {
  * sound ceiling to fall back to. A binding copied one hop from a tainted one
  * (`const b = a;`) is not detected here.
  *
- * A parameter is never authoritative — it names no initializer to disagree
- * with — and neither is a plain `const` TypeScript does not narrow past its
- * own declaration.
+ * Parameters and mutable locals have no fixed initializer-based reading.
+ * Neither does a plain `const` TypeScript does not narrow past its declaration.
  */
 function authoritativeType(
   binding: { decl: any; name: string; sym: Symbol },
@@ -896,7 +916,7 @@ function authoritativeType(
   const hit = cache.get(key);
   if (hit) return hit;
   let result: Authoritative;
-  if (isParameter(binding.decl)) {
+  if (isParameter(binding.decl) || isMutableDeclaration(binding.decl)) {
     result = { labels: null, readTainted: false, declared: null, claimed: null };
   } else {
     const init = binding.decl.initializer;

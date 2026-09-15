@@ -114,6 +114,9 @@ private def exprSites : Fragment.Expr → Sites
   | .var p _ | .lit p _ => ([],[p])
   | .shapeTest p _ _ e | .not p e | .alloc p e | .read p e | .lambda p _ _ e => joinSites ([],[p]) (exprSites e)
   | .withValue p a b _ _ | .write p a b | .unitTest p _ _ _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
+  -- An assignment is an expression site, and the name it assigns is not one:
+  -- the producer claims the value written, not the location.
+  | .assign p _ _ e => joinSites ([],[p]) (exprSites e)
   | .atEnv p e => joinSites ([p.1],[]) (exprSites e)
   | .bindWithReceiver p f receiver args | .callWithReceiver p f receiver args => args.foldl (fun acc a => joinSites acc (exprSites a))
       (joinSites ([],[p]) (joinSites (exprSites f) (exprSites receiver)))
@@ -123,7 +126,7 @@ private def exprSites : Fragment.Expr → Sites
   | .ifBody p result a b c => joinSites (if result.isSome then ([p.1],[]) else ([],[p])) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
 private partial def stmtSites : Fragment.Stmt → Sites
   | .brk p | .cont p => ([p.1],[])
-  | .ret p e | .cst p _ _ e | .effect p e => joinSites ([p.1],[]) (exprSites e)
+  | .ret p e | .cst p _ _ e | .mut p _ _ _ e | .effect p e => joinSites ([p.1],[]) (exprSites e)
   | .loop p c body => joinSites ([p.1],[]) (joinSites (exprSites c)
       (body.foldl (fun s st => joinSites s (stmtSites st)) ([],[])))
   | .ite p c a b =>

@@ -87,22 +87,49 @@ function loopCarried(): boolean {
 ```
 
 SKJS accepts this reduction and it returns null on the second iteration. The
-missing feature is initialized mutable lexical bindings and assignment; loops,
-back edges, primitive claims and local allocation already exist. The target is a
-failed loop-head/back-edge obligation or the stale read it justifies, not an
-unsupported-`let` error. A counterpart that checks the value inside the loop must
-verify, with supplied invariants on every incoming edge and no fixed-point inference.
+target is a failed loop-head/back-edge obligation or the stale read it justifies,
+not an unsupported-`let` error. A counterpart that checks the value inside the
+loop must verify, with supplied invariants on every incoming edge and no
+fixed-point inference.
 
-Before implementing `let`, specify binding identity, storage and initialization
-once, including capture. The existing stable heap contracts provide a cell-based foundation. A captured variable must denote a
-shared location, not the value it held when the closure was created. If uncaptured
-locals use graph slots instead, treat that as a deliberate lowering choice with
-explicit restrictions and a capture story, not an implicit representation change
-when a lambda happens to appear. Explain how point claims about current values
-relate to stable storage contracts, and which observations an assignment or call
-invalidates. Do not confuse discarding stale refinements with preserving the
-storage guarantees of every live alias. Keep shadowing and uninitialized bindings
-gated until their identities and initialization obligations are supported.
+The storage decision is taken and implemented, in
+[SourceExtraction.lean](lean/Verification/ExperimentState/SourceExtraction.lean).
+An initialized, annotated `let` lowers to a private cell using the existing
+heap semantics, one representation whether or not it is captured: the slot
+holds the cell's identity, a source read is a read of the cell, and assignment
+evaluates its right-hand side once, writes it, and yields the saved value, since
+the calculus's write yields null. A closure therefore holds the cell's identity
+and observes later writes, while `const saved = x` holds the value read and is
+untouched by them. The annotation is the stable storage contract; the write
+rule is the check that every assignment meets it, and the initializer is
+checked against it too rather than admitting the declaration at a narrower
+type. Storage is decided by the declaration and carried in an internal scope
+binding, never in a diagnostic descriptor and never from a producer's point
+claim, which describes contents. Every occurrence of the name lowers through
+one resolution, so no site can take the identity for the value: the identity
+escapes the frame only inside a closure's environment, never as something a
+source expression produces.
+
+Ordinary producer claims for a mutable binding describe its current contents,
+and are checked even at entries where the binding is unused. Claims implied
+by the storage invariant become read obligations; narrower Boolean/null/undefined
+claims become heap observations checked on incoming edges. Writes, calls and
+back edges use the existing heap-knowledge rules. A closure's entry claims must
+follow from the stable invariant, not creation-time contents. Immutable snapshots
+can retain a precise value after the original local changes.
+
+Guard shortcuts that refine an immutable slot never apply to a mutable cell's
+identity: the condition tests the actual read. This is conservative for guarded
+contents, and the loop-carried target above still needs further precision work.
+The lowering is trusted code: Lean proves the resulting calculus program sound,
+not that this translation preserves TypeScript execution. Regression tests pair
+source executions with forged claims and independent certificate consumption to
+exercise that boundary; they are not a semantic-preservation theorem.
+
+A `let` without an initializer stays gated:
+after the declaration executes its value is `undefined`, and definite
+assignment must show a suitable write precedes each read, through branches and
+captures. Shadowing stays gated with it.
 
 **4. Captured mutable locals — #599, `L-STALE-READ` and `L-CAPT-EVOLVE`.** After
 that storage decision, port the whole-local variants and

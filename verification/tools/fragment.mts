@@ -13,6 +13,9 @@ export type Expr =
   | { k: "bin"; pos: Span; op: string; l: Expr; r: Expr }
   | { k: "coalesce"; pos: Span; left: Expr; right: Expr }
   | { k: "write"; pos: Span; receiver: Expr; rhs: Expr }
+  /* Assignment to a mutable local. An expression, because JavaScript's is:
+     it yields the value written, which the calculus's write does not. */
+  | { k: "assign"; pos: Span; name: string; namePos: Span; rhs: Expr }
   | { k: "withValue"; pos: Span; fn: Expr; initial: Expr; functionType: ClaimType; bagType: ClaimType }
   | { k: "functionTest"; pos: Span; equal: boolean; e: Expr }
   | { k: "apply"; pos: Span; callee: Expr; args: Expr[] }
@@ -60,6 +63,17 @@ export type Stmt =
       name: string;
       namePos: Span;
       annot: ClaimType | null;
+      init: Expr;
+    }
+  /* A mutable local. `annot` is the storage contract every assignment is
+     checked against, and is required: an initializer's type is what the
+     binding happens to hold first, not what it may hold. */
+  | {
+      k: "let";
+      pos: Span;
+      name: string;
+      namePos: Span;
+      annot: ClaimType;
       init: Expr;
     };
 

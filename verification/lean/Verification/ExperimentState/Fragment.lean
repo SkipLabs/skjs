@@ -126,6 +126,9 @@ inductive Expr where
   | alloc (pos : Span) (e : Expr)
   | read (pos : Span) (e : Expr)
   | write (pos : Span) (receiver rhs : Expr)
+  /-- Assignment to a mutable local, which is an expression: it yields the
+  value written, where the calculus's write yields null. -/
+  | assign (pos : Span) (name : String) (namePos : Span) (rhs : Expr)
   | withValue (pos : Span) (fn initial : Expr) (functionType bagType : Json)
   | lambda (pos : Span) (params : List (String × Json)) (result : Json) (body : Expr)
   | bindWithReceiver (pos : Span) (callee receiver : Expr) (args : List Expr)
@@ -149,11 +152,15 @@ abbrev Expr.app (p : Span) (callee arg : Expr) : Expr := .call p callee [arg]
 def Expr.span : Expr → Span
   | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body => body.span
   | .ifBody p _ _ _ _ | .done p | .unitTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .alloc p _ | .read p _ | .write p _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ | .call p _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .alloc p _ | .read p _ | .write p _ _ | .assign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ | .call p _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ => p
 
 inductive Stmt where
   | ret (pos : Span) (e : Expr)
   | cst (pos : Span) (name : String) (annot : Option Json) (init : Expr)
+  /-- A mutable local. The annotation is the storage contract every assignment
+  is checked against, and is required: what the initializer happens to produce
+  is not what the binding may later hold. -/
+  | mut (pos : Span) (name : String) (namePos : Span) (annot : Json) (init : Expr)
   | ite (pos : Span) (cond : Expr) (thn : List Stmt) (els : Option (List Stmt))
   | brk (pos : Span)
   | cont (pos : Span)
@@ -240,6 +247,10 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     return .call p (← decodeExpr (← jField j "callee"))
       (← (← jArr j "args").mapM decodeExpr)
   | "write" => return .write p (← decodeExpr (← jField j "receiver")) (← decodeExpr (← jField j "rhs"))
+  | "assign" => do
+    CellClaims.fieldsExactly j ["k","pos","name","namePos","rhs"]
+    return .assign p (← jStr (← jField j "name")) (← jSpan j "namePos")
+      (← decodeExpr (← jField j "rhs"))
   | _ => throw s!"unsupported source expression at [{p.1},{p.2}): expression outside the stateful fragment"
 
 partial def decodeStmt (j : Json) : Except String Stmt := do
@@ -251,6 +262,10 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
     let a ← jField j "annot"
     return .cst p (← jStr (← jField j "name")) (if a == .null then none else some a)
       (← decodeExpr (← jField j "init"))
+  | "let" => do
+    CellClaims.fieldsExactly j ["k","pos","name","namePos","annot","init"]
+    return .mut p (← jStr (← jField j "name")) (← jSpan j "namePos")
+      (← jField j "annot") (← decodeExpr (← jField j "init"))
   | "break" => return .brk p
   | "continue" => return .cont p
   | "while" => return .loop p (← decodeExpr (← jField j "cond")) (← (← jArr j "body").mapM decodeStmt)

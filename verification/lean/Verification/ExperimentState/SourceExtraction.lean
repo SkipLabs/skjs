@@ -20,9 +20,48 @@ open Fragment
 
 private def distinct [BEq α] (xs : List α) : Bool := xs.eraseDups.length == xs.length
 
+/-- What a scope slot holds. A value slot holds the value itself. A cell slot
+holds the identity of a private cell this lowering allocated: `contract` is the
+stable storage type every assignment is checked against, and `reference` is the
+slot's own type, interned once when the binding was declared so that building
+an environment stays a pure projection.
+
+Storage comes from the source declaration and from nothing else. A producer's
+claim about `x` describes what the cell currently holds, which is exactly what
+must not become the type of the slot holding its identity. -/
+private inductive Storage where
+  | value
+  | cell (contract : Ty Nat) (reference : Ty Nat)
+  deriving Repr, Inhabited
+
+/-- A scope slot: how the source names it, and what it holds. `Descriptor` is
+explanatory source-map data that cannot affect acceptance, so the storage that
+decides lowering lives here and is projected away before anything is emitted. -/
+private structure ScopeBinding where
+  source : Descriptor
+  storage : Storage := .value
+  deriving Repr
+
+private def held (d : Descriptor) : ScopeBinding := ⟨d, .value⟩
+
+/-- Explanatory projection: what a reader is shown, with the storage dropped. -/
+private def sources (scope : List ScopeBinding) : List Descriptor := scope.map (·.source)
+
 /-- Name lookup is unchanged: descriptors carry the same names in the same
 order, and an unnamed one can never match a source identifier. -/
-private def names (scope : List Descriptor) : List String := scope.map (·.name)
+private def names (scope : List ScopeBinding) : List String := scope.map (·.source.name)
+
+/-- The one place a source name becomes a slot, so no site can decide for
+itself whether a name denotes a value or a location. -/
+private def resolve (scope : List ScopeBinding) (name : String) : Option (Nat × Storage) := do
+  let i ← (names scope).idxOf? name
+  let b ← scope[i]?
+  return (i, b.storage)
+
+/-- Only immutable value slots may be substituted by a guard's saved value. -/
+private def valueSlot (scope : List ScopeBinding) (name : String) : Option Nat := do
+  let (i,.value) ← resolve scope name | none
+  return i
 
 private structure Built where
   /-- The graph under construction: the claims' table, grown by annotations. -/
@@ -45,22 +84,26 @@ private def lower (m : SourceTypes.Lowering α) : Compiler α := do
   set { s with types := T }
   return a
 
-private def envCore (bound : Nat) (fc : SourceClaims.Function) (pos : Nat) (scope : List Descriptor) :
+private def envCore (bound : Nat) (fc : SourceClaims.Function) (pos : Nat) (scope : List ScopeBinding) :
     Except String (List (Ty Nat)) := do
   let vars ← match fc.envs.lookup pos with
     | some vars => pure vars
     | none => throw s!"missing statement environment at {pos}"
   if !distinct (vars.map Prod.fst) then throw s!"duplicate environment binding at {pos}"
-  scope.mapM fun d => do
-    let name := d.name
-    match vars.lookup name with
-    | some t => (SourceClaims.resolve bound t).mapError fun msg =>
-        if msg == "type claim unavailable from producer" then
-          s!"unavailable claimed binding '{name}' at {pos}"
-        else msg
-    | none => throw s!"missing claimed binding '{name}' at {pos}"
+  scope.mapM fun b => do
+    -- The slot holds the cell's identity. What the producer says `x` is now
+    -- describes the contents, and is an observation, not this slot's type.
+    let name := b.source.name
+    let some t := vars.lookup name | throw s!"missing claimed binding '{name}' at {pos}"
+    let A ← (SourceClaims.resolve bound t).mapError fun msg =>
+      if msg == "type claim unavailable from producer" then
+        s!"unavailable claimed binding '{name}' at {pos}"
+      else msg
+    match b.storage with
+    | .value => return A
+    | .cell _ reference => return reference
 
-private def env (fc : SourceClaims.Function) (pos : Nat) (scope : List Descriptor) :
+private def env (fc : SourceClaims.Function) (pos : Nat) (scope : List ScopeBinding) :
     Compiler (List (Ty Nat)) := do
   (envCore (← table).length fc pos scope).mapError fun msg =>
     s!"source environment obligation at {pos}: {msg}"
@@ -93,20 +136,20 @@ context this cannot name is an extraction bug, not a slot number for a reader,
 so it fails here rather than reaching a message. -/
 private def emitAt (pos : Span) (t : Tm) (k : Continuation) (Γ : List (Ty Nat)) (A : Ty Nat)
     (role : String := "node-typing") (environmentStart : Option Nat := none)
-    (scope : List Descriptor := []) : Compiler Target := do
+    (scope : List ScopeBinding := []) : Compiler Target := do
   let target ← emit t k Γ A
   if scope.length != Γ.length then
     throw s!"internal extraction error: source map covers {scope.length} of {Γ.length} bindings at {pos.1}"
-  if let some d := scope.find? (!·.describes) then
-    throw s!"internal extraction error: undescribed binding '{d.name}' at {pos.1}"
+  if let some b := scope.find? (!·.source.describes) then
+    throw s!"internal extraction error: undescribed binding '{b.source.name}' at {pos.1}"
   modify fun s =>
-    { s with sourceMap := s.sourceMap.set target.label (some ⟨pos,role,environmentStart,scope⟩) }
+    { s with sourceMap := s.sourceMap.set target.label (some ⟨pos,role,environmentStart,sources scope⟩) }
   return target
 
 /-- A checkpoint is an actual no-op graph node. Every incoming edge must
 justify its supplied current-heap assertion, including backedges. -/
 private def checkpoint (pos : Span) (Γ : List (Ty Nat)) (facts : HeapFacts.Facts)
-    (next : Target) (entry : Option Nat := none) (scope : List Descriptor := []) :
+    (next : Target) (entry : Option Nat := none) (scope : List ScopeBinding := []) :
     Compiler Target := do
   if facts.isEmpty then return next
   let t ← emitAt pos .nul (.effect next) Γ [0] "heap-observation" entry scope
@@ -120,24 +163,15 @@ private def contents (A : Ty Nat) : Compiler (List HeapFacts.Literal) := do
     | throw "current-content predicate must be a finite primitive type"
   return R
 
-private def entryFacts (fc : SourceClaims.Function) (pos : Nat) (scope : List Descriptor) :
-    Compiler HeapFacts.Facts := do
-  let cs := (fc.entryCurrent.lookup pos).getD []
-  scope.zipIdx.foldlM (fun facts (d,i) => do
-    let name := d.name
-    match cs.lookup name with
-    | none => return facts
-    | some A => return facts ++ [⟨i,← contents A⟩]) []
-
 /-- Record a source obligation with its source map, under the same invariant as
 `emitAt`: every context binding must be describable in the words of the source. -/
 private def obligation (pos : Span) (j : ProgramCertificates.Sequent Nat) (plan : Option DirectProof.Plan)
-    (role : String) (scope : List Descriptor) : Compiler Unit := do
+    (role : String) (scope : List ScopeBinding) : Compiler Unit := do
   if scope.length != j.context.length then
     throw s!"internal extraction error: source map covers {scope.length} of {j.context.length} bindings at {pos.1}"
-  if scope.any (!·.describes) then
+  if scope.any (!·.source.describes) then
     throw s!"internal extraction error: undescribed binding at {pos.1}"
-  modify fun s => { s with obligations := s.obligations ++ [⟨pos,j,plan,role,scope⟩] }
+  modify fun s => { s with obligations := s.obligations ++ [⟨pos,j,plan,role,sources scope⟩] }
 
 /-- Ordinary lambda proofs cannot retain transient heap observations across
 calls. Require their declared storage contract to imply such an observation
@@ -152,14 +186,37 @@ private def persistentObservation (d : Descriptor) (pos : Span) (A R : Ty Nat) :
     pure W
   let W := invariants.flatten.eraseDups
   let plan := DirectProof.var [W] 0 R
-  obligation pos plan.goal (some plan) "heap-observation" [d]
+  obligation pos plan.goal (some plan) "heap-observation" [held d]
+
+/-- Mutable entry types are assertions about contents, not reference types.
+Finite primitive assertions are checked on every incoming edge. Other claims
+must follow from the stable storage contract; no claim is silently dropped. -/
+private def entryFacts (fc : SourceClaims.Function) (pos : Nat) (scope : List ScopeBinding) :
+    Compiler HeapFacts.Facts := do
+  let cs := (fc.entryCurrent.lookup pos).getD []
+  let vars := (fc.envs.lookup pos).getD []
+  scope.zipIdx.foldlM (fun facts (b,i) => do
+    let mut facts := facts
+    if let .cell contract reference := b.storage then
+      let some candidate := vars.lookup b.source.name
+        | throw s!"missing claimed binding '{b.source.name}' at {pos}"
+      let A ← SourceClaims.resolve (← table).length candidate
+      if contract.all A.contains then
+        persistentObservation b.source (pos,pos+1) reference A
+      else
+        match HeapKnowledge.literals (SourceTypes.graph (← table)) A with
+        | some literals => facts := facts ++ [⟨i,literals⟩]
+        | none => persistentObservation b.source (pos,pos+1) reference A
+    match cs.lookup b.source.name with
+    | none => return facts
+    | some A => return facts ++ [⟨i,← contents A⟩]) []
 
 /-- A dot cannot occur in a source binding identifier, so these names designate
 administrative read snapshots without colliding with source variables. -/
 private def snapshotName (name : String) : String := name ++ ".value"
 private def isSnapshot (name : String) : Bool := name.endsWith ".value"
 
-private def observed (scope : List Descriptor) (Γ : List (Ty Nat))
+private def observed (scope : List ScopeBinding) (Γ : List (Ty Nat))
     (name : String) (d : Descriptor) (pos : Span) (A R : Ty Nat) : Compiler Unit := do
   if let some i := (names scope).idxOf? (snapshotName name) then
     let _ ← contents R
@@ -176,7 +233,7 @@ private def readOnly : Fragment.Expr → Bool
   | .unitTest _ _ _ _ a b | .logical _ _ a b | .coalesce _ a b
   | .seqBody _ a b | .letBody _ _ _ a b => readOnly a && readOnly b
   | .ifBody _ _ c t e => readOnly c && readOnly t && readOnly e
-  | .alloc .. | .write .. | .lambda .. | .withValue .. | .bindWithReceiver ..
+  | .alloc .. | .write .. | .assign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
   | .callWithReceiver .. | .call .. => false
 
 /-- Save the plain read in a null/undefined comparison. The other operand is
@@ -191,15 +248,25 @@ private def readGuard : Fragment.Expr → Option (String × Fragment.Expr × Fra
 
 /-- Statement claims name source bindings only. Preserve anonymous evaluation
 slots at their already checked types while projecting the supplied named slots. -/
-private def closureEnv (fc : SourceClaims.Function) (pos : Nat) (scope : List Descriptor)
+private def closureEnv (fc : SourceClaims.Function) (pos : Nat) (scope : List ScopeBinding)
     (Γ : List (Ty Nat)) : Compiler (List (Ty Nat)) := do
-  let named := (names scope).filter (fun name => name != "" && !isSnapshot name)
-  let H ← env fc pos (named.map (fun n => ⟨n,none⟩))
-  for (name,A) in named.zip H do
+  -- The closure's environment keeps each captured binding's storage: a
+  -- captured mutable local is the cell's identity, and rebuilding it from its
+  -- name would type the slot by what the cell currently holds.
+  let captured := scope.filter (fun b => b.source.name != "" && !isSnapshot b.source.name)
+  let named := captured.map (·.source.name)
+  let H ← env fc pos (captured.map fun b => { b with source := ⟨b.source.name,none⟩ })
+  for (b,A) in captured.zip H do
+    let name := b.source.name
+    if let .cell _ reference := b.storage then
+      let some candidate := ((fc.envs.lookup pos).getD []).lookup name
+        | throw s!"missing claimed binding '{name}' at {pos}"
+      let R ← SourceClaims.resolve (← table).length candidate
+      persistentObservation b.source (pos,pos+1) reference R
     if let some R := ((fc.entryCurrent.lookup pos).getD []).lookup name then
       observed scope Γ name ⟨name,none⟩ (pos,pos+1) A R
-  (scope.zipIdx).mapM fun (d,i) => do
-    let name := d.name
+  (scope.zipIdx).mapM fun (b,i) => do
+    let name := b.source.name
     let A := if name == "" || isSnapshot name then Γ[i]? else H[named.idxOf name]?
     match A with
     | some A => pure A
@@ -207,20 +274,20 @@ private def closureEnv (fc : SourceClaims.Function) (pos : Nat) (scope : List De
 
 /-- Negations of an immutable variable retain its identity and reverse the
 branch polarity. Arbitrary expressions deliberately carry no alias refinement. -/
-private def conditionVariable (scope : List Descriptor) : Fragment.Expr → Option (Nat × Bool)
-  | .var _ name => ((names scope).idxOf? name).map (·, false)
+private def conditionVariable (scope : List ScopeBinding) : Fragment.Expr → Option (Nat × Bool)
+  | .var _ name => (valueSlot scope name).map (·, false)
   | .not _ e => (conditionVariable scope e).map fun (i, reversed) => (i, !reversed)
   | _ => none
 
 /-- Only a syntactic immutable variable retains an alias to the observed value.
 Reads and calls deliberately do not qualify, even if their types look stable. -/
-private def tagConditionVariable (scope : List Descriptor) : Fragment.Expr → Option (Nat × Tag × Bool)
+private def tagConditionVariable (scope : List ScopeBinding) : Fragment.Expr → Option (Nat × Tag × Bool)
   | .not _ e => (tagConditionVariable scope e).map fun (i, tag, equal) => (i, tag, !equal)
   | .shapeTest _ tag equal (.var _ name) =>
-    ((names scope).idxOf? name).map (·, tag, equal)
+    (valueSlot scope name).map (·, tag, equal)
   | .unitTest _ tag equal testLeft left right =>
     match (if testLeft then left else right) with
-    | .var _ name => ((names scope).idxOf? name).map (·, tag, equal)
+    | .var _ name => (valueSlot scope name).map (·, tag, equal)
     | _ => none
   | _ => none
 
@@ -246,9 +313,9 @@ private def tagTestPlan (G : PositiveGraphs.NormalGraph Nat) (tag : Tag) (Γ : L
 /-- Shared conditional proof construction for statement branches, ternaries and
 short-circuit operators. Branch builders retain their own source claims; a
 logical operator's constant arm is administrative and needs no invented claim. -/
-private def conditionalPlan (scope : List Descriptor) (H : List (Ty Nat)) (A : Ty Nat)
+private def conditionalPlan (scope : List ScopeBinding) (H : List (Ty Nat)) (A : Ty Nat)
     (cond : Fragment.Expr) (c : DirectProof.Plan)
-    (yesBranch noBranch : List Descriptor → List (Ty Nat) → Compiler DirectProof.Plan) :
+    (yesBranch noBranch : List ScopeBinding → List (Ty Nat) → Compiler DirectProof.Plan) :
     Compiler DirectProof.Plan := do
   let G := SourceTypes.graph (← table)
   if let some (i, tag, equal) := tagConditionVariable scope cond then
@@ -258,8 +325,8 @@ private def conditionalPlan (scope : List Descriptor) (H : List (Ty Nat)) (A : T
     let tested := i+1
     let T := K.set tested (BranchRefinement.tagSlice G C tag true)
     let F := K.set tested (BranchRefinement.tagSlice G C tag false)
-    let t ← yesBranch (⟨"",some cond.span⟩::scope) (if equal then T else F)
-    let e ← noBranch (⟨"",some cond.span⟩::scope) (if equal then F else T)
+    let t ← yesBranch (held ⟨"",some cond.span⟩ :: scope) (if equal then T else F)
+    let e ← noBranch (held ⟨"",some cond.span⟩ :: scope) (if equal then F else T)
     let yes := if equal then t else e
     let no := if equal then e else t
     let term := Tm.ite (.test tag (.var tested)) yes.term no.term
@@ -309,7 +376,7 @@ private def allocationChild : DirectProof.Plan → Option DirectProof.Plan
 /-- Build compositional proofs for lambda bodies and source ternaries without
 losing their individual claims. Requirements use the lexical context at the occurrence; synthetic let
 slots are introduced only after the operand supplying their type is checked. -/
-private partial def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (Γ : List (Ty Nat))
+private partial def closureExpr (fc : SourceClaims.Function) (scope : List ScopeBinding) (Γ : List (Ty Nat))
     (e : Fragment.Expr) : Compiler DirectProof.Plan := do
   let A ← closureType fc e
   let G := SourceTypes.graph (← table)
@@ -319,9 +386,22 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Descr
     | _ => persistentObservation ⟨"",some e.span⟩ e.span A R
   let p ← match e with
   | .var _ name =>
-    match (names scope).idxOf? name with
-    | some i => pure (DirectProof.var Γ i A)
+    match resolve scope name with
+    | some (i, .value) => pure (DirectProof.var Γ i A)
+    | some (i, .cell contract reference) =>
+      pure (DirectProof.node Γ (.read (.var i)) contract .read [DirectProof.var Γ i reference])
     | none => throw s!"unbound or uninitialized closure variable '{name}'"
+  | .assign _ name _ rhs => do
+    let some (i, .cell contract reference) := resolve scope name
+      | throw s!"assignment to '{name}', which is not a mutable local"
+    let a ← closureExpr fc scope Γ rhs
+    let C := a.type
+    let H := C::Γ
+    let term := Tm.write (.var (i+1)) (.var 0)
+    let write := DirectProof.node H term [0] .write
+      [DirectProof.var H (i+1) reference, DirectProof.cast H contract (DirectProof.var H 0 C)]
+    let done := DirectProof.letE H write (DirectProof.var ([0]::H) 1 C)
+    pure (DirectProof.letE Γ a done)
   | .lit _ v => do
     let t ← SourceTypes.value v
     let (B,r) ← match t with
@@ -342,13 +422,13 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Descr
   | .unitTest _ tag equal testLeft left right => do
     let leftSpan := left.span
     let left ← closureExpr fc scope Γ left
-    let right ← closureExpr fc (⟨"",some leftSpan⟩::scope) (left.type::Γ) right
+    let right ← closureExpr fc (held ⟨"",some leftSpan⟩ :: scope) (left.type::Γ) right
     let H := right.type::left.type::Γ
     let result ← tagTestPlan G tag H (if testLeft then 1 else 0) equal A
     pure (DirectProof.letE Γ left (DirectProof.letE (left.type::Γ) right result))
   | .logical _ andOp left right => do
     let l ← closureExpr fc scope Γ left
-    let constant := fun (_ : List Descriptor) H => pure
+    let constant := fun (_ : List ScopeBinding) H => pure
       (if andOp then DirectProof.node H .fls [2] .flsLit
        else DirectProof.node H .tru [1] .truLit)
     let rhs := fun ds types => closureExpr fc ds types right
@@ -361,9 +441,11 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Descr
     -- A named immutable left operand is identical to the saved value. Move its
     -- name to that slot for the fallback; no mutable read is given an alias.
     let rightScope := match left with
-      | .var _ name => ⟨name,some left.span⟩ ::
-          scope.map (fun d => if d.name == name then ⟨"",some left.span⟩ else d)
-      | _ => ⟨"",some left.span⟩ :: scope
+      | .var _ name =>
+        if (valueSlot scope name).isSome then held ⟨name,some left.span⟩ ::
+          scope.map (fun b => if b.source.name == name then held ⟨"",some left.span⟩ else b)
+        else held ⟨"",some left.span⟩ :: scope
+      | _ => held ⟨"",some left.span⟩ :: scope
     let r ← closureExpr fc rightScope H right
     let term := Tm.ite (.test .isNullish (.var 0)) r.term (.var 0)
     let children := l.type.map fun label =>
@@ -408,11 +490,11 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Descr
         (.read (.var 0)) R (.unionVar 0) children))
   | .bindWithReceiver _ f receiver args => do
     let callee ← closureExpr fc scope Γ f
-    let receiverPlan ← closureExpr fc (⟨"",some f.span⟩::scope) (callee.type::Γ) receiver
-    let startScope := ⟨"",some receiver.span⟩::⟨"",some f.span⟩::scope
+    let receiverPlan ← closureExpr fc (held ⟨"",some f.span⟩ :: scope) (callee.type::Γ) receiver
+    let startScope := held ⟨"",some receiver.span⟩::held ⟨"",some f.span⟩ :: scope
     let (plans,K,_) ← args.attach.foldlM (fun (ps,H,ds) ⟨arg,_⟩ => do
       let p ← closureExpr fc ds H arg
-      pure (ps ++ [p],p.type::H,⟨"",some arg.span⟩::ds))
+      pure (ps ++ [p],p.type::H,held ⟨"",some arg.span⟩ :: ds))
       ([callee,receiverPlan],receiverPlan.type::callee.type::Γ,startScope)
     let G := SourceTypes.graph (← table)
     let [.arrs [(Ds,R)]] := PositiveRules.expand G A
@@ -437,9 +519,9 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Descr
   | .callWithReceiver _ f receiver args => do
     let callee ← closureExpr fc scope Γ f
     let K := callee.type :: Γ
-    let receiverPlan ← closureExpr fc (⟨"",some f.span⟩::scope) K receiver
+    let receiverPlan ← closureExpr fc (held ⟨"",some f.span⟩ :: scope) K receiver
     let H := receiverPlan.type :: K
-    let ds := ⟨"",some receiver.span⟩::⟨"",some f.span⟩::scope
+    let ds := held ⟨"",some receiver.span⟩::held ⟨"",some f.span⟩ :: scope
     let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr fc ds H a
     let L ← match PositiveRules.expand G callee.type with
       | [.arrs L] | [.callable _ _ L] => pure L
@@ -467,8 +549,8 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Descr
       -- Save callee first, then each actual, before splitting its immutable slot.
       let (_,_,actuals) ← args.attach.foldlM (fun (ctx,sc,ps) ⟨a,_⟩ => do
         let p ← closureExpr fc sc ctx a
-        pure (p.type::ctx,⟨"",some a.span⟩::sc,ps ++ [p]))
-        (callee.type::Γ,⟨"",some f.span⟩::scope,[])
+        pure (p.type::ctx,held ⟨"",some a.span⟩::sc,ps ++ [p]))
+        (callee.type::Γ,held ⟨"",some f.span⟩ :: scope,[])
       let As := actuals.map (·.type)
       let alternatives ← callee.type.mapM fun label => do
         let [.arrs L] := PositiveRules.expand G [label]
@@ -497,7 +579,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Descr
           | throw "every write alternative must name a cell contract"
         pure (label,D)
     let r ← closureExpr fc scope Γ receiver
-    let a ← closureExpr fc (⟨"",some receiver.span⟩::scope) (B::Γ) rhs
+    let a ← closureExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) rhs
     let C := a.type
     let H := C::B::Γ
     let term := Tm.write (.var 1) (.var 0)
@@ -515,7 +597,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Descr
   | .done _ => pure (DirectProof.node Γ .nul [0] .nul)
   | .seqBody _ init body => do
     let a ← closureExpr fc scope Γ init
-    let b ← closureExpr fc (⟨"",some init.span⟩::scope) (a.type::Γ) body
+    let b ← closureExpr fc (held ⟨"",some init.span⟩ :: scope) (a.type::Γ) body
     pure (DirectProof.letE Γ a b)
   | .letBody pos name annot init body => do
     if name == "undefined" then throw "shadowing undefined is outside the fragment"
@@ -531,7 +613,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Descr
     let a ← closureExpr fc scope H init
     let annotation := DirectProof.cast H B a
     obligation init.span annotation.goal (some annotation) "binding-annotation" scope
-    let b ← closureExpr fc (⟨name,some init.span⟩::scope) (I::H) body
+    let b ← closureExpr fc (held ⟨name,some init.span⟩::scope) (I::H) body
     pure (DirectProof.letE H a b)
   | .ifBody pos result cond thn els => do
     let H ← if result.isSome then closureEnv fc pos.1 scope Γ else pure Γ
@@ -539,9 +621,9 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Descr
       for (B,i) in H.zipIdx do
         obligation pos ⟨Γ,.var i,B⟩ (some (DirectProof.var Γ i B)) "closure-entry" scope
     if let some (name, read, tested) := readGuard cond then
-      if readOnly thn && readOnly els then
+      if (valueSlot scope name).isSome && readOnly thn && readOnly els then
         let saved ← closureExpr fc scope H read
-        let ds := ⟨snapshotName name,some read.span⟩ :: scope
+        let ds := held ⟨snapshotName name,some read.span⟩ :: scope
         let K := saved.type :: H
         let c ← closureExpr fc ds K cond
         let body ← conditionalPlan ds K A tested c
@@ -587,7 +669,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Descr
       throw "shadowing or duplicate closure parameter is outside the fragment"
     let Ds ← params.mapM fun p => lower (Fragment.callableType p.2)
     let R ← lower (Fragment.callableType ret)
-    let inner := (paramNames.map fun name => ⟨name,some pos⟩) ++ scope
+    let inner := (paramNames.map fun name => held ⟨name,some pos⟩) ++ scope
     let [.arrs L] := PositiveRules.expand G A | throw "closure claim must name a source arrow"
     if L.isEmpty || !L.all (fun (Di,_) => Di.length == Ds.length && (Di.zip Ds).all (fun (D,A) => D.all A.contains)) then
       throw "closure signature claim is outside the source annotation"
@@ -611,18 +693,35 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Descr
 /-- Each expression leaves its result in slot zero and preserves the original
 slots after it. Anonymous temporary slots cannot be named by source identifiers.
 Mappings discard only the temporaries introduced by this expression. -/
-private def compileExpr (fc : SourceClaims.Function) (scope : List Descriptor) (Γ : List (Ty Nat))
+private def compileExpr (fc : SourceClaims.Function) (scope : List ScopeBinding) (Γ : List (Ty Nat))
     (e : Fragment.Expr) (next : Target) : Compiler Target := do
   let A ← exprType fc e
   let next ← match fc.exprCurrent.lookup e.span with
     | none => pure next
-    | some R => checkpoint e.span (A::Γ) [⟨0,← contents R⟩] next (scope := ⟨"",some e.span⟩::scope)
+    | some R => checkpoint e.span (A::Γ) [⟨0,← contents R⟩] next (scope := held ⟨"",some e.span⟩ :: scope)
   match he : e with
   | .var _ name =>
-    let i ← match (names scope).idxOf? name with
-      | some i => pure i
-      | none => throw s!"unbound or uninitialized source variable '{name}'"
-    emitAt e.span (.var i) (.bind next) Γ A (scope := scope)
+    match resolve scope name with
+    | some (i, .value) => emitAt e.span (.var i) (.bind next) Γ A (scope := scope)
+    -- A source read of a mutable local returns the cell's contents; the
+    -- identity in the slot is never the value of a source expression.
+    | some (i, .cell ..) => emitAt e.span (.read (.var i)) (.bind next) Γ A (scope := scope)
+    | none => throw s!"unbound or uninitialized source variable '{name}'"
+  | .assign _ name _ rhs =>
+    let some (i, .cell ..) := resolve scope name
+      | throw s!"assignment to '{name}', which is not a mutable local"
+    let C ← exprType fc rhs
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun j => if j == 0 then 0 else j+1))⟩
+    -- As for a cell write: JavaScript's assignment yields the value written,
+    -- the calculus's write yields null, so the value is saved and returned.
+    -- The write itself is the storage-contract check: it types only when the
+    -- value meets the contract the cell was declared with.
+    let effects := held ⟨"",some rhs.span⟩ :: scope
+    let result ← emitAt e.span (.var 0) (.bind drop) (C::Γ) A (scope := effects)
+    let write ← emitAt e.span (.write (.var (i+1)) (.var 0)) (.effect result) (C::Γ) [0]
+      "storage-contract" (scope := effects)
+    compileExpr fc scope Γ rhs write
   | .lit _ v => emitAt e.span (← SourceTypes.value v) (.bind next) Γ A (scope := scope)
   | .alloc _ a | .read _ a | .not _ a =>
     let B ← exprType fc a
@@ -633,7 +732,7 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+1))⟩
     let node ← emitAt e.span (op (.var 0)) (.bind drop) (B::Γ) A
-      (scope := ⟨"",some a.span⟩::scope)
+      (scope := held ⟨"",some a.span⟩ :: scope)
     compileExpr fc scope Γ a node
   | .atEnv .. | .letBody .. | .ifBody _ (some _) .. | .done .. | .seqBody .. => throw "statement environment wrapper is only supported inside a closure"
   | .bindWithReceiver .. | .withValue .. | .lambda .. | .ifBody _ none .. | .coalesce .. | .logical .. =>
@@ -644,7 +743,7 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+1))⟩
     let test ← emitAt e.span (tagTestTerm tag equal 0) (.bind drop) (B::Γ) A
-      (scope := ⟨"",some operand.span⟩::scope)
+      (scope := held ⟨"",some operand.span⟩ :: scope)
     compileExpr fc scope Γ operand test
   | .unitTest _ tag equal testLeft left right =>
     let B ← exprType fc left
@@ -652,8 +751,8 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+2))⟩
     let test ← emitAt e.span (tagTestTerm tag equal (if testLeft then 1 else 0)) (.bind drop) (C::B::Γ) A
-      (scope := ⟨"",some right.span⟩::⟨"",some left.span⟩::scope)
-    let right ← compileExpr fc (⟨"",some left.span⟩::scope) (B::Γ) right test
+      (scope := held ⟨"",some right.span⟩::held ⟨"",some left.span⟩ :: scope)
+    let right ← compileExpr fc (held ⟨"",some left.span⟩ :: scope) (B::Γ) right test
     compileExpr fc scope Γ left right
   | .call _ callee args | .callWithReceiver _ callee _ args =>
     let operands := match e with
@@ -662,14 +761,14 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     let B ← exprType fc callee
     let As ← operands.mapM (exprType fc)
     let n := As.length
-    let temporaries := (operands.map fun a => ⟨"",some a.span⟩).reverse ++ [⟨"",some callee.span⟩]
+    let temporaries := (operands.map fun a => held ⟨"",some a.span⟩).reverse ++ [held ⟨"",some callee.span⟩]
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+n+1))⟩
     let call ← emitAt e.span (.call (.var n) ((List.range args.length).map fun i => .var (args.length-1-i)))
       (.bind drop) (As.reverse ++ B::Γ) A (scope := temporaries ++ scope)
     let right ← operands.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) =>
       compileExpr fc
-        ((operands.take i |>.map fun a => ⟨"",some a.span⟩).reverse ++ ⟨"",some callee.span⟩::scope)
+        ((operands.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++ held ⟨"",some callee.span⟩ :: scope)
         ((As.take i).reverse ++ B::Γ) arg next) call
     compileExpr fc scope Γ callee right
   | .write _ receiver rhs =>
@@ -678,11 +777,11 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+2))⟩
     -- JS assignment returns its evaluated RHS; the calculus write returns null.
-    let effects := ⟨"",some rhs.span⟩::⟨"",some receiver.span⟩::scope
+    let effects := held ⟨"",some rhs.span⟩::held ⟨"",some receiver.span⟩ :: scope
     let result ← emitAt e.span (.var 0) (.bind drop) (C::B::Γ) A (scope := effects)
     let write ← emitAt e.span (.write (.var 1) (.var 0)) (.effect result) (C::B::Γ) [0]
       (scope := effects)
-    let right ← compileExpr fc (⟨"",some receiver.span⟩::scope) (B::Γ) rhs write
+    let right ← compileExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) rhs write
     compileExpr fc scope Γ receiver right
 termination_by e
 decreasing_by
@@ -699,16 +798,16 @@ is gated until the export can identify hidden bindings independently. With no
 continuation the body completes rather than returns, producing `undefined`; that
 is emitted as an exit claiming the declared result, attributed to the function
 because an empty body has no statement to point at. -/
-private def leave (pos : Span) (R : Ty Nat) (scope : List Descriptor)
-    (tail : Option (Target × List Descriptor)) : Compiler Target := do
+private def leave (pos : Span) (R : Ty Nat) (scope : List ScopeBinding)
+    (tail : Option (Target × List ScopeBinding)) : Compiler Target := do
   match tail with
   | none =>
     let exit ← emitAt pos .undef .ret [] R "completion"
     return ⟨exit.label, some []⟩
   | some (target, outer) =>
-    let slots ← outer.mapM fun d => match (names scope).idxOf? d.name with
+    let slots ← outer.mapM fun b => match (names scope).idxOf? b.source.name with
       | some i => pure i
-      | none => throw s!"internal extraction error: lost outer binding '{d.name}'"
+      | none => throw s!"internal extraction error: lost outer binding '{b.source.name}'"
     return ⟨target.label, some slots⟩
 
 /-- Branch binding pushes the actual tested value. For a source variable test,
@@ -721,7 +820,7 @@ private def branchMapping (width : Nat) (tested : Option Nat) (target : Target) 
 /-- Keep a pre-existing singleton fact rather than replacing it with the
 branch witness. In particular, an impossible opposite edge must not force a
 contradictory replacement of an otherwise valid immutable binding. -/
-private def testedSlot (scope : List Descriptor) (Γ : List (Ty Nat)) (cond : Fragment.Expr) : Option Nat :=
+private def testedSlot (scope : List ScopeBinding) (Γ : List (Ty Nat)) (cond : Fragment.Expr) : Option Nat :=
   do
     let (i, _) ← conditionVariable scope cond
     if Γ[i]? == some [1] || Γ[i]? == some [2] then none else some i
@@ -729,7 +828,7 @@ private def testedSlot (scope : List Descriptor) (Γ : List (Ty Nat)) (cond : Fr
 /-- Share polarity handling between conditionals and loop heads. The saved
 condition is in slot zero. Only a syntactically identified immutable variable
 may be replaced by the recovered Boolean witness. -/
-private def emitBranch (scope : List Descriptor) (Γ : List (Ty Nat)) (cond : Fragment.Expr)
+private def emitBranch (scope : List ScopeBinding) (Γ : List (Ty Nat)) (cond : Fragment.Expr)
     (A : Ty Nat) (yes no : Target) : Compiler Target := do
   if let some (i, tag, equal) := tagConditionVariable scope cond then
     let some C := Γ[i]? | throw "internal tag-guard slot mismatch"
@@ -742,7 +841,7 @@ private def emitBranch (scope : List Descriptor) (Γ : List (Ty Nat)) (cond : Fr
     -- any source expression or trusting the saved Boolean's annotation.
     return ← emitAt cond.span (.var (i+1))
       (.tagBind tag (adapt (if equal then yes else no)) (adapt (if equal then no else yes)))
-      (A::Γ) C "tag-dispatch" (scope := ⟨"",some cond.span⟩::scope)
+      (A::Γ) C "tag-dispatch" (scope := held ⟨"",some cond.span⟩ :: scope)
   let tested := testedSlot scope Γ cond
   -- Branch on the saved value; the edge maps discard its older copy and
   -- retain the new refinement slot supplied by branchBind.
@@ -753,13 +852,13 @@ private def emitBranch (scope : List Descriptor) (Γ : List (Ty Nat)) (cond : Fr
   -- Negation is handled by swapping successors in compileCondition, so this
   -- dispatch always observes the saved operand itself, retaining its read link.
   emitAt cond.span (.var 0) (.branchBind (adapt yes) (adapt no)) (A::Γ) A
-    (scope := ⟨"",some cond.span⟩::scope)
+    (scope := held ⟨"",some cond.span⟩ :: scope)
 
 /-- Facts justified on the path to a short-circuit operand. Only immutable
 source bindings are refined; every generated edge checks this candidate context.
 A true conjunction / false disjunction establishes both operand outcomes. The
 other outcomes deliberately retain the input context rather than compute a join. -/
-private def conditionContext (G : PositiveGraphs.NormalGraph Nat) (scope : List Descriptor) (Γ : List (Ty Nat))
+private def conditionContext (G : PositiveGraphs.NormalGraph Nat) (scope : List ScopeBinding) (Γ : List (Ty Nat))
     (cond : Fragment.Expr) (answer : Bool) : List (Ty Nat) :=
   match cond with
   | .not _ e => conditionContext G scope Γ e (!answer)
@@ -777,7 +876,7 @@ private def conditionContext (G : PositiveGraphs.NormalGraph Nat) (scope : List 
 /-- Compile compound conditions as short-circuit edges. The full source
 expression still has an independent claimed typing obligation; the runtime
 traverses its operands once instead of evaluating it and then replaying it. -/
-private def compileCondition (fc : SourceClaims.Function) (scope : List Descriptor)
+private def compileCondition (fc : SourceClaims.Function) (scope : List ScopeBinding)
     (Γ : List (Ty Nat)) (cond : Fragment.Expr) (yes no : Target) : Compiler Target := do
   let simple := do
     let A ← exprType fc cond
@@ -797,14 +896,14 @@ termination_by cond
 
 /-- The nearest enclosing loop, with the lexical scope at each destination. -/
 private structure LoopTargets where
-  again : Target × List Descriptor
-  done : Option (Target × List Descriptor)
+  again : Target × List ScopeBinding
+  done : Option (Target × List ScopeBinding)
 
 /-- Compile the continuation once, then point both arms at it. Allocation order
 is intentionally independent of source order; `start` records the real entry.
 Fuel bounds structural traversal, not execution or certificate search. -/
-private def body : Nat → SourceClaims.Function → Ty Nat → List Descriptor → List Fragment.Stmt →
-    Option (Target × List Descriptor) → Option LoopTargets → Compiler Target
+private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBinding → List Fragment.Stmt →
+    Option (Target × List ScopeBinding) → Option LoopTargets → Compiler Target
   | 0, _, _, _, _, _, _ => throw "internal extraction error: exhausted structural traversal"
   | fuel+1, fc, R, scope, stmts, tail, loopTargets => do
     let target ← match stmts with
@@ -823,7 +922,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List Descriptor 
       let Γ ← env fc pos.1 scope
       let A ← exprType fc e
       let done ← emitAt e.span (.var 0) .ret (A::Γ) R "return-contract" (some pos.1)
-        (scope := ⟨"",some e.span⟩::scope)
+        (scope := held ⟨"",some e.span⟩ :: scope)
       compileExpr fc scope Γ e done
     | .cst pos name annot e :: rest =>
       if name == "undefined" then throw "shadowing undefined is outside the fragment"
@@ -831,9 +930,9 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List Descriptor 
       let Γ ← env fc pos.1 scope
       let A ← exprType fc e
       let B ← match annot with | none => pure A | some ty => lower (Fragment.translate ty)
-      let next ← body fuel fc R (⟨name,some pos⟩::scope) rest tail loopTargets
+      let next ← body fuel fc R (held ⟨name,some pos⟩::scope) rest tail loopTargets
       let annotation ← emitAt e.span (.var 0) (.effect next) (A::Γ) B "binding-annotation" (some pos.1)
-        (scope := ⟨name,some e.span⟩::scope)
+        (scope := held ⟨name,some e.span⟩::scope)
       compileExpr fc scope Γ e annotation
     | .ite pos cond thn els :: rest =>
       let Γ ← env fc pos.1 scope
@@ -859,9 +958,29 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List Descriptor 
       if !facts.isEmpty then
         modify fun s => { s with
           assertions := s.assertions ++ [(head.label,⟨facts,[],[]⟩)]
-          sourceMap := s.sourceMap.set head.label (some ⟨pos,"heap-observation",some pos.1,scope⟩) }
+          sourceMap := s.sourceMap.set head.label (some ⟨pos,"heap-observation",some pos.1,sources scope⟩) }
       modify fun s => { s with cuts := head.label :: s.cuts }
       pure head
+    | .mut pos name _ annot init :: rest =>
+      if name == "undefined" then throw "shadowing undefined is outside the fragment"
+      if (names scope).contains name then throw "shadowing is outside the fragment"
+      let Γ ← env fc pos.1 scope
+      let A ← exprType fc init
+      let contract ← lower (Fragment.translate annot)
+      let reference ← lower (do return [← CellClaims.reference contract])
+      -- The slot holds the identity of a cell only this lowering allocated.
+      -- Storage is decided here, by the declaration, and nowhere else.
+      let binding : ScopeBinding := ⟨⟨name,some pos⟩, .cell contract reference⟩
+      let next ← body fuel fc R (binding::scope) rest tail loopTargets
+      let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+        (fun j => if j == 0 then 0 else j+1))⟩
+      let allocation ← emitAt init.span (.alloc (.var 0)) (.bind drop) (A::Γ) reference
+        "binding-allocation" (some pos.1) (scope := held ⟨"",some init.span⟩ :: scope)
+      -- The initializer meets the storage contract, or the declaration fails
+      -- here rather than being admitted at the initializer's narrower type.
+      let stored ← emitAt init.span (.var 0) (.effect allocation) (A::Γ) contract
+        "storage-contract" (some pos.1) (scope := held ⟨"",some init.span⟩ :: scope)
+      compileExpr fc scope Γ init stored
     | .effect pos e :: rest =>
       let Γ ← env fc pos.1 scope
       let next ← body fuel fc R scope rest tail loopTargets
@@ -871,7 +990,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List Descriptor 
     | [] | .loop .. :: _ => return target
     | st :: _ =>
       let pos := match st with
-        | .brk p | .cont p | .ret p _ | .cst p _ _ _ | .effect p _ | .loop p _ _ | .ite p _ _ _ => p
+        | .brk p | .cont p | .ret p _ | .cst p _ _ _ | .mut p _ _ _ _ | .effect p _ | .loop p _ _ | .ite p _ _ _ => p
       let facts ← entryFacts fc pos.1 scope
       let entry ← checkpoint pos (← env fc pos.1 scope) facts target (some pos.1) scope
       modify fun s => { s with cuts := entry.label :: s.cuts }
@@ -879,7 +998,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List Descriptor 
 
 private def traversalBudget : List Fragment.Stmt → Nat
   | [] => 1
-  | .brk .. :: rest | .cont .. :: rest | .ret .. :: rest | .cst .. :: rest | .effect .. :: rest => 1 + traversalBudget rest
+  | .brk .. :: rest | .cont .. :: rest | .ret .. :: rest | .cst .. :: rest | .mut .. :: rest | .effect .. :: rest => 1 + traversalBudget rest
   | .loop _ _ loopBody :: rest => 1 + traversalBudget loopBody + traversalBudget rest
   | .ite _ _ thn none :: rest => 2 + traversalBudget thn + traversalBudget rest
   | .ite _ _ thn (some els) :: rest =>
@@ -907,7 +1026,7 @@ did not mention grow it, and the request carries the result. -/
 def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceClaims.Function) :
     Except String SourceRequest := do
   if f.name != fc.name || f.namePos != fc.namePos then throw "function claim identity mismatch"
-  let scope : List Descriptor := f.params.map (fun p => ⟨p.name,none⟩)
+  let scope : List ScopeBinding := f.params.map (fun p => held ⟨p.name,none⟩)
   if f.name == "undefined" || (names scope).contains "undefined" then
     throw "shadowing undefined is outside the fragment"
   if !distinct (names scope) then throw "duplicate source parameter name"

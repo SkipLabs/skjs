@@ -93,9 +93,17 @@ parameters, including a thunk when all parameters are bound. SKJS rejects this
 partial binding; the [incompleteness example](tests/skjs-incomplete/bound-arguments.ts)
 verifies using TypeScript’s claims.
 
-Mutable bindings, loops inside closures, external cell parameters,
-labeled transfers, active-name shadowing, other `typeof` comparisons, general strings,
-and overloads are outside it. Numbers are in it, but opaquely: a number is
+Loops inside closures, external cell parameters, labeled transfers,
+active-name shadowing, other `typeof` comparisons, general strings, and overloads
+are outside it. An initialized, annotated `let` is in it: it allocates a private
+cell the source never sees as a value, reading the name reads the cell,
+assignment writes it and yields the value written, and a closure holds the
+cell's identity, so it observes later writes. The annotation is the storage
+contract every assignment is checked against; an unannotated `let` is refused
+rather than given its initializer's type. Current-content claims are checked
+as read obligations or finite heap observations; immutable snapshots can keep
+precise contents across later writes. Guard refinement of mutable contents is
+still conservative, and a `let` without an initializer is outside. Numbers are in it, but opaquely: a number is
 bound, passed, returned, held in a union and shape-tested, never computed with,
 because the fragment has no arithmetic and no numeric comparison. A numeric
 literal is its own singleton and is below `number`; its identity is the double

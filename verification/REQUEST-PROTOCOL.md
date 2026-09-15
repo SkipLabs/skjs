@@ -251,7 +251,7 @@ required data. They also check that object field order does not matter.
 ## Source mode
 
 The adapter accepts primitive or bounded callable parameters, initialized
-`const` declarations, nested boolean branches and returns, using variable
+`const` and annotated `let` declarations, assignment to a `let` as an expression, nested boolean branches and returns, using variable
 expressions and null/undefined/boolean literals. Every path must return. Types
 may be null, undefined, boolean, true, false, unions of these, or bottom. Source
 parameters may also contain the bounded function contracts below, including unions with
@@ -262,6 +262,20 @@ alternative by the checked read/write rule below; unsupported encodings are
 never omitted. Other constructs
 are covered by the cell and closure extensions below or rejected by the fragment
 gate, including active-name shadowing and statements after an explicit return. This restriction is not a final dead-code policy.
+
+An initialized mutable declaration has `k: "let"`, `pos`, `name`, `namePos`,
+`annot` and `init`; assignment has `k: "assign"`, `pos`, `name`, `namePos` and
+`rhs`. The annotation defines a private cell's invariant. An internal scope
+binding records whether its slot holds a value or this cell's identity;
+diagnostic descriptors carry no storage flag. Source references read the cell,
+and assignment saves its RHS, writes once, then returns that saved value.
+Ordinary environment claims for mutable names assert contents, not identities:
+the extractor requires an invariant-based read proof or a finite heap observation
+checked on every incoming edge. Captured entry claims require the stable
+invariant. Immutable-slot guard refinements cannot substitute cell identities.
+Uninitialized or unannotated `let`, `var`, and mutable parameter assignment
+remain outside this lowering.
+
 The identity scheme `id<T>(x: T): T { return x }` is also accepted, with
 each distinct type parameter exported as a `param` atom. Function AST objects always
 include `typeParams` (empty when the function is not generic). Each type
