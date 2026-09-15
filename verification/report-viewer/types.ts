@@ -1,4 +1,5 @@
 import type { ObligationView } from "../tools/diagnostic-view.mts";
+import type { Span } from "../tools/span.mts";
 // The report the reader displays.
 //
 // One description of the shape that `tools/annotate-source.js` writes, the
@@ -11,9 +12,6 @@ import type { ObligationView } from "../tools/diagnostic-view.mts";
 // Node runs this directly (type stripping, Node 23.6+), so the modules that
 // import it need no build. The browser gets the compiled bundle. Keep the
 // syntax erasable: no `enum`, no `namespace`, no parameter properties.
-
-/** A half-open span of the original source, in UTF-16 code units. */
-export type Span = [start: number, end: number];
 
 /** Which checker supplied the claims a report displays. */
 export type Producer = "skjs" | "tsc" | "manual" | "edited candidate";

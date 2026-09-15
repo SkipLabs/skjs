@@ -9,9 +9,7 @@
  * decoder requires field by field, or it is rejected.
  */
 
-/** A half-open span of the original source, in UTF-16 code units. */
-export type Span = [start: number, end: number];
-
+import type { Span } from "./span.mts";
 import type { Labels, Row } from "./type-graph.mts";
 export type { Labels, Row } from "./type-graph.mts";
 

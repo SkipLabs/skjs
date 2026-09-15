@@ -4,9 +4,7 @@
  * names are the contract. The parser that produces a tree is fragment-parse.mts.
  */
 import type { ClaimType, Atom } from "./claim.mts";
-
-/** A half-open span of the source, in UTF-16 code units. */
-export type Span = [start: number, end: number];
+import type { Span } from "./span.mts";
 
 export type Expr =
   | { k: "id"; pos: Span; name: string }

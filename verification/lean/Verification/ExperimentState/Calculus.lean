@@ -1,3 +1,5 @@
+import Lean.Data.Json
+
 /-!
 # The object language
 
@@ -40,7 +42,7 @@ inductive Tm where
   | tru
   | fls
   /-- A number, carried as the bit pattern of the double it denotes, which is
-  the identity `numBits` already assigns a numeric literal. The fragment
+  the identity `numBits` below assigns a numeric literal. The fragment
   has no arithmetic and no numeric comparison, so a number is opaque here: it
   is bound, passed, stored and shape-tested, never computed with. Two patterns
   that denote the same double are equal, so singletons cannot be confused; two
@@ -64,6 +66,20 @@ inductive CallCode where
   | closure (arity : Nat) (body : Tm)
   deriving Repr
 end
+
+/-- The bits `Tm.num` carries for a numeric lexeme: the bit pattern of the
+double it denotes, with `-0` normalised to `+0`. This is not a JSON helper but
+the rule that `1`, `1.0` and `1e0` are one value — a fact about this
+calculus's numbers, which the claim decoder happens to need in order to give a
+numeric literal the same identity the calculus gives it. Numeric wire data
+remains decodable, but `SourceTypes` rejects it; this does not establish
+numeric program semantics. -/
+def numBits (lexeme : String) : Except String UInt64 :=
+  match Lean.Json.parse lexeme with
+  | .ok (.num n) =>
+      let f := n.toFloat
+      .ok (if f == 0.0 then (0.0 : Float).toBits else f.toBits)
+  | _ => .error s!"not a decimal numeric literal: {lexeme}"
 
 /-! Executable structural equality, kept explicit because Lean's deriving
 handler does not support nested mutual types such as list-valued applications.

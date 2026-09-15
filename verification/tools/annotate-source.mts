@@ -20,8 +20,8 @@ import type {
   NamedPoint,
   Point,
   SourceClaims,
-  Span,
 } from "./source-claims.mts";
+import type { Span } from "./span.mts";
 import type { Collection } from "../report-viewer/types.ts";
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 // The display helpers beside this file are plain JavaScript modules.

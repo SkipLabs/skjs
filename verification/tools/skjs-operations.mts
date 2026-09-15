@@ -4,8 +4,6 @@
  * sites. This is SKJS's own encoding, not the independent sidecar. */
 import { decodeClaimType, type ClaimType } from "./claim.mts";
 
-export type Span = [start: number, end: number];
-
 export type OperationKind = "subtype" | "expand";
 
 /** A closed subtype or expansion judgment, serialized at the snapshot in force. */

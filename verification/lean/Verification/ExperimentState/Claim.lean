@@ -1,4 +1,5 @@
-import Lean.Data.Json
+import Verification.ExperimentState.Calculus
+import Verification.ExperimentState.Decode
 
 /-! # The claim language
 
@@ -8,12 +9,10 @@ atoms. A claim surface, not a second program calculus. The source adapter
 rejects unsupported primitives; its exact-translation lemmas relate accepted
 claims to the current semantics.
 
-`Span`, `numBits` and the JSON helpers below sit outside the `Claim` namespace:
-they are shared decoding plumbing, not part of the language. -/
+The decoder below is this language's own. The plumbing it reads JSON with is
+shared, and lives in `Decode.lean`; the identity it gives a numeric literal is
+the calculus's, and lives in `Calculus.lean`. -/
 namespace Verification
-
-abbrev Span := Nat × Nat
-def spanStr (p : Span) : String := s!"[{p.1},{p.2})"
 
 namespace Claim
 
@@ -64,36 +63,6 @@ def mem (v : Val) (t : Ty) : Prop :=
 end Claim
 open Lean Claim
 
-/-- The canonical identity of a numeric literal: the bit pattern of the double
-it denotes, with `-0` normalised to `+0`. Numeric wire data remains decodable,
-but SourceTypes rejects it; this does not establish numeric program semantics. -/
-def numBits (lexeme : String) : Except String UInt64 :=
-  match Json.parse lexeme with
-  | .ok (.num n) =>
-      let f := n.toFloat
-      .ok (if f == 0.0 then (0.0 : Float).toBits else f.toBits)
-  | _ => .error s!"not a decimal numeric literal: {lexeme}"
-
-/-! ### JSON helpers -/
-
-def jField (j : Json) (k : String) : Except String Json :=
-  match j.getObjVal? k with
-  | .ok v => .ok v
-  | .error e => .error s!"missing field '{k}': {e}"
-
-def jStr (j : Json) : Except String String := j.getStr?
-def jArr (j : Json) (k : String) : Except String (List Json) := do
-  let a ← (← jField j k).getArr?
-  return a.toList
-
-def jSpan (j : Json) (k : String) : Except String Span := do
-  let a ← (← jField j k).getArr?
-  if h : a.size = 2 then
-    let s ← a[0].getNat?
-    let e ← a[1].getNat?
-    return (s, e)
-  else .error s!"field '{k}' is not a [start, end] pair"
-
 /-! ### Atoms and types -/
 
 def decodeBoolLiteral (j : Json) : Except String Bool := do
@@ -110,7 +79,7 @@ def decodeAtom (j : Json) : Except String Atom := do
   | "number" => return .num
   | "string" => return .str
   | "boolean" => return .bool
-  | "numberlit" => return .numLit (← numBits (← jStr (← jField j "v")))
+  | "numberlit" => return .numLit (← ExperimentState.numBits (← jStr (← jField j "v")))
   | "stringlit" => return .strLit (← jStr (← jField j "v"))
   | "booleanlit" => return .boolLit (← decodeBoolLiteral j)
   | other => .error s!"unknown type atom '{other}'"
@@ -124,7 +93,7 @@ def decodeVal (j : Json) : Except String Val := do
   match a with
   | "null" => return .vnull
   | "undefined" => return .vundef
-  | "numberlit" => return .vnum (← numBits (← jStr (← jField j "v")))
+  | "numberlit" => return .vnum (← ExperimentState.numBits (← jStr (← jField j "v")))
   | "stringlit" => return .vstr (← jStr (← jField j "v"))
   | "booleanlit" => return .vbool (← decodeBoolLiteral j)
   | other => .error s!"'{other}' is not a literal value"

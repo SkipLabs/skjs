@@ -11,7 +11,7 @@ import surface from "./claim-text.mts";
 import { decodeGraph, graphDefinitions, printLabels, type GraphDefinition } from "./type-graph.mts";
 import type { ObligationDiagnostic } from "./diagnostic.mts";
 import { printTerm } from "./calculus.mts";
-import type { Span } from "../tools/source-claims.mts";
+import type { Span } from "./span.mts";
 
 /** One binding of the context: what was carried, and what was required. */
 export interface ContextRow {

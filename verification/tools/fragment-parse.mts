@@ -23,11 +23,11 @@ import type {
   Ast,
   Expr,
   FunctionAst,
-  Span,
   Stmt,
   TypeAliasAst,
   TypeParamAst,
 } from "./fragment.mts";
+import type { Span } from "./span.mts";
 
 /* --------------------------------------------------------- the compiler -- */
 // The compiler runs out of process and is addressed through one API instance.

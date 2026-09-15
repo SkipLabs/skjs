@@ -1,6 +1,7 @@
 import { decodeGraph, decodeLabels, type TypeGraph, type Labels } from "./type-graph.mts";
 import { decodeTerm, type Term } from "./calculus.mts";
 import { decodeNode, type ProgramNode } from "./control-flow.mts";
+import type { Span } from "./span.mts";
 
 // Optional explanatory metadata, never evidence. A record this reader cannot
 // decode field by field is left in the human diagnostic; it must not change the
@@ -21,10 +22,10 @@ export type Kind =
  * Absent when the request carried no source map.
  */
 export interface SourceMapEntry {
-  pos: [number, number];
+  pos: Span;
   role: string;
   environmentStart: number | null;
-  context: {name: string; span: [number,number] | null}[];
+  context: {name: string; span: Span | null}[];
 }
 
 /** The judgement a failure could not establish. */
@@ -79,7 +80,7 @@ interface Common {
   input?: {
     file: string;
     functionName: string;
-    namePos: [number, number];
+    namePos: Span;
     sourceSha256: string;
     claimsSha256: string;
   };

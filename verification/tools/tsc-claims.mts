@@ -37,7 +37,8 @@ import type {
   Row,
   SourceClaims,
 } from "./source-claims.mts";
-import type { Ast, Expr, FunctionAst, Span, Stmt } from "./fragment.mts";
+import type { Ast, Expr, FunctionAst, Stmt } from "./fragment.mts";
+import type { Span } from "./span.mts";
 
 /* ------------------------------------------------------------- refusal -- */
 // A type this producer will not state. The reason is a short slug; the

@@ -4,7 +4,7 @@ import fs from "node:fs";
 import { hash, render } from "../tools/annotate-source.mts";
 import { createRequire } from "node:module";
 import type { FailureKind, Manifest } from "../report-viewer/types.ts";
-import type { Span } from "../tools/source-claims.mts";
+import type { Span } from "../tools/span.mts";
 import {
   fromBundle,
   parseReport,
