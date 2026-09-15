@@ -13,6 +13,20 @@ Update a row when a SKJS commit lands that addresses it: set the status, name
 the tests, and keep the “done when” criterion true. `make test-in-docker` must
 stay green.
 
+Put a repair's regressions in [`tests/expect-error/`](../tests/expect-error).
+The verification corpus is a slice of that directory and a new test joins it,
+so a test placed there is measured and one placed elsewhere is not.
+`make verify-census` reports how many of its functions the pipeline can verify
+and why the rest are refused; adding tests moves the recorded baseline, which
+`make verify-census UPDATE=1` accepts. The census is a measurement, not a gate:
+a refusal names a boundary of the verified fragment and says nothing about
+whether SKJS is right.
+
+It extracts each top-level function on its own, so a function that needs an
+ambient declaration or a class from elsewhere in its file is reported as
+unresolved rather than measured. Where being self-contained costs nothing,
+prefer it; do not distort a regression to suit the census.
+
 ## Spec
 
 Three similar-looking kinds stay distinct:
