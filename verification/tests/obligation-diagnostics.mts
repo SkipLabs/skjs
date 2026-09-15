@@ -7,10 +7,43 @@ import { hash, fromSourceClaims, verifySkjs, } from "../tools/annotate-source.mt
 import { presentObligation } from "../tools/diagnostic-view.mts";
 import { parseGraph, printGraph } from "../tools/type-graph.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
-import type { SourceClaims } from "../tools/source-claims.mts";
+import type { Labels, SourceClaims } from "../tools/source-claims.mts";
+import type { NodeTyping, Sequent, SourceMapEntry } from "../tools/diagnostic.mts";
+import type { Result } from "../report-viewer/types.ts";
 const __dirname = path.dirname(import.meta.filename);
 const verifier = path.resolve(process.argv[2]);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "obligation-diagnostics-"));
+/**
+ * What a not-established source result carries here: the node-typing record,
+ * the judgement it could not establish, the source map for the node it names,
+ * and the request identity the report writer attaches. `Result` declares the
+ * field `unknown` — a verifier need not record one, and the record it does
+ * write need not be this kind — so a test that reads these says which it wants.
+ */
+type SourceObligation = NodeTyping & {
+  source: NodeTyping["source"] & { sourceMap: SourceMapEntry };
+  sequent: Sequent;
+  input: NonNullable<NodeTyping["input"]>;
+};
+const isSourceObligation = (v: unknown): v is SourceObligation =>
+  !!v && typeof v === "object" &&
+  "kind" in v && v.kind === "node-typing" &&
+  "sequent" in v && !!v.sequent &&
+  "source" in v && !!v.source && typeof v.source === "object" &&
+  "sourceMap" in v.source && !!v.source.sourceMap &&
+  "input" in v && !!v.input;
+function obligationOf(r: Omit<Result, "function">): SourceObligation {
+  assert(
+    isSourceObligation(r.obligation),
+    "the result records a node-typing obligation with a located judgement",
+  );
+  return r.obligation;
+}
+/** The view the report writer prepared beside that record. */
+function viewOf(r: Omit<Result, "function">) {
+  assert(r.obligationView, "the result records a view of that obligation");
+  return r.obligationView;
+}
 let passed = 0;
 const test = (name: string, f: any) => {
   f();
@@ -57,7 +90,7 @@ try {
       },
     ],
   };
-  const verify = (entry: any, expression: any) => {
+  const verify = (entry: Labels, expression: Labels) => {
     const d: SourceClaims = structuredClone(base);
     d.functions[0].entries[0].bindings[0].type = entry;
     d.functions[0].expressions[0].type = expression;
@@ -75,7 +108,7 @@ try {
   // The source map is the reason a reader never shows a slot number, so a live
   // record must carry one descriptor per context binding, each describable.
   test("a live diagnostic names every binding in its context", () => {
-    const d = verify([1, 2], [1, 2]).obligation;
+    const d = obligationOf(verify([1, 2], [1, 2]));
     const map = d.source.sourceMap;
     assert.equal(map.context.length, d.sequent.context.length);
     for (const descriptor of map.context)
@@ -84,14 +117,14 @@ try {
         JSON.stringify(descriptor),
       );
     assert.deepEqual(
-      map.context.map((x: any) => x.name),
+      map.context.map((x) => x.name),
       ["", "flag"],
     );
   });
   test("broad claims locate the separate return-contract obligation", () => {
     const r = verify([1, 2], [1, 2]);
     assert.equal(r.status, "not-established");
-    const d = r.obligation;
+    const d = obligationOf(r);
     assert.equal(d.source.sourceMap.role, "return-contract");
     assert.deepEqual(d.source.sourceMap.pos, pos);
     assert.equal(d.source.sourceMap.environmentStart, f.body[0].pos[0]);
@@ -99,11 +132,11 @@ try {
     assert.deepEqual(d.sequent.context[0], [1, 2]);
     assert.equal(d.input.sourceSha256, hash(source));
     assert.equal(d.input.functionName, f.name);
-    assert.deepEqual(r.obligationView.focus, {
+    assert.deepEqual(viewOf(r).focus, {
       subject:"flag", available:"boolean", required:"true", requiredLabel:"Required return type",
     });
-    assert.equal(r.obligationView.summary,"The available claim for flag is boolean. This return requires true.");
-    assert.equal(r.obligationView.namedConclusion,"flag: true");
+    assert.equal(viewOf(r).summary,"The available claim for flag is boolean. This return requires true.");
+    assert.equal(viewOf(r).namedConclusion,"flag: true");
     // Names follow the actual term slot, not a guess that every goal is slot 0.
     const changed = structuredClone(d);
     changed.sequent.term = {var:{i:1}};
@@ -119,8 +152,8 @@ try {
     assert.equal(r.obligation, undefined);
   });
   test("strengthening only the expression fails a different obligation at the same span", () => {
-    const a = verify([1, 2], [1, 2]).obligation,
-      b = verify([1, 2], [1]).obligation;
+    const a = obligationOf(verify([1, 2], [1, 2])),
+      b = obligationOf(verify([1, 2], [1]));
     assert.notEqual(a.id, b.id);
     assert.equal(b.source.sourceMap.role, "node-typing");
     assert.deepEqual(a.source.sourceMap.pos, b.source.sourceMap.pos);
@@ -205,7 +238,7 @@ try {
     });
   });
   test("unknown malformed and duplicate diagnostic records are not interpreted", () => {
-    const {input, ...rawDiagnostic} = verify([1, 2], [1, 2]).obligation;
+    const {input, ...rawDiagnostic} = obligationOf(verify([1, 2], [1, 2]));
     const line = "obligation-diagnostic: " + JSON.stringify(rawDiagnostic);
     assert(readDiagnostic(line));
     const parsed = JSON.parse(line.slice("obligation-diagnostic: ".length));

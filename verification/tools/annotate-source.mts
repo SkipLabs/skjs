@@ -22,7 +22,7 @@ import type {
   SourceClaims,
 } from "./source-claims.mts";
 import type { Span } from "./span.mts";
-import type { Collection, Failure } from "../report-viewer/types.ts";
+import type { Collection, Failure, Result } from "../report-viewer/types.ts";
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 // The display helpers beside this file are plain JavaScript modules.
 const require = createRequire(import.meta.url);
@@ -628,13 +628,10 @@ function verifySkjs(
   source: string,
   claims: SkjsFile[] | SourceClaims,
   file: string,
-  // Only the function identities are read here, and the honest type for them
-  // is `{ functions: { name: string; namePos: number[] }[] }`. Writing it types
-  // the results this returns, and three suites read `.location.kind`,
-  // `.obligation.phase` and `.obligationView.focus` off values the reader's own
-  // `Result` declares optional and `unknown`. Those reads compile only because
-  // this is untyped; narrowing them belongs to those files.
-  report: any,
+  // Only the function identities are read here. Writing that types the results
+  // this returns as the reader's own `Result`, minus the `function` id `main`
+  // attaches afterwards.
+  report: { functions: { name: string; namePos: number[] }[] },
   verifier: string,
   depth: number,
   normalized = false,
@@ -652,7 +649,7 @@ function verifySkjs(
     } catch(error) {
       const detail=String((error as Error)?.message||error);
       if(!detail.startsWith("gate:"))throw Error(`source parser failed: ${detail}`);
-      return {identity,results:report.functions.map(()=>({status:"unsupported",detail:detail.trim()}))};
+      return {identity,results:report.functions.map((): Omit<Result,"function">=>({status:"unsupported",detail:detail.trim()}))};
     }
     ast.file=file;
     // Whole file first. The per-function pass below exists to attribute a
@@ -675,13 +672,13 @@ function verifySkjs(
       const checked=run(verifier,[normalized?"--check-source-claims":"--check-stateful-source",ap,cp,file,ep]);
       if(checked.status!==0)return null;
       const certificateSha256=hash(fs.readFileSync(ep));
-      return report.functions.map(()=>({status:"verified",scope:"modeled function and required claims",certificateSha256}));
+      return report.functions.map((): Omit<Result,"function">=>({status:"verified",scope:"modeled function and required claims",certificateSha256}));
     })();
     if(whole) {
       if(fs.readFileSync(sourcePath,"utf8")!==source)throw Error("source changed during verification");
       return {identity,results:whole};
     }
-    const results=report.functions.map((f: { name: string; namePos: number[] })=> {
+    const results=report.functions.map((f): Omit<Result,"function">=> {
       const named=(g: { name: string; namePos: Span })=>g.name===f.name && JSON.stringify(g.namePos)===JSON.stringify(f.namePos);
       const a=clone(ast);a.functions=a.functions.filter(named);
       if(a.functions.length!==1)throw Error("function identity mismatch during verification");

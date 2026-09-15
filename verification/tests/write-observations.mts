@@ -66,6 +66,15 @@ function check(file: string, claims: any, name = "writeRefinedRead") {
       .functions.findIndex((f: any) => f.name === name)
   ];
 }
+// `Result.obligation` is explanatory metadata a verifier need not record, so
+// the wire type leaves it `unknown`. A test that reads its phase says so first.
+function phaseOf(obligation: unknown) {
+  assert(
+    obligation && typeof obligation === "object" && "phase" in obligation,
+    "a not-established result records an obligation",
+  );
+  return obligation.phase;
+}
 function stripPositions(x: any): any {
   if (Array.isArray(x)) return x.map(stripPositions);
   if (x && typeof x === "object")
@@ -146,13 +155,15 @@ test("rejected negated guard exports a broad read instead of stale false", () =>
 test("rejected negated witness cannot certify its partial export", () => {
   const r = check(badFile, badClaims, "staleFlip");
   assert.equal(r.status, "not-established");
+  // `location` is optional: a result need not say where checking stopped.
+  assert(r.location, "the result records where checking stopped");
   assert.equal(r.location.kind, "missing-environment-claim");
   assert.equal(r.obligation, undefined);
 });
 test("the original broad entry claim cannot retain a prior write fact", () => {
   const r = check(safeFile, safeClaims);
   assert.equal(r.status, "not-established");
-  assert.equal(r.obligation.phase, "proof-search");
+  assert.equal(phaseOf(r.obligation), "proof-search");
 });
 function observedCandidate(value: any) {
   const candidate = structuredClone(safeClaims);
@@ -179,7 +190,7 @@ test("an explicit true observation makes the return locally provable", () => {
 test("a false entry observation fails on the incoming write edge", () => {
   const r = check(safeFile, observedCandidate(false));
   assert.equal(r.status, "not-established");
-  assert.equal(r.obligation.phase, "proof-search");
+  assert.equal(phaseOf(r.obligation), "proof-search");
 });
 test("a false read claim cannot override the actual written value", () => {
   const candidate = observedCandidate(true);
@@ -187,7 +198,7 @@ test("a false read claim cannot override the actual written value", () => {
     lit(false);
   const r = check(safeFile, candidate);
   assert.equal(r.status, "not-established");
-  assert.equal(r.obligation.phase, "proof-search");
+  assert.equal(phaseOf(r.obligation), "proof-search");
 });
 
 console.log(`Write observations: ${passed} passed, 0 failed`);

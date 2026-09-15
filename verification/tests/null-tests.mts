@@ -554,6 +554,8 @@ try {
     10,
   ).results[0];
   assert.equal(originalReport.stage, "source-extraction");
+  // `location` is optional: a result need not say where checking stopped.
+  assert(originalReport.location, "the result records where checking stopped");
   assert.equal(originalReport.location.kind, "unavailable-type-claim");
   assert.equal(originalReport.location.binding, "cell");
   assert.equal(
@@ -579,6 +581,7 @@ try {
       10,
     ).results[0];
     const expected = structuredClone(originalReport);
+    assert(expected.location, "the clone carries the location asserted above");
     if (mode === "unknown") expected.location.reason = "future-reason";
     else delete expected.location.reason;
     assert.deepEqual(result, expected);
