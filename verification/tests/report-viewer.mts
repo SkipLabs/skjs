@@ -475,8 +475,12 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   assert.deepEqual(factory.atoms[0].result, freshArrow);
   assert(surface.roundTrips(factory));
   const restricted = structuredClone(freshArrow);
-  restricted.atoms[0].construct = "absent";
-  restricted.atoms[0].array = "absent";
+  // `Atom` is a union and only some of its members carry object modes, so the
+  // suite says which atom the text it just wrote produced.
+  const signature = restricted.atoms[0];
+  assert(signature.a === "function", "the text names a free signature");
+  signature.construct = "absent";
+  signature.array = "absent";
   const changedArrow: any = surface.parseType("(null, boolean) => boolean");
   assert.equal(changedArrow.atoms[0].construct, "unknown");
   assert.equal(changedArrow.atoms[0].array, "unknown");
@@ -976,7 +980,10 @@ assert.equal(failedAt(absentEnv)!.site, "unclaimed");
   callable.atoms[0].bag.call = 'absent';
   assert.deepEqual(surface.parseType(surface.printType(callable).text),callable);
   const env = [{name:'x',type:surface.parseType('{ "a,b": "a,b" }')}];
-  assert.deepEqual(surface.readClaimValue('environment',surface.printClaimValue('environment',env),env),env);
+  // Printing a claim value returns null where the surface cannot say it all.
+  const printedEnv = surface.printClaimValue('environment',env);
+  assert(printedEnv !== null,"the environment is printable");
+  assert.deepEqual(surface.readClaimValue('environment',printedEnv,env),env);
 }
 
 // The exact native graph covers cycles and simultaneous contracts without
