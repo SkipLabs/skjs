@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { fromSkjs, verifySkjs } from "../tools/annotate-source.mts";
 import { decodeClaimType } from "../tools/claim-language.mts";
 // Source extraction of generic bodies that copy T through const and fst.
 
@@ -118,6 +119,53 @@ try {
   merged.find((f: any) => f.file === fileKey).functions
     .find((f: any) => f.name === "second").params[1].type = t;
   expect("producer cannot collapse U to T", run(ast, merged), false, "differ from the source annotation");
+  const boolean = { top: false, atoms: [{ a: "boolean" }] };
+  const editedClaims = (name: string, edit: (f: any) => void) => {
+    const changed = clone(rawClaims);
+    edit(changed.find((f: any) => f.file === fileKey).functions.find((f: any) => f.name === name));
+    return changed;
+  };
+  const badEntry = editedClaims("bind", f => {
+    f.envs[0].vars.find((v: any) => v.name === "x").type = boolean;
+  });
+  const badExpression = editedClaims("bind", f => { f.exprs[0].type = boolean; });
+  expect("unjustified entry edit is rejected", run(ast, badEntry), false, "generic entry claim at");
+  expect("unjustified expression edit is rejected", run(ast, badExpression), false, "generic expression claim at");
+  expect("a const entry cannot regain a narrower dependent type", run(ast, editedClaims("upper", f => {
+    f.envs[1].vars.find((v: any) => v.name === "y").type = { top: false, atoms: [{ a: "param", name: "U" }] };
+  })), false, "generic entry claim at");
+  expect("missing expression claims reject", run(ast, editedClaims("bind", f => { f.exprs.pop(); })), false, "missing, duplicate or unmatched");
+  expect("duplicate entry claims reject", run(ast, editedClaims("bind", f => { f.envs.push(clone(f.envs[0])); })), false, "missing, duplicate or unmatched");
+  expect("unmatched expression claims reject", run(ast, editedClaims("bind", f => {
+    f.exprs.push({ pos: [0, 1], type: t });
+  })), false, "missing, duplicate or unmatched");
+  expect("extra entry bindings reject", run(ast, editedClaims("bind", f => {
+    f.envs[0].vars.push({ name: "invented", type: t });
+  })), false, "bindings differ");
+  expect("justified weakening along the bound chain verifies", run(ast, editedClaims("boundChain", f => {
+    f.envs[0].vars.find((v: any) => v.name === "x").type = boolean;
+    f.exprs[0].type = boolean;
+  })), true);
+  // Reuse a valid certificate and change only the claims before consumption.
+  // This catches a fix confined to production or the viewer.
+  for (const [name, changed] of [["entry", badEntry], ["expression", badExpression]] as const) {
+    expect("original claims produce evidence", run(ast, rawClaims), true);
+    const cp = path.join(tmp, "claims.json");
+    fs.writeFileSync(cp, JSON.stringify(changed));
+    const r = spawnSync(verifier, ["--check-stateful-source", path.join(tmp, "ast.json"), cp,
+      fileKey, path.join(tmp, "evidence.json")], { encoding: "utf8" });
+    expect(`consumer rejects edited ${name} claim`, r, false, `generic ${name} claim at`);
+  }
+  const source = fs.readFileSync(fileKey, "utf8");
+  for (const [changed, kind] of [[badEntry, "environment-obligation"], [badExpression, "expression-obligation"]] as const) {
+    const report = fromSkjs(source, fileKey, changed, "skjs");
+    const { results } = verifySkjs(fileKey, source, changed, fileKey, report, verifier, 8);
+    const index = report.functions.findIndex(f => f.name === "bind");
+    const result = results[index] as any;
+    if (result?.status !== "not-established" || result?.location?.kind !== kind)
+      throw Error(`generic claim rejection has no viewer location: ${JSON.stringify(result)}`);
+    passed++;
+  }
   console.log(`Generic bodies: ${passed} passed`);
 } catch (e) {
   console.error(e);

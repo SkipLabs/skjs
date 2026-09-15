@@ -274,8 +274,13 @@ name distinct declared parameters or boolean. A conversion requires identity
 or a forward path through the declared bounds, so `U extends T` permits `U`
 to `T` but never the reverse. A const retains its annotation after conversion.
 Generic callbacks and source call-site instantiation remain outside the slice. A file of
-only these schemes produces an empty evidence bundle: the scheme is checked,
-then omitted from the graph request.
+only these schemes still produces an empty graph evidence bundle. Both production
+and consumption nevertheless check the source body, signature, and every source
+entry/expression claim. Sites must match exactly, without duplicates or missing
+claims. Entry inclusions, expression inclusions and binding/return contracts
+are checked under rigid parameters and the declared bounds; failure reports the
+source span and named inclusion. The scheme is then omitted from the ground
+graph request. No per-site generic evidence is serialized yet.
 
 Generate an AST with `tools/parse-source.mts`, and claims with SKJS's
 `--emit-skjs-type-claims`. Then run:

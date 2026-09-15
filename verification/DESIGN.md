@@ -371,6 +371,18 @@ identity instead of choosing one of the clause's variables. Unrelated
 intersections and additional narrowing remain refused. The generic source suite
 checks dependent bounds using unedited SKJS exports; no candidate signatures are
 needed. The snapshot also covers parameter occurrences in entries and expressions.
+Generic statement entries and variable-expression claims are mandatory inputs,
+not display-only annotations. Each source site must have exactly one claim;
+extra sites and extra source bindings reject. Entry types must follow from the
+incoming context under the declared bounds, expression types from the checked
+entry, and binding/return contracts from that expression claim. The only excluded
+entry name is SKJS's implicit unavailable `this`; an asserted type for it rejects.
+Production and independent consumption both reconstruct and check these
+obligations. Located failures print the bounds, named environment and required
+inclusion, and the report points to the entry or expression. Valid weakening is
+allowed. These generic checks still run directly rather than emitting a ground
+graph or serialized per-site evidence; an empty graph bundle no longer skips
+body-claim validation. TypeScript's normalized producer still refuses generics.
 This checks variable-copy bodies; generic callbacks, source call-site
 instantiation, higher-rank and parameter-changing forms remain later work.
 

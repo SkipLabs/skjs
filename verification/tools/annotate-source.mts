@@ -552,6 +552,7 @@ function verifySkjs(
         const diagnostic=readDiagnostic(rawDetail);
         const detail=diagnostic ? rawDetail.split("\nobligation-diagnostic: ")[0] : rawDetail;
         const located=/^(?:reject: )?(source expression obligation|closure expression claim|source incoming edge obligation|unsupported source expression) at \[(\d+),(\d+)\):/.exec(detail);
+        const genericPoint=/^(?:reject: )?generic (entry claim|expression claim|return contract|binding annotation) at \[(\d+),(\d+)\):/.exec(detail);
         const environment=/^(?:reject: )?source environment obligation at (\d+): (.*)$/.exec(detail);
         // A claim the extractor needed and did not find is a different finding
         // from a claim whose proof search failed: the report already marks that
@@ -568,7 +569,9 @@ function verifySkjs(
         // is held to: a finding about the claim, before any obligation is tried.
         const parameterClaim=/claimed parameter type differs from the source annotation for '([^']*)'$/.exec(detail);
         const outsideSlice=/outside the [^:]*slice\.?$/.test(detail);
-        const location=parameterClaim ? {kind:"parameter-claim",binding:parameterClaim[1]} : unavailableType ? {kind:"unavailable-type-claim",
+        const location=genericPoint ? (genericPoint[1]==="entry claim" ?
+          {kind:"environment-obligation",start:Number(genericPoint[2])} :
+          {kind:"expression-obligation",pos:[Number(genericPoint[2]),Number(genericPoint[3])]}) : parameterClaim ? {kind:"parameter-claim",binding:parameterClaim[1]} : unavailableType ? {kind:"unavailable-type-claim",
           ...(unavailableBinding ? {start:Number(environment[1]),binding:unavailableBinding[1]} :
             located ? {pos:[Number(located[2]),Number(located[3])]} : {})} : nonInvariant ? {kind:"source-limitation",reason:"non-invariant-cell-contract",
           ...(environment ? {start:Number(environment[1])} : located ? {pos:[Number(located[2]),Number(located[3])]} : {})} : located ? {kind:located[1]==="unsupported source expression" ? "source-limitation" : located[1]==="source incoming edge obligation" ? "edge-obligation" : "expression-obligation",pos:[Number(located[2]),Number(located[3])]} :

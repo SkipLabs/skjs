@@ -88,7 +88,7 @@ partial def copyBody (params : List String) (edges : List (Nat × Nat))
 /-- Check generic variable-copy bodies using distinct rigid parameters and
 forward upper bounds, including dependent chains. Producer signatures must
 match source annotations exactly; bounds never identify their endpoints. -/
-def check (f : SourceInput.Fn) (typeParams : List SourceInput.TypeParam)
+def checkScheme (f : SourceInput.Fn) (typeParams : List SourceInput.TypeParam)
     (fc : SourceInput.Claims) : Except String Unit := do
   if f.name != fc.name || f.namePos != fc.namePos then
     throw "function claim identity mismatch"
@@ -111,6 +111,102 @@ def check (f : SourceInput.Fn) (typeParams : List SourceInput.TypeParam)
   if (← typeIndex params fc.ret) != result then
     throw "claimed generic identity types differ from the source annotation"
 
+private def typeName (params : List String) (i : Nat) : String :=
+  if i == 0 then "boolean" else (params[i-1]?).getD "?"
+
+private def requireSubtype (params : List String) (edges : List (Nat × Nat))
+    (env : List (String × Nat)) (pos : Span) (role subject : String)
+    (actual expected : Nat) : Except String Unit := do
+  unless subtype edges actual expected do
+    let context := String.intercalate "; " (env.map fun (name,t) => s!"{name}: {typeName params t}")
+    let bounds := String.intercalate ", " (edges.map fun (a,b) =>
+      s!"{typeName params a} ≤ {typeName params b}")
+    throw s!"generic {role} at [{pos.1},{pos.2}): {bounds}; {context} ⊢ {subject} : {typeName params expected}; cannot establish {typeName params actual} ≤ {typeName params expected}"
+
+private def claimedType (params : List String) (pos : Span) (role : String)
+    (ty : Json) : Except String Nat :=
+  match typeIndex params ty with
+  | .ok t => pure t
+  | .error reason => throw s!"generic {role} at [{pos.1},{pos.2}): {reason}"
+
+private def entryClaims (params : List String) (edges : List (Nat × Nat))
+    (fc : SourceInput.Claims) (env : List (String × Nat)) (pos : Span) :
+    Except String (List (String × Nat)) := do
+  let some raw := fc.envs.lookup pos.1
+    | throw s!"generic entry claim at [{pos.1},{pos.2}): missing statement environment"
+  let names := raw.map Prod.fst
+  if names.eraseDups.length != names.length then
+    throw s!"generic entry claim at [{pos.1},{pos.2}): duplicate binding"
+  -- SKJS exposes an unavailable implicit `this` even in receiver-free functions.
+  -- It is not a source binding. Never silently accept an asserted type for it.
+  if let some thisType := raw.lookup "this" then
+    unless thisType == Json.mkObj [("unsupported",toJson true)] do
+      throw s!"generic entry claim at [{pos.1},{pos.2}): this is not a source binding"
+  let source := raw.filter (fun p => p.1 != "this")
+  if source.length != env.length || source.any (fun p => !(env.map Prod.fst).contains p.1) then
+    throw s!"generic entry claim at [{pos.1},{pos.2}): bindings differ from the source scope"
+  env.mapM fun (name,actual) => do
+    let some ty := source.lookup name | throw s!"missing generic binding '{name}'"
+    let expected ← claimedType params pos "entry claim" ty
+    requireSubtype params edges env pos "entry claim" name actual expected
+    return (name,expected)
+
+private def expressionClaim (params : List String) (edges : List (Nat × Nat))
+    (fc : SourceInput.Claims) (env : List (String × Nat)) (e : SourceInput.Expr) :
+    Except String Nat := do
+  let some ty := fc.exprs.lookup e.span
+    | throw s!"generic expression claim at [{e.span.1},{e.span.2}): missing expression claim"
+  let expected ← claimedType params e.span "expression claim" ty
+  let actual ← variableType env e
+  let subject := match e with | .var _ name => name | _ => "expression"
+  requireSubtype params edges env e.span "expression claim" subject actual expected
+  return expected
+
+private def claimSites : List SourceInput.Stmt → List Nat × List Span
+  | [] => ([],[])
+  | .ret pos e :: rest =>
+    let (entries,expressions) := claimSites rest
+    (pos.1 :: entries,e.span :: expressions)
+  | .cst pos _ _ e :: rest =>
+    let (entries,expressions) := claimSites rest
+    (pos.1 :: entries,e.span :: expressions)
+  | _ :: rest => claimSites rest
+
+private def bodyClaims (params : List String) (edges : List (Nat × Nat))
+    (fc : SourceInput.Claims) (env : List (String × Nat)) (result : Nat) :
+    List SourceInput.Stmt → Except String Unit
+  | [.ret pos e] => do
+    let H ← entryClaims params edges fc env pos
+    let actual ← expressionClaim params edges fc H e
+    requireSubtype params edges H pos "return contract" "returned expression" actual result
+  | .cst pos name (some annot) init :: rest => do
+    let H ← entryClaims params edges fc env pos
+    let actual ← expressionClaim params edges fc H init
+    let expected ← typeIndex params annot
+    requireSubtype params edges H pos "binding annotation" name actual expected
+    bodyClaims params edges fc (H ++ [(name,expected)]) result rest
+  | _ => throw "generic claim checking requires a checked variable-copy body"
+
+/-- Both production and independent consumption reconstruct these obligations.
+Every source entry and expression must occur exactly once; no supplied point is
+silently ignored. Subtyping uses the proved rigid-bound relation. -/
+def check (f : SourceInput.Fn) (typeParams : List SourceInput.TypeParam)
+    (fc : SourceInput.Claims) : Except String Unit := do
+  checkScheme f typeParams fc
+  let params := typeParams.map (·.name)
+  let edges ← boundEdges typeParams
+  let (entries,expressions) := claimSites f.body
+  let suppliedEntries := fc.envs.map Prod.fst
+  let suppliedExpressions := fc.exprs.map Prod.fst
+  if suppliedEntries.eraseDups.length != suppliedEntries.length ||
+      suppliedEntries.length != entries.length || suppliedEntries.any (fun p => !entries.contains p) then
+    throw "generic entry claims: missing, duplicate or unmatched statement site"
+  if suppliedExpressions.eraseDups.length != suppliedExpressions.length ||
+      suppliedExpressions.length != expressions.length || suppliedExpressions.any (fun p => !expressions.contains p) then
+    throw "generic expression claims: missing, duplicate or unmatched expression site"
+  let env ← f.params.mapM fun p => do return (p.name, ← typeIndex params p.ty)
+  bodyClaims params edges fc env (← typeIndex params f.ret) f.body
+
 private def paramT : Json :=
   Json.mkObj [("top", toJson false),
     ("atoms", toJson [Json.mkObj [("a", toJson "param"), ("name", toJson "T")]])]
@@ -131,18 +227,18 @@ private def asBoolFn : SourceInput.Fn :=
 private def asBoolClaims : SourceInput.Claims :=
   ⟨"asBoolean", (0, 2), [("x", paramT)], booleanType, [], []⟩
 
-#guard (match check idFn [tpT] idClaims with | .ok () => true | _ => false)
-#guard (match check {idFn with body := [.effect (10, 18) (.var (17, 18) "x")]} [tpT] idClaims with
+#guard (match checkScheme idFn [tpT] idClaims with | .ok () => true | _ => false)
+#guard (match checkScheme {idFn with body := [.effect (10, 18) (.var (17, 18) "x")]} [tpT] idClaims with
   | .error e => "generic identity requires".isPrefixOf e
   | _ => false)
-#guard (match check idFn [tpT, tpT] idClaims with
+#guard (match checkScheme idFn [tpT, tpT] idClaims with
   | .error e => "duplicate type parameter".isPrefixOf e
   | _ => false)
-#guard (match check asBoolFn [tpTbool] asBoolClaims with | .ok () => true | _ => false)
-#guard (match check asBoolFn [tpT] asBoolClaims with
+#guard (match checkScheme asBoolFn [tpTbool] asBoolClaims with | .ok () => true | _ => false)
+#guard (match checkScheme asBoolFn [tpT] asBoolClaims with
   | .error e => "generic return".isPrefixOf e
   | _ => false)
-#guard (match check {idFn with body := [.ret (10, 18) (.lit (17, 18) (.vbool true))]}
+#guard (match checkScheme {idFn with body := [.ret (10, 18) (.lit (17, 18) (.vbool true))]}
     [tpTbool] idClaims with
   | .error e => "an upper bound does not justify true".isPrefixOf e
   | _ => false)
@@ -162,13 +258,13 @@ private def fstFn : SourceInput.Fn :=
 private def fstClaims : SourceInput.Claims :=
   ⟨"fst", (0, 2), [("x", paramT), ("y", paramT)], paramT, [], []⟩
 
-#guard (match check bindFn [tpT] bindClaims with | .ok () => true | _ => false)
-#guard (match check fstFn [tpT] fstClaims with | .ok () => true | _ => false)
-#guard (match check {bindFn with body :=
+#guard (match checkScheme bindFn [tpT] bindClaims with | .ok () => true | _ => false)
+#guard (match checkScheme fstFn [tpT] fstClaims with | .ok () => true | _ => false)
+#guard (match checkScheme {bindFn with body :=
     [.cst (2, 3) "y" (some paramT) (.var (4, 5) "x"),
      .ret (6, 7) (.var (8, 9) "x")]} [tpT] bindClaims with
   | .ok () => true | _ => false)
-#guard (match check {bindFn with body :=
+#guard (match checkScheme {bindFn with body :=
     [.cst (2, 3) "y" none (.var (4, 5) "x"),
      .ret (6, 7) (.var (8, 9) "y")]} [tpT] bindClaims with
   | .error e => "generic const requires".isPrefixOf e | _ => false)
