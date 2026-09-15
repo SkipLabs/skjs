@@ -20,11 +20,14 @@ const tags: string[] = Object.keys(TAGS);
 /** Whether a decoded value is a tag, so the table above stays the one place a
  * tag is declared even for readers of other languages that carry one. */
 export function isTag(v: unknown): v is Tag { return tags.includes(v as string); }
+/* JSON shape checks, shared with the program graph in control-flow.mts. They
+ * belong to neither language, so they name neither: a malformed target is not
+ * a malformed term. */
 export function fields(v: unknown, keys: string[]): Record<string, unknown> {
-  if (!v || typeof v !== "object" || Array.isArray(v) || Object.keys(v).length !== keys.length || keys.some(k => !(k in v))) throw Error("invalid term fields");
+  if (!v || typeof v !== "object" || Array.isArray(v) || Object.keys(v).length !== keys.length || keys.some(k => !(k in v))) throw Error("unexpected or missing field");
   return v as Record<string, unknown>;
 }
-export function nat(v: unknown) { if (!Number.isSafeInteger(v) || (v as number) < 0) throw Error("invalid term index"); }
+export function nat(v: unknown) { if (!Number.isSafeInteger(v) || (v as number) < 0) throw Error("expected a non-negative integer"); }
 function code(v: unknown) {
   if (v === "absent") return;
   const c = fields(fields(v,["closure"]).closure,["arity","body"]); nat(c.arity); decodeTerm(c.body);
