@@ -1,4 +1,4 @@
-/** Native term syntax, matching Language.lean and its derived JSON codec. The
+/** Native term syntax, matching Calculus.lean and its derived JSON codec. The
  * program graph over these terms is its own language, in control-flow.mts. */
 export type Tag = "isNul" | "isBool" | "isRef" | "isFun" | "isUndef" | "isNullish" | "isNum";
 export type CallCode = "absent" | {closure: {arity: number; body: Term}};

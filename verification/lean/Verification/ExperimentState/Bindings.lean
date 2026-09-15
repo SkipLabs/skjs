@@ -1,4 +1,4 @@
-import Verification.ExperimentState.Language
+import Verification.ExperimentState.Calculus
 
 /-!
 # Binding discipline

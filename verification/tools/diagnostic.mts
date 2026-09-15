@@ -1,5 +1,5 @@
 import { decodeGraph, decodeLabels, type TypeGraph, type Labels } from "./type-graph.mts";
-import { decodeTerm, type Term } from "./calculus-language.mts";
+import { decodeTerm, type Term } from "./calculus.mts";
 import { decodeNode, type ProgramNode } from "./control-flow.mts";
 
 // Optional explanatory metadata, never evidence. A record this reader cannot

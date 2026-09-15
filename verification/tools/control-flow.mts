@@ -2,7 +2,7 @@
  * codec. A node is one term plus the continuation that follows it, and every
  * destination states its label and slot map, so the graph is explicit program
  * data the reader validates rather than structure it infers from terms. */
-import { decodeTerm, fields, isTag, nat, type Tag, type Term } from "./calculus-language.mts";
+import { decodeTerm, fields, isTag, nat, type Tag, type Term } from "./calculus.mts";
 
 export interface Target { label: number; mapping: number[] | null }
 export type Continuation = "ret"

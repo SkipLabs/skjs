@@ -64,8 +64,8 @@ references remain references. Self-reference needs no exception and overloads
 are never reduced to a single arrow. The readable definitions are a display;
 the validated JSON is the editable graph syntax.
 
-`tools/calculus-language.mts` similarly declares `Term`, `CallCode`, and `Tag`
-against `Language.lean`. `parseTerm` / `printTerm` are exact, validated JSON.
+`tools/calculus.mts` similarly declares `Term`, `CallCode`, and `Tag`
+against `Calculus.lean`. `parseTerm` / `printTerm` are exact, validated JSON.
 Terms retain native slot numbers so the printed obligation matches the calculus;
 source names are shown alongside in its context table.
 

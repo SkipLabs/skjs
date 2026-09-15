@@ -9,7 +9,7 @@ distinguishes the supported source fragment from model-only features.
 
 ## Operational language
 
-`Language.lean` defines an untyped call-by-value language with a mutable heap.
+`Calculus.lean` defines an untyped call-by-value language with a mutable heap.
 This is the whole term syntax:
 
 $$t ::= x_i\mid t\,t\mid\mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}
