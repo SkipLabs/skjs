@@ -15,6 +15,33 @@ export type Clause = "nul" | "bool" | "undef" | "num"
 export type Row = Clause[];
 export type TypeGraph = Row[];
 
+/** The clause kinds, split so that every consumer can be made to cover them.
+ * `keyof` over a union intersects, so the key extraction distributes. */
+export type StringClause = Extract<Clause, string>;
+type ObjectClause = Exclude<Clause, string>;
+type KeysOf<T> = T extends unknown ? keyof T : never;
+export type ClauseKey = KeysOf<ObjectClause>;
+
+/** Adding a clause to `Clause` without adding it here is a compile error, and
+ * these are the only two places a clause kind is enumerated. */
+export const STRING_CLAUSE_TEXT: Record<StringClause, string> = {
+  nul: "null", bool: "boolean", undef: "undefined", num: "number",
+};
+
+/** The number a literal's bit pattern denotes. Readers show the number; the
+ * bits are its identity, not its display. */
+export const numberOfBits = (bits: string): number => {
+  const view = new DataView(new ArrayBuffer(8));
+  view.setBigUint64(0, BigInt(bits));
+  return view.getFloat64(0);
+};
+
+/** Unreachable when every clause kind is handled; a compile error when one is
+ * added and a dispatch above is not extended to cover it. */
+export function assertNever(x: never): never {
+  throw Error(`unhandled type graph clause: ${JSON.stringify(x)}`);
+}
+
 function obj(v: unknown, keys: string[]): Record<string, unknown> {
   if (!v || typeof v !== "object" || Array.isArray(v) ||
       Object.keys(v).length !== keys.length || keys.some(k => !(k in v)))
@@ -34,23 +61,37 @@ export function decodeGraph(value: unknown): TypeGraph {
     const pair = array(a); if (pair.length !== 2) throw Error("expected arrow pair");
     array(pair[0]).forEach(labels); labels(pair[1]);
   });
-  rows.forEach(row => array(row).forEach(c => {
-    if (c === "nul" || c === "bool" || c === "undef" || c === "num") return;
-    if (!c || typeof c !== "object" || Array.isArray(c)) throw Error("unknown graph clause");
-    const key = Object.keys(c)[0]; const o = obj(c,[key]);
-    if (key === "boolLit") {
-      if (typeof obj(o[key],["value"]).value !== "boolean") throw Error("invalid Boolean literal");
-    } else if (key === "numLit") {
-      // The identity is the double's bit pattern, decimal, as an unsigned 64.
-      const bits = obj(o[key],["bits"]).bits;
+  // One validator per clause kind. A missing key does not compile, so a new
+  // clause cannot reach the decoder as a silent "unknown graph clause".
+  const check: Record<ClauseKey, (body: unknown) => void> = {
+    boolLit: b => {
+      if (typeof obj(b,["value"]).value !== "boolean") throw Error("invalid Boolean literal");
+    },
+    // The identity is the double's bit pattern, decimal, as an unsigned 64.
+    numLit: b => {
+      const bits = obj(b,["bits"]).bits;
       if (typeof bits !== "string" || !/^[0-9]+$/.test(bits) ||
           BigInt(bits) > 0xffffffffffffffffn)
         throw Error("invalid numeric literal");
-    } else if (key === "refs" || key === "callable") {
-      const r = obj(o[key],key === "refs" ? ["first","rest"] : ["first","rest","arrows"]);
-      labels(r.first); array(r.rest).forEach(labels); if (key === "callable") arrows(r.arrows);
-    } else if (key === "arrs") arrows(obj(o[key],["arrows"]).arrows);
-    else throw Error("unknown graph clause");
+    },
+    refs: b => { const r = obj(b,["first","rest"]); labels(r.first); array(r.rest).forEach(labels); },
+    arrs: b => arrows(obj(b,["arrows"]).arrows),
+    callable: b => {
+      const r = obj(b,["first","rest","arrows"]);
+      labels(r.first); array(r.rest).forEach(labels); arrows(r.arrows);
+    },
+  };
+  const validators = check as Record<string, ((body: unknown) => void) | undefined>;
+  rows.forEach(row => array(row).forEach(c => {
+    if (typeof c === "string") {
+      if (!(c in STRING_CLAUSE_TEXT)) throw Error("unknown graph clause");
+      return;
+    }
+    if (!c || typeof c !== "object" || Array.isArray(c)) throw Error("unknown graph clause");
+    const key = Object.keys(c)[0];
+    const validate = validators[key];
+    if (!validate) throw Error("unknown graph clause");
+    validate(obj(c,[key])[key]);
   }));
   return value as TypeGraph;
 }
@@ -60,18 +101,15 @@ export const printGraph = (graph: TypeGraph): string => JSON.stringify(decodeGra
 export const printLabels = (labels: Labels): string => labels.length ? labels.map(l => `#${l}`).join(" | ") : "never";
 const arrowText = ([domains,result]: Arrow) => `(${domains.map(printLabels).join(", ")}) => ${printLabels(result)}`;
 function clauseText(c: Clause): string {
-  if (typeof c === "string")
-    return {nul:"null",bool:"boolean",undef:"undefined",num:"number"}[c];
+  if (typeof c === "string") return STRING_CLAUSE_TEXT[c];
   if ("boolLit" in c) return String(c.boolLit.value);
   // The reader shows the number, not the bit pattern that identifies it.
-  if ("numLit" in c) {
-    const view = new DataView(new ArrayBuffer(8));
-    view.setBigUint64(0, BigInt(c.numLit.bits));
-    return String(view.getFloat64(0));
-  }
+  if ("numLit" in c) return String(numberOfBits(c.numLit.bits));
   if ("refs" in c) return [c.refs.first,...c.refs.rest].map(a => `ref(${printLabels(a)})`).join(" & ");
   if ("arrs" in c) return `calls[${c.arrs.arrows.map(arrowText).join("; ")}]`;
-  return `object[${[c.callable.first,...c.callable.rest].map(a => `value: ${printLabels(a)}`).join(" & ")}; calls[${c.callable.arrows.map(arrowText).join("; ")}]]`;
+  if ("callable" in c)
+    return `object[${[c.callable.first,...c.callable.rest].map(a => `value: ${printLabels(a)}`).join(" & ")}; calls[${c.callable.arrows.map(arrowText).join("; ")}]]`;
+  return assertNever(c);
 }
 export interface GraphDefinition { label: string; definition: string }
 /** Every row, exactly once. No fixed-label heuristics or depth limit. */

@@ -2,6 +2,7 @@
  * nondefault object modes and conjunction metadata explicitly. The
  * text always determines its type. */
 import { decodeClaimType, type WireType } from "./claim-language.mts";
+import { numberOfBits, type ClauseKey, type StringClause } from "./type-graph.mts";
 
 const PRIMITIVE = ["null", "boolean", "string", "number", "undefined"];
 // A membership marker, not a table of names.
@@ -475,11 +476,24 @@ function roundTrips(type: any) {
   // stays on the JSON path, like anything else the surface cannot name.
   const shown = (atoms: any[]) => atoms.map((atom) => printType({ top: false, atoms: [atom] }).text).join(" & ");
 
+  // Every clause kind this lifter names. The graph arrives untyped, so the
+  // dispatch below cannot be narrowed; this table is checked instead, and a
+  // clause added to `Clause` without a case here does not compile.
+  const _handled = {
+    nul: 1, bool: 1, undef: 1, num: 1,
+    boolLit: 1, numLit: 1, refs: 1, arrs: 1, callable: 1,
+  } satisfies Record<StringClause | ClauseKey, 1>;
+  void _handled;
+
   function liftClause(types: any, clause: any, depth: number): any {
     if (clause === "nul") return { a: "null" };
     if (clause === "bool") return { a: "boolean" };
     if (clause === "undef") return { a: "undefined" };
+    if (clause === "num") return { a: "number" };
     if (clause && clause.boolLit) return { a: "booleanlit", v: String(clause.boolLit.value) };
+    // The surface names the number, not the bit pattern that identifies it.
+    if (clause && clause.numLit)
+      return { a: "numberlit", v: String(numberOfBits(clause.numLit.bits)) };
     // The graph is finite but may be cyclic, so lifting stops rather than recursing.
     if (depth <= 0) return "…";
     if (clause && clause.refs) {
