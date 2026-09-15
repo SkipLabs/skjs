@@ -1,5 +1,6 @@
 import { decodeGraph, decodeLabels, type TypeGraph, type Labels } from "./type-graph.mts";
-import { decodeTerm, decodeNode, type Term, type ProgramNode } from "./calculus-language.mts";
+import { decodeTerm, type Term } from "./calculus-language.mts";
+import { decodeNode, type ProgramNode } from "./control-flow.mts";
 
 // Optional explanatory metadata, never evidence. A record this reader cannot
 // decode field by field is left in the human diagnostic; it must not change the

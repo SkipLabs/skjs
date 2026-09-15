@@ -69,6 +69,11 @@ against `Language.lean`. `parseTerm` / `printTerm` are exact, validated JSON.
 Terms retain native slot numbers so the printed obligation matches the calculus;
 source names are shown alongside in its context table.
 
+`tools/control-flow.mts` declares the program graph over those terms —
+`Target`, `Continuation`, and `ProgramNode` — against `ControlFlow.lean`. A node
+names its successors and their slot maps explicitly, so the node in a failure
+record is validated as program data rather than inferred from its expression.
+
 ## Obligations and consistency
 
 `tools/diagnostic.mts` reads the native failure record, checking its
