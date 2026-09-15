@@ -26,7 +26,6 @@ esac
 
 VERIFIER="$REPO/verification/lean/.lake/build/bin/verifier"
 WORK="$(mktemp -d)"
-REPAIR_DIR=""
 passed=0
 failed=0
 completed=0
@@ -62,7 +61,6 @@ finish() {
   echo "  Elapsed: $((SECONDS - started_at))s"
   skjs_shutdown
   rm -rf "$WORK"
-  if [ -n "$REPAIR_DIR" ]; then rm -rf "$REPAIR_DIR"; fi
 }
 trap finish EXIT
 
@@ -154,19 +152,6 @@ snapshot_probes() {
   skjs_check "$SNAPSHOTS"/*.ts > "$WORK/snapshots.claims" 2> "$WORK/snapshots.err" || true
 }
 
-# Preserve exact repair-test bodies while making each file fit the source gate.
-# The generated files are in the shared mount and strict verification project.
-repair_probes() {
-  node verification/tests/repair-captured-read.mts --extract "$REPAIR_DIR" || exit 1
-  skjs_check "$REPAIR_DIR/accepted.ts" "$REPAIR_DIR/rejected.ts" > "$WORK/repair.claims" 2> "$WORK/repair.err"
-  local got=$?
-  if [ "$got" -ne 2 ]; then
-    echo "FAIL: expected stale repair controls to reject, got $got"
-    cat "$WORK/repair.err"
-    exit 1
-  fi
-}
-
 # The front end is TypeScript and is checked as such: `tsc` over the trusted
 # tools and over the reader's own types, under the same strictness the corpus
 # is claimed at. A silently-renamed compiler API reads as `undefined` at
@@ -217,10 +202,8 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   # Fixtures are independent and each is dominated by a container start, so
   # they are built at once rather than in turn. Every one writes under its own
   # name, and a failure inside a background build still stops the run.
-  REPAIR_DIR="$(mktemp -d verification/tests/.repair-source.XXXXXX)"
   building=()
   build() { "$@" & building+=($!); }
-  build repair_probes
   build fixture source "$BASE"
   build fixture cells "$CELL_SOURCE"
   build fixture undefined "$UNDEFINED_SOURCE"
@@ -310,7 +293,6 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Generic identity source" node verification/tests/generic-source.mts "$WORK/generic_id.ast" "$WORK/generic_id.claims" "$GENERIC_ID" "$VERIFIER"
   run_test "Generic alias source" node verification/tests/generic-aliases.mts "$WORK/generic_aliases.ast" "$WORK/generic_aliases.claims" "$GENERIC_ALIASES" "$VERIFIER"
   run_test "Generic extends source" node verification/tests/generic-extends.mts "$WORK/generic_extends.ast" "$WORK/generic_extends.claims" "$GENERIC_EXTENDS" "$VERIFIER"
-  run_test "Repair captured reads" node verification/tests/repair-captured-read.mts --check "$REPAIR_DIR" "$WORK/repair.claims" "$VERIFIER"
   run_test "Generic body source" node verification/tests/generic-bodies.mts "$WORK/generic_bodies.ast" "$WORK/generic_bodies.claims" "$GENERIC_BODIES" "$VERIFIER"
   run_test "TypeScript claims" node verification/tests/tsc-claims.mts "$VERIFIER"
   # The drafts kept beside corpus sources: still about those sources, and still

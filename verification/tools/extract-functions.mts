@@ -15,12 +15,3 @@ export function listFunctions(file: string): { name: string; text: string }[] {
     .filter(f => f.name && f.body)
     .map(f => ({ name: f.name!.text, text: source.slice(f.getStart(sf), f.end) }));
 }
-
-/** Exact named function bodies for dependency-free source fixtures.
- * Dependencies are not synthesized: callers select self-contained functions. */
-export function extractFunctions(file: string, names: string[]): string {
-  const functions = listFunctions(file).filter(f => names.includes(f.name));
-  if (functions.length !== names.length || new Set(names).size !== names.length)
-    throw Error(`expected each selected function exactly once in ${file}`);
-  return functions.map(f => f.text).join("\n\n") + "\n";
-}

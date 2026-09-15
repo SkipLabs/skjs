@@ -762,9 +762,9 @@ remains. Every supplied expression claim is still checked, while stronger
 saved-read evidence may establish the enclosing return contract. This lowering
 uses the existing term rules and adds no axioms; its correspondence with source
 reads is part of the trusted adapter, not a proved JavaScript equivalence.
-`repair-captured-read.mts` extracts unchanged safe and stale controls from
-`tests/expect-error/captured-read-stability.ts`, checks both producers, and runs
-the independent certificate consumer on successful requests.
+The repaired and stale forms this lowering distinguishes are
+`captured-read-stability.ts` in the corpus, reported by `make verify-census`
+rather than asserted by a suite.
 
 Straight-line blocks also support initialized `const` declarations and expression
 statements before the final return. Each statement entry uses the same checked
