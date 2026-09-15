@@ -255,8 +255,11 @@ async function collect(relative: any, producer = "skjs") {
         throw error;
       run = error;
     }
+    const nativeClaims = path.join(tmp, "native-claims.json");
+    await fs.writeFile(nativeClaims, run.stdout);
     const claims = path.join(tmp, "claims.json");
-    await fs.writeFile(claims, run.stdout);
+    await execFile(process.execPath,["verification/tools/export-source-claims.mts",
+      relative,"--claims",nativeClaims,"--out",claims],options);
     const args = [
       "verification/tools/annotate-source.mts",
       relative,
@@ -265,7 +268,9 @@ async function collect(relative: any, producer = "skjs") {
       "--producer",
       "skjs",
       "--format",
-      "skjs",
+      "source-claims",
+      "--conversion",
+      claims + ".conversion.json",
       "--stdout",
       "json",
     ];
@@ -301,10 +306,10 @@ async function collect(relative: any, producer = "skjs") {
         verified: Boolean(verify),
       },
       candidate: {
-        format: "skjs",
+        format: "source-claims",
         file: relative,
         sourceSha256: digest,
-        claims: JSON.parse(run.stdout).filter((f: any) => f.file === relative),
+        claims: JSON.parse(await fs.readFile(claims,"utf8")),
       },
     };
   } finally {

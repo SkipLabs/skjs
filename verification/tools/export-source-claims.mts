@@ -35,12 +35,22 @@ export function main(args: string[]) {
   const parser=path.resolve(__dirname,"parse-source.mts"),temp=fs.mkdtempSync(path.join(os.tmpdir(),"source-export-"));
   const diagnostics=opts.diagnostics?fs.readFileSync(opts.diagnostics,"utf8"):null;
   try {
-    const ast=JSON.parse(run(process.execPath,[parser,sourcePath]));
-    const file=opts["file-key"]||sourcePath;ast.file=file;
-    if(ast.sourceSha256!==hash(source))throw Error("source changed during parsing");
-    const ap=path.join(temp,"ast.json"),cp=path.join(temp,"claims.json");
-    fs.writeFileSync(ap,JSON.stringify(ast));fs.writeFileSync(cp,raw);
-    const converted=JSON.parse(run(opts.verifier,["--export-source-claims",ap,cp,file]));
+    const file=opts["file-key"]||sourcePath;
+    let ast;
+    try { ast=JSON.parse(run(process.execPath,[parser,sourcePath])); }
+    catch(error) {
+      if(!String((error as Error).message).startsWith("gate:"))throw error;
+    }
+    const cp=path.join(temp,"claims.json");fs.writeFileSync(cp,raw);
+    let converted;
+    if(ast) {
+      ast.file=file;
+      if(ast.sourceSha256!==hash(source))throw Error("source changed during parsing");
+      const ap=path.join(temp,"ast.json");fs.writeFileSync(ap,JSON.stringify(ast));
+      converted=JSON.parse(run(opts.verifier,["--export-source-claims",ap,cp,file]));
+    } else {
+      converted=JSON.parse(run(opts.verifier,["--import-skjs-claims",cp,file,hash(source)]));
+    }
     if(fs.readFileSync(sourcePath,"utf8")!==source||hash(fs.readFileSync(opts.claims,"utf8"))!==hash(raw))throw Error("input changed during conversion");
     const bytes=JSON.stringify(converted.claims,null,2)+"\n";
     const selected=originalClaims.find((f: any)=>f.file===file);

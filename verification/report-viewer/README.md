@@ -214,3 +214,9 @@ Report ids identify records within one snapshot. They are not stable identities
 across edits; reattachment requires syntax and binding identity as well as
 offset mapping. Moving an annotation is not evidence that its claim remains
 valid.
+
+Both producer collection paths supply `source-claims` candidates. Rigid parameters
+use the same function-scoped references, and unavailable claims retain their sites.
+SKJS native JSON is an import artifact, retained in provenance; editing and checking
+new collections use the shared format. Sources outside the modeled fragment still
+have an inspectable normalized report, with verification unavailable.

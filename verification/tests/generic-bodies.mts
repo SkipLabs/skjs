@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
+import assert from "node:assert/strict";
+import { produce as tscProduce, close as closeTsc } from "../tools/tsc-claims.mts";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -135,10 +137,10 @@ try {
     f.envs[1].vars.find((v: any) => v.name === "y").type = { top: false, atoms: [{ a: "param", name: "U" }] };
   })), false, "generic entry claim at");
   expect("missing expression claims reject", run(ast, editedClaims("bind", f => { f.exprs.pop(); })), false, "missing, duplicate or unmatched");
-  expect("duplicate entry claims reject", run(ast, editedClaims("bind", f => { f.envs.push(clone(f.envs[0])); })), false, "missing, duplicate or unmatched");
+  expect("duplicate entry claims reject", run(ast, editedClaims("bind", f => { f.envs.push(clone(f.envs[0])); })), false, "duplicate source claim sites or bindings");
   expect("unmatched expression claims reject", run(ast, editedClaims("bind", f => {
     f.exprs.push({ pos: [0, 1], type: t });
-  })), false, "missing, duplicate or unmatched");
+  })), false, "claim site is not");
   expect("extra entry bindings reject", run(ast, editedClaims("bind", f => {
     f.envs[0].vars.push({ name: "invented", type: t });
   })), false, "bindings differ");
@@ -166,6 +168,23 @@ try {
       throw Error(`generic claim rejection has no viewer location: ${JSON.stringify(result)}`);
     passed++;
   }
+  // Both native producers converge before verification or display.
+  const imported=spawnSync(verifier,["--export-source-claims",astPath,claimsPath,fileKey],{encoding:"utf8"});
+  assert.equal(imported.status,0,imported.stderr);
+  const neutral=JSON.parse(imported.stdout).claims;
+  const tsClaims=tscProduce(fileKey).doc;
+  closeTsc();
+  assert.deepEqual(neutral.functions.slice(0,4),tsClaims.functions.slice(0,4),"both producers use identical rigid-parameter encoding");
+  // The Boolean result permits a producer to state a weaker expression claim.
+  assert.deepEqual(neutral.types,tsClaims.types);
+  const np=path.join(tmp,"neutral.json");
+  fs.writeFileSync(np,JSON.stringify(neutral));
+  expect("native claims produce common evidence",run(ast,rawClaims),true);
+  const consumed=spawnSync(verifier,["--check-source-claims",astPath,np,fileKey,path.join(tmp,"evidence.json")],{encoding:"utf8"});
+  expect("neutral claims consume native-import evidence",consumed,true);
+  neutral.functions[0].expressions[0].type=[1,2];
+  fs.writeFileSync(np,JSON.stringify(neutral));
+  expect("neutral edit rejects with native-import evidence",spawnSync(verifier,["--check-source-claims",astPath,np,fileKey,path.join(tmp,"evidence.json")],{encoding:"utf8"}),false,"generic expression claim");
   console.log(`Generic bodies: ${passed} passed`);
 } catch (e) {
   console.error(e);

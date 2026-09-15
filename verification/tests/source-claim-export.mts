@@ -89,22 +89,23 @@ try {
     const r=run(verifier,["--produce-source-claims",oa,oc,partialFile,ep,"10"]);assert.equal(r.status,0,r.stderr);
   });
   test("optional recovery provenance retained separately",()=>{const rp=path.join(tmp,"recovery.json"),r=convert(partialFile,recoveryPath,rp);assert.equal(r.status,0,r.stderr);const m=JSON.parse(fs.readFileSync(rp+".conversion.json", "utf8"));assert(m.functions.some((f: any) =>f.collection.quality==="recovery"));assert(!("collection" in JSON.parse(fs.readFileSync(rp, "utf8")).functions[0]));});
-  test("unsupported required type becomes a recorded gap",()=>{
+  test("unavailable required type is preserved at its site",()=>{
     const raw=JSON.parse(fs.readFileSync(partialPath, "utf8")),f=raw.find((f: any) =>f.file===partialFile).functions.find((f: any) =>f.name==="complete");
     f.exprs[0].type={unsupported:true};const cp=path.join(tmp,"unsupported.raw.json"),op=path.join(tmp,"unsupported.json");fs.writeFileSync(cp,JSON.stringify(raw));
     const r=convert(partialFile,cp,op);assert.equal(r.status,0,r.stderr);
     const d=JSON.parse(fs.readFileSync(op, "utf8")),m=JSON.parse(fs.readFileSync(op+".conversion.json", "utf8"));
-    assert.equal(d.functions.find((f: any) =>f.name==="complete").expressions.length,0);
+    assert.equal(d.functions.find((f: any) =>f.name==="complete").expressions.length,1);
+    assert(d.functions.find((f: any) =>f.name==="complete").expressions[0].type.unavailable);
     assert(m.omissions.some((o: any) =>o.function==="complete"&&o.raw.unsupported===true));
     const oneAst=JSON.parse(fs.readFileSync(pa, "utf8"));oneAst.functions=oneAst.functions.filter((f: any) =>f.name==="complete");d.functions=d.functions.filter((f: any) =>f.name==="complete");
     const oa=path.join(tmp,"unavailable.ast.json"),oc=path.join(tmp,"unavailable-one.json");fs.writeFileSync(oa,JSON.stringify(oneAst));fs.writeFileSync(oc,JSON.stringify(d));
     assert.notEqual(run(verifier,["--produce-source-claims",oa,oc,partialFile,ep,"10"]).status,0);
   });
-  test("unavailable signatures omit the function explicitly",()=>{
+  test("unavailable signatures preserve the function explicitly",()=>{
     const raw=JSON.parse(fs.readFileSync(partialPath, "utf8"));raw.find((f: any) =>f.file===partialFile).functions.find((f: any) =>f.name==="complete").retType={unsupported:true};
     const cp=path.join(tmp,"signature.raw.json"),op=path.join(tmp,"signature.json");fs.writeFileSync(cp,JSON.stringify(raw));const r=convert(partialFile,cp,op);assert.equal(r.status,0,r.stderr);
-    assert(!JSON.parse(fs.readFileSync(op, "utf8")).functions.some((f: any) =>f.name==="complete"));
-    assert(JSON.parse(fs.readFileSync(op+".conversion.json", "utf8")).omissions.some((o: any) =>o.reason.includes("signature")));
+    assert(JSON.parse(fs.readFileSync(op, "utf8")).functions.find((f: any) =>f.name==="complete").result.unavailable);
+    assert(JSON.parse(fs.readFileSync(op+".conversion.json", "utf8")).omissions.some((o: any) =>o.site==="result"));
   });
   test("duplicate claims fail conversion rather than being merged",()=>{
     const raw=JSON.parse(fs.readFileSync(partialPath, "utf8"));const selected=raw.find((f: any) =>f.file===partialFile);selected.functions.push(selected.functions[0]);const cp=path.join(tmp,"duplicate.json");fs.writeFileSync(cp,JSON.stringify(raw));assert.notEqual(convert(partialFile,cp,path.join(tmp,"duplicate-out.json")).status,0);
@@ -124,10 +125,10 @@ try {
     const rp=path.join(tmp,"recovery.json"),out=path.join(tmp,"recovery.annotated.ts"),r=report(rp,out,["--conversion",rp+".conversion.json"]);
     assert.equal(r.status,0,r.stderr);const text=fs.readFileSync(out,"utf8");assert(text.includes("quality=recovery"));assert(text.includes("recovery claim"));
   });
-  test("conversion omissions are distinct from unfinished expressions",()=>{
+  test("unavailable claims stay distinct from unfinished expressions",()=>{
     const cp=path.join(tmp,"unsupported.json"),out=path.join(tmp,"omitted.annotated.ts"),r=report(cp,out,["--conversion",cp+".conversion.json"]);assert.equal(r.status,0,r.stderr);
     const m=JSON.parse(fs.readFileSync(out+".json", "utf8")),f=m.functions.find((f: any) =>f.name==="complete"),pos=f.collectionSnapshot.expressions[0].pos;
-    assert(m.gaps.some((g: any) =>JSON.stringify(g.pos)===JSON.stringify(pos)&&g.status.includes("omitted during conversion")));
+    assert(f.expressions.find((e: any)=>JSON.stringify(e.pos)===JSON.stringify(pos)).raw.unavailable);
     assert(!m.gaps.some((g: any) =>JSON.stringify(g.pos)===JSON.stringify(pos)&&g.status==="expression entered without a type result"));
   });
   test("edited sidecar cannot inherit original collection labels",()=>{

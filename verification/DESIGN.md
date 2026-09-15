@@ -382,7 +382,11 @@ obligations. Located failures print the bounds, named environment and required
 inclusion, and the report points to the entry or expression. Valid weakening is
 allowed. These generic checks still run directly rather than emitting a ground
 graph or serialized per-site evidence; an empty graph bundle no longer skips
-body-claim validation. Both producers support this fragment. The TS exporter
+body-claim validation. Both producers support this fragment. Native SKJS claims
+are imported into the same typed source sidecar as TS claims, before verification
+or viewer collection. Unavailable types remain explicit at their sites; native
+payloads and collection history are import provenance. There is one whole-file
+producer/consumer implementation, in `SourceClaimJson`. The TS exporter
 preserves compiler symbol identity as a function-scoped `{param: "T"}` source
 claim; the neutral consumer checks it against the source binders and bounds.
 This checks variable-copy bodies; generic callbacks, source call-site

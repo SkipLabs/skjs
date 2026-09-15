@@ -52,7 +52,7 @@ const claimedType = (t: any) =>
     ? t.every((label) => Number.isInteger(label) && label >= 0)
     : Boolean(t) &&
       typeof t === "object" &&
-      (typeof t.param === "string" || t.unsupported === true ||
+      (typeof t.unavailable === "string" || typeof t.param === "string" || t.unsupported === true ||
         (typeof t.top === "boolean" && Array.isArray(t.atoms)));
 // There is one editor and it speaks the producer's structural encoding. A
 // candidate in the normalized encoding is lowered here on the way in, interning
@@ -61,7 +61,7 @@ const claimedType = (t: any) =>
 // assertion, `null` for none.
 const point = (types: any, value: any, current: any = null) => ({
   current,
-  ...(value?.param ? {type:value} : value?.top === false && Object.keys(value).length === 2 && value.atoms?.length === 1 &&
+  ...(value?.param || value?.unavailable ? {type:value} : value?.top === false && Object.keys(value).length === 2 && value.atoms?.length === 1 &&
     value.atoms[0].a === "param" && Object.keys(value.atoms[0]).length === 2 ?
     {type:{param:value.atoms[0].name}} : surface.lower(types, value)),
 });

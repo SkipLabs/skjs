@@ -29,6 +29,13 @@ still do not emit graph certificates. Ground functions cannot use rigid claims,
 and rigid claims cannot carry current-content assertions. Within this fragment,
 other types must denote Boolean; no parameter is replaced by its bound.
 
+Both producers feed this format into `SourceClaimJson`. The native SKJS CLI
+entry points first run `SourceClaimExport`; they do not have another verifier.
+The viewer collects and edits this format for both producers. Original native
+claims are retained only as import provenance or accepted by legacy import tools.
+When source parsing is outside the fragment, import still permits inspection in
+this format, but verification requires the real source parser and stays unavailable.
+
 ## Encoding
 
 Every field shown below is required. Unknown fields, including stored verification
@@ -270,10 +277,11 @@ Two files are written, without modifying inputs or overwriting existing outputs:
 - `source-claims.json.conversion.json`: original raw claims, function collection
   metadata, exact optional diagnostics, input/tool fingerprints and all omissions.
 
-Unsupported binding or expression types are omitted with their original payload
-and decoder error recorded. An unsupported signature omits that function rather
-than inventing parameter or result types. Entries and expressions absent from
-the lowered source are also recorded as omissions. These include raw export
+An unavailable type is represented as `{"unavailable":"decoder reason"}` at its
+original signature, binding or expression site. It never denotes a type, and
+using it in an obligation rejects. The native payload and reason also remain in
+the import metadata. Entries and expressions absent from the lowered source are
+recorded as omissions. These include raw export
 sites not used by the source adapter; they do not necessarily indicate errors.
 Malformed inputs and duplicate identities are rejected instead of merged.
 
@@ -294,7 +302,7 @@ node verification/tools/annotate-source.mts input.ts --format source-claims \
 
 The report shows **original SKJS collection** status and recovery labels,
 retains diagnostics and omissions, and uses the original snapshot to distinguish
-unfinished expressions from claims omitted by conversion. The conversion
+unfinished expressions from unavailable claims and native sites omitted by conversion. The conversion
 manifest must match both the source identity and the exact sidecar bytes. Its
 fingerprint participates in report freshness checks. These are provenance
 checks, not authentication or proof of the producer's descriptions.

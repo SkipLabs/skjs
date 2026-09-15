@@ -943,39 +943,6 @@ def extractFn (f : SourceInput.Fn) (fc : SourceInput.Claims) : Except String Sou
   let (fc, T) ← (SkjsSourceClaims.translate fc).run SourceTypes.initial
   extractNormalizedFn T f fc
 
-def extract (ast claims : Json) (fileKey : String) : Except String (List SourceRequest) := do
-  if (← jStr (← jField ast "file")) != fileKey then throw "AST file key mismatch"
-  let files ← claims.getArr?
-  let selected ← files.toList.filterM fun f => do return (← jStr (← jField f "file")) == fileKey
-  if selected.length != 1 then throw "expected exactly one matching claim file"
-  let aliases ← GenericAlias.decodeAliases ast
-  for a in aliases do GenericAlias.admit a
-  let decoded ← SourceInput.decodeAstWithParams ast
-  let decoded ← decoded.mapM fun (f, tps) => do
-    return (← GenericAlias.expandFn aliases f, tps)
-  let fs := decoded.map Prod.fst
-  let cs ← SourceInput.decodeTypeClaims claims fileKey
-  let cs ← cs.mapM (GenericAlias.expandClaims aliases)
-  if fs.isEmpty then throw "no source functions to verify"
-  if !distinct (fs.map (fun f => (f.name, f.namePos))) then throw "duplicate source function identities"
-  if !distinct (cs.map (fun f => (f.name, f.namePos))) then throw "duplicate function claims"
-  if fs.length != cs.length then throw "function claim count mismatch"
-  let generic := decoded.filter (fun (_, tps) => !tps.isEmpty)
-  let ground := decoded.filter (fun (_, tps) => tps.isEmpty) |>.map Prod.fst
-  for (f, tps) in generic do
-    let some c := cs.find? (fun c => c.name == f.name && c.namePos == f.namePos)
-      | throw s!"missing claims for '{f.name}'"
-    GenericSource.check f tps c
-  if ground.isEmpty then return []
-  -- One table for the file, lowered in source declaration order so that the
-  -- neutral export of the same claims names the same labels.
-  let lower (f : SourceInput.Fn) : SourceTypes.Lowering (SourceInput.Fn × SourceClaims.Function) := do
-    let some c := cs.find? (fun c => c.name == f.name && c.namePos == f.namePos)
-      | throw s!"missing claims for '{f.name}'"
-    return (f, ← SkjsSourceClaims.translate c)
-  let (lowered, T) ← (ground.mapM lower).run SourceTypes.initial
-  lowered.mapM fun (f, fc) => extractNormalizedFn T f fc
-
 /-- Evidence order is source declaration order, independent of export order. -/
 structure Bundle where
   functions : List Response
@@ -1028,42 +995,6 @@ theorem checkRequests_assertions {rs : List SourceRequest} {b : Bundle}
   obtain ⟨node,hn,_,hk⟩ := hs
   exact checkAssertions_sound (hc.1.2 _ hm).2 hr hn hk
 
-def checkJson (ast claims : Json) (fileKey : String) (evidence : Json) : Except String Unit := do
-  let rs ← extract ast claims fileKey
-  let b : Bundle ← decodeStrict evidence
-  if checkRequests rs b then return ()
-  throw "source evidence does not justify the extracted program and exact claims"
-
-def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat) : Except String Json := do
-  let rs ← extract ast claims fileKey
-  let es ← rs.mapM fun r => ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels r.types.length fuel r.obligations
-  let cs ← (rs.zip es).mapM fun (r,proofs) => do
-    let j ← RequestJson.produceJson (toJson r.toRequest) fuel [] proofs r.sourceMap (some r.searchLabels) r.assertions r.cuts
-    decodeResponse r.toRequest j
-  let evidence := toJson (Bundle.mk cs es)
-  checkJson ast claims fileKey evidence
-  return evidence
-
-/-- Tie source-mode acceptance to the actual decoded inputs and extracted requests. -/
-theorem checkJson_checked {ast claims evidence : Json} {fileKey : String}
-    (h : checkJson ast claims fileKey evidence = .ok ()) :
-    ∃ rs b, extract ast claims fileKey = .ok rs ∧
-      decodeStrict evidence = .ok b ∧ checkRequests rs b = true := by
-  unfold checkJson at h
-  cases he : extract ast claims fileKey with
-  | error e => simp only [he] at h; contradiction
-  | ok rs =>
-    cases hb : (decodeStrict evidence : Except String Bundle) with
-    | error e => simp only [he, hb] at h; contradiction
-    | ok b =>
-      simp only [he, hb] at h
-      change (if checkRequests rs b = true then Except.ok () else
-        Except.error "source evidence does not justify the extracted program and exact claims") = .ok () at h
-      split at h
-      · exact ⟨rs,b,rfl,rfl,by assumption⟩
-      · contradiction
-
 /-- Every accepted extracted function has the existing all-budget guarantee.
 This does not assert semantic preservation of the source compiler. -/
 theorem checkRequests_safe {rs : List SourceRequest} {b : Bundle}
@@ -1085,6 +1016,5 @@ theorem checkRequests_obligations {rs : List SourceRequest} {b : Bundle}
 #print axioms checkAssertions_cut
 #print axioms checkAssertions_sound
 #print axioms checkRequests_obligations
-#print axioms checkJson_checked
 #print axioms checkRequests_safe
 end Verification.ExperimentState.SourceExtraction

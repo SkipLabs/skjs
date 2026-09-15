@@ -51,14 +51,14 @@ try {
     ["missing statement environment", (a,c) => { fn(c).envs = []; }, "missing statement environment"],
     ["missing expression claim", (a,c) => { fn(c).exprs = []; }, "no claimed type"],
     ["missing local binding", (a,c) => { fn(c).envs.forEach((e: any) => e.vars = e.vars.filter((v: any) => v.name !== "x")); }, "missing claimed binding"],
-    ["duplicate claim", (a,c) => { fn(c).exprs.push(clone(fn(c).exprs[0])); }, "duplicate statement or expression claim"],
+    ["duplicate claim", (a,c) => { fn(c).exprs.push(clone(fn(c).exprs[0])); }, "duplicate source claim sites or bindings"],
     ["malformed singleton", (a,c) => { fn(c).exprs[0].type = ty("maybe"); }, "boolean literal must be exactly"],
     ["malformed source literal", a => { a.functions[0].body[0].init.lit.v = "maybe"; }, "boolean literal must be exactly"],
     ["return signature mismatch", (a,c) => { fn(c).retType = ty("true"); }, "claimed return type differs"],
     ["uninitialized source read", a => { a.functions[0].body[0].init = { k: "id", pos: a.functions[0].body[0].init.pos, name: "x" }; }, "unbound or uninitialized"],
     ["duplicate local declaration", a => { a.functions[0].body[1].name = "x"; }, "duplicate or shadowing local declaration"],
     ["duplicate file claims", (a,c) => { c.push(clone(c.find((f: any) => f.file === fileKey))); }, "exactly one matching claim file"],
-    ["duplicate source identity", a => { a.functions[1] = clone(a.functions[0]); }, "duplicate source function identities"],
+    ["duplicate source identity", a => { a.functions[1] = clone(a.functions[0]); }, "duplicate function identity"],
     // Falling off the end is not refused, it is checked: the exit carries the
     // value a completing body produces, and `undefined` establishes nothing the
     // source can declare. Asserting on the term pins the reason, not just the
@@ -104,7 +104,7 @@ try {
       const env = parameterClaims(c).envs.find((e: any) => e.pos[0] === initial);
       env.vars = env.vars.filter((v: any) => v.name !== "second");
     }, "missing claimed binding"],
-    ["shifted function identity", (a,c) => { fn(c).namePos[0]++; }, "missing claims for"],
+    ["shifted function identity", (a,c) => { fn(c).namePos[0]++; }, "claim function identity is absent from source"],
     ["missing function claims", (a,c) => { c.find((f: any) => f.file === fileKey).functions.pop(); }, "function claim count mismatch"],
     ["renamed claim file", (a,c) => { c.find((f: any) => f.file === fileKey).file += ".other"; }, "exactly one matching claim file"],
     ["never expression claim", (a,c) => { fn(c).exprs[0].type = {top:false,atoms:[]}; }, "evidence search failed"],

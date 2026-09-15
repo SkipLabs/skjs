@@ -300,12 +300,12 @@ or annotation judgment. Counts and root judgments must match exactly. Exported
 function order does not matter. The checking command reconstructs both the
 requests and required judgments itself and does not run the producer.
 
-Internally, SKJS exports pass through `SkjsSourceClaims.translate` into
-`SourceClaims.Function`, whose candidates are calculus type labels or explicit
-decoding failures. `extractNormalizedFn` is the same extraction path for direct
-in-memory producers. Used candidates are resolved with source-graph label bounds
-checks. This does not introduce a serialized claim format or change the CLI;
-see [the proposed source-claim interface](CLAIM-INTERFACE.md).
+Native SKJS source commands first import through `SourceClaimExport` into the
+same `SourceClaimJson` document and consumer used by TS. Unavailable claims stay
+explicit and do not denote types. There is no separate native whole-file checker.
+Ground functions lower to `SourceClaims.Function`; used candidates are resolved
+with source-graph label bounds checks. Generic functions use the shared rigid
+checker. See [the source-claim interface](SOURCE-CLAIMS.md).
 
 The adapter represents boolean as the union of exact true and false labels.
 [SourceTypes.lean](lean/Verification/ExperimentState/SourceTypes.lean) proves

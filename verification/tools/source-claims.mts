@@ -16,7 +16,7 @@ import type { Labels, Row } from "./type-graph.mts";
 export type { Labels, Row } from "./type-graph.mts";
 
 /** Ground graph labels or a reference to the enclosing function's source binder. */
-export type ClaimType = Labels | { param: string };
+export type ClaimType = Labels | { param: string } | { unavailable: string };
 
 /**
  * What a producer believes at one site: the type it claims, and — where the

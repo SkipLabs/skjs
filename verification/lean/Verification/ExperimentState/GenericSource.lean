@@ -10,7 +10,7 @@ extra parameters (`fst`), along `letE_safeP` and `var_safeP`.
 `T extends boolean` is an assumption `T ≤ boolean`:
 `asBoolean<T extends boolean>(x: T): boolean { return x }` transports along
 that inclusion. It does not justify `true ≤ T`. Other generic shapes remain
-outside the fragment. SKJS still supplies the parameter and result claims. -/
+outside the fragment. Producer claims enter through the shared source interface. -/
 namespace Verification.ExperimentState.GenericSource
 open Lean Wire
 
@@ -137,12 +137,7 @@ private def entryClaims (params : List String) (edges : List (Nat × Nat))
   let names := raw.map Prod.fst
   if names.eraseDups.length != names.length then
     throw s!"generic entry claim at [{pos.1},{pos.2}): duplicate binding"
-  -- SKJS exposes an unavailable implicit `this` even in receiver-free functions.
-  -- It is not a source binding. Never silently accept an asserted type for it.
-  if let some thisType := raw.lookup "this" then
-    unless thisType == Json.mkObj [("unsupported",toJson true)] do
-      throw s!"generic entry claim at [{pos.1},{pos.2}): this is not a source binding"
-  let source := raw.filter (fun p => p.1 != "this")
+  let source := raw
   if source.length != env.length || source.any (fun p => !(env.map Prod.fst).contains p.1) then
     throw s!"generic entry claim at [{pos.1},{pos.2}): bindings differ from the source scope"
   env.mapM fun (name,actual) => do

@@ -365,7 +365,7 @@ function fromBundle(bundle: any) {
         bindings: e.bindings.map((b: any) => ({
           name: b.name,
           type: display(b.raw, b.type),
-          unavailable: b.raw?.unsupported === true,
+          unavailable: b.raw?.unsupported === true || typeof b.raw?.unavailable === "string",
         })),
       })),
       ...f.expressions.map((e: any) => ({

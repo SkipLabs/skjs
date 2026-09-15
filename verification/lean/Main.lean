@@ -5,6 +5,8 @@ open Verification Lean
 
 def main (args : List String) : IO UInt32 := do
   match args with
+  | ["--import-skjs-claims", claimsPath, fileKey, digest] =>
+      ExperimentState.RequestCli.inspectSourceClaims claimsPath fileKey digest
   | ["--export-source-claims", astPath, claimsPath, fileKey] =>
       ExperimentState.RequestCli.exportSourceClaims astPath claimsPath fileKey
   | ["--check-source-claims", astPath, claimsPath, fileKey, evidencePath] =>

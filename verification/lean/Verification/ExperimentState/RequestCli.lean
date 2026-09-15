@@ -41,6 +41,13 @@ def exportSourceClaims (astPath claimsPath fileKey : String) : IO UInt32 := do
   | .ok converted => IO.println converted.compress; return 0
   | .error e => IO.eprintln s!"reject: {e}"; return 1
 
+/-- Native import only; its output is the same neutral document used by both producers. -/
+def inspectSourceClaims (claimsPath fileKey digest : String) : IO UInt32 := do
+  let claims ← readJson claimsPath
+  match claims.bind (fun c => SourceClaimExport.inspect c fileKey digest) with
+  | .ok converted => IO.println converted.compress; return 0
+  | .error e => IO.eprintln s!"reject: {e}"; return 1
+
 def sourceFiles (astPath claimsPath fileKey evidencePath : String)
     (fuel : Option Nat) (normalized : Bool := false) : IO UInt32 := do
   if fuel.isSome && (evidencePath == astPath || evidencePath == claimsPath) then
@@ -48,19 +55,22 @@ def sourceFiles (astPath claimsPath fileKey evidencePath : String)
     return 1
   let ast ← readJson astPath
   let claims ← readJson claimsPath
+  let claims := do
+    let c ← claims
+    if normalized then return c
+    let converted ← SourceClaimExport.convert (← ast) c fileKey
+    jField converted "claims"
   match fuel with
   | none =>
     let evidence ← readJson evidencePath
     let checked := do
-      let check := if normalized then SourceClaimJson.checkJson else SourceExtraction.checkJson
-      check (← ast) (← claims) fileKey (← evidence)
+      SourceClaimJson.checkJson (← ast) (← claims) fileKey (← evidence)
     match checked with
     | .ok () => IO.println s!"accept: stateful source {fileKey}"; return 0
     | .error e => IO.eprintln s!"reject: {e}"; return 1
   | some depth =>
     let produced := do
-      let produce := if normalized then SourceClaimJson.produceJson else SourceExtraction.produceJson
-      produce (← ast) (← claims) fileKey depth
+      SourceClaimJson.produceJson (← ast) (← claims) fileKey depth
     match produced with
     | .error e => IO.eprintln s!"reject: {e}"; return 1
     | .ok evidence =>

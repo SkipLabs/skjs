@@ -249,6 +249,8 @@ function fromSourceClaims(
   if(!Array.isArray(types)||types.length<4)throw Error("invalid source type table");
   const type=(A: import("./source-claims.mts").ClaimType)=> {
     if(!Array.isArray(A)) {
+      if("unavailable" in A && Object.keys(A).length===1 && typeof A.unavailable==="string" && A.unavailable)return "(unavailable)";
+      if(!("param" in A))throw Error("invalid source claim type");
       if(Object.keys(A).join()!=="param" || typeof A.param!=="string" || !A.param)throw Error("invalid rigid parameter claim");
       return A.param;
     }

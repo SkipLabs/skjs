@@ -12,21 +12,27 @@ interpreted as a ground graph label or replaced with its upper bound. -/
 inductive ClaimType where
   | labels : List Nat → ClaimType
   | param : String → ClaimType
+  | unavailable : String → ClaimType
 instance : Coe (List Nat) ClaimType := ⟨ClaimType.labels⟩
 instance : ToJson ClaimType where
   toJson
     | .labels A => toJson A
     | .param name => Json.mkObj [("param",toJson name)]
+    | .unavailable reason => Json.mkObj [("unavailable",toJson reason)]
 instance : FromJson ClaimType where
   fromJson? j := match j with
     | .arr _ => ClaimType.labels <$> fromJson? j
     | _ => do
+      if let .ok reason := j.getObjValAs? String "unavailable" then
+        if j != Json.mkObj [("unavailable",toJson reason)] || reason.isEmpty then throw "invalid unavailable claim"
+        return .unavailable reason
       let name ← jStr (← jField j "param")
       if j != Json.mkObj [("param",toJson name)] || name.isEmpty then throw "invalid rigid parameter claim"
       return .param name
 private def ClaimType.ground : ClaimType → SourceClaims.Candidate
   | .labels A => .ok A
   | .param _ => .error "rigid parameter outside generic function"
+  | .unavailable reason => .error reason
 
 structure Binding where
   name : String
@@ -70,6 +76,7 @@ private def validTable (T : SourceTypes.Table) : Bool :=
   SourceTypes.initial.isPrefixOf T && (T.flatMap id |>.flatMap clauseTypes).all (validTy T.length)
 private def validType (T : SourceTypes.Table) : ClaimType → Bool
   | .param name => !name.isEmpty
+  | .unavailable reason => !reason.isEmpty
   | .labels A => validTy T.length A && A == A.mergeSort (· ≤ ·) && A.eraseDups == A
 private def validCurrent (T : SourceTypes.Table) (A : ClaimType) (current : Option (List Nat)) : Bool :=
   match current with
@@ -127,6 +134,7 @@ def functionSites (f : SourceInput.Fn) : List Nat × List Span :=
   f.body.foldl (fun s st => joinSites s (stmtSites st)) ([],[])
 
 private def genericType (T : SourceTypes.Table) : ClaimType → Except String Json
+  | .unavailable reason => throw reason
   | .param name => pure (Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj [("a",toJson "param"),("name",toJson name)]])])
   | .labels A => do
     let rows := PositiveRules.expand (SourceTypes.graph T) A
