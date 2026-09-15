@@ -29,6 +29,8 @@ def substClause [DecidableEq ι] (p : ι) (A : List ι) : Clause (List ι) → C
   | .undef => .undef
   | .bool => .bool
   | .boolLit b => .boolLit b
+  | .num => .num
+  | .numLit v => .numLit v
   | .refs a bs => .refs (substTy p A a) (bs.map (substTy p A))
   | .arrs L => .arrs (L.map fun q => (q.1.map (substTy p A), substTy p A q.2))
   | .callable a bs L =>
@@ -236,6 +238,8 @@ theorem meaningP_value {G : NormalGraph ι} {P η} {A n W v}
     | nul => subst v; exact ⟨rfl, trivial⟩
     | bool => rcases hc with rfl | rfl <;> exact ⟨rfl, trivial⟩
     | boolLit b => cases b <;> cases hc <;> exact ⟨rfl, trivial⟩
+    | num => obtain ⟨s, rfl⟩ := hc; exact ⟨rfl, trivial⟩
+    | numLit s => subst v; exact ⟨rfl, trivial⟩
     | refs a rest => obtain ⟨l, _, rfl, _⟩ := hc.1; exact ⟨rfl, trivial⟩
     | arrs L => exact ⟨(callsT_callable hc).val, (callsT_callable hc).scoped⟩
     | callable a bs L => exact ⟨(callsT_callable hc.2).val, (callsT_callable hc.2).scoped⟩

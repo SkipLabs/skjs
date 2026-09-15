@@ -9,6 +9,8 @@ private def toNatClause : PositiveNormalization.Clause (List (Fin 6)) → Positi
   | .undef => .undef
   | .bool => .bool
   | .boolLit b => .boolLit b
+  | .num => .num
+  | .numLit v => .numLit v
   | .refs a bs => .refs (a.map Fin.val) (bs.map (List.map Fin.val))
   | .arrs L => .arrs (L.map fun (a,b) => (a.map (List.map Fin.val),b.map Fin.val))
   | .callable a bs L => .callable (a.map Fin.val) (bs.map (List.map Fin.val))

@@ -50,6 +50,10 @@ def undefT : Fam := fun _ _ v => v = .undef
 /-- A cell that can actually change observably. -/
 def boolT : Fam := fun _ _ v => v = .tru ∨ v = .fls
 
+/-- Every number, at any spelling. The fragment computes with none of them, so
+this family is the union of its singletons and nothing more. -/
+def numT : Fam := fun _ _ v => ∃ s, v = .num s
+
 /-! ### A rigid parameter under a reference -/
 
 
@@ -196,6 +200,8 @@ structure Adm (T : Fam) : Prop where
 theorem nulT_adm : Adm nulT := ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
 
 theorem boolT_adm : Adm boolT := ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+
+theorem numT_adm : Adm numT := ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
 
 theorem topF_adm : Adm topF := ⟨fun _ _ _ _ => trivial, fun _ _ _ _ _ _ => trivial⟩
 

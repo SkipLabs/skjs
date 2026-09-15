@@ -35,6 +35,8 @@ theorem meaning_value {G : NormalGraph ι} {A n W v} (h : meaning G A n W v) :
   | nul => subst v; exact ⟨rfl, trivial⟩
   | bool => rcases hc with rfl | rfl <;> exact ⟨rfl, trivial⟩
   | boolLit b => cases b <;> cases hc <;> exact ⟨rfl, trivial⟩
+  | num => obtain ⟨s, rfl⟩ := hc; exact ⟨rfl, trivial⟩
+  | numLit s => subst v; exact ⟨rfl, trivial⟩
   | refs a rest => obtain ⟨l, _, rfl, _⟩ := hc.1; exact ⟨rfl, trivial⟩
   | arrs L => exact ⟨(callsT_callable hc).val, (callsT_callable hc).scoped⟩
   | callable a bs L => exact ⟨(callsT_callable hc.2).val,(callsT_callable hc.2).scoped⟩
@@ -208,6 +210,7 @@ def tagShape (tag : Tag) (s : Nat) : Bool :=
   | .isNul => s == 0 | .isBool => s == 1 | .isRef => s == 2
   -- A function object is a function to `typeof`, as a lambda is.
   | .isFun => s == 3 | .isUndef => s == 4 | .isNullish => s == 0 || s == 4
+  | .isNum => s == 5
 
 /-- A finite syntactic check; it neither executes a term nor queries membership. -/
 def Answers (G : NormalGraph ι) (A : Ty ι) (tag : Tag) (q : Bool) : Prop :=

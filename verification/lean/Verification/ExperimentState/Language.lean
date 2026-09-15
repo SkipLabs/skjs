@@ -23,7 +23,7 @@ namespace ExperimentState
 Nullishness groups null and undefined for source coalescing; the other tests
 distinguish individual runtime shapes. -/
 inductive Tag where
-  | isNul | isBool | isRef | isFun | isUndef | isNullish
+  | isNul | isBool | isRef | isFun | isUndef | isNullish | isNum
   deriving Repr, DecidableEq
 
 mutual
@@ -39,6 +39,13 @@ inductive Tm where
   | undef
   | tru
   | fls
+  /-- A number, carried as its canonical JavaScript spelling. The fragment has
+  no arithmetic and no numeric comparison, so a number is opaque here: it is
+  bound, passed, stored and shape-tested, never computed with. Equality of
+  these strings is equality of the numbers they spell only because the trusted
+  codec canonicalizes every literal through `String(Number(v))` before it
+  reaches this language; that obligation is the adapter's, not this module's. -/
+  | num (v : String)
   /-- An object identity with an optional, immutable invocation descriptor. -/
   | obj (l : Nat) (call : CallCode)
   /-- Allocate one object with immutable call code and initial bag contents `a`.
@@ -81,6 +88,8 @@ def tmDecEq (a b : Tm) : Decidable (a = b) := by
     exact isTrue rfl
   case fls.fls =>
     exact isTrue rfl
+  case num.num a0 b0 =>
+    exact decidable_of_iff (a0 = b0) (by simp only [Tm.num.injEq])
   case obj.obj a0 a1 b0 b1 =>
     haveI : Decidable (a1 = b1) := callCodeDecEq a1 b1
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.obj.injEq])
@@ -150,6 +159,7 @@ instance : DecidableEq CallCode := callCodeDecEq
     (call : ∀ f args, P f → (∀ a ∈ args, P a) → P (.call f args))
     (letE : ∀ a b, P a → P b → P (.letE a b))
     (nul : P .nul) (undef : P .undef) (tru : P .tru) (fls : P .fls)
+    (num : ∀ v, P (.num v))
     (objAbsent : ∀ l, P (.obj l .absent))
     (objClosure : ∀ l n b, P b → P (.obj l (.closure n b)))
     (attach : ∀ n b a, P b → P a → P (.make (.closure n b) a))
@@ -161,7 +171,7 @@ instance : DecidableEq CallCode := callCodeDecEq
   apply Tm.rec (motive_1 := P)
     (motive_2 := fun c => match c with | .absent => True | .closure _ b => P b)
     (motive_3 := fun args => ∀ a ∈ args, P a)
-    var call letE nul undef tru fls ?_ ?_ read write test ite
+    var call letE nul undef tru fls num ?_ ?_ read write test ite
     True.intro (fun _ _ h => h) (by simp) (by
       intro a args ha ih v hv
       rcases List.mem_cons.mp hv with rfl | hv
@@ -184,7 +194,7 @@ abbrev Val := Tm
 
 
 def isVal : Tm → Bool
-  | .nul | .undef | .tru | .fls | .obj .. => true
+  | .nul | .undef | .tru | .fls | .num _ | .obj .. => true
   | _ => false
 
 /-- What a test of a value answers. A test is total on values: every value has
@@ -196,6 +206,7 @@ def tagHolds : Tag → Val → Bool
   | .isNullish, .nul | .isNullish, .undef => true
   | .isBool, .tru => true
   | .isBool, .fls => true
+  | .isNum, .num _ => true
   | .isRef, .obj _ .absent => true
   | .isFun, .obj _ (.closure _ _) => true
   | _, _ => false
@@ -209,6 +220,7 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .undef => .undef
   | .tru => .tru
   | .fls => .fls
+  | .num v => .num v
   | .obj l .absent => .obj l .absent
   | .obj l (.closure n b) => .obj l (.closure n (subst (j + n) a b))
   | .make (.closure n b) x => .make (.closure n (subst (j + n) a b)) (subst j a x)
