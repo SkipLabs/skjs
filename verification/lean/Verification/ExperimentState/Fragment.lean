@@ -36,7 +36,10 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
       return [← SourceTypes.use (.arrs signatures.eraseDups)]
     else
       let single := Json.mkObj [("top",toJson false),("atoms",toJson [atom])]
-      SourceTypes.translate (← CellClaims.primitive single)
+      -- The callable table grows as this walks it, so a numeric parameter or
+      -- result is interned rather than refused for being outside the four
+      -- fixed labels.
+      SourceTypes.translateArm (← CellClaims.primitive single)
   return arms.flatten.mergeSort (· ≤ ·) |>.eraseDups
 
 /-- Required cell fields admit primitives and callables, but not nested records.

@@ -118,6 +118,20 @@ back edges use the existing heap-knowledge rules. A closure's entry claims must
 follow from the stable invariant, not creation-time contents. Immutable snapshots
 can retain a precise value after the original local changes.
 
+A number reaches all of this through the same interning path every other type
+uses: wherever the table can grow, a type's numeric arms are interned rather
+than refused, which is what lets a closure be typed `(): number => …` and a
+`let` hold `number`. The paths that cannot grow a table — the cell contract,
+and the pure translation the exactness lemmas are stated over — still refuse a
+number, and that, not a separate feature, is the remaining numeric boundary.
+
+A number is also not a current-content assertion. Such an assertion is a finite
+set of primitive values checked on every incoming edge, and a number has no
+finite set. A claim about what a cell holds now whose type is not finite is
+recorded as the obligation that the storage contract implies it, which is an
+inclusion of types and needs no finiteness. Neither dropping that claim nor
+widening it to the contract would report what the producer said.
+
 Guard shortcuts that refine an immutable slot never apply to a mutable cell's
 identity: the condition tests the actual read. This is conservative for guarded
 contents, and the loop-carried target above still needs further precision work.
@@ -1115,7 +1129,7 @@ assumptions and historical coverage counts are not an implementation plan.
 | --- | --- |
 | Flow refinement across loops and calls | State which observations survive writes and calls, and prove branch/refinement transfer rules. Stable cell contracts alone do not supply these facts. |
 | Mutable structural objects | Specify field presence, width, aliasing and allowed mutation; extend beyond the current invariant cells and export their types. |
-| More primitives and operators | Numbers are admitted as opaque values with singleton literal types; arithmetic, numeric comparison, JavaScript equality, truthiness and strings are not, and each needs its runtime behavior defined and agreement validated. Numbers in a mutable cell need the cell contract path to intern rather than translate purely. |
+| More primitives and operators | Numbers are admitted as opaque values with singleton literal types, in closure signatures and as the storage contract of a mutable local; arithmetic, numeric comparison, JavaScript equality, truthiness and strings are not, and each needs its runtime behavior defined and agreement validated. A number cannot be a current-content assertion, which is a finite set of values; such a claim becomes the obligation that the storage contract implies it instead. Numbers in a `{ value: T }` cell still need that cell path to intern rather than translate purely. |
 | Graph-backed closure bodies | Extend the call/body interface if source functions require graph control flow internally; surrounding graph loops are insufficient. |
 | Generics and bounds | The model slice is in [TypeParams.lean](lean/Verification/ExperimentState/TypeParams.lean). Source extraction of identity, `T extends boolean`, `const y: T = x`, and extra `T` parameters is in [GenericSource.lean](lean/Verification/ExperimentState/GenericSource.lean). Source extraction of `type Id<T> = T` and `type Box<T> = { value: T }` is in [GenericAlias.lean](lean/Verification/ExperimentState/GenericAlias.lean). Distinct parameters and dependent upper-bound chains in variable-copy bodies are checked using [GenericBounds.lean](lean/Verification/ExperimentState/GenericBounds.lean). Remaining: generic callbacks and source call-site instantiation, conditional types, higher-rank polymorphism or parameter-changing recursion. Generic parameters, inference variables and hidden object type arguments are not interchangeable. Checking concrete instantiations remains regression testing, not universal certification of a generic body. |
 | Difference and negation | Supply sound rules or approximations: pointwise complement need not preserve admissibility. They do not follow from positive normalization. |

@@ -91,6 +91,13 @@ is the bit pattern of the double it denotes, so distinct spellings of one value
 are one clause; two spellings a codec failed to identify would be two
 singletons, which costs completeness and never soundness.
 
+A number is not carried as a current-content assertion. Such an assertion is a
+finite set of primitive values, checked on every incoming edge, and a number
+has no finite set; the protocol has no form for one and none is invented. A
+claim about what a cell holds now whose type is not finite is recorded instead
+as the obligation that the cell's storage contract implies it, which is an
+inclusion of types and needs no finiteness.
+
 ## Terms, targets and evidence
 
 The JSON codecs use Lean's tagged constructor encoding: nullary constructors

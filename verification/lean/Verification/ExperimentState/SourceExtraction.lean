@@ -177,7 +177,10 @@ private def obligation (pos : Span) (j : ProgramCertificates.Sequent Nat) (plan 
 calls. Require their declared storage contract to imply such an observation
 uniformly; this is a located proof obligation, never a discarded assertion. -/
 private def persistentObservation (d : Descriptor) (pos : Span) (A R : Ty Nat) : Compiler Unit := do
-  let _ ← contents R
+  -- The obligation below is an inclusion of types, so the observed type needs
+  -- only to be one this table names. It does not need a finite set of values:
+  -- that is what a literal assertion on an edge needs, and this is not one.
+  if !RequestJson.validTy (← table).length R then throw "invalid current-content type label"
   let clauses := PositiveRules.expand (SourceTypes.graph (← table)) A
   if clauses.isEmpty then throw "current-content assertion requires nonempty cell contracts"
   let invariants ← clauses.mapM fun clause => do
@@ -209,7 +212,21 @@ private def entryFacts (fc : SourceClaims.Function) (pos : Nat) (scope : List Sc
         | none => persistentObservation b.source (pos,pos+1) reference A
     match cs.lookup b.source.name with
     | none => return facts
-    | some A => return facts ++ [⟨i,← contents A⟩]) []
+    | some A =>
+      match b.storage with
+      | .value => return facts ++ [⟨i,← contents A⟩]
+      -- A cell's contents may be claimed at a type with no finite set of
+      -- values, a number being the ordinary case. That is not a literal
+      -- assertion and is not thereby dropped: it becomes the obligation that
+      -- the storage contract already implies it, as above.
+      | .cell _ reference =>
+        let T ← table
+        if !RequestJson.validTy T.length A then throw "invalid current-content type label"
+        match HeapKnowledge.literals (SourceTypes.graph T) A with
+        | some literals => return facts ++ [⟨i,literals⟩]
+        | none =>
+          persistentObservation b.source (pos,pos+1) reference A
+          return facts) []
 
 /-- A dot cannot occur in a source binding identifier, so these names designate
 administrative read snapshots without colliding with source variables. -/

@@ -1,9 +1,9 @@
 # census: repair-work
-# 4/89 verified, of 315 functions
+# 5/89 verified, of 315 functions
 #   skjs-rejected: 226
 #   gate: 80
-#   unproved: 5
-#   verified: 4
+#   verified: 5
+#   unproved: 4
 #
 gate:a `let` needs a type annotation in the fragment	tests/expect-error/captured-read-stability.ts	checkedEvolvingCapture
 gate:a `let` needs a type annotation in the fragment	tests/expect-error/captured-read-stability.ts	checkedMutableObjectReplacement
@@ -312,11 +312,11 @@ skjs-rejected	tests/expect-error/unsound-refinement.ts	storedLocalAlias
 skjs-rejected	tests/expect-error/unsound-refinement.ts	storedNarrowAlias
 skjs-rejected	tests/expect-error/unsound-refinement.ts	tupleDeclarationDefault
 unproved:reject: assignment to '_', which is not a mutable local	tests/expect-error/issue-89-and-or-narrowing.ts	unrelatedFact
+unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/call-effect-boundaries.ts	clearEffect
 unproved:reject: closure expression claim at [163,164): evidence search failed	tests/expect-error/captured-read-stability.ts	checkedCapturedLocal
-unproved:reject: current-content predicate must be a finite primitive type	tests/expect-error/nullish-coalescing.ts	resultOfFallback
 unproved:reject: source incoming edge obligation at [198,211): evidence search failed (unsupported 	tests/expect-error/captured-read-stability.ts	snapshotCapturedLocal
-unproved:reject: source type outside the null/undefined/boolean/singleton fragment	tests/expect-error/call-effect-boundaries.ts	clearEffect
 verified	tests/expect-error/captured-read-stability.ts	checkedAnnotatedConstField
 verified	tests/expect-error/captured-read-stability.ts	checkedInferredObject
 verified	tests/expect-error/captured-read-stability.ts	neverReassigned
 verified	tests/expect-error/captured-read-stability.ts	stableAnnotatedConstValue
+verified	tests/expect-error/nullish-coalescing.ts	resultOfFallback

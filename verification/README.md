@@ -107,8 +107,13 @@ still conservative, and a `let` without an initializer is outside. Numbers are i
 bound, passed, returned, held in a union and shape-tested, never computed with,
 because the fragment has no arithmetic and no numeric comparison. A numeric
 literal is its own singleton and is below `number`; its identity is the double
-it denotes, so `1`, `1.0` and `1e0` are one literal. Numbers inside a mutable
-cell are still outside. Generic variable-copy bodies admit distinct type parameters and bounds to
+it denotes, so `1`, `1.0` and `1e0` are one literal. A number may be a
+parameter or result of a closure, and the storage contract of a mutable local,
+so a captured reader of a numeric `let` verifies. What a number cannot be is a
+current-content assertion: such an assertion is a finite set of values carried
+on every incoming edge, and a number has no finite set. A claim about what a
+cell holds now is instead the obligation that its storage contract implies it.
+Numbers inside a `{ value: T }` cell are still outside. Generic variable-copy bodies admit distinct type parameters and bounds to
 `boolean` or an earlier parameter, including transitive chains. Parameters,
 annotated `const` copies and results use those rigid types or `boolean`;
 conversions follow declared bounds only. Dependent parameters retain their rigid identity in raw SKJS exports. First-order aliases

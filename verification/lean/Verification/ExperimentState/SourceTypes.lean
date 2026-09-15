@@ -132,6 +132,17 @@ def isNumberAtom : Claim.Atom → Bool
   | .num | .numLit _ => true
   | _ => false
 
+/-- One arm of a union, translated where the table can grow: its numbers are
+interned and its fixed primitives translate exactly as before. `translate` is
+the pure path and names only the four fixed labels, which is what a table that
+cannot grow needs; wherever one can grow, a number belongs in it. -/
+def translateArm (t : Claim.Ty) : Lowering (Ty Nat) := do
+  let numbers ← numberLabels ⟨t.top, t.atoms.filter isNumberAtom⟩
+  let others ← match translate ⟨t.top, t.atoms.filter (fun a => !isNumberAtom a)⟩ with
+    | .ok A => pure A
+    | .error e => throw e
+  return (numbers ++ others).mergeSort (· ≤ ·) |>.eraseDups
+
 /-- This characterization also rules out extra nonprimitive modeled values. -/
 theorem encode_meaning {T : Table} (h : initial <+: T) (t : Claim.Ty) (n W v) :
     meaning (graph T) (encode t) n W v ↔

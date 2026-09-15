@@ -238,6 +238,9 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   | truLit : Represents G A (.boolLit true) → HasTy G Γ .tru A
   | flsLit : Represents G A (.boolLit false) → HasTy G Γ .fls A
   | numLit : Represents G A (.numLit b) → HasTy G Γ (.num b) A
+  /-- Every number is a number, as every Boolean is a Boolean. Without this a
+  literal claimed at the family rather than at its own singleton has no rule. -/
+  | num : Represents G A .num → HasTy G Γ (.num b) A
   | funE : Represents G F (.arrs L) → (∀ p ∈ L, p.1.length = arity) →
       (∀ p ∈ L, HasTy G (p.1 ++ Γ) b p.2) → HasTy G Γ (.make (.closure arity b) .nul) F
   | makeCallable : Represents G F (.callable P [] L) → HasTy G Γ a P →
@@ -298,6 +301,9 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
   | numLit hr =>
     intro n W h ρ he hw hh
     exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr rfl)
+  | @num _ _ b hr =>
+    intro n W h ρ he hw hh
+    exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr ⟨b, rfl⟩)
   | @funE F L arity Γ b hr hlen hb ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, Nat.zero_add]

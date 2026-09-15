@@ -129,8 +129,13 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     -- A number has one rule: its own singleton. Reaching `number`, or any
     -- union above it, is the coercion's job, exactly as for a boolean literal.
     | .num _ =>
+      -- Its own singleton where the claim names one, the family where it does
+      -- not: a literal claimed at `number` has no singleton label to coerce
+      -- from, exactly as a Boolean claimed at `boolean` has none.
       return (A :: pool).findSome? fun B =>
-        if checkTree G (leaf B .numLit) then coerce G pool (leaf B .numLit) A else none
+        if checkTree G (leaf B .numLit) then coerce G pool (leaf B .numLit) A
+        else if checkTree G (leaf B .num) then coerce G pool (leaf B .num) A
+        else none
     | .make (.closure arity b) .nul =>
       return (A :: pool).findSome? fun F => do
         match expand G F with
