@@ -257,19 +257,23 @@ alternative by the checked read/write rule below; unsupported encodings are
 never omitted. Other constructs
 are covered by the cell and closure extensions below or rejected by the slice
 gate, including active-name shadowing and statements after an explicit return. This restriction is not a final dead-code policy.
-The identity scheme `id<T>(x: T): T { return x }` is also accepted, with one
-type parameter exported as a `param` atom. Function AST objects always
+The identity scheme `id<T>(x: T): T { return x }` is also accepted, with
+each distinct type parameter exported as a `param` atom. Function AST objects always
 include `typeParams` (empty when the function is not generic). Each type
 parameter is `{ "name": "T", "bound": null }` or `{ "name": "T", "bound": boolean }`
-for `T extends boolean`. The file AST always includes `aliases` (empty when the
+for `T extends boolean`; a bound may also be a `param` atom naming an earlier
+parameter. Duplicate names, forward bounds and cycles are rejected. The file AST always includes `aliases` (empty when the
 file declares none). `type Id<T> = T` and `type Box<T> = { value: T }` are the
 admitted alias schemes; a one-argument named instantiation is an `alias` atom
 `{ "a": "alias", "name": "Id", "args": [A] }`.
 The adapter substitutes using the identity and cell theorems before identity
 checking or ground extraction. `asBoolean<T extends boolean>(x: T): boolean { return x }`
 is accepted; returning `true` as `T` is not. A generic body may copy `T`
-through `const y: T = x` and extra parameters of type `T`, then return one of
-those bindings. Other generic functions remain outside the slice. A file of
+through annotated consts and return a variable. Parameters and annotations may
+name distinct declared parameters or boolean. A conversion requires identity
+or a forward path through the declared bounds, so `U extends T` permits `U`
+to `T` but never the reverse. A const retains its annotation after conversion.
+Generic callbacks and source call-site instantiation remain outside the slice. A file of
 only these schemes produces an empty evidence bundle: the scheme is checked,
 then omitted from the graph request.
 
@@ -635,8 +639,12 @@ are checked. The observation comes from execution, never from evidence.
 `tests/stateful-source/null-guards.ts` exercises this integration. Closure null
 guards use existing expression certificate forms (`letE`, `unionVar`, `ifTrue` /
 `ifFalse`), preserving condition evaluation and all source claims. No new closure
-wire form is needed. Other strict comparisons, loose equality, retained property
-refinement and loops inside closures remain source boundaries.
+wire form is needed. A plain cell read tested against null/undefined can also
+be saved and reused within branches with no calls, writes, allocations or nested
+closures. Current-content assertions must follow from that saved value, and
+source claims are checked separately from any stronger return evidence.
+Other strict comparisons, loose equality, property refinement across effects
+and loops inside closures remain source boundaries.
 
 A function with one required invariant `value` field is exported as
 `{"a":"callable","function":F,"bag":B}`, where `F` is the bounded function

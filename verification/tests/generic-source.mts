@@ -61,7 +61,7 @@ try {
     { name: "T", bound: null },
     { name: "U", bound: null },
   ];
-  expect("two type parameters are outside the fragment", run(twoParams, claims), false, "only one type parameter");
+  expect("an unused distinct type parameter is admitted", run(twoParams, claims), true);
   console.log(`Generic source: ${passed} passed`);
 } catch (e) {
   console.error(e);

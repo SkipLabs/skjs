@@ -351,6 +351,20 @@ extension class TypeChecker {
       cgNode,
     );
     funSig = this.getFunSig(subst.context, fd);
+    // Read the already-installed declaration bindings only when exporting.
+    // Do not normalize again or consult a later inference state.
+    claimRigidTypes = mutable Vector<(TParam, TType)>[];
+    if (getConfig(tcenv.context).emitSkjsTypeClaims) {
+      for (tp in funSig.tparams) {
+        this.bindings.maybeGet(tp.name.value) match {
+        | Some(ty) ->
+          claimRigidTypes.push(
+            (TParam(tp.name.value, tp.name.pos.fileName, tp.id), ty),
+          )
+        | None() -> void
+        }
+      }
+    };
     if (this.retType is None()) {
       subst.error(
         Array[
@@ -478,6 +492,7 @@ extension class TypeChecker {
               fdPos,
               typedParams,
               retType,
+              claimRigidTypes.toArray(),
               tcenv,
               true,
               claimErrorsBefore,
@@ -494,6 +509,7 @@ extension class TypeChecker {
             fdPos,
             typedParams,
             retType,
+            claimRigidTypes.toArray(),
             tcenv,
             false,
             claimErrorsBefore,

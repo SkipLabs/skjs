@@ -959,24 +959,27 @@ class Gate {
     if (!node.body) this.fail(node, "a function must have a body");
     const typeParams: TypeParamAst[] = [];
     if (node.typeParameters?.length) {
-      if (node.typeParameters.length !== 1)
-        this.fail(node, "only one type parameter is in the fragment");
-      const tp = node.typeParameters[0];
-      if (tp.default)
-        this.fail(tp, "type parameter defaults are outside the fragment");
-      if (tp.name.kind !== ts.SyntaxKind.Identifier)
-        this.fail(tp, "expected a type-parameter name");
-      let bound: WireType | null = null;
-      if (tp.constraint) {
-        if (tp.constraint.kind !== ts.SyntaxKind.BooleanKeyword)
-          this.fail(
-            tp.constraint,
-            "only `extends boolean` is in the fragment",
-          );
-        bound = this.typeOf(tp.constraint);
+      for (const tp of node.typeParameters) {
+        if (tp.default)
+          this.fail(tp, "type parameter defaults are outside the fragment");
+        if (tp.name.kind !== ts.SyntaxKind.Identifier)
+          this.fail(tp, "expected a type-parameter name");
+        if (this.typeParams.has(tp.name.text))
+          this.fail(tp, "duplicate type parameter");
+        let bound: WireType | null = null;
+        if (tp.constraint) {
+          const earlier = tp.constraint.kind === ts.SyntaxKind.TypeReference &&
+            tp.constraint.typeName.kind === ts.SyntaxKind.Identifier &&
+            !tp.constraint.typeArguments?.length &&
+            this.typeParams.has(tp.constraint.typeName.text);
+          if (tp.constraint.kind !== ts.SyntaxKind.BooleanKeyword && !earlier)
+            this.fail(tp.constraint,
+              "only `extends boolean` or an earlier type parameter is in the fragment");
+          bound = this.typeOf(tp.constraint);
+        }
+        typeParams.push({ name: tp.name.text, bound });
+        this.typeParams.add(tp.name.text);
       }
-      typeParams.push({ name: tp.name.text, bound });
-      this.typeParams.add(tp.name.text);
     }
     try {
     const params = node.parameters.map((p: any) => {

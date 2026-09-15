@@ -1,10 +1,11 @@
 import Verification.ExperimentState.SourceInput
 import Verification.ExperimentState.CellClaims
+import Verification.ExperimentState.GenericBounds
 
 /-! Source extraction of first-order generic function bodies.
 
-A function `id<T>(x: T): T { return x }` is checked under a rigid `T` by the
-existing identity theorem. Bodies may copy `T` through `const y: T = x` and
+Variable-copy bodies are checked under distinct rigid parameters and forward
+upper bounds by the existing variable, let and subtype rules. Bodies may copy `T` through `const y: T = x` and
 extra parameters (`fst`), along `letE_safeP` and `var_safeP`.
 `T extends boolean` is an assumption `T ≤ boolean`:
 `asBoolean<T extends boolean>(x: T): boolean { return x }` transports along
@@ -29,82 +30,86 @@ def booleanType : Json :=
 
 def isBooleanType (j : Json) : Bool := j == booleanType
 
-def boundBoolean (bound : Option Json) : Except String Bool :=
-  match bound with
-  | none => return false
-  | some b =>
-    if isBooleanType b then return true
-    else throw "only `extends boolean` is in the fragment"
+/-- Label zero is boolean; distinct declared parameters get distinct positive labels. -/
+def typeIndex (params : List String) (j : Json) : Except String Nat := do
+  if isBooleanType j then return 0
+  let name ← paramName j
+  let some index := params.idxOf? name | throw s!"undeclared type parameter '{name}'"
+  return index + 1
 
-def copyInit (t : String) (env : List String) : SourceInput.Expr → Except String Unit
+def boundEdges (params : List SourceInput.TypeParam) : Except String (List (Nat × Nat)) := do
+  let mut seen : List String := []
+  let mut edges := []
+  for tp in params do
+    if tp.name == "undefined" then throw "shadowing undefined is outside the source slice"
+    if tp.name ∈ seen then throw "duplicate type parameter"
+    if let some bound := tp.bound then
+      let upper ← match typeIndex seen bound with
+        | .ok i => pure i
+        | .error _ => throw "only `extends boolean` or an earlier type parameter is in the fragment"
+      edges := edges ++ [(seen.length + 1, upper)]
+    seen := seen ++ [tp.name]
+  return edges
+
+def variableType (env : List (String × Nat)) : SourceInput.Expr → Except String Nat
   | .var _ name =>
-    if name ∈ env then return ()
-    else throw s!"generic body must initialize from a '{t}' binding"
-  | _ => throw "generic body requires `const y: T = x`"
+    match env.find? (fun p => p.1 == name) with
+    | some p => return p.2
+    | none => throw s!"generic body refers to unbound variable '{name}'"
+  | _ => throw "generic body requires a variable copy"
 
-def copyConst (t : String) (env : List String) : SourceInput.Stmt → Except String String
-  | .cst _ name (some annot) init => do
+/-- The executable relation has a `SubP` soundness proof in `GenericBounds`.
+Bounds originate only at positive parameter labels. -/
+def subtype (edges : List (Nat × Nat)) (a b : Nat) : Bool :=
+  GenericBounds.follows edges (edges.length + 1) a b
+
+partial def copyBody (params : List String) (edges : List (Nat × Nat))
+    (env : List (String × Nat)) (result : Nat) : List SourceInput.Stmt → Except String Unit
+  | [] => throw "generic identity requires an explicit return"
+  | [.ret _ e] => do
+    let actual ← match e with
+      | .lit _ (.vbool true) =>
+        if !edges.isEmpty then throw "an upper bound does not justify true ≤ T"
+        else throw "generic identity requires returning a variable"
+      | _ => variableType env e
+    unless subtype edges actual result do
+      throw "generic return is not justified by the declared upper bounds (returning T as boolean requires T extends boolean)"
+  | .cst _ name annot init :: rest => do
     if name == "undefined" then throw "shadowing undefined is outside the source slice"
-    if name ∈ env then throw "active-name shadowing is outside the source slice"
-    let pt ← paramName annot
-    if pt != t then throw s!"generic const must be annotated '{t}'"
-    copyInit t env init
-    return name
-  | .cst _ _ none _ => throw "generic const requires a T annotation"
-  | _ => throw "generic body requires `const y: T = x` then `return y`"
+    if env.any (fun p => p.1 == name) then throw "active-name shadowing is outside the source slice"
+    let some annot := annot | throw "generic const requires a type annotation"
+    let expected ← typeIndex params annot
+    let actual ← variableType env init
+    unless subtype edges actual expected do
+      throw "generic const is not justified by the declared upper bounds"
+    copyBody params edges (env ++ [(name, expected)]) result rest
+  | _ => throw "generic identity requires const copies followed by a return"
 
-def copyReturn (t : String) (env : List String) (ext : Bool) :
-    SourceInput.Stmt → Except String Unit
-  | .ret _ (.var _ name) =>
-    if name ∈ env then return ()
-    else throw s!"generic body must return a '{t}' binding"
-  | .ret _ (.lit _ (.vbool true)) =>
-    if ext then throw "T extends boolean does not justify true ≤ T"
-    else throw "generic identity requires a body that is `return x`"
-  | _ => throw "generic identity requires a body that is `return x`"
-
-partial def copyBody (t : String) (env : List String) (ext : Bool) :
-    List SourceInput.Stmt → Except String Unit
-  | [] => throw "generic identity requires a body that is `return x`"
-  | [last] => copyReturn t env ext last
-  | s :: rest => do
-    let name ← copyConst t env s
-    copyBody t (env ++ [name]) ext rest
-
-/-- Identity, `const y: T = x; return y`, extra `T` parameters, or `T → boolean`
-under `T extends boolean`. -/
+/-- Check generic variable-copy bodies using distinct rigid parameters and
+forward upper bounds, including dependent chains. Producer signatures must
+match source annotations exactly; bounds never identify their endpoints. -/
 def check (f : SourceInput.Fn) (typeParams : List SourceInput.TypeParam)
     (fc : SourceInput.Claims) : Except String Unit := do
   if f.name != fc.name || f.namePos != fc.namePos then
     throw "function claim identity mismatch"
-  let [tp] := typeParams | throw "only one type parameter is in the fragment"
-  let t := tp.name
-  if t == "undefined" then throw "shadowing undefined is outside the source slice"
-  let ext ← boundBoolean tp.bound
-  if f.params.isEmpty then throw "generic body requires a value parameter of type T"
+  if typeParams.isEmpty then throw "generic body requires type parameters"
+  let edges ← boundEdges typeParams
+  let params := typeParams.map (·.name)
+  if f.params.isEmpty then throw "generic body requires a value parameter"
   let names := f.params.map (·.name)
   if names.eraseDups.length != names.length then throw "duplicate source parameter"
-  for p in f.params do
+  let env ← f.params.mapM fun p => do
     if p.name == "undefined" then throw "shadowing undefined is outside the source slice"
-    let pt ← paramName p.ty
-    if pt != t then throw s!"generic body requires parameter '{p.name}' to be '{t}'"
-  copyBody t names ext f.body
+    return (p.name, ← typeIndex params p.ty)
+  let result ← typeIndex params f.ret
+  copyBody params edges env result f.body
   if f.params.length != fc.params.length then throw "parameter claim count mismatch"
   for (p, c) in f.params.zip fc.params do
     if p.name != c.1 then throw "parameter claim name or order mismatch"
-    let claimedPt ← paramName c.2
-    if claimedPt != t then
+    if (← typeIndex params p.ty) != (← typeIndex params c.2) then
       throw "claimed generic identity types differ from the source annotation"
-  if isBooleanType f.ret then
-    if !ext then
-      throw "returning a type parameter as boolean requires T extends boolean"
-    unless isBooleanType fc.ret do
-      throw "claimed generic identity types differ from the source annotation"
-  else
-    let rt ← paramName f.ret
-    let claimedR ← paramName fc.ret
-    if rt != t || claimedR != t then
-      throw s!"generic identity requires parameter and result to be '{t}'"
+  if (← typeIndex params fc.ret) != result then
+    throw "claimed generic identity types differ from the source annotation"
 
 private def paramT : Json :=
   Json.mkObj [("top", toJson false),
@@ -131,15 +136,15 @@ private def asBoolClaims : SourceInput.Claims :=
   | .error e => "generic identity requires".isPrefixOf e
   | _ => false)
 #guard (match check idFn [tpT, tpT] idClaims with
-  | .error e => "only one type parameter".isPrefixOf e
+  | .error e => "duplicate type parameter".isPrefixOf e
   | _ => false)
 #guard (match check asBoolFn [tpTbool] asBoolClaims with | .ok () => true | _ => false)
 #guard (match check asBoolFn [tpT] asBoolClaims with
-  | .error e => "returning a type parameter as boolean".isPrefixOf e
+  | .error e => "generic return".isPrefixOf e
   | _ => false)
 #guard (match check {idFn with body := [.ret (10, 18) (.lit (17, 18) (.vbool true))]}
     [tpTbool] idClaims with
-  | .error e => "T extends boolean does not justify true".isPrefixOf e
+  | .error e => "an upper bound does not justify true".isPrefixOf e
   | _ => false)
 
 private def bindFn : SourceInput.Fn :=

@@ -64,7 +64,7 @@ try {
   expect("returning T as boolean requires the bound", run(unbounded, claims), false, "requires T extends boolean");
   const notBoolean = clone(ast);
   notBoolean.functions.find((f: any) => f.name === "asBoolean").typeParams[0].bound = t;
-  expect("only extends boolean is in the fragment", run(notBoolean, claims), false, "only `extends boolean`");
+  expect("a parameter cannot be its own bound", run(notBoolean, claims), false, "only `extends boolean`");
   console.log(`Generic extends: ${passed} passed`);
 } catch (e) {
   console.error(e);

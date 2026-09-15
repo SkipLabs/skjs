@@ -154,18 +154,53 @@ private def persistentObservation (d : Descriptor) (pos : Span) (A R : Ty Nat) :
   let plan := DirectProof.var [W] 0 R
   obligation pos plan.goal (some plan) "heap-observation" [d]
 
+/-- A dot cannot occur in a source binding identifier, so these names designate
+administrative read snapshots without colliding with source variables. -/
+private def snapshotName (name : String) : String := name ++ ".value"
+private def isSnapshot (name : String) : Bool := name.endsWith ".value"
+
+private def observed (scope : List Descriptor) (Γ : List (Ty Nat))
+    (name : String) (d : Descriptor) (pos : Span) (A R : Ty Nat) : Compiler Unit := do
+  if let some i := (names scope).idxOf? (snapshotName name) then
+    let _ ← contents R
+    let plan := DirectProof.var Γ i R
+    obligation pos plan.goal (some plan) "heap-observation" scope
+  else
+    persistentObservation d pos A R
+
+/-- A saved read is usable only in a subtree with no possible heap effects or
+escaping closure. Reads are plain modeled cells, never JavaScript accessors. -/
+private def readOnly : SourceInput.Expr → Bool
+  | .var .. | .lit .. | .done .. => true
+  | .not _ e | .read _ e | .shapeTest _ _ _ e | .atEnv _ e => readOnly e
+  | .unitTest _ _ _ _ a b | .logical _ _ a b | .coalesce _ a b
+  | .seqBody _ a b | .letBody _ _ _ a b => readOnly a && readOnly b
+  | .ifBody _ _ c t e => readOnly c && readOnly t && readOnly e
+  | .alloc .. | .write .. | .lambda .. | .withValue .. | .bindWithReceiver ..
+  | .callWithReceiver .. | .call .. => false
+
+/-- Save the plain read in a null/undefined comparison. The other operand is
+necessarily a literal; moving that literal across the read has no effect. -/
+private def readGuard : SourceInput.Expr → Option (String × SourceInput.Expr × SourceInput.Expr)
+  | .not pos e => (readGuard e).map fun (name,r,c) => (name,r,.not pos c)
+  | .unitTest pos tag equal true (r@(.read rp (.var _ name))) (lit@(.lit ..)) =>
+    some (name,r,.unitTest pos tag equal true (.var rp (snapshotName name)) lit)
+  | .unitTest pos tag equal false (lit@(.lit ..)) (r@(.read rp (.var _ name))) =>
+    some (name,r,.unitTest pos tag equal false lit (.var rp (snapshotName name)))
+  | _ => none
+
 /-- Statement claims name source bindings only. Preserve anonymous evaluation
 slots at their already checked types while projecting the supplied named slots. -/
 private def closureEnv (fc : SourceClaims.Function) (pos : Nat) (scope : List Descriptor)
     (Γ : List (Ty Nat)) : Compiler (List (Ty Nat)) := do
-  let named := (names scope).filter (· != "")
+  let named := (names scope).filter (fun name => name != "" && !isSnapshot name)
   let H ← env fc pos (named.map (fun n => ⟨n,none⟩))
   for (name,A) in named.zip H do
     if let some R := ((fc.entryCurrent.lookup pos).getD []).lookup name then
-      persistentObservation ⟨name,none⟩ (pos,pos+1) A R
+      observed scope Γ name ⟨name,none⟩ (pos,pos+1) A R
   (scope.zipIdx).mapM fun (d,i) => do
     let name := d.name
-    let A := if name == "" then Γ[i]? else H[named.idxOf name]?
+    let A := if name == "" || isSnapshot name then Γ[i]? else H[named.idxOf name]?
     match A with
     | some A => pure A
     | none => throw "internal closure slot mismatch"
@@ -274,12 +309,14 @@ private def allocationChild : DirectProof.Plan → Option DirectProof.Plan
 /-- Build compositional proofs for lambda bodies and source ternaries without
 losing their individual claims. Requirements use the lexical context at the occurrence; synthetic let
 slots are introduced only after the operand supplying their type is checked. -/
-private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (Γ : List (Ty Nat))
+private partial def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (Γ : List (Ty Nat))
     (e : SourceInput.Expr) : Compiler DirectProof.Plan := do
   let A ← closureType fc e
   let G := SourceTypes.graph (← table)
   if let some R := fc.exprCurrent.lookup e.span then
-    persistentObservation ⟨"",some e.span⟩ e.span A R
+    match e with
+    | .var _ name => observed scope Γ name ⟨"",some e.span⟩ e.span A R
+    | _ => persistentObservation ⟨"",some e.span⟩ e.span A R
   let p ← match e with
   | .var _ name =>
     match (names scope).idxOf? name with
@@ -341,8 +378,15 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     let a ← closureExpr fc scope Γ a
     pure (DirectProof.node Γ (.alloc a.term) A .alloc [DirectProof.cast Γ B a])
   | .read _ a => do
+    let receiver := a
     let a ← closureExpr fc scope Γ a
-    match PositiveRules.expand G a.type with
+    let snapshot := match receiver with
+      | .var _ name => (names scope).idxOf? (snapshotName name)
+      | _ => none
+    if let some i := snapshot then
+      let some R := Γ[i]? | throw "internal saved-read slot mismatch"
+      pure (DirectProof.var Γ i R)
+    else match PositiveRules.expand G a.type with
     | [.refs B []] => pure (DirectProof.node Γ (.read a.term) B .read [a])
     | [.callable B _ _] => pure (DirectProof.node Γ (.read a.term) B .readCallable [a])
     | _ =>
@@ -490,10 +534,26 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     if result.isSome then
       for (B,i) in H.zipIdx do
         obligation pos ⟨Γ,.var i,B⟩ (some (DirectProof.var Γ i B)) "closure-entry" scope
-    let c ← closureExpr fc scope H cond
-    conditionalPlan scope H A cond c
-      (fun names types => closureExpr fc names types thn)
-      (fun names types => closureExpr fc names types els)
+    if let some (name, read, tested) := readGuard cond then
+      if readOnly thn && readOnly els then
+        let saved ← closureExpr fc scope H read
+        let ds := ⟨snapshotName name,some read.span⟩ :: scope
+        let K := saved.type :: H
+        let c ← closureExpr fc ds K cond
+        let body ← conditionalPlan ds K A tested c
+          (fun names types => closureExpr fc names types thn)
+          (fun names types => closureExpr fc names types els)
+        pure (DirectProof.letE H saved body)
+      else
+        let c ← closureExpr fc scope H cond
+        conditionalPlan scope H A cond c
+          (fun names types => closureExpr fc names types thn)
+          (fun names types => closureExpr fc names types els)
+    else
+      let c ← closureExpr fc scope H cond
+      conditionalPlan scope H A cond c
+        (fun names types => closureExpr fc names types thn)
+        (fun names types => closureExpr fc names types els)
   | .atEnv pos body => do
     let H ← closureEnv fc pos.1 scope Γ
     for (B,i) in H.zipIdx do
@@ -536,8 +596,13 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     pure (DirectProof.node Γ (.make (.closure Ds.length b.term) .nul) A .funE bodies)
   let plan := DirectProof.cast Γ A p
   obligation e.span plan.goal (some plan) "expression-claim" scope
-  return plan
-termination_by e
+  -- Validate the supplied claim, but do not discard a stronger saved-read
+  -- derivation needed for the enclosing return contract. atEnv is a no-op.
+  match e with
+  | .read _ (.var _ name) =>
+    if (names scope).contains (snapshotName name) then return p else return plan
+  | .atEnv .. => return p
+  | _ => return plan
 
 /-- Each expression leaves its result in slot zero and preserves the original
 slots after it. Anonymous temporary slots cannot be named by source identifiers.

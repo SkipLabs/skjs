@@ -52,6 +52,10 @@ class FunTypeClaims(
   // Snapshot at successful completion or a body error that aborts checking.
   // Export reads existing bounds; it cannot solve, seal or grow inference variables.
   substValues: SortedMap<TVarID, SubstValue>,
+  // Exact declaration bindings captured at function setup. Dependent bounds
+  // can put several rigid parameters in one clause; identity comes from the
+  // declaration, never from choosing a member of that intersection.
+  rigidTypes: Array<(TParam, TType)>,
   // Closed subtype and expansion judgments recorded during this body, with
   // types serialized under the substitution in force at the judgment.
   operations: Array<(String, String, String)>,
@@ -68,6 +72,7 @@ fun buildFunTypeClaims(
   namePos: PosRange,
   typedParams: Array<(Pattern, TType)>,
   retType: TType,
+  rigidTypes: Array<(TParam, TType)>,
   tcenv: mutable TCEnv,
   aborted: Bool,
   errorsBefore: Int,
@@ -136,6 +141,7 @@ fun buildFunTypeClaims(
     exprs.toArray(),
     lvalues.toArray(),
     tcenv.subst.values,
+    rigidTypes,
     tcenv.subst.popClaimedOpFrame(),
     aborted,
     tcenv.results.errors.size() > errorsBefore,
@@ -254,6 +260,7 @@ fun claimTypeJsonBounded(
   values: SortedMap<TVarID, SubstValue>,
   fuel: Int,
   allowParam: Bool = true,
+  rigidTypes: Array<(TParam, TType)> = Array[],
 ): ClaimExport {
   if (fuel <= 0) {
     claimUnavailable("fuel-exhausted")
@@ -277,6 +284,7 @@ fun claimTypeJsonBounded(
             values,
             fuel - 1,
             allowParam,
+            rigidTypes,
           )
         | None() -> claimUnavailable("unbound-inference-variable")
         }
@@ -297,6 +305,7 @@ fun claimTypeJsonBounded(
             values,
             fuel - 1,
             allowParam,
+            rigidTypes,
           );
           if (arg.reason != "") {
             claimUnavailable(arg.reason)
@@ -336,13 +345,21 @@ fun claimTypeJsonBounded(
   } else {
     // A lone type-parameter clause is a rigid parameter. SKJS may store
     // `T extends boolean` as that variable plus the bound; the bound is Δ,
-    // not a second source type. Nested uses and several variables stay refused.
+    // not a second source type. Several variables identify a parameter only
+    // when this exact type is its captured declaration binding. Nested uses
+    // and unrelated intersections remain outside the export fragment.
     paramName = "";
     if (allowParam && ty.clauses.size() == 1) {
       for (clause in ty.clauses) {
         if (clause.vars.size() == 1) {
           for (v in clause.vars) {
             !paramName = v.name
+          }
+        } else {
+          for (decl in rigidTypes) {
+            if (ty == decl.i1 && clause.vars.containsElt(decl.i0)) {
+              !paramName = decl.i0.name
+            }
           }
         }
       }
@@ -627,10 +644,11 @@ fun recordClosedClaimedOp(
 fun claimTypeAtJson(
   ty: TType,
   values: SortedMap<TVarID, SubstValue>,
+  rigidTypes: Array<(TParam, TType)>,
   address: Array<(String, String)>,
   unavailable: mutable Vector<String>,
 ): String {
-  result = claimTypeJsonBounded(ty, true, true, values, 64);
+  result = claimTypeJsonBounded(ty, true, true, values, 64, true, rigidTypes);
   if (result.reason != "") {
     unavailable.push(
       jsonObj(address.concat(Array[("reason", jsonStr(result.reason))])),
@@ -691,6 +709,7 @@ fun funTypeClaimsJson(
                 claimTypeAtJson(
                   p.type,
                   fc.substValues,
+                  fc.rigidTypes,
                   Array[
                     ("kind", jsonStr("parameter")),
                     ("binding", jsonStr(p.name)),
@@ -708,6 +727,7 @@ fun funTypeClaimsJson(
       claimTypeAtJson(
         fc.retType,
         fc.substValues,
+        fc.rigidTypes,
         Array[("kind", jsonStr("result"))],
         unavailable,
       ),
@@ -731,6 +751,7 @@ fun funTypeClaimsJson(
                         claimTypeAtJson(
                           v.type,
                           fc.substValues,
+                          fc.rigidTypes,
                           Array[
                             ("kind", jsonStr("entry")),
                             ("pos", claimPosJson(e.pos, symbols)),
@@ -748,6 +769,7 @@ fun funTypeClaimsJson(
                           claimTypeAtJson(
                             d,
                             fc.substValues,
+                            fc.rigidTypes,
                             Array[
                               ("kind", jsonStr("declared")),
                               ("pos", claimPosJson(e.pos, symbols)),
@@ -780,6 +802,7 @@ fun funTypeClaimsJson(
                 claimTypeAtJson(
                   x.type,
                   fc.substValues,
+                  fc.rigidTypes,
                   Array[
                     ("kind", jsonStr("expression")),
                     ("pos", claimPosJson(x.pos, symbols)),
@@ -804,6 +827,7 @@ fun funTypeClaimsJson(
                 claimTypeAtJson(
                   x.type,
                   fc.substValues,
+                  fc.rigidTypes,
                   Array[
                     ("kind", jsonStr("lvalue")),
                     ("pos", claimPosJson(x.pos, symbols)),

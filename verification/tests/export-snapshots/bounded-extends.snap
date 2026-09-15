@@ -6,3 +6,21 @@ result: boolean
 entry 57-65: this: (unavailable: void-type); x!: T
 expr 64-65 `x`: T
 subtype T ≤ boolean
+
+## unrelated [complete unverified normal]
+params: x: (unavailable: unsupported-type)
+result: (unavailable: unsupported-type)
+entry 263-271: this: (unavailable: void-type); x!: (unavailable: unsupported-type)
+expr 270-271 `x`: (unavailable: unsupported-type)
+
+## narrower [complete unverified normal]
+params: x: (unavailable: type-parameter)
+result: (unavailable: type-parameter)
+entry 420-428: this: (unavailable: void-type); x!: (unavailable: type-parameter)
+expr 427-428 `x`: (unavailable: type-parameter)
+
+## dependent [complete unverified normal]
+params: x: V
+result: V
+entry 131-139: this: (unavailable: void-type); x!: V
+expr 138-139 `x`: V

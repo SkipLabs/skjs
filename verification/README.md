@@ -95,11 +95,12 @@ verifies using TypeScript’s claims.
 
 Mutable bindings, loops inside closures, external cell parameters,
 labeled transfers, active-name shadowing, other `typeof` comparisons, general strings and numbers,
-and overloads are outside it. One type parameter is admitted for the
-identity scheme `id<T>(x: T): T { return x }`, for `T extends boolean` as
-`T ≤ boolean`, for bodies that copy `T` through `const` and extra parameters,
-and for first-order aliases `type Id<T> = T` and
-`type Box<T> = { value: T }`; other generics remain outside.
+and overloads are outside it. Generic variable-copy bodies admit distinct type parameters and bounds to
+`boolean` or an earlier parameter, including transitive chains. Parameters,
+annotated `const` copies and results use those rigid types or `boolean`;
+conversions follow declared bounds only. Dependent parameters retain their rigid identity in raw SKJS exports. First-order aliases
+`type Id<T> = T` and `type Box<T> = { value: T }` remain single-parameter.
+Generic callbacks, call-site instantiation and other generic bodies remain outside.
 The fragment is smaller than the calculus,
 and the parser can represent syntax the Lean adapter then rejects: such a
 rejection is a limitation, never evidence that a producer claim is false.

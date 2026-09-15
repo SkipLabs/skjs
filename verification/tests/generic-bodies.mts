@@ -8,7 +8,8 @@ import { decodeClaimType } from "../tools/claim-language.mts";
 
 const [astPath, claimsPath, fileKey, verifier] = process.argv.slice(2);
 const ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
-const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
+const rawClaims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
+const claims = structuredClone(rawClaims);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "generic-bodies-"));
 const clone = (x: any) => JSON.parse(JSON.stringify(x));
 const t = { top: false, atoms: [{ a: "param", name: "T" }] };
@@ -23,6 +24,12 @@ function run(a: any, c: any) {
     encoding: "utf8",
   });
   if (r.error || r.signal) throw r.error || Error(String(r.signal));
+  if (r.status === 0) {
+    const checked = spawnSync(verifier, ["--check-stateful-source", ap, cp, fileKey, ep], {
+      encoding: "utf8",
+    });
+    if (checked.status !== 0) throw Error(`certificate rejected: ${checked.stderr}`);
+  }
   return r;
 }
 function expect(name: string, r: ReturnType<typeof run>, accept: boolean, message = "") {
@@ -49,7 +56,18 @@ try {
   decodeClaimType(fstC.params[1].type);
   if (JSON.stringify(bindC.retType) !== JSON.stringify(t))
     throw Error("SKJS should export bind result as param T");
-  expect("bind and fst are accepted", run(ast, claims), true);
+  const independentAst = clone(ast);
+  independentAst.functions = independentAst.functions.filter((f: any) => f.name === "second");
+  const independentClaims = clone(rawClaims).filter((f: any) => f.file === fileKey);
+  independentClaims[0].functions = independentClaims[0].functions.filter((f: any) => f.name === "second");
+  expect("distinct parameters verify from unedited SKJS claims", run(independentAst, independentClaims), true);
+  for (const [name, parameter] of [["upper", "U"], ["boundChain", "V"]]) {
+    const f = exported.find((f: any) => f.name === name);
+    const expected = { top: false, atoms: [{ a: "param", name: parameter }] };
+    if (JSON.stringify(f.params[0].type) !== JSON.stringify(expected))
+      throw Error(`${name}: SKJS must preserve dependent parameter ${parameter}`);
+  }
+  expect("dependent bounds verify from unedited SKJS claims", run(ast, rawClaims), true);
   const noAnnot = clone(ast);
   noAnnot.functions.find((f: any) => f.name === "bind").body[0].annot = null;
   expect("generic const requires a T annotation", run(noAnnot, claims), false, "generic const requires");
@@ -67,6 +85,39 @@ try {
     lit: { a: "booleanlit", v: "true" },
   };
   expect("fst returning true is not a T-copy", run(fstTrue, claims), false, "generic identity requires");
+  // These mutations leave producer claims alone: source obligations must reject
+  // reverse bounds and parameter conflation even with plausible signatures.
+  const mutate = (name: string, edit: (f: any) => void) => {
+    const a = clone(ast);
+    edit(a.functions.find((f: any) => f.name === name));
+    return run(a, claims);
+  };
+  expect("distinct parameters cannot be interchanged", mutate("second", f => {
+    f.body[0].e.name = "x";
+  }), false, "generic return");
+  expect("a missing dependent bound cannot justify the const", mutate("upper", f => {
+    f.typeParams[1].bound = null;
+  }), false, "generic const");
+  expect("dependent inclusion cannot be reversed", mutate("upper", f => {
+    f.params[0].type = t;
+    f.body[0].annot = { top: false, atoms: [{ a: "param", name: "U" }] };
+  }), false, "generic const");
+  expect("a widened const cannot recover the narrower parameter", mutate("upper", f => {
+    f.retType = { top: false, atoms: [{ a: "param", name: "U" }] };
+  }), false, "generic return");
+  expect("a broken transitive bound chain cannot reach boolean", mutate("boundChain", f => {
+    f.typeParams[1].bound = null;
+  }), false, "generic return");
+  expect("forward and cyclic bounds are refused", mutate("boundChain", f => {
+    f.typeParams[0].bound = { top: false, atoms: [{ a: "param", name: "V" }] };
+  }), false, "earlier type parameter");
+  expect("duplicate type parameters are refused", mutate("second", f => {
+    f.typeParams[1].name = "T";
+  }), false, "duplicate type parameter");
+  const merged = clone(claims);
+  merged.find((f: any) => f.file === fileKey).functions
+    .find((f: any) => f.name === "second").params[1].type = t;
+  expect("producer cannot collapse U to T", run(ast, merged), false, "differ from the source annotation");
   console.log(`Generic bodies: ${passed} passed`);
 } catch (e) {
   console.error(e);

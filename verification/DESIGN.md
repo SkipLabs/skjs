@@ -348,7 +348,7 @@ term along `SubP` is `sub_safeP`. See
 [TypeParams.lean](lean/Verification/ExperimentState/TypeParams.lean).
 
 Source extraction of `id<T>(x: T): T { return x }` is connected: the parser
-admits one unbounded type parameter, SKJS exports it as a rigid `param`
+admits distinct type parameters, SKJS exports each as a rigid `param`
 atom, and the adapter checks that shape against the identity theorem.
 First-order generic aliases are connected too: `type Id<T> = T` and
 `type Box<T> = { value: T }` are the admitted schemes, SKJS exports a
@@ -357,9 +357,22 @@ substitutes using `instantiate_param` / `instantiate_ref`.
 `T extends boolean` is connected as `T ≤ boolean`:
 `asBoolean<T extends boolean>(x: T): boolean { return x }` transports along
 that inclusion. It does not justify `true ≤ T`. Bodies that copy `T` through
-`const y: T = x; return y` and extra `T` parameters (`fst`) are connected
-along `letE_safeP` and `var_safeP`. Higher-rank or parameter-changing forms
-remain later work.
+`const y: T = x; return y` and extra parameters are connected along `letE_safeP` and `var_safeP`.
+The source adapter also admits `U extends T` when `T` is declared earlier,
+retaining distinct rigid labels. `GenericBounds.follows_sound` proves every
+successful finite upper-bound traversal derives `SubP`; `SubP.sound` supplies
+semantic inclusion under assignments satisfying those bounds. Annotated copies
+and returns use that traversal, including chains ending at boolean. Bounds
+cannot be reversed, and a widened const keeps its annotated type. The parser
+and consumer reject duplicate names, forward bounds and cycles independently.
+SKJS captures each function's already-installed rigid declaration bindings.
+An exact dependent clause match exports the declared parameter, retaining its
+identity instead of choosing one of the clause's variables. Unrelated
+intersections and additional narrowing remain refused. The generic source suite
+checks dependent bounds using unedited SKJS exports; no candidate signatures are
+needed. The snapshot also covers parameter occurrences in entries and expressions.
+This checks variable-copy bodies; generic callbacks, source call-site
+instantiation, higher-rank and parameter-changing forms remain later work.
 
 This is independent of the mutation and loop source-fragment targets above.
 Those remain the next programs to cover with the existing stateful
@@ -571,14 +584,15 @@ path must reach an explicit return; loops may diverge.
 It rejects active-name shadowing, calls to named top-level functions, statements after
 an explicit return, and unsupported types. This is a coverage gate for this slice, not the intended final dead-code policy.
 The identity scheme `id<T>(x: T): T { return x }` is checked under a rigid
-parameter and omitted from the graph request; other generic functions remain
-outside the slice. See [GenericSource.lean](lean/Verification/ExperimentState/GenericSource.lean).
+parameter and omitted from the graph request; the same path admits variable-copy
+bodies with distinct parameters and directed dependent bounds. See [GenericSource.lean](lean/Verification/ExperimentState/GenericSource.lean).
 `type Id<T> = T` and `type Box<T> = { value: T }` are expanded by substitution
 before that check and before ground extraction. See
 [GenericAlias.lean](lean/Verification/ExperimentState/GenericAlias.lean).
 `T extends boolean` is an assumption in `Δ`; returning `x` at `boolean` is
 transport along `SubP`. A generic body may copy `T` through annotated `const`
-bindings and extra parameters. See [GenericSource.lean](lean/Verification/ExperimentState/GenericSource.lean).
+bindings and extra parameters, with bounds to boolean or an earlier parameter.
+See [GenericSource.lean](lean/Verification/ExperimentState/GenericSource.lean).
 
 [SourceTypes.lean](lean/Verification/ExperimentState/SourceTypes.lean) translates
 null, undefined, boolean, their singleton types, unions and bottom exactly into
@@ -735,6 +749,22 @@ The return expression is then checked under $H$.
 This checks unused claimed bindings too, and permits justified weakening.
 The wrapper introduces no execution step; a graph-equality regression ties the
 block form to the existing captured-read execution trace.
+
+A closure null/undefined guard on a plain `cell.value` read may retain its
+observation within branches containing only reads, primitive operations and
+local consts. Extraction saves the tested read in an administrative let, refines
+that immutable slot with existing tag rules, and reuses it for reads of the
+same named cell. Calls, writes, allocations and nested closures anywhere in
+either branch disable this lowering. Thus no observation crosses an effect or
+escapes into a later invocation. Source heap assertions are checked against the
+saved slot; absent such a slot, the original persistent-contract obligation
+remains. Every supplied expression claim is still checked, while stronger
+saved-read evidence may establish the enclosing return contract. This lowering
+uses the existing term rules and adds no axioms; its correspondence with source
+reads is part of the trusted adapter, not a proved JavaScript equivalence.
+`repair-captured-read.mts` extracts unchanged safe and stale controls from
+`tests/expect-error/captured-read-stability.ts`, checks both producers, and runs
+the independent certificate consumer on successful requests.
 
 Straight-line blocks also support initialized `const` declarations and expression
 statements before the final return. Each statement entry uses the same checked
@@ -1042,7 +1072,7 @@ assumptions and historical coverage counts are not an implementation plan.
 | Mutable structural objects | Specify field presence, width, aliasing and allowed mutation; extend beyond the current invariant cells and export their types. |
 | More primitives and operators | Define their runtime behavior and validate agreement, particularly numbers and JavaScript equality. |
 | Graph-backed closure bodies | Extend the call/body interface if source functions require graph control flow internally; surrounding graph loops are insufficient. |
-| Generics and bounds | The model slice is in [TypeParams.lean](lean/Verification/ExperimentState/TypeParams.lean). Source extraction of identity, `T extends boolean`, `const y: T = x`, and extra `T` parameters is in [GenericSource.lean](lean/Verification/ExperimentState/GenericSource.lean). Source extraction of `type Id<T> = T` and `type Box<T> = { value: T }` is in [GenericAlias.lean](lean/Verification/ExperimentState/GenericAlias.lean). Remaining: conditional types, higher-rank polymorphism or parameter-changing recursion. Generic parameters, inference variables and hidden object type arguments are not interchangeable. Checking concrete instantiations remains regression testing, not universal certification of a generic body. |
+| Generics and bounds | The model slice is in [TypeParams.lean](lean/Verification/ExperimentState/TypeParams.lean). Source extraction of identity, `T extends boolean`, `const y: T = x`, and extra `T` parameters is in [GenericSource.lean](lean/Verification/ExperimentState/GenericSource.lean). Source extraction of `type Id<T> = T` and `type Box<T> = { value: T }` is in [GenericAlias.lean](lean/Verification/ExperimentState/GenericAlias.lean). Distinct parameters and dependent upper-bound chains in variable-copy bodies are checked using [GenericBounds.lean](lean/Verification/ExperimentState/GenericBounds.lean). Remaining: generic callbacks and source call-site instantiation, conditional types, higher-rank polymorphism or parameter-changing recursion. Generic parameters, inference variables and hidden object type arguments are not interchangeable. Checking concrete instantiations remains regression testing, not universal certification of a generic body. |
 | Difference and negation | Supply sound rules or approximations: pointwise complement need not preserve admissibility. They do not follow from positive normalization. |
 | Exceptions | Model abrupt completion, state at raising, and pending returns/exceptions through `finally`; ordinary graph edges alone are insufficient. |
 
