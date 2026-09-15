@@ -258,7 +258,7 @@ required data. They also check that object field order does not matter.
 ## Source mode
 
 The adapter accepts primitive or bounded callable parameters, initialized
-`const` and annotated `let` declarations, assignment to a `let` as an expression, nested boolean branches and returns, using variable
+`const` and `let` declarations, assignment to a `let` as an expression, nested boolean branches and returns, using variable
 expressions and null/undefined/boolean literals. Every path must return. Types
 may be null, undefined, boolean, true, false, unions of these, or bottom. Source
 parameters may also contain the bounded function contracts below, including unions with

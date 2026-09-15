@@ -1,23 +1,17 @@
 # census: repair-work
-# 5/89 verified, of 315 functions
+# 6/89 verified, of 315 functions
 #   skjs-rejected: 226
-#   gate: 80
-#   verified: 5
-#   unproved: 4
+#   gate: 78
+#   verified: 6
+#   unproved: 5
 #
-gate:a `let` needs a type annotation in the fragment	tests/expect-error/captured-read-stability.ts	checkedEvolvingCapture
-gate:a `let` needs a type annotation in the fragment	tests/expect-error/captured-read-stability.ts	checkedMutableObjectReplacement
-gate:a `let` needs a type annotation in the fragment	tests/expect-error/captured-read-stability.ts	evolvedInferredSnapshotStillString
-gate:a `let` needs a type annotation in the fragment	tests/expect-error/captured-read-stability.ts	inferredPrimitiveCompatibleWrite
-gate:a `let` needs a type annotation in the fragment	tests/expect-error/compound-computed-key.ts	annotatedCompoundKey
-gate:a `let` needs a type annotation in the fragment	tests/expect-error/increment-narrowing.ts	computedUpdate
-gate:a `let` needs a type annotation in the fragment	tests/expect-error/logical-compound-computed-key.ts	computedAnd
-gate:a `let` needs a type annotation in the fragment	tests/expect-error/logical-compound-computed-key.ts	computedFallback
-gate:a `let` needs a type annotation in the fragment	tests/expect-error/obj-literal-var-field-growth.ts	retainedReceiver
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofUndefinedFieldAdmitsInitialValue
 gate:a `let` needs an initializer	tests/expect-error/test_ternary_refinements.ts	bothBranchesInitialize
+gate:binary operator outside the fragment (&&=)	tests/expect-error/logical-compound-computed-key.ts	computedAnd
 gate:binary operator outside the fragment (+=)	tests/expect-error/assignment-receivers.ts	temporaryReceiver
+gate:binary operator outside the fragment (+=)	tests/expect-error/compound-computed-key.ts	annotatedCompoundKey
+gate:binary operator outside the fragment (??=)	tests/expect-error/logical-compound-computed-key.ts	computedFallback
 gate:binary operator outside the fragment (??=)	tests/expect-error/logical-compound-flow.ts	localFallback
 gate:binary operator outside the fragment (||=)	tests/expect-error/assignment-receivers.ts	selectedReceiver
 gate:default parameters are outside the fragment	tests/expect-error/arrow-default-param-optional.ts	earlierGenericDefault
@@ -31,6 +25,8 @@ gate:destructuring parameter	tests/expect-error/arrow-default-param-optional.ts	
 gate:expected a block	tests/expect-error/as-operator.ts	castScalarSnapshot
 gate:expected a block	tests/expect-error/call-effect-boundaries.ts	postCallGuard
 gate:expected a block	tests/expect-error/captured-read-stability.ts	checkedAliasChain
+gate:expected a block	tests/expect-error/captured-read-stability.ts	checkedEvolvingCapture
+gate:expected a block	tests/expect-error/captured-read-stability.ts	checkedMutableObjectReplacement
 gate:expected a block	tests/expect-error/local-vs-local-refinement.ts	inferredReadNamedNull
 gate:expected a block	tests/expect-error/postfix-exclamation.ts	nonNullScalarSnapshot
 gate:expected a block	tests/expect-error/satisfies.ts	satisfiesSnapshot
@@ -49,6 +45,7 @@ gate:expected plain single-field allocation	tests/expect-error/accessor-declarat
 gate:expected plain single-field allocation	tests/expect-error/local-vs-local-refinement.ts	inferredReadSingleton
 gate:expected plain value property; no accessors, methods or spreads	tests/expect-error/field-refinement.ts	inferredFieldComparison
 gate:expected plain value property; no accessors, methods or spreads	tests/expect-error/obj-literal-var-field-growth.ts	keyInitializesRhs
+gate:expected plain value property; no accessors, methods or spreads	tests/expect-error/obj-literal-var-field-growth.ts	retainedReceiver
 gate:expected required mutable value field	tests/expect-error/captured-read-stability.ts	checkedPropertyResult
 gate:expected required mutable value field	tests/expect-error/destructuring-assignment.ts	keyBeforeDefault
 gate:expected required mutable value field	tests/expect-error/destructuring.ts	checkedNestedPattern
@@ -67,6 +64,7 @@ gate:expected required mutable value field	tests/expect-error/unsound-refinement
 gate:expression outside the fragment (ArrayLiteralExpression)	tests/expect-error/destructuring.ts	inferredAssignmentDefault
 gate:expression outside the fragment (ArrayLiteralExpression)	tests/expect-error/destructuring.ts	inferredIterableDefault
 gate:expression outside the fragment (PostfixUnaryExpression)	tests/expect-error/const-writes.ts	mutateConstantObject
+gate:expression outside the fragment (PostfixUnaryExpression)	tests/expect-error/increment-narrowing.ts	computedUpdate
 gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/promise-object.ts	testAwaitScalarSnapshot
 gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/unsound-refinement.ts	freshReturnSnapshot
 gate:one binding per `const` in the fragment	tests/expect-error/binding-initialization.ts	earlierDeclarator
@@ -315,8 +313,10 @@ unproved:reject: assignment to '_', which is not a mutable local	tests/expect-er
 unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/call-effect-boundaries.ts	clearEffect
 unproved:reject: closure expression claim at [163,164): evidence search failed	tests/expect-error/captured-read-stability.ts	checkedCapturedLocal
 unproved:reject: source incoming edge obligation at [198,211): evidence search failed (unsupported 	tests/expect-error/captured-read-stability.ts	snapshotCapturedLocal
+unproved:reject: source type outside the null/undefined/boolean/singleton fragment	tests/expect-error/captured-read-stability.ts	evolvedInferredSnapshotStillString
 verified	tests/expect-error/captured-read-stability.ts	checkedAnnotatedConstField
 verified	tests/expect-error/captured-read-stability.ts	checkedInferredObject
+verified	tests/expect-error/captured-read-stability.ts	inferredPrimitiveCompatibleWrite
 verified	tests/expect-error/captured-read-stability.ts	neverReassigned
 verified	tests/expect-error/captured-read-stability.ts	stableAnnotatedConstValue
 verified	tests/expect-error/nullish-coalescing.ts	resultOfFallback

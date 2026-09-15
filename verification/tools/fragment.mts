@@ -66,14 +66,15 @@ export type Stmt =
       init: Expr;
     }
   /* A mutable local. `annot` is the storage contract every assignment is
-     checked against, and is required: an initializer's type is what the
-     binding happens to hold first, not what it may hold. */
+     checked against. Absent, the producer supplies one and the adapter checks
+     it; an initializer's type is what the binding happens to hold first, not
+     what it may hold, so it is never taken for the contract. */
   | {
       k: "let";
       pos: Span;
       name: string;
       namePos: Span;
-      annot: ClaimType;
+      annot: ClaimType | null;
       init: Expr;
     };
 

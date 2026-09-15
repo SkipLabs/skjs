@@ -222,7 +222,7 @@ partial def expandStmt (aliases : List Alias) (s : Fragment.Stmt) : Except Strin
     let annot' ← expandOpt aliases annot
     return .cst p n annot' (← expandExpr aliases i)
   | .mut p n np annot i =>
-    return .mut p n np (← expandType aliases annot) (← expandExpr aliases i)
+    return .mut p n np (← expandOpt aliases annot) (← expandExpr aliases i)
   | .ite p c t e =>
     let t' ← t.mapM (expandStmt aliases)
     let e' ← match e with

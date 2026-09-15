@@ -787,15 +787,15 @@ class Gate {
           this.fail(d, `a \`${kindWord}\` needs an initializer`);
         if (mutable) {
           // The storage contract is what every later assignment is checked
-          // against, so it is stated rather than inferred from the first value.
-          if (!d.type)
-            this.fail(d, "a `let` needs a type annotation in the fragment");
+          // against. Written, it is the annotation; unwritten, the producer
+          // states one for the binding and the adapter checks that, rather
+          // than this taking the initializer's type for the contract.
           return {
             k: "let",
             pos: this.span(node),
             name: d.name.text,
             namePos: this.span(d.name),
-            annot: this.typeOf(d.type),
+            annot: d.type ? this.typeOf(d.type) : null,
             init: this.expr(d.initializer),
           };
         }

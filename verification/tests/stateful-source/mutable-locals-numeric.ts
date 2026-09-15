@@ -29,3 +29,16 @@ function numericAssignmentInCoalesce(seed: number | undefined): number {
   const result: number = seed ?? (state = 1);
   return result;
 }
+
+/**
+ * The same binding with no annotation. The producer states its contract — the
+ * type it gives the name where it first stands in scope, `number` rather than
+ * the `1` the initializer produced — and that is what every assignment is
+ * checked against. It is supplied and checked, never inferred here.
+ */
+function inferredStorageContract(): number {
+  let value = 1;
+  const read = (): number => value;
+  value = 2;
+  return read();
+}

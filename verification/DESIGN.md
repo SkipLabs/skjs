@@ -140,6 +140,14 @@ not that this translation preserves TypeScript execution. Regression tests pair
 source executions with forged claims and independent certificate consumption to
 exercise that boundary; they are not a semantic-preservation theorem.
 
+The annotation may be omitted. The contract is then the producer's own: the
+type it gives the name where it first stands in scope, before anything has
+narrowed it, which for `let value = 1` is `number` and not the `1` the
+initializer produced. It is supplied and then checked exactly as a written one
+is — every assignment against it, and the initializer too — so an inferred
+binding is not admitted at whatever its first value happened to be, and no
+lifetime union is invented for it here.
+
 A `let` without an initializer stays gated:
 after the declaration executes its value is `undefined`, and definite
 assignment must show a suitable write precedes each read, through branches and

@@ -103,7 +103,11 @@ contract every assignment is checked against; an unannotated `let` is refused
 rather than given its initializer's type. Current-content claims are checked
 as read obligations or finite heap observations; immutable snapshots can keep
 precise contents across later writes. Guard refinement of mutable contents is
-still conservative, and a `let` without an initializer is outside. Numbers are in it, but opaquely: a number is
+still conservative. A `let` may omit its annotation: the producer states the
+contract for a binding it inferred, the type it gives the name where it first
+stands in scope, and that is checked like a written one rather than the
+initializer's type being taken for it. A `let` without an initializer is
+outside. Numbers are in it, but opaquely: a number is
 bound, passed, returned, held in a union and shape-tested, never computed with,
 because the fragment has no arithmetic and no numeric comparison. A numeric
 literal is its own singleton and is below `number`; its identity is the double

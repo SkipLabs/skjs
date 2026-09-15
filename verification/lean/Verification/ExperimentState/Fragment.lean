@@ -163,7 +163,7 @@ inductive Stmt where
   /-- A mutable local. The annotation is the storage contract every assignment
   is checked against, and is required: what the initializer happens to produce
   is not what the binding may later hold. -/
-  | mut (pos : Span) (name : String) (namePos : Span) (annot : Json) (init : Expr)
+  | mut (pos : Span) (name : String) (namePos : Span) (annot : Option Json) (init : Expr)
   | ite (pos : Span) (cond : Expr) (thn : List Stmt) (els : Option (List Stmt))
   | brk (pos : Span)
   | cont (pos : Span)
@@ -267,8 +267,9 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
       (← decodeExpr (← jField j "init"))
   | "let" => do
     CellClaims.fieldsExactly j ["k","pos","name","namePos","annot","init"]
+    let a ← jField j "annot"
     return .mut p (← jStr (← jField j "name")) (← jSpan j "namePos")
-      (← jField j "annot") (← decodeExpr (← jField j "init"))
+      (if a == .null then none else some a) (← decodeExpr (← jField j "init"))
   | "break" => return .brk p
   | "continue" => return .cont p
   | "while" => return .loop p (← decodeExpr (← jField j "cond")) (← (← jArr j "body").mapM decodeStmt)

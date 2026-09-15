@@ -983,7 +983,22 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
       if (names scope).contains name then throw "shadowing is outside the fragment"
       let Γ ← env fc pos.1 scope
       let A ← exprType fc init
-      let contract ← lower (Fragment.translate annot)
+      let contract ← match annot with
+        | some ty => lower (Fragment.translate ty)
+        -- An inferred binding still has a stated contract: the type the
+        -- producer gives the name where it first stands in scope, before
+        -- anything has narrowed it. It is supplied and then checked like a
+        -- written one — every assignment against it, the initializer too —
+        -- rather than the initializer's own type being taken for it.
+        | none =>
+          let claimed := fc.envs.foldl (fun found (start, vars) =>
+            match found with
+            | some _ => found
+            | none => (vars.lookup name).map (fun c => (start, c))) none
+          let some (start, candidate) := claimed
+            | throw s!"no claimed storage contract for '{name}' at {pos.1}"
+          (SourceClaims.resolve (← table).length candidate).mapError fun msg =>
+            s!"storage contract for '{name}' at {start}: {msg}"
       let reference ← lower (do return [← CellClaims.reference contract])
       -- The slot holds the identity of a cell only this lowering allocated.
       -- Storage is decided here, by the declaration, and nowhere else.
