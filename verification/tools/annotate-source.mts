@@ -10,8 +10,8 @@ import * as ts from "typescript/unstable/ast";
 import { createScanner } from "typescript/unstable/ast/scanner";
 import { createRequire } from "node:module";
 import surface from "./claim-type-text.mts";
-import obligationReader, { presentObligation } from "../tools/obligation-view.mts";
-import { readDiagnostic } from "./obligation-diagnostic.mts";
+import obligationReader, { presentObligation } from "../tools/diagnostic-view.mts";
+import { readDiagnostic } from "./diagnostic.mts";
 // The source annotation encoding has exactly one implementation; a second
 // would be a second opinion about what a source type means.
 import * as parseSource from "./parse-source.mts";

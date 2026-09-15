@@ -14,7 +14,7 @@ import * as marks from "../report-viewer/marks.mts";
 import surface from "../tools/claim-type-text.mts";
 import { decodeGraph, parseGraph, printGraph, graphDefinitions } from "../tools/type-graph.mts";
 import { decodeTerm, parseTerm, printTerm } from "../tools/calculus-language.mts";
-import ob from "../tools/obligation-view.mts";
+import ob from "../tools/diagnostic-view.mts";
 // Plain JavaScript modules; the reader loads these in a browser too.
 const require = createRequire(import.meta.url);
 const source =

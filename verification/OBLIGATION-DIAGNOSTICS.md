@@ -13,7 +13,7 @@ then one line on stderr:
 obligation-diagnostic: {"phase":"proof-search","outcome":"not-established",...}
 ```
 
-`verification/tools/obligation-diagnostic.mts` reads the record without parsing the
+`verification/tools/diagnostic.mts` reads the record without parsing the
 human sentence. A record it cannot decode field by field, and a duplicate
 record, are not interpreted: the reader requires the fields below and refuses
 what it does not recognize, so a record it accepts is one of exactly this
@@ -247,7 +247,7 @@ being silently erased.
 ## Report presentation
 
 The report writer attaches `obligationView` beside the exact raw `obligation`.
-`tools/obligation-view.mts` prepares it once; Svelte only renders the typed
+`tools/diagnostic-view.mts` prepares it once; Svelte only renders the typed
 presentation. Its `judgement` has `assumptions`, `conclusion`, and their printed
 `A ⊢ B` form. Node and expression failures use the recorded sequent. Edge
 failures state the available slots, branch premise, target mapping, and heap

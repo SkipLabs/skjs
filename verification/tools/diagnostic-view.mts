@@ -1,4 +1,4 @@
-/* Reading an obligation diagnostic for display.
+/* Reading the verifier's diagnostic record for display.
  *
  * A record describes an unsuccessful verification attempt: the assumptions that
  * were available and the conclusion that had to follow. It is explanatory
@@ -9,7 +9,7 @@
 
 import surface from "./claim-type-text.mts";
 import { decodeGraph, graphDefinitions, printLabels, type GraphDefinition } from "./type-graph.mts";
-import type { ObligationDiagnostic } from "./obligation-diagnostic.mts";
+import type { ObligationDiagnostic } from "./diagnostic.mts";
 import { printTerm } from "./calculus-language.mts";
 import type { Span } from "../tools/source-claims.mts";
 

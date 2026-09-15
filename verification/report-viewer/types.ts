@@ -1,4 +1,4 @@
-import type { ObligationView } from "../tools/obligation-view.mts";
+import type { ObligationView } from "../tools/diagnostic-view.mts";
 // The report the reader displays.
 //
 // One description of the shape that `tools/annotate-source.js` writes, the

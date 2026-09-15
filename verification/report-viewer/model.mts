@@ -1,4 +1,4 @@
-import type { ObligationView } from "../tools/obligation-view.mts";
+import type { ObligationView } from "../tools/diagnostic-view.mts";
 // Surface type printing is shared with the report writer.
 import type { Bundle, Producer } from "./types.ts";
 import type { Span } from "../tools/source-claims.mts";

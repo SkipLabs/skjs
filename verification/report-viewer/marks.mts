@@ -39,7 +39,7 @@ export interface SourceMarks {
 }
 
 
-import obligationReader from "../tools/obligation-view.mts";
+import obligationReader from "../tools/diagnostic-view.mts";
 
 const lineStarts = (src: any) => {
   const a = [0];

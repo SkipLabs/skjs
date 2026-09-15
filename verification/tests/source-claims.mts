@@ -4,7 +4,7 @@ import os from "node:os";
 import assert from "node:assert";
 import { spawnSync } from "node:child_process";
 import { hash } from "../tools/annotate-source.mts";
-import { readDiagnostic } from "../tools/obligation-diagnostic.mts";
+import { readDiagnostic } from "../tools/diagnostic.mts";
 const __dirname = path.dirname(import.meta.filename);
 const verifier=process.argv[2],tmp=fs.mkdtempSync(path.join(os.tmpdir(),"source-claims-"));
 const run=(exe: string,args: string[])=>{const r=spawnSync(exe,args,{encoding:"utf8"});if(r.error||r.signal)throw r.error||Error(String(r.signal));return r;};

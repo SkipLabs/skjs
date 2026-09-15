@@ -174,7 +174,7 @@ end and exercised by `tests/report-viewer.mts` without a browser:
   to.
 - `marks.mts` — what the source view draws: which claims at what position, the
   outcome symbols, how marks pack onto rows without overlapping.
-- `../tools/obligation-view.mts` — builds a typed obligation presentation when the report is generated; the panel renders it.
+- `../tools/diagnostic-view.mts` — builds a typed obligation presentation when the report is generated; the panel renders it.
 - `candidate.mts` — immutable candidate edits. Candidate inputs and stored
   results are never trusted proof evidence.
 - `../tools/claim-type-text.mts` — claim types in surface syntax, printed and read

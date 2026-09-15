@@ -71,9 +71,9 @@ source names are shown alongside in its context table.
 
 ## Obligations and consistency
 
-`tools/obligation-diagnostic.mts` reads the native failure record, checking its
+`tools/diagnostic.mts` reads the native failure record, checking its
 graph, sequent, mappings, source descriptors, and heap facts. Malformed or unknown
-records remain human diagnostics. `tools/obligation-view.mts` prepares a typed
+records remain human diagnostics. `tools/diagnostic-view.mts` prepares a typed
 presentation at report generation, including `A ⊢ B` and the complete graph
 legend. The viewer renders `obligationView`; it does not infer an obligation
 from a diagnostic sentence. [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md)
