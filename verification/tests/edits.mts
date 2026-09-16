@@ -1,0 +1,90 @@
+/*
+ * Reaching into a program and its claims, for the suites that alter them.
+ *
+ * A suite here changes one thing about a document and requires the verifier to
+ * reject the result. The alteration is written against the declared languages
+ * — the fragment tree of tools/fragment.mts, the producer's claims of
+ * tools/skjs-claims.mts — so a suite names the construct it is reaching into
+ * and a fixture that stops having that shape fails at the line that names it,
+ * rather than as something unrelated further on. What the alteration then
+ * writes is deliberately outside those languages; that is the point of it, and
+ * the claim fields it writes are `unknown` for exactly that reason.
+ */
+import type { Ast, Expr, FunctionAst, Stmt } from "../tools/fragment.mts";
+import type {
+  SkjsClaims,
+  SkjsEntry,
+  SkjsExpression,
+  SkjsFunction,
+  SkjsNamedPoint,
+} from "../tools/skjs-claims.mts";
+
+const found = <T,>(what: string, value: T | undefined): T => {
+  if (value === undefined) throw Error(`this fixture has no ${what}`);
+  return value;
+};
+
+/** The members of a tagged union one tag selects. `Extract` will not do: some
+ * members carry several tags, and are the same node whichever it is. */
+type OfKind<T extends { k: string }, K extends T["k"]> = T extends unknown
+  ? K extends T["k"]
+    ? T
+    : never
+  : never;
+
+/** Whether a node carries the tag named, which is what selects its members. */
+const isKind = <T extends { k: string }, K extends T["k"]>(
+  node: T,
+  k: K,
+): node is OfKind<T, K> => node.k === k;
+
+/** The statement at a place in a body, as the kind the suite names. */
+export function stmt<K extends Stmt["k"]>(
+  s: Stmt | undefined,
+  k: K,
+): OfKind<Stmt, K> {
+  if (s === undefined || !isKind(s, k))
+    throw Error(`expected a ${k} statement, found ${s?.k ?? "none"}`);
+  return s;
+}
+
+/** The expression at a place in a tree, as the kind the suite names. */
+export function expr<K extends Expr["k"]>(
+  e: Expr | undefined,
+  k: K,
+): OfKind<Expr, K> {
+  if (e === undefined || !isKind(e, k))
+    throw Error(`expected a ${k} expression, found ${e?.k ?? "none"}`);
+  return e;
+}
+
+/** One function of a parse, by name. */
+export const fn = (ast: Ast, name: string): FunctionAst =>
+  found(`function ${name}`, ast.functions.find((f) => f.name === name));
+
+/** The statement at an index of a body. */
+export const at = (body: Stmt[], i: number): Stmt =>
+  found(`statement ${i}`, body[i]);
+
+/* ---------- the claims beside it ---------- */
+
+/** The one function a single-function fixture states claims for. */
+export const only = (claims: SkjsClaims, file: string): SkjsFunction =>
+  found(`claims for ${file}`, claims.find((f) => f.file === file)?.functions[0]);
+
+/** The claim stated at an expression's own start. */
+export const claimAt = (f: SkjsFunction, start: number): SkjsExpression =>
+  found(`claim at ${start}`, f.exprs.find((e) => e.pos[0] === start));
+
+/** The environment stated at a statement entry. */
+export const entryAt = (f: SkjsFunction, start: number): SkjsEntry =>
+  found(`entry at ${start}`, f.envs.find((e) => e.pos[0] === start));
+
+/** One binding of that environment. */
+export const binding = (
+  f: SkjsFunction,
+  start: number,
+  name: string,
+): SkjsNamedPoint =>
+  found(`claim for ${name} at ${start}`,
+    entryAt(f, start).vars.find((v) => v.name === name));

@@ -5,6 +5,11 @@ import os from "node:os";
 import vm from "node:vm";
 import { spawnSync } from "node:child_process";
 import { stripTypes } from "../tools/strip-types.mts";
+import { functionOf } from "../tools/skjs-claims.mts";
+import type { SkjsClaims } from "../tools/skjs-claims.mts";
+import type { Ast } from "../tools/fragment.mts";
+import { at, binding, claimAt, expr, fn, only, stmt } from "./edits.mts";
+import type { SpawnSyncReturns } from "node:child_process";
 // Negated tests must reverse refinements without trusting them or duplicating effects.
 
 
@@ -24,19 +29,25 @@ const [
   singletonClaimsPath,
   singletonFile,
 ] = process.argv.slice(2);
-const ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
-const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
+const ast: Ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
+const claims: SkjsClaims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
 const tmp = fs.mkdtempSync(os.tmpdir() + "/negation-");
-const firstClaim = (c: any) =>
-  c
-    .find((f: any) => f.file === file)
-    .functions.find((f: any) => f.name === "negatedBranch");
-const singleton = (v: any) => ({
+const firstClaim = (c: SkjsClaims) => functionOf(c, file, "negatedBranch");
+const singleton = (v: boolean) => ({
   top: false,
   atoms: [{ a: "booleanlit", v: String(v) }],
 });
 let passed = 0;
-function run(mode: string, a: any, c: any, evidence?: any, key = file) {
+/** The `if` this fixture is about, and the test it branches on. */
+const branch = (a: Ast) => stmt(at(fn(a, "negatedBranch").body, 0), "if");
+const negatedTest = (a: Ast) => branch(a).cond;
+function run(
+  mode: string,
+  a: Ast,
+  c: unknown,
+  evidence?: unknown,
+  key = file,
+) {
   fs.writeFileSync(tmp + "/ast.json", JSON.stringify(a));
   fs.writeFileSync(tmp + "/claims.json", JSON.stringify(c));
   if (evidence)
@@ -53,7 +64,12 @@ function run(mode: string, a: any, c: any, evidence?: any, key = file) {
   assert(!r.error && !r.signal, String(r.error || r.signal));
   return r;
 }
-function expect(name: string, r: any, accept: any, reason = "") {
+function expect(
+  name: string,
+  r: SpawnSyncReturns<string>,
+  accept: boolean,
+  reason = "",
+) {
   assert.equal(r.status === 0, accept, name + ": " + r.stderr);
   assert((r.stdout + r.stderr).includes(reason), name + ": " + r.stderr);
   console.log("  " + name + ": OK");
@@ -99,9 +115,9 @@ try {
     [
       "negation operand claim required",
       (a, c) => {
-        const pos = a.functions[0].body[0].cond.e.pos;
+        const pos = expr(negatedTest(a), "not").e.pos;
         firstClaim(c).exprs = firstClaim(c).exprs.filter(
-          (e: any) => e.pos[0] !== pos[0],
+          (e) => e.pos[0] !== pos[0],
         );
       },
       "no claimed type",
@@ -109,70 +125,63 @@ try {
     [
       "negation result cannot be invented",
       (a, c) => {
-        const pos = a.functions[0].body[0].cond.pos;
-        firstClaim(c).exprs.find((e: any) => e.pos[0] === pos[0]).type =
-          singleton(true);
+        const pos = negatedTest(a).pos;
+        claimAt(firstClaim(c), pos[0]).type = singleton(true);
       },
       "evidence search failed",
     ],
     [
       "reversed branch cannot invent true",
       (a, c) => {
-        const start = a.functions[0].body[0].then[0].pos[0];
-        firstClaim(c)
-          .envs.find((e: any) => e.pos[0] === start)
-          .vars.find((v: any) => v.name === "flag").type = singleton(true);
+        const start = at(branch(a).then, 0).pos[0];
+        binding(firstClaim(c), start, "flag").type = singleton(true);
       },
       "evidence search failed",
     ],
     [
       "negation requires Boolean operand",
       (a, c) => {
-        const operand = a.functions[0].body[0].cond.e;
-        a.functions[0].body[0].cond.e = {
-          k: "lit",
-          pos: operand.pos,
-          lit: { a: "null" },
-        };
-        firstClaim(c).exprs.find((e: any) => e.pos[0] === operand.pos[0]).type = {
+        const negation = expr(negatedTest(a), "not");
+        const operand = negation.e;
+        negation.e = { k: "lit", pos: operand.pos, lit: { a: "null" } };
+        claimAt(firstClaim(c), operand.pos[0]).type = {
           top: false,
           atoms: [{ a: "null" }],
         };
       },
       "evidence search failed",
     ],
-  ] as [string, (a: any, c: any) => void, string][]) {
+  ] as [string, (a: Ast, c: SkjsClaims) => void, string][]) {
     const a = structuredClone(ast),
       c = structuredClone(claims);
     mutate(a, c);
     expect(name, run("--produce-stateful-source", a, c), false, reason);
   }
   const changed = structuredClone(ast);
-  changed.functions[0].body[0].cond = {
-    ...changed.functions[0].body[0].cond.e,
-    pos: changed.functions[0].body[0].cond.pos,
-  };
+  const test = expr(negatedTest(changed), "not");
+  branch(changed).cond = { ...test.e, pos: test.pos };
   expect(
     "old evidence rejects changed polarity",
     run("--check-stateful-source", changed, claims, evidence),
     false,
   );
-  const exitAst = JSON.parse(fs.readFileSync(exitAstPath, "utf8"));
-  const exitClaims = JSON.parse(fs.readFileSync(exitClaimsPath, "utf8"));
-  const exitFn = exitClaims.find((f: any) => f.file === exitFile).functions[0];
-  assert.equal(exitFn.collection.completion, "aborted");
-  assert.equal(exitFn.collection.mode, "normal");
+  const exitAst: Ast = JSON.parse(fs.readFileSync(exitAstPath, "utf8"));
+  const exitClaims: SkjsClaims = JSON.parse(
+    fs.readFileSync(exitClaimsPath, "utf8"),
+  );
+  const exitFn = only(exitClaims, exitFile);
+  assert.equal(exitFn.collection?.completion, "aborted");
+  assert.equal(exitFn.collection?.mode, "normal");
   expect(
     "broad loop exit claim loses the branch refinement at the local boundary",
     run("--produce-stateful-source", exitAst, exitClaims, undefined, exitFile),
     false,
   );
-  const ret = exitAst.functions[0].body.at(-1);
-  const binding = exitFn.envs
-    .find((e: any) => e.pos[0] === ret.pos[0])
-    .vars.find((v: any) => v.name === "flag");
-  const expression = exitFn.exprs.find((e: any) => e.pos[0] === ret.e.pos[0]);
-  binding.type = singleton(true);
+  const body = exitAst.functions[0]!.body;
+  const ret = stmt(body[body.length - 1], "return");
+  const flag = binding(exitFn, ret.pos[0], "flag");
+  const expression = claimAt(exitFn, ret.e.pos[0]);
+  flag.type = singleton(true);
   expression.type = singleton(true);
   expect(
     "repaired loop exit independently provable",
@@ -191,19 +200,22 @@ try {
     ),
     true,
   );
-  binding.type = singleton(false);
+  flag.type = singleton(false);
   expect(
     "wrong loop exit refinement rejected",
     run("--produce-stateful-source", exitAst, exitClaims, undefined, exitFile),
     false,
     "evidence search failed",
   );
-  const singletonAst = JSON.parse(fs.readFileSync(singletonAstPath, "utf8"));
-  const singletonClaims = JSON.parse(fs.readFileSync(singletonClaimsPath, "utf8"));
-  const singletonFn = singletonClaims.find((f: any) => f.file === singletonFile)
-    .functions[0];
-  assert.equal(singletonFn.collection.completion, "aborted");
-  assert.equal(singletonFn.collection.mode, "normal");
+  const singletonAst: Ast = JSON.parse(
+    fs.readFileSync(singletonAstPath, "utf8"),
+  );
+  const singletonClaims: SkjsClaims = JSON.parse(
+    fs.readFileSync(singletonClaimsPath, "utf8"),
+  );
+  const singletonFn = only(singletonClaims, singletonFile);
+  assert.equal(singletonFn.collection?.completion, "aborted");
+  assert.equal(singletonFn.collection?.mode, "normal");
   expect(
     "SKJS singleton negation claim too broad",
     run(
@@ -216,8 +228,9 @@ try {
     false,
     "evidence search failed",
   );
-  const negated = singletonFn.exprs.find(
-    (e: any) => e.pos[0] === singletonAst.functions[0].body[0].e.pos[0],
+  const negated = claimAt(
+    singletonFn,
+    stmt(singletonAst.functions[0]!.body[0], "return").e.pos[0],
   );
   negated.type = singleton(false);
   expect(
