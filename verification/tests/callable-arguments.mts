@@ -6,16 +6,32 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import vm from "node:vm";
 import { stripTypes } from "../tools/strip-types.mts";
+import type { Ast } from "../tools/fragment.mts";
+import type { ClaimType } from "../tools/claim.mts";
+import { functionOf, type SkjsClaims, type SkjsFunction } from "../tools/skjs-claims.mts";
+import {
+  at as nth,
+  atom,
+  claimAt,
+  claimType,
+  expr,
+  fn as functionIn,
+  last,
+  must,
+  stmt,
+} from "./edits.mts";
 
 const [astPath, claimsPath, file, verifier] = process.argv.slice(2);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "callable-arguments-"));
 try {
-  const source = JSON.parse(fs.readFileSync(astPath, "utf8"));
-  const exported = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
-  const fn = source.functions.find((fn: any) => fn.name === "callableArgument");
+  const source: Ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
+  const exported: SkjsClaims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
+  const fn = functionIn(source, "callableArgument");
+  /** The call whose argument is the callback under test. */
+  const invocation = (f = fn) => expr(stmt(nth(f.body, 3), "const").init, "apply");
   const ast = path.join(tmp, "ast"), claims = path.join(tmp, "claims");
   const evidence = path.join(tmp, "evidence");
-  const run = (mode: string, a: any, c: any) => {
+  const run = (mode: string, a: Ast, c: SkjsClaims) => {
     fs.writeFileSync(ast, JSON.stringify(a));
     fs.writeFileSync(claims, JSON.stringify(c));
     const args = [mode, ast, claims, file, evidence];
@@ -30,20 +46,17 @@ try {
   }
   console.log("  stateful callable arguments: original claims and independent consumer OK");
 
-  const transported = source.functions.find((f: any) => f.name === "exchangeMultiArgument");
-  assert(transported);
-  const returned = transported.body.at(-1).e;
+  const transported = functionIn(source, "exchangeMultiArgument");
+  const returned = stmt(last(transported.body), "return").e;
   for (const [name, domains] of [
     ["later parameter cannot widen from null to Boolean",
       [{top: false, atoms: [{a: "boolean"}]}, {top: false, atoms: [{a: "boolean"}]}]],
     ["a native signature cannot lose its second parameter",
       [{top: false, atoms: [{a: "boolean"}]}]],
-  ] as [string, any[]][]) {
+  ] as [string, ClaimType[]][]) {
     const changed = structuredClone(exported);
-    const fc = changed.find((b: any) => b.file === file).functions.find((f: any) => f.name === transported.name);
-    const site = fc.exprs.find((e: any) => e.pos[0] === returned.pos[0] && e.pos[1] === returned.pos[1]);
-    assert(site);
-    site.type.atoms[0].params = domains;
+    const fc = functionOf(changed, file, transported.name);
+    atom(claimType(claimAt(fc, returned.pos)).atoms[0], "function").params = domains;
     for (const mode of ["--check-stateful-source", "--produce-stateful-source"]) {
       const result = run(mode, source, changed);
       assert.notEqual(result.status, 0, name);
@@ -51,7 +64,7 @@ try {
   }
   console.log("  transported multi-argument contracts retain later domains and arity: OK");
   const omitted = structuredClone(source);
-  omitted.functions.find((f: any) => f.name === "callableArgument").body[3].init.args = [];
+  invocation(functionIn(omitted, "callableArgument")).args = [];
   for (const mode of ["--check-stateful-source", "--produce-stateful-source"]) {
     const result = run(mode, omitted, exported);
     assert.notEqual(result.status, 0, "omission cannot satisfy a required callback parameter");
@@ -61,9 +74,8 @@ try {
   vm.runInContext(stripTypes(fs.readFileSync(file, "utf8")), runtime, {timeout: 1000});
   for (const seed of [false, true])
     assert.equal(vm.runInContext(`escapedCallbackArgument(${seed})`, runtime, {timeout: 1000}), !seed);
-  const escaped = source.functions.find((f: any) => f.name === "escapedCallbackArgument");
-  const terminal = escaped.body.at(-1);
-  assert.equal(terminal.k, "return");
+  const escaped = functionIn(source, "escapedCallbackArgument");
+  const terminal = stmt(last(escaped.body), "return");
   const original = fs.readFileSync(file, "utf8");
   const observations: boolean[][] = [];
   const observed = vm.createContext({observe: (...values: boolean[]) => { observations.push(values); }});
@@ -74,19 +86,20 @@ try {
   assert.deepEqual(observations, [[true, false], [false, true]]);
   console.log("  escaped callback argument observes the write and forwards the argument: JavaScript witness OK");
   for (const [name, change] of [
-    ["callback must accept the invoker's full Boolean domain", (fc: any) => {
-      const arg = fn.body[3].init.args[0];
-      const site = fc.exprs.find((e: any) => e.pos[0] === arg.pos[0] && e.pos[1] === arg.pos[1]);
-      site.type.atoms[0].params[0] = {top: false, atoms: [{a: "booleanlit", v: "false"}]};
+    ["callback must accept the invoker's full Boolean domain", (fc) => {
+      const arg = must(invocation().args[0], "an argument");
+      atom(claimType(claimAt(fc, arg.pos)).atoms[0], "function").params[0] =
+        {top: false, atoms: [{a: "booleanlit", v: "false"}]};
     }],
-    ["invoker cannot accept callbacks with incompatible results", (fc: any) => {
-      const callee = fn.body[3].init.callee;
-      const site = fc.exprs.find((e: any) => e.pos[0] === callee.pos[0] && e.pos[1] === callee.pos[1]);
-      site.type.atoms[0].params[0].atoms[0].result = {top: false, atoms: [{a: "null"}]};
+    ["invoker cannot accept callbacks with incompatible results", (fc) => {
+      const callee = invocation().callee;
+      const invoker = atom(claimType(claimAt(fc, callee.pos)).atoms[0], "function");
+      atom(must(invoker.params[0], "a domain").atoms[0], "function").result =
+        {top: false, atoms: [{a: "null"}]};
     }],
-  ] as [string, (fc: any) => void][]) {
+  ] as [string, (fc: SkjsFunction) => void][]) {
     const changed = structuredClone(exported);
-    change(changed.find((b: any) => b.file === file).functions.find((f: any) => f.name === fn.name));
+    change(functionOf(changed, file, fn.name));
     // Check reuse first so a failed production cannot alter the original evidence.
     for (const mode of ["--check-stateful-source", "--produce-stateful-source"]) {
       const result = run(mode, source, changed);
