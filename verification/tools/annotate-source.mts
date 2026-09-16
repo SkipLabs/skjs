@@ -912,5 +912,9 @@ export function main(args: string[]) {
   console.log(`Annotated source: ${output}\nReport manifest: ${manifest}`);
 }
 export {hash,typeText,fromSkjs,fromSourceClaims,attachConversion,render,coverage,compareClaims,verifySkjs};
+/* The intermediate a converter builds and `render` writes out. It is this
+ * file's own shape rather than a language of its own, and is exported so a
+ * suite that alters one says which document it is altering. */
+export type {DraftReport, ReportInput};
 if(process.argv[1] && import.meta.filename===path.resolve(process.argv[1]))
   try {main(process.argv.slice(2));}catch(e){console.error((e as Error).message);process.exitCode=1;}

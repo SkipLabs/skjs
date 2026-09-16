@@ -9,21 +9,38 @@ import { createRequire } from "node:module";
 import { parseReport } from "../report-viewer/model.mts";
 import surface from "../tools/claim-text.mts";
 import { parseFile } from "../tools/fragment-parse.mts";
+import type { ReportInput } from "../tools/annotate-source.mts";
+import type { Ast } from "../tools/fragment.mts";
+import type { ClaimType, FunctionAtom } from "../tools/claim.mts";
+import type { Manifest, Result } from "../report-viewer/types.ts";
+import { functionOf, type SkjsClaims, type SkjsFunction } from "../tools/skjs-claims.mts";
+import { at as nth, expr, fn as functionIn, must, record, stmt } from "./edits.mts";
+
+/** The results a report states, which the checks below are about. */
+const results=(m: Manifest): Result[]=>must(m.results,"results");
+/** The body of the closure `capturedRead` binds, from a fresh parse. */
+const capturedBody=(stdout: string)=>{
+  const parsed: Ast=JSON.parse(stdout);
+  return expr(stmt(nth(functionIn(parsed,"capturedRead").body,1),"const").init,"lambda").body;
+};
+/** A claim the producer could not decode says so, and is not one to print. */
+const unsupported=(t: unknown)=>
+  !!t && typeof t==="object" && "unsupported" in t && t.unsupported===true;
 // Plain JavaScript modules; the reader loads these in a browser too.
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(import.meta.filename);
 const [claimsPath,fileKey,verifier]=process.argv.slice(2);
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"annotated-tests-"));
 let passed=0;
-const test=(name: string,f: any)=>{f();passed++;console.log(`  ${name}: OK`);};
+const test=(name: string,f: () => void)=>{f();passed++;console.log(`  ${name}: OK`);};
 try {
   test("function unions retain grouping and per-alternative metadata",()=>{
-    const unit={top:false,atoms:[{a:"null"}]};
-    const truth={top:false,atoms:[{a:"booleanlit",v:"true"}]};
-    const falsity={top:false,atoms:[{a:"booleanlit",v:"false"}]};
-    const arrow=(params: any[],result: any,construct="unknown")=>
+    const unit: ClaimType={top:false,atoms:[{a:"null"}]};
+    const truth: ClaimType={top:false,atoms:[{a:"booleanlit",v:"true"}]};
+    const falsity: ClaimType={top:false,atoms:[{a:"booleanlit",v:"false"}]};
+    const arrow=(params: ClaimType[],result: ClaimType,construct="unknown"): FunctionAtom=>
       ({a:"function",params,result,construct,array:"unknown"});
-    const callableUnion={top:false,atoms:[arrow([unit],truth),arrow([unit],falsity,"absent")]};
+    const callableUnion: ClaimType={top:false,atoms:[arrow([unit],truth),arrow([unit],falsity,"absent")]};
     for(const type of [callableUnion,{top:false,atoms:[{a:"null"},...callableUnion.atoms]},
       {top:false,atoms:[arrow([callableUnion],unit)]},
       {top:false,atoms:[arrow([unit],callableUnion)]}]) {
@@ -48,7 +65,7 @@ try {
   });
   const source='// Unicode: 😀\nfunction f(x: boolean): boolean { return x; }\n';
   const ns=source.indexOf("f("), es=source.lastIndexOf("x;");
-  const report={source:{file:"test.ts",sha256:hash(source)},producer:"other-analyzer",
+  const report: ReportInput={source:{file:"test.ts",sha256:hash(source)},producer:"other-analyzer",
     functions:[{name:"f",namePos:[ns,ns+1],entries:[{pos:[source.indexOf("return"),es+2],bindings:[{name:"x",type:"boolean"}]}],
       expressions:[{pos:[es,es+1],type:"boolean"}]}]};
   test("independent producer report and Unicode positions",()=>assert(render(source,report).includes("producer=other-analyzer")));
@@ -58,8 +75,8 @@ try {
   test("inside-token attachment rejected",()=>{const r=structuredClone(report);r.functions[0].expressions[0].pos=[source.indexOf("return")+1,source.indexOf("return")+3];assert.throws(()=>render(source,r),/attach/);});
   test("comment injection stays inside report",()=>{const r=structuredClone(report);r.functions[0].expressions[0].type='*/ throw "bad"; /*\n';assert(render(source,r).includes('*\\/'));});
   test("return line break remains unchanged",()=>{const s=source.replace("return x","return\nx"),r=structuredClone(report);r.source.sha256=hash(s);r.functions[0].entries=[];r.functions[0].expressions=[];assert(render(s,r).includes("return\nx"));});
-  test("stored generic statuses cannot establish verification",()=>{const r: any=structuredClone(report);r.results=[{status:"verified"}];assert(!render(source,r).includes("verification=verified"));});
-  test("comparison ignores stored statuses and provenance changes",()=>{const r: any=structuredClone(report);r.results=[{status:"verified"}];r.producer="manual";assert.deepEqual(compareClaims(source,report,r).changes,[]);});
+  test("stored generic statuses cannot establish verification",()=>{const r: ReportInput=structuredClone(report);r.results=[{status:"verified"}];assert(!render(source,r).includes("verification=verified"));});
+  test("comparison ignores stored statuses and provenance changes",()=>{const r: ReportInput=structuredClone(report);r.results=[{status:"verified"}];r.producer="manual";assert.deepEqual(compareClaims(source,report,r).changes,[]);});
   test("comparison reports added removed and changed claims",()=>{
     const r=structuredClone(report);r.functions[0].entries=[];r.functions[0].expressions[0].type="true";
     const changes=compareClaims(source,report,r).changes;
@@ -79,7 +96,7 @@ try {
     assert.deepEqual(compareClaims(source,a,b).changes,[]);
   });
   test("unavailable reasons identify claims, ignore stale metadata, and preserve unknown codes",()=>{
-    const raw: any=[{file:"test.ts",functions:[{name:"f",namePos:[ns,ns+1],
+    const raw: SkjsClaims=[{file:"test.ts",functions:[{name:"f",namePos:[ns,ns+1],
       params:[{name:"x",type:{unsupported:true}}],retType:{unsupported:true},
       envs:[{pos:[es-7,es+2],vars:[{name:"x",type:{unsupported:true}},{name:"y",type:{unsupported:true}}]}],
       exprs:[{pos:[es,es+1],type:{unsupported:true}}],
@@ -94,12 +111,13 @@ try {
     const get=()=>{const u=fromSkjs(source,"test.ts",raw,"skjs").functions[0]!.unavailableTypes;assert(u);return u;};
     assert.equal(get().length,5);
     assert.equal(get()[3]!.reason,"future-reason");
-    const f=raw[0].functions[0];
-    f.envs[0].vars[0].type={top:false,atoms:[{a:"boolean"}]};
+    const f=must(must(raw[0],"the probe file").functions[0],"the probe function");
+    must(must(f.envs[0],"an entry").vars[0],"a binding").type={top:false,atoms:[{a:"boolean"}]};
     assert(!get().some(d=>d.kind==="entry"&&d.binding==="x"));
-    f.unavailableTypes.push({...f.unavailableTypes[3],reason:"conflicting-reason"});
+    const omissions=must(f.unavailableTypes,"the probe's omissions");
+    omissions.push({...record(must(omissions[3],"an omission"),"an omission"),reason:"conflicting-reason"});
     assert(!get().some(d=>d.kind==="entry"&&d.binding==="y"));
-    f.unavailableTypes.push(null,{kind:"expression",pos:null,reason:"bad"});
+    omissions.push(null,{kind:"expression",pos:null,reason:"bad"});
     assert.equal(get().length,3);
     delete f.unavailableTypes;
     assert.deepEqual(get(),[]);
@@ -148,7 +166,7 @@ try {
     assert.equal(typeText(t),JSON.stringify(t));
   });
   test("bindings without a decoded type are named in the annotation",()=>{
-    const r: any=structuredClone(report);
+    const r: ReportInput=structuredClone(report);
     r.functions[0].entries[0].bindings.push({name:"this",type:typeText({unsupported:true}),raw:{unsupported:true}});
     const entry=render(source,r).split("@verify-report").find(m=>m.includes("kind=entry"));
     assert(entry, "no entry annotation");
@@ -158,11 +176,11 @@ try {
   test("annotation ids resolve to manifest records",()=>{
     const r=cli([generic,"--claims",gp,"--format","report","--stdout","json"]);
     assert.equal(r.status,0,r.stderr);
-    const {annotated,manifest}=JSON.parse(r.stdout);
+    const {annotated,manifest}: {annotated: string; manifest: Manifest}=JSON.parse(r.stdout);
     const ids=[...annotated.matchAll(/id=([a-z0-9]+);/g)].map(m=>m[1]);
     assert(ids.length>=3);
-    const known=new Set([...manifest.functions.flatMap((f: any) =>[f.id,...f.entries.map((e: any) =>e.id),...f.expressions.map((e: any) =>e.id)]),
-      ...manifest.gaps.map((g: any) =>g.id)]);
+    const known=new Set([...manifest.functions.flatMap((f) =>[f.id,...f.entries.map((e) =>e.id),...f.expressions.map((e) =>e.id)]),
+      ...must(manifest.gaps,"the gaps").map((g) =>g.id)]);
     for(const id of ids)assert(known.has(id),id);
   });
   test("stdout mode leaves no files behind",()=>{
@@ -211,19 +229,19 @@ try {
   // Surface syntax is what a reader edits claims in, so it has to determine the
   // producer's encoding exactly. Check that on every type in a real export.
   test("every exported claim type survives printing and reading back",()=>{
-    const types: any[]=[];
-    const walk=(f: any) =>{for(const e of f.exprs||[])types.push(e.type);
+    const types: unknown[]=[];
+    const walk=(f: SkjsFunction) =>{for(const e of f.exprs||[])types.push(e.type);
       for(const env of f.envs||[])for(const v of env.vars||[])types.push(v.type);
       for(const p of f.params||[])types.push(p.type); types.push(f.retType);};
     for(const file of claims)for(const f of file.functions)walk(f);
-    const printable=types.filter(t=>t&&!t.unsupported&&surface.printType(t).printable);
+    const printable=types.filter(t=>t&&!unsupported(t)&&surface.printType(t).printable);
     assert(printable.length>50,`only ${printable.length} printable types`);
     for(const type of printable)
       assert.deepEqual(surface.parseType(surface.printType(type).text),type,surface.printType(type).text);
   });
   test("all real exported claims attach without changing syntax",()=>render(real,fromSkjs(real,fileKey,claims,"skjs")));
   const out=path.join(tmp,"real.annotated.ts");
-  test("fresh independent verification is recorded",()=>{const r=cli([fileKey,"--claims",claimsPath,"--verify",verifier,"--out",out]);assert.equal(r.status,0,r.stderr);const m=JSON.parse(fs.readFileSync(out+".json", "utf8"));assert(m.results.every((x: any) =>x.status==="verified"));assert(m.results.every((x: any) =>x.certificateSha256));assert.equal(m.verifierSha256,hash(fs.readFileSync(verifier)));assert.equal(m.source.sha256,hash(real));});
+  test("fresh independent verification is recorded",()=>{const r=cli([fileKey,"--claims",claimsPath,"--verify",verifier,"--out",out]);assert.equal(r.status,0,r.stderr);const m=JSON.parse(fs.readFileSync(out+".json", "utf8"));assert(results(m).every((x) =>x.status==="verified"));assert(results(m).every((x) =>x.certificateSha256));assert.equal(m.verifierSha256,hash(fs.readFileSync(verifier)));assert.equal(m.source.sha256,hash(real));});
   // A claim the extractor needed and did not find is a different finding from a
   // proof search that failed, and the report must say which one happened.
   test("an absent required claim is located as a missing claim",()=>{
