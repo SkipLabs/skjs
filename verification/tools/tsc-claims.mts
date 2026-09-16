@@ -27,7 +27,21 @@ import {
 } from "typescript/unstable/sync";
 import type { Checker, Symbol, Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
-import type { Node, SourceFile } from "typescript/unstable/ast";
+import type {
+  BinaryExpression,
+  Expression,
+  FunctionDeclaration,
+  FunctionLikeDeclaration,
+  Identifier,
+  Node,
+  ParameterDeclaration,
+  PropertyAccessExpression,
+  PropertySignatureDeclaration,
+  SignatureDeclaration,
+  SourceFile,
+  Statement,
+  VariableDeclaration,
+} from "typescript/unstable/ast";
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { close, parseFile, projectFor } from "./fragment-parse.mts";
@@ -66,10 +80,27 @@ const FUNCTION_LIKE = new Set<number>([
   ts.SyntaxKind.GetAccessor,
   ts.SyntaxKind.SetAccessor,
 ]);
-const isFunctionLike = (n: Node) => FUNCTION_LIKE.has(n.kind);
-const isParameter = (n: Node) => n.kind === ts.SyntaxKind.Parameter;
-const isPropertySignature = (n: Node) =>
+const isFunctionLike = (n: Node): n is FunctionLikeDeclaration =>
+  FUNCTION_LIKE.has(n.kind);
+const isParameter = (n: Node): n is ParameterDeclaration =>
+  n.kind === ts.SyntaxKind.Parameter;
+const isPropertySignature = (n: Node): n is PropertySignatureDeclaration =>
   n.kind === ts.SyntaxKind.PropertySignature;
+
+/* Everything that declares parameters, which is wider than the function-like
+ * kinds above: a callable parameter's own type is a function type node, and its
+ * optional parameters are what `arrowOf` refuses. */
+const SIGNATURE_KINDS = new Set<number>([
+  ...FUNCTION_LIKE,
+  ts.SyntaxKind.CallSignature,
+  ts.SyntaxKind.ConstructSignature,
+  ts.SyntaxKind.MethodSignature,
+  ts.SyntaxKind.IndexSignature,
+  ts.SyntaxKind.FunctionType,
+  ts.SyntaxKind.ConstructorType,
+]);
+const isSignatureDeclaration = (n: Node): n is SignatureDeclaration =>
+  SIGNATURE_KINDS.has(n.kind);
 
 /* ---------------------------------------------------------- the sites -- */
 // Which spans carry a claim, from the trusted parse alone. The verifier
@@ -229,16 +260,16 @@ const STATEMENT_KINDS = new Set<number>([
 ]);
 
 interface Indices {
-  stmtByStart: Map<number, any>;
-  exprBySpan: Map<string, any>;
+  stmtByStart: Map<number, Statement>;
+  exprBySpan: Map<string, Node>;
 }
 
 function buildIndices(sf: SourceFile): Indices {
-  const stmtByStart = new Map<number, any>();
-  const exprBySpan = new Map<string, any>();
-  const visit = (node: any): void => {
+  const stmtByStart = new Map<number, Statement>();
+  const exprBySpan = new Map<string, Node>();
+  const visit = (node: Node): void => {
     const start = node.getStart(sf);
-    if (STATEMENT_KINDS.has(node.kind) && !stmtByStart.has(start))
+    if (ts.isStatement(node) && STATEMENT_KINDS.has(node.kind) && !stmtByStart.has(start))
       stmtByStart.set(start, node);
     exprBySpan.set(start + ":" + node.end, node);
     node.forEachChild(visit);
@@ -372,12 +403,13 @@ function tryRecord(type: Type, checker: Checker, callableBag = false): RecordRea
     return { ok: false, reason: "indexed-type" };
   if (prop.flags & SymbolFlags.Optional)
     return { ok: false, reason: "optional-field" };
-  // A declaration arrives as a handle; `readonly` is on the node it names.
+  // A declaration arrives as a handle; `readonly` is on the node it names, and
+  // the two kinds of member declaration that can carry one are these.
   const declaration = declarationOf(prop);
   if (
-    declaration?.modifiers?.some(
-      (m: Node) => m.kind === ts.SyntaxKind.ReadonlyKeyword,
-    )
+    declaration &&
+    (isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration)) &&
+    declaration.modifiers?.some((m) => m.kind === ts.SyntaxKind.ReadonlyKeyword)
   )
     return { ok: false, reason: "readonly-field" };
   return {
@@ -428,8 +460,12 @@ function tryArrow(type: Type, checker: Checker): ArrowRead {
   // Optionality is on the declared parameter: a signature transports its
   // parameters as ids, and asking the checker for one of those symbols is
   // not the way to reach a type here — `getParameterType` is.
-  const declared = sig.declaration?.resolve() as any;
-  if (declared?.parameters?.some((p: any) => p.questionToken || p.initializer))
+  const declared = sig.declaration?.resolve();
+  if (
+    declared &&
+    isSignatureDeclaration(declared) &&
+    declared.parameters.some((p) => p.questionToken || p.initializer)
+  )
     return { ok: false, reason: "optional-param" };
   return {
     ok: true,
@@ -572,7 +608,7 @@ function translateType(type: Type, checker: Checker, types: Row[], records = tru
 // Remote objects are addressed by handle, so a declaration is fetched and a
 // symbol is compared by id rather than by reference.
 
-function declarationOf(sym: Symbol): any {
+function declarationOf(sym: Symbol): Node | undefined {
   const handle = sym.valueDeclaration ?? sym.declarations?.[0];
   return handle ? handle.resolve() : undefined;
 }
@@ -598,17 +634,23 @@ function declarationOf(sym: Symbol): any {
  * does not (and need not) grant, so a read's claim is always the cell's own
  * invariant: the `first` contract of whatever row its receiver's type interns.
  */
-function readInvariant(node: any, checker: Checker, types: Row[]): number[] {
+function readInvariant(
+  node: PropertyAccessExpression,
+  checker: Checker,
+  types: Row[],
+): number[] {
   const cellType = must(
     checker.getTypeAtLocation(node.expression),
     "receiver-type",
   );
   const cellLabels = translateType(cellType, checker, types);
   if (cellLabels.length === 1) {
-    const row = types[cellLabels[0]!];
-    const clause = Array.isArray(row) && row.length === 1 ? (row[0] as any) : null;
-    if (clause?.refs) return clause.refs.first;
-    if (clause?.callable) return clause.callable.first;
+    const row = types[cellLabels[0]];
+    const clause = Array.isArray(row) && row.length === 1 ? row[0] : null;
+    if (clause !== null && typeof clause === "object") {
+      if ("refs" in clause) return clause.refs.first;
+      if ("callable" in clause) return clause.callable.first;
+    }
   }
   throw new Refusal("read-of-non-reference", checker.typeToString(cellType));
 }
@@ -626,7 +668,7 @@ function readInvariant(node: any, checker: Checker, types: Row[]): number[] {
  * calculus's model of this one test does, not a fact the calculus can use.
  */
 function testedIdentitySymbol(
-  cond: any,
+  cond: Expression,
   checker: Checker,
 ): { sym: Symbol; negated: boolean } | null {
   if (ts.isParenthesizedExpression(cond))
@@ -649,11 +691,11 @@ function testedIdentitySymbol(
  * Walks outward from a reference through enclosing `if`/`while` statements,
  * applying the innermost one that tests this same binding by bare identity.
  */
-function truthyGuardLabels(node: any, checker: Checker): number[] | null {
+function truthyGuardLabels(node: Node, checker: Checker): number[] | null {
   const sym = checker.getSymbolAtLocation(node);
   if (!sym) return null;
-  let child: any = node;
-  let cur: any = node.parent;
+  let child: Node = node;
+  let cur: Node = node.parent;
   while (cur && !isFunctionLike(cur)) {
     if (ts.isIfStatement(cur) || ts.isWhileStatement(cur)) {
       const tested = testedIdentitySymbol(cur.expression, checker);
@@ -673,7 +715,7 @@ function truthyGuardLabels(node: any, checker: Checker): number[] | null {
 }
 
 /** A strict null, undefined or function-shape test on an immutable identifier. */
-function testedTagSymbol(cond: any, checker: Checker): {sym: Symbol; equal: boolean; label: number | "function"} | null {
+function testedTagSymbol(cond: Expression, checker: Checker): {sym: Symbol; equal: boolean; label: number | "function"} | null {
   if (ts.isParenthesizedExpression(cond)) return testedTagSymbol(cond.expression, checker);
   if (ts.isPrefixUnaryExpression(cond) && cond.operator === ts.SyntaxKind.ExclamationToken) {
     const inner = testedTagSymbol(cond.operand, checker);
@@ -682,7 +724,7 @@ function testedTagSymbol(cond: any, checker: Checker): {sym: Symbol; equal: bool
   if (!ts.isBinaryExpression(cond)) return null;
   const op = cond.operatorToken.kind;
   if (op !== ts.SyntaxKind.EqualsEqualsEqualsToken && op !== ts.SyntaxKind.ExclamationEqualsEqualsToken) return null;
-  const unwrap = (e: any): any => ts.isParenthesizedExpression(e) ? unwrap(e.expression) : e;
+  const unwrap = (e: Expression): Expression => ts.isParenthesizedExpression(e) ? unwrap(e.expression) : e;
   const l = unwrap(cond.left), r = unwrap(cond.right);
   const typeOf = ts.isTypeOfExpression(l) && ts.isStringLiteral(r) && r.text === "function"
     ? l : ts.isTypeOfExpression(r) && ts.isStringLiteral(l) && l.text === "function" ? r : null;
@@ -691,7 +733,7 @@ function testedTagSymbol(cond: any, checker: Checker): {sym: Symbol; equal: bool
     const sym = ts.isIdentifier(id) ? checker.getSymbolAtLocation(id) : null;
     return sym ? {sym, equal: op === ts.SyntaxKind.EqualsEqualsEqualsToken, label: "function"} : null;
   }
-  const unitLabel = (node: any): number | null => {
+  const unitLabel = (node: Expression): number | null => {
     if (node.kind === ts.SyntaxKind.NullKeyword) return 0;
     if (ts.isIdentifier(node) && node.text === "undefined" &&
         (checker.getTypeAtLocation(node)?.flags ?? 0) & TypeFlags.Undefined) return 3;
@@ -705,7 +747,7 @@ function testedTagSymbol(cond: any, checker: Checker): {sym: Symbol; equal: bool
   return sym ? {sym, equal: op === ts.SyntaxKind.EqualsEqualsEqualsToken, label} : null;
 }
 
-function alwaysReturns(stmt: any): boolean {
+function alwaysReturns(stmt: Statement): boolean {
   if (ts.isReturnStatement(stmt)) return true;
   if (ts.isBlock(stmt)) return stmt.statements.some(alwaysReturns);
   return ts.isIfStatement(stmt) && !!stmt.elseStatement &&
@@ -716,14 +758,14 @@ function alwaysReturns(stmt: any): boolean {
  * A preceding returning arm establishes the opposite edge for its continuation.
  * Immutable const captures retain creation-time guards across arrow functions;
  * parameters and other function boundaries stop the walk. */
-function tagGuardLabels(node: any, checker: Checker, types: Row[], labels: number[], anchor = node): number[] {
+function tagGuardLabels(node: Node, checker: Checker, types: Row[], labels: number[], anchor: Node = node): number[] {
   const sym = checker.getSymbolAtLocation(node);
   if (!sym) return labels;
   const declaration = declarationOf(sym);
   const immutableCapture = declaration && ts.isVariableDeclaration(declaration) &&
     ts.isVariableDeclarationList(declaration.parent) &&
     (declaration.parent.flags & ts.NodeFlags.Const) !== 0;
-  const refine = (cond: any, truth: boolean, base: number[]): number[] => {
+  const refine = (cond: Expression, truth: boolean, base: number[]): number[] => {
     if (ts.isParenthesizedExpression(cond)) return refine(cond.expression, truth, base);
     if (ts.isPrefixUnaryExpression(cond) && cond.operator === ts.SyntaxKind.ExclamationToken)
       return refine(cond.operand, !truth, base);
@@ -749,8 +791,8 @@ function tagGuardLabels(node: any, checker: Checker, types: Row[], labels: numbe
           : (label === test.label) === (test.equal === truth)))
       : base;
   };
-  const apply = (cond: any, truth: boolean) => { labels = refine(cond, truth, labels); };
-  let child = anchor, cur = anchor.parent;
+  const apply = (cond: Expression, truth: boolean) => { labels = refine(cond, truth, labels); };
+  let child: Node = anchor, cur: Node = anchor.parent;
   while (cur) {
     if (isFunctionLike(cur) && !(immutableCapture && ts.isArrowFunction(cur))) break;
     if (ts.isIfStatement(cur)) {
@@ -784,7 +826,7 @@ function tagGuardLabels(node: any, checker: Checker, types: Row[], labels: numbe
  * type, ignoring flow entirely. Always sound, since it is what every value the
  * binding could ever hold is required to satisfy.
  */
-function declaredTypeAt(node: any, checker: Checker, types: Row[]): number[] {
+function declaredTypeAt(node: Node, checker: Checker, types: Row[]): number[] {
   const sym = checker.getSymbolAtLocation(node);
   if (sym)
     return translateType(
@@ -804,7 +846,7 @@ interface Authoritative {
 }
 type DeclCache = Map<number, Authoritative>;
 
-function isMutableDeclaration(decl: any): boolean {
+function isMutableDeclaration(decl: Node | undefined): boolean {
   return !!decl &&
     ts.isVariableDeclaration(decl) &&
     ts.isVariableDeclarationList(decl.parent) &&
@@ -822,7 +864,7 @@ function isMutableDeclaration(decl: any): boolean {
  * is entitled to.
  */
 function bestLabelsForReference(
-  node: any,
+  node: Identifier,
   checker: Checker,
   types: Row[],
   declCache: DeclCache | null,
@@ -838,16 +880,11 @@ function bestLabelsForReference(
   }
   const guard = truthyGuardLabels(node, checker);
   if (guard) return guard;
-  if (declCache) {
-    const sym = checker.getSymbolAtLocation(node);
-    const decl = sym ? declarationOf(sym) : undefined;
-    if (
-      decl &&
-      (ts.isVariableDeclaration(decl) || isParameter(decl)) &&
-      decl.getStart !== undefined
-    ) {
+  if (declCache && symbol) {
+    const decl = declarationOf(symbol);
+    if (decl && (ts.isVariableDeclaration(decl) || isParameter(decl))) {
       const auth = authoritativeType(
-        { decl, name: node.text, sym: sym! },
+        { decl, name: node.text, sym: symbol },
         checker,
         types,
         declCache,
@@ -863,12 +900,16 @@ function bestLabelsForReference(
       // already returned above — the one place the compiled program itself
       // narrows the binding's own internal value, exactly enough to justify
       // the arm's tighter claim.
+      // A binding with no fixed reading of its own — a parameter, a mutable
+      // local — is neither tainted nor differently declared, so the guard below
+      // is the same condition it always was.
       if (
-        auth.readTainted ||
-        (auth.declared &&
-          JSON.stringify(auth.declared) !== JSON.stringify(auth.claimed))
+        auth.labels &&
+        (auth.readTainted ||
+          (auth.declared &&
+            JSON.stringify(auth.declared) !== JSON.stringify(auth.claimed)))
       )
-        return tagGuardLabels(node, checker, types, auth.labels!);
+        return tagGuardLabels(node, checker, types, auth.labels);
     }
   }
   const t = must(checker.getTypeAtLocation(node), "reference-type");
@@ -877,8 +918,7 @@ function bestLabelsForReference(
   return translateType(t, checker, types);
 }
 
-function declarationExprKind(node: any): string {
-  if (!node) return "other";
+function declarationExprKind(node: Expression): string {
   if (ts.isParenthesizedExpression(node))
     return declarationExprKind(node.expression);
   if (ts.isPropertyAccessExpression(node)) return "read";
@@ -906,7 +946,7 @@ function declarationExprKind(node: any): string {
  * Neither does a plain `const` TypeScript does not narrow past its declaration.
  */
 function authoritativeType(
-  binding: { decl: any; name: string; sym: Symbol },
+  binding: { decl: VariableDeclaration | ParameterDeclaration; name: string; sym: Symbol },
   checker: Checker,
   types: Row[],
   cache: DeclCache,
@@ -920,6 +960,9 @@ function authoritativeType(
     result = { labels: null, readTainted: false, declared: null, claimed: null };
   } else {
     const init = binding.decl.initializer;
+    // Everything without one is a parameter or a mutable local, taken above: a
+    // `const` the compiler accepted has an initializer.
+    if (!init) throw new Refusal("no-initializer", binding.name);
     const kind = declarationExprKind(init);
     const claimed = typeForExprSite(kind, init, checker, types, cache, sf);
     let declared: number[] | null = null;
@@ -951,7 +994,7 @@ function authoritativeType(
  * Mirrors the JSON `k` tags the parser assigns, over a real node, for the one
  * place a real node needs re-classifying: a write's own value.
  */
-function tsExprKind(node: any): string {
+function tsExprKind(node: Expression): string {
   if (ts.isParenthesizedExpression(node)) return tsExprKind(node.expression);
   if (ts.isIdentifier(node)) return "id";
   if (
@@ -972,17 +1015,39 @@ function tsExprKind(node: any): string {
   return "other";
 }
 
+/** The node at a site is the one the trusted parser classified, so a kind that
+ * does not match the tree is the two disagreeing — a refusal, not a crash. */
+function asKind<T extends Node>(
+  node: Node,
+  is: (n: Node) => n is T,
+  kind: string,
+): T {
+  if (!is(node)) throw new Refusal("site-kind-mismatch", kind);
+  return node;
+}
+
 function typeForExprSite(
   kind: string,
-  node: any,
+  node: Node,
   checker: Checker,
   types: Row[],
   declCache: DeclCache | null,
   sf: SourceFile,
 ): number[] {
-  if (kind === "read") return readInvariant(node, checker, types);
+  if (kind === "read")
+    return readInvariant(
+      asKind(node, ts.isPropertyAccessExpression, kind),
+      checker,
+      types,
+    );
   if (kind === "id")
-    return bestLabelsForReference(node, checker, types, declCache, sf);
+    return bestLabelsForReference(
+      asKind(node, ts.isIdentifier, kind),
+      checker,
+      types,
+      declCache,
+      sf,
+    );
   // JavaScript's assignment expression evaluates to the assigned value, and
   // the calculus's write carries that same value forward as the expression's
   // result (SourceExtraction.lean's `.write` case derives the write node's
@@ -991,14 +1056,14 @@ function typeForExprSite(
   // exactly the right-hand side's claim, not a second, independently-asked
   // opinion that could disagree with it.
   if (kind === "write") {
-    let assignment = node;
+    let assignment: Expression = asKind(node, ts.isExpression, kind);
     while (ts.isParenthesizedExpression(assignment))
       assignment = assignment.expression;
-    const rhs = assignment.right;
+    const rhs = asKind(assignment, ts.isBinaryExpression, kind).right;
     return typeForExprSite(tsExprKind(rhs), rhs, checker, types, declCache, sf);
   }
   if (kind === "alloc" || kind === "lambda") {
-    const ctx = checker.getContextualType(node);
+    const ctx = checker.getContextualType(asKind(node, ts.isExpression, kind));
     if (ctx && !isUnionType(ctx)) {
       try {
         return translateType(ctx, checker, types);
@@ -1022,26 +1087,29 @@ function typeForExprSite(
 
 interface VisibleBinding {
   sym: Symbol;
-  decl: any;
+  decl: VariableDeclaration | ParameterDeclaration;
   declStart: number;
   name: string;
 }
 
 function envAtEntry(
-  anchorNode: any,
+  anchorNode: Node,
   offset: number,
   checker: Checker,
   sf: SourceFile,
 ): VisibleBinding[] {
   const seen: VisibleBinding[] = [];
-  const take = (nameNode: any, decl: any): void => {
+  const take = (
+    nameNode: Identifier,
+    decl: VariableDeclaration | ParameterDeclaration,
+  ): void => {
     const declStart = nameNode.getStart(sf);
     if (declStart >= offset) return;
     const sym = checker.getSymbolAtLocation(nameNode);
     if (sym) seen.push({ sym, decl, declStart, name: nameNode.text });
   };
-  for (let n: any = anchorNode; n; n = n.parent) {
-    if (n.kind === ts.SyntaxKind.Block || n.kind === ts.SyntaxKind.SourceFile) {
+  for (let n: Node = anchorNode; n; n = n.parent) {
+    if (ts.isBlock(n) || ts.isSourceFile(n)) {
       for (const st of n.statements)
         if (ts.isVariableStatement(st))
           for (const d of st.declarationList.declarations)
@@ -1051,7 +1119,7 @@ function envAtEntry(
     // innermost: an entry inside a lowered closure body still sees the
     // parameters of the function that closure was written in.
     if (isFunctionLike(n))
-      for (const p of n.parameters ?? [])
+      for (const p of n.parameters)
         if (ts.isIdentifier(p.name)) take(p.name, p);
   }
   seen.sort((a, b) => a.declStart - b.declStart);
@@ -1066,17 +1134,17 @@ function envAtEntry(
  * reach into branches decided *after* this point) keeps the anchor at the
  * right point in the control-flow graph.
  */
-function anchorSearchScope(stmtNode: any): any {
+function anchorSearchScope(stmtNode: Statement): Expression | null {
   if (ts.isIfStatement(stmtNode) || ts.isWhileStatement(stmtNode))
     return stmtNode.expression;
   if (ts.isReturnStatement(stmtNode)) return stmtNode.expression ?? null;
   if (ts.isVariableStatement(stmtNode))
-    return stmtNode.declarationList.declarations[0].initializer;
+    return stmtNode.declarationList.declarations[0].initializer ?? null;
   if (ts.isExpressionStatement(stmtNode)) return stmtNode.expression;
   return null; // break/continue: no expression to anchor on
 }
 
-function isNamePosition(id: any): boolean {
+function isNamePosition(id: Node): boolean {
   const p = id.parent;
   if (!p) return false;
   return (
@@ -1090,10 +1158,10 @@ function isNamePosition(id: any): boolean {
   );
 }
 
-function findNameRef(scope: any, name: string): any {
+function findNameRef(scope: Node | null, name: string): Identifier | null {
   if (!scope) return null;
-  let found: any = null;
-  const visit = (node: any): void => {
+  let found: Identifier | null = null;
+  const visit = (node: Node): void => {
     if (found) return;
     if (ts.isIdentifier(node) && node.text === name && !isNamePosition(node)) {
       found = node;
@@ -1114,7 +1182,7 @@ function findNameRef(scope: any, name: string): any {
  * is always sound, if not always precise enough for proof search.
  */
 function bindingLabelsAtEntry(
-  stmtNode: any,
+  stmtNode: Statement,
   binding: VisibleBinding,
   checker: Checker,
   sf: SourceFile,
@@ -1126,8 +1194,8 @@ function bindingLabelsAtEntry(
   // Absence from the statement does not undo the contract imposed at the
   // declaration. Apply only guards that dominate this statement's entry.
   const auth = authoritativeType(binding, checker, types, cache, sf);
-  if (auth.readTainted || (auth.declared && JSON.stringify(auth.declared) !== JSON.stringify(auth.claimed)))
-    return tagGuardLabels(binding.decl.name, checker, types, auth.labels!, stmtNode);
+  if (auth.labels && (auth.readTainted || (auth.declared && JSON.stringify(auth.declared) !== JSON.stringify(auth.claimed))))
+    return tagGuardLabels(binding.decl.name, checker, types, auth.labels, stmtNode);
   return translateType(
     must(checker.getTypeOfSymbolAtLocation(binding.sym, stmtNode), "binding-type"),
     checker,
@@ -1156,9 +1224,19 @@ function omissionRecord(fn: string, site: unknown, err: unknown): Omission {
   };
 }
 
+/** A parameter's own name. The trusted parse refuses a destructuring pattern
+ * before this producer ever sees the file, so one here is the two disagreeing. */
+function parameterName(p: ParameterDeclaration): string {
+  if (!ts.isIdentifier(p.name))
+    throw new Refusal("destructuring-parameter", printName(p.name));
+  return p.name.text;
+}
+const printName = (name: Node): string =>
+  ts.isIdentifier(name) ? name.text : "";
+
 /** Rigid references are scoped to this declaration; names are emitted only
  * after matching the compiler symbol identity, never by printed type text. */
-function processGenericFunction(fn: FunctionAst, node: any, checker: Checker,
+function processGenericFunction(fn: FunctionAst, node: FunctionDeclaration, checker: Checker,
   sf: SourceFile, types: Row[], indices: Indices): FunctionClaims {
   const parameters = new Map<number, string>();
   for (const p of node.typeParameters ?? []) {
@@ -1175,13 +1253,13 @@ function processGenericFunction(fn: FunctionAst, node: any, checker: Checker,
     }
     return translateType(t, checker, types);
   };
-  const at = (n: any) => claim(must(checker.getTypeAtLocation(n), "generic-site-type"));
+  const at = (n: Node) => claim(must(checker.getTypeAtLocation(n), "generic-site-type"));
   const sites = functionSites(fn);
   const sig = checker.getSignatureFromDeclaration(node);
   if (!sig) throw new Refusal("no-signature", "");
   return {
     name: fn.name, namePos: fn.namePos,
-    params: node.parameters.map((p: any) => ({name:p.name.text,type:at(p.name),current:null})),
+    params: node.parameters.map((p) => ({name:parameterName(p),type:at(p.name),current:null})),
     result: claim(must(checker.getReturnTypeOfSignature(sig), "return-type")),
     entries: [...sites.entries].sort((a,b)=>a-b).map(start => {
       const stmt = indices.stmtByStart.get(start);
@@ -1200,7 +1278,7 @@ function processGenericFunction(fn: FunctionAst, node: any, checker: Checker,
 
 function processFunction(
   fnJson: FunctionAst,
-  fnNode: any,
+  fnNode: FunctionDeclaration,
   checker: Checker,
   sf: SourceFile,
   types: Row[],
@@ -1210,10 +1288,10 @@ function processFunction(
   if (fnNode.typeParameters?.length) return processGenericFunction(fnJson,fnNode,checker,sf,types,indices);
   const before = omissions.length;
   const name = fnJson.name;
-  const params = fnNode.parameters.map((p: any) => {
+  const params = fnNode.parameters.map((p) => {
     try {
       return {
-        name: p.name.text,
+        name: parameterName(p),
         type: translateType(
           must(checker.getTypeAtLocation(p.name), "parameter-type"),
           checker,
@@ -1223,7 +1301,7 @@ function processFunction(
       };
     } catch (e) {
       omissions.push(
-        omissionRecord(name, { kind: "param", name: p.name.text }, e),
+        omissionRecord(name, { kind: "param", name: printName(p.name) }, e),
       );
       return null;
     }
@@ -1337,9 +1415,7 @@ export function produce(file: string): Produced {
   const sf = project.program.getSourceFile(absolute);
   if (!sf) throw new Error(`the compiler produced no tree for ${file}`);
   const indices = buildIndices(sf);
-  const fnNodes = sf.statements.filter((s: any) =>
-    ts.isFunctionDeclaration(s),
-  ) as any[];
+  const fnNodes = sf.statements.filter(ts.isFunctionDeclaration);
   if (fnNodes.length !== ast.functions.length)
     throw new Error(
       "function count mismatch between the trusted parse and the checker's program",
