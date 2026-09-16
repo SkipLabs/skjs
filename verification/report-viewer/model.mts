@@ -1,6 +1,16 @@
 import type { ObligationView } from "../tools/diagnostic-view.mts";
 // Surface type printing is shared with the report writer.
-import type { Bundle, Producer } from "./types.ts";
+import type {
+  Bundle,
+  CollectionRun,
+  Manifest,
+  MissingSite,
+  Producer,
+} from "./types.ts";
+import type {
+  ObligationDiagnostic,
+  SourceMapEntry,
+} from "../tools/diagnostic.mts";
 import type { Span } from "../tools/span.mts";
 
 /*
@@ -86,7 +96,7 @@ export interface ShownFunction {
   collection?: string;
   quality?: string;
   /** The obligation record, kept as recorded for the panel; never evidence. */
-  obligation?: unknown;
+  obligation?: ObligationDiagnostic | null;
   obligationView?: ObligationView;
   /** True for a source function the candidate says nothing about at all. */
   candidateMissing?: boolean;
@@ -115,14 +125,34 @@ export interface Report {
   missingFunctions?: { name: string; namePos: Span }[];
 }
 
+/** A report built from a bundle: everything `Report` says, and the provenance
+ * the view shows beside it. Nothing here is evidence; `collection` records that
+ * a command ran, not that anything was established. */
+export interface ShownReport extends Report {
+  file: string;
+  meta: Record<string, string>;
+  collection: CollectionRun | null;
+  manifest: Manifest;
+}
+
+/** A report read back from the annotated source rather than from a manifest.
+ * It carries what the annotation's own header states, which a bundle states
+ * elsewhere: the file the report is about, and the header's other fields. */
+export interface ParsedReport extends Report {
+  file: string;
+  meta: Record<string, string>;
+  /** The format declaration, where the header makes one. */
+  fields?: string[];
+}
+
 
 import SURFACE from "../tools/claim-text.mts";
-const printSurface = (type: any) => SURFACE.printType(type);
+const printSurface = (type: unknown) => SURFACE.printType(type);
 
 /* ---------- reading the annotated format ---------- */
 const RE_COMMENT = /\/\*\s*@verify-report([\s\S]*?)\*\//g;
 
-function unescapeText(s: any) {
+function unescapeText(s: string): string {
   try {
     return JSON.parse('"' + s.replace(/\n/g, " ") + '"');
   } catch (e) {
@@ -131,10 +161,10 @@ function unescapeText(s: any) {
 }
 
 // split "a: T, b: U" on top-level commas (types may be raw JSON)
-function splitTop(s: any, sep: any) {
-  const out: any[] = [];
+function splitTop(s: string, sep: string): string[] {
+  const out: string[] = [];
   let depth = 0,
-    q = null,
+    q: string | null = null,
     cur = "";
   for (const ch of s) {
     if (q) {
@@ -167,17 +197,17 @@ function renderType(text: string) {
   return { text: value, raw: value.startsWith("{") ? value : null };
 }
 
-function parseReport(annotated: any) {
-  const rep: Record<string, any> = {
+function parseReport(annotated: string): ParsedReport {
+  const rep: ParsedReport = {
     producer: "unknown",
     file: "(unknown source)",
-    meta: {} as Record<string, any>,
-    functions: [] as any[],
+    meta: {},
+    functions: [],
     source: "",
   };
   let src = "",
-    last = 0,
-    cur = null;
+    last = 0;
+  let cur: ShownFunction | null = null;
   RE_COMMENT.lastIndex = 0;
   let m;
   while ((m = RE_COMMENT.exec(annotated))) {
@@ -205,13 +235,13 @@ function parseReport(annotated: any) {
     }
     const text = unescapeText(body.trim());
     const span = /@(\d+):(\d+)\s*$/.exec(text);
-    const pos = span ? [+span[1], +span[2]] : null;
+    const pos: Span | null = span ? [Number(span[1]), Number(span[2])] : null;
     let core = span ? text.slice(0, span.index).trim() : text;
     // The generator prefixes machine-readable fields; the prose after them is for
     // people. Reports written before those fields still parse by their prose.
-    const fld: Record<string, any> = {};
+    const fld: Record<string, string> = {};
     core = core
-      .replace(/^(?:[a-z]+=[^;]*; )+/, (run: any) => {
+      .replace(/^(?:[a-z]+=[^;]*; )+/, (run: string) => {
         for (const kv of run.split("; ")) {
           const i = kv.indexOf("=");
           if (i > 0) fld[kv.slice(0, i)] = kv.slice(i + 1);
@@ -239,14 +269,16 @@ function parseReport(annotated: any) {
     }
     if (kind === "function") {
       const parts = splitTop(core, ";");
-      const f = {
+      const f: ShownFunction = {
+        id: fld.id || "",
         name: parts[0].replace(/^function\s+/, "").trim(),
+        pos: [src.length, src.length],
         status: "not-run",
         detail: "",
         collection: "",
         quality: "",
-        sites: [] as Site[],
-      } as Record<string, any>;
+        sites: [],
+      };
       for (const p of parts.slice(1)) {
         if (p.startsWith("verification=")) f.status = p.slice(13).trim();
         else if (p.startsWith("collection=")) f.collection = p.slice(11).trim();
@@ -256,8 +288,6 @@ function parseReport(annotated: any) {
         else if (/^(producer=|claimed |mode=)/.test(p)) continue;
         else f.detail = (f.detail ? f.detail + "; " : "") + p;
       }
-      f.id = fld.id || "";
-      f.pos = [src.length, src.length];
       rep.functions.push(f);
       cur = f;
     } else if (kind === "entry") {
@@ -287,41 +317,56 @@ function parseReport(annotated: any) {
   src += annotated.slice(last);
   rep.source = src;
   for (let i = 0; i < rep.functions.length; i++) {
-    rep.functions[i].pos[1] = rep.functions[i + 1]?.pos[0] ?? src.length;
-    ordered(rep.functions[i].sites);
+    rep.functions[i]!.pos[1] = rep.functions[i + 1]?.pos[0] ?? src.length;
+    ordered(rep.functions[i]!.sites);
   }
   return rep;
 }
 
-function fromBundle(bundle: any) {
+function fromBundle(bundle: Bundle): ShownReport {
   const { source, manifest: m } = bundle;
   if (typeof source !== "string" || !Array.isArray(m?.functions))
     throw new Error("Expected source text and a report manifest");
-  const span = (pos: any): Span => {
+  const span = (pos: readonly number[]): Span => {
     if (
       !Array.isArray(pos) ||
       pos.length !== 2 ||
       !pos.every(Number.isSafeInteger) ||
       pos[0] < 0 ||
       pos[0] >= pos[1] ||
-      pos[1] > source.length
+      pos[1]! > source.length
     )
       throw new Error("Invalid claim source span");
-    return pos as Span;
+    return [pos[0]!, pos[1]!];
   };
   const sameSpan = (a: Span, b: Span) => a[0] === b[0] && a[1] === b[1];
-  const raw = (x: any) => (x === undefined ? null : JSON.stringify(x, null, 2));
+  const raw = (x: unknown) => (x === undefined ? null : JSON.stringify(x, null, 2));
+  /** The producer said it could not decode a type here, in either of the two
+   * ways it says so. */
+  const unavailableClaim = (encoding: unknown) =>
+    !!encoding &&
+    typeof encoding === "object" &&
+    ("unsupported" in encoding
+      ? encoding.unsupported === true
+      : "unavailable" in encoding && typeof encoding.unavailable === "string");
+  /** The places a diagnostic names, where its kind names them at all: the two
+   * ends of an edge, or the one place a claim was made. */
+  const ends = (o: ObligationDiagnostic | undefined) => ({
+    source: o && "source" in o ? o.source.sourceMap : null,
+    destination: o && "destination" in o ? o.destination.sourceMap : null,
+    own: o && "sourceMap" in o ? o.sourceMap : null,
+  });
   // Claims are shown in the syntax they were written in. The producer's display
   // string is the fallback: it is what a report carries when there is no
   // encoding to print, and the exact encoding stays available beside it.
-  const display = (encoding: any, fallback: any) => {
+  const display = (encoding: unknown, fallback: string) => {
     if (encoding === undefined || encoding === null) return fallback;
     const printed = printSurface(encoding);
     return printed.printable ? printed.text : fallback;
   };
   const gaps = [
     ...(m.gaps || []),
-    ...(m.comparison?.changes || []).map((c: any) => ({
+    ...(m.comparison?.changes || []).map((c) => ({
       pos: c.span,
       status: `claim edit: ${c.status} ${c.kind}`,
     })),
@@ -330,8 +375,11 @@ function fromBundle(bundle: any) {
   // "the producer did not visit this statement" and "this statement has no
   // environment claim" are one fact in two vocabularies, so it is one site,
   // with the gap's wording and the lowering's answer to what belongs there.
-  const unclaimed = (f: any, pos: Span): Site[] => {
-    const sites: Site[] = (f.missingSites || []).map((site: any) => {
+  const unclaimed = (
+    f: { missingSites?: MissingSite[] },
+    pos: Span,
+  ): Site[] => {
+    const sites: Site[] = (f.missingSites || []).map((site) => {
       if (!["expression", "environment"].includes(site.kind))
         throw new Error("Invalid missing claim kind");
       span(site.pos);
@@ -349,26 +397,26 @@ function fromBundle(bundle: any) {
     }
     return sites;
   };
-  const functions: any[] = m.functions.map((f: any) => {
+  const functions: ShownFunction[] = m.functions.map((f) => {
     const pos = span(f.pos);
-    const result = m.results?.find((r: any) => r.function === f.id);
+    const result = m.results?.find((r) => r.function === f.id);
     const recovery = f.collection?.quality === "recovery";
     const sites: Site[] = [
       ...(Array.isArray(f.resultPos) && f.signature
         ? [{ kind: "result" as const, pos: span(f.resultPos), type: display(f.signature.retType, "") }]
         : []),
-      ...f.entries.map((e: any) => ({
+      ...f.entries.map((e) => ({
         kind: "environment" as const,
         pos: span(e.pos),
         recovery,
         changed: new Set<string>(),
-        bindings: e.bindings.map((b: any) => ({
+        bindings: e.bindings.map((b) => ({
           name: b.name,
           type: display(b.raw, b.type),
-          unavailable: b.raw?.unsupported === true || typeof b.raw?.unavailable === "string",
+          unavailable: unavailableClaim(b.raw),
         })),
       })),
-      ...f.expressions.map((e: any) => ({
+      ...f.expressions.map((e) => ({
         kind: "expression" as const,
         pos: span(e.pos),
         recovery,
@@ -395,20 +443,22 @@ function fromBundle(bundle: any) {
     };
   });
   for (const f of functions) {
-    const result = m.results?.find((r: any) => r.function === f.id);
+    const result = m.results?.find((r) => r.function === f.id);
     const location = result?.location;
     if (f.status !== "not-established" || !location) continue;
     const sites: Site[] = f.sites;
     // Where a location does not land on a claim, the record's own environment
     // offset says which statement entry it belongs to.
+    const atEnds = ends(result.obligation);
     const entryStart =
-      result.obligation?.destination?.sourceMap?.environmentStart ??
-      result.obligation?.source?.sourceMap?.environmentStart ??
+      atEnds.destination?.environmentStart ??
+      atEnds.source?.environmentStart ??
       location.start ??
       (Array.isArray(location.pos) ? location.pos[0] : undefined);
     const samePos = (s: Site) =>
       location.pos !== undefined && JSON.stringify(s.pos) === JSON.stringify(location.pos);
-    const startsAt = (start: any) => (s: Site) => s.pos[0] === start;
+    const startsAt = (start: number | undefined) => (s: Site) =>
+      s.pos[0] === start;
     const is = (kind: Site["kind"], test: (s: Site) => boolean) => (s: Site) =>
       s.kind === kind && test(s);
     const first = (...tests: ((s: Site) => boolean)[]) => {
@@ -449,22 +499,21 @@ function fromBundle(bundle: any) {
     // is not the expression's own claim, even though they share a span. For an
     // edge, the role that describes where this attached is the destination's;
     // `source` describes the other end.
-    const destination = result.obligation?.destination?.sourceMap;
+    const destination = atEnds.destination;
     const role =
       (destination && at >= 0 && destination.environmentStart === sites[at]!.pos[0]
         ? destination.role
         : "") ||
-      result.obligation?.source?.sourceMap?.role ||
-      result.obligation?.sourceMap?.role ||
+      atEnds.source?.role ||
+      atEnds.own?.role ||
       "";
     // Both ends of an edge obligation are claims: an expression at the mapped
     // span, or the environment at the mapped statement entry.
-    const endSite = (map: any) => {
+    const endSite = (map: SourceMapEntry | null | undefined) => {
       const pos = map?.pos;
       const i = first(
-        (s) =>
-          Array.isArray(pos) && pos.length === 2 && s.kind !== "unclaimed" && sameSpan(s.pos, pos as Span),
-        is("environment", startsAt(map?.environmentStart)),
+        (s) => !!pos && s.kind !== "unclaimed" && sameSpan(s.pos, pos),
+        is("environment", startsAt(map?.environmentStart ?? undefined)),
       );
       return i >= 0 ? i : null;
     };
@@ -474,8 +523,8 @@ function fromBundle(bundle: any) {
     const edge =
       result.obligation?.kind === "edge-coverage"
         ? {
-            from: endSite(result.obligation.source?.sourceMap),
-            to: endSite(result.obligation.destination?.sourceMap),
+            from: endSite(atEnds.source),
+            to: endSite(atEnds.destination),
           }
         : role === "return-contract" && at >= 0 && resultSite >= 0
           ? { from: at, to: resultSite }
@@ -500,12 +549,12 @@ function fromBundle(bundle: any) {
     if (
       f.namePos[0] < pos[0] ||
       f.namePos[1] > pos[1] ||
-      functions.some((existing: any) => existing.namePos?.[0] === f.namePos[0])
+      functions.some((existing) => existing.namePos?.[0] === f.namePos[0])
     )
       throw new Error("Invalid missing function identity");
     if (
       !Array.isArray(f.parameters) ||
-      f.parameters.some((p: any) => typeof p !== "string")
+      f.parameters.some((p) => typeof p !== "string")
     )
       throw new Error("Invalid missing function parameters");
     functions.push({
@@ -521,9 +570,9 @@ function fromBundle(bundle: any) {
         "No function candidate supplied. Add its contract before adding point claims.",
     });
   }
-  functions.sort((a: any, b: any) => a.pos[0] - b.pos[0]);
+  functions.sort((a, b) => a.pos[0] - b.pos[0]);
   const unattached = gaps.filter(
-    (g) => !functions.some((f: any) => g.pos[0] >= f.pos[0] && g.pos[1] <= f.pos[1]),
+    (g) => !functions.some((f) => g.pos[0] >= f.pos[0] && g.pos[1] <= f.pos[1]),
   );
   if (unattached.length)
     functions.push({
@@ -540,10 +589,7 @@ function fromBundle(bundle: any) {
     functions,
     file: m.source.file,
     producer: m.producer,
-    diagnostics:
-      (bundle.originalDiagnostics && m.diagnostics
-        ? "Original producer snapshot:\n"
-        : "") + (m.diagnostics || ""),
+    diagnostics: m.diagnostics || "",
     // What produced this report and when, as reported by the local runner. It
     // records that a command ran, not that anything was established.
     collection: bundle.collection || null,

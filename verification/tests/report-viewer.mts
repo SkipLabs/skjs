@@ -11,6 +11,7 @@ import {
   renderType,
 } from "../report-viewer/model.mts";
 import * as marks from "../report-viewer/marks.mts";
+import type { ShownFunction } from "../report-viewer/model.mts";
 import surface from "../tools/claim-text.mts";
 import { decodeGraph, parseGraph, printGraph, graphDefinitions, type Labels, type TypeGraph } from "../tools/type-graph.mts";
 import type {
@@ -208,10 +209,13 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
 
 // Both outcomes, and whether they disagree.
 {
-  const fresh = { collection: { verified: true } };
-  const fromFile = { collection: null };
-  const outcome = (f: any, rep: any = fresh) => marks.outcome(f, rep);
-  const verified = { status: "verified", collection: "complete" };
+  // The run this report came from, where one ran: a verified function is
+  // stamped as freshly checked only then.
+  const fresh = { verified: true };
+  const fromFile = null;
+  const outcome = (f: marks.Judged, run: { verified: boolean } | null = fresh) =>
+    marks.outcome(f, run);
+  const verified: marks.Judged = { status: "verified", collection: "complete" };
   assert.deepEqual(
     [outcome(verified).producer[0], outcome(verified).proof[0]],
     ["✓", "✓"],
@@ -228,10 +232,17 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   const agreed = { status: "not-established", collection: "aborted" };
   assert.equal(outcome(agreed).disagrees, false);
   // Nothing was concluded: no symbol claiming a verdict, and no disagreement.
-  const incomplete = {
+  const incomplete: marks.Judged = {
     status: "not-established",
     collection: "complete",
-    failure: { kind: "missing-expression-claim" },
+    failure: {
+      kind: "missing-expression-claim",
+      detail: "",
+      role: "",
+      binding: "",
+      at: null,
+      pos: null,
+    },
   };
   assert.equal(outcome(incomplete).proof[0], "?");
   assert.equal(outcome(incomplete).disagrees, false);
@@ -246,10 +257,11 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
 {
   const text =
     "// note\nfunction f(x: boolean): boolean {\n  const y: boolean = x;\n  const t: true = true;\n  return y;\n}\n";
-  const at = (s: any) => [text.indexOf(s), text.indexOf(s) + s.length];
-  const literal = [text.lastIndexOf("true"), text.lastIndexOf("true") + 4];
-  const rep = { source: text, file: "f.ts", collection: { verified: true } };
-  const fn = {
+  const at = (s: string): Span => [text.indexOf(s), text.indexOf(s) + s.length];
+  const literal: Span = [text.lastIndexOf("true"), text.lastIndexOf("true") + 4];
+  const rep = { source: text, file: "f.ts" };
+  const fn: ShownFunction = {
+    id: "f0",
     name: "f",
     status: "not-established",
     collection: "complete",
@@ -260,21 +272,22 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
         kind: "environment",
         pos: at("const y: boolean = x;"),
         bindings: [
-          { name: "x", type: "boolean" },
+          { name: "x", type: "boolean", unavailable: false },
           { name: "this", type: "(unavailable)", unavailable: true },
         ],
         changed: new Set(["x"]),
+        recovery: false,
       },
-      { kind: "expression", pos: at("x;"), type: "boolean" },
-      { kind: "expression", pos: at("y;"), type: "boolean" },
+      { kind: "expression", pos: at("x;"), type: "boolean", raw: null, recovery: false },
+      { kind: "expression", pos: at("y;"), type: "boolean", raw: null, recovery: false },
       // a literal restating itself: hidden in Compact, shown in Every claim
-      { kind: "expression", pos: literal, type: "true" },
+      { kind: "expression", pos: literal, type: "true", raw: null, recovery: false },
     ],
     failure: { detail: "no", kind: "expression-obligation", role: "", binding: "", at: 2, pos: at("y;") },
   };
   const compact = marks.sourceMarks(rep, fn, { density: "key" });
   assert.deepEqual(
-    compact.items.map((i: any) => [i.site, i.label, i.mark]),
+    compact.items.map((i) => [i.site, i.label, i.mark]),
     [
       [1, "boolean", ""],
       [2, "boolean", "✗"],
@@ -284,7 +297,7 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   const all = marks.sourceMarks(rep, fn, { density: "all", unsupported: true });
   assert.equal(all.entries[0].label, "x: boolean,  this: (unavailable)");
   assert.deepEqual(
-    all.items.map((i: any) => i.site),
+    all.items.map((i) => i.site),
     [1, 2, 3],
   );
 }
@@ -294,8 +307,10 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
 {
   const text = "function f(): boolean {\n  return true;\n}\n";
   const rep = { source: text, file: "f.ts" };
-  const site = [text.indexOf("return"), text.indexOf("true;") + 5];
-  const fn = {
+  const site: Span = [text.indexOf("return"), text.indexOf("true;") + 5];
+  const fn: ShownFunction = {
+    id: "f0",
+    name: "f",
     status: "not-established",
     collection: "aborted",
     pos: [0, text.length],
@@ -357,8 +372,8 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   assert.equal(f.sites[f.failure!.at!].kind, "environment");
   assert.equal(marks.proofMark(f)[0], "?");
   assert.equal(marks.outcomeGroup(f).label, "could not be checked");
-  assert.equal(marks.outcome(f, { collection: null }).disagrees, false);
-  assert.equal(marks.outcome(f, { collection: null }).attention, false);
+  assert.equal(marks.outcome(f, null).disagrees, false);
+  assert.equal(marks.outcome(f, null).attention, false);
   assert.equal(marks.roleTag("unavailable-type-claim"), "type unavailable");
   // The same kind can name an expression instead of a statement entry.
   const atExpression = structuredClone(unavailable);
@@ -820,13 +835,17 @@ const recorded = (d: ObligationDiagnostic) =>
 // is generic: a claim must not be labelled as the wrong one.
 {
   const source = "function f(): true {\n  return flag;\n}\n";
-  const rep = { source, file: "f.ts", collection: { verified: true } };
-  const pos = [source.indexOf("flag"), source.indexOf("flag") + 4];
-  const fn = {
+  const rep = { source, file: "f.ts" };
+  const pos: Span = [source.indexOf("flag"), source.indexOf("flag") + 4];
+  const fn: ShownFunction = {
+    id: "f0",
+    name: "f",
     status: "not-established",
     collection: "aborted",
     pos: [0, source.length],
-    sites: [{ kind: "expression", pos, type: "boolean" }],
+    sites: [
+      { kind: "expression", pos, type: "boolean", raw: null, recovery: false },
+    ],
     failure: { detail: "reject", kind: "expression-obligation", role: "return-contract", binding: "", at: 0, pos },
   };
   const [mark] = marks.sourceMarks(rep, fn, { density: "key" }).items;

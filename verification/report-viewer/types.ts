@@ -1,4 +1,5 @@
 import type { ObligationView } from "../tools/diagnostic-view.mts";
+import type { ObligationDiagnostic } from "../tools/diagnostic.mts";
 import type { SkjsClaims } from "../tools/skjs-claims.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import type { Span } from "../tools/span.mts";
@@ -136,6 +137,38 @@ export interface ReportFunction {
   collection?: Collection;
 }
 
+/**
+ * A function the source declares that the producer said nothing about. The
+ * reader offers to write its contract, so the manifest carries what writing
+ * one needs: where the declaration is, its parameter names in source order,
+ * and the sites a claim would have to be added at.
+ */
+export interface MissingFunction {
+  name: string;
+  namePos: Span;
+  pos: Span;
+  parameters: string[];
+  missingSites: MissingSite[];
+}
+
+/**
+ * What changed against a baseline report, where one was compared. Each entry
+ * is one site, in the same vocabulary the sites themselves use; the reader
+ * shows it as a gap, because an edited claim is a place to look rather than a
+ * result. `before` and `after` are the claims as they were written.
+ */
+export interface Comparison {
+  baselineProducer: Producer | string;
+  changes: {
+    kind: string;
+    function: string;
+    span: Span;
+    status: "added" | "removed" | "changed";
+    before?: unknown;
+    after?: unknown;
+  }[];
+}
+
 /** A span the producer did not visit, or an edit recorded against a baseline. */
 export interface Gap {
   id: string;
@@ -156,8 +189,10 @@ export interface Result {
   /** The verifier's own message, kept verbatim. */
   detail?: string;
   location?: Failure;
-  /** Explanatory metadata about an unsuccessful attempt. Never evidence. */
-  obligation?: unknown;
+  /** Explanatory metadata about an unsuccessful attempt. Never evidence: the
+   * writer attaches the record the verifier's own decoder read back, and what
+   * the reader makes of it changes no outcome. */
+  obligation?: ObligationDiagnostic;
   obligationView?: ObligationView;
   /** What a successful check covers, in the verifier's own words. */
   scope?: string;
@@ -174,7 +209,10 @@ export interface Manifest {
   results?: Result[] | null;
   /** The producer's own stderr for this file, kept verbatim for display. */
   diagnostics?: string;
-  missingFunctions?: { name: string; namePos: Span }[];
+  missingFunctions?: MissingFunction[];
+  /** Present when the report was compared against a baseline. */
+  comparison?: Comparison;
+  baselinePath?: string;
   /** Fingerprints of what produced this report, for provenance only. */
   claimsSha256?: string;
   verifierSha256?: string;

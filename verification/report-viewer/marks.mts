@@ -6,7 +6,36 @@
  */
 
 /* ---------- positions ---------- */
-import type { ShownFunction, Report } from "./model.mts";
+import type { ShownFunction, ShownReport, Site } from "./model.mts";
+
+/** What a mark is drawn against: the report's own text, and the producer's
+ * diagnostics where it carried any. Both kinds of report the reader builds
+ * satisfy it. */
+export type MarkedReport = {
+  source: string;
+  file?: string;
+  diagnostics?: string;
+};
+
+/** What an outcome is read from: the two verdicts a function carries, and —
+ * where proof search stopped — what stopped it. */
+export type Judged = Pick<ShownFunction, "status" | "failure" | "collection">;
+
+/** What the source view was asked to draw. */
+export interface MarkOptions {
+  /** "key" keeps the claims worth reading; "all" keeps every one. */
+  density?: string;
+  /** Show claims the producer could not decode, which are otherwise noise. */
+  unsupported?: boolean;
+  producerErrors?: boolean;
+}
+
+/** One of the producer's own diagnostics, placed where it points. */
+export interface ProducerMark {
+  pos: [number, number];
+  text: string;
+  line: number;
+}
 
 /** One drawn mark: where it sits, what it says, and how it reads. */
 export interface MarkItem {
@@ -18,9 +47,9 @@ export interface MarkItem {
   end: number;
   label: string;
   /** A proof symbol where this claim is the located failure. */
-  mark: string;
+  mark?: string;
   /** The obligation's role, where the record names one. */
-  tag: string;
+  tag?: string;
   /** The mark's own key, for hover; and the site it stands for, where it does. */
   id: string;
   site: number | null;
@@ -41,34 +70,34 @@ export interface SourceMarks {
 
 import obligationReader from "../tools/diagnostic-view.mts";
 
-const lineStarts = (src: any) => {
+const lineStarts = (src: string) => {
   const a = [0];
   for (let i = 0; i < src.length; i++) if (src[i] === "\n") a.push(i + 1);
   return a;
 };
 
-function lineAt(starts: any, pos: any) {
+function lineAt(starts: number[], pos: number) {
   let lo = 0,
     hi = starts.length;
   while (lo + 1 < hi) {
     const mid = (lo + hi) >> 1;
-    if (starts[mid] <= pos) lo = mid;
+    if (starts[mid]! <= pos) lo = mid;
     else hi = mid;
   }
   return lo;
 }
 
-const lineEndAt = (source: string, starts: any, line: any) =>
-  line + 1 < starts.length ? starts[line + 1] - 1 : source.length;
+const lineEndAt = (source: string, starts: number[], line: number) =>
+  line + 1 < starts.length ? starts[line + 1]! - 1 : source.length;
 
 // Claim spans start at the declaration, but a comment written directly above a
 // function belongs to it for whoever is reading. Take that block, stopping at a
 // blank line or at anything that is not a comment, so a neighbour's trailing
 // comment is never attributed here.
 const COMMENT_LINE = /^\s*(\/\/|\/\*|\*)/;
-function commentStartLine(source: string, starts: any, from: any, floor: any) {
+function commentStartLine(source: string, starts: number[], from: number, floor: number) {
   let line = lineAt(starts, from);
-  while (line > 0 && starts[line - 1] >= floor) {
+  while (line > 0 && starts[line - 1]! >= floor) {
     const text = source.slice(starts[line - 1], lineEndAt(source, starts, line - 1));
     if (!text.trim() || !COMMENT_LINE.test(text)) break;
     line--;
@@ -97,8 +126,11 @@ const PROOF_LABEL: Record<string, string> = {
 };
 const proofLabel = (status: string) => PROOF_LABEL[status] || status;
 
-const proofSymbol = (failureKind: any) =>
-  INCOMPLETE_INPUT.has(failureKind) ? "?" : "✗";
+/** Whether checking stopped for want of an input rather than at a judgement. */
+const incompleteInput = (failureKind: string | undefined) =>
+  failureKind !== undefined && INCOMPLETE_INPUT.has(failureKind);
+const proofSymbol = (failureKind: string | undefined) =>
+  incompleteInput(failureKind) ? "?" : "✗";
 
 // A mark says which obligation stopped there when the record names a specific
 // one. Without that, it stays silent rather than implying the claim is at fault.
@@ -113,7 +145,7 @@ const ROLE_TAG: Record<string, string> = {
 };
 const roleTag = (role: string) => ROLE_TAG[role] || "";
 
-function proofMark(f: any) {
+function proofMark(f: Judged): [string, string] {
   if (f.status === "verified") return ["✓", "a certificate was checked"];
   if (f.status === "unsupported")
     return [
@@ -126,7 +158,7 @@ function proofMark(f: any) {
       "a type this needed was never decoded by the producer, so no obligation was reached",
     ];
   if (f.status === "not-established")
-    return INCOMPLETE_INPUT.has(f.failure?.kind)
+    return incompleteInput(f.failure?.kind)
       ? [
           "?",
           "checking could not proceed: a claim it needed is missing, or the source is outside the fragment",
@@ -147,7 +179,7 @@ const OUTCOME_GROUP: Record<string, string> = {
   "·": "not run",
 };
 const outcomeLabel = (symbol: string) => OUTCOME_GROUP[symbol] || symbol;
-const outcomeGroup = (f: any) => {
+const outcomeGroup = (f: Judged) => {
   const [symbol] = proofMark(f);
   return { key: symbol, label: OUTCOME_GROUP[symbol] || proofLabel(f.status) };
 };
@@ -161,13 +193,16 @@ const PRODUCER_MARK: Record<string, string[]> = {
 // outcome holds for as long as the source does; proof search reads the claims,
 // so an edit can change it. Where proof search reached no verdict there is no
 // disagreement to report.
-function outcome(f: any, rep: any) {
-  const producer = PRODUCER_MARK[f.collection] || [
+function outcome(
+  f: Judged,
+  collection: { verified: boolean } | null | undefined,
+) {
+  const producer = PRODUCER_MARK[f.collection ?? ""] || [
     "·",
     "no producer outcome recorded",
   ];
   const proof = proofMark(f);
-  const concluded = !INCOMPLETE_INPUT.has(f.failure?.kind);
+  const concluded = !incompleteInput(f.failure?.kind);
   const disagrees =
     concluded &&
     ((f.collection === "complete" && f.status === "not-established") ||
@@ -180,7 +215,7 @@ function outcome(f: any, rep: any) {
     // ran for this report rather than the status having been read from a file.
     stamp:
       f.status === "verified"
-        ? rep.collection?.verified === true
+        ? collection?.verified === true
           ? "fresh"
           : "recorded"
         : null,
@@ -193,22 +228,22 @@ function outcome(f: any, rep: any) {
 /* ---------- the producer's own diagnostics ---------- */
 // SKJS reports against the source with 1-based columns and an exclusive end.
 // These are its diagnostics shown where they point: not claims, not results.
-function producerMarks(rep: any) {
-  const marks: any[] = [];
+function producerMarks(rep: MarkedReport): ProducerMark[] {
+  const marks: ProducerMark[] = [];
   if (!rep.diagnostics) return marks;
   const starts = lineStarts(rep.source);
   const re = /^File "([^"]+)", line (\d+), character (\d+)-(\d+):\r?\n([^\n]*)/gm;
   let m;
   while ((m = re.exec(rep.diagnostics))) {
     const [, file, line, from, to, text] = m;
-    if (rep.file && !file.endsWith(rep.file)) continue;
+    if (rep.file && !file!.endsWith(rep.file)) continue;
     const ln = Number(line) - 1;
     if (!(ln >= 0 && ln < starts.length)) continue;
     const end = lineEndAt(rep.source, starts, ln);
-    const start = Math.min(starts[ln] + Number(from) - 1, end);
+    const start = Math.min(starts[ln]! + Number(from) - 1, end);
     marks.push({
-      pos: [start, Math.min(Math.max(starts[ln] + Number(to) - 1, start + 1), end)],
-      text: text.trim(),
+      pos: [start, Math.min(Math.max(starts[ln]! + Number(to) - 1, start + 1), end)],
+      text: text!.trim(),
       line: ln,
     });
   }
@@ -216,7 +251,7 @@ function producerMarks(rep: any) {
 }
 
 /* ---------- what the source view shows ---------- */
-const isNoise = (b: any) =>
+const isNoise = (b: { unavailable: boolean; type: string }) =>
   b.unavailable || b.type === "unsupported" || b.type === "(unavailable)";
 
 // Gaps read better as a short phrase than as the generator's sentence.
@@ -226,9 +261,10 @@ const GAP_LABEL: Record<string, string> = {
   "claims-unavailable": "no claims for this function",
   "claim-edit": "claim edit",
 };
-const gapLabel = (g: any) => GAP_LABEL[g.reason] || g.detail;
+const gapLabel = (g: { reason: string; detail: string }) =>
+  GAP_LABEL[g.reason] || g.detail;
 
-function shortType(type: any) {
+function shortType(type: string) {
   // Surface syntax reads as a type; a raw producer encoding does not, and only
   // appears when this reader cannot name it.
   if (/^\{\s*"/.test(type)) return "structured type — inspect";
@@ -240,64 +276,72 @@ function shortType(type: any) {
 // The environment an expression obligation is checked against. Where the record
 // names it, that is the answer; otherwise it is the innermost one containing the
 // expression. Both are facts about the report, not a claim about what is wrong.
-function companionEntry(f: any) {
-  const sites = f.sites || [];
+function companionEntry(f: ShownFunction) {
+  const sites: Site[] = f.sites || [];
   const failing = f.failure?.at !== null && f.failure?.at !== undefined ? sites[f.failure.at] : null;
   if (!failing || failing.kind !== "expression") return -1;
-  const named = f.obligation?.source?.sourceMap?.environmentStart;
+  const obligation = f.obligation;
+  const named =
+    obligation && "source" in obligation
+      ? obligation.source.sourceMap?.environmentStart
+      : undefined;
   if (named !== null && named !== undefined) {
-    const at = sites.findIndex((s: any) => s.kind === "environment" && s.pos[0] === named);
+    const at = sites.findIndex((s) => s.kind === "environment" && s.pos[0] === named);
     if (at >= 0) return at;
   }
   let best = -1;
-  sites.forEach((s: any, i: number) => {
+  sites.forEach((s, i) => {
     if (s.kind !== "environment" || s.pos[0] > failing.pos[0] || s.pos[1] < failing.pos[1]) return;
-    if (best < 0 || s.pos[1] - s.pos[0] < sites[best].pos[1] - sites[best].pos[0]) best = i;
+    if (best < 0 || s.pos[1] - s.pos[0] < sites[best]!.pos[1] - sites[best]!.pos[0]) best = i;
   });
   return best;
 }
 
-function sourceMarks(rep: any, f: any, options: any) {
+function sourceMarks(
+  rep: MarkedReport,
+  f: ShownFunction,
+  options?: MarkOptions,
+): SourceMarks {
   const { density = "key", unsupported = false, producerErrors = true } = options || {};
   const source = rep.source;
   const starts = lineStarts(source);
-  const at = (p: any) => lineAt(starts, p);
-  const sites: any[] = f.sites || [];
+  const at = (p: number) => lineAt(starts, p);
+  const sites: Site[] = f.sites || [];
   const failure = f.status === "not-established" ? f.failure : null;
   // A recovery-quality snapshot says so once, on the function; only a claim that
   // stands out from its snapshot needs the label repeated.
   const recMark = f.quality === "recovery" ? "" : "  (recovery)";
-  const items: any[] = [];
-  const entries: any[] = [];
+  const items: MarkItem[] = [];
+  const entries: MarkItem[] = [];
   // Both sides of a failed obligation stay on screen. Compact hides an
   // environment where nothing changed, which is often the very one the marked
   // claim is checked against.
   const companion = failure ? companionEntry(f) : -1;
   // A mark's bracket stops at the end of its first line; the span may go on.
-  const columns = (pos: any) => {
+  const columns = (pos: readonly [number, number]) => {
     const line = at(pos[0]);
     const multiline = at(pos[1] - 1) !== line;
     return {
       line,
-      col: pos[0] - starts[line],
-      end: (multiline ? lineEndAt(source, starts, line) : pos[1]) - starts[line],
+      col: pos[0] - starts[line]!,
+      end: (multiline ? lineEndAt(source, starts, line) : pos[1]) - starts[line]!,
       multiline,
     };
   };
 
-  sites.forEach((s: any, i: number) => {
-    const failed = Boolean(failure) && failure.at === i;
+  sites.forEach((s, i) => {
+    const failed = !!failure && failure.at === i;
     // A site proof search stopped at reads the same, with the proof outcome
     // added in the symbols the function pill uses.
-    const mark = failed ? proofSymbol(failure.kind) : "";
-    const tag = failed ? roleTag(failure.role || failure.kind) : "";
+    const mark = failed ? proofSymbol(failure?.kind) : "";
+    const tag = failed ? roleTag(failure?.role || failure?.kind || "") : "";
     const flagged = failed ? " failed" : "";
     if (s.kind === "expression") {
       if (density === "key" && !failed) {
         // Compact keeps the outermost claim of a nest, and drops a literal that
         // only restates its own text.
         const nested = sites.some(
-          (o: any) =>
+          (o) =>
             o.kind === "expression" &&
             o !== s &&
             o.pos[0] <= s.pos[0] &&
@@ -353,7 +397,7 @@ function sourceMarks(rep: any, f: any, options: any) {
         end: c.end,
         label: s.claims
           ? "no " + s.claims + " claim" + (s.detail ? " · " + gapLabel(s) : "")
-          : gapLabel(s) + (failed && failure.binding ? " · " + failure.binding : ""),
+          : gapLabel(s) + (failed && failure?.binding ? " · " + failure.binding : ""),
         mark,
         tag: s.claims ? "" : tag,
         cls: "gap" + (s.claims ? " missing" : "") + flagged,
@@ -362,15 +406,15 @@ function sourceMarks(rep: any, f: any, options: any) {
       const involved = failed || i === companion;
       // An undecoded claim is normally noise. Where checking stopped at this
       // statement it is the finding, so it shows whatever the toggle says.
-      const shown = s.bindings.filter((b: any) => unsupported || failed || !isNoise(b));
+      const shown = s.bindings.filter((b) => unsupported || failed || !isNoise(b));
       // An environment the marked claim is checked against shows what it
       // claims, not only what changed there: nothing changing is exactly why
       // it can be the side that has to.
       const list =
-        density === "key" && !involved ? shown.filter((b: any) => s.changed.has(b.name)) : shown;
+        density === "key" && !involved ? shown.filter((b) => s.changed.has(b.name)) : shown;
       if (!list.length && !involved) return;
       const line = at(s.pos[0]);
-      const col = s.pos[0] - starts[line];
+      const col = s.pos[0] - starts[line]!;
       entries.push({
         kind: "entry",
         id: "s" + i,
@@ -379,7 +423,7 @@ function sourceMarks(rep: any, f: any, options: any) {
         col,
         end: col,
         label:
-          list.map((b: any) => b.name + ": " + shortType(b.type)).join(",  ") +
+          list.map((b) => b.name + ": " + shortType(b.type)).join(",  ") +
           (s.recovery ? recMark : ""),
         mark,
         tag,
@@ -412,7 +456,7 @@ function sourceMarks(rep: any, f: any, options: any) {
     producerMarks(rep).forEach((mark, i) => {
       if (mark.pos[0] < f.pos[0] || mark.pos[1] > f.pos[1]) return;
       const line = at(mark.pos[0]);
-      const col = mark.pos[0] - starts[line];
+      const col = mark.pos[0] - starts[line]!;
       items.push({
         kind: "error",
         id: "p" + i,
@@ -430,7 +474,7 @@ function sourceMarks(rep: any, f: any, options: any) {
 
 
 /* ---------- laying marks out ---------- */
-function bracket(w: any) {
+function bracket(w: number) {
   if (w <= 1) return "╵";
   return "╰" + "─".repeat(Math.max(0, w - 2)) + "╯";
 }
@@ -438,16 +482,18 @@ function bracket(w: any) {
 // Marks are packed onto as few rows as fit, so nesting is visible at a glance.
 // Width counts the bracket, the label and any proof symbol: these sit in a
 // monospace grid, and a row that miscounts would overlap the next mark.
-const markWidth = (it: any) =>
+/** What packing needs of a mark: where it sits, and how wide it reads. */
+type Packable = Pick<MarkItem, "col" | "end" | "label" | "mark" | "tag">;
+const markWidth = (it: Packable) =>
   Math.max(1, it.end - it.col) +
   1 +
   it.label.length +
   (it.mark ? it.mark.length + 1 : 0) +
   (it.tag ? it.tag.length + 1 : 0);
 
-function packRows(items: any) {
-  const rows: any[] = [];
-  items.sort((a: any, b: any) => a.col - b.col || a.end - b.end);
+function packRows<T extends Packable>(items: T[]): { items: T[]; free: number }[] {
+  const rows: { items: T[]; free: number }[] = [];
+  items.sort((a, b) => a.col - b.col || a.end - b.end);
   for (const it of items) {
     let row = rows.find((r) => r.free <= it.col);
     if (!row) {
@@ -460,11 +506,11 @@ function packRows(items: any) {
   return rows;
 }
 
-function groupLines(items: any) {
-  const grouped = new Map();
+function groupLines(items: MarkItem[]): Map<number, MarkItem[]> {
+  const grouped = new Map<number, MarkItem[]>();
   for (const item of items) {
     if (!grouped.has(item.line)) grouped.set(item.line, []);
-    grouped.get(item.line).push(item);
+    grouped.get(item.line)!.push(item);
   }
   return grouped;
 }
