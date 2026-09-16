@@ -10,6 +10,7 @@ import { spawn } from "node:child_process";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 import type { Bundle, Candidate } from "./types.ts";
+import { fieldOf, messageOf, outputOf } from "../tools/thrown.mts";
 
 /** What the page posts: the candidate to check or keep, and — for a draft —
  * what to do with it. Discarding one names the source alone, and everything
@@ -263,19 +264,14 @@ async function collect(relative: string, producer = "skjs"): Promise<Bundle> {
     } catch (thrown) {
       // Normal rejection can still yield a partial collection. Operational
       // errors cannot, and a thrown value is unknown until something checks it.
-      const error = thrown as {
-        killed?: boolean;
-        code?: unknown;
-        stdout: string;
-        stderr?: string;
-      };
       if (
-        error.killed ||
-        typeof error.code !== "number" ||
-        !error.stdout?.trim().startsWith("[")
+        fieldOf(thrown, "killed") ||
+        typeof fieldOf(thrown, "code") !== "number" ||
+        !outputOf(thrown, "stdout").trim().startsWith("[")
       )
-        throw error;
-      run = error;
+        throw thrown;
+      // The producer refused the program and still wrote its claims.
+      run = { stdout: outputOf(thrown, "stdout") };
     }
     const nativeClaims = path.join(tmp, "native-claims.json");
     await fs.writeFile(nativeClaims, run.stdout);
@@ -555,9 +551,8 @@ const server = http.createServer(async (req, res) => {
       asset[1],
     );
   } catch (thrown) {
-    const error = thrown as { stderr?: string; message?: string };
     send(res, 500, {
-      error: String(error.stderr || error.message).slice(0, 4000),
+      error: (outputOf(thrown, "stderr") || messageOf(thrown)).slice(0, 4000),
     });
   }
 });
@@ -567,7 +562,7 @@ if (process.argv[1] && import.meta.filename === path.resolve(process.argv[1])) {
   // A port already taken usually means a reader is up from an earlier run.
   // Say so, with what to do about it, rather than a stack trace.
   server.on("error", (error) => {
-    if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
+    if (fieldOf(error, "code") !== "EADDRINUSE") throw error;
     console.error(
       `Port ${PORT} is already serving. Open http://localhost:${PORT},` +
         ` or run on another port with PORT=8732 make viewer.`,

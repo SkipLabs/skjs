@@ -23,7 +23,7 @@ import type {
 import { decodeTerm, parseTerm, printTerm } from "../tools/calculus.mts";
 import ob from "../tools/diagnostic-view.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
-import { atom, must } from "./edits.mts";
+import { atom, must, rows } from "./edits.mts";
 import type { Atom, ClaimType } from "../tools/claim.mts";
 
 /** One end of an obligation, as the record names it. */
@@ -42,8 +42,12 @@ const source =
 const start = source.indexOf("function"),
   expr = source.indexOf("(\n"),
   end = source.indexOf(");") + 1;
+const claimPos: Span = [expr, end];
+const namePos: Span = [source.indexOf("f("), source.indexOf("f(") + 1];
+const declaration: Span = [start, source.length - 1];
+const entryPos: Span = [start, end];
 const claim = {
-  pos: [expr, end] as Span,
+  pos: claimPos,
   type: '{"reference":{"to":7}}',
   raw: { reference: { to: 7 } },
 };
@@ -57,8 +61,8 @@ const manifest: Manifest = {
     {
       id: "f0",
       name: "f",
-      namePos: [source.indexOf("f("), source.indexOf("f(") + 1] as Span,
-      pos: [start, source.length - 1] as Span,
+      namePos: namePos,
+      pos: declaration,
       entries: [],
       expressions: [{ id: "f0x0", ...claim }],
     },
@@ -595,12 +599,12 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   );
   assert.equal(surface.readClaimValue("expression", "{ value: boolean }", { unsupported: true }).atoms[0].a, "record");
   // The binding set is the original's: none added, none dropped, none doubled.
-  for (const [bad, complaint] of [
+  for (const [bad, complaint] of rows<[string, RegExp]>([
     ["value: null", /binding 'this' is missing/],
     ["this: (unavailable), value: null, cell: { value: boolean }, extra: null", /not a binding/],
     ["this: (unavailable), value: null, value: null, cell: { value: boolean }", /appears twice/],
     ["this: (unavailable), value, cell: { value: boolean }", /needs a name and a type/],
-  ] as [string, RegExp][])
+  ]))
     assert.throws(() => surface.readClaimValue("environment", bad, env), complaint);
 }
 
@@ -907,13 +911,16 @@ const failedAt = (bundle: Bundle) => {
 };
 assert.equal(failedAt(failureBundle)!.detail, "proof search stopped");
 assert.equal(failedAt(failureBundle)!.site, "expression");
-for (const kind of ["edge-obligation", "source-limitation"]) {
-  failureBundle.manifest.results![0]!.location!.kind = kind as FailureKind;
+for (const kind of rows<FailureKind>(["edge-obligation", "source-limitation"])) {
+  must(
+    must(must(failureBundle.manifest.results, "results")[0], "a result").location,
+    "a place",
+  ).kind = kind;
   assert.equal(failedAt(failureBundle)!.kind, kind);
   assert.equal(failedAt(failureBundle)!.site, "expression");
 }
 failureBundle.manifest.functions[0].entries = [
-  { id: "f0e0", pos: [start, end] as Span, bindings: [] },
+  { id: "f0e0", pos: entryPos, bindings: [] },
 ];
 failureBundle.manifest.results![0].location = {
   kind: "environment-obligation",

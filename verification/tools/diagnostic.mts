@@ -265,5 +265,7 @@ export function readDiagnostic(
     !d.sequent
   )
     return undefined;
+  // Checked field by field above, variant by variant: this is where that
+  // becomes a type, and the only assertion this file makes.
   return d as unknown as ObligationDiagnostic;
 }

@@ -129,6 +129,12 @@ an exporter change needs a place to show, one phenomenon per file.
   pipe through node's own `_handle`, which bun does not expose
   (`undefined is not an object (evaluating 'stdout._handle.fd')`). Every tool
   that opens the compiler is affected, so this is not a per-suite choice.
+- A decoder is the only place that asserts a shape. Everything else narrows:
+  a type predicate, a `typeof` before a comparison, a case table keyed by the
+  language's own union. `tools/unchecked.mts` reports every written `any`, `as`
+  and `!` in the node side; what it should show is one `as` at the last line of
+  each decoder, where the checks it just ran become the type it returns. An
+  assertion anywhere else is standing in for a check that is missing.
 - Wire formats carry no version, profile or schema tag, and none is to be
   added. What a version would be for is consistency, and consistency here is a
   typing property: each format is one declared type, every producer and

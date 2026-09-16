@@ -17,6 +17,9 @@
  * a `!` says it is there when the compiler cannot see that either. Both are
  * assertions: nothing checks them, and a decoder that establishes the fact is
  * what they stand in for.
+ *
+ * `as const` is not one of them and is not counted: it asserts nothing about a
+ * value, it only asks for the literal type of what is already written there.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -33,6 +36,15 @@ export interface Written {
   text: string;
 }
 
+/** `x as const`, which the parser writes as an `as` with a type reference to
+ * the reserved name `const`. */
+function isConstAssertion(node: ts.Node): boolean {
+  if (!ts.isAsExpression(node)) return false;
+  const type = node.type;
+  return ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName) &&
+    type.typeName.text === "const";
+}
+
 const KINDS: [number, Kind][] = [
   [ts.SyntaxKind.AnyKeyword, "any"],
   [ts.SyntaxKind.AsExpression, "as"],
@@ -46,7 +58,7 @@ export function writtenAny(file: string): Written[] {
   const found: Written[] = [];
   const walk = (node: ts.Node): void => {
     const kind = KINDS.find(([syntax]) => syntax === node.kind)?.[1];
-    if (kind !== undefined) {
+    if (kind !== undefined && !isConstAssertion(node)) {
       const at = source.getLineAndCharacterOfPosition(node.getStart(source));
       found.push({
         file,

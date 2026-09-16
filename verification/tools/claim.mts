@@ -83,5 +83,6 @@ function atom(v: unknown): void {
 export function decodeClaimType(v: unknown): ClaimType {
   const o = object(v); keys(o,["top","atoms"]); bool(o.top); list(o.atoms).forEach(atom);
   if (o.top && list(o.atoms).length) throw Error("unknown cannot also carry atoms");
+  // Checked field by field above: this is where that becomes a type.
   return v as ClaimType;
 }

@@ -67,6 +67,7 @@ export function decodeTerm(value: unknown): Term {
     else if (k === "args") { if (!Array.isArray(v)) throw Error("invalid arguments"); v.forEach(decodeTerm); }
     else decodeTerm(v);
   }
+  // Checked field by field above: this is where that becomes a type.
   return value as Term;
 }
 export const parseTerm = (text: string): Term => decodeTerm(JSON.parse(text));

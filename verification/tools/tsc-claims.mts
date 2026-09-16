@@ -48,11 +48,13 @@ import { close, parseFile, projectFor } from "./fragment-parse.mts";
 import type {
   ClaimType,
   FunctionClaims,
+  NamedPoint,
   Row,
   SourceClaims,
 } from "./source-claims.mts";
 import type { Ast, Expr, FunctionAst, Stmt } from "./fragment.mts";
 import type { Span } from "./span.mts";
+import { messageOf } from "./thrown.mts";
 
 /* ------------------------------------------------------------- refusal -- */
 // A type this producer will not state. The reason is a short slug; the
@@ -199,9 +201,9 @@ function walkExpr(e: Expr, out: Sites): void {
       // Administrative completion; no source expression claim.
       return;
     default:
-      throw new Error(
-        `expression outside the lowered fragment (${(e as { k: string }).k})`,
-      );
+      // Every kind of the fragment is handled above, so this is reached only
+      // by a tree the parser no longer writes the way this reads it.
+      throw new Error("expression outside the lowered fragment");
   }
 }
 
@@ -231,9 +233,7 @@ function walkStmt(s: Stmt, out: Sites): void {
       (s.else_ ?? []).forEach((st) => walkStmt(st, out));
       return;
     default:
-      throw new Error(
-        `statement outside the lowered fragment (${(s as { k: string }).k})`,
-      );
+      throw new Error("statement outside the lowered fragment");
   }
 }
 
@@ -329,10 +329,9 @@ function numberBits(value: number): string {
  */
 function numberLabelsOf(type: Type, types: Row[]): number[] | null {
   const f = type.flags;
-  if (f & TypeFlags.NumberLiteral) {
-    const value = (type as { value?: unknown }).value;
-    if (typeof value !== "number" || !Number.isFinite(value)) return null;
-    return [internRow(types, [{ numLit: { bits: numberBits(value) } }])];
+  if (type.isNumberLiteralType()) {
+    if (!Number.isFinite(type.value)) return null;
+    return [internRow(types, [{ numLit: { bits: numberBits(type.value) } }])];
   }
   if (f & TypeFlags.Number) return [internRow(types, ["num"])];
   if (isUnionType(type)) {
@@ -358,8 +357,7 @@ function primitiveLabelsOf(type: Type): number[] | null {
   if (f & TypeFlags.Undefined) return [3];
   if (f & TypeFlags.Never) return [];
   if (f & TypeFlags.Boolean) return [1, 2]; // the `boolean` pseudo-union itself
-  if (f & TypeFlags.BooleanLiteral)
-    return (type as { value?: unknown }).value === true ? [1] : [2];
+  if (type.isBooleanLiteralType()) return type.value === true ? [1] : [2];
   if (isUnionType(type)) {
     const acc: number[] = [];
     for (const t of type.getTypes()) {
@@ -567,8 +565,8 @@ function translateType(type: Type, checker: Checker, types: Row[], records = tru
     const R = translateType(arrow.result!, checker, types, false, fuel - 1);
     return [internRow(types, [{callable: {first: P, rest: [], arrows: [[Ds,R]]}}])];
   }
-  if (type.flags & TypeFlags.Intersection) {
-    const parts = (type as unknown as { getTypes(): readonly Type[] }).getTypes();
+  if (type.isIntersectionType()) {
+    const parts = type.getTypes();
     const refs = records ? tryRecordIntersection(type, checker, parts, types, fuel) : null;
     if (refs) return [internRow(types, [{ refs }])];
     const arrows = tryArrowIntersection(type, checker, parts, types, fuel);
@@ -1220,7 +1218,7 @@ function omissionRecord(fn: string, site: unknown, err: unknown): Omission {
     reason:
       err instanceof Refusal
         ? err.reason
-        : String((err as Error)?.message ?? err),
+        : messageOf(err),
   };
 }
 
@@ -1288,7 +1286,7 @@ function processFunction(
   if (fnNode.typeParameters?.length) return processGenericFunction(fnJson,fnNode,checker,sf,types,indices);
   const before = omissions.length;
   const name = fnJson.name;
-  const params = fnNode.parameters.map((p) => {
+  const params: (NamedPoint | null)[] = fnNode.parameters.map((p) => {
     try {
       return {
         name: parameterName(p),
@@ -1297,7 +1295,7 @@ function processFunction(
           checker,
           types,
         ),
-        current: null as null,
+        current: null,
       };
     } catch (e) {
       omissions.push(
@@ -1373,12 +1371,13 @@ function processFunction(
 
   // One unstated site would fail extraction, so a function is claimed whole or
   // not at all.
-  if (omissions.length !== before || result === null || params.some((p: unknown) => p === null))
+  const stated = params.filter((p) => p !== null);
+  if (omissions.length !== before || result === null || stated.length !== params.length)
     return null;
   return {
     name: fnJson.name,
     namePos: fnJson.namePos,
-    params: params as FunctionClaims["params"],
+    params: stated,
     result,
     entries,
     expressions,
@@ -1505,7 +1504,7 @@ if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
     );
     close();
   } catch (e) {
-    process.stderr.write(String((e as Error)?.message ?? e) + "\n");
+    process.stderr.write(messageOf(e) + "\n");
     process.exit(1);
   }
 }

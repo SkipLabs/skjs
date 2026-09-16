@@ -20,10 +20,16 @@ const strip: (source: string) => string = (() => {
     const transpiler = new Bun.Transpiler({ loader: "ts" });
     return (source: string) => transpiler.transformSync(source);
   }
-  const { stripTypeScriptTypes } = nodeModule as unknown as {
-    stripTypeScriptTypes(source: string): string;
-  };
-  return (source: string) => stripTypeScriptTypes(source);
+  // node's own stripper, which its `module` typings do not declare while it is
+  // experimental: asked for by name and checked to be callable, rather than
+  // asserted to be there.
+  const strip: unknown = Object.getOwnPropertyDescriptor(
+    nodeModule,
+    "stripTypeScriptTypes",
+  )?.value;
+  if (typeof strip !== "function")
+    throw Error("this runtime cannot erase type annotations");
+  return (source: string) => String(strip(source));
 })();
 
 /** The source with its type annotations erased, ready to evaluate. */

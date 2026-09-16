@@ -7,7 +7,7 @@ import { stripTypes } from "../tools/strip-types.mts";
 import { spawnSync } from "node:child_process";
 import type { Ast } from "../tools/fragment.mts";
 import { functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
-import { at, atom, binding, claimAt, expr, field, fn, list, record, stmt } from "./edits.mts";
+import { at, atom, binding, claimAt, expr, field, fn, list, record, rows, stmt } from "./edits.mts";
 const __dirname = path.dirname(import.meta.filename);
 /** The `while` a named function of this fixture loops with. */
 const loop=(a: Ast,name: string)=>{
@@ -30,7 +30,7 @@ try {
   test("real SKJS loop claims produce evidence",()=>{const r=run("--produce-stateful-source",ast,claims);assert.equal(r.status,0,r.stderr);});
   const evidence=JSON.parse(fs.readFileSync(ep, "utf8"));
   test("independent loop consumer",()=>assert.equal(run("--check-stateful-source",ast,claims,evidence).status,0));
-  for(const [name,edit] of [
+  for(const [name,edit] of rows<[string, (a: Ast, c: SkjsClaims) => void]>([
     ["missing loop-head invariant",(a,c)=>{const p=loop(a,"oneWrite").pos[0];cf(c,"oneWrite").envs=cf(c,"oneWrite").envs.filter((e) =>e.pos[0]!==p);}],
     ["unjustified loop-head narrowing",(a,c)=>{const p=loop(a,"zeroTrips").pos[0];binding(cf(c,"zeroTrips"),p,"flag").type={top:false,atoms:[{a:"booleanlit",v:"true"}]};}],
     ["missing repeated condition claim",(a,c)=>{const p=loop(a,"oneWrite").cond.pos;cf(c,"oneWrite").exprs=cf(c,"oneWrite").exprs.filter((e) =>JSON.stringify(e.pos)!==JSON.stringify(p));}],
@@ -38,7 +38,7 @@ try {
       expr(expr(stmt(at(fn(a,"oneWrite").body,3),"return").e,"read").e,"id").name="alias";}],
     ["nonboolean condition",a=>{const head=loop(a,"zeroTrips");head.cond={k:"lit",pos:head.cond.pos,lit:{a:"null"}};}],
     ["missing exit return",a=>{fn(a,"zeroTrips").body.pop();}]
-  ] as [string, (a: Ast, c: SkjsClaims) => void][])test(name,()=>{const a=clone(ast),c=clone(claims);edit(a,c);assert.notEqual(run("--produce-stateful-source",a,c).status,0);assert.notEqual(run("--check-stateful-source",a,c,evidence).status,0);});
+  ]))test(name,()=>{const a=clone(ast),c=clone(claims);edit(a,c);assert.notEqual(run("--produce-stateful-source",a,c).status,0);assert.notEqual(run("--check-stateful-source",a,c,evidence).status,0);});
   test("back-edge evidence cannot be omitted",()=>{
     const e=clone(evidence),i=ast.functions.findIndex((f) =>f.name==="oneWrite");
     const back=record(field(e,"functions",i,"certificate",4),"the loop head's node");

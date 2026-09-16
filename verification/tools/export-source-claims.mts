@@ -7,6 +7,7 @@ import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import type { SkjsClaims, SkjsCollection } from "./skjs-claims.mts";
 import type { Span } from "./span.mts";
+import { messageOf } from "./thrown.mts";
 
 /**
  * The manifest this tool writes beside a converted sidecar: where the
@@ -55,14 +56,19 @@ export function main(args: string[]) {
   const sourcePath=args.shift();
   // Every switch accepted below lands here, so the record says so once rather
   // than growing a property at a time.
-  const opts = {verifier:path.resolve(__dirname,"../lean/.lake/build/bin/verifier")} as {
+  const opts: {
     verifier:string, claims?:string, out?:string, "file-key"?:string, diagnostics?:string,
-  };
+  } = {verifier:path.resolve(__dirname,"../lean/.lake/build/bin/verifier")};
   if(!sourcePath)throw Error("usage: export-source-claims.mts source.ts --claims skjs.json [--out source-claims.json] [--diagnostics stderr.txt]");
   while(args.length) {
     const key=args.shift()?.replace(/^--/,"");
-    if(!key||!["claims","out","file-key","verifier","diagnostics"].includes(key)||!args.length)throw Error(`invalid option ${key}`);
-    (opts as Record<string,string|undefined>)[key]=args.shift();
+    // The switch names a field of the record above; nothing else can be written.
+    const isOption=(k: string): k is keyof typeof opts =>
+      ["claims","out","file-key","verifier","diagnostics"].includes(k);
+    const value=args[0];
+    if(!key||!isOption(key)||value===undefined)throw Error(`invalid option ${key}`);
+    args.shift();
+    opts[key]=value;
   }
   if(!opts.claims)throw Error("missing --claims");
   const output=opts.out||sourcePath.replace(/\.ts$/,"")+".source-claims.json",manifest=output+".conversion.json";
@@ -75,7 +81,7 @@ export function main(args: string[]) {
     let ast;
     try { ast=JSON.parse(run(process.execPath,[parser,sourcePath])); }
     catch(error) {
-      if(!String((error as Error).message).startsWith("gate:"))throw error;
+      if(!messageOf(error).startsWith("gate:"))throw error;
     }
     const cp=path.join(temp,"claims.json");fs.writeFileSync(cp,raw);
     let converted;
@@ -105,4 +111,4 @@ export function main(args: string[]) {
   } finally {fs.rmSync(temp,{recursive:true,force:true});}
 }
 if(process.argv[1] && import.meta.filename===path.resolve(process.argv[1]))
-  try {main(process.argv.slice(2));}catch(e){console.error((e as Error).message);process.exitCode=1;}
+  try {main(process.argv.slice(2));}catch(e){console.error(messageOf(e));process.exitCode=1;}

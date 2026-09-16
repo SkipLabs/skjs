@@ -13,9 +13,11 @@ export interface ClosedOperation {
   target: ClaimType;
 }
 
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === "object" && !Array.isArray(v);
 export function decodeClosedOperation(v: unknown): ClosedOperation {
-  if (!v || typeof v !== "object" || Array.isArray(v)) throw Error("expected an operation object");
-  const o = v as Record<string, unknown>;
+  if (!isRecord(v)) throw Error("expected an operation object");
+  const o = v;
   if (Object.keys(o).some(k => !["kind", "source", "target"].includes(k)) ||
       !("kind" in o && "source" in o && "target" in o))
     throw Error("unexpected or missing operation field");

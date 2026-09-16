@@ -17,10 +17,12 @@ export function decodeTarget(value: unknown): Target {
     if (!Array.isArray(t.mapping)) throw Error("invalid slot mapping");
     t.mapping.forEach(nat);
   }
+  // Checked field by field above: this is where that becomes a type.
   return value as Target;
 }
 export function decodeNode(value: unknown): ProgramNode {
   const n = fields(value,["expression","continuation"]); decodeTerm(n.expression);
+  // Checked above: a returning node has nothing else to check.
   if (n.continuation === "ret") return value as ProgramNode;
   if (!n.continuation || typeof n.continuation !== "object") throw Error("invalid continuation");
   const k = Object.keys(n.continuation)[0], outer = fields(n.continuation,[k]);
@@ -34,5 +36,6 @@ export function decodeNode(value: unknown): ProgramNode {
     }
     default: throw Error("unknown continuation");
   }
+  // Checked field by field above: this is where that becomes a type.
   return value as ProgramNode;
 }

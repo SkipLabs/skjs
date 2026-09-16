@@ -54,6 +54,7 @@ function array(v: unknown): unknown[] { if (!Array.isArray(v)) throw Error("expe
 export function decodeLabels(v: unknown, size: number): Labels {
   if (array(v).some(i => typeof i !== "number" || !Number.isSafeInteger(i) || i < 0 || i >= size))
     throw Error("type graph reference out of bounds");
+  // Checked field by field above: this is where that becomes a type.
   return v as Labels;
 }
 export function decodeGraph(value: unknown): TypeGraph {
@@ -99,6 +100,7 @@ export function decodeGraph(value: unknown): TypeGraph {
     if (!validate) throw Error("unknown graph clause");
     validate(obj(c,[key])[key]);
   }));
+  // Checked field by field above: this is where that becomes a type.
   return value as TypeGraph;
 }
 /** JSON is the complete editable graph syntax; decoding is strict and lossless. */

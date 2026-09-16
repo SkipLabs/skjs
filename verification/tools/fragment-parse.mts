@@ -38,6 +38,7 @@ import type {
   TypeParamAst,
 } from "./fragment.mts";
 import type { Span } from "./span.mts";
+import { messageOf } from "./thrown.mts";
 
 /* --------------------------------------------------------- the compiler -- */
 // The compiler runs out of process and is addressed through one API instance.
@@ -1078,7 +1079,7 @@ if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
     process.stdout.write(JSON.stringify(parseFile(file), null, 1));
     close();
   } catch (error) {
-    process.stderr.write(String((error as Error).message ?? error) + "\n");
+    process.stderr.write(messageOf(error) + "\n");
     process.exit(1);
   }
 }

@@ -25,6 +25,7 @@ import type { Span } from "./span.mts";
 import type { Failure, Result } from "../report-viewer/types.ts";
 import type { SkjsFile, SkjsFunction } from "./skjs-claims.mts";
 import type { ConversionManifest } from "./export-source-claims.mts";
+import { messageOf } from "./thrown.mts";
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 // The display helpers beside this file are plain JavaScript modules.
 const require = createRequire(import.meta.url);
@@ -614,7 +615,7 @@ function verifySkjs(
     try {
       ast=fragmentParse.parseFile(sourcePath);
     } catch(error) {
-      const detail=String((error as Error)?.message||error);
+      const detail=messageOf(error);
       if(!detail.startsWith("gate:"))throw Error(`source parser failed: ${detail}`);
       return {identity,results:report.functions.map((): Omit<Result,"function">=>({status:"unsupported",detail:detail.trim()}))};
     }
@@ -801,11 +802,11 @@ export function main(args: string[]) {
   const sourcePath=args.shift();
   // Every switch in `allowed` below lands here, so the record says so once
   // rather than growing a property at a time.
-  const options = {format:"skjs",depth:10} as {
+  const options: {
     format:string, depth:string|number, claims?:string, out?:string, verify?:string,
     producer?:string, "file-key"?:string, diagnostics?:string, baseline?:string,
     conversion?:string, stdout?:string,
-  };
+  } = {format:"skjs",depth:10};
   if(!sourcePath)throw Error("usage: annotate-source.mts source.ts --claims claims.json [--out annotated.ts] [--verify verifier] [--format report --producer name]");
   const allowed=new Set(["claims","out","verify","format","producer","file-key","depth","diagnostics","baseline","conversion","stdout"]);
   // The switch names a field of the record above; nothing else can be written.
@@ -904,4 +905,4 @@ export {hash,typeText,fromSkjs,fromSourceClaims,attachConversion,render,coverage
  * suite that alters one says which document it is altering. */
 export type {DraftReport, ReportInput};
 if(process.argv[1] && import.meta.filename===path.resolve(process.argv[1]))
-  try {main(process.argv.slice(2));}catch(e){console.error((e as Error).message);process.exitCode=1;}
+  try {main(process.argv.slice(2));}catch(e){console.error(messageOf(e));process.exitCode=1;}
