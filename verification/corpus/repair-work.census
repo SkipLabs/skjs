@@ -1,9 +1,9 @@
 # census: repair-work
-# 6/115 verified, of 315 functions
+# 7/115 verified, of 315 functions
 #   skjs-rejected: 200
 #   gate: 90
-#   unproved: 19
-#   verified: 6
+#   unproved: 18
+#   verified: 7
 #
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofUndefinedFieldAdmitsInitialValue
@@ -301,7 +301,6 @@ unproved:reject: cell parameters need an external-value boundary, which is outsi
 unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/captured-read-stability.ts	checkedAliasChain
 unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/unsound-refinement.ts	assignmentResultSnapshot
 unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/unsound-refinement.ts	checkedAfterWrite
-unproved:reject: closure expression claim at [634,635): evidence search failed	tests/expect-error/captured-read-stability.ts	checkedCapturedLocal
 unproved:reject: closure expression claim at [638,639): evidence search failed	tests/expect-error/captured-read-stability.ts	checkedEvolvingCapture
 unproved:reject: source environment obligation at 706: unavailable claimed binding '_' at 706	tests/expect-error/captured-read-stability.ts	checkedMutableObjectReplacement
 unproved:reject: source environment obligation at 713: unavailable claimed binding '_' at 713	tests/expect-error/captured-read-stability.ts	checkedGenericCallResult
@@ -315,6 +314,7 @@ unproved:reject: unsupported source expression at [231,243): equality requires a
 unproved:reject: unsupported source expression at [243,253): equality requires a null or undefined 	tests/expect-error/local-vs-local-refinement.ts	inferredReadSingleton
 unproved:reject: unsupported source expression at [73,83): equality requires a null or undefined li	tests/expect-error/binding-initialization.ts	conditionBeforeLocal
 verified	tests/expect-error/captured-read-stability.ts	checkedAnnotatedConstField
+verified	tests/expect-error/captured-read-stability.ts	checkedCapturedLocal
 verified	tests/expect-error/captured-read-stability.ts	checkedInferredObject
 verified	tests/expect-error/captured-read-stability.ts	inferredPrimitiveCompatibleWrite
 verified	tests/expect-error/captured-read-stability.ts	neverReassigned

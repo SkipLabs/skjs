@@ -244,7 +244,6 @@ private def observed (scope : List ScopeBinding) (Γ : List (Ty Nat))
     (name : String) (d : Descriptor) (pos : Span) (A : Ty Nat)
     (fld : String) (R : Ty Nat) : Compiler Unit := do
   if let some i := (names scope).idxOf? (snapshotName name fld) then
-    let _ ← contents R
     let plan := DirectProof.var Γ i R
     obligation pos plan.goal (some plan) "heap-observation" scope
   else
@@ -263,12 +262,24 @@ private def readOnly : Fragment.Expr → Bool
 
 /-- Save the plain read in a null/undefined comparison. The other operand is
 necessarily a literal; moving that literal across the read has no effect. -/
-private def readGuard : Fragment.Expr → Option (String × String × Fragment.Expr × Fragment.Expr)
-  | .not pos e => (readGuard e).map fun (name,snapshot,r,c) => (name,snapshot,r,.not pos c)
-  | .unitTest pos tag equal true (r@(.read rp f (.var _ name))) (lit@(.lit ..)) =>
-    some (name,snapshotName name f,r,.unitTest pos tag equal true (.var rp (snapshotName name f)) lit)
-  | .unitTest pos tag equal false (lit@(.lit ..)) (r@(.read rp f (.var _ name))) =>
-    some (name,snapshotName name f,r,.unitTest pos tag equal false lit (.var rp (snapshotName name f)))
+private def readGuard (scope : List ScopeBinding) :
+    Fragment.Expr → Option (String × Fragment.Expr × Fragment.Expr)
+  | .not pos e => (readGuard scope e).map fun (snapshot,r,c) => (snapshot,r,.not pos c)
+  | .unitTest pos tag equal testLeft left right => do
+    let (r,lit) := if testLeft then (left,right) else (right,left)
+    let .lit .. := lit | none
+    let (name,fld) ← match r with
+      | .read _ fld (.var _ name) => do
+        let _ ← valueSlot scope name
+        pure (name,fld)
+      | .var _ name => match resolve scope name with
+        | some (_, .cell ..) => some (name,valueField)
+        | _ => none
+      | _ => none
+    let snapshot := snapshotName name fld
+    let saved := Fragment.Expr.var r.span snapshot
+    some (snapshot,r,.unitTest pos tag equal testLeft
+      (if testLeft then saved else lit) (if testLeft then lit else saved))
   | _ => none
 
 /-- Statement claims name source bindings only. Preserve anonymous evaluation
@@ -287,7 +298,7 @@ private def closureEnv (fc : SourceClaims.Function) (pos : Nat) (scope : List Sc
       let some candidate := ((fc.envs.lookup pos).getD []).lookup name
         | throw s!"missing claimed binding '{name}' at {pos}"
       let R ← SourceClaims.resolve (← table).length candidate
-      persistentObservation b.source (pos,pos+1) reference valueField R
+      observed scope Γ name b.source (pos,pos+1) reference valueField R
     if let some asserted := ((fc.entryCurrent.lookup pos).getD []).lookup name then
       for (fld, R) in asserted do
         observed scope Γ name ⟨name,none⟩ (pos,pos+1) A fld R
@@ -416,7 +427,11 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     match resolve scope name with
     | some (i, .value) => pure (DirectProof.var Γ i A)
     | some (i, .cell contract reference) =>
-      pure (DirectProof.node Γ (.readAt valueField (.var i)) contract .read [DirectProof.var Γ i reference])
+      if let some saved := (names scope).idxOf? (snapshotName name valueField) then
+        let some R := Γ[saved]? | throw "internal saved-local slot mismatch"
+        pure (DirectProof.var Γ saved R)
+      else
+        pure (DirectProof.node Γ (.readAt valueField (.var i)) contract .read [DirectProof.var Γ i reference])
     | none => throw s!"unbound or uninitialized closure variable '{name}'"
   | .assign _ name _ rhs => do
     let some (i, .cell contract reference) := resolve scope name
@@ -670,8 +685,8 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     if result.isSome then
       for (B,i) in H.zipIdx do
         obligation pos ⟨Γ,.var i,B⟩ (some (DirectProof.var Γ i B)) "closure-entry" scope
-    if let some (name, snapshot, read, tested) := readGuard cond then
-      if (valueSlot scope name).isSome && readOnly thn && readOnly els then
+    if let some (snapshot, read, tested) := readGuard scope cond then
+      if readOnly thn && readOnly els then
         let saved ← closureExpr fc scope H read
         let ds := held ⟨snapshot,some read.span⟩ :: scope
         let K := saved.type :: H
@@ -748,6 +763,8 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
   match e with
   | .read _ fld (.var _ name) =>
     if (names scope).contains (snapshotName name fld) then return p else return plan
+  | .var _ name =>
+    if (names scope).contains (snapshotName name valueField) then return p else return plan
   | .atEnv .. => return p
   | _ => return plan
 

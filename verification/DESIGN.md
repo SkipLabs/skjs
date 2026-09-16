@@ -1326,6 +1326,15 @@ Forged polarity, variable identity and stronger result guarantees are rejected.
 
 ### Null predicates through union elimination
 
+Inside a closure, a null/undefined guard on a captured mutable local may save
+its read into an immutable temporary. The branch proof narrows that temporary;
+subsequent reads and statement-entry claims use its checked type. This lowering
+is restricted to branches for which `readOnly` excludes writes, calls,
+allocations and escaping closures. It establishes no persistent narrowing of
+the cell's storage contract and carries no observation across a back edge.
+`captured-local-guards.ts` checks the supported shape; `mutable-guard-effects.ts`
+checks that a write or callback prevents reusing the saved value.
+
 `HasTy.unionVar` eliminates one variable's finite union by checking the same term
 and result under every singleton-label alternative. Its soundness proof selects
 the alternative containing the actual immutable value; no semantic budget enters

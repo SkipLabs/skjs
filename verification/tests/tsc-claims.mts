@@ -55,6 +55,7 @@ const expected = {
   "stateful-source/basic": "verified",
   "stateful-source/cells": "verified",
   "stateful-source/records": "verified",
+  "stateful-source/captured-local-guards": "verified",
   "stateful-source/cell-conjunction": "verified",
   "stateful-source/closures": "verified",
   "stateful-source/loops": "verified",
