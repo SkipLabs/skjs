@@ -8,10 +8,21 @@
  */
 
 import surface from "./claim-text.mts";
-import { decodeGraph, graphDefinitions, printLabels, type GraphDefinition } from "./type-graph.mts";
-import type { ObligationDiagnostic } from "./diagnostic.mts";
-import { printTerm } from "./calculus.mts";
+import { decodeGraph, graphDefinitions, printLabels, type GraphDefinition, type Labels } from "./type-graph.mts";
+import type { HeapKnowledge, ObligationDiagnostic, SourceMapEntry } from "./diagnostic.mts";
+import { printTerm, type Term } from "./calculus.mts";
 import type { Span } from "./span.mts";
+
+/* A record reaches `obligationView` decoded: diagnostic.mts checks one field by
+ * field and refuses what does not fit, so the shapes below are the ones that
+ * arrive. The descriptors and label lists are the exception — the report writer
+ * hands those in straight from a producer's document — so reading one narrows
+ * what arrived instead of assuming it. `Array.isArray` alone would widen
+ * `unknown` to `any[]`, which is how elements stop being checked; `isList`
+ * keeps them unknown, as annotate-source.mts does with the same data. */
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === "object";
+const isList = (v: unknown): v is unknown[] => Array.isArray(v);
 
 /** One binding of the context: what was carried, and what was required. */
 export interface ContextRow {
@@ -43,12 +54,7 @@ export interface KnowledgeRow {
 export interface Endpoint {
   end: "from" | "to";
   label: number;
-  sourceMap: {
-    pos: Span | null;
-    role: string;
-    environmentStart?: number;
-    context?: { name: string; span: Span | null }[];
-  } | null;
+  sourceMap: SourceMapEntry | null;
 }
 
 /**
@@ -76,7 +82,7 @@ export interface ObligationView {
   phase: string;
   pos: Span | null;
   /** Where the statement entry this obligation is about begins. */
-  environmentStart?: number;
+  environmentStart?: number | null;
   /** The result type the request asked for, printed. */
   requiredResult?: string;
   rows: ContextRow[];
@@ -134,8 +140,8 @@ const ROLE: Record<string, { title: string; what: string }> = {
     what: "The judgement attempted at this point did not follow from the assumptions available.",
   },
 };
-const roleView = (role: string) =>
-  ROLE[role] || {
+const roleView = (role: string | undefined) =>
+  (role === undefined ? undefined : ROLE[role]) || {
     title: "Obligation at this point",
     what: "This obligation's source role is not one this reader knows; it is shown as recorded.",
   };
@@ -151,8 +157,8 @@ const KIND_LABEL: Record<string, string> = {
 // A type is a list of labels into the record's own table, read as their union
 // and printed in the one surface syntax every claim is shown in: lifted into
 // the structural encoding and printed from there.
-function typeText(types: any, labels: any, depth = 3) {
-  if (!Array.isArray(labels)) return "(no type recorded)";
+function typeText(types: unknown, labels: unknown, depth = 3): string {
+  if (!isList(labels)) return "(no type recorded)";
   return surface.printType(surface.lift(types, labels, null, depth)).text;
 }
 
@@ -163,18 +169,20 @@ function typeText(types: any, labels: any, depth = 3) {
 // so a position should never reach a reader. The `slot N` fallback below is for
 // a record that arrives without a source map at all; seeing one means the
 // producer broke that invariant.
-function bindingText(descriptor: any, source: string) {
-  if (!descriptor) return "";
-  if (descriptor.name) return descriptor.name;
-  if (!Array.isArray(descriptor.span)) return "";
-  return String(source || "")
-    .slice(descriptor.span[0], descriptor.span[1])
+function bindingText(descriptor: unknown, source: string): string {
+  if (!isRecord(descriptor)) return "";
+  if (descriptor.name) return String(descriptor.name);
+  const span = descriptor.span;
+  if (!isList(span) || typeof span[0] !== "number" || typeof span[1] !== "number")
+    return "";
+  return source
+    .slice(span[0], span[1])
     .replace(/\s+/g, " ")
     .trim();
 }
 
-const bindingsOf = (map: any, source: string) =>
-  (map?.context || []).map((d: any) => bindingText(d, source));
+const bindingsOf = (map: { context?: unknown } | null, source: string): string[] =>
+  (isList(map?.context) ? map.context : []).map((d) => bindingText(d, source));
 
 /* ---------- current-content requirements ---------- */
 // A slot's type is its standing contract; knowledge is a statement about the
@@ -182,15 +190,20 @@ const bindingsOf = (map: any, source: string) =>
 // differ here, so these facts are shown in their own right rather than folded
 // into the slot table. See ../OBLIGATION-DIAGNOSTICS.md.
 const LITERAL: Record<string, string> = { nul: "null", tru: "true", fls: "false" };
-const contentsText = (contents: any): any =>
-  !Array.isArray(contents) || !contents.length
+const contentsText = (contents: unknown): string =>
+  !isList(contents) || !contents.length
     ? "never"
-    : contents.map((l) => LITERAL[l] || String(l)).join(" | ");
+    : contents.map((l) => LITERAL[String(l)] || String(l)).join(" | ");
 
-function knowledgeRows(knowledge: any, names: string[] = []) {
+/* A record carries all three lists; a caller reading one part of a record it
+ * built itself need not, and the reads below already say so. */
+function knowledgeRows(
+  knowledge: Partial<HeapKnowledge> | null,
+  names: string[] = [],
+): KnowledgeRow[] {
   if (!knowledge) return [];
-  const of = (slot: any) => names[slot] || "slot " + slot;
-  const rows: any[] = [];
+  const of = (slot: number) => names[slot] || "slot " + slot;
+  const rows: KnowledgeRow[] = [];
   for (const f of knowledge.cells || [])
     rows.push({ slot: f.slot, binding: of(f.slot), what: "holds " + contentsText(f.contents) });
   for (const f of knowledge.values || [])
@@ -209,33 +222,38 @@ function knowledgeRows(knowledge: any, names: string[] = []) {
 
 // Terms are shown technically: this is the calculus's own encoding, and naming
 // it after a source construct would be a guess.
-function termText(term: any): any {
+function termText(term: Term): string {
   if (typeof term === "string") return term;
-  if (term && term.var) return "slot " + term.var.i;
+  if ("var" in term) return "slot " + term.var.i;
   return JSON.stringify(term);
 }
 
 /* ---------- one record, as rows a panel can show ---------- */
-const sameType = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
+const sameType = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 // The destination map acts after the result is pushed: target slot i takes
 // source slot mapping[i]. A null mapping selects the available context as it is.
-function mapContext(available: any, mapping: any) {
-  if (!Array.isArray(mapping)) return available;
+function mapContext(available: Labels[], mapping: number[] | null): Labels[] {
+  if (mapping === null) return available;
   return mapping.map((slot) => available[slot]);
 }
 
-function obligationView(ob: any, source = "") {
-  if (!ob) return null;
-  const types = ob.types || [];
+function obligationView(ob: ObligationDiagnostic, source = ""): ObligationView {
+  const types = ob.types;
   // An edge fails at what its destination required, so a destination role that
   // names something specific describes it. A generic destination leaves the
-  // source end to describe it, which is where a dispatch role sits.
-  const specific = (o: any) => o && o.role && o.role !== "node-typing";
-  const sourceMap =
-    ob.kind === "edge-coverage" && specific(ob.destination?.sourceMap)
-      ? ob.destination.sourceMap
-      : ob.source?.sourceMap || ob.sourceMap || null;
+  // source end to describe it, which is where a dispatch role sits. A
+  // production failure is about the certificate rather than a point, so it
+  // names no place at all.
+  const specific = (o: SourceMapEntry | null) => !!o && !!o.role && o.role !== "node-typing";
+  const sourceMap: SourceMapEntry | null =
+    ob.kind === "production-failure"
+      ? null
+      : ob.kind === "expression-claim"
+        ? ob.sourceMap
+        : ob.kind === "edge-coverage" && specific(ob.destination.sourceMap)
+          ? ob.destination.sourceMap
+          : ob.source.sourceMap;
   const role = roleView(sourceMap?.role);
   const view: ObligationView = {
     kind: ob.kind,
@@ -243,7 +261,7 @@ function obligationView(ob: any, source = "") {
     role: sourceMap?.role || "",
     title: role.title,
     what: role.what,
-    id: ob.id || "",
+    id: ob.kind === "production-failure" ? "" : ob.id,
     fuel: ob.fuel,
     phase: ob.phase,
     pos: sourceMap?.pos || null,
@@ -263,11 +281,11 @@ function obligationView(ob: any, source = "") {
   };
 
   if (ob.kind === "edge-coverage") {
-    const available = ob.transfer?.available || [];
-    const required = ob.destination?.claim?.context || [];
-    const mapped = mapContext(available, ob.transfer?.target?.mapping);
-    const names = bindingsOf(ob.destination?.sourceMap, source);
-    view.rows = required.map((need: any, slot: any) => ({
+    const available = ob.transfer.available;
+    const required = ob.destination.claim?.context || [];
+    const mapped = mapContext(available, ob.transfer.target.mapping);
+    const names = bindingsOf(ob.destination.sourceMap, source);
+    view.rows = required.map((need, slot) => ({
       slot,
       binding: names[slot] || "slot " + slot,
       have: typeText(types, mapped[slot]),
@@ -276,17 +294,17 @@ function obligationView(ob: any, source = "") {
     }));
     view.conclusion = "";
     view.endpoints = [
-      { end: "from", sourceMap: ob.source?.sourceMap || null, label: ob.source?.label },
+      { end: "from", sourceMap: ob.source.sourceMap, label: ob.source.label },
       {
         end: "to",
-        sourceMap: ob.destination?.sourceMap || null,
-        label: ob.transfer?.target?.label ?? ob.destination?.label,
+        sourceMap: ob.destination.sourceMap,
+        label: ob.transfer.target.label,
       },
     ];
     // An observation is the premise the selected edge carries, never a statement
     // that execution took it. Boolean and tag dispatch both observe slot 0.
-    const observed = ob.transfer?.booleanObservation;
-    const tag = ob.transfer?.tagObservation;
+    const observed = ob.transfer.booleanObservation;
+    const tag = ob.transfer.tagObservation;
     if (observed === true || observed === false)
       view.observation =
         "This edge carries the case where " +
@@ -303,7 +321,7 @@ function obligationView(ob: any, source = "") {
         " on " +
         (names[tag.slot ?? 0] || "slot " + (tag.slot ?? 0)) +
         ". That is the edge's premise, not a claim that execution took it.";
-    view.knowledge = knowledgeRows(ob.destination?.requiredKnowledge, names);
+    view.knowledge = knowledgeRows(ob.destination.requiredKnowledge, names);
     const differing = view.rows.find((r) => r.differs);
     // Nothing here says which end is at fault; it says where the two ends stop
     // agreeing, which is all the record supports.
@@ -315,17 +333,22 @@ function obligationView(ob: any, source = "") {
         : view.knowledgeIsTheDifference
           ? "Every binding's contract already agrees. What this edge had to establish beyond them is the current-content requirement above."
           : "The available context and the destination's claim agree on every binding.") +
-      (ob.edgeIndex === undefined
-        ? ""
-        : " Both branch edges can share a destination; this is edge " +
-          ob.edgeIndex +
-          ".");
+      " Both branch edges can share a destination; this is edge " +
+      ob.edgeIndex +
+      ".";
     return view;
   }
 
-  const sequent = ob.sequent || {};
+  // Nothing was attempted at a point: a production failure is about the
+  // certificate as a whole, and `presentObligation` says what it was.
+  if (ob.kind === "production-failure") {
+    view.conclusion = typeText(types, null);
+    return view;
+  }
+
+  const sequent = ob.sequent;
   const names = bindingsOf(sourceMap, source);
-  view.rows = (sequent.context || []).map((entry: any, slot: any) => ({
+  view.rows = sequent.context.map((entry, slot) => ({
     slot,
     binding: names[slot] || "slot " + slot,
     have: typeText(types, entry),
@@ -338,8 +361,11 @@ function obligationView(ob: any, source = "") {
   }));
   view.term = termText(sequent.term);
   view.conclusion = typeText(types, sequent.type);
-  // A node obligation records its own required facts, when it has any.
-  view.knowledge = knowledgeRows(ob.source?.requiredKnowledge, names);
+  // A node obligation records its own required facts, when it has any. A
+  // closure's expression claim is raised away from the graph and has no node to
+  // carry them.
+  view.knowledge =
+    ob.kind === "node-typing" ? knowledgeRows(ob.source.requiredKnowledge, names) : [];
   return view;
 }
 
@@ -362,7 +388,7 @@ export default obligationReader;
  * across calls/writes. JSON terms are the complete native term language.
  */
 export function presentObligation(ob: ObligationDiagnostic, source: string): ObligationView {
-  const view = obligationReader.obligationView(ob,source)!;
+  const view = obligationReader.obligationView(ob,source);
   view.graph = graphDefinitions(decodeGraph(ob.types));
   if (ob.kind === "production-failure") {
     view.title = "Certificate production stopped";
@@ -372,7 +398,7 @@ export function presentObligation(ob: ObligationDiagnostic, source: string): Obl
   const context = (entries: number[][], prefix = "slot") => entries.map((t,i) => `${prefix} ${i}: ${printLabels(t)}`);
   let assumptions: string[], conclusion: string;
   if (ob.kind === "edge-coverage") {
-    const t = ob.transfer!;
+    const t = ob.transfer;
     const differing = view.rows.find(r => r.differs);
     if (differing?.need) {
       view.focus = {subject:differing.binding,available:differing.have,required:differing.need,requiredLabel:"Required at destination"};
@@ -391,7 +417,7 @@ export function presentObligation(ob: ObligationDiagnostic, source: string): Obl
     conclusion = `transfer to node ${t.target.label} establishes { ${destination.join(", ")} }`;
     if (ob.destination.requiredKnowledge) conclusion += ` and heap ${JSON.stringify(ob.destination.requiredKnowledge)}`;
   } else {
-    const q = ob.sequent!;
+    const q = ob.sequent;
     const slot = typeof q.term === "object" && "var" in q.term ? q.term.var.i : undefined;
     const row = slot === undefined ? undefined : view.rows.find(r => r.slot === slot);
     if (row) {

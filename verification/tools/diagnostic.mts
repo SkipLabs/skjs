@@ -91,7 +91,7 @@ export interface NodeTyping extends Common {
   kind: "node-typing";
   id: string;
   source: DiagnosticNode;
-  sequent: Sequent | null;
+  sequent: Sequent;
 }
 
 /** An edge's destination was not justified by what its source carries. */
@@ -101,7 +101,7 @@ export interface EdgeCoverage extends Common {
   edgeIndex: number;
   source: DiagnosticNode;
   destination: DiagnosticNode;
-  transfer: DiagnosticTransfer | null;
+  transfer: DiagnosticTransfer;
 }
 
 /**
@@ -114,7 +114,7 @@ export interface ExpressionClaimFailure extends Common {
   kind: "expression-claim";
   id: string;
   sourceMap: SourceMapEntry;
-  sequent: Sequent | null;
+  sequent: Sequent;
 }
 
 /** Something was produced and then rejected by the independent check. */

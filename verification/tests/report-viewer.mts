@@ -12,9 +12,16 @@ import {
 } from "../report-viewer/model.mts";
 import * as marks from "../report-viewer/marks.mts";
 import surface from "../tools/claim-text.mts";
-import { decodeGraph, parseGraph, printGraph, graphDefinitions } from "../tools/type-graph.mts";
+import { decodeGraph, parseGraph, printGraph, graphDefinitions, type Labels, type TypeGraph } from "../tools/type-graph.mts";
+import type {
+  EdgeCoverage,
+  NodeTyping,
+  ObligationDiagnostic,
+  SourceMapEntry,
+} from "../tools/diagnostic.mts";
 import { decodeTerm, parseTerm, printTerm } from "../tools/calculus.mts";
 import ob from "../tools/diagnostic-view.mts";
+import { readDiagnostic } from "../tools/diagnostic.mts";
 // Plain JavaScript modules; the reader loads these in a browser too.
 const require = createRequire(import.meta.url);
 const source =
@@ -612,10 +619,17 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   assert.equal(ob.termText("nul"), "nul");
 }
 
+const recorded = (d: ObligationDiagnostic) =>
+  "obligation-diagnostic: " + JSON.stringify(d);
+
 // A return contract: the claim can be sound and still not establish the result.
 {
-  const types = [["nul"], [{ boolLit: { value: true } }], [{ boolLit: { value: false } }]];
-  const record = {
+  const types: TypeGraph = [["nul"], [{ boolLit: { value: true } }], [{ boolLit: { value: false } }]];
+  const sourceMap: SourceMapEntry =
+    { pos: [370, 374], role: "return-contract", environmentStart: 363, context: [] };
+  // Written as the record the decoder admits, so that a field it requires
+  // cannot quietly go missing from what the reader is tested on.
+  const record: NodeTyping = {
     kind: "node-typing",
     phase: "proof-search",
     outcome: "not-established",
@@ -628,41 +642,45 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
       label: 1,
       node: { continuation: "ret", expression: { var: { i: 0 } } },
       claim: { context: [[1, 2], [1, 2]], type: [1] },
-      sourceMap: { pos: [370, 374], role: "return-contract", environmentStart: 363 },
+      sourceMap,
+      requiredKnowledge: null,
     },
   };
+  // The fixture is a record the decoder admits, not a shape invented here: what
+  // the reader is typed against and what arrives are the same thing.
+  assert(readDiagnostic(recorded(record)), "the decoder refused this fixture");
   const view = ob.obligationView(record);
-  assert(view, "the reader made nothing of a valid record");
   assert.equal(view.title, "Return contract");
   assert.equal(view.role, "return-contract");
   assert.equal(view.conclusion, "true");
   assert.equal(view.requiredResult, "true");
   assert.equal(view.term, "slot 0");
   assert.deepEqual(
-    view.rows.map((r: any) => [r.slot, r.have, r.note]),
+    view.rows.map((r) => [r.slot, r.have, r.note]),
     [
       [0, "boolean", "the value being returned"],
       [1, "boolean", ""],
     ],
   );
   assert.equal(view.environmentStart, 363);
-  assert.equal(ob.obligationView(null), null);
+  const inRole = (role: string): NodeTyping =>
+    ({ ...record, source: { ...record.source, sourceMap: { ...sourceMap, role } } });
   // An unknown role stays generic rather than being guessed into a story.
-  const odd = structuredClone(record);
-  odd.source.sourceMap.role = "future-role";
-  assert.equal(ob.obligationView(odd)!.title, "Obligation at this point");
-  assert.match(ob.obligationView(odd)!.what, /not one this reader knows/);
+  const odd = ob.obligationView(inRole("future-role"));
+  assert.equal(odd.title, "Obligation at this point");
+  assert.match(odd.what, /not one this reader knows/);
   // Only a return contract names slot 0 as the returned value.
-  const plain = structuredClone(record);
-  plain.source.sourceMap.role = "expression-claim";
-  assert.equal(ob.obligationView(plain)!.rows[0].note, "");
+  assert.equal(ob.obligationView(inRole("expression-claim")).rows[0].note, "");
 }
 
 // An edge: the destination map acts on the available context, and the slots
 // that differ are the ones to look at. The observation is the edge's premise.
 {
-  const types = [["nul"], [{ boolLit: { value: true } }], [{ boolLit: { value: false } }]];
-  const record = {
+  const types: TypeGraph = [["nul"], [{ boolLit: { value: true } }], [{ boolLit: { value: false } }]];
+  const at = (pos: Span, role: string, environmentStart: number | null = null): SourceMapEntry =>
+    ({ pos, role, environmentStart, context: [] });
+  const required: Labels[] = [[1], [0]];
+  const record: EdgeCoverage = {
     kind: "edge-coverage",
     phase: "proof-search",
     outcome: "not-established",
@@ -670,23 +688,27 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
     id: "edge:8:1",
     types,
     edgeIndex: 1,
-    source: { label: 8, sourceMap: { pos: [10, 14], role: "expression-claim" } },
+    source: { label: 8, sourceMap: at([10, 14], "expression-claim"),
+      node: null, claim: null, requiredKnowledge: null },
     destination: {
       label: 7,
-      claim: { context: [[1], [0]] },
-      sourceMap: { pos: [20, 24], role: "node-typing" },
+      claim: { context: required, type: [1] },
+      sourceMap: at([20, 24], "node-typing"),
+      node: null,
+      requiredKnowledge: null,
     },
     transfer: {
       available: [[0], [1, 2], [1]],
       target: { label: 7, mapping: [2, 0] },
       booleanObservation: true,
+      tagObservation: null,
     },
   };
+  assert(readDiagnostic(recorded(record)), "the decoder refused this fixture");
   const view = ob.obligationView(record);
-  assert(view, "the reader made nothing of a valid record");
   assert.equal(view.kindLabel, "edge coverage");
   assert.deepEqual(
-    view.rows.map((r: any) => [r.slot, r.have, r.need, r.differs]),
+    view.rows.map((r) => [r.slot, r.have, r.need, r.differs]),
     [
       [0, "true", "true", false],
       [1, "null", "null", false],
@@ -696,7 +718,7 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   assert.match(view.observation!, /not a claim that execution took it/);
   assert.match(view.note!, /edge 1/);
   assert.deepEqual(
-    view.endpoints.map((e: any) => [e.end, e.sourceMap.pos]),
+    view.endpoints.map((e) => [e.end, e.sourceMap?.pos]),
     [
       ["from", [10, 14]],
       ["to", [20, 24]],
@@ -704,19 +726,14 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   );
   // An edge into a statement checkpoint has no expression claim at its span: it
   // is described by what its destination required, and attaches to that entry.
-  const checkpoint: any = structuredClone(record);
-  checkpoint.source.sourceMap = { pos: [1, 5], role: "binding-annotation" };
-  checkpoint.destination.sourceMap = {
-    pos: [10, 20],
-    environmentStart: 10,
-    role: "heap-observation",
-  };
+  const checkpoint = structuredClone(record);
+  checkpoint.source.sourceMap = at([1, 5], "binding-annotation");
+  checkpoint.destination.sourceMap = at([10, 20], "heap-observation", 10);
   const checkpointView = ob.obligationView(checkpoint);
-  assert(checkpointView, "the reader made nothing of a valid record");
   assert.equal(checkpointView.title, "Current-content assertion");
   assert.equal(checkpointView.environmentStart, 10);
   assert.deepEqual(
-    checkpointView.endpoints.map((e: any) => e.sourceMap.pos),
+    checkpointView.endpoints.map((e) => e.sourceMap?.pos),
     [
       [1, 5],
       [10, 20],
@@ -727,7 +744,7 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   // shown, and named as the remaining difference only when they are one.
   assert.deepEqual(checkpointView.knowledge, []);
   const observed = structuredClone(checkpoint);
-  observed.transfer.available = observed.destination.claim.context;
+  observed.transfer.available = required;
   observed.transfer.target.mapping = null;
   observed.destination.requiredKnowledge = {
     cells: [{ slot: 1, contents: ["tru"] }],
@@ -735,13 +752,12 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
     links: [{ cell: 1, value: 0, alias: false }],
   };
   const observedView = ob.obligationView(observed);
-  assert(observedView, "the reader made nothing of a valid record");
   assert.equal(
-    observedView.rows.every((r: any) => !r.differs),
+    observedView.rows.every((r) => !r.differs),
     true,
   );
   assert.deepEqual(
-    observedView.knowledge.map((r: any) => [r.binding, r.what]),
+    observedView.knowledge.map((r) => [r.binding, r.what]),
     [
       ["slot 1", "holds true"],
       ["slot 0", "is null | false"],
@@ -754,7 +770,6 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   const both = structuredClone(observed);
   both.transfer.available = [[2], [0]];
   const bothView = ob.obligationView(both);
-  assert(bothView, "the reader made nothing of a valid record");
   assert.equal(bothView.knowledgeIsTheDifference, false);
   assert.match(bothView.note!, /slot 0 is where/);
   assert.equal(bothView.knowledge.length, 3);
@@ -767,7 +782,7 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   assert.deepEqual(
     ob
       .knowledgeRows({ cells: [{ slot: 1, contents: ["tru"] }] }, ["r", "cell"])
-      .map((x: any) => [x.binding, x.what]),
+      .map((x) => [x.binding, x.what]),
     [["cell", "holds true"]],
   );
   // A descriptor is a name, or the expression whose value the binding holds.
@@ -783,12 +798,11 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   assert.equal(ob.contentsText([]), "never");
 
   // Tag dispatch observes the same slot, and reads the same way.
-  const tagged: any = structuredClone(record);
-  delete tagged.transfer.booleanObservation;
+  const tagged = structuredClone(record);
+  tagged.transfer.booleanObservation = null;
   tagged.transfer.tagObservation = { test: "nul", answer: false, slot: 0 };
-  tagged.source.sourceMap.role = "tag-dispatch";
+  tagged.source.sourceMap = at([10, 14], "tag-dispatch");
   const tagView = ob.obligationView(tagged);
-  assert(tagView, "the reader made nothing of a valid record");
   assert.equal(tagView.title, "Tag dispatch");
   assert.match(tagView.observation!, /tag test nul answers false on slot 0/);
   assert.match(tagView.observation!, /not a claim that execution took it/);
@@ -797,7 +811,7 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   const mismatched = structuredClone(record);
   mismatched.transfer.target.mapping = [0, 1];
   assert.deepEqual(
-    ob.obligationView(mismatched)!.rows.map((r: any) => r.differs),
+    ob.obligationView(mismatched).rows.map((r) => r.differs),
     [true, true],
   );
 }
