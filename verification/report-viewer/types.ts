@@ -1,4 +1,6 @@
 import type { ObligationView } from "../tools/diagnostic-view.mts";
+import type { SkjsClaims } from "../tools/skjs-claims.mts";
+import type { SourceClaims } from "../tools/source-claims.mts";
 import type { Span } from "../tools/span.mts";
 // The report the reader displays.
 //
@@ -192,13 +194,20 @@ export interface CollectionRun {
   verified: boolean;
 }
 
-/** An editable copy of the producer's claims, kept beside the original. */
-export interface Candidate {
-  format: "skjs" | "source-claims";
-  file: string;
-  sourceSha256: string;
-  claims: unknown;
-}
+/** An editable copy of the producer's claims, kept beside the original. The
+ * format says which document the copy is, and each is declared where it is
+ * owned: the producer's own export in tools/skjs-claims.mts, the normalized
+ * sidecar in tools/source-claims.mts. A candidate arriving from outside is
+ * checked for its source identity, not its shape; what actually validates the
+ * document is the verifier the report is built by. */
+export type Candidate =
+  | { format: "skjs"; file: string; sourceSha256: string; claims: SkjsClaims }
+  | {
+      format: "source-claims";
+      file: string;
+      sourceSha256: string;
+      claims: SourceClaims;
+    };
 
 /** What the server hands the page. */
 export interface Bundle {

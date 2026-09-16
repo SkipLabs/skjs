@@ -9,6 +9,23 @@ import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
+import type { Bundle, Candidate } from "./types.ts";
+
+/** What the page posts: the candidate to check or keep, and — for a draft —
+ * what to do with it. Discarding one names the source alone, and everything
+ * here arrives from a browser, so nothing is assumed of it. */
+interface CandidateRequest {
+  candidate?: Candidate;
+  file?: string;
+  remove?: boolean;
+}
+
+/** What the child processes below are run with, decided once. */
+interface RunOptions {
+  cwd: string;
+  timeout: number;
+  maxBuffer: number;
+}
 
 const execFile = promisify(execFileCb);
 const __dirname = path.dirname(import.meta.filename);
@@ -43,7 +60,7 @@ let listing: { at: number; files: string[] } = { at: 0, files: [] };
 async function sources() {
   if (Date.now() - listing.at < 10000) return listing.files;
   const files: string[] = [];
-  const walk = async (dir: any) => {
+  const walk = async (dir: string) => {
     if (files.length > 20000) return;
     let entries;
     try {
@@ -67,7 +84,7 @@ async function sources() {
   return files;
 }
 
-async function repositoryPath(relative: any) {
+async function repositoryPath(relative: string) {
   const resolved = await fs
     .realpath(path.resolve(REPO, relative))
     .catch(() => {
@@ -97,7 +114,7 @@ const draftPath = (source: string) => source.replace(/\.tsx?$/, "") + ".candidat
  * be shown — but saying nothing would leave a file in the tree that silently
  * does nothing, so what is wrong with it is reported instead.
  */
-async function readDraft(absolute: any, sourceSha256: any) {
+async function readDraft(absolute: string, sourceSha256: string) {
   const at = draftPath(absolute);
   const text = await fs.readFile(at, "utf8").catch(() => null);
   if (text === null) return null;
@@ -130,7 +147,12 @@ async function hasVerifier() {
 // through the same verifier. It states types and no current-content
 // assertions, so a cell read after a write fails here by its own limits;
 // tests/tsc-claims/README.md says which failures are which.
-async function tscAnalyse(relative: any, source: string, tmp: any, options: any) {
+async function tscAnalyse(
+  relative: string,
+  source: string,
+  tmp: string,
+  options: RunOptions,
+): Promise<Bundle> {
   const startedAt = Date.now();
   try {
     const claims = path.join(tmp, "tsc-claims.mtson");
@@ -191,7 +213,7 @@ async function tscAnalyse(relative: any, source: string, tmp: any, options: any)
   }
 }
 
-async function analyse(relative: any, producer = "skjs") {
+async function analyse(relative: string, producer = "skjs"): Promise<Bundle> {
   const bundle = await collect(relative, producer);
   // The draft, where one is beside the source and is about this source. The
   // reader decides what to do with it; the server only reports that it exists.
@@ -202,7 +224,7 @@ async function analyse(relative: any, producer = "skjs") {
   return kept ? { ...bundle, ...kept } : bundle;
 }
 
-async function collect(relative: any, producer = "skjs") {
+async function collect(relative: string, producer = "skjs"): Promise<Bundle> {
   const sourcePath = await repositoryPath(relative);
   const source = await fs.readFile(sourcePath, "utf8");
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "claim-report-"));
@@ -319,7 +341,10 @@ async function collect(relative: any, producer = "skjs") {
 
 // `verify` exists for callers that want attachment validation on its own; the
 // HTTP route never passes it, so nothing a browser asks for skips checking.
-async function candidateReport(candidate: any, verify = true) {
+async function candidateReport(
+  candidate: Candidate | undefined,
+  verify = true,
+): Promise<Bundle> {
   const startedAt = Date.now();
   if (
     !candidate ||
@@ -382,7 +407,9 @@ async function candidateReport(candidate: any, verify = true) {
   }
 }
 
-async function readCandidate(req: any) {
+async function readCandidate(
+  req: http.IncomingMessage,
+): Promise<CandidateRequest> {
   if (
     req.method !== "POST" ||
     !req.headers["content-type"]?.startsWith("application/json")
@@ -409,16 +436,16 @@ const assets = new Map([
   ["/reader.css", ["app/dist/reader.css", "text/css"]],
 ]);
 const send = (
-  res: any,
+  res: http.ServerResponse,
   status: number,
-  data: any,
+  data: unknown,
   type = "application/json",
 ) => {
   res.writeHead(status, {
     "content-type": type + "; charset=utf-8",
     "cache-control": "no-store",
   });
-  res.end(type === "application/json" ? JSON.stringify(data) : data);
+  res.end(type === "application/json" ? JSON.stringify(data) : String(data));
 };
 
 // Bound concurrency: expensive runs do not block file loading or health checks.

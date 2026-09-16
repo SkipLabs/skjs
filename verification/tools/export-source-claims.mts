@@ -5,16 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
-import type { Span } from "./span.mts";
-
-/* One file's entry in the producer's own claims document, as this tool reads
- * it: the manifest records which functions the producer spoke about and where
- * their names are. `collection` is the producer's own progress record, copied
- * across without being read. */
-interface ProducerFile {
-  file: string;
-  functions: {name: string, namePos: Span, collection?: unknown}[];
-}
+import type { SkjsClaims } from "./skjs-claims.mts";
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 const hash = (x: crypto.BinaryLike) =>
@@ -41,7 +32,7 @@ export function main(args: string[]) {
   if(!opts.claims)throw Error("missing --claims");
   const output=opts.out||sourcePath.replace(/\.ts$/,"")+".source-claims.json",manifest=output+".conversion.json";
   if(fs.existsSync(output)||fs.existsSync(manifest))throw Error("output already exists; choose another --out path");
-  const source=fs.readFileSync(sourcePath,"utf8"),raw=fs.readFileSync(opts.claims,"utf8"),originalClaims: ProducerFile[]=JSON.parse(raw);
+  const source=fs.readFileSync(sourcePath,"utf8"),raw=fs.readFileSync(opts.claims,"utf8"),originalClaims: SkjsClaims=JSON.parse(raw);
   const parser=path.resolve(__dirname,"fragment-parse.mts"),temp=fs.mkdtempSync(path.join(os.tmpdir(),"source-export-"));
   const diagnostics=opts.diagnostics?fs.readFileSync(opts.diagnostics,"utf8"):null;
   try {

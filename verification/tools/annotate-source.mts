@@ -22,7 +22,8 @@ import type {
   SourceClaims,
 } from "./source-claims.mts";
 import type { Span } from "./span.mts";
-import type { Collection, Failure, Result } from "../report-viewer/types.ts";
+import type { Failure, Result } from "../report-viewer/types.ts";
+import type { SkjsFile, SkjsFunction } from "./skjs-claims.mts";
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 // The display helpers beside this file are plain JavaScript modules.
 const require = createRequire(import.meta.url);
@@ -66,9 +67,10 @@ interface Unavailable {
   reason: string;
 }
 /**
- * Collection metadata as a document carries it. `Collection` in
- * report-viewer/types.ts names the same fields once a report has been read
- * back; a document arriving here has not been checked against it.
+ * Collection metadata as a report document carries it, which is not yet
+ * checked: `Collection` in report-viewer/types.ts names the same fields once a
+ * report has been read back, and `SkjsCollection` names them as the producer's
+ * own export carries them.
  */
 interface DraftCollection {
   completion: string;
@@ -107,31 +109,9 @@ interface ReportInput {
  * function and carries the producer's own collection metadata. */
 interface DraftFunction extends InputFunction {
   signature: { params: { name: string; type: unknown }[]; retType: unknown };
-  collection?: Collection;
 }
 interface DraftReport extends ReportInput {
   functions: DraftFunction[];
-}
-
-/**
- * One file's worth of SKJS's own export, as `fromSkjs` reads it. Nothing in
- * the repo types that document, so these are the fields this file reads of it.
- * A claimed type is whatever the producer encoded, which `typeText` decodes.
- */
-interface SkjsFunction {
-  name: string;
-  namePos: Span;
-  params: { name: string; type: unknown }[];
-  retType: unknown;
-  envs: { pos: Span; vars: { name: string; type: unknown }[] }[];
-  exprs: { pos: Span; type: unknown }[];
-  collection?: Collection;
-  /** Advisory, and validated before use: shape unknown until then. */
-  unavailableTypes?: unknown[];
-}
-interface SkjsFile {
-  file: string;
-  functions: SkjsFunction[];
 }
 
 /**

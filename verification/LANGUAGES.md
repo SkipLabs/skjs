@@ -36,6 +36,7 @@ missing key is a type error rather than a run-time refusal.
 | **Request** — the whole verification request | [RequestJson.lean](lean/Verification/ExperimentState/RequestJson.lean) | — | extraction |
 | **Evidence** — certificates the checker validates | [ProgramCertificates.lean](lean/Verification/ExperimentState/ProgramCertificates.lean), [PositiveCertificates.lean](lean/Verification/ExperimentState/PositiveCertificates.lean) | — | proof search |
 | **Diagnostic** — why an attempt did not succeed | in [RequestJson.lean](lean/Verification/ExperimentState/RequestJson.lean) | [diagnostic.mts](tools/diagnostic.mts), rendered by [diagnostic-view.mts](tools/diagnostic-view.mts) | the verifier |
+| **SKJS claims** — what SKJS's checker believes at each site of one file | decoded by `decodeClaims` in [Fragment.lean](lean/Verification/ExperimentState/Fragment.lean) | [skjs-claims.mts](tools/skjs-claims.mts) | SKJS |
 | **SKJS operations** — the closed judgments SKJS records | checked by [SkjsOperations.lean](lean/Verification/ExperimentState/SkjsOperations.lean) | [skjs-operations.mts](tools/skjs-operations.mts) | SKJS |
 
 Defining no language, and saying so: [Decode.lean](lean/Verification/ExperimentState/Decode.lean)
@@ -48,6 +49,12 @@ Defining no language, and saying so: [Decode.lean](lean/Verification/ExperimentS
   it, and moving it to buy a matching filename would separate a definition from
   the theorems about it. The mirror is named for the language; the Lean side is
   named for the proof.
+- **SKJS claims** is produced outside this repository, so its TypeScript file
+  is what the repository reads of the document rather than the document's own
+  definition: a field SKJS adds is ignored, and one it renames is a compile
+  error at every reader at once. Its Lean side is `decodeClaims` inside
+  `Fragment.lean`, beside the tree the claims are attached to, rather than a
+  module of its own.
 - **SKJS operations** has a Lean module with the same name that is a *checker*,
   not a mirror. It verifies these judgments rather than defining them, so by
   rule 3 it is a consumer that happens to read this language rather than a
@@ -60,11 +67,6 @@ Defining no language, and saying so: [Decode.lean](lean/Verification/ExperimentS
 
 ## Known gaps
 
-- **Nothing types SKJS's raw export document.** `skjs-operations.mts` declares
-  one record from it and `source-claims.mts` declares the independent sidecar,
-  but the raw document — functions, parameters, entries, expressions — is read
-  structurally, so tools index into it untyped. A field SKJS renamed would
-  surface as `undefined` at a use site rather than as a compile error.
 - **The producer direction is unguarded.** The case tables above protect readers
   of a language. A producer that fails to emit a new case degrades to a refusal,
   which is a worse outcome reported honestly rather than a wrong one, but it is
