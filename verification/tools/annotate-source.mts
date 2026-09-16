@@ -24,6 +24,7 @@ import type {
 import type { Span } from "./span.mts";
 import type { Failure, Result } from "../report-viewer/types.ts";
 import type { SkjsFile, SkjsFunction } from "./skjs-claims.mts";
+import type { ConversionManifest } from "./export-source-claims.mts";
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 // The display helpers beside this file are plain JavaScript modules.
 const require = createRequire(import.meta.url);
@@ -114,23 +115,7 @@ interface DraftReport extends ReportInput {
   functions: DraftFunction[];
 }
 
-/**
- * The manifest `export-source-claims.mts` writes beside a converted sidecar.
- * Declared here so the fields this tool reads are checked rather than assumed:
- * a field that is renamed or dropped upstream fails to compile here.
- */
-interface ConversionManifest {
-  kind: "skjs-source-claim-conversion";
-  source: { file: string; sha256: string };
-  sidecarSha256: string;
-  originalClaims: SkjsFile[];
-  omissions: {
-    function: string;
-    namePos: Span;
-    site?: { kind: string; pos: Span };
-    reason: string;
-  }[];
-}
+
 
 /** One site where a candidate's claim differs from its baseline. */
 interface ClaimChange {
@@ -412,9 +397,11 @@ function attachConversion(
     for(const omission of conversion.omissions) {
       if(omission.function!==f.name||JSON.stringify(omission.namePos)!==JSON.stringify(f.namePos))continue;
       const site=omission.site;
-      if(site?.kind==="expression" && old.expressions.some(e=>JSON.stringify(e.pos)===JSON.stringify(site.pos)) &&
-          !f.expressions.some(e=>JSON.stringify(e.pos)===JSON.stringify(site.pos))) {
-        f.conversionGaps.push({pos:site.pos,status:`expression claim omitted during conversion: ${omission.reason}`});
+      if(typeof site!=="object" || site.kind!=="expression" || !site.pos)continue;
+      const pos=site.pos;
+      if(old.expressions.some(e=>JSON.stringify(e.pos)===JSON.stringify(pos)) &&
+          !f.expressions.some(e=>JSON.stringify(e.pos)===JSON.stringify(pos))) {
+        f.conversionGaps.push({pos,status:`expression claim omitted during conversion: ${omission.reason}`});
       }
     }
   }

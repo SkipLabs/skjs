@@ -5,7 +5,42 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
-import type { SkjsClaims } from "./skjs-claims.mts";
+import type { SkjsClaims, SkjsCollection } from "./skjs-claims.mts";
+import type { Span } from "./span.mts";
+
+/**
+ * The manifest this tool writes beside a converted sidecar: where the
+ * conversion came from, what it refused, and the producer's own claims kept
+ * verbatim. Nothing here is evidence — it records that a conversion ran.
+ */
+export interface ConversionManifest {
+  kind: "skjs-source-claim-conversion";
+  source: { file: string; sha256: string };
+  sourcePath: string;
+  claimsPath: string;
+  claimsSha256: string;
+  sidecarPath: string;
+  sidecarSha256: string;
+  converterSha256: string;
+  /** The functions the producer spoke about, with its own progress record. */
+  functions: { name: string; namePos: Span; collection?: SkjsCollection }[];
+  originalClaims: SkjsClaims;
+  /** What the conversion refused, with the producer's own encoding beside it. */
+  omissions: {
+    function: string;
+    namePos: Span;
+    /** Where the refusal is, as the converter names it: an expression by its
+     * span, an entry by the statement it begins, or the word for a whole
+     * function or a result, which have no site of their own. */
+    site?: { kind: string; pos?: Span; name?: string; start?: number } | string;
+    reason: string;
+    raw?: unknown;
+  }[];
+  /** The producer's own stderr, where the caller supplied it. */
+  diagnostics?: string;
+  diagnosticsPath?: string;
+  diagnosticsSha256?: string;
+}
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 const hash = (x: crypto.BinaryLike) =>
