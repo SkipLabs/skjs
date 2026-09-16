@@ -4,15 +4,29 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import type { Ast, FunctionAst } from "../tools/fragment.mts";
+import type { SkjsClaims } from "../tools/skjs-claims.mts";
+import {
+  at,
+  atom,
+  claimFrom,
+  claimType,
+  expr,
+  fn as functionIn,
+  stmt,
+} from "./edits.mts";
+import { functionOf } from "../tools/skjs-claims.mts";
 
 const [astPath, claimsPath, file, verifier] = process.argv.slice(2);
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "callable-guards-"));
+/** The one `if` this fixture guards with. */
+const guard = (f: FunctionAst) => stmt(at(f.body, 0), "if");
 try {
-  const ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
-  const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
+  const ast: Ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
+  const claims: SkjsClaims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
   const input = path.join(work, "ast"), contract = path.join(work, "claims");
   const evidence = path.join(work, "evidence");
-  const run = (mode: string, a: any, c: any) => {
+  const run = (mode: string, a: Ast, c: SkjsClaims) => {
     fs.writeFileSync(input, JSON.stringify(a));
     fs.writeFileSync(contract, JSON.stringify(c));
     const args = [mode, input, contract, file, evidence];
@@ -26,20 +40,26 @@ try {
     assert.equal(r.status, 0, r.stdout + r.stderr);
   }
   for (const [name, edit] of [
-    ["opposite polarity cannot justify invocation", (f: any) => { f.body[0].cond.equal = false; }],
-    ["another same-typed input cannot justify refinement", (f: any) => { f.body[0].cond.e.name = "other"; }],
-  ] as [string, (f: any) => void][]) {
+    ["opposite polarity cannot justify invocation", (f) => {
+      expr(guard(f).cond, "functionTest").equal = false;
+    }],
+    ["another same-typed input cannot justify refinement", (f) => {
+      expr(expr(guard(f).cond, "functionTest").e, "id").name = "other";
+    }],
+  ] as [string, (f: FunctionAst) => void][]) {
     const changed = structuredClone(ast);
-    edit(changed.functions.find((f: any) => f.name === "guardedShape"));
+    edit(functionIn(changed, "guardedShape"));
     for (const mode of ["--check-stateful-source", "--produce-stateful-source"])
       assert.notEqual(run(mode, changed, claims).status, 0, name);
   }
   const forged = structuredClone(claims);
-  const fn = ast.functions.find((f: any) => f.name === "guardedShape");
-  const pos = fn.body[0].then[0].e.callee.pos;
-  const fc = forged.find((b: any) => b.file === file).functions.find((f: any) => f.name === fn.name);
-  const call = fc.exprs.find((e: any) => e.pos[0] === pos[0] && e.pos[1] === pos[1]);
-  call.type.atoms[0].result = {top: false, atoms: [{a: "booleanlit", v: "true"}]};
+  const guarded = functionIn(ast, "guardedShape");
+  const pos = expr(stmt(at(guard(guarded).then, 0), "return").e, "apply").callee.pos;
+  const call = claimFrom(functionOf(forged, file, guarded.name), pos[0]);
+  atom(claimType(call).atoms[0], "function").result = {
+    top: false,
+    atoms: [{ a: "booleanlit", v: "true" }],
+  };
   for (const mode of ["--check-stateful-source", "--produce-stateful-source"])
     assert.notEqual(run(mode, ast, forged).status, 0, "shape cannot invent a more precise callable result");
   console.log("  function guards: both polarities, captured refinement, value test, and forged evidence rejection OK");

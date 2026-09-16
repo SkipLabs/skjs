@@ -6,15 +6,19 @@ import path from "node:path";
 import vm from "node:vm";
 import { spawnSync } from "node:child_process";
 import { stripTypes } from "../tools/strip-types.mts";
+import type { Ast } from "../tools/fragment.mts";
+import type { Field } from "../tools/claim.mts";
+import { functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
+import { at, atom, claimAt, claimType, expr, fn, stmt } from "./edits.mts";
 
 const [astPath, claimsPath, file, verifier] = process.argv.slice(2);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "callable-cells-"));
 try {
-  const source = JSON.parse(fs.readFileSync(astPath, "utf8"));
-  const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
+  const source: Ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
+  const claims: SkjsClaims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
   const astFile = path.join(tmp, "ast"), claimsFile = path.join(tmp, "claims");
   const evidence = path.join(tmp, "evidence");
-  const run = (mode: string, ast: any, supplied: any) => {
+  const run = (mode: string, ast: Ast, supplied: SkjsClaims) => {
     fs.writeFileSync(astFile, JSON.stringify(ast));
     fs.writeFileSync(claimsFile, JSON.stringify(supplied));
     const result = spawnSync(verifier, [mode, astFile, claimsFile, file, evidence,
@@ -27,21 +31,20 @@ try {
     assert.equal(result.status, 0, result.stdout + result.stderr);
   }
   for (const [name, mutate] of [
-    ["callable storage must retain its full argument domain", (field: any) => {
-      field.read.atoms[0].params[0] = {top: false, atoms: [{a: "booleanlit", v: "true"}]};
+    ["callable storage must retain its full argument domain", (field) => {
+      atom(field.read.atoms[0], "function").params[0] =
+        {top: false, atoms: [{a: "booleanlit", v: "true"}]};
     }],
-    ["a replacement cannot change the stored result contract", (field: any) => {
-      field.read.atoms[0].result = {top: false, atoms: [{a: "null"}]};
+    ["a replacement cannot change the stored result contract", (field) => {
+      atom(field.read.atoms[0], "function").result = {top: false, atoms: [{a: "null"}]};
       field.write = structuredClone(field.read);
     }],
-  ] as [string, (field: any) => void][]) {
+  ] as [string, (field: Field) => void][]) {
     const changed = structuredClone(claims);
-    const fn = source.functions.find((f: any) => f.name === "replacedCallback");
-    const fc = changed.find((f: any) => f.file === file).functions.find((f: any) => f.name === fn.name);
-    const receiver = fn.body[2].e.receiver;
-    const claim = fc.exprs.find((e: any) => e.pos[0] === receiver.pos[0] && e.pos[1] === receiver.pos[1]);
-    assert.ok(claim);
-    mutate(claim.type.atoms[0].fields[0]);
+    const replaced = fn(source, "replacedCallback");
+    const receiver = expr(stmt(at(replaced.body, 2), "effect").e, "write").receiver;
+    const claim = claimAt(functionOf(changed, file, replaced.name), receiver.pos);
+    mutate(atom(claimType(claim).atoms[0], "record").fields[0]!);
     for (const mode of ["--check-stateful-source", "--produce-stateful-source"]) {
       const result = run(mode, source, changed);
       assert.notEqual(result.status, 0, `${name}: ${mode} accepted the forged contract`);

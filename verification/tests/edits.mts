@@ -11,6 +11,8 @@
  * the claim fields it writes are `unknown` for exactly that reason.
  */
 import type { Ast, Expr, FunctionAst, Stmt } from "../tools/fragment.mts";
+import type { Span } from "../tools/span.mts";
+import { decodeClaimType, type Atom, type ClaimType } from "../tools/claim.mts";
 import type {
   SkjsClaims,
   SkjsEntry,
@@ -31,12 +33,21 @@ type OfKind<T extends { k: string }, K extends T["k"]> = T extends unknown
     ? T
     : never
   : never;
+type OfTag<T extends { a: string }, K extends T["a"]> = T extends unknown
+  ? K extends T["a"]
+    ? T
+    : never
+  : never;
 
 /** Whether a node carries the tag named, which is what selects its members. */
 const isKind = <T extends { k: string }, K extends T["k"]>(
   node: T,
   k: K,
 ): node is OfKind<T, K> => node.k === k;
+const isTagged = <T extends { a: string }, K extends T["a"]>(
+  node: T,
+  a: K,
+): node is OfTag<T, K> => node.a === a;
 
 /** The statement at a place in a body, as the kind the suite names. */
 export function stmt<K extends Stmt["k"]>(
@@ -62,9 +73,11 @@ export function expr<K extends Expr["k"]>(
 export const fn = (ast: Ast, name: string): FunctionAst =>
   found(`function ${name}`, ast.functions.find((f) => f.name === name));
 
-/** The statement at an index of a body. */
+/** The statement at an index of a body, and the one it ends with. */
 export const at = (body: Stmt[], i: number): Stmt =>
   found(`statement ${i}`, body[i]);
+export const last = (body: Stmt[]): Stmt =>
+  found("statement to end with", body[body.length - 1]);
 
 /* ---------- the claims beside it ---------- */
 
@@ -72,8 +85,15 @@ export const at = (body: Stmt[], i: number): Stmt =>
 export const only = (claims: SkjsClaims, file: string): SkjsFunction =>
   found(`claims for ${file}`, claims.find((f) => f.file === file)?.functions[0]);
 
-/** The claim stated at an expression's own start. */
-export const claimAt = (f: SkjsFunction, start: number): SkjsExpression =>
+/** The claim stated for an expression's whole span. A call and its callee
+ * begin together, so the end is what tells two claims there apart. */
+export const claimAt = (f: SkjsFunction, pos: Span): SkjsExpression =>
+  found(`claim at ${pos.join(":")}`,
+    f.exprs.find((e) => e.pos[0] === pos[0] && e.pos[1] === pos[1]));
+
+/** The claim stated at an expression's own start, where a suite addresses it
+ * by that alone. */
+export const claimFrom = (f: SkjsFunction, start: number): SkjsExpression =>
   found(`claim at ${start}`, f.exprs.find((e) => e.pos[0] === start));
 
 /** The environment stated at a statement entry. */
@@ -88,3 +108,17 @@ export const binding = (
 ): SkjsNamedPoint =>
   found(`claim for ${name} at ${start}`,
     entryAt(f, start).vars.find((v) => v.name === name));
+
+/** What a producer stated at a site, decoded: an alteration changes it as the
+ * claim language of claim.mts, and changes it where it is, so the rest of the
+ * claim stays exactly as the producer wrote it. A claim that does not decode
+ * is this fixture having changed, not something to alter. */
+export const claimType = (claim: { type: unknown }): ClaimType =>
+  decodeClaimType(claim.type);
+
+/** One atom of a claim, as the kind the suite names. */
+export function atom<K extends Atom["a"]>(a: Atom | undefined, k: K): OfTag<Atom, K> {
+  if (a === undefined || !isTagged(a, k))
+    throw Error(`expected a ${k} atom, found ${a?.a ?? "none"}`);
+  return a;
+}

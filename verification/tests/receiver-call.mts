@@ -6,8 +6,15 @@ import path from "node:path";
 import vm from "node:vm";
 import { spawnSync } from "node:child_process";
 import { stripTypes } from "../tools/strip-types.mts";
+import type { Ast, Expr } from "../tools/fragment.mts";
+import { functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
+import { claimAt, expr, last, stmt } from "./edits.mts";
 
 const [astPath, claimsPath, file, verifier] = process.argv.slice(2);
+/** The call with a receiver this fixture ends with. */
+type Received = Extract<Expr, { k: "callWithReceiver" | "bindWithReceiver" }>;
+const received = (a: Ast): Received =>
+  expr(stmt(last(a.functions[0]!.body), "return").e, "callWithReceiver");
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "receiver-call-"));
 try {
   const source = fs.readFileSync(file, "utf8");
@@ -28,10 +35,10 @@ try {
     assert.equal(execute(late, `receiverCall(${seed})`), true);
   }
 
-  const ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
-  const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
+  const ast: Ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
+  const claims: SkjsClaims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
   const input = path.join(work, "ast"), contract = path.join(work, "claims"), evidence = path.join(work, "evidence");
-  const check = (mode: string, a: any, c: any) => {
+  const check = (mode: string, a: Ast, c: SkjsClaims) => {
     fs.writeFileSync(input, JSON.stringify(a));
     fs.writeFileSync(contract, JSON.stringify(c));
     const args = [mode, input, contract, file, evidence];
@@ -45,23 +52,23 @@ try {
     assert.equal(r.status, 0, r.stdout + r.stderr);
   }
   const changed = structuredClone(ast);
-  const call = changed.functions[0].body.at(-1).e;
+  const call = received(changed);
   // A same-typed inert receiver must not reuse evidence for its original write.
   call.receiver = {k: "lit", pos: call.receiver.pos, lit: {a: "booleanlit", v: "true"}};
   assert.notEqual(check("--check-stateful-source", changed, claims).status, 0);
   for (const edit of [
-    (c: any) => c.args.unshift(c.receiver),
-    (c: any) => c.args.pop(),
+    (c: Received) => c.args.unshift(c.receiver),
+    (c: Received) => c.args.pop(),
   ]) {
     const a = structuredClone(ast);
-    edit(a.functions[0].body.at(-1).e);
+    edit(received(a));
     for (const mode of ["--check-stateful-source", "--produce-stateful-source"])
       assert.notEqual(check(mode, a, claims).status, 0, "receiver is excluded from exact actual count");
   }
   const bad = structuredClone(claims);
-  const fc = bad.find((b: any) => b.file === file).functions.find((f: any) => f.name === "receiverCall");
-  const pos = ast.functions[0].body.at(-1).e.receiver.pos;
-  fc.exprs.find((e: any) => e.pos[0] === pos[0] && e.pos[1] === pos[1]).type = {top: false, atoms: [{a: "null"}]};
+  const pos = received(ast).receiver.pos;
+  claimAt(functionOf(bad, file, "receiverCall"), pos).type =
+    {top: false, atoms: [{a: "null"}]};
   for (const mode of ["--check-stateful-source", "--produce-stateful-source"])
     assert.notEqual(check(mode, ast, bad).status, 0, "discarding a receiver value does not discard its claim");
 

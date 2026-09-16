@@ -6,15 +6,19 @@ import path from "node:path";
 import vm from "node:vm";
 import { spawnSync } from "node:child_process";
 import { stripTypes } from "../tools/strip-types.mts";
+import type { Ast } from "../tools/fragment.mts";
+import type { ClaimType } from "../tools/claim.mts";
+import { functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
+import { atom, claimAt, claimType, expr, fn, last, stmt } from "./edits.mts";
 
 const [astPath, claimsPath, file, verifier] = process.argv.slice(2);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "callable-thunks-"));
 try {
-  const source = JSON.parse(fs.readFileSync(astPath, "utf8"));
-  const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
+  const source: Ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
+  const claims: SkjsClaims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
   const astFile = path.join(tmp, "ast"), claimsFile = path.join(tmp, "claims");
   const evidence = path.join(tmp, "evidence");
-  const run = (mode: string, ast: any, supplied: any) => {
+  const run = (mode: string, ast: Ast, supplied: SkjsClaims) => {
     fs.writeFileSync(astFile, JSON.stringify(ast));
     fs.writeFileSync(claimsFile, JSON.stringify(supplied));
     const result = spawnSync(verifier, [mode, astFile, claimsFile, file, evidence,
@@ -26,22 +30,20 @@ try {
     const result = run(mode, source, claims);
     assert.equal(result.status, 0, result.stdout + result.stderr);
   }
-  const fn = source.functions.find((f: any) => f.name === "returnedThunk");
-  const call = fn.body.at(-1).e;
+  const thunk = fn(source, "returnedThunk");
+  const call = expr(stmt(last(thunk.body), "return").e, "apply");
   assert.deepEqual(call.args, []);
   for (const [name, edit] of [
-    ["omission cannot supply a Boolean argument", (type: any) => {
-      type.atoms[0].params = [{top: false, atoms: [{a: "boolean"}]}];
+    ["omission cannot supply a Boolean argument", (type) => {
+      atom(type.atoms[0], "function").params = [{top: false, atoms: [{a: "boolean"}]}];
     }],
-    ["a thunk cannot promise an incompatible result", (type: any) => {
-      type.atoms[0].result = {top: false, atoms: [{a: "null"}]};
+    ["a thunk cannot promise an incompatible result", (type) => {
+      atom(type.atoms[0], "function").result = {top: false, atoms: [{a: "null"}]};
     }],
-  ] as [string, (type: any) => void][]) {
+  ] as [string, (type: ClaimType) => void][]) {
     const changed = structuredClone(claims);
-    const fc = changed.find((f: any) => f.file === file).functions.find((f: any) => f.name === fn.name);
-    const claim = fc.exprs.find((e: any) => e.pos[0] === call.callee.pos[0] && e.pos[1] === call.callee.pos[1]);
-    assert.ok(claim);
-    edit(claim.type);
+    const claim = claimAt(functionOf(changed, file, thunk.name), call.callee.pos);
+    edit(claimType(claim));
     for (const mode of ["--check-stateful-source", "--produce-stateful-source"]) {
       const result = run(mode, source, changed);
       assert.notEqual(result.status, 0, `${name}: ${mode} accepted the forged contract`);

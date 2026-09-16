@@ -8,7 +8,7 @@ import { stripTypes } from "../tools/strip-types.mts";
 import { functionOf } from "../tools/skjs-claims.mts";
 import type { SkjsClaims } from "../tools/skjs-claims.mts";
 import type { Ast } from "../tools/fragment.mts";
-import { at, binding, claimAt, expr, fn, only, stmt } from "./edits.mts";
+import { at, binding, claimFrom, expr, fn, only, stmt } from "./edits.mts";
 import type { SpawnSyncReturns } from "node:child_process";
 // Negated tests must reverse refinements without trusting them or duplicating effects.
 
@@ -126,7 +126,7 @@ try {
       "negation result cannot be invented",
       (a, c) => {
         const pos = negatedTest(a).pos;
-        claimAt(firstClaim(c), pos[0]).type = singleton(true);
+        claimFrom(firstClaim(c), pos[0]).type = singleton(true);
       },
       "evidence search failed",
     ],
@@ -144,7 +144,7 @@ try {
         const negation = expr(negatedTest(a), "not");
         const operand = negation.e;
         negation.e = { k: "lit", pos: operand.pos, lit: { a: "null" } };
-        claimAt(firstClaim(c), operand.pos[0]).type = {
+        claimFrom(firstClaim(c), operand.pos[0]).type = {
           top: false,
           atoms: [{ a: "null" }],
         };
@@ -180,7 +180,7 @@ try {
   const body = exitAst.functions[0]!.body;
   const ret = stmt(body[body.length - 1], "return");
   const flag = binding(exitFn, ret.pos[0], "flag");
-  const expression = claimAt(exitFn, ret.e.pos[0]);
+  const expression = claimFrom(exitFn, ret.e.pos[0]);
   flag.type = singleton(true);
   expression.type = singleton(true);
   expect(
@@ -228,7 +228,7 @@ try {
     false,
     "evidence search failed",
   );
-  const negated = claimAt(
+  const negated = claimFrom(
     singletonFn,
     stmt(singletonAst.functions[0]!.body[0], "return").e.pos[0],
   );
