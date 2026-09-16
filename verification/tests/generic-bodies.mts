@@ -6,18 +6,32 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fromSkjs, verifySkjs } from "../tools/annotate-source.mts";
-import { decodeClaimType } from "../tools/claim.mts";
+import { decodeClaimType, type ClaimType } from "../tools/claim.mts";
+import type { Ast, FunctionAst } from "../tools/fragment.mts";
+import {
+  fileOf,
+  functionOf,
+  type SkjsClaims,
+  type SkjsFunction,
+} from "../tools/skjs-claims.mts";
+import {
+  at as nth,
+  expr as exprOf,
+  fn as functionIn,
+  must,
+  stmt,
+} from "./edits.mts";
 // Source extraction of generic bodies that copy T through const and fst.
 
 const [astPath, claimsPath, fileKey, verifier] = process.argv.slice(2);
-const ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
-const rawClaims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
+const ast: Ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
+const rawClaims: SkjsClaims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
 const claims = structuredClone(rawClaims);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "generic-bodies-"));
-const clone = (x: any) => JSON.parse(JSON.stringify(x));
-const t = { top: false, atoms: [{ a: "param", name: "T" }] };
+const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
+const t: ClaimType = { top: false, atoms: [{ a: "param", name: "T" }] };
 let passed = 0;
-function run(a: any, c: any) {
+function run(a: Ast, c: SkjsClaims) {
   const ap = path.join(tmp, "ast.json");
   const cp = path.join(tmp, "claims.json");
   const ep = path.join(tmp, "evidence.json");
@@ -44,109 +58,112 @@ function expect(name: string, r: ReturnType<typeof run>, accept: boolean, messag
   console.log(`  ${name}: OK`);
 }
 try {
-  const bind = ast.functions.find((f: any) => f.name === "bind");
-  const fst = ast.functions.find((f: any) => f.name === "fst");
-  if (!bind || !fst) throw Error("missing bind or fst");
-  decodeClaimType(bind.params[0].type);
-  decodeClaimType(bind.body[0].annot);
-  if (JSON.stringify(bind.body[0].annot) !== JSON.stringify(t))
+  const bind = functionIn(ast, "bind");
+  const fst = functionIn(ast, "fst");
+  const bound = stmt(nth(bind.body, 0), "const");
+  decodeClaimType(must(bind.params[0], "a parameter").type);
+  decodeClaimType(must(bound.annot, "the binding's annotation"));
+  if (JSON.stringify(bound.annot) !== JSON.stringify(t))
     throw Error("bind const should be annotated T");
   if (fst.params.length !== 2) throw Error("fst should have two parameters");
-  const exported = claims.find((f: any) => f.file === fileKey).functions;
-  const bindC = exported.find((f: any) => f.name === "bind");
-  const fstC = exported.find((f: any) => f.name === "fst");
-  decodeClaimType(bindC.params[0].type);
-  decodeClaimType(fstC.params[1].type);
+  const exported = fileOf(claims, fileKey).functions;
+  const bindC = functionOf(claims, fileKey, "bind");
+  const fstC = functionOf(claims, fileKey, "fst");
+  decodeClaimType(must(bindC.params[0], "a parameter").type);
+  decodeClaimType(must(fstC.params[1], "a parameter").type);
   if (JSON.stringify(bindC.retType) !== JSON.stringify(t))
     throw Error("SKJS should export bind result as param T");
   const independentAst = clone(ast);
-  independentAst.functions = independentAst.functions.filter((f: any) => f.name === "second");
-  const independentClaims = clone(rawClaims).filter((f: any) => f.file === fileKey);
-  independentClaims[0].functions = independentClaims[0].functions.filter((f: any) => f.name === "second");
+  independentAst.functions = independentAst.functions.filter((f) => f.name === "second");
+  const independentClaims = clone(rawClaims).filter((f) => f.file === fileKey);
+  const independentFile = must(independentClaims[0], "the claim file");
+  independentFile.functions = independentFile.functions.filter((f) => f.name === "second");
   expect("distinct parameters verify from unedited SKJS claims", run(independentAst, independentClaims), true);
   for (const [name, parameter] of [["upper", "U"], ["boundChain", "V"]]) {
-    const f = exported.find((f: any) => f.name === name);
+    const f = functionOf(claims, fileKey, name);
     const expected = { top: false, atoms: [{ a: "param", name: parameter }] };
-    if (JSON.stringify(f.params[0].type) !== JSON.stringify(expected))
+    if (JSON.stringify(must(f.params[0], "a parameter").type) !== JSON.stringify(expected))
       throw Error(`${name}: SKJS must preserve dependent parameter ${parameter}`);
   }
   expect("dependent bounds verify from unedited SKJS claims", run(ast, rawClaims), true);
   const noAnnot = clone(ast);
-  noAnnot.functions.find((f: any) => f.name === "bind").body[0].annot = null;
+  stmt(nth(functionIn(noAnnot, "bind").body, 0), "const").annot = null;
   expect("generic const requires a T annotation", run(noAnnot, claims), false, "generic const requires");
   const badInit = clone(ast);
-  badInit.functions.find((f: any) => f.name === "bind").body[0].init = {
+  stmt(nth(functionIn(badInit, "bind").body, 0), "const").init = {
     k: "lit",
-    pos: bind.body[0].init.pos,
+    pos: bound.init.pos,
     lit: { a: "booleanlit", v: "true" },
   };
   expect("const cannot be initialized from true", run(badInit, claims), false, "generic body requires");
   const fstTrue = clone(ast);
-  fstTrue.functions.find((f: any) => f.name === "fst").body[0].e = {
+  stmt(nth(functionIn(fstTrue, "fst").body, 0), "return").e = {
     k: "lit",
-    pos: fst.body[0].e.pos,
+    pos: stmt(nth(fst.body, 0), "return").e.pos,
     lit: { a: "booleanlit", v: "true" },
   };
   expect("fst returning true is not a T-copy", run(fstTrue, claims), false, "generic identity requires");
   // These mutations leave producer claims alone: source obligations must reject
   // reverse bounds and parameter conflation even with plausible signatures.
-  const mutate = (name: string, edit: (f: any) => void) => {
+  const mutate = (name: string, edit: (f: FunctionAst) => void) => {
     const a = clone(ast);
-    edit(a.functions.find((f: any) => f.name === name));
+    edit(functionIn(a, name));
     return run(a, claims);
   };
   expect("distinct parameters cannot be interchanged", mutate("second", f => {
-    f.body[0].e.name = "x";
+    exprOf(stmt(nth(f.body, 0), "return").e, "id").name = "x";
   }), false, "generic return");
   expect("a missing dependent bound cannot justify the const", mutate("upper", f => {
-    f.typeParams[1].bound = null;
+    must(f.typeParams[1], "a type parameter").bound = null;
   }), false, "generic const");
   expect("dependent inclusion cannot be reversed", mutate("upper", f => {
-    f.params[0].type = t;
-    f.body[0].annot = { top: false, atoms: [{ a: "param", name: "U" }] };
+    must(f.params[0], "a parameter").type = t;
+    stmt(nth(f.body, 0), "const").annot = { top: false, atoms: [{ a: "param", name: "U" }] };
   }), false, "generic const");
   expect("a widened const cannot recover the narrower parameter", mutate("upper", f => {
     f.retType = { top: false, atoms: [{ a: "param", name: "U" }] };
   }), false, "generic return");
   expect("a broken transitive bound chain cannot reach boolean", mutate("boundChain", f => {
-    f.typeParams[1].bound = null;
+    must(f.typeParams[1], "a type parameter").bound = null;
   }), false, "generic return");
   expect("forward and cyclic bounds are refused", mutate("boundChain", f => {
-    f.typeParams[0].bound = { top: false, atoms: [{ a: "param", name: "V" }] };
+    must(f.typeParams[0], "a type parameter").bound = { top: false, atoms: [{ a: "param", name: "V" }] };
   }), false, "earlier type parameter");
   expect("duplicate type parameters are refused", mutate("second", f => {
-    f.typeParams[1].name = "T";
+    must(f.typeParams[1], "a type parameter").name = "T";
   }), false, "duplicate type parameter");
   const merged = clone(claims);
-  merged.find((f: any) => f.file === fileKey).functions
-    .find((f: any) => f.name === "second").params[1].type = t;
+  must(functionOf(merged, fileKey, "second").params[1], "a parameter").type = t;
   expect("producer cannot collapse U to T", run(ast, merged), false, "differ from the source annotation");
-  const boolean = { top: false, atoms: [{ a: "boolean" }] };
-  const editedClaims = (name: string, edit: (f: any) => void) => {
+  const boolean: ClaimType = { top: false, atoms: [{ a: "boolean" }] };
+  const editedClaims = (name: string, edit: (f: SkjsFunction) => void) => {
     const changed = clone(rawClaims);
-    edit(changed.find((f: any) => f.file === fileKey).functions.find((f: any) => f.name === name));
+    edit(functionOf(changed, fileKey, name));
     return changed;
   };
+  /** One binding of a function's i-th entry, by name. */
+  const varOf = (f: SkjsFunction, i: number, name: string) =>
+    must(must(f.envs[i], `entry ${i}`).vars.find((v) => v.name === name), `a claim for ${name}`);
   const badEntry = editedClaims("bind", f => {
-    f.envs[0].vars.find((v: any) => v.name === "x").type = boolean;
+    varOf(f, 0, "x").type = boolean;
   });
-  const badExpression = editedClaims("bind", f => { f.exprs[0].type = boolean; });
+  const badExpression = editedClaims("bind", f => { must(f.exprs[0], "a claim").type = boolean; });
   expect("unjustified entry edit is rejected", run(ast, badEntry), false, "generic entry claim at");
   expect("unjustified expression edit is rejected", run(ast, badExpression), false, "generic expression claim at");
   expect("a const entry cannot regain a narrower dependent type", run(ast, editedClaims("upper", f => {
-    f.envs[1].vars.find((v: any) => v.name === "y").type = { top: false, atoms: [{ a: "param", name: "U" }] };
+    varOf(f, 1, "y").type = { top: false, atoms: [{ a: "param", name: "U" }] };
   })), false, "generic entry claim at");
   expect("missing expression claims reject", run(ast, editedClaims("bind", f => { f.exprs.pop(); })), false, "missing, duplicate or unmatched");
-  expect("duplicate entry claims reject", run(ast, editedClaims("bind", f => { f.envs.push(clone(f.envs[0])); })), false, "duplicate source claim sites or bindings");
+  expect("duplicate entry claims reject", run(ast, editedClaims("bind", f => { f.envs.push(clone(must(f.envs[0], "an entry"))); })), false, "duplicate source claim sites or bindings");
   expect("unmatched expression claims reject", run(ast, editedClaims("bind", f => {
     f.exprs.push({ pos: [0, 1], type: t });
   })), false, "claim site is not");
   expect("extra entry bindings reject", run(ast, editedClaims("bind", f => {
-    f.envs[0].vars.push({ name: "invented", type: t });
+    must(f.envs[0], "an entry").vars.push({ name: "invented", type: t });
   })), false, "bindings differ");
   expect("justified weakening along the bound chain verifies", run(ast, editedClaims("boundChain", f => {
-    f.envs[0].vars.find((v: any) => v.name === "x").type = boolean;
-    f.exprs[0].type = boolean;
+    varOf(f, 0, "x").type = boolean;
+    must(f.exprs[0], "a claim").type = boolean;
   })), true);
   // Reuse a valid certificate and change only the claims before consumption.
   // This catches a fix confined to production or the viewer.
@@ -163,7 +180,7 @@ try {
     const report = fromSkjs(source, fileKey, changed, "skjs");
     const { results } = verifySkjs(fileKey, source, changed, fileKey, report, verifier, 8);
     const index = report.functions.findIndex(f => f.name === "bind");
-    const result = results[index] as any;
+    const result = results[index];
     if (result?.status !== "not-established" || result?.location?.kind !== kind)
       throw Error(`generic claim rejection has no viewer location: ${JSON.stringify(result)}`);
     passed++;
