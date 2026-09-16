@@ -5,34 +5,54 @@ import assert from "node:assert";
 import vm from "node:vm";
 import { stripTypes } from "../tools/strip-types.mts";
 import { spawnSync } from "node:child_process";
+import type { Ast } from "../tools/fragment.mts";
+import { functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
+import { at, binding, expr, field, fn, list, record, stmt } from "./edits.mts";
 const __dirname = path.dirname(import.meta.filename);
-const [astPath,claimsPath,file,verifier]=process.argv.slice(2),ast=JSON.parse(fs.readFileSync(astPath, "utf8")),claims=JSON.parse(fs.readFileSync(claimsPath, "utf8"));
+const [astPath,claimsPath,file,verifier]=process.argv.slice(2);
+const ast: Ast=JSON.parse(fs.readFileSync(astPath, "utf8"));
+const claims: SkjsClaims=JSON.parse(fs.readFileSync(claimsPath, "utf8"));
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"loop-transfers-")),ap=path.join(tmp,"ast.json"),cp=path.join(tmp,"claims.json"),ep=path.join(tmp,"evidence.json");
-const sf=(a: any,n: any)=>a.functions.find((f: any) =>f.name===n),cf=(c: any,n: any)=>c.find((f: any) =>f.file===file).functions.find((f: any) =>f.name===n);
+const sf=(a: Ast,n: string)=>fn(a,n),cf=(c: SkjsClaims,n: string)=>functionOf(c,file,n);
 const exec=(exe: string,args: string[])=>{const r=spawnSync(exe,args,{encoding:"utf8",timeout:120000});if(r.error||r.signal)throw r.error||Error(String(r.signal));return r;};
-const run=(mode: string,a: any,c: any,e?: any)=>{fs.writeFileSync(ap,JSON.stringify(a));fs.writeFileSync(cp,JSON.stringify(c));if(e)fs.writeFileSync(ep,JSON.stringify(e));return exec(verifier,[mode,ap,cp,file,ep,...(mode.startsWith("--produce")?["10"]:[])]);};
-let passed=0;const test=(name: string,f: any)=>{f();passed++;console.log(`  ${name}: OK`);};
+const run=(mode: string,a: Ast,c: SkjsClaims,e?: unknown)=>{fs.writeFileSync(ap,JSON.stringify(a));fs.writeFileSync(cp,JSON.stringify(c));if(e)fs.writeFileSync(ep,JSON.stringify(e));return exec(verifier,[mode,ap,cp,file,ep,...(mode.startsWith("--produce")?["10"]:[])]);};
+let passed=0;const test=(name: string,f: () => void)=>{f();passed++;console.log(`  ${name}: OK`);};
 try {
   test("SKJS break and continue claims produce evidence",()=>{const r=run("--produce-stateful-source",ast,claims);assert.equal(r.status,0,r.stderr);});
   const evidence=JSON.parse(fs.readFileSync(ep, "utf8"));
   test("independent transfer consumer",()=>assert.equal(run("--check-stateful-source",ast,claims,evidence).status,0));
   for(const name of ["stopAfterWrite","continueAfterWrite"]) {
     test(`${name}: transfer environment required`,()=>{
-      const c=structuredClone(claims),p=sf(ast,name).body[2].body[2].pos[0];cf(c,name).envs=cf(c,name).envs.filter((e: any) =>e.pos[0]!==p);
+      const c=structuredClone(claims);
+      const p=at(stmt(at(sf(ast,name).body,2),"while").body,2).pos[0];
+      cf(c,name).envs=cf(c,name).envs.filter((e) =>e.pos[0]!==p);
       assert.notEqual(run("--produce-stateful-source",ast,c).status,0);assert.notEqual(run("--check-stateful-source",ast,c,evidence).status,0);
     });
     test(`${name}: outgoing transfer evidence required`,()=>{
-      const e=structuredClone(evidence),i=ast.functions.findIndex((f: any) =>f.name===name);
-      const node=e.functions[i].certificate.find((n: any) =>n.expression.node.rule==="nul"&&n.expression.node.claim.context.length===3);assert(node);assert(node.edges.length);node.edges=[];
+      const e=structuredClone(evidence),i=ast.functions.findIndex((f) =>f.name===name);
+      const certificate=list(field(e,"functions",i,"certificate"),"the certificate");
+      const node=certificate
+        .map((n)=>record(n,"a certificate node"))
+        .find((n)=>field(n,"expression","node","rule")==="nul"&&
+          list(field(n,"expression","node","claim","context"),"its context").length===3);
+      assert(node);assert(list(field(node,"edges"),"its edges").length);node.edges=[];
       assert.notEqual(run("--check-stateful-source",ast,claims,e).status,0);
     });
   }
   test("break must justify the exit environment",()=>{
-    const c=structuredClone(claims),p=sf(ast,"nestedBreak").body[0].body[1].pos[0];cf(c,"nestedBreak").envs.find((e: any) =>e.pos[0]===p).vars.find((v: any) =>v.name==="flag").type={top:false,atoms:[{a:"booleanlit",v:"false"}]};
+    const c=structuredClone(claims);
+    const p=at(stmt(at(sf(ast,"nestedBreak").body,0),"while").body,1).pos[0];
+    binding(cf(c,"nestedBreak"),p,"flag").type={top:false,atoms:[{a:"booleanlit",v:"false"}]};
     assert.notEqual(run("--produce-stateful-source",ast,c).status,0);assert.notEqual(run("--check-stateful-source",ast,c,evidence).status,0);
   });
-  test("loop body locals cannot escape break",()=>{const a=structuredClone(ast);sf(a,"stopAfterWrite").body[3].e.e.name="alias";assert.notEqual(run("--produce-stateful-source",a,claims).status,0);});
-  test("consumer rejects a transfer outside any loop",()=>{const a=structuredClone(ast);sf(a,"stopAfterWrite").body[0]={k:"break",pos:sf(a,"stopAfterWrite").body[0].pos};assert.notEqual(run("--produce-stateful-source",a,claims).status,0);});
+  test("loop body locals cannot escape break",()=>{
+    const a=structuredClone(ast);
+    expr(expr(stmt(at(sf(a,"stopAfterWrite").body,3),"return").e,"read").e,"id").name="alias";
+    assert.notEqual(run("--produce-stateful-source",a,claims).status,0);});
+  test("consumer rejects a transfer outside any loop",()=>{
+    const a=structuredClone(ast),body=sf(a,"stopAfterWrite").body;
+    body[0]={k:"break",pos:at(body,0).pos};
+    assert.notEqual(run("--produce-stateful-source",a,claims).status,0);});
   test("sidecars preserve transfer environments and checks",()=>{
     const out=path.join(tmp,"sidecar.json"),r=exec(process.execPath,[path.resolve(__dirname,"../tools/export-source-claims.mts"),file,"--claims",claimsPath,"--out",out,"--verifier",verifier]);assert.equal(r.status,0,r.stderr);
     fs.writeFileSync(ap,JSON.stringify(ast));fs.writeFileSync(ep,JSON.stringify(evidence));const c=exec(verifier,["--check-source-claims",ap,out,file,ep]);assert.equal(c.status,0,c.stderr);

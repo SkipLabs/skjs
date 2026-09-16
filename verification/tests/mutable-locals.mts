@@ -10,18 +10,22 @@ import { stripTypes } from "../tools/strip-types.mts";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import type { Ast } from "../tools/fragment.mts";
+import type { ClaimType } from "../tools/claim.mts";
+import { fileOf, type SkjsClaims } from "../tools/skjs-claims.mts";
+import { at, claimAt, claimType, expr, fn, only as only_, stmt } from "./edits.mts";
 // Private-cell lowering: source execution witnesses complement checked
 // certificates, while claim mutations exercise the trusted lowering boundary.
 
 const [astPath, claimsPath, fileKey, verifier] = process.argv.slice(2);
-const ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
-const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
+const ast: Ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
+const claims: SkjsClaims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "mutable-locals-"));
-const clone = (x: any) => JSON.parse(JSON.stringify(x));
-const tru = { top: false, atoms: [{ a: "booleanlit", v: "true" }] };
+const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
+const tru: ClaimType = { top: false, atoms: [{ a: "booleanlit", v: "true" }] };
 let passed = 0;
 
-function run(a: any, c: any) {
+function run(a: Ast, c: SkjsClaims) {
   const ap = path.join(tmp, "ast.json"),
     cp = path.join(tmp, "claims.json");
   const ep = path.join(tmp, "evidence.json");
@@ -56,16 +60,15 @@ function expect(
   passed++;
   console.log(`  ${name}: OK`);
 }
-const fn = (a: any, name: string) =>
-  a.functions.find((f: any) => f.name === name);
-const only = (a: any, name: string) => ({
+/** The fixture cut down to one function, which each check is about. */
+const only = (a: Ast, name: string): Ast => ({
   ...clone(a),
   functions: [fn(clone(a), name)],
 });
 const claimsFor = (name: string) => {
   const c = clone(claims);
-  const file = c.find((f: any) => f.file === fileKey);
-  file.functions = file.functions.filter((f: any) => f.name === name);
+  const file = fileOf(c, fileKey);
+  file.functions = file.functions.filter((f) => f.name === name);
   return c;
 };
 
@@ -84,7 +87,7 @@ try {
   // The storage contract is the annotation. Narrow it to `true` and the
   // assignment of `false` no longer meets it: the write is the check.
   const narrowed = only(ast, "capturedReaderObservesWrite");
-  narrowed.functions[0].body[0].annot = tru;
+  stmt(at(narrowed.functions[0]!.body, 0), "let").annot = tru;
   expect(
     "a value outside the storage contract is refused",
     run(narrowed, claimsFor("capturedReaderObservesWrite")),
@@ -94,10 +97,10 @@ try {
   // A read through the cell yields the contract, never a narrowing the
   // producer asserted before a write it did not see.
   const stale = claimsFor("capturedReaderObservesWrite");
-  const f = stale.find((x: any) => x.file === fileKey).functions[0];
+  const f = only_(stale, fileKey);
   for (const x of f.exprs)
     if (
-      JSON.stringify(x.type.atoms) === JSON.stringify([{ a: "boolean" }]) &&
+      JSON.stringify(claimType(x).atoms) === JSON.stringify([{ a: "boolean" }]) &&
       x.pos[1] - x.pos[0] === 5
     )
       x.type = tru;
@@ -109,10 +112,10 @@ try {
 
   // Assigning to a `const` has no cell to write.
   const toConst = only(ast, "snapshotSurvivesWrite");
-  const assign = fn(toConst, "snapshotSurvivesWrite").body.find(
-    (s: any) => s.k === "effect",
+  const effect = fn(toConst, "snapshotSurvivesWrite").body.find(
+    (s) => s.k === "effect",
   );
-  assign.e.name = "saved";
+  expr(stmt(effect, "effect").e, "assign").name = "saved";
   expect(
     "assignment to an immutable binding is refused",
     run(toConst, claimsFor("snapshotSurvivesWrite")),
@@ -123,9 +126,9 @@ try {
   // A verifier must check the claims at unused entries as well as expressions.
   for (const missing of [false, true]) {
     const changed = claimsFor("capturedReaderObservesWrite");
-    const f = changed.find((x: any) => x.file === fileKey).functions[0];
+    const f = only_(changed, fileKey);
     for (const e of f.envs) {
-      if (missing) e.vars = e.vars.filter((v: any) => v.name !== "value");
+      if (missing) e.vars = e.vars.filter((v) => v.name !== "value");
       else
         for (const v of e.vars)
           if (v.name === "value") v.type = { top: false, atoms: [] };
@@ -158,19 +161,19 @@ try {
     );
   }
   const wrongTag = only(ast, "mutableTag");
-  wrongTag.functions[0].retType = tru;
+  wrongTag.functions[0]!.retType = tru;
   const wrongClaims = claimsFor("mutableTag");
-  const tagged = wrongClaims.find((x: any) => x.file === fileKey).functions[0];
+  const tagged = only_(wrongClaims, fileKey);
   tagged.retType = tru;
-  const ternary = wrongTag.functions[0].body[1].e;
-  tagged.exprs.find((x: any) => x.pos.join() === ternary.pos.join()).type = tru;
+  const ternary = stmt(at(wrongTag.functions[0]!.body, 1), "return").e;
+  claimAt(tagged, ternary.pos).type = tru;
   expect(
     "a cell identity cannot justify the false ternary claim",
     run(wrongTag, wrongClaims),
     false,
   );
   const shadow = only(ast, "snapshotSurvivesWrite");
-  shadow.functions[0].body[0].name = "seed";
+  stmt(at(shadow.functions[0]!.body, 0), "let").name = "seed";
   expect(
     "mutable locals cannot shadow active bindings",
     run(shadow, claimsFor("snapshotSurvivesWrite")),

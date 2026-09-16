@@ -122,3 +122,37 @@ export function atom<K extends Atom["a"]>(a: Atom | undefined, k: K): OfTag<Atom
     throw Error(`expected a ${k} atom, found ${a?.a ?? "none"}`);
   return a;
 }
+
+/* ---------- documents this repository states no type for ---------- */
+/* Evidence and requests have no TypeScript mirror: the verifier is their only
+ * reader, so there is no second one to keep in step. A suite that alters one
+ * says what it expects to find, step by step, and fails where it says it. */
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === "object" && !Array.isArray(v);
+
+/** One value inside such a document, by the path that reaches it. */
+export function field(value: unknown, ...path: (string | number)[]): unknown {
+  let at = value;
+  for (const [i, key] of path.entries()) {
+    const so_far = path.slice(0, i + 1).join(".");
+    if (typeof key === "number") {
+      if (!Array.isArray(at)) throw Error(`${so_far} is not a list`);
+      at = at[key];
+    } else {
+      if (!isRecord(at)) throw Error(`${so_far} is not a record`);
+      at = at[key];
+    }
+  }
+  return at;
+}
+
+/** That value, as the record or the list a suite reaches into. */
+export function record(value: unknown, what: string): Record<string, unknown> {
+  if (!isRecord(value)) throw Error(`${what} is not a record`);
+  return value;
+}
+export function list(value: unknown, what: string): unknown[] {
+  if (!Array.isArray(value)) throw Error(`${what} is not a list`);
+  return value;
+}

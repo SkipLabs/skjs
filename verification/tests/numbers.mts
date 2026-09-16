@@ -3,20 +3,23 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { decodeClaimType } from "../tools/claim.mts";
+import { decodeClaimType, type ClaimType } from "../tools/claim.mts";
+import type { Ast } from "../tools/fragment.mts";
+import { fileOf, functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
+import { fn } from "./edits.mts";
 // Numbers in the source fragment: the family, its singletons, and the one
 // inclusion between them. Mutations check that nothing wider is admitted.
 
 const [astPath, claimsPath, fileKey, verifier] = process.argv.slice(2);
-const ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
-const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
+const ast: Ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
+const claims: SkjsClaims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "numbers-"));
-const clone = (x: any) => JSON.parse(JSON.stringify(x));
-const number = { top: false, atoms: [{ a: "number" }] };
-const one = { top: false, atoms: [{ a: "numberlit", v: "1" }] };
+const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
+const number: ClaimType = { top: false, atoms: [{ a: "number" }] };
+const one: ClaimType = { top: false, atoms: [{ a: "numberlit", v: "1" }] };
 let passed = 0;
 
-function run(a: any, c: any) {
+function run(a: Ast, c: SkjsClaims) {
   const ap = path.join(tmp, "ast.json"), cp = path.join(tmp, "claims.json");
   const ep = path.join(tmp, "evidence.json");
   fs.writeFileSync(ap, JSON.stringify(a));
@@ -42,9 +45,9 @@ function expect(name: string, r: ReturnType<typeof run>, accept: boolean, messag
 }
 
 try {
-  const exported = claims.find((f: any) => f.file === fileKey).functions;
-  const byName = (n: string) => exported.find((f: any) => f.name === n);
-  for (const f of exported) { decodeClaimType(f.retType); f.params.forEach((p: any) => decodeClaimType(p.type)); }
+  const exported = fileOf(claims, fileKey).functions;
+  const byName = (n: string) => functionOf(claims, fileKey, n);
+  for (const f of exported) { decodeClaimType(f.retType); f.params.forEach((p) => decodeClaimType(p.type)); }
 
   if (JSON.stringify(byName("idNumber").retType) !== JSON.stringify(number))
     throw Error("SKJS should export the number family");
@@ -58,35 +61,32 @@ try {
 
   // A singleton is below the family; the family is not below the singleton.
   const widen = clone(claims);
-  widen.find((f: any) => f.file === fileKey).functions
-    .find((f: any) => f.name === "singletonNumber").retType = number;
+  functionOf(widen, fileKey, "singletonNumber").retType = number;
   expect("the family cannot stand in for a singleton result",
     run(ast, widen), false, "from the source annotation");
 
   const narrow = clone(ast);
-  narrow.functions.find((f: any) => f.name === "idNumber").retType = one;
+  fn(narrow, "idNumber").retType = one;
   expect("a number result cannot be narrowed to a singleton",
     run(narrow, claims), false);
 
   // Distinct singletons are unrelated in both directions.
   const other = clone(claims);
-  other.find((f: any) => f.file === fileKey).functions
-    .find((f: any) => f.name === "spelledNumber").retType =
-      { top: false, atoms: [{ a: "numberlit", v: "2" }] };
+  functionOf(other, fileKey, "spelledNumber").retType =
+    { top: false, atoms: [{ a: "numberlit", v: "2" }] };
   expect("a different number is a different singleton",
     run(ast, other), false, "from the source annotation");
 
   // A number is not a boolean, and the guard result is not the guarded value.
   const asBool = clone(claims);
-  asBool.find((f: any) => f.file === fileKey).functions
-    .find((f: any) => f.name === "idNumber").retType =
-      { top: false, atoms: [{ a: "boolean" }] };
+  functionOf(asBool, fileKey, "idNumber").retType =
+    { top: false, atoms: [{ a: "boolean" }] };
   expect("a number is not a boolean", run(ast, asBool), false,
     "from the source annotation");
 
   // Dropping null from the declared parameter is not something the guard grants.
   const dropNull = clone(ast);
-  dropNull.functions.find((f: any) => f.name === "guardNumber").params[0].type = number;
+  fn(dropNull, "guardNumber").params[0]!.type = number;
   expect("the guarded parameter keeps its null arm", run(dropNull, claims), false);
 
   console.log(`Numbers: ${passed} passed`);
