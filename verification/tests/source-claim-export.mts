@@ -80,7 +80,7 @@ try {
     const rawCheck=run(verifier,["--check-stateful-source",ap,cp,file,ep]);
     assert.equal(rawCheck.status,0,rawCheck.stderr);
     const report=fromSourceClaims(fs.readFileSync(file,"utf8"),file,d,"candidate");
-    const shown=report.functions.find(f=>f.name===changed.name)!.expressions.find(e=>JSON.stringify(e.pos)===JSON.stringify(changed.pos));
+    const shown=must(report.functions.find(f=>f.name===changed.name),"the changed function").expressions.find(e=>JSON.stringify(e.pos)===JSON.stringify(changed.pos));
     assert(shown, "no claim at the changed point");
     assert(shown.type.includes(" = (true)"));
     assert.deepEqual(shown.raw,{type:labels,current:[1]});

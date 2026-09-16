@@ -136,7 +136,10 @@ try {
     assert.deepEqual(identity.result, [3]);
     const shown = fromSourceClaims(source, file, doc, "candidate");
     assert.equal(
-      shown.functions.find((f) => f.name === identity.name)!.signature.retType,
+      must(
+        shown.functions.find((f) => f.name === identity.name),
+        "the shown function",
+      ).signature?.retType,
       "undefined",
     );
     accepted(check("source-claims", normalized));

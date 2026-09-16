@@ -73,6 +73,11 @@ const manifest: Manifest = {
 };
 const bundle = { source, manifest };
 /** The sites of one kind, in source order. */
+/** The failure a function records, and the site it attached to: a check that
+ * reads one is about a report that has one. */
+const failureOf = (f: ShownFunction) => must(f.failure, "a recorded failure");
+const at = (failure: { at: number | null }) =>
+  must(failure.at, "the site the failure attached to");
 const of = <K extends Site["kind"]>(f: ShownFunction, kind: K) =>
   f.sites.filter((s): s is Extract<Site, { kind: K }> => s.kind === kind);
 const report = fromBundle(bundle);
@@ -394,9 +399,9 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
     },
   ];
   const f = fromBundle(unavailable).functions[0];
-  assert.equal(f.failure!.kind, "unavailable-type-claim");
-  assert.equal(f.failure!.binding, "cell");
-  assert.equal(f.sites[f.failure!.at!].kind, "environment");
+  assert.equal(failureOf(f).kind, "unavailable-type-claim");
+  assert.equal(failureOf(f).binding, "cell");
+  assert.equal(f.sites[at(failureOf(f))].kind, "environment");
   assert.equal(marks.proofMark(f)[0], "?");
   assert.equal(marks.outcomeGroup(f).label, "could not be checked");
   assert.equal(marks.outcome(f, null).disagrees, false);
@@ -404,14 +409,14 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   assert.equal(marks.roleTag("unavailable-type-claim"), "type unavailable");
   // The same kind can name an expression instead of a statement entry.
   const atExpression = structuredClone(unavailable);
-  atExpression.manifest.results![0].location = {
+  must(atExpression.manifest.results, 'results')[0].location = {
     kind: "unavailable-type-claim",
     pos: claim.pos,
   };
   {
     const f = fromBundle(atExpression).functions[0];
-    assert.equal(f.failure!.kind, "unavailable-type-claim");
-    assert.equal(f.sites[f.failure!.at!].kind, "expression");
+    assert.equal(failureOf(f).kind, "unavailable-type-claim");
+    assert.equal(f.sites[at(failureOf(f))].kind, "expression");
   }
   // Verified functions and failed searches keep their own groups.
   assert.equal(
@@ -759,9 +764,9 @@ const recorded = (d: ObligationDiagnostic) =>
       [1, "null", "null", false],
     ],
   );
-  assert.match(view.observation!, /slot 0 is true/);
-  assert.match(view.observation!, /not a claim that execution took it/);
-  assert.match(view.note!, /edge 1/);
+  assert.match(must(view.observation, 'the reader\'s own words'), /slot 0 is true/);
+  assert.match(must(view.observation, 'the reader\'s own words'), /not a claim that execution took it/);
+  assert.match(must(view.note, 'the reader\'s own words'), /edge 1/);
   assert.deepEqual(
     view.endpoints.map((e) => [e.end, e.sourceMap?.pos]),
     [
@@ -810,13 +815,13 @@ const recorded = (d: ObligationDiagnostic) =>
     ],
   );
   assert.equal(observedView.knowledgeIsTheDifference, true);
-  assert.match(observedView.note!, /Every binding's contract already agrees/);
+  assert.match(must(observedView.note, 'the reader\'s own words'), /Every binding's contract already agrees/);
   // A differing contract is still reported as the difference it is.
   const both = structuredClone(observed);
   both.transfer.available = [[2], [0]];
   const bothView = ob.obligationView(both);
   assert.equal(bothView.knowledgeIsTheDifference, false);
-  assert.match(bothView.note!, /slot 0 is where/);
+  assert.match(must(bothView.note, 'the reader\'s own words'), /slot 0 is where/);
   assert.equal(bothView.knowledge.length, 3);
   // An alias link reads as an equality between slots, not as a heap read.
   assert.equal(
@@ -849,8 +854,8 @@ const recorded = (d: ObligationDiagnostic) =>
   tagged.source.sourceMap = at([10, 14], "tag-dispatch");
   const tagView = ob.obligationView(tagged);
   assert.equal(tagView.title, "Tag dispatch");
-  assert.match(tagView.observation!, /tag test nul answers false on slot 0/);
-  assert.match(tagView.observation!, /not a claim that execution took it/);
+  assert.match(must(tagView.observation, 'the reader\'s own words'), /tag test nul answers false on slot 0/);
+  assert.match(must(tagView.observation, 'the reader\'s own words'), /not a claim that execution took it/);
   // An identity map selects the available context unchanged.
   assert.deepEqual(ob.mapContext([[1], [2]], null), [[1], [2]]);
   const mismatched = structuredClone(record);
@@ -909,25 +914,25 @@ const failedAt = (bundle: Bundle) => {
   const f = fromBundle(bundle).functions[0];
   return f.failure ? { ...f.failure, site: f.failure.at === null ? null : f.sites[f.failure.at].kind } : null;
 };
-assert.equal(failedAt(failureBundle)!.detail, "proof search stopped");
-assert.equal(failedAt(failureBundle)!.site, "expression");
+assert.equal(must(failedAt(failureBundle), 'a located failure').detail, "proof search stopped");
+assert.equal(must(failedAt(failureBundle), 'a located failure').site, "expression");
 for (const kind of rows<FailureKind>(["edge-obligation", "source-limitation"])) {
   must(
     must(must(failureBundle.manifest.results, "results")[0], "a result").location,
     "a place",
   ).kind = kind;
-  assert.equal(failedAt(failureBundle)!.kind, kind);
-  assert.equal(failedAt(failureBundle)!.site, "expression");
+  assert.equal(must(failedAt(failureBundle), 'a located failure').kind, kind);
+  assert.equal(must(failedAt(failureBundle), 'a located failure').site, "expression");
 }
 failureBundle.manifest.functions[0].entries = [
   { id: "f0e0", pos: entryPos, bindings: [] },
 ];
-failureBundle.manifest.results![0].location = {
+must(failureBundle.manifest.results, 'results')[0].location = {
   kind: "environment-obligation",
   start,
 };
-assert.equal(failedAt(failureBundle)!.kind, "environment-obligation");
-assert.equal(failedAt(failureBundle)!.site, "environment");
+assert.equal(must(failedAt(failureBundle), 'a located failure').kind, "environment-obligation");
+assert.equal(must(failedAt(failureBundle), 'a located failure').site, "environment");
 // An edge obligation names both of its claims: the expression at the mapped
 // span, and the environment at the mapped statement entry.
 // Only the two source maps are read here; the record a verifier writes states
@@ -964,9 +969,9 @@ must(failureBundle.manifest.results, "results")[0].obligation = {
 {
   const f = fromBundle(failureBundle).functions[0];
   const kindAt = (i: number | null) => (i === null ? null : f.sites[i].kind);
-  assert.deepEqual([kindAt(f.failure!.edge!.from), kindAt(f.failure!.edge!.to)], ["expression", "environment"]);
+  assert.deepEqual([kindAt(must(failureOf(f).edge, 'both ends').from), kindAt(must(failureOf(f).edge, 'both ends').to)], ["expression", "environment"]);
 }
-delete failureBundle.manifest.results![0].obligation;
+delete must(failureBundle.manifest.results, 'results')[0].obligation;
 // The declared result is a site of its own, first in source order, and a
 // failed return contract is an edge from the returned expression to it.
 {
@@ -1005,19 +1010,19 @@ delete failureBundle.manifest.results![0].obligation;
   const first = f.sites[0];
   assert(first.kind === "result", "the declared result is drawn first");
   assert.deepEqual([first.kind, first.type], ["result", "true"]);
-  assert.equal(f.sites[f.failure!.at!].kind, "expression");
-  assert.deepEqual(f.failure!.edge, { from: f.failure!.at, to: 0 });
+  assert.equal(f.sites[at(failureOf(f))].kind, "expression");
+  assert.deepEqual(failureOf(f).edge, { from: at(failureOf(f)), to: 0 });
   const [drawn] = marks.sourceMarks({ source, file: "f.ts" }, f, { density: "key" }).items;
   assert.equal(drawn.label, "returns true");
   assert.equal(drawn.cls, "result");
 }
-delete failureBundle.manifest.results![0].location;
+delete must(failureBundle.manifest.results, 'results')[0].location;
 assert.equal(failedAt(failureBundle), null);
-failureBundle.manifest.results![0].location = {
+must(failureBundle.manifest.results, 'results')[0].location = {
   kind: "expression-obligation",
   pos: claim.pos,
 };
-failureBundle.manifest.results![0].status = "verified";
+must(failureBundle.manifest.results, 'results')[0].status = "verified";
 assert.equal(failedAt(failureBundle), null);
 
 // A claim the verifier needed and did not find is reported at the gap that
@@ -1041,30 +1046,30 @@ absent.manifest.results = [
 ];
 {
   const f = fromBundle(absent).functions[0];
-  assert.equal(f.failure!.kind, "missing-expression-claim");
-  assert.match(f.failure!.detail, /no claimed type/);
-  assert.equal(f.sites[f.failure!.at!].kind, "unclaimed");
-  assert.equal(f.detail, absent.manifest.results![0].detail);
+  assert.equal(failureOf(f).kind, "missing-expression-claim");
+  assert.match(failureOf(f).detail, /no claimed type/);
+  assert.equal(f.sites[at(failureOf(f))].kind, "unclaimed");
+  assert.equal(f.detail, must(absent.manifest.results, 'results')[0].detail);
   assert.equal(f.status, "not-established");
 }
 // Without a gap at that place — an older report — the claim there still carries it.
 const absentNoGap = structuredClone(absent);
 absentNoGap.manifest.gaps = [];
 absentNoGap.manifest.functions[0].expressions = [{ id: "f0x0", ...claim }];
-assert.equal(failedAt(absentNoGap)!.kind, "missing-expression-claim");
-assert.equal(failedAt(absentNoGap)!.site, "expression");
+assert.equal(must(failedAt(absentNoGap), 'a located failure').kind, "missing-expression-claim");
+assert.equal(must(failedAt(absentNoGap), 'a located failure').site, "expression");
 const absentEnv = structuredClone(absent);
 absentEnv.manifest.gaps = [
   { id: "g0", pos: [start, end], status: "statement not visited" },
 ];
-absentEnv.manifest.results![0].location = {
+must(absentEnv.manifest.results, 'results')[0].location = {
   kind: "missing-environment-claim",
   start,
   binding: "x",
 };
-assert.equal(failedAt(absentEnv)!.kind, "missing-environment-claim");
-assert.equal(failedAt(absentEnv)!.binding, "x");
-assert.equal(failedAt(absentEnv)!.site, "unclaimed");
+assert.equal(must(failedAt(absentEnv), 'a located failure').kind, "missing-environment-claim");
+assert.equal(must(failedAt(absentEnv), 'a located failure').binding, "x");
+assert.equal(must(failedAt(absentEnv), 'a located failure').site, "unclaimed");
 
 // Self-contained claim language: fields and callable structure do not depend on
 // what the producer happened to export, including missing environment bindings.

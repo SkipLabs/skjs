@@ -2,7 +2,11 @@ import fs from "node:fs";
 import assert from "node:assert/strict";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import type { Ast } from "../tools/fragment.mts";
-import { at as nth, expr, fn as functionIn, stmt } from "./edits.mts";
+import { at as nth, expr, fn as functionIn, must, stmt } from "./edits.mts";
+
+/** One function's claims in a normalized document, by name. */
+const claimsFor = (d: SourceClaims, name: string) =>
+  must(d.functions.find((f) => f.name === name), `claims for ${name}`);
 import type { Span } from "../tools/span.mts";
 import os from "node:os";
 import path from "node:path";
@@ -115,7 +119,7 @@ for (const [name, want] of Object.entries(expected)) {
         const parsed: Ast = JSON.parse(fs.readFileSync(ast, "utf8"));
         const normalized: SourceClaims = JSON.parse(fs.readFileSync(claims, "utf8"));
         const escaped = functionIn(parsed, "escapedLocalCallback");
-        const escapedClaims = normalized.functions.find((f) => f.name === escaped.name)!;
+        const escapedClaims = claimsFor(normalized, escaped.name);
         const callee = expr(expr(stmt(nth(escaped.body, 2), "return").e, "lambda").body, "apply").callee;
         const calleeClaim = escapedClaims.expressions.find((p) => p.pos[0] === callee.pos[0] && p.pos[1] === callee.pos[1]);
         assert.ok(calleeClaim);
@@ -123,14 +127,14 @@ for (const [name, want] of Object.entries(expected)) {
         assert.equal(calleeClaim.type.length, 1);
         assert(!calleeClaim.type.includes(0), "returned closure retains its immutable capture refinement");
         const later = functionIn(parsed, "laterGuardedCallback");
-        const laterClaims = normalized.functions.find((f) => f.name === later.name)!;
+        const laterClaims = claimsFor(normalized, later.name);
         const test = expr(expr(expr(stmt(nth(later.body, 1), "const").init, "lambda").body, "conditional").cond, "bin").l;
         const testClaim = laterClaims.expressions.find((p) => p.pos[0] === test.pos[0] && p.pos[1] === test.pos[1]);
         assert.ok(testClaim);
         assert.ok(Array.isArray(testClaim.type));
         assert(testClaim.type.includes(0), "a later outer guard cannot refine an earlier closure capture");
         const absent = functionIn(parsed, "twoAbsenceCapture");
-        const absentClaims = normalized.functions.find((f) => f.name === absent.name)!;
+        const absentClaims = claimsFor(normalized, absent.name);
         const absentRef = expr(expr(expr(stmt(nth(absent.body, 2), "return").e, "lambda").body, "conditional").cond, "bin").l;
         const absentClaim = absentClaims.expressions.find((p) => p.pos[0] === absentRef.pos[0] && p.pos[1] === absentRef.pos[1]);
         assert.ok(absentClaim);
@@ -138,7 +142,7 @@ for (const [name, want] of Object.entries(expected)) {
         assert(absentClaim.type.includes(0), "eliminating undefined must retain null");
         assert(!absentClaim.type.includes(3), "returned capture retains the outer undefined exclusion");
         const compound = functionIn(parsed, "compoundAbsenceCapture");
-        const compoundClaims = normalized.functions.find((f) => f.name === compound.name)!;
+        const compoundClaims = claimsFor(normalized, compound.name);
         const compoundCallee = expr(expr(stmt(nth(compound.body, 2), "return").e, "lambda").body, "apply").callee;
         const compoundClaim = compoundClaims.expressions.find((p) => p.pos[0] === compoundCallee.pos[0] && p.pos[1] === compoundCallee.pos[1]);
         assert.ok(compoundClaim);
@@ -147,7 +151,7 @@ for (const [name, want] of Object.entries(expected)) {
         assert(!compoundClaim.type.includes(0) && !compoundClaim.type.includes(3),
           "the compound guard excludes both absence tags before capture");
         const ambiguous = functionIn(parsed, "ambiguousCaptureGuard");
-        const ambiguousClaims = normalized.functions.find((f) => f.name === ambiguous.name)!;
+        const ambiguousClaims = claimsFor(normalized, ambiguous.name);
         const ambiguousRef = expr(expr(expr(stmt(nth(stmt(nth(ambiguous.body, 1), "if").then, 0), "return").e, "lambda").body, "conditional").cond, "bin").l;
         const ambiguousClaim = ambiguousClaims.expressions.find((p) => p.pos[0] === ambiguousRef.pos[0] && p.pos[1] === ambiguousRef.pos[1]);
         assert.ok(ambiguousClaim);
@@ -155,14 +159,14 @@ for (const [name, want] of Object.entries(expected)) {
         assert(ambiguousClaim.type.includes(0), "a successful disjunction must retain the path admitted by flag");
         assert.equal(ambiguousClaim.type.length, 2, "capture retains both null and the callable");
         const probe = functionIn(parsed, "callbackProbeDoesNotNarrow");
-        const probeClaims = normalized.functions.find((f) => f.name === probe.name)!;
+        const probeClaims = claimsFor(normalized, probe.name);
         const probedRef = expr(expr(stmt(nth(stmt(nth(probe.body, 2), "if").then, 0), "return").e, "conditional").cond, "bin").l;
         const probedClaim = probeClaims.expressions.find((p) => p.pos[0] === probedRef.pos[0] && p.pos[1] === probedRef.pos[1]);
         assert.ok(probedClaim);
         assert.ok(Array.isArray(probedClaim.type));
         assert(probedClaim.type.includes(0), "a Boolean probe result does not refine the captured callback");
         const fn = functionIn(parsed, "distinctNullableCallbacks");
-        const fc = normalized.functions.find((f) => f.name === fn.name)!;
+        const fc = claimsFor(normalized, fn.name);
         assert.ok(fc);
         const at = (e: { pos: Span }) => {
           const site = fc.expressions.find((p) => p.pos[0] === e.pos[0] && p.pos[1] === e.pos[1]);
@@ -220,9 +224,9 @@ for (const [name, want] of Object.entries(expected)) {
         mutate(d=>{d.functions[0].expressions.pop();});
         mutate(d=>{d.functions[0].expressions[0].current=[1];});
         if(name.endsWith("generic-bodies")) {
-          mutate(d=>{d.functions.find(f=>f.name==="second")!.result={param:"T"};});
+          mutate(d=>{claimsFor(d,"second").result={param:"T"};});
           const weak=structuredClone(original);
-          const chain=weak.functions.find(f=>f.name==="boundChain")!;
+          const chain=claimsFor(weak,"boundChain");
           chain.entries[0].bindings[0].type=[1,2];
           chain.expressions[0].type=[1,2];
           assert.equal(consume(weak).status,0,"declared bound chain permits Boolean weakening");
