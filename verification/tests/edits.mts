@@ -159,3 +159,9 @@ export function list(value: unknown, what: string): unknown[] {
   if (!Array.isArray(value)) throw Error(`${what} is not a list`);
   return value;
 }
+
+/** A node as the plain record it is, for a check that writes a field neither
+ * language has — which is what that check is about: the reader must refuse it.
+ * Everything else is written as the language it belongs to. */
+export const written = (node: object): Record<string, unknown> =>
+  record(node, "a node");

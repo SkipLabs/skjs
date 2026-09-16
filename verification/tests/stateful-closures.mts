@@ -25,6 +25,7 @@ import {
   must,
   record,
   stmt,
+  written,
 } from "./edits.mts";
 const __dirname = path.dirname(import.meta.filename);
 const [astPath,claimsPath,fileKey,verifier]=process.argv.slice(2);
@@ -47,9 +48,6 @@ const each=(e: unknown)=>list(field(e,"obligations"),"the obligations");
 const first=(e: unknown)=>list(field(e,"obligations",0),"the first obligations");
 /** The call `capturedRead` ends with. */
 const call=(f: FunctionAst)=>expr(stmt(nth(f.body,4),"return").e,"apply");
-/** A field the fragment and the claim language do not have, which these checks
- * add to require that a decoder refuses it. */
-const written=(node: object): Record<string, unknown> => record(node,"a node");
 /** The last closure a fixture binds, whichever statement binds it. */
 const lastLambda=(f: FunctionAst)=>{
   const bound=f.body.filter((s)=>s.k==="const"&&s.init.k==="lambda");
