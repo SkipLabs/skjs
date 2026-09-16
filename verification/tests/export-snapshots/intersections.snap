@@ -1,9 +1,9 @@
 # intersections.ts
 
 ## records [complete unverified normal]
-params: c: (unavailable: unexpanded-intersection); d: { value: boolean } [call=unknown construct=unknown array=unknown]; e: (unavailable: cell-field-name)
+params: c: (unavailable: unexpanded-intersection); d: { value: boolean } [call=unknown construct=unknown array=unknown]; e: { x: boolean, y: null } [call=unknown construct=unknown array=unknown]
 result: null
-entry 159-170: c!: (unavailable: unexpanded-intersection); d!: { value: boolean } [call=unknown construct=unknown array=unknown]; e!: (unavailable: cell-field-name); this: (unavailable: void-type)
+entry 159-170: c!: (unavailable: unexpanded-intersection); d!: { value: boolean } [call=unknown construct=unknown array=unknown]; e!: { x: boolean, y: null } [call=unknown construct=unknown array=unknown]; this: (unavailable: void-type)
 expr 166-170 `null`: null
 
 ## arrows [aborted unverified normal]

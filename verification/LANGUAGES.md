@@ -102,6 +102,6 @@ replace the intrinsics used by lowering or encounter special function properties
 These are source-language restrictions; the calculus itself has ordinary named
 locations and does not model JavaScript prototypes or property descriptors.
 
-The TypeScript producer exports these multi-field records. SKJS currently marks
-non-`value` and multi-field record claims unavailable; `records.ts` pins that
-producer boundary while the TS claims exercise the complete source pipeline.
+Both SKJS and TypeScript export these multi-field records. `records.ts` exercises
+both producers through the same source pipeline and independent consumer; SKJS's
+original export and its normalized sidecar also consume the same evidence.

@@ -9,7 +9,8 @@ import type { SourceClaims } from "../tools/source-claims.mts";
 import { stripTypes } from "../tools/strip-types.mts";
 import { must, stmt, expr } from "./edits.mts";
 
-const [astPath, claimsPath, file, verifier] = process.argv.slice(2);
+const [astPath, claimsPath, file, verifier, rawClaimsPath] =
+  process.argv.slice(2);
 const ast: Ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
 const claims: SourceClaims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "records-"));
@@ -23,6 +24,20 @@ try {
     const r = spawnSync(verifier, args, { encoding: "utf8" });
     assert(!r.error && !r.signal, String(r.error || r.signal));
     return r;
+  }
+  if (rawClaimsPath) {
+    for (const mode of [
+      "--produce-stateful-source",
+      "--check-stateful-source",
+    ]) {
+      const args = [mode, astPath, rawClaimsPath, file, proof];
+      if (mode === "--produce-stateful-source") args.push("10");
+      const r = spawnSync(verifier, args, { encoding: "utf8" });
+      assert(!r.error && !r.signal, String(r.error || r.signal));
+      assert.equal(r.status, 0, r.stdout + r.stderr);
+    }
+    const converted = run("--check-source-claims", claims);
+    assert.equal(converted.status, 0, converted.stdout + converted.stderr);
   }
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
     const r = run(mode, claims);

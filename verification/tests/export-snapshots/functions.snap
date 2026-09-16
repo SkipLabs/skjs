@@ -1,7 +1,7 @@
 # functions.ts
 
 ## functions [complete unverified normal]
-params: f: (boolean) => null [construct=unknown array=unknown]; g: (boolean, null) => boolean [construct=unknown array=unknown]; h: (unavailable: function-optional-parameter); k: () => null [construct=unknown array=unknown]; m: (unavailable: cell-field-name); n: (unavailable: nested-object-type)
+params: f: (boolean) => null [construct=unknown array=unknown]; g: (boolean, null) => boolean [construct=unknown array=unknown]; h: (unavailable: function-optional-parameter); k: () => null [construct=unknown array=unknown]; m: (unavailable: function-this-parameter); n: (unavailable: nested-object-type)
 result: null
-entry 214-225: f!: (boolean) => null [construct=unknown array=unknown]; g!: (boolean, null) => boolean [construct=unknown array=unknown]; h!: (unavailable: function-optional-parameter); k!: () => null [construct=unknown array=unknown]; m!: (unavailable: cell-field-name); n!: (unavailable: nested-object-type); this: (unavailable: void-type)
+entry 214-225: f!: (boolean) => null [construct=unknown array=unknown]; g!: (boolean, null) => boolean [construct=unknown array=unknown]; h!: (unavailable: function-optional-parameter); k!: () => null [construct=unknown array=unknown]; m!: (unavailable: function-this-parameter); n!: (unavailable: nested-object-type); this: (unavailable: void-type)
 expr 221-225 `null`: null

@@ -416,7 +416,7 @@ fun claimTypeJsonBounded(
   }
 }
 
-// A deliberately bounded record branch: one public `value` field, no real index,
+// A bounded record branch: nonempty public named fields, no real index,
 // symbol, array, call or construct requirements. Preserve read and write types
 // separately; the verifier decides whether they justify an invariant cell.
 // Callable field operands consume the shared serialization fuel.
@@ -445,7 +445,6 @@ fun claimCellBranchJson(
   if (newMode.isNone()) return Failure("cell-constructible");
   entries = mutable Vector<String>[];
   for (field in fields.fields) {
-    if (field.name.value != "value") return Failure("cell-field-name");
     if (!(field.access is FAPublic())) return Failure("cell-field-access");
     // A field type that cannot be exported names its own reason.
     read = claimTypeJsonBounded(field.get, false, true, values, fuel, false);
@@ -463,7 +462,7 @@ fun claimCellBranchJson(
       ),
     )
   };
-  if (entries.size() != 1) return Failure("cell-field-count");
+  if (entries.isEmpty()) return Failure("cell-field-count");
   Success(
     jsonObj(
       Array[

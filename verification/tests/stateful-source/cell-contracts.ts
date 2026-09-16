@@ -31,8 +31,7 @@ function optionalCell(cell: { value?: boolean }): boolean | undefined {
 }
 
 /**
- * Use a field name other than value. The decoder must reject it rather than
- * project an unrelated property into the cell model.
+ * Preserve a field name other than value through export and decoding.
  */
 function otherField(cell: { other: boolean }): boolean {
   return cell.other;

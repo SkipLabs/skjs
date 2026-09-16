@@ -52,7 +52,12 @@ private def checks (claims : Json) (fileKey : String) : Except String (List Stri
     (SourceTypes.encode rof.read == [1,2] && SourceTypes.encode rof.write == [])]
   log := log ++ [← expect "readonly is not a mutable invariant" (rejects readonlyCell)]
   log := log ++ [← expect "optional is not a required cell" (rejects optionalCell)]
-  for name in ["otherField","extraField","nestedCell","indexedCell","genericCell"] do
+  log := log ++ [← expect "non-value field exported"
+    ((CellClaims.translate (← param "otherField")).toOption == some [("other",[1,2])])]
+  let extra ← CellClaims.translate (← param "extraField")
+  log := log ++ [← expect "every named field exported"
+    (extra.length == 2 && extra.lookup "value" == some [1,2] && extra.lookup "other" == some [0])]
+  for name in ["nestedCell","indexedCell","genericCell"] do
     let ty ← param name
     log := log ++ [← expect s!"{name} stays unsupported"
       ((ty.getObjValAs? Bool "unsupported").toOption == some true)]
