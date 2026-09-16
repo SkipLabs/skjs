@@ -8,6 +8,18 @@ import { performance } from "node:perf_hooks";
 import { stripTypes } from "../tools/strip-types.mts";
 import { typeErrors } from "../tools/type-errors.mts";
 import { fromSourceClaims } from "../tools/annotate-source.mts";
+import type { Ast, FunctionAst } from "../tools/fragment.mts";
+import type { Labels } from "../tools/type-graph.mts";
+import type { FunctionClaims, SourceClaims } from "../tools/source-claims.mts";
+import { fileOf, functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
+import {
+  atom,
+  claimType,
+  fn as functionIn,
+  last,
+  must,
+  stmt,
+} from "./edits.mts";
 const __dirname = path.dirname(import.meta.filename);
 // Fresh producer claims, independent consumers, exact format mirroring, and
 // negative candidates. Runtime checks distinguish null, undefined and false.
@@ -22,14 +34,21 @@ const __dirname = path.dirname(import.meta.filename);
 
 
 const [astPath, claimsPath, file, verifier] = process.argv.slice(2);
-const ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
-const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
+const ast: Ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
+const claims: SkjsClaims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
 const source = fs.readFileSync(file, "utf8");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "undefined-tests-"));
 const evidence = path.join(tmp, "evidence.json");
 const normalized = path.join(tmp, "claims.json");
 let passed = 0;
-const run = (exe: string, args: string[], cwd?: any) => {
+/** One normalized function, one of its entries, one binding of that entry. */
+const stated = (d: SourceClaims, name: string) =>
+  must(d.functions.find((f) => f.name === name), `claims for ${name}`);
+const entryOf = (f: FunctionClaims, start: number) =>
+  must(f.entries.find((e) => e.start === start), `an entry at ${start}`);
+const bindingOf = (f: FunctionClaims, start: number, name: string) =>
+  must(entryOf(f, start).bindings.find((b) => b.name === name), `a claim for ${name}`);
+const run = (exe: string, args: string[], cwd?: string) => {
   const r = spawnSync(exe, args, {
     cwd,
     encoding: "utf8",
@@ -39,24 +58,25 @@ const run = (exe: string, args: string[], cwd?: any) => {
   assert(!r.error, String(r.error));
   return r;
 };
-const accepted = (r: any) => assert.equal(r.status, 0, r.stderr);
-const test = (name: string, f: any) => {
+const accepted = (r: { status: number | null; stderr: string }) =>
+  assert.equal(r.status, 0, r.stderr);
+const test = (name: string, f: () => void) => {
   f();
   passed++;
   console.log(`  ${name}: OK`);
 };
 const produce = (ap = astPath, cp = claimsPath, mode = "stateful-source") =>
   run(verifier, [`--produce-${mode}`, ap, cp, file, evidence, "10"]);
-const check = (mode: string, cp: any) =>
+const check = (mode: string, cp: string) =>
   run(verifier, [`--check-${mode}`, astPath, cp, file, evidence]);
 try {
   test("all undefined functions have complete normal-mode producer claims", () => {
-    const functions = claims.find((c: any) => c.file === file).functions;
+    const functions = fileOf(claims, file).functions;
     assert.equal(functions.length, ast.functions.length);
     assert(
       functions.every(
-        (f: any) =>
-          f.collection.completion === "complete" &&
+        (f) =>
+          f.collection?.completion === "complete" &&
           f.collection.mode === "normal",
       ),
     );
@@ -81,7 +101,7 @@ try {
       verifier,
     ]);
     accepted(r);
-    const doc = JSON.parse(fs.readFileSync(normalized, "utf8"));
+    const doc: SourceClaims = JSON.parse(fs.readFileSync(normalized, "utf8"));
     // The table starts with the primitives and holds one row per compound
     // type the fixture mentions, each a single clause over earlier labels.
     assert.deepEqual(doc.types.slice(0, 4), [
@@ -90,22 +110,29 @@ try {
       [{ boolLit: { value: false } }],
       ["undef"],
     ]);
-    assert(doc.types.length > 4 && doc.types.length < 20, doc.types.length);
+    assert(doc.types.length > 4 && doc.types.length < 20, String(doc.types.length));
     for (const [i, row] of doc.types.entries()) {
       assert.equal(row.length, 1);
-      const operands = row[0].refs
-        ? [row[0].refs.first, ...row[0].refs.rest]
-        : row[0].arrs
-          ? row[0].arrs.arrows.flatMap(([As, B]: [number[][], number[]]) => [...As, B])
-          : [];
+      const clause = must(row[0], "a clause");
+      const operands: Labels[] =
+        typeof clause === "string"
+          ? []
+          : "refs" in clause
+            ? [clause.refs.first, ...clause.refs.rest]
+            : "arrs" in clause
+              ? clause.arrs.arrows.flatMap(([As, B]) => [...As, B])
+              : [];
       assert(
-        operands.every((A: any) => A.every((j: number) => j < i)),
+        operands.every((A) => A.every((j) => j < i)),
         JSON.stringify(row),
       );
     }
-    assert.equal(new Set(doc.types.map(JSON.stringify)).size, doc.types.length);
-    const identity = doc.functions.find((f: any) => f.name === "undefinedIdentity");
-    assert.deepEqual(identity.params[0].type, [3]);
+    assert.equal(
+      new Set(doc.types.map((row) => JSON.stringify(row))).size,
+      doc.types.length,
+    );
+    const identity = stated(doc, "undefinedIdentity");
+    assert.deepEqual(must(identity.params[0], "a parameter").type, [3]);
     assert.deepEqual(identity.result, [3]);
     const shown = fromSourceClaims(source, file, doc, "candidate");
     assert.equal(
@@ -116,72 +143,69 @@ try {
     accepted(produce(astPath, normalized, "source-claims"));
     accepted(check("stateful-source", claimsPath));
   });
-  function candidate(name: string, edit: any) {
-    const doc = JSON.parse(fs.readFileSync(normalized, "utf8"));
-    doc.functions = doc.functions.filter((f: any) => f.name === name);
+  function candidate(
+    name: string,
+    edit: (f: FunctionClaims, a: FunctionAst) => void,
+  ) {
+    const doc: SourceClaims = JSON.parse(fs.readFileSync(normalized, "utf8"));
+    doc.functions = doc.functions.filter((f) => f.name === name);
     const a = {
       ...ast,
-      functions: ast.functions.filter((f: any) => f.name === name),
+      functions: ast.functions.filter((f) => f.name === name),
     };
-    edit(doc.functions[0], a.functions[0]);
+    edit(must(doc.functions[0], "the candidate"), functionIn(a, name));
     const ap = path.join(tmp, "candidate.ast.json"),
       cp = path.join(tmp, "candidate.claims.json");
     fs.writeFileSync(ap, JSON.stringify(a));
     fs.writeFileSync(cp, JSON.stringify(doc));
     return { doc, ap, cp };
   }
-  function rejects(c: any) {
+  function rejects(c: { ap: string; cp: string }) {
     const r = produce(c.ap, c.cp, "source-claims");
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /evidence search failed/);
   }
   test("a claim cannot erase undefined from a live input union", () =>
     rejects(
-      candidate("undefinedUnion", (f: any, a: any) => {
-        f.entries.find((e: any) => e.start === a.body[0].pos[0]).bindings[0].type = [
-          0, 1, 2,
-        ];
+      candidate("undefinedUnion", (f, a) => {
+        must(entryOf(f, must(a.body[0], "a statement").pos[0]).bindings[0], "a binding")
+          .type = [0, 1, 2];
       }),
     ));
   test("null testing does not justify an undefined branch claim", () =>
     rejects(
-      candidate("nullIsDifferent", (f: any, a: any) => {
-        const ret = a.body.at(-1);
-        f.entries.find((e: any) => e.start === ret.pos[0]).bindings[0].type = [0];
+      candidate("nullIsDifferent", (f, a) => {
+        must(entryOf(f, last(a.body).pos[0]).bindings[0], "a binding").type = [0];
       }),
     ));
   test("a precise undefined read requires a supplied current observation", () => {
-    const c = candidate("undefinedCurrent", (f: any, a: any) => {
-      const ret = a.body.at(-1);
-      f.expressions.find((e: any) => String(e.pos) === String(ret.e.pos)).type = [3];
+    const c = candidate("undefinedCurrent", (f, a) => {
+      const ret = stmt(last(a.body), "return");
+      must(
+        f.expressions.find((e) => String(e.pos) === String(ret.e.pos)),
+        "a claim at the return",
+      ).type = [3];
     });
     rejects(c);
-    const f = c.doc.functions[0],
-      ret = ast.functions
-        .find((f: any) => f.name === "undefinedCurrent")
-        .body.at(-1);
-    f.entries
-      .find((e: any) => e.start === ret.pos[0])
-      .bindings.find((b: any) => b.name === "cell").current = [3];
+    const f = must(c.doc.functions[0], "the candidate");
+    const ret = last(functionIn(ast, "undefinedCurrent").body);
+    bindingOf(f, ret.pos[0], "cell").current = [3];
     fs.writeFileSync(c.cp, JSON.stringify(c.doc));
     accepted(produce(c.ap, c.cp, "source-claims"));
-    f.entries
-      .find((e: any) => e.start === ret.pos[0])
-      .bindings.find((b: any) => b.name === "cell").current = [1];
+    bindingOf(f, ret.pos[0], "cell").current = [1];
     fs.writeFileSync(c.cp, JSON.stringify(c.doc));
     rejects(c);
   });
   test("an undefined-bearing observation survives raw-to-neutral conversion", () => {
     const raw = structuredClone(claims);
-    const f = raw
-      .find((f: any) => f.file === file)
-      .functions.find((f: any) => f.name === "undefinedCurrent");
-    const ret = ast.functions
-      .find((f: any) => f.name === "undefinedCurrent")
-      .body.at(-1);
-    f.envs
-      .find((e: any) => e.pos[0] === ret.pos[0])
-      .vars.find((b: any) => b.name === "cell").type.atoms[0].fields[0].read = {
+    const f = functionOf(raw, file, "undefinedCurrent");
+    const ret = last(functionIn(ast, "undefinedCurrent").body);
+    const held = must(
+      must(f.envs.find((e) => e.pos[0] === ret.pos[0]), "an entry")
+        .vars.find((b) => b.name === "cell"),
+      "the cell's claim",
+    );
+    must(atom(claimType(held).atoms[0], "record").fields[0], "a field").read = {
       top: false,
       atoms: [{ a: "undefined" }],
     };
@@ -200,13 +224,12 @@ try {
         verifier,
       ]),
     );
-    const doc = JSON.parse(fs.readFileSync(out, "utf8"));
-    const b = doc.functions
-      .find((f: any) => f.name === "undefinedCurrent")
-      .entries.find((e: any) => e.start === ret.pos[0])
-      .bindings.find((b: any) => b.name === "cell");
+    const doc: SourceClaims = JSON.parse(fs.readFileSync(out, "utf8"));
+    const b = bindingOf(stated(doc, "undefinedCurrent"), ret.pos[0], "cell");
     assert.deepEqual(b.current, [3]);
-    assert.deepEqual(doc.types[b.type[0]], [
+    const labels = b.type;
+    assert(Array.isArray(labels));
+    assert.deepEqual(doc.types[must(labels[0], "a label")], [
       { refs: { first: [1, 2, 3], rest: [] } },
     ]);
     accepted(produce(astPath, cp));
