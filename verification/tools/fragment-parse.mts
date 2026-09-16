@@ -789,8 +789,16 @@ class Gate {
 
   /* -------------------------------------------------------- statements -- */
 
+  /* A branch or loop body. TypeScript allows a single statement where a block
+     could be written, and the two mean the same thing here: a lexical
+     declaration cannot be an unbraced body, so no binding's scope depends on
+     the braces. */
   block(node: Statement): Stmt[] {
-    if (!ts.isBlock(node)) this.fail(node, "expected a block");
+    if (!ts.isBlock(node)) {
+      if (ts.isVariableStatement(node))
+        this.fail(node, "a declaration requires a block body");
+      return [this.stmt(node)];
+    }
     return node.statements.map((s) => this.stmt(s));
   }
 
