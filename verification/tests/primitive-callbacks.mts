@@ -5,6 +5,10 @@ import os from "node:os";
 import vm from "node:vm";
 import { spawnSync } from "node:child_process";
 import { stripTypes } from "../tools/strip-types.mts";
+import type { Ast } from "../tools/fragment.mts";
+import type { ClaimType } from "../tools/claim.mts";
+import { functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
+import { claimAt, expr, fn, last, must, only, stmt } from "./edits.mts";
 // Exact callback contracts, real SKJS exports, and a captured-refinement witness.
 
 
@@ -21,13 +25,13 @@ const [
   badClaimsPath,
   badFile,
 ] = process.argv.slice(2);
-const ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
-const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
+const ast: Ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
+const claims: SkjsClaims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
 const tmp = fs.mkdtempSync(os.tmpdir() + "/primitive-callbacks-");
 const clone = structuredClone;
-const nul = { top: false, atoms: [{ a: "null" }] };
+const nul: ClaimType = { top: false, atoms: [{ a: "null" }] };
 let passed = 0;
-function run(mode: string, a: any, c: any, key = file, evidence?: any) {
+function run(mode: string, a: Ast, c: unknown, key = file, evidence?: unknown) {
   fs.writeFileSync(tmp + "/ast.json", JSON.stringify(a));
   fs.writeFileSync(tmp + "/claims.json", JSON.stringify(c));
   if (evidence)
@@ -44,7 +48,12 @@ function run(mode: string, a: any, c: any, key = file, evidence?: any) {
   assert(!r.error && !r.signal, String(r.error || r.signal));
   return r;
 }
-function expect(name: string, r: any, accept: any, reason = "") {
+function expect(
+  name: string,
+  r: { status: number | null; stdout: string; stderr: string },
+  accept: boolean,
+  reason = "",
+) {
   assert.equal(r.status === 0, accept, name + ": " + r.stderr);
   assert((r.stdout + r.stderr).includes(reason), name + ": " + r.stderr);
   console.log("  " + name + ": OK");
@@ -93,15 +102,10 @@ try {
   );
   const a = clone(ast),
     c = clone(claims);
-  const f = a.functions.find((f: any) => f.name === "booleanIdentity");
-  const call = f.body.at(-1).e;
-  const pos = call.args[0].pos;
+  const call = expr(stmt(last(fn(a, "booleanIdentity").body), "return").e, "apply");
+  const pos = must(call.args[0], "an argument").pos;
   call.args[0] = { k: "lit", pos, lit: { a: "null" } };
-  c
-    .find((f: any) => f.file === file)
-    .functions.find((f: any) => f.name === "booleanIdentity")
-    .exprs.find((e: any) => JSON.stringify(e.pos) === JSON.stringify(pos)).type =
-    nul;
+  claimAt(functionOf(c, file, "booleanIdentity"), pos).type = nul;
   expect(
     "null does not satisfy Boolean callback domain",
     run("--produce-stateful-source", a, c),
@@ -113,10 +117,9 @@ try {
     run("--check-stateful-source", a, c, file, evidence),
     false,
   );
-  const bad = JSON.parse(fs.readFileSync(badClaimsPath, "utf8")),
-    ba = JSON.parse(fs.readFileSync(badAstPath, "utf8"));
-  assert.equal(bad.find((x: any) => x.file === badFile).functions[0]
-    .collection.completion, "aborted");
+  const bad: SkjsClaims = JSON.parse(fs.readFileSync(badClaimsPath, "utf8")),
+    ba: Ast = JSON.parse(fs.readFileSync(badAstPath, "utf8"));
+  assert.equal(only(bad, badFile).collection?.completion, "aborted");
   const rejected = run("--produce-stateful-source", ba, bad, badFile);
   expect("rejected singleton return is not certified", rejected, false);
   const goodRuntime = runtime(file),

@@ -4,15 +4,22 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { decodeClaimType } from "../tools/claim.mts";
+import type { Ast } from "../tools/fragment.mts";
+import { functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
+import { atom, claimType, fn, must } from "./edits.mts";
+
+/** One type alias of a parse, by name. */
+const alias = (a: Ast, name: string) =>
+  must(a.aliases.find((x) => x.name === name), `the alias ${name}`);
 // Source extraction of first-order generic aliases: Id<T> = T and Box<T> = { value: T }.
 
 const [astPath, claimsPath, fileKey, verifier] = process.argv.slice(2);
-const ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
-const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
+const ast: Ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
+const claims: SkjsClaims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "generic-aliases-"));
-const clone = (x: any) => JSON.parse(JSON.stringify(x));
+const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 let passed = 0;
-function run(a: any, c: any) {
+function run(a: Ast, c: SkjsClaims) {
   const ap = path.join(tmp, "ast.json");
   const cp = path.join(tmp, "claims.json");
   const ep = path.join(tmp, "evidence.json");
@@ -33,41 +40,39 @@ function expect(name: string, r: ReturnType<typeof run>, accept: boolean, messag
   console.log(`  ${name}: OK`);
 }
 try {
-  const names = ast.aliases.map((a: any) => a.name).sort();
+  const names = ast.aliases.map((a) => a.name).sort();
   if (JSON.stringify(names) !== JSON.stringify(["Box", "Id"]))
     throw Error("expected Id and Box aliases");
-  const id = ast.aliases.find((a: any) => a.name === "Id");
+  const id = alias(ast, "Id");
   const t = { top: false, atoms: [{ a: "param", name: "T" }] };
   decodeClaimType(id.body);
   if (JSON.stringify(id.body) !== JSON.stringify(t))
     throw Error("Id body should be param T");
-  const wrap = ast.functions.find((f: any) => f.name === "wrap");
-  if (!wrap) throw Error("missing wrap");
-  decodeClaimType(wrap.params[0].type);
-  if (wrap.params[0].type.atoms[0]?.a !== "alias" || wrap.params[0].type.atoms[0]?.name !== "Id")
+  const wrap = fn(ast, "wrap");
+  const wrapped = must(wrap.params[0], "a parameter").type;
+  decodeClaimType(wrapped);
+  if (atom(wrapped.atoms[0], "alias").name !== "Id")
     throw Error("wrap parameter should be alias Id");
-  const exported = claims
-    .find((f: any) => f.file === fileKey)
-    .functions.find((f: any) => f.name === "wrap");
-  decodeClaimType(exported.params[0].type);
+  const exported = functionOf(claims, fileKey, "wrap");
+  const claimed = claimType(must(exported.params[0], "a parameter"));
   decodeClaimType(exported.retType);
-  if (exported.params[0].type.atoms[0]?.a !== "alias" || exported.params[0].type.atoms[0]?.name !== "Id")
+  if (atom(claimed.atoms[0], "alias").name !== "Id")
     throw Error("SKJS should export alias Id");
   expect("generic aliases are accepted", run(ast, claims), true);
   const badBody = clone(ast);
-  badBody.aliases.find((a: any) => a.name === "Id").body = {
+  alias(badBody, "Id").body = {
     top: false,
     atoms: [{ a: "boolean" }],
   };
   expect("Id<T> = boolean is not the identity alias", run(badBody, claims), false, "only identity");
   const unknown = clone(ast);
-  unknown.functions.find((f: any) => f.name === "wrap").params[0].type = {
+  must(fn(unknown, "wrap").params[0], "a parameter").type = {
     top: false,
     atoms: [{ a: "alias", name: "Missing", args: [{ top: false, atoms: [{ a: "boolean" }] }] }],
   };
   expect("unknown type alias is rejected", run(unknown, claims), false, "unknown type alias");
   const twoParams = clone(ast);
-  twoParams.aliases.find((a: any) => a.name === "Id").typeParams = [
+  alias(twoParams, "Id").typeParams = [
     { name: "T", bound: null },
     { name: "U", bound: null },
   ];

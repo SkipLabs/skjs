@@ -1,6 +1,9 @@
 import fs from "node:fs";
 import assert from "node:assert/strict";
 import type { SourceClaims } from "../tools/source-claims.mts";
+import type { Ast } from "../tools/fragment.mts";
+import { at as nth, expr, fn as functionIn, stmt } from "./edits.mts";
+import type { Span } from "../tools/span.mts";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -80,7 +83,7 @@ const expected = {
   "stateful-source/cell-contracts": "out-of-fragment",
 };
 
-const run = (cmd: any, args: string[]) =>
+const run = (cmd: string, args: string[]) =>
   spawnSync(cmd, args, { encoding: "utf8", timeout: 120000 });
 let failures = 0;
 for (const [name, want] of Object.entries(expected)) {
@@ -109,71 +112,73 @@ for (const [name, want] of Object.entries(expected)) {
       detail = (produced.stderr || "").split("\n")[0];
     } else {
       if (name === "callables/unions") {
-        const parsed = JSON.parse(fs.readFileSync(ast, "utf8"));
+        const parsed: Ast = JSON.parse(fs.readFileSync(ast, "utf8"));
         const normalized: SourceClaims = JSON.parse(fs.readFileSync(claims, "utf8"));
-        const escaped = parsed.functions.find((f: any) => f.name === "escapedLocalCallback");
+        const escaped = functionIn(parsed, "escapedLocalCallback");
         const escapedClaims = normalized.functions.find((f) => f.name === escaped.name)!;
-        const callee = escaped.body[2].e.body.callee;
+        const callee = expr(expr(stmt(nth(escaped.body, 2), "return").e, "lambda").body, "apply").callee;
         const calleeClaim = escapedClaims.expressions.find((p) => p.pos[0] === callee.pos[0] && p.pos[1] === callee.pos[1]);
         assert.ok(calleeClaim);
         assert.ok(Array.isArray(calleeClaim.type));
         assert.equal(calleeClaim.type.length, 1);
         assert(!calleeClaim.type.includes(0), "returned closure retains its immutable capture refinement");
-        const later = parsed.functions.find((f: any) => f.name === "laterGuardedCallback");
+        const later = functionIn(parsed, "laterGuardedCallback");
         const laterClaims = normalized.functions.find((f) => f.name === later.name)!;
-        const test = later.body[1].init.body.cond.l;
+        const test = expr(expr(expr(stmt(nth(later.body, 1), "const").init, "lambda").body, "conditional").cond, "bin").l;
         const testClaim = laterClaims.expressions.find((p) => p.pos[0] === test.pos[0] && p.pos[1] === test.pos[1]);
         assert.ok(testClaim);
         assert.ok(Array.isArray(testClaim.type));
         assert(testClaim.type.includes(0), "a later outer guard cannot refine an earlier closure capture");
-        const absent = parsed.functions.find((f: any) => f.name === "twoAbsenceCapture");
+        const absent = functionIn(parsed, "twoAbsenceCapture");
         const absentClaims = normalized.functions.find((f) => f.name === absent.name)!;
-        const absentRef = absent.body[2].e.body.cond.l;
+        const absentRef = expr(expr(expr(stmt(nth(absent.body, 2), "return").e, "lambda").body, "conditional").cond, "bin").l;
         const absentClaim = absentClaims.expressions.find((p) => p.pos[0] === absentRef.pos[0] && p.pos[1] === absentRef.pos[1]);
         assert.ok(absentClaim);
         assert.ok(Array.isArray(absentClaim.type));
         assert(absentClaim.type.includes(0), "eliminating undefined must retain null");
         assert(!absentClaim.type.includes(3), "returned capture retains the outer undefined exclusion");
-        const compound = parsed.functions.find((f: any) => f.name === "compoundAbsenceCapture");
+        const compound = functionIn(parsed, "compoundAbsenceCapture");
         const compoundClaims = normalized.functions.find((f) => f.name === compound.name)!;
-        const compoundCallee = compound.body[2].e.body.callee;
+        const compoundCallee = expr(expr(stmt(nth(compound.body, 2), "return").e, "lambda").body, "apply").callee;
         const compoundClaim = compoundClaims.expressions.find((p) => p.pos[0] === compoundCallee.pos[0] && p.pos[1] === compoundCallee.pos[1]);
         assert.ok(compoundClaim);
         assert.ok(Array.isArray(compoundClaim.type));
         assert.equal(compoundClaim.type.length, 1);
         assert(!compoundClaim.type.includes(0) && !compoundClaim.type.includes(3),
           "the compound guard excludes both absence tags before capture");
-        const ambiguous = parsed.functions.find((f: any) => f.name === "ambiguousCaptureGuard");
+        const ambiguous = functionIn(parsed, "ambiguousCaptureGuard");
         const ambiguousClaims = normalized.functions.find((f) => f.name === ambiguous.name)!;
-        const ambiguousRef = ambiguous.body[1].then[0].e.body.cond.l;
+        const ambiguousRef = expr(expr(expr(stmt(nth(stmt(nth(ambiguous.body, 1), "if").then, 0), "return").e, "lambda").body, "conditional").cond, "bin").l;
         const ambiguousClaim = ambiguousClaims.expressions.find((p) => p.pos[0] === ambiguousRef.pos[0] && p.pos[1] === ambiguousRef.pos[1]);
         assert.ok(ambiguousClaim);
         assert.ok(Array.isArray(ambiguousClaim.type));
         assert(ambiguousClaim.type.includes(0), "a successful disjunction must retain the path admitted by flag");
         assert.equal(ambiguousClaim.type.length, 2, "capture retains both null and the callable");
-        const probe = parsed.functions.find((f: any) => f.name === "callbackProbeDoesNotNarrow");
+        const probe = functionIn(parsed, "callbackProbeDoesNotNarrow");
         const probeClaims = normalized.functions.find((f) => f.name === probe.name)!;
-        const probedRef = probe.body[2].then[0].e.cond.l;
+        const probedRef = expr(expr(stmt(nth(stmt(nth(probe.body, 2), "if").then, 0), "return").e, "conditional").cond, "bin").l;
         const probedClaim = probeClaims.expressions.find((p) => p.pos[0] === probedRef.pos[0] && p.pos[1] === probedRef.pos[1]);
         assert.ok(probedClaim);
         assert.ok(Array.isArray(probedClaim.type));
         assert(probedClaim.type.includes(0), "a Boolean probe result does not refine the captured callback");
-        const fn = parsed.functions.find((f: any) => f.name === "distinctNullableCallbacks");
+        const fn = functionIn(parsed, "distinctNullableCallbacks");
         const fc = normalized.functions.find((f) => f.name === fn.name)!;
         assert.ok(fc);
-        const at = (e: any) => {
+        const at = (e: { pos: Span }) => {
           const site = fc.expressions.find((p) => p.pos[0] === e.pos[0] && p.pos[1] === e.pos[1]);
           assert.ok(site);
         assert.ok(Array.isArray(site.type));
           return site.type;
         };
-        assert.equal(fn.body[3].cond.l.name, "second");
-        assert(at(fn.body[3].cond.l).includes(0), "guarding first must leave second nullable");
-        const firstCall = fn.body[3].then[0].e;
-        const secondCall = fn.body[4].e;
-        assert.equal(firstCall.callee.name, "first");
-        assert.equal(secondCall.callee.name, "second");
-        const branchEntry = fc.entries.find((entry) => entry.start === fn.body[3].then[0].pos[0]);
+        const guard = stmt(nth(fn.body, 3), "if");
+        const tested = expr(expr(guard.cond, "bin").l, "id");
+        assert.equal(tested.name, "second");
+        assert(at(tested).includes(0), "guarding first must leave second nullable");
+        const firstCall = expr(stmt(nth(guard.then, 0), "return").e, "apply");
+        const secondCall = expr(stmt(nth(fn.body, 4), "return").e, "apply");
+        assert.equal(expr(firstCall.callee, "id").name, "first");
+        assert.equal(expr(secondCall.callee, "id").name, "second");
+        const branchEntry = fc.entries.find((entry) => entry.start === nth(guard.then, 0).pos[0]);
         assert.ok(branchEntry);
         assert.deepEqual(branchEntry.bindings.find((binding) => binding.name === "second")?.type, [0],
           "an unmentioned callback retains its own null branch at statement entry");
