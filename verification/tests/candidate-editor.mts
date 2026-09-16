@@ -129,6 +129,31 @@ assert.deepEqual(
 {
   const tabled: Normalized = structuredClone(normalized);
   tabled.claims.types = [["nul"], [{ boolLit: { value: true } }], [{ boolLit: { value: false } }], ["undef"]];
+  tabled.claims.types.push([{ refs: { first: [1, 2], rest: [] } }]);
+  const observed = [{ name: "cell", type: [4], current: [1] }];
+  const withObservation = editClaim(tabled, fn, env, observed);
+  assert.deepEqual(claimValue(withObservation, fn, env), observed);
+  assert.deepEqual(
+    claimValue(
+      editClaim(withObservation, fn, env, claimValue(withObservation, fn, env)),
+      fn,
+      env,
+    ),
+    observed,
+  );
+  assert.deepEqual(
+    claimValue(
+      editClaim(withObservation, fn, env, [{ ...observed[0], current: null }]),
+      fn,
+      env,
+    ),
+    [{ name: "cell", type: [4], current: null }],
+  );
+  for (const current of ["true", ["1"], [-1], [1.5], [5]])
+    assert.throws(() =>
+      editClaim(tabled, fn, env, [{ name: "cell", type: [4], current }]),
+    );
+  tabled.claims.types.pop();
   assert.deepEqual(editable(tabled, fn, item), { top: false, atoms: [{ a: "boolean" }] });
   const boolean = { top: false, atoms: [{ a: "boolean" }] };
   const cell = {

@@ -14,7 +14,9 @@ import type {
   Labels,
   NamedPoint,
   Point,
+  Row,
 } from "../tools/source-claims.mts";
+import { decodeLabels } from "../tools/type-graph.mts";
 
 /** Where a claim sits, in the terms the candidate is addressed by. */
 export interface ClaimSite {
@@ -130,14 +132,31 @@ const point = (
   }
   return { current, ...surface.lower(types, value) };
 };
-const bindings = (types: unknown, value: SkjsNamedPoint[]): NamedPoint[] =>
-  value.map((b) => ({ name: b.name, ...point(types, b.type) }));
+type EditableBinding = SkjsNamedPoint & { current?: Labels | null };
+const bindings = (types: Row[], value: EditableBinding[]): NamedPoint[] =>
+  value.map((b) => ({
+    name: b.name,
+    ...point(
+      types,
+      b.type,
+      b.current == null ? null : decodeLabels(b.current, types.length),
+    ),
+  }));
 
 /** An environment is a list of named claims, and nothing else is one. */
-const isEnvironment = (value: unknown): value is SkjsNamedPoint[] =>
+const isEnvironment = (value: unknown): value is EditableBinding[] =>
   isList(value) &&
   value.every(
-    (b) => isRecord(b) && typeof b.name === "string" && claimedType(b.type),
+    (b) =>
+      isRecord(b) &&
+      typeof b.name === "string" &&
+      claimedType(b.type) &&
+      (b.current === undefined ||
+        b.current === null ||
+        (isList(b.current) &&
+          b.current.every(
+            (l) => typeof l === "number" && Number.isSafeInteger(l) && l >= 0,
+          ))),
   );
 const ENVIRONMENT_REQUIRED =
   "An environment must be an array of {name, type} bindings";
