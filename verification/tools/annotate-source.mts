@@ -452,7 +452,7 @@ function render(
   for(const [index,f] of report.functions.entries()) {
     checkSpan(f.namePos);
     const key=f.namePos.join(":"), node=functions.get(key);
-    if(!node || node.name!.text!==f.name || seen.has(`fn:${key}`))throw Error("missing or duplicate function identity");
+    if(!node || node.name?.text!==f.name || seen.has(`fn:${key}`))throw Error("missing or duplicate function identity");
     seen.add(`fn:${key}`);
     if(!Array.isArray(f.entries)||!Array.isArray(f.expressions))throw Error("invalid function claims");
     add(node.getStart(sf),{kind:"function",id:idOf("function",index),name:f.name,producer:report.producer,
@@ -579,6 +579,14 @@ function compareClaims(source: string, baseline: ReportInput, current: ReportInp
   }
   changes.sort((a,b)=>a.span[0]-b.span[0]||a.kind.localeCompare(b.kind));
   return {baselineProducer:baseline.producer,changes};
+}
+
+/** The declaration a reported function names. `render` above matched every one
+ * of them, so failing here is that having stopped being true. */
+function declaring(nodes: ts.FunctionDeclaration[], start: number): ts.FunctionDeclaration {
+  const found=nodes.find(n=>n.name?.getStart()===start);
+  if(!found)throw Error("no declaration for a reported function");
+  return found;
 }
 
 function run(executable: string, args: string[]) {
@@ -874,18 +882,23 @@ export function main(args: string[]) {
     ...(options.verify ? {verifierPath:path.resolve(options.verify)} : {}),
     ...identity,source:report.source,annotatedSha256:hash(annotated),producer:report.producer,
     ...(options.diagnostics ? {diagnosticsPath:path.resolve(options.diagnostics),diagnostics} : {}),
-    ...(conversion?{conversionPath:path.resolve(options.conversion!),conversion}:{}),
-    ...(comparison?{baselinePath:path.resolve(options.baseline!),comparison}:{}),
-    missingFunctions:functionNodes.filter(n=>n.name && n.body && !report.functions.some(f=>f.namePos[0]===n.name!.getStart())).map(n=>({
-      name:n.name!.text,namePos:[n.name!.getStart(),n.name!.end],pos:[n.getStart(),n.end],
-      parameters:n.parameters.map(p=>p.name.getText()),missingSites:missingClaimSites(n,{entries:[],expressions:[]})})),
+    ...(conversion&&options.conversion?{conversionPath:path.resolve(options.conversion),conversion}:{}),
+    ...(comparison&&options.baseline?{baselinePath:path.resolve(options.baseline),comparison}:{}),
+    // A declaration the report says nothing about: named, so the reader can
+    // offer its contract. One without a name or a body is not a declaration
+    // this report is about.
+    missingFunctions:functionNodes.flatMap(n=>{
+      const name=n.name;
+      if(!name||!n.body||report.functions.some(f=>f.namePos[0]===name.getStart()))return [];
+      return [{name:name.text,namePos:[name.getStart(),name.end],pos:[n.getStart(),n.end],
+        parameters:n.parameters.map(p=>p.name.getText()),missingSites:missingClaimSites(n,{entries:[],expressions:[]})}];
+    }),
     gaps:coverage(source,report),
     functions:report.functions.map((f,i)=>({id:`f${i}`,...f,
       // The declared result's annotation, where the source writes one: the reader
       // shows the claimed result there, and a return contract points at it.
       ...((node: ts.FunctionDeclaration)=>({pos:[node.getStart(),node.end],resultPos:node.type ? [node.type.getStart(),node.type.end] : null,missingSites:missingClaimSites(node,f)}))(
-        // `render` above matched every reported function to a declaration.
-        functionNodes.find(n=>n.name?.getStart()===f.namePos[0])!),
+        declaring(functionNodes,f.namePos[0])),
       entries:f.entries.map((e,j)=>({id:`f${i}e${j}`,...e})),
       expressions:f.expressions.map((e,j)=>({id:`f${i}x${j}`,...e}))})),
     results:results ? results.map((r,i)=>({function:`f${i}`,...r})) : results};

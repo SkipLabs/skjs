@@ -108,9 +108,9 @@ try {
         {kind:"expression",pos:[es,es+1],reason:"fuel-exhausted"}]}]}];
     // The probe always states some, and the assertions below are about how
     // many: a missing list is a failure, not an empty one.
-    const get=()=>{const u=fromSkjs(source,"test.ts",raw,"skjs").functions[0]!.unavailableTypes;assert(u);return u;};
+    const get=()=>{const u=fromSkjs(source,"test.ts",raw,"skjs").functions[0].unavailableTypes;assert(u);return u;};
     assert.equal(get().length,5);
-    assert.equal(get()[3]!.reason,"future-reason");
+    assert.equal(get()[3].reason,"future-reason");
     const f=must(must(raw[0],"the probe file").functions[0],"the probe function");
     must(must(f.envs[0],"an entry").vars[0],"a binding").type={top:false,atoms:[{a:"boolean"}]};
     assert(!get().some(d=>d.kind==="entry"&&d.binding==="x"));

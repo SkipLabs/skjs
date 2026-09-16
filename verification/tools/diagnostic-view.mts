@@ -412,7 +412,10 @@ export function presentObligation(ob: ObligationDiagnostic, source: string): Obl
     assumptions.push(`source node = ${JSON.stringify(ob.source.node)}`);
     if (ob.source.requiredKnowledge) assumptions.push(`source heap requirements = ${JSON.stringify(ob.source.requiredKnowledge)}`);
     const mapping = t.target.mapping;
-    const destination = ob.destination.claim!.context.map((type,i) =>
+    // An edge's destination states a claim — `readDiagnostic` refuses one that
+    // does not — and what follows is what that claim required.
+    const required = ob.destination.claim?.context ?? [];
+    const destination = required.map((type,i) =>
       `available ${mapping === null ? i : mapping[i]}: ${printLabels(type)}`);
     conclusion = `transfer to node ${t.target.label} establishes { ${destination.join(", ")} }`;
     if (ob.destination.requiredKnowledge) conclusion += ` and heap ${JSON.stringify(ob.destination.requiredKnowledge)}`;

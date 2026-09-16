@@ -81,14 +81,14 @@ function lineAt(starts: number[], pos: number) {
     hi = starts.length;
   while (lo + 1 < hi) {
     const mid = (lo + hi) >> 1;
-    if (starts[mid]! <= pos) lo = mid;
+    if (starts[mid] <= pos) lo = mid;
     else hi = mid;
   }
   return lo;
 }
 
 const lineEndAt = (source: string, starts: number[], line: number) =>
-  line + 1 < starts.length ? starts[line + 1]! - 1 : source.length;
+  line + 1 < starts.length ? starts[line + 1] - 1 : source.length;
 
 // Claim spans start at the declaration, but a comment written directly above a
 // function belongs to it for whoever is reading. Take that block, stopping at a
@@ -97,7 +97,7 @@ const lineEndAt = (source: string, starts: number[], line: number) =>
 const COMMENT_LINE = /^\s*(\/\/|\/\*|\*)/;
 function commentStartLine(source: string, starts: number[], from: number, floor: number) {
   let line = lineAt(starts, from);
-  while (line > 0 && starts[line - 1]! >= floor) {
+  while (line > 0 && starts[line - 1] >= floor) {
     const text = source.slice(starts[line - 1], lineEndAt(source, starts, line - 1));
     if (!text.trim() || !COMMENT_LINE.test(text)) break;
     line--;
@@ -236,14 +236,17 @@ function producerMarks(rep: MarkedReport): ProducerMark[] {
   let m;
   while ((m = re.exec(rep.diagnostics))) {
     const [, file, line, from, to, text] = m;
-    if (rep.file && !file!.endsWith(rep.file)) continue;
+    // Every group of the pattern above participates in a match, so a match
+    // that reached here has them all.
+    if (file === undefined || text === undefined) continue;
+    if (rep.file && !file.endsWith(rep.file)) continue;
     const ln = Number(line) - 1;
     if (!(ln >= 0 && ln < starts.length)) continue;
     const end = lineEndAt(rep.source, starts, ln);
-    const start = Math.min(starts[ln]! + Number(from) - 1, end);
+    const start = Math.min(starts[ln] + Number(from) - 1, end);
     marks.push({
-      pos: [start, Math.min(Math.max(starts[ln]! + Number(to) - 1, start + 1), end)],
-      text: text!.trim(),
+      pos: [start, Math.min(Math.max(starts[ln] + Number(to) - 1, start + 1), end)],
+      text: text.trim(),
       line: ln,
     });
   }
@@ -292,7 +295,7 @@ function companionEntry(f: ShownFunction) {
   let best = -1;
   sites.forEach((s, i) => {
     if (s.kind !== "environment" || s.pos[0] > failing.pos[0] || s.pos[1] < failing.pos[1]) return;
-    if (best < 0 || s.pos[1] - s.pos[0] < sites[best]!.pos[1] - sites[best]!.pos[0]) best = i;
+    if (best < 0 || s.pos[1] - s.pos[0] < sites[best].pos[1] - sites[best].pos[0]) best = i;
   });
   return best;
 }
@@ -323,8 +326,8 @@ function sourceMarks(
     const multiline = at(pos[1] - 1) !== line;
     return {
       line,
-      col: pos[0] - starts[line]!,
-      end: (multiline ? lineEndAt(source, starts, line) : pos[1]) - starts[line]!,
+      col: pos[0] - starts[line],
+      end: (multiline ? lineEndAt(source, starts, line) : pos[1]) - starts[line],
       multiline,
     };
   };
@@ -414,7 +417,7 @@ function sourceMarks(
         density === "key" && !involved ? shown.filter((b) => s.changed.has(b.name)) : shown;
       if (!list.length && !involved) return;
       const line = at(s.pos[0]);
-      const col = s.pos[0] - starts[line]!;
+      const col = s.pos[0] - starts[line];
       entries.push({
         kind: "entry",
         id: "s" + i,
@@ -456,7 +459,7 @@ function sourceMarks(
     producerMarks(rep).forEach((mark, i) => {
       if (mark.pos[0] < f.pos[0] || mark.pos[1] > f.pos[1]) return;
       const line = at(mark.pos[0]);
-      const col = mark.pos[0] - starts[line]!;
+      const col = mark.pos[0] - starts[line];
       items.push({
         kind: "error",
         id: "p" + i,
@@ -509,8 +512,9 @@ function packRows<T extends Packable>(items: T[]): { items: T[]; free: number }[
 function groupLines(items: MarkItem[]): Map<number, MarkItem[]> {
   const grouped = new Map<number, MarkItem[]>();
   for (const item of items) {
-    if (!grouped.has(item.line)) grouped.set(item.line, []);
-    grouped.get(item.line)!.push(item);
+    const line = grouped.get(item.line) ?? [];
+    line.push(item);
+    grouped.set(item.line, line);
   }
   return grouped;
 }

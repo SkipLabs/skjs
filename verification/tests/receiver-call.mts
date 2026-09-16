@@ -14,7 +14,7 @@ const [astPath, claimsPath, file, verifier] = process.argv.slice(2);
 /** The call with a receiver this fixture ends with. */
 type Received = Extract<Expr, { k: "callWithReceiver" | "bindWithReceiver" }>;
 const received = (a: Ast): Received =>
-  expr(stmt(last(a.functions[0]!.body), "return").e, "callWithReceiver");
+  expr(stmt(last(a.functions[0].body), "return").e, "callWithReceiver");
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "receiver-call-"));
 try {
   const source = fs.readFileSync(file, "utf8");

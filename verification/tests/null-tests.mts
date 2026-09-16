@@ -59,7 +59,7 @@ const claims: SkjsClaims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
 const tmp = fs.mkdtempSync(os.tmpdir() + "/null-tests-");
 const fn = (c: SkjsClaims) => functionOf(c, file, "isNull");
 /** The equality test this fixture's only function is. */
-const test = (a: Ast) => expr(stmt(nth(a.functions[0]!.body, 0), "return").e, "bin");
+const test = (a: Ast) => expr(stmt(nth(a.functions[0].body, 0), "return").e, "bin");
 let passed = 0;
 function run(mode: string, a: Ast, c: unknown, evidence?: unknown, key = file) {
   fs.writeFileSync(tmp + "/ast.json", JSON.stringify(a));
@@ -403,7 +403,7 @@ try {
     false,
   );
   const reversedGuard = structuredClone(guardAst);
-  expr(stmt(nth(reversedGuard.functions[0]!.body, 0), "if").cond, "bin").op = "!==";
+  expr(stmt(nth(reversedGuard.functions[0].body, 0), "if").cond, "bin").op = "!==";
   expect(
     "null guard evidence rejects a changed observation",
     run(
@@ -520,7 +520,7 @@ try {
   const metadataFile = fileOf(metadataClaims, guardFile);
   metadataFile.functions = metadataFile.functions
     .filter((f) => f.name === "compoundContinue");
-  const lastEntry = last(metadataAst.functions[0]!.body).pos[0];
+  const lastEntry = last(metadataAst.functions[0].body).pos[0];
   const metadataEntry = entryAt(only(metadataClaims, guardFile), lastEntry);
   const missingMetadataClaims = structuredClone(metadataClaims);
   const missingMetadata = only(missingMetadataClaims, guardFile);
@@ -652,7 +652,7 @@ try {
   );
   const repaired = structuredClone(exitClaims);
   const exitFn = only(repaired, exitFile);
-  const ret = stmt(nth(exitAst.functions[0]!.body, 1), "return");
+  const ret = stmt(nth(exitAst.functions[0].body, 1), "return");
   const boolean: ClaimType = { top: false, atoms: [{ a: "boolean" }] };
   binding(exitFn, ret.pos[0], "value").type = boolean;
   claimFrom(exitFn, ret.e.pos[0]).type = boolean;

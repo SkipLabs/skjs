@@ -103,7 +103,9 @@ export function main(args: string[]) {
       converterSha256:hash(fs.readFileSync(opts.verifier)),
       functions:selected.functions.map(f=>({name:f.name,namePos:f.namePos,...(f.collection?{collection:f.collection}:{})})),
       originalClaims,omissions:converted.omissions,
-      ...(diagnostics!==null?{diagnostics,diagnosticsPath:path.resolve(opts.diagnostics!),diagnosticsSha256:hash(diagnostics)}:{})};
+      ...(diagnostics!==null&&opts.diagnostics!==undefined
+        ?{diagnostics,diagnosticsPath:path.resolve(opts.diagnostics),diagnosticsSha256:hash(diagnostics)}
+        :{})};
     fs.writeFileSync(output,bytes,{flag:"wx"});
     try {fs.writeFileSync(manifest,JSON.stringify(provenance,null,2)+"\n",{flag:"wx"});}
     catch(e){fs.unlinkSync(output);throw e;}

@@ -91,7 +91,7 @@ export class Reader {
     const at = fns.findIndex((f) => f.id === this.selection?.functionId);
     const next = at + by;
     if (next < 0 || next >= fns.length) return;
-    this.select(fns[next]!.id);
+    this.select(fns[next].id);
   }
 
   get functions(): ShownFunction[] {
@@ -134,7 +134,7 @@ export class Reader {
       // A fresh report makes the previous selection meaningless: ids identify
       // records within one snapshot, not the same claim across collections.
       this.selection = this.report.functions.length
-        ? { functionId: this.report.functions[0]!.id, site: null }
+        ? { functionId: this.report.functions[0].id, site: null }
         : null;
     } catch (e) {
       this.error = (e as Error).message;
@@ -301,7 +301,7 @@ export class Reader {
       // The innermost site containing the offset is the one meant.
       if (
         best < 0 ||
-        s.pos[1] - s.pos[0] < fn.sites[best]!.pos[1] - fn.sites[best]!.pos[0]
+        s.pos[1] - s.pos[0] < fn.sites[best].pos[1] - fn.sites[best].pos[0]
       )
         best = i;
     });

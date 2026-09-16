@@ -100,7 +100,7 @@ function openFile(absolute: string, text: string): SourceFile {
   const project = projectFor(absolute);
   const syntax = project.program.getSyntacticDiagnostics(absolute);
   if (syntax.length > 0)
-    throw new Error(`gate: parse error: ${syntax[0]!.text}`);
+    throw new Error(`gate: parse error: ${syntax[0].text}`);
   const file = project.program.getSourceFile(absolute);
   if (!file)
     throw new Error(`gate: the compiler produced no tree for ${absolute}`);
@@ -244,9 +244,9 @@ class Gate {
         this.atomsOf(operand, one);
         if (one.length !== 1)
           this.fail(operand, "an intersection operand must be a single type");
-        return one[0]!;
+        return one[0];
       });
-      const head = parts[0]!;
+      const head = parts[0];
       if (parts.some((p) => p.a !== head.a))
         this.fail(node, "intersection operands must have the same shape");
       if (head.a !== "record" && head.a !== "function")
@@ -670,7 +670,7 @@ class Gate {
 
     const prefix = (stmts: Stmt[], tail: Expr, allowReturn = false): Expr => {
       for (let i = stmts.length - 1; i >= 0; --i) {
-        const st = stmts[i]!;
+        const st = stmts[i];
         if (st.k === "while" || st.k === "break" || st.k === "continue")
           this.fail(
             at,

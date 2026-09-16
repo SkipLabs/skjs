@@ -40,7 +40,7 @@ const parameterClaims =(c: SkjsClaims) => functionOf(c, fileKey, "selectParamete
 const ty =(v: string): ClaimType => ({ top: false, atoms: [{ a: "booleanlit", v }] });
 /** The binding this fixture's first function copies, and the `if` a named
  * function branches on. */
-const copied = (a: Ast) => stmt(nth(a.functions[0]!.body, 0), "const");
+const copied = (a: Ast) => stmt(nth(a.functions[0].body, 0), "const");
 const branch = (f: FunctionAst) => stmt(must(f.body.find((s) => s.k === "if"), "an if"), "if");
 let passed = 0;
 function run(mode: string, a: Ast, c: unknown, evidence?: unknown) {
@@ -73,7 +73,7 @@ try {
   const cases: [string, (a: Ast, c: SkjsClaims) => void, string?][] = [
     ["false claim for true initializer", (a,c) => { claimFrom(fn(c), copied(a).init.pos[0]).type = ty("false"); }, "evidence search failed"],
     ["source annotation independently enforced", a => { copied(a).annot = ty("false"); }, "evidence search failed"],
-    ["incoming edge rejects invented refinement", (a,c) => { binding(fn(c), nth(a.functions[0]!.body, 1).pos[0], "x").type = ty("false"); }, "evidence search failed"],
+    ["incoming edge rejects invented refinement", (a,c) => { binding(fn(c), nth(a.functions[0].body, 1).pos[0], "x").type = ty("false"); }, "evidence search failed"],
     ["missing statement environment", (a,c) => { fn(c).envs = []; }, "missing statement environment"],
     ["missing expression claim", (a,c) => { fn(c).exprs = []; }, "no claimed type"],
     ["missing local binding", (a,c) => { fn(c).envs.forEach((e) => e.vars = e.vars.filter((v) => v.name !== "x")); }, "missing claimed binding"],
@@ -82,9 +82,9 @@ try {
     ["malformed source literal", a => { atom(expr(copied(a).init, "lit").lit, "booleanlit").v = "maybe"; }, "boolean literal must be exactly"],
     ["return signature mismatch", (a,c) => { fn(c).retType = ty("true"); }, "claimed return type differs"],
     ["uninitialized source read", a => { const bound = copied(a); bound.init = { k: "id", pos: bound.init.pos, name: "x" }; }, "unbound or uninitialized"],
-    ["duplicate local declaration", a => { stmt(nth(a.functions[0]!.body, 1), "const").name = "x"; }, "duplicate or shadowing local declaration"],
+    ["duplicate local declaration", a => { stmt(nth(a.functions[0].body, 1), "const").name = "x"; }, "duplicate or shadowing local declaration"],
     ["duplicate file claims", (a,c) => { c.push(clone(fileOf(c, fileKey))); }, "exactly one matching claim file"],
-    ["duplicate source identity", a => { a.functions[1] = clone(a.functions[0]!); }, "duplicate function identity"],
+    ["duplicate source identity", a => { a.functions[1] = clone(a.functions[0]); }, "duplicate function identity"],
     // Falling off the end is not refused, it is checked: the exit carries the
     // value a completing body produces, and `undefined` establishes nothing the
     // source can declare. Asserting on the term pins the reason, not just the
@@ -133,7 +133,7 @@ try {
     ["renamed claim file", (a,c) => { fileOf(c, fileKey).file += ".other"; }, "exactly one matching claim file"],
     ["never expression claim", (a,c) => { must(fn(c).exprs[0], "a claim").type = {top:false,atoms:[]}; }, "evidence search failed"],
     ["never incoming binding", (a,c) => {
-      binding(fn(c), nth(a.functions[0]!.body, 1).pos[0], "x").type = {top:false,atoms:[]};
+      binding(fn(c), nth(a.functions[0].body, 1).pos[0], "x").type = {top:false,atoms:[]};
     }, "evidence search failed"],
     ["AST identity mismatch", a => { a.file = "other.ts"; }, "AST file key mismatch"],
   ];

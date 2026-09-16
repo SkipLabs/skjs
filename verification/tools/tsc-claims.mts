@@ -299,7 +299,7 @@ function dedupSortArrays(arrs: number[][]): number[][] {
   const sorted = arrs.map((a) => a.slice()).sort(arrCompare);
   const out: number[][] = [];
   for (const a of sorted)
-    if (!out.length || arrCompare(out[out.length - 1]!, a) !== 0) out.push(a);
+    if (!out.length || arrCompare(out[out.length - 1], a) !== 0) out.push(a);
   return out;
 }
 function internRow(types: Row[], row: Row): number {
@@ -370,11 +370,11 @@ function primitiveLabelsOf(type: Type): number[] | null {
   return null;
 }
 
-interface RecordRead {
-  ok: boolean;
-  reason?: string;
-  valueType?: Type;
-}
+/** A reading either succeeded and carries what it read, or it did not and
+ * carries why — where it has a reason to give. */
+type RecordRead =
+  | { ok: true; valueType: Type }
+  | { ok: false; reason?: string };
 
 /**
  * `{ value: T }`-shaped: exactly one required, non-readonly property named
@@ -395,7 +395,7 @@ function tryRecord(type: Type, checker: Checker, callableBag = false): RecordRea
       ok: false,
       reason: props.length === 0 ? "no-value-field" : "several-properties",
     };
-  const prop = props[0]!;
+  const prop = props[0];
   if (prop.name !== "value") return { ok: false, reason: "no-value-field" };
   if (checker.getIndexInfosOfType(type).length)
     return { ok: false, reason: "indexed-type" };
@@ -416,12 +416,9 @@ function tryRecord(type: Type, checker: Checker, callableBag = false): RecordRea
   };
 }
 
-interface ArrowRead {
-  ok: boolean;
-  reason?: string;
-  domains?: Type[];
-  result?: Type;
-}
+type ArrowRead =
+  | { ok: true; domains: Type[]; result: Type }
+  | { ok: false; reason?: string };
 
 /**
  * One signature with ordered required parameters, no
@@ -435,7 +432,7 @@ function tryArrow(type: Type, checker: Checker): ArrowRead {
     checker.getSignaturesOfType(type, SignatureKind.Construct).length
   )
     return { ok: false, reason: "overloaded-arrow" };
-  const sig = sigs[0]!;
+  const sig = sigs[0];
   if (sig.typeParameters?.length) return { ok: false, reason: "generic-arrow" };
   if (sig.thisParameter !== undefined) return { ok: false, reason: "this-param" };
   let parameterCount = sig.parameters.length;
@@ -507,16 +504,22 @@ function tryRecordIntersection(
   fuel: number,
 ): { first: number[]; rest: number[][] } | null {
   const results = parts.map((t) => tryRecord(t, checker));
-  if (!results.every((r) => r.ok)) {
-    const bad = results.find((r) => !r.ok && r.reason);
-    if (bad) throw new Refusal(bad.reason!, checker.typeToString(type));
+  const read = results.flatMap((r) => (r.ok ? [r] : []));
+  if (read.length !== results.length) {
+    const reason = refusals(results)[0];
+    if (reason !== undefined) throw new Refusal(reason, checker.typeToString(type));
     return null;
   }
   const operands = dedupSortArrays(
-    results.map((r) => translateType(r.valueType!, checker, types, false, fuel - 1)),
+    read.map((r) => translateType(r.valueType, checker, types, false, fuel - 1)),
   );
-  return { first: operands[0]!, rest: operands.slice(1) };
+  return { first: operands[0], rest: operands.slice(1) };
 }
+
+/** The reasons a list of readings gives, in order: a reading that refused
+ * without one is "not this shape at all", which is not a refusal to report. */
+const refusals = (results: (RecordRead | ArrowRead)[]): string[] =>
+  results.flatMap((r) => (r.ok || r.reason === undefined ? [] : [r.reason]));
 
 /** An intersection of arrows, in declaration order, exact repeats dropped. */
 function tryArrowIntersection(
@@ -527,16 +530,17 @@ function tryArrowIntersection(
   fuel: number,
 ): [number[][], number[]][] | null {
   const results = parts.map((t) => tryArrow(t, checker));
-  if (!results.every((r) => r.ok)) {
-    const bad = results.find((r) => !r.ok && r.reason);
-    if (bad) throw new Refusal(bad.reason!, checker.typeToString(type));
+  const read = results.flatMap((r) => (r.ok ? [r] : []));
+  if (read.length !== results.length) {
+    const reason = refusals(results)[0];
+    if (reason !== undefined) throw new Refusal(reason, checker.typeToString(type));
     return null;
   }
   const arrows: [number[][], number[]][] = [];
-  for (const r of results) {
+  for (const r of read) {
     const pair: [number[][], number[]] = [
-      r.domains!.map((domain) => translateType(domain, checker, types, false, fuel - 1)),
-      translateType(r.result!, checker, types, false, fuel - 1),
+      r.domains.map((domain) => translateType(domain, checker, types, false, fuel - 1)),
+      translateType(r.result, checker, types, false, fuel - 1),
     ];
     if (!arrows.some((a) => JSON.stringify(a) === JSON.stringify(pair)))
       arrows.push(pair);
@@ -560,9 +564,9 @@ function translateType(type: Type, checker: Checker, types: Row[], records = tru
     if (!bag.ok) throw new Refusal(bag.reason || "callable-field", checker.typeToString(type));
     const arrow = tryArrow(type, checker);
     if (!arrow.ok) throw new Refusal(arrow.reason || "callable-signature", checker.typeToString(type));
-    const P = translateType(bag.valueType!, checker, types, false, fuel - 1);
-    const Ds = arrow.domains!.map(D => translateType(D, checker, types, false, fuel - 1));
-    const R = translateType(arrow.result!, checker, types, false, fuel - 1);
+    const P = translateType(bag.valueType, checker, types, false, fuel - 1);
+    const Ds = arrow.domains.map(D => translateType(D, checker, types, false, fuel - 1));
+    const R = translateType(arrow.result, checker, types, false, fuel - 1);
     return [internRow(types, [{callable: {first: P, rest: [], arrows: [[Ds,R]]}}])];
   }
   if (type.isIntersectionType()) {
@@ -586,15 +590,15 @@ function translateType(type: Type, checker: Checker, types: Row[], records = tru
   if (rec.ok)
     return [
       internRow(types, [
-        { refs: { first: translateType(rec.valueType!, checker, types, false, fuel - 1), rest: [] } },
+        { refs: { first: translateType(rec.valueType, checker, types, false, fuel - 1), rest: [] } },
       ]),
     ];
   if (rec.reason) throw new Refusal(rec.reason, checker.typeToString(type));
   const arr = tryArrow(type, checker);
   if (arr.ok) {
     const pair: [number[][], number[]] = [
-      arr.domains!.map((domain) => translateType(domain, checker, types, false, fuel - 1)),
-      translateType(arr.result!, checker, types, false, fuel - 1),
+      arr.domains.map((domain) => translateType(domain, checker, types, false, fuel - 1)),
+      translateType(arr.result, checker, types, false, fuel - 1),
     ];
     return [internRow(types, [{ arrs: { arrows: [pair] } }])];
   }
@@ -1484,7 +1488,8 @@ if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
   let out: string | null = null;
   while (rest.length) {
     const flag = rest.shift();
-    if (flag === "--out" && rest.length) out = rest.shift()!;
+    const next = rest[0];
+    if (flag === "--out" && next !== undefined) { rest.shift(); out = next; }
     else {
       process.stderr.write(`invalid option ${flag}\n`);
       process.exit(1);

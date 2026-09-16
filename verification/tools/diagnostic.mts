@@ -201,7 +201,7 @@ export function readDiagnostic(
   if (lines.length !== 1) return undefined;
   let d: Record<string, unknown>;
   try {
-    const parsed: unknown = JSON.parse(lines[0]!.slice(PREFIX.length));
+    const parsed: unknown = JSON.parse(lines[0].slice(PREFIX.length));
     if (!isRecord(parsed)) return undefined;
     d = parsed;
     const variants: Record<string,string[]> = {

@@ -11,9 +11,10 @@ export function listFunctions(file: string): { name: string; text: string }[] {
   const absolute = path.resolve(file);
   const sf = projectFor(absolute).program.getSourceFile(absolute);
   if (!sf) throw Error(`missing compiler source for ${file}`);
-  return sf.statements.filter(ts.isFunctionDeclaration)
-    .filter(f => f.name && f.body)
-    .map(f => ({ name: f.name!.text, text: source.slice(f.getStart(sf), f.end) }));
+  return sf.statements.filter(ts.isFunctionDeclaration).flatMap(f =>
+    f.name && f.body
+      ? [{ name: f.name.text, text: source.slice(f.getStart(sf), f.end) }]
+      : []);
 }
 
 /** Everything at the top level of a file that is not a function with a body:
@@ -38,5 +39,5 @@ export function listContext(file: string): string {
 export function listFunctionsOf(label: string, text: string): string[] {
   const sf = openText(path.resolve(label), text);
   return sf.statements.filter(ts.isFunctionDeclaration)
-    .filter(f => f.name && f.body).map(f => f.name!.text);
+    .flatMap(f => (f.name && f.body ? [f.name.text] : []));
 }

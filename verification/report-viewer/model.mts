@@ -317,8 +317,8 @@ function parseReport(annotated: string): ParsedReport {
   src += annotated.slice(last);
   rep.source = src;
   for (let i = 0; i < rep.functions.length; i++) {
-    rep.functions[i]!.pos[1] = rep.functions[i + 1]?.pos[0] ?? src.length;
-    ordered(rep.functions[i]!.sites);
+    rep.functions[i].pos[1] = rep.functions[i + 1]?.pos[0] ?? src.length;
+    ordered(rep.functions[i].sites);
   }
   return rep;
 }
@@ -334,10 +334,10 @@ function fromBundle(bundle: Bundle): ShownReport {
       !pos.every(Number.isSafeInteger) ||
       pos[0] < 0 ||
       pos[0] >= pos[1] ||
-      pos[1]! > source.length
+      pos[1] > source.length
     )
       throw new Error("Invalid claim source span");
-    return [pos[0]!, pos[1]!];
+    return [pos[0], pos[1]];
   };
   const sameSpan = (a: Span, b: Span) => a[0] === b[0] && a[1] === b[1];
   const raw = (x: unknown) => (x === undefined ? null : JSON.stringify(x, null, 2));
@@ -511,7 +511,7 @@ function fromBundle(bundle: Bundle): ShownReport {
     // `source` describes the other end.
     const destination = atEnds.destination;
     const role =
-      (destination && at >= 0 && destination.environmentStart === sites[at]!.pos[0]
+      (destination && at >= 0 && destination.environmentStart === sites[at].pos[0]
         ? destination.role
         : "") ||
       atEnds.source?.role ||
@@ -548,7 +548,7 @@ function fromBundle(bundle: Bundle): ShownReport {
       role,
       binding: location.binding || "",
       at: at >= 0 ? at : null,
-      pos: at >= 0 ? sites[at]!.pos : Array.isArray(location.pos) ? span(location.pos) : null,
+      pos: at >= 0 ? sites[at].pos : Array.isArray(location.pos) ? span(location.pos) : null,
       ...(edge ? { edge } : {}),
     };
   }
