@@ -3,18 +3,21 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { decodeClaimType } from "../tools/claim.mts";
+import { decodeClaimType, type ClaimType } from "../tools/claim.mts";
+import type { Ast } from "../tools/fragment.mts";
+import { functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
+import { at, fn, stmt } from "./edits.mts";
 // Source extraction of T extends boolean: T ≤ boolean, not true ≤ T.
 
 const [astPath, claimsPath, fileKey, verifier] = process.argv.slice(2);
-const ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
-const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
+const ast: Ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
+const claims: SkjsClaims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "generic-extends-"));
-const clone = (x: any) => JSON.parse(JSON.stringify(x));
-const boolean = { top: false, atoms: [{ a: "boolean" }] };
-const t = { top: false, atoms: [{ a: "param", name: "T" }] };
+const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
+const boolean: ClaimType = { top: false, atoms: [{ a: "boolean" }] };
+const t: ClaimType = { top: false, atoms: [{ a: "param", name: "T" }] };
 let passed = 0;
-function run(a: any, c: any) {
+function run(a: Ast, c: SkjsClaims) {
   const ap = path.join(tmp, "ast.json");
   const cp = path.join(tmp, "claims.json");
   const ep = path.join(tmp, "evidence.json");
@@ -35,8 +38,7 @@ function expect(name: string, r: ReturnType<typeof run>, accept: boolean, messag
   console.log(`  ${name}: OK`);
 }
 try {
-  const asBoolean = ast.functions.find((f: any) => f.name === "asBoolean");
-  if (!asBoolean) throw Error("missing asBoolean");
+  const asBoolean = fn(ast, "asBoolean");
   if (JSON.stringify(asBoolean.typeParams) !== JSON.stringify([{ name: "T", bound: boolean }]))
     throw Error("asBoolean should declare T extends boolean");
   decodeClaimType(asBoolean.params[0].type);
@@ -45,9 +47,7 @@ try {
     throw Error("parameter type should be param T");
   if (JSON.stringify(asBoolean.retType) !== JSON.stringify(boolean))
     throw Error("result should be boolean");
-  const exported = claims
-    .find((f: any) => f.file === fileKey)
-    .functions.find((f: any) => f.name === "asBoolean");
+  const exported = functionOf(claims, fileKey, "asBoolean");
   decodeClaimType(exported.params[0].type);
   decodeClaimType(exported.retType);
   if (JSON.stringify(exported.params[0].type) !== JSON.stringify(t))
@@ -56,14 +56,14 @@ try {
     throw Error("SKJS should export boolean result");
   expect("asBoolean and bounded identity are accepted", run(ast, claims), true);
   const trap = clone(ast);
-  const idB = trap.functions.find((f: any) => f.name === "idBounded");
-  idB.body[0].e = { k: "lit", pos: idB.body[0].e.pos, lit: { a: "booleanlit", v: "true" } };
+  const returned = stmt(at(fn(trap, "idBounded").body, 0), "return");
+  returned.e = { k: "lit", pos: returned.e.pos, lit: { a: "booleanlit", v: "true" } };
   expect("true as T is not justified by extends boolean", run(trap, claims), false, "does not justify true");
   const unbounded = clone(ast);
-  unbounded.functions.find((f: any) => f.name === "asBoolean").typeParams[0].bound = null;
+  fn(unbounded, "asBoolean").typeParams[0].bound = null;
   expect("returning T as boolean requires the bound", run(unbounded, claims), false, "requires T extends boolean");
   const notBoolean = clone(ast);
-  notBoolean.functions.find((f: any) => f.name === "asBoolean").typeParams[0].bound = t;
+  fn(notBoolean, "asBoolean").typeParams[0].bound = t;
   expect("a parameter cannot be its own bound", run(notBoolean, claims), false, "only `extends boolean`");
   console.log(`Generic extends: ${passed} passed`);
 } catch (e) {

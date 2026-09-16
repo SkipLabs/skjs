@@ -1,41 +1,58 @@
 #!/usr/bin/env node
 /**
- * Every written `any` in the node side, found with the compiler the project
- * builds with. `noImplicitAny` is already on and governs the ones nobody
- * wrote; this is for the ones somebody did, which `tsc` has no option for and
- * `typescript-eslint` cannot check here because it does not support
- * TypeScript 7.
+ * Everywhere the node side tells the compiler not to check something, found
+ * with the compiler the project builds with. `tsc` has no option for any of
+ * these, and `typescript-eslint` cannot check them here because it does not
+ * support TypeScript 7.
+ *
+ * Three ways of saying it, one report:
  *
  * A written `any` is not a weaker type, it is the absence of one: the compiler
  * stops reading the expression, so a field that does not exist reads as
  * `undefined` rather than failing. That is not hypothetical here — two checks
  * on type-parameter defaults read `tp.default` through an `any` for as long as
  * they existed, and never once fired.
+ *
+ * An `as` says the value is something the compiler cannot see that it is, and
+ * a `!` says it is there when the compiler cannot see that either. Both are
+ * assertions: nothing checks them, and a decoder that establishes the fact is
+ * what they stand in for.
  */
 import fs from "node:fs";
 import path from "node:path";
 import * as ts from "typescript/unstable/ast";
 import { openText } from "./fragment-parse.mts";
 
+/** What was written, and which of the three it is. */
+export type Kind = "any" | "as" | "!";
 export interface Written {
   file: string;
   line: number;
   column: number;
+  kind: Kind;
   text: string;
 }
 
-/** Each `any` written in a file, in source order. */
+const KINDS: [number, Kind][] = [
+  [ts.SyntaxKind.AnyKeyword, "any"],
+  [ts.SyntaxKind.AsExpression, "as"],
+  [ts.SyntaxKind.NonNullExpression, "!"],
+];
+
+/** Each one written in a file, in source order. */
 export function writtenAny(file: string): Written[] {
   const text = fs.readFileSync(file, "utf8");
   const source = openText(path.resolve(file), text);
   const found: Written[] = [];
   const walk = (node: ts.Node): void => {
-    if (node.kind === ts.SyntaxKind.AnyKeyword) {
+    const kind = KINDS.find(([syntax]) => syntax === node.kind)?.[1];
+    if (kind !== undefined) {
       const at = source.getLineAndCharacterOfPosition(node.getStart(source));
       found.push({
         file,
         line: at.line + 1,
         column: at.character + 1,
+        kind,
         text: text.split("\n")[at.line]?.trim() ?? "",
       });
     }
@@ -52,11 +69,19 @@ const files = roots.flatMap((dir) =>
     .filter((name) => name.endsWith(".mts") || name.endsWith(".ts"))
     .map((name) => `${dir}/${name}`),
 );
-const found = files.flatMap(writtenAny);
+const wanted = KINDS.map(([, kind]) => kind).filter(
+  (kind) => !process.argv.some((a) => a.startsWith("--kind=")) ||
+    process.argv.includes(`--kind=${kind}`),
+);
+const found = files.flatMap(writtenAny).filter((w) => wanted.includes(w.kind));
 if (process.argv.includes("--list"))
-  for (const w of found) console.log(`${w.file}:${w.line}:${w.column}  ${w.text}`);
+  for (const w of found)
+    console.log(`${w.file}:${w.line}:${w.column}  [${w.kind}]  ${w.text}`);
 const byFile = new Map<string, number>();
 for (const w of found) byFile.set(w.file, (byFile.get(w.file) ?? 0) + 1);
 for (const [file, n] of [...byFile].sort((a, b) => b[1] - a[1]))
   console.log(`${String(n).padStart(4)}  ${file}`);
-console.log(`\n${found.length} written \`any\` in ${byFile.size} of ${files.length} files`);
+const counts = wanted.map(
+  (kind) => `${found.filter((w) => w.kind === kind).length} \`${kind}\``,
+);
+console.log(`\n${counts.join(", ")} in ${byFile.size} of ${files.length} files`);

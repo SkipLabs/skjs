@@ -60,7 +60,7 @@ try {
     "saved evidence must not accept reversed actuals with the same types");
   for (const edit of [
     (c: Call) => { c.args.pop(); },
-    (c: Call) => { c.args.push(structuredClone(c.args[0]!)); },
+    (c: Call) => { c.args.push(structuredClone(c.args[0])); },
   ]) {
     const changed = structuredClone(ast);
     edit(order(changed));
@@ -70,7 +70,7 @@ try {
 
   const badArgument = structuredClone(ast), badClaims = structuredClone(claims);
   const badCall = order(badArgument);
-  const secondPos = badCall.args[1]!.pos;
+  const secondPos = badCall.args[1].pos;
   badCall.args[1] = {k: "lit", pos: secondPos, lit: {a: "null"}};
   claimAt(functionOf(badClaims, file, "argumentOrder"), secondPos).type =
     {top: false, atoms: [{a: "null"}]};

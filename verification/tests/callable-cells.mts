@@ -44,7 +44,7 @@ try {
     const replaced = fn(source, "replacedCallback");
     const receiver = expr(stmt(at(replaced.body, 2), "effect").e, "write").receiver;
     const claim = claimAt(functionOf(changed, file, replaced.name), receiver.pos);
-    mutate(atom(claimType(claim).atoms[0], "record").fields[0]!);
+    mutate(atom(claimType(claim).atoms[0], "record").fields[0]);
     for (const mode of ["--check-stateful-source", "--produce-stateful-source"]) {
       const result = run(mode, source, changed);
       assert.notEqual(result.status, 0, `${name}: ${mode} accepted the forged contract`);

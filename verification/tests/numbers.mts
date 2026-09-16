@@ -86,7 +86,7 @@ try {
 
   // Dropping null from the declared parameter is not something the guard grants.
   const dropNull = clone(ast);
-  fn(dropNull, "guardNumber").params[0]!.type = number;
+  fn(dropNull, "guardNumber").params[0].type = number;
   expect("the guarded parameter keeps its null arm", run(dropNull, claims), false);
 
   console.log(`Numbers: ${passed} passed`);

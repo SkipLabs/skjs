@@ -177,7 +177,7 @@ try {
     run("--produce-stateful-source", exitAst, exitClaims, undefined, exitFile),
     false,
   );
-  const body = exitAst.functions[0]!.body;
+  const body = exitAst.functions[0].body;
   const ret = stmt(body[body.length - 1], "return");
   const flag = binding(exitFn, ret.pos[0], "flag");
   const expression = claimFrom(exitFn, ret.e.pos[0]);
@@ -230,7 +230,7 @@ try {
   );
   const negated = claimFrom(
     singletonFn,
-    stmt(singletonAst.functions[0]!.body[0], "return").e.pos[0],
+    stmt(singletonAst.functions[0].body[0], "return").e.pos[0],
   );
   negated.type = singleton(false);
   expect(

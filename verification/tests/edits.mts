@@ -21,10 +21,13 @@ import type {
   SkjsNamedPoint,
 } from "../tools/skjs-claims.mts";
 
-const found = <T,>(what: string, value: T | undefined): T => {
-  if (value === undefined) throw Error(`this fixture has no ${what}`);
+/** A value the suite requires the fixture to have. */
+export const must = <T,>(value: T | null | undefined, what: string): T => {
+  if (value === null || value === undefined)
+    throw Error(`this fixture has no ${what}`);
   return value;
 };
+const found = <T,>(what: string, value: T | undefined): T => must(value, what);
 
 /** The members of a tagged union one tag selects. `Extract` will not do: some
  * members carry several tags, and are the same node whichever it is. */

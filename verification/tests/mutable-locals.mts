@@ -87,7 +87,7 @@ try {
   // The storage contract is the annotation. Narrow it to `true` and the
   // assignment of `false` no longer meets it: the write is the check.
   const narrowed = only(ast, "capturedReaderObservesWrite");
-  stmt(at(narrowed.functions[0]!.body, 0), "let").annot = tru;
+  stmt(at(narrowed.functions[0].body, 0), "let").annot = tru;
   expect(
     "a value outside the storage contract is refused",
     run(narrowed, claimsFor("capturedReaderObservesWrite")),
@@ -161,11 +161,11 @@ try {
     );
   }
   const wrongTag = only(ast, "mutableTag");
-  wrongTag.functions[0]!.retType = tru;
+  wrongTag.functions[0].retType = tru;
   const wrongClaims = claimsFor("mutableTag");
   const tagged = only_(wrongClaims, fileKey);
   tagged.retType = tru;
-  const ternary = stmt(at(wrongTag.functions[0]!.body, 1), "return").e;
+  const ternary = stmt(at(wrongTag.functions[0].body, 1), "return").e;
   claimAt(tagged, ternary.pos).type = tru;
   expect(
     "a cell identity cannot justify the false ternary claim",
@@ -173,7 +173,7 @@ try {
     false,
   );
   const shadow = only(ast, "snapshotSurvivesWrite");
-  stmt(at(shadow.functions[0]!.body, 0), "let").name = "seed";
+  stmt(at(shadow.functions[0].body, 0), "let").name = "seed";
   expect(
     "mutable locals cannot shadow active bindings",
     run(shadow, claimsFor("snapshotSurvivesWrite")),
