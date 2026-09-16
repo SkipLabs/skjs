@@ -50,9 +50,10 @@ def validTy (bound : Nat) (A : Ty Nat) : Bool := A.all (fun i => i < bound)
 
 def clauseTypes : Clause (Ty Nat) → List (Ty Nat)
   | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ => []
-  | .refs A bs => A :: bs
+  | .refs A bs => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd)
   | .arrs L => L.flatMap (fun p => p.1 ++ [p.2])
-  | .callable A bs L => A :: bs ++ L.flatMap (fun p => p.1 ++ [p.2])
+  | .callable A bs L =>
+      A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ L.flatMap (fun p => p.1 ++ [p.2])
 
 def validClaim (bound : Nat) (c : PointClaim Nat) : Bool :=
   (c.type :: c.context).all (validTy bound)
@@ -91,8 +92,8 @@ decreasing_by
   omega
 
 def validEffect (bound : Nat) : HeapExpressionRules.StepEvidence Nat → Bool
-  | .typedRead _ B e => validTy bound B && validEvidence bound e
-  | .ordinary e | .pure e | .created e | .allocated _ _ e | .written _ _ _ e => validEvidence bound e
+  | .typedRead _ B e => (B.map Prod.snd).all (validTy bound) && validEvidence bound e
+  | .ordinary e | .pure e | .created e | .allocated e | .written _ _ _ e => validEvidence bound e
   | .observedRead _ _ | .knownValue _ _ => true
 
 def validResponse (r : Request) (c : Response) : Bool :=

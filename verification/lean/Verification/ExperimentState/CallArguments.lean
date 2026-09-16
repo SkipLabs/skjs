@@ -214,12 +214,18 @@ theorem unary_binding (a body : Tm) : bindParameters 1 [a] body = subst 0 a body
 theorem omitted_unary_binding (body : Tm) :
     bindParameters 1 [] body = subst 0 .undef body := rfl
 
+/-- Initializers of an allocation reduce exactly as actual arguments do. -/
+theorem Step.makeArgs {c : CallCode} {ns : List String} {h h' : Heap} {args args' : List Tm}
+    (hs : ArgStep h args h' args') : Step h (.makeAt c ns args) h' (.makeAt c ns args') := by
+  obtain ⟨i, a, a', hg, hb, hstep, rfl⟩ := focus_iff.mp hs
+  exact .makeArg hg hb hstep
+
 /-- Dispatch a fully evaluated frame to the code on its saved callee. The
 descriptor supplies the parameter count; all actuals, including extras,
 must be values before normalization. Invocation itself performs no heap effect. -/
 inductive Invoke : Frame → Tm → Prop where
   | closure : Values args →
-      Invoke ⟨.obj l (.closure arity body), args⟩ (bindParameters arity args body)
+      Invoke ⟨.objAt fs (.closure arity body), args⟩ (bindParameters arity args body)
 
 theorem invoke_ready (hi : Invoke frame body) : frame.ready := by
   cases hi with
@@ -237,14 +243,14 @@ theorem invoke_no_prepare (hi : Invoke frame body) : ¬ Prepare h frame h' frame
 /-- Readiness is sufficient for dispatch precisely when the saved callee has
 invocation code. No scope or type test is added to the untyped machine. -/
 theorem invoke_iff : Invoke frame result ↔
-    ∃ l arity body, frame.callee = .obj l (.closure arity body) ∧ Values frame.args ∧
+    ∃ fs arity body, frame.callee = .objAt fs (.closure arity body) ∧ Values frame.args ∧
       result = bindParameters arity frame.args body := by
   constructor
   · intro hi
     cases hi with
     | closure hv => exact ⟨_, _, _, rfl, hv, rfl⟩
   · rcases frame with ⟨f, args⟩
-    rintro ⟨l, arity, body, hf, hv, rfl⟩
+    rintro ⟨fs, arity, body, hf, hv, rfl⟩
     cases hf
     exact .closure hv
 

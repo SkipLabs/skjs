@@ -1300,7 +1300,7 @@ implemented.
 
 ## Callables
 
-The one-cell callable fragment described below is implemented. The rest of
+The callable fragment described below is implemented. The rest of
 this section states the broader design and the rules it would add, in the terms of the rules above, so the
 design can be read as a user of the verifier would read it: what can be claimed
 about a value, what a claim commits to, and what the verifier will and will not
@@ -1321,12 +1321,16 @@ class constructor's `[[Call]]` always throws, and a value of TypeScript's
 
 The original [operational language](SEMANTICS.md#operational-language) separated
 lambdas from locations. The Lean runtime now has only object values for both
-plain objects (`obj l absent`) and functions (`obj l (closure arity b)`). `CallCode`
-is a separate descriptor type; its body is not a runtime value. `funE b`
-allocates a fresh function object with a null-initialized one-cell bag, while
-`letE` binds without allocation. Plain allocation and function creation are
-abbreviations of `make code initialContents`, with one congruence rule, one
-allocation step, and the shared semantic proof `make_rule`. `isFun` recognizes function objects and
+plain objects (`objAt fields absent`) and functions (`objAt fields (closure
+arity b)`), where `fields` is the finite map from field names to the locations
+they stand for, fixed at allocation. `CallCode` is a separate descriptor type;
+its body is not a runtime value. `makeAt code names inits` takes one fresh
+location per named field; `funE b` is the one-field case, giving a source
+function a null-initialized bag — a function has no properties of its own, and
+that one location is what gives it an identity to compare. `letE` binds without
+allocation. Plain allocation and one-field function creation are abbreviations
+of `makeAt`, with one congruence rule, one allocation step, and the shared
+semantic proofs `make_rule` and `make_fields_rule`. `isFun` recognizes function objects and
 `isRef` recognizes plain objects, both independently of the heap.
 
 The implemented semantic slice is in

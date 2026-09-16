@@ -623,12 +623,12 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
     ["nul"],
     [{ boolLit: { value: true } }],
     [{ boolLit: { value: false } }],
-    [{ refs: { first: [1, 2], rest: [] } }],
+    [{ refs: { first: [["value", [1, 2]]], rest: [] } }],
     [{ arrs: { arrows: [[[[0]], [1, 2]]] } }],
     [{ mystery: 7 }],
-    [{ refs: { first: [6], rest: [] } }],
+    [{ refs: { first: [["value", [6]]], rest: [] } }],
   ];
-  types.push([{ refs: { first: [7], rest: [] } }]);
+  types.push([{ refs: { first: [["value", [7]]], rest: [] } }]);
   // The table's rows 1 and 2 are the literals a source `boolean` lowers to, and
   // a reference row is printed as the record the source declared.
   assert.equal(ob.typeText(types, [1, 2]), "boolean");
@@ -641,19 +641,19 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   // A normalized claim is lifted into the structural encoding to be edited,
   // with the current-content assertion as the cell's read side, and lowered
   // back, interning the rows the edit needs into the document's own table.
-  const lifted = surface.lift(types, [3], [1]);
+  const lifted = surface.lift(types, [3], [["value",[1]]]);
   assert.equal(surface.printType(lifted).text, "{ value: boolean = (true) }");
-  assert.equal(surface.lift(types, [1], [1]), null);
+  assert.equal(surface.lift(types, [1], [["value",[1]]]), null);
   const table = structuredClone(types);
   assert.deepEqual(
     surface.lower(table, surface.parseType("{ value: boolean = (true) }")),
-    { type: [3], current: [1] },
+    { type: [3], current: [["value", [1]]] },
   );
   assert.deepEqual(surface.lower(table, surface.parseType("{ value: true }")), {
     type: [types.length],
     current: null,
   });
-  assert.deepEqual(table[types.length], [{ refs: { first: [1], rest: [] } }]);
+  assert.deepEqual(table[types.length], [{ refs: { first: [["value", [1]]], rest: [] } }]);
   assert.deepEqual(surface.lower(table, surface.parseType("null | boolean")), {
     type: [0, 1, 2],
     current: null,
@@ -797,9 +797,9 @@ const recorded = (d: ObligationDiagnostic) =>
   observed.transfer.available = required;
   observed.transfer.target.mapping = null;
   observed.destination.requiredKnowledge = {
-    cells: [{ slot: 1, contents: ["tru"] }],
-    values: [{ slot: 0, contents: ["nul", "fls"] }],
-    links: [{ cell: 1, value: 0, alias: false }],
+    cells: [{ slot: 1, contents: ["tru"], field: "value" }],
+    values: [{ slot: 0, contents: ["nul", "fls"], field: "value" }],
+    links: [{ cell: 1, value: 0, alias: false, field: "value" }],
   };
   const observedView = ob.obligationView(observed);
   assert.equal(
@@ -809,9 +809,9 @@ const recorded = (d: ObligationDiagnostic) =>
   assert.deepEqual(
     observedView.knowledge.map((r) => [r.binding, r.what]),
     [
-      ["slot 1", "holds true"],
+      ["slot 1", ".value holds true"],
       ["slot 0", "is null | false"],
-      ["slot 0", "is a read of slot 1"],
+      ["slot 0", "is a read of slot 1.value"],
     ],
   );
   assert.equal(observedView.knowledgeIsTheDifference, true);
@@ -825,15 +825,15 @@ const recorded = (d: ObligationDiagnostic) =>
   assert.equal(bothView.knowledge.length, 3);
   // An alias link reads as an equality between slots, not as a heap read.
   assert.equal(
-    ob.knowledgeRows({ links: [{ cell: 3, value: 2, alias: true }] })[0].what,
+    ob.knowledgeRows({ links: [{ cell: 3, value: 2, alias: true, field: "value" }] })[0].what,
     "is the same value as slot 3",
   );
   // With a source map the same fact reads in the words of the source.
   assert.deepEqual(
     ob
-      .knowledgeRows({ cells: [{ slot: 1, contents: ["tru"] }] }, ["r", "cell"])
+      .knowledgeRows({ cells: [{ slot: 1, contents: ["tru"], field: "value" }] }, ["r", "cell"])
       .map((x) => [x.binding, x.what]),
-    [["cell", "holds true"]],
+    [["cell", ".value holds true"]],
   );
   // A descriptor is a name, or the expression whose value the binding holds.
   assert.equal(ob.bindingText({ name: "cell" }, "x"), "cell");
@@ -1106,20 +1106,20 @@ assert.equal(must(failedAt(absentEnv), 'a located failure').site, "unclaimed");
 // unfolding or dropping overloads. Its complete syntax is validated JSON.
 {
   const graph = decodeGraph([
-    [{refs:{first:[0],rest:[[1]]}}],
-    [{callable:{first:[0],rest:[[1]],arrows:[[[[0],[1]],[1]],[[],[]]]}}],
+    [{refs:{first: [["value", [0]]],rest: [[["value", [1]]]]}}],
+    [{callable:{first: [["value", [0]]],rest: [[["value", [1]]]],arrows:[[[[0],[1]],[1]],[[],[]]]}}],
     [{arrs:{arrows:[]}}], ["bool"], ["undef"], ["nul"],
     [{boolLit:{value:false}}], [{boolLit:{value:true}}],
   ]);
   assert.deepEqual(parseGraph(printGraph(graph)),graph);
   const rows = graphDefinitions(graph);
-  assert.equal(rows[0].definition,'ref(#0) & ref(#1)');
+  assert.equal(rows[0].definition,'ref{value: #0} & ref{value: #1}');
   assert.match(rows[1].definition,/\(#0, #1\) => #1; \(\) => never/);
   assert.equal(rows.length,graph.length);
   assert.equal(ob.typeText(graph,[6,7]),'boolean');
-  for (const invalid of [[["new-clause"]],[[{refs:{first:[1],rest:[]}}]],[[{boolLit:{value:true,extra:0}}]]])
+  for (const invalid of [[["new-clause"]],[[{refs:{first: [["value", [1]]],rest:[]}}]],[[{boolLit:{value:true,extra:0}}]]])
     assert.throws(() => decodeGraph(invalid));
-  const term = decodeTerm({make:{call:{closure:{arity:2,body:{call:{f:{var:{i:0}},args:["tru","nul"]}}}},a:"undef"}});
+  const term = decodeTerm({makeAt:{call:{closure:{arity:2,body:{call:{f:{var:{i:0}},args:["tru","nul"]}}}},names:["left","right"],inits:["undef","tru"]}});
   assert.deepEqual(parseTerm(printTerm(term)),term);
   assert.throws(() => decodeTerm({var:{i:-1}}));
   assert.throws(() => decodeTerm({read:{a:"nul",extra:0}}));
@@ -1133,6 +1133,9 @@ assert.equal(must(failedAt(absentEnv), 'a located failure').site, "unclaimed");
   assert.deepEqual(surface.parseType(surface.printType(number).text),number);
   const rows = [["nul"],[{boolLit:{value:true}}],[{boolLit:{value:false}}],["undef"]];
   // A current-content edit must not erase another field during normalization.
-  assert.throws(() => surface.lower(rows,surface.parseType('{ value: boolean = (true), other: null }')),/one field/);
+  const multi = surface.parseType('{ value: boolean = (true), other: null }');
+  const point = surface.lower(rows,multi);
+  assert.deepEqual(point.current, [["value",[1]]]);
+  assert.equal(surface.printType(surface.lift(rows,point.type,point.current)).text, surface.printType(multi).text);
   assert.throws(() => surface.lower(rows,surface.parseType('{ value: boolean } @{"call":"custom"}')),/mode/);
 }

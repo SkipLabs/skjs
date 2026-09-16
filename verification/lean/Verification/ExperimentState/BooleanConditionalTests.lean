@@ -5,7 +5,7 @@ namespace Verification.ExperimentState.BooleanConditionalTests
 open Lean ProgramTyping ProgramCertificates ControlFlow RequestJson PositiveGraphs
 
 private def types : List (List (PositiveNormalization.Clause (List Nat))) :=
-  [[.bool],[.nul],[.refs [0] []],[.arrs [([[1]],[0])]]]
+  [[.bool],[.nul],[.refs [(valueField, [0])] []],[.arrs [([[1]],[0])]]]
 private def ok (r : Except String α) : Bool := match r with | .ok _ => true | .error _ => false
 private def roundtrip (r : Request) : Except String Unit := do
   let input ← Json.parse (toJson r).compress
@@ -85,7 +85,7 @@ private def knownProof : Evidence Nat :=
 private def knownEffectProgram : Program :=
   [⟨.alloc .tru,.bind 1⟩,
    ⟨.ite (.letE (.write (.var 0) .fls) .tru) .fls (.read .nul),.ret⟩]
-#guard ok (roundtrip ⟨refinedTypes ++ [[.refs [0,1] []]],knownEffectProgram,
+#guard ok (roundtrip ⟨refinedTypes ++ [[.refs [(valueField, [0,1])] []]],knownEffectProgram,
   [⟨[],[3]⟩,⟨[[3]],[1]⟩],[1],0,[]⟩)
 
 /-- Selecting a known arm must not erase the condition's write. -/

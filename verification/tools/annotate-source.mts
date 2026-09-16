@@ -352,7 +352,10 @@ function fromSourceClaims(
     if(!Object.hasOwn(b,"current"))throw Error("every source-claim point requires an explicit current field");
     const ordinary=type(b.type);
     if(b.current==null)return {type:ordinary,raw:b.type};
-    if(!Array.isArray(b.current)||b.current.some((i: number)=>!Number.isInteger(i)||i<0||i>=4))throw Error("invalid current-content assertion");
+    if(!Array.isArray(b.current)||!b.current.length||b.current.some((f)=>
+        !Array.isArray(f)||f.length!==2||typeof f[0]!=="string"||
+        !Array.isArray(f[1])||f[1].some((i)=>!Number.isInteger(i)||i<0)))
+      throw Error("invalid current-content assertion");
     if(!Array.isArray(b.type))throw Error("rigid parameters cannot carry current contents");
     const lifted=surface.lift(types,b.type,b.current);
     if(!lifted)throw Error("invalid current-content assertion");

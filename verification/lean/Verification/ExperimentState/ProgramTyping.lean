@@ -37,7 +37,7 @@ theorem meaning_value {G : NormalGraph ι} {A n W v} (h : meaning G A n W v) :
   | boolLit b => cases b <;> cases hc <;> exact ⟨rfl, trivial⟩
   | num => obtain ⟨b, rfl⟩ := hc; exact ⟨rfl, trivial⟩
   | numLit b => subst v; exact ⟨rfl, trivial⟩
-  | refs a rest => obtain ⟨l, _, rfl, _⟩ := hc.1; exact ⟨rfl, trivial⟩
+  | refs a rest => obtain ⟨flds, rfl, _⟩ := hc.1; exact ⟨rfl, trivial⟩
   | arrs L => exact ⟨(callsT_callable hc).val, (callsT_callable hc).scoped⟩
   | callable a bs L => exact ⟨(callsT_callable hc.2).val,(callsT_callable hc.2).scoped⟩
   | undef => subst v; exact ⟨rfl, trivial⟩
@@ -243,22 +243,36 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   | num : Represents G A .num → HasTy G Γ (.num b) A
   | funE : Represents G F (.arrs L) → (∀ p ∈ L, p.1.length = arity) →
       (∀ p ∈ L, HasTy G (p.1 ++ Γ) b p.2) → HasTy G Γ (.make (.closure arity b) .nul) F
-  | makeCallable : Represents G F (.callable P [] L) → HasTy G Γ a P →
+  /-- A callable object: the same allocation as a record, with invocation code
+  attached. Its bag is a record like any other, so its fields are named by the
+  program rather than fixed here. -/
+  | makeCallable {parts : List (String × Ty ι × Tm)} :
+      Represents G F (.callable (parts.map fun p => (p.1, p.2.1)) [] L) →
+      (parts.map Prod.fst).Nodup →
+      (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) →
       (∀ p ∈ L, p.1.length = arity) →
-      (∀ p ∈ L, HasTy G (p.1 ++ Γ) b p.2) → HasTy G Γ (.make (.closure arity b) a) F
+      (∀ p ∈ L, HasTy G (p.1 ++ Γ) b p.2) →
+      HasTy G Γ (.makeAt (.closure arity b) (parts.map Prod.fst)
+        (parts.map fun p => p.2.2)) F
   | callCallable : HasTy G Γ f F → Represents G F (.callable P Ps L) → ((xs : List (Ty ι × Tm)).map Prod.fst,B) ∈ L →
       (∀ p ∈ xs, HasTy G Γ p.2 p.1) → HasTy G Γ (.call f (xs.map Prod.snd)) B
-  | readCallable : HasTy G Γ a F → Represents G F (.callable P Ps L) →
-      HasTy G Γ (.read a) P
-  | writeCallable : HasTy G Γ a F → Represents G F (.callable P Ps L) → HasTy G Γ b P →
-      Represents G N .nul → HasTy G Γ (.write a b) N
+  | readCallable : HasTy G Γ a F → Represents G F (.callable P Ps L) → (f, A) ∈ P →
+      HasTy G Γ (.readAt f a) A
+  | writeCallable : HasTy G Γ a F → Represents G F (.callable P Ps L) → (f, A) ∈ P →
+      HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
   | app : HasTy G Γ f F → Represents G F (.arrs L) → ((xs : List (Ty ι × Tm)).map Prod.fst, B) ∈ L →
       (∀ p ∈ xs, HasTy G Γ p.2 p.1) → HasTy G Γ (.call f (xs.map Prod.snd)) B
   | letE : HasTy G Γ a A → HasTy G (A :: Γ) b B → HasTy G Γ (.letE a b) B
-  | alloc : HasTy G Γ a A → Represents G Ref (.refs A []) → HasTy G Γ (.alloc a) Ref
-  | read : HasTy G Γ a Ref → Represents G Ref (.refs A []) → HasTy G Γ (.read a) A
-  | write : HasTy G Γ a Ref → Represents G Ref (.refs A []) → HasTy G Γ b A →
-      Represents G N .nul → HasTy G Γ (.write a b) N
+  /-- **Allocation.** One object, one fresh location per named field. The field
+  names are distinct, which is what makes the object a map from them. -/
+  | alloc {parts : List (String × Ty ι × Tm)} : (parts.map Prod.fst).Nodup →
+      (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) →
+      Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) []) →
+      HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
+  | read : HasTy G Γ a Ref → Represents G Ref (.refs fs []) → (f, A) ∈ fs →
+      HasTy G Γ (.readAt f a) A
+  | write : HasTy G Γ a Ref → Represents G Ref (.refs fs []) → (f, A) ∈ fs →
+      HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
   | ifBool : HasTy G Γ c C → Answers G C .isBool true →
       HasTy G Γ t A → HasTy G Γ e A → HasTy G Γ (.ite c t e) A
   /-- The condition still evaluates; its singleton type selects the reachable arm. -/
@@ -310,19 +324,48 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     have hcode := invocation_of_body he hlen (fun p hp => ih p hp)
     have hs := make_callable_rule nulT_adm arity n W h _ .nul hcode rfl hw hh rfl
     exact Safe_mono n (fun k _ U v hv => (represents_sem hr k U v).mpr hv.2) W h _ hs
-  | @makeCallable F P L Γ a arity b hr ha hlen hb iha ihb =>
+  | @makeCallable F L Γ arity b parts hr hnd hp hlen hb ih ihb =>
     intro n W h ρ he hw hh
-    simp only [instantiate, Nat.zero_add]
+    simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def, Nat.zero_add]
     have hcode := invocation_of_body he hlen (fun p hp => ihb p hp)
-    apply bind (Tm.make (.closure arity (instantiate arity ρ b))) Step.makeC n W h _ hw hh
-      (iha n W h ρ he hw hh)
-    intro j hj U hx hu heap av hok hav ha'
+    have hmap : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.snd
+        = parts.map fun x => instantiate 0 ρ x.2.2 := by
+      simp [List.map_map, Function.comp_def]
+    rw [← hmap]
+    apply bind_list (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2))
+      (by intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; exact meaning_adm G r.2.1)
+      (fun args => .makeAt (.closure arity (instantiate arity ρ b)) (parts.map Prod.fst) args)
+      (fun hs => CallArguments.Step.makeArgs hs) hw hh
+      (by
+        intro q hq
+        obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq
+        intro j hj U hx hu heap hok
+        exact ih r hr' j U heap ρ (he.transfer j hj U hx) hu hok)
+    intro j hj U hx hu heap args hok hargs
+    have hAs : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.fst
+        = parts.map fun p => meaning G p.2.1 := by simp [List.map_map, Function.comp_def]
+    rw [hAs] at hargs
+    have hlenA := ArgsT_length hargs
     have hc : InvocationSpec arity (L.map fun p => (p.1.map (meaning G),meaning G p.2))
         j U (instantiate arity ρ b) :=
-      (callsT_code_iff _ arity 0 _ j U).mp ((callsT_adm _).mono j _ U hx _
-        ((callsT_adm _).down_le n j hj W _ ((callsT_code_iff _ arity 0 _ n W).mpr hcode)))
-    have hs := make_callable_rule (meaning_adm G P) arity j U heap _ av hc hav hu hok ha'
-    exact Safe_mono j (fun k _ V v hv => (represents_sem hr k V v).mpr ⟨⟨hv.1,by simp⟩,hv.2⟩) U heap _ hs
+      (callsT_code_iff _ arity [] _ j U).mp ((callsT_adm _).mono j _ U hx _
+        ((callsT_adm _).down_le n j hj W _ ((callsT_code_iff _ arity [] _ n W).mpr hcode)))
+    have hs := make_callable_fields_rule
+      (P := parts.map fun p => meaning G p.2.1)
+      (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_adm G r.2.1)
+      arity j U heap _ args _ hnd (by simpa using hlenA.symm) (by simpa using hlenA.symm)
+      hc
+      (ArgsT_values
+        (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.2.1)
+        hargs)
+      hu hok (ArgsT_zip hargs)
+    apply Safe_mono j (fun k _ V v hv => (represents_sem hr k V v).mpr ⟨⟨?_, by simp⟩, hv.2⟩) U heap _ hs
+    case _ =>
+      have hfam : ReferenceConjunctions.famsOf (meaning G) (parts.map fun p => (p.1, p.2.1))
+          = (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2.1) := by
+        simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
+      rw [hfam]
+      exact hv.1
   | @callCallable Γ f F P Ps L xs B hf hr hp ha ihf iha =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
@@ -340,22 +383,24 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp
       intro j hj U hx hu heap hok
       exact iha q hq j U heap ρ (he.transfer j hj U hx) hu hok
-  | @readCallable Γ a Ref A Ps L ha hr ih =>
+  | @readCallable Γ a Ref P Ps L f A ha hr hm ih =>
     intro n W h ρ he hw hh
-    apply bind Tm.read Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply bind (Tm.readAt f) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
-    exact bag_read (meaning_valOnly G A) ((represents_sem hr j U v).mp ha').1.1 hu hok
-  | @writeCallable Γ a Ref A Ps L b N ha hr hb hn iha ihb =>
+    exact bag_read (meaning_valOnly G A) (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
+      ((represents_sem hr j U v).mp ha').1.1 hu hok
+  | @writeCallable Γ a Ref P Ps L f A b N ha hr hm hb hn iha ihb =>
     intro n W h ρ he hw hh
-    apply bind (fun a => .write a (instantiate 0 ρ b)) Step.writeC1 n W h _ hw hh
+    apply bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 n W h _ hw hh
       (iha n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
-    apply bind (.write av) (Step.writeC2 hav) j U heap _ hu hok
+    apply bind (.writeAt f av) (Step.writeC2 hav) j U heap _ hu hok
       (ihb j U heap ρ (he.transfer j hj U hx) hu hok)
     intro k hk V hy hv heap' bv hok' hbval hb'
     have ha'' := (meaning_adm G Ref).mono k _ V hy av ((meaning_adm G Ref).down_le j k hk U av ha')
     apply Safe_mono k (fun i _ X v hval => (represents_sem hn i X v).mpr hval)
-    exact bag_write (meaning_adm G A) ((represents_sem hr k V av).mp ha'').1.1 hb' hbval hv hok'
+    exact bag_write (meaning_adm G A) (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
+      ((represents_sem hr k V av).mp ha'').1.1 hb' hbval hv hok'
   | @app Γ f F L xs B hf hr hp ha ihf iha =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
@@ -386,30 +431,62 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       have he' := ((he.transfer (k+1) hj U hx).push ha').transfer k (Nat.le_succ k)
         (trunc k (Nat.le_succ k) U) (WExt_refl _)
       exact ihb k _ heap (push av ρ) he' (WorldAdm_trunc _ hu) (HeapOk_trunc k U heap hok)
-  | @alloc Γ a A Ref ha hr ih =>
+  | @alloc Γ Ref parts hnd hp hr ih =>
     intro n W h ρ he hw hh
-    apply bind Tm.alloc Step.makeC n W h _ hw hh (ih n W h ρ he hw hh)
+    simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
+    have hmap : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.snd
+        = parts.map fun x => instantiate 0 ρ x.2.2 := by
+      simp [List.map_map, Function.comp_def]
+    rw [← hmap]
+    apply bind_list (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2))
+      (by intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; exact meaning_adm G r.2.1)
+      (fun args => .makeAt .absent (parts.map Prod.fst) args)
+      (fun hs => CallArguments.Step.makeArgs hs) hw hh
+      (by
+        intro q hq
+        obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq
+        intro j hj U hx hu heap hok
+        exact ih r hr' j U heap ρ (he.transfer j hj U hx) hu hok)
+    intro j hj U hx hu heap args hok hargs
+    have hAs : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.fst
+        = parts.map fun p => meaning G p.2.1 := by simp [List.map_map, Function.comp_def]
+    rw [hAs] at hargs
+    have hlen := ArgsT_length hargs
+    apply make_fields_rule
+      (As := parts.map fun p => meaning G p.2.1)
+      (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_adm G r.2.1)
+      j U heap .absent _ args hnd (by simpa using hlen.symm) (by simpa using hlen.symm)
+      (ArgsT_values
+        (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.2.1)
+        hargs)
+      hu hok (ArgsT_zip hargs)
+    intro k hk V hy hrec
+    refine (represents_sem hr k V _).mpr ⟨?_, by simp⟩
+    have hfam : ReferenceConjunctions.famsOf (meaning G) (parts.map fun p => (p.1, p.2.1))
+        = (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2.1) := by
+      simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
+    rw [hfam]
+    exact hrec
+  | @read Γ a Ref fs f A ha hr hm ih =>
+    intro n W h ρ he hw hh
+    apply bind (Tm.readAt f) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
-    apply Safe_mono j (fun k _ V v hv => (represents_sem hr k V v).mpr ⟨hv, by simp⟩)
-    exact alloc_rule (meaning_adm G A) j U heap v hv hu hok ha'
-  | @read Γ a Ref A ha hr ih =>
+    obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ :=
+      recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) ((represents_sem hr j U v).mp ha').1
+    exact read_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag
+  | @write Γ a Ref fs f A b N ha hr hm hb hn iha ihb =>
     intro n W h ρ he hw hh
-    apply bind Tm.read Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
-    intro j hj U hx hu heap v hok hv ha'
-    obtain ⟨l, c, rfl, hl, hag⟩ := ((represents_sem hr j U v).mp ha').1
-    exact read_rule (meaning_valOnly G A) j U heap l hu hok hl hag
-  | @write Γ a Ref A b N ha hr hb hn iha ihb =>
-    intro n W h ρ he hw hh
-    apply bind (fun a => .write a (instantiate 0 ρ b)) Step.writeC1 n W h _ hw hh
+    apply bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 n W h _ hw hh
       (iha n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
-    apply bind (.write av) (Step.writeC2 hav) j U heap _ hu hok
+    apply bind (.writeAt f av) (Step.writeC2 hav) j U heap _ hu hok
       (ihb j U heap ρ (he.transfer j hj U hx) hu hok)
     intro k hk V hy hv heap' bv hok' hbval hb'
     have ha'' := (meaning_adm G Ref).mono k _ V hy av ((meaning_adm G Ref).down_le j k hk U av ha')
-    obtain ⟨l, c, rfl, hl, hag⟩ := ((represents_sem hr k V av).mp ha'').1
+    obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ :=
+      recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) ((represents_sem hr k V av).mp ha'').1
     apply Safe_mono k (fun i _ X v hval => (represents_sem hn i X v).mpr hval)
-    exact write_rule (meaning_adm G A) k V heap' l bv hbval hv hok' hl hag hb'
+    exact write_rule (meaning_adm G A) k V heap' l bv hbval hv hok' hf hl hag hb'
   | @ifBool Γ c C t A e hc hbool ht he ihc iht ihe =>
     intro n W h ρ henv hw hh
     apply bind (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) Step.iteC

@@ -34,10 +34,15 @@ private def ClaimType.ground : ClaimType → SourceClaims.Candidate
   | .param _ => .error "rigid parameter outside generic function"
   | .unavailable reason => .error reason
 
+/-- What a point currently holds, field by field: an object has one location
+per named field, so an assertion about its contents names the field it is
+about. A point that names no record carries none. -/
+abbrev CurrentFields := List (String × List Nat)
+
 structure Binding where
   name : String
   type : ClaimType
-  current : Option (List Nat) := none
+  current : Option CurrentFields := none
   deriving ToJson, FromJson
 structure Entry where
   start : Nat
@@ -46,7 +51,7 @@ structure Entry where
 structure Expression where
   pos : Span
   type : ClaimType
-  current : Option (List Nat) := none
+  current : Option CurrentFields := none
   deriving ToJson, FromJson
 structure Function where
   name : String
@@ -78,12 +83,19 @@ private def validType (T : SourceTypes.Table) : ClaimType → Bool
   | .param name => !name.isEmpty
   | .unavailable reason => !reason.isEmpty
   | .labels A => validTy T.length A && A == A.mergeSort (· ≤ ·) && A.eraseDups == A
-private def validCurrent (T : SourceTypes.Table) (A : ClaimType) (current : Option (List Nat)) : Bool :=
+/-- Every asserted field is one the point's own record contract names, each at
+most once, at a type this table has. The asserted type need not be finite: a
+field the extractor cannot turn into a literal assertion becomes an obligation
+that the storage contract already implies it. -/
+private def validCurrent (T : SourceTypes.Table) (A : ClaimType) (current : Option CurrentFields) : Bool :=
   match current with
   | none => true
-  | some R =>
-    (match PositiveRules.expand (SourceTypes.graph T) (A.ground.toOption.getD []) with | [.refs _ []] => true | _ => false) &&
-      validType T (.labels R) && R.all SourceTypes.isPrimitive
+  | some fs =>
+    !fs.isEmpty && (fs.map Prod.fst).eraseDups.length == fs.length &&
+    (match PositiveRules.expand (SourceTypes.graph T) (A.ground.toOption.getD []) with
+      | [.refs contract []] => fs.all (fun p => (contract.lookup p.1).isSome)
+      | _ => false) &&
+    fs.all (fun p => validType T (.labels p.2))
 private def validBindings (T : SourceTypes.Table) (bs : List Binding) : Bool :=
   (bs.map (·.name)).eraseDups.length == bs.length &&
     bs.all (fun b => !b.name.isEmpty && validType T b.type && validCurrent T b.type b.current)
@@ -112,8 +124,9 @@ private abbrev Sites := List Nat × List Span
 private def joinSites (a b : Sites) : Sites := (a.1 ++ b.1,a.2 ++ b.2)
 private def exprSites : Fragment.Expr → Sites
   | .var p _ | .lit p _ => ([],[p])
-  | .shapeTest p _ _ e | .not p e | .alloc p e | .read p e | .lambda p _ _ e => joinSites ([],[p]) (exprSites e)
-  | .withValue p a b _ _ | .write p a b | .unitTest p _ _ _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
+  | .shapeTest p _ _ e | .not p e | .read p _ e | .lambda p _ _ e => joinSites ([],[p]) (exprSites e)
+  | .alloc p _ es => es.foldl (fun acc a => joinSites acc (exprSites a)) ([],[p])
+  | .withValue p a b _ _ | .write p _ a b | .unitTest p _ _ _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
   -- An assignment is an expression site, and the name it assigns is not one:
   -- the producer claims the value written, not the location.
   | .assign p _ _ e => joinSites ([],[p]) (exprSites e)

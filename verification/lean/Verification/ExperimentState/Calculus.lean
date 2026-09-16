@@ -10,6 +10,12 @@ An untyped call-by-value calculus with a mutable heap: closures, application,
 explicit binding, primitive values, and object allocation/read/write. Values are terms, so worlds, heaps and the
 operational semantics all speak about the same objects.
 
+An object is a finite map from field names to heap locations, fixed at
+allocation. Each location still holds one value under one contract, so worlds,
+heap satisfaction and the write rule are unchanged; what a field name buys is
+that one object can own several of them, and that two contracts naming
+different fields of the same object constrain different locations.
+
 Substitution is written for *closed* arguments. `Bindings.lean` proves its
 closing-substitution laws; `ProgramTyping.lean` ensures typed positive values
 are closed. The untyped step relation itself imposes no scope check.
@@ -20,6 +26,12 @@ that is not a value and cannot step is **stuck**, and the safety predicate in
 -/
 namespace Verification
 namespace ExperimentState
+
+/-- The field every single-cell object of the earlier development carries. A
+one-field object named this way is what `Tm.obj`, `Tm.read` and `Tm.write`
+abbreviate, so every rule and proof written before field names keeps its
+meaning. -/
+def valueField : String := "value"
 
 /-- The shapes a value can have, and so the tests a program can make of one.
 Nullishness groups null and undefined for source coalescing; the other tests
@@ -49,13 +61,15 @@ inductive Tm where
   that denote it differently would be distinct singletons, which costs
   completeness and never soundness. -/
   | num (bits : UInt64)
-  /-- An object identity with an optional, immutable invocation descriptor. -/
-  | obj (l : Nat) (call : CallCode)
-  /-- Allocate one object with immutable call code and initial bag contents `a`.
-  Only the initializer is evaluated; code binds its declared parameter count. -/
-  | make (call : CallCode) (a : Tm)
-  | read (a : Tm)
-  | write (a b : Tm)
+  /-- An object identity: the locations its named fields stand for, fixed at
+  allocation, with an optional immutable invocation descriptor. -/
+  | objAt (fields : List (String × Nat)) (call : CallCode)
+  /-- Allocate one object with immutable call code, one fresh location per
+  named field, holding the values of `inits` in order. Only the initializers
+  are evaluated; code binds its declared parameter count. -/
+  | makeAt (call : CallCode) (names : List String) (inits : List Tm)
+  | readAt (field : String) (a : Tm)
+  | writeAt (field : String) (a b : Tm)
   | test (k : Tag) (a : Tm)
   | ite (c t e : Tm)
   deriving Repr
@@ -107,20 +121,20 @@ def tmDecEq (a b : Tm) : Decidable (a = b) := by
     exact isTrue rfl
   case num.num a0 b0 =>
     exact decidable_of_iff (a0 = b0) (by simp only [Tm.num.injEq])
-  case obj.obj a0 a1 b0 b1 =>
+  case objAt.objAt a0 a1 b0 b1 =>
     haveI : Decidable (a1 = b1) := callCodeDecEq a1 b1
-    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.obj.injEq])
-  case make.make a0 a1 b0 b1 =>
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.objAt.injEq])
+  case makeAt.makeAt a0 a1 a2 b0 b1 b2 =>
     haveI : Decidable (a0 = b0) := callCodeDecEq a0 b0
+    haveI : Decidable (a2 = b2) := argsDecEq a2 b2
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2) (by simp only [Tm.makeAt.injEq])
+  case readAt.readAt a0 a1 b0 b1 =>
     haveI : Decidable (a1 = b1) := tmDecEq a1 b1
-    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.make.injEq])
-  case read.read a0 b0 =>
-    haveI : Decidable (a0 = b0) := tmDecEq a0 b0
-    exact decidable_of_iff (a0 = b0) (by simp only [Tm.read.injEq])
-  case write.write a0 a1 b0 b1 =>
-    haveI : Decidable (a0 = b0) := tmDecEq a0 b0
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.readAt.injEq])
+  case writeAt.writeAt a0 a1 a2 b0 b1 b2 =>
     haveI : Decidable (a1 = b1) := tmDecEq a1 b1
-    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.write.injEq])
+    haveI : Decidable (a2 = b2) := tmDecEq a2 b2
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2) (by simp only [Tm.writeAt.injEq])
   case test.test a0 a1 b0 b1 =>
     haveI : Decidable (a1 = b1) := tmDecEq a1 b1
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.test.injEq])
@@ -158,6 +172,25 @@ instance : DecidableEq CallCode := callCodeDecEq
 /-- Unary application is the singleton case of the argument-list constructor. -/
 @[match_pattern] abbrev Tm.app (f a : Tm) : Tm := .call f [a]
 
+/-! ### The one-field spellings
+
+A cell is an object with the single field `value`. These abbreviations are the
+language the development before field names was written in, and they keep that
+meaning exactly: every rule, example and proof that says `obj`, `make`, `read`
+or `write` is speaking about that one field. -/
+
+/-- An already allocated one-field object. -/
+@[match_pattern] abbrev Tm.obj (l : Nat) (call : CallCode) : Tm :=
+  .objAt [(valueField, l)] call
+
+/-- Allocation of a one-field object. -/
+@[match_pattern] abbrev Tm.make (call : CallCode) (a : Tm) : Tm :=
+  .makeAt call [valueField] [a]
+
+/-- Reading and writing that one field. -/
+@[match_pattern] abbrev Tm.read (a : Tm) : Tm := .readAt valueField a
+@[match_pattern] abbrev Tm.write (a b : Tm) : Tm := .writeAt valueField a b
+
 /-- Plain-object allocation is the absent-descriptor case of `make`. -/
 @[match_pattern] abbrev Tm.alloc (a : Tm) : Tm := .make .absent a
 
@@ -170,6 +203,38 @@ instance : DecidableEq CallCode := callCodeDecEq
 /-- Notation for an already allocated function object, used in semantic lemmas. -/
 @[match_pattern] abbrev Tm.fn (l : Nat) (b : Tm) : Tm := .obj l (.closure 1 b)
 
+/-- The locations a fresh allocation gives its fields, in declaration order. -/
+def slots (base : Nat) : List String → List (String × Nat)
+  | [] => []
+  | f :: fs => (f, base) :: slots (base + 1) fs
+
+@[simp] theorem slots_value (base : Nat) : slots base [valueField] = [(valueField, base)] := rfl
+
+@[simp] theorem slots_length (base : Nat) (ns : List String) :
+    (slots base ns).length = ns.length := by
+  induction ns generalizing base <;> simp_all [slots]
+
+/-- A field of a fresh object stands for the location its position was given.
+Distinct names are what makes the map a map: with a repeat, only the first
+occurrence is ever found. -/
+theorem lookup_slots {ns : List String} (hnd : ns.Nodup) {base i : Nat}
+    (hi : i < ns.length) : (slots base ns).lookup ns[i] = some (base + i) := by
+  induction ns generalizing base i with
+  | nil => simp at hi
+  | cons a ns ih =>
+    cases i with
+    | zero => simp [slots, List.lookup]
+    | succ i =>
+      have hib : i < ns.length := by simpa using hi
+      have hne : ns[i] ≠ a := by
+        intro he
+        exact (List.nodup_cons.mp hnd).1 (he ▸ List.getElem_mem hib)
+      have hbeq : (ns[i] == a) = false := by simpa using hne
+      simp only [slots, List.lookup, List.getElem_cons_succ, hbeq]
+      rw [ih (List.nodup_cons.mp hnd).2 hib]
+      congr 1
+      omega
+
 /-- Term induction exposing the body stored inside a call descriptor. -/
 @[elab_as_elim] theorem Tm.induct {P : Tm → Prop}
     (var : ∀ i, P (.var i))
@@ -177,12 +242,12 @@ instance : DecidableEq CallCode := callCodeDecEq
     (letE : ∀ a b, P a → P b → P (.letE a b))
     (nul : P .nul) (undef : P .undef) (tru : P .tru) (fls : P .fls)
     (num : ∀ v, P (.num v))
-    (objAbsent : ∀ l, P (.obj l .absent))
-    (objClosure : ∀ l n b, P b → P (.obj l (.closure n b)))
-    (attach : ∀ n b a, P b → P a → P (.make (.closure n b) a))
-    (alloc : ∀ a, P a → P (.alloc a))
-    (read : ∀ a, P a → P (.read a))
-    (write : ∀ a b, P a → P b → P (.write a b))
+    (objAbsent : ∀ fs, P (.objAt fs .absent))
+    (objClosure : ∀ fs n b, P b → P (.objAt fs (.closure n b)))
+    (attach : ∀ n b ns args, P b → (∀ a ∈ args, P a) → P (.makeAt (.closure n b) ns args))
+    (alloc : ∀ ns args, (∀ a ∈ args, P a) → P (.makeAt .absent ns args))
+    (read : ∀ f a, P a → P (.readAt f a))
+    (write : ∀ f a b, P a → P b → P (.writeAt f a b))
     (test : ∀ k a, P a → P (.test k a))
     (ite : ∀ c a b, P c → P a → P b → P (.ite c a b)) (t : Tm) : P t := by
   apply Tm.rec (motive_1 := P)
@@ -194,14 +259,14 @@ instance : DecidableEq CallCode := callCodeDecEq
       rcases List.mem_cons.mp hv with rfl | hv
       · exact ha
       · exact ih v hv) t
-  · intro l c ih
+  · intro fs c ih
     cases c with
-    | absent => exact objAbsent l
-    | closure n b => exact objClosure l n b ih
-  · intro c a ihc iha
+    | absent => exact objAbsent fs
+    | closure n b => exact objClosure fs n b ih
+  · intro c ns args ihc iha
     cases c with
-    | absent => exact alloc a iha
-    | closure n b => exact attach n b a ihc iha
+    | absent => exact alloc ns args iha
+    | closure n b => exact attach n b ns args ihc iha
 
 
 
@@ -211,7 +276,7 @@ abbrev Val := Tm
 
 
 def isVal : Tm → Bool
-  | .nul | .undef | .tru | .fls | .num _ | .obj .. => true
+  | .nul | .undef | .tru | .fls | .num _ | .objAt .. => true
   | _ => false
 
 /-- What a test of a value answers. A test is total on values: every value has
@@ -224,8 +289,8 @@ def tagHolds : Tag → Val → Bool
   | .isBool, .tru => true
   | .isBool, .fls => true
   | .isNum, .num _ => true
-  | .isRef, .obj _ .absent => true
-  | .isFun, .obj _ (.closure _ _) => true
+  | .isRef, .objAt _ .absent => true
+  | .isFun, .objAt _ (.closure _ _) => true
   | _, _ => false
 
 mutual
@@ -238,12 +303,12 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .tru => .tru
   | .fls => .fls
   | .num v => .num v
-  | .obj l .absent => .obj l .absent
-  | .obj l (.closure n b) => .obj l (.closure n (subst (j + n) a b))
-  | .make (.closure n b) x => .make (.closure n (subst (j + n) a b)) (subst j a x)
-  | .alloc x => .alloc (subst j a x)
-  | .read x => .read (subst j a x)
-  | .write x y => .write (subst j a x) (subst j a y)
+  | .objAt fs .absent => .objAt fs .absent
+  | .objAt fs (.closure n b) => .objAt fs (.closure n (subst (j + n) a b))
+  | .makeAt (.closure n b) ns xs => .makeAt (.closure n (subst (j + n) a b)) ns (substArgs j a xs)
+  | .makeAt .absent ns xs => .makeAt .absent ns (substArgs j a xs)
+  | .readAt f x => .readAt f (subst j a x)
+  | .writeAt f x y => .writeAt f (subst j a x) (subst j a y)
   | .test k x => .test k (subst j a x)
   | .ite c x y => .ite (subst j a c) (subst j a x) (subst j a y)
 
@@ -300,15 +365,26 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | letV : isVal a = true → Step h (.letE a b) h (subst 0 a b)
   /-- Invocation executes the object's stored code in one step. -/
   | callV : (∀ a ∈ args, isVal a = true) →
-      Step h (.call (.obj l (.closure n b)) args) h (CallArguments.bindParameters n args b)
-  | makeC : Step h a h' a' → Step h (.make c a) h' (.make c a')
-  | makeV : isVal v = true → Step h (.make c v) (h ++ [v]) (.obj h.length c)
-  | readC : Step h a h' a' → Step h (.read a) h' (.read a')
-  /-- Reading and writing an object go to its bag, whatever its code. -/
-  | readV : h[l]? = some v → Step h (.read (.obj l c)) h v
-  | writeC1 : Step h a h' a' → Step h (.write a b) h' (.write a' b)
-  | writeC2 : isVal a = true → Step h b h' b' → Step h (.write a b) h' (.write a b')
-  | writeV : isVal v = true → l < h.length → Step h (.write (.obj l c) v) (h.set l v) .nul
+      Step h (.call (.objAt fs (.closure n b)) args) h (CallArguments.bindParameters n args b)
+  /-- Initializers are evaluated left to right, like actual arguments. -/
+  | makeArg {c : CallCode} {ns : List String} {inits : List Tm} {i : Nat}
+      {h h' : Heap} {a a' : Tm} : inits[i]? = some a →
+      (∀ j, j < i → ∀ v, inits[j]? = some v → isVal v = true) →
+      Step h a h' a' → Step h (.makeAt c ns inits) h' (.makeAt c ns (inits.set i a'))
+  /-- Allocation takes one fresh location per named field, in order. -/
+  | makeFields {c : CallCode} {ns : List String} {vs : List Tm} {h : Heap} :
+      (∀ v ∈ vs, isVal v = true) → ns.length = vs.length →
+      Step h (.makeAt c ns vs) (h ++ vs) (.objAt (slots h.length ns) c)
+  | readC : Step h a h' a' → Step h (.readAt f a) h' (.readAt f a')
+  /-- Reading and writing a field go to its location, whatever the object's code. -/
+  | readField {f : String} {fs : List (String × Nat)} {c : CallCode} {l : Nat}
+      {h : Heap} {v : Val} : fs.lookup f = some l → h[l]? = some v →
+      Step h (.readAt f (.objAt fs c)) h v
+  | writeC1 : Step h a h' a' → Step h (.writeAt f a b) h' (.writeAt f a' b)
+  | writeC2 : isVal a = true → Step h b h' b' → Step h (.writeAt f a b) h' (.writeAt f a b')
+  | writeField {f : String} {fs : List (String × Nat)} {c : CallCode} {l : Nat}
+      {h : Heap} {v : Val} : isVal v = true → fs.lookup f = some l → l < h.length →
+      Step h (.writeAt f (.objAt fs c) v) (h.set l v) .nul
   | testC : Step h a h' a' → Step h (.test k a) h' (.test k a')
   | testV : isVal v = true →
       Step h (.test k v) h (if tagHolds k v then .tru else .fls)
@@ -316,6 +392,27 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | iteT : Step h (.ite .tru t e) h t
   | iteF : Step h (.ite .fls t e) h e
 
+/-! ### The one-field rules
+
+Each is the single-field instance of the rule above it, and carries the name
+and the statement the development used before fields were named. -/
+
+@[simp] theorem lookup_value (l : Nat) : ([(valueField, l)] : List (String × Nat)).lookup valueField = some l := by
+  simp [List.lookup]
+
+theorem Step.makeC (hs : Step h a h' a') : Step h (.make c a) h' (.make c a') :=
+  .makeArg (i := 0) rfl (by intro j hj; omega) hs
+
+theorem Step.makeV (hv : isVal v = true) :
+    Step h (.make c v) (h ++ [v]) (.obj h.length c) :=
+  .makeFields (by simpa using hv) rfl
+
+theorem Step.readV (he : h[l]? = some v) : Step h (.read (.obj l c)) h v :=
+  .readField (lookup_value l) he
+
+theorem Step.writeV (hv : isVal v = true) (hlt : l < h.length) :
+    Step h (.write (.obj l c) v) (h.set l v) .nul :=
+  .writeField hv (lookup_value l) hlt
 
 /-- Singleton operand rules are specializations of native list evaluation. -/
 theorem Step.appL (hs : Step h f h' f') : Step h (.app f a) h' (.app f' a) :=
@@ -333,14 +430,14 @@ theorem singleton_get {a b : Tm} {i : Nat} (h : [a][i]? = some b) : i = 0 ∧ b 
   exact ⟨rfl, (Option.some.inj h).symm⟩
 
 /-- The existing unary beta rule is a specialization of list dispatch. -/
-theorem Step.beta (ha : isVal a = true) :
-    Step h (.app (.obj l (.closure n b)) a) h (CallArguments.bindParameters n [a] b) :=
+theorem Step.beta {fs : List (String × Nat)} (ha : isVal a = true) :
+    Step h (.app (.objAt fs (.closure n b)) a) h (CallArguments.bindParameters n [a] b) :=
   .callV (by simpa using ha)
 
 theorem nul_no_step {h h' t} : ¬ Step h .nul h' t := by intro s; cases s
 theorem tru_no_step {h h' t} : ¬ Step h .tru h' t := by intro s; cases s
 theorem fls_no_step {h h' t} : ¬ Step h .fls h' t := by intro s; cases s
-theorem obj_no_step {h l c h' t} : ¬ Step h (.obj l c) h' t := by intro s; cases s
+theorem obj_no_step {h fs c h' t} : ¬ Step h (.objAt fs c) h' t := by intro s; cases s
 
 /-! ## Divergence
 
@@ -422,37 +519,53 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | callL hs => exact absurd hs obj_no_step
     | callArg _ hg _ hs => exact absurd hs (value_no_step (hv _ (List.mem_of_getElem? hg)))
     | callV => exact ⟨rfl, rfl⟩
-  | makeC hs ih =>
+  | @makeArg c ns inits i h h1 a a1 hg hb s ih =>
     cases s2 with
-    | makeC hs' => exact (ih hs').imp id (congrArg (Tm.make _))
-    | makeV hv => exact absurd hs (value_no_step hv)
-  | makeV hv =>
+    | @makeArg _ _ _ j _ _ b b1 hg' hb' s' =>
+      have hij : i = j := by
+        by_cases he : i = j
+        · exact he
+        · have hlt : i < j ∨ j < i := by omega
+          rcases hlt with hij | hji
+          · exact False.elim (value_no_step (hb' i hij a hg) s)
+          · exact False.elim (value_no_step (hb j hji b hg') s')
+      subst j
+      have hab : a = b := Option.some.inj (hg.symm.trans hg')
+      subst b
+      obtain ⟨rfl, rfl⟩ := ih s'
+      exact ⟨rfl, rfl⟩
+    | makeFields hvs _ => exact False.elim (value_no_step (hvs _ (List.mem_of_getElem? hg)) s)
+  | makeFields hv hlen =>
     cases s2 with
-    | makeC hs => exact absurd hs (value_no_step hv)
-    | makeV => exact ⟨rfl, rfl⟩
+    | makeArg hg _ s' => exact False.elim (value_no_step (hv _ (List.mem_of_getElem? hg)) s')
+    | makeFields _ _ => exact ⟨rfl, rfl⟩
   | readC s ih =>
     cases s2 with
-    | readC s' => exact (ih s').imp id (congrArg Tm.read)
-    | readV _ => exact absurd s obj_no_step
-  | readV he =>
+    | readC s' => exact (ih s').imp id (congrArg (Tm.readAt _))
+    | readField _ _ => exact absurd s obj_no_step
+  | readField hl he =>
     cases s2 with
     | readC s' => exact absurd s' obj_no_step
-    | readV he' => exact ⟨rfl, Option.some.inj (he.symm.trans he')⟩
+    | readField hl' he' =>
+      cases Option.some.inj (hl.symm.trans hl')
+      exact ⟨rfl, Option.some.inj (he.symm.trans he')⟩
   | writeC1 s ih =>
     cases s2 with
-    | writeC1 s' => exact (ih s').imp id (congrArg (Tm.write · _))
+    | writeC1 s' => exact (ih s').imp id (congrArg (Tm.writeAt _ · _))
     | writeC2 hv s' => exact absurd s (by intro hs; exact value_no_step hv hs)
-    | writeV _ _ => exact absurd s obj_no_step
+    | writeField _ _ _ => exact absurd s obj_no_step
   | writeC2 hv s ih =>
     cases s2 with
     | writeC1 s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
-    | writeC2 _ s' => exact (ih s').imp id (congrArg (Tm.write _ ·))
-    | writeV hv' _ => exact absurd s (by intro hs; exact value_no_step hv' hs)
-  | writeV hv hlt =>
+    | writeC2 _ s' => exact (ih s').imp id (congrArg (Tm.writeAt _ _ ·))
+    | writeField hv' _ _ => exact absurd s (by intro hs; exact value_no_step hv' hs)
+  | writeField hv hl hlt =>
     cases s2 with
     | writeC1 s' => exact absurd s' obj_no_step
     | writeC2 _ s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
-    | writeV _ _ => exact ⟨rfl, rfl⟩
+    | writeField _ hl' _ =>
+      cases Option.some.inj (hl.symm.trans hl')
+      exact ⟨rfl, rfl⟩
   | testC s ih =>
     cases s2 with
     | testC s' => exact (ih s').imp id (congrArg (Tm.test _))
@@ -478,11 +591,13 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
 theorem make_step_inv {c : CallCode} {v : Val} (hv : isVal v = true) {h h' t}
     (hs : Step h (.make c v) h' t) : h' = h ++ [v] ∧ t = .obj h.length c := by
   cases hs with
-  | makeC hs => exact False.elim (value_no_step hv hs)
-  | makeV => exact ⟨rfl, rfl⟩
+  | makeArg hg _ hs =>
+    obtain ⟨rfl, rfl⟩ := singleton_get hg
+    exact False.elim (value_no_step hv hs)
+  | makeFields => exact ⟨rfl, rfl⟩
 
-theorem beta_inv {b a : Tm} {l : Nat} (ha : isVal a = true) {h h' t}
-    (hs : Step h (.app (.obj l (.closure 1 b)) a) h' t) : h' = h ∧ t = subst 0 a b := by
+theorem beta_inv {b a : Tm} {fs : List (String × Nat)} (ha : isVal a = true) {h h' t}
+    (hs : Step h (.app (.objAt fs (.closure 1 b)) a) h' t) : h' = h ∧ t = subst 0 a b := by
   cases hs with
   | callL hs => cases hs
   | callArg _ hg _ hs =>
@@ -501,7 +616,10 @@ theorem read_step_inv {r : Nat} {c : CallCode} {h h' t} (hs : Step h (.read (.ob
     h' = h ∧ h[r]? = some t := by
   cases hs with
   | readC hs => exact False.elim (obj_no_step hs)
-  | readV he => exact ⟨rfl, he⟩
+  | readField hl he =>
+    rw [lookup_value] at hl
+    cases hl
+    exact ⟨rfl, he⟩
 
 
 end ExperimentState

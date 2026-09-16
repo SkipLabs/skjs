@@ -20,7 +20,7 @@ theorem fn_intro {l : Nat} {A B : Fam} (b : Tm) (k : Nat) (W : WorldT k) (hc : S
       WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U →
       ∀ (heap : Heap), HeapOk j U heap → ∀ a, A j U a →
         Safe B j U heap (subst 0 a b)) : arrowT A B k W (.fn l b) :=
-  ⟨⟨1, b, l, rfl, hc⟩, h⟩
+  ⟨⟨1, b, _, rfl, hc⟩, h⟩
 
 /-- Ready native list calls consume one step, then satisfy the chosen result
 contract. The domains transfer all saved actuals to that smaller budget. -/
@@ -101,28 +101,32 @@ theorem Safe_bind_appR {A B : Fam} (f : Tm) (hfv : isVal f = true) :
 
 
 /-- **Read.** -/
-theorem read_rule {code : CallCode} {A : Fam} (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap) (l : Nat)
-    (hadm : WorldAdm W) (hok : HeapOk n W h) {c : Ctr n} (hl : lookup W l = some c)
+theorem read_rule {code : CallCode} {flds : List (String × Nat)} {f : String} {A : Fam}
+    (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap) (l : Nat)
+    (hadm : WorldAdm W) (hok : HeapOk n W h) (hf : flds.lookup f = some l)
+    {c : Ctr n} (hl : lookup W l = some c)
     (hag : ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u ↔ A j U u) :
-    Safe A n W h (.read (.obj l code)) := by
+    Safe A n W h (.readAt f (.objAt flds code)) := by
   cases n with
   | zero => trivial
   | succ p =>
     obtain ⟨v, hv, hmem⟩ := hok.2 l c hl
     have hAv : A p (trunc p (Nat.le_succ p) W) v := (hag p (by omega) _ v).mp (hmem p (by omega))
     refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, v, WExt_refl _,
-      WorldAdm_trunc _ hadm, .readV hv, HeapOk_trunc p W h hok, ?_⟩
+      WorldAdm_trunc _ hadm, .readField hf hv, HeapOk_trunc p W h hok, ?_⟩
     cases p with
     | zero => trivial
     | succ q => exact Or.inl ⟨hA _ _ _ hAv, hAv⟩
 
 /-- **Write.** -/
-theorem write_rule {code : CallCode} {A : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (l : Nat)
+theorem write_rule {code : CallCode} {flds : List (String × Nat)} {f : String} {A : Fam}
+    (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (l : Nat)
     (v : Tm) (hval : isVal v = true) (hadm : WorldAdm W) (hok : HeapOk n W h)
+    (hf : flds.lookup f = some l)
     {c : Ctr n} (hl : lookup W l = some c)
     (hag : ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u ↔ A j U u)
     (hv : A n W v) :
-    Safe nulT n W h (.write (.obj l code) v) := by
+    Safe nulT n W h (.writeAt f (.objAt flds code) v) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -130,7 +134,7 @@ theorem write_rule {code : CallCode} {A : Fam} (hA : Adm A) (n : Nat) (W : World
     have hlt : l < h.length := by
       have := (List.getElem?_eq_some_iff.mp hw).1; omega
     refine Or.inr ⟨trunc p (Nat.le_succ p) W, h.set l v, .nul, WExt_refl _,
-      WorldAdm_trunc _ hadm, .writeV hval hlt, ?_, Safe_nul p _ _⟩
+      WorldAdm_trunc _ hadm, .writeField hval hf hlt, ?_, Safe_nul p _ _⟩
     refine write_sound p _ h l _ v (HeapOk_trunc p W h hok)
       (lookup_trunc (Nat.le_succ p) W l c hl) ?_
     intro i hi
@@ -170,10 +174,62 @@ theorem make_rule {A Q : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (
     | zero => trivial
     | succ q =>
       refine Or.inl ⟨rfl, result (q + 1) (by omega) _ (WExt_appendW _ _) ?_⟩
-      refine ⟨h.length, res A, rfl, ?_, fun _ _ _ _ => Iff.rfl⟩
+      refine refT_cell (c := res A) ?_ (fun _ _ _ _ => Iff.rfl)
       simp only [lookup, appendW, toList_ofList]
       rw [List.getElem?_append_right (by omega)]
       simp [hlen]
+
+/-- **Allocating an object with named fields.** One step takes one fresh
+location per field, so the world grows by one contract per field and the result
+sees the whole record. The single-cell rule above is the one-field case. -/
+theorem make_fields_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
+    (n : Nat) (W : WorldT n) (h : Heap) (code : CallCode)
+    (ns : List String) (vs : List Val)
+    (hnd : ns.Nodup) (hns : ns.length = vs.length) (hAs : As.length = vs.length)
+    (hvals : ∀ v ∈ vs, isVal v = true)
+    (hadm : WorldAdm W) (hok : HeapOk n W h)
+    (hv : ∀ p ∈ As.zip vs, p.1 n W p.2)
+    (result : ∀ j (hj : j < n) (U : WorldT j),
+      WExt (trunc j (Nat.le_of_lt hj) W) U →
+      recT (ns.zip As) j U (.objAt (slots h.length ns) .absent) →
+      Q j U (.objAt (slots h.length ns) code)) :
+    Safe Q n W h (.makeAt code ns vs) := by
+  cases n with
+  | zero => trivial
+  | succ p =>
+    have hcadm : ∀ c ∈ As.map (fun A => (res A : Ctr p)), CtrAdm c := by
+      intro c hc
+      obtain ⟨A, hA', rfl⟩ := List.mem_map.mp hc
+      exact fun i _ U U' hx w hw => (hA A hA').mono i U U' hx w hw
+    have hlen : h.length = (toList (trunc p (Nat.le_succ p) W)).length := by
+      have := hok.1; simp [trunc] at this ⊢; omega
+    have hcont : ∀ q ∈ (As.map (fun A => (res A : Ctr p))).zip vs, ∀ (j : Nat) (hj : j < p),
+        q.1 j hj (trunc j (Nat.le_of_lt hj) (trunc p (Nat.le_succ p) W)) q.2 := by
+      rw [List.zip_map_left]
+      rintro q hq j hj
+      obtain ⟨⟨A, v⟩, hm, rfl⟩ := List.mem_map.mp hq
+      show A j _ v
+      rw [trunc_trunc]
+      exact (hA A (List.of_mem_zip hm).1).down_le (p + 1) j (by omega) W v (hv (A, v) hm)
+    refine Or.inr ⟨appendWs (trunc p (Nat.le_succ p) W) (As.map (fun A => (res A : Ctr p))),
+      h ++ vs, .objAt (slots h.length ns) code,
+      WExt_appendWs _ _, WorldAdm_appendWs (WorldAdm_trunc _ hadm) hcadm,
+      .makeFields hvals hns,
+      heap_allocs p _ (trunc p (Nat.le_succ p) W) h vs (HeapOk_trunc p W h hok)
+        (WorldAdm_trunc _ hadm) hcadm (by simp [hAs]) hcont, ?_⟩
+    cases p with
+    | zero => trivial
+    | succ q =>
+      refine Or.inl ⟨rfl, result (q + 1) (by omega) _ (WExt_appendWs _ _) ?_⟩
+      refine recT_alloc hnd (by omega) ?_
+      intro i hi
+      have hib : i < (As.map (fun A => (res A : Ctr (q + 1)))).length := by
+        simp; omega
+      have := lookup_appendWs (trunc (q + 1) (Nat.le_succ (q + 1)) W)
+        (As.map (fun A => (res A : Ctr (q + 1)))) hib
+      rw [← hlen] at this
+      rw [this]
+      simp [List.getElem?_map, List.getElem?_eq_getElem (show i < As.length by omega)]
 
 /-- Plain references specialize the common allocation rule to an absent descriptor. -/
 theorem alloc_rule {A : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (v : Tm)
@@ -184,9 +240,9 @@ theorem alloc_rule {A : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (v
 #print axioms make_rule
 #print axioms alloc_rule
 
-theorem refT_transfer {A : Fam} {k : Nat} {W : WorldT k} {l : Nat}
-    (hr : refT A k W (.obj l .absent)) (j : Nat) (hj : j ≤ k) (W' : WorldT j)
-    (hW : WExt (trunc j hj W) W') : refT A j W' (.obj l .absent) :=
+theorem refT_transfer {A : Fam} {k : Nat} {W : WorldT k} {flds : List (String × Nat)}
+    (hr : refT A k W (.objAt flds .absent)) (j : Nat) (hj : j ≤ k) (W' : WorldT j)
+    (hW : WExt (trunc j hj W) W') : refT A j W' (.objAt flds .absent) :=
   (refT_adm A).mono j _ _ hW _ ((refT_adm A).down_le k j hj W _ hr)
 
 /-- A function that ignores its argument and diverges inhabits *every* arrow
@@ -219,7 +275,7 @@ theorem stuck_not_safe (B : Fam) (k : Nat) (W : WorldT (k + 1)) (h : Heap) :
 that type, including one that would get stuck if it were ever applied. -/
 theorem vacuous_arrow {l : Nat} {A B : Fam} (hA : ∀ (j : Nat) (W : WorldT j) (v : Val), ¬ A j W v)
     (b : Tm) (k : Nat) (W : WorldT k) (hc : Scoped 1 b) : arrowT A B k W (.fn l b) :=
-  ⟨⟨1, b, l, rfl, hc⟩, fun _ _ _ _ _ _ _ a ha => absurd ha (hA _ _ a)⟩
+  ⟨⟨1, b, _, rfl, hc⟩, fun _ _ _ _ _ _ _ a ha => absurd ha (hA _ _ a)⟩
 
 /-! ## Testing a value's shape, and branching on the answer
 
@@ -280,7 +336,7 @@ theorem arrowsT_of_arrow {L : List (Fam × Fam)} {A B : Fam}
 /-- The diverging function inhabits every intersection of arrows, as a direct check that these types admit safe nontermination. -/
 theorem diverging_in_arrowsT (L : List (Fam × Fam))
     (k : Nat) (W : WorldT k) : arrowsT L k W (.fn 0 omegaTm) := by
-  refine ⟨⟨1, omegaTm, 0, rfl, by simp [omegaTm, delta, Scoped]⟩, ?_⟩
+  refine ⟨⟨1, omegaTm, _, rfl, by simp [omegaTm, delta, Scoped]⟩, ?_⟩
   intro p hp j hj W' hx hu hh hok a ha
   exact (diverging_arrow (A := p.1) (B := p.2) k W).2 j hj W' hx hu hh hok a ha
 

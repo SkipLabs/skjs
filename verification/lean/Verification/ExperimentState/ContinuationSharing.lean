@@ -23,7 +23,7 @@ theorem share_typed {ι : Type} [DecidableEq ι] {G : PositiveGraphs.NormalGraph
 
 /-- The primitives, a Boolean cell, a null-to-Boolean arrow and a null-to-true arrow. -/
 private def T : SourceTypes.Table :=
-  SourceTypes.initial ++ [[.refs [1,2] []],[.arrs [([[0]],[1,2])]],[.arrs [([[0]],[1])]]]
+  SourceTypes.initial ++ [[.refs [(valueField,[1,2])] []],[.arrs [([[0]],[1,2])]],[.arrs [([[0]],[1])]]]
 private def G := SourceTypes.graph T
 private def Γ : List (Ty Nat) := [[4],[1,2],[1,2]]
 private def H : List (Ty Nat) := [5]::Γ

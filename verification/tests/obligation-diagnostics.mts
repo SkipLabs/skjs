@@ -143,7 +143,7 @@ try {
     changed.sequent.term = {var:{i:1}};
     changed.source.sourceMap.context = [{name:"saved",span:null},{name:"cell.value",span:null}];
     assert.equal(presentObligation(changed,source).focus?.subject,"cell.value");
-    changed.sequent.term = {read:{a:{var:{i:1}}}};
+    changed.sequent.term = {readAt:{field:"value",a:{var:{i:1}}}};
     assert.equal(presentObligation(changed,source).focus,undefined);
 
   });

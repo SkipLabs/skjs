@@ -67,6 +67,8 @@ function run(command: string, args: string[]) {
 // Expected outcomes are corpus policy, not evidence. The partial fixture contains
 // two invalid definitions and a valid one; a rejection alone proves no bug.
 function expectedVerified(file: string, name: string) {
+  // The TS producer exports named records; SKJS still exports only value cells.
+  if (file.endsWith("/records.ts")) return false;
   // SKJS loses the initializer's singleton; the TS column verifies this case.
   if (file.endsWith("/mutable-locals.ts") && name === "preciseSnapshot")
     return false;

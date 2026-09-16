@@ -25,7 +25,7 @@
       [
         {
           "refs": {
-            "first": [1, 2],
+            "first": [["value", [1, 2]]],
             "rest": []
           }
         }
@@ -58,7 +58,7 @@
               {
                 "name": "cell",
                 "type": [4],
-                "current": [1]
+                "current": [["value", [1]]]
               }
             ]
           }

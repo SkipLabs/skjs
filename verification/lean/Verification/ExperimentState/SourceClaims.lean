@@ -16,9 +16,11 @@ structure Function where
   ret : Candidate
   envs : List (Nat × List (String × Candidate))
   exprs : List (Span × Candidate)
-  /-- Current contents at source entries/results, separate from persistent types. -/
-  entryCurrent : List (Nat × List (String × Ty Nat)) := []
-  exprCurrent : List (Span × Ty Nat) := []
+  /-- Current contents at source entries/results, separate from persistent
+  types. An object has one location per named field, so what it currently holds
+  is stated field by field; a point that names no record carries none. -/
+  entryCurrent : List (Nat × List (String × List (String × Ty Nat))) := []
+  exprCurrent : List (Span × List (String × Ty Nat)) := []
 
 /-- Labels are checked against the request's own table, so even a direct caller
 cannot turn an out-of-range label into its empty default. -/

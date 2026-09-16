@@ -54,6 +54,7 @@ const expected = {
   // hand repair at the loop exit or the negation.
   "stateful-source/basic": "verified",
   "stateful-source/cells": "verified",
+  "stateful-source/records": "verified",
   "stateful-source/cell-conjunction": "verified",
   "stateful-source/closures": "verified",
   "stateful-source/loops": "verified",
@@ -222,7 +223,7 @@ for (const [name, want] of Object.entries(expected)) {
         mutate(d=>{d.functions[0].expressions[0].type=[1,2];});
         mutate(d=>{d.functions[0].entries[0].bindings[0].type={param:"NotInScope"};});
         mutate(d=>{d.functions[0].expressions.pop();});
-        mutate(d=>{d.functions[0].expressions[0].current=[1];});
+        mutate(d=>{d.functions[0].expressions[0].current=[["value",[1]]];});
         if(name.endsWith("generic-bodies")) {
           mutate(d=>{claimsFor(d,"second").result={param:"T"};});
           const weak=structuredClone(original);

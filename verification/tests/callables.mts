@@ -308,7 +308,7 @@ try {
     // Context: next, read, cell, seed. After saving cell, next moves to slot 1;
     // the write consumes saved operands and the assignment returns saved next.
     const expected = letE(variable(2), letE(variable(1),
-      letE({write: {a: variable(1), b: variable(0)}}, variable(1))));
+      letE({writeAt: {field: "value", a: variable(1), b: variable(0)}}, variable(1))));
     const obligations = list(field(evidence, "obligations", index), "the obligations");
     const proof = obligations.findIndex((e) => {
       try { assert.deepEqual(field(e, "node", "claim", "term"), expected); return true; } catch { return false; }

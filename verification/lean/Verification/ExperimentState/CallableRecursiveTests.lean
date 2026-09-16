@@ -3,15 +3,17 @@ import Verification.ExperimentState.CallableGraphTests
 /-! Recursive callable bags exercise the existing recursive graph interpretation,
 producer, consumer, and machine together. The heap may contain the very callable
 whose contract describes that heap cell. -/
+set_option maxHeartbeats 800000
+
 namespace Verification.ExperimentState.CallableRecursiveTests
 open Lean PositiveNormalization PositiveGraphs ProgramTyping ControlFlow CertificateProducer RequestJson
 
 -- R = { bag: null | R; call: Boolean → Boolean }. A second label describes
 -- the same recursive contract independently, to exercise cyclic subtyping.
 private def types : List (List (Clause (List Nat))) :=
-  [[.nul],[.bool],[.callable [0,2] [] [([[1]],[1])]],
-   [.callable [0,3] [] [([[1]],[1])]],
-   [.callable [0,2,1] [] [([[1]],[1])]],
+  [[.nul],[.bool],[.callable [(valueField, [0,2])] [] [([[1]],[1])]],
+   [.callable [(valueField, [0,3])] [] [([[1]],[1])]],
+   [.callable [(valueField, [0,2,1])] [] [([[1]],[1])]],
    [.arrs [([[2]],[2])]], [.arrs [([[1]],[0,2])]]]
 private def G : NormalGraph Nat := fun i => types[i]?.getD []
 private def labels := List.range types.length

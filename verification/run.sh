@@ -243,6 +243,11 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   build rejected_fixture singleton "$SINGLETON"
   build rejected_fixture null-exit "$NULL_EXIT"
   build rejected_fixture write-refined "$WRITE_REFINED" 2
+  records_fixture() {
+    node verification/tools/fragment-parse.mts verification/tests/stateful-source/records.ts > "$WORK/records.ast" &&
+      node verification/tools/tsc-claims.mts verification/tests/stateful-source/records.ts --out "$WORK/records.claims"
+  }
+  build records_fixture
   build snapshot_probes
   for pid in "${building[@]}"; do wait "$pid" || exit 1; done
 
@@ -297,6 +302,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Generic identity source" node verification/tests/generic-source.mts "$WORK/generic_id.ast" "$WORK/generic_id.claims" "$GENERIC_ID" "$VERIFIER"
   run_test "Generic alias source" node verification/tests/generic-aliases.mts "$WORK/generic_aliases.ast" "$WORK/generic_aliases.claims" "$GENERIC_ALIASES" "$VERIFIER"
   run_test "Generic extends source" node verification/tests/generic-extends.mts "$WORK/generic_extends.ast" "$WORK/generic_extends.claims" "$GENERIC_EXTENDS" "$VERIFIER"
+  run_test "Multi-field records" node verification/tests/records.mts "$WORK/records.ast" "$WORK/records.claims" verification/tests/stateful-source/records.ts "$VERIFIER"
   run_test "Mutable locals" node verification/tests/mutable-locals.mts "$WORK/mutable_locals.ast" "$WORK/mutable_locals.claims" "$MUTABLE_LOCALS" "$VERIFIER"
   run_test "Numbers" node verification/tests/numbers.mts "$WORK/numbers.ast" "$WORK/numbers.claims" "$NUMBERS" "$VERIFIER"
   run_test "Generic body source" node verification/tests/generic-bodies.mts "$WORK/generic_bodies.ast" "$WORK/generic_bodies.claims" "$GENERIC_BODIES" "$VERIFIER"

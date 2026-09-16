@@ -39,6 +39,18 @@ missing key is a type error rather than a run-time refusal.
 | **SKJS claims** — what SKJS's checker believes at each site of one file | decoded by `decodeClaims` in [Fragment.lean](lean/Verification/ExperimentState/Fragment.lean) | [skjs-claims.mts](tools/skjs-claims.mts) | SKJS |
 | **SKJS operations** — the closed judgments SKJS records | checked by [SkjsOperations.lean](lean/Verification/ExperimentState/SkjsOperations.lean) | [skjs-operations.mts](tools/skjs-operations.mts) | SKJS |
 
+Named fields cut across most of these at once, and they are named the same way
+everywhere. An object is a finite map from field names to locations, fixed at
+allocation: **Fragment** writes `{k:"alloc", fields}`, `{k:"read", field, e}`
+and `{k:"write", field, receiver, rhs}`; **Claim** already had a record's
+`fields`; **TypeGraph**'s `refs` and `callable` carry `[name, labels]` pairs;
+**Calculus** has `objAt`, `makeAt`, `readAt` and `writeAt`; and a
+**SourceClaims** `current` is a list of `[field, labels]` pairs, because what an
+object holds is stated per field. No field name is privileged anywhere: `value`
+is what a *mutable local's* own cell is called, an internal slot the lowering
+invents, and what a source function's property bag is called, which is what
+gives a function an identity to compare.
+
 Defining no language, and saying so: [Decode.lean](lean/Verification/ExperimentState/Decode.lean)
 (source spans and JSON accessors several decoders share) and [span.mts](tools/span.mts).
 
@@ -81,3 +93,15 @@ Name it, give it a file on each side that it alone owns, and add a row above. If
 it needs a case table in a mirror, key the table by the language's own union so
 the next person cannot half-add a case. If the new file defines no language, say
 so in its first line.
+
+Source allocations admit required, mutable, primitive-valued named fields.
+The parser rejects `__proto__` initializers: JavaScript treats them as prototype
+syntax rather than ordinary own fields. Fresh callable initialization also
+rejects `call`, `bind`, `name`, `length`, `caller`, and `arguments`: these either
+replace the intrinsics used by lowering or encounter special function properties.
+These are source-language restrictions; the calculus itself has ordinary named
+locations and does not model JavaScript prototypes or property descriptors.
+
+The TypeScript producer exports these multi-field records. SKJS currently marks
+non-`value` and multi-field record claims unavailable; `records.ts` pins that
+producer boundary while the TS claims exercise the complete source pipeline.

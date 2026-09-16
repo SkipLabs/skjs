@@ -29,6 +29,14 @@ inductive Evidence (ι : Type) where
 def claim : Evidence ι → Sequent ι
   | .node j _ _ => j
 
+/-- The premises a function-creation node owes: one checked body per declared
+signature, in the order the checker expects. -/
+abbrev funEPremises [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (A : Ty ι)
+    (arity : Nat) (b : Tm) (ps : List (Sequent ι)) : Prop :=
+  match expand G A with
+  | [.arrs L] => (∀ p ∈ L, p.1.length = arity) ∧ ps = L.map (fun p => ⟨p.1 ++ Γ, b, p.2⟩)
+  | _ => False
+
 /-- Only finite, syntactic premises of one rule. -/
 def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι)) : Prop :=
   match r, j.term, ps with
@@ -40,10 +48,10 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   | .flsLit, .fls, [] => Represents G j.type (.boolLit false)
   | .numLit, .num b, [] => Represents G j.type (.numLit b)
   | .num, .num _, [] => Represents G j.type .num
-  | .funE, .make (.closure arity b) .nul, ps =>
-    match expand G j.type with
-    | [.arrs L] => (∀ p ∈ L, p.1.length = arity) ∧ ps = L.map (fun p => ⟨p.1 ++ j.context, b, p.2⟩)
-    | _ => False
+  -- A source function has no properties of its own; the model still gives it a
+  -- bag, so the shape of that allocation is fixed here rather than claimed.
+  | .funE, .makeAt (.closure arity b) ns inits, ps =>
+    ns = [valueField] ∧ inits = [Tm.nul] ∧ funEPremises G j.context j.type arity b ps
   | .app, .call f args, jf :: jas =>
     jf.context = j.context ∧ jf.term = f ∧ jas.map Sequent.term = args ∧
     (∀ ja ∈ jas, ja.context = j.context) ∧
@@ -52,13 +60,23 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     | _ => False
   | .letE, .letE a b, [ja, jb] =>
     ja.context = j.context ∧ ja.term = a ∧ jb = ⟨ja.type :: j.context, b, j.type⟩
-  | .alloc, .alloc a, [ja] =>
-    ja.context = j.context ∧ ja.term = a ∧ Represents G j.type (.refs ja.type [])
-  | .read, .read a, [ja] =>
-    ja.context = j.context ∧ ja.term = a ∧ Represents G ja.type (.refs j.type [])
-  | .write, .write a b, [ja, jb] =>
+  | .alloc, .makeAt .absent ns inits, ps =>
+    match expand G j.type with
+    | [.refs fs []] =>
+      ns.Nodup ∧ ns.length = ps.length ∧ ps.map Sequent.term = inits ∧
+      (∀ p ∈ ps, p.context = j.context) ∧ fs = ns.zip (ps.map Sequent.type)
+    | _ => False
+  | .read, .readAt f a, [ja] =>
+    ja.context = j.context ∧ ja.term = a ∧
+    (match expand G ja.type with
+     | [.refs fs []] => (f, j.type) ∈ fs
+     | _ => False)
+  | .write, .writeAt f a b, [ja, jb] =>
     ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
-    Represents G ja.type (.refs jb.type []) ∧ Represents G j.type .nul
+    Represents G j.type .nul ∧
+    (match expand G ja.type with
+     | [.refs fs []] => (f, jb.type) ∈ fs
+     | _ => False)
   | .ifBool, .ite c t e, [jc,jt,je] =>
     jc.context = j.context ∧ jc.term = c ∧ Answers G jc.type .isBool true ∧
     jt = ⟨j.context,t,j.type⟩ ∧ je = ⟨j.context,e,j.type⟩
@@ -83,9 +101,16 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     match j.context[i]? with
     | some C => ps = C.map (fun a => ⟨j.context.set i [a], j.term, j.type⟩)
     | none => False
-  | .makeCallable, .make (.closure arity b) a, ja :: ps =>
+  -- The bag's premises come first, one per named field, then the body's.
+  | .makeCallable, .makeAt (.closure arity b) ns inits, ps =>
     match expand G j.type with
-    | [.callable P [] L] => ja = ⟨j.context,a,P⟩ ∧ (∀ p ∈ L, p.1.length = arity) ∧ ps = L.map (fun p => ⟨p.1 ++ j.context,b,p.2⟩)
+    | [.callable P [] L] =>
+      ns.Nodup ∧ ns.length = inits.length ∧
+      (ps.take ns.length).map Sequent.term = inits ∧
+      (∀ p ∈ ps.take ns.length, p.context = j.context) ∧
+      P = ns.zip ((ps.take ns.length).map Sequent.type) ∧
+      (∀ p ∈ L, p.1.length = arity) ∧
+      ps.drop ns.length = L.map (fun p => ⟨p.1 ++ j.context,b,p.2⟩)
     | _ => False
   | .callCallable, .call f args, jf :: jas =>
     jf.context = j.context ∧ jf.term = f ∧ jas.map Sequent.term = args ∧
@@ -93,16 +118,16 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     match expand G jf.type with
     | [.callable _ _ L] => (jas.map Sequent.type,j.type) ∈ L
     | _ => False
-  | .readCallable, .read a, [ja] =>
+  | .readCallable, .readAt f a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧
     match expand G ja.type with
-    | [.callable P _ _] => j.type = P
+    | [.callable P _ _] => (f, j.type) ∈ P
     | _ => False
-  | .writeCallable, .write a b, [ja,jb] =>
+  | .writeCallable, .writeAt f a b, [ja,jb] =>
     ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
     Represents G j.type .nul ∧
     match expand G ja.type with
-    | [.callable P _ _] => jb.type = P
+    | [.callable P _ _] => (f, jb.type) ∈ P
     | _ => False
   | .sub proof, _, [jt] =>
     jt.context = j.context ∧ jt.term = j.term ∧
@@ -113,7 +138,7 @@ instance [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (p
     Decidable (Local G j r ps) := by
   unfold Local
   split <;> try infer_instance
-  all_goals try dsimp [Represents, Answers]
+  all_goals try dsimp [Represents, Answers, funEPremises]
   all_goals first | infer_instance | (split <;> infer_instance)
 
 def checkTree [DecidableEq ι] (G : NormalGraph ι) : Evidence ι → Bool
@@ -127,13 +152,14 @@ decreasing_by
 mutual
 def checkScope (d : Nat) : Tm → Bool
   | .var i => decide (i < d)
-  | .obj _ .absent => true
-  | .obj _ (.closure n b) => checkScope (d+n) b
-  | .make (.closure n b) a => checkScope (d+n) b && checkScope d a
+  | .objAt _ .absent => true
+  | .objAt _ (.closure n b) => checkScope (d+n) b
+  | .makeAt (.closure n b) _ args => checkScope (d+n) b && checkScopes d args
+  | .makeAt .absent _ args => checkScopes d args
   | .letE a b => checkScope d a && checkScope (d+1) b
   | .call f args => checkScope d f && checkScopes d args
-  | .write a b => checkScope d a && checkScope d b
-  | .alloc a | .read a | .test _ a => checkScope d a
+  | .writeAt _ a b => checkScope d a && checkScope d b
+  | .readAt _ a | .test _ a => checkScope d a
   | .ite c a b => checkScope d c && checkScope d a && checkScope d b
   | _ => true
 
@@ -169,8 +195,11 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
   · exact .flsLit hl
   · exact .numLit hl
   · exact .num hl
-  · split at hl
-    · rename_i arity b ps L hL
+  · rename_i ps arity b ns inits
+    obtain ⟨rfl, rfl, hl⟩ := hl
+    unfold funEPremises at hl
+    split at hl
+    · rename_i L hL
       apply HasTy.funE hL hl.1
       intro p hmem
       apply hp ⟨p.1 ++ Γ, b, p.2⟩
@@ -198,23 +227,61 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     have ha := hp ja (by simp)
     rw [hΓ, ht] at ha
     exact .letE ha (hp ⟨ja.type :: Γ, b, A⟩ (by simp))
-  · rename_i a ja
+  · rename_i ps _ _ _ ns inits
+    split at hl
+    · rename_i fs he
+      obtain ⟨hnd, hlen, hterms, hctx, rfl⟩ := hl
+      have hzl : (ns.zip ps).length = ns.length := by simp [hlen]
+      have hfst : ((ns.zip ps).map fun r => (r.1, r.2.type, r.2.term)).map Prod.fst = ns := by
+        simp only [List.map_map, Function.comp_def]
+        exact List.map_fst_zip (by omega)
+      have hsnd : ((ns.zip ps).map fun r => (r.1, r.2.type, r.2.term)).map (fun p => p.2.2)
+          = inits := by
+        rw [← hterms]
+        simp only [List.map_map, Function.comp_def]
+        calc (ns.zip ps).map (fun r => r.2.term)
+            = ((ns.zip ps).map Prod.snd).map Sequent.term := by
+              simp [List.map_map, Function.comp_def]
+          _ = ps.map Sequent.term := by rw [List.map_snd_zip (by omega)]
+      have htyp : ((ns.zip ps).map fun r => (r.1, r.2.type, r.2.term)).map
+          (fun p => (p.1, p.2.1)) = ns.zip (ps.map Sequent.type) := by
+        rw [List.zip_map_right]
+        simp only [List.map_map, Function.comp_def]
+        apply List.map_congr_left
+        intro r _
+        rfl
+      have := HasTy.alloc (G := G) (Γ := Γ) (Ref := A)
+        (parts := (ns.zip ps).map fun r => (r.1, r.2.type, r.2.term))
+        (by rw [hfst]; exact hnd)
+        (by
+          intro q hq
+          obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hq
+          have hmem : r.2 ∈ ps := (List.of_mem_zip (by simpa using hr)).2
+          have h := hp r.2 hmem
+          rw [hctx r.2 hmem] at h
+          exact h)
+        (by rw [htyp]; exact he)
+      rw [hfst, hsnd] at this
+      exact this
+    · contradiction
+  · rename_i f a ja
     rcases hl with ⟨hΓ, ht, hr⟩
     have ha := hp ja (by simp)
     rw [hΓ, ht] at ha
-    exact .alloc ha hr
-  · rename_i a ja
-    rcases hl with ⟨hΓ, ht, hr⟩
-    have ha := hp ja (by simp)
-    rw [hΓ, ht] at ha
-    exact .read ha hr
-  · rename_i a b ja jb
-    rcases hl with ⟨hΓa, hta, hΓb, htb, hr, hn⟩
+    split at hr
+    · rename_i fs he
+      exact .read ha he hr
+    · contradiction
+  · rename_i f a b ja jb
+    rcases hl with ⟨hΓa, hta, hΓb, htb, hn, hr⟩
     have ha := hp ja (by simp)
     have hb := hp jb (by simp)
     rw [hΓa, hta] at ha
     rw [hΓb, htb] at hb
-    exact .write ha hr hb hn
+    split at hr
+    · rename_i fs he
+      exact .write ha he hr hb hn
+    · contradiction
   · rename_i c t e jc jt je
     rcases hl with ⟨hΓ, hc, hb, rfl, rfl⟩
     have hcond := hp jc (by simp)
@@ -252,13 +319,58 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
       rw [hl]
       exact List.mem_map.mpr ⟨a,ha,rfl⟩
     · contradiction
-  · rename_i arity b a ja ps
+  · rename_i ps _ _ _ arity b ns inits
     split at hl
     · rename_i P L hr
-      rcases hl with ⟨rfl,hlen,rfl⟩
-      apply HasTy.makeCallable hr (hp ⟨Γ,a,P⟩ (by simp)) hlen
-      intro p hm
-      exact hp _ (List.mem_cons_of_mem _ (List.mem_map.mpr ⟨p,hm,rfl⟩))
+      obtain ⟨hnd,hlen,hterms,hctx,rfl,harity,hbodies⟩ := hl
+      have hplen : (ps.take ns.length).length = ns.length := by
+        have : ns.length ≤ ps.length := by
+          have := congrArg List.length hterms
+          simp only [List.length_map, List.length_take] at this
+          omega
+        simp only [List.length_take]
+        omega
+      have hfst : ((ns.zip (ps.take ns.length)).map fun r => (r.1, r.2.type, r.2.term)).map
+          Prod.fst = ns := by
+        simp only [List.map_map, Function.comp_def]
+        exact List.map_fst_zip (by omega)
+      have hsnd : ((ns.zip (ps.take ns.length)).map fun r => (r.1, r.2.type, r.2.term)).map
+          (fun p => p.2.2) = inits := by
+        rw [← hterms]
+        simp only [List.map_map, Function.comp_def]
+        calc (ns.zip (ps.take ns.length)).map (fun r => r.2.term)
+            = ((ns.zip (ps.take ns.length)).map Prod.snd).map Sequent.term := by
+              simp [List.map_map, Function.comp_def]
+          _ = (ps.take ns.length).map Sequent.term := by
+              rw [List.map_snd_zip (by omega)]
+      have htyp : ((ns.zip (ps.take ns.length)).map fun r => (r.1, r.2.type, r.2.term)).map
+          (fun p => (p.1, p.2.1)) = ns.zip ((ps.take ns.length).map Sequent.type) := by
+        rw [List.zip_map_right]
+        simp only [List.map_map, Function.comp_def]
+        apply List.map_congr_left
+        intro r _
+        rfl
+      have := HasTy.makeCallable (G := G) (Γ := Γ) (F := A) (arity := arity) (b := b) (L := L)
+        (parts := (ns.zip (ps.take ns.length)).map fun r => (r.1, r.2.type, r.2.term))
+        (by rw [htyp]; exact hr)
+        (by rw [hfst]; exact hnd)
+        (by
+          intro q hq
+          obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq
+          have hmem : r.2 ∈ ps := List.mem_of_mem_take (List.of_mem_zip (by simpa using hr')).2
+          have h := hp r.2 hmem
+          rw [hctx r.2 (List.of_mem_zip (by simpa using hr')).2] at h
+          exact h)
+        harity
+        (by
+          intro q hq
+          apply hp ⟨q.1 ++ Γ, b, q.2⟩
+          have : (⟨q.1 ++ Γ, b, q.2⟩ : Sequent ι) ∈ ps.drop ns.length := by
+            rw [hbodies]
+            exact List.mem_map.mpr ⟨q, hq, rfl⟩
+          exact List.mem_of_mem_drop this)
+      rw [hfst, hsnd] at this
+      exact this
     · contradiction
   · rename_i f args jf jas
     rcases hl with ⟨hΓf, htf, hargs, hcontexts, hL⟩
@@ -282,8 +394,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     rw [hΓ,ht] at ha
     split at hL
     · rename_i P Ps L he
-      cases hL
-      exact .readCallable ha he
+      exact .readCallable ha he hL
     · contradiction
   · rename_i a b ja jb
     rcases hl with ⟨hΓa,hta,hΓb,htb,hn,hL⟩
@@ -293,8 +404,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     rw [hΓb,htb] at hb
     split at hL
     · rename_i P Ps L he
-      rw [hL] at hb
-      exact .writeCallable ha he hb hn
+      exact .writeCallable ha he hL hb hn
     · contradiction
   · rename_i proof t jt
     rcases hl with ⟨hΓ, ht, hc⟩
@@ -365,17 +475,35 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
   | num hr => exact node_complete (r := .num) (js := []) hr (by simp)
   | @funE F L arity Γ b hr hlen hb ih =>
     apply node_complete (r := .funE) (js := L.map (fun p => ⟨p.1 ++ Γ, b, p.2⟩))
-    · simpa only [Local, show expand G F = [.arrs L] from hr, and_true] using hlen
+    · refine ⟨rfl, rfl, ?_⟩
+      show funEPremises G Γ F arity b _
+      simpa only [funEPremises, show expand G F = [.arrs L] from hr, and_true] using hlen
     · intro j hj
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
       exact ih p hp
-  | @makeCallable F P L Γ a arity b hr ha hlen hb iha ihb =>
+  | @makeCallable F L Γ arity b parts hr hnd hpart hlen hb ih ihb =>
     apply node_complete (r := .makeCallable)
-      (js := ⟨Γ,a,P⟩ :: L.map (fun p => ⟨p.1 ++ Γ,b,p.2⟩))
-    · simpa [Local,show expand G F = [.callable P [] L] from hr] using hlen
+      (j := ⟨Γ, .makeAt (.closure arity b) (parts.map Prod.fst) (parts.map fun p => p.2.2), F⟩)
+      (js := (parts.map fun p => ⟨Γ, p.2.2, p.2.1⟩) ++ L.map (fun p => ⟨p.1 ++ Γ,b,p.2⟩))
+    · simp only [Local,
+        show expand G F = [.callable (parts.map fun p => (p.1, p.2.1)) [] L] from hr]
+      have hlenp : (parts.map fun p => (⟨Γ, p.2.2, p.2.1⟩ : Sequent ι)).length
+          = (parts.map Prod.fst).length := by simp
+      refine ⟨hnd, by simp, ?_, ?_, ?_, hlen, ?_⟩
+      · rw [List.take_left' hlenp]
+        simp [List.map_map, Function.comp_def]
+      · rw [List.take_left' hlenp]
+        intro q hq
+        obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq
+        rfl
+      · rw [List.take_left' hlenp]
+        simp only [List.map_map, Function.comp_def]
+        rw [List.zip_map']
+      · rw [List.drop_left' hlenp]
     · intro j hj
-      rcases List.mem_cons.mp hj with rfl | hj
-      · exact iha
+      rcases List.mem_append.mp hj with hj | hj
+      · obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hj
+        exact ih p hp
       · obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hj
         exact ihb p hp
   | @callCallable Γ f F P Ps L xs B hf hr hp ha ihf iha =>
@@ -392,14 +520,16 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       · exact ihf
       · obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hj
         exact iha p hp
-  | @readCallable Γ a F P Ps L ha hr ih =>
-    apply node_complete (G := G) (j := ⟨Γ,.read a,P⟩) (r := .readCallable) (js := [⟨Γ,a,F⟩])
-    · simp [Local,show expand G F = [.callable P Ps L] from hr]
+  | @readCallable Γ a F P Ps L f A ha hr hm ih =>
+    apply node_complete (G := G) (j := ⟨Γ,.readAt f a,A⟩) (r := .readCallable) (js := [⟨Γ,a,F⟩])
+    · simpa [Local,show expand G F = [.callable P Ps L] from hr] using hm
     · simpa using ih
-  | @writeCallable Γ a F P Ps L b N ha hr hb hn iha ihb =>
-    apply node_complete (G := G) (j := ⟨Γ,.write a b,N⟩) (r := .writeCallable)
-      (js := [⟨Γ,a,F⟩,⟨Γ,b,P⟩])
-    · simpa [Local,show expand G F = [.callable P Ps L] from hr] using hn
+  | @writeCallable Γ a F P Ps L f A b N ha hr hm hb hn iha ihb =>
+    apply node_complete (G := G) (j := ⟨Γ,.writeAt f a b,N⟩) (r := .writeCallable)
+      (js := [⟨Γ,a,F⟩,⟨Γ,b,A⟩])
+    · exact ⟨rfl,rfl,rfl,rfl,hn,by
+        simp only [show expand G F = [.callable P Ps L] from hr]
+        exact hm⟩
     · intro j hj
       simp only [List.mem_cons,List.not_mem_nil,or_false] at hj
       rcases hj with rfl | rfl
@@ -427,14 +557,26 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       rcases hj with rfl | rfl
       · exact iha
       · exact ihb
-  | @alloc Γ a A Ref ha hr ih =>
-    apply node_complete (G := G) (j := ⟨Γ, .alloc a, Ref⟩) (r := .alloc) (js := [⟨Γ,a,A⟩]) ⟨rfl,rfl,hr⟩
+  | @alloc Γ Ref parts hnd hpart hr ih =>
+    apply node_complete (G := G)
+      (j := ⟨Γ, .makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2), Ref⟩)
+      (r := .alloc) (js := parts.map fun p => ⟨Γ, p.2.2, p.2.1⟩)
+    · simp only [Local, show expand G Ref = [.refs (parts.map fun p => (p.1, p.2.1)) []] from hr]
+      refine ⟨hnd, by simp, by simp [List.map_map, Function.comp_def], by
+        intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; rfl, ?_⟩
+      simp only [List.map_map, Function.comp_def]
+      rw [List.zip_map']
+    · intro j hj
+      obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
+      exact ih p hp
+  | @read Γ a Ref fs f A ha hr hm ih =>
+    apply node_complete (G := G) (j := ⟨Γ, .readAt f a, A⟩) (r := .read) (js := [⟨Γ,a,Ref⟩])
+      ⟨rfl,rfl,by simp only [show expand G Ref = [.refs fs []] from hr]; exact hm⟩
     simpa using ih
-  | @read Γ a Ref A ha hr ih =>
-    apply node_complete (G := G) (j := ⟨Γ, .read a, A⟩) (r := .read) (js := [⟨Γ,a,Ref⟩]) ⟨rfl,rfl,hr⟩
-    simpa using ih
-  | @write Γ a Ref A b N ha hr hb hn iha ihb =>
-    apply node_complete (G := G) (j := ⟨Γ, .write a b, N⟩) (r := .write) (js := [⟨Γ,a,Ref⟩, ⟨Γ,b,A⟩]) ⟨rfl,rfl,rfl,rfl,hr,hn⟩
+  | @write Γ a Ref fs f A b N ha hr hm hb hn iha ihb =>
+    apply node_complete (G := G) (j := ⟨Γ, .writeAt f a b, N⟩) (r := .write)
+      (js := [⟨Γ,a,Ref⟩, ⟨Γ,b,A⟩])
+      ⟨rfl,rfl,rfl,rfl,hn,by simp only [show expand G Ref = [.refs fs []] from hr]; exact hm⟩
     intro j hj
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
     rcases hj with rfl | rfl

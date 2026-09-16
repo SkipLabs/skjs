@@ -33,14 +33,95 @@ abbrev Fam := (k : Nat) → WorldT k → Val → Prop
 observe only strictly lower levels; higher-level information is unavailable. -/
 def res {k : Nat} (T : Fam) : Ctr k := fun j _ W' v => T j W' v
 
-/-- **A reference, built from a semantic element type.** The stored contract is
-compared with the element family itself, at strictly lower budget. Taking the
-element type semantically rather than syntactically is what makes the clause
-depend on the environment interpreting it, so a type parameter under a
-reference is interpreted rather than ignored. -/
-def refT (T : Fam) : Fam := fun k W v =>
-  ∃ (l : Nat) (c : Ctr k), v = .obj l .absent ∧ lookup W l = some c ∧
-    ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ T j W' u
+/-- **A record, built from semantic field types.** An object is a finite map
+from field names to locations, fixed at allocation; the contract stored at a
+named field's location is compared with that field's family, at strictly lower
+budget. Taking the field types semantically rather than syntactically is what
+makes the clause depend on the environment interpreting it, so a type parameter
+under a field is interpreted rather than ignored.
+
+Fields the type does not name are unconstrained, so a record type is open, as
+TypeScript's structural types are; every field it does name keeps its exact
+contract, which is what makes that openness sound and each field invariant. -/
+abbrev Fields := List (String × Fam)
+
+def recT (fs : Fields) : Fam := fun k W v =>
+  ∃ flds : List (String × Nat), v = .objAt flds .absent ∧
+    ∀ (f : String) (T : Fam), (f, T) ∈ fs →
+      ∃ (l : Nat) (c : Ctr k), flds.lookup f = some l ∧ lookup W l = some c ∧
+        ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ T j W' u
+
+/-- **A reference**: the record with the single field a cell carries. Every
+rule and proof written before fields were named speaks about this one. -/
+def refT (T : Fam) : Fam := recT [(valueField, T)]
+
+/-- One named field, as the cell development states it. -/
+theorem recT_single {f : String} {A : Fam} {k} {W : WorldT k} {v} :
+    recT [(f, A)] k W v ↔ ∃ (flds : List (String × Nat)) (l : Nat) (c : Ctr k),
+      v = .objAt flds .absent ∧ flds.lookup f = some l ∧ lookup W l = some c ∧
+      ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ A j W' u := by
+  constructor
+  · rintro ⟨flds, rfl, h⟩
+    obtain ⟨l, c, hl, hw, hag⟩ := h f A (by simp)
+    exact ⟨flds, l, c, rfl, hl, hw, hag⟩
+  · rintro ⟨flds, l, c, rfl, hl, hw, hag⟩
+    refine ⟨flds, rfl, ?_⟩
+    rintro f' T' hm
+    simp only [List.mem_singleton, Prod.mk.injEq] at hm
+    obtain ⟨rfl, rfl⟩ := hm
+    exact ⟨l, c, hl, hw, hag⟩
+
+/-- A pair in a zip comes from one position of both lists. -/
+theorem mem_zip_index {α β : Type} {as : List α} {bs : List β} {a : α} {b : β}
+    (h : (a, b) ∈ as.zip bs) :
+    ∃ (i : Nat) (hi : i < as.length) (hj : i < bs.length), as[i] = a ∧ bs[i] = b := by
+  induction as generalizing bs with
+  | nil => simp at h
+  | cons x as ih =>
+    cases bs with
+    | nil => simp at h
+    | cons y bs =>
+      rw [List.zip_cons_cons] at h
+      rcases List.mem_cons.mp h with he | h'
+      · cases he
+        exact ⟨0, by simp, by simp, rfl, rfl⟩
+      · obtain ⟨i, hi, hj, h1, h2⟩ := ih h'
+        exact ⟨i + 1, by simpa using hi, by simpa using hj, h1, h2⟩
+
+/-- **The record a fresh allocation satisfies.** Each named field stands for the
+location its position was given, under the contract stated for it there. -/
+theorem recT_alloc {n : Nat} {W : WorldT n} {ns : List String} {As : List Fam} {base : Nat}
+    (hnd : ns.Nodup) (hlen : ns.length = As.length)
+    (hl : ∀ (i : Nat) (hi : i < ns.length),
+      lookup W (base + i) = some (res (As[i]'(hlen ▸ hi)))) :
+    recT (ns.zip As) n W (.objAt (slots base ns) .absent) := by
+  refine ⟨slots base ns, rfl, ?_⟩
+  intro f T hm
+  obtain ⟨i, hi, hj, rfl, rfl⟩ := mem_zip_index hm
+  exact ⟨base + i, res (As[i]'hj), lookup_slots hnd hi, hl i hi, fun _ _ _ _ => Iff.rfl⟩
+
+/-- What a record type says about one of its fields. -/
+theorem recT_at {fs : List (String × Fam)} {f : String} {A : Fam} (hm : (f, A) ∈ fs)
+    {k} {W : WorldT k} {v} (h : recT fs k W v) :
+    ∃ (flds : List (String × Nat)) (l : Nat) (c : Ctr k),
+      v = .objAt flds .absent ∧ flds.lookup f = some l ∧ lookup W l = some c ∧
+      ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ A j W' u := by
+  obtain ⟨flds, rfl, hfs⟩ := h
+  obtain ⟨l, c, hl, hw, hag⟩ := hfs f A hm
+  exact ⟨flds, l, c, rfl, hl, hw, hag⟩
+
+theorem refT_iff {A : Fam} {k} {W : WorldT k} {v} :
+    refT A k W v ↔ ∃ (flds : List (String × Nat)) (l : Nat) (c : Ctr k),
+      v = .objAt flds .absent ∧ flds.lookup valueField = some l ∧ lookup W l = some c ∧
+      ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ A j W' u :=
+  recT_single
+
+/-- Building the cell at a known location, as the earlier development did. -/
+theorem refT_cell {A : Fam} {k} {W : WorldT k} {l : Nat} {c : Ctr k}
+    (hl : lookup W l = some c)
+    (hag : ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ A j W' u) :
+    refT A k W (.obj l .absent) :=
+  refT_iff.mpr ⟨_, l, c, rfl, lookup_value l, hl, hag⟩
 
 def nulT : Fam := fun _ _ v => v = .nul
 
@@ -59,7 +140,7 @@ def numT : Fam := fun _ _ v => ∃ b, v = .num b
 
 theorem ref_param_inhabited (F : Fam) (k : Nat) :
     refT F k (ofList [res F]) (.obj 0 .absent) :=
-  ⟨0, res F, rfl, by simp [lookup], fun _ _ _ _ => Iff.rfl⟩
+  refT_cell (c := res F) (by simp [lookup]) (fun _ _ _ _ => Iff.rfl)
 
 theorem ref_param_universal :
     ∀ (F : Fam) (k : Nat), ∃ (W : WorldT k) (v : Val), refT F k W v :=
@@ -119,9 +200,9 @@ theorem fix_unfold (F : Fam → Fam) (hF : Contractive F) (n : Nat) (W : WorldT 
 so it is a guard. -/
 theorem refT_contractive : Contractive refT := by
   intro n T U hag W v
-  simp only [refT]
-  constructor <;> rintro ⟨l, c, rfl, hl, h⟩ <;> refine ⟨l, c, rfl, hl, ?_⟩ <;>
-      intro j hj W' u
+  simp only [refT_iff]
+  constructor <;> rintro ⟨flds, l, c, rfl, hf, hl, h⟩ <;>
+      refine ⟨flds, l, c, rfl, hf, hl, ?_⟩ <;> intro j hj W' u
   · exact (h j hj W' u).trans (hag j hj W' u)
   · exact (h j hj W' u).trans (hag j hj W' u).symm
 
@@ -149,12 +230,12 @@ theorem R_unfold (n : Nat) (W : WorldT n) (v : Val) : R n W v ↔ refT R n W v :
 /-- Inhabited by a genuinely cyclic world: one location whose contract is `R`
 itself, holding a reference to that same location. -/
 theorem R_cyclic (n : Nat) : R n (ofList [res R]) (.obj 0 .absent) :=
-  (R_unfold n _ _).mpr ⟨0, res R, rfl, by simp [lookup], fun _ _ _ _ => Iff.rfl⟩
+  (R_unfold n _ _).mpr (refT_cell (c := res R) (by simp [lookup]) (fun _ _ _ _ => Iff.rfl))
 
 /-- And `R` is not everything: a non-location is excluded at every level. -/
 theorem R_not_trivial (n : Nat) (W : WorldT n) : ¬ R n W .nul := by
   intro h
-  obtain ⟨l, c, hv, -, -⟩ := (R_unfold n W _).mp h
+  obtain ⟨flds, l, c, hv, -, -, -⟩ := refT_iff.mp ((R_unfold n W _).mp h)
   exact absurd hv (by simp)
 
 /-- A reference respects equality of its element type. -/
@@ -179,15 +260,17 @@ theorem R_eq_ref_ref :
 
 /-- Allocation cannot invalidate a reference claim: a future world keeps every
 contract it already had. -/
+theorem recT_mono (fs : List (String × Fam)) (k : Nat) (W W' : WorldT k) (h : WExt W W')
+    (v : Val) (hv : recT fs k W v) : recT fs k W' v := by
+  obtain ⟨flds, rfl, hfs⟩ := hv
+  refine ⟨flds, rfl, ?_⟩
+  intro f T hm
+  obtain ⟨l, c, hf, hl, hag⟩ := hfs f T hm
+  exact ⟨l, c, hf, WExt_lookup h hl, hag⟩
+
 theorem refT_mono (T : Fam) (k : Nat) (W W' : WorldT k) (h : WExt W W') (v : Val)
-    (hv : refT T k W v) : refT T k W' v := by
-  obtain ⟨l, c, rfl, hl, hag⟩ := hv
-  obtain ⟨tail, ht⟩ := h
-  refine ⟨l, c, rfl, ?_, hag⟩
-  simp only [lookup] at hl ⊢
-  rw [ht]
-  have := (List.getElem?_eq_some_iff.mp hl).1
-  simpa [List.getElem?_append, this] using hl
+    (hv : refT T k W v) : refT T k W' v :=
+  recT_mono _ k W W' h v hv
 
 /-! ## Admissibility -/
 
@@ -207,12 +290,17 @@ theorem topF_adm : Adm topF := ⟨fun _ _ _ _ => trivial, fun _ _ _ _ _ _ => tri
 
 /-- A reference is admissible whatever its element type is: the level drop is
 absorbed by restricting the stored contract, and allocation only appends. -/
-theorem refT_adm (T : Fam) : Adm (refT T) := by
-  refine ⟨?_, fun n W W' hx v hv => refT_mono T n W W' hx v hv⟩
-  rintro n W v ⟨l, c, rfl, hl, hag⟩
-  refine ⟨l, _, rfl, lookup_trunc (Nat.le_succ n) W l c hl, ?_⟩
+theorem recT_adm (fs : List (String × Fam)) : Adm (recT fs) := by
+  refine ⟨?_, fun n W W' hx v hv => recT_mono fs n W W' hx v hv⟩
+  rintro n W v ⟨flds, rfl, hfs⟩
+  refine ⟨flds, rfl, ?_⟩
+  intro f T hm
+  obtain ⟨l, c, hf, hl, hag⟩ := hfs f T hm
+  refine ⟨l, _, hf, lookup_trunc (Nat.le_succ n) W l c hl, ?_⟩
   intro j hj W' u
   exact hag j (by omega) W' u
+
+theorem refT_adm (T : Fam) : Adm (refT T) := recT_adm _
 
 theorem iter_adm (F : Fam → Fam) (hF : ∀ T, Adm T → Adm (F T)) : ∀ k, Adm (iter F k)
   | 0 => topF_adm
@@ -257,8 +345,10 @@ theorem nulT_valOnly : ValOnly nulT := by rintro _ _ _ rfl; rfl
 
 theorem boolT_valOnly : ValOnly boolT := by rintro _ _ _ (rfl | rfl) <;> rfl
 
-theorem refT_valOnly (A : Fam) : ValOnly (refT A) := by
-  rintro _ _ _ ⟨l, c, rfl, -, -⟩; rfl
+theorem recT_valOnly (fs : List (String × Fam)) : ValOnly (recT fs) := by
+  rintro _ _ _ ⟨flds, rfl, -⟩; rfl
+
+theorem refT_valOnly (A : Fam) : ValOnly (refT A) := recT_valOnly _
 
 /-- Restricting a semantic type to a contract is level-independent. -/
 theorem trunc_res {k j : Nat} (h : j ≤ k) (T : Fam) :

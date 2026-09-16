@@ -97,6 +97,45 @@ theorem heap_alloc (n : Nat) (W : WorldT n) (h : Heap) (c : Ctr n) (v : Val)
     rw [List.getElem?_append_right (by omega)]
     simp [hlen]
 
+/-- **Allocating a whole object.** One object takes one fresh location per
+named field, so the world grows by that many contracts at once. Each is the
+single allocation above, so admissibility is needed for exactly the same
+reason and nothing new is assumed. -/
+theorem heap_allocs : ∀ (n : Nat) (cs : List (Ctr n)) (W : WorldT n) (h : Heap) (vs : List Val),
+    HeapOk n W h → WorldAdm W → (∀ c ∈ cs, CtrAdm c) → cs.length = vs.length →
+    (∀ p ∈ cs.zip vs, ∀ (j : Nat) (hj : j < n),
+      p.1 j hj (trunc j (Nat.le_of_lt hj) W) p.2) →
+    HeapOk n (appendWs W cs) (h ++ vs) := by
+  intro n cs
+  induction cs with
+  | nil =>
+    intro W h vs hok _ _ hlen _
+    have hv : vs = [] := by cases vs <;> simp_all
+    subst hv
+    simpa using hok
+  | cons c cs ih =>
+    intro W h vs hok hadm hc hlen hv
+    cases vs with
+    | nil => simp at hlen
+    | cons v vs =>
+      have hcadm := hc c (by simp)
+      have hxt : ∀ (j : Nat) (hj : j < n),
+          WExt (trunc j (Nat.le_of_lt hj) W) (trunc j (Nat.le_of_lt hj) (appendW W c)) :=
+        fun j hj => WExt_trunc (Nat.le_of_lt hj) (WExt_appendW W c)
+      have hstep : HeapOk n (appendW W c) (h ++ [v]) := by
+        refine heap_alloc n W h c v hok hadm ?_
+        intro j hj
+        exact hcadm j hj _ _ (hxt j hj) v (hv (c, v) (by simp) j hj)
+      have hrest := ih (appendW W c) (h ++ [v]) vs hstep
+        (WorldAdm_append hadm hcadm) (fun d hd => hc d (by simp [hd]))
+        (by simpa using hlen) ?_
+      · rw [appendWs_cons]
+        simpa [List.append_assoc] using hrest
+      · rintro ⟨d, w⟩ hp j hj
+        have hd : d ∈ cs := (List.of_mem_zip hp).1
+        exact hc d (by simp [hd]) j hj _ _ (hxt j hj) w
+          (hv (d, w) (List.mem_cons_of_mem _ hp) j hj)
+
 /-! ## An inhabited cyclic heap -/
 
 

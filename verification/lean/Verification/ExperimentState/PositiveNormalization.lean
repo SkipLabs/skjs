@@ -9,7 +9,11 @@ open ReferenceConjunctions Tower
 
 inductive Clause (α : Type) where
   | nul | bool
-  | refs (first : α) (rest : List α)
+  /-- A location under one or more record contracts. An operand is a finite map
+  from field names to labels and names only the fields it constrains, so
+  operands naming different fields describe different locations of the same
+  object rather than one location twice. -/
+  | refs (first : List (String × α)) (rest : List (List (String × α)))
   | arrs (arrows : List (List α × α))
   | boolLit (value : Bool)
   /-- Numbers, and one number. The spelling is canonical, so `numLit` singletons
@@ -18,7 +22,8 @@ inductive Clause (α : Type) where
   | numLit (bits : UInt64)
   /-- The value a body produces by completing rather than returning. -/
   | undef
-  | callable (first : α) (rest : List α) (arrows : List (List α × α))
+  | callable (first : List (String × α)) (rest : List (List (String × α)))
+      (arrows : List (List α × α))
   deriving Repr, DecidableEq
 
 def sem (X : α → Fam) : Clause α → Fam
@@ -28,9 +33,11 @@ def sem (X : α → Fam) : Clause α → Fam
   | .boolLit b => fun _ _ v => v = (if b then .tru else .fls)
   | .num => numT
   | .numLit b => fun _ _ v => v = .num b
-  | .refs a bs => refsT (X a) (bs.map X)
+  | .refs a bs => refsT (famsOf X a) (bs.map (famsOf X))
   | .arrs L => callsT (L.map fun p => (p.1.map X, X p.2))
-  | .callable a bs L => CallableConjunctions.objectsT (X a) (bs.map X) (L.map fun p => (p.1.map X,X p.2))
+  | .callable a bs L =>
+      CallableConjunctions.objectsT (famsOf X a) (bs.map (famsOf X))
+        (L.map fun p => (p.1.map X,X p.2))
 
 def semList (X : α → Fam) (L : List (Clause α)) : Fam := setSem (sem X) L
 
@@ -84,8 +91,8 @@ def shape : Clause α → Nat
   | .undef => 4 | .num | .numLit _ => 5
 
 def valueShape : Val → Nat
-  | .nul => 0 | .tru | .fls => 1 | .obj _ .absent => 2 | .undef => 4
-  | .obj _ (.closure _ _) => 3
+  | .nul => 0 | .tru | .fls => 1 | .objAt _ .absent => 2 | .undef => 4
+  | .objAt _ (.closure _ _) => 3
   | .num _ => 5
   | _ => 6
 
@@ -97,7 +104,7 @@ theorem sem_shape {X : α → Fam} {c : Clause α} {n W v}
   | boolLit b => cases b <;> cases h <;> rfl
   | num => obtain ⟨b, rfl⟩ := h; rfl
   | numLit b => cases h; rfl
-  | refs a bs => obtain ⟨l, _, rfl, _⟩ := h.1; rfl
+  | refs a bs => obtain ⟨flds, rfl, _⟩ := h.1; rfl
   | arrs L => rcases callsT_callable h with ⟨arity, b, l, rfl, _⟩; rfl
   | undef => cases h; rfl
   | callable a bs L => rcases callsT_callable h.2 with ⟨arity,b,l,rfl,_⟩; rfl

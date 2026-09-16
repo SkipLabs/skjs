@@ -72,6 +72,11 @@ export function expr<K extends Expr["k"]>(
   return e;
 }
 
+/** The initializer of an allocation's single field, for a fixture that
+ * allocates one. A record with several fields is reached by index instead. */
+export const allocField = (e: Expr | undefined): Expr =>
+  must(expr(e, "alloc").fields[0], "an allocated field").e;
+
 /** One function of a parse, by name. */
 export const fn = (ast: Ast, name: string): FunctionAst =>
   found(`function ${name}`, ast.functions.find((f) => f.name === name));

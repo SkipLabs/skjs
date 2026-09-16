@@ -7,8 +7,8 @@ open PositiveNormalization PositiveGraphs PositiveRules ProgramTyping ProgramCer
 open CertificateProducer ControlFlow RequestJson HeapExpressionRules
 
 private def types : List (List (Clause (List Nat))) :=
-  [[.nul],[.bool],[.refs [1] []],[.callable [1] [] []],
-   [.callable [1] [] [([[0]],[1])]]]
+  [[.nul],[.bool],[.refs [(valueField, [1])] []],[.callable [(valueField, [1])] [] []],
+   [.callable [(valueField, [1])] [] [([[0]],[1])]]]
 private def G : NormalGraph Nat := fun i => types[i]?.getD []
 private def labels := List.range types.length
 -- The initializer writes true, allocates an intermediate object, and returns
@@ -33,10 +33,10 @@ private def pool := vocabulary G labels claims []
 private def creation : Sequent Nat := ⟨[[2,3]],callee,[4]⟩
 private def evidence : Evidence Nat :=
   (expression G pool 12 creation.context creation.term creation.type).getD (.node creation .nul [])
-private def knowledge : HeapKnowledge.Knowledge := ⟨[⟨0,[.fls]⟩],[],[]⟩
+private def knowledge : HeapKnowledge.Knowledge := ⟨[⟨0,[.fls],valueField⟩],[],[]⟩
 #guard checkTree G evidence
 #guard allocationSlot callee == none
-#guard checkStep G creation knowledge (.allocated 0 [.fls] evidence) == none
+#guard checkStep G creation knowledge (.allocated evidence) == none
 #guard checkStep G creation knowledge (.created evidence) == none
 #guard checkStep G creation knowledge (.pure evidence) == none
 #guard checkStep G creation knowledge (.ordinary evidence) == some (ordinaryOutput knowledge)
@@ -70,8 +70,11 @@ theorem initializer_blocks_argument {h h' t'} :
   cases step with
   | callL step =>
     cases step with
-    | makeC step => exact stuck_no_step step
-    | makeV hv => simp [isVal] at hv
+    | @makeArg _ _ _ i _ _ a _ hg _ step =>
+      cases i with
+      | zero => simp at hg; subst a; exact stuck_no_step step
+      | succ i => simp at hg
+    | makeFields hv _ => have h := hv (.app .nul .nul) (by simp); simp [isVal] at h
   | callArg hv _ _ _ => simp [isVal] at hv
 
 /-- Even a discarded extra argument must finish: a stuck second actual blocks

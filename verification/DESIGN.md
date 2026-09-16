@@ -725,10 +725,12 @@ and external callers remain separate integration work.
 
 The cell-contract boundary is implemented in
 [CellClaims.lean](lean/Verification/ExperimentState/CellClaims.lean). SKJS exports
-a bounded single-field record with separate read/write types, optionality and
+a bounded record with separate read/write types per field, optionality and
 object-mode flags. Synthetic index markers are recorded separately from runtime
-permissions; real indexes remain unsupported. The Lean gate requires a required `value` field and equal
-read/write contracts after lowering to the same graph table. A mutable Boolean
+permissions; real indexes remain unsupported. The Lean gate requires at least one
+required field, distinct field names, and equal read/write contracts per field
+after lowering to the same graph table. Field names come from the program; none
+is privileged. A mutable Boolean
 field passes; a readonly Boolean field has `never` writes and fails this
 particular invariant-cell gate. Readonly objects need a different capability
 interface; this rejection does not mean they are unsafe.
@@ -1261,7 +1263,7 @@ argument count; optional/rest parameters and spread actuals remain excluded.
 
 ### Next callable and object milestones
 
-Required single-field cells can store callbacks using the existing reference and
+Required record fields can store callbacks using the existing reference and
 arrow rules. The source tests distinguish a saved callback from a replacement and
 tie recursive invocation through a cell. The next milestones should expose new
 behavior through actual producer claims and independent consumption:
@@ -1270,8 +1272,8 @@ behavior through actual producer claims and independent consumption:
 | --- | --- | --- |
 | Function-shape guards | Select a callable from a mixed union with `typeof x === "function"`, then invoke it. | Complete through the existing `isFun` tag rule and checked source refinements; includes mixed unions, captured guards and effectful operands. No signature is invented. |
 | Required argument lists | Two arguments with effects distinguish callee-first and left-to-right evaluation, and a wrong second argument fails. | Complete through source lowering and both producers, including native zero-argument thunks. Optional/rest parameters and spread actuals remain separate work. |
-| Initialized function field | A fresh arrow receives a `value` field, an alias observes a write, then calls the function. | Complete through both producers and the existing native callable allocation/read/write/call rules. Construction is restricted to explicitly typed `Object.assign` of a fresh arrow and a fresh one-field literal. |
-| Multiple object fields | A write through one alias updates one field while a callback reads another. | Extend the one-cell bag with field-indexed storage and preserve object identity and each field invariant. |
+| Initialized function field | A fresh arrow receives a named field, an alias observes a write, then calls the function. | Complete through both producers and the existing native callable allocation/read/write/call rules. Construction is restricted to explicitly typed `Object.assign` of a fresh arrow and a fresh object literal; its fields are named by the program. |
+| ~~Multiple object fields~~ | *Done.* An object is a finite map from field names to locations, fixed at allocation; each field is invariant on its own. `make_fields_rule` allocates one location per named field, `covers_recs` composes contracts field by field, and a current-content assertion names the field it is about. | |
 | Optional fields | Distinguish an absent field from a present field containing `undefined`, including reads and initialization. | Define presence separately from value type, then support the chosen presence tests and mutation policy. |
 | `.call` | Explicit receiver and argument effects reach the intended function; incompatible receiver or argument claims fail. | Local source-created arrows now preserve receiver evaluation through the pipeline. Receiver-dependent methods remain pending. [call-objects.ts](tests/callables/call-objects.ts) is the boundary example: an extracted method uses a new receiver, while an arrow retains its capture. Establish the intrinsic operation rather than assuming every property named `call` is `Function.prototype.call`. |
 
@@ -1412,7 +1414,7 @@ atom; the source gate lowers their conjunction to the existing graph callable
 clause. It does not treat the components as union alternatives.
 
 The trusted parser recognizes only standard `Object.assign` with two explicit
-type arguments, a fresh arrow, and a fresh single-field literal. It rejects
+type arguments, a fresh arrow, and a fresh object literal. It rejects
 shadowing of `Object`. The adapter checks both annotations and fuses the
 unexposed arrow and temporary object allocations into one initialized callable
 allocation, preserving initializer evaluation. This is part of the reviewed

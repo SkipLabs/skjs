@@ -1,14 +1,16 @@
 # census: repair-work
 # 6/115 verified, of 315 functions
 #   skjs-rejected: 200
-#   gate: 103
-#   unproved: 6
+#   gate: 102
+#   unproved: 7
 #   verified: 6
 #
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofUndefinedFieldAdmitsInitialValue
 gate:a `let` needs an initializer	tests/expect-error/test_ternary_refinements.ts	bothBranchesInitialize
+gate:a record with no field has no location	tests/expect-error/unsound-refinement.ts	grownAliasField
 gate:binary operator outside the fragment (&&=)	tests/expect-error/logical-compound-computed-key.ts	computedAnd
+gate:binary operator outside the fragment (+)	tests/expect-error/unsound-refinement.ts	checkedConditionalAlias
 gate:binary operator outside the fragment (+=)	tests/expect-error/assignment-receivers.ts	temporaryReceiver
 gate:binary operator outside the fragment (+=)	tests/expect-error/compound-computed-key.ts	annotatedCompoundKey
 gate:binary operator outside the fragment (??=)	tests/expect-error/logical-compound-computed-key.ts	computedFallback
@@ -29,49 +31,46 @@ gate:expected a block	tests/expect-error/captured-read-stability.ts	checkedAlias
 gate:expected a block	tests/expect-error/captured-read-stability.ts	checkedEvolvingCapture
 gate:expected a block	tests/expect-error/captured-read-stability.ts	checkedGenericCallResult
 gate:expected a block	tests/expect-error/captured-read-stability.ts	checkedMutableObjectReplacement
+gate:expected a block	tests/expect-error/captured-read-stability.ts	checkedPropertyResult
+gate:expected a block	tests/expect-error/destructuring.ts	identityPatternScalar
+gate:expected a block	tests/expect-error/field-refinement.ts	inferredFieldComparison
 gate:expected a block	tests/expect-error/local-vs-local-refinement.ts	inferredReadNamedNull
+gate:expected a block	tests/expect-error/local-vs-local-refinement.ts	inferredReadSingleton
 gate:expected a block	tests/expect-error/postfix-exclamation.ts	nonNullScalarSnapshot
 gate:expected a block	tests/expect-error/satisfies.ts	satisfiesSnapshot
 gate:expected a block	tests/expect-error/unsound-refinement.ts	assignmentResultSnapshot
 gate:expected a block	tests/expect-error/unsound-refinement.ts	capturedReceiver
+gate:expected a block	tests/expect-error/unsound-refinement.ts	checkedAfterWrite
+gate:expected a block	tests/expect-error/unsound-refinement.ts	identityMemberSnapshot
+gate:expected a block	tests/expect-error/unsound-refinement.ts	stableMemberScalar
+gate:expected a block	tests/expect-error/unsound-refinement.ts	stablePropertyCopiesScalar
+gate:expected a plain property; no accessors, methods or spreads	tests/expect-error/obj-literal-var-field-growth.ts	copiedObjectField
+gate:expected a plain property; no accessors, methods or spreads	tests/expect-error/spread-callable.ts	copyStaticData
 gate:expected a required closure parameter	tests/expect-error/arrow-default-param-optional.ts	earlierArrowDefault
-gate:expected a single cell field	tests/expect-error/destructuring.ts	earlierPatternRead
-gate:expected a single cell field	tests/expect-error/destructuring.ts	patternEarlierBinding
-gate:expected a single cell field	tests/expect-error/optional-chaining-method-call.ts	composedReceiverSnapshot
-gate:expected a single cell field	tests/expect-error/spread-callable.ts	restOwnCallable
-gate:expected a single cell field	tests/expect-error/unsound-refinement.ts	assignedUnionAlternative
-gate:expected a single cell field	tests/expect-error/unsound-refinement.ts	checkedConditionalAlias
-gate:expected a single cell field	tests/expect-error/unsound-refinement.ts	receiverSnapshot
-gate:expected a single cell field	tests/expect-error/unsound-refinement.ts	stablePropertyCopiesScalar
-gate:expected plain single-field allocation	tests/expect-error/local-vs-local-refinement.ts	inferredReadSingleton
-gate:expected plain value property; no accessors, methods or spreads	tests/expect-error/field-refinement.ts	inferredFieldComparison
-gate:expected plain value property; no accessors, methods or spreads	tests/expect-error/obj-literal-var-field-growth.ts	keyInitializesRhs
-gate:expected plain value property; no accessors, methods or spreads	tests/expect-error/obj-literal-var-field-growth.ts	retainedReceiver
-gate:expected plain value property; no accessors, methods or spreads	tests/expect-error/spread-callable.ts	copyStaticData
-gate:expected required mutable value field	tests/expect-error/captured-read-stability.ts	checkedPropertyResult
-gate:expected required mutable value field	tests/expect-error/destructuring-assignment.ts	keyBeforeDefault
-gate:expected required mutable value field	tests/expect-error/destructuring.ts	checkedNestedPattern
-gate:expected required mutable value field	tests/expect-error/destructuring.ts	identityPatternScalar
-gate:expected required mutable value field	tests/expect-error/obj-literal-var-field-growth.ts	copiedObjectField
-gate:expected required mutable value field	tests/expect-error/optional-chaining-method-call.ts	callResult
-gate:expected required mutable value field	tests/expect-error/unsound-refinement.ts	checkedAfterWrite
-gate:expected required mutable value field	tests/expect-error/unsound-refinement.ts	checkedArrayAlias
-gate:expected required mutable value field	tests/expect-error/unsound-refinement.ts	checkedDeclarationDefault
-gate:expected required mutable value field	tests/expect-error/unsound-refinement.ts	grownAliasField
-gate:expected required mutable value field	tests/expect-error/unsound-refinement.ts	identityMemberSnapshot
-gate:expected required mutable value field	tests/expect-error/unsound-refinement.ts	snapshotArgument
-gate:expected required mutable value field	tests/expect-error/unsound-refinement.ts	stableAnnotatedAlias
-gate:expected required mutable value field	tests/expect-error/unsound-refinement.ts	stableMemberScalar
+gate:expected a required mutable field	tests/expect-error/destructuring.ts	checkedNestedPattern
+gate:expected a required mutable field	tests/expect-error/destructuring.ts	earlierPatternRead
+gate:expected a required mutable field	tests/expect-error/destructuring.ts	patternEarlierBinding
+gate:expected a required mutable field	tests/expect-error/optional-chaining-method-call.ts	callResult
+gate:expected a required mutable field	tests/expect-error/unsound-refinement.ts	assignedUnionAlternative
+gate:expected a required mutable field	tests/expect-error/unsound-refinement.ts	checkedDeclarationDefault
+gate:expected a required mutable field	tests/expect-error/unsound-refinement.ts	snapshotArgument
+gate:expected a required mutable field	tests/expect-error/unsound-refinement.ts	stableAnnotatedAlias
+gate:expected a required ordinary parameter	tests/expect-error/optional-chaining-method-call.ts	composedReceiverSnapshot
+gate:expected a required ordinary parameter	tests/expect-error/unsound-refinement.ts	receiverSnapshot
 gate:expression outside the fragment (ArrayLiteralExpression)	tests/expect-error/destructuring.ts	inferredAssignmentDefault
 gate:expression outside the fragment (ArrayLiteralExpression)	tests/expect-error/destructuring.ts	inferredIterableDefault
+gate:expression outside the fragment (AsExpression)	tests/expect-error/unsound-refinement.ts	checkedArrayAlias
 gate:expression outside the fragment (NewExpression)	tests/expect-error/hidden-dependent-bounds.ts	inferredBound
 gate:expression outside the fragment (NewExpression)	tests/expect-error/rest-inference-stability.ts	keepArgument
 gate:expression outside the fragment (PostfixUnaryExpression)	tests/expect-error/const-writes.ts	mutateConstantObject
 gate:expression outside the fragment (PostfixUnaryExpression)	tests/expect-error/increment-narrowing.ts	computedUpdate
+gate:intersection operands must have the same shape	tests/expect-error/spread-callable.ts	restOwnCallable
 gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/promise-object.ts	testAwaitScalarSnapshot
 gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/unsound-refinement.ts	freshReturnSnapshot
 gate:one binding per `const` in the fragment	tests/expect-error/binding-initialization.ts	earlierDeclarator
 gate:only `extends boolean` or an earlier type parameter is in the fragment	tests/expect-error/freeze-window-stale-cache.ts	frozenNumbers
+gate:only field and local assignments are supported	tests/expect-error/destructuring-assignment.ts	keyBeforeDefault
+gate:only field and local assignments are supported	tests/expect-error/obj-literal-var-field-growth.ts	keyInitializesRhs
 gate:rest parameters are outside the fragment	tests/expect-error/iterator-effects.ts	consumeNumbers
 gate:statement outside the fragment (SwitchStatement)	tests/expect-error/switch-scope-merge.ts	switchLaterBinding
 gate:statement outside the fragment (TryStatement)	tests/expect-error/binding-initialization.ts	exceptionScopesSeparate
@@ -313,6 +312,7 @@ unproved:reject: cell parameters need an external-value boundary, which is outsi
 unproved:reject: closure expression claim at [634,635): evidence search failed	tests/expect-error/captured-read-stability.ts	checkedCapturedLocal
 unproved:reject: source incoming edge obligation at [669,682): evidence search failed (unsupported 	tests/expect-error/captured-read-stability.ts	snapshotCapturedLocal
 unproved:reject: source type outside the null/undefined/boolean/singleton fragment	tests/expect-error/captured-read-stability.ts	evolvedInferredSnapshotStillString
+unproved:reject: unsupported source expression at [185,215): equality requires a null or undefined 	tests/expect-error/obj-literal-var-field-growth.ts	retainedReceiver
 unproved:reject: unsupported source expression at [73,83): equality requires a null or undefined li	tests/expect-error/binding-initialization.ts	conditionBeforeLocal
 verified	tests/expect-error/captured-read-stability.ts	checkedAnnotatedConstField
 verified	tests/expect-error/captured-read-stability.ts	checkedInferredObject

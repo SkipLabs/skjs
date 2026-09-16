@@ -85,17 +85,17 @@ def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs
   | .num, .num => true
   | .numLit _, .num => true
   | .numLit a, .numLit b => decide (a = b)
-  | .refs a bs, .refs c ds => decide (∀ b ∈ c :: ds,
-      ∃ x ∈ a :: bs, Rel table x b ∧ Rel table b x)
+  | .refs a bs, .refs c ds => decide (CoversFields (Rel table) (a :: bs) (c :: ds))
   | .arrs L, .arrs M | .callable _ _ L, .arrs M => decide (∀ p ∈ M, ∃ e ∈ proofs,
       e.1 = L ∧ e.2.1 = p ∧ checkArrow G table L p.1 p.2 e.2.2 = true)
   | .callable a bs L, .callable c ds M => decide
-      ((∀ b ∈ c :: ds, ∃ x ∈ a :: bs, Rel table x b ∧ Rel table b x) ∧
+      (CoversFields (Rel table) (a :: bs) (c :: ds) ∧
        ∀ p ∈ M, ∃ e ∈ proofs,
          e.1 = L ∧ e.2.1 = p ∧ checkArrow G table L p.1 p.2 e.2.2 = true)
   | _, _ => false
 
 
+set_option synthInstance.maxSize 1024 in
 theorem checkClause_sound [DecidableEq ι] {G : NormalGraph ι} {table proofs a b}
     (h : checkClause G table proofs a b = true) : Covers G (Rel table) a b := by
   cases a <;> cases b <;> simp only [checkClause, Bool.false_eq_true, Covers] at *
@@ -135,6 +135,7 @@ private theorem collect {α β : Type} (xs : List α) (P : α → List β → Pr
     · subst a; exact mono x es _ (fun e he => List.mem_append_left rest he) he
     · exact mono a rest _ (fun e he => List.mem_append_right es he) (hr a hm)
 
+set_option synthInstance.maxSize 1024 in
 theorem checkClause_mono [DecidableEq ι] {G : NormalGraph ι} {table a b es es'}
     (hm : ∀ e ∈ es, e ∈ es') (h : checkClause G table es a b = true) :
     checkClause G table es' a b = true := by
@@ -159,6 +160,7 @@ private theorem arrow_evidence_complete [DecidableEq ι] {G : NormalGraph ι} {t
     ⟨e, hm e he, hL, hp, hc⟩) hx
   exact ⟨es,he⟩
 
+set_option synthInstance.maxSize 1024 in
 theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table a b}
     (h : Covers G (Rel table) a b) : ∃ es, checkClause G table es a b = true := by
   cases a <;> cases b <;> simp only [Covers] at h

@@ -15,7 +15,7 @@ assert.equal(check.status, 0, check.stdout + check.stderr);
 const parsed = spawnSync(process.execPath, ["verification/tools/fragment-parse.mts", file], {encoding: "utf8"});
 assert(!parsed.error && !parsed.signal, String(parsed.error || parsed.signal));
 assert.equal(parsed.status, 1);
-assert.match(parsed.stderr, /expected plain single-field allocation/);
+assert.match(parsed.stderr, /expected a plain property/);
 
 const results = (text: string) => {
   const context = vm.createContext({});

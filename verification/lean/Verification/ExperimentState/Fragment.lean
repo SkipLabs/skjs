@@ -42,19 +42,22 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
       SourceTypes.translateArm (← CellClaims.primitive single)
   return arms.flatten.mergeSort (· ≤ ·) |>.eraseDups
 
-/-- Required cell fields admit primitives and callables, but not nested records.
-Decode both capabilities through the same table before checking invariance. -/
+/-- Required record fields admit primitives and callables, but not nested
+records. Decode both capabilities through the same table before checking
+invariance, field by field. -/
 private def cellContract (atom : Json) : SourceTypes.Lowering CellUnion.Contract := do
-  let (read, write) ← CellClaims.decodeShape
+  let fields ← CellClaims.decodeShapes
     (Json.mkObj [("top",toJson false),("atoms",toJson [atom])])
-  return ⟨← callableType read, ← callableType write⟩
+  fields.mapM fun (name, read, write) => do
+    return ⟨name, ← callableType read, ← callableType write⟩
 
 private def cellConjunction (atom : Json) : SourceTypes.Lowering Nat := do
   let types ← (← CellClaims.conjuncts atom).mapM fun part => do
     let c ← cellContract part
-    if c.read != c.write then throw "cell read and write types do not describe the same invariant"
-    return c.read
-  let first :: rest := (types.mergeSort CellClaims.before).eraseDups
+    if !CellUnion.invariant c then
+      throw "cell read and write types do not describe the same invariant"
+    return c.map fun f => (f.name, f.read)
+  let first :: rest := (types.mergeSort CellClaims.beforeFields).eraseDups
     | throw "an empty conjunction is not a contract"
   SourceTypes.use (.refs first rest)
 
@@ -66,8 +69,9 @@ private def callableObject (atom : Json) : SourceTypes.Lowering Nat := do
   let Ds ← args.mapM callableType
   let R ← callableType result
   let c ← cellContract (← jField atom "bag")
-  if c.read != c.write then throw "callable field requires an invariant read/write contract"
-  SourceTypes.use (.callable c.write [] [(Ds,R)])
+  if !CellUnion.invariant c then
+    throw "callable field requires an invariant read/write contract"
+  SourceTypes.use (.callable (c.map fun f => (f.name, f.write)) [] [(Ds,R)])
 
 /-- Validate every union arm. Record alternatives may absorb a redundant
 read/write contract into an existing invariant alternative (CellUnion.normalize_exact).
@@ -106,17 +110,24 @@ contents predicate. It is never accepted by erasing `current`. Ordinary function
 signatures and nested function operands continue to use `translate`. -/
 structure PointType where
   type : Ty Nat
-  current : Option (Ty Nat) := none
+  /-- What the point's record currently holds, field by field, for the fields
+  whose read and write contracts differ. A point naming no record has none. -/
+  current : Option (List (String × Ty Nat)) := none
 
 def translatePoint (j : Json) : SourceTypes.Lowering PointType := do
   -- Preserve the existing exact union translation when it succeeds.
   match ← SourceTypes.attempt (translate j) with
   | .ok A => return ⟨A,none⟩
   | .error original =>
-    let .ok f := CellClaims.decode j | throw original
-    let R ← SourceTypes.translate f.read
-    let W ← SourceTypes.translate f.write
-    return ⟨[← CellClaims.reference W],some R⟩
+    -- The persistent contract is what a field may be written; what it holds
+    -- now is the read side, stated separately and field by field. Numbers are
+    -- interned on both sides, so a numeric field can carry an assertion.
+    let .ok fs := CellClaims.decode j | throw original
+    let write ← fs.mapM fun f => do return (f.name, ← SourceTypes.translateArm f.write)
+    let read ← fs.mapM fun f => do return (f.name, ← SourceTypes.translateArm f.read)
+    let current := (read.zip write).filterMap fun (r,w) => if r.2 == w.2 then none else some r
+    if current.isEmpty then throw original
+    return ⟨[← CellClaims.reference write],some current⟩
 
 inductive Expr where
   | var (pos : Span) (name : String)
@@ -126,9 +137,10 @@ inductive Expr where
   | shapeTest (pos : Span) (tag : Tag) (equal : Bool) (e : Expr)
   | unitTest (pos : Span) (tag : Tag) (equal testLeft : Bool) (left right : Expr)
   | not (pos : Span) (e : Expr)
-  | alloc (pos : Span) (e : Expr)
-  | read (pos : Span) (e : Expr)
-  | write (pos : Span) (receiver rhs : Expr)
+  /-- An object literal: one named field per initializer, in source order. -/
+  | alloc (pos : Span) (names : List String) (es : List Expr)
+  | read (pos : Span) (field : String) (e : Expr)
+  | write (pos : Span) (field : String) (receiver rhs : Expr)
   /-- Assignment to a mutable local, which is an expression: it yields the
   value written, where the calculus's write yields null. -/
   | assign (pos : Span) (name : String) (namePos : Span) (rhs : Expr)
@@ -155,7 +167,7 @@ abbrev Expr.app (p : Span) (callee arg : Expr) : Expr := .call p callee [arg]
 def Expr.span : Expr → Span
   | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body => body.span
   | .ifBody p _ _ _ _ | .done p | .unitTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .alloc p _ | .read p _ | .write p _ _ | .assign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ | .call p _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ | .call p _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ => p
 
 inductive Stmt where
   | ret (pos : Span) (e : Expr)
@@ -211,8 +223,12 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     return .shapeTest p .isFun (← (← jField j "equal").getBool?) (← decodeExpr (← jField j "e"))
   | "coalesce" => return .coalesce p (← decodeExpr (← jField j "left")) (← decodeExpr (← jField j "right"))
   | "not" => return .not p (← decodeExpr (← jField j "e"))
-  | "alloc" => return .alloc p (← decodeExpr (← jField j "e"))
-  | "read" => return .read p (← decodeExpr (← jField j "e"))
+  | "alloc" =>
+    let fields ← jArr j "fields"
+    let parts ← fields.mapM fun f => do
+      return (← jStr (← jField f "name"), ← decodeExpr (← jField f "e"))
+    return .alloc p (parts.map Prod.fst) (parts.map Prod.snd)
+  | "read" => return .read p (← jStr (← jField j "field")) (← decodeExpr (← jField j "e"))
   | "bindWithReceiver" => do
     CellClaims.fieldsExactly j ["k","pos","callee","receiver","args"]
     return .bindWithReceiver p (← decodeExpr (← jField j "callee"))
@@ -249,7 +265,9 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     CellClaims.fieldsExactly j ["k","pos","callee","args"]
     return .call p (← decodeExpr (← jField j "callee"))
       (← (← jArr j "args").mapM decodeExpr)
-  | "write" => return .write p (← decodeExpr (← jField j "receiver")) (← decodeExpr (← jField j "rhs"))
+  | "write" =>
+    return .write p (← jStr (← jField j "field")) (← decodeExpr (← jField j "receiver"))
+      (← decodeExpr (← jField j "rhs"))
   | "assign" => do
     CellClaims.fieldsExactly j ["k","pos","name","namePos","rhs"]
     return .assign p (← jStr (← jField j "name")) (← jSpan j "namePos")

@@ -4,6 +4,7 @@ const stateful = [
   "basic",
   "undefined",
   "cells",
+  "records",
   "closures",
   "loops",
   "loop-transfers",

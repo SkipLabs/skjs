@@ -7,7 +7,7 @@ No current-content fact is assumed at the function's external entry. -/
 set_option maxRecDepth 65536
 namespace Verification.ExperimentState.HeapGuardTests
 open ProgramTyping ProgramCertificates ControlFlow HeapKnowledge HeapExpressionRules
-private def T : SourceTypes.Table := SourceTypes.initial ++ [[.refs [1,2] []]]
+private def T : SourceTypes.Table := SourceTypes.initial ++ [[.refs [(valueField, [1,2])] []]]
 private def G := SourceTypes.graph T
 private def R : List HeapFacts.Literal := [.tru,.fls]
 private def empty : Knowledge := ⟨[],[],[]⟩
@@ -15,12 +15,12 @@ private def leaf (Γ : List (List Nat)) (t : Tm) (A : List Nat) (r : Rule Nat) :
   .node ⟨Γ,t,A⟩ r []
 private def allocProof : Evidence Nat := .node ⟨[[1,2]],.alloc (.var 0),[4]⟩ .alloc
   [leaf [[1,2]] (.var 0) [1,2] .var]
-private def allocated := allocOutput empty R
-private def readResult := readOutput allocated 0 R
+private def allocated := allocOutput empty [(valueField, R)]
+private def readResult := readOutput allocated 0 valueField R
 private def copyProof := leaf [[1,2],[4],[1,2]] (.var 0) [1,2] .var
 private def copied := copy readResult 0
-private def yes : Knowledge := ⟨[⟨0,[.tru]⟩],[],[]⟩
-private def no : Knowledge := ⟨[⟨0,[.fls]⟩],[],[]⟩
+private def yes : Knowledge := ⟨[⟨0,[.tru],valueField⟩],[],[]⟩
+private def no : Knowledge := ⟨[⟨0,[.fls],valueField⟩],[],[]⟩
 
 def program : Program :=
   [⟨.alloc (.var 0),.bind 1⟩,⟨.read (.var 0),.bind 2⟩,
@@ -30,16 +30,16 @@ def program : Program :=
 
 def certificate : ControlFlow.Certificate Nat :=
   [{expression := allocProof, edges := [[.subset,.subset]],
-    effect := some (.allocated 0 R allocProof), output := allocated},
+    effect := some (.allocated allocProof), output := allocated},
    {expression := leaf [[4],[1,2]] (.read (.var 0)) [1,2] .read,
     edges := [[.subset,.subset,.subset]], knowledge := allocated,
     effect := some (.observedRead 0 R), output := readResult},
    {expression := copyProof, edges := [[.subset],[.subset]], knowledge := readResult,
     effect := some (.pure copyProof), output := copied},
    {expression := leaf [[4]] (.read (.var 0)) [1] .read, edges := [[.subset]],
-    knowledge := yes, effect := some (.observedRead 0 [.tru]), output := readOutput yes 0 [.tru]},
+    knowledge := yes, effect := some (.observedRead 0 [.tru]), output := readOutput yes 0 valueField [.tru]},
    {expression := leaf [[4]] (.read (.var 0)) [2] .read, edges := [[.subset]],
-    knowledge := no, effect := some (.observedRead 0 [.fls]), output := readOutput no 0 [.fls]},
+    knowledge := no, effect := some (.observedRead 0 [.fls]), output := readOutput no 0 valueField [.fls]},
    {expression := leaf [[1,2]] (.var 0) [1,2] .var, edges := []}]
 
 #guard checkEntry G [1,2] program certificate 0 [[1,2]]
@@ -53,8 +53,8 @@ theorem safe (n W h ρ) (he : EnvOk G [[1,2]] ρ n W) (hw : WorldAdm W) (hh : He
 #guard (ordinaryOutput readResult).links == []
 #guard !(HeapKnowledge.check (observeBoolean (ordinaryOutput readResult) 1 true) yes (some [2]))
 -- Writes discard the old relation even when the immutable value remains true.
-#guard (writeOutput readResult 1 [.fls]).links == []
-#guard !(HeapKnowledge.check (observeBoolean (writeOutput readResult 1 [.fls]) 1 true) yes (some [2]))
+#guard (writeOutput readResult 1 valueField [.fls]).links == []
+#guard !(HeapKnowledge.check (observeBoolean (writeOutput readResult 1 valueField [.fls]) 1 true) yes (some [2]))
 -- Without a checked read link, the broad cell fact cannot justify either branch.
 #guard !(HeapKnowledge.check (observeBoolean {copied with links := []} 0 true) yes (some [2]))
 #guard !(checkEntry G [1,2] program (certificate.set 3 {certificate[3] with knowledge := no}) 0 [[1,2]])

@@ -199,23 +199,33 @@ class Gate {
     }
 
     if (ts.isTypeLiteralNode(node)) {
-      if (node.members.length !== 1)
-        this.fail(node, "expected a single cell field");
-      const f = node.members[0];
-      if (
-        !ts.isPropertySignatureDeclaration(f) ||
-        !ts.isIdentifier(f.name) ||
-        f.name.text !== "value" ||
-        // A member's `?` (or `!`) is its postfix token; a parameter's is a
-        // question token. Different nodes, different names.
-        f.postfixToken ||
-        f.modifiers?.length
-      )
-        this.fail(f, "expected required mutable value field");
-      const t = this.typeOf(f.type);
+      if (!node.members.length)
+        this.fail(node, "a record with no field has no location");
+      const names = new Set<string>();
+      const fields = node.members.map((f) => {
+        if (
+          !ts.isPropertySignatureDeclaration(f) ||
+          !ts.isIdentifier(f.name) ||
+          // A member's `?` (or `!`) is its postfix token; a parameter's is a
+          // question token. Different nodes, different names.
+          f.postfixToken ||
+          f.modifiers?.length
+        )
+          this.fail(f, "expected a required mutable field");
+        const name =
+          ts.isPropertySignatureDeclaration(f) && ts.isIdentifier(f.name)
+            ? f.name.text
+            : this.fail(f, "expected a required mutable field");
+        if (names.has(name)) this.fail(f, "duplicate field name in a record");
+        names.add(name);
+        const t = this.typeOf(
+          ts.isPropertySignatureDeclaration(f) ? f.type : undefined,
+        );
+        return { name, optional: false, read: t, write: t };
+      });
       acc.push({
         a: "record",
-        fields: [{ name: "value", optional: false, read: t, write: t }],
+        fields,
         indexes: { string: "absent", number: "absent", symbol: "absent" },
         call: "unknown",
         construct: "unknown",
@@ -411,31 +421,42 @@ class Gate {
     if (ts.isArrowFunction(node)) return this.lambda(node);
 
     if (ts.isObjectLiteralExpression(node)) {
-      if (node.properties.length !== 1)
-        this.fail(node, "expected plain single-field allocation");
-      const f = node.properties[0];
-      if (
-        !ts.isPropertyAssignment(f) ||
-        !ts.isIdentifier(f.name) ||
-        f.name.text !== "value"
-      )
-        this.fail(
-          f,
-          "expected plain value property; no accessors, methods or spreads",
-        );
-      return {
-        k: "alloc",
-        pos: this.span(node),
-        e: this.expr(f.initializer),
-      };
+      if (!node.properties.length)
+        this.fail(node, "a record with no field has no location");
+      const seen = new Set<string>();
+      const fields = node.properties.map((f) => {
+        if (!ts.isPropertyAssignment(f) || !ts.isIdentifier(f.name))
+          this.fail(
+            f,
+            "expected a plain property; no accessors, methods or spreads",
+          );
+        const name =
+          ts.isPropertyAssignment(f) && ts.isIdentifier(f.name)
+            ? f.name.text
+            : this.fail(f, "expected a plain property");
+        if (seen.has(name)) this.fail(f, "duplicate field name in a record");
+        if (name === "__proto__")
+          this.fail(f, "prototype initializers are outside the fragment");
+        seen.add(name);
+        return {
+          name,
+          e: this.expr(
+            ts.isPropertyAssignment(f)
+              ? f.initializer
+              : this.fail(f, "expected a plain property"),
+          ),
+        };
+      });
+      return { k: "alloc", pos: this.span(node), fields };
     }
 
     if (ts.isPropertyAccessExpression(node)) {
-      if (node.questionDotToken || node.name.text !== "value")
-        this.fail(node, "expected cell.value");
+      if (node.questionDotToken)
+        this.fail(node, "optional property access is outside the fragment");
       return {
         k: "read",
         pos: this.span(node),
+        field: node.name.text,
         e: this.expr(node.expression),
       };
     }
@@ -462,7 +483,7 @@ class Gate {
         if (node.questionDotToken || node.expression.questionDotToken ||
             node.typeArguments?.length !== 2 || node.arguments.length !== 2 ||
             !ts.isArrowFunction(node.arguments[0]) || !ts.isObjectLiteralExpression(node.arguments[1]))
-          this.fail(node, "Object.assign requires a fresh arrow, one value-field literal and two explicit type arguments");
+          this.fail(node, "Object.assign requires a fresh arrow, an object literal and two explicit type arguments");
         // The fragment cannot assign to Object.assign or pass Object as a value.
         // Reject any local declaration that could shadow the standard builtin.
         const checkBinding = (n: Node): void => {
@@ -472,6 +493,13 @@ class Gate {
           n.forEachChild(checkBinding);
         };
         checkBinding(this.file);
+        // These names either replace an intrinsic used by the lowering or
+        // encounter special/non-writable properties on JavaScript functions.
+        for (const property of node.arguments[1].properties) {
+          if (ts.isPropertyAssignment(property) && ts.isIdentifier(property.name) &&
+              ["call", "bind", "name", "length", "caller", "arguments", "__proto__"].includes(property.name.text))
+            this.fail(property, "special function properties are outside callable initialization");
+        }
         return {k: "withValue", pos: this.span(node), fn: this.expr(node.arguments[0]),
           initial: this.expr(node.arguments[1]), functionType: this.typeOf(node.typeArguments[0]),
           bagType: this.typeOf(node.typeArguments[1])};
@@ -566,14 +594,20 @@ class Gate {
       }
       if (
         !ts.isPropertyAccessExpression(node.left) ||
-        node.left.questionDotToken ||
-        node.left.name.text !== "value"
+        node.left.questionDotToken
       )
-        this.fail(node.left, "only cell.value and local assignments are supported");
+        this.fail(node.left, "only field and local assignments are supported");
       return {
         k: "write",
         pos: this.span(node),
-        receiver: this.expr(node.left.expression),
+        field: ts.isPropertyAccessExpression(node.left)
+          ? node.left.name.text
+          : this.fail(node.left, "only field and local assignments are supported"),
+        receiver: this.expr(
+          ts.isPropertyAccessExpression(node.left)
+            ? node.left.expression
+            : this.fail(node.left, "only field and local assignments are supported"),
+        ),
         rhs: this.expr(node.right),
       };
     }

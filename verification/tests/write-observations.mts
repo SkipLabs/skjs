@@ -129,18 +129,19 @@ test("safe source matches the allocate/write/read body proved in Lean", () => {
       annot: cell.annot,
       init: {
         k: "alloc",
-        e: { k: "lit", lit: { a: "booleanlit", v: "false" } },
+        fields: [{name: "value", e: { k: "lit", lit: { a: "booleanlit", v: "false" } }}],
       },
     },
     {
       k: "effect",
       e: {
         k: "write",
+        field: "value",
         receiver: { k: "id", name: "cell" },
         rhs: { k: "lit", lit: { a: "booleanlit", v: "true" } },
       },
     },
-    { k: "return", e: { k: "read", e: { k: "id", name: "cell" } } },
+    { k: "return", e: { k: "read", field: "value", e: { k: "id", name: "cell" } } },
   ]);
 });
 test("normal first-error export contains the imprecise Boolean read", () => {

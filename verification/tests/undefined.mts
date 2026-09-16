@@ -118,7 +118,7 @@ try {
         typeof clause === "string"
           ? []
           : "refs" in clause
-            ? [clause.refs.first, ...clause.refs.rest]
+            ? [clause.refs.first, ...clause.refs.rest].flatMap((fs) => fs.map(([, ls]) => ls))
             : "arrs" in clause
               ? clause.arrs.arrows.flatMap(([As, B]) => [...As, B])
               : [];
@@ -192,10 +192,10 @@ try {
     rejects(c);
     const f = must(c.doc.functions[0], "the candidate");
     const ret = last(functionIn(ast, "undefinedCurrent").body);
-    bindingOf(f, ret.pos[0], "cell").current = [3];
+    bindingOf(f, ret.pos[0], "cell").current = [["value", [3]]];
     fs.writeFileSync(c.cp, JSON.stringify(c.doc));
     accepted(produce(c.ap, c.cp, "source-claims"));
-    bindingOf(f, ret.pos[0], "cell").current = [1];
+    bindingOf(f, ret.pos[0], "cell").current = [["value", [1]]];
     fs.writeFileSync(c.cp, JSON.stringify(c.doc));
     rejects(c);
   });
@@ -229,11 +229,11 @@ try {
     );
     const doc: SourceClaims = JSON.parse(fs.readFileSync(out, "utf8"));
     const b = bindingOf(stated(doc, "undefinedCurrent"), ret.pos[0], "cell");
-    assert.deepEqual(b.current, [3]);
+    assert.deepEqual(b.current, [["value", [3]]]);
     const labels = b.type;
     assert(Array.isArray(labels));
     assert.deepEqual(doc.types[must(labels[0], "a label")], [
-      { refs: { first: [1, 2, 3], rest: [] } },
+      { refs: { first: [["value", [1, 2, 3]]], rest: [] } },
     ]);
     accepted(produce(astPath, cp));
     accepted(check("source-claims", out));

@@ -185,6 +185,14 @@ theorem CallArrow.sound {G : NormalGraph ι} {R L As d} (hc : CallArrow G R L As
     exact hr r (by omega) _ _ (hg i hi k hk (compatible_sound hv1 hv2)) V u
       ⟨i, by simp, hv1⟩
 
+/-- One record conjunction covers another when every field any target operand
+names is named by some source operand, with contracts that imply each other.
+Fields the target does not name are not compared: a record type is open, so
+covering never requires the source to forget a field. -/
+abbrev CoversFields (R : List ι → List ι → Prop)
+    (source target : List (List (String × List ι))) : Prop :=
+  ∀ b ∈ target, ∀ q ∈ b, ∃ p ∈ source.flatten, p.1 = q.1 ∧ R p.2 q.2 ∧ R q.2 p.2
+
 def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
     Clause (List ι) → Clause (List ι) → Prop
   | .nul, .nul => True
@@ -195,12 +203,80 @@ def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
   | .num, .num => True
   | .numLit _, .num => True
   | .numLit a, .numLit b => a = b
-  | .refs a bs, .refs c ds => ∀ b ∈ c :: ds, ∃ x ∈ a :: bs, R x b ∧ R b x
+  | .refs a bs, .refs c ds => CoversFields R (a :: bs) (c :: ds)
   | .arrs L, .arrs M | .callable _ _ L, .arrs M => ∀ p ∈ M, CallArrow G R L p.1 p.2
   | .callable a bs L, .callable c ds M =>
-      (∀ b ∈ c :: ds, ∃ x ∈ a :: bs, R x b ∧ R b x) ∧
+      CoversFields R (a :: bs) (c :: ds) ∧
       ∀ p ∈ M, CallArrow G R L p.1 p.2
   | _, _ => False
+
+/-- Covering field by field is enough: the operands all constrain the same
+object, so a field the target names is found at the location the source already
+fixed, under a contract the two relations identify. -/
+theorem covers_recs {G : NormalGraph ι} {R : List ι → List ι → Prop}
+    {a c : List (String × List ι)} {bs ds : List (List (String × List ι))}
+    (hc : CoversFields R (a :: bs) (c :: ds)) (n : Nat)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
+    (W : WorldT n) (flds : List (String × Nat))
+    (hsrc : ∀ x ∈ a :: bs, recT (famsOf (meaning G) x) n W (.objAt flds .absent)) :
+    ∀ b ∈ c :: ds, recT (famsOf (meaning G) b) n W (.objAt flds .absent) := by
+  intro b hb
+  refine ⟨flds, rfl, ?_⟩
+  intro f T hm
+  obtain ⟨y, hy, rfl⟩ := mem_famsOf.mp hm
+  obtain ⟨⟨pf, pl⟩, hp, hpf, hpy, hyp⟩ := hc b hb (f, y) hy
+  simp only at hpf
+  subst hpf
+  obtain ⟨L, hL, hpL⟩ := List.mem_flatten.mp hp
+  obtain ⟨flds', l, c0, he', hf, hl, hag⟩ :=
+    recT_at (mem_famsOf.mpr ⟨pl, hpL, rfl⟩) (hsrc L hL)
+  cases he'
+  exact ⟨l, c0, hf, hl, fun j hj W' u =>
+    (hag j hj W' u).trans ⟨hr j hj pl y hpy W' u, hr j hj y pl hyp W' u⟩⟩
+
+theorem covers_fields_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
+    {a c : List (String × List ι)} {bs ds : List (List (String × List ι))}
+    (hc : CoversFields R (a :: bs) (c :: ds)) (n : Nat)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
+    (W : WorldT n) (v : Val)
+    (hv : refsT (famsOf (meaning G) a) (bs.map (famsOf (meaning G))) n W v) :
+    refsT (famsOf (meaning G) c) (ds.map (famsOf (meaning G))) n W v := by
+  obtain ⟨flds, he, -⟩ := hv.1
+  subst he
+  have hsrc : ∀ x ∈ a :: bs, recT (famsOf (meaning G) x) n W (.objAt flds .absent) := by
+    intro x hx
+    rcases List.mem_cons.mp hx with rfl | hx
+    · exact hv.1
+    · exact hv.2 _ (List.mem_map_of_mem hx)
+  have key := covers_recs hc n hr W flds hsrc
+  exact ⟨key c (by simp), fun B hB => by
+    obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hB
+    exact key b (List.mem_cons_of_mem c hb)⟩
+
+/-- The same argument for a callable object's property bag, which forgets the
+call slot but names the same locations. -/
+theorem covers_bags_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
+    {a c : List (String × List ι)} {bs ds : List (List (String × List ι))}
+    (hc : CoversFields R (a :: bs) (c :: ds)) (n : Nat)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
+    (W : WorldT n) (v : Val)
+    (hv : CallableConjunctions.propsT (famsOf (meaning G) a)
+      (bs.map (famsOf (meaning G))) n W v) :
+    CallableConjunctions.propsT (famsOf (meaning G) c)
+      (ds.map (famsOf (meaning G))) n W v := by
+  obtain ⟨flds, code, he, hval, hbag⟩ := hv.1
+  subst he
+  have hsrc : ∀ x ∈ a :: bs, recT (famsOf (meaning G) x) n W (.objAt flds .absent) := by
+    intro x hx
+    rcases List.mem_cons.mp hx with rfl | hx
+    · exact hbag
+    · obtain ⟨flds', code', he', -, hbag'⟩ := hv.2 _ (List.mem_map_of_mem hx)
+      cases he'
+      exact hbag'
+  have key := covers_recs hc n hr W flds hsrc
+  exact ⟨⟨flds, code, rfl, hval, key c (by simp)⟩, fun B hB => by
+    obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hB
+    exact ⟨flds, code, rfl, hval, key b (List.mem_cons_of_mem c hb)⟩⟩
 
 theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
@@ -211,15 +287,7 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
   · exact id
   · rename_i a bs c ds
     intro hv
-    have hall : ∀ x ∈ a :: bs, refT (meaning G x) n W v := by
-      simpa [sem, refsT] using hv
-    have hout : ∀ b ∈ c :: ds, refT (meaning G b) n W v := by
-      intro b hb
-      obtain ⟨x, hx, hxb, hbx⟩ := hc b hb
-      apply (refT_contractive n (meaning G x) (meaning G b) ?_ W v).mp (hall x hx)
-      intro j hj U u
-      exact ⟨hr j hj x b hxb U u, hr j hj b x hbx U u⟩
-    simpa [sem, refsT] using hout
+    exact covers_fields_sound hc n hr W v hv
   · intro hv
     apply callsT_of_signatures (callsT_callable hv)
     intro p hp
@@ -245,15 +313,7 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
     exact CallArrow.sound (hc q hq) n hr W v hv.2
   · rename_i a bs L c ds M
     intro hv
-    have hall : ∀ x ∈ a :: bs, bagT (meaning G x) n W v := by
-      simpa [CallableConjunctions.propsT] using hv.1
-    have hout : ∀ b ∈ c :: ds, bagT (meaning G b) n W v := by
-      intro b hb
-      obtain ⟨x,hx,hxb,hbx⟩ := hc.1 b hb
-      apply (bagT_contractive n (meaning G x) (meaning G b) ?_ W v).mp (hall x hx)
-      intro j hj U u
-      exact ⟨hr j hj x b hxb U u,hr j hj b x hbx U u⟩
-    refine ⟨by simpa [CallableConjunctions.propsT] using hout, ?_⟩
+    refine ⟨covers_bags_sound hc.1 n hr W v hv.1, ?_⟩
     apply callsT_of_signatures (callsT_callable hv.2)
     intro p hp
     obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp

@@ -12,7 +12,7 @@ import type { ClaimType, RecordAtom } from "../tools/claim.mts";
 import type { Span } from "../tools/span.mts";
 import type { SpawnSyncReturns } from "node:child_process";
 import { functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
-import { at as nth, atom, claimAt, claimType, expr, fn, must, rows, stmt } from "./edits.mts";
+import { allocField, at as nth, atom, claimAt, claimType, expr, fn, must, rows, stmt } from "./edits.mts";
 
 const [astPath, claimsPath, fileKey, verifier] = process.argv.slice(2);
 const ast: Ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
@@ -76,8 +76,8 @@ try {
     expr(stmt(nth(source(a,n).body,i),"effect").e,"write");
   const cases: [string, (a: Ast, c: SkjsClaims) => void][] = [
     ["cell parameter boundary",(a,c)=>{const t=must(allocation(a,"aliasWrite").annot,"a cell annotation");source(a,"aliasWrite").params[0].type=clone(t);fun(c,"aliasWrite").params[0].type=clone(t);}],
-    ["initializer subexpression claim",(a,c)=>{claim(c,"aliasWrite",expr(allocation(a,"aliasWrite").init,"alloc").e).type=lit("true");}],
-    ["missing allocation subexpression",(a,c)=>{const e=expr(allocation(a,"aliasWrite").init,"alloc").e; fun(c,"aliasWrite").exprs=fun(c,"aliasWrite").exprs.filter((x) =>x.pos[0]!==e.pos[0]);}],
+    ["initializer subexpression claim",(a,c)=>{claim(c,"aliasWrite",allocField(allocation(a,"aliasWrite").init)).type=lit("true");}],
+    ["missing allocation subexpression",(a,c)=>{const e=allocField(allocation(a,"aliasWrite").init); fun(c,"aliasWrite").exprs=fun(c,"aliasWrite").exprs.filter((x) =>x.pos[0]!==e.pos[0]);}],
     ["allocation invariant cannot narrow",(a,c)=>{const t=atom(at(c,"aliasWrite",allocation(a,"aliasWrite").init).atoms[0],"record").fields[0];t.read=lit("true");t.write=lit("true");}],
     ["receiver must be a reference",(a,c)=>{claim(c,"aliasWrite",written(a,"aliasWrite",2).receiver).type=bool;}],
     ["write respects invariant",(a,c)=>{const e=expr(written(a,"aliasWrite",2).rhs,"lit");e.lit={a:"null"};claim(c,"aliasWrite",e).type={top:false,atoms:[{a:"null"}]};}],
@@ -96,7 +96,7 @@ try {
   for (const [name,body] of [
     ["accessor allocation gate","const c = { get value(): boolean { return true; } }; return c.value;"],
     ["spread allocation gate","const c = { value: true }; const d = { ...c }; return d.value;"],
-    ["extra-field allocation gate","const c = { value: true, other: false }; return c.value;"],
+    ["prototype allocation gate","const c = { __proto__: true, value: false }; return c.__proto__;"],
     ["computed property gate","const c = { ['value']: true }; return c.value;"],
     ["optional access gate","const c = { value: true }; return c?.value;"],
   ]) {

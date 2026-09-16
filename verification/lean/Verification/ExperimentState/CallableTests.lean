@@ -42,8 +42,10 @@ example : Step [] (.alloc .tru) [.tru] (.obj 0 .absent) ∧
 example (code : CallCode) {h h' t} : ¬ Step h (.make code (.app .nul .nul)) h' t := by
   intro hs
   cases hs with
-  | makeC hs => exact stuck_no_step hs
-  | makeV hv => cases hv
+  | makeArg hg _ hs =>
+    obtain ⟨rfl, rfl⟩ := singleton_get hg
+    exact stuck_no_step hs
+  | makeFields hv _ => simpa [isVal] using hv (.app .nul .nul) (by simp)
 
 /-- Calling it is one beta step; the heap is untouched. -/
 example : Step [.tru] (.app (.obj 0 (.closure 1 (.var 0))) .fls) [.tru] .fls :=
@@ -95,7 +97,7 @@ theorem identity_arrow (A : Fam) (hA : ValOnly A) (n W) :
   simpa [subst] using value_safe A j U heap a (hA _ _ _ ha) ha
 
 theorem identity_overloaded (n W) : CodeSpec signatures n W (.var 0) := by
-  apply (arrowsT_code_iff signatures 0 (.var 0) n W).mp
+  apply (arrowsT_code_iff signatures [(valueField, 0)] (.var 0) n W).mp
   apply arrowsT_of_all rfl (by simp [Scoped])
   intro p hp
   simp only [signatures, List.mem_cons, List.not_mem_nil, or_false] at hp
@@ -104,13 +106,13 @@ theorem identity_overloaded (n W) : CodeSpec signatures n W (.var 0) := by
   · exact identity_arrow nulT nulT_valOnly n W
 
 theorem identity_object (n : Nat) :
-    callableT signatures boolT n (ofList [res boolT]) (.obj 0 (.closure 1 (.var 0))) :=
-  ⟨⟨0, .closure 1 (.var 0), rfl, rfl, ref_param_inhabited boolT n⟩,
-    (arrowsT_code_iff signatures 0 (.var 0) n _).mpr (identity_overloaded n _)⟩
+    callableT signatures [(valueField, boolT)] n (ofList [res boolT]) (.obj 0 (.closure 1 (.var 0))) :=
+  ⟨⟨_, .closure 1 (.var 0), rfl, rfl, ref_param_inhabited boolT n⟩,
+    (arrowsT_code_iff signatures [(valueField, 0)] (.var 0) n _).mpr (identity_overloaded n _)⟩
 
 /-- Allocation is safe at every budget, including when its result is observed. -/
 theorem identity_creation (n W h) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    Safe (callableT signatures boolT) n W h (.attach (.var 0) .tru) :=
+    Safe (callableT signatures [(valueField, boolT)]) n W h (.attach (.var 0) .tru) :=
   attach_rule boolT_adm n W h _ _ (identity_overloaded n W) rfl hw hh (Or.inl rfl)
 
 /-- The same object supports its call contract, its bag read, and its bag write. -/
@@ -123,8 +125,8 @@ theorem identity_operations (n : Nat) (h : Heap)
   have hf : arrowT boolT boolT n (ofList [res boolT]) (.obj 0 (.closure 1 (.var 0))) :=
     ⟨(identity_object n).2.1, (identity_object n).2.2 (boolT, boolT) (by simp [signatures])⟩
   exact ⟨app_elim boolT_adm boolT_valOnly hf (Or.inr rfl) hw hh,
-    bag_read boolT_valOnly (identity_object n).1 hw hh,
-    bag_write boolT_adm (identity_object n).1 (Or.inr rfl) rfl hw hh⟩
+    bag_read boolT_valOnly (by simp) (identity_object n).1 hw hh,
+    bag_write boolT_adm (by simp) (identity_object n).1 (Or.inr rfl) rfl hw hh⟩
 
 /-- Shape alone does not justify a signature whose body gets stuck. -/
 theorem stuck_object_excluded :
@@ -137,7 +139,7 @@ theorem stuck_object_excluded :
 
 /-- The legacy reference type remains the plain-object view. -/
 example (n W) : ¬ refT boolT n W (.obj 0 (.closure 1 (.var 0))) := by
-  rintro ⟨l, c, he, _⟩; cases he
+  rintro ⟨flds, he, _⟩; cases he
 
 /-- Function-shape refinement recognizes the new inhabitants of arrows. -/
 example : PositiveNormalization.valueShape (.obj 0 (.closure 1 (.var 0))) =

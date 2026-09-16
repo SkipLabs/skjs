@@ -63,7 +63,7 @@ theorem capFn_in_arrow (n : Nat) : arrowT nulT nulT n (ofList [res nulT]) capFn 
   have hl : lookup U 0 = some (res nulT) := by
     rw [trunc_res] at hx
     exact WExt_lookup hx (by simp [lookup])
-  exact read_rule nulT_valOnly j U heap 0 hu hh hl (fun _ _ _ _ => Iff.rfl)
+  exact read_rule nulT_valOnly j U heap 0 hu hh (lookup_value 0) hl (fun _ _ _ _ => Iff.rfl)
 
 /-- **And it survives an alias writing to that cell.** The write preserves heap
 satisfaction, and `capFn`'s safety was stated against satisfaction rather than
@@ -95,20 +95,20 @@ def prog : Tm := .app (.fn 0 body) (.alloc .tru)
 
 /-- Reading through the captured closure, at any level and admissible world in
 which the cell is a boolean reference. -/
-theorem closure_read {l : Nat} : ∀ (j : Nat) (W : WorldT j) (h : Heap),
-    refT boolT j W (.obj l .absent) → WorldAdm W → HeapOk j W h →
-    ∀ v, isVal v = true → Safe boolT j W h (.app (.fn 0 (.read (.obj l .absent))) v) := by
+theorem closure_read {flds : List (String × Nat)} : ∀ (j : Nat) (W : WorldT j) (h : Heap),
+    refT boolT j W (.objAt flds .absent) → WorldAdm W → HeapOk j W h →
+    ∀ v, isVal v = true → Safe boolT j W h (.app (.fn 0 (.read (.objAt flds .absent))) v) := by
   intro j W h hr hadm hok v hv
   cases j with
   | zero => trivial
   | succ r =>
     refine beta_rule _ v hv r W h hadm hok ?_
     have hr' := refT_transfer hr r (Nat.le_succ r) _ (WExt_refl _)
-    obtain ⟨l', c, hvl, hl, hag⟩ := hr'
+    obtain ⟨flds', l, c, hvl, hf, hl, hag⟩ := refT_iff.mp hr'
     injection hvl with hll
     subst hll
     exact read_rule boolT_valOnly r _ h l (WorldAdm_trunc _ hadm)
-      (HeapOk_trunc r W h hok) hl hag
+      (HeapOk_trunc r W h hok) hf hl hag
 
 /-- **The target.** -/
 theorem prog_safe : ∀ (n : Nat) (W : WorldT n) (h : Heap),
@@ -117,23 +117,23 @@ theorem prog_safe : ∀ (n : Nat) (W : WorldT n) (h : Heap),
   refine Safe_bind_appR (A := refT boolT) _ rfl n W h _ hadm hok
     (alloc_rule boolT_adm n W h .tru rfl hadm hok (Or.inl rfl)) ?_
   intro j _ W' _ hadm' h' v hok' hv
-  obtain ⟨l, c, rfl, hl, hag⟩ := hv
-  have hr : refT boolT j W' (.obj l .absent) := ⟨l, c, rfl, hl, hag⟩
+  obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ := refT_iff.mp hv
+  have hr : refT boolT j W' (.objAt flds .absent) := refT_iff.mpr ⟨flds, l, c, rfl, hf, hl, hag⟩
   cases j with
   | zero => trivial
   | succ q =>
     refine beta_rule _ _ rfl q W' h' hadm' hok' ?_
-    show Safe boolT q _ h' (.app (.fn 0 (.read (.obj l .absent))) (.write (.obj l .absent) .fls))
-    have hrq : refT boolT q (trunc q (Nat.le_succ q) W') (.obj l .absent) :=
+    show Safe boolT q _ h'
+      (.app (.fn 0 (.read (.objAt flds .absent))) (.write (.objAt flds .absent) .fls))
+    have hrq : refT boolT q (trunc q (Nat.le_succ q) W') (.objAt flds .absent) :=
       refT_transfer hr q (Nat.le_succ q) _ (WExt_refl _)
-    have hrqc := hrq
-    obtain ⟨l2, c2, hvl2, hl2, hag2⟩ := hrqc
+    obtain ⟨flds2, l2, c2, hvl2, hf2, hl2, hag2⟩ := refT_iff.mp hrq
     injection hvl2 with hll2
     subst hll2
     refine Safe_bind_appR (A := nulT) _ rfl q _ h' _ (WorldAdm_trunc _ hadm')
       (HeapOk_trunc q W' h' hok') ?_ ?_
-    · exact write_rule boolT_adm q _ h' l .fls rfl (WorldAdm_trunc _ hadm')
-        (HeapOk_trunc q W' h' hok') hl2 hag2 (Or.inr rfl)
+    · exact write_rule boolT_adm q _ h' l2 .fls rfl (WorldAdm_trunc _ hadm')
+        (HeapOk_trunc q W' h' hok') hf2 hl2 hag2 (Or.inr rfl)
     · intro i hi W'' hW'' hadm'' h'' u hok'' hu
       have hu' : u = .nul := hu
       subst hu'
@@ -159,11 +159,12 @@ theorem prog_lam_arrow (k : Nat) (W : WorldT k) :
     arrowT (refT boolT) boolT k W (.fn 0 body) := by
   apply fn_intro _ _ _ (by simp [body, inner, Scoped])
   intro p hp U hx hu heap hh a ha
-  obtain ⟨l, c, rfl, hl, hc⟩ := ha
-  have hr : refT boolT p U (.obj l .absent) := ⟨l, c, rfl, hl, hc⟩
-  change Safe boolT p U heap (.app (.fn 0 (.read (.obj l .absent))) (.write (.obj l .absent) .fls))
+  obtain ⟨flds, l, c, rfl, hf, hl, hc⟩ := refT_iff.mp ha
+  have hr : refT boolT p U (.objAt flds .absent) := refT_iff.mpr ⟨flds, l, c, rfl, hf, hl, hc⟩
+  change Safe boolT p U heap
+    (.app (.fn 0 (.read (.objAt flds .absent))) (.write (.objAt flds .absent) .fls))
   apply Safe_bind_appR (A := nulT) _ rfl p U heap _ hu hh
-    (write_rule boolT_adm p U heap l .fls rfl hu hh hl hc (Or.inr rfl))
+    (write_rule boolT_adm p U heap l .fls rfl hu hh hf hl hc (Or.inr rfl))
   intro j hj V hV hVadm h' v hh' hv
   exact closure_read j V h' (refT_transfer hr j hj V hV) hVadm hh' v (nulT_valOnly _ _ _ hv)
 

@@ -9,22 +9,23 @@ private def checkCoreSource [DecidableEq ι] (G : PositiveGraphs.Graph ι) (S T 
 
 -- Distribution retains conjunctions of reference contracts instead of treating
 -- them as an invariant of intersected contents or as bottom.
-#guard normalize (Formula.inter (.atom (.refs (0 : Nat) []))
-  (.union (.atom (.refs 1 [])) (.atom .nul))) = [.refs 0 [1]]
+#guard normalize (Formula.inter (.atom (.refs [("value", (0 : Nat))] []))
+  (.union (.atom (.refs [("value", 1)] [])) (.atom .nul)))
+    = [.refs [("value", 0)] [[("value", 1)]]]
 #guard normalize (Formula.inter (.atom (.arrs [([(0 : Nat)], 1)]))
   (.atom (.arrs [([1], 0)]))) = [.arrs [([0], 1), ([1], 0)]]
-#guard normalize (Formula.inter (.atom (.refs (0 : Nat) [])) (.atom .bool)) = []
+#guard normalize (Formula.inter (.atom (.refs [("value", (0 : Nat))] [])) (.atom .bool)) = []
 
 def G : PositiveGraphs.Graph (Fin 12) := fun i => match i.val with
   | 0 => .atom .nul
   | 1 => .atom .bool
-  | 2 => .inter (.atom (.refs [0] [])) (.atom (.refs [1] []))
-  | 3 => .atom (.refs [0] [])
-  | 4 => .inter (.atom (.refs [4] [])) (.atom (.refs [4] []))
-  | 5 => .atom (.refs [5] [])
-  | 6 => .inter (.atom (.refs [3] [])) (.atom (.refs [7] []))
-  | 7 => .atom (.refs [1] [])
-  | 8 => .atom (.refs [3] [])
+  | 2 => .inter (.atom (.refs [(valueField, [0])] [])) (.atom (.refs [(valueField, [1])] []))
+  | 3 => .atom (.refs [(valueField, [0])] [])
+  | 4 => .inter (.atom (.refs [(valueField, [4])] [])) (.atom (.refs [(valueField, [4])] []))
+  | 5 => .atom (.refs [(valueField, [5])] [])
+  | 6 => .inter (.atom (.refs [(valueField, [3])] [])) (.atom (.refs [(valueField, [7])] []))
+  | 7 => .atom (.refs [(valueField, [1])] [])
+  | 8 => .atom (.refs [(valueField, [3])] [])
   | 9 => .inter (.atom (.arrs [([[0]], [0])])) (.atom (.arrs [([[1]], [0])]))
   | 10 => .atom (.arrs [([[0, 1]], [0])])
   | _ => .inter (.atom .nul) (.atom .bool)
@@ -35,7 +36,7 @@ def G : PositiveGraphs.Graph (Fin 12) := fun i => match i.val with
 -- The opposite direction would invent a constraint.
 #guard !(checkCoreSource G [3] [2] ⟨[([3], [2]), ([0], [0])], []⟩)
 -- The incompatible reference conjunction is not dropped as bottom.
-#guard normalizeGraph G 2 = [.refs [0] [[1]]]
+#guard normalizeGraph G 2 = [.refs [(valueField, [0])] [[(valueField, [1])]]]
 #guard !(checkCoreSource G [2] [] ⟨[([2], [])], []⟩)
 -- Disjoint atoms really do normalize to bottom.
 #guard checkCoreSource G [11] [] ⟨[([11], [])], []⟩
@@ -76,8 +77,8 @@ def BoolG : PositiveGraphs.Graph (Fin 6) := fun i => match i.val with
   | 1 => .atom (.boolLit true)
   | 2 => .atom (.boolLit false)
   | 3 => .atom .nul
-  | 4 => .atom (.refs [0] [])
-  | _ => .atom (.refs [1, 2] [])
+  | 4 => .atom (.refs [(valueField, [0])] [])
+  | _ => .atom (.refs [(valueField, [1, 2])] [])
 
 #guard PositiveRules.sourceClauses (normalizeGraph BoolG) [0]
   = [.boolLit true, .boolLit false]
@@ -132,11 +133,17 @@ theorem checked_recursive_example : FamLe
 with a satisfying cyclic heap, not just at the universal zero approximation. -/
 theorem nested_inhabited :
     HeapOk 1 (ofList [res R]) [.obj 0 .absent] ∧
-    refsT (refT nulT) [refT boolT] 1 (ofList [res R]) (.obj 0 .absent) := by
+    refsT [(valueField, refT nulT)] [[(valueField, refT boolT)]] 1 (ofList [res R])
+      (.obj 0 .absent) := by
   have hR := R_cyclic 1
   have hn := (ModelBoundaries.nested_agrees_cycle 2 nulT 1 (by omega) _ _).mpr hR
   have hb := (ModelBoundaries.nested_agrees_cycle 2 boolT 1 (by omega) _ _).mpr hR
-  exact ⟨cyclic_heap_ok 1, hn, by simpa [ModelBoundaries.nestedRef] using hb⟩
+  refine ⟨cyclic_heap_ok 1, hn, ?_⟩
+  intro B hB
+  simp only [List.mem_singleton] at hB
+  subst hB
+  show recT [(valueField, refT boolT)] 1 (ofList [res R]) (.obj 0 .absent)
+  simpa [ModelBoundaries.nestedRef, refT] using hb
 
 #print axioms checked_recursive_example
 #print axioms checked_boolean_split

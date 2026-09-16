@@ -77,36 +77,33 @@ result.
 
 ### 2. Disjoint-field composition: `{ name: string } & { createdAt: number }`
 
-**Needs multi-field references.** A location in the model holds one value under
-one contract. The pattern is a location under two contracts that speak about
-different fields, and it is the most common intersection in TypeScript
-(mixins, `PropsWithChildren`, `Omit<T, k> & { k: New }`).
+**Implemented.** The pattern is one object under two contracts that speak about
+different fields, and it is the most common intersection in TypeScript (mixins,
+`PropsWithChildren`, `Omit<T, k> & { k: New }`). Under the old one-location
+reading it was empty: `refT P ∧ refT Q` needed the stored contract to equal both
+`P` and `Q`. The fix was not to weaken invariance but to move it to the field.
 
-The invariant reading makes it empty as things stand: `refT P ∧ refT Q` needs
-the stored contract to equal both `P` and `Q`. The fix is not to weaken
-invariance but to move it to the field:
+**An object is a finite map from field names to locations, fixed at
+allocation.** `Tm.objAt fields call` carries that map; `makeAt code names inits`
+takes one fresh location per named field; `readAt f` and `writeAt f` go to the
+location the map gives `f`. A location still holds one value under one contract,
+so worlds, `HeapOk`, `read_sound` and `write_sound` are unchanged, and allocating
+a whole object is the old single allocation iterated (`heap_allocs`,
+`make_fields_rule`). That is the one place this differs from the sketch that
+stood here: the field map lives in the value rather than in the world, which
+leaves the heap model alone.
 
-- A location's stored contract becomes a finite map from field names to
-  contracts, fixed at allocation. Fields are invariant individually.
-- `recT fs`, for `fs` a list of `(field, Fam)`, holds of a location whose stored
-  map has, at each named field, exactly that contract. Fields the type does not
-  name are unconstrained: the type is open, as TypeScript's structural types
-  are.
-- Then `recT fs ∧ recT gs = recT (fs ∪ gs)` when the two agree on every shared
-  field, and is empty otherwise. Width subtyping `recT (fs ++ gs) ≤ recT fs` is
-  sound, because every named field keeps its exact contract.
-
-Today's `refT A` is `recT [(value, A)]`, and the `refs A rest` clause becomes a
-conjunction of field maps rather than of whole-cell contracts. This is the one
-extension that turns the reference conjunction from a vacuous construct into a
-useful one: with disjoint fields the conjunction is inhabited and is the
-composed record.
-
-What it touches: worlds store field maps instead of contracts; `HeapOk`,
-`WorldAdm`, and the allocation and write preservation lemmas in `Heaps.lean`
-are restated per field; `read` and `write` take a field; `Val` gains a record
-form or the heap cell holds a field map. The positive clause `refs` gains
-field names. It is a refactor of the heap model, not a new idea.
+- `recT fs`, for `fs` a list of `(field, Fam)`, holds of an object whose map
+  has, at each named field, a location under exactly that contract. Fields the
+  type does not name are unconstrained: the type is open, as TypeScript's
+  structural types are.
+- `refT A` is `recT [(value, A)]`, and the `refs` clause carries a conjunction
+  of field maps rather than of whole-cell contracts. `CoversFields` and
+  `covers_recs` compare them field by field, so two operands naming disjoint
+  fields constrain different locations and the conjunction is the composed
+  record rather than the empty type.
+- Width subtyping is sound for the same reason: every named field keeps its
+  exact contract, and an unnamed one is not constrained.
 
 ### 3. Overlapping keys: `{ value: null } & { value: boolean }`
 
@@ -197,21 +194,21 @@ carry no runtime meaning and have no semantic content to model.
 | Pattern | Now | Verdict | Extension |
 | --- | --- | --- | --- |
 | Overload sets | in the model | inhabited iff one body meets each; more precise than TS | none |
-| Disjoint-field composition | empty | inhabited, equals the composed record | multi-field references |
+| Disjoint-field composition | inhabited, equals the composed record | as the model now has it | done |
 | Overlapping mutable keys | empty | empty; the sound verdict | none |
 | Overlapping read-only keys | not statable | covariant merge, sound | read/write field capabilities |
 | Callable with properties | empty | inhabited once functions are locations | boxed functions |
 | Branding | empty | empty, as intended; the cast is the unsound step | none; a nominal type if ever |
-| `in` narrowing | not statable | tag on locations | multi-field references plus a tag |
+| `in` narrowing | not statable | tag on locations | a `hasField` tag, answered by the object's own map |
 | `instanceof` narrowing | not statable | subclass relation on tags | tagged locations |
 | Generic bounds | out of scope | membership in the intersection | polymorphism |
 
 ## Order of extensions
 
-1. **Multi-field references with per-field invariance.** Unlocks composition,
-   overriding, `in` narrowing, and gives the reference conjunction its first
-   inhabited non-trivial instance. Touches worlds, heaps, the clause language,
-   and the read and write rules. Everything else builds on it.
+1. ~~**Multi-field references with per-field invariance.**~~ Done. An object is
+   a map from field names to locations; the clause language, the typing and
+   certificate rules, the source lowering and both producers name the field
+   they are about, and a current-content assertion does too.
 2. **Read and write capabilities on a field.** Gives the claim boundary's
    read/write split a semantics and makes TypeScript's covariant merge sound
    exactly where it is sound. Small once fields are individual.

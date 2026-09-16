@@ -11,7 +11,7 @@ import {
   type SkjsClaims,
   type SkjsFunction,
 } from "../tools/skjs-claims.mts";
-import { at as nth, atom, binding, claimAt, claimType, entryAt, expr, field, fn, list, must, record, rows, stmt, written } from "./edits.mts";
+import { allocField, at as nth, atom, binding, claimAt, claimType, entryAt, expr, field, fn, list, must, record, rows, stmt, written } from "./edits.mts";
 const __dirname = path.dirname(import.meta.filename);
 const [astPath,claimsPath,fileKey,verifier]=process.argv.slice(2);
 const ast: Ast=JSON.parse(fs.readFileSync(astPath,"utf8"));
@@ -91,7 +91,7 @@ try {
   }
   for(const [name,select] of rows<[string, (body: Expr) => Expr]>([
     ["writingBody", body=>expr(body,"write").rhs],
-    ["allocatingBody", body=>expr(expr(body,"read").e,"alloc").e],
+    ["allocatingBody", body=>allocField(expr(body,"read").e)],
     ["callingBody", body=>must(expr(body,"apply").args[0],"an argument")],
   ])) {
     const a=clone(ast),c=clone(claims);

@@ -6,7 +6,7 @@ open PositiveNormalization PositiveGraphs PositiveRules PositiveCertificates Pro
 def G : NormalGraph (Fin 6) := fun i => match i.val with
   | 0 => [.nul]
   | 1 => [.bool]
-  | 2 => [.refs [1] []]
+  | 2 => [.refs [(valueField, [1])] []]
   | 3 => [.arrs [([[0]], [1]), ([[1]], [0])]]
   | 4 => [.arrs [([[0, 1]], [0, 1])]]
   | _ => [.arrs [([[3]], [1])]]
@@ -20,7 +20,7 @@ theorem dispatch_typed : HasTy G [[2]] dispatch [3] := by
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
   rcases hp with rfl | rfl
   · apply HasTy.ifTag (q := true) (by rfl) (by intro c hc; simp [expand, G] at hc; subst c; rfl)
-    · intro _; exact .read (.var rfl) (by rfl)
+    · intro _; exact .read (.var rfl) (by rfl) (by simp)
     · intro h; cases h
   · apply HasTy.ifTag (q := false) (by rfl) (by intro c hc; simp [expand, G] at hc; subst c; rfl)
     · intro h; cases h
@@ -74,10 +74,11 @@ def program : Tm :=
           (.letE (.app (.var 2) .tru) (.app (.var 3) .nul)))))
 
 theorem program_typed : HasTy G [] program [0, 1] := by
-  apply HasTy.letE (A := [2]) (.alloc (A := [1]) (.tru (by rfl)) (by rfl))
+  apply HasTy.letE (A := [2]) (.alloc (parts := [(valueField, [1], .tru)]) (by simp)
+    (by intro p hp; cases List.mem_singleton.mp hp; exact .tru (by rfl)) (by rfl))
   apply HasTy.letE (A := [3]) dispatch_typed
   apply HasTy.letE (A := [2]) (.var rfl)
-  apply HasTy.letE (A := [0]) (.write (.var rfl) (by rfl) (.fls (by rfl)) (by rfl))
+  apply HasTy.letE (A := [0]) (.write (A := [1]) (.var rfl) (by rfl) (by simp) (.fls (by rfl)) (by rfl))
   apply HasTy.letE (A := [0])
     (.app (xs := [([1],.tru)]) (.var rfl) (by rfl) (by simp)
       (by intro p hp; cases List.mem_singleton.mp hp; exact .tru (by rfl)))

@@ -1,13 +1,15 @@
 import Verification.ExperimentState.CallableGraphTests
 
+set_option maxHeartbeats 800000
+
 namespace Verification.ExperimentState.NeutralBagTests
 open PositiveNormalization PositiveGraphs PositiveRules ProgramTyping ProgramCertificates
 open CertificateProducer ControlFlow RequestJson HeapExpressionRules
 
 -- [2,3] describes a Boolean bag without promising whether it is callable.
 private def types : List (List (Clause (List Nat))) :=
-  [[.nul],[.bool],[.refs [1] []],[.callable [1] [] []],
-   [.callable [1] [] [([[1]],[1])]], [.boolLit false]]
+  [[.nul],[.bool],[.refs [(valueField, [1])] []],[.callable [(valueField, [1])] [] []],
+   [.callable [(valueField, [1])] [] [([[1]],[1])]], [.boolLit false]]
 private def G : NormalGraph Nat := fun i => types[i]?.getD []
 private def pool := vocabulary G (List.range types.length) [] [[2,3]]
 private def readClaim : Sequent Nat := ⟨[[2,3]],.read (.var 0),[1]⟩
@@ -37,22 +39,22 @@ theorem write_checked : checkTree G writeProof = true := by cbv
 #guard !(expression G pool 8 [[2,3]] (.write (.var 0) .nul) [0]).isSome
 
 -- Every branch has the same invariant, so typedRead retains facts and links.
-#guard bagOperand (expand G [2,3]) == some [1]
-#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [1] readProof) ==
-  some (readFrame ⟨[],[],[]⟩ 0)
+#guard bagOperand (expand G [2,3]) == some [(valueField,[1])]
+#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [(valueField, [1])] readProof) ==
+  some (readFrame ⟨[],[],[]⟩ 0 valueField)
 #guard match expressionEffect G pool 8 readClaim ⟨[],[],[]⟩ [] [] with
-  | some (_, .typedRead 0 [1] _, out) => out == readFrame ⟨[],[],[]⟩ 0
+  | some (_, .typedRead 0 [(valueField, [1])] _, out) => out == readFrame ⟨[],[],[]⟩ 0 valueField
   | _ => false
 
 -- Nullable and mismatched alternatives cannot borrow the first branch's
 -- invariant. Clause order and duplicate valid alternatives do not matter.
-#guard bagOperand (expand G [3,2,3]) == some [1]
+#guard bagOperand (expand G [3,2,3]) == some [(valueField,[1])]
 #guard bagOperand ([] : List (Clause (List Nat))) == none
-#guard bagOperand ([.refs [1] [],.callable [0] [] []] : List (Clause (List Nat))) == none
-#guard bagOperand ([.callable [0] [] [],.refs [1] []] : List (Clause (List Nat))) == none
+#guard bagOperand ([.refs [(valueField, [1])] [],.callable [(valueField, [0])] [] []] : List (Clause (List Nat))) == none
+#guard bagOperand ([.callable [(valueField, [0])] [] [],.refs [(valueField, [1])] []] : List (Clause (List Nat))) == none
 -- A nullable alternative and a mismatched requested invariant must fail.
 #guard bagOperand (expand G [0,2]) == none
-#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [0] readProof) == none
+#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [(valueField, [0])] readProof) == none
 
 -- A bad alternative cannot be hidden by the successful branch.
 #guard !(expression G pool 8 [[0,2]] (.read (.var 0)) [1]).isSome

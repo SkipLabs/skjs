@@ -185,10 +185,10 @@ partial def expandExpr (aliases : List Alias) (e : Fragment.Expr) : Except Strin
   | .unitTest p t eq tl l r =>
     return .unitTest p t eq tl (← expandExpr aliases l) (← expandExpr aliases r)
   | .not p e => return .not p (← expandExpr aliases e)
-  | .alloc p e => return .alloc p (← expandExpr aliases e)
-  | .read p e => return .read p (← expandExpr aliases e)
-  | .write p r rhs =>
-    return .write p (← expandExpr aliases r) (← expandExpr aliases rhs)
+  | .alloc p ns es => return .alloc p ns (← es.mapM (expandExpr aliases))
+  | .read p f e => return .read p f (← expandExpr aliases e)
+  | .write p f r rhs =>
+    return .write p f (← expandExpr aliases r) (← expandExpr aliases rhs)
   | .withValue p fn initial ft bt =>
     return .withValue p (← expandExpr aliases fn) (← expandExpr aliases initial)
       (← expandType aliases ft) (← expandType aliases bt)

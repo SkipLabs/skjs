@@ -70,8 +70,8 @@ try {
       .find((e) =>JSON.stringify(e.pos)===JSON.stringify(changed.pos)),"the changed point");
     const labels=point.type;
     assert(Array.isArray(labels));
-    assert.deepEqual(d.types[must(labels[0],"a label")],[{refs:{first:[1,2],rest:[]}}]);
-    assert.equal(labels.length,1);assert.deepEqual(point.current,[1]);
+    assert.deepEqual(d.types[must(labels[0],"a label")],[{refs:{first: [["value", [1,2]]],rest:[]}}]);
+    assert.equal(labels.length,1);assert.deepEqual(point.current,[["value",[1]]]);
     const conversion: ConversionManifest=JSON.parse(fs.readFileSync(op+".conversion.json", "utf8"));
     assert(!conversion.omissions.some((o) =>o.function===changed.name&&
       typeof o.site==="object"&&JSON.stringify(o.site.pos)===JSON.stringify(changed.pos)));
@@ -83,21 +83,21 @@ try {
     const shown=must(report.functions.find(f=>f.name===changed.name),"the changed function").expressions.find(e=>JSON.stringify(e.pos)===JSON.stringify(changed.pos));
     assert(shown, "no claim at the changed point");
     assert(shown.type.includes(" = (true)"));
-    assert.deepEqual(shown.raw,{type:labels,current:[1]});
+    assert.deepEqual(shown.raw,{type:labels,current: [["value", [1]]]});
     const result=verifySkjs(file,fs.readFileSync(file,"utf8"),d,file,report,verifier,10,true)
       .results[report.functions.findIndex(f=>f.name===changed.name)];
     assert.equal(result.status,"verified");
     const check=()=>run(verifier,["--produce-source-claims",ap,op,file,ep,"10"]);
-    point.current=[];fs.writeFileSync(op,JSON.stringify(d));
+    point.current=[["value",[]]];fs.writeFileSync(op,JSON.stringify(d));
     assert.notEqual(run(verifier,["--check-source-claims",ap,op,file,ep]).status,0,"old evidence cannot erase an impossible observation");
     const empty=check();assert.notEqual(empty.status,0);
     assert(empty.stderr.includes("obligation-diagnostic:"),empty.stderr);
-    point.current=labels.slice();fs.writeFileSync(op,JSON.stringify(d));
+    point.current=[["value",labels.slice()]];fs.writeFileSync(op,JSON.stringify(d));
     const invalid=check();assert.notEqual(invalid.status,0);
-    assert(invalid.stderr.includes("invalid source claims"),invalid.stderr);
+    assert(invalid.stderr.includes("current-content predicate must be a finite primitive type"),invalid.stderr);
     delete written(point).current;fs.writeFileSync(op,JSON.stringify(d));
     assert.notEqual(check().status,0,"the format requires explicit assertion fields");
-    point.current=[1];written(d).status="verified";
+    point.current=[["value",[1]]];written(d).status="verified";
     fs.writeFileSync(op,JSON.stringify(d));
     const extra=check();assert.notEqual(extra.status,0);
     assert(extra.stderr.includes("unknown fields"),extra.stderr);

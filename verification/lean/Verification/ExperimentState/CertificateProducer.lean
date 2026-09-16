@@ -145,17 +145,19 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           coerce G pool (.node ⟨Γ,t,F⟩ .funE ps) A
         | [.callable P [] L] =>
           if !L.all (fun p => p.1.length == arity) then none else do
-          let ea ← recur Γ .nul P
+          let [(_, Pv)] := P | none
+          let ea ← recur Γ .nul Pv
           let ps ← L.mapM fun p => recur (p.1 ++ Γ) b p.2
           coerce G pool (.node ⟨Γ,t,F⟩ .makeCallable (ea :: ps)) A
         | _ => none
-    | .make (.closure arity b) a =>
+    | .makeAt (.closure arity b) ns inits =>
       return (A :: pool).findSome? fun F => do
         let [.callable P [] L] := expand G F | none
         if !L.all (fun p => p.1.length == arity) then none else do
-        let ea ← recur Γ a P
+        if P.map Prod.fst != ns || inits.length != ns.length then none else do
+        let eas ← (inits.zip (P.map Prod.snd)).mapM fun (a,D) => recur Γ a D
         let ps ← L.mapM fun p => recur (p.1 ++ Γ) b p.2
-        coerce G pool (.node ⟨Γ,t,F⟩ .makeCallable (ea :: ps)) A
+        coerce G pool (.node ⟨Γ,t,F⟩ .makeCallable (eas ++ ps)) A
     | .letE a b =>
       let exactTypes := suggestions.reverse.filterMap fun j =>
         if j.context == Γ && j.term == a then some j.type else none
@@ -182,28 +184,33 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
             coerce G pool (.node ⟨Γ,t,p.2⟩ r (ef :: eas)) A
       if let some e := direct then return some e
       return splitReceiver f
-    | .alloc a =>
+    | .makeAt .absent ns inits =>
       return (A :: pool).findSome? fun R => do
         let [.refs B []] := expand G R | none
-        let ea ← recur Γ a B
-        coerce G pool (.node ⟨Γ,t,R⟩ .alloc [ea]) A
-    | .read a =>
+        if B.map Prod.fst != ns then none else do
+        if !(decide ns.Nodup) then none else do
+        if inits.length != ns.length then none else do
+        let ps ← (inits.zip (B.map Prod.snd)).mapM fun (a,D) => recur Γ a D
+        coerce G pool (.node ⟨Γ,t,R⟩ .alloc ps) A
+    | .readAt f a =>
       let direct := pool.findSome? fun R => do
-        let (B,r) ← match expand G R with
-          | [.refs B []] => some (B,Rule.read)
-          | [.callable B _ _] => some (B,Rule.readCallable)
+        let (fs,r) ← match expand G R with
+          | [.refs fs []] => some (fs,Rule.read)
+          | [.callable fs _ _] => some (fs,Rule.readCallable)
           | _ => none
+        let B ← fs.lookup f
         let _ ← subtype G pool B A
         let ea ← recur Γ a R
         coerce G pool (.node ⟨Γ,t,B⟩ r [ea]) A
       if let some e := direct then return some e
       return splitReceiver a
-    | .write a b =>
+    | .writeAt f a b =>
       let direct := pool.findSome? fun R => do
-        let (B,r) ← match expand G R with
-          | [.refs B []] => some (B,Rule.write)
-          | [.callable B _ _] => some (B,Rule.writeCallable)
+        let (fs,r) ← match expand G R with
+          | [.refs fs []] => some (fs,Rule.write)
+          | [.callable fs _ _] => some (fs,Rule.writeCallable)
           | _ => none
+        let B ← fs.lookup f
         let ea ← recur Γ a R
         let eb ← recur Γ b B
         (A :: pool).findSome? fun N =>
@@ -259,9 +266,10 @@ def vocabulary [DecidableEq ι] (G : NormalGraph ι) (labels : List ι)
   ([] :: (labels.map fun i => [i]) ++ hints ++
     claims.flatMap (fun c => c.type :: c.context) ++
     labels.flatMap (fun i => (G i).flatMap fun c => match c with
-      | .refs A bs => A :: bs
+      | .refs A bs => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd)
       | .arrs L => L.flatMap fun p => p.1 ++ [p.2]
-      | .callable A bs L => A :: bs ++ L.flatMap (fun p => p.1 ++ [p.2])
+      | .callable A bs L =>
+          A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ L.flatMap (fun p => p.1 ++ [p.2])
       | _ => [])).eraseDups
 
 inductive Failure where
@@ -309,19 +317,19 @@ def expressionEffect [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
   | .var i =>
     if let some R := HeapExpressionRules.valuesAt G j.context k i then
       choices := [.knownValue i R]
-  | .read (.var i) =>
-    choices := (k.cells.filter fun f => f.slot == i).map fun f => .observedRead i f.contents
+  | .readAt fld (.var i) =>
+    choices := (k.cells.filter fun f => f.slot == i && f.field == fld).map
+      fun f => .observedRead i f.contents
   | _ => pure ()
   if let some e := ordinary then
     match j.term with
-    | .read (.var i) =>
+    | .readAt _ (.var i) =>
       if let some Ref := j.context[i]? then
         if let some B := HeapExpressionRules.bagOperand (expand G Ref) then
           choices := choices ++ [.typedRead i B e]
-    | .make _ (.var i) =>
-      if let some R := HeapExpressionRules.valuesAt G j.context k i then
-        choices := choices ++ [.allocated i R e]
-    | .write (.var i) (.var v) =>
+    | .makeAt .. =>
+      choices := choices ++ [.allocated e]
+    | .writeAt _ (.var i) (.var v) =>
       if let some R := HeapExpressionRules.valuesAt G j.context k v then
         choices := choices ++ [.written i v R e]
     | _ => pure ()

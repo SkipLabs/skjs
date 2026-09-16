@@ -72,7 +72,7 @@ function fixture(body: string, param = "") {
         break;
       case "alloc":
         type = [4];
-        expr(e.e);
+        e.fields.forEach((f) => expr(f.e));
         break;
       case "read":
         type = [1, 2];
@@ -117,7 +117,7 @@ function fixture(body: string, param = "") {
       [{ boolLit: { value: true } }],
       [{ boolLit: { value: false } }],
       ["undef"],
-      [{ refs: { first: [1, 2], rest: [] } }],
+      [{ refs: { first: [["value", [1, 2]]], rest: [] } }],
     ],
     file,
     sourceSha256: hash(source),
@@ -157,7 +157,7 @@ function fixture(body: string, param = "") {
                 {
                   name: "value",
                   optional: false,
-                  read: primitive(b.current ?? [1, 2]),
+                  read: primitive(b.current?.[0]?.[1] ?? [1, 2]),
                   write: primitive([1, 2]),
                 },
               ],
@@ -248,13 +248,13 @@ function fixture(body: string, param = "") {
         must(entries.find((e) => e.start === st.pos[0]), "an entry")
           .bindings.find((b) => b.name === "cell"),
         "the cell's claim",
-      ).current = R;
+      ).current = R === null ? null : [["value", R]];
     },
     result(e: { pos: Span }, R: Labels | null) {
       must(
         expressions.find((c) => String(c.pos) === String(e.pos)),
         "a claim there",
-      ).current = R;
+      ).current = R === null ? null : [["value", R]];
     },
   };
 }

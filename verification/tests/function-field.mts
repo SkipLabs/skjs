@@ -60,7 +60,9 @@ try {
   for (const [name, text] of [
     ["shadowed builtin", source.replace("callableField(seed: boolean)", "callableField(seed: boolean, Object: unknown)")],
     ["aliased target", source.replace("(next: boolean): boolean => next,", "seed,")],
-    ["extra field", source.replace("{ value: seed }", "{ value: seed, extra: seed }")],
+    ...["call", "bind", "name", "length", "caller", "arguments", "__proto__"].map(name => [
+      `special field ${name}`, source.replace("{ value: seed }", `{ value: seed, ${name}: seed }`),
+    ]),
     ["accessor", source.replace("{ value: seed }", "{ get value() { return seed; } }")],
     ["extra source", source.replace("{ value: seed },", "{ value: seed }, { value: seed },")],
   ]) {

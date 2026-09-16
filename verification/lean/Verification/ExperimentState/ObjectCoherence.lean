@@ -21,20 +21,52 @@ theorem Extends.refl (D : Registry) : Extends D D := fun _ _ h => h
 theorem Extends.trans {D E F} (h : Extends D E) (h' : Extends E F) : Extends D F :=
   fun l c hc => h' l c (h l c hc)
 
-theorem extends_append (D : Registry) (c : CallCode) : Extends D (D ++ [c]) := by
+theorem extends_append (D E : Registry) : Extends D (D ++ E) := by
   intro l b hl
   have hlt : l < D.length := List.getElem?_eq_some_iff.mp hl |>.1
   simpa [List.getElem?_append, hlt] using hl
 
+/-- One allocation gives every field of the new object the same descriptor, in
+the locations `slots` hands out, so the registry grows by that many copies. -/
+theorem registry_alloc {D : Registry} {c : CallCode} {k l : Nat}
+    (hl : D.length ≤ l) (hu : l < D.length + k) :
+    (D ++ List.replicate k c)[l]? = some c := by
+  rw [List.getElem?_append_right hl]
+  simp [show l - D.length < k by omega]
+
+/-- The locations an object's fields stand for. Identity is these locations,
+so the registry constrains them and nothing else about the map. -/
+def locs (fs : List (String × Nat)) : List Nat := fs.map Prod.snd
+
+theorem mem_locs {fs : List (String × Nat)} {l : Nat} :
+    l ∈ locs fs ↔ ∃ f, (f, l) ∈ fs := by
+  simp only [locs, List.mem_map]
+  constructor
+  · rintro ⟨p, hp, rfl⟩; exact ⟨p.1, by simpa using hp⟩
+  · rintro ⟨f, hf⟩; exact ⟨(f, l), hf, rfl⟩
+
+theorem mem_slots {base : Nat} {ns : List String} {p : String × Nat}
+    (h : p ∈ slots base ns) : base ≤ p.2 ∧ p.2 < base + ns.length := by
+  induction ns generalizing base with
+  | nil => simp [slots] at h
+  | cons n ns ih =>
+    rcases List.mem_cons.mp h with rfl | h
+    · simp
+    · have := ih h
+      simp only [List.length_cons]
+      omega
+
 /-! Every object occurrence agrees with its allocation, including inside code. -/
 mutual
 def Names (D : Registry) : Tm → Prop
-  | .obj l .absent => D[l]? = some .absent
-  | .obj l (.closure n b) => D[l]? = some (.closure n b) ∧ Scoped n b ∧ Names D b
-  | .make (.closure _ b) a => Names D b ∧ Names D a
+  | .objAt fs .absent => ∀ l ∈ locs fs, D[l]? = some .absent
+  | .objAt fs (.closure n b) =>
+      (∀ l ∈ locs fs, D[l]? = some (.closure n b)) ∧ Scoped n b ∧ Names D b
+  | .makeAt (.closure _ b) _ args => Names D b ∧ NamesArgs D args
+  | .makeAt .absent _ args => NamesArgs D args
   | .call f args => Names D f ∧ NamesArgs D args
-  | .letE a b | .write a b => Names D a ∧ Names D b
-  | .alloc a | .read a | .test _ a => Names D a
+  | .letE a b | .writeAt _ a b => Names D a ∧ Names D b
+  | .readAt _ a | .test _ a => Names D a
   | .ite c a b => Names D c ∧ Names D a ∧ Names D b
   | _ => True
 
@@ -49,18 +81,20 @@ end
 
 theorem Names.mono {D E t} (ht : Names D t) (hx : Extends D E) : Names E t := by
   induction t using Tm.induct <;> simp_all [Names]
-  case objAbsent l => exact hx _ _ ht
-  case objClosure l n b ih => exact hx _ _ ht.1
+  case objAbsent fs => exact fun l hl => hx _ _ (ht l hl)
+  case objClosure fs n b ih => exact fun l hl => hx _ _ (ht.1 l hl)
 
-theorem Names.descriptor {D l c} (ht : Names D (.obj l c)) : D[l]? = some c := by
+theorem Names.descriptor {D fs c} (ht : Names D (.objAt fs c)) :
+    ∀ l ∈ locs fs, D[l]? = some c := by
   cases c with
   | absent => exact ht
   | closure n b => exact ht.1
 
-/-- Same identity means exactly the same descriptor, including its body. -/
-theorem descriptor_unique {D l c c'} (h : Names D (.obj l c))
-    (h' : Names D (.obj l c')) : c = c' :=
-  Option.some.inj (h.descriptor.symm.trans h'.descriptor)
+/-- Same identity means exactly the same descriptor, including its body. An
+identity is its fields, so this needs one of them to name. -/
+theorem descriptor_unique {D fs c c'} {l : Nat} (hl : l ∈ locs fs)
+    (h : Names D (.objAt fs c)) (h' : Names D (.objAt fs c')) : c = c' :=
+  Option.some.inj ((h.descriptor l hl).symm.trans (h'.descriptor l hl))
 
 theorem Names.subst {D t a} (ht : Names D t) (ha : Names D a) (j : Nat) :
     Names D (subst j a t) := by
@@ -93,11 +127,12 @@ theorem Names.instantiate {D t} (ht : Names D t) (ρ : Env)
 an unreachable branch or the body of an empty overload. -/
 mutual
 def sourceTerm : Tm → Bool
-  | .obj .. => false
-  | .make (.closure _ b) a => sourceTerm b && sourceTerm a
+  | .objAt .. => false
+  | .makeAt (.closure _ b) _ args => sourceTerm b && sourceArgs args
+  | .makeAt .absent _ args => sourceArgs args
   | .call f args => sourceTerm f && sourceArgs args
-  | .letE a b | .write a b => sourceTerm a && sourceTerm b
-  | .alloc a | .read a | .test _ a => sourceTerm a
+  | .letE a b | .writeAt _ a b => sourceTerm a && sourceTerm b
+  | .readAt _ a | .test _ a => sourceTerm a
   | .ite c a b => sourceTerm c && sourceTerm a && sourceTerm b
   | _ => true
 
@@ -134,16 +169,15 @@ theorem HeapOk.write {D h v l} (hh : HeapOk D h) (hv : isVal v = true)
   · exact hh.2 w hw
   · exact ⟨hv, ht⟩
 
-theorem HeapOk.alloc {D h v} (hh : HeapOk D h) (hv : isVal v = true)
-    (ht : TermOk D v) (c : CallCode) : HeapOk (D ++ [c]) (h ++ [v]) := by
+theorem HeapOk.alloc {D h vs} (hh : HeapOk D h)
+    (hv : ∀ v ∈ vs, isVal v = true ∧ TermOk D v) (c : CallCode) :
+    HeapOk (D ++ List.replicate vs.length c) (h ++ vs) := by
   refine ⟨by simp [hh.1], ?_⟩
   intro w hw
   rcases List.mem_append.mp hw with hw | hw
   · have hw := hh.2 w hw
-    exact ⟨hw.1, hw.2.mono (extends_append D c)⟩
-  · have he : w = v := by simpa using hw
-    subst w
-    exact ⟨hv, ht.mono (extends_append D c)⟩
+    exact ⟨hw.1, hw.2.mono (extends_append D _)⟩
+  · exact ⟨(hv w hw).1, (hv w hw).2.mono (extends_append D _)⟩
 
 /-- Every actual expression step preserves coherence. Only allocation extends
 its registry; existing entries are never rewritten. -/
@@ -184,30 +218,59 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
     · exact CallArguments.bound_body_closed (by simpa [Scoped] using ht.1.1)
         ht.1.2
     · exact ht.2.1.2.2.bindParameters ht.2.2 _
-  | @makeC h a h' a' c step ih =>
+  | @makeArg c ns inits i h h' a a' hg hb step ih =>
     intro D hh ht
+    have hm := List.mem_of_getElem? hg
     cases c with
     | absent =>
-      obtain ⟨E,hx,hh',ht'⟩ := ih D hh ht
-      exact ⟨E,hx,hh',ht'⟩
+      simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
+      obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1 _ hm,ht.2 _ hm⟩
+      refine ⟨E,hx,hh',?_,?_⟩
+      · intro v hv
+        rcases List.mem_or_eq_of_mem_set hv with hv | rfl
+        · exact ht.1 v hv
+        · exact hs
+      · intro v hv
+        rcases List.mem_or_eq_of_mem_set hv with hv | rfl
+        · exact (ht.2 v hv).mono hx
+        · exact hn
     | closure n b =>
-      obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2,ht.2.2⟩
-      exact ⟨E,hx,hh',⟨ht.1.1,hs⟩,ht.2.1.mono hx,hn⟩
-  | @makeV v h c hv =>
+      simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
+      obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2 _ hm,ht.2.2 _ hm⟩
+      refine ⟨E,hx,hh',⟨ht.1.1,?_⟩,ht.2.1.mono hx,?_⟩
+      · intro v hv
+        rcases List.mem_or_eq_of_mem_set hv with hv | rfl
+        · exact ht.1.2 v hv
+        · exact hs
+      · intro v hv
+        rcases List.mem_or_eq_of_mem_set hv with hv | rfl
+        · exact (ht.2.2 v hv).mono hx
+        · exact hn
+  | @makeFields c ns vs h hv hlen =>
     intro D hh ht
-    have hx := extends_append D c
-    have hl : (D ++ [c])[h.length]? = some c := by simp [hh.1]
+    have hx := extends_append D (List.replicate vs.length c)
+    have hfield : ∀ l ∈ locs (slots h.length ns),
+        (D ++ List.replicate vs.length c)[l]? = some c := by
+      intro l hl
+      obtain ⟨f,hf⟩ := mem_locs.mp hl
+      obtain ⟨hlo,hhi⟩ := mem_slots (p := (f,l)) hf
+      have hdl := hh.1
+      have hnl := hlen
+      exact registry_alloc (by omega) (by omega)
     cases c with
     | absent =>
-      refine ⟨D ++ [CallCode.absent],extends_append D .absent,hh.alloc hv ht .absent,?_⟩
-      exact ⟨True.intro,hl⟩
+      simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
+      exact ⟨_,hx,hh.alloc (fun v hv' => ⟨hv v hv',ht.1 v hv',ht.2 v hv'⟩) .absent,
+        trivial,hfield⟩
     | closure n b =>
-      exact ⟨D ++ [.closure n b],hx,hh.alloc hv ⟨ht.1.2,ht.2.2⟩ (.closure n b),
-        ht.1.1,hl,(by simpa using ht.1.1),ht.2.1.mono hx⟩
+      simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
+      refine ⟨_,hx,hh.alloc (fun v hv' => ⟨hv v hv',ht.1.2 v hv',ht.2.2 v hv'⟩) _,?_,?_⟩
+      · simpa using ht.1.1
+      · exact ⟨hfield,by simpa using ht.1.1,ht.2.1.mono hx⟩
   | readC step ih =>
     intro D hh ht
     exact ih D hh ht
-  | readV hv =>
+  | readField hl hv =>
     intro D hh ht
     exact ⟨D,.refl D,hh,(hh.lookup hv).2⟩
   | writeC1 step ih =>
@@ -218,7 +281,7 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
     intro D hh ht
     obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2,ht.2.2⟩
     exact ⟨E,hx,hh',⟨ht.1.1,hs⟩,ht.2.1.mono hx,hn⟩
-  | writeV hv hl =>
+  | writeField hv hl hlt =>
     intro D hh ht
     exact ⟨D,.refl D,hh.write hv ⟨ht.1.2,ht.2.2⟩,trivial,trivial⟩
   | testC step ih =>

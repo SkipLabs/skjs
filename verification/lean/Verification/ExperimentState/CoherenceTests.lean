@@ -6,11 +6,11 @@ open ObjectCoherence GraphCoherence ControlFlow ProgramCertificates
 
 /-- Matching identities cannot acquire different callability or different code. -/
 example {D l b} (h : Names D (.obj l .absent)) (h' : Names D (.fn l b)) : False := by
-  have he := descriptor_unique h h'
+  have he := descriptor_unique (l := l) (by simp [locs]) h h'
   cases he
 
 example {D l b b'} (h : Names D (.fn l b)) (h' : Names D (.fn l b')) : b = b' := by
-  have he := descriptor_unique h h'
+  have he := descriptor_unique (l := l) (by simp [locs]) h h'
   cases he
   rfl
 
@@ -21,7 +21,7 @@ example (D : Registry) : ¬ Names D (.fn 0 (.var 1)) := by simp [Names, Scoped]
 
 /-- An object hidden inside captured code is checked against the same registry. -/
 example : ¬ Names [.absent, .closure 1 (.fn 0 (.var 0))] (.fn 1 (.fn 0 (.var 0))) := by
-  simp [Names]
+  simp [Names,locs]
 
 /- Native call lists must not hide malformed syntax after the first argument.
 These check syntax traversal; non-singleton source calls remain gated. -/
@@ -65,12 +65,12 @@ example : ∃ D, ObjectCoherence.HeapOk D [.fls,.nul] ∧ StateCoherent D (.done
 private def captured : Tm := .read (.obj 0 .absent)
 private def initial : Registry := [.absent]
 private theorem initial_ok : ObjectCoherence.HeapOk initial [.tru] := by
-  simp [ObjectCoherence.HeapOk,initial,TermOk,Scoped,Names,isVal]
+  simp [ObjectCoherence.HeapOk,initial,TermOk,Scoped,Names,locs,isVal]
 
 example : ∃ D, Extends initial D ∧ ObjectCoherence.HeapOk D [.tru,.nul] ∧
     TermOk D (.fn 1 captured) :=
   step_preserves (.makeV rfl : Step [.tru] (.funE captured) [.tru,.nul] (.fn 1 captured))
-    initial initial_ok (by simp [TermOk,Scoped,Names,captured,initial])
+    initial initial_ok (by simp [TermOk,Scoped,Names,locs,captured,initial])
 
 /-- A write can create a heap cycle through captured code while retaining both
 identities' descriptors. The invariant does not forbid mutable heap cycles. -/
@@ -80,8 +80,8 @@ example : ∃ E, Extends [.absent,.closure 1 captured] E ∧
     Step [.tru,.fn 1 captured] (.write (.obj 0 .absent) (.fn 1 captured))
       [.fn 1 captured,.fn 1 captured] .nul)
     [.absent,.closure 1 captured]
-    (by simp [ObjectCoherence.HeapOk,TermOk,Scoped,Names,isVal,captured])
-    (by simp [TermOk,Scoped,Names,captured])
+    (by simp [ObjectCoherence.HeapOk,TermOk,Scoped,Names,locs,isVal,captured])
+    (by simp [TermOk,Scoped,Names,locs,captured])
 
 #print axioms mapped_coherent
 end Verification.ExperimentState.CoherenceTests

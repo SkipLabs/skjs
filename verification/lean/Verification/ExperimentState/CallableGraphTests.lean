@@ -9,8 +9,8 @@ open Lean PositiveNormalization PositiveGraphs ProgramTyping ControlFlow Certifi
 
 private def signatures : List (List (List Nat) × List Nat) := [([[1]],[1]),([[0]],[0])]
 def types : List (List (Clause (List Nat))) :=
-  [[.nul],[.bool],[.callable [1] [] signatures],[.arrs signatures],
-   [.callable [1] [[1]] signatures],[.refs [1] []],[.callable [0,1] [] signatures]]
+  [[.nul],[.bool],[.callable [(valueField, [1])] [] signatures],[.arrs signatures],
+   [.callable [(valueField, [1])] [[(valueField,[1])]] signatures],[.refs [(valueField, [1])] []],[.callable [(valueField, [0,1])] [] signatures]]
 def G : NormalGraph Nat := fun i => types[i]?.getD []
 def labels := List.range types.length
 
@@ -28,6 +28,7 @@ def certificate : ControlFlow.Certificate Nat :=
   | .ok c => c
   | .error _ => []
 
+set_option maxHeartbeats 800000 in
 theorem checked : checkClosed G [1] program certificate 0 = true := by cbv
 
 private def ok (x : Except String α) : Bool := match x with | .ok _ => true | .error _ => false
@@ -68,11 +69,11 @@ private def pool := vocabulary G labels claims []
 #guard !(subtype G pool [3] [2]).isSome
 
 -- Normalization merges property constraints and overloads without allocation.
-#guard meet (.callable [1] [] signatures) (.arrs [([[1]],[1])]) ==
-  [.callable [1] [] (signatures ++ [([[1]],[1])])]
-#guard meet (.callable [1] [] signatures) (.callable [1] [] signatures) ==
-  [.callable [1] [[1]] (signatures ++ signatures)]
-#guard meet (.refs [1] []) (.callable [1] [] signatures) == []
+#guard meet (.callable [(valueField, [1])] [] signatures) (.arrs [([[1]],[1])]) ==
+  [.callable [(valueField, [1])] [] (signatures ++ [([[1]],[1])])]
+#guard meet (.callable [(valueField, [1])] [] signatures) (.callable [(valueField, [1])] [] signatures) ==
+  [.callable [(valueField, [1])] [[(valueField,[1])]] (signatures ++ signatures)]
+#guard meet (.refs [(valueField, [1])] []) (.callable [(valueField, [1])] [] signatures) == []
 
 -- Unsafe code, invalid bag writes, and plain-object calls cannot acquire evidence.
 #guard !(expression G pool 8 [] (.attach (.app .nul .nul) .tru) [2]).isSome
@@ -92,9 +93,9 @@ private def creationPlan : DirectProof.Plan :=
   | some e => ProgramCertificates.check G (.attach (.var 0) .tru) [2] e
 
 -- Labels in the new clause's bag and arrow operands remain range checked.
-#guard !validRequest {request with types := types ++ [[.callable [99] [] signatures]]}
-#guard !validRequest {request with types := types ++ [[.callable [1] [[99]] signatures]]}
-#guard !validRequest {request with types := types ++ [[.callable [1] [] [([[1]],[99])]]]}
+#guard !validRequest {request with types := types ++ [[.callable [(valueField, [99])] [] signatures]]}
+#guard !validRequest {request with types := types ++ [[.callable [(valueField, [1])] [[(valueField,[99])]] signatures]]}
+#guard !validRequest {request with types := types ++ [[.callable [(valueField, [1])] [] [([[1]],[99])]]]}
 
 -- Native certificates split the middle parameter while fixing both neighbors.
 -- These are certificate checks, not executions of extracted source programs.
@@ -167,7 +168,7 @@ private def zeroCallReq : Request :=
 
 -- A callable's cell is updated by the first operand and read by the second.
 -- This exercises effectful operands through the callable-object application rule.
-private def cellRows := rows ++ [[.callable [1] [] [([[0],[1]],[1])]]]
+private def cellRows := rows ++ [[.callable [(valueField, [1])] [] [([[0],[1]],[1])]]]
 private def cellCallReq : Request :=
   ⟨cellRows,
    [⟨.make (.closure 2 (.var 1)) .tru,.bind 1⟩,

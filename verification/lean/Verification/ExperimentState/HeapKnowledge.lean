@@ -24,8 +24,15 @@ theorem empty (ρ h) : Holds ⟨[],[],[]⟩ ρ h := ⟨holds_nil ρ h,by simp [V
 theorem alloc_frame {k ρ h v} (hk : Holds k ρ h) : Holds k ρ (h ++ [v]) := by
   refine ⟨?_, hk.2.1, HeapLinks.alloc_frame hk.2.2⟩
   intro f hf
-  obtain ⟨l,c,u,he,hu,a,ha,hv⟩ := hk.1 f hf
-  exact ⟨l,c,u,he,HeapObservations.alloc_frame hu,a,ha,hv⟩
+  obtain ⟨flds,c,l,u,he,hfd,hu,a,ha,hv⟩ := hk.1 f hf
+  exact ⟨flds,c,l,u,he,hfd,HeapObservations.alloc_frame hu,a,ha,hv⟩
+
+/-- The same across a whole object's worth of fresh locations. -/
+theorem alloc_frames {k ρ h} (vs : List Val) (hk : Holds k ρ h) : Holds k ρ (h ++ vs) := by
+  refine ⟨?_, hk.2.1, HeapLinks.alloc_frames vs hk.2.2⟩
+  intro f hf
+  obtain ⟨flds,c,l,u,he,hfd,hu,a,ha,hv⟩ := hk.1 f hf
+  exact ⟨flds,c,l,u,he,hfd,HeapObservations.alloc_frames vs hu,a,ha,hv⟩
 
 def check (a b : Knowledge) (m : PointClaims.Mapping) : Bool :=
   HeapFacts.check a.cells b.cells m && (HeapFacts.check a.values b.values m && HeapLinks.check a.links b.links m)
@@ -128,8 +135,9 @@ theorem project_checked (k : Knowledge) (m count) : check k (project k m count) 
 The ordinary value fact is useful even when no cell link exists. -/
 def observeBoolean (k : Knowledge) (slot : Nat) (q : Bool) : Knowledge :=
   let R := [if q then HeapFacts.Literal.tru else .fls]
-  ⟨(k.links.filter (fun g => !g.alias && g.value == slot)).map (fun g => ⟨g.cell,R⟩) ++ k.cells,
-    ⟨slot,R⟩ :: k.values,k.links⟩
+  ⟨(k.links.filter (fun g => !g.alias && g.value == slot)).map
+      (fun g => ⟨g.cell,R,g.field⟩) ++ k.cells,
+    ⟨slot,R,valueField⟩ :: k.values,k.links⟩
 
 theorem observeBoolean_holds {k slot q ρ h} (hk : Holds k ρ h)
     (hq : ρ slot = if q then .tru else .fls) : Holds (observeBoolean k slot q) ρ h := by
@@ -141,9 +149,10 @@ theorem observeBoolean_holds {k slot q ρ h} (hk : Holds k ρ h)
       have hg2 := hg.2
       simp only [Bool.and_eq_true,Bool.not_eq_true',beq_iff_eq] at hg2
       have hs := hg2.2
-      obtain ⟨l,c,hl,hh⟩ := (show ∃ l c, ρ g.cell = .obj l c ∧ h[l]? = some (ρ g.value) from
+      obtain ⟨flds,c,l,hl,hfd,hh⟩ := (show ∃ flds c l, ρ g.cell = .objAt flds c ∧
+          flds.lookup g.field = some l ∧ h[l]? = some (ρ g.value) from
         by simpa [hg2.1] using hk.2.2 g hg.1)
-      refine ⟨l,c,ρ g.value,hl,hh,(if q then .tru else .fls),by simp,?_⟩
+      refine ⟨flds,c,l,ρ g.value,hl,hfd,hh,(if q then .tru else .fls),by simp,?_⟩
       cases q <;> simpa [hs,HeapFacts.Literal.value] using hq
     · exact hk.1 f hf
   · intro f hf

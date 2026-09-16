@@ -176,7 +176,8 @@ private def obligation (pos : Span) (j : ProgramCertificates.Sequent Nat) (plan 
 /-- Ordinary lambda proofs cannot retain transient heap observations across
 calls. Require their declared storage contract to imply such an observation
 uniformly; this is a located proof obligation, never a discarded assertion. -/
-private def persistentObservation (d : Descriptor) (pos : Span) (A R : Ty Nat) : Compiler Unit := do
+private def persistentObservation (d : Descriptor) (pos : Span) (A : Ty Nat)
+    (fld : String) (R : Ty Nat) : Compiler Unit := do
   -- The obligation below is an inclusion of types, so the observed type needs
   -- only to be one this table names. It does not need a finite set of values:
   -- that is what a literal assertion on an edge needs, and this is not one.
@@ -186,7 +187,9 @@ private def persistentObservation (d : Descriptor) (pos : Span) (A R : Ty Nat) :
   let invariants ← clauses.mapM fun clause => do
     let .refs W [] := clause
       | throw "current-content assertion requires only cell contracts"
-    pure W
+    let some Wc := W.lookup fld
+      | throw s!"current-content assertion names a field '{fld}' the contract does not have"
+    pure Wc
   let W := invariants.flatten.eraseDups
   let plan := DirectProof.var [W] 0 R
   obligation pos plan.goal (some plan) "heap-observation" [held d]
@@ -205,48 +208,53 @@ private def entryFacts (fc : SourceClaims.Function) (pos : Nat) (scope : List Sc
         | throw s!"missing claimed binding '{b.source.name}' at {pos}"
       let A ← SourceClaims.resolve (← table).length candidate
       if contract.all A.contains then
-        persistentObservation b.source (pos,pos+1) reference A
+        persistentObservation b.source (pos,pos+1) reference valueField A
       else
         match HeapKnowledge.literals (SourceTypes.graph (← table)) A with
-        | some literals => facts := facts ++ [⟨i,literals⟩]
-        | none => persistentObservation b.source (pos,pos+1) reference A
+        | some literals => facts := facts ++ [⟨i,literals,valueField⟩]
+        | none => persistentObservation b.source (pos,pos+1) reference valueField A
     match cs.lookup b.source.name with
     | none => return facts
-    | some A =>
-      match b.storage with
-      | .value => return facts ++ [⟨i,← contents A⟩]
-      -- A cell's contents may be claimed at a type with no finite set of
-      -- values, a number being the ordinary case. That is not a literal
-      -- assertion and is not thereby dropped: it becomes the obligation that
-      -- the storage contract already implies it, as above.
-      | .cell _ reference =>
-        let T ← table
+    | some asserted =>
+      -- One assertion per named field of the record this binding holds. A
+      -- field may be claimed at a type with no finite set of values, a number
+      -- being the ordinary case. That is not a literal assertion and is not
+      -- thereby dropped: it becomes the obligation that the storage contract
+      -- already implies it, as above.
+      let T ← table
+      let reference ← match b.storage with
+        | .value =>
+          let some candidate := vars.lookup b.source.name
+            | throw s!"missing claimed binding '{b.source.name}' at {pos}"
+          SourceClaims.resolve T.length candidate
+        | .cell _ reference => pure reference
+      for (fld, A) in asserted do
         if !RequestJson.validTy T.length A then throw "invalid current-content type label"
         match HeapKnowledge.literals (SourceTypes.graph T) A with
-        | some literals => return facts ++ [⟨i,literals⟩]
-        | none =>
-          persistentObservation b.source (pos,pos+1) reference A
-          return facts) []
+        | some literals => facts := facts ++ [⟨i,literals,fld⟩]
+        | none => persistentObservation b.source (pos,pos+1) reference fld A
+      return facts) []
 
 /-- A dot cannot occur in a source binding identifier, so these names designate
 administrative read snapshots without colliding with source variables. -/
-private def snapshotName (name : String) : String := name ++ ".value"
-private def isSnapshot (name : String) : Bool := name.endsWith ".value"
+private def snapshotName (name field : String) : String := name ++ "." ++ field
+private def isSnapshot (name : String) : Bool := name.any (· == '.')
 
 private def observed (scope : List ScopeBinding) (Γ : List (Ty Nat))
-    (name : String) (d : Descriptor) (pos : Span) (A R : Ty Nat) : Compiler Unit := do
-  if let some i := (names scope).idxOf? (snapshotName name) then
+    (name : String) (d : Descriptor) (pos : Span) (A : Ty Nat)
+    (fld : String) (R : Ty Nat) : Compiler Unit := do
+  if let some i := (names scope).idxOf? (snapshotName name fld) then
     let _ ← contents R
     let plan := DirectProof.var Γ i R
     obligation pos plan.goal (some plan) "heap-observation" scope
   else
-    persistentObservation d pos A R
+    persistentObservation d pos A fld R
 
 /-- A saved read is usable only in a subtree with no possible heap effects or
 escaping closure. Reads are plain modeled cells, never JavaScript accessors. -/
 private def readOnly : Fragment.Expr → Bool
   | .var .. | .lit .. | .done .. => true
-  | .not _ e | .read _ e | .shapeTest _ _ _ e | .atEnv _ e => readOnly e
+  | .not _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e => readOnly e
   | .unitTest _ _ _ _ a b | .logical _ _ a b | .coalesce _ a b
   | .seqBody _ a b | .letBody _ _ _ a b => readOnly a && readOnly b
   | .ifBody _ _ c t e => readOnly c && readOnly t && readOnly e
@@ -255,12 +263,12 @@ private def readOnly : Fragment.Expr → Bool
 
 /-- Save the plain read in a null/undefined comparison. The other operand is
 necessarily a literal; moving that literal across the read has no effect. -/
-private def readGuard : Fragment.Expr → Option (String × Fragment.Expr × Fragment.Expr)
-  | .not pos e => (readGuard e).map fun (name,r,c) => (name,r,.not pos c)
-  | .unitTest pos tag equal true (r@(.read rp (.var _ name))) (lit@(.lit ..)) =>
-    some (name,r,.unitTest pos tag equal true (.var rp (snapshotName name)) lit)
-  | .unitTest pos tag equal false (lit@(.lit ..)) (r@(.read rp (.var _ name))) =>
-    some (name,r,.unitTest pos tag equal false lit (.var rp (snapshotName name)))
+private def readGuard : Fragment.Expr → Option (String × String × Fragment.Expr × Fragment.Expr)
+  | .not pos e => (readGuard e).map fun (name,snapshot,r,c) => (name,snapshot,r,.not pos c)
+  | .unitTest pos tag equal true (r@(.read rp f (.var _ name))) (lit@(.lit ..)) =>
+    some (name,snapshotName name f,r,.unitTest pos tag equal true (.var rp (snapshotName name f)) lit)
+  | .unitTest pos tag equal false (lit@(.lit ..)) (r@(.read rp f (.var _ name))) =>
+    some (name,snapshotName name f,r,.unitTest pos tag equal false lit (.var rp (snapshotName name f)))
   | _ => none
 
 /-- Statement claims name source bindings only. Preserve anonymous evaluation
@@ -279,9 +287,10 @@ private def closureEnv (fc : SourceClaims.Function) (pos : Nat) (scope : List Sc
       let some candidate := ((fc.envs.lookup pos).getD []).lookup name
         | throw s!"missing claimed binding '{name}' at {pos}"
       let R ← SourceClaims.resolve (← table).length candidate
-      persistentObservation b.source (pos,pos+1) reference R
-    if let some R := ((fc.entryCurrent.lookup pos).getD []).lookup name then
-      observed scope Γ name ⟨name,none⟩ (pos,pos+1) A R
+      persistentObservation b.source (pos,pos+1) reference valueField R
+    if let some asserted := ((fc.entryCurrent.lookup pos).getD []).lookup name then
+      for (fld, R) in asserted do
+        observed scope Γ name ⟨name,none⟩ (pos,pos+1) A fld R
   (scope.zipIdx).mapM fun (b,i) => do
     let name := b.source.name
     let A := if name == "" || isSnapshot name then Γ[i]? else H[named.idxOf name]?
@@ -385,9 +394,9 @@ private def creationChildren : DirectProof.Plan → Option (List DirectProof.Pla
   | .cast _ p => creationChildren p
   | .rule _ .funE ps => some ps
   | _ => none
-private def allocationChild : DirectProof.Plan → Option DirectProof.Plan
-  | .cast _ p => allocationChild p
-  | .rule _ .alloc [p] => some p
+private def allocationChildren : DirectProof.Plan → Option (List DirectProof.Plan)
+  | .cast _ p => allocationChildren p
+  | .rule _ .alloc ps => some ps
   | _ => none
 
 /-- Build compositional proofs for lambda bodies and source ternaries without
@@ -397,16 +406,17 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     (e : Fragment.Expr) : Compiler DirectProof.Plan := do
   let A ← closureType fc e
   let G := SourceTypes.graph (← table)
-  if let some R := fc.exprCurrent.lookup e.span then
-    match e with
-    | .var _ name => observed scope Γ name ⟨"",some e.span⟩ e.span A R
-    | _ => persistentObservation ⟨"",some e.span⟩ e.span A R
+  if let some asserted := fc.exprCurrent.lookup e.span then
+    for (fld, R) in asserted do
+      match e with
+      | .var _ name => observed scope Γ name ⟨"",some e.span⟩ e.span A fld R
+      | _ => persistentObservation ⟨"",some e.span⟩ e.span A fld R
   let p ← match e with
   | .var _ name =>
     match resolve scope name with
     | some (i, .value) => pure (DirectProof.var Γ i A)
     | some (i, .cell contract reference) =>
-      pure (DirectProof.node Γ (.read (.var i)) contract .read [DirectProof.var Γ i reference])
+      pure (DirectProof.node Γ (.readAt valueField (.var i)) contract .read [DirectProof.var Γ i reference])
     | none => throw s!"unbound or uninitialized closure variable '{name}'"
   | .assign _ name _ rhs => do
     let some (i, .cell contract reference) := resolve scope name
@@ -414,7 +424,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let a ← closureExpr fc scope Γ rhs
     let C := a.type
     let H := C::Γ
-    let term := Tm.write (.var (i+1)) (.var 0)
+    let term := Tm.writeAt valueField (.var (i+1)) (.var 0)
     let write := DirectProof.node H term [0] .write
       [DirectProof.var H (i+1) reference, DirectProof.cast H contract (DirectProof.var H 0 C)]
     let done := DirectProof.letE H write (DirectProof.var ([0]::H) 1 C)
@@ -475,36 +485,52 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let a ← closureExpr fc scope Γ a
     pure (DirectProof.ifE G Γ A a
       (DirectProof.node Γ .fls [2] .flsLit) (DirectProof.node Γ .tru [1] .truLit))
-  | .alloc _ a => do
+  | .alloc _ ns es => do
     let [.refs B []] := PositiveRules.expand G A
-      | throw "allocation claim must name a cell contract"
-    let a ← closureExpr fc scope Γ a
-    pure (DirectProof.node Γ (.alloc a.term) A .alloc [DirectProof.cast Γ B a])
-  | .read _ a => do
+      | throw "allocation claim must name a record contract"
+    if B.length != ns.length then throw "allocation claim names different fields"
+    let B ← ns.mapM fun name => do
+      let some D := B.lookup name | throw "allocation claim names different fields"
+      pure (name,D)
+    let Ref ← lower (CellClaims.reference B)
+    if es.length != ns.length then throw "allocation initializer count mismatch"
+    -- Every initializer is checked in the lexical context of the literal, which
+    -- is what the allocation rule asks for; the calculus still evaluates them
+    -- left to right, and the rule's soundness carries each claim forward.
+    let ps ← es.mapM fun a => closureExpr fc scope Γ a
+    let casts := (ps.zip (B.map Prod.snd)).map fun (p,D) => DirectProof.cast Γ D p
+    pure (DirectProof.node Γ (.makeAt .absent ns (ps.map (·.term))) [Ref] .alloc casts)
+  | .read _ fld a => do
     let receiver := a
     let a ← closureExpr fc scope Γ a
     let snapshot := match receiver with
-      | .var _ name => (names scope).idxOf? (snapshotName name)
+      | .var _ name => (names scope).idxOf? (snapshotName name fld)
       | _ => none
     if let some i := snapshot then
       let some R := Γ[i]? | throw "internal saved-read slot mismatch"
       pure (DirectProof.var Γ i R)
     else match PositiveRules.expand G a.type with
-    | [.refs B []] => pure (DirectProof.node Γ (.read a.term) B .read [a])
-    | [.callable B _ _] => pure (DirectProof.node Γ (.read a.term) B .readCallable [a])
+    | [.refs fs []] =>
+      let some B := fs.lookup fld | throw s!"read of a field '{fld}' the contract does not name"
+      pure (DirectProof.node Γ (.readAt fld a.term) B .read [a])
+    | [.callable fs _ _] =>
+      let some B := fs.lookup fld | throw s!"read of a field '{fld}' the contract does not name"
+      pure (DirectProof.node Γ (.readAt fld a.term) B .readCallable [a])
     | _ =>
       if a.type.length ≤ 1 then throw "read receiver must name a cell contract"
       let alternatives ← a.type.mapM fun label => do
-        let [.refs B []] := PositiveRules.expand G [label]
+        let [.refs fs []] := PositiveRules.expand G [label]
           | throw "every read alternative must name a cell contract"
+        let some B := fs.lookup fld
+          | throw s!"read of a field '{fld}' an alternative does not name"
         pure (label,B)
       let R := (alternatives.flatMap Prod.snd).eraseDups
       let children := alternatives.map fun (label,B) =>
         let H := [label] :: Γ
-        DirectProof.cast H R (DirectProof.node H (.read (.var 0)) B .read
+        DirectProof.cast H R (DirectProof.node H (.readAt fld (.var 0)) B .read
           [DirectProof.var H 0 [label]])
       pure (DirectProof.letE Γ a (DirectProof.node (a.type::Γ)
-        (.read (.var 0)) R (.unionVar 0) children))
+        (.readAt fld (.var 0)) R (.unionVar 0) children))
   | .bindWithReceiver _ f receiver args => do
     let callee ← closureExpr fc scope Γ f
     let receiverPlan ← closureExpr fc (held ⟨"",some f.span⟩ :: scope) (callee.type::Γ) receiver
@@ -586,20 +612,27 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
               DirectProof.cast branch D (DirectProof.var branch (n-1-i) A))))
       pure (saveOperands (callee::actuals)
         (DirectProof.node H term R (.unionVar n) children))
-  | .write _ receiver rhs => do
+  | .write _ fld receiver rhs => do
     let B ← exprType fc receiver
-    let single := match PositiveRules.expand G B with | [.refs D []] => some D | _ => none
+    let single ← match PositiveRules.expand G B with
+      | [.refs fs []] =>
+        let some D := fs.lookup fld
+          | throw s!"write to a field '{fld}' the contract does not name"
+        pure (some D)
+      | _ => pure none
     let alternatives ← if single.isSome then pure [] else do
       if B.length ≤ 1 then throw "write receiver must name a cell contract"
       B.mapM fun label => do
-        let [.refs D []] := PositiveRules.expand G [label]
+        let [.refs fs []] := PositiveRules.expand G [label]
           | throw "every write alternative must name a cell contract"
+        let some D := fs.lookup fld
+          | throw s!"write to a field '{fld}' an alternative does not name"
         pure (label,D)
     let r ← closureExpr fc scope Γ receiver
     let a ← closureExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) rhs
     let C := a.type
     let H := C::B::Γ
-    let term := Tm.write (.var 1) (.var 0)
+    let term := Tm.writeAt fld (.var 1) (.var 0)
     let write := match single with
       | some D => DirectProof.node H term [0] .write
           [DirectProof.var H 1 B,DirectProof.cast H D (DirectProof.var H 0 C)]
@@ -637,10 +670,10 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     if result.isSome then
       for (B,i) in H.zipIdx do
         obligation pos ⟨Γ,.var i,B⟩ (some (DirectProof.var Γ i B)) "closure-entry" scope
-    if let some (name, read, tested) := readGuard cond then
+    if let some (name, snapshot, read, tested) := readGuard cond then
       if (valueSlot scope name).isSome && readOnly thn && readOnly els then
         let saved ← closureExpr fc scope H read
-        let ds := held ⟨snapshotName name,some read.span⟩ :: scope
+        let ds := held ⟨snapshot,some read.span⟩ :: scope
         let K := saved.type :: H
         let c ← closureExpr fc ds K cond
         let body ← conditionalPlan ds K A tested c
@@ -669,17 +702,28 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let PRef ← lower (Fragment.translate bagType)
     let G := SourceTypes.graph (← table)
     let [.arrs L] := PositiveRules.expand G F | throw "initializer requires a free function annotation"
-    let [.refs P []] := PositiveRules.expand G PRef | throw "initializer requires one invariant field"
+    let [.refs P []] := PositiveRules.expand G PRef
+      | throw "initializer requires an invariant record annotation"
     let .make (.closure arity body) .nul := f.term | throw "initializer requires a fresh arrow"
     let some bodies := creationChildren f | throw "initializer requires a checked arrow body"
-    let some value := allocationChild property | throw "initializer requires a fresh value-field literal"
+    let some values := allocationChildren property
+      | throw "initializer requires a fresh object literal"
+    let .alloc _ ns _ := initial | throw "initializer requires a fresh object literal"
+    if values.length != P.length then throw "initializer literal does not match its annotation"
+    -- Initializers stay in source order. An annotation may list the same fields
+    -- in another order; pairing by position would silently rename their values.
+    let P ← ns.mapM fun name => do
+      let some D := P.lookup name | throw s!"initializer field '{name}' is absent from its annotation"
+      pure (name,D)
     let fp := DirectProof.cast Γ F f
     let pp := DirectProof.cast Γ PRef property
     obligation fn.span fp.goal (some fp) "callable-function-annotation" scope
     obligation initial.span pp.goal (some pp) "callable-field-annotation" scope
     let C ← lower (SourceTypes.use (.callable P [] L))
-    pure (DirectProof.node Γ (.make (.closure arity body) value.term) [C] .makeCallable
-      (DirectProof.cast Γ P value :: bodies))
+    let casts := (values.zip (P.map Prod.snd)).map fun (v,D) => DirectProof.cast Γ D v
+    pure (DirectProof.node Γ
+      (.makeAt (.closure arity body) (P.map Prod.fst) (values.map (·.term))) [C] .makeCallable
+      (casts ++ bodies))
   | .lambda pos params ret body => do
     let paramNames := params.map Prod.fst
     if !distinct paramNames || paramNames.any (fun name => name == "" || name == "undefined" || (names scope).contains name) then
@@ -702,8 +746,8 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
   -- Validate the supplied claim, but do not discard a stronger saved-read
   -- derivation needed for the enclosing return contract. atEnv is a no-op.
   match e with
-  | .read _ (.var _ name) =>
-    if (names scope).contains (snapshotName name) then return p else return plan
+  | .read _ fld (.var _ name) =>
+    if (names scope).contains (snapshotName name fld) then return p else return plan
   | .atEnv .. => return p
   | _ => return plan
 
@@ -715,14 +759,16 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List ScopeBinding)
   let A ← exprType fc e
   let next ← match fc.exprCurrent.lookup e.span with
     | none => pure next
-    | some R => checkpoint e.span (A::Γ) [⟨0,← contents R⟩] next (scope := held ⟨"",some e.span⟩ :: scope)
+    | some asserted =>
+      let facts ← asserted.mapM fun (fld, R) => do return (⟨0,← contents R,fld⟩ : HeapFacts.Fact)
+      checkpoint e.span (A::Γ) facts next (scope := held ⟨"",some e.span⟩ :: scope)
   match he : e with
   | .var _ name =>
     match resolve scope name with
     | some (i, .value) => emitAt e.span (.var i) (.bind next) Γ A (scope := scope)
     -- A source read of a mutable local returns the cell's contents; the
     -- identity in the slot is never the value of a source expression.
-    | some (i, .cell ..) => emitAt e.span (.read (.var i)) (.bind next) Γ A (scope := scope)
+    | some (i, .cell ..) => emitAt e.span (.readAt valueField (.var i)) (.bind next) Γ A (scope := scope)
     | none => throw s!"unbound or uninitialized source variable '{name}'"
   | .assign _ name _ rhs =>
     let some (i, .cell ..) := resolve scope name
@@ -736,21 +782,36 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List ScopeBinding)
     -- value meets the contract the cell was declared with.
     let effects := held ⟨"",some rhs.span⟩ :: scope
     let result ← emitAt e.span (.var 0) (.bind drop) (C::Γ) A (scope := effects)
-    let write ← emitAt e.span (.write (.var (i+1)) (.var 0)) (.effect result) (C::Γ) [0]
+    let write ← emitAt e.span (.writeAt valueField (.var (i+1)) (.var 0)) (.effect result) (C::Γ) [0]
       "storage-contract" (scope := effects)
     compileExpr fc scope Γ rhs write
   | .lit _ v => emitAt e.span (← SourceTypes.value v) (.bind next) Γ A (scope := scope)
-  | .alloc _ a | .read _ a | .not _ a =>
+  | .read _ fld a =>
     let B ← exprType fc a
-    let op := match e with
-      | .alloc .. => Tm.alloc
-      | .not .. => fun t => Tm.ite t .fls .tru
-      | _ => Tm.read
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+1))⟩
-    let node ← emitAt e.span (op (.var 0)) (.bind drop) (B::Γ) A
+    let node ← emitAt e.span (.readAt fld (.var 0)) (.bind drop) (B::Γ) A
       (scope := held ⟨"",some a.span⟩ :: scope)
     compileExpr fc scope Γ a node
+  | .not _ a =>
+    let B ← exprType fc a
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else i+1))⟩
+    let node ← emitAt e.span (.ite (.var 0) .fls .tru) (.bind drop) (B::Γ) A
+      (scope := held ⟨"",some a.span⟩ :: scope)
+    compileExpr fc scope Γ a node
+  | .alloc _ ns operands =>
+    let As ← operands.mapM (exprType fc)
+    let n := As.length
+    let temporaries := (operands.map fun a => held ⟨"",some a.span⟩).reverse
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else i+n))⟩
+    let make ← emitAt e.span (.makeAt .absent ns ((List.range n).map fun i => .var (n-1-i)))
+      (.bind drop) (As.reverse ++ Γ) A (scope := temporaries ++ scope)
+    operands.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) =>
+      compileExpr fc
+        ((operands.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++ scope)
+        ((As.take i).reverse ++ Γ) arg next) make
   | .atEnv .. | .letBody .. | .ifBody _ (some _) .. | .done .. | .seqBody .. => throw "statement environment wrapper is only supported inside a closure"
   | .bindWithReceiver .. | .withValue .. | .lambda .. | .ifBody _ none .. | .coalesce .. | .logical .. =>
     let t ← closureExpr fc scope Γ e
@@ -788,7 +849,7 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List ScopeBinding)
         ((operands.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++ held ⟨"",some callee.span⟩ :: scope)
         ((As.take i).reverse ++ B::Γ) arg next) call
     compileExpr fc scope Γ callee right
-  | .write _ receiver rhs =>
+  | .write _ fld receiver rhs =>
     let B ← exprType fc receiver
     let C ← exprType fc rhs
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
@@ -796,7 +857,7 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List ScopeBinding)
     -- JS assignment returns its evaluated RHS; the calculus write returns null.
     let effects := held ⟨"",some rhs.span⟩::held ⟨"",some receiver.span⟩ :: scope
     let result ← emitAt e.span (.var 0) (.bind drop) (C::B::Γ) A (scope := effects)
-    let write ← emitAt e.span (.write (.var 1) (.var 0)) (.effect result) (C::B::Γ) [0]
+    let write ← emitAt e.span (.writeAt fld (.var 1) (.var 0)) (.effect result) (C::B::Γ) [0]
       (scope := effects)
     let right ← compileExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) rhs write
     compileExpr fc scope Γ receiver right
@@ -1004,14 +1065,14 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
             | throw s!"no claimed storage contract for '{name}' at {start}"
           (SourceClaims.resolve (← table).length candidate).mapError fun msg =>
             s!"storage contract for '{name}' at {start}: {msg}"
-      let reference ← lower (do return [← CellClaims.reference contract])
+      let reference ← lower (do return [← CellClaims.reference [(valueField, contract)]])
       -- The slot holds the identity of a cell only this lowering allocated.
       -- Storage is decided here, by the declaration, and nowhere else.
       let binding : ScopeBinding := ⟨⟨name,some pos⟩, .cell contract reference⟩
       let next ← body fuel fc R (binding::scope) rest tail loopTargets
       let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
         (fun j => if j == 0 then 0 else j+1))⟩
-      let allocation ← emitAt init.span (.alloc (.var 0)) (.bind drop) (A::Γ) reference
+      let allocation ← emitAt init.span (.makeAt .absent [valueField] [.var 0]) (.bind drop) (A::Γ) reference
         "binding-allocation" (some pos.1) (scope := held ⟨"",some init.span⟩ :: scope)
       -- The initializer meets the storage contract, or the declaration fails
       -- here rather than being admitted at the initializer's narrower type.

@@ -11,11 +11,11 @@ open ProgramTyping ProgramCertificates PositiveGraphs PositiveRules HeapExpressi
 open ControlFlow CertificateProducer RequestJson
 
 private def types := CallableGraphTests.types ++
-  [[PositiveNormalization.Clause.boolLit false], [.callable [1] [] [([[0]],[0])]]]
+  [[PositiveNormalization.Clause.boolLit false], [.callable [(valueField, [1])] [] [([[0]],[0])]]]
 private def G : NormalGraph Nat := fun i => types[i]?.getD []
 private def labels := List.range types.length
 private def pool := vocabulary G labels [] [[1],[2],[5],[8]]
-private def k : HeapKnowledge.Knowledge := ⟨[⟨1,[.fls]⟩],[⟨0,[.tru]⟩],[]⟩
+private def k : HeapKnowledge.Knowledge := ⟨[⟨1,[.fls],valueField⟩],[⟨0,[.tru],valueField⟩],[]⟩
 private def creation : Sequent Nat :=
   ⟨[[1],[5]],.attach (.write (.var 2) .tru) (.var 0),[8]⟩
 private def proof (j : Sequent Nat) : Evidence Nat :=
@@ -24,37 +24,36 @@ private def proof (j : Sequent Nat) : Evidence Nat :=
 -- The potentially mutating body is not run by creation. Both the fresh bag's
 -- initial contents and the old cell's false contents survive.
 #guard checkTree G (proof creation)
-#guard checkStep G creation k (.allocated 0 [.tru] (proof creation)) == some (allocOutput k [.tru])
-#guard (allocOutput k [.tru]).cells == [⟨0,[.tru]⟩,⟨2,[.fls]⟩]
-#guard checkStep G creation k (.allocated 0 [.fls] (proof creation)) == none
+#guard checkStep G creation k (.allocated (proof creation)) == some (allocOutput k [(valueField, [.tru])])
+#guard (allocOutput k [(valueField, [.tru])]).cells == [⟨0,[.tru],valueField⟩,⟨2,[.fls],valueField⟩]
 #guard checkStep G {creation with term := .alloc (.var 0)} k
-  (.allocated 0 [.tru] (proof creation)) == none
+  (.allocated (proof creation)) == none
 #guard checkStep G {creation with term := .attach .nul (.var 0)} k
-  (.allocated 0 [.tru] (proof creation)) == none
+  (.allocated (proof creation)) == none
 #guard allocationSlot (.attach .nul (.write (.var 1) .tru)) == none
 
 -- Empty overloads cannot hide out-of-scope captures behind allocation evidence.
-private def emptyG : NormalGraph Nat := fun i => if i == 9 then [.callable [1] [] []] else G i
+private def emptyG : NormalGraph Nat := fun i => if i == 9 then [.callable [(valueField, [1])] [] []] else G i
 private def escaped : Sequent Nat := ⟨[[1]],.attach (.var 2) (.var 0),[9]⟩
 private def escapedProof : Evidence Nat := .node escaped .makeCallable
   [.node ⟨[[1]],.var 0,[1]⟩ .var []]
 #guard checkTree emptyG escapedProof
-#guard checkStep emptyG escaped k (.allocated 0 [.tru] escapedProof) == none
+#guard checkStep emptyG escaped k (.allocated escapedProof) == none
 
 -- A typed read needs no transient contents fact. Its link records the same
 -- callable value; neither a plain-reference view nor an invented operand works.
 private def readClaim : Sequent Nat := ⟨[[2]],.read (.var 0),[1]⟩
-#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [1] (proof readClaim)) ==
-  some (readFrame ⟨[],[],[]⟩ 0)
-#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [0] (proof readClaim)) == none
+#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [(valueField, [1])] (proof readClaim)) ==
+  some (readFrame ⟨[],[],[]⟩ 0 valueField)
+#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [(valueField, [0])] (proof readClaim)) == none
 #guard bagOperand (expand G [3]) == none
 
 -- Producer selection uses the maintained allocation/read evidence constructors.
 #guard match expressionEffect G pool 8 creation k [] [] with
-  | some (_, .allocated 0 [.tru] _, out) => out == allocOutput k [.tru]
+  | some (_, .allocated _, out) => out == allocOutput k [(valueField, [.tru])]
   | _ => false
 #guard match expressionEffect G pool 8 readClaim ⟨[],[],[]⟩ [] [] with
-  | some (_, .typedRead 0 [1] _, out) => out == readFrame ⟨[],[],[]⟩ 0
+  | some (_, .typedRead 0 [(valueField, [1])] _, out) => out == readFrame ⟨[],[],[]⟩ 0 valueField
   | _ => false
 
 /-- The graph requires a precise false return even though the bag and its read

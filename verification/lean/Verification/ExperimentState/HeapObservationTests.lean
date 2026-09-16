@@ -16,7 +16,7 @@ theorem write_then_read {n W h l} (hw : WorldAdm W) (hh : HeapOk n W h)
 /-- The same read is precise before mutation, without strengthening Ref bool. -/
 theorem before_write {n W h l} (hw : WorldAdm W) (hh : HeapOk n W h)
     (ho : Observes h l .tru) : Safe (exact .tru) n W h (.read (.obj l .absent)) :=
-  erase (read_observed hw hh rfl ho)
+  erase (read_observed hw hh (lookup_value _) rfl ho)
 
 /-- This closure is a valid ordinary null-to-null arrow in every future
 admissible world/heap, despite overwriting the captured cell. -/
@@ -28,7 +28,7 @@ theorem writer_arrow {n W l} (hr : refT boolT n W (.obj l .absent)) :
   intro j hj U hx hu h hh a ha
   change Safe nulT j U h (.write (.obj l .absent) .fls)
   exact erase (write_observed boolT_adm hu hh (refT_transfer hr j (by omega) U hx)
-    rfl (Or.inr rfl))
+    (lookup_value _) rfl (Or.inr rfl))
 
 /-- The persistent Boolean world admits both heaps at every budget. -/
 def boolWorld (n : Nat) : WorldT n := ofList [res boolT]
@@ -51,7 +51,7 @@ theorem boolWorld_heap (n : Nat) (v : Val) (hv : v = .tru ∨ v = .fls) :
     | succ l => simp [boolWorld,lookup] at hl
 
 theorem boolWorld_ref (n : Nat) : refT boolT n (boolWorld n) (.obj 0 .absent) :=
-  ⟨0,res boolT,rfl,by simp [boolWorld,lookup],fun _ _ _ _ => Iff.rfl⟩
+  refT_cell (c := res boolT) (by simp [boolWorld,lookup]) (fun _ _ _ _ => Iff.rfl)
 
 /-- Observations are not resource assertions: they can be duplicated, but a
 write through any alias invalidates the old one. -/
@@ -107,8 +107,11 @@ theorem observation_does_not_narrow_invariant :
     HeapOk 1 (boolWorld 1) [.tru] ∧ refT boolT 1 (boolWorld 1) (.obj 0 .absent) ∧
     Observes [.tru] 0 .tru ∧ ¬ refT (exact .tru) 1 (boolWorld 1) (.obj 0 .absent) := by
   refine ⟨boolWorld_heap 1 .tru (Or.inl rfl),boolWorld_ref 1,rfl,?_⟩
-  rintro ⟨l,c,he,hl,hc⟩
+  intro hr
+  obtain ⟨flds,l,c,he,hf,hl,hc⟩ := refT_iff.mp hr
   cases he
+  simp at hf
+  subst l
   simp [boolWorld,lookup] at hl
   subst c
   have hf := (hc 0 (by decide) (ofList []) .fls).mp (Or.inr rfl)
@@ -116,7 +119,7 @@ theorem observation_does_not_narrow_invariant :
 
 -- Different storage invariants are deliberately not absorbed. The theorem
 -- above is the semantic regression guarding that restriction.
-#guard CellUnion.normalize [⟨[1],[1,2]⟩,⟨[1],[1]⟩] = [⟨[1],[1,2]⟩,⟨[1],[1]⟩]
+#guard CellUnion.normalize [[⟨valueField,[1],[1,2]⟩],[⟨valueField,[1],[1]⟩]] = [[⟨valueField,[1],[1,2]⟩],[⟨valueField,[1],[1]⟩]]
 
 #print axioms observation_not_a_value_type
 #print axioms observation_does_not_narrow_invariant

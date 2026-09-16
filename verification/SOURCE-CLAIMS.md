@@ -92,8 +92,8 @@ lists into the same table:
 | Row | Clause | Meaning |
 | --- | --- | --- |
 | `0`, `1`, `2`, `3` | `"nul"`, `boolLit true`, `boolLit false`, `"undef"` | The primitives, fixed |
-| any | `{"refs": {"first": A, "rest": []}}` | `Ref<A>`, an invariant plain cell holding the union `A` |
-| any | `{"refs": {"first": A, "rest": [B, ...]}}` | One location under every listed contract, `Ref<A> & Ref<B>` |
+| any | `{"refs": {"first": [["value", A]], "rest": []}}` | A plain record with an invariant `value` field holding the union `A` |
+| any | `{"refs": {"first": F, "rest": [H, ...]}}` | One record under every listed field contract; `F` and `H` are lists of `[name, labels]` pairs |
 | any | `{"arrs": {"arrows": [[D, R]]}}` | A signature with ordered domain list `D` and result union `R` |
 
 The table starts with the four primitives and holds one further row per compound
@@ -149,7 +149,12 @@ per signature.
 These are calculus contracts; the source boundary still checks that allocations
 and operations justify their interpretation. An array of several reference or
 arrow labels can be decoded, but the source adapter may reject its use where it
-requires a single cell or arrow contract.
+requires a single record or arrow contract.
+
+A record contract names one location per field, so a claim about what a point
+currently holds names the field it is about: `current` is a list of `[field,
+labels]` pairs, or `null` where no such assertion is made. A point whose type
+names no record cannot carry one.
 
 All labels are validated, including those in unused candidates. Duplicate sites,
 bindings and function identities are rejected. All source functions must have
@@ -166,19 +171,21 @@ The [assertion grammar](POSITIVE-TYPES.md#state-assertion-grammar) defines the
 combined notation; this section specifies its sidecar encoding.
 
 Bindings and expressions have a required `current` field: `null` means no
-additional assertion; otherwise it is a sorted, duplicate-free list of primitive
-labels (`0` null, `1` true, `2` false, `3` undefined). With a non-null assertion,
-`type` must be exactly one single-contract reference label. For example, in a
+additional assertion; otherwise it is a nonempty list of distinct `[field, labels]` pairs. Each field
+must belong to the point's record contract; `type` must name exactly one
+single-contract plain reference row. Each label list is sorted and
+duplicate-free; extraction requires it to denote a finite primitive predicate
+(`0` null, `1` true, `2` false, `3` undefined). For example, in a
 document whose row 4 is `Ref<boolean>`:
 
 ```json
-{"name":"cell","type":[4],"current":[1]}
+{"name":"cell","type":[4],"current":[["value",[1]]]}
 ```
 
 This displays as `{ value: boolean = (true) }`. The storage invariant and current
 predicate are distinct; their [semantic meaning](SEMANTICS.md#current-content-assertions-and-postconditions)
-is not a persistent read/write capability. An empty `current` array denotes the
-empty predicate and is not absence. Function parameters require `current: null`;
+is not a persistent read/write capability. An empty field predicate, `[["value",[]]]`, denotes impossibility, not
+absence. The outer `current` array must be nonempty. Function parameters require `current: null`;
 ordinary arrows do not acquire creation-time heap assumptions or postconditions.
 Numbers, nested predicates, and correlated unions of differently refined
 references remain outside this profile.

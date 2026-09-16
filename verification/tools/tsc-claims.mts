@@ -52,6 +52,7 @@ import type {
   Row,
   SourceClaims,
 } from "./source-claims.mts";
+import type { Fields } from "./type-graph.mts";
 import type { Ast, Expr, FunctionAst, Stmt } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { messageOf } from "./thrown.mts";
@@ -130,9 +131,12 @@ function walkExpr(e: Expr, out: Sites): void {
       walkExpr(e.fn, out);
       walkExpr(e.initial, out);
       return;
+    case "alloc":
+      addExpr(out, e.pos, e.k);
+      for (const f of e.fields) walkExpr(f.e, out);
+      return;
     case "functionTest":
     case "not":
-    case "alloc":
     case "read":
       addExpr(out, e.pos, e.k);
       walkExpr(e.e, out);
@@ -373,14 +377,15 @@ function primitiveLabelsOf(type: Type): number[] | null {
 /** A reading either succeeded and carries what it read, or it did not and
  * carries why — where it has a reason to give. */
 type RecordRead =
-  | { ok: true; valueType: Type }
+  | { ok: true; fields: { name: string; type: Type }[] }
   | { ok: false; reason?: string };
 
 /**
- * `{ value: T }`-shaped: exactly one required, non-readonly property named
- * "value", no index signatures, and not itself callable. `ok:false` with no
- * reason means "not object-shaped at all, try the arrow reading instead";
- * with a reason it means "object-shaped but not this exact contract".
+ * Record-shaped: at least one required, non-readonly property, no index
+ * signatures, and not itself callable. `ok:false` with no reason means "not
+ * object-shaped at all, try the arrow reading instead"; with a reason it means
+ * "object-shaped but not this contract". A callable's bag reads the same way;
+ * what makes it a bag is only that its own call signatures are not consulted.
  */
 function tryRecord(type: Type, checker: Checker, callableBag = false): RecordRead {
   if (!(type.flags & TypeFlags.Object) && !callableBag) return { ok: false };
@@ -390,30 +395,28 @@ function tryRecord(type: Type, checker: Checker, callableBag = false): RecordRea
   )
     return { ok: false };
   const props = checker.getPropertiesOfType(type);
-  if (props.length !== 1)
-    return {
-      ok: false,
-      reason: props.length === 0 ? "no-value-field" : "several-properties",
-    };
-  const prop = props[0];
-  if (prop.name !== "value") return { ok: false, reason: "no-value-field" };
+  if (!props.length) return { ok: false, reason: "no-value-field" };
   if (checker.getIndexInfosOfType(type).length)
     return { ok: false, reason: "indexed-type" };
-  if (prop.flags & SymbolFlags.Optional)
-    return { ok: false, reason: "optional-field" };
-  // A declaration arrives as a handle; `readonly` is on the node it names, and
-  // the two kinds of member declaration that can carry one are these.
-  const declaration = declarationOf(prop);
-  if (
-    declaration &&
-    (isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration)) &&
-    declaration.modifiers?.some((m) => m.kind === ts.SyntaxKind.ReadonlyKeyword)
-  )
-    return { ok: false, reason: "readonly-field" };
-  return {
-    ok: true,
-    valueType: must(checker.getTypeOfSymbol(prop), "field-type"),
-  };
+  const fields: { name: string; type: Type }[] = [];
+  for (const prop of props) {
+    if (prop.flags & SymbolFlags.Optional)
+      return { ok: false, reason: "optional-field" };
+    // A declaration arrives as a handle; `readonly` is on the node it names,
+    // and the two kinds of member declaration that can carry one are these.
+    const declaration = declarationOf(prop);
+    if (
+      declaration &&
+      (isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration)) &&
+      declaration.modifiers?.some((m) => m.kind === ts.SyntaxKind.ReadonlyKeyword)
+    )
+      return { ok: false, reason: "readonly-field" };
+    fields.push({
+      name: prop.name,
+      type: must(checker.getTypeOfSymbol(prop), "field-type"),
+    });
+  }
+  return { ok: true, fields };
 }
 
 type ArrowRead =
@@ -502,7 +505,7 @@ function tryRecordIntersection(
   parts: readonly Type[],
   types: Row[],
   fuel: number,
-): { first: number[]; rest: number[][] } | null {
+): { first: Fields; rest: Fields[] } | null {
   const results = parts.map((t) => tryRecord(t, checker));
   const read = results.flatMap((r) => (r.ok ? [r] : []));
   if (read.length !== results.length) {
@@ -510,10 +513,16 @@ function tryRecordIntersection(
     if (reason !== undefined) throw new Refusal(reason, checker.typeToString(type));
     return null;
   }
-  const operands = dedupSortArrays(
-    read.map((r) => translateType(r.valueType, checker, types, false, fuel - 1)),
-  );
-  return { first: operands[0], rest: operands.slice(1) };
+  const operands: Fields[] = [];
+  for (const r of read) {
+    const fs: Fields = r.fields.map((f): [string, number[]] =>
+      [f.name, translateType(f.type, checker, types, false, fuel - 1)]);
+    if (!operands.some((o) => JSON.stringify(o) === JSON.stringify(fs))) operands.push(fs);
+  }
+  operands.sort((a, b) => (JSON.stringify(a) < JSON.stringify(b) ? -1 : 1));
+  const [first, ...rest] = operands;
+  if (!first) throw new Refusal("record-operand", checker.typeToString(type));
+  return { first, rest };
 }
 
 /** The reasons a list of readings gives, in order: a reading that refused
@@ -564,7 +573,8 @@ function translateType(type: Type, checker: Checker, types: Row[], records = tru
     if (!bag.ok) throw new Refusal(bag.reason || "callable-field", checker.typeToString(type));
     const arrow = tryArrow(type, checker);
     if (!arrow.ok) throw new Refusal(arrow.reason || "callable-signature", checker.typeToString(type));
-    const P = translateType(bag.valueType, checker, types, false, fuel - 1);
+    const P: Fields = bag.fields.map((f): [string, number[]] =>
+      [f.name, translateType(f.type, checker, types, false, fuel - 1)]);
     const Ds = arrow.domains.map(D => translateType(D, checker, types, false, fuel - 1));
     const R = translateType(arrow.result, checker, types, false, fuel - 1);
     return [internRow(types, [{callable: {first: P, rest: [], arrows: [[Ds,R]]}}])];
@@ -590,7 +600,9 @@ function translateType(type: Type, checker: Checker, types: Row[], records = tru
   if (rec.ok)
     return [
       internRow(types, [
-        { refs: { first: translateType(rec.valueType, checker, types, false, fuel - 1), rest: [] } },
+        { refs: { first: rec.fields.map((f): [string, number[]] =>
+            [f.name, translateType(f.type, checker, types, false, fuel - 1)]),
+          rest: [] } },
       ]),
     ];
   if (rec.reason) throw new Refusal(rec.reason, checker.typeToString(type));
@@ -646,12 +658,20 @@ function readInvariant(
     "receiver-type",
   );
   const cellLabels = translateType(cellType, checker, types);
+  const named = (fs: Fields): number[] | null =>
+    fs.find((f) => f[0] === node.name.text)?.[1] ?? null;
   if (cellLabels.length === 1) {
     const row = types[cellLabels[0]];
     const clause = Array.isArray(row) && row.length === 1 ? row[0] : null;
     if (clause !== null && typeof clause === "object") {
-      if ("refs" in clause) return clause.refs.first;
-      if ("callable" in clause) return clause.callable.first;
+      if ("refs" in clause) {
+        const labels = named(clause.refs.first);
+        if (labels) return labels;
+      }
+      if ("callable" in clause) {
+        const labels = named(clause.callable.first);
+        if (labels) return labels;
+      }
     }
   }
   throw new Refusal("read-of-non-reference", checker.typeToString(cellType));

@@ -25,7 +25,9 @@ private def expect (label : String) (test : Bool) : Except String String :=
   if test then .ok s!"  {label}: OK" else .error s!"{label}: unexpected cell-contract result"
 
 private def is (j : Json) (expected : List Nat) : Bool :=
-  match CellClaims.translate j with | .ok A => A == expected | .error _ => false
+  match CellClaims.translate j with
+  | .ok [(_, A)] => A == expected
+  | _ => false
 private def rejects (j : Json) : Bool :=
   match CellClaims.translate j with | .ok _ => false | .error _ => true
 
@@ -45,8 +47,9 @@ private def checks (claims : Json) (fileKey : String) : Except String (List Stri
   log := log ++ [← expect "singleton contract preserved" (is literalCell [1])]
   -- Check exported permissions before applying the invariant gate.
   let ro ← CellClaims.decode readonlyCell
+  let some rof := ro.head? | .error "readonly cell has no field"
   log := log ++ [← expect "readonly exports empty write type"
-    (SourceTypes.encode ro.read == [1,2] && SourceTypes.encode ro.write == [])]
+    (SourceTypes.encode rof.read == [1,2] && SourceTypes.encode rof.write == [])]
   log := log ++ [← expect "readonly is not a mutable invariant" (rejects readonlyCell)]
   log := log ++ [← expect "optional is not a required cell" (rejects optionalCell)]
   for name in ["otherField","extraField","nestedCell","indexedCell","genericCell"] do
@@ -59,8 +62,8 @@ private def checks (claims : Json) (fileKey : String) : Except String (List Stri
     (rejects (← fieldMap mutableCell (fun f => put f "write" btrue)))]
   log := log ++ [← expect "equivalent primitive union accepted"
     (is (← fieldMap mutableCell (fun f => put f "read" bsplit)) [1,2])]
-  log := log ++ [← expect "wrong field rejected"
-    (rejects (← fieldMap mutableCell (fun f => put f "name" (toJson "other"))))]
+  log := log ++ [← expect "named field preserved"
+    ((CellClaims.translate (← fieldMap mutableCell (fun f => put f "name" (toJson "other")))).toOption == some [("other",[1,2])])]
   log := log ++ [← expect "array contract rejected"
     (rejects (← atomMap mutableCell (fun a => put a "array" (toJson "present"))))]
   log := log ++ [← expect "callable contract rejected"

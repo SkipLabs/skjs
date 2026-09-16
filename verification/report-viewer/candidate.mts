@@ -9,6 +9,7 @@ import type {
 } from "../tools/skjs-claims.mts";
 import type {
   ClaimType,
+  CurrentFields,
   EntryClaim,
   ExpressionClaim,
   Labels,
@@ -108,7 +109,7 @@ const claimedType = (t: unknown) =>
 const point = (
   types: unknown,
   value: unknown,
-  current: Labels | null = null,
+  current: CurrentFields | null = null,
 ): Point => {
   // A rigid parameter names the function's own binder and an unavailable type
   // names no type at all: neither has a row to intern, so both are stored as
@@ -132,16 +133,32 @@ const point = (
   }
   return { current, ...surface.lower(types, value) };
 };
-type EditableBinding = SkjsNamedPoint & { current?: Labels | null };
+type EditableBinding = SkjsNamedPoint & { current?: CurrentFields | null };
 const bindings = (types: Row[], value: EditableBinding[]): NamedPoint[] =>
   value.map((b) => ({
     name: b.name,
     ...point(
       types,
       b.type,
-      b.current == null ? null : decodeLabels(b.current, types.length),
+      b.current == null ? null : decodeCurrent(b.current, types.length),
     ),
   }));
+
+/** A current-contents assertion names a field and the labels it may hold. An
+ * object has one location per field, so an assertion carries the field it is
+ * about; a claim that names none is refused rather than read as `value`. */
+const decodeCurrent = (value: unknown, bound: number): CurrentFields => {
+  if (!Array.isArray(value) || !value.length)
+    throw Error("a current-contents assertion names at least one field");
+  const names = new Set<string>();
+  return value.map((entry) => {
+    if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== "string")
+      throw Error("a current-contents assertion names a field and its labels");
+    if (names.has(entry[0])) throw Error("duplicate field in a current-contents assertion");
+    names.add(entry[0]);
+    return [entry[0], decodeLabels(entry[1], bound)];
+  });
+};
 
 /** An environment is a list of named claims, and nothing else is one. */
 const isEnvironment = (value: unknown): value is EditableBinding[] =>
@@ -155,7 +172,8 @@ const isEnvironment = (value: unknown): value is EditableBinding[] =>
         b.current === null ||
         (isList(b.current) &&
           b.current.every(
-            (l) => typeof l === "number" && Number.isSafeInteger(l) && l >= 0,
+            (entry) => isList(entry) && entry.length === 2 && typeof entry[0] === "string" &&
+              isList(entry[1]) && entry[1].every((l) => typeof l === "number" && Number.isSafeInteger(l) && l >= 0),
           ))),
   );
 const ENVIRONMENT_REQUIRED =
@@ -337,7 +355,7 @@ const spanOf = (pos: [number, number] | undefined): [number, number] => {
 function editable(candidate: Candidate, fn: FunctionRef, item: SiteRef) {
   if (candidate.format === "skjs") return claimValue(candidate, fn, item);
   const types = candidate.claims.types;
-  const lifted = (labels: ClaimType, current: Labels | null) => {
+  const lifted = (labels: ClaimType, current: CurrentFields | null) => {
     const type =
       isRecord(labels) && "param" in labels
         ? { top: false, atoms: [{ a: "param", name: labels.param }] }

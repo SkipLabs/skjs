@@ -24,9 +24,12 @@ belongs to `ref X` only when the world's contract for it *equals* `⟦X⟧`, and
 cell has one contract. -/
 theorem ref_inter_empty (j : Nat) (hj : 0 < j) (W : WorldT j) (u : Val) :
     ¬ interT (refT nulT) (refT (unionT nulT boolT)) j W u := by
-  rintro ⟨⟨l, c, he, hl, hc⟩, ⟨l', c', he', hl', hc'⟩⟩
+  rintro ⟨h1, h2⟩
+  obtain ⟨flds, l, c, he, hf, hl, hc⟩ := refT_iff.mp h1
+  obtain ⟨flds', l', c', he', hf', hl', hc'⟩ := refT_iff.mp h2
   subst he
   cases he'
+  cases Option.some.inj (hf.symm.trans hf')
   rw [hl] at hl'
   cases hl'
   have h1 := (hc' 0 hj (ofList []) .tru).mpr (Or.inr (Or.inl rfl))

@@ -5,13 +5,16 @@
  */
 export type Labels = number[];
 export type Arrow = [domains: Labels[], result: Labels];
+/** An object contract: one label list per named field, in the order the
+ * producer wrote them. Fields a contract does not name are unconstrained. */
+export type Fields = [name: string, labels: Labels][];
 export type Clause = "nul" | "bool" | "undef" | "num"
   | { boolLit: { value: boolean } }
   /** The double's bit pattern, decimal, as the consumer's UInt64. */
   | { numLit: { bits: string } }
-  | { refs: { first: Labels; rest: Labels[] } }
+  | { refs: { first: Fields; rest: Fields[] } }
   | { arrs: { arrows: Arrow[] } }
-  | { callable: { first: Labels; rest: Labels[]; arrows: Arrow[] } };
+  | { callable: { first: Fields; rest: Fields[]; arrows: Arrow[] } };
 export type Row = Clause[];
 export type TypeGraph = Row[];
 
@@ -64,6 +67,17 @@ export function decodeGraph(value: unknown): TypeGraph {
     const pair = array(a); if (pair.length !== 2) throw Error("expected arrow pair");
     array(pair[0]).forEach(labels); labels(pair[1]);
   });
+  const fields = (v: unknown) => {
+    const names = new Set<string>();
+    array(v).forEach(f => {
+      const pair = array(f);
+      if (pair.length !== 2) throw Error("expected a field name and its labels");
+      if (typeof pair[0] !== "string") throw Error("expected a field name");
+      if (names.has(pair[0])) throw Error("duplicate field in an object contract");
+      names.add(pair[0]);
+      labels(pair[1]);
+    });
+  };
   // One validator per clause kind. A missing key does not compile, so a new
   // clause cannot reach the decoder as a silent "unknown graph clause".
   // Keyed by the language's own union, so a clause added there and not here is
@@ -81,11 +95,11 @@ export function decodeGraph(value: unknown): TypeGraph {
           BigInt(bits) > 0xffffffffffffffffn)
         throw Error("invalid numeric literal");
     },
-    refs: b => { const r = obj(b,["first","rest"]); labels(r.first); array(r.rest).forEach(labels); },
+    refs: b => { const r = obj(b,["first","rest"]); fields(r.first); array(r.rest).forEach(fields); },
     arrs: b => arrows(obj(b,["arrows"]).arrows),
     callable: b => {
       const r = obj(b,["first","rest","arrows"]);
-      labels(r.first); array(r.rest).forEach(labels); arrows(r.arrows);
+      fields(r.first); array(r.rest).forEach(fields); arrows(r.arrows);
     },
   };
 
@@ -108,15 +122,17 @@ export const parseGraph = (text: string): TypeGraph => decodeGraph(JSON.parse(te
 export const printGraph = (graph: TypeGraph): string => JSON.stringify(decodeGraph(graph),null,2);
 export const printLabels = (labels: Labels): string => labels.length ? labels.map(l => `#${l}`).join(" | ") : "never";
 const arrowText = ([domains,result]: Arrow) => `(${domains.map(printLabels).join(", ")}) => ${printLabels(result)}`;
+const printFields = (fs: Fields) =>
+  `ref{${fs.map(([name,ls]) => `${name}: ${printLabels(ls)}`).join(", ")}}`;
 function clauseText(c: Clause): string {
   if (typeof c === "string") return STRING_CLAUSE_TEXT[c];
   if ("boolLit" in c) return String(c.boolLit.value);
   // The reader shows the number, not the bit pattern that identifies it.
   if ("numLit" in c) return String(numberOfBits(c.numLit.bits));
-  if ("refs" in c) return [c.refs.first,...c.refs.rest].map(a => `ref(${printLabels(a)})`).join(" & ");
+  if ("refs" in c) return [c.refs.first,...c.refs.rest].map(printFields).join(" & ");
   if ("arrs" in c) return `calls[${c.arrs.arrows.map(arrowText).join("; ")}]`;
   if ("callable" in c)
-    return `object[${[c.callable.first,...c.callable.rest].map(a => `value: ${printLabels(a)}`).join(" & ")}; calls[${c.callable.arrows.map(arrowText).join("; ")}]]`;
+    return `object[${[c.callable.first,...c.callable.rest].map(printFields).join(" & ")}; calls[${c.callable.arrows.map(arrowText).join("; ")}]]`;
   return assertNever(c);
 }
 export interface GraphDefinition { label: string; definition: string }

@@ -10,7 +10,7 @@ set_option maxHeartbeats 2000000
 namespace Verification.ExperimentState.HeapGraphTests
 open ProgramTyping ProgramCertificates ControlFlow HeapKnowledge HeapExpressionRules
 
-private def T : SourceTypes.Table := SourceTypes.initial ++ [[.refs [1,2] []]]
+private def T : SourceTypes.Table := SourceTypes.initial ++ [[.refs [(valueField, [1,2])] []]]
 private def G := SourceTypes.graph T
 private def leaf (Γ : List (List Nat)) (t : Tm) (A : List Nat) (r : Rule Nat) : Evidence Nat :=
   .node ⟨Γ,t,A⟩ r []
@@ -26,16 +26,16 @@ private def allocProof : Evidence Nat := .node ⟨[[2]],.alloc (.var 0),[4]⟩ .
   [widen (leaf [[2]] (.var 0) [2] .var)]
 private def writeProof : Evidence Nat := .node ⟨[[1],[4],[2]],.write (.var 1) (.var 0),[0]⟩ .write
   [leaf [[1],[4],[2]] (.var 1) [4] .var, widen (leaf [[1],[4],[2]] (.var 0) [1] .var)]
-private def allocated : Knowledge := allocOutput ⟨[],[],[]⟩ [.fls]
+private def allocated : Knowledge := allocOutput ⟨[],[],[]⟩ [(valueField, [.fls])]
 private def beforeWrite := pureOutput allocated .tru
-private def written := writeOutput beforeWrite 1 [.tru]
-private def beforeRead : Knowledge := ⟨[⟨0,[.tru]⟩],[],[]⟩
-private def readResult := readOutput beforeRead 0 [.tru]
+private def written := writeOutput beforeWrite 1 valueField [.tru]
+private def beforeRead : Knowledge := ⟨[⟨0,[.tru],valueField⟩],[],[]⟩
+private def readResult := readOutput beforeRead 0 valueField [.tru]
 
 def certificate : ControlFlow.Certificate Nat :=
   [{expression := leaf [] .fls [2] .flsLit, edges := [[.subset]]},
    {expression := allocProof, edges := [[.subset,.subset]],
-    effect := some (.allocated 0 [.fls] allocProof), output := allocated},
+    effect := some (.allocated allocProof), output := allocated},
    {expression := leaf [[4],[2]] .tru [1] .truLit, edges := [[.subset,.subset,.subset]],
     knowledge := allocated, effect := some (.pure (leaf [[4],[2]] .tru [1] .truLit)), output := beforeWrite},
    {expression := writeProof, edges := [[.subset]], knowledge := beforeWrite,
@@ -54,13 +54,13 @@ theorem safe (n : Nat) : SafeGraph program (PositiveRules.meaning G [1]) n
 
 -- A false observation cannot be preserved through the checked true write.
 #guard !(checkClosed G [1] program
-  (certificate.set 4 {certificate[4] with knowledge := ⟨[⟨0,[.fls]⟩],[],[]⟩}) 0)
+  (certificate.set 4 {certificate[4] with knowledge := ⟨[⟨0,[.fls],valueField⟩],[],[]⟩}) 0)
 -- Local facts cannot simply be assumed at the external entry.
 #guard !(checkClosed G [1] program
-  (certificate.set 0 {certificate[0] with knowledge := ⟨[],[⟨0,[.tru]⟩],[]⟩}) 0)
+  (certificate.set 0 {certificate[0] with knowledge := ⟨[],[⟨0,[.tru],valueField⟩],[]⟩}) 0)
 -- Nor can evidence invent its own postcondition or change the actual slot map.
 #guard !(checkClosed G [1] program
-  (certificate.set 3 {certificate[3] with output := ⟨[⟨2,[.fls]⟩],[],[]⟩}) 0)
+  (certificate.set 3 {certificate[3] with output := ⟨[⟨2,[.fls],valueField⟩],[],[]⟩}) 0)
 #guard !(checkClosed G [1] (program.set 3 ⟨.write (.var 1) (.var 0),.effect ⟨4,some [0]⟩⟩) certificate 0)
 
 -- A back edge must re-establish the head's facts just like the first edge.

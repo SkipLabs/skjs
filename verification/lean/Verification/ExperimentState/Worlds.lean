@@ -146,6 +146,37 @@ theorem trunc_nil {k j : Nat} (h : j ≤ k) :
     trunc j h (ofList ([] : List (Ctr k))) = ofList [] := by
   simp [trunc]
 
+/-- One allocation appends one contract per named field, in order. -/
+def appendWs {k : Nat} (W : WorldT k) (cs : List (Ctr k)) : WorldT k :=
+  ofList (toList W ++ cs)
+
+@[simp] theorem appendWs_nil {k : Nat} (W : WorldT k) : appendWs W [] = W := by
+  simp [appendWs]
+
+theorem appendWs_cons {k : Nat} (W : WorldT k) (c : Ctr k) (cs : List (Ctr k)) :
+    appendWs W (c :: cs) = appendWs (appendW W c) cs := by
+  simp [appendWs, appendW]
+
+theorem WExt_appendWs {k : Nat} (W : WorldT k) (cs : List (Ctr k)) : WExt W (appendWs W cs) :=
+  ⟨cs, by simp [appendWs]⟩
+
+theorem length_appendWs {k : Nat} (W : WorldT k) (cs : List (Ctr k)) :
+    (toList (appendWs W cs)).length = (toList W).length + cs.length := by
+  simp [appendWs]
+
+theorem lookup_appendWs {k : Nat} (W : WorldT k) (cs : List (Ctr k)) {i : Nat}
+    (hi : i < cs.length) :
+    lookup (appendWs W cs) ((toList W).length + i) = cs[i]? := by
+  simp only [lookup, appendWs, toList_ofList]
+  rw [List.getElem?_append_right (by omega)]
+  simp
+
+theorem trunc_appendWs {k j : Nat} (h : j ≤ k) (W : WorldT k) (cs : List (Ctr k)) :
+    trunc j h (appendWs W cs) =
+      appendWs (trunc j h W)
+        (cs.map (fun c i hi w => c i (Nat.lt_of_lt_of_le hi h) w)) := by
+  simp only [trunc, appendWs, toList_ofList, List.map_append]
+
 /-! ## Which contracts are types -/
 
 
@@ -179,6 +210,14 @@ theorem WorldAdm_append {k : Nat} {W : WorldT k} {c : Ctr k}
     simp at hl
     subst hl
     exact hc
+
+theorem WorldAdm_appendWs {k : Nat} {W : WorldT k} {cs : List (Ctr k)}
+    (hW : WorldAdm W) (hc : ∀ c ∈ cs, CtrAdm c) : WorldAdm (appendWs W cs) := by
+  induction cs generalizing W with
+  | nil => simpa using hW
+  | cons c cs ih =>
+    rw [appendWs_cons]
+    exact ih (WorldAdm_append hW (hc c (by simp))) (fun d hd => hc d (by simp [hd]))
 
 theorem WorldAdm_nil {k : Nat} : WorldAdm (ofList ([] : List (Ctr k))) := by
   intro l c hl; simp [lookup] at hl

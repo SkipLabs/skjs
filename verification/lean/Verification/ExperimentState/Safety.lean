@@ -45,12 +45,12 @@ theorem Safe_nul : ∀ (n : Nat) (W : WorldT n) (h : Heap), Safe nulT n W h .nul
 not an additional runtime operation. Arrow membership separately requires a
 callable shape, so the fallback branch is never used for typed application. -/
 def callBody (v a : Tm) : Tm := match v with
-  | .obj _ (.closure n b) => CallArguments.bindParameters n [a] b
+  | .objAt _ (.closure n b) => CallArguments.bindParameters n [a] b
   | _ => .app .nul .nul
 
 /-- Only an object with closed invocation code is a callable value. -/
 def Callable (v : Val) : Prop :=
-  ∃ arity b l, v = .obj l (.closure arity b) ∧ Scoped arity b
+  ∃ arity b fs, v = .objAt fs (.closure arity b) ∧ Scoped arity b
 
 theorem Callable.val {v : Val} (h : Callable v) : isVal v = true := by
   rcases h with ⟨arity, b, l, rfl, _⟩; rfl
@@ -215,9 +215,10 @@ theorem arrowsT_singleton (A B : Fam) (k : Nat) (W : WorldT k) (v : Val) :
     exact fun j hj W' hx hu hh hok a ha => h j hj W' hx hu hh hok a ha
 
 /-- Membership in every conjunct is membership in the intersection. -/
-theorem arrowsT_of_all {L : List (Fam × Fam)} {k : Nat} {W : WorldT k} {v : Val} {b : Tm} {l : Nat}
-    (hobj : v = .obj l (.closure 1 b)) (hclosed : Scoped 1 b) (h : ∀ p ∈ L, arrowT p.1 p.2 k W v) : arrowsT L k W v :=
-  ⟨⟨1, b, l, hobj, hclosed⟩, fun p hp j hj W' hx hu hp' hok a ha => (h p hp).2 j hj W' hx hu hp' hok a ha⟩
+theorem arrowsT_of_all {L : List (Fam × Fam)} {k : Nat} {W : WorldT k} {v : Val} {b : Tm}
+    {fs : List (String × Nat)}
+    (hobj : v = .objAt fs (.closure 1 b)) (hclosed : Scoped 1 b) (h : ∀ p ∈ L, arrowT p.1 p.2 k W v) : arrowsT L k W v :=
+  ⟨⟨1, b, fs, hobj, hclosed⟩, fun p hp j hj W' hx hu hp' hok a ha => (h p hp).2 j hj W' hx hu hp' hok a ha⟩
 
 theorem arrowsT_valOnly (L : List (Fam × Fam)) : ValOnly (arrowsT L) := by
   rintro j W a ⟨hc, -⟩
@@ -245,6 +246,22 @@ theorem ArgsT_length {As k W args} (h : ArgsT As k W args) :
     cases args with
     | nil => exact False.elim h
     | cons a args => exact congrArg Nat.succ (ih h.2)
+
+/-- Position by position, which is what an allocation needs. -/
+theorem ArgsT_zip {As k W args} (h : ArgsT As k W args) :
+    ∀ p ∈ As.zip args, p.1 k W p.2 := by
+  induction As generalizing args with
+  | nil =>
+    cases args <;> simp_all [ArgsT]
+  | cons A As ih =>
+    cases args with
+    | nil => exact False.elim h
+    | cons a args =>
+      intro p hp
+      rw [List.zip_cons_cons] at hp
+      rcases List.mem_cons.mp hp with rfl | hp
+      · exact h.1
+      · exact ih h.2 p hp
 
 /-- Typed actuals are ready for binding when their domains contain only values. -/
 theorem ArgsT_values {As k W args} (hA : ∀ A ∈ As, ValOnly A)
@@ -322,8 +339,8 @@ theorem InvocationSpec.invoke {arity L k W b} (hs : InvocationSpec arity L k W b
     {p : List Fam × Fam} (hp : p ∈ L) {j : Nat} (hj : j < k) {U : WorldT j}
     (hx : WExt (trunc j (Nat.le_of_lt hj) W) U) (hu : WorldAdm U)
     {heap : Heap} (hh : HeapOk j U heap) {args : List Tm} (ha : ArgsT p.1 j U args)
-    {l : Nat} {result : Tm}
-    (hi : CallArguments.Invoke ⟨.obj l (.closure arity b), args⟩ result) :
+    {fs : List (String × Nat)} {result : Tm}
+    (hi : CallArguments.Invoke ⟨.objAt fs (.closure arity b), args⟩ result) :
     Safe p.2 j U heap result := by
   cases hi
   exact hs.2 p hp j hj U hx hu heap hh args ha
@@ -331,16 +348,17 @@ theorem InvocationSpec.invoke {arity L k W b} (hs : InvocationSpec arity L k W b
 /-- Callable values with ordered argument-list signatures. The descriptor's
 parameter count is independent of every overload's admitted actual count. -/
 def callsT (L : List (List Fam × Fam)) : Fam := fun k W v =>
-  ∃ arity b l, v = .obj l (.closure arity b) ∧ InvocationSpec arity L k W b
+  ∃ arity b fs, v = .objAt fs (.closure arity b) ∧ InvocationSpec arity L k W b
 
-theorem callsT_code_iff (L : List (List Fam × Fam)) (arity l : Nat) (b : Tm) (n W) :
-    callsT L n W (.obj l (.closure arity b)) ↔ InvocationSpec arity L n W b := by
+theorem callsT_code_iff (L : List (List Fam × Fam)) (arity : Nat)
+    (fs : List (String × Nat)) (b : Tm) (n W) :
+    callsT L n W (.objAt fs (.closure arity b)) ↔ InvocationSpec arity L n W b := by
   constructor
-  · rintro ⟨arity', b', l', he, hs⟩
+  · rintro ⟨arity', b', fs', he, hs⟩
     cases he
     exact hs
   · intro hs
-    exact ⟨arity, b, l, rfl, hs⟩
+    exact ⟨arity, b, fs, rfl, hs⟩
 
 theorem callsT_callable {L n W v} (h : callsT L n W v) : Callable v := by
   obtain ⟨arity, b, l, hv, hs⟩ := h
@@ -396,8 +414,8 @@ theorem callsT_invoke {L k W v} (hf : callsT L k W v)
     {heap : Heap} (hh : HeapOk j U heap) {args : List Tm}
     (hA : ∀ A ∈ p.1, ValOnly A) (ha : ArgsT p.1 j U args) :
     ∃ result, CallArguments.Invoke ⟨v, args⟩ result ∧ Safe p.2 j U heap result := by
-  obtain ⟨arity, b, l, rfl, hs⟩ := hf
-  have hi := CallArguments.Invoke.closure (l := l) (body := b) (arity := arity) (ArgsT_values hA ha)
+  obtain ⟨arity, b, fs, rfl, hs⟩ := hf
+  have hi := CallArguments.Invoke.closure (fs := fs) (body := b) (arity := arity) (ArgsT_values hA ha)
   exact ⟨_, hi, hs.invoke hp hj hx hu hh ha hi⟩
 
 /-- The existing unary judgment is a specialization of list invocation. -/
@@ -435,16 +453,16 @@ theorem CodeSpec_iff (L : List (Fam × Fam)) (k : Nat) (W : WorldT k) (b : Tm) :
 /-- Unary arrow domains describe actual calls, independently of the code's
 parameter count. The descriptor controls padding and truncation. -/
 theorem arrowsT_invocation_iff (arity : Nat) (L : List (Fam × Fam))
-    (l : Nat) (b : Tm) (n W) :
-    arrowsT L n W (.obj l (.closure arity b)) ↔
+    (fs : List (String × Nat)) (b : Tm) (n W) :
+    arrowsT L n W (.objAt fs (.closure arity b)) ↔
       InvocationSpec arity (L.map fun p => ([p.1], p.2)) n W b := by
   rw [InvocationSpec_unary_iff]
   constructor
-  · rintro ⟨⟨arity', b', l', he, hc⟩, hs⟩
+  · rintro ⟨⟨arity', b', fs', he, hc⟩, hs⟩
     cases he
     exact ⟨hc, hs⟩
   · rintro ⟨hc, hs⟩
-    exact ⟨⟨arity, b, l, rfl, hc⟩, hs⟩
+    exact ⟨⟨arity, b, fs, rfl, hc⟩, hs⟩
 
 /-- Existing unary overloads are exactly singleton-domain list signatures. -/
 theorem arrowsT_callsT (L : List (Fam × Fam)) (n W v) :
@@ -471,9 +489,9 @@ theorem arrowsT_congr {α : Type} (l : List α) (f g : α → Fam × Fam) {n : N
   intro x hx
   exact ⟨.cons (h x hx).1 .nil, (h x hx).2⟩
 
-theorem arrowsT_code_iff (L : List (Fam × Fam)) (l : Nat) (b : Tm) (n W) :
-    arrowsT L n W (.obj l (.closure 1 b)) ↔ CodeSpec L n W b :=
-  arrowsT_invocation_iff 1 L l b n W
+theorem arrowsT_code_iff (L : List (Fam × Fam)) (fs : List (String × Nat)) (b : Tm) (n W) :
+    arrowsT L n W (.objAt fs (.closure 1 b)) ↔ CodeSpec L n W b :=
+  arrowsT_invocation_iff 1 L fs b n W
 
 theorem CodeSpec.down {L n W b} (h : CodeSpec L (n + 1) W b) :
     CodeSpec L n (trunc n (Nat.le_succ n) W) b :=

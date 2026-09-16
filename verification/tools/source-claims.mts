@@ -18,13 +18,17 @@ export type ClaimType = Labels | { param: string } | { unavailable: string };
 
 /**
  * What a producer believes at one site: the type it claims, and — where the
- * site is a cell read and the producer tracks cell contents — what the cell
- * holds at that point. `current` is required and explicitly `null` where no
- * such assertion is made, so silence is stated rather than inferred.
+ * site names a record and the producer tracks its contents — what each named
+ * field holds at that point. An object has one location per field, so the
+ * assertion names the field it is about. `current` is required and explicitly
+ * `null` where no such assertion is made, so silence is stated rather than
+ * inferred.
  */
+export type CurrentFields = [name: string, labels: Labels][];
+
 export interface Point {
   type: ClaimType;
-  current: Labels | null;
+  current: CurrentFields | null;
 }
 
 /** A named point: a parameter, or a binding visible at a statement entry. */

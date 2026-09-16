@@ -9,10 +9,13 @@ import type { Span } from "./span.mts";
 export type Expr =
   | { k: "id"; pos: Span; name: string }
   | { k: "lit"; pos: Span; lit: Atom }
-  | { k: "not" | "alloc" | "read" | "typeof"; pos: Span; e: Expr }
+  | { k: "not" | "typeof"; pos: Span; e: Expr }
+  /* An object literal: one named field per initializer, in source order. */
+  | { k: "alloc"; pos: Span; fields: { name: string; e: Expr }[] }
+  | { k: "read"; pos: Span; field: string; e: Expr }
   | { k: "bin"; pos: Span; op: string; l: Expr; r: Expr }
   | { k: "coalesce"; pos: Span; left: Expr; right: Expr }
-  | { k: "write"; pos: Span; receiver: Expr; rhs: Expr }
+  | { k: "write"; pos: Span; field: string; receiver: Expr; rhs: Expr }
   /* Assignment to a mutable local. An expression, because JavaScript's is:
      it yields the value written, which the calculus's write does not. */
   | { k: "assign"; pos: Span; name: string; namePos: Span; rhs: Expr }

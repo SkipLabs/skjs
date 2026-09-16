@@ -205,9 +205,9 @@ private def cellWire : Json := Json.mkObj [("top",toJson false),("atoms",toJson 
 -- calculus transitions, without introducing a second evaluator.
 private def cellFn : Fragment.Fn :=
   ⟨"cell",(0,1),[],wireTy ⟨false,[.bool]⟩,
-    [.cst (2,3) "cell" (some cellWire) (.alloc (4,7) (.lit (5,6) (.vbool true))),
+    [.cst (2,3) "cell" (some cellWire) (.alloc (4,7) [valueField] [(.lit (5,6) (.vbool true))]),
      .cst (8,9) "alias" (some cellWire) (.var (10,11) "cell"),
-     .ret (12,19) (.write (14,19) (.var (14,15) "alias") (.lit (18,19) (.vbool false))) ]⟩
+     .ret (12,19) (.write (14,19) valueField (.var (14,15) "alias") (.lit (18,19) (.vbool false))) ]⟩
 private def cellClaims : Fragment.Claims :=
   ⟨"cell",(0,1),[],wireTy ⟨false,[.bool]⟩,
    [(2,[]),(8,[("cell",cellWire)]),(12,[("cell",cellWire),("alias",cellWire)])],
@@ -247,12 +247,12 @@ private def functionWire : Json := Json.mkObj [("top",toJson false),("atoms",toJ
    ("result",wireTy ⟨false,[.bool]⟩),("construct",toJson "unknown"),("array",toJson "unknown")]])]
 private def captureFn : Fragment.Fn :=
   ⟨"capture",(0,1),[],wireTy ⟨false,[.bool]⟩,
-    [.cst (2,3) "cell" (some cellWire) (.alloc (4,7) (.lit (5,6) (.vbool true))),
+    [.cst (2,3) "cell" (some cellWire) (.alloc (4,7) [valueField] [(.lit (5,6) (.vbool true))]),
      .cst (8,9) "reader" (some functionWire)
        (.lam (10,15) "unit" (wireTy ⟨false,[.null]⟩) (wireTy ⟨false,[.bool]⟩)
-         (.read (12,15) (.var (12,13) "cell"))),
+         (.read (12,15) valueField (.var (12,13) "cell"))),
      .cst (16,17) "alias" (some cellWire) (.var (18,19) "cell"),
-     .effect (20,25) (.write (20,25) (.var (20,21) "alias") (.lit (24,25) (.vbool false))),
+     .effect (20,25) (.write (20,25) valueField (.var (20,21) "alias") (.lit (24,25) (.vbool false))),
      .ret (26,33) (.app (28,33) (.var (28,29) "reader") (.lit (32,33) .vnull))]⟩
 private def captureClaims : Fragment.Claims :=
   let B := wireTy ⟨false,[.bool]⟩
@@ -345,9 +345,9 @@ private def joinedCaptureFn : Fragment.Fn :=
         (.seqBody (40,49)
           (.ifBody (40,49) (some N) body (.done (41,42))
             (.letBody (43,48) "" none
-              (.write (44,47) (.var (44,45) "cell") (.lit (46,47) (.vbool true)))
+              (.write (44,47) valueField (.var (44,45) "cell") (.lit (46,47) (.vbool true)))
               (.done (48,49))))
-          (.atEnv (50,53) (.read (51,53) (.var (51,52) "cell")))))
+          (.atEnv (50,53) (.read (51,53) valueField (.var (51,52) "cell")))))
     | st => st }
 private def joinedCaptureClaims : Fragment.Claims :=
   let H := [("unit",wireTy ⟨false,[.null]⟩),("cell",cellWire)]
@@ -397,11 +397,11 @@ private def earlyCaptureFn (q : Bool) : Fragment.Fn :=
           (.atEnv (41,44) (.lit (42,43) (.vbool true)))
           (.seqBody (45,59)
             (.letBody (45,50) "" none
-              (.write (46,49) (.var (46,47) "cell") (.lit (48,49) (.vbool false)))
+              (.write (46,49) valueField (.var (46,47) "cell") (.lit (48,49) (.vbool false)))
               (.done (50,51)))
-            (.atEnv (52,55) (.read (53,55) (.var (53,54) "cell"))))))
-    | .effect pos (.write wp receiver (.lit lp _)) =>
-      .effect pos (.write wp receiver (.lit lp (.vbool q)))
+            (.atEnv (52,55) (.read (53,55) valueField (.var (53,54) "cell"))))))
+    | .effect pos (.write wp fld receiver (.lit lp _)) =>
+      .effect pos (.write wp fld receiver (.lit lp (.vbool q)))
     | st => st }
 private def earlyCaptureClaims (q : Bool) : Fragment.Claims :=
   let H := [("unit",wireTy ⟨false,[.null]⟩),("cell",cellWire)]
@@ -462,10 +462,10 @@ private def narrowedCapture : Fragment.Claims :=
 
 private def writerFn : Fragment.Fn :=
   ⟨"writer",(0,1),[],wireTy ⟨false,[.bool]⟩,
-    [.cst (2,3) "cell" (some cellWire) (.alloc (4,7) (.lit (5,6) (.vbool true))),
+    [.cst (2,3) "cell" (some cellWire) (.alloc (4,7) [valueField] [(.lit (5,6) (.vbool true))]),
      .cst (8,9) "writer" (some functionWire)
        (.lam (10,19) "unit" (wireTy ⟨false,[.null]⟩) (wireTy ⟨false,[.bool]⟩)
-         (.write (12,19) (.var (12,13) "cell") (.lit (18,19) (.vbool false)))),
+         (.write (12,19) valueField (.var (12,13) "cell") (.lit (18,19) (.vbool false)))),
      .ret (20,27) (.app (22,27) (.var (22,23) "writer") (.lit (26,27) .vnull))]⟩
 private def writerClaims : Fragment.Claims :=
   ⟨"writer",(0,1),[],wireTy ⟨false,[.bool]⟩,
@@ -532,8 +532,8 @@ private def localWriterFn : Fragment.Fn :=
         (.letBody (30,31) "saved" (some (wireTy ⟨false,[.bool]⟩))
           (.lit (32,33) (.vbool false))
           (.letBody (34,35) "" none
-            (.write (36,39) (.var (36,37) "cell") (.var (38,39) "saved"))
-            (.atEnv (40,43) (.read (41,43) (.var (41,42) "cell"))))))
+            (.write (36,39) valueField (.var (36,37) "cell") (.var (38,39) "saved"))
+            (.atEnv (40,43) (.read (41,43) valueField (.var (41,42) "cell"))))))
     | st => st }
 private def localWriterClaims : Fragment.Claims :=
   let N := wireTy ⟨false,[.null]⟩
@@ -660,11 +660,11 @@ private def arrowOf (D R : Claim.Ty) : Json := Json.mkObj [("top",toJson false),
    ("result",wireTy R),("construct",toJson "unknown"),("array",toJson "unknown")]])]
 private def rowOf (j : Json) : Option (List (Clause (List Nat))) :=
   ((Fragment.translate j).run SourceTypes.initial).toOption.bind fun (A,T) => A.head?.bind (T[·]?)
-#guard rowOf (conjoined cellWire [cellWire,cellWire]) == some [.refs [1,2] []]
+#guard rowOf (conjoined cellWire [cellWire,cellWire]) == some [.refs [(valueField, [1,2])] []]
 #guard rowOf (conjoined (cellOf ⟨false,[.boolLit true]⟩) [cellOf ⟨false,[.null]⟩,cellOf ⟨false,[.bool]⟩])
-  == some [.refs [0] [[1],[1,2]]]
+  == some [.refs [(valueField, [0])] [[(valueField,[1])],[(valueField,[1,2])]]]
 #guard rowOf (conjoined (cellOf ⟨false,[.bool]⟩) [cellOf ⟨false,[.null]⟩,cellOf ⟨false,[.boolLit true]⟩])
-  == some [.refs [0] [[1],[1,2]]]
+  == some [.refs [(valueField, [0])] [[(valueField,[1])],[(valueField,[1,2])]]]
 private def trueToNull := arrowOf ⟨false,[.boolLit true]⟩ ⟨false,[.null]⟩
 private def falseToNull := arrowOf ⟨false,[.boolLit false]⟩ ⟨false,[.null]⟩
 #guard rowOf (conjoined trueToNull [falseToNull]) == some [.arrs [([[1]],[0]),([[2]],[0])]]

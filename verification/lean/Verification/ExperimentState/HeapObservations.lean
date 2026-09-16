@@ -170,21 +170,24 @@ theorem bind_value {T Q n} {W : WorldT (n+1)} {h b a}
 
 /-- Observations supply read precision without narrowing the location's world
 contract. Reading preserves the whole heap, so all current observations remain. -/
-theorem read_observed {n W h l v} {c : CallCode} (hw : WorldAdm W) (hh : HeapOk n W h)
+theorem read_observed {n W h l v} {c : CallCode} {flds : List (String × Nat)} {f : String}
+    (hw : WorldAdm W) (hh : HeapOk n W h) (hf : flds.lookup f = some l)
     (hv : isVal v = true) (ho : Observes h l v) :
-    SafePost (exact v) (fun h' u => h' = h ∧ u = v) n W h (.read (.obj l c)) := by
+    SafePost (exact v) (fun h' u => h' = h ∧ u = v) n W h (.readAt f (.objAt flds c)) := by
   cases n with
   | zero => trivial
   | succ p =>
     refine Or.inr ⟨trunc p (Nat.le_succ p) W,h,v,WExt_refl _,WorldAdm_trunc _ hw,
-      .readV ho,HeapOk_trunc p W h hh,?_⟩
+      .readField hf ho,HeapOk_trunc p W h hh,?_⟩
     exact value hv rfl ⟨rfl,rfl⟩
 
-theorem read_contents {n W h l P} {c : CallCode} (hw : WorldAdm W) (hh : HeapOk n W h)
+theorem read_contents {n W h l P} {c : CallCode} {flds : List (String × Nat)} {f : String}
+    (hw : WorldAdm W) (hh : HeapOk n W h) (hf : flds.lookup f = some l)
     (hval : ∀ v, P v → isVal v = true) (ho : Contents h l P) :
-    SafePost (fun _ _ v => P v) (fun h' u => h' = h ∧ Observes h' l u) n W h (.read (.obj l c)) := by
+    SafePost (fun _ _ v => P v) (fun h' u => h' = h ∧ Observes h' l u) n W h
+      (.readAt f (.objAt flds c)) := by
   obtain ⟨v,hread,hp⟩ := ho
-  apply consequence _ _ (read_observed hw hh (hval v hp) hread)
+  apply consequence _ _ (read_observed hw hh hf (hval v hp) hread)
   · intro _ _ u he; cases he; exact hp
   · intro h' u he
     exact ⟨he.1,by rw [he.1,he.2]; exact hread⟩
@@ -192,16 +195,20 @@ theorem read_contents {n W h l P} {c : CallCode} (hw : WorldAdm W) (hh : HeapOk 
 /-- This rule has no premise asserting old contents. The write permission comes
 from the invariant reference, and the postcondition records the new contents. -/
 theorem write_observed {A : Fam} (ha : Adm A) {n W h l v}
-    (hw : WorldAdm W) (hh : HeapOk n W h) (hr : refT A n W (.obj l .absent))
+    {flds : List (String × Nat)} {f : String}
+    (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hr : recT [(f, A)] n W (.objAt flds .absent)) (hf : flds.lookup f = some l)
     (hv : isVal v = true) (ht : A n W v) :
-    SafePost nulT (fun h' u => h' = h.set l v ∧ u = .nul) n W h (.write (.obj l .absent) v) := by
-  obtain ⟨_,c,he,hl,hc⟩ := hr
+    SafePost nulT (fun h' u => h' = h.set l v ∧ u = .nul) n W h
+      (.writeAt f (.objAt flds .absent) v) := by
+  obtain ⟨flds',l',c,he,hf',hl,hc⟩ := recT_single.mp hr
   cases he
+  cases Option.some.inj (hf'.symm.trans hf)
   have hlt : l < h.length := by
     have hb := (List.getElem?_eq_some_iff.mp hl).1
     rw [hh.1]; exact hb
-  exact one_step rfl rfl (.writeV hv hlt) ⟨rfl,rfl⟩
-    (write_rule ha n W h l v hv hw hh hl hc ht)
+  exact one_step rfl rfl (.writeField hv hf hlt) ⟨rfl,rfl⟩
+    (write_rule ha n W h l v hv hw hh hf hl hc ht)
 
 theorem alloc_observed {A : Fam} (ha : Adm A) {n W h v}
     (hw : WorldAdm W) (hh : HeapOk n W h) (hv : isVal v = true) (ht : A n W v) :
@@ -227,6 +234,13 @@ theorem alloc_frame {h l u v} (ho : Observes h l u) : Observes (h ++ [v]) l u :=
 theorem alloc_new (h : Heap) (v : Val) : Observes (h ++ [v]) h.length v := by
   simp [Observes]
 
+/-- One object takes as many locations as it has fields; an observation of an
+older one survives all of them. -/
+theorem alloc_frames {h l u} (vs : List Val) (ho : Observes h l u) :
+    Observes (h ++ vs) l u := by
+  have hlt := (List.getElem?_eq_some_iff.mp ho).1
+  simpa [Observes, List.getElem?_append_left hlt] using ho
+
 /-- Composite proof: mutation produces a new observation, which the continuation
 uses to type the next read exactly. No original-content premise is needed. -/
 theorem write_then_read {A : Fam} (ha : Adm A) {n W h l v}
@@ -235,12 +249,14 @@ theorem write_then_read {A : Fam} (ha : Adm A) {n W h l v}
     SafePost (exact v) (fun h' u => Observes h' l v ∧ u = v) n W h
       (.letE (.write (.obj l .absent) v) (.read (.obj l .absent))) := by
   have hlt : l < h.length := by
-    obtain ⟨_,c,he,hl,_⟩ := hr
+    obtain ⟨flds,l',c,he,hf,hl,_⟩ := refT_iff.mp hr
     cases he
+    rw [lookup_value] at hf
+    cases hf
     rw [hh.1]; exact (List.getElem?_eq_some_iff.mp hl).1
   apply bind (fun t => .letE t (.read (.obj l .absent))) Step.letC
     n W h (.write (.obj l .absent) v) hw hh
-    (write_observed ha hw hh hr hv ht)
+    (write_observed ha hw hh hr (lookup_value l) hv ht)
   intro j hj U hx hu h' u hh' hval ht hpost
   have ho : Observes h' l v := by rw [hpost.1]; exact write_new hlt
   cases j with
@@ -248,7 +264,7 @@ theorem write_then_read {A : Fam} (ha : Adm A) {n W h l v}
   | succ p =>
     apply bind_value hval hu hh'
     change SafePost _ _ p _ h' (.read (.obj l .absent))
-    apply weaken _ (read_observed (WorldAdm_trunc _ hu) (HeapOk_trunc p U h' hh') hv ho)
+    apply weaken _ (read_observed (WorldAdm_trunc _ hu) (HeapOk_trunc p U h' hh') (lookup_value l) hv ho)
     intro h'' result hp
     exact ⟨by rw [hp.1]; exact ho,hp.2⟩
 

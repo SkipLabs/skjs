@@ -205,7 +205,11 @@ function knowledgeRows(
   const of = (slot: number) => names[slot] || "slot " + slot;
   const rows: KnowledgeRow[] = [];
   for (const f of knowledge.cells || [])
-    rows.push({ slot: f.slot, binding: of(f.slot), what: "holds " + contentsText(f.contents) });
+    rows.push({
+      slot: f.slot,
+      binding: of(f.slot),
+      what: "." + f.field + " holds " + contentsText(f.contents),
+    });
   for (const f of knowledge.values || [])
     rows.push({ slot: f.slot, binding: of(f.slot), what: "is " + contentsText(f.contents) });
   // A link relates two bindings, so it is listed against the one it constrains.
@@ -215,7 +219,7 @@ function knowledgeRows(
       binding: of(g.value),
       what: g.alias
         ? "is the same value as " + of(g.cell)
-        : "is a read of " + of(g.cell),
+        : "is a read of " + of(g.cell) + "." + g.field,
     });
   return rows;
 }

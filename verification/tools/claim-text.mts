@@ -515,19 +515,32 @@ function roundTrips(type: unknown) {
   // current-content assertion, where one is made, as that field's read side:
   // `{ value: boolean = (true) }`, which POSITIVE-TYPES.md fixes as the source
   // spelling of `x : ref(boolean) ∧ x ↦ true`.
-  const cell = (types: unknown, invariant: unknown, current: unknown, depth: number) => ({
-    a: "record",
-    indexes: {string: "absent", number: "absent", symbol: "absent"},
-    call: "unknown", construct: "unknown", array: "unknown",
-    fields: [
-      {
-        name: "value",
-        optional: false,
-        read: liftType(types, current ?? invariant, depth),
-        write: liftType(types, invariant, depth),
-      },
-    ],
-  });
+  /** A record contract's fields, as the claim language writes them. `current`
+   * refines the read side of the fields it names; a field it does not name
+   * reads at its own invariant. */
+  const cell = (types: unknown, contract: unknown, current: unknown, depth: number) => {
+    const entries: unknown[] = Array.isArray(contract) ? contract : [];
+    const asserted: unknown[] = Array.isArray(current) ? current : [];
+    return {
+      a: "record",
+      indexes: {string: "absent", number: "absent", symbol: "absent"},
+      call: "unknown", construct: "unknown", array: "unknown",
+      fields: entries.map((entry) => {
+        const pair: unknown[] = Array.isArray(entry) ? entry : [];
+        const invariant = pair[1];
+        const name = typeof pair[0] === "string" ? pair[0] : "";
+        const now = asserted
+          .map((a) => (Array.isArray(a) ? a : []))
+          .find((a) => a[0] === name)?.[1];
+        return {
+          name,
+          optional: false,
+          read: liftType(types, now ?? invariant, depth),
+          write: liftType(types, invariant, depth),
+        };
+      }),
+    };
+  };
 
   // An intersection of contracts has no surface form; it is shown as text and
   // stays on the JSON path, like anything else the surface cannot name.
@@ -652,6 +665,11 @@ function roundTrips(type: unknown) {
   // not a string is not one of them, which is what `includes` said before.
   const stated = (mode: unknown, allowed: string[]) => typeof mode === "string" && allowed.includes(mode);
 
+  function namedField(types: unknown, field: Record<string, unknown>, side: "read" | "write"): [string, number[]] {
+    if (typeof field.name !== "string") throw new TypeSyntaxError("a field needs a name");
+    return [field.name, lowerType(types, field[side])];
+  }
+
   function lowerAtom(types: unknown, atom: unknown): number[] {
     if (!isObject(atom)) throw new TypeSyntaxError("not a type: " + String(atom));
     for (const key of ["call","construct","array"])
@@ -664,12 +682,14 @@ function roundTrips(type: unknown) {
     if (atom.a === "boolean") return [1, 2];
     if (atom.a === "booleanlit") return [String(atom.v) === "true" ? 1 : 2];
     if (atom.a === "record") {
-      const [field, ...more] = isRecordList(atom.fields) ? atom.fields : [];
-      if (!field || more.length || field.name !== "value" || field.optional)
-        throw new TypeSyntaxError("a cell is an object with the one field 'value'");
-      if (!same(field.read, field.write))
+      const fields = isRecordList(atom.fields) ? atom.fields : [];
+      if (!fields.length) throw new TypeSyntaxError("a record with no field has no location");
+      if (fields.some((f) => f.optional))
+        throw new TypeSyntaxError("an optional field is not an invariant cell");
+      if (fields.some((f) => !same(f.read, f.write)))
         throw new TypeSyntaxError("what a cell holds is asserted at the top of a claim, not inside a type");
-      return [intern(types, [{ refs: { first: lowerType(types, field.write), rest: [] } }])];
+      return [intern(types, [{ refs: { first: fields.map((f) =>
+        namedField(types, f, "write")), rest: [] } }])];
     }
     if (atom.a === "callable") {
       const f = isObject(atom.function) ? atom.function : undefined, bag = isObject(atom.bag) ? atom.bag : undefined;
@@ -677,12 +697,14 @@ function roundTrips(type: unknown) {
           [f?.construct,f?.array,bag?.call,bag?.construct,bag?.array].some(v => v !== undefined && !stated(v, ["unknown","absent"])) ||
           Object.values(bag && isObject(bag.indexes) ? bag.indexes : {}).some(v => v !== "absent" && v !== "synthetic"))
         throw new TypeSyntaxError("unsupported callable object requirement");
-      const [field, ...more] = bag && isRecordList(bag.fields) ? bag.fields : [];
-      if (f?.a !== "function" || bag?.a !== "record" || !field || more.length ||
-          field.name !== "value" || field.optional || !same(field.read, field.write))
-        throw new TypeSyntaxError("a callable field requires one invariant value property");
+      const bagFields = bag && isRecordList(bag.fields) ? bag.fields : [];
+      if (f?.a !== "function" || bag?.a !== "record" || !bagFields.length ||
+          bagFields.some((fd) => fd.optional || !same(fd.read, fd.write)))
+        throw new TypeSyntaxError("a callable's properties must be required and invariant");
       if (!Array.isArray(f.params)) throw new TypeSyntaxError("a function needs a parameter list");
-      return [intern(types, [{callable: {first: lowerType(types,field.write), rest: [],
+      return [intern(types, [{callable: {
+        first: bagFields.map((fd) => namedField(types, fd, "write")),
+        rest: [],
         arrows: [[f.params.map((D: unknown) => lowerType(types,D)), lowerType(types,f.result)]]}}])];
     }
     if (atom.a === "function") {
@@ -704,17 +726,23 @@ function roundTrips(type: unknown) {
   // label list comes back alone; a structural type comes back with the
   // current-content assertion it makes, or `null` for none, as the format
   // requires one or the other to be said.
-  function lower(types: unknown, type: unknown): { type: number[]; current?: number[] | null } {
+  function lower(
+    types: unknown,
+    type: unknown,
+  ): { type: number[]; current?: [string, number[]][] | null } {
     if (Array.isArray(type)) return { type };
     const shape = isObject(type) ? type : null;
     const [first, ...more] = shape && Array.isArray(shape.atoms) ? shape.atoms : [];
     const atom = !more.length && isObject(first) && first.a === "record" ? first : null;
-    const fields: unknown[] = atom && Array.isArray(atom.fields) ? atom.fields : [];
-    const field = atom && isObject(fields[0]) ? fields[0] : null;
-    if (shape && atom && field && fields.length === 1 && field.name === "value" && !same(field.read, field.write)) {
-      const current = lowerType(types, field.read);
-      if (current.some((l) => l > 3)) throw new TypeSyntaxError("a cell holds null, true, false or undefined");
-      const invariant = { ...shape, atoms: [{ ...atom, fields: [{ ...field, read: field.write }] }] };
+    const fields = atom && isRecordList(atom.fields) ? atom.fields : [];
+    const narrowed = fields.filter((f) => !same(f.read, f.write));
+    if (shape && atom && narrowed.length) {
+      const current: [string, number[]][] = narrowed.map((f) =>
+        namedField(types, f, "read"));
+      const invariant = {
+        ...shape,
+        atoms: [{ ...atom, fields: fields.map((f) => ({ ...f, read: f.write })) }],
+      };
       return { type: lowerType(types, invariant), current };
     }
     return { type: lowerType(types, type), current: null };

@@ -1,6 +1,8 @@
 import Verification.ExperimentState.CertificateProducer
 import Verification.ExperimentState.ControlFlowTests
 
+set_option maxHeartbeats 800000
+
 namespace Verification.ExperimentState.CertificateProducerTests
 open ProgramTyping ProgramTypingTests ControlFlow CertificateProducer
 
@@ -90,7 +92,7 @@ def mappedDiamondClaims : List (PointClaim (Fin 6)) :=
 #guard succeeds (produce G labels 12 [0,1] [⟨program,.ret⟩] [⟨[],[0,1]⟩] 0)
 -- Recursive references: the generated cyclic table closes through invariance.
 def recursiveG : PositiveGraphs.NormalGraph (Fin 3) := fun i =>
-  match i.val with | 0 => [.refs [0] []] | 1 => [.refs [1] []] | _ => [.bool]
+  match i.val with | 0 => [.refs [(valueField, [0])] []] | 1 => [.refs [(valueField, [1])] []] | _ => [.bool]
 #guard (subtype recursiveG [[],[0],[1],[2]] [0] [1]).isSome
 #guard !(subtype recursiveG [[],[0],[1],[2]] [0] [2]).isSome
 

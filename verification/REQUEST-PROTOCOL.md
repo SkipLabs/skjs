@@ -72,9 +72,9 @@ Each type-graph node is a union of clauses:
 | Null | `"nul"` |
 | Boolean | `"bool"` |
 | Boolean singleton | `{"boolLit":{"value":true}}` (or `false`) |
-| Invariant reference with optional additional contract requirements | `{"refs":{"first":[1],"rest":[]}}` |
+| Invariant reference with optional additional contract requirements | `{"refs":{"first":[["value",[1]]],"rest":[]}}` |
 | Intersection of arrows | `{"arrs":{"arrows":[[[[0]],[1]],[[[1]],[0]]]}}` |
-| Callable with invariant bag requirements and overloads | `{"callable":{"first":[1],"rest":[],"arrows":[[[[0]],[1]]]}}` |
+| Callable with invariant bag requirements and overloads | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[[[[0]],[1]]]}}` |
 
 The arrow example contains two argument-list/result pairs, each with one
 argument. Each argument type is itself a list of union labels. References and arrow
@@ -130,19 +130,18 @@ The encoding follows mechanically from the
 | $\mathsf{let}(t,t)$ | `{"letE":{"a":t,"b":t}}` | `bind` | `{"bind":{"next":T}}` |
 | $\mathsf{call}(t,[t,\ldots])$ | `{"call":{"f":t,"args":[t]}}` | `effect` | `{"effect":{"next":T}}` |
 | null, undefined, true, false | `"nul"`, `"undef"`, `"tru"`, `"fls"` | `branch` | `{"branch":{"yes":T,"no":T}}` |
-| object $\mathsf{obj}(\ell,c)$ | `{"obj":{"l":0,"call":c}}` | `branchBind` | `{"branchBind":{"yes":T,"no":T}}` |
-| $\mathsf{make}(c,t)$ | `{"make":{"call":c,"a":t}}` | `tagBind` | `{"tagBind":{"test":"isNul","yes":T,"no":T}}` |
-| $\mathsf{read}(t)$ | `{"read":{"a":t}}` | | |
-| $\mathsf{write}(t,t)$ | `{"write":{"a":t,"b":t}}` | | |
+| object with named locations | `{"objAt":{"fields":[["value",0]],"call":c}}` | `branchBind` | `{"branchBind":{"yes":T,"no":T}}` |
+| allocation with ordered initializers | `{"makeAt":{"call":c,"names":["value"],"inits":[t]}}` | `tagBind` | `{"tagBind":{"test":"isNul","yes":T,"no":T}}` |
+| field read | `{"readAt":{"field":"value","a":t}}` | | |
+| field write | `{"writeAt":{"field":"value","a":t,"b":t}}` | | |
 | $\mathsf{test}_k(t)$ | `{"test":{"k":"isNul","a":t}}` | | |
 | $\mathsf{if}\;t\;t\;t$ | `{"ite":{"c":t,"t":t,"e":t}}` | | |
 
 A descriptor `c` is `"absent"` or `{"closure":{"arity":2,"body":t}}`. Plain allocation
 uses the absent descriptor; function creation uses a closure descriptor and an
-initial bag value. The body is under `arity` parameter binders, in declaration
+ordered field initializers. The body is under `arity` parameter binders, in declaration
 order, before any captures. Creation evidence requires each overload to have
-that many argument types. Application evidence currently admits singleton
-actual lists; other counts remain a typing boundary. Runtime object terms
+that many argument types. Application evidence carries every actual argument in order. Runtime object terms
 are rejected in supplied graph syntax, including inside unused branches and
 closure bodies.
 

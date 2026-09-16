@@ -129,8 +129,8 @@ assert.deepEqual(
 {
   const tabled: Normalized = structuredClone(normalized);
   tabled.claims.types = [["nul"], [{ boolLit: { value: true } }], [{ boolLit: { value: false } }], ["undef"]];
-  tabled.claims.types.push([{ refs: { first: [1, 2], rest: [] } }]);
-  const observed = [{ name: "cell", type: [4], current: [1] }];
+  tabled.claims.types.push([{ refs: { first: [["value", [1, 2]]], rest: [] } }]);
+  const observed = [{ name: "cell", type: [4], current: [["value", [1]]] }];
   const withObservation = editClaim(tabled, fn, env, observed);
   assert.deepEqual(claimValue(withObservation, fn, env), observed);
   assert.deepEqual(
@@ -161,8 +161,8 @@ assert.deepEqual(
     atoms: [{ a: "record", fields: [{ name: "value", optional: false, read: { top: false, atoms: [{ a: "booleanlit", v: "true" }] }, write: boolean }] }],
   };
   const held = normalizedClaims(editClaim(tabled, fn, item, cell));
-  assert.deepEqual(held.functions[0].expressions[0], { pos: item.pos, type: [4], current: [1] });
-  assert.deepEqual(held.types[4], [{ refs: { first: [1, 2], rest: [] } }]);
+  assert.deepEqual(held.functions[0].expressions[0], { pos: item.pos, type: [4], current: [["value", [1]]] });
+  assert.deepEqual(held.types[4], [{ refs: { first: [["value", [1, 2]]], rest: [] } }]);
   assert.equal(
     surface.printType(
       editable({ ...tabled, claims: held }, fn, item),

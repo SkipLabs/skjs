@@ -35,10 +35,17 @@ export interface Sequent {
   type: Labels;
 }
 
-export interface HeapFact { slot: number; contents: ("nul" | "undef" | "tru" | "fls")[] }
+/** An assertion about a runtime slot: for a cell, about the named field of the
+ * object it holds; for a value, about the slot itself, where the field is not
+ * consulted. */
+export interface HeapFact {
+  slot: number;
+  contents: ("nul" | "undef" | "tru" | "fls")[];
+  field: string;
+}
 export interface HeapKnowledge {
   cells: HeapFact[]; values: HeapFact[];
-  links: {cell: number; value: number; alias: boolean}[];
+  links: {cell: number; value: number; alias: boolean; field: string}[];
 }
 
 /** A node of the certificate graph, as the failure reports it. */
@@ -171,13 +178,15 @@ function knowledge(v: unknown) {
   for (const key of ["cells","values"]) {
     if (!Array.isArray(k[key])) throw Error("invalid heap facts");
     for (const fact of k[key]) {
-      const f = record(fact,["slot","contents"]); nat(f.slot);
+      const f = record(fact,["slot","contents","field"]); nat(f.slot);
+      if (typeof f.field !== "string") throw Error("invalid heap fact field");
       if (!Array.isArray(f.contents) || f.contents.some(x => !["nul","undef","tru","fls"].includes(x))) throw Error("invalid heap contents");
     }
   }
   if (!Array.isArray(k.links)) throw Error("invalid heap links");
   for (const link of k.links) {
-    const l = record(link,["cell","value","alias"]); nat(l.cell); nat(l.value);
+    const l = record(link,["cell","value","alias","field"]); nat(l.cell); nat(l.value);
+    if (typeof l.field !== "string") throw Error("invalid heap link field");
     if (typeof l.alias !== "boolean") throw Error("invalid alias");
   }
 }
