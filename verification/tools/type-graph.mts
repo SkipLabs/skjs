@@ -42,15 +42,17 @@ export function assertNever(x: never): never {
   throw Error(`unhandled type graph clause: ${JSON.stringify(x)}`);
 }
 
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === "object" && !Array.isArray(v);
 function obj(v: unknown, keys: string[]): Record<string, unknown> {
-  if (!v || typeof v !== "object" || Array.isArray(v) ||
+  if (!isRecord(v) ||
       Object.keys(v).length !== keys.length || keys.some(k => !(k in v)))
     throw Error("unexpected type graph fields");
-  return v as Record<string, unknown>;
+  return v;
 }
 function array(v: unknown): unknown[] { if (!Array.isArray(v)) throw Error("expected graph list"); return v; }
 export function decodeLabels(v: unknown, size: number): Labels {
-  if (array(v).some(i => !Number.isSafeInteger(i) || (i as number) < 0 || (i as number) >= size))
+  if (array(v).some(i => typeof i !== "number" || !Number.isSafeInteger(i) || i < 0 || i >= size))
     throw Error("type graph reference out of bounds");
   return v as Labels;
 }
@@ -63,7 +65,11 @@ export function decodeGraph(value: unknown): TypeGraph {
   });
   // One validator per clause kind. A missing key does not compile, so a new
   // clause cannot reach the decoder as a silent "unknown graph clause".
-  const check: Record<ClauseKey, (body: unknown) => void> = {
+  // Keyed by the language's own union, so a clause added there and not here is
+  // a type error; read by a key that may be none of them, so a clause this does
+  // not know is a refusal rather than a silent pass.
+  const check: Record<ClauseKey, (body: unknown) => void> &
+    Record<string, ((body: unknown) => void) | undefined> = {
     boolLit: b => {
       if (typeof obj(b,["value"]).value !== "boolean") throw Error("invalid Boolean literal");
     },
@@ -81,15 +87,15 @@ export function decodeGraph(value: unknown): TypeGraph {
       labels(r.first); array(r.rest).forEach(labels); arrows(r.arrows);
     },
   };
-  const validators = check as Record<string, ((body: unknown) => void) | undefined>;
+
   rows.forEach(row => array(row).forEach(c => {
     if (typeof c === "string") {
       if (!(c in STRING_CLAUSE_TEXT)) throw Error("unknown graph clause");
       return;
     }
-    if (!c || typeof c !== "object" || Array.isArray(c)) throw Error("unknown graph clause");
+    if (!isRecord(c)) throw Error("unknown graph clause");
     const key = Object.keys(c)[0];
-    const validate = validators[key];
+    const validate = check[key];
     if (!validate) throw Error("unknown graph clause");
     validate(obj(c,[key])[key]);
   }));

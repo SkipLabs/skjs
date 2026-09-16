@@ -16,32 +16,43 @@ const TAGS: Record<Tag, true> = {
   isNul: true, isBool: true, isRef: true, isFun: true,
   isUndef: true, isNullish: true, isNum: true,
 };
-const tags: string[] = Object.keys(TAGS);
+const tags: readonly unknown[] = Object.keys(TAGS);
 /** Whether a decoded value is a tag, so the table above stays the one place a
  * tag is declared even for readers of other languages that carry one. */
-export function isTag(v: unknown): v is Tag { return tags.includes(v as string); }
+export function isTag(v: unknown): v is Tag { return tags.includes(v); }
 /* JSON shape checks, shared with the program graph in control-flow.mts. They
  * belong to neither language, so they name neither: a malformed target is not
  * a malformed term. */
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === "object" && !Array.isArray(v);
 export function fields(v: unknown, keys: string[]): Record<string, unknown> {
-  if (!v || typeof v !== "object" || Array.isArray(v) || Object.keys(v).length !== keys.length || keys.some(k => !(k in v))) throw Error("unexpected or missing field");
-  return v as Record<string, unknown>;
+  if (!isRecord(v) || Object.keys(v).length !== keys.length || keys.some(k => !(k in v))) throw Error("unexpected or missing field");
+  return v;
 }
-export function nat(v: unknown) { if (!Number.isSafeInteger(v) || (v as number) < 0) throw Error("expected a non-negative integer"); }
+export function nat(v: unknown) { if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0) throw Error("expected a non-negative integer"); }
 function code(v: unknown) {
   if (v === "absent") return;
   const c = fields(fields(v,["closure"]).closure,["arity","body"]); nat(c.arity); decodeTerm(c.body);
 }
+/** The terms that are all tag and no fields, which is how they are written. */
+const BARE: Record<Extract<Term, string>, true> =
+  { nul: true, undef: true, tru: true, fls: true };
+const bare: readonly unknown[] = Object.keys(BARE);
+const isBareTerm = (v: unknown): v is Extract<Term, string> => bare.includes(v);
 type KeysOf<T> = T extends unknown ? keyof T : never;
 type TermKey = KeysOf<Exclude<Term, string>>;
 
 export function decodeTerm(value: unknown): Term {
-  if (["nul","undef","tru","fls"].includes(value as string)) return value as Term;
+  if (isBareTerm(value)) return value;
   if (!value || typeof value !== "object") throw Error("invalid term");
   const key = Object.keys(value)[0], outer = fields(value,[key]);
   // One entry per compound constructor of `Term`; a missing key is a type error.
-  const shape: Record<TermKey,string[]> = {num:["bits"],var:["i"],call:["f","args"],letE:["a","b"],obj:["l","call"],make:["call","a"],read:["a"],write:["a","b"],test:["k","a"],ite:["c","t","e"]};
-  const keys = (shape as Record<string,string[]|undefined>)[key];
+  // Keyed by the language's own union, so a constructor added there and not
+  // here is a type error; read by a key that may be none of them, so a
+  // constructor this does not know is a refusal.
+  const shape: Record<TermKey,string[]> & Record<string,string[]|undefined> =
+    {num:["bits"],var:["i"],call:["f","args"],letE:["a","b"],obj:["l","call"],make:["call","a"],read:["a"],write:["a","b"],test:["k","a"],ite:["c","t","e"]};
+  const keys = shape[key];
   if (!keys) throw Error("unknown term constructor");
   const o = fields(outer[key],keys);
   for (const [k,v] of Object.entries(o)) {

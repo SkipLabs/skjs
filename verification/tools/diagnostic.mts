@@ -129,24 +129,29 @@ export type ObligationDiagnostic =
   | ExpressionClaimFailure
   | ProductionFailure;
 
-const PHASES: readonly string[] = [
+const PHASES: readonly unknown[] = [
   "proof-search",
   "certificate-check",
   "request-validation",
 ];
-const KINDS: readonly string[] = [
+const KINDS: readonly unknown[] = [
   "node-typing",
   "edge-coverage",
   "expression-claim",
   "production-failure",
 ];
+/** The tag tests an edge can answer, which the reader shows as recorded. */
+const TESTS: readonly unknown[] =
+  ["isNul","isBool","isRef","isFun","isUndef","isNullish"];
 const PREFIX = "obligation-diagnostic: ";
 
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === "object" && !Array.isArray(v);
 function record(v: unknown, required: string[], optional: string[] = []): Record<string, unknown> {
-  if (!v || typeof v !== "object" || Array.isArray(v) || required.some(k => !(k in v)) || Object.keys(v).some(k => ![...required,...optional].includes(k))) throw Error("invalid diagnostic fields");
-  return v as Record<string, unknown>;
+  if (!isRecord(v) || required.some(k => !(k in v)) || Object.keys(v).some(k => ![...required,...optional].includes(k))) throw Error("invalid diagnostic fields");
+  return v;
 }
-function nat(v: unknown) { if (!Number.isSafeInteger(v) || (v as number) < 0) throw Error("invalid diagnostic index"); }
+function nat(v: unknown) { if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0) throw Error("invalid diagnostic index"); }
 function span(v: unknown) { if (!Array.isArray(v) || v.length !== 2) throw Error("invalid diagnostic span"); v.forEach(nat); if (v[1] < v[0]) throw Error("reversed span"); }
 function sourceMap(v: unknown) {
   if (v === null) return;
@@ -197,56 +202,60 @@ export function readDiagnostic(
   let d: Record<string, unknown>;
   try {
     const parsed: unknown = JSON.parse(lines[0]!.slice(PREFIX.length));
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
-    d = parsed as Record<string, unknown>;
+    if (!isRecord(parsed)) return undefined;
+    d = parsed;
     const variants: Record<string,string[]> = {
       "node-typing":["id","source","sequent"], "expression-claim":["id","sourceMap","sequent"],
       "edge-coverage":["id","edgeIndex","source","destination","transfer"], "production-failure":["failure"],
     };
     if (typeof d.kind !== "string" || !variants[d.kind]) return undefined;
     record(d,["phase","outcome","fuel","types","kind",...variants[d.kind]],["requiredResult"]);
-    decodeGraph(d.types);
-    if (d.source !== undefined) diagnosticNode(d.source,(d.types as TypeGraph).length);
-    if (d.destination !== undefined) diagnosticNode(d.destination,(d.types as TypeGraph).length);
+    // The graph decides how many labels there are, so it is decoded first and
+    // everything after counts against what it returned.
+    const types = decodeGraph(d.types);
+    if (d.source !== undefined) diagnosticNode(d.source,types.length);
+    if (d.destination !== undefined) diagnosticNode(d.destination,types.length);
     if (d.sourceMap !== undefined) sourceMap(d.sourceMap);
     if (d.kind === "production-failure" && typeof d.failure !== "string") return undefined;
-    const labels = (v: unknown) => decodeLabels(v,(d.types as TypeGraph).length);
+    const labels = (v: unknown) => decodeLabels(v,types.length);
     if (d.requiredResult !== undefined) labels(d.requiredResult);
     if (d.kind === "node-typing" || d.kind === "expression-claim") {
-      const q = d.sequent as Sequent;
-      if (!q || Object.keys(q).sort().join() !== "context,term,type" || !Array.isArray(q.context)) return undefined;
+      const q = d.sequent;
+      if (!isRecord(q) || Object.keys(q).sort().join() !== "context,term,type" || !Array.isArray(q.context)) return undefined;
       q.context.forEach(labels); labels(q.type); decodeTerm(q.term);
     }
     if (d.kind === "edge-coverage") {
       nat(d.edgeIndex);
-      record(d.transfer,["available","target","booleanObservation","tagObservation"]);
-      const transfer = d.transfer as DiagnosticTransfer;
-      record(transfer.target,["label","mapping"]);
+      const transfer = record(d.transfer,["available","target","booleanObservation","tagObservation"]);
+      const target = record(transfer.target,["label","mapping"]);
       if (transfer.tagObservation !== null) {
         const tag = record(transfer.tagObservation,["test","answer","slot"]);
         nat(tag.slot);
-        if (!["isNul","isBool","isRef","isFun","isUndef","isNullish"].includes(tag.test as string) || typeof tag.answer !== "boolean") return undefined;
+        if (!TESTS.includes(tag.test) || typeof tag.answer !== "boolean") return undefined;
       }
-      const destination = d.destination as DiagnosticNode;
-      if (!transfer || !destination?.claim || !Array.isArray(transfer.available) || !Array.isArray(destination.claim.context)) return undefined;
-      transfer.available.forEach(labels); destination.claim.context.forEach(labels);
-      if (!transfer.target || !Number.isSafeInteger(transfer.target.label)) return undefined;
-      const mapping = transfer.target.mapping;
-      if (mapping !== null && (!Array.isArray(mapping) || mapping.some(i => !Number.isSafeInteger(i) || i < 0 || i >= transfer.available.length))) return undefined;
+      const destination = record(d.destination,["label","sourceMap","node","claim","requiredKnowledge"]);
+      const claim = destination.claim;
+      const available = transfer.available;
+      if (!isRecord(claim) || !Array.isArray(available) || !Array.isArray(claim.context)) return undefined;
+      available.forEach(labels); claim.context.forEach(labels);
+      if (!Number.isSafeInteger(target.label)) return undefined;
+      const mapping = target.mapping;
+      if (mapping !== null && (!Array.isArray(mapping) || mapping.some(i => typeof i !== "number" || !Number.isSafeInteger(i) || i < 0 || i >= available.length))) return undefined;
       if (transfer.booleanObservation !== null && typeof transfer.booleanObservation !== "boolean") return undefined;
     }
   } catch {
     return undefined;
   }
   if (
-    !PHASES.includes(d.phase as string) ||
+    !PHASES.includes(d.phase) ||
     d.outcome !== "not-established" ||
     !Array.isArray(d.types) ||
+    typeof d.fuel !== "number" ||
     !Number.isSafeInteger(d.fuel) ||
-    (d.fuel as number) < 0
+    d.fuel < 0
   )
     return undefined;
-  if (!KINDS.includes(d.kind as string)) return undefined;
+  if (!KINDS.includes(d.kind)) return undefined;
   if (d.kind !== "production-failure" && typeof d.id !== "string")
     return undefined;
   if (d.kind === "edge-coverage" && (!d.source || !d.destination || !d.transfer))

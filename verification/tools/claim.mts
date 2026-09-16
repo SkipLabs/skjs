@@ -22,16 +22,20 @@ export type Atom =
   | RecordAtom | FunctionAtom
   | { a: "callable"; function: FunctionAtom; bag: RecordAtom };
 
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === "object" && !Array.isArray(v);
 function object(v: unknown): Record<string, unknown> {
-  if (!v || typeof v !== "object" || Array.isArray(v)) throw Error("expected an object");
-  return v as Record<string, unknown>;
+  if (!isRecord(v)) throw Error("expected an object");
+  return v;
 }
 function keys(v: Record<string, unknown>, required: string[], optional: string[] = []) {
   if (required.some(k => !(k in v)) || Object.keys(v).some(k => ![...required,...optional].includes(k)))
     throw Error("unexpected or missing claim field");
 }
 function list(v: unknown): unknown[] { if (!Array.isArray(v)) throw Error("expected a list"); return v; }
-function str(v: unknown) { if (typeof v !== "string") throw Error("expected a string"); }
+/** Checks and narrows, so a caller that goes on to read the string needs no
+ * second word for it. */
+function str(v: unknown): asserts v is string { if (typeof v !== "string") throw Error("expected a string"); }
 function bool(v: unknown) { if (typeof v !== "boolean") throw Error("expected a boolean"); }
 function atom(v: unknown): void {
   const o = object(v);
@@ -66,11 +70,11 @@ function atom(v: unknown): void {
       break;
     case "param":
       keys(o,["a","name"]); str(o.name);
-      if (!(o.name as string).length) throw Error("empty type-parameter name");
+      if (!o.name.length) throw Error("empty type-parameter name");
       break;
     case "alias":
       keys(o,["a","name","args"]); str(o.name);
-      if (!(o.name as string).length) throw Error("empty alias name");
+      if (!o.name.length) throw Error("empty alias name");
       list(o.args).forEach(decodeClaimType);
       break;
     default: throw Error("unknown claim atom");
