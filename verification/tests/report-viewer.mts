@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { hash, render } from "../tools/annotate-source.mts";
 import { createRequire } from "node:module";
-import type { FailureKind, Manifest } from "../report-viewer/types.ts";
+import type { Bundle, FailureKind, Manifest } from "../report-viewer/types.ts";
 import type { Span } from "../tools/span.mts";
 import {
   fromBundle,
@@ -11,7 +11,7 @@ import {
   renderType,
 } from "../report-viewer/model.mts";
 import * as marks from "../report-viewer/marks.mts";
-import type { ShownFunction } from "../report-viewer/model.mts";
+import type { ShownFunction, Site } from "../report-viewer/model.mts";
 import surface from "../tools/claim-text.mts";
 import { decodeGraph, parseGraph, printGraph, graphDefinitions, type Labels, type TypeGraph } from "../tools/type-graph.mts";
 import type {
@@ -23,6 +23,18 @@ import type {
 import { decodeTerm, parseTerm, printTerm } from "../tools/calculus.mts";
 import ob from "../tools/diagnostic-view.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
+import { atom, must } from "./edits.mts";
+import type { Atom, ClaimType } from "../tools/claim.mts";
+
+/** One end of an obligation, as the record names it. */
+const sourceMapAt = (
+  pos: Span,
+  role: string,
+  environmentStart: number | null = null,
+): SourceMapEntry => ({ pos, role, environmentStart, context: [] });
+/** The one field of a record claim the surface tests write. */
+const fieldOf = (type: ClaimType) =>
+  must(atom(type.atoms[0], "record").fields[0], "the field");
 // Plain JavaScript modules; the reader loads these in a browser too.
 const require = createRequire(import.meta.url);
 const source =
@@ -57,10 +69,14 @@ const manifest: Manifest = {
 };
 const bundle = { source, manifest };
 /** The sites of one kind, in source order. */
-const of = (f: any, kind: string) => f.sites.filter((s: any) => s.kind === kind);
+const of = <K extends Site["kind"]>(f: ShownFunction, kind: K) =>
+  f.sites.filter((s): s is Extract<Site, { kind: K }> => s.kind === kind);
 const report = fromBundle(bundle);
 assert.equal(of(report.functions[0], "expression")[0].type, claim.type);
-assert.deepEqual(JSON.parse(of(report.functions[0], "expression")[0].raw), claim.raw);
+assert.deepEqual(
+  JSON.parse(must(of(report.functions[0], "expression")[0]?.raw, "the claim's encoding")),
+  claim.raw,
+);
 assert.equal(
   report.source.slice(...of(report.functions[0], "expression")[0].pos),
   "(\n    x\n  )",
@@ -71,9 +87,12 @@ assert.equal(renderType('{"newConstructor":7}').text, '{"newConstructor":7}');
 const bad = structuredClone(bundle);
 bad.manifest.functions[0].expressions[0].pos = [1, source.length + 1];
 assert.throws(() => fromBundle(bad), /span/);
-const changed: any = structuredClone(bundle);
+const changed = structuredClone(bundle);
 changed.manifest.comparison = {
-  changes: [{ span: [expr, end], status: "changed", kind: "expression" }],
+  baselineProducer: "manual",
+  changes: [
+    { span: [expr, end], status: "changed", kind: "expression", function: "f" },
+  ],
 };
 assert.match(
   of(fromBundle(changed).functions[0], "unclaimed")[0].detail,
@@ -85,7 +104,7 @@ missing.manifest.gaps = [
   { id: "g0", pos: [start, source.length - 1], status: "claims unavailable" },
 ];
 assert.equal(of(fromBundle(missing).functions[0], "unclaimed").length, 1);
-const missingFunctionBundle: any = structuredClone(missing);
+const missingFunctionBundle = structuredClone(missing);
 missingFunctionBundle.manifest.missingFunctions = [
   {
     name: "f",
@@ -100,9 +119,13 @@ assert.equal(
   true,
 );
 const invalidMissing = structuredClone(missingFunctionBundle);
-invalidMissing.manifest.missingFunctions[0].missingSites[0].pos = [0, 1];
+const invalidFunction = must(
+  must(invalidMissing.manifest.missingFunctions, "the missing functions")[0],
+  "a missing function",
+);
+must(invalidFunction.missingSites[0], "a missing site").pos = [0, 1];
 assert.throws(() => fromBundle(invalidMissing), /outside function/);
-invalidMissing.manifest.missingFunctions[0].namePos = [0, 1];
+invalidFunction.namePos = [0, 1];
 assert.throws(() => fromBundle(invalidMissing), /identity/);
 const annotated = render(source, manifest);
 assert.equal(parseReport(annotated).source, source);
@@ -160,7 +183,7 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   assert.equal(of(partialFn, "expression")[0].recovery, true);
   assert.equal(of(partialFn, "environment")[0].bindings[0].unavailable, true);
   const unvisited = of(partialFn, "unclaimed").find(
-    (g: any) => g.reason === "statement-not-visited",
+    (g) => g.reason === "statement-not-visited",
   );
   assert(unvisited);
   assert.equal(text.slice(...unvisited.pos), "return x;");
@@ -170,7 +193,7 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
 // A site is addressed by its index in source order; an environment comes
 // before the claims of its statement, so stepping visits it first.
 {
-  const shifted: any = structuredClone(bundle);
+  const shifted = structuredClone(bundle);
   shifted.manifest.functions[0].expressions.unshift({
     id: "f0x9",
     pos: [source.indexOf("x\n"), source.indexOf("x\n") + 1],
@@ -179,7 +202,7 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   shifted.manifest.functions[0].entries = [{ id: "f0e0", pos: [start, end], bindings: [] }];
   const sites = fromBundle(shifted).functions[0].sites;
   assert.deepEqual(
-    sites.map((s: any) => [s.kind, s.pos[0]]),
+    sites.map((s) => [s.kind, s.pos[0]]),
     [["environment", start], ["expression", claim.pos[0]], ["expression", source.indexOf("x\n")]],
   );
 }
@@ -401,7 +424,7 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
 
 
 {
-  const cell = (read: any, write: any) => ({
+  const cell = (read: ClaimType, write: ClaimType): ClaimType => ({
     top: false,
     atoms: [
       {
@@ -414,7 +437,7 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
       },
     ],
   });
-  const of = (...atoms: any[]) => ({ top: false, atoms });
+  const of = (...atoms: Atom[]): ClaimType => ({ top: false, atoms });
   const boolean = of({ a: "boolean" });
   const trueLit = of({ a: "booleanlit", v: "true" });
   const shapes = [
@@ -459,27 +482,25 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   // are the documented form; a bare union is accepted too.
   {
     const plain = cell(boolean, boolean);
-    const observed: any = surface.parseType("{ value: boolean = (true) }");
-    assert.deepEqual(observed.atoms[0].fields[0].read, trueLit);
-    assert.deepEqual(observed.atoms[0].fields[0].write, boolean);
+    const observed = surface.parseType("{ value: boolean = (true) }");
+    const value = must(atom(observed.atoms[0], "record").fields[0], "the field");
+    assert.deepEqual(value.read, trueLit);
+    assert.deepEqual(value.write, boolean);
     assert.equal(surface.printType(observed).text, "{ value: boolean = (true) }");
     assert.deepEqual(
       surface.parseType("{ value: boolean = true }"),
       observed,
     );
     // Dropping the assertion says both at once again.
-    assert.deepEqual(
-      (surface.parseType("{ value: boolean }").atoms[0] as any).fields[0].read,
-      boolean,
-    );
+    assert.deepEqual(fieldOf(surface.parseType("{ value: boolean }")).read, boolean);
   }
 
   // Bare text states default modes; printed nondefault modes are explicit.
   const original = cell(trueLit, boolean);
-  const edited: any = surface.parseType("{ value: boolean }");
-  assert.deepEqual(edited.atoms[0].indexes, {string:"absent",number:"absent",symbol:"absent"});
+  const edited = surface.parseType("{ value: boolean }");
+  assert.deepEqual(atom(edited.atoms[0], "record").indexes, {string:"absent",number:"absent",symbol:"absent"});
   assert.deepEqual(surface.parseType(surface.printType(original).text), original);
-  assert.deepEqual(edited.atoms[0].fields[0].read, edited.atoms[0].fields[0].write);
+  assert.deepEqual(fieldOf(edited).read, fieldOf(edited).write);
   assert.equal(surface.printType(edited).text, "{ value: boolean }");
   assert.deepEqual(surface.parseType("true | null"), {
     top: false,
@@ -493,8 +514,8 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
     params: [boolean], result: of({a: "null"})}));
   assert.deepEqual(surface.parseType("(boolean) => null"), freshArrow);
   assert.deepEqual(surface.readClaimValue("expression", "(boolean) => null", {unsupported: true}), freshArrow);
-  const factory: any = surface.parseType("() => (boolean) => null");
-  assert.deepEqual(factory.atoms[0].result, freshArrow);
+  const factory = surface.parseType("() => (boolean) => null");
+  assert.deepEqual(atom(factory.atoms[0], "function").result, freshArrow);
   assert(surface.roundTrips(factory));
   const restricted = structuredClone(freshArrow);
   // `Atom` is a union and only some of its members carry object modes, so the
@@ -503,19 +524,24 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   assert(signature.a === "function", "the text names a free signature");
   signature.construct = "absent";
   signature.array = "absent";
-  const changedArrow: any = surface.parseType("(null, boolean) => boolean");
-  assert.equal(changedArrow.atoms[0].construct, "unknown");
-  assert.equal(changedArrow.atoms[0].array, "unknown");
+  const changedArrow = atom(
+    surface.parseType("(null, boolean) => boolean").atoms[0],
+    "function",
+  );
+  assert.equal(changedArrow.construct, "unknown");
+  assert.equal(changedArrow.array, "unknown");
   assert.deepEqual(surface.parseType(surface.printType(restricted).text), restricted);
   assert.throws(() => surface.parseType("boolean &"), /unexpected/);
   assert.throws(() => surface.parseType("{ value boolean }"), /expected :/);
-  assert.equal((surface.parseType("{ nope: boolean }").atoms[0] as any).fields[0].name,"nope");
+  assert.equal(fieldOf(surface.parseType("{ nope: boolean }")).name,"nope");
   // Dropping a field is expressible, so it is allowed.
-  assert.deepEqual((surface.parseType("{ }").atoms[0] as any).fields, []);
+  assert.deepEqual(atom(surface.parseType("{ }").atoms[0], "record").fields, []);
   assert.throws(() => surface.parseType("boolean boolean"), /after the type/);
 
   // An encoding this reader cannot name is summarized, and then not editable.
-  const exotic = of({ a: "tuple", parts: [] });
+  // Not built with `of`: the point is that this is not one of the language's
+  // atoms, and the reader must say so rather than name it.
+  const exotic = { top: false, atoms: [{ a: "tuple", parts: [] }] };
   assert.equal(surface.printType(exotic).printable, false);
   assert.equal(surface.printType(exotic).text, "«tuple»");
   assert.equal(surface.roundTrips(exotic), false);
@@ -875,7 +901,7 @@ failureBundle.manifest.results = [
   },
 ];
 /** The failure's site, by kind, so a test says where it attached. */
-const failedAt = (bundle: any) => {
+const failedAt = (bundle: Bundle) => {
   const f = fromBundle(bundle).functions[0];
   return f.failure ? { ...f.failure, site: f.failure.at === null ? null : f.sites[f.failure.at].kind } : null;
 };
@@ -897,11 +923,37 @@ assert.equal(failedAt(failureBundle)!.kind, "environment-obligation");
 assert.equal(failedAt(failureBundle)!.site, "environment");
 // An edge obligation names both of its claims: the expression at the mapped
 // span, and the environment at the mapped statement entry.
-failureBundle.manifest.results![0].obligation = {
+// Only the two source maps are read here; the record a verifier writes states
+// the rest, and this fixture is about where the reader attaches the ends.
+must(failureBundle.manifest.results, "results")[0].obligation = {
   kind: "edge-coverage",
-  source: { sourceMap: { pos: claim.pos, role: "binding-annotation" } },
-  destination: { sourceMap: { environmentStart: start, role: "heap-observation" } },
-} as any;
+  phase: "proof-search",
+  outcome: "not-established",
+  fuel: 10,
+  types: [],
+  id: "edge:0:0",
+  edgeIndex: 0,
+  source: {
+    label: 0,
+    sourceMap: sourceMapAt(claim.pos, "binding-annotation"),
+    node: null,
+    claim: null,
+    requiredKnowledge: null,
+  },
+  destination: {
+    label: 1,
+    sourceMap: sourceMapAt([start, start], "heap-observation", start),
+    node: null,
+    claim: null,
+    requiredKnowledge: null,
+  },
+  transfer: {
+    available: [],
+    target: { label: 1, mapping: null },
+    booleanObservation: null,
+    tagObservation: null,
+  },
+};
 {
   const f = fromBundle(failureBundle).functions[0];
   const kindAt = (i: number | null) => (i === null ? null : f.sites[i].kind);
@@ -911,7 +963,7 @@ delete failureBundle.manifest.results![0].obligation;
 // The declared result is a site of its own, first in source order, and a
 // failed return contract is an edge from the returned expression to it.
 {
-  const contract: any = structuredClone(bundle);
+  const contract = structuredClone(bundle);
   const annotation = source.lastIndexOf("boolean");
   contract.manifest.functions[0].resultPos = [annotation, annotation + 7];
   contract.manifest.functions[0].signature = {
@@ -924,11 +976,28 @@ delete failureBundle.manifest.results![0].obligation;
       status: "not-established",
       detail: "did not establish true",
       location: { kind: "expression-obligation", pos: claim.pos },
-      obligation: { kind: "node-typing", sourceMap: { pos: claim.pos, role: "return-contract" } },
+      obligation: {
+        kind: "node-typing",
+        phase: "proof-search",
+        outcome: "not-established",
+        fuel: 10,
+        types: [],
+        id: "node:0",
+        source: {
+          label: 0,
+          sourceMap: sourceMapAt(claim.pos, "return-contract"),
+          node: null,
+          claim: null,
+          requiredKnowledge: null,
+        },
+        sequent: { context: [], term: "nul", type: [] },
+      },
     },
   ];
   const f = fromBundle(contract).functions[0];
-  assert.deepEqual([f.sites[0].kind, (f.sites[0] as any).type], ["result", "true"]);
+  const first = f.sites[0];
+  assert(first.kind === "result", "the declared result is drawn first");
+  assert.deepEqual([first.kind, first.type], ["result", "true"]);
   assert.equal(f.sites[f.failure!.at!].kind, "expression");
   assert.deepEqual(f.failure!.edge, { from: f.failure!.at, to: 0 });
   const [drawn] = marks.sourceMarks({ source, file: "f.ts" }, f, { density: "key" }).items;
@@ -1005,12 +1074,14 @@ assert.equal(failedAt(absentEnv)!.site, "unclaimed");
   }
   assert.throws(() => surface.parseType('{ x: boolean, x?: null }'),/twice/);
   assert.throws(() => surface.parseType('{ x: boolean } @{"fields":[]}'),/metadata/);
-  const arrow: any = surface.parseType('(boolean) => null');
-  arrow.atoms[0].and = [surface.parseType('() => boolean').atoms[0]];
+  const arrow = surface.parseType('(boolean) => null');
+  atom(arrow.atoms[0], "function").and =
+    [atom(surface.parseType('() => boolean').atoms[0], "function")];
   assert.deepEqual(surface.parseType(surface.printType(arrow).text),arrow);
-  const callable: any = surface.parseType('((boolean) => null) & { value: boolean }');
-  callable.atoms[0].function.construct = 'absent';
-  callable.atoms[0].bag.call = 'absent';
+  const callable = surface.parseType('((boolean) => null) & { value: boolean }');
+  const combined = atom(callable.atoms[0], "callable");
+  combined.function.construct = 'absent';
+  combined.bag.call = 'absent';
   assert.deepEqual(surface.parseType(surface.printType(callable).text),callable);
   const env = [{name:'x',type:surface.parseType('{ "a,b": "a,b" }')}];
   // Printing a claim value returns null where the surface cannot say it all.

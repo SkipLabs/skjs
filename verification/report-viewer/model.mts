@@ -359,6 +359,10 @@ function fromBundle(bundle: Bundle): ShownReport {
   // Claims are shown in the syntax they were written in. The producer's display
   // string is the fallback: it is what a report carries when there is no
   // encoding to print, and the exact encoding stays available beside it.
+  /** A signature's own type, printed from an encoding or shown as the text a
+   * converted report already holds. */
+  const shown = (type: unknown) =>
+    display(type, typeof type === "string" ? type : "");
   const display = (encoding: unknown, fallback: string) => {
     if (encoding === undefined || encoding === null) return fallback;
     const printed = printSurface(encoding);
@@ -403,7 +407,13 @@ function fromBundle(bundle: Bundle): ShownReport {
     const recovery = f.collection?.quality === "recovery";
     const sites: Site[] = [
       ...(Array.isArray(f.resultPos) && f.signature
-        ? [{ kind: "result" as const, pos: span(f.resultPos), type: display(f.signature.retType, "") }]
+        ? [
+            {
+              kind: "result" as const,
+              pos: span(f.resultPos),
+              type: shown(f.signature.retType),
+            },
+          ]
         : []),
       ...f.entries.map((e) => ({
         kind: "environment" as const,

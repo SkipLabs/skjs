@@ -104,9 +104,16 @@ export interface MissingSite {
   syntax?: string;
 }
 
+/**
+ * The signature a report carries for a function. The two writers state it
+ * differently and both are read the same way: converting a producer's export
+ * keeps that producer's own encoding, and converting the normalized sidecar
+ * has already printed its surface text. So a reader prints an encoding and
+ * shows text as it stands.
+ */
 export interface Signature {
-  params: { name: string; type: string }[];
-  retType: string;
+  params: { name: string; type: unknown }[];
+  retType: unknown;
 }
 
 /** How complete the producer's own collection was for this function. */
