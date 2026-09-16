@@ -11,22 +11,7 @@ import {
   type SkjsClaims,
   type SkjsFunction,
 } from "../tools/skjs-claims.mts";
-import {
-  at as nth,
-  atom,
-  binding,
-  claimAt,
-  claimType,
-  entryAt,
-  expr,
-  field,
-  fn,
-  list,
-  must,
-  record,
-  stmt,
-  written,
-} from "./edits.mts";
+import { at as nth, atom, binding, claimAt, claimType, entryAt, expr, field, fn, list, must, record, rows, stmt, written } from "./edits.mts";
 const __dirname = path.dirname(import.meta.filename);
 const [astPath,claimsPath,fileKey,verifier]=process.argv.slice(2);
 const ast: Ast=JSON.parse(fs.readFileSync(astPath,"utf8"));
@@ -66,7 +51,7 @@ try {
   expect("produce captured closure certificates",run("--produce-stateful-source",ast,claims),true);
   const evidence=JSON.parse(fs.readFileSync(path.join(tmp,"evidence"),"utf8"));
   expect("independent closure consumer",run("--check-stateful-source",ast,claims,evidence),true);
-  for(const [name,edit] of [
+  for(const [name,edit] of rows<[string, (a: Ast, c: SkjsClaims) => void]>([
     ["missing closure body claim",(a,c)=>{const e=lambda(sf(a),1).body;cf(c).exprs=cf(c).exprs.filter((x) =>x.pos[1]!==e.pos[1]||x.pos[0]!==e.pos[0]);}],
     ["body claim cannot narrow",(a,c)=>{at(c,lambda(sf(a),1).body).type=lit("true");}],
     ["capture claim must match binding",(a,c)=>{at(c,expr(lambda(sf(a),1).body,"read").e).type=lit("true");}],
@@ -81,7 +66,7 @@ try {
     ["obsolete lambda field rejected",a=>{written(lambda(sf(a),1)).name="ignored";}],
     ["function requirements cannot disappear",(a,c)=>{atom(claimType(at(c,lambda(sf(a),1))).atoms[0],"function").construct="present";}],
     ["extra signature fields rejected",(a,c)=>{written(atom(claimType(at(c,lambda(sf(a),1))).atoms[0],"function")).optional=true;}],
-  ] as [string, (a: Ast, c: SkjsClaims) => void][]){
+  ])){
     const a=clone(ast),c=clone(claims);edit(a,c);
     expect(name,run("--produce-stateful-source",a,c),false);
     expect(`${name} (consumer)`,run("--check-stateful-source",a,c,evidence),false);
@@ -91,7 +76,7 @@ try {
   if(obligations.length!==ast.functions.length ||
      obligations.some((es) =>list(es,"one function's obligations").length===0))
     throw Error("missing expression obligations");
-  for(const [name,edit] of [
+  for(const [name,edit] of rows<[string, (e: unknown) => void]>([
     ["unknown bundle fields", e=>{record(e,"the evidence").status="verified";}],
     ["missing obligation lists", e=>{delete record(e,"the evidence").obligations;}],
     ["missing function obligations", e=>{each(e).pop();}],
@@ -100,15 +85,15 @@ try {
     ["valid proof for wrong sequent", e=>{first(e)[1]=clone(first(e)[0]);}],
     ["changed expression context", e=>{record(field(first(e)[0],"node","claim"),"a claim").context=[];}],
     ["changed expression result", e=>{record(field(first(e)[0],"node","claim"),"a claim").type=[1];}],
-  ] as [string, (e: unknown) => void][]) {
+  ])) {
     const e=clone(evidence);edit(e);
     expect(name,run("--check-stateful-source",ast,claims,e),false);
   }
-  for(const [name,select] of [
+  for(const [name,select] of rows<[string, (body: Expr) => Expr]>([
     ["writingBody", body=>expr(body,"write").rhs],
     ["allocatingBody", body=>expr(expr(body,"read").e,"alloc").e],
     ["callingBody", body=>must(expr(body,"apply").args[0],"an argument")],
-  ] as [string, (body: Expr) => Expr][]) {
+  ])) {
     const a=clone(ast),c=clone(claims);
     const e=select(lastLambda(fn(a,name)).body);
     const claim=claimAt(functionOf(c,fileKey,name),e.pos);
@@ -124,56 +109,56 @@ try {
     expect("composite write result claim",run("--produce-stateful-source",ast,c),false);
     expect("composite write result claim (consumer)",run("--check-stateful-source",ast,c,evidence),false);
   }
-  for (const [name,edit] of [
+  for (const [name,edit] of rows<[string, (fc: SkjsFunction, pos: Span) => void]>([
     ["missing block entry claim", (fc,pos)=>{fc.envs=fc.envs.filter((q) =>q.pos[0]!==pos[0]);}],
     ["missing block parameter", (fc,pos)=>{const e=entryAt(fc,pos[0]);e.vars=e.vars.filter((v) =>v.name!=="unit");}],
     ["unjustified block entry", (fc,pos)=>{binding(fc,pos[0],"unit").type=lit("true");}],
-  ] as [string, (fc: SkjsFunction, pos: Span) => void][]) {
+  ])) {
     const c=clone(claims);
     edit(functionOf(c,fileKey,"blockReader"),lambda(fn(ast,"blockReader"),1).body.pos);
     expect(name,run("--produce-stateful-source",ast,c),false);
     expect(`${name} (consumer)`,run("--check-stateful-source",ast,c,evidence),false);
   }
-  for (const [name,edit] of [
+  for (const [name,edit] of rows<[string, (a: FunctionAst, fc: SkjsFunction) => void]>([
     ["missing local statement claim", (a,fc)=>{const p=local(a).pos;fc.envs=fc.envs.filter((q) =>q.pos[0]!==p[0]);}],
     ["wrong local annotation", a=>{local(a).annot=lit("true");}],
     ["shadowing local gated", a=>{local(a).name="cell";}],
     ["unjustified local entry", (a,fc)=>{binding(fc,expr(local(a).body,"letBody").pos[0],"saved").type=lit("true");}],
-  ] as [string, (a: FunctionAst, fc: SkjsFunction) => void][]) {
+  ])) {
     const a=clone(ast),c=clone(claims);
     edit(fn(a,"localBlock"),functionOf(c,fileKey,"localBlock"));
     expect(name,run("--produce-stateful-source",a,c),false);
     expect(`${name} (consumer)`,run("--check-stateful-source",a,c,evidence),false);
   }
-  for (const [name,edit] of [
+  for (const [name,edit] of rows<[string, (b: IfBody, fc: SkjsFunction) => void]>([
     ["missing branch entry", (b,fc)=>{fc.envs=fc.envs.filter((q) =>q.pos[0]!==b.then.pos[0]);}],
     ["wrong false-arm refinement", (b,fc)=>{binding(fc,b.else_.pos[0],"flag").type=lit("true");}],
     ["branch cannot narrow parameter", (b,fc)=>{binding(fc,b.then.pos[0],"unit").type=lit("true");}],
     ["branch result annotation checked", b=>{b.result=lit("false");}],
     ["non-Boolean closure condition", b=>{b.cond={k:"lit",pos:b.cond.pos,lit:{a:"null"}};}],
-  ] as [string, (b: IfBody, fc: SkjsFunction) => void][]) {
+  ])) {
     const a=clone(ast),c=clone(claims);
     edit(expr(lambda(fn(a,"branchingClosure"),0).body,"ifBody"),functionOf(c,fileKey,"branchingClosure"));
     expect(name,run("--produce-stateful-source",a,c),false);
     expect(`${name} (consumer)`,run("--check-stateful-source",a,c,evidence),false);
   }
-  for (const [name,edit] of [
+  for (const [name,edit] of rows<[string, (b: SeqBody, fc: SkjsFunction) => void]>([
     ["missing shared continuation entry", (b,fc)=>{fc.envs=fc.envs.filter((q) =>q.pos[0]!==b.body.pos[0]);}],
     ["branch refinement cannot escape join", (b,fc)=>{binding(fc,b.body.pos[0],"flag").type=lit("true");}],
     ["branch local cannot escape closure join", b=>{const ret=expr(b.body,"returnBody");ret.e={k:"id",pos:ret.e.pos,name:"saved"};}],
     ["branch local initializer checked", (b,fc)=>{const pos=expr(expr(b.init,"ifBody").then,"letBody").init.pos;claimAt(fc,pos).type=lit("false");}],
-  ] as [string, (b: SeqBody, fc: SkjsFunction) => void][]) {
+  ])) {
     const a=clone(ast),c=clone(claims);
     edit(expr(expr(lambda(fn(a,"joinedClosure"),0).body,"letBody").body,"seqBody"),
       functionOf(c,fileKey,"joinedClosure"));
     expect(name,run("--produce-stateful-source",a,c),false);
     expect(`${name} (consumer)`,run("--check-stateful-source",a,c,evidence),false);
   }
-  for (const [name,edit] of [
+  for (const [name,edit] of rows<[string, (b: IfBody, fc: SkjsFunction) => void]>([
     ["missing early-return continuation entry", (b,fc)=>{fc.envs=fc.envs.filter((q) =>q.pos[0]!==b.else_.pos[0]);}],
     ["wrong surviving-arm refinement", (b,fc)=>{binding(fc,b.else_.pos[0],"flag").type=lit("true");}],
     ["early return expression claim checked", (b,fc)=>{claimAt(fc,expr(b.then,"returnBody").e.pos).type=lit("false");}],
-  ] as [string, (b: IfBody, fc: SkjsFunction) => void][]) {
+  ])) {
     const a=clone(ast),c=clone(claims);
     edit(expr(lambda(fn(a,"earlyReturn"),0).body,"ifBody"),functionOf(c,fileKey,"earlyReturn"));
     expect(name,run("--produce-stateful-source",a,c),false);

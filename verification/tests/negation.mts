@@ -8,7 +8,7 @@ import { stripTypes } from "../tools/strip-types.mts";
 import { functionOf } from "../tools/skjs-claims.mts";
 import type { SkjsClaims } from "../tools/skjs-claims.mts";
 import type { Ast } from "../tools/fragment.mts";
-import { at, binding, claimFrom, expr, fn, only, stmt } from "./edits.mts";
+import { at, binding, claimFrom, expr, fn, only, rows, stmt } from "./edits.mts";
 import type { SpawnSyncReturns } from "node:child_process";
 // Negated tests must reverse refinements without trusting them or duplicating effects.
 
@@ -111,7 +111,7 @@ try {
     ),
     true,
   );
-  for (const [name, mutate, reason] of [
+  for (const [name, mutate, reason] of rows<[string, (a: Ast, c: SkjsClaims) => void, string]>([
     [
       "negation operand claim required",
       (a, c) => {
@@ -151,7 +151,7 @@ try {
       },
       "evidence search failed",
     ],
-  ] as [string, (a: Ast, c: SkjsClaims) => void, string][]) {
+  ])) {
     const a = structuredClone(ast),
       c = structuredClone(claims);
     mutate(a, c);

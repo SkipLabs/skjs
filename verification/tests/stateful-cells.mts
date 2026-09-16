@@ -12,7 +12,7 @@ import type { ClaimType, RecordAtom } from "../tools/claim.mts";
 import type { Span } from "../tools/span.mts";
 import type { SpawnSyncReturns } from "node:child_process";
 import { functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
-import { at as nth, atom, claimAt, claimType, expr, fn, must, stmt } from "./edits.mts";
+import { at as nth, atom, claimAt, claimType, expr, fn, must, rows, stmt } from "./edits.mts";
 
 const [astPath, claimsPath, fileKey, verifier] = process.argv.slice(2);
 const ast: Ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
@@ -56,14 +56,14 @@ try {
     expect(`redundant read/write union, reverse=${reverse}`,run("--produce-stateful-source",ast,c),true);
     expect(`same checked certificate after exact absorption, reverse=${reverse}`,run("--check-stateful-source",ast,c,evidence),true);
   }
-  for (const [name,edit] of [
+  for (const [name,edit] of rows<[string, (a: RecordAtom) => void]>([
     ["read variance cannot be reversed",a=>{a.fields[0].read={top:false,atoms:[{a:"boolean"},{a:"null"}]};}],
     ["write variance cannot be reversed",a=>{a.fields[0].write=lit("true");}],
     ["unsupported primitive arm cannot be erased",a=>{a.fields[0].read={top:false,atoms:[{a:"string"}]};}],
     ["optional field cannot be erased",a=>{a.fields[0].optional=true;}],
     ["real index cannot be erased",a=>{a.indexes.string="present";}],
     ["callable requirement cannot be erased",a=>{a.call="present";}],
-  ] as [string, (a: RecordAtom) => void][]) {
+  ])) {
     const c=clone(claims),t=at(c,"aliasWrite",allocation(ast,"aliasWrite").init);
     const arm=clone(atom(t.atoms[0],"record"));edit(arm);t.atoms.push(arm);
     expect(name,run("--produce-stateful-source",ast,c),false);

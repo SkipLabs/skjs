@@ -20,14 +20,15 @@ import {
   binding,
   claimAt,
   claimFrom,
+  claimType,
   entryAt,
   expr,
-  claimType,
   fn as functionIn,
   last,
   must,
   only,
   record,
+  rows,
   stmt,
   written,
 } from "./edits.mts";
@@ -120,7 +121,7 @@ try {
     run("--check-source-claims", ast, normalized, normalizedEvidence),
     true,
   );
-  for (const [name, mutate, reason] of [
+  for (const [name, mutate, reason] of rows<[string, (a: Ast, c: SkjsClaims) => void, string]>([
     [
       "null result claim cannot invent true",
       (a, c) => {
@@ -151,7 +152,7 @@ try {
       },
       "only strict equality",
     ],
-  ] as [string, (a: Ast, c: SkjsClaims) => void, string][]) {
+  ])) {
     const a = structuredClone(ast),
       c = structuredClone(claims);
     mutate(a, c);
@@ -246,7 +247,7 @@ try {
   const logical = expr(returned(guardAst, "logicalNullAnd"), "bin");
   const coalesce = expr(returned(guardAst, "coalesceBoolean"), "coalesce");
   const compound = stmt(nth(functionIn(guardAst, "compoundIf").body, 0), "if").cond;
-  for (const [name, sites] of [
+  for (const [name, sites] of rows<[string, [string, Span][]]>([
     [
       "ternaryGuard",
       [
@@ -271,7 +272,7 @@ try {
       ],
     ],
     ["compoundIf", [["condition", compound.pos]]],
-  ] as [string, [string, Span][]][]) {
+  ])) {
     for (const [label, pos] of sites) {
       const missing = structuredClone(guardClaims);
       const f = functionOf(missing, guardFile, name);
@@ -324,7 +325,7 @@ try {
     ),
     false,
   );
-  for (const [name, entry] of [
+  for (const [name, entry] of rows<[string, number]>([
     [
       "compoundIf",
       nth(functionIn(guardAst, "compoundIf").body, 1).pos[0],
@@ -333,7 +334,7 @@ try {
       "compoundOr",
       nth(stmt(nth(functionIn(guardAst, "compoundOr").body, 0), "if").then, 0).pos[0],
     ],
-  ] as [string, number][]) {
+  ])) {
     const wrong = structuredClone(guardClaims);
     binding(functionOf(wrong, guardFile, name), entry, "value").type = {
       top: false,

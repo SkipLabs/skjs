@@ -9,17 +9,7 @@ import { stripTypes } from "../tools/strip-types.mts";
 import type { Ast } from "../tools/fragment.mts";
 import type { ClaimType } from "../tools/claim.mts";
 import { functionOf, type SkjsClaims, type SkjsFunction } from "../tools/skjs-claims.mts";
-import {
-  at as nth,
-  atom,
-  claimAt,
-  claimType,
-  expr,
-  fn as functionIn,
-  last,
-  must,
-  stmt,
-} from "./edits.mts";
+import { at as nth, atom, claimAt, claimType, expr, fn as functionIn, last, must, rows, stmt } from "./edits.mts";
 
 const [astPath, claimsPath, file, verifier] = process.argv.slice(2);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "callable-arguments-"));
@@ -48,12 +38,12 @@ try {
 
   const transported = functionIn(source, "exchangeMultiArgument");
   const returned = stmt(last(transported.body), "return").e;
-  for (const [name, domains] of [
+  for (const [name, domains] of rows<[string, ClaimType[]]>([
     ["later parameter cannot widen from null to Boolean",
       [{top: false, atoms: [{a: "boolean"}]}, {top: false, atoms: [{a: "boolean"}]}]],
     ["a native signature cannot lose its second parameter",
       [{top: false, atoms: [{a: "boolean"}]}]],
-  ] as [string, ClaimType[]][]) {
+  ])) {
     const changed = structuredClone(exported);
     const fc = functionOf(changed, file, transported.name);
     atom(claimType(claimAt(fc, returned.pos)).atoms[0], "function").params = domains;
@@ -85,7 +75,7 @@ try {
     vm.runInContext(`escapedCallbackArgument(${seed})`, observed, {timeout: 1000});
   assert.deepEqual(observations, [[true, false], [false, true]]);
   console.log("  escaped callback argument observes the write and forwards the argument: JavaScript witness OK");
-  for (const [name, change] of [
+  for (const [name, change] of rows<[string, (fc: SkjsFunction) => void]>([
     ["callback must accept the invoker's full Boolean domain", (fc) => {
       const arg = must(invocation().args[0], "an argument");
       atom(claimType(claimAt(fc, arg.pos)).atoms[0], "function").params[0] =
@@ -97,7 +87,7 @@ try {
       atom(must(invoker.params[0], "a domain").atoms[0], "function").result =
         {top: false, atoms: [{a: "null"}]};
     }],
-  ] as [string, (fc: SkjsFunction) => void][]) {
+  ])) {
     const changed = structuredClone(exported);
     change(functionOf(changed, file, fn.name));
     // Check reuse first so a failed production cannot alter the original evidence.

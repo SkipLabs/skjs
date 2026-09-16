@@ -165,3 +165,8 @@ export function list(value: unknown, what: string): unknown[] {
  * Everything else is written as the language it belongs to. */
 export const written = (node: object): Record<string, unknown> =>
   record(node, "a node");
+
+/** A table of alterations written inline, given the row type it is written as.
+ * An annotation the compiler checks against every row, where the cast this
+ * replaces would have been believed instead. */
+export const rows = <T,>(table: T[]): T[] => table;

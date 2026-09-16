@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import type { Ast, FunctionAst } from "../tools/fragment.mts";
 import type { Row } from "../tools/type-graph.mts";
 import { functionOf, type SkjsClaims, type SkjsFunction } from "../tools/skjs-claims.mts";
-import { at as nth, atom, claimAt, claimType, expr, stmt } from "./edits.mts";
+import { at as nth, atom, claimAt, claimType, expr, rows, stmt } from "./edits.mts";
 import surface from "../tools/claim-text.mts";
 const [astPath, claimsPath, file, verifier] = process.argv.slice(2);
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "function-field-"));
@@ -41,16 +41,16 @@ try {
   claimAt(manualFn,assign.pos).type = surface.parseType("((boolean) => boolean) & { value: null }");
   assert.notEqual(run("--produce-stateful-source",ast,manual).status,0,"fresh field claims still require evidence");
   assert.equal(run("--produce-stateful-source",ast,claims).status,0);
-  const rows: Row[] = [["nul"], [{boolLit: {value: true}}], [{boolLit: {value: false}}], ["undef"]];
-  const normalized = surface.lower(rows, combined);
-  const lifted = surface.lift(rows, normalized.type);
+  const table: Row[] = [["nul"], [{boolLit: {value: true}}], [{boolLit: {value: false}}], ["undef"]];
+  const normalized = surface.lower(table, combined);
+  const lifted = surface.lift(table, normalized.type);
   assert(surface.roundTrips(lifted), "normalized callable contract remains editable");
-  assert.deepEqual(surface.lower(rows, lifted), normalized);
-  for(const [name,edit] of [
+  assert.deepEqual(surface.lower(table, lifted), normalized);
+  for(const [name,edit] of rows<[string,(a: FunctionAst,c: SkjsFunction)=>void]>([
     ["field invariant", (a,c)=>{atom(claimType(claimAt(c,assign.pos)).atoms[0],"callable").bag.fields[0].write={top:false,atoms:[{a:"null"}]};}],
     ["call signature", (a,c)=>{atom(claimType(claimAt(c,assign.pos)).atoms[0],"callable").function.result={top:false,atoms:[{a:"null"}]};}],
     ["source field annotation", (a,c)=>{const field=atom(expr(stmt(nth(a.body,0),"const").init,"withValue").bagType.atoms[0],"record").fields[0];field.read=field.write={top:false,atoms:[{a:"null"}]};}],
-  ] as [string,(a: FunctionAst,c: SkjsFunction)=>void][]) {
+  ])) {
     const a=structuredClone(ast),c=structuredClone(claims);
     edit(a.functions[0],functionOf(c,file,fn.name));
     for(const mode of ["--check-stateful-source","--produce-stateful-source"])

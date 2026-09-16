@@ -9,7 +9,7 @@ import { stripTypes } from "../tools/strip-types.mts";
 import type { Ast } from "../tools/fragment.mts";
 import type { ClaimType } from "../tools/claim.mts";
 import { functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
-import { atom, claimAt, claimType, expr, fn, last, stmt } from "./edits.mts";
+import { atom, claimAt, claimType, expr, fn, last, rows, stmt } from "./edits.mts";
 
 const [astPath, claimsPath, file, verifier] = process.argv.slice(2);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "callable-thunks-"));
@@ -33,14 +33,14 @@ try {
   const thunk = fn(source, "returnedThunk");
   const call = expr(stmt(last(thunk.body), "return").e, "apply");
   assert.deepEqual(call.args, []);
-  for (const [name, edit] of [
+  for (const [name, edit] of rows<[string, (type: ClaimType) => void]>([
     ["omission cannot supply a Boolean argument", (type) => {
       atom(type.atoms[0], "function").params = [{top: false, atoms: [{a: "boolean"}]}];
     }],
     ["a thunk cannot promise an incompatible result", (type) => {
       atom(type.atoms[0], "function").result = {top: false, atoms: [{a: "null"}]};
     }],
-  ] as [string, (type: ClaimType) => void][]) {
+  ])) {
     const changed = structuredClone(claims);
     const claim = claimAt(functionOf(changed, file, thunk.name), call.callee.pos);
     edit(claimType(claim));

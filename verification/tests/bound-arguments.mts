@@ -12,7 +12,7 @@ import type { Arrow } from "../tools/type-graph.mts";
 import type { Span } from "../tools/span.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import { fileOf, type SkjsClaims } from "../tools/skjs-claims.mts";
-import { expr, fn, last, must, stmt } from "./edits.mts";
+import { expr, fn, last, must, rows, stmt } from "./edits.mts";
 
 const [astPath, claimsPath, file, verifier, tscPath] = process.argv.slice(2);
 /** A statement that binds this name, which is how the fixture is addressed. */
@@ -98,7 +98,7 @@ try {
       throw Error("the bind result is not an arrow");
     return must(clause.arrs.arrows[0], "an arrow");
   };
-  for (const [name, edit] of [
+  for (const [name, edit] of rows<[string, (a: Ast, c: SourceClaims) => void]>([
     ["remaining arity", (a, c) => signature(c)[0].push([1, 2])],
     ["bound result", (a, c) => { signature(c)[1] = [0]; }],
     ["bound argument domain", (a, c) => {
@@ -107,7 +107,7 @@ try {
       call.args[0] = {k: "lit", pos: first.pos, lit: {a: "null"}};
       at(c, first.pos).type = [0];
     }],
-  ] as [string, (a: Ast, c: SourceClaims) => void][]) {
+  ])) {
     const a = structuredClone(ast), c = structuredClone(claims);
     edit(a, c);
     for (const mode of ["--check-stateful-source", "--produce-stateful-source"])

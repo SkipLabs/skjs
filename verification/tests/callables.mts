@@ -17,20 +17,7 @@ import {
   type SkjsExpression,
   type SkjsFunction,
 } from "../tools/skjs-claims.mts";
-import {
-  at as nth,
-  atom,
-  binding,
-  claimAt,
-  claimType,
-  expr,
-  field,
-  fn,
-  list,
-  must,
-  record,
-  stmt,
-} from "./edits.mts";
+import { at as nth, atom, binding, claimAt, claimType, expr, field, fn, list, must, record, rows, stmt } from "./edits.mts";
 
 const [astPath, claimsPath, fileKey, verifier] = process.argv.slice(2);
 const ast: Ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
@@ -109,7 +96,7 @@ try {
   const evidence = JSON.parse(fs.readFileSync(path.join(tmp, "evidence"), "utf8"));
   expect("independent callable consumer", run("--check-stateful-source", ast, claims, evidence), true);
 
-  for(const [name,edit] of [
+  for(const [name,edit] of rows<[string, (b: Apply, at: At) => void]>([
     ["coalesced callable cannot discard fallback",(b,at)=>{
       const t=claimType(at(b.callee));
       const arrows=t.atoms.filter((a)=>a.a==="function");
@@ -125,7 +112,7 @@ try {
     ["coalesced callable checks the argument",(b,at)=>{
       const arg=nthArg(b,0);at(arg).type=lit("true");b.args[0]={k:"lit",pos:arg.pos,lit:{a:"booleanlit",v:"true"}};
     }],
-  ] as [string, (b: Apply, at: At) => void][]) {
+  ])) {
     const {a,c,f,at}=about("coalescedCallable");
     edit(expr(closure(f,0),"apply"),at);
     expect(name,run("--produce-stateful-source",a,c),false);
@@ -133,7 +120,7 @@ try {
   }
 
   for (const functionName of ["andGuardedCallable", "orGuardedCallable"]) {
-    for (const [name, edit] of [
+    for (const [name, edit] of rows<[string, (b: Bin, at: At) => void]>([
       ["reversed guard cannot justify the call", (b, at) => {
         const test = expr(b.l, "bin");
         test.op = test.op === "===" ? "!==" : "===";
@@ -146,7 +133,7 @@ try {
         assert.deepEqual(called, lit(functionName === "andGuardedCallable" ? "true" : "false"));
         at(b).type = clone(called);
       }],
-    ] as [string, (b: Bin, at: At) => void][]) {
+    ])) {
       const {a, c, f, at} = about(functionName);
       edit(expr(closure(f, 0), "bin"), at);
       expect(`${functionName}: ${name}`, run("--produce-stateful-source", a, c), false);
@@ -154,7 +141,7 @@ try {
     }
   }
 
-  for (const [name, edit] of [
+  for (const [name, edit] of rows<[string, (branch: Branch, at: At) => void]>([
     ["reversed guard cannot justify an escaping capture", (branch, at) => {
       expr(branch.cond, "bin").op = "!==";
     }],
@@ -169,14 +156,14 @@ try {
     ["later invocation result cannot narrow", (branch, at) => {
       at(escaping(branch).body).type = lit("true");
     }],
-  ] as [string, (branch: Branch, at: At) => void][]) {
+  ])) {
     const {a, c, f, at} = about("capturedGuardedCallable");
     edit(stmt(nth(f.body, 0), "if"), at);
     expect(name, run("--produce-stateful-source", a, c), false);
     expect(`${name} (consumer)`, run("--check-stateful-source", a, c, evidence), false);
   }
 
-  for (const [name, edit] of [
+  for (const [name, edit] of rows<[string, (b: LetBody, at: At, fc: SkjsFunction) => void]>([
     ["alias selection must respect the guard", (b, at, fc) => {
       expr(expr(b.init, "conditional").cond, "bin").op = "!==";
     }],
@@ -197,14 +184,14 @@ try {
     ["nested alias call result cannot narrow", (b, at, fc) => {
       at(expr(inner(b).init, "lambda").body).type = lit("true");
     }],
-  ] as [string, (b: LetBody, at: At, fc: SkjsFunction) => void][]) {
+  ])) {
     const {a, c, f, fc, at} = about("aliasedCallableSelection");
     edit(expr(closure(f, 0), "letBody"), at, fc);
     expect(name, run("--produce-stateful-source", a, c), false);
     expect(`${name} (consumer)`, run("--check-stateful-source", a, c, evidence), false);
   }
 
-  for (const [name, edit] of [
+  for (const [name, edit] of rows<[string, (call: Apply, at: At) => void]>([
     ["argument must fit every selected callable", (call, at) => {
       falseArgument(call, at);
     }],
@@ -226,14 +213,14 @@ try {
     ["shared-domain result must retain both alternatives", (call, at) => {
       at(call).type = lit("true");
     }],
-  ] as [string, (call: Apply, at: At) => void][]) {
+  ])) {
     const {a, c, f, at} = about("sharedCallableDomain");
     edit(expr(expr(expr(closure(f, 0), "letBody").body, "returnBody").e, "apply"), at);
     expect(name, run("--produce-stateful-source", a, c), false);
     expect(`${name} (consumer)`, run("--check-stateful-source", a, c, evidence), false);
   }
 
-  for (const [name, edit] of [
+  for (const [name, edit] of rows<[string, (b: Conditional, at: At) => void]>([
     ["false branch cannot borrow the true-only domain", (b, at) => {
       const [then_, else_] = [expr(b.then, "apply"), expr(b.else_, "apply")];
       assert.deepEqual(at(nthArg(then_, 0)).type, lit("true"));
@@ -252,14 +239,14 @@ try {
     ["joined call result cannot retain one branch only", (b, at) => {
       at(b).type = lit("true");
     }],
-  ] as [string, (b: Conditional, at: At) => void][]) {
+  ])) {
     const {a, c, f, at} = about("branchLocalCallableDomains");
     edit(expr(closure(f, 0), "conditional"), at);
     expect(name, run("--produce-stateful-source", a, c), false);
     expect(`${name} (consumer)`, run("--check-stateful-source", a, c, evidence), false);
   }
 
-  for (const [name, edit] of [
+  for (const [name, edit] of rows<[string, (body: Stmt[], at: At) => void]>([
     ["argument write must satisfy the callee domain", (body, at) => {
       atom(claimType(at(writingCall(body).callee)).atoms[0], "function").params[0] = lit("true");
     }],
@@ -275,7 +262,7 @@ try {
     ["captured read cannot invent a singleton", (body, at) => {
       at(expr(stmt(nth(body, 1), "const").init, "lambda").body).type = lit("true");
     }],
-  ] as [string, (body: Stmt[], at: At) => void][]) {
+  ])) {
     const {a, c, f, at} = about("callableArgumentWrite");
     edit(f.body, at);
     expect(name, run("--produce-stateful-source", a, c), false);
@@ -298,7 +285,7 @@ try {
     expect("original evidence cannot replace refined assignment proof", run("--check-stateful-source", ast, c, evidence), false);
   }
 
-  for (const [name, edit] of [
+  for (const [name, edit] of rows<[string, (call: Apply, at: At) => void]>([
     ["nested argument receiver must remain the captured cell", (call, at) => {
       expr(nestedWrite(call).receiver, "id").name = "next";
     }],
@@ -308,7 +295,7 @@ try {
     ["nested assignment must return its saved RHS", (call, at) => {
       at(nthArg(call, 0)).type = {top: false, atoms: [{a: "null"}]};
     }],
-  ] as [string, (call: Apply, at: At) => void][]) {
+  ])) {
     const {a, c, f, at} = about("nestedCallableArgumentWrite");
     edit(expr(closure(f, 2), "apply"), at);
     expect(name, run("--produce-stateful-source", a, c), false);
@@ -338,14 +325,14 @@ try {
     expect("same-typed capture cannot replace argument parameter", run("--check-stateful-source", ast, claims, changed), false);
   }
 
-  for (const [name, edit] of [
+  for (const [name, edit] of rows<[string, (body: IfBody) => void]>([
     ["returned capture requires the non-null factory branch", (body) => {
       expr(body.cond, "bin").op = "!==";
     }],
     ["factory argument refinement cannot transfer to the caller capture", (body) => {
       expr(expr(expr(body.else_, "returnBody").e, "lambda").body, "id").name = "seed";
     }],
-  ] as [string, (body: IfBody) => void][]) {
+  ])) {
     const a = clone(ast);
     const body = expr(closure(fn(a, "branchReturnedCapture"), 0), "ifBody");
     assert.equal(expr(expr(expr(body.else_, "returnBody").e, "lambda").body, "id").name, "input");
@@ -354,7 +341,7 @@ try {
     expect(`${name} (consumer)`, run("--check-stateful-source", a, claims, evidence), false);
   }
 
-  for (const [name, edit] of [
+  for (const [name, edit] of rows<[string, (f: FunctionAst, at: At) => void]>([
     ["factory result cannot widen the returned parameter domain", (f, at) => {
       const factory = atom(claimType(at(stmt(nth(f.body, 0), "const").init)).atoms[0], "function");
       const returned = atom(factory.result.atoms[0], "function");
@@ -366,14 +353,14 @@ try {
       assert.deepEqual(at(nthArg(call, 0)).type, lit("true"));
       falseArgument(call, at);
     }],
-  ] as [string, (f: FunctionAst, at: At) => void][]) {
+  ])) {
     const {a, c, f, at} = about("returnedCallableDomain");
     edit(f, at);
     expect(name, run("--produce-stateful-source", a, c), false);
     expect(`${name} (consumer)`, run("--check-stateful-source", a, c, evidence), false);
   }
 
-  for (const [name, edit] of [
+  for (const [name, edit] of rows<[string, (f: FunctionAst, at: At) => void]>([
     ["factory result claim must retain the null alternative", (f, at) => {
       const result = atom(claimType(at(stmt(nth(f.body, 0), "const").init)).atoms[0], "function").result;
       assert(result.atoms.some((a) => a.a === "null"));
@@ -384,7 +371,7 @@ try {
       assert.equal(test.op, "===");
       test.op = "!==";
     }],
-  ] as [string, (f: FunctionAst, at: At) => void][]) {
+  ])) {
     const {a, c, f, at} = about("nullableFactoryResult");
     edit(f, at);
     expect(name, run("--produce-stateful-source", a, c), false);

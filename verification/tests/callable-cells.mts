@@ -9,7 +9,7 @@ import { stripTypes } from "../tools/strip-types.mts";
 import type { Ast } from "../tools/fragment.mts";
 import type { Field } from "../tools/claim.mts";
 import { functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
-import { at, atom, claimAt, claimType, expr, fn, stmt } from "./edits.mts";
+import { at, atom, claimAt, claimType, expr, fn, rows, stmt } from "./edits.mts";
 
 const [astPath, claimsPath, file, verifier] = process.argv.slice(2);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "callable-cells-"));
@@ -30,7 +30,7 @@ try {
     const result = run(mode, source, claims);
     assert.equal(result.status, 0, result.stdout + result.stderr);
   }
-  for (const [name, mutate] of [
+  for (const [name, mutate] of rows<[string, (field: Field) => void]>([
     ["callable storage must retain its full argument domain", (field) => {
       atom(field.read.atoms[0], "function").params[0] =
         {top: false, atoms: [{a: "booleanlit", v: "true"}]};
@@ -39,7 +39,7 @@ try {
       atom(field.read.atoms[0], "function").result = {top: false, atoms: [{a: "null"}]};
       field.write = structuredClone(field.read);
     }],
-  ] as [string, (field: Field) => void][]) {
+  ])) {
     const changed = structuredClone(claims);
     const replaced = fn(source, "replacedCallback");
     const receiver = expr(stmt(at(replaced.body, 2), "effect").e, "write").receiver;

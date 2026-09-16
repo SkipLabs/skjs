@@ -6,15 +6,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import type { Ast, FunctionAst } from "../tools/fragment.mts";
 import type { SkjsClaims } from "../tools/skjs-claims.mts";
-import {
-  at,
-  atom,
-  claimFrom,
-  claimType,
-  expr,
-  fn as functionIn,
-  stmt,
-} from "./edits.mts";
+import { at, atom, claimFrom, claimType, expr, fn as functionIn, rows, stmt } from "./edits.mts";
 import { functionOf } from "../tools/skjs-claims.mts";
 
 const [astPath, claimsPath, file, verifier] = process.argv.slice(2);
@@ -39,14 +31,14 @@ try {
     const r = run(mode, ast, claims);
     assert.equal(r.status, 0, r.stdout + r.stderr);
   }
-  for (const [name, edit] of [
+  for (const [name, edit] of rows<[string, (f: FunctionAst) => void]>([
     ["opposite polarity cannot justify invocation", (f) => {
       expr(guard(f).cond, "functionTest").equal = false;
     }],
     ["another same-typed input cannot justify refinement", (f) => {
       expr(expr(guard(f).cond, "functionTest").e, "id").name = "other";
     }],
-  ] as [string, (f: FunctionAst) => void][]) {
+  ])) {
     const changed = structuredClone(ast);
     edit(functionIn(changed, "guardedShape"));
     for (const mode of ["--check-stateful-source", "--produce-stateful-source"])
