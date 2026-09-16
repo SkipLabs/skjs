@@ -120,8 +120,54 @@ try {
     assert.notEqual(run("--check-source-claims", doc).status, 0, name);
     assert.notEqual(run("--produce-source-claims", doc).status, 0, name);
   }
+  // Dropping a required field cannot be hidden by keeping the field count.
+  {
+    const swapped = structuredClone(ast);
+    const f = must(
+      swapped.functions.find((f) => f.name === "recordAlias"),
+      "recordAlias",
+    );
+    const literal = expr(
+      stmt(must(f.body[0], "the allocation"), "const").init,
+      "alloc",
+    );
+    const [left, right] = literal.fields;
+    literal.fields = [
+      must(left, "the first field"),
+      { ...must(right, "the second field"), name: "missing" },
+    ];
+    const swappedPath = path.join(work, "swapped.ast");
+    fs.writeFileSync(swappedPath, JSON.stringify(swapped));
+    fs.writeFileSync(input, JSON.stringify(claims));
+    for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+      const args = [mode, swappedPath, input, file, proof];
+      if (mode === "--produce-source-claims") args.push("10");
+      const r = spawnSync(verifier, args, { encoding: "utf8" });
+      assert(!r.error && !r.signal, String(r.error || r.signal));
+      assert.notEqual(r.status, 0, "a missing required field must not match the contract");
+    }
+  }
+  // What a record may not be, refused while parsing rather than lowered into
+  // something the model would then have to interpret.
+  for (const [name, text] of [
+    ["a duplicate field in a type", "const x: { a: boolean; a: boolean } = { a: true }; return null;"],
+    ["a duplicate field in a literal", "const x: { a: boolean } = { a: true, a: false }; return null;"],
+    ["a type with no field", "const x: {} = {}; return null;"],
+    ["a literal with no field", "const x: { a: boolean } = {}; return null;"],
+  ] satisfies [string, string][]) {
+    const probe = path.join(work, "gated.ts");
+    fs.writeFileSync(probe, `function gated(): null { ${text} }`);
+    const r = spawnSync(
+      process.execPath,
+      ["verification/tools/fragment-parse.mts", probe],
+      { encoding: "utf8" },
+    );
+    assert(!r.error && !r.signal, String(r.error || r.signal));
+    assert.notEqual(r.status, 0, name);
+    assert(r.stderr.startsWith("gate:"), name + ": " + r.stderr);
+  }
   console.log(
-    "  five multi-field programs verify and independently consume; runtime order, aliases, guards and .call agree; three forged observations rejected",
+    "  seven multi-field programs verify and independently consume, numeric and single named fields among them; runtime order, aliases, guards and .call agree; three forged observations, one missing field and four malformed records rejected",
   );
 } finally {
   fs.rmSync(work, { recursive: true, force: true });

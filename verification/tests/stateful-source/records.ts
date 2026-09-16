@@ -45,3 +45,23 @@ function reorderedCallable(): boolean {
   );
   return f.left;
 }
+// A number is an ordinary field contract: interned rather than refused, and
+// invariant on its own location like any other.
+function numericField(seed: number | null): number | null {
+  const box: { count: number | null; flag: boolean } = {
+    count: seed,
+    flag: true,
+  };
+  if (box.flag) {
+    box.count = null;
+  }
+  return box.count;
+}
+
+// One field, named by the program rather than by the model.
+function singleNamedField(seed: boolean): boolean {
+  const box: { other: boolean } = { other: seed };
+  const alias = box;
+  alias.other = true;
+  return box.other;
+}
