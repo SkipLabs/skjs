@@ -13,7 +13,15 @@ import { spawnSync } from "node:child_process";
 import type { Ast } from "../tools/fragment.mts";
 import type { ClaimType } from "../tools/claim.mts";
 import { fileOf, type SkjsClaims } from "../tools/skjs-claims.mts";
-import { at, claimAt, claimType, expr, fn, only as only_, stmt } from "./edits.mts";
+import {
+  at,
+  claimAt,
+  claimType,
+  expr,
+  fn,
+  only as only_,
+  stmt,
+} from "./edits.mts";
 // Private-cell lowering: source execution witnesses complement checked
 // certificates, while claim mutations exercise the trusted lowering boundary.
 
@@ -81,8 +89,17 @@ try {
     "mutableTag",
     "mutableFallback",
     "mutableBranch",
+    "inferredSiblingContracts",
   ])
     expect(`${name} verifies`, run(only(ast, name), claimsFor(name)), true);
+
+  const reordered = claimsFor("inferredSiblingContracts");
+  fileOf(reordered, fileKey).functions[0].envs.reverse();
+  expect(
+    "inferred contracts do not depend on entry ordering",
+    run(only(ast, "inferredSiblingContracts"), reordered),
+    true,
+  );
 
   // The storage contract is the annotation. Narrow it to `true` and the
   // assignment of `false` no longer meets it: the write is the check.
@@ -100,7 +117,8 @@ try {
   const f = only_(stale, fileKey);
   for (const x of f.exprs)
     if (
-      JSON.stringify(claimType(x).atoms) === JSON.stringify([{ a: "boolean" }]) &&
+      JSON.stringify(claimType(x).atoms) ===
+        JSON.stringify([{ a: "boolean" }]) &&
       x.pos[1] - x.pos[0] === 5
     )
       x.type = tru;
@@ -186,10 +204,12 @@ try {
   const ts = tscProduce(fileKey);
   closeTsc();
   ts.ast.functions = ts.ast.functions.filter(
-    (f) => f.name === "preciseSnapshot",
+    (f) =>
+      f.name === "preciseSnapshot" || f.name === "inferredSiblingContracts",
   );
   ts.doc.functions = ts.doc.functions.filter(
-    (f) => f.name === "preciseSnapshot",
+    (f) =>
+      f.name === "preciseSnapshot" || f.name === "inferredSiblingContracts",
   );
   const ap = path.join(tmp, "snapshot.ast"),
     cp = path.join(tmp, "snapshot.claims"),
@@ -197,7 +217,7 @@ try {
   fs.writeFileSync(ap, JSON.stringify(ts.ast));
   fs.writeFileSync(cp, JSON.stringify(ts.doc));
   expect(
-    "TS singleton snapshot verifies",
+    "TS singleton snapshot and sibling contracts verify",
     spawnSync(
       verifier,
       ["--produce-source-claims", ap, cp, fileKey, ep, "10"],
@@ -228,6 +248,8 @@ try {
   assert.equal(evaluate("mutableFallback(false)"), false);
   assert.equal(evaluate("mutableBranch(true)"), false);
   assert.equal(evaluate("mutableBranch(false)"), true);
+  assert.equal(evaluate("inferredSiblingContracts(true)"), 1);
+  assert.equal(evaluate("inferredSiblingContracts(false)"), false);
   console.log(`Mutable locals: ${passed} passed`);
 } catch (e) {
   console.error(e);

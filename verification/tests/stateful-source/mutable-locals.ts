@@ -71,3 +71,14 @@ function preciseSnapshot(seed: true): true {
   value = false;
   return read();
 }
+
+/** Sibling scopes can reuse a name without sharing an inferred contract. */
+function inferredSiblingContracts(seed: boolean): number | boolean {
+  if (seed) {
+    let value = 1;
+    return value;
+  } else {
+    let value = false;
+    return value;
+  }
+}

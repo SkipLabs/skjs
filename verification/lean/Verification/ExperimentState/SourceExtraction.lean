@@ -991,12 +991,17 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
         -- written one — every assignment against it, the initializer too —
         -- rather than the initializer's own type being taken for it.
         | none =>
-          let claimed := fc.envs.foldl (fun found (start, vars) =>
-            match found with
-            | some _ => found
-            | none => (vars.lookup name).map (fun c => (start, c))) none
-          let some (start, candidate) := claimed
+          -- Only the next statement in this lexical block sees this binding
+          -- immediately after initialization. Searching all environments by
+          -- name can pick a different declaration in a sibling block, or a
+          -- later narrowing when the producer reorders its entries.
+          let some next := rest.head?
             | throw s!"no claimed storage contract for '{name}' at {pos.1}"
+          let start := (match next with
+            | .brk p | .cont p | .ret p _ | .cst p _ _ _ | .mut p _ _ _ _
+            | .effect p _ | .loop p _ _ | .ite p _ _ _ => p).1
+          let some candidate := (fc.envs.lookup start).bind (·.lookup name)
+            | throw s!"no claimed storage contract for '{name}' at {start}"
           (SourceClaims.resolve (← table).length candidate).mapError fun msg =>
             s!"storage contract for '{name}' at {start}: {msg}"
       let reference ← lower (do return [← CellClaims.reference contract])

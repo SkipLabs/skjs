@@ -140,10 +140,11 @@ not that this translation preserves TypeScript execution. Regression tests pair
 source executions with forged claims and independent certificate consumption to
 exercise that boundary; they are not a semantic-preservation theorem.
 
-The annotation may be omitted. The contract is then the producer's own: the
-type it gives the name where it first stands in scope, before anything has
-narrowed it, which for `let value = 1` is `number` and not the `1` the
-initializer produced. It is supplied and then checked exactly as a written one
+The annotation may be omitted. The candidate contract is then the producer's
+claim at the next statement entry in the same lexical block. That entry belongs
+to this declaration, independently of the order of exported entries or names
+reused in sibling blocks. If there is no such entry claim, extraction refuses
+the inferred contract. It is supplied and then checked exactly as a written one
 is — every assignment against it, and the initializer too — so an inferred
 binding is not admitted at whatever its first value happened to be, and no
 lifetime union is invented for it here.
