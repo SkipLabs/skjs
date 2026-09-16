@@ -5,6 +5,25 @@ import vm from "node:vm";
 import { stripTypes } from "../tools/strip-types.mts";
 import { typeErrors } from "../tools/type-errors.mts";
 import { fromSkjs, verifySkjs } from "../tools/annotate-source.mts";
+import type { Ast } from "../tools/fragment.mts";
+import type { ClaimType } from "../tools/claim.mts";
+import type { Span } from "../tools/span.mts";
+import {
+  fileOf,
+  functionOf,
+  type SkjsClaims,
+  type SkjsFunction,
+} from "../tools/skjs-claims.mts";
+import {
+  at as nth,
+  atom,
+  binding,
+  claimType,
+  expr,
+  fn as functionIn,
+  must,
+  stmt,
+} from "./edits.mts";
 import path from "node:path";
 // Classify the two producer witnesses independently of verifier acceptance.
 // The complete safe body also has a Lean proof in WriteRefinedRead.lean; the
@@ -24,19 +43,28 @@ const [
   badFile,
   verifier,
 ] = process.argv.slice(2);
-const load = (p: any) => JSON.parse(fs.readFileSync(p, "utf8"));
-const safeAst = load(safeAstPath),
-  safeClaims = load(safeClaimsPath);
-const badAst = load(badAstPath),
-  badClaims = load(badClaimsPath);
-const claim = (cs: any, file: string, name = "writeRefinedRead") =>
-  cs.find((c: any) => c.file === file).functions.find((f: any) => f.name === name);
-const at = (f: any, pos: any) =>
-  f.exprs.find((e: any) => JSON.stringify(e.pos) === JSON.stringify(pos));
-const bool = { top: false, atoms: [{ a: "boolean" }] };
-const lit = (v: any) => ({ top: false, atoms: [{ a: "booleanlit", v: String(v) }] });
+const load = <T,>(p: string | undefined): T =>
+  JSON.parse(fs.readFileSync(must(p, "a path"), "utf8"));
+const safeAst: Ast = load(safeAstPath),
+  safeClaims: SkjsClaims = load(safeClaimsPath);
+const badAst: Ast = load(badAstPath),
+  badClaims: SkjsClaims = load(badClaimsPath);
+const claim = (cs: SkjsClaims, file: string, name = "writeRefinedRead") =>
+  functionOf(cs, file, name);
+const at = (f: SkjsFunction, pos: Span) =>
+  must(
+    f.exprs.find((e) => JSON.stringify(e.pos) === JSON.stringify(pos)),
+    `a claim at ${pos.join(":")}`,
+  );
+const bool: ClaimType = { top: false, atoms: [{ a: "boolean" }] };
+const lit = (v: boolean): ClaimType =>
+  ({ top: false, atoms: [{ a: "booleanlit", v: String(v) }] });
 let passed = 0;
-function test(name: string, f: any) {
+/** The statement the safe fixture returns from, which every observation is
+ * stated at. */
+const returned = () =>
+  stmt(nth(must(safeAst.functions[0], "the safe function").body, 2), "return");
+function test(name: string, f: () => void) {
   f();
   passed++;
   console.log(`  ${name}: OK`);
@@ -49,7 +77,7 @@ function runtime(file: string) {
   );
   return context;
 }
-function check(file: string, claims: any, name = "writeRefinedRead") {
+function check(file: string, claims: SkjsClaims, name = "writeRefinedRead") {
   const source = fs.readFileSync(file, "utf8");
   const results = verifySkjs(
     file,
@@ -60,11 +88,10 @@ function check(file: string, claims: any, name = "writeRefinedRead") {
     verifier,
     10,
   ).results;
-  return results[
-    claims
-      .find((f: any) => f.file === file)
-      .functions.findIndex((f: any) => f.name === name)
-  ];
+  return must(
+    results[fileOf(claims, file).functions.findIndex((f) => f.name === name)],
+    `a result for ${name}`,
+  );
 }
 // `Result.obligation` is explanatory metadata a verifier need not record, so
 // the wire type leaves it `unknown`. A test that reads its phase says so first.
@@ -75,7 +102,7 @@ function phaseOf(obligation: unknown) {
   );
   return obligation.phase;
 }
-function stripPositions(x: any): any {
+function stripPositions(x: unknown): unknown {
   if (Array.isArray(x)) return x.map(stripPositions);
   if (x && typeof x === "object")
     return Object.fromEntries(
@@ -87,12 +114,12 @@ function stripPositions(x: any): any {
 }
 
 test("safe source matches the allocate/write/read body proved in Lean", () => {
-  const f = safeAst.functions[0],
-    cell = f.body[0];
+  const f = must(safeAst.functions[0], "the safe function"),
+    cell = stmt(nth(f.body, 0), "const");
   assert.equal(f.name, "writeRefinedRead");
   assert.deepEqual(f.params, []);
   assert.deepEqual(f.retType, lit(true));
-  assert.deepEqual(cell.annot.atoms[0].fields, [
+  assert.deepEqual(atom(must(cell.annot, "the annotation").atoms[0], "record").fields, [
     { name: "value", optional: false, read: bool, write: bool },
   ]);
   assert.deepEqual(stripPositions(f.body), [
@@ -117,15 +144,15 @@ test("safe source matches the allocate/write/read body proved in Lean", () => {
   ]);
 });
 test("normal first-error export contains the imprecise Boolean read", () => {
-  const f = claim(safeClaims, safeFile);
-  assert.equal(f.collection.completion, "aborted");
-  assert.equal(f.collection.mode, "normal");
-  assert.equal(f.collection.quality, "unverified");
-  assert.deepEqual(at(f, safeAst.functions[0].body[2].e.pos).type, bool);
+  const f = claim(safeClaims, must(safeFile, "the safe file"));
+  assert.equal(f.collection?.completion, "aborted");
+  assert.equal(f.collection?.mode, "normal");
+  assert.equal(f.collection?.quality, "unverified");
+  assert.deepEqual(at(f, returned().e.pos).type, bool);
 });
 test("runtime results establish the two classifications", () => {
-  assert.equal(runtime(safeFile).writeRefinedRead(), true);
-  const bad = runtime(badFile);
+  assert.equal(runtime(must(safeFile, "the safe file")).writeRefinedRead(), true);
+  const bad = runtime(must(badFile, "the unsound file"));
   assert.equal(bad.staleFlip(null), false);
   assert.equal(bad.staleFlip(true), true);
   assert.equal(bad.staleFlip(false), true);
@@ -144,59 +171,59 @@ test("TypeScript accepts the safe function and rejects the stale false return", 
   assert.match(flipped.text, /Type 'true' is not assignable to type 'false'/);
 });
 test("rejected negated guard exports a broad read instead of stale false", () => {
-  const f = claim(badClaims, badFile, "staleFlip"),
-    loop = badAst.functions.find((f: any) => f.name === "staleFlip").body[1];
-  assert.equal(f.collection.completion, "aborted");
-  assert.equal(f.collection.mode, "normal");
+  const f = claim(badClaims, must(badFile, "the unsound file"), "staleFlip"),
+    loop = stmt(nth(functionIn(badAst, "staleFlip").body, 1), "while");
+  assert.equal(f.collection?.completion, "aborted");
+  assert.equal(f.collection?.mode, "normal");
   assert.deepEqual(f.retType, lit(false));
-  assert.deepEqual(loop.body[0].e.rhs.lit, { a: "booleanlit", v: "true" });
-  assert.deepEqual(at(f, loop.body[1].e.pos).type, bool);
+  assert.deepEqual(
+    expr(expr(stmt(nth(loop.body, 0), "effect").e, "write").rhs, "lit").lit,
+    { a: "booleanlit", v: "true" },
+  );
+  assert.deepEqual(at(f, stmt(nth(loop.body, 1), "return").e.pos).type, bool);
 });
 test("rejected negated witness cannot certify its partial export", () => {
-  const r = check(badFile, badClaims, "staleFlip");
+  const r = check(must(badFile, "the unsound file"), badClaims, "staleFlip");
   assert.equal(r.status, "not-established");
   // `location` is optional: a result need not say where checking stopped.
   assert(r.location, "the result records where checking stopped");
-  assert.equal(r.location.kind, "missing-environment-claim");
+  assert.equal(must(r.location, "where checking stopped").kind, "missing-environment-claim");
   assert.equal(r.obligation, undefined);
 });
 test("the original broad entry claim cannot retain a prior write fact", () => {
-  const r = check(safeFile, safeClaims);
+  const r = check(must(safeFile, "the safe file"), safeClaims);
   assert.equal(r.status, "not-established");
   assert.equal(phaseOf(r.obligation), "proof-search");
 });
-function observedCandidate(value: any) {
+function observedCandidate(value: boolean) {
   const candidate = structuredClone(safeClaims);
-  const f = claim(candidate, safeFile);
-  const ret = safeAst.functions[0].body[2];
-  const cell = f.envs
-    .find((e: any) => e.pos[0] === ret.pos[0])
-    .vars.find((v: any) => v.name === "cell");
-  cell.type.atoms[0].fields[0].read = lit(value);
+  const f = claim(candidate, must(safeFile, "the safe file"));
+  const cell = binding(f, returned().pos[0], "cell");
+  must(atom(claimType(cell).atoms[0], "record").fields[0], "a field").read = lit(value);
   return candidate;
 }
 test("an explicit true observation makes the return locally provable", () => {
   const candidate = observedCandidate(true);
   // The expression's Boolean claim is a local obligation, not a state cut.
   assert.deepEqual(
-    at(claim(candidate, safeFile), safeAst.functions[0].body[2].e.pos).type,
+    at(claim(candidate, must(safeFile, "the safe file")), returned().e.pos).type,
     bool,
   );
-  assert.equal(check(safeFile, candidate).status, "verified");
-  at(claim(candidate, safeFile), safeAst.functions[0].body[2].e.pos).type =
+  assert.equal(check(must(safeFile, "the safe file"), candidate).status, "verified");
+  at(claim(candidate, must(safeFile, "the safe file")), returned().e.pos).type =
     lit(true);
-  assert.equal(check(safeFile, candidate).status, "verified");
+  assert.equal(check(must(safeFile, "the safe file"), candidate).status, "verified");
 });
 test("a false entry observation fails on the incoming write edge", () => {
-  const r = check(safeFile, observedCandidate(false));
+  const r = check(must(safeFile, "the safe file"), observedCandidate(false));
   assert.equal(r.status, "not-established");
   assert.equal(phaseOf(r.obligation), "proof-search");
 });
 test("a false read claim cannot override the actual written value", () => {
   const candidate = observedCandidate(true);
-  at(claim(candidate, safeFile), safeAst.functions[0].body[2].e.pos).type =
+  at(claim(candidate, must(safeFile, "the safe file")), returned().e.pos).type =
     lit(false);
-  const r = check(safeFile, candidate);
+  const r = check(must(safeFile, "the safe file"), candidate);
   assert.equal(r.status, "not-established");
   assert.equal(phaseOf(r.obligation), "proof-search");
 });
