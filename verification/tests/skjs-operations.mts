@@ -3,21 +3,26 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { decodeClosedOperation } from "../tools/skjs-operations.mts";
+import { decodeClosedOperation, type ClosedOperation } from "../tools/skjs-operations.mts";
+import type { ClaimType } from "../tools/claim.mts";
+import { functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
+import { must, written } from "./edits.mts";
 import { decodeClaimType } from "../tools/claim.mts";
 // Independent checking of SKJS's closed subtype and expansion judgments.
 
 
 const [claimsPath, fileKey, verifier] = process.argv.slice(2);
-const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
+const claims: SkjsClaims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "skjs-operations-"));
-const clone = (x: any) => JSON.parse(JSON.stringify(x));
-const fn = (name: string) =>
-  claims.find((f: any) => f.file === fileKey).functions.find((f: any) => f.name === name);
-const lit = (v: "true" | "false") => ({ top: false, atoms: [{ a: "booleanlit", v }] });
-const boolean = { top: false, atoms: [{ a: "boolean" }] };
+const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
+const fn = (name: string, c = claims) => functionOf(c, fileKey, name);
+const lit = (v: "true" | "false"): ClaimType => ({ top: false, atoms: [{ a: "booleanlit", v }] });
+const boolean: ClaimType = { top: false, atoms: [{ a: "boolean" }] };
+/** The judgments a function recorded, which every check here is about. */
+const operations = (name: string, c = claims) =>
+  must(fn(name, c).operations, `operations for ${name}`);
 let passed = 0;
-function run(c: any) {
+function run(c: SkjsClaims) {
   const p = path.join(tmp, "claims.json");
   fs.writeFileSync(p, JSON.stringify(c));
   const r = spawnSync(verifier, ["--check-skjs-operations", p], { encoding: "utf8" });
@@ -32,38 +37,35 @@ function expect(name: string, r: ReturnType<typeof run>, accept: boolean, messag
   passed++;
   console.log(`  ${name}: OK`);
 }
-function isLit(t: any, v: string) {
-  return t?.top === false && t.atoms?.length === 1 && t.atoms[0]?.a === "booleanlit" && t.atoms[0]?.v === v;
+function isLit(t: ClaimType, v: string) {
+  const only = t.atoms.length === 1 ? t.atoms[0] : undefined;
+  return t.top === false && only?.a === "booleanlit" && only.v === v;
 }
-function isBoolean(t: any) {
-  return t?.top === false && t.atoms?.length === 1 && t.atoms[0]?.a === "boolean";
+function isBoolean(t: ClaimType) {
+  return t.top === false && t.atoms.length === 1 && t.atoms[0]?.a === "boolean";
 }
+/** The widening this fixture is about: `true` is below `boolean`. */
+const widening = (ops: ClosedOperation[]) =>
+  ops.find((op) => op.kind === "subtype" && isLit(op.source, "true") && isBoolean(op.target));
 try {
-  const copy = fn("copyTrue");
-  if (!Array.isArray(copy.operations)) throw Error("copyTrue has no operations array");
-  copy.operations.forEach(decodeClosedOperation);
-  const trueToBoolean = copy.operations.find(
-    (op: any) => op.kind === "subtype" && isLit(op.source, "true") && isBoolean(op.target),
-  );
+  operations("copyTrue").forEach(decodeClosedOperation);
+  const trueToBoolean = widening(operations("copyTrue"));
   if (!trueToBoolean) throw Error("copyTrue did not export true ≤ boolean");
   decodeClaimType(trueToBoolean.source);
   decodeClaimType(trueToBoolean.target);
   expect("closed operations from a real export", run(claims), true, "closed operations");
   const missing = clone(claims);
-  delete missing.find((f: any) => f.file === fileKey).functions.find((f: any) => f.name === "copyTrue").operations;
+  delete fn("copyTrue", missing).operations;
   expect("missing operations field", run(missing), false, "operations");
   const extra = clone(claims);
-  extra.find((f: any) => f.file === fileKey).functions.find((f: any) => f.name === "copyTrue")
-    .operations[0].hint = "ignore-me";
+  written(must(operations("copyTrue", extra)[0], "an operation")).hint = "ignore-me";
   expect("unknown operation field", run(extra), false, "unexpected fields");
   const unsound = clone(claims);
-  unsound.find((f: any) => f.file === fileKey).functions.find((f: any) => f.name === "copyTrue")
-    .operations.find((op: any) => op.kind === "subtype" && isLit(op.source, "true") && isBoolean(op.target))
-    .target = lit("false");
+  must(widening(operations("copyTrue", unsound)), "the widening").target = lit("false");
   expect("true ≤ false is unproved", run(unsound), false, "unproved closed operation");
   const invented = clone(claims);
-  invented.find((f: any) => f.file === fileKey).functions.find((f: any) => f.name === "copyTrue")
-    .operations.push({ kind: "subtype", source: boolean, target: lit("true") });
+  operations("copyTrue", invented)
+    .push({ kind: "subtype", source: boolean, target: lit("true") });
   expect("boolean ≤ true is unproved", run(invented), false, "unproved closed operation");
   console.log(`Closed SKJS operations: ${passed} passed`);
 } catch (e) {

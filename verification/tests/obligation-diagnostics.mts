@@ -45,7 +45,7 @@ function viewOf(r: Omit<Result, "function">) {
   return r.obligationView;
 }
 let passed = 0;
-const test = (name: string, f: any) => {
+const test = (name: string, f: () => void) => {
   f();
   passed++;
   console.log(`  ${name}: OK`);
@@ -164,7 +164,9 @@ try {
   test("strengthening both claims verifies independently", () =>
     assert.equal(verify([1], [1]).status, "verified"));
   test("an edge diagnostic identifies the selected mapping even with a shared destination", () => {
-    const request: any = {
+    // A calculus request, which no TypeScript file declares: the verifier is
+    // its only reader, and this one is written to be read by it alone.
+    const request = {
       types: [
         [{ boolLit: { value: true } }],
         [{ boolLit: { value: false } }],
@@ -204,9 +206,9 @@ try {
     assert.match(shown.judgement!.text,/⊢/);
     assert.equal(shown.graph.length,d.types.length);
     assert(d.kind === "edge-coverage");
-    // The transfer and the destination's claim are optional in the record and
-    // required by what follows, so assert them rather than assume them.
-    assert(d.transfer && d.destination.claim);
+    // A destination need not state a claim, and what follows needs this one to,
+    // so assert it rather than assume it.
+    assert(d.destination.claim);
     assert.equal(d.edgeIndex, 1);
     assert.equal(d.source.label, 0);
     assert.equal(d.destination.label, 1);
@@ -214,21 +216,31 @@ try {
     assert.equal(d.transfer.booleanObservation, false);
     assert.deepEqual(d.transfer.available, [[2], [0], [2]]);
     assert.deepEqual(d.destination.claim.context, [[0]]);
-    request.program[0].continuation = {
-      tagBind: {
-        test: "isNul",
-        yes: { label: 1, mapping: [0] },
-        no: { label: 1, mapping: [2] },
-      },
+    // The same request, dispatching on a tag rather than on a Boolean.
+    const onTag = {
+      ...request,
+      program: [
+        {
+          ...request.program[0],
+          continuation: {
+            tagBind: {
+              test: "isNul",
+              yes: { label: 1, mapping: [0] },
+              no: { label: 1, mapping: [2] },
+            },
+          },
+        },
+        request.program[1],
+      ],
     };
-    fs.writeFileSync(rp, JSON.stringify(request));
+    fs.writeFileSync(rp, JSON.stringify(onTag));
     const tagged = spawnSync(verifier, ["--produce-stateful", rp, ep, "6"], {
       encoding: "utf8",
     });
     assert.notEqual(tagged.status, 0);
     const td = readDiagnostic(tagged.stderr);
     assert(td, tagged.stderr);
-    assert(td.kind === "edge-coverage" && td.transfer);
+    assert(td.kind === "edge-coverage");
     assert.equal(td.edgeIndex, 1);
     assert.equal(td.transfer.booleanObservation, null);
     assert.deepEqual(td.transfer.tagObservation, {

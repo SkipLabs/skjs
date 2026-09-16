@@ -15,6 +15,7 @@
  */
 
 import type { Span } from "./span.mts";
+import type { ClosedOperation } from "./skjs-operations.mts";
 
 /** How complete the producer's own collection was, as the document carries it.
  * `Collection` in report-viewer/types.ts names the same fields once a report
@@ -31,6 +32,10 @@ export interface SkjsCollection {
 export interface SkjsNamedPoint {
   name: string;
   type: unknown;
+  /** Whether the binding can be assigned to, where the producer says. */
+  mutable?: boolean;
+  /** The type the source declares, where that differs from the narrowed one. */
+  declared?: unknown;
 }
 
 /** The environment at one statement entry. The whole statement's span is
@@ -52,10 +57,16 @@ export interface SkjsFunction {
   retType: unknown;
   envs: SkjsEntry[];
   exprs: SkjsExpression[];
+  /** The sites written to, which the producer states separately from the
+   * expressions it read. */
+  lvalues?: SkjsExpression[];
   /** Absent where the producer said nothing about its own collection. */
   collection?: SkjsCollection;
   /** Advisory, and validated before use: shape unknown until then. */
   unavailableTypes?: unknown[];
+  /** The closed judgments SKJS recorded while checking this function, which
+   * skjs-operations.mts owns and `--check-skjs-operations` verifies. */
+  operations?: ClosedOperation[];
 }
 
 export interface SkjsFile {

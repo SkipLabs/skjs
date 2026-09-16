@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import type { Ast, FunctionAst } from "../tools/fragment.mts";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -20,7 +21,12 @@ const cases = {
   "mutable_binding.ts": "a `let` needs an initializer",
 };
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "source-boundaries-"));
-const run = (cmd: any, args: string[]) => {
+/** The functions of a parse the gate accepted, which is what this reads of it. */
+const parsedFunctions = (stdout: string): FunctionAst[] => {
+  const parsed: Ast = JSON.parse(stdout);
+  return parsed.functions;
+};
+const run = (cmd: string, args: string[]) => {
   const r = spawnSync(cmd, args, { encoding: "utf8", timeout: 30000 });
   assert(!r.error && !r.signal, String(r.error || r.signal));
   return r;
@@ -50,7 +56,7 @@ try {
         JSON.stringify([
           {
             file,
-            functions: JSON.parse(result.stdout).functions.map((f: any) => ({
+            functions: parsedFunctions(result.stdout).map((f) => ({
               name: f.name,
               namePos: f.namePos,
               params: f.params,
