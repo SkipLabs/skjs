@@ -27,3 +27,25 @@ function callAfterGuard(seed: boolean | null): boolean | null {
   };
   return read();
 }
+
+function topLevelWriteAfterGuard(seed: boolean | null): boolean | null {
+  let value: boolean | null = seed;
+  if (value !== null) {
+    value = null;
+    return value;
+  }
+  return false;
+}
+
+function topLevelCallAfterGuard(seed: boolean | null): boolean | null {
+  let value: boolean | null = seed;
+  const reset = (): null => {
+    value = null;
+    return null;
+  };
+  if (value !== null) {
+    reset();
+    return value;
+  }
+  return false;
+}

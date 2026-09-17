@@ -11,3 +11,15 @@ function guardedCapturedRead(seed: boolean | null): boolean {
   value = null;
   return read();
 }
+
+// A const snapshot keeps its value even after the captured location changes.
+function snapshotCapturedLocal(seed: boolean | null): boolean {
+  let value: boolean | null = seed;
+  if (value !== null) {
+    const snapshot = value;
+    const read = (): boolean => snapshot;
+    value = null;
+    return read();
+  }
+  return false;
+}

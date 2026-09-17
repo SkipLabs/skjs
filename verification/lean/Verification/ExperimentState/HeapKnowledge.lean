@@ -161,15 +161,56 @@ theorem observeBoolean_holds {k slot q ρ h} (hk : Holds k ρ h)
       cases q <;> simpa [HeapFacts.Literal.value] using hq
     · exact hk.2.1 f hf
 
+/-- A tag narrows a saved finite value, and its still-live read links transfer
+that observation to the heap. No link means no assertion about a mutable cell. -/
+def observeTag (k : Knowledge) (slot : Nat) (tag : Tag) (q : Bool) : Knowledge :=
+  match k.values.find? (fun f => f.slot == slot) with
+  | none => k
+  | some f =>
+    let R := f.contents.filter (fun a => tagHolds tag a.value == q)
+    ⟨(k.links.filter (fun g => !g.alias && g.value == slot)).map
+        (fun g => ⟨g.cell,R,g.field⟩) ++ k.cells,
+      ⟨slot,R,valueField⟩ :: k.values,k.links⟩
+
+theorem observeTag_holds {k slot tag q ρ h} (hk : Holds k ρ h)
+    (hq : tagHolds tag (ρ slot) = q) : Holds (observeTag k slot tag q) ρ h := by
+  unfold observeTag
+  split
+  · exact hk
+  · rename_i f hf
+    have hm := List.mem_of_find?_eq_some hf
+    have hs : f.slot = slot := by simpa using List.find?_some hf
+    obtain ⟨a,ha,hv⟩ := hk.2.1 f hm
+    have hv : ρ slot = a.value := by simpa [hs] using hv
+    have hmem : a ∈ f.contents.filter (fun a => tagHolds tag a.value == q) :=
+      List.mem_filter.mpr ⟨ha,by simpa [hv] using hq⟩
+    refine ⟨?_,?_,hk.2.2⟩
+    · intro f' hf'
+      rcases List.mem_append.mp hf' with hf' | hf'
+      · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf'
+        have hg := List.mem_filter.mp hg
+        have hg2 := hg.2
+        simp only [Bool.and_eq_true,Bool.not_eq_true',beq_iff_eq] at hg2
+        obtain ⟨flds,c,l,hl,hfd,hh⟩ :=
+          (show ∃ flds c l, ρ g.cell = .objAt flds c ∧
+            flds.lookup g.field = some l ∧ h[l]? = some (ρ g.value) from
+            by simpa [hg2.1] using hk.2.2 g hg.1)
+        exact ⟨flds,c,l,ρ g.value,hl,hfd,hh,a,hmem,by simpa [hg2.2] using hv⟩
+      · exact hk.1 f' hf'
+    · intro f' hf'
+      rcases List.mem_cons.mp hf' with rfl | hf'
+      · exact ⟨a,hmem,hv⟩
+      · exact hk.2.1 f' hf'
+
 def observe (k : Knowledge) (slot : Nat) : BranchRefinement.Observation → Knowledge
   | .boolean q => observeBoolean k slot q
-  | .tag _ _ => k
+  | .tag t q => observeTag k slot t q
 
 theorem observe_holds {k slot o ρ h} (hk : Holds k ρ h)
     (ho : o.holds (ρ slot)) : Holds (observe k slot o) ρ h := by
   cases o with
   | boolean q => exact observeBoolean_holds hk ho
-  | tag _ _ => exact hk
+  | tag t q => exact observeTag_holds hk ho
 
 /-- Finite literal interpretation exists only for entirely primitive clauses. -/
 def primitive : List (Clause (Ty ι)) → Option (List Literal)
@@ -205,5 +246,7 @@ theorem literals_sem {G : NormalGraph ι} {A R} (h : literals G A = some R) (n W
     meaning G A n W v ↔ ∃ a ∈ R, v = a.value := by
   rw [expand_sem]
   exact primitive_sem h n W v
+
+#print axioms observeTag_holds
 
 end Verification.ExperimentState.HeapKnowledge

@@ -1027,8 +1027,21 @@ private def compileCondition (fc : SourceClaims.Function) (scope : List ScopeBin
     (Γ : List (Ty Nat)) (cond : Fragment.Expr) (yes no : Target) : Compiler Target := do
   let simple := do
     let A ← exprType fc cond
-    let node ← emitBranch scope Γ cond A yes no
-    compileExpr fc scope Γ cond node
+    if let some (snapshot, read, tested) := readGuard scope cond then
+      -- Preserve the tested read until tag dispatch, so its heap link can
+      -- justify the branch's current-content assertion. The singleton literal
+      -- has no effects; every source operand still has its typing obligation.
+      let B ← exprType fc read
+      let ds := held ⟨snapshot,some read.span⟩ :: scope
+      let K := B :: Γ
+      let lift := fun (t : Target) =>
+        ⟨t.label, some ((t.mapping.getD (List.range scope.length)).map (·+1))⟩
+      let node ← emitBranch ds K tested A (lift yes) (lift no)
+      let predicate ← compileExpr fc ds K tested node
+      compileExpr fc scope Γ read predicate
+    else
+      let node ← emitBranch scope Γ cond A yes no
+      compileExpr fc scope Γ cond node
   match cond with
   | .logical _ andOp left right =>
     let _ ← closureExpr fc scope Γ cond

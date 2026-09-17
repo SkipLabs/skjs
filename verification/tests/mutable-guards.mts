@@ -39,7 +39,17 @@ try {
     context,
   );
   assert.equal(vm.runInContext("guardedCapturedRead(true)", context), false);
-  for (const name of ["writeAfterGuard", "callAfterGuard"])
+  for (const seed of [true, false, null])
+    assert.equal(
+      vm.runInContext(`snapshotCapturedLocal(${seed})`, context),
+      seed ?? false,
+    );
+  for (const name of [
+    "writeAfterGuard",
+    "callAfterGuard",
+    "topLevelWriteAfterGuard",
+    "topLevelCallAfterGuard",
+  ])
     assert.equal(vm.runInContext(`${name}(true)`, context), null);
   const ast: Ast = JSON.parse(fs.readFileSync(controlsAst, "utf8"));
   const doc: SourceClaims = JSON.parse(fs.readFileSync(controlsClaims, "utf8"));
@@ -53,6 +63,13 @@ try {
         f.name,
       ),
     );
+    if (f.name === "topLevelWriteAfterGuard") {
+      fs.writeFileSync(claim, JSON.stringify({ ...doc, functions: [fc] }));
+      for (const action of ["produce", "check"]) {
+        const r = run(`--${action}-source-claims`, ap, claim, controlsFile);
+        assert.equal(r.status, 0, r.stderr);
+      }
+    }
     // Use deliberately broad entry claims so a precise post-write `null`
     // assertion cannot accidentally be what rejects the forged saved read.
     for (const entry of fc.entries)

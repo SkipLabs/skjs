@@ -1335,6 +1335,13 @@ the cell's storage contract and carries no observation across a back edge.
 `captured-local-guards.ts` checks the supported shape; `mutable-guard-effects.ts`
 checks that a write or callback prevents reusing the saved value.
 
+For graph branches, the lowering retains the tested read through tag dispatch.
+A finite null/undefined observation narrows the saved value and propagates to
+its live heap read links. This permits copying a guarded local to a const and
+capturing that snapshot. Writes and calls invalidate those links through the
+existing effect rules. Closure creation preserves old heap facts at every arity:
+it allocates fresh storage but does not execute the closure body.
+
 `HasTy.unionVar` eliminates one variable's finite union by checking the same term
 and result under every singleton-label alternative. Its soundness proof selects
 the alternative containing the actual immutable value; no semantic budget enters

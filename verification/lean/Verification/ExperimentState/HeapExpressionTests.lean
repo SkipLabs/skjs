@@ -73,6 +73,13 @@ private def copyClaim : Sequent Nat := ⟨[refBool],.var 0,refBool⟩
 private def copyProof : Evidence Nat := .node copyClaim .var []
 #guard checkStep G copyClaim afterEdge (.pure copyProof) == some (copy afterEdge 0)
 #guard (copy afterEdge 0).cells == [⟨0,[.tru],valueField⟩,⟨1,[.tru],valueField⟩]
+-- Tag observations refine only values with a live read link to the cell.
+private def nullableRead : Knowledge :=
+  ⟨[],[⟨0,[.nul,.tru,.fls],valueField⟩],[⟨1,0,false,valueField⟩]⟩
+#guard (observe nullableRead 0 (.tag .isNul false)).cells == [⟨1,[.tru,.fls],valueField⟩]
+#guard (observe nullableRead 0 (.tag .isNul true)).cells == [⟨1,[.nul],valueField⟩]
+#guard (observe (ordinaryOutput nullableRead) 1 (.tag .isNul false)).cells == []
+
 -- Ordinary evidence promises no heap preservation, even for a known write.
 #guard checkStep G writeClaim beforeWrite (.ordinary writeProof) ==
   some (ordinaryOutput beforeWrite)
