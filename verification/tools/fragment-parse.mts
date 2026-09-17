@@ -431,6 +431,20 @@ class Gate {
         lit: { a: "stringlit", v: node.text },
       };
 
+    if (
+      ts.isPrefixUnaryExpression(node) &&
+      node.operator === ts.SyntaxKind.MinusToken &&
+      ts.isNumericLiteral(node.operand)
+    ) {
+      if (!DECIMAL.test(node.operand.text))
+        this.fail(node, "non-decimal numeric literal");
+      return {
+        k: "lit",
+        pos: this.span(node),
+        lit: { a: "numberlit", v: "-" + node.operand.text },
+      };
+    }
+
     if (ts.isNumericLiteral(node)) {
       if (!DECIMAL.test(node.text))
         this.fail(node, "non-decimal numeric literal");

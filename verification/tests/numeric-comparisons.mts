@@ -103,10 +103,19 @@ try {
       (c) => typeof c === "object" && "numLit" in c && c.numLit.bits === "0",
     ),
   );
+  const negativeZero = broad.types.findIndex((row) =>
+    row.some(
+      (c) =>
+        typeof c === "object" &&
+        "numLit" in c &&
+        c.numLit.bits === "9223372036854775808",
+    ),
+  );
+  assert(negativeZero >= 0);
   assert.deepEqual(
     narrowed.type,
-    [zero],
-    "a broad numeric guard must not export never",
+    [zero, negativeZero],
+    "a zero guard includes both runtime zeros",
   );
   const limited = spawnSync(
     verifier,

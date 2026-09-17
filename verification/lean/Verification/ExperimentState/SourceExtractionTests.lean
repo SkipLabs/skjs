@@ -19,6 +19,19 @@ private def produceSourceJson (j : Json) (fuel : Nat)
   let source : SourceRequest := ⟨r,[],[],[],[]⟩
   RequestJson.produceJson j fuel suggestions known [] (some source.searchLabels)
 
+-- Runtime numeric operations retain signed zero. This is the same expression
+-- executed by the JS arithmetic suite: merging its zeros changes false to true.
+private def signedZeroComparison : Bool :=
+  let zero := (0.0 : Float).toBits
+  let one := (1.0 : Float).toBits
+  let z := arithBits .mul zero (arithBits .sub zero one)
+  numberEqual (arithBits .div one (arithBits .add (arithBits .div one z)
+    (arithBits .div one zero))) zero
+#guard !signedZeroComparison
+#guard is (literalBits "-0") (9223372036854775808 : UInt64)
+#guard is (literalBits "-0.0") (9223372036854775808 : UInt64)
+#guard numberEqual (9223372036854775808 : UInt64) 0
+
 -- Exact finite-set translation, including normalization of unions.
 #guard is (SourceTypes.translate ⟨false,[.bool]⟩) ([1,2])
 #guard is (SourceTypes.translate ⟨false,[.boolLit true]⟩) ([1])

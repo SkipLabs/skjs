@@ -53,7 +53,7 @@ import type {
   Row,
   SourceClaims,
 } from "./source-claims.mts";
-import type { Fields } from "./type-graph.mts";
+import { numberOfBits, type Fields } from "./type-graph.mts";
 import type { Ast, Expr, FunctionAst, Stmt } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { messageOf } from "./thrown.mts";
@@ -373,11 +373,17 @@ function numberBits(value: number): string {
  * interned on use, exactly as the consumer interns them. Returns null when the
  * type is not a number or a union of numbers with primitives.
  */
+function numberLiteralRow(value: number): Row {
+  return value === 0
+    ? [{ numLit: { bits: "0" } }, { numLit: { bits: "9223372036854775808" } }]
+    : [{ numLit: { bits: numberBits(value) } }];
+}
+
 function numberLabelsOf(type: Type, types: Row[]): number[] | null {
   const f = type.flags;
   if (type.isNumberLiteralType()) {
     if (!Number.isFinite(type.value)) return null;
-    return [internRow(types, [{ numLit: { bits: numberBits(type.value) } }])];
+    return numberLiteralRow(type.value).map((c) => internRow(types, [c]));
   }
   if (f & TypeFlags.Number) return [internRow(types, ["num"])];
   // Strings likewise: a literal is its own singleton, carried as itself.
@@ -843,7 +849,7 @@ function testedTagSymbol(cond: Expression, checker: Checker, types: Row[]): {sym
     if (flags & TypeFlags.Null) return 0;
     if (flags & TypeFlags.Undefined) return 3;
     if (type?.isNumberLiteralType() && Number.isFinite(type.value))
-      return internRow(types, [{ numLit: { bits: numberBits(type.value) } }]);
+      return internRow(types, numberLiteralRow(type.value));
     if (type?.isStringLiteralType())
       return internRow(types, [{ strLit: { value: type.value } }]);
     return null;
@@ -903,9 +909,34 @@ function tagGuardLabels(node: Node, checker: Checker, types: Row[], labels: numb
         // A broad number or string can equal this singleton. Its positive
         // branch narrows to the singleton; the negative branch cannot
         // subtract it from the family.
-        return dedupSortInts(base.flatMap((label) => types[label]?.includes(family)
-          ? [test.equal === truth ? singleton : label]
-          : (label === singleton) === (test.equal === truth) ? [label] : []));
+        return dedupSortInts(
+          base.flatMap((label) => {
+            const alternatives = types[label] ?? [];
+            if (alternatives.includes(family))
+              return [test.equal === truth ? singleton : label];
+            const matches = (c: Row[number]) =>
+              row.some((r) => {
+                if (
+                  typeof c === "object" &&
+                  "numLit" in c &&
+                  typeof r === "object" &&
+                  "numLit" in r
+                )
+                  return (
+                    numberOfBits(c.numLit.bits) === numberOfBits(r.numLit.bits)
+                  );
+                return JSON.stringify(c) === JSON.stringify(r);
+              });
+            const kept = alternatives.filter(
+              (c) => matches(c) === (test.equal === truth),
+            );
+            return kept.length === 0
+              ? []
+              : kept.length === alternatives.length
+                ? [label]
+                : [internRow(types, kept)];
+          }),
+        );
       }
     }
     return base.filter((label) => (test.label === "function"

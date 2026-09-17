@@ -94,13 +94,9 @@ inductive CallCode where
   deriving Repr
 end
 
-/-- The bits `Tm.num` carries for a numeric lexeme: the bit pattern of the
-double it denotes, with `-0` normalised to `+0`. This is not a JSON helper but
-the rule that `1`, `1.0` and `1e0` are one value — a fact about this
-calculus's numbers, which the claim decoder happens to need in order to give a
-numeric literal the same identity the calculus gives it. Numeric wire data
-remains decodable, but `SourceTypes` rejects it; this does not establish
-numeric program semantics. -/
+/-- Canonical bits for a source numeric literal type. Equal decimal spellings
+share a singleton; source type zero expands to both runtime bit patterns in
+`SourceTypes`. Runtime literals use `literalBits` and retain their sign. -/
 def numBits (lexeme : String) : Except String UInt64 :=
   match Lean.Json.parse lexeme with
   | .ok (.num n) =>
@@ -108,9 +104,16 @@ def numBits (lexeme : String) : Except String UInt64 :=
       .ok (if f == 0.0 then (0.0 : Float).toBits else f.toBits)
   | _ => .error s!"not a decimal numeric literal: {lexeme}"
 
+/-- Runtime literals retain their sign. Source type zero
+is lowered to both bit singletons, while an expression keeps its exact bits. -/
+def literalBits (lexeme : String) : Except String UInt64 := do
+  let bits ← numBits lexeme
+  return if Float.ofBits bits == 0.0 && lexeme.startsWith "-"
+    then (9223372036854775808 : UInt64) else bits
+
 /-- The bits of an arithmetic result: the double operation on the operands'
-doubles, with `-0` normalised to `+0` as `numBits` does for a literal, so a
-computed zero and a written zero are one value, as `===` already treats them. -/
+doubles. Signed zero is preserved: division observes its sign even though
+strict equality equates the two zeros. -/
 def arithBits (op : Arith) (x y : UInt64) : UInt64 :=
   let a := Float.ofBits x
   let b := Float.ofBits y
@@ -119,7 +122,7 @@ def arithBits (op : Arith) (x y : UInt64) : UInt64 :=
     | .sub => a - b
     | .mul => a * b
     | .div => a / b
-  if r == 0.0 then (0.0 : Float).toBits else r.toBits
+  r.toBits
 
 /-! Executable structural equality, kept explicit because Lean's deriving
 handler does not support nested mutual types such as list-valued applications.

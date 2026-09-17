@@ -40,3 +40,16 @@ function computedUpdate(): number {
   let count = 0;
   return box[(count += 1) === 1 ? "value" : "value"]++;
 }
+
+/** Equality merges the zeros; arithmetic must retain their sign. */
+function signedZero(): boolean {
+  const z = 0 * (0 - 1);
+  return 1 / (1 / z + 1 / 0) === 0;
+}
+/** Literal type zero includes both signed runtime zeros. */
+function negativeZeroLiteral(): 0 {
+  return -0;
+}
+function zeroParameter(value: 0): number {
+  return 1 / value;
+}

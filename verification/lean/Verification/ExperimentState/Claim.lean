@@ -99,7 +99,7 @@ def decodeVal (j : Json) : Except String Val := do
   match a with
   | "null" => return .vnull
   | "undefined" => return .vundef
-  | "numberlit" => return .vnum (← ExperimentState.numBits (← jStr (← jField j "v")))
+  | "numberlit" => return .vnum (← ExperimentState.literalBits (← jStr (← jField j "v")))
   | "stringlit" => return .vstr (← jStr (← jField j "v"))
   | "booleanlit" => return .vbool (← decodeBoolLiteral j)
   | other => .error s!"'{other}' is not a literal value"

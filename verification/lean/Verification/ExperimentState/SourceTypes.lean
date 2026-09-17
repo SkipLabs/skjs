@@ -124,7 +124,12 @@ def numberLabels (t : Claim.Ty) : Lowering (Ty Nat) := do
   for a in t.atoms do
     match a with
     | .num => out := out ++ [← use .num]
-    | .numLit b => out := out ++ [← use (.numLit b)]
+    | .numLit b =>
+      -- TypeScript's literal type 0 includes both runtime zeros. The graph's
+      -- bit singletons remain exact, so state both rather than erase a sign.
+      out := out ++ [← use (.numLit b)]
+      if Float.ofBits b == 0.0 then
+        out := out ++ [← use (.numLit (9223372036854775808 : UInt64))]
     | .str => out := out ++ [← use .str]
     | .strLit s => out := out ++ [← use (.strLit s)]
     -- A void result forgets its guarantee: every value, like `unknown`.

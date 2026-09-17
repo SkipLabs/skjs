@@ -139,7 +139,9 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
     let select := fun (A : Ty Nat) =>
       if A == [0] then some Tag.isNul else if A == [3] then some Tag.isUndef else
         match PositiveRules.expand G A with
-        | [.numLit bits] => some (.numEq bits)
+        | .numLit bits :: cs =>
+          if cs.all (fun c => match c with | .numLit b => numberEqual bits b | _ => false)
+          then some (.numEq bits) else none
         | [.strLit s] => some (.strEq s)
         | _ => none
     match select R, select L with
