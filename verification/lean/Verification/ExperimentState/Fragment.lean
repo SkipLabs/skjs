@@ -59,7 +59,7 @@ private def cellConjunction (atom : Json) : SourceTypes.Lowering Nat := do
     return c.map fun f => (f.name, f.read)
   let first :: rest := (types.mergeSort CellClaims.beforeFields).eraseDups
     | throw "an empty conjunction is not a contract"
-  SourceTypes.use (.refs first rest)
+  SourceTypes.use (.refs first rest [])
 
 /-- A callable bag is one value satisfying both contracts, never a union. -/
 private def callableObject (atom : Json) : SourceTypes.Lowering Nat := do

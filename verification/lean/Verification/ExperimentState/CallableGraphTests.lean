@@ -10,7 +10,7 @@ open Lean PositiveNormalization PositiveGraphs ProgramTyping ControlFlow Certifi
 private def signatures : List (List (List Nat) × List Nat) := [([[1]],[1]),([[0]],[0])]
 def types : List (List (Clause (List Nat))) :=
   [[.nul],[.bool],[.callable [(valueField, [1])] [] signatures],[.arrs signatures],
-   [.callable [(valueField, [1])] [[(valueField,[1])]] signatures],[.refs [(valueField, [1])] []],[.callable [(valueField, [0,1])] [] signatures]]
+   [.callable [(valueField, [1])] [[(valueField,[1])]] signatures],[.refs [(valueField, [1])] [] []],[.callable [(valueField, [0,1])] [] signatures]]
 def G : NormalGraph Nat := fun i => types[i]?.getD []
 def labels := List.range types.length
 
@@ -73,7 +73,7 @@ private def pool := vocabulary G labels claims []
   [.callable [(valueField, [1])] [] (signatures ++ [([[1]],[1])])]
 #guard meet (.callable [(valueField, [1])] [] signatures) (.callable [(valueField, [1])] [] signatures) ==
   [.callable [(valueField, [1])] [[(valueField,[1])]] (signatures ++ signatures)]
-#guard meet (.refs [(valueField, [1])] []) (.callable [(valueField, [1])] [] signatures) == []
+#guard meet (.refs [(valueField, [1])] [] []) (.callable [(valueField, [1])] [] signatures) == []
 
 -- Unsafe code, invalid bag writes, and plain-object calls cannot acquire evidence.
 #guard !(expression G pool 8 [] (.attach (.app .nul .nul) .tru) [2]).isSome

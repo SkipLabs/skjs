@@ -7,7 +7,7 @@ premises. Full source/CFG acceptance still requires checked edge integration. -/
 namespace Verification.ExperimentState.HeapExpressionTests
 open ProgramCertificates HeapExpressionRules HeapKnowledge
 
-private def T : SourceTypes.Table := SourceTypes.initial ++ [[.refs [(valueField, [1,2])] []]]
+private def T : SourceTypes.Table := SourceTypes.initial ++ [[.refs [(valueField, [1,2])] [] []]]
 private def G := SourceTypes.graph T
 private def boolTy : List Nat := [1,2]
 private def refBool : List Nat := [4]

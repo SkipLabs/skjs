@@ -63,6 +63,18 @@ theorem recT_congr_below {ι : Type} (X Y : ι → Fam) (a : List (String × ι)
   · obtain ⟨l, c, hl, hw, hag⟩ := hfs f (Y i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
     exact ⟨l, c, hl, hw, fun j hj W' u => (hag j hj W' u).trans (h i j hj W' u).symm⟩
 
+theorem famsOf_append {ι : Type} (X : ι → Fam) (a b : List (String × ι)) :
+    famsOf X (a ++ b) = famsOf X a ++ famsOf X b := List.map_append ..
+
+theorem view_congr_below {ι : Type} (X Y : ι → Fam) (a : List (String × ι)) (n : Nat)
+    (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
+    viewT (famsOf X a) n W v ↔ viewT (famsOf Y a) n W v := by
+  constructor <;> intro hv f T hm <;> obtain ⟨i, hi, rfl⟩ := mem_famsOf.mp hm
+  · obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ := hv f (X i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
+    exact ⟨flds, l, c, rfl, hf, hl, fun j hj W' u hu => (h i j hj W' u).mp (hag j hj W' u hu)⟩
+  · obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ := hv f (Y i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
+    exact ⟨flds, l, c, rfl, hf, hl, fun j hj W' u hu => (h i j hj W' u).mpr (hag j hj W' u hu)⟩
+
 theorem congr_below {ι : Type} (X Y : ι → Fam) (a : List (String × ι))
     (bs : List (List (String × ι))) (n : Nat)
     (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :

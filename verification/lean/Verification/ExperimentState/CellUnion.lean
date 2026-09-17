@@ -41,6 +41,12 @@ theorem covers_sound {a b Reads Writes} (h : covers a b = true)
 
 def invariant (c : Contract) : Bool := c.all fun f => f.read == f.write
 
+/-- A readonly field accepts no write: its write capability is `never`. -/
+def readonly (f : FieldContract) : Bool := f.write == []
+
+/-- Every field is invariant or readonly: a record with views. -/
+def viewed (c : Contract) : Bool := c.all fun f => f.read == f.write || readonly f
+
 def select (cs : List Contract) (c : Contract) : Contract :=
   if invariant c then c else
     (cs.find? fun d => invariant d && covers c d).getD c
@@ -93,6 +99,10 @@ modes. A remaining non-invariant arm rejects the entire union. -/
 def lower (cs : List Contract) : SourceTypes.Lowering (List (Ty Nat)) := do
   (normalize cs).mapM fun c => do
     if invariant c then return [← CellClaims.reference (c.map fun f => (f.name, f.read))]
+    if viewed c then
+      let fields := (c.filter fun f => !readonly f).map fun f => (f.name, f.read)
+      let views := (c.filter readonly).map fun f => (f.name, f.read)
+      return [← CellClaims.viewReference fields views]
     throw "cell read and write types do not describe the same invariant"
 
 def translate (atoms : List Json) : SourceTypes.Lowering (List (Ty Nat)) := do

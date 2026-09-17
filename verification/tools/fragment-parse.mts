@@ -207,13 +207,18 @@ class Gate {
         this.fail(node, "a record with no field has no location");
       const names = new Set<string>();
       const fields = node.members.map((f) => {
+        // A `readonly` member is a read capability: its write contract is
+        // `never`, and nothing else about the field changes.
+        const readonly =
+          ts.isPropertySignatureDeclaration(f) &&
+          f.modifiers?.every((m) => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true;
         if (
           !ts.isPropertySignatureDeclaration(f) ||
           !ts.isIdentifier(f.name) ||
           // A member's `?` (or `!`) is its postfix token; a parameter's is a
           // question token. Different nodes, different names.
           f.postfixToken ||
-          f.modifiers?.length
+          (f.modifiers?.length && !readonly)
         )
           this.fail(f, "expected a required mutable field");
         const name =
@@ -225,7 +230,7 @@ class Gate {
         const t = this.typeOf(
           ts.isPropertySignatureDeclaration(f) ? f.type : undefined,
         );
-        return { name, optional: false, read: t, write: t };
+        return { name, optional: false, read: t, write: readonly ? { top: false, atoms: [] } : t };
       });
       acc.push({
         a: "record",

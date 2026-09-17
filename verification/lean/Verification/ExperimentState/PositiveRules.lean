@@ -208,6 +208,12 @@ abbrev CoversFields (R : List ι → List ι → Prop)
     (source target : List (List (String × List ι))) : Prop :=
   ∀ b ∈ target, ∀ q ∈ b, ∃ p ∈ source.flatten, p.1 = q.1 ∧ R p.2 q.2 ∧ R q.2 p.2
 
+/-- A view field is covered by a source field of the same name whose contract
+implies it: an invariant field or a view, either way a sound upper bound. -/
+abbrev CoversViews (R : List ι → List ι → Prop)
+    (source : List (List (String × List ι))) (views target : List (String × List ι)) : Prop :=
+  ∀ q ∈ target, ∃ p ∈ source.flatten ++ views, p.1 = q.1 ∧ R p.2 q.2
+
 def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
     Clause (List ι) → Clause (List ι) → Prop
   | _, .top => True
@@ -222,7 +228,7 @@ def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
   | .str, .str => True
   | .strLit _, .str => True
   | .strLit a, .strLit b => a = b
-  | .refs a bs, .refs c ds => CoversFields R (a :: bs) (c :: ds)
+  | .refs a bs vs, .refs c ds ws => CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws
   | .arrs L, .arrs M | .callable _ _ L, .arrs M => ∀ p ∈ M, CallArrow G R L p.1 p.2
   | .callable a bs L, .callable c ds M =>
       CoversFields R (a :: bs) (c :: ds) ∧
@@ -272,6 +278,33 @@ theorem covers_fields_sound {G : NormalGraph ι} {R : List ι → List ι → Pr
     obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hB
     exact key b (List.mem_cons_of_mem c hb)⟩
 
+/-- A covered view field reads a location whose contract implies its family,
+whether the source states that location invariantly or as a view. -/
+theorem covers_views_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
+    {a : List (String × List ι)} {bs : List (List (String × List ι))}
+    {vs ws : List (String × List ι)}
+    (hc : CoversViews R (a :: bs) vs ws) (n : Nat)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
+    (W : WorldT n) (v : Val)
+    (hv : refsT (famsOf (meaning G) a) (bs.map (famsOf (meaning G))) n W v ∧
+      viewT (famsOf (meaning G) vs) n W v) :
+    viewT (famsOf (meaning G) ws) n W v := by
+  intro f T hm
+  obtain ⟨y, hy, rfl⟩ := mem_famsOf.mp hm
+  obtain ⟨⟨pf, pl⟩, hp, hpf, hpy⟩ := hc (f, y) hy
+  simp only at hpf
+  subst hpf
+  rcases List.mem_append.mp hp with hp | hp
+  · obtain ⟨L, hL, hpL⟩ := List.mem_flatten.mp hp
+    have hsrc : recT (famsOf (meaning G) L) n W v := by
+      rcases List.mem_cons.mp hL with rfl | hL
+      · exact hv.1.1
+      · exact hv.1.2 _ (List.mem_map_of_mem hL)
+    obtain ⟨flds, l, c0, he, hf, hl, hag⟩ := recT_at (mem_famsOf.mpr ⟨pl, hpL, rfl⟩) hsrc
+    exact ⟨flds, l, c0, he, hf, hl, fun j hj W' u hu => hr j hj pl y hpy W' u ((hag j hj W' u).mp hu)⟩
+  · obtain ⟨flds, l, c0, he, hf, hl, hag⟩ := viewT_at (mem_famsOf.mpr ⟨pl, hp, rfl⟩) hv.2
+    exact ⟨flds, l, c0, he, hf, hl, fun j hj W' u hu => hr j hj pl y hpy W' u (hag j hj W' u hu)⟩
+
 /-- The same argument for a callable object's property bag, which forgets the
 call slot but names the same locations. -/
 theorem covers_bags_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
@@ -307,9 +340,9 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
   all_goals try exact absurd rfl hb
   · exact id
   · exact id
-  · rename_i a bs c ds
+  · rename_i a bs vs c ds ws
     intro hv
-    exact covers_fields_sound hc n hr W v hv
+    exact ⟨covers_fields_sound hc.1 n hr W v hv.1, covers_views_sound hc.2 n hr W v hv⟩
   · intro hv
     apply callsT_of_signatures (callsT_callable hv)
     intro p hp

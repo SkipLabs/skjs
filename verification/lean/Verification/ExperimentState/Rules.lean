@@ -118,6 +118,25 @@ theorem read_rule {code : CallCode} {flds : List (String × Nat)} {f : String} {
     | zero => trivial
     | succ q => exact Or.inl ⟨hA _ _ _ hAv, hAv⟩
 
+/-- **Read through a view.** The location's contract implies the stated family,
+which is all a read observes. -/
+theorem read_view_rule {code : CallCode} {flds : List (String × Nat)} {f : String} {A : Fam}
+    (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap) (l : Nat)
+    (hadm : WorldAdm W) (hok : HeapOk n W h) (hf : flds.lookup f = some l)
+    {c : Ctr n} (hl : lookup W l = some c)
+    (hag : ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → A j U u) :
+    Safe A n W h (.readAt f (.objAt flds code)) := by
+  cases n with
+  | zero => trivial
+  | succ p =>
+    obtain ⟨v, hv, hmem⟩ := hok.2 l c hl
+    have hAv : A p (trunc p (Nat.le_succ p) W) v := hag p (by omega) _ v (hmem p (by omega))
+    refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, v, WExt_refl _,
+      WorldAdm_trunc _ hadm, .readField hf hv, HeapOk_trunc p W h hok, ?_⟩
+    cases p with
+    | zero => trivial
+    | succ q => exact Or.inl ⟨hA _ _ _ hAv, hAv⟩
+
 /-- **Write.** -/
 theorem write_rule {code : CallCode} {flds : List (String × Nat)} {f : String} {A : Fam}
     (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (l : Nat)

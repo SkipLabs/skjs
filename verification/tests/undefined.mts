@@ -233,7 +233,7 @@ try {
     const labels = b.type;
     assert(Array.isArray(labels));
     assert.deepEqual(doc.types[must(labels[0], "a label")], [
-      { refs: { first: [["value", [1, 2, 3]]], rest: [] } },
+      { refs: { first: [["value", [1, 2, 3]]], rest: [], views: [] } },
     ]);
     accepted(produce(astPath, cp));
     accepted(check("source-claims", out));

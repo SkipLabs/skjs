@@ -93,7 +93,7 @@ private def validCurrent (T : SourceTypes.Table) (A : ClaimType) (current : Opti
   | some fs =>
     !fs.isEmpty && (fs.map Prod.fst).eraseDups.length == fs.length &&
     (match PositiveRules.expand (SourceTypes.graph T) (A.ground.toOption.getD []) with
-      | [.refs contract []] => fs.all (fun p => (contract.lookup p.1).isSome)
+      | [.refs contract [] vs] => fs.all (fun p => (contract.lookup p.1).isSome || (vs.lookup p.1).isSome)
       | _ => false) &&
     fs.all (fun p => validType T (.labels p.2))
 private def validBindings (T : SourceTypes.Table) (bs : List Binding) : Bool :=

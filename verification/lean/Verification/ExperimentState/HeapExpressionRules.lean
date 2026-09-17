@@ -134,7 +134,7 @@ theorem read_sound {G : NormalGraph ι} {Γ k i fld R A ρ n W h}
 
 /-- A clause's first invariant bag operand, independent of callability. -/
 def clauseBagOperand : PositiveNormalization.Clause α → Option (List (String × α))
-  | .refs B _ | .callable B _ _ => some B
+  | .refs B _ _ | .callable B _ _ => some B
   | _ => none
 
 /-- Every alternative must promise the same invariant. This includes a neutral
@@ -173,7 +173,7 @@ theorem bagOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref B n W v}
   have hb := bagOperand_mem hr hm
   cases c <;> simp only [clauseBagOperand] at hb
   all_goals try contradiction
-  · cases hb; exact recT_bag hc.1
+  · cases hb; exact recT_bag hc.1.1
   · cases hb; exact hc.1.1
 
 theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i fld Ref B El A ρ n W h}

@@ -623,12 +623,12 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
     ["nul"],
     [{ boolLit: { value: true } }],
     [{ boolLit: { value: false } }],
-    [{ refs: { first: [["value", [1, 2]]], rest: [] } }],
+    [{ refs: { first: [["value", [1, 2]]], rest: [], views: [] } }],
     [{ arrs: { arrows: [[[[0]], [1, 2]]] } }],
     [{ mystery: 7 }],
-    [{ refs: { first: [["value", [6]]], rest: [] } }],
+    [{ refs: { first: [["value", [6]]], rest: [], views: [] } }],
   ];
-  types.push([{ refs: { first: [["value", [7]]], rest: [] } }]);
+  types.push([{ refs: { first: [["value", [7]]], rest: [], views: [] } }]);
   // The table's rows 1 and 2 are the literals a source `boolean` lowers to, and
   // a reference row is printed as the record the source declared.
   assert.equal(ob.typeText(types, [1, 2]), "boolean");
@@ -653,7 +653,7 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
     type: [types.length],
     current: null,
   });
-  assert.deepEqual(table[types.length], [{ refs: { first: [["value", [1]]], rest: [] } }]);
+  assert.deepEqual(table[types.length], [{ refs: { first: [["value", [1]]], rest: [], views: [] } }]);
   assert.deepEqual(surface.lower(table, surface.parseType("null | boolean")), {
     type: [0, 1, 2],
     current: null,
@@ -1119,7 +1119,7 @@ assert.equal(must(failedAt(absentEnv), 'a located failure').site, "unclaimed");
 // unfolding or dropping overloads. Its complete syntax is validated JSON.
 {
   const graph = decodeGraph([
-    [{refs:{first: [["value", [0]]],rest: [[["value", [1]]]]}}],
+    [{refs:{first: [["value", [0]]],rest: [[["value", [1]]]],views: []}}],
     [{callable:{first: [["value", [0]]],rest: [[["value", [1]]]],arrows:[[[[0],[1]],[1]],[[],[]]]}}],
     [{arrs:{arrows:[]}}], ["bool"], ["undef"], ["nul"],
     [{boolLit:{value:false}}], [{boolLit:{value:true}}],
@@ -1130,7 +1130,7 @@ assert.equal(must(failedAt(absentEnv), 'a located failure').site, "unclaimed");
   assert.match(rows[1].definition,/\(#0, #1\) => #1; \(\) => never/);
   assert.equal(rows.length,graph.length);
   assert.equal(ob.typeText(graph,[6,7]),'boolean');
-  for (const invalid of [[["new-clause"]],[[{refs:{first: [["value", [1]]],rest:[]}}]],[[{boolLit:{value:true,extra:0}}]]])
+  for (const invalid of [[["new-clause"]],[[{refs:{first: [["value", [1]]],rest:[], views: []}}]],[[{boolLit:{value:true,extra:0}}]]])
     assert.throws(() => decodeGraph(invalid));
   const term = decodeTerm({makeAt:{call:{closure:{arity:2,body:{call:{f:{var:{i:0}},args:["tru","nul"]}}}},names:["left","right"],inits:["undef","tru"]}});
   assert.deepEqual(parseTerm(printTerm(term)),term);

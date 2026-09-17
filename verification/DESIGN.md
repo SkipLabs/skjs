@@ -709,7 +709,10 @@ alias writes and supplied current-content observations. Statement-entry claims
 remain complete local verification boundaries. `unknown` is semantic top and a
 `void` result forgets its guarantee into it, as a distinct source atom; this
 does not yet cover optional-property presence, omitted arguments or a bare
-`return`. Runtime
+`return`. A `readonly` field is a view: a read capability at a sound upper
+bound on the location's contents, which withholds writes through that view and
+never retypes the backing invariant, so another alias may still mutate the
+object. Runtime
 bindings named `undefined` are rejected so the source compiler cannot confuse
 a shadowed identifier with the primitive value.
 

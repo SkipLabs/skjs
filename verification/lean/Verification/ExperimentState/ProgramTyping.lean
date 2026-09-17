@@ -37,7 +37,7 @@ theorem meaning_value {G : NormalGraph ι} {A n W v} (h : meaning G A n W v) :
   | boolLit b => cases b <;> cases hc <;> exact ⟨rfl, trivial⟩
   | num => obtain ⟨b, rfl⟩ := hc; exact ⟨rfl, trivial⟩
   | numLit b => subst v; exact ⟨rfl, trivial⟩
-  | refs a rest => obtain ⟨flds, rfl, _⟩ := hc.1; exact ⟨rfl, trivial⟩
+  | refs a rest => obtain ⟨flds, rfl, _⟩ := hc.1.1; exact ⟨rfl, trivial⟩
   | arrs L => exact ⟨(callsT_callable hc).val, (callsT_callable hc).scoped⟩
   | callable a bs L => exact ⟨(callsT_callable hc.2).val,(callsT_callable hc.2).scoped⟩
   | undef => subst v; exact ⟨rfl, trivial⟩
@@ -311,11 +311,14 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   names are distinct, which is what makes the object a map from them. -/
   | alloc {parts : List (String × Ty ι × Tm)} : (parts.map Prod.fst).Nodup →
       (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) →
-      Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) []) →
+      Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) [] []) →
       HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
-  | read : HasTy G Γ a Ref → Represents G Ref (.refs fs []) → (f, A) ∈ fs →
+  | read : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs) → (f, A) ∈ fs →
       HasTy G Γ (.readAt f a) A
-  | write : HasTy G Γ a Ref → Represents G Ref (.refs fs []) → (f, A) ∈ fs →
+  /-- A view field reads at its bound: a capability, never a write permission. -/
+  | readView : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs) → (f, A) ∈ vs →
+      HasTy G Γ (.readAt f a) A
+  | write : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs) → (f, A) ∈ fs →
       HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
   /-- Arithmetic needs two operands the number test answers for, and yields
   the number family: no singleton, since the result's bits are not typed. -/
@@ -519,19 +522,26 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
         hargs)
       hu hok (ArgsT_zip hargs)
     intro k hk V hy hrec
-    refine (represents_sem hr k V _).mpr ⟨?_, by simp⟩
+    refine (represents_sem hr k V _).mpr ⟨⟨?_, by simp⟩, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm⟩
     have hfam : ReferenceConjunctions.famsOf (meaning G) (parts.map fun p => (p.1, p.2.1))
         = (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2.1) := by
       simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
     rw [hfam]
     exact hrec
-  | @read Γ a Ref fs f A ha hr hm ih =>
+  | @read Γ a Ref fs vs f A ha hr hm ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
     obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ :=
-      recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) ((represents_sem hr j U v).mp ha').1
+      recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) ((represents_sem hr j U v).mp ha').1.1
     exact read_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag
+  | @readView Γ a Ref fs vs f A ha hr hm ih =>
+    intro n W h ρ he hw hh
+    apply bind (Tm.readAt f) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
+    intro j hj U hx hu heap v hok hv ha'
+    obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ :=
+      viewT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) ((represents_sem hr j U v).mp ha').2
+    exact read_view_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag
   | @test Γ a A B k ha ht hf ih =>
     intro n W h ρ he hw hh
     apply bind (.test k) Step.testC n W h _ hw hh (ih n W h ρ he hw hh)
@@ -560,7 +570,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       cases bv <;> simp [tagHolds] at hnb; exact ⟨_, rfl⟩
     exact arith_value_safe op x y k V heap' hv hok'
       (fun m U => (represents_sem hn m U _).mpr ⟨_, rfl⟩)
-  | @write Γ a Ref fs f A b N ha hr hm hb hn iha ihb =>
+  | @write Γ a Ref fs vs f A b N ha hr hm hb hn iha ihb =>
     intro n W h ρ he hw hh
     apply bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 n W h _ hw hh
       (iha n W h ρ he hw hh)
@@ -570,7 +580,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     intro k hk V hy hv heap' bv hok' hbval hb'
     have ha'' := (meaning_adm G Ref).mono k _ V hy av ((meaning_adm G Ref).down_le j k hk U av ha')
     obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ :=
-      recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) ((represents_sem hr k V av).mp ha'').1
+      recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) ((represents_sem hr k V av).mp ha'').1.1
     apply Safe_mono k (fun i _ X v hval => (represents_sem hn i X v).mpr hval)
     exact write_rule (meaning_adm G A) k V heap' l bv hbval hv hok' hf hl hag hb'
   | @ifBool Γ c C t A e hc hbool ht he ihc iht ihe =>

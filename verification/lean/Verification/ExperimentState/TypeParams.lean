@@ -39,7 +39,7 @@ def substClause [DecidableEq ι] (p : ι) (A : List ι) : Clause (List ι) → C
   | .numLit v => .numLit v
   | .str => .str
   | .strLit v => .strLit v
-  | .refs a bs => .refs (substFields p A a) (bs.map (substFields p A))
+  | .refs a bs vs => .refs (substFields p A a) (bs.map (substFields p A)) (substFields p A vs)
   | .arrs L => .arrs (L.map fun q => (q.1.map (substTy p A), substTy p A q.2))
   | .callable a bs L =>
       .callable (substFields p A a) (bs.map (substFields p A))
@@ -132,7 +132,7 @@ theorem instantiate_param [DecidableEq ι] {G : NormalGraph ι} {P η} {p : ι}
 /-- Instantiating `Ref T` is `Ref` of the assigned family.
 Source `type Box<T> = { value: T }` applied to `A` is this theorem. -/
 theorem instantiate_ref [DecidableEq ι] {G : NormalGraph ι} {P η} {p b : ι}
-    (hp : P p = true) (hb : P b = false) (hG : G b = [.refs [(valueField, [p])] []])
+    (hp : P p = true) (hb : P b = false) (hG : G b = [.refs [(valueField, [p])] [] []])
     (T : Fam) (n : Nat) (W : WorldT n) (v : Val) :
     meaningP G P (update η p T) [b] n W v ↔ refT T n W v := by
   have hη : update η p T p = T := by simp [update]
@@ -141,7 +141,7 @@ theorem instantiate_ref [DecidableEq ι] {G : NormalGraph ι} {P η} {p b : ι}
         ReferenceConjunctions.refsT [(valueField, meaningP G P (update η p T) [p])] [] n W v := by
     simp only [meaningP, setSem, List.mem_singleton, exists_eq_left]
     rw [unfold_param]
-    simp [paramLayer, hb, hG, semList, setSem, sem, ReferenceConjunctions.famsOf]
+    simp [paramLayer, hb, hG, semList, setSem, sem, ReferenceConjunctions.famsOf, viewT]
   have href :
       ReferenceConjunctions.refsT [(valueField, meaningP G P (update η p T) [p])] [] n W v ↔
         refT (meaningP G P (update η p T) [p]) n W v :=
@@ -195,7 +195,7 @@ theorem identity_at_boolean (k : Nat) (W : WorldT k) :
 
 /-- `type Box<T> = Ref<T>` at label 5, with parameter `T` at label 4. -/
 def boxG : NormalGraph Nat
-  | 5 => [.refs [(valueField, [4])] []]
+  | 5 => [.refs [(valueField, [4])] [] []]
   | _ => []
 
 def isT : Nat → Bool := fun i => i == 4
@@ -248,7 +248,7 @@ theorem meaningP_value {G : NormalGraph ι} {P η} {A n W v}
     | boolLit b => cases b <;> cases hc <;> exact ⟨rfl, trivial⟩
     | num => obtain ⟨b, rfl⟩ := hc; exact ⟨rfl, trivial⟩
     | numLit b => subst v; exact ⟨rfl, trivial⟩
-    | refs a rest => obtain ⟨flds, rfl, _⟩ := hc.1; exact ⟨rfl, trivial⟩
+    | refs a rest => obtain ⟨flds, rfl, _⟩ := hc.1.1; exact ⟨rfl, trivial⟩
     | arrs L => exact ⟨(callsT_callable hc).val, (callsT_callable hc).scoped⟩
     | callable a bs L => exact ⟨(callsT_callable hc.2).val, (callsT_callable hc.2).scoped⟩
     | undef => subst v; exact ⟨rfl, trivial⟩
@@ -413,7 +413,7 @@ theorem app_safeP {G : NormalGraph ι} {P η} {Γ F B f n W h ρ}
 general many-field rule is `make_fields_rule`; nothing here depends on the
 arity, only on the parameter being interpreted rather than erased. -/
 theorem alloc_safeP {G : NormalGraph ι} {P η} {Γ a A Ref f n W h ρ}
-    (hC : ClosedAssign P η) (hr : Represents G Ref (.refs [(f, A)] []))
+    (hC : ClosedAssign P η) (hr : Represents G Ref (.refs [(f, A)] [] []))
     (hRef : ∀ i ∈ Ref, P i = false)
     (ih : ∀ n W h ρ, EnvOkP G P η Γ ρ n W → WorldAdm W → HeapOk n W h →
       Safe (meaningP G P η A) n W h (instantiate 0 ρ a))
@@ -423,7 +423,8 @@ theorem alloc_safeP {G : NormalGraph ι} {P η} {Γ a A Ref f n W h ρ}
   apply bind (fun t => .makeAt .absent [f] [t])
     (fun hs => CallArguments.Step.makeArgs (.head hs)) n W h _ hw hh (ih n W h ρ he hw hh)
   intro j hj U hx hu heap v hok hv ha'
-  apply Safe_mono j (fun k _ V w hw => (represents_semP hr hRef k V w).mpr ⟨hw, by simp⟩)
+  apply Safe_mono j (fun k _ V w hw => (represents_semP hr hRef k V w).mpr
+    ⟨⟨hw, by simp⟩, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm⟩)
   refine make_fields_rule (As := [meaningP G P η A])
     (by intro X hX; simp only [List.mem_singleton] at hX; subst hX
         exact meaningP_adm G P η (fun i hi => (hC i hi).1) A)
@@ -435,7 +436,7 @@ theorem alloc_safeP {G : NormalGraph ι} {P η} {Γ a A Ref f n W h ρ}
   exact hrec
 
 theorem read_safeP {G : NormalGraph ι} {P η} {Γ a A fs f Ref n W h ρ}
-    (hC : ClosedAssign P η) (hr : Represents G Ref (.refs fs []))
+    (hC : ClosedAssign P η) (hr : Represents G Ref (.refs fs [] []))
     (hm : (f, A) ∈ fs) (hRef : ∀ i ∈ Ref, P i = false)
     (ih : ∀ n W h ρ, EnvOkP G P η Γ ρ n W → WorldAdm W → HeapOk n W h →
       Safe (meaningP G P η Ref) n W h (instantiate 0 ρ a))
@@ -446,11 +447,11 @@ theorem read_safeP {G : NormalGraph ι} {P η} {Γ a A fs f Ref n W h ρ}
   intro j hj U hx hu heap v hok hv ha'
   obtain ⟨flds, l, c, rfl, hfd, hl, hag⟩ :=
     recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
-      ((represents_semP hr hRef j U v).mp ha').1
+      ((represents_semP hr hRef j U v).mp ha').1.1
   exact read_rule (meaningP_valOnly hC A) j U heap l hu hok hfd hl hag
 
 theorem write_safeP {G : NormalGraph ι} {P η} {Γ a b A fs f Ref N n W h ρ}
-    (hC : ClosedAssign P η) (hr : Represents G Ref (.refs fs []))
+    (hC : ClosedAssign P η) (hr : Represents G Ref (.refs fs [] []))
     (hm : (f, A) ∈ fs)
     (hRef : ∀ i ∈ Ref, P i = false) (hn : Represents G N .nul)
     (hN : ∀ i ∈ N, P i = false)
@@ -472,7 +473,7 @@ theorem write_safeP {G : NormalGraph ι} {P η} {Γ a b A fs f Ref N n W h ρ}
       ((meaningP_adm G P η (fun i hi => (hC i hi).1) Ref).down_le j k hk U av ha')
   obtain ⟨flds, l, c, rfl, hfd, hl, hag⟩ :=
     recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
-      ((represents_semP hr hRef k V av).mp ha'').1
+      ((represents_semP hr hRef k V av).mp ha'').1.1
   apply Safe_mono k (fun i _ X v hval => (represents_semP hn hN i X v).mpr hval)
   exact write_rule (meaningP_adm G P η (fun i hi => (hC i hi).1) A)
     k V heap' l bv hbval hv hok' hfd hl hag hb'

@@ -73,7 +73,7 @@ Each type-graph node is a union of clauses:
 | Null | `"nul"` |
 | Boolean | `"bool"` |
 | Boolean singleton | `{"boolLit":{"value":true}}` (or `false`) |
-| Invariant reference with optional additional contract requirements | `{"refs":{"first":[["value",[1]]],"rest":[]}}` |
+| Invariant reference with optional additional contract requirements, and readonly views: fields read at a sound upper bound, with no write permission through this contract | `{"refs":{"first":[["value",[1]]],"rest":[],"views":[["seen",[1]]]}}` |
 | Intersection of arrows | `{"arrs":{"arrows":[[[[0]],[1]],[[[1]],[0]]]}}` |
 | Callable with invariant bag requirements and overloads | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[[[[0]],[1]]]}}` |
 
@@ -158,7 +158,9 @@ one subtype-evidence list per outgoing edge. A derivation node names the
 `var`, `nul`, `undef`, `tru`, `fls`, `truLit`, `flsLit`, `numLit`, `num`,
 `strLit`, `str`, `funE`, `app`, `letE`, `alloc`,
 `read`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
-`unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, `arith`, `test`, or `sub`.
+`unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `arith`, `test`, or `sub`.
+`readView` reads a field named among a record's views, at the bound the view
+states; no rule writes through a view.
 `arith` combines two operands the number test answers for into the number
 family; `test` types a tag test whose answer the operand's type does not settle
 as a Boolean holding both literals, for `ifBool` to branch on. `ifTrue` and `ifFalse` are the two answers of the single

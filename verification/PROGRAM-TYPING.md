@@ -165,6 +165,16 @@ into the same top: the callee still runs and its effects still happen, only
 the result's contract says nothing. `undefined` remains a particular value,
 which a body produces by completing, and there is no void value or tag.
 
+A record clause also carries *views*: fields read through a capability. A
+view names a location whose stored contract implies the stated family, so a
+read through it, by `readView`, observes that family; nothing permits a write
+through it, and the backing invariant, which may be stronger, is never
+retyped. An invariant field is below a view of the same name whose contract it
+implies, and a view is below a weaker view, so a mutable Boolean cell is
+viewed as readonly Boolean without ever acquiring a persistent readonly-`true`
+guarantee from its current contents; current-content observations stay
+separate and subject to invalidation. `readonly` fields are these views.
+
 Arithmetic has one rule, `arith`: two operands whose types answer the number
 test, combined by the double operation into a type representing the number
 family, never a singleton, since the result's bits are not typed. A tag test

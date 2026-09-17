@@ -17,9 +17,10 @@ HasTy  (ProgramTyping.lean)
   writeCallable : HasTy G Γ a F → Represents G F (.callable P Ps L) → (f, A) ∈ P → HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
   app : HasTy G Γ f F → Represents G F (.arrs L) → ((xs : List (Ty ι × Tm)).map Prod.fst, B) ∈ L → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → HasTy G Γ (.call f (xs.map Prod.snd)) B
   letE : HasTy G Γ a A → HasTy G (A :: Γ) b B → HasTy G Γ (.letE a b) B
-  alloc {parts : List (String × Ty ι × Tm)} : (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) []) → HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
-  read : HasTy G Γ a Ref → Represents G Ref (.refs fs []) → (f, A) ∈ fs → HasTy G Γ (.readAt f a) A
-  write : HasTy G Γ a Ref → Represents G Ref (.refs fs []) → (f, A) ∈ fs → HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
+  alloc {parts : List (String × Ty ι × Tm)} : (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) [] []) → HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
+  read : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs) → (f, A) ∈ fs → HasTy G Γ (.readAt f a) A
+  readView : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs) → (f, A) ∈ vs → HasTy G Γ (.readAt f a) A
+  write : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs) → (f, A) ∈ fs → HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
   arith : HasTy G Γ a A → Answers G A .isNum true → HasTy G Γ b B → Answers G B .isNum true → Represents G N .num → HasTy G Γ (.arith op a b) N
   test : HasTy G Γ a A → (.boolLit true) ∈ expand G B → (.boolLit false) ∈ expand G B → HasTy G Γ (.test k a) B
   ifBool : HasTy G Γ c C → Answers G C .isBool true → HasTy G Γ t A → HasTy G Γ e A → HasTy G Γ (.ite c t e) A
@@ -46,6 +47,7 @@ Rule  (ProgramCertificates.lean)
   letE
   alloc
   read
+  readView
   write
   arith
   test

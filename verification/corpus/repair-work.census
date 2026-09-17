@@ -1,9 +1,9 @@
 # census: repair-work
-# 38/116 verified, of 319 functions
+# 39/116 verified, of 319 functions
 #   skjs-rejected: 203
-#   gate: 69
-#   verified: 38
-#   unproved: 9
+#   gate: 65
+#   verified: 39
+#   unproved: 12
 #
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofUndefinedFieldAdmitsInitialValue
@@ -27,12 +27,7 @@ gate:expected a required mutable field	tests/expect-error/destructuring.ts	check
 gate:expected a required mutable field	tests/expect-error/destructuring.ts	earlierPatternRead
 gate:expected a required mutable field	tests/expect-error/destructuring.ts	patternEarlierBinding
 gate:expected a required mutable field	tests/expect-error/optional-chaining-method-call.ts	callResult
-gate:expected a required mutable field	tests/expect-error/satisfies.ts	satisfiesCompatibleWrite
-gate:expected a required mutable field	tests/expect-error/satisfies.ts	satisfiesLiteralTarget
-gate:expected a required mutable field	tests/expect-error/unsound-refinement.ts	assignedUnionAlternative
 gate:expected a required mutable field	tests/expect-error/unsound-refinement.ts	checkedDeclarationDefault
-gate:expected a required mutable field	tests/expect-error/unsound-refinement.ts	snapshotArgument
-gate:expected a required mutable field	tests/expect-error/unsound-refinement.ts	stableAnnotatedAlias
 gate:expected a required ordinary parameter	tests/expect-error/optional-chaining-method-call.ts	composedReceiverSnapshot
 gate:expected a required ordinary parameter	tests/expect-error/unsound-refinement.ts	receiverSnapshot
 gate:expected ordinary call arguments without spread or type arguments	tests/expect-error/alias-inference-stability.ts	compatibleWritePreservesExplicitConstraint
@@ -42,6 +37,7 @@ gate:expression outside the fragment (ArrayLiteralExpression)	tests/expect-error
 gate:expression outside the fragment (NewExpression)	tests/expect-error/hidden-dependent-bounds.ts	inferredBound
 gate:expression outside the fragment (NewExpression)	tests/expect-error/rest-inference-stability.ts	keepArgument
 gate:intersection operands must have the same shape	tests/expect-error/spread-callable.ts	restOwnCallable
+gate:missing type annotation	tests/expect-error/unsound-refinement.ts	snapshotArgument
 gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/promise-object.ts	testAwaitScalarSnapshot
 gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/unsound-refinement.ts	freshReturnSnapshot
 gate:nested patterns are outside the fragment	tests/expect-error/destructuring.ts	identityPatternScalar
@@ -277,9 +273,12 @@ skjs-rejected	tests/expect-error/unsound-refinement.ts	stableSpreadMember
 skjs-rejected	tests/expect-error/unsound-refinement.ts	storedLocalAlias
 skjs-rejected	tests/expect-error/unsound-refinement.ts	storedNarrowAlias
 skjs-rejected	tests/expect-error/unsound-refinement.ts	tupleDeclarationDefault
+unproved:reject: claimed parameter type differs from the source annotation for '_'	tests/expect-error/unsound-refinement.ts	assignedUnionAlternative
 unproved:reject: claimed parameter type differs from the source annotation for '_'	tests/expect-error/unsound-refinement.ts	checkedConditionalAlias
 unproved:reject: source expression obligation at [185,209): type claim unavailable from producer	tests/expect-error/obj-literal-var-field-growth.ts	retainedReceiver
 unproved:reject: source expression obligation at [551,574): type claim unavailable from producer	tests/expect-error/captured-read-stability.ts	checkedGenericCallResult
+unproved:reject: source expression obligation at [59,92): evidence search failed (unsupported or un	tests/expect-error/satisfies.ts	satisfiesLiteralTarget
+unproved:reject: source incoming edge obligation at [191,215): evidence search failed (unsupported 	tests/expect-error/unsound-refinement.ts	stableAnnotatedAlias
 unproved:reject: unbound or uninitialized source variable '_'	tests/expect-error/binding-initialization.ts	conditionBeforeLocal
 unproved:reject: unexpected fields in the cell record claim	tests/expect-error/assignment-receivers.ts	temporaryReceiver
 unproved:reject: unexpected fields in the cell record claim	tests/expect-error/captured-read-stability.ts	checkedPropertyResult
@@ -321,6 +320,7 @@ verified	tests/expect-error/loop-carried-narrowing.ts	unchangedLoopRead
 verified	tests/expect-error/nullish-coalescing.ts	resultOfFallback
 verified	tests/expect-error/obj-literal-var-field-growth.ts	keyInitializesRhs
 verified	tests/expect-error/postfix-exclamation.ts	nonNullScalarSnapshot
+verified	tests/expect-error/satisfies.ts	satisfiesCompatibleWrite
 verified	tests/expect-error/satisfies.ts	satisfiesSnapshot
 verified	tests/expect-error/unsound-refinement.ts	assignmentResultSnapshot
 verified	tests/expect-error/unsound-refinement.ts	checkedAfterWrite

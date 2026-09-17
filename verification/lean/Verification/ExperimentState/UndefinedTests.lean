@@ -16,11 +16,11 @@ private def lowered : Except String (List Nat × Table) :=
 #guard lowered.toOption.map (·.1) == some [4,5,6,7,4]
 #guard lowered.toOption.map (·.2.length) == some 8
 -- A clause the table lacks is out of range, never a different contract.
-#guard label initial (.refs [(valueField, [3])] []) == initial.length
+#guard label initial (.refs [(valueField, [3])] [] []) == initial.length
 -- A location under two contracts has a label of its own, not the plain cell's.
-private def pair := intern initial (.refs [(valueField, [0])] [[(valueField,[1,2])]])
-#guard label pair (.refs [(valueField, [0])] [[(valueField,[1,2])]]) == 4
-#guard label pair (.refs [(valueField, [0])] []) == pair.length
+private def pair := intern initial (.refs [(valueField, [0])] [[(valueField,[1,2])]] [])
+#guard label pair (.refs [(valueField, [0])] [[(valueField,[1,2])]] []) == 4
+#guard label pair (.refs [(valueField, [0])] [] []) == pair.length
 
 private def G := graph initial
 private def undefProof : Evidence Nat := .node ⟨[],.undef,[3]⟩ .undef []
@@ -30,8 +30,8 @@ private def undefProof : Evidence Nat := .node ⟨[],.undef,[3]⟩ .undef []
 #guard HeapKnowledge.atoms G [0,3] == some [.nul,.undef]
 
 private def write (A : Ty Nat) : Bool :=
-  let T := intern initial (.refs [(valueField,A)] [])
-  let Ref := [label T (.refs [(valueField,A)] [])]
+  let T := intern initial (.refs [(valueField,A)] [] [])
+  let Ref := [label T (.refs [(valueField,A)] [] [])]
   let Γ := [Ref,[3]]
   checkTree (graph T) (.node ⟨Γ,.write (.var 0) (.var 1),[0]⟩ .write
     [.node ⟨Γ,.var 0,Ref⟩ .var [],.node ⟨Γ,.var 1,A⟩ (.sub .subset)

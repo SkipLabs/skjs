@@ -666,11 +666,11 @@ private def arrowOf (D R : Claim.Ty) : Json := Json.mkObj [("top",toJson false),
    ("result",wireTy R),("construct",toJson "unknown"),("array",toJson "unknown")]])]
 private def rowOf (j : Json) : Option (List (Clause (List Nat))) :=
   ((Fragment.translate j).run SourceTypes.initial).toOption.bind fun (A,T) => A.head?.bind (T[·]?)
-#guard rowOf (conjoined cellWire [cellWire,cellWire]) == some [.refs [(valueField, [1,2])] []]
+#guard rowOf (conjoined cellWire [cellWire,cellWire]) == some [.refs [(valueField, [1,2])] [] []]
 #guard rowOf (conjoined (cellOf ⟨false,[.boolLit true]⟩) [cellOf ⟨false,[.null]⟩,cellOf ⟨false,[.bool]⟩])
-  == some [.refs [(valueField, [0])] [[(valueField,[1])],[(valueField,[1,2])]]]
+  == some [.refs [(valueField, [0])] [[(valueField,[1])],[(valueField,[1,2])]] []]
 #guard rowOf (conjoined (cellOf ⟨false,[.bool]⟩) [cellOf ⟨false,[.null]⟩,cellOf ⟨false,[.boolLit true]⟩])
-  == some [.refs [(valueField, [0])] [[(valueField,[1])],[(valueField,[1,2])]]]
+  == some [.refs [(valueField, [0])] [[(valueField,[1])],[(valueField,[1,2])]] []]
 private def trueToNull := arrowOf ⟨false,[.boolLit true]⟩ ⟨false,[.null]⟩
 private def falseToNull := arrowOf ⟨false,[.boolLit false]⟩ ⟨false,[.null]⟩
 #guard rowOf (conjoined trueToNull [falseToNull]) == some [.arrs [([[1]],[0]),([[2]],[0])]]

@@ -191,7 +191,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
       return splitReceiver f
     | .makeAt .absent ns inits =>
       return (A :: pool).findSome? fun R => do
-        let [.refs B []] := expand G R | none
+        let [.refs B [] []] := expand G R | none
         if B.map Prod.fst != ns then none else do
         if !(decide ns.Nodup) then none else do
         if inits.length != ns.length then none else do
@@ -199,11 +199,12 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         coerce G pool (.node ⟨Γ,t,R⟩ .alloc ps) A
     | .readAt f a =>
       let direct := pool.findSome? fun R => do
-        let (fs,r) ← match expand G R with
-          | [.refs fs []] => some (fs,Rule.read)
-          | [.callable fs _ _] => some (fs,Rule.readCallable)
+        -- An invariant field reads at its contract; a view field at its bound.
+        let (B,r) ← match expand G R with
+          | [.refs fs [] vs] =>
+            (fs.lookup f).map (·,Rule.read) <|> (vs.lookup f).map (·,Rule.readView)
+          | [.callable fs _ _] => (fs.lookup f).map (·,Rule.readCallable)
           | _ => none
-        let B ← fs.lookup f
         let _ ← subtype G pool B A
         let ea ← recur Γ a R
         coerce G pool (.node ⟨Γ,t,B⟩ r [ea]) A
@@ -212,7 +213,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     | .writeAt f a b =>
       let direct := pool.findSome? fun R => do
         let (fs,r) ← match expand G R with
-          | [.refs fs []] => some (fs,Rule.write)
+          | [.refs fs [] _] => some (fs,Rule.write)
           | [.callable fs _ _] => some (fs,Rule.writeCallable)
           | _ => none
         let B ← fs.lookup f
@@ -290,7 +291,7 @@ def vocabulary [DecidableEq ι] (G : NormalGraph ι) (labels : List ι)
   ([] :: (labels.map fun i => [i]) ++ hints ++
     claims.flatMap (fun c => c.type :: c.context) ++
     labels.flatMap (fun i => (G i).flatMap fun c => match c with
-      | .refs A bs => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd)
+      | .refs A bs vs => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd
       | .arrs L => L.flatMap fun p => p.1 ++ [p.2]
       | .callable A bs L =>
           A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ L.flatMap (fun p => p.1 ++ [p.2])

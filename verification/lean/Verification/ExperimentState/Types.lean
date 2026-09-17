@@ -307,6 +307,36 @@ theorem recT_adm (fs : List (String × Fam)) : Adm (recT fs) := by
 
 theorem refT_adm (T : Fam) : Adm (refT T) := recT_adm _
 
+/-- **A read capability** on named fields. Each names a location whose stored
+contract implies the stated family, so a read observes that family; nothing
+here permits a write, and the backing invariant, which may be stronger, is
+never retyped. A readonly view of a mutable cell is such a capability. -/
+def viewT (fs : Fields) : Fam := fun k W v =>
+  ∀ (f : String) (T : Fam), (f, T) ∈ fs →
+    ∃ (flds : List (String × Nat)) (l : Nat) (c : Ctr k), v = .objAt flds .absent ∧
+      flds.lookup f = some l ∧ lookup W l = some c ∧
+      ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → T j W' u
+
+theorem viewT_at {fs : Fields} {f : String} {A : Fam} (hm : (f, A) ∈ fs)
+    {k} {W : WorldT k} {v} (h : viewT fs k W v) :
+    ∃ (flds : List (String × Nat)) (l : Nat) (c : Ctr k),
+      v = .objAt flds .absent ∧ flds.lookup f = some l ∧ lookup W l = some c ∧
+      ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → A j W' u := h f A hm
+
+theorem viewT_append (A B : Fields) (k : Nat) (W : WorldT k) (v : Val) :
+    viewT (A ++ B) k W v ↔ viewT A k W v ∧ viewT B k W v := by
+  simp only [viewT, List.mem_append, or_imp, forall_and]
+
+theorem viewT_adm (fs : Fields) : Adm (viewT fs) := by
+  refine ⟨?_, ?_⟩
+  · intro n W v h f T hm
+    obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ := h f T hm
+    exact ⟨flds, l, _, rfl, hf, lookup_trunc (Nat.le_succ n) W l c hl,
+      fun j hj W' u => hag j (by omega) W' u⟩
+  · intro n W W' hx v h f T hm
+    obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ := h f T hm
+    exact ⟨flds, l, c, rfl, hf, WExt_lookup hx hl, hag⟩
+
 theorem iter_adm (F : Fam → Fam) (hF : ∀ T, Adm T → Adm (F T)) : ∀ k, Adm (iter F k)
   | 0 => topF_adm
   | k + 1 => hF _ (iter_adm F hF k)

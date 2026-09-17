@@ -7,7 +7,7 @@ open PositiveNormalization PositiveGraphs PositiveRules ProgramTyping ControlFlo
 open CertificateProducer RequestJson
 
 private def types : List (List (Clause (List Nat))) :=
-  [[.nul],[.bool],[.refs [(valueField, [1])] []],[.callable [(valueField, [1])] [] []],
+  [[.nul],[.bool],[.refs [(valueField, [1])] [] []],[.callable [(valueField, [1])] [] []],
    [.arrs [([[0]],[1])]], [.arrs [([[4]],[1])]], [.boolLit false]]
 private def G : NormalGraph Nat := fun i => types[i]?.getD []
 private def labels := List.range types.length

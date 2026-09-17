@@ -14,6 +14,7 @@ inductive Clause (α : Type) where
   operands naming different fields describe different locations of the same
   object rather than one location twice. -/
   | refs (first : List (String × α)) (rest : List (List (String × α)))
+      (views : List (String × α))
   | arrs (arrows : List (List α × α))
   | boolLit (value : Bool)
   /-- Numbers, and one number. The spelling is canonical, so `numLit` singletons
@@ -46,7 +47,8 @@ def sem (X : α → Fam) : Clause α → Fam
   | .numLit b => fun _ _ v => v = .num b
   | .str => strT
   | .strLit s => fun _ _ v => v = .str s
-  | .refs a bs => refsT (famsOf X a) (bs.map (famsOf X))
+  | .refs a bs vs => fun n W v =>
+      refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧ viewT (famsOf X vs) n W v
   | .arrs L => callsT (L.map fun p => (p.1.map X, X p.2))
   | .callable a bs L =>
       CallableConjunctions.objectsT (famsOf X a) (bs.map (famsOf X))
@@ -81,7 +83,7 @@ def meet : Clause α → Clause α → List (Clause α)
   | .str, .str => [.str]
   | .str, .strLit s | .strLit s, .str => [.strLit s]
   | .strLit a, .strLit b => if a == b then [.strLit a] else []
-  | .refs a bs, .refs c ds => [.refs a (bs ++ c :: ds)]
+  | .refs a bs vs, .refs c ds ws => [.refs a (bs ++ c :: ds) (vs ++ ws)]
   | .arrs L, .arrs M => [.arrs (L ++ M)]
   | .callable a bs L, .callable c ds M => [.callable a (bs ++ c :: ds) (L ++ M)]
   | .callable a bs L, .arrs M => [.callable a bs (L ++ M)]
@@ -125,7 +127,7 @@ theorem sem_value {X : α → Fam} {c : Clause α} {n W v}
   | boolLit b => cases b <;> cases h <;> exact ⟨rfl, trivial⟩
   | num => obtain ⟨b, rfl⟩ := h; exact ⟨rfl, trivial⟩
   | numLit b => subst v; exact ⟨rfl, trivial⟩
-  | refs a rest => obtain ⟨flds, rfl, _⟩ := h.1; exact ⟨rfl, trivial⟩
+  | refs a rest => obtain ⟨flds, rfl, _⟩ := h.1.1; exact ⟨rfl, trivial⟩
   | arrs L => exact ⟨(callsT_callable h).val, (callsT_callable h).scoped⟩
   | callable a bs L => exact ⟨(callsT_callable h.2).val,(callsT_callable h.2).scoped⟩
   | undef => subst v; exact ⟨rfl, trivial⟩
@@ -142,7 +144,7 @@ theorem sem_shape {X : α → Fam} {c : Clause α} {n W v} (hc : c ≠ .top)
   | boolLit b => cases b <;> cases h <;> rfl
   | num => obtain ⟨b, rfl⟩ := h; rfl
   | numLit b => cases h; rfl
-  | refs a bs => obtain ⟨flds, rfl, _⟩ := h.1; rfl
+  | refs a bs => obtain ⟨flds, rfl, _⟩ := h.1.1; rfl
   | arrs L => rcases callsT_callable h with ⟨arity, b, l, rfl, _⟩; rfl
   | undef => cases h; rfl
   | callable a bs L => rcases callsT_callable h.2 with ⟨arity,b,l,rfl,_⟩; rfl
@@ -170,7 +172,9 @@ theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (
       cases b <;> simp [meet, singleton_sem, sem, interT, boolT]
       all_goals intro hv; subst v; simp
     · simp only [meet, singleton_sem, sem, List.map_append, List.map_cons]
-      exact merge _ _ _ _ n W v
+      rw [merge _ _ _ _ n W v, famsOf_append, viewT_append]
+      simp only [interT]
+      exact ⟨fun h => ⟨⟨h.1.1, h.2.1⟩, ⟨h.1.2, h.2.2⟩⟩, fun h => ⟨⟨h.1.1, h.2.1⟩, ⟨h.1.2, h.2.2⟩⟩⟩
     · simp only [meet, singleton_sem, sem, List.map_append]
       exact TypeAlgebra.calls_append _ _ n W v
     · simp only [meet, singleton_sem, sem, List.map_append]
@@ -259,7 +263,8 @@ theorem sem_adm (X : α → Fam) (c : Clause α) : Adm (sem X c) := by
   | boolLit b => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | num => exact numT_adm
   | numLit b => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
-  | refs a bs => exact adm _ _
+  | refs a bs vs => exact ⟨fun n W v h => ⟨(adm _ _).down n W v h.1, (viewT_adm _).down n W v h.2⟩,
+      fun n W U hx v h => ⟨(adm _ _).mono n W U hx v h.1, (viewT_adm _).mono n W U hx v h.2⟩⟩
   | arrs L => exact callsT_adm _
   | callable a bs L => exact CallableConjunctions.adm _ _ _
   | undef => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
@@ -279,7 +284,7 @@ theorem sem_congr (X Y : α → Fam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
   | strLit _ => rfl
   | undef => rfl
   | top => rfl
-  | refs a bs => exact congr_below X Y a bs n h W v
+  | refs a bs vs => exact and_congr (congr_below X Y a bs n h W v) (view_congr_below X Y vs n h W v)
   | arrs L =>
     have hd : ∀ As : List α, ArgsAgree n (As.map X) (As.map Y) := by
       intro As; induction As with

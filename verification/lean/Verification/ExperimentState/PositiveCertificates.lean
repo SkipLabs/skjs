@@ -89,7 +89,8 @@ def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs
   | .str, .str => true
   | .strLit _, .str => true
   | .strLit a, .strLit b => decide (a = b)
-  | .refs a bs, .refs c ds => decide (CoversFields (Rel table) (a :: bs) (c :: ds))
+  | .refs a bs vs, .refs c ds ws =>
+      decide (CoversFields (Rel table) (a :: bs) (c :: ds) ∧ CoversViews (Rel table) (a :: bs) vs ws)
   | .arrs L, .arrs M | .callable _ _ L, .arrs M => decide (∀ p ∈ M, ∃ e ∈ proofs,
       e.1 = L ∧ e.2.1 = p ∧ checkArrow G table L p.1 p.2 e.2.2 = true)
   | .callable a bs L, .callable c ds M => decide

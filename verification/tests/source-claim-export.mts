@@ -70,7 +70,7 @@ try {
       .find((e) =>JSON.stringify(e.pos)===JSON.stringify(changed.pos)),"the changed point");
     const labels=point.type;
     assert(Array.isArray(labels));
-    assert.deepEqual(d.types[must(labels[0],"a label")],[{refs:{first: [["value", [1,2]]],rest:[]}}]);
+    assert.deepEqual(d.types[must(labels[0],"a label")],[{refs:{first: [["value", [1,2]]],rest:[], views: []}}]);
     assert.equal(labels.length,1);assert.deepEqual(point.current,[["value",[1]]]);
     const conversion: ConversionManifest=JSON.parse(fs.readFileSync(op+".conversion.json", "utf8"));
     assert(!conversion.omissions.some((o) =>o.function===changed.name&&

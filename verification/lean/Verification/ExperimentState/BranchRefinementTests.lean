@@ -6,7 +6,7 @@ open Lean ProgramTyping ControlFlow RequestJson BranchRefinement
 private def ok (r : Except String α) : Bool := match r with
   | .ok _ => true
   | .error _ => false
-private def T : SourceTypes.Table := SourceTypes.initial ++ [[.refs [(valueField, [1,2])] []]]
+private def T : SourceTypes.Table := SourceTypes.initial ++ [[.refs [(valueField, [1,2])] [] []]]
 private def G := SourceTypes.graph T
 
 -- Tag observations split explicit unions without inventing a new type label.

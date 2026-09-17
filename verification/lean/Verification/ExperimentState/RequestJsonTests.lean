@@ -14,7 +14,8 @@ private def toNatClause : PositiveNormalization.Clause (List (Fin 6)) → Positi
   | .numLit v => .numLit v
   | .str => .str
   | .strLit v => .strLit v
-  | .refs a bs => .refs (a.map fun (f,A) => (f,A.map Fin.val)) (bs.map fun fs => fs.map fun (f,A) => (f,A.map Fin.val))
+  | .refs a bs vs => .refs (a.map fun (f,A) => (f,A.map Fin.val)) (bs.map fun fs => fs.map fun (f,A) => (f,A.map Fin.val))
+      (vs.map fun (f,A) => (f,A.map Fin.val))
   | .arrs L => .arrs (L.map fun (a,b) => (a.map (List.map Fin.val),b.map Fin.val))
   | .callable a bs L => .callable (a.map fun (f,A) => (f,A.map Fin.val)) (bs.map fun fs => fs.map fun (f,A) => (f,A.map Fin.val))
       (L.map fun (a,b) => (a.map (List.map Fin.val),b.map Fin.val))
@@ -69,7 +70,7 @@ def response : Json := match produceJson (toJson mappedRequest) 12 with
 #guard !(ok (verifyJson (toJson { mappedRequest with program := (mappedRequest.program.set 0 ⟨.alloc .tru, .bind ⟨1,some [0,99]⟩⟩) }) response))
 
 -- Reject dangling labels even in unused type definitions.
-#guard !(ok (decodeRequest (toJson { mappedRequest with types := (mappedRequest.types ++ [[PositiveNormalization.Clause.refs [(valueField, [99])] []]]) })))
+#guard !(ok (decodeRequest (toJson { mappedRequest with types := (mappedRequest.types ++ [[PositiveNormalization.Clause.refs [(valueField, [99])] [] []]]) })))
 #guard !(ok (decodeRequest (toJson { mappedRequest with result := [99] })))
 #guard !(ok (decodeRequest (toJson { mappedRequest with claims := [⟨[[99]],[1]⟩] })))
 #guard !(ok (produceJson (toJson mappedRequest) 0))
@@ -116,7 +117,7 @@ def inputRequest : Request := ⟨[[.bool]], [⟨.var 0,.ret⟩], [⟨[[0]],[0]�
 #guard !ok (decodeRequest (omitField (toJson inputRequest) "inputs"))
 -- The generalized theorem also covers stateful arguments, not just primitive
 -- source parameters. The input reference may belong to any satisfying heap.
-def referenceInput : Request := ⟨[[.bool],[.refs [(valueField, [0])] []]],
+def referenceInput : Request := ⟨[[.bool],[.refs [(valueField, [0])] [] []]],
   [⟨.read (.var 0),.ret⟩], [⟨[[1]],[0]⟩], [0],0,[[1]]⟩
 #guard ok (roundtrip referenceInput)
 #guard !ok (roundtrip { referenceInput with inputs := [[0]] })

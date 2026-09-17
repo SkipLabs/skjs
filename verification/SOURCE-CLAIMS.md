@@ -92,8 +92,8 @@ lists into the same table:
 | Row | Clause | Meaning |
 | --- | --- | --- |
 | `0`, `1`, `2`, `3` | `"nul"`, `boolLit true`, `boolLit false`, `"undef"` | The primitives, fixed |
-| any | `{"refs": {"first": [["value", A]], "rest": []}}` | A plain record with an invariant `value` field holding the union `A` |
-| any | `{"refs": {"first": F, "rest": [H, ...]}}` | One record under every listed field contract; `F` and `H` are lists of `[name, labels]` pairs |
+| any | `{"refs": {"first": [["value", A]], "rest": [], "views": []}}` | A plain record with an invariant `value` field holding the union `A` |
+| any | `{"refs": {"first": F, "rest": [H, ...], "views": V}}` | One record under every listed field contract; `F`, `H` and `V` are lists of `[name, labels]` pairs. `V` names readonly views: fields read at a sound upper bound on their contents, with no write permission through this contract |
 | any | `{"arrs": {"arrows": [[D, R]]}}` | A signature with ordered domain list `D` and result union `R` |
 
 The table starts with the four primitives and holds one further row per compound

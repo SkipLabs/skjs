@@ -256,7 +256,7 @@ try {
     assert(readDiagnostic(line));
     const parsed = JSON.parse(line.slice("obligation-diagnostic: ".length));
     assert.equal(readDiagnostic("obligation-diagnostic: null"),undefined);
-    for (const types of [[["new-clause"]],[[{refs:{first:[99],rest:[]}}]]])
+    for (const types of [[["new-clause"]],[[{refs:{first:[99],rest:[], views: []}}]]])
       assert.equal(readDiagnostic("obligation-diagnostic: " + JSON.stringify({...parsed,types})),undefined);
     assert.equal(readDiagnostic(line + "\n" + line), undefined);
     assert.equal(readDiagnostic("obligation-diagnostic: {"), undefined);

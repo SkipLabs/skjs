@@ -6,7 +6,7 @@ open PositiveNormalization PositiveGraphs PositiveRules PositiveCertificates Pro
 def G : NormalGraph (Fin 6) := fun i => match i.val with
   | 0 => [.nul]
   | 1 => [.bool]
-  | 2 => [.refs [(valueField, [1])] []]
+  | 2 => [.refs [(valueField, [1])] [] []]
   | 3 => [.arrs [([[0]], [1]), ([[1]], [0])]]
   | 4 => [.arrs [([[0, 1]], [0, 1])]]
   | _ => [.arrs [([[3]], [1])]]

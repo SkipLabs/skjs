@@ -518,14 +518,25 @@ function roundTrips(type: unknown) {
   /** A record contract's fields, as the claim language writes them. `current`
    * refines the read side of the fields it names; a field it does not name
    * reads at its own invariant. */
-  const cell = (types: unknown, contract: unknown, current: unknown, depth: number) => {
+  const cell = (types: unknown, contract: unknown, current: unknown, depth: number, views: unknown = []) => {
     const entries: unknown[] = Array.isArray(contract) ? contract : [];
     const asserted: unknown[] = Array.isArray(current) ? current : [];
+    // A view field reads at its bound and accepts no write.
+    const viewed: unknown[] = Array.isArray(views) ? views : [];
+    const readonly = viewed.map((entry) => {
+      const pair: unknown[] = Array.isArray(entry) ? entry : [];
+      return {
+        name: typeof pair[0] === "string" ? pair[0] : "",
+        optional: false,
+        read: liftType(types, pair[1], depth),
+        write: { top: false, atoms: [] },
+      };
+    });
     return {
       a: "record",
       indexes: {string: "absent", number: "absent", symbol: "absent"},
       call: "unknown", construct: "unknown", array: "unknown",
-      fields: entries.map((entry) => {
+      fields: [...readonly, ...entries.map((entry) => {
         const pair: unknown[] = Array.isArray(entry) ? entry : [];
         const invariant = pair[1];
         const name = typeof pair[0] === "string" ? pair[0] : "";
@@ -538,7 +549,7 @@ function roundTrips(type: unknown) {
           read: liftType(types, now ?? invariant, depth),
           write: liftType(types, invariant, depth),
         };
-      }),
+      })],
     };
   };
 
@@ -586,7 +597,8 @@ function roundTrips(type: unknown) {
     if (refs) {
       const first = isObject(refs) ? refs.first : undefined;
       const rest: unknown[] = isObject(refs) && Array.isArray(refs.rest) ? refs.rest : [];
-      const cells = [first, ...rest].map((c) => cell(types, c, null, depth - 1));
+      const views = isObject(refs) ? refs.views : undefined;
+      const cells = [first, ...rest].map((c, i) => cell(types, c, null, depth - 1, i === 0 ? views : []));
       return cells.length === 1 ? cells[0] : shown(cells);
     }
     const callable = body("callable");
@@ -690,10 +702,14 @@ function roundTrips(type: unknown) {
       if (!fields.length) throw new TypeSyntaxError("a record with no field has no location");
       if (fields.some((f) => f.optional))
         throw new TypeSyntaxError("an optional field is not an invariant cell");
-      if (fields.some((f) => !same(f.read, f.write)))
+      // A field accepting no write is a readonly view of its read bound.
+      const never = (t: unknown) => isObject(t) && t.top === false && Array.isArray(t.atoms) && t.atoms.length === 0;
+      const invariant = fields.filter((f) => !never(f.write)), views = fields.filter((f) => never(f.write));
+      if (invariant.some((f) => !same(f.read, f.write)))
         throw new TypeSyntaxError("what a cell holds is asserted at the top of a claim, not inside a type");
-      return [intern(types, [{ refs: { first: fields.map((f) =>
-        namedField(types, f, "write")), rest: [] } }])];
+      if (!invariant.length) throw new TypeSyntaxError("a record needs an invariant field");
+      return [intern(types, [{ refs: { first: invariant.map((f) =>
+        namedField(types, f, "write")), rest: [], views: views.map((f) => namedField(types, f, "read")) } }])];
     }
     if (atom.a === "callable") {
       const f = isObject(atom.function) ? atom.function : undefined, bag = isObject(atom.bag) ? atom.bag : undefined;

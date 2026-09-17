@@ -197,7 +197,11 @@ def conjuncts (atom : Json) : Except String (List Json) := do
     return plain :: others.toList
 
 /-- The label of a location under one record contract. -/
-def reference (fs : List (String × Ty Nat)) : Lowering Nat := use (.refs fs [])
+def reference (fs : List (String × Ty Nat)) : Lowering Nat := use (.refs fs [] [])
+
+/-- The label of a location under one record contract with readonly views:
+the invariant fields and, separately, the fields read through a capability. -/
+def viewReference (fs vs : List (String × Ty Nat)) : Lowering Nat := use (.refs fs [] vs)
 
 /-- The one-field spelling, for the places that still speak of a single cell. -/
 def cellReference (A : Ty Nat) : Lowering Nat := reference [(valueField, A)]
@@ -224,20 +228,21 @@ def conjunction (atom : Json) : Lowering Nat := do
     translate (Json.mkObj [("top",toJson false),("atoms",toJson [part])])
   let first :: rest := (types.mergeSort beforeFields).eraseDups
     | throw "an empty conjunction is not a contract"
-  use (.refs first rest)
+  use (.refs first rest [])
 
 /-- The reference label denotes exactly the cell invariant, over any table
 holding its row, at every world and budget. -/
 theorem reference_exact {T : Table} {fs : List (String × Ty Nat)}
-    (hm : [.refs fs []] ∈ T) (n W v) :
-    meaning (graph T) [label T (.refs fs [])] n W v ↔ interpretation T fs n W v := by
+    (hm : [.refs fs [] []] ∈ T) (n W v) :
+    meaning (graph T) [label T (.refs fs [] [])] n W v ↔ interpretation T fs n W v := by
   rw [label_meaning hm]
-  simp [PositiveNormalization.sem, ReferenceConjunctions.refsT, interpretation]
+  simp [PositiveNormalization.sem, ReferenceConjunctions.refsT, interpretation,
+    ReferenceConjunctions.famsOf, viewT]
 
 /-- Interning a reference yields a table holding its row and its label there. -/
 theorem reference_run {fs : List (String × Ty Nat)} {T T' : Table} {l}
     (h : (reference fs).run T = .ok (l, T')) :
-    [.refs fs []] ∈ T' ∧ l = label T' (.refs fs []) ∧ T <+: T' :=
+    [.refs fs [] []] ∈ T' ∧ l = label T' (.refs fs [] []) ∧ T <+: T' :=
   use_spec h
 
 #print axioms reference_exact

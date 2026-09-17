@@ -63,7 +63,7 @@ try {
   mutate("different source identity rejected",(d) =>d.file="elsewhere.ts");
   mutate("out-of-range labels rejected even in unused bindings",(d) =>must(only(d).entries[0],"an entry").bindings.push({name:"unused",type:[4],current:null}));
   mutate("a table without the primitives is rejected",(d) =>d.types=d.types.slice(1));
-  mutate("a table row referring past the table is rejected",(d) =>d.types.push([{refs:{first:[["value",[9]]],rest:[]}}]));
+  mutate("a table row referring past the table is rejected",(d) =>d.types.push([{refs:{first:[["value",[9]]],rest:[], views: []}}]));
   mutate("duplicate labels rejected",(d) =>only(d).result=[1,1,2]);
   mutate("noncanonical label order rejected",(d) =>only(d).result=[2,1]);
   mutate("duplicate entry sites rejected",(d) =>only(d).entries.push(must(only(d).entries[0],"an entry")));
@@ -139,7 +139,7 @@ try {
     const expressions: ExpressionClaim[]=[],entries: EntryClaim[]=[];
     const scope: {name: string; type: Labels; current: null}[]=[];
     // The table: the primitives, then the cell at 4 and the reader arrow at 5.
-    const types: Row[]=[...primitives,[{refs:{first:[["value",[1,2]]],rest:[]}}],[{arrs:{arrows:[[[[0]],[1,2]]]}}]];
+    const types: Row[]=[...primitives,[{refs:{first:[["value",[1,2]]],rest:[], views: []}}],[{arrs:{arrows:[[[[0]],[1,2]]]}}]];
     const labels: Record<string, Labels>={cell:[4],read:[5],x:[0]};
     const expr=(e: Expr): void =>{
       let type: Labels;

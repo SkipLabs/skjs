@@ -9,23 +9,23 @@ private def checkCoreSource [DecidableEq ι] (G : PositiveGraphs.Graph ι) (S T 
 
 -- Distribution retains conjunctions of reference contracts instead of treating
 -- them as an invariant of intersected contents or as bottom.
-#guard normalize (Formula.inter (.atom (.refs [("value", (0 : Nat))] []))
-  (.union (.atom (.refs [("value", 1)] [])) (.atom .nul)))
-    = [.refs [("value", 0)] [[("value", 1)]]]
+#guard normalize (Formula.inter (.atom (.refs [("value", (0 : Nat))] [] []))
+  (.union (.atom (.refs [("value", 1)] [] [])) (.atom .nul)))
+    = [.refs [("value", 0)] [[("value", 1)]] []]
 #guard normalize (Formula.inter (.atom (.arrs [([(0 : Nat)], 1)]))
   (.atom (.arrs [([1], 0)]))) = [.arrs [([0], 1), ([1], 0)]]
-#guard normalize (Formula.inter (.atom (.refs [("value", (0 : Nat))] [])) (.atom .bool)) = []
+#guard normalize (Formula.inter (.atom (.refs [("value", (0 : Nat))] [] [])) (.atom .bool)) = []
 
 def G : PositiveGraphs.Graph (Fin 12) := fun i => match i.val with
   | 0 => .atom .nul
   | 1 => .atom .bool
-  | 2 => .inter (.atom (.refs [(valueField, [0])] [])) (.atom (.refs [(valueField, [1])] []))
-  | 3 => .atom (.refs [(valueField, [0])] [])
-  | 4 => .inter (.atom (.refs [(valueField, [4])] [])) (.atom (.refs [(valueField, [4])] []))
-  | 5 => .atom (.refs [(valueField, [5])] [])
-  | 6 => .inter (.atom (.refs [(valueField, [3])] [])) (.atom (.refs [(valueField, [7])] []))
-  | 7 => .atom (.refs [(valueField, [1])] [])
-  | 8 => .atom (.refs [(valueField, [3])] [])
+  | 2 => .inter (.atom (.refs [(valueField, [0])] [] [])) (.atom (.refs [(valueField, [1])] [] []))
+  | 3 => .atom (.refs [(valueField, [0])] [] [])
+  | 4 => .inter (.atom (.refs [(valueField, [4])] [] [])) (.atom (.refs [(valueField, [4])] [] []))
+  | 5 => .atom (.refs [(valueField, [5])] [] [])
+  | 6 => .inter (.atom (.refs [(valueField, [3])] [] [])) (.atom (.refs [(valueField, [7])] [] []))
+  | 7 => .atom (.refs [(valueField, [1])] [] [])
+  | 8 => .atom (.refs [(valueField, [3])] [] [])
   | 9 => .inter (.atom (.arrs [([[0]], [0])])) (.atom (.arrs [([[1]], [0])]))
   | 10 => .atom (.arrs [([[0, 1]], [0])])
   | _ => .inter (.atom .nul) (.atom .bool)
@@ -36,7 +36,7 @@ def G : PositiveGraphs.Graph (Fin 12) := fun i => match i.val with
 -- The opposite direction would invent a constraint.
 #guard !(checkCoreSource G [3] [2] ⟨[([3], [2]), ([0], [0])], []⟩)
 -- The incompatible reference conjunction is not dropped as bottom.
-#guard normalizeGraph G 2 = [.refs [(valueField, [0])] [[(valueField, [1])]]]
+#guard normalizeGraph G 2 = [.refs [(valueField, [0])] [[(valueField, [1])]] []]
 #guard !(checkCoreSource G [2] [] ⟨[([2], [])], []⟩)
 -- Disjoint atoms really do normalize to bottom.
 #guard checkCoreSource G [11] [] ⟨[([11], [])], []⟩
@@ -77,8 +77,8 @@ def BoolG : PositiveGraphs.Graph (Fin 6) := fun i => match i.val with
   | 1 => .atom (.boolLit true)
   | 2 => .atom (.boolLit false)
   | 3 => .atom .nul
-  | 4 => .atom (.refs [(valueField, [0])] [])
-  | _ => .atom (.refs [(valueField, [1, 2])] [])
+  | 4 => .atom (.refs [(valueField, [0])] [] [])
+  | _ => .atom (.refs [(valueField, [1, 2])] [] [])
 
 #guard PositiveRules.sourceClauses (normalizeGraph BoolG) [0]
   = [.boolLit true, .boolLit false]

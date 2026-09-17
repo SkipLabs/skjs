@@ -44,10 +44,10 @@ of the work remaining.
 
 ## Checkpoint: 17 September 2026
 
-The baseline is **38/116 verified**, out of 319 selected functions:
-203 SKJS-rejected, 69 gated, 9 unproved. The separate curated run had 56 files,
+The baseline is **39/116 verified**, out of 319 selected functions:
+203 SKJS-rejected, 65 gated, 12 unproved. The separate curated run had 56 files,
 235 verified functions, 7 search failures and 13 unavailable checks; the suite
-run had 63 suites. These are checkpoint results, not permanent expectations;
+run had 64 suites. These are checkpoint results, not permanent expectations;
 the baseline and fresh command output are authoritative.
 
 Recent repair gains were numeric heap predicates (`checkedEvolvingCapture`),
@@ -68,8 +68,9 @@ type does not settle (`mutateConstantObject`, `annotatedCompoundKey`,
 `computedUpdate`), and logical assignments to fields and elements
 (`selectedReceiver`, `computedAnd`, `computedFallback`), and semantic top for
 `unknown` and `void` results (`privateScalar`, `guardedLoopRead`,
-`unchangedLoopRead`):
-11 → 12 → 13 → 14 → 15 → 17 → 21 → 24 → 27 → 28 → 29 → 32 → 35 → 38.
+`unchangedLoopRead`), and readonly views, a read capability on a field
+(`satisfiesCompatibleWrite`):
+11 → 12 → 13 → 14 → 15 → 17 → 21 → 24 → 27 → 28 → 29 → 32 → 35 → 38 → 39.
 TS observation fixes also improved curated coverage without themselves moving
 this SKJS repair count.
 
@@ -185,7 +186,9 @@ where to investigate, not a promise that one extension will verify each row.
 | `captured-read-stability.ts`: `checkedGenericCallResult` | The callee `makeCapturedGenericCell` at extracted span `[551,574)` is refused as `function-generic`; the call's result claim itself exports. The claim language has no generic function type, so an export would have to state the call-site instantiation, and the TS producer refuses the same signature (`generic-arrow`). Beyond that, the extractor binds identifiers only from parameters and local declarations, so an ambient function value is unbound: the same external-value boundary as the object rows above. Four census functions carry `function-generic`. |
 | `binding-initialization.ts`: `conditionBeforeLocal` | Reads top-level `seed` before declaring an inner `seed`. Context extraction carries the declaration, but lowering lacks that external value. Do not diagnose this solely as local shadowing. |
 | `captured-read-stability.ts`: `checkedPropertyResult`; `unsound-refinement.ts`: `identityMemberSnapshot`, `stableMemberScalar`; `assignment-receivers.ts`: `temporaryReceiver` | Nested record claims refused. The first two also have external objects; `identityMemberSnapshot` and `stableMemberScalar` additionally compare object identities (`x.child !== narrow`). Nested record support alone is insufficient. |
-| `unsound-refinement.ts`: `checkedConditionalAlias` | A parameter typed as a union of two record shapes with a discriminant: the claimed parameter type differs from the source annotation, since record unions are outside the claim language the extractor accepts for parameters. |
+| `unsound-refinement.ts`: `stableAnnotatedAlias` | The readonly view lowers; the row now fails on `if (x.f === 1) { const snapshot: 1 = x.f; ... }` nested under `if (x !== null)`: the singleton observation from the numeric guard is not established at the inner statement's entry, with or without the view (`withoutView` probe). |
+| `satisfies.ts`: `satisfiesLiteralTarget` | The object literal `{ port: 8080, host: "localhost" }` must meet `satisfies { readonly port: 8080; ... }`: the literal's claimed type has literal read contracts and family write contracts, a current-content shape the expression obligation does not yet establish for a fresh allocation. |
+| `unsound-refinement.ts`: `assignedUnionAlternative`, `checkedConditionalAlias` | A parameter typed as a union of two record shapes with a discriminant: the claimed parameter type differs from the source annotation, since record unions are outside the claim language the extractor accepts for parameters. |
 | `unsound-refinement.ts`: `capturedReceiver` | The guard `(x = { value: null }) === x` compares two object operands: equality is lowered only against a null, undefined or singleton operand, so reference identity between records has no test in the calculus. |
 | `definite-assignment-tvar-soundness.ts`: `typeofInferredFieldAfterAssignment`, `typeofUndefinedFieldAdmitsInitialValue`; `test_ternary_refinements.ts`: `bothBranchesInitialize` | Uninitialized `let`. Requires an initialization discipline; seeding every private cell with undefined must not weaken the declared write contract or allow a read before initialization. |
 | `logical-compound-computed-key.ts`: `computedFallback` | `??=` currently requires a local identifier. Property/computed targets must save receiver and key before the RHS and evaluate each once. String/key restrictions may be the next gate. |

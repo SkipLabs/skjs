@@ -422,7 +422,7 @@ function primitiveLabelsOf(type: Type): number[] | null {
 /** A reading either succeeded and carries what it read, or it did not and
  * carries why — where it has a reason to give. */
 type RecordRead =
-  | { ok: true; fields: { name: string; type: Type }[] }
+  | { ok: true; fields: { name: string; type: Type }[]; views: { name: string; type: Type }[] }
   | { ok: false; reason?: string };
 
 /**
@@ -444,24 +444,25 @@ function tryRecord(type: Type, checker: Checker, callableBag = false): RecordRea
   if (checker.getIndexInfosOfType(type).length)
     return { ok: false, reason: "indexed-type" };
   const fields: { name: string; type: Type }[] = [];
+  const views: { name: string; type: Type }[] = [];
   for (const prop of props) {
     if (prop.flags & SymbolFlags.Optional)
       return { ok: false, reason: "optional-field" };
     // A declaration arrives as a handle; `readonly` is on the node it names,
     // and the two kinds of member declaration that can carry one are these.
+    // A readonly field is a read capability, a view; a callable's bag has none.
     const declaration = declarationOf(prop);
-    if (
-      declaration &&
+    const readonly =
+      declaration !== undefined &&
       (isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration)) &&
-      declaration.modifiers?.some((m) => m.kind === ts.SyntaxKind.ReadonlyKeyword)
-    )
-      return { ok: false, reason: "readonly-field" };
-    fields.push({
+      declaration.modifiers?.some((m) => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true;
+    if (readonly && callableBag) return { ok: false, reason: "readonly-field" };
+    (readonly ? views : fields).push({
       name: prop.name,
       type: must(checker.getTypeOfSymbol(prop), "field-type"),
     });
   }
-  return { ok: true, fields };
+  return { ok: true, fields, views };
 }
 
 type ArrowRead =
@@ -550,7 +551,7 @@ function tryRecordIntersection(
   parts: readonly Type[],
   types: Row[],
   fuel: number,
-): { first: Fields; rest: Fields[] } | null {
+): { first: Fields; rest: Fields[]; views: Fields } | null {
   const results = parts.map((t) => tryRecord(t, checker));
   const read = results.flatMap((r) => (r.ok ? [r] : []));
   if (read.length !== results.length) {
@@ -567,7 +568,10 @@ function tryRecordIntersection(
   operands.sort((a, b) => (JSON.stringify(a) < JSON.stringify(b) ? -1 : 1));
   const [first, ...rest] = operands;
   if (!first) throw new Refusal("record-operand", checker.typeToString(type));
-  return { first, rest };
+  // Every part's views are views of the one object.
+  const views: Fields = read.flatMap((r) => r.views.map((f): [string, number[]] =>
+    [f.name, translateType(f.type, checker, types, false, fuel - 1)]));
+  return { first, rest, views };
 }
 
 /** The reasons a list of readings gives, in order: a reading that refused
@@ -649,7 +653,9 @@ function translateType(type: Type, checker: Checker, types: Row[], records = tru
       internRow(types, [
         { refs: { first: rec.fields.map((f): [string, number[]] =>
             [f.name, translateType(f.type, checker, types, false, fuel - 1)]),
-          rest: [] } },
+          rest: [],
+          views: rec.views.map((f): [string, number[]] =>
+            [f.name, translateType(f.type, checker, types, false, fuel - 1)]) } },
       ]),
     ];
   if (rec.reason) throw new Refusal(rec.reason, checker.typeToString(type));
@@ -708,7 +714,8 @@ function readInvariant(
     const clause = Array.isArray(row) && row.length === 1 ? row[0] : null;
     if (clause !== null && typeof clause === "object") {
       if ("refs" in clause) {
-        const labels = named(clause.refs.first);
+        // An invariant field reads at its contract; a view at its bound.
+        const labels = named(clause.refs.first) ?? named(clause.refs.views);
         if (labels) return labels;
       }
       if ("callable" in clause) {

@@ -51,7 +51,7 @@ def validTy (bound : Nat) (A : Ty Nat) : Bool := A.all (fun i => i < bound)
 
 def clauseTypes : Clause (Ty Nat) → List (Ty Nat)
   | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .str | .strLit _ | .top => []
-  | .refs A bs => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd)
+  | .refs A bs vs => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd
   | .arrs L => L.flatMap (fun p => p.1 ++ [p.2])
   | .callable A bs L =>
       A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ L.flatMap (fun p => p.1 ++ [p.2])

@@ -17,7 +17,9 @@ export type Clause = "nul" | "bool" | "undef" | "num"
   /** Strings, and one string, carried as itself. */
   | "str"
   | { strLit: { value: string } }
-  | { refs: { first: Fields; rest: Fields[] } }
+  /** `views` are read capabilities: a field read at a sound upper bound on
+   * its contents, with no write permission through this contract. */
+  | { refs: { first: Fields; rest: Fields[]; views: Fields } }
   | { arrs: { arrows: Arrow[] } }
   | { callable: { first: Fields; rest: Fields[]; arrows: Arrow[] } };
 export type Row = Clause[];
@@ -103,7 +105,7 @@ export function decodeGraph(value: unknown): TypeGraph {
     strLit: b => {
       if (typeof obj(b,["value"]).value !== "string") throw Error("invalid string literal");
     },
-    refs: b => { const r = obj(b,["first","rest"]); fields(r.first); array(r.rest).forEach(fields); },
+    refs: b => { const r = obj(b,["first","rest","views"]); fields(r.first); array(r.rest).forEach(fields); fields(r.views); },
     arrs: b => arrows(obj(b,["arrows"]).arrows),
     callable: b => {
       const r = obj(b,["first","rest","arrows"]);
@@ -138,7 +140,8 @@ function clauseText(c: Clause): string {
   // The reader shows the number, not the bit pattern that identifies it.
   if ("numLit" in c) return String(numberOfBits(c.numLit.bits));
   if ("strLit" in c) return JSON.stringify(c.strLit.value);
-  if ("refs" in c) return [c.refs.first,...c.refs.rest].map(printFields).join(" & ");
+  if ("refs" in c) return [[c.refs.first,...c.refs.rest].map(printFields).join(" & "),
+    ...(c.refs.views.length ? [`readonly ${printFields(c.refs.views)}`] : [])].join(" & ");
   if ("arrs" in c) return `calls[${c.arrs.arrows.map(arrowText).join("; ")}]`;
   if ("callable" in c)
     return `object[${[c.callable.first,...c.callable.rest].map(printFields).join(" & ")}; calls[${c.callable.arrows.map(arrowText).join("; ")}]]`;

@@ -119,7 +119,7 @@ function fixture(body: string, param = "") {
       [{ boolLit: { value: true } }],
       [{ boolLit: { value: false } }],
       ["undef"],
-      [{ refs: { first: [["value", [1, 2]]], rest: [] } }],
+      [{ refs: { first: [["value", [1, 2]]], rest: [], views: [] } }],
     ],
     file,
     sourceSha256: hash(source),

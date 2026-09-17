@@ -276,7 +276,7 @@ private def distinctLinks (G : Verification.ExperimentState.PositiveGraphs.Norma
       Γ.zipIdx.flatMap fun (A,j) =>
         if i == j then [] else
         match PositiveRules.expand G A with
-        | [.refs fs _] => fs.map fun p => (⟨i,j,false,valueField,true,p.1⟩ : HeapLinks.Link)
+        | [.refs fs _ _] => fs.map fun p => (⟨i,j,false,valueField,true,p.1⟩ : HeapLinks.Link)
         | _ => []
     | .value => []
 
@@ -321,7 +321,7 @@ private def persistentObservation (d : Descriptor) (pos : Span) (A : Ty Nat)
   let clauses := PositiveRules.expand (SourceTypes.graph (← table)) A
   if clauses.isEmpty then throw "current-content assertion requires nonempty cell contracts"
   let invariants ← clauses.mapM fun clause => do
-    let .refs W [] := clause
+    let .refs W [] [] := clause
       | throw "current-content assertion requires only cell contracts"
     let some Wc := W.lookup fld
       | throw s!"current-content assertion names a field '{fld}' the contract does not have"
@@ -569,16 +569,19 @@ bag, or an explicit union of cell contracts each naming the field. -/
 private def readCell (G : PositiveGraphs.NormalGraph Nat) (Γ : List (Ty Nat)) (fld : String)
     (a : DirectProof.Plan) : Compiler DirectProof.Plan := do
   match PositiveRules.expand G a.type with
-  | [.refs fs []] =>
-    let some B := fs.lookup fld | throw s!"read of a field '{fld}' the contract does not name"
-    pure (DirectProof.node Γ (.readAt fld a.term) B .read [a])
+  | [.refs fs [] vs] =>
+    -- An invariant field reads at its contract; a readonly view at its bound.
+    match fs.lookup fld, vs.lookup fld with
+    | some B, _ => pure (DirectProof.node Γ (.readAt fld a.term) B .read [a])
+    | none, some B => pure (DirectProof.node Γ (.readAt fld a.term) B .readView [a])
+    | none, none => throw s!"read of a field '{fld}' the contract does not name"
   | [.callable fs _ _] =>
     let some B := fs.lookup fld | throw s!"read of a field '{fld}' the contract does not name"
     pure (DirectProof.node Γ (.readAt fld a.term) B .readCallable [a])
   | _ =>
     if a.type.length ≤ 1 then throw "read receiver must name a cell contract"
     let alternatives ← a.type.mapM fun label => do
-      let [.refs fs []] := PositiveRules.expand G [label]
+      let [.refs fs [] []] := PositiveRules.expand G [label]
         | throw "every read alternative must name a cell contract"
       let some B := fs.lookup fld
         | throw s!"read of a field '{fld}' an alternative does not name"
@@ -597,14 +600,16 @@ private def writeCell (G : PositiveGraphs.NormalGraph Nat) (H : List (Ty Nat)) (
     (B C : Ty Nat) (ri : Nat) : Compiler DirectProof.Plan := do
   let term := Tm.writeAt fld (.var ri) (.var 0)
   match PositiveRules.expand G B with
-  | [.refs fs []] =>
-    let some D := fs.lookup fld | throw s!"write to a field '{fld}' the contract does not name"
+  | [.refs fs [] vs] =>
+    let some D := fs.lookup fld
+      | throw (if (vs.lookup fld).isSome then s!"write to a readonly field '{fld}'"
+          else s!"write to a field '{fld}' the contract does not name")
     pure (DirectProof.node H term [0] .write
       [DirectProof.var H ri B,DirectProof.cast H D (DirectProof.var H 0 C)])
   | _ =>
     if B.length ≤ 1 then throw "write receiver must name a cell contract"
     let alternatives ← B.mapM fun label => do
-      let [.refs fs []] := PositiveRules.expand G [label]
+      let [.refs fs [] []] := PositiveRules.expand G [label]
         | throw "every write alternative must name a cell contract"
       let some D := fs.lookup fld
         | throw s!"write to a field '{fld}' an alternative does not name"
@@ -723,7 +728,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       obligation e.span check.goal (some check) "cast-annotation" (held ⟨"",some a.span⟩ :: scope)
     pure (DirectProof.cast Γ A p)
   | .alloc _ ns es => do
-    let [.refs B []] := PositiveRules.expand G A
+    let [.refs B [] []] := PositiveRules.expand G A
       | throw "allocation claim must name a record contract"
     if B.length != ns.length then throw "allocation claim names different fields"
     let B ← ns.mapM fun name => do
@@ -926,7 +931,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let PRef ← lower (Fragment.translate bagType)
     let G := SourceTypes.graph (← table)
     let [.arrs L] := PositiveRules.expand G F | throw "initializer requires a free function annotation"
-    let [.refs P []] := PositiveRules.expand G PRef
+    let [.refs P [] []] := PositiveRules.expand G PRef
       | throw "initializer requires an invariant record annotation"
     let .make (.closure arity body) .nul := f.term | throw "initializer requires a fresh arrow"
     let some bodies := creationChildren f | throw "initializer requires a checked arrow body"
@@ -1258,7 +1263,7 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let N : Ty Nat := [← lower (SourceTypes.use .num)]
     let fieldType := fun (B : Ty Nat) (fld : String) => do
       match PositiveRules.expand G B with
-      | [.refs fs []] =>
+      | [.refs fs [] []] =>
         let some T := fs.lookup fld | throw s!"update of a field '{fld}' the contract does not name"
         pure T
       | _ => throw "a compound assignment needs one cell contract"
@@ -1308,7 +1313,7 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let G := SourceTypes.graph (← table)
     let fieldType := fun (B : Ty Nat) (fld : String) => do
       match PositiveRules.expand G B with
-      | [.refs fs []] =>
+      | [.refs fs [] []] =>
         let some T := fs.lookup fld | throw s!"update of a field '{fld}' the contract does not name"
         pure T
       | _ => throw "a logical assignment needs one cell contract"
@@ -1366,6 +1371,11 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
   | .write _ fld receiver rhs =>
     let B ← exprType fc receiver
     let C ← exprType fc rhs
+    -- A view permits reads only: say so, rather than fail the search.
+    match PositiveRules.expand (SourceTypes.graph (← table)) B with
+    | [.refs fs [] vs] =>
+      if (fs.lookup fld).isNone && (vs.lookup fld).isSome then throw s!"write to a readonly field '{fld}'"
+    | _ => pure ()
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+2))⟩
     -- JS assignment returns its evaluated RHS; the calculus write returns null.
@@ -1596,7 +1606,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
       let Γ ← env fc pos.1 scope
       let A ← exprType fc init
       let G := SourceTypes.graph (← table)
-      let [.refs fields []] := PositiveRules.expand G A
+      let [.refs fields [] []] := PositiveRules.expand G A
         | throw "an object pattern requires a single record contract"
       -- The object is held anonymously for the whole statement, below the
       -- bindings it yields; the reads address it by its slot.
