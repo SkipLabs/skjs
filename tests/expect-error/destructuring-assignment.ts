@@ -110,12 +110,11 @@ function restTargetOfArrayAccepted(src: number[]): void {
   void r;
 }
 
-// Without an annotation the inferred type evolves on assignment, here as much
-// as for a single `x = 5`. SKJS is deliberately more permissive than tsc, which
-// pins `let x = "a"` to `string` and rejects the write; the narrowing keeps this
-// sound because reads see the written type.
+// Destructuring writes must preserve the inferred contract just like an
+// ordinary assignment. TypeScript also rejects the number here.
 function inferredTargetEvolves(): void {
   let x = "a";
+  // @ts-expect-error Type is not assignable to the variable's type
   [x] = [5];
   const n: number = x;
   void n;

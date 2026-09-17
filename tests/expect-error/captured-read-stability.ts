@@ -56,10 +56,11 @@ function evolvedInferredCapture(): number {
   return read();
 }
 
-// Without a capture of the mutable binding, SKJS still permits evolution
-// (tsc rejects the string assignment). Copying the value makes a stable capture.
+// Copying into an immutable snapshot cannot justify an earlier write that
+// violates the mutable binding's inferred contract.
 function evolvedInferredSnapshotStillString(): string {
   let value = 1;
+  // @ts-expect-error Type is not assignable to the variable's type
   value = "s";
   const snapshot = value;
   const read = (): string => snapshot;

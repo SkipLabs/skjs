@@ -1,13 +1,15 @@
-// Baseline: SKJS currently accepts these replacements without checking the
-// retained binding contract. TypeScript rejects both assignments.
+// Every replacement preserves the inferred binding contract, even without
+// capture. TypeScript also rejects these incompatible assignments.
 function inferredPrimitiveContract(): string {
   let value = 1;
+  // @ts-expect-error Type is not assignable to the variable's type
   value = "s";
   return value;
 }
 
 function inferredCallableContract(): string {
   let value = (): number => 1;
+  // @ts-expect-error Type is not assignable to the variable's type
   value = (): string => "s";
   return value();
 }

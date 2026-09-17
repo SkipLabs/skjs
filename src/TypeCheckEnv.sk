@@ -375,7 +375,7 @@ mutable class TCEnv private {
       if (this.pendingBindings.contains(pos)) _ = this.scope.get(name)
     });
     this.scope.checkWritable(name);
-    this.updateLocalType(tenv, name, ty, isSubType)
+    this.updateLocalType(tenv, name, ty, isSubType, true)
   }
 
   // Growing an object's fields changes our view of the same reference; it
@@ -395,6 +395,7 @@ mutable class TCEnv private {
     name: Name,
     ty: TType,
     isSubType: (TType, TType) -> void,
+    runtimeWrite: Bool = false,
   ): void {
     // A callback can run after its enclosing frame replaces this binding.
     // Its write is an observable use even if no value has been read yet.
@@ -408,8 +409,15 @@ mutable class TCEnv private {
         bounds![name.value] = TType::union(this.subst, tenv, previous, ty)
       )
     };
-    this.scope.set(name, ty, (source, target) ->
-      isSubType(source, tenv.preserveCopyProvenance(this.subst, source, target))
+    this.scope.set(
+      name,
+      ty,
+      (source, target) ->
+        isSubType(
+          source,
+          tenv.preserveCopyProvenance(this.subst, source, target),
+        ),
+      runtimeWrite,
     );
     this.scope.preserveAssignedCopyProvenance(tenv, this.subst, name, ty)
   }

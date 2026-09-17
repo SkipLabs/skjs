@@ -92,6 +92,31 @@ General substitution stability remains R2; general alias mutation remains M1.
 | M2 | Stale captured reads: a creation-time narrowing is not a captured arrow guarantee (`L-STALE-READ`) | done | Reduced [stale-closure-reads](deep-dives/issues/stale-closure-reads-narrowing.md) programs are rejected; a snapshot-or-null-check counterpart still checks |
 | M3 | Loop-carried narrowing (`L-LOOP-CARRIED`) | done | SKJS rejects the [loop-carried](deep-dives/issues/loop-carried-narrowing-stale.md) reduction using its existing language and tests. Independent pipeline coverage of `let` is **not** a prerequisite. A counterpart that remains correct under SKJS's own loop checking (not source-level supplied invariants) still checks |
 
+## Retained binding contracts (2026-09-17)
+
+The uncaptured assignment path previously replaced `LocalRef.type` without
+checking `LocalRef.declaredType`. For `let value = 1; value = "s"`, it retained
+`number` as the latter and installed `string` as the former; it did not compute
+a common invariant. Captures constrained writes, so inserting a closure changed
+whether the same replacement was accepted. This was an unchecked write, not
+missing exporter support for an internally established union.
+
+The repair makes runtime writes check the retained contract regardless of
+capture. Concrete primitive and callable contracts reject incompatible
+replacements; open inference variables collect writes in the same variable,
+and the existing loop restriction remains. Flow observations and object-shape construction are still distinct
+from runtime writes: only `TCEnv.writeVar` marks a runtime assignment. The AVL
+example now states `node | null` for a temporary read before replacement;
+its equality read had already resolved its otherwise null-only inference bound.
+This addresses this acceptance bypass, not all inference
+stability (R2) or object alias mutation (M1).
+
+`inferred-binding-contract.ts` records the two previously accepted replacements,
+compatible callable replacement, and explicit-union assignment with a precise
+string result. `evolvedInferredSnapshotStillString` is now an expected rejection
+at the string assignment. That is a checker repair, not an increase in the count
+of verified repair functions. The verifier's fixed-world invariant is unchanged.
+
 ## Progress assessment (2026-09-14)
 
 The completed rows are bounded repairs, not a percentage of overall soundness.

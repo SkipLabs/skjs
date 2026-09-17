@@ -1,9 +1,9 @@
 # census: repair-work
-# 24/115 verified, of 315 functions
-#   skjs-rejected: 200
+# 26/116 verified, of 319 functions
+#   skjs-rejected: 203
 #   gate: 83
-#   verified: 24
-#   unproved: 8
+#   verified: 26
+#   unproved: 7
 #
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofUndefinedFieldAdmitsInitialValue
@@ -138,6 +138,7 @@ skjs-rejected	tests/expect-error/call-effect-boundaries.ts	suspensionEffect
 skjs-rejected	tests/expect-error/captured-read-stability.ts	aliasThenNarrow
 skjs-rejected	tests/expect-error/captured-read-stability.ts	branchObjectCapture
 skjs-rejected	tests/expect-error/captured-read-stability.ts	evolvedInferredCapture
+skjs-rejected	tests/expect-error/captured-read-stability.ts	evolvedInferredSnapshotStillString
 skjs-rejected	tests/expect-error/captured-read-stability.ts	evolvingNullCapture
 skjs-rejected	tests/expect-error/captured-read-stability.ts	inferredAliasCapture
 skjs-rejected	tests/expect-error/captured-read-stability.ts	inferredObjectCapture
@@ -197,6 +198,8 @@ skjs-rejected	tests/expect-error/increment-narrowing.ts	readonlyUpdate
 skjs-rejected	tests/expect-error/index-signatures.ts	constructIndexedOwnField
 skjs-rejected	tests/expect-error/index-signatures.ts	reuseCopiedIndexContract
 skjs-rejected	tests/expect-error/index-signatures.ts	satisfyCopiedIndexContract
+skjs-rejected	tests/expect-error/inferred-binding-contract.ts	inferredCallableContract
+skjs-rejected	tests/expect-error/inferred-binding-contract.ts	inferredPrimitiveContract
 skjs-rejected	tests/expect-error/instanceof-generic-skolem-args.ts	holeForConditionPooling
 skjs-rejected	tests/expect-error/instanceof-generic-skolem-args.ts	holeWhilePooling
 skjs-rejected	tests/expect-error/issue-89-and-or-narrowing.ts	comparisonWritesOperand
@@ -289,7 +292,6 @@ skjs-rejected	tests/expect-error/unsound-refinement.ts	storedLocalAlias
 skjs-rejected	tests/expect-error/unsound-refinement.ts	storedNarrowAlias
 skjs-rejected	tests/expect-error/unsound-refinement.ts	tupleDeclarationDefault
 unproved:reject: source expression obligation at [185,209): type claim unavailable from producer	tests/expect-error/obj-literal-var-field-growth.ts	retainedReceiver
-unproved:reject: source expression obligation at [546,557): evidence search failed (unsupported or 	tests/expect-error/captured-read-stability.ts	evolvedInferredSnapshotStillString
 unproved:reject: source expression obligation at [551,574): type claim unavailable from producer	tests/expect-error/captured-read-stability.ts	checkedGenericCallResult
 unproved:reject: source incoming edge obligation at [1485,1500): evidence search failed (unsupporte	tests/expect-error/field-refinement.ts	inferredFieldComparison
 unproved:reject: source incoming edge obligation at [196,211): evidence search failed (unsupported 	tests/expect-error/unsound-refinement.ts	assignmentResultSnapshot
@@ -312,6 +314,8 @@ verified	tests/expect-error/captured-read-stability.ts	snapshotCapturedLocal
 verified	tests/expect-error/captured-read-stability.ts	stableAnnotatedConstValue
 verified	tests/expect-error/destructuring.ts	checkedStateAfterDefault
 verified	tests/expect-error/destructuring.ts	inferredFieldDefault
+verified	tests/expect-error/inferred-binding-contract.ts	compatibleInferredReplacement
+verified	tests/expect-error/inferred-binding-contract.ts	unionContractStillNarrows
 verified	tests/expect-error/issue-89-and-or-narrowing.ts	unrelatedFact
 verified	tests/expect-error/local-vs-local-refinement.ts	inferredReadNamedNull
 verified	tests/expect-error/local-vs-local-refinement.ts	inferredReadSingleton

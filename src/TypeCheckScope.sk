@@ -11,8 +11,8 @@ module SKJS;
 // narrowing (see `Scope::set`). `hasDeclaredContract` records an explicit
 // annotation, a completed inferred object, or an object contract inherited
 // from an alias source. Every write must preserve that contract.
-// Captured primitive initializers and bare
-// inference variables also constrain writes; other unannotated bindings evolve.
+// Inferred initializers constrain writes too. Open inference variables collect
+// compatible bounds; a concrete contract is never replaced by a later flow type.
 // `isMutable` is false for a `const` binding and true for `let`, `var`, a
 // parameter, or a catch clause's variable; `this` is also not mutable, since
 // it cannot be reassigned.
@@ -612,6 +612,7 @@ mutable class Scope{
     name: Name,
     ty: TType,
     isSubType: (TType, TType) -> void,
+    runtimeWrite: Bool = false,
   ): void {
     (throughLoop, upRef) = this.maybeGetRef(name.value) match {
     | None() ->
@@ -621,19 +622,27 @@ mutable class Scope{
       )
     | Some(x) -> x
     };
-    if (this.hasCaptureContract(name.value, upRef)) {
-      // Captured inference variables collect writes while open. A captured
-      // read uses that same variable, sealing it through ordinary type checking;
-      // later writes must preserve the sealed contract. Concrete primitive
-      // initializers and explicit annotations constrain every write as well.
-      // The value still narrows the binding for later reads in this frame,
-      // but it may not escape that contract.
+    // Every runtime write preserves the binding's retained contract, even
+    // when no closure captures it. Concrete contracts cannot change kind;
+    // an open inference variable collects writes in that same variable,
+    // and a sealed one checks them against its established bound.
+    // Object initialization can grow a reference's shape without replacing
+    // the binding. Preserve its existing first-use contract discipline;
+    // runtimeWrite distinguishes assignments from that construction work.
+    // Flow-only callers supply a no-op checker.
+    if (
+      runtimeWrite ||
+      this.hasCaptureContract(name.value, upRef) ||
+      this.isThroughFunction(name)
+    ) {
       isSubType(ty, upRef.declaredType);
-    } else if (this.isThroughFunction(name)) {
-      // Other inferred captures can evolve on same-frame writes, but a write
-      // from a closure may run later and must respect the declared type.
-      isSubType(ty, upRef.declaredType);
-    } else if (throughLoop) {
+    };
+    if (
+      throughLoop &&
+      !this.hasCaptureContract(name.value, upRef) &&
+      !this.isThroughFunction(name)
+    ) {
+      // Retain the existing loop-entry restriction for unsealed bindings.
       isSubType(ty, upRef.type);
     };
     this.!refs[name.value] = LocalRef(
