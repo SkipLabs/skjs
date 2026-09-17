@@ -65,7 +65,7 @@ def Names (D : Registry) : Tm → Prop
   | .makeAt (.closure _ b) _ args => Names D b ∧ NamesArgs D args
   | .makeAt .absent _ args => NamesArgs D args
   | .call f args => Names D f ∧ NamesArgs D args
-  | .letE a b | .writeAt _ a b => Names D a ∧ Names D b
+  | .letE a b | .writeAt _ a b | .arith _ a b => Names D a ∧ Names D b
   | .readAt _ a | .test _ a => Names D a
   | .ite c a b => Names D c ∧ Names D a ∧ Names D b
   | _ => True
@@ -131,7 +131,7 @@ def sourceTerm : Tm → Bool
   | .makeAt (.closure _ b) _ args => sourceTerm b && sourceArgs args
   | .makeAt .absent _ args => sourceArgs args
   | .call f args => sourceTerm f && sourceArgs args
-  | .letE a b | .writeAt _ a b => sourceTerm a && sourceTerm b
+  | .letE a b | .writeAt _ a b | .arith _ a b => sourceTerm a && sourceTerm b
   | .readAt _ a | .test _ a => sourceTerm a
   | .ite c a b => sourceTerm c && sourceTerm a && sourceTerm b
   | _ => true
@@ -301,6 +301,17 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
   | iteF =>
     intro D hh ht
     exact ⟨D,.refl D,hh,ht.1.2.2,ht.2.2.2⟩
+  | arithC1 step ih =>
+    intro D hh ht
+    obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.1,ht.2.1⟩
+    exact ⟨E,hx,hh',⟨hs,ht.1.2⟩,hn,ht.2.2.mono hx⟩
+  | arithC2 hv step ih =>
+    intro D hh ht
+    obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2,ht.2.2⟩
+    exact ⟨E,hx,hh',⟨ht.1.1,hs⟩,ht.2.1.mono hx,hn⟩
+  | arithV =>
+    intro D hh ht
+    exact ⟨D,.refl D,hh,trivial,trivial⟩
 
 #print axioms descriptor_unique
 #print axioms step_preserves

@@ -340,6 +340,14 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
       node verification/tools/tsc-claims.mts "$COMPUTED_KEYS" --out "$WORK/computed_keys.tsc"
   }
   build computed_keys_fixture
+  ARITHMETIC=verification/tests/stateful-source/arithmetic.ts
+  ARITHMETIC_STRINGS=verification/tests/stateful-source/arithmetic-strings.ts
+  arithmetic_fixture() {
+    fixture arithmetic "$ARITHMETIC" &&
+      node verification/tools/tsc-claims.mts "$ARITHMETIC" --out "$WORK/arithmetic.tsc" &&
+      fixture arithmetic_strings "$ARITHMETIC_STRINGS"
+  }
+  build arithmetic_fixture
   build snapshot_probes
   for pid in "${building[@]}"; do wait "$pid" || exit 1; done
 
@@ -398,6 +406,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Distinct cells" node verification/tests/distinct-cells.mts "$WORK/distinct.ast" "$WORK/distinct.claims" "$WORK/distinct.tsc" "$DISTINCT" "$WORK/distinct_aliased.ast" "$WORK/distinct_aliased.tsc" "$DISTINCT_ALIASED" "$VERIFIER"
   run_test "Singleton operands" node verification/tests/singleton-operands.mts "$WORK/singleton_operands.ast" "$WORK/singleton_operands.claims" "$WORK/singleton_operands.tsc" "$SINGLETON_OPERANDS" "$WORK/singleton_call.ast" "$WORK/singleton_call.tsc" "$SINGLETON_CALL" "$VERIFIER"
   run_test "Computed keys" node verification/tests/computed-keys.mts "$WORK/computed_keys.ast" "$WORK/computed_keys.claims" "$WORK/computed_keys.tsc" "$COMPUTED_KEYS" "$VERIFIER"
+  run_test "Arithmetic" node verification/tests/arithmetic.mts "$WORK/arithmetic.ast" "$WORK/arithmetic.claims" "$WORK/arithmetic.tsc" "$ARITHMETIC" "$WORK/arithmetic_strings.ast" "$WORK/arithmetic_strings.claims" "$ARITHMETIC_STRINGS" "$VERIFIER"
   run_test "Closed SKJS operations" node verification/tests/skjs-operations.mts "$WORK/source.claims" "$BASE" "$VERIFIER"
   run_test "Generic identity source" node verification/tests/generic-source.mts "$WORK/generic_id.ast" "$WORK/generic_id.claims" "$GENERIC_ID" "$VERIFIER"
   run_test "Generic alias source" node verification/tests/generic-aliases.mts "$WORK/generic_aliases.ast" "$WORK/generic_aliases.claims" "$GENERIC_ALIASES" "$VERIFIER"

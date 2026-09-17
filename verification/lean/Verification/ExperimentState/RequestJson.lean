@@ -11,6 +11,7 @@ open Lean ProgramTyping PositiveNormalization PositiveGraphs PositiveRules
 open ProgramCertificates PointClaims ControlFlow CertificateProducer
 
 deriving instance ToJson, FromJson for Tag
+deriving instance ToJson, FromJson for Arith
 deriving instance ToJson, FromJson for Tm, CallCode
 deriving instance ToJson, FromJson for Clause
 deriving instance ToJson, FromJson for Target

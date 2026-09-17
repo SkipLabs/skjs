@@ -20,7 +20,7 @@ def Scoped (d : Nat) : Tm → Prop
   | .letE a b => Scoped d a ∧ Scoped (d + 1) b
   | .call f args => Scoped d f ∧ ScopedArgs d args
   | .readAt _ a | .test _ a => Scoped d a
-  | .writeAt _ a b => Scoped d a ∧ Scoped d b
+  | .writeAt _ a b | .arith _ a b => Scoped d a ∧ Scoped d b
   | .ite c a b => Scoped d c ∧ Scoped d a ∧ Scoped d b
   | _ => True
 
@@ -46,6 +46,7 @@ theorem Scoped.mono {t : Tm} {d e : Nat} (h : Scoped d t) (hde : d ≤ e) :
   case attach n f ns args ihf ihargs =>
     exact ⟨ihf h.1 (by omega), fun a ha => ihargs a ha (h.2 a ha) hde⟩
   case write f a b iha ihb => exact ⟨iha h.1 hde, ihb h.2 hde⟩
+  case arith op a b iha ihb => exact ⟨iha h.1 hde, ihb h.2 hde⟩
   case ite c a b ihc iha ihb => exact ⟨ihc h.1 hde, iha h.2.1 hde, ihb h.2.2 hde⟩
   case alloc ns args ihargs => exact fun a ha => ihargs a ha (h a ha) hde
   case read f a ih => exact ih h hde
@@ -67,6 +68,7 @@ theorem subst_above {t : Tm} {d j : Nat} (h : Scoped d t) (hj : d ≤ j) (a : Tm
       simpa using (List.map_congr_left (g := id) (fun x hx => ihargs x hx (h.2 x hx) hj))
     rw [ihf h.1 (by omega), hmap]
   case write f b c ihb ihc => rw [ihb h.1 hj, ihc h.2 hj]
+  case arith op b c ihb ihc => rw [ihb h.1 hj, ihc h.2 hj]
   case ite c b e ihc ihb ihe => rw [ihc h.1 hj, ihb h.2.1 hj, ihe h.2.2 hj]
   case alloc ns args ihargs =>
     have hmap : args.map (subst j a) = args := by
@@ -101,6 +103,7 @@ theorem subst_scoped {t a : Tm} {d j : Nat} (ht : Scoped (d + 1) t)
     obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
     exact ihargs x hx (ht.2 x hx) hj
   case write f b c ihb ihc => exact ⟨ihb ht.1 hj, ihc ht.2 hj⟩
+  case arith op b c ihb ihc => exact ⟨ihb ht.1 hj, ihc ht.2 hj⟩
   case ite c b e ihc ihb ihe => exact ⟨ihc ht.1 hj, ihb ht.2.1 hj, ihe ht.2.2 hj⟩
   case alloc ns args ihargs =>
     intro v hv
@@ -131,6 +134,7 @@ def instantiate (d : Nat) (ρ : Env) : Tm → Tm
   | .writeAt f a b => .writeAt f (instantiate d ρ a) (instantiate d ρ b)
   | .test k a => .test k (instantiate d ρ a)
   | .ite c a b => .ite (instantiate d ρ c) (instantiate d ρ a) (instantiate d ρ b)
+  | .arith op a b => .arith op (instantiate d ρ a) (instantiate d ρ b)
   | t => t
 
 def instantiateArgs (d : Nat) (ρ : Env) : List Tm → List Tm
@@ -159,6 +163,7 @@ theorem instantiate_scoped (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (t : Tm) (d
     obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
     exact ihargs x hx d
   case write f a b iha ihb => exact ⟨iha _, ihb _⟩
+  case arith op a b iha ihb => exact ⟨iha _, ihb _⟩
   case ite c a b ihc iha ihb => exact ⟨ihc _, iha _, ihb _⟩
   case alloc ns args ihargs =>
     intro v hv
@@ -196,6 +201,7 @@ theorem instantiate_beta (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (a t : Tm) (d
     intro x hx
     exact ihargs x hx d
   case write f b c ihb ihc => rw [ihb, ihc]
+  case arith op b c ihb ihc => rw [ihb, ihc]
   case ite c b e ihc ihb ihe => rw [ihc, ihb, ihe]
   case alloc ns args ihargs =>
     rw [List.map_map]
@@ -251,6 +257,7 @@ theorem instantiate_above {t : Tm} {d : Nat} (ht : Scoped d t) (ρ : Env) :
       simpa using (List.map_congr_left (g := id) (fun x hx => ihargs x hx (ht.2 x hx)))
     rw [ihf ht.1, hmap]
   case write f a b iha ihb => rw [iha ht.1, ihb ht.2]
+  case arith op a b iha ihb => rw [iha ht.1, ihb ht.2]
   case ite c a b ihc iha ihb => rw [ihc ht.1, iha ht.2.1, ihb ht.2.2]
   case alloc ns args ihargs =>
     have hmap : args.map (instantiate d ρ) = args := by

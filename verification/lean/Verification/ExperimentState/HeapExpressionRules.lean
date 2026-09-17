@@ -479,6 +479,7 @@ def pureTerm : Tm → Bool
   | .var _ => true
   | .test _ a => pureTerm a
   | .ite c t e => pureTerm c && pureTerm t && pureTerm e
+  | .arith _ a b => pureTerm a && pureTerm b
   | t => isVal t
 
 /-- Purity is closed under actual reduction and rules out every heap change.

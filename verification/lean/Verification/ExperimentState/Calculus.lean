@@ -42,6 +42,12 @@ inductive Tag where
   | strEq (value : String)
   deriving Repr, DecidableEq
 
+/-- Binary arithmetic on two numbers: the IEEE-754 double operation JavaScript
+performs on two Numbers. The fragment applies one to nothing else. -/
+inductive Arith where
+  | add | sub | mul | div
+  deriving Repr, DecidableEq, BEq
+
 mutual
 /-- Terms. Values are terms too, so worlds and the operational semantics speak
 about the same objects. -/
@@ -56,9 +62,9 @@ inductive Tm where
   | tru
   | fls
   /-- A number, carried as the bit pattern of the double it denotes, which is
-  the identity `numBits` below assigns a numeric literal. The fragment
-  has no arithmetic; equality tests inspect these bits. Otherwise a number is opaque: it
-  is bound, passed, stored and shape-tested, never computed with. Two patterns
+  the identity `numBits` below assigns a numeric literal. Equality tests
+  inspect these bits and `arith` combines them as doubles; otherwise a number
+  is opaque: it is bound, passed, stored and shape-tested. Two patterns
   that denote the same double are equal, so singletons cannot be confused; two
   that denote it differently would be distinct singletons, which costs
   completeness and never soundness. -/
@@ -77,6 +83,8 @@ inductive Tm where
   | writeAt (field : String) (a b : Tm)
   | test (k : Tag) (a : Tm)
   | ite (c t e : Tm)
+  /-- Arithmetic on the values of `a` and `b`, in that order, both numbers. -/
+  | arith (op : Arith) (a b : Tm)
   deriving Repr
 
 /-- Invocation code is not a runtime value. A plain object has no call code. -/
@@ -99,6 +107,19 @@ def numBits (lexeme : String) : Except String UInt64 :=
       let f := n.toFloat
       .ok (if f == 0.0 then (0.0 : Float).toBits else f.toBits)
   | _ => .error s!"not a decimal numeric literal: {lexeme}"
+
+/-- The bits of an arithmetic result: the double operation on the operands'
+doubles, with `-0` normalised to `+0` as `numBits` does for a literal, so a
+computed zero and a written zero are one value, as `===` already treats them. -/
+def arithBits (op : Arith) (x y : UInt64) : UInt64 :=
+  let a := Float.ofBits x
+  let b := Float.ofBits y
+  let r := match op with
+    | .add => a + b
+    | .sub => a - b
+    | .mul => a * b
+    | .div => a / b
+  if r == 0.0 then (0.0 : Float).toBits else r.toBits
 
 /-! Executable structural equality, kept explicit because Lean's deriving
 handler does not support nested mutual types such as list-valued applications.
@@ -150,6 +171,10 @@ def tmDecEq (a b : Tm) : Decidable (a = b) := by
     haveI : Decidable (a1 = b1) := tmDecEq a1 b1
     haveI : Decidable (a2 = b2) := tmDecEq a2 b2
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2) (by simp only [Tm.ite.injEq])
+  case arith.arith a0 a1 a2 b0 b1 b2 =>
+    haveI : Decidable (a1 = b1) := tmDecEq a1 b1
+    haveI : Decidable (a2 = b2) := tmDecEq a2 b2
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2) (by simp only [Tm.arith.injEq])
 termination_by sizeOf a
 
 def callCodeDecEq (a b : CallCode) : Decidable (a = b) := by
@@ -257,11 +282,12 @@ theorem lookup_slots {ns : List String} (hnd : ns.Nodup) {base i : Nat}
     (read : ∀ f a, P a → P (.readAt f a))
     (write : ∀ f a b, P a → P b → P (.writeAt f a b))
     (test : ∀ k a, P a → P (.test k a))
-    (ite : ∀ c a b, P c → P a → P b → P (.ite c a b)) (t : Tm) : P t := by
+    (ite : ∀ c a b, P c → P a → P b → P (.ite c a b))
+    (arith : ∀ op a b, P a → P b → P (.arith op a b)) (t : Tm) : P t := by
   apply Tm.rec (motive_1 := P)
     (motive_2 := fun c => match c with | .absent => True | .closure _ b => P b)
     (motive_3 := fun args => ∀ a ∈ args, P a)
-    var call letE nul undef tru fls num str ?_ ?_ read write test ite
+    var call letE nul undef tru fls num str ?_ ?_ read write test ite arith
     True.intro (fun _ _ h => h) (by simp) (by
       intro a args ha ih v hv
       rcases List.mem_cons.mp hv with rfl | hv
@@ -330,6 +356,7 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .writeAt f x y => .writeAt f (subst j a x) (subst j a y)
   | .test k x => .test k (subst j a x)
   | .ite c x y => .ite (subst j a c) (subst j a x) (subst j a y)
+  | .arith op x y => .arith op (subst j a x) (subst j a y)
 
 termination_by structural t => t
 
@@ -410,6 +437,10 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | iteC : Step h c h' c' → Step h (.ite c t e) h' (.ite c' t e)
   | iteT : Step h (.ite .tru t e) h t
   | iteF : Step h (.ite .fls t e) h e
+  | arithC1 : Step h a h' a' → Step h (.arith op a b) h' (.arith op a' b)
+  | arithC2 : isVal a = true → Step h b h' b' → Step h (.arith op a b) h' (.arith op a b')
+  /-- Two numbers combine in one step; nothing else is ever combined. -/
+  | arithV : Step h (.arith op (.num x) (.num y)) h (.num (arithBits op x y))
 
 /-! ### The one-field rules
 
@@ -606,6 +637,21 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     cases s2 with
     | iteC s' => exact absurd s' fls_no_step
     | iteF => exact ⟨rfl, rfl⟩
+  | arithC1 s ih =>
+    cases s2 with
+    | arithC1 s' => exact (ih s').imp id (congrArg (Tm.arith _ · _))
+    | arithC2 hv _ => exact absurd s (by intro hs; exact value_no_step hv hs)
+    | arithV => exact absurd s (by intro hs; exact value_no_step rfl hs)
+  | arithC2 hv s ih =>
+    cases s2 with
+    | arithC1 s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
+    | arithC2 _ s' => exact (ih s').imp id (congrArg (Tm.arith _ _ ·))
+    | arithV => exact absurd s (by intro hs; exact value_no_step rfl hs)
+  | arithV =>
+    cases s2 with
+    | arithC1 s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
+    | arithC2 _ s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
+    | arithV => exact ⟨rfl, rfl⟩
 
 theorem make_step_inv {c : CallCode} {v : Val} (hv : isVal v = true) {h h' t}
     (hs : Step h (.make c v) h' t) : h' = h ++ [v] ∧ t = .obj h.length c := by

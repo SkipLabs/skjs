@@ -313,6 +313,14 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       HasTy G Γ (.readAt f a) A
   | write : HasTy G Γ a Ref → Represents G Ref (.refs fs []) → (f, A) ∈ fs →
       HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
+  /-- Arithmetic needs two operands the number test answers for, and yields
+  the number family: no singleton, since the result's bits are not typed. -/
+  | arith : HasTy G Γ a A → Answers G A .isNum true → HasTy G Γ b B → Answers G B .isNum true →
+      Represents G N .num → HasTy G Γ (.arith op a b) N
+  /-- A tag test whose answer the operand's type does not settle is still a
+  Boolean: its type holds both literals. -/
+  | test : HasTy G Γ a A → (.boolLit true) ∈ expand G B → (.boolLit false) ∈ expand G B →
+      HasTy G Γ (.test k a) B
   | ifBool : HasTy G Γ c C → Answers G C .isBool true →
       HasTy G Γ t A → HasTy G Γ e A → HasTy G Γ (.ite c t e) A
   /-- The condition still evaluates; its singleton type selects the reachable arm. -/
@@ -520,6 +528,34 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ :=
       recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) ((represents_sem hr j U v).mp ha').1
     exact read_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag
+  | @test Γ a A B k ha ht hf ih =>
+    intro n W h ρ he hw hh
+    apply bind (.test k) Step.testC n W h _ hw hh (ih n W h ρ he hw hh)
+    intro j hj U hx hu heap av hok hav ha'
+    cases j with
+    | zero => trivial
+    | succ p =>
+      apply Safe_mono (p+1) (fun m _ X v hv => ?_) U heap _ (test_value_safe k av hav p U heap hu hok)
+      rcases hv with rfl | rfl
+      · exact (expand_sem G B m X _).mpr (by simp only [semList, setSem]; exact ⟨_, ht, rfl⟩)
+      · exact (expand_sem G B m X _).mpr (by simp only [semList, setSem]; exact ⟨_, hf, rfl⟩)
+  | @arith Γ a A b B N op ha hqa hb hqb hn iha ihb =>
+    intro n W h ρ he hw hh
+    apply bind (fun a => .arith op a (instantiate 0 ρ b)) Step.arithC1 n W h _ hw hh
+      (iha n W h ρ he hw hh)
+    intro j hj U hx hu heap av hok hav ha'
+    apply bind (.arith op av) (Step.arithC2 hav) j U heap _ hu hok
+      (ihb j U heap ρ (he.transfer j hj U hx) hu hok)
+    intro k hk V hy hv heap' bv hok' hbval hb'
+    have ha'' := (meaning_adm G A).mono k _ V hy av ((meaning_adm G A).down_le j k hk U av ha')
+    have hna := answers_sound hqa ha''
+    have hnb := answers_sound hqb hb'
+    obtain ⟨x, rfl⟩ : ∃ x, av = .num x := by
+      cases av <;> simp [tagHolds] at hna; exact ⟨_, rfl⟩
+    obtain ⟨y, rfl⟩ : ∃ y, bv = .num y := by
+      cases bv <;> simp [tagHolds] at hnb; exact ⟨_, rfl⟩
+    exact arith_value_safe op x y k V heap' hv hok'
+      (fun m U => (represents_sem hn m U _).mpr ⟨_, rfl⟩)
   | @write Γ a Ref fs f A b N ha hr hm hb hn iha ihb =>
     intro n W h ρ he hw hh
     apply bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 n W h _ hw hh

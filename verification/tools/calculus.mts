@@ -29,7 +29,9 @@ export type Term =
   | { readAt: { field: string; a: Term } }
   | { writeAt: { field: string; a: Term; b: Term } }
   | { test: { k: Tag; a: Term } }
-  | { ite: { c: Term; t: Term; e: Term } };
+  | { ite: { c: Term; t: Term; e: Term } }
+  /** Arithmetic on two numbers, as the double operation. */
+  | { arith: { op: "add" | "sub" | "mul" | "div"; a: Term; b: Term } };
 /** Every tag, checked against `Tag`: adding one there and not here is a type
  * error rather than an "unknown tag" at run time. */
 const TAGS: Record<Extract<Tag, string>, true> = {
@@ -112,6 +114,7 @@ export function decodeTerm(value: unknown): Term {
     writeAt: ["field", "a", "b"],
     test: ["k", "a"],
     ite: ["c", "t", "e"],
+    arith: ["op", "a", "b"],
   };
   const keys = shape[key];
   if (!keys) throw Error("unknown term constructor");

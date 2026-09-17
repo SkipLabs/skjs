@@ -223,6 +223,17 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           if checkTree G e then coerce G pool e A else none
       if let some e := direct then return some e
       return splitReceiver a
+    | .arith _ a b =>
+      -- Each operand at a pool type the number test answers for; the result
+      -- at the requested type when it is the number family, else coerced.
+      let numbers := pool.filter fun R => decide (Answers G R .isNum true)
+      return numbers.findSome? fun R => do
+        let ea ← recur Γ a R
+        numbers.findSome? fun S => do
+          let eb ← recur Γ b S
+          (A :: pool).findSome? fun N =>
+            let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .arith [ea,eb]
+            if checkTree G e then coerce G pool e A else none
     | .ite (.test tag (.var i)) u e =>
       let some B := Γ[i]? | return none
       if decide (Answers G B tag true) then
@@ -230,8 +241,16 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
       if decide (Answers G B tag false) then
         return (recur Γ e A).map fun p => .node ⟨Γ,t,A⟩ .ifFalse [p]
       -- Split only an explicit union. A singleton whose graph clause itself
-      -- mixes shapes is not made smaller by repeating this rule.
-      if B.length ≤ 1 then return none
+      -- mixes shapes is not made smaller by repeating this rule; its answer
+      -- is unknown, the test is a Boolean, and both arms are typed.
+      if B.length ≤ 1 then
+        return (A :: pool).findSome? fun C => do
+          if !decide ((.boolLit true) ∈ expand G C ∧ (.boolLit false) ∈ expand G C) then none else do
+          let pc := ProgramCertificates.Evidence.node ⟨Γ,.test tag (.var i),C⟩ .test
+            [.node ⟨Γ,.var i,B⟩ .var []]
+          let pt ← recur Γ u A
+          let pe ← recur Γ e A
+          pure (.node ⟨Γ,t,A⟩ .ifBool [pc,pt,pe])
       return do
         let ps ← B.mapM fun a => recur (Γ.set i [a]) t A
         pure (.node ⟨Γ,t,A⟩ (.unionVar i) ps)

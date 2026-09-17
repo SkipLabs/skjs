@@ -6,6 +6,7 @@
 import type { ClaimType, Atom } from "./claim.mts";
 import type { Span } from "./span.mts";
 
+export type ArithOp = "add" | "sub" | "mul" | "div";
 export type Expr =
   | { k: "id"; pos: Span; name: string }
   | { k: "lit"; pos: Span; lit: Atom }
@@ -21,6 +22,13 @@ export type Expr =
   | { k: "index"; pos: Span; e: Expr; key: Expr }
   | { k: "indexWrite"; pos: Span; receiver: Expr; key: Expr; rhs: Expr }
   | { k: "bin"; pos: Span; op: string; l: Expr; r: Expr }
+  /* Arithmetic on two numbers: `l`, then `r`, then the double operation. */
+  | { k: "arith"; pos: Span; op: ArithOp; l: Expr; r: Expr }
+  /* `target op= rhs`, `target++` and the like: the target's parts are
+     evaluated once, its current value read, the right side (1 for an
+     increment) evaluated, the operation applied and the result written back.
+     `post` selects the old value as the expression's value. */
+  | { k: "update"; pos: Span; op: ArithOp; target: Expr; rhs: Expr | null; post: boolean }
   | { k: "coalesce"; pos: Span; left: Expr; right: Expr }
   | { k: "write"; pos: Span; field: string; receiver: Expr; rhs: Expr }
   /* A nullish assignment also reads the target at namePos. */

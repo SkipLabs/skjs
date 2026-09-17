@@ -15,7 +15,7 @@ structure Sequent (ι : Type) where
 
 inductive Rule (ι : Type) where
   | var | nul | undef | tru | fls | truLit | flsLit | numLit | num | strLit | str
-  | funE | app | letE | alloc | read | write
+  | funE | app | letE | alloc | read | write | arith | test
   | ifBool | ifTrue | ifFalse
   | ifKnown (answer : Bool)
   | ifBoolVar (trueType falseType : Ty ι)
@@ -79,6 +79,12 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     (match expand G ja.type with
      | [.refs fs []] => (f, jb.type) ∈ fs
      | _ => False)
+  | .arith, .arith _ a b, [ja, jb] =>
+    ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
+    Answers G ja.type .isNum true ∧ Answers G jb.type .isNum true ∧ Represents G j.type .num
+  | .test, .test _ a, [ja] =>
+    ja.context = j.context ∧ ja.term = a ∧
+    (.boolLit true) ∈ expand G j.type ∧ (.boolLit false) ∈ expand G j.type
   | .ifBool, .ite c t e, [jc,jt,je] =>
     jc.context = j.context ∧ jc.term = c ∧ Answers G jc.type .isBool true ∧
     jt = ⟨j.context,t,j.type⟩ ∧ je = ⟨j.context,e,j.type⟩
@@ -160,7 +166,7 @@ def checkScope (d : Nat) : Tm → Bool
   | .makeAt .absent _ args => checkScopes d args
   | .letE a b => checkScope d a && checkScope (d+1) b
   | .call f args => checkScope d f && checkScopes d args
-  | .writeAt _ a b => checkScope d a && checkScope d b
+  | .writeAt _ a b | .arith _ a b => checkScope d a && checkScope d b
   | .readAt _ a | .test _ a => checkScope d a
   | .ite c a b => checkScope d c && checkScope d a && checkScope d b
   | _ => true
@@ -286,6 +292,18 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     · rename_i fs he
       exact .write ha he hr hb hn
     · contradiction
+  · rename_i op a b ja jb
+    rcases hl with ⟨hΓa, hta, hΓb, htb, hqa, hqb, hn⟩
+    have ha := hp ja (by simp)
+    have hb := hp jb (by simp)
+    rw [hΓa, hta] at ha
+    rw [hΓb, htb] at hb
+    exact .arith ha hqa hb hqb hn
+  · rename_i k a ja
+    rcases hl with ⟨hΓ, hta, ht, hf⟩
+    have ha := hp ja (by simp)
+    rw [hΓ, hta] at ha
+    exact .test ha ht hf
   · rename_i c t e jc jt je
     rcases hl with ⟨hΓ, hc, hb, rfl, rfl⟩
     have hcond := hp jc (by simp)
@@ -579,6 +597,18 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     apply node_complete (G := G) (j := ⟨Γ, .readAt f a, A⟩) (r := .read) (js := [⟨Γ,a,Ref⟩])
       ⟨rfl,rfl,by simp only [show expand G Ref = [.refs fs []] from hr]; exact hm⟩
     simpa using ih
+  | @test Γ a A B k ha ht hf ih =>
+    apply node_complete (G := G) (j := ⟨Γ, .test k a, B⟩) (r := .test) (js := [⟨Γ,a,A⟩])
+      ⟨rfl,rfl,ht,hf⟩
+    simpa using ih
+  | @arith Γ a A b B N op ha hqa hb hqb hn iha ihb =>
+    apply node_complete (G := G) (j := ⟨Γ, .arith op a b, N⟩) (r := .arith)
+      (js := [⟨Γ,a,A⟩, ⟨Γ,b,B⟩]) ⟨rfl,rfl,rfl,rfl,hqa,hqb,hn⟩
+    intro j hj
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
+    rcases hj with rfl | rfl
+    · exact iha
+    · exact ihb
   | @write Γ a Ref fs f A b N ha hr hm hb hn iha ihb =>
     apply node_complete (G := G) (j := ⟨Γ, .writeAt f a b, N⟩) (r := .write)
       (js := [⟨Γ,a,Ref⟩, ⟨Γ,b,A⟩])

@@ -44,10 +44,10 @@ of the work remaining.
 
 ## Checkpoint: 17 September 2026
 
-The baseline is **29/116 verified**, out of 319 selected functions:
-203 SKJS-rejected, 80 gated, 7 unproved. The separate curated run had 56 files,
+The baseline is **32/116 verified**, out of 319 selected functions:
+203 SKJS-rejected, 75 gated, 9 unproved. The separate curated run had 56 files,
 235 verified functions, 7 search failures and 13 unavailable checks; the suite
-run had 60 suites. These are checkpoint results, not permanent expectations;
+run had 61 suites. These are checkpoint results, not permanent expectations;
 the baseline and fresh command output are authoritative.
 
 Recent repair gains were numeric heap predicates (`checkedEvolvingCapture`),
@@ -62,7 +62,10 @@ field (`assignmentResultSnapshot`), and singleton comparisons whose other
 operand is an effect-free name or field read rather than a literal
 (`inferredFieldComparison`), and element access with a computed key claimed
 as a string singleton, with ternaries branching in the graph so an effect in
-the key is seen (`keyInitializesRhs`): 11 → 12 → 13 → 14 → 15 → 17 → 21 → 24 → 27 → 28 → 29.
+the key is seen (`keyInitializesRhs`), and arithmetic on numbers with compound
+assignments and increments, plus a Boolean typing for a numeric test the operand's
+type does not settle (`mutateConstantObject`, `annotatedCompoundKey`,
+`computedUpdate`): 11 → 12 → 13 → 14 → 15 → 17 → 21 → 24 → 27 → 28 → 29 → 32.
 TS observation fixes also improved curated coverage without themselves moving
 this SKJS repair count.
 
@@ -177,7 +180,8 @@ where to investigate, not a promise that one extension will verify each row.
 | `obj-literal-var-field-growth.ts`: `retainedReceiver` | The exporter reports `fuel-exhausted` for `{ slot: seed }` and every type mentioning `box` or `original`: the object literal's growable field variable has a cyclic saved bound, which the bounded export refuses rather than unrolls (see `testTypeClaimSnapshotUnion`). Fixing the export is only the first gate: the function then aliases a mutable local's object, assigns inside an expression, and compares a numeric field. Only three census functions carry this reason. There is a different, SKJS-rejected function with the same name in `unsound-refinement.ts`. |
 | `captured-read-stability.ts`: `checkedGenericCallResult` | The callee `makeCapturedGenericCell` at extracted span `[551,574)` is refused as `function-generic`; the call's result claim itself exports. The claim language has no generic function type, so an export would have to state the call-site instantiation, and the TS producer refuses the same signature (`generic-arrow`). Beyond that, the extractor binds identifiers only from parameters and local declarations, so an ambient function value is unbound: the same external-value boundary as the object rows above. Four census functions carry `function-generic`. |
 | `binding-initialization.ts`: `conditionBeforeLocal` | Reads top-level `seed` before declaring an inner `seed`. Context extraction carries the declaration, but lowering lacks that external value. Do not diagnose this solely as local shadowing. |
-| `captured-read-stability.ts`: `checkedPropertyResult`; `unsound-refinement.ts`: `identityMemberSnapshot`, `stableMemberScalar` | Nested record claims refused. The first two also have external objects; `identityMemberSnapshot` and `stableMemberScalar` additionally compare object identities (`x.child !== narrow`). Nested record support alone is insufficient. |
+| `captured-read-stability.ts`: `checkedPropertyResult`; `unsound-refinement.ts`: `identityMemberSnapshot`, `stableMemberScalar`; `assignment-receivers.ts`: `temporaryReceiver` | Nested record claims refused. The first two also have external objects; `identityMemberSnapshot` and `stableMemberScalar` additionally compare object identities (`x.child !== narrow`). Nested record support alone is insufficient. |
+| `unsound-refinement.ts`: `checkedConditionalAlias` | A parameter typed as a union of two record shapes with a discriminant: the claimed parameter type differs from the source annotation, since record unions are outside the claim language the extractor accepts for parameters. |
 | `unsound-refinement.ts`: `capturedReceiver` | The guard `(x = { value: null }) === x` compares two object operands: equality is lowered only against a null, undefined or singleton operand, so reference identity between records has no test in the calculus. |
 | `definite-assignment-tvar-soundness.ts`: `typeofInferredFieldAfterAssignment`, `typeofUndefinedFieldAdmitsInitialValue`; `test_ternary_refinements.ts`: `bothBranchesInitialize` | Uninitialized `let`. Requires an initialization discipline; seeding every private cell with undefined must not weaken the declared write contract or allow a read before initialization. |
 | `logical-compound-computed-key.ts`: `computedFallback` | `??=` currently requires a local identifier. Property/computed targets must save receiver and key before the RHS and evaluate each once. String/key restrictions may be the next gate. |

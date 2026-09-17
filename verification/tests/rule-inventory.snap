@@ -20,6 +20,8 @@ HasTy  (ProgramTyping.lean)
   alloc {parts : List (String × Ty ι × Tm)} : (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) []) → HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
   read : HasTy G Γ a Ref → Represents G Ref (.refs fs []) → (f, A) ∈ fs → HasTy G Γ (.readAt f a) A
   write : HasTy G Γ a Ref → Represents G Ref (.refs fs []) → (f, A) ∈ fs → HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
+  arith : HasTy G Γ a A → Answers G A .isNum true → HasTy G Γ b B → Answers G B .isNum true → Represents G N .num → HasTy G Γ (.arith op a b) N
+  test : HasTy G Γ a A → (.boolLit true) ∈ expand G B → (.boolLit false) ∈ expand G B → HasTy G Γ (.test k a) B
   ifBool : HasTy G Γ c C → Answers G C .isBool true → HasTy G Γ t A → HasTy G Γ e A → HasTy G Γ (.ite c t e) A
   ifKnown : HasTy G Γ c C → Represents G C (.boolLit q) → HasTy G Γ (if q then t else e) A → HasTy G Γ (.ite c t e) A
   ifBoolVar : Γ[i]? = some C → Answers G C .isBool true → Represents G T (.boolLit true) → Represents G F (.boolLit false) → HasTy G (Γ.set i T) t A → HasTy G (Γ.set i F) e A → HasTy G Γ (.ite (.var i) t e) A
@@ -45,6 +47,8 @@ Rule  (ProgramCertificates.lean)
   alloc
   read
   write
+  arith
+  test
   ifBool
   ifTrue
   ifFalse

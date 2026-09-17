@@ -155,6 +155,13 @@ then invoke, read and write it under the same premises as `app`, `read` and
 `write`. Allocation and invocation remain distinct steps: creation allocates
 the object and checks the bodies, without running them.
 
+Arithmetic has one rule, `arith`: two operands whose types answer the number
+test, combined by the double operation into a type representing the number
+family, never a singleton, since the result's bits are not typed. A tag test
+whose answer the operand's type does not settle is typed by `test` as a Boolean
+holding both literals, so `ifBool` can branch on it; a settled answer still
+uses `ifTag`.
+
 For branching, $\operatorname{Answers}_G(A,k,q)$ checks that every expanded
 clause of $A$ gives the same known Boolean answer $q$ to test $k$. Shape
 tests have an answer determined by the clause's shape; numeric singleton

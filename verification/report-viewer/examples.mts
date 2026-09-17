@@ -29,6 +29,7 @@ const stateful = [
   "distinct-cells",
   "singleton-operands",
   "computed-keys",
+  "arithmetic",
 ].map((name) => `verification/tests/stateful-source/${name}.ts`)
   .concat("verification/tests/export-snapshots/inferred-replacement.ts");
 const callables = ["unions", "factories", "arguments", "cells", "thunks", "arity", "guards", "function-field", "receiver-call"].map((name) => `verification/tests/callables/${name}.ts`);

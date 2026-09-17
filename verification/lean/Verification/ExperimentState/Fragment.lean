@@ -152,6 +152,12 @@ inductive Expr where
   expression obligation must establish it. -/
   | index (pos : Span) (field : Option String) (e key : Expr)
   | indexWrite (pos : Span) (field : Option String) (receiver key rhs : Expr)
+  /-- Arithmetic on two numbers, left operand first. -/
+  | arith (pos : Span) (op : Arith) (l r : Expr)
+  /-- `target op= rhs`, or an increment when `rhs` is absent: the target's
+  parts once, its value read, the right side, the operation, the write back.
+  `post` makes the old value the expression's value. -/
+  | update (pos : Span) (op : Arith) (target : Expr) (rhs : Option Expr) (post : Bool)
   /-- Read a local once; assign and return the RHS only when nullish. -/
   | nullishAssign (pos : Span) (name : String) (namePos : Span) (rhs : Expr)
   /-- Assignment to a mutable local, which is an expression: it yields the
@@ -180,7 +186,7 @@ abbrev Expr.app (p : Span) (callee arg : Expr) : Expr := .call p callee [arg]
 def Expr.span : Expr → Span
   | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body => body.span
   | .ifBody p _ _ _ _ | .done p | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
-  | .index p _ _ _ | .indexWrite p _ _ _ _ => p
+  | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ => p
   | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .cast p _ _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ | .call p _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ => p
 
 /-- One declarator of a `const` or `let`. -/
@@ -239,6 +245,14 @@ structure Claims where
   envs : List (Nat × List (String × Json))
   exprs : List (Span × Json)
 
+private def decodeArith (j : Json) : Except String Arith := do
+  match ← jStr j with
+  | "add" => pure .add
+  | "sub" => pure .sub
+  | "mul" => pure .mul
+  | "div" => pure .div
+  | op => throw s!"unknown arithmetic operator '{op}'"
+
 partial def decodeExpr (j : Json) : Except String Expr := do
   let p ← jSpan j "pos"
   match ← jStr (← jField j "k") with
@@ -276,6 +290,15 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       return (← jStr (← jField f "name"), ← decodeExpr (← jField f "e"))
     return .alloc p (parts.map Prod.fst) (parts.map Prod.snd)
   | "read" => return .read p (← jStr (← jField j "field")) (← decodeExpr (← jField j "e"))
+  | "arith" => do
+    CellClaims.fieldsExactly j ["k","pos","op","l","r"]
+    return .arith p (← decodeArith (← jField j "op")) (← decodeExpr (← jField j "l")) (← decodeExpr (← jField j "r"))
+  | "update" => do
+    CellClaims.fieldsExactly j ["k","pos","op","target","rhs","post"]
+    let rhs ← jField j "rhs"
+    let rhs ← if rhs == .null then pure none else do pure (some (← decodeExpr rhs))
+    return .update p (← decodeArith (← jField j "op")) (← decodeExpr (← jField j "target"))
+      rhs (← (← jField j "post").getBool?)
   | "index" => do
     CellClaims.fieldsExactly j ["k","pos","e","key"]
     return .index p none (← decodeExpr (← jField j "e")) (← decodeExpr (← jField j "key"))

@@ -152,6 +152,17 @@ function walkExpr(e: Expr, out: Sites): void {
       walkExpr(e.receiver, out);
       walkExpr(e.rhs, out);
       return;
+    case "arith":
+      addExpr(out, e.pos, "arith");
+      walkExpr(e.l, out);
+      walkExpr(e.r, out);
+      return;
+    case "update":
+      // The target is read before it is written: its site is a claim.
+      addExpr(out, e.pos, "update");
+      walkExpr(e.target, out);
+      if (e.rhs) walkExpr(e.rhs, out);
+      return;
     case "index":
       addExpr(out, e.pos, "index");
       walkExpr(e.e, out);

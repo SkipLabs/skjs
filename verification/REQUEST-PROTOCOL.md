@@ -157,7 +157,10 @@ one subtype-evidence list per outgoing edge. A derivation node names the
 `var`, `nul`, `undef`, `tru`, `fls`, `truLit`, `flsLit`, `numLit`, `num`,
 `strLit`, `str`, `funE`, `app`, `letE`, `alloc`,
 `read`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
-`unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, or `sub`. `ifTrue` and `ifFalse` are the two answers of the single
+`unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, `arith`, `test`, or `sub`.
+`arith` combines two operands the number test answers for into the number
+family; `test` types a tag test whose answer the operand's type does not settle
+as a Boolean holding both literals, for `ifBool` to branch on. `ifTrue` and `ifFalse` are the two answers of the single
 shape-test rule `ifTag`, split so that the evidence records which answer it
 relies on; `truLit` and `flsLit` are the Boolean singleton introductions, and
 `numLit` and `num` the numeric ones, a literal at its own singleton and at the
@@ -623,6 +626,13 @@ assignment `{"k":"indexWrite","pos":[start,end],"receiver":...,"key":...,"rhs":.
 the receiver is evaluated, then the key, then the right side. The key's claimed
 type must be one string singleton, which names the field; the key expression
 keeps its own obligation to that claim.
+Arithmetic uses `{"k":"arith","pos":[start,end],"op":"add"|"sub"|"mul"|"div","l":...,"r":...}`.
+A compound assignment or an increment uses
+`{"k":"update","pos":[start,end],"op":...,"target":...,"rhs":...|null,"post":bool}`:
+the target, a name, a field or an element, has its parts evaluated once and its
+value read at the storage contract; then the right side, `1` when absent; then
+the operation and the write back. `post` makes the old value the expression's
+value, as for `x++`.
 The overall expression and both operands select exact expression claims. Lowering
 saves the left result in a let slot, then uses nullish testing and `unionVar`
 to check the fallback or return the saved value. False takes the latter path.

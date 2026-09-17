@@ -39,6 +39,7 @@ import type {
   Stmt,
   TypeAliasAst,
   TypeParamAst,
+  ArithOp,
 } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { messageOf } from "./thrown.mts";
@@ -501,6 +502,15 @@ class Gate {
         e: this.expr(node.expression),
       };
 
+    if (ts.isPostfixUnaryExpression(node))
+      return this.update(node, node.operand, node.operator, null, true);
+    if (
+      ts.isPrefixUnaryExpression(node) &&
+      (node.operator === ts.SyntaxKind.PlusPlusToken ||
+        node.operator === ts.SyntaxKind.MinusMinusToken)
+    )
+      return this.update(node, node.operand, node.operator, null, false);
+
     if (ts.isPrefixUnaryExpression(node)) {
       if (node.operator !== ts.SyntaxKind.ExclamationToken)
         this.fail(node, "unary operator outside the fragment");
@@ -602,7 +612,56 @@ class Gate {
     return false;
   }
 
+  /** A compound assignment or an increment: the target's parts are evaluated
+   * once, so the verifier is handed one form rather than a rewrite that would
+   * evaluate an effectful key twice. */
+  private update(
+    node: Expression,
+    target: Expression,
+    token: ts.SyntaxKind,
+    rhs: Expression | null,
+    post: boolean,
+  ): Expr {
+    const ops: Record<number, ArithOp> = {
+      [ts.SyntaxKind.PlusEqualsToken]: "add",
+      [ts.SyntaxKind.MinusEqualsToken]: "sub",
+      [ts.SyntaxKind.AsteriskEqualsToken]: "mul",
+      [ts.SyntaxKind.SlashEqualsToken]: "div",
+      [ts.SyntaxKind.PlusPlusToken]: "add",
+      [ts.SyntaxKind.MinusMinusToken]: "sub",
+    };
+    const op = ops[token];
+    if (!op) this.fail(node, `binary operator outside the fragment (${ts.tokenToString(token)})`);
+    const lhs = this.expr(target);
+    if (lhs.k !== "id" && lhs.k !== "read" && lhs.k !== "index")
+      this.fail(target, "only field and local assignments are supported");
+    return {
+      k: "update",
+      pos: this.span(node),
+      op,
+      target: lhs,
+      rhs: rhs ? this.expr(rhs) : null,
+      post,
+    };
+  }
+
   private binary(node: BinaryExpression): Expr {
+    switch (node.operatorToken.kind) {
+      case ts.SyntaxKind.PlusEqualsToken:
+      case ts.SyntaxKind.MinusEqualsToken:
+      case ts.SyntaxKind.AsteriskEqualsToken:
+      case ts.SyntaxKind.SlashEqualsToken:
+        return this.update(node, node.left, node.operatorToken.kind, node.right, false);
+    }
+    const arithmetic: Record<number, ArithOp> = {
+      [ts.SyntaxKind.PlusToken]: "add",
+      [ts.SyntaxKind.MinusToken]: "sub",
+      [ts.SyntaxKind.AsteriskToken]: "mul",
+      [ts.SyntaxKind.SlashToken]: "div",
+    };
+    const arith = arithmetic[node.operatorToken.kind];
+    if (arith)
+      return { k: "arith", pos: this.span(node), op: arith, l: this.expr(node.left), r: this.expr(node.right) };
     if (node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionEqualsToken) {
       if (!ts.isIdentifier(node.left) || node.left.text === "undefined")
         this.fail(node.left, "nullish assignment requires a local identifier");

@@ -131,8 +131,8 @@ def undefT : Fam := fun _ _ v => v = .undef
 /-- A cell that can actually change observably. -/
 def boolT : Fam := fun _ _ v => v = .tru ∨ v = .fls
 
-/-- Every number, at any spelling. The fragment computes with none of them, so
-this family is the union of its singletons and nothing more. -/
+/-- Every number, at any spelling: the union of its singletons and nothing
+more, and what arithmetic yields. -/
 def numT : Fam := fun _ _ v => ∃ b, v = .num b
 
 /-- Every string. As with numbers, the family is the union of its singletons. -/

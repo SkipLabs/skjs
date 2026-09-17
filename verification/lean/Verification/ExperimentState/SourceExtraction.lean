@@ -160,6 +160,9 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
   | .index p _ e key =>
     let key ← comparisonsExpr fc key
     return .index p (some (← keyField fc key)) (← comparisonsExpr fc e) key
+  | .arith p op l r => return .arith p op (← comparisonsExpr fc l) (← comparisonsExpr fc r)
+  | .update p op target rhs post =>
+    return .update p op (← comparisonsExpr fc target) (← rhs.mapM (comparisonsExpr fc)) post
   | .indexWrite p _ r key rhs =>
     let key ← comparisonsExpr fc key
     return .indexWrite p (some (← keyField fc key)) (← comparisonsExpr fc r) key (← comparisonsExpr fc rhs)
@@ -203,6 +206,10 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .withValue _ a b _ _ | .index _ _ a b
   | .seqBody _ a b | .letBody _ _ _ a b => assignsExpr name a || assignsExpr name b
   | .indexWrite _ _ a b c => assignsExpr name a || assignsExpr name b || assignsExpr name c
+  | .arith _ _ a b => assignsExpr name a || assignsExpr name b
+  | .update _ _ target rhs _ =>
+    (match target with | .var _ n => n == name | _ => false) ||
+      assignsExpr name target || (rhs.map (assignsExpr name)).getD false
   | .alloc _ _ es => es.any (assignsExpr name)
   | .call _ f args => assignsExpr name f || args.any (assignsExpr name)
   | .callWithReceiver _ f r args | .bindWithReceiver _ f r args =>
@@ -385,9 +392,9 @@ private def readOnly : Fragment.Expr → Bool
   | .var .. | .lit .. | .done .. => true
   | .not _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e => readOnly e
   | .equality _ _ a b | .singletonTest _ _ _ _ a b | .logical _ _ a b | .coalesce _ a b
-  | .seqBody _ a b | .letBody _ _ _ a b | .index _ _ a b => readOnly a && readOnly b
+  | .seqBody _ a b | .letBody _ _ _ a b | .index _ _ a b | .arith _ _ a b => readOnly a && readOnly b
   | .ifBody _ _ c t e => readOnly c && readOnly t && readOnly e
-  | .alloc .. | .write .. | .indexWrite .. | .assign .. | .nullishAssign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
+  | .alloc .. | .write .. | .indexWrite .. | .update .. | .assign .. | .nullishAssign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
   | .callWithReceiver .. | .call .. => false
 
 /-- The other operand of a singleton comparison, when saving the tested read
@@ -753,6 +760,16 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let done := DirectProof.letE H write (DirectProof.var ([0]::H) 1 a.type)
     pure (DirectProof.letE Γ r (DirectProof.letE (B::Γ) k (DirectProof.letE (k.type::B::Γ) a done)))
   | .index _ none .. | .indexWrite _ none .. => throw "internal unresolved computed key"
+  | .arith _ op l r => do
+    -- Both operands are checked as numbers by the rule; the result is the
+    -- number family, whatever its bits.
+    let a ← closureExpr fc scope Γ l
+    let b ← closureExpr fc (held ⟨"",some l.span⟩ :: scope) (a.type::Γ) r
+    let H := a.type::Γ
+    let N : Ty Nat := [← lower (SourceTypes.use .num)]
+    pure (DirectProof.letE Γ a
+      (DirectProof.node H (.arith op (.var 0) b.term) N .arith [DirectProof.var H 0 a.type, b]))
+  | .update .. => throw "compound assignment inside a closed expression is outside the fragment"
   | .bindWithReceiver _ f receiver args => do
     let callee ← closureExpr fc scope Γ f
     let receiverPlan ← closureExpr fc (held ⟨"",some f.span⟩ :: scope) (callee.type::Γ) receiver
@@ -1216,6 +1233,64 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let right ← compileExpr fc (held ⟨"",some key.span⟩::held ⟨"",some receiver.span⟩ :: scope) (K::B::Γ) rhs write
     let middle ← compileExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key right
     compileExpr fc scope Γ receiver middle
+  | .arith _ op l r =>
+    let B ← exprType fc l
+    let C ← exprType fc r
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else i+2))⟩
+    let temporaries := held ⟨"",some r.span⟩::held ⟨"",some l.span⟩ :: scope
+    let node ← emitAt e.span (.arith op (.var 1) (.var 0)) (.bind drop) (C::B::Γ) A (scope := temporaries)
+    let right ← compileExpr fc (held ⟨"",some l.span⟩ :: scope) (B::Γ) r node
+    compileExpr fc scope Γ l right
+  | .update _ op target rhs post =>
+    -- The target's parts are evaluated once and its value read at the
+    -- storage contract, never at a claim; then the right side, the
+    -- operation, the write back at the contract, and the old or new value.
+    let G := SourceTypes.graph (← table)
+    let N : Ty Nat := [← lower (SourceTypes.use .num)]
+    let fieldType := fun (B : Ty Nat) (fld : String) => do
+      match PositiveRules.expand G B with
+      | [.refs fs []] =>
+        let some T := fs.lookup fld | throw s!"update of a field '{fld}' the contract does not name"
+        pure T
+      | _ => throw "a compound assignment needs one cell contract"
+    let (parts, T, readTerm, receiverSlot, fld) ← match target with
+      | .var _ name =>
+        let some (i, .cell contract _) := resolve scope name
+          | throw s!"assignment to '{name}', which is not a mutable local"
+        pure (([] : List Fragment.Expr), contract, Tm.readAt valueField (.var i), i+3, valueField)
+      | .read _ fld receiver =>
+        let B ← exprType fc receiver
+        let T ← fieldType B fld
+        pure ([receiver], T, Tm.readAt fld (.var 0), 3, fld)
+      | .index _ (some fld) receiver key =>
+        let B ← exprType fc receiver
+        let T ← fieldType B fld
+        pure ([receiver, key], T, Tm.readAt fld (.var 1), 4, fld)
+      | _ => throw "only field and local assignments are supported"
+    let types ← parts.mapM (exprType fc)
+    let heldParts := (parts.map fun p => held ⟨"",some p.span⟩).reverse
+    let K := types.reverse ++ Γ
+    let one := (1.0 : Float).toBits
+    let C ← match rhs with
+      | some r => exprType fc r
+      | none => do pure [← lower (SourceTypes.use (.numLit one))]
+    let n := parts.length
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else i+n+3))⟩
+    let after := held ⟨"",some e.span⟩::held ⟨"",some e.span⟩::held ⟨"",some e.span⟩ :: heldParts ++ scope
+    let result ← emitAt e.span (.var (if post then 2 else 0)) (.bind drop) (N::C::T::K) A (scope := after)
+    let write ← emitAt e.span (.writeAt fld (.var receiverSlot) (.var 0)) (.effect result) (N::C::T::K) [0]
+      "storage-contract" (scope := after)
+    let combine ← emitAt e.span (.arith op (.var 1) (.var 0)) (.bind write) (C::T::K) N
+      (scope := after.drop 1)
+    let delta ← match rhs with
+      | some r => compileExpr fc (after.drop 2) (T::K) r combine
+      | none => emitAt e.span (.num one) (.bind combine) (T::K) C (scope := after.drop 2)
+    let read ← emitAt e.span readTerm (.bind delta) K T (scope := heldParts ++ scope)
+    parts.attach.zipIdx.reverse.foldlM (fun next (⟨part,_⟩,i) =>
+      compileExpr fc ((parts.take i |>.map fun p => held ⟨"",some p.span⟩).reverse ++ scope)
+        ((types.take i).reverse ++ Γ) part next) read
   | .index _ none .. | .indexWrite _ none .. => throw "internal unresolved computed key"
   | .write _ fld receiver rhs =>
     let B ← exprType fc receiver

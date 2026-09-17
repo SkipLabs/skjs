@@ -1,18 +1,15 @@
 # census: repair-work
-# 29/116 verified, of 319 functions
+# 32/116 verified, of 319 functions
 #   skjs-rejected: 203
-#   gate: 80
-#   verified: 29
-#   unproved: 7
+#   gate: 75
+#   verified: 32
+#   unproved: 9
 #
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofUndefinedFieldAdmitsInitialValue
 gate:a `let` needs an initializer	tests/expect-error/test_ternary_refinements.ts	bothBranchesInitialize
 gate:a record with no field has no location	tests/expect-error/unsound-refinement.ts	grownAliasField
 gate:binary operator outside the fragment (&&=)	tests/expect-error/logical-compound-computed-key.ts	computedAnd
-gate:binary operator outside the fragment (+)	tests/expect-error/unsound-refinement.ts	checkedConditionalAlias
-gate:binary operator outside the fragment (+=)	tests/expect-error/assignment-receivers.ts	temporaryReceiver
-gate:binary operator outside the fragment (+=)	tests/expect-error/compound-computed-key.ts	annotatedCompoundKey
 gate:binary operator outside the fragment (||=)	tests/expect-error/assignment-receivers.ts	selectedReceiver
 gate:default parameters are outside the fragment	tests/expect-error/arrow-default-param-optional.ts	earlierGenericDefault
 gate:default parameters are outside the fragment	tests/expect-error/arrow-default-param-optional.ts	initializedDefault
@@ -39,8 +36,6 @@ gate:expression outside the fragment (ArrayLiteralExpression)	tests/expect-error
 gate:expression outside the fragment (ArrayLiteralExpression)	tests/expect-error/destructuring.ts	inferredIterableDefault
 gate:expression outside the fragment (NewExpression)	tests/expect-error/hidden-dependent-bounds.ts	inferredBound
 gate:expression outside the fragment (NewExpression)	tests/expect-error/rest-inference-stability.ts	keepArgument
-gate:expression outside the fragment (PostfixUnaryExpression)	tests/expect-error/const-writes.ts	mutateConstantObject
-gate:expression outside the fragment (PostfixUnaryExpression)	tests/expect-error/increment-narrowing.ts	computedUpdate
 gate:intersection operands must have the same shape	tests/expect-error/spread-callable.ts	restOwnCallable
 gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/promise-object.ts	testAwaitScalarSnapshot
 gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/unsound-refinement.ts	freshReturnSnapshot
@@ -288,9 +283,11 @@ skjs-rejected	tests/expect-error/unsound-refinement.ts	stableSpreadMember
 skjs-rejected	tests/expect-error/unsound-refinement.ts	storedLocalAlias
 skjs-rejected	tests/expect-error/unsound-refinement.ts	storedNarrowAlias
 skjs-rejected	tests/expect-error/unsound-refinement.ts	tupleDeclarationDefault
+unproved:reject: claimed parameter type differs from the source annotation for '_'	tests/expect-error/unsound-refinement.ts	checkedConditionalAlias
 unproved:reject: source expression obligation at [185,209): type claim unavailable from producer	tests/expect-error/obj-literal-var-field-growth.ts	retainedReceiver
 unproved:reject: source expression obligation at [551,574): type claim unavailable from producer	tests/expect-error/captured-read-stability.ts	checkedGenericCallResult
 unproved:reject: unbound or uninitialized source variable '_'	tests/expect-error/binding-initialization.ts	conditionBeforeLocal
+unproved:reject: unexpected fields in the cell record claim	tests/expect-error/assignment-receivers.ts	temporaryReceiver
 unproved:reject: unexpected fields in the cell record claim	tests/expect-error/captured-read-stability.ts	checkedPropertyResult
 unproved:reject: unexpected fields in the cell record claim	tests/expect-error/unsound-refinement.ts	identityMemberSnapshot
 unproved:reject: unexpected fields in the cell record claim	tests/expect-error/unsound-refinement.ts	stableMemberScalar
@@ -309,9 +306,12 @@ verified	tests/expect-error/captured-read-stability.ts	inferredPrimitiveCompatib
 verified	tests/expect-error/captured-read-stability.ts	neverReassigned
 verified	tests/expect-error/captured-read-stability.ts	snapshotCapturedLocal
 verified	tests/expect-error/captured-read-stability.ts	stableAnnotatedConstValue
+verified	tests/expect-error/compound-computed-key.ts	annotatedCompoundKey
+verified	tests/expect-error/const-writes.ts	mutateConstantObject
 verified	tests/expect-error/destructuring.ts	checkedStateAfterDefault
 verified	tests/expect-error/destructuring.ts	inferredFieldDefault
 verified	tests/expect-error/field-refinement.ts	inferredFieldComparison
+verified	tests/expect-error/increment-narrowing.ts	computedUpdate
 verified	tests/expect-error/inferred-binding-contract.ts	compatibleInferredReplacement
 verified	tests/expect-error/inferred-binding-contract.ts	unionContractStillNarrows
 verified	tests/expect-error/issue-89-and-or-narrowing.ts	unrelatedFact
