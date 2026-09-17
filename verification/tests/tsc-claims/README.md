@@ -51,7 +51,11 @@ field read supplies a checked snapshot that survives a later aliased write.
 More complex evaluation positions and facts needed across intermediate
 statement cuts remain exporter limitations.
 
-`null-guards.ts` now verifies, including independent certificate consumption.
+`primitive-callbacks.ts` also verifies: an immutable snapshot keeps its
+Boolean guard at intervening statement entries even when those statements do
+not mention it. The guard is keyed to the snapshot symbol and stops at function
+boundaries; this does not preserve a mutable cell refinement across calls.
+`null-guards.ts` verifies, including independent certificate consumption.
 Lambda and allocation claims under union contexts use the expression's own
 arrow or cell type. Explicit null and undefined tests refine a binding's declared contract
 within branches and after an arm that returns; the fallback no longer restores

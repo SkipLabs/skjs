@@ -737,11 +737,15 @@ function testedIdentitySymbol(
  * Walks outward from a reference through enclosing `if`/`while` statements,
  * applying the innermost one that tests this same binding by bare identity.
  */
-function truthyGuardLabels(node: Node, checker: Checker): number[] | null {
+function truthyGuardLabels(
+  node: Node,
+  checker: Checker,
+  anchor: Node = node,
+): number[] | null {
   const sym = checker.getSymbolAtLocation(node);
   if (!sym) return null;
-  let child: Node = node;
-  let cur: Node = node.parent;
+  let child: Node = anchor;
+  let cur: Node = anchor.parent;
   while (cur && !isFunctionLike(cur)) {
     if (ts.isIfStatement(cur) || ts.isWhileStatement(cur)) {
       const tested = testedIdentitySymbol(cur.expression, checker);
@@ -1297,6 +1301,13 @@ function bindingLabelsAtEntry(
   // Absence from the statement does not undo the contract imposed at the
   // declaration. Apply only guards that dominate this statement's entry.
   const auth = authoritativeType(binding, checker, types, cache, sf);
+  // An immutable snapshot keeps an enclosing Boolean guard even when this
+  // statement does not mention it. Calls can change its source cell, not the
+  // saved value. Mutable bindings have no authoritative initializer contract.
+  if (auth.labels) {
+    const guard = truthyGuardLabels(binding.decl.name, checker, stmtNode);
+    if (guard) return guard;
+  }
   if (auth.labels && (auth.readTainted || (auth.declared && JSON.stringify(auth.declared) !== JSON.stringify(auth.claimed))))
     return tagGuardLabels(binding.decl.name, checker, types, auth.labels, stmtNode);
   return translateType(

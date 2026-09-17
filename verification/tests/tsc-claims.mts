@@ -71,7 +71,7 @@ const expected = {
   // A cell read after a write is true at runtime and tsc types it so; the
   // producer now carries the primitive field observation at the entry.
   "skjs-incomplete/write-refined-read": "verified",
-  "stateful-source/primitive-callbacks": "failed",
+  "stateful-source/primitive-callbacks": "verified",
   // Explicit null guards refine the declared nullable cell and callable contracts.
   "stateful-source/null-guards": "verified",
   // tsc rejects these outright, so its claims describe a program it does not
@@ -116,6 +116,27 @@ for (const [name, want] of Object.entries(expected)) {
       got = "producer-error";
       detail = (produced.stderr || "").split("\n")[0];
     } else {
+      if (name === "stateful-source/primitive-callbacks") {
+        const normalized: SourceClaims = JSON.parse(
+          fs.readFileSync(claims, "utf8"),
+        );
+        const snapshot = claimsFor(normalized, "stableSnapshot");
+        const source = fs.readFileSync(file, "utf8");
+        const start = source.indexOf("const done: null = reset(false)");
+        const entry = must(
+          snapshot.entries.find((e) => e.start === start),
+          "call entry",
+        );
+        const saved = must(
+          entry.bindings.find((b) => b.name === "snapshot"),
+          "saved snapshot",
+        );
+        assert.deepEqual(
+          saved.type,
+          [1],
+          "unused immutable snapshot retains its Boolean guard across the call entry",
+        );
+      }
       if (name === "callables/unions") {
         const parsed: Ast = JSON.parse(fs.readFileSync(ast, "utf8"));
         const normalized: SourceClaims = JSON.parse(fs.readFileSync(claims, "utf8"));
@@ -202,7 +223,7 @@ for (const [name, want] of Object.entries(expected)) {
         "10",
       ]);
       got = checked.status === 0 ? "verified" : "failed";
-      if (got === "verified" && ["callables/thunks", "callables/cells", "callables/arguments", "callables/factories", "callables/unions", "stateful-source/null-guards"].includes(name)) {
+      if (got === "verified" && ["callables/thunks", "callables/cells", "callables/arguments", "callables/factories", "callables/unions", "stateful-source/null-guards", "stateful-source/primitive-callbacks", "skjs-incomplete/write-refined-read"].includes(name)) {
         const consumed = run(verifier, ["--check-source-claims", ast, claims, file, evidence]);
         if (consumed.status !== 0) {
           got = "consumer-failed";
