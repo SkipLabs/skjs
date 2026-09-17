@@ -77,7 +77,9 @@ SKJS itself; it is not required for changes confined to the verifier or reports.
 The source adapter supports **functions with primitive or bounded callable
 parameters, initialized `const` bindings, nested branches, `while` loops with `break`/`continue`, and
 returns**, where a `const` or `let` statement may declare several bindings,
-bound left to right under the statement's one entry, over local cells and bounded expression closures and calls. Cell
+bound left to right under the statement's one entry, and a `const` may bind an
+object pattern of identifier properties with optional defaults over a local
+record, over local cells and bounded expression closures and calls. Cell
 fields, arrow arguments and arrow results admit primitive and recursively
 callable contracts; nested record operands remain excluded. Annotations may union the supported primitive, cell and
 function types with ordered required parameters. Creating and invoking closures

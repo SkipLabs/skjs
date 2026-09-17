@@ -180,6 +180,13 @@ structure Binding where
   annot : Option Json
   init : Expr
 
+/-- One property of an object pattern: `field: name = default_`. -/
+structure PatternProp where
+  field : String
+  name : String
+  namePos : Span
+  default_ : Option Expr
+
 inductive Stmt where
   | ret (pos : Span) (e : Expr)
   /-- Immutable bindings, left to right, each initializer seeing the earlier
@@ -190,6 +197,9 @@ inductive Stmt where
   supplies one. What the initializer happens to produce is not what the
   binding may later hold. -/
   | mutables (pos : Span) (bindings : List Binding)
+  /-- An object pattern on a `const`: the initializer once, then each property
+  read in order, a default evaluated only when its read is undefined. -/
+  | pattern (pos : Span) (props : List PatternProp) (init : Expr)
   | ite (pos : Span) (cond : Expr) (thn : List Stmt) (els : Option (List Stmt))
   | brk (pos : Span)
   | cont (pos : Span)
@@ -316,6 +326,15 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
   | "effect" => return .effect p (← decodeExpr (← jField j "e"))
   | "const" => return .constants p (← decodeBindings j)
   | "let" => return .mutables p (← decodeBindings j)
+  | "pattern" =>
+    CellClaims.fieldsExactly j ["k","pos","props","init"]
+    let props ← (← jArr j "props").mapM fun q => do
+      CellClaims.fieldsExactly q ["field","name","namePos","default_"]
+      let d ← jField q "default_"
+      let dflt ← if d == .null then pure none else some <$> decodeExpr d
+      return (⟨← jStr (← jField q "field"), ← jStr (← jField q "name"), ← jSpan q "namePos", dflt⟩ : PatternProp)
+    if props.isEmpty then throw "an empty pattern binds nothing"
+    return .pattern p props (← decodeExpr (← jField j "init"))
   | "break" => return .brk p
   | "continue" => return .cont p
   | "while" => return .loop p (← decodeExpr (← jField j "cond")) (← (← jArr j "body").mapM decodeStmt)

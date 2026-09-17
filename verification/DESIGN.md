@@ -877,7 +877,20 @@ allocation and storage-contract obligations as a single declaration. An
 unannotated `let` in a list takes its contract from the entry that follows the
 whole statement, the first place every binding of the list stands in scope.
 Inside a closure body a list stays gated: each lowered binding there is an
-entry of its own, and the producers state none for the later declarators. Local annotations are separate obligations; bindings
+entry of its own, and the producers state none for the later declarators.
+
+A `const` object pattern (`const { field: name = default, … } = init`) is
+lowered under the same one entry. The initializer is evaluated once and held
+in an anonymous slot below the bindings; each property is read from it in
+pattern order at the field type the record contract names. A default is
+compiled only on the arm where that read is undefined: the read dispatches on
+the undefined tag, the defined slice is one arm, the default's claimed value
+the other, and both join at a node typed by their union, which each incoming
+edge must establish. A property without a default binds its read. The
+producers claim the initializer and the defaults, not the reads; the entry
+after the statement states every binding, and the anonymous slot is dropped
+before it. Nested and rest elements, `let` patterns, patterns beside other
+declarators and patterns in closure bodies stay gated. Local annotations are separate obligations; bindings
 retain the initializer's claimed precision. Sequential composition uses the
 existing let rule, with one occurrence of the continuation. Effect results occupy
 anonymous slots, preserved at their established types across subsequent named

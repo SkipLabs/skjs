@@ -143,6 +143,9 @@ private partial def stmtSites : Fragment.Stmt → Sites
   | .ret p e | .effect p e => joinSites ([p.1],[]) (exprSites e)
   -- One entry for the statement; every declarator's initializer is a site.
   | .constants p bs | .mutables p bs => bs.foldl (fun acc b => joinSites acc (exprSites b.init)) ([p.1],[])
+  -- The initializer and each default are sites; the pattern's reads are not.
+  | .pattern p props init => props.foldl (fun acc q => match q.default_ with
+      | some d => joinSites acc (exprSites d) | none => acc) (joinSites ([p.1],[]) (exprSites init))
   | .loop p c body => joinSites ([p.1],[]) (joinSites (exprSites c)
       (body.foldl (fun s st => joinSites s (stmtSites st)) ([],[])))
   | .ite p c a b =>

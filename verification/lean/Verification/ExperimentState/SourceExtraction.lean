@@ -162,6 +162,10 @@ private partial def comparisonsStmt (fc : SourceClaims.Function) (s : Fragment.S
   | .ret p e => return .ret p (← comparisonsExpr fc e)
   | .constants p bs => return .constants p (← bs.mapM fun b => do return { b with init := ← comparisonsExpr fc b.init })
   | .mutables p bs => return .mutables p (← bs.mapM fun b => do return { b with init := ← comparisonsExpr fc b.init })
+  | .pattern p props init =>
+    let props ← props.mapM fun q => do
+      return { q with default_ := ← q.default_.mapM (comparisonsExpr fc) }
+    return .pattern p props (← comparisonsExpr fc init)
   | .effect p e => return .effect p (← comparisonsExpr fc e)
   | .ite p c t e =>
     return .ite p (← comparisonsExpr fc c) (← t.mapM (comparisonsStmt fc))
@@ -190,6 +194,8 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
 private partial def assignsStmt (name : String) : Fragment.Stmt → Bool
   | .ret _ e | .effect _ e => assignsExpr name e
   | .constants _ bs | .mutables _ bs => bs.any fun b => assignsExpr name b.init
+  | .pattern _ props init => assignsExpr name init ||
+    props.any fun q => (q.default_.map (assignsExpr name)).getD false
   | .ite _ c t e => assignsExpr name c || t.any (assignsStmt name) ||
     (e.getD []).any (assignsStmt name)
   | .loop _ c b => assignsExpr name c || b.any (assignsStmt name)
@@ -1143,8 +1149,57 @@ private structure LoopTargets where
 
 /-- Where a statement begins: the entry the producer states for it. -/
 private def stmtStart : Fragment.Stmt → Nat
-  | .brk p | .cont p | .ret p _ | .constants p _ | .mutables p _
+  | .brk p | .cont p | .ret p _ | .constants p _ | .mutables p _ | .pattern p _ _
   | .effect p _ | .loop p _ _ | .ite p _ _ _ => p.1
+
+/-- The properties of an object pattern, read in order from the object held
+in slot `obj`, under the statement's one entry. A property without a default
+binds its read at the contract's field type. One with a default dispatches on
+the read being undefined: the default is compiled only on that arm, the
+defined slice of the read is the other, and both arms join at a node typed
+by their union, which every incoming edge must establish. `after` compiles
+what follows the statement. -/
+private def patternProps (fc : SourceClaims.Function) (pos : Span)
+    (fields : List (String × Ty Nat)) (after : List ScopeBinding → Compiler Target) :
+    List ScopeBinding → List (Ty Nat) → Nat → List Fragment.PatternProp → Compiler Target
+  | scope, Γ, obj, [] => do
+    -- The statement is over: the object's anonymous slot, below the `obj`
+    -- bindings, is dropped before the next statement's named environment.
+    let next ← after (scope.take obj ++ scope.drop (obj+1))
+    pure ⟨next.label, some ((next.mapping.getD (List.range (Γ.length-1))).map
+      (fun j => if j < obj then j else j+1))⟩
+  | scope, Γ, obj, q :: more => do
+    if q.name == "undefined" then throw "shadowing undefined is outside the fragment"
+    if (names scope).contains q.name then throw s!"duplicate or shadowing local declaration '{q.name}'"
+    let some R := fields.lookup q.field
+      | throw s!"pattern reads a field '{q.field}' the contract does not name"
+    let G := SourceTypes.graph (← table)
+    let bound := held ⟨q.name,some pos⟩
+    match q.default_ with
+    | none =>
+      let next ← patternProps fc pos fields after (bound::scope) (R::Γ) (obj+1) more
+      emitAt q.namePos (.readAt q.field (.var obj)) (.bind next) Γ R "pattern-read" (some pos.1)
+        (scope := scope)
+    | some d =>
+      let D ← exprType fc d
+      let present := BranchRefinement.tagSlice G R .isUndef false
+      let T := (present ++ D).eraseDups
+      let next ← patternProps fc pos fields after (bound::scope) (T::Γ) (obj+1) more
+      -- A merge has no unique predecessor: each arm proves the binding's type.
+      let join ← emitAt q.namePos .nul (.effect next) (T::Γ) [0] "pattern-default-join" (some pos.1)
+        (scope := bound::scope)
+      -- The undefined read is dropped before the default is evaluated; its
+      -- value is what the arm binds.
+      let fallback ← compileExpr fc scope Γ d join
+      let yes : Target := ⟨fallback.label, some ((fallback.mapping.getD (List.range Γ.length)).map (·+1))⟩
+      -- tagBind introduces a refined copy; discard the older read.
+      let adapt := fun (t : Target) =>
+        ⟨t.label, some ((t.mapping.getD (List.range (Γ.length+1))).map
+          (fun j => if j == 0 then 0 else j+1))⟩
+      let dispatch ← emitAt q.namePos (.var 0) (.tagBind .isUndef (adapt yes) (adapt join))
+        (R::Γ) R "pattern-default-dispatch" (some pos.1) (scope := held ⟨"",some q.namePos⟩ :: scope)
+      emitAt q.namePos (.readAt q.field (.var obj)) (.bind dispatch) Γ R "pattern-read" (some pos.1)
+        (scope := scope)
 
 /-- The declarators of a `const`, bound left to right under the one entry `Γ`
 the producer states for the statement: each initializer is compiled in the
@@ -1268,6 +1323,17 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
       let Γ ← env fc pos.1 scope
       mutables fc pos (rest.head?.map stmtStart)
         (fun scope => body fuel fc R scope rest tail loopTargets) scope Γ bindings
+    | .pattern pos props init :: rest =>
+      let Γ ← env fc pos.1 scope
+      let A ← exprType fc init
+      let G := SourceTypes.graph (← table)
+      let [.refs fields []] := PositiveRules.expand G A
+        | throw "an object pattern requires a single record contract"
+      -- The object is held anonymously for the whole statement, below the
+      -- bindings it yields; the reads address it by its slot.
+      let next ← patternProps fc pos fields (fun scope => body fuel fc R scope rest tail loopTargets)
+        (held ⟨"",some init.span⟩ :: scope) (A::Γ) 0 props
+      compileExpr fc scope Γ init next
     | .effect pos e :: rest =>
       let Γ ← env fc pos.1 scope
       let next ← body fuel fc R scope rest tail loopTargets
@@ -1277,7 +1343,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
     | [] | .loop .. :: _ => return target
     | st :: _ =>
       let pos := match st with
-        | .brk p | .cont p | .ret p _ | .constants p _ | .mutables p _ | .effect p _ | .loop p _ _ | .ite p _ _ _ => p
+        | .brk p | .cont p | .ret p _ | .constants p _ | .mutables p _ | .pattern p _ _ | .effect p _ | .loop p _ _ | .ite p _ _ _ => p
       let facts ← entryFacts fc pos.1 scope
       let entry ← checkpoint pos (← env fc pos.1 scope) facts target (some pos.1) scope
       modify fun s => { s with cuts := entry.label :: s.cuts }
@@ -1285,7 +1351,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
 
 private def traversalBudget : List Fragment.Stmt → Nat
   | [] => 1
-  | .brk .. :: rest | .cont .. :: rest | .ret .. :: rest | .constants .. :: rest | .mutables .. :: rest | .effect .. :: rest => 1 + traversalBudget rest
+  | .brk .. :: rest | .cont .. :: rest | .ret .. :: rest | .constants .. :: rest | .mutables .. :: rest | .pattern .. :: rest | .effect .. :: rest => 1 + traversalBudget rest
   | .loop _ _ loopBody :: rest => 1 + traversalBudget loopBody + traversalBudget rest
   | .ite _ _ thn none :: rest => 2 + traversalBudget thn + traversalBudget rest
   | .ite _ _ thn (some els) :: rest =>

@@ -1,8 +1,8 @@
 # census: repair-work
-# 15/115 verified, of 315 functions
+# 17/115 verified, of 315 functions
 #   skjs-rejected: 200
-#   gate: 88
-#   verified: 15
+#   gate: 86
+#   verified: 17
 #   unproved: 12
 #
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
@@ -18,9 +18,6 @@ gate:default parameters are outside the fragment	tests/expect-error/arrow-defaul
 gate:default parameters are outside the fragment	tests/expect-error/arrow-default-param-optional.ts	initializedDefault
 gate:default parameters are outside the fragment	tests/expect-error/captured-read-stability.ts	stablePattern
 gate:destructuring is outside the fragment	tests/expect-error/captured-read-stability.ts	checkedDestructuredDefault
-gate:destructuring is outside the fragment	tests/expect-error/destructuring.ts	checkedStateAfterDefault
-gate:destructuring is outside the fragment	tests/expect-error/destructuring.ts	identityPatternScalar
-gate:destructuring is outside the fragment	tests/expect-error/destructuring.ts	inferredFieldDefault
 gate:destructuring parameter	tests/expect-error/arrow-default-param-optional.ts	defaultObject
 gate:destructuring parameter	tests/expect-error/arrow-default-param-optional.ts	extractedGeneric
 gate:destructuring parameter	tests/expect-error/arrow-default-param-optional.ts	siblingDefaults
@@ -53,6 +50,7 @@ gate:expression outside the fragment (SatisfiesExpression)	tests/expect-error/sa
 gate:intersection operands must have the same shape	tests/expect-error/spread-callable.ts	restOwnCallable
 gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/promise-object.ts	testAwaitScalarSnapshot
 gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/unsound-refinement.ts	freshReturnSnapshot
+gate:nested patterns are outside the fragment	tests/expect-error/destructuring.ts	identityPatternScalar
 gate:nullish assignment requires a local identifier	tests/expect-error/logical-compound-computed-key.ts	computedFallback
 gate:only `extends boolean` or an earlier type parameter is in the fragment	tests/expect-error/freeze-window-stale-cache.ts	frozenNumbers
 gate:only field and local assignments are supported	tests/expect-error/destructuring-assignment.ts	keyBeforeDefault
@@ -315,6 +313,8 @@ verified	tests/expect-error/captured-read-stability.ts	inferredPrimitiveCompatib
 verified	tests/expect-error/captured-read-stability.ts	neverReassigned
 verified	tests/expect-error/captured-read-stability.ts	snapshotCapturedLocal
 verified	tests/expect-error/captured-read-stability.ts	stableAnnotatedConstValue
+verified	tests/expect-error/destructuring.ts	checkedStateAfterDefault
+verified	tests/expect-error/destructuring.ts	inferredFieldDefault
 verified	tests/expect-error/issue-89-and-or-narrowing.ts	unrelatedFact
 verified	tests/expect-error/local-vs-local-refinement.ts	inferredReadNamedNull
 verified	tests/expect-error/local-vs-local-refinement.ts	inferredReadSingleton

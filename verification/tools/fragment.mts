@@ -70,7 +70,19 @@ export type Stmt =
      assignment is checked against. Absent, the producer supplies one and the
      adapter checks it; an initializer's type is what the binding happens to
      hold first, not what it may hold, so it is never taken for the contract. */
-  | { k: "let"; pos: Span; bindings: BindingAst[] };
+  | { k: "let"; pos: Span; bindings: BindingAst[] }
+  /* An object pattern on a `const`. The initializer is evaluated once; each
+     property is then read in pattern order, and a default is evaluated only
+     when that read is undefined. Every binding is an immutable local. */
+  | { k: "pattern"; pos: Span; props: PatternPropAst[]; init: Expr };
+
+/** One property of an object pattern: `field: name = default_`. */
+export interface PatternPropAst {
+  field: string;
+  name: string;
+  namePos: Span;
+  default_: Expr | null;
+}
 
 /** One declarator of a `const` or `let` statement. */
 export interface BindingAst {

@@ -23,6 +23,7 @@ import type {
   SourceFile,
   Statement,
   TypeAliasDeclaration,
+  VariableStatement,
   TypeNode,
 } from "typescript/unstable/ast";
 import { createHash } from "node:crypto";
@@ -34,6 +35,7 @@ import type {
   BindingAst,
   Expr,
   FunctionAst,
+  PatternPropAst,
   Stmt,
   TypeAliasAst,
   TypeParamAst,
@@ -760,6 +762,8 @@ class Gate {
               at,
               "closure branch needs one returning arm and one return-free arm",
             );
+        } else if (st.k === "pattern") {
+          this.fail(at, "a pattern in a closure body is outside the fragment");
         } else if (st.k === "const" || st.k === "effect") {
           // A lowered binding is an entry of its own, and a producer states
           // one entry per statement: a list of declarators has no entry for
@@ -807,6 +811,49 @@ class Gate {
 
   /* -------------------------------------------------------- statements -- */
 
+  /* `const { field: name = default, … } = init;`. One declarator, identifier
+     keys and names, no rest, no nesting: what the lowering states. */
+  private patternStmt(node: VariableStatement, mutable: boolean): Stmt {
+    const list = node.declarationList;
+    if (mutable) this.fail(node, "a `let` pattern is outside the fragment");
+    if (list.declarations.length !== 1)
+      this.fail(node, "a pattern declares alone in the fragment");
+    const d = list.declarations[0];
+    const pattern = d.name;
+    if (!ts.isObjectBindingPattern(pattern))
+      this.fail(d, "destructuring is outside the fragment");
+    if (d.type) this.fail(d, "an annotated pattern is outside the fragment");
+    if (!d.initializer) this.fail(d, "a `const` needs an initializer");
+    if (pattern.elements.length === 0)
+      this.fail(pattern, "an empty pattern binds nothing");
+    const names = new Set<string>();
+    const props: PatternPropAst[] = pattern.elements.map((el) => {
+      if (el.dotDotDotToken)
+        this.fail(el, "rest elements are outside the fragment");
+      if (!el.name || !ts.isIdentifier(el.name))
+        this.fail(el, "nested patterns are outside the fragment");
+      const key = el.propertyName ?? el.name;
+      if (!ts.isIdentifier(key))
+        this.fail(el, "computed or string pattern keys are outside the fragment");
+      if (el.name.text === "undefined")
+        this.fail(el, "shadowing undefined is outside the fragment");
+      if (names.has(el.name.text)) this.fail(el, "duplicate pattern binding");
+      names.add(el.name.text);
+      return {
+        field: key.text,
+        name: el.name.text,
+        namePos: this.span(el.name),
+        default_: el.initializer ? this.expr(el.initializer) : null,
+      };
+    });
+    return {
+      k: "pattern",
+      pos: this.span(node),
+      props,
+      init: this.expr(d.initializer),
+    };
+  }
+
   /* A branch or loop body. TypeScript allows a single statement where a block
      could be written, and the two mean the same thing here: a lexical
      declaration cannot be an unbraced body, so no binding's scope depends on
@@ -845,6 +892,8 @@ class Gate {
       if (mutable && !(list.flags & ts.NodeFlags.Let))
         this.fail(node, "`var` is outside the fragment");
       const kindWord = mutable ? "let" : "const";
+      if (list.declarations.some((d) => ts.isObjectBindingPattern(d.name)))
+        return this.patternStmt(node, mutable);
       // A declaration list binds its declarators left to right, each
       // initializer seeing the earlier bindings, under the statement's one
       // entry. Each declarator is gated on its own terms.

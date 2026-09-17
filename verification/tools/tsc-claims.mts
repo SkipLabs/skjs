@@ -29,6 +29,7 @@ import type { Checker, Symbol, Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type {
   BinaryExpression,
+  BindingElement,
   Expression,
   FunctionDeclaration,
   FunctionLikeDeclaration,
@@ -231,6 +232,12 @@ function walkStmt(s: Stmt, out: Sites): void {
     case "let":
       // One entry for the statement; every declarator's initializer is a site.
       s.bindings.forEach((b) => walkExpr(b.init, out));
+      return;
+    case "pattern":
+      // The initializer and each default are sites; the reads are not source
+      // expressions and carry no claim.
+      walkExpr(s.init, out);
+      s.props.forEach((p) => { if (p.default_) walkExpr(p.default_, out); });
       return;
     case "while":
       // The loop head: the invariant candidate checked on entry and every
@@ -1005,7 +1012,7 @@ function declarationExprKind(node: Expression): string {
  * Neither does a plain `const` TypeScript does not narrow past its declaration.
  */
 function authoritativeType(
-  binding: { decl: VariableDeclaration | ParameterDeclaration; name: string; sym: Symbol },
+  binding: { decl: VariableDeclaration | ParameterDeclaration | BindingElement; name: string; sym: Symbol },
   checker: Checker,
   types: Row[],
   cache: DeclCache,
@@ -1015,7 +1022,9 @@ function authoritativeType(
   const hit = cache.get(key);
   if (hit) return hit;
   let result: Authoritative;
-  if (isParameter(binding.decl) || isMutableDeclaration(binding.decl)) {
+  // A pattern binding's value is a read the lowering makes, not a source
+  // expression with a claim, so it carries no initializer contract either.
+  if (isParameter(binding.decl) || ts.isBindingElement(binding.decl) || isMutableDeclaration(binding.decl)) {
     result = { labels: null, readTainted: false, declared: null, claimed: null };
   } else {
     const init = binding.decl.initializer;
@@ -1143,7 +1152,7 @@ function typeForExprSite(
 
 interface VisibleBinding {
   sym: Symbol;
-  decl: VariableDeclaration | ParameterDeclaration;
+  decl: VariableDeclaration | ParameterDeclaration | BindingElement;
   declStart: number;
   name: string;
 }
@@ -1157,7 +1166,7 @@ function envAtEntry(
   const seen: VisibleBinding[] = [];
   const take = (
     nameNode: Identifier,
-    decl: VariableDeclaration | ParameterDeclaration,
+    decl: VariableDeclaration | ParameterDeclaration | BindingElement,
   ): void => {
     const declStart = nameNode.getStart(sf);
     if (declStart >= offset) return;
@@ -1170,6 +1179,10 @@ function envAtEntry(
         if (ts.isVariableStatement(st))
           for (const d of st.declarationList.declarations)
             if (ts.isIdentifier(d.name)) take(d.name, d);
+            // A pattern's bindings are visible from their own names on.
+            else if (ts.isObjectBindingPattern(d.name))
+              for (const el of d.name.elements)
+                if (el.name && ts.isIdentifier(el.name)) take(el.name, el);
     }
     // Every enclosing function contributes its parameters, not just the
     // innermost: an entry inside a lowered closure body still sees the
@@ -1312,11 +1325,13 @@ function bindingLabelsAtEntry(
   // statement does not mention it. Calls can change its source cell, not the
   // saved value. Mutable bindings have no authoritative initializer contract.
   if (auth.labels) {
-    const guard = truthyGuardLabels(binding.decl.name, checker, stmtNode);
+    const guard = binding.decl.name && truthyGuardLabels(binding.decl.name, checker, stmtNode);
     if (guard) return guard;
   }
   if (auth.labels && (auth.readTainted || (auth.declared && JSON.stringify(auth.declared) !== JSON.stringify(auth.claimed))))
-    return tagGuardLabels(binding.decl.name, checker, types, auth.labels, stmtNode);
+    return binding.decl.name
+      ? tagGuardLabels(binding.decl.name, checker, types, auth.labels, stmtNode)
+      : auth.labels;
   return translateType(
     must(checker.getTypeOfSymbolAtLocation(binding.sym, stmtNode), "binding-type"),
     checker,

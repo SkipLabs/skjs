@@ -226,6 +226,10 @@ partial def expandStmt (aliases : List Alias) (s : Fragment.Stmt) : Except Strin
   | .ret p e => return .ret p (← expandExpr aliases e)
   | .constants p bs => return .constants p (← bs.mapM (expandBinding aliases))
   | .mutables p bs => return .mutables p (← bs.mapM (expandBinding aliases))
+  | .pattern p props init =>
+    let props' ← props.mapM fun q => do
+      return { q with default_ := ← q.default_.mapM (expandExpr aliases) }
+    return .pattern p props' (← expandExpr aliases init)
   | .ite p c t e =>
     let t' ← t.mapM (expandStmt aliases)
     let e' ← match e with

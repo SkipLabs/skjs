@@ -44,16 +44,17 @@ of the work remaining.
 
 ## Checkpoint: 17 September 2026
 
-The working-tree baseline is **15/115 verified**, out of 315 selected functions:
-200 SKJS-rejected, 88 gated, 12 unproved. The separate curated run had 54 files,
-219 verified functions, 6 search failures and 16 unavailable checks; the suite
-run had 54 suites. These are checkpoint results, not permanent expectations;
+The working-tree baseline is **17/115 verified**, out of 315 selected functions:
+200 SKJS-rejected, 86 gated, 12 unproved. The separate curated run had 55 files,
+223 verified functions, 6 search failures and 16 unavailable checks; the suite
+run had 55 suites. These are checkpoint results, not permanent expectations;
 the baseline and fresh command output are authoritative.
 
 Recent repair gains were numeric heap predicates (`checkedEvolvingCapture`),
 local nullish assignment (`localFallback`), inferred object replacement
-(`checkedMutableObjectReplacement`) and declaration lists
-(`earlierDeclarator`): 11 → 12 → 13 → 14 → 15.
+(`checkedMutableObjectReplacement`), declaration lists (`earlierDeclarator`)
+and object patterns (`inferredFieldDefault`, `checkedStateAfterDefault`):
+11 → 12 → 13 → 14 → 15 → 17.
 TS observation fixes also improved curated coverage without themselves moving
 this SKJS repair count.
 
@@ -72,6 +73,21 @@ first` with `first` narrowed to `boolean`) is not re-established after a
 write to a different cell, whether or not the declarations share a statement.
 The fixture seeds its cells from a `boolean | null` parameter to stay within
 the supported contents tracking.
+
+Object patterns on `const` (`const { value = 0 } = box`) followed: identifier
+properties, optional renames and defaults, over a local record. The lowering
+reads each property in order from the initializer held once, dispatches a
+default on the undefined tag and joins both arms at a node typed by their
+union; the producers claim only the initializer and the defaults, and the
+entry after the statement states the bindings. `tests/object-patterns.mts`
+and `ObjectPatternTests.lean` cover it. TypeScript types a literal destructured
+directly with optional properties, so the TS column covers patterns over a
+bound local only; SKJS claims both forms, which is what the census measures.
+The other destructuring rows stay out: `identityPatternScalar` now reports
+its nested pattern, and it, `checkedNestedPattern`, `earlierPatternRead`,
+`patternEarlierBinding` and `checkedDeclarationDefault` all destructure
+external object parameters; `checkedDestructuredDefault` destructures an
+ambient call's tuple.
 
 The inferred replacement implementation is committed in `59eb0637`, following
 `60d5468b`, the pre-change export snapshot. `46b3a7b7` committed local `??=`
