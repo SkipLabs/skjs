@@ -1,9 +1,9 @@
 # census: repair-work
-# 10/115 verified, of 315 functions
+# 11/115 verified, of 315 functions
 #   skjs-rejected: 200
 #   gate: 90
-#   unproved: 15
-#   verified: 10
+#   unproved: 14
+#   verified: 11
 #
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofUndefinedFieldAdmitsInitialValue
@@ -306,10 +306,9 @@ unproved:reject: source environment obligation at 706: unavailable claimed bindi
 unproved:reject: source environment obligation at 713: unavailable claimed binding '_' at 713	tests/expect-error/captured-read-stability.ts	checkedGenericCallResult
 unproved:reject: source expression obligation at [185,209): type claim unavailable from producer	tests/expect-error/obj-literal-var-field-growth.ts	retainedReceiver
 unproved:reject: source type outside the null/undefined/boolean/singleton fragment	tests/expect-error/captured-read-stability.ts	evolvedInferredSnapshotStillString
+unproved:reject: unbound or uninitialized source variable '_'	tests/expect-error/binding-initialization.ts	conditionBeforeLocal
 unproved:reject: unexpected fields in the cell record claim	tests/expect-error/captured-read-stability.ts	checkedPropertyResult
 unproved:reject: unexpected fields in the cell record claim	tests/expect-error/unsound-refinement.ts	identityMemberSnapshot
-unproved:reject: unsupported source expression at [243,253): equality requires a null or undefined 	tests/expect-error/local-vs-local-refinement.ts	inferredReadSingleton
-unproved:reject: unsupported source expression at [73,83): equality requires a null or undefined si	tests/expect-error/binding-initialization.ts	conditionBeforeLocal
 verified	tests/expect-error/captured-read-stability.ts	checkedAnnotatedConstField
 verified	tests/expect-error/captured-read-stability.ts	checkedCapturedLocal
 verified	tests/expect-error/captured-read-stability.ts	checkedInferredObject
@@ -319,4 +318,5 @@ verified	tests/expect-error/captured-read-stability.ts	snapshotCapturedLocal
 verified	tests/expect-error/captured-read-stability.ts	stableAnnotatedConstValue
 verified	tests/expect-error/issue-89-and-or-narrowing.ts	unrelatedFact
 verified	tests/expect-error/local-vs-local-refinement.ts	inferredReadNamedNull
+verified	tests/expect-error/local-vs-local-refinement.ts	inferredReadSingleton
 verified	tests/expect-error/nullish-coalescing.ts	resultOfFallback

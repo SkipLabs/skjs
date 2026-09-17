@@ -319,7 +319,7 @@ function obligationView(ob: ObligationDiagnostic, source = ""): ObligationView {
     else if (tag && tag.test !== undefined)
       view.observation =
         "This edge carries the case where the tag test " +
-        String(tag.test) +
+        (typeof tag.test === "string" ? tag.test : JSON.stringify(tag.test)) +
         " answers " +
         String(tag.answer) +
         " on " +

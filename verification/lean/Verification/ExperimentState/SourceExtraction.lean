@@ -114,7 +114,7 @@ private def exprType (fc : SourceClaims.Function) (e : Fragment.Expr) : Compiler
       s!"source expression obligation at [{e.span.1},{e.span.2}): {msg}"
   | none => throw s!"no claimed type for the expression at {spanStr e.span}"
 
-/-- A claimed null/undefined operand selects a tag-test implementation, never
+/-- A claimed null/undefined/numeric singleton selects a tag-test implementation, never
 an assumption: both operands remain in the program, in source order, and their
 expression obligations must establish the singleton used by this translation. -/
 private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.Expr) :
@@ -126,17 +126,21 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
     let r ← comparisonsExpr fc r
     let L ← exprType fc l
     let R ← exprType fc r
+    let G := SourceTypes.graph (← table)
     let select := fun (A : Ty Nat) =>
-      if A == [0] then some Tag.isNul else if A == [3] then some Tag.isUndef else none
+      if A == [0] then some Tag.isNul else if A == [3] then some Tag.isUndef else
+        match PositiveRules.expand G A with
+        | [.numLit bits] => some (.numEq bits)
+        | _ => none
     match select R, select L with
-    | some tag, _ => pure (.unitTest p tag eq true l r)
-    | _, some tag => pure (.unitTest p tag eq false l r)
-    | _, _ => throw s!"unsupported source expression at [{p.1},{p.2}): equality requires a null or undefined singleton operand"
+    | some tag, _ => pure (.singletonTest p tag eq true l r)
+    | _, some tag => pure (.singletonTest p tag eq false l r)
+    | _, _ => throw s!"unsupported source expression at [{p.1},{p.2}): equality requires a null, undefined or numeric singleton operand"
   | .logical p a l r => return .logical p a (← comparisonsExpr fc l) (← comparisonsExpr fc r)
   | .coalesce p l r => return .coalesce p (← comparisonsExpr fc l) (← comparisonsExpr fc r)
   | .assign p n np r => return .assign p n np (← comparisonsExpr fc r)
   | .shapeTest p t eq e => return .shapeTest p t eq (← comparisonsExpr fc e)
-  | .unitTest p t eq tl l r => return .unitTest p t eq tl (← comparisonsExpr fc l) (← comparisonsExpr fc r)
+  | .singletonTest p t eq tl l r => return .singletonTest p t eq tl (← comparisonsExpr fc l) (← comparisonsExpr fc r)
   | .not p e => return .not p (← comparisonsExpr fc e)
   | .alloc p ns es => return .alloc p ns (← es.mapM (comparisonsExpr fc))
   | .read p f e => return .read p f (← comparisonsExpr fc e)
@@ -174,7 +178,7 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .not _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e
   | .lambda _ _ _ e => assignsExpr name e
   | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b
-  | .unitTest _ _ _ _ a b | .write _ _ a b | .withValue _ a b _ _
+  | .singletonTest _ _ _ _ a b | .write _ _ a b | .withValue _ a b _ _
   | .seqBody _ a b | .letBody _ _ _ a b => assignsExpr name a || assignsExpr name b
   | .alloc _ _ es => es.any (assignsExpr name)
   | .call _ f args => assignsExpr name f || args.any (assignsExpr name)
@@ -329,18 +333,18 @@ escaping closure. Reads are plain modeled cells, never JavaScript accessors. -/
 private def readOnly : Fragment.Expr → Bool
   | .var .. | .lit .. | .done .. => true
   | .not _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e => readOnly e
-  | .equality _ _ a b | .unitTest _ _ _ _ a b | .logical _ _ a b | .coalesce _ a b
+  | .equality _ _ a b | .singletonTest _ _ _ _ a b | .logical _ _ a b | .coalesce _ a b
   | .seqBody _ a b | .letBody _ _ _ a b => readOnly a && readOnly b
   | .ifBody _ _ c t e => readOnly c && readOnly t && readOnly e
   | .alloc .. | .write .. | .assign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
   | .callWithReceiver .. | .call .. => false
 
-/-- Save the plain read in a null/undefined comparison. The other operand is
+/-- Save the plain read in a singleton comparison. The other operand is
 necessarily a literal; moving that literal across the read has no effect. -/
 private def readGuard (scope : List ScopeBinding) :
     Fragment.Expr → Option (String × Fragment.Expr × Fragment.Expr)
   | .not pos e => (readGuard scope e).map fun (snapshot,r,c) => (snapshot,r,.not pos c)
-  | .unitTest pos tag equal testLeft left right => do
+  | .singletonTest pos tag equal testLeft left right => do
     let (r,lit) := if testLeft then (left,right) else (right,left)
     let .lit .. := lit | none
     let (name,fld) ← match r with
@@ -353,7 +357,7 @@ private def readGuard (scope : List ScopeBinding) :
       | _ => none
     let snapshot := snapshotName name fld
     let saved := Fragment.Expr.var r.span snapshot
-    some (snapshot,r,.unitTest pos tag equal testLeft
+    some (snapshot,r,.singletonTest pos tag equal testLeft
       (if testLeft then saved else lit) (if testLeft then lit else saved))
   | _ => none
 
@@ -397,7 +401,7 @@ private def tagConditionVariable (scope : List ScopeBinding) : Fragment.Expr →
   | .not _ e => (tagConditionVariable scope e).map fun (i, tag, equal) => (i, tag, !equal)
   | .shapeTest _ tag equal (.var _ name) =>
     (valueSlot scope name).map (·, tag, equal)
-  | .unitTest _ tag equal testLeft left right =>
+  | .singletonTest _ tag equal testLeft left right =>
     match (if testLeft then left else right) with
     | .var _ name => (valueSlot scope name).map (·, tag, equal)
     | _ => none
@@ -406,8 +410,8 @@ private def tagConditionVariable (scope : List ScopeBinding) : Fragment.Expr →
 private def tagTestTerm (tag : Tag) (equal : Bool) (slot : Nat) : Tm :=
   .ite (.test tag (.var slot)) (if equal then .tru else .fls) (if equal then .fls else .tru)
 
-/-- Every source label has a uniform head shape. Splitting the explicit union
-lets the ordinary tag rule prove each alternative. -/
+/-- Split an explicit union and require a known test outcome for each arm.
+A broad numeric arm is not silently treated as unequal to the singleton. -/
 private def tagTestPlan (G : PositiveGraphs.NormalGraph Nat) (tag : Tag) (Γ : List (Ty Nat)) (slot : Nat)
     (equal : Bool) (A : Ty Nat) : Except String DirectProof.Plan := do
   let some C := Γ[slot]? | throw "internal tag-test slot mismatch"
@@ -418,6 +422,8 @@ private def tagTestPlan (G : PositiveGraphs.NormalGraph Nat) (tag : Tag) (Γ : L
     let value := if q == equal then Tm.tru else .fls
     let B := if q == equal then [1] else [2]
     let rule := if q == equal then ProgramCertificates.Rule.truLit else .flsLit
+    if !q && !(decide (Answers G [a] tag false)) then
+      throw "numeric comparison requires a union of known singleton outcomes"
     pure (DirectProof.node H term A (if q then .ifTrue else .ifFalse)
       [DirectProof.cast H A (DirectProof.node H value B rule)])
   pure (DirectProof.node Γ term A (.unionVar slot) children)
@@ -537,7 +543,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let operand ← closureExpr fc scope Γ e
     let result ← tagTestPlan G tag (operand.type::Γ) 0 equal A
     pure (DirectProof.letE Γ operand result)
-  | .unitTest _ tag equal testLeft left right => do
+  | .singletonTest _ tag equal testLeft left right => do
     let leftSpan := left.span
     let left ← closureExpr fc scope Γ left
     let right ← closureExpr fc (held ⟨"",some leftSpan⟩ :: scope) (left.type::Γ) right
@@ -917,7 +923,7 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List ScopeBinding)
     let test ← emitAt e.span (tagTestTerm tag equal 0) (.bind drop) (B::Γ) A
       (scope := held ⟨"",some operand.span⟩ :: scope)
     compileExpr fc scope Γ operand test
-  | .unitTest _ tag equal testLeft left right =>
+  | .singletonTest _ tag equal testLeft left right =>
     let B ← exprType fc left
     let C ← exprType fc right
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map

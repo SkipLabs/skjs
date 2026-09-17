@@ -184,8 +184,8 @@ partial def expandExpr (aliases : List Alias) (e : Fragment.Expr) : Except Strin
     return .shapeTest p tag equal (← expandExpr aliases e)
   | .equality p eq l r =>
     return .equality p eq (← expandExpr aliases l) (← expandExpr aliases r)
-  | .unitTest p t eq tl l r =>
-    return .unitTest p t eq tl (← expandExpr aliases l) (← expandExpr aliases r)
+  | .singletonTest p t eq tl l r =>
+    return .singletonTest p t eq tl (← expandExpr aliases l) (← expandExpr aliases r)
   | .not p e => return .not p (← expandExpr aliases e)
   | .alloc p ns es => return .alloc p ns (← es.mapM (expandExpr aliases))
   | .read p f e => return .read p f (← expandExpr aliases e)

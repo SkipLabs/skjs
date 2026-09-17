@@ -656,17 +656,20 @@ calls and external cell parameters remain outside the fragment. Evaluation order
 capture lowering and assignment temporaries are described in
 [source integration](DESIGN.md#source-integration-current-slice-and-next-milestone).
 
-### Null and undefined predicates
+### Singleton comparisons
 
 Source binary forms with `op` equal to `===` or `!==` are accepted when either
-operand is a null or undefined literal, or has a claimed singleton null or
-undefined type. Lean resolves the latter case using the common source claims;
+operand has a checked singleton null, undefined or numeric type. Lean resolves the latter case using the common source claims;
 the operand obligation must prove that singleton, so a forged claim cannot
 justify replacing equality by a tag test. Both operands are evaluated in source order and both
 retain their expression obligations. The comparison lowers to the corresponding primitive
-shape test and Boolean conditional over the saved operand. `unionVar` evidence
-allows tag dispatch over a primitive union; no new term or reference semantics
-is introduced. The same lowering is available inside a supported closure.
+test and Boolean conditional over the saved operand. Numeric tests use
+`{"numEq":{"bits":"…"}}` as the shared `Tag` representation. They implement
+[Number::equal](https://tc39.es/ecma262/multipage/ecmascript-data-types-and-values.html#sec-numeric-types-number-equal):
+the two signs of zero compare equal, and NaN never compares equal. `unionVar`
+evidence handles finite unions with known outcomes; a broad `number` operand
+remains unsupported by this source proof construction. Unknown outcomes retain
+the whole type on both branches, never establish the false branch. The same lowering is available inside a supported closure.
 
 Top-level branches and loop heads also refine a syntactically identified immutable
 variable. Negations and either operand order are supported. The original

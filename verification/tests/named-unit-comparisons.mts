@@ -54,7 +54,7 @@ try {
         if (wrongType.length === 2)
           assert.match(
             r.stderr + r.stdout,
-            /equality requires a null or undefined singleton operand/,
+            /equality requires a null, undefined or numeric singleton operand/,
           );
       }
     }

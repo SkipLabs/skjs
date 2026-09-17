@@ -7,7 +7,8 @@ export type Tag =
   | "isFun"
   | "isUndef"
   | "isNullish"
-  | "isNum";
+  | "isNum"
+  | { numEq: { bits: string } };
 export type CallCode = "absent" | { closure: { arity: number; body: Term } };
 export type Term =
   | "nul"
@@ -27,7 +28,7 @@ export type Term =
   | { ite: { c: Term; t: Term; e: Term } };
 /** Every tag, checked against `Tag`: adding one there and not here is a type
  * error rather than an "unknown tag" at run time. */
-const TAGS: Record<Tag, true> = {
+const TAGS: Record<Extract<Tag, string>, true> = {
   isNul: true,
   isBool: true,
   isRef: true,
@@ -40,7 +41,11 @@ const tags: readonly unknown[] = Object.keys(TAGS);
 /** Whether a decoded value is a tag, so the table above stays the one place a
  * tag is declared even for readers of other languages that carry one. */
 export function isTag(v: unknown): v is Tag {
-  return tags.includes(v);
+  if (tags.includes(v)) return true;
+  if (!isRecord(v) || Object.keys(v).length !== 1 || !isRecord(v.numEq)) return false;
+  const n = v.numEq;
+  return Object.keys(n).length === 1 && typeof n.bits === "string" &&
+    /^[0-9]+$/.test(n.bits) && BigInt(n.bits) <= 0xffffffffffffffffn;
 }
 /* JSON shape checks, shared with the program graph in control-flow.mts. They
  * belong to neither language, so they name neither: a malformed target is not

@@ -1,5 +1,5 @@
 import { decodeGraph, decodeLabels, type TypeGraph, type Labels } from "./type-graph.mts";
-import { decodeTerm, type Term } from "./calculus.mts";
+import { decodeTerm, isTag, type Tag, type Term } from "./calculus.mts";
 import { decodeNode, type ProgramNode } from "./control-flow.mts";
 import type { Span } from "./span.mts";
 
@@ -67,7 +67,7 @@ export interface DiagnosticTransfer {
   /** Which way a two-armed Boolean test went; null for every other edge. */
   booleanObservation: boolean | null;
   /** The tag test an edge answers, where the continuation is one. */
-  tagObservation: { test: unknown; answer: boolean; slot: number } | null;
+  tagObservation: { test: Tag; answer: boolean; slot: number } | null;
 }
 
 /** What every record carries, whatever the failure was. */
@@ -147,9 +147,6 @@ const KINDS: readonly unknown[] = [
   "expression-claim",
   "production-failure",
 ];
-/** The tag tests an edge can answer, which the reader shows as recorded. */
-const TESTS: readonly unknown[] =
-  ["isNul","isBool","isRef","isFun","isUndef","isNullish"];
 const PREFIX = "obligation-diagnostic: ";
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -240,7 +237,7 @@ export function readDiagnostic(
       if (transfer.tagObservation !== null) {
         const tag = record(transfer.tagObservation,["test","answer","slot"]);
         nat(tag.slot);
-        if (!TESTS.includes(tag.test) || typeof tag.answer !== "boolean") return undefined;
+        if (!isTag(tag.test) || typeof tag.answer !== "boolean") return undefined;
       }
       const destination = record(d.destination,["label","sourceMap","node","claim","requiredKnowledge"]);
       const claim = destination.claim;

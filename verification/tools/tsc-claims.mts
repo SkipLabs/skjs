@@ -737,10 +737,10 @@ function truthyGuardLabels(node: Node, checker: Checker): number[] | null {
 }
 
 /** A strict null, undefined or function-shape test on an immutable identifier. */
-function testedTagSymbol(cond: Expression, checker: Checker): {sym: Symbol; equal: boolean; label: number | "function"} | null {
-  if (ts.isParenthesizedExpression(cond)) return testedTagSymbol(cond.expression, checker);
+function testedTagSymbol(cond: Expression, checker: Checker, types: Row[]): {sym: Symbol; equal: boolean; label: number | "function"} | null {
+  if (ts.isParenthesizedExpression(cond)) return testedTagSymbol(cond.expression, checker, types);
   if (ts.isPrefixUnaryExpression(cond) && cond.operator === ts.SyntaxKind.ExclamationToken) {
-    const inner = testedTagSymbol(cond.operand, checker);
+    const inner = testedTagSymbol(cond.operand, checker, types);
     return inner && {...inner, equal: !inner.equal};
   }
   if (!ts.isBinaryExpression(cond)) return null;
@@ -756,9 +756,12 @@ function testedTagSymbol(cond: Expression, checker: Checker): {sym: Symbol; equa
     return sym ? {sym, equal: op === ts.SyntaxKind.EqualsEqualsEqualsToken, label: "function"} : null;
   }
   const unitLabel = (node: Expression): number | null => {
-    const flags = checker.getTypeAtLocation(node)?.flags ?? 0;
+    const type = checker.getTypeAtLocation(node);
+    const flags = type?.flags ?? 0;
     if (flags & TypeFlags.Null) return 0;
     if (flags & TypeFlags.Undefined) return 3;
+    if (type?.isNumberLiteralType() && Number.isFinite(type.value))
+      return internRow(types, [{ numLit: { bits: numberBits(type.value) } }]);
     return null;
   };
   const left = unitLabel(cond.left), right = unitLabel(cond.right);
@@ -805,13 +808,22 @@ function tagGuardLabels(node: Node, checker: Checker, types: Row[], labels: numb
         ]);
       }
     }
-    const test = testedTagSymbol(cond, checker);
-    return test?.sym.id === sym.id
-      ? base.filter((label) => (test.label === "function"
-          ? (types[label]?.some((clause) =>
-              (clause !== null && typeof clause === "object" && ("arrs" in clause || "callable" in clause)) === (test.equal === truth)) ?? true)
-          : (label === test.label) === (test.equal === truth)))
-      : base;
+    const test = testedTagSymbol(cond, checker, types);
+    if (test?.sym.id !== sym.id) return base;
+    if (typeof test.label === "number" && types[test.label]?.some((c) =>
+        typeof c === "object" && "numLit" in c)) {
+      const singleton = test.label;
+      // A broad number can equal this singleton. Its positive branch narrows
+      // to the singleton; the negative branch cannot subtract it from `number`.
+      return dedupSortInts(base.flatMap((label) => types[label]?.includes("num")
+        ? [test.equal === truth ? singleton : label]
+        : (label === singleton) === (test.equal === truth) ? [label] : []));
+    }
+    return base.filter((label) => (test.label === "function"
+      ? (types[label]?.some((clause) =>
+          (clause !== null && typeof clause === "object" && ("arrs" in clause || "callable" in clause)) === (test.equal === truth)) ?? true)
+      : (label === test.label) === (test.equal === truth)));
+
   };
   const apply = (cond: Expression, truth: boolean) => { labels = refine(cond, truth, labels); };
   let child: Node = anchor, cur: Node = anchor.parent;

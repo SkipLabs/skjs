@@ -107,15 +107,15 @@ still conservative. A `let` may omit its annotation: the producer states the
 contract for a binding it inferred, the type it gives the name where it first
 stands in scope, and that is checked like a written one rather than the
 initializer's type being taken for it. A `let` without an initializer is
-outside. Numbers are in it, but opaquely: a number is
-bound, passed, returned, held in a union and shape-tested, never computed with,
-because the fragment has no arithmetic and no numeric comparison. A numeric
+outside. Numbers can be bound, passed, returned, held in a union and shape-tested.
+Strict comparisons against numeric singletons also verify for finite unions
+with known comparison outcomes; arithmetic is outside the fragment. A numeric
 literal is its own singleton and is below `number`; its identity is the double
 it denotes, so `1`, `1.0` and `1e0` are one literal. A number may be a
 parameter or result of a closure, and the storage contract of a mutable local,
 so a captured reader of a numeric `let` verifies. What a number cannot be is a
-current-content assertion: such an assertion is a finite set of values carried
-on every incoming edge, and a number has no finite set. A claim about what a
+current-content assertion: those currently enumerate only null, undefined and
+Boolean values on incoming edges. A claim about what a
 cell holds now is instead the obligation that its storage contract implies it.
 Numbers inside a `{ value: T }` cell are still outside. Generic variable-copy bodies admit distinct type parameters and bounds to
 `boolean` or an earlier parameter, including transitive chains. Parameters,

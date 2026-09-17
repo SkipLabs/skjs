@@ -137,7 +137,7 @@ inductive Expr where
   | shapeTest (pos : Span) (tag : Tag) (equal : Bool) (e : Expr)
   /-- Strict equality awaiting a checked singleton operand from source claims. -/
   | equality (pos : Span) (equal : Bool) (left right : Expr)
-  | unitTest (pos : Span) (tag : Tag) (equal testLeft : Bool) (left right : Expr)
+  | singletonTest (pos : Span) (tag : Tag) (equal testLeft : Bool) (left right : Expr)
   | not (pos : Span) (e : Expr)
   /-- An object literal: one named field per initializer, in source order. -/
   | alloc (pos : Span) (names : List String) (es : List Expr)
@@ -168,7 +168,7 @@ abbrev Expr.app (p : Span) (callee arg : Expr) : Expr := .call p callee [arg]
 
 def Expr.span : Expr → Span
   | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body => body.span
-  | .ifBody p _ _ _ _ | .done p | .equality p _ _ _ | .unitTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
+  | .ifBody p _ _ _ _ | .done p | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
   | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ | .call p _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ => p
 
 inductive Stmt where
@@ -215,10 +215,10 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     let left ← decodeExpr (← jField j "l")
     let right ← decodeExpr (← jField j "r")
     match left, right with
-    | _, .lit _ .vnull => return .unitTest p .isNul (op == "===") true left right
-    | .lit _ .vnull, _ => return .unitTest p .isNul (op == "===") false left right
-    | _, .lit _ .vundef => return .unitTest p .isUndef (op == "===") true left right
-    | .lit _ .vundef, _ => return .unitTest p .isUndef (op == "===") false left right
+    | _, .lit _ .vnull => return .singletonTest p .isNul (op == "===") true left right
+    | .lit _ .vnull, _ => return .singletonTest p .isNul (op == "===") false left right
+    | _, .lit _ .vundef => return .singletonTest p .isUndef (op == "===") true left right
+    | .lit _ .vundef, _ => return .singletonTest p .isUndef (op == "===") false left right
     | _, _ => return .equality p (op == "===") left right
   | "functionTest" => do
     CellClaims.fieldsExactly j ["k","pos","equal","e"]

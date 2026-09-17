@@ -265,6 +265,13 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
       node verification/tools/tsc-claims.mts verification/tests/stateful-source/mutable-parameters.ts --out "$WORK/mutable_params.tsc"
   }
   build mutable_params_fixture
+  numeric_comparisons_fixture() {
+    fixture numeric_comparisons verification/tests/stateful-source/numeric-comparisons.ts &&
+      node verification/tools/tsc-claims.mts verification/tests/stateful-source/numeric-comparisons.ts --out "$WORK/numeric_comparisons.tsc" &&
+      node verification/tools/fragment-parse.mts verification/tests/stateful-source/numeric-comparison-boundary.ts > "$WORK/numeric_boundary.ast" &&
+      node verification/tools/tsc-claims.mts verification/tests/stateful-source/numeric-comparison-boundary.ts --out "$WORK/numeric_boundary.tsc"
+  }
+  build numeric_comparisons_fixture
   build named_units_fixture
   build mutable_guard_fixture
   build records_fixture
@@ -326,6 +333,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Multi-field records · SKJS" node verification/tests/records.mts "$WORK/records_skjs.ast" "$WORK/records_skjs.normalized" verification/tests/stateful-source/records.ts "$VERIFIER" "$WORK/records_skjs.claims"
   run_test "Multi-field records · TypeScript" node verification/tests/records.mts "$WORK/records.ast" "$WORK/records.claims" verification/tests/stateful-source/records.ts "$VERIFIER"
   run_test "Mutable parameters" node verification/tests/mutable-parameters.mts "$WORK/mutable_params.ast" "$WORK/mutable_params.claims" "$WORK/mutable_params.tsc" verification/tests/stateful-source/mutable-parameters.ts "$VERIFIER"
+  run_test "Numeric singleton comparisons" node verification/tests/numeric-comparisons.mts "$WORK/numeric_comparisons.ast" "$WORK/numeric_comparisons.claims" "$WORK/numeric_comparisons.tsc" verification/tests/stateful-source/numeric-comparisons.ts "$VERIFIER" "$WORK/numeric_boundary.ast" "$WORK/numeric_boundary.tsc" verification/tests/stateful-source/numeric-comparison-boundary.ts
   run_test "Named unit comparisons" node verification/tests/named-unit-comparisons.mts "$WORK/named_units.ast" "$WORK/named_units.claims" "$WORK/named_units.tsc" verification/tests/stateful-source/named-unit-comparisons.ts "$VERIFIER"
   run_test "Captured mutable guards" node verification/tests/mutable-guards.mts "$WORK/mutable_guard.ast" "$WORK/mutable_guard.claims" verification/tests/stateful-source/captured-local-guards.ts "$WORK/mutable_guard_effects.ast" "$WORK/mutable_guard_effects.claims" verification/tests/stateful-source/mutable-guard-effects.ts "$VERIFIER"
   run_test "Mutable locals" node verification/tests/mutable-locals.mts "$WORK/mutable_locals.ast" "$WORK/mutable_locals.claims" "$MUTABLE_LOCALS" "$VERIFIER"

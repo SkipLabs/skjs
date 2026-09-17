@@ -15,6 +15,7 @@ const stateful = [
   "named-unit-comparisons",
   "null-guards",
   "numbers",
+  "numeric-comparisons",
   "mutable-locals",
   "mutable-parameters",
   "captured-local-guards",

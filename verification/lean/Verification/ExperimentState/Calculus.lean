@@ -38,6 +38,7 @@ Nullishness groups null and undefined for source coalescing; the other tests
 distinguish individual runtime shapes. -/
 inductive Tag where
   | isNul | isBool | isRef | isFun | isUndef | isNullish | isNum
+  | numEq (bits : UInt64)
   deriving Repr, DecidableEq
 
 mutual
@@ -55,7 +56,7 @@ inductive Tm where
   | fls
   /-- A number, carried as the bit pattern of the double it denotes, which is
   the identity `numBits` below assigns a numeric literal. The fragment
-  has no arithmetic and no numeric comparison, so a number is opaque here: it
+  has no arithmetic; equality tests inspect these bits. Otherwise a number is opaque: it
   is bound, passed, stored and shape-tested, never computed with. Two patterns
   that denote the same double are equal, so singletons cannot be confused; two
   that denote it differently would be distinct singletons, which costs
@@ -279,9 +280,16 @@ def isVal : Tm → Bool
   | .nul | .undef | .tru | .fls | .num _ | .objAt .. => true
   | _ => false
 
-/-- What a test of a value answers. A test is total on values: every value has
-exactly one shape, which is the fact the shape lemmas of the type semantics
-record on the other side. -/
+/-- ECMAScript Number::equal on IEEE-754 bits: NaN never equals, and the
+sign of zero is ignored. All other equal Numbers have the same encoding. -/
+def numberEqual (a b : UInt64) : Bool :=
+  let nan := fun (x : UInt64) =>
+    (x &&& 0x7ff0000000000000) == 0x7ff0000000000000 &&
+      (x &&& 0x000fffffffffffff) != 0
+  !nan a && !nan b &&
+    (a == b || ((a &&& 0x7fffffffffffffff) == 0 && (b &&& 0x7fffffffffffffff) == 0))
+
+/-- Tests are total on values. Numeric equality also inspects the bits. -/
 def tagHolds : Tag → Val → Bool
   | .isNul, .nul => true
   | .isUndef, .undef => true
@@ -289,6 +297,7 @@ def tagHolds : Tag → Val → Bool
   | .isBool, .tru => true
   | .isBool, .fls => true
   | .isNum, .num _ => true
+  | .numEq bits, .num value => numberEqual value bits
   | .isRef, .objAt _ .absent => true
   | .isFun, .objAt _ (.closure _ _) => true
   | _, _ => false

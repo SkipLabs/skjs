@@ -126,7 +126,7 @@ private def exprSites : Fragment.Expr → Sites
   | .var p _ | .lit p _ => ([],[p])
   | .shapeTest p _ _ e | .not p e | .read p _ e | .lambda p _ _ e => joinSites ([],[p]) (exprSites e)
   | .alloc p _ es => es.foldl (fun acc a => joinSites acc (exprSites a)) ([],[p])
-  | .withValue p a b _ _ | .write p _ a b | .unitTest p _ _ _ a b | .equality p _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
+  | .withValue p a b _ _ | .write p _ a b | .singletonTest p _ _ _ a b | .equality p _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
   -- An assignment is an expression site, and the name it assigns is not one:
   -- the producer claims the value written, not the location.
   | .assign p _ _ e => joinSites ([],[p]) (exprSites e)

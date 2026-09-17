@@ -205,26 +205,49 @@ theorem call_safe {B : Fam} (xs : List (Fam × Tm))
     (by intro A h; obtain ⟨p,hp,rfl⟩ := List.mem_map.mp h; exact hAv p hp)
     hf' (List.mem_singleton_self _) hargs hv' hok'
 
-def tagShape (tag : Tag) (s : Nat) : Bool :=
+/-- A shape-only test has a fixed answer. Numeric equality needs the
+singleton bits; the whole number family has no uniform answer. -/
+def tagShape (tag : Tag) (s : Nat) : Option Bool :=
   match tag with
-  | .isNul => s == 0 | .isBool => s == 1 | .isRef => s == 2
-  -- A function object is a function to `typeof`, as a lambda is.
-  | .isFun => s == 3 | .isUndef => s == 4 | .isNullish => s == 0 || s == 4
-  | .isNum => s == 5
+  | .isNul => some (s == 0) | .isBool => some (s == 1) | .isRef => some (s == 2)
+  | .isFun => some (s == 3) | .isUndef => some (s == 4)
+  | .isNullish => some (s == 0 || s == 4) | .isNum => some (s == 5)
+  | .numEq _ => if s == 5 then none else some false
 
-/-- A finite syntactic check; it neither executes a term nor queries membership. -/
+def tagClause (tag : Tag) (c : Clause α) : Option Bool :=
+  match tag, c with
+  | .numEq bits, .numLit value => some (numberEqual value bits)
+  | _, _ => tagShape tag (shape c)
+
+/-- A finite syntactic check; unknown numeric answers cannot establish either
+branch. It neither executes a term nor queries semantic membership. -/
 def Answers (G : NormalGraph ι) (A : Ty ι) (tag : Tag) (q : Bool) : Prop :=
-  ∀ c ∈ expand G A, tagShape tag (shape c) = q
+  ∀ c ∈ expand G A, tagClause tag c = some q
+
+theorem tagClause_sound {S : α → Fam} {c tag q n W v}
+    (hq : tagClause tag c = some q) (hv : sem S c n W v) : tagHolds tag v = q := by
+  cases ht : tag with
+  | numEq bits =>
+    cases c <;> simp [ht, tagClause, tagShape, shape] at hq
+    all_goals subst q
+    case numLit value =>
+      change v = .num value at hv
+      subst v
+      rfl
+    all_goals
+      have hs := sem_shape hv
+      cases v <;> simp_all [ht,valueShape,tagHolds,shape]
+  | isNul | isBool | isRef | isFun | isUndef | isNullish | isNum =>
+    have htag : some (tagHolds tag v) = tagShape tag (valueShape v) := by
+      rw [ht]
+      cases v <;> first | rfl | (rename_i fs code; cases code <;> rfl)
+    rw [sem_shape hv, ht] at htag
+    exact Option.some.inj (htag.trans (by simpa only [ht,tagClause] using hq))
 
 theorem answers_sound {G : NormalGraph ι} {A tag q n W v}
     (hq : Answers G A tag q) (hv : meaning G A n W v) : tagHolds tag v = q := by
   obtain ⟨c, hc, hv⟩ := (expand_sem G A n W v).mp hv
-  have htag : tagHolds tag v = tagShape tag (valueShape v) := by
-    -- An object's answer depends on what sits in its call slot. `cases v`
-    -- re-introduces the membership hypothesis after the object's two fields.
-    cases tag <;> cases v <;> first | rfl | (rename_i l c h; cases c <;> rfl)
-  rw [htag, sem_shape hv]
-  exact hq c hc
+  exact tagClause_sound (hq c hc) hv
 
 variable [DecidableEq ι]
 
@@ -608,4 +631,6 @@ theorem HasTy.closed_safe {G : NormalGraph ι} {t A} (ht : HasTy G [] t A)
 #print axioms HasTy.invocationSpec
 #print axioms HasTy.sound
 #print axioms HasTy.closed_safe
+#print axioms tagClause_sound
+
 end Verification.ExperimentState.ProgramTyping

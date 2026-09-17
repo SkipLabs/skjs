@@ -850,12 +850,14 @@ const recorded = (d: ObligationDiagnostic) =>
   // Tag dispatch observes the same slot, and reads the same way.
   const tagged = structuredClone(record);
   tagged.transfer.booleanObservation = null;
-  tagged.transfer.tagObservation = { test: "nul", answer: false, slot: 0 };
+  tagged.transfer.tagObservation = { test: "isNul", answer: false, slot: 0 };
   tagged.source.sourceMap = at([10, 14], "tag-dispatch");
   const tagView = ob.obligationView(tagged);
   assert.equal(tagView.title, "Tag dispatch");
-  assert.match(must(tagView.observation, 'the reader\'s own words'), /tag test nul answers false on slot 0/);
+  assert.match(must(tagView.observation, 'the reader\'s own words'), /tag test isNul answers false on slot 0/);
   assert.match(must(tagView.observation, 'the reader\'s own words'), /not a claim that execution took it/);
+  tagged.transfer.tagObservation = { test: { numEq: { bits: "0" } }, answer: true, slot: 0 };
+  assert.match(must(ob.obligationView(tagged).observation, "numeric tag observation"), /numEq.*0/);
   // An identity map selects the available context unchanged.
   assert.deepEqual(ob.mapContext([[1], [2]], null), [[1], [2]]);
   const mismatched = structuredClone(record);

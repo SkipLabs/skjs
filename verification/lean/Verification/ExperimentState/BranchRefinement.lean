@@ -36,14 +36,14 @@ theorem onlyBoolean_sound {G : NormalGraph ι} {A n W v}
 /-- Drop only labels whose every clause contradicts the observed tag. A mixed
 label is retained intact: this does not assume that labels have uniform shapes. -/
 def tagSlice (G : NormalGraph ι) (A : Ty ι) (tag : Tag) (q : Bool) : Ty ι :=
-  A.filter fun a => !((expand G [a]).all fun c => (tagShape tag (shape c)) == !q)
+  A.filter fun a => !((expand G [a]).all fun c => (tagClause tag c) == some (!q))
 
 theorem tagSlice_sound {G : NormalGraph ι} {A tag q n W v}
     (hv : meaning G A n W v) (hq : tagHolds tag v = q) :
     meaning G (tagSlice G A tag q) n W v := by
   obtain ⟨a, ha, hv⟩ := hv
   refine ⟨a, List.mem_filter.mpr ⟨ha, ?_⟩, hv⟩
-  cases h : (expand G [a]).all (fun c => (tagShape tag (shape c)) == !q) with
+  cases h : (expand G [a]).all (fun c => (tagClause tag c) == some (!q)) with
   | false => rfl
   | true =>
     have hop : Answers G [a] tag (!q) := by

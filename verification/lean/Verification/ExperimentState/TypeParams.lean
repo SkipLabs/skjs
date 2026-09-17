@@ -301,10 +301,7 @@ theorem answers_soundP {G : NormalGraph ι} {P η} {A tag q n W v}
     (hq : Answers G A tag q) (hA : ∀ i ∈ A, P i = false)
     (hv : meaningP G P η A n W v) : tagHolds tag v = q := by
   obtain ⟨c, hc, hv⟩ := (expand_semP hA n W v).mp hv
-  have htag : tagHolds tag v = tagShape tag (valueShape v) := by
-    cases tag <;> cases v <;> first | rfl | (rename_i l c h; cases c <;> rfl)
-  rw [htag, sem_shape hv]
-  exact hq c hc
+  exact tagClause_sound (hq c hc) hv
 
 theorem EnvOkP.refine {G : NormalGraph ι} {P η} {Γ ρ n W i A B}
     (h : EnvOkP G P η Γ ρ n W) (hi : Γ[i]? = some A)
