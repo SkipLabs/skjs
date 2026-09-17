@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import type { Ast, FunctionAst } from "../tools/fragment.mts";
 import type { Row } from "../tools/type-graph.mts";
 import { functionOf, type SkjsClaims, type SkjsFunction } from "../tools/skjs-claims.mts";
-import { at as nth, atom, claimAt, claimType, expr, rows, stmt } from "./edits.mts";
+import { atom, claimAt, claimType, expr, at as nth, rows, sole, stmt } from "./edits.mts";
 import surface from "../tools/claim-text.mts";
 const [astPath, claimsPath, file, verifier] = process.argv.slice(2);
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "function-field-"));
@@ -27,7 +27,7 @@ try {
     const r=run(mode,ast,claims); assert.equal(r.status,0,r.stdout+r.stderr);
   }
   const fn=ast.functions[0], fc=functionOf(claims,file,fn.name);
-  const assign=expr(stmt(nth(fn.body,0),"const").init,"withValue");
+  const assign=expr(sole(stmt(nth(fn.body,0),"const")).init,"withValue");
   const combined=claimType(claimAt(fc,assign.pos));
   assert.equal(combined.atoms[0].a,"callable");
   assert(surface.roundTrips(combined),"combined call/property contract must survive report editing");
@@ -49,7 +49,7 @@ try {
   for(const [name,edit] of rows<[string,(a: FunctionAst,c: SkjsFunction)=>void]>([
     ["field invariant", (a,c)=>{atom(claimType(claimAt(c,assign.pos)).atoms[0],"callable").bag.fields[0].write={top:false,atoms:[{a:"null"}]};}],
     ["call signature", (a,c)=>{atom(claimType(claimAt(c,assign.pos)).atoms[0],"callable").function.result={top:false,atoms:[{a:"null"}]};}],
-    ["source field annotation", (a,c)=>{const field=atom(expr(stmt(nth(a.body,0),"const").init,"withValue").bagType.atoms[0],"record").fields[0];field.read=field.write={top:false,atoms:[{a:"null"}]};}],
+    ["source field annotation", (a,c)=>{const field=atom(expr(sole(stmt(nth(a.body,0),"const")).init,"withValue").bagType.atoms[0],"record").fields[0];field.read=field.write={top:false,atoms:[{a:"null"}]};}],
   ])) {
     const a=structuredClone(ast),c=structuredClone(claims);
     edit(a.functions[0],functionOf(c,file,fn.name));

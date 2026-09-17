@@ -292,6 +292,12 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
       node verification/tools/tsc-claims.mts "$SNAPSHOTS/inferred-replacement.ts" --out "$WORK/inferred_replacement.tsc"
   }
   build inferred_replacement_fixture
+  DECLARATION_LIST=verification/tests/stateful-source/declaration-list.ts
+  declaration_list_fixture() {
+    fixture declaration_list "$DECLARATION_LIST" &&
+      node verification/tools/tsc-claims.mts "$DECLARATION_LIST" --out "$WORK/declaration_list.tsc"
+  }
+  build declaration_list_fixture
   build snapshot_probes
   for pid in "${building[@]}"; do wait "$pid" || exit 1; done
 
@@ -343,6 +349,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Candidate editing" node verification/tests/candidate-editor.mts "$WORK/closures.claims"
   run_test "Inferred replacement" node verification/tests/inferred-replacement.mts "$WORK/inferred_replacement.ast" "$WORK/snapshots.claims" "$WORK/inferred_replacement.tsc" "$SNAPSHOTS/inferred-replacement.ts" "$VERIFIER"
   run_test "Export snapshots" node verification/tests/export-snapshots.mts "$WORK/snapshots.claims" "$SNAPSHOTS"
+  run_test "Declaration lists" node verification/tests/declaration-list.mts "$WORK/declaration_list.ast" "$WORK/declaration_list.claims" "$WORK/declaration_list.tsc" "$DECLARATION_LIST" "$VERIFIER"
   run_test "Closed SKJS operations" node verification/tests/skjs-operations.mts "$WORK/source.claims" "$BASE" "$VERIFIER"
   run_test "Generic identity source" node verification/tests/generic-source.mts "$WORK/generic_id.ast" "$WORK/generic_id.claims" "$GENERIC_ID" "$VERIFIER"
   run_test "Generic alias source" node verification/tests/generic-aliases.mts "$WORK/generic_aliases.ast" "$WORK/generic_aliases.claims" "$GENERIC_ALIASES" "$VERIFIER"

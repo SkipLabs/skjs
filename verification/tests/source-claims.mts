@@ -13,7 +13,7 @@ import type {
   SourceClaims,
 } from "../tools/source-claims.mts";
 import type { Manifest } from "../report-viewer/types.ts";
-import { at as nth, atom, expr as exprOf, must, stmt, written } from "./edits.mts";
+import { atom, expr as exprOf, must, at as nth, sole, stmt, written } from "./edits.mts";
 
 /** The claim a document states for one expression's span. */
 const claimAt = (d: SourceClaims, pos: readonly number[]) =>
@@ -27,7 +27,7 @@ const __dirname = path.dirname(import.meta.filename);
 const verifier=process.argv[2],tmp=fs.mkdtempSync(path.join(os.tmpdir(),"source-claims-"));
 /** The expression a statement of this fixture carries. */
 const carried = (st: Stmt): Expr => {
-  if (st.k === "const" || st.k === "let") return st.init;
+  if (st.k === "const" || st.k === "let") return sole(st).init;
   if (st.k === "effect" || st.k === "return") return st.e;
   throw Error(`a ${st.k} statement carries no expression`);
 };
@@ -89,7 +89,7 @@ try {
       fs.writeFileSync(sa,p.stdout);
       const parsedAst: Ast=JSON.parse(p.stdout);
       const f=must(parsedAst.functions[0],"the parsed function");
-      const cst=stmt(nth(f.body,0),"const"),ret=stmt(nth(f.body,1),"return");
+      const declaration=stmt(nth(f.body,0),"const"),cst=sole(declaration),ret=stmt(nth(f.body,1),"return");
       // The parser writes the second signature under `and` on the first.
       const annot=must(cst.annot,"the binding's annotation");
       assert.deepEqual(annot.atoms.map((x) =>x.a),["function"]);
@@ -97,7 +97,7 @@ try {
       const lambda=exprOf(cst.init,"lambda"),call=exprOf(ret.e,"apply");
       const expressions: ExpressionClaim[]=[{pos:cst.init.pos,type:[4],current:null},{pos:lambda.body.pos,type:bodyType,current:null},
         {pos:ret.e.pos,type:[0],current:null},{pos:call.callee.pos,type:[4],current:null},{pos:must(call.args[0],"an argument").pos,type:[1],current:null}];
-      const entries: EntryClaim[]=[{start:cst.pos[0],bindings:[]},{start:ret.pos[0],bindings:[{name:"f",type:[4],current:null}]}];
+      const entries: EntryClaim[]=[{start:declaration.pos[0],bindings:[]},{start:ret.pos[0],bindings:[{name:"f",type:[4],current:null}]}];
       fs.writeFileSync(sc,JSON.stringify({file:sf,sourceSha256:hash(source),types,functions:[{name:f.name,namePos:f.namePos,params:[],result:[0],entries,expressions}]}));
     };
     write(text,[0]);
@@ -159,13 +159,13 @@ try {
     for(const st of f.body) {
       entries.push({start:st.pos[0],bindings:structuredClone(scope)});
       expr(carried(st));
-      if(st.k==="const")scope.push({name:st.name,type:must(labels[st.name],`a label for ${st.name}`),current:null});
+      if(st.k==="const"){const b=sole(st);scope.push({name:b.name,type:must(labels[b.name],`a label for ${b.name}`),current:null});}
     }
     fs.writeFileSync(sa,p.stdout);fs.writeFileSync(sc,JSON.stringify({file:sf,sourceSha256:hash(text),types,functions:[{name:f.name,namePos:f.namePos,params:[],result:[1,2],entries,expressions}]}));
     const produced=run(verifier,["--produce-source-claims",sa,sc,sf,se,"10"]);assert.equal(produced.status,0,produced.stderr);
     const checked=run(verifier,["--check-source-claims",sa,sc,sf,se]);assert.equal(checked.status,0,checked.stderr);
     const bad: SourceClaims=JSON.parse(fs.readFileSync(sc,"utf8"));
-    const reader=exprOf(stmt(nth(f.body,1),"const").init,"lambda");
+    const reader=exprOf(sole(stmt(nth(f.body,1),"const")).init,"lambda");
     const bodyPos=reader.body.pos;
     claimAt(bad,bodyPos).type=[1];
     fs.writeFileSync(sc,JSON.stringify(bad));

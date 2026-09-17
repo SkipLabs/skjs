@@ -74,15 +74,18 @@ partial def copyBody (params : List String) (edges : List (Nat × Nat))
       | _ => variableType env e
     unless subtype edges actual result do
       throw "generic return is not justified by the declared upper bounds (returning T as boolean requires T extends boolean)"
-  | .cst _ name annot init :: rest => do
-    if name == "undefined" then throw "shadowing undefined is outside the fragment"
-    if env.any (fun p => p.1 == name) then throw "active-name shadowing is outside the fragment"
-    let some annot := annot | throw "generic const requires a type annotation"
+  -- The declarators of one `const` are copies in turn, each seeing the earlier.
+  | .constants _ [] :: rest => copyBody params edges env result rest
+  | .constants pos (b :: more) :: rest => do
+    if b.name == "undefined" then throw "shadowing undefined is outside the fragment"
+    if env.any (fun p => p.1 == b.name) then throw "active-name shadowing is outside the fragment"
+    let some annot := b.annot | throw "generic const requires a type annotation"
     let expected ← typeIndex params annot
-    let actual ← variableType env init
+    let actual ← variableType env b.init
     unless subtype edges actual expected do
       throw "generic const is not justified by the declared upper bounds"
-    copyBody params edges (env ++ [(name, expected)]) result rest
+    copyBody params edges (env ++ [(b.name, expected)]) result
+      (if more.isEmpty then rest else .constants pos more :: rest)
   | _ => throw "generic identity requires const copies followed by a return"
 
 /-- Check generic variable-copy bodies using distinct rigid parameters and
@@ -162,9 +165,9 @@ private def claimSites : List Fragment.Stmt → List Nat × List Span
   | .ret pos e :: rest =>
     let (entries,expressions) := claimSites rest
     (pos.1 :: entries,e.span :: expressions)
-  | .cst pos _ _ e :: rest =>
+  | .constants pos bs :: rest =>
     let (entries,expressions) := claimSites rest
-    (pos.1 :: entries,e.span :: expressions)
+    (pos.1 :: entries,bs.map (·.init.span) ++ expressions)
   | _ :: rest => claimSites rest
 
 private def bodyClaims (params : List String) (edges : List (Nat × Nat))
@@ -174,12 +177,18 @@ private def bodyClaims (params : List String) (edges : List (Nat × Nat))
     let H ← entryClaims params edges fc env pos
     let actual ← expressionClaim params edges fc H e
     requireSubtype params edges H pos "return contract" "returned expression" actual result
-  | .cst pos name (some annot) init :: rest => do
+  | .constants pos bindings :: rest => do
+    -- One entry for the statement; each declarator's claim is checked in the
+    -- scope the earlier ones extend.
     let H ← entryClaims params edges fc env pos
-    let actual ← expressionClaim params edges fc H init
-    let expected ← typeIndex params annot
-    requireSubtype params edges H pos "binding annotation" name actual expected
-    bodyClaims params edges fc (H ++ [(name,expected)]) result rest
+    let H ← bindings.foldlM (fun H b => do
+      let some annot := b.annot
+        | throw "generic claim checking requires a checked variable-copy body"
+      let actual ← expressionClaim params edges fc H b.init
+      let expected ← typeIndex params annot
+      requireSubtype params edges H pos "binding annotation" b.name actual expected
+      return H ++ [(b.name,expected)]) H
+    bodyClaims params edges fc H result rest
   | _ => throw "generic claim checking requires a checked variable-copy body"
 
 /-- Both production and independent consumption reconstruct these obligations.

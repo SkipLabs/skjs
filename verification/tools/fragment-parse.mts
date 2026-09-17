@@ -31,6 +31,7 @@ import { dirname, resolve } from "node:path";
 import type { ClaimType, Atom } from "./claim.mts";
 import type {
   Ast,
+  BindingAst,
   Expr,
   FunctionAst,
   Stmt,
@@ -760,12 +761,18 @@ class Gate {
               "closure branch needs one returning arm and one return-free arm",
             );
         } else if (st.k === "const" || st.k === "effect") {
+          // A lowered binding is an entry of its own, and a producer states
+          // one entry per statement: a list of declarators has no entry for
+          // its later bindings inside a closure body.
+          if (st.k === "const" && st.bindings.length !== 1)
+            this.fail(at, "one binding per `const` in a closure body");
+          const bound = st.k === "const" ? st.bindings[0] : null;
           tail = {
             k: "letBody",
             pos: st.pos,
-            name: st.k === "const" ? st.name : "",
-            annot: st.k === "const" ? st.annot : null,
-            init: st.k === "const" ? st.init : st.e,
+            name: bound ? bound.name : "",
+            annot: bound ? bound.annot : null,
+            init: st.k === "const" ? st.bindings[0].init : st.e,
             body: tail,
           };
         } else
@@ -838,37 +845,29 @@ class Gate {
       if (mutable && !(list.flags & ts.NodeFlags.Let))
         this.fail(node, "`var` is outside the fragment");
       const kindWord = mutable ? "let" : "const";
-      if (list.declarations.length !== 1)
-        this.fail(node, `one binding per \`${kindWord}\` in the fragment`);
-      const d = list.declarations[0];
-      if (d.name.kind !== ts.SyntaxKind.Identifier)
-        this.fail(d, "destructuring is outside the fragment");
-      if (d.name.text === "undefined")
-        this.fail(d, "shadowing undefined is outside the fragment");
-      if (!d.initializer)
-        this.fail(d, `a \`${kindWord}\` needs an initializer`);
-      if (mutable) {
-        // The storage contract is what every later assignment is checked
-        // against. Written, it is the annotation; unwritten, the producer
-        // states one for the binding and the adapter checks that, rather
-        // than this taking the initializer's type for the contract.
+      // A declaration list binds its declarators left to right, each
+      // initializer seeing the earlier bindings, under the statement's one
+      // entry. Each declarator is gated on its own terms.
+      const bindings: BindingAst[] = list.declarations.map((d) => {
+        if (d.name.kind !== ts.SyntaxKind.Identifier)
+          this.fail(d, "destructuring is outside the fragment");
+        if (d.name.text === "undefined")
+          this.fail(d, "shadowing undefined is outside the fragment");
+        if (!d.initializer)
+          this.fail(d, `a \`${kindWord}\` needs an initializer`);
+        // For `let`, the storage contract is what every later assignment is
+        // checked against. Written, it is the annotation; unwritten, the
+        // producer states one for the binding and the adapter checks that,
+        // rather than this taking the initializer's type for the contract.
         return {
-          k: "let",
-          pos: this.span(node),
           name: d.name.text,
           namePos: this.span(d.name),
           annot: d.type ? this.typeOf(d.type) : null,
           init: this.expr(d.initializer),
         };
-      }
-      return {
-        k: "const",
-        pos: this.span(node),
-        name: d.name.text,
-        namePos: this.span(d.name),
-        annot: d.type ? this.typeOf(d.type) : null,
-        init: this.expr(d.initializer),
-      };
+      });
+      if (mutable) return { k: "let", pos: this.span(node), bindings };
+      return { k: "const", pos: this.span(node), bindings };
     }
 
     if (ts.isBreakStatement(node) || ts.isContinueStatement(node)) {

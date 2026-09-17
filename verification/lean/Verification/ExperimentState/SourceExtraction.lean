@@ -160,8 +160,8 @@ private partial def comparisonsStmt (fc : SourceClaims.Function) (s : Fragment.S
     Compiler Fragment.Stmt := do
   match s with
   | .ret p e => return .ret p (← comparisonsExpr fc e)
-  | .cst p n a e => return .cst p n a (← comparisonsExpr fc e)
-  | .mut p n np a e => return .mut p n np a (← comparisonsExpr fc e)
+  | .constants p bs => return .constants p (← bs.mapM fun b => do return { b with init := ← comparisonsExpr fc b.init })
+  | .mutables p bs => return .mutables p (← bs.mapM fun b => do return { b with init := ← comparisonsExpr fc b.init })
   | .effect p e => return .effect p (← comparisonsExpr fc e)
   | .ite p c t e =>
     return .ite p (← comparisonsExpr fc c) (← t.mapM (comparisonsStmt fc))
@@ -188,7 +188,8 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .ifBody _ _ c t e => assignsExpr name c || assignsExpr name t || assignsExpr name e
 
 private partial def assignsStmt (name : String) : Fragment.Stmt → Bool
-  | .ret _ e | .cst _ _ _ e | .mut _ _ _ _ e | .effect _ e => assignsExpr name e
+  | .ret _ e | .effect _ e => assignsExpr name e
+  | .constants _ bs | .mutables _ bs => bs.any fun b => assignsExpr name b.init
   | .ite _ c t e => assignsExpr name c || t.any (assignsStmt name) ||
     (e.getD []).any (assignsStmt name)
   | .loop _ c b => assignsExpr name c || b.any (assignsStmt name)
@@ -1140,6 +1141,74 @@ private structure LoopTargets where
   again : Target × List ScopeBinding
   done : Option (Target × List ScopeBinding)
 
+/-- Where a statement begins: the entry the producer states for it. -/
+private def stmtStart : Fragment.Stmt → Nat
+  | .brk p | .cont p | .ret p _ | .constants p _ | .mutables p _
+  | .effect p _ | .loop p _ _ | .ite p _ _ _ => p.1
+
+/-- The declarators of a `const`, bound left to right under the one entry `Γ`
+the producer states for the statement: each initializer is compiled in the
+scope the earlier bindings extend, and no cut separates them, because the
+producer states none. `after` compiles what follows the whole statement. -/
+private def constants (fc : SourceClaims.Function) (pos : Span)
+    (after : List ScopeBinding → Compiler Target) :
+    List ScopeBinding → List (Ty Nat) → List Fragment.Binding → Compiler Target
+  | scope, _, [] => after scope
+  | scope, Γ, b :: more => do
+    if b.name == "undefined" then throw "shadowing undefined is outside the fragment"
+    if (names scope).contains b.name then throw s!"duplicate or shadowing local declaration '{b.name}'"
+    let A ← exprType fc b.init
+    let B ← match b.annot with | none => pure A | some ty => lower (Fragment.translate ty)
+    let next ← constants fc pos after (held ⟨b.name,some pos⟩::scope) (A::Γ) more
+    let annotation ← emitAt b.init.span (.var 0) (.effect next) (A::Γ) B "binding-annotation" (some pos.1)
+      (scope := held ⟨b.name,some b.init.span⟩::scope)
+    compileExpr fc scope Γ b.init annotation
+
+/-- The declarators of a `let`, each allocating its own private cell, in the
+same left-to-right order under the statement's one entry. An unannotated
+binding's contract is read at `next`, the entry of the statement that follows
+the whole list: the first place every binding of the list stands in scope. -/
+private def mutables (fc : SourceClaims.Function) (pos : Span) (next : Option Nat)
+    (after : List ScopeBinding → Compiler Target) :
+    List ScopeBinding → List (Ty Nat) → List Fragment.Binding → Compiler Target
+  | scope, _, [] => after scope
+  | scope, Γ, b :: more => do
+    if b.name == "undefined" then throw "shadowing undefined is outside the fragment"
+    if (names scope).contains b.name then throw "shadowing is outside the fragment"
+    let A ← exprType fc b.init
+    let contract ← match b.annot with
+      | some ty => lower (Fragment.translate ty)
+      -- An inferred binding still has a stated contract: the type the
+      -- producer gives the name where it first stands in scope, before
+      -- anything has narrowed it. It is supplied and then checked like a
+      -- written one — every assignment against it, the initializer too —
+      -- rather than the initializer's own type being taken for it.
+      | none =>
+        -- Only the next statement in this lexical block sees this binding
+        -- immediately after initialization. Searching all environments by
+        -- name can pick a different declaration in a sibling block, or a
+        -- later narrowing when the producer reorders its entries.
+        let some start := next
+          | throw s!"no claimed storage contract for '{b.name}' at {pos.1}"
+        let some candidate := (fc.envs.lookup start).bind (·.lookup b.name)
+          | throw s!"no claimed storage contract for '{b.name}' at {start}"
+        (SourceClaims.resolve (← table).length candidate).mapError fun msg =>
+          s!"storage contract for '{b.name}' at {start}: {msg}"
+    let reference ← lower (do return [← CellClaims.reference [(valueField, contract)]])
+    -- The slot holds the identity of a cell only this lowering allocated.
+    -- Storage is decided here, by the declaration, and nowhere else.
+    let binding : ScopeBinding := ⟨⟨b.name,some pos⟩, .cell contract reference⟩
+    let continued ← mutables fc pos next after (binding::scope) (reference::Γ) more
+    let drop := ⟨continued.label, some ((continued.mapping.getD (List.range (Γ.length+1))).map
+      (fun j => if j == 0 then 0 else j+1))⟩
+    let allocation ← emitAt b.init.span (.makeAt .absent [valueField] [.var 0]) (.bind drop) (A::Γ) reference
+      "binding-allocation" (some pos.1) (scope := held ⟨"",some b.init.span⟩ :: scope)
+    -- The initializer meets the storage contract, or the declaration fails
+    -- here rather than being admitted at the initializer's narrower type.
+    let stored ← emitAt b.init.span (.var 0) (.effect allocation) (A::Γ) contract
+      "storage-contract" (some pos.1) (scope := held ⟨"",some b.init.span⟩ :: scope)
+    compileExpr fc scope Γ b.init stored
+
 /-- Compile the continuation once, then point both arms at it. Allocation order
 is intentionally independent of source order; `start` records the real entry.
 Fuel bounds structural traversal, not execution or certificate search. -/
@@ -1165,16 +1234,9 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
       let done ← emitAt e.span (.var 0) .ret (A::Γ) R "return-contract" (some pos.1)
         (scope := held ⟨"",some e.span⟩ :: scope)
       compileExpr fc scope Γ e done
-    | .cst pos name annot e :: rest =>
-      if name == "undefined" then throw "shadowing undefined is outside the fragment"
-      if (names scope).contains name then throw s!"duplicate or shadowing local declaration '{name}'"
+    | .constants pos bindings :: rest =>
       let Γ ← env fc pos.1 scope
-      let A ← exprType fc e
-      let B ← match annot with | none => pure A | some ty => lower (Fragment.translate ty)
-      let next ← body fuel fc R (held ⟨name,some pos⟩::scope) rest tail loopTargets
-      let annotation ← emitAt e.span (.var 0) (.effect next) (A::Γ) B "binding-annotation" (some pos.1)
-        (scope := held ⟨name,some e.span⟩::scope)
-      compileExpr fc scope Γ e annotation
+      constants fc pos (fun scope => body fuel fc R scope rest tail loopTargets) scope Γ bindings
     | .ite pos cond thn els :: rest =>
       let Γ ← env fc pos.1 scope
       let continuation ← if rest.isEmpty then pure tail else do
@@ -1202,46 +1264,10 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
           sourceMap := s.sourceMap.set head.label (some ⟨pos,"heap-observation",some pos.1,sources scope⟩) }
       modify fun s => { s with cuts := head.label :: s.cuts }
       pure head
-    | .mut pos name _ annot init :: rest =>
-      if name == "undefined" then throw "shadowing undefined is outside the fragment"
-      if (names scope).contains name then throw "shadowing is outside the fragment"
+    | .mutables pos bindings :: rest =>
       let Γ ← env fc pos.1 scope
-      let A ← exprType fc init
-      let contract ← match annot with
-        | some ty => lower (Fragment.translate ty)
-        -- An inferred binding still has a stated contract: the type the
-        -- producer gives the name where it first stands in scope, before
-        -- anything has narrowed it. It is supplied and then checked like a
-        -- written one — every assignment against it, the initializer too —
-        -- rather than the initializer's own type being taken for it.
-        | none =>
-          -- Only the next statement in this lexical block sees this binding
-          -- immediately after initialization. Searching all environments by
-          -- name can pick a different declaration in a sibling block, or a
-          -- later narrowing when the producer reorders its entries.
-          let some next := rest.head?
-            | throw s!"no claimed storage contract for '{name}' at {pos.1}"
-          let start := (match next with
-            | .brk p | .cont p | .ret p _ | .cst p _ _ _ | .mut p _ _ _ _
-            | .effect p _ | .loop p _ _ | .ite p _ _ _ => p).1
-          let some candidate := (fc.envs.lookup start).bind (·.lookup name)
-            | throw s!"no claimed storage contract for '{name}' at {start}"
-          (SourceClaims.resolve (← table).length candidate).mapError fun msg =>
-            s!"storage contract for '{name}' at {start}: {msg}"
-      let reference ← lower (do return [← CellClaims.reference [(valueField, contract)]])
-      -- The slot holds the identity of a cell only this lowering allocated.
-      -- Storage is decided here, by the declaration, and nowhere else.
-      let binding : ScopeBinding := ⟨⟨name,some pos⟩, .cell contract reference⟩
-      let next ← body fuel fc R (binding::scope) rest tail loopTargets
-      let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
-        (fun j => if j == 0 then 0 else j+1))⟩
-      let allocation ← emitAt init.span (.makeAt .absent [valueField] [.var 0]) (.bind drop) (A::Γ) reference
-        "binding-allocation" (some pos.1) (scope := held ⟨"",some init.span⟩ :: scope)
-      -- The initializer meets the storage contract, or the declaration fails
-      -- here rather than being admitted at the initializer's narrower type.
-      let stored ← emitAt init.span (.var 0) (.effect allocation) (A::Γ) contract
-        "storage-contract" (some pos.1) (scope := held ⟨"",some init.span⟩ :: scope)
-      compileExpr fc scope Γ init stored
+      mutables fc pos (rest.head?.map stmtStart)
+        (fun scope => body fuel fc R scope rest tail loopTargets) scope Γ bindings
     | .effect pos e :: rest =>
       let Γ ← env fc pos.1 scope
       let next ← body fuel fc R scope rest tail loopTargets
@@ -1251,7 +1277,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
     | [] | .loop .. :: _ => return target
     | st :: _ =>
       let pos := match st with
-        | .brk p | .cont p | .ret p _ | .cst p _ _ _ | .mut p _ _ _ _ | .effect p _ | .loop p _ _ | .ite p _ _ _ => p
+        | .brk p | .cont p | .ret p _ | .constants p _ | .mutables p _ | .effect p _ | .loop p _ _ | .ite p _ _ _ => p
       let facts ← entryFacts fc pos.1 scope
       let entry ← checkpoint pos (← env fc pos.1 scope) facts target (some pos.1) scope
       modify fun s => { s with cuts := entry.label :: s.cuts }
@@ -1259,7 +1285,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
 
 private def traversalBudget : List Fragment.Stmt → Nat
   | [] => 1
-  | .brk .. :: rest | .cont .. :: rest | .ret .. :: rest | .cst .. :: rest | .mut .. :: rest | .effect .. :: rest => 1 + traversalBudget rest
+  | .brk .. :: rest | .cont .. :: rest | .ret .. :: rest | .constants .. :: rest | .mutables .. :: rest | .effect .. :: rest => 1 + traversalBudget rest
   | .loop _ _ loopBody :: rest => 1 + traversalBudget loopBody + traversalBudget rest
   | .ite _ _ thn none :: rest => 2 + traversalBudget thn + traversalBudget rest
   | .ite _ _ thn (some els) :: rest =>

@@ -10,7 +10,7 @@
  * writes is deliberately outside those languages; that is the point of it, and
  * the claim fields it writes are `unknown` for exactly that reason.
  */
-import type { Ast, Expr, FunctionAst, Stmt } from "../tools/fragment.mts";
+import type { Ast, BindingAst, Expr, FunctionAst, Stmt } from "../tools/fragment.mts";
 import type { Span } from "../tools/span.mts";
 import { decodeClaimType, type Atom, type ClaimType } from "../tools/claim.mts";
 import type {
@@ -70,6 +70,14 @@ export function expr<K extends Expr["k"]>(
   if (e === undefined || !isKind(e, k))
     throw Error(`expected a ${k} expression, found ${e?.k ?? "none"}`);
   return e;
+}
+
+/** The one binding of a declaration that declares one, which is how the
+ * suites here address a `const` or `let`. A list is reached by index instead. */
+export function sole(s: OfKind<Stmt, "const" | "let">): BindingAst {
+  if (s.bindings.length !== 1)
+    throw Error(`expected one binding, found ${s.bindings.length}`);
+  return s.bindings[0];
 }
 
 /** The initializer of an allocation's single field, for a fixture that

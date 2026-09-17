@@ -14,14 +14,14 @@ import type { Ast } from "../tools/fragment.mts";
 import type { ClaimType, FunctionAtom } from "../tools/claim.mts";
 import type { Manifest, Result } from "../report-viewer/types.ts";
 import { functionOf, type SkjsClaims, type SkjsFunction } from "../tools/skjs-claims.mts";
-import { at as nth, expr, fn as functionIn, must, record, stmt } from "./edits.mts";
+import { expr, fn as functionIn, must, at as nth, record, sole, stmt } from "./edits.mts";
 
 /** The results a report states, which the checks below are about. */
 const results=(m: Manifest): Result[]=>must(m.results,"results");
 /** The body of the closure `capturedRead` binds, from a fresh parse. */
 const capturedBody=(stdout: string)=>{
   const parsed: Ast=JSON.parse(stdout);
-  return expr(stmt(nth(functionIn(parsed,"capturedRead").body,1),"const").init,"lambda").body;
+  return expr(sole(stmt(nth(functionIn(parsed,"capturedRead").body,1),"const")).init,"lambda").body;
 };
 /** A claim the producer could not decode says so, and is not one to print. */
 const unsupported=(t: unknown)=>

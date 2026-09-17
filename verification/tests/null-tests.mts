@@ -16,7 +16,6 @@ import {
   type SkjsFunction,
 } from "../tools/skjs-claims.mts";
 import {
-  at as nth,
   binding,
   claimAt,
   claimFrom,
@@ -26,9 +25,11 @@ import {
   fn as functionIn,
   last,
   must,
+  at as nth,
   only,
   record,
   rows,
+  sole,
   stmt,
   written,
 } from "./edits.mts";
@@ -307,7 +308,7 @@ try {
   const nonBooleanLogical = structuredClone(guardAst);
   const nonBooleanClaims = structuredClone(guardClaims);
   const expression = expr(
-    stmt(nth(functionIn(nonBooleanLogical, "logicalAndWrite").body, 1), "const").init,
+    sole(stmt(nth(functionIn(nonBooleanLogical, "logicalAndWrite").body, 1), "const")).init,
     "bin",
   );
   const leftPos = expression.l.pos;

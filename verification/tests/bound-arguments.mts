@@ -12,12 +12,12 @@ import type { Arrow } from "../tools/type-graph.mts";
 import type { Span } from "../tools/span.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import { fileOf, type SkjsClaims } from "../tools/skjs-claims.mts";
-import { expr, fn, last, must, rows, stmt } from "./edits.mts";
+import { expr, fn, last, must, rows, sole, stmt } from "./edits.mts";
 
 const [astPath, claimsPath, file, verifier, tscPath] = process.argv.slice(2);
 /** A statement that binds this name, which is how the fixture is addressed. */
 const named = (name: string) => (s: Stmt) =>
-  (s.k === "const" || s.k === "let") && s.name === name;
+  (s.k === "const" || s.k === "let") && s.bindings.some((b) => b.name === name);
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "bound-arguments-"));
 try {
   const source = fs.readFileSync(file, "utf8");
@@ -79,7 +79,7 @@ try {
   assert.equal(check("--produce-stateful-source", ast, claims).status, 0);
   /** The `.bind` call this fixture binds, wherever its statement sits. */
   const bound = (a: Ast) => expr(
-    stmt(must(fn(a, "boundArguments").body.find(named("bound")), "the bound local"), "const").init,
+    sole(stmt(must(fn(a, "boundArguments").body.find(named("bound")), "the bound local"), "const")).init,
     "bindWithReceiver",
   );
   const bind = bound(ast);

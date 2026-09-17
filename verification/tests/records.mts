@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import type { Ast } from "../tools/fragment.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import { stripTypes } from "../tools/strip-types.mts";
-import { must, stmt, expr } from "./edits.mts";
+import { expr, must, sole, stmt } from "./edits.mts";
 
 const [astPath, claimsPath, file, verifier, rawClaimsPath] =
   process.argv.slice(2);
@@ -128,7 +128,7 @@ try {
       "recordAlias",
     );
     const literal = expr(
-      stmt(must(f.body[0], "the allocation"), "const").init,
+      sole(stmt(must(f.body[0], "the allocation"), "const")).init,
       "alloc",
     );
     const [left, right] = literal.fields;

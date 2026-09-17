@@ -7,7 +7,6 @@ import type { Ast, FunctionAst } from "../tools/fragment.mts";
 import type { ClaimType } from "../tools/claim.mts";
 import { fileOf, functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
 import {
-  at as nth,
   atom,
   binding,
   claimFrom,
@@ -18,6 +17,8 @@ import {
   last,
   list,
   must,
+  at as nth,
+  sole,
   stmt,
 } from "./edits.mts";
 // Exercise the source consumer using actual parser output and SKJS exports.
@@ -40,7 +41,7 @@ const parameterClaims =(c: SkjsClaims) => functionOf(c, fileKey, "selectParamete
 const ty =(v: string): ClaimType => ({ top: false, atoms: [{ a: "booleanlit", v }] });
 /** The binding this fixture's first function copies, and the `if` a named
  * function branches on. */
-const copied = (a: Ast) => stmt(nth(a.functions[0].body, 0), "const");
+const copied = (a: Ast) => sole(stmt(nth(a.functions[0].body, 0), "const"));
 const branch = (f: FunctionAst) => stmt(must(f.body.find((s) => s.k === "if"), "an if"), "if");
 let passed = 0;
 function run(mode: string, a: Ast, c: unknown, evidence?: unknown) {
@@ -82,7 +83,7 @@ try {
     ["malformed source literal", a => { atom(expr(copied(a).init, "lit").lit, "booleanlit").v = "maybe"; }, "boolean literal must be exactly"],
     ["return signature mismatch", (a,c) => { fn(c).retType = ty("true"); }, "claimed return type differs"],
     ["uninitialized source read", a => { const bound = copied(a); bound.init = { k: "id", pos: bound.init.pos, name: "x" }; }, "unbound or uninitialized"],
-    ["duplicate local declaration", a => { stmt(nth(a.functions[0].body, 1), "const").name = "x"; }, "duplicate or shadowing local declaration"],
+    ["duplicate local declaration", a => { sole(stmt(nth(a.functions[0].body, 1), "const")).name = "x"; }, "duplicate or shadowing local declaration"],
     ["duplicate file claims", (a,c) => { c.push(clone(fileOf(c, fileKey))); }, "exactly one matching claim file"],
     ["duplicate source identity", a => { a.functions[1] = clone(a.functions[0]); }, "duplicate function identity"],
     // Falling off the end is not refused, it is checked: the exit carries the
@@ -103,7 +104,7 @@ try {
       claimFrom(branchClaims(c), condition.pos[0]).type = { top: false, atoms: [{ a: "null" }] };
     }, "evidence search failed"],
     ["branch local cannot escape", a => { expr(stmt(last(branchAst(a).body), "return").e, "id").name = "local"; }, "unbound or uninitialized"],
-    ["active-name shadowing gate", a => { stmt(nth(stmt(nth(branchAst(a).body, 1), "if").then, 0), "const").name = "outer"; }, "duplicate or shadowing"],
+    ["active-name shadowing gate", a => { sole(stmt(nth(stmt(nth(branchAst(a).body, 1), "if").then, 0), "const")).name = "outer"; }, "duplicate or shadowing"],
     ["opposite refinement on true edge", (a,c) => {
       const arm = nth(branch(refinedAst(a)).then, 0);
       binding(refinedClaims(c), arm.pos[0], "condition").type = ty("false");

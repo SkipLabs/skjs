@@ -22,6 +22,7 @@ import {
   expr,
   fn as functionIn,
   must,
+  sole,
   stmt,
 } from "./edits.mts";
 import path from "node:path";
@@ -115,7 +116,7 @@ function stripPositions(x: unknown): unknown {
 
 test("safe source matches the allocate/write/read body proved in Lean", () => {
   const f = must(safeAst.functions[0], "the safe function"),
-    cell = stmt(nth(f.body, 0), "const");
+    cell = sole(stmt(nth(f.body, 0), "const"));
   assert.equal(f.name, "writeRefinedRead");
   assert.deepEqual(f.params, []);
   assert.deepEqual(f.retType, lit(true));
@@ -125,12 +126,16 @@ test("safe source matches the allocate/write/read body proved in Lean", () => {
   assert.deepEqual(stripPositions(f.body), [
     {
       k: "const",
-      name: "cell",
-      annot: cell.annot,
-      init: {
-        k: "alloc",
-        fields: [{name: "value", e: { k: "lit", lit: { a: "booleanlit", v: "false" } }}],
-      },
+      bindings: [
+        {
+          name: "cell",
+          annot: cell.annot,
+          init: {
+            k: "alloc",
+            fields: [{name: "value", e: { k: "lit", lit: { a: "booleanlit", v: "false" } }}],
+          },
+        },
+      ],
     },
     {
       k: "effect",

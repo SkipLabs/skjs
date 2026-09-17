@@ -12,7 +12,7 @@ import type { ClaimType, RecordAtom } from "../tools/claim.mts";
 import type { Span } from "../tools/span.mts";
 import type { SpawnSyncReturns } from "node:child_process";
 import { functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
-import { allocField, at as nth, atom, claimAt, claimType, expr, fn, must, rows, stmt } from "./edits.mts";
+import { allocField, at as nth, atom, claimAt, claimType, expr, fn, must, rows, sole, stmt } from "./edits.mts";
 
 const [astPath, claimsPath, fileKey, verifier] = process.argv.slice(2);
 const ast: Ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
@@ -28,7 +28,7 @@ const at = (c: SkjsClaims,n: string,e: {pos: Span}) => claimType(claim(c,n,e));
 const bool: ClaimType = {top:false,atoms:[{a:"boolean"}]};
 const lit =(v: string): ClaimType => ({top:false,atoms:[{a:"booleanlit",v}]});
 /** The cell this fixture allocates, and the statements around it. */
-const allocation = (a: Ast,n: string) => stmt(nth(source(a,n).body,0),"const");
+const allocation = (a: Ast,n: string) => sole(stmt(nth(source(a,n).body,0),"const"));
 let passed = 0;
 function run(mode: string,a: Ast,c: SkjsClaims,evidence?: unknown) {
   fs.writeFileSync(path.join(tmp,"ast"),JSON.stringify(a));

@@ -11,7 +11,7 @@ import {
   type SkjsClaims,
   type SkjsFunction,
 } from "../tools/skjs-claims.mts";
-import { allocField, at as nth, atom, binding, claimAt, claimType, entryAt, expr, field, fn, list, must, record, rows, stmt, written } from "./edits.mts";
+import { allocField, atom, binding, claimAt, claimType, entryAt, expr, field, fn, list, must, at as nth, record, rows, sole, stmt, written } from "./edits.mts";
 const __dirname = path.dirname(import.meta.filename);
 const [astPath,claimsPath,fileKey,verifier]=process.argv.slice(2);
 const ast: Ast=JSON.parse(fs.readFileSync(astPath,"utf8"));
@@ -23,7 +23,7 @@ const cf=(c: SkjsClaims) =>functionOf(c,fileKey,"capturedRead");
 const at=(c: SkjsClaims,e: {pos: Span})=>claimAt(cf(c),e.pos);
 const lit=(v: string): ClaimType =>({top:false,atoms:[{a:"booleanlit",v}]});
 /** The closure a fixture binds at the i-th statement. */
-const lambda=(f: FunctionAst,i: number)=>expr(stmt(nth(f.body,i),"const").init,"lambda");
+const lambda=(f: FunctionAst,i: number)=>expr(sole(stmt(nth(f.body,i),"const")).init,"lambda");
 type IfBody = Extract<Expr, { k: "ifBody" }>;
 type SeqBody = Extract<Expr, { k: "seqBody" }>;
 /** The lowered `let` inside the closure `localBlock` binds. */
@@ -35,8 +35,8 @@ const first=(e: unknown)=>list(field(e,"obligations",0),"the first obligations")
 const call=(f: FunctionAst)=>expr(stmt(nth(f.body,4),"return").e,"apply");
 /** The last closure a fixture binds, whichever statement binds it. */
 const lastLambda=(f: FunctionAst)=>{
-  const bound=f.body.filter((s)=>s.k==="const"&&s.init.k==="lambda");
-  return expr(stmt(must(bound[bound.length-1],"a bound closure"),"const").init,"lambda");
+  const bound=f.body.filter((s)=>s.k==="const"&&s.bindings.length===1&&s.bindings[0].init.k==="lambda");
+  return expr(sole(stmt(must(bound[bound.length-1],"a bound closure"),"const")).init,"lambda");
 };
 let passed=0;
 function run(mode: string,a: Ast,c: SkjsClaims,e?: unknown) {

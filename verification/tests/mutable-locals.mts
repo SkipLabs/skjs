@@ -20,6 +20,7 @@ import {
   expr,
   fn,
   only as only_,
+  sole,
   stmt,
 } from "./edits.mts";
 // Private-cell lowering: source execution witnesses complement checked
@@ -104,7 +105,7 @@ try {
   // The storage contract is the annotation. Narrow it to `true` and the
   // assignment of `false` no longer meets it: the write is the check.
   const narrowed = only(ast, "capturedReaderObservesWrite");
-  stmt(at(narrowed.functions[0].body, 0), "let").annot = tru;
+  sole(stmt(at(narrowed.functions[0].body, 0), "let")).annot = tru;
   expect(
     "a value outside the storage contract is refused",
     run(narrowed, claimsFor("capturedReaderObservesWrite")),
@@ -191,7 +192,7 @@ try {
     false,
   );
   const shadow = only(ast, "snapshotSurvivesWrite");
-  stmt(at(shadow.functions[0].body, 0), "let").name = "seed";
+  sole(stmt(at(shadow.functions[0].body, 0), "let")).name = "seed";
   expect(
     "mutable locals cannot shadow active bindings",
     run(shadow, claimsFor("snapshotSurvivesWrite")),

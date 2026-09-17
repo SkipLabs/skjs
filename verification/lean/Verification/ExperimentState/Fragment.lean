@@ -173,18 +173,34 @@ def Expr.span : Expr → Span
   | .ifBody p _ _ _ _ | .done p | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
   | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ | .call p _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ => p
 
+/-- One declarator of a `const` or `let`. -/
+structure Binding where
+  name : String
+  namePos : Span
+  annot : Option Json
+  init : Expr
+
 inductive Stmt where
   | ret (pos : Span) (e : Expr)
-  | cst (pos : Span) (name : String) (annot : Option Json) (init : Expr)
-  /-- A mutable local. The annotation is the storage contract every assignment
-  is checked against, and is required: what the initializer happens to produce
-  is not what the binding may later hold. -/
-  | mut (pos : Span) (name : String) (namePos : Span) (annot : Option Json) (init : Expr)
+  /-- Immutable bindings, left to right, each initializer seeing the earlier
+  ones. The statement is the entry; no cut separates its declarators. -/
+  | constants (pos : Span) (bindings : List Binding)
+  /-- Mutable locals, one private cell each. A binding's annotation is the
+  storage contract every assignment is checked against; absent, the producer
+  supplies one. What the initializer happens to produce is not what the
+  binding may later hold. -/
+  | mutables (pos : Span) (bindings : List Binding)
   | ite (pos : Span) (cond : Expr) (thn : List Stmt) (els : Option (List Stmt))
   | brk (pos : Span)
   | cont (pos : Span)
   | loop (pos : Span) (cond : Expr) (body : List Stmt)
   | effect (pos : Span) (e : Expr)
+
+/-- Singleton notation for small source-adapter fixtures. -/
+abbrev Stmt.cst (p : Span) (name : String) (annot : Option Json) (init : Expr) : Stmt :=
+  .constants p [⟨name, p, annot, init⟩]
+abbrev Stmt.mut (p : Span) (name : String) (namePos : Span) (annot : Option Json) (init : Expr) : Stmt :=
+  .mutables p [⟨name, namePos, annot, init⟩]
 
 structure Param where
   name : String
@@ -282,20 +298,24 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       (← decodeExpr (← jField j "rhs"))
   | _ => throw s!"unsupported source expression at [{p.1},{p.2}): expression outside the stateful fragment"
 
+/-- The declarators of a `const` or `let`: at least one, in source order. -/
+partial def decodeBindings (j : Json) : Except String (List Binding) := do
+  CellClaims.fieldsExactly j ["k","pos","bindings"]
+  let bindings ← (← jArr j "bindings").mapM fun b => do
+    CellClaims.fieldsExactly b ["name","namePos","annot","init"]
+    let a ← jField b "annot"
+    return (⟨← jStr (← jField b "name"), ← jSpan b "namePos",
+      if a == .null then none else some a, ← decodeExpr (← jField b "init")⟩ : Binding)
+  if bindings.isEmpty then throw "a declaration needs a binding"
+  return bindings
+
 partial def decodeStmt (j : Json) : Except String Stmt := do
   let p ← jSpan j "pos"
   match ← jStr (← jField j "k") with
   | "return" => return .ret p (← decodeExpr (← jField j "e"))
   | "effect" => return .effect p (← decodeExpr (← jField j "e"))
-  | "const" =>
-    let a ← jField j "annot"
-    return .cst p (← jStr (← jField j "name")) (if a == .null then none else some a)
-      (← decodeExpr (← jField j "init"))
-  | "let" => do
-    CellClaims.fieldsExactly j ["k","pos","name","namePos","annot","init"]
-    let a ← jField j "annot"
-    return .mut p (← jStr (← jField j "name")) (← jSpan j "namePos")
-      (if a == .null then none else some a) (← decodeExpr (← jField j "init"))
+  | "const" => return .constants p (← decodeBindings j)
+  | "let" => return .mutables p (← decodeBindings j)
   | "break" => return .brk p
   | "continue" => return .cont p
   | "while" => return .loop p (← decodeExpr (← jField j "cond")) (← (← jArr j "body").mapM decodeStmt)

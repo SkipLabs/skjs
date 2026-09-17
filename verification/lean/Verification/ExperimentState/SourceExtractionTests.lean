@@ -299,11 +299,11 @@ theorem captured_alias_trace : ControlFlow.Execution captureProgram 37 []
 -- once. The condition reads the heap at call time, after the alias write.
 private def branchCaptureFn : Fragment.Fn :=
   { captureFn with body := captureFn.body.map fun st => match st with
-    | .cst pos name annot (.lam lp param arg ret body) =>
-      .cst pos name annot (.lam lp param arg ret
+    | .constants pos [⟨name, np, annot, .lam lp param arg ret body⟩] =>
+      .constants pos [⟨name, np, annot, (.lam lp param arg ret
         (.ifBody (40,49) (some ret) body
           (.atEnv (41,44) (.lit (42,43) (.vbool true)))
-          (.atEnv (45,48) (.lit (46,47) (.vbool false)))))
+          (.atEnv (45,48) (.lit (46,47) (.vbool false)))))⟩]
     | st => st }
 private def branchCaptureClaims : Fragment.Claims :=
   let H := [("unit",wireTy ⟨false,[.null]⟩),("cell",cellWire)]
@@ -340,14 +340,14 @@ theorem terminal_branch_trace : ControlFlow.Execution branchCaptureProgram 38 []
 private def joinedCaptureFn : Fragment.Fn :=
   let N := wireTy ⟨false,[.null]⟩
   { captureFn with body := captureFn.body.map fun st => match st with
-    | .cst pos name annot (.lam lp param arg ret body) =>
-      .cst pos name annot (.lam lp param arg ret
+    | .constants pos [⟨name, np, annot, .lam lp param arg ret body⟩] =>
+      .constants pos [⟨name, np, annot, (.lam lp param arg ret
         (.seqBody (40,49)
           (.ifBody (40,49) (some N) body (.done (41,42))
             (.letBody (43,48) "" none
               (.write (44,47) valueField (.var (44,45) "cell") (.lit (46,47) (.vbool true)))
               (.done (48,49))))
-          (.atEnv (50,53) (.read (51,53) valueField (.var (51,52) "cell")))))
+          (.atEnv (50,53) (.read (51,53) valueField (.var (51,52) "cell")))))⟩]
     | st => st }
 private def joinedCaptureClaims : Fragment.Claims :=
   let H := [("unit",wireTy ⟨false,[.null]⟩),("cell",cellWire)]
@@ -391,15 +391,15 @@ theorem shared_continuation_trace : ControlFlow.Execution joinedCaptureProgram 4
 -- The same extracted conditional must skip its continuation on early return.
 private def earlyCaptureFn (q : Bool) : Fragment.Fn :=
   { captureFn with body := captureFn.body.map fun st => match st with
-    | .cst pos name annot (.lam lp param arg ret body) =>
-      .cst pos name annot (.lam lp param arg ret
+    | .constants pos [⟨name, np, annot, .lam lp param arg ret body⟩] =>
+      .constants pos [⟨name, np, annot, (.lam lp param arg ret
         (.ifBody (40,59) (some ret) body
           (.atEnv (41,44) (.lit (42,43) (.vbool true)))
           (.seqBody (45,59)
             (.letBody (45,50) "" none
               (.write (46,49) valueField (.var (46,47) "cell") (.lit (48,49) (.vbool false)))
               (.done (50,51)))
-            (.atEnv (52,55) (.read (53,55) valueField (.var (53,54) "cell"))))))
+            (.atEnv (52,55) (.read (53,55) valueField (.var (53,54) "cell"))))))⟩]
     | .effect pos (.write wp fld receiver (.lit lp _)) =>
       .effect pos (.write wp fld receiver (.lit lp (.vbool q)))
     | st => st }
@@ -506,8 +506,8 @@ theorem closure_write_trace : ControlFlow.Execution writerProgram 27 []
 -- adds proof obligations for the supplied statement environment.
 private def blockCaptureFn : Fragment.Fn :=
   { captureFn with body := captureFn.body.map fun st => match st with
-    | .cst pos name annot (.lam lp param arg ret body) =>
-      .cst pos name annot (.lam lp param arg ret (.atEnv (11,16) body))
+    | .constants pos [⟨name, np, annot, .lam lp param arg ret body⟩] =>
+      .constants pos [⟨name, np, annot, (.lam lp param arg ret (.atEnv (11,16) body))⟩]
     | st => st }
 private def blockCaptureClaims (unitTy : Json) : Fragment.Claims :=
   { captureClaims with envs := captureClaims.envs ++
@@ -527,13 +527,13 @@ private def blockObligations (unitTy : Json) : Except String Unit := do
 
 private def localWriterFn : Fragment.Fn :=
   { writerFn with body := writerFn.body.map fun st => match st with
-    | .cst pos name annot (.lam lp param arg ret _) =>
-      .cst pos name annot (.lam lp param arg ret
+    | .constants pos [⟨name, np, annot, .lam lp param arg ret _⟩] =>
+      .constants pos [⟨name, np, annot, (.lam lp param arg ret
         (.letBody (30,31) "saved" (some (wireTy ⟨false,[.bool]⟩))
           (.lit (32,33) (.vbool false))
           (.letBody (34,35) "" none
             (.write (36,39) valueField (.var (36,37) "cell") (.var (38,39) "saved"))
-            (.atEnv (40,43) (.read (41,43) valueField (.var (41,42) "cell"))))))
+            (.atEnv (40,43) (.read (41,43) valueField (.var (41,42) "cell"))))))⟩]
     | st => st }
 private def localWriterClaims : Fragment.Claims :=
   let N := wireTy ⟨false,[.null]⟩

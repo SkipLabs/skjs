@@ -17,7 +17,7 @@ import {
   type SkjsExpression,
   type SkjsFunction,
 } from "../tools/skjs-claims.mts";
-import { at as nth, atom, binding, claimAt, claimType, expr, field, fn, list, must, record, rows, stmt } from "./edits.mts";
+import { atom, binding, claimAt, claimType, expr, field, fn, list, must, at as nth, record, rows, sole, stmt } from "./edits.mts";
 
 const [astPath, claimsPath, fileKey, verifier] = process.argv.slice(2);
 const ast: Ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
@@ -49,7 +49,7 @@ const nthArg = (call: Apply, i: number): Expr =>
 /** The body of a closure bound by the i-th statement, which is where these
  * fixtures put the construct under test. */
 const closure = (f: FunctionAst, i: number) =>
-  expr(stmt(nth(f.body, i), "const").init, "lambda").body;
+  expr(sole(stmt(nth(f.body, i), "const")).init, "lambda").body;
 /** The `if` a fixture guards with, and the closure its else arm returns. */
 type Branch = Extract<Stmt, { k: "if" }>;
 const escaping = (branch: Branch) =>
@@ -64,7 +64,7 @@ const callableAlternatives = (claim: SkjsExpression): FunctionAtom[] => {
 };
 /** The call whose argument is itself an assignment. */
 const writingCall = (body: Stmt[]) =>
-  expr(stmt(nth(body, 2), "const").init, "apply");
+  expr(sole(stmt(nth(body, 2), "const")).init, "apply");
 /** The assignment a nested call passes as its argument. */
 const nestedWrite = (call: Apply): Write => expr(nthArg(call, 0), "write");
 /** Pass `false` where the fixture passes `true`, claim included. */
@@ -260,7 +260,7 @@ try {
       at(nthArg(writingCall(body), 0)).type = {top: false, atoms: [{a: "null"}]};
     }],
     ["captured read cannot invent a singleton", (body, at) => {
-      at(expr(stmt(nth(body, 1), "const").init, "lambda").body).type = lit("true");
+      at(expr(sole(stmt(nth(body, 1), "const")).init, "lambda").body).type = lit("true");
     }],
   ])) {
     const {a, c, f, at} = about("callableArgumentWrite");
@@ -343,7 +343,7 @@ try {
 
   for (const [name, edit] of rows<[string, (f: FunctionAst, at: At) => void]>([
     ["factory result cannot widen the returned parameter domain", (f, at) => {
-      const factory = atom(claimType(at(stmt(nth(f.body, 0), "const").init)).atoms[0], "function");
+      const factory = atom(claimType(at(sole(stmt(nth(f.body, 0), "const")).init)).atoms[0], "function");
       const returned = atom(factory.result.atoms[0], "function");
       assert.deepEqual(returned.params[0], lit("true"));
       returned.params[0] = {top: false, atoms: [{a: "boolean"}]};
@@ -362,7 +362,7 @@ try {
 
   for (const [name, edit] of rows<[string, (f: FunctionAst, at: At) => void]>([
     ["factory result claim must retain the null alternative", (f, at) => {
-      const result = atom(claimType(at(stmt(nth(f.body, 0), "const").init)).atoms[0], "function").result;
+      const result = atom(claimType(at(sole(stmt(nth(f.body, 0), "const")).init)).atoms[0], "function").result;
       assert(result.atoms.some((a) => a.a === "null"));
       result.atoms = result.atoms.filter((a) => a.a !== "null");
     }],

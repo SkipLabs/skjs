@@ -9,7 +9,7 @@ import { stripTypes } from "../tools/strip-types.mts";
 import type { Ast } from "../tools/fragment.mts";
 import type { ClaimType } from "../tools/claim.mts";
 import { functionOf, type SkjsClaims, type SkjsFunction } from "../tools/skjs-claims.mts";
-import { at as nth, atom, claimAt, claimType, expr, fn as functionIn, last, must, rows, stmt } from "./edits.mts";
+import { atom, claimAt, claimType, expr, fn as functionIn, last, must, at as nth, rows, sole, stmt } from "./edits.mts";
 
 const [astPath, claimsPath, file, verifier] = process.argv.slice(2);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "callable-arguments-"));
@@ -18,7 +18,7 @@ try {
   const exported: SkjsClaims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
   const fn = functionIn(source, "callableArgument");
   /** The call whose argument is the callback under test. */
-  const invocation = (f = fn) => expr(stmt(nth(f.body, 3), "const").init, "apply");
+  const invocation = (f = fn) => expr(sole(stmt(nth(f.body, 3), "const")).init, "apply");
   const ast = path.join(tmp, "ast"), claims = path.join(tmp, "claims");
   const evidence = path.join(tmp, "evidence");
   const run = (mode: string, a: Ast, c: SkjsClaims) => {

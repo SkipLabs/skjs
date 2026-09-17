@@ -1,8 +1,8 @@
 # census: repair-work
-# 14/115 verified, of 315 functions
+# 15/115 verified, of 315 functions
 #   skjs-rejected: 200
-#   gate: 89
-#   verified: 14
+#   gate: 88
+#   verified: 15
 #   unproved: 12
 #
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
@@ -54,7 +54,6 @@ gate:intersection operands must have the same shape	tests/expect-error/spread-ca
 gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/promise-object.ts	testAwaitScalarSnapshot
 gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/unsound-refinement.ts	freshReturnSnapshot
 gate:nullish assignment requires a local identifier	tests/expect-error/logical-compound-computed-key.ts	computedFallback
-gate:one binding per `const` in the fragment	tests/expect-error/binding-initialization.ts	earlierDeclarator
 gate:only `extends boolean` or an earlier type parameter is in the fragment	tests/expect-error/freeze-window-stale-cache.ts	frozenNumbers
 gate:only field and local assignments are supported	tests/expect-error/destructuring-assignment.ts	keyBeforeDefault
 gate:only field and local assignments are supported	tests/expect-error/obj-literal-var-field-growth.ts	keyInitializesRhs
@@ -306,6 +305,7 @@ unproved:reject: source type outside the null/undefined/boolean/singleton fragme
 unproved:reject: unbound or uninitialized source variable '_'	tests/expect-error/binding-initialization.ts	conditionBeforeLocal
 unproved:reject: unexpected fields in the cell record claim	tests/expect-error/captured-read-stability.ts	checkedPropertyResult
 unproved:reject: unexpected fields in the cell record claim	tests/expect-error/unsound-refinement.ts	identityMemberSnapshot
+verified	tests/expect-error/binding-initialization.ts	earlierDeclarator
 verified	tests/expect-error/captured-read-stability.ts	checkedAnnotatedConstField
 verified	tests/expect-error/captured-read-stability.ts	checkedCapturedLocal
 verified	tests/expect-error/captured-read-stability.ts	checkedEvolvingCapture

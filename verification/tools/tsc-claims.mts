@@ -229,7 +229,8 @@ function walkStmt(s: Stmt, out: Sites): void {
       return;
     case "const":
     case "let":
-      walkExpr(s.init, out);
+      // One entry for the statement; every declarator's initializer is a site.
+      s.bindings.forEach((b) => walkExpr(b.init, out));
       return;
     case "while":
       // The loop head: the invariant candidate checked on entry and every

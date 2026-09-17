@@ -869,7 +869,15 @@ rather than asserted by a suite.
 
 Straight-line blocks also support initialized `const` declarations and expression
 statements before the final return. Each statement entry uses the same checked
-environment obligations. Local annotations are separate obligations; bindings
+environment obligations. A declaration may list several bindings: the producers
+state one entry for the statement and none between its declarators, so the
+lowering binds them left to right under that entry, each initializer compiled in
+the scope the earlier bindings extend, with the same per-binding annotation,
+allocation and storage-contract obligations as a single declaration. An
+unannotated `let` in a list takes its contract from the entry that follows the
+whole statement, the first place every binding of the list stands in scope.
+Inside a closure body a list stays gated: each lowered binding there is an
+entry of its own, and the producers state none for the later declarators. Local annotations are separate obligations; bindings
 retain the initializer's claimed precision. Sequential composition uses the
 existing let rule, with one occurrence of the continuation. Effect results occupy
 anonymous slots, preserved at their established types across subsequent named

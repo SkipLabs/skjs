@@ -218,14 +218,14 @@ partial def expandExpr (aliases : List Alias) (e : Fragment.Expr) : Except Strin
     let annot' ← expandOpt aliases annot
     return .letBody p n annot' (← expandExpr aliases i) (← expandExpr aliases b)
 
+private def expandBinding (aliases : List Alias) (b : Fragment.Binding) : Except String Fragment.Binding := do
+  return { b with annot := ← expandOpt aliases b.annot, init := ← expandExpr aliases b.init }
+
 partial def expandStmt (aliases : List Alias) (s : Fragment.Stmt) : Except String Fragment.Stmt := do
   match s with
   | .ret p e => return .ret p (← expandExpr aliases e)
-  | .cst p n annot i =>
-    let annot' ← expandOpt aliases annot
-    return .cst p n annot' (← expandExpr aliases i)
-  | .mut p n np annot i =>
-    return .mut p n np (← expandOpt aliases annot) (← expandExpr aliases i)
+  | .constants p bs => return .constants p (← bs.mapM (expandBinding aliases))
+  | .mutables p bs => return .mutables p (← bs.mapM (expandBinding aliases))
   | .ite p c t e =>
     let t' ← t.mapM (expandStmt aliases)
     let e' ← match e with

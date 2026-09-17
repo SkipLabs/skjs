@@ -16,7 +16,7 @@ import type {
   Point,
   SourceClaims,
 } from "../tools/source-claims.mts";
-import { at as nth, expr, must, stmt } from "./edits.mts";
+import { expr, must, at as nth, sole, stmt } from "./edits.mts";
 
 /** The labels a claim states, where this fixture only ever states labels. */
 const labelsOf = (type: SidecarClaim): Labels => {
@@ -99,8 +99,10 @@ function fixture(body: string, param = "") {
         expr(st.cond);
         stmts(st.body, [...names]);
       } else if (st.k === "const" || st.k === "let") {
-        expr(st.init);
-        if (st.k === "const") names.push(st.name);
+        for (const b of st.bindings) {
+          expr(b.init);
+          if (st.k === "const") names.push(b.name);
+        }
       } else if (st.k === "effect" || st.k === "return") {
         expr(st.e);
       }
@@ -171,7 +173,7 @@ function fixture(body: string, param = "") {
     /** The i-th statement of the body, and what it carries: an initializer, a
      * returned expression, an arm. Each check names the one it is about. */
     at: (i: number) => nth(f.body, i),
-    init: (i: number) => stmt(nth(f.body, i), "const").init,
+    init: (i: number) => sole(stmt(nth(f.body, i), "const")).init,
     returned: (i: number) => stmt(nth(f.body, i), "return").e,
     arm: (i: number, which: "then" | "else_") => {
       const branch = stmt(nth(f.body, i), "if");

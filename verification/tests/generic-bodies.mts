@@ -15,10 +15,11 @@ import {
   type SkjsFunction,
 } from "../tools/skjs-claims.mts";
 import {
-  at as nth,
   expr as exprOf,
   fn as functionIn,
   must,
+  at as nth,
+  sole,
   stmt,
 } from "./edits.mts";
 // Source extraction of generic bodies that copy T through const and fst.
@@ -60,7 +61,7 @@ function expect(name: string, r: ReturnType<typeof run>, accept: boolean, messag
 try {
   const bind = functionIn(ast, "bind");
   const fst = functionIn(ast, "fst");
-  const bound = stmt(nth(bind.body, 0), "const");
+  const bound = sole(stmt(nth(bind.body, 0), "const"));
   decodeClaimType(must(bind.params[0], "a parameter").type);
   decodeClaimType(must(bound.annot, "the binding's annotation"));
   if (JSON.stringify(bound.annot) !== JSON.stringify(t))
@@ -87,10 +88,10 @@ try {
   }
   expect("dependent bounds verify from unedited SKJS claims", run(ast, rawClaims), true);
   const noAnnot = clone(ast);
-  stmt(nth(functionIn(noAnnot, "bind").body, 0), "const").annot = null;
+  sole(stmt(nth(functionIn(noAnnot, "bind").body, 0), "const")).annot = null;
   expect("generic const requires a T annotation", run(noAnnot, claims), false, "generic const requires");
   const badInit = clone(ast);
-  stmt(nth(functionIn(badInit, "bind").body, 0), "const").init = {
+  sole(stmt(nth(functionIn(badInit, "bind").body, 0), "const")).init = {
     k: "lit",
     pos: bound.init.pos,
     lit: { a: "booleanlit", v: "true" },
@@ -118,7 +119,7 @@ try {
   }), false, "generic const");
   expect("dependent inclusion cannot be reversed", mutate("upper", f => {
     must(f.params[0], "a parameter").type = t;
-    stmt(nth(f.body, 0), "const").annot = { top: false, atoms: [{ a: "param", name: "U" }] };
+    sole(stmt(nth(f.body, 0), "const")).annot = { top: false, atoms: [{ a: "param", name: "U" }] };
   }), false, "generic const");
   expect("a widened const cannot recover the narrower parameter", mutate("upper", f => {
     f.retType = { top: false, atoms: [{ a: "param", name: "U" }] };

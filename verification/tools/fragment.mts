@@ -62,26 +62,23 @@ export type Stmt =
   | { k: "break" | "continue"; pos: Span }
   | { k: "while"; pos: Span; cond: Expr; body: Stmt[] }
   | { k: "if"; pos: Span; cond: Expr; then: Stmt[]; else_: Stmt[] | null }
-  | {
-      k: "const";
-      pos: Span;
-      name: string;
-      namePos: Span;
-      annot: ClaimType | null;
-      init: Expr;
-    }
-  /* A mutable local. `annot` is the storage contract every assignment is
-     checked against. Absent, the producer supplies one and the adapter checks
-     it; an initializer's type is what the binding happens to hold first, not
-     what it may hold, so it is never taken for the contract. */
-  | {
-      k: "let";
-      pos: Span;
-      name: string;
-      namePos: Span;
-      annot: ClaimType | null;
-      init: Expr;
-    };
+  /* A declaration statement binds one or more names, left to right, each
+     initializer seeing the earlier bindings. The statement is the entry; the
+     producer states no cut between its declarators. */
+  | { k: "const"; pos: Span; bindings: BindingAst[] }
+  /* Mutable locals. A binding's `annot` is the storage contract every
+     assignment is checked against. Absent, the producer supplies one and the
+     adapter checks it; an initializer's type is what the binding happens to
+     hold first, not what it may hold, so it is never taken for the contract. */
+  | { k: "let"; pos: Span; bindings: BindingAst[] };
+
+/** One declarator of a `const` or `let` statement. */
+export interface BindingAst {
+  name: string;
+  namePos: Span;
+  annot: ClaimType | null;
+  init: Expr;
+}
 
 export interface TypeParamAst {
   name: string;

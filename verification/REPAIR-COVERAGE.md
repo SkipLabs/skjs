@@ -44,17 +44,34 @@ of the work remaining.
 
 ## Checkpoint: 17 September 2026
 
-The working-tree baseline is **14/115 verified**, out of 315 selected functions:
-200 SKJS-rejected, 89 gated, 12 unproved. The separate curated run had 53 files,
-215 verified functions, 6 search failures and 16 unavailable checks; the suite
-run had 53 suites. These are checkpoint results, not permanent expectations;
+The working-tree baseline is **15/115 verified**, out of 315 selected functions:
+200 SKJS-rejected, 88 gated, 12 unproved. The separate curated run had 54 files,
+219 verified functions, 6 search failures and 16 unavailable checks; the suite
+run had 54 suites. These are checkpoint results, not permanent expectations;
 the baseline and fresh command output are authoritative.
 
 Recent repair gains were numeric heap predicates (`checkedEvolvingCapture`),
-local nullish assignment (`localFallback`), and inferred object replacement
-(`checkedMutableObjectReplacement`): 11 → 12 → 13 → 14.
+local nullish assignment (`localFallback`), inferred object replacement
+(`checkedMutableObjectReplacement`) and declaration lists
+(`earlierDeclarator`): 11 → 12 → 13 → 14 → 15.
 TS observation fixes also improved curated coverage without themselves moving
 this SKJS repair count.
+
+Declaration lists (`const a = …, b = …;` and the `let` form) are lowered in
+Lean under the statement's one entry, left to right, each initializer in the
+scope the earlier bindings extend; the Fragment statement now carries a
+`bindings` list on both sides, so every consumer was updated rather than
+silently reading one declarator. Inside closure bodies a list stays gated.
+`tests/declaration-list.mts` checks both producers, forged entries, reversed
+and dropped declarators, cross-cell contents, the gates and source executions;
+`DeclarationListTests.lean` traces the lowered program of the separate-cell
+case, since source executions alone do not show what the lowering does. While
+building it, one boundary was recorded, not fixed: a TS entry claim narrower
+than a cell's contract (`second: boolean` after `let second: boolean | null =
+first` with `first` narrowed to `boolean`) is not re-established after a
+write to a different cell, whether or not the declarations share a statement.
+The fixture seeds its cells from a `boolean | null` parameter to stay within
+the supported contents tracking.
 
 The inferred replacement implementation is committed in `59eb0637`, following
 `60d5468b`, the pre-change export snapshot. `46b3a7b7` committed local `??=`
@@ -89,21 +106,25 @@ where to investigate, not a promise that one extension will verify each row.
 | Cases | Observed obstruction and additional caveats |
 | --- | --- |
 | `call-effect-boundaries.ts`: `clearEffect`, `postCallGuard`; `captured-read-stability.ts`: `checkedAliasChain`; `field-refinement.ts`: `inferredFieldComparison`; `unsound-refinement.ts`: `assignmentResultSnapshot`, `checkedAfterWrite` | External object parameters. Structural TypeScript annotations do not establish the model's plain heap-object behavior. Getters, proxies and external effects need a justified boundary. Do not simply remove the gate. |
-| `obj-literal-var-field-growth.ts`: `retainedReceiver` | Unavailable expression claim at extracted span `[185,209)`. Inspect raw `unavailableTypes` next; this has not been established to reach numeric proof search. There is a different, SKJS-rejected function with the same name in `unsound-refinement.ts`. |
-| `captured-read-stability.ts`: `checkedGenericCallResult` | Unavailable expression claim at extracted span `[551,574)`, involving ambient generic factory `makeCapturedGenericCell`. Reinspect the current raw reason after the saved-substitution export change; the earlier environment blocker has changed. |
+| `obj-literal-var-field-growth.ts`: `retainedReceiver` | The exporter reports `fuel-exhausted` for `{ slot: seed }` and every type mentioning `box` or `original`: the object literal's growable field variable has a cyclic saved bound, which the bounded export refuses rather than unrolls (see `testTypeClaimSnapshotUnion`). Fixing the export is only the first gate: the function then aliases a mutable local's object, assigns inside an expression, and compares a numeric field. Only three census functions carry this reason. There is a different, SKJS-rejected function with the same name in `unsound-refinement.ts`. |
+| `captured-read-stability.ts`: `checkedGenericCallResult` | The callee `makeCapturedGenericCell` at extracted span `[551,574)` is refused as `function-generic`; the call's result claim itself exports. The claim language has no generic function type, so an export would have to state the call-site instantiation, and the TS producer refuses the same signature (`generic-arrow`). Beyond that, the extractor binds identifiers only from parameters and local declarations, so an ambient function value is unbound: the same external-value boundary as the object rows above. Four census functions carry `function-generic`. |
 | `captured-read-stability.ts`: `evolvedInferredSnapshotStillString` | General string type outside the supported source types. |
 | `binding-initialization.ts`: `conditionBeforeLocal` | Reads top-level `seed` before declaring an inner `seed`. Context extraction carries the declaration, but lowering lacks that external value. Do not diagnose this solely as local shadowing. |
 | `captured-read-stability.ts`: `checkedPropertyResult`; `unsound-refinement.ts`: `identityMemberSnapshot` | Nested record claims refused. Both also have external objects; the latter additionally compares object identities. Nested record support alone is insufficient. |
-| `binding-initialization.ts`: `earlierDeclarator` | Multiple declarators in one `const`. SKJS supplies one entry environment for the whole declaration list, not an intermediate cut for the second binding. TS site indexing also anchors the whole statement. Preserve left-to-right evaluation and binding visibility without fabricating producer claims. |
 | `definite-assignment-tvar-soundness.ts`: `typeofInferredFieldAfterAssignment`, `typeofUndefinedFieldAdmitsInitialValue`; `test_ternary_refinements.ts`: `bothBranchesInitialize` | Uninitialized `let`. Requires an initialization discipline; seeding every private cell with undefined must not weaken the declared write contract or allow a read before initialization. |
 | `logical-compound-computed-key.ts`: `computedFallback` | `??=` currently requires a local identifier. Property/computed targets must save receiver and key before the RHS and evaluate each once. String/key restrictions may be the next gate. |
 
 Other first gates include destructuring/defaults, spread/accessors, optional or
 readonly fields, arrays/tuples, unknown/generic parameters, implicit returns,
 arithmetic and classes. Audit representative full functions before choosing a
-large extension. A useful next investigation is the two unavailable-expression
-rows above, then multiple declarators; external objects require a design decision,
-not just exporter work.
+large extension. Over the whole census export, the raw exporter reasons that
+appear in gated functions' claims are dominated by `void-type` (arrows returning
+`void`), `unexpanded-named-type` (class instances and named types),
+`unsupported-type`, `cell-callable` and `nested-object-type`. That is a count of
+unavailable claims, not of next gates: a site the verifier never needs does not
+obstruct, so a gated row may or may not meet one of these after its syntax gate.
+External objects and ambient values require a design decision, not just
+exporter work.
 
 To retain diagnostics for an investigation, follow [census.sh](census.sh):
 `census.mts --extract` writes per-function sources and an index, one shared SKJS

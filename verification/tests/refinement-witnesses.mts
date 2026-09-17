@@ -72,7 +72,7 @@ try {
       const expected = record(strip(f), "the stripped function");
       expected.name = target;
       if (f.name === "staleCapturedCell")
-        record(field(expected, "body", 2, "then", 0), "the guarded binding")
+        record(field(expected, "body", 2, "then", 0, "bindings", 0), "the guarded binding")
           .init = { k: "lit", lit: { a: "null" } };
       else list(field(expected, "body", 1, "body"), "the loop body").shift();
       test(`${f.name}: control retains the exact guard and read`, () =>

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import assert from "node:assert/strict";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import type { Ast } from "../tools/fragment.mts";
-import { at as nth, expr, fn as functionIn, must, stmt } from "./edits.mts";
+import { expr, fn as functionIn, must, at as nth, sole, stmt } from "./edits.mts";
 
 /** One function's claims in a normalized document, by name. */
 const claimsFor = (d: SourceClaims, name: string) =>
@@ -150,7 +150,7 @@ for (const [name, want] of Object.entries(expected)) {
         assert(!calleeClaim.type.includes(0), "returned closure retains its immutable capture refinement");
         const later = functionIn(parsed, "laterGuardedCallback");
         const laterClaims = claimsFor(normalized, later.name);
-        const test = expr(expr(expr(stmt(nth(later.body, 1), "const").init, "lambda").body, "conditional").cond, "bin").l;
+        const test = expr(expr(expr(sole(stmt(nth(later.body, 1), "const")).init, "lambda").body, "conditional").cond, "bin").l;
         const testClaim = laterClaims.expressions.find((p) => p.pos[0] === test.pos[0] && p.pos[1] === test.pos[1]);
         assert.ok(testClaim);
         assert.ok(Array.isArray(testClaim.type));

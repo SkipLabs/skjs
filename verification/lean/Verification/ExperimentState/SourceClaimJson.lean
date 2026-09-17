@@ -140,7 +140,9 @@ private def exprSites : Fragment.Expr → Sites
   | .ifBody p result a b c => joinSites (if result.isSome then ([p.1],[]) else ([],[p])) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
 private partial def stmtSites : Fragment.Stmt → Sites
   | .brk p | .cont p => ([p.1],[])
-  | .ret p e | .cst p _ _ e | .mut p _ _ _ e | .effect p e => joinSites ([p.1],[]) (exprSites e)
+  | .ret p e | .effect p e => joinSites ([p.1],[]) (exprSites e)
+  -- One entry for the statement; every declarator's initializer is a site.
+  | .constants p bs | .mutables p bs => bs.foldl (fun acc b => joinSites acc (exprSites b.init)) ([p.1],[])
   | .loop p c body => joinSites ([p.1],[]) (joinSites (exprSites c)
       (body.foldl (fun s st => joinSites s (stmtSites st)) ([],[])))
   | .ite p c a b =>
