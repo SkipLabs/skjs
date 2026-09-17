@@ -17,7 +17,7 @@ const cases = {
   "calls_and_consts.ts":
     "source type outside the null/undefined/boolean/singleton fragment",
   "typeof_narrow.ts": "expression outside the stateful fragment",
-  "beyond_precision.ts": "equality requires a null or undefined literal operand",
+  "beyond_precision.ts": "source type outside the null/undefined/boolean/singleton fragment",
   "mutable_binding.ts": "a `let` needs an initializer",
 };
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "source-boundaries-"));

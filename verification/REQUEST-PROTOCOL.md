@@ -650,14 +650,17 @@ capture lowering and assignment temporaries are described in
 ### Null and undefined predicates
 
 Source binary forms with `op` equal to `===` or `!==` are accepted when either
-operand is a null or undefined literal. Both operands are evaluated in source order and both
+operand is a null or undefined literal, or has a claimed singleton null or
+undefined type. Lean resolves the latter case using the common source claims;
+the operand obligation must prove that singleton, so a forged claim cannot
+justify replacing equality by a tag test. Both operands are evaluated in source order and both
 retain their expression obligations. The comparison lowers to the corresponding primitive
 shape test and Boolean conditional over the saved operand. `unionVar` evidence
 allows tag dispatch over a primitive union; no new term or reference semantics
 is introduced. The same lowering is available inside a supported closure.
 
 Top-level branches and loop heads also refine a syntactically identified immutable
-variable. Negations and either literal operand order are supported. The original
+variable. Negations and either operand order are supported. The original
 condition and its claims are checked before tag dispatch on the same immutable
 value; reads and calls cannot supply an alias refinement.
 

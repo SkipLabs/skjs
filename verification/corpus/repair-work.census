@@ -1,9 +1,9 @@
 # census: repair-work
-# 7/115 verified, of 315 functions
+# 8/115 verified, of 315 functions
 #   skjs-rejected: 200
 #   gate: 90
-#   unproved: 18
-#   verified: 7
+#   unproved: 17
+#   verified: 8
 #
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofUndefinedFieldAdmitsInitialValue
@@ -299,24 +299,24 @@ unproved:reject: assignment to '_', which is not a mutable local	tests/expect-er
 unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/call-effect-boundaries.ts	clearEffect
 unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/call-effect-boundaries.ts	postCallGuard
 unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/captured-read-stability.ts	checkedAliasChain
+unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/field-refinement.ts	inferredFieldComparison
 unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/unsound-refinement.ts	assignmentResultSnapshot
 unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/unsound-refinement.ts	checkedAfterWrite
 unproved:reject: closure expression claim at [638,639): evidence search failed	tests/expect-error/captured-read-stability.ts	checkedEvolvingCapture
 unproved:reject: source environment obligation at 706: unavailable claimed binding '_' at 706	tests/expect-error/captured-read-stability.ts	checkedMutableObjectReplacement
 unproved:reject: source environment obligation at 713: unavailable claimed binding '_' at 713	tests/expect-error/captured-read-stability.ts	checkedGenericCallResult
+unproved:reject: source expression obligation at [185,209): type claim unavailable from producer	tests/expect-error/obj-literal-var-field-growth.ts	retainedReceiver
 unproved:reject: source incoming edge obligation at [669,682): evidence search failed (unsupported 	tests/expect-error/captured-read-stability.ts	snapshotCapturedLocal
 unproved:reject: source type outside the null/undefined/boolean/singleton fragment	tests/expect-error/captured-read-stability.ts	evolvedInferredSnapshotStillString
 unproved:reject: unexpected fields in the cell record claim	tests/expect-error/captured-read-stability.ts	checkedPropertyResult
-unproved:reject: unsupported source expression at [1461,1483): equality requires a null or undefine	tests/expect-error/field-refinement.ts	inferredFieldComparison
-unproved:reject: unsupported source expression at [182,195): equality requires a null or undefined 	tests/expect-error/unsound-refinement.ts	identityMemberSnapshot
-unproved:reject: unsupported source expression at [185,215): equality requires a null or undefined 	tests/expect-error/obj-literal-var-field-growth.ts	retainedReceiver
-unproved:reject: unsupported source expression at [231,243): equality requires a null or undefined 	tests/expect-error/local-vs-local-refinement.ts	inferredReadNamedNull
+unproved:reject: unexpected fields in the cell record claim	tests/expect-error/unsound-refinement.ts	identityMemberSnapshot
 unproved:reject: unsupported source expression at [243,253): equality requires a null or undefined 	tests/expect-error/local-vs-local-refinement.ts	inferredReadSingleton
-unproved:reject: unsupported source expression at [73,83): equality requires a null or undefined li	tests/expect-error/binding-initialization.ts	conditionBeforeLocal
+unproved:reject: unsupported source expression at [73,83): equality requires a null or undefined si	tests/expect-error/binding-initialization.ts	conditionBeforeLocal
 verified	tests/expect-error/captured-read-stability.ts	checkedAnnotatedConstField
 verified	tests/expect-error/captured-read-stability.ts	checkedCapturedLocal
 verified	tests/expect-error/captured-read-stability.ts	checkedInferredObject
 verified	tests/expect-error/captured-read-stability.ts	inferredPrimitiveCompatibleWrite
 verified	tests/expect-error/captured-read-stability.ts	neverReassigned
 verified	tests/expect-error/captured-read-stability.ts	stableAnnotatedConstValue
+verified	tests/expect-error/local-vs-local-refinement.ts	inferredReadNamedNull
 verified	tests/expect-error/nullish-coalescing.ts	resultOfFallback

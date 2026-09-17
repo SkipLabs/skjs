@@ -756,9 +756,9 @@ function testedTagSymbol(cond: Expression, checker: Checker): {sym: Symbol; equa
     return sym ? {sym, equal: op === ts.SyntaxKind.EqualsEqualsEqualsToken, label: "function"} : null;
   }
   const unitLabel = (node: Expression): number | null => {
-    if (node.kind === ts.SyntaxKind.NullKeyword) return 0;
-    if (ts.isIdentifier(node) && node.text === "undefined" &&
-        (checker.getTypeAtLocation(node)?.flags ?? 0) & TypeFlags.Undefined) return 3;
+    const flags = checker.getTypeAtLocation(node)?.flags ?? 0;
+    if (flags & TypeFlags.Null) return 0;
+    if (flags & TypeFlags.Undefined) return 3;
     return null;
   };
   const left = unitLabel(cond.left), right = unitLabel(cond.right);

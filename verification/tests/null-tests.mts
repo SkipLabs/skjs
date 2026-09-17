@@ -139,11 +139,11 @@ try {
       "no claimed type",
     ],
     [
-      "non-null equality remains unsupported",
+      "forged null operand claim cannot change equality semantics",
       (a) => {
         expr(test(a).r, "lit").lit = { a: "booleanlit", v: "true" };
       },
-      "equality requires a null or undefined literal operand",
+      "evidence search failed",
     ],
     [
       "loose equality remains unsupported",

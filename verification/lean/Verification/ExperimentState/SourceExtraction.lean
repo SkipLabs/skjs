@@ -114,6 +114,56 @@ private def exprType (fc : SourceClaims.Function) (e : Fragment.Expr) : Compiler
       s!"source expression obligation at [{e.span.1},{e.span.2}): {msg}"
   | none => throw s!"no claimed type for the expression at {spanStr e.span}"
 
+/-- A claimed null/undefined operand selects a tag-test implementation, never
+an assumption: both operands remain in the program, in source order, and their
+expression obligations must establish the singleton used by this translation. -/
+private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.Expr) :
+    Compiler Fragment.Expr := do
+  match e with
+  | .var .. | .lit .. | .done .. => pure e
+  | .equality p eq l r =>
+    let l ← comparisonsExpr fc l
+    let r ← comparisonsExpr fc r
+    let L ← exprType fc l
+    let R ← exprType fc r
+    let select := fun (A : Ty Nat) =>
+      if A == [0] then some Tag.isNul else if A == [3] then some Tag.isUndef else none
+    match select R, select L with
+    | some tag, _ => pure (.unitTest p tag eq true l r)
+    | _, some tag => pure (.unitTest p tag eq false l r)
+    | _, _ => throw s!"unsupported source expression at [{p.1},{p.2}): equality requires a null or undefined singleton operand"
+  | .logical p a l r => return .logical p a (← comparisonsExpr fc l) (← comparisonsExpr fc r)
+  | .coalesce p l r => return .coalesce p (← comparisonsExpr fc l) (← comparisonsExpr fc r)
+  | .assign p n np r => return .assign p n np (← comparisonsExpr fc r)
+  | .shapeTest p t eq e => return .shapeTest p t eq (← comparisonsExpr fc e)
+  | .unitTest p t eq tl l r => return .unitTest p t eq tl (← comparisonsExpr fc l) (← comparisonsExpr fc r)
+  | .not p e => return .not p (← comparisonsExpr fc e)
+  | .alloc p ns es => return .alloc p ns (← es.mapM (comparisonsExpr fc))
+  | .read p f e => return .read p f (← comparisonsExpr fc e)
+  | .write p f l r => return .write p f (← comparisonsExpr fc l) (← comparisonsExpr fc r)
+  | .withValue p f i ft bt => return .withValue p (← comparisonsExpr fc f) (← comparisonsExpr fc i) ft bt
+  | .lambda p ps result b => return .lambda p ps result (← comparisonsExpr fc b)
+  | .bindWithReceiver p c r args => return .bindWithReceiver p (← comparisonsExpr fc c) (← comparisonsExpr fc r) (← args.mapM (comparisonsExpr fc))
+  | .callWithReceiver p c r args => return .callWithReceiver p (← comparisonsExpr fc c) (← comparisonsExpr fc r) (← args.mapM (comparisonsExpr fc))
+  | .call p c args => return .call p (← comparisonsExpr fc c) (← args.mapM (comparisonsExpr fc))
+  | .atEnv p e => return .atEnv p (← comparisonsExpr fc e)
+  | .seqBody p i b => return .seqBody p (← comparisonsExpr fc i) (← comparisonsExpr fc b)
+  | .ifBody p result c t e => return .ifBody p result (← comparisonsExpr fc c) (← comparisonsExpr fc t) (← comparisonsExpr fc e)
+  | .letBody p n annot i b => return .letBody p n annot (← comparisonsExpr fc i) (← comparisonsExpr fc b)
+
+private partial def comparisonsStmt (fc : SourceClaims.Function) (s : Fragment.Stmt) :
+    Compiler Fragment.Stmt := do
+  match s with
+  | .ret p e => return .ret p (← comparisonsExpr fc e)
+  | .cst p n a e => return .cst p n a (← comparisonsExpr fc e)
+  | .mut p n np a e => return .mut p n np a (← comparisonsExpr fc e)
+  | .effect p e => return .effect p (← comparisonsExpr fc e)
+  | .ite p c t e =>
+    return .ite p (← comparisonsExpr fc c) (← t.mapM (comparisonsStmt fc))
+      (← e.mapM (fun ss => ss.mapM (comparisonsStmt fc)))
+  | .loop p c b => return .loop p (← comparisonsExpr fc c) (← b.mapM (comparisonsStmt fc))
+  | .brk .. | .cont .. => pure s
+
 /-- A terminal branch uses the enclosing source result annotation, not a
 fabricated expression claim at the if statement's span. -/
 private def closureType (fc : SourceClaims.Function) : Fragment.Expr → Compiler (Ty Nat)
@@ -254,7 +304,7 @@ escaping closure. Reads are plain modeled cells, never JavaScript accessors. -/
 private def readOnly : Fragment.Expr → Bool
   | .var .. | .lit .. | .done .. => true
   | .not _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e => readOnly e
-  | .unitTest _ _ _ _ a b | .logical _ _ a b | .coalesce _ a b
+  | .equality _ _ a b | .unitTest _ _ _ _ a b | .logical _ _ a b | .coalesce _ a b
   | .seqBody _ a b | .letBody _ _ _ a b => readOnly a && readOnly b
   | .ifBody _ _ c t e => readOnly c && readOnly t && readOnly e
   | .alloc .. | .write .. | .assign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
@@ -423,6 +473,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       | .var _ name => observed scope Γ name ⟨"",some e.span⟩ e.span A fld R
       | _ => persistentObservation ⟨"",some e.span⟩ e.span A fld R
   let p ← match e with
+  | .equality .. => throw "internal unresolved equality"
   | .var _ name =>
     match resolve scope name with
     | some (i, .value) => pure (DirectProof.var Γ i A)
@@ -780,6 +831,7 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List ScopeBinding)
       let facts ← asserted.mapM fun (fld, R) => do return (⟨0,← contents R,fld⟩ : HeapFacts.Fact)
       checkpoint e.span (A::Γ) facts next (scope := held ⟨"",some e.span⟩ :: scope)
   match he : e with
+  | .equality .. => throw "internal unresolved equality"
   | .var _ name =>
     match resolve scope name with
     | some (i, .value) => emitAt e.span (.var i) (.bind next) Γ A (scope := scope)
@@ -1169,7 +1221,8 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
     let R ← lower (Fragment.translate f.ret)
     let claimedR ← SourceClaims.resolve (← table).length fc.ret
     if R != claimedR then throw "claimed return type differs from the source annotation"
-    let first ← body (traversalBudget f.body) fc R scope f.body none none
+    let stmts ← f.body.mapM (comparisonsStmt fc)
+    let first ← body (traversalBudget stmts) fc R scope stmts none none
     let entry ← emit .nul (.effect first) inputs [0]
     return (inputs, R, entry)).run { types := T }
   return ⟨⟨built.types, built.program, built.claims, R, entry.label, inputs⟩,

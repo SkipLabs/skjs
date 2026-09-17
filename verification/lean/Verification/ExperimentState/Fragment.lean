@@ -135,6 +135,8 @@ inductive Expr where
   | logical (pos : Span) (andOp : Bool) (left right : Expr)
   | coalesce (pos : Span) (left right : Expr)
   | shapeTest (pos : Span) (tag : Tag) (equal : Bool) (e : Expr)
+  /-- Strict equality awaiting a checked singleton operand from source claims. -/
+  | equality (pos : Span) (equal : Bool) (left right : Expr)
   | unitTest (pos : Span) (tag : Tag) (equal testLeft : Bool) (left right : Expr)
   | not (pos : Span) (e : Expr)
   /-- An object literal: one named field per initializer, in source order. -/
@@ -166,7 +168,7 @@ abbrev Expr.app (p : Span) (callee arg : Expr) : Expr := .call p callee [arg]
 
 def Expr.span : Expr → Span
   | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body => body.span
-  | .ifBody p _ _ _ _ | .done p | .unitTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
+  | .ifBody p _ _ _ _ | .done p | .equality p _ _ _ | .unitTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
   | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ | .call p _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ => p
 
 inductive Stmt where
@@ -217,7 +219,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     | .lit _ .vnull, _ => return .unitTest p .isNul (op == "===") false left right
     | _, .lit _ .vundef => return .unitTest p .isUndef (op == "===") true left right
     | .lit _ .vundef, _ => return .unitTest p .isUndef (op == "===") false left right
-    | _, _ => throw s!"unsupported source expression at [{p.1},{p.2}): equality requires a null or undefined literal operand"
+    | _, _ => return .equality p (op == "===") left right
   | "functionTest" => do
     CellClaims.fieldsExactly j ["k","pos","equal","e"]
     return .shapeTest p .isFun (← (← jField j "equal").getBool?) (← decodeExpr (← jField j "e"))

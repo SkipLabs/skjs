@@ -1341,8 +1341,11 @@ the alternative containing the actual immutable value; no semantic budget enters
 the rule. The ordinary evidence checker enforces complete coverage and unchanged
 other bindings. Derivation-to-evidence completeness is extended with this rule.
 
-The source adapter now checks strict equality/inequality against a null literal,
-including inside callbacks and with effectful operands. Both operand claims are
+The source adapter checks strict equality/inequality against null or undefined,
+including named singleton operands, inside callbacks and with effectful operands.
+Lean resolves nonliteral comparisons from the common source claims and keeps the
+singleton operand as an ordinary expression obligation; the selected tag test
+is justified only if that obligation checks. Both operand claims are
 required and both expressions evaluate in order. Existing `ifTag` plus `unionVar`
 prove the lowered predicate. Tests exercise both operand orders and polarities,
 independent consumption, omitted alternatives, and forged claims.

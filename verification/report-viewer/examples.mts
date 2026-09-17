@@ -12,6 +12,7 @@ const stateful = [
   "cell-conjunction",
   "negation",
   "null-tests",
+  "named-unit-comparisons",
   "null-guards",
   "numbers",
   "mutable-locals",
