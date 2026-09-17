@@ -102,6 +102,13 @@ private def creationClaim : Sequent Nat :=
 private def creationProof : Evidence Nat := .node creationClaim .funE []
 #guard checkStep CG creationClaim beforeWrite (.created creationProof) == some (shift beforeWrite)
 #guard checkStep CG creationClaim beforeWrite (.pure creationProof) == none
+-- Arity changes the body's bound variables, never the effects of creation.
+private def creationAt (arity : Nat) : Sequent Nat :=
+  ⟨creationClaim.context,.make (.closure arity (.write (.var arity) .fls)) .nul,[5]⟩
+#guard [0,2].all fun arity =>
+  let j := creationAt arity
+  checkStep CG j beforeWrite (.created (.node j .funE [])) == some (shift beforeWrite)
+
 -- An actual write cannot obtain the creation frame, even with a valid typing proof.
 #guard checkStep G writeClaim beforeWrite (.created writeProof) == none
 

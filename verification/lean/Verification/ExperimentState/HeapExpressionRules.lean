@@ -482,12 +482,12 @@ theorem pure_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k t A ρ n W h}
 
 /-- Creating a function allocates a fresh bag without executing its body or
 invalidating knowledge about existing cells. -/
-theorem creation_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k b A ρ n W h}
-    (ht : HasTy G Γ (.funE b) A) (he : EnvOk G Γ ρ n W)
+theorem creation_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k arity b A ρ n W h}
+    (ht : HasTy G Γ (.make (.closure arity b) .nul) A) (he : EnvOk G Γ ρ n W)
     (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (meaning G A)
       (fun h' v => HeapKnowledge.Holds (HeapKnowledge.shift k) (push v ρ) h')
-      n W h (instantiate 0 ρ (.funE b)) := by
+      n W h (instantiate 0 ρ (.make (.closure arity b) .nul)) := by
   have hs := ht.sound n W h ρ he hw hh
   cases n with
   | zero => trivial
@@ -554,7 +554,7 @@ def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
   | .created e =>
     if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTree G e = true then
       match j.term with
-      | .funE _ => some (HeapKnowledge.shift k)
+      | .make (.closure _ _) .nul => some (HeapKnowledge.shift k)
       | _ => none
     else none
   | .typedRead i B e =>
@@ -631,7 +631,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
       have typed := checkTree_sound e ht
       rw [hj] at typed
       split at hc
-      · rename_i b hb
+      · rename_i arity b hb
         cases hc
         rw [hb] at typed ⊢
         exact creation_sound typed he hk hw hh

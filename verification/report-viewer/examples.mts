@@ -17,6 +17,7 @@ const stateful = [
   "numbers",
   "mutable-locals",
   "captured-local-guards",
+  "mutable-locals-guard",
   "mutable-locals-numeric",
 ].map((name) => `verification/tests/stateful-source/${name}.ts`);
 const callables = ["unions", "factories", "arguments", "cells", "thunks", "arity", "guards", "function-field", "receiver-call"].map((name) => `verification/tests/callables/${name}.ts`);
@@ -70,11 +71,7 @@ const groups = [
       "typeof_narrow",
       "mutable_binding",
       "beyond_precision",
-    ]
-      .map((name) => `verification/tests/unsupported/${name}.ts`)
-      // A guard does not refine a read of a mutable local. It lives with the
-      // mutable-local sources it is a limit of, and is expected not to verify.
-      .concat(["verification/tests/stateful-source/mutable-locals-guard.ts"]),
+    ].map((name) => `verification/tests/unsupported/${name}.ts`),
   },
 ];
 export { supported, groups };
