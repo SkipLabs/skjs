@@ -131,6 +131,7 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
       if A == [0] then some Tag.isNul else if A == [3] then some Tag.isUndef else
         match PositiveRules.expand G A with
         | [.numLit bits] => some (.numEq bits)
+        | [.strLit s] => some (.strEq s)
         | _ => none
     match select R, select L with
     | some tag, _ => pure (.singletonTest p tag eq true l r)
@@ -557,6 +558,8 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       -- clause the program mentions.
       | .num b => do pure ([← lower (SourceTypes.use (.numLit b))],
           ProgramCertificates.Rule.numLit)
+      | .str s => do pure ([← lower (SourceTypes.use (.strLit s))],
+          ProgramCertificates.Rule.strLit)
       | _ => throw "unsupported closure literal"
     pure (DirectProof.node Γ t B r)
   | .shapeTest _ tag equal e => do

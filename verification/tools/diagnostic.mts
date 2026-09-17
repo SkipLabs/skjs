@@ -38,16 +38,20 @@ export interface Sequent {
 /** An assertion about a runtime slot: for a cell, about the named field of the
  * object it holds; for a value, about the slot itself, where the field is not
  * consulted. */
-export type HeapAtom = "nul" | "undef" | "tru" | "fls" | "num" |
-  Extract<Clause, {numLit: unknown}>;
+export type HeapAtom = "nul" | "undef" | "tru" | "fls" | "num" | "str" |
+  Extract<Clause, {numLit: unknown} | {strLit: unknown}>;
 const HEAP_ATOMS: Record<Extract<HeapAtom, string>, true> = {
-  nul: true, undef: true, tru: true, fls: true, num: true,
+  nul: true, undef: true, tru: true, fls: true, num: true, str: true,
 };
 const heapAtoms: readonly unknown[] = Object.keys(HEAP_ATOMS);
 function heapAtom(v: unknown): void {
   if (heapAtoms.includes(v)) return;
+  // Singleton payloads use the graph language's existing decoder.
+  if (typeof v === "object" && v !== null && "strLit" in v) {
+    decodeGraph([[{strLit: record(v,["strLit"]).strLit}]]);
+    return;
+  }
   const a = record(v,["numLit"]);
-  // Numeric singleton payloads use the graph language's existing decoder.
   decodeGraph([[{numLit: a.numLit}]]);
 }
 export interface HeapFact {

@@ -228,6 +228,8 @@ def primitive : List (Clause (Ty ι)) → Option (List Atom)
   | .boolLit b :: cs => (primitive cs).map ([if b then .tru else .fls] ++ ·)
   | .num :: cs => (primitive cs).map ([.num] ++ ·)
   | .numLit b :: cs => (primitive cs).map ([.numLit b] ++ ·)
+  | .str :: cs => (primitive cs).map ([.str] ++ ·)
+  | .strLit s :: cs => (primitive cs).map ([.strLit s] ++ ·)
   | _ => none
 
 def atoms (G : NormalGraph ι) (A : Ty ι) := primitive (expand G A)
@@ -248,8 +250,8 @@ theorem primitive_sem {G : NormalGraph ι} {cs R} (hc : primitive cs = some R) (
         have hi := ih hr
         simp only [semList,setSem,List.mem_cons,exists_eq_or_imp] at hi ⊢
         rw [hi]
-        simp [sem,nulT,undefT,boolT,numT,Atom.holds,apply_ite,or_assoc]
-        all_goals split <;> simp_all [Atom.holds]
+        simp [sem,nulT,undefT,boolT,numT,strT,Atom.holds,apply_ite,or_assoc]
+        all_goals try (split <;> simp_all [Atom.holds])
 
 theorem atoms_sem {G : NormalGraph ι} {A R} (h : atoms G A = some R) (n W v) :
     meaning G A n W v ↔ ∃ a ∈ R, a.holds v := by

@@ -36,6 +36,8 @@ def substClause [DecidableEq ι] (p : ι) (A : List ι) : Clause (List ι) → C
   | .boolLit b => .boolLit b
   | .num => .num
   | .numLit v => .numLit v
+  | .str => .str
+  | .strLit v => .strLit v
   | .refs a bs => .refs (substFields p A a) (bs.map (substFields p A))
   | .arrs L => .arrs (L.map fun q => (q.1.map (substTy p A), substTy p A q.2))
   | .callable a bs L =>
@@ -249,6 +251,8 @@ theorem meaningP_value {G : NormalGraph ι} {P η} {A n W v}
     | arrs L => exact ⟨(callsT_callable hc).val, (callsT_callable hc).scoped⟩
     | callable a bs L => exact ⟨(callsT_callable hc.2).val, (callsT_callable hc.2).scoped⟩
     | undef => subst v; exact ⟨rfl, trivial⟩
+    | str => obtain ⟨s, rfl⟩ := hc; exact ⟨rfl, trivial⟩
+    | strLit s => subst v; exact ⟨rfl, trivial⟩
 
 theorem meaningP_valOnly {G : NormalGraph ι} {P η} (hC : ClosedAssign P η)
     (A : Ty ι) : ValOnly (meaningP G P η A) :=

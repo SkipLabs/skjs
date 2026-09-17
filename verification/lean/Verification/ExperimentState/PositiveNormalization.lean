@@ -24,6 +24,9 @@ inductive Clause (α : Type) where
   | undef
   | callable (first : List (String × α)) (rest : List (List (String × α)))
       (arrows : List (List α × α))
+  /-- Strings, and one string; appended last so every earlier case order holds. -/
+  | str
+  | strLit (value : String)
   deriving Repr, DecidableEq
 
 def sem (X : α → Fam) : Clause α → Fam
@@ -33,6 +36,8 @@ def sem (X : α → Fam) : Clause α → Fam
   | .boolLit b => fun _ _ v => v = (if b then .tru else .fls)
   | .num => numT
   | .numLit b => fun _ _ v => v = .num b
+  | .str => strT
+  | .strLit s => fun _ _ v => v = .str s
   | .refs a bs => refsT (famsOf X a) (bs.map (famsOf X))
   | .arrs L => callsT (L.map fun p => (p.1.map X, X p.2))
   | .callable a bs L =>
@@ -64,6 +69,9 @@ def meet : Clause α → Clause α → List (Clause α)
   | .num, .num => [.num]
   | .num, .numLit b | .numLit b, .num => [.numLit b]
   | .numLit a, .numLit b => if a == b then [.numLit a] else []
+  | .str, .str => [.str]
+  | .str, .strLit s | .strLit s, .str => [.strLit s]
+  | .strLit a, .strLit b => if a == b then [.strLit a] else []
   | .refs a bs, .refs c ds => [.refs a (bs ++ c :: ds)]
   | .arrs L, .arrs M => [.arrs (L ++ M)]
   | .callable a bs L, .callable c ds M => [.callable a (bs ++ c :: ds) (L ++ M)]
@@ -88,13 +96,14 @@ private theorem nil_sem (X : α → Fam) (n W v) : ¬ semList X [] n W v := by
 
 def shape : Clause α → Nat
   | .nul => 0 | .bool | .boolLit _ => 1 | .refs .. => 2 | .arrs .. | .callable .. => 3
-  | .undef => 4 | .num | .numLit _ => 5
+  | .undef => 4 | .num | .numLit _ => 5 | .str | .strLit _ => 6
 
 def valueShape : Val → Nat
   | .nul => 0 | .tru | .fls => 1 | .objAt _ .absent => 2 | .undef => 4
   | .objAt _ (.closure _ _) => 3
   | .num _ => 5
-  | _ => 6
+  | .str _ => 6
+  | _ => 7
 
 theorem sem_shape {X : α → Fam} {c : Clause α} {n W v}
     (h : sem X c n W v) : valueShape v = shape c := by
@@ -108,6 +117,8 @@ theorem sem_shape {X : α → Fam} {c : Clause α} {n W v}
   | arrs L => rcases callsT_callable h with ⟨arity, b, l, rfl, _⟩; rfl
   | undef => cases h; rfl
   | callable a bs L => rcases callsT_callable h.2 with ⟨arity,b,l,rfl,_⟩; rfl
+  | str => obtain ⟨s, rfl⟩ := h; rfl
+  | strLit s => cases h; rfl
 
 theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (v : Val) :
     semList X (meet a b) n W v ↔ interT (sem X a) (sem X b) n W v := by
@@ -152,6 +163,22 @@ theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (
       exact CallableConjunctions.calls_merge _ _ _ _ n W v
     · simp only [meet, singleton_sem, sem, List.map_append, List.map_cons]
       exact CallableConjunctions.merge _ _ _ _ _ _ n W v
+    · -- str ∩ str
+      simp [meet, singleton_sem, sem, interT, strT]
+    · -- str ∩ strLit
+      rename_i s
+      simp [meet, singleton_sem, sem, interT, strT]
+      intro hv; subst v; exact ⟨s, rfl⟩
+    · -- strLit ∩ str
+      rename_i s
+      simp [meet, singleton_sem, sem, interT, strT]
+      intro hv; subst v; exact ⟨s, rfl⟩
+    · -- strLit ∩ strLit
+      rename_i a b
+      by_cases hab : a = b
+      · subst hab; simp [meet, singleton_sem, sem, interT]
+      · simp [meet, semList, setSem, sem, interT, hab]
+        intro hv; subst hv; simp [hab]
   · have hm : meet a b = [] := by
       cases a <;> cases b <;> simp_all [shape, meet]
     rw [hm]
@@ -197,6 +224,8 @@ theorem sem_adm (X : α → Fam) (c : Clause α) : Adm (sem X c) := by
   | arrs L => exact callsT_adm _
   | callable a bs L => exact CallableConjunctions.adm _ _ _
   | undef => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+  | str => exact strT_adm
+  | strLit _ => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
 
 theorem sem_congr (X Y : α → Fam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
     (c : Clause α) (W : WorldT n) (v : Val) : sem X c n W v ↔ sem Y c n W v := by
@@ -206,6 +235,8 @@ theorem sem_congr (X Y : α → Fam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
   | boolLit _ => rfl
   | num => rfl
   | numLit _ => rfl
+  | str => rfl
+  | strLit _ => rfl
   | undef => rfl
   | refs a bs => exact congr_below X Y a bs n h W v
   | arrs L =>

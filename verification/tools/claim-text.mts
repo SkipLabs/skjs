@@ -550,8 +550,8 @@ function roundTrips(type: unknown) {
   // dispatch below cannot be narrowed; this table is checked instead, and a
   // clause added to `Clause` without a case here does not compile.
   const _handled = {
-    nul: 1, bool: 1, undef: 1, num: 1,
-    boolLit: 1, numLit: 1, refs: 1, arrs: 1, callable: 1,
+    nul: 1, bool: 1, undef: 1, num: 1, str: 1,
+    boolLit: 1, numLit: 1, strLit: 1, refs: 1, arrs: 1, callable: 1,
   } satisfies Record<StringClause | ClauseKey, 1>;
   void _handled;
 
@@ -567,6 +567,7 @@ function roundTrips(type: unknown) {
     if (clause === "bool") return { a: "boolean" };
     if (clause === "undef") return { a: "undefined" };
     if (clause === "num") return { a: "number" };
+    if (clause === "str") return { a: "string" };
     // A clause states one kind, under its own key. The table above is what
     // says these are all of them; here the key is only read.
     const body = (key: string): unknown => (isObject(clause) ? clause[key] : undefined);
@@ -576,6 +577,8 @@ function roundTrips(type: unknown) {
     const numLit = body("numLit");
     if (numLit)
       return { a: "numberlit", v: String(numberOfBits(String(isObject(numLit) ? numLit.bits : undefined))) };
+    const strLit = body("strLit");
+    if (strLit) return { a: "stringlit", v: String(isObject(strLit) ? strLit.value : undefined) };
     // The graph is finite but may be cyclic, so lifting stops rather than recursing.
     if (depth <= 0) return "…";
     const refs = body("refs");

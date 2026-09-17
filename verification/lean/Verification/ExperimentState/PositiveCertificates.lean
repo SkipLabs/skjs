@@ -85,6 +85,9 @@ def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs
   | .num, .num => true
   | .numLit _, .num => true
   | .numLit a, .numLit b => decide (a = b)
+  | .str, .str => true
+  | .strLit _, .str => true
+  | .strLit a, .strLit b => decide (a = b)
   | .refs a bs, .refs c ds => decide (CoversFields (Rel table) (a :: bs) (c :: ds))
   | .arrs L, .arrs M | .callable _ _ L, .arrs M => decide (∀ p ∈ M, ∃ e ∈ proofs,
       e.1 = L ∧ e.2.1 = p ∧ checkArrow G table L p.1 p.2 e.2.2 = true)
@@ -118,6 +121,8 @@ theorem checkClause_sound [DecidableEq ι] {G : NormalGraph ι} {table proofs a 
     intro p hp
     obtain ⟨e,_,_,_,he⟩ := hh.2 p hp
     exact checkArrow_sound he
+  · -- strLit ≤ strLit
+    exact of_decide_eq_true h
 
 /-- Finite evidence collection is proof-only; the checker itself makes no
 classical choices. Monotonicity allows witnesses to share one evidence list. -/
@@ -184,6 +189,12 @@ theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table a b}
     exact ⟨es,by simpa only [checkClause,decide_eq_true_eq] using he⟩
   · obtain ⟨es,he⟩ := arrow_evidence_complete h.2
     exact ⟨es,by simpa only [checkClause,decide_eq_true_eq] using And.intro h.1 he⟩
+  · -- str ≤ str
+    exact ⟨[], rfl⟩
+  · -- strLit ≤ str
+    exact ⟨[], rfl⟩
+  · -- strLit ≤ strLit
+    exact ⟨[], by simpa [checkClause] using h⟩
 
 structure Certificate (ι : Type) where
   table : Table ι

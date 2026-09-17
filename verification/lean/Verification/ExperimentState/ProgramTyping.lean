@@ -41,6 +41,8 @@ theorem meaning_value {G : NormalGraph ι} {A n W v} (h : meaning G A n W v) :
   | arrs L => exact ⟨(callsT_callable hc).val, (callsT_callable hc).scoped⟩
   | callable a bs L => exact ⟨(callsT_callable hc.2).val,(callsT_callable hc.2).scoped⟩
   | undef => subst v; exact ⟨rfl, trivial⟩
+  | str => obtain ⟨s, rfl⟩ := hc; exact ⟨rfl, trivial⟩
+  | strLit s => subst v; exact ⟨rfl, trivial⟩
 
 theorem meaning_valOnly (G : NormalGraph ι) (A : Ty ι) : ValOnly (meaning G A) :=
   fun _ _ _ h => (meaning_value h).1
@@ -213,10 +215,13 @@ def tagShape (tag : Tag) (s : Nat) : Option Bool :=
   | .isFun => some (s == 3) | .isUndef => some (s == 4)
   | .isNullish => some (s == 0 || s == 4) | .isNum => some (s == 5)
   | .numEq _ => if s == 5 then none else some false
+  | .isStr => some (s == 6)
+  | .strEq _ => if s == 6 then none else some false
 
 def tagClause (tag : Tag) (c : Clause α) : Option Bool :=
   match tag, c with
   | .numEq bits, .numLit value => some (numberEqual value bits)
+  | .strEq s, .strLit t => some (s == t)
   | _, _ => tagShape tag (shape c)
 
 /-- A finite syntactic check; unknown numeric answers cannot establish either
@@ -237,7 +242,17 @@ theorem tagClause_sound {S : α → Fam} {c tag q n W v}
     all_goals
       have hs := sem_shape hv
       cases v <;> simp_all [ht,valueShape,tagHolds,shape]
-  | isNul | isBool | isRef | isFun | isUndef | isNullish | isNum =>
+  | strEq s =>
+    cases c <;> simp [ht, tagClause, tagShape, shape] at hq
+    all_goals subst q
+    case strLit t =>
+      change v = .str t at hv
+      subst v
+      rfl
+    all_goals
+      have hs := sem_shape hv
+      cases v <;> simp_all [ht,valueShape,tagHolds,shape]
+  | isNul | isBool | isRef | isFun | isUndef | isNullish | isNum | isStr =>
     have htag : some (tagHolds tag v) = tagShape tag (valueShape v) := by
       rw [ht]
       cases v <;> first | rfl | (rename_i fs code; cases code <;> rfl)
@@ -264,6 +279,8 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   /-- Every number is a number, as every Boolean is a Boolean. Without this a
   literal claimed at the family rather than at its own singleton has no rule. -/
   | num : Represents G A .num → HasTy G Γ (.num b) A
+  | strLit : Represents G A (.strLit s) → HasTy G Γ (.str s) A
+  | str : Represents G A .str → HasTy G Γ (.str s) A
   | funE : Represents G F (.arrs L) → (∀ p ∈ L, p.1.length = arity) →
       (∀ p ∈ L, HasTy G (p.1 ++ Γ) b p.2) → HasTy G Γ (.make (.closure arity b) .nul) F
   /-- A callable object: the same allocation as a record, with invocation code
@@ -341,6 +358,12 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
   | @num _ _ b hr =>
     intro n W h ρ he hw hh
     exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr ⟨b, rfl⟩)
+  | strLit hr =>
+    intro n W h ρ he hw hh
+    exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr rfl)
+  | @str _ _ s hr =>
+    intro n W h ρ he hw hh
+    exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr ⟨s, rfl⟩)
   | @funE F L arity Γ b hr hlen hb ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, Nat.zero_add]

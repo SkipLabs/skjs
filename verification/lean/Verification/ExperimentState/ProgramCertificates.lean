@@ -14,7 +14,7 @@ structure Sequent (ι : Type) where
   deriving DecidableEq
 
 inductive Rule (ι : Type) where
-  | var | nul | undef | tru | fls | truLit | flsLit | numLit | num
+  | var | nul | undef | tru | fls | truLit | flsLit | numLit | num | strLit | str
   | funE | app | letE | alloc | read | write
   | ifBool | ifTrue | ifFalse
   | ifKnown (answer : Bool)
@@ -48,6 +48,8 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   | .flsLit, .fls, [] => Represents G j.type (.boolLit false)
   | .numLit, .num b, [] => Represents G j.type (.numLit b)
   | .num, .num _, [] => Represents G j.type .num
+  | .strLit, .str s, [] => Represents G j.type (.strLit s)
+  | .str, .str _, [] => Represents G j.type .str
   -- A source function has no properties of its own; the model still gives it a
   -- bag, so the shape of that allocation is fixed here rather than claimed.
   | .funE, .makeAt (.closure arity b) ns inits, ps =>
@@ -195,6 +197,8 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
   · exact .flsLit hl
   · exact .numLit hl
   · exact .num hl
+  · exact .strLit hl
+  · exact .str hl
   · rename_i ps arity b ns inits
     obtain ⟨rfl, rfl, hl⟩ := hl
     unfold funEPremises at hl
@@ -473,6 +477,8 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
   | flsLit hr => exact node_complete (r := .flsLit) (js := []) hr (by simp)
   | numLit hr => exact node_complete (r := .numLit) (js := []) hr (by simp)
   | num hr => exact node_complete (r := .num) (js := []) hr (by simp)
+  | strLit hr => exact node_complete (r := .strLit) (js := []) hr (by simp)
+  | str hr => exact node_complete (r := .str) (js := []) hr (by simp)
   | @funE F L arity Γ b hr hlen hb ih =>
     apply node_complete (r := .funE) (js := L.map (fun p => ⟨p.1 ++ Γ, b, p.2⟩))
     · refine ⟨rfl, rfl, ?_⟩

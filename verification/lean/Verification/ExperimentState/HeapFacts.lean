@@ -11,7 +11,7 @@ open ProgramTyping PositiveRules PositiveGraphs HeapObservations
 /-- A finite vocabulary of primitive predicates. `num` covers every numeric
 value; `numLit` preserves an exact bit pattern. Neither is a storage contract. -/
 inductive Atom where
-  | nul | undef | tru | fls | num | numLit (bits : UInt64)
+  | nul | undef | tru | fls | num | numLit (bits : UInt64) | str | strLit (value : String)
   deriving DecidableEq, Repr
 
 def Atom.holds : Atom → Tm → Prop
@@ -21,6 +21,8 @@ def Atom.holds : Atom → Tm → Prop
   | .fls, v => v = .fls
   | .num, v => ∃ bits, v = .num bits
   | .numLit bits, v => v = .num bits
+  | .str, v => ∃ s, v = .str s
+  | .strLit s, v => v = .str s
 
 theorem Atom.isValue {a : Atom} {v} (h : a.holds v) : isVal v = true := by
   cases a <;> simp only [Atom.holds] at h
@@ -30,13 +32,14 @@ def Atom.clause (a : Atom) : PositiveNormalization.Clause α :=
   match a with
   | .nul => .nul | .undef => .undef | .tru => .boolLit true
   | .fls => .boolLit false | .num => .num | .numLit b => .numLit b
+  | .str => .str | .strLit s => .strLit s
 
 theorem Atom.sem {a : Atom} {S : α → Fam} {n W v} :
     PositiveNormalization.sem S a.clause n W v ↔ a.holds v := by
   cases a <;> rfl
 
 def Atom.le (a b : Atom) : Bool :=
-  a == b || match a, b with | .numLit _, .num => true | _, _ => false
+  a == b || match a, b with | .numLit _, .num => true | .strLit _, .str => true | _, _ => false
 
 theorem Atom.le_sound {a b : Atom} {v} (h : a.le b = true) (hv : a.holds v) : b.holds v := by
   simp only [Atom.le, Bool.or_eq_true, beq_iff_eq] at h

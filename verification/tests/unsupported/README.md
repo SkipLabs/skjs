@@ -4,11 +4,16 @@ These are readable boundary cases, not verified successes. `unsupported.mts`
 requires rejection for a specific limitation, so an unrelated failure cannot
 silently replace the intended gate.
 
-- `calls_and_consts.ts`: equality and general string/call support.
 - `typeof_narrow.ts`: `typeof` tests and general primitive narrowing.
 - `mutable_binding.ts`: mutable local bindings.
-- `beyond_precision.ts`: a numeric-precision soundness target; the current
-  verifier rejects unsupported equality, not the numeric narrowing itself.
+
+The string and call example that used to sit here is gone: strings are in the
+fragment, and calls to declared functions are recorded as the ambient-value
+boundary in [the coverage guide](../../REPAIR-COVERAGE.md). The
+numeric-precision target that used to sit here now lives in
+[`skjs-unsound/beyond-precision.ts`](../skjs-unsound/beyond-precision.ts):
+with numbers and strings in the fragment it reaches proof search, where its
+claims are not derived.
 
 The viewer labels this group **Unsupported examples · expected limitations**.
 See [the regression guide](../README.md) for promotion criteria.

@@ -203,6 +203,9 @@ def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
   | .num, .num => True
   | .numLit _, .num => True
   | .numLit a, .numLit b => a = b
+  | .str, .str => True
+  | .strLit _, .str => True
+  | .strLit a, .strLit b => a = b
   | .refs a bs, .refs c ds => CoversFields R (a :: bs) (c :: ds)
   | .arrs L, .arrs M | .callable _ _ L, .arrs M => ∀ p ∈ M, CallArrow G R L p.1 p.2
   | .callable a bs L, .callable c ds M =>
@@ -318,6 +321,13 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
     intro p hp
     obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp
     exact CallArrow.sound (hc.2 q hq) n hr W v hv.2
+  · -- str ≤ str
+    exact id
+  · -- strLit ≤ str: the singleton inhabits the family
+    rename_i s
+    intro hv; cases hv; exact ⟨s, rfl⟩
+  · -- strLit ≤ strLit at equal strings
+    cases hc; exact id
 
 /-- Each split part of each source clause must be covered by some single target
 clause. A `bool` source is therefore discharged by the pair of Boolean singleton

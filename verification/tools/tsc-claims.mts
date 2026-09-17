@@ -353,6 +353,9 @@ function numberLabelsOf(type: Type, types: Row[]): number[] | null {
     return [internRow(types, [{ numLit: { bits: numberBits(type.value) } }])];
   }
   if (f & TypeFlags.Number) return [internRow(types, ["num"])];
+  // Strings likewise: a literal is its own singleton, carried as itself.
+  if (type.isStringLiteralType()) return [internRow(types, [{ strLit: { value: type.value } }])];
+  if (f & TypeFlags.String) return [internRow(types, ["str"])];
   if (isUnionType(type)) {
     const acc: number[] = [];
     for (const t of type.getTypes()) {
@@ -805,6 +808,8 @@ function testedTagSymbol(cond: Expression, checker: Checker, types: Row[]): {sym
     if (flags & TypeFlags.Undefined) return 3;
     if (type?.isNumberLiteralType() && Number.isFinite(type.value))
       return internRow(types, [{ numLit: { bits: numberBits(type.value) } }]);
+    if (type?.isStringLiteralType())
+      return internRow(types, [{ strLit: { value: type.value } }]);
     return null;
   };
   const left = unitLabel(cond.left), right = unitLabel(cond.right);
@@ -853,14 +858,19 @@ function tagGuardLabels(node: Node, checker: Checker, types: Row[], labels: numb
     }
     const test = testedTagSymbol(cond, checker, types);
     if (test?.sym.id !== sym.id) return base;
-    if (typeof test.label === "number" && types[test.label]?.some((c) =>
-        typeof c === "object" && "numLit" in c)) {
-      const singleton = test.label;
-      // A broad number can equal this singleton. Its positive branch narrows
-      // to the singleton; the negative branch cannot subtract it from `number`.
-      return dedupSortInts(base.flatMap((label) => types[label]?.includes("num")
-        ? [test.equal === truth ? singleton : label]
-        : (label === singleton) === (test.equal === truth) ? [label] : []));
+    if (typeof test.label === "number") {
+      const row = types[test.label] ?? [];
+      const family = row.some((c) => typeof c === "object" && "numLit" in c) ? "num"
+        : row.some((c) => typeof c === "object" && "strLit" in c) ? "str" : null;
+      if (family) {
+        const singleton = test.label;
+        // A broad number or string can equal this singleton. Its positive
+        // branch narrows to the singleton; the negative branch cannot
+        // subtract it from the family.
+        return dedupSortInts(base.flatMap((label) => types[label]?.includes(family)
+          ? [test.equal === truth ? singleton : label]
+          : (label === singleton) === (test.equal === truth) ? [label] : []));
+      }
     }
     return base.filter((label) => (test.label === "function"
       ? (types[label]?.some((clause) =>
@@ -1266,8 +1276,9 @@ function entryFieldClaims(
           clause === "undef" ||
           clause === "bool" ||
           clause === "num" ||
+          clause === "str" ||
           (typeof clause === "object" &&
-            ("numLit" in clause || "boolLit" in clause)),
+            ("numLit" in clause || "strLit" in clause || "boolLit" in clause)),
       ),
     )
   )

@@ -136,6 +136,11 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         if checkTree G (leaf B .numLit) then coerce G pool (leaf B .numLit) A
         else if checkTree G (leaf B .num) then coerce G pool (leaf B .num) A
         else none
+    | .str _ =>
+      return (A :: pool).findSome? fun B =>
+        if checkTree G (leaf B .strLit) then coerce G pool (leaf B .strLit) A
+        else if checkTree G (leaf B .str) then coerce G pool (leaf B .str) A
+        else none
     | .make (.closure arity b) .nul =>
       return (A :: pool).findSome? fun F => do
         match expand G F with

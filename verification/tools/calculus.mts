@@ -8,7 +8,9 @@ export type Tag =
   | "isUndef"
   | "isNullish"
   | "isNum"
-  | { numEq: { bits: string } };
+  | "isStr"
+  | { numEq: { bits: string } }
+  | { strEq: { value: string } };
 export type CallCode = "absent" | { closure: { arity: number; body: Term } };
 export type Term =
   | "nul"
@@ -17,6 +19,8 @@ export type Term =
   | "fls"
   /** A number, as the bit pattern of the double it denotes: its identity. */
   | { num: { bits: string } }
+  /** A string, as itself. */
+  | { str: { value: string } }
   | { var: { i: number } }
   | { call: { f: Term; args: Term[] } }
   | { letE: { a: Term; b: Term } }
@@ -36,13 +40,16 @@ const TAGS: Record<Extract<Tag, string>, true> = {
   isUndef: true,
   isNullish: true,
   isNum: true,
+  isStr: true,
 };
 const tags: readonly unknown[] = Object.keys(TAGS);
 /** Whether a decoded value is a tag, so the table above stays the one place a
  * tag is declared even for readers of other languages that carry one. */
 export function isTag(v: unknown): v is Tag {
   if (tags.includes(v)) return true;
-  if (!isRecord(v) || Object.keys(v).length !== 1 || !isRecord(v.numEq)) return false;
+  if (!isRecord(v) || Object.keys(v).length !== 1) return false;
+  if (isRecord(v.strEq)) return Object.keys(v.strEq).length === 1 && typeof v.strEq.value === "string";
+  if (!isRecord(v.numEq)) return false;
   const n = v.numEq;
   return Object.keys(n).length === 1 && typeof n.bits === "string" &&
     /^[0-9]+$/.test(n.bits) && BigInt(n.bits) <= 0xffffffffffffffffn;
@@ -95,6 +102,7 @@ export function decodeTerm(value: unknown): Term {
   const shape: Record<TermKey, string[]> &
     Record<string, string[] | undefined> = {
     num: ["bits"],
+    str: ["value"],
     var: ["i"],
     call: ["f", "args"],
     letE: ["a", "b"],
@@ -117,6 +125,8 @@ export function decodeTerm(value: unknown): Term {
         BigInt(v) > 0xffffffffffffffffn
       )
         throw Error("invalid number");
+    } else if (k === "value") {
+      if (typeof v !== "string") throw Error("invalid string");
     } else if (k === "i" || k === "l") nat(v);
     else if (k === "call") code(v);
     else if (k === "k") {

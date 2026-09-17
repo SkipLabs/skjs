@@ -98,9 +98,9 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
     match ← jStr (← jField atom "a") with
     | "callable" => return [← callableObject atom]
     | "function" => callableType single
-    -- A number arm is interned, so `1` and `number` are separate labels and
-    -- the singleton is below the family by the ordinary clause rules.
-    | "number" | "numberlit" =>
+    -- A number or string arm is interned, so `1` and `number` are separate
+    -- labels and the singleton is below the family by the ordinary clause rules.
+    | "number" | "numberlit" | "string" | "stringlit" =>
       SourceTypes.numberLabels (← CellClaims.primitive single)
     | _ => SourceTypes.translate (← CellClaims.primitive single)
   return (records ++ conjunctions ++ arms).flatten.mergeSort (· ≤ ·) |>.eraseDups

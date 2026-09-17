@@ -92,7 +92,8 @@ are one clause; two spellings a codec failed to identify would be two
 singletons, which costs completeness and never soundness.
 
 Current-content assertions use a finite list of primitive predicates, including
-`num` for any numeric value and `numLit` for an exact bit pattern. They are
+`num` for any numeric value and `numLit` for an exact bit pattern, `str` for
+any string and `strLit` for one string. They are
 checked on every incoming edge. Unsupported predicates still require a proof
 that the storage contract implies the claim; they are never silently discarded.
 
@@ -154,13 +155,13 @@ The evidence file is an object with one field, `certificate`, a list of
 one subtype-evidence list per outgoing edge. A derivation node names the
 [typing rule](PROGRAM-TYPING.md#judgments-and-constructor-views) it applies:
 `var`, `nul`, `undef`, `tru`, `fls`, `truLit`, `flsLit`, `numLit`, `num`,
-`funE`, `app`, `letE`, `alloc`,
+`strLit`, `str`, `funE`, `app`, `letE`, `alloc`,
 `read`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
 `unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, or `sub`. `ifTrue` and `ifFalse` are the two answers of the single
 shape-test rule `ifTag`, split so that the evidence records which answer it
 relies on; `truLit` and `flsLit` are the Boolean singleton introductions, and
 `numLit` and `num` the numeric ones, a literal at its own singleton and at the
-family. These names are not written anywhere: `RequestJson.lean` derives
+family, and `strLit` and `str` the same for strings. These names are not written anywhere: `RequestJson.lean` derives
 ToJson/FromJson for `Rule`, so this list is the inductive's constructors and a
 rule added there extends the protocol. `verification/tests/rule-inventory.mts`
 holds the two to the same set. Expression sequents repeat their
@@ -182,10 +183,10 @@ lists, including empty lists for zero-argument thunks. There is one accepted cer
 All node objects explicitly contain `expression`, `edges`, `knowledge`, `effect`
 and `output`. `knowledge` and `output` each contain `cells`, `values`, and `links`. The first two are lists of
 `{slot, contents, field}` facts. `contents` is a disjunction of primitive
-predicates: `nul`, `undef`, `tru`, `fls`, `num`, or
+predicates: `nul`, `undef`, `tru`, `fls`, `num`, `str`,
 `{"numLit":{"bits":"…"}}`, with the same unsigned 64-bit decimal encoding as
-numeric graph clauses. The empty list is impossible. A singleton numeric fact
-can weaken to `num`, never the reverse. `links` is a list of
+numeric graph clauses, or `{"strLit":{"value":"…"}}`. The empty list is
+impossible. A singleton fact can weaken to its family, never the reverse. `links` is a list of
 `{cell, value, alias, field}` objects: `alias: true` means equal slot values;
 `alias: false` means the named field currently contains the other slot's value. These are finite state assertions, not extra type labels.
 `effect: null` selects ordinary expression evidence; a non-null effect selects

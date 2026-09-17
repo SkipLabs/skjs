@@ -289,10 +289,10 @@ skjs-rejected	tests/expect-error/unsound-refinement.ts	storedLocalAlias
 skjs-rejected	tests/expect-error/unsound-refinement.ts	storedNarrowAlias
 skjs-rejected	tests/expect-error/unsound-refinement.ts	tupleDeclarationDefault
 unproved:reject: source expression obligation at [185,209): type claim unavailable from producer	tests/expect-error/obj-literal-var-field-growth.ts	retainedReceiver
+unproved:reject: source expression obligation at [546,557): evidence search failed (unsupported or 	tests/expect-error/captured-read-stability.ts	evolvedInferredSnapshotStillString
 unproved:reject: source expression obligation at [551,574): type claim unavailable from producer	tests/expect-error/captured-read-stability.ts	checkedGenericCallResult
 unproved:reject: source incoming edge obligation at [1485,1500): evidence search failed (unsupporte	tests/expect-error/field-refinement.ts	inferredFieldComparison
 unproved:reject: source incoming edge obligation at [196,211): evidence search failed (unsupported 	tests/expect-error/unsound-refinement.ts	assignmentResultSnapshot
-unproved:reject: source type outside the null/undefined/boolean/singleton fragment	tests/expect-error/captured-read-stability.ts	evolvedInferredSnapshotStillString
 unproved:reject: unbound or uninitialized source variable '_'	tests/expect-error/binding-initialization.ts	conditionBeforeLocal
 unproved:reject: unexpected fields in the cell record claim	tests/expect-error/captured-read-stability.ts	checkedPropertyResult
 unproved:reject: unexpected fields in the cell record claim	tests/expect-error/unsound-refinement.ts	identityMemberSnapshot

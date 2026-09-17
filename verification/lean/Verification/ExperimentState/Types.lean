@@ -135,6 +135,9 @@ def boolT : Fam := fun _ _ v => v = .tru ∨ v = .fls
 this family is the union of its singletons and nothing more. -/
 def numT : Fam := fun _ _ v => ∃ b, v = .num b
 
+/-- Every string. As with numbers, the family is the union of its singletons. -/
+def strT : Fam := fun _ _ v => ∃ s, v = .str s
+
 /-! ### A rigid parameter under a reference -/
 
 
@@ -285,6 +288,8 @@ theorem nulT_adm : Adm nulT := ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
 theorem boolT_adm : Adm boolT := ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
 
 theorem numT_adm : Adm numT := ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+
+theorem strT_adm : Adm strT := ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
 
 theorem topF_adm : Adm topF := ⟨fun _ _ _ _ => trivial, fun _ _ _ _ _ _ => trivial⟩
 

@@ -190,11 +190,12 @@ const bindingsOf = (map: { context?: unknown } | null, source: string): string[]
 // differ here, so these facts are shown in their own right rather than folded
 // into the slot table. See ../OBLIGATION-DIAGNOSTICS.md.
 const ATOM_TEXT: Record<Extract<HeapAtom, string>, string> = {
-  nul: "null", undef: "undefined", tru: "true", fls: "false", num: "number",
+  nul: "null", undef: "undefined", tru: "true", fls: "false", num: "number", str: "string",
 };
 const contentsText = (contents: readonly HeapAtom[]): string =>
   !contents.length ? "never" : contents.map((a) => {
     if (typeof a === "string") return ATOM_TEXT[a];
+    if ("strLit" in a) return JSON.stringify(a.strLit.value);
     const n = numberOfBits(a.numLit.bits);
     return Object.is(n, -0) ? "-0" : String(n);
   }).join(" | ");

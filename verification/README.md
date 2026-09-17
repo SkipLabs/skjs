@@ -129,7 +129,10 @@ stands in scope, and that is checked like a written one rather than the
 initializer's type being taken for it. A `let` without an initializer is
 outside. Numbers can be bound, passed, returned, held in a union and shape-tested.
 Strict comparisons against numeric singletons also verify for finite unions
-with known comparison outcomes; arithmetic is outside the fragment. A numeric
+with known comparison outcomes; arithmetic is outside the fragment. Strings
+are admitted on the same terms as numbers: opaque values with literal
+singletons below the `string` family, compared for equality with a literal,
+never concatenated or indexed. A numeric
 literal is its own singleton and is below `number`; its identity is the double
 it denotes, so `1`, `1.0` and `1e0` are one literal. A number may be a
 parameter or result of a closure, and the storage contract of a mutable local,

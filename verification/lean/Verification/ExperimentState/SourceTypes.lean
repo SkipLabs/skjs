@@ -114,7 +114,7 @@ def value : Claim.Val → Except String Tm
   | .vbool true => .ok .tru
   | .vbool false => .ok .fls
   | .vnum b => .ok (.num b)
-  | _ => .error "source literal outside the null/undefined/boolean/number fragment"
+  | .vstr s => .ok (.str s)
 
 /-- Numbers are interned rather than given fixed rows, because the singletons
 are unbounded: the first four labels stay exactly the four primitive values,
@@ -125,11 +125,14 @@ def numberLabels (t : Claim.Ty) : Lowering (Ty Nat) := do
     match a with
     | .num => out := out ++ [← use .num]
     | .numLit b => out := out ++ [← use (.numLit b)]
+    | .str => out := out ++ [← use .str]
+    | .strLit s => out := out ++ [← use (.strLit s)]
     | _ => pure ()
   return out
 
+/-- Numbers and strings are interned, as their singletons are unbounded. -/
 def isNumberAtom : Claim.Atom → Bool
-  | .num | .numLit _ => true
+  | .num | .numLit _ | .str | .strLit _ => true
   | _ => false
 
 /-- One arm of a union, translated where the table can grow: its numbers are
@@ -166,6 +169,11 @@ theorem supported_not_num {a : Claim.Atom} (h : supportedAtom a = true) (b : UIn
     Claim.inhabits (.vnum b) a = false := by
   cases a <;> simp_all [supportedAtom, Claim.inhabits]
 
+/-- Likewise no atom of the primitive fragment admits a string. -/
+theorem supported_not_str {a : Claim.Atom} (h : supportedAtom a = true) (s : String) :
+    Claim.inhabits (.vstr s) a = false := by
+  cases a <;> simp_all [supportedAtom, Claim.inhabits]
+
 /-- Supported claim-value membership is preserved in both directions. -/
 theorem translate_exact {T : Table} (hT : initial <+: T) {t : Claim.Ty} {A u v}
     (ht : translate t = .ok A) (hv : value u = .ok v) (n W) :
@@ -189,6 +197,15 @@ theorem translate_exact {T : Table} (hT : initial <+: T) {t : Claim.Ty} {A u v}
       have hall := List.all_eq_true.mp h.2
       have hno : ∀ a ∈ t.atoms, Claim.inhabits (.vnum b) a = false :=
         fun a ha => supported_not_num (hall a ha) b
+      simp only [Claim.mem, htop, admits, List.any_eq_true, Bool.false_eq_true,
+        false_or, encode, not_exists]
+      simpa using hno
+    · -- A string: neither side holds, for the same reason.
+      rename_i s
+      cases hv
+      have hall := List.all_eq_true.mp h.2
+      have hno : ∀ a ∈ t.atoms, Claim.inhabits (.vstr s) a = false :=
+        fun a ha => supported_not_str (hall a ha) s
       simp only [Claim.mem, htop, admits, List.any_eq_true, Bool.false_eq_true,
         false_or, encode, not_exists]
       simpa using hno

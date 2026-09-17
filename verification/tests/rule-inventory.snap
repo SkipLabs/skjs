@@ -8,6 +8,8 @@ HasTy  (ProgramTyping.lean)
   flsLit : Represents G A (.boolLit false) → HasTy G Γ .fls A
   numLit : Represents G A (.numLit b) → HasTy G Γ (.num b) A
   num : Represents G A .num → HasTy G Γ (.num b) A
+  strLit : Represents G A (.strLit s) → HasTy G Γ (.str s) A
+  str : Represents G A .str → HasTy G Γ (.str s) A
   funE : Represents G F (.arrs L) → (∀ p ∈ L, p.1.length = arity) → (∀ p ∈ L, HasTy G (p.1 ++ Γ) b p.2) → HasTy G Γ (.make (.closure arity b) .nul) F
   makeCallable {parts : List (String × Ty ι × Tm)} : Represents G F (.callable (parts.map fun p => (p.1, p.2.1)) [] L) → (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → (∀ p ∈ L, p.1.length = arity) → (∀ p ∈ L, HasTy G (p.1 ++ Γ) b p.2) → HasTy G Γ (.makeAt (.closure arity b) (parts.map Prod.fst) (parts.map fun p => p.2.2)) F
   callCallable : HasTy G Γ f F → Represents G F (.callable P Ps L) → ((xs : List (Ty ι × Tm)).map Prod.fst,B) ∈ L → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → HasTy G Γ (.call f (xs.map Prod.snd)) B
@@ -35,6 +37,8 @@ Rule  (ProgramCertificates.lean)
   flsLit
   numLit
   num
+  strLit
+  str
   funE
   app
   letE

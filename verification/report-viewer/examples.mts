@@ -25,6 +25,7 @@ const stateful = [
   "declaration-list",
   "object-patterns",
   "casts",
+  "strings",
 ].map((name) => `verification/tests/stateful-source/${name}.ts`)
   .concat("verification/tests/export-snapshots/inferred-replacement.ts");
 const callables = ["unions", "factories", "arguments", "cells", "thunks", "arity", "guards", "function-field", "receiver-call"].map((name) => `verification/tests/callables/${name}.ts`);
@@ -65,6 +66,7 @@ const groups = [
       "verification/tests/skjs-unsound/captured-refinement.ts",
       "verification/tests/skjs-unsound/never-completes.ts",
       "verification/tests/skjs-unsound/arrow-intersection.ts",
+      "verification/tests/skjs-unsound/beyond-precision.ts",
     ],
   },
   {
@@ -74,10 +76,8 @@ const groups = [
   {
     label: "Unsupported examples · expected limitations",
     files: [
-      "calls_and_consts",
       "typeof_narrow",
       "mutable_binding",
-      "beyond_precision",
     ].map((name) => `verification/tests/unsupported/${name}.ts`),
   },
 ];

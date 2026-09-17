@@ -12,6 +12,9 @@ export type Clause = "nul" | "bool" | "undef" | "num"
   | { boolLit: { value: boolean } }
   /** The double's bit pattern, decimal, as the consumer's UInt64. */
   | { numLit: { bits: string } }
+  /** Strings, and one string, carried as itself. */
+  | "str"
+  | { strLit: { value: string } }
   | { refs: { first: Fields; rest: Fields[] } }
   | { arrs: { arrows: Arrow[] } }
   | { callable: { first: Fields; rest: Fields[]; arrows: Arrow[] } };
@@ -28,7 +31,7 @@ export type ClauseKey = KeysOf<ObjectClause>;
 /** Adding a clause to `Clause` without adding it here is a compile error, and
  * these are the only two places a clause kind is enumerated. */
 export const STRING_CLAUSE_TEXT: Record<StringClause, string> = {
-  nul: "null", bool: "boolean", undef: "undefined", num: "number",
+  nul: "null", bool: "boolean", undef: "undefined", num: "number", str: "string",
 };
 
 /** The number a literal's bit pattern denotes. Readers show the number; the
@@ -95,6 +98,9 @@ export function decodeGraph(value: unknown): TypeGraph {
           BigInt(bits) > 0xffffffffffffffffn)
         throw Error("invalid numeric literal");
     },
+    strLit: b => {
+      if (typeof obj(b,["value"]).value !== "string") throw Error("invalid string literal");
+    },
     refs: b => { const r = obj(b,["first","rest"]); fields(r.first); array(r.rest).forEach(fields); },
     arrs: b => arrows(obj(b,["arrows"]).arrows),
     callable: b => {
@@ -129,6 +135,7 @@ function clauseText(c: Clause): string {
   if ("boolLit" in c) return String(c.boolLit.value);
   // The reader shows the number, not the bit pattern that identifies it.
   if ("numLit" in c) return String(numberOfBits(c.numLit.bits));
+  if ("strLit" in c) return JSON.stringify(c.strLit.value);
   if ("refs" in c) return [c.refs.first,...c.refs.rest].map(printFields).join(" & ");
   if ("arrs" in c) return `calls[${c.arrs.arrows.map(arrowText).join("; ")}]`;
   if ("callable" in c)

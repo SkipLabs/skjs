@@ -37,8 +37,9 @@ def valueField : String := "value"
 Nullishness groups null and undefined for source coalescing; the other tests
 distinguish individual runtime shapes. -/
 inductive Tag where
-  | isNul | isBool | isRef | isFun | isUndef | isNullish | isNum
+  | isNul | isBool | isRef | isFun | isUndef | isNullish | isNum | isStr
   | numEq (bits : UInt64)
+  | strEq (value : String)
   deriving Repr, DecidableEq
 
 mutual
@@ -62,6 +63,9 @@ inductive Tm where
   that denote it differently would be distinct singletons, which costs
   completeness and never soundness. -/
   | num (bits : UInt64)
+  /-- A string, carried as itself. Like a number it is opaque: bound, passed,
+  stored, shape-tested and compared for equality, never computed with. -/
+  | str (value : String)
   /-- An object identity: the locations its named fields stand for, fixed at
   allocation, with an optional immutable invocation descriptor. -/
   | objAt (fields : List (String × Nat)) (call : CallCode)
@@ -122,6 +126,8 @@ def tmDecEq (a b : Tm) : Decidable (a = b) := by
     exact isTrue rfl
   case num.num a0 b0 =>
     exact decidable_of_iff (a0 = b0) (by simp only [Tm.num.injEq])
+  case str.str a0 b0 =>
+    exact decidable_of_iff (a0 = b0) (by simp only [Tm.str.injEq])
   case objAt.objAt a0 a1 b0 b1 =>
     haveI : Decidable (a1 = b1) := callCodeDecEq a1 b1
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.objAt.injEq])
@@ -243,6 +249,7 @@ theorem lookup_slots {ns : List String} (hnd : ns.Nodup) {base i : Nat}
     (letE : ∀ a b, P a → P b → P (.letE a b))
     (nul : P .nul) (undef : P .undef) (tru : P .tru) (fls : P .fls)
     (num : ∀ v, P (.num v))
+    (str : ∀ s, P (.str s))
     (objAbsent : ∀ fs, P (.objAt fs .absent))
     (objClosure : ∀ fs n b, P b → P (.objAt fs (.closure n b)))
     (attach : ∀ n b ns args, P b → (∀ a ∈ args, P a) → P (.makeAt (.closure n b) ns args))
@@ -254,7 +261,7 @@ theorem lookup_slots {ns : List String} (hnd : ns.Nodup) {base i : Nat}
   apply Tm.rec (motive_1 := P)
     (motive_2 := fun c => match c with | .absent => True | .closure _ b => P b)
     (motive_3 := fun args => ∀ a ∈ args, P a)
-    var call letE nul undef tru fls num ?_ ?_ read write test ite
+    var call letE nul undef tru fls num str ?_ ?_ read write test ite
     True.intro (fun _ _ h => h) (by simp) (by
       intro a args ha ih v hv
       rcases List.mem_cons.mp hv with rfl | hv
@@ -277,7 +284,7 @@ abbrev Val := Tm
 
 
 def isVal : Tm → Bool
-  | .nul | .undef | .tru | .fls | .num _ | .objAt .. => true
+  | .nul | .undef | .tru | .fls | .num _ | .str _ | .objAt .. => true
   | _ => false
 
 /-- ECMAScript Number::equal on IEEE-754 bits: NaN never equals, and the
@@ -298,6 +305,8 @@ def tagHolds : Tag → Val → Bool
   | .isBool, .fls => true
   | .isNum, .num _ => true
   | .numEq bits, .num value => numberEqual value bits
+  | .isStr, .str _ => true
+  | .strEq s, .str t => s == t
   | .isRef, .objAt _ .absent => true
   | .isFun, .objAt _ (.closure _ _) => true
   | _, _ => false
@@ -312,6 +321,7 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .tru => .tru
   | .fls => .fls
   | .num v => .num v
+  | .str s => .str s
   | .objAt fs .absent => .objAt fs .absent
   | .objAt fs (.closure n b) => .objAt fs (.closure n (subst (j + n) a b))
   | .makeAt (.closure n b) ns xs => .makeAt (.closure n (subst (j + n) a b)) ns (substArgs j a xs)

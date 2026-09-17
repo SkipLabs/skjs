@@ -45,3 +45,12 @@ parameter empty, the annotation says the two-signature arrow, and the function
 is refused with "claimed parameter type differs from the source annotation".
 The corpus shows this as a parameter claim differing from its annotation, the
 finding itself rather than a failed proof search.
+
+## Beyond double precision
+
+`beyond-precision.ts` is accepted by SKJS (issue #781). Its two parameters
+are typed with numeric literals that round to the same double, so `x === y`
+holds at runtime, yet SKJS treats that branch's input as `never` and admits
+returning `x` at a `string` result. The verifier interns both literals as one
+singleton and does not derive the string claim; the corpus expects it not to
+verify. A runtime witness is not yet recorded here.
