@@ -570,6 +570,17 @@ class Gate {
   }
 
   private binary(node: BinaryExpression): Expr {
+    if (node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionEqualsToken) {
+      if (!ts.isIdentifier(node.left) || node.left.text === "undefined")
+        this.fail(node.left, "nullish assignment requires a local identifier");
+      return {
+        k: "nullishAssign",
+        pos: this.span(node),
+        name: node.left.text,
+        namePos: this.span(node.left),
+        rhs: this.expr(node.right),
+      };
+    }
     if (node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken)
       return {
         k: "coalesce",

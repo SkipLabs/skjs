@@ -276,6 +276,11 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
     fixture numeric_heap verification/tests/stateful-source/mutable-locals-numeric.ts &&
       node verification/tools/tsc-claims.mts verification/tests/stateful-source/mutable-locals-numeric.ts --out "$WORK/numeric_heap.tsc"
   }
+  nullish_assignment_fixture() {
+    fixture nullish_assignment verification/tests/stateful-source/nullish-assignment.ts &&
+      node verification/tools/tsc-claims.mts verification/tests/stateful-source/nullish-assignment.ts --out "$WORK/nullish_assignment.tsc"
+  }
+  build nullish_assignment_fixture
   build numeric_heap_fixture
   build numeric_comparisons_fixture
   build named_units_fixture
@@ -339,6 +344,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Multi-field records · SKJS" node verification/tests/records.mts "$WORK/records_skjs.ast" "$WORK/records_skjs.normalized" verification/tests/stateful-source/records.ts "$VERIFIER" "$WORK/records_skjs.claims"
   run_test "Multi-field records · TypeScript" node verification/tests/records.mts "$WORK/records.ast" "$WORK/records.claims" verification/tests/stateful-source/records.ts "$VERIFIER"
   run_test "Mutable parameters" node verification/tests/mutable-parameters.mts "$WORK/mutable_params.ast" "$WORK/mutable_params.claims" "$WORK/mutable_params.tsc" verification/tests/stateful-source/mutable-parameters.ts "$VERIFIER"
+  run_test "Nullish assignment" node verification/tests/nullish-assignment.mts "$WORK/nullish_assignment.ast" "$WORK/nullish_assignment.claims" "$WORK/nullish_assignment.tsc" verification/tests/stateful-source/nullish-assignment.ts "$VERIFIER"
   run_test "Numeric heap facts" node verification/tests/numeric-heap-facts.mts "$WORK/numeric_heap.ast" "$WORK/numeric_heap.claims" "$WORK/numeric_heap.tsc" verification/tests/stateful-source/mutable-locals-numeric.ts "$VERIFIER"
   run_test "Numeric singleton comparisons" node verification/tests/numeric-comparisons.mts "$WORK/numeric_comparisons.ast" "$WORK/numeric_comparisons.claims" "$WORK/numeric_comparisons.tsc" verification/tests/stateful-source/numeric-comparisons.ts "$VERIFIER" "$WORK/numeric_boundary.ast" "$WORK/numeric_boundary.tsc" verification/tests/stateful-source/numeric-comparison-boundary.ts
   run_test "Named unit comparisons" node verification/tests/named-unit-comparisons.mts "$WORK/named_units.ast" "$WORK/named_units.claims" "$WORK/named_units.tsc" verification/tests/stateful-source/named-unit-comparisons.ts "$VERIFIER"

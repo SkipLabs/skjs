@@ -143,6 +143,8 @@ inductive Expr where
   | alloc (pos : Span) (names : List String) (es : List Expr)
   | read (pos : Span) (field : String) (e : Expr)
   | write (pos : Span) (field : String) (receiver rhs : Expr)
+  /-- Read a local once; assign and return the RHS only when nullish. -/
+  | nullishAssign (pos : Span) (name : String) (namePos : Span) (rhs : Expr)
   /-- Assignment to a mutable local, which is an expression: it yields the
   value written, where the calculus's write yields null. -/
   | assign (pos : Span) (name : String) (namePos : Span) (rhs : Expr)
@@ -169,7 +171,7 @@ abbrev Expr.app (p : Span) (callee arg : Expr) : Expr := .call p callee [arg]
 def Expr.span : Expr → Span
   | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body => body.span
   | .ifBody p _ _ _ _ | .done p | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ | .call p _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ | .call p _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ => p
 
 inductive Stmt where
   | ret (pos : Span) (e : Expr)
@@ -269,6 +271,10 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       (← (← jArr j "args").mapM decodeExpr)
   | "write" =>
     return .write p (← jStr (← jField j "field")) (← decodeExpr (← jField j "receiver"))
+      (← decodeExpr (← jField j "rhs"))
+  | "nullishAssign" => do
+    CellClaims.fieldsExactly j ["k","pos","name","namePos","rhs"]
+    return .nullishAssign p (← jStr (← jField j "name")) (← jSpan j "namePos")
       (← decodeExpr (← jField j "rhs"))
   | "assign" => do
     CellClaims.fieldsExactly j ["k","pos","name","namePos","rhs"]

@@ -750,4 +750,38 @@ private def assignedParametersClaims : Fragment.Claims :=
       throw "parameter allocation permuted or aliased the source bindings"
   | _ => throw "parameter allocation did not initialize the assigned slots")
 
+-- A short-circuit lowering can remain well typed even if its branches are
+-- accidentally reversed. Check the extracted graph's evaluation shape too.
+private def reachesWrite (P : ControlFlow.Program) : Nat → Nat → Bool
+  | 0, _ => false
+  | fuel+1, label => match P[label]? with
+    | none => false
+    | some node => match node.expression with
+      | .writeAt .. => true
+      | _ => (CertificateProducer.successors node.continuation).any
+          (fun target => reachesWrite P fuel target.label)
+
+private def nullishAssignmentFn : Fragment.Fn :=
+  let B := wireTy ⟨false,[.bool,.null]⟩
+  ⟨"fallback",(0,1),[⟨"x",B⟩],wireTy ⟨false,[.bool]⟩,
+    [.ret (2,7) (.nullishAssign (3,7) "x" (3,4) (.lit (6,7) (.vbool true)))]⟩
+private def nullishAssignmentClaims : Fragment.Claims :=
+  let B := wireTy ⟨false,[.bool,.null]⟩
+  let R := wireTy ⟨false,[.bool]⟩
+  ⟨"fallback",(0,1),[("x",B)],R,[(2,[("x",B)])],
+    [((3,7),R),((3,4),B),((6,7),t)]⟩
+#guard ok (do
+  let r ← extractFn nullishAssignmentFn nullishAssignmentClaims
+  if (r.program.filter fun n => match n.expression with | .readAt .. => true | _ => false).length != 1 then
+    throw "nullish assignment must read its target once"
+  let dispatch := r.program.filterMap fun n => match n.continuation with
+    | .tagBind .isNullish yes no => some (yes,no)
+    | _ => none
+  let [(yes,no)] := dispatch | throw "expected one nullish dispatch"
+  if yes.mapping != some [0,2] || no.mapping != some [0,2] then
+    throw "nullish dispatch must keep the witness and discard the older read"
+  if !reachesWrite r.program r.program.length yes.label ||
+     reachesWrite r.program r.program.length no.label then
+    throw "only the nullish arm may evaluate the assignment")
+
 end Verification.ExperimentState.SourceExtractionTests

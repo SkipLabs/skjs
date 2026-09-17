@@ -138,6 +138,7 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
     | _, _ => throw s!"unsupported source expression at [{p.1},{p.2}): equality requires a null, undefined or numeric singleton operand"
   | .logical p a l r => return .logical p a (← comparisonsExpr fc l) (← comparisonsExpr fc r)
   | .coalesce p l r => return .coalesce p (← comparisonsExpr fc l) (← comparisonsExpr fc r)
+  | .nullishAssign p n np r => return .nullishAssign p n np (← comparisonsExpr fc r)
   | .assign p n np r => return .assign p n np (← comparisonsExpr fc r)
   | .shapeTest p t eq e => return .shapeTest p t eq (← comparisonsExpr fc e)
   | .singletonTest p t eq tl l r => return .singletonTest p t eq tl (← comparisonsExpr fc l) (← comparisonsExpr fc r)
@@ -174,7 +175,7 @@ name cannot silently designate a different binding. Producer claims cannot
 choose which parameters are mutable. -/
 private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .var .. | .lit .. | .done .. => false
-  | .assign _ target _ rhs => target == name || assignsExpr name rhs
+  | .assign _ target _ rhs | .nullishAssign _ target _ rhs => target == name || assignsExpr name rhs
   | .not _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e
   | .lambda _ _ _ e => assignsExpr name e
   | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b
@@ -334,7 +335,7 @@ private def readOnly : Fragment.Expr → Bool
   | .equality _ _ a b | .singletonTest _ _ _ _ a b | .logical _ _ a b | .coalesce _ a b
   | .seqBody _ a b | .letBody _ _ _ a b => readOnly a && readOnly b
   | .ifBody _ _ c t e => readOnly c && readOnly t && readOnly e
-  | .alloc .. | .write .. | .assign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
+  | .alloc .. | .write .. | .assign .. | .nullishAssign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
   | .callWithReceiver .. | .call .. => false
 
 /-- Save the plain read in a singleton comparison. The other operand is
@@ -513,6 +514,10 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       else
         pure (DirectProof.node Γ (.readAt valueField (.var i)) contract .read [DirectProof.var Γ i reference])
     | none => throw s!"unbound or uninitialized closure variable '{name}'"
+  | .nullishAssign pos name namePos rhs =>
+    -- The administrative assignment shares the source result claim: either
+    -- chosen value must establish it. No synthetic producer fact is added.
+    closureExpr fc scope Γ (.coalesce pos (.var namePos name) (.assign pos name namePos rhs))
   | .assign _ name _ rhs => do
     let some (i, .cell contract reference) := resolve scope name
       | throw s!"assignment to '{name}', which is not a mutable local"
@@ -868,6 +873,44 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List ScopeBinding)
     -- identity in the slot is never the value of a source expression.
     | some (i, .cell ..) => emitAt e.span (.readAt valueField (.var i)) (.bind next) Γ A (scope := scope)
     | none => throw s!"unbound or uninitialized source variable '{name}'"
+  | .nullishAssign pos name namePos rhs => do
+    let some (i, .cell ..) := resolve scope name
+      | throw s!"assignment to '{name}', which is not a mutable local"
+    let left := Fragment.Expr.var namePos name
+    let B ← exprType fc left
+    let C ← exprType fc rhs
+    let G := SourceTypes.graph (← table)
+    -- A merge has no unique predecessor from which to propagate knowledge.
+    -- Both arms must establish this candidate postcondition independently.
+    let next ← match HeapKnowledge.atoms G A with
+      | some atoms =>
+        checkpoint pos (A::Γ) [⟨i+1,atoms,valueField⟩] next (scope := held ⟨"",some pos⟩ :: scope)
+      | none => pure next
+    let present := BranchRefinement.tagSlice G B .isNullish false
+    let absent := BranchRefinement.tagSlice G B .isNullish true
+    let saved := held ⟨"",some namePos⟩ :: scope
+    -- The tag witness is the saved read. On the present arm it is also the
+    -- result, and its read link justifies the unchanged cell's current type.
+    let no ← emitAt pos (.var 0) (.effect next) (present::Γ) A (scope := saved)
+    let effects := held ⟨"",some rhs.span⟩ :: saved
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun j => if j == 0 then 0 else j+2))⟩
+    let result ← emitAt pos (.var 0) (.bind drop) (C::absent::Γ) A (scope := effects)
+    let write ← emitAt pos (.writeAt valueField (.var (i+2)) (.var 0)) (.effect result)
+      (C::absent::Γ) [0] "storage-contract" (scope := effects)
+    let yes ← compileExpr fc saved (absent::Γ) rhs write
+    -- tagBind introduces a refined copy; discard the older saved read.
+    let adapt := fun (t : Target) =>
+      ⟨t.label, some ((t.mapping.getD (List.range (Γ.length+1))).map
+        (fun j => if j == 0 then 0 else j+1))⟩
+    let dispatch ← emitAt namePos (.var 0) (.tagBind .isNullish (adapt yes) (adapt no))
+      (B::Γ) B "nullish-assignment-dispatch" (scope := saved)
+    let dispatch ← match fc.exprCurrent.lookup namePos with
+      | none => pure dispatch
+      | some asserted =>
+        let facts ← asserted.mapM fun (fld, R) => do return (⟨0,← contents R,fld⟩ : HeapFacts.Fact)
+        checkpoint namePos (B::Γ) facts dispatch (scope := saved)
+    emitAt namePos (.readAt valueField (.var i)) (.bind dispatch) Γ B (scope := scope)
   | .assign _ name _ rhs =>
     let some (i, .cell ..) := resolve scope name
       | throw s!"assignment to '{name}', which is not a mutable local"

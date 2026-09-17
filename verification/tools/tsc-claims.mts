@@ -150,7 +150,13 @@ function walkExpr(e: Expr, out: Sites): void {
       walkExpr(e.receiver, out);
       walkExpr(e.rhs, out);
       return;
-    // The assignment is a site; the name it assigns is a location, not one.
+    // Nullish assignment reads the LHS before deciding whether to write.
+    case "nullishAssign":
+      addExpr(out, e.pos, "nullishAssign");
+      addExpr(out, e.namePos, "id");
+      walkExpr(e.rhs, out);
+      return;
+    // Plain assignment names a location, without reading it.
     case "assign":
       addExpr(out, e.pos, "assign");
       walkExpr(e.rhs, out);

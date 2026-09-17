@@ -118,6 +118,16 @@ annotation remains the storage contract; no producer claim chooses whether a
 parameter is a location. A closure captures that location and a const captures
 a snapshot, as for `let`. The function's public input contract is unchanged.
 
+Nullish assignment to a local (`x ??= rhs`) uses the same private storage.
+The parser records the operator; Lean reads once and dispatches on the saved
+value's nullish tag. Only the nullish arm evaluates and writes `rhs`; the other
+returns the saved value. Both arms establish the expression claim and, for
+primitive results, an explicit heap postcondition at their join. This is a
+checked obligation, not a new typing rule or an assumed refinement. The LHS
+read, RHS, and whole expression each retain their producer claim. Closures use
+the existing let/conditional/write terms. Property and computed assignment
+targets remain outside this form: their receiver must be saved separately.
+
 Ordinary producer claims for a mutable binding describe its current contents,
 and are checked even at entries where the binding is unused. Claims implied
 by the storage invariant become read obligations; narrower supported primitive

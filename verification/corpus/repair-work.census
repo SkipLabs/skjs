@@ -1,9 +1,9 @@
 # census: repair-work
-# 12/115 verified, of 315 functions
+# 13/115 verified, of 315 functions
 #   skjs-rejected: 200
-#   gate: 90
+#   gate: 89
 #   unproved: 13
-#   verified: 12
+#   verified: 13
 #
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofUndefinedFieldAdmitsInitialValue
@@ -13,8 +13,6 @@ gate:binary operator outside the fragment (&&=)	tests/expect-error/logical-compo
 gate:binary operator outside the fragment (+)	tests/expect-error/unsound-refinement.ts	checkedConditionalAlias
 gate:binary operator outside the fragment (+=)	tests/expect-error/assignment-receivers.ts	temporaryReceiver
 gate:binary operator outside the fragment (+=)	tests/expect-error/compound-computed-key.ts	annotatedCompoundKey
-gate:binary operator outside the fragment (??=)	tests/expect-error/logical-compound-computed-key.ts	computedFallback
-gate:binary operator outside the fragment (??=)	tests/expect-error/logical-compound-flow.ts	localFallback
 gate:binary operator outside the fragment (||=)	tests/expect-error/assignment-receivers.ts	selectedReceiver
 gate:default parameters are outside the fragment	tests/expect-error/arrow-default-param-optional.ts	earlierGenericDefault
 gate:default parameters are outside the fragment	tests/expect-error/arrow-default-param-optional.ts	initializedDefault
@@ -55,6 +53,7 @@ gate:expression outside the fragment (SatisfiesExpression)	tests/expect-error/sa
 gate:intersection operands must have the same shape	tests/expect-error/spread-callable.ts	restOwnCallable
 gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/promise-object.ts	testAwaitScalarSnapshot
 gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/unsound-refinement.ts	freshReturnSnapshot
+gate:nullish assignment requires a local identifier	tests/expect-error/logical-compound-computed-key.ts	computedFallback
 gate:one binding per `const` in the fragment	tests/expect-error/binding-initialization.ts	earlierDeclarator
 gate:only `extends boolean` or an earlier type parameter is in the fragment	tests/expect-error/freeze-window-stale-cache.ts	frozenNumbers
 gate:only field and local assignments are supported	tests/expect-error/destructuring-assignment.ts	keyBeforeDefault
@@ -319,4 +318,5 @@ verified	tests/expect-error/captured-read-stability.ts	stableAnnotatedConstValue
 verified	tests/expect-error/issue-89-and-or-narrowing.ts	unrelatedFact
 verified	tests/expect-error/local-vs-local-refinement.ts	inferredReadNamedNull
 verified	tests/expect-error/local-vs-local-refinement.ts	inferredReadSingleton
+verified	tests/expect-error/logical-compound-flow.ts	localFallback
 verified	tests/expect-error/nullish-coalescing.ts	resultOfFallback

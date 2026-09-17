@@ -82,6 +82,12 @@ follows them, including through `&&`, `||`, `??`, `?:` and negation.
 Strict `typeof e === "function"` and `!==` tests evaluate the operand once;
 tests on immutable variables retain only the corresponding callable alternatives. Every path must reach an explicit return.
 
+Nullish assignment to mutable locals and parameters (`x ??= rhs`) is supported.
+Its lowering lives in Lean and checks both the skipped and writing paths, using
+the existing heap and nullish-test rules. [nullish-assignment.ts](tests/stateful-source/nullish-assignment.ts)
+covers skipped RHS effects, nested assignments and escaping callbacks with both
+producers. Property assignment targets remain outside this form.
+
 A fresh arrow can acquire one initialized mutable `value` field using explicitly
 typed `Object.assign`; aliases preserve both the field invariant and call signature.
 See [function-field.ts](tests/callables/function-field.ts). Known local arrows and
