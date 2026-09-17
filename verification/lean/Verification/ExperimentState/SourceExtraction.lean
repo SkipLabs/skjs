@@ -143,6 +143,7 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
   | .shapeTest p t eq e => return .shapeTest p t eq (← comparisonsExpr fc e)
   | .singletonTest p t eq tl l r => return .singletonTest p t eq tl (← comparisonsExpr fc l) (← comparisonsExpr fc r)
   | .not p e => return .not p (← comparisonsExpr fc e)
+  | .cast p annot e => return .cast p annot (← comparisonsExpr fc e)
   | .alloc p ns es => return .alloc p ns (← es.mapM (comparisonsExpr fc))
   | .read p f e => return .read p f (← comparisonsExpr fc e)
   | .write p f l r => return .write p f (← comparisonsExpr fc l) (← comparisonsExpr fc r)
@@ -180,7 +181,7 @@ choose which parameters are mutable. -/
 private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .var .. | .lit .. | .done .. => false
   | .assign _ target _ rhs | .nullishAssign _ target _ rhs => target == name || assignsExpr name rhs
-  | .not _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e
+  | .not _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e
   | .lambda _ _ _ e => assignsExpr name e
   | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .withValue _ a b _ _
@@ -346,7 +347,7 @@ private def observed (scope : List ScopeBinding) (Γ : List (Ty Nat))
 escaping closure. Reads are plain modeled cells, never JavaScript accessors. -/
 private def readOnly : Fragment.Expr → Bool
   | .var .. | .lit .. | .done .. => true
-  | .not _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e => readOnly e
+  | .not _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e => readOnly e
   | .equality _ _ a b | .singletonTest _ _ _ _ a b | .logical _ _ a b | .coalesce _ a b
   | .seqBody _ a b | .letBody _ _ _ a b => readOnly a && readOnly b
   | .ifBody _ _ c t e => readOnly c && readOnly t && readOnly e
@@ -601,6 +602,16 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let a ← closureExpr fc scope Γ a
     pure (DirectProof.ifE G Γ A a
       (DirectProof.node Γ .fls [2] .flsLit) (DirectProof.node Γ .tru [1] .truLit))
+  | .cast _ annot a => do
+    -- The value is the operand's; the claim at the cast follows from the
+    -- operand's, and an annotation is one more type the operand must meet.
+    let B ← exprType fc a
+    let p ← closureExpr fc scope Γ a
+    if let some ty := annot then
+      let T ← lower (Fragment.translate ty)
+      let check := DirectProof.var (B::Γ) 0 T
+      obligation e.span check.goal (some check) "cast-annotation" (held ⟨"",some a.span⟩ :: scope)
+    pure (DirectProof.cast Γ A p)
   | .alloc _ ns es => do
     let [.refs B []] := PositiveRules.expand G A
       | throw "allocation claim must name a record contract"
@@ -956,6 +967,19 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List ScopeBinding)
       (fun i => if i == 0 then 0 else i+1))⟩
     let node ← emitAt e.span (.ite (.var 0) .fls .tru) (.bind drop) (B::Γ) A
       (scope := held ⟨"",some a.span⟩ :: scope)
+    compileExpr fc scope Γ a node
+  | .cast _ annot a =>
+    -- The operand's value, retyped at the cast's own claim: the node proves
+    -- the claim from the operand, and an annotation is one more type the
+    -- operand must meet. Nothing here decides the assertion is true.
+    let B ← exprType fc a
+    if let some ty := annot then
+      let T ← lower (Fragment.translate ty)
+      let check := DirectProof.var (B::Γ) 0 T
+      obligation e.span check.goal (some check) "cast-annotation" (held ⟨"",some a.span⟩ :: scope)
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else i+1))⟩
+    let node ← emitAt e.span (.var 0) (.bind drop) (B::Γ) A "cast" (scope := held ⟨"",some a.span⟩ :: scope)
     compileExpr fc scope Γ a node
   | .alloc _ ns operands =>
     let As ← operands.mapM (exprType fc)

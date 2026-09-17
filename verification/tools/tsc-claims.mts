@@ -139,6 +139,7 @@ function walkExpr(e: Expr, out: Sites): void {
     case "functionTest":
     case "not":
     case "read":
+    case "cast":
       addExpr(out, e.pos, e.k);
       walkExpr(e.e, out);
       return;
@@ -1227,11 +1228,14 @@ function entryFieldClaims(
   while (node) {
     if (
       ts.isParenthesizedExpression(node) ||
-      ts.isPrefixUnaryExpression(node)
+      ts.isPrefixUnaryExpression(node) ||
+      // A type assertion is the operand's value: the read beneath it is
+      // what the entry observes.
+      ts.isAsExpression(node) ||
+      ts.isSatisfiesExpression(node) ||
+      ts.isNonNullExpression(node)
     ) {
-      node = ts.isParenthesizedExpression(node)
-        ? node.expression
-        : node.operand;
+      node = ts.isPrefixUnaryExpression(node) ? node.operand : node.expression;
     } else if (
       ts.isBinaryExpression(node) &&
       (node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken ||

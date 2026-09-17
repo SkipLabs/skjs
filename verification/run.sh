@@ -304,6 +304,12 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
       node verification/tools/tsc-claims.mts "$OBJECT_PATTERNS" --out "$WORK/object_patterns.tsc"
   }
   build object_patterns_fixture
+  CASTS=verification/tests/stateful-source/casts.ts
+  casts_fixture() {
+    fixture casts "$CASTS" &&
+      node verification/tools/tsc-claims.mts "$CASTS" --out "$WORK/casts.tsc"
+  }
+  build casts_fixture
   build snapshot_probes
   for pid in "${building[@]}"; do wait "$pid" || exit 1; done
 
@@ -357,6 +363,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Export snapshots" node verification/tests/export-snapshots.mts "$WORK/snapshots.claims" "$SNAPSHOTS"
   run_test "Declaration lists" node verification/tests/declaration-list.mts "$WORK/declaration_list.ast" "$WORK/declaration_list.claims" "$WORK/declaration_list.tsc" "$DECLARATION_LIST" "$VERIFIER"
   run_test "Object patterns" node verification/tests/object-patterns.mts "$WORK/object_patterns.ast" "$WORK/object_patterns.claims" "$WORK/object_patterns.tsc" "$OBJECT_PATTERNS" "$VERIFIER"
+  run_test "Casts" node verification/tests/casts.mts "$WORK/casts.ast" "$WORK/casts.claims" "$WORK/casts.tsc" "$CASTS" "$VERIFIER"
   run_test "Closed SKJS operations" node verification/tests/skjs-operations.mts "$WORK/source.claims" "$BASE" "$VERIFIER"
   run_test "Generic identity source" node verification/tests/generic-source.mts "$WORK/generic_id.ast" "$WORK/generic_id.claims" "$GENERIC_ID" "$VERIFIER"
   run_test "Generic alias source" node verification/tests/generic-aliases.mts "$WORK/generic_aliases.ast" "$WORK/generic_aliases.claims" "$GENERIC_ALIASES" "$VERIFIER"

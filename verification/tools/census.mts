@@ -40,7 +40,8 @@ type Entry = { slug: string; source: string; fn: string };
 
 /* One file's entry in the producer's own claims export, as this tool reads it:
  * the file it speaks about and the functions it stated something for. The
- * entry is handed to the verifier whole, so nothing else in it is described. */
+ * entry is handed to the verifier with only the censused function's claims,
+ * unchanged, so nothing else in it is described. */
 type Exported = { file: string; functions?: { name: string }[] };
 
 /* Outcomes are `stage:reason`, most advanced stage last. A reason is the
@@ -180,7 +181,10 @@ function outcomeFor(file: string, e: Entry, byFile: Map<string, Exported>,
   const ap = `${dir}/.attempt.ast`, cp = `${dir}/.attempt.claims`;
   const ep = `${dir}/.attempt.evidence`;
   fs.writeFileSync(ap, JSON.stringify(ast));
-  fs.writeFileSync(cp, JSON.stringify([exported]));
+  // The carried context may hold class methods the producer also claims;
+  // they have no body in the source, so the verifier is handed only the
+  // censused function's claims, exactly as the producer wrote them.
+  fs.writeFileSync(cp, JSON.stringify([{ ...exported, functions: [fn] }]));
   const produced = spawnSync(verifier,
     ["--produce-stateful-source", ap, cp, file, ep, "10"], { encoding: "utf8" });
   if (produced.error || produced.signal)

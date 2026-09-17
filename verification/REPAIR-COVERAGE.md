@@ -44,10 +44,10 @@ of the work remaining.
 
 ## Checkpoint: 17 September 2026
 
-The working-tree baseline is **21/115 verified**, out of 315 selected functions:
-200 SKJS-rejected, 86 gated, 8 unproved. The separate curated run had 55 files,
-225 verified functions, 6 search failures and 16 unavailable checks; the suite
-run had 55 suites. These are checkpoint results, not permanent expectations;
+The working-tree baseline is **24/115 verified**, out of 315 selected functions:
+200 SKJS-rejected, 83 gated, 8 unproved. The separate curated run had 56 files,
+229 verified functions, 6 search failures and 16 unavailable checks; the suite
+run had 56 suites. These are checkpoint results, not permanent expectations;
 the baseline and fresh command output are authoritative.
 
 Recent repair gains were numeric heap predicates (`checkedEvolvingCapture`),
@@ -55,7 +55,8 @@ local nullish assignment (`localFallback`), inferred object replacement
 (`checkedMutableObjectReplacement`), declaration lists (`earlierDeclarator`)
 object patterns (`inferredFieldDefault`, `checkedStateAfterDefault`) and
 object parameters assumed at their annotation (`clearEffect`, `postCallGuard`,
-`checkedAliasChain`, `checkedAfterWrite`): 11 → 12 → 13 → 14 → 15 → 17 → 21.
+`checkedAliasChain`, `checkedAfterWrite`) and type assertions (`castScalarSnapshot`,
+`satisfiesSnapshot`, `nonNullScalarSnapshot`): 11 → 12 → 13 → 14 → 15 → 17 → 21 → 24.
 TS observation fixes also improved curated coverage without themselves moving
 this SKJS repair count.
 
@@ -94,6 +95,13 @@ conforming function respects its contract) is recorded in DESIGN.md, and
 `cells.ts` gains an external cell and an aliased pair whose forged claims are
 refused. Four census rows verified at once; the two others report knowledge
 limitations below.
+
+Type assertions (`e as T`, `e satisfies T`, `e!`) lower to a node returning
+the operand unchanged at the assertion's own claim, with `T` an obligation on
+the operand; a downcast with nothing known is refused. The TS producer's entry
+field observation now looks through an assertion to the read beneath it. The
+census also hands the verifier only the censused function's claims: carried
+class methods are claimed by SKJS but have no body in the extracted source.
 
 The other destructuring rows stay out: `identityPatternScalar` now reports
 its nested pattern, and it, `checkedNestedPattern`, `earlierPatternRead`,

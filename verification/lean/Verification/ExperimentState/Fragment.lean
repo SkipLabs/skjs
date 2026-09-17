@@ -139,6 +139,9 @@ inductive Expr where
   | equality (pos : Span) (equal : Bool) (left right : Expr)
   | singletonTest (pos : Span) (tag : Tag) (equal testLeft : Bool) (left right : Expr)
   | not (pos : Span) (e : Expr)
+  /-- `e as T`, `e satisfies T` or `e!`: the operand's value. An annotation is
+  an obligation the operand must meet, never a fact about it. -/
+  | cast (pos : Span) (annot : Option Json) (e : Expr)
   /-- An object literal: one named field per initializer, in source order. -/
   | alloc (pos : Span) (names : List String) (es : List Expr)
   | read (pos : Span) (field : String) (e : Expr)
@@ -171,7 +174,7 @@ abbrev Expr.app (p : Span) (callee arg : Expr) : Expr := .call p callee [arg]
 def Expr.span : Expr → Span
   | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body => body.span
   | .ifBody p _ _ _ _ | .done p | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ | .call p _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .cast p _ _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ | .call p _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ => p
 
 /-- One declarator of a `const` or `let`. -/
 structure Binding where
@@ -253,6 +256,13 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     return .shapeTest p .isFun (← (← jField j "equal").getBool?) (← decodeExpr (← jField j "e"))
   | "coalesce" => return .coalesce p (← decodeExpr (← jField j "left")) (← decodeExpr (← jField j "right"))
   | "not" => return .not p (← decodeExpr (← jField j "e"))
+  | "cast" =>
+    CellClaims.fieldsExactly j ["k","pos","cast","annot","e"]
+    let kind ← jStr (← jField j "cast")
+    if kind != "as" && kind != "satisfies" && kind != "nonNull" then throw "unknown cast kind"
+    let a ← jField j "annot"
+    if (kind == "nonNull") != (a == .null) then throw "a cast's annotation does not match its kind"
+    return .cast p (if a == .null then none else some a) (← decodeExpr (← jField j "e"))
   | "alloc" =>
     let fields ← jArr j "fields"
     let parts ← fields.mapM fun f => do

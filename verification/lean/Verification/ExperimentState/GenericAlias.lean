@@ -188,6 +188,7 @@ partial def expandExpr (aliases : List Alias) (e : Fragment.Expr) : Except Strin
   | .singletonTest p t eq tl l r =>
     return .singletonTest p t eq tl (← expandExpr aliases l) (← expandExpr aliases r)
   | .not p e => return .not p (← expandExpr aliases e)
+  | .cast p annot e => return .cast p (← expandOpt aliases annot) (← expandExpr aliases e)
   | .alloc p ns es => return .alloc p ns (← es.mapM (expandExpr aliases))
   | .read p f e => return .read p f (← expandExpr aliases e)
   | .write p f r rhs =>

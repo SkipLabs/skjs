@@ -1,8 +1,8 @@
 # census: repair-work
-# 21/115 verified, of 315 functions
+# 24/115 verified, of 315 functions
 #   skjs-rejected: 200
-#   gate: 86
-#   verified: 21
+#   gate: 83
+#   verified: 24
 #   unproved: 8
 #
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
@@ -37,16 +37,12 @@ gate:expected a required ordinary parameter	tests/expect-error/optional-chaining
 gate:expected a required ordinary parameter	tests/expect-error/unsound-refinement.ts	receiverSnapshot
 gate:expression outside the fragment (ArrayLiteralExpression)	tests/expect-error/destructuring.ts	inferredAssignmentDefault
 gate:expression outside the fragment (ArrayLiteralExpression)	tests/expect-error/destructuring.ts	inferredIterableDefault
-gate:expression outside the fragment (AsExpression)	tests/expect-error/as-operator.ts	castScalarSnapshot
-gate:expression outside the fragment (AsExpression)	tests/expect-error/unsound-refinement.ts	checkedArrayAlias
 gate:expression outside the fragment (ElementAccessExpression)	tests/expect-error/unsound-refinement.ts	capturedReceiver
 gate:expression outside the fragment (ElementAccessExpression)	tests/expect-error/unsound-refinement.ts	stableMemberScalar
 gate:expression outside the fragment (NewExpression)	tests/expect-error/hidden-dependent-bounds.ts	inferredBound
 gate:expression outside the fragment (NewExpression)	tests/expect-error/rest-inference-stability.ts	keepArgument
-gate:expression outside the fragment (NonNullExpression)	tests/expect-error/postfix-exclamation.ts	nonNullScalarSnapshot
 gate:expression outside the fragment (PostfixUnaryExpression)	tests/expect-error/const-writes.ts	mutateConstantObject
 gate:expression outside the fragment (PostfixUnaryExpression)	tests/expect-error/increment-narrowing.ts	computedUpdate
-gate:expression outside the fragment (SatisfiesExpression)	tests/expect-error/satisfies.ts	satisfiesSnapshot
 gate:intersection operands must have the same shape	tests/expect-error/spread-callable.ts	restOwnCallable
 gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/promise-object.ts	testAwaitScalarSnapshot
 gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/unsound-refinement.ts	freshReturnSnapshot
@@ -91,6 +87,7 @@ gate:unknown type parameter	tests/expect-error/spread-callable.ts	spreadClassDat
 gate:unknown type parameter	tests/expect-error/spread-callable.ts	spreadOwnFunction
 gate:unknown type parameter	tests/expect-error/this-parameter-implicit-class.ts	compatibleDestructuring
 gate:unknown type parameter	tests/expect-error/this-parameter-implicit-class.ts	compatibleReattachment
+gate:unknown type parameter	tests/expect-error/unsound-refinement.ts	checkedArrayAlias
 skjs-rejected	tests/expect-error/abstract-type-projection.ts	absorbedText
 skjs-rejected	tests/expect-error/abstract-type-projection.ts	abstractRead
 skjs-rejected	tests/expect-error/abstract-type-projection.ts	concreteElement
@@ -299,6 +296,7 @@ unproved:reject: source type outside the null/undefined/boolean/singleton fragme
 unproved:reject: unbound or uninitialized source variable '_'	tests/expect-error/binding-initialization.ts	conditionBeforeLocal
 unproved:reject: unexpected fields in the cell record claim	tests/expect-error/captured-read-stability.ts	checkedPropertyResult
 unproved:reject: unexpected fields in the cell record claim	tests/expect-error/unsound-refinement.ts	identityMemberSnapshot
+verified	tests/expect-error/as-operator.ts	castScalarSnapshot
 verified	tests/expect-error/binding-initialization.ts	earlierDeclarator
 verified	tests/expect-error/call-effect-boundaries.ts	clearEffect
 verified	tests/expect-error/call-effect-boundaries.ts	postCallGuard
@@ -319,4 +317,6 @@ verified	tests/expect-error/local-vs-local-refinement.ts	inferredReadNamedNull
 verified	tests/expect-error/local-vs-local-refinement.ts	inferredReadSingleton
 verified	tests/expect-error/logical-compound-flow.ts	localFallback
 verified	tests/expect-error/nullish-coalescing.ts	resultOfFallback
+verified	tests/expect-error/postfix-exclamation.ts	nonNullScalarSnapshot
+verified	tests/expect-error/satisfies.ts	satisfiesSnapshot
 verified	tests/expect-error/unsound-refinement.ts	checkedAfterWrite

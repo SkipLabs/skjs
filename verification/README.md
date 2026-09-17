@@ -88,6 +88,10 @@ follows them, including through `&&`, `||`, `??`, `?:` and negation.
 Strict `typeof e === "function"` and `!==` tests evaluate the operand once;
 tests on immutable variables retain only the corresponding callable alternatives. Every path must reach an explicit return.
 
+A type assertion (`e as T`, `e satisfies T`, `e!`) is the operand's value: the
+claim at the assertion must follow from the operand, and `T` is one more type
+the operand must meet, so an assertion never establishes what a guard would.
+
 Nullish assignment to mutable locals and parameters (`x ??= rhs`) is supported.
 Its lowering lives in Lean and checks both the skipped and writing paths, using
 the existing heap and nullish-test rules. [nullish-assignment.ts](tests/stateful-source/nullish-assignment.ts)

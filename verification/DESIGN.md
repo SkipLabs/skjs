@@ -886,6 +886,13 @@ whole statement, the first place every binding of the list stands in scope.
 Inside a closure body a list stays gated: each lowered binding there is an
 entry of its own, and the producers state none for the later declarators.
 
+A type assertion (`e as T`, `e satisfies T`, `e!`) lowers to a node returning
+its operand unchanged, typed at the assertion's own claim, which the node
+proves from the operand like any other claim. `T` is recorded as an
+obligation that the operand meets it. Nothing decides that the assertion is
+true: a downcast with nothing known of the operand is refused, so an
+assertion never establishes what a guard would.
+
 A `const` object pattern (`const { field: name = default, … } = init`) is
 lowered under the same one entry. The initializer is evaluated once and held
 in an anonymous slot below the bindings; each property is read from it in

@@ -10,6 +10,9 @@ export type Expr =
   | { k: "id"; pos: Span; name: string }
   | { k: "lit"; pos: Span; lit: Atom }
   | { k: "not" | "typeof"; pos: Span; e: Expr }
+  /* `e as T`, `e satisfies T` or `e!`: the operand's value, unchanged. The
+     annotation, when there is one, is what the operand must meet. */
+  | { k: "cast"; pos: Span; cast: "as" | "satisfies" | "nonNull"; annot: ClaimType | null; e: Expr }
   /* An object literal: one named field per initializer, in source order. */
   | { k: "alloc"; pos: Span; fields: { name: string; e: Expr }[] }
   | { k: "read"; pos: Span; field: string; e: Expr }

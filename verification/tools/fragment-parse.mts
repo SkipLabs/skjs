@@ -471,6 +471,25 @@ class Gate {
         e: this.expr(node.expression),
       };
 
+    // A type assertion is the operand's value; the runtime never sees it.
+    // What it asserts is an obligation on the operand, never a fact.
+    if (ts.isAsExpression(node) || ts.isSatisfiesExpression(node))
+      return {
+        k: "cast",
+        pos: this.span(node),
+        cast: ts.isAsExpression(node) ? "as" : "satisfies",
+        annot: this.typeOf(node.type),
+        e: this.expr(node.expression),
+      };
+    if (ts.isNonNullExpression(node))
+      return {
+        k: "cast",
+        pos: this.span(node),
+        cast: "nonNull",
+        annot: null,
+        e: this.expr(node.expression),
+      };
+
     if (ts.isPrefixUnaryExpression(node)) {
       if (node.operator !== ts.SyntaxKind.ExclamationToken)
         this.fail(node, "unary operator outside the fragment");
