@@ -287,6 +287,11 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   build mutable_guard_fixture
   build records_fixture
   build skjs_records_fixture
+  inferred_replacement_fixture() {
+    node verification/tools/fragment-parse.mts "$SNAPSHOTS/inferred-replacement.ts" > "$WORK/inferred_replacement.ast" &&
+      node verification/tools/tsc-claims.mts "$SNAPSHOTS/inferred-replacement.ts" --out "$WORK/inferred_replacement.tsc"
+  }
+  build inferred_replacement_fixture
   build snapshot_probes
   for pid in "${building[@]}"; do wait "$pid" || exit 1; done
 
@@ -336,6 +341,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Obligation diagnostics" node verification/tests/obligation-diagnostics.mts "$VERIFIER"
   run_test "Report viewer" node verification/tests/report-viewer.mts
   run_test "Candidate editing" node verification/tests/candidate-editor.mts "$WORK/closures.claims"
+  run_test "Inferred replacement" node verification/tests/inferred-replacement.mts "$WORK/inferred_replacement.ast" "$WORK/snapshots.claims" "$WORK/inferred_replacement.tsc" "$SNAPSHOTS/inferred-replacement.ts" "$VERIFIER"
   run_test "Export snapshots" node verification/tests/export-snapshots.mts "$WORK/snapshots.claims" "$SNAPSHOTS"
   run_test "Closed SKJS operations" node verification/tests/skjs-operations.mts "$WORK/source.claims" "$BASE" "$VERIFIER"
   run_test "Generic identity source" node verification/tests/generic-source.mts "$WORK/generic_id.ast" "$WORK/generic_id.claims" "$GENERIC_ID" "$VERIFIER"

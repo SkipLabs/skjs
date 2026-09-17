@@ -1,0 +1,36 @@
+module SKJSTests;
+
+// Union export reads a saved substitution, not the checker's later state.
+// Neither an absent bound nor a recursive bound may silently lose a disjunct.
+@test
+fun testTypeClaimSnapshotUnion(): void {
+  context = SKStore.Context::mcreate{};
+  results = SKJS.TCResultsAcc::mcreate{errorHandling => SKJS.EHDefault()};
+  base = mutable SKJS.TCEnvLight{context, results};
+  subst = SKJS.Subst::mcreate(base);
+  pos = SKJS.PosRange::none;
+  tv = subst.gen(pos);
+  number = SKJS.TType::single(SKJS.TPrimValue::number(pos));
+  boolean = SKJS.TType::single(SKJS.TPrimValue::boolean(pos));
+  variable = SKJS.TType::var(tv);
+  mixed = variable.rawMap(insts -> (insts, Vector[]), _ -> number.clauses);
+  empty = SortedMap<SKJS.TVarID, SKJS.SubstValue>[];
+  snapshot = empty.set(tv.id, SKJS.SVClosed(boolean));
+  export = values -> SKJS.claimTypeJsonBounded(mixed, true, true, values, 10);
+  recorded = export(snapshot);
+  SKTest.expectEq("", recorded.reason);
+  SKTest.expectEq(false, recorded.top);
+  SKTest.expectEq(2, recorded.atoms.size());
+  for (ty in Array[number, boolean]) {
+    part = SKJS.claimTypeJsonBounded(ty, true, true, empty, 10);
+    SKTest.expectEq(true, recorded.atoms.contains(part.atoms[0]))
+  };
+  subst.!values[tv.id] = SKJS.SVClosed(SKJS.TType::top(pos));
+  SKTest.expectEq(recorded.json, export(snapshot).json);
+  SKTest.expectEq(true, export(subst.values).top);
+  SKTest.expectEq("unbound-inference-variable", export(empty).reason);
+  cyclic = empty.set(tv.id, SKJS.SVClosed(mixed));
+  SKTest.expectEq("fuel-exhausted", export(cyclic).reason);
+}
+
+module end;

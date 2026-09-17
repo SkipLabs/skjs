@@ -1110,7 +1110,7 @@ function typeForExprSite(
   // what the assignment evaluates to) — so the write's claim has to be
   // exactly the right-hand side's claim, not a second, independently-asked
   // opinion that could disagree with it.
-  if (kind === "write") {
+  if (kind === "write" || kind === "assign") {
     let assignment: Expression = asKind(node, ts.isExpression, kind);
     while (ts.isParenthesizedExpression(assignment))
       assignment = assignment.expression;

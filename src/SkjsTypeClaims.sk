@@ -161,7 +161,30 @@ fun buildFunTypeClaims(
 /***************************************************************************/
 
 // Reasons are diagnostics, serialized beside claims, never inside a type.
-class ClaimExport(json: String, reason: String)
+class ClaimExport(
+  json: String,
+  reason: String,
+  atoms: Array<String> = Array[],
+  top: Bool = false,
+)
+
+// Keep the serialized atoms so disjuncts can be combined without parsing JSON
+// or asking the mutable type checker to normalize them.
+fun claimAtoms(atoms: Array<String>, top: Bool = false): ClaimExport {
+  if (top) {
+    ClaimExport("{\"top\": true, \"atoms\": []}", "", Array[], true)
+  } else {
+    unique = mutable Vector<String>[];
+    for (atom in atoms) {
+      if (!unique.contains(atom)) unique.push(atom)
+    };
+    ClaimExport(
+      `{"top": false, "atoms": ${jsonArr(unique)}}`,
+      "",
+      unique.toArray(),
+    )
+  }
+}
 fun claimUnavailable(reason: String): ClaimExport {
   ClaimExport(claimUnsupported, reason)
 }
@@ -264,6 +287,43 @@ fun claimTypeJsonBounded(
 ): ClaimExport {
   if (fuel <= 0) {
     claimUnavailable("fuel-exhausted")
+  } else if (
+    !ty.insts.isEmpty() &&
+    (!ty.clauses.isEmpty() || ty.insts.size() > 1)
+  ) {
+    // TType's instances and clauses are disjuncts. Serialize each under the
+    // same saved substitution; never solve variables or discard constraints.
+    parts = mutable Vector<TType>[];
+    if (!ty.clauses.isEmpty()) {
+      parts.push(TType::ofClauses(ty.pos, ty.clauses))
+    };
+    for (inst in ty.insts) {
+      parts.push(
+        ty.rawMap(_ -> (TInsts::single(inst), Vector[]), _ -> Clauses::empty()),
+      )
+    };
+    atoms = mutable Vector<String>[];
+    top = false;
+    reason = "";
+    for (part in parts) {
+      exported = claimTypeJsonBounded(
+        part,
+        records,
+        functions,
+        values,
+        fuel - 1,
+        allowParam,
+        rigidTypes,
+      );
+      if (exported.reason != "" && reason == "") {
+        !reason = exported.reason
+      };
+      !top = top || exported.top;
+      atoms.extend(exported.atoms)
+    };
+    if (reason != "") claimUnavailable(reason) else {
+      claimAtoms(atoms.toArray(), top)
+    }
   } else if (!ty.insts.isEmpty()) {
     // Only an isolated, bound, unconstrained inference variable can be read
     // from the snapshot. Do not approximate constraints. A one-argument named
@@ -290,58 +350,51 @@ fun claimTypeJsonBounded(
         }
       }
     | None() ->
-      if (ty.insts.size() > 1) {
-        claimUnavailable("several-unexpanded-types")
-      } else {
-        ty.getSingleInst() match {
-        | Some(inst) if (inst.targs.targs.size() == 1) ->
-          // A single named instantiation with one argument is an alias
-          // application, not an expansion. The verifier substitutes using the
-          // identity and cell schemes; classes and nullary aliases stay refused.
-          arg = claimTypeJsonBounded(
-            inst.targs.targs[0],
-            records,
-            functions,
-            values,
-            fuel - 1,
-            allowParam,
-            rigidTypes,
-          );
-          if (arg.reason != "") {
-            claimUnavailable(arg.reason)
-          } else {
-            ClaimExport(
-              `{"top": false, "atoms": ${jsonArr(
+      ty.getSingleInst() match {
+      | Some(inst) if (inst.targs.targs.size() == 1) ->
+        // A single named instantiation with one argument is an alias
+        // application, not an expansion. The verifier substitutes using the
+        // identity and cell schemes; classes and nullary aliases stay refused.
+        arg = claimTypeJsonBounded(
+          inst.targs.targs[0],
+          records,
+          functions,
+          values,
+          fuel - 1,
+          allowParam,
+          rigidTypes,
+        );
+        if (arg.reason != "") {
+          claimUnavailable(arg.reason)
+        } else {
+          claimAtoms(
+            Array[
+              jsonObj(
                 Array[
-                  jsonObj(
-                    Array[
-                      ("a", jsonStr("alias")),
-                      ("name", jsonStr(inst.name.value)),
-                      ("args", jsonArr(Array[arg.json])),
-                    ],
-                  ),
+                  ("a", jsonStr("alias")),
+                  ("name", jsonStr(inst.name.value)),
+                  ("args", jsonArr(Array[arg.json])),
                 ],
-              )}}`,
-              "",
-            )
-          }
-        | Some(_) -> claimUnavailable("unexpanded-named-type")
-        | None() ->
-          if (ty.getSingleInter().isSome()) {
-            // A conjunction of two object types is merged by TObject::inter
-            // (src/TTypeInter.sk) before it can reach export, and an unexpanded
-            // TInter survives only around an unbound inference variable, which
-            // the surface never leaves open. So no export carries a conjunction
-            // to write as `and`, and this refusal is what remains.
-            claimUnavailable("unexpanded-intersection")
-          } else {
-            claimUnavailable("unexpanded-type")
-          }
+              ),
+            ],
+          )
+        }
+      | Some(_) -> claimUnavailable("unexpanded-named-type")
+      | None() ->
+        if (ty.getSingleInter().isSome()) {
+          // A conjunction of two object types is merged by TObject::inter
+          // (src/TTypeInter.sk) before it can reach export, and an unexpanded
+          // TInter survives only around an unbound inference variable, which
+          // the surface never leaves open. So no export carries a conjunction
+          // to write as `and`, and this refusal is what remains.
+          claimUnavailable("unexpanded-intersection")
+        } else {
+          claimUnavailable("unexpanded-type")
         }
       }
     }
   } else if (ty.clauses.isTop()) {
-    ClaimExport("{\"top\": true, \"atoms\": []}", "")
+    claimAtoms(Array[], true)
   } else {
     // A lone type-parameter clause is a rigid parameter. SKJS may store
     // `T extends boolean` as that variable plus the bound; the bound is Δ,
@@ -365,15 +418,10 @@ fun claimTypeJsonBounded(
       }
     };
     if (paramName != "") {
-      ClaimExport(
-        `{"top": false, "atoms": ${jsonArr(
-          Array[
-            jsonObj(
-              Array[("a", jsonStr("param")), ("name", jsonStr(paramName))],
-            ),
-          ],
-        )}}`,
-        "",
+      claimAtoms(
+        Array[
+          jsonObj(Array[("a", jsonStr("param")), ("name", jsonStr(paramName))]),
+        ],
       )
     } else {
       atoms = mutable Vector<String>[];
@@ -408,7 +456,7 @@ fun claimTypeJsonBounded(
         !reason = "union-of-clauses"
       };
       if (reason == "") {
-        ClaimExport(`{"top": false, "atoms": ${jsonArr(atoms)}}`, "")
+        claimAtoms(atoms.toArray())
       } else {
         claimUnavailable(reason)
       }

@@ -305,23 +305,31 @@ private def entryFacts (fc : SourceClaims.Function) (pos : Nat) (scope : List Sc
           let some candidate := vars.lookup b.source.name
             | throw s!"missing claimed binding '{b.source.name}' at {pos}"
           SourceClaims.resolve T.length candidate
-        | .cell _ reference => pure reference
+        | .cell contract _ => pure contract
       for (fld, A) in asserted do
         if !RequestJson.validTy T.length A then throw "invalid current-content type label"
-        match HeapKnowledge.atoms (SourceTypes.graph T) A with
-        | some atoms => facts := facts ++ [⟨i,atoms,fld⟩]
-        | none => persistentObservation b.source (pos,pos+1) reference fld A
+        match b.storage with
+        | .cell .. =>
+          -- Slot i is the private holder, not the object inside it. A field
+          -- observation cannot be attached to the holder's own value field.
+          persistentObservation b.source (pos,pos+1) reference fld A
+        | .value => match HeapKnowledge.atoms (SourceTypes.graph T) A with
+          | some atoms => facts := facts ++ [⟨i,atoms,fld⟩]
+          | none => persistentObservation b.source (pos,pos+1) reference fld A
       return facts) []
 
 /-- A dot cannot occur in a source binding identifier, so these names designate
 administrative read snapshots without colliding with source variables. -/
 private def snapshotName (name field : String) : String := name ++ "." ++ field
+-- A saved local value is different from a field of the object it contains.
+-- This prefix cannot begin a source identifier or a name.field snapshot.
+private def localSnapshotName (name : String) : String := ".local:" ++ name
 private def isSnapshot (name : String) : Bool := name.any (· == '.')
 
 private def observed (scope : List ScopeBinding) (Γ : List (Ty Nat))
-    (name : String) (d : Descriptor) (pos : Span) (A : Ty Nat)
+    (snapshot : String) (d : Descriptor) (pos : Span) (A : Ty Nat)
     (fld : String) (R : Ty Nat) : Compiler Unit := do
-  if let some i := (names scope).idxOf? (snapshotName name fld) then
+  if let some i := (names scope).idxOf? snapshot then
     let plan := DirectProof.var Γ i R
     obligation pos plan.goal (some plan) "heap-observation" scope
   else
@@ -346,15 +354,14 @@ private def readGuard (scope : List ScopeBinding) :
   | .singletonTest pos tag equal testLeft left right => do
     let (r,lit) := if testLeft then (left,right) else (right,left)
     let .lit .. := lit | none
-    let (name,fld) ← match r with
+    let snapshot ← match r with
       | .read _ fld (.var _ name) => do
-        let _ ← valueSlot scope name
-        pure (name,fld)
+        let _ ← resolve scope name
+        pure (snapshotName name fld)
       | .var _ name => match resolve scope name with
-        | some (_, .cell ..) => some (name,valueField)
+        | some (_, .cell ..) => some (localSnapshotName name)
         | _ => none
       | _ => none
-    let snapshot := snapshotName name fld
     let saved := Fragment.Expr.var r.span snapshot
     some (snapshot,r,.singletonTest pos tag equal testLeft
       (if testLeft then saved else lit) (if testLeft then lit else saved))
@@ -376,10 +383,12 @@ private def closureEnv (fc : SourceClaims.Function) (pos : Nat) (scope : List Sc
       let some candidate := ((fc.envs.lookup pos).getD []).lookup name
         | throw s!"missing claimed binding '{name}' at {pos}"
       let R ← SourceClaims.resolve (← table).length candidate
-      observed scope Γ name b.source (pos,pos+1) reference valueField R
+      observed scope Γ (localSnapshotName name) b.source (pos,pos+1) reference valueField R
     if let some asserted := ((fc.entryCurrent.lookup pos).getD []).lookup name then
       for (fld, R) in asserted do
-        observed scope Γ name ⟨name,none⟩ (pos,pos+1) A fld R
+        let receiver := match b.storage with
+          | .value => A | .cell contract _ => contract
+        observed scope Γ (snapshotName name fld) ⟨name,none⟩ (pos,pos+1) receiver fld R
   (scope.zipIdx).mapM fun (b,i) => do
     let name := b.source.name
     let A := if name == "" || isSnapshot name then Γ[i]? else H[named.idxOf name]?
@@ -500,7 +509,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
   if let some asserted := fc.exprCurrent.lookup e.span then
     for (fld, R) in asserted do
       match e with
-      | .var _ name => observed scope Γ name ⟨"",some e.span⟩ e.span A fld R
+      | .var _ name => observed scope Γ (snapshotName name fld) ⟨"",some e.span⟩ e.span A fld R
       | _ => persistentObservation ⟨"",some e.span⟩ e.span A fld R
   let p ← match e with
   | .equality .. => throw "internal unresolved equality"
@@ -508,7 +517,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     match resolve scope name with
     | some (i, .value) => pure (DirectProof.var Γ i A)
     | some (i, .cell contract reference) =>
-      if let some saved := (names scope).idxOf? (snapshotName name valueField) then
+      if let some saved := (names scope).idxOf? (localSnapshotName name) then
         let some R := Γ[saved]? | throw "internal saved-local slot mismatch"
         pure (DirectProof.var Γ saved R)
       else
@@ -849,7 +858,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
   | .read _ fld (.var _ name) =>
     if (names scope).contains (snapshotName name fld) then return p else return plan
   | .var _ name =>
-    if (names scope).contains (snapshotName name valueField) then return p else return plan
+    if (names scope).contains (localSnapshotName name) then return p else return plan
   | .atEnv .. => return p
   | _ => return plan
 

@@ -136,6 +136,13 @@ back edges use the existing heap-knowledge rules. A closure's entry claims must
 follow from the stable invariant, not creation-time contents. Immutable snapshots
 can retain a precise value after the original local changes.
 
+Saved reads distinguish a mutable local's contents from fields of the object
+it contains. A read-only guarded closure can retain either observation, including
+nested guards on both. Field assertions describe the inner object, not the
+private holder; graph entry assertions on such fields still require the inner
+object's invariant when no stable inner-object slot is available. Effects and
+escaping closures prevent the read-only snapshot optimization.
+
 A number reaches all of this through the same interning path every other type
 uses: wherever the table can grow, a type's numeric arms are interned rather
 than refused, which is what lets a closure be typed `(): number => …` and a
@@ -786,8 +793,10 @@ with SKJS's internal object semantics. Standalone observations follow the
 
 Fresh object literals carry synthetic indexes and inference-variable field
 bounds internally. Export records the former and reads the latter from the
-function's substitution snapshot, without changing inference. Only isolated,
-bound variables without constraints are followed, with bounded recursion;
+function's substitution snapshot, without changing inference. Mixed instance
+and concrete-clause unions are serialized disjunct by disjunct under that same
+snapshot, preserving every arm and removing only identical serialized atoms.
+Only bound variables without constraints are followed, with bounded recursion;
 unresolved or recursive cases remain unsupported. Tests check actual allocation
 expression claims at Boolean and singleton contracts, contextual field growth,
 and preservation of both aliases' contracts after a write. This export mapping

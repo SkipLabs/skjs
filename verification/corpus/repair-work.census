@@ -1,9 +1,9 @@
 # census: repair-work
-# 13/115 verified, of 315 functions
+# 14/115 verified, of 315 functions
 #   skjs-rejected: 200
 #   gate: 89
-#   unproved: 13
-#   verified: 13
+#   verified: 14
+#   unproved: 12
 #
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofUndefinedFieldAdmitsInitialValue
@@ -300,9 +300,8 @@ unproved:reject: cell parameters need an external-value boundary, which is outsi
 unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/field-refinement.ts	inferredFieldComparison
 unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/unsound-refinement.ts	assignmentResultSnapshot
 unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/unsound-refinement.ts	checkedAfterWrite
-unproved:reject: source environment obligation at 706: unavailable claimed binding '_' at 706	tests/expect-error/captured-read-stability.ts	checkedMutableObjectReplacement
-unproved:reject: source environment obligation at 713: unavailable claimed binding '_' at 713	tests/expect-error/captured-read-stability.ts	checkedGenericCallResult
 unproved:reject: source expression obligation at [185,209): type claim unavailable from producer	tests/expect-error/obj-literal-var-field-growth.ts	retainedReceiver
+unproved:reject: source expression obligation at [551,574): type claim unavailable from producer	tests/expect-error/captured-read-stability.ts	checkedGenericCallResult
 unproved:reject: source type outside the null/undefined/boolean/singleton fragment	tests/expect-error/captured-read-stability.ts	evolvedInferredSnapshotStillString
 unproved:reject: unbound or uninitialized source variable '_'	tests/expect-error/binding-initialization.ts	conditionBeforeLocal
 unproved:reject: unexpected fields in the cell record claim	tests/expect-error/captured-read-stability.ts	checkedPropertyResult
@@ -311,6 +310,7 @@ verified	tests/expect-error/captured-read-stability.ts	checkedAnnotatedConstFiel
 verified	tests/expect-error/captured-read-stability.ts	checkedCapturedLocal
 verified	tests/expect-error/captured-read-stability.ts	checkedEvolvingCapture
 verified	tests/expect-error/captured-read-stability.ts	checkedInferredObject
+verified	tests/expect-error/captured-read-stability.ts	checkedMutableObjectReplacement
 verified	tests/expect-error/captured-read-stability.ts	inferredPrimitiveCompatibleWrite
 verified	tests/expect-error/captured-read-stability.ts	neverReassigned
 verified	tests/expect-error/captured-read-stability.ts	snapshotCapturedLocal
