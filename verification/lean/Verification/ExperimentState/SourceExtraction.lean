@@ -73,6 +73,9 @@ private structure Built where
   assertions : List (Nat × HeapKnowledge.Knowledge) := []
   /-- Full statement-entry interfaces; absent assertions mean empty knowledge. -/
   cuts : List Nat := []
+  /-- Labels the program mentions but no claim does, such as a pattern's
+  literal index: search hints, never part of what is checked. -/
+  hints : List Nat := []
 
 private abbrev Compiler := StateT Built (Except String)
 
@@ -114,14 +117,50 @@ private def exprType (fc : SourceClaims.Function) (e : Fragment.Expr) : Compiler
       s!"source expression obligation at [{e.span.1},{e.span.2}): {msg}"
   | none => throw s!"no claimed type for the expression at {spanStr e.span}"
 
-/-- A computed key names the field its claimed type is: a string singleton.
-The key stays in the program, evaluated after the receiver and before any
-right side, and its expression obligation must establish that singleton. -/
-private def keyField (fc : SourceClaims.Function) (key : Fragment.Expr) : Compiler String := do
+/-- The store type of an array claim: the type of its store field, held
+invariantly or as a view. -/
+private def storeOf (G : PositiveGraphs.NormalGraph Nat) (A : Ty Nat) : Option (Ty Nat) :=
+  match PositiveRules.expand G A with
+  | [.refs fs [] vs] => fs.lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField
+  | _ => none
+
+/-- A source numeric key must denote one valid array index. The two runtime
+zeros name the same property although their numeric values remain distinct. -/
+private def arrayIndex (G : PositiveGraphs.NormalGraph Nat) (K : Ty Nat) : Except String Nat := do
+  let cs := PositiveRules.expand G K
+  let .numLit b :: _ := cs
+    | throw "a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled"
+  let some k := indexOfBits b
+    | throw "numeric property keys outside the array-index range are outside the fragment"
+  if !cs.all (fun c => match c with | .numLit b => indexOfBits b == some k | _ => false) then
+    throw "a numeric array key needs one array index"
+  return k
+
+private def arrayKeyTerm (K : Ty Nat) : Compiler Tm := do
+  let k ← arrayIndex (SourceTypes.graph (← table)) K
+  let b := bitsOfNat k
+  let label ← lower (SourceTypes.use (.numLit b))
+  modify fun s => {s with hints := label :: s.hints}
+  return .num b
+
+/-- What a computed key names, by its claimed type: a field, for a string
+singleton, or an element of the array's store, for a number. The key stays in
+the program, evaluated after the receiver and before any right side, and its
+expression obligation must establish that claim. -/
+private inductive KeyKind where
+  | field (name : String)
+  | element
+
+private def keyField (fc : SourceClaims.Function) (key : Fragment.Expr) : Compiler KeyKind := do
   let K ← exprType fc key
   match PositiveRules.expand (SourceTypes.graph (← table)) K with
-  | [.strLit s] => pure s
-  | _ => throw s!"unsupported source expression at [{key.span.1},{key.span.2}): a computed key requires a string singleton claim"
+  | [.strLit s] =>
+    if s == SourceTypes.storeField then throw "the array store is internal, not a source property"
+    else pure (.field s)
+  | [.str] => throw "a computed key requires a string singleton or a numeric array-index singleton"
+  | _ =>
+    let _ ← arrayIndex (SourceTypes.graph (← table)) K
+    pure .element
 
 /-- A claimed null/undefined/numeric singleton selects a tag-test implementation, never
 an assumption: both operands remain in the program, in source order, and their
@@ -161,7 +200,21 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
   | .write p f l r => return .write p f (← comparisonsExpr fc l) (← comparisonsExpr fc r)
   | .index p _ e key =>
     let key ← comparisonsExpr fc key
-    return .index p (some (← keyField fc key)) (← comparisonsExpr fc e) key
+    let e ← comparisonsExpr fc e
+    match ← keyField fc key with
+    | .field s => return .index p (some s) e key
+    | .element => return .elemAt p e key
+  | .arrayLit p es => return .arrayLit p (← es.mapM (comparisonsExpr fc))
+  | .arrayAssign p targets rhs =>
+    match rhs with
+    | .arrayLit .. => pure ()
+    | _ => throw "array destructuring requires a fresh literal; external iterators are outside the fragment"
+    let targets ← targets.mapM fun q => do
+      return { q with default_ := ← q.default_.mapM (comparisonsExpr fc) }
+    return .arrayAssign p targets (← comparisonsExpr fc rhs)
+  | .elemAt p e key => return .elemAt p (← comparisonsExpr fc e) (← comparisonsExpr fc key)
+  | .elemWrite p r key rhs =>
+    return .elemWrite p (← comparisonsExpr fc r) (← comparisonsExpr fc key) (← comparisonsExpr fc rhs)
   | .arith p op l r => return .arith p op (← comparisonsExpr fc l) (← comparisonsExpr fc r)
   | .logicalAssign p op target rhs =>
     return .logicalAssign p op (← comparisonsExpr fc target) (← comparisonsExpr fc rhs)
@@ -169,7 +222,11 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
     return .update p op (← comparisonsExpr fc target) (← rhs.mapM (comparisonsExpr fc)) post
   | .indexWrite p _ r key rhs =>
     let key ← comparisonsExpr fc key
-    return .indexWrite p (some (← keyField fc key)) (← comparisonsExpr fc r) key (← comparisonsExpr fc rhs)
+    let r ← comparisonsExpr fc r
+    let rhs ← comparisonsExpr fc rhs
+    match ← keyField fc key with
+    | .field s => return .indexWrite p (some s) r key rhs
+    | .element => return .elemWrite p r key rhs
   | .withValue p f i ft bt => return .withValue p (← comparisonsExpr fc f) (← comparisonsExpr fc i) ft bt
   | .lambda p ps result b => return .lambda p ps result (← comparisonsExpr fc b)
   | .bindWithReceiver p c r args => return .bindWithReceiver p (← comparisonsExpr fc c) (← comparisonsExpr fc r) (← args.mapM (comparisonsExpr fc))
@@ -190,6 +247,13 @@ private partial def comparisonsStmt (fc : SourceClaims.Function) (s : Fragment.S
     let props ← props.mapM fun q => do
       return { q with default_ := ← q.default_.mapM (comparisonsExpr fc) }
     return .pattern p props (← comparisonsExpr fc init)
+  | .arrayPattern p elems init =>
+    match init with
+    | .arrayLit .. => pure ()
+    | _ => throw "array destructuring requires a fresh literal; external iterators are outside the fragment"
+    let elems ← elems.mapM fun q => do
+      return { q with default_ := ← q.default_.mapM (comparisonsExpr fc) }
+    return .arrayPattern p elems (← comparisonsExpr fc init)
   | .effect p e => return .effect p (← comparisonsExpr fc e)
   | .ite p c t e =>
     return .ite p (← comparisonsExpr fc c) (← t.mapM (comparisonsStmt fc))
@@ -209,8 +273,11 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .withValue _ a b _ _ | .index _ _ a b
   | .seqBody _ a b | .letBody _ _ _ a b => assignsExpr name a || assignsExpr name b
-  | .indexWrite _ _ a b c => assignsExpr name a || assignsExpr name b || assignsExpr name c
-  | .arith _ _ a b => assignsExpr name a || assignsExpr name b
+  | .indexWrite _ _ a b c | .elemWrite _ a b c => assignsExpr name a || assignsExpr name b || assignsExpr name c
+  | .arith _ _ a b | .elemAt _ a b => assignsExpr name a || assignsExpr name b
+  | .arrayLit _ es => es.any (assignsExpr name)
+  | .arrayAssign _ targets rhs => targets.any (fun q => q.name == name ||
+      (q.default_.map (assignsExpr name)).getD false) || assignsExpr name rhs
   | .logicalAssign _ _ target rhs =>
     (match target with | .var _ n => n == name | _ => false) ||
       assignsExpr name target || assignsExpr name rhs
@@ -228,6 +295,8 @@ private partial def assignsStmt (name : String) : Fragment.Stmt → Bool
   | .constants _ bs | .mutables _ bs => bs.any fun b => assignsExpr name b.init
   | .pattern _ props init => assignsExpr name init ||
     props.any fun q => (q.default_.map (assignsExpr name)).getD false
+  | .arrayPattern _ elems init => assignsExpr name init ||
+    elems.any fun q => (q.default_.map (assignsExpr name)).getD false
   | .ite _ c t e => assignsExpr name c || t.any (assignsStmt name) ||
     (e.getD []).any (assignsStmt name)
   | .loop _ c b => assignsExpr name c || b.any (assignsStmt name)
@@ -399,9 +468,9 @@ private def readOnly : Fragment.Expr → Bool
   | .var .. | .lit .. | .done .. => true
   | .not _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e => readOnly e
   | .equality _ _ a b | .singletonTest _ _ _ _ a b | .logical _ _ a b | .coalesce _ a b
-  | .seqBody _ a b | .letBody _ _ _ a b | .index _ _ a b | .arith _ _ a b => readOnly a && readOnly b
+  | .seqBody _ a b | .letBody _ _ _ a b | .index _ _ a b | .arith _ _ a b | .elemAt _ a b => readOnly a && readOnly b
   | .ifBody _ _ c t e => readOnly c && readOnly t && readOnly e
-  | .alloc .. | .write .. | .indexWrite .. | .update .. | .logicalAssign .. | .assign .. | .nullishAssign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
+  | .alloc .. | .write .. | .indexWrite .. | .update .. | .logicalAssign .. | .assign .. | .arrayLit .. | .elemWrite .. | .arrayAssign .. | .nullishAssign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
   | .callWithReceiver .. | .call .. => false
 
 /-- The other operand of a singleton comparison, when saving the tested read
@@ -782,6 +851,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     pure (DirectProof.letE Γ a
       (DirectProof.node H (.arith op (.var 0) b.term) N .arith [DirectProof.var H 0 a.type, b]))
   | .update .. => throw "compound assignment inside a closed expression is outside the fragment"
+  | .arrayLit .. | .elemAt .. | .elemWrite .. | .arrayAssign .. => throw "array operations inside a closed expression are outside the fragment"
   | .logicalAssign pos .nullish (.var np name) rhs =>
     closureExpr fc scope Γ (.nullishAssign pos name np rhs)
   | .logicalAssign .. => throw "logical assignment inside a closed expression is outside the fragment"
@@ -1066,6 +1136,30 @@ private def conditionContext (G : PositiveGraphs.NormalGraph Nat) (scope : List 
       Γ.set i (if answer then [1] else [2])
     else Γ
 
+/-- What a literal position of an array reads, by the array's contract: a
+required position reads at its type, an optional or rest position at its type
+or `undefined`, and a position no contract names is refused. A union of
+array contracts reads at the union of their positions. -/
+private def positionRead (G : PositiveGraphs.NormalGraph Nat) (A : Ty Nat) (i : Nat) :
+    Compiler (Ty Nat) := do
+  -- The index is a literal of the read, typed at its singleton; the producer
+  -- finds that singleton among the request's types.
+  let label ← lower (SourceTypes.use (.numLit (bitsOfNat i)))
+  modify fun s => { s with hints := label :: s.hints }
+  let alts ← (PositiveRules.expand G A).mapM fun c => do
+    let store ← match c with
+      | .refs fs [] vs => match fs.lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField with
+        | some S => pure S
+        | none => throw "an array pattern requires an array contract"
+      | _ => throw "an array pattern requires an array contract"
+    (PositiveRules.expand G store).mapM fun c => do
+      let .list T [] := c | throw "an array pattern requires an array contract"
+      match T.required[i]?, ProgramTyping.positionTy T i with
+      | some E, _ => pure E
+      | none, some E => pure (E ++ [3])
+      | none, none => throw s!"position {i} is outside the array's contract"
+  pure alts.flatten.flatten.eraseDups
+
 mutual
 /-- Each expression leaves its result in slot zero and preserves the original
 slots after it. Anonymous temporary slots cannot be named by source identifiers.
@@ -1140,12 +1234,25 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let write ← emitAt e.span (.writeAt valueField (.var (i+1)) (.var 0)) (.effect result) (C::Γ) [0]
       "storage-contract" (scope := effects)
     compileExpr fc scope Γ rhs write
+  | .arrayAssign _ targets rhs =>
+    -- The right side is held for the whole assignment, below the reads of
+    -- its positions; its value is the expression's.
+    let C ← exprType fc rhs
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun j => if j == 0 then 0 else j+1))⟩
+    let effects := held ⟨"",some rhs.span⟩ :: scope
+    let result ← emitAt e.span (.var 0) (.bind drop) (C::Γ) A (scope := effects)
+    let writes ← arrayAssigns fc e.span C result effects (C::Γ) 0 targets
+    compileExpr fc scope Γ rhs writes
   | .lit _ v => emitAt e.span (← SourceTypes.value v) (.bind next) Γ A (scope := scope)
   | .read _ fld a =>
     let B ← exprType fc a
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+1))⟩
-    let node ← emitAt e.span (.readAt fld (.var 0)) (.bind drop) (B::Γ) A
+    -- An array's `length` is its store's, read as a number.
+    let term := if fld == "length" && (storeOf (SourceTypes.graph (← table)) B).isSome
+      then Tm.lenOf (.readAt SourceTypes.storeField (.var 0)) else .readAt fld (.var 0)
+    let node ← emitAt e.span term (.bind drop) (B::Γ) A
       (scope := held ⟨"",some a.span⟩ :: scope)
     compileExpr fc scope Γ a node
   | .not _ a =>
@@ -1226,6 +1333,52 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
         ((operands.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++ held ⟨"",some callee.span⟩ :: scope)
         ((As.take i).reverse ++ B::Γ) arg next) call
     compileExpr fc scope Γ callee right
+  | .arrayLit _ elems =>
+    -- The elements, in order, then the store they fill, then the array
+    -- object holding it: two nodes, so the allocation's slots are variables.
+    let G := SourceTypes.graph (← table)
+    let some S := storeOf G A | throw "an array literal needs an array claim"
+    let As ← elems.mapM (exprType fc)
+    let n := As.length
+    let temporaries := (elems.map fun a => held ⟨"",some a.span⟩).reverse
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else i+n+1))⟩
+    let make ← emitAt e.span (.makeAt .absent [SourceTypes.storeField] [.var 0]) (.bind drop)
+      (S :: As.reverse ++ Γ) A (scope := held ⟨"",some e.span⟩ :: temporaries ++ scope)
+    let store ← emitAt e.span (.arrLit ((List.range n).map fun i => .var (n-1-i))) (.bind make)
+      (As.reverse ++ Γ) S (scope := temporaries ++ scope)
+    elems.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) =>
+      compileExpr fc
+        ((elems.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++ scope)
+        ((As.take i).reverse ++ Γ) arg next) store
+  | .elemAt _ receiver key =>
+    let B ← exprType fc receiver
+    let K ← exprType fc key
+    let index ← arrayKeyTerm K
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else i+2))⟩
+    let temporaries := held ⟨"",some key.span⟩::held ⟨"",some receiver.span⟩ :: scope
+    let node ← emitAt e.span (.elemAt (.readAt SourceTypes.storeField (.var 1)) index) (.bind drop)
+      (K::B::Γ) A (scope := temporaries)
+    let right ← compileExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key node
+    compileExpr fc scope Γ receiver right
+  | .elemWrite _ receiver key rhs =>
+    -- The store is read, the element set, and the store written back: one
+    -- write, so every alias sees the contract kept.
+    let B ← exprType fc receiver
+    let K ← exprType fc key
+    let index ← arrayKeyTerm K
+    let C ← exprType fc rhs
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else i+3))⟩
+    let effects := held ⟨"",some rhs.span⟩::held ⟨"",some key.span⟩::held ⟨"",some receiver.span⟩ :: scope
+    let result ← emitAt e.span (.var 0) (.bind drop) (C::K::B::Γ) A (scope := effects)
+    let write ← emitAt e.span (.writeAt SourceTypes.storeField (.var 2)
+        (.setElem (.readAt SourceTypes.storeField (.var 2)) index (.var 0)))
+      (.effect result) (C::K::B::Γ) [0] (scope := effects)
+    let right ← compileExpr fc (held ⟨"",some key.span⟩::held ⟨"",some receiver.span⟩ :: scope) (K::B::Γ) rhs write
+    let middle ← compileExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key right
+    compileExpr fc scope Γ receiver middle
   | .index _ (some fld) receiver key =>
     let B ← exprType fc receiver
     let K ← exprType fc key
@@ -1420,6 +1573,60 @@ private partial def compileCondition (fc : SourceClaims.Function) (scope : List 
     let _ ← closureExpr fc scope Γ cond
     compileCondition fc scope Γ e no yes
   | _ => simple
+/-- A read that binds: `term`, at type `R` under `Γ`, becomes the binding
+`bound` above the scope. One with a default dispatches on the read being
+undefined: the default is compiled only on that arm, the defined slice of the
+read is the other, and both arms join at a node typed by their union, which
+every incoming edge must establish. `next` compiles what follows, given the
+type the binding holds. -/
+private partial def readWithDefault (fc : SourceClaims.Function) (pos namePos : Span) (term : Tm)
+    (R : Ty Nat) (default_ : Option Fragment.Expr) (bound : ScopeBinding)
+    (scope : List ScopeBinding) (Γ : List (Ty Nat)) (next : Ty Nat → Compiler Target) :
+    Compiler Target := do
+  let G := SourceTypes.graph (← table)
+  match default_ with
+  | none =>
+    let next ← next R
+    emitAt namePos term (.bind next) Γ R "pattern-read" (some pos.1) (scope := scope)
+  | some d =>
+    let D ← exprType fc d
+    let present := BranchRefinement.tagSlice G R .isUndef false
+    let T := (present ++ D).eraseDups
+    let next ← next T
+    -- A merge has no unique predecessor: each arm proves the binding's type.
+    let join ← emitAt namePos .nul (.effect next) (T::Γ) [0] "pattern-default-join" (some pos.1)
+      (scope := bound::scope)
+    -- The undefined read is dropped before the default is evaluated; its
+    -- value is what the arm binds.
+    let fallback ← compileExpr fc scope Γ d join
+    let yes : Target := ⟨fallback.label, some ((fallback.mapping.getD (List.range Γ.length)).map (·+1))⟩
+    -- tagBind introduces a refined copy; discard the older read.
+    let adapt := fun (t : Target) =>
+      ⟨t.label, some ((t.mapping.getD (List.range (Γ.length+1))).map
+        (fun j => if j == 0 then 0 else j+1))⟩
+    let dispatch ← emitAt namePos (.var 0) (.tagBind .isUndef (adapt yes) (adapt join))
+      (R::Γ) R "pattern-default-dispatch" (some pos.1) (scope := held ⟨"",some namePos⟩ :: scope)
+    emitAt namePos term (.bind dispatch) Γ R "pattern-read" (some pos.1) (scope := scope)
+
+/-- The writes an array assignment performs, left to right, over the right
+side held at slot `obj`: each position is read, defaulted, and written to its
+mutable local, whose storage contract the write must meet. `after` compiles
+what follows, under the environment the reads started from. -/
+private partial def arrayAssigns (fc : SourceClaims.Function) (pos : Span) (A : Ty Nat) (after : Target) :
+    List ScopeBinding → List (Ty Nat) → Nat → List (Fragment.ArrayElem Fragment.Expr) → Compiler Target
+  | _, _, _, [] => pure after
+  | scope, Γ, obj, q :: more => do
+    let R ← positionRead (SourceTypes.graph (← table)) A q.index
+    let bound := held ⟨"",some q.namePos⟩
+    let term := Tm.elemAt (.readAt SourceTypes.storeField (.var obj)) (.num (bitsOfNat q.index))
+    readWithDefault fc pos q.namePos term R q.default_ bound scope Γ fun T => do
+      let some (i, .cell ..) := resolve (bound::scope) q.name
+        | throw s!"assignment to '{q.name}', which is not a mutable local"
+      let rest ← arrayAssigns fc pos A after scope Γ obj more
+      let dropped : Target := ⟨rest.label, some ((rest.mapping.getD (List.range Γ.length)).map (·+1))⟩
+      emitAt q.namePos (.writeAt valueField (.var i) (.var 0)) (.effect dropped) (T::Γ) [0]
+        "storage-contract" (some pos.1) (scope := bound::scope)
+
 end
 
 /-- The nearest enclosing loop, with the lexical scope at each destination. -/
@@ -1429,16 +1636,12 @@ private structure LoopTargets where
 
 /-- Where a statement begins: the entry the producer states for it. -/
 private def stmtStart : Fragment.Stmt → Nat
-  | .brk p | .cont p | .ret p _ | .constants p _ | .mutables p _ | .pattern p _ _
+  | .brk p | .cont p | .ret p _ | .constants p _ | .mutables p _ | .pattern p _ _ | .arrayPattern p _ _
   | .effect p _ | .loop p _ _ | .ite p _ _ _ => p.1
 
-/-- The properties of an object pattern, read in order from the object held
-in slot `obj`, under the statement's one entry. A property without a default
-binds its read at the contract's field type. One with a default dispatches on
-the read being undefined: the default is compiled only on that arm, the
-defined slice of the read is the other, and both arms join at a node typed
-by their union, which every incoming edge must establish. `after` compiles
-what follows the statement. -/
+/-- The bindings an object pattern yields, left to right, over the object held
+at slot `obj`: each binds its read at the contract's field type. `after`
+compiles what follows the statement. -/
 private def patternProps (fc : SourceClaims.Function) (pos : Span)
     (fields : List (String × Ty Nat)) (after : List ScopeBinding → Compiler Target) :
     List ScopeBinding → List (Ty Nat) → Nat → List Fragment.PatternProp → Compiler Target
@@ -1453,33 +1656,27 @@ private def patternProps (fc : SourceClaims.Function) (pos : Span)
     if (names scope).contains q.name then throw s!"duplicate or shadowing local declaration '{q.name}'"
     let some R := fields.lookup q.field
       | throw s!"pattern reads a field '{q.field}' the contract does not name"
-    let G := SourceTypes.graph (← table)
     let bound := held ⟨q.name,some pos⟩
-    match q.default_ with
-    | none =>
-      let next ← patternProps fc pos fields after (bound::scope) (R::Γ) (obj+1) more
-      emitAt q.namePos (.readAt q.field (.var obj)) (.bind next) Γ R "pattern-read" (some pos.1)
-        (scope := scope)
-    | some d =>
-      let D ← exprType fc d
-      let present := BranchRefinement.tagSlice G R .isUndef false
-      let T := (present ++ D).eraseDups
-      let next ← patternProps fc pos fields after (bound::scope) (T::Γ) (obj+1) more
-      -- A merge has no unique predecessor: each arm proves the binding's type.
-      let join ← emitAt q.namePos .nul (.effect next) (T::Γ) [0] "pattern-default-join" (some pos.1)
-        (scope := bound::scope)
-      -- The undefined read is dropped before the default is evaluated; its
-      -- value is what the arm binds.
-      let fallback ← compileExpr fc scope Γ d join
-      let yes : Target := ⟨fallback.label, some ((fallback.mapping.getD (List.range Γ.length)).map (·+1))⟩
-      -- tagBind introduces a refined copy; discard the older read.
-      let adapt := fun (t : Target) =>
-        ⟨t.label, some ((t.mapping.getD (List.range (Γ.length+1))).map
-          (fun j => if j == 0 then 0 else j+1))⟩
-      let dispatch ← emitAt q.namePos (.var 0) (.tagBind .isUndef (adapt yes) (adapt join))
-        (R::Γ) R "pattern-default-dispatch" (some pos.1) (scope := held ⟨"",some q.namePos⟩ :: scope)
-      emitAt q.namePos (.readAt q.field (.var obj)) (.bind dispatch) Γ R "pattern-read" (some pos.1)
-        (scope := scope)
+    readWithDefault fc pos q.namePos (.readAt q.field (.var obj)) R q.default_ bound scope Γ
+      fun T => patternProps fc pos fields after (bound::scope) (T::Γ) (obj+1) more
+
+/-- The bindings an array pattern yields, left to right, over the array held
+at slot `obj`: each binds the read of its position of the store. -/
+private def arrayElems (fc : SourceClaims.Function) (pos : Span) (A : Ty Nat)
+    (after : List ScopeBinding → Compiler Target) :
+    List ScopeBinding → List (Ty Nat) → Nat → List (Fragment.ArrayElem Fragment.Expr) → Compiler Target
+  | scope, Γ, obj, [] => do
+    let next ← after (scope.take obj ++ scope.drop (obj+1))
+    pure ⟨next.label, some ((next.mapping.getD (List.range (Γ.length-1))).map
+      (fun j => if j < obj then j else j+1))⟩
+  | scope, Γ, obj, q :: more => do
+    if q.name == "undefined" then throw "shadowing undefined is outside the fragment"
+    if (names scope).contains q.name then throw s!"duplicate or shadowing local declaration '{q.name}'"
+    let R ← positionRead (SourceTypes.graph (← table)) A q.index
+    let bound := held ⟨q.name,some pos⟩
+    let term := Tm.elemAt (.readAt SourceTypes.storeField (.var obj)) (.num (bitsOfNat q.index))
+    readWithDefault fc pos q.namePos term R q.default_ bound scope Γ
+      fun T => arrayElems fc pos A after (bound::scope) (T::Γ) (obj+1) more
 
 /-- The declarators of a `const`, bound left to right under the one entry `Γ`
 the producer states for the statement: each initializer is compiled in the
@@ -1615,6 +1812,14 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
       let next ← patternProps fc pos fields (fun scope => body fuel fc R scope rest tail loopTargets)
         (held ⟨"",some init.span⟩ :: scope) (A::Γ) 0 props
       compileExpr fc scope Γ init next
+    | .arrayPattern pos elems init :: rest =>
+      let Γ ← env fc pos.1 scope
+      let A ← exprType fc init
+      -- The array is held anonymously for the whole statement, below the
+      -- bindings it yields; the reads address its store by its slot.
+      let next ← arrayElems fc pos A (fun scope => body fuel fc R scope rest tail loopTargets)
+        (held ⟨"",some init.span⟩ :: scope) (A::Γ) 0 elems
+      compileExpr fc scope Γ init next
     | .effect pos e :: rest =>
       let Γ ← env fc pos.1 scope
       let next ← body fuel fc R scope rest tail loopTargets
@@ -1624,7 +1829,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
     | [] | .loop .. :: _ => return target
     | st :: _ =>
       let pos := match st with
-        | .brk p | .cont p | .ret p _ | .constants p _ | .mutables p _ | .pattern p _ _ | .effect p _ | .loop p _ _ | .ite p _ _ _ => p
+        | .brk p | .cont p | .ret p _ | .constants p _ | .mutables p _ | .pattern p _ _ | .arrayPattern p _ _ | .effect p _ | .loop p _ _ | .ite p _ _ _ => p
       let facts ← entryFacts fc pos.1 scope
       let entry ← checkpoint pos (← env fc pos.1 scope) facts target (some pos.1) scope
       modify fun s => { s with cuts := entry.label :: s.cuts }
@@ -1632,7 +1837,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
 
 private def traversalBudget : List Fragment.Stmt → Nat
   | [] => 1
-  | .brk .. :: rest | .cont .. :: rest | .ret .. :: rest | .constants .. :: rest | .mutables .. :: rest | .pattern .. :: rest | .effect .. :: rest => 1 + traversalBudget rest
+  | .brk .. :: rest | .cont .. :: rest | .ret .. :: rest | .constants .. :: rest | .mutables .. :: rest | .pattern .. :: rest | .arrayPattern .. :: rest | .effect .. :: rest => 1 + traversalBudget rest
   | .loop _ _ loopBody :: rest => 1 + traversalBudget loopBody + traversalBudget rest
   | .ite _ _ thn none :: rest => 2 + traversalBudget thn + traversalBudget rest
   | .ite _ _ thn (some els) :: rest =>
@@ -1646,14 +1851,21 @@ structure SourceRequest extends Request where
   assertions : List (Nat × HeapKnowledge.Knowledge) := []
   /-- Full statement-entry interfaces; absent assertions mean empty knowledge. -/
   cuts : List Nat := []
+  /-- Labels the program mentions but no claim does: search hints only. -/
+  hints : List Nat := []
 
 /-- Search hints only: the primitives and the labels the request mentions, so
 a coercion does not consider every unrelated signature in the table. The
 consumer still checks against the complete graph and the exact request. -/
 def SourceRequest.searchLabels (r : SourceRequest) : List Nat :=
-  ([0,1,2,3] ++ r.result ++ r.inputs.flatten ++
+  let roots := ([0,1,2,3] ++ r.result ++ r.inputs.flatten ++ r.hints ++
     r.claims.flatMap (fun (c : PointClaim Nat) => c.type ++ c.context.flatten) ++
     r.obligations.flatMap (fun (o : ExpressionClaims.Required) => o.sequent.type ++ o.sequent.context.flatten)).eraseDups
+  -- Readonly array coercions depend on the store's element unions two levels
+  -- below the object. Close the vocabulary over the finite reachable graph.
+  (List.range r.types.length).foldl (fun known _ =>
+    (known ++ known.flatMap (fun i => (r.types[i]?.getD []).flatMap
+      (fun c => (RequestJson.clauseTypes c).flatten))).eraseDups) roots
 
 /-- The table is the one the claims were lowered into; annotations the claims
 did not mention grow it, and the request carries the result. -/
@@ -1713,7 +1925,7 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
     let entry ← emit .nul (.effect first) inputs [0]
     return (inputs, R, entry)).run { types := T }
   return ⟨⟨built.types, built.program, built.claims, R, entry.label, inputs⟩,
-    built.obligations, built.sourceMap, built.assertions, built.cuts⟩
+    built.obligations, built.sourceMap, built.assertions, built.cuts, built.hints⟩
 
 /-- One function's wire claims, lowered into a fresh table. Other producers can
 supply normalized candidates directly to extractNormalizedFn. -/

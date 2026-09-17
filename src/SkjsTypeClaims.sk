@@ -333,14 +333,14 @@ fun claimTypeJsonBounded(
     // from the snapshot. Do not approximate constraints. A one-argument named
     // instantiation is serialized as an alias application; it is not expanded
     // here. Everything else is refused under the name of what it is.
-    ty.getSingleVar() match {
-    | Some(tv) ->
-      if (!tv.constraints.isEmpty()) {
-        claimUnavailable("constrained-inference-variable")
-      } else {
-        values.maybeGet(tv.id) match {
-        | Some(SVOpen(bound))
-        | Some(SVClosed(bound)) ->
+    // An array literal's type is the inference variable it is delayed on; the
+    // snapshot holds what the literal settled to, an Array or a tuple.
+    arrayLit = ty.getSingleArrayLit() match {
+    | Some(arrLit) ->
+      values.maybeGet(arrLit.tvar.id) match {
+      | Some(SVOpen(bound))
+      | Some(SVClosed(bound)) ->
+        Some(
           claimTypeJsonBounded(
             bound,
             records,
@@ -349,51 +349,146 @@ fun claimTypeJsonBounded(
             fuel - 1,
             allowParam,
             rigidTypes,
-          )
-        | None() -> claimUnavailable("unbound-inference-variable")
-        }
-      }
-    | None() ->
-      ty.getSingleInst() match {
-      | Some(inst) if (inst.targs.targs.size() == 1) ->
-        // A single named instantiation with one argument is an alias
-        // application, not an expansion. The verifier substitutes using the
-        // identity and cell schemes; classes and nullary aliases stay refused.
-        arg = claimTypeJsonBounded(
-          inst.targs.targs[0],
-          records,
-          functions,
-          values,
-          fuel - 1,
-          allowParam,
-          rigidTypes,
-        );
-        if (arg.reason != "") {
-          claimUnavailable(arg.reason)
-        } else {
-          claimAtoms(
-            Array[
-              jsonObj(
-                Array[
-                  ("a", jsonStr("alias")),
-                  ("name", jsonStr(inst.name.value)),
-                  ("args", jsonArr(Array[arg.json])),
-                ],
-              ),
-            ],
-          )
-        }
-      | Some(_) -> claimUnavailable("unexpanded-named-type")
+          ),
+        )
       | None() ->
-        if (ty.getSingleInter().isSome()) {
-          // A conjunction of two object types is merged by TObject::inter
-          // (src/TTypeInter.sk) before it can reach export, and an unexpanded
-          // TInter survives only around an unbound inference variable, which
-          // the surface never leaves open. So no export carries a conjunction
-          // to write as `and`, and this refusal is what remains.
-          claimUnavailable("unexpanded-intersection")
+        // Uncommitted: the literal stands for the mutable tuple of its
+        // elements, as its expansion does.
+        Some(
+          claimTypeJsonBounded(
+            TType::tuple(arrLit.tvar.pos, arrLit.tupleElts, false),
+            records,
+            functions,
+            values,
+            fuel - 1,
+            allowParam,
+            rigidTypes,
+          ),
+        )
+      }
+    | None() -> None()
+    };
+    if (arrayLit is Some _) {
+      arrayLit.fromSome()
+    } else {
+      ty.getSingleVar() match {
+      | Some(tv) ->
+        if (!tv.constraints.isEmpty()) {
+          claimUnavailable("constrained-inference-variable")
         } else {
-          claimUnavailable("unexpanded-type")
+          values.maybeGet(tv.id) match {
+          | Some(SVOpen(bound))
+          | Some(SVClosed(bound)) ->
+            claimTypeJsonBounded(
+              bound,
+              records,
+              functions,
+              values,
+              fuel - 1,
+              allowParam,
+              rigidTypes,
+            )
+          | None() -> claimUnavailable("unbound-inference-variable")
+          }
+        }
+      | None() ->
+        ty.getSingleInst() match {
+        | Some(
+          inst,
+        ) if (
+          inst.name.value == "Array" ||
+          inst.name.value == "ReadonlyArray" ||
+          inst.name.value.startsWith(tupleName) ||
+          inst.name.value.startsWith(readonlyTupleName)
+        ) ->
+          // Arrays and tuples are one atom: a tuple contract on the store, a
+          // view of it when readonly. An array's element contract is the rest;
+          // a tuple's arguments are its required positions.
+          isReadonly =
+            inst.name.value == "ReadonlyArray" ||
+            inst.name.value.startsWith(readonlyTupleName);
+          isArray =
+            inst.name.value == "Array" ||
+            inst.name.value == "ReadonlyArray";
+          args = mutable Vector<String>[];
+          reason = "";
+          for (targ in inst.targs.targs) {
+            exported = claimTypeJsonBounded(
+              targ,
+              records,
+              functions,
+              values,
+              fuel - 1,
+              allowParam,
+              rigidTypes,
+            );
+            if (exported.reason != "" && reason == "") {
+              !reason = exported.reason
+            };
+            args.push(exported.json)
+          };
+          if (reason != "") {
+            claimUnavailable(reason)
+          } else if (isArray && args.size() != 1) {
+            claimUnavailable("array-arity")
+          } else {
+            claimAtoms(
+              Array[
+                jsonObj(
+                  Array[
+                    ("a", jsonStr("array")),
+                    (
+                      "required",
+                      if (isArray) "[]" else jsonArr(args.toArray()),
+                    ),
+                    ("optional", "[]"),
+                    ("rest", if (isArray) args[0] else "null"),
+                    ("readonly", if (isReadonly) "true" else "false"),
+                  ],
+                ),
+              ],
+            )
+          }
+        | Some(inst) if (inst.targs.targs.size() == 1) ->
+          // A single named instantiation with one argument is an alias
+          // application, not an expansion. The verifier substitutes using the
+          // identity and cell schemes; classes and nullary aliases stay refused.
+          arg = claimTypeJsonBounded(
+            inst.targs.targs[0],
+            records,
+            functions,
+            values,
+            fuel - 1,
+            allowParam,
+            rigidTypes,
+          );
+          if (arg.reason != "") {
+            claimUnavailable(arg.reason)
+          } else {
+            claimAtoms(
+              Array[
+                jsonObj(
+                  Array[
+                    ("a", jsonStr("alias")),
+                    ("name", jsonStr(inst.name.value)),
+                    ("args", jsonArr(Array[arg.json])),
+                  ],
+                ),
+              ],
+            )
+          }
+        | Some(_) -> claimUnavailable("unexpanded-named-type")
+        | None() ->
+          if (ty.getSingleInter().isSome()) {
+            // A conjunction of two object types is merged by TObject::inter
+            // (src/TTypeInter.sk) before it can reach export, and an unexpanded
+            // TInter survives only around an unbound inference variable, which
+            // the surface never leaves open. So no export carries a conjunction
+            // to write as `and`, and this refusal is what remains.
+            claimUnavailable("unexpanded-intersection")
+          } else {
+            claimUnavailable("unexpanded-type")
+          }
         }
       }
     }

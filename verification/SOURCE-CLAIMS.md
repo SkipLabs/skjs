@@ -123,7 +123,7 @@ a list of further atoms of the same kind:
 which is `Ref<A> & Ref<B>`: one location meeting both contracts invariantly. An
 absent or empty `and` is the ordinary single-contract atom, unchanged.
 
-or, on a function atom, `(D1 => R1) & (D2 => R2)`: one function meeting every
+On a function atom, `(D1 => R1) & (D2 => R2)`: one function meeting every
 signature. The rule that keeps this honest is that the format may not be able
 to say more than the clause language can hold. `and` on a primitive atom is
 refused, because no clause conjoins primitives and a decoder would have to
@@ -164,6 +164,38 @@ export policy and need not be consumed. A successful function result establishes
 the modeled obligations, not every candidate in its environment. This sidecar
 therefore does not yet implement the proposed comment frontend's stricter
 requirement to consume every directive.
+
+## Arrays
+
+An array claim is one atom:
+
+```json
+{ "a": "array", "required": [T, ...], "optional": [T, ...], "rest": T | null, "readonly": false }
+```
+
+`number[]` has no required or optional positions and `number` as its rest;
+`[number, string]` has two required positions and no rest; `readonly` marks a
+`ReadonlyArray` or readonly tuple. The exporter lowers the atom to a record
+whose one field, the store, holds a `list` clause with the same positions,
+invariantly for a mutable array and as a view for a readonly one, so an array
+is an object and its contract is on the store: aliases share it, a write
+keeps it. A readonly store contract uses an upper bound at each element location, so element types are covariant; the store-field view grants no replacement permission. Presence of a position
+is kept apart from a present `undefined`: an optional or rest position reads
+at its type or `undefined`, a required one at its type alone. Optional tuple
+positions are not produced by SKJS; the atom carries them for tsc.
+
+The editor prints homogeneous arrays as `Array<T>` or `ReadonlyArray<T>` and
+also accepts `T[]` and `readonly T[]`. Tuples use `[T, U?, ...Array<V>]`.
+`Store<...>` names the internal store contract when a graph row is edited
+by itself; it uses the same structural fields with atom tag `store`. Normalized
+array objects lift back to the array spelling. The `readonly` flag on a native
+`list` tuple is required, and does not mean the backing locations are immutable.
+
+Source numeric element operations require a valid array-index singleton.
+Arbitrary numbers can name ordinary properties (negative, fractional, NaN,
+or out of range), which this store does not represent. Destructuring requires
+a fresh literal and the fragment's unmodified standard array iterator;
+external array parameters may have custom iterators and are refused.
 
 ## Current-content assertions
 

@@ -74,10 +74,19 @@ theorem checkArrow_complete [DecidableEq ι] {G : NormalGraph ι} {table L As d}
 
 abbrev Evidence (ι : Type) := List (Ops ι × ((List (List ι) × List ι) × ArrowCert ι))
 
+instance {R : List ι → List ι → Prop} [DecidableRel R] (a b : Option (List ι)) :
+    Decidable (CoversRest R readonly a b) := by
+  cases a <;> cases b <;> simp only [CoversRest] <;> infer_instance
+
+instance {R : List ι → List ι → Prop} [DecidableRel R] (p q : Tuple (List ι)) :
+    Decidable (CoversTuple R p q) := by
+  unfold CoversTuple; infer_instance
+
 set_option synthInstance.maxSize 1024 in
 def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs : Evidence ι) :
     Clause (List ι) → Clause (List ι) → Bool
   | _, .top => true
+  | .list a bs, .list c ds => decide (∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversTuple (Rel table) p q)
   | .nul, .nul => true
   | .undef, .undef => true
   | .bool, .bool => true
@@ -125,6 +134,7 @@ theorem checkClause_sound [DecidableEq ι] {G : NormalGraph ι} {table proofs a 
     exact checkArrow_sound he
   · -- strLit ≤ strLit
     exact of_decide_eq_true h
+  · exact of_decide_eq_true h
 
 /-- Finite evidence collection is proof-only; the checker itself makes no
 classical choices. Monotonicity allows witnesses to share one evidence list. -/
@@ -200,6 +210,7 @@ theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table a b}
     exact ⟨[], rfl⟩
   · -- strLit ≤ strLit
     exact ⟨[], by simpa [checkClause] using h⟩
+  · exact ⟨[], by simpa only [checkClause, decide_eq_true_eq] using h⟩
 
 structure Certificate (ι : Type) where
   table : Table ι

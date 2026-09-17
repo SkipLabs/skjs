@@ -42,6 +42,21 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
       SourceTypes.translateArm (← CellClaims.primitive single)
   return arms.flatten.mergeSort (· ≤ ·) |>.eraseDups
 
+/-- An array type: a tuple contract on a store, held by an object in its store
+field, invariantly or, for a readonly array, as a view. Element types are
+lowered as callable operands are. -/
+private partial def arrayType (atom : Json) : SourceTypes.Lowering Nat := do
+  CellClaims.fieldsExactly atom ["a","required","optional","rest","readonly"]
+  let required ← (← jArr atom "required").mapM callableType
+  let optional ← (← jArr atom "optional").mapM callableType
+  let restJson ← jField atom "rest"
+  let rest ← if restJson == .null then pure none else do pure (some (← callableType restJson))
+  let readonly ← (← jField atom "readonly").getBool?
+  let store ← SourceTypes.use (.list ⟨required, optional, rest, readonly⟩ [])
+  if (← jStr (← jField atom "a")) == "store" then pure store
+  else if readonly then SourceTypes.use (.refs [] [] [(SourceTypes.storeField, [store])])
+  else SourceTypes.use (.refs [(SourceTypes.storeField, [store])] [] [])
+
 /-- Required record fields admit primitives and callables, but not nested
 records. Decode both capabilities through the same table before checking
 invariance, field by field. -/
@@ -98,6 +113,7 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
     let single := Json.mkObj [("top",toJson false),("atoms",toJson [atom])]
     match ← jStr (← jField atom "a") with
     | "callable" => return [← callableObject atom]
+    | "array" | "store" => return [← arrayType atom]
     | "function" => callableType single
     -- A number or string arm is interned, so `1` and `number` are separate
     -- labels and the singleton is below the family by the ordinary clause rules.
@@ -135,6 +151,14 @@ inductive LogicalOp where
   | nullish | orElse | andAlso
   deriving Repr, DecidableEq
 
+/-- One element of an array pattern: position `index` binds `name`, with a
+default when the read is undefined. -/
+structure ArrayElem (Expr : Type) where
+  index : Nat
+  name : String
+  namePos : Span
+  default_ : Option Expr
+
 inductive Expr where
   | var (pos : Span) (name : String)
   | lit (pos : Span) (v : Claim.Val)
@@ -158,6 +182,16 @@ inductive Expr where
   expression obligation must establish it. -/
   | index (pos : Span) (field : Option String) (e key : Expr)
   | indexWrite (pos : Span) (field : Option String) (receiver key rhs : Expr)
+  /-- An array literal: one element per initializer, in source order. -/
+  | arrayLit (pos : Span) (elems : List Expr)
+  /-- `[a, b = d] = rhs`: the right side once, then each mutable local takes
+  its position of the store, or its default when that read is undefined; the
+  value is the right side. -/
+  | arrayAssign (pos : Span) (targets : List (ArrayElem Expr)) (rhs : Expr)
+  /-- `e[key]` with a numeric key: an element read of the array's store, and
+  its assignment; resolved from `index` and `indexWrite` by the key's claim. -/
+  | elemAt (pos : Span) (e key : Expr)
+  | elemWrite (pos : Span) (receiver key rhs : Expr)
   /-- Arithmetic on two numbers, left operand first. -/
   | arith (pos : Span) (op : Arith) (l r : Expr)
   /-- `target op= rhs`, or an increment when `rhs` is absent: the target's
@@ -197,6 +231,7 @@ def Expr.span : Expr → Span
   | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body => body.span
   | .ifBody p _ _ _ _ | .done p | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
+  | .arrayLit p _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ => p
   | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .cast p _ _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ | .call p _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ => p
 
 /-- One declarator of a `const` or `let`. -/
@@ -226,11 +261,23 @@ inductive Stmt where
   /-- An object pattern on a `const`: the initializer once, then each property
   read in order, a default evaluated only when its read is undefined. -/
   | pattern (pos : Span) (props : List PatternProp) (init : Expr)
+  /-- An array pattern: each element reads its position of the initializer's
+  store, with a default when the read is undefined. -/
+  | arrayPattern (pos : Span) (elems : List (ArrayElem Expr)) (init : Expr)
   | ite (pos : Span) (cond : Expr) (thn : List Stmt) (els : Option (List Stmt))
   | brk (pos : Span)
   | cont (pos : Span)
   | loop (pos : Span) (cond : Expr) (body : List Stmt)
   | effect (pos : Span) (e : Expr)
+
+/-- One element of an array pattern, decoded with the given expression
+decoder, since the structure is shared by statements and expressions. -/
+def decodeArrayElem (decodeExpr : Json → Except String Expr) (q : Json) :
+    Except String (ArrayElem Expr) := do
+  CellClaims.fieldsExactly q ["index","name","namePos","default_"]
+  let d ← jField q "default_"
+  let dflt ← if d == .null then pure none else some <$> decodeExpr d
+  return ⟨← (← jField q "index").getNat?, ← jStr (← jField q "name"), ← jSpan q "namePos", dflt⟩
 
 /-- Singleton notation for small source-adapter fixtures. -/
 abbrev Stmt.cst (p : Span) (name : String) (annot : Option Json) (init : Expr) : Stmt :=
@@ -309,6 +356,14 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     let rhs ← if rhs == .null then pure none else do pure (some (← decodeExpr rhs))
     return .update p (← decodeArith (← jField j "op")) (← decodeExpr (← jField j "target"))
       rhs (← (← jField j "post").getBool?)
+  | "arrayLit" => do
+    CellClaims.fieldsExactly j ["k","pos","elems"]
+    return .arrayLit p (← (← jArr j "elems").mapM decodeExpr)
+  | "arrayAssign" => do
+    CellClaims.fieldsExactly j ["k","pos","targets","rhs"]
+    let targets ← (← jArr j "targets").mapM (decodeArrayElem decodeExpr)
+    if targets.isEmpty then throw "an empty pattern binds nothing"
+    return .arrayAssign p targets (← decodeExpr (← jField j "rhs"))
   | "index" => do
     CellClaims.fieldsExactly j ["k","pos","e","key"]
     return .index p none (← decodeExpr (← jField j "e")) (← decodeExpr (← jField j "key"))
@@ -391,6 +446,11 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
   | "effect" => return .effect p (← decodeExpr (← jField j "e"))
   | "const" => return .constants p (← decodeBindings j)
   | "let" => return .mutables p (← decodeBindings j)
+  | "arrayPattern" =>
+    CellClaims.fieldsExactly j ["k","pos","elems","init"]
+    let elems ← (← jArr j "elems").mapM (decodeArrayElem decodeExpr)
+    if elems.isEmpty then throw "an empty pattern binds nothing"
+    return .arrayPattern p elems (← decodeExpr (← jField j "init"))
   | "pattern" =>
     CellClaims.fieldsExactly j ["k","pos","props","init"]
     let props ← (← jArr j "props").mapM fun q => do

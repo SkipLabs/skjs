@@ -75,6 +75,7 @@ Each type-graph node is a union of clauses:
 | Boolean singleton | `{"boolLit":{"value":true}}` (or `false`) |
 | Invariant reference with optional additional contract requirements, and readonly views: fields read at a sound upper bound, with no write permission through this contract | `{"refs":{"first":[["value",[1]]],"rest":[],"views":[["seen",[1]]]}}` |
 | Intersection of arrows | `{"arrs":{"arrows":[[[[0]],[1]],[[[1]],[0]]]}}` |
+| Array store: simultaneous tuple contracts, each with required, optional and rest positions; readonly contracts give element read capabilities | `{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],"readonly":false},"rest":[]}}` |
 | Callable with invariant bag requirements and overloads | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[[[[0]],[1]]]}}` |
 
 The arrow example contains two argument-list/result pairs, each with one
@@ -136,6 +137,11 @@ The encoding follows mechanically from the
 | field write | `{"writeAt":{"field":"value","a":t,"b":t}}` | | |
 | $\mathsf{test}_k(t)$ | `{"test":{"k":"isNul","a":t}}` | | |
 | $\mathsf{if}\;t\;t\;t$ | `{"ite":{"c":t,"t":t,"e":t}}` | | |
+| arithmetic | `{"arith":{"op":"add","a":t,"b":t}}` | | |
+| array store with initial elements | `{"arrLit":{"inits":[t]}}` | | |
+| element at a numeric index | `{"elemAt":{"a":t,"i":t}}` | | |
+| store with an element set | `{"setElem":{"a":t,"i":t,"v":t}}` | | |
+| length of a store | `{"lenOf":{"a":t}}` | | |
 
 A descriptor `c` is `"absent"` or `{"closure":{"arity":2,"body":t}}`. Plain allocation
 uses the absent descriptor; function creation uses a closure descriptor and an
@@ -158,7 +164,15 @@ one subtype-evidence list per outgoing edge. A derivation node names the
 `var`, `nul`, `undef`, `tru`, `fls`, `truLit`, `flsLit`, `numLit`, `num`,
 `strLit`, `str`, `funE`, `app`, `letE`, `alloc`,
 `read`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
-`unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `arith`, `test`, or `sub`.
+`unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `arith`, `test`,
+`arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, or `sub`.
+The array rules act on a store, the value an array object holds in its store
+field: `arrLit` allocates one location per element under the positions of a
+tuple contract; `elem` reads a required position named by a literal index at
+its contract, `elemOpt` an optional or rest position at its contract or
+`undefined`, and `elemAny` any numeric index into a homogeneous array at the
+element contract or `undefined`; `setElem` writes a named position, into its
+location or a fresh one the store records; `len` reads the length as a number.
 `readView` reads a field named among a record's views, at the bound the view
 states; no rule writes through a view.
 `arith` combines two operands the number test answers for into the number

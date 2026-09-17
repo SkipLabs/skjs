@@ -12,6 +12,9 @@ open ProgramTyping PositiveNormalization PositiveGraphs PositiveRules
 
 abbrev Table := List (List (Clause (List Nat)))
 
+/-- The field an array object holds its store in. No source name spells it. -/
+def storeField : String := "[]"
+
 /-- Labels 0 to 3: null, true, false, undefined. -/
 def initial : Table := [[.nul],[.boolLit true],[.boolLit false],[.undef]]
 

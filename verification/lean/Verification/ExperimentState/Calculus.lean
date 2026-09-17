@@ -85,6 +85,19 @@ inductive Tm where
   | ite (c t e : Tm)
   /-- Arithmetic on the values of `a` and `b`, in that order, both numbers. -/
   | arith (op : Arith) (a b : Tm)
+  /-- An array's store: the location of each element, in order, or none at a
+  hole. The array object holds this value in its store field and replaces it
+  when the array grows, so identity, aliasing and holes all live in locations. -/
+  | arr (elems : List (Option Nat))
+  /-- Allocate one location per initializer, in order, as a store. -/
+  | arrLit (inits : List Tm)
+  /-- The element a numeric index names in a store: `undefined` at a hole or
+  past the end, as property lookup answers. -/
+  | elemAt (a i : Tm)
+  /-- Store a value at a numeric index: into the element's location, or, at a
+  hole or past the end, into a fresh location the returned store records. -/
+  | setElem (a i v : Tm)
+  | lenOf (a : Tm)
   deriving Repr
 
 /-- Invocation code is not a runtime value. A plain object has no call code. -/
@@ -123,6 +136,50 @@ def arithBits (op : Arith) (x y : UInt64) : UInt64 :=
     | .mul => a * b
     | .div => a / b
   r.toBits
+
+/-- The array index a number denotes, when it is one: a finite integer in the
+index range, the property name it would spell. Any other number names an
+ordinary property this fragment does not model. -/
+def indexOfBits (b : UInt64) : Option Nat :=
+  let f := Float.ofBits b
+  if f.isFinite && decide (0.0 ≤ f) && f == f.floor && decide (f < 4294967295.0)
+  then some f.toUInt64.toNat else none
+
+def bitsOfNat (n : Nat) : UInt64 := n.toFloat.toBits
+
+/-- The location an index names in a store: none at a hole or past the end. -/
+def elemLoc (ls : List (Option Nat)) (b : UInt64) : Option Nat :=
+  (indexOfBits b).bind fun k => (ls[k]?).bind id
+
+/-- One fresh location per element, in order, as a literal allocates them. -/
+def elemSlots (base n : Nat) : List (Option Nat) := (List.range n).map fun i => some (base + i)
+
+/-- The store with location `l` at index `k`, holes filling any gap before it. -/
+def placeAt (ls : List (Option Nat)) (k l : Nat) : List (Option Nat) :=
+  (ls ++ List.replicate (k + 1 - ls.length) none).set k (some l)
+
+theorem mem_elemSlots {base n l : Nat} (h : l ∈ (elemSlots base n).filterMap id) :
+    base ≤ l ∧ l < base + n := by
+  simp only [elemSlots, List.mem_filterMap, List.mem_map, List.mem_range, id] at h
+  obtain ⟨o, ⟨i, hi, rfl⟩, he⟩ := h
+  simp only [Option.some.injEq] at he
+  omega
+
+/-- A grown store names the old locations and the one it was given. -/
+theorem mem_placeAt {ls : List (Option Nat)} {k m l : Nat}
+    (h : l ∈ (placeAt ls k m).filterMap id) : l ∈ ls.filterMap id ∨ l = m := by
+  simp only [placeAt, List.mem_filterMap, id] at h ⊢
+  obtain ⟨o, ho, he⟩ := h
+  cases o with
+  | none => simp at he
+  | some x =>
+    simp only [Option.some.injEq] at he
+    subst he
+    rcases List.mem_or_eq_of_mem_set ho with ho | he
+    · rcases List.mem_append.mp ho with ho | ho
+      · exact Or.inl ⟨some x, ho, rfl⟩
+      · simp [List.mem_replicate] at ho
+    · exact Or.inr (Option.some.inj he)
 
 /-! Executable structural equality, kept explicit because Lean's deriving
 handler does not support nested mutual types such as list-valued applications.
@@ -178,6 +235,23 @@ def tmDecEq (a b : Tm) : Decidable (a = b) := by
     haveI : Decidable (a1 = b1) := tmDecEq a1 b1
     haveI : Decidable (a2 = b2) := tmDecEq a2 b2
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2) (by simp only [Tm.arith.injEq])
+  case arr.arr a0 b0 =>
+    exact decidable_of_iff (a0 = b0) (by simp only [Tm.arr.injEq])
+  case arrLit.arrLit a0 b0 =>
+    haveI : Decidable (a0 = b0) := argsDecEq a0 b0
+    exact decidable_of_iff (a0 = b0) (by simp only [Tm.arrLit.injEq])
+  case elemAt.elemAt a0 a1 b0 b1 =>
+    haveI : Decidable (a0 = b0) := tmDecEq a0 b0
+    haveI : Decidable (a1 = b1) := tmDecEq a1 b1
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.elemAt.injEq])
+  case setElem.setElem a0 a1 a2 b0 b1 b2 =>
+    haveI : Decidable (a0 = b0) := tmDecEq a0 b0
+    haveI : Decidable (a1 = b1) := tmDecEq a1 b1
+    haveI : Decidable (a2 = b2) := tmDecEq a2 b2
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2) (by simp only [Tm.setElem.injEq])
+  case lenOf.lenOf a0 b0 =>
+    haveI : Decidable (a0 = b0) := tmDecEq a0 b0
+    exact decidable_of_iff (a0 = b0) (by simp only [Tm.lenOf.injEq])
 termination_by sizeOf a
 
 def callCodeDecEq (a b : CallCode) : Decidable (a = b) := by
@@ -286,11 +360,16 @@ theorem lookup_slots {ns : List String} (hnd : ns.Nodup) {base i : Nat}
     (write : ∀ f a b, P a → P b → P (.writeAt f a b))
     (test : ∀ k a, P a → P (.test k a))
     (ite : ∀ c a b, P c → P a → P b → P (.ite c a b))
-    (arith : ∀ op a b, P a → P b → P (.arith op a b)) (t : Tm) : P t := by
+    (arith : ∀ op a b, P a → P b → P (.arith op a b))
+    (arr : ∀ ls, P (.arr ls))
+    (arrLit : ∀ inits, (∀ a ∈ inits, P a) → P (.arrLit inits))
+    (elemAt : ∀ a i, P a → P i → P (.elemAt a i))
+    (setElem : ∀ a i v, P a → P i → P v → P (.setElem a i v))
+    (lenOf : ∀ a, P a → P (.lenOf a)) (t : Tm) : P t := by
   apply Tm.rec (motive_1 := P)
     (motive_2 := fun c => match c with | .absent => True | .closure _ b => P b)
     (motive_3 := fun args => ∀ a ∈ args, P a)
-    var call letE nul undef tru fls num str ?_ ?_ read write test ite arith
+    var call letE nul undef tru fls num str ?_ ?_ read write test ite arith arr arrLit elemAt setElem lenOf
     True.intro (fun _ _ h => h) (by simp) (by
       intro a args ha ih v hv
       rcases List.mem_cons.mp hv with rfl | hv
@@ -313,7 +392,7 @@ abbrev Val := Tm
 
 
 def isVal : Tm → Bool
-  | .nul | .undef | .tru | .fls | .num _ | .str _ | .objAt .. => true
+  | .nul | .undef | .tru | .fls | .num _ | .str _ | .objAt .. | .arr _ => true
   | _ => false
 
 /-- ECMAScript Number::equal on IEEE-754 bits: NaN never equals, and the
@@ -360,6 +439,11 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .test k x => .test k (subst j a x)
   | .ite c x y => .ite (subst j a c) (subst j a x) (subst j a y)
   | .arith op x y => .arith op (subst j a x) (subst j a y)
+  | .arr ls => .arr ls
+  | .arrLit xs => .arrLit (substArgs j a xs)
+  | .elemAt x y => .elemAt (subst j a x) (subst j a y)
+  | .setElem x y z => .setElem (subst j a x) (subst j a y) (subst j a z)
+  | .lenOf x => .lenOf (subst j a x)
 
 termination_by structural t => t
 
@@ -444,6 +528,35 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | arithC2 : isVal a = true → Step h b h' b' → Step h (.arith op a b) h' (.arith op a b')
   /-- Two numbers combine in one step; nothing else is ever combined. -/
   | arithV : Step h (.arith op (.num x) (.num y)) h (.num (arithBits op x y))
+  /-- Store initializers are evaluated left to right, like fields. -/
+  | arrArg {inits : List Tm} {i : Nat} {h h' : Heap} {a a' : Tm} : inits[i]? = some a →
+      (∀ j, j < i → ∀ v, inits[j]? = some v → isVal v = true) →
+      Step h a h' a' → Step h (.arrLit inits) h' (.arrLit (inits.set i a'))
+  /-- A store takes one fresh location per element, in order. -/
+  | arrAlloc {vs : List Tm} {h : Heap} : (∀ v ∈ vs, isVal v = true) →
+      Step h (.arrLit vs) (h ++ vs) (.arr (elemSlots h.length vs.length))
+  | elemC1 : Step h a h' a' → Step h (.elemAt a i) h' (.elemAt a' i)
+  | elemC2 : isVal a = true → Step h i h' i' → Step h (.elemAt a i) h' (.elemAt a i')
+  /-- An index naming a location reads it; any other reads `undefined`. -/
+  | elemRead {ls : List (Option Nat)} {b : UInt64} {l : Nat} {h : Heap} {v : Val} :
+      elemLoc ls b = some l → h[l]? = some v → Step h (.elemAt (.arr ls) (.num b)) h v
+  | elemAbsent {ls : List (Option Nat)} {b : UInt64} {h : Heap} :
+      elemLoc ls b = none → Step h (.elemAt (.arr ls) (.num b)) h .undef
+  | setC1 : Step h a h' a' → Step h (.setElem a i v) h' (.setElem a' i v)
+  | setC2 : isVal a = true → Step h i h' i' → Step h (.setElem a i v) h' (.setElem a i' v)
+  | setC3 : isVal a = true → isVal i = true → Step h v h' v' →
+      Step h (.setElem a i v) h' (.setElem a i v')
+  /-- A present element's location takes the value; the store is unchanged. -/
+  | setPresent {ls : List (Option Nat)} {b : UInt64} {l : Nat} {h : Heap} {v : Val} :
+      isVal v = true → elemLoc ls b = some l → l < h.length →
+      Step h (.setElem (.arr ls) (.num b) v) (h.set l v) (.arr ls)
+  /-- A hole or an index past the end takes a fresh location, which the new
+  store records; holes fill any gap. -/
+  | setGrow {ls : List (Option Nat)} {b : UInt64} {k : Nat} {h : Heap} {v : Val} :
+      isVal v = true → indexOfBits b = some k → elemLoc ls b = none →
+      Step h (.setElem (.arr ls) (.num b) v) (h ++ [v]) (.arr (placeAt ls k h.length))
+  | lenC : Step h a h' a' → Step h (.lenOf a) h' (.lenOf a')
+  | lenV {ls : List (Option Nat)} {h : Heap} : Step h (.lenOf (.arr ls)) h (.num (bitsOfNat ls.length))
 
 /-! ### The one-field rules
 
@@ -655,6 +768,100 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | arithC1 s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
     | arithC2 _ s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
     | arithV => exact ⟨rfl, rfl⟩
+  | @arrArg inits i h h1 a a1 hg hb s ih =>
+    cases s2 with
+    | @arrArg _ j _ _ b b1 hg' hb' s' =>
+      have hij : i = j := by
+        by_cases he : i = j
+        · exact he
+        · have hlt : i < j ∨ j < i := by omega
+          rcases hlt with hij | hji
+          · exact False.elim (value_no_step (hb' i hij a hg) s)
+          · exact False.elim (value_no_step (hb j hji b hg') s')
+      subst j
+      have hab : a = b := Option.some.inj (hg.symm.trans hg')
+      subst b
+      obtain ⟨rfl, rfl⟩ := ih s'
+      exact ⟨rfl, rfl⟩
+    | arrAlloc hvs => exact False.elim (value_no_step (hvs _ (List.mem_of_getElem? hg)) s)
+  | arrAlloc hv =>
+    cases s2 with
+    | arrArg hg _ s' => exact False.elim (value_no_step (hv _ (List.mem_of_getElem? hg)) s')
+    | arrAlloc _ => exact ⟨rfl, rfl⟩
+  | elemC1 s ih =>
+    cases s2 with
+    | elemC1 s' => exact (ih s').imp id (congrArg (Tm.elemAt · _))
+    | elemC2 hv _ => exact absurd s (by intro hs; exact value_no_step hv hs)
+    | elemRead _ _ => exact absurd s (by intro hs; exact value_no_step rfl hs)
+    | elemAbsent _ => exact absurd s (by intro hs; exact value_no_step rfl hs)
+  | elemC2 hv s ih =>
+    cases s2 with
+    | elemC1 s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
+    | elemC2 _ s' => exact (ih s').imp id (congrArg (Tm.elemAt _ ·))
+    | elemRead _ _ => exact absurd s (by intro hs; exact value_no_step rfl hs)
+    | elemAbsent _ => exact absurd s (by intro hs; exact value_no_step rfl hs)
+  | elemRead hl hv =>
+    cases s2 with
+    | elemC1 s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
+    | elemC2 _ s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
+    | elemRead hl' hv' =>
+      cases Option.some.inj (hl.symm.trans hl')
+      cases Option.some.inj (hv.symm.trans hv')
+      exact ⟨rfl, rfl⟩
+    | elemAbsent hn => exact absurd (hl.symm.trans hn) (by simp)
+  | elemAbsent hn =>
+    cases s2 with
+    | elemC1 s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
+    | elemC2 _ s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
+    | elemRead hl' _ => exact absurd (hn.symm.trans hl') (by simp)
+    | elemAbsent _ => exact ⟨rfl, rfl⟩
+  | setC1 s ih =>
+    cases s2 with
+    | setC1 s' => exact (ih s').imp id (congrArg (Tm.setElem · _ _))
+    | setC2 hv _ => exact absurd s (by intro hs; exact value_no_step hv hs)
+    | setC3 hv _ _ => exact absurd s (by intro hs; exact value_no_step hv hs)
+    | setPresent _ _ _ => exact absurd s (by intro hs; exact value_no_step rfl hs)
+    | setGrow _ _ _ => exact absurd s (by intro hs; exact value_no_step rfl hs)
+  | setC2 hv s ih =>
+    cases s2 with
+    | setC1 s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
+    | setC2 _ s' => exact (ih s').imp id (congrArg (Tm.setElem _ · _))
+    | setC3 _ hi _ => exact absurd s (by intro hs; exact value_no_step hi hs)
+    | setPresent _ _ _ => exact absurd s (by intro hs; exact value_no_step rfl hs)
+    | setGrow _ _ _ => exact absurd s (by intro hs; exact value_no_step rfl hs)
+  | setC3 hv hi s ih =>
+    cases s2 with
+    | setC1 s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
+    | setC2 _ s' => exact absurd s' (by intro hs; exact value_no_step hi hs)
+    | setC3 _ _ s' => exact (ih s').imp id (congrArg (Tm.setElem _ _ ·))
+    | setPresent hw _ _ => exact absurd s (by intro hs; exact value_no_step hw hs)
+    | setGrow hw _ _ => exact absurd s (by intro hs; exact value_no_step hw hs)
+  | setPresent hw hl hlt =>
+    cases s2 with
+    | setC1 s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
+    | setC2 _ s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
+    | setC3 _ _ s' => exact absurd s' (by intro hs; exact value_no_step hw hs)
+    | setPresent _ hl' _ =>
+      cases Option.some.inj (hl.symm.trans hl')
+      exact ⟨rfl, rfl⟩
+    | setGrow _ _ hn => exact absurd (hl.symm.trans hn) (by simp)
+  | setGrow hw hk hn =>
+    cases s2 with
+    | setC1 s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
+    | setC2 _ s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
+    | setC3 _ _ s' => exact absurd s' (by intro hs; exact value_no_step hw hs)
+    | setPresent _ hl' _ => exact absurd (hn.symm.trans hl') (by simp)
+    | setGrow _ hk' _ =>
+      cases Option.some.inj (hk.symm.trans hk')
+      exact ⟨rfl, rfl⟩
+  | lenC s ih =>
+    cases s2 with
+    | lenC s' => exact (ih s').imp id (congrArg Tm.lenOf)
+    | lenV => exact absurd s (by intro hs; exact value_no_step rfl hs)
+  | lenV =>
+    cases s2 with
+    | lenC s' => exact absurd s' (by intro hs; exact value_no_step rfl hs)
+    | lenV => exact ⟨rfl, rfl⟩
 
 theorem make_step_inv {c : CallCode} {v : Val} (hv : isVal v = true) {h h' t}
     (hs : Step h (.make c v) h' t) : h' = h ++ [v] ∧ t = .obj h.length c := by

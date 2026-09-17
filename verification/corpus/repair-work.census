@@ -1,21 +1,24 @@
 # census: repair-work
 # 39/116 verified, of 319 functions
 #   skjs-rejected: 203
-#   gate: 65
+#   gate: 61
 #   verified: 39
-#   unproved: 12
+#   unproved: 16
 #
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofUndefinedFieldAdmitsInitialValue
 gate:a `let` needs an initializer	tests/expect-error/test_ternary_refinements.ts	bothBranchesInitialize
+gate:a `let` pattern is outside the fragment	tests/expect-error/captured-read-stability.ts	checkedDestructuredDefault
 gate:a record with no field has no location	tests/expect-error/unsound-refinement.ts	grownAliasField
+gate:binary operator outside the fragment (<)	tests/expect-error/instanceof-generic-skolem-args.ts	opaqueWhileContainer
 gate:binary operator outside the fragment (instanceof)	tests/expect-error/hidden-dependent-bounds.ts	sameWitness
+gate:binary operator outside the fragment (instanceof)	tests/expect-error/instanceof-generic-skolem-args.ts	localHiddenContainer
 gate:binary operator outside the fragment (instanceof)	tests/expect-error/instanceof-generic-skolem-args.ts	observeLocalHiddenType
+gate:binary operator outside the fragment (instanceof)	tests/expect-error/instanceof-generic-skolem-args.ts	opaqueCapturedContainer
 gate:binary operator outside the fragment (instanceof)	tests/expect-error/instanceof-generic-skolem-args.ts	opaqueHiddenResult
 gate:default parameters are outside the fragment	tests/expect-error/arrow-default-param-optional.ts	earlierGenericDefault
 gate:default parameters are outside the fragment	tests/expect-error/arrow-default-param-optional.ts	initializedDefault
 gate:default parameters are outside the fragment	tests/expect-error/captured-read-stability.ts	stablePattern
-gate:destructuring is outside the fragment	tests/expect-error/captured-read-stability.ts	checkedDestructuredDefault
 gate:destructuring parameter	tests/expect-error/arrow-default-param-optional.ts	defaultObject
 gate:destructuring parameter	tests/expect-error/arrow-default-param-optional.ts	extractedGeneric
 gate:destructuring parameter	tests/expect-error/arrow-default-param-optional.ts	siblingDefaults
@@ -31,9 +34,7 @@ gate:expected a required mutable field	tests/expect-error/unsound-refinement.ts	
 gate:expected a required ordinary parameter	tests/expect-error/optional-chaining-method-call.ts	composedReceiverSnapshot
 gate:expected a required ordinary parameter	tests/expect-error/unsound-refinement.ts	receiverSnapshot
 gate:expected ordinary call arguments without spread or type arguments	tests/expect-error/alias-inference-stability.ts	compatibleWritePreservesExplicitConstraint
-gate:expression outside the fragment (ArrayLiteralExpression)	tests/expect-error/destructuring.ts	inferredAssignmentDefault
-gate:expression outside the fragment (ArrayLiteralExpression)	tests/expect-error/destructuring.ts	inferredIterableDefault
-gate:expression outside the fragment (ArrayLiteralExpression)	tests/expect-error/instanceof-generic-skolem-args.ts	localHiddenContainer
+gate:expression outside the fragment (NewExpression)	tests/expect-error/contextual-hidden-escape.ts	opaqueContextualRoot
 gate:expression outside the fragment (NewExpression)	tests/expect-error/hidden-dependent-bounds.ts	inferredBound
 gate:expression outside the fragment (NewExpression)	tests/expect-error/rest-inference-stability.ts	keepArgument
 gate:intersection operands must have the same shape	tests/expect-error/spread-callable.ts	restOwnCallable
@@ -43,21 +44,16 @@ gate:modifiers (export/async/declare) are outside the fragment	tests/expect-erro
 gate:nested patterns are outside the fragment	tests/expect-error/destructuring.ts	identityPatternScalar
 gate:only `extends boolean` or an earlier type parameter is in the fragment	tests/expect-error/freeze-window-stale-cache.ts	frozenNumbers
 gate:only field and local assignments are supported	tests/expect-error/destructuring-assignment.ts	keyBeforeDefault
+gate:rest elements are outside the fragment	tests/expect-error/array-isarray-refinement.ts	restArrayEntries
+gate:rest elements are outside the fragment	tests/expect-error/destructuring-tuple-rest-union.ts	assignedRest
+gate:rest elements are outside the fragment	tests/expect-error/destructuring-tuple-rest-union.ts	declaredRest
+gate:rest elements are outside the fragment	tests/expect-error/destructuring-tuple-rest-union.ts	emptyRemainder
 gate:rest parameters are outside the fragment	tests/expect-error/iterator-effects.ts	consumeNumbers
+gate:statement outside the fragment (ForOfStatement)	tests/expect-error/for-in-for-of-invalid.ts	loopScopeRestoresOuter
+gate:statement outside the fragment (ForOfStatement)	tests/expect-error/instanceof-generic-skolem-args.ts	iterationLocalContainer
 gate:statement outside the fragment (ForStatement)	tests/expect-error/loop-carried-narrowing.ts	guardedIncrementRead
 gate:statement outside the fragment (SwitchStatement)	tests/expect-error/switch-scope-merge.ts	switchLaterBinding
 gate:statement outside the fragment (TryStatement)	tests/expect-error/binding-initialization.ts	exceptionScopesSeparate
-gate:type outside the fragment (ArrayType)	tests/expect-error/array-isarray-refinement.ts	restArrayEntries
-gate:type outside the fragment (ArrayType)	tests/expect-error/for-in-for-of-invalid.ts	loopScopeRestoresOuter
-gate:type outside the fragment (ArrayType)	tests/expect-error/instanceof-generic-skolem-args.ts	iterationLocalContainer
-gate:type outside the fragment (ArrayType)	tests/expect-error/instanceof-generic-skolem-args.ts	opaqueCapturedContainer
-gate:type outside the fragment (ArrayType)	tests/expect-error/instanceof-generic-skolem-args.ts	opaqueWhileContainer
-gate:type outside the fragment (TupleType)	tests/expect-error/contextual-hidden-escape.ts	opaqueContextualRoot
-gate:type outside the fragment (TupleType)	tests/expect-error/destructuring-tuple-rest-union.ts	assignedRest
-gate:type outside the fragment (TupleType)	tests/expect-error/destructuring-tuple-rest-union.ts	declaredRest
-gate:type outside the fragment (TupleType)	tests/expect-error/destructuring-tuple-rest-union.ts	emptyRemainder
-gate:type outside the fragment (TupleType)	tests/expect-error/destructuring-tuple-union.ts	assignedPrefix
-gate:type outside the fragment (TupleType)	tests/expect-error/destructuring-tuple-union.ts	declaredPrefix
 gate:unknown type alias	tests/expect-error/alias-inference-stability.ts	compatibleAliasAndClassConstraints
 gate:unknown type alias	tests/expect-error/alias-inference-stability.ts	inferenceBox
 gate:unknown type alias	tests/expect-error/iterator-effects.ts	freshGuardAndSnapshot
@@ -273,6 +269,10 @@ skjs-rejected	tests/expect-error/unsound-refinement.ts	stableSpreadMember
 skjs-rejected	tests/expect-error/unsound-refinement.ts	storedLocalAlias
 skjs-rejected	tests/expect-error/unsound-refinement.ts	storedNarrowAlias
 skjs-rejected	tests/expect-error/unsound-refinement.ts	tupleDeclarationDefault
+unproved:reject: array destructuring requires a fresh literal; external iterators are outside the f	tests/expect-error/destructuring-tuple-union.ts	assignedPrefix
+unproved:reject: array destructuring requires a fresh literal; external iterators are outside the f	tests/expect-error/destructuring-tuple-union.ts	declaredPrefix
+unproved:reject: array destructuring requires a fresh literal; external iterators are outside the f	tests/expect-error/destructuring.ts	inferredAssignmentDefault
+unproved:reject: array destructuring requires a fresh literal; external iterators are outside the f	tests/expect-error/destructuring.ts	inferredIterableDefault
 unproved:reject: claimed parameter type differs from the source annotation for '_'	tests/expect-error/unsound-refinement.ts	assignedUnionAlternative
 unproved:reject: claimed parameter type differs from the source annotation for '_'	tests/expect-error/unsound-refinement.ts	checkedConditionalAlias
 unproved:reject: source expression obligation at [185,209): type claim unavailable from producer	tests/expect-error/obj-literal-var-field-growth.ts	retainedReceiver

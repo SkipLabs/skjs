@@ -235,6 +235,64 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           (A :: pool).findSome? fun N =>
             let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .arith [ea,eb]
             if checkTree G e then coerce G pool e A else none
+    | .arrLit inits =>
+      -- The claimed type, or a pool type, names the tuple; each initializer
+      -- is typed at its position's contract.
+      return (A :: pool).findSome? fun L => do
+        let [.list T []] := expand G L | none
+        if inits.length < T.required.length then none else
+        if T.rest.isNone && T.required.length + T.optional.length < inits.length then none else do
+        let ps ← inits.zipIdx.mapM fun (a, k) => do
+          let B ← positionTy T k
+          recur Γ a B
+        let e := ProgramCertificates.Evidence.node ⟨Γ,t,L⟩ .arrLit ps
+        if checkTree G e then coerce G pool e A else none
+    | .elemAt a i =>
+      -- A store read through a union of array objects splits the receiver.
+      let direct := pool.findSome? fun L => do
+        let [.list T []] := expand G L | none
+        let ea ← recur Γ a L
+        pool.findSome? fun I => do
+          let ei ← recur Γ i I
+          match expand G I with
+          | [.numLit b] => do
+            let k ← indexOfBits b
+            match T.required[k]? with
+            | some B => coerce G pool (.node ⟨Γ,t,B⟩ .elem [ea,ei]) A
+            | none => do
+              let B ← positionTy T k
+              (A :: pool).findSome? fun U =>
+                let e := ProgramCertificates.Evidence.node ⟨Γ,t,B ++ U⟩ (.elemOpt U) [ea,ei]
+                if checkTree G e then coerce G pool e A else none
+          | _ =>
+            match T with
+            | ⟨[], [], some E, false⟩ =>
+              (A :: pool).findSome? fun U =>
+                let e := ProgramCertificates.Evidence.node ⟨Γ,t,E ++ U⟩ (.elemAny U) [ea,ei]
+                if checkTree G e then coerce G pool e A else none
+            | _ => none
+      if let some e := direct then return some e
+      let .readAt _ receiver := a | return none
+      return splitReceiver receiver
+    | .setElem a i v =>
+      return pool.findSome? fun L => do
+        let [.list T []] := expand G L | none
+        let ea ← recur Γ a L
+        pool.findSome? fun I => do
+          let [.numLit b] := expand G I | none
+          let ei ← recur Γ i I
+          let k ← indexOfBits b
+          let B ← positionTy T k
+          let ev ← recur Γ v B
+          let e := ProgramCertificates.Evidence.node ⟨Γ,t,L⟩ .setElem [ea,ei,ev]
+          if checkTree G e then coerce G pool e A else none
+    | .lenOf a =>
+      return pool.findSome? fun L => do
+        let [.list _ []] := expand G L | none
+        let ea ← recur Γ a L
+        (A :: pool).findSome? fun N =>
+          let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .len [ea]
+          if checkTree G e then coerce G pool e A else none
     | .ite (.test tag (.var i)) u e =>
       let some B := Γ[i]? | return none
       if decide (Answers G B tag true) then
@@ -292,6 +350,7 @@ def vocabulary [DecidableEq ι] (G : NormalGraph ι) (labels : List ι)
     claims.flatMap (fun c => c.type :: c.context) ++
     labels.flatMap (fun i => (G i).flatMap fun c => match c with
       | .refs A bs vs => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd
+      | .list a bs => (a :: bs).flatMap fun t => t.required ++ t.optional ++ t.rest.toList
       | .arrs L => L.flatMap fun p => p.1 ++ [p.2]
       | .callable A bs L =>
           A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ L.flatMap (fun p => p.1 ++ [p.2])

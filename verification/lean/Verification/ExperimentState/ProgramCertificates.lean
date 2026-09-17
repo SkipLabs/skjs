@@ -13,9 +13,26 @@ structure Sequent (ι : Type) where
   type : Ty ι
   deriving DecidableEq
 
+/-- What a literal index names in a tuple contract, as the checker reads it: a
+required position's type; an optional or rest position's type with `undefined`;
+any named position's type. -/
+def requiredAt (T : Tuple (Ty ι)) (b : UInt64) : Option (Ty ι) :=
+  (indexOfBits b).bind fun k => T.required[k]?
+
+def optionalAt (T : Tuple (Ty ι)) (b : UInt64) (U : Ty ι) : Option (Ty ι) :=
+  (indexOfBits b).bind fun k => match T.required[k]? with
+    | some _ => none
+    | none => (positionTy T k).map (· ++ U)
+
+def namedAt (T : Tuple (Ty ι)) (b : UInt64) : Option (Ty ι) :=
+  (indexOfBits b).bind fun k => positionTy T k
+
 inductive Rule (ι : Type) where
   | var | nul | undef | tru | fls | truLit | flsLit | numLit | num | strLit | str
   | funE | app | letE | alloc | read | readView | write | arith | test
+  | arrLit | elem | setElem | len
+  | elemOpt (undef : Ty ι)
+  | elemAny (undef : Ty ι)
   | ifBool | ifTrue | ifFalse
   | ifKnown (answer : Bool)
   | ifBoolVar (trueType falseType : Ty ι)
@@ -90,6 +107,42 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   | .test, .test _ a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧
     (.boolLit true) ∈ expand G j.type ∧ (.boolLit false) ∈ expand G j.type
+  | .arrLit, .arrLit inits, ps =>
+    match expand G j.type with
+    | [.list T []] =>
+      ps.map Sequent.term = inits ∧ (∀ p ∈ ps, p.context = j.context) ∧
+      T.required.length ≤ ps.length ∧
+      (T.rest = none → ps.length ≤ T.required.length + T.optional.length) ∧
+      ∀ q ∈ ps.zipIdx, positionTy T q.2 = some q.1.type
+    | _ => False
+  | .elem, .elemAt a i, [ja, ji] =>
+    ja.context = j.context ∧ ja.term = a ∧ ji.context = j.context ∧ ji.term = i ∧
+    (match expand G ja.type, expand G ji.type with
+     | [.list T []], [.numLit b] => requiredAt T b = some j.type
+     | _, _ => False)
+  | .elemOpt U, .elemAt a i, [ja, ji] =>
+    ja.context = j.context ∧ ja.term = a ∧ ji.context = j.context ∧ ji.term = i ∧
+    Represents G U .undef ∧
+    (match expand G ja.type, expand G ji.type with
+     | [.list T []], [.numLit b] => optionalAt T b U = some j.type
+     | _, _ => False)
+  | .elemAny U, .elemAt a i, [ja, ji] =>
+    ja.context = j.context ∧ ja.term = a ∧ ji.context = j.context ∧ ji.term = i ∧
+    Represents G U .undef ∧ Answers G ji.type .isNum true ∧
+    (match expand G ja.type with
+     | [.list ⟨[], [], some E, false⟩ []] => j.type = E ++ U
+     | _ => False)
+  | .setElem, .setElem a i v, [ja, ji, jv] =>
+    ja.context = j.context ∧ ja.term = a ∧ ji.context = j.context ∧ ji.term = i ∧
+    jv.context = j.context ∧ jv.term = v ∧ j.type = ja.type ∧
+    (match expand G ja.type, expand G ji.type with
+     | [.list T []], [.numLit b] => namedAt T b = some jv.type ∧ T.readonly = false
+     | _, _ => False)
+  | .len, .lenOf a, [ja] =>
+    ja.context = j.context ∧ ja.term = a ∧ Represents G j.type .num ∧
+    (match expand G ja.type with
+     | [.list _ []] => True
+     | _ => False)
   | .ifBool, .ite c t e, [jc,jt,je] =>
     jc.context = j.context ∧ jc.term = c ∧ Answers G jc.type .isBool true ∧
     jt = ⟨j.context,t,j.type⟩ ∧ je = ⟨j.context,e,j.type⟩
@@ -171,8 +224,10 @@ def checkScope (d : Nat) : Tm → Bool
   | .makeAt .absent _ args => checkScopes d args
   | .letE a b => checkScope d a && checkScope (d+1) b
   | .call f args => checkScope d f && checkScopes d args
-  | .writeAt _ a b | .arith _ a b => checkScope d a && checkScope d b
-  | .readAt _ a | .test _ a => checkScope d a
+  | .writeAt _ a b | .arith _ a b | .elemAt a b => checkScope d a && checkScope d b
+  | .readAt _ a | .test _ a | .lenOf a => checkScope d a
+  | .setElem a b c => checkScope d a && checkScope d b && checkScope d c
+  | .arrLit args => checkScopes d args
   | .ite c a b => checkScope d c && checkScope d a && checkScope d b
   | _ => true
 
@@ -317,6 +372,90 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     have ha := hp ja (by simp)
     rw [hΓ, hta] at ha
     exact .test ha ht hf
+  · rename_i psl r x ps' inits
+    split at hl
+    · rename_i T hT
+      obtain ⟨hterms, hctx, hreq, hbound, hpos⟩ := hl
+      subst hterms
+      have hmap : psl.map Sequent.term = (psl.map fun p => (p.type, p.term)).map Prod.snd := by
+        simp [List.map_map, Function.comp_def]
+      rw [hmap]
+      refine HasTy.arrLit (xs := psl.map fun p => (p.type, p.term)) hT
+        (by simpa using hreq) (by simpa using hbound) ?_ ?_
+      · intro q hq
+        rw [List.zipIdx_map] at hq
+        obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
+        exact hpos p hp
+      · intro p hmem
+        obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hmem
+        have := hp q hq
+        rw [hctx q hq] at this
+        exact this
+    · contradiction
+  · rename_i a i ja ji
+    rcases hl with ⟨hΓa, hta, hΓi, hti, hr⟩
+    have ha := hp ja (by simp)
+    have hi := hp ji (by simp)
+    rw [hΓa, hta] at ha
+    rw [hΓi, hti] at hi
+    split at hr
+    · rename_i T b hT hI
+      simp only [requiredAt, Option.bind_eq_some_iff] at hr
+      obtain ⟨k, hk, hA⟩ := hr
+      exact .elem ha hT hi hI hk hA
+    · contradiction
+  · rename_i U a i ja ji
+    rcases hl with ⟨hΓa, hta, hΓi, hti, hU, hr⟩
+    have ha := hp ja (by simp)
+    have hi := hp ji (by simp)
+    rw [hΓa, hta] at ha
+    rw [hΓi, hti] at hi
+    split at hr
+    · rename_i T b hT hI
+      simp only [optionalAt, Option.bind_eq_some_iff] at hr
+      obtain ⟨k, hk, hr⟩ := hr
+      split at hr
+      · cases hr
+      · rename_i hnone
+        simp only [Option.map_eq_some_iff] at hr
+        obtain ⟨A, hA, rfl⟩ := hr
+        exact .elemOpt ha hT hi hI hk hnone hA hU
+    · contradiction
+  · rename_i U a i ja ji
+    rcases hl with ⟨hΓa, hta, hΓi, hti, hU, hq, hr⟩
+    have ha := hp ja (by simp)
+    have hi := hp ji (by simp)
+    rw [hΓa, hta] at ha
+    rw [hΓi, hti] at hi
+    split at hr
+    · rename_i E hT
+      rw [hr]
+      exact .elemAny ha hT hi hq hU
+    · contradiction
+  · rename_i a i v ja ji jv
+    rcases hl with ⟨hΓa, hta, hΓi, hti, hΓv, htv, hty, hr⟩
+    have ha := hp ja (by simp)
+    have hi := hp ji (by simp)
+    have hv := hp jv (by simp)
+    rw [hΓa, hta] at ha
+    rw [hΓi, hti] at hi
+    rw [hΓv, htv] at hv
+    rw [hty]
+    split at hr
+    · rename_i T b hT hI
+      obtain ⟨hr, hro⟩ := hr
+      simp only [namedAt, Option.bind_eq_some_iff] at hr
+      obtain ⟨k, hk, hA⟩ := hr
+      exact .setElem ha hT hi hI hk hA hro hv
+    · contradiction
+  · rename_i a ja
+    rcases hl with ⟨hΓ, hta, hn, hr⟩
+    have ha := hp ja (by simp)
+    rw [hΓ, hta] at ha
+    split at hr
+    · rename_i T hT
+      exact .len ha hT hn
+    · contradiction
   · rename_i c t e jc jt je
     rcases hl with ⟨hΓ, hc, hb, rfl, rfl⟩
     have hcond := hp jc (by simp)
@@ -613,6 +752,63 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
   | @readView Γ a Ref fs vs f A ha hr hm ih =>
     apply node_complete (G := G) (j := ⟨Γ, .readAt f a, A⟩) (r := .readView) (js := [⟨Γ,a,Ref⟩])
       ⟨rfl,rfl,by simp only [show expand G Ref = [.refs fs [] vs] from hr]; exact hm⟩
+    simpa using ih
+  | @arrLit Γ L T xs hr hreq hbound hpos hx ih =>
+    apply node_complete (G := G) (j := ⟨Γ, .arrLit (xs.map Prod.snd), L⟩) (r := .arrLit)
+      (js := xs.map fun p => ⟨Γ, p.2, p.1⟩)
+    · simp only [Local, show expand G L = [.list T []] from hr]
+      refine ⟨by simp [List.map_map, Function.comp_def],
+        by intro p hp; obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp; rfl,
+        by simpa using hreq, by simpa using hbound, ?_⟩
+      intro q hq
+      rw [List.zipIdx_map] at hq
+      obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
+      exact hpos p hp
+    · intro j hj
+      obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
+      exact ih p hp
+  | @elem Γ a i L I A T b k ha hr hi hI hk hA iha ihi =>
+    apply node_complete (G := G) (j := ⟨Γ, .elemAt a i, A⟩) (r := .elem) (js := [⟨Γ,a,L⟩, ⟨Γ,i,I⟩])
+      ⟨rfl,rfl,rfl,rfl,by simp only [show expand G L = [.list T []] from hr,
+        show expand G I = [.numLit b] from hI]; simp [requiredAt, hk, hA]⟩
+    intro j hj
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
+    rcases hj with rfl | rfl
+    · exact iha
+    · exact ihi
+  | @elemOpt Γ a i L I A U T b k ha hr hi hI hk hnone hA hU iha ihi =>
+    apply node_complete (G := G) (j := ⟨Γ, .elemAt a i, A ++ U⟩) (r := .elemOpt U)
+      (js := [⟨Γ,a,L⟩, ⟨Γ,i,I⟩])
+      ⟨rfl,rfl,rfl,rfl,hU,by simp only [show expand G L = [.list T []] from hr,
+        show expand G I = [.numLit b] from hI]; simp [optionalAt, hk, hnone, hA]⟩
+    intro j hj
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
+    rcases hj with rfl | rfl
+    · exact iha
+    · exact ihi
+  | @elemAny Γ a i L I E U ha hr hi hq hU iha ihi =>
+    apply node_complete (G := G) (j := ⟨Γ, .elemAt a i, E ++ U⟩) (r := .elemAny U)
+      (js := [⟨Γ,a,L⟩, ⟨Γ,i,I⟩])
+      ⟨rfl,rfl,rfl,rfl,hU,hq,by simp only [show expand G L = [.list ⟨[], [], some E, false⟩ []] from hr]⟩
+    intro j hj
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
+    rcases hj with rfl | rfl
+    · exact iha
+    · exact ihi
+  | @setElem Γ a i v L I A T b k ha hr hi hI hk hA hro hv iha ihi ihv =>
+    apply node_complete (G := G) (j := ⟨Γ, .setElem a i v, L⟩) (r := .setElem)
+      (js := [⟨Γ,a,L⟩, ⟨Γ,i,I⟩, ⟨Γ,v,A⟩])
+      ⟨rfl,rfl,rfl,rfl,rfl,rfl,rfl,by simp only [show expand G L = [.list T []] from hr,
+        show expand G I = [.numLit b] from hI]; simp [namedAt, hk, hA, hro]⟩
+    intro j hj
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
+    rcases hj with rfl | rfl | rfl
+    · exact iha
+    · exact ihi
+    · exact ihv
+  | @len Γ a L N T ha hr hn ih =>
+    apply node_complete (G := G) (j := ⟨Γ, .lenOf a, N⟩) (r := .len) (js := [⟨Γ,a,L⟩])
+      ⟨rfl,rfl,hn,by simp only [show expand G L = [.list T []] from hr]⟩
     simpa using ih
   | @test Γ a A B k ha ht hf ih =>
     apply node_complete (G := G) (j := ⟨Γ, .test k a, B⟩) (r := .test) (js := [⟨Γ,a,A⟩])

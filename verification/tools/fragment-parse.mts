@@ -40,6 +40,7 @@ import type {
   TypeAliasAst,
   TypeParamAst,
   ArithOp,
+  ArrayElemAst,
 } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { messageOf } from "./thrown.mts";
@@ -211,7 +212,9 @@ class Gate {
         // `never`, and nothing else about the field changes.
         const readonly =
           ts.isPropertySignatureDeclaration(f) &&
-          f.modifiers?.every((m) => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true;
+          f.modifiers?.every(
+            (m) => m.kind === ts.SyntaxKind.ReadonlyKeyword,
+          ) === true;
         if (
           !ts.isPropertySignatureDeclaration(f) ||
           !ts.isIdentifier(f.name) ||
@@ -230,7 +233,12 @@ class Gate {
         const t = this.typeOf(
           ts.isPropertySignatureDeclaration(f) ? f.type : undefined,
         );
-        return { name, optional: false, read: t, write: readonly ? { top: false, atoms: [] } : t };
+        return {
+          name,
+          optional: false,
+          read: t,
+          write: readonly ? { top: false, atoms: [] } : t,
+        };
       });
       acc.push({
         a: "record",
@@ -289,8 +297,7 @@ class Gate {
           );
         if (node.typeArguments.length !== 1)
           this.fail(node, "only one type argument is in the fragment");
-        if (!this.aliasNames.has(name))
-          this.fail(node, "unknown type alias");
+        if (!this.aliasNames.has(name)) this.fail(node, "unknown type alias");
         acc.push({
           a: "alias",
           name,
@@ -298,8 +305,7 @@ class Gate {
         });
         return;
       }
-      if (!this.typeParams.has(name))
-        this.fail(node, "unknown type parameter");
+      if (!this.typeParams.has(name)) this.fail(node, "unknown type parameter");
       acc.push({ a: "param", name });
       return;
     }
@@ -351,6 +357,63 @@ class Gate {
       case ts.SyntaxKind.UndefinedKeyword:
         acc.push({ a: "undefined" });
         return;
+      // An array: a tuple contract on its store. `T[]` is a rest contract;
+      // a tuple names its required positions, its optional ones and its rest.
+      case ts.SyntaxKind.ArrayType: {
+        const elem = ts.isArrayTypeNode(node) ? node.elementType : undefined;
+        acc.push({
+          a: "array",
+          required: [],
+          optional: [],
+          rest: this.typeOf(elem),
+          readonly: false,
+        });
+        return;
+      }
+      case ts.SyntaxKind.TupleType: {
+        const elements = ts.isTupleTypeNode(node) ? node.elements : [];
+        const required: ClaimType[] = [],
+          optional: ClaimType[] = [];
+        let rest: ClaimType | null = null;
+        for (const e of elements) {
+          if (ts.isNamedTupleMember(e))
+            this.fail(e, "named tuple members are outside the fragment");
+          if (ts.isRestTypeNode(e)) {
+            if (rest !== null || !ts.isArrayTypeNode(e.type))
+              this.fail(e, "a tuple rest must be one final array");
+            rest = this.typeOf(e.type.elementType);
+          } else if (ts.isOptionalTypeNode(e)) {
+            if (rest !== null)
+              this.fail(e, "an optional position cannot follow the rest");
+            optional.push(this.typeOf(e.type));
+          } else {
+            if (optional.length || rest !== null)
+              this.fail(e, "a required position cannot follow an optional one");
+            required.push(this.typeOf(e));
+          }
+        }
+        acc.push({ a: "array", required, optional, rest, readonly: false });
+        return;
+      }
+      case ts.SyntaxKind.TypeOperator: {
+        // `readonly T[]` and `readonly [..]`: the same contract as a view.
+        if (
+          !ts.isTypeOperatorNode(node) ||
+          node.operator !== ts.SyntaxKind.ReadonlyKeyword
+        )
+          this.fail(
+            node,
+            `type outside the fragment (${ts.SyntaxKind[node.kind]})`,
+          );
+        const inner: Atom[] = [];
+        this.atomsOf(node.type, inner);
+        for (const a of inner) {
+          if (a.a !== "array")
+            this.fail(node, "readonly applies to an array or tuple type");
+          acc.push({ ...a, readonly: true });
+        }
+        return;
+      }
       // A `void` result: no usable guarantee about the value.
       case ts.SyntaxKind.VoidKeyword:
         acc.push({ a: "void" });
@@ -498,6 +561,23 @@ class Gate {
       };
     }
 
+    if (ts.isArrayLiteralExpression(node)) {
+      if (
+        node.elements.some(
+          (e) => ts.isSpreadElement(e) || ts.isOmittedExpression(e),
+        )
+      )
+        this.fail(
+          node,
+          "array literal spreads and holes are outside the fragment",
+        );
+      return {
+        k: "arrayLit",
+        pos: this.span(node),
+        elems: node.elements.map((e) => this.expr(e)),
+      };
+    }
+
     if (ts.isElementAccessExpression(node)) {
       if (node.questionDotToken)
         this.fail(node, "optional element access is outside the fragment");
@@ -553,47 +633,108 @@ class Gate {
     if (ts.isBinaryExpression(node)) return this.binary(node);
 
     if (ts.isCallExpression(node)) {
-      if (ts.isPropertyAccessExpression(node.expression) &&
-          ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "Object" &&
-          node.expression.name.text === "assign") {
-        if (node.questionDotToken || node.expression.questionDotToken ||
-            node.typeArguments?.length !== 2 || node.arguments.length !== 2 ||
-            !ts.isArrowFunction(node.arguments[0]) || !ts.isObjectLiteralExpression(node.arguments[1]))
-          this.fail(node, "Object.assign requires a fresh arrow, an object literal and two explicit type arguments");
+      if (
+        ts.isPropertyAccessExpression(node.expression) &&
+        ts.isIdentifier(node.expression.expression) &&
+        node.expression.expression.text === "Object" &&
+        node.expression.name.text === "assign"
+      ) {
+        if (
+          node.questionDotToken ||
+          node.expression.questionDotToken ||
+          node.typeArguments?.length !== 2 ||
+          node.arguments.length !== 2 ||
+          !ts.isArrowFunction(node.arguments[0]) ||
+          !ts.isObjectLiteralExpression(node.arguments[1])
+        )
+          this.fail(
+            node,
+            "Object.assign requires a fresh arrow, an object literal and two explicit type arguments",
+          );
         // The fragment cannot assign to Object.assign or pass Object as a value.
         // Reject any local declaration that could shadow the standard builtin.
         const checkBinding = (n: Node): void => {
-          if ((ts.isParameterDeclaration(n) || ts.isVariableDeclaration(n) || ts.isFunctionDeclaration(n)) &&
-              n.name && ts.isIdentifier(n.name) && n.name.text === "Object")
-            this.fail(n, "shadowing Object is outside intrinsic callable initialization");
+          if (
+            (ts.isParameterDeclaration(n) ||
+              ts.isVariableDeclaration(n) ||
+              ts.isFunctionDeclaration(n)) &&
+            n.name &&
+            ts.isIdentifier(n.name) &&
+            n.name.text === "Object"
+          )
+            this.fail(
+              n,
+              "shadowing Object is outside intrinsic callable initialization",
+            );
           n.forEachChild(checkBinding);
         };
         checkBinding(this.file);
         // These names either replace an intrinsic used by the lowering or
         // encounter special/non-writable properties on JavaScript functions.
         for (const property of node.arguments[1].properties) {
-          if (ts.isPropertyAssignment(property) && ts.isIdentifier(property.name) &&
-              ["call", "bind", "name", "length", "caller", "arguments", "__proto__"].includes(property.name.text))
-            this.fail(property, "special function properties are outside callable initialization");
+          if (
+            ts.isPropertyAssignment(property) &&
+            ts.isIdentifier(property.name) &&
+            [
+              "call",
+              "bind",
+              "name",
+              "length",
+              "caller",
+              "arguments",
+              "__proto__",
+            ].includes(property.name.text)
+          )
+            this.fail(
+              property,
+              "special function properties are outside callable initialization",
+            );
         }
-        return {k: "withValue", pos: this.span(node), fn: this.expr(node.arguments[0]),
-          initial: this.expr(node.arguments[1]), functionType: this.typeOf(node.typeArguments[0]),
-          bagType: this.typeOf(node.typeArguments[1])};
+        return {
+          k: "withValue",
+          pos: this.span(node),
+          fn: this.expr(node.arguments[0]),
+          initial: this.expr(node.arguments[1]),
+          functionType: this.typeOf(node.typeArguments[0]),
+          bagType: this.typeOf(node.typeArguments[1]),
+        };
       }
-      if (ts.isPropertyAccessExpression(node.expression) && ["call", "bind"].includes(node.expression.name.text)) {
-        if (node.questionDotToken || node.expression.questionDotToken || node.typeArguments?.length ||
-            node.arguments.length === 0 || node.arguments.some((arg) => ts.isSpreadElement(arg)) ||
-            !this.localArrow(node.expression.expression))
-          this.fail(node, `.${node.expression.name.text} requires a known local arrow, an explicit receiver and ordinary arguments`);
-        return {k: node.expression.name.text === "bind" ? "bindWithReceiver" : "callWithReceiver", pos: this.span(node), callee: this.expr(node.expression.expression),
-          receiver: this.expr(node.arguments[0]), args: node.arguments.slice(1).map((arg) => this.expr(arg))};
+      if (
+        ts.isPropertyAccessExpression(node.expression) &&
+        ["call", "bind"].includes(node.expression.name.text)
+      ) {
+        if (
+          node.questionDotToken ||
+          node.expression.questionDotToken ||
+          node.typeArguments?.length ||
+          node.arguments.length === 0 ||
+          node.arguments.some((arg) => ts.isSpreadElement(arg)) ||
+          !this.localArrow(node.expression.expression)
+        )
+          this.fail(
+            node,
+            `.${node.expression.name.text} requires a known local arrow, an explicit receiver and ordinary arguments`,
+          );
+        return {
+          k:
+            node.expression.name.text === "bind"
+              ? "bindWithReceiver"
+              : "callWithReceiver",
+          pos: this.span(node),
+          callee: this.expr(node.expression.expression),
+          receiver: this.expr(node.arguments[0]),
+          args: node.arguments.slice(1).map((arg) => this.expr(arg)),
+        };
       }
       if (
         node.questionDotToken ||
         node.typeArguments?.length ||
         node.arguments.some((arg) => ts.isSpreadElement(arg))
       )
-        this.fail(node, "expected ordinary call arguments without spread or type arguments");
+        this.fail(
+          node,
+          "expected ordinary call arguments without spread or type arguments",
+        );
       return {
         k: "apply",
         pos: this.span(node),
@@ -612,17 +753,28 @@ class Gate {
   // Follow immutable lexical aliases to source-created arrows. Parameters and
   // arbitrary call results may carry their own .call property, so are refused.
   private localArrow(node: Expression, seen = new Set<number>()): boolean {
-    if (ts.isParenthesizedExpression(node)) return this.localArrow(node.expression, seen);
+    if (ts.isParenthesizedExpression(node))
+      return this.localArrow(node.expression, seen);
     if (ts.isArrowFunction(node)) return true;
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
-        ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "Object" &&
-        node.expression.name.text === "assign")
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      ts.isIdentifier(node.expression.expression) &&
+      node.expression.expression.text === "Object" &&
+      node.expression.name.text === "assign"
+    )
       // Its initializer is separately parsed through the full Object.assign
       // gate. Do not parse it again here: its body may refer back to this name.
-      return node.arguments.length === 2 && ts.isArrowFunction(node.arguments[0]) &&
-        ts.isObjectLiteralExpression(node.arguments[1]);
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
-        node.expression.name.text === "bind")
+      return (
+        node.arguments.length === 2 &&
+        ts.isArrowFunction(node.arguments[0]) &&
+        ts.isObjectLiteralExpression(node.arguments[1])
+      );
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === "bind"
+    )
       return this.localArrow(node.expression.expression, seen);
     if (!ts.isIdentifier(node)) return false;
     // Held as a string: a narrowing of `node` does not reach into a closure.
@@ -632,15 +784,26 @@ class Gate {
         for (const statement of scope.statements) {
           if (!ts.isVariableStatement(statement)) continue;
           for (const decl of statement.declarationList.declarations) {
-            if (!ts.isIdentifier(decl.name) || decl.name.text !== name) continue;
-            if (!(statement.declarationList.flags & ts.NodeFlags.Const) || !decl.initializer || seen.has(decl.getStart(this.file))) return false;
+            if (!ts.isIdentifier(decl.name) || decl.name.text !== name)
+              continue;
+            if (
+              !(statement.declarationList.flags & ts.NodeFlags.Const) ||
+              !decl.initializer ||
+              seen.has(decl.getStart(this.file))
+            )
+              return false;
             seen.add(decl.getStart(this.file));
             return this.localArrow(decl.initializer, seen);
           }
         }
       }
-      if (ts.isFunctionLikeDeclaration(scope) && scope.parameters?.some((p) =>
-          ts.isIdentifier(p.name) && p.name.text === name)) return false;
+      if (
+        ts.isFunctionLikeDeclaration(scope) &&
+        scope.parameters?.some(
+          (p) => ts.isIdentifier(p.name) && p.name.text === name,
+        )
+      )
+        return false;
     }
     return false;
   }
@@ -664,7 +827,11 @@ class Gate {
       [ts.SyntaxKind.MinusMinusToken]: "sub",
     };
     const op = ops[token];
-    if (!op) this.fail(node, `binary operator outside the fragment (${ts.tokenToString(token)})`);
+    if (!op)
+      this.fail(
+        node,
+        `binary operator outside the fragment (${ts.tokenToString(token)})`,
+      );
     const lhs = this.expr(target);
     if (lhs.k !== "id" && lhs.k !== "read" && lhs.k !== "index")
       this.fail(target, "only field and local assignments are supported");
@@ -684,7 +851,13 @@ class Gate {
       case ts.SyntaxKind.MinusEqualsToken:
       case ts.SyntaxKind.AsteriskEqualsToken:
       case ts.SyntaxKind.SlashEqualsToken:
-        return this.update(node, node.left, node.operatorToken.kind, node.right, false);
+        return this.update(
+          node,
+          node.left,
+          node.operatorToken.kind,
+          node.right,
+          false,
+        );
     }
     const arithmetic: Record<number, ArithOp> = {
       [ts.SyntaxKind.PlusToken]: "add",
@@ -694,7 +867,13 @@ class Gate {
     };
     const arith = arithmetic[node.operatorToken.kind];
     if (arith)
-      return { k: "arith", pos: this.span(node), op: arith, l: this.expr(node.left), r: this.expr(node.right) };
+      return {
+        k: "arith",
+        pos: this.span(node),
+        op: arith,
+        l: this.expr(node.left),
+        r: this.expr(node.right),
+      };
     const logical: Record<number, "nullish" | "or" | "and"> = {
       [ts.SyntaxKind.QuestionQuestionEqualsToken]: "nullish",
       [ts.SyntaxKind.BarBarEqualsToken]: "or",
@@ -707,7 +886,13 @@ class Gate {
         this.fail(node.left, "only field and local assignments are supported");
       if (target.k === "id" && target.name === "undefined")
         this.fail(node.left, "shadowing undefined is outside the fragment");
-      return { k: "logicalAssign", pos: this.span(node), op: logicalOp, target, rhs: this.expr(node.right) };
+      return {
+        k: "logicalAssign",
+        pos: this.span(node),
+        op: logicalOp,
+        target,
+        rhs: this.expr(node.right),
+      };
     }
     if (node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionEqualsToken) {
       if (!ts.isIdentifier(node.left) || node.left.text === "undefined")
@@ -727,6 +912,46 @@ class Gate {
         left: this.expr(node.left),
         right: this.expr(node.right),
       };
+    if (
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      ts.isArrayLiteralExpression(node.left)
+    ) {
+      // `[a, b = d] = rhs`: each element names a mutable local, with a
+      // default written as an assignment inside the literal.
+      const names = new Set<string>();
+      const targets: ArrayElemAst[] = node.left.elements.map((el, index) => {
+        const target =
+          ts.isBinaryExpression(el) &&
+          el.operatorToken.kind === ts.SyntaxKind.EqualsToken
+            ? el.left
+            : el;
+        const dflt =
+          ts.isBinaryExpression(el) &&
+          el.operatorToken.kind === ts.SyntaxKind.EqualsToken
+            ? el.right
+            : null;
+        if (ts.isSpreadElement(el) || ts.isOmittedExpression(el))
+          this.fail(el, "rest elements are outside the fragment");
+        if (!ts.isIdentifier(target))
+          this.fail(el, "only field and local assignments are supported");
+        if (target.text === "undefined")
+          this.fail(el, "shadowing undefined is outside the fragment");
+        if (names.has(target.text)) this.fail(el, "duplicate pattern binding");
+        names.add(target.text);
+        return {
+          index,
+          name: target.text,
+          namePos: this.span(target),
+          default_: dflt ? this.expr(dflt) : null,
+        };
+      });
+      return {
+        k: "arrayAssign",
+        pos: this.span(node),
+        targets,
+        rhs: this.expr(node.right),
+      };
+    }
     if (node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
       // Assigning a name is assigning a mutable local. Whether one was
       // declared is the adapter's to check: it builds the scope, and a name
@@ -742,7 +967,10 @@ class Gate {
           rhs: this.expr(node.right),
         };
       }
-      if (ts.isElementAccessExpression(node.left) && !node.left.questionDotToken)
+      if (
+        ts.isElementAccessExpression(node.left) &&
+        !node.left.questionDotToken
+      )
         return {
           k: "indexWrite",
           pos: this.span(node),
@@ -760,11 +988,17 @@ class Gate {
         pos: this.span(node),
         field: ts.isPropertyAccessExpression(node.left)
           ? node.left.name.text
-          : this.fail(node.left, "only field and local assignments are supported"),
+          : this.fail(
+              node.left,
+              "only field and local assignments are supported",
+            ),
         receiver: this.expr(
           ts.isPropertyAccessExpression(node.left)
             ? node.left.expression
-            : this.fail(node.left, "only field and local assignments are supported"),
+            : this.fail(
+                node.left,
+                "only field and local assignments are supported",
+              ),
         ),
         rhs: this.expr(node.right),
       };
@@ -782,13 +1016,27 @@ class Gate {
         `binary operator outside the fragment (${this.text(node.operatorToken)})`,
       );
     if (op === "===" || op === "!==") {
-      const unwrap = (e: Expression): Expression => ts.isParenthesizedExpression(e) ? unwrap(e.expression) : e;
-      const left = unwrap(node.left), right = unwrap(node.right);
-      const pair = ts.isTypeOfExpression(left) && ts.isStringLiteral(right) && right.text === "function"
-        ? left : ts.isTypeOfExpression(right) && ts.isStringLiteral(left) && left.text === "function"
-          ? right : null;
+      const unwrap = (e: Expression): Expression =>
+        ts.isParenthesizedExpression(e) ? unwrap(e.expression) : e;
+      const left = unwrap(node.left),
+        right = unwrap(node.right);
+      const pair =
+        ts.isTypeOfExpression(left) &&
+        ts.isStringLiteral(right) &&
+        right.text === "function"
+          ? left
+          : ts.isTypeOfExpression(right) &&
+              ts.isStringLiteral(left) &&
+              left.text === "function"
+            ? right
+            : null;
       if (pair)
-        return {k: "functionTest", pos: this.span(node), equal: op === "===", e: this.expr(pair.expression)};
+        return {
+          k: "functionTest",
+          pos: this.span(node),
+          equal: op === "===",
+          e: this.expr(pair.expression),
+        };
     }
     return {
       k: "bin",
@@ -835,7 +1083,10 @@ class Gate {
     return {
       k: "lambda",
       pos: this.span(node),
-      params: node.parameters.map((p, i) => ({name: names[i], type: this.typeOf(p.type)})),
+      params: node.parameters.map((p, i) => ({
+        name: names[i],
+        type: this.typeOf(p.type),
+      })),
       result: this.typeOf(node.type),
       body,
     };
@@ -964,6 +1215,39 @@ class Gate {
       this.fail(node, "a pattern declares alone in the fragment");
     const d = list.declarations[0];
     const pattern = d.name;
+    if (ts.isArrayBindingPattern(pattern)) {
+      if (d.type) this.fail(d, "an annotated pattern is outside the fragment");
+      if (!d.initializer) this.fail(d, "a `const` needs an initializer");
+      if (pattern.elements.length === 0)
+        this.fail(pattern, "an empty pattern binds nothing");
+      const names = new Set<string>();
+      const elems: ArrayElemAst[] = pattern.elements.map((el, index) => {
+        // A hole is an omitted expression, or a binding element without a name.
+        if (ts.isOmittedExpression(el) || !el.name)
+          this.fail(el, "array pattern holes are outside the fragment");
+        if (el.dotDotDotToken)
+          this.fail(el, "rest elements are outside the fragment");
+        const name = el.name;
+        if (!ts.isIdentifier(name))
+          this.fail(el, "nested patterns are outside the fragment");
+        if (name.text === "undefined")
+          this.fail(el, "shadowing undefined is outside the fragment");
+        if (names.has(name.text)) this.fail(el, "duplicate pattern binding");
+        names.add(name.text);
+        return {
+          index,
+          name: name.text,
+          namePos: this.span(name),
+          default_: el.initializer ? this.expr(el.initializer) : null,
+        };
+      });
+      return {
+        k: "arrayPattern",
+        pos: this.span(node),
+        elems,
+        init: this.expr(d.initializer),
+      };
+    }
     if (!ts.isObjectBindingPattern(pattern))
       this.fail(d, "destructuring is outside the fragment");
     if (d.type) this.fail(d, "an annotated pattern is outside the fragment");
@@ -978,7 +1262,10 @@ class Gate {
         this.fail(el, "nested patterns are outside the fragment");
       const key = el.propertyName ?? el.name;
       if (!ts.isIdentifier(key))
-        this.fail(el, "computed or string pattern keys are outside the fragment");
+        this.fail(
+          el,
+          "computed or string pattern keys are outside the fragment",
+        );
       if (el.name.text === "undefined")
         this.fail(el, "shadowing undefined is outside the fragment");
       if (names.has(el.name.text)) this.fail(el, "duplicate pattern binding");
@@ -1036,7 +1323,13 @@ class Gate {
       if (mutable && !(list.flags & ts.NodeFlags.Let))
         this.fail(node, "`var` is outside the fragment");
       const kindWord = mutable ? "let" : "const";
-      if (list.declarations.some((d) => ts.isObjectBindingPattern(d.name)))
+      if (
+        list.declarations.some(
+          (d) =>
+            ts.isObjectBindingPattern(d.name) ||
+            ts.isArrayBindingPattern(d.name),
+        )
+      )
         return this.patternStmt(node, mutable);
       // A declaration list binds its declarators left to right, each
       // initializer seeing the earlier bindings, under the statement's one
@@ -1091,10 +1384,7 @@ class Gate {
       };
 
     if (ts.isIfStatement(node)) {
-      if (
-        node.elseStatement &&
-        node.elseStatement.kind !== ts.SyntaxKind.Block
-      )
+      if (node.elseStatement && node.elseStatement.kind !== ts.SyntaxKind.Block)
         this.fail(
           node.elseStatement,
           "`else if` and non-block branches are outside the fragment",
@@ -1169,13 +1459,16 @@ class Gate {
           this.fail(tp, "duplicate type parameter");
         let bound: ClaimType | null = null;
         if (tp.constraint) {
-          const earlier = ts.isTypeReferenceNode(tp.constraint) &&
+          const earlier =
+            ts.isTypeReferenceNode(tp.constraint) &&
             tp.constraint.typeName.kind === ts.SyntaxKind.Identifier &&
             !tp.constraint.typeArguments?.length &&
             this.typeParams.has(tp.constraint.typeName.text);
           if (tp.constraint.kind !== ts.SyntaxKind.BooleanKeyword && !earlier)
-            this.fail(tp.constraint,
-              "only `extends boolean` or an earlier type parameter is in the fragment");
+            this.fail(
+              tp.constraint,
+              "only `extends boolean` or an earlier type parameter is in the fragment",
+            );
           bound = this.typeOf(tp.constraint);
         }
         typeParams.push({ name: tp.name.text, bound });
@@ -1183,31 +1476,31 @@ class Gate {
       }
     }
     try {
-    const params = node.parameters.map((p) => {
-      if (p.name.kind !== ts.SyntaxKind.Identifier)
-        this.fail(p, "destructuring parameter");
-      if (p.name.text === "undefined")
-        this.fail(p, "shadowing undefined is outside the fragment");
-      if (p.questionToken)
-        this.fail(p, "optional parameters are outside the fragment");
-      if (p.dotDotDotToken)
-        this.fail(p, "rest parameters are outside the fragment");
-      if (p.initializer)
-        this.fail(p, "default parameters are outside the fragment");
+      const params = node.parameters.map((p) => {
+        if (p.name.kind !== ts.SyntaxKind.Identifier)
+          this.fail(p, "destructuring parameter");
+        if (p.name.text === "undefined")
+          this.fail(p, "shadowing undefined is outside the fragment");
+        if (p.questionToken)
+          this.fail(p, "optional parameters are outside the fragment");
+        if (p.dotDotDotToken)
+          this.fail(p, "rest parameters are outside the fragment");
+        if (p.initializer)
+          this.fail(p, "default parameters are outside the fragment");
+        return {
+          name: p.name.text,
+          pos: this.span(p.name),
+          type: this.typeOf(p.type),
+        };
+      });
       return {
-        name: p.name.text,
-        pos: this.span(p.name),
-        type: this.typeOf(p.type),
+        name: node.name.text,
+        namePos: this.span(node.name),
+        typeParams,
+        params,
+        retType: this.typeOf(node.type),
+        body: this.block(node.body),
       };
-    });
-    return {
-      name: node.name.text,
-      namePos: this.span(node.name),
-      typeParams,
-      params,
-      retType: this.typeOf(node.type),
-      body: this.block(node.body),
-    };
     } finally {
       this.typeParams.clear();
     }

@@ -31,7 +31,18 @@ export type Term =
   | { test: { k: Tag; a: Term } }
   | { ite: { c: Term; t: Term; e: Term } }
   /** Arithmetic on two numbers, as the double operation. */
-  | { arith: { op: "add" | "sub" | "mul" | "div"; a: Term; b: Term } };
+  | { arith: { op: "add" | "sub" | "mul" | "div"; a: Term; b: Term } }
+  /** An array store with these initial elements, in order: the value an
+   * array object holds in its store field. */
+  | { arrLit: { inits: Term[] } }
+  /** The element of a store at a numeric index: `undefined` at a hole or out
+   * of range. */
+  | { elemAt: { a: Term; i: Term } }
+  /** The store with the element at a numeric index set, growing it when the
+   * index is past the end. */
+  | { setElem: { a: Term; i: Term; v: Term } }
+  /** The length of a store, as a number. */
+  | { lenOf: { a: Term } };
 /** Every tag, checked against `Tag`: adding one there and not here is a type
  * error rather than an "unknown tag" at run time. */
 const TAGS: Record<Extract<Tag, string>, true> = {
@@ -50,11 +61,18 @@ const tags: readonly unknown[] = Object.keys(TAGS);
 export function isTag(v: unknown): v is Tag {
   if (tags.includes(v)) return true;
   if (!isRecord(v) || Object.keys(v).length !== 1) return false;
-  if (isRecord(v.strEq)) return Object.keys(v.strEq).length === 1 && typeof v.strEq.value === "string";
+  if (isRecord(v.strEq))
+    return (
+      Object.keys(v.strEq).length === 1 && typeof v.strEq.value === "string"
+    );
   if (!isRecord(v.numEq)) return false;
   const n = v.numEq;
-  return Object.keys(n).length === 1 && typeof n.bits === "string" &&
-    /^[0-9]+$/.test(n.bits) && BigInt(n.bits) <= 0xffffffffffffffffn;
+  return (
+    Object.keys(n).length === 1 &&
+    typeof n.bits === "string" &&
+    /^[0-9]+$/.test(n.bits) &&
+    BigInt(n.bits) <= 0xffffffffffffffffn
+  );
 }
 /* JSON shape checks, shared with the program graph in control-flow.mts. They
  * belong to neither language, so they name neither: a malformed target is not
@@ -115,6 +133,10 @@ export function decodeTerm(value: unknown): Term {
     test: ["k", "a"],
     ite: ["c", "t", "e"],
     arith: ["op", "a", "b"],
+    arrLit: ["inits"],
+    elemAt: ["a", "i"],
+    setElem: ["a", "i", "v"],
+    lenOf: ["a"],
   };
   const keys = shape[key];
   if (!keys) throw Error("unknown term constructor");
@@ -150,6 +172,9 @@ export function decodeTerm(value: unknown): Term {
           throw Error("invalid object field");
         nat(pair[1]);
       }
+    } else if (k === "op") {
+      if (!["add", "sub", "mul", "div"].includes(v as string))
+        throw Error("unknown arithmetic operator");
     } else if (k === "args" || k === "inits") {
       if (!Array.isArray(v)) throw Error("invalid arguments");
       v.forEach(decodeTerm);

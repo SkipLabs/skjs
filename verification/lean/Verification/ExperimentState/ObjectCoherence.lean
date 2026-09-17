@@ -65,8 +65,11 @@ def Names (D : Registry) : Tm → Prop
   | .makeAt (.closure _ b) _ args => Names D b ∧ NamesArgs D args
   | .makeAt .absent _ args => NamesArgs D args
   | .call f args => Names D f ∧ NamesArgs D args
-  | .letE a b | .writeAt _ a b | .arith _ a b => Names D a ∧ Names D b
-  | .readAt _ a | .test _ a => Names D a
+  | .letE a b | .writeAt _ a b | .arith _ a b | .elemAt a b => Names D a ∧ Names D b
+  | .readAt _ a | .test _ a | .lenOf a => Names D a
+  | .setElem a b c => Names D a ∧ Names D b ∧ Names D c
+  | .arrLit args => NamesArgs D args
+  | .arr ls => ∀ l ∈ ls.filterMap id, D[l]? = some .absent
   | .ite c a b => Names D c ∧ Names D a ∧ Names D b
   | _ => True
 
@@ -81,6 +84,7 @@ end
 
 theorem Names.mono {D E t} (ht : Names D t) (hx : Extends D E) : Names E t := by
   induction t using Tm.induct <;> simp_all [Names]
+  case arr ls => exact fun l hl => hx l _ (ht l hl)
   case objAbsent fs => exact fun l hl => hx _ _ (ht l hl)
   case objClosure fs n b ih => exact fun l hl => hx _ _ (ht.1 l hl)
 
@@ -131,8 +135,11 @@ def sourceTerm : Tm → Bool
   | .makeAt (.closure _ b) _ args => sourceTerm b && sourceArgs args
   | .makeAt .absent _ args => sourceArgs args
   | .call f args => sourceTerm f && sourceArgs args
-  | .letE a b | .writeAt _ a b | .arith _ a b => sourceTerm a && sourceTerm b
-  | .readAt _ a | .test _ a => sourceTerm a
+  | .letE a b | .writeAt _ a b | .arith _ a b | .elemAt a b => sourceTerm a && sourceTerm b
+  | .readAt _ a | .test _ a | .lenOf a => sourceTerm a
+  | .setElem a b c => sourceTerm a && sourceTerm b && sourceTerm c
+  | .arrLit args => sourceArgs args
+  | .arr .. => false
   | .ite c a b => sourceTerm c && sourceTerm a && sourceTerm b
   | _ => true
 
@@ -310,6 +317,76 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
     obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2,ht.2.2⟩
     exact ⟨E,hx,hh',⟨ht.1.1,hs⟩,ht.2.1.mono hx,hn⟩
   | arithV =>
+    intro D hh ht
+    exact ⟨D,.refl D,hh,trivial,trivial⟩
+  | @arrArg inits i h h' a a' hg hb step ih =>
+    intro D hh ht
+    have hm := List.mem_of_getElem? hg
+    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
+    obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1 _ hm,ht.2 _ hm⟩
+    refine ⟨E,hx,hh',?_,?_⟩
+    · intro v hv
+      rcases List.mem_or_eq_of_mem_set hv with hv | rfl
+      · exact ht.1 v hv
+      · exact hs
+    · intro v hv
+      rcases List.mem_or_eq_of_mem_set hv with hv | rfl
+      · exact (ht.2 v hv).mono hx
+      · exact hn
+  | @arrAlloc vs h hv =>
+    intro D hh ht
+    have hx := extends_append D (List.replicate vs.length .absent)
+    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
+    refine ⟨_,hx,hh.alloc (fun v hv' => ⟨hv v hv',ht.1 v hv',ht.2 v hv'⟩) .absent,trivial,?_⟩
+    intro l hl
+    have hb := mem_elemSlots hl
+    have hdl := hh.1
+    exact registry_alloc (by omega) (by omega)
+  | elemC1 step ih =>
+    intro D hh ht
+    obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.1,ht.2.1⟩
+    exact ⟨E,hx,hh',⟨hs,ht.1.2⟩,hn,ht.2.2.mono hx⟩
+  | elemC2 hv step ih =>
+    intro D hh ht
+    obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2,ht.2.2⟩
+    exact ⟨E,hx,hh',⟨ht.1.1,hs⟩,ht.2.1.mono hx,hn⟩
+  | elemRead hl hv =>
+    intro D hh ht
+    exact ⟨D,.refl D,hh,(hh.lookup hv).2⟩
+  | elemAbsent _ =>
+    intro D hh ht
+    exact ⟨D,.refl D,hh,trivial,trivial⟩
+  | setC1 step ih =>
+    intro D hh ht
+    obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.1,ht.2.1⟩
+    exact ⟨E,hx,hh',⟨hs,ht.1.2⟩,hn,ht.2.2.1.mono hx,ht.2.2.2.mono hx⟩
+  | setC2 hv step ih =>
+    intro D hh ht
+    obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2.1,ht.2.2.1⟩
+    exact ⟨E,hx,hh',⟨ht.1.1,hs,ht.1.2.2⟩,ht.2.1.mono hx,hn,ht.2.2.2.mono hx⟩
+  | setC3 hv hi step ih =>
+    intro D hh ht
+    obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2.2,ht.2.2.2⟩
+    exact ⟨E,hx,hh',⟨ht.1.1,ht.1.2.1,hs⟩,ht.2.1.mono hx,ht.2.2.1.mono hx,hn⟩
+  | setPresent hw hl hlt =>
+    intro D hh ht
+    exact ⟨D,.refl D,hh.write hw ⟨ht.1.2.2,ht.2.2.2⟩,trivial,ht.2.1⟩
+  | @setGrow ls b k h v hw hk hn =>
+    intro D hh ht
+    have hx := extends_append D (List.replicate 1 .absent)
+    refine ⟨_,hx,?_,trivial,?_⟩
+    · have := hh.alloc (vs := [v]) (fun w hw' => by
+        simp only [List.mem_singleton] at hw'; subst hw'; exact ⟨hw,ht.1.2.2,ht.2.2.2⟩) .absent
+      simpa using this
+    · intro l hl
+      rcases mem_placeAt hl with hl | rfl
+      · exact hx l _ (ht.2.1 l hl)
+      · have hdl := hh.1
+        exact registry_alloc (by omega) (by omega)
+  | lenC step ih =>
+    intro D hh ht
+    exact ih D hh ht
+  | lenV =>
     intro D hh ht
     exact ⟨D,.refl D,hh,trivial,trivial⟩
 

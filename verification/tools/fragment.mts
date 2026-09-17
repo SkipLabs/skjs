@@ -13,13 +13,25 @@ export type Expr =
   | { k: "not" | "typeof"; pos: Span; e: Expr }
   /* `e as T`, `e satisfies T` or `e!`: the operand's value, unchanged. The
      annotation, when there is one, is what the operand must meet. */
-  | { k: "cast"; pos: Span; cast: "as" | "satisfies" | "nonNull"; annot: ClaimType | null; e: Expr }
+  | {
+      k: "cast";
+      pos: Span;
+      cast: "as" | "satisfies" | "nonNull";
+      annot: ClaimType | null;
+      e: Expr;
+    }
   /* An object literal: one named field per initializer, in source order. */
   | { k: "alloc"; pos: Span; fields: { name: string; e: Expr }[] }
   | { k: "read"; pos: Span; field: string; e: Expr }
   /* `e[key]`: the receiver, then the key, then the read of the field the
      key's claimed type names, a string singleton. */
   | { k: "index"; pos: Span; e: Expr; key: Expr }
+  /* An array literal: one element per initializer, in source order. */
+  | { k: "arrayLit"; pos: Span; elems: Expr[] }
+  /* `[a, b = d] = rhs`: the right side once, then each mutable local takes
+     its position of the store, or its default when that read is undefined.
+     The expression's value is the right side. */
+  | { k: "arrayAssign"; pos: Span; targets: ArrayElemAst[]; rhs: Expr }
   | { k: "indexWrite"; pos: Span; receiver: Expr; key: Expr; rhs: Expr }
   | { k: "bin"; pos: Span; op: string; l: Expr; r: Expr }
   /* Arithmetic on two numbers: `l`, then `r`, then the double operation. */
@@ -28,22 +40,48 @@ export type Expr =
      evaluated once, its current value read, the right side (1 for an
      increment) evaluated, the operation applied and the result written back.
      `post` selects the old value as the expression's value. */
-  | { k: "update"; pos: Span; op: ArithOp; target: Expr; rhs: Expr | null; post: boolean }
+  | {
+      k: "update";
+      pos: Span;
+      op: ArithOp;
+      target: Expr;
+      rhs: Expr | null;
+      post: boolean;
+    }
   | { k: "coalesce"; pos: Span; left: Expr; right: Expr }
   | { k: "write"; pos: Span; field: string; receiver: Expr; rhs: Expr }
   /* `target ??= rhs`, `||=` or `&&=` on a field, an element or, for the
      Boolean forms, a name: the target's parts once, its value read, the test
      on that value, and the right side written only on the writing arm. */
-  | { k: "logicalAssign"; pos: Span; op: "nullish" | "or" | "and"; target: Expr; rhs: Expr }
+  | {
+      k: "logicalAssign";
+      pos: Span;
+      op: "nullish" | "or" | "and";
+      target: Expr;
+      rhs: Expr;
+    }
   /* A nullish assignment also reads the target at namePos. */
   | { k: "nullishAssign"; pos: Span; name: string; namePos: Span; rhs: Expr }
   /* Assignment to a mutable local. An expression, because JavaScript's is:
      it yields the value written, which the calculus's write does not. */
   | { k: "assign"; pos: Span; name: string; namePos: Span; rhs: Expr }
-  | { k: "withValue"; pos: Span; fn: Expr; initial: Expr; functionType: ClaimType; bagType: ClaimType }
+  | {
+      k: "withValue";
+      pos: Span;
+      fn: Expr;
+      initial: Expr;
+      functionType: ClaimType;
+      bagType: ClaimType;
+    }
   | { k: "functionTest"; pos: Span; equal: boolean; e: Expr }
   | { k: "apply"; pos: Span; callee: Expr; args: Expr[] }
-  | { k: "callWithReceiver" | "bindWithReceiver"; pos: Span; callee: Expr; receiver: Expr; args: Expr[] }
+  | {
+      k: "callWithReceiver" | "bindWithReceiver";
+      pos: Span;
+      callee: Expr;
+      receiver: Expr;
+      args: Expr[];
+    }
   | { k: "conditional"; pos: Span; cond: Expr; then: Expr; else_: Expr }
   | {
       k: "lambda";
@@ -93,7 +131,19 @@ export type Stmt =
   /* An object pattern on a `const`. The initializer is evaluated once; each
      property is then read in pattern order, and a default is evaluated only
      when that read is undefined. Every binding is an immutable local. */
-  | { k: "pattern"; pos: Span; props: PatternPropAst[]; init: Expr };
+  | { k: "pattern"; pos: Span; props: PatternPropAst[]; init: Expr }
+  /* An array pattern `const [a, b = d] = init`: each element reads its
+     position of the array's store, with a default when the read is
+     undefined. */
+  | { k: "arrayPattern"; pos: Span; elems: ArrayElemAst[]; init: Expr };
+
+/** One element of an array pattern: position `index` binds `name`. */
+export interface ArrayElemAst {
+  index: number;
+  name: string;
+  namePos: Span;
+  default_: Expr | null;
+}
 
 /** One property of an object pattern: `field: name = default_`. */
 export interface PatternPropAst {

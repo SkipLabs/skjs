@@ -37,7 +37,8 @@ def programEvidence : Evidence (Fin 6) :=
 #guard !(check G .nul [0,1] programEvidence)
 #guard !(check G program [1] programEvidence)
 
-set_option maxHeartbeats 2000000 in
+set_option maxHeartbeats 8000000 in
+set_option maxRecDepth 10000 in
 /-- The consumer obtains safety directly from the executable check. -/
 theorem checked_program_safe (n W h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     Safe (PositiveRules.meaning G [0,1]) n W h program :=

@@ -910,7 +910,30 @@ producers claim the initializer and the defaults, not the reads; the entry
 after the statement states every binding, and the anonymous slot is dropped
 before it. Nested and rest elements, `let` patterns, patterns beside other
 declarators and patterns in closure bodies stay gated. Local annotations are separate obligations; bindings
-retain the initializer's claimed precision. Sequential composition uses the
+retain the initializer's claimed precision.
+
+Arrays and tuples use an object with an internal store of element locations.
+Writable tuple positions require the backing invariant exactly. Readonly tuple
+positions require only that the backing invariant implies their read type,
+so a readonly array can widen element types without changing any location.
+The readonly outer store field prevents replacing the store through that view;
+the readonly inner contract independently prevents element writes. Neither
+permission may be recovered by coercing a view to a writable contract.
+
+A source numeric key must be proved to be one valid array-index singleton.
+An arbitrary number could name an ordinary property, which the current store
+model omits. Known indices support reads, writes, growth and shared alias
+identity. The internal store field cannot be accessed through a source key.
+Array destructuring of external values is refused: an array type does not
+establish a standard iterator or its effects. Direct fresh literals support
+patterns and assignment patterns under the existing unmodified-intrinsics
+boundary. Wider support needs iterator contracts, not replacement by indexing.
+Required, optional and rest positions have distinct store contracts; a missing
+optional/rest position reads undefined. Source arrays in this slice are plain
+data arrays, without inherited indexed properties or accessors; supporting
+those requires the general property-operation contracts.
+
+Sequential composition uses the
 existing let rule, with one occurrence of the continuation. Effect results occupy
 anonymous slots, preserved at their established types across subsequent named
 statement environments. An execution regression checks a saved local, a write,

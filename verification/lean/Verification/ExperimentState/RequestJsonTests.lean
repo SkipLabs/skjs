@@ -6,6 +6,11 @@ open Lean ProgramTyping ControlFlow CertificateProducer RequestJson
 
 private def toNatClause : PositiveNormalization.Clause (List (Fin 6)) → PositiveNormalization.Clause (List Nat)
   | .top => .top
+  | .list a bs =>
+    let tuple := fun (t : PositiveNormalization.Tuple (List (Fin 6))) =>
+      (⟨t.required.map (List.map Fin.val), t.optional.map (List.map Fin.val), t.rest.map (List.map Fin.val), t.readonly⟩ :
+        PositiveNormalization.Tuple (List Nat))
+    .list (tuple a) (bs.map tuple)
   | .nul => .nul
   | .undef => .undef
   | .bool => .bool

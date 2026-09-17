@@ -8,7 +8,17 @@ export type Arrow = [domains: Labels[], result: Labels];
 /** An object contract: one label list per named field, in the order the
  * producer wrote them. Fields a contract does not name are unconstrained. */
 export type Fields = [name: string, labels: Labels][];
-export type Clause = "nul" | "bool" | "undef" | "num"
+export type Tuple = {
+  required: Labels[];
+  optional: Labels[];
+  rest: Labels | null;
+  readonly: boolean;
+};
+export type Clause =
+  | "nul"
+  | "bool"
+  | "undef"
+  | "num"
   /** Semantic top: every value, and no operation through it. */
   | "top"
   | { boolLit: { value: boolean } }
@@ -20,6 +30,9 @@ export type Clause = "nul" | "bool" | "undef" | "num"
   /** `views` are read capabilities: a field read at a sound upper bound on
    * its contents, with no write permission through this contract. */
   | { refs: { first: Fields; rest: Fields[]; views: Fields } }
+  /** A tuple contract on an array store: required positions, optional
+   * positions, and the rest, or null when no further position may exist. */
+  | { list: { first: Tuple; rest: Tuple[] } }
   | { arrs: { arrows: Arrow[] } }
   | { callable: { first: Fields; rest: Fields[]; arrows: Arrow[] } };
 export type Row = Clause[];
@@ -35,7 +48,12 @@ export type ClauseKey = KeysOf<ObjectClause>;
 /** Adding a clause to `Clause` without adding it here is a compile error, and
  * these are the only two places a clause kind is enumerated. */
 export const STRING_CLAUSE_TEXT: Record<StringClause, string> = {
-  nul: "null", bool: "boolean", undef: "undefined", num: "number", str: "string", top: "unknown",
+  nul: "null",
+  bool: "boolean",
+  undef: "undefined",
+  num: "number",
+  str: "string",
+  top: "unknown",
 };
 
 /** The number a literal's bit pattern denotes. Readers show the number; the
@@ -55,35 +73,59 @@ export function assertNever(x: never): never {
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === "object" && !Array.isArray(v);
 function obj(v: unknown, keys: string[]): Record<string, unknown> {
-  if (!isRecord(v) ||
-      Object.keys(v).length !== keys.length || keys.some(k => !(k in v)))
+  if (
+    !isRecord(v) ||
+    Object.keys(v).length !== keys.length ||
+    keys.some((k) => !(k in v))
+  )
     throw Error("unexpected type graph fields");
   return v;
 }
-function array(v: unknown): unknown[] { if (!Array.isArray(v)) throw Error("expected graph list"); return v; }
+function array(v: unknown): unknown[] {
+  if (!Array.isArray(v)) throw Error("expected graph list");
+  return v;
+}
 export function decodeLabels(v: unknown, size: number): Labels {
-  if (array(v).some(i => typeof i !== "number" || !Number.isSafeInteger(i) || i < 0 || i >= size))
+  if (
+    array(v).some(
+      (i) =>
+        typeof i !== "number" || !Number.isSafeInteger(i) || i < 0 || i >= size,
+    )
+  )
     throw Error("type graph reference out of bounds");
   // Checked field by field above: this is where that becomes a type.
   return v as Labels;
 }
 export function decodeGraph(value: unknown): TypeGraph {
   const rows = array(value);
-  const labels = (v: unknown) => decodeLabels(v,rows.length);
-  const arrows = (v: unknown) => array(v).forEach(a => {
-    const pair = array(a); if (pair.length !== 2) throw Error("expected arrow pair");
-    array(pair[0]).forEach(labels); labels(pair[1]);
-  });
+  const labels = (v: unknown) => decodeLabels(v, rows.length);
+  const arrows = (v: unknown) =>
+    array(v).forEach((a) => {
+      const pair = array(a);
+      if (pair.length !== 2) throw Error("expected arrow pair");
+      array(pair[0]).forEach(labels);
+      labels(pair[1]);
+    });
   const fields = (v: unknown) => {
     const names = new Set<string>();
-    array(v).forEach(f => {
+    array(v).forEach((f) => {
       const pair = array(f);
-      if (pair.length !== 2) throw Error("expected a field name and its labels");
+      if (pair.length !== 2)
+        throw Error("expected a field name and its labels");
       if (typeof pair[0] !== "string") throw Error("expected a field name");
-      if (names.has(pair[0])) throw Error("duplicate field in an object contract");
+      if (names.has(pair[0]))
+        throw Error("duplicate field in an object contract");
       names.add(pair[0]);
       labels(pair[1]);
     });
+  };
+  const tuple = (v: unknown) => {
+    const t = obj(v, ["required", "optional", "rest", "readonly"]);
+    if (typeof t.readonly !== "boolean")
+      throw Error("invalid tuple readonly flag");
+    array(t.required).forEach(labels);
+    array(t.optional).forEach(labels);
+    if (t.rest !== null) labels(t.rest);
   };
   // One validator per clause kind. A missing key does not compile, so a new
   // clause cannot reach the decoder as a silent "unknown graph clause".
@@ -92,63 +134,102 @@ export function decodeGraph(value: unknown): TypeGraph {
   // not know is a refusal rather than a silent pass.
   const check: Record<ClauseKey, (body: unknown) => void> &
     Record<string, ((body: unknown) => void) | undefined> = {
-    boolLit: b => {
-      if (typeof obj(b,["value"]).value !== "boolean") throw Error("invalid Boolean literal");
+    boolLit: (b) => {
+      if (typeof obj(b, ["value"]).value !== "boolean")
+        throw Error("invalid Boolean literal");
     },
     // The identity is the double's bit pattern, decimal, as an unsigned 64.
-    numLit: b => {
-      const bits = obj(b,["bits"]).bits;
-      if (typeof bits !== "string" || !/^[0-9]+$/.test(bits) ||
-          BigInt(bits) > 0xffffffffffffffffn)
+    numLit: (b) => {
+      const bits = obj(b, ["bits"]).bits;
+      if (
+        typeof bits !== "string" ||
+        !/^[0-9]+$/.test(bits) ||
+        BigInt(bits) > 0xffffffffffffffffn
+      )
         throw Error("invalid numeric literal");
     },
-    strLit: b => {
-      if (typeof obj(b,["value"]).value !== "string") throw Error("invalid string literal");
+    strLit: (b) => {
+      if (typeof obj(b, ["value"]).value !== "string")
+        throw Error("invalid string literal");
     },
-    refs: b => { const r = obj(b,["first","rest","views"]); fields(r.first); array(r.rest).forEach(fields); fields(r.views); },
-    arrs: b => arrows(obj(b,["arrows"]).arrows),
-    callable: b => {
-      const r = obj(b,["first","rest","arrows"]);
-      fields(r.first); array(r.rest).forEach(fields); arrows(r.arrows);
+    refs: (b) => {
+      const r = obj(b, ["first", "rest", "views"]);
+      fields(r.first);
+      array(r.rest).forEach(fields);
+      fields(r.views);
+    },
+    list: (b) => {
+      const r = obj(b, ["first", "rest"]);
+      tuple(r.first);
+      array(r.rest).forEach(tuple);
+    },
+    arrs: (b) => arrows(obj(b, ["arrows"]).arrows),
+    callable: (b) => {
+      const r = obj(b, ["first", "rest", "arrows"]);
+      fields(r.first);
+      array(r.rest).forEach(fields);
+      arrows(r.arrows);
     },
   };
 
-  rows.forEach(row => array(row).forEach(c => {
-    if (typeof c === "string") {
-      if (!(c in STRING_CLAUSE_TEXT)) throw Error("unknown graph clause");
-      return;
-    }
-    if (!isRecord(c)) throw Error("unknown graph clause");
-    const key = Object.keys(c)[0];
-    const validate = check[key];
-    if (!validate) throw Error("unknown graph clause");
-    validate(obj(c,[key])[key]);
-  }));
+  rows.forEach((row) =>
+    array(row).forEach((c) => {
+      if (typeof c === "string") {
+        if (!(c in STRING_CLAUSE_TEXT)) throw Error("unknown graph clause");
+        return;
+      }
+      if (!isRecord(c)) throw Error("unknown graph clause");
+      const key = Object.keys(c)[0];
+      const validate = check[key];
+      if (!validate) throw Error("unknown graph clause");
+      validate(obj(c, [key])[key]);
+    }),
+  );
   // Checked field by field above: this is where that becomes a type.
   return value as TypeGraph;
 }
 /** JSON is the complete editable graph syntax; decoding is strict and lossless. */
-export const parseGraph = (text: string): TypeGraph => decodeGraph(JSON.parse(text));
-export const printGraph = (graph: TypeGraph): string => JSON.stringify(decodeGraph(graph),null,2);
-export const printLabels = (labels: Labels): string => labels.length ? labels.map(l => `#${l}`).join(" | ") : "never";
-const arrowText = ([domains,result]: Arrow) => `(${domains.map(printLabels).join(", ")}) => ${printLabels(result)}`;
+export const parseGraph = (text: string): TypeGraph =>
+  decodeGraph(JSON.parse(text));
+export const printGraph = (graph: TypeGraph): string =>
+  JSON.stringify(decodeGraph(graph), null, 2);
+export const printLabels = (labels: Labels): string =>
+  labels.length ? labels.map((l) => `#${l}`).join(" | ") : "never";
+const arrowText = ([domains, result]: Arrow) =>
+  `(${domains.map(printLabels).join(", ")}) => ${printLabels(result)}`;
+const printTuple = (t: Tuple) =>
+  `${t.readonly ? "readonly " : ""}[${[
+    ...t.required.map(printLabels),
+    ...t.optional.map((l) => `${printLabels(l)}?`),
+    ...(t.rest ? [`...${printLabels(t.rest)}[]`] : []),
+  ].join(", ")}]`;
 const printFields = (fs: Fields) =>
-  `ref{${fs.map(([name,ls]) => `${name}: ${printLabels(ls)}`).join(", ")}}`;
+  `ref{${fs.map(([name, ls]) => `${name}: ${printLabels(ls)}`).join(", ")}}`;
 function clauseText(c: Clause): string {
   if (typeof c === "string") return STRING_CLAUSE_TEXT[c];
   if ("boolLit" in c) return String(c.boolLit.value);
   // The reader shows the number, not the bit pattern that identifies it.
   if ("numLit" in c) return String(numberOfBits(c.numLit.bits));
   if ("strLit" in c) return JSON.stringify(c.strLit.value);
-  if ("refs" in c) return [[c.refs.first,...c.refs.rest].map(printFields).join(" & "),
-    ...(c.refs.views.length ? [`readonly ${printFields(c.refs.views)}`] : [])].join(" & ");
+  if ("list" in c)
+    return [c.list.first, ...c.list.rest].map(printTuple).join(" & ");
+  if ("refs" in c)
+    return [
+      [c.refs.first, ...c.refs.rest].map(printFields).join(" & "),
+      ...(c.refs.views.length ? [`readonly ${printFields(c.refs.views)}`] : []),
+    ].join(" & ");
   if ("arrs" in c) return `calls[${c.arrs.arrows.map(arrowText).join("; ")}]`;
   if ("callable" in c)
-    return `object[${[c.callable.first,...c.callable.rest].map(printFields).join(" & ")}; calls[${c.callable.arrows.map(arrowText).join("; ")}]]`;
+    return `object[${[c.callable.first, ...c.callable.rest].map(printFields).join(" & ")}; calls[${c.callable.arrows.map(arrowText).join("; ")}]]`;
   return assertNever(c);
 }
-export interface GraphDefinition { label: string; definition: string }
+export interface GraphDefinition {
+  label: string;
+  definition: string;
+}
 /** Every row, exactly once. No fixed-label heuristics or depth limit. */
-export const graphDefinitions = (graph: TypeGraph): GraphDefinition[] => graph.map((row,i) => ({
-  label:`#${i}`, definition: row.length ? row.map(clauseText).join(" | ") : "never",
-}));
+export const graphDefinitions = (graph: TypeGraph): GraphDefinition[] =>
+  graph.map((row, i) => ({
+    label: `#${i}`,
+    definition: row.length ? row.map(clauseText).join(" | ") : "never",
+  }));

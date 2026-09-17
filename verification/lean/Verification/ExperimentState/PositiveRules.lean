@@ -214,9 +214,25 @@ abbrev CoversViews (R : List ι → List ι → Prop)
     (source : List (List (String × List ι))) (views target : List (String × List ι)) : Prop :=
   ∀ q ∈ target, ∃ p ∈ source.flatten ++ views, p.1 = q.1 ∧ R p.2 q.2
 
+/-- Two rest contracts agree: both absent, or both present and equivalent. -/
+def CoversRest (R : List ι → List ι → Prop) (readonly : Bool) : Option (List ι) → Option (List ι) → Prop
+  | none, none => True
+  | some x, some y => R x y ∧ (readonly = false → R y x)
+  | _, _ => False
+
+/-- Same-shape tuple contracts compare element read types covariantly for a
+readonly target. A writable target needs a writable source and equivalent
+element contracts; no location is retyped. -/
+def CoversTuple (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Prop :=
+  p.required.length = q.required.length ∧ p.optional.length = q.optional.length ∧
+  (∀ x ∈ p.required.zip q.required, R x.1 x.2 ∧ (q.readonly = false → R x.2 x.1)) ∧
+  (∀ x ∈ p.optional.zip q.optional, R x.1 x.2 ∧ (q.readonly = false → R x.2 x.1)) ∧
+  CoversRest R q.readonly p.rest q.rest ∧ (q.readonly = false → p.readonly = false)
+
 def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
     Clause (List ι) → Clause (List ι) → Prop
   | _, .top => True
+  | .list a bs, .list c ds => ∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversTuple R p q
   | .nul, .nul => True
   | .undef, .undef => True
   | .bool, .bool => True
@@ -330,6 +346,65 @@ theorem covers_bags_sound {G : NormalGraph ι} {R : List ι → List ι → Prop
     obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hB
     exact ⟨flds, code, rfl, hval, key b (List.mem_cons_of_mem c hb)⟩⟩
 
+/-- A covered tuple contract holds of the same store: every position's location
+carries a contract both families identify. -/
+theorem covers_tuple_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
+    {p q : Tuple (List ι)} (hc : CoversTuple R p q) (n : Nat)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
+    (W : WorldT n) (v : Val) (hv : listT (tupleFams (meaning G) p) n W v) :
+    listT (tupleFams (meaning G) q) n W v := by
+  obtain ⟨hreqLen, hoptLen, hreqR, hoptR, hrestR, hmode⟩ := hc
+  obtain ⟨ls, rfl, hlen, hbound, hreq, hopt, hrest⟩ := hv
+  simp only [listT, tupleFams, List.length_map, List.getElem?_map, Option.map_eq_none_iff,
+    Option.map_eq_some_iff] at hlen hbound hreq hopt hrest ⊢
+  refine ⟨ls, rfl, hreqLen ▸ hlen, ?_, ?_, ?_, ?_⟩
+  · intro hn
+    have hpn : p.rest = none := by
+      cases hp : p.rest <;> cases hq : q.rest <;> simp_all [CoversRest]
+    have := hbound hpn
+    omega
+  · rintro i A ⟨y, hy, rfl⟩
+    have hi : i < q.required.length := (List.getElem?_eq_some_iff.mp hy).1
+    obtain ⟨x, hx⟩ : ∃ x, p.required[i]? = some x :=
+      List.getElem?_eq_some_iff.mpr ⟨by omega, rfl⟩ |> fun h => ⟨_, h⟩
+    obtain ⟨l, c, hl, hw, hag⟩ := hreq i (meaning G x) ⟨x, hx, rfl⟩
+    have hxy := hreqR (x, y) (List.getElem?_zip_eq_some.mpr ⟨hx, hy⟩ |> List.mem_of_getElem?)
+    exact ⟨l, c, hl, hw, fun j hj W' u =>
+      (hag j hj W' u).weaken hmode (hr j hj _ _ hxy.1 W' u) (fun hro => hr j hj _ _ (hxy.2 hro) W' u)⟩
+  · rintro i A l ⟨y, hy, rfl⟩ hl
+    have hi : i < q.optional.length := (List.getElem?_eq_some_iff.mp hy).1
+    obtain ⟨x, hx⟩ : ∃ x, p.optional[i]? = some x :=
+      List.getElem?_eq_some_iff.mpr ⟨by omega, rfl⟩ |> fun h => ⟨_, h⟩
+    obtain ⟨c, hw, hag⟩ := hopt i (meaning G x) l ⟨x, hx, rfl⟩ (hreqLen ▸ hl)
+    have hxy := hoptR (x, y) (List.getElem?_zip_eq_some.mpr ⟨hx, hy⟩ |> List.mem_of_getElem?)
+    exact ⟨c, hw, fun j hj W' u =>
+      (hag j hj W' u).weaken hmode (hr j hj _ _ hxy.1 W' u) (fun hro => hr j hj _ _ (hxy.2 hro) W' u)⟩
+  · intro i l hi hl
+    obtain ⟨E, c, ⟨e, he, rfl⟩, hw, hag⟩ := hrest i l (by omega) hl
+    cases hq : q.rest with
+    | none => simp [he, hq, CoversRest] at hrestR
+    | some y =>
+      have hx : R e y ∧ (q.readonly = false → R y e) := by simpa [he, hq, CoversRest] using hrestR
+      exact ⟨meaning G y, c, ⟨y, rfl, rfl⟩, hw,
+        fun j hj W' u => (hag j hj W' u).weaken hmode (hr j hj _ _ hx.1 W' u) (fun hro => hr j hj _ _ (hx.2 hro) W' u)⟩
+
+theorem covers_lists_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
+    {a c : Tuple (List ι)} {bs ds : List (Tuple (List ι))}
+    (hc : ∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversTuple R p q) (n : Nat)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
+    (W : WorldT n) (v : Val)
+    (hv : listT (tupleFams (meaning G) a) n W v ∧ ∀ b ∈ bs, listT (tupleFams (meaning G) b) n W v) :
+    listT (tupleFams (meaning G) c) n W v ∧ ∀ b ∈ ds, listT (tupleFams (meaning G) b) n W v := by
+  have each : ∀ q ∈ c :: ds, listT (tupleFams (meaning G) q) n W v := by
+    intro q hq
+    obtain ⟨p, hp, hpq⟩ := hc q hq
+    have hpv : listT (tupleFams (meaning G) p) n W v := by
+      rcases List.mem_cons.mp hp with rfl | hp
+      · exact hv.1
+      · exact hv.2 p hp
+    exact covers_tuple_sound hpq n hr W v hpv
+  exact ⟨each c (by simp), fun b hb => each b (List.mem_cons_of_mem c hb)⟩
+
 theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
     (W : WorldT n) (v : Val) : sem (meaning G) a n W v → sem (meaning G) b n W v := by
@@ -380,6 +455,9 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
     intro hv; cases hv; exact ⟨s, rfl⟩
   · -- strLit ≤ strLit at equal strings
     cases hc; exact id
+  · rename_i a bs c ds
+    intro hv
+    exact covers_lists_sound hc n hr W v hv
 
 /-- Each split part of each source clause must be covered by some single target
 clause. A `bool` source is therefore discharged by the pair of Boolean singleton

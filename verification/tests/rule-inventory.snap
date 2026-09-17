@@ -22,6 +22,12 @@ HasTy  (ProgramTyping.lean)
   readView : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs) → (f, A) ∈ vs → HasTy G Γ (.readAt f a) A
   write : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs) → (f, A) ∈ fs → HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
   arith : HasTy G Γ a A → Answers G A .isNum true → HasTy G Γ b B → Answers G B .isNum true → Represents G N .num → HasTy G Γ (.arith op a b) N
+  arrLit {Γ : List (Ty ι)} {L : Ty ι} {T : Tuple (Ty ι)} {xs : List (Ty ι × Tm)} : Represents G L (.list T []) → T.required.length ≤ xs.length → (T.rest = none → xs.length ≤ T.required.length + T.optional.length) → (∀ p ∈ xs.zipIdx, positionTy T p.2 = some p.1.1) → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → HasTy G Γ (.arrLit (xs.map Prod.snd)) L
+  elem {Γ : List (Ty ι)} {a i : Tm} {L I A : Ty ι} {T : Tuple (Ty ι)} {b : UInt64} {k : Nat} : HasTy G Γ a L → Represents G L (.list T []) → HasTy G Γ i I → Represents G I (.numLit b) → indexOfBits b = some k → T.required[k]? = some A → HasTy G Γ (.elemAt a i) A
+  elemOpt {Γ : List (Ty ι)} {a i : Tm} {L I A U : Ty ι} {T : Tuple (Ty ι)} {b : UInt64} {k : Nat} : HasTy G Γ a L → Represents G L (.list T []) → HasTy G Γ i I → Represents G I (.numLit b) → indexOfBits b = some k → T.required[k]? = none → positionTy T k = some A → Represents G U .undef → HasTy G Γ (.elemAt a i) (A ++ U)
+  elemAny {Γ : List (Ty ι)} {a i : Tm} {L I E U : Ty ι} : HasTy G Γ a L → Represents G L (.list ⟨[], [], some E, false⟩ []) → HasTy G Γ i I → Answers G I .isNum true → Represents G U .undef → HasTy G Γ (.elemAt a i) (E ++ U)
+  setElem {Γ : List (Ty ι)} {a i v : Tm} {L I A : Ty ι} {T : Tuple (Ty ι)} {b : UInt64} {k : Nat} : HasTy G Γ a L → Represents G L (.list T []) → HasTy G Γ i I → Represents G I (.numLit b) → indexOfBits b = some k → positionTy T k = some A → T.readonly = false → HasTy G Γ v A → HasTy G Γ (.setElem a i v) L
+  len {Γ : List (Ty ι)} {a : Tm} {L N : Ty ι} {T : Tuple (Ty ι)} : HasTy G Γ a L → Represents G L (.list T []) → Represents G N .num → HasTy G Γ (.lenOf a) N
   test : HasTy G Γ a A → (.boolLit true) ∈ expand G B → (.boolLit false) ∈ expand G B → HasTy G Γ (.test k a) B
   ifBool : HasTy G Γ c C → Answers G C .isBool true → HasTy G Γ t A → HasTy G Γ e A → HasTy G Γ (.ite c t e) A
   ifKnown : HasTy G Γ c C → Represents G C (.boolLit q) → HasTy G Γ (if q then t else e) A → HasTy G Γ (.ite c t e) A
@@ -51,6 +57,12 @@ Rule  (ProgramCertificates.lean)
   write
   arith
   test
+  arrLit
+  elem
+  setElem
+  len
+  elemOpt (undef : Ty ι)
+  elemAny (undef : Ty ι)
   ifBool
   ifTrue
   ifFalse

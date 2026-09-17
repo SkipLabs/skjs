@@ -1,6 +1,6 @@
 import Verification.ExperimentState.CallableGraphTests
 
-set_option maxHeartbeats 800000
+set_option maxHeartbeats 3200000
 
 namespace Verification.ExperimentState.NeutralBagTests
 open PositiveNormalization PositiveGraphs PositiveRules ProgramTyping ProgramCertificates

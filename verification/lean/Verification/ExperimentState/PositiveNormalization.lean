@@ -7,6 +7,19 @@ arrow results. Taking operands to be graph-label lists supports recursive graphs
 namespace Verification.ExperimentState.PositiveNormalization
 open ReferenceConjunctions Tower
 
+/-- A tuple contract: required positions, optional positions, and the contract
+any further position must hold, if the array may have any. -/
+structure Tuple (α : Type) where
+  required : List α
+  optional : List α
+  rest : Option α
+  readonly : Bool
+  deriving DecidableEq, Repr
+
+/-- The families a tuple contract denotes, position by position. -/
+def tupleFams {α : Type} (X : α → Fam) (t : Tuple α) : TupleF :=
+  ⟨t.required.map X, t.optional.map X, t.rest.map X, t.readonly⟩
+
 inductive Clause (α : Type) where
   | nul | bool
   /-- A location under one or more record contracts. An operand is a finite map
@@ -32,6 +45,9 @@ inductive Clause (α : Type) where
   /-- Strings, and one string; appended last so every earlier case order holds. -/
   | str
   | strLit (value : String)
+  /-- An array store under one or more tuple contracts. The array object
+  holds the store in its store field; the contracts describe the store. -/
+  | list (first : Tuple α) (rest : List (Tuple α))
   deriving Repr, DecidableEq
 
 /-- Every value. A closed value, as every member of every family is. -/
@@ -39,6 +55,7 @@ def topT : Fam := fun _ _ v => isVal v = true ∧ Scoped 0 v
 
 def sem (X : α → Fam) : Clause α → Fam
   | .top => topT
+  | .list a bs => fun n W v => listT (tupleFams X a) n W v ∧ ∀ b ∈ bs, listT (tupleFams X b) n W v
   | .nul => nulT
   | .undef => undefT
   | .bool => boolT
@@ -72,6 +89,7 @@ def eval (X : α → Fam) : Formula α → Fam
 /-- Intersection of clauses: preserve all constraints of the same shape. -/
 def meet : Clause α → Clause α → List (Clause α)
   | .top, c | c, .top => [c]
+  | .list a bs, .list c ds => [.list a (bs ++ c :: ds)]
   | .nul, .nul => [.nul]
   | .undef, .undef => [.undef]
   | .bool, .bool => [.bool]
@@ -108,13 +126,14 @@ private theorem nil_sem (X : α → Fam) (n W v) : ¬ semList X [] n W v := by
 def shape : Clause α → Nat
   | .nul => 0 | .bool | .boolLit _ => 1 | .refs .. => 2 | .arrs .. | .callable .. => 3
   | .undef => 4 | .num | .numLit _ => 5 | .str | .strLit _ => 6
-  | .top => 7
+  | .top => 7 | .list .. => 8
 
 def valueShape : Val → Nat
   | .nul => 0 | .tru | .fls => 1 | .objAt _ .absent => 2 | .undef => 4
   | .objAt _ (.closure _ _) => 3
   | .num _ => 5
   | .str _ => 6
+  | .arr _ => 8
   | _ => 7
 
 /-- Every member of a clause is a closed value; top says nothing more. -/
@@ -122,6 +141,7 @@ theorem sem_value {X : α → Fam} {c : Clause α} {n W v}
     (h : sem X c n W v) : isVal v = true ∧ Scoped 0 v := by
   cases c with
   | top => exact h
+  | list a bs => obtain ⟨ls, rfl, _⟩ := h.1; exact ⟨rfl, trivial⟩
   | nul => subst v; exact ⟨rfl, trivial⟩
   | bool => rcases h with rfl | rfl <;> exact ⟨rfl, trivial⟩
   | boolLit b => cases b <;> cases h <;> exact ⟨rfl, trivial⟩
@@ -139,6 +159,7 @@ theorem sem_shape {X : α → Fam} {c : Clause α} {n W v} (hc : c ≠ .top)
     (h : sem X c n W v) : valueShape v = shape c := by
   cases c with
   | top => exact absurd rfl hc
+  | list a bs => obtain ⟨ls, rfl, _⟩ := h.1; rfl
   | nul => cases h; rfl
   | bool => rcases h with h | h <;> cases h <;> rfl
   | boolLit b => cases b <;> cases h <;> rfl
@@ -222,6 +243,10 @@ theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (
       · subst hab; simp [meet, singleton_sem, sem, interT]
       · simp [meet, semList, setSem, sem, interT, hab]
         intro hv; subst hv; simp [hab]
+    · -- list ∩ list: every contract of both, on the one store
+      simp only [meet, singleton_sem, sem, List.mem_append, List.mem_cons, or_imp, forall_and,
+        forall_eq, interT]
+      exact ⟨fun ⟨ha, hb, hc, hd⟩ => ⟨⟨ha, hb⟩, hc, hd⟩, fun ⟨⟨ha, hb⟩, hc, hd⟩ => ⟨ha, hb, hc, hd⟩⟩
   · have hm : meet a b = [] := by
       cases a <;> cases b <;> simp_all [shape, meet]
     rw [hm]
@@ -269,8 +294,40 @@ theorem sem_adm (X : α → Fam) (c : Clause α) : Adm (sem X c) := by
   | callable a bs L => exact CallableConjunctions.adm _ _ _
   | undef => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | top => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+  | list a bs => exact ⟨fun n W v h => ⟨(listT_adm _).down n W v h.1,
+        fun b hb => (listT_adm _).down n W v (h.2 b hb)⟩,
+      fun n W U hx v h => ⟨(listT_adm _).mono n W U hx v h.1,
+        fun b hb => (listT_adm _).mono n W U hx v (h.2 b hb)⟩⟩
   | str => exact strT_adm
   | strLit _ => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+
+/-- Position by position, a tuple contract's meaning depends on its labels'
+meanings only below the budget, as a record's does. -/
+theorem list_congr_below (X Y : α → Fam) (t : Tuple α) (n : Nat)
+    (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
+    listT (tupleFams X t) n W v ↔ listT (tupleFams Y t) n W v := by
+  constructor <;> rintro ⟨ls, rfl, hlen, hbound, hreq, hopt, hrest⟩ <;>
+    simp only [listT, tupleFams, List.length_map, List.getElem?_map, Option.map_eq_none_iff,
+      Option.map_eq_some_iff] at hlen hbound hreq hopt hrest ⊢ <;>
+    refine ⟨ls, rfl, hlen, hbound, ?_, ?_, ?_⟩
+  · rintro i A ⟨a, ha, rfl⟩
+    obtain ⟨l, c, hl, hw, hag⟩ := hreq i (X a) ⟨a, ha, rfl⟩
+    exact ⟨l, c, hl, hw, fun j hj W' u => (hag j hj W' u).congr (h a j hj W' u)⟩
+  · rintro i A l ⟨a, ha, rfl⟩ hl
+    obtain ⟨c, hw, hag⟩ := hopt i (X a) l ⟨a, ha, rfl⟩ hl
+    exact ⟨c, hw, fun j hj W' u => (hag j hj W' u).congr (h a j hj W' u)⟩
+  · intro i l hi hl
+    obtain ⟨E, c, ⟨e, he, rfl⟩, hw, hag⟩ := hrest i l hi hl
+    exact ⟨Y e, c, ⟨e, he, rfl⟩, hw, fun j hj W' u => (hag j hj W' u).congr (h e j hj W' u)⟩
+  · rintro i A ⟨a, ha, rfl⟩
+    obtain ⟨l, c, hl, hw, hag⟩ := hreq i (Y a) ⟨a, ha, rfl⟩
+    exact ⟨l, c, hl, hw, fun j hj W' u => (hag j hj W' u).congr (h a j hj W' u).symm⟩
+  · rintro i A l ⟨a, ha, rfl⟩ hl
+    obtain ⟨c, hw, hag⟩ := hopt i (Y a) l ⟨a, ha, rfl⟩ hl
+    exact ⟨c, hw, fun j hj W' u => (hag j hj W' u).congr (h a j hj W' u).symm⟩
+  · intro i l hi hl
+    obtain ⟨E, c, ⟨e, he, rfl⟩, hw, hag⟩ := hrest i l hi hl
+    exact ⟨X e, c, ⟨e, he, rfl⟩, hw, fun j hj W' u => (hag j hj W' u).congr (h e j hj W' u).symm⟩
 
 theorem sem_congr (X Y : α → Fam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
     (c : Clause α) (W : WorldT n) (v : Val) : sem X c n W v ↔ sem Y c n W v := by
@@ -284,6 +341,8 @@ theorem sem_congr (X Y : α → Fam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
   | strLit _ => rfl
   | undef => rfl
   | top => rfl
+  | list a bs =>
+    exact and_congr (list_congr_below X Y a n h W v) (forall_congr' fun b => forall_congr' fun _ => list_congr_below X Y b n h W v)
   | refs a bs vs => exact and_congr (congr_below X Y a bs n h W v) (view_congr_below X Y vs n h W v)
   | arrs L =>
     have hd : ∀ As : List α, ArgsAgree n (As.map X) (As.map Y) := by

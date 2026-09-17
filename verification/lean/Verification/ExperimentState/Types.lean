@@ -327,6 +327,217 @@ theorem viewT_append (A B : Fields) (k : Nat) (W : WorldT k) (v : Val) :
     viewT (A ++ B) k W v ↔ viewT A k W v ∧ viewT B k W v := by
   simp only [viewT, List.mem_append, or_imp, forall_and]
 
+/-- A readable slot provides an upper bound. A writable slot additionally
+accepts every member of that bound, without changing the backing invariant. -/
+def SlotContract (readonly : Bool) (P Q : Prop) : Prop :=
+  (P → Q) ∧ (readonly = false → Q → P)
+
+theorem SlotContract.refl (r : Bool) (P : Prop) : SlotContract r P P :=
+  ⟨id, fun _ => id⟩
+
+theorem SlotContract.congr {r : Bool} {P Q R : Prop}
+    (h : SlotContract r P Q) (e : Q ↔ R) : SlotContract r P R :=
+  ⟨fun p => e.mp (h.1 p), fun hr r => h.2 hr (e.mpr r)⟩
+
+theorem SlotContract.weaken {r s : Bool} {P Q R : Prop}
+    (h : SlotContract r P Q) (mode : s = false → r = false)
+    (read : Q → R) (write : s = false → R → Q) : SlotContract s P R :=
+  ⟨fun p => read (h.1 p), fun hs r => h.2 (mode hs) (write hs r)⟩
+
+/-- A tuple contract on an array store: the required positions' families, the
+optional positions', and what any further position must hold, if any may. -/
+structure TupleF where
+  required : List Fam
+  optional : List Fam
+  rest : Option Fam
+  readonly : Bool := false
+
+/-- **A store under a tuple contract.** Every required position has a location
+under its family (or implying it for a readonly contract); an optional
+position is a hole or a location under the same capability; a further position exists only under a rest family, and holds a
+location under it. Lengths follow: at least the required positions, and no
+more than the optional ones without a rest. -/
+def listT (T : TupleF) : Fam := fun k W v =>
+  ∃ ls : List (Option Nat), v = .arr ls ∧ T.required.length ≤ ls.length ∧
+    (T.rest = none → ls.length ≤ T.required.length + T.optional.length) ∧
+    (∀ (i : Nat) (A : Fam), T.required[i]? = some A → ∃ (l : Nat) (c : Ctr k),
+      ls[i]? = some (some l) ∧ lookup W l = some c ∧
+      ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), SlotContract T.readonly (c j hj W' u) (A j W' u)) ∧
+    (∀ (i : Nat) (A : Fam) (l : Nat), T.optional[i]? = some A →
+      ls[T.required.length + i]? = some (some l) → ∃ c : Ctr k, lookup W l = some c ∧
+        ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), SlotContract T.readonly (c j hj W' u) (A j W' u)) ∧
+    (∀ (i l : Nat), T.required.length + T.optional.length ≤ i → ls[i]? = some (some l) →
+      ∃ (E : Fam) (c : Ctr k), T.rest = some E ∧ lookup W l = some c ∧
+        ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), SlotContract T.readonly (c j hj W' u) (E j W' u))
+
+theorem listT_adm (T : TupleF) : Adm (listT T) := by
+  refine ⟨?_, ?_⟩
+  · rintro n W v ⟨ls, rfl, hlen, hbound, hreq, hopt, hrest⟩
+    refine ⟨ls, rfl, hlen, hbound, ?_, ?_, ?_⟩
+    · intro i A hA
+      obtain ⟨l, c, hl, hw, hag⟩ := hreq i A hA
+      exact ⟨l, _, hl, lookup_trunc (Nat.le_succ n) W l c hw, fun j hj W' u => hag j (by omega) W' u⟩
+    · intro i A l hA hl
+      obtain ⟨c, hw, hag⟩ := hopt i A l hA hl
+      exact ⟨_, lookup_trunc (Nat.le_succ n) W l c hw, fun j hj W' u => hag j (by omega) W' u⟩
+    · intro i l hi hl
+      obtain ⟨E, c, hE, hw, hag⟩ := hrest i l hi hl
+      exact ⟨E, _, hE, lookup_trunc (Nat.le_succ n) W l c hw, fun j hj W' u => hag j (by omega) W' u⟩
+  · rintro n W W' hx v ⟨ls, rfl, hlen, hbound, hreq, hopt, hrest⟩
+    refine ⟨ls, rfl, hlen, hbound, ?_, ?_, ?_⟩
+    · intro i A hA
+      obtain ⟨l, c, hl, hw, hag⟩ := hreq i A hA
+      exact ⟨l, c, hl, WExt_lookup hx hw, hag⟩
+    · intro i A l hA hl
+      obtain ⟨c, hw, hag⟩ := hopt i A l hA hl
+      exact ⟨c, WExt_lookup hx hw, hag⟩
+    · intro i l hi hl
+      obtain ⟨E, c, hE, hw, hag⟩ := hrest i l hi hl
+      exact ⟨E, c, hE, WExt_lookup hx hw, hag⟩
+
+/-- The family a tuple contract states for an index: a required position's,
+an optional position's, or the rest's where any further position may be. -/
+def positionFam (T : TupleF) (i : Nat) : Option Fam :=
+  match T.required[i]? with
+  | some A => some A
+  | none => match T.optional[i - T.required.length]? with
+    | some A => some A
+    | none => if T.required.length + T.optional.length ≤ i then T.rest else none
+
+theorem elemSlots_getElem? (base n i : Nat) :
+    (elemSlots base n)[i]? = if i < n then some (some (base + i)) else none := by
+  simp only [elemSlots, List.getElem?_map]
+  by_cases hi : i < n
+  · rw [List.getElem?_eq_getElem (by simpa using hi)]
+    simp [hi, List.getElem_range]
+  · rw [List.getElem?_eq_none (by simpa using hi)]
+    simp [hi]
+
+theorem placeAt_getElem? (ls : List (Option Nat)) (k m i : Nat) :
+    (placeAt ls k m)[i]? = if i = k then some (some m)
+      else if i < ls.length then ls[i]? else if i < k + 1 then some none else none := by
+  unfold placeAt
+  have hlen : (ls ++ List.replicate (k + 1 - ls.length) none).length = ls.length + (k + 1 - ls.length) := by
+    simp [List.length_append, List.length_replicate]
+  by_cases hik : i = k
+  · subst hik
+    rw [List.getElem?_set_self]
+    simp only [hlen, if_true]
+    have : i < ls.length + (i + 1 - ls.length) := by omega
+    simp [this]
+  · rw [List.getElem?_set_ne (Ne.symm hik)]
+    simp only [hik, if_false]
+    by_cases hi : i < ls.length
+    · simp [List.getElem?_append_left hi, hi]
+    · simp only [hi, if_false]
+      rw [List.getElem?_append_right (by omega), List.getElem?_replicate]
+      by_cases hk : i < k + 1
+      · simp only [hk, if_true]; simp; omega
+      · simp only [hk, if_false]; simp; omega
+
+theorem placeAt_length (ls : List (Option Nat)) (k m : Nat) :
+    (placeAt ls k m).length = ls.length + (k + 1 - ls.length) := by
+  simp [placeAt, List.length_set, List.length_append, List.length_replicate]
+
+/-- **The store a literal allocates.** Each position's location holds the
+contract of its family, in order, so the store meets any tuple contract whose
+positions those families are, and whose bounds the count respects. -/
+theorem listT_alloc {n : Nat} {W : WorldT n} {T : TupleF} {As : List Fam} {base : Nat}
+    (hreq : T.required.length ≤ As.length)
+    (hbound : T.rest = none → As.length ≤ T.required.length + T.optional.length)
+    (hpos : ∀ i A, As[i]? = some A → positionFam T i = some A)
+    (hl : ∀ (i : Nat) (hi : i < As.length), lookup W (base + i) = some (res (As[i]'hi))) :
+    listT T n W (.arr (elemSlots base As.length)) := by
+  have hpos' : ∀ (i : Nat) (hi : i < As.length), positionFam T i = some (As[i]'hi) :=
+    fun i hi => hpos i _ (List.getElem?_eq_some_iff.mpr ⟨hi, rfl⟩)
+  refine ⟨_, rfl, by simp [elemSlots, hreq], fun hn => by simpa [elemSlots] using hbound hn, ?_, ?_, ?_⟩
+  · intro i A hA
+    have hi : i < As.length := by
+      have := (List.getElem?_eq_some_iff.mp hA).1; omega
+    refine ⟨base + i, res (As[i]'hi), by simp [elemSlots_getElem?, hi], hl i hi, ?_⟩
+    have := hpos' i hi
+    simp only [positionFam, hA, Option.some.injEq] at this
+    subst this
+    exact fun _ _ _ _ => SlotContract.refl _ _
+  · intro i A l hA hl'
+    rw [elemSlots_getElem?] at hl'
+    split at hl'
+    · rename_i hlt
+      cases Option.some.inj (Option.some.inj hl')
+      refine ⟨res (As[T.required.length + i]'hlt), hl _ hlt, ?_⟩
+      have := hpos' _ hlt
+      have hr : T.required[T.required.length + i]? = none := List.getElem?_eq_none (by omega)
+      simp only [positionFam, hr, Nat.add_sub_cancel_left, hA, Option.some.injEq] at this
+      subst this
+      exact fun _ _ _ _ => SlotContract.refl _ _
+    · contradiction
+  · intro i l hi hl'
+    rw [elemSlots_getElem?] at hl'
+    split at hl'
+    · rename_i hlt
+      cases Option.some.inj (Option.some.inj hl')
+      have := hpos' i hlt
+      have hr : T.required[i]? = none := List.getElem?_eq_none (by omega)
+      have ho : T.optional[i - T.required.length]? = none := List.getElem?_eq_none (by omega)
+      simp only [positionFam, hr, ho, hi, if_true] at this
+      exact ⟨_, res (As[i]'hlt), this, hl i hlt, fun _ _ _ _ => SlotContract.refl _ _⟩
+    · contradiction
+
+/-- **A grown store.** Filling a hole, or a position past the end, with a fresh
+location under the position's family keeps the tuple contract: every other
+position is as before, and the bounds still hold because the position is one
+the contract names. -/
+theorem listT_grow {n : Nat} {W : WorldT n} {T : TupleF} {ls : List (Option Nat)} {k m : Nat} {A : Fam}
+    (h : listT T n W (.arr ls)) (hpos : positionFam T k = some A)
+    (hhole : (ls[k]?).bind id = none) (hm : lookup W m = some (res A)) :
+    listT T n W (.arr (placeAt ls k m)) := by
+  obtain ⟨ls', he, hlen, hbound, hreq, hopt, hrest⟩ := h
+  cases he
+  have hnamed : T.rest = none → k < T.required.length + T.optional.length := by
+    intro hn
+    simp only [positionFam] at hpos
+    split at hpos
+    · rename_i hk; have := (List.getElem?_eq_some_iff.mp hk).1; omega
+    · split at hpos
+      · rename_i hk; have := (List.getElem?_eq_some_iff.mp hk).1; omega
+      · split at hpos
+        · rw [hn] at hpos; cases hpos
+        · cases hpos
+  refine ⟨_, rfl, by rw [placeAt_length]; omega, fun hn => by rw [placeAt_length]; have := hbound hn; have := hnamed hn; omega, ?_, ?_, ?_⟩
+  · intro i A' hA
+    obtain ⟨l, c, hl, hw, hag⟩ := hreq i A' hA
+    have hik : i ≠ k := by
+      rintro rfl
+      simp [hl] at hhole
+    have hi : i < ls.length := (List.getElem?_eq_some_iff.mp hl).1
+    exact ⟨l, c, by rw [placeAt_getElem?]; simp only [hik, hi, if_false, if_true]; exact hl, hw, hag⟩
+  · intro i A' l hA hl
+    rw [placeAt_getElem?] at hl
+    split at hl
+    · rename_i hik
+      cases Option.some.inj (Option.some.inj hl)
+      subst hik
+      have hr : T.required[T.required.length + i]? = none := List.getElem?_eq_none (by omega)
+      simp only [positionFam, hr, Nat.add_sub_cancel_left, hA, Option.some.injEq] at hpos
+      subst hpos
+      exact ⟨res A', hm, fun _ _ _ _ => SlotContract.refl _ _⟩
+    · split at hl
+      · exact hopt i A' l hA hl
+      · split at hl <;> cases hl
+  · intro i l hi hl
+    rw [placeAt_getElem?] at hl
+    split at hl
+    · rename_i hik
+      cases Option.some.inj (Option.some.inj hl)
+      subst hik
+      have hr : T.required[i]? = none := List.getElem?_eq_none (by omega)
+      have ho : T.optional[i - T.required.length]? = none := List.getElem?_eq_none (by omega)
+      simp only [positionFam, hr, ho, hi, if_true] at hpos
+      exact ⟨A, res A, hpos, hm, fun _ _ _ _ => SlotContract.refl _ _⟩
+    · split at hl
+      · exact hrest i l hi hl
+      · split at hl <;> cases hl
+
 theorem viewT_adm (fs : Fields) : Adm (viewT fs) := by
   refine ⟨?_, ?_⟩
   · intro n W v h f T hm

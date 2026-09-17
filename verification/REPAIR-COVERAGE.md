@@ -45,9 +45,9 @@ of the work remaining.
 ## Checkpoint: 17 September 2026
 
 The baseline is **39/116 verified**, out of 319 selected functions:
-203 SKJS-rejected, 65 gated, 12 unproved. The separate curated run had 56 files,
-235 verified functions, 7 search failures and 13 unavailable checks; the suite
-run had 64 suites. These are checkpoint results, not permanent expectations;
+203 SKJS-rejected, 61 gated, 16 unproved. The separate curated run has 64 files,
+278 verified functions, 9 search failures and 18 unavailable checks; the suite
+run has 65 suites. These are checkpoint results, not permanent expectations;
 the baseline and fresh command output are authoritative.
 
 Recent repair gains were numeric heap predicates (`checkedEvolvingCapture`),
@@ -69,8 +69,10 @@ type does not settle (`mutateConstantObject`, `annotatedCompoundKey`,
 (`selectedReceiver`, `computedAnd`, `computedFallback`), and semantic top for
 `unknown` and `void` results (`privateScalar`, `guardedLoopRead`,
 `unchangedLoopRead`), and readonly views, a read capability on a field
-(`satisfiesCompatibleWrite`):
-11 → 12 → 13 → 14 → 15 → 17 → 21 → 24 → 27 → 28 → 29 → 32 → 35 → 38 → 39.
+(`satisfiesCompatibleWrite`), and arrays and tuples in the object model with
+array patterns and array assignments (`declaredPrefix`, `assignedPrefix`,
+`inferredIterableDefault`, `inferredAssignmentDefault`):
+11 → 12 → 13 → 14 → 15 → 17 → 21 → 24 → 27 → 28 → 29 → 32 → 35 → 38 → 39 → 43 → 39 (four unjustified iterator cases withdrawn).
 TS observation fixes also improved curated coverage without themselves moving
 this SKJS repair count.
 
@@ -108,6 +110,26 @@ entry after the statement states the bindings. `tests/object-patterns.mts`
 and `ObjectPatternTests.lean` cover it. TypeScript types a literal destructured
 directly with optional properties, so the TS column covers patterns over a
 bound local only; SKJS claims both forms, which is what the census measures.
+
+Arrays and tuples now use element locations in a shared object store. Mutable
+positions keep exact invariants; readonly positions are covariant read
+capabilities. Literal index reads/writes, growth, lengths and aliasing are
+covered; arbitrary numeric keys remain refused because ordinary numeric
+properties are not represented. Destructuring requires a direct fresh literal:
+external array types do not establish iterator behavior. The initially reported
+four gains (`declaredPrefix`, `assignedPrefix`, `inferredIterableDefault`,
+`inferredAssignmentDefault`) were withdrawn on review for that reason. The
+census is back to 39/116; its four iterator refusals appear in the adapter's
+`unproved` category with their explicit reason. They are unresolved coverage,
+not completed rows. Rest patterns and general iteration remain outside.
+
+`tests/arrays.mts` exercises both producers, readonly covariance and refused
+writable widening, alias growth, the numeric-key and iterator boundaries, and
+claim-language round-trips. Source executions with custom iterators and ordinary
+numeric properties witness why the boundaries matter. `tests/arithmetic.mts`
+and the Lean extraction tests agree on signed-zero behavior; source type `0`
+contains both zeros while runtime literals and arithmetic preserve their bits.
+
 Object parameters were then admitted at their annotation. No rule was added:
 `RequestJson.verify_safe` already quantifies over every environment, world and
 heap meeting the input types, and a record parameter is a reference whose

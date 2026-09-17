@@ -16,7 +16,7 @@ private def produceSourceJson (j : Json) (fuel : Nat)
     (suggestions : List (ProgramCertificates.Sequent Nat) := [])
     (known : List (ProgramCertificates.Evidence Nat) := []) : Except String Json := do
   let r ← decodeRequest j
-  let source : SourceRequest := ⟨r,[],[],[],[]⟩
+  let source : SourceRequest := ⟨r,[],[],[],[],[]⟩
   RequestJson.produceJson j fuel suggestions known [] (some source.searchLabels)
 
 -- Runtime numeric operations retain signed zero. This is the same expression
@@ -461,7 +461,7 @@ theorem early_return_trace (q : Bool) : ControlFlow.Execution (earlyCaptureProgr
 #print axioms early_return_trace
 
 -- Supplemental proofs are necessary even when the whole lambda is typable.
-private def captureRequired := (extractFn captureFn captureClaims).toOption.getD ⟨captureRequest,[],[],[],[]⟩
+private def captureRequired := (extractFn captureFn captureClaims).toOption.getD ⟨captureRequest,[],[],[],[],[]⟩
 #guard captureRequired.obligations.length == 4
 #guard ok (ExpressionClaims.produce (RequestJson.graph captureRequest)
   captureRequired.searchLabels captureRequest.types.length 10 captureRequired.obligations)
@@ -647,7 +647,7 @@ private def localClaims : SourceClaims.Function := {
   name := "local", namePos := (0,1), params := [], ret := .ok [1]
   envs := [(2,[]),(6,[("x",.ok [1,2])])]
   exprs := [((4,5),.ok [1]),((8,9),.ok [1,2])] }
-private def localRequest := (extractNormalizedFn SourceTypes.initial localFn localClaims).toOption.getD ⟨request .nul [0],[],[],[],[]⟩
+private def localRequest := (extractNormalizedFn SourceTypes.initial localFn localClaims).toOption.getD ⟨request .nul [0],[],[],[],[],[]⟩
 private def localCertificate (cuts : List Nat) :=
   CertificateProducer.produce (RequestJson.graph localRequest.toRequest)
     localRequest.searchLabels 8 localRequest.result localRequest.program localRequest.claims
@@ -657,7 +657,7 @@ private def globalCertificate := (localCertificate []).toOption.get!
 #guard !checkAssertions localRequest ⟨globalCertificate⟩
 #guard (localCertificate localRequest.cuts).toOption.isNone
 private def repairedLocal := (extractNormalizedFn SourceTypes.initial localFn
-  {localClaims with envs := [(2,[]),(6,[("x",.ok [1])])]}).toOption.getD ⟨request .nul [0],[],[],[],[]⟩
+  {localClaims with envs := [(2,[]),(6,[("x",.ok [1])])]}).toOption.getD ⟨request .nul [0],[],[],[],[],[]⟩
 #guard ok (RequestJson.produceJson (toJson repairedLocal.toRequest) 8 [] []
   repairedLocal.sourceMap (some repairedLocal.searchLabels) repairedLocal.assertions repairedLocal.cuts)
 

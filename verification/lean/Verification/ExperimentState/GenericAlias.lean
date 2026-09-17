@@ -84,6 +84,12 @@ partial def substAtom (p : String) (arg : Json) (atom : Json) : Except String Js
         [("read", ← substType p arg (← jField field "read")),
          ("write", ← substType p arg (← jField field "write"))]
     return putFields atom [("fields", toJson fields)]
+  | "array" | "store" =>
+    let required ← (← jArr atom "required").mapM (substType p arg)
+    let optional ← (← jArr atom "optional").mapM (substType p arg)
+    let rest ← jField atom "rest"
+    let rest ← if rest == .null then pure rest else substType p arg rest
+    return putFields atom [("required",toJson required),("optional",toJson optional),("rest",rest)]
   | "function" =>
     let params ← (← jArr atom "params").mapM (substType p arg)
     return putFields atom
@@ -135,6 +141,12 @@ partial def expandAtom (aliases : List Alias) (atom : Json) : Except String Json
          ("write", ← expandType aliases (← jField field "write"))]
     return Json.mkObj [("top", toJson false),
       ("atoms", toJson [putFields atom [("fields", toJson fields)]])]
+  | "array" | "store" =>
+    let required ← (← jArr atom "required").mapM (expandType aliases)
+    let optional ← (← jArr atom "optional").mapM (expandType aliases)
+    let rest ← jField atom "rest"
+    let rest ← if rest == .null then pure rest else expandType aliases rest
+    return Json.mkObj [("top",toJson false),("atoms",toJson [putFields atom [("required",toJson required),("optional",toJson optional),("rest",rest)]])]
   | "function" =>
     let params ← (← jArr atom "params").mapM (expandType aliases)
     return Json.mkObj [("top", toJson false),
@@ -194,6 +206,14 @@ partial def expandExpr (aliases : List Alias) (e : Fragment.Expr) : Except Strin
   | .write p f r rhs =>
     return .write p f (← expandExpr aliases r) (← expandExpr aliases rhs)
   | .index p f e key => return .index p f (← expandExpr aliases e) (← expandExpr aliases key)
+  | .arrayLit p es => return .arrayLit p (← es.mapM (expandExpr aliases))
+  | .arrayAssign p targets rhs =>
+    let targets' ← targets.mapM fun q => do
+      return { q with default_ := ← q.default_.mapM (expandExpr aliases) }
+    return .arrayAssign p targets' (← expandExpr aliases rhs)
+  | .elemAt p e key => return .elemAt p (← expandExpr aliases e) (← expandExpr aliases key)
+  | .elemWrite p r key rhs =>
+    return .elemWrite p (← expandExpr aliases r) (← expandExpr aliases key) (← expandExpr aliases rhs)
   | .arith p op l r => return .arith p op (← expandExpr aliases l) (← expandExpr aliases r)
   | .logicalAssign p op target rhs =>
     return .logicalAssign p op (← expandExpr aliases target) (← expandExpr aliases rhs)
@@ -239,6 +259,10 @@ partial def expandStmt (aliases : List Alias) (s : Fragment.Stmt) : Except Strin
     let props' ← props.mapM fun q => do
       return { q with default_ := ← q.default_.mapM (expandExpr aliases) }
     return .pattern p props' (← expandExpr aliases init)
+  | .arrayPattern p elems init =>
+    let elems' ← elems.mapM fun q => do
+      return { q with default_ := ← q.default_.mapM (expandExpr aliases) }
+    return .arrayPattern p elems' (← expandExpr aliases init)
   | .ite p c t e =>
     let t' ← t.mapM (expandStmt aliases)
     let e' ← match e with

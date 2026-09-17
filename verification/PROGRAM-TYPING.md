@@ -175,6 +175,24 @@ viewed as readonly Boolean without ever acquiring a persistent readonly-`true`
 guarantee from its current contents; current-content observations stay
 separate and subject to invalidation. `readonly` fields are these views.
 
+An array is an object whose store field holds a *store*: the location of each
+element in order, or a hole. Identity, aliasing and mutation are the object's;
+the store is a value the object replaces when the array grows. A `list` clause
+is one or more tuple contracts on a store: required positions, each a
+location under its family; optional positions, a hole or such a location; and a
+rest family under which any further location must be, without which there is
+none. A hole and a present `undefined` differ, as do an index in bounds and an
+arbitrary one, and a mutable and a readonly array. A readonly store carries
+element read capabilities: each location invariant implies the element type.
+Writable stores require equality and are invariant; `setElem` requires a
+writable store. The outer store field is also a view for a readonly array. `arrLit` allocates a store under the claimed tuple; `elem` reads a
+required position named by a literal index, `elemOpt` an optional or rest
+position, adding `undefined`, and `elemAny` any numeric index into a
+homogeneous array, adding `undefined`; `setElem` writes a named position into
+its location, or a fresh one the new store records, keeping the contract for
+every alias; `len` reads the length. Writes at an index no contract names, and
+reads by a non-literal index into a tuple, have no rule.
+
 Arithmetic has one rule, `arith`: two operands whose types answer the number
 test, combined by the double operation into a type representing the number
 family, never a singleton, since the result's bits are not typed. A tag test

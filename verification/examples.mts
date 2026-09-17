@@ -15,7 +15,10 @@ const __dirname = path.dirname(__filename);
 const require = createRequire(import.meta.url);
 // The corpus index: which files each display group holds, and which of them
 // the reader advertises as source-verifiable.
-const { groups, supported }: {
+const {
+  groups,
+  supported,
+}: {
   groups: { label: string; files: string[] }[];
   supported: string[];
 } = require("./report-viewer/examples.mts");
@@ -70,6 +73,21 @@ function expectedVerified(file: string, name: string) {
   // SKJS loses the initializer's singleton; the TS column verifies this case.
   if (file.endsWith("/mutable-locals.ts") && name === "preciseSnapshot")
     return false;
+  // These array cases need numeric-property or iterator contracts that the
+  // source fragment does not yet establish.
+  if (
+    file.endsWith("/arrays.ts") &&
+    [
+      "indexed",
+      "declaredPrefix",
+      "inferredDefault",
+      "assignedPrefix",
+      "assignedDefault",
+      "negativeKey",
+      "fractionalKey",
+    ].includes(name)
+  )
+    return false;
   return (
     supported.includes(file) ||
     (file === "verification/tests/partial-claims.ts" && name === "complete") ||
@@ -109,7 +127,11 @@ function outcome(result: any): [string, string] {
 // the parent's decision and travels with the work rather than being asked again
 // somewhere it cannot be answered.
 const colorEnv = process.env.VERIFY_COLOR;
-function color(code: number, text: string, stream: NodeJS.WriteStream = process.stdout) {
+function color(
+  code: number,
+  text: string,
+  stream: NodeJS.WriteStream = process.stdout,
+) {
   const wanted = colorEnv
     ? colorEnv === "1"
     : stream.isTTY && process.env.TERM !== "dumb" && !process.env.NO_COLOR;
@@ -230,10 +252,20 @@ try {
           // Only a file that fails is split, and only to say which function
           // failed; a file that verifies needs no second look.
           const claimed = new Set(doc.functions.map((g) => g.name));
-          const attempt = (document: unknown) => {
+          const attempt = (document: unknown, name?: string) => {
             const astFile = path.join(work, "tsc.ast.json");
             const claimsFile = path.join(work, "tsc.claims.json");
-            fs.writeFileSync(astFile, JSON.stringify({ ...ast, file }));
+            fs.writeFileSync(
+              astFile,
+              JSON.stringify({
+                ...ast,
+                file,
+                functions:
+                  name === undefined
+                    ? ast.functions
+                    : ast.functions.filter((f) => f.name === name),
+              }),
+            );
             fs.writeFileSync(claimsFile, JSON.stringify(document));
             return (
               run(verifier, [
@@ -251,10 +283,13 @@ try {
             for (const name of claimed)
               fromTsc.set(
                 name,
-                attempt({
-                  ...doc,
-                  functions: doc.functions.filter((g) => g.name === name),
-                }),
+                attempt(
+                  {
+                    ...doc,
+                    functions: doc.functions.filter((g) => g.name === name),
+                  },
+                  name,
+                ),
               );
         } catch (error) {
           void error;
@@ -293,7 +328,11 @@ try {
             ? "✓"
             : "✗"
           : "·";
-        const tscOwn = tscAccepted?.has(f.name) ? (tscAccepted.get(f.name) ? "✓" : "✗") : "·";
+        const tscOwn = tscAccepted?.has(f.name)
+          ? tscAccepted.get(f.name)
+            ? "✓"
+            : "✗"
+          : "·";
         const pair = (own: string, proof: string, flag: boolean) =>
           `${marked(own, own)}→${marked(proof, proof)}` +
           (flag && own === "✓" && proof === "✗" ? color(33, " ⚠") : "");

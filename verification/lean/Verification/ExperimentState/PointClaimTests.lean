@@ -28,7 +28,7 @@ def continuationEvidence : Evidence (Fin 6) :=
 #guard checkTree G continuationEvidence
 #guard checkEdge G [[0],[2]] [[0,1],[2]] [.subset,.subset]
 
-set_option maxHeartbeats 800000 in
+set_option maxHeartbeats 3200000 in
 /-- The write changes the heap; the checked point claim preserves the reference
 needed by the continuation and widens the write's result to the supplied union. -/
 theorem checked_write_then_read (n W h ρ) (he : EnvOk G [[2]] ρ n W)

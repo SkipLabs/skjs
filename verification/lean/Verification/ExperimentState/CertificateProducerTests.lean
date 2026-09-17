@@ -1,7 +1,8 @@
 import Verification.ExperimentState.CertificateProducer
 import Verification.ExperimentState.ControlFlowTests
 
-set_option maxHeartbeats 800000
+set_option maxHeartbeats 8000000
+set_option maxRecDepth 10000
 
 namespace Verification.ExperimentState.CertificateProducerTests
 open ProgramTyping ProgramTypingTests ControlFlow CertificateProducer

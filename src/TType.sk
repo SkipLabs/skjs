@@ -842,6 +842,12 @@ class TType private {
     }
   }
 
+  fun getSingleArrayLit(): ?TArrayLit {
+    if (this.clauses.isEmpty()) this.insts.getSingleArrayLit() else {
+      None()
+    }
+  }
+
   fun getSingleInst(): ?TSInst {
     if (this.clauses.isEmpty()) this.insts.getSingleInst() else {
       None()

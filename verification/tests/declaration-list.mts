@@ -140,7 +140,8 @@ try {
   for (const [name, text, message] of [
     ["uninitialized later declarator", "let a = 1, b; return a;", "a `let` needs an initializer"],
     ["destructured later declarator", "const a = 1, { b } = { b: 1 }; return a;", "a pattern declares alone in the fragment"],
-    ["array pattern declarator", "const [a] = [1]; return a;", "destructuring is outside the fragment"],
+    ["array pattern hole", "const [, a] = [1, 2]; return a;", "array pattern holes are outside the fragment"],
+    ["array pattern rest", "const [a, ...b] = [1, 2]; return a;", "rest elements are outside the fragment"],
     [
       "declaration list in a closure body",
       "const f = (): number => { const a = 1, b = a; return b; }; return f();",

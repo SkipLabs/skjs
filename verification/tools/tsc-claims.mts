@@ -26,6 +26,7 @@ import {
   isUnionType,
 } from "typescript/unstable/sync";
 import type { Checker, Symbol, Type } from "typescript/unstable/sync";
+import { isTupleType } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type {
   BinaryExpression,
@@ -53,7 +54,12 @@ import type {
   Row,
   SourceClaims,
 } from "./source-claims.mts";
-import { numberOfBits, type Fields } from "./type-graph.mts";
+import {
+  numberOfBits,
+  type Fields,
+  type Labels,
+  type Tuple,
+} from "./type-graph.mts";
 import type { Ast, Expr, FunctionAst, Stmt } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { messageOf } from "./thrown.mts";
@@ -168,6 +174,19 @@ function walkExpr(e: Expr, out: Sites): void {
       walkExpr(e.target, out);
       if (e.rhs) walkExpr(e.rhs, out);
       return;
+    case "arrayAssign":
+      // The right side and each default are sites; the element reads and
+      // the local writes are not source expressions.
+      addExpr(out, e.pos, "arrayAssign");
+      walkExpr(e.rhs, out);
+      e.targets.forEach((p) => {
+        if (p.default_) walkExpr(p.default_, out);
+      });
+      return;
+    case "arrayLit":
+      addExpr(out, e.pos, "arrayLit");
+      for (const el of e.elems) walkExpr(el, out);
+      return;
     case "index":
       addExpr(out, e.pos, "index");
       walkExpr(e.e, out);
@@ -265,7 +284,15 @@ function walkStmt(s: Stmt, out: Sites): void {
       // The initializer and each default are sites; the reads are not source
       // expressions and carry no claim.
       walkExpr(s.init, out);
-      s.props.forEach((p) => { if (p.default_) walkExpr(p.default_, out); });
+      s.props.forEach((p) => {
+        if (p.default_) walkExpr(p.default_, out);
+      });
+      return;
+    case "arrayPattern":
+      walkExpr(s.init, out);
+      s.elems.forEach((p) => {
+        if (p.default_) walkExpr(p.default_, out);
+      });
       return;
     case "while":
       // The loop head: the invariant candidate checked on entry and every
@@ -315,7 +342,11 @@ function buildIndices(sf: SourceFile): Indices {
   const exprBySpan = new Map<string, Node>();
   const visit = (node: Node): void => {
     const start = node.getStart(sf);
-    if (ts.isStatement(node) && STATEMENT_KINDS.has(node.kind) && !stmtByStart.has(start))
+    if (
+      ts.isStatement(node) &&
+      STATEMENT_KINDS.has(node.kind) &&
+      !stmtByStart.has(start)
+    )
       stmtByStart.set(start, node);
     exprBySpan.set(start + ":" + node.end, node);
     node.forEachChild(visit);
@@ -387,7 +418,8 @@ function numberLabelsOf(type: Type, types: Row[]): number[] | null {
   }
   if (f & TypeFlags.Number) return [internRow(types, ["num"])];
   // Strings likewise: a literal is its own singleton, carried as itself.
-  if (type.isStringLiteralType()) return [internRow(types, [{ strLit: { value: type.value } }])];
+  if (type.isStringLiteralType())
+    return [internRow(types, [{ strLit: { value: type.value } }])];
   if (f & TypeFlags.String) return [internRow(types, ["str"])];
   if (isUnionType(type)) {
     const acc: number[] = [];
@@ -428,7 +460,11 @@ function primitiveLabelsOf(type: Type): number[] | null {
 /** A reading either succeeded and carries what it read, or it did not and
  * carries why — where it has a reason to give. */
 type RecordRead =
-  | { ok: true; fields: { name: string; type: Type }[]; views: { name: string; type: Type }[] }
+  | {
+      ok: true;
+      fields: { name: string; type: Type }[];
+      views: { name: string; type: Type }[];
+    }
   | { ok: false; reason?: string };
 
 /**
@@ -438,10 +474,15 @@ type RecordRead =
  * "object-shaped but not this contract". A callable's bag reads the same way;
  * what makes it a bag is only that its own call signatures are not consulted.
  */
-function tryRecord(type: Type, checker: Checker, callableBag = false): RecordRead {
+function tryRecord(
+  type: Type,
+  checker: Checker,
+  callableBag = false,
+): RecordRead {
   if (!(type.flags & TypeFlags.Object) && !callableBag) return { ok: false };
   if (
-    (!callableBag && checker.getSignaturesOfType(type, SignatureKind.Call).length) ||
+    (!callableBag &&
+      checker.getSignaturesOfType(type, SignatureKind.Call).length) ||
     checker.getSignaturesOfType(type, SignatureKind.Construct).length
   )
     return { ok: false };
@@ -460,8 +501,11 @@ function tryRecord(type: Type, checker: Checker, callableBag = false): RecordRea
     const declaration = declarationOf(prop);
     const readonly =
       declaration !== undefined &&
-      (isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration)) &&
-      declaration.modifiers?.some((m) => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true;
+      (isPropertySignature(declaration) ||
+        ts.isPropertyDeclaration(declaration)) &&
+      declaration.modifiers?.some(
+        (m) => m.kind === ts.SyntaxKind.ReadonlyKeyword,
+      ) === true;
     if (readonly && callableBag) return { ok: false, reason: "readonly-field" };
     (readonly ? views : fields).push({
       name: prop.name,
@@ -489,7 +533,8 @@ function tryArrow(type: Type, checker: Checker): ArrowRead {
     return { ok: false, reason: "overloaded-arrow" };
   const sig = sigs[0];
   if (sig.typeParameters?.length) return { ok: false, reason: "generic-arrow" };
-  if (sig.thisParameter !== undefined) return { ok: false, reason: "this-param" };
+  if (sig.thisParameter !== undefined)
+    return { ok: false, reason: "this-param" };
   let parameterCount = sig.parameters.length;
   let tail: Type[] = [];
   if (sig.hasRestParameter) {
@@ -502,8 +547,11 @@ function tryArrow(type: Type, checker: Checker): ArrowRead {
     if (!target.isTupleType()) return { ok: false, reason: "arrow-arity" };
     tail = [...checker.getTypeArguments(rest)];
     const flags = target.elementFlags ?? [];
-    if (flags.length !== tail.length || target.fixedLength !== flags.length ||
-        flags.some(flag => flag !== ElementFlags.Required))
+    if (
+      flags.length !== tail.length ||
+      target.fixedLength !== flags.length ||
+      flags.some((flag) => flag !== ElementFlags.Required)
+    )
       return { ok: false, reason: "arrow-arity" };
     parameterCount--;
   }
@@ -519,7 +567,10 @@ function tryArrow(type: Type, checker: Checker): ArrowRead {
     return { ok: false, reason: "optional-param" };
   return {
     ok: true,
-    domains: sig.parameters.slice(0, parameterCount).map((_, i) => must(checker.getParameterType(sig, i), "parameter-type")).concat(tail),
+    domains: sig.parameters
+      .slice(0, parameterCount)
+      .map((_, i) => must(checker.getParameterType(sig, i), "parameter-type"))
+      .concat(tail),
     result: must(checker.getReturnTypeOfSignature(sig), "return-type"),
   };
 }
@@ -562,21 +613,29 @@ function tryRecordIntersection(
   const read = results.flatMap((r) => (r.ok ? [r] : []));
   if (read.length !== results.length) {
     const reason = refusals(results)[0];
-    if (reason !== undefined) throw new Refusal(reason, checker.typeToString(type));
+    if (reason !== undefined)
+      throw new Refusal(reason, checker.typeToString(type));
     return null;
   }
   const operands: Fields[] = [];
   for (const r of read) {
-    const fs: Fields = r.fields.map((f): [string, number[]] =>
-      [f.name, translateType(f.type, checker, types, false, fuel - 1)]);
-    if (!operands.some((o) => JSON.stringify(o) === JSON.stringify(fs))) operands.push(fs);
+    const fs: Fields = r.fields.map((f): [string, number[]] => [
+      f.name,
+      translateType(f.type, checker, types, false, fuel - 1),
+    ]);
+    if (!operands.some((o) => JSON.stringify(o) === JSON.stringify(fs)))
+      operands.push(fs);
   }
   operands.sort((a, b) => (JSON.stringify(a) < JSON.stringify(b) ? -1 : 1));
   const [first, ...rest] = operands;
   if (!first) throw new Refusal("record-operand", checker.typeToString(type));
   // Every part's views are views of the one object.
-  const views: Fields = read.flatMap((r) => r.views.map((f): [string, number[]] =>
-    [f.name, translateType(f.type, checker, types, false, fuel - 1)]));
+  const views: Fields = read.flatMap((r) =>
+    r.views.map((f): [string, number[]] => [
+      f.name,
+      translateType(f.type, checker, types, false, fuel - 1),
+    ]),
+  );
   return { first, rest, views };
 }
 
@@ -597,13 +656,16 @@ function tryArrowIntersection(
   const read = results.flatMap((r) => (r.ok ? [r] : []));
   if (read.length !== results.length) {
     const reason = refusals(results)[0];
-    if (reason !== undefined) throw new Refusal(reason, checker.typeToString(type));
+    if (reason !== undefined)
+      throw new Refusal(reason, checker.typeToString(type));
     return null;
   }
   const arrows: [number[][], number[]][] = [];
   for (const r of read) {
     const pair: [number[][], number[]] = [
-      r.domains.map((domain) => translateType(domain, checker, types, false, fuel - 1)),
+      r.domains.map((domain) =>
+        translateType(domain, checker, types, false, fuel - 1),
+      ),
       translateType(r.result, checker, types, false, fuel - 1),
     ];
     if (!arrows.some((a) => JSON.stringify(a) === JSON.stringify(pair)))
@@ -614,31 +676,111 @@ function tryArrowIntersection(
 
 // Arrow operands can contain further arrows, with bounded recursion for
 // recursive TS types. Record fields admit the same primitive/callable operands.
-function translateType(type: Type, checker: Checker, types: Row[], records = true, fuel = 64): number[] {
+function translateType(
+  type: Type,
+  checker: Checker,
+  types: Row[],
+  records = true,
+  fuel = 64,
+): number[] {
   if (fuel <= 0) throw new Refusal("type-depth", checker.typeToString(type));
   // `unknown` is semantic top; a `void` result forgets its guarantee into it.
-  if (type.flags & (TypeFlags.Unknown | TypeFlags.Void)) return [internRow(types, ["top"])];
+  if (type.flags & (TypeFlags.Unknown | TypeFlags.Void))
+    return [internRow(types, ["top"])];
+  // An array or a tuple: a tuple contract on the store, which the array object
+  // holds in its store field, invariantly or, when readonly, as a view.
+  if (checker.isArrayType(type) || checker.isTupleType(type)) {
+    if (!type.isTypeReference())
+      throw new Refusal("array-shape", checker.typeToString(type));
+    const args = checker
+      .getTypeArguments(type)
+      .map((a) => translateType(a, checker, types, false, fuel - 1));
+    const target = type.getTarget();
+    let tuple: Tuple;
+    let readonly: boolean;
+    if (isTupleType(target)) {
+      const required: Labels[] = [],
+        optional: Labels[] = [];
+      let rest: Labels | null = null;
+      target.elementFlags.forEach((flag, i) => {
+        const arg = args[i];
+        if (arg === undefined)
+          throw new Refusal("tuple-arity", checker.typeToString(type));
+        if (flag & ElementFlags.Required) required.push(arg);
+        else if (flag & ElementFlags.Optional) optional.push(arg);
+        else if (flag & ElementFlags.Rest) rest = arg;
+        else throw new Refusal("variadic-tuple", checker.typeToString(type));
+      });
+      readonly = target.readonly;
+      tuple = { required, optional, rest, readonly };
+    } else {
+      const elem = args[0];
+      if (args.length !== 1 || elem === undefined)
+        throw new Refusal("array-arity", checker.typeToString(type));
+      readonly = target.getSymbol()?.name === "ReadonlyArray";
+      tuple = { required: [], optional: [], rest: elem, readonly };
+    }
+    const store = internRow(types, [{ list: { first: tuple, rest: [] } }]);
+    const field: Fields = [["[]", [store]]];
+    return [
+      internRow(types, [
+        {
+          refs: readonly
+            ? { first: [], rest: [], views: field }
+            : { first: field, rest: [], views: [] },
+        },
+      ]),
+    ];
+  }
   const prim = primitiveLabelsOf(type);
   if (prim !== null) return prim;
   const nums = numberLabelsOf(type, types);
   if (nums !== null) return nums;
-  if (!records && (checker.getPropertiesOfType(type).length || checker.getIndexInfosOfType(type).length))
-    throw new Refusal("callable-operand-properties", checker.typeToString(type));
-  if (records && checker.getSignaturesOfType(type, SignatureKind.Call).length &&
-      checker.getPropertiesOfType(type).length) {
+  if (
+    !records &&
+    (checker.getPropertiesOfType(type).length ||
+      checker.getIndexInfosOfType(type).length)
+  )
+    throw new Refusal(
+      "callable-operand-properties",
+      checker.typeToString(type),
+    );
+  if (
+    records &&
+    checker.getSignaturesOfType(type, SignatureKind.Call).length &&
+    checker.getPropertiesOfType(type).length
+  ) {
     const bag = tryRecord(type, checker, true);
-    if (!bag.ok) throw new Refusal(bag.reason || "callable-field", checker.typeToString(type));
+    if (!bag.ok)
+      throw new Refusal(
+        bag.reason || "callable-field",
+        checker.typeToString(type),
+      );
     const arrow = tryArrow(type, checker);
-    if (!arrow.ok) throw new Refusal(arrow.reason || "callable-signature", checker.typeToString(type));
-    const P: Fields = bag.fields.map((f): [string, number[]] =>
-      [f.name, translateType(f.type, checker, types, false, fuel - 1)]);
-    const Ds = arrow.domains.map(D => translateType(D, checker, types, false, fuel - 1));
+    if (!arrow.ok)
+      throw new Refusal(
+        arrow.reason || "callable-signature",
+        checker.typeToString(type),
+      );
+    const P: Fields = bag.fields.map((f): [string, number[]] => [
+      f.name,
+      translateType(f.type, checker, types, false, fuel - 1),
+    ]);
+    const Ds = arrow.domains.map((D) =>
+      translateType(D, checker, types, false, fuel - 1),
+    );
     const R = translateType(arrow.result, checker, types, false, fuel - 1);
-    return [internRow(types, [{callable: {first: P, rest: [], arrows: [[Ds,R]]}}])];
+    return [
+      internRow(types, [
+        { callable: { first: P, rest: [], arrows: [[Ds, R]] } },
+      ]),
+    ];
   }
   if (type.isIntersectionType()) {
     const parts = type.getTypes();
-    const refs = records ? tryRecordIntersection(type, checker, parts, types, fuel) : null;
+    const refs = records
+      ? tryRecordIntersection(type, checker, parts, types, fuel)
+      : null;
     if (refs) return [internRow(types, [{ refs }])];
     const arrows = tryArrowIntersection(type, checker, parts, types, fuel);
     if (arrows) return [internRow(types, [{ arrs: { arrows } }])];
@@ -653,22 +795,33 @@ function translateType(type: Type, checker: Checker, types: Row[], records = tru
     return dedupSortInts(labels);
   }
   const rec = tryRecord(type, checker);
-  if (rec.ok && !records) throw new Refusal("record-operand", checker.typeToString(type));
+  if (rec.ok && !records)
+    throw new Refusal("record-operand", checker.typeToString(type));
   if (rec.ok)
     return [
       internRow(types, [
-        { refs: { first: rec.fields.map((f): [string, number[]] =>
-            [f.name, translateType(f.type, checker, types, false, fuel - 1)]),
-          rest: [],
-          views: rec.views.map((f): [string, number[]] =>
-            [f.name, translateType(f.type, checker, types, false, fuel - 1)]) } },
+        {
+          refs: {
+            first: rec.fields.map((f): [string, number[]] => [
+              f.name,
+              translateType(f.type, checker, types, false, fuel - 1),
+            ]),
+            rest: [],
+            views: rec.views.map((f): [string, number[]] => [
+              f.name,
+              translateType(f.type, checker, types, false, fuel - 1),
+            ]),
+          },
+        },
       ]),
     ];
   if (rec.reason) throw new Refusal(rec.reason, checker.typeToString(type));
   const arr = tryArrow(type, checker);
   if (arr.ok) {
     const pair: [number[][], number[]] = [
-      arr.domains.map((domain) => translateType(domain, checker, types, false, fuel - 1)),
+      arr.domains.map((domain) =>
+        translateType(domain, checker, types, false, fuel - 1),
+      ),
       translateType(arr.result, checker, types, false, fuel - 1),
     ];
     return [internRow(types, [{ arrs: { arrows: [pair] } }])];
@@ -720,9 +873,15 @@ function readInvariant(
     const clause = Array.isArray(row) && row.length === 1 ? row[0] : null;
     if (clause !== null && typeof clause === "object") {
       if ("refs" in clause) {
-        // An invariant field reads at its contract; a view at its bound.
+        // An invariant field reads at its contract; a view at its bound. An
+        // array's `length` is the number its store has, read at the family.
         const labels = named(clause.refs.first) ?? named(clause.refs.views);
         if (labels) return labels;
+        const store = [...clause.refs.first, ...clause.refs.views].some(
+          (f) => f[0] === "[]",
+        );
+        if (store && node.name.text === "length")
+          return [internRow(types, ["num"])];
       }
       if ("callable" in clause) {
         const labels = named(clause.callable.first);
@@ -825,23 +984,49 @@ function truthyGuardLabels(
 }
 
 /** A strict null, undefined or function-shape test on an immutable identifier. */
-function testedTagSymbol(cond: Expression, checker: Checker, types: Row[]): {sym: Symbol; equal: boolean; label: number | "function"} | null {
-  if (ts.isParenthesizedExpression(cond)) return testedTagSymbol(cond.expression, checker, types);
-  if (ts.isPrefixUnaryExpression(cond) && cond.operator === ts.SyntaxKind.ExclamationToken) {
+function testedTagSymbol(
+  cond: Expression,
+  checker: Checker,
+  types: Row[],
+): { sym: Symbol; equal: boolean; label: number | "function" } | null {
+  if (ts.isParenthesizedExpression(cond))
+    return testedTagSymbol(cond.expression, checker, types);
+  if (
+    ts.isPrefixUnaryExpression(cond) &&
+    cond.operator === ts.SyntaxKind.ExclamationToken
+  ) {
     const inner = testedTagSymbol(cond.operand, checker, types);
-    return inner && {...inner, equal: !inner.equal};
+    return inner && { ...inner, equal: !inner.equal };
   }
   if (!ts.isBinaryExpression(cond)) return null;
   const op = cond.operatorToken.kind;
-  if (op !== ts.SyntaxKind.EqualsEqualsEqualsToken && op !== ts.SyntaxKind.ExclamationEqualsEqualsToken) return null;
-  const unwrap = (e: Expression): Expression => ts.isParenthesizedExpression(e) ? unwrap(e.expression) : e;
-  const l = unwrap(cond.left), r = unwrap(cond.right);
-  const typeOf = ts.isTypeOfExpression(l) && ts.isStringLiteral(r) && r.text === "function"
-    ? l : ts.isTypeOfExpression(r) && ts.isStringLiteral(l) && l.text === "function" ? r : null;
+  if (
+    op !== ts.SyntaxKind.EqualsEqualsEqualsToken &&
+    op !== ts.SyntaxKind.ExclamationEqualsEqualsToken
+  )
+    return null;
+  const unwrap = (e: Expression): Expression =>
+    ts.isParenthesizedExpression(e) ? unwrap(e.expression) : e;
+  const l = unwrap(cond.left),
+    r = unwrap(cond.right);
+  const typeOf =
+    ts.isTypeOfExpression(l) && ts.isStringLiteral(r) && r.text === "function"
+      ? l
+      : ts.isTypeOfExpression(r) &&
+          ts.isStringLiteral(l) &&
+          l.text === "function"
+        ? r
+        : null;
   if (typeOf) {
     const id = unwrap(typeOf.expression);
     const sym = ts.isIdentifier(id) ? checker.getSymbolAtLocation(id) : null;
-    return sym ? {sym, equal: op === ts.SyntaxKind.EqualsEqualsEqualsToken, label: "function"} : null;
+    return sym
+      ? {
+          sym,
+          equal: op === ts.SyntaxKind.EqualsEqualsEqualsToken,
+          label: "function",
+        }
+      : null;
   }
   const unitLabel = (node: Expression): number | null => {
     const type = checker.getTypeAtLocation(node);
@@ -854,42 +1039,69 @@ function testedTagSymbol(cond: Expression, checker: Checker, types: Row[]): {sym
       return internRow(types, [{ strLit: { value: type.value } }]);
     return null;
   };
-  const left = unitLabel(cond.left), right = unitLabel(cond.right);
+  const left = unitLabel(cond.left),
+    right = unitLabel(cond.right);
   const id = left !== null ? cond.right : right !== null ? cond.left : null;
   const label = left ?? right;
   if (!id || !ts.isIdentifier(id) || label === null) return null;
   const sym = checker.getSymbolAtLocation(id);
-  return sym ? {sym, equal: op === ts.SyntaxKind.EqualsEqualsEqualsToken, label} : null;
+  return sym
+    ? { sym, equal: op === ts.SyntaxKind.EqualsEqualsEqualsToken, label }
+    : null;
 }
 
 function alwaysReturns(stmt: Statement): boolean {
   if (ts.isReturnStatement(stmt)) return true;
   if (ts.isBlock(stmt)) return stmt.statements.some(alwaysReturns);
-  return ts.isIfStatement(stmt) && !!stmt.elseStatement &&
-    alwaysReturns(stmt.thenStatement) && alwaysReturns(stmt.elseStatement);
+  return (
+    ts.isIfStatement(stmt) &&
+    !!stmt.elseStatement &&
+    alwaysReturns(stmt.thenStatement) &&
+    alwaysReturns(stmt.elseStatement)
+  );
 }
 
 /** Refine a fixed binding contract only along explicit null/undefined/function-test edges.
  * A preceding returning arm establishes the opposite edge for its continuation.
  * Immutable const captures retain creation-time guards across arrow functions;
  * parameters and other function boundaries stop the walk. */
-function tagGuardLabels(node: Node, checker: Checker, types: Row[], labels: number[], anchor: Node = node): number[] {
+function tagGuardLabels(
+  node: Node,
+  checker: Checker,
+  types: Row[],
+  labels: number[],
+  anchor: Node = node,
+): number[] {
   const sym = checker.getSymbolAtLocation(node);
   if (!sym) return labels;
   const declaration = declarationOf(sym);
-  const immutableCapture = declaration && ts.isVariableDeclaration(declaration) &&
+  const immutableCapture =
+    declaration &&
+    ts.isVariableDeclaration(declaration) &&
     ts.isVariableDeclarationList(declaration.parent) &&
     (declaration.parent.flags & ts.NodeFlags.Const) !== 0;
-  const refine = (cond: Expression, truth: boolean, base: number[]): number[] => {
-    if (ts.isParenthesizedExpression(cond)) return refine(cond.expression, truth, base);
-    if (ts.isPrefixUnaryExpression(cond) && cond.operator === ts.SyntaxKind.ExclamationToken)
+  const refine = (
+    cond: Expression,
+    truth: boolean,
+    base: number[],
+  ): number[] => {
+    if (ts.isParenthesizedExpression(cond))
+      return refine(cond.expression, truth, base);
+    if (
+      ts.isPrefixUnaryExpression(cond) &&
+      cond.operator === ts.SyntaxKind.ExclamationToken
+    )
       return refine(cond.operand, !truth, base);
     if (ts.isBinaryExpression(cond)) {
       const op = cond.operatorToken.kind;
-      if (op === ts.SyntaxKind.AmpersandAmpersandToken || op === ts.SyntaxKind.BarBarToken) {
+      if (
+        op === ts.SyntaxKind.AmpersandAmpersandToken ||
+        op === ts.SyntaxKind.BarBarToken
+      ) {
         const and = op === ts.SyntaxKind.AmpersandAmpersandToken;
         // True conjunctions and false disjunctions establish both operands.
-        if (truth === and) return refine(cond.right, truth, refine(cond.left, truth, base));
+        if (truth === and)
+          return refine(cond.right, truth, refine(cond.left, truth, base));
         // The other outcome can come from either short-circuit path. Preserve
         // their union; a fact from just one path cannot refine the whole edge.
         return dedupSortInts([
@@ -902,8 +1114,11 @@ function tagGuardLabels(node: Node, checker: Checker, types: Row[], labels: numb
     if (test?.sym.id !== sym.id) return base;
     if (typeof test.label === "number") {
       const row = types[test.label] ?? [];
-      const family = row.some((c) => typeof c === "object" && "numLit" in c) ? "num"
-        : row.some((c) => typeof c === "object" && "strLit" in c) ? "str" : null;
+      const family = row.some((c) => typeof c === "object" && "numLit" in c)
+        ? "num"
+        : row.some((c) => typeof c === "object" && "strLit" in c)
+          ? "str"
+          : null;
       if (family) {
         const singleton = test.label;
         // A broad number or string can equal this singleton. Its positive
@@ -939,16 +1154,26 @@ function tagGuardLabels(node: Node, checker: Checker, types: Row[], labels: numb
         );
       }
     }
-    return base.filter((label) => (test.label === "function"
-      ? (types[label]?.some((clause) =>
-          (clause !== null && typeof clause === "object" && ("arrs" in clause || "callable" in clause)) === (test.equal === truth)) ?? true)
-      : (label === test.label) === (test.equal === truth)));
-
+    return base.filter((label) =>
+      test.label === "function"
+        ? (types[label]?.some(
+            (clause) =>
+              (clause !== null &&
+                typeof clause === "object" &&
+                ("arrs" in clause || "callable" in clause)) ===
+              (test.equal === truth),
+          ) ?? true)
+        : (label === test.label) === (test.equal === truth),
+    );
   };
-  const apply = (cond: Expression, truth: boolean) => { labels = refine(cond, truth, labels); };
-  let child: Node = anchor, cur: Node = anchor.parent;
+  const apply = (cond: Expression, truth: boolean) => {
+    labels = refine(cond, truth, labels);
+  };
+  let child: Node = anchor,
+    cur: Node = anchor.parent;
   while (cur) {
-    if (isFunctionLike(cur) && !(immutableCapture && ts.isArrowFunction(cur))) break;
+    if (isFunctionLike(cur) && !(immutableCapture && ts.isArrowFunction(cur)))
+      break;
     if (ts.isIfStatement(cur)) {
       if (child === cur.thenStatement) apply(cur.expression, true);
       if (child === cur.elseStatement) apply(cur.expression, false);
@@ -958,14 +1183,17 @@ function tagGuardLabels(node: Node, checker: Checker, types: Row[], labels: numb
       if (child === cur.whenTrue) apply(cur.condition, true);
       if (child === cur.whenFalse) apply(cur.condition, false);
     } else if (ts.isBinaryExpression(cur) && child === cur.right) {
-      if (cur.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) apply(cur.left, true);
-      if (cur.operatorToken.kind === ts.SyntaxKind.BarBarToken) apply(cur.left, false);
+      if (cur.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken)
+        apply(cur.left, true);
+      if (cur.operatorToken.kind === ts.SyntaxKind.BarBarToken)
+        apply(cur.left, false);
     } else if (ts.isBlock(cur)) {
       for (const stmt of cur.statements) {
         if (stmt === child) break;
         if (ts.isIfStatement(stmt)) {
           if (alwaysReturns(stmt.thenStatement)) apply(stmt.expression, false);
-          if (stmt.elseStatement && alwaysReturns(stmt.elseStatement)) apply(stmt.expression, true);
+          if (stmt.elseStatement && alwaysReturns(stmt.elseStatement))
+            apply(stmt.expression, true);
         }
       }
     }
@@ -1001,10 +1229,12 @@ interface Authoritative {
 type DeclCache = Map<number, Authoritative>;
 
 function isMutableDeclaration(decl: Node | undefined): boolean {
-  return !!decl &&
+  return (
+    !!decl &&
     ts.isVariableDeclaration(decl) &&
     ts.isVariableDeclarationList(decl.parent) &&
-    (decl.parent.flags & ts.NodeFlags.Const) === 0;
+    (decl.parent.flags & ts.NodeFlags.Const) === 0
+  );
 }
 
 /**
@@ -1029,7 +1259,9 @@ function bestLabelsForReference(
     // A mutable read describes this point's contents. Neither an initializer
     // cache nor a syntactic guard survives arbitrary intervening writes.
     return translateType(
-      must(checker.getTypeAtLocation(node), "reference-type"), checker, types,
+      must(checker.getTypeAtLocation(node), "reference-type"),
+      checker,
+      types,
     );
   }
   const guard = truthyGuardLabels(node, checker);
@@ -1067,8 +1299,7 @@ function bestLabelsForReference(
     }
   }
   const t = must(checker.getTypeAtLocation(node), "reference-type");
-  if (t.flags & TypeFlags.Never)
-    return declaredTypeAt(node, checker, types);
+  if (t.flags & TypeFlags.Never) return declaredTypeAt(node, checker, types);
   return translateType(t, checker, types);
 }
 
@@ -1090,7 +1321,11 @@ function declarationExprKind(node: Expression): string {
  * Neither does a plain `const` TypeScript does not narrow past its declaration.
  */
 function authoritativeType(
-  binding: { decl: VariableDeclaration | ParameterDeclaration | BindingElement; name: string; sym: Symbol },
+  binding: {
+    decl: VariableDeclaration | ParameterDeclaration | BindingElement;
+    name: string;
+    sym: Symbol;
+  },
   checker: Checker,
   types: Row[],
   cache: DeclCache,
@@ -1102,8 +1337,17 @@ function authoritativeType(
   let result: Authoritative;
   // A pattern binding's value is a read the lowering makes, not a source
   // expression with a claim, so it carries no initializer contract either.
-  if (isParameter(binding.decl) || ts.isBindingElement(binding.decl) || isMutableDeclaration(binding.decl)) {
-    result = { labels: null, readTainted: false, declared: null, claimed: null };
+  if (
+    isParameter(binding.decl) ||
+    ts.isBindingElement(binding.decl) ||
+    isMutableDeclaration(binding.decl)
+  ) {
+    result = {
+      labels: null,
+      readTainted: false,
+      declared: null,
+      claimed: null,
+    };
   } else {
     const init = binding.decl.initializer;
     // Everything without one is a parameter or a mutable local, taken above: a
@@ -1115,7 +1359,10 @@ function authoritativeType(
     if (binding.decl.type) {
       try {
         declared = translateType(
-          must(checker.getTypeFromTypeNode(binding.decl.type), "annotation-type"),
+          must(
+            checker.getTypeFromTypeNode(binding.decl.type),
+            "annotation-type",
+          ),
           checker,
           types,
         );
@@ -1181,7 +1428,11 @@ function typeForExprSite(
   sf: SourceFile,
 ): number[] {
   if (kind === "read") {
-    return readLabels(asKind(node, ts.isPropertyAccessExpression, kind), checker, types);
+    return readLabels(
+      asKind(node, ts.isPropertyAccessExpression, kind),
+      checker,
+      types,
+    );
   }
   if (kind === "id")
     return bestLabelsForReference(
@@ -1258,9 +1509,17 @@ function envAtEntry(
           for (const d of st.declarationList.declarations)
             if (ts.isIdentifier(d.name)) take(d.name, d);
             // A pattern's bindings are visible from their own names on.
-            else if (ts.isObjectBindingPattern(d.name))
+            else if (
+              ts.isObjectBindingPattern(d.name) ||
+              ts.isArrayBindingPattern(d.name)
+            )
               for (const el of d.name.elements)
-                if (el.name && ts.isIdentifier(el.name)) take(el.name, el);
+                if (
+                  ts.isBindingElement(el) &&
+                  el.name &&
+                  ts.isIdentifier(el.name)
+                )
+                  take(el.name, el);
     }
     // Every enclosing function contributes its parameters, not just the
     // innermost: an entry inside a lowered closure body still sees the
@@ -1415,15 +1674,25 @@ function bindingLabelsAtEntry(
   // statement does not mention it. Calls can change its source cell, not the
   // saved value. Mutable bindings have no authoritative initializer contract.
   if (auth.labels) {
-    const guard = binding.decl.name && truthyGuardLabels(binding.decl.name, checker, stmtNode);
+    const guard =
+      binding.decl.name &&
+      truthyGuardLabels(binding.decl.name, checker, stmtNode);
     if (guard) return guard;
   }
-  if (auth.labels && (auth.readTainted || (auth.declared && JSON.stringify(auth.declared) !== JSON.stringify(auth.claimed))))
+  if (
+    auth.labels &&
+    (auth.readTainted ||
+      (auth.declared &&
+        JSON.stringify(auth.declared) !== JSON.stringify(auth.claimed)))
+  )
     return binding.decl.name
       ? tagGuardLabels(binding.decl.name, checker, types, auth.labels, stmtNode)
       : auth.labels;
   return translateType(
-    must(checker.getTypeOfSymbolAtLocation(binding.sym, stmtNode), "binding-type"),
+    must(
+      checker.getTypeOfSymbolAtLocation(binding.sym, stmtNode),
+      "binding-type",
+    ),
     checker,
     types,
   );
@@ -1443,10 +1712,7 @@ function omissionRecord(fn: string, site: unknown, err: unknown): Omission {
     function: fn,
     site,
     tsType: err instanceof Refusal ? err.tsType : "",
-    reason:
-      err instanceof Refusal
-        ? err.reason
-        : messageOf(err),
+    reason: err instanceof Refusal ? err.reason : messageOf(err),
   };
 }
 
@@ -1462,8 +1728,14 @@ const printName = (name: Node): string =>
 
 /** Rigid references are scoped to this declaration; names are emitted only
  * after matching the compiler symbol identity, never by printed type text. */
-function processGenericFunction(fn: FunctionAst, node: FunctionDeclaration, checker: Checker,
-  sf: SourceFile, types: Row[], indices: Indices): FunctionClaims {
+function processGenericFunction(
+  fn: FunctionAst,
+  node: FunctionDeclaration,
+  checker: Checker,
+  sf: SourceFile,
+  types: Row[],
+  indices: Indices,
+): FunctionClaims {
   const parameters = new Map<number, string>();
   for (const p of node.typeParameters ?? []) {
     const symbol = checker.getSymbolAtLocation(p.name);
@@ -1474,30 +1746,52 @@ function processGenericFunction(fn: FunctionAst, node: FunctionDeclaration, chec
     if (t.flags & TypeFlags.TypeParameter) {
       const symbol = t.getSymbol();
       const name = symbol && parameters.get(symbol.id);
-      if (!name) throw new Refusal("out-of-scope-type-parameter", checker.typeToString(t));
-      return {param: name};
+      if (!name)
+        throw new Refusal(
+          "out-of-scope-type-parameter",
+          checker.typeToString(t),
+        );
+      return { param: name };
     }
     return translateType(t, checker, types);
   };
-  const at = (n: Node) => claim(must(checker.getTypeAtLocation(n), "generic-site-type"));
+  const at = (n: Node) =>
+    claim(must(checker.getTypeAtLocation(n), "generic-site-type"));
   const sites = functionSites(fn);
   const sig = checker.getSignatureFromDeclaration(node);
   if (!sig) throw new Refusal("no-signature", "");
   return {
-    name: fn.name, namePos: fn.namePos,
-    params: node.parameters.map((p) => ({name:parameterName(p),type:at(p.name),current:null})),
+    name: fn.name,
+    namePos: fn.namePos,
+    params: node.parameters.map((p) => ({
+      name: parameterName(p),
+      type: at(p.name),
+      current: null,
+    })),
     result: claim(must(checker.getReturnTypeOfSignature(sig), "return-type")),
-    entries: [...sites.entries].sort((a,b)=>a-b).map(start => {
-      const stmt = indices.stmtByStart.get(start);
-      if (!stmt) throw new Refusal("site-not-found", "");
-      return {start, bindings:envAtEntry(stmt,start,checker,sf).map(b=>({
-        name:b.name, type:claim(must(checker.getTypeOfSymbolAtLocation(b.sym,stmt),"binding-type")),current:null,
-      }))};
-    }),
-    expressions:[...sites.exprs].map(([key,{pos}])=> {
-      const expression=indices.exprBySpan.get(key);
+    entries: [...sites.entries]
+      .sort((a, b) => a - b)
+      .map((start) => {
+        const stmt = indices.stmtByStart.get(start);
+        if (!stmt) throw new Refusal("site-not-found", "");
+        return {
+          start,
+          bindings: envAtEntry(stmt, start, checker, sf).map((b) => ({
+            name: b.name,
+            type: claim(
+              must(
+                checker.getTypeOfSymbolAtLocation(b.sym, stmt),
+                "binding-type",
+              ),
+            ),
+            current: null,
+          })),
+        };
+      }),
+    expressions: [...sites.exprs].map(([key, { pos }]) => {
+      const expression = indices.exprBySpan.get(key);
       if (!expression) throw new Refusal("site-not-found", "");
-      return {pos,type:at(expression),current:null};
+      return { pos, type: at(expression), current: null };
     }),
   };
 }
@@ -1511,7 +1805,8 @@ function processFunction(
   indices: Indices,
   omissions: Omission[],
 ): FunctionClaims | null {
-  if (fnNode.typeParameters?.length) return processGenericFunction(fnJson,fnNode,checker,sf,types,indices);
+  if (fnNode.typeParameters?.length)
+    return processGenericFunction(fnJson, fnNode, checker, sf, types, indices);
   const before = omissions.length;
   const name = fnJson.name;
   const params: (NamedPoint | null)[] = fnNode.parameters.map((p) => {
@@ -1554,7 +1849,11 @@ function processFunction(
     const stmtNode = indices.stmtByStart.get(start);
     if (!stmtNode) {
       omissions.push(
-        omissionRecord(name, { kind: "entry", start }, new Refusal("site-not-found", "")),
+        omissionRecord(
+          name,
+          { kind: "entry", start },
+          new Refusal("site-not-found", ""),
+        ),
       );
       continue;
     }
@@ -1563,7 +1862,14 @@ function processFunction(
       try {
         bindings.push({
           name: b.name,
-          type: bindingLabelsAtEntry(stmtNode, b, checker, sf, types, declCache),
+          type: bindingLabelsAtEntry(
+            stmtNode,
+            b,
+            checker,
+            sf,
+            types,
+            declCache,
+          ),
           current: entryFieldClaims(stmtNode, b, checker, types),
         });
       } catch (e) {
@@ -1582,7 +1888,11 @@ function processFunction(
     const node = indices.exprBySpan.get(key);
     if (!node) {
       omissions.push(
-        omissionRecord(name, { kind: "expr", pos }, new Refusal("site-not-found", "")),
+        omissionRecord(
+          name,
+          { kind: "expr", pos },
+          new Refusal("site-not-found", ""),
+        ),
       );
       continue;
     }
@@ -1600,7 +1910,11 @@ function processFunction(
   // One unstated site would fail extraction, so a function is claimed whole or
   // not at all.
   const stated = params.filter((p) => p !== null);
-  if (omissions.length !== before || result === null || stated.length !== params.length)
+  if (
+    omissions.length !== before ||
+    result === null ||
+    stated.length !== params.length
+  )
     return null;
   return {
     name: fnJson.name,
@@ -1687,9 +2001,7 @@ export function produce(file: string): Produced {
     if (fn.name)
       accepted.set(
         fn.name.text,
-        !diagnostics.some(
-          (d) => d.pos >= fn.getStart(sf) && d.pos < fn.end,
-        ),
+        !diagnostics.some((d) => d.pos >= fn.getStart(sf) && d.pos < fn.end),
       );
 
   return {
@@ -1713,21 +2025,31 @@ if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
   while (rest.length) {
     const flag = rest.shift();
     const next = rest[0];
-    if (flag === "--out" && next !== undefined) { rest.shift(); out = next; }
-    else {
+    if (flag === "--out" && next !== undefined) {
+      rest.shift();
+      out = next;
+    } else {
       process.stderr.write(`invalid option ${flag}\n`);
       process.exit(1);
     }
   }
   if (!file || !out) {
-    process.stderr.write("usage: tsc-claims.mts <file.ts> --out <claims.json>\n");
+    process.stderr.write(
+      "usage: tsc-claims.mts <file.ts> --out <claims.json>\n",
+    );
     process.exit(1);
   }
   try {
     const { doc, omissions, accepted } = produce(file);
-    writeFileSync(out + ".outcomes.json", JSON.stringify(Object.fromEntries(accepted)) + "\n");
+    writeFileSync(
+      out + ".outcomes.json",
+      JSON.stringify(Object.fromEntries(accepted)) + "\n",
+    );
     writeFileSync(out, JSON.stringify(doc, null, 2) + "\n");
-    writeFileSync(out + ".omissions.json", JSON.stringify(omissions, null, 2) + "\n");
+    writeFileSync(
+      out + ".omissions.json",
+      JSON.stringify(omissions, null, 2) + "\n",
+    );
     process.stderr.write(
       `${doc.functions.length} function(s) claimed, ${omissions.length} omitted site(s)/reason(s).\n`,
     );

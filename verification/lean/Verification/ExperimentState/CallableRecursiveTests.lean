@@ -3,7 +3,8 @@ import Verification.ExperimentState.CallableGraphTests
 /-! Recursive callable bags exercise the existing recursive graph interpretation,
 producer, consumer, and machine together. The heap may contain the very callable
 whose contract describes that heap cell. -/
-set_option maxHeartbeats 800000
+set_option maxHeartbeats 8000000
+set_option maxRecDepth 10000
 
 namespace Verification.ExperimentState.CallableRecursiveTests
 open Lean PositiveNormalization PositiveGraphs ProgramTyping ControlFlow CertificateProducer RequestJson

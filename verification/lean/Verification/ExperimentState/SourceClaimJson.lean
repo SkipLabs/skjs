@@ -122,14 +122,18 @@ def decode (j : Json) : Except String Document := do
 
 private abbrev Sites := List Nat × List Span
 private def joinSites (a b : Sites) : Sites := (a.1 ++ b.1,a.2 ++ b.2)
-private def exprSites : Fragment.Expr → Sites
+private partial def exprSites : Fragment.Expr → Sites
   | .var p _ | .lit p _ => ([],[p])
   | .shapeTest p _ _ e | .not p e | .cast p _ e | .read p _ e | .lambda p _ _ e => joinSites ([],[p]) (exprSites e)
   | .alloc p _ es => es.foldl (fun acc a => joinSites acc (exprSites a)) ([],[p])
   | .withValue p a b _ _ | .write p _ a b | .singletonTest p _ _ _ a b | .equality p _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
   -- An assignment is an expression site, and the name it assigns is not one:
   -- the producer claims the value written, not the location.
-  | .index p _ a b | .arith p _ a b | .logicalAssign p _ a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
+  | .index p _ a b | .arith p _ a b | .logicalAssign p _ a b | .elemAt p a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
+  | .arrayLit p es => es.foldl (fun acc a => joinSites acc (exprSites a)) ([],[p])
+  | .arrayAssign p targets rhs => targets.foldl (fun acc q => match q.default_ with
+      | some d => joinSites acc (exprSites d) | none => acc) (joinSites ([],[p]) (exprSites rhs))
+  | .elemWrite p a b c => joinSites ([],[p]) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
   | .update p _ a none _ => joinSites ([],[p]) (exprSites a)
   | .update p _ a (some r) _ => joinSites ([],[p]) (joinSites (exprSites a) (exprSites r))
   | .indexWrite p _ a b c => joinSites ([],[p]) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
@@ -149,6 +153,8 @@ private partial def stmtSites : Fragment.Stmt → Sites
   | .constants p bs | .mutables p bs => bs.foldl (fun acc b => joinSites acc (exprSites b.init)) ([p.1],[])
   -- The initializer and each default are sites; the pattern's reads are not.
   | .pattern p props init => props.foldl (fun acc q => match q.default_ with
+      | some d => joinSites acc (exprSites d) | none => acc) (joinSites ([p.1],[]) (exprSites init))
+  | .arrayPattern p elems init => elems.foldl (fun acc q => match q.default_ with
       | some d => joinSites acc (exprSites d) | none => acc) (joinSites ([p.1],[]) (exprSites init))
   | .loop p c body => joinSites ([p.1],[]) (joinSites (exprSites c)
       (body.foldl (fun s st => joinSites s (stmtSites st)) ([],[])))

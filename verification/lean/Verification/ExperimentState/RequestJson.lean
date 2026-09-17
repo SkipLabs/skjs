@@ -13,6 +13,7 @@ open ProgramCertificates PointClaims ControlFlow CertificateProducer
 deriving instance ToJson, FromJson for Tag
 deriving instance ToJson, FromJson for Arith
 deriving instance ToJson, FromJson for Tm, CallCode
+deriving instance ToJson, FromJson for PositiveNormalization.Tuple
 deriving instance ToJson, FromJson for Clause
 deriving instance ToJson, FromJson for Target
 deriving instance ToJson, FromJson for Continuation
@@ -51,6 +52,7 @@ def validTy (bound : Nat) (A : Ty Nat) : Bool := A.all (fun i => i < bound)
 
 def clauseTypes : Clause (Ty Nat) → List (Ty Nat)
   | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .str | .strLit _ | .top => []
+  | .list a bs => (a :: bs).flatMap fun t => t.required ++ t.optional ++ t.rest.toList
   | .refs A bs vs => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd
   | .arrs L => L.flatMap (fun p => p.1 ++ [p.2])
   | .callable A bs L =>

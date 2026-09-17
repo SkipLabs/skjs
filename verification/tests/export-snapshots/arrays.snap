@@ -1,0 +1,22 @@
+# arrays.ts
+
+## arrayClaims [complete unverified normal]
+params: values: {"a":"array","required":[],"optional":[],"rest":{"top":false,"atoms":[{"a":"number"}]},"readonly":false}
+result: {"a":"array","required":[],"optional":[],"rest":{"top":false,"atoms":[{"a":"number"},{"a":"string"}]},"readonly":true}
+entry 73-86: this: {"a":"void"}; values!: {"a":"array","required":[],"optional":[],"rest":{"top":false,"atoms":[{"a":"number"}]},"readonly":false}
+expr 80-86 `values`: {"a":"array","required":[],"optional":[],"rest":{"top":false,"atoms":[{"a":"number"}]},"readonly":false}
+subtype number ≤ number | string
+subtype (number | string) => boolean [construct=unknown array=unknown] ≤ (number) => boolean [construct=unknown array=unknown]
+subtype number | undefined ≤ number | string | undefined
+subtype (number | string, number) => {"a":"void"} [construct=unknown array=unknown] ≤ (number, number) => {"a":"void"} [construct=unknown array=unknown]
+subtype never ≤ number
+subtype { done: boolean, value: never = (number) } [call=unknown construct=unknown array=unknown] ≤ { done: boolean, value: never = (number | string) } [call=unknown construct=unknown array=unknown]
+subtype {"a":"array","required":[],"optional":[],"rest":{"top":false,"atoms":[{"a":"number"}]},"readonly":false} ≤ {"a":"array","required":[],"optional":[],"rest":{"top":false,"atoms":[{"a":"number"},{"a":"string"}]},"readonly":true}
+
+## tupleClaims [complete unverified normal]
+params: values: {"a":"array","required":[{"top":false,"atoms":[{"a":"number"}]},{"top":false,"atoms":[{"a":"string"}]}],"optional":[],"rest":null,"readonly":true}
+result: number
+entry 158-174: this: {"a":"void"}; values!: {"a":"array","required":[{"top":false,"atoms":[{"a":"number"}]},{"top":false,"atoms":[{"a":"string"}]}],"optional":[],"rest":null,"readonly":true}
+expr 165-171 `values`: {"a":"array","required":[{"top":false,"atoms":[{"a":"number"}]},{"top":false,"atoms":[{"a":"string"}]}],"optional":[],"rest":null,"readonly":true}
+expr 165-174 `values[0]`: number
+expr 172-173 `0`: 0

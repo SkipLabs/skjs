@@ -659,8 +659,8 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
     current: null,
   });
   assert.deepEqual(surface.lower(table, [0, 3]), { type: [0, 3] });
-  assert.throws(() => surface.lower(table, surface.parseType("unknown")), /fragment/);
-  assert.equal(table.length, types.length + 1);
+  assert.deepEqual(surface.lower(table, surface.parseType("unknown")),{type:[types.length + 1],current:null});
+  assert.equal(table.length, types.length + 2);
   assert.equal(ob.typeText(types, [5]), JSON.stringify({ mystery: 7 }));
   assert.equal(ob.typeText(types, [99]), "type 99");
   assert.match(ob.typeText(types, [6], 2), /…/);

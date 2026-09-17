@@ -369,6 +369,12 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
       node verification/tools/tsc-claims.mts "$READONLY" --out "$WORK/readonly.tsc"
   }
   build readonly_fixture
+  ARRAYS=verification/tests/stateful-source/arrays.ts
+  arrays_fixture() {
+    fixture arrays "$ARRAYS" &&
+      node verification/tools/tsc-claims.mts "$ARRAYS" --out "$WORK/arrays.tsc"
+  }
+  build arrays_fixture
   build snapshot_probes
   for pid in "${building[@]}"; do wait "$pid" || exit 1; done
 
@@ -431,6 +437,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Logical assignments" node verification/tests/logical-assignments.mts "$WORK/logical.ast" "$WORK/logical.claims" "$WORK/logical.tsc" "$LOGICAL" "$WORK/logical_number.ast" "$WORK/logical_number.tsc" "$LOGICAL_NUMBER" "$VERIFIER"
   run_test "Void results" node verification/tests/void-results.mts "$WORK/void_results.ast" "$WORK/void_results.claims" "$WORK/void_results.tsc" "$VOID_RESULTS" "$VERIFIER"
   run_test "Readonly views" node verification/tests/readonly-views.mts "$WORK/readonly.ast" "$WORK/readonly.claims" "$WORK/readonly.tsc" "$READONLY" "$VERIFIER"
+  run_test "Arrays" node verification/tests/arrays.mts "$WORK/arrays.ast" "$WORK/arrays.claims" "$WORK/arrays.tsc" "$ARRAYS" "$VERIFIER"
   run_test "Closed SKJS operations" node verification/tests/skjs-operations.mts "$WORK/source.claims" "$BASE" "$VERIFIER"
   run_test "Generic identity source" node verification/tests/generic-source.mts "$WORK/generic_id.ast" "$WORK/generic_id.claims" "$GENERIC_ID" "$VERIFIER"
   run_test "Generic alias source" node verification/tests/generic-aliases.mts "$WORK/generic_aliases.ast" "$WORK/generic_aliases.claims" "$GENERIC_ALIASES" "$VERIFIER"

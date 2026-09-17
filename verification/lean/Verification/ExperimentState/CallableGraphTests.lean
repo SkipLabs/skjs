@@ -28,7 +28,8 @@ def certificate : ControlFlow.Certificate Nat :=
   | .ok c => c
   | .error _ => []
 
-set_option maxHeartbeats 800000 in
+set_option maxHeartbeats 8000000 in
+set_option maxRecDepth 10000 in
 theorem checked : checkClosed G [1] program certificate 0 = true := by cbv
 
 private def ok (x : Except String α) : Bool := match x with | .ok _ => true | .error _ => false

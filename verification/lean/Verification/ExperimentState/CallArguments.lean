@@ -220,6 +220,12 @@ theorem Step.makeArgs {c : CallCode} {ns : List String} {h h' : Heap} {args args
   obtain ⟨i, a, a', hg, hb, hstep, rfl⟩ := focus_iff.mp hs
   exact .makeArg hg hb hstep
 
+/-- A store's initializers reduce exactly as actual arguments do. -/
+theorem Step.arrArgs {h h' : Heap} {args args' : List Tm}
+    (hs : ArgStep h args h' args') : Step h (.arrLit args) h' (.arrLit args') := by
+  obtain ⟨i, a, a', hg, hb, hstep, rfl⟩ := focus_iff.mp hs
+  exact .arrArg hg hb hstep
+
 /-- Dispatch a fully evaluated frame to the code on its saved callee. The
 descriptor supplies the parameter count; all actuals, including extras,
 must be values before normalization. Invocation itself performs no heap effect. -/

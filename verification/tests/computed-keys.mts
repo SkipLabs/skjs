@@ -70,7 +70,7 @@ try {
   claimAt(functionOf(broad, fileKey, "twoFields"), spanOf("twoFields", '"a"')).type =
     { top: false, atoms: [{ a: "string" }] };
   expect("a key claimed as a broad string is refused",
-    run("stateful-source", only(ast, "twoFields"), broad), false, "string singleton claim");
+    run("stateful-source", only(ast, "twoFields"), broad), false, "string singleton or a numeric array-index singleton");
 
   // Claiming the other field's name for the literal "a" selects `b`, and the
   // literal's own obligation to that claim fails.
