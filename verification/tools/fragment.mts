@@ -31,6 +31,10 @@ export type Expr =
   | { k: "update"; pos: Span; op: ArithOp; target: Expr; rhs: Expr | null; post: boolean }
   | { k: "coalesce"; pos: Span; left: Expr; right: Expr }
   | { k: "write"; pos: Span; field: string; receiver: Expr; rhs: Expr }
+  /* `target ??= rhs`, `||=` or `&&=` on a field, an element or, for the
+     Boolean forms, a name: the target's parts once, its value read, the test
+     on that value, and the right side written only on the writing arm. */
+  | { k: "logicalAssign"; pos: Span; op: "nullish" | "or" | "and"; target: Expr; rhs: Expr }
   /* A nullish assignment also reads the target at namePos. */
   | { k: "nullishAssign"; pos: Span; name: string; namePos: Span; rhs: Expr }
   /* Assignment to a mutable local. An expression, because JavaScript's is:

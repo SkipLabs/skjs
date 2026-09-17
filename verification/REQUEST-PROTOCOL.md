@@ -633,6 +633,14 @@ the target, a name, a field or an element, has its parts evaluated once and its
 value read at the storage contract; then the right side, `1` when absent; then
 the operation and the write back. `post` makes the old value the expression's
 value, as for `x++`.
+A logical assignment uses
+`{"k":"logicalAssign","pos":[start,end],"op":"nullish"|"or"|"and","target":...,"rhs":...}`
+for `??=`, `||=` and `&&=` on a field, an element or, for the Boolean forms,
+a name: the target's parts once, its value read at the storage contract, the
+test on that value, and the right side evaluated and written only on the
+writing arm; the other arm's value is the one read. `or` and `and` need a
+Boolean target, since truthiness in this fragment is only that. `??=` on a
+name keeps the `nullishAssign` form.
 The overall expression and both operands select exact expression claims. Lowering
 saves the left result in a let slot, then uses nullish testing and `unionVar`
 to check the fallback or return the saved value. False takes the latter path.

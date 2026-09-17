@@ -1,16 +1,14 @@
 # census: repair-work
-# 32/116 verified, of 319 functions
+# 35/116 verified, of 319 functions
 #   skjs-rejected: 203
-#   gate: 75
-#   verified: 32
+#   gate: 72
+#   verified: 35
 #   unproved: 9
 #
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofUndefinedFieldAdmitsInitialValue
 gate:a `let` needs an initializer	tests/expect-error/test_ternary_refinements.ts	bothBranchesInitialize
 gate:a record with no field has no location	tests/expect-error/unsound-refinement.ts	grownAliasField
-gate:binary operator outside the fragment (&&=)	tests/expect-error/logical-compound-computed-key.ts	computedAnd
-gate:binary operator outside the fragment (||=)	tests/expect-error/assignment-receivers.ts	selectedReceiver
 gate:default parameters are outside the fragment	tests/expect-error/arrow-default-param-optional.ts	earlierGenericDefault
 gate:default parameters are outside the fragment	tests/expect-error/arrow-default-param-optional.ts	initializedDefault
 gate:default parameters are outside the fragment	tests/expect-error/captured-read-stability.ts	stablePattern
@@ -40,7 +38,6 @@ gate:intersection operands must have the same shape	tests/expect-error/spread-ca
 gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/promise-object.ts	testAwaitScalarSnapshot
 gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/unsound-refinement.ts	freshReturnSnapshot
 gate:nested patterns are outside the fragment	tests/expect-error/destructuring.ts	identityPatternScalar
-gate:nullish assignment requires a local identifier	tests/expect-error/logical-compound-computed-key.ts	computedFallback
 gate:only `extends boolean` or an earlier type parameter is in the fragment	tests/expect-error/freeze-window-stale-cache.ts	frozenNumbers
 gate:only field and local assignments are supported	tests/expect-error/destructuring-assignment.ts	keyBeforeDefault
 gate:rest parameters are outside the fragment	tests/expect-error/iterator-effects.ts	consumeNumbers
@@ -293,6 +290,7 @@ unproved:reject: unexpected fields in the cell record claim	tests/expect-error/u
 unproved:reject: unexpected fields in the cell record claim	tests/expect-error/unsound-refinement.ts	stableMemberScalar
 unproved:reject: unsupported source expression at [148,175): equality requires a null, undefined or	tests/expect-error/unsound-refinement.ts	capturedReceiver
 verified	tests/expect-error/as-operator.ts	castScalarSnapshot
+verified	tests/expect-error/assignment-receivers.ts	selectedReceiver
 verified	tests/expect-error/binding-initialization.ts	earlierDeclarator
 verified	tests/expect-error/call-effect-boundaries.ts	clearEffect
 verified	tests/expect-error/call-effect-boundaries.ts	postCallGuard
@@ -317,6 +315,8 @@ verified	tests/expect-error/inferred-binding-contract.ts	unionContractStillNarro
 verified	tests/expect-error/issue-89-and-or-narrowing.ts	unrelatedFact
 verified	tests/expect-error/local-vs-local-refinement.ts	inferredReadNamedNull
 verified	tests/expect-error/local-vs-local-refinement.ts	inferredReadSingleton
+verified	tests/expect-error/logical-compound-computed-key.ts	computedAnd
+verified	tests/expect-error/logical-compound-computed-key.ts	computedFallback
 verified	tests/expect-error/logical-compound-flow.ts	localFallback
 verified	tests/expect-error/nullish-coalescing.ts	resultOfFallback
 verified	tests/expect-error/obj-literal-var-field-growth.ts	keyInitializesRhs

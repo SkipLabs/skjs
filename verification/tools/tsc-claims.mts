@@ -157,6 +157,11 @@ function walkExpr(e: Expr, out: Sites): void {
       walkExpr(e.l, out);
       walkExpr(e.r, out);
       return;
+    case "logicalAssign":
+      addExpr(out, e.pos, "logicalAssign");
+      walkExpr(e.target, out);
+      walkExpr(e.rhs, out);
+      return;
     case "update":
       // The target is read before it is written: its site is a claim.
       addExpr(out, e.pos, "update");

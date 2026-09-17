@@ -161,6 +161,8 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
     let key ← comparisonsExpr fc key
     return .index p (some (← keyField fc key)) (← comparisonsExpr fc e) key
   | .arith p op l r => return .arith p op (← comparisonsExpr fc l) (← comparisonsExpr fc r)
+  | .logicalAssign p op target rhs =>
+    return .logicalAssign p op (← comparisonsExpr fc target) (← comparisonsExpr fc rhs)
   | .update p op target rhs post =>
     return .update p op (← comparisonsExpr fc target) (← rhs.mapM (comparisonsExpr fc)) post
   | .indexWrite p _ r key rhs =>
@@ -207,6 +209,9 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .seqBody _ a b | .letBody _ _ _ a b => assignsExpr name a || assignsExpr name b
   | .indexWrite _ _ a b c => assignsExpr name a || assignsExpr name b || assignsExpr name c
   | .arith _ _ a b => assignsExpr name a || assignsExpr name b
+  | .logicalAssign _ _ target rhs =>
+    (match target with | .var _ n => n == name | _ => false) ||
+      assignsExpr name target || assignsExpr name rhs
   | .update _ _ target rhs _ =>
     (match target with | .var _ n => n == name | _ => false) ||
       assignsExpr name target || (rhs.map (assignsExpr name)).getD false
@@ -394,7 +399,7 @@ private def readOnly : Fragment.Expr → Bool
   | .equality _ _ a b | .singletonTest _ _ _ _ a b | .logical _ _ a b | .coalesce _ a b
   | .seqBody _ a b | .letBody _ _ _ a b | .index _ _ a b | .arith _ _ a b => readOnly a && readOnly b
   | .ifBody _ _ c t e => readOnly c && readOnly t && readOnly e
-  | .alloc .. | .write .. | .indexWrite .. | .update .. | .assign .. | .nullishAssign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
+  | .alloc .. | .write .. | .indexWrite .. | .update .. | .logicalAssign .. | .assign .. | .nullishAssign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
   | .callWithReceiver .. | .call .. => false
 
 /-- The other operand of a singleton comparison, when saving the tested read
@@ -770,6 +775,9 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     pure (DirectProof.letE Γ a
       (DirectProof.node H (.arith op (.var 0) b.term) N .arith [DirectProof.var H 0 a.type, b]))
   | .update .. => throw "compound assignment inside a closed expression is outside the fragment"
+  | .logicalAssign pos .nullish (.var np name) rhs =>
+    closureExpr fc scope Γ (.nullishAssign pos name np rhs)
+  | .logicalAssign .. => throw "logical assignment inside a closed expression is outside the fragment"
   | .bindWithReceiver _ f receiver args => do
     let callee ← closureExpr fc scope Γ f
     let receiverPlan ← closureExpr fc (held ⟨"",some f.span⟩ :: scope) (callee.type::Γ) receiver
@@ -1288,6 +1296,69 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
       | some r => compileExpr fc (after.drop 2) (T::K) r combine
       | none => emitAt e.span (.num one) (.bind combine) (T::K) C (scope := after.drop 2)
     let read ← emitAt e.span readTerm (.bind delta) K T (scope := heldParts ++ scope)
+    parts.attach.zipIdx.reverse.foldlM (fun next (⟨part,_⟩,i) =>
+      compileExpr fc ((parts.take i |>.map fun p => held ⟨"",some p.span⟩).reverse ++ scope)
+        ((types.take i).reverse ++ Γ) part next) read
+  | .logicalAssign pos .nullish (.var np name) rhs =>
+    compileExpr fc scope Γ (.nullishAssign pos name np rhs) next
+  | .logicalAssign pos op target rhs =>
+    -- The target's parts once, its value read at the storage contract, the
+    -- test on that value, and the right side written only on the writing
+    -- arm; the other arm's value is the one read.
+    let G := SourceTypes.graph (← table)
+    let fieldType := fun (B : Ty Nat) (fld : String) => do
+      match PositiveRules.expand G B with
+      | [.refs fs []] =>
+        let some T := fs.lookup fld | throw s!"update of a field '{fld}' the contract does not name"
+        pure T
+      | _ => throw "a logical assignment needs one cell contract"
+    let (parts, T, readTerm, receiverSlot, fld) ← match target with
+      | .var _ name =>
+        let some (i, .cell contract _) := resolve scope name
+          | throw s!"assignment to '{name}', which is not a mutable local"
+        pure (([] : List Fragment.Expr), contract, Tm.readAt valueField (.var i), i+2, valueField)
+      | .read _ fld receiver =>
+        let B ← exprType fc receiver
+        let T ← fieldType B fld
+        pure ([receiver], T, Tm.readAt fld (.var 0), 2, fld)
+      | .index _ (some fld) receiver key =>
+        let B ← exprType fc receiver
+        let T ← fieldType B fld
+        pure ([receiver, key], T, Tm.readAt fld (.var 1), 3, fld)
+      | _ => throw "only field and local assignments are supported"
+    let types ← parts.mapM (exprType fc)
+    let heldParts := (parts.map fun p => held ⟨"",some p.span⟩).reverse
+    let K := types.reverse ++ Γ
+    let C ← exprType fc rhs
+    let n := parts.length
+    -- The arms' slices of the read value: the writing arm's and the kept one's.
+    if op != .nullish && !decide (Answers G T .isBool true) then
+      throw "a logical assignment needs a Boolean target"
+    let (writes, keeps) : Ty Nat × Ty Nat := match op with
+      | .nullish => (BranchRefinement.tagSlice G T .isNullish true, BranchRefinement.tagSlice G T .isNullish false)
+      | .orElse => ([2], [1])
+      | .andAlso => ([1], [2])
+    let saved := held ⟨"",some pos⟩ :: heldParts ++ scope
+    let dropKeep := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun j => if j == 0 then 0 else j+n+1))⟩
+    let keep ← emitAt pos (.var 0) (.bind dropKeep) (keeps::K) A (scope := saved)
+    let effects := held ⟨"",some rhs.span⟩ :: saved
+    let dropWrite := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun j => if j == 0 then 0 else j+n+2))⟩
+    let result ← emitAt pos (.var 0) (.bind dropWrite) (C::writes::K) A (scope := effects)
+    let write ← emitAt pos (.writeAt fld (.var receiverSlot) (.var 0)) (.effect result)
+      (C::writes::K) [0] "storage-contract" (scope := effects)
+    let yes ← compileExpr fc saved (writes::K) rhs write
+    -- The dispatch introduces a refined copy of the read; discard the older one.
+    let adapt := fun (t : Target) =>
+      ⟨t.label, some ((t.mapping.getD (List.range (K.length+1))).map
+        (fun j => if j == 0 then 0 else j+1))⟩
+    let continuation : Continuation := match op with
+      | .nullish => .tagBind .isNullish (adapt yes) (adapt keep)
+      | .orElse => .branchBind (adapt keep) (adapt yes)
+      | .andAlso => .branchBind (adapt yes) (adapt keep)
+    let dispatch ← emitAt pos (.var 0) continuation (T::K) T "logical-assignment-dispatch" (scope := saved)
+    let read ← emitAt pos readTerm (.bind dispatch) K T (scope := heldParts ++ scope)
     parts.attach.zipIdx.reverse.foldlM (fun next (⟨part,_⟩,i) =>
       compileExpr fc ((parts.take i |>.map fun p => held ⟨"",some p.span⟩).reverse ++ scope)
         ((types.take i).reverse ++ Γ) part next) read

@@ -129,6 +129,11 @@ def translatePoint (j : Json) : SourceTypes.Lowering PointType := do
     if current.isEmpty then throw original
     return ⟨[← CellClaims.reference write],some current⟩
 
+/-- The test a logical assignment makes on the target's current value. -/
+inductive LogicalOp where
+  | nullish | orElse | andAlso
+  deriving Repr, DecidableEq
+
 inductive Expr where
   | var (pos : Span) (name : String)
   | lit (pos : Span) (v : Claim.Val)
@@ -158,6 +163,10 @@ inductive Expr where
   parts once, its value read, the right side, the operation, the write back.
   `post` makes the old value the expression's value. -/
   | update (pos : Span) (op : Arith) (target : Expr) (rhs : Option Expr) (post : Bool)
+  /-- `target ??= rhs`, `||=` or `&&=`: the target's parts once, its value
+  read, the test on it, and the right side written only on the writing arm.
+  The Boolean forms need a Boolean target: truthiness is only that. -/
+  | logicalAssign (pos : Span) (op : LogicalOp) (target rhs : Expr)
   /-- Read a local once; assign and return the RHS only when nullish. -/
   | nullishAssign (pos : Span) (name : String) (namePos : Span) (rhs : Expr)
   /-- Assignment to a mutable local, which is an expression: it yields the
@@ -186,7 +195,7 @@ abbrev Expr.app (p : Span) (callee arg : Expr) : Expr := .call p callee [arg]
 def Expr.span : Expr → Span
   | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body => body.span
   | .ifBody p _ _ _ _ | .done p | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
-  | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ => p
+  | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
   | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .cast p _ _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ | .call p _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ => p
 
 /-- One declarator of a `const` or `let`. -/
@@ -345,6 +354,14 @@ partial def decodeExpr (j : Json) : Except String Expr := do
   | "write" =>
     return .write p (← jStr (← jField j "field")) (← decodeExpr (← jField j "receiver"))
       (← decodeExpr (← jField j "rhs"))
+  | "logicalAssign" => do
+    CellClaims.fieldsExactly j ["k","pos","op","target","rhs"]
+    let op ← match ← jStr (← jField j "op") with
+      | "nullish" => pure LogicalOp.nullish
+      | "or" => pure .orElse
+      | "and" => pure .andAlso
+      | op => throw s!"unknown logical assignment '{op}'"
+    return .logicalAssign p op (← decodeExpr (← jField j "target")) (← decodeExpr (← jField j "rhs"))
   | "nullishAssign" => do
     CellClaims.fieldsExactly j ["k","pos","name","namePos","rhs"]
     return .nullishAssign p (← jStr (← jField j "name")) (← jSpan j "namePos")

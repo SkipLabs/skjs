@@ -662,6 +662,20 @@ class Gate {
     const arith = arithmetic[node.operatorToken.kind];
     if (arith)
       return { k: "arith", pos: this.span(node), op: arith, l: this.expr(node.left), r: this.expr(node.right) };
+    const logical: Record<number, "nullish" | "or" | "and"> = {
+      [ts.SyntaxKind.QuestionQuestionEqualsToken]: "nullish",
+      [ts.SyntaxKind.BarBarEqualsToken]: "or",
+      [ts.SyntaxKind.AmpersandAmpersandEqualsToken]: "and",
+    };
+    const logicalOp = logical[node.operatorToken.kind];
+    if (logicalOp && (logicalOp !== "nullish" || !ts.isIdentifier(node.left))) {
+      const target = this.expr(node.left);
+      if (target.k !== "id" && target.k !== "read" && target.k !== "index")
+        this.fail(node.left, "only field and local assignments are supported");
+      if (target.k === "id" && target.name === "undefined")
+        this.fail(node.left, "shadowing undefined is outside the fragment");
+      return { k: "logicalAssign", pos: this.span(node), op: logicalOp, target, rhs: this.expr(node.right) };
+    }
     if (node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionEqualsToken) {
       if (!ts.isIdentifier(node.left) || node.left.text === "undefined")
         this.fail(node.left, "nullish assignment requires a local identifier");

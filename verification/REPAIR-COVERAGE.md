@@ -44,10 +44,10 @@ of the work remaining.
 
 ## Checkpoint: 17 September 2026
 
-The baseline is **32/116 verified**, out of 319 selected functions:
-203 SKJS-rejected, 75 gated, 9 unproved. The separate curated run had 56 files,
+The baseline is **35/116 verified**, out of 319 selected functions:
+203 SKJS-rejected, 72 gated, 9 unproved. The separate curated run had 56 files,
 235 verified functions, 7 search failures and 13 unavailable checks; the suite
-run had 61 suites. These are checkpoint results, not permanent expectations;
+run had 62 suites. These are checkpoint results, not permanent expectations;
 the baseline and fresh command output are authoritative.
 
 Recent repair gains were numeric heap predicates (`checkedEvolvingCapture`),
@@ -65,7 +65,9 @@ as a string singleton, with ternaries branching in the graph so an effect in
 the key is seen (`keyInitializesRhs`), and arithmetic on numbers with compound
 assignments and increments, plus a Boolean typing for a numeric test the operand's
 type does not settle (`mutateConstantObject`, `annotatedCompoundKey`,
-`computedUpdate`): 11 → 12 → 13 → 14 → 15 → 17 → 21 → 24 → 27 → 28 → 29 → 32.
+`computedUpdate`), and logical assignments to fields and elements
+(`selectedReceiver`, `computedAnd`, `computedFallback`):
+11 → 12 → 13 → 14 → 15 → 17 → 21 → 24 → 27 → 28 → 29 → 32 → 35.
 TS observation fixes also improved curated coverage without themselves moving
 this SKJS repair count.
 
