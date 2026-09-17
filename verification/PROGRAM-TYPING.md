@@ -155,6 +155,16 @@ then invoke, read and write it under the same premises as `app`, `read` and
 `write`. Allocation and invocation remain distinct steps: creation allocates
 the object and checks the bodies, without running them.
 
+The clause `top` is semantic top: every closed value inhabits it, and
+membership permits nothing, since no read, call, arithmetic or shape rule has
+a premise it satisfies; a narrowing fact must be established separately. Every
+clause is below it, its intersection with a clause is that clause, and a tag
+test on it has no answer. The source type `unknown` denotes it. A `void`
+result is a distinct source atom that forgets its guarantee about the value
+into the same top: the callee still runs and its effects still happen, only
+the result's contract says nothing. `undefined` remains a particular value,
+which a body produces by completing, and there is no void value or tag.
+
 Arithmetic has one rule, `arith`: two operands whose types answer the number
 test, combined by the double operation into a type representing the number
 family, never a singleton, since the result's bits are not typed. A tag test

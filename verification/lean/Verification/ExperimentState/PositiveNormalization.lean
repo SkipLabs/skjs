@@ -24,12 +24,20 @@ inductive Clause (α : Type) where
   | undef
   | callable (first : List (String × α)) (rest : List (List (String × α)))
       (arrows : List (List α × α))
+  /-- Semantic top: every value. Membership grants no operation, so nothing
+  reads, calls or tests through it without a narrowing fact. `unknown`
+  denotes it; a `void` result forgets its guarantee into it. -/
+  | top
   /-- Strings, and one string; appended last so every earlier case order holds. -/
   | str
   | strLit (value : String)
   deriving Repr, DecidableEq
 
+/-- Every value. A closed value, as every member of every family is. -/
+def topT : Fam := fun _ _ v => isVal v = true ∧ Scoped 0 v
+
 def sem (X : α → Fam) : Clause α → Fam
+  | .top => topT
   | .nul => nulT
   | .undef => undefT
   | .bool => boolT
@@ -61,6 +69,7 @@ def eval (X : α → Fam) : Formula α → Fam
 
 /-- Intersection of clauses: preserve all constraints of the same shape. -/
 def meet : Clause α → Clause α → List (Clause α)
+  | .top, c | c, .top => [c]
   | .nul, .nul => [.nul]
   | .undef, .undef => [.undef]
   | .bool, .bool => [.bool]
@@ -97,6 +106,7 @@ private theorem nil_sem (X : α → Fam) (n W v) : ¬ semList X [] n W v := by
 def shape : Clause α → Nat
   | .nul => 0 | .bool | .boolLit _ => 1 | .refs .. => 2 | .arrs .. | .callable .. => 3
   | .undef => 4 | .num | .numLit _ => 5 | .str | .strLit _ => 6
+  | .top => 7
 
 def valueShape : Val → Nat
   | .nul => 0 | .tru | .fls => 1 | .objAt _ .absent => 2 | .undef => 4
@@ -105,9 +115,28 @@ def valueShape : Val → Nat
   | .str _ => 6
   | _ => 7
 
-theorem sem_shape {X : α → Fam} {c : Clause α} {n W v}
+/-- Every member of a clause is a closed value; top says nothing more. -/
+theorem sem_value {X : α → Fam} {c : Clause α} {n W v}
+    (h : sem X c n W v) : isVal v = true ∧ Scoped 0 v := by
+  cases c with
+  | top => exact h
+  | nul => subst v; exact ⟨rfl, trivial⟩
+  | bool => rcases h with rfl | rfl <;> exact ⟨rfl, trivial⟩
+  | boolLit b => cases b <;> cases h <;> exact ⟨rfl, trivial⟩
+  | num => obtain ⟨b, rfl⟩ := h; exact ⟨rfl, trivial⟩
+  | numLit b => subst v; exact ⟨rfl, trivial⟩
+  | refs a rest => obtain ⟨flds, rfl, _⟩ := h.1; exact ⟨rfl, trivial⟩
+  | arrs L => exact ⟨(callsT_callable h).val, (callsT_callable h).scoped⟩
+  | callable a bs L => exact ⟨(callsT_callable h.2).val,(callsT_callable h.2).scoped⟩
+  | undef => subst v; exact ⟨rfl, trivial⟩
+  | str => obtain ⟨s, rfl⟩ := h; exact ⟨rfl, trivial⟩
+  | strLit s => subst v; exact ⟨rfl, trivial⟩
+
+/-- A member's shape is its clause's, except under top, which has none. -/
+theorem sem_shape {X : α → Fam} {c : Clause α} {n W v} (hc : c ≠ .top)
     (h : sem X c n W v) : valueShape v = shape c := by
   cases c with
+  | top => exact absurd rfl hc
   | nul => cases h; rfl
   | bool => rcases h with h | h <;> cases h <;> rfl
   | boolLit b => cases b <;> cases h <;> rfl
@@ -122,6 +151,16 @@ theorem sem_shape {X : α → Fam} {c : Clause α} {n W v}
 
 theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (v : Val) :
     semList X (meet a b) n W v ↔ interT (sem X a) (sem X b) n W v := by
+  by_cases ha : a = .top
+  · subst ha
+    simp only [meet, singleton_sem, sem, interT]
+    exact ⟨fun h => ⟨sem_value h, h⟩, fun h => h.2⟩
+  by_cases hb : b = .top
+  · subst hb
+    have hm : meet a .top = [a] := by
+      cases a <;> first | exact absurd rfl ha | rfl
+    rw [hm, singleton_sem]
+    exact ⟨fun h => ⟨h, sem_value h⟩, fun h => h.1⟩
   by_cases hs : shape a = shape b
   · cases a <;> cases b <;> simp only [shape] at hs
     all_goals try contradiction
@@ -184,8 +223,8 @@ theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (
     rw [hm]
     constructor
     · intro h; exact False.elim (nil_sem X n W v h)
-    · rintro ⟨ha, hb⟩
-      exact False.elim (hs ((sem_shape ha).symm.trans (sem_shape hb)))
+    · rintro ⟨hva, hvb⟩
+      exact False.elim (hs ((sem_shape ha hva).symm.trans (sem_shape hb hvb)))
 
 theorem meetLists_sound (X : α → Fam) (A B : List (Clause α)) (n W v) :
     semList X (meetLists A B) n W v ↔ interT (semList X A) (semList X B) n W v := by
@@ -224,6 +263,7 @@ theorem sem_adm (X : α → Fam) (c : Clause α) : Adm (sem X c) := by
   | arrs L => exact callsT_adm _
   | callable a bs L => exact CallableConjunctions.adm _ _ _
   | undef => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+  | top => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | str => exact strT_adm
   | strLit _ => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
 
@@ -238,6 +278,7 @@ theorem sem_congr (X Y : α → Fam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
   | str => rfl
   | strLit _ => rfl
   | undef => rfl
+  | top => rfl
   | refs a bs => exact congr_below X Y a bs n h W v
   | arrs L =>
     have hd : ∀ As : List α, ArgsAgree n (As.map X) (As.map Y) := by

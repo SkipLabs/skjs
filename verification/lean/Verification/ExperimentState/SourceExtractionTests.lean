@@ -608,7 +608,8 @@ private def lowered (j : Json) : Except String (Ty Nat) :=
 #guard is (lowered (joined [wireTy ⟨false,[.null]⟩,functionWire])) [0,4]
 #guard is (lowered (joined [cellWire,functionWire])) [4,5]
 #guard !ok (lowered (joined [cellWire,wireTy ⟨false,[.str]⟩]))
-#guard !ok (lowered (Json.mkObj [("top",toJson true),("atoms",toJson ([] : List Json))]))
+-- `unknown` is semantic top: one interned label, past the four fixed ones.
+#guard is (lowered (Json.mkObj [("top",toJson true),("atoms",toJson ([] : List Json))])) [4]
 
 -- An input is assumed at its annotation whatever its type: a nullable cell
 -- parameter is admitted like a primitive or an arrow.

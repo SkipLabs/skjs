@@ -217,7 +217,11 @@ fun claimPushAtoms(
   | TPrimUnit(TUndefined(), _) ->
     acc.push(jsonObj(Array[("a", jsonStr("undefined"))]));
     ""
-  | TPrimUnit(TVoid(), _) -> "void-type"
+  // A void result forgets its guarantee about the value: its own atom, so the
+  // source distinction from `unknown` survives, though both admit every value.
+  | TPrimUnit(TVoid(), _) ->
+    acc.push(jsonObj(Array[("a", jsonStr("void"))]));
+    ""
   | TPrimValue(kind, litsOpt, _) ->
     claimKindName(kind) match {
     | None() -> "unsupported-primitive"

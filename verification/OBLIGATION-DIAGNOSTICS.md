@@ -197,7 +197,6 @@ For `unavailable-type-claim`, [SkjsTypeClaims.sk](../src/SkjsTypeClaims.sk) emit
 | Reason | Emitted when |
 | --- | --- |
 | `unsupported-primitive` | A `bigint` or `symbol`, outside the export format. |
-| `void-type` | The `void` unit, which the format keeps distinct from `undefined` and does not carry. |
 | `unsupported-type` | A clause has no representable types. |
 | `nested-object-type` | An object occurs as a field, parameter or result type; objects are exported at the top of a claim only. |
 | `cell-is-array`, `cell-symbol-field`, `cell-index-signature`, `cell-callable`, `cell-constructible` | A branch read as a cell has an array brand, a symbol field, a real index signature, or positive callability or constructibility. |

@@ -44,10 +44,10 @@ of the work remaining.
 
 ## Checkpoint: 17 September 2026
 
-The baseline is **35/116 verified**, out of 319 selected functions:
-203 SKJS-rejected, 72 gated, 9 unproved. The separate curated run had 56 files,
+The baseline is **38/116 verified**, out of 319 selected functions:
+203 SKJS-rejected, 69 gated, 9 unproved. The separate curated run had 56 files,
 235 verified functions, 7 search failures and 13 unavailable checks; the suite
-run had 62 suites. These are checkpoint results, not permanent expectations;
+run had 63 suites. These are checkpoint results, not permanent expectations;
 the baseline and fresh command output are authoritative.
 
 Recent repair gains were numeric heap predicates (`checkedEvolvingCapture`),
@@ -66,8 +66,10 @@ the key is seen (`keyInitializesRhs`), and arithmetic on numbers with compound
 assignments and increments, plus a Boolean typing for a numeric test the operand's
 type does not settle (`mutateConstantObject`, `annotatedCompoundKey`,
 `computedUpdate`), and logical assignments to fields and elements
-(`selectedReceiver`, `computedAnd`, `computedFallback`):
-11 → 12 → 13 → 14 → 15 → 17 → 21 → 24 → 27 → 28 → 29 → 32 → 35.
+(`selectedReceiver`, `computedAnd`, `computedFallback`), and semantic top for
+`unknown` and `void` results (`privateScalar`, `guardedLoopRead`,
+`unchangedLoopRead`):
+11 → 12 → 13 → 14 → 15 → 17 → 21 → 24 → 27 → 28 → 29 → 32 → 35 → 38.
 TS observation fixes also improved curated coverage without themselves moving
 this SKJS repair count.
 
@@ -192,8 +194,8 @@ Other first gates include destructuring/defaults, spread/accessors, optional or
 readonly fields, arrays/tuples, unknown/generic parameters, implicit returns,
 arithmetic and classes. Audit representative full functions before choosing a
 large extension. Over the whole census export, the raw exporter reasons that
-appear in gated functions' claims are dominated by `void-type` (arrows returning
-`void`), `unexpanded-named-type` (class instances and named types),
+appear in gated functions' claims are dominated by `unexpanded-named-type`
+(class instances and named types),
 `unsupported-type`, `cell-callable` and `nested-object-type`. That is a count of
 unavailable claims, not of next gates: a site the verifier never needs does not
 obstruct, so a gated row may or may not meet one of these after its syntax gate.

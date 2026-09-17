@@ -357,6 +357,12 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
       node verification/tools/tsc-claims.mts "$LOGICAL_NUMBER" --out "$WORK/logical_number.tsc"
   }
   build logical_fixture
+  VOID_RESULTS=verification/tests/stateful-source/void-results.ts
+  void_fixture() {
+    fixture void_results "$VOID_RESULTS" &&
+      node verification/tools/tsc-claims.mts "$VOID_RESULTS" --out "$WORK/void_results.tsc"
+  }
+  build void_fixture
   build snapshot_probes
   for pid in "${building[@]}"; do wait "$pid" || exit 1; done
 
@@ -417,6 +423,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Computed keys" node verification/tests/computed-keys.mts "$WORK/computed_keys.ast" "$WORK/computed_keys.claims" "$WORK/computed_keys.tsc" "$COMPUTED_KEYS" "$VERIFIER"
   run_test "Arithmetic" node verification/tests/arithmetic.mts "$WORK/arithmetic.ast" "$WORK/arithmetic.claims" "$WORK/arithmetic.tsc" "$ARITHMETIC" "$WORK/arithmetic_strings.ast" "$WORK/arithmetic_strings.claims" "$ARITHMETIC_STRINGS" "$VERIFIER"
   run_test "Logical assignments" node verification/tests/logical-assignments.mts "$WORK/logical.ast" "$WORK/logical.claims" "$WORK/logical.tsc" "$LOGICAL" "$WORK/logical_number.ast" "$WORK/logical_number.tsc" "$LOGICAL_NUMBER" "$VERIFIER"
+  run_test "Void results" node verification/tests/void-results.mts "$WORK/void_results.ast" "$WORK/void_results.claims" "$WORK/void_results.tsc" "$VOID_RESULTS" "$VERIFIER"
   run_test "Closed SKJS operations" node verification/tests/skjs-operations.mts "$WORK/source.claims" "$BASE" "$VERIFIER"
   run_test "Generic identity source" node verification/tests/generic-source.mts "$WORK/generic_id.ast" "$WORK/generic_id.claims" "$GENERIC_ID" "$VERIFIER"
   run_test "Generic alias source" node verification/tests/generic-aliases.mts "$WORK/generic_aliases.ast" "$WORK/generic_aliases.claims" "$GENERIC_ALIASES" "$VERIFIER"

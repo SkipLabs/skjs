@@ -3,8 +3,8 @@
 ## capturedWrite [complete unverified normal]
 params: seed: boolean
 result: () => boolean [construct=unknown array=unknown]
-entry 57-85: seed!: boolean; this: (unavailable: void-type)
-entry 89-131: cell: { value: boolean } [string-index=synthetic symbol-index=synthetic]; seed!: boolean; this: (unavailable: void-type)
+entry 57-85: seed!: boolean; this: {"a":"void"}
+entry 89-131: cell: { value: boolean } [string-index=synthetic symbol-index=synthetic]; seed!: boolean; this: {"a":"void"}
 expr 70-85 `{ value: seed }`: { value: boolean } [string-index=synthetic symbol-index=synthetic]
 expr 79-83 `seed`: boolean
 expr 96-131 `(): boolean => (cell.value = !seed)`: () => boolean [construct=unknown array=unknown]

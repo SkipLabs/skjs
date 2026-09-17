@@ -3,5 +3,5 @@
 ## wrap [complete unverified normal]
 params: x: Id<boolean>
 result: Id<boolean>
-entry 63-71: this: (unavailable: void-type); x!: Id<boolean>
+entry 63-71: this: {"a":"void"}; x!: Id<boolean>
 expr 70-71 `x`: Id<boolean>

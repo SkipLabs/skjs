@@ -33,6 +33,10 @@ inductive Atom where
   | numLit (bits : UInt64)
   | strLit (s : String)
   | boolLit (b : Bool)
+  /-- A `void` result: no usable guarantee about the value, which may be
+  anything. Distinct from `top` (`unknown`) as a source type; both denote
+  every value. -/
+  | void
   deriving DecidableEq, Repr
 
 /-- A type: `unknown` (`top`), or the union of a finite list of atoms.
@@ -54,6 +58,7 @@ def inhabits : Val → Atom → Bool
   | .vnum b, .numLit c => b == c
   | .vstr s, .strLit t => s == t
   | .vbool b, .boolLit c => b == c
+  | _, .void => true
   | _, _ => false
 
 /-- The denotation of a type as a set of values. -/
@@ -82,6 +87,7 @@ def decodeAtom (j : Json) : Except String Atom := do
   | "numberlit" => return .numLit (← ExperimentState.numBits (← jStr (← jField j "v")))
   | "stringlit" => return .strLit (← jStr (← jField j "v"))
   | "booleanlit" => return .boolLit (← decodeBoolLiteral j)
+  | "void" => return .void
   | other => .error s!"unknown type atom '{other}'"
 
 /-- The literal forms. An `Expr.lit` node denotes one value, so a "literal"

@@ -16,6 +16,8 @@ export interface FunctionAtom {
 }
 export type Atom =
   | { a: "null" | "undefined" | "boolean" | "string" | "number" }
+  /* A `void` result: no usable guarantee about the value. */
+  | { a: "void" }
   | { a: "stringlit" | "numberlit" | "booleanlit"; v: string }
   | { a: "param"; name: string }
   | { a: "alias"; name: string; args: ClaimType[] }
@@ -40,7 +42,7 @@ function bool(v: unknown) { if (typeof v !== "boolean") throw Error("expected a 
 function atom(v: unknown): void {
   const o = object(v);
   switch (o.a) {
-    case "null": case "undefined": case "boolean": case "string": case "number": keys(o,["a"]); break;
+    case "null": case "undefined": case "boolean": case "string": case "number": case "void": keys(o,["a"]); break;
     case "booleanlit": case "numberlit": case "stringlit":
       keys(o,["a","v"]); str(o.v);
       if (o.a === "booleanlit" && o.v !== "true" && o.v !== "false") throw Error("invalid boolean literal");

@@ -3,15 +3,15 @@
 ## nestedSavedReads [complete unverified normal]
 params: seed: boolean | null
 result: boolean
-entry 314-374: seed!: boolean | null; this: (unavailable: void-type)
-entry 378-514: cell!: null | { value: boolean | null } [call=unknown construct=unknown array=unknown]; seed!: boolean | null; this: (unavailable: void-type)
-entry 412-444: cell!: null | { value: boolean | null } [call=unknown construct=unknown array=unknown]; seed!: boolean | null; this: (unavailable: void-type)
-entry 431-443: cell!: null (declared null | { value: boolean | null } [call=unknown construct=unknown array=unknown]); seed!: boolean | null; this: (unavailable: void-type)
-entry 449-487: cell!: { value: boolean | null } [call=unknown construct=unknown array=unknown] (declared null | { value: boolean | null } [call=unknown construct=unknown array=unknown]); seed!: boolean | null; this: (unavailable: void-type)
-entry 474-486: cell!: { value: boolean | null = (null) } [call=unknown construct=unknown array=unknown] (declared null | { value: boolean | null } [call=unknown construct=unknown array=unknown]); seed!: boolean | null; this: (unavailable: void-type)
-entry 492-509: cell!: { value: boolean | null = (boolean) } [call=unknown construct=unknown array=unknown] (declared null | { value: boolean | null } [call=unknown construct=unknown array=unknown]); seed!: boolean | null; this: (unavailable: void-type)
-entry 518-529: cell!: null | { value: boolean | null } [call=unknown construct=unknown array=unknown]; read: () => boolean [construct=unknown array=unknown]; seed!: boolean | null; this: (unavailable: void-type)
-entry 533-546: cell!: null (declared null | { value: boolean | null } [call=unknown construct=unknown array=unknown]); read: () => boolean [construct=unknown array=unknown]; seed!: boolean | null; this: (unavailable: void-type)
+entry 314-374: seed!: boolean | null; this: {"a":"void"}
+entry 378-514: cell!: null | { value: boolean | null } [call=unknown construct=unknown array=unknown]; seed!: boolean | null; this: {"a":"void"}
+entry 412-444: cell!: null | { value: boolean | null } [call=unknown construct=unknown array=unknown]; seed!: boolean | null; this: {"a":"void"}
+entry 431-443: cell!: null (declared null | { value: boolean | null } [call=unknown construct=unknown array=unknown]); seed!: boolean | null; this: {"a":"void"}
+entry 449-487: cell!: { value: boolean | null } [call=unknown construct=unknown array=unknown] (declared null | { value: boolean | null } [call=unknown construct=unknown array=unknown]); seed!: boolean | null; this: {"a":"void"}
+entry 474-486: cell!: { value: boolean | null = (null) } [call=unknown construct=unknown array=unknown] (declared null | { value: boolean | null } [call=unknown construct=unknown array=unknown]); seed!: boolean | null; this: {"a":"void"}
+entry 492-509: cell!: { value: boolean | null = (boolean) } [call=unknown construct=unknown array=unknown] (declared null | { value: boolean | null } [call=unknown construct=unknown array=unknown]); seed!: boolean | null; this: {"a":"void"}
+entry 518-529: cell!: null | { value: boolean | null } [call=unknown construct=unknown array=unknown]; read: () => boolean [construct=unknown array=unknown]; seed!: boolean | null; this: {"a":"void"}
+entry 533-546: cell!: null (declared null | { value: boolean | null } [call=unknown construct=unknown array=unknown]); read: () => boolean [construct=unknown array=unknown]; seed!: boolean | null; this: {"a":"void"}
 expr 359-374 `{ value: seed }`: { value: boolean | null } [string-index=synthetic symbol-index=synthetic]
 expr 368-372 `seed`: boolean | null
 expr 391-514 `(): boolean => { if (cell === null) r...`: () => boolean [construct=unknown array=unknown]
@@ -43,13 +43,13 @@ subtype null ≤ null | { value: boolean | null } [call=unknown construct=unknow
 ## checkedMutableObjectReplacement [complete unverified normal]
 params: seed: boolean | null
 result: boolean
-entry 76-102: seed!: boolean | null; this: (unavailable: void-type)
-entry 106-205: cell!: { value: boolean | null } [string-index=synthetic symbol-index=synthetic]; seed!: boolean | null; this: (unavailable: void-type)
-entry 140-183: cell!: { value: boolean | null } [string-index=synthetic symbol-index=synthetic]; seed!: boolean | null; this: (unavailable: void-type)
-entry 165-182: cell!: { value: boolean | null = (boolean) } [string-index=synthetic symbol-index=synthetic] (declared { value: boolean | null } [string-index=synthetic symbol-index=synthetic]); seed!: boolean | null; this: (unavailable: void-type)
-entry 188-200: cell!: { value: boolean | null = (null) } [string-index=synthetic symbol-index=synthetic] (declared { value: boolean | null } [string-index=synthetic symbol-index=synthetic]); seed!: boolean | null; this: (unavailable: void-type)
-entry 209-231: cell!: { value: boolean | null } [string-index=synthetic symbol-index=synthetic]; read: () => boolean [construct=unknown array=unknown]; seed!: boolean | null; this: (unavailable: void-type)
-entry 235-248: cell!: { value: null | boolean } [string-index=synthetic symbol-index=synthetic] (declared { value: boolean | null } [string-index=synthetic symbol-index=synthetic]); read: () => boolean [construct=unknown array=unknown]; seed!: boolean | null; this: (unavailable: void-type)
+entry 76-102: seed!: boolean | null; this: {"a":"void"}
+entry 106-205: cell!: { value: boolean | null } [string-index=synthetic symbol-index=synthetic]; seed!: boolean | null; this: {"a":"void"}
+entry 140-183: cell!: { value: boolean | null } [string-index=synthetic symbol-index=synthetic]; seed!: boolean | null; this: {"a":"void"}
+entry 165-182: cell!: { value: boolean | null = (boolean) } [string-index=synthetic symbol-index=synthetic] (declared { value: boolean | null } [string-index=synthetic symbol-index=synthetic]); seed!: boolean | null; this: {"a":"void"}
+entry 188-200: cell!: { value: boolean | null = (null) } [string-index=synthetic symbol-index=synthetic] (declared { value: boolean | null } [string-index=synthetic symbol-index=synthetic]); seed!: boolean | null; this: {"a":"void"}
+entry 209-231: cell!: { value: boolean | null } [string-index=synthetic symbol-index=synthetic]; read: () => boolean [construct=unknown array=unknown]; seed!: boolean | null; this: {"a":"void"}
+entry 235-248: cell!: { value: null | boolean } [string-index=synthetic symbol-index=synthetic] (declared { value: boolean | null } [string-index=synthetic symbol-index=synthetic]); read: () => boolean [construct=unknown array=unknown]; seed!: boolean | null; this: {"a":"void"}
 expr 87-102 `{ value: seed }`: { value: boolean | null } [string-index=synthetic symbol-index=synthetic]
 expr 96-100 `seed`: boolean | null
 expr 119-205 `(): boolean => { if (cell.value !== n...`: () => boolean [construct=unknown array=unknown]

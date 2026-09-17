@@ -3,8 +3,8 @@
 ## readValue [complete unverified normal]
 params: none
 result: boolean
-entry 75-95: this: (unavailable: void-type)
-entry 99-113: c: { value: boolean }; this: (unavailable: void-type)
+entry 75-95: this: {"a":"void"}
+entry 99-113: c: { value: boolean }; this: {"a":"void"}
 expr 85-95 `new Cell()`: { value: boolean }
 expr 106-107 `c`: { value: boolean }
 expr 106-113 `c.value`: boolean

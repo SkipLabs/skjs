@@ -9,6 +9,8 @@ export type Arrow = [domains: Labels[], result: Labels];
  * producer wrote them. Fields a contract does not name are unconstrained. */
 export type Fields = [name: string, labels: Labels][];
 export type Clause = "nul" | "bool" | "undef" | "num"
+  /** Semantic top: every value, and no operation through it. */
+  | "top"
   | { boolLit: { value: boolean } }
   /** The double's bit pattern, decimal, as the consumer's UInt64. */
   | { numLit: { bits: string } }
@@ -31,7 +33,7 @@ export type ClauseKey = KeysOf<ObjectClause>;
 /** Adding a clause to `Clause` without adding it here is a compile error, and
  * these are the only two places a clause kind is enumerated. */
 export const STRING_CLAUSE_TEXT: Record<StringClause, string> = {
-  nul: "null", bool: "boolean", undef: "undefined", num: "number", str: "string",
+  nul: "null", bool: "boolean", undef: "undefined", num: "number", str: "string", top: "unknown",
 };
 
 /** The number a literal's bit pattern denotes. Readers show the number; the

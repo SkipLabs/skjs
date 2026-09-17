@@ -606,6 +606,8 @@ function tryArrowIntersection(
 // recursive TS types. Record fields admit the same primitive/callable operands.
 function translateType(type: Type, checker: Checker, types: Row[], records = true, fuel = 64): number[] {
   if (fuel <= 0) throw new Refusal("type-depth", checker.typeToString(type));
+  // `unknown` is semantic top; a `void` result forgets its guarantee into it.
+  if (type.flags & (TypeFlags.Unknown | TypeFlags.Void)) return [internRow(types, ["top"])];
   const prim = primitiveLabelsOf(type);
   if (prim !== null) return prim;
   const nums = numberLabelsOf(type, types);

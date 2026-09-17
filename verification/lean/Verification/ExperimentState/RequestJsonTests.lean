@@ -5,6 +5,7 @@ namespace Verification.ExperimentState.RequestJsonTests
 open Lean ProgramTyping ControlFlow CertificateProducer RequestJson
 
 private def toNatClause : PositiveNormalization.Clause (List (Fin 6)) → PositiveNormalization.Clause (List Nat)
+  | .top => .top
   | .nul => .nul
   | .undef => .undef
   | .bool => .bool

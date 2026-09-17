@@ -55,8 +55,9 @@ private def convertFunction (f : Fragment.Fn) (c : Fragment.Claims) (generic : B
       continue
     let mut bindings := []
     for (name,raw) in bs do
-      -- The native implicit receiver is not a source binding.
-      if name == "this" && raw == Json.mkObj [("unsupported",toJson true)] then continue
+      -- The native implicit receiver is not a source binding, whatever its
+      -- claim: a plain function's `this` is `void`, which the export carries.
+      if name == "this" then continue
       let (A,current) ← candidate raw true
       issues := issues ++ note (bindingSite "binding" name start) raw A
       bindings := bindings ++ [Binding.mk name A current]

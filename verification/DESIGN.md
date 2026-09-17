@@ -706,8 +706,10 @@ Undefined is supported in required cell fields, primitive callbacks, explicit
 returns, strict comparisons and nullish coalescing. The
 [undefined fixture](tests/stateful-source/undefined.ts) checks these together with
 alias writes and supplied current-content observations. Statement-entry claims
-remain complete local verification boundaries. This does not yet cover `void`,
-optional-property presence, omitted arguments or implicit returns. Runtime
+remain complete local verification boundaries. `unknown` is semantic top and a
+`void` result forgets its guarantee into it, as a distinct source atom; this
+does not yet cover optional-property presence, omitted arguments or a bare
+`return`. Runtime
 bindings named `undefined` are rejected so the source compiler cannot confuse
 a shadowed identifier with the primitive value.
 

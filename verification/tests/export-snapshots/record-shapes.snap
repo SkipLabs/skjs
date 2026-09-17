@@ -3,5 +3,5 @@
 ## shapes [complete unverified normal]
 params: a: { x: boolean, y: null } [call=unknown construct=unknown array=unknown]; b: { value?: boolean } [call=unknown construct=unknown array=unknown]; c: { value: never = (boolean) } [call=unknown construct=unknown array=unknown]; d: (unavailable: nested-object-type); e: { value: (boolean) => null [construct=unknown array=unknown] } [call=unknown construct=unknown array=unknown]
 result: null
-entry 193-204: a!: { x: boolean, y: null } [call=unknown construct=unknown array=unknown]; b!: { value?: boolean } [call=unknown construct=unknown array=unknown]; c!: { value: never = (boolean) } [call=unknown construct=unknown array=unknown]; d!: (unavailable: nested-object-type); e!: { value: (boolean) => null [construct=unknown array=unknown] } [call=unknown construct=unknown array=unknown]; this: (unavailable: void-type)
+entry 193-204: a!: { x: boolean, y: null } [call=unknown construct=unknown array=unknown]; b!: { value?: boolean } [call=unknown construct=unknown array=unknown]; c!: { value: never = (boolean) } [call=unknown construct=unknown array=unknown]; d!: (unavailable: nested-object-type); e!: { value: (boolean) => null [construct=unknown array=unknown] } [call=unknown construct=unknown array=unknown]; this: {"a":"void"}
 expr 200-204 `null`: null

@@ -550,7 +550,7 @@ function roundTrips(type: unknown) {
   // dispatch below cannot be narrowed; this table is checked instead, and a
   // clause added to `Clause` without a case here does not compile.
   const _handled = {
-    nul: 1, bool: 1, undef: 1, num: 1, str: 1,
+    nul: 1, bool: 1, undef: 1, num: 1, str: 1, top: 1,
     boolLit: 1, numLit: 1, strLit: 1, refs: 1, arrs: 1, callable: 1,
   } satisfies Record<StringClause | ClauseKey, 1>;
   void _handled;
@@ -568,6 +568,7 @@ function roundTrips(type: unknown) {
     if (clause === "undef") return { a: "undefined" };
     if (clause === "num") return { a: "number" };
     if (clause === "str") return { a: "string" };
+    if (clause === "top") return "unknown";
     // A clause states one kind, under its own key. The table above is what
     // says these are all of them; here the key is only read.
     const body = (key: string): unknown => (isObject(clause) ? clause[key] : undefined);

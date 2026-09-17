@@ -346,6 +346,13 @@ class Gate {
       case ts.SyntaxKind.UndefinedKeyword:
         acc.push({ a: "undefined" });
         return;
+      // A `void` result: no usable guarantee about the value.
+      case ts.SyntaxKind.VoidKeyword:
+        acc.push({ a: "void" });
+        return;
+      case ts.SyntaxKind.UnknownKeyword:
+        this.top = true;
+        return;
 
       default:
         this.fail(
@@ -355,11 +362,18 @@ class Gate {
     }
   }
 
+  /** Whether the type being read mentioned `unknown`, which absorbs the
+   * rest of its union: semantic top. */
+  private top = false;
+
   typeOf(node: TypeNode | undefined): ClaimType {
     if (!node) this.fail(null, "missing type annotation");
     const atoms: Atom[] = [];
+    this.top = false;
     this.atomsOf(node, atoms);
-    return { top: false, atoms };
+    const top = this.top;
+    this.top = false;
+    return top ? { top: true, atoms: [] } : { top: false, atoms };
   }
 
   /* ------------------------------------------------------- expressions -- */

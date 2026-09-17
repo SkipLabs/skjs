@@ -13,8 +13,9 @@ def translate (c : Fragment.Claims) : Lowering SourceClaims.Function := do
   let point := fun ty => attempt (Fragment.translatePoint ty)
   let params ← c.params.mapM fun (name,ty) => do return (name, ← candidate ty)
   let ret ← candidate c.ret
+  -- `this` is claimed for every function and is no source binding.
   let envs ← c.envs.mapM fun (pos,vars) => do
-    return (pos, ← vars.mapM fun (name,ty) => do return (name, ← point ty))
+    return (pos, ← (vars.filter (·.1 != "this")).mapM fun (name,ty) => do return (name, ← point ty))
   let exprs ← c.exprs.mapM fun (pos,ty) => do return (pos, ← point ty)
   let current := fun (p : Except String Fragment.PointType) => p.toOption.bind (·.current)
   return ⟨c.name,c.namePos,params,ret,

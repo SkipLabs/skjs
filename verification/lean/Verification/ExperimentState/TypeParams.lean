@@ -30,6 +30,7 @@ def substFields [DecidableEq ι] (p : ι) (A : List ι)
   fs.map fun q => (q.1, substTy p A q.2)
 
 def substClause [DecidableEq ι] (p : ι) (A : List ι) : Clause (List ι) → Clause (List ι)
+  | .top => .top
   | .nul => .nul
   | .undef => .undef
   | .bool => .bool
@@ -251,6 +252,7 @@ theorem meaningP_value {G : NormalGraph ι} {P η} {A n W v}
     | arrs L => exact ⟨(callsT_callable hc).val, (callsT_callable hc).scoped⟩
     | callable a bs L => exact ⟨(callsT_callable hc.2).val, (callsT_callable hc.2).scoped⟩
     | undef => subst v; exact ⟨rfl, trivial⟩
+    | top => exact hc
     | str => obtain ⟨s, rfl⟩ := hc; exact ⟨rfl, trivial⟩
     | strLit s => subst v; exact ⟨rfl, trivial⟩
 

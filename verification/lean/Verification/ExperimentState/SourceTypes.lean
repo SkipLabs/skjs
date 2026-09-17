@@ -127,12 +127,14 @@ def numberLabels (t : Claim.Ty) : Lowering (Ty Nat) := do
     | .numLit b => out := out ++ [← use (.numLit b)]
     | .str => out := out ++ [← use .str]
     | .strLit s => out := out ++ [← use (.strLit s)]
+    -- A void result forgets its guarantee: every value, like `unknown`.
+    | .void => out := out ++ [← use .top]
     | _ => pure ()
   return out
 
 /-- Numbers and strings are interned, as their singletons are unbounded. -/
 def isNumberAtom : Claim.Atom → Bool
-  | .num | .numLit _ | .str | .strLit _ => true
+  | .num | .numLit _ | .str | .strLit _ | .void => true
   | _ => false
 
 /-- One arm of a union, translated where the table can grow: its numbers are
@@ -140,6 +142,8 @@ interned and its fixed primitives translate exactly as before. `translate` is
 the pure path and names only the four fixed labels, which is what a table that
 cannot grow needs; wherever one can grow, a number belongs in it. -/
 def translateArm (t : Claim.Ty) : Lowering (Ty Nat) := do
+  -- `unknown` is semantic top: every value, and no operation through it.
+  if t.top then return [← use .top]
   let numbers ← numberLabels ⟨t.top, t.atoms.filter isNumberAtom⟩
   let others ← match translate ⟨t.top, t.atoms.filter (fun a => !isNumberAtom a)⟩ with
     | .ok A => pure A

@@ -3,7 +3,7 @@
 ## bindResult [aborted unverified normal]
 params: target: (boolean, null) => boolean [construct=unknown array=unknown]; saved: boolean
 result: (null) => boolean [construct=unknown array=unknown]
-entry 125-156: saved!: boolean; target!: (boolean, null) => boolean [construct=unknown array=unknown]; this: (unavailable: void-type)
+entry 125-156: saved!: boolean; target!: (boolean, null) => boolean [construct=unknown array=unknown]; this: {"a":"void"}
 expr 132-138 `target`: (boolean, null) => boolean [construct=unknown array=unknown]
 expr 139-143 `bind`: "bind"
 expr 144-148 `null`: null

@@ -28,10 +28,19 @@ def sourceClauses (G : NormalGraph ι) (S : List ι) : List (Clause (List ι)) :
 
 def meaning (G : NormalGraph ι) (S : List ι) : Fam := setSem (normalDenote G) S
 
+/-- Top has no shape; it can share a member with any clause. -/
+def isTop : Clause α → Bool
+  | .top => true
+  | _ => false
+
+/-- Two clauses can share a member: same shape, or top, which has none. -/
+def overlaps (a b : Clause α) : Bool :=
+  isTop a || isTop b || shape a == shape b
+
 /-- A conservative compatibility check: two union labels can share a value
 only if some pair of their clauses has the same outer shape. -/
 def compatible (G : NormalGraph ι) (i k : ι) : Bool :=
-  (G i).any fun a => (G k).any fun b => shape a == shape b
+  (G i).any fun a => (G k).any fun b => overlaps a b
 
 theorem normal_congr (G : NormalGraph ι) : LayerCongr (normalLayer G) := by
   intro X Y n h i W v
@@ -76,8 +85,14 @@ theorem compatible_sound {G : NormalGraph ι} {i k : ι} {n W U v}
     compatible G i k = true := by
   obtain ⟨a, ha, hva⟩ := (unfold_normal G i n W v).mp hi
   obtain ⟨b, hb, hvb⟩ := (unfold_normal G k n U v).mp hk
-  simp only [compatible, List.any_eq_true, beq_iff_eq]
-  exact ⟨a, ha, b, hb, (sem_shape hva).symm.trans (sem_shape hvb)⟩
+  simp only [compatible, List.any_eq_true]
+  refine ⟨a, ha, b, hb, ?_⟩
+  by_cases hta : a = .top
+  · subst hta; rfl
+  by_cases htb : b = .top
+  · subst htb; simp [overlaps, isTop]
+  have hs := (sem_shape hta hva).symm.trans (sem_shape htb hvb)
+  simp [overlaps, hs]
 
 def FamLeAt (G : NormalGraph ι) (a b : List ι) (n : Nat) : Prop :=
   ∀ (W : WorldT n) (v : Val), meaning G a n W v → meaning G b n W v
@@ -195,6 +210,7 @@ abbrev CoversFields (R : List ι → List ι → Prop)
 
 def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
     Clause (List ι) → Clause (List ι) → Prop
+  | _, .top => True
   | .nul, .nul => True
   | .undef, .undef => True
   | .bool, .bool => True
@@ -284,8 +300,11 @@ theorem covers_bags_sound {G : NormalGraph ι} {R : List ι → List ι → Prop
 theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
     (W : WorldT n) (v : Val) : sem (meaning G) a n W v → sem (meaning G) b n W v := by
+  by_cases hb : b = .top
+  · subst hb; exact fun hv => sem_value hv
   cases a <;> cases b <;> simp only [Covers] at hc
   all_goals try contradiction
+  all_goals try exact absurd rfl hb
   · exact id
   · exact id
   · rename_i a bs c ds

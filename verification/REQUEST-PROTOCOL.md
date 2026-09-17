@@ -69,6 +69,7 @@ Each type-graph node is a union of clauses:
 
 | Clause | JSON example |
 | --- | --- |
+| Top: every value, permitting no operation | `"top"` |
 | Null | `"nul"` |
 | Boolean | `"bool"` |
 | Boolean singleton | `{"boolLit":{"value":true}}` (or `false`) |

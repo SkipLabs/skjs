@@ -1,14 +1,17 @@
 # census: repair-work
-# 35/116 verified, of 319 functions
+# 38/116 verified, of 319 functions
 #   skjs-rejected: 203
-#   gate: 72
-#   verified: 35
+#   gate: 69
+#   verified: 38
 #   unproved: 9
 #
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofUndefinedFieldAdmitsInitialValue
 gate:a `let` needs an initializer	tests/expect-error/test_ternary_refinements.ts	bothBranchesInitialize
 gate:a record with no field has no location	tests/expect-error/unsound-refinement.ts	grownAliasField
+gate:binary operator outside the fragment (instanceof)	tests/expect-error/hidden-dependent-bounds.ts	sameWitness
+gate:binary operator outside the fragment (instanceof)	tests/expect-error/instanceof-generic-skolem-args.ts	observeLocalHiddenType
+gate:binary operator outside the fragment (instanceof)	tests/expect-error/instanceof-generic-skolem-args.ts	opaqueHiddenResult
 gate:default parameters are outside the fragment	tests/expect-error/arrow-default-param-optional.ts	earlierGenericDefault
 gate:default parameters are outside the fragment	tests/expect-error/arrow-default-param-optional.ts	initializedDefault
 gate:default parameters are outside the fragment	tests/expect-error/captured-read-stability.ts	stablePattern
@@ -24,14 +27,18 @@ gate:expected a required mutable field	tests/expect-error/destructuring.ts	check
 gate:expected a required mutable field	tests/expect-error/destructuring.ts	earlierPatternRead
 gate:expected a required mutable field	tests/expect-error/destructuring.ts	patternEarlierBinding
 gate:expected a required mutable field	tests/expect-error/optional-chaining-method-call.ts	callResult
+gate:expected a required mutable field	tests/expect-error/satisfies.ts	satisfiesCompatibleWrite
+gate:expected a required mutable field	tests/expect-error/satisfies.ts	satisfiesLiteralTarget
 gate:expected a required mutable field	tests/expect-error/unsound-refinement.ts	assignedUnionAlternative
 gate:expected a required mutable field	tests/expect-error/unsound-refinement.ts	checkedDeclarationDefault
 gate:expected a required mutable field	tests/expect-error/unsound-refinement.ts	snapshotArgument
 gate:expected a required mutable field	tests/expect-error/unsound-refinement.ts	stableAnnotatedAlias
 gate:expected a required ordinary parameter	tests/expect-error/optional-chaining-method-call.ts	composedReceiverSnapshot
 gate:expected a required ordinary parameter	tests/expect-error/unsound-refinement.ts	receiverSnapshot
+gate:expected ordinary call arguments without spread or type arguments	tests/expect-error/alias-inference-stability.ts	compatibleWritePreservesExplicitConstraint
 gate:expression outside the fragment (ArrayLiteralExpression)	tests/expect-error/destructuring.ts	inferredAssignmentDefault
 gate:expression outside the fragment (ArrayLiteralExpression)	tests/expect-error/destructuring.ts	inferredIterableDefault
+gate:expression outside the fragment (ArrayLiteralExpression)	tests/expect-error/instanceof-generic-skolem-args.ts	localHiddenContainer
 gate:expression outside the fragment (NewExpression)	tests/expect-error/hidden-dependent-bounds.ts	inferredBound
 gate:expression outside the fragment (NewExpression)	tests/expect-error/rest-inference-stability.ts	keepArgument
 gate:intersection operands must have the same shape	tests/expect-error/spread-callable.ts	restOwnCallable
@@ -41,31 +48,21 @@ gate:nested patterns are outside the fragment	tests/expect-error/destructuring.t
 gate:only `extends boolean` or an earlier type parameter is in the fragment	tests/expect-error/freeze-window-stale-cache.ts	frozenNumbers
 gate:only field and local assignments are supported	tests/expect-error/destructuring-assignment.ts	keyBeforeDefault
 gate:rest parameters are outside the fragment	tests/expect-error/iterator-effects.ts	consumeNumbers
+gate:statement outside the fragment (ForStatement)	tests/expect-error/loop-carried-narrowing.ts	guardedIncrementRead
 gate:statement outside the fragment (SwitchStatement)	tests/expect-error/switch-scope-merge.ts	switchLaterBinding
 gate:statement outside the fragment (TryStatement)	tests/expect-error/binding-initialization.ts	exceptionScopesSeparate
 gate:type outside the fragment (ArrayType)	tests/expect-error/array-isarray-refinement.ts	restArrayEntries
 gate:type outside the fragment (ArrayType)	tests/expect-error/for-in-for-of-invalid.ts	loopScopeRestoresOuter
 gate:type outside the fragment (ArrayType)	tests/expect-error/instanceof-generic-skolem-args.ts	iterationLocalContainer
+gate:type outside the fragment (ArrayType)	tests/expect-error/instanceof-generic-skolem-args.ts	opaqueCapturedContainer
 gate:type outside the fragment (ArrayType)	tests/expect-error/instanceof-generic-skolem-args.ts	opaqueWhileContainer
+gate:type outside the fragment (TupleType)	tests/expect-error/contextual-hidden-escape.ts	opaqueContextualRoot
 gate:type outside the fragment (TupleType)	tests/expect-error/destructuring-tuple-rest-union.ts	assignedRest
 gate:type outside the fragment (TupleType)	tests/expect-error/destructuring-tuple-rest-union.ts	declaredRest
 gate:type outside the fragment (TupleType)	tests/expect-error/destructuring-tuple-rest-union.ts	emptyRemainder
 gate:type outside the fragment (TupleType)	tests/expect-error/destructuring-tuple-union.ts	assignedPrefix
 gate:type outside the fragment (TupleType)	tests/expect-error/destructuring-tuple-union.ts	declaredPrefix
-gate:type outside the fragment (UnknownKeyword)	tests/expect-error/contextual-hidden-escape.ts	opaqueContextualRoot
-gate:type outside the fragment (UnknownKeyword)	tests/expect-error/hidden-dependent-bounds.ts	sameWitness
-gate:type outside the fragment (UnknownKeyword)	tests/expect-error/instanceof-generic-skolem-args.ts	localHiddenContainer
-gate:type outside the fragment (UnknownKeyword)	tests/expect-error/instanceof-generic-skolem-args.ts	observeLocalHiddenType
-gate:type outside the fragment (UnknownKeyword)	tests/expect-error/instanceof-generic-skolem-args.ts	opaqueCapturedContainer
-gate:type outside the fragment (UnknownKeyword)	tests/expect-error/instanceof-generic-skolem-args.ts	opaqueHiddenResult
-gate:type outside the fragment (VoidKeyword)	tests/expect-error/alias-inference-stability.ts	compatibleAliasAndClassConstraints
-gate:type outside the fragment (VoidKeyword)	tests/expect-error/alias-inference-stability.ts	compatibleWritePreservesExplicitConstraint
-gate:type outside the fragment (VoidKeyword)	tests/expect-error/call-effect-boundaries.ts	privateScalar
-gate:type outside the fragment (VoidKeyword)	tests/expect-error/loop-carried-narrowing.ts	guardedIncrementRead
-gate:type outside the fragment (VoidKeyword)	tests/expect-error/loop-carried-narrowing.ts	guardedLoopRead
-gate:type outside the fragment (VoidKeyword)	tests/expect-error/loop-carried-narrowing.ts	unchangedLoopRead
-gate:type outside the fragment (VoidKeyword)	tests/expect-error/satisfies.ts	satisfiesCompatibleWrite
-gate:type outside the fragment (VoidKeyword)	tests/expect-error/satisfies.ts	satisfiesLiteralTarget
+gate:unknown type alias	tests/expect-error/alias-inference-stability.ts	compatibleAliasAndClassConstraints
 gate:unknown type alias	tests/expect-error/alias-inference-stability.ts	inferenceBox
 gate:unknown type alias	tests/expect-error/iterator-effects.ts	freshGuardAndSnapshot
 gate:unknown type parameter	tests/expect-error/spread-callable.ts	annotatedOwnCopy
@@ -294,6 +291,7 @@ verified	tests/expect-error/assignment-receivers.ts	selectedReceiver
 verified	tests/expect-error/binding-initialization.ts	earlierDeclarator
 verified	tests/expect-error/call-effect-boundaries.ts	clearEffect
 verified	tests/expect-error/call-effect-boundaries.ts	postCallGuard
+verified	tests/expect-error/call-effect-boundaries.ts	privateScalar
 verified	tests/expect-error/captured-read-stability.ts	checkedAliasChain
 verified	tests/expect-error/captured-read-stability.ts	checkedAnnotatedConstField
 verified	tests/expect-error/captured-read-stability.ts	checkedCapturedLocal
@@ -318,6 +316,8 @@ verified	tests/expect-error/local-vs-local-refinement.ts	inferredReadSingleton
 verified	tests/expect-error/logical-compound-computed-key.ts	computedAnd
 verified	tests/expect-error/logical-compound-computed-key.ts	computedFallback
 verified	tests/expect-error/logical-compound-flow.ts	localFallback
+verified	tests/expect-error/loop-carried-narrowing.ts	guardedLoopRead
+verified	tests/expect-error/loop-carried-narrowing.ts	unchangedLoopRead
 verified	tests/expect-error/nullish-coalescing.ts	resultOfFallback
 verified	tests/expect-error/obj-literal-var-field-growth.ts	keyInitializesRhs
 verified	tests/expect-error/postfix-exclamation.ts	nonNullScalarSnapshot

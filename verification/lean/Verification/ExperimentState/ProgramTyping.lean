@@ -41,6 +41,7 @@ theorem meaning_value {G : NormalGraph ι} {A n W v} (h : meaning G A n W v) :
   | arrs L => exact ⟨(callsT_callable hc).val, (callsT_callable hc).scoped⟩
   | callable a bs L => exact ⟨(callsT_callable hc.2).val,(callsT_callable hc.2).scoped⟩
   | undef => subst v; exact ⟨rfl, trivial⟩
+  | top => exact hc
   | str => obtain ⟨s, rfl⟩ := hc; exact ⟨rfl, trivial⟩
   | strLit s => subst v; exact ⟨rfl, trivial⟩
 
@@ -220,6 +221,7 @@ def tagShape (tag : Tag) (s : Nat) : Option Bool :=
 
 def tagClause (tag : Tag) (c : Clause α) : Option Bool :=
   match tag, c with
+  | _, .top => none
   | .numEq bits, .numLit value => some (numberEqual value bits)
   | .strEq s, .strLit t => some (s == t)
   | _, _ => tagShape tag (shape c)
@@ -240,7 +242,7 @@ theorem tagClause_sound {S : α → Fam} {c tag q n W v}
       subst v
       rfl
     all_goals
-      have hs := sem_shape hv
+      have hs := sem_shape (by simp) hv
       cases v <;> simp_all [ht,valueShape,tagHolds,shape]
   | strEq s =>
     cases c <;> simp [ht, tagClause, tagShape, shape] at hq
@@ -250,13 +252,15 @@ theorem tagClause_sound {S : α → Fam} {c tag q n W v}
       subst v
       rfl
     all_goals
-      have hs := sem_shape hv
+      have hs := sem_shape (by simp) hv
       cases v <;> simp_all [ht,valueShape,tagHolds,shape]
   | isNul | isBool | isRef | isFun | isUndef | isNullish | isNum | isStr =>
+    by_cases hc : c = .top
+    · subst hc; simp [ht, tagClause] at hq
     have htag : some (tagHolds tag v) = tagShape tag (valueShape v) := by
       rw [ht]
       cases v <;> first | rfl | (rename_i fs code; cases code <;> rfl)
-    rw [sem_shape hv, ht] at htag
+    rw [sem_shape hc hv, ht] at htag
     exact Option.some.inj (htag.trans (by simpa only [ht,tagClause] using hq))
 
 theorem answers_sound {G : NormalGraph ι} {A tag q n W v}

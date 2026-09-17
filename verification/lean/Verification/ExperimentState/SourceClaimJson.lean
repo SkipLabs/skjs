@@ -164,6 +164,8 @@ private def genericType (T : SourceTypes.Table) : ClaimType → Except String Js
   | .param name => pure (Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj [("a",toJson "param"),("name",toJson name)]])])
   | .labels A => do
     let rows := PositiveRules.expand (SourceTypes.graph T) A
+    -- Semantic top passes through as itself: it permits nothing.
+    if rows == [.top] then return Json.mkObj [("top",toJson true),("atoms",toJson ([] : List Json))]
     if rows != [.bool] && rows != [.boolLit true,.boolLit false] && rows != [.boolLit false,.boolLit true] then
       throw "generic claim requires a rigid parameter or boolean"
     return Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj [("a",toJson "boolean")]])]
@@ -172,7 +174,9 @@ private def Function.genericClaims (T : SourceTypes.Table) (c : Function) : Exce
       c.expressions.any (fun e => e.current.isSome) then throw "generic claims cannot assert current contents"
   return ⟨c.name,c.namePos,← c.params.mapM (fun b => do return (b.name,← genericType T b.type)),
     ← genericType T c.result,
-    ← c.entries.mapM (fun e => do return (e.start,← e.bindings.mapM (fun b => do return (b.name,← genericType T b.type)))),
+    -- `this` is a claimed binding of every function and no source name.
+    ← c.entries.mapM (fun e => do return (e.start,← (e.bindings.filter (·.name != "this")).mapM
+      (fun b => do return (b.name,← genericType T b.type)))),
     ← c.expressions.mapM (fun e => do return (e.pos,← genericType T e.type))⟩
 
 def extract (ast claims : Json) (fileKey : String) : Except String (List SourceRequest) := do

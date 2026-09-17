@@ -171,14 +171,14 @@ try {
   test("a claim cannot erase undefined from a live input union", () =>
     rejects(
       candidate("undefinedUnion", (f, a) => {
-        must(entryOf(f, must(a.body[0], "a statement").pos[0]).bindings[0], "a binding")
+        must(entryOf(f, must(a.body[0], "a statement").pos[0]).bindings.find((b) => b.name === "value"), "the value binding")
           .type = [0, 1, 2];
       }),
     ));
   test("null testing does not justify an undefined branch claim", () =>
     rejects(
       candidate("nullIsDifferent", (f, a) => {
-        must(entryOf(f, last(a.body).pos[0]).bindings[0], "a binding").type = [0];
+        must(entryOf(f, last(a.body).pos[0]).bindings.find((b) => b.name === "value"), "the value binding").type = [0];
       }),
     ));
   test("a precise undefined read requires a supplied current observation", () => {

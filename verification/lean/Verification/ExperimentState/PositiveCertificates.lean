@@ -77,6 +77,7 @@ abbrev Evidence (ι : Type) := List (Ops ι × ((List (List ι) × List ι) × A
 set_option synthInstance.maxSize 1024 in
 def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs : Evidence ι) :
     Clause (List ι) → Clause (List ι) → Bool
+  | _, .top => true
   | .nul, .nul => true
   | .undef, .undef => true
   | .bool, .bool => true
@@ -168,8 +169,11 @@ private theorem arrow_evidence_complete [DecidableEq ι] {G : NormalGraph ι} {t
 set_option synthInstance.maxSize 1024 in
 theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table a b}
     (h : Covers G (Rel table) a b) : ∃ es, checkClause G table es a b = true := by
+  by_cases hb : b = .top
+  · subst hb; exact ⟨[], by cases a <;> rfl⟩
   cases a <;> cases b <;> simp only [Covers] at h
   all_goals try contradiction
+  all_goals try exact absurd rfl hb
   · exact ⟨[], rfl⟩
   · exact ⟨[], rfl⟩
   · exact ⟨[], by simpa only [checkClause, decide_eq_true_eq] using h⟩

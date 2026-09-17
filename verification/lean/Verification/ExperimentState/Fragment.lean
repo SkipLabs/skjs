@@ -82,7 +82,8 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
   if j == Json.mkObj [("unsupported", toJson true)] then
     throw "type claim unavailable from producer"
   CellClaims.fieldsExactly j ["top","atoms"]
-  if ← (← jField j "top").getBool? then throw "top is outside the fragment"
+  -- `unknown` is semantic top: every value, and no operation through it.
+  if ← (← jField j "top").getBool? then return [← SourceTypes.use .top]
   let atoms ← jArr j "atoms"
   let tagged ← atoms.mapM fun atom => do return (← jStr (← jField atom "a"),atom)
   -- A conjunction is one arm of the union, not a union of its own, so each
@@ -100,7 +101,7 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
     | "function" => callableType single
     -- A number or string arm is interned, so `1` and `number` are separate
     -- labels and the singleton is below the family by the ordinary clause rules.
-    | "number" | "numberlit" | "string" | "stringlit" =>
+    | "number" | "numberlit" | "string" | "stringlit" | "void" =>
       SourceTypes.numberLabels (← CellClaims.primitive single)
     | _ => SourceTypes.translate (← CellClaims.primitive single)
   return (records ++ conjunctions ++ arms).flatten.mergeSort (· ≤ ·) |>.eraseDups
