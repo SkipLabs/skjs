@@ -110,6 +110,14 @@ one resolution, so no site can take the identity for the value: the identity
 escapes the frame only inside a closure's environment, never as something a
 source expression produces.
 
+Assigned function parameters use the same storage convention. The Lean lowering
+scans the body and nested closures for assignments, then initializes a separate
+private cell for each assigned parameter. It replaces only that parameter's
+slot, preserving the order and values of all other inputs. The written parameter
+annotation remains the storage contract; no producer claim chooses whether a
+parameter is a location. A closure captures that location and a const captures
+a snapshot, as for `let`. The function's public input contract is unchanged.
+
 Ordinary producer claims for a mutable binding describe its current contents,
 and are checked even at entries where the binding is unused. Claims implied
 by the storage invariant become read obligations; narrower Boolean/null/undefined

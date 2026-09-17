@@ -725,4 +725,29 @@ private def callerClaims : Fragment.Claims :=
   | .ok _ => false)
 #guard !ok (extractFn { callerFn with params := [⟨"a",cellWire⟩] } { callerClaims with params := [("a",cellWire)] })
 
+-- Entry allocation replaces exactly the assigned parameter slots. The middle
+-- parameter stays a value; both private cells start with their own argument.
+private def assignedParametersFn : Fragment.Fn :=
+  let B := wireTy ⟨false,[.bool]⟩
+  ⟨"parameters",(0,1),[⟨"x",B⟩,⟨"keep",B⟩,⟨"z",B⟩],B,
+    [.effect (2,5) (.assign (2,5) "x" (2,3) (.var (4,5) "z")),
+     .effect (6,9) (.assign (6,9) "z" (6,7) (.lit (8,9) (.vbool false))),
+     .ret (10,13) (.var (12,13) "x")]⟩
+private def assignedParametersClaims : Fragment.Claims :=
+  let B := wireTy ⟨false,[.bool]⟩
+  let H := [("x",B),("keep",B),("z",B)]
+  ⟨"parameters",(0,1),H,B,[(2,H),(6,H),(10,H)],
+    [((2,5),B),((4,5),B),((6,9),B),((8,9),b),((12,13),B)]⟩
+#guard ok (do
+  let r ← extractFn assignedParametersFn assignedParametersClaims
+  if r.inputs != [[1,2],[1,2],[1,2]] then throw "changed public parameter contract"
+  match r.program.reverse with
+  | ⟨.nul,.effect entry⟩ ::
+    ⟨.makeAt .absent ["value"] [.var 0],.bind first⟩ ::
+    ⟨.makeAt .absent ["value"] [.var 2],.bind second⟩ :: _ =>
+    if entry.label != r.start-1 || first.label != r.start-2 ||
+       first.mapping != some [0,2,3] || second.mapping != some [1,2,0] then
+      throw "parameter allocation permuted or aliased the source bindings"
+  | _ => throw "parameter allocation did not initialize the assigned slots")
+
 end Verification.ExperimentState.SourceExtractionTests

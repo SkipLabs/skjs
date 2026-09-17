@@ -260,6 +260,11 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
     fixture named_units verification/tests/stateful-source/named-unit-comparisons.ts &&
       node verification/tools/tsc-claims.mts verification/tests/stateful-source/named-unit-comparisons.ts --out "$WORK/named_units.tsc"
   }
+  mutable_params_fixture() {
+    fixture mutable_params verification/tests/stateful-source/mutable-parameters.ts &&
+      node verification/tools/tsc-claims.mts verification/tests/stateful-source/mutable-parameters.ts --out "$WORK/mutable_params.tsc"
+  }
+  build mutable_params_fixture
   build named_units_fixture
   build mutable_guard_fixture
   build records_fixture
@@ -320,6 +325,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Generic extends source" node verification/tests/generic-extends.mts "$WORK/generic_extends.ast" "$WORK/generic_extends.claims" "$GENERIC_EXTENDS" "$VERIFIER"
   run_test "Multi-field records · SKJS" node verification/tests/records.mts "$WORK/records_skjs.ast" "$WORK/records_skjs.normalized" verification/tests/stateful-source/records.ts "$VERIFIER" "$WORK/records_skjs.claims"
   run_test "Multi-field records · TypeScript" node verification/tests/records.mts "$WORK/records.ast" "$WORK/records.claims" verification/tests/stateful-source/records.ts "$VERIFIER"
+  run_test "Mutable parameters" node verification/tests/mutable-parameters.mts "$WORK/mutable_params.ast" "$WORK/mutable_params.claims" "$WORK/mutable_params.tsc" verification/tests/stateful-source/mutable-parameters.ts "$VERIFIER"
   run_test "Named unit comparisons" node verification/tests/named-unit-comparisons.mts "$WORK/named_units.ast" "$WORK/named_units.claims" "$WORK/named_units.tsc" verification/tests/stateful-source/named-unit-comparisons.ts "$VERIFIER"
   run_test "Captured mutable guards" node verification/tests/mutable-guards.mts "$WORK/mutable_guard.ast" "$WORK/mutable_guard.claims" verification/tests/stateful-source/captured-local-guards.ts "$WORK/mutable_guard_effects.ast" "$WORK/mutable_guard_effects.claims" verification/tests/stateful-source/mutable-guard-effects.ts "$VERIFIER"
   run_test "Mutable locals" node verification/tests/mutable-locals.mts "$WORK/mutable_locals.ast" "$WORK/mutable_locals.claims" "$MUTABLE_LOCALS" "$VERIFIER"

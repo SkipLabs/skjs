@@ -279,8 +279,17 @@ Ordinary environment claims for mutable names assert contents, not identities:
 the extractor requires an invariant-based read proof or a finite heap observation
 checked on every incoming edge. Captured entry claims require the stable
 invariant. Immutable-slot guard refinements cannot substitute cell identities.
-Uninitialized or unannotated `let`, `var`, and mutable parameter assignment
-remain outside this lowering.
+For an unannotated initialized `let`, the first following statement's claim
+supplies a candidate storage contract; the initializer and every write must
+establish it. Uninitialized `let` and function-scoped `var` remain unsupported.
+
+Assigned parameters of a stateful source function use the same private-cell
+representation. Lean scans assignments, including inside nested closures, and
+allocates one cell per assigned parameter on entry. Its source annotation is
+the storage contract; public input types still describe the argument values.
+Unassigned parameters keep their value slots. A nested closure may write a
+captured outer parameter; assignment to the closure's own parameters remains
+outside this lowering.
 
 The identity scheme `id<T>(x: T): T { return x }` is also accepted, with
 each distinct type parameter exported as a `param` atom. Function AST objects always

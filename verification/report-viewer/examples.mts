@@ -16,6 +16,7 @@ const stateful = [
   "null-guards",
   "numbers",
   "mutable-locals",
+  "mutable-parameters",
   "captured-local-guards",
   "mutable-locals-guard",
   "mutable-locals-numeric",

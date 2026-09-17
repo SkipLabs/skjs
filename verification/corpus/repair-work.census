@@ -1,9 +1,9 @@
 # census: repair-work
-# 9/115 verified, of 315 functions
+# 10/115 verified, of 315 functions
 #   skjs-rejected: 200
 #   gate: 90
-#   unproved: 16
-#   verified: 9
+#   unproved: 15
+#   verified: 10
 #
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofUndefinedFieldAdmitsInitialValue
@@ -295,7 +295,6 @@ skjs-rejected	tests/expect-error/unsound-refinement.ts	stableSpreadMember
 skjs-rejected	tests/expect-error/unsound-refinement.ts	storedLocalAlias
 skjs-rejected	tests/expect-error/unsound-refinement.ts	storedNarrowAlias
 skjs-rejected	tests/expect-error/unsound-refinement.ts	tupleDeclarationDefault
-unproved:reject: assignment to '_', which is not a mutable local	tests/expect-error/issue-89-and-or-narrowing.ts	unrelatedFact
 unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/call-effect-boundaries.ts	clearEffect
 unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/call-effect-boundaries.ts	postCallGuard
 unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/captured-read-stability.ts	checkedAliasChain
@@ -318,5 +317,6 @@ verified	tests/expect-error/captured-read-stability.ts	inferredPrimitiveCompatib
 verified	tests/expect-error/captured-read-stability.ts	neverReassigned
 verified	tests/expect-error/captured-read-stability.ts	snapshotCapturedLocal
 verified	tests/expect-error/captured-read-stability.ts	stableAnnotatedConstValue
+verified	tests/expect-error/issue-89-and-or-narrowing.ts	unrelatedFact
 verified	tests/expect-error/local-vs-local-refinement.ts	inferredReadNamedNull
 verified	tests/expect-error/nullish-coalescing.ts	resultOfFallback

@@ -26,7 +26,7 @@ stable storage type every assignment is checked against, and `reference` is the
 slot's own type, interned once when the binding was declared so that building
 an environment stays a pure projection.
 
-Storage comes from the source declaration and from nothing else. A producer's
+Storage comes from source declarations and assignments. A producer's
 claim about `x` describes what the cell currently holds, which is exactly what
 must not become the type of the slot holding its identity. -/
 private inductive Storage where
@@ -163,6 +163,31 @@ private partial def comparisonsStmt (fc : SourceClaims.Function) (s : Fragment.S
       (← e.mapM (fun ss => ss.mapM (comparisonsStmt fc)))
   | .loop p c b => return .loop p (← comparisonsExpr fc c) (← b.mapM (comparisonsStmt fc))
   | .brk .. | .cont .. => pure s
+
+/-- Storage is selected from source assignments, including writes in nested
+closures. Active-name shadowing is rejected by the lowering, so a matching
+name cannot silently designate a different binding. Producer claims cannot
+choose which parameters are mutable. -/
+private partial def assignsExpr (name : String) : Fragment.Expr → Bool
+  | .var .. | .lit .. | .done .. => false
+  | .assign _ target _ rhs => target == name || assignsExpr name rhs
+  | .not _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e
+  | .lambda _ _ _ e => assignsExpr name e
+  | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b
+  | .unitTest _ _ _ _ a b | .write _ _ a b | .withValue _ a b _ _
+  | .seqBody _ a b | .letBody _ _ _ a b => assignsExpr name a || assignsExpr name b
+  | .alloc _ _ es => es.any (assignsExpr name)
+  | .call _ f args => assignsExpr name f || args.any (assignsExpr name)
+  | .callWithReceiver _ f r args | .bindWithReceiver _ f r args =>
+    assignsExpr name f || assignsExpr name r || args.any (assignsExpr name)
+  | .ifBody _ _ c t e => assignsExpr name c || assignsExpr name t || assignsExpr name e
+
+private partial def assignsStmt (name : String) : Fragment.Stmt → Bool
+  | .ret _ e | .cst _ _ _ e | .mut _ _ _ _ e | .effect _ e => assignsExpr name e
+  | .ite _ c t e => assignsExpr name c || t.any (assignsStmt name) ||
+    (e.getD []).any (assignsStmt name)
+  | .loop _ c b => assignsExpr name c || b.any (assignsStmt name)
+  | .brk .. | .cont .. => false
 
 /-- A terminal branch uses the enclosing source result annotation, not a
 fabricated expression claim at the if statement's span. -/
@@ -1235,7 +1260,27 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
     let claimedR ← SourceClaims.resolve (← table).length fc.ret
     if R != claimedR then throw "claimed return type differs from the source annotation"
     let stmts ← f.body.mapM (comparisonsStmt fc)
-    let first ← body (traversalBudget stmts) fc R scope stmts none none
+    let bodyScope : List ScopeBinding ← (scope.zip inputs).mapM fun (pair : ScopeBinding × Ty Nat) => do
+      let (b,contract) := pair
+      if stmts.any (assignsStmt b.source.name) then
+        let reference ← lower (do return [← CellClaims.reference [(valueField, contract)]])
+        pure { b with storage := .cell contract reference }
+      else pure b
+    let mut first ← body (traversalBudget stmts) fc R bodyScope stmts none none
+    -- Each assigned parameter gets one fresh private cell at function entry.
+    -- Replace its slot in place; the caller still supplies the original value
+    -- and the function's public input contract does not mention these cells.
+    for (b,i) in bodyScope.zipIdx.reverse do
+      if let .cell _ reference := b.storage then
+        let Γ := (bodyScope.zip inputs).zipIdx.map fun (entry : (ScopeBinding × Ty Nat) × Nat) =>
+          let ((binding,A),j) := entry
+          if j < i then match binding.storage with
+            | .cell _ ref => ref | .value => A
+          else A
+        let mapping := (List.range scope.length).map fun j => if j == i then 0 else j+1
+        first ← emitAt f.namePos (.makeAt .absent [valueField] [.var i])
+          (.bind ⟨first.label,some mapping⟩) Γ reference "parameter-allocation"
+          (scope := scope)
     let entry ← emit .nul (.effect first) inputs [0]
     return (inputs, R, entry)).run { types := T }
   return ⟨⟨built.types, built.program, built.claims, R, entry.label, inputs⟩,
