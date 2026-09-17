@@ -12,9 +12,9 @@
  * Functions are censused one per file. The corpus sources are SKJS regression
  * tests that also hold classes and ambient declarations, and the source gate
  * rejects a whole file on the first of those, so a per-file request would
- * report nothing at all. Dependencies are not carried along: a function using
- * an ambient declaration from its original file is reported as unresolved
- * rather than repaired.
+ * report nothing at all. Non-function top-level context is carried along, including
+ * ambient declarations, aliases, classes and variables. Other named function
+ * implementations are omitted; this is not dependency resolution.
  *
  * Phases are split because SKJS runs in a container: `--extract` writes the
  * per-function files, the caller exports claims for all of them in one

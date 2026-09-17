@@ -25,10 +25,12 @@ nothing to check, and is reported separately rather than as a shortfall. The cen
 a refusal names a boundary of the verified fragment and says nothing about
 whether SKJS is right.
 
-It extracts each top-level function on its own, so a function that needs an
-ambient declaration or a class from elsewhere in its file is reported as
-unresolved rather than measured. Where being self-contained costs nothing,
-prefer it; do not distort a regression to suit the census.
+It extracts each top-level function with the file's non-function context,
+including ambient declarations, aliases, classes and top-level variables. Other
+named function implementations are omitted; it is not a dependency resolver.
+Do not distort a regression to suit the census. For the pipeline continuation
+checkpoint, inspected blockers and safe extension workflow, see
+[Repair coverage](../verification/REPAIR-COVERAGE.md).
 
 ## Spec
 

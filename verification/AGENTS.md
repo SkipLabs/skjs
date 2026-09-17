@@ -11,10 +11,14 @@ Preserve SKJS acceptance, inference and diagnostics while doing this experiment.
 Keep rejected safe programs as incompleteness findings; only behavior-preserving
 claim extraction changes belong here. [DESIGN.md](DESIGN.md) owns this boundary.
 
+For repair-coverage work, start with [REPAIR-COVERAGE.md](REPAIR-COVERAGE.md):
+measurement, current checkpoint, inspected blockers and extension pitfalls.
+
 ## Commands
 
 ```sh
 make verify                      # from the repo root: build, suites, then the corpus
+make verify-census               # original SKJS repair functions (separate baseline)
 make verify-test                 # the suites only
 make verify-examples             # the corpus only
 verification/run.sh --suite all  # the suites, without rebuilding Lean
@@ -87,8 +91,8 @@ corpus file, one worker per core, and colour decided once in the parent.
 ## Snapshots of the exporter
 
 `tests/export-snapshots/` holds small probes with SKJS's exported claims
-printed beside them. They are independent of the corpus and may use any
-TypeScript. A change to what the exporter says is a diff in a `.snap` file;
+printed beside them. They may use any TypeScript; some supported probes are also shared with
+the pipeline suites and viewer corpus. A change to what the exporter says is a diff in a `.snap` file;
 read it, then regenerate:
 
 ```sh
@@ -108,8 +112,7 @@ an exporter change needs a place to show, one phenomenon per file.
 - Every module the node side runs is `.mts`, and `tools/tsconfig.json` covers
   all of them — the trusted front end, the corpus driver and the suites — under
   one fully strict configuration, `noImplicitAny` and `strictNullChecks`
-  included — the trusted front end, the corpus driver, the suites, and the
-  reader's own model and server. A new file lands in that project by being
+  included, as well as the reader's own model and server. A new file lands in that project by being
   where it belongs; nothing is exempt.
 - `tools/source-claims.mts` describes the source sidecar wire format, and
   `report-viewer/types.ts` the report the reader displays. A tool that writes

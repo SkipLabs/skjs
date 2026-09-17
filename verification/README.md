@@ -16,7 +16,7 @@ are the types a graph label can name. [Control-flow graphs](PROGRAM-TYPING.md#ch
 and [state assertions](POSITIVE-TYPES.md#state-assertion-grammar) are layered on
 those two rather than alternatives to them.
 
-The supported source profile includes null, undefined and Boolean unions, required
+The supported source profile includes null, undefined, Boolean and numeric unions, required
 cell fields, and callbacks with ordered required parameters. The
 [undefined examples](tests/stateful-source/undefined.ts) exercise contracts, alias
 writes, strict comparisons and nullish coalescing. This does not imply support
@@ -47,6 +47,9 @@ The commands separate regression testing from inspecting example outcomes:
   `⚠` highlights SKJS acceptance not established by its claims; it is not itself
   evidence of an SKJS bug.
   No repair is applied; repair demonstrations belong to the regression suites.
+- `make verify-census` measures original SKJS repair regressions against a separate
+  baseline. See [Repair coverage](REPAIR-COVERAGE.md) for the denominator,
+  inspected blockers and continuation workflow.
 - `make verify` runs both, building Lean once and keeping their summaries separate.
 
 The example summary counts functions by producer and proof outcome. A separate
@@ -101,12 +104,11 @@ verifies using TypeScript’s claims.
 
 Loops inside closures, external cell parameters, labeled transfers,
 active-name shadowing, other `typeof` comparisons, general strings, and overloads
-are outside it. An initialized, annotated `let` is in it: it allocates a private
+are outside it. An initialized `let` is in it: it allocates a private
 cell the source never sees as a value, reading the name reads the cell,
 assignment writes it and yields the value written, and a closure holds the
 cell's identity, so it observes later writes. The annotation is the storage
-contract every assignment is checked against; an unannotated `let` is refused
-rather than given its initializer's type. Current-content claims are checked
+contract every assignment is checked against when one is written. Current-content claims are checked
 as read obligations or primitive heap observations; immutable snapshots can keep
 precise contents across later writes. Guard refinement of mutable contents is
 still conservative. A `let` may omit its annotation: the producer states the
@@ -119,11 +121,9 @@ with known comparison outcomes; arithmetic is outside the fragment. A numeric
 literal is its own singleton and is below `number`; its identity is the double
 it denotes, so `1`, `1.0` and `1e0` are one literal. A number may be a
 parameter or result of a closure, and the storage contract of a mutable local,
-so a captured reader of a numeric `let` verifies. What a number cannot be is a
-current-content assertion: those currently enumerate only null, undefined and
-Boolean values on incoming edges. A claim about what a
-cell holds now is instead the obligation that its storage contract implies it.
-Numbers inside a `{ value: T }` cell are still outside. Generic variable-copy bodies admit distinct type parameters and bounds to
+so a captured reader of a numeric `let` verifies. Numeric current-content assertions are supported on incoming edges, including
+numeric contents of local cells; a broad `number` assertion does not establish a
+particular singleton. Generic variable-copy bodies admit distinct type parameters and bounds to
 `boolean` or an earlier parameter, including transitive chains. Parameters,
 annotated `const` copies and results use those rigid types or `boolean`;
 conversions follow declared bounds only. Dependent parameters retain their rigid identity in raw SKJS exports. First-order aliases
@@ -176,6 +176,7 @@ owner; other documents link to them and give only the context their readers need
 | Document | Owns |
 | --- | --- |
 | This README | Commands, a concise supported-fragment overview, and navigation. |
+| [REPAIR-COVERAGE](REPAIR-COVERAGE.md) | Repair measurement, continuation checkpoint, inspected blockers and safe extension workflow. |
 | [DESIGN](DESIGN.md) | Architecture, trust boundary, decisions, corpus-led priorities and integration status. |
 | [SEMANTICS](SEMANTICS.md) | The term and value grammar, execution, worlds, heap satisfaction, membership and safety predicates. |
 | [POSITIVE-TYPES](POSITIVE-TYPES.md) | Type and state-assertion grammars, normalization, declarative subtyping and subtype certificates. |
