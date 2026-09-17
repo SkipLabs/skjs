@@ -222,9 +222,11 @@ function knowledgeRows(
     rows.push({
       slot: g.value,
       binding: of(g.value),
-      what: g.alias
-        ? "is the same value as " + of(g.cell)
-        : "is a read of " + of(g.cell) + "." + g.field,
+      what: g.distinct
+        ? "." + g.other + " is a different location from " + of(g.cell) + "." + g.field
+        : g.alias
+          ? "is the same value as " + of(g.cell)
+          : "is a read of " + of(g.cell) + "." + g.field,
     });
   return rows;
 }

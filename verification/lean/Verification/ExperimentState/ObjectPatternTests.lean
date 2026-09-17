@@ -23,31 +23,34 @@ private def start : Nat := ((extracted.toOption.getD []).map (·.start)).headD 0
 -- its default writing 2 (4), joining at (2). The return reads the state cell
 -- and falls back to `b` (1).
 private def expected : Program :=
-  [⟨.var 0,.ret⟩,
+  [
+   ⟨.var 0,.ret⟩,
    ⟨.letE (.readAt "value" (.var 3)) (.ite (.test .isNullish (.var 0)) (.var 1) (.var 0)),.bind 0⟩,
-   ⟨.nul,.effect ⟨1,some [0, 1, 3, 4, 5]⟩⟩,
-   ⟨.var 0,.bind ⟨2,some [0, 2, 3, 4, 5, 6]⟩⟩,
-   ⟨.writeAt "value" (.var 4) (.var 0),.effect 3⟩,
-   ⟨.num 4611686018427387904,.bind 4⟩,
-   ⟨.var 0,.tagBind .isUndef ⟨5,some [2, 3, 4, 5, 6]⟩ ⟨2,some [0, 2, 3, 4, 5, 6]⟩⟩,
-   ⟨.readAt "b" (.var 1),.bind 6⟩,
-   ⟨.nul,.effect 7⟩,
-   ⟨.var 0,.bind ⟨8,some [0, 2, 3, 4, 5]⟩⟩,
-   ⟨.writeAt "value" (.var 3) (.var 0),.effect 9⟩,
-   ⟨.num 4607182418800017408,.bind 10⟩,
-   ⟨.var 0,.tagBind .isUndef ⟨11,some [2, 3, 4, 5]⟩ ⟨8,some [0, 2, 3, 4, 5]⟩⟩,
-   ⟨.readAt "a" (.var 0),.bind 12⟩,
-   ⟨.var 0,.bind 13⟩,
-   ⟨.var 0,.effect 14⟩,
-   ⟨.makeAt .absent ["a", "b"] [.var 1, .var 0],.bind ⟨15,some [0, 3, 4]⟩⟩,
-   ⟨.var 2,.bind 16⟩,
-   ⟨.var 1,.bind 17⟩,
-   ⟨.makeAt .absent ["value"] [.var 0],.bind ⟨18,some [0, 2]⟩⟩,
-   ⟨.var 0,.effect 19⟩,
-   ⟨.nul,.bind 20⟩,
-   ⟨.nul,.effect 21⟩]
+   ⟨.nul,.effect 1⟩,
+   ⟨.nul,.effect ⟨2,some [0, 1, 3, 4, 5]⟩⟩,
+   ⟨.var 0,.bind ⟨3,some [0, 2, 3, 4, 5, 6]⟩⟩,
+   ⟨.writeAt "value" (.var 4) (.var 0),.effect 4⟩,
+   ⟨.num 4611686018427387904,.bind 5⟩,
+   ⟨.var 0,.tagBind .isUndef ⟨6,some [2, 3, 4, 5, 6]⟩ ⟨3,some [0, 2, 3, 4, 5, 6]⟩⟩,
+   ⟨.readAt "b" (.var 1),.bind 7⟩,
+   ⟨.nul,.effect 8⟩,
+   ⟨.var 0,.bind ⟨9,some [0, 2, 3, 4, 5]⟩⟩,
+   ⟨.writeAt "value" (.var 3) (.var 0),.effect 10⟩,
+   ⟨.num 4607182418800017408,.bind 11⟩,
+   ⟨.var 0,.tagBind .isUndef ⟨12,some [2, 3, 4, 5]⟩ ⟨9,some [0, 2, 3, 4, 5]⟩⟩,
+   ⟨.readAt "a" (.var 0),.bind 13⟩,
+   ⟨.var 0,.bind 14⟩,
+   ⟨.nul,.effect 15⟩,
+   ⟨.var 0,.effect 16⟩,
+   ⟨.makeAt .absent ["a", "b"] [.var 1, .var 0],.bind ⟨17,some [0, 3, 4]⟩⟩,
+   ⟨.var 2,.bind 18⟩,
+   ⟨.var 1,.bind 19⟩,
+   ⟨.makeAt .absent ["value"] [.var 0],.bind ⟨20,some [0, 2]⟩⟩,
+   ⟨.var 0,.effect 21⟩,
+   ⟨.nul,.bind 22⟩,
+   ⟨.nul,.effect 23⟩]
 #guard program == expected
-#guard start == 22
+#guard start == 24
 
 /-- The seed in slot zero, nothing else bound. -/
 private def seeded (v : Tm) : Env := fun i => if i == 0 then v else .nul
@@ -56,8 +59,8 @@ private def seeded (v : Tm) : Env := fun i => if i == 0 then v else .nul
 -- both fields undefined, both defaults run in pattern order: the state cell
 -- ends at 2, which is returned. This is a trace of the lowered program, not
 -- a general compiler proof.
-theorem both_defaults_in_order : Execution expected 56 []
-    (.at 22 (seeded .undef))
+theorem both_defaults_in_order : Execution expected 60 []
+    (.at 24 (seeded .undef))
     [.num 4611686018427387904, .undef, .undef] (.done (.num 4611686018427387904)) := by
   repeat first
     | exact Execution.refl
@@ -77,8 +80,8 @@ theorem both_defaults_in_order : Execution expected 56 []
 
 -- With both fields present neither default runs: the state cell stays null
 -- and the read of `b`, the seed, is returned.
-theorem no_default_runs : Execution expected 42 []
-    (.at 22 (seeded (.num 4617315517961601024)))
+theorem no_default_runs : Execution expected 46 []
+    (.at 24 (seeded (.num 4617315517961601024)))
     [.nul, .num 4617315517961601024, .num 4617315517961601024]
     (.done (.num 4617315517961601024)) := by
   repeat first

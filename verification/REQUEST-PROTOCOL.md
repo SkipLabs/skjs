@@ -187,8 +187,13 @@ predicates: `nul`, `undef`, `tru`, `fls`, `num`, `str`,
 `{"numLit":{"bits":"…"}}`, with the same unsigned 64-bit decimal encoding as
 numeric graph clauses, or `{"strLit":{"value":"…"}}`. The empty list is
 impossible. A singleton fact can weaken to its family, never the reverse. `links` is a list of
-`{cell, value, alias, field}` objects: `alias: true` means equal slot values;
-`alias: false` means the named field currently contains the other slot's value. These are finite state assertions, not extra type labels.
+`{cell, value, alias, field, distinct, other}` objects: `alias: true` means equal
+slot values; `alias: false` means the named field currently contains the other
+slot's value; `distinct: true` means field `field` of the object in `cell` and
+field `other` of the object in `value` are different locations, a timeless fact
+established by allocation, since fresh locations differ from every field of
+every record-typed slot in scope, and the reason a write to one cell keeps
+facts about another. These are finite state assertions, not extra type labels.
 `effect: null` selects ordinary expression evidence; a non-null effect selects
 one of the checked `StepEvidence` constructors (`ordinary`, `pure`,
 `typedRead`, `observedRead`, `knownValue`, `created`, `allocated`, `written`). Constructor payloads use

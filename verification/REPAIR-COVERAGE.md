@@ -44,10 +44,10 @@ of the work remaining.
 
 ## Checkpoint: 17 September 2026
 
-The baseline is **26/116 verified**, out of 319 selected functions:
-203 SKJS-rejected, 83 gated, 7 unproved. The separate curated run had 56 files,
+The baseline is **27/116 verified**, out of 319 selected functions:
+203 SKJS-rejected, 83 gated, 6 unproved. The separate curated run had 56 files,
 235 verified functions, 7 search failures and 13 unavailable checks; the suite
-run had 57 suites. These are checkpoint results, not permanent expectations;
+run had 58 suites. These are checkpoint results, not permanent expectations;
 the baseline and fresh command output are authoritative.
 
 Recent repair gains were numeric heap predicates (`checkedEvolvingCapture`),
@@ -56,7 +56,9 @@ local nullish assignment (`localFallback`), inferred object replacement
 object patterns (`inferredFieldDefault`, `checkedStateAfterDefault`) and
 object parameters assumed at their annotation (`clearEffect`, `postCallGuard`,
 `checkedAliasChain`, `checkedAfterWrite`) and type assertions (`castScalarSnapshot`,
-`satisfiesSnapshot`, `nonNullScalarSnapshot`): 11 → 12 → 13 → 14 → 15 → 17 → 21 → 24.
+`satisfiesSnapshot`, `nonNullScalarSnapshot`) and distinct-location links, under
+which a write to a fresh private cell keeps a guard's fact about a parameter's
+field (`assignmentResultSnapshot`): 11 → 12 → 13 → 14 → 15 → 17 → 21 → 24 → 27.
 TS observation fixes also improved curated coverage without themselves moving
 this SKJS repair count.
 
@@ -169,7 +171,6 @@ where to investigate, not a promise that one extension will verify each row.
 | Cases | Observed obstruction and additional caveats |
 | --- | --- |
 | `field-refinement.ts`: `inferredFieldComparison` | Object parameters are now assumed at their annotation (see DESIGN.md, the trust boundary); this row's next obstruction is the guard `x.value !== other.zero`, a comparison of a field read against another singleton-typed read rather than a literal, which does not refine the read on the branch. |
-| `unsound-refinement.ts`: `assignmentResultSnapshot` | After the null guard, `const value = (y = x.value)` writes the assigned parameter's private cell, and the observation that `x.value` is a number does not survive that write to the entry of `x.value = null`. The cell is a fresh allocation, so the knowledge rules could keep the fact if they used the allocation's distinctness. |
 | `obj-literal-var-field-growth.ts`: `retainedReceiver` | The exporter reports `fuel-exhausted` for `{ slot: seed }` and every type mentioning `box` or `original`: the object literal's growable field variable has a cyclic saved bound, which the bounded export refuses rather than unrolls (see `testTypeClaimSnapshotUnion`). Fixing the export is only the first gate: the function then aliases a mutable local's object, assigns inside an expression, and compares a numeric field. Only three census functions carry this reason. There is a different, SKJS-rejected function with the same name in `unsound-refinement.ts`. |
 | `captured-read-stability.ts`: `checkedGenericCallResult` | The callee `makeCapturedGenericCell` at extracted span `[551,574)` is refused as `function-generic`; the call's result claim itself exports. The claim language has no generic function type, so an export would have to state the call-site instantiation, and the TS producer refuses the same signature (`generic-arrow`). Beyond that, the extractor binds identifiers only from parameters and local declarations, so an ambient function value is unbound: the same external-value boundary as the object rows above. Four census functions carry `function-generic`. |
 | `binding-initialization.ts`: `conditionBeforeLocal` | Reads top-level `seed` before declaring an inner `seed`. Context extraction carries the declaration, but lowering lacks that external value. Do not diagnose this solely as local shadowing. |

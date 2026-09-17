@@ -401,7 +401,11 @@ def produceRaw [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
       (successors node.continuation).zipIdx.filterMap fun (t,index) =>
         if t.label == target then some (l,index,t) else none
   let mut table : List (Option (NodeEvidence ι)) := List.replicate P.length none
-  for _ in List.range (P.length + 1) do
+  -- A merge waits for its predecessors while some pass still makes progress;
+  -- once none does, the merges still waiting (a cycle through no cut) take
+  -- their stated requirements alone, as every merge did before.
+  let mut force := false
+  for _ in List.range (2 * P.length + 2) do
     let mut progress := false
     for l in List.range P.length do
       if ((table[l]?).getD none).isSome then continue
@@ -410,17 +414,35 @@ def produceRaw [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
       let required := (requirements.lookup l).getD ⟨[],[],[]⟩
       let mut k := required
       if l != start && !cuts.contains l then
-        if let some [(pred,index,target)] := incoming[l]? then
+        match incoming[l]? with
+        | some [(pred,index,target)] =>
           let some previous := (table[pred]?).getD none | continue
           let some source := P[pred]? | throw .claimCount
           k := HeapKnowledge.project (edgeKnowledge previous.output source.continuation index)
             target.mapping c.context.length
+        | some preds =>
+          -- A merge that is not a cut states no requirement of its own; it
+          -- keeps what every predecessor establishes, once all are available.
+          -- Cycles pass through cuts, so waiting here cannot deadlock.
+          let mut projections : List HeapKnowledge.Knowledge := []
+          let mut ready := true
+          for (pred,index,target) in preds do
+            match (table[pred]?).getD none, P[pred]? with
+            | some previous, some source =>
+              projections := projections ++ [HeapKnowledge.project
+                (edgeKnowledge previous.output source.continuation index) target.mapping c.context.length]
+            | _, _ => ready := false
+          if !ready && !force then continue
+          if ready then k := HeapKnowledge.meet projections
+        | none => pure ()
       k := ⟨(k.cells ++ required.cells).eraseDups,(k.values ++ required.values).eraseDups,
         (k.links ++ required.links).eraseDups⟩
       let evidence ← produceNode G pool fuel l node claims k suggestions known
       table := table.set l (some evidence)
       progress := true
-    if !progress then break
+    if !progress then
+      if force then break else force := true
+    else force := false
   table.mapM fun c => match c with
     | some e => pure e
     | none => throw .rejected

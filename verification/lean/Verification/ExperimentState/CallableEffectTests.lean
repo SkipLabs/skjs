@@ -24,7 +24,8 @@ private def proof (j : Sequent Nat) : Evidence Nat :=
 -- The potentially mutating body is not run by creation. Both the fresh bag's
 -- initial contents and the old cell's false contents survive.
 #guard checkTree G (proof creation)
-#guard checkStep G creation k (.allocated (proof creation)) == some (allocOutput k [(valueField, [.tru])])
+#guard checkStep G creation k (.allocated (proof creation)) ==
+  some (allocOutput k [(valueField, [.tru])] (contractFields G creation.context))
 #guard (allocOutput k [(valueField, [.tru])]).cells == [⟨0,[.tru],valueField⟩,⟨2,[.fls],valueField⟩]
 #guard checkStep G {creation with term := .alloc (.var 0)} k
   (.allocated (proof creation)) == none
@@ -50,7 +51,7 @@ private def readClaim : Sequent Nat := ⟨[[2]],.read (.var 0),[1]⟩
 
 -- Producer selection uses the maintained allocation/read evidence constructors.
 #guard match expressionEffect G pool 8 creation k [] [] with
-  | some (_, .allocated _, out) => out == allocOutput k [(valueField, [.tru])]
+  | some (_, .allocated _, out) => out == allocOutput k [(valueField, [.tru])] (contractFields G creation.context)
   | _ => false
 #guard match expressionEffect G pool 8 readClaim ⟨[],[],[]⟩ [] [] with
   | some (_, .typedRead 0 [(valueField, [1])] _, out) => out == readFrame ⟨[],[],[]⟩ 0 valueField

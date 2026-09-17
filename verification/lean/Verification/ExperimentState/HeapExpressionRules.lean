@@ -15,7 +15,7 @@ def copySlots (i j : Nat) : List Nat := if j = i then [0,j+1] else [j+1]
 
 def copy (k : Knowledge) (i : Nat) : Knowledge :=
   ⟨copyFacts k.cells i,copyFacts k.values i,
-    ⟨0,i+1,true,valueField⟩ :: HeapLinks.pull k.links (copySlots i)⟩
+    ⟨0,i+1,true,valueField,false,valueField⟩ :: HeapLinks.pull k.links (copySlots i)⟩
 
 theorem copy_holds {k i ρ h} (hk : HeapKnowledge.Holds k ρ h) :
     HeapKnowledge.Holds (copy k i) (push (ρ i) ρ) h := by
@@ -102,7 +102,7 @@ theorem result_holds {k R ρ h v} (hk : HeapKnowledge.Holds k (push v ρ) h)
 came from. This does not claim the cell had any particular contents beforehand. -/
 def readFrame (k : Knowledge) (i : Nat) (fld : String) : Knowledge :=
   let out := HeapKnowledge.shift k
-  {out with links := (HeapLinks.aliases k.links i).map (fun j => ⟨j+1,0,false,fld⟩) ++ out.links}
+  {out with links := (HeapLinks.aliases k.links i).map (fun j => ⟨j+1,0,false,fld,false,valueField⟩) ++ out.links}
 
 /-- Reading uses a current-cell fact; its result is also an immutable value fact.
 This latter fact is what permits a subsequent result-contract check to retain
@@ -229,11 +229,34 @@ theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k t A ρ n W h}
   intro _ _ heap v _
   exact ⟨holds_nil _ _,(HeapKnowledge.shift_holds (v := v) hk).2.1,HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2⟩
 
+/-- The named fields of every record-typed slot: the locations a fresh
+allocation is known to differ from, read off the context's contracts. -/
+def contractFields [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) : List (Nat × String) :=
+  Γ.zipIdx.flatMap fun (A, s) => match bagOperand (expand G A) with
+    | some B => B.map fun p => (s, p.1)
+    | none => []
+
+theorem contractFields_mem [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {s f}
+    (hm : (s, f) ∈ contractFields G Γ) :
+    ∃ Ref B El, Γ[s]? = some Ref ∧ bagOperand (expand G Ref) = some B ∧ (f, El) ∈ B := by
+  obtain ⟨⟨A,s'⟩,hA,hsel⟩ := List.mem_flatMap.mp hm
+  simp only at hsel
+  split at hsel
+  · rename_i B hB
+    obtain ⟨p,hp,hpe⟩ := List.mem_map.mp hsel
+    cases hpe
+    have hidx := List.mem_zipIdx_iff_getElem?.mp hA
+    exact ⟨A,B,p.2,hidx,hB,hp⟩
+  · simp at hsel
+
 /-- Allocation retains facts about old cells and records the fresh object, one
-assertion per named field it was given. -/
-def allocOutput (k : Knowledge) (Rs : List (String × List Atom)) : Knowledge :=
+assertion per named field it was given. Its locations are fresh, so each of its
+fields is distinct from every contract field of every record-typed slot. -/
+def allocOutput (k : Knowledge) (Rs : List (String × List Atom))
+    (others : List (Nat × String) := []) : Knowledge :=
   ⟨(Rs.map fun p => (⟨0,p.2,p.1⟩ : Fact)) ++ HeapFacts.shift k.cells, HeapFacts.shift k.values,
-    (HeapKnowledge.shift k).links⟩
+    (Rs.flatMap fun p => others.map fun q =>
+      (⟨0,q.1+1,false,p.1,true,q.2⟩ : HeapLinks.Link)) ++ (HeapKnowledge.shift k).links⟩
 
 /-- The slots a fresh allocation's initializers stand in, with the field each
 one fills. Nothing else can frame facts: every initializer must already be a
@@ -318,12 +341,12 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
     {parts : List (String × Nat × List Atom)}
     (hnd : (parts.map Prod.fst).Nodup)
     (hv : ∀ p ∈ parts, valuesAt G Γ k p.2.1 = some p.2.2)
-    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hh : HeapOk n W h)
     (hs : Safe (meaning G A) n W h
       (.makeAt code (parts.map Prod.fst) (parts.map fun p => ρ p.2.1))) :
     SafePost (meaning G A)
       (fun h' v => HeapKnowledge.Holds
-        (allocOutput k (parts.map fun p => (p.1, p.2.2))) (push v ρ) h')
+        (allocOutput k (parts.map fun p => (p.1, p.2.2)) (contractFields G Γ)) (push v ρ) h')
       n W h (.makeAt code (parts.map Prod.fst) (parts.map fun p => ρ p.2.1)) := by
   have hval : ∀ p ∈ parts, isVal (ρ p.2.1) = true := by
     intro p hp
@@ -358,13 +381,44 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
     · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
       obtain ⟨flds,c,l,v,hl,hfd,hh',b,hb,hv'⟩ := hk.1 g hg
       exact ⟨flds,c,l,v,hl,hfd,alloc_frames _ hh',b,hb,hv'⟩
-  · show HeapLinks.Holds (HeapKnowledge.shift k).links _ _
-    exact HeapLinks.alloc_frames (parts.map fun p => ρ p.2.1) hshift.2.2
+  · intro g hg
+    simp only [allocOutput] at hg
+    rcases List.mem_append.mp hg with hg | hg
+    · -- A fresh field sits at or beyond the old heap's end; a contract field of
+      -- an existing object holds a heap value, so it sits below it.
+      obtain ⟨p,hp,hg⟩ := List.mem_flatMap.mp hg
+      obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hg
+      obtain ⟨pp,hpp,hpq⟩ := List.mem_map.mp hp
+      cases hpq
+      obtain ⟨i,hi,hpi⟩ := List.mem_iff_getElem.mp hpp
+      obtain ⟨Ref,B,El,hidx,hbag,hmem⟩ := contractFields_mem hq
+      obtain ⟨flds0,code0,hl0,_,hrec⟩ := bagOperand_sound hbag (he.2 q.1 Ref hidx)
+      obtain ⟨flds1,l1,c1,hproj,hfd1,hlookup,_⟩ :=
+        recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) hrec
+      obtain ⟨u,hu,_⟩ := hh.2 l1 c1 hlookup
+      have hlt : l1 < h.length := List.getElem?_eq_some_iff.mp hu |>.1
+      simp only [ite_true]
+      intro flds c l flds' c' l' h0 hfl hs' hfl'
+      simp only [push] at h0 hs'
+      cases h0
+      have hname : (parts.map Prod.fst)[i]'(by simpa using hi) = pp.1 := by simp [hpi]
+      have hsl : (slots h.length (parts.map Prod.fst)).lookup pp.1 = some (h.length + i) := by
+        rw [← hname]; exact lookup_slots hnd (by simpa using hi)
+      have hleq : l = h.length + i := Option.some.inj (hfl.symm.trans hsl)
+      rw [hl0] at hs'
+      cases hs'
+      cases hproj
+      have hl'eq : l' = l1 := Option.some.inj (hfl'.symm.trans hfd1)
+      omega
+    · exact HeapLinks.alloc_frames (parts.map fun p => ρ p.2.1) hshift.2.2 g hg
 
-/-- A write forgets all old cell observations (including aliases), establishes
-its new contents, and retains immutable values already read into slots. -/
+/-- A write forgets old cell observations, except those about locations known
+to be distinct from the written one, establishes its new contents, and retains
+immutable values already read into slots. -/
 def writeOutput (k : Knowledge) (i : Nat) (fld : String) (R : List Atom) : Knowledge :=
-  ⟨(HeapLinks.aliases k.links i).map (fun j => ⟨j+1,R,fld⟩),
+  ⟨(HeapLinks.aliases k.links i).map (fun j => ⟨j+1,R,fld⟩) ++
+      (k.cells.filter fun f => (f.slot,f.field) ∈ HeapLinks.distinctFrom k.links i fld).map
+        (fun f => {f with slot := f.slot + 1}),
     ⟨0,[.nul],valueField⟩ :: HeapFacts.shift k.values,
     HeapLinks.stable (HeapKnowledge.shift k).links⟩
 
@@ -403,9 +457,17 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i j fld R A ρ n
       apply one_step rfl rfl (.writeField hvv hfd hlt) _ hs
       refine ⟨?_,?_,HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := .nul) hk).2.2⟩
       · intro f hf
-        obtain ⟨slot,hs,rfl⟩ := List.mem_map.mp hf
-        have heq := HeapLinks.aliases_eq hk.2.2 hs
-        exact ⟨flds,c,l,ρ j,heq.trans hl,hfd,write_new hlt,a,ha,hv⟩
+        rcases List.mem_append.mp hf with hf | hf
+        · obtain ⟨slot,hs,rfl⟩ := List.mem_map.mp hf
+          have heq := HeapLinks.aliases_eq hk.2.2 hs
+          exact ⟨flds,c,l,ρ j,heq.trans hl,hfd,write_new hlt,a,ha,hv⟩
+        · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
+          have hg := List.mem_filter.mp hg
+          obtain ⟨flds0,c0,l0,u,hs0,hfd0,hu,b,hb,hb'⟩ := hk.1 g hg.1
+          have hne : l ≠ l0 := HeapLinks.distinct_sound hk.2.2 (of_decide_eq_true hg.2) hl hfd hs0 hfd0
+          refine ⟨flds0,c0,l0,u,?_,hfd0,?_,b,hb,hb'⟩
+          · simpa [push] using hs0
+          · rw [List.getElem?_set_ne hne]; exact hu
       · intro f hf
         rcases List.mem_cons.mp hf with rfl | hf
         · exact ⟨.nul,by simp,rfl⟩
@@ -583,7 +645,7 @@ def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
       | some parts =>
         if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTree G e = true ∧
             (parts.map Prod.fst).Nodup
-        then some (allocOutput k (parts.map fun p => (p.1, p.2.2))) else none
+        then some (allocOutput k (parts.map fun p => (p.1, p.2.2)) (contractFields G j.context)) else none
       | none => none
     | none => none
   | .written i v R e =>
@@ -707,7 +769,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
               Function.comp_def] at hs ⊢
           all_goals
             exact alloc_sound (parts := parts)
-              (by simpa [List.map_map, Function.comp_def] using hnd) hvals he hk hs
+              (by simpa [List.map_map, Function.comp_def] using hnd) hvals he hk hh hs
         · contradiction
       · contradiction
     · contradiction

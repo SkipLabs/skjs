@@ -966,14 +966,20 @@ checked expression postconditions and graph-edge entailment, and source consumpt
 through both raw SKJS claims and [sidecars](SOURCE-CLAIMS.md#current-content-assertions).
 Every statement entry is an exact local interface: its supplied ordinary types
 and current observations are the whole starting context. Extra derived heap/value
-facts and links are forgotten there, even on single-predecessor paths. The
+facts and links are forgotten there, even on single-predecessor paths, except
+the distinct-location links the extractor states at every entry: a private
+cell is a fresh allocation, so its location differs from every field of every
+record-typed binding in scope, and the entry restates that timeless fact. The
 consumer enforces this independently of the producer. Expression-result claims
 are checked local obligations within a statement, where effect rules can derive
 postconditions. Loop heads use supplied interfaces; every backedge must establish
 them. No loop invariant is inferred.
 
-Writes establish new contents for recorded aliases and discard other heap facts;
-ordinary calls discard heap observations and read links. Immutable values and
+Writes establish new contents for recorded aliases, keep facts about cells a
+distinct-location link separates from the written one, and discard other heap
+facts; two parameters carry no such link, so a write through one forgets what
+was known about the other. Ordinary calls discard heap observations and read
+links. Immutable values and
 slot equalities survive. Boolean guards refine current cells through checked
 read links, including links carried through receiver temporaries. Ordinary
 closure proofs require a supplied observation to follow uniformly from the

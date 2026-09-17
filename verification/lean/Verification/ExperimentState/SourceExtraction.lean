@@ -235,14 +235,33 @@ private def emitAt (pos : Span) (t : Tm) (k : Continuation) (Γ : List (Ty Nat))
     { s with sourceMap := s.sourceMap.set target.label (some ⟨pos,role,environmentStart,sources scope⟩) }
   return target
 
+/-- The cells this lowering allocated sit at locations no other object in
+scope has: a private cell's identity never becomes a source value, and every
+record-typed slot holds something else. Stated at each cut so the allocation's
+freshness survives the reset of knowledge there; every incoming edge proves
+it, from the allocation or from the cut before. -/
+private def distinctLinks (G : Verification.ExperimentState.PositiveGraphs.NormalGraph Nat) (scope : List ScopeBinding)
+    (Γ : List (Ty Nat)) : HeapLinks.Links :=
+  scope.zipIdx.flatMap fun (b,i) =>
+    match b.storage with
+    | .cell .. =>
+      Γ.zipIdx.flatMap fun (A,j) =>
+        if i == j then [] else
+        match PositiveRules.expand G A with
+        | [.refs fs _] => fs.map fun p => (⟨i,j,false,valueField,true,p.1⟩ : HeapLinks.Link)
+        | _ => []
+    | .value => []
+
 /-- A checkpoint is an actual no-op graph node. Every incoming edge must
 justify its supplied current-heap assertion, including backedges. -/
 private def checkpoint (pos : Span) (Γ : List (Ty Nat)) (facts : HeapFacts.Facts)
     (next : Target) (entry : Option Nat := none) (scope : List ScopeBinding := []) :
     Compiler Target := do
-  if facts.isEmpty then return next
+  let G := SourceTypes.graph (← table)
+  let links := if entry.isSome then distinctLinks G scope Γ else []
+  if facts.isEmpty && links.isEmpty then return next
   let t ← emitAt pos .nul (.effect next) Γ [0] "heap-observation" entry scope
-  modify fun s => { s with assertions := s.assertions ++ [(t.label,⟨facts,[],[]⟩)] }
+  modify fun s => { s with assertions := s.assertions ++ [(t.label,⟨facts,[],links⟩)] }
   return t
 
 private def contents (A : Ty Nat) : Compiler (List HeapFacts.Atom) := do
@@ -1340,9 +1359,10 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
       let condition ← compileCondition fc scope Γ cond yes no
       modify fun s => { s with program := s.program.set head.label ⟨.nul,.effect condition⟩ }
       let facts ← entryFacts fc pos.1 scope
-      if !facts.isEmpty then
+      let links := distinctLinks (SourceTypes.graph (← table)) scope Γ
+      if !facts.isEmpty || !links.isEmpty then
         modify fun s => { s with
-          assertions := s.assertions ++ [(head.label,⟨facts,[],[]⟩)]
+          assertions := s.assertions ++ [(head.label,⟨facts,[],links⟩)]
           sourceMap := s.sourceMap.set head.label (some ⟨pos,"heap-observation",some pos.1,sources scope⟩) }
       modify fun s => { s with cuts := head.label :: s.cuts }
       pure head

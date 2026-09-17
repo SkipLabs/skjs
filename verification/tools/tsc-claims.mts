@@ -1226,7 +1226,9 @@ function anchorSearchScope(stmtNode: Statement): Expression | null {
 
 /** Reads at the entry's evaluation point, before any effects or branch choice.
  * Do not descend into closure bodies, call arguments, or a binary RHS: their
- * flow types can describe a later state. Unsupported anchors carry no facts.
+ * flow types can describe a later state. The one exception is an assignment
+ * to a plain variable, whose right side is read before the variable changes.
+ * Unsupported anchors carry no facts.
  * These are claims only; the verifier must establish each predicate. */
 function entryFieldClaims(
   stmt: Statement,
@@ -1252,6 +1254,12 @@ function entryFieldClaims(
         node.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken)
     ) {
       node = node.left;
+    } else if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      ts.isIdentifier(node.left)
+    ) {
+      node = node.right;
     } else break;
   }
   if (

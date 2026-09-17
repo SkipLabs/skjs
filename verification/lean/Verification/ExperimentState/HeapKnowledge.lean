@@ -34,6 +34,16 @@ theorem alloc_frames {k ρ h} (vs : List Val) (hk : Holds k ρ h) : Holds k ρ (
   obtain ⟨flds,c,l,u,he,hfd,hu,a,ha,hv⟩ := hk.1 f hf
   exact ⟨flds,c,l,u,he,hfd,HeapObservations.alloc_frames vs hu,a,ha,hv⟩
 
+/-- What every one of several states establishes: the first's assertions that
+appear verbatim in all the others. Used by the producer at a merge that is not
+a cut, where no requirement is stated; every edge is still checked. -/
+def meet : List Knowledge → Knowledge
+  | [] => ⟨[],[],[]⟩
+  | k :: ks =>
+    ⟨k.cells.filter (fun f => ks.all (·.cells.contains f)),
+     k.values.filter (fun f => ks.all (·.values.contains f)),
+     k.links.filter (fun g => ks.all (·.links.contains g))⟩
+
 def check (a b : Knowledge) (m : PointClaims.Mapping) : Bool :=
   HeapFacts.check a.cells b.cells m && (HeapFacts.check a.values b.values m && HeapLinks.check a.links b.links m)
 
@@ -135,7 +145,7 @@ theorem project_checked (k : Knowledge) (m count) : check k (project k m count) 
 The ordinary value fact is useful even when no cell link exists. -/
 def observeBoolean (k : Knowledge) (slot : Nat) (q : Bool) : Knowledge :=
   let R := [if q then HeapFacts.Atom.tru else .fls]
-  ⟨(k.links.filter (fun g => !g.alias && g.value == slot)).map
+  ⟨(k.links.filter (fun g => (!g.alias && !g.distinct) && g.value == slot)).map
       (fun g => ⟨g.cell,R,g.field⟩) ++ k.cells,
     ⟨slot,R,valueField⟩ :: k.values,k.links⟩
 
@@ -151,7 +161,7 @@ theorem observeBoolean_holds {k slot q ρ h} (hk : Holds k ρ h)
       have hs := hg2.2
       obtain ⟨flds,c,l,hl,hfd,hh⟩ := (show ∃ flds c l, ρ g.cell = .objAt flds c ∧
           flds.lookup g.field = some l ∧ h[l]? = some (ρ g.value) from
-        by simpa [hg2.1] using hk.2.2 g hg.1)
+        by simpa [hg2.1.1,hg2.1.2] using hk.2.2 g hg.1)
       refine ⟨flds,c,l,ρ g.value,hl,hfd,hh,(if q then .tru else .fls),by simp,?_⟩
       cases q <;> simpa [hs,HeapFacts.Atom.holds] using hq
     · exact hk.1 f hf
@@ -168,7 +178,7 @@ def observeTag (k : Knowledge) (slot : Nat) (tag : Tag) (q : Bool) : Knowledge :
   | none => k
   | some f =>
     let R := f.contents.filter (fun a => tagClause tag (a.clause (α := Ty Nat)) != some (!q))
-    ⟨(k.links.filter (fun g => !g.alias && g.value == slot)).map
+    ⟨(k.links.filter (fun g => (!g.alias && !g.distinct) && g.value == slot)).map
         (fun g => ⟨g.cell,R,g.field⟩) ++ k.cells,
       ⟨slot,R,valueField⟩ :: k.values,k.links⟩
 
@@ -201,7 +211,7 @@ theorem observeTag_holds {k slot tag q ρ h} (hk : Holds k ρ h)
         obtain ⟨flds,c,l,hl,hfd,hh⟩ :=
           (show ∃ flds c l, ρ g.cell = .objAt flds c ∧
             flds.lookup g.field = some l ∧ h[l]? = some (ρ g.value) from
-            by simpa [hg2.1] using hk.2.2 g hg.1)
+            by simpa [hg2.1.1,hg2.1.2] using hk.2.2 g hg.1)
         exact ⟨flds,c,l,ρ g.value,hl,hfd,hh,a,hmem,by simpa [hg2.2] using hv⟩
       · exact hk.1 f' hf'
     · intro f' hf'

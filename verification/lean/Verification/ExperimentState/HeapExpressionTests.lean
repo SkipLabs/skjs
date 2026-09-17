@@ -45,7 +45,7 @@ private def readProof : Evidence Nat := .node readClaim .read
   [.node ⟨readClaim.context,.var 0,refBool⟩ .var []]
 #guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [(valueField,boolTy)] readProof) ==
   some (readFrame ⟨[],[],[]⟩ 0 valueField)
-#guard (readFrame ⟨[],[],[]⟩ 0 valueField).links == [⟨1,0,false,valueField⟩]
+#guard (readFrame ⟨[],[],[]⟩ 0 valueField).links == [⟨1,0,false,valueField,false,valueField⟩]
 -- Neither a false storage contract nor a changed read claim can use that proof.
 #guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [(valueField, [1])] readProof) == none
 #guard checkStep G {readClaim with type := [1]} ⟨[],[],[]⟩ (.typedRead 0 [(valueField,boolTy)] readProof) == none
@@ -75,7 +75,7 @@ private def copyProof : Evidence Nat := .node copyClaim .var []
 #guard (copy afterEdge 0).cells == [⟨0,[.tru],valueField⟩,⟨1,[.tru],valueField⟩]
 -- Tag observations refine only values with a live read link to the cell.
 private def nullableRead : Knowledge :=
-  ⟨[],[⟨0,[.nul,.tru,.fls],valueField⟩],[⟨1,0,false,valueField⟩]⟩
+  ⟨[],[⟨0,[.nul,.tru,.fls],valueField⟩],[⟨1,0,false,valueField,false,valueField⟩]⟩
 #guard (observe nullableRead 0 (.tag .isNul false)).cells == [⟨1,[.tru,.fls],valueField⟩]
 #guard (observe nullableRead 0 (.tag .isNul true)).cells == [⟨1,[.nul],valueField⟩]
 #guard (observe (ordinaryOutput nullableRead) 1 (.tag .isNul false)).cells == []
@@ -121,4 +121,20 @@ private def creationAt (arity : Nat) : Sequent Nat :=
 
 #print axioms pure_step
 #print axioms pure_frame
+-- Distinct-location links. A write keeps a fact about another cell exactly
+-- when a distinct link relates the two locations, in either orientation, and
+-- drops it otherwise; an allocation states such a link against every contract
+-- field of every record-typed slot in its context.
+private def apart : Knowledge :=
+  ⟨[⟨1,[.num],valueField⟩],[],[⟨0,1,false,valueField,true,valueField⟩]⟩
+#guard (writeOutput apart 0 valueField [.nul]).cells == [⟨1,[.nul],valueField⟩,⟨2,[.num],valueField⟩]
+#guard (writeOutput ⟨[⟨1,[.num],valueField⟩],[],[]⟩ 0 valueField [.nul]).cells == [⟨1,[.nul],valueField⟩]
+#guard (writeOutput ⟨[⟨1,[.num],valueField⟩],[],[⟨1,0,false,valueField,true,valueField⟩]⟩ 0 valueField [.nul]).cells
+  == [⟨1,[.nul],valueField⟩,⟨2,[.num],valueField⟩]
+#guard HeapLinks.distinctFrom apart.links 1 valueField == [(0,valueField)]
+#guard HeapLinks.distinctFrom apart.links 0 "other" == []
+#guard (HeapLinks.stable apart.links) == apart.links
+#guard HeapLinks.check apart.links [⟨1,0,false,valueField,true,valueField⟩] none
+#guard !(HeapLinks.check apart.links [⟨1,0,false,valueField,true,"other"⟩] none)
+
 end Verification.ExperimentState.HeapExpressionTests

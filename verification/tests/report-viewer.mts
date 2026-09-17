@@ -799,7 +799,7 @@ const recorded = (d: ObligationDiagnostic) =>
   observed.destination.requiredKnowledge = {
     cells: [{ slot: 1, contents: ["tru"], field: "value" }],
     values: [{ slot: 0, contents: ["nul", "fls"], field: "value" }],
-    links: [{ cell: 1, value: 0, alias: false, field: "value" }],
+    links: [{ cell: 1, value: 0, alias: false, field: "value" , distinct: false, other: "value" }],
   };
   const observedView = ob.obligationView(observed);
   assert.equal(
@@ -825,7 +825,7 @@ const recorded = (d: ObligationDiagnostic) =>
   assert.equal(bothView.knowledge.length, 3);
   // An alias link reads as an equality between slots, not as a heap read.
   assert.equal(
-    ob.knowledgeRows({ links: [{ cell: 3, value: 2, alias: true, field: "value" }] })[0].what,
+    ob.knowledgeRows({ links: [{ cell: 3, value: 2, alias: true, field: "value" , distinct: false, other: "value" }] })[0].what,
     "is the same value as slot 3",
   );
   // With a source map the same fact reads in the words of the source.

@@ -23,28 +23,32 @@ private def start : Nat := ((extracted.toOption.getD []).map (·.start)).headD 0
 -- second cell (12); only then is null written to the first cell (10), the
 -- second cell read and tested (9, 5), and its contents or false returned.
 private def expected : Program :=
-  [⟨.var 0,.ret⟩,
-   ⟨.fls,.bind 0⟩,
+  [
    ⟨.var 0,.ret⟩,
-   ⟨.readAt "value" (.var 0),.bind 2⟩,
-   ⟨.nul,.effect 3⟩,
-   ⟨.var 1,.tagBind .isNul ⟨1,some [3, 4, 5]⟩ ⟨4,some [3, 4, 5]⟩⟩,
-   ⟨.ite (.test .isNul (.var 1)) .fls .tru,.bind ⟨5,some [0, 3, 4, 5, 6]⟩⟩,
-   ⟨.nul,.bind 6⟩,
-   ⟨.var 0,.bind 7⟩,
-   ⟨.readAt "value" (.var 0),.bind 8⟩,
-   ⟨.var 0,.bind ⟨9,some [2, 3, 4]⟩⟩,
-   ⟨.writeAt "value" (.var 2) (.var 0),.effect 10⟩,
-   ⟨.nul,.bind 11⟩,
-   ⟨.makeAt .absent ["value"] [.var 0],.bind ⟨12,some [0, 2, 3]⟩⟩,
-   ⟨.var 0,.effect 13⟩,
-   ⟨.readAt "value" (.var 0),.bind 14⟩,
-   ⟨.makeAt .absent ["value"] [.var 0],.bind ⟨15,some [0, 2]⟩⟩,
+   ⟨.fls,.bind 0⟩,
+   ⟨.nul,.effect 1⟩,
+   ⟨.var 0,.ret⟩,
+   ⟨.readAt "value" (.var 0),.bind 3⟩,
+   ⟨.nul,.effect 4⟩,
+   ⟨.var 1,.tagBind .isNul ⟨2,some [3, 4, 5]⟩ ⟨5,some [3, 4, 5]⟩⟩,
+   ⟨.ite (.test .isNul (.var 1)) (.fls) (.tru),.bind ⟨6,some [0, 3, 4, 5, 6]⟩⟩,
+   ⟨.nul,.bind 7⟩,
+   ⟨.var 0,.bind 8⟩,
+   ⟨.readAt "value" (.var 0),.bind 9⟩,
+   ⟨.nul,.effect 10⟩,
+   ⟨.var 0,.bind ⟨11,some [2, 3, 4]⟩⟩,
+   ⟨.writeAt "value" (.var 2) (.var 0),.effect 12⟩,
+   ⟨.nul,.bind 13⟩,
+   ⟨.nul,.effect 14⟩,
+   ⟨.makeAt .absent ["value"] [.var 0],.bind ⟨15,some [0, 2, 3]⟩⟩,
    ⟨.var 0,.effect 16⟩,
-   ⟨.var 0,.bind 17⟩,
-   ⟨.nul,.effect 18⟩]
+   ⟨.readAt "value" (.var 0),.bind 17⟩,
+   ⟨.makeAt .absent ["value"] [.var 0],.bind ⟨18,some [0, 2]⟩⟩,
+   ⟨.var 0,.effect 19⟩,
+   ⟨.var 0,.bind 20⟩,
+   ⟨.nul,.effect 21⟩]
 #guard program == expected
-#guard start == 19
+#guard start == 22
 
 /-- The seed in slot zero, nothing else bound. -/
 private def seeded (v : Tm) : Env := fun i => if i == 0 then v else .nul
@@ -52,8 +56,8 @@ private def seeded (v : Tm) : Env := fun i => if i == 0 then v else .nul
 -- The heap holds the first cell then the second. After the run the first cell
 -- is null and the second still holds the seed, which a non-null seed returns.
 -- This is a trace of the lowered program, not a general compiler proof.
-theorem separate_cells (b : Bool) : Execution expected 44 []
-    (.at 19 (seeded (if b then .tru else .fls)))
+theorem separate_cells (b : Bool) : Execution expected 48 []
+    (.at 22 (seeded (if b then .tru else .fls)))
     [.nul, if b then .tru else .fls] (.done (if b then .tru else .fls)) := by
   cases b <;> repeat first
     | exact Execution.refl
@@ -70,8 +74,8 @@ theorem separate_cells (b : Bool) : Execution expected 44 []
     | apply Execution.next (.ret rfl)
 
 -- A null seed copies null into the second cell and returns false.
-theorem null_seed : Execution expected 41 []
-    (.at 19 (seeded .nul)) [.nul, .nul] (.done .fls) := by
+theorem null_seed : Execution expected 47 []
+    (.at 22 (seeded .nul)) [.nul, .nul] (.done .fls) := by
   repeat first
     | exact Execution.refl
     | apply Execution.next (.enter rfl)
