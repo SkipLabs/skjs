@@ -26,4 +26,10 @@ private def G : NormalGraph Nat := fun i =>
 #guard !(decide (Answers G [2] (.numEq 0) false))
 #guard tagHolds (.numEq 0) .nul == false
 
+-- A broad numeric observation cannot disappear from either equality edge.
+private def observed : HeapKnowledge.Knowledge := ⟨[],[⟨0,[.num,.nul],valueField⟩],[]⟩
+#guard (HeapKnowledge.observeTag observed 0 (.numEq 0) true).values.head?.map (·.contents) == some [.num]
+#guard (HeapKnowledge.observeTag observed 0 (.numEq 0) false).values.head?.map (·.contents) == some [.num,.nul]
+#guard (HeapKnowledge.observeTag observed 0 .isNul false).values.head?.map (·.contents) == some [.num]
+
 end Verification.ExperimentState.NumericEqualityTests

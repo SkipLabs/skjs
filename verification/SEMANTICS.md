@@ -347,8 +347,8 @@ the invariant check is vacuous at budget zero. Giving the conjunction meaning
 does not require a syntactic subtype relation between `R` and `B`.
 
 The right side of `=` is a predicate, not an initializer or a future-read promise.
-Only null/undefined/Boolean predicates are exported today; numeric notation illustrates a
-future extension. These assertions are duplicable facts, not exclusive write
+Null/undefined/Boolean and numeric predicates are supported, including the
+whole number family and exact numeric singletons. These assertions are duplicable facts, not exclusive write
 permissions. This is a chosen plain-cell interpretation, not a theorem equating
 SKJS's internal types with heap assertions.
 
@@ -360,23 +360,26 @@ does the form mention the heap?
 $$
 \begin{aligned}
 x=R&\equiv\rho(x)\in R,
-  &&\text{a variable equals one of these constants}\\
+  &&\text{a variable satisfies a primitive predicate}\\
 x=y&\equiv\rho(x)=\rho(y),
   &&\text{two variables hold the same value}\\
 x\mapsto R&\equiv
   \exists\ell\,v.\;\rho(x)=\ell\land h(\ell)=v\land v\in R,
-  &&\text{the cell }x\text{ names holds one of them}\\
+  &&\text{the cell }x\text{ names satisfies }R\\
 x\mapsto y&\equiv
   \exists\ell.\;\rho(x)=\ell\land h(\ell)=\rho(y),
   &&\text{that cell holds the value of }y
 \end{aligned}
 $$
 
-Two relations, each taking a finite set of constants or a variable on the right.
+Two relations, each taking a finite primitive-predicate disjunction or a variable on the right.
+The [predicate vocabulary](POSITIVE-TYPES.md#state-assertion-grammar) includes
+numeric singletons and the whole number family.
 The $=$ atoms mention only $\rho$; the $\mapsto$ atoms mention $h$ as well, and
-that is the only difference that matters. $x=R$ abbreviates the disjunction
-$x=c_1\lor\dots\lor c_k$, an ordinary equality when $R$ is a singleton; its
-meaning is membership, but the assertion is an equality. Write $\Pi$ for a list of them. The last two mention $h$ as
+that is the only difference that matters. $x=R$ abbreviates membership in the
+disjunction of predicates in $R$. For constant predicates this is a disjunction
+of equalities; the numeric-family predicate also admits any numeric value.
+Write $\Pi$ for a list of them. The last two mention $h$ as
 well. Write $\Sigma$ for a list of those. Both are read as the conjunction of
 their atoms and extended with a comma, exactly as $\Gamma$ is; neither carries
 ownership or disjointness, and the atoms are duplicable, so there is no

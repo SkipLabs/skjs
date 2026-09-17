@@ -91,12 +91,10 @@ is the bit pattern of the double it denotes, so distinct spellings of one value
 are one clause; two spellings a codec failed to identify would be two
 singletons, which costs completeness and never soundness.
 
-A number is not carried as a current-content assertion. Such an assertion is a
-finite set of primitive values, checked on every incoming edge, and a number
-has no finite set; the protocol has no form for one and none is invented. A
-claim about what a cell holds now whose type is not finite is recorded instead
-as the obligation that the cell's storage contract implies it, which is an
-inclusion of types and needs no finiteness.
+Current-content assertions use a finite list of primitive predicates, including
+`num` for any numeric value and `numLit` for an exact bit pattern. They are
+checked on every incoming edge. Unsupported predicates still require a proof
+that the storage contract implies the claim; they are never silently discarded.
 
 ## Terms, targets and evidence
 
@@ -183,10 +181,13 @@ lists, including empty lists for zero-argument thunks. There is one accepted cer
 
 All node objects explicitly contain `expression`, `edges`, `knowledge`, `effect`
 and `output`. `knowledge` and `output` each contain `cells`, `values`, and `links`. The first two are lists of
-`{slot, contents}` facts. `contents` is a list of literal constructors `nul`,
-`undef`, `tru`, or `fls`. `links` is a list of `{cell, value, alias}` objects: `alias: true` means equal
-slot values; `alias: false` means the cell currently contains the value in the
-other slot. These are finite state assertions, not extra type labels.
+`{slot, contents, field}` facts. `contents` is a disjunction of primitive
+predicates: `nul`, `undef`, `tru`, `fls`, `num`, or
+`{"numLit":{"bits":"…"}}`, with the same unsigned 64-bit decimal encoding as
+numeric graph clauses. The empty list is impossible. A singleton numeric fact
+can weaken to `num`, never the reverse. `links` is a list of
+`{cell, value, alias, field}` objects: `alias: true` means equal slot values;
+`alias: false` means the named field currently contains the other slot's value. These are finite state assertions, not extra type labels.
 `effect: null` selects ordinary expression evidence; a non-null effect selects
 one of the checked `StepEvidence` constructors (`ordinary`, `pure`,
 `typedRead`, `observedRead`, `knownValue`, `created`, `allocated`, `written`). Constructor payloads use
@@ -282,7 +283,7 @@ binding records whether its slot holds a value or this cell's identity;
 diagnostic descriptors carry no storage flag. Source references read the cell,
 and assignment saves its RHS, writes once, then returns that saved value.
 Ordinary environment claims for mutable names assert contents, not identities:
-the extractor requires an invariant-based read proof or a finite heap observation
+the extractor requires an invariant-based read proof or a supported primitive heap observation
 checked on every incoming edge. Captured entry claims require the stable
 invariant. Immutable-slot guard refinements cannot substitute cell identities.
 For an unannotated initialized `let`, the first following statement's claim

@@ -24,8 +24,8 @@ rule statements, side conditions, soundness scope and evidence construction;
 | $r$ | the binding a rule gives its result |
 | $k$ | one of the tests in [the operational language](SEMANTICS.md#operational-language) |
 | $A$, $B$, $C$ | types, each a finite list of graph labels read as their union |
-| $R$ | a finite set of constants |
-| $\operatorname{lits}(A)$ | the constants $A$ denotes, defined only for a primitive $A$ (`literals`) |
+| $R$ | a finite disjunction of primitive predicates |
+| $\operatorname{pred}(A)$ | the predicate disjunction $A$ denotes, defined for supported primitives (`HeapKnowledge.atoms`) |
 | $G$ | the normalized positive graph |
 | $\Gamma$ | a typing context, one type per variable |
 | $\Pi$, $\Sigma$ | the [equality and heap parts](#checked-expression-postconditions) of the assertion state |
@@ -684,8 +684,10 @@ preservation of existing facts.
 | `consequence` | Implication weakens the result family and postcondition. |
 | `write_then_read` | Composing write, bind, beta and read proves that the immediate subsequent read returns the written value; there is no ownership or non-escape premise. |
 
-The finite assertion layer represents a fact as a slot $i$ and a set $R$ of
-null/undefined/Boolean literals. Its meaning is:
+The finite assertion layer represents a fact as a slot $i$, a field name and
+an $R$ from the [primitive predicate grammar](POSITIVE-TYPES.md#state-assertion-grammar).
+Write $v\in R$ for satisfying one of those predicates. In the one-field
+abbreviation its meaning is:
 
 $$
 \operatorname{Holds}(\Delta,\rho,h)
@@ -704,7 +706,7 @@ $$
 `HeapFacts.check_sound` proves it. Repeated slot mappings retain aliases; different
 slots do not prove disjoint locations. `shift_holds` transports facts when a bind
 pushes a result. The finite `read` rule preserves facts. `write` conservatively
-drops all old facts and establishes the written literal. `alloc` preserves shifted
+drops all old facts and establishes the written value's predicate. `alloc` preserves shifted
 old facts and adds the fresh cell at the result slot. These are semantic rules;
 source compilation must still supply and check their graph-level use.
 
@@ -718,19 +720,19 @@ narrower subsequent return contract. Mutation invalidates cell contents and read
 values already read into immutable slots or equalities between copied values.
 
 The [assertion layer](SEMANTICS.md#what-is-asserted-and-what-a-heap-change-can-touch)
-splits in two. $\Pi$ is a conjunction of **equalities** — $x\in\{c_1,\dots,c_k\}$
-between a variable and constants, and $x=y$ between two variables — and mentions
+splits in two. $\Pi$ is a conjunction of **value predicates** $x\in R$ and
+**equalities** $x=y$ between two variables. It mentions
 only the environment. $\Sigma$ is a list of points-to atoms $x.f\mapsto R$ and
-$x.f\mapsto y$ — the cell field $f$ of the object $x$ names currently holds one
-of those constants, or the value of $y$ — and so mentions the heap. Neither
+$x.f\mapsto y$: the field $f$ of the object $x$ names currently satisfies
+$R$, or holds the value of $y$. These facts mention the heap. Neither
 relation carries ownership: $\mapsto$ here is duplicable and says nothing about
 what else the heap holds.
 
 Every atom names a field: `HeapFacts.Fact` and `HeapLinks.Link` each carry one,
 and `HeapExpressionRules` reads it off the term rather than taking it from
 evidence, so a certificate cannot assert a fact about a field the program never
-touched. The `allocated` rule establishes one finite-content atom per named
-field when every initializer slot has a known finite set of values; an ordinary
+touched. The `allocated` rule establishes one primitive-content atom per named
+field when every initializer slot has a known supported predicate; an ordinary
 allocation alone makes no such assertion. The rules below are
 written in the one-field spelling, $x\mapsto R$, which is the general rule at
 whichever field its term names; nothing in them is specific to a field name.
@@ -752,7 +754,7 @@ $r$ is in scope in the postcondition only, so a premise can never mention it.
 $\Gamma$ does not appear on the right. It types the variables and is fixed for
 the derivation; only $\Pi$ and $\Sigma$ are transformed. Note that $\Gamma$ and $\Pi$ both
 constrain the environment, in different languages: $\Gamma$ gives each variable a
-graph type, and $\Pi$'s constant equalities refine that for primitives — `valuesAt`
+graph type, and $\Pi$'s primitive predicates refine that for primitives — `valuesAt`
 reads a value fact when there is one and falls back to the variable's type when
 there is not. What $\Pi$ adds beyond $\Gamma$ is equalities *between* variables,
 which a type cannot express.
@@ -773,11 +775,11 @@ where a certificate carries a permutation, in
 [binding transfer](#supplied-point-claims-and-incoming-edges) and on the wire.
 
 Two auxiliary forms. $(\Gamma;\Pi)(x)$ looks $x$ up in both contexts, $\Pi$
-first: it is the finite disjunction of constants recorded for $x$ there, or
-failing that the one $\Gamma(x)$ denotes when that type is a finite primitive
+first: it is the primitive predicate recorded for $x$ there, or
+failing that the one $\Gamma(x)$ denotes when it is a supported primitive
 union. It extends the $\Gamma(x)$ of the ordinary rules to the pair, is partial
 in the same way, and is a lookup rather than a search — `valuesAt` computes it in
-that order and `valuesAt_sound` proves the equality it yields.
+that order and `valuesAt_sound` proves the membership it yields.
 
 $y\approx_\Pi x$ says $\Pi$ contains the equality $x=y$, or $y$ is $x$ itself. It
 is deliberately not written as an entailment, because it is **one step and not
@@ -837,7 +839,7 @@ The second applies when $\Sigma$ already holds an atom for $x$ and the result ty
 is primitive. It consumes that atom and returns it as an equality on the result.
 It needs no typing derivation: the atom and its premise establish the result type
 between them, which is why its first premise is a membership in $\Sigma$ rather
-than a judgment. Writing $\operatorname{lits}(A)$ for the constants a type
+than a judgment. Writing $\operatorname{pred}(A)$ for the primitive predicates a type
 denotes — defined only when $A$ is primitive, so the premise also fails for a
 reference or an arrow result:
 
@@ -848,7 +850,7 @@ $$
 $$
 
 $$
-\frac{(x\mapsto R)\in\Sigma\qquad R\subseteq\operatorname{lits}(A)}
+\frac{(x\mapsto R)\in\Sigma\qquad R\subseteq\operatorname{pred}(A)}
 {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\operatorname{read}(x):A
   \dashv \Pi,\;r=R\;;\;
    \Sigma,\{y\mapsto r\mid y\approx_\Pi x\}}
@@ -968,7 +970,7 @@ It computes a guaranteed output, not an assumed postcondition:
 | Pure value or variable copy | Preserve facts and links; copies establish slot equality and duplicate existing facts. Literals establish their exact result even when their supplied type is wider. Lambda bodies require ordinary typing, without captured heap facts. |
 | Pure test or conditional | Preserve existing facts and links, shifted past the result slot. Every evaluated subexpression must be syntactically pure; no new result-to-cell link is invented. |
 | Ordinary typed read | Preserve facts and record read links to the receiver and witnessed aliases, retaining its plain or callable descriptor; no prior current-content fact is needed. Its result has the supplied type. |
-| Observed read | Preserve facts and links; record the result's literal set and its current read relationship. That set must fit the requested ordinary result type. |
+| Observed read | Preserve facts and links; record the result's primitive predicate and its current read relationship. That set must fit the requested ordinary result type. |
 | Known immutable value | Check the requested primitive type against a proved slot fact or the slot's ordinary primitive type. |
 | Allocation | Check ordinary creation evidence and scope for either descriptor, preserve old facts, and add the fresh bag's initial contents from a checked value slot. Closure code is not executed. |
 | Write | Check ordinary write evidence (no old-content premise), discard all old cell facts, record new contents for the receiver and its witnessed aliases, and preserve immutable facts and slot equalities. Read links are discarded. |
@@ -1040,8 +1042,8 @@ predicates without treating an effectful operand as pure. A negated graph guard
 checks its full expression claim separately and swaps the operand's successors;
 it does not invent an equality between a Boolean and its negation.
 
-Primitive result sets are finite
-null/undefined/Boolean literal lists. `HeapKnowledge.check_sound` and `project_checked`
+Primitive result predicates are finite lists of null/undefined/Boolean
+singletons, numeric singletons and the number family. `HeapKnowledge.check_sound` and `project_checked`
 justify transfer and alias-preserving projection along executable slot maps.
 
 [HeapExpressionTests.lean](lean/Verification/ExperimentState/HeapExpressionTests.lean)

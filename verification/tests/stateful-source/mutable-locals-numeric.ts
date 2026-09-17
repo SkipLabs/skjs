@@ -1,11 +1,4 @@
-/**
- * Mutable locals holding numbers. Separate from the Boolean forms because a
- * current-content assertion is a finite set of values and a number has none:
- * the wire protocol cannot carry one. Where a claim needs such an assertion
- * the TypeScript producer states nothing and this file does not verify under
- * it, which is its own limit rather than a disagreement about these programs.
- * Under SKJS the storage contract carries them, and they verify.
- */
+/** Numeric storage contracts and checked current-content predicates. */
 
 /**
  * The storage contract is `number`, so the later write meets it and the
@@ -41,4 +34,43 @@ function inferredStorageContract(): number {
   const read = (): number => value;
   value = 2;
   return read();
+}
+
+/** A numeric point fact survives closure creation, but not a later write. */
+function numericGuardedCapture(): number {
+  let value: number | null = null;
+  value = 1;
+  const read = (): number => {
+    if (value !== null) return value;
+    return 0;
+  };
+  value = null;
+  return read();
+}
+
+/** The written value is arbitrary, so a finite list of constants is insufficient. */
+function numericAssignmentSnapshot(seed: number): number {
+  let value: number | null = null;
+  value = seed;
+  const snapshot = value;
+  value = null;
+  return snapshot;
+}
+
+/**
+ * A named field guard establishes a snapshot that survives an aliased call.
+ * SKJS supplies the field-content assertion; the TS exporter currently omits
+ * it and widens the read, so this remains a TS producer boundary.
+ */
+function numericAliasSnapshot(seed: number | null): number {
+  const cell: { total: number | null } = { total: seed };
+  const alias = cell;
+  if (cell.total === null) return 0;
+  const snapshot: number = cell.total;
+  const clear = (): null => {
+    alias.total = null;
+    return null;
+  };
+  const ignored = clear();
+  return snapshot;
 }

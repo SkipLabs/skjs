@@ -9,7 +9,7 @@ namespace Verification.ExperimentState.HeapGuardTests
 open ProgramTyping ProgramCertificates ControlFlow HeapKnowledge HeapExpressionRules
 private def T : SourceTypes.Table := SourceTypes.initial ++ [[.refs [(valueField, [1,2])] []]]
 private def G := SourceTypes.graph T
-private def R : List HeapFacts.Literal := [.tru,.fls]
+private def R : List HeapFacts.Atom := [.tru,.fls]
 private def empty : Knowledge := ⟨[],[],[]⟩
 private def leaf (Γ : List (List Nat)) (t : Tm) (A : List Nat) (r : Rule Nat) : Evidence Nat :=
   .node ⟨Γ,t,A⟩ r []

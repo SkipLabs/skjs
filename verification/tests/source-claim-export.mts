@@ -94,7 +94,7 @@ try {
     assert(empty.stderr.includes("obligation-diagnostic:"),empty.stderr);
     point.current=[["value",labels.slice()]];fs.writeFileSync(op,JSON.stringify(d));
     const invalid=check();assert.notEqual(invalid.status,0);
-    assert(invalid.stderr.includes("current-content predicate must be a finite primitive type"),invalid.stderr);
+    assert(invalid.stderr.includes("current-content predicate must be a supported primitive predicate"),invalid.stderr);
     delete written(point).current;fs.writeFileSync(op,JSON.stringify(d));
     assert.notEqual(check().status,0,"the format requires explicit assertion fields");
     point.current=[["value",[1]]];written(d).status="verified";

@@ -140,11 +140,11 @@ bottom would be an incorrect normalization.
 Point claims can combine ordinary types with facts about the current execution
 state. The following notation describes the finite assertion layer; it does not
 add constructors to the ordinary type grammar above. Let $x$ and $y$ name environment
-slots, $A$ and $B$ be ordinary types, and $R$ be a finite set of constants:
+slots, $A$ and $B$ be ordinary types, and $R$ be a finite disjunction of primitive predicates:
 
 $$
 \begin{aligned}
-a &::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false},\\
+a &::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}\mid\mathsf{Number}\mid\mathsf{numLit}(b),\\
 R &::= \{a_1,\ldots,a_k\}\quad(k\geq 0),\\
 J &::= \top\mid x:A\mid x=R\mid x=y\mid x\mapsto R\mid x\mapsto y\mid J\land J.
 \end{aligned}
@@ -153,13 +153,13 @@ $$
 | Assertion | What it states |
 | --- | --- |
 | $x:A$ | The value of $x$ belongs to the ordinary type $A$, interpreted against the current world and budget. |
-| $x=R$ | $x$ equals one of the constants in $R$. A statement about the environment, so no heap change can falsify it. |
+| $x=R$ | $x$ satisfies one of the predicates in $R$. A statement about the environment, so no heap change can falsify it. |
 | $x=y$ | $x$ and $y$ hold the same value, including the same location when they hold references. Again untouched by heap changes. |
-| $x\mapsto R$ | The cell $x$ names currently holds one of the constants in $R$. It does not specify or change that location's storage invariant. |
+| $x\mapsto R$ | The cell $x$ names currently holds a value satisfying $R$. It does not specify or change that location's storage invariant. |
 | $x\mapsto y$ | The cell $x$ names currently holds the value of $y$. A write or a call can falsify this. |
 | $\top$, $J_1\land J_2$ | No requirement, or both requirements. Conjunction does not assert ownership or disjoint locations. |
 
-The two relations each take a constant set or a variable on the right, which is
+The two relations each take a primitive predicate disjunction or a variable on the right, which is
 the whole grammar: $=$ speaks only about the environment, $\mapsto$ about the
 heap as well. That division is what decides survival, and
 [Program typing](PROGRAM-TYPING.md#the-reference-operations) states the rules
@@ -167,12 +167,13 @@ over it. Despite the notation there is no separating conjunction and no
 ownership: these facts are duplicable, and $\mapsto$ carries no claim that the
 cell is unaliased or that the heap holds nothing else.
 
-An empty literal set is an impossible content/value predicate, not an absent
+An empty predicate list is an impossible content/value predicate, not an absent
 assertion. There is no general assertion disjunction, negation or quantifier in
 this finite grammar. The union within $R$ permits alternatives for one value;
 it does not express arbitrary correlated alternatives between slots. The explicit
-read and equality atoms express only the relationships listed above. Numbers and predicates
-on nested references are not part of the implemented literal language.
+read and equality atoms express only the relationships listed above. `Number` means any numeric value; `numLit(b)` means exactly that bit pattern.
+Singleton predicates imply `Number`, not conversely. Predicates on nested
+references remain outside this vocabulary.
 
 The notation requested for source claims is an abbreviation:
 

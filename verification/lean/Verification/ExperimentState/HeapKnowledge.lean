@@ -1,7 +1,7 @@
 import Verification.ExperimentState.HeapLinks
 import Verification.ExperimentState.BranchRefinement
 
-/-! Finite heap and immutable-value facts for expression postconditions. Facts
+/-! Primitive heap and immutable-value facts for expression postconditions. Facts
 are execution-state assertions, not extra world contracts or source type labels. -/
 namespace Verification.ExperimentState.HeapKnowledge
 open ProgramTyping PositiveRules PositiveGraphs PositiveNormalization Tower HeapFacts
@@ -13,7 +13,7 @@ structure Knowledge where
   deriving DecidableEq, Repr
 
 def ValueHolds (facts : Facts) (ρ : Env) : Prop :=
-  ∀ f ∈ facts, ∃ a ∈ f.contents, ρ f.slot = a.value
+  ∀ f ∈ facts, ∃ a ∈ f.contents, a.holds (ρ f.slot)
 
 def Holds (k : Knowledge) (ρ : Env) (h : Heap) : Prop :=
   HeapFacts.Holds k.cells ρ h ∧ ValueHolds k.values ρ ∧ HeapLinks.Holds k.links ρ h
@@ -43,9 +43,9 @@ theorem check_sound {a b m ρ h} (hc : check a b m = true) (ha : Holds a ρ h) :
   refine ⟨HeapFacts.check_sound hc.1 ha.1,?_,HeapLinks.check_sound hc.2.2 ha.2.2⟩
   intro f hf
   obtain ⟨g,hg,hc⟩ := List.any_eq_true.mp (List.all_eq_true.mp hc.2.1 f hf)
-  simp only [Bool.and_eq_true,beq_iff_eq,List.all_eq_true,List.contains_iff_mem] at hc
+  simp only [Bool.and_eq_true,beq_iff_eq] at hc
   obtain ⟨a,ham,he⟩ := ha.2.1 g hg
-  exact ⟨a,hc.2 a ham,by simpa [PointClaims.mapEnv,hc.1] using he⟩
+  simpa [PointClaims.mapEnv,hc.1] using covers_sound hc.2 ⟨a,ham,he⟩
 
 def shift (k : Knowledge) : Knowledge := ⟨HeapFacts.shift k.cells,HeapFacts.shift k.values,HeapLinks.pull k.links (fun i => [i+1])⟩
 
@@ -116,7 +116,7 @@ theorem project_checked (k : Knowledge) (m count) : check k (project k m count) 
     obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
     have hg := List.mem_filter.mp hg
     apply List.any_eq_true.mpr
-    exact ⟨g,hg.1,by simp [hg.2]⟩
+    exact ⟨g,hg.1,by simp [hg.2,covers_refl]⟩
   simp only [check,Bool.and_eq_true]
   refine ⟨one _,one _,?_⟩
   apply List.all_eq_true.mpr
@@ -134,7 +134,7 @@ theorem project_checked (k : Knowledge) (m count) : check k (project k m count) 
 /-- An observed Boolean outcome refines cells only through current read links.
 The ordinary value fact is useful even when no cell link exists. -/
 def observeBoolean (k : Knowledge) (slot : Nat) (q : Bool) : Knowledge :=
-  let R := [if q then HeapFacts.Literal.tru else .fls]
+  let R := [if q then HeapFacts.Atom.tru else .fls]
   ⟨(k.links.filter (fun g => !g.alias && g.value == slot)).map
       (fun g => ⟨g.cell,R,g.field⟩) ++ k.cells,
     ⟨slot,R,valueField⟩ :: k.values,k.links⟩
@@ -153,21 +153,21 @@ theorem observeBoolean_holds {k slot q ρ h} (hk : Holds k ρ h)
           flds.lookup g.field = some l ∧ h[l]? = some (ρ g.value) from
         by simpa [hg2.1] using hk.2.2 g hg.1)
       refine ⟨flds,c,l,ρ g.value,hl,hfd,hh,(if q then .tru else .fls),by simp,?_⟩
-      cases q <;> simpa [hs,HeapFacts.Literal.value] using hq
+      cases q <;> simpa [hs,HeapFacts.Atom.holds] using hq
     · exact hk.1 f hf
   · intro f hf
     rcases List.mem_cons.mp hf with rfl | hf
     · refine ⟨(if q then .tru else .fls),by simp,?_⟩
-      cases q <;> simpa [HeapFacts.Literal.value] using hq
+      cases q <;> simpa [HeapFacts.Atom.holds] using hq
     · exact hk.2.1 f hf
 
-/-- A tag narrows a saved finite value, and its still-live read links transfer
+/-- A tag narrows a saved primitive predicate, and its still-live read links transfer
 that observation to the heap. No link means no assertion about a mutable cell. -/
 def observeTag (k : Knowledge) (slot : Nat) (tag : Tag) (q : Bool) : Knowledge :=
   match k.values.find? (fun f => f.slot == slot) with
   | none => k
   | some f =>
-    let R := f.contents.filter (fun a => tagHolds tag a.value == q)
+    let R := f.contents.filter (fun a => tagClause tag (a.clause (α := Ty Nat)) != some (!q))
     ⟨(k.links.filter (fun g => !g.alias && g.value == slot)).map
         (fun g => ⟨g.cell,R,g.field⟩) ++ k.cells,
       ⟨slot,R,valueField⟩ :: k.values,k.links⟩
@@ -181,9 +181,16 @@ theorem observeTag_holds {k slot tag q ρ h} (hk : Holds k ρ h)
     have hm := List.mem_of_find?_eq_some hf
     have hs : f.slot = slot := by simpa using List.find?_some hf
     obtain ⟨a,ha,hv⟩ := hk.2.1 f hm
-    have hv : ρ slot = a.value := by simpa [hs] using hv
-    have hmem : a ∈ f.contents.filter (fun a => tagHolds tag a.value == q) :=
-      List.mem_filter.mpr ⟨ha,by simpa [hv] using hq⟩
+    have hv : a.holds (ρ slot) := by simpa [hs] using hv
+    have hmem : a ∈ f.contents.filter (fun a => tagClause tag (a.clause (α := Ty Nat)) != some (!q)) := by
+      apply List.mem_filter.mpr
+      refine ⟨ha,?_⟩
+      simp only [bne_iff_ne]
+      intro hbad
+      have hanswer := tagClause_sound (S := fun (_ : Ty Nat) => nulT)
+        (n := 0) (W := ofList []) hbad (Atom.sem.mpr hv)
+      rw [hq] at hanswer
+      cases q <;> contradiction
     refine ⟨?_,?_,hk.2.2⟩
     · intro f' hf'
       rcases List.mem_append.mp hf' with hf' | hf'
@@ -212,19 +219,21 @@ theorem observe_holds {k slot o ρ h} (hk : Holds k ρ h)
   | boolean q => exact observeBoolean_holds hk ho
   | tag t q => exact observeTag_holds hk ho
 
-/-- Finite literal interpretation exists only for entirely primitive clauses. -/
-def primitive : List (Clause (Ty ι)) → Option (List Literal)
+/-- A finite predicate vocabulary exactly interprets supported primitive clauses. -/
+def primitive : List (Clause (Ty ι)) → Option (List Atom)
   | [] => some []
   | .nul :: cs => (primitive cs).map ([.nul] ++ ·)
   | .undef :: cs => (primitive cs).map ([.undef] ++ ·)
   | .bool :: cs => (primitive cs).map ([.tru,.fls] ++ ·)
   | .boolLit b :: cs => (primitive cs).map ([if b then .tru else .fls] ++ ·)
+  | .num :: cs => (primitive cs).map ([.num] ++ ·)
+  | .numLit b :: cs => (primitive cs).map ([.numLit b] ++ ·)
   | _ => none
 
-def literals (G : NormalGraph ι) (A : Ty ι) := primitive (expand G A)
+def atoms (G : NormalGraph ι) (A : Ty ι) := primitive (expand G A)
 
 theorem primitive_sem {G : NormalGraph ι} {cs R} (hc : primitive cs = some R) (n W v) :
-    semList (meaning G) cs n W v ↔ ∃ a ∈ R, v = a.value := by
+    semList (meaning G) cs n W v ↔ ∃ a ∈ R, a.holds v := by
   induction cs generalizing R with
   | nil => simp [primitive] at hc; subst R; simp [semList,setSem]
   | cons c cs ih =>
@@ -239,14 +248,15 @@ theorem primitive_sem {G : NormalGraph ι} {cs R} (hc : primitive cs = some R) (
         have hi := ih hr
         simp only [semList,setSem,List.mem_cons,exists_eq_or_imp] at hi ⊢
         rw [hi]
-        simp [sem,nulT,undefT,boolT,Literal.value,apply_ite,exists_or,or_assoc]
-        all_goals split <;> simp_all [Literal.value]
+        simp [sem,nulT,undefT,boolT,numT,Atom.holds,apply_ite,or_assoc]
+        all_goals split <;> simp_all [Atom.holds]
 
-theorem literals_sem {G : NormalGraph ι} {A R} (h : literals G A = some R) (n W v) :
-    meaning G A n W v ↔ ∃ a ∈ R, v = a.value := by
+theorem atoms_sem {G : NormalGraph ι} {A R} (h : atoms G A = some R) (n W v) :
+    meaning G A n W v ↔ ∃ a ∈ R, a.holds v := by
   rw [expand_sem]
   exact primitive_sem h n W v
 
+#print axioms atoms_sem
 #print axioms observeTag_holds
 
 end Verification.ExperimentState.HeapKnowledge

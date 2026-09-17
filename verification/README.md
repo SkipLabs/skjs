@@ -101,7 +101,7 @@ assignment writes it and yields the value written, and a closure holds the
 cell's identity, so it observes later writes. The annotation is the storage
 contract every assignment is checked against; an unannotated `let` is refused
 rather than given its initializer's type. Current-content claims are checked
-as read obligations or finite heap observations; immutable snapshots can keep
+as read obligations or primitive heap observations; immutable snapshots can keep
 precise contents across later writes. Guard refinement of mutable contents is
 still conservative. A `let` may omit its annotation: the producer states the
 contract for a binding it inferred, the type it gives the name where it first

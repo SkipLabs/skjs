@@ -22,7 +22,7 @@ deriving instance ToJson, FromJson for PositiveCertificates.Proof
 deriving instance ToJson, FromJson for Sequent
 deriving instance ToJson, FromJson for Rule
 deriving instance ToJson, FromJson for ProgramCertificates.Evidence
-deriving instance ToJson, FromJson for HeapFacts.Literal
+deriving instance ToJson, FromJson for HeapFacts.Atom
 deriving instance ToJson, FromJson for HeapFacts.Fact
 deriving instance ToJson, FromJson for HeapLinks.Link
 deriving instance ToJson, FromJson for HeapKnowledge.Knowledge

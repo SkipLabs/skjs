@@ -1,6 +1,6 @@
 import Verification.ExperimentState.HeapKnowledge
 
-/-! Checked expression rules with finite state postconditions. Ordinary evidence
+/-! Checked expression rules with primitive state postconditions. Ordinary evidence
 retains only immutable-value facts; special rules justify stronger heap facts.
 No fact is accepted as an ordinary reference type or captured as a permanent call contract. -/
 namespace Verification.ExperimentState.HeapExpressionRules
@@ -50,14 +50,14 @@ theorem copy_holds {k i ρ h} (hk : HeapKnowledge.Holds k ρ h) :
 
 /-- Primitive slot facts take precedence over the ordinary (possibly wider)
 value type. Both sources have independently proved membership. -/
-def valuesAt (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) (i : Nat) : Option (List Literal) :=
+def valuesAt (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) (i : Nat) : Option (List Atom) :=
   match k.values.find? (fun f => f.slot == i) with
   | some f => some f.contents
-  | none => (Γ[i]?).bind (HeapKnowledge.literals G)
+  | none => (Γ[i]?).bind (HeapKnowledge.atoms G)
 
 theorem valuesAt_sound {G : NormalGraph ι} {Γ k i R ρ n W h}
     (hr : valuesAt G Γ k i = some R) (he : EnvOk G Γ ρ n W)
-    (hk : HeapKnowledge.Holds k ρ h) : ∃ a ∈ R, ρ i = a.value := by
+    (hk : HeapKnowledge.Holds k ρ h) : ∃ a ∈ R, a.holds (ρ i) := by
   unfold valuesAt at hr
   split at hr
   · rename_i f hf
@@ -69,29 +69,29 @@ theorem valuesAt_sound {G : NormalGraph ι} {Γ k i R ρ n W h}
     | none => simp [hb] at hr
     | some B =>
       simp only [hb,Option.bind_some] at hr
-      exact (literals_sem hr n W (ρ i)).mp (he.2 i B hb)
+      exact (atoms_sem hr n W (ρ i)).mp (he.2 i B hb)
 
-/-- A primitive type's literal set is a structural view, not semantic search. -/
-def includes (G : NormalGraph ι) (A : Ty ι) (R : List Literal) : Bool :=
-  match literals G A with
-  | some S => R.all S.contains
+/-- A primitive type's predicate is a structural view, not semantic search. -/
+def includes (G : NormalGraph ι) (A : Ty ι) (R : List Atom) : Bool :=
+  match atoms G A with
+  | some S => covers R S
   | none => false
 
 theorem includes_sound {G : NormalGraph ι} {A R v} (hc : includes G A R = true)
-    (hv : ∃ a ∈ R, v = a.value) (n W) : meaning G A n W v := by
+    (hv : ∃ a ∈ R, a.holds v) (n W) : meaning G A n W v := by
   unfold includes at hc
   split at hc
   · rename_i S hs
     obtain ⟨a,ha,he⟩ := hv
-    apply (literals_sem hs n W v).mpr
-    exact ⟨a,List.contains_iff_mem.mp (List.all_eq_true.mp hc a ha),he⟩
+    apply (atoms_sem hs n W v).mpr
+    exact covers_sound hc ⟨a,ha,he⟩
   · contradiction
 
-def withResult (k : Knowledge) (R : List Literal) : Knowledge :=
+def withResult (k : Knowledge) (R : List Atom) : Knowledge :=
   ⟨k.cells,⟨0,R,valueField⟩::k.values,k.links⟩
 
 theorem result_holds {k R ρ h v} (hk : HeapKnowledge.Holds k (push v ρ) h)
-    (hr : ∃ a ∈ R, v = a.value) : HeapKnowledge.Holds (withResult k R) (push v ρ) h := by
+    (hr : ∃ a ∈ R, a.holds v) : HeapKnowledge.Holds (withResult k R) (push v ρ) h := by
   refine ⟨hk.1,?_,hk.2.2⟩
   intro f hf
   rcases List.mem_cons.mp hf with rfl | hf
@@ -107,7 +107,7 @@ def readFrame (k : Knowledge) (i : Nat) (fld : String) : Knowledge :=
 /-- Reading uses a current-cell fact; its result is also an immutable value fact.
 This latter fact is what permits a subsequent result-contract check to retain
 precision even when the producer supplied a wider expression type. -/
-def readOutput (k : Knowledge) (i : Nat) (fld : String) (R : List Literal) : Knowledge :=
+def readOutput (k : Knowledge) (i : Nat) (fld : String) (R : List Atom) : Knowledge :=
   withResult (readFrame k i fld) R
 
 theorem read_sound {G : NormalGraph ι} {Γ k i fld R A ρ n W h}
@@ -117,13 +117,13 @@ theorem read_sound {G : NormalGraph ι} {Γ k i fld R A ρ n W h}
     SafePost (meaning G A)
       (fun h' v => HeapKnowledge.Holds (readOutput k i fld R) (push v ρ) h') n W h
       (.readAt fld (ρ i)) := by
-  obtain ⟨flds,c,l,v,hl,hfd,hv,a,ha,rfl⟩ := hk.1 _ hm
+  obtain ⟨flds,c,l,v,hl,hfd,hv,a,ha,hav⟩ := hk.1 _ hm
   rw [hl]
-  apply consequence _ _ (read_observed hw hh hfd (by cases a <;> rfl) hv)
-  · intro j U u hu; exact includes_sound hc ⟨a,ha,hu⟩ j U
+  apply consequence _ _ (read_observed hw hh hfd (Atom.isValue hav) hv)
+  · intro j U u hu; subst u; exact includes_sound hc ⟨a,ha,hav⟩ j U
   · intro h' u hp
     rw [hp.1]
-    have hout := result_holds (HeapKnowledge.shift_holds hk) ⟨a,ha,hp.2⟩
+    have hout := result_holds (HeapKnowledge.shift_holds (v := u) hk) ⟨a,ha,by simpa [hp.2] using hav⟩
     refine ⟨hout.1,hout.2.1,?_⟩
     intro link hm
     rcases List.mem_append.mp hm with hm | hm
@@ -212,7 +212,7 @@ theorem value_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
       (fun h' v => HeapKnowledge.Holds (withResult (copy k i) R) (push v ρ) h') n W h (ρ i) := by
   have hv := valuesAt_sound hr he hk
   have hval : isVal (ρ i) = true := by
-    obtain ⟨a,_,ha⟩ := hv; rw [ha]; cases a <;> rfl
+    obtain ⟨a,_,ha⟩ := hv; exact Atom.isValue ha
   exact HeapObservations.value hval (includes_sound hc hv n W)
     (result_holds (copy_holds hk) hv)
 
@@ -231,7 +231,7 @@ theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k t A ρ n W h}
 
 /-- Allocation retains facts about old cells and records the fresh object, one
 assertion per named field it was given. -/
-def allocOutput (k : Knowledge) (Rs : List (String × List Literal)) : Knowledge :=
+def allocOutput (k : Knowledge) (Rs : List (String × List Atom)) : Knowledge :=
   ⟨(Rs.map fun p => (⟨0,p.2,p.1⟩ : Fact)) ++ HeapFacts.shift k.cells, HeapFacts.shift k.values,
     (HeapKnowledge.shift k).links⟩
 
@@ -248,9 +248,9 @@ def allocationSlots : Tm → Option (List (String × Nat))
   | _ => none
 
 /-- What each initializer slot is known to hold. An allocation frames facts only
-when every one of its fields has a known finite set of values. -/
+when every one of its fields has a known supported primitive predicate. -/
 def allocationFacts [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) :
-    List (String × Nat) → Option (List (String × Nat × List Literal))
+    List (String × Nat) → Option (List (String × Nat × List Atom))
   | [] => some []
   | (f, i) :: rest =>
     match valuesAt G Γ k i, allocationFacts G Γ k rest with
@@ -315,7 +315,7 @@ theorem allocationSlots_eq {t : Tm} {parts : List (String × Nat)}
   · simp at h
 
 theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {code : CallCode}
-    {parts : List (String × Nat × List Literal)}
+    {parts : List (String × Nat × List Atom)}
     (hnd : (parts.map Prod.fst).Nodup)
     (hv : ∀ p ∈ parts, valuesAt G Γ k p.2.1 = some p.2.2)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
@@ -328,7 +328,7 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
   have hval : ∀ p ∈ parts, isVal (ρ p.2.1) = true := by
     intro p hp
     obtain ⟨a,_,hq⟩ := valuesAt_sound (hv p hp) he hk
-    rw [hq]; cases a <;> rfl
+    exact Atom.isValue hq
   have hvals : ∀ v ∈ parts.map (fun p => ρ p.2.1), isVal v = true := by
     intro v hm
     obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm
@@ -363,7 +363,7 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
 
 /-- A write forgets all old cell observations (including aliases), establishes
 its new contents, and retains immutable values already read into slots. -/
-def writeOutput (k : Knowledge) (i : Nat) (fld : String) (R : List Literal) : Knowledge :=
+def writeOutput (k : Knowledge) (i : Nat) (fld : String) (R : List Atom) : Knowledge :=
   ⟨(HeapLinks.aliases k.links i).map (fun j => ⟨j+1,R,fld⟩),
     ⟨0,[.nul],valueField⟩ :: HeapFacts.shift k.values,
     HeapLinks.stable (HeapKnowledge.shift k).links⟩
@@ -388,7 +388,7 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i j fld R A ρ n
       (fun h' v => HeapKnowledge.Holds (writeOutput k i fld R) (push v ρ) h')
       n W h (.writeAt fld (ρ i) (ρ j)) := by
   obtain ⟨a,ha,hv⟩ := valuesAt_sound hr he hk
-  have hvv : isVal (ρ j) = true := by rw [hv]; cases a <;> rfl
+  have hvv : isVal (ρ j) = true := Atom.isValue hv
   have hiv := (meaning_value (he.2 i Γ[i] (List.getElem?_eq_some_iff.mpr ⟨hi,rfl⟩))).1
   have hs : Safe (meaning G A) n W h (.writeAt fld (ρ i) (ρ j)) := by
     simpa [instantiate] using ht.sound n W h ρ he hw hh
@@ -506,12 +506,12 @@ inductive StepEvidence (ι : Type) where
   | pure (proof : ProgramCertificates.Evidence ι)
   | created (proof : ProgramCertificates.Evidence ι)
   | typedRead (slot : Nat) (element : List (String × Ty ι)) (proof : ProgramCertificates.Evidence ι)
-  | observedRead (slot : Nat) (contents : List Literal)
-  | knownValue (slot : Nat) (contents : List Literal)
+  | observedRead (slot : Nat) (contents : List Atom)
+  | knownValue (slot : Nat) (contents : List Atom)
   /-- The fields, their slots and their contents are read off the term and the
   state, so this carries only the ordinary derivation it stands beside. -/
   | allocated (proof : ProgramCertificates.Evidence ι)
-  | written (receiver value : Nat) (contents : List Literal) (proof : ProgramCertificates.Evidence ι)
+  | written (receiver value : Nat) (contents : List Atom) (proof : ProgramCertificates.Evidence ι)
 
 /-- Only allocation whose initializer is an existing value slot can frame facts.
 The descriptor is not evaluated; its code obligations stay in ordinary evidence. -/

@@ -235,11 +235,11 @@ private def checkpoint (pos : Span) (Γ : List (Ty Nat)) (facts : HeapFacts.Fact
   modify fun s => { s with assertions := s.assertions ++ [(t.label,⟨facts,[],[]⟩)] }
   return t
 
-private def contents (A : Ty Nat) : Compiler (List HeapFacts.Literal) := do
+private def contents (A : Ty Nat) : Compiler (List HeapFacts.Atom) := do
   let T ← table
   if !RequestJson.validTy T.length A then throw "invalid current-content type label"
-  let some R := HeapKnowledge.literals (SourceTypes.graph T) A
-    | throw "current-content predicate must be a finite primitive type"
+  let some R := HeapKnowledge.atoms (SourceTypes.graph T) A
+    | throw "current-content predicate must be a supported primitive predicate"
   return R
 
 /-- Record a source obligation with its source map, under the same invariant as
@@ -258,8 +258,8 @@ uniformly; this is a located proof obligation, never a discarded assertion. -/
 private def persistentObservation (d : Descriptor) (pos : Span) (A : Ty Nat)
     (fld : String) (R : Ty Nat) : Compiler Unit := do
   -- The obligation below is an inclusion of types, so the observed type needs
-  -- only to be one this table names. It does not need a finite set of values:
-  -- that is what a literal assertion on an edge needs, and this is not one.
+  -- only to be one this table names. It does not need a supported primitive predicate:
+  -- that is what a primitive assertion on an edge needs, and this is not one.
   if !RequestJson.validTy (← table).length R then throw "invalid current-content type label"
   let clauses := PositiveRules.expand (SourceTypes.graph (← table)) A
   if clauses.isEmpty then throw "current-content assertion requires nonempty cell contracts"
@@ -274,7 +274,7 @@ private def persistentObservation (d : Descriptor) (pos : Span) (A : Ty Nat)
   obligation pos plan.goal (some plan) "heap-observation" [held d]
 
 /-- Mutable entry types are assertions about contents, not reference types.
-Finite primitive assertions are checked on every incoming edge. Other claims
+Supported primitive assertions are checked on every incoming edge. Other claims
 must follow from the stable storage contract; no claim is silently dropped. -/
 private def entryFacts (fc : SourceClaims.Function) (pos : Nat) (scope : List ScopeBinding) :
     Compiler HeapFacts.Facts := do
@@ -289,17 +289,15 @@ private def entryFacts (fc : SourceClaims.Function) (pos : Nat) (scope : List Sc
       if contract.all A.contains then
         persistentObservation b.source (pos,pos+1) reference valueField A
       else
-        match HeapKnowledge.literals (SourceTypes.graph (← table)) A with
-        | some literals => facts := facts ++ [⟨i,literals,valueField⟩]
+        match HeapKnowledge.atoms (SourceTypes.graph (← table)) A with
+        | some atoms => facts := facts ++ [⟨i,atoms,valueField⟩]
         | none => persistentObservation b.source (pos,pos+1) reference valueField A
     match cs.lookup b.source.name with
     | none => return facts
     | some asserted =>
-      -- One assertion per named field of the record this binding holds. A
-      -- field may be claimed at a type with no finite set of values, a number
-      -- being the ordinary case. That is not a literal assertion and is not
-      -- thereby dropped: it becomes the obligation that the storage contract
-      -- already implies it, as above.
+      -- One assertion per named field of the record this binding holds.
+      -- A field claim outside the primitive predicate vocabulary is not
+      -- dropped: the storage contract must imply it, as above.
       let T ← table
       let reference ← match b.storage with
         | .value =>
@@ -309,8 +307,8 @@ private def entryFacts (fc : SourceClaims.Function) (pos : Nat) (scope : List Sc
         | .cell _ reference => pure reference
       for (fld, A) in asserted do
         if !RequestJson.validTy T.length A then throw "invalid current-content type label"
-        match HeapKnowledge.literals (SourceTypes.graph T) A with
-        | some literals => facts := facts ++ [⟨i,literals,fld⟩]
+        match HeapKnowledge.atoms (SourceTypes.graph T) A with
+        | some atoms => facts := facts ++ [⟨i,atoms,fld⟩]
         | none => persistentObservation b.source (pos,pos+1) reference fld A
       return facts) []
 

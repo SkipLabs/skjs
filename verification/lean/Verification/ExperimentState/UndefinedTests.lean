@@ -27,7 +27,7 @@ private def undefProof : Evidence Nat := .node ⟨[],.undef,[3]⟩ .undef []
 #guard checkTree G undefProof
 #guard !checkTree G (.node ⟨[],.undef,[0]⟩ .undef [])
 #guard (pureOutput ⟨[],[],[]⟩ .undef).values == [⟨0,[.undef],valueField⟩]
-#guard HeapKnowledge.literals G [0,3] == some [.nul,.undef]
+#guard HeapKnowledge.atoms G [0,3] == some [.nul,.undef]
 
 private def write (A : Ty Nat) : Bool :=
   let T := intern initial (.refs [(valueField,A)] [])

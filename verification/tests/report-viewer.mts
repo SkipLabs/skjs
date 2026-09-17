@@ -846,6 +846,17 @@ const recorded = (d: ObligationDiagnostic) =>
     ["seed", "abc"],
   );
   assert.equal(ob.contentsText([]), "never");
+  const numeric = structuredClone(observed);
+  numeric.destination.requiredKnowledge = {
+    cells: [{ slot: 1, field: "total", contents: ["num", "nul"] }],
+    values: [{ slot: 0, field: "value", contents: [{numLit: {bits:"9223372036854775808"}}] }],
+    links: [],
+  };
+  assert(readDiagnostic(recorded(numeric)), "numeric heap predicates decode");
+  assert.deepEqual(ob.obligationView(numeric).knowledge.map(r => r.what), [".total holds number | null", "is -0"]);
+  numeric.destination.requiredKnowledge.values[0].contents = [{numLit: {bits:"18446744073709551616"}}];
+  assert.equal(readDiagnostic(recorded(numeric)), undefined, "numeric heap bits are checked");
+
 
   // Tag dispatch observes the same slot, and reads the same way.
   const tagged = structuredClone(record);

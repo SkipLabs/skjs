@@ -1,4 +1,4 @@
-import { decodeGraph, decodeLabels, type TypeGraph, type Labels } from "./type-graph.mts";
+import { decodeGraph, decodeLabels, type TypeGraph, type Labels, type Clause } from "./type-graph.mts";
 import { decodeTerm, isTag, type Tag, type Term } from "./calculus.mts";
 import { decodeNode, type ProgramNode } from "./control-flow.mts";
 import type { Span } from "./span.mts";
@@ -38,9 +38,21 @@ export interface Sequent {
 /** An assertion about a runtime slot: for a cell, about the named field of the
  * object it holds; for a value, about the slot itself, where the field is not
  * consulted. */
+export type HeapAtom = "nul" | "undef" | "tru" | "fls" | "num" |
+  Extract<Clause, {numLit: unknown}>;
+const HEAP_ATOMS: Record<Extract<HeapAtom, string>, true> = {
+  nul: true, undef: true, tru: true, fls: true, num: true,
+};
+const heapAtoms: readonly unknown[] = Object.keys(HEAP_ATOMS);
+function heapAtom(v: unknown): void {
+  if (heapAtoms.includes(v)) return;
+  const a = record(v,["numLit"]);
+  // Numeric singleton payloads use the graph language's existing decoder.
+  decodeGraph([[{numLit: a.numLit}]]);
+}
 export interface HeapFact {
   slot: number;
-  contents: ("nul" | "undef" | "tru" | "fls")[];
+  contents: HeapAtom[];
   field: string;
 }
 export interface HeapKnowledge {
@@ -177,7 +189,8 @@ function knowledge(v: unknown) {
     for (const fact of k[key]) {
       const f = record(fact,["slot","contents","field"]); nat(f.slot);
       if (typeof f.field !== "string") throw Error("invalid heap fact field");
-      if (!Array.isArray(f.contents) || f.contents.some(x => !["nul","undef","tru","fls"].includes(x))) throw Error("invalid heap contents");
+      if (!Array.isArray(f.contents)) throw Error("invalid heap contents");
+      f.contents.forEach(heapAtom);
     }
   }
   if (!Array.isArray(k.links)) throw Error("invalid heap links");

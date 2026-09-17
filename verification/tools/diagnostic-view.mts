@@ -8,8 +8,8 @@
  */
 
 import surface from "./claim-text.mts";
-import { decodeGraph, graphDefinitions, printLabels, type GraphDefinition, type Labels } from "./type-graph.mts";
-import type { HeapKnowledge, ObligationDiagnostic, SourceMapEntry } from "./diagnostic.mts";
+import { decodeGraph, numberOfBits, graphDefinitions, printLabels, type GraphDefinition, type Labels } from "./type-graph.mts";
+import type { HeapAtom, HeapKnowledge, ObligationDiagnostic, SourceMapEntry } from "./diagnostic.mts";
 import { printTerm, type Term } from "./calculus.mts";
 import type { Span } from "./span.mts";
 
@@ -189,11 +189,15 @@ const bindingsOf = (map: { context?: unknown } | null, source: string): string[]
 // heap as it is at this point. Two ends can agree on every contract and still
 // differ here, so these facts are shown in their own right rather than folded
 // into the slot table. See ../OBLIGATION-DIAGNOSTICS.md.
-const LITERAL: Record<string, string> = { nul: "null", tru: "true", fls: "false" };
-const contentsText = (contents: unknown): string =>
-  !isList(contents) || !contents.length
-    ? "never"
-    : contents.map((l) => LITERAL[String(l)] || String(l)).join(" | ");
+const ATOM_TEXT: Record<Extract<HeapAtom, string>, string> = {
+  nul: "null", undef: "undefined", tru: "true", fls: "false", num: "number",
+};
+const contentsText = (contents: readonly HeapAtom[]): string =>
+  !contents.length ? "never" : contents.map((a) => {
+    if (typeof a === "string") return ATOM_TEXT[a];
+    const n = numberOfBits(a.numLit.bits);
+    return Object.is(n, -0) ? "-0" : String(n);
+  }).join(" | ");
 
 /* A record carries all three lists; a caller reading one part of a record it
  * built itself need not, and the reads below already say so. */
