@@ -640,13 +640,9 @@ function declarationOf(sym: Symbol): Node | undefined {
  * enclosing union.
  * No union alternative is selected or discarded by this producer.
  *
- * A `.value` read is a different case: TypeScript narrows a property access
- * across a straight-line write (`cell.value = false; ...cell.value...` reads
- * as `false`), but the calculus reads a cell at its declared invariant unless
- * the point carries an explicit current-content assertion, which this producer
- * never writes. Claiming the narrower type here states something the calculus
- * does not (and need not) grant, so a read's claim is always the cell's own
- * invariant: the `first` contract of whatever row its receiver's type interns.
+ * Field reads have an invariant contract as well as a flow type. The latter
+ * is an untrusted producer claim: entry assertions below expose the primitive
+ * field predicates needed to check it against the heap.
  */
 function readInvariant(
   node: PropertyAccessExpression,
@@ -675,6 +671,34 @@ function readInvariant(
     }
   }
   throw new Refusal("read-of-non-reference", checker.typeToString(cellType));
+}
+
+/** Keep the invariant when the surrounding contract already asks for it.
+ * In particular, a write from an explicitly widened const only establishes
+ * that const's exported contract, even if TS folds its initializer to a unit. */
+function readLabels(
+  node: PropertyAccessExpression,
+  checker: Checker,
+  types: Row[],
+): number[] {
+  const invariant = readInvariant(node, checker, types);
+  const context = checker.getContextualType(node);
+  if (context) {
+    try {
+      if (
+        JSON.stringify(translateType(context, checker, types)) ===
+        JSON.stringify(invariant)
+      )
+        return invariant;
+    } catch (error) {
+      if (!(error instanceof Refusal)) throw error;
+    }
+  }
+  return translateType(
+    must(checker.getTypeAtLocation(node), "read-type"),
+    checker,
+    types,
+  );
 }
 
 /**
@@ -926,7 +950,7 @@ function bestLabelsForReference(
       );
       // A tainted binding (read- or literal-tainted; see `authoritativeType`)
       // is wrong everywhere but a matching guard: the calculus's own internal
-      // value for it is its fixed reading (a read's cell invariant, or a
+      // value for it is its fixed reading (a read's exported type, or a
       // `const`'s declared annotation — the cast a `const` compiles to, never
       // the narrower literal TypeScript tracks for it), so a claim anywhere
       // has to be provable from that, not from whatever TypeScript
@@ -962,19 +986,9 @@ function declarationExprKind(node: Expression): string {
 }
 
 /**
- * A binding disagrees with TypeScript's later narrowing in two distinct ways
- * this producer has found by testing against the corpus: a `.value` read
- * tracks the cell's exact last-written content past the point the calculus
- * grants that without a current-content assertion (never written here), and a
- * `const` whose annotation is wider than its initializer's own literal type
- * lets TypeScript fold the literal through every later use — including
- * treating whichever arm of a subsequent test the literal rules out as
- * unreachable (`never`), where the calculus's plain two-armed test
- * (`conditionVariable`) keeps both arms live. Either way the binding's own
- * declared annotation (or, lacking one, the initializer's own claimed type) is
- * what every value it could hold is required to satisfy, so it is always a
- * sound ceiling to fall back to. A binding copied one hop from a tainted one
- * (`const b = a;`) is not detected here.
+ * A read snapshot retains its initializer's claimed type independently of
+ * later heap mutations. An explicitly wider annotation remains the ceiling
+ * used by this producer, including on paths TypeScript treats as unreachable.
  *
  * Parameters and mutable locals have no fixed initializer-based reading.
  * Neither does a plain `const` TypeScript does not narrow past its declaration.
@@ -1068,12 +1082,9 @@ function typeForExprSite(
   declCache: DeclCache | null,
   sf: SourceFile,
 ): number[] {
-  if (kind === "read")
-    return readInvariant(
-      asKind(node, ts.isPropertyAccessExpression, kind),
-      checker,
-      types,
-    );
+  if (kind === "read") {
+    return readLabels(asKind(node, ts.isPropertyAccessExpression, kind), checker, types);
+  }
   if (kind === "id")
     return bestLabelsForReference(
       asKind(node, ts.isIdentifier, kind),
@@ -1176,6 +1187,64 @@ function anchorSearchScope(stmtNode: Statement): Expression | null {
     return stmtNode.declarationList.declarations[0].initializer ?? null;
   if (ts.isExpressionStatement(stmtNode)) return stmtNode.expression;
   return null; // break/continue: no expression to anchor on
+}
+
+/** Reads at the entry's evaluation point, before any effects or branch choice.
+ * Do not descend into closure bodies, call arguments, or a binary RHS: their
+ * flow types can describe a later state. Unsupported anchors carry no facts.
+ * These are claims only; the verifier must establish each predicate. */
+function entryFieldClaims(
+  stmt: Statement,
+  binding: VisibleBinding,
+  checker: Checker,
+  types: Row[],
+): NamedPoint["current"] {
+  let node = anchorSearchScope(stmt);
+  while (node) {
+    if (
+      ts.isParenthesizedExpression(node) ||
+      ts.isPrefixUnaryExpression(node)
+    ) {
+      node = ts.isParenthesizedExpression(node)
+        ? node.expression
+        : node.operand;
+    } else if (
+      ts.isBinaryExpression(node) &&
+      (node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken ||
+        node.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken)
+    ) {
+      node = node.left;
+    } else break;
+  }
+  if (
+    !node ||
+    !ts.isPropertyAccessExpression(node) ||
+    !ts.isIdentifier(node.expression) ||
+    checker.getSymbolAtLocation(node.expression) !== binding.sym
+  )
+    return null;
+  const labels = readLabels(node, checker, types);
+  if (
+    JSON.stringify(labels) ===
+    JSON.stringify(readInvariant(node, checker, types))
+  )
+    return null;
+  // Heap knowledge supports primitive predicates, not arbitrary graph types.
+  if (
+    !labels.every((label) =>
+      types[label].every(
+        (clause) =>
+          clause === "nul" ||
+          clause === "undef" ||
+          clause === "bool" ||
+          clause === "num" ||
+          (typeof clause === "object" &&
+            ("numLit" in clause || "boolLit" in clause)),
+      ),
+    )
+  )
+    return null;
+  return [[node.name.text, labels]];
 }
 
 function isNamePosition(id: Node): boolean {
@@ -1372,7 +1441,7 @@ function processFunction(
         bindings.push({
           name: b.name,
           type: bindingLabelsAtEntry(stmtNode, b, checker, sf, types, declCache),
-          current: null,
+          current: entryFieldClaims(stmtNode, b, checker, types),
         });
       } catch (e) {
         omissions.push(

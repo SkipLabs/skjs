@@ -72,8 +72,9 @@ corpus file, one worker per core, and colour decided once in the parent.
   made. `✗` on the right means proof search found no derivation; it is never a
   disproof. `?` means the check could not be attempted. `⚠` marks an SKJS
   acceptance its own claims do not establish; the tsc column carries none,
-  because that producer states no current-content assertions and fails by its
-  own limits wherever one is needed.
+  because exporter coverage and proof-search limits still need to be separated
+  from unsoundness findings. TS now states primitive field-content assertions
+  for direct reads at statement entry.
 - Expected outcomes are policy, in `expectedVerified` in `examples.mts`: a
   witness fixture is expected *not* to verify, and a run fails when any
   function's outcome contradicts the policy, in either direction.

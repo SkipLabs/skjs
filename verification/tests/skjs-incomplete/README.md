@@ -26,13 +26,12 @@ The first four need nothing invented: where SKJS's claims do not verify and the
 other producer's do, the second producer's claims *are* the repair, and saying
 so is what a two-producer corpus is for.
 
-The last two are the interesting ones, because neither producer can state them.
+The remaining examples exercise heap observations and empty arrow domains.
 
 `write-refined-read.ts` needs the assertion this file's own comment names:
 `cell` holds exactly `true` after the write, independently of its persistent
-Boolean invariant. SKJS's export forgets it and the TypeScript producer states
-no current-content assertions at all, so neither can express the repair even
-though the claim is true and the verifier derives it. The reader prints such a
+Boolean invariant. SKJS's export forgets it; the TypeScript producer now states
+the field observation and its original claims verify. The reader prints such a
 claim as `{ value: boolean = (true) }`.
 
 `empty-domain-escape.ts` shows that *where* a claim sits decides whether a rule

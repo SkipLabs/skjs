@@ -145,9 +145,8 @@ async function hasVerifier() {
 // Verification is not an option the caller turns on: if a verifier is present it
 // runs, so what is displayed is always checked against the claims on screen.
 // The other producer: what TypeScript's own checker claims at the same sites,
-// through the same verifier. It states types and no current-content
-// assertions, so a cell read after a write fails here by its own limits;
-// tests/tsc-claims/README.md says which failures are which.
+// through the same verifier, including primitive field assertions at direct
+// statement-entry reads. tests/tsc-claims/README.md records its limits.
 async function tscAnalyse(
   relative: string,
   source: string,

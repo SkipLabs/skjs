@@ -15,9 +15,15 @@ Sites come from the trusted parser's AST and mirror `SourceClaimJson`'s
 `functionSites`; a site's type is `checker.getTypeAtLocation`, and an entry's
 environment is each visible binding at `getTypeOfSymbolAtLocation`. A type the
 document cannot state is omitted with its reason and `tsc`'s own rendering, in
-`<out>.omissions.json`. Every point carries `current: null`: this producer
-states types, and leaves current-content assertions to a producer that has
-them.
+`<out>.omissions.json`. Field reads state their compiler flow type, or retain the field invariant
+when the surrounding contextual contract already requests it. For a
+primitive field read at statement entry, the receiver binding also carries a
+`current` assertion when the flow type differs from the field invariant.
+Parentheses, unary operators, and the left side of an equality test preserve
+that entry point. Calls, closure bodies, branch arms, and later operands do
+not: their observations must not be moved before earlier effects or tests.
+Symbol identity selects the receiver binding. Each assertion is untrusted and
+must be established by the verifier; no protocol or proof rule is added.
 
 ## What the run says
 
@@ -38,14 +44,13 @@ path.
 ## Reading the corpus column
 
 `examples.mts` shows `tsc accepted→derived` beside SKJS's pair. The column
-carries no ⚠, because a `✗` there is as often this producer's limit as a
-finding: it states no current-content assertions, so every function that reads
-a cell after writing it fails, 56 of 129 in the corpus today. Teaching it to
-state the observation TypeScript already computes at that site is the next
-step, and would make the column's failures mean what SKJS's do.
+carries no ⚠: exporter coverage and proof-search limits still need to be
+separated from unsoundness findings. `write-refined-read.ts` now verifies from
+TS's original claims. `numericAliasSnapshot` also verifies: the guarded numeric
+field read supplies a checked snapshot that survives a later aliased write.
+More complex evaluation positions and facts needed across intermediate
+statement cuts remain exporter limitations.
 
-`write-refined-read.ts` and `primitive-callbacks.ts` still fail by this producer's
-limits: they need a current-content assertion, which it does not write.
 `null-guards.ts` now verifies, including independent certificate consumption.
 Lambda and allocation claims under union contexts use the expression's own
 arrow or cell type. Explicit null and undefined tests refine a binding's declared contract

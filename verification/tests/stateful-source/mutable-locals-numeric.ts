@@ -59,8 +59,7 @@ function numericAssignmentSnapshot(seed: number): number {
 
 /**
  * A named field guard establishes a snapshot that survives an aliased call.
- * SKJS supplies the field-content assertion; the TS exporter currently omits
- * it and widens the read, so this remains a TS producer boundary.
+ * Both producers supply the field-content assertion checked at the read.
  */
 function numericAliasSnapshot(seed: number | null): number {
   const cell: { total: number | null } = { total: seed };

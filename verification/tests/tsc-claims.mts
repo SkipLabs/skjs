@@ -69,9 +69,8 @@ const expected = {
   "skjs-incomplete/undefined-completes": "verified",
   "skjs-incomplete/arrow-intersection": "verified",
   // A cell read after a write is true at runtime and tsc types it so; the
-  // calculus reads a cell at its invariant unless the point carries a
-  // current-content assertion, which this producer does not write.
-  "skjs-incomplete/write-refined-read": "failed",
+  // producer now carries the primitive field observation at the entry.
+  "skjs-incomplete/write-refined-read": "verified",
   "stateful-source/primitive-callbacks": "failed",
   // Explicit null guards refine the declared nullable cell and callable contracts.
   "stateful-source/null-guards": "verified",

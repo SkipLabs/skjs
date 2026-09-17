@@ -5,7 +5,6 @@ import vm from "node:vm";
 import { spawnSync } from "node:child_process";
 import { stripTypes } from "../tools/strip-types.mts";
 import { fileOf, type SkjsClaims } from "../tools/skjs-claims.mts";
-import type { Ast } from "../tools/fragment.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import { must } from "./edits.mts";
 
@@ -25,32 +24,68 @@ try {
     ["stateful-source", raw],
     ["source-claims", tsc],
   ]) {
-    let astPath = ast,
+    const astPath = ast,
       input = path;
-    if (kind === "source-claims") {
-      // TS does not export field-current assertions. Its broadened field read
-      // cannot establish this snapshot; keep that separate producer boundary.
-      const boundary = run("--produce-source-claims", path);
-      assert.notEqual(boundary.status, 0);
-      assert.match(boundary.stderr, /binding-annotation/);
-      const selectedAst: Ast = JSON.parse(fs.readFileSync(ast, "utf8"));
-      selectedAst.functions = selectedAst.functions.filter(
-        (f) => f.name !== "numericAliasSnapshot",
-      );
-      const selected: SourceClaims = JSON.parse(fs.readFileSync(input, "utf8"));
-      selected.functions = selected.functions.filter(
-        (f) => f.name !== "numericAliasSnapshot",
-      );
-      astPath = work + "/ts.ast";
-      input = work + "/ts.claims";
-      fs.writeFileSync(astPath, JSON.stringify(selectedAst));
-      fs.writeFileSync(input, JSON.stringify(selected));
-    }
     for (const action of ["produce", "check"]) {
       const r = run(`--${action}-${kind}`, input, astPath);
       assert.equal(r.status, 0, r.stdout + r.stderr);
     }
     const valid = fs.readFileSync(proof);
+    if (kind === "source-claims") {
+      const original: SourceClaims = JSON.parse(fs.readFileSync(input, "utf8"));
+      const snapshot = must(
+        original.functions.find((f) => f.name === "numericAliasSnapshot"),
+        "snapshot",
+      );
+      const start = source.indexOf("const snapshot: number = cell.total");
+      const env = must(
+        snapshot.entries.find((e) => e.start === start),
+        "snapshot entry",
+      );
+      const cell = must(
+        env.bindings.find((b) => b.name === "cell"),
+        "cell",
+      );
+      const number = original.types.findIndex(
+        (row) => row.length === 1 && row[0] === "num",
+      );
+      assert.deepEqual(cell.current, [["total", [number]]]);
+      const unit = original.types.findIndex(
+        (row) =>
+          row.length === 1 && typeof row[0] === "object" && "numLit" in row[0],
+      );
+      assert(unit >= 0);
+      // The assertion is necessary, but cannot justify a stronger singleton.
+      for (const omit of [true, false]) {
+        const changed: SourceClaims = JSON.parse(
+          fs.readFileSync(input, "utf8"),
+        );
+        const f = must(
+          changed.functions.find((f) => f.name === snapshot.name),
+          "snapshot",
+        );
+        const e = must(
+          f.entries.find((e) => e.start === start),
+          "entry",
+        );
+        const b = must(
+          e.bindings.find((b) => b.name === "cell"),
+          "cell",
+        );
+        b.current = omit ? null : [["total", [unit]]];
+        const path = work + "/field-claim";
+        fs.writeFileSync(path, JSON.stringify(changed));
+        for (const action of ["produce", "check"]) {
+          fs.writeFileSync(proof, valid);
+          const r = run(`--${action}-${kind}`, path);
+          assert.notEqual(
+            r.status,
+            0,
+            "missing or unjustified field assertion accepted",
+          );
+        }
+      }
+    }
     const entry = source.indexOf(
       "return read();",
       source.indexOf("function numericGuardedCapture"),
@@ -115,7 +150,7 @@ try {
   }
   assert.equal(evaluate("numericAliasSnapshot(null)"), 0);
   console.log(
-    "Numeric heap facts: both producers, stale-entry rejection, numeric snapshots and the TS field-claim boundary passed",
+    "Numeric heap facts: both producers, stale-entry rejection, numeric snapshots and aliased field claims passed",
   );
 } finally {
   fs.rmSync(work, { recursive: true, force: true });

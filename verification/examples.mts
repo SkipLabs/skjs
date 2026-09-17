@@ -143,8 +143,8 @@ try {
         " reads accepted→derived: its own verdict on the program, then whether" +
         " the verifier derives the claims it made. ⚠ marks an SKJS acceptance" +
         " its own claims do not establish. The tsc column carries no ⚠: that" +
-        " producer states no current-content assertions, so a cell read after" +
-        " a write fails there by its own limits (tests/tsc-claims/README.md).",
+        " exporter and proof-search limits still need to be distinguished from" +
+        " unsoundness findings (tests/tsc-claims/README.md).",
     );
   // One producer run for every example. A container start costs more than
   // checking any of these files, so the loop used to spend most of its time
