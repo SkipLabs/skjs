@@ -16,6 +16,10 @@ export type Expr =
   /* An object literal: one named field per initializer, in source order. */
   | { k: "alloc"; pos: Span; fields: { name: string; e: Expr }[] }
   | { k: "read"; pos: Span; field: string; e: Expr }
+  /* `e[key]`: the receiver, then the key, then the read of the field the
+     key's claimed type names, a string singleton. */
+  | { k: "index"; pos: Span; e: Expr; key: Expr }
+  | { k: "indexWrite"; pos: Span; receiver: Expr; key: Expr; rhs: Expr }
   | { k: "bin"; pos: Span; op: string; l: Expr; r: Expr }
   | { k: "coalesce"; pos: Span; left: Expr; right: Expr }
   | { k: "write"; pos: Span; field: string; receiver: Expr; rhs: Expr }

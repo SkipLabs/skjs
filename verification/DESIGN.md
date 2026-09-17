@@ -975,6 +975,10 @@ are checked local obligations within a statement, where effect rules can derive
 postconditions. Loop heads use supplied interfaces; every backedge must establish
 them. No loop invariant is inferred.
 
+A source ternary branches in the graph like an `if` statement, so an effect in
+its condition or an arm is a node with its own knowledge. Element access reads
+or writes the field the key's claimed string singleton names, after the
+receiver and before any right side, and the key keeps its own obligation.
 Writes establish new contents for recorded aliases, keep facts about cells a
 distinct-location link separates from the written one, and discard other heap
 facts; two parameters carry no such link, so a write through one forgets what

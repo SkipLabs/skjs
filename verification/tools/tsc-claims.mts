@@ -152,6 +152,17 @@ function walkExpr(e: Expr, out: Sites): void {
       walkExpr(e.receiver, out);
       walkExpr(e.rhs, out);
       return;
+    case "index":
+      addExpr(out, e.pos, "index");
+      walkExpr(e.e, out);
+      walkExpr(e.key, out);
+      return;
+    case "indexWrite":
+      addExpr(out, e.pos, "indexWrite");
+      walkExpr(e.receiver, out);
+      walkExpr(e.key, out);
+      walkExpr(e.rhs, out);
+      return;
     // Nullish assignment reads the LHS before deciding whether to write.
     case "nullishAssign":
       addExpr(out, e.pos, "nullishAssign");

@@ -334,6 +334,12 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
       node verification/tools/tsc-claims.mts "$SINGLETON_CALL" --out "$WORK/singleton_call.tsc"
   }
   build singleton_fixture
+  COMPUTED_KEYS=verification/tests/stateful-source/computed-keys.ts
+  computed_keys_fixture() {
+    fixture computed_keys "$COMPUTED_KEYS" &&
+      node verification/tools/tsc-claims.mts "$COMPUTED_KEYS" --out "$WORK/computed_keys.tsc"
+  }
+  build computed_keys_fixture
   build snapshot_probes
   for pid in "${building[@]}"; do wait "$pid" || exit 1; done
 
@@ -391,6 +397,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Strings" node verification/tests/strings.mts "$WORK/strings.ast" "$WORK/strings.claims" "$WORK/strings.tsc" "$STRINGS" "$VERIFIER"
   run_test "Distinct cells" node verification/tests/distinct-cells.mts "$WORK/distinct.ast" "$WORK/distinct.claims" "$WORK/distinct.tsc" "$DISTINCT" "$WORK/distinct_aliased.ast" "$WORK/distinct_aliased.tsc" "$DISTINCT_ALIASED" "$VERIFIER"
   run_test "Singleton operands" node verification/tests/singleton-operands.mts "$WORK/singleton_operands.ast" "$WORK/singleton_operands.claims" "$WORK/singleton_operands.tsc" "$SINGLETON_OPERANDS" "$WORK/singleton_call.ast" "$WORK/singleton_call.tsc" "$SINGLETON_CALL" "$VERIFIER"
+  run_test "Computed keys" node verification/tests/computed-keys.mts "$WORK/computed_keys.ast" "$WORK/computed_keys.claims" "$WORK/computed_keys.tsc" "$COMPUTED_KEYS" "$VERIFIER"
   run_test "Closed SKJS operations" node verification/tests/skjs-operations.mts "$WORK/source.claims" "$BASE" "$VERIFIER"
   run_test "Generic identity source" node verification/tests/generic-source.mts "$WORK/generic_id.ast" "$WORK/generic_id.claims" "$GENERIC_ID" "$VERIFIER"
   run_test "Generic alias source" node verification/tests/generic-aliases.mts "$WORK/generic_aliases.ast" "$WORK/generic_aliases.claims" "$GENERIC_ALIASES" "$VERIFIER"

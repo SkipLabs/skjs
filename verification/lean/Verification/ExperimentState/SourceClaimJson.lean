@@ -129,6 +129,8 @@ private def exprSites : Fragment.Expr → Sites
   | .withValue p a b _ _ | .write p _ a b | .singletonTest p _ _ _ a b | .equality p _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
   -- An assignment is an expression site, and the name it assigns is not one:
   -- the producer claims the value written, not the location.
+  | .index p _ a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
+  | .indexWrite p _ a b c => joinSites ([],[p]) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
   | .nullishAssign p _ np e => joinSites ([],[p,np]) (exprSites e)
   | .assign p _ _ e => joinSites ([],[p]) (exprSites e)
   | .atEnv p e => joinSites ([p.1],[]) (exprSites e)

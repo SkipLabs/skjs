@@ -114,6 +114,15 @@ private def exprType (fc : SourceClaims.Function) (e : Fragment.Expr) : Compiler
       s!"source expression obligation at [{e.span.1},{e.span.2}): {msg}"
   | none => throw s!"no claimed type for the expression at {spanStr e.span}"
 
+/-- A computed key names the field its claimed type is: a string singleton.
+The key stays in the program, evaluated after the receiver and before any
+right side, and its expression obligation must establish that singleton. -/
+private def keyField (fc : SourceClaims.Function) (key : Fragment.Expr) : Compiler String := do
+  let K ← exprType fc key
+  match PositiveRules.expand (SourceTypes.graph (← table)) K with
+  | [.strLit s] => pure s
+  | _ => throw s!"unsupported source expression at [{key.span.1},{key.span.2}): a computed key requires a string singleton claim"
+
 /-- A claimed null/undefined/numeric singleton selects a tag-test implementation, never
 an assumption: both operands remain in the program, in source order, and their
 expression obligations must establish the singleton used by this translation. -/
@@ -148,6 +157,12 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
   | .alloc p ns es => return .alloc p ns (← es.mapM (comparisonsExpr fc))
   | .read p f e => return .read p f (← comparisonsExpr fc e)
   | .write p f l r => return .write p f (← comparisonsExpr fc l) (← comparisonsExpr fc r)
+  | .index p _ e key =>
+    let key ← comparisonsExpr fc key
+    return .index p (some (← keyField fc key)) (← comparisonsExpr fc e) key
+  | .indexWrite p _ r key rhs =>
+    let key ← comparisonsExpr fc key
+    return .indexWrite p (some (← keyField fc key)) (← comparisonsExpr fc r) key (← comparisonsExpr fc rhs)
   | .withValue p f i ft bt => return .withValue p (← comparisonsExpr fc f) (← comparisonsExpr fc i) ft bt
   | .lambda p ps result b => return .lambda p ps result (← comparisonsExpr fc b)
   | .bindWithReceiver p c r args => return .bindWithReceiver p (← comparisonsExpr fc c) (← comparisonsExpr fc r) (← args.mapM (comparisonsExpr fc))
@@ -185,8 +200,9 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .not _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e
   | .lambda _ _ _ e => assignsExpr name e
   | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b
-  | .singletonTest _ _ _ _ a b | .write _ _ a b | .withValue _ a b _ _
+  | .singletonTest _ _ _ _ a b | .write _ _ a b | .withValue _ a b _ _ | .index _ _ a b
   | .seqBody _ a b | .letBody _ _ _ a b => assignsExpr name a || assignsExpr name b
+  | .indexWrite _ _ a b c => assignsExpr name a || assignsExpr name b || assignsExpr name c
   | .alloc _ _ es => es.any (assignsExpr name)
   | .call _ f args => assignsExpr name f || args.any (assignsExpr name)
   | .callWithReceiver _ f r args | .bindWithReceiver _ f r args =>
@@ -369,9 +385,9 @@ private def readOnly : Fragment.Expr → Bool
   | .var .. | .lit .. | .done .. => true
   | .not _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e => readOnly e
   | .equality _ _ a b | .singletonTest _ _ _ _ a b | .logical _ _ a b | .coalesce _ a b
-  | .seqBody _ a b | .letBody _ _ _ a b => readOnly a && readOnly b
+  | .seqBody _ a b | .letBody _ _ _ a b | .index _ _ a b => readOnly a && readOnly b
   | .ifBody _ _ c t e => readOnly c && readOnly t && readOnly e
-  | .alloc .. | .write .. | .assign .. | .nullishAssign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
+  | .alloc .. | .write .. | .indexWrite .. | .assign .. | .nullishAssign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
   | .callWithReceiver .. | .call .. => false
 
 /-- The other operand of a singleton comparison, when saving the tested read
@@ -536,6 +552,57 @@ private def allocationChildren : DirectProof.Plan → Option (List DirectProof.P
   | .rule _ .alloc ps => some ps
   | _ => none
 
+/-- Read a field from a cell plan under context `Γ`: one contract, a callable
+bag, or an explicit union of cell contracts each naming the field. -/
+private def readCell (G : PositiveGraphs.NormalGraph Nat) (Γ : List (Ty Nat)) (fld : String)
+    (a : DirectProof.Plan) : Compiler DirectProof.Plan := do
+  match PositiveRules.expand G a.type with
+  | [.refs fs []] =>
+    let some B := fs.lookup fld | throw s!"read of a field '{fld}' the contract does not name"
+    pure (DirectProof.node Γ (.readAt fld a.term) B .read [a])
+  | [.callable fs _ _] =>
+    let some B := fs.lookup fld | throw s!"read of a field '{fld}' the contract does not name"
+    pure (DirectProof.node Γ (.readAt fld a.term) B .readCallable [a])
+  | _ =>
+    if a.type.length ≤ 1 then throw "read receiver must name a cell contract"
+    let alternatives ← a.type.mapM fun label => do
+      let [.refs fs []] := PositiveRules.expand G [label]
+        | throw "every read alternative must name a cell contract"
+      let some B := fs.lookup fld
+        | throw s!"read of a field '{fld}' an alternative does not name"
+      pure (label,B)
+    let R := (alternatives.flatMap Prod.snd).eraseDups
+    let children := alternatives.map fun (label,B) =>
+      let H := [label] :: Γ
+      DirectProof.cast H R (DirectProof.node H (.readAt fld (.var 0)) B .read
+        [DirectProof.var H 0 [label]])
+    pure (DirectProof.letE Γ a (DirectProof.node (a.type::Γ)
+      (.readAt fld (.var 0)) R (.unionVar 0) children))
+
+/-- The write node under context `H`, with the value in slot 0 and the
+receiver, claimed at `B`, in slot `ri`. -/
+private def writeCell (G : PositiveGraphs.NormalGraph Nat) (H : List (Ty Nat)) (fld : String)
+    (B C : Ty Nat) (ri : Nat) : Compiler DirectProof.Plan := do
+  let term := Tm.writeAt fld (.var ri) (.var 0)
+  match PositiveRules.expand G B with
+  | [.refs fs []] =>
+    let some D := fs.lookup fld | throw s!"write to a field '{fld}' the contract does not name"
+    pure (DirectProof.node H term [0] .write
+      [DirectProof.var H ri B,DirectProof.cast H D (DirectProof.var H 0 C)])
+  | _ =>
+    if B.length ≤ 1 then throw "write receiver must name a cell contract"
+    let alternatives ← B.mapM fun label => do
+      let [.refs fs []] := PositiveRules.expand G [label]
+        | throw "every write alternative must name a cell contract"
+      let some D := fs.lookup fld
+        | throw s!"write to a field '{fld}' an alternative does not name"
+      pure (label,D)
+    let children := alternatives.map fun (label,D) =>
+      let branch := H.set ri [label]
+      DirectProof.node branch term [0] .write
+        [DirectProof.var branch ri [label],DirectProof.cast branch D (DirectProof.var branch 0 C)]
+    pure (DirectProof.node H term [0] (.unionVar ri) children)
+
 /-- Build compositional proofs for lambda bodies and source ternaries without
 losing their individual claims. Requirements use the lexical context at the occurrence; synthetic let
 slots are introduced only after the operand supplying their type is checked. -/
@@ -667,28 +734,25 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     if let some i := snapshot then
       let some R := Γ[i]? | throw "internal saved-read slot mismatch"
       pure (DirectProof.var Γ i R)
-    else match PositiveRules.expand G a.type with
-    | [.refs fs []] =>
-      let some B := fs.lookup fld | throw s!"read of a field '{fld}' the contract does not name"
-      pure (DirectProof.node Γ (.readAt fld a.term) B .read [a])
-    | [.callable fs _ _] =>
-      let some B := fs.lookup fld | throw s!"read of a field '{fld}' the contract does not name"
-      pure (DirectProof.node Γ (.readAt fld a.term) B .readCallable [a])
-    | _ =>
-      if a.type.length ≤ 1 then throw "read receiver must name a cell contract"
-      let alternatives ← a.type.mapM fun label => do
-        let [.refs fs []] := PositiveRules.expand G [label]
-          | throw "every read alternative must name a cell contract"
-        let some B := fs.lookup fld
-          | throw s!"read of a field '{fld}' an alternative does not name"
-        pure (label,B)
-      let R := (alternatives.flatMap Prod.snd).eraseDups
-      let children := alternatives.map fun (label,B) =>
-        let H := [label] :: Γ
-        DirectProof.cast H R (DirectProof.node H (.readAt fld (.var 0)) B .read
-          [DirectProof.var H 0 [label]])
-      pure (DirectProof.letE Γ a (DirectProof.node (a.type::Γ)
-        (.readAt fld (.var 0)) R (.unionVar 0) children))
+    else readCell G Γ fld a
+  | .index _ (some fld) receiver key => do
+    -- The receiver, then the key, then the read: the key's own claim was
+    -- resolved to the field, and is checked here like any operand's.
+    let r ← closureExpr fc scope Γ receiver
+    let k ← closureExpr fc (held ⟨"",some receiver.span⟩ :: scope) (r.type::Γ) key
+    let H := k.type::r.type::Γ
+    let read ← readCell G H fld (DirectProof.var H 1 r.type)
+    pure (DirectProof.letE Γ r (DirectProof.letE (r.type::Γ) k read))
+  | .indexWrite _ (some fld) receiver key rhs => do
+    let B ← exprType fc receiver
+    let r ← closureExpr fc scope Γ receiver
+    let k ← closureExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key
+    let a ← closureExpr fc (held ⟨"",some key.span⟩::held ⟨"",some receiver.span⟩ :: scope) (k.type::B::Γ) rhs
+    let H := a.type::k.type::B::Γ
+    let write ← writeCell G H fld B a.type 2
+    let done := DirectProof.letE H write (DirectProof.var ([0]::H) 1 a.type)
+    pure (DirectProof.letE Γ r (DirectProof.letE (B::Γ) k (DirectProof.letE (k.type::B::Γ) a done)))
+  | .index _ none .. | .indexWrite _ none .. => throw "internal unresolved computed key"
   | .bindWithReceiver _ f receiver args => do
     let callee ← closureExpr fc scope Γ f
     let receiverPlan ← closureExpr fc (held ⟨"",some f.span⟩ :: scope) (callee.type::Γ) receiver
@@ -772,34 +836,11 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         (DirectProof.node H term R (.unionVar n) children))
   | .write _ fld receiver rhs => do
     let B ← exprType fc receiver
-    let single ← match PositiveRules.expand G B with
-      | [.refs fs []] =>
-        let some D := fs.lookup fld
-          | throw s!"write to a field '{fld}' the contract does not name"
-        pure (some D)
-      | _ => pure none
-    let alternatives ← if single.isSome then pure [] else do
-      if B.length ≤ 1 then throw "write receiver must name a cell contract"
-      B.mapM fun label => do
-        let [.refs fs []] := PositiveRules.expand G [label]
-          | throw "every write alternative must name a cell contract"
-        let some D := fs.lookup fld
-          | throw s!"write to a field '{fld}' an alternative does not name"
-        pure (label,D)
     let r ← closureExpr fc scope Γ receiver
     let a ← closureExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) rhs
     let C := a.type
     let H := C::B::Γ
-    let term := Tm.writeAt fld (.var 1) (.var 0)
-    let write := match single with
-      | some D => DirectProof.node H term [0] .write
-          [DirectProof.var H 1 B,DirectProof.cast H D (DirectProof.var H 0 C)]
-      | none =>
-        let children := alternatives.map fun (label,D) =>
-          let branch := C :: [label] :: Γ
-          DirectProof.node branch term [0] .write
-            [DirectProof.var branch 1 [label],DirectProof.cast branch D (DirectProof.var branch 0 C)]
-        DirectProof.node H term [0] (.unionVar 1) children
+    let write ← writeCell G H fld B C 1
     let done := DirectProof.letE H write (DirectProof.var ([0]::H) 1 C)
     pure (DirectProof.letE Γ r (DirectProof.letE (B::Γ) a done))
   | .done _ => pure (DirectProof.node Γ .nul [0] .nul)
@@ -911,10 +952,93 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
   | .atEnv .. => return p
   | _ => return plan
 
+
+
+/-- Leaving a block drops its local slots simultaneously. Active-name shadowing
+is gated until the export can identify hidden bindings independently. With no
+continuation the body completes rather than returns, producing `undefined`; that
+is emitted as an exit claiming the declared result, attributed to the function
+because an empty body has no statement to point at. -/
+private def leave (pos : Span) (R : Ty Nat) (scope : List ScopeBinding)
+    (tail : Option (Target × List ScopeBinding)) : Compiler Target := do
+  match tail with
+  | none =>
+    let exit ← emitAt pos .undef .ret [] R "completion"
+    return ⟨exit.label, some []⟩
+  | some (target, outer) =>
+    let slots ← outer.mapM fun b => match (names scope).idxOf? b.source.name with
+      | some i => pure i
+      | none => throw s!"internal extraction error: lost outer binding '{b.source.name}'"
+    return ⟨target.label, some slots⟩
+
+/-- Branch binding pushes the actual tested value. For a source variable test,
+map that variable to the pushed value (the same immutable value), exposing its
+proved singleton refinement. Other slots retain their ordinary identities. -/
+private def branchMapping (width : Nat) (tested : Option Nat) (target : Target) : Target :=
+  ⟨target.label, some ((target.mapping.getD (List.range width)).map fun i =>
+    if tested == some i then 0 else i+1)⟩
+
+/-- Keep a pre-existing singleton fact rather than replacing it with the
+branch witness. In particular, an impossible opposite edge must not force a
+contradictory replacement of an otherwise valid immutable binding. -/
+private def testedSlot (scope : List ScopeBinding) (Γ : List (Ty Nat)) (cond : Fragment.Expr) : Option Nat :=
+  do
+    let (i, _) ← conditionVariable scope cond
+    if Γ[i]? == some [1] || Γ[i]? == some [2] then none else some i
+
+/-- Share polarity handling between conditionals and loop heads. The saved
+condition is in slot zero. Only a syntactically identified immutable variable
+may be replaced by the recovered Boolean witness. -/
+private def emitBranch (scope : List ScopeBinding) (Γ : List (Ty Nat)) (cond : Fragment.Expr)
+    (A : Ty Nat) (yes no : Target) : Compiler Target := do
+  if let some (i, tag, equal) := tagConditionVariable scope cond then
+    let some C := Γ[i]? | throw "internal tag-guard slot mismatch"
+    let adapt := fun t =>
+      let mapped := branchMapping scope.length (some i) t
+      ⟨mapped.label, some ((mapped.mapping.getD []).map
+        (fun j => if j == 0 then 0 else j+1))⟩
+    -- The source predicate has already run and all operand claims were checked.
+    -- Reading the same immutable variable observes its tag without repeating
+    -- any source expression or trusting the saved Boolean's annotation.
+    return ← emitAt cond.span (.var (i+1))
+      (.tagBind tag (adapt (if equal then yes else no)) (adapt (if equal then no else yes)))
+      (A::Γ) C "tag-dispatch" (scope := held ⟨"",some cond.span⟩ :: scope)
+  let tested := testedSlot scope Γ cond
+  -- Branch on the saved value; the edge maps discard its older copy and
+  -- retain the new refinement slot supplied by branchBind.
+  let adapt := fun t =>
+    let mapped := branchMapping scope.length tested t
+    ⟨mapped.label, some ((mapped.mapping.getD []).map
+      (fun i => if i == 0 then 0 else i+1))⟩
+  -- Negation is handled by swapping successors in compileCondition, so this
+  -- dispatch always observes the saved operand itself, retaining its read link.
+  emitAt cond.span (.var 0) (.branchBind (adapt yes) (adapt no)) (A::Γ) A
+    (scope := held ⟨"",some cond.span⟩ :: scope)
+
+/-- Facts justified on the path to a short-circuit operand. Only immutable
+source bindings are refined; every generated edge checks this candidate context.
+A true conjunction / false disjunction establishes both operand outcomes. The
+other outcomes deliberately retain the input context rather than compute a join. -/
+private def conditionContext (G : PositiveGraphs.NormalGraph Nat) (scope : List ScopeBinding) (Γ : List (Ty Nat))
+    (cond : Fragment.Expr) (answer : Bool) : List (Ty Nat) :=
+  match cond with
+  | .not _ e => conditionContext G scope Γ e (!answer)
+  | .logical _ andOp left right =>
+    if answer == andOp then
+      conditionContext G scope (conditionContext G scope Γ left answer) right answer
+    else Γ
+  | _ =>
+    if let some (i, tag, equal) := tagConditionVariable scope cond then
+      Γ.set i (BranchRefinement.tagSlice G (Γ[i]?.getD []) tag (answer == equal))
+    else if let some i := testedSlot scope Γ cond then
+      Γ.set i (if answer then [1] else [2])
+    else Γ
+
+mutual
 /-- Each expression leaves its result in slot zero and preserves the original
 slots after it. Anonymous temporary slots cannot be named by source identifiers.
 Mappings discard only the temporaries introduced by this expression. -/
-private def compileExpr (fc : SourceClaims.Function) (scope : List ScopeBinding) (Γ : List (Ty Nat))
+private partial def compileExpr (fc : SourceClaims.Function) (scope : List ScopeBinding) (Γ : List (Ty Nat))
     (e : Fragment.Expr) (next : Target) : Compiler Target := do
   let A ← exprType fc e
   let next ← match fc.exprCurrent.lookup e.span with
@@ -1025,7 +1149,16 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List ScopeBinding)
         ((operands.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++ scope)
         ((As.take i).reverse ++ Γ) arg next) make
   | .atEnv .. | .letBody .. | .ifBody _ (some _) .. | .done .. | .seqBody .. => throw "statement environment wrapper is only supported inside a closure"
-  | .bindWithReceiver .. | .withValue .. | .lambda .. | .ifBody _ none .. | .coalesce .. | .logical .. =>
+  | .ifBody _ none cond thn els =>
+    -- A source ternary branches in the graph like an `if` statement, so an
+    -- effect in its condition or an arm is a node with its own knowledge;
+    -- each arm is compiled under the condition's refinement of its context
+    -- and joins the continuation with its own claim.
+    let G := SourceTypes.graph (← table)
+    let yes ← compileExpr fc scope (conditionContext G scope Γ cond true) thn next
+    let no ← compileExpr fc scope (conditionContext G scope Γ cond false) els next
+    compileCondition fc scope Γ cond yes no
+  | .bindWithReceiver .. | .withValue .. | .lambda .. | .coalesce .. | .logical .. =>
     let t ← closureExpr fc scope Γ e
     emitAt e.span t.term (.bind next) Γ A (scope := scope)
   | .shapeTest _ tag equal operand =>
@@ -1061,6 +1194,29 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List ScopeBinding)
         ((operands.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++ held ⟨"",some callee.span⟩ :: scope)
         ((As.take i).reverse ++ B::Γ) arg next) call
     compileExpr fc scope Γ callee right
+  | .index _ (some fld) receiver key =>
+    let B ← exprType fc receiver
+    let K ← exprType fc key
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else i+2))⟩
+    let temporaries := held ⟨"",some key.span⟩::held ⟨"",some receiver.span⟩ :: scope
+    let node ← emitAt e.span (.readAt fld (.var 1)) (.bind drop) (K::B::Γ) A (scope := temporaries)
+    let right ← compileExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key node
+    compileExpr fc scope Γ receiver right
+  | .indexWrite _ (some fld) receiver key rhs =>
+    let B ← exprType fc receiver
+    let K ← exprType fc key
+    let C ← exprType fc rhs
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else i+3))⟩
+    let effects := held ⟨"",some rhs.span⟩::held ⟨"",some key.span⟩::held ⟨"",some receiver.span⟩ :: scope
+    let result ← emitAt e.span (.var 0) (.bind drop) (C::K::B::Γ) A (scope := effects)
+    let write ← emitAt e.span (.writeAt fld (.var 2) (.var 0)) (.effect result) (C::K::B::Γ) [0]
+      (scope := effects)
+    let right ← compileExpr fc (held ⟨"",some key.span⟩::held ⟨"",some receiver.span⟩ :: scope) (K::B::Γ) rhs write
+    let middle ← compileExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key right
+    compileExpr fc scope Γ receiver middle
+  | .index _ none .. | .indexWrite _ none .. => throw "internal unresolved computed key"
   | .write _ fld receiver rhs =>
     let B ← exprType fc receiver
     let C ← exprType fc rhs
@@ -1073,100 +1229,11 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List ScopeBinding)
       (scope := effects)
     let right ← compileExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) rhs write
     compileExpr fc scope Γ receiver right
-termination_by e
-decreasing_by
-  all_goals simp_all +zetaDelta
-  all_goals first
-    | decreasing_tactic
-    | (rcases ‹_ ∨ _› with h | h
-       · subst_vars; decreasing_tactic
-       · have := List.sizeOf_lt_of_mem h; omega)
-
-
-/-- Leaving a block drops its local slots simultaneously. Active-name shadowing
-is gated until the export can identify hidden bindings independently. With no
-continuation the body completes rather than returns, producing `undefined`; that
-is emitted as an exit claiming the declared result, attributed to the function
-because an empty body has no statement to point at. -/
-private def leave (pos : Span) (R : Ty Nat) (scope : List ScopeBinding)
-    (tail : Option (Target × List ScopeBinding)) : Compiler Target := do
-  match tail with
-  | none =>
-    let exit ← emitAt pos .undef .ret [] R "completion"
-    return ⟨exit.label, some []⟩
-  | some (target, outer) =>
-    let slots ← outer.mapM fun b => match (names scope).idxOf? b.source.name with
-      | some i => pure i
-      | none => throw s!"internal extraction error: lost outer binding '{b.source.name}'"
-    return ⟨target.label, some slots⟩
-
-/-- Branch binding pushes the actual tested value. For a source variable test,
-map that variable to the pushed value (the same immutable value), exposing its
-proved singleton refinement. Other slots retain their ordinary identities. -/
-private def branchMapping (width : Nat) (tested : Option Nat) (target : Target) : Target :=
-  ⟨target.label, some ((target.mapping.getD (List.range width)).map fun i =>
-    if tested == some i then 0 else i+1)⟩
-
-/-- Keep a pre-existing singleton fact rather than replacing it with the
-branch witness. In particular, an impossible opposite edge must not force a
-contradictory replacement of an otherwise valid immutable binding. -/
-private def testedSlot (scope : List ScopeBinding) (Γ : List (Ty Nat)) (cond : Fragment.Expr) : Option Nat :=
-  do
-    let (i, _) ← conditionVariable scope cond
-    if Γ[i]? == some [1] || Γ[i]? == some [2] then none else some i
-
-/-- Share polarity handling between conditionals and loop heads. The saved
-condition is in slot zero. Only a syntactically identified immutable variable
-may be replaced by the recovered Boolean witness. -/
-private def emitBranch (scope : List ScopeBinding) (Γ : List (Ty Nat)) (cond : Fragment.Expr)
-    (A : Ty Nat) (yes no : Target) : Compiler Target := do
-  if let some (i, tag, equal) := tagConditionVariable scope cond then
-    let some C := Γ[i]? | throw "internal tag-guard slot mismatch"
-    let adapt := fun t =>
-      let mapped := branchMapping scope.length (some i) t
-      ⟨mapped.label, some ((mapped.mapping.getD []).map
-        (fun j => if j == 0 then 0 else j+1))⟩
-    -- The source predicate has already run and all operand claims were checked.
-    -- Reading the same immutable variable observes its tag without repeating
-    -- any source expression or trusting the saved Boolean's annotation.
-    return ← emitAt cond.span (.var (i+1))
-      (.tagBind tag (adapt (if equal then yes else no)) (adapt (if equal then no else yes)))
-      (A::Γ) C "tag-dispatch" (scope := held ⟨"",some cond.span⟩ :: scope)
-  let tested := testedSlot scope Γ cond
-  -- Branch on the saved value; the edge maps discard its older copy and
-  -- retain the new refinement slot supplied by branchBind.
-  let adapt := fun t =>
-    let mapped := branchMapping scope.length tested t
-    ⟨mapped.label, some ((mapped.mapping.getD []).map
-      (fun i => if i == 0 then 0 else i+1))⟩
-  -- Negation is handled by swapping successors in compileCondition, so this
-  -- dispatch always observes the saved operand itself, retaining its read link.
-  emitAt cond.span (.var 0) (.branchBind (adapt yes) (adapt no)) (A::Γ) A
-    (scope := held ⟨"",some cond.span⟩ :: scope)
-
-/-- Facts justified on the path to a short-circuit operand. Only immutable
-source bindings are refined; every generated edge checks this candidate context.
-A true conjunction / false disjunction establishes both operand outcomes. The
-other outcomes deliberately retain the input context rather than compute a join. -/
-private def conditionContext (G : PositiveGraphs.NormalGraph Nat) (scope : List ScopeBinding) (Γ : List (Ty Nat))
-    (cond : Fragment.Expr) (answer : Bool) : List (Ty Nat) :=
-  match cond with
-  | .not _ e => conditionContext G scope Γ e (!answer)
-  | .logical _ andOp left right =>
-    if answer == andOp then
-      conditionContext G scope (conditionContext G scope Γ left answer) right answer
-    else Γ
-  | _ =>
-    if let some (i, tag, equal) := tagConditionVariable scope cond then
-      Γ.set i (BranchRefinement.tagSlice G (Γ[i]?.getD []) tag (answer == equal))
-    else if let some i := testedSlot scope Γ cond then
-      Γ.set i (if answer then [1] else [2])
-    else Γ
 
 /-- Compile compound conditions as short-circuit edges. The full source
 expression still has an independent claimed typing obligation; the runtime
 traverses its operands once instead of evaluating it and then replaying it. -/
-private def compileCondition (fc : SourceClaims.Function) (scope : List ScopeBinding)
+private partial def compileCondition (fc : SourceClaims.Function) (scope : List ScopeBinding)
     (Γ : List (Ty Nat)) (cond : Fragment.Expr) (yes no : Target) : Compiler Target := do
   let simple := do
     let A ← exprType fc cond
@@ -1195,7 +1262,7 @@ private def compileCondition (fc : SourceClaims.Function) (scope : List ScopeBin
     let _ ← closureExpr fc scope Γ cond
     compileCondition fc scope Γ e no yes
   | _ => simple
-termination_by cond
+end
 
 /-- The nearest enclosing loop, with the lexical scope at each destination. -/
 private structure LoopTargets where

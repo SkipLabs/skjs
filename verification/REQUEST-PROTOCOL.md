@@ -618,6 +618,11 @@ The [derived typing forms](PROGRAM-TYPING.md#derived-source-forms) specify their
 proof construction and evaluation order.
 
 Null coalescing uses `{"k":"coalesce","pos":[start,end],"left":...,"right":...}`.
+Element access uses `{"k":"index","pos":[start,end],"e":...,"key":...}` and its
+assignment `{"k":"indexWrite","pos":[start,end],"receiver":...,"key":...,"rhs":...}`:
+the receiver is evaluated, then the key, then the right side. The key's claimed
+type must be one string singleton, which names the field; the key expression
+keeps its own obligation to that claim.
 The overall expression and both operands select exact expression claims. Lowering
 saves the left result in a let slot, then uses nullish testing and `unionVar`
 to check the fallback or return the saved value. False takes the latter path.

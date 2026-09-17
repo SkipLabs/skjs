@@ -193,6 +193,9 @@ partial def expandExpr (aliases : List Alias) (e : Fragment.Expr) : Except Strin
   | .read p f e => return .read p f (← expandExpr aliases e)
   | .write p f r rhs =>
     return .write p f (← expandExpr aliases r) (← expandExpr aliases rhs)
+  | .index p f e key => return .index p f (← expandExpr aliases e) (← expandExpr aliases key)
+  | .indexWrite p f r key rhs =>
+    return .indexWrite p f (← expandExpr aliases r) (← expandExpr aliases key) (← expandExpr aliases rhs)
   | .withValue p fn initial ft bt =>
     return .withValue p (← expandExpr aliases fn) (← expandExpr aliases initial)
       (← expandType aliases ft) (← expandType aliases bt)

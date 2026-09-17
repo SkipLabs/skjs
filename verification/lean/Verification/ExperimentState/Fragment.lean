@@ -146,6 +146,12 @@ inductive Expr where
   | alloc (pos : Span) (names : List String) (es : List Expr)
   | read (pos : Span) (field : String) (e : Expr)
   | write (pos : Span) (field : String) (receiver rhs : Expr)
+  /-- `e[key]`: the receiver, then the key, then the read of the field the
+  key's claimed type names. The decoder leaves the field unresolved; the
+  extractor fills it from the key's claim, a string singleton, and the key's
+  expression obligation must establish it. -/
+  | index (pos : Span) (field : Option String) (e key : Expr)
+  | indexWrite (pos : Span) (field : Option String) (receiver key rhs : Expr)
   /-- Read a local once; assign and return the RHS only when nullish. -/
   | nullishAssign (pos : Span) (name : String) (namePos : Span) (rhs : Expr)
   /-- Assignment to a mutable local, which is an expression: it yields the
@@ -174,6 +180,7 @@ abbrev Expr.app (p : Span) (callee arg : Expr) : Expr := .call p callee [arg]
 def Expr.span : Expr → Span
   | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body => body.span
   | .ifBody p _ _ _ _ | .done p | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
+  | .index p _ _ _ | .indexWrite p _ _ _ _ => p
   | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .cast p _ _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ | .call p _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ => p
 
 /-- One declarator of a `const` or `let`. -/
@@ -269,6 +276,13 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       return (← jStr (← jField f "name"), ← decodeExpr (← jField f "e"))
     return .alloc p (parts.map Prod.fst) (parts.map Prod.snd)
   | "read" => return .read p (← jStr (← jField j "field")) (← decodeExpr (← jField j "e"))
+  | "index" => do
+    CellClaims.fieldsExactly j ["k","pos","e","key"]
+    return .index p none (← decodeExpr (← jField j "e")) (← decodeExpr (← jField j "key"))
+  | "indexWrite" => do
+    CellClaims.fieldsExactly j ["k","pos","receiver","key","rhs"]
+    return .indexWrite p none (← decodeExpr (← jField j "receiver")) (← decodeExpr (← jField j "key"))
+      (← decodeExpr (← jField j "rhs"))
   | "bindWithReceiver" => do
     CellClaims.fieldsExactly j ["k","pos","callee","receiver","args"]
     return .bindWithReceiver p (← decodeExpr (← jField j "callee"))

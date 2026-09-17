@@ -464,6 +464,17 @@ class Gate {
       };
     }
 
+    if (ts.isElementAccessExpression(node)) {
+      if (node.questionDotToken)
+        this.fail(node, "optional element access is outside the fragment");
+      return {
+        k: "index",
+        pos: this.span(node),
+        e: this.expr(node.expression),
+        key: this.expr(node.argumentExpression),
+      };
+    }
+
     if (ts.isTypeOfExpression(node))
       return {
         k: "typeof",
@@ -625,6 +636,14 @@ class Gate {
           rhs: this.expr(node.right),
         };
       }
+      if (ts.isElementAccessExpression(node.left) && !node.left.questionDotToken)
+        return {
+          k: "indexWrite",
+          pos: this.span(node),
+          receiver: this.expr(node.left.expression),
+          key: this.expr(node.left.argumentExpression),
+          rhs: this.expr(node.right),
+        };
       if (
         !ts.isPropertyAccessExpression(node.left) ||
         node.left.questionDotToken
