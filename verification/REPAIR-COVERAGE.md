@@ -44,17 +44,18 @@ of the work remaining.
 
 ## Checkpoint: 17 September 2026
 
-The working-tree baseline is **17/115 verified**, out of 315 selected functions:
-200 SKJS-rejected, 86 gated, 12 unproved. The separate curated run had 55 files,
-223 verified functions, 6 search failures and 16 unavailable checks; the suite
+The working-tree baseline is **21/115 verified**, out of 315 selected functions:
+200 SKJS-rejected, 86 gated, 8 unproved. The separate curated run had 55 files,
+225 verified functions, 6 search failures and 16 unavailable checks; the suite
 run had 55 suites. These are checkpoint results, not permanent expectations;
 the baseline and fresh command output are authoritative.
 
 Recent repair gains were numeric heap predicates (`checkedEvolvingCapture`),
 local nullish assignment (`localFallback`), inferred object replacement
 (`checkedMutableObjectReplacement`), declaration lists (`earlierDeclarator`)
-and object patterns (`inferredFieldDefault`, `checkedStateAfterDefault`):
-11 → 12 → 13 → 14 → 15 → 17.
+object patterns (`inferredFieldDefault`, `checkedStateAfterDefault`) and
+object parameters assumed at their annotation (`clearEffect`, `postCallGuard`,
+`checkedAliasChain`, `checkedAfterWrite`): 11 → 12 → 13 → 14 → 15 → 17 → 21.
 TS observation fixes also improved curated coverage without themselves moving
 this SKJS repair count.
 
@@ -83,6 +84,17 @@ entry after the statement states the bindings. `tests/object-patterns.mts`
 and `ObjectPatternTests.lean` cover it. TypeScript types a literal destructured
 directly with optional properties, so the TS column covers patterns over a
 bound local only; SKJS claims both forms, which is what the census measures.
+Object parameters were then admitted at their annotation. No rule was added:
+`RequestJson.verify_safe` already quantifies over every environment, world and
+heap meeting the input types, and a record parameter is a reference whose
+fields the read and write rules use as for an allocated record. The extractor
+had refused reference-typed inputs by policy; that refusal is gone, the
+interpretation (a conforming JavaScript value is a plain data object, as a
+conforming function respects its contract) is recorded in DESIGN.md, and
+`cells.ts` gains an external cell and an aliased pair whose forged claims are
+refused. Four census rows verified at once; the two others report knowledge
+limitations below.
+
 The other destructuring rows stay out: `identityPatternScalar` now reports
 its nested pattern, and it, `checkedNestedPattern`, `earlierPatternRead`,
 `patternEarlierBinding` and `checkedDeclarationDefault` all destructure
@@ -121,7 +133,8 @@ where to investigate, not a promise that one extension will verify each row.
 
 | Cases | Observed obstruction and additional caveats |
 | --- | --- |
-| `call-effect-boundaries.ts`: `clearEffect`, `postCallGuard`; `captured-read-stability.ts`: `checkedAliasChain`; `field-refinement.ts`: `inferredFieldComparison`; `unsound-refinement.ts`: `assignmentResultSnapshot`, `checkedAfterWrite` | External object parameters. Structural TypeScript annotations do not establish the model's plain heap-object behavior. Getters, proxies and external effects need a justified boundary. Do not simply remove the gate. |
+| `field-refinement.ts`: `inferredFieldComparison` | Object parameters are now assumed at their annotation (see DESIGN.md, the trust boundary); this row's next obstruction is the guard `x.value !== other.zero`, a comparison of a field read against another singleton-typed read rather than a literal, which does not refine the read on the branch. |
+| `unsound-refinement.ts`: `assignmentResultSnapshot` | After the null guard, `const value = (y = x.value)` writes the assigned parameter's private cell, and the observation that `x.value` is a number does not survive that write to the entry of `x.value = null`. The cell is a fresh allocation, so the knowledge rules could keep the fact if they used the allocation's distinctness. |
 | `obj-literal-var-field-growth.ts`: `retainedReceiver` | The exporter reports `fuel-exhausted` for `{ slot: seed }` and every type mentioning `box` or `original`: the object literal's growable field variable has a cyclic saved bound, which the bounded export refuses rather than unrolls (see `testTypeClaimSnapshotUnion`). Fixing the export is only the first gate: the function then aliases a mutable local's object, assigns inside an expression, and compares a numeric field. Only three census functions carry this reason. There is a different, SKJS-rejected function with the same name in `unsound-refinement.ts`. |
 | `captured-read-stability.ts`: `checkedGenericCallResult` | The callee `makeCapturedGenericCell` at extracted span `[551,574)` is refused as `function-generic`; the call's result claim itself exports. The claim language has no generic function type, so an export would have to state the call-site instantiation, and the TS producer refuses the same signature (`generic-arrow`). Beyond that, the extractor binds identifiers only from parameters and local declarations, so an ambient function value is unbound: the same external-value boundary as the object rows above. Four census functions carry `function-generic`. |
 | `captured-read-stability.ts`: `evolvedInferredSnapshotStillString` | General string type outside the supported source types. |
@@ -139,8 +152,10 @@ appear in gated functions' claims are dominated by `void-type` (arrows returning
 `unsupported-type`, `cell-callable` and `nested-object-type`. That is a count of
 unavailable claims, not of next gates: a site the verifier never needs does not
 obstruct, so a gated row may or may not meet one of these after its syntax gate.
-External objects and ambient values require a design decision, not just
-exporter work.
+Ambient values (top-level declarations and generic callees) remain unbound in
+the extractor. Object parameters are assumed at their annotation as arrow
+parameters already were; the rows that carried the old refusal now verify or
+report their next obstruction above.
 
 To retain diagnostics for an investigation, follow [census.sh](census.sh):
 `census.mts --extract` writes per-function sources and an index, one shared SKJS

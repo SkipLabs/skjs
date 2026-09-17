@@ -1541,9 +1541,10 @@ read, then checks a singleton result from that cell through the JSON pipeline. S
 remains future work.
 Source integration also needs explicit property-presence/initialization rules:
 the model's initial function bag does not establish a source `value` field.
-External structural object annotations can admit accessors, so lifting the
-source parameter gate requires an external-value boundary as well. The new
-heap evidence does not relax either restriction.
+Object parameters are admitted at their annotation: the interpretation of a
+structural annotation as a plain data object is part of the caller contract,
+as the arrow interpretation already was (DESIGN.md, the trust boundary). The
+heap evidence is stated over locations and so covers aliased parameters.
 `ObjectCoherence.step_preserves` proves global identity/descriptor coherence
 for the operational machine using an append-only ghost registry, including
 objects nested in code and heap cells. `GraphCoherence.accepted_closed_coherent`

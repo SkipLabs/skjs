@@ -71,11 +71,12 @@ private def observed (R : Ty Nat) : SourceClaims.Function :=
 -- Possible read contents must not be narrowed to null by a supplied claim.
 #guard !ok (check (source false) {claims with exprs := claims.exprs.map fun (pos,c) =>
   if pos == (24,27) then (pos,.ok [0]) else (pos,c)})
--- The source parameter boundary must still reject externally supplied cells.
+-- An externally supplied cell union is admitted at its annotation.
 #guard match extractNormalizedFn table {(source false) with params := [⟨"external",union⟩]}
-    {claims with params := [("external",.ok [4,5])]} with
-  | .error e => e == "cell parameters need an external-value boundary, which is outside the fragment"
-  | .ok _ => false
+    {claims with params := [("external",.ok [4,5])]
+                 envs := claims.envs.map fun pv => (pv.1,("external",Except.ok [4,5]) :: pv.2)} with
+  | .ok _ => true
+  | .error _ => false
 -- A Boolean write fits the first cell but not the null-only alternative.
 -- Extraction succeeds; its independently checked write obligation must fail.
 private def wrongWrite := withBody (.seqBody (12,27)

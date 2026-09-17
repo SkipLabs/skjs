@@ -51,3 +51,27 @@ function singletonCell(): true {
   const cell: { value: true } = { value: true };
   return cell.value;
 }
+
+/**
+ * An object parameter is assumed at its annotation: a reference to a
+ * location whose field holds a Boolean, written and read by the same rules as
+ * a cell allocated here.
+ */
+function externalCell(cell: { value: boolean }): boolean {
+  cell.value = false;
+  return cell.value;
+}
+
+/**
+ * Two object parameters may be the same object. After both writes the first
+ * field holds true only if they differ, so its read is Boolean: a claim that
+ * it is still true is refused.
+ */
+function aliasedParameters(
+  a: { value: boolean },
+  b: { value: boolean },
+): boolean {
+  a.value = true;
+  b.value = false;
+  return a.value;
+}

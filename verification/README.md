@@ -105,7 +105,12 @@ parameters, including a thunk when all parameters are bound. SKJS rejects this
 partial binding; the [incompleteness example](tests/skjs-incomplete/bound-arguments.ts)
 verifies using TypeScript’s claims.
 
-Loops inside closures, external cell parameters, labeled transfers,
+Object parameters are assumed at their annotation like every other input: a
+record annotation means a reference to a location whose fields hold the stated
+types, read and written by the same rules as a record allocated here, and two
+such references may alias. What a JavaScript value must be for that meaning to
+hold is part of the interpreted caller contract, as it is for arrow parameters.
+Loops inside closures, labeled transfers,
 active-name shadowing, other `typeof` comparisons, general strings, and overloads
 are outside it. An initialized `let` is in it: it allocates a private
 cell the source never sees as a value, reading the name reads the cell,

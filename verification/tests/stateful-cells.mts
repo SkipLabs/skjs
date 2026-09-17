@@ -75,7 +75,8 @@ try {
   const written = (a: Ast,n: string,i: number) =>
     expr(stmt(nth(source(a,n).body,i),"effect").e,"write");
   const cases: [string, (a: Ast, c: SkjsClaims) => void][] = [
-    ["cell parameter boundary",(a,c)=>{const t=must(allocation(a,"aliasWrite").annot,"a cell annotation");source(a,"aliasWrite").params[0].type=clone(t);fun(c,"aliasWrite").params[0].type=clone(t);}],
+    ["aliased parameters cannot keep the first write",(a,c)=>{claim(c,"aliasedParameters",stmt(nth(source(a,"aliasedParameters").body,2),"return").e).type=lit("true");}],
+    ["external cell write respects its annotation",(a,c)=>{const e=expr(written(a,"externalCell",0).rhs,"lit");e.lit={a:"null"};claim(c,"externalCell",e).type={top:false,atoms:[{a:"null"}]};}],
     ["initializer subexpression claim",(a,c)=>{claim(c,"aliasWrite",allocField(allocation(a,"aliasWrite").init)).type=lit("true");}],
     ["missing allocation subexpression",(a,c)=>{const e=allocField(allocation(a,"aliasWrite").init); fun(c,"aliasWrite").exprs=fun(c,"aliasWrite").exprs.filter((x) =>x.pos[0]!==e.pos[0]);}],
     ["allocation invariant cannot narrow",(a,c)=>{const t=atom(at(c,"aliasWrite",allocation(a,"aliasWrite").init).atoms[0],"record").fields[0];t.read=lit("true");t.write=lit("true");}],

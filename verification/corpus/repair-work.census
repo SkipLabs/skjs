@@ -1,9 +1,9 @@
 # census: repair-work
-# 17/115 verified, of 315 functions
+# 21/115 verified, of 315 functions
 #   skjs-rejected: 200
 #   gate: 86
-#   verified: 17
-#   unproved: 12
+#   verified: 21
+#   unproved: 8
 #
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofUndefinedFieldAdmitsInitialValue
@@ -291,19 +291,18 @@ skjs-rejected	tests/expect-error/unsound-refinement.ts	stableSpreadMember
 skjs-rejected	tests/expect-error/unsound-refinement.ts	storedLocalAlias
 skjs-rejected	tests/expect-error/unsound-refinement.ts	storedNarrowAlias
 skjs-rejected	tests/expect-error/unsound-refinement.ts	tupleDeclarationDefault
-unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/call-effect-boundaries.ts	clearEffect
-unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/call-effect-boundaries.ts	postCallGuard
-unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/captured-read-stability.ts	checkedAliasChain
-unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/field-refinement.ts	inferredFieldComparison
-unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/unsound-refinement.ts	assignmentResultSnapshot
-unproved:reject: cell parameters need an external-value boundary, which is outside the fragment	tests/expect-error/unsound-refinement.ts	checkedAfterWrite
 unproved:reject: source expression obligation at [185,209): type claim unavailable from producer	tests/expect-error/obj-literal-var-field-growth.ts	retainedReceiver
 unproved:reject: source expression obligation at [551,574): type claim unavailable from producer	tests/expect-error/captured-read-stability.ts	checkedGenericCallResult
+unproved:reject: source incoming edge obligation at [1485,1500): evidence search failed (unsupporte	tests/expect-error/field-refinement.ts	inferredFieldComparison
+unproved:reject: source incoming edge obligation at [196,211): evidence search failed (unsupported 	tests/expect-error/unsound-refinement.ts	assignmentResultSnapshot
 unproved:reject: source type outside the null/undefined/boolean/singleton fragment	tests/expect-error/captured-read-stability.ts	evolvedInferredSnapshotStillString
 unproved:reject: unbound or uninitialized source variable '_'	tests/expect-error/binding-initialization.ts	conditionBeforeLocal
 unproved:reject: unexpected fields in the cell record claim	tests/expect-error/captured-read-stability.ts	checkedPropertyResult
 unproved:reject: unexpected fields in the cell record claim	tests/expect-error/unsound-refinement.ts	identityMemberSnapshot
 verified	tests/expect-error/binding-initialization.ts	earlierDeclarator
+verified	tests/expect-error/call-effect-boundaries.ts	clearEffect
+verified	tests/expect-error/call-effect-boundaries.ts	postCallGuard
+verified	tests/expect-error/captured-read-stability.ts	checkedAliasChain
 verified	tests/expect-error/captured-read-stability.ts	checkedAnnotatedConstField
 verified	tests/expect-error/captured-read-stability.ts	checkedCapturedLocal
 verified	tests/expect-error/captured-read-stability.ts	checkedEvolvingCapture
@@ -320,3 +319,4 @@ verified	tests/expect-error/local-vs-local-refinement.ts	inferredReadNamedNull
 verified	tests/expect-error/local-vs-local-refinement.ts	inferredReadSingleton
 verified	tests/expect-error/logical-compound-flow.ts	localFallback
 verified	tests/expect-error/nullish-coalescing.ts	resultOfFallback
+verified	tests/expect-error/unsound-refinement.ts	checkedAfterWrite

@@ -610,12 +610,17 @@ private def lowered (j : Json) : Except String (Ty Nat) :=
 #guard !ok (lowered (joined [cellWire,wireTy ⟨false,[.str]⟩]))
 #guard !ok (lowered (Json.mkObj [("top",toJson true),("atoms",toJson ([] : List Json))]))
 
--- Mixed unions do not bypass the external-object/callable origin boundary.
-#guard (match extractFn
-    { branchFn true with params := [⟨"external",joined [wireTy ⟨false,[.null]⟩,cellWire]⟩] }
-    { branchClaims true with params := [("external",joined [wireTy ⟨false,[.null]⟩,cellWire])] } with
-  | .error e => e == "cell parameters need an external-value boundary, which is outside the fragment"
-  | .ok _ => false)
+-- An input is assumed at its annotation whatever its type: a nullable cell
+-- parameter is admitted like a primitive or an arrow.
+private def nullableCell : Json := joined [wireTy ⟨false,[.null]⟩,cellWire]
+private def externalFn : Fragment.Fn :=
+  { branchFn true with params := [⟨"external",nullableCell⟩] }
+private def externalEnvs : List (Nat × List (String × Json)) :=
+  (branchClaims true).envs.map fun pv => (pv.1,("external",nullableCell) :: pv.2)
+private def externalClaims : Fragment.Claims :=
+  { branchClaims true with params := [("external",nullableCell)], envs := externalEnvs }
+#guard ok (extractFn externalFn externalClaims)
+#guard ok (do produceSourceJson (toJson (← extractFn externalFn externalClaims).toRequest) 8)
 #guard !ok (lowered (joined [wireTy ⟨false,[.str]⟩,cellWire]))
 
 -- A graph-safe certificate can still violate the source's local interfaces.
@@ -707,8 +712,8 @@ private def overloadClaims : Fragment.Claims :=
   produceSourceJson (toJson r.toRequest) 8)
 
 -- An arrow parameter is assumed at its annotation and may be called; a claim
--- that contradicts the annotation is refused by name, and a cell parameter is
--- still outside the fragment.
+-- that contradicts the annotation is refused by name, and a cell parameter
+-- claimed as an arrow where it is called is refused by proof search.
 private def callerFn : Fragment.Fn :=
   ⟨"caller",(0,1),[⟨"a",trueToNull⟩],wireTy ⟨false,[.null]⟩,
     [.ret (2,9) (.app (4,9) (.var (4,5) "a") (.lit (6,7) (.vbool true)))]⟩
@@ -723,7 +728,9 @@ private def callerClaims : Fragment.Claims :=
 #guard (match extractFn callerFn { callerClaims with params := [("a",wireTy ⟨false,[]⟩)] } with
   | .error e => e == "claimed parameter type differs from the source annotation for 'a'"
   | .ok _ => false)
-#guard !ok (extractFn { callerFn with params := [⟨"a",cellWire⟩] } { callerClaims with params := [("a",cellWire)] })
+#guard !ok (do
+  let r ← extractFn { callerFn with params := [⟨"a",cellWire⟩] } { callerClaims with params := [("a",cellWire)] }
+  produceSourceJson (toJson r.toRequest) 8)
 
 -- Entry allocation replaces exactly the assigned parameter slots. The middle
 -- parameter stays a value; both private cells start with their own argument.

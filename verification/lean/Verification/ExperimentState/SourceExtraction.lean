@@ -1389,17 +1389,17 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
   let ((inputs, R, entry), built) ← (do
     let inputs ← f.params.mapM (fun (p : Fragment.Param) => lower (Fragment.translate p.ty))
     -- A parameter's annotation is the assumption its caller makes, and the
-    -- soundness theorem takes it as given for every value meeting it. A
-    -- primitive or an arrow can be assumed. Callable arguments may expose
-    -- captured cells, so arrow contracts cover admissible future heaps and
-    -- invocation effects rather than promising snapshot contents.
-    -- A cell cannot: a structural object annotation does not rule out
-    -- accessors, so the plain-cell interpretation may be false of a value
-    -- that conforms to the annotation. Cells must be allocated here.
-    let G := SourceTypes.graph (← table)
-    if inputs.any (fun A => A.any fun i => match PositiveRules.expand G [i] with
-        | [.refs _ _] => true | _ => false) then
-      throw "cell parameters need an external-value boundary, which is outside the fragment"
+    -- soundness theorem (`RequestJson.verify_safe`) takes it as given for
+    -- every environment, world and heap meeting it. Each annotation is
+    -- assumed at the model's meaning of its type: a primitive is that value,
+    -- an arrow is a function whose invocations respect its contract over
+    -- admissible heaps, and a record is a reference to a location whose
+    -- fields hold the stated types, which the read and write rules then use
+    -- exactly as for a record allocated here. Two such references may alias;
+    -- the heap rules are stated over locations, so nothing here assumes they
+    -- do not. What a JavaScript value must be for that meaning to hold (a
+    -- plain data object, not an accessor or proxy) is part of the interpreted
+    -- caller contract, as it is for arrows (DESIGN.md, the trust boundary).
     for ((p, A), (name, claimed)) in (f.params.zip inputs).zip fc.params do
       if p.name != name then throw "parameter claim name or order mismatch"
       let B ← SourceClaims.resolve (← table).length claimed

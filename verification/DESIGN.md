@@ -199,7 +199,7 @@ or treating the initializer as a permanent invariant.
 | --- | --- | --- |
 | **Incomparable function signatures are not disjoint — `L-INTER-BOT`.** [Witness](https://github.com/SkipLabs/skjs/blob/bf20814b4c0bfc72305e9e58411e13da68f94bca/docs/deep-dives/issues/tfun-inter-incomparable-not-disjoint.md). | Directly exercises the positive calculus's function intersections. Begin with a calculus witness: one checked constant-null closure inhabits both a null-domain arrow and a Boolean-domain arrow. | Source integration needs richer callable claims and a sound identity/comparison story to reproduce the equality branch. Extensional arrow membership does not establish JavaScript function identity. Do not add intersection completeness or unrestricted arrow-result merging as a prerequisite. |
 | **Numeric false disjointness — `L-LIT`, deep dive G.** [Witness family](https://github.com/SkipLabs/skjs/blob/bf20814b4c0bfc72305e9e58411e13da68f94bca/docs/deep-dives/issues/beyond-precision-numeric-literals.md). | Distinct decimal spellings can denote the same binary64 value, making a claimed unreachable branch live. It tests runtime grounding independently of mutation. | The calculus now models numbers opaquely, and a literal's identity is the bit pattern of the double it denotes, with `-0` normalized, so distinct decimal spellings of one value are one singleton rather than distinct integers. Strict equality against a numeric singleton now filters finite singleton unions using Number::equal; truthiness and arithmetic remain absent. |
-| **Callability/absence, getters and void.** `F-CABSENT`, `ACCESSOR-METHOD`, `L-SEQ`. | The corpus has concrete reachable-never and non-callable-call witnesses. | They require object-shape guarantees, accessor execution, or an explicit distinction between void as a typing convention and undefined as a value. Preserve the external-object boundary; do not trust structural declarations or treat void as a disjoint runtime tag. |
+| **Callability/absence, getters and void.** `F-CABSENT`, `ACCESSOR-METHOD`, `L-SEQ`. | The corpus has concrete reachable-never and non-callable-call witnesses. | They require object-shape guarantees, accessor execution, or an explicit distinction between void as a typing convention and undefined as a value. Object parameters are assumed at their annotation as part of the interpreted caller contract, which is not the same as trusting a structural declaration to exclude accessors at runtime; do not treat void as a disjoint runtime tag. |
 | **Inference-state and expansion failures.** `MR-1`, `C-FREEZE-CACHE`, `L-SUB-TSINST`, `E-EXPKEY`. | Wrong inferred types remain valid verifier targets even when their cause is a cache or substitution bug. | Select a concrete escaping wrong claim whose ground types fit the calculus. This pipeline should check that consequence, not model SKJS caches, rollback or its entire generic inference algorithm. Once a ground consequence is in reach, export the responsible subtype or expansion judgment with the snapshot in force at that judgment and check that operation's contract independently. Universal generic certification needs separate rules; checking one ground instance does not supply it. See [Semantic contracts for SKJS operations](#semantic-contracts-for-skjs-operations). |
 
 ### Completion criteria for every corpus target
@@ -770,10 +770,17 @@ an equivalence theorem for TypeScript records and calculus references. Record
 annotations cannot distinguish data properties from accessors. Establishing
 plain-data allocation is the source gate’s responsibility. The parser accepts
 only an explicit single `value` data property, with no getters, setters, spreads
-or computed keys. Cell parameters remain rejected: an external object needs
-a separate plain-data boundary that its structural annotation cannot establish.
-Arrow parameters are assumed at their source annotation, as part of the caller
-contract. Callable arguments can expose captured cells to an invocation; the
+or computed keys. Parameters are assumed at their source annotation, as part
+of the caller contract, whatever their type: `RequestJson.verify_safe`
+quantifies over every environment, world and heap meeting the input types. A
+record parameter is therefore a reference to a location whose fields hold the
+stated types, used by the same read and write rules as an allocated record;
+two such references may alias, and the heap rules are stated over locations,
+so nothing assumes they do not. That a JavaScript value conforming to a
+structural annotation is such a plain data object, rather than an accessor or
+proxy, is part of how the annotation is interpreted, exactly as a function
+type is interpreted as a function respecting its contract. The interpretation
+is the same trust boundary for both; it is not established by the annotation. Callable arguments can expose captured cells to an invocation; the
 semantic arrow guarantee must therefore hold across admissible future heaps,
 including callback effects. A producer claim that contradicts the annotation
 is refused before proof search. This does not admit record-valued parameters
