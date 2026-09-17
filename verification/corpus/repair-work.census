@@ -1,9 +1,9 @@
 # census: repair-work
-# 27/116 verified, of 319 functions
+# 28/116 verified, of 319 functions
 #   skjs-rejected: 203
 #   gate: 83
-#   verified: 27
-#   unproved: 6
+#   verified: 28
+#   unproved: 5
 #
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofUndefinedFieldAdmitsInitialValue
@@ -293,7 +293,6 @@ skjs-rejected	tests/expect-error/unsound-refinement.ts	storedNarrowAlias
 skjs-rejected	tests/expect-error/unsound-refinement.ts	tupleDeclarationDefault
 unproved:reject: source expression obligation at [185,209): type claim unavailable from producer	tests/expect-error/obj-literal-var-field-growth.ts	retainedReceiver
 unproved:reject: source expression obligation at [551,574): type claim unavailable from producer	tests/expect-error/captured-read-stability.ts	checkedGenericCallResult
-unproved:reject: source incoming edge obligation at [1485,1500): evidence search failed (unsupporte	tests/expect-error/field-refinement.ts	inferredFieldComparison
 unproved:reject: unbound or uninitialized source variable '_'	tests/expect-error/binding-initialization.ts	conditionBeforeLocal
 unproved:reject: unexpected fields in the cell record claim	tests/expect-error/captured-read-stability.ts	checkedPropertyResult
 unproved:reject: unexpected fields in the cell record claim	tests/expect-error/unsound-refinement.ts	identityMemberSnapshot
@@ -313,6 +312,7 @@ verified	tests/expect-error/captured-read-stability.ts	snapshotCapturedLocal
 verified	tests/expect-error/captured-read-stability.ts	stableAnnotatedConstValue
 verified	tests/expect-error/destructuring.ts	checkedStateAfterDefault
 verified	tests/expect-error/destructuring.ts	inferredFieldDefault
+verified	tests/expect-error/field-refinement.ts	inferredFieldComparison
 verified	tests/expect-error/inferred-binding-contract.ts	compatibleInferredReplacement
 verified	tests/expect-error/inferred-binding-contract.ts	unionContractStillNarrows
 verified	tests/expect-error/issue-89-and-or-narrowing.ts	unrelatedFact

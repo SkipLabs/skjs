@@ -981,7 +981,9 @@ facts; two parameters carry no such link, so a write through one forgets what
 was known about the other. Ordinary calls discard heap observations and read
 links. Immutable values and
 slot equalities survive. Boolean guards refine current cells through checked
-read links, including links carried through receiver temporaries. Ordinary
+read links, including links carried through receiver temporaries; a strict
+comparison does so when the other operand's claimed type is a singleton and
+the operand is effect-free, a literal, a name or a field read, never a call. Ordinary
 closure proofs require a supplied observation to follow uniformly from the
 storage invariant; they cannot retain temporary facts from closure creation.
 [Program typing](PROGRAM-TYPING.md#source-observation-checkpoints) owns the precise

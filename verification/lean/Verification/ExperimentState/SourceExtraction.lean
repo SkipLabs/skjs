@@ -374,14 +374,23 @@ private def readOnly : Fragment.Expr → Bool
   | .alloc .. | .write .. | .assign .. | .nullishAssign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
   | .callWithReceiver .. | .call .. => false
 
+/-- The other operand of a singleton comparison, when saving the tested read
+before it changes nothing: a literal, a name, or one field read. Each is
+effect-free, so the two operands' values are the same in either order. The
+singleton itself comes from the operand's claimed type, which its expression
+obligation must establish; a call or a write could change the tested cell. -/
+private def pureOperand : Fragment.Expr → Bool
+  | .lit .. | .var .. | .read _ _ (.var ..) => true
+  | _ => false
+
 /-- Save the plain read in a singleton comparison. The other operand is
-necessarily a literal; moving that literal across the read has no effect. -/
+effect-free; moving it across the read has no effect. -/
 private def readGuard (scope : List ScopeBinding) :
     Fragment.Expr → Option (String × Fragment.Expr × Fragment.Expr)
   | .not pos e => (readGuard scope e).map fun (snapshot,r,c) => (snapshot,r,.not pos c)
   | .singletonTest pos tag equal testLeft left right => do
     let (r,lit) := if testLeft then (left,right) else (right,left)
-    let .lit .. := lit | none
+    guard (pureOperand lit)
     let snapshot ← match r with
       | .read _ fld (.var _ name) => do
         let _ ← resolve scope name
