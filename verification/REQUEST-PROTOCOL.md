@@ -155,11 +155,17 @@ The evidence file is an object with one field, `certificate`, a list of
 `NodeEvidence` objects. Each node supplies its expression derivation tree and
 one subtype-evidence list per outgoing edge. A derivation node names the
 [typing rule](PROGRAM-TYPING.md#judgments-and-constructor-views) it applies:
-`var`, `nul`, `undef`, `tru`, `fls`, `truLit`, `flsLit`, `funE`, `app`, `letE`, `alloc`,
+`var`, `nul`, `undef`, `tru`, `fls`, `truLit`, `flsLit`, `numLit`, `num`,
+`funE`, `app`, `letE`, `alloc`,
 `read`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
 `unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, or `sub`. `ifTrue` and `ifFalse` are the two answers of the single
 shape-test rule `ifTag`, split so that the evidence records which answer it
-relies on; `truLit` and `flsLit` are the Boolean singleton introductions. Expression sequents repeat their
+relies on; `truLit` and `flsLit` are the Boolean singleton introductions, and
+`numLit` and `num` the numeric ones, a literal at its own singleton and at the
+family. These names are not written anywhere: `RequestJson.lean` derives
+ToJson/FromJson for `Rule`, so this list is the inductive's constructors and a
+rule added there extends the protocol. `verification/tests/rule-inventory.mts`
+holds the two to the same set. Expression sequents repeat their
 contexts, terms and result types. The consumer checks these against the request;
 this redundancy cannot substitute a different program or different claims.
 

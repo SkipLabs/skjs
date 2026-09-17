@@ -351,7 +351,19 @@ implied by the union-label congruence theorem.
 
 `PositiveCertificates.lean` checks finite tables, arrow evidence, and explicit
 structural proof trees. Its checker uses no semantic oracle or unbounded proof
-search. `check_sound` and `check_complete` prove:
+search.
+
+A proof is one of three forms. `core` carries a `Certificate`: the finite
+candidate relation and its arrow evidence. `subset` is plain union inclusion of
+the source labels in the target's. `trans` names an intermediate type and holds
+a proof on each side. All three are accepted, which is worth stating separately
+from what the producer builds: `CertificateProducer` never emits `trans`, and
+[PROGRAM-TYPING.md](PROGRAM-TYPING.md#producing-evidence-from-supplied-claims)
+records that its search does not enumerate transitivity derivations. That is a
+restriction on search, not on the accepted language — a certificate written by
+hand or by another producer may use `trans`, and the consumer checks it.
+
+`check_sound` and `check_complete` prove:
 
 $$
 G\vdash S\le T\quad\Longleftrightarrow\quad

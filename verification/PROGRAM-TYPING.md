@@ -68,43 +68,98 @@ $$
 \frac{}{\Gamma\vdash_G \mathsf{false}:\mathsf{boolLit}(\mathsf{false})}.
 $$
 
+A numeric literal has the same pair and only that pair: `numLit` gives it its
+own singleton, and `num` gives it the family. Neither reaches a union above
+either one; that is the subsumption rule's work, exactly as for a Boolean. A
+literal claimed at $\mathsf{Number}$ need not have a singleton label in the graph to be coerced from,
+which is why the family rule is separate rather than derived.
+
 $$
-\frac{\forall(A,B)\in L.\;\Gamma,x:A\vdash_G t:B}
-     {\Gamma\vdash_G \lambda x.t:\bigwedge_{(A,B)\in L}(A\to B)}
+\frac{}{\Gamma\vdash_G n:\mathsf{numLit}(n)}
 \qquad
-\frac{\Gamma\vdash_G f:\bigwedge_{(C,D)\in L}(C\to D)
-      \quad(A,B)\in L\quad\Gamma\vdash_G a:A}
-     {\Gamma\vdash_G f(a):B}
+\frac{}{\Gamma\vdash_G n:\mathsf{Number}}.
 $$
+
+Functions take ordered parameter lists. Write $\vec A$ for a signature's
+parameter types and $|\vec A|$ for its length. Every signature of a created
+function has the descriptor's arity, and its body is typed under all of that
+signature's parameters followed by the captured bindings:
+
+$$
+\frac{\forall(\vec A,B)\in L.\;|\vec A|=\mathit{arity}
+      \quad\forall(\vec A,B)\in L.\;\Gamma,\vec x{:}\vec A\vdash_G t:B}
+     {\Gamma\vdash_G \lambda\vec x.t:\bigwedge_{(\vec A,B)\in L}(\vec A\to B)}
+\qquad
+\frac{\Gamma\vdash_G f:\bigwedge_{(\vec C,D)\in L}(\vec C\to D)
+      \quad(\vec A,B)\in L\quad\forall i.\;\Gamma\vdash_G a_i:A_i}
+     {\Gamma\vdash_G f(\vec a):B}
+$$
+
+Application requires an exact argument count: $|\vec a|=|\vec A|$ is part of
+selecting $(\vec A,B)$ from $L$. An empty parameter list is a zero-argument
+call, not an absent one. Optional and rest parameters need further rules.
 
 $$
 \frac{\Gamma\vdash_G a:A\quad\Gamma,x:A\vdash_G b:B}
      {\Gamma\vdash_G \mathsf{let}\ x=a\ \mathsf{in}\ b:B}
 $$
 
-Here $\lambda x.t$ denotes source function creation, implemented as `funE t`: it
+Here $\lambda\vec x.t$ denotes source function creation, implemented as `funE t`: it
 allocates an object before any invocation. `let` has its own operational constructor, `letE a b`. It evaluates `a`,
 then substitutes the resulting value into `b` in one nonallocating step.
 Neither a function value nor a function-type graph label is needed. The
 producer and consumer use this constructor directly; lambda application no
 longer has a special binding-certificate route.
 
-$$
-\frac{\Gamma\vdash_G a:A}{\Gamma\vdash_G\mathsf{alloc}(a):\mathsf{Ref}(A)}
-\qquad
-\frac{\Gamma\vdash_G a:\mathsf{Ref}(A)}{\Gamma\vdash_G\mathsf{read}(a):A}
-$$
+An object is a finite map from field names to heap locations, fixed at
+allocation. Let $\varphi$ range over field maps $\overline{f{:}A}$ with distinct
+names, and write $\mathsf{Ref}(\varphi)$ for the record clause carrying those
+invariants. `alloc` allocates one fresh location per named field, and the names
+being distinct is what makes the result a map from them:
 
 $$
-\frac{\Gamma\vdash_G a:\mathsf{Ref}(A)\quad\Gamma\vdash_G a':A}
-     {\Gamma\vdash_G\mathsf{write}(a,a'):\mathsf{Null}}
+\frac{\overline{f}\ \text{distinct}\qquad\forall i.\;\Gamma\vdash_G a_i:A_i}
+     {\Gamma\vdash_G\{\overline{f=a}\}:\mathsf{Ref}(\overline{f{:}A})}
+$$
+
+`read` and `write` name the field they act on and require it of the receiver's
+contract. A contract constrains only the fields it names, so a receiver may
+carry fields the rule never mentions — width subtyping is this openness, not a
+separate rule:
+
+$$
+\frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Ref}(\varphi)\quad(f{:}A)\in\varphi}
+     {\Gamma\vdash_G a.f:A}
 \qquad
+\frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Ref}(\varphi)
+      \quad(f{:}A)\in\varphi\quad\Gamma\vdash_G a':A}
+     {\Gamma\vdash_G a.f\leftarrow a':\mathsf{Null}}
+$$
+
+Both rules read $\varphi$ off a single reference clause. Eliminating a
+conjunction of record contracts to such a view can be justified by subsumption;
+no direct multi-contract program rule is assumed, so a field supplied only by a
+second operand of an intersection needs such a view before these rules apply.
+
+$$
 \frac{\Gamma\vdash_G t:A\quad\operatorname{check}(G,A,B,p)=\mathsf{true}}
      {\Gamma\vdash_G t:B}
 $$
 
+One object can carry both a field map and invocation code; the graph clause
+$\mathsf{Callable}(\varphi;L)$ combines them. Four rules give it the same four
+operations, and they are implemented and proved, not proposed: `makeCallable`
+allocates it, typing each field's initializer and each signature's body exactly
+as the two rules above do; `callCallable`, `readCallable` and `writeCallable`
+then invoke, read and write it under the same premises as `app`, `read` and
+`write`. Allocation and invocation remain distinct steps: creation allocates
+the object and checks the bodies, without running them.
+
 For branching, $\operatorname{Answers}_G(A,k,q)$ checks that every expanded
-clause of $A$ gives the same Boolean answer $q$ to shape test $k$:
+clause of $A$ gives the same known Boolean answer $q$ to test $k$. Shape
+tests have an answer determined by the clause's shape; numeric singleton
+equality also examines its bits. A broad number clause has no fixed answer
+to that equality, so it establishes neither outcome:
 
 $$
 \frac{\Gamma(x)=A\quad\operatorname{Answers}_G(A,k,q)
@@ -161,9 +216,6 @@ value justifies the changed binding, and all others retain their meanings.
 It neither refines mutable heap contents nor supplies general union splitting.
 Graph edges use the common [observation-based refinement contract](#refinement-under-an-observed-outcome)
 below, currently connected to Boolean dispatch.
-
-Reference rules use a single invariant operand; eliminating a conjunction to such a reference view
-can be justified by subsumption. No direct multi-contract program rule is assumed.
 
 ### Eliminating a variable's union type
 
@@ -668,10 +720,20 @@ values already read into immutable slots or equalities between copied values.
 The [assertion layer](SEMANTICS.md#what-is-asserted-and-what-a-heap-change-can-touch)
 splits in two. $\Pi$ is a conjunction of **equalities** — $x\in\{c_1,\dots,c_k\}$
 between a variable and constants, and $x=y$ between two variables — and mentions
-only the environment. $\Sigma$ is a list of points-to atoms $x\mapsto R$ and
-$x\mapsto y$ — the cell $x$ names currently holds one of those constants, or the
-value of $y$ — and so mentions the heap. Neither relation carries ownership:
-$\mapsto$ here is duplicable and says nothing about what else the heap holds.
+only the environment. $\Sigma$ is a list of points-to atoms $x.f\mapsto R$ and
+$x.f\mapsto y$ — the cell field $f$ of the object $x$ names currently holds one
+of those constants, or the value of $y$ — and so mentions the heap. Neither
+relation carries ownership: $\mapsto$ here is duplicable and says nothing about
+what else the heap holds.
+
+Every atom names a field: `HeapFacts.Fact` and `HeapLinks.Link` each carry one,
+and `HeapExpressionRules` reads it off the term rather than taking it from
+evidence, so a certificate cannot assert a fact about a field the program never
+touched. The `allocated` rule establishes one finite-content atom per named
+field when every initializer slot has a known finite set of values; an ordinary
+allocation alone makes no such assertion. The rules below are
+written in the one-field spelling, $x\mapsto R$, which is the general rule at
+whichever field its term names; nothing in them is specific to a field name.
 
 Checking an expression is then a **Hoare typing**: an ordinary typing carrying a
 precondition and a postcondition. Write
@@ -1820,7 +1882,11 @@ The rules below extend the first proposal's callable introduction,
 application, property access, and subsumption. They retain the ordinary
 judgment $\Gamma\vdash_G t:A$; exception bounds, construction contracts, and the
 stateful judgments are explicit additions. These are proposed rules, not claims
-about what is already implemented or proved.
+about what is already implemented or proved. The four that *are* implemented
+and proved are the ones stated above under
+[Judgments and constructor views](#judgments-and-constructor-views) —
+`makeCallable`, `callCallable`, `readCallable` and `writeCallable`, over the
+$\mathsf{Callable}(\varphi;L)$ clause. Nothing below is in force.
 
 The principal distinction is between checking an invocation implementation,
 allocating an object carrying that implementation, and using the resulting

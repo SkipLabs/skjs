@@ -1,0 +1,75 @@
+HasTy  (ProgramTyping.lean)
+  var : Γ[i]? = some A → HasTy G Γ (.var i) A
+  nul : Represents G A .nul → HasTy G Γ .nul A
+  undef : Represents G A .undef → HasTy G Γ .undef A
+  tru : Represents G A .bool → HasTy G Γ .tru A
+  fls : Represents G A .bool → HasTy G Γ .fls A
+  truLit : Represents G A (.boolLit true) → HasTy G Γ .tru A
+  flsLit : Represents G A (.boolLit false) → HasTy G Γ .fls A
+  numLit : Represents G A (.numLit b) → HasTy G Γ (.num b) A
+  num : Represents G A .num → HasTy G Γ (.num b) A
+  funE : Represents G F (.arrs L) → (∀ p ∈ L, p.1.length = arity) → (∀ p ∈ L, HasTy G (p.1 ++ Γ) b p.2) → HasTy G Γ (.make (.closure arity b) .nul) F
+  makeCallable {parts : List (String × Ty ι × Tm)} : Represents G F (.callable (parts.map fun p => (p.1, p.2.1)) [] L) → (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → (∀ p ∈ L, p.1.length = arity) → (∀ p ∈ L, HasTy G (p.1 ++ Γ) b p.2) → HasTy G Γ (.makeAt (.closure arity b) (parts.map Prod.fst) (parts.map fun p => p.2.2)) F
+  callCallable : HasTy G Γ f F → Represents G F (.callable P Ps L) → ((xs : List (Ty ι × Tm)).map Prod.fst,B) ∈ L → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → HasTy G Γ (.call f (xs.map Prod.snd)) B
+  readCallable : HasTy G Γ a F → Represents G F (.callable P Ps L) → (f, A) ∈ P → HasTy G Γ (.readAt f a) A
+  writeCallable : HasTy G Γ a F → Represents G F (.callable P Ps L) → (f, A) ∈ P → HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
+  app : HasTy G Γ f F → Represents G F (.arrs L) → ((xs : List (Ty ι × Tm)).map Prod.fst, B) ∈ L → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → HasTy G Γ (.call f (xs.map Prod.snd)) B
+  letE : HasTy G Γ a A → HasTy G (A :: Γ) b B → HasTy G Γ (.letE a b) B
+  alloc {parts : List (String × Ty ι × Tm)} : (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) []) → HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
+  read : HasTy G Γ a Ref → Represents G Ref (.refs fs []) → (f, A) ∈ fs → HasTy G Γ (.readAt f a) A
+  write : HasTy G Γ a Ref → Represents G Ref (.refs fs []) → (f, A) ∈ fs → HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
+  ifBool : HasTy G Γ c C → Answers G C .isBool true → HasTy G Γ t A → HasTy G Γ e A → HasTy G Γ (.ite c t e) A
+  ifKnown : HasTy G Γ c C → Represents G C (.boolLit q) → HasTy G Γ (if q then t else e) A → HasTy G Γ (.ite c t e) A
+  ifBoolVar : Γ[i]? = some C → Answers G C .isBool true → Represents G T (.boolLit true) → Represents G F (.boolLit false) → HasTy G (Γ.set i T) t A → HasTy G (Γ.set i F) e A → HasTy G Γ (.ite (.var i) t e) A
+  ifTag : Γ[i]? = some A → Answers G A tag q → (q = true → HasTy G Γ u B) → (q = false → HasTy G Γ e B) → HasTy G Γ (.ite (.test tag (.var i)) u e) B
+  unionVar : Γ[i]? = some C → (∀ a ∈ C, HasTy G (Γ.set i [a]) t A) → HasTy G Γ t A
+  sub : HasTy G Γ t A → PositiveCertificates.check G A B cert = true → HasTy G Γ t B
+
+Rule  (ProgramCertificates.lean)
+  var
+  nul
+  undef
+  tru
+  fls
+  truLit
+  flsLit
+  numLit
+  num
+  funE
+  app
+  letE
+  alloc
+  read
+  write
+  ifBool
+  ifTrue
+  ifFalse
+  ifKnown (answer : Bool)
+  ifBoolVar (trueType falseType : Ty ι)
+  unionVar (slot : Nat)
+  makeCallable
+  callCallable
+  readCallable
+  writeCallable
+  sub (proof : PositiveCertificates.Proof ι)
+
+Proof  (PositiveCertificates.lean)
+  core (certificate : Certificate ι)
+  subset
+  trans (middle : List ι) (left right : Proof ι)
+
+ArrowCert  (PositiveCertificates.lean)
+  empty
+  source (p : List (List ι) × List ι)
+  union (pre : List (List ι)) (a b : List ι) (suffix : List (List ι)) (left right : ArrowCert ι)
+  combine (b b' : List ι) (left right : ArrowCert ι)
+
+StepEvidence  (HeapExpressionRules.lean)
+  ordinary (proof : ProgramCertificates.Evidence ι)
+  pure (proof : ProgramCertificates.Evidence ι)
+  created (proof : ProgramCertificates.Evidence ι)
+  typedRead (slot : Nat) (element : List (String × Ty ι)) (proof : ProgramCertificates.Evidence ι)
+  observedRead (slot : Nat) (contents : List Literal)
+  knownValue (slot : Nat) (contents : List Literal)
+  allocated (proof : ProgramCertificates.Evidence ι)
+  written (receiver value : Nat) (contents : List Literal) (proof : ProgramCertificates.Evidence ι)

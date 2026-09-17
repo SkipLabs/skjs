@@ -163,6 +163,7 @@ typecheck() {
 
 if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Front-end types" typecheck
+  run_test "Rule inventory" node verification/tests/rule-inventory.mts
   run_test "Source boundaries" node verification/tests/unsupported.mts "$VERIFIER"
 
   BASE=verification/tests/stateful-source/basic.ts
