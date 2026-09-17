@@ -61,6 +61,33 @@ cp target/host/dev/skjs target/host/dev/skjs.<label>
 - **One error per definition**: SKJS reports only the first type error per function/definition unless passing `--keep-going` (best-effort — fatal errors may still hide subsequent ones)
 - **Match TypeScript**: SKJS should not be more permissive than TypeScript, but must not follow TypeScript when TypeScript is unsound. When in doubt, verify with `npx tsc --strict --noEmit`
 
+## Resolving checker/verifier disagreements
+
+- The semantic model is the reference: an allocated location has one fixed
+  world type. Its current contents may narrow or change within that type;
+  assignment must not change the location's type. Inference may determine a
+  symbolic contract, but must preserve all earlier obligations when resolving it.
+- Trace acceptance to the actual checker condition and retained inference state,
+  then trace the exported fields through their consumers. An internal field
+  named `declaredType` or a producer success flag is not itself a justification.
+- Distinguish point-specific contents, enforced write contracts and candidate
+  invariants. Do not synthesize a union, weaken an obligation, or reinterpret a
+  point type as a lifetime contract just to make a repair example verify. A
+  separately found proof of the program does not validate SKJS's own reasoning.
+- When SKJS accepts a write without maintaining the required contract, treat it
+  as a checker defect to investigate, not an exporter feature to accommodate.
+  Correct export omissions when the checker already has the justification;
+  repair the checker when that justification is missing. Existing acceptance
+  tests record behavior and do not override the specified invariant.
+- Respect task scope: pipeline-only work preserves SKJS behavior unless the user
+  authorizes checker repairs. Once authorized, a demonstrated contract violation
+  does not require another policy choice from the user. Keep the checker repair
+  separate from unrelated fragment extensions.
+- Report the original target's actual outcome. If a new feature works but its
+  motivating repair still does not verify, say so explicitly, name the remaining
+  obstruction, and continue within scope or identify what prevents progress.
+  Passing suites and a recorded limitation do not make that target complete.
+
 ## Detailed Guides
 
 Read these before starting the relevant task:

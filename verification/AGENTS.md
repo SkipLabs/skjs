@@ -9,7 +9,13 @@ needs to change things here without breaking the suite's shape.
 
 Preserve SKJS acceptance, inference and diagnostics while doing this experiment.
 Keep rejected safe programs as incompleteness findings; only behavior-preserving
-claim extraction changes belong here. [DESIGN.md](DESIGN.md) owns this boundary.
+claim extraction changes belong here. An explicit user request to repair SKJS
+changes that task scope; keep the repair separate from pipeline extensions.
+[DESIGN.md](DESIGN.md) owns the experiment boundary. Follow the root
+[checker/verifier disagreement rules](../AGENTS.md#resolving-checkerverifier-disagreements):
+a fixed location contract is distinct from current contents, and faithful export
+must not invent a justification the checker never established. Before attributing
+a refusal to an exported field, trace the actual consumer of that field.
 
 For repair-coverage work, start with [REPAIR-COVERAGE.md](REPAIR-COVERAGE.md):
 measurement, current checkpoint, inspected blockers and extension pitfalls.

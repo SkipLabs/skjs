@@ -44,8 +44,8 @@ of the work remaining.
 
 ## Checkpoint: 17 September 2026
 
-The working-tree baseline is **24/115 verified**, out of 315 selected functions:
-200 SKJS-rejected, 83 gated, 8 unproved. The separate curated run had 57 files,
+The baseline is **26/116 verified**, out of 319 selected functions:
+203 SKJS-rejected, 83 gated, 7 unproved. The separate curated run had 56 files,
 235 verified functions, 7 search failures and 13 unavailable checks; the suite
 run had 57 suites. These are checkpoint results, not permanent expectations;
 the baseline and fresh command output are authoritative.
@@ -59,6 +59,15 @@ object parameters assumed at their annotation (`clearEffect`, `postCallGuard`,
 `satisfiesSnapshot`, `nonNullScalarSnapshot`): 11 → 12 → 13 → 14 → 15 → 17 → 21 → 24.
 TS observation fixes also improved curated coverage without themselves moving
 this SKJS repair count.
+
+The retained-binding-contract repair (`a1a84a9d`, following baseline tests in
+`56a4575a`) added four regressions: two compatible
+cases verify, and two incompatible replacements reject. Of the previous 315
+functions, `evolvedInferredSnapshotStillString` moved from unproved to
+SKJS-rejected; none moved to verified. Thus 24 → 26 reflects the two new positive
+regressions, not additional coverage of the previous corpus. All 57 pipeline
+suites, the full Lean build and full SKJS tests passed; curated expectations
+had zero mismatches or runner errors.
 
 Declaration lists (`const a = …, b = …;` and the `let` form) are lowered in
 Lean under the statement's one entry, left to right, each initializer in the
@@ -98,12 +107,21 @@ limitations below.
 
 Strings are admitted on the same terms as numbers: an opaque `str` value with
 `strLit` singletons, `isStr` and `strEq` tags, interned labels, heap atoms,
-and both producers. The whole tree still proves with no new axiom. The census
-count did not move: the one string row is the evolving-contract case below, and
-the other rows that mention strings also need `for` loops, arithmetic, defaults
-or `this`. `tests/strings.mts` and `StringEqualityTests.lean` cover it; the
-old string boundary fixtures in `tests/unsupported/` were deleted, and the
-precision witness moved to `tests/skjs-unsound/`.
+and both producers. That extension alone did not increase repair coverage.
+`evolvedInferredSnapshotStillString` exposed a checker defect: an uncaptured
+write replaced its flow type with string without checking the retained number
+contract. No common number/string invariant was computed. The source adapter
+uses the exported point `type` for its inferred storage candidate, not the raw
+`declared` field; changing the latter would not fix this refusal.
+
+The checker repair now rejects that string assignment. This is a newly rejected
+repair regression, not a newly verified function. Concrete inferred contracts
+are enforced without requiring capture, and writes through open inference
+variables constrain the same variable. Do not resurrect the discarded optional
+export-contract workaround or synthesize a union to certify the original
+acceptance. See the [agent decision rules](../AGENTS.md#resolving-checkerverifier-disagreements).
+`tests/strings.mts` and `StringEqualityTests.lean` still cover string support;
+the precision witness lives in `tests/skjs-unsound/`.
 
 Type assertions (`e as T`, `e satisfies T`, `e!`) lower to a node returning
 the operand unchanged at the assertion's own claim, with `T` an obligation on
@@ -154,7 +172,6 @@ where to investigate, not a promise that one extension will verify each row.
 | `unsound-refinement.ts`: `assignmentResultSnapshot` | After the null guard, `const value = (y = x.value)` writes the assigned parameter's private cell, and the observation that `x.value` is a number does not survive that write to the entry of `x.value = null`. The cell is a fresh allocation, so the knowledge rules could keep the fact if they used the allocation's distinctness. |
 | `obj-literal-var-field-growth.ts`: `retainedReceiver` | The exporter reports `fuel-exhausted` for `{ slot: seed }` and every type mentioning `box` or `original`: the object literal's growable field variable has a cyclic saved bound, which the bounded export refuses rather than unrolls (see `testTypeClaimSnapshotUnion`). Fixing the export is only the first gate: the function then aliases a mutable local's object, assigns inside an expression, and compares a numeric field. Only three census functions carry this reason. There is a different, SKJS-rejected function with the same name in `unsound-refinement.ts`. |
 | `captured-read-stability.ts`: `checkedGenericCallResult` | The callee `makeCapturedGenericCell` at extracted span `[551,574)` is refused as `function-generic`; the call's result claim itself exports. The claim language has no generic function type, so an export would have to state the call-site instantiation, and the TS producer refuses the same signature (`generic-arrow`). Beyond that, the extractor binds identifiers only from parameters and local declarations, so an ambient function value is unbound: the same external-value boundary as the object rows above. Four census functions carry `function-generic`. |
-| `captured-read-stability.ts`: `evolvedInferredSnapshotStillString` | Strings are in the fragment now; the row's obstruction is the evolving inferred contract. SKJS exports `value: number` as the binding's declared type at the entry of `value = "s"` and then admits the string write, so under the protocol the storage contract is `number` and the write fails it. That is SKJS's own inference evolving past its stated declaration, which the exporter would have to report as the contract SKJS actually enforces. |
 | `binding-initialization.ts`: `conditionBeforeLocal` | Reads top-level `seed` before declaring an inner `seed`. Context extraction carries the declaration, but lowering lacks that external value. Do not diagnose this solely as local shadowing. |
 | `captured-read-stability.ts`: `checkedPropertyResult`; `unsound-refinement.ts`: `identityMemberSnapshot` | Nested record claims refused. Both also have external objects; the latter additionally compares object identities. Nested record support alone is insufficient. |
 | `definite-assignment-tvar-soundness.ts`: `typeofInferredFieldAfterAssignment`, `typeofUndefinedFieldAdmitsInitialValue`; `test_ternary_refinements.ts`: `bothBranchesInitialize` | Uninitialized `let`. Requires an initialization discipline; seeding every private cell with undefined must not weaken the declared write contract or allow a read before initialization. |
