@@ -125,6 +125,22 @@ extension class TType {
     })
   }
 
+  // A retained type must keep its symbolic operands when eager intersection
+  // inspected provisional inference or an unresolved recursive premise. Solver
+  // queries can still use inter directly for their point-specific answer.
+  static fun interForTypeConstruction(
+    subst: mutable Subst,
+    tenv: TEnv,
+    ty1: TType,
+    ty2: TType,
+  ): TType {
+    readStamp = subst.typeQueryReadStamp();
+    result = TType::inter(subst, tenv, ty1, ty2);
+    if (subst.canCacheTypeQuerySince(readStamp)) result else {
+      TType::unexpandedInter(ty1, ty2)
+    }
+  }
+
   private static fun inter_(
     subst: mutable Subst,
     tenv: TEnv,

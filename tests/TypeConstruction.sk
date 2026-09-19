@@ -26,8 +26,8 @@ fun testFrozenParameterIntersectionRetainsBothOperands(): void {
   subst.!freezeCandidates = false;
   subst.grow(tenv, b, observationNumber(), SKJS.Contravariant());
   result = SKJS.TType::isSub(subst, tenv, observationNumber(), mapped);
-  // Pin the premature empty intersection before dependency preservation.
-  SKTest.expectEq(false, result is SKJS.STOk());
+  // The intersection must acquire number when the second candidate grows.
+  SKTest.expectEq(true, result is SKJS.STOk());
 }
 
 fun constructionField(ty: SKJS.TType): SKJS.TField {
@@ -58,7 +58,7 @@ fun testFrozenFieldUnionRetainsWriteContract(): void {
   subst.grow(tenv, b, observationNumber(), SKJS.Contravariant());
   for (field in Array[named, indexed]) {
     result = SKJS.TType::isSub(subst, tenv, observationNumber(), field.set);
-    SKTest.expectEq(false, result is SKJS.STOk());
+    SKTest.expectEq(true, result is SKJS.STOk());
   }
 }
 
@@ -101,7 +101,7 @@ fun testFrozenCallbackUnionRetainsInputContracts(): void {
     combined.optionalParams[0],
   ]) {
     result = SKJS.TType::isSub(subst, tenv, observationNumber(), input);
-    SKTest.expectEq(false, result is SKJS.STOk());
+    SKTest.expectEq(true, result is SKJS.STOk());
   }
 }
 

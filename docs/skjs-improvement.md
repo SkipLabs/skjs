@@ -418,6 +418,36 @@ retain identical diagnostics: array 0.712 → 0.689 s, large skolem 1.008 → 0.
 and recursive EagerCollection 4.805 → 4.547 s. These single paired runs establish
 no new slowdown in the measured workloads, not a general performance guarantee.
 
+### Retained intersections in type constructors
+
+The same loss of dependency also occurred before the constrained-parameter
+shortcut: substituting candidates into `T & U` eagerly intersected their current
+contents. Object union write contracts and callback union inputs did likewise.
+For open candidates initially holding number and string, those constructors
+could retain `never` even after legal growth of the second candidate added
+number. Native tests exercise the actual constructors, including named/indexed
+field setters and callback bounds, receivers, required and optional parameters.
+These are algebra counterexamples, not established source-program exploits.
+
+`interForTypeConstruction` retains the original symbolic intersection when the
+existing query-dependency policy prevents reuse of an eager result. The
+parameter-substitution fold and object/callback union constructors use it.
+Temporary solver queries still use ordinary intersection. The distinction
+prevents a retained contract from silently becoming a snapshot of provisional
+contents; it does not change an allocated runtime location's world type.
+
+This is a bounded consumer repair, not completion of R2/R3c. The helper inherits
+the existing cache policy's limits, including the remaining argument about
+transitive substitution stability. Other materializing consumers, including
+object intersection read projections and constrained-parameter construction,
+remain to be audited.
+
+Validation: 204 checker tests and 65 verifier suites pass; the curated corpus
+remains at 278 verified with zero unexpected outcomes. Paired gates preserve
+identical diagnostics: array 0.892 → 0.687 s, large skolem 1.040 → 0.992 s,
+recursive EagerCollection 5.021 → 4.598 s. These single paired runs show no
+slowdown on the measured workloads, not a general performance guarantee.
+
 ### Remaining work and completion criteria
 
 1. **Reusable judgments.** Recursive subtype/intersection assumptions now

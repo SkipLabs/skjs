@@ -495,7 +495,12 @@ class TType private {
         | None() -> TType::fromTParam(this.pos, tparam)
         | Some(ty) -> ty
         };
-        !clause1 = TType::inter(subst, tenv, clause1, paramTy)
+        !clause1 = TType::interForTypeConstruction(
+          subst,
+          tenv,
+          clause1,
+          paramTy,
+        )
       };
       clause0.stypes match {
       | None() -> clause1

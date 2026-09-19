@@ -99,7 +99,7 @@ extension class TField {
     // The union should be processed first, it leads to better inference
     get = TType::union(subst, tenv, x.get, y.get);
     set = if (tenv.expandInter) {
-      TType::inter(subst, tenv, x.set, y.set)
+      TType::interForTypeConstruction(subst, tenv, x.set, y.set)
     } else {
       TType::unexpandedInter(x.set, y.set)
     };
@@ -122,7 +122,7 @@ extension class TField {
     y: TField,
   ): ?TField {
     get = TType::union(subst, tenv, x.get, y.get);
-    set = TType::inter(subst, tenv, x.set, y.set);
+    set = TType::interForTypeConstruction(subst, tenv, x.set, y.set);
     isOptional = x.isOptional || y.isOptional;
     Some(
       TField{
@@ -274,7 +274,8 @@ extension class TFun {
       | (None(), None()) -> None()
       | (None(), Some(x)) -> Some(x)
       | (Some(x), None()) -> Some(x)
-      | (Some(x), Some(y)) -> Some(TType::inter(subst, tenv, x, y))
+      | (Some(x), Some(y)) ->
+        Some(TType::interForTypeConstruction(subst, tenv, x, y))
       };
       clauses.push(tparam1 with {cstr});
     };
@@ -296,10 +297,10 @@ extension class TFun {
     | (other, NoThis()) ->
       other
     | (ImplicitClass(t1), ImplicitClass(t2)) ->
-      ImplicitClass(TType::inter(subst, tenv, t1, t2))
+      ImplicitClass(TType::interForTypeConstruction(subst, tenv, t1, t2))
     | (tp1, tp2) ->
       Explicit(
-        TType::inter(
+        TType::interForTypeConstruction(
           subst,
           tenv,
           tp1.tyOpt().fromSome(),
@@ -333,7 +334,8 @@ extension class TFun {
         }
       };
       p = (p1opt, p2opt) match {
-      | (Some(p1), Some(p2)) -> TType::inter(subst, tenv, p1, p2)
+      | (Some(p1), Some(p2)) ->
+        TType::interForTypeConstruction(subst, tenv, p1, p2)
       | (Some(p), None())
       | (None(), Some(p)) ->
         p
@@ -365,7 +367,8 @@ extension class TFun {
         spread2elt
       };
       p = (p1opt, p2opt) match {
-      | (Some(p1), Some(p2)) -> TType::inter(subst, tenv, p1, p2)
+      | (Some(p1), Some(p2)) ->
+        TType::interForTypeConstruction(subst, tenv, p1, p2)
       | (Some(p), None())
       | (None(), Some(p)) ->
         p
@@ -375,7 +378,8 @@ extension class TFun {
       optionalParams.push(p)
     };
     spreadParam = (f1.spreadParam, f2.spreadParam) match {
-    | (Some(ty1), Some(ty2)) -> Some(TType::inter(subst, tenv, ty1, ty2))
+    | (Some(ty1), Some(ty2)) ->
+      Some(TType::interForTypeConstruction(subst, tenv, ty1, ty2))
     | (spread @ Some _, None())
     | (None(), spread) ->
       spread
