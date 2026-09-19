@@ -459,4 +459,35 @@ fun testRestLayoutCommitmentRollsBackWithAlternative(): void {
   SKTest.expectEq(saved.version, subst.version);
 }
 
+// Alias/class constraint probes may solve throwaway variables while a surrounding
+// materialization is observing its real dependencies. Those speculative writes
+// must neither block the observation nor escape into the owner.
+@test
+fun testDetachedTypeArgumentProbeDoesNotBlockObservation(): void {
+  subst = observationSubst();
+  observed = subst.gen(SKJS.PosRange::none);
+  subst.!values[observed.id] = SKJS.SVOpen(observationNumber());
+  ownerVersion = subst.version;
+  result = subst.withCommittedTypeReads<Bool>(scratch -> {
+    probe = scratch.cloneForTypeArgumentProbe();
+    speculative = probe.gen(SKJS.PosRange::none);
+    probe.grow(
+      mutable SKJS.TEnvLight{
+        context => probe.context,
+        results => probe.results,
+      },
+      speculative,
+      observationString(),
+      SKJS.Contravariant(),
+    );
+    _ = scratch.peekRaw(observed);
+    Some(true)
+  });
+  SKTest.expectEq(true, result is SKJS.TRReady(true));
+  SKTest.expectEq(true, subst.isClosed(observed));
+  // Only committing the observed binding mutates the owner; speculative probe
+  // allocation/growth lives on the detached clone.
+  SKTest.expectEq(ownerVersion + 1, subst.version);
+}
+
 module end;

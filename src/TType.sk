@@ -728,7 +728,17 @@ class TType private {
         key = tenv.expansionCacheKey(subst, name, targs);
         subst.seenExpansion.maybeGet(key) match {
         | None() ->
-          expandedType = tenv.instantiate(subst, subst, name, targs);
+          // instantiate may normalize shape-inspecting alias bodies in a
+          // private Subst. Establish every candidate payload that computation
+          // inspects in THIS owner before publishing either the result or the
+          // cache entry. Symbolic arguments that are merely carried through are
+          // not inspected and remain open.
+          expandedType = tenv.materializeTypeRead(
+            subst,
+            name.pos,
+            (scratch, readEnv) ->
+              readEnv.instantiate(scratch, scratch, name, targs),
+          );
           subst.!seenExpansion[key] = expandedType;
           expandedType
         | Some(expandedType) -> expandedType

@@ -28,6 +28,6 @@ function observedNestedIndexedNumber(
 }
 
 function observedIndexedRejectsWrongResult(xs: readonly number[]): string {
-  // @ts-expect-error Type of returned value is not assignable to the function's return type
+  // @ts-expect-error
   return observedIndexed(xs);
 }

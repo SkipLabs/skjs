@@ -220,6 +220,30 @@ mutable class Subst private {
     this.readObservation.isSome()
   }
 
+  // Constraint compatibility during alias/class instantiation is guidance, not
+  // authority for the materialized expansion. During an observed expansion it
+  // therefore needs a detached speculative state: inheriting readObservation
+  // would make the probe's own inference writes block an otherwise symbolic
+  // expansion. Nothing from this clone is transferred back. Keep this method
+  // restricted to TypeArgumentCheck::ProbeTypeArguments.
+  mutable fun cloneForTypeArgumentProbe(): mutable this {
+    mutable Subst{
+      context => this.context,
+      results => this.results,
+      seenSub => SortedSet[],
+      seenInter => SortedMap[],
+      seenUnion => SortedMap[],
+      seenExpansion => SortedMap[],
+      version => this.version,
+      semanticEpoch => this.semanticEpoch,
+      values => this.values,
+      origins => this.origins,
+      freezeCandidates => this.freezeCandidates,
+      nextSkolemId => -1,
+      ppNames => this.ppNames,
+    }
+  }
+
   // Read-only traversals that do not install materialized type facts use this
   // immutable view instead of the tracing live-state accessors.
   readonly fun snapshot(): SubstSnapshot {

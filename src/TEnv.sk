@@ -17,7 +17,12 @@ base class TypeArgumentCheck {
   fun substitution(subst: mutable Subst): mutable Subst {
     this match {
     | ValidateTypeArguments() -> subst
-    | ProbeTypeArguments() -> subst.clone()
+    | ProbeTypeArguments() ->
+      if (subst.isObservingTypeReads()) {
+        subst.cloneForTypeArgumentProbe()
+      } else {
+        subst.clone()
+      }
     }
   }
 }
@@ -217,6 +222,51 @@ base class TEnv{
     targs: TArgs,
   ): ExpansionKey {
     ExpansionKey(this.typeDefinitionIdentity(tcenvb, name), targs)
+  }
+
+  // Materialize a shape-sensitive type result against the candidate owner that
+  // supplied its symbolic operands. The computation runs in isolated observed
+  // state; every candidate payload it actually inspects is committed atomically
+  // before the TType escapes. A TCEnv owns its live Subst; a Subst owns itself.
+  // Declaration-only/light environments have no candidate owner and retain the
+  // ordinary fresh-state behavior.
+  //
+  // This is deliberately narrower than making normalization use live inference
+  // everywhere. The callback may preserve symbolic members without inspecting
+  // them; only inspected payloads are pinned. A blocked materialization is not
+  // allowed to fall back to an answer computed from private inference.
+  fun materializeTypeRead(
+    tcenvb: mutable TCEnvBase,
+    pos: PosRange,
+    read: (mutable Subst, TEnv) -> TType,
+  ): TType {
+    owner: ?mutable Subst = tcenvb match {
+    | tcenv @ TCEnv _ -> Some(tcenv.subst)
+    | subst @ Subst _ -> Some(subst)
+    | _ -> None()
+    };
+    owner match {
+    | None() -> read(Subst::mcreate(tcenvb), this)
+    | Some(subst) ->
+      readEnv = this.forTypeReadObservation();
+      subst.withCommittedTypeReads<TType>(scratch ->
+        Some(read(scratch, readEnv))
+      ) match {
+      | TRReady(value) -> value
+      | TRUnavailable() ->
+        invariant_violation("A mandatory type materialization cannot be unavailable")
+      | TRBlocked() ->
+        fatalError(
+          Array[
+            (
+              pos,
+              "A type projection or expansion could not be established without changing inference; add an explicit type annotation",
+            ),
+          ],
+          SKJSCode(9037),
+        )
+      }
+    }
   }
 
   // Given a type name and type arguments, first retrieves the type
@@ -1929,9 +1979,12 @@ base class TEnv{
         SKJSCode(9032),
       )
     | TAKeyOf(ty) ->
-      subst = Subst::mcreate(tcenvb);
       targetType = this.normalize(tcenvb, ty);
-      this.keyOfType(subst, targetType, pos)
+      this.materializeTypeRead(
+        tcenvb,
+        pos,
+        (scratch, readEnv) -> readEnv.keyOfType(scratch, targetType, pos),
+      )
     | tafun @ TAFun _ ->
       tfuns = this.normalizeFun(tcenvb, pos, tafun);
       TType::single(TObject::createCallWithPos(tfuns, pos))
@@ -2260,9 +2313,13 @@ base class TEnv{
       | TAPrim(TPKNum()) ->
         // T[number] requires an established shape. A generic bound is not
         // an exact result type for every instantiation of the parameter.
-        subst = Subst::mcreate(tcenvb);
         objType = this.normalize(tcenvb, tyObj);
-        this.numberIndexedType(subst, objType, pos)
+        this.materializeTypeRead(
+          tcenvb,
+          pos,
+          (scratch, readEnv) ->
+            readEnv.numberIndexedType(scratch, objType, pos),
+        )
       | _ ->
         fatalError(
           Array[
