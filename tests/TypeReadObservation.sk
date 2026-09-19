@@ -272,4 +272,88 @@ fun testNestedForeignCandidateStateIsRefused(): void {
   SKTest.expectEq(true, subst.isOpen(tv));
 }
 
+// A saved candidate store can agree with the observation while its cached
+// answers have never contributed to that observation's read frame. The caches
+// below are deliberately poisoned fixtures, not claimed valid subtype facts.
+@test
+fun testObservedRestoreCannotImportOwnerCaches(): void {
+  subst = observationSubst();
+  num = observationNumber();
+  str = observationString();
+  pos = SKJS.PosRange::none;
+  key = SKJS.ExpansionKey(
+    SKJS.TypeDefinitionIdentity(pos.fileName, "ObservedAlias", 0),
+    SKJS.TArgs(Array[]),
+  );
+  subst.!seenSub = SortedSet[(num, str)];
+  subst.!seenInter[(num, str)] = num;
+  subst.!seenUnion[(num, str)] = num;
+  subst.!seenExpansion[key] = str;
+  saved = subst.save();
+  result = subst.withCommittedTypeReads<SKJS.TType>(scratch -> {
+    scratch.restore(saved);
+    SKTest.expectEq(true, scratch.seenSub.isEmpty());
+    SKTest.expectEq(true, scratch.seenInter.isEmpty());
+    SKTest.expectEq(true, scratch.seenUnion.isEmpty());
+    SKTest.expectEq(true, scratch.seenExpansion.isEmpty());
+    Some(num)
+  });
+  SKTest.expectEq(true, result is SKJS.TRReady _);
+  // Scratch cleanup does not rewrite the live owner's inference caches.
+  SKTest.expectEq(saved.seenSub, subst.seenSub);
+  SKTest.expectEq(saved.seenInter, subst.seenInter);
+  SKTest.expectEq(saved.seenUnion, subst.seenUnion);
+  SKTest.expectEq(saved.seenExpansion, subst.seenExpansion);
+}
+
+@test
+fun testObservedLocalRestoreKeepsInspectedDependencies(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  num = observationNumber();
+  str = observationString();
+  subst.!values[tv.id] = SKJS.SVOpen(num);
+  result = subst.withCommittedTypeReads(scratch -> {
+    observed = scratch.peekRaw(tv);
+    scratch.!seenSub = SortedSet[(num, str)];
+    saved = scratch.save();
+    scratch.restore(saved);
+    SKTest.expectEq(true, scratch.seenSub.isEmpty());
+    observed
+  });
+  SKTest.expectEq(true, result is SKJS.TRReady _);
+  SKTest.expectEq(true, subst.isClosed(tv));
+}
+
+@test
+fun testNestedObservedRestoreCannotImportOwnerCaches(): void {
+  subst = observationSubst();
+  num = observationNumber();
+  str = observationString();
+  subst.!seenSub = SortedSet[(num, str)];
+  saved = subst.save();
+  result = subst.withCommittedTypeReads<SKJS.TType>(scratch -> {
+    nested = scratch.clone();
+    nested.restore(saved);
+    SKTest.expectEq(true, nested.seenSub.isEmpty());
+    Some(num)
+  });
+  SKTest.expectEq(true, result is SKJS.TRReady _);
+}
+
+@test
+fun testOrdinaryRestoreStillRestoresInferenceCaches(): void {
+  subst = observationSubst();
+  num = observationNumber();
+  str = observationString();
+  subst.!seenSub = SortedSet[(num, str)];
+  subst.!seenInter[(num, str)] = num;
+  saved = subst.save();
+  subst.!seenSub = SortedSet[];
+  subst.!seenInter = SortedMap[];
+  subst.restore(saved);
+  SKTest.expectEq(saved.seenSub, subst.seenSub);
+  SKTest.expectEq(saved.seenInter, subst.seenInter);
+}
+
 module end;

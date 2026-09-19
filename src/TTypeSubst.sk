@@ -247,10 +247,23 @@ mutable class Subst private {
     this.!semanticEpoch = nextSemanticEpoch;
     this.!values = saved.values;
     this.!origins = saved.origins;
-    this.!seenSub = saved.seenSub;
-    this.!seenInter = saved.seenInter;
-    this.!seenUnion = saved.seenUnion;
-    this.!seenExpansion = saved.seenExpansion;
+    this.readObservation match {
+    | Some(_) ->
+      // Equal candidate bindings do not establish a saved cache's provenance.
+      // The save may come from the live owner, before this observation began;
+      // importing it would let a cache hit bypass the observation's read set.
+      // Even local saves are discarded here: SavedSubst carries no read-frame
+      // identity. The shared frame retains every dependency already inspected.
+      this.!seenSub = SortedSet[];
+      this.!seenInter = SortedMap[];
+      this.!seenUnion = SortedMap[];
+      this.!seenExpansion = SortedMap[]
+    | None() ->
+      this.!seenSub = saved.seenSub;
+      this.!seenInter = saved.seenInter;
+      this.!seenUnion = saved.seenUnion;
+      this.!seenExpansion = saved.seenExpansion
+    }
   }
 
   static private fun observationScratch(
