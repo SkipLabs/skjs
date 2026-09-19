@@ -882,4 +882,62 @@ fun testFrozenSubstitutionCanSimplifyClosedCandidate(): void {
   SKTest.expectEq(Some(tv), mapped.getSingleVar());
 }
 
+// Restoring a computation mode cannot discharge a provisional read.
+@test
+fun testFrozenReadDependencySurvivesModeExit(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  inner = subst.gen(SKJS.PosRange::none);
+  outer = subst.gen(SKJS.PosRange::none);
+  subst.grow(tenv, inner, observationNumber(), SKJS.Contravariant());
+  subst.grow(tenv, outer, SKJS.TType::var(inner), SKJS.Covariant());
+  stamp = subst.typeQueryReadStamp();
+  subst.!freezeCandidates = true;
+  result = SKJS.TType::isSub(
+    subst,
+    tenv,
+    SKJS.TType::var(outer),
+    observationNumber(),
+  );
+  subst.!freezeCandidates = false;
+  SKTest.expectEq(true, result is SKJS.STOk());
+  SKTest.expectEq(true, subst.isClosed(outer));
+  SKTest.expectEq(true, subst.isOpen(inner));
+  // Pin the eligibility bug after the frozen scope ends.
+  SKTest.expectEq(true, subst.canCacheTypeQuerySince(stamp));
+  subst.grow(tenv, inner, observationString(), SKJS.Contravariant());
+  later = SKJS.TType::isSub(
+    subst,
+    tenv,
+    SKJS.TType::var(outer),
+    observationNumber(),
+  );
+  SKTest.expectEq(false, later is SKJS.STOk());
+}
+
+@test
+fun testFrozenCloneDependencySurvivesModeExitAndRestore(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  tv = subst.gen(SKJS.PosRange::none);
+  subst.grow(tenv, tv, observationNumber(), SKJS.Contravariant());
+  saved = subst.save();
+  stamp = subst.typeQueryReadStamp();
+  scratch = subst.clone();
+  scratch.!freezeCandidates = true;
+  _ = scratch.get(tenv, tv, SKJS.Covariant());
+  scratch.!freezeCandidates = false;
+  subst.restore(saved);
+  // Neither scratch disposal nor rollback establishes its provisional read.
+  SKTest.expectEq(true, subst.canCacheTypeQuerySince(stamp));
+  fresh = subst.typeQueryReadStamp();
+  _ = SKJS.TType::isSub(
+    subst,
+    tenv,
+    observationNumber(),
+    SKJS.TType::top(SKJS.PosRange::none),
+  );
+  SKTest.expectEq(true, subst.canCacheTypeQuerySince(fresh));
+}
+
 module end;
