@@ -184,8 +184,58 @@ fun testUncommittedLiteralIntersectionDoesNotBecomeStale(): void {
   fresh = subst.clone();
   fresh.!seenInter = SortedMap[];
   recomputed = SKJS.TType::inter(fresh, tenv, literal, object);
-  // Pin reuse of the literal's pre-commitment tuple shape.
-  SKTest.expectEq(false, reused == recomputed);
+  // A later commitment must give the same result as a fresh query.
+  SKTest.expectEq(true, reused == recomputed);
+}
+
+@test
+fun testSubtypeLifetimeFollowsCallbackVariance(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  pos = SKJS.PosRange::none;
+  resultSource = subst.gen(pos);
+  argumentTarget = subst.gen(pos);
+  resultTarget = subst.gen(pos);
+  for (tv in Array[resultSource, argumentTarget, resultTarget]) {
+    subst.grow(tenv, tv, observationNumber(), SKJS.Contravariant())
+  };
+  callback = (arg, ret) ->
+    SKJS.TType::single(
+      SKJS.TObject::createCall(
+        SKJS.TFuns::singleFun(
+          SKJS.TFun(
+            Array[],
+            SKJS.NoThis(),
+            Array[arg],
+            Array[],
+            None(),
+            ret,
+            SKJS.CGNodes(SortedSet[]),
+          ),
+          pos,
+        ),
+      ),
+    );
+  source = callback(observationNumber(), SKJS.TType::var(resultSource));
+  target = callback(
+    SKJS.TType::var(argumentTarget),
+    SKJS.TType::var(resultTarget),
+  );
+  SKTest.expectEq(
+    true,
+    SKJS.TType::isSub(subst, tenv, source, target) is SKJS.STOk(),
+  );
+  // Contravariance makes the target's argument a source dependency.
+  SKTest.expectEq(true, subst.isClosed(argumentTarget));
+  SKTest.expectEq(true, subst.isClosed(resultSource));
+  SKTest.expectEq(true, subst.isOpen(resultTarget));
+  subst.grow(tenv, resultTarget, observationString(), SKJS.Contravariant());
+  reused = SKJS.TType::isSub(subst, tenv, source, target);
+  fresh = subst.clone();
+  fresh.!seenSub = SortedSet[];
+  recomputed = SKJS.TType::isSub(fresh, tenv, source, target);
+  SKTest.expectEq(true, reused is SKJS.STOk());
+  SKTest.expectEq(true, recomputed is SKJS.STOk());
 }
 
 module end;

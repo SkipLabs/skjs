@@ -87,16 +87,11 @@ extension class TType {
     }
   }
 
-  // Caching is correct for compound types that contain TVars (but not bare
-  // TVars, which are excluded below). inter_ expands TVars via
-  // expandToClauses with Covariant(), which seals them (SVOpen -> SVClosed
-  // via Subst::get). Once sealed, a TVar cannot grow, so the cached result
-  // remains valid for the rest of the computation. Bare TVars are excluded
-  // because inter_ handles them specially (adding constraints or creating
-  // unexpanded intersections) without sealing. During a candidate freeze,
-  // get may return an open binding without sealing it. Track the actual reads,
-  // including scratch descendants, and publish only when no unsealed binding
-  // was inspected. Queries on fixed data keep their ordinary cache behavior.
+  // Exact materialization reads both operands covariantly, establishing the
+  // inspected candidate payloads in the live substitution. Uninspected members
+  // remain symbolic. Frozen reads and uncommitted literal defaults are tracked
+  // as provisional and cannot publish. Bare TVars use symbolic constraint
+  // shortcuts and are excluded from this cache.
   static fun inter(
     subst: mutable Subst,
     tenv: TEnv,
@@ -186,9 +181,9 @@ extension class TType {
     subst.introduceTypeQueryAssumption(TQIntersection(ty1, ty2));
     clauses1 = ty1.expandToClauses(subst, tenv, Covariant());
     clauses2 = ty2.expandToClauses(subst, tenv, Covariant());
-    // TODO: These speculative isSub checks use subst directly. They only
-    // involve concrete types (expandPrim produces e.g. Number, not TVars),
-    // so TVar growth cannot occur. If this changes, consider using clone().
+    // Returning the primitive requires a live subtype justification against
+    // the object's constraint, which may itself contain inference candidates.
+    // Keep its commitments; a discarded clone's success is not sufficient.
     (clauses1.primKind(), clauses2.getObject()) match {
     | (Some(primKind), Some(stype)) ->
       TType::isSub(

@@ -28,7 +28,7 @@ mutable class TypeQueryFrame{
 // Shared with scratch descendants and deliberately outside rollback state.
 mutable class TypeQueryReads{
   mutable unsealed: Int = 0,
-  mutable frozenUnsealed: Int = 0,
+  mutable provisional: Int = 0,
   mutable mutations: Int = 0,
   mutable recursive: Int = 0,
   frames: mutable Vector<mutable TypeQueryFrame> = mutable Vector[],
@@ -356,15 +356,21 @@ mutable class Subst private {
   }
 
   // Capture immediately before a query. Track both all unsealed reads (for
-  // a caller still frozen at publication) and reads made while frozen (even
-  // if a nested check restores the mode). Counters include scratch descendants
+  // a caller still frozen at publication) and provisional materializations
+  // (frozen reads or default literal shapes). Counters include scratch descendants
   // and are never restored with substitution state.
   readonly fun typeQueryReadStamp(): (Int, Int, Int) {
     (
       this.queryReads.unsealed,
       this.queryReads.recursive,
-      this.queryReads.frozenUnsealed,
+      this.queryReads.provisional,
     )
+  }
+
+  // A materialized answer used provisional contents that were not committed.
+  // This evidence survives mode changes, scratch disposal, and rollback.
+  mutable fun recordProvisionalTypeRead(): void {
+    this.queryReads.!provisional = this.queryReads.provisional + 1
   }
 
   mutable fun recordRecursiveTypeQuery(assumption: TypeQueryAssumption): void {
@@ -407,7 +413,7 @@ mutable class Subst private {
         frame.dependencyDepth >= frame.depth
       }) &&
       this.queryReads.recursive == stamp.i1 &&
-      this.queryReads.frozenUnsealed == stamp.i2 &&
+      this.queryReads.provisional == stamp.i2 &&
       (!this.freezeCandidates || this.queryReads.unsealed == stamp.i0)
   }
 
@@ -419,7 +425,7 @@ mutable class Subst private {
       // caller decides whether to retain an answer. Keep the read's mode,
       // including in scratch descendants, rather than only the final mode.
       if (this.freezeCandidates) {
-        this.queryReads.!frozenUnsealed = this.queryReads.frozenUnsealed + 1
+        this.recordProvisionalTypeRead()
       }
     };
     this.readObservation.each(frame -> frame.record(tvar, value));

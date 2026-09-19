@@ -104,7 +104,11 @@ class ArrayLitTyping() {
   ): TType {
     ArrayLitTyping::arrayLitCommittedType(subst, tenv, arrLit) match {
     | Some(ty) -> ty
-    | None() -> ArrayLitTyping::arrayLitDefaultType(arrLit)
+    | None() ->
+      // The default tuple is guidance until the literal chooses a representation.
+      // A cache or retained constructor must not freeze this temporary shape.
+      subst.recordProvisionalTypeRead();
+      ArrayLitTyping::arrayLitDefaultType(arrLit)
     }
   }
 
