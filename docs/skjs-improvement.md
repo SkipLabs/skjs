@@ -321,11 +321,52 @@ validity problem. The global memo replacement was withdrawn; its safe and
 efficient replacement is still required. Full-suite success alone did not
 detect this cost, so the array workload must accompany future cache changes.
 
+### Recursive assumptions and reusable query answers
+
+The actual subtype wrapper admitted a context leak: a query justified by an
+explicit `number <: string` recursive assumption was cached, then succeeded
+again without that assumption. This is a native protocol counterexample, not
+an identified source program. `TypeReadObservation.sk` exercises the actual
+wrapper and keeps an independent positive query inside the same context.
+
+Subtype and intersection computations now have nested query scopes. A scope
+records which recursive premises it introduced and the outermost active scope
+whose premise it consumed. A descendant answer depending on an ancestor is
+not published. Only a successful enclosing computation may discharge its own
+premises. Premises from outside the active query tree remain unresolved;
+failed or exceptional computations cannot discharge their own premises.
+These dependencies survive scratch cloning and rollback. The frozen-candidate
+read requirement still applies independently.
+
+The scope stack is nested, so the outermost unresolved owner suffices for
+publication eligibility: any inner owner is completed or conservatively
+marked unresolved before that scope returns. This records proof-context
+lifetime without copying an entire substitution snapshot for each cache key.
+It relies on the existing coinductive algorithm; it does not prove that
+algorithm, ordinary substitution stability, or every materialized consumer.
+
+A first attempt that disabled publication after any recursive cut timed out
+on the array workload at 20 seconds and was withdrawn before commit. Merely
+tracking actual cuts is insufficient: completed recursive computations must
+be able to discharge their premises and remain reusable.
+
+Validation: all 195 checker tests and 65 verifier suites pass. The curated
+corpus remains at 278 verified functions with zero unexpected outcomes.
+Three paired array runs give medians of 0.345 s before and 0.692 s after,
+with identical diagnostics; the minimal control remains about 0.215 s.
+The ten largest fixtures also retain identical diagnostics. Most have similar
+cost, but `instanceof-generic-skolem-args.ts` rises from 0.444 s to 1.043 s in
+the single paired large-fixture run. This is a measured cost of withholding
+conditional sub-results, not a claim of performance neutrality. Keep both
+fixtures as gates for subsequent dependency-tracking or memo-promotion work.
+Do not regain that cost by publishing conditional answers without a justified
+scope or by ignoring mutation/rollback when promoting deferred answers.
+
 ### Remaining work and completion criteria
 
-1. **Reusable judgments.** Separate a completed independent answer from an
-   answer conditional on recursive assumptions and from an inference proposal.
-   Track semantic dependencies and context, including transitive candidate
+1. **Reusable judgments.** Recursive subtype/intersection assumptions now
+   have explicit publication scopes. Extend the dependency argument to
+   substitution changes and inference proposals, including transitive candidate
    reads. Closing an outer variable is not transitive stability. Invalidation
    cannot retract an answer already installed in a consumer.
 2. **Durable consumers.** Audit successful subtype consumers, expression and
@@ -469,7 +510,7 @@ result already materialized from the wrong state.
 | Path | What the source audit establishes |
 | --- | --- |
 | `seenUnion` | `TType.union` combines symbolic instances and clauses; `TObject.union` retains branches. The shape-inspecting `TField.union` and `TFun.union` helpers belong to subsequent branch projection, not this cache's construction path. No freeze-window cache fix follows merely from those helpers having the same operation name. |
-| `seenSub` / `seenInter` | Frozen candidate queries do not publish entries. Ordinary reads seal directly inspected candidates; untouched nested types can remain symbolic. This is a local justification, not a transitive proof for every subtype shortcut and materialized projection. |
+| `seenSub` / `seenInter` | Recursive premises must be discharged before publication; frozen queries that read unsealed bindings do not publish entries. Ordinary reads seal directly inspected candidates; untouched nested types can remain symbolic. This is a local justification, not a transitive proof for every subtype shortcut and materialized projection. |
 | `seenExpansion` | Both `TType.expandToVectors` and `collectTVars` cache `instantiate` results by resolved declaration and symbolic arguments. Cache-key identity does not establish that the result remains symbolic. The previous source comment claimed only `keyof` could inspect arguments; that inventory was incomplete. |
 | `instantiate` | Creates a separate `Subst` initialized from the caller's state. Its values/caches can diverge, and `Subst.mcreate` does not copy `freezeCandidates`. A seal in that substitution is not a seal in the caller. Returning symbolic arguments is sufficient only for branches that actually preserve them. |
 | `keyof`, numeric indexed access and `Closed<T>` | Their normalizers create fresh substitution state and inspect expanded operands. Bounds/shape restrictions can make an outcome conservative or reject it, but the successful cases need an explicit transfer argument. Neither the fresh state nor an unchanged parent version supplies that argument. |

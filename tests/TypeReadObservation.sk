@@ -677,10 +677,9 @@ fun testRecursiveSubtypeMemoScope(): void {
   assumed = tenv with {seenSub => SortedSet[(subst.version, number, string)]};
   conditional = SKJS.TType::isSub(subst, assumed, number, string);
   SKTest.expectEq(true, conditional is SKJS.STOk());
-  // Pin the existing leak before the repair: a conditional result is reused
-  // after the assumption has gone away.
+  // The conditional result must not escape its recursive context.
   outside = SKJS.TType::isSub(subst, tenv, number, string);
-  SKTest.expectEq(true, outside is SKJS.STOk());
+  SKTest.expectEq(false, outside is SKJS.STOk());
 }
 
 @test
@@ -694,6 +693,88 @@ fun testIndependentSubtypeInsideRecursiveContextCanMemoize(): void {
   result = SKJS.TType::isSub(subst, assumed, number, top);
   SKTest.expectEq(true, result is SKJS.STOk());
   SKTest.expectEq(true, subst.seenSub.contains((number, top)));
+}
+
+@test
+fun testRecursiveIntersectionMemoScope(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  number = observationNumber();
+  string = observationString();
+  assumed = tenv with {seenInter => SortedSet[(number, string)]};
+  deferredIntersection = SKJS.TType::inter(subst, assumed, number, string);
+  SKTest.expectEq(true, deferredIntersection.getSingleInter().isSome());
+  outside = SKJS.TType::inter(subst, tenv, number, string);
+  SKTest.expectEq(true, outside.isBottom());
+}
+
+@test
+fun testRecursiveQueryInCloneSurvivesRollback(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  number = observationNumber();
+  string = observationString();
+  assumed = tenv with {seenSub => SortedSet[(subst.version, number, string)]};
+  stamp = subst.typeQueryReadStamp();
+  scratch = subst.clone();
+  saved = scratch.save();
+  _ = SKJS.TType::isSub(scratch, assumed, number, string);
+  scratch.restore(saved);
+  SKTest.expectEq(false, subst.canCacheTypeQuerySince(stamp));
+  // Only computations that consumed the conditional answer are excluded.
+  fresh = subst.typeQueryReadStamp();
+  SKTest.expectEq(true, subst.canCacheTypeQuerySince(fresh));
+}
+
+// Protocol test: a descendant cannot publish its ancestor's premise, while a
+// successful enclosing computation can discharge the premise it introduced.
+@test
+fun testCompletedRecursiveQueryDischargesOwnPremise(): void {
+  subst = observationSubst();
+  premise = SKJS.TQSubtype(
+    subst.version,
+    observationNumber(),
+    observationString(),
+  );
+  independent = subst.withTypeQuery(() -> {
+    stamp = subst.typeQueryReadStamp();
+    subst.introduceTypeQueryAssumption(premise);
+    nested = subst.withTypeQuery(() -> {
+      childStamp = subst.typeQueryReadStamp();
+      subst.recordRecursiveTypeQuery(premise);
+      (subst.canCacheTypeQuerySince(childStamp), true)
+    });
+    SKTest.expectEq(false, nested);
+    (subst.canCacheTypeQuerySince(stamp), true)
+  });
+  SKTest.expectEq(true, independent);
+}
+
+@test
+fun testAbandonedRecursiveQueryDoesNotDischargePremise(): void {
+  subst = observationSubst();
+  premise = SKJS.TQSubtype(
+    subst.version,
+    observationNumber(),
+    observationString(),
+  );
+  stamp = subst.typeQueryReadStamp();
+  caught = false;
+  try {
+    _ = subst.withTypeQuery<Bool>(() -> {
+      subst.introduceTypeQueryAssumption(premise);
+      subst.recordRecursiveTypeQuery(premise);
+      throw ObservationTestFailure()
+    })
+  } catch {
+  | ObservationTestFailure() -> !caught = true
+  | exn -> throw exn
+  };
+  SKTest.expectEq(true, caught);
+  SKTest.expectEq(false, subst.canCacheTypeQuerySince(stamp));
+  // A fresh computation still has no dependency on that abandoned attempt.
+  fresh = subst.typeQueryReadStamp();
+  SKTest.expectEq(true, subst.canCacheTypeQuerySince(fresh));
 }
 
 module end;

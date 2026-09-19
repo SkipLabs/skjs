@@ -1851,15 +1851,21 @@ extension class TType {
     if (u1 == u2) return STOk();
     pair = (u1, u2);
     if (subst.seenSub.contains(pair)) return STOk();
-    readStamp = subst.typeQueryReadStamp();
-    res = TType::isSub_(subst, tenv, u1, u2);
-    // Freeze only changes the meaning of reads of unsealed bindings. A
-    // computation that never makes such a read has the ordinary cache contract;
-    // otherwise its success must not survive later candidate growth.
-    if (res is STOk() && subst.canCacheTypeQuerySince(readStamp)) {
+    // Top needs no recursive premise or substitution read.
+    if (u2.isTop()) {
       subst.!seenSub = subst.seenSub.set(pair);
+      return STOk()
     };
-    res
+    subst.withTypeQuery(() -> {
+      readStamp = subst.typeQueryReadStamp();
+      res = TType::isSub_(subst, tenv, u1, u2);
+      // Publish only after this query discharges its recursive premises and
+      // establishes the existing frozen-candidate read requirement.
+      if (res is STOk() && subst.canCacheTypeQuerySince(readStamp)) {
+        subst.!seenSub = subst.seenSub.set(pair)
+      };
+      (res, res is STOk())
+    })
   }
 
   private static fun isSub_(
@@ -1868,8 +1874,10 @@ extension class TType {
     u1: TType,
     u2: TType,
   ): STResult<TType> {
-    if (u2.isTop()) return STOk();
-    if (tenv.seenSub.contains((subst.version, u1, u2))) return STOk();
+    if (tenv.seenSub.contains((subst.version, u1, u2))) {
+      subst.recordRecursiveTypeQuery(TQSubtype(subst.version, u1, u2));
+      return STOk()
+    };
     // Two recursive aliases whose type arguments grow at each level never
     // repeat a `seenSub` entry, so their descent is bounded by how many times
     // it revisits the same pair of constructors (issue #997). Past the bound
@@ -1883,8 +1891,16 @@ extension class TType {
         tenv.expansionCacheKey(subst, inst1.name, inst1.targs),
         tenv.expansionCacheKey(subst, inst2.name, inst2.targs),
       );
-      if (tenv.seenNamedSub.contains(namedPair)) return STOk();
+      if (tenv.seenNamedSub.contains(namedPair)) {
+        subst.recordRecursiveTypeQuery(
+          TQNamedSubtype(namedPair.i0, namedPair.i1, namedPair.i2),
+        );
+        return STOk()
+      };
       !tenv.seenNamedSub = tenv.seenNamedSub.set(namedPair);
+      subst.introduceTypeQueryAssumption(
+        TQNamedSubtype(namedPair.i0, namedPair.i1, namedPair.i2),
+      );
       key = (inst1.name.value, inst2.name.value);
       count = tenv.subtypingHeadDepth.maybeGet(key).default(0);
       if (count >= kMaxSubtypingHeadDepth) {
@@ -1902,6 +1918,7 @@ extension class TType {
     | _ -> void
     };
     !tenv.seenSub = tenv.seenSub.set((subst.version, u1, u2));
+    subst.introduceTypeQueryAssumption(TQSubtype(subst.version, u1, u2));
 
     // Shortcut: TInter(tys) <: u2 if u2 is one of the tys
     u1.getSingleInter() match {

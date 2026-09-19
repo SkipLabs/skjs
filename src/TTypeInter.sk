@@ -112,22 +112,17 @@ extension class TType {
       | None() -> void
       }
     };
-    readStamp = subst.typeQueryReadStamp();
-    result = TType::inter_(subst, tenv, ty1, ty2);
-    if (hasTVar || !subst.canCacheTypeQuerySince(readStamp)) {
-      result
-    } else {
-      subst.seenInter.maybeGet(pair) match {
-      | Some(ty) ->
-        // Re-entrant cycle: a recursive call during inter_ already cached a
-        // result for this pair. Return the already-cached (and already-used)
-        // result for consistency with intermediate callers that consumed it.
-        ty
-      | None() ->
-        subst.!seenInter[pair] = result;
-        result
-      }
-    }
+    subst.withTypeQuery(() -> {
+      readStamp = subst.typeQueryReadStamp();
+      result = TType::inter_(subst, tenv, ty1, ty2);
+      if (!hasTVar && subst.canCacheTypeQuerySince(readStamp)) {
+        subst.seenInter.maybeGet(pair) match {
+        | Some(ty) -> !result = ty
+        | None() -> subst.!seenInter[pair] = result
+        }
+      };
+      (result, true)
+    })
   }
 
   private static fun inter_(
@@ -168,9 +163,11 @@ extension class TType {
     | None() -> void
     };
     if (tenv.seenInter.contains((ty1, ty2))) {
+      subst.recordRecursiveTypeQuery(TQIntersection(ty1, ty2));
       return TType::unexpandedInter(ty1, ty2);
     };
     !tenv.seenInter = tenv.seenInter.set((ty1, ty2));
+    subst.introduceTypeQueryAssumption(TQIntersection(ty1, ty2));
     clauses1 = ty1.expandToClauses(subst, tenv, Covariant());
     clauses2 = ty2.expandToClauses(subst, tenv, Covariant());
     // TODO: These speculative isSub checks use subst directly. They only

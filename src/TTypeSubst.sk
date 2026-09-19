@@ -10,10 +10,60 @@ base class SubstValue uses Equality {
   | SVClosed(TType)
 }
 
-// Shared by an owner and its scratch descendants; deliberately not rollback
-// state. A frozen query that read an unsealed binding cannot publish a lasting
-// memo even when the read happened in a clone or an abandoned alternative.
-mutable class TypeQueryReads{mutable unsealed: Int = 0}
+// A coinductive result may discharge its own recursive assumptions only after
+// its complete query succeeds. Descendant results still depend on that query.
+base class TypeQueryAssumption uses Equality {
+  children =
+  | TQSubtype(Int, TType, TType)
+  | TQNamedSubtype(Int, ExpansionKey, ExpansionKey)
+  | TQIntersection(TType, TType)
+}
+
+mutable class TypeQueryFrame{
+  depth: Int,
+  mutable dependencyDepth: Int,
+  mutable assumptions: Vector<TypeQueryAssumption> = Vector[],
+}
+
+// Shared with scratch descendants and deliberately outside rollback state.
+mutable class TypeQueryReads{
+  mutable unsealed: Int = 0,
+  mutable recursive: Int = 0,
+  frames: mutable Vector<mutable TypeQueryFrame> = mutable Vector[],
+} {
+  mutable fun record(assumption: TypeQueryAssumption): void {
+    owner = 0;
+    for (i in Range(0, this.frames.size())) {
+      if (this.frames[i].assumptions.contains(assumption)) {
+        !owner = i + 1
+      }
+    };
+    if (owner == 0) {
+      // The premise came from a caller context outside the active query tree.
+      this.!recursive = this.recursive + 1
+    };
+    if (this.frames.size() > 0) {
+      frame = this.frames[this.frames.size() - 1];
+      frame.!dependencyDepth = min(frame.dependencyDepth, owner)
+    }
+  }
+
+  mutable fun finish(success: Bool): void {
+    frame = this.frames.pop();
+    if (frame.dependencyDepth < frame.depth) {
+      if (this.frames.size() > 0) {
+        parent = this.frames[this.frames.size() - 1];
+        parent.!dependencyDepth = min(
+          parent.dependencyDepth,
+          frame.dependencyDepth,
+        )
+      }
+    } else if (!success && frame.dependencyDepth == frame.depth) {
+      // A failed/abandoned query cannot discharge a premise it introduced.
+      this.!recursive = this.recursive + 1
+    }
+  }
+}
 
 mutable base class SubstState private {
   mutable seenSub: SortedSet<(TType, TType)>,
@@ -299,14 +349,51 @@ mutable class Subst private {
   // Capture immediately before a query. Every raw binding read participates,
   // even in non-frozen descendants: clone-local sealing cannot justify the
   // owner's memo. The counter is never restored with substitution state.
-  readonly fun typeQueryReadStamp(): Int {
-    this.queryReads.unsealed
+  readonly fun typeQueryReadStamp(): (Int, Int) {
+    (this.queryReads.unsealed, this.queryReads.recursive)
   }
 
-  // This refines the freeze-window exclusion, not the general cache theorem.
-  // Non-frozen queries retain the existing sealing/rollback contract.
-  readonly fun canCacheTypeQuerySince(stamp: Int): Bool {
-    !this.freezeCandidates || this.queryReads.unsealed == stamp
+  mutable fun recordRecursiveTypeQuery(assumption: TypeQueryAssumption): void {
+    this.queryReads.record(assumption)
+  }
+
+  mutable fun introduceTypeQueryAssumption(
+    assumption: TypeQueryAssumption,
+  ): void {
+    frame = this.queryReads.frames[this.queryReads.frames.size() - 1];
+    frame.!assumptions = frame.assumptions.concat(Vector[assumption])
+  }
+
+  mutable fun withTypeQuery<T>(compute: () -> (T, Bool)): T {
+    depth = this.queryReads.frames.size() + 1;
+    this.queryReads.frames.push(
+      mutable TypeQueryFrame{depth, dependencyDepth => depth + 1},
+    );
+    cell = SubstReadCell::mcreate();
+    try {
+      cell.!value = Some(compute())
+    } catch {
+    | exn ->
+      this.queryReads.finish(false);
+      throw exn
+    };
+    (result, success) = cell.value.fromSome();
+    this.queryReads.finish(success);
+    result
+  }
+
+  // Successful queries may discharge only premises introduced in their own
+  // scope. Other recursive dependencies prevent publication. The binding-read
+  // part retains the existing non-frozen sealing/rollback contract; this is
+  // not a general theorem about substitution or normalization stability.
+  readonly fun canCacheTypeQuerySince(stamp: (Int, Int)): Bool {
+    (this.queryReads.frames.size() == 0 ||
+      {
+        frame = this.queryReads.frames[this.queryReads.frames.size() - 1];
+        frame.dependencyDepth >= frame.depth
+      }) &&
+      this.queryReads.recursive == stamp.i1 &&
+      (!this.freezeCandidates || this.queryReads.unsealed == stamp.i0)
   }
 
   private mutable fun readBinding(tvar: TVar): ?SubstValue {
