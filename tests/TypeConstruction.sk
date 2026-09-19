@@ -156,4 +156,36 @@ fun testFrozenGenericBoundRetainsCandidate(): void {
   SKTest.expectEq(true, result is SKJS.STOk());
 }
 
+@test
+fun testUncommittedLiteralIntersectionDoesNotBecomeStale(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  file = SKJS.FPath::create(
+    SKJS.RootId::project,
+    "tests/expect-error/type-query-memo-stability.ts",
+  );
+  lexer = SKJS.Lexer::mcreate(file, "");
+  pos = SKJS.PosRange::create(lexer, SKJS.Pos(0), SKJS.Pos(0));
+  commitment = subst.genForLiteralCommitment(pos);
+  literal = SKJS.TType::arrayLit(
+    commitment,
+    Array[observationNumber()],
+    Array[None()],
+  );
+  object = SKJS.TType::single(SKJS.TObject::createEmpty(pos));
+  _ = SKJS.TType::inter(subst, tenv, literal, object);
+  SKTest.expectEq(true, subst.isUnbound(commitment));
+  array = SKJS.TType::inst(
+    SKJS.Name(pos, "Array"),
+    SKJS.TArgs(Array[observationNumber()]),
+  );
+  subst.grow(tenv, commitment, array, SKJS.Covariant());
+  reused = SKJS.TType::inter(subst, tenv, literal, object);
+  fresh = subst.clone();
+  fresh.!seenInter = SortedMap[];
+  recomputed = SKJS.TType::inter(fresh, tenv, literal, object);
+  // Pin reuse of the literal's pre-commitment tuple shape.
+  SKTest.expectEq(false, reused == recomputed);
+}
+
 module end;
