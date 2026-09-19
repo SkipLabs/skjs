@@ -2067,7 +2067,8 @@ extension class TypeChecker {
       | Call(Expr(_, Var(Name(_, "__SKJS_show_expanded"))), _, _) ->
         void
       | Call _
-      | New _ ->
+      | New _
+      | InstanceOf _ ->
         tcenv.invalidateCallEffects(this)
       | Await _ ->
         !ty = this.stableAliasExprType(tcenv, e, ty);
@@ -3294,7 +3295,8 @@ extension class TypeChecker {
       }
 
     | InstanceOf(e1, e2) ->
-      _ = this.expr(tcenv, e1, true);
+      lhsTy = this.expr(tcenv, e1, true);
+      stableLhs = this.stableAliasExprType(tcenv, e1, lhsTy);
       // The RHS must be a value that is constructable or callable (a class,
       // function, or other Function-like value). A type-only interface used
       // here is already reported as TS2693 by typechecking it as a value.
@@ -3310,6 +3312,13 @@ extension class TypeChecker {
           TSCode(2359),
         )
       };
+      this.validateInstanceofHook(
+        tcenv,
+        pos,
+        stableLhs,
+        rhsTy,
+        this.stableAliasExprType(tcenv, e2, rhsTy),
+      );
       TType::single(TPrimValue::boolean(pos))
     | In(e1, e2) ->
       t1 = this.expr(tcenv, e1, true);
@@ -3822,6 +3831,94 @@ extension class TypeChecker {
         }
       )
     }
+  }
+
+  // @@hasInstance is called with the already evaluated LHS and the RHS as
+  // receiver. A nullish optional hook falls back to ordinary membership.
+  private fun validateInstanceofHook(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    lhsTy: TType,
+    rhsTy: TType,
+    stableRhs: TType,
+  ): void {
+    uniqueId = this.getWellKnownSymbolUniqueId(
+      tcenv.subst,
+      pos,
+      "hasInstance",
+    ) match {
+    | Some(id) -> id
+    | None() -> return void
+    };
+    rhsTy.getSTypes(tcenv.subst, this, Covariant()).each(stypes -> {
+      for (stype in stypes) {
+        stype match {
+        | obj @ TObject _ ->
+          for (fields in obj.getBranches()) {
+            fields.maybeGetSymbol(uniqueId).each(field -> {
+              hooks = field.get.getSTypes(
+                tcenv.subst,
+                this,
+                Covariant(),
+              ) match {
+              | Some(types) -> types
+              | None() ->
+                fatalError(
+                  Array[
+                    (
+                      pos,
+                      "The 'Symbol.hasInstance' hook must have a callable signature",
+                    ),
+                  ],
+                  TSCode(2349),
+                )
+              };
+              for (hook in hooks) {
+                if (!hook.isNullish()) {
+                  callable = hook match {
+                  | fn @ TObject _ -> fn.callMode(tcenv.subst, this).i0
+                  | _ -> CUnknown()
+                  };
+                  callable match {
+                  | CPresent(tfuns) ->
+                    _ = this.callWithArgumentTypes(
+                      tcenv,
+                      pos,
+                      tfuns,
+                      Array[],
+                      Vector::mcreateFromItems(Array[lhsTy]),
+                      None(),
+                      Some(
+                        TType::single(
+                          TObject::createSingleBranch(fields, None(), obj.pos),
+                        ).withStableContents(
+                          tcenv.subst,
+                          this,
+                          stableRhs,
+                          true,
+                        ),
+                      ),
+                      ValidateTypeArguments(),
+                    )
+                  | _ ->
+                    fatalError(
+                      Array[
+                        (
+                          pos,
+                          "The 'Symbol.hasInstance' hook must have a callable signature",
+                        ),
+                      ],
+                      TSCode(2349),
+                    )
+                  }
+                }
+              }
+            })
+          }
+        | _ -> void
+        }
+      }
+    })
   }
 
   // The precise type of a direct primitive literal expression, or None for
@@ -5495,6 +5592,30 @@ extension class TypeChecker {
       }
     };
 
+    this.callWithArgumentTypes(
+      tcenv,
+      pos,
+      tfuns,
+      targs,
+      args,
+      moreArgs,
+      thisArgOpt,
+      argumentCheck,
+    )
+  }
+
+  // Both explicit and implicit calls use the same receiver, generic and
+  // argument obligations. Callers have evaluated each operand exactly once.
+  private fun callWithArgumentTypes(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    tfuns: TFuns,
+    targs: Array<TType>,
+    args: readonly Vector<TType>,
+    moreArgs: ?TType,
+    thisArgOpt: ?TType,
+    argumentCheck: TypeArgumentCheck,
+  ): TType {
     tfuns match {
     | TFuns(tfun, fPos) ->
       tcenv.recordCalls(tfun.cgNodes);

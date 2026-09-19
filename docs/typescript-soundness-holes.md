@@ -242,6 +242,18 @@ const n: number = f({ a: 5 }); // runtime: { a: 5 }
 
 **Test:** [tests/expect-error/instanceof-hasinstance.ts](../tests/expect-error/instanceof-hasinstance.ts) · **SKJS:** rejects — `Type 'C'` / `is not assignable to type 'number'`; SKJS never narrows the `instanceof` else-branch
 
+### An implicit membership call preserves stale field refinements
+
+A custom `Symbol.hasInstance` can overwrite a narrowed field. Strict tsc accepts
+both a later numeric return of that field and a numeric return guarded by
+`x.value !== null && x instanceof C`, although the hook may have stored null.
+SKJS treats membership as a call effect, invalidating object contents and
+preventing replay of the pre-call check. Scalar snapshots and checks performed
+after the hook remain valid. The hook's argument contract is checked too;
+tsc already rejects an incompatible argument (TS2860).
+
+**Test:** [tests/expect-error/implicit-instanceof-effects.ts](../tests/expect-error/implicit-instanceof-effects.ts).
+
 ### typeof x === "function" removes object constituents that callable values inhabit
 
 In the `typeof x === "function"` branch tsc drops every non-function constituent: a non-union object type that is neither a supertype nor a subtype of `Function` (`{ a: number }`, an interface, a class-instance type) narrows to `never`, and in a union the object arm is dropped so the call is checked at the function arm's signature. A callable value carrying properties genuinely inhabits such a type — `Object.assign(() => {}, { a: 1 })` is accepted as a `{ a: number }` — and `typeof` on it is `"function"`, so the branch tsc declared unreachable is reached. Since `never` is assignable to everything, the value flows anywhere; in the union form it is instead called at an unrelated signature, so `call(bad)` computes `(1).length` and returns `undefined` from a `number`-typed slot.

@@ -175,8 +175,12 @@ mutable class CaptureWrites{
       this.expr(x)
     | Dot(_, x, _) -> this.expr(x)
     | Get(x, y)
-    | In(x, y)
+    | In(x, y) ->
+      this.expr(x);
+      this.expr(y)
     | InstanceOf(x, y) ->
+      // Membership can invoke an inherited/custom Symbol.hasInstance hook.
+      this.!hasCallEffects = true;
       this.expr(x);
       this.expr(y)
     | New(x, _, args)

@@ -1084,7 +1084,7 @@ All examples follow SKJS constraints and pass type checking successfully.
 
 ### Effect boundaries
 
-Explicit calls, `new`, `await`, and iterator execution invalidate transient object
+Explicit calls, `new`, `await`, `instanceof`, and iterator execution invalidate transient object
 contents on lasting contracts. Iteration includes `for…of`, array and argument
 spread, and array destructuring; advancing and closing an iterator can execute
 user code. Captured mutable bindings also widen when they may be reassigned.
@@ -1092,8 +1092,23 @@ Checks observed before a later effect cannot re-establish stale field or capture
 binding facts. Copied scalar values, private scalar locals and fresh post-call
 checks remain usable. Ordinary calls have no purity summaries, so even pure
 formatting and recursive helpers can lose discriminant refinements. Checker-only
-`__SKJS_show` and `__SKJS_show_expanded` are exempt. This policy does not cover
-externally supplied accessor/proxy effects or growing, uncontracted objects.
+`__SKJS_show` and `__SKJS_show_expanded` are exempt. `instanceof` may invoke
+`Symbol.hasInstance`; a visible hook uses the ordinary receiver, argument and
+generic-call checks. Its Boolean result does not make its effects pure. Computed
+keys and condition replay include this implicit call in their effect summaries.
+
+Fresh local objects may grow only before their first read or escape. That use
+establishes their shared contents contract; a callback cannot retain a transient
+narrowing as a permanent view. Constructor initialization remains subject to its
+field contracts and incomplete objects cannot escape to a stronger parameter.
+
+Object contracts describe data properties in the checked subset. Getter/setter
+declarations are rejected, and no proxy/reflection construction API is supplied
+by the built-in stubs. An unchecked JavaScript caller supplying accessors or a
+proxy does not establish that interpretation merely by matching a structural
+annotation. Supporting those values needs read/write execution effects and
+repeat-read stability, not just another invalidation call. This is the same
+caller-contract boundary described in `verification/DESIGN.md`.
 
 ### Abstract type projections
 
