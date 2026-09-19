@@ -224,7 +224,9 @@ mutable class EscapingTypeParams(
   }
 
   private mutable fun boundType(subst: readonly Subst, tv: TVar): void {
-    subst.peekRaw(tv).each(bound -> {
+    // This traversal installs no materialized type or subtype fact. Keep it
+    // read-only; the retained escape roots are rechecked by TCEnv after growth.
+    subst.snapshot().peekRaw(tv).each(bound -> {
       if (!this.visiting.contains(bound)) {
         _ = this.type(subst, bound)
       }

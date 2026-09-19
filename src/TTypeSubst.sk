@@ -35,20 +35,6 @@ mutable base class SubstState private {
   readonly fun save(): SavedSubst {
     SavedSubst::create(this)
   }
-
-  mutable fun restore(saved: SavedSubst): void {
-    // Restoring inference state is itself a semantic transition. Keep its
-    // identity monotone even though the rollbackable version rewinds.
-    nextSemanticEpoch = this.semanticEpoch + 1;
-    this.!version = saved.version;
-    this.!semanticEpoch = nextSemanticEpoch;
-    this.!values = saved.values;
-    this.!origins = saved.origins;
-    this.!seenSub = saved.seenSub;
-    this.!seenInter = saved.seenInter;
-    this.!seenUnion = saved.seenUnion;
-    this.!seenExpansion = saved.seenExpansion;
-  }
 }
 
 mutable class SavedSubst private {} extends SubstState {
@@ -79,6 +65,9 @@ mutable class SavedSubst private {} extends SubstState {
 }
 
 mutable class Subst private {
+  // Present only on isolated shape-read state. Descendants share this frame;
+  // save/restore never clear it. Normal inference retains its existing behavior.
+  private readObservation: ?mutable SubstReadObservation = None(),
   // While set, a candidate variable that ALREADY has a binding is fully
   // read-only: the remaining candidate-write sites (grow's contravariant
   // lower-bound union, and get's covariant seal) refuse to touch an existing
@@ -144,6 +133,22 @@ mutable class Subst private {
     tcenvb: mutable TCEnvBase,
     state: readonly SubstState = SavedSubst::empty,
   ): mutable Subst {
+    // Normalization often asks for a fresh Subst even though its type operands
+    // contain candidates. During an observation it must use the SAME snapshot
+    // and read frame, not an empty or privately solvable candidate store.
+    tcenvb match {
+    | parent @ Subst _ ->
+      parent.readObservation match {
+      | Some(frame) ->
+        if (!state.values.isEmpty() && state.values != parent.values) {
+          frame.block()
+        };
+        return static::observationScratch(parent, frame)
+      | None() -> void
+      }
+    // A declaration-only/light environment has no candidate-read owner.
+    | _ -> void
+    };
     mutable Subst{
       context => tcenvb.context,
       results => tcenvb.results,
@@ -186,6 +191,10 @@ mutable class Subst private {
      One would typically do this to check subtyping relations that are
      non-mandatory. */
   mutable fun clone(): mutable this {
+    this.readObservation match {
+    | Some(frame) -> return Subst::observationScratch(this, frame)
+    | None() -> void
+    };
     mutable Subst{
       context => this.context,
       results => this.results,
@@ -207,10 +216,170 @@ mutable class Subst private {
     }
   }
 
+  readonly fun isObservingTypeReads(): Bool {
+    this.readObservation.isSome()
+  }
+
+  // Read-only traversals that do not install materialized type facts use this
+  // immutable view instead of the tracing live-state accessors.
+  readonly fun snapshot(): SubstSnapshot {
+    SubstSnapshot::create(this.values)
+  }
+
+  private mutable fun readBinding(tvar: TVar): ?SubstValue {
+    value = this.values.maybeGet(tvar.id);
+    this.readObservation.each(frame -> frame.record(tvar, value));
+    value
+  }
+
+  mutable fun restore(saved: SavedSubst): void {
+    this.readObservation match {
+    | Some(frame) ->
+      // Local cache rollback is harmless. Candidate-state replacement is not
+      // a read, even if the caller plans to restore it again before returning.
+      if (saved.version != this.version || saved.values != this.values) {
+        frame.block()
+      }
+    | None() -> void
+    };
+    nextSemanticEpoch = this.semanticEpoch + 1;
+    this.!version = saved.version;
+    this.!semanticEpoch = nextSemanticEpoch;
+    this.!values = saved.values;
+    this.!origins = saved.origins;
+    this.!seenSub = saved.seenSub;
+    this.!seenInter = saved.seenInter;
+    this.!seenUnion = saved.seenUnion;
+    this.!seenExpansion = saved.seenExpansion;
+  }
+
+  static private fun observationScratch(
+    parent: mutable Subst,
+    frame: mutable SubstReadObservation,
+  ): mutable Subst {
+    mutable Subst{
+      context => parent.context,
+      // Preserve the existing clone discipline for diagnostics/reachability.
+      // Reported source errors still reject the program in keep-going mode;
+      // this read result is not itself a whole-program acceptance certificate.
+      results => parent.results,
+      seenSub => SortedSet[],
+      seenInter => SortedMap[],
+      seenUnion => SortedMap[],
+      seenExpansion => SortedMap[],
+      version => parent.version,
+      semanticEpoch => parent.semanticEpoch,
+      values => parent.values,
+      origins => parent.origins,
+      freezeCandidates => parent.freezeCandidates,
+      nextSkolemId => -1,
+      readObservation => Some(frame),
+    }
+  }
+
+  // Establish all inspected payloads before exposing a materialized answer.
+  // The first pass checks EVERY binding before the second pass writes ANY of
+  // them, so a failed transfer never leaves a partially sealed parent.
+  private mutable fun commitObservedBindings(
+    frame: readonly SubstReadObservation,
+    entryEpoch: Int,
+  ): Bool {
+    if (frame.isBlocked() || this.semanticEpoch != entryEpoch) {
+      return false
+    };
+    bindings = frame.bindings();
+    for ((id, expected) in bindings.items()) {
+      this.values.maybeGet(id) match {
+      | Some(SVClosed(actual)) ->
+        if (actual != expected) {
+          return false
+        }
+      | Some(SVOpen(actual)) ->
+        if (actual != expected || (this.freezeCandidates && id.isCandidate())) {
+          return false
+        }
+      | None() -> return false
+      }
+    };
+    for ((id, expected) in bindings.items()) {
+      this.values.maybeGet(id) match {
+      | Some(SVOpen(_)) ->
+        _ = this.bumpVersion();
+        this.!values[id] = SVClosed(expected)
+      // Validated by the first pass; already closed bindings need no write.
+      | _ -> void
+      }
+    };
+    true
+  }
+
+  // A synchronous shape-read transaction, NOT a generic proof/certificate API.
+  // `read` must compute its result from its symbolic operands using `scratch`;
+  // passing in an already materialized answer does not establish its provenance.
+  // Every supported inspected candidate payload is pinned in this owner before
+  // TRReady(result) escapes. Symbolic members that were not inspected remain open.
+  // These commitments have the lifetime of the enclosing inference transaction:
+  // ordinary rollback must abandon its derived answers as well as its state.
+  // No receipt or scratch cache is transferable across owners or rollback.
+  mutable fun withCommittedTypeReads<T>(
+    read: (mutable Subst) -> ?T,
+  ): TypeReadResult<T> {
+    this.readObservation match {
+    | Some(frame) ->
+      // Nested consumers contribute to the same outer read set. They cannot
+      // mint an independent commitment in a scratch substitution.
+      if (frame.isBlocked()) {
+        TRBlocked()
+      } else {
+        result = read(this);
+        if (frame.isBlocked()) {
+          TRBlocked()
+        } else {
+          result match {
+          | Some(value) -> TRReady(value)
+          | None() -> TRUnavailable()
+          }
+        }
+      }
+    | None() ->
+      entryEpoch = this.semanticEpoch;
+      entryFreeze = this.freezeCandidates;
+      frame = SubstReadObservation::mcreate(this.snapshot());
+      scratch = Subst::observationScratch(this, frame);
+      result = try {
+        read(scratch)
+      } catch {
+      | SubstObservationBlocked() ->
+        frame.markBlocked();
+        None()
+      | exn -> throw exn
+      };
+      if (
+        frame.isBlocked() || this.semanticEpoch != entryEpoch ||
+        this.freezeCandidates != entryFreeze
+      ) {
+        TRBlocked()
+      } else {
+        result match {
+        | None() -> TRUnavailable()
+        | Some(value) ->
+          if (this.commitObservedBindings(frame, entryEpoch)) {
+            TRReady(value)
+          } else {
+            TRBlocked()
+          }
+        }
+      }
+    }
+  }
+
   // Record one supported mutation of inference state. Callers that need to
   // know whether a speculative computation was observationally pure compare
   // semanticEpoch, never the rollbackable version.
   private mutable fun bumpVersion(): Int {
+    // All supported allocation and binding writes pass this boundary. A
+    // private read cannot solve or seal a candidate to make its answer valid.
+    this.readObservation.each(frame -> frame.block());
     oldVersion = this.version;
     this.!version = this.version + 1;
     this.!semanticEpoch = this.semanticEpoch + 1;
@@ -223,7 +392,7 @@ mutable class Subst private {
     ty: TType,
     variance: Variance,
   ): void {
-    newTy = this.values.maybeGet(tvar.id) match {
+    newTy = this.readBinding(tvar) match {
     | None() -> ty
     | Some(SVClosed(_)) -> return void
     | Some(SVOpen(ty2)) ->
@@ -255,9 +424,28 @@ mutable class Subst private {
   }
 
   mutable fun get(tenv: TEnv, tvar: TVar, variance: Variance): TType {
+    this.readObservation match {
+    | Some(frame) ->
+      // Read the fixed payload without the ordinary covariant sealing step.
+      // Occurrence constraints still apply, but any attempted solution during
+      // their evaluation blocks the entire observation.
+      value = this.readBinding(tvar);
+      result = value match {
+      | Some(SVOpen(ty))
+      | Some(SVClosed(ty)) -> ty
+      | None() ->
+        frame.block();
+        invariant_violation("an unbound observed read cannot return")
+      };
+      for (cstr in tvar.constraints) {
+        !result = TType::inter(this, tenv, result, cstr)
+      };
+      return result
+    | None() -> void
+    };
     result = variance match {
     | Covariant() ->
-      this.values.maybeGet(tvar.id) match {
+      this.readBinding(tvar) match {
       | None() ->
         // Fresh: sealing to top is a new addition, allowed.
         topTy = TType::top(tvar.pos);
@@ -277,7 +465,7 @@ mutable class Subst private {
         }
       }
     | Contravariant() ->
-      this.values.maybeGet(tvar.id) match {
+      this.readBinding(tvar) match {
       | None() -> TType::bottom(tvar.pos)
       | Some(SVOpen(ty))
       | Some(SVClosed(ty)) ->
@@ -291,7 +479,7 @@ mutable class Subst private {
   }
 
   mutable fun peek(tenv: TEnv, tvar: TVar): ?TType {
-    this.values.maybeGet(tvar.id) match {
+    this.readBinding(tvar) match {
     | None() -> None()
     | Some(SVOpen(ty))
     | Some(SVClosed(ty)) ->
@@ -321,6 +509,7 @@ mutable class Subst private {
     name: String,
     cstr: ?TType,
   ): TParamWithConstraint {
+    this.readObservation.each(frame -> frame.block());
     invariant(
       this.nextSkolemId >= 0,
       "A skolem must not be minted in a cloned Subst: its id could collide " +
@@ -347,20 +536,20 @@ mutable class Subst private {
     TVar::create(pos, TVarID::createForLiteralCommitment(id))
   }
 
-  readonly fun isOpen(tvar: TVar): Bool {
-    this.values.maybeGet(tvar.id) match {
+  mutable fun isOpen(tvar: TVar): Bool {
+    this.readBinding(tvar) match {
     | Some(SVOpen _) -> true
     | _ -> false
     }
   }
 
-  readonly fun isClosed(tvar: TVar): Bool {
-    this.values.maybeGet(tvar.id) is Some(SVClosed _)
+  mutable fun isClosed(tvar: TVar): Bool {
+    this.readBinding(tvar) is Some(SVClosed _)
   }
 
   // Returns true if the type variable has no binding at all
-  readonly fun isUnbound(tvar: TVar): Bool {
-    this.values.maybeGet(tvar.id) is None()
+  mutable fun isUnbound(tvar: TVar): Bool {
+    this.readBinding(tvar) is None()
   }
 
   mutable fun setOrigin(tvar: TVar, origin: TVarOrigin): void {
@@ -373,8 +562,8 @@ mutable class Subst private {
 
   // Returns the raw bound value without applying constraints
   // Used for checking if a type variable is bound to a tuple for spread param expansion
-  readonly fun peekRaw(tvar: TVar): ?TType {
-    this.values.maybeGet(tvar.id) match {
+  mutable fun peekRaw(tvar: TVar): ?TType {
+    this.readBinding(tvar) match {
     | None() -> None()
     | Some(SVOpen(ty))
     | Some(SVClosed(ty)) ->

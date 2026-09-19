@@ -24,62 +24,73 @@
 module SKJS;
 
 class VariadicTyping() {
-  // Finds the most specific fixed-length tuple type that spreadParam is a
-  // subtype of. Returns the element types, or None.
-  //
-  // Precondition: spreadParam is normalized — all unions and
-  // intersections (TInter) have been eagerly computed during normalize().
-  // This guarantees at most one clause with a tuple after expansion.
-  //
-  // Two paths:
-  //   1. Expand to clauses (resolves type aliases and tvar bindings) and
-  //      look for a tuple in the single clause.
-  //   2. Fallback for bound tvars: expandToClauses intersects the binding
-  //      with constraints, which can hide the tuple (e.g. [string, number]
-  //      & readonly DepSafe[] loses the tuple shape). Peek the raw binding
-  //      (without constraint intersection) and retry.
-  // INVARIANT: when this function returns None, subst is unchanged.
+  // Resolve a fixed rest shape only after establishing every candidate payload
+  // inspected to obtain it. The callback runs on read-only scratch candidates;
+  // successful reads are pinned in the owner by withCommittedTypeReads before
+  // tuple elements escape. Symbolic element candidates remain available for
+  // ordinary argument inference unless the shape computation inspected them.
+  // Both call checking and function subtyping use this same boundary.
+  // None leaves the owning substitution unchanged; it does not mean that the
+  // type is disjoint from every tuple, only that this operation established none.
   static fun resolveSpreadToTuple(
     subst: mutable Subst,
     tenv: TEnv,
     spreadParam: ?TType,
   ): ?Array<TType> {
-    fullType = spreadParam match {
-    | Some(ft) -> ft
-    | None() -> return None()
-    };
-    saved = subst.save();
-    // Consuming an exact rest shape establishes it, just like reading a value.
-    // Seal the outer candidate before flattening away its identity; element
-    // checks alone cannot prevent a later replacement by a different tuple.
-    // Failure restores this read along with the rest of the speculation.
-    clauses = fullType.expandToClauses(subst, tenv, Covariant());
-    clauses.getSingleTuple(subst, tenv) match {
-    | Some(tupleElts) -> return Some(tupleElts)
-    | None() -> void
-    };
-    // Fallback: for a bound tvar, expandToClauses intersects the binding
-    // with constraints, which can hide the tuple. Peek the raw binding
-    // (without constraint intersection) and try again.
-    tvar = fullType.getSingleVar() match {
-    | Some(tv) -> tv
-    | None() ->
-      subst.restore(saved);
-      return None()
-    };
-    boundType = subst.peekRaw(tvar) match {
-    | Some(bt) -> bt
-    | None() ->
-      subst.restore(saved);
-      return None()
-    };
-    boundType
-      .expandToClauses(subst, tenv, Covariant())
-      .getSingleTuple(subst, tenv) match {
+    spreadParam match {
+    | None() -> None()
+    | Some(fullType) ->
+      readEnv = if (subst.isObservingTypeReads()) {
+        tenv
+      } else {
+        tenv.forTypeReadObservation()
+      };
+      subst.withCommittedTypeReads(scratch ->
+        static::readSpreadTuple(scratch, readEnv, fullType)
+      ) match {
+      | TRReady(tupleElts) -> Some(tupleElts)
+      | TRUnavailable() -> None()
+      // Unknown is not evidence for the array-rest fallback: that fallback
+      // forgets exact arity. Refuse rather than silently weaken the contract.
+      | TRBlocked() ->
+        fatalError(
+          Array[
+            (
+              fullType.pos,
+              "A fixed rest-parameter shape could not be established without changing inference; add an explicit tuple or rest-parameter type annotation",
+            ),
+          ],
+          SKJSCode(9036),
+        )
+      }
+    }
+  }
+
+  // Never call this directly on live inference state. In particular, the raw
+  // fallback is an observed dependency, not an escape from constraint checking.
+  // A constrained type is a subtype of its raw binding, so that binding may
+  // supply a supertype tuple shape even when intersection obscures the tuple.
+  static private fun readSpreadTuple(
+    scratch: mutable Subst,
+    tenv: TEnv,
+    fullType: TType,
+  ): ?Array<TType> {
+    invariant(scratch.isObservingTypeReads());
+    clauses = fullType.expandToClauses(scratch, tenv, Covariant());
+    clauses.getSingleTuple(scratch, tenv) match {
     | Some(tupleElts) -> Some(tupleElts)
     | None() ->
-      subst.restore(saved);
-      None()
+      fullType.getSingleVar() match {
+      | None() -> None()
+      | Some(tv) ->
+        scratch.peekRaw(tv) match {
+        | None() -> None()
+        | Some(boundType) ->
+          boundType
+            .expandToClauses(scratch, tenv, Covariant())
+            .getSingleTuple(scratch, tenv)
+        }
+      }
     }
   }
 
