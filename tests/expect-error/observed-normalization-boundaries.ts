@@ -7,7 +7,7 @@ function normalizationKeyPositive<T>(): NormalizationKeys<T> {
 }
 
 function normalizationKeyNegative<T>(): NormalizationKeys<T> {
-  // @ts-expect-error
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return "missing";
 }
 
@@ -18,7 +18,7 @@ function normalizationMappedPositive<T>(x: NormalizationMapped<T>): T {
 }
 
 function normalizationMappedNegative(x: NormalizationMapped<number>): string {
-  // @ts-expect-error
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return x.left;
 }
 
@@ -29,7 +29,7 @@ function normalizationTemplatePositive<T>(): NormalizationTemplate<T> {
 }
 
 function normalizationTemplateNegative<T>(): NormalizationTemplate<T> {
-  // @ts-expect-error
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return "prefix-missing";
 }
 
@@ -38,19 +38,21 @@ function normalizationClosedPositive<T>(x: Closed<{ value: T }>): T {
 }
 
 function normalizationClosedNegative(x: Closed<{ value: number }>): string {
-  // @ts-expect-error
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return x.value;
 }
 
 type NormalizationElement<T> = (readonly T[] & readonly T[])[number];
-declare function normalizationSelect<T>(xs: readonly T[]): NormalizationElement<T>;
+declare function normalizationSelect<T>(
+  xs: readonly T[],
+): NormalizationElement<T>;
 
 function normalizationIntersectionPositive(xs: readonly number[]): number {
   return normalizationSelect(xs);
 }
 
 function normalizationIntersectionNegative(xs: readonly number[]): string {
-  // @ts-expect-error
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return normalizationSelect(xs);
 }
 
@@ -82,7 +84,9 @@ function normalizationSymbolPositive<T>(x: NormalizationSymbolShape<T>): T {
   return x[normalizationSymbol];
 }
 
-declare const normalizationContainer: { readonly pair: readonly [number, string] };
+declare const normalizationContainer: {
+  readonly pair: readonly [number, string];
+};
 type NormalizationDeclaredPair = typeof normalizationContainer.pair;
 
 function normalizationTypeofPositive(x: NormalizationDeclaredPair): string {
@@ -91,7 +95,7 @@ function normalizationTypeofPositive(x: NormalizationDeclaredPair): string {
 
 type NormalizationPhantom<T extends number> = { kind: "checked" };
 // A materialized/erasing body must not drop a written argument's constraint.
-// @ts-expect-error
+// @ts-expect-error Type argument does not satisfy the constraint
 type NormalizationInvalidPhantom = NormalizationPhantom<string>;
 
 // The two functions differ only in whether this is actually receiverless.
@@ -104,6 +108,6 @@ function normalizationReceiverlessPositive(
 function normalizationReceiverNegative(
   f: (this: { value: number }, x: number) => number,
 ): (this: { value: string }, x: number) => number {
-  // @ts-expect-error
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return f;
 }
