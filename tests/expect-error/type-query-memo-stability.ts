@@ -121,8 +121,7 @@ function queryLiteralBroadLengthView(seed: number): number {
   return view.length;
 }
 
-// FIXME: mixed await retains the literal's provisional tuple shape, losing
-// the representation identity that the later push commits as an array.
+// Mixed await must establish the literal form before retaining its shape.
 async function queryMixedAwaitedLiteralLength(
   seed: number,
   pick: boolean,
@@ -133,6 +132,7 @@ async function queryMixedAwaitedLiteralLength(
   const view = await (pick ? items : pending);
   if (typeof view === "number") return 1;
   items.push(seed);
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return view.length;
 }
 

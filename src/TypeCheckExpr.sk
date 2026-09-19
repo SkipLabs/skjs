@@ -500,7 +500,20 @@ extension class TypeChecker {
     sourceType: TType,
     defaultType: TType,
   ): TType {
-    sourceRead = sourceType.expand(tcenv.subst, this, Some(Covariant()));
+    ArrayLitTyping::establishLiteralForms(
+      tcenv.subst,
+      this,
+      sourceType,
+      TType::top(sourceType.pos),
+      Some(Covariant()),
+    );
+    sourceRead = this.materializeTypeRead(
+      tcenv,
+      sourceType.pos,
+      (scratch, readEnv) ->
+        sourceType.expand(scratch, readEnv, Some(Covariant()))
+      ,
+    );
     TType::union(
       tcenv.subst,
       this,
@@ -1034,16 +1047,23 @@ extension class TypeChecker {
         // accepts `undefined`, that read is a genuine member of the type, so
         // exempt it from the used-before-assigned check (TS2454's carve-out).
         // A typeof annotation can contain an open inferred field candidate.
-        // Establish its current type in the live substitution before probing:
-        // otherwise the clone can grow it to admit undefined and authorize
-        // an uninitialized read under a different type in the parent.
-        establishedTy = ty.expand(tcenv.subst, this, Some(Covariant()));
+        // Finalize its head candidates (including the ordinary unknown
+        // default) in the owner before observing the initialization decision.
+        // Keep the original type so a provisional literal cannot lose its
+        // selector before the observation sees it.
+        ArrayLitTyping::establishLiteralForms(
+          tcenv.subst,
+          this,
+          ty,
+          TType::top(pos),
+          Some(Covariant()),
+        );
         undefinedTy = TType::single(TPrimUnit(TUndefined(), pos));
         isInitialized = this.materializeSubtypeDecision(
           tcenv,
           pos,
           undefinedTy,
-          establishedTy,
+          ty,
         );
         (ty, isInitialized)
       }
@@ -3616,6 +3636,15 @@ extension class TypeChecker {
       )
     | Await(ae) ->
       aeType = this.expr(tcenv, ae, mostPrecise);
+      // Mixed thenable/non-thenable results retain projected object shapes.
+      // Establish literal representations before those shapes lose their identity.
+      ArrayLitTyping::establishLiteralForms(
+        tcenv.subst,
+        this,
+        aeType,
+        TType::top(pos),
+        Some(Covariant()),
+      );
       // Unwrap the thenable branches and pass the non-thenable parts
       // through unchanged, like the runtime does (and like tsc types it).
       // Non-thenable parts produce a lint warning; checking continues

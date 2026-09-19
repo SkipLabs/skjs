@@ -1946,13 +1946,19 @@ extension class TType {
     _ = static::growTVars(subst, tenv, u2, u1, Covariant());
     // Successful validation must retain the representation used to establish
     // the relation. Failed validation rolls these choices back with savedSubst.
-    ArrayLitTyping::establishValidationForms(subst, tenv, u1, u2, Covariant());
-    ArrayLitTyping::establishValidationForms(
+    ArrayLitTyping::establishLiteralForms(
+      subst,
+      tenv,
+      u1,
+      u2,
+      Some(Covariant()),
+    );
+    ArrayLitTyping::establishLiteralForms(
       subst,
       tenv,
       u2,
       u1,
-      Contravariant(),
+      Some(Contravariant()),
     );
     clauses1 = u1.expandToClauses(subst, tenv, Covariant());
     clauses2 = u2.expandToClauses(subst, tenv, Contravariant());

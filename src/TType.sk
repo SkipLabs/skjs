@@ -662,6 +662,15 @@ class TType private {
     if (visited.contains(this)) return true;
     visited.insert(this);
     !chain = chain.set(this);
+    // Keep candidate identities symbolic, but retain any literal form that
+    // flattening would otherwise replace with its provisional tuple shape.
+    ArrayLitTyping::establishLiteralForms(
+      subst,
+      tenv,
+      this,
+      TType::top(pos),
+      None(),
+    );
     // Expand without resolving type variables: resolving would force (and
     // thereby seal) them, breaking inference for e.g. unannotated async
     // lambdas whose return type is Promise<tvar>. Leftover variables are

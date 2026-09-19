@@ -328,17 +328,17 @@ class ArrayLitTyping() {
     }
   }
 
-  // A successful subtype judgment may not depend on a temporary literal
-  // default. Traverse only the head expansion that validation will inspect;
-  // nested fields remain symbolic until their own subtype checks visit them.
+  // A retained judgment or projection may not depend on a temporary literal
+  // default. Match the consumer's expansion of ordinary candidates and visit
+  // only that head shape; nested fields remain symbolic until inspected.
   // This includes literals behind candidate bindings, aliases, intersections,
   // and unions, not just the single-literal contextual fast path.
-  static fun establishValidationForms(
+  static fun establishLiteralForms(
     subst: mutable Subst,
     tenv: TEnv,
     type: TType,
     expected: TType,
-    variance: Variance,
+    expandTVars: ?Variance,
   ): void {
     if (subst.isObservingTypeReads()) return void;
     todo = Vector::mcreateFromItems(type.insts);
@@ -349,7 +349,11 @@ class ArrayLitTyping() {
         continue
       };
       next = inst match {
-      | tv @ TVar _ -> subst.get(tenv, tv, variance)
+      | tv @ TVar _ ->
+        expandTVars match {
+        | Some(variance) -> subst.get(tenv, tv, variance)
+        | None() -> TType::bottom(type.pos)
+        }
       | TSInst(name, targs) -> tenv.expandNamed(subst, name, targs)
       | TInter(types) ->
         for (part in types) {
