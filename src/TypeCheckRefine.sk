@@ -819,6 +819,18 @@ extension class TypeChecker {
     | None() -> /* Non-local */ return void
     | Some(ty) -> ty
     };
+    // Establish the head shape before callbacks construct a retained
+    // refinement. A blocked read contributes no narrowing, never a made-up
+    // tuple/default shape or an eliminated branch.
+    readEnv = this.forTypeReadObservation();
+    tcenv.subst.withCommittedTypeDecision<TType>(scratch ->
+      ty.expand(scratch, readEnv, Some(Covariant()))
+    ) match {
+    | TRReady(established) -> !ty = established
+    | TRUnavailable()
+    | TRBlocked() ->
+      return void
+    };
     f = (sTypesOpt) ->
       sTypesOpt match {
       | None() -> default

@@ -102,6 +102,28 @@ extension class TType {
     tenv: TEnv,
     declared: TFields,
   ): Bool {
+    readEnv = tenv.forTypeReadObservation();
+    subst.withCommittedTypeReads<Bool>(scratch ->
+      if (this.probeMatchesAlternative(scratch, readEnv, declared)) {
+        None()
+      } else {
+        Some(false)
+      }
+    ) match {
+    | TRReady(matches) -> matches
+    | TRUnavailable()
+    | TRBlocked() ->
+      true
+    }
+  }
+
+  // Only a justified elimination escapes; keeping an alternative requires no
+  // inferred commitment. Nested probes share the outer observation's reads.
+  private fun probeMatchesAlternative(
+    subst: mutable Subst,
+    tenv: TEnv,
+    declared: TFields,
+  ): Bool {
     probe = subst.clone();
     stamp = probe.typeMutationStamp();
     current = this.getSTypes(probe, tenv, Covariant());

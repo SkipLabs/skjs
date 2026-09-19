@@ -240,7 +240,11 @@ class TType private {
         "this",
         className.pos.fileName,
         Id::createThis(),
-        Some(cstr.expand(subst, tenv, Some(Covariant()))),
+        Some(
+          tenv.materializeTypeRead(subst, className.pos, (scratch, readEnv) ->
+            cstr.expand(scratch, readEnv, Some(Covariant()))
+          ),
+        ),
       ),
     )
   }
