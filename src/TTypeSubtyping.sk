@@ -1851,10 +1851,12 @@ extension class TType {
     if (u1 == u2) return STOk();
     pair = (u1, u2);
     if (subst.seenSub.contains(pair)) return STOk();
+    readStamp = subst.typeQueryReadStamp();
     res = TType::isSub_(subst, tenv, u1, u2);
-    // A freeze query may read an open candidate without sealing it. Its
-    // success is not stable under later growth, so do not publish that memo.
-    if (res is STOk() && !subst.freezeCandidates) {
+    // Freeze only changes the meaning of reads of unsealed bindings. A
+    // computation that never makes such a read has the ordinary cache contract;
+    // otherwise its success must not survive later candidate growth.
+    if (res is STOk() && subst.canCacheTypeQuerySince(readStamp)) {
       subst.!seenSub = subst.seenSub.set(pair);
     };
     res

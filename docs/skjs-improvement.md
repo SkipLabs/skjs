@@ -287,7 +287,7 @@ Tests: `TypeReadObservation.sk`, `observed-rest-shape.ts`,
 `observed-indexed-normalization.ts`, `observed-normalization-boundaries.ts`,
 and `normalization-owner.ts`.
 
-### Confirmed performance regression
+### Frozen-query performance regression and repair
 
 The five-second array workload is itself a regression, not an acceptable
 pre-existing performance target. A rebuilt-code bisection identified
@@ -301,11 +301,25 @@ A minimal control takes about 0.2 s. Each in-container median uses three runs;
 container startup is excluded. Thus there are two separate regressions: this
 freeze-window slowdown and the later whole-snapshot memo OOM.
 
-**Open:** recover frozen-query reuse without publishing unsealed answers into
-caches that outlive their validity. Do not revert the freeze-window soundness
-repair. The global memo replacement was withdrawn; its safe and efficient
-replacement is still required. Full-suite success alone did not detect this
-cost, so the array workload must accompany future cache changes.
+Frozen queries now publish subtype/intersection results only if no open or
+unbound substitution binding was read during the computation. A shared,
+monotone read counter includes scratch descendants and is not restored on
+rollback. Reading a closed outer variable does not hide a subsequent read of
+an open inner variable. Non-frozen queries retain their existing policy.
+
+On the same array workload, three runs before/after this change give medians
+of 4.902 s and 0.376 s (about 13× faster), with byte-identical diagnostics.
+Native tests cover closed reads, unbound reads across rollback, open reads in
+clones, nested dependencies, and observed reads. Existing source regressions
+still require rejection of stale answers after candidate growth. Validation:
+189 checker tests and 65 verifier suites pass; the curated corpus retains 278
+verified functions with zero unexpected outcomes. The ten largest fixtures
+also retain byte-identical diagnostics and essentially unchanged timings.
+
+This repairs the blanket freeze-window exclusion, not the general memo
+validity problem. The global memo replacement was withdrawn; its safe and
+efficient replacement is still required. Full-suite success alone did not
+detect this cost, so the array workload must accompany future cache changes.
 
 ### Remaining work and completion criteria
 
@@ -353,7 +367,7 @@ inference dependency. No R2/R3c completion status changes follow from this table
 | `TypeChecker.call`: inferred positional/rest arguments | The complete argument pass repeats until the substitution version stops changing. This checks consistency within that call. It supplies no revalidation when a dependency changes after the call returns. |
 | `TType`, `STypes`, `Clauses`, `TFun`, `TObject` subtyping | Successful alternatives retain their substitution changes. Failed alternatives restore state; an entirely failed check restores its entry state. These are transactional acceptance paths, not successful checks on discarded clones. Stability of previously successful checks still depends on sealing and symbolic types. |
 | `growTVars.isCovered` | Its subtype probes always restore, but only choose which lower bounds to propose. The outer `TType.isSub_` subsequently expands and validates the complete relation in the live substitution. A probe success is not the final acceptance result. |
-| `growTVars`: constraint admissibility | `freezeCandidates` suppresses growth/sealing of already determined candidates while permitting fresh determinations. Success commits fresh determinations before growth; failure restores. The outer subtype check validates afterward. Frozen-query results are not published to subtype/intersection caches. |
+| `growTVars`: constraint admissibility | `freezeCandidates` suppresses growth/sealing of already determined candidates while permitting fresh determinations. Success commits fresh determinations before growth; failure restores. The outer subtype check validates afterward. Frozen-query results are published to subtype/intersection caches only when the computation reads no open or unbound binding, including in scratch descendants. |
 | `TType.mapTParams`: redundant-constraint shortcut | Success skips an intersection only when the substitution version is unchanged. Otherwise it restores and computes the intersection. The shortcut establishes non-mutation now; its dependence on earlier cached answers belongs to the cache obligation below. |
 | `VariadicTyping.resolveSpreadToTuple` | Success consumes a tuple shape from contravariant expansion, with a raw-binding fallback when constraint intersection hides the tuple. Failure restores. The stored-callback witness below showed that element checks did not protect the outer shape. Tuple resolution now establishes that shape through a covariant read before flattening; unsuccessful resolution restores the read. General transitive dependency tracking remains open. |
 | `VariadicTyping.inferRestTypeVar`, array literal commitment | Successful constraint/element checks commit; failure restores in the transactional paths. Literal-precision probing chooses guidance, followed by live element checking. Error-recovery state is outside this soundness objective. |
@@ -747,9 +761,10 @@ The resolved-declaration identity protections from R3a remain in
 normal expansion and recursive comparisons.
 
 R3b implementation note: subtype and intersection results computed while
-`freezeCandidates` is set are not inserted into the substitution caches.
-Those queries can read open candidates without sealing them, so their results
-have no stability guarantee after growth. Ordinary cache reuse is unchanged.
+`freezeCandidates` is set are cached only when their computation reads no
+unsealed binding. Reads in scratch descendants and abandoned alternatives
+also prevent publication. Queries that read open candidates without sealing
+them have no stability guarantee after growth. Ordinary cache reuse is unchanged.
 [`freeze-window-stale-cache.ts`](../tests/expect-error/freeze-window-stale-cache.ts)
 checks rejection with and without priming, plus repeated valid queries when
 later growth remains within the constraint. `make test-in-docker` and

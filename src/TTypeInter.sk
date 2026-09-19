@@ -94,8 +94,9 @@ extension class TType {
   // remains valid for the rest of the computation. Bare TVars are excluded
   // because inter_ handles them specially (adding constraints or creating
   // unexpanded intersections) without sealing. During a candidate freeze,
-  // get may return an open binding without sealing it; those results must
-  // not be published to this cache either.
+  // get may return an open binding without sealing it. Track the actual reads,
+  // including scratch descendants, and publish only when no unsealed binding
+  // was inspected. Queries on fixed data keep their ordinary cache behavior.
   static fun inter(
     subst: mutable Subst,
     tenv: TEnv,
@@ -111,8 +112,9 @@ extension class TType {
       | None() -> void
       }
     };
+    readStamp = subst.typeQueryReadStamp();
     result = TType::inter_(subst, tenv, ty1, ty2);
-    if (hasTVar || subst.freezeCandidates) {
+    if (hasTVar || !subst.canCacheTypeQuerySince(readStamp)) {
       result
     } else {
       subst.seenInter.maybeGet(pair) match {
