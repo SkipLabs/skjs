@@ -645,4 +645,55 @@ fun testFrozenObservedReadCannotMemoize(): void {
   SKTest.expectEq(false, subst.canCacheTypeQuerySince(stamp));
 }
 
+// Exercise the real query wrapper with a controlled recursive context. This
+// exposes memo lifetime directly; it is not a source-program counterexample.
+fun observationTypeEnv(subst: mutable SKJS.Subst): SKJS.TEnv {
+  context = subst.context;
+  fs = SKJS.Fs::disk();
+  files =
+    SKJS.Files::create(
+      context,
+      fs,
+      ".",
+      Array["tests/expect-error/type-query-memo-stability.ts"],
+      Array["./import-stubs"],
+    ) |> expectFilesSuccess;
+  SKJS.writeConfig(
+    context,
+    SKJS.CheckerConfig{
+      errorHandling => SKJS.EHDefault(),
+      errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
+    },
+  );
+  SKJS.Checker::create{context, fs, files}.fromSuccess().checker
+}
+
+@test
+fun testRecursiveSubtypeMemoScope(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  number = observationNumber();
+  string = observationString();
+  assumed = tenv with {seenSub => SortedSet[(subst.version, number, string)]};
+  conditional = SKJS.TType::isSub(subst, assumed, number, string);
+  SKTest.expectEq(true, conditional is SKJS.STOk());
+  // Pin the existing leak before the repair: a conditional result is reused
+  // after the assumption has gone away.
+  outside = SKJS.TType::isSub(subst, tenv, number, string);
+  SKTest.expectEq(true, outside is SKJS.STOk());
+}
+
+@test
+fun testIndependentSubtypeInsideRecursiveContextCanMemoize(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  number = observationNumber();
+  string = observationString();
+  top = SKJS.TType::top(SKJS.PosRange::none);
+  assumed = tenv with {seenSub => SortedSet[(subst.version, number, string)]};
+  result = SKJS.TType::isSub(subst, assumed, number, top);
+  SKTest.expectEq(true, result is SKJS.STOk());
+  SKTest.expectEq(true, subst.seenSub.contains((number, top)));
+}
+
 module end;
