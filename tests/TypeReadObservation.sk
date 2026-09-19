@@ -821,4 +821,52 @@ fun testQueryCacheOnlyRestore(): void {
   SKTest.expectEq(true, subst.typeMutationStamp() == stamp);
 }
 
+fun substituteNumberConstraint(
+  subst: mutable SKJS.Subst,
+  tenv: SKJS.TEnv,
+  candidate: SKJS.TVar,
+): SKJS.TType {
+  pos = SKJS.PosRange::none;
+  parameter = SKJS.TParamWithConstraint(
+    "T",
+    SKJS.FPath::nil,
+    SKJS.Id::createSynthetic("substitution-test-T"),
+    Some(observationNumber()),
+  );
+  original = SKJS.TType::fromTParamWithConstraint(subst, tenv, pos, parameter);
+  original.mapTParams(subst, tenv, _ -> Some(SKJS.TType::var(candidate)))
+}
+
+@test
+fun testFrozenSubstitutionRetainsSatisfiedConstraint(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  tv = subst.gen(SKJS.PosRange::none);
+  subst.grow(tenv, tv, observationNumber(), SKJS.Contravariant());
+  subst.!freezeCandidates = true;
+  mapped = substituteNumberConstraint(subst, tenv, tv);
+  subst.!freezeCandidates = false;
+  SKTest.expectEq(true, subst.isOpen(tv));
+  subst.grow(tenv, tv, observationString(), SKJS.Contravariant());
+  // Pin the lost constraint: (?a & number) became ?a and now admits string.
+  result = SKJS.TType::isSub(subst, tenv, mapped, observationNumber());
+  SKTest.expectEq(false, result is SKJS.STOk());
+}
+
+@test
+fun testFrozenSubstitutionRetainsDisjointConstraint(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  tv = subst.gen(SKJS.PosRange::none);
+  subst.grow(tenv, tv, observationString(), SKJS.Contravariant());
+  subst.!freezeCandidates = true;
+  mapped = substituteNumberConstraint(subst, tenv, tv);
+  subst.!freezeCandidates = false;
+  SKTest.expectEq(true, subst.isOpen(tv));
+  subst.grow(tenv, tv, observationNumber(), SKJS.Contravariant());
+  // Pin premature bottom: the intersection must admit number after growth.
+  result = SKJS.TType::isSub(subst, tenv, observationNumber(), mapped);
+  SKTest.expectEq(false, result is SKJS.STOk());
+}
+
 module end;
