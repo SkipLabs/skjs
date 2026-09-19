@@ -69,4 +69,39 @@ fun testSubstSemanticEpochDoesNotRewind(): void {
   SKTest.expectEq(afterGrowthEpoch + 1, subst.semanticEpoch);
 }
 
+// The same spelling currently aliases a hidden witness and an ordinary
+// synthetic parameter. Pin the representation boundary before separating them.
+@test
+fun testHiddenWitnessSyntheticNamespace(): void {
+  context = SKStore.Context::mcreate{};
+  results = SKJS.TCResultsAcc::mcreate{errorHandling => SKJS.EHDefault()};
+  base = mutable SKJS.TCEnvLight{context, results};
+  subst = SKJS.Subst::mcreate(base);
+  hidden = subst.genSkolemTParam(SKJS.PosRange::none, "hidden", None());
+  ordinary = SKJS.Id::createSynthetic("skolem:0");
+  SKTest.expectEq(true, hidden.id == ordinary);
+}
+
+@test
+fun testHiddenWitnessAllocationDoesNotRewindWithInference(): void {
+  context = SKStore.Context::mcreate{};
+  results = SKJS.TCResultsAcc::mcreate{errorHandling => SKJS.EHDefault()};
+  base = mutable SKJS.TCEnvLight{context, results};
+  subst = SKJS.Subst::mcreate(base);
+  pos = SKJS.PosRange::none;
+  before = subst.genSkolemTParam(pos, "hidden", None());
+  checkpoint = subst.nextSkolemId;
+  saved = subst.save();
+  abandoned = subst.genSkolemTParam(pos, "hidden", None());
+  _ = subst.gen(pos);
+  subst.restore(saved);
+  after = subst.genSkolemTParam(pos, "hidden", None());
+  SKTest.expectEq(false, before.id == after.id);
+  SKTest.expectEq(false, abandoned.id == after.id);
+  SKTest.expectEq(
+    SortedSet[abandoned.id, after.id],
+    subst.skolemIdsSince(checkpoint),
+  );
+}
+
 module end;
