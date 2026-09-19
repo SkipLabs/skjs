@@ -64,6 +64,7 @@ The ownership boundaries and remaining validation obligations are described in
 - **Rule**: `[...]` literals defer their type (array vs tuple) until used in context
 - **Commits to Array**: when assigned to `Array<T>` / `T[]` / `readonly T[]`, used with `.push()` / `.map()` etc., or indexed with a non-literal number
 - **Commits to Tuple**: when assigned to a tuple type like `[number, string]`, or used only with literal indices
+- **Structural validation commits too**: a retained subtype judgment selects a tuple when its context contains a tuple branch, and an array otherwise. A structural `{ readonly length: 1 }` view cannot borrow an uncommitted literal's temporary tuple length and then let that literal become a growing array.
 - **Once committed, cannot change**: using an array-committed literal as a tuple (or vice versa) is an error
 - **Example**: `const nums: number[] = [1, 2, 3];` commits to array; `const pair: [number, string] = [1, "hello"];` commits to tuple
 

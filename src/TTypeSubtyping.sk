@@ -1944,6 +1944,16 @@ extension class TType {
     constraintErr = static::growTVars(subst, tenv, u1, u2, Contravariant());
     // seal TVars in u1 from u2 (its constraint-check hints are not relevant)
     _ = static::growTVars(subst, tenv, u2, u1, Covariant());
+    // Successful validation must retain the representation used to establish
+    // the relation. Failed validation rolls these choices back with savedSubst.
+    ArrayLitTyping::establishValidationForms(subst, tenv, u1, u2, Covariant());
+    ArrayLitTyping::establishValidationForms(
+      subst,
+      tenv,
+      u2,
+      u1,
+      Contravariant(),
+    );
     clauses1 = u1.expandToClauses(subst, tenv, Covariant());
     clauses2 = u2.expandToClauses(subst, tenv, Contravariant());
 

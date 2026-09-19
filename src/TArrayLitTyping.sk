@@ -328,6 +328,63 @@ class ArrayLitTyping() {
     }
   }
 
+  // A successful subtype judgment may not depend on a temporary literal
+  // default. Traverse only the head expansion that validation will inspect;
+  // nested fields remain symbolic until their own subtype checks visit them.
+  // This includes literals behind candidate bindings, aliases, intersections,
+  // and unions, not just the single-literal contextual fast path.
+  static fun establishValidationForms(
+    subst: mutable Subst,
+    tenv: TEnv,
+    type: TType,
+    expected: TType,
+    variance: Variance,
+  ): void {
+    if (subst.isObservingTypeReads()) return void;
+    todo = Vector::mcreateFromItems(type.insts);
+    seen = mutable Set<TInst>[];
+    while (!todo.isEmpty()) {
+      inst = todo.pop();
+      if (!seen.maybeInsert(inst)) {
+        continue
+      };
+      next = inst match {
+      | tv @ TVar _ -> subst.get(tenv, tv, variance)
+      | TSInst(name, targs) -> tenv.expandNamed(subst, name, targs)
+      | TInter(types) ->
+        for (part in types) {
+          todo.extend(part.insts)
+        };
+        TType::bottom(type.pos)
+      | literal @ TArrayLit _ ->
+        ArrayLitTyping::arrayLitCommittedType(subst, tenv, literal) match {
+        | Some(committed) -> committed
+        | None() ->
+          tupleContext = expected
+            .getSTypes(subst, tenv, Contravariant())
+            .map(stypes ->
+              stypes.any(stype ->
+                stype match {
+                | obj @ TObject _ ->
+                  obj.getBranches().any(fields -> fields.isTuple().isSome())
+                | _ -> false
+                }
+              )
+            )
+            .default(false);
+          committed = if (tupleContext) {
+            ArrayLitTyping::arrayLitToTupleType(literal)
+          } else {
+            ArrayLitTyping::arrayLitToArrayTType(subst, tenv, literal)
+          };
+          ArrayLitTyping::arrayLitCommitType(subst, tenv, literal, committed);
+          committed
+        }
+      };
+      todo.extend(next.insts)
+    }
+  }
+
   // Handles subtyping when u1 or u2 contains ArrayLit<α, elts>.
   // Each branch commits the literal to tuple or array based on context.
   static fun subtyping(

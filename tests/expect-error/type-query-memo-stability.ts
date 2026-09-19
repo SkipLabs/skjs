@@ -92,10 +92,11 @@ function queryFreshLiteralDefault(seed: number): number {
   const [value = 0] = [seed];
   return value;
 }
-// FIXME: tsc rejects the length-1 view. A later representation commitment
-// currently invalidates the previously accepted contract in SKJS.
+// Structural validation must commit the literal representation before a
+// length contract can escape through another view.
 function queryLiteralLengthView(seed: number): 1 {
   const items = [seed];
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const view: { readonly length: 1 } = items;
   items.push(seed);
   return view.length;
@@ -106,6 +107,7 @@ function queryConditionalLiteralLengthView(seed: number, pick: boolean): 1 {
   const first = [seed];
   const second = [seed + 1];
   const items = pick ? first : second;
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const view: { readonly length: 1 } = items;
   first.push(seed);
   second.push(seed);
