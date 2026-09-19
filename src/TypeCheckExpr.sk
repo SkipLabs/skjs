@@ -5530,28 +5530,32 @@ extension class TypeChecker {
               (tcenv.subst, this, frozenMap),
               cstr,
             );
-            constraintSubst = argumentCheck.substitution(tcenv.subst);
-            TType::isSub(constraintSubst, this, tArg, cstrTy) match {
-            | STOk() -> void
-            | err @ STErrorOnTType _ ->
-              tcenv.subtypingError(
-                tcenv.subst,
-                this,
-                Array[
-                  (pos, "Type argument does not satisfy the constraint"),
-                  (tArg.pos, `This is of type: ${this.ppType(tcenv, tArg)}`),
-                  (
-                    cstr.pos,
-                    `It does not satisfy the constraint: ${this.ppType(
-                      tcenv,
-                      cstrTy,
-                    )}`,
-                  ),
-                ],
-                err,
-                TSCode(2344),
-              )
-            }
+            // A probe runs detached: its inference changes and caches never
+            // return to the checking owner. The constraint is still reported
+            // against the live substitution, which is what the user sees.
+            argumentCheck.check(tcenv.subst, constraintSubst -> {
+              TType::isSub(constraintSubst, this, tArg, cstrTy) match {
+              | STOk() -> void
+              | err @ STErrorOnTType _ ->
+                tcenv.subtypingError(
+                  tcenv.subst,
+                  this,
+                  Array[
+                    (pos, "Type argument does not satisfy the constraint"),
+                    (tArg.pos, `This is of type: ${this.ppType(tcenv, tArg)}`),
+                    (
+                      cstr.pos,
+                      `It does not satisfy the constraint: ${this.ppType(
+                        tcenv,
+                        cstrTy,
+                      )}`,
+                    ),
+                  ],
+                  err,
+                  TSCode(2344),
+                )
+              }
+            })
           }
         }
       };
