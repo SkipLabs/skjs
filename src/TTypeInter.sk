@@ -87,15 +87,11 @@ extension class TType {
     }
   }
 
-  // Caching is correct for compound types that contain TVars (but not bare
-  // TVars, which are excluded below). inter_ expands TVars via
-  // expandToClauses with Covariant(), which seals them (SVOpen -> SVClosed
-  // via Subst::get). Once sealed, a TVar cannot grow, so the cached result
-  // remains valid for the rest of the computation. Bare TVars are excluded
-  // because inter_ handles them specially (adding constraints or creating
-  // unexpanded intersections) without sealing. During a candidate freeze,
-  // get may return an open binding without sealing it; those results must
-  // not be published to this cache either.
+  // A closed outer TVar may still contain changing symbolic dependencies.
+  // Completed memo reuse is therefore qualified by the whole candidate snapshot
+  // and query context, rather than inferred from one covariant sealing step.
+  // Materialized answers that escape this call still need their own commitment
+  // or replay contract; a memo is not durable evidence for those consumers.
   static fun inter(
     subst: mutable Subst,
     tenv: TEnv,
@@ -103,29 +99,9 @@ extension class TType {
     ty2: TType,
   ): TType {
     if (ty1 == ty2) return ty1;
-    pair = (ty1, ty2);
-    hasTVar = ty1.getSingleVar().isSome() || ty2.getSingleVar().isSome();
-    if (!hasTVar) {
-      subst.seenInter.maybeGet(pair) match {
-      | Some(ty) -> return ty
-      | None() -> void
-      }
-    };
-    result = TType::inter_(subst, tenv, ty1, ty2);
-    if (hasTVar || subst.freezeCandidates) {
-      result
-    } else {
-      subst.seenInter.maybeGet(pair) match {
-      | Some(ty) ->
-        // Re-entrant cycle: a recursive call during inter_ already cached a
-        // result for this pair. Return the already-cached (and already-used)
-        // result for consistency with intermediate callers that consumed it.
-        ty
-      | None() ->
-        subst.!seenInter[pair] = result;
-        result
-      }
-    }
+    subst.memoizedIntersection(tenv.typeQueryContext(), ty1, ty2, () ->
+      TType::inter_(subst, tenv, ty1, ty2)
+    )
   }
 
   private static fun inter_(

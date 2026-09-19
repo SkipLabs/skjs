@@ -1,0 +1,58 @@
+/***************************************************************************/
+// Completed query memos are qualified by the state in which they were checked.
+// They are not durable subtype evidence or materialization commitments.
+/***************************************************************************/
+
+module SKJS;
+
+// Declaration tables/configuration are fixed for a checking owner. Record the
+// lexical bindings and normalization modes that can vary within that owner.
+// Recursive assumptions are different: a result conditional on an in-progress
+// query must not be published as a completed answer to another query.
+class TypeQueryContext(
+  bindings: SortedMap<String, TType>,
+  expandInter: Bool,
+  inTypeDefValidation: Bool,
+  hasAssumptions: Bool,
+) uses Equality
+
+class TypeQueryStamp(
+  epoch: Int,
+  bindings: SortedMap<TVarID, SubstValue>,
+  context: TypeQueryContext,
+  purpose: TypeComputationPurpose,
+) uses Equality {
+  fun matches(
+    epoch: Int,
+    bindings: SortedMap<TVarID, SubstValue>,
+    context: TypeQueryContext,
+    purpose: TypeComputationPurpose,
+  ): Bool {
+    // Epochs do not rewind with rollback. Comparing payloads as well makes
+    // unsupported/uninstrumented store replacement fail closed at this boundary.
+    this.epoch == epoch &&
+      this.bindings == bindings &&
+      this.context == context &&
+      this.purpose == purpose
+  }
+}
+
+extension base class TEnv {
+  fun typeQueryContext(): TypeQueryContext {
+    TypeQueryContext(
+      this.bindings,
+      this.expandInter,
+      this.inTypeDefValidation,
+      !this.seenSub.isEmpty() ||
+        !this.seenNamedSub.isEmpty() ||
+        !this.seenInter.isEmpty() ||
+        !this.subtypingHeadDepth.isEmpty() ||
+        !this.seenInstantiate.isEmpty() ||
+        !this.instantiatingTParams.isEmpty() ||
+        !this.forbiddenInsts.isEmpty() ||
+        !this.typeofValues.isEmpty(),
+    )
+  }
+}
+
+module end;

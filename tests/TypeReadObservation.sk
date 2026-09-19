@@ -15,6 +15,17 @@ fun observationString(): SKJS.TType {
   SKJS.TType::single(SKJS.TPrimValue::string(SKJS.PosRange::none))
 }
 
+// Fixtures can deliberately poison a completed cache; a stamp makes the entry
+// well-formed data, not a claim that the arbitrary fixture subtype is true.
+fun observationQueryStamp(subst: readonly SKJS.Subst): SKJS.TypeQueryStamp {
+  SKJS.TypeQueryStamp(
+    subst.semanticEpoch,
+    subst.values,
+    SKJS.TypeQueryContext(SortedMap[], false, false, false),
+    subst.typeComputationPurpose(),
+  )
+}
+
 // Direct values writes below set up internal states, as in HiddenEscape.sk.
 // They are deliberately not production inference operations. Tests that check
 // the epoch use gen/restore, not an uninstrumented fixture write.
@@ -214,16 +225,19 @@ fun testObservedScratchDoesNotInheritSuccessCaches(): void {
   subst = observationSubst();
   num = observationNumber();
   str = observationString();
-  subst.!seenSub = SortedSet[(num, str)];
-  subst.!seenInter[(num, str)] = num;
+  subst.!seenSub[(num, str)] = observationQueryStamp(subst);
+  subst.!seenInter[(num, str)] = (observationQueryStamp(subst), num);
   result = subst.withCommittedTypeReads<SKJS.TType>(scratch -> {
     SKTest.expectEq(true, scratch.seenSub.isEmpty());
     SKTest.expectEq(true, scratch.seenInter.isEmpty());
-    scratch.!seenSub = SortedSet[(str, num)];
+    scratch.!seenSub[(str, num)] = observationQueryStamp(scratch);
     Some(num)
   });
   SKTest.expectEq(true, result is SKJS.TRReady _);
-  SKTest.expectEq(SortedSet[(num, str)], subst.seenSub);
+  SKTest.expectEq(
+    Some(observationQueryStamp(subst)),
+    subst.seenSub.maybeGet((num, str)),
+  );
 }
 
 @test
@@ -285,8 +299,8 @@ fun testObservedRestoreCannotImportOwnerCaches(): void {
     SKJS.TypeDefinitionIdentity(pos.fileName, "ObservedAlias", 0),
     SKJS.TArgs(Array[]),
   );
-  subst.!seenSub = SortedSet[(num, str)];
-  subst.!seenInter[(num, str)] = num;
+  subst.!seenSub[(num, str)] = observationQueryStamp(subst);
+  subst.!seenInter[(num, str)] = (observationQueryStamp(subst), num);
   subst.!seenUnion[(num, str)] = num;
   subst.!seenExpansion[key] = str;
   saved = subst.save();
@@ -315,7 +329,7 @@ fun testObservedLocalRestoreKeepsInspectedDependencies(): void {
   subst.!values[tv.id] = SKJS.SVOpen(num);
   result = subst.withCommittedTypeReads(scratch -> {
     observed = scratch.peekRaw(tv);
-    scratch.!seenSub = SortedSet[(num, str)];
+    scratch.!seenSub[(num, str)] = observationQueryStamp(scratch);
     saved = scratch.save();
     scratch.restore(saved);
     SKTest.expectEq(true, scratch.seenSub.isEmpty());
@@ -330,7 +344,7 @@ fun testNestedObservedRestoreCannotImportOwnerCaches(): void {
   subst = observationSubst();
   num = observationNumber();
   str = observationString();
-  subst.!seenSub = SortedSet[(num, str)];
+  subst.!seenSub[(num, str)] = observationQueryStamp(subst);
   saved = subst.save();
   result = subst.withCommittedTypeReads<SKJS.TType>(scratch -> {
     nested = scratch.clone();
@@ -346,10 +360,10 @@ fun testOrdinaryRestoreStillRestoresInferenceCaches(): void {
   subst = observationSubst();
   num = observationNumber();
   str = observationString();
-  subst.!seenSub = SortedSet[(num, str)];
-  subst.!seenInter[(num, str)] = num;
+  subst.!seenSub[(num, str)] = observationQueryStamp(subst);
+  subst.!seenInter[(num, str)] = (observationQueryStamp(subst), num);
   saved = subst.save();
-  subst.!seenSub = SortedSet[];
+  subst.!seenSub = SortedMap[];
   subst.!seenInter = SortedMap[];
   subst.restore(saved);
   SKTest.expectEq(saved.seenSub, subst.seenSub);
