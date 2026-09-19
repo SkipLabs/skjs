@@ -44,9 +44,14 @@ Three similar-looking kinds stay distinct:
 
 `T extends boolean` is `T ≤ boolean`. It is not `boolean ≤ T` or `true ≤ T`.
 
-SKJS already separates `TParam` from inference `TVar`. The remaining question
-is whether *uses* preserve rigidity, scope, and witness identity, especially
-when closures or loops let values escape.
+SKJS separates rigid `TParam` from solver `TVar`. A parameter ID also carries
+an explicit `ParamOrigin`: declared, ordinary synthetic, or hidden witness.
+Equality includes that origin and renaming preserves it; a printable synthetic
+name cannot forge a hidden witness. The owning substitution's witness allocator
+is private, separate from rollback state, and exposes only a scope checkpoint.
+This is an identity boundary, not completion of the lifetime audit: *uses* must
+still preserve rigidity, scope and witness identity when closures, loops or
+later inference let values escape.
 
 Contracts (full text in [DESIGN](../verification/DESIGN.md#contracts)):
 

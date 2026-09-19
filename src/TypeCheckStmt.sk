@@ -170,7 +170,7 @@ extension class TypeChecker {
       initScope = tcenv.mcreateSubScope{isLoop => false};
       tcenv.!scope = initScope;
       initTerm = this.stmt(tcenv, initStmt);
-      firstLocalSkolem = tcenv.subst.nextSkolemId;
+      firstLocalSkolem = tcenv.subst.skolemCheckpoint();
       loopScope = tcenv.mcreateSubScope{isLoop => true};
       writes = mutable CaptureWrites{};
       writes.expr(cond);
@@ -275,7 +275,7 @@ extension class TypeChecker {
         | _ -> false
         };
 
-      firstLocalSkolem = tcenv.subst.nextSkolemId;
+      firstLocalSkolem = tcenv.subst.skolemCheckpoint();
       loopScope = tcenv.mcreateSubScope{isLoop => true};
       tcenv.!scope = loopScope;
       // See the `For` case: the loop catches its body's jumps and folds their
@@ -314,7 +314,7 @@ extension class TypeChecker {
       StmtTermination::expr(e).then(StmtTermination::throw_)
     | While(cond, block) ->
       scopeCopy = tcenv.scope;
-      firstLocalSkolem = tcenv.subst.nextSkolemId;
+      firstLocalSkolem = tcenv.subst.skolemCheckpoint();
       loopScope = tcenv.mcreateSubScope{isLoop => true};
       writes = mutable CaptureWrites{};
       writes.expr(cond);

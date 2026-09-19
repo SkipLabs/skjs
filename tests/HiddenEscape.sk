@@ -69,8 +69,7 @@ fun testSubstSemanticEpochDoesNotRewind(): void {
   SKTest.expectEq(afterGrowthEpoch + 1, subst.semanticEpoch);
 }
 
-// The same spelling currently aliases a hidden witness and an ordinary
-// synthetic parameter. Pin the representation boundary before separating them.
+// Hidden identity is separate from diagnostic spelling and survives renaming.
 @test
 fun testHiddenWitnessSyntheticNamespace(): void {
   context = SKStore.Context::mcreate{};
@@ -79,7 +78,12 @@ fun testHiddenWitnessSyntheticNamespace(): void {
   subst = SKJS.Subst::mcreate(base);
   hidden = subst.genSkolemTParam(SKJS.PosRange::none, "hidden", None());
   ordinary = SKJS.Id::createSynthetic("skolem:0");
-  SKTest.expectEq(true, hidden.id == ordinary);
+  SKTest.expectEq(false, hidden.id == ordinary);
+  SKTest.expectEq(true, hidden.id.isHiddenWitness());
+  SKTest.expectEq(false, ordinary.isHiddenWitness());
+  SKTest.expectEq(true, hidden.id.prefixWith("$").isHiddenWitness());
+  SKTest.expectEq(true, hidden.id.prefixWith("$").isSynthetic());
+  SKTest.expectEq(true, ordinary.prefixWith("$").isSynthetic());
 }
 
 @test
@@ -90,7 +94,7 @@ fun testHiddenWitnessAllocationDoesNotRewindWithInference(): void {
   subst = SKJS.Subst::mcreate(base);
   pos = SKJS.PosRange::none;
   before = subst.genSkolemTParam(pos, "hidden", None());
-  checkpoint = subst.nextSkolemId;
+  checkpoint = subst.skolemCheckpoint();
   saved = subst.save();
   abandoned = subst.genSkolemTParam(pos, "hidden", None());
   _ = subst.gen(pos);

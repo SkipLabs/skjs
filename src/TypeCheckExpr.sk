@@ -3965,7 +3965,7 @@ extension class TypeChecker {
     body: ClosureBody,
     expectedParamTypes: Array<?TType> = Array[],
   ): TType {
-    firstLocalSkolem = tcenv.subst.nextSkolemId;
+    firstLocalSkolem = tcenv.subst.skolemCheckpoint();
     static::checkTypeParams(
       tcenv.subst,
       tparams,
@@ -4070,7 +4070,7 @@ extension class TypeChecker {
       annotatedType
     };
 
-    if (tcenv.subst.nextSkolemId > firstLocalSkolem) {
+    if (tcenv.subst.skolemCheckpoint() > firstLocalSkolem) {
       this.checkHiddenBindingEscape(tcenv, pos, firstLocalSkolem, savedScope)
     };
 
@@ -4144,7 +4144,7 @@ extension class TypeChecker {
     // A contextual parameter may carry a candidate owned by a temporary
     // receiver, absent from the enclosing scope. Explicit typeof annotations
     // can expose that candidate too. Retain the whole published signature.
-    if (tcenv.subst.nextSkolemId > firstLocalSkolem) {
+    if (tcenv.subst.skolemCheckpoint() > firstLocalSkolem) {
       tcenv.registerHiddenEscape(
         HiddenEscapeCheck(
           pos,
@@ -4195,7 +4195,7 @@ extension class TypeChecker {
     firstLocalSkolem: Int,
     enclosingScope: readonly Scope,
   ): void {
-    if (tcenv.subst.nextSkolemId > firstLocalSkolem) {
+    if (tcenv.subst.skolemCheckpoint() > firstLocalSkolem) {
       roots = mutable Vector[];
       for (entry in enclosingScope.visibleRefs().items()) {
         roots.push(entry.i1.type);

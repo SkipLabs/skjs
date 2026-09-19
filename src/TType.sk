@@ -3312,29 +3312,54 @@ class TInsts private (
   }
 }
 
-value class Id private (id: String) uses XXHashable, Orderable, Show {
+// Rigid declaration parameters and hidden existential witnesses share the
+// parameter algebra, but their origins must survive renaming and cannot be
+// inferred from a printable name. Solver candidates use TVarID, never Id.
+base class ParamOrigin uses XXHashable, Orderable {
+  children =
+  | PODeclared()
+  | POSynthetic()
+  | POHiddenWitness()
+}
+
+value class Id private (
+  id: String,
+  origin: ParamOrigin,
+) uses XXHashable, Orderable, Show {
   static fun create(name: String, id: Int, lexer: readonly Lexer): Id {
-    Id(`${name}:${id}:${lexer.relativeFileNameHash}`)
+    Id(`${name}:${id}:${lexer.relativeFileNameHash}`, PODeclared())
   }
 
   fun prefixWith(pre: String): Id {
-    Id(pre + this.id)
+    Id(pre + this.id, this.origin)
   }
 
   static fun createThis(): Id {
-    Id("this")
+    Id("this", PODeclared())
   }
 
   static fun createSynthetic(id: String): Id {
-    Id(`synthetic:${id}`)
+    Id(`synthetic:${id}`, POSynthetic())
   }
 
-  // A synthetic id belongs to a type the checker minted rather than one the
-  // program declared -- a hidden type argument from `instanceof` narrowing, an
-  // ambient field's missing-annotation placeholder. Such a type has no name in
-  // source, so a diagnostic must never suggest writing it.
+  // Only the owning substitution allocates witness serials. A synthetic name
+  // with the same spelling is a different identity by construction.
+  static fun createHiddenWitness(serial: Int): Id {
+    Id(`synthetic:skolem:${serial}`, POHiddenWitness())
+  }
+
+  fun isHiddenWitness(): Bool {
+    this.origin is POHiddenWitness()
+  }
+
+  // Generated parameters have no writable source name, even after renaming.
   fun isSynthetic(): Bool {
-    this.id.startsWith("synthetic:")
+    this.origin match {
+    | PODeclared() -> false
+    | POSynthetic()
+    | POHiddenWitness() ->
+      true
+    }
   }
 
   fun toString(): String {

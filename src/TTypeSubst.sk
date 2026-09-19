@@ -86,7 +86,7 @@ mutable class Subst private {
   // Fresh ids for skolem type parameters. This counter is separate from the
   // version and from SubstState because restore rewinds the version; reusing an
   // id on a restored timeline would merge two distinct hidden type arguments.
-  mutable nextSkolemId: Int = 0,
+  private mutable nextSkolemId: Int = 0,
   // Where the pretty-printer reports the type-parameter names it emits, set
   // for the length of one diagnostic's rendering (see PpNames). Unlike
   // nextSkolemId below, a clone SHARES this rather than being cut off from
@@ -583,10 +583,15 @@ mutable class Subst private {
     TVar::create(pos, TVarID::create(id))
   }
 
+  // A scope may record allocation progress but cannot rewind the allocator.
+  readonly fun skolemCheckpoint(): Int {
+    this.nextSkolemId
+  }
+
   readonly fun skolemIdsSince(first: Int): SortedSet<Id> {
     ids = SortedSet[];
     for (id in Range(first, this.nextSkolemId)) {
-      !ids = ids.set(Id::createSynthetic(`skolem:${id}`))
+      !ids = ids.set(Id::createHiddenWitness(id))
     };
     ids
   }
@@ -605,12 +610,7 @@ mutable class Subst private {
     );
     id = this.nextSkolemId;
     this.!nextSkolemId = this.nextSkolemId + 1;
-    TParamWithConstraint(
-      name,
-      pos.fileName,
-      Id::createSynthetic(`skolem:${id}`),
-      cstr,
-    )
+    TParamWithConstraint(name, pos.fileName, Id::createHiddenWitness(id), cstr)
   }
 
   mutable fun genForField(pos: PosRange): TVar {
