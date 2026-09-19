@@ -239,7 +239,7 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - In `obj?.m(args)`, a possibly nullish receiver also makes argument effects conditional. A definitely present receiver evaluates the arguments normally; an always-nullish receiver skips them.
 - The merge conservatively includes both paths even when the source type could show that the conditional expression or default always or never runs. Check the resulting value explicitly when needed.
 - A condition does not establish refinements from tests that reference names written within that condition. Independent tests still narrow. Unknown write targets suppress refinement; split writes and subsequent checks into separate statements when needed. This conservative rule does not model hidden callee effects.
-- **Verified by**: `tests/expect-error/destructuring.ts`, `tests/expect-error/nullish-coalescing.ts`, and `tests/expect-error/optional-chaining-method-call.ts`.
+- **Verified by**: `tests/expect-error/destructuring.ts`, `tests/expect-error/nullish-coalescing.ts`, `tests/expect-error/optional-chaining-method-call.ts`, `tests/expect-error/binding-initialization.ts` (declaration names reserved before initializers) and `tests/expect-error/catch-entry-writes.ts` (try/catch/finally entry state).
 
 ### 16b. Un-annotated Class Fields Are Opaque (Ambient Classes)
 - **Rule**: Every class field needs an explicit type annotation. A non-ambient class field without one is an error (`Member 'x' must have an explicit type annotation`). An **ambient** class (`declare class`) may omit the annotation — its bodies are never checked — but the field then has an **opaque** type: it is a subtype of nothing but itself and `unknown`, and no concrete value is a subtype of it. So both **reading** such a field into a concrete type and **writing** a concrete value into it are rejected. This is stricter than tsc, which treats the field as implicit `any` and reports the missing annotation (TS7008) at the declaration instead.
@@ -327,7 +327,7 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **Error**: `TypeCheckStmt.getValueType` raises "Invalid iterable type for for-of loop" when the iterable type falls outside those shapes (see `tests/expect-error/for-of-object.ts`).
 - **Semantics**: The element type is computed once from the iterable’s structure; there is no special flow refinement beyond the standard loop scopes. For objects with an index signature, the element type is the index value type; for strings it is `string`.
 - **Workaround**: When you need to iterate a record-like object, first expose a string index signature (e.g., type `{ [key: string]: number }`) or convert the value to an array via `Object.keys` / `Object.values`.
-- **Verified by**: `examples/src/for_in_for_of_tests.ts` (arrays, tuples, strings, index signatures) and `tests/expect-error/for-of-object.ts` (plain objects rejected).
+- **Verified by**: `tests/expect-error/for_in_for_of_tests.ts` (arrays, tuples, strings), `tests/expect-error/index-signatures.ts` (iterating an index signature) and `tests/expect-error/for-of-object.ts` (plain objects rejected).
 
 ### 20b. Switch Clauses Must Not Fall Through
 
@@ -527,7 +527,7 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **Unicode escapes are supported**: an identifier character may be written as `\uXXXX` or `\u{...}`, and the name is the decoded text — `caf\u00e9` and `café` are one symbol. The escape must denote a character valid where it sits (`\u0031` cannot start a name but continues `a\u0031b` = `a1b`)
 - **Reserved words may not name bindings or declarations**: a value binding (`const if`, a parameter `if`, destructuring), or a declaration name (function/class/enum/type-alias/type-parameter), in either spelling — `const if` and `const \u0069f` alike — is a syntax error (TS1359). The same word is an ordinary property name (`{ if: 1 }.if`, `enum E { if }`, `class C { static() {} }`). The always-reserved words plus the strict-mode set are covered; TypeScript's contextual keywords (`type`, `async`, `readonly`, …) are not reserved and may name things
 - **Known gaps**: `await` is not treated as reserved (it is only inside async code, which is not tracked); and import/export bindings and reference positions do not yet reject reserved words (#938)
-- **Verified by**: `tests/expect-error/unicode-identifiers.ts`, `tests/expect-error/identifier-escapes-prettier-ignore.ts`, `tests/Lexer.sk`, `tests/JSIdentifierChars.sk`
+- **Verified by**: `tests/expect-error/unicode-identifiers.ts`, `tests/expect-error/identifier-escapes-prettier-ignore.ts`, `tests/expect-error/reserved-word-names-prettier-ignore.ts`, `tests/Lexer.sk`, `tests/JSIdentifierChars.sk`
 
 ### 31. Enums (Value-Set Semantics)
 
