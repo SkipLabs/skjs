@@ -10,6 +10,11 @@ base class SubstValue uses Equality {
   | SVClosed(TType)
 }
 
+// Shared by an owner and its scratch descendants; deliberately not rollback
+// state. A frozen query that read an unsealed binding cannot publish a lasting
+// memo even when the read happened in a clone or an abandoned alternative.
+mutable class TypeQueryReads{mutable unsealed: Int = 0}
+
 mutable base class SubstState private {
   mutable seenSub: SortedSet<(TType, TType)>,
   mutable seenInter: SortedMap<(TType, TType), TType>,
@@ -64,6 +69,7 @@ mutable class SavedSubst private {} extends SubstState {
 }
 
 mutable class Subst private {
+  private queryReads: mutable TypeQueryReads = mutable TypeQueryReads{},
   // This purpose is not rollback state. A proposal/diagnostic computation may
   // normalize locally, but its results are not checking-owner evidence.
   private computationPurpose: TypeComputationPurpose = TCPChecking(),
@@ -156,6 +162,9 @@ mutable class Subst private {
       computationPurpose => parentOpt
         .map(parent -> parent.typeComputationPurpose())
         .default(TCPChecking()),
+      queryReads => parentOpt
+        .map(parent -> parent.queryReads)
+        .default(mutable TypeQueryReads{}),
       context => tcenvb.context,
       results => tcenvb.results,
       seenSub => state.seenSub,
@@ -204,6 +213,7 @@ mutable class Subst private {
     | None() -> void
     };
     mutable Subst{
+      queryReads => this.queryReads,
       computationPurpose => this.computationPurpose,
       context => this.context,
       results => this.results,
@@ -262,6 +272,7 @@ mutable class Subst private {
       !this.isObservingTypeReads() &&
       (purpose is TCPTypeArgumentProbe());
     mutable Subst{
+      queryReads => this.queryReads,
       computationPurpose => purpose,
       context => this.context,
       results => this.results,
@@ -285,8 +296,24 @@ mutable class Subst private {
     SubstSnapshot::create(this.values)
   }
 
+  // Capture immediately before a query. Every raw binding read participates,
+  // even in non-frozen descendants: clone-local sealing cannot justify the
+  // owner's memo. The counter is never restored with substitution state.
+  readonly fun typeQueryReadStamp(): Int {
+    this.queryReads.unsealed
+  }
+
+  // This refines the freeze-window exclusion, not the general cache theorem.
+  // Non-frozen queries retain the existing sealing/rollback contract.
+  readonly fun canCacheTypeQuerySince(stamp: Int): Bool {
+    !this.freezeCandidates || this.queryReads.unsealed == stamp
+  }
+
   private mutable fun readBinding(tvar: TVar): ?SubstValue {
     value = this.values.maybeGet(tvar.id);
+    if (!(value is Some(SVClosed _))) {
+      this.queryReads.!unsealed = this.queryReads.unsealed + 1
+    };
     this.readObservation.each(frame -> frame.record(tvar, value));
     value
   }
@@ -330,6 +357,7 @@ mutable class Subst private {
     frame: mutable SubstReadObservation,
   ): mutable Subst {
     mutable Subst{
+      queryReads => parent.queryReads,
       computationPurpose => parent.computationPurpose,
       context => parent.context,
       // Preserve the existing clone discipline for diagnostics/reachability.

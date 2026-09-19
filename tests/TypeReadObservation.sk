@@ -576,4 +576,73 @@ fun testProbeExceptionDoesNotGetSwallowed(): void {
   SKTest.expectEq(true, caught);
 }
 
+// Frozen-query memo eligibility is based on the reads of this computation,
+// including reads in scratch descendants, not the outer variable's tag alone.
+@test
+fun testFrozenClosedReadsCanMemoize(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  // An earlier unsealed read must not poison all later queries.
+  _ = subst.peekRaw(tv);
+  subst.!values[tv.id] = SKJS.SVClosed(observationNumber());
+  subst.!freezeCandidates = true;
+  stamp = subst.typeQueryReadStamp();
+  _ = subst.peekRaw(tv);
+  SKTest.expectEq(true, subst.canCacheTypeQuerySince(stamp));
+}
+
+@test
+fun testFrozenUnboundReadSurvivesRollback(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  subst.!freezeCandidates = true;
+  saved = subst.save();
+  stamp = subst.typeQueryReadStamp();
+  _ = subst.isUnbound(tv);
+  subst.restore(saved);
+  SKTest.expectEq(false, subst.canCacheTypeQuerySince(stamp));
+}
+
+@test
+fun testFrozenOpenReadInCloneCannotMemoize(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  subst.!values[tv.id] = SKJS.SVOpen(observationNumber());
+  subst.!freezeCandidates = true;
+  stamp = subst.typeQueryReadStamp();
+  scratch = subst.clone();
+  saved = scratch.save();
+  _ = scratch.peekRaw(tv);
+  scratch.restore(saved);
+  SKTest.expectEq(false, subst.canCacheTypeQuerySince(stamp));
+}
+
+@test
+fun testFrozenClosedOuterDoesNotHideNormalizerRead(): void {
+  subst = observationSubst();
+  outer = subst.gen(SKJS.PosRange::none);
+  inner = subst.gen(SKJS.PosRange::none);
+  subst.!values[outer.id] = SKJS.SVClosed(SKJS.TType::var(inner));
+  subst.!values[inner.id] = SKJS.SVOpen(observationNumber());
+  subst.!freezeCandidates = true;
+  stamp = subst.typeQueryReadStamp();
+  scratch = SKJS.Subst::mcreate(subst, subst.save());
+  raw = scratch.peekRaw(outer);
+  SKTest.expectEq(true, subst.canCacheTypeQuerySince(stamp));
+  _ = raw.flatMap(ty -> ty.getSingleVar().flatMap(tv -> scratch.peekRaw(tv)));
+  SKTest.expectEq(false, subst.canCacheTypeQuerySince(stamp));
+}
+
+@test
+fun testFrozenObservedReadCannotMemoize(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  subst.!values[tv.id] = SKJS.SVOpen(observationNumber());
+  subst.!freezeCandidates = true;
+  stamp = subst.typeQueryReadStamp();
+  result = subst.withCommittedTypeReads(scratch -> scratch.peekRaw(tv));
+  SKTest.expectEq(true, result is SKJS.TRBlocked _);
+  SKTest.expectEq(false, subst.canCacheTypeQuerySince(stamp));
+}
+
 module end;
