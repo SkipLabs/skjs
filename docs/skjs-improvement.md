@@ -228,22 +228,90 @@ iteration. Do not add extracted Lean programs absent a credible verifier issue.
 The existing semantic contracts remain the reference; passing concrete generic
 instantiations does not prove a generic body.
 
-## Native normalization-transfer batch (2026-09-19; pending validation)
+## Native ownership boundaries (2026-09-19)
 
-The current implementation batch centralizes named-expansion publication at
-`TEnv.expandNamed`, gates direct `instantiate` callers, and observes the
-materializing normalizer operations described in
-[normalization-transfer-handoff.md](normalization-transfer-handoff.md). It
-preserves a single read frame through nested normalization, and separates
-void-only type-argument probes and diagnostic computations from checking.
-The historical inventory below records the state at the date in its heading;
-its older direct-live-read descriptions are not the current rest implementation.
+The implementation through `25920bbf` commits the dependencies of materialized
+normalization results in their actual inference owner. The independently rebuilt checkpoint
+passed all 182 checker tests, all 65 verifier suites and the verifier corpus
+(278 proofs, zero unexpected outcomes). Measured overhead on two rest/normalization workloads was about 2%;
+these are bounded measurements, not a general performance guarantee.
 
-R2/R3c are **not** closed. Source-level implementation of these boundaries is
-not native build/test evidence or a proof of the general inference, mutation,
-cache or publication invariants. The complete batch must be compiled and tested
-as one unit before updating the validation evidence. Do not replace a failing
-positive control with an expected error merely to obtain a green run.
+`065d419b` adds whole-snapshot subtype/intersection memo qualification. Its
+array-literal workload regresses from about 5 seconds to a reported OOM at
+4 GB. An independent bounded run reached 190,000 subtype queries with zero
+hits or publications before timing out. Retaining exact recursive contexts and
+avoiding epoch changes on unchanged restore still timed out. That implementation
+and its wrapper-specific native tests have been removed; the source regression
+controls remain. This returns to the preceding cache policy, whose general
+transitive validity is still an open obligation. R2/R3c remain **in progress**. The
+older handoff documents have been consolidated here; historical build reports
+and prototype designs remain available in Git history.
+
+### Contract implemented by observation
+
+`TEnv.materializeRead` and `Subst.withCommittedTypeDecision` run a shape
+operation in isolated state. All scratch descendants share one read frame.
+Before a result escapes, every inspected candidate payload must still match
+and be committed in the actual owner. Uninspected symbolic members stay open;
+observing `Array<E>` must not determine `E` without inspecting it.
+
+- Normalize source operands in the checking environment before observation.
+  Explicit type-argument constraints and live `typeof` checks remain mandatory.
+- A negative shape decision is still a result with dependencies. Blocked reads
+  must not silently choose a permissive fallback. Optional absence and inability
+  to establish a read are distinct outcomes.
+- Recursive normalization preserves the observation's own guards. Caller proof
+  assumptions are cleared only at entry, never on every nested expansion.
+- Named expansion has one publication path, `TEnv.expandNamed`; direct
+  instantiation is gated too. An expansion cache entry is justified by its
+  publication and transactional lifetime, not by its immutable result alone.
+- Speculative type-argument checks and diagnostics have explicit detached
+  purposes, preserved through cloning and restore. Their answers and caches
+  cannot authorize the checking owner. Probe callbacks return no type result.
+- Observed restore clears imported caches and retains the read frame. Ordinary
+  rollback must abandon derived answers together with their commitments.
+- Keep the void-typed exception boundary with `SubstReadCell`: a generic result
+  crossing try/catch in a mutable generic method crashed the Skip compiler.
+
+Implemented consumers include call/function-rest layouts and element projections,
+named expansion, direct instantiation, `keyof`, numeric indexed access, `Closed`,
+template and mapped-key classification, index/computed-key classification,
+union/intersection construction, declaration `typeof`, and function normalization.
+Tests: `TypeReadObservation.sk`, `observed-rest-shape.ts`,
+`observed-array-rest.ts`, `observed-rest-subtyping.ts`,
+`observed-indexed-normalization.ts`, `observed-normalization-boundaries.ts`,
+and `normalization-owner.ts`.
+
+### Remaining work and completion criteria
+
+1. **Reusable judgments.** Separate a completed independent answer from an
+   answer conditional on recursive assumptions and from an inference proposal.
+   Track semantic dependencies and context, including transitive candidate
+   reads. Closing an outer variable is not transitive stability. Invalidation
+   cannot retract an answer already installed in a consumer.
+2. **Durable consumers.** Audit successful subtype consumers, expression and
+   refinement materializations, clone transfer and final publication. Preserve
+   original symbolic operands when a projection erases them; checking only the
+   already-normalized answer cannot detect a stale projection. Each consumer
+   must commit its prerequisites or retain and revalidate its obligations.
+3. **Variable roles.** Generic parameters are universally quantified and rigid;
+   inference candidates are solver choices constrained by all earlier uses;
+   hidden object arguments are fixed existential witnesses. Only the second
+   category may be solved. Witness identity, scope and bounds survive cloning,
+   rollback, normalization and later candidate growth. A computation purpose
+   (checking/probe/diagnostic) is separate from these three semantic roles.
+4. **Regression and cost gates.** Keep positive controls positive and reject
+   cross-witness identification, stale growth and incompatible writes. Run the
+   full checker suite and the independent verifier after changes stabilize.
+   Validate a performance harness on a known failure and a completing control
+   before broad scans; report timeout, process kill and harness failure separately.
+   Do not cap virtual memory below Skip's reserved heap. Require the known array
+   reproducer to complete before expanding the scan.
+
+A stable read protocol is not a proof of the subtype/normalization algorithm,
+a complete validation journal, or global R2/R3c completion. Native protocol
+tests with controlled callbacks check the protocol, not arbitrary semantic
+judgments. Do not retire regressions or weaken expected outcomes to claim closure.
 
 ## Validation-lifetime inventory (2026-09-14)
 
