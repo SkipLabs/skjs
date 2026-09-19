@@ -720,6 +720,22 @@ const u: undefined = o.m(); // tsc: OK — `u` is the object `o` at runtime
 
 **Test:** [tests/expect-error/this-parameter-void-receiver.ts](../tests/expect-error/this-parameter-void-receiver.ts) · **SKJS:** rejects at the body's `this` read — `error: 'this' is not available in this context`; SKJS keeps the receiver-less assignment legal and instead forbids observing `this` in such a body ([skjs-rules.md](../skjs-rules.md))
 
+### Structural widening hides an implicit membership call
+
+A class with `static [Symbol.hasInstance](x: { value: number })` may inspect
+`x.value.toFixed()`. Strict tsc accepts assigning that class to a compatible
+constructor type that omits the hook, or to `Function`, and then using a value
+without `value` as the left operand of `instanceof`. The runtime still calls
+the original hook and throws; the structural view has discarded its input
+requirement. No explicit call or escape-hatch type is needed.
+
+**Test:** [membership-protocol-erasure.ts](../tests/expect-error/membership-protocol-erasure.ts).
+**SKJS:** rejects the erasing conversion. A function-like target must retain
+`Symbol.hasInstance`, whose signature is checked by ordinary field/function
+subtyping. An explicit compatible protocol and an opaque non-callable object
+view remain accepted. This conservative rule does not prove the safety of every
+implicit JavaScript protocol.
+
 ### Calling a `Function`-typed value yields an implicit `any`
 
 `Function` proves callability without supplying a signature, yet tsc permits `f(...)` on a `Function`-typed value with arbitrary arguments and types the result `any` — silently, under `--strict`, which includes `noImplicitAny`. Neither the arguments nor the result are checked, so whatever the call returns is laundered into any annotation. The same `Function` type is what `typeof x === "function"` narrows `unknown` to, making the hole reachable from a guard alone. The program contains no `any`, `as` or `!`: the implicit `any` is injected by the built-in type itself.

@@ -3818,8 +3818,8 @@ extension class TypeChecker {
 
   // Whether `rhsTy` is a valid `instanceof` right-hand side: every member of
   // the type is a Function-like object (each branch carries a construct or
-  // call signature). Mirrors tsc's TS2359 acceptance (modulo
-  // `Symbol.hasInstance`, which SKJS does not model).
+  // call signature). A custom membership hook is validated separately below;
+  // non-function objects whose only capability is the hook remain unsupported.
   fun isInstanceofRhs(tcenv: mutable TCEnv, rhsTy: TType): Bool {
     rhsTy.getSTypes(tcenv.subst, this, Covariant()) match {
     | None() -> false

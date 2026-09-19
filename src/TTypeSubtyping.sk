@@ -687,6 +687,7 @@ base class STErrorOnTFields(
   children =
   | STRecFieldsCall(?STErrorOnTFuns)
   | STRecFieldsNew(?STErrorOnTFuns)
+  | STRecFieldsMembershipProtocol(TField)
   | STRecFieldsIndexValue(STErrorOnTType, TField, TField, FieldMismatchKind)
   | STRecFieldsMissingIndex(STErrorOnTType, TField)
   | STRecFieldsFieldIndex(STErrorOnTType, TField, TField, FieldMismatchKind)
@@ -754,6 +755,17 @@ base class STErrorOnTFields(
         "Missing constructor signature"
       };
       (List.Nil(), List[(pos1, msg)], None())
+    | STRecFieldsMembershipProtocol(field, _fields1, _fields2) ->
+      (
+        List.Nil(),
+        List[
+          (
+            field.pos,
+            "A function-like type must preserve the source's Symbol.hasInstance contract; include the hook in the target type",
+          ),
+        ],
+        None(),
+      )
     | STRecIndexCopyProvenance(index, target, _fields1, _fields2) ->
       (
         List.Nil(),
@@ -1223,6 +1235,32 @@ extension class TFields {
     fields1: TFields,
     fields2: TFields,
   ): STResult<TFields> {
+    // Function-like views can execute @@hasInstance even when the field is
+    // omitted. Width subtyping must not erase that implicit call contract.
+    // Opaque non-callable views cannot perform membership tests and may forget it.
+    if (
+      !fields1.symbolFields.isEmpty() &&
+      (fields2.call is CPresent _ ||
+        fields2.call is CFunction() ||
+        fields2.new is CPresent _)
+    ) {
+      tenv.getWellKnownSymbolUniqueId(
+        subst,
+        fields1.symbolFields.values().next().fromSome().pos,
+        "hasInstance",
+      ) match {
+      | Some(uniqueId) ->
+        (
+          fields1.maybeGetSymbol(uniqueId),
+          fields2.maybeGetSymbol(uniqueId),
+        ) match {
+        | (Some(hook), None()) ->
+          return STRecFieldsMembershipProtocol(hook, fields1, fields2)
+        | _ -> void
+        }
+      | None() -> void
+      }
+    };
     // Process fields first so that tuple index type variables are resolved
     // before call/new signatures with union types.
     TFields::isSub_NamedFields(

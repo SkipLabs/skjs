@@ -9,10 +9,12 @@ class MembershipNumeric {
   }
 }
 function erasedConstructorHook(x: { other: number }): boolean {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const ctor: typeof MembershipPlain = MembershipNumeric;
   return x instanceof ctor;
 }
 function erasedFunctionHook(x: { other: number }): boolean {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const ctor: Function = MembershipNumeric;
   return x instanceof ctor;
 }
