@@ -92,3 +92,29 @@ function queryFreshLiteralDefault(seed: number): number {
   const [value = 0] = [seed];
   return value;
 }
+// FIXME: tsc rejects the length-1 view. A later representation commitment
+// currently invalidates the previously accepted contract in SKJS.
+function queryLiteralLengthView(seed: number): 1 {
+  const items = [seed];
+  const view: { readonly length: 1 } = items;
+  items.push(seed);
+  return view.length;
+}
+
+// Both literal identities remain reachable through the conditional alias.
+function queryConditionalLiteralLengthView(seed: number, pick: boolean): 1 {
+  const first = [seed];
+  const second = [seed + 1];
+  const items = pick ? first : second;
+  const view: { readonly length: 1 } = items;
+  first.push(seed);
+  second.push(seed);
+  return view.length;
+}
+
+function queryLiteralBroadLengthView(seed: number): number {
+  const items = [seed];
+  const view: { readonly length: number } = items;
+  items.push(seed);
+  return view.length;
+}
