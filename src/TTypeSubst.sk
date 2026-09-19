@@ -388,6 +388,17 @@ mutable class Subst private {
     }
   }
 
+  // A decision always produces a result, including false or None. Consumers
+  // that branch on such a result depend on the reads that produced it just as
+  // consumers of a positive result do. Unlike withCommittedTypeReads, a negative
+  // decision therefore commits its read set. This is not a subtype certificate:
+  // the callback still owns the meaning and validity of the decision.
+  mutable fun withCommittedTypeDecision<T>(
+    decide: (mutable Subst) -> T,
+  ): TypeReadResult<T> {
+    this.withCommittedTypeReads<T>(scratch -> Some(decide(scratch)))
+  }
+
   // Record one supported mutation of inference state. Callers that need to
   // know whether a speculative computation was observationally pure compare
   // semanticEpoch, never the rollbackable version.

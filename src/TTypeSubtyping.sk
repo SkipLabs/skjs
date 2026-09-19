@@ -1998,7 +1998,16 @@ extension class TFun {
     f2: TFun,
   ): STResult<TFun> {
     savedSubst = subst.save();
-    res = TFun::isSub_(subst, tenv, f1, f2);
+    // A later rest projection can be blocked after an earlier layout decision
+    // committed bindings. Exceptions abandon this subtype attempt too; restore
+    // before rethrowing, just as the STError path below abandons its state.
+    res = try {
+      TFun::isSub_(subst, tenv, f1, f2)
+    } catch {
+    | exn ->
+      subst.restore(savedSubst);
+      throw exn
+    };
     if (res is STError _) {
       subst.restore(savedSubst)
     } else {
@@ -2091,7 +2100,7 @@ extension class TFun {
       f2params,
       f2optionalParams,
       f2spreadParam,
-    ) = VariadicTyping::resolveSpreadToTuple(
+    ) = VariadicTyping::resolveSubtypeRestTuple(
       subst,
       tenv,
       f2.spreadParam,
@@ -2108,7 +2117,7 @@ extension class TFun {
       f1params,
       f1optionalParams,
       f1spreadParam,
-    ) = VariadicTyping::resolveSpreadToTuple(
+    ) = VariadicTyping::resolveSubtypeRestTuple(
       subst,
       tenv,
       f1.spreadParam,
@@ -2129,7 +2138,12 @@ extension class TFun {
     spread1elt = f1spreadParam match {
     | None() -> None()
     | Some(spread1) ->
-      maybeGetRestElementType(subst, tenv, spread1, Contravariant()) match {
+      VariadicTyping::resolveRestElementType(
+        subst,
+        tenv,
+        spread1,
+        Contravariant(),
+      ) match {
       | None() -> return STInvalidSpread(spread1, f1, f2)
       | some @ Some _ -> some
       }
@@ -2189,7 +2203,9 @@ extension class TFun {
         return STRecFunSpread(None(), f1, f2)
       }
     | Some(spread2) ->
-      spread2elt = maybeGetRestElementType(
+      // Positional checks above may have inferred symbolic element types.
+      // Observe this projection now, without moving it ahead of those checks.
+      spread2elt = VariadicTyping::resolveRestElementType(
         subst,
         tenv,
         spread2,

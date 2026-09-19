@@ -356,4 +356,107 @@ fun testOrdinaryRestoreStillRestoresInferenceCaches(): void {
   SKTest.expectEq(saved.seenInter, subst.seenInter);
 }
 
+// Unlike an optional read, a negative decision is consumed by the caller.
+// Its read set must therefore be committed, even when the value is false.
+@test
+fun testFalseTypeDecisionCommitsItsReads(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  subst.!values[tv.id] = SKJS.SVOpen(observationNumber());
+  epoch = subst.semanticEpoch;
+  result = subst.withCommittedTypeDecision<Bool>(scratch ->
+    scratch.peekRaw(tv).fromSome().getSingleVar().isSome()
+  );
+  SKTest.expectEq(true, result is SKJS.TRReady(false));
+  SKTest.expectEq(true, subst.isClosed(tv));
+  SKTest.expectEq(epoch + 1, subst.semanticEpoch);
+}
+
+// This is the shape of the function-subtyping tuple decision: no fixed tuple
+// was found, but that conclusion is not an unavailable optional observation.
+@test
+fun testAbsentTupleDecisionCommitsItsReads(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  subst.!values[tv.id] = SKJS.SVOpen(observationNumber());
+  result = subst.withCommittedTypeDecision<?Array<SKJS.TType>>(scratch -> {
+    _ = scratch.peekRaw(tv);
+    None()
+  });
+  SKTest.expectEq(true, result is SKJS.TRReady(None()));
+  SKTest.expectEq(true, subst.isClosed(tv));
+}
+
+@test
+fun testBlockedDecisionIsNotFalse(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  epoch = subst.semanticEpoch;
+  result = subst.withCommittedTypeDecision<Bool>(scratch ->
+    scratch.isClosed(tv)
+  );
+  SKTest.expectEq(true, result is SKJS.TRBlocked _);
+  SKTest.expectEq(true, subst.isUnbound(tv));
+  SKTest.expectEq(epoch, subst.semanticEpoch);
+}
+
+// Catching a forbidden inference operation cannot produce a trusted negative
+// decision; the shared blocked latch survives the caught exception.
+@test
+fun testCaughtBlockDoesNotAuthorizeNegativeDecision(): void {
+  subst = observationSubst();
+  epoch = subst.semanticEpoch;
+  result = subst.withCommittedTypeDecision<Bool>(scratch -> {
+    try {
+      _ = scratch.gen(SKJS.PosRange::none)
+    } catch {
+    | SKJS.SubstObservationBlocked() -> void
+    | exn -> throw exn
+    };
+    false
+  });
+  SKTest.expectEq(true, result is SKJS.TRBlocked _);
+  SKTest.expectEq(epoch, subst.semanticEpoch);
+}
+
+// The layout can inspect an outer binding without inspecting its element.
+// Later positional checks must still be able to infer that symbolic element.
+@test
+fun testRestLayoutDecisionLeavesSymbolicElementOpen(): void {
+  subst = observationSubst();
+  outer = subst.gen(SKJS.PosRange::none);
+  element = subst.gen(SKJS.PosRange::none);
+  arrayTy = SKJS.TType::inst(
+    SKJS.Name(SKJS.PosRange::none, "Array"),
+    SKJS.TArgs(Array[SKJS.TType::var(element)]),
+  );
+  subst.!values[outer.id] = SKJS.SVOpen(arrayTy);
+  result = subst.withCommittedTypeDecision<?Array<SKJS.TType>>(scratch -> {
+    _ = scratch.peekRaw(outer);
+    None()
+  });
+  SKTest.expectEq(true, result is SKJS.TRReady(None()));
+  SKTest.expectEq(true, subst.isClosed(outer));
+  SKTest.expectEq(true, subst.isUnbound(element));
+}
+
+// Rejecting the enclosing alternative abandons its layout decision too.
+// The normal rollback path must restore the pre-decision open binding.
+@test
+fun testRestLayoutCommitmentRollsBackWithAlternative(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  subst.!values[tv.id] = SKJS.SVOpen(observationNumber());
+  saved = subst.save();
+  result = subst.withCommittedTypeDecision<Bool>(scratch -> {
+    _ = scratch.peekRaw(tv);
+    false
+  });
+  SKTest.expectEq(true, result is SKJS.TRReady(false));
+  SKTest.expectEq(true, subst.isClosed(tv));
+  subst.restore(saved);
+  SKTest.expectEq(true, subst.isOpen(tv));
+  SKTest.expectEq(saved.version, subst.version);
+}
+
 module end;

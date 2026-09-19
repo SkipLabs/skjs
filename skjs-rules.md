@@ -13,6 +13,24 @@ Diagnostics currently reported as warnings: redundant optional chaining (`Useles
 
 In tests, warnings are asserted with `// @skjs-expect-warning`; see [docs/testing.md](docs/testing.md).
 
+## Rest-parameter shape diagnostics
+
+SKJS9036 reports: "A fixed rest-parameter shape could not be established without
+changing inference; add an explicit tuple or rest-parameter type annotation".
+This can arise when a call or function comparison needs a rest layout that is
+still an unresolved inference choice. A failed shape observation is not treated
+as permission to forget tuple arity and accept a homogeneous array rest instead.
+Supply the relevant explicit type argument or establish the callee's rest type
+before this check. For example, a factory returning `(...args: T) => void` may
+need `T` specified as `readonly [number, string]` before its result is checked
+against that pair signature. See `observed-rest-shape.ts` and
+`observed-rest-subtyping.ts` in `tests/expect-error/`.
+
+The diagnostic means the checker could not establish the required shape with
+its current inference state. It does not prove that the source program is
+unsafe. Element types may remain symbolic when selecting the outer shape does
+not inspect their candidate bindings; later ordinary checks still infer them.
+
 ## Key Restrictions Discovered
 
 ### 1. No Toplevel `let` Declarations

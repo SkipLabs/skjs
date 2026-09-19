@@ -38,8 +38,9 @@ class VariadicTyping() {
   // successful reads are pinned in the owner by withCommittedTypeReads before
   // tuple elements escape. Symbolic element candidates remain available for
   // ordinary argument inference unless the shape computation inspected them.
-  // Function subtyping uses this tuple-only view. Call checking uses the
-  // combined tuple/array boundary below.
+  // This is an optional tuple query. A consumer that RETAINS the decision not
+  // to flatten must use resolveSubtypeRestTuple instead. Call checking uses
+  // the combined tuple/array boundary below.
   // None leaves the owning substitution unchanged; it does not mean that the
   // type is disjoint from every tuple, only that this operation established none.
   static fun resolveSpreadToTuple(
@@ -62,18 +63,90 @@ class VariadicTyping() {
       | TRUnavailable() -> None()
       // Unknown is not evidence for the array-rest fallback: that fallback
       // forgets exact arity. Refuse rather than silently weaken the contract.
-      | TRBlocked() ->
-        fatalError(
-          Array[
-            (
-              fullType.pos,
-              "A fixed rest-parameter shape could not be established without changing inference; add an explicit tuple or rest-parameter type annotation",
-            ),
-          ],
-          SKJSCode(9036),
-        )
+      | TRBlocked() -> static::blockedRestShape(fullType.pos)
       }
     }
+  }
+
+  // Function subtyping first decides which rests to flatten, then checks
+  // positional parameters, then projects the remaining target rest element.
+  // The "no fixed tuple" decision must survive those intervening checks.
+  // Returning None from an OPTIONAL observation would discard its read set.
+  // Here None is instead the value of a successful decision, so its inspected
+  // outer bindings are established too. This does not claim disjointness from
+  // all tuples or prove that the remaining type is an array.
+  static fun resolveSubtypeRestTuple(
+    subst: mutable Subst,
+    tenv: TEnv,
+    spreadParam: ?TType,
+  ): ?Array<TType> {
+    spreadParam match {
+    | None() -> None()
+    | Some(fullType) ->
+      readEnv = if (subst.isObservingTypeReads()) {
+        tenv
+      } else {
+        tenv.forTypeReadObservation()
+      };
+      subst.withCommittedTypeDecision<?Array<TType>>(scratch ->
+        static::readSpreadTuple(scratch, readEnv, fullType)
+      ) match {
+      | TRReady(tupleElts) -> tupleElts
+      // The callback produces a decision even when no tuple was found.
+      | TRUnavailable() ->
+        invariant_violation("A rest-layout decision cannot be unavailable")
+      | TRBlocked() -> static::blockedRestShape(fullType.pos)
+      }
+    }
+  }
+
+  // Use at the actual element-consumption point, not while choosing the tuple
+  // layout. In function subtyping, positional checks can infer a symbolic
+  // element before the target-side projection. Preserve that ordering while
+  // establishing every payload the eventual projection does inspect.
+  static fun resolveRestElementType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    fullType: TType,
+    variance: Variance,
+  ): ?TType {
+    readEnv = if (subst.isObservingTypeReads()) {
+      tenv
+    } else {
+      tenv.forTypeReadObservation()
+    };
+    subst.withCommittedTypeReads<TType>(scratch ->
+      static::readRestElement(scratch, readEnv, fullType, variance)
+    ) match {
+    | TRReady(element) -> Some(element)
+    | TRUnavailable() -> None()
+    | TRBlocked() -> static::blockedRestShape(fullType.pos)
+    }
+  }
+
+  // This is the only unwrapped rest-element projection in this module.
+  // Keep the assertion even though both production callers supply scratch:
+  // a new caller must not bypass observation by passing live inference state.
+  static private fun readRestElement(
+    scratch: mutable Subst,
+    tenv: TEnv,
+    fullType: TType,
+    variance: Variance,
+  ): ?TType {
+    invariant(scratch.isObservingTypeReads());
+    maybeGetRestElementType(scratch, tenv, fullType, variance)
+  }
+
+  static private fun blockedRestShape<T>(pos: PosRange): T {
+    fatalError(
+      Array[
+        (
+          pos,
+          "A fixed rest-parameter shape could not be established without changing inference; add an explicit tuple or rest-parameter type annotation",
+        ),
+      ],
+      SKJSCode(9036),
+    )
   }
 
   // The call-side array fallback also materializes a type. Observing only the
@@ -98,7 +171,7 @@ class VariadicTyping() {
         // Preserve the original call-side variance. During observation candidate
         // get reads fixed payloads without growth/sealing in either direction.
         // Returning an element candidate does not itself inspect its payload.
-        maybeGetRestElementType(
+        static::readRestElement(
           scratch,
           readEnv,
           fullType,
@@ -108,16 +181,7 @@ class VariadicTyping() {
     }) match {
     | TRReady(shape) -> Some(shape)
     | TRUnavailable() -> None()
-    | TRBlocked() ->
-      fatalError(
-        Array[
-          (
-            fullType.pos,
-            "A fixed rest-parameter shape could not be established without changing inference; add an explicit tuple or rest-parameter type annotation",
-          ),
-        ],
-        SKJSCode(9036),
-      )
+    | TRBlocked() -> static::blockedRestShape(fullType.pos)
     }
   }
 
