@@ -22,7 +22,13 @@ mutable base class SubstState private {
   // use a fresh/private Subst, so sealing there does not seal the caller's
   // candidates. See the normalization-transfer audit in skjs-improvement.md.
   mutable seenExpansion: SortedMap<ExpansionKey, TType>,
+  // Rollbackable inference-state version. TVar allocation uses this identity
+  // space, so restore intentionally rewinds it with the rest of SubstState.
   mutable version: Int,
+  // Monotone mutation identity for acceptance-relevant observations. Unlike
+  // version, this never rewinds on restore: two states reached on different
+  // timelines must not look unchanged merely because rollback reused a version.
+  mutable semanticEpoch: Int,
   mutable values: SortedMap<TVarID, SubstValue>,
   mutable origins: SortedMap<TVarID, TVarOrigin>,
 } {
@@ -31,7 +37,11 @@ mutable base class SubstState private {
   }
 
   mutable fun restore(saved: SavedSubst): void {
+    // Restoring inference state is itself a semantic transition. Keep its
+    // identity monotone even though the rollbackable version rewinds.
+    nextSemanticEpoch = this.semanticEpoch + 1;
     this.!version = saved.version;
+    this.!semanticEpoch = nextSemanticEpoch;
     this.!values = saved.values;
     this.!origins = saved.origins;
     this.!seenSub = saved.seenSub;
@@ -48,6 +58,7 @@ mutable class SavedSubst private {} extends SubstState {
     seenUnion => SortedMap[],
     seenExpansion => SortedMap[],
     version => 0,
+    semanticEpoch => 0,
     values => SortedMap[],
     origins => SortedMap[],
   };
@@ -60,6 +71,7 @@ mutable class SavedSubst private {} extends SubstState {
       seenUnion => state.seenUnion,
       seenExpansion => state.seenExpansion,
       version => state.version,
+      semanticEpoch => state.semanticEpoch,
       values => state.values,
       origins => state.origins,
     }
@@ -140,6 +152,7 @@ mutable class Subst private {
       seenUnion => state.seenUnion,
       seenExpansion => state.seenExpansion,
       version => state.version,
+      semanticEpoch => state.semanticEpoch,
       values => state.values,
       origins => state.origins,
     }
@@ -161,6 +174,7 @@ mutable class Subst private {
       seenUnion => state.seenUnion,
       seenExpansion => state.seenExpansion,
       version => state.version,
+      semanticEpoch => state.semanticEpoch,
       values => state.values,
       origins => state.origins,
       results => results.mclone(),
@@ -180,6 +194,7 @@ mutable class Subst private {
       seenUnion => this.seenUnion,
       seenExpansion => this.seenExpansion,
       version => this.version,
+      semanticEpoch => this.semanticEpoch,
       values => this.values,
       origins => this.origins,
       // A skolem minted inside a clone would not advance the parent's
@@ -190,6 +205,16 @@ mutable class Subst private {
       nextSkolemId => -1,
       ppNames => this.ppNames,
     }
+  }
+
+  // Record one supported mutation of inference state. Callers that need to
+  // know whether a speculative computation was observationally pure compare
+  // semanticEpoch, never the rollbackable version.
+  private mutable fun bumpVersion(): Int {
+    oldVersion = this.version;
+    this.!version = this.version + 1;
+    this.!semanticEpoch = this.semanticEpoch + 1;
+    oldVersion
   }
 
   mutable fun grow(
@@ -222,7 +247,7 @@ mutable class Subst private {
         newTy
       }
     };
-    this.!version = this.version + 1;
+    _ = this.bumpVersion();
     this.!values[tvar.id] = variance match {
     | Contravariant() -> SVOpen(newTy)
     | Covariant() -> SVClosed(newTy)
@@ -236,7 +261,7 @@ mutable class Subst private {
       | None() ->
         // Fresh: sealing to top is a new addition, allowed.
         topTy = TType::top(tvar.pos);
-        this.!version = this.version + 1;
+        _ = this.bumpVersion();
         this.!values[tvar.id] = SVClosed(topTy);
         topTy
       | Some(SVClosed(ty)) -> ty
@@ -246,7 +271,7 @@ mutable class Subst private {
         if (this.freezeCandidates && tvar.id.isCandidate()) {
           ty
         } else {
-          this.!version = this.version + 1;
+          _ = this.bumpVersion();
           this.!values[tvar.id] = SVClosed(ty);
           ty
         }
@@ -279,8 +304,7 @@ mutable class Subst private {
   }
 
   mutable fun gen(pos: PosRange): TVar {
-    id = this.version;
-    this.!version = this.version + 1;
+    id = this.bumpVersion();
     TVar::create(pos, TVarID::create(id))
   }
 
@@ -314,14 +338,12 @@ mutable class Subst private {
   }
 
   mutable fun genForField(pos: PosRange): TVar {
-    id = this.version;
-    this.!version = this.version + 1;
+    id = this.bumpVersion();
     TVar::create(pos, TVarID::createForField(id))
   }
 
   mutable fun genForLiteralCommitment(pos: PosRange): TVar {
-    id = this.version;
-    this.!version = this.version + 1;
+    id = this.bumpVersion();
     TVar::create(pos, TVarID::createForLiteralCommitment(id))
   }
 

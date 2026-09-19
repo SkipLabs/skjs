@@ -47,4 +47,26 @@ fun testHiddenEscapeThroughArrayCommitment(): void {
   SKTest.expectEq(false, check.fails(subst));
 }
 
+@test
+fun testSubstSemanticEpochDoesNotRewind(): void {
+  context = SKStore.Context::mcreate{};
+  results = SKJS.TCResultsAcc::mcreate{errorHandling => SKJS.EHDefault()};
+  base = mutable SKJS.TCEnvLight{context, results};
+  subst = SKJS.Subst::mcreate(base);
+  pos = SKJS.PosRange::none;
+
+  saved = subst.save();
+  savedVersion = subst.version;
+  initialEpoch = subst.semanticEpoch;
+  _ = subst.gen(pos);
+  afterGrowthEpoch = subst.semanticEpoch;
+
+  SKTest.expectEq(savedVersion + 1, subst.version);
+  SKTest.expectEq(initialEpoch + 1, afterGrowthEpoch);
+
+  subst.restore(saved);
+  SKTest.expectEq(savedVersion, subst.version);
+  SKTest.expectEq(afterGrowthEpoch + 1, subst.semanticEpoch);
+}
+
 module end;
