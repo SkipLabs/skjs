@@ -105,4 +105,54 @@ fun testFrozenCallbackUnionRetainsInputContracts(): void {
   }
 }
 
+@test
+fun testFrozenFieldIntersectionRetainsReadContract(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst) with {expandInter => true};
+  a = subst.gen(SKJS.PosRange::none);
+  b = subst.gen(SKJS.PosRange::none);
+  subst.grow(tenv, a, observationNumber(), SKJS.Contravariant());
+  subst.grow(tenv, b, observationString(), SKJS.Contravariant());
+  x = constructionField(SKJS.TType::var(a));
+  y = constructionField(SKJS.TType::var(b));
+  subst.!freezeCandidates = true;
+  named = SKJS.TField::inter(subst, tenv, x, y);
+  indexed = SKJS.TField::interIndex(subst, tenv, x, y);
+  subst.!freezeCandidates = false;
+  subst.grow(tenv, b, observationNumber(), SKJS.Contravariant());
+  for (field in Array[named, indexed]) {
+    numeric = SKJS.TType::isSub(subst, tenv, observationNumber(), field.get);
+    textual = SKJS.TType::isSub(subst, tenv, observationString(), field.get);
+    // Pin the premature empty read projection.
+    SKTest.expectEq(false, numeric is SKJS.STOk());
+    SKTest.expectEq(false, textual is SKJS.STOk());
+  }
+}
+
+@test
+fun testFrozenGenericBoundRetainsCandidate(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  pos = SKJS.PosRange::none;
+  a = subst.gen(pos);
+  subst.grow(tenv, a, observationString(), SKJS.Contravariant());
+  id = SKJS.Id::createSynthetic("constructed-bound");
+  param = SKJS.TParamWithConstraint(
+    "T",
+    SKJS.FPath::nil,
+    id,
+    Some(SKJS.TType::var(a)),
+  );
+  subst.!freezeCandidates = true;
+  bounded = SKJS.TType::fromTParamWithConstraint(subst, tenv, pos, param);
+  subst.!freezeCandidates = false;
+  subst.grow(tenv, a, observationNumber(), SKJS.Contravariant());
+  instantiated = bounded.mapTParams(subst, tenv, _ ->
+    Some(observationNumber())
+  );
+  result = SKJS.TType::isSub(subst, tenv, observationNumber(), instantiated);
+  // Pin the bound captured before its candidate gained number.
+  SKTest.expectEq(false, result is SKJS.STOk());
+}
+
 module end;
