@@ -4,7 +4,6 @@ from model import BOTTOM, NUMBER, Blocked, Owner, Ty
 
 
 class RegistrationTests(unittest.TestCase):
-    @unittest.expectedFailure
     def test_blocked_materialization_prevents_publication(self):
         owner = Owner()
         candidate = owner.fresh()
@@ -13,7 +12,6 @@ class RegistrationTests(unittest.TestCase):
         with self.assertRaises(Blocked):
             owner.close()
 
-    @unittest.expectedFailure
     def test_unsupported_materialization_prevents_publication(self):
         owner = Owner()
         with self.assertRaises(Blocked):

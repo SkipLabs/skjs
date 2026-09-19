@@ -130,6 +130,10 @@ class Query:
     target: Ty
 
     def holds(self, s: Snapshot) -> bool:
+        if self.op == "defined":
+            # A required evaluation is a premise even before it yields a value.
+            normalize(self.source, s)
+            return True
         a, b = normalize(self.source, s), normalize(self.target, s)
         if self.op == "sub":
             return included(a, b)
@@ -322,6 +326,8 @@ class Owner:
         return self._check(receipt.obligation)
 
     def observe(self, source: Ty) -> Observation:
+        # Register BEFORE evaluation: a caught Blocked must not permit publication.
+        self.require(Query("defined", source, BOTTOM))
         value = normalize(source, self.snapshot)
         # Retain the lost dependency even if downstream code uses only the frozen value.
         return Observation(value, self.require(Query("equal", source, value)))
