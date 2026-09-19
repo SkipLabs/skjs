@@ -14,15 +14,10 @@ base class TypeArgumentCheck {
   | ValidateTypeArguments()
   | ProbeTypeArguments()
 
-  fun substitution(subst: mutable Subst): mutable Subst {
+  fun check(subst: mutable Subst, runCheck: (mutable Subst) -> void): void {
     this match {
-    | ValidateTypeArguments() -> subst
-    | ProbeTypeArguments() ->
-      if (subst.isObservingTypeReads()) {
-        subst.cloneForTypeArgumentProbe()
-      } else {
-        subst.clone()
-      }
+    | ValidateTypeArguments() -> runCheck(subst)
+    | ProbeTypeArguments() -> subst.withTypeArgumentProbe(runCheck)
     }
   }
 }
@@ -224,56 +219,27 @@ base class TEnv{
     ExpansionKey(this.typeDefinitionIdentity(tcenvb, name), targs)
   }
 
-  // Materialize a shape-sensitive type result against the candidate owner that
-  // supplied its symbolic operands. The computation runs in isolated observed
-  // state; every candidate payload it actually inspects is committed atomically
-  // before the TType escapes. A TCEnv owns its live Subst; a Subst owns itself.
-  // Declaration-only/light environments have no candidate owner and retain the
-  // ordinary fresh-state behavior.
-  //
-  // This is deliberately narrower than making normalization use live inference
-  // everywhere. The callback may preserve symbolic members without inspecting
-  // them; only inspected payloads are pinned. A blocked materialization is not
-  // allowed to fall back to an answer computed from private inference.
-  fun materializeTypeRead(
-    tcenvb: mutable TCEnvBase,
-    pos: PosRange,
-    read: (mutable Subst, TEnv) -> TType,
-  ): TType {
-    owner: ?mutable Subst = tcenvb match {
-    | tcenv @ TCEnv _ -> Some(tcenv.subst)
-    | subst @ Subst _ -> Some(subst)
-    | _ -> None()
-    };
-    owner match {
-    | None() -> read(Subst::mcreate(tcenvb), this)
-    | Some(subst) ->
-      readEnv = this.forTypeReadObservation();
-      subst.withCommittedTypeReads<TType>(scratch ->
-        Some(read(scratch, readEnv))
-      ) match {
-      | TRReady(value) -> value
-      | TRUnavailable() ->
-        invariant_violation("A mandatory type materialization cannot be unavailable")
-      | TRBlocked() ->
-        fatalError(
-          Array[
-            (
-              pos,
-              "A type projection or expansion could not be established without changing inference; add an explicit type annotation",
-            ),
-          ],
-          SKJSCode(9037),
-        )
-      }
-    }
-  }
-
   // Given a type name and type arguments, first retrieves the type
   // definition (using the defMap) and then produces a type where the
   // type parameters have been replaced with the corresponding type
   // arguments (as expected).
   fun instantiate(
+    _tcenvb: mutable TCEnvBase,
+    baseSubst: mutable Subst,
+    name: Name,
+    targs: TArgs,
+  ): TType {
+    // The supplied candidate owner, not an arbitrary fresh normalization state,
+    // must establish the reads. Scratch inherits that owner's diagnostics too.
+    this.materializeTypeRead(
+      baseSubst,
+      name.pos,
+      (scratch, readEnv) ->
+        readEnv.instantiateRead(scratch, scratch, name, targs),
+    )
+  }
+
+  private fun instantiateRead(
     tcenvb: mutable TCEnvBase,
     baseSubst: readonly Subst,
     name: Name,
@@ -502,8 +468,8 @@ base class TEnv{
         // string). For an unbound inference-variable argument this makes the
         // check vacuous, which is sound — see the constraint-check soundness
         // note on this function.
-        constraintSubst = argumentCheck.substitution(subst);
-        TType::isSub(constraintSubst, this, tArg, cstrTy) match {
+        argumentCheck.check(subst, constraintSubst -> {
+          TType::isSub(constraintSubst, this, tArg, cstrTy) match {
         | STOk() -> void
         | err @ STErrorOnTType _ ->
           tcenvb.subtypingError(
@@ -527,7 +493,8 @@ base class TEnv{
             err,
             TSCode(2344),
           )
-        }
+          }
+        })
       };
       !this.bindings[tParam.name.value] = tArg;
     };
@@ -2292,21 +2259,28 @@ base class TEnv{
         TType::inst(n, TArgs(normTargs))
       }
     | TAUnion(ty1, ty2) ->
-      subst = Subst::mcreate(tcenvb);
-      TType::union(
-        subst,
-        this,
-        this.normalize(tcenvb, ty1),
-        this.normalize(tcenvb, ty2),
+      left = this.normalize(tcenvb, ty1);
+      right = this.normalize(tcenvb, ty2);
+      this.materializeTypeRead(
+        tcenvb,
+        pos,
+        (scratch, readEnv) -> TType::union(scratch, readEnv, left, right),
       ).withPos(pos)
     | TAInter(ty1, ty2) ->
-      subst = Subst::mcreate(tcenvb);
-      TType::inter(
-        subst,
-        this,
-        this.normalize(tcenvb, ty1),
-        this.normalize(tcenvb, ty2),
-      ).withPos(pos)
+      left = this.normalize(tcenvb, ty1);
+      right = this.normalize(tcenvb, ty2);
+      if (left.getSingleVar().isSome() || right.getSingleVar().isSome()) {
+        // Preserve a symbolic intersection rather than consult a variable's
+        // inference status merely to construct it. Shape consumers establish
+        // any payload they later need when expanding this TInter.
+        TType::unexpandedInter(left, right).withPos(pos)
+      } else {
+        this.materializeTypeRead(
+          tcenvb,
+          pos,
+          (scratch, readEnv) -> TType::inter(scratch, readEnv, left, right),
+        ).withPos(pos)
+      }
     | taTuple @ TATuple _ -> this.normalizeTuple(tcenvb, pos, taTuple, false)
     | TAGet(tyObj, tyKey) ->
       tyKey.value match {
@@ -2353,9 +2327,18 @@ base class TEnv{
     types: Array<Type>,
   ): TType {
     invariant(strings.size() == types.size() + 1);
-    subst = Subst::mcreate(tcenvb);
     holeTypes = types.map(ty -> this.normalize(tcenvb, ty));
-    holes = holeTypes.map(ty -> this.templateHole(subst, ty));
+    holes = this.materializeRead<Array<TemplateHole>>(
+      tcenvb,
+      pos,
+      (scratch, readEnv) ->
+        holeTypes.map(ty -> readEnv.templateHole(scratch, ty)),
+    );
+    // This state is only used to render the failure diagnostics below.
+    subst = Subst::candidateOwner(tcenvb) match {
+    | Some(owner) -> owner.cloneForTypeDiagnostics()
+    | None() -> Subst::mcreate(tcenvb)
+    };
 
     // A hole whose type may not be interpolated at all is an error, as in tsc,
     // and takes precedence over any reduction. Checking continues as `string`,
@@ -2748,8 +2731,11 @@ base class TEnv{
           )
         | Class{kind => CKInterface()} -> !sawInterface = true
         | Class _ ->
-          subst = Subst::mcreate(tcenvb);
-          return this.newStatic(subst, varName)
+          return this.materializeTypeRead(
+            tcenvb,
+            varName.pos,
+            (scratch, readEnv) -> readEnv.newStatic(scratch, varName),
+          )
         | TypeDef _ -> !sawTypeAlias = true
         | en @ Enum _ -> return this.enumStatic(tcenvb, en)
         | FDVar _ -> !sawValueDef = true
@@ -2760,9 +2746,13 @@ base class TEnv{
       };
       if (sawInterface && !sawValueDef) {
         interfaceAsValueError(tcenvb, varName);
-        // Continue as if the interface name were a value.
-        subst = Subst::mcreate(tcenvb);
-        this.newStatic(subst, varName)
+        // Continue as if the interface name were a value, without allowing
+        // recovery normalization to bypass the ownership boundary.
+        this.materializeTypeRead(
+          tcenvb,
+          varName.pos,
+          (scratch, readEnv) -> readEnv.newStatic(scratch, varName),
+        )
       } else if (sawTypeAlias && !sawValueDef) {
         typeAliasAsValueError(varName)
       } else {
@@ -2776,28 +2766,12 @@ base class TEnv{
         notSupported(propertyName.pos, "prototype access")
       };
       baseType = this.typeOfExpr(tcenvb, baseExpr);
-      subst = Subst::mcreate(tcenvb);
-      baseType.getSTypes(subst, this, Covariant()).flatMap(sTypes ->
-        sTypes.singleElt()
-      ) match {
-      | Some(obj @ TObject _) ->
-        this.extractedMethodType(
-          subst,
-          obj.getType(subst, this, propertyName.value, expr.pos),
-        )
-      | _ ->
-        fatalError(
-          Array[
-            (
-              propertyName.pos,
-              `Cannot access a property on non-object type ${quoteRenderedType(
-                prettyPrintType(false, baseType, subst, this),
-              )}`,
-            ),
-          ],
-          TSCode(2339),
-        )
-      }
+      this.materializeTypeRead(
+        tcenvb,
+        propertyName.pos,
+        (scratch, readEnv) ->
+          readEnv.readTypeofProperty(scratch, baseType, propertyName, expr.pos),
+      )
     | _ ->
       fatalError(
         Array[
@@ -2807,6 +2781,35 @@ base class TEnv{
           ),
         ],
         SKJSCode(2052),
+      )
+    }
+  }
+
+  private fun readTypeofProperty(
+    subst: mutable Subst,
+    baseType: TType,
+    propertyName: Name,
+    pos: PosRange,
+  ): TType {
+    baseType.getSTypes(subst, this, Covariant()).flatMap(sTypes ->
+      sTypes.singleElt()
+    ) match {
+    | Some(obj @ TObject _) ->
+      this.extractedMethodType(
+        subst,
+        obj.getType(subst, this, propertyName.value, pos),
+      )
+    | _ ->
+      fatalError(
+        Array[
+          (
+            propertyName.pos,
+            `Cannot access a property on non-object type ${quoteRenderedType(
+              prettyPrintType(false, baseType, subst, this),
+            )}`,
+          ),
+        ],
+        TSCode(2339),
       )
     }
   }
@@ -2840,7 +2843,18 @@ base class TEnv{
     pos: PosRange,
     keyType: TType,
   ): IndexKeyKinds {
-    subst = Subst::mcreate(tcenvb);
+    this.materializeRead<IndexKeyKinds>(
+      tcenvb,
+      pos,
+      (scratch, readEnv) -> readEnv.readIndexKeyKinds(scratch, pos, keyType),
+    )
+  }
+
+  private fun readIndexKeyKinds(
+    subst: mutable Subst,
+    pos: PosRange,
+    keyType: TType,
+  ): IndexKeyKinds {
     hasString = false;
     hasNumber = false;
     hasSymbol = false;
@@ -2989,11 +3003,15 @@ base class TEnv{
         // outer class/type-def instantiation binding. This gives the
         // method its own scope for `tparam.name.value` within its
         // signature. (#606)
-        !this.bindings[tparam.name.value] = TType::fromTParamWithConstraint(
-          subst,
-          this,
+        !this.bindings[tparam.name.value] = this.materializeTypeRead(
+          tcenvb,
           tparam.name.pos,
-          funTParam,
+          (scratch, readEnv) -> TType::fromTParamWithConstraint(
+            scratch,
+            readEnv,
+            tparam.name.pos,
+            funTParam,
+          ),
         );
         funTParam
       });
@@ -3094,7 +3112,12 @@ base class TEnv{
         // function is effectively free: freely callable, assignable to a
         // no-`this` type, and its `.call`/`.apply`/`.bind` accept the natural
         // `undefined` receiver. Represent it as `NoThis`.
-        if (TEnv::isReceiverlessThis(subst, this, t)) {
+        receiverless = this.materializeRead<Bool>(
+          tcenvb,
+          t.pos,
+          (scratch, readEnv) -> TEnv::isReceiverlessThis(scratch, readEnv, t),
+        );
+        if (receiverless) {
           NoThis()
         } else {
           Explicit(t)
@@ -3132,7 +3155,19 @@ base class TEnv{
     keyExpr: Expr,
   ): FieldKey {
     keyType = this.typeOfExpr(tcenvb, keyExpr);
-    subst = Subst::mcreate(tcenvb);
+    this.materializeRead<FieldKey>(
+      tcenvb,
+      keyExpr.pos,
+      (scratch, readEnv) ->
+        readEnv.readComputedKey(scratch, keyExpr, keyType),
+    )
+  }
+
+  private fun readComputedKey(
+    subst: mutable Subst,
+    keyExpr: Expr,
+    keyType: TType,
+  ): FieldKey {
     keyType
       .getSTypes(subst, this, Covariant())
       .flatMap(stypes -> stypes.singleElt())
@@ -3149,6 +3184,57 @@ base class TEnv{
         TSCode(1170),
       )
     }
+  }
+
+  private fun readMappedKey(
+    subst: mutable Subst,
+    keyTType: TType,
+  ): MappedKeyShape {
+    hasString = false;
+    hasNumber = false;
+    hasSymbol = false;
+    namedLiterals = mutable Vector<String>[];
+    symbolLiterals = mutable Vector<String>[];
+    isAbstract = false;
+    // Keep the existing unresolved/abstract policy. This pass does not infer
+    // keys from a bound or turn an unsupported mapped type into an empty one.
+    valid = keyTType.expandToVectors(subst, this, None()) match {
+    | None() -> false
+    | Some((insts, clauses)) ->
+      ok = insts.isEmpty();
+      for (clause in clauses) {
+        if (!clause.vars.isEmpty()) !isAbstract = true;
+        clause.stypes match {
+        | None() -> !ok = false
+        | Some(stypes) ->
+          for (stype in stypes) {
+            stype match {
+            | TPrimValue(TString(), None(), _) -> !hasString = true
+            | TPrimValue(TNum(), None(), _) -> !hasNumber = true
+            | TPrimValue(TSymbol(), None(), _) -> !hasSymbol = true
+            | TPrimValue(TString(), Some(lits), _)
+            | TPrimValue(TNum(), Some(lits), _) ->
+              for (lit in lits.values()) namedLiterals.push(lit.val)
+            | TPrimValue(TSymbol(), Some(lits), _) ->
+              for (lit in lits.values()) symbolLiterals.push(lit.val)
+            // Any other primitive/object shape is unsupported, including
+            // future additions until their key semantics are supplied here.
+            | _ -> !ok = false
+            }
+          }
+        }
+      };
+      ok
+    };
+    MappedKeyShape(
+      valid,
+      isAbstract,
+      hasString,
+      hasNumber,
+      hasSymbol,
+      namedLiterals.toArray(),
+      symbolLiterals.toArray(),
+    )
   }
 
   private fun createTFields(
@@ -3212,48 +3298,18 @@ base class TEnv{
           | Some(FNRemove _) -> false
           };
           keyTType = this.normalize(tcenvb, kType);
-          subst = Subst::mcreate(tcenvb);
-          hasString = false;
-          hasNumber = false;
-          hasSymbol = false;
-          namedLiterals = mutable Vector[];
-          symbolLiterals = mutable Vector[];
-          // K resolves either to a concrete supported shape, an abstract type
-          // parameter (TParam in clause.vars / TVar in insts), or an unsupported
-          // shape (e.g. boolean). Abstract K is silently skipped only during
-          // type-def validation so that generic mapped-type aliases like
-          //   type Record<K extends string | number | symbol, V> = { [P in K]: V }
-          // pass validation; in any other context (e.g. instantiation with an
-          // outer type parameter) an abstract K is reported. Unsupported
-          // shapes always error.
-          isAbstract = false;
-          shapeOk = keyTType.expandToVectors(subst, this, None()) match {
-          | None() ->
-            false // K expanded to Top (e.g. any/unknown) — unsupported
-          | Some((insts, clauses)) ->
-            ok = insts.isEmpty();
-            for (clause in clauses) {
-              if (!clause.vars.isEmpty()) !isAbstract = true;
-              clause.stypes match {
-              | None() -> !ok = false
-              | Some(stypes) ->
-                for (stype in stypes) {
-                  stype match {
-                  | TPrimValue(TString(), None(), _) -> !hasString = true
-                  | TPrimValue(TNum(), None(), _) -> !hasNumber = true
-                  | TPrimValue(TSymbol(), None(), _) -> !hasSymbol = true
-                  | TPrimValue(TString(), Some(lits), _)
-                  | TPrimValue(TNum(), Some(lits), _) ->
-                    for (lit in lits.values()) namedLiterals.push(lit.val)
-                  | TPrimValue(TSymbol(), Some(lits), _) ->
-                    for (lit in lits.values()) symbolLiterals.push(lit.val)
-                  | _ -> !ok = false
-                  }
-                }
-              }
-            };
-            ok
-          };
+          shape = this.materializeRead<MappedKeyShape>(
+            tcenvb,
+            this.instantiateAt.default(fd.pos),
+            (scratch, readEnv) -> readEnv.readMappedKey(scratch, keyTType),
+          );
+          hasString = shape.hasString;
+          hasNumber = shape.hasNumber;
+          hasSymbol = shape.hasSymbol;
+          namedLiterals = shape.namedLiterals;
+          symbolLiterals = shape.symbolLiterals;
+          isAbstract = shape.isAbstract;
+          shapeOk = shape.valid;
           if (isAbstract) {
             if (!this.inTypeDefValidation) {
               errPos = this.instantiateAt.default(fd.pos);
@@ -3454,7 +3510,19 @@ base class TEnv{
     closedPos: PosRange,
     inner: TType,
   ): TType {
-    subst = Subst::mcreate(tcenvb);
+    this.materializeTypeRead(
+      tcenvb,
+      this.instantiateAt.default(closedPos),
+      (scratch, readEnv) -> readEnv.readClosedObject(scratch, closedPos, inner),
+    )
+  }
+
+  private fun readClosedObject(
+    subst: mutable Subst,
+    closedPos: PosRange,
+    inner: TType,
+  ): TType {
+    tcenvb: mutable TCEnvBase = subst;
     // Errors anchor at the instantiation site when there is one (for the
     // stub-alias route that is the innermost alias application: a direct
     // Closed<...> use anchors at the use site; a wrapper alias anchors at the
@@ -3566,6 +3634,18 @@ base class TEnv{
      Try to keep in synch with TypeChecker#get in TypeCheckExpr
   */
   fun keyOfType(subst: mutable Subst, ty: TType, pos: PosRange): TType {
+    this.materializeTypeRead(
+      subst,
+      pos,
+      (scratch, readEnv) -> readEnv.readKeyOfType(scratch, ty, pos),
+    )
+  }
+
+  private fun readKeyOfType(
+    subst: mutable Subst,
+    ty: TType,
+    pos: PosRange,
+  ): TType {
     clauses = ty.expandToClauses(subst, this, Covariant());
     this.checkAbstractProjection(clauses, pos, "keyof");
     if (

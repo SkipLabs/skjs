@@ -8,11 +8,6 @@ base class TypeComputationPurpose {
   children =
   | TCPChecking()
   | TCPTypeArgumentProbe()
-  // Representation guidance. Dispatches like a diagnostic -- detached, no
-  // committed read -- but the two differ in who may consume the answer: a
-  // diagnostic result may only be rendered, while a guidance result may
-  // select an inference proposal. Neither may authorize acceptance.
-  | TCPGuidance()
   | TCPDiagnostic()
 }
 
@@ -29,33 +24,40 @@ value class MappedKeyShape(
 )
 
 extension base class TEnv {
-  // Checking receives only fixed-read operations. Detached probes/diagnostics
-  // have a separate callback: their computations cannot publish checking facts.
-  // This distinction is computation purpose, independent of candidate role.
-  fun materializeReadContext<T>(
+  // Normalize children in their source checking environment BEFORE entering
+  // here. This preserves mandatory written-type-argument checks and typeof's
+  // expression semantics. Only the consuming type operation runs in scratch.
+  fun materializeRead<T>(
     tcenvb: mutable TCEnvBase,
     pos: PosRange,
-    read: (mutable TypeReadContext) -> T,
-    detached: (mutable Subst, TEnv) -> T,
+    read: (mutable Subst, TEnv) -> T,
   ): T {
-    tcenvb match {
-    | declaration @ TypeReadDeclaration _ ->
-      return declaration.readIn(this, read)
-    | _ -> void
+    subst = Subst::candidateOwner(tcenvb) match {
+    | Some(owner) -> owner
+    // With no owner, observation against an empty store still refuses any
+    // foreign candidate payload read. It cannot invent a shape from top/bottom.
+    | None() -> Subst::mcreate(tcenvb)
     };
-    subst = Subst::computationOwner(tcenvb);
     subst.typeComputationPurpose() match {
     | TCPTypeArgumentProbe()
-    | TCPGuidance()
     | TCPDiagnostic() ->
-      detached(subst, this)
+      // These states are detached and cannot confer checking-owner authority.
+      // Their nested normalization must not restart a checking observation.
+      read(subst, this)
     | TCPChecking() ->
-      subst.withCommittedReadDecision<T>(this, read) match {
+      // Clear caller proof assumptions ONCE. Resetting these inside recursive
+      // observed expansion destroys the guards that this snapshot just built.
+      readEnv = if (subst.isObservingTypeReads()) {
+        this
+      } else {
+        this.forTypeReadObservation()
+      };
+      subst.withCommittedTypeDecision<T>(scratch ->
+        read(scratch, readEnv)
+      ) match {
       | TRReady(value) -> value
       | TRUnavailable() ->
-        invariant_violation(
-          "A mandatory type materialization cannot be unavailable",
-        )
+        invariant_violation("A mandatory type materialization cannot be unavailable")
       | TRBlocked() ->
         fatalError(
           Array[
@@ -70,29 +72,17 @@ extension base class TEnv {
     }
   }
 
-  // A subtype decision used to choose a lasting program fact must not be
-  // justified by solutions or seals in a discarded clone. Both true and false
-  // inspect dependencies; establish them in the checking owner before return.
-  fun materializeSubtypeDecision(
+  fun materializeTypeRead(
     tcenvb: mutable TCEnvBase,
     pos: PosRange,
-    source: TType,
-    target: TType,
-  ): Bool {
-    this.materializeReadContext<Bool>(
-      tcenvb,
-      pos,
-      context -> context.isSubtype(source, target),
-      (scratch, readEnv) ->
-        TType::isSub(scratch, readEnv, source, target) is STOk()
-      ,
-    )
+    read: (mutable Subst, TEnv) -> TType,
+  ): TType {
+    this.materializeRead<TType>(tcenvb, pos, read)
   }
 
   // The single memoizing named-expansion path. All callers, including inference
   // variable collection, share the same publication boundary. instantiate itself
-  // also gates uncached/direct callers. Fixed reads use the same declaration
-  // evaluator through TypeReadDeclaration, without a mutable-solver callback.
+  // also gates uncached/direct callers, so its raw implementation cannot escape.
   fun expandNamed(subst: mutable Subst, name: Name, targs: TArgs): TType {
     identity = this.typeDefinitionIdentity(subst, name);
     if (this.seenInstantiate.contains(identity)) {
@@ -100,14 +90,14 @@ extension base class TEnv {
       TType::inst(name, targs)
     } else {
       key = ExpansionKey(identity, targs);
-      subst.memoizedExpansion(key) match {
+      subst.seenExpansion.maybeGet(key) match {
       | Some(expanded) -> expanded
       | None() ->
         expanded = this.instantiate(subst, subst, name, targs);
         if (expanded != TType::inst(name, targs)) {
           // In scratch this remains local/provisional; in the live owner the
           // outer observation has already established its inspected payloads.
-          subst.memoizeExpansion(key, expanded)
+          subst.!seenExpansion[key] = expanded
         };
         expanded
       }

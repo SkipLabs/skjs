@@ -469,17 +469,16 @@ fun testDetachedTypeArgumentProbeDoesNotBlockObservation(): void {
   subst.!values[observed.id] = SKJS.SVOpen(observationNumber());
   ownerVersion = subst.version;
   result = subst.withCommittedTypeReads<Bool>(scratch -> {
-    probe = scratch.cloneForTypeArgumentProbe();
-    speculative = probe.gen(SKJS.PosRange::none);
-    probe.grow(
-      mutable SKJS.TEnvLight{
-        context => probe.context,
-        results => probe.results,
-      },
-      speculative,
-      observationString(),
-      SKJS.Contravariant(),
-    );
+    scratch.withTypeArgumentProbe(probe -> {
+      // Allocation is a genuine instrumented mutation and needs no fabricated
+      // typing environment. Fixture binding writes only set up the probe state.
+      speculative = probe.gen(SKJS.PosRange::none);
+      probe.!values[speculative.id] = SKJS.SVOpen(observationString());
+      SKTest.expectEq(
+        true,
+        probe.typeComputationPurpose() is SKJS.TCPTypeArgumentProbe(),
+      );
+    });
     _ = scratch.peekRaw(observed);
     Some(true)
   });
@@ -488,6 +487,96 @@ fun testDetachedTypeArgumentProbeDoesNotBlockObservation(): void {
   // Only committing the observed binding mutates the owner; speculative probe
   // allocation/growth lives on the detached clone.
   SKTest.expectEq(ownerVersion + 1, subst.version);
+}
+
+@test
+fun testProbePurposeSurvivesCloneAndNormalization(): void {
+  subst = observationSubst();
+  originalVersion = subst.version;
+  subst.withTypeArgumentProbe(probe -> {
+    child = probe.clone();
+    fresh = SKJS.Subst::mcreate(child);
+    SKTest.expectEq(
+      true,
+      fresh.typeComputationPurpose() is SKJS.TCPTypeArgumentProbe(),
+    );
+    _ = fresh.gen(SKJS.PosRange::none);
+    decision = probe.withCommittedTypeDecision<Bool>(scratch -> {
+      nested = SKJS.Subst::mcreate(scratch.clone());
+      nested.typeComputationPurpose() is SKJS.TCPTypeArgumentProbe()
+    });
+    SKTest.expectEq(true, decision is SKJS.TRReady(true));
+  });
+  SKTest.expectEq(originalVersion, subst.version);
+  SKTest.expectEq(true, subst.typeComputationPurpose() is SKJS.TCPChecking());
+}
+
+@test
+fun testProbeCannotInstallAnObservedPayload(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  num = observationNumber();
+  subst.!values[tv.id] = SKJS.SVOpen(num);
+  result = subst.withCommittedTypeReads(scratch -> {
+    scratch.withTypeArgumentProbe(probe -> {
+      probe.!values[tv.id] = SKJS.SVClosed(observationString());
+    });
+    scratch.peekRaw(tv)
+  });
+  SKTest.expectEq(true, result is SKJS.TRReady _);
+  SKTest.expectEq(Some(num), subst.peekRaw(tv));
+  SKTest.expectEq(true, subst.isClosed(tv));
+}
+
+@test
+fun testDiagnosticReadDoesNotContributeACommitment(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  subst.!values[tv.id] = SKJS.SVOpen(observationNumber());
+  result = subst.withCommittedTypeReads<Bool>(scratch -> {
+    diagnostic = scratch.cloneForTypeDiagnostics();
+    _ = diagnostic.peekRaw(tv);
+    _ = diagnostic.gen(SKJS.PosRange::none);
+    SKTest.expectEq(
+      true,
+      diagnostic.typeComputationPurpose() is SKJS.TCPDiagnostic(),
+    );
+    Some(true)
+  });
+  SKTest.expectEq(true, result is SKJS.TRReady(true));
+  SKTest.expectEq(true, subst.isOpen(tv));
+}
+
+@test
+fun testDetachedPurposeDoesNotChangeOnRestore(): void {
+  subst = observationSubst();
+  saved = subst.save();
+  diagnostic = subst.cloneForTypeDiagnostics();
+  diagnostic.restore(saved);
+  SKTest.expectEq(
+    true,
+    diagnostic.typeComputationPurpose() is SKJS.TCPDiagnostic(),
+  );
+  child = SKJS.Subst::mcreate(diagnostic);
+  SKTest.expectEq(
+    true,
+    child.typeComputationPurpose() is SKJS.TCPDiagnostic(),
+  );
+}
+
+@test
+fun testProbeExceptionDoesNotGetSwallowed(): void {
+  subst = observationSubst();
+  caught = false;
+  try {
+    subst.withTypeArgumentProbe(_probe -> {
+      throw ObservationTestFailure()
+    });
+  } catch {
+  | ObservationTestFailure() -> !caught = true
+  | exn -> throw exn
+  };
+  SKTest.expectEq(true, caught);
 }
 
 module end;

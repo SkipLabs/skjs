@@ -228,6 +228,23 @@ iteration. Do not add extracted Lean programs absent a credible verifier issue.
 The existing semantic contracts remain the reference; passing concrete generic
 instantiations does not prove a generic body.
 
+## Native normalization-transfer batch (2026-09-19; pending validation)
+
+The current implementation batch centralizes named-expansion publication at
+`TEnv.expandNamed`, gates direct `instantiate` callers, and observes the
+materializing normalizer operations described in
+[normalization-transfer-handoff.md](normalization-transfer-handoff.md). It
+preserves a single read frame through nested normalization, and separates
+void-only type-argument probes and diagnostic computations from checking.
+The historical inventory below records the state at the date in its heading;
+its older direct-live-read descriptions are not the current rest implementation.
+
+R2/R3c are **not** closed. Source-level implementation of these boundaries is
+not native build/test evidence or a proof of the general inference, mutation,
+cache or publication invariants. The complete batch must be compiled and tested
+as one unit before updating the validation evidence. Do not replace a failing
+positive control with an expected error merely to obtain a green run.
+
 ## Validation-lifetime inventory (2026-09-14)
 
 This pass traces the clone, save/restore and raw-binding consumers in the checker,

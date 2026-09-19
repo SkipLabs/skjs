@@ -1442,8 +1442,8 @@ extension class TType {
     u2: TType,
   ): List<(PosRange, String)> {
     hints = List<(PosRange, String)>[];
-    // Use a clone so that union side effects don't affect the real subst.
-    clonedSubst = subst.clone();
+    // Hints cannot establish checking facts or poison an observation's reads.
+    clonedSubst = subst.cloneForTypeDiagnostics();
     for (inst in u2.insts) {
       inst match {
       // Hints are diagnostics: they install no type fact, so they read the
@@ -1591,16 +1591,7 @@ extension class TType {
             }
           }
         | TSInst(name, targs) ->
-          // This shares the expansion contract of TType.expand:
-          // see SubstState.seenExpansion for its remaining obligations.
-          key = tenv.expansionCacheKey(subst, name, targs);
-          expandedType = subst.seenExpansion.maybeGet(key) match {
-          | None() ->
-            e = tenv.instantiate(subst, subst, name, targs);
-            subst.!seenExpansion[key] = e;
-            e
-          | Some(e) -> e
-          };
+          expandedType = tenv.expandNamed(subst, name, targs);
           static::collectTVars(
             subst,
             tenv,

@@ -14,13 +14,12 @@ mutable base class SubstState private {
   mutable seenSub: SortedSet<(TType, TType)>,
   mutable seenInter: SortedMap<(TType, TType), TType>,
   mutable seenUnion: SortedMap<(TType, TType), TType>,
-  // Cached named expansions must remain valid as argument candidates grow.
-  // Ordinary parameter substitution retains symbolic arguments. Operators
-  // that inspect their shape (keyof, T[number], mapped keys, templates and
-  // Closed<T>) need a separate justification: retaining a symbolic cache key
-  // does not make a materialized result symbolic. Some normalization paths
-  // use a fresh/private Subst, so sealing there does not seal the caller's
-  // candidates. See the normalization-transfer audit in skjs-improvement.md.
+  // TEnv.expandNamed is the sole named-expansion publisher. Checking entries
+  // are released only after instantiate establishes its inspected payloads in
+  // the candidate owner. Uninspected arguments remain symbolic. Observation,
+  // probe and diagnostic caches are local and never transferred to the owner;
+  // restore discards observed caches whose read-frame provenance is unknown.
+  // This contract is not a proof of the other subtype/intersection caches.
   mutable seenExpansion: SortedMap<ExpansionKey, TType>,
   // Rollbackable inference-state version. TVar allocation uses this identity
   // space, so restore intentionally rewinds it with the rest of SubstState.
@@ -65,6 +64,9 @@ mutable class SavedSubst private {} extends SubstState {
 }
 
 mutable class Subst private {
+  // This purpose is not rollback state. A proposal/diagnostic computation may
+  // normalize locally, but its results are not checking-owner evidence.
+  private computationPurpose: TypeComputationPurpose = TCPChecking(),
   // Present only on isolated shape-read state. Descendants share this frame;
   // save/restore never clear it. Normal inference retains its existing behavior.
   private readObservation: ?mutable SubstReadObservation = None(),
@@ -136,8 +138,9 @@ mutable class Subst private {
     // Normalization often asks for a fresh Subst even though its type operands
     // contain candidates. During an observation it must use the SAME snapshot
     // and read frame, not an empty or privately solvable candidate store.
-    tcenvb match {
-    | parent @ Subst _ ->
+    parentOpt = static::candidateOwner(tcenvb);
+    parentOpt match {
+    | Some(parent) ->
       parent.readObservation match {
       | Some(frame) ->
         if (!state.values.isEmpty() && state.values != parent.values) {
@@ -147,9 +150,12 @@ mutable class Subst private {
       | None() -> void
       }
     // A declaration-only/light environment has no candidate-read owner.
-    | _ -> void
+    | None() -> void
     };
     mutable Subst{
+      computationPurpose => parentOpt
+        .map(parent -> parent.typeComputationPurpose())
+        .default(TCPChecking()),
       context => tcenvb.context,
       results => tcenvb.results,
       seenSub => state.seenSub,
@@ -172,7 +178,9 @@ mutable class Subst private {
     stateAndResults: (SubstState, TCResultsAcc),
   ): mutable this {
     (state, results) = stateAndResults;
+    // Saved-error reconstruction is for rendering, not for producing type facts.
     mutable Subst{
+      computationPurpose => TCPDiagnostic(),
       context,
       seenSub => state.seenSub,
       seenInter => state.seenInter,
@@ -196,6 +204,7 @@ mutable class Subst private {
     | None() -> void
     };
     mutable Subst{
+      computationPurpose => this.computationPurpose,
       context => this.context,
       results => this.results,
       seenSub => this.seenSub,
@@ -220,20 +229,45 @@ mutable class Subst private {
     this.readObservation.isSome()
   }
 
-  // Constraint compatibility during alias/class instantiation is guidance, not
-  // authority for the materialized expansion. During an observed expansion it
-  // therefore needs a detached speculative state: inheriting readObservation
-  // would make the probe's own inference writes block an otherwise symbolic
-  // expansion. Nothing from this clone is transferred back. Keep this method
-  // restricted to TypeArgumentCheck::ProbeTypeArguments.
-  mutable fun cloneForTypeArgumentProbe(): mutable this {
+  static fun candidateOwner(tcenvb: mutable TCEnvBase): ?mutable Subst {
+    tcenvb match {
+    | subst @ Subst _ -> Some(subst)
+    | tcenv @ TCEnv _ -> Some(tcenv.subst)
+    // Light/declaration environments do not contain a candidate owner.
+    | _ -> None()
+    }
+  }
+
+  readonly fun typeComputationPurpose(): TypeComputationPurpose {
+    this.computationPurpose
+  }
+
+  // The compatibility caller may report failure, but receives no solved type,
+  // environment, cache or success receipt from this operation. The callback is
+  // audited at TypeArgumentCheck.check; it must not publish captured probe state.
+  mutable fun withTypeArgumentProbe(check: (mutable Subst) -> void): void {
+    check(this.detachedTypeComputation(TCPTypeArgumentProbe()))
+  }
+
+  // Only rendering and error-hint construction may use this untraced state.
+  // It must never supply a type fact to a checking consumer.
+  mutable fun cloneForTypeDiagnostics(): mutable Subst {
+    this.detachedTypeComputation(TCPDiagnostic())
+  }
+
+  private mutable fun detachedTypeComputation(
+    purpose: TypeComputationPurpose,
+  ): mutable Subst {
+    reuseCaches = !this.isObservingTypeReads() &&
+      (purpose is TCPTypeArgumentProbe());
     mutable Subst{
+      computationPurpose => purpose,
       context => this.context,
       results => this.results,
-      seenSub => SortedSet[],
-      seenInter => SortedMap[],
-      seenUnion => SortedMap[],
-      seenExpansion => SortedMap[],
+      seenSub => if (reuseCaches) this.seenSub else SortedSet[],
+      seenInter => if (reuseCaches) this.seenInter else SortedMap[],
+      seenUnion => if (reuseCaches) this.seenUnion else SortedMap[],
+      seenExpansion => if (reuseCaches) this.seenExpansion else SortedMap[],
       version => this.version,
       semanticEpoch => this.semanticEpoch,
       values => this.values,
@@ -295,6 +329,7 @@ mutable class Subst private {
     frame: mutable SubstReadObservation,
   ): mutable Subst {
     mutable Subst{
+      computationPurpose => parent.computationPurpose,
       context => parent.context,
       // Preserve the existing clone discipline for diagnostics/reachability.
       // Reported source errors still reject the program in keep-going mode;

@@ -723,26 +723,7 @@ class TType private {
       inst = todo.pop();
       tyDef = inst match {
       | TSInst(name, targs) ->
-        // Reuse requires the expansion contract documented at
-        // SubstState.seenExpansion, including shape-inspecting operators.
-        key = tenv.expansionCacheKey(subst, name, targs);
-        subst.seenExpansion.maybeGet(key) match {
-        | None() ->
-          // instantiate may normalize shape-inspecting alias bodies in a
-          // private Subst. Establish every candidate payload that computation
-          // inspects in THIS owner before publishing either the result or the
-          // cache entry. Symbolic arguments that are merely carried through are
-          // not inspected and remain open.
-          expandedType = tenv.materializeTypeRead(
-            subst,
-            name.pos,
-            (scratch, readEnv) ->
-              readEnv.instantiate(scratch, scratch, name, targs),
-          );
-          subst.!seenExpansion[key] = expandedType;
-          expandedType
-        | Some(expandedType) -> expandedType
-        }
+        tenv.expandNamed(subst, name, targs)
       | tInter @ TInter _ -> tInter.expand(subst, tenv)
       | tvar @ TVar _ ->
         expandTVars match {
@@ -2252,6 +2233,22 @@ class TIndexes{} extends TIndexesBase uses XXHashable, Orderable {
   // When multiple indexes cover the same kind, their value types are merged:
   //   getter (covariant) → intersection, setter (contravariant) → union.
   static fun create(
+    tcenvb: mutable TCEnvBase,
+    tenv: TEnv,
+    indexes: readonly Vector<(IndexKeyKinds, TField)>,
+  ): TIndexes {
+    if (indexes.isEmpty()) {
+      TIndexes::empty
+    } else {
+      tenv.materializeRead<TIndexes>(
+        tcenvb,
+        indexes[0].i1.pos,
+        (scratch, readEnv) -> TIndexes::createRead(scratch, readEnv, indexes),
+      )
+    }
+  }
+
+  private static fun createRead(
     tcenvb: mutable TCEnvBase,
     tenv: TEnv,
     indexes: readonly Vector<(IndexKeyKinds, TField)>,

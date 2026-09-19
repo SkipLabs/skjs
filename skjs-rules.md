@@ -30,6 +30,23 @@ its current inference state. It does not prove that the source program is
 unsafe. Element types may remain symbolic when selecting the outer shape does
 not inspect their candidate bindings; later ordinary checks still infer them.
 
+## Normalization ownership diagnostics
+
+SKJS9037 reports: "A type projection or expansion could not be established without
+changing inference; add an explicit type annotation". Named expansion and
+shape-sensitive normalization may inspect an inference candidate only through
+a read whose dependencies can be established in the candidate's owner. A
+private or diagnostic substitution is not evidence for a checking result.
+
+This applies to materialized indexed/keyof results, closed-object shapes,
+template-hole and mapped-key classifications, index/computed keys and index
+merges. A blocked read is not permission to use an inferred approximation from
+a throwaway clone. Symbolic members that the operation does not inspect remain
+available to later inference. The diagnostic does not itself prove the program
+unsafe, and does not lift the existing restrictions on abstract projections.
+The normalization-transfer batch is pending native compilation and regression
+validation; see `docs/normalization-transfer-handoff.md` for the precise frontier.
+
 ## Key Restrictions Discovered
 
 ### 1. No Toplevel `let` Declarations
@@ -102,10 +119,15 @@ not inspect their candidate bindings; later ordinary checks still infer them.
 - **Status**: Fixed - `new Array<T>()` assignment works in generic class constructors
 - **Example**: `class Stack<T> { items: Array<T>; constructor() { this.items = new Array<T>(); } }`
 
-### 8. Keyof Operator Not Implemented
-- **Rule**: The `keyof` operator is not supported
-- **Error**: "Invariant violation: TODO keyof"
-- **Workaround**: Use explicit property access or type-specific functions
+### 8. Keyof Requires a Supported Known Shape
+
+SKJS computes keys of supported known object/array shapes, retaining symbolic
+member types where the key computation does not inspect them. `keyof` on an
+abstract type is not a general dependent type: it is refused with SKJS9034
+outside the existing type-alias definition-validation deferral. Inference-dependent
+shape reads additionally require the ownership check described under SKJS9037.
+The implemented key computation is an approximation, not full TypeScript `keyof`
+semantics, and must not by itself justify that arbitrary property access is safe.
 
 ### 9. Literal Typing and `as const`
 - **Rule**: SKJS automatically uses precise literal types in some contexts but requires the use of `as const` in others
