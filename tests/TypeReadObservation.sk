@@ -956,9 +956,9 @@ fun testObservedSubtypeDecisionDoesNotProposeGrowth(): void {
       SKJS.TType::var(target),
     ) is SKJS.STOk()
   );
-  // Pin inference attempting to grow a target during snapshot validation.
-  SKTest.expectEq(true, decision is SKJS.TRBlocked());
-  SKTest.expectEq(true, subst.isOpen(target));
+  // A false result commits the numeric read without proposing undefined.
+  SKTest.expectEq(true, decision is SKJS.TRReady(false));
+  SKTest.expectEq(true, subst.isClosed(target));
 }
 
 module end;

@@ -1621,6 +1621,13 @@ extension class TType {
     openTy: TType,
     variance: Variance,
   ): ?STErrorOnTType {
+    // Observation validates a fixed snapshot. Proposals belong to inference;
+    // even an attempted proposal can turn a decidable false relation into a
+    // blocked read. The subsequent expansion and subtype rules inspect the
+    // existing bindings and record their dependencies without solving them.
+    if (subst.isObservingTypeReads()) {
+      return None()
+    };
     // First failed constraint check from speculative growth. It is only
     // rendered by isSub_ if the overall subtyping check also fails. Note the
     // approximation: this is the first failure on *any* TVar reached by the
