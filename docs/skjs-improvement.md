@@ -388,6 +388,36 @@ corpus remains at 278 verified with zero unexpected outcomes. Paired gates
 retain identical diagnostics, with the array and large-skolem workloads at
 about 0.71 s and 1.03 s respectively (no additional slowdown in this run).
 
+### Generic constraints retained through later inference
+
+`mapTParams` had a concrete algebra failure under frozen candidate reads.
+Substituting an open candidate `a` into `T & number` could return just `a`
+when its current contents were numeric. Later legal growth to `number | string`
+then lost the numeric constraint. Conversely, an initially string-valued
+candidate could collapse the intersection to `never`, which stayed empty even
+when later growth added numbers. Native tests run the actual substitution and
+growth operations; this is not a claimed source-program exploit.
+
+The required equation is `(T & number)[T := a] = a & number`, preserving the
+candidate reference and the constraint until there is lasting evidence to
+simplify. Query purity alone does not supply that evidence. The shortcut now
+also checks its query dependencies. If they prevent reuse, it returns a
+symbolic intersection of the original operands; it neither erases the
+constraint nor evaluates the intersection from provisional contents. Fixed
+candidates retain the simplification fast path. Existing inference transactions
+and the fallback for mutating checks otherwise remain unchanged.
+
+This repairs one durable consumer of subtype results. It is not global cache
+invalidation or completion of R2/R3c. Continue by finding concrete consumers
+that erase symbolic dependencies, rather than merely attaching snapshots to
+already-materialized answers.
+
+Validation: 201 checker tests and 65 verifier suites pass; the curated corpus
+remains at 278 verified with zero unexpected outcomes. Paired performance gates
+retain identical diagnostics: array 0.712 → 0.689 s, large skolem 1.008 → 0.980 s,
+and recursive EagerCollection 4.805 → 4.547 s. These single paired runs establish
+no new slowdown in the measured workloads, not a general performance guarantee.
+
 ### Remaining work and completion criteria
 
 1. **Reusable judgments.** Recursive subtype/intersection assumptions now
@@ -435,7 +465,7 @@ inference dependency. No R2/R3c completion status changes follow from this table
 | `TType`, `STypes`, `Clauses`, `TFun`, `TObject` subtyping | Successful alternatives retain their substitution changes. Failed alternatives restore state; an entirely failed check restores its entry state. These are transactional acceptance paths, not successful checks on discarded clones. Stability of previously successful checks still depends on sealing and symbolic types. |
 | `growTVars.isCovered` | Its subtype probes always restore, but only choose which lower bounds to propose. The outer `TType.isSub_` subsequently expands and validates the complete relation in the live substitution. A probe success is not the final acceptance result. |
 | `growTVars`: constraint admissibility | `freezeCandidates` suppresses growth/sealing of already determined candidates while permitting fresh determinations. Success commits fresh determinations before growth; failure restores. The outer subtype check validates afterward. Frozen-query results are published to subtype/intersection caches only when the computation reads no open or unbound binding, including in scratch descendants. |
-| `TType.mapTParams`: redundant-constraint shortcut | Success skips an intersection only when the shared mutation stamp is unchanged, including scratch descendants and rollback. Otherwise it restores and computes the intersection. The shortcut establishes non-mutation now; its dependence on earlier cached answers belongs to the cache obligation below. |
+| `TType.mapTParams`: redundant-constraint shortcut | Success skips an intersection only when the shared mutation stamp is unchanged, including scratch descendants and rollback. Otherwise it restores and computes the intersection. The shortcut also requires reusable query dependencies; otherwise it preserves the symbolic intersection. General validity of earlier cached answers remains a separate obligation. |
 | `VariadicTyping.resolveSpreadToTuple` | Success consumes a tuple shape from contravariant expansion, with a raw-binding fallback when constraint intersection hides the tuple. Failure restores. The stored-callback witness below showed that element checks did not protect the outer shape. Tuple resolution now establishes that shape through a covariant read before flattening; unsuccessful resolution restores the read. General transitive dependency tracking remains open. |
 | `VariadicTyping.inferRestTypeVar`, array literal commitment | Successful constraint/element checks commit; failure restores in the transactional paths. Literal-precision probing chooses guidance, followed by live element checking. Error-recovery state is outside this soundness objective. |
 | `bindType`: uninitialized annotations | The annotation expands covariantly in the live substitution before the clone tests whether it admits `undefined`. The clone cannot alone choose an uninitialized variable's accepted type. Existing definite-assignment stability coverage exercises this boundary. |

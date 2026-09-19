@@ -848,9 +848,9 @@ fun testFrozenSubstitutionRetainsSatisfiedConstraint(): void {
   subst.!freezeCandidates = false;
   SKTest.expectEq(true, subst.isOpen(tv));
   subst.grow(tenv, tv, observationString(), SKJS.Contravariant());
-  // Pin the lost constraint: (?a & number) became ?a and now admits string.
+  // The retained intersection must still exclude strings after growth.
   result = SKJS.TType::isSub(subst, tenv, mapped, observationNumber());
-  SKTest.expectEq(false, result is SKJS.STOk());
+  SKTest.expectEq(true, result is SKJS.STOk());
 }
 
 @test
@@ -864,9 +864,22 @@ fun testFrozenSubstitutionRetainsDisjointConstraint(): void {
   subst.!freezeCandidates = false;
   SKTest.expectEq(true, subst.isOpen(tv));
   subst.grow(tenv, tv, observationNumber(), SKJS.Contravariant());
-  // Pin premature bottom: the intersection must admit number after growth.
+  // A currently disjoint intersection must admit number after growth.
   result = SKJS.TType::isSub(subst, tenv, observationNumber(), mapped);
-  SKTest.expectEq(false, result is SKJS.STOk());
+  SKTest.expectEq(true, result is SKJS.STOk());
+}
+
+@test
+fun testFrozenSubstitutionCanSimplifyClosedCandidate(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  tv = subst.gen(SKJS.PosRange::none);
+  subst.grow(tenv, tv, observationNumber(), SKJS.Covariant());
+  subst.!freezeCandidates = true;
+  mapped = substituteNumberConstraint(subst, tenv, tv);
+  subst.!freezeCandidates = false;
+  SKTest.expectEq(true, subst.isClosed(tv));
+  SKTest.expectEq(Some(tv), mapped.getSingleVar());
 }
 
 module end;

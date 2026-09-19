@@ -508,20 +508,29 @@ class TType private {
         // top-level (a TVar/TInter/TArrayLit inst) or nested inside the
         // structure — and committing them to the constraint instead of to the
         // actual argument types would be unsound. So only take the shortcut
-        // when isSub succeeds without mutation, including scratch descendants
-        // and changes undone by rollback. This is an immediate purity check,
-        // not a proof of stability under later inference changes.
-        // Otherwise restore whatever isSub sealed and use the real intersection.
+        // when isSub succeeds without mutation AND its inspected dependencies
+        // permit reuse. A frozen read can be pure while its candidate still
+        // grows later. In that case retain the original symbolic intersection:
+        // dropping the constraint or materializing a current bottom both lose
+        // information needed after later inference changes.
         saved = subst.save();
         stamp = subst.typeMutationStamp();
+        readStamp = subst.typeQueryReadStamp();
+        result = TType::isSub(subst, tenv, clause1, sty);
+        reusable = subst.canCacheTypeQuerySince(readStamp);
         if (
-          TType::isSub(subst, tenv, clause1, sty) is STOk() &&
-          subst.typeMutationStamp() == stamp
+          result is STOk() &&
+          subst.typeMutationStamp() == stamp &&
+          reusable
         ) {
           clause1
         } else {
           subst.restore(saved);
-          TType::inter(subst, tenv, clause1, sty)
+          if (reusable) {
+            TType::inter(subst, tenv, clause1, sty)
+          } else {
+            TType::unexpandedInter(clause1, sty)
+          }
         }
       }
     })
