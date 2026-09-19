@@ -438,15 +438,34 @@ contents; it does not change an allocated runtime location's world type.
 
 This is a bounded consumer repair, not completion of R2/R3c. The helper inherits
 the existing cache policy's limits, including the remaining argument about
-transitive substitution stability. Other materializing consumers, including
-object intersection read projections and constrained-parameter construction,
-remain to be audited.
+transitive substitution stability.
 
-Validation: 204 checker tests and 65 verifier suites pass; the curated corpus
-remains at 278 verified with zero unexpected outcomes. Paired gates preserve
-identical diagnostics: array 0.892 → 0.687 s, large skolem 1.040 → 0.992 s,
-recursive EagerCollection 5.021 → 4.598 s. These single paired runs show no
-slowdown on the measured workloads, not a general performance guarantee.
+The next audit reproduced the same dependency loss in object intersection read
+projections (both named and indexed fields) and constrained-parameter
+construction. These now use the same helper. The field test checks both that
+later candidate growth admits numbers and that the other operand still excludes
+strings. The bound test retains a generic type, grows the bound candidate, then
+instantiates the generic: its result must reflect the retained bound rather than
+the earlier string-only snapshot. These tests exercise inference candidates, not
+changing runtime location contracts or solving rigid parameters.
+
+The remaining direct intersection calls are not interchangeable constructor
+sites: substitution get/peek computes current contents with occurrence
+constraints; source normalization has a committed observation boundary;
+refinement and loop-exit consumers retain expression facts. Those boundaries,
+along with compound candidate dependencies and the constrained class-this
+pre-expansion, still need their own evidence. Do not replace all eager
+intersections indiscriminately or treat this constructor audit as global
+substitution stability.
+
+Validation after the read/bound extension: 206 checker tests and 65 verifier
+suites pass; the curated corpus remains at 278 verified with zero unexpected
+outcomes. Paired gates preserve identical diagnostics: array 0.714 → 0.750 s,
+large skolem 1.048 → 1.030 s, recursive EagerCollection 5.561 → 4.732 s.
+These single paired runs are a bounded performance check, not a general
+performance guarantee. The generic regression uses the recursive `Instantiate`
+transformer: `mapTParams` alone only substitutes the outer clauses and cannot
+test instantiation through a retained symbolic intersection.
 
 ### Remaining work and completion criteria
 

@@ -256,7 +256,7 @@ extension class TField {
     // The union should be processed first, it leads to better inference
     set = TType::union(subst, tenv, x.set, y.set);
     get = if (tenv.expandInter) {
-      TType::inter(subst, tenv, x.get, y.get)
+      TType::interForTypeConstruction(subst, tenv, x.get, y.get)
     } else {
       TType::unexpandedInter(x.get, y.get)
     };
@@ -279,7 +279,7 @@ extension class TField {
     x: TField,
     y: TField,
   ): TField {
-    get = TType::inter(subst, tenv, x.get, y.get);
+    get = TType::interForTypeConstruction(subst, tenv, x.get, y.get);
     set = TType::union(subst, tenv, x.set, y.set);
     isOptional = x.isOptional && y.isOptional;
     TField{

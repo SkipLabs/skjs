@@ -195,7 +195,7 @@ class TType private {
     ty = TType::fromTParam(pos, tparam.withoutConstraint());
     tparam.cstr match {
     | None() -> ty
-    | Some(cstr) -> TType::inter(subst, tenv, ty, cstr)
+    | Some(cstr) -> TType::interForTypeConstruction(subst, tenv, ty, cstr)
     }
   }
 

@@ -123,8 +123,8 @@ fun testFrozenFieldIntersectionRetainsReadContract(): void {
   for (field in Array[named, indexed]) {
     numeric = SKJS.TType::isSub(subst, tenv, observationNumber(), field.get);
     textual = SKJS.TType::isSub(subst, tenv, observationString(), field.get);
-    // Pin the premature empty read projection.
-    SKTest.expectEq(false, numeric is SKJS.STOk());
+    // Reads retain both operands: numbers become possible, strings do not.
+    SKTest.expectEq(true, numeric is SKJS.STOk());
     SKTest.expectEq(false, textual is SKJS.STOk());
   }
 }
@@ -147,12 +147,13 @@ fun testFrozenGenericBoundRetainsCandidate(): void {
   bounded = SKJS.TType::fromTParamWithConstraint(subst, tenv, pos, param);
   subst.!freezeCandidates = false;
   subst.grow(tenv, a, observationNumber(), SKJS.Contravariant());
-  instantiated = bounded.mapTParams(subst, tenv, _ ->
-    Some(observationNumber())
+  instantiated = (mutable SKJS.Instantiate()).type_(
+    (subst, tenv, SortedMap[(id, observationNumber())]),
+    bounded,
   );
   result = SKJS.TType::isSub(subst, tenv, observationNumber(), instantiated);
-  // Pin the bound captured before its candidate gained number.
-  SKTest.expectEq(false, result is SKJS.STOk());
+  // Instantiation must use the retained bound after candidate growth.
+  SKTest.expectEq(true, result is SKJS.STOk());
 }
 
 module end;
