@@ -28,6 +28,7 @@ mutable class TypeQueryFrame{
 // Shared with scratch descendants and deliberately outside rollback state.
 mutable class TypeQueryReads{
   mutable unsealed: Int = 0,
+  mutable frozenUnsealed: Int = 0,
   mutable mutations: Int = 0,
   mutable recursive: Int = 0,
   frames: mutable Vector<mutable TypeQueryFrame> = mutable Vector[],
@@ -354,11 +355,16 @@ mutable class Subst private {
     this.queryReads.mutations
   }
 
-  // Capture immediately before a query. Every raw binding read participates,
-  // even in non-frozen descendants: clone-local sealing cannot justify the
-  // owner's memo. The counter is never restored with substitution state.
-  readonly fun typeQueryReadStamp(): (Int, Int) {
-    (this.queryReads.unsealed, this.queryReads.recursive)
+  // Capture immediately before a query. Track both all unsealed reads (for
+  // a caller still frozen at publication) and reads made while frozen (even
+  // if a nested check restores the mode). Counters include scratch descendants
+  // and are never restored with substitution state.
+  readonly fun typeQueryReadStamp(): (Int, Int, Int) {
+    (
+      this.queryReads.unsealed,
+      this.queryReads.recursive,
+      this.queryReads.frozenUnsealed,
+    )
   }
 
   mutable fun recordRecursiveTypeQuery(assumption: TypeQueryAssumption): void {
@@ -394,20 +400,27 @@ mutable class Subst private {
   // scope. Other recursive dependencies prevent publication. The binding-read
   // part retains the existing non-frozen sealing/rollback contract; this is
   // not a general theorem about substitution or normalization stability.
-  readonly fun canCacheTypeQuerySince(stamp: (Int, Int)): Bool {
+  readonly fun canCacheTypeQuerySince(stamp: (Int, Int, Int)): Bool {
     (this.queryReads.frames.size() == 0 ||
       {
         frame = this.queryReads.frames[this.queryReads.frames.size() - 1];
         frame.dependencyDepth >= frame.depth
       }) &&
       this.queryReads.recursive == stamp.i1 &&
+      this.queryReads.frozenUnsealed == stamp.i2 &&
       (!this.freezeCandidates || this.queryReads.unsealed == stamp.i0)
   }
 
   private mutable fun readBinding(tvar: TVar): ?SubstValue {
     value = this.values.maybeGet(tvar.id);
     if (!(value is Some(SVClosed _))) {
-      this.queryReads.!unsealed = this.queryReads.unsealed + 1
+      this.queryReads.!unsealed = this.queryReads.unsealed + 1;
+      // A nested admissibility check restores freezeCandidates before its
+      // caller decides whether to retain an answer. Keep the read's mode,
+      // including in scratch descendants, rather than only the final mode.
+      if (this.freezeCandidates) {
+        this.queryReads.!frozenUnsealed = this.queryReads.frozenUnsealed + 1
+      }
     };
     this.readObservation.each(frame -> frame.record(tvar, value));
     value

@@ -467,6 +467,36 @@ performance guarantee. The generic regression uses the recursive `Instantiate`
 transformer: `mapTParams` alone only substitutes the outer clauses and cannot
 test instantiation through a retained symbolic intersection.
 
+### Provisional reads survive the end of a frozen check
+
+A closed outer candidate can still refer to an open inner candidate. The
+existing actual-read tracking detects that inner dependency while freezing is
+active, but memo eligibility previously forgot it after `freezeCandidates` was
+restored to false. This is a real production control-flow pattern:
+`growTVars` temporarily freezes candidates for admissibility checks and restores
+the flag before the enclosing query decides whether to publish its answer.
+
+The read stamp now includes a monotone count of unsealed reads made while
+freezing was active. It is shared with scratch descendants and is not rewound
+by rollback. A query that made such a read cannot become reusable merely by
+leaving that mode. The existing guard for queries ending in frozen mode remains,
+including reads made by non-frozen scratch descendants. A fresh query over fixed
+data remains eligible; this is not whole-store epoch invalidation.
+
+The native tests show a successful subtype query through a closed outer
+candidate becoming false after legal inner-candidate growth, and expose the
+incorrect enclosing eligibility after freeze exit. A second test covers a
+frozen clone, owner restore, and a later independent fixed query. These are
+query-protocol counterexamples, not a demonstrated source-program exploit.
+This closes the mode-exit gap; it does not establish general cache stability
+under all substitution changes or clone-local sealing.
+
+Validation: 208 checker tests and 65 verifier suites pass; the curated corpus
+remains at 278 verified with zero unexpected outcomes. Paired gates preserve
+identical diagnostics: array 0.808 → 0.724 s, large skolem 1.055 → 1.018 s,
+recursive EagerCollection 4.938 → 4.822 s. These are single paired workload
+checks, not a general performance guarantee.
+
 ### Remaining work and completion criteria
 
 1. **Reusable judgments.** Recursive subtype/intersection assumptions now

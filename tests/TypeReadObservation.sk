@@ -903,8 +903,8 @@ fun testFrozenReadDependencySurvivesModeExit(): void {
   SKTest.expectEq(true, result is SKJS.STOk());
   SKTest.expectEq(true, subst.isClosed(outer));
   SKTest.expectEq(true, subst.isOpen(inner));
-  // Pin the eligibility bug after the frozen scope ends.
-  SKTest.expectEq(true, subst.canCacheTypeQuerySince(stamp));
+  // Ending the frozen scope cannot establish the provisional answer.
+  SKTest.expectEq(false, subst.canCacheTypeQuerySince(stamp));
   subst.grow(tenv, inner, observationString(), SKJS.Contravariant());
   later = SKJS.TType::isSub(
     subst,
@@ -929,7 +929,7 @@ fun testFrozenCloneDependencySurvivesModeExitAndRestore(): void {
   scratch.!freezeCandidates = false;
   subst.restore(saved);
   // Neither scratch disposal nor rollback establishes its provisional read.
-  SKTest.expectEq(true, subst.canCacheTypeQuerySince(stamp));
+  SKTest.expectEq(false, subst.canCacheTypeQuerySince(stamp));
   fresh = subst.typeQueryReadStamp();
   _ = SKJS.TType::isSub(
     subst,
