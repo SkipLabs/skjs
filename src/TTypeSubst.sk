@@ -346,16 +346,18 @@ mutable class Subst private {
       entryFreeze = this.freezeCandidates;
       frame = SubstReadObservation::mcreate(this.snapshot());
       scratch = Subst::observationScratch(this, frame);
-      result = try {
-        read(scratch)
+      cell = SubstReadCell::mcreate();
+      try {
+        cell.!value = read(scratch)
       } catch {
-      | SubstObservationBlocked() ->
-        frame.markBlocked();
-        None()
+      // block() already latched the frame before throwing.
+      | SubstObservationBlocked() -> void
       | exn -> throw exn
       };
+      result = cell.value;
       if (
-        frame.isBlocked() || this.semanticEpoch != entryEpoch ||
+        frame.isBlocked() ||
+        this.semanticEpoch != entryEpoch ||
         this.freezeCandidates != entryFreeze
       ) {
         TRBlocked()
@@ -432,7 +434,8 @@ mutable class Subst private {
       value = this.readBinding(tvar);
       result = value match {
       | Some(SVOpen(ty))
-      | Some(SVClosed(ty)) -> ty
+      | Some(SVClosed(ty)) ->
+        ty
       | None() ->
         frame.block();
         invariant_violation("an unbound observed read cannot return")

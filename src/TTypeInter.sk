@@ -137,21 +137,33 @@ extension class TType {
     expandPrim = (primClassName) -> TType::inst(primClassName, TArgs(Array[]));
     if (ty2.isTop() || ty1.isBottom()) return ty1;
     if (ty1.isTop() || ty2.isBottom()) return ty2;
-    (ty1.getSingleVar(), ty2.getSingleVar()) match {
-    | (
-      Some(tvar1),
-      Some(tvar2),
-    ) if (subst.isUnbound(tvar1) && subst.isUnbound(tvar2)) ->
-      return TType::unexpandedInter(ty1, ty2)
-    | (Some(tvar), _) if (subst.isUnbound(tvar)) ->
-      return TType::var(tvar.setConstraint(ty2))
-    | (Some(tvar), _) if (subst.isOpen(tvar) && tvar.isForField()) ->
-      return TType::var(tvar.setConstraint(ty2))
-    | (_, Some(tvar)) if (subst.isUnbound(tvar)) ->
-      return TType::var(tvar.setConstraint(ty1))
-    | (_, Some(tvar)) if (subst.isOpen(tvar) && tvar.isForField()) ->
-      return TType::var(tvar.setConstraint(ty1))
+    // A match guard is a readonly context, so these binding reads -- which
+    // register an observed dependency -- run in the arm bodies instead. The
+    // order in which they are consulted is the order of the original arms.
+    var1 = ty1.getSingleVar();
+    var2 = ty2.getSingleVar();
+    (var1, var2) match {
+    | (Some(tvar1), Some(tvar2)) ->
+      if (subst.isUnbound(tvar1) && subst.isUnbound(tvar2)) {
+        return TType::unexpandedInter(ty1, ty2)
+      }
     | _ -> void
+    };
+    var1 match {
+    | Some(tvar) ->
+      if (subst.isUnbound(tvar)) return TType::var(tvar.setConstraint(ty2));
+      if (subst.isOpen(tvar) && tvar.isForField()) {
+        return TType::var(tvar.setConstraint(ty2))
+      }
+    | None() -> void
+    };
+    var2 match {
+    | Some(tvar) ->
+      if (subst.isUnbound(tvar)) return TType::var(tvar.setConstraint(ty1));
+      if (subst.isOpen(tvar) && tvar.isForField()) {
+        return TType::var(tvar.setConstraint(ty1))
+      }
+    | None() -> void
     };
     if (tenv.seenInter.contains((ty1, ty2))) {
       return TType::unexpandedInter(ty1, ty2);

@@ -217,10 +217,13 @@ class ArrayLitTyping() {
     target: TType,
   ): Bool {
     target.getSingleVar() match {
-    | Some(tvar) if (subst.isUnbound(tvar)) ->
-      return tvar.constraints.any(cstr ->
-        ArrayLitTyping::containsLiteralType(subst, tenv, cstr)
-      )
+    | Some(tvar) ->
+      // A tracing read cannot run in a match guard: it needs the live subst.
+      if (subst.isUnbound(tvar)) {
+        return tvar.constraints.any(cstr ->
+          ArrayLitTyping::containsLiteralType(subst, tenv, cstr)
+        )
+      }
     | _ -> void
     };
     ArrayLitTyping::containsLiteralType(subst, tenv, target)
@@ -344,17 +347,19 @@ class ArrayLitTyping() {
     ArrayLitTyping::getSingleArrayLitUncommitted(subst, tenv, u1) match {
     | Some(arrLit) ->
       // Case 2a: ArrayLit<α, elts> <: β (type variable)
-      u2.getSingleVar() match {
-      // Case 2a: unconstrained type variable → commit to Tuple, bind variable
-      | Some(
-        tvar,
-      ) if (
-        tvar.constraints.isEmpty() &&
-        (subst.isClosed(tvar) ||
+      // The sealed/frozen test reads candidate bindings, which registers an
+      // observed dependency and so cannot run inside a match guard.
+      targetEstablished = u2.getSingleVar() match {
+      | Some(tvar) if (tvar.constraints.isEmpty()) ->
+        subst.isClosed(tvar) ||
           (subst.freezeCandidates &&
             tvar.id.isCandidate() &&
-            !subst.isUnbound(tvar)))
-      ) ->
+            !subst.isUnbound(tvar))
+      | _ -> false
+      };
+      u2.getSingleVar() match {
+      // Case 2a: unconstrained type variable → commit to Tuple, bind variable
+      | Some(tvar) if (targetEstablished) ->
         // Growth cannot authorize acceptance when the target is sealed or
         // frozen. Keep the literal uncommitted and validate it against the
         // established target, so its array/tuple context is preserved too.

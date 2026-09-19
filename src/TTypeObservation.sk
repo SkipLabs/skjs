@@ -16,8 +16,13 @@ class SubstSnapshot private (bindings: SortedMap<TVarID, SubstValue>) {
     this.bindings.maybeGet(tv.id) match {
     | None() -> None()
     | Some(SVOpen(ty))
-    | Some(SVClosed(ty)) -> Some(ty)
+    | Some(SVClosed(ty)) ->
+      Some(ty)
     }
+  }
+
+  fun isClosed(tv: TVar): Bool {
+    this.bindings.maybeGet(tv.id) is Some(SVClosed _)
   }
 }
 
@@ -33,6 +38,14 @@ base class TypeReadResult<T> {
   | TRReady(T)
   | TRUnavailable()
   | TRBlocked()
+}
+
+// Holds a read's payload so the observation boundary can catch Blocked around
+// a void-typed try. The payload never crosses the exception handler.
+mutable class SubstReadCell<T>{mutable value: ?T} {
+  static fun mcreate(): mutable SubstReadCell<T> {
+    mutable SubstReadCell{value => None()}
+  }
 }
 
 // One frame is shared by an observation and every scratch descendant. It is

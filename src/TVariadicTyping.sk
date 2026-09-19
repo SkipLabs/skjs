@@ -121,7 +121,9 @@ class VariadicTyping() {
     spreadParam match {
     | Some(fullType) ->
       fullType.getSingleVar() match {
-      | Some(tvar) if (subst.isUnbound(tvar)) ->
+      | Some(tvar) ->
+        // A tracing read cannot run in a match guard.
+        if (!subst.isUnbound(tvar)) return false;
         inferred = moreArgs match {
         | Some(tailElt0) ->
           // Unknown-length tail: infer ReadonlyArray<U> where U = union of all rest args.
@@ -162,7 +164,7 @@ class VariadicTyping() {
           }
         };
         false
-      | _ -> false
+      | None() -> false
       }
     | None() -> false
     }
