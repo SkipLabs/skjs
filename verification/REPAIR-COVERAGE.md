@@ -42,6 +42,21 @@ includes adapter refusals and unavailable claims, not just failed proof search.
 Each row reports only the first obstruction. Groups are not additive estimates
 of the work remaining.
 
+## Measurement refresh: 20 September 2026
+
+The current baseline is **40/148 verified**, out of **386** selected functions:
+238 SKJS-rejected, 85 gated and 23 unproved/unavailable. The previous checkpoint
+below remains useful history. There are 67 new selected functions and three old
+normalization-owner functions now accepted by SKJS but gated by source syntax;
+none of the previously selected functions newly verifies.
+
+Separating the self-contained `literal-representation-lifetime.ts` tests from
+unrelated recursive aliases lets `queryFreshLiteralDefault` verify. The numeric
+length-view control reaches a missing exported expression claim; its async
+counterpart is outside the fragment. New `instanceof` effect controls are gated
+on that operator, and the repaired unsafe programs are producer rejections.
+This is a census refresh and test organization change, not a pipeline extension.
+
 ## Checkpoint: 17 September 2026
 
 The baseline is **39/116 verified**, out of 319 selected functions:

@@ -1,17 +1,25 @@
 # census: repair-work
-# 39/116 verified, of 319 functions
-#   skjs-rejected: 203
-#   gate: 61
-#   verified: 39
-#   unproved: 16
+# 40/148 verified, of 386 functions
+#   skjs-rejected: 238
+#   gate: 85
+#   verified: 40
+#   unproved: 23
 #
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofUndefinedFieldAdmitsInitialValue
 gate:a `let` needs an initializer	tests/expect-error/test_ternary_refinements.ts	bothBranchesInitialize
 gate:a `let` pattern is outside the fragment	tests/expect-error/captured-read-stability.ts	checkedDestructuredDefault
 gate:a record with no field has no location	tests/expect-error/unsound-refinement.ts	grownAliasField
+gate:alias applications in alias bodies are outside the fragment	tests/expect-error/type-query-memo-stability.ts	queryCompoundIntersection
+gate:alias applications in alias bodies are outside the fragment	tests/expect-error/type-query-memo-stability.ts	queryInferenceStillWorks
+gate:alias applications in alias bodies are outside the fragment	tests/expect-error/type-query-memo-stability.ts	queryRecursiveArrayPositive
+gate:alias applications in alias bodies are outside the fragment	tests/expect-error/type-query-memo-stability.ts	queryRecursivePositive
+gate:alias applications in alias bodies are outside the fragment	tests/expect-error/type-query-memo-stability.ts	queryRepeatedReadonlyView
 gate:binary operator outside the fragment (<)	tests/expect-error/instanceof-generic-skolem-args.ts	opaqueWhileContainer
 gate:binary operator outside the fragment (instanceof)	tests/expect-error/hidden-dependent-bounds.ts	sameWitness
+gate:binary operator outside the fragment (instanceof)	tests/expect-error/implicit-instanceof-effects.ts	instanceFreshCheck
+gate:binary operator outside the fragment (instanceof)	tests/expect-error/implicit-instanceof-effects.ts	instanceHookCompatibleArgument
+gate:binary operator outside the fragment (instanceof)	tests/expect-error/implicit-instanceof-effects.ts	instanceScalarSnapshot
 gate:binary operator outside the fragment (instanceof)	tests/expect-error/instanceof-generic-skolem-args.ts	localHiddenContainer
 gate:binary operator outside the fragment (instanceof)	tests/expect-error/instanceof-generic-skolem-args.ts	observeLocalHiddenType
 gate:binary operator outside the fragment (instanceof)	tests/expect-error/instanceof-generic-skolem-args.ts	opaqueCapturedContainer
@@ -31,14 +39,27 @@ gate:expected a required mutable field	tests/expect-error/destructuring.ts	earli
 gate:expected a required mutable field	tests/expect-error/destructuring.ts	patternEarlierBinding
 gate:expected a required mutable field	tests/expect-error/optional-chaining-method-call.ts	callResult
 gate:expected a required mutable field	tests/expect-error/unsound-refinement.ts	checkedDeclarationDefault
+gate:expected a required ordinary parameter	tests/expect-error/observed-rest-subtyping.ts	observedAliasedTupleLayout
+gate:expected a required ordinary parameter	tests/expect-error/observed-rest-subtyping.ts	observedOptionalSourceForArrayRest
+gate:expected a required ordinary parameter	tests/expect-error/observed-rest-subtyping.ts	observedPositionalRestInference
+gate:expected a required ordinary parameter	tests/expect-error/observed-rest-subtyping.ts	observedPrefixedArrayRest
+gate:expected a required ordinary parameter	tests/expect-error/observed-rest-subtyping.ts	observedRestContravariance
+gate:expected a required ordinary parameter	tests/expect-error/observed-rest-subtyping.ts	observedRigidAliasRest
 gate:expected a required ordinary parameter	tests/expect-error/optional-chaining-method-call.ts	composedReceiverSnapshot
 gate:expected a required ordinary parameter	tests/expect-error/unsound-refinement.ts	receiverSnapshot
 gate:expected ordinary call arguments without spread or type arguments	tests/expect-error/alias-inference-stability.ts	compatibleWritePreservesExplicitConstraint
+gate:expected ordinary call arguments without spread or type arguments	tests/expect-error/observed-array-rest.ts	observedArraySpread
+gate:expected ordinary call arguments without spread or type arguments	tests/expect-error/observed-array-rest.ts	observedRigidArrayElement
+gate:expected ordinary call arguments without spread or type arguments	tests/expect-error/observed-rest-shape.ts	observedAliasWithSymbolicElements
 gate:expression outside the fragment (NewExpression)	tests/expect-error/contextual-hidden-escape.ts	opaqueContextualRoot
 gate:expression outside the fragment (NewExpression)	tests/expect-error/hidden-dependent-bounds.ts	inferredBound
+gate:expression outside the fragment (NewExpression)	tests/expect-error/normalization-owner.ts	compatibleProjectionGrowth
+gate:expression outside the fragment (NewExpression)	tests/expect-error/normalization-owner.ts	projectedElement
+gate:expression outside the fragment (NewExpression)	tests/expect-error/normalization-owner.ts	projectedKeys
 gate:expression outside the fragment (NewExpression)	tests/expect-error/rest-inference-stability.ts	keepArgument
 gate:intersection operands must have the same shape	tests/expect-error/spread-callable.ts	restOwnCallable
 gate:missing type annotation	tests/expect-error/unsound-refinement.ts	snapshotArgument
+gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/literal-representation-lifetime.ts	queryMixedAwaitedLiteralBroadLength
 gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/promise-object.ts	testAwaitScalarSnapshot
 gate:modifiers (export/async/declare) are outside the fragment	tests/expect-error/unsound-refinement.ts	freshReturnSnapshot
 gate:nested patterns are outside the fragment	tests/expect-error/destructuring.ts	identityPatternScalar
@@ -54,6 +75,9 @@ gate:statement outside the fragment (ForOfStatement)	tests/expect-error/instance
 gate:statement outside the fragment (ForStatement)	tests/expect-error/loop-carried-narrowing.ts	guardedIncrementRead
 gate:statement outside the fragment (SwitchStatement)	tests/expect-error/switch-scope-merge.ts	switchLaterBinding
 gate:statement outside the fragment (TryStatement)	tests/expect-error/binding-initialization.ts	exceptionScopesSeparate
+gate:type outside the fragment (IndexedAccessType)	tests/expect-error/observed-indexed-normalization.ts	observedIndexedNumber
+gate:type outside the fragment (IndexedAccessType)	tests/expect-error/observed-indexed-normalization.ts	observedIndexedString
+gate:type outside the fragment (IndexedAccessType)	tests/expect-error/observed-indexed-normalization.ts	observedNestedIndexedNumber
 gate:unknown type alias	tests/expect-error/alias-inference-stability.ts	compatibleAliasAndClassConstraints
 gate:unknown type alias	tests/expect-error/alias-inference-stability.ts	inferenceBox
 gate:unknown type alias	tests/expect-error/iterator-effects.ts	freshGuardAndSnapshot
@@ -171,6 +195,10 @@ skjs-rejected	tests/expect-error/freeze-window-stale-cache.ts	widenedWithoutPrim
 skjs-rejected	tests/expect-error/hidden-dependent-bounds.ts	crossWitness
 skjs-rejected	tests/expect-error/hidden-dependent-bounds.ts	incompatibleBound
 skjs-rejected	tests/expect-error/hidden-dependent-bounds.ts	reverseBound
+skjs-rejected	tests/expect-error/implicit-instanceof-effects.ts	implicitInstanceEffect
+skjs-rejected	tests/expect-error/implicit-instanceof-effects.ts	instanceComputedRead
+skjs-rejected	tests/expect-error/implicit-instanceof-effects.ts	instanceConditionReplay
+skjs-rejected	tests/expect-error/implicit-instanceof-effects.ts	instanceHookArgument
 skjs-rejected	tests/expect-error/increment-narrowing.ts	literalUpdate
 skjs-rejected	tests/expect-error/increment-narrowing.ts	readonlyUpdate
 skjs-rejected	tests/expect-error/index-signatures.ts	constructIndexedOwnField
@@ -188,21 +216,48 @@ skjs-rejected	tests/expect-error/iterator-effects.ts	destructureEffect
 skjs-rejected	tests/expect-error/iterator-effects.ts	loopEffect
 skjs-rejected	tests/expect-error/iterator-effects.ts	spreadBeforeArgument
 skjs-rejected	tests/expect-error/iterator-effects.ts	spreadEffect
+skjs-rejected	tests/expect-error/literal-representation-lifetime.ts	queryConditionalLiteralLengthView
+skjs-rejected	tests/expect-error/literal-representation-lifetime.ts	queryLiteralLengthView
+skjs-rejected	tests/expect-error/literal-representation-lifetime.ts	queryMixedAwaitedLiteralLength
 skjs-rejected	tests/expect-error/local-vs-local-refinement.ts	inferredReadNonSingleton
 skjs-rejected	tests/expect-error/logical-compound-flow.ts	skippedWrite
 skjs-rejected	tests/expect-error/loop-carried-narrowing.ts	staleForOfRead
 skjs-rejected	tests/expect-error/loop-carried-narrowing.ts	staleIncrementRead
 skjs-rejected	tests/expect-error/loop-carried-narrowing.ts	staleLoopRead
-skjs-rejected	tests/expect-error/normalization-owner.ts	compatibleProjectionGrowth
-skjs-rejected	tests/expect-error/normalization-owner.ts	projectedElement
 skjs-rejected	tests/expect-error/normalization-owner.ts	projectedElementGrowth
-skjs-rejected	tests/expect-error/normalization-owner.ts	projectedKeys
 skjs-rejected	tests/expect-error/nullish-coalescing.ts	possibleFallback
 skjs-rejected	tests/expect-error/nullish-coalescing.ts	skippedFallback
 skjs-rejected	tests/expect-error/obj-literal-var-field-growth.ts	computedObjectAlias
 skjs-rejected	tests/expect-error/obj-literal-var-field-growth.ts	keyClearsRhs
 skjs-rejected	tests/expect-error/obj-literal-var-field-growth.ts	replacedReceiver
 skjs-rejected	tests/expect-error/obj-literal-var-field-growth.ts	storedObjectAlias
+skjs-rejected	tests/expect-error/observed-array-rest.ts	observedWrongAliasedArrayElement
+skjs-rejected	tests/expect-error/observed-array-rest.ts	observedWrongArrayElement
+skjs-rejected	tests/expect-error/observed-array-rest.ts	observedWrongInferredOuterArray
+skjs-rejected	tests/expect-error/observed-indexed-normalization.ts	observedIndexedRejectsWrongResult
+skjs-rejected	tests/expect-error/observed-normalization-boundaries.ts	normalizationClosedNegative
+skjs-rejected	tests/expect-error/observed-normalization-boundaries.ts	normalizationClosedPositive
+skjs-rejected	tests/expect-error/observed-normalization-boundaries.ts	normalizationIndexPositive
+skjs-rejected	tests/expect-error/observed-normalization-boundaries.ts	normalizationIntersectionNegative
+skjs-rejected	tests/expect-error/observed-normalization-boundaries.ts	normalizationIntersectionPositive
+skjs-rejected	tests/expect-error/observed-normalization-boundaries.ts	normalizationKeyNegative
+skjs-rejected	tests/expect-error/observed-normalization-boundaries.ts	normalizationKeyPositive
+skjs-rejected	tests/expect-error/observed-normalization-boundaries.ts	normalizationMappedNegative
+skjs-rejected	tests/expect-error/observed-normalization-boundaries.ts	normalizationMappedPositive
+skjs-rejected	tests/expect-error/observed-normalization-boundaries.ts	normalizationReceiverNegative
+skjs-rejected	tests/expect-error/observed-normalization-boundaries.ts	normalizationReceiverlessPositive
+skjs-rejected	tests/expect-error/observed-normalization-boundaries.ts	normalizationRecursivePositive
+skjs-rejected	tests/expect-error/observed-normalization-boundaries.ts	normalizationSymbolPositive
+skjs-rejected	tests/expect-error/observed-normalization-boundaries.ts	normalizationTemplateNegative
+skjs-rejected	tests/expect-error/observed-normalization-boundaries.ts	normalizationTemplatePositive
+skjs-rejected	tests/expect-error/observed-normalization-boundaries.ts	normalizationTypeofPositive
+skjs-rejected	tests/expect-error/observed-rest-shape.ts	observedBlockedRestShape
+skjs-rejected	tests/expect-error/observed-rest-shape.ts	observedPairMissingArgument
+skjs-rejected	tests/expect-error/observed-rest-shape.ts	observedPairWrongElement
+skjs-rejected	tests/expect-error/observed-rest-subtyping.ts	observedOptionalSourceRejectsArrayElement
+skjs-rejected	tests/expect-error/observed-rest-subtyping.ts	observedRestContravarianceRejects
+skjs-rejected	tests/expect-error/observed-rest-subtyping.ts	observedRigidRestArgumentsStayDistinct
+skjs-rejected	tests/expect-error/observed-rest-subtyping.ts	observedTuplePositionsRemainDistinct
 skjs-rejected	tests/expect-error/optional-chaining-method-call.ts	composedReceiverContract
 skjs-rejected	tests/expect-error/optional-chaining-method-call.ts	possibleArgument
 skjs-rejected	tests/expect-error/optional-chaining-method-call.ts	skippedArgument
@@ -236,6 +291,10 @@ skjs-rejected	tests/expect-error/this-parameter-implicit-class.ts	parameterReatt
 skjs-rejected	tests/expect-error/this-parameter-implicit-class.ts	reattachedMethod
 skjs-rejected	tests/expect-error/this-parameter-implicit-class.ts	reattachmentThroughTypeof
 skjs-rejected	tests/expect-error/this-parameter-implicit-class.ts	retypedMethod
+skjs-rejected	tests/expect-error/type-query-memo-stability.ts	queryCompoundIntersectionMismatch
+skjs-rejected	tests/expect-error/type-query-memo-stability.ts	queryLaterIncompatibleArgument
+skjs-rejected	tests/expect-error/type-query-memo-stability.ts	queryRecursiveMismatch
+skjs-rejected	tests/expect-error/type-query-memo-stability.ts	queryRigidParametersStayDistinct
 skjs-rejected	tests/expect-error/unsound-refinement.ts	aliasBeforeNarrow
 skjs-rejected	tests/expect-error/unsound-refinement.ts	annotatedAliasReturn
 skjs-rejected	tests/expect-error/unsound-refinement.ts	annotatedNarrowAlias
@@ -275,7 +334,14 @@ unproved:reject: array destructuring requires a fresh literal; external iterator
 unproved:reject: array destructuring requires a fresh literal; external iterators are outside the f	tests/expect-error/destructuring.ts	inferredIterableDefault
 unproved:reject: claimed parameter type differs from the source annotation for '_'	tests/expect-error/unsound-refinement.ts	assignedUnionAlternative
 unproved:reject: claimed parameter type differs from the source annotation for '_'	tests/expect-error/unsound-refinement.ts	checkedConditionalAlias
+unproved:reject: no claimed type for the expression at [138,148)	tests/expect-error/literal-representation-lifetime.ts	queryLiteralBroadLengthView
+unproved:reject: only identity (`type Id<T> = T`) and cell (`type Box<T> = { value: T }`) aliases a	tests/expect-error/observed-array-rest.ts	observedArrayElementInference
+unproved:reject: only identity (`type Id<T> = T`) and cell (`type Box<T> = { value: T }`) aliases a	tests/expect-error/observed-array-rest.ts	observedEmptyArrayRest
+unproved:reject: only identity (`type Id<T> = T`) and cell (`type Box<T> = { value: T }`) aliases a	tests/expect-error/observed-array-rest.ts	observedInferredOuterArray
 unproved:reject: source expression obligation at [185,209): type claim unavailable from producer	tests/expect-error/obj-literal-var-field-growth.ts	retainedReceiver
+unproved:reject: source expression obligation at [522,534): type claim unavailable from producer	tests/expect-error/observed-rest-shape.ts	observedPairPositive
+unproved:reject: source expression obligation at [522,535): type claim unavailable from producer	tests/expect-error/observed-rest-shape.ts	observedArrayFallbackPositive
+unproved:reject: source expression obligation at [546,560): type claim unavailable from producer	tests/expect-error/observed-rest-shape.ts	observedElementInferencePositive
 unproved:reject: source expression obligation at [551,574): type claim unavailable from producer	tests/expect-error/captured-read-stability.ts	checkedGenericCallResult
 unproved:reject: source expression obligation at [59,92): evidence search failed (unsupported or un	tests/expect-error/satisfies.ts	satisfiesLiteralTarget
 unproved:reject: source incoming edge obligation at [191,215): evidence search failed (unsupported 	tests/expect-error/unsound-refinement.ts	stableAnnotatedAlias
@@ -310,6 +376,7 @@ verified	tests/expect-error/increment-narrowing.ts	computedUpdate
 verified	tests/expect-error/inferred-binding-contract.ts	compatibleInferredReplacement
 verified	tests/expect-error/inferred-binding-contract.ts	unionContractStillNarrows
 verified	tests/expect-error/issue-89-and-or-narrowing.ts	unrelatedFact
+verified	tests/expect-error/literal-representation-lifetime.ts	queryFreshLiteralDefault
 verified	tests/expect-error/local-vs-local-refinement.ts	inferredReadNamedNull
 verified	tests/expect-error/local-vs-local-refinement.ts	inferredReadSingleton
 verified	tests/expect-error/logical-compound-computed-key.ts	computedAnd

@@ -88,6 +88,17 @@ cp target/host/dev/skjs target/host/dev/skjs.<label>
   obstruction, and continue within scope or identify what prevents progress.
   Passing suites and a recorded limitation do not make that target complete.
 
+## Measuring checker repair tests
+
+When adding or regrouping repair regressions, run `make verify-census` in the
+checkout containing their commits. It selects the repair arc's committed
+TypeScript functions; `make verify-examples` only measures the curated viewer
+examples, and native Skip tests are outside the source corpus. Review changed
+producer outcomes and refusal reasons before recording `UPDATE=1`. Keep an
+independent regression family in its own file when unrelated top-level aliases
+would otherwise prevent meaningful extraction; do not simplify a witness to
+make it verify. Report rejected, gated and verified outcomes separately.
+
 ## Detailed Guides
 
 Read these before starting the relevant task:
