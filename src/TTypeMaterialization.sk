@@ -82,6 +82,20 @@ extension base class TEnv {
     this.materializeRead<TType>(tcenvb, pos, read)
   }
 
+  // A subtype decision used to choose a lasting program fact must not be
+  // justified by solutions or seals in a discarded clone. Both true and false
+  // inspect dependencies; establish them in the checking owner before return.
+  fun materializeSubtypeDecision(
+    tcenvb: mutable TCEnvBase,
+    pos: PosRange,
+    source: TType,
+    target: TType,
+  ): Bool {
+    this.materializeRead<Bool>(tcenvb, pos, (scratch, readEnv) ->
+      TType::isSub(scratch, readEnv, source, target) is STOk()
+    )
+  }
+
   // The single memoizing named-expansion path. All callers, including inference
   // variable collection, share the same publication boundary. instantiate itself
   // also gates uncached/direct callers, so its raw implementation cannot escape.

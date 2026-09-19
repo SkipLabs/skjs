@@ -94,21 +94,23 @@ extension class TypeChecker {
         // Clone subst because inter may unify type variables as a side
         // effect; we want the exploratory narrowing not to mutate the main subst.
         if (target) {
-          common = TType::inter(
-            tcenv.subst.clone(),
-            this,
-            comparisonType,
-            otherType,
+          common = this.materializeTypeRead(
+            tcenv,
+            local.pos,
+            (scratch, readEnv) ->
+              TType::inter(scratch, readEnv, comparisonType, otherType)
+            ,
           );
           tcenv.scope.set(local, common, (_, _) -> void)
         } else {
           otherType.getSingleConstant() match {
           | Some(c) ->
-            diffed = TType::removeConstant(
-              tcenv.subst.clone(),
-              this,
-              comparisonType,
-              c,
+            diffed = this.materializeTypeRead(
+              tcenv,
+              local.pos,
+              (scratch, readEnv) ->
+                TType::removeConstant(scratch, readEnv, comparisonType, c)
+              ,
             );
             tcenv.scope.set(local, diffed, (_, _) -> void)
           | None() -> void
@@ -202,11 +204,12 @@ extension class TypeChecker {
       fieldName,
       local.pos,
       (tFields, branchFieldType) -> {
-        overlap = TType::inter(
-          tcenv.subst.clone(),
-          this,
-          branchFieldType,
-          otherType,
+        overlap = this.materializeTypeRead(
+          tcenv,
+          local.pos,
+          (scratch, readEnv) ->
+            TType::inter(scratch, readEnv, branchFieldType, otherType)
+          ,
         );
         if (overlap.isBottom()) {
           // No overlap: === eliminates the branch, !== keeps it
@@ -222,11 +225,12 @@ extension class TypeChecker {
           constant match {
           | Some(c) ->
             // !==: subtract the constant from the field type
-            narrowed = TType::removeConstant(
-              tcenv.subst.clone(),
-              this,
-              branchFieldType,
-              c,
+            narrowed = this.materializeTypeRead(
+              tcenv,
+              local.pos,
+              (scratch, readEnv) ->
+                TType::removeConstant(scratch, readEnv, branchFieldType, c)
+              ,
             );
             if (narrowed.isBottom()) {
               None()
@@ -775,10 +779,12 @@ extension class TypeChecker {
       fieldName,
       fieldPos,
       (tFields, branchFieldType) -> {
-        narrowed = branchFieldType.truthinessPart(
-          tcenv.subst.clone(),
-          this,
-          target,
+        narrowed = this.materializeTypeRead(
+          tcenv,
+          fieldPos,
+          (scratch, readEnv) ->
+            branchFieldType.truthinessPart(scratch, readEnv, target)
+          ,
         );
         if (narrowed.isBottom()) {
           None()

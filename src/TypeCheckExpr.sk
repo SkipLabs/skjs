@@ -567,18 +567,18 @@ extension class TypeChecker {
               isParameter,
             );
             undefined = TType::single(TPrimUnit(TUndefined(), defaultExpr.pos));
-            canBeUndefined = TType::isSub(
-              tcenv.subst.clone(),
-              this,
+            canBeUndefined = this.materializeSubtypeDecision(
+              tcenv,
+              defaultExpr.pos,
               undefined,
               eltType,
-            ) is STOk();
-            isAlwaysUndefined = TType::isSub(
-              tcenv.subst.clone(),
-              this,
+            );
+            isAlwaysUndefined = this.materializeSubtypeDecision(
+              tcenv,
+              defaultExpr.pos,
               eltType,
               undefined,
-            ) is STOk();
+            );
             if (!canBeUndefined) {
               tcenv.warning(
                 Array[
@@ -841,12 +841,12 @@ extension class TypeChecker {
               | Some((defaultPos, defaultType)) ->
                 if (
                   tfield.isOptional ||
-                  TType::isSub(
-                    tcenv.subst.clone(),
-                    this,
+                  this.materializeSubtypeDecision(
+                    tcenv,
+                    defaultPos,
                     undefined(defaultPos),
                     tfield.get,
-                  ) is STOk()
+                  )
                 ) {
                   !defaultIsUseless = None();
                   this.defaultedValueType(tcenv, tfield.get, defaultType)
@@ -1039,12 +1039,12 @@ extension class TypeChecker {
         // an uninitialized read under a different type in the parent.
         establishedTy = ty.expand(tcenv.subst, this, Some(Covariant()));
         undefinedTy = TType::single(TPrimUnit(TUndefined(), pos));
-        isInitialized = TType::isSub(
-          tcenv.subst.clone(),
-          this,
+        isInitialized = this.materializeSubtypeDecision(
+          tcenv,
+          pos,
           undefinedTy,
           establishedTy,
-        ) is STOk();
+        );
         (ty, isInitialized)
       }
     | Some(e) ->
