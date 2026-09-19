@@ -777,4 +777,48 @@ fun testAbandonedRecursiveQueryDoesNotDischargePremise(): void {
   SKTest.expectEq(true, subst.canCacheTypeQuerySince(fresh));
 }
 
+@test
+fun testQueryMutationInsideClone(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  tv = subst.gen(SKJS.PosRange::none);
+  subst.grow(tenv, tv, observationNumber(), SKJS.Contravariant());
+  stamp = subst.version;
+  scratch = subst.clone();
+  _ = scratch.get(tenv, tv, SKJS.Covariant());
+  SKTest.expectEq(true, scratch.isClosed(tv));
+  SKTest.expectEq(true, subst.isOpen(tv));
+  // Pin the old purity criterion: it misses the clone's actual commitment.
+  SKTest.expectEq(true, subst.version == stamp);
+}
+
+@test
+fun testQueryMutationUndoneByRollback(): void {
+  subst = observationSubst();
+  saved = subst.save();
+  stamp = subst.version;
+  _ = subst.gen(SKJS.PosRange::none);
+  subst.restore(saved);
+  // Returning to the old version does not mean the query made no changes.
+  SKTest.expectEq(true, subst.version == stamp);
+}
+
+@test
+fun testQueryCacheOnlyRestore(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  saved = subst.save();
+  stamp = subst.version;
+  _ = SKJS.TType::isSub(
+    subst,
+    tenv,
+    observationNumber(),
+    SKJS.TType::top(SKJS.PosRange::none),
+  );
+  SKTest.expectEq(false, subst.seenSub.isEmpty());
+  subst.restore(saved);
+  SKTest.expectEq(true, subst.seenSub.isEmpty());
+  SKTest.expectEq(true, subst.version == stamp);
+}
+
 module end;
