@@ -23,13 +23,23 @@
 
 module SKJS;
 
+// A call consumes either an exact tuple contract or a homogeneous rest element
+// contract. The types may stay symbolic. resolveCallRestShape establishes its
+// inspected dependencies before returning; this datatype alone is not evidence.
+base class RestCallShape {
+  children =
+  | RCSFixed(Array<TType>)
+  | RCSArray(TType)
+}
+
 class VariadicTyping() {
   // Resolve a fixed rest shape only after establishing every candidate payload
   // inspected to obtain it. The callback runs on read-only scratch candidates;
   // successful reads are pinned in the owner by withCommittedTypeReads before
   // tuple elements escape. Symbolic element candidates remain available for
   // ordinary argument inference unless the shape computation inspected them.
-  // Both call checking and function subtyping use this same boundary.
+  // Function subtyping uses this tuple-only view. Call checking uses the
+  // combined tuple/array boundary below.
   // None leaves the owning substitution unchanged; it does not mean that the
   // type is disjoint from every tuple, only that this operation established none.
   static fun resolveSpreadToTuple(
@@ -63,6 +73,51 @@ class VariadicTyping() {
           SKJSCode(9036),
         )
       }
+    }
+  }
+
+  // The call-side array fallback also materializes a type. Observing only the
+  // tuple attempt is insufficient: TRUnavailable intentionally commits nothing,
+  // so a subsequent unobserved element projection would lose its own read set.
+  // Select the representation and project its members in ONE transaction. A
+  // tuple result never falls through to the homogeneous-array interpretation.
+  static fun resolveCallRestShape(
+    subst: mutable Subst,
+    tenv: TEnv,
+    fullType: TType,
+  ): ?RestCallShape {
+    readEnv = if (subst.isObservingTypeReads()) {
+      tenv
+    } else {
+      tenv.forTypeReadObservation()
+    };
+    subst.withCommittedTypeReads<RestCallShape>(scratch -> {
+      static::readSpreadTuple(scratch, readEnv, fullType) match {
+      | Some(tupleElts) -> Some(RCSFixed(tupleElts))
+      | None() ->
+        // Preserve the original call-side variance. During observation candidate
+        // get reads fixed payloads without growth/sealing in either direction.
+        // Returning an element candidate does not itself inspect its payload.
+        maybeGetRestElementType(
+          scratch,
+          readEnv,
+          fullType,
+          Contravariant(),
+        ).map(element -> RCSArray(element))
+      }
+    }) match {
+    | TRReady(shape) -> Some(shape)
+    | TRUnavailable() -> None()
+    | TRBlocked() ->
+      fatalError(
+        Array[
+          (
+            fullType.pos,
+            "A fixed rest-parameter shape could not be established without changing inference; add an explicit tuple or rest-parameter type annotation",
+          ),
+        ],
+        SKJSCode(9036),
+      )
     }
   }
 
@@ -199,8 +254,8 @@ class VariadicTyping() {
     | Some(spreadType) ->
       knownRest = args.slice(totalSize);
 
-      static::resolveSpreadToTuple(tcenv.subst, tenv, Some(spreadType)) match {
-      | Some(tupleElts) ->
+      static::resolveCallRestShape(tcenv.subst, tenv, spreadType) match {
+      | Some(RCSFixed(tupleElts)) ->
         // Exact tuple-rest: reject unknown-length tail, enforce exact arity,
         // then element-wise subtype check.
         if (moreArgs is Some(_)) {
@@ -245,58 +300,50 @@ class VariadicTyping() {
             }
           }
         }
+      | Some(RCSArray(eltType)) ->
+        // Projection is already committed. Argument subtyping still runs in
+        // the live owner so uninspected symbolic elements can be inferred.
+        for (restArg in knownRest) {
+          TType::isSub(tcenv.subst, tenv, restArg, eltType) match {
+          | STOk() -> void
+          | err @ STErrorOnTType _ ->
+            tcenv.subtypingError(
+              tcenv.subst,
+              tenv,
+              Array[
+                (pos, "Argument is not assignable to the parameter's type"),
+              ],
+              err,
+              TSCode(2345),
+            )
+          }
+        };
+        moreArgs.each(ma -> {
+          TType::isSub(tcenv.subst, tenv, ma, eltType) match {
+          | STOk() -> void
+          | err @ STErrorOnTType _ ->
+            tcenv.subtypingError(
+              tcenv.subst,
+              tenv,
+              Array[
+                (pos, "Argument is not assignable to the parameter's type"),
+              ],
+              err,
+              TSCode(2345),
+            )
+          }
+        })
       | None() ->
-        // Array-rest (or array-like) validation: check each rest arg against the
-        // element type.
-        maybeGetRestElementType(
-          tcenv.subst,
-          tenv,
-          spreadType,
-          Contravariant(),
-        ) match {
-        | Some(eltType) ->
-          for (restArg in knownRest) {
-            TType::isSub(tcenv.subst, tenv, restArg, eltType) match {
-            | STOk() -> void
-            | err @ STErrorOnTType _ ->
-              tcenv.subtypingError(
-                tcenv.subst,
-                tenv,
-                Array[
-                  (pos, "Argument is not assignable to the parameter's type"),
-                ],
-                err,
-                TSCode(2345),
-              )
-            }
-          };
-          moreArgs.each(ma -> {
-            TType::isSub(tcenv.subst, tenv, ma, eltType) match {
-            | STOk() -> void
-            | err @ STErrorOnTType _ ->
-              tcenv.subtypingError(
-                tcenv.subst,
-                tenv,
-                Array[
-                  (pos, "Argument is not assignable to the parameter's type"),
-                ],
-                err,
-                TSCode(2345),
-              )
-            }
-          })
-        | None() ->
-          tcenv.error(
-            Array[
-              (pos, "A spread argument ('...') must be of an array type"),
-              (
-                spreadType.pos,
-                `${tenv.ppType(tcenv, spreadType)} is not an array`,
-              ),
-            ],
-            SKJSCode(2045),
-          )
-        }
+        tcenv.error(
+          Array[
+            (pos, "A spread argument ('...') must be of an array type"),
+            (
+              spreadType.pos,
+              `${tenv.ppType(tcenv, spreadType)} is not an array`,
+            ),
+          ],
+          SKJSCode(2045),
+        )
       }
     }
   }
