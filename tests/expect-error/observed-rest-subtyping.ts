@@ -9,7 +9,7 @@ function observedRestContravariance(
 function observedRestContravarianceRejects(
   f: (...args: readonly number[]) => number,
 ): (...args: readonly (number | string)[]) => number {
-  // @ts-expect-error
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return f;
 }
 
@@ -24,7 +24,7 @@ function observedOptionalSourceForArrayRest(
 function observedOptionalSourceRejectsArrayElement(
   f: (first?: number) => number,
 ): (...args: readonly string[]) => number {
-  // @ts-expect-error
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return f;
 }
 
@@ -47,7 +47,7 @@ function observedRigidAliasRest<T>(
 function observedRigidRestArgumentsStayDistinct<T, U>(
   f: (...args: ObservedRestAlias<T>) => void,
 ): (...args: ObservedRestAlias<U>) => void {
-  // @ts-expect-error
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return f;
 }
 
@@ -76,6 +76,6 @@ function observedAliasedTupleLayout(
 function observedTuplePositionsRemainDistinct(
   f: (...args: ObservedSubtypePair<number, string>) => void,
 ): (...args: readonly [number, number]) => void {
-  // @ts-expect-error
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return f;
 }
