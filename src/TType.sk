@@ -508,14 +508,15 @@ class TType private {
         // top-level (a TVar/TInter/TArrayLit inst) or nested inside the
         // structure — and committing them to the constraint instead of to the
         // actual argument types would be unsound. So only take the shortcut
-        // when isSub SUCCEEDS WITHOUT MUTATING the substitution (its version
-        // is unchanged), which proves clause1 already satisfies the constraint
-        // on its own; otherwise restore whatever isSub sealed and fall back to
-        // the real intersection.
+        // when isSub succeeds without mutation, including scratch descendants
+        // and changes undone by rollback. This is an immediate purity check,
+        // not a proof of stability under later inference changes.
+        // Otherwise restore whatever isSub sealed and use the real intersection.
         saved = subst.save();
+        stamp = subst.typeMutationStamp();
         if (
           TType::isSub(subst, tenv, clause1, sty) is STOk() &&
-          subst.version == saved.version
+          subst.typeMutationStamp() == stamp
         ) {
           clause1
         } else {

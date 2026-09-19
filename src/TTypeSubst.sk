@@ -28,6 +28,7 @@ mutable class TypeQueryFrame{
 // Shared with scratch descendants and deliberately outside rollback state.
 mutable class TypeQueryReads{
   mutable unsealed: Int = 0,
+  mutable mutations: Int = 0,
   mutable recursive: Int = 0,
   frames: mutable Vector<mutable TypeQueryFrame> = mutable Vector[],
 } {
@@ -346,6 +347,13 @@ mutable class Subst private {
     SubstSnapshot::create(this.values)
   }
 
+  // Purity of a computation includes mutations in scratch descendants and
+  // mutations later undone by rollback. This is not a cache key or a promise
+  // that an unchanged answer remains valid after future inference changes.
+  readonly fun typeMutationStamp(): Int {
+    this.queryReads.mutations
+  }
+
   // Capture immediately before a query. Every raw binding read participates,
   // even in non-frozen descendants: clone-local sealing cannot justify the
   // owner's memo. The counter is never restored with substitution state.
@@ -414,6 +422,11 @@ mutable class Subst private {
         frame.block()
       }
     | None() -> void
+    };
+    // Restoring caches alone does not change candidate state. A real state
+    // transition advances the shared stamp even when it rewinds the version.
+    if (saved.version != this.version || saved.values != this.values) {
+      this.queryReads.!mutations = this.queryReads.mutations + 1
     };
     nextSemanticEpoch = this.semanticEpoch + 1;
     this.!version = saved.version;
@@ -576,11 +589,13 @@ mutable class Subst private {
 
   // Record one supported mutation of inference state. Callers that need to
   // know whether a speculative computation was observationally pure compare
-  // semanticEpoch, never the rollbackable version.
+  // typeMutationStamp for a computation including scratch descendants;
+  // semanticEpoch describes only this owner. Neither counter rewinds.
   private mutable fun bumpVersion(): Int {
     // All supported allocation and binding writes pass this boundary. A
     // private read cannot solve or seal a candidate to make its answer valid.
     this.readObservation.each(frame -> frame.block());
+    this.queryReads.!mutations = this.queryReads.mutations + 1;
     oldVersion = this.version;
     this.!version = this.version + 1;
     this.!semanticEpoch = this.semanticEpoch + 1;

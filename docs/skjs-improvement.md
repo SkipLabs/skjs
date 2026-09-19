@@ -362,6 +362,32 @@ fixtures as gates for subsequent dependency-tracking or memo-promotion work.
 Do not regain that cost by publishing conditional answers without a justified
 scope or by ignoring mutation/rollback when promoting deferred answers.
 
+### Query purity versus inference progress
+
+The remaining purity guards used rollbackable `Subst.version` to decide
+whether a subtype shortcut or branch-elimination probe had changed anything.
+That misses both mutation undone by restore and mutation in a scratch clone.
+Native tests exercise clone-only sealing, allocation followed by rollback,
+and cache-only restore. They establish the protocol distinction, not a new
+source-level unsoundness example.
+
+`typeMutationStamp()` now tracks allocation and binding transitions across a
+substitution and its scratch descendants. Restore advances it only when the
+candidate state actually changes; restoring caches alone is not a mutation.
+The redundant-constraint shortcut and both branch-elimination guards use this
+shared, non-rewinding stamp. It is an immediate purity guard, not a cache key
+or evidence of stability under future inference changes.
+
+The call argument fixed-point loop intentionally retains `version`: it checks
+progress in the live inference transaction, not whether scratch computation
+occurred. The owner-local `semanticEpoch` still protects observation transfer.
+These three notions must not be substituted for each other.
+
+Validation: all 198 checker tests and 65 verifier suites pass; the curated
+corpus remains at 278 verified with zero unexpected outcomes. Paired gates
+retain identical diagnostics, with the array and large-skolem workloads at
+about 0.71 s and 1.03 s respectively (no additional slowdown in this run).
+
 ### Remaining work and completion criteria
 
 1. **Reusable judgments.** Recursive subtype/intersection assumptions now
@@ -409,14 +435,14 @@ inference dependency. No R2/R3c completion status changes follow from this table
 | `TType`, `STypes`, `Clauses`, `TFun`, `TObject` subtyping | Successful alternatives retain their substitution changes. Failed alternatives restore state; an entirely failed check restores its entry state. These are transactional acceptance paths, not successful checks on discarded clones. Stability of previously successful checks still depends on sealing and symbolic types. |
 | `growTVars.isCovered` | Its subtype probes always restore, but only choose which lower bounds to propose. The outer `TType.isSub_` subsequently expands and validates the complete relation in the live substitution. A probe success is not the final acceptance result. |
 | `growTVars`: constraint admissibility | `freezeCandidates` suppresses growth/sealing of already determined candidates while permitting fresh determinations. Success commits fresh determinations before growth; failure restores. The outer subtype check validates afterward. Frozen-query results are published to subtype/intersection caches only when the computation reads no open or unbound binding, including in scratch descendants. |
-| `TType.mapTParams`: redundant-constraint shortcut | Success skips an intersection only when the substitution version is unchanged. Otherwise it restores and computes the intersection. The shortcut establishes non-mutation now; its dependence on earlier cached answers belongs to the cache obligation below. |
+| `TType.mapTParams`: redundant-constraint shortcut | Success skips an intersection only when the shared mutation stamp is unchanged, including scratch descendants and rollback. Otherwise it restores and computes the intersection. The shortcut establishes non-mutation now; its dependence on earlier cached answers belongs to the cache obligation below. |
 | `VariadicTyping.resolveSpreadToTuple` | Success consumes a tuple shape from contravariant expansion, with a raw-binding fallback when constraint intersection hides the tuple. Failure restores. The stored-callback witness below showed that element checks did not protect the outer shape. Tuple resolution now establishes that shape through a covariant read before flattening; unsuccessful resolution restores the read. General transitive dependency tracking remains open. |
 | `VariadicTyping.inferRestTypeVar`, array literal commitment | Successful constraint/element checks commit; failure restores in the transactional paths. Literal-precision probing chooses guidance, followed by live element checking. Error-recovery state is outside this soundness objective. |
 | `bindType`: uninitialized annotations | The annotation expands covariantly in the live substitution before the clone tests whether it admits `undefined`. The clone cannot alone choose an uninitialized variable's accepted type. Existing definite-assignment stability coverage exercises this boundary. |
 | Tuple/object defaults | Clone queries decide whether the default contributes and produce warnings. The selected value passes through live source expansion/default-result typing and subsequent binding. The negative reachability decision still relies on those reads establishing the relevant candidate. Probes below exercise both tuple and field paths. |
 | Equality/truthiness refinements | Local equality establishes both operands live; contracted field refinement establishes the field live before clone intersection/subtraction. **Open:** nested symbolic dependencies and uncontracted inferred fields need a transitive stability argument. The new effect epoch addresses runtime effects, not substitution growth. |
 | `evalInstanceof` preservation probe | A successful branch probe retains the original branch; it does not import the clone's solved type arguments. A failed probe intersects with fresh rigid witnesses live. Preserving a branch therefore does not itself identify two hidden witnesses. Their later escape remains R1. |
-| `Scope.mayMatchAlternative` | Alternative elimination now requires both the current-type expansion and the disjointness probe to leave their clone versions unchanged. Otherwise the alternative is retained. This prevents clone-only solving/sealing from authorizing elimination. It still relies on the ordinary cache and symbolic-dependency invariants for non-mutating results. |
+| `Scope.mayMatchAlternative` | Alternative elimination requires both the current-type expansion and the disjointness probe to leave the shared mutation stamp unchanged. Otherwise the alternative is retained. This prevents clone-only solving/sealing from authorizing elimination. It still relies on the ordinary cache and symbolic-dependency invariants for non-mutating results. |
 | Diagnostic overlap, `showTypes`, `originSuggestions` | Clone/raw results supply warnings, display assertions or advice, not a program typing premise. Keep these separate from mandatory validation; making them live would change inference merely by requesting diagnostics. |
 | `EscapingTypeParams` | `peekRaw` traverses current bindings without installing its rebuilt type. This detects identities reachable now. Retained escape obligations now revisit the symbolic roots after later live checks. The completed bounded R1 audit below covers root publication and checking-environment boundaries; general subtype/cache stability remains R2. |
 

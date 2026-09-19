@@ -103,11 +103,11 @@ extension class TType {
     declared: TFields,
   ): Bool {
     probe = subst.clone();
-    version = probe.version;
+    stamp = probe.typeMutationStamp();
     current = this.getSTypes(probe, tenv, Covariant());
     // Discarding a branch installs a fact in the parent. A clone-only read
     // that seals or solves candidates cannot justify that lasting fact.
-    if (probe.version != version) return true;
+    if (probe.typeMutationStamp() != stamp) return true;
     current
       .map(current ->
         current.any(st ->
@@ -139,9 +139,9 @@ extension class TType {
     right: TType,
   ): Bool {
     probe = subst.clone();
-    version = probe.version;
+    stamp = probe.typeMutationStamp();
     disjoint = TType::inter(probe, tenv, left, right).isBottom();
-    disjoint && probe.version == version
+    disjoint && probe.typeMutationStamp() == stamp
   }
 }
 
