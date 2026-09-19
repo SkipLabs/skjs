@@ -83,7 +83,9 @@ M2 (stale captured reads), and M3 (loop-carried narrowing) meet their stated
 bounded completion criteria.
 The current validation-lifetime audit (R2/R3c) also meets its implementation
 completion criteria, as recorded below. R1 records and revalidates signature
-and persistent-binding escape roots. General alias mutation remains M1.
+and persistent-binding escape roots. M1 now meets its bounded mutation/alias
+criterion for the checked data-object language; its interoperability boundary
+and evidence are recorded below.
 
 | ID | Work | Status | Done when |
 | --- | --- | --- | --- |
@@ -92,7 +94,7 @@ and persistent-binding escape roots. General alias mutation remains M1.
 | R3a | Expansion keys identify the resolved declaration, not spelling | done | [expansion-key-collision](deep-dives/issues/expansion-key-collision.md): same-named aliases from different modules no longer share a cache entry; the unsound call is rejected; renaming the local alias still rejects; valid uses of each definition still check |
 | R3b | Substitution-dependent answers track what can invalidate them | done | [freeze-window](deep-dives/issues/freeze-window-stale-memo-caches.md): a memo written while a candidate is unsealed is not reused after that candidate grows; the order-dependent acceptance is gone; the program without the priming call still rejects |
 | R3c | Speculative clone results authorize the parent only with a justified transfer | done | A clone that does not commit cannot make the parent accept; any transfer of a clone result is justified by an explicit obligation |
-| M1 | Alias writes: a narrow alias must not promise contents another alias may legally overwrite (`L-MUT-ALIAS`) | in progress | Reduced [narrowed-alias-stale-write](deep-dives/issues/narrowed-alias-stale-write.md) programs are rejected; a positive counterpart with a shared invariant still checks |
+| M1 | Alias writes: a narrow alias must not promise contents another alias may legally overwrite (`L-MUT-ALIAS`) | done | Reduced [narrowed-alias-stale-write](deep-dives/issues/narrowed-alias-stale-write.md) programs are rejected; a positive counterpart with a shared invariant still checks |
 | M2 | Stale captured reads: a creation-time narrowing is not a captured arrow guarantee (`L-STALE-READ`) | done | Reduced [stale-closure-reads](deep-dives/issues/stale-closure-reads-narrowing.md) programs are rejected; a snapshot-or-null-check counterpart still checks |
 | M3 | Loop-carried narrowing (`L-LOOP-CARRIED`) | done | SKJS rejects the [loop-carried](deep-dives/issues/loop-carried-narrowing-stale.md) reduction using its existing language and tests. Independent pipeline coverage of `let` is **not** a prerequisite. A counterpart that remains correct under SKJS's own loop checking (not source-level supplied invariants) still checks |
 
@@ -181,6 +183,82 @@ candidate growth must not be confused with changing that representation.
 Remaining milestones are M1's mutation/alias/effect boundary and final
 consolidation/qualification. New counterexamples can reopen an audited boundary;
 these completion criteria do not assert that SKJS is globally sound or complete.
+
+## Mutation and alias boundary audit (2026-09-20)
+
+Through `ef5416fb`, milestone 2 closes M1 for the checked data-object subset.
+This is an implementation audit, not a whole-language soundness theorem. The
+obligation is that a lasting alias cannot promise a temporary contents fact,
+and that a runtime write or call cannot leave such a fact available for later
+reads or condition replay. The earlier dated M1 inventories below are historical;
+this section states the current scope.
+
+| Boundary | Rule and evidence |
+| --- | --- |
+| Alias publication | Declarations, assignments, returns, arguments, receivers, selections and copied object-valued fields use stable contents contracts. Scalar reads are values and may retain their point type. Existing alias, object-literal, pattern, spread/rest and receiver regressions cover these paths. |
+| Visible writes | Property/index writes, compound assignments and updates invalidate transient contents on contracted aliases; destination write contracts remain fixed. Primitive snapshots and known non-null references are retained. |
+| Explicit execution | Calls, construction and suspension use `invalidateCallEffects`. Captured locals that may be reassigned widen to their contract. Condition replay uses observation epochs so a pre-effect guard cannot become a post-effect fact. |
+| Iteration | Acquisition, advancement and closing invalidate at the relevant array/argument spread, destructuring and `for…of` boundaries. Existing iterator regressions cover body entry, exhaustion/closing and later call arguments. |
+| Membership hooks | `instanceof` is an implicit call effect, including in keys and condition summaries. Visible `Symbol.hasInstance` hooks use the same argument, receiver, generic and fixed-point call validation as explicit calls. Arguments are already evaluated, so validation cannot replay their effects. Runtime truthiness converts the result; no Boolean-return assumption is imposed. |
+| Growing objects and constructors | A local object's first read/escape establishes its shared contents contract. Captured writes establish that contract too. Prior initialization is not mistaken for an established-object refinement. Batched probes rejected callback invalidation of a newly built object, escape of an incomplete constructor object to a stronger parameter, and admission of a broader writable alias to a narrower initialized slot. These overlap existing contract/growth tests and were not duplicated. |
+| Other implicit operations | Arithmetic, relational and template conversion accept primitive domains, so they cannot invoke a user object's coercion hooks. Data-property reads, `in`, object copying and key enumeration have no user execution under the data-object interpretation below. Getter/proxy semantics are not silently treated as this case. |
+
+The new witnesses in `implicit-instanceof-effects.ts` cover a later field read,
+replay of an earlier conjunct, a computed-key read retaining its evaluated
+receiver, and an incompatible hook argument. The first three previously
+promised `number` after the hook wrote null; the last could invoke a numeric
+method on a missing field. All now reject. Scalar snapshots, fresh checks and
+compatible hook arguments pass. Existing ordinary-class membership and custom
+membership-narrowing tests remain green.
+
+### Scope of the object contract
+
+The current checked language creates data properties and rejects accessor
+declarations. Its stubs do not supply proxy/reflection construction operations.
+As in the semantic model's caller interpretation, an object input satisfies a
+data-field contract; a structural TypeScript annotation alone does not prove
+that an arbitrary unchecked JavaScript object has data properties. This audit
+therefore does **not** cover externally supplied getters, setters, proxies or
+monkey-patched built-ins. This is an explicit language/interoperability boundary,
+not evidence that such operations are pure. Supporting them requires modeling
+execution at reads/writes and repeated-read stability, rather than merely
+invalidating after a getter has already consumed an unjustified refinement.
+
+For a new operation that can execute user code, add its execution boundary and
+its syntactic effect summary together. Use stable operand/receiver contracts
+when operands were evaluated before the effect. Preserve the distinction
+between scalar snapshots and aliases, and between initialization and observation.
+Do not use tests passing under a plain-data assumption as evidence about
+accessor/proxy behavior.
+
+Validation: 211 checker tests, 65 verifier suites and the existing 278 example
+proofs pass with zero unexpected outcomes. Three bounded timing rounds retained
+identical diagnostics; median before/after seconds were 0.743/0.750 (arrays),
+1.070/1.065 (generic membership), and 5.202/5.264 (deep collection). These are
+regression controls, not a whole-corpus complexity guarantee. The repair census
+is reported separately below. Milestone 3 remains consolidation and broader
+qualification; unsupported language features and general type-rule completeness
+are not implied complete by these lifecycle audits.
+
+## Repair census refresh (2026-09-20)
+
+`make verify-census` now selects 386 functions: 238 SKJS-rejected and 148 accepted,
+of which 40 verify, 85 are gated and 23 are unproved/unavailable. Relative to the
+old recorded 319-function baseline, 67 functions were added. Three old
+normalization-owner rows now pass SKJS and reach the source gate; none of the
+old selected functions newly verifies. Those acceptance gains predate milestone 2.
+
+The selector automatically includes committed repair additions; the curated
+`verify-examples` run does not. Native Skip tests exercise checker internals and
+are not source-corpus entries. `literal-representation-lifetime.ts` separates
+self-contained literal regressions from unrelated recursive alias declarations
+that the extractor previously carried along. `queryFreshLiteralDefault` now
+verifies. Its numeric length-view counterpart reaches a missing-expression-claim
+boundary; the mixed-await control is gated on async. The three accepted implicit
+membership controls are gated on `instanceof`. Their unsafe counterparts appear
+as producer rejections, rather than failed proofs. Thus the increase from 39 to
+40 comes from measuring an existing positive regression without unrelated
+context, not from extending the verifier or proving the new soundness repairs.
 
 ## Retained binding contracts (2026-09-17)
 
