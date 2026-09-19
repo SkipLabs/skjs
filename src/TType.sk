@@ -722,8 +722,7 @@ class TType private {
     while (!todo.isEmpty()) {
       inst = todo.pop();
       tyDef = inst match {
-      | TSInst(name, targs) ->
-        tenv.expandNamed(subst, name, targs)
+      | TSInst(name, targs) -> tenv.expandNamed(subst, name, targs)
       | tInter @ TInter _ -> tInter.expand(subst, tenv)
       | tvar @ TVar _ ->
         expandTVars match {

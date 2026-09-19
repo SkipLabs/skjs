@@ -57,7 +57,9 @@ extension base class TEnv {
       ) match {
       | TRReady(value) -> value
       | TRUnavailable() ->
-        invariant_violation("A mandatory type materialization cannot be unavailable")
+        invariant_violation(
+          "A mandatory type materialization cannot be unavailable",
+        )
       | TRBlocked() ->
         fatalError(
           Array[

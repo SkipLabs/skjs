@@ -258,7 +258,8 @@ mutable class Subst private {
   private mutable fun detachedTypeComputation(
     purpose: TypeComputationPurpose,
   ): mutable Subst {
-    reuseCaches = !this.isObservingTypeReads() &&
+    reuseCaches =
+      !this.isObservingTypeReads() &&
       (purpose is TCPTypeArgumentProbe());
     mutable Subst{
       computationPurpose => purpose,

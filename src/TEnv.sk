@@ -231,11 +231,8 @@ base class TEnv{
   ): TType {
     // The supplied candidate owner, not an arbitrary fresh normalization state,
     // must establish the reads. Scratch inherits that owner's diagnostics too.
-    this.materializeTypeRead(
-      baseSubst,
-      name.pos,
-      (scratch, readEnv) ->
-        readEnv.instantiateRead(scratch, scratch, name, targs),
+    this.materializeTypeRead(baseSubst, name.pos, (scratch, readEnv) ->
+      readEnv.instantiateRead(scratch, scratch, name, targs)
     )
   }
 
@@ -470,29 +467,29 @@ base class TEnv{
         // note on this function.
         argumentCheck.check(subst, constraintSubst -> {
           TType::isSub(constraintSubst, this, tArg, cstrTy) match {
-        | STOk() -> void
-        | err @ STErrorOnTType _ ->
-          tcenvb.subtypingError(
-            subst,
-            this,
-            Array[
-              (pos, "Type argument does not satisfy the constraint"),
-              (
-                tArg.pos,
-                `This is of type: ${quoteRenderedType(
-                  prettyPrintType(false, tArg, subst, this),
-                )}`,
-              ),
-              (
-                cstr.pos,
-                `It does not satisfy the constraint: ${quoteRenderedType(
-                  prettyPrintType(false, cstrTy, subst, this),
-                )}`,
-              ),
-            ],
-            err,
-            TSCode(2344),
-          )
+          | STOk() -> void
+          | err @ STErrorOnTType _ ->
+            tcenvb.subtypingError(
+              subst,
+              this,
+              Array[
+                (pos, "Type argument does not satisfy the constraint"),
+                (
+                  tArg.pos,
+                  `This is of type: ${quoteRenderedType(
+                    prettyPrintType(false, tArg, subst, this),
+                  )}`,
+                ),
+                (
+                  cstr.pos,
+                  `It does not satisfy the constraint: ${quoteRenderedType(
+                    prettyPrintType(false, cstrTy, subst, this),
+                  )}`,
+                ),
+              ],
+              err,
+              TSCode(2344),
+            )
           }
         })
       };
@@ -1947,10 +1944,8 @@ base class TEnv{
       )
     | TAKeyOf(ty) ->
       targetType = this.normalize(tcenvb, ty);
-      this.materializeTypeRead(
-        tcenvb,
-        pos,
-        (scratch, readEnv) -> readEnv.keyOfType(scratch, targetType, pos),
+      this.materializeTypeRead(tcenvb, pos, (scratch, readEnv) ->
+        readEnv.keyOfType(scratch, targetType, pos)
       )
     | tafun @ TAFun _ ->
       tfuns = this.normalizeFun(tcenvb, pos, tafun);
@@ -2261,10 +2256,8 @@ base class TEnv{
     | TAUnion(ty1, ty2) ->
       left = this.normalize(tcenvb, ty1);
       right = this.normalize(tcenvb, ty2);
-      this.materializeTypeRead(
-        tcenvb,
-        pos,
-        (scratch, readEnv) -> TType::union(scratch, readEnv, left, right),
+      this.materializeTypeRead(tcenvb, pos, (scratch, readEnv) ->
+        TType::union(scratch, readEnv, left, right)
       ).withPos(pos)
     | TAInter(ty1, ty2) ->
       left = this.normalize(tcenvb, ty1);
@@ -2275,10 +2268,8 @@ base class TEnv{
         // any payload they later need when expanding this TInter.
         TType::unexpandedInter(left, right).withPos(pos)
       } else {
-        this.materializeTypeRead(
-          tcenvb,
-          pos,
-          (scratch, readEnv) -> TType::inter(scratch, readEnv, left, right),
+        this.materializeTypeRead(tcenvb, pos, (scratch, readEnv) ->
+          TType::inter(scratch, readEnv, left, right)
         ).withPos(pos)
       }
     | taTuple @ TATuple _ -> this.normalizeTuple(tcenvb, pos, taTuple, false)
@@ -2288,11 +2279,8 @@ base class TEnv{
         // T[number] requires an established shape. A generic bound is not
         // an exact result type for every instantiation of the parameter.
         objType = this.normalize(tcenvb, tyObj);
-        this.materializeTypeRead(
-          tcenvb,
-          pos,
-          (scratch, readEnv) ->
-            readEnv.numberIndexedType(scratch, objType, pos),
+        this.materializeTypeRead(tcenvb, pos, (scratch, readEnv) ->
+          readEnv.numberIndexedType(scratch, objType, pos)
         )
       | _ ->
         fatalError(
@@ -2332,7 +2320,8 @@ base class TEnv{
       tcenvb,
       pos,
       (scratch, readEnv) ->
-        holeTypes.map(ty -> readEnv.templateHole(scratch, ty)),
+        holeTypes.map(ty -> readEnv.templateHole(scratch, ty))
+      ,
     );
     // This state is only used to render the failure diagnostics below.
     subst = Subst::candidateOwner(tcenvb) match {
@@ -2748,10 +2737,8 @@ base class TEnv{
         interfaceAsValueError(tcenvb, varName);
         // Continue as if the interface name were a value, without allowing
         // recovery normalization to bypass the ownership boundary.
-        this.materializeTypeRead(
-          tcenvb,
-          varName.pos,
-          (scratch, readEnv) -> readEnv.newStatic(scratch, varName),
+        this.materializeTypeRead(tcenvb, varName.pos, (scratch, readEnv) ->
+          readEnv.newStatic(scratch, varName)
         )
       } else if (sawTypeAlias && !sawValueDef) {
         typeAliasAsValueError(varName)
@@ -2766,11 +2753,8 @@ base class TEnv{
         notSupported(propertyName.pos, "prototype access")
       };
       baseType = this.typeOfExpr(tcenvb, baseExpr);
-      this.materializeTypeRead(
-        tcenvb,
-        propertyName.pos,
-        (scratch, readEnv) ->
-          readEnv.readTypeofProperty(scratch, baseType, propertyName, expr.pos),
+      this.materializeTypeRead(tcenvb, propertyName.pos, (scratch, readEnv) ->
+        readEnv.readTypeofProperty(scratch, baseType, propertyName, expr.pos)
       )
     | _ ->
       fatalError(
@@ -2843,10 +2827,8 @@ base class TEnv{
     pos: PosRange,
     keyType: TType,
   ): IndexKeyKinds {
-    this.materializeRead<IndexKeyKinds>(
-      tcenvb,
-      pos,
-      (scratch, readEnv) -> readEnv.readIndexKeyKinds(scratch, pos, keyType),
+    this.materializeRead<IndexKeyKinds>(tcenvb, pos, (scratch, readEnv) ->
+      readEnv.readIndexKeyKinds(scratch, pos, keyType)
     )
   }
 
@@ -3006,12 +2988,14 @@ base class TEnv{
         !this.bindings[tparam.name.value] = this.materializeTypeRead(
           tcenvb,
           tparam.name.pos,
-          (scratch, readEnv) -> TType::fromTParamWithConstraint(
-            scratch,
-            readEnv,
-            tparam.name.pos,
-            funTParam,
-          ),
+          (scratch, readEnv) ->
+            TType::fromTParamWithConstraint(
+              scratch,
+              readEnv,
+              tparam.name.pos,
+              funTParam,
+            )
+          ,
         );
         funTParam
       });
@@ -3155,11 +3139,8 @@ base class TEnv{
     keyExpr: Expr,
   ): FieldKey {
     keyType = this.typeOfExpr(tcenvb, keyExpr);
-    this.materializeRead<FieldKey>(
-      tcenvb,
-      keyExpr.pos,
-      (scratch, readEnv) ->
-        readEnv.readComputedKey(scratch, keyExpr, keyType),
+    this.materializeRead<FieldKey>(tcenvb, keyExpr.pos, (scratch, readEnv) ->
+      readEnv.readComputedKey(scratch, keyExpr, keyType)
     )
   }
 
@@ -3634,10 +3615,8 @@ base class TEnv{
      Try to keep in synch with TypeChecker#get in TypeCheckExpr
   */
   fun keyOfType(subst: mutable Subst, ty: TType, pos: PosRange): TType {
-    this.materializeTypeRead(
-      subst,
-      pos,
-      (scratch, readEnv) -> readEnv.readKeyOfType(scratch, ty, pos),
+    this.materializeTypeRead(subst, pos, (scratch, readEnv) ->
+      readEnv.readKeyOfType(scratch, ty, pos)
     )
   }
 

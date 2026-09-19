@@ -558,10 +558,7 @@ fun testDetachedPurposeDoesNotChangeOnRestore(): void {
     diagnostic.typeComputationPurpose() is SKJS.TCPDiagnostic(),
   );
   child = SKJS.Subst::mcreate(diagnostic);
-  SKTest.expectEq(
-    true,
-    child.typeComputationPurpose() is SKJS.TCPDiagnostic(),
-  );
+  SKTest.expectEq(true, child.typeComputationPurpose() is SKJS.TCPDiagnostic());
 }
 
 @test
