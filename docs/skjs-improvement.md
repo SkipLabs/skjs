@@ -287,6 +287,26 @@ Tests: `TypeReadObservation.sk`, `observed-rest-shape.ts`,
 `observed-indexed-normalization.ts`, `observed-normalization-boundaries.ts`,
 and `normalization-owner.ts`.
 
+### Confirmed performance regression
+
+The five-second array workload is itself a regression, not an acceptable
+pre-existing performance target. A rebuilt-code bisection identified
+`68c3b742` (2026-09-13, avoid caching unsealed freeze-query results) as the
+introducing commit. Its immediate predecessor `1e9f6330` takes 0.45–0.49 s
+including Docker exec overhead; the introducing commit takes 5.1–5.8 s, with
+byte-identical diagnostics and the same checked source. Timings within one
+container give medians of 0.28 s at pre-repair `aad730c9`, 4.90 s at
+`ca8fbd75`, 4.88 s at `25920bbf`, and 4.81 s after witness-ID hardening.
+A minimal control takes about 0.2 s. Each in-container median uses three runs;
+container startup is excluded. Thus there are two separate regressions: this
+freeze-window slowdown and the later whole-snapshot memo OOM.
+
+**Open:** recover frozen-query reuse without publishing unsealed answers into
+caches that outlive their validity. Do not revert the freeze-window soundness
+repair. The global memo replacement was withdrawn; its safe and efficient
+replacement is still required. Full-suite success alone did not detect this
+cost, so the array workload must accompany future cache changes.
+
 ### Remaining work and completion criteria
 
 1. **Reusable judgments.** Separate a completed independent answer from an
