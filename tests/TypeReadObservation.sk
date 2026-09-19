@@ -940,4 +940,25 @@ fun testFrozenCloneDependencySurvivesModeExitAndRestore(): void {
   SKTest.expectEq(true, subst.canCacheTypeQuerySince(fresh));
 }
 
+@test
+fun testObservedSubtypeDecisionDoesNotProposeGrowth(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  pos = SKJS.PosRange::none;
+  target = subst.gen(pos);
+  subst.grow(tenv, target, observationNumber(), SKJS.Contravariant());
+  undefined = SKJS.TType::single(SKJS.TPrimUnit(SKJS.TUndefined(), pos));
+  decision = subst.withCommittedTypeDecision<Bool>(scratch ->
+    SKJS.TType::isSub(
+      scratch,
+      tenv.forTypeReadObservation(),
+      undefined,
+      SKJS.TType::var(target),
+    ) is SKJS.STOk()
+  );
+  // Pin inference attempting to grow a target during snapshot validation.
+  SKTest.expectEq(true, decision is SKJS.TRBlocked());
+  SKTest.expectEq(true, subst.isOpen(target));
+}
+
 module end;

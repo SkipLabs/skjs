@@ -84,3 +84,11 @@ function queryRecursiveArrayPositive(
 ): readonly QueryTarget<number>[] {
   return nodes;
 }
+
+// A default decision reads the existing element type; it must not try to
+// infer a different element type merely to decide whether undefined fits.
+function queryFreshLiteralDefault(seed: number): number {
+  // @skjs-expect-error A type projection or expansion could not be established without changing inference; add an explicit type annotation
+  const [value = 0] = [seed];
+  return value;
+}
