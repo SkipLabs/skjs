@@ -81,21 +81,106 @@ Statuses: `not started` · `in progress` · `done`.
 R1 (hidden identity and escape), R3a (declaration identity), R3b (freeze-window),
 M2 (stale captured reads), and M3 (loop-carried narrowing) meet their stated
 bounded completion criteria.
-The next architectural milestone is durable validation under substitution
-changes (R2), including justified use of speculative clone results (R3c).
-R1 records and revalidates signature and persistent-binding escape roots.
-General substitution stability remains R2; general alias mutation remains M1.
+The current validation-lifetime audit (R2/R3c) also meets its implementation
+completion criteria, as recorded below. R1 records and revalidates signature
+and persistent-binding escape roots. General alias mutation remains M1.
 
 | ID | Work | Status | Done when |
 | --- | --- | --- | --- |
 | R1 | Uses of `TParam`, inference `TVar`, and hidden witnesses preserve rigidity, scope, and identity | done | Specific forbidden transitions and escapes fail (a parameter is not solved as `?T`; a hidden witness does not become another object's; a captured/loop-escaped witness keeps its identity). Legitimate repeated uses of the *same* hidden witness still check. Not a wholesale TVar rewrite. |
-| R2 | Propose vs validate, **and** later uses respect the snapshot | in progress | A subtype/expansion result is valid against an explicit snapshot **and** subsequent uses of that result respect the same snapshot, or the judgment is revalidated when a recorded dependency changes. Exporting a closed record under the subst at validation time does **not** count: that stabilizes the *exported* record, not SKJS's earlier acceptance. |
+| R2 | Propose vs validate, **and** later uses respect the snapshot | done | A subtype/expansion result is valid against an explicit snapshot **and** subsequent uses of that result respect the same snapshot, or the judgment is revalidated when a recorded dependency changes. Exporting a closed record under the subst at validation time does **not** count: that stabilizes the *exported* record, not SKJS's earlier acceptance. |
 | R3a | Expansion keys identify the resolved declaration, not spelling | done | [expansion-key-collision](deep-dives/issues/expansion-key-collision.md): same-named aliases from different modules no longer share a cache entry; the unsound call is rejected; renaming the local alias still rejects; valid uses of each definition still check |
 | R3b | Substitution-dependent answers track what can invalidate them | done | [freeze-window](deep-dives/issues/freeze-window-stale-memo-caches.md): a memo written while a candidate is unsealed is not reused after that candidate grows; the order-dependent acceptance is gone; the program without the priming call still rejects |
-| R3c | Speculative clone results authorize the parent only with a justified transfer | in progress | A clone that does not commit cannot make the parent accept; any transfer of a clone result is justified by an explicit obligation |
+| R3c | Speculative clone results authorize the parent only with a justified transfer | done | A clone that does not commit cannot make the parent accept; any transfer of a clone result is justified by an explicit obligation |
 | M1 | Alias writes: a narrow alias must not promise contents another alias may legally overwrite (`L-MUT-ALIAS`) | in progress | Reduced [narrowed-alias-stale-write](deep-dives/issues/narrowed-alias-stale-write.md) programs are rejected; a positive counterpart with a shared invariant still checks |
 | M2 | Stale captured reads: a creation-time narrowing is not a captured arrow guarantee (`L-STALE-READ`) | done | Reduced [stale-closure-reads](deep-dives/issues/stale-closure-reads-narrowing.md) programs are rejected; a snapshot-or-null-check counterpart still checks |
 | M3 | Loop-carried narrowing (`L-LOOP-CARRIED`) | done | SKJS rejects the [loop-carried](deep-dives/issues/loop-carried-narrowing-stale.md) reduction using its existing language and tests. Independent pipeline coverage of `let` is **not** a prerequisite. A counterpart that remains correct under SKJS's own loop checking (not source-level supplied invariants) still checks |
+
+## Validation lifetime closure audit (2026-09-19)
+
+Through `f2b59831`, this closes the current implementation audit for R2/R3c.
+It is a source-level argument over the boundaries below, supported by regression tests; it is not a
+Lean proof of the full checker or completion of the alias/effect work in M1.
+Dated audits below describe earlier checkpoints. This section and the active
+status table supersede their remaining-obligation statements for R2/R3c.
+
+The lifetime rule has three cases. A materialized decision commits every
+inspected candidate payload in its actual owner before publication. A symbolic
+construction retains its original operands instead of fixing a provisional
+answer. A normal successful subtype check retains its live commitments: source
+reads are covariant, parameter/setter checks reverse the relation, and remaining
+positive target growth only widens the admitted set. Closing one outer candidate
+is not enough; these rules apply again whenever a nested dependency is inspected.
+The callback-variance regression checks that the negative dependencies close
+while a positive result candidate can still grow without invalidating success.
+
+| Boundary | Why a retained result survives |
+| --- | --- |
+| Named expansion and source normalization | `materializeRead` observes a fixed snapshot with fresh scratch caches and no inherited caller proof assumptions. Descendants share the read frame; the actual owner commits matching payloads before return. Uninspected children remain symbolic. `expandNamed` is the single memoizing publication path. |
+| Explicit type arguments and call checking | Written constraints validate live, including phantom aliases and constructor arguments. Inference proposes bounds; the argument pass checks them. Its fixed point provides call-local consistency; later lifetime follows from the same commitments and variance rule as every successful subtype check. |
+| Defaults and definite assignment | Both positive and negative `materializeSubtypeDecision` results have owner-committed dependencies. Observed subtyping skips `growTVars`: deciding whether an existing type admits `undefined` must not propose a new solution. Default-result projections establish literal forms before retaining their shape. |
+| Refinement and alternative elimination | Equality, subtraction, truthiness and head-shape projections use committed observations. An unjustified optional refinement keeps the original type. Branch elimination observes all descendant reads and commits them before discarding an alternative. |
+| Variadic/callback shape extraction | The tuple/rest/callback shape observations include the raw-binding fallback. Failure to establish a read cannot select a more permissive fallback. The extracted element types may remain symbolic. |
+| Delayed array literals and `await` | A selector is a representation choice, not monotone lower-bound growth. Subtype validation establishes its array/tuple form, including through aliases, unions and intersections. Awaited flattening establishes inspected literal forms while preserving unresolved ordinary candidates. Provisional defaults cannot justify retained intersections or query caches. |
+| Successful subtype alternatives | Successful branches retain their commitments. Failed alternatives restore values and caches together. `growTVars.isCovered` probes only guide proposals; live checking validates the final relation. A redundant-constraint shortcut additionally requires no shared mutation and reusable query dependencies. |
+| Remaining speculative clones | `instanceof` preservation returns the original branch, not the clone's solved type; the other branch uses fresh rigid witnesses. Literal-precision probes choose element guidance followed by live element validation. Detached declaration probes return no type result; rigid declaration checking and retained argument constraints justify use. Diagnostic overlap, display and advice do not authorize acceptance. |
+| Hidden escape raw reads | Raw traversal installs no rebuilt type. Persistent symbolic roots are retained and rechecked after later inference growth, under the existing R1 boundary. |
+| Runtime value projections | Destructuring/property reads and object/array spread extract current values or allocate copies. Nested types retain their identities; covariant candidate reads establish inspected payloads. Retained alias-shape projections, notably mixed `await`, additionally establish literal selectors. Mutation of runtime objects is the separate M1 obligation. |
+
+The cache argument is compositional, not an entire-substitution cache key:
+
+- `seenUnion` combines symbolic inputs. `seenExpansion` uses resolved declaration
+  identity and the observation publication boundary.
+- `seenSub` retains committed source/negative dependencies and permits monotone
+  positive target growth. Equality of the same symbolic type and admission to
+  top need no payload read. Recursive premises have scoped publication rules;
+  a child depending on an ancestor's unfinished premise cannot publish it.
+- `seenInter` may publish only reusable computations. Frozen candidate reads
+  and uncommitted literal defaults mark the shared query frame provisional,
+  even across scratch clones and freeze-mode exit. Retained constructors use
+  `interForTypeConstruction` to preserve operands when simplification is not
+  justified for later reuse.
+- Rollback restores candidate values and caches together. Observation frames,
+  provisional-read counters and mutation stamps cannot rewind with a failed
+  alternative. Scratch caches never transfer to the owner.
+
+The source counterexamples in `type-query-memo-stability.ts` distinguish a
+structural length view, a conditional alias, and a mixed awaited projection.
+Previously SKJS accepted a return contract of `1` although growing the same
+array made the returned length `2`. The repaired checker rejects those promises;
+the corresponding numeric-length views remain usable. Existing contextual
+single/union tuple tests and generic async inference remain positive controls.
+Native tests cover stale literal intersections, observed validation without
+inference, callback variance, recursive publication, rollback and clone reads.
+
+Final gates: 211 checker tests passed; 65 independent verifier suites passed;
+the 64-file example run retained 278 proofs with zero expected-outcome
+mismatches or runner errors. That verifier run checks the existing corpus; it
+does not independently certify these new checker repairs. No extracted Lean
+programs or verification-language changes were needed.
+
+Three isolated before/after rounds under a 4 GB container limit retained
+identical diagnostics. Median times before/after the final projection repair
+were 0.709/0.715 seconds for `array_literal_examples.ts`, 1.058/1.056 seconds for
+`instanceof-generic-skolem-args.ts`, and 5.209/5.174 seconds for
+`eagercollection-deep-value-no-oom.ts`. These are bounded performance gates,
+not a whole-corpus complexity guarantee. The withdrawn whole-snapshot memo
+policy was not reintroduced.
+
+### Extension rule
+
+For a new typing consumer, identify what escapes: a value type, an eliminated
+alternative, a negative decision, or a cached success. Use committed observation
+for materialized facts, preserve symbolic operands when simplifying is
+provisional, or validate live and explain the variance/commitment lifetime.
+A detached clone's success, a call-local fixed point, an exported closed record,
+and a green suite are not substitutes for that argument. Representation
+selectors must be fixed before their default shapes escape; ordinary monotone
+candidate growth must not be confused with changing that representation.
+
+Remaining milestones are M1's mutation/alias/effect boundary and final
+consolidation/qualification. New counterexamples can reopen an audited boundary;
+these completion criteria do not assert that SKJS is globally sound or complete.
 
 ## Retained binding contracts (2026-09-17)
 
