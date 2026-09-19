@@ -1,5 +1,6 @@
-// Precision/regression controls for snapshot-qualified query memos. The native
-// TypeQueryMemo.sk suite exercises cache hits and invalidation directly.
+// Query-stability controls: recursive relations, rigid parameters, repeated
+// readonly views, incompatible later arguments, and inference. These outcomes
+// must survive changes to cache policy; they do not prove cache validity.
 
 type QuerySource<T> = {
   readonly next: QuerySource<T> | null;
@@ -18,7 +19,9 @@ function queryRecursivePositive<T>(node: QuerySource<T>): QueryTarget<T> {
   return node;
 }
 
-function queryRecursiveMismatch(node: QuerySource<string>): QueryTarget<number> {
+function queryRecursiveMismatch(
+  node: QuerySource<string>,
+): QueryTarget<number> {
   // @ts-expect-error Type of returned value is not assignable to the function's return type
   return node;
 }

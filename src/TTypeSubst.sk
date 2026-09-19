@@ -11,11 +11,8 @@ base class SubstValue uses Equality {
 }
 
 mutable base class SubstState private {
-  // Completed query caches. Only memoizedSubtype/memoizedIntersection may
-  // consume/publish these entries in production. A key's presence is not enough:
-  // its stamp must match the current candidate store and query context.
-  mutable seenSub: SortedMap<(TType, TType), TypeQueryStamp>,
-  mutable seenInter: SortedMap<(TType, TType), (TypeQueryStamp, TType)>,
+  mutable seenSub: SortedSet<(TType, TType)>,
+  mutable seenInter: SortedMap<(TType, TType), TType>,
   mutable seenUnion: SortedMap<(TType, TType), TType>,
   // TEnv.expandNamed is the sole named-expansion publisher. Checking entries
   // are released only after instantiate establishes its inspected payloads in
@@ -41,7 +38,7 @@ mutable base class SubstState private {
 
 mutable class SavedSubst private {} extends SubstState {
   const empty: SavedSubst = SavedSubst{
-    seenSub => SortedMap[],
+    seenSub => SortedSet[],
     seenInter => SortedMap[],
     seenUnion => SortedMap[],
     seenExpansion => SortedMap[],
@@ -268,7 +265,7 @@ mutable class Subst private {
       computationPurpose => purpose,
       context => this.context,
       results => this.results,
-      seenSub => if (reuseCaches) this.seenSub else SortedMap[],
+      seenSub => if (reuseCaches) this.seenSub else SortedSet[],
       seenInter => if (reuseCaches) this.seenInter else SortedMap[],
       seenUnion => if (reuseCaches) this.seenUnion else SortedMap[],
       seenExpansion => if (reuseCaches) this.seenExpansion else SortedMap[],
@@ -279,105 +276,6 @@ mutable class Subst private {
       freezeCandidates => this.freezeCandidates,
       nextSkolemId => -1,
       ppNames => this.ppNames,
-    }
-  }
-
-  // This only controls memo reuse. The query algorithm remains responsible for
-  // its judgment, and callers must still retain any obligations of a result
-  // they materialize or keep after this call. No clone result is promoted here.
-  private readonly fun queryMemoAllowed(context: TypeQueryContext): Bool {
-    !this.freezeCandidates && !context.hasAssumptions
-  }
-
-  private readonly fun typeQueryStamp(context: TypeQueryContext): TypeQueryStamp {
-    TypeQueryStamp(
-      this.semanticEpoch,
-      this.values,
-      context,
-      this.computationPurpose,
-    )
-  }
-
-  private readonly fun queryStampMatches(
-    context: TypeQueryContext,
-    stamp: TypeQueryStamp,
-  ): Bool {
-    this.queryMemoAllowed(context) &&
-      stamp.matches(
-        this.semanticEpoch,
-        this.values,
-        context,
-        this.computationPurpose,
-      )
-  }
-
-  // A completed success may be reused only in the exact state/context recorded
-  // by its producer. Inference-changing checks still return their ordinary
-  // result, but do not publish it as a completed memo for one snapshot.
-  // A later unchanged-state check can populate the cache instead.
-  mutable fun memoizedSubtype(
-    context: TypeQueryContext,
-    source: TType,
-    target: TType,
-    compute: () -> STResult<TType>,
-  ): STResult<TType> {
-    if (!this.queryMemoAllowed(context)) {
-      compute()
-    } else {
-      pair = (source, target);
-      this.seenSub.maybeGet(pair) match {
-      | Some(stamp) ->
-        if (this.queryStampMatches(context, stamp)) {
-          return STOk()
-        }
-      | None() -> void
-      };
-      entry = this.typeQueryStamp(context);
-      result = compute();
-      if (result is STOk() && this.queryStampMatches(context, entry)) {
-        this.!seenSub[pair] = entry
-      };
-      result
-    }
-  }
-
-  mutable fun memoizedIntersection(
-    context: TypeQueryContext,
-    left: TType,
-    right: TType,
-    compute: () -> TType,
-  ): TType {
-    // Bare variables have special symbolic/constraint handling. Preserve that
-    // exclusion independently of whether this particular run changed state.
-    hasBareVar = left.getSingleVar().isSome() || right.getSingleVar().isSome();
-    if (hasBareVar || !this.queryMemoAllowed(context)) {
-      compute()
-    } else {
-      pair = (left, right);
-      this.seenInter.maybeGet(pair) match {
-      | Some((stamp, value)) ->
-        if (this.queryStampMatches(context, stamp)) {
-          return value
-        }
-      | None() -> void
-      };
-      entry = this.typeQueryStamp(context);
-      result = compute();
-      if (!this.queryStampMatches(context, entry)) {
-        // In particular, do not replace this answer by a re-entrant answer
-        // installed after the candidate state changed during this computation.
-        result
-      } else {
-        this.seenInter.maybeGet(pair) match {
-        | Some((stamp, value)) ->
-          if (this.queryStampMatches(context, stamp)) {
-            return value
-          }
-        | None() -> void
-        };
-        this.!seenInter[pair] = (entry, result);
-        result
-      }
     }
   }
 
@@ -415,7 +313,7 @@ mutable class Subst private {
       // importing it would let a cache hit bypass the observation's read set.
       // Even local saves are discarded here: SavedSubst carries no read-frame
       // identity. The shared frame retains every dependency already inspected.
-      this.!seenSub = SortedMap[];
+      this.!seenSub = SortedSet[];
       this.!seenInter = SortedMap[];
       this.!seenUnion = SortedMap[];
       this.!seenExpansion = SortedMap[]
@@ -438,7 +336,7 @@ mutable class Subst private {
       // Reported source errors still reject the program in keep-going mode;
       // this read result is not itself a whole-program acceptance certificate.
       results => parent.results,
-      seenSub => SortedMap[],
+      seenSub => SortedSet[],
       seenInter => SortedMap[],
       seenUnion => SortedMap[],
       seenExpansion => SortedMap[],
@@ -568,11 +466,6 @@ mutable class Subst private {
     // All supported allocation and binding writes pass this boundary. A
     // private read cannot solve or seal a candidate to make its answer valid.
     this.readObservation.each(frame -> frame.block());
-    // Drop old snapshot roots promptly rather than retaining every intermediate
-    // candidate map through stale memos. Stamps still guard restore, fixture
-    // writes, mode changes, and publication after a computation mutates state.
-    this.!seenSub = SortedMap[];
-    this.!seenInter = SortedMap[];
     oldVersion = this.version;
     this.!version = this.version + 1;
     this.!semanticEpoch = this.semanticEpoch + 1;

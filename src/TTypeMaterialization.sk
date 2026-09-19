@@ -4,7 +4,7 @@
 
 module SKJS;
 
-base class TypeComputationPurpose uses Equality {
+base class TypeComputationPurpose {
   children =
   | TCPChecking()
   | TCPTypeArgumentProbe()
