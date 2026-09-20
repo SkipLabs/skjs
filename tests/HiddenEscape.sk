@@ -25,15 +25,18 @@ fun testHiddenEscapeThroughArrayCommitment(): void {
     2080,
   );
   SKTest.expectEq(false, check.fails(subst));
-  subst.!values[commitment.id] = SKJS.SVClosed(
+  observationBind(
+    subst,
+    commitment,
     SKJS.TType::inst(
       SKJS.Name(pos, "Array"),
       SKJS.TArgs(Array[SKJS.TType::var(element)]),
     ),
+    true,
   );
   SKTest.expectEq(false, check.fails(subst));
   saved = subst.save();
-  subst.!values[element.id] = SKJS.SVOpen(hiddenType);
+  observationBind(subst, element, hiddenType, false);
   direct = SKJS.HiddenEscapeCheck(
     pos,
     SortedSet[hidden.id],

@@ -25,7 +25,7 @@ fun testTypeClaimSnapshotUnion(): void {
     part = SKJS.claimTypeJsonBounded(ty, true, true, empty, 10);
     SKTest.expectEq(true, recorded.atoms.contains(part.atoms[0]))
   };
-  subst.!values[tv.id] = SKJS.SVClosed(SKJS.TType::top(pos));
+  observationBind(subst, tv, SKJS.TType::top(pos), true);
   SKTest.expectEq(recorded.json, export(snapshot).json);
   SKTest.expectEq(true, export(subst.values).top);
   SKTest.expectEq("unbound-inference-variable", export(empty).reason);

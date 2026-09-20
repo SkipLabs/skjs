@@ -15,15 +15,29 @@ fun observationString(): SKJS.TType {
   SKJS.TType::single(SKJS.TPrimValue::string(SKJS.PosRange::none))
 }
 
-// Direct values writes below set up internal states, as in HiddenEscape.sk.
-// They are deliberately not production inference operations. Tests that check
-// the epoch use gen/restore, not an uninstrumented fixture write.
+// Fixture construction uses the same growth and sealing operations as the
+// checker. Tests cannot bypass mutation tracking by writing the store directly.
+fun observationBind(
+  subst: mutable SKJS.Subst,
+  tv: SKJS.TVar,
+  ty: SKJS.TType,
+  closed: Bool,
+): void {
+  // A fresh declaration environment avoids initializing the owner's SKStore
+  // twice when a fixture binds several variables. Candidate state stays in subst.
+  tenv = observationTypeEnv(observationSubst());
+  subst.grow(tenv, tv, ty, SKJS.Contravariant());
+  if (closed) {
+    _ = subst.get(tenv, tv, SKJS.Covariant())
+  }
+}
+
 @test
 fun testObservedBindingIsCommitted(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
   num = observationNumber();
-  subst.!values[tv.id] = SKJS.SVOpen(num);
+  observationBind(subst, tv, num, false);
   epoch = subst.semanticEpoch;
   result = subst.withCommittedTypeReads(scratch -> scratch.peekRaw(tv));
   SKTest.expectEq(true, result is SKJS.TRReady _);
@@ -47,7 +61,7 @@ fun testUnboundObservationIsBlockedNotUnavailable(): void {
 fun testUnavailableObservationDoesNotCommit(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
-  subst.!values[tv.id] = SKJS.SVOpen(observationNumber());
+  observationBind(subst, tv, observationNumber(), false);
   epoch = subst.semanticEpoch;
   result = subst.withCommittedTypeReads<SKJS.TType>(scratch -> {
     _ = scratch.peekRaw(tv);
@@ -63,8 +77,8 @@ fun testObservedClosedOuterStillCommitsInnerRead(): void {
   subst = observationSubst();
   outer = subst.gen(SKJS.PosRange::none);
   inner = subst.gen(SKJS.PosRange::none);
-  subst.!values[outer.id] = SKJS.SVClosed(SKJS.TType::var(inner));
-  subst.!values[inner.id] = SKJS.SVOpen(observationNumber());
+  observationBind(subst, outer, SKJS.TType::var(inner), true);
+  observationBind(subst, inner, observationNumber(), false);
   result = subst.withCommittedTypeReads(scratch ->
     scratch.peekRaw(outer).flatMap(ty ->
       ty.getSingleVar().flatMap(tv -> scratch.peekRaw(tv))
@@ -83,7 +97,7 @@ fun testUninspectedSymbolicMemberRemainsOpen(): void {
     SKJS.Name(SKJS.PosRange::none, "Array"),
     SKJS.TArgs(Array[SKJS.TType::var(member)]),
   );
-  subst.!values[outer.id] = SKJS.SVOpen(arrayTy);
+  observationBind(subst, outer, arrayTy, false);
   // No binding for member is needed to retain the symbolic Array<member>.
   result = subst.withCommittedTypeReads(scratch -> scratch.peekRaw(outer));
   SKTest.expectEq(true, result is SKJS.TRReady _);
@@ -95,7 +109,7 @@ fun testUninspectedSymbolicMemberRemainsOpen(): void {
 fun testNestedCloneContributesReadDependencies(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
-  subst.!values[tv.id] = SKJS.SVOpen(observationNumber());
+  observationBind(subst, tv, observationNumber(), false);
   result = subst.withCommittedTypeReads(scratch -> {
     child = scratch.clone();
     child.peekRaw(tv)
@@ -108,7 +122,7 @@ fun testNestedCloneContributesReadDependencies(): void {
 fun testNestedNormalizationSubstKeepsSnapshot(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
-  subst.!values[tv.id] = SKJS.SVOpen(observationNumber());
+  observationBind(subst, tv, observationNumber(), false);
   result = subst.withCommittedTypeReads(scratch -> {
     // The omitted state must not replace the inherited candidate store by an
     // empty one, as ordinary declaration-only normalization is allowed to do.
@@ -123,7 +137,7 @@ fun testNestedNormalizationSubstKeepsSnapshot(): void {
 fun testCaughtAllocationDoesNotAuthorizeObservation(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
-  subst.!values[tv.id] = SKJS.SVOpen(observationNumber());
+  observationBind(subst, tv, observationNumber(), false);
   epoch = subst.semanticEpoch;
   result = subst.withCommittedTypeReads(scratch -> {
     saved = scratch.save();
@@ -149,8 +163,8 @@ fun testFrozenTransferIsAtomic(): void {
   field = subst.genForField(SKJS.PosRange::none);
   candidate = subst.gen(SKJS.PosRange::none);
   num = observationNumber();
-  subst.!values[field.id] = SKJS.SVOpen(num);
-  subst.!values[candidate.id] = SKJS.SVOpen(num);
+  observationBind(subst, field, num, false);
+  observationBind(subst, candidate, num, false);
   subst.!freezeCandidates = true;
   epoch = subst.semanticEpoch;
   result = subst.withCommittedTypeReads(scratch -> {
@@ -169,7 +183,7 @@ fun testFrozenTransferIsAtomic(): void {
 fun testFrozenAlreadyClosedReadSucceeds(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
-  subst.!values[tv.id] = SKJS.SVClosed(observationNumber());
+  observationBind(subst, tv, observationNumber(), true);
   subst.!freezeCandidates = true;
   epoch = subst.semanticEpoch;
   result = subst.withCommittedTypeReads(scratch -> scratch.peekRaw(tv));
@@ -181,7 +195,7 @@ fun testFrozenAlreadyClosedReadSucceeds(): void {
 fun testOwnerRollbackInvalidatesInFlightRead(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
-  subst.!values[tv.id] = SKJS.SVOpen(observationNumber());
+  observationBind(subst, tv, observationNumber(), false);
   saved = subst.save();
   version = subst.version;
   result = subst.withCommittedTypeReads(scratch -> {
@@ -194,19 +208,24 @@ fun testOwnerRollbackInvalidatesInFlightRead(): void {
   SKTest.expectEq(true, subst.isOpen(tv));
 }
 
+// The frame rejects a read payload from a different candidate interpretation.
+// Supply the mismatched data directly to the frame, not to the owner's store.
 @test
-fun testBindingComparisonProtectsUninstrumentedFixtureChange(): void {
+fun testObservationRejectsMismatchedBindingPayload(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
-  subst.!values[tv.id] = SKJS.SVOpen(observationNumber());
-  result = subst.withCommittedTypeReads(scratch -> {
-    value = scratch.peekRaw(tv);
-    // Deliberately bypass epoch accounting to exercise the second guard.
-    subst.!values[tv.id] = SKJS.SVOpen(observationString());
-    value
-  });
-  SKTest.expectEq(true, result is SKJS.TRBlocked _);
-  SKTest.expectEq(true, subst.isOpen(tv));
+  observationBind(subst, tv, observationNumber(), false);
+  frame = SKJS.SubstReadObservation::mcreate(subst.snapshot());
+  caught = false;
+  try {
+    frame.record(tv, Some(SKJS.SVOpen(observationString())))
+  } catch {
+  | SKJS.SubstObservationBlocked() -> !caught = true
+  | exn -> throw exn
+  };
+  SKTest.expectEq(true, caught);
+  SKTest.expectEq(true, frame.isBlocked());
+  SKTest.expectEq(Some(observationNumber()), subst.peekRaw(tv));
 }
 
 @test
@@ -227,13 +246,13 @@ fun testObservedScratchDoesNotInheritSuccessCaches(): void {
 }
 
 @test
-fun testImmutableSnapshotDoesNotFollowLiveReplacement(): void {
+fun testImmutableSnapshotDoesNotFollowLiveGrowth(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
   num = observationNumber();
-  subst.!values[tv.id] = SKJS.SVOpen(num);
+  observationBind(subst, tv, num, false);
   snapshot = subst.snapshot();
-  subst.!values[tv.id] = SKJS.SVOpen(observationString());
+  observationBind(subst, tv, observationString(), false);
   SKTest.expectEq(Some(num), snapshot.peekRaw(tv));
   SKTest.expectEq(true, subst.isOpen(tv));
 }
@@ -259,10 +278,10 @@ fun testUnexpectedObservationExceptionPropagates(): void {
 fun testNestedForeignCandidateStateIsRefused(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
-  subst.!values[tv.id] = SKJS.SVOpen(observationNumber());
+  observationBind(subst, tv, observationNumber(), false);
   foreign = observationSubst();
   other = foreign.gen(SKJS.PosRange::none);
-  foreign.!values[other.id] = SKJS.SVOpen(observationString());
+  observationBind(foreign, other, observationString(), false);
   foreignState = foreign.save();
   result = subst.withCommittedTypeReads(scratch -> {
     child = SKJS.Subst::mcreate(scratch, foreignState);
@@ -312,7 +331,7 @@ fun testObservedLocalRestoreKeepsInspectedDependencies(): void {
   tv = subst.gen(SKJS.PosRange::none);
   num = observationNumber();
   str = observationString();
-  subst.!values[tv.id] = SKJS.SVOpen(num);
+  observationBind(subst, tv, num, false);
   result = subst.withCommittedTypeReads(scratch -> {
     observed = scratch.peekRaw(tv);
     scratch.!seenSub = SortedSet[(num, str)];
@@ -362,7 +381,7 @@ fun testOrdinaryRestoreStillRestoresInferenceCaches(): void {
 fun testFalseTypeDecisionCommitsItsReads(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
-  subst.!values[tv.id] = SKJS.SVOpen(observationNumber());
+  observationBind(subst, tv, observationNumber(), false);
   epoch = subst.semanticEpoch;
   result = subst.withCommittedTypeDecision<Bool>(scratch ->
     scratch.peekRaw(tv).fromSome().getSingleVar().isSome()
@@ -378,7 +397,7 @@ fun testFalseTypeDecisionCommitsItsReads(): void {
 fun testAbsentTupleDecisionCommitsItsReads(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
-  subst.!values[tv.id] = SKJS.SVOpen(observationNumber());
+  observationBind(subst, tv, observationNumber(), false);
   result = subst.withCommittedTypeDecision<?Array<SKJS.TType>>(scratch -> {
     _ = scratch.peekRaw(tv);
     None()
@@ -430,7 +449,7 @@ fun testRestLayoutDecisionLeavesSymbolicElementOpen(): void {
     SKJS.Name(SKJS.PosRange::none, "Array"),
     SKJS.TArgs(Array[SKJS.TType::var(element)]),
   );
-  subst.!values[outer.id] = SKJS.SVOpen(arrayTy);
+  observationBind(subst, outer, arrayTy, false);
   result = subst.withCommittedTypeDecision<?Array<SKJS.TType>>(scratch -> {
     _ = scratch.peekRaw(outer);
     None()
@@ -446,7 +465,7 @@ fun testRestLayoutDecisionLeavesSymbolicElementOpen(): void {
 fun testRestLayoutCommitmentRollsBackWithAlternative(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
-  subst.!values[tv.id] = SKJS.SVOpen(observationNumber());
+  observationBind(subst, tv, observationNumber(), false);
   saved = subst.save();
   result = subst.withCommittedTypeDecision<Bool>(scratch -> {
     _ = scratch.peekRaw(tv);
@@ -466,14 +485,13 @@ fun testRestLayoutCommitmentRollsBackWithAlternative(): void {
 fun testDetachedTypeArgumentProbeDoesNotBlockObservation(): void {
   subst = observationSubst();
   observed = subst.gen(SKJS.PosRange::none);
-  subst.!values[observed.id] = SKJS.SVOpen(observationNumber());
+  observationBind(subst, observed, observationNumber(), false);
   ownerVersion = subst.version;
   result = subst.withCommittedTypeReads<Bool>(scratch -> {
     scratch.withTypeArgumentProbe(probe -> {
-      // Allocation is a genuine instrumented mutation and needs no fabricated
-      // typing environment. Fixture binding writes only set up the probe state.
+      // Both allocation and growth are confined to the detached probe.
       speculative = probe.gen(SKJS.PosRange::none);
-      probe.!values[speculative.id] = SKJS.SVOpen(observationString());
+      observationBind(probe, speculative, observationString(), false);
       SKTest.expectEq(
         true,
         probe.typeComputationPurpose() is SKJS.TCPTypeArgumentProbe(),
@@ -516,10 +534,10 @@ fun testProbeCannotInstallAnObservedPayload(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
   num = observationNumber();
-  subst.!values[tv.id] = SKJS.SVOpen(num);
+  observationBind(subst, tv, num, false);
   result = subst.withCommittedTypeReads(scratch -> {
     scratch.withTypeArgumentProbe(probe -> {
-      probe.!values[tv.id] = SKJS.SVClosed(observationString());
+      observationBind(probe, tv, observationString(), true);
     });
     scratch.peekRaw(tv)
   });
@@ -532,7 +550,7 @@ fun testProbeCannotInstallAnObservedPayload(): void {
 fun testDiagnosticReadDoesNotContributeACommitment(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
-  subst.!values[tv.id] = SKJS.SVOpen(observationNumber());
+  observationBind(subst, tv, observationNumber(), false);
   result = subst.withCommittedTypeReads<Bool>(scratch -> {
     diagnostic = scratch.cloneForTypeDiagnostics();
     _ = diagnostic.peekRaw(tv);
@@ -584,7 +602,7 @@ fun testFrozenClosedReadsCanMemoize(): void {
   tv = subst.gen(SKJS.PosRange::none);
   // An earlier unsealed read must not poison all later queries.
   _ = subst.peekRaw(tv);
-  subst.!values[tv.id] = SKJS.SVClosed(observationNumber());
+  observationBind(subst, tv, observationNumber(), true);
   subst.!freezeCandidates = true;
   stamp = subst.typeQueryReadStamp();
   _ = subst.peekRaw(tv);
@@ -607,7 +625,7 @@ fun testFrozenUnboundReadSurvivesRollback(): void {
 fun testFrozenOpenReadInCloneCannotMemoize(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
-  subst.!values[tv.id] = SKJS.SVOpen(observationNumber());
+  observationBind(subst, tv, observationNumber(), false);
   subst.!freezeCandidates = true;
   stamp = subst.typeQueryReadStamp();
   scratch = subst.clone();
@@ -622,8 +640,8 @@ fun testFrozenClosedOuterDoesNotHideNormalizerRead(): void {
   subst = observationSubst();
   outer = subst.gen(SKJS.PosRange::none);
   inner = subst.gen(SKJS.PosRange::none);
-  subst.!values[outer.id] = SKJS.SVClosed(SKJS.TType::var(inner));
-  subst.!values[inner.id] = SKJS.SVOpen(observationNumber());
+  observationBind(subst, outer, SKJS.TType::var(inner), true);
+  observationBind(subst, inner, observationNumber(), false);
   subst.!freezeCandidates = true;
   stamp = subst.typeQueryReadStamp();
   scratch = SKJS.Subst::mcreate(subst, subst.save());
@@ -637,7 +655,7 @@ fun testFrozenClosedOuterDoesNotHideNormalizerRead(): void {
 fun testFrozenObservedReadCannotMemoize(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
-  subst.!values[tv.id] = SKJS.SVOpen(observationNumber());
+  observationBind(subst, tv, observationNumber(), false);
   subst.!freezeCandidates = true;
   stamp = subst.typeQueryReadStamp();
   result = subst.withCommittedTypeReads(scratch -> scratch.peekRaw(tv));
