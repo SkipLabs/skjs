@@ -1312,4 +1312,30 @@ fun testObservedCallbackSubtypeCommitsAtomically(): void {
   SKTest.expectEq(true, subst.snapshot().isClosed(output));
 }
 
+@test
+fun testMaterializationKeepsCheckingProbeAndDiagnosticPurposesSeparate(): void {
+  owner = observationSubst();
+  tenv = observationTypeEnv(owner);
+  pos = SKJS.PosRange::none;
+  checking = tenv.materializeRead<Bool>(owner, pos, (scratch, _) ->
+    scratch.isObservingTypeReads() &&
+      scratch.typeComputationPurpose() is SKJS.TCPChecking()
+  );
+  SKTest.expectEq(true, checking);
+  owner.withTypeArgumentProbe(probe -> {
+    probing = tenv.materializeRead<Bool>(probe, pos, (scratch, _) ->
+      !scratch.isObservingTypeReads() &&
+        scratch.typeComputationPurpose() is SKJS.TCPTypeArgumentProbe()
+    );
+    SKTest.expectEq(true, probing)
+  });
+  diagnostic = owner.cloneForTypeDiagnostics();
+  diagnosing = tenv.materializeRead<Bool>(diagnostic, pos, (scratch, _) ->
+    !scratch.isObservingTypeReads() &&
+      scratch.typeComputationPurpose() is SKJS.TCPDiagnostic()
+  );
+  SKTest.expectEq(true, diagnosing);
+  SKTest.expectEq(true, owner.typeComputationPurpose() is SKJS.TCPChecking());
+}
+
 module end;
