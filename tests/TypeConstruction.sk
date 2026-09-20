@@ -289,4 +289,23 @@ fun testStructuralUnionPreservesUnresolvedOperands(): void {
   SKTest.expectEq(stamp, subst.typeMutationStamp());
 }
 
+// Rejection must abandon source commitments made while comparing the types.
+// This is a publication boundary, independent of which proposal found a bound.
+@test
+fun testRejectedSubtypeDoesNotPublishSourceRead(): void {
+  owner = observationSubst();
+  tenv = observationTypeEnv(owner);
+  source = owner.gen(SKJS.PosRange::none);
+  owner.grow(tenv, source, observationNumber(), SKJS.Contravariant());
+  result = SKJS.TType::isSub(
+    owner,
+    tenv,
+    SKJS.TType::var(source),
+    observationString(),
+  );
+  SKTest.expectEq(false, result is SKJS.STOk());
+  SKTest.expectEq(true, owner.isOpen(source));
+  SKTest.expectEq(Some(observationNumber()), owner.peekRaw(source));
+}
+
 module end;
