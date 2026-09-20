@@ -48,12 +48,22 @@ mutable class SubstReadCell<T>{mutable value: ?T} {
   }
 }
 
+// A shape depends on an exact payload. A positive subtype target can instead
+// rely on its current lower bound: legal growth only adds inhabitants. Neither
+// requirement permits replacing a binding or surviving the owner's rollback.
+base class TypeReadRequirement {
+  children =
+  | FixedTypeRead()
+  | MonotoneTypeRead()
+}
+
 // One frame is shared by an observation and every scratch descendant. It is
 // deliberately NOT part of SavedSubst: catching an exception or restoring a
 // speculative alternative cannot erase a dependency already inspected.
 mutable class SubstReadObservation private {
   snapshot: SubstSnapshot,
   private mutable reads: SortedMap<TVarID, TType> = SortedMap[],
+  private mutable lowerBounds: SortedMap<TVarID, TType> = SortedMap[],
   private mutable blocked: Bool = false,
 } {
   static fun mcreate(snapshot: SubstSnapshot): mutable SubstReadObservation {
@@ -69,7 +79,11 @@ mutable class SubstReadObservation private {
     throw SubstObservationBlocked()
   }
 
-  mutable fun record(tv: TVar, value: ?SubstValue): void {
+  mutable fun record(
+    tv: TVar,
+    value: ?SubstValue,
+    requirement: TypeReadRequirement = FixedTypeRead(),
+  ): void {
     if (this.blocked) {
       throw SubstObservationBlocked()
     } else {
@@ -82,7 +96,10 @@ mutable class SubstReadObservation private {
         if (this.snapshot.peekRaw(tv) != Some(ty)) {
           this.block()
         } else {
-          this.!reads[tv.identity()] = ty
+          requirement match {
+          | FixedTypeRead() -> this.!reads[tv.identity()] = ty
+          | MonotoneTypeRead() -> this.!lowerBounds[tv.identity()] = ty
+          }
         }
       }
     }
@@ -94,6 +111,10 @@ mutable class SubstReadObservation private {
 
   readonly fun bindings(): SortedMap<TVarID, TType> {
     this.reads
+  }
+
+  readonly fun monotoneBindings(): SortedMap<TVarID, TType> {
+    this.lowerBounds
   }
 }
 
@@ -159,6 +180,7 @@ mutable class TypeReadContext private {
   private scratch: mutable Subst,
   private tenv: TEnv,
   private lifetime: mutable TypeReadLifetime,
+  private allowTargetGrowth: Bool = false,
 } {
   // Only the observation transaction may supply scratch. Always expire the
   // capability, including on exceptions: retaining a handle cannot extend the
@@ -181,6 +203,23 @@ mutable class TypeReadContext private {
     };
     lifetime.expire();
     result.value.fromSome()
+  }
+
+  // There is no arbitrary success callback here: the restricted relation
+  // itself must establish the requested judgment. Failure publishes no reads.
+  static fun runSubtypeProof(
+    scratch: mutable Subst,
+    tenv: TEnv,
+    source: TType,
+    target: TType,
+  ): ?Void {
+    static::runObserved(scratch, tenv, context -> {
+      validator = context with {allowTargetGrowth => true};
+      validator.subtype(source, target) match {
+      | STOk() -> Some(void)
+      | STErrorOnTType _ -> None()
+      }
+    })
   }
 
   // Preserve lifetime, snapshot, query state and recursive premises while
@@ -277,14 +316,33 @@ mutable class TypeReadContext private {
       )
     | tv @ TVar _ ->
       variance.map(_ -> {
-        value = this.peekRaw(tv).fromSome();
-        for (constraint in tv.constraints) {
-          !value = this.intersection(value, constraint)
-        };
-        value
+        this.constrainRead(tv, this.peekRaw(tv).fromSome())
       })
     | arrLit @ TArrayLit _ -> Some(arrLit.selector.read(this))
     }
+  }
+
+  private mutable fun constrainRead(tv: TVar, value: TType): TType {
+    for (constraint in tv.constraints) {
+      !value = this.intersection(value, constraint)
+    };
+    value
+  }
+
+  // Only the RHS of the positive relation gets this interpretation. Recursive
+  // field and callback checks swap sides according to their variance. Shape
+  // normalization, occurrence-constraint intersections and selector reads keep
+  // their exact-payload requirements.
+  private mutable fun positiveTargetClauses(type: TType): Clauses {
+    type.expandWith(inst ->
+      inst match {
+      | tv @ TVar _ ->
+        Some(
+          this.constrainRead(tv, this.scratch.peekSubtypeTarget(tv).fromSome()),
+        )
+      | _ -> this.expandInstance(inst, Some(Contravariant()))
+      }
+    ).clauses
   }
 
   private mutable fun expandClauses(type: TType, variance: Variance): Clauses {
@@ -428,7 +486,8 @@ mutable class TypeReadContext private {
   // The relation uses fixed payloads and structural rules. It never proposes a
   // solution, selects a literal representation or records inference edges.
   mutable fun isSubtype(source: TType, target: TType): Bool {
-    this.subtype(source, target) is STOk()
+    context = this with {allowTargetGrowth => false};
+    context.subtype(source, target) is STOk()
   }
 
   private mutable fun subtype(u1: TType, u2: TType): STResult<TType> {
@@ -510,7 +569,11 @@ mutable class TypeReadContext private {
 
     context = this with {tenv};
     left = context.expandClauses(u1, Covariant());
-    right = context.expandClauses(u2, Contravariant());
+    right = if (this.allowTargetGrowth) {
+      context.positiveTargetClauses(u2)
+    } else {
+      context.expandClauses(u2, Contravariant())
+    };
     Clauses::isSubWith(left, right, (a, b) ->
       STypes::isSubWith(a, b, (x, y) ->
         TObject::isSubWith(x, y, (f, g) -> context.fieldsSubtype(f, g))
@@ -561,7 +624,8 @@ mutable class TypeReadContext private {
     };
     this.scratch.withTypeQuery(() -> {
       stamp = this.scratch.typeQueryReadStamp();
-      result = this.intersection_(left, right);
+      context = this with {allowTargetGrowth => false};
+      result = context.intersection_(left, right);
       if (!hasVar && this.scratch.canCacheTypeQuerySince(stamp)) {
         this.scratch.seenInter.maybeGet(pair) match {
         | Some(cached) -> !result = cached

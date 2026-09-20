@@ -239,7 +239,7 @@ fun testSubtypeLifetimeFollowsCallbackVariance(): void {
   );
   SKTest.expectEq(
     true,
-    SKJS.TType::isSub(subst, tenv, source, target) is SKJS.STOk(),
+    subst.proveSubtype(tenv, source, target) is SKJS.TRReady _,
   );
   // Contravariance makes the target's argument a source dependency.
   SKTest.expectEq(true, subst.isClosed(argumentTarget));
@@ -297,13 +297,12 @@ fun testRejectedSubtypeDoesNotPublishSourceRead(): void {
   tenv = observationTypeEnv(owner);
   source = owner.gen(SKJS.PosRange::none);
   owner.grow(tenv, source, observationNumber(), SKJS.Contravariant());
-  result = SKJS.TType::isSub(
-    owner,
+  result = owner.proveSubtype(
     tenv,
     SKJS.TType::var(source),
     observationString(),
   );
-  SKTest.expectEq(false, result is SKJS.STOk());
+  SKTest.expectEq(true, result is SKJS.TRUnavailable _);
   SKTest.expectEq(true, owner.isOpen(source));
   SKTest.expectEq(Some(observationNumber()), owner.peekRaw(source));
 }

@@ -68,11 +68,12 @@ fun testObservedBindingIsCommitted(): void {
 }
 
 @test
-fun testUnboundObservationIsBlockedNotUnavailable(): void {
+fun testUnboundSubtypeTargetBlocksWithoutProposals(): void {
   subst = observationSubst();
+  tenv = observationTypeEnv(subst);
   tv = subst.gen(SKJS.PosRange::none);
   epoch = subst.typeOwnerEpoch();
-  result = subst.testObservedReads(scratch -> scratch.peekRaw(tv));
+  result = subst.proveSubtype(tenv, observationNumber(), SKJS.TType::var(tv));
   SKTest.expectEq(true, result is SKJS.TRBlocked _);
   SKTest.expectEq(true, subst.isUnbound(tv));
   SKTest.expectEq(epoch, subst.typeOwnerEpoch());

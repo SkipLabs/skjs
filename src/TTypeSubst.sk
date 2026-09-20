@@ -438,7 +438,10 @@ mutable class Subst private {
       (!this.freezeCandidates || this.queryReads.unsealed == stamp.i0)
   }
 
-  private mutable fun readBinding(tvar: TVar): ?SubstValue {
+  private mutable fun readBinding(
+    tvar: TVar,
+    requirement: TypeReadRequirement = FixedTypeRead(),
+  ): ?SubstValue {
     value = this.values.maybeGet(tvar.identity());
     if (!(value is Some(SVClosed _))) {
       this.queryReads.!unsealed = this.queryReads.unsealed + 1;
@@ -449,7 +452,7 @@ mutable class Subst private {
         this.recordProvisionalTypeRead()
       }
     };
-    this.readObservation.each(frame -> frame.record(tvar, value));
+    this.readObservation.each(frame -> frame.record(tvar, value, requirement));
     value
   }
 
@@ -529,6 +532,17 @@ mutable class Subst private {
       return false
     };
     bindings = frame.bindings();
+    // Positive target reads do not seal the candidate, but must still belong
+    // to this snapshot. Subst.grow preserves their lower bound by union; source
+    // reads also present in bindings below take the stronger fixed requirement.
+    for ((id, expected) in frame.monotoneBindings().items()) {
+      this.values.maybeGet(id) match {
+      | Some(SVOpen(actual))
+      | Some(SVClosed(actual)) ->
+        if (actual != expected) return false
+      | None() -> return false
+      }
+    };
     for ((id, expected) in bindings.items()) {
       this.values.maybeGet(id) match {
       | Some(SVClosed(actual)) ->
@@ -641,6 +655,44 @@ mutable class Subst private {
     decide: (mutable TypeReadContext) -> T,
   ): TypeReadResult<T> {
     this.withCommittedReadContext<T>(tenv, context -> Some(decide(context)))
+  }
+
+  // Establish an actual positive judgment without proposing any candidate or
+  // literal representation. Unavailable means no proof, not a stable negation;
+  // Blocked means an interpretation is missing or publication is forbidden.
+  // The result has the lifetime of this owner's enclosing inference transaction.
+  mutable fun proveSubtype(
+    tenv: TEnv,
+    source: TType,
+    target: TType,
+  ): TypeReadResult<Void> {
+    if (
+      !(this.computationPurpose is TCPChecking()) ||
+      this.isObservingTypeReads()
+    ) {
+      TRBlocked()
+    } else {
+      this.withCommittedTypeReads(scratch ->
+        TypeReadContext::runSubtypeProof(
+          scratch,
+          tenv.forTypeReadObservation(),
+          source,
+          target,
+        )
+      )
+    }
+  }
+
+  // Only fixed-read subtype validation requests this view. Reading an unknown
+  // target still blocks; this API never guesses bottom or solves a candidate.
+  mutable fun peekSubtypeTarget(tvar: TVar): ?TType {
+    invariant(this.isObservingTypeReads());
+    this.readBinding(tvar, MonotoneTypeRead()) match {
+    | Some(SVOpen(type))
+    | Some(SVClosed(type)) ->
+      Some(type)
+    | None() -> None()
+    }
   }
 
   // Record one supported mutation of inference state. Callers that need to

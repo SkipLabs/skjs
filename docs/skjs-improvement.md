@@ -131,10 +131,10 @@ callers. Declared parameters and hidden witnesses still share rigid algebra;
 owner/scope checks remain partly dynamic. Array representation selectors now
 have an opaque API distinct from value candidates, as described below.
 `Subst` combines candidate storage, commitments, rollback, query dependencies,
-caches and diagnostic/export state. Rest-shape queries and refinement head expansion now receive a restricted
-`TypeReadContext`. The remaining `withCommittedTypeReads` consumers and the
-expansion backend still use mutable `Subst` and detect forbidden operations
-dynamically.
+caches and diagnostic/export state. A2 completed restricted committed shape
+observation, including its algebra and declaration backend. Its raw transaction
+kernel is private; consumers receive `TypeReadContext`. A3 now separates ordinary
+inference from the validation and publication of subtype/call judgments.
 `TType.isSub_` still proposes candidate growth, seals dependencies, establishes
 literal representations and checks the relation in one mutable transaction.
 Those mechanisms have been audited; their interfaces are not the target design.
@@ -175,7 +175,7 @@ diagnostic) is independent of variable role.
 ### Planned milestones
 
 These are architectural milestones A1–A4, separate from completed repair rows
-R1–R3/M1–M3. A1–A2 are **done**; A3–A4 are **not started**.
+R1–R3/M1–M3. A1–A2 are **done**; A3 is **in progress**; A4 is **not started**.
 Names below describe responsibilities, not prescribed new class names.
 
 | ID | Deliverable | Closure evidence |
@@ -383,6 +383,46 @@ refactoring. A3 still separates ordinary subtype/call proposals, validation and
 publication. A4 completes that wider consumer migration and retires the remaining
 inference interfaces. Existing lifetime, owner and rollback controls remain
 necessary; an arbitrary callback result is not a proof certificate.
+
+### A3 execution plan
+
+A3 must replace the mixed acceptance path, not merely run another check beside
+it or rename `isSub`. The following work remains one milestone:
+
+1. **Positive subtype validation.** Distinguish exact source/shape dependencies
+   from monotone target lower bounds. Run the restricted relation without growth,
+   publish only a proved positive judgment, and preserve symbolic operands.
+   A failed proof is not a retained negative fact. Existing fixed shape/negative
+   observations retain their stronger commitment policy.
+2. **Subtype proposal driver.** Separate candidate growth, literal representation
+   proposals and speculative constraint discovery from acceptance. Proposal success
+   is not proof. Recursive proposal paths must not publish accepted judgments,
+   export claims or call-graph edges before validation. Preserve constraint
+   obligations and rollback; do not close every candidate to force a proof.
+3. **Call publication.** Collect receiver, positional, optional and rest obligations
+   after generic instantiation. Inference may iterate, but returning a call or
+   constructor result requires validation of the whole applicable obligation set
+   in one consistent state. Include literal choices and explicit/dependent bounds.
+4. **Representative integration and qualification.** Exercise failed/reordered
+   proposals, callback variance, symbolic results, constructor results and owner
+   rollback through the real drivers. Retained negative decisions still require
+   justified dependencies. Compare source outcomes, verifier results and named
+   performance controls before declaring A3 complete. A4 then handles the wider
+   remaining consumer inventory and retirement of superseded interfaces.
+
+The first implementation provides `Subst.proveSubtype`, which runs an actual
+restricted positive relation rather than an arbitrary callback. Source reads and
+shape operations still require exact payloads. Reads of the positive relation's
+target carry lower-bound dependencies; publication checks those against the same
+snapshot but leaves them open. Legal `Subst.grow` preserves a bound by union;
+contravariant callback/field positions swap sides and therefore acquire fixed
+source dependencies where needed. Any dependency also read exactly is still
+sealed. Missing interpretations block; false comparisons publish no commitments.
+Probes and diagnostics cannot use this checking publication entry point.
+
+This is a validation primitive, **not completion of A3**: the ordinary `TType.isSub`
+and call drivers still mix proposal and checking. Their migration, representation
+proposals, constraint obligations and deferred publication remain required.
 
 ### Acceptance criteria and migration discipline
 
