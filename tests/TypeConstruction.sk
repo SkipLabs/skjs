@@ -254,4 +254,36 @@ fun testSubtypeLifetimeFollowsCallbackVariance(): void {
   SKTest.expectEq(true, recomputed is SKJS.STOk());
 }
 
+@test
+fun testStructuralUnionPreservesUnresolvedOperands(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  pos = SKJS.PosRange::none;
+  candidate = subst.gen(pos);
+  fieldCandidate = subst.gen(pos);
+  symbolic = SKJS.TType::var(candidate.setConstraint(observationNumber()));
+  field = constructionField(SKJS.TType::var(fieldCandidate));
+  fields = SKJS.TFields::createFromSorted{
+    fields => SortedMap[].set(field.name, field),
+  };
+  object = SKJS.TType::single(
+    SKJS.TObject::createSingleBranch(fields, None(), pos),
+  );
+  stamp = subst.typeMutationStamp();
+  observed = subst.withCommittedTypeDecision(scratch ->
+    SKJS.TType::union(scratch, tenv, symbolic, object)
+  );
+  SKTest.expectEq(
+    true,
+    observed match {
+    | SKJS.TRReady(result) ->
+      result.insts == symbolic.insts && result.clauses == object.clauses
+    | _ -> false
+    },
+  );
+  SKTest.expectEq(true, subst.isUnbound(candidate));
+  SKTest.expectEq(true, subst.isUnbound(fieldCandidate));
+  SKTest.expectEq(stamp, subst.typeMutationStamp());
+}
+
 module end;
