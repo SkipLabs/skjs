@@ -5,6 +5,11 @@ contracts as a reference. This is **SKJS `src/` work**. It is not the
 verification pipeline, and it is not a plan to make SKJS implement the Lean
 fragment.
 
+The bounded repair/lifetime audit is complete. The stronger architectural
+refactoring is **planned, not complete**: clarity, restricted capabilities and
+separation of inference from validation are its additional completion criteria.
+See [Architectural end state](#architectural-end-state).
+
 Status of each row is stated only here. Corpus row status stays in
 [ledger.yaml](ledger.yaml). Verification architecture stays in
 [verification/DESIGN.md](../verification/DESIGN.md).
@@ -59,8 +64,10 @@ Contracts (full text in [DESIGN](../verification/DESIGN.md#contracts)):
 3. Successful subtyping is semantic inclusion under every assignment satisfying `Δ`.
 4. Inference cannot invalidate previous checks.
 
-Repair architecture: inference **proposes**; validation is against an
-**immutable, explicit** representation. Heuristic inference may stay. Its
+Target architecture: inference **proposes**; validation is against an
+**immutable, explicit** representation. The current implementation enforces parts
+of this contract through shared mutable state and runtime protocols; it does not
+yet provide the capability separation planned below. Heuristic inference may stay. Its
 success does not authorize acceptance. Caches and clones then have local
 obligations instead of becoming part of the meaning of subtyping.
 
@@ -73,7 +80,7 @@ justify a SKJS fix. An independently checked derivation is a **strong** route
 to an incompleteness fix, not the only permitted one. A verification-pipeline
 `reject:` is not a disproof, and a failed proof search is not incompleteness.
 
-## Active work
+## Completed bounded repair audit
 
 Statuses: `not started` · `in progress` · `done`.
 
@@ -84,7 +91,10 @@ The current validation-lifetime audit (R2/R3c) also meets its implementation
 completion criteria, as recorded below. R1 records and revalidates signature
 and persistent-binding escape roots. M1 now meets its bounded mutation/alias
 criterion for the checked data-object language; its interoperability boundary
-and evidence are recorded below.
+and evidence are recorded below. In this table, “done” means the stated bounded
+implementation audit passed. In particular, R2/R3c do not mean that inference and
+validation now have separate interfaces or that all invariants are enforced by
+the host type system. The architectural milestones below track that work.
 
 | ID | Work | Status | Done when |
 | --- | --- | --- | --- |
@@ -96,6 +106,116 @@ and evidence are recorded below.
 | M1 | Alias writes: a narrow alias must not promise contents another alias may legally overwrite (`L-MUT-ALIAS`) | done | Reduced [narrowed-alias-stale-write](deep-dives/issues/narrowed-alias-stale-write.md) programs are rejected; a positive counterpart with a shared invariant still checks |
 | M2 | Stale captured reads: a creation-time narrowing is not a captured arrow guarantee (`L-STALE-READ`) | done | Reduced [stale-closure-reads](deep-dives/issues/stale-closure-reads-narrowing.md) programs are rejected; a snapshot-or-null-check counterpart still checks |
 | M3 | Loop-carried narrowing (`L-LOOP-CARRIED`) | done | SKJS rejects the [loop-carried](deep-dives/issues/loop-carried-narrowing-stale.md) reduction using its existing language and tests. Independent pipeline coverage of `let` is **not** a prerequisite. A counterpart that remains correct under SKJS's own loop checking (not source-level supplied invariants) still checks |
+
+## Architectural end state
+
+The objective is a checker whose implementation explains the three variable
+roles clearly and whose interfaces exclude misuse wherever practical. Completion
+means fewer dangerous capabilities and caller obligations, not more mode flags,
+wrappers or regression examples around the same unrestricted state.
+
+### Current gap
+
+`TParam` and `TVar` are separate, and parameter identity includes `ParamOrigin`.
+However, declared parameters and hidden witnesses still share a general `Id`
+interface; allocation and scope restrictions are partly runtime protocols.
+`Subst` combines candidate storage, commitments, rollback, query dependencies,
+caches and diagnostic/export state. `withCommittedTypeReads` passes a mutable
+`Subst` to its callback and detects forbidden operations dynamically.
+`TType.isSub_` still proposes candidate growth, seals dependencies, establishes
+literal representations and checks the relation in one mutable transaction.
+Those mechanisms have been audited; their interfaces are not the target design.
+
+### Responsibilities and permitted interaction
+
+| Component | Capability | Must not be able to do |
+| --- | --- | --- |
+| Variable identities and scopes | Allocate declared parameters, solver candidates and scoped hidden witnesses through role-specific factories; preserve identities through renaming | Solve a rigid parameter, forge/reuse a hidden witness, or confuse a literal representation selector with an ordinary candidate |
+| Inference engine | Propose candidates, constraints and representation choices; retry after validation feedback | Turn proposal success into acceptance, mutate established dependencies without preserving obligations, or construct validated results |
+| Validation context | Read explicit assumptions and candidate interpretations through a restricted interface; compute judgments and their dependencies | Allocate/solve candidates, choose a literal representation, or reach the owner's mutable solver through a back door |
+| Commitment/publication boundary | Check dependencies against their owner and transaction, establish required commitments, then release a retained result | Publish scratch-local evidence, a stale decision or a result whose provenance was discarded |
+| Query machinery | Maintain recursion assumptions, dependency tracking and caches local to justified contexts | Treat a conditional recursive answer as unconditional or transfer caches independently of their justification |
+| Diagnostics and export | Inspect an appropriate view and report outcomes | Manufacture acceptance authority or feed display approximations back into validation |
+
+Inference and validation communicate; they are not independent algorithms.
+The driver may propose, validate, commit or retry. Validation may return an
+unsatisfied constraint or an inability to establish a shape. It must not silently
+solve that problem itself. Changing an inference heuristic may change which
+valid programs are found, but cannot change what counts as valid evidence.
+Recursive bookkeeping and caches may remain mutable inside validation; semantic
+candidate state is what the restricted interface must prevent it from mutating.
+
+Do not require all candidates to be globally closed. A judgment can retain
+symbolic dependencies under explicit assumptions. Publication must preserve
+those assumptions: commit inspected payloads, retain justified symbolic operands,
+or retain an obligation that is revalidated before further reliance. Inference
+choices never change an allocated runtime location's fixed world type.
+
+Use separate variants/identifier types and restricted constructors where they
+exclude real misuse. Rigid universal parameters and existential witnesses may
+share algebraic operations when their identity and scope rules are preserved;
+three semantic roles do not require three copies of the type algebra. Distinguish
+ordinary inference, field construction and literal selectors within solver state
+where their legal transitions differ. Computation purpose (checking, probe,
+diagnostic) is independent of variable role.
+
+### Planned milestones
+
+These are architectural milestones A1–A4, separate from completed repair rows
+R1–R3/M1–M3. All are currently **not started**; this plan is not implementation.
+Names below describe responsibilities, not prescribed new class names.
+
+| ID | Deliverable | Closure evidence |
+| --- | --- | --- |
+| A1 | Restrict variable creation and state transitions | Role-specific factories and private storage prevent ordinary callers from minting witnesses or writing candidate bindings directly. Solver operations cannot accept rigid IDs. Candidate/field/selector transitions are explicit. Existing identity, escape, rollback and literal controls pass; any necessary dynamic scope/owner checks are centralized and documented. |
+| A2 | Introduce validation read capabilities | Migrate committed shape observation end to end so callbacks receive a restricted context, with no solver mutation or mutable-owner accessor. Reads still collect transitive dependencies; blocked, unavailable and negative decisions remain distinct. Existing owner/clone/rollback controls pass without relying on callbacks voluntarily avoiding mutators. |
+| A3 | Separate proposals, checking and publication | Split ordinary subtype/call processing into explicit proposal, validation and commitment responsibilities using A1/A2. Validation cannot call growth or representation-selection APIs. Retained positive/negative judgments and materialized shapes pass through justified publication; symbolic results remain symbolic where appropriate. A call fixed point or a generic success wrapper is not sufficient. |
+| A4 | Migrate consumers and retire unrestricted paths | Complete the existing consumer/cache/clone inventory against the new interfaces; remove superseded mutable entry points, modes and duplicate mechanisms where their purpose has been replaced. Qualify all source outcomes, native protocols, independent suites, census changes and performance. Report remaining trusted/dynamic checks explicitly. |
+
+Start with the allocation/mutation entry points in `TType.sk` and
+`TTypeSubst.sk`, then the observation boundary in `TTypeObservation.sk` and
+`TTypeSubst.sk`. Use one existing shape consumer as the first complete A2
+migration, including its commitment path. A facade that internally hands the
+same unrestricted owner to the callback does not complete A2. For A3, use
+`TTypeSubtyping.sk` and the call driver to separate proposal effects from the
+relation checked; include literal selectors, negative decisions and retained
+constructor results, not just the final Boolean. Reuse the consumer inventory
+and regression responsibilities in this guide for A4.
+
+### Acceptance criteria and migration discipline
+
+- For each migrated boundary, state which misuse has become unrepresentable,
+  which runtime check remains, and who owns it. Prefer compiler-enforced access
+  restrictions. Where Skip cannot express a lifetime/ownership restriction,
+  keep the check at one narrow boundary rather than claiming static enforcement.
+- Private validated-result construction, if introduced, must correspond to an
+  actual judgment and its dependency lifetime. Wrapping an arbitrary callback
+  result, an already materialized type or an immutable snapshot is not evidence.
+  No success object may outlive rollback or cross owners without justification.
+- Preserve the recursive-premise publication rules, transitive read tracking,
+  monotone target-growth justification, and symbolic intersection fallback.
+  Read-only access by itself proves neither subtyping nor future stability.
+- Use small, green implementation slices, but judge completion end to end.
+  Temporary adapters must have named remaining callers and be retired in A4;
+  do not leave two competing sources of truth. Avoid parallel type algebras and
+  unnecessary wire-format changes. Keep independently demonstrated behavior
+  repairs separate from behavior-preserving interface changes.
+- Reuse the meaningful existing tests. Add tests for new capability boundaries
+  or genuinely different failures, not copies of previous examples. Verify that
+  changing/reordering proposals cannot bypass validation, that rejected proposals
+  cannot publish, and that positive inference controls retain their behavior.
+- Run the full checker suite for code changes, independent pipeline regression
+  gates at coherent checkpoints, and the repair census when source tests change.
+  Keep the three named performance controls and broaden qualification at A4.
+  Do not reintroduce whole-store snapshot memo keys or blanket invalidation that
+  caused the earlier OOM/slowdown. Inspect diagnostic and acceptance differences;
+  do not silently update expectations to accommodate regressions.
+
+The end state is reached when the old mutable validation route is retired,
+variable-role misuse is excluded as far as Skip permits, and the remaining
+correctness argument is concentrated in the validator and publication boundary.
+A proof of the entire checker and broader language support remain separate work;
+passing the old bounded audit does not close A1–A4.
 
 ## Validation lifetime closure audit (2026-09-19)
 
@@ -402,9 +522,10 @@ Concrete instantiations of a generic do not certify its universal body.
 
 ## Final qualification (20 September 2026)
 
-The three delivery milestones are complete: validation lifetime, checked-data
-mutation/effect boundaries, and consolidation with broader qualification. The
-final checker repair is `f29516c2`; its baseline tests are `3231d580`.
+The three bounded repair delivery milestones are complete: validation lifetime,
+checked-data mutation/effect boundaries, and consolidation with broader
+qualification. This checkpoint does not complete architectural milestones A1–A4.
+The final checker repair is `f29516c2`; its baseline tests are `3231d580`.
 
 - All **211 checker tests** pass, including the multi-file project and incremental
   suites; **65 independent verifier suites** pass.
@@ -453,7 +574,9 @@ and supported implicit effects invalidate transient facts; distinct regressions
 and legitimate controls pass; and broader qualification reports actual outcomes
 and cost. A new counterexample reopens its boundary even if every suite is green.
 
-The remaining work is outside those bounded criteria:
+The active next objective is [Architectural end state](#architectural-end-state),
+A1–A4. It strengthens implementation clarity and enforcement without requiring
+new language features. Beyond that refactoring, separate work remains:
 
 - A soundness proof of the full subtype/normalization algorithm, recursive types,
   and the whole source checker. The current source audit is not such a proof.

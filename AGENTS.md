@@ -88,6 +88,17 @@ cp target/host/dev/skjs target/host/dev/skjs.<label>
   obstruction, and continue within scope or identify what prevents progress.
   Passing suites and a recorded limitation do not make that target complete.
 
+## Architectural refactoring status
+
+The completed repair/lifetime audit is not completion of the stronger
+architectural refactoring. Follow A1–A4 in
+[the architectural end-state plan](docs/skjs-improvement.md#architectural-end-state).
+Measure progress by restricted capabilities, separated proposal/validation/publication,
+and retired unrestricted paths. More guards or passing regressions alone do not
+establish separation. Keep remaining runtime enforcement and incomplete migrations
+explicit; do not describe the reorganization as complete while those milestones
+remain open.
+
 ## Measuring checker repair tests
 
 When adding or regrouping repair regressions, run `make verify-census` in the
