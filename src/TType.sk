@@ -1060,6 +1060,16 @@ class TObject private (
   // positionally. Returns None() if any branch is not a tuple or arities
   // differ (the caller sees the raw TObject in that case).
   fun asTuple(subst: mutable Subst, tenv: TEnv): ?Array<TType> {
+    this.asTupleWith((pos, elements) ->
+      TType::unionN_it(subst, tenv, pos, elements)
+    )
+  }
+
+  // Structural projection has no solver access. Only positional element
+  // unioning needs normalization, supplied by the inference/read adapter.
+  fun asTupleWith(
+    merge: (PosRange, mutable Iterator<TType>) -> TType,
+  ): ?Array<TType> {
     branches = this.branches.toArray();
     if (branches.isEmpty()) return None();
     first = branches[0].asTuple() match {
@@ -1077,12 +1087,7 @@ class TObject private (
     };
     Some(
       Array::fillBy(arity, i ->
-        TType::unionN_it(
-          subst,
-          tenv,
-          this.pos,
-          branchesElts.values().map(be -> be[i]),
-        )
+        merge(this.pos, branchesElts.values().map(be -> be[i]))
       ),
     )
   }
@@ -3274,6 +3279,12 @@ class ArrayLiteralSelector private (
     owner.peek(tenv, this.binding)
   }
 
+  // The private selector binding has no occurrence constraints. Validation
+  // reads its fixed payload; an absent choice blocks, never supplies a default.
+  fun read(context: mutable TypeReadContext): TType {
+    context.peekRaw(this.binding).fromSome()
+  }
+
   // For diagnostics/export and escape traversal, never acceptance evidence.
   fun peekSnapshot(snapshot: SubstSnapshot): ?TType {
     snapshot.peekRaw(this.binding)
@@ -3669,8 +3680,23 @@ class Clauses private (
 
   // Returns the tuple if clauses is a single clause whose only stype is a Tuple.
   fun getSingleTuple(subst: mutable Subst, tenv: TEnv): ?Array<TType> {
+    this.getSingleTupleWith((pos, elements) ->
+      TType::unionN_it(subst, tenv, pos, elements)
+    )
+  }
+
+  fun getSingleTupleWith(
+    merge: (PosRange, mutable Iterator<TType>) -> TType,
+  ): ?Array<TType> {
     this.clauses.singleElt().flatMap(clause ->
-      clause.stypes.flatMap(sTypes -> sTypes.getSingleTuple(subst, tenv))
+      clause.stypes
+        .flatMap(stypes -> stypes.singleElt())
+        .flatMap(stype ->
+          stype match {
+          | obj @ TObject _ -> obj.asTupleWith(merge)
+          | _ -> None()
+          }
+        )
     )
   }
 

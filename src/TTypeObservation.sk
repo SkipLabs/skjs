@@ -174,8 +174,7 @@ mutable class TypeReadContext private {
         };
         value
       })
-    | arrLit @ TArrayLit _ ->
-      Some(ArrayLitTyping::expand(this.scratch, this.tenv, arrLit))
+    | arrLit @ TArrayLit _ -> Some(arrLit.selector.read(this))
     }
   }
 
@@ -191,20 +190,23 @@ mutable class TypeReadContext private {
     this.expandClauses(type, variance).restElement(this.scratch, this.tenv)
   }
 
+  private mutable fun tupleElements(clauses: Clauses): ?Array<TType> {
+    clauses.getSingleTupleWith((pos, elements) ->
+      TType::unionN_it(this.scratch, this.tenv, pos, elements)
+    )
+  }
+
   // A constrained type subtypes its raw binding. The fallback therefore may
   // supply a supertype tuple shape; reading it still records the dependency.
   mutable fun spreadTuple(type: TType): ?Array<TType> {
     this.lifetime.checkActive();
     clauses = this.expandClauses(type, Covariant());
-    clauses.getSingleTuple(this.scratch, this.tenv) match {
+    this.tupleElements(clauses) match {
     | Some(elements) -> Some(elements)
     | None() ->
       type.getSingleVar().flatMap(tv ->
         this.peekRaw(tv).flatMap(bound ->
-          this.expandClauses(bound, Covariant()).getSingleTuple(
-            this.scratch,
-            this.tenv,
-          )
+          this.tupleElements(this.expandClauses(bound, Covariant()))
         )
       )
     }

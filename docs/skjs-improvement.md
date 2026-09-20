@@ -351,12 +351,14 @@ Six negative compilation probes reject allocation, growth, solver extraction,
 lifetime replacement/extraction and passing the context as a solver; their
 temporary source is removed after checking.
 
-Validation: 215 checker tests, 65 verifier suites and the unchanged 278 curated
-proofs pass. Three isolated paired rounds have identical diagnostics; median
-seconds before/after the traversal split are array 0.937/0.817, generic membership
-1.228/1.227 and deep collection 6.828/5.887. These samples establish no observed
-regression, not a general speedup. No source corpus fixtures changed; native tests do
-not change the repair-census selection.
+Validation: 216 checker tests, 65 verifier suites and the unchanged 278 curated
+proofs pass, as do formatting and shell checks. Paired runs of the array,
+generic-membership and deep-collection controls preserve exact diagnostics.
+The projection split's initial timing medians were 0.765/0.760, 1.109/1.163 and
+5.729/6.115 seconds before/after. Five additional alternating-order rounds of the
+last two cases varied in both directions; these measurements do not establish a
+consistent slowdown or rule out a small cost. No source corpus fixtures changed;
+native tests do not change the repair-census selection.
 
 The head-expansion traversal and result construction are now shared operations
 with no solver parameter. Inference supplies its existing solving adapter;
@@ -370,9 +372,18 @@ The expansion tests exercise the production path: a closed outer binding with an
 open inner binding, symbolic preservation, unbound refusal and a contradictory
 occurrence constraint that leaves the underlying binding unchanged.
 
+Literal head expansion now reads the selector through `TypeReadContext` directly.
+The backing binding stays private; this path cannot call the inference default or
+representation-selection logic. Its lifecycle test exercises the production tuple
+query before selection, after selection and after rollback. Tuple classification
+and positional projection also have no solver parameter: inference and validation
+share the structural traversal, supplying only element-union normalization. The
+single-branch path returns symbolic elements without inspecting their bindings.
+
 A2 is **not complete**. Named-type expansion, intersections (including occurrence
-constraints), literal selectors, clause normalization and tuple/iterator projection
-still call the observed legacy kernel. Nested candidate reads there still use its
+constraints), clause/tuple-element normalization and iterator projection still
+call the observed legacy kernel. Literal reads reached through those nested legacy
+operations have not migrated yet. Nested candidate reads there still use its
 guarded `get`; mutation prohibition remains dynamic in those operations. The
 shared traversal cannot directly solve a candidate, but its normalization adapters
 are not yet end-to-end read-only. The remaining raw production consumers are
