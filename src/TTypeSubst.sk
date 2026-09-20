@@ -432,7 +432,7 @@ mutable class Subst private {
   }
 
   private mutable fun readBinding(tvar: TVar): ?SubstValue {
-    value = this.values.maybeGet(tvar.id);
+    value = this.values.maybeGet(tvar.identity());
     if (!(value is Some(SVClosed _))) {
       this.queryReads.!unsealed = this.queryReads.unsealed + 1;
       // A nested admissibility check restores freezeCandidates before its
@@ -656,7 +656,7 @@ mutable class Subst private {
       // contravariant grow of a bound candidate is suppressed too: a query
       // must not add lower bounds either.
       if (
-        tvar.id.isCandidate() &&
+        tvar.identity().isCandidate() &&
         (variance is Covariant _ || this.freezeCandidates)
       ) {
         return void
@@ -667,7 +667,7 @@ mutable class Subst private {
       }
     };
     _ = this.bumpVersion();
-    this.!values[tvar.id] = variance match {
+    this.!values[tvar.identity()] = variance match {
     | Contravariant() -> SVOpen(newTy)
     | Covariant() -> SVClosed(newTy)
     }
@@ -701,17 +701,17 @@ mutable class Subst private {
         // Fresh: sealing to top is a new addition, allowed.
         topTy = TType::top(tvar.pos);
         _ = this.bumpVersion();
-        this.!values[tvar.id] = SVClosed(topTy);
+        this.!values[tvar.identity()] = SVClosed(topTy);
         topTy
       | Some(SVClosed(ty)) -> ty
       | Some(SVOpen(ty)) ->
         // Sealing changes an existing binding, so inside an admissibility check
         // suppress it for a candidate and return the value unsealed.
-        if (this.freezeCandidates && tvar.id.isCandidate()) {
+        if (this.freezeCandidates && tvar.identity().isCandidate()) {
           ty
         } else {
           _ = this.bumpVersion();
-          this.!values[tvar.id] = SVClosed(ty);
+          this.!values[tvar.identity()] = SVClosed(ty);
           ty
         }
       }
@@ -743,7 +743,7 @@ mutable class Subst private {
   }
 
   mutable fun gen(pos: PosRange): TVar {
-    TVar::create(pos, TVarID::create(this))
+    TVar::create(this, pos)
   }
 
   // A scope may record allocation progress but cannot rewind the allocator.
@@ -788,11 +788,11 @@ mutable class Subst private {
   }
 
   mutable fun genForField(pos: PosRange): TVar {
-    TVar::create(pos, TVarID::createForField(this))
+    TVar::createForField(this, pos)
   }
 
   mutable fun genForContextualElement(pos: PosRange): TVar {
-    TVar::create(pos, TVarID::createForContextualElement(this))
+    TVar::createForContextualElement(this, pos)
   }
 
   mutable fun isOpen(tvar: TVar): Bool {
@@ -812,11 +812,11 @@ mutable class Subst private {
   }
 
   mutable fun setOrigin(tvar: TVar, origin: TVarOrigin): void {
-    this.!origins[tvar.id] = origin;
+    this.!origins[tvar.identity()] = origin;
   }
 
   readonly fun getOrigin(tvar: TVar): ?TVarOrigin {
-    this.origins.maybeGet(tvar.id)
+    this.origins.maybeGet(tvar.identity())
   }
 
   // Returns the raw bound value without applying constraints

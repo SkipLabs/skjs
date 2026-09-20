@@ -47,6 +47,14 @@ Three similar-looking kinds stay distinct:
 | Inference variable `?T` | The checker may **choose** a type that meets the constraints. |
 | Hidden type argument of an object | There **exists a fixed type**; the checker cannot choose or identify hidden args of different runtime objects. |
 
+Delayed literal selection is an existential **inference problem**: choose a
+representation satisfying the element and use-site obligations, then preserve
+that choice for later uses. It is not elimination of a hidden existential
+package. The latter introduces a rigid unknown whose witness was already fixed
+by the runtime object; the checker must work without choosing that witness.
+Thus selectors belong with solver choices, while hidden arguments belong with
+rigid parameters. Both need stable identity, but grant different authority.
+
 `T extends boolean` is `T ≤ boolean`. It is not `boolean ≤ T` or `true ≤ T`.
 
 SKJS separates rigid `TParam` from solver `TVar`. A parameter ID also carries
@@ -247,6 +255,36 @@ construction, backing-candidate access, and backing-candidate replacement. The
 probe source was removed. Three paired performance rounds have identical
 outputs; median seconds before/after are array 0.793/0.790, generic membership
 1.129/1.161, and deep collection 5.556/5.598. No source corpus fixtures changed.
+
+The identity audit also closes an ordinary-variable construction route:
+`TVar` factories now require an owner and allocate the requested role directly.
+They no longer accept an existing `TVarID`. The variable's identity field is
+protected, with read-only `identity()` inspection, so a record update cannot
+replace its identity or role. Occurrence-constraint transformations preserve the
+same identity. Export snapshots remain data, not a source of constructible live
+variables.
+
+The current owner implements these transitions centrally in `grow`, `get`,
+and `commitObservedBindings`:
+
+| Role/state | Permitted transition |
+| --- | --- |
+| Unbound ordinary, field or contextual element | Lower-bound growth opens a binding; expected-type growth seals it. |
+| Open ordinary candidate | Lower-bound growth may union before freezing; expected-type growth cannot replace it; covariant read seals unless frozen. |
+| Open field or contextual element | Context may union and seal the value, including while ordinary candidates are frozen. |
+| Closed binding | Further growth cannot replace it. |
+| Literal selector | Its opaque API exposes only unbound-to-sealed choice, tracked read, and snapshot inspection. |
+| Rigid parameter or hidden witness | No solver binding transition exists. |
+
+Save/restore preserves this state machine but rewinds candidate identities and
+bindings together. Abandoned speculative values must not escape rollback.
+Cross-owner use is still a caller lifetime obligation, not a statically checked
+owner brand. Hidden-witness allocation has a non-rewinding counter and clone
+prohibition. The audit found that fresh normalization substitutions and
+saved-diagnostic reconstruction still start their own counters: they currently
+have no production witness-allocation caller, but this boundary needs explicit
+restriction before A1 can close. The sole production minting path is
+`TEnv.makeSkolemTArgsOf`, reached from instance narrowing.
 
 A1 remains in progress pending a final audit of the candidate/field/contextual
 transition surface and owner/scope boundaries. A2–A4 remain separate milestones;

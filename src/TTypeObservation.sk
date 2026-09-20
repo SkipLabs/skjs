@@ -13,7 +13,7 @@ class SubstSnapshot private (bindings: SortedMap<TVarID, SubstValue>) {
   }
 
   fun peekRaw(tv: TVar): ?TType {
-    this.bindings.maybeGet(tv.id) match {
+    this.bindings.maybeGet(tv.identity()) match {
     | None() -> None()
     | Some(SVOpen(ty))
     | Some(SVClosed(ty)) ->
@@ -22,7 +22,7 @@ class SubstSnapshot private (bindings: SortedMap<TVarID, SubstValue>) {
   }
 
   fun isClosed(tv: TVar): Bool {
-    this.bindings.maybeGet(tv.id) is Some(SVClosed _)
+    this.bindings.maybeGet(tv.identity()) is Some(SVClosed _)
   }
 }
 
@@ -82,7 +82,7 @@ mutable class SubstReadObservation private {
         if (this.snapshot.peekRaw(tv) != Some(ty)) {
           this.block()
         } else {
-          this.!reads[tv.id] = ty
+          this.!reads[tv.identity()] = ty
         }
       }
     }

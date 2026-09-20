@@ -375,7 +375,7 @@ fun claimTypeJsonBounded(
         if (!tv.constraints.isEmpty()) {
           claimUnavailable("constrained-inference-variable")
         } else {
-          values.maybeGet(tv.id) match {
+          values.maybeGet(tv.identity()) match {
           | Some(SVOpen(bound))
           | Some(SVClosed(bound)) ->
             claimTypeJsonBounded(

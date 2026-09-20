@@ -15,7 +15,7 @@ fun testTypeClaimSnapshotUnion(): void {
   variable = SKJS.TType::var(tv);
   mixed = variable.rawMap(insts -> (insts, Vector[]), _ -> number.clauses);
   empty = SortedMap<SKJS.TVarID, SKJS.SubstValue>[];
-  snapshot = empty.set(tv.id, SKJS.SVClosed(boolean));
+  snapshot = empty.set(tv.identity(), SKJS.SVClosed(boolean));
   export = values -> SKJS.claimTypeJsonBounded(mixed, true, true, values, 10);
   recorded = export(snapshot);
   SKTest.expectEq("", recorded.reason);
@@ -29,7 +29,7 @@ fun testTypeClaimSnapshotUnion(): void {
   SKTest.expectEq(recorded.json, export(snapshot).json);
   SKTest.expectEq(true, export(subst.bindingsForExport()).top);
   SKTest.expectEq("unbound-inference-variable", export(empty).reason);
-  cyclic = empty.set(tv.id, SKJS.SVClosed(mixed));
+  cyclic = empty.set(tv.identity(), SKJS.SVClosed(mixed));
   SKTest.expectEq("fuel-exhausted", export(cyclic).reason);
 }
 

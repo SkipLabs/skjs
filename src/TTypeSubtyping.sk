@@ -1519,7 +1519,7 @@ extension class TType {
           // The example lists every argument, so it is writable only when they
           // all are -- not just the one that failed.
           targs = allTVars.map(tv -> {
-            if (tv.id == tvar.id) {
+            if (tv.identity() == tvar.identity()) {
               widerExample
             } else {
               clonedSubst.snapshot().peekRaw(tv) match {

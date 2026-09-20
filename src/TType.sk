@@ -805,8 +805,8 @@ class TType private {
     while (i < insts.size()) {
       ty = insts[i] match {
       | tv @ TVar _ ->
-        if (seenTVars.contains(tv.id)) TType::empty else {
-          seenTVars.insert(tv.id);
+        if (seenTVars.contains(tv.identity())) TType::empty else {
+          seenTVars.insert(tv.identity());
           subst.get(tenv, tv, Covariant())
         }
       | arrLit @ TArrayLit _ -> ArrayLitTyping::expand(subst, tenv, arrLit)
@@ -3099,7 +3099,7 @@ class STypes private (
 // - when instantiating a generic type or a function
 //
 // Interpretation:
-// 〚 tvar 〛 = more or less* subst[tvar.id] ⨅ 〚 tvar.constraints 〛
+// 〚 tvar 〛 = more or less* subst[tvar.identity()] ⨅ 〚 tvar.constraints 〛
 // 〚 constraints 〛 = ⨅ 〚 c 〛 for c in constraints
 //
 // *see Subst#get
@@ -3173,11 +3173,28 @@ base class TVarOrigin {
 
 class TVar private (
   pos: PosRange,
-  id: TVarID,
+  protected id: TVarID,
   constraints: SortedSet<TType>,
 ) extends TInst {
-  static fun create(pos: PosRange, id: TVarID): TVar {
-    TVar(pos, id, SortedSet[])
+  static fun create(owner: mutable Subst, pos: PosRange): TVar {
+    TVar(pos, TVarID::create(owner), SortedSet[])
+  }
+
+  static fun createForField(owner: mutable Subst, pos: PosRange): TVar {
+    TVar(pos, TVarID::createForField(owner), SortedSet[])
+  }
+
+  static fun createForContextualElement(
+    owner: mutable Subst,
+    pos: PosRange,
+  ): TVar {
+    TVar(pos, TVarID::createForContextualElement(owner), SortedSet[])
+  }
+
+  // Identity is observable for lookup/export, but cannot be replaced or wrapped
+  // in another variable. Occurrence constraints preserve this identity.
+  fun identity(): TVarID {
+    this.id
   }
 
   fun isForField(): Bool {

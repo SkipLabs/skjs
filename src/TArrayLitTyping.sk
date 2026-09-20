@@ -417,7 +417,7 @@ class ArrayLitTyping() {
       | Some(tvar) if (tvar.constraints.isEmpty()) ->
         subst.isClosed(tvar) ||
           (subst.freezeCandidates &&
-            tvar.id.isCandidate() &&
+            tvar.identity().isCandidate() &&
             !subst.isUnbound(tvar))
       | _ -> false
       };
