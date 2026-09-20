@@ -78,8 +78,8 @@ fun testUnboundSubtypeTargetBlocksWithoutProposals(): void {
     SKJS.TType::var(tv),
   );
   covered = subst.proveSubtype(tenv, observationNumber(), knownAlternative);
-  // Baseline: eager expansion blocks even though number proves this union.
-  SKTest.expectEq(true, covered is SKJS.TRBlocked _);
+  // Prove the known branch without solving or interpreting the opaque one.
+  SKTest.expectEq(true, covered is SKJS.TRReady _);
   result = subst.proveSubtype(tenv, observationNumber(), SKJS.TType::var(tv));
   SKTest.expectEq(true, result is SKJS.TRBlocked _);
   SKTest.expectEq(true, subst.isUnbound(tv));

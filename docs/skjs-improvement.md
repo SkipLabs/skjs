@@ -417,7 +417,10 @@ target carry lower-bound dependencies; publication checks those against the same
 snapshot but leaves them open. Legal `Subst.grow` preserves a bound by union;
 contravariant callback/field positions swap sides and therefore acquire fixed
 source dependencies where needed. Any dependency also read exactly is still
-sealed. Missing interpretations block; false comparisons publish no commitments.
+sealed. Missing interpretations needed by the proof block; false comparisons
+publish no commitments. A known target sub-union may prove the relation without
+interpreting an unresolved alternative. This is union injection, not a default
+solution for the omitted candidate.
 Probes and diagnostics cannot use this checking publication entry point.
 
 This is a validation primitive, **not completion of A3**: the ordinary `TType.isSub`
@@ -437,9 +440,10 @@ Checkpoint: 223 checker tests and 65 verifier suites pass; curated outcomes rema
 producer rejections and one verified tuple alternative (41/151 accepted functions
 verify; 242 further functions are rejected). Three paired control medians before
 A3 / after this repair: array literals 0.741/0.744 s, generic membership
-1.107/1.104 s, deep collections 5.934/5.732 s; outputs agree. The next integration
-issue is avoiding unnecessary reads of unresolved target-union branches when a
-known alternative already proves the relation. Source reads must remain fixed.
+1.107/1.104 s, deep collections 5.934/5.732 s; outputs agree. Positive validation now avoids unnecessary reads of unresolved
+target-union branches when a known alternative already proves the relation.
+Source reads remain fixed; unsuccessful comparisons with an unresolved target
+still report blocked, not a negative fact.
 
 ### Acceptance criteria and migration discipline
 

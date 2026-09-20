@@ -683,8 +683,14 @@ mutable class Subst private {
     }
   }
 
-  // Only fixed-read subtype validation requests this view. Reading an unknown
-  // target still blocks; this API never guesses bottom or solves a candidate.
+  // A proof of a known target sub-union needs no interpretation of an opaque
+  // alternative. If that proof fails, absence makes the result blocked rather
+  // than a negative judgment. No candidate is solved or given a default.
+  mutable fun blockIfMissingSubtypeTarget(): void {
+    this.readObservation.each(frame -> frame.blockIfMissingSubtypeTarget())
+  }
+
+  // Only positive subtype validation requests this lower-bound view.
   mutable fun peekSubtypeTarget(tvar: TVar): ?TType {
     invariant(this.isObservingTypeReads());
     this.readBinding(tvar, MonotoneTypeRead()) match {

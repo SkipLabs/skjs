@@ -65,6 +65,7 @@ mutable class SubstReadObservation private {
   private mutable reads: SortedMap<TVarID, TType> = SortedMap[],
   private mutable lowerBounds: SortedMap<TVarID, TType> = SortedMap[],
   private mutable blocked: Bool = false,
+  private mutable missingSubtypeTarget: Bool = false,
 } {
   static fun mcreate(snapshot: SubstSnapshot): mutable SubstReadObservation {
     mutable SubstReadObservation{snapshot}
@@ -88,9 +89,13 @@ mutable class SubstReadObservation private {
       throw SubstObservationBlocked()
     } else {
       value match {
-      // Absence cannot license a materialized shape: neither an inference
-      // lower bound of never nor an array literal's default is a fixed choice.
-      | None() -> this.block()
+      // An unknown target alternative contributes no evidence. A positive
+      // proof may use another alternative; a shape/source read must block.
+      | None() ->
+        requirement match {
+        | FixedTypeRead() -> this.block()
+        | MonotoneTypeRead() -> this.!missingSubtypeTarget = true
+        }
       | Some(SVOpen(ty))
       | Some(SVClosed(ty)) ->
         if (this.snapshot.peekRaw(tv) != Some(ty)) {
@@ -103,6 +108,10 @@ mutable class SubstReadObservation private {
         }
       }
     }
+  }
+
+  mutable fun blockIfMissingSubtypeTarget(): void {
+    if (this.missingSubtypeTarget) this.block()
   }
 
   readonly fun isBlocked(): Bool {
@@ -217,7 +226,9 @@ mutable class TypeReadContext private {
       validator = context with {allowTargetGrowth => true};
       validator.subtype(source, target) match {
       | STOk() -> Some(void)
-      | STErrorOnTType _ -> None()
+      | STErrorOnTType _ ->
+        scratch.blockIfMissingSubtypeTarget();
+        None()
       }
     })
   }
@@ -333,12 +344,15 @@ mutable class TypeReadContext private {
   // field and callback checks swap sides according to their variance. Shape
   // normalization, occurrence-constraint intersections and selector reads keep
   // their exact-payload requirements.
+  // expandWith preserves unknown variables symbolically; taking clauses
+  // below uses only the known sub-union. It assigns no meaning or solution to
+  // the omitted alternatives. Failure with an omitted alternative blocks.
   private mutable fun positiveTargetClauses(type: TType): Clauses {
     type.expandWith(inst ->
       inst match {
       | tv @ TVar _ ->
-        Some(
-          this.constrainRead(tv, this.scratch.peekSubtypeTarget(tv).fromSome()),
+        this.scratch.peekSubtypeTarget(tv).map(value ->
+          this.constrainRead(tv, value)
         )
       | _ -> this.expandInstance(inst, Some(Contravariant()))
       }
