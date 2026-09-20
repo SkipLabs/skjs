@@ -4,6 +4,13 @@
 
 module SKJS;
 
+// A solver proposal is deliberately not an accepted subtype result.
+base class SubtypeProposalResult {
+  children =
+  | SubtypeProposed()
+  | SubtypeProposalRejected(STErrorOnTType)
+}
+
 base class SubstValue uses Equality {
   children =
   | SVOpen(TType)
@@ -183,6 +190,22 @@ mutable class Subst private {
     this.opFrames.pop().toArray()
   }
 
+  // Ordinary candidate rollback does not rewind already-published judgments.
+  // An enclosing failed call additionally abandons its own speculative output.
+  readonly fun claimedOpCheckpoint(): Array<Int> {
+    this.opFrames.values().map(frame -> frame.size()).collect(Array)
+  }
+
+  mutable fun restoreClaimedOps(checkpoint: Array<Int>): void {
+    invariant(this.opFrames.size() == checkpoint.size());
+    for (i => size in checkpoint) {
+      frame = this.opFrames[i];
+      while (frame.size() > size) {
+        _ = frame.pop();
+      }
+    }
+  }
+
   mutable fun recordClaimedOp(
     kind: String,
     sourceJson: String,
@@ -318,7 +341,8 @@ mutable class Subst private {
     tenv: TEnv,
     source: TType,
     target: TType,
-  ): STResult<TType> {
+  ): SubtypeProposalResult {
+    saved = this.save();
     wasProposing = this.subtypeProposal;
     this.!subtypeProposal = true;
     result = try {
@@ -326,10 +350,16 @@ mutable class Subst private {
     } catch {
     | exn ->
       this.!subtypeProposal = wasProposing;
+      this.restore(saved);
       throw exn
     };
     this.!subtypeProposal = wasProposing;
-    result
+    result match {
+    | STOk() -> SubtypeProposed()
+    | err @ STErrorOnTType _ ->
+      this.restore(saved);
+      SubtypeProposalRejected(err)
+    }
   }
 
   readonly fun isObservingTypeReads(): Bool {
@@ -727,11 +757,30 @@ mutable class Subst private {
     target: TType,
     allowSealing: Bool,
   ): TypeReadResult<Void> {
+    this.proveSubtypesRead(tenv, Array[(source, target)], allowSealing) match {
+    | SubtypesProved() -> TRReady(void)
+    | SubtypesUnproved(_, SVFUnresolved()) -> TRBlocked()
+    | SubtypesUnproved(_, SVFUnproved()) -> TRUnavailable()
+    }
+  }
+
+  mutable fun proveSubtypes(
+    tenv: TEnv,
+    obligations: Array<(TType, TType)>,
+  ): SubtypeBatchResult {
+    this.proveSubtypesRead(tenv, obligations, true)
+  }
+
+  private mutable fun proveSubtypesRead(
+    tenv: TEnv,
+    obligations: Array<(TType, TType)>,
+    allowSealing: Bool,
+  ): SubtypeBatchResult {
     if (
       !(this.computationPurpose is TCPChecking()) ||
       this.isObservingTypeReads()
     ) {
-      TRBlocked()
+      SubtypesUnproved(0, SVFUnresolved())
     } else {
       bindings = this.values;
       origins = this.origins;
@@ -745,7 +794,7 @@ mutable class Subst private {
       // retain pointers into a discarded proof or mutate the candidate owner.
       (
         frame,
-        succeeded,
+        failure,
         diagnostics,
         reads,
         mutations,
@@ -770,22 +819,17 @@ mutable class Subst private {
           readObservation => Some(observation),
         };
         exception: ?Exception = None();
-        success = try {
-          TypeReadContext::runSubtypeProof(
-            scratch,
-            readEnv,
-            source,
-            target,
-          ).isSome()
+        failure = try {
+          TypeReadContext::runSubtypeProofs(scratch, readEnv, obligations)
         } catch {
-        | SubstObservationBlocked() -> false
+        | SubstObservationBlocked() -> Some(0)
         | exn ->
           !exception = Some(exn);
-          false
+          Some(0)
         };
         (
           observation.freeze(),
-          success,
+          failure,
           results.chill(),
           scratch.typeQueryReadStamp(),
           scratch.typeMutationStamp(),
@@ -798,7 +842,7 @@ mutable class Subst private {
       this.queryReads.!recursive = this.queryReads.recursive + reads.i1;
       this.queryReads.!provisional = this.queryReads.provisional + reads.i2;
       this.queryReads.!mutations = this.queryReads.mutations + mutations;
-      this.results.appendResults(diagnostics);
+      this.results.appendDiagnostics(diagnostics);
       // Return exceptions as data across the region, so both their payload and
       // the updated declaration context are copied before any outer recovery.
       exception.each(exn -> throw exn);
@@ -807,13 +851,14 @@ mutable class Subst private {
         this.semanticEpoch != entryEpoch ||
         this.freezeCandidates != entryFreeze
       ) {
-        TRBlocked()
-      } else if (!succeeded) {
-        TRUnavailable()
+        SubtypesUnproved(failure.default(0), SVFUnresolved())
+      } else if (failure.isSome()) {
+        SubtypesUnproved(failure.fromSome(), SVFUnproved())
       } else if (this.commitObservedBindings(frame, entryEpoch, allowSealing)) {
-        TRReady(void)
+        this.results.appendPublication(diagnostics);
+        SubtypesProved()
       } else {
-        TRBlocked()
+        SubtypesUnproved(failure.default(0), SVFUnresolved())
       }
     }
   }

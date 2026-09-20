@@ -135,9 +135,10 @@ caches and diagnostic/export state. A2 completed restricted committed shape
 observation, including its algebra and declaration backend. Its raw transaction
 kernel is private; consumers receive `TypeReadContext`. A3 now separates ordinary
 inference from the validation and publication of subtype/call judgments.
-`TType.isSub_` still proposes candidate growth, seals dependencies, establishes
-literal representations and checks the relation in one mutable transaction.
-Those mechanisms have been audited; their interfaces are not the target design.
+`TType.isSub_` remains the mutable proposal implementation, including candidate
+growth and literal selection; its success no longer authorizes ordinary subtype
+or call acceptance. A4 retires the remaining unrestricted structural-helper,
+cache and clone paths outside these migrated boundaries.
 
 ### Responsibilities and permitted interaction
 
@@ -175,7 +176,7 @@ diagnostic) is independent of variable role.
 ### Planned milestones
 
 These are architectural milestones A1–A4, separate from completed repair rows
-R1–R3/M1–M3. A1–A2 are **done**; A3 is **in progress**; A4 is **not started**.
+R1–R3/M1–M3. A1–A3 are **done**; A4 is **not started**.
 Names below describe responsibilities, not prescribed new class names.
 
 | ID | Deliverable | Closure evidence |
@@ -310,7 +311,8 @@ callers; role-specific creation, selector commitment and value growth are
 separate; rigid IDs cannot enter the solver. Occurrence constraints preserve
 identity. Clone/rollback/escape and literal controls remain required tests.
 The A2 closure below records the subsequent migration of committed shape
-observations. A3–A4 still cover ordinary inference and its wider consumer migration.
+observations. The A3 closure covers ordinary subtype/call inference; A4 remains
+the wider consumer migration.
 
 Remaining dynamic enforcement includes checking-owner authority for witness
 allocation, checkpoint validity, observation read/commit checks, and save/restore
@@ -340,8 +342,8 @@ Unknown payloads block instead of receiving inference defaults.
 Compatibility probes may solve detached state only to report diagnostics: no
 solved type, environment or success receipt returns to declaration construction.
 Diagnostic rendering returns text only. Explicit source type arguments retain
-live constraint checking; separating those ordinary inference proposals belongs
-to A3. Computation purpose remains independent of variable role.
+live constraint checking. A3 now retains call bounds through inference and
+validates them with the whole call. Computation purpose remains independent of variable role.
 
 The capability's record copies and borrowed declaration scopes share a private
 lifetime cell. Normal return and exceptions expire it, so a retained handle
@@ -379,15 +381,14 @@ performance guarantee. No TypeScript source fixtures or corpus-selection inputs
 changed in this closure; native protocol tests are outside the repair census.
 
 A2 closes the committed shape-observation boundary, not the full architectural
-refactoring. A3 still separates ordinary subtype/call proposals, validation and
-publication. A4 completes that wider consumer migration and retires the remaining
+refactoring. A3 subsequently separates ordinary subtype/call proposals, validation
+and publication. A4 completes that wider consumer migration and retires the remaining
 inference interfaces. Existing lifetime, owner and rollback controls remain
 necessary; an arbitrary callback result is not a proof certificate.
 
-### A3 execution plan
+### A3 closure: proposals, validation and publication
 
-A3 must replace the mixed acceptance path, not merely run another check beside
-it or rename `isSub`. The following work remains one milestone:
+A3 replaces the mixed ordinary acceptance path. Its completed obligations are:
 
 1. **Positive subtype validation.** Distinguish exact source/shape dependencies
    from monotone target lower bounds. Run the restricted relation without growth,
@@ -443,16 +444,40 @@ whose environment has no caller assumptions. This prevents temporary proof graph
 from accumulating alongside inference's allocations. No inference cache is imported
 into validation and no validation bypass is present.
 
-**A3 remains in progress.** Calls still validate arguments individually while
-iterating inference. Whole-call obligation collection, explicit/dependent bounds,
-and constructor-result publication remain to be completed. Literal construction
-now independently checks each original initializer against the selected array or
-tuple storage. Fresh primitive values retain their precision during this check;
-widening remains an inference policy. A native fault-injection test demonstrates
-that a false proposal premise cannot turn a number element into string storage,
-and that rejection rolls the selector back. The wider direct
-structural-helper/cache/clone inventory belongs to A4; do not mistake those legacy
-paths or their runtime scope checks for compiler-enforced capability separation.
+`CallSubtypePlan` has private obligation storage. It retains the original symbolic
+receiver, required/optional argument, tuple/array-rest and explicit/dependent bound
+pairs across inference passes. Constructor compatibility probes remain detached,
+but their bounds are included in final validation. `Subst.proveSubtypes` proves
+the entire set using the same fixed-snapshot relation and read frame as individual
+subtypes. It commits no dependencies or proof outputs if any obligation fails.
+The common call/constructor driver publishes call edges and returns an accepted
+result only after this succeeds. Failed calls restore candidate/cache state and
+speculative publication while retaining diagnostics. Already-evaluated operands
+precede the checkpoint. Recovery values are not accepted-call evidence.
+
+Proposal results have their own `SubtypeProposalResult` variants; a proposal
+cannot be returned as an accepted subtype result by accident. Failed proposals
+restore their state. Call obligations cannot be cleared or rewritten by consumers.
+The validator receives operand data and its restricted context, never a callback
+that can assert success or a mutable candidate owner. Source and exact shape reads
+are sealed on successful commitment; positive target lower bounds may remain
+open, and uninspected result candidates stay symbolic.
+
+Literal construction independently checks each original initializer against the
+selected array or tuple storage. Fresh primitive values retain their precision;
+widening remains an inference policy. A native fault-injection test rejects a
+false proposal premise that would put a number element in string storage and
+checks selector rollback. Batch tests cover atomic failure in both orders,
+monotone target growth and uninspected candidates. The call-collector test supplies
+a false early premise, grows its candidate in a later successful proposal, and
+requires rejection of the retained earlier obligation. These are native protocol
+tests, not Lean proofs of the checker. Existing source regressions exercise
+callback variance, dependent bounds, receiver/rest inference and constructors.
+
+**A3 is complete.** The wider direct structural-helper/cache/clone inventory and
+retirement of unrestricted inference interfaces belong to A4. Owner epochs,
+rollback lifetimes, proposal scopes and query qualification still have runtime
+checks; this is not a claim of static ownership or a proof of the entire checker.
 
 The first integration audit found a concrete mismatch: delayed literals were
 accepted against element-wise joins of array/tuple union alternatives, although
@@ -462,13 +487,19 @@ against the full target. `delayed-literal-union-contract.ts` preserves the two
 rejected crossed-element witnesses and a valid tuple alternative. This repair
 removes one obstruction to the driver migration; it does not replace that migration.
 
-Checkpoint: 224 checker tests and 65 verifier suites pass; curated outcomes remain
-278 verified / 9 search failures / 18 unavailable. The repair census is unchanged:
-41/151 accepted functions verify; 242 further functions are rejected. Three paired
-control medians before A3 / after the subtype driver: array literals 0.705/0.842 s,
-generic membership 1.047/1.132 s, deep collections 5.173/5.855 s. Outputs agree
-exactly under the same 4 GB limit. Independent validation adds measurable overhead;
-the unbounded paging seen before allocation isolation is resolved.
+Closure qualification: 226 checker tests and 65 verifier suites pass; curated
+outcomes remain 278 verified / 9 search failures / 18 unavailable. The repair
+census is unchanged: 41 verified / 87 gated / 23 unproved among 151 accepted
+functions; 242 further functions are rejected. Two follow-on assignment errors
+in `seensub-stale-cache.ts` disappear because failed-call inference now rolls back;
+the original call errors remain, and no definition changes acceptance.
+
+Three alternating paired control medians before A3 / after whole-call validation:
+array literals 0.717/0.751 s, generic membership 1.063/1.109 s, deep collections
+5.225/5.177 s. Outputs agree exactly under the same 4 GB limit and 20-second bound.
+Batching avoids repeating independent validation during each call-inference pass;
+the temporary proof allocation region prevents the earlier unbounded paging.
+These bounded controls establish comparable performance, not a general speedup.
 
 ### Acceptance criteria and migration discipline
 
@@ -862,9 +893,10 @@ and supported implicit effects invalidate transient facts; distinct regressions
 and legitimate controls pass; and broader qualification reports actual outcomes
 and cost. A new counterexample reopens its boundary even if every suite is green.
 
-The active next objective is [Architectural end state](#architectural-end-state),
-A1–A4. It strengthens implementation clarity and enforcement without requiring
-new language features. Beyond that refactoring, separate work remains:
+The next milestone is A4 in [Architectural end state](#architectural-end-state):
+migrate the remaining consumers and retire unrestricted paths. A1–A3 are complete.
+This strengthens implementation clarity and enforcement without requiring new
+language features. Beyond that refactoring, separate work remains:
 
 - A soundness proof of the full subtype/normalization algorithm, recursive types,
   and the whole source checker. The current source audit is not such a proof.

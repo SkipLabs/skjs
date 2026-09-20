@@ -5617,9 +5617,51 @@ extension class TypeChecker {
     thisArgOpt: ?TType,
     argumentCheck: TypeArgumentCheck,
   ): TType {
+    saved = tcenv.subst.save();
+    publication = tcenv.results.savePublication();
+    claimedOps = tcenv.subst.claimedOpCheckpoint();
+    entryErrors = tcenv.results.errors.size();
+    result = try {
+      this.proposeAndValidateCall(
+        tcenv,
+        pos,
+        tfuns,
+        targs,
+        args,
+        moreArgs,
+        thisArgOpt,
+        argumentCheck,
+        entryErrors,
+      )
+    } catch {
+    | exn ->
+      tcenv.subst.restore(saved);
+      tcenv.results.restorePublication(publication);
+      tcenv.subst.restoreClaimedOps(claimedOps);
+      throw exn
+    };
+    if (tcenv.results.errors.size() != entryErrors) {
+      tcenv.subst.restore(saved);
+      tcenv.results.restorePublication(publication);
+      tcenv.subst.restoreClaimedOps(claimedOps)
+    };
+    result
+  }
+
+  private fun proposeAndValidateCall(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    tfuns: TFuns,
+    targs: Array<TType>,
+    args: readonly Vector<TType>,
+    moreArgs: ?TType,
+    thisArgOpt: ?TType,
+    argumentCheck: TypeArgumentCheck,
+    entryErrors: Int,
+  ): TType {
     tfuns match {
     | TFuns(tfun, fPos) ->
-      tcenv.recordCalls(tfun.cgNodes);
+      plan = CallSubtypePlan::mcreate();
       if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {
         tcenv.error(
           Array[
@@ -5650,27 +5692,9 @@ extension class TypeChecker {
         }
       };
       frozenMap = map.chill();
-      // Validate each explicit type argument against its parameter's constraint.
-      // Inferred arguments (the fresh TVars above) carry their constraint on the
-      // variable and have it enforced at growth, so only explicit arguments need
-      // checking here. Class constructor calls also supply synthesized arguments
-      // in targs: their compatibility probes must not preempt argument inference.
-      // The constraint is a subtyping obligation -- every
-      // inhabitant of the argument must inhabit the bound -- so it is checked
-      // with `isSub`. The constraint is instantiated with `frozenMap` first, so
-      // a constraint that references another type parameter (a dependent
-      // constraint like `<A, B extends A>`) is checked against that parameter's
-      // argument. This is a mandatory validation, so use the live substitution:
-      // explicit arguments can contain open candidates (e.g. typeof a local
-      // object's fields). Discarding their sealing would let later writes
-      // invalidate the successful constraint check. Inferred arguments retain
-      // their separate constraint-carrying growth path.
-      //
-      // Without this check, an argument that violates the bound is substituted
-      // anyway; where the parameter occurs only covariantly (e.g. the return
-      // type) the constraint-carrying occurrence (the parameter is normalized to
-      // `param & constraint`) collapses to `never`, which is assignable to
-      // anything and silently absorbs the violation -- unsound.
+      // Retain bounds as original symbolic obligations. Constructor arguments
+      // may need a detached compatibility proposal before argument inference;
+      // the final call still proves their bounds in the live fixed snapshot.
       for (i => tparamDecl in tfun.tparams) {
         if (i < targs.size()) {
           tparamDecl.cstr match {
@@ -5681,32 +5705,25 @@ extension class TypeChecker {
               (tcenv.subst, this, frozenMap),
               cstr,
             );
-            // A probe runs detached: its inference changes and caches never
-            // return to the checking owner. The constraint is still reported
-            // against the live substitution, which is what the user sees.
-            argumentCheck.check(tcenv.subst, constraintSubst -> {
-              TType::isSub(constraintSubst, this, tArg, cstrTy) match {
-              | STOk() -> void
-              | err @ STErrorOnTType _ ->
-                tcenv.subtypingError(
-                  tcenv.subst,
-                  this,
-                  Array[
-                    (pos, "Type argument does not satisfy the constraint"),
-                    (tArg.pos, `This is of type: ${this.ppType(tcenv, tArg)}`),
-                    (
-                      cstr.pos,
-                      `It does not satisfy the constraint: ${this.ppType(
-                        tcenv,
-                        cstrTy,
-                      )}`,
-                    ),
-                  ],
-                  err,
-                  TSCode(2344),
-                )
-              }
-            })
+            plan.propose(
+              tcenv,
+              this,
+              tArg,
+              cstrTy,
+              Array[
+                (pos, "Type argument does not satisfy the constraint"),
+                (tArg.pos, `This is of type: ${this.ppType(tcenv, tArg)}`),
+                (
+                  cstr.pos,
+                  `It does not satisfy the constraint: ${this.ppType(
+                    tcenv,
+                    cstrTy,
+                  )}`,
+                ),
+              ],
+              TSCode(2344),
+              argumentCheck,
+            )
           }
         }
       };
@@ -5719,6 +5736,7 @@ extension class TypeChecker {
       // type variable, infer/bind it from call-site arguments before param checking.
       callInvalid = VariadicTyping::inferRestTypeVar(
         tcenv,
+        plan,
         this,
         pos,
         tfun.spreadParam,
@@ -5733,9 +5751,8 @@ extension class TypeChecker {
         return tfun.retType
       };
 
-      // Validate the whole call against one stable substitution. Rest or
-      // positional inference can affect the receiver and earlier arguments;
-      // a pass only finishes when none of these obligations changed it.
+      // Proposals can iterate, but none of these passes publishes acceptance.
+      // Retain earlier operands when rest or positional inference changes them.
       version = tcenv.subst.inferenceVersion();
       loop {
         // Check the receiver against the declared `this` parameter, if any.
@@ -5771,12 +5788,17 @@ extension class TypeChecker {
           | Some(t) -> t
           | None() -> TType::single(TPrimUnit(TVoid(), pos))
           };
-          this.checkSubType(
+          plan.propose(
             tcenv,
-            pos,
-            "The 'this' context is not assignable to method's 'this' type",
+            this,
             actualThis,
             expectedThis,
+            Array[
+              (
+                pos,
+                "The 'this' context is not assignable to method's 'this' type",
+              ),
+            ],
             TSCode(2684),
           )
         };
@@ -5791,14 +5813,16 @@ extension class TypeChecker {
             );
             break void
           } else {
-            this.checkSubType(
+            plan.propose(
               tcenv,
-              pos,
-              "Argument is not assignable to the parameter's type",
+              this,
               args[i],
               tfun.params[i],
+              Array[
+                (pos, "Argument is not assignable to the parameter's type"),
+              ],
               TSCode(2345),
-            )
+            );
           }
         };
         for (j in Range(0, tfun.optionalParams.size())) {
@@ -5811,17 +5835,18 @@ extension class TypeChecker {
             | Some(ma) -> ma
             }
           };
-          this.checkSubType(
+          plan.propose(
             tcenv,
-            pos,
-            "Argument is not assignable to the parameter's type",
+            this,
             arg,
             tfun.optionalParams[j],
+            Array[(pos, "Argument is not assignable to the parameter's type")],
             TSCode(2345),
-          )
+          );
         };
-        VariadicTyping::checkRestArgs(
+        VariadicTyping::proposeRestArgs(
           tcenv,
+          plan,
           this,
           pos,
           tfun.spreadParam,
@@ -5833,6 +5858,12 @@ extension class TypeChecker {
           break void
         };
         !version = tcenv.subst.inferenceVersion();
+      };
+      if (
+        tcenv.results.errors.size() == entryErrors &&
+        plan.validate(tcenv, this)
+      ) {
+        tcenv.recordCalls(tfun.cgNodes)
       };
       tfun.retType
     }

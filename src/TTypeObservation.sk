@@ -54,6 +54,14 @@ base class SubtypeValidationFailure uses Equality {
   | SVFUnproved()
 }
 
+// A batch is accepted only after every judgment has been proved in one snapshot.
+// Failure identifies the original obligation; no earlier reads are committed.
+base class SubtypeBatchResult {
+  children =
+  | SubtypesProved()
+  | SubtypesUnproved(Int, SubtypeValidationFailure)
+}
+
 // A shape depends on an exact payload. A positive subtype target can instead
 // rely on its current lower bound: legal growth only adds inhabitants. Neither
 // requirement permits replacing a binding or surviving the owner's rollback.
@@ -242,20 +250,29 @@ mutable class TypeReadContext private {
 
   // There is no arbitrary success callback here: the restricted relation
   // itself must establish the requested judgment. Failure publishes no reads.
-  static fun runSubtypeProof(
+  static fun runSubtypeProofs(
     scratch: mutable Subst,
     tenv: TEnv,
-    source: TType,
-    target: TType,
-  ): ?Void {
+    obligations: Array<(TType, TType)>,
+  ): ?Int {
     static::runObserved(scratch, tenv, context -> {
       validator = context with {allowTargetGrowth => true};
-      validator.subtype(source, target) match {
-      | STOk() -> Some(void)
-      | STErrorOnTType _ ->
-        scratch.blockIfMissingSubtypeTarget();
-        None()
-      }
+      failed: ?Int = None();
+      for (i => obligation in obligations) {
+        (source, target) = obligation;
+        proved = try {
+          validator.subtype(source, target) is STOk()
+        } catch {
+        | SubstObservationBlocked() -> false
+        | exn -> throw exn
+        };
+        if (!proved) {
+          scratch.blockIfMissingSubtypeTarget();
+          !failed = Some(i);
+          break void
+        }
+      };
+      failed
     })
   }
 

@@ -1947,7 +1947,10 @@ extension class TType {
       return static::subtypeProposal(subst, tenv, u1, u2)
     };
     if (!(subst.typeComputationPurpose() is TCPChecking())) {
-      return subst.proposeSubtype(tenv, u1, u2)
+      return subst.proposeSubtype(tenv, u1, u2) match {
+      | SubtypeProposed() -> STOk()
+      | SubtypeProposalRejected(err) -> err
+      }
     };
     // If established meanings already prove the judgment, no proposal is
     // needed. This is the same restricted proof used after inference, never a
@@ -1960,8 +1963,8 @@ extension class TType {
     result = try {
       proposed = subst.proposeSubtype(tenv, u1, u2);
       proposed match {
-      | err @ STErrorOnTType _ -> err
-      | STOk() ->
+      | SubtypeProposalRejected(err) -> err
+      | SubtypeProposed() ->
         proof = subst.proveSubtype(tenv, u1, u2);
         proof match {
         | TRReady _ ->

@@ -165,6 +165,7 @@ class VariadicTyping() {
   // Returns true if inference fails constraints (call is invalid).
   static fun inferRestTypeVar(
     tcenv: mutable TCEnv,
+    plan: mutable CallSubtypePlan,
     tenv: TEnv,
     pos: PosRange,
     spreadParam: ?TType,
@@ -195,26 +196,25 @@ class VariadicTyping() {
         saved = subst.save();
         subst.grow(tenv, tvar, inferred, Contravariant());
         for (cstr in tvar.constraints) {
-          TType::isSub(subst, tenv, inferred, cstr) match {
-          | STOk() -> void
-          | stErr @ STErrorOnTType _ ->
+          plan.propose(
+            tcenv,
+            tenv,
+            inferred,
+            cstr,
+            Array[
+              (
+                pos,
+                `The inferred rest arguments ${tenv.ppType(
+                  tcenv,
+                  inferred,
+                )} do not satisfy the rest parameter's constraint`,
+              ),
+              (cstr.pos, `Constraint ${tenv.ppType(tcenv, cstr)}`),
+            ],
+            TSCode(2344),
+          );
+          if (plan.hasFailed()) {
             subst.restore(saved);
-            tcenv.subtypingError(
-              subst,
-              tenv,
-              Array[
-                (
-                  pos,
-                  `The inferred rest arguments ${tenv.ppType(
-                    tcenv,
-                    inferred,
-                  )} do not satisfy the rest parameter's constraint`,
-                ),
-                (cstr.pos, `Constraint ${tenv.ppType(tcenv, cstr)}`),
-              ],
-              stErr,
-              TSCode(2344),
-            );
             return true
           }
         };
@@ -225,7 +225,8 @@ class VariadicTyping() {
     }
   }
 
-  // Validates rest arguments against the expected rest shape after param checking.
+  // Proposes rest arguments against the committed rest shape and retains every
+  // obligation for whole-call validation.
   //
   // For `coll.map(Two, "hello", 42)` with `...params: Params` bound to `[string, number]`:
   //   - totalSize = 1 (the `mapper` param), args = [Two, "hello", 42]
@@ -238,8 +239,9 @@ class VariadicTyping() {
   //   - `coll.map(Two, ...arr)` where arr is unknown-length => error
   //
   // For array-rest (non-tuple), checks each rest arg against the element type.
-  static fun checkRestArgs(
+  static fun proposeRestArgs(
     tcenv: mutable TCEnv,
+    plan: mutable CallSubtypePlan,
     tenv: TEnv,
     pos: PosRange,
     spreadParam: ?TType,
@@ -285,53 +287,40 @@ class VariadicTyping() {
           )
         } else {
           for (i in Range(0, tupleElts.size())) {
-            TType::isSub(tcenv.subst, tenv, knownRest[i], tupleElts[i]) match {
-            | STOk() -> void
-            | err @ STErrorOnTType _ ->
-              tcenv.subtypingError(
-                tcenv.subst,
-                tenv,
-                Array[
-                  (pos, "Argument is not assignable to the parameter's type"),
-                ],
-                err,
-                TSCode(2345),
-              )
-            }
+            plan.propose(
+              tcenv,
+              tenv,
+              knownRest[i],
+              tupleElts[i],
+              Array[
+                (pos, "Argument is not assignable to the parameter's type"),
+              ],
+              TSCode(2345),
+            );
           }
         }
       | Some(RCSArray(eltType)) ->
-        // Projection is already committed. Argument subtyping still runs in
-        // the live owner so uninspected symbolic elements can be inferred.
+        // Projection is already committed. Proposals may infer symbolic
+        // elements; only the whole-call validator publishes acceptance.
         for (restArg in knownRest) {
-          TType::isSub(tcenv.subst, tenv, restArg, eltType) match {
-          | STOk() -> void
-          | err @ STErrorOnTType _ ->
-            tcenv.subtypingError(
-              tcenv.subst,
-              tenv,
-              Array[
-                (pos, "Argument is not assignable to the parameter's type"),
-              ],
-              err,
-              TSCode(2345),
-            )
-          }
+          plan.propose(
+            tcenv,
+            tenv,
+            restArg,
+            eltType,
+            Array[(pos, "Argument is not assignable to the parameter's type")],
+            TSCode(2345),
+          );
         };
         moreArgs.each(ma -> {
-          TType::isSub(tcenv.subst, tenv, ma, eltType) match {
-          | STOk() -> void
-          | err @ STErrorOnTType _ ->
-            tcenv.subtypingError(
-              tcenv.subst,
-              tenv,
-              Array[
-                (pos, "Argument is not assignable to the parameter's type"),
-              ],
-              err,
-              TSCode(2345),
-            )
-          }
+          plan.propose(
+            tcenv,
+            tenv,
+            ma,
+            eltType,
+            Array[(pos, "Argument is not assignable to the parameter's type")],
+            TSCode(2345),
+          );
         })
       | None() ->
         tcenv.error(

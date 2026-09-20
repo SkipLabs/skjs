@@ -34,12 +34,14 @@ mutable class CallSubtypePlan private {
         CallSubtypeObligation{source, target, messages, code},
       )
     };
-    argumentCheck.proposeSubtype(tcenv.subst, tenv, source, target) match {
-    | SubtypeProposed() -> void
-    | SubtypeProposalRejected(err) ->
-      this.!failed = true;
-      tcenv.subtypingError(tcenv.subst, tenv, messages, err, code)
-    }
+    argumentCheck.check(tcenv.subst, owner -> {
+      owner.proposeSubtype(tenv, source, target) match {
+      | SubtypeProposed() -> void
+      | SubtypeProposalRejected(err) ->
+        this.!failed = true;
+        tcenv.subtypingError(tcenv.subst, tenv, messages, err, code)
+      }
+    })
   }
 
   readonly fun hasFailed(): Bool {
@@ -56,7 +58,11 @@ mutable class CallSubtypePlan private {
         .map(o -> (o.source, o.target))
         .collect(Array);
       tcenv.subst.proveSubtypes(tenv, operands) match {
-      | SubtypesProved() -> true
+      | SubtypesProved() ->
+        for (o in this.obligations) {
+          recordClosedClaimedOp(tcenv.subst, "subtype", o.source, o.target)
+        };
+        true
       | SubtypesUnproved(index, why) ->
         obligation = this.obligations[index];
         tcenv.subtypingError(

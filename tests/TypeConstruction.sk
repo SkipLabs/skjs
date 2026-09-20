@@ -344,7 +344,7 @@ fun testLiteralConstructionRejectsUnprovedElement(): void {
   owner.restore(saved);
   assumed = tenv with {seenSub => SortedSet[(selectedVersion, num, str)]};
   SKTest.expectEq(
-    owner.proposeSubtype(assumed, literal, target) is SKJS.STOk(),
+    owner.proposeSubtype(assumed, literal, target) is SKJS.SubtypeProposed(),
     true,
     "the proposal witness must select the incompatible tuple",
   );
@@ -378,6 +378,124 @@ fun testLiteralConstructionRejectsUnprovedElement(): void {
   SKTest.expectEq(
     SKJS.TType::isSub(owner, tenv, literal, valid) is SKJS.STOk(),
     true,
+  );
+}
+
+// A later failed obligation must not publish an earlier successful source read.
+// Reordering the batch changes the reported index, never the commitments.
+@test
+fun testWholeSubtypeBatchCommitsAtomically(): void {
+  owner = observationSubst();
+  tenv = observationTypeEnv(owner);
+  source = owner.gen(SKJS.PosRange::none);
+  target = owner.gen(SKJS.PosRange::none);
+  unused = owner.gen(SKJS.PosRange::none);
+  num = observationNumber();
+  str = observationString();
+  owner.grow(tenv, source, num, SKJS.Contravariant());
+  owner.grow(tenv, target, num, SKJS.Contravariant());
+  good = (SKJS.TType::var(source), num);
+  bad = (str, num);
+  for (batch in Array[Array[good, bad], Array[bad, good]]) {
+    outcome = owner.proveSubtypes(tenv, batch);
+    SKTest.expectEq(
+      outcome match {
+      | SKJS.SubtypesUnproved(i, SKJS.SVFUnproved()) -> batch[i] == bad
+      | _ -> false
+      },
+      true,
+      "report the failed original obligation",
+    );
+    SKTest.expectEq(
+      owner.isOpen(source),
+      true,
+      "a failed batch must not seal earlier reads",
+    );
+  };
+  SKTest.expectEq(
+    owner.proveSubtypes(
+      tenv,
+      Array[good, (num, SKJS.TType::var(target))],
+    ) is SKJS.SubtypesProved(),
+    true,
+  );
+  SKTest.expectEq(owner.isClosed(source), true);
+  SKTest.expectEq(
+    owner.isOpen(target),
+    true,
+    "a positive target remains growable",
+  );
+  SKTest.expectEq(
+    owner.isUnbound(unused),
+    true,
+    "uninspected symbolic results stay symbolic",
+  );
+}
+
+// The first proposal uses an unjustified premise instead of inspecting source.
+// A later proposal grows source. Validating only the last proposal would accept
+// this call; the collector must retain and reject the original first obligation.
+@test
+fun testCallPlanRetainsEarlierObligations(): void {
+  owner = observationSubst();
+  tenv = observationTypeEnv(owner);
+  file = SKJS.FPath::create(
+    SKJS.RootId::project,
+    "tests/expect-error/type-query-memo-stability.ts",
+  );
+  lexer = SKJS.Lexer::mcreate(file, "");
+  pos = SKJS.PosRange::create(lexer, SKJS.Pos(0), SKJS.Pos(0));
+  tcenv = SKJS.TCEnv::mcreate(owner, SKJS.CGNode::toplevel(file));
+  source = owner.gen(pos);
+  num = observationNumber();
+  str = observationString();
+  owner.grow(tenv, source, num, SKJS.Contravariant());
+  original = SKJS.TType::var(source);
+  assumed = tenv with {
+    seenSub => SortedSet[(owner.inferenceVersion(), original, num)],
+  };
+  SKJS.writeConfig(
+    owner.context,
+    SKJS.getConfig(owner.context) with {emitSkjsTypeClaims => true},
+  );
+  owner.pushClaimedOpFrame();
+  plan = SKJS.CallSubtypePlan::mcreate();
+  messages = Array[(pos, "Argument is not assignable to the parameter's type")];
+  plan.propose(tcenv, assumed, original, num, messages, SKJS.TSCode(2345));
+  SKTest.expectEq(
+    owner.isOpen(source),
+    true,
+    "first proposal must use the supplied premise",
+  );
+  plan.propose(tcenv, tenv, str, original, messages, SKJS.TSCode(2345));
+  SKTest.expectEq(
+    plan.hasFailed(),
+    false,
+    "both inference proposals must succeed",
+  );
+  accepted = false;
+  error = SKJS.catchError(() -> {
+    !accepted = plan.validate(tcenv, assumed)
+  });
+  SKTest.expectEq(accepted, false);
+  SKTest.expectEq(
+    owner.popClaimedOpFrame().isEmpty(),
+    true,
+    "failed call proposals must not publish accepted subtype claims",
+  );
+  SKTest.expectEq(
+    error match {
+    | Some(SKJS.SubtypingError(_, _, _, stErr, _)) ->
+      stErr.ty1 == original && stErr.ty2 == num
+    | _ -> false
+    },
+    true,
+    "report the original earlier obligation",
+  );
+  SKTest.expectEq(
+    owner.isOpen(source),
+    true,
+    "failed validation commits no reads",
   );
 }
 

@@ -785,7 +785,7 @@ fun testRecursiveSubtypeMemoScope(): void {
     seenSub => SortedSet[(subst.inferenceVersion(), number, string)],
   };
   conditional = subst.proposeSubtype(assumed, number, string);
-  SKTest.expectEq(true, conditional is SKJS.STOk());
+  SKTest.expectEq(true, conditional is SKJS.SubtypeProposed());
   // A proposal can use the supplied recursive assumption. Acceptance cannot.
   validated = SKJS.TType::isSub(subst, assumed, number, string);
   SKTest.expectEq(false, validated is SKJS.STOk());
@@ -1015,7 +1015,7 @@ fun testFrozenReadDependencySurvivesModeExit(): void {
     observationNumber(),
   );
   subst.!freezeCandidates = false;
-  SKTest.expectEq(true, result is SKJS.STOk());
+  SKTest.expectEq(true, result is SKJS.SubtypeProposed());
   SKTest.expectEq(true, subst.isClosed(outer));
   SKTest.expectEq(true, subst.isOpen(inner));
   // Ending the frozen scope cannot establish the provisional answer.

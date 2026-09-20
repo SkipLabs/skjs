@@ -692,6 +692,15 @@ class TCResults private {
   }
 }
 
+// Restore speculative facts without discarding their diagnostics. Operand
+// evaluation precedes the call checkpoint and therefore retains its own facts.
+class TypePublicationState{
+  callCount: Int,
+  subtypingEdges: SortedSet<(CGNode, CGNode)>,
+  cfgs: SortedMap<CGNode, CFG>,
+  typeClaims: SortedMap<CGNode, FunTypeClaims>,
+}
+
 mutable class TCResultsAcc private {
   errorHandling: ErrorHandling,
   errors: mutable Vector<Error> = mutable Vector[],
@@ -706,11 +715,32 @@ mutable class TCResultsAcc private {
     mutable static{errorHandling}
   }
 
-  // Import only the outputs of a completed isolated computation. The caller
-  // retains this accumulator's identity, including aliases held by its scopes.
-  mutable fun appendResults(other: TCResultsAcc): void {
+  readonly fun savePublication(): TypePublicationState {
+    TypePublicationState{
+      callCount => this.callgraph.size(),
+      subtypingEdges => this.subtypingEdges,
+      cfgs => this.cfgs,
+      typeClaims => this.typeClaims,
+    }
+  }
+
+  mutable fun restorePublication(saved: TypePublicationState): void {
+    while (this.callgraph.size() > saved.callCount) {
+      _ = this.callgraph.pop();
+    };
+    this.!subtypingEdges = saved.subtypingEdges;
+    this.!cfgs = saved.cfgs;
+    this.!typeClaims = saved.typeClaims
+  }
+
+  // Preserve diagnostics from a failed isolated proof without publishing facts.
+  mutable fun appendDiagnostics(other: TCResultsAcc): void {
     this.errors.extend(other.errors);
-    this.warnings.extend(other.warnings);
+    this.warnings.extend(other.warnings)
+  }
+
+  // Facts cross the boundary only after the proof dependencies commit.
+  mutable fun appendPublication(other: TCResultsAcc): void {
     this.callgraph.extend(other.callgraph);
     this.classHierarchy.extend(other.classHierarchy);
     for (edge in other.subtypingEdges) {

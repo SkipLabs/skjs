@@ -14,7 +14,8 @@ base class TypeArgumentCheck {
   | ValidateTypeArguments()
   | ProbeTypeArguments()
 
-  // Source expression inference still owns its proposal callback (A3).
+  // Call inference owns this proposal callback. Its result cannot replace
+  // the independent whole-call validation of the retained bound.
   fun check(subst: mutable Subst, runCheck: (mutable Subst) -> void): void {
     this match {
     | ValidateTypeArguments() -> runCheck(subst)
