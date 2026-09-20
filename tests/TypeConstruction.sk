@@ -271,7 +271,7 @@ fun testStructuralUnionPreservesUnresolvedOperands(): void {
   );
   pure = SKJS.TType::unionStructural(symbolic, object);
   stamp = subst.typeMutationStamp();
-  observed = subst.withCommittedTypeDecision(scratch ->
+  observed = subst.testObservedDecision(scratch ->
     SKJS.TType::union(scratch, tenv, symbolic, object)
   );
   SKTest.expectEq(

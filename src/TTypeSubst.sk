@@ -554,7 +554,9 @@ mutable class Subst private {
     true
   }
 
-  // A synchronous shape-read transaction, NOT a generic proof/certificate API.
+  // Private transaction kernel. Only the restricted context factory calls it
+  // in production; test-only class extensions inject illegal scratch operations.
+  // This is a synchronous shape-read transaction, NOT a proof/certificate API.
   // `read` must compute its result from its symbolic operands using `scratch`;
   // passing in an already materialized answer does not establish its provenance.
   // Every supported inspected candidate payload is pinned in this owner before
@@ -562,7 +564,7 @@ mutable class Subst private {
   // These commitments have the lifetime of the enclosing inference transaction:
   // ordinary rollback must abandon its derived answers as well as its state.
   // No receipt or scratch cache is transferable across owners or rollback.
-  mutable fun withCommittedTypeReads<T>(
+  private mutable fun withCommittedTypeReads<T>(
     read: (mutable Subst) -> ?T,
   ): TypeReadResult<T> {
     this.readObservation match {
@@ -614,17 +616,6 @@ mutable class Subst private {
         }
       }
     }
-  }
-
-  // A decision always produces a result, including false or None. Consumers
-  // that branch on such a result depend on the reads that produced it just as
-  // consumers of a positive result do. Unlike withCommittedTypeReads, a negative
-  // decision therefore commits its read set. This is not a subtype certificate:
-  // the callback still owns the meaning and validity of the decision.
-  mutable fun withCommittedTypeDecision<T>(
-    decide: (mutable Subst) -> T,
-  ): TypeReadResult<T> {
-    this.withCommittedTypeReads<T>(scratch -> Some(decide(scratch)))
   }
 
   // Restricted consumer boundary. Clear caller recursion assumptions once,

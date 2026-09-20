@@ -839,7 +839,9 @@ extension class TypeChecker {
       | None() -> default
       | Some(sTypes) -> Some(sTypes.filterMap(filterMap))
       };
-    !ty = ty.mapSTypes(tcenv.subst, this, Some(Covariant()), f);
+    // Head expansion was established above. Transform that data without
+    // entering inference's expansion adapter again; nested members stay symbolic.
+    !ty = ty.mapSTypesWith(_ -> None(), f);
     tcenv.scope.set(local, ty, (_, _) -> void)
   }
 

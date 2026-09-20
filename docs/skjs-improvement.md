@@ -175,7 +175,7 @@ diagnostic) is independent of variable role.
 ### Planned milestones
 
 These are architectural milestones A1–A4, separate from completed repair rows
-R1–R3/M1–M3. A1 is **done**; A2 is **in progress**; A3–A4 are **not started**.
+R1–R3/M1–M3. A1–A2 are **done**; A3–A4 are **not started**.
 Names below describe responsibilities, not prescribed new class names.
 
 | ID | Deliverable | Closure evidence |
@@ -309,193 +309,80 @@ boundaries. Candidate state and identity replacement are unavailable to ordinary
 callers; role-specific creation, selector commitment and value growth are
 separate; rigid IDs cannot enter the solver. Occurrence constraints preserve
 identity. Clone/rollback/escape and literal controls remain required tests.
-A2–A4 are still open: unmigrated validation callbacks receive mutable `Subst`, inference
-still participates in subtype checking, and the mutable routes have not yet
-been retired. The A2 checkpoint below records the first restricted consumer interface;
-its recursive expansion kernel and remaining consumers still need migration.
+The A2 closure below records the subsequent migration of committed shape
+observations. A3–A4 still cover ordinary inference and its wider consumer migration.
 
-Remaining dynamic enforcement includes checking-owner authority for witness allocation,
-checkpoint validity, observation read/commit checks, and the lifetime discipline
-of save/restore. The mutable state hierarchy is trusted implementation, not a
-security boundary against adding privileged subclasses/extensions. Unmigrated validation
-callbacks still receive mutable `Subst`; A2 removes that capability. No source
-acceptance or wire-format change is intended in this access-control slice.
+Remaining dynamic enforcement includes checking-owner authority for witness
+allocation, checkpoint validity, observation read/commit checks, and save/restore
+lifetimes. The mutable state hierarchy is trusted implementation, not a security
+boundary against adding privileged subclasses/extensions. No source acceptance
+or wire-format change is intended by these access-control milestones.
 
-### A2 checkpoint: restricted shape consumers
+### A2 closure: restricted shape observation
 
-All four variadic shape boundaries (optional spread tuple, retained tuple
-absence, rest element, and combined call rest shape) now use `TypeReadContext`.
-Refinement head expansion and declared-alternative pruning use the same capability. Its public instance
-operations expose only tracked reads; there is no allocation, growth, sealing,
-representation-selection, solver-cloning or mutable-owner accessor. The owner still
-performs atomic commitment before a result escapes. Optional absence commits
-nothing, while a retained negative/absent decision commits its inspected reads.
+Committed shape observation uses `TypeReadContext` end to end. The context has
+no allocation, growth, sealing, literal-selection, solver-cloning or mutable-owner
+accessor. Its fixed-read subtype and intersection orchestration shares structural
+rules with inference; it does not call inference's proposal or growth machinery.
+Symbolic members remain symbolic until an operation actually inspects them.
+Unknown payloads block instead of receiving inference defaults.
 
-The context expires when its callback returns or throws. Record copies share
-a private lifetime cell: a per-context Boolean was insufficient because an
-empty record copy duplicated its live flag. The lifecycle regression reproduced
-that escape before the shared-cell fix. Neither original nor copied handles can
-append reads after publication, and private fields cannot be used to replace the
-lifetime or obtain the backing substitution. This is runtime lifetime
-checking, not a static ownership proof. A callback that separately captures the
-original owner is still subject to the existing epoch/freeze checks. The generic
-callback result is not a proof certificate; callers still own its meaning.
+| Boundary | Implementation and evidence |
+| --- | --- |
+| Publication | `Subst.withCommittedReadContext` / `withCommittedReadDecision` create the capability. The private transaction kernel collects transitive reads and checks every binding before sealing any. Owner epoch/freeze checks refuse stale transfers. |
+| Variadic shapes | All four `TVariadicTyping` consumers use the context: optional tuple, retained tuple absence, rest element, and combined call-rest shape. Optional absence commits nothing; retained negative decisions commit their reads; Blocked cannot authorize a fallback. |
+| Refinement | `TypeCheckRefine` establishes head expansion before transforming it without re-entering inference expansion. `TypeCheckScope` branch elimination receives only the read context; uncertainty retains an alternative. Ordinary source checking and refinement construction remain distinct from the committed head observation. |
+| Type algebra | Fixed-payload expansion, selector reads, subtype/intersection orchestration, occurrence constraints, disjointness and iterator/member projection are in `TTypeObservation`. Union, clause distribution, field assembly and callback rules share solver-free structural helpers with inference. Recursive premises and query qualification retain their lifetime rules. |
+| Declaration normalization | `TypeReadDeclaration` carries declaration lookup, diagnostics and the active context, not a candidate owner. Class/alias construction, signature normalization, heritage aliases, enum types, rest constraints, symbol carriers and primitive boxing borrow the same snapshot/read frame across lexical environment changes. |
+| Materialization | `TEnv.materializeReadContext` separates the checking callback from detached probe/diagnostic callbacks before dispatch. Index merges, constrained parameters, templates, mapped/computed keys, `keyof`, numeric indexing, `Closed<T>`, receiver classification and `typeof` projections use this boundary. |
+| Retirement | The raw materialization helpers and raw decision helper are removed. `withCommittedTypeReads` is private and has one production caller, the context factory. Fault injection uses extensions compiled only into the native test binary. |
 
-Cleanup removes the mutable-substitution rest-read helpers and four repeated
-environment-reset blocks. Existing layout tests now call the real production
-query instead of simulating its reads. Commitment, unavailable results and
-owner-rollback tests exercise the restricted boundary. A new lifecycle test
-checks normal and exceptional exits for both original and copied handles and
-refuses a subsequent uncommitted read.
-Six negative compilation probes reject allocation, growth, solver extraction,
-lifetime replacement/extraction and passing the context as a solver; their
-temporary source is removed after checking.
+Compatibility probes may solve detached state only to report diagnostics: no
+solved type, environment or success receipt returns to declaration construction.
+Diagnostic rendering returns text only. Explicit source type arguments retain
+live constraint checking; separating those ordinary inference proposals belongs
+to A3. Computation purpose remains independent of variable role.
 
-Validation: 221 checker tests, 65 verifier suites and the unchanged 278 curated
-proofs pass, with no unexpected producer or proof outcomes. Formatting and shell
-checks pass. Three paired runs against the saved pre-declaration binary preserve
-exact diagnostics; median seconds before/after are 0.835/0.785 for array
-literals, 1.159/1.148 for generic membership and 5.686/5.826 for deep
-collections. These samples show comparable timings, not a general performance
-guarantee. No source corpus fixtures changed; native tests do not change census
-selection.
+The capability's record copies and borrowed declaration scopes share a private
+lifetime cell. Normal return and exceptions expire it, so a retained handle
+cannot add reads after publication. `Subst::mcreate` refuses a declaration-only
+context rather than inventing an empty candidate store. These are dynamic
+backstops; Skip does not provide a static ownership/lifetime proof. The private
+scratch still owns query bookkeeping and caches, whose isolated descendants
+share the same read frame. Restoring caches cannot import untracked owner facts.
 
-The head-expansion traversal and result construction are now shared operations
-with no solver parameter. Inference supplies its existing solving adapter;
-`TypeReadContext` supplies fixed-payload candidate reads, applying occurrence
-constraints without calling inference's `get`. Refinement, tuple shape and rest
-element head expansion use this path. Preserved symbolic occurrences are not
-inspected; unresolved candidates block instead of receiving an inference default.
-Cycle handling, top propagation and traversal order remain shared. Rest-element
-projection is also shared after head expansion, avoiding two iterator algorithms.
-The expansion tests exercise the production path: a closed outer binding with an
-open inner binding, symbolic preservation, unbound refusal and a contradictory
-occurrence constraint that leaves the underlying binding unchanged.
+Seven compiler-negative probes reject raw transaction access, the removed raw
+decision and materialization helpers, extraction of the context's scratch or the
+declaration's reader, passing a read context as a solver, and use of test-only
+fault-injection wrappers from production code. Temporary probe source is removed
+before building and testing the restored tree. Privileged class extensions are
+trusted implementation, not a security boundary against malicious repository edits.
 
-Literal head expansion now reads the selector through `TypeReadContext` directly.
-The backing binding stays private; this path cannot call the inference default or
-representation-selection logic. Its lifecycle test exercises the production tuple
-query before selection, after selection and after rollback. Tuple classification
-and positional projection also have no solver parameter: inference and validation
-share the structural traversal, supplying only element-union normalization. The
-single-branch path returns symbolic elements without inspecting their bindings.
+`tests/TypeReadObservation.sk` covers commitment, Blocked versus Unavailable,
+retained negatives, atomic frozen transfer, owner rollback, nested clones, cache
+provenance, symbolic rest members, literal selection, callback comparison and
+normal/exceptional lifetime expiry. The declaration regression normalizes two
+`keyof` projections under borrowed lexical bindings: a late unknown commits
+neither read; resolving it commits both; the escaped declaration handle then
+refuses normalization and solver creation. `tests/TypeConstruction.sk` checks
+structural algebra against its inference adapters without solving symbolic operands.
 
-Declared-alternative pruning now receives only the read capability. Shape
-projection and disjointness keep their isolated normalization caches inside it;
-the consumer cannot clone a solver or mutate candidates. Its old post-hoc
-mutation-stamp checks and `stablyDisjoint` helper are removed: every supported
-mutation in observation already latches Blocked before writing. The production
-regression checks elimination commitment, compatible alternatives, optional
-fields, unknown candidates and frozen candidates. This removes the raw
-`TypeCheckScope` callback. Disjointness now uses the fixed-read intersection
-backend described below; its remaining legacy dependencies are declaration
-expansion and symbol lookup.
+Final qualification: 222 checker tests and all 65 independent verifier suites
+pass. Curated outcomes remain 278 verified, 9 search failures and 18 unavailable,
+with zero mismatches or runner errors. Formatting and shell checks pass. Three
+alternating paired runs under a 4 GiB limit preserve exact diagnostics and finish
+within the 20-second per-file bound. Median seconds before/after the closure are
+0.769/0.776 for array literals, 1.152/1.156 for generic membership and 5.429/5.661
+for deep collections. The last control is about 4% slower in this sample; these
+bounded checks show comparable performance, not identical timing or a general
+performance guarantee. No TypeScript source fixtures or corpus-selection inputs
+changed in this closure; native protocol tests are outside the repair census.
 
-Iterator extraction now shares a solver-free protocol traversal between inference
-and validation. Each intermediate object head on the validation path expands
-through `TypeReadContext`. Object-branch traversal, call-return selection and
-optional-field read selection are shared structural helpers; validation no longer
-calls the mutable named/symbol-member or return-projection entry points. Symbol
-writes retain their intersection merge in inference, while reads retain union
-merging. Optional reads still add undefined. A production iterator regression
-blocks at an unknown intermediate result without committing earlier reads, then
-checks that resolving it commits the inspected chain while leaving the returned
-element symbolic. Symbol-identity resolution still uses a guarded legacy adapter.
-
-Structural union is now an owner-free algebra end to end: `TType`, `Clauses`,
-`Clause`, `STypes` and `TObject` union, plus concrete-clause projection, receive
-neither a substitution nor a checking environment. They preserve constrained
-candidate references, nominal references and object branches without inspecting
-bindings. Validation uses this core for expansion assembly, optional reads,
-member/call-result unions and tuple-element unions. Inference retains its memoized
-union adapter; validation does not enter that mutable cache. The shared union
-fold preserves empty/singleton handling and left-to-right order. Removing the
-redundant clause-merge callback from expansion also removes a place where a
-mutable normalization operation could have been supplied. The regression compares
-pure and cached construction and checks that unknown candidates remain unbound.
-This does not cover `TField`/`TFun` merges, which also compute intersections and
-still depend on inference machinery.
-
-Intersection distribution and field-set assembly receive only their required
-normalization operations. Primitive intersections, parameter sets, index coverage,
-symbol fields, array/callability brands, duplicate merging and branch limits
-share structural rules between inference and validation. Signature selection
-receives a subtype decision and preserves left-first choice and merged call-graph
-nodes. Inference retains transactional adapters; validation supplies fixed reads.
-
-The read context now has its own intersection and subtype orchestration. It
-uses fixed candidate payloads and selected literal representations, shared
-field/callback assembly and shared structural subtype rules. It does not enter
-inference's proposal collection, growth, literal selection, rollback or call-graph
-publication. Occurrence constraints, explicit intersections and disjointness use
-this backend; recursive premises and memo qualification retain the existing
-policy. The callback regression now calls the restricted relation directly:
-blocking at an unresolved result commits no earlier parameter read, and resolving
-the result makes the complete comparison commit atomically.
-
-Materialization now has separately typed callbacks for checking and detached
-computation. Checking receives `TypeReadContext`; only the probe/diagnostic arm
-receives a substitution. The purpose gate runs before either callback and never
-uses a detached computation as a checking observation. A native regression covers
-all three purposes. Negative compilation probes reject both candidate growth
-and extraction of the private backing substitution from the checking callback;
-the temporary probe source is removed. This preserves diagnostic/probe behavior
-without adding a mutable mode to the validation capability.
-
-Refinement intersections, constant subtraction, truthiness filtering, default
-reads, lasting subtype decisions, class-this expansion, constrained signature
-parameters and duplicate index merging now use that boundary. Template-hole,
-mapped-key, computed-key, index-key and receiver classification consume expanded
-data through shared structural helpers. Type-annotation union uses pure structural
-union directly. Subtraction and clause mapping also share solver-free cores.
-
-Declaration projections now also use fixed reads. `keyof`, numeric indexed
-access and `Closed<T>` share structural algorithms with detached normalization.
-`typeof` property reads use fixed head/member projection and a shared method
-extraction transform, preserving an implicit class receiver as an explicit
-requirement. Symbol identity uses that fixed property path after resolving its
-carrier declaration. Diagnostics receive only the reporting/formatting operations
-they need; they do not justify type decisions.
-
-Declaration construction now borrows `TypeReadDeclaration`, which carries syntax
-lookup and diagnostics plus the active read context, not a candidate owner.
-Class fields, alias parameter binding, enum types, signature normalization,
-heritage aliases and rest-parameter constraints use that interface. Nested
-materialization preserves lexical environment changes, the snapshot and the
-transitive read frame. Named expansion, primitive boxing and symbol-carrier
-lookup no longer pass a solver into declaration evaluation. Compatibility probes
-return only diagnostics; diagnostic rendering returns only text. Written source
-type arguments still use live constraint checking, whose proposal separation
-belongs to A3.
-
-The two raw materialization helpers and all three of their call sites are removed.
-`Subst::mcreate` refuses the declaration-only context rather than silently creating
-an empty candidate store. This is a dynamic backstop for the shared declaration
-base type; no solver accessor is exposed by the borrowed context. The underlying
-owner observation primitive is still public for native protocol tests. Restrict
-that entry point and complete the access/lifetime and performance closure audit
-before marking A2 done.
-
-### Remaining A2 work and estimate
-
-After structural shape migration, the three backend/closure packages below are
-estimated at **3–5 substantial rounds**, not one final interface cleanup. This is
-an estimate, not a closure claim; recursive normalization is the largest uncertainty.
-
-| Work package | Remaining change | Expected rounds |
-| --- | --- | --- |
-| Shape consumers | Structural traversal migrated for branch elimination and iterator/member projection; algebra and declaration dependencies remain in the next rows. | Structural migration done |
-| Read-only type algebra | Fixed-read intersection and subtype orchestration implemented using shared structural rules. Remaining legacy declaration dependencies are in the next row. | Backend implemented; declaration dependency open |
-| Declaration normalization | Class/alias construction and symbol carrier lookup borrow the read context; raw materialization helpers retired. | Migrated |
-| Closure audit | Retire raw validation callbacks and superseded guards, exercise compiler-negative access checks, then qualify behavior, verifier outcomes and performance. | 1 |
-
-These packages share recursive dependencies and may need interleaving. A2 needs
-read-only subtype operations where normalization calls them; A3 still owns the
-separation of ordinary inference/call proposals, validation and publication.
-Closure requires that a validation path cannot reach a solver mutator through an
-adapter. Private adapters that still take mutable `Subst` are migration work, not
-evidence of completion. Runtime lifetime, rollback and atomic-publication checks
-remain necessary even after the solver capability has been removed.
+A2 closes the committed shape-observation boundary, not the full architectural
+refactoring. A3 still separates ordinary subtype/call proposals, validation and
+publication. A4 completes that wider consumer migration and retires the remaining
+inference interfaces. Existing lifetime, owner and rollback controls remain
+necessary; an arbitrary callback result is not a proof certificate.
 
 ### Acceptance criteria and migration discipline
 

@@ -468,8 +468,8 @@ mutable class TypeReadContext private {
     | (Some(inst1), Some(inst2)) ->
       namedPair = (
         this.scratch.inferenceVersion(),
-        tenv.expansionCacheKey(this.scratch, inst1.name, inst1.targs),
-        tenv.expansionCacheKey(this.scratch, inst2.name, inst2.targs),
+        tenv.expansionCacheKey(this.declaration(), inst1.name, inst1.targs),
+        tenv.expansionCacheKey(this.declaration(), inst2.name, inst2.targs),
       );
       if (tenv.seenNamedSub.contains(namedPair)) {
         this.scratch.recordRecursiveTypeQuery(
