@@ -1268,4 +1268,48 @@ fun testIteratorProjectionTracksIntermediateShapes(): void {
   SKTest.expectEq(true, subst.isUnbound(element));
 }
 
+@test
+fun testObservedCallbackSubtypeCommitsAtomically(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  pos = SKJS.PosRange::none;
+  input = subst.gen(pos);
+  output = subst.gen(pos);
+  observationBind(subst, input, observationNumber(), false);
+  callback = (arg, result) ->
+    SKJS.TType::single(
+      SKJS.TObject::createCall(
+        SKJS.TFuns::singleFun(
+          SKJS.TFun(
+            Array[],
+            SKJS.NoThis(),
+            Array[arg],
+            Array[],
+            None(),
+            result,
+            SKJS.CGNodes(SortedSet[]),
+          ),
+          pos,
+        ),
+      ),
+    );
+  source = callback(observationNumber(), SKJS.TType::var(output));
+  target = callback(SKJS.TType::var(input), observationString());
+  check = () ->
+    subst.withCommittedTypeDecision<Bool>(scratch ->
+      SKJS.TType::isSub(scratch, tenv, source, target) is SKJS.STOk()
+    );
+  // The contravariant input is read before the unresolved covariant output.
+  // A blocked comparison must not publish its earlier successful read.
+  SKTest.expectEq(true, check() is SKJS.TRBlocked());
+  SKTest.expectEq(false, subst.snapshot().isClosed(input));
+  observationBind(subst, output, observationString(), false);
+  check() match {
+  | SKJS.TRReady(value) -> SKTest.expectEq(true, value)
+  | _ -> SKTest.expectEq(true, false)
+  };
+  SKTest.expectEq(true, subst.snapshot().isClosed(input));
+  SKTest.expectEq(true, subst.snapshot().isClosed(output));
+}
+
 module end;
