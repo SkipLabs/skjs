@@ -190,6 +190,26 @@ mutable class TypeReadContext private {
     this.expandClauses(type, variance).restElement(this.scratch, this.tenv)
   }
 
+  // Isolate normalization caches as before, but expose neither the scratch
+  // clone nor its solver operations to the shape consumer. Descendants share
+  // the observation frame, so every nested read contributes to publication.
+  mutable fun singleTypes(type: TType): ?STypes {
+    this.lifetime.checkActive();
+    TypeReadContext::runObserved(this.scratch.clone(), this.tenv, probe ->
+      probe
+        .expandClauses(type, Covariant())
+        .getSTypes(probe.scratch, probe.tenv)
+    )
+  }
+
+  // Intersection normalization is still the guarded legacy backend. Supported
+  // solver mutations latch Blocked before writing, so a post-hoc mutation-stamp
+  // comparison is redundant inside this capability. Keep the cache isolation.
+  mutable fun disjoint(left: TType, right: TType): Bool {
+    this.lifetime.checkActive();
+    TType::inter(this.scratch.clone(), this.tenv, left, right).isBottom()
+  }
+
   private mutable fun tupleElements(clauses: Clauses): ?Array<TType> {
     clauses.getSingleTupleWith((pos, elements) ->
       TType::unionN_it(this.scratch, this.tenv, pos, elements)

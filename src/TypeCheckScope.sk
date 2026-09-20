@@ -102,13 +102,15 @@ extension class TType {
     tenv: TEnv,
     declared: TFields,
   ): Bool {
-    readEnv = tenv.forTypeReadObservation();
-    subst.withCommittedTypeReads<Bool>(scratch ->
-      if (this.probeMatchesAlternative(scratch, readEnv, declared)) {
-        None()
-      } else {
-        Some(false)
-      }
+    subst.withCommittedReadContext<Bool>(
+      tenv.forTypeReadObservation(),
+      context ->
+        if (this.probeMatchesAlternative(context, declared)) {
+          None()
+        } else {
+          Some(false)
+        }
+      ,
     ) match {
     | TRReady(matches) -> matches
     | TRUnavailable()
@@ -120,16 +122,10 @@ extension class TType {
   // Only a justified elimination escapes; keeping an alternative requires no
   // inferred commitment. Nested probes share the outer observation's reads.
   private fun probeMatchesAlternative(
-    subst: mutable Subst,
-    tenv: TEnv,
+    context: mutable TypeReadContext,
     declared: TFields,
   ): Bool {
-    probe = subst.clone();
-    stamp = probe.typeMutationStamp();
-    current = this.getSTypes(probe, tenv, Covariant());
-    // Discarding a branch installs a fact in the parent. A clone-only read
-    // that seals or solves candidates cannot justify that lasting fact.
-    if (probe.typeMutationStamp() != stamp) return true;
+    current = context.singleTypes(this);
     current
       .map(current ->
         current.any(st ->
@@ -142,7 +138,7 @@ extension class TType {
                   .map(other ->
                     !field.isOptional &&
                       !other.isOptional &&
-                      TType::stablyDisjoint(subst, tenv, field.get, other.get)
+                      context.disjoint(field.get, other.get)
                   )
                   .default(false)
               )
@@ -152,18 +148,6 @@ extension class TType {
         )
       )
       .default(true)
-  }
-
-  private static fun stablyDisjoint(
-    subst: mutable Subst,
-    tenv: TEnv,
-    left: TType,
-    right: TType,
-  ): Bool {
-    probe = subst.clone();
-    stamp = probe.typeMutationStamp();
-    disjoint = TType::inter(probe, tenv, left, right).isBottom();
-    disjoint && probe.typeMutationStamp() == stamp
   }
 }
 

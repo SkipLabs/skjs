@@ -321,11 +321,11 @@ security boundary against adding privileged subclasses/extensions. Unmigrated va
 callbacks still receive mutable `Subst`; A2 removes that capability. No source
 acceptance or wire-format change is intended in this access-control slice.
 
-### A2 checkpoint: restricted rest and refinement consumers
+### A2 checkpoint: restricted shape consumers
 
 All four variadic shape boundaries (optional spread tuple, retained tuple
 absence, rest element, and combined call rest shape) now use `TypeReadContext`.
-Refinement head expansion uses the same capability. Its public instance
+Refinement head expansion and declared-alternative pruning use the same capability. Its public instance
 operations expose only tracked reads; there is no allocation, growth, sealing,
 representation-selection, solver-cloning or mutable-owner accessor. The owner still
 performs atomic commitment before a result escapes. Optional absence commits
@@ -351,14 +351,13 @@ Six negative compilation probes reject allocation, growth, solver extraction,
 lifetime replacement/extraction and passing the context as a solver; their
 temporary source is removed after checking.
 
-Validation: 216 checker tests, 65 verifier suites and the unchanged 278 curated
-proofs pass, as do formatting and shell checks. Paired runs of the array,
-generic-membership and deep-collection controls preserve exact diagnostics.
-The projection split's initial timing medians were 0.765/0.760, 1.109/1.163 and
-5.729/6.115 seconds before/after. Five additional alternating-order rounds of the
-last two cases varied in both directions; these measurements do not establish a
-consistent slowdown or rule out a small cost. No source corpus fixtures changed;
-native tests do not change the repair-census selection.
+Validation: 217 checker tests, 65 verifier suites and the unchanged 278 curated
+proofs pass, as do formatting and shell checks. Three paired runs of the array,
+generic-membership and deep-collection controls preserve exact diagnostics;
+median seconds before/after the branch-elimination migration are 0.748/0.744,
+1.097/1.089 and 5.288/5.274. This shows no observed regression in these samples,
+not a general performance guarantee. No source corpus fixtures changed; native
+tests do not change the repair-census selection.
 
 The head-expansion traversal and result construction are now shared operations
 with no solver parameter. Inference supplies its existing solving adapter;
@@ -380,18 +379,48 @@ and positional projection also have no solver parameter: inference and validatio
 share the structural traversal, supplying only element-union normalization. The
 single-branch path returns symbolic elements without inspecting their bindings.
 
+Declared-alternative pruning now receives only the read capability. Shape
+projection and disjointness keep their isolated normalization caches inside it;
+the consumer cannot clone a solver or mutate candidates. Its old post-hoc
+mutation-stamp checks and `stablyDisjoint` helper are removed: every supported
+mutation in observation already latches Blocked before writing. The production
+regression checks elimination commitment, compatible alternatives, optional
+fields, unknown candidates and frozen candidates. This removes the raw
+`TypeCheckScope` callback, but disjointness still uses guarded legacy intersection
+normalization and is not an end-to-end read-only relation yet.
+
 A2 is **not complete**. Named-type expansion, intersections (including occurrence
 constraints), clause/tuple-element normalization and iterator projection still
 call the observed legacy kernel. Literal reads reached through those nested legacy
 operations have not migrated yet. Nested candidate reads there still use its
 guarded `get`; mutation prohibition remains dynamic in those operations. The
 shared traversal cannot directly solve a candidate, but its normalization adapters
-are not yet end-to-end read-only. The remaining raw production consumers are
-`TEnv.materializeRead` (including normalization and subtype decisions) and
-`TType.mayMatchAlternative`; the owner adapter and low-level protocol tests
-also retain the old boundary. Next migrate those normalization/projection
+are not yet end-to-end read-only. The remaining raw production consumer is
+`TEnv.materializeRead` (including normalization and subtype decisions); the owner
+adapter and low-level protocol tests also retain the old boundary. Next migrate those normalization/projection
 operations behind restricted capabilities, then the remaining consumers; only
 then retire the old mutable callback API and checks whose purpose has disappeared.
+
+### Remaining A2 work and estimate
+
+The remaining work is expected to take **4–6 substantial rounds including the
+branch-elimination migration**, not one final interface cleanup. This is an
+estimate, not a closure claim; recursive normalization is the largest uncertainty.
+
+| Work package | Remaining change | Expected rounds |
+| --- | --- | --- |
+| Shape consumers | Restricted branch elimination and iterator/member projection; retain centralized dependency publication and cache isolation. | 1 |
+| Read-only type algebra | Separate union/intersection/field normalization and the subtype checks they invoke from solver growth, literal choice and allocation. Preserve recursive premises and memo qualification. | 1–2 |
+| Declaration normalization | Migrate named expansion and the materialization inventory: 28 call sites outside wrappers in `TType`, `TEnv`, `TypeCheckExpr` and `TypeCheckRefine`. Keep checking, probes and diagnostics distinct. | 1–2 |
+| Closure audit | Retire raw validation callbacks and superseded guards, exercise compiler-negative access checks, then qualify behavior, verifier outcomes and performance. | 1 |
+
+These packages share recursive dependencies and may need interleaving. A2 needs
+read-only subtype operations where normalization calls them; A3 still owns the
+separation of ordinary inference/call proposals, validation and publication.
+Closure requires that a validation path cannot reach a solver mutator through an
+adapter. Private adapters that still take mutable `Subst` are migration work, not
+evidence of completion. Runtime lifetime, rollback and atomic-publication checks
+remain necessary even after the solver capability has been removed.
 
 ### Acceptance criteria and migration discipline
 
