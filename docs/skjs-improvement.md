@@ -445,8 +445,12 @@ into validation and no validation bypass is present.
 
 **A3 remains in progress.** Calls still validate arguments individually while
 iterating inference. Whole-call obligation collection, explicit/dependent bounds,
-constructor-result publication, and independent validation of literal construction
-against its selected representation remain to be completed. The wider direct
+and constructor-result publication remain to be completed. Literal construction
+now independently checks each original initializer against the selected array or
+tuple storage. Fresh primitive values retain their precision during this check;
+widening remains an inference policy. A native fault-injection test demonstrates
+that a false proposal premise cannot turn a number element into string storage,
+and that rejection rolls the selector back. The wider direct
 structural-helper/cache/clone inventory belongs to A4; do not mistake those legacy
 paths or their runtime scope checks for compiler-enforced capability separation.
 
@@ -458,7 +462,7 @@ against the full target. `delayed-literal-union-contract.ts` preserves the two
 rejected crossed-element witnesses and a valid tuple alternative. This repair
 removes one obstruction to the driver migration; it does not replace that migration.
 
-Checkpoint: 223 checker tests and 65 verifier suites pass; curated outcomes remain
+Checkpoint: 224 checker tests and 65 verifier suites pass; curated outcomes remain
 278 verified / 9 search failures / 18 unavailable. The repair census is unchanged:
 41/151 accepted functions verify; 242 further functions are rejected. Three paired
 control medians before A3 / after the subtype driver: array literals 0.705/0.842 s,

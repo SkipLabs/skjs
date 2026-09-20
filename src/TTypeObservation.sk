@@ -355,8 +355,72 @@ mutable class TypeReadContext private {
       variance.map(_ -> {
         this.constrainRead(tv, this.peekRaw(tv).fromSome())
       })
-    | arrLit @ TArrayLit _ -> Some(arrLit.selector.read(this))
+    | arrLit @ TArrayLit _ -> Some(this.literalSelection(arrLit))
     }
+  }
+
+  // A selector is only a proposed storage layout. Its original initializer
+  // elements must establish that layout independently of proposal premises.
+  // Fresh primitive types describe the actual written values; widening is an
+  // inference policy, not a restriction on this introduction rule.
+  private mutable fun literalSelection(literal: TArrayLit): TType {
+    selected = literal.selector.read(this);
+    targets: ?Array<TType> = selected.getSingleInst() match {
+    | Some(TSInst(name, TArgs(args))) ->
+      if (name.value == "Array" && args.size() == 1) {
+        Some(Array::fillBy(literal.tupleElts.size(), _ -> args[0]))
+      } else {
+        tupleKind(name.value).flatMap(kind ->
+          if (
+            !kind.isReadonly &&
+            kind.arity == args.size() &&
+            args.size() == literal.tupleElts.size()
+          ) {
+            Some(args)
+          } else {
+            None()
+          }
+        )
+      }
+    | None() -> None()
+    };
+    elements = targets match {
+    | Some(types) -> types
+    | None() ->
+      fatalError(
+        Array[
+          (
+            literal.selector.pos(),
+            "The selected array-literal representation must be an array or a tuple of matching length",
+          ),
+        ],
+        SKJSCode(9038),
+      )
+    };
+    // Initialization is a positive obligation even inside a fixed shape read.
+    // A later legal growth of the target preserves every established element.
+    introduction = this with {allowTargetGrowth => true};
+    for (i in Range(0, elements.size())) {
+      actual = literal.freshElts[i].default(literal.tupleElts[i]);
+      introduction.subtype(actual, elements[i]) match {
+      | STOk() -> void
+      | err @ STErrorOnTType _ ->
+        subtypingError(
+          this.scratch,
+          this.tenv,
+          Array[
+            (
+              literal.selector.pos(),
+              `Array literal element ${i +
+                1} does not satisfy its selected storage type`,
+            ),
+          ],
+          err,
+          TSCode(2322),
+        )
+      }
+    };
+    selected
   }
 
   private mutable fun constrainRead(tv: TVar, value: TType): TType {

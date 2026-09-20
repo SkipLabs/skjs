@@ -318,4 +318,67 @@ fun testRejectedSubtypeDoesNotPublishSourceRead(): void {
   SKTest.expectEq(Some(observationNumber()), owner.peekRaw(source));
 }
 
+// A successful representation proposal is not evidence that the original
+// elements inhabit it. The independent check must reject a false recursive
+// premise used while selecting a tuple, and roll the selection back.
+@test
+fun testLiteralConstructionRejectsUnprovedElement(): void {
+  owner = observationSubst();
+  tenv = observationTypeEnv(owner);
+  file = SKJS.FPath::create(
+    SKJS.RootId::project,
+    "tests/expect-error/type-query-memo-stability.ts",
+  );
+  lexer = SKJS.Lexer::mcreate(file, "");
+  pos = SKJS.PosRange::create(lexer, SKJS.Pos(0), SKJS.Pos(0));
+  num = observationNumber();
+  str = observationString();
+  selector = SKJS.ArrayLiteralSelector::create(owner, pos);
+  literal = SKJS.TType::arrayLit(selector, Array[num], Array[None()]);
+  target = SKJS.TType::tuple(pos, Array[str], false);
+  saved = owner.save();
+  // Tuple selection precedes its element checks. Attach the deliberately false
+  // premise to that state, deriving its version through the real selector API.
+  selector.commit(owner, tenv, target);
+  selectedVersion = owner.inferenceVersion();
+  owner.restore(saved);
+  assumed = tenv with {seenSub => SortedSet[(selectedVersion, num, str)]};
+  SKTest.expectEq(
+    owner.proposeSubtype(assumed, literal, target) is SKJS.STOk(),
+    true,
+    "the proposal witness must select the incompatible tuple",
+  );
+  SKTest.expectEq(selector.peek(owner, tenv), Some(target));
+  owner.restore(saved);
+  accepted = false;
+  error = SKJS.catchError(() -> {
+    !accepted = SKJS.TType::isSub(
+      owner,
+      assumed,
+      literal,
+      target,
+    ) is SKJS.STOk()
+  });
+  SKTest.expectEq(
+    accepted,
+    false,
+    "validation must not accept the incompatible literal",
+  );
+  SKTest.expectEq(
+    error match {
+    | Some(SKJS.SubtypingError(_, _, _, stErr, _)) ->
+      stErr.ty1 == num && stErr.ty2 == str
+    | _ -> false
+    },
+    true,
+    "validation must reject the original number element against string storage",
+  );
+  SKTest.expectEq(selector.peek(owner, tenv), None());
+  valid = SKJS.TType::tuple(pos, Array[num], false);
+  SKTest.expectEq(
+    SKJS.TType::isSub(owner, tenv, literal, valid) is SKJS.STOk(),
+    true,
+  );
+}
+
 module end;
