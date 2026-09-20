@@ -110,4 +110,47 @@ fun testHiddenWitnessAllocationDoesNotRewindWithInference(): void {
   );
 }
 
+fun tryHiddenWitnessAllocation(subst: mutable SKJS.Subst): ?SKJS.Id {
+  minted: ?SKJS.Id = None();
+  try {
+    !minted = Some(
+      subst.genSkolemTParam(SKJS.PosRange::none, "hidden", None()).id,
+    )
+  } catch {
+  | InvariantViolation(_) -> void
+  | exn -> throw exn
+  };
+  minted
+}
+
+// All detached construction routes need the same witness-allocation boundary.
+@test
+fun testHiddenWitnessAllocationAuthorities(): void {
+  owner = observationSubst();
+  pos = SKJS.PosRange::none;
+  first = owner.genSkolemTParam(pos, "hidden", None());
+  SKTest.expectEq(None(), tryHiddenWitnessAllocation(owner.clone()));
+  SKTest.expectEq(
+    None(),
+    tryHiddenWitnessAllocation(owner.cloneForTypeDiagnostics()),
+  );
+  // Baseline: these routes currently restart the owner's namespace.
+  SKTest.expectEq(
+    Some(first.id),
+    tryHiddenWitnessAllocation(SKJS.Subst::mcreate(owner)),
+  );
+  SKTest.expectEq(
+    Some(first.id),
+    tryHiddenWitnessAllocation(SKJS.Subst::mcreate(owner, owner.save())),
+  );
+  SKTest.expectEq(
+    Some(first.id),
+    tryHiddenWitnessAllocation(
+      SKJS.Subst::mcreateFromSaved(owner.context, owner.saveAll()),
+    ),
+  );
+  after = owner.genSkolemTParam(pos, "hidden", None());
+  SKTest.expectEq(false, first.id == after.id);
+}
+
 module end;
