@@ -74,6 +74,44 @@ extension base class TEnv {
     }
   }
 
+  // Checking receives only fixed-read operations. Detached probes/diagnostics
+  // have a separate callback: their computations cannot publish checking facts.
+  // This distinction is computation purpose, independent of candidate role.
+  fun materializeReadContext<T>(
+    tcenvb: mutable TCEnvBase,
+    pos: PosRange,
+    read: (mutable TypeReadContext) -> T,
+    detached: (mutable Subst, TEnv) -> T,
+  ): T {
+    subst = Subst::candidateOwner(tcenvb) match {
+    | Some(owner) -> owner
+    | None() -> Subst::mcreate(tcenvb)
+    };
+    subst.typeComputationPurpose() match {
+    | TCPTypeArgumentProbe()
+    | TCPDiagnostic() ->
+      detached(subst, this)
+    | TCPChecking() ->
+      subst.withCommittedReadDecision<T>(this, read) match {
+      | TRReady(value) -> value
+      | TRUnavailable() ->
+        invariant_violation(
+          "A mandatory type materialization cannot be unavailable",
+        )
+      | TRBlocked() ->
+        fatalError(
+          Array[
+            (
+              pos,
+              "A type projection or expansion could not be established without changing inference; add an explicit type annotation",
+            ),
+          ],
+          SKJSCode(9037),
+        )
+      }
+    }
+  }
+
   fun materializeTypeRead(
     tcenvb: mutable TCEnvBase,
     pos: PosRange,
@@ -91,8 +129,13 @@ extension base class TEnv {
     source: TType,
     target: TType,
   ): Bool {
-    this.materializeRead<Bool>(tcenvb, pos, (scratch, readEnv) ->
-      TType::isSub(scratch, readEnv, source, target) is STOk()
+    this.materializeReadContext<Bool>(
+      tcenvb,
+      pos,
+      context -> context.isSubtype(source, target),
+      (scratch, readEnv) ->
+        TType::isSub(scratch, readEnv, source, target) is STOk()
+      ,
     )
   }
 

@@ -351,13 +351,15 @@ Six negative compilation probes reject allocation, growth, solver extraction,
 lifetime replacement/extraction and passing the context as a solver; their
 temporary source is removed after checking.
 
-Validation: 220 checker tests, 65 verifier suites and the unchanged 278 curated
+Validation: 221 checker tests, 65 verifier suites and the unchanged 278 curated
 proofs pass, with no unexpected producer or proof outcomes. Formatting and shell
-checks pass. Three paired runs against the saved pre-algebra binary preserve exact
-diagnostics; median seconds before/after are 0.744/0.728 for array literals,
-1.113/1.110 for generic membership and 5.295/5.274 for deep collections. This shows
-no observed slowdown in these samples, not a general performance guarantee.
-No source corpus fixtures changed; native tests do not change census selection.
+checks pass. Three paired runs against the saved pre-materialization binary
+preserve exact diagnostics; median seconds before/after are 0.719/0.760 for
+array literals, 1.074/1.065 for generic membership and 5.218/5.284 for deep
+collections. A five-pair array-only repeat gives 0.747/0.747 seconds, so the
+initial small array gap did not reproduce. These samples show comparable timings,
+not a general performance guarantee. No source corpus fixtures changed; native tests do not
+change census selection.
 
 The head-expansion traversal and result construction are now shared operations
 with no solver parameter. Inference supplies its existing solving adapter;
@@ -432,15 +434,30 @@ policy. The callback regression now calls the restricted relation directly:
 blocking at an unresolved result commits no earlier parameter read, and resolving
 the result makes the complete comparison commit atomically.
 
-A2 is **not complete**. Named-type expansion and symbol-identity resolution still
-call the observed legacy declaration kernel. The new relation can reach legacy
-normalization through those operations, so its call graph is not yet end-to-end
-read-only. The remaining raw production consumer is `TEnv.materializeRead`
-(including normalization and subtype decisions); its owner adapter and low-level
-protocol tests also retain the old boundary. Migrate declaration normalization
-and those consumers before retiring the raw callback API and superseded dynamic
-guards. Inference keeps its separate transactional adapters around the shared
-structural subtype rules.
+Materialization now has separately typed callbacks for checking and detached
+computation. Checking receives `TypeReadContext`; only the probe/diagnostic arm
+receives a substitution. The purpose gate runs before either callback and never
+uses a detached computation as a checking observation. A native regression covers
+all three purposes. Negative compilation probes reject both candidate growth
+and extraction of the private backing substitution from the checking callback;
+the temporary probe source is removed. This preserves diagnostic/probe behavior
+without adding a mutable mode to the validation capability.
+
+Refinement intersections, constant subtraction, truthiness filtering, default
+reads, lasting subtype decisions, class-this expansion, constrained signature
+parameters and duplicate index merging now use that boundary. Template-hole,
+mapped-key, computed-key, index-key and receiver classification consume expanded
+data through shared structural helpers. Type-annotation union uses pure structural
+union directly. Subtraction and clause mapping also share solver-free cores.
+
+A2 is **not complete**. Eight raw materialization call sites remain, all in
+`TEnv`: named instantiation, `keyof` (two sites), numeric indexed access, class
+statics (two sites), `typeof` property reads and `Closed<T>`. Named expansion and
+symbol identity still let the fixed-read algebra reach this legacy declaration
+kernel, so the full call graph is not yet read-only. Migrate these operations,
+then remove the raw callback API and audit transitive capabilities. The explicit
+detached callback is for probes/diagnostics, not a validation fallback; inference
+keeps its own transactional adapters around shared structural rules.
 
 ### Remaining A2 work and estimate
 
@@ -452,7 +469,7 @@ an estimate, not a closure claim; recursive normalization is the largest uncerta
 | --- | --- | --- |
 | Shape consumers | Structural traversal migrated for branch elimination and iterator/member projection; algebra and declaration dependencies remain in the next rows. | Structural migration done |
 | Read-only type algebra | Fixed-read intersection and subtype orchestration implemented using shared structural rules. Remaining legacy declaration dependencies are in the next row. | Backend implemented; declaration dependency open |
-| Declaration normalization | Migrate named expansion and the materialization inventory: 28 call sites outside wrappers in `TType`, `TEnv`, `TypeCheckExpr` and `TypeCheckRefine`. Keep checking, probes and diagnostics distinct. | 1–2 |
+| Declaration normalization | Migrate named expansion and the eight remaining raw materialization calls in `TEnv`. Checking and detached computation now have separately typed callbacks; audit declaration dependencies before retiring the raw API. | 1–2 |
 | Closure audit | Retire raw validation callbacks and superseded guards, exercise compiler-negative access checks, then qualify behavior, verifier outcomes and performance. | 1 |
 
 These packages share recursive dependencies and may need interleaving. A2 needs

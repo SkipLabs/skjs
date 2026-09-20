@@ -1317,22 +1317,34 @@ fun testMaterializationKeepsCheckingProbeAndDiagnosticPurposesSeparate(): void {
   owner = observationSubst();
   tenv = observationTypeEnv(owner);
   pos = SKJS.PosRange::none;
-  checking = tenv.materializeRead<Bool>(owner, pos, (scratch, _) ->
-    scratch.isObservingTypeReads() &&
-      scratch.typeComputationPurpose() is SKJS.TCPChecking()
+  checking = tenv.materializeReadContext<Bool>(
+    owner,
+    pos,
+    _context -> true,
+    (_scratch, _env) -> false,
   );
   SKTest.expectEq(true, checking);
   owner.withTypeArgumentProbe(probe -> {
-    probing = tenv.materializeRead<Bool>(probe, pos, (scratch, _) ->
-      !scratch.isObservingTypeReads() &&
-        scratch.typeComputationPurpose() is SKJS.TCPTypeArgumentProbe()
+    probing = tenv.materializeReadContext<Bool>(
+      probe,
+      pos,
+      _context -> false,
+      (scratch, _) ->
+        !scratch.isObservingTypeReads() &&
+          scratch.typeComputationPurpose() is SKJS.TCPTypeArgumentProbe()
+      ,
     );
     SKTest.expectEq(true, probing)
   });
   diagnostic = owner.cloneForTypeDiagnostics();
-  diagnosing = tenv.materializeRead<Bool>(diagnostic, pos, (scratch, _) ->
-    !scratch.isObservingTypeReads() &&
-      scratch.typeComputationPurpose() is SKJS.TCPDiagnostic()
+  diagnosing = tenv.materializeReadContext<Bool>(
+    diagnostic,
+    pos,
+    _context -> false,
+    (scratch, _) ->
+      !scratch.isObservingTypeReads() &&
+        scratch.typeComputationPurpose() is SKJS.TCPDiagnostic()
+    ,
   );
   SKTest.expectEq(true, diagnosing);
   SKTest.expectEq(true, owner.typeComputationPurpose() is SKJS.TCPChecking());

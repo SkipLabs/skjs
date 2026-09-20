@@ -188,6 +188,63 @@ mutable class TypeReadContext private {
     }
   }
 
+  mutable fun concreteTypes(type: TType, variance: Variance): ?STypes {
+    this.lifetime.checkActive();
+    this.expandClauses(type, variance).getSTypes()
+  }
+
+  mutable fun expandVectors(
+    type: TType,
+    variance: ?Variance,
+  ): ?(mutable Vector<TInst>, mutable Vector<Clause>) {
+    this.lifetime.checkActive();
+    type.expandGraph(inst -> this.expandInstance(inst, variance))
+  }
+
+  mutable fun removeConstant(type: TType, constant: TPrim): TType {
+    TType::removeConstantFromExpanded(
+      type.pos,
+      this.expand(type, None()),
+      constant,
+    )
+  }
+
+  mutable fun truthinessPart(type: TType, target: Bool): TType {
+    this.lifetime.checkActive();
+    type.mapSTypesWith(
+      inst -> this.expandInstance(inst, Some(Covariant())),
+      stypes ->
+        stypes.map(types ->
+          types.filterMap(stype -> stype.truthinessResidue(target))
+        )
+      ,
+    )
+  }
+
+  mutable fun constrainedParameter(
+    pos: PosRange,
+    parameter: TParamWithConstraint,
+  ): TType {
+    this.lifetime.checkActive();
+    TType::fromTParamWithConstraintWith(pos, parameter, (left, right) ->
+      this.retainedIntersection(left, right)
+    )
+  }
+
+  mutable fun mergeIndexKind(indexes: readonly Vector<TField>): ?TField {
+    this.lifetime.checkActive();
+    TypeReadContext::runObserved(this.scratch.clone(), this.tenv, context ->
+      TIndexes::mergeKindWith(indexes, (left, right) ->
+        TField::interContracts(
+          left,
+          right,
+          context.retainedIntersection(left.get, right.get),
+          TType::unionStructural(left.set, right.set),
+        )
+      )
+    )
+  }
+
   // The relation uses fixed payloads and structural rules. It never proposes a
   // solution, selects a literal representation or records inference edges.
   mutable fun isSubtype(source: TType, target: TType): Bool {
@@ -487,9 +544,8 @@ mutable class TypeReadContext private {
     )
   }
 
-  // Intersection normalization is still the guarded legacy backend. Supported
-  // solver mutations latch Blocked before writing, so a post-hoc mutation-stamp
-  // comparison is redundant inside this capability. Keep the cache isolation.
+  // Disjointness uses fixed-read normalization with isolated caches. Descendants
+  // retain the observation frame, including reads made by failed comparisons.
   mutable fun disjoint(left: TType, right: TType): Bool {
     this.lifetime.checkActive();
     TypeReadContext::runObserved(this.scratch.clone(), this.tenv, context ->

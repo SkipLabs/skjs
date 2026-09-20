@@ -2256,9 +2256,7 @@ base class TEnv{
     | TAUnion(ty1, ty2) ->
       left = this.normalize(tcenvb, ty1);
       right = this.normalize(tcenvb, ty2);
-      this.materializeTypeRead(tcenvb, pos, (scratch, readEnv) ->
-        TType::union(scratch, readEnv, left, right)
-      ).withPos(pos)
+      TType::unionStructural(left, right).withPos(pos)
     | TAInter(ty1, ty2) ->
       left = this.normalize(tcenvb, ty1);
       right = this.normalize(tcenvb, ty2);
@@ -2268,8 +2266,11 @@ base class TEnv{
         // any payload they later need when expanding this TInter.
         TType::unexpandedInter(left, right).withPos(pos)
       } else {
-        this.materializeTypeRead(tcenvb, pos, (scratch, readEnv) ->
-          TType::inter(scratch, readEnv, left, right)
+        this.materializeReadContext<TType>(
+          tcenvb,
+          pos,
+          context -> context.intersection(left, right),
+          (scratch, readEnv) -> TType::inter(scratch, readEnv, left, right),
         ).withPos(pos)
       }
     | taTuple @ TATuple _ -> this.normalizeTuple(tcenvb, pos, taTuple, false)
@@ -2316,11 +2317,17 @@ base class TEnv{
   ): TType {
     invariant(strings.size() == types.size() + 1);
     holeTypes = types.map(ty -> this.normalize(tcenvb, ty));
-    holes = this.materializeRead<Array<TemplateHole>>(
+    holes = this.materializeReadContext<Array<TemplateHole>>(
       tcenvb,
       pos,
+      context ->
+        holeTypes.map(ty ->
+          TEnv::templateHoleFrom(context.expandVectors(ty, None()))
+        ),
       (scratch, readEnv) ->
-        holeTypes.map(ty -> readEnv.templateHole(scratch, ty))
+        holeTypes.map(ty ->
+          TEnv::templateHoleFrom(ty.expandToVectors(scratch, readEnv, None()))
+        )
       ,
     );
     // This state is only used to render the failure diagnostics below.
@@ -2427,8 +2434,10 @@ base class TEnv{
   }
 
   // Classifies the strings a template hole's type can produce at runtime.
-  private fun templateHole(subst: mutable Subst, hole: TType): TemplateHole {
-    hole.expandToVectors(subst, this, None()) match {
+  static fun templateHoleFrom(
+    expanded: ?(mutable Vector<TInst>, mutable Vector<Clause>),
+  ): TemplateHole {
+    expanded match {
     // Top: `unknown` (which tsc rejects here) or `any`.
     | None() -> THNotStringifiable()
     | Some((insts, clauses)) ->
@@ -2827,20 +2836,28 @@ base class TEnv{
     pos: PosRange,
     keyType: TType,
   ): IndexKeyKinds {
-    this.materializeRead<IndexKeyKinds>(tcenvb, pos, (scratch, readEnv) ->
-      readEnv.readIndexKeyKinds(scratch, pos, keyType)
+    this.materializeReadContext<IndexKeyKinds>(
+      tcenvb,
+      pos,
+      context ->
+        TEnv::indexKeyKindsFrom(
+          pos,
+          context.concreteTypes(keyType, Covariant()),
+        ),
+      (scratch, readEnv) ->
+        TEnv::indexKeyKindsFrom(
+          pos,
+          keyType.getSTypes(scratch, readEnv, Covariant()),
+        )
+      ,
     )
   }
 
-  private fun readIndexKeyKinds(
-    subst: mutable Subst,
-    pos: PosRange,
-    keyType: TType,
-  ): IndexKeyKinds {
+  static fun indexKeyKindsFrom(pos: PosRange, types: ?STypes): IndexKeyKinds {
     hasString = false;
     hasNumber = false;
     hasSymbol = false;
-    valid = keyType.getSTypes(subst, this, Covariant()) match {
+    valid = types match {
     | Some(stypes) ->
       stypes.all(stype ->
         stype match {
@@ -2908,7 +2925,11 @@ base class TEnv{
     tenv: TEnv,
     thisTy: TType,
   ): Bool {
-    thisTy.getSTypes(subst, tenv, Covariant()) match {
+    TEnv::receiverlessThisFrom(thisTy.getSTypes(subst, tenv, Covariant()))
+  }
+
+  static fun receiverlessThisFrom(types: ?STypes): Bool {
+    types match {
     | Some(sTypes) ->
       sTypes.all(st ->
         st is TPrimUnit(TVoid(), _) || st is TPrimUnit(TUndefined(), _)
@@ -2950,9 +2971,10 @@ base class TEnv{
         // outer class/type-def instantiation binding. This gives the
         // method its own scope for `tparam.name.value` within its
         // signature. (#606)
-        !this.bindings[tparam.name.value] = this.materializeTypeRead(
+        !this.bindings[tparam.name.value] = this.materializeReadContext<TType>(
           tcenvb,
           tparam.name.pos,
+          context -> context.constrainedParameter(tparam.name.pos, funTParam),
           (scratch, readEnv) ->
             TType::fromTParamWithConstraint(
               scratch,
@@ -3061,9 +3083,11 @@ base class TEnv{
         // function is effectively free: freely callable, assignable to a
         // no-`this` type, and its `.call`/`.apply`/`.bind` accept the natural
         // `undefined` receiver. Represent it as `NoThis`.
-        receiverless = this.materializeRead<Bool>(
+        receiverless = this.materializeReadContext<Bool>(
           tcenvb,
           t.pos,
+          context ->
+            TEnv::receiverlessThisFrom(context.concreteTypes(t, Covariant())),
           (scratch, readEnv) -> TEnv::isReceiverlessThis(scratch, readEnv, t),
         );
         if (receiverless) {
@@ -3104,26 +3128,33 @@ base class TEnv{
     keyExpr: Expr,
   ): FieldKey {
     keyType = this.typeOfExpr(tcenvb, keyExpr);
-    this.materializeRead<FieldKey>(tcenvb, keyExpr.pos, (scratch, readEnv) ->
-      readEnv.readComputedKey(scratch, keyExpr, keyType)
+    this.materializeReadContext<FieldKey>(
+      tcenvb,
+      keyExpr.pos,
+      context ->
+        TEnv::computedKeyFrom(
+          keyExpr.pos,
+          context.concreteTypes(keyType, Covariant()),
+        ),
+      (scratch, readEnv) ->
+        TEnv::computedKeyFrom(
+          keyExpr.pos,
+          keyType.getSTypes(scratch, readEnv, Covariant()),
+        )
+      ,
     )
   }
 
-  private fun readComputedKey(
-    subst: mutable Subst,
-    keyExpr: Expr,
-    keyType: TType,
-  ): FieldKey {
-    keyType
-      .getSTypes(subst, this, Covariant())
+  static fun computedKeyFrom(pos: PosRange, types: ?STypes): FieldKey {
+    types
       .flatMap(stypes -> stypes.singleElt())
-      .flatMap(stype -> FieldKey::ofSType(keyExpr.pos, stype)) match {
+      .flatMap(stype -> FieldKey::ofSType(pos, stype)) match {
     | Some(res) -> res
     | None() ->
       fatalError(
         Array[
           (
-            keyExpr.pos,
+            pos,
             "A computed property key must be a literal or a 'unique symbol'",
           ),
         ],
@@ -3132,9 +3163,8 @@ base class TEnv{
     }
   }
 
-  private fun readMappedKey(
-    subst: mutable Subst,
-    keyTType: TType,
+  static fun mappedKeyFrom(
+    expanded: ?(mutable Vector<TInst>, mutable Vector<Clause>),
   ): MappedKeyShape {
     hasString = false;
     hasNumber = false;
@@ -3144,7 +3174,7 @@ base class TEnv{
     isAbstract = false;
     // Keep the existing unresolved/abstract policy. This pass does not infer
     // keys from a bound or turn an unsupported mapped type into an empty one.
-    valid = keyTType.expandToVectors(subst, this, None()) match {
+    valid = expanded match {
     | None() -> false
     | Some((insts, clauses)) ->
       ok = insts.isEmpty();
@@ -3244,10 +3274,16 @@ base class TEnv{
           | Some(FNRemove _) -> false
           };
           keyTType = this.normalize(tcenvb, kType);
-          shape = this.materializeRead<MappedKeyShape>(
+          shape = this.materializeReadContext<MappedKeyShape>(
             tcenvb,
             this.instantiateAt.default(fd.pos),
-            (scratch, readEnv) -> readEnv.readMappedKey(scratch, keyTType),
+            context ->
+              TEnv::mappedKeyFrom(context.expandVectors(keyTType, None())),
+            (scratch, readEnv) ->
+              TEnv::mappedKeyFrom(
+                keyTType.expandToVectors(scratch, readEnv, None()),
+              )
+            ,
           );
           hasString = shape.hasString;
           hasNumber = shape.hasNumber;

@@ -507,9 +507,10 @@ extension class TypeChecker {
       TType::top(sourceType.pos),
       Some(Covariant()),
     );
-    sourceRead = this.materializeTypeRead(
+    sourceRead = this.materializeReadContext<TType>(
       tcenv,
       sourceType.pos,
+      context -> context.expand(sourceType, Some(Covariant())),
       (scratch, readEnv) ->
         sourceType.expand(scratch, readEnv, Some(Covariant()))
       ,

@@ -192,10 +192,20 @@ class TType private {
     pos: PosRange,
     tparam: TParamWithConstraint,
   ): TType {
+    TType::fromTParamWithConstraintWith(pos, tparam, (left, right) ->
+      TType::interForTypeConstruction(subst, tenv, left, right)
+    )
+  }
+
+  static fun fromTParamWithConstraintWith(
+    pos: PosRange,
+    tparam: TParamWithConstraint,
+    intersect: (TType, TType) -> TType,
+  ): TType {
     ty = TType::fromTParam(pos, tparam.withoutConstraint());
     tparam.cstr match {
     | None() -> ty
-    | Some(cstr) -> TType::interForTypeConstruction(subst, tenv, ty, cstr)
+    | Some(cstr) -> intersect(ty, cstr)
     }
   }
 
@@ -241,8 +251,13 @@ class TType private {
         className.pos.fileName,
         Id::createThis(),
         Some(
-          tenv.materializeTypeRead(subst, className.pos, (scratch, readEnv) ->
-            cstr.expand(scratch, readEnv, Some(Covariant()))
+          tenv.materializeReadContext<TType>(
+            subst,
+            className.pos,
+            context -> context.expand(cstr, Some(Covariant())),
+            (scratch, readEnv) ->
+              cstr.expand(scratch, readEnv, Some(Covariant()))
+            ,
           ),
         ),
       ),
@@ -264,7 +279,18 @@ class TType private {
     ty: TType,
     prim: TPrim,
   ): TType {
-    expanded = ty.expand(subst, tenv, None());
+    TType::removeConstantFromExpanded(
+      ty.pos,
+      ty.expand(subst, tenv, None()),
+      prim,
+    )
+  }
+
+  static fun removeConstantFromExpanded(
+    resultPos: PosRange,
+    expanded: TType,
+    prim: TPrim,
+  ): TType {
     newClauses = expanded.clauses.mapSTypes(stypesOpt ->
       stypesOpt.map(stypes ->
         stypes.filterMap(stype ->
@@ -298,7 +324,7 @@ class TType private {
         )
       )
     );
-    TType::create(ty.pos, expanded.insts, newClauses)
+    TType::create(resultPos, expanded.insts, newClauses)
   }
 
   static fun removeUndefined(
@@ -446,7 +472,17 @@ class TType private {
     expandTVars: ?Variance,
     f: (?STypes) -> ?STypes,
   ): TType {
-    this.expandToVectors(subst, tenv, expandTVars) match {
+    this.mapSTypesWith(
+      inst -> this.expandInstance(subst, tenv, expandTVars, inst),
+      f,
+    )
+  }
+
+  fun mapSTypesWith(
+    expandInst: (TInst) -> ?TType,
+    f: (?STypes) -> ?STypes,
+  ): TType {
+    this.expandGraph(expandInst) match {
     | None() ->
       f(None()) match {
       | Some(stypes) -> TType::fromSTypes(this.pos, stypes)
@@ -2326,18 +2362,28 @@ class TIndexes{} extends TIndexesBase uses XXHashable, Orderable {
     if (indexes.isEmpty()) {
       TIndexes::empty
     } else {
-      tenv.materializeRead<TIndexes>(
+      tenv.materializeReadContext<TIndexes>(
         tcenvb,
         indexes[0].i1.pos,
-        (scratch, readEnv) -> TIndexes::createRead(scratch, readEnv, indexes),
+        context ->
+          TIndexes::createWith(indexes, fields ->
+            context.mergeIndexKind(fields)
+          ),
+        (scratch, readEnv) ->
+          TIndexes::createWith(indexes, fields -> {
+            subst = Subst::mcreate(scratch);
+            TIndexes::mergeKindWith(fields, (left, right) ->
+              TField::interIndex(subst, readEnv, left, right)
+            )
+          })
+        ,
       )
     }
   }
 
-  private static fun createRead(
-    tcenvb: mutable TCEnvBase,
-    tenv: TEnv,
+  static fun createWith(
     indexes: readonly Vector<(IndexKeyKinds, TField)>,
+    mergeKind: (readonly Vector<TField>) -> ?TField,
   ): TIndexes {
     stringIndexes: mutable Vector<TField> = mutable Vector[];
     numberIndexes: mutable Vector<TField> = mutable Vector[];
@@ -2347,27 +2393,25 @@ class TIndexes{} extends TIndexesBase uses XXHashable, Orderable {
       if (keyKinds.hasNumber) numberIndexes.push(f);
       if (keyKinds.hasSymbol) symbolIndexes.push(f);
     };
-    stringIndex = TIndexes::mergeIndexesForKind(tcenvb, tenv, stringIndexes);
-    numberIndex = TIndexes::mergeIndexesForKind(tcenvb, tenv, numberIndexes);
-    symbolIndex = TIndexes::mergeIndexesForKind(tcenvb, tenv, symbolIndexes);
+    stringIndex = mergeKind(stringIndexes);
+    numberIndex = mergeKind(numberIndexes);
+    symbolIndex = mergeKind(symbolIndexes);
     TIndexes{stringIndex, numberIndex, symbolIndex}
   }
 
   // Merge multiple indexes for the same key kind into a single TField.
   // Getter (covariant) → intersection, setter (contravariant) → union.
-  private static fun mergeIndexesForKind(
-    tcenvb: mutable TCEnvBase,
-    tenv: TEnv,
+  static fun mergeKindWith(
     indexes: readonly Vector<TField>,
+    meetIndex: (TField, TField) -> TField,
   ): ?TField {
     indexesIt = indexes.iterator();
     result = indexesIt.next() match {
     | None() -> return None()
     | Some(first) -> first
     };
-    subst = Subst::mcreate(tcenvb);
     for (other in indexesIt) {
-      !result = TField::interIndex(subst, tenv, result, other);
+      !result = meetIndex(result, other);
     };
     Some(result)
   }
