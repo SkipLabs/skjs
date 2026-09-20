@@ -353,9 +353,9 @@ temporary source is removed after checking.
 
 Validation: 221 checker tests, 65 verifier suites and the unchanged 278 curated
 proofs pass, with no unexpected producer or proof outcomes. Formatting and shell
-checks pass. Three paired runs against the saved pre-projection binary preserve
-exact diagnostics; median seconds before/after are 0.726/0.722 for array
-literals, 1.075/1.067 for generic membership and 5.327/5.221 for deep
+checks pass. Three paired runs against the saved pre-declaration binary preserve
+exact diagnostics; median seconds before/after are 0.835/0.785 for array
+literals, 1.159/1.148 for generic membership and 5.686/5.826 for deep
 collections. These samples show comparable timings, not a general performance
 guarantee. No source corpus fixtures changed; native tests do not change census
 selection.
@@ -457,17 +457,24 @@ requirement. Symbol identity uses that fixed property path after resolving its
 carrier declaration. Diagnostics receive only the reporting/formatting operations
 they need; they do not justify type decisions.
 
-A2 is **not complete**. Three raw materialization call sites remain in `TEnv`:
-named instantiation and class statics (two sites). The raw materialization helpers
-are now private, so ordinary consumers cannot introduce new unrestricted
-validation callbacks. Negative compilation probes reject external calls to both
-raw helpers; the temporary sources are removed and the restored tree checks. The transitive declaration dependencies still matter:
-`TypeReadContext` calls legacy named expansion, primitive-class construction and
-value-declaration lookup for symbol carriers. Class/alias declaration evaluation
-must be separated from its solver dependencies before this is end-to-end
-read-only. Remove the remaining private raw helpers only after those paths have
-migrated. Detached compatibility probes and diagnostics must remain explicitly
-separate from checking publication.
+Declaration construction now borrows `TypeReadDeclaration`, which carries syntax
+lookup and diagnostics plus the active read context, not a candidate owner.
+Class fields, alias parameter binding, enum types, signature normalization,
+heritage aliases and rest-parameter constraints use that interface. Nested
+materialization preserves lexical environment changes, the snapshot and the
+transitive read frame. Named expansion, primitive boxing and symbol-carrier
+lookup no longer pass a solver into declaration evaluation. Compatibility probes
+return only diagnostics; diagnostic rendering returns only text. Written source
+type arguments still use live constraint checking, whose proposal separation
+belongs to A3.
+
+The two raw materialization helpers and all three of their call sites are removed.
+`Subst::mcreate` refuses the declaration-only context rather than silently creating
+an empty candidate store. This is a dynamic backstop for the shared declaration
+base type; no solver accessor is exposed by the borrowed context. The underlying
+owner observation primitive is still public for native protocol tests. Restrict
+that entry point and complete the access/lifetime and performance closure audit
+before marking A2 done.
 
 ### Remaining A2 work and estimate
 
@@ -479,7 +486,7 @@ an estimate, not a closure claim; recursive normalization is the largest uncerta
 | --- | --- | --- |
 | Shape consumers | Structural traversal migrated for branch elimination and iterator/member projection; algebra and declaration dependencies remain in the next rows. | Structural migration done |
 | Read-only type algebra | Fixed-read intersection and subtype orchestration implemented using shared structural rules. Remaining legacy declaration dependencies are in the next row. | Backend implemented; declaration dependency open |
-| Declaration normalization | Migrate named expansion, class/alias construction and symbol carrier lookup; three private raw materialization calls remain in `TEnv`. Audit transitive solver dependencies before retiring those helpers. | 1–2 |
+| Declaration normalization | Class/alias construction and symbol carrier lookup borrow the read context; raw materialization helpers retired. | Migrated |
 | Closure audit | Retire raw validation callbacks and superseded guards, exercise compiler-negative access checks, then qualify behavior, verifier outcomes and performance. | 1 |
 
 These packages share recursive dependencies and may need interleaving. A2 needs

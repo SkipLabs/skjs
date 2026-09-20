@@ -14,10 +14,99 @@ base class TypeArgumentCheck {
   | ValidateTypeArguments()
   | ProbeTypeArguments()
 
+  // Source expression inference still owns its proposal callback (A3).
   fun check(subst: mutable Subst, runCheck: (mutable Subst) -> void): void {
     this match {
     | ValidateTypeArguments() -> runCheck(subst)
     | ProbeTypeArguments() -> subst.withTypeArgumentProbe(runCheck)
+    }
+  }
+
+  fun checkDeclaration(
+    tcenvb: mutable TCEnvBase,
+    tenv: TEnv,
+    pos: PosRange,
+    argument: TType,
+    constraint: TType,
+    constraintPos: PosRange,
+  ): void {
+    tcenvb match {
+    | declaration @ TypeReadDeclaration _ ->
+      invariant(this is ProbeTypeArguments());
+      declaration.checkCompatibility(
+        tenv,
+        pos,
+        argument,
+        constraint,
+        constraintPos,
+      )
+    | _ ->
+      subst = Subst::candidateOwner(tcenvb) match {
+      | Some(owner) -> owner
+      | None() -> Subst::mcreate(tcenvb)
+      };
+      this match {
+      | ValidateTypeArguments() ->
+        static::checkConstraint(
+          subst,
+          subst,
+          tenv,
+          pos,
+          argument,
+          constraint,
+          constraintPos,
+        )
+      | ProbeTypeArguments() ->
+        subst.withTypeArgumentProbe(probe ->
+          static::checkConstraint(
+            probe,
+            subst,
+            tenv,
+            pos,
+            argument,
+            constraint,
+            constraintPos,
+          )
+        )
+      }
+    }
+  }
+
+  // Only reports diagnostics. No solved type, state or success receipt escapes
+  // a compatibility probe into declaration construction.
+  static fun checkConstraint(
+    checker: mutable Subst,
+    diagnostic: mutable Subst,
+    tenv: TEnv,
+    pos: PosRange,
+    argument: TType,
+    constraint: TType,
+    constraintPos: PosRange,
+  ): void {
+    TType::isSub(checker, tenv, argument, constraint) match {
+    | STOk() -> void
+    | err @ STErrorOnTType _ ->
+      checker.subtypingError(
+        diagnostic,
+        tenv,
+        Array[
+          (pos, "Type argument does not satisfy the constraint"),
+          (
+            argument.pos,
+            `This is of type: ${quoteRenderedType(
+              prettyPrintType(false, argument, diagnostic, tenv),
+            )}`,
+          ),
+          (
+            constraintPos,
+            `It does not satisfy the constraint: ${quoteRenderedType(
+              prettyPrintType(false, constraint, diagnostic, tenv),
+            )}`,
+          ),
+        ],
+        err,
+        TSCode(2344),
+      )
     }
   }
 }
@@ -231,14 +320,22 @@ base class TEnv{
   ): TType {
     // The supplied candidate owner, not an arbitrary fresh normalization state,
     // must establish the reads. Scratch inherits that owner's diagnostics too.
-    this.materializeTypeRead(baseSubst, name.pos, (scratch, readEnv) ->
-      readEnv.instantiateRead(scratch, scratch, name, targs)
+    this.materializeReadContext<TType>(
+      baseSubst,
+      name.pos,
+      context -> context.instantiate(name, targs),
+      (scratch, readEnv) ->
+        readEnv.instantiateDeclaration(
+          Subst::mcreate(scratch, scratch),
+          name,
+          targs,
+        )
+      ,
     )
   }
 
-  private fun instantiateRead(
+  fun instantiateDeclaration(
     tcenvb: mutable TCEnvBase,
-    baseSubst: readonly Subst,
     name: Name,
     targs: TArgs,
   ): TType {
@@ -265,7 +362,6 @@ base class TEnv{
 
     tdef = this.defMap.getType(tcenvb, name);
 
-    subst = Subst::mcreate(tcenvb, baseSubst);
     tdef match {
     | ta @ TypeDef{tdefParams} ->
       // An alias that requires itself denotes nothing, and unfolding it need
@@ -285,7 +381,7 @@ base class TEnv{
         return TType::inst(name, targs);
       };
       !this = this.instantiateTParams(
-        subst,
+        tcenvb,
         name.pos,
         targs.targs,
         tdefParams,
@@ -294,8 +390,8 @@ base class TEnv{
       );
       !this.instantiateAt = Some(name.pos);
       this.normalize(tcenvb, this.getTypeDefBody(tcenvb.context, ta))
-    | Class _ -> this.new(subst, name, targs.targs)
-    | en @ Enum _ -> this.enumUnionType(subst, en)
+    | Class _ -> this.new(tcenvb, name, targs.targs)
+    | en @ Enum _ -> this.enumUnionType(tcenvb, en)
     // Enum-member types (`E.A`) are resolved directly in normalize and never
     // wrapped in a TInst, so instantiate never receives one.
     | EnumMemberDef _ ->
@@ -343,7 +439,7 @@ base class TEnv{
   //    this far: it is rejected at the declaration by normalize's reference-site
   //    check (the rigid TParam V fails C there).
   private fun instantiateTParams(
-    subst: mutable Subst,
+    tcenvb: mutable TCEnvBase,
     pos: PosRange,
     tArgs: Array<TType>,
     tParams: Array<TypeParam>,
@@ -357,8 +453,6 @@ base class TEnv{
     // instantiation reaching it is refused.
     selfTd: ?TypeDef = None(),
   ): this {
-    tcenvb: mutable TCEnvBase = subst;
-
     // A cycle through a second alias's default (which `typeReachesTypeDef`
     // below does not follow) leads back to instantiating the same alias with
     // no arguments; refuse it as excessively deep rather than recurse forever.
@@ -465,33 +559,14 @@ base class TEnv{
         // string). For an unbound inference-variable argument this makes the
         // check vacuous, which is sound — see the constraint-check soundness
         // note on this function.
-        argumentCheck.check(subst, constraintSubst -> {
-          TType::isSub(constraintSubst, this, tArg, cstrTy) match {
-          | STOk() -> void
-          | err @ STErrorOnTType _ ->
-            tcenvb.subtypingError(
-              subst,
-              this,
-              Array[
-                (pos, "Type argument does not satisfy the constraint"),
-                (
-                  tArg.pos,
-                  `This is of type: ${quoteRenderedType(
-                    prettyPrintType(false, tArg, subst, this),
-                  )}`,
-                ),
-                (
-                  cstr.pos,
-                  `It does not satisfy the constraint: ${quoteRenderedType(
-                    prettyPrintType(false, cstrTy, subst, this),
-                  )}`,
-                ),
-              ],
-              err,
-              TSCode(2344),
-            )
-          }
-        })
+        argumentCheck.checkDeclaration(
+          tcenvb,
+          this,
+          pos,
+          tArg,
+          cstrTy,
+          cstr.pos,
+        )
       };
       !this.bindings[tParam.name.value] = tArg;
     };
@@ -953,34 +1028,40 @@ base class TEnv{
   }
 
   fun new(
-    subst: mutable Subst,
+    tcenvb: mutable TCEnvBase,
     className: Name,
     targs: Array<TType>,
     filter: ClassFieldValue ~> Bool = _ ~> true,
   ): TType {
-    this.newOf(subst, this.getClass(subst, className), className, targs, filter)
+    this.newOf(
+      tcenvb,
+      this.getClass(tcenvb, className),
+      className,
+      targs,
+      filter,
+    )
   }
 
   // new against a class the caller has already resolved.
   fun newOf(
-    subst: mutable Subst,
+    tcenvb: mutable TCEnvBase,
     c: Class,
     className: Name,
     targs: Array<TType>,
     filter: ClassFieldValue ~> Bool = _ ~> true,
   ): TType {
-    obj = this.newObjectOf(subst, c, className, targs, filter);
+    obj = this.newObjectOf(tcenvb, c, className, targs, filter);
     TType::single(obj)
   }
 
   fun newConstructor(
-    subst: mutable Subst,
+    tcenvb: mutable TCEnvBase,
     className: Name,
     targs: Array<TType>,
   ): CstrType {
     this.newConstructorOf(
-      subst,
-      this.getClass(subst, className),
+      tcenvb,
+      this.getClass(tcenvb, className),
       className,
       targs,
     )
@@ -988,13 +1069,13 @@ base class TEnv{
 
   // newConstructor against a class the caller has already resolved.
   fun newConstructorOf(
-    subst: mutable Subst,
+    tcenvb: mutable TCEnvBase,
     c: Class,
     className: Name,
     targs: Array<TType>,
   ): CstrType {
     if (c.tparams.size() != targs.size()) {
-      subst.error(
+      tcenvb.error(
         Array[
           (
             className.pos,
@@ -1006,20 +1087,20 @@ base class TEnv{
     };
     visitedClasses = SortedSet[];
     CstrType(
-      this.findConstructor(subst, visitedClasses, className, c.tparams, targs),
+      this.findConstructor(tcenvb, visitedClasses, className, c.tparams, targs),
       targs,
     )
   }
 
   fun newObject(
-    subst: mutable Subst,
+    tcenvb: mutable TCEnvBase,
     className: Name,
     targs: Array<TType>,
     filter: ClassFieldValue ~> Bool = _ ~> true,
   ): TObject {
     this.newObjectOf(
-      subst,
-      this.getClass(subst, className),
+      tcenvb,
+      this.getClass(tcenvb, className),
       className,
       targs,
       filter,
@@ -1030,14 +1111,14 @@ base class TEnv{
   // also needs the class's tparams (to build `targs` with makeTArgsOf or
   // makeSkolemTArgsOf) would otherwise resolve the same name twice.
   fun newObjectOf(
-    subst: mutable Subst,
+    tcenvb: mutable TCEnvBase,
     c: Class,
     className: Name,
     targs: Array<TType>,
     filter: ClassFieldValue ~> Bool = _ ~> true,
   ): TObject {
     this.objectOfFields(
-      this.newFieldsOf(subst, c, className, targs, filter),
+      this.newFieldsOf(tcenvb, c, className, targs, filter),
       className,
       targs,
     )
@@ -1063,14 +1144,14 @@ base class TEnv{
   // `TFields::inter`) wants this rather than a TObject it has to unwrap --
   // and the signature, not a comment, is then what says there is one branch.
   fun newFieldsOf(
-    subst: mutable Subst,
+    tcenvb: mutable TCEnvBase,
     c: Class,
     className: Name,
     targs: Array<TType>,
     filter: ClassFieldValue ~> Bool = _ ~> true,
   ): TFields {
     if (c.tparams.size() != targs.size()) {
-      subst.error(
+      tcenvb.error(
         Array[
           (
             className.pos,
@@ -1087,7 +1168,7 @@ base class TEnv{
     thisType = TType::inst(className, TArgs(targs));
     !this.bindings["this"] = thisType;
     constructor = this.addFields(
-      subst,
+      tcenvb,
       fields,
       symbolFields,
       indexes,
@@ -1101,7 +1182,7 @@ base class TEnv{
     );
     constructor match {
     | Some(constructorTy) ->
-      subst.notSupported(constructorTy.pos, "new returning a constructor")
+      tcenvb.notSupported(constructorTy.pos, "new returning a constructor")
     | None() -> void
     };
     isArray = c.kind match {
@@ -1119,24 +1200,27 @@ base class TEnv{
     | CKClass() ->
       (CAbsent(), CAbsent())
     };
-    tIndexes = TIndexes::create(subst, this, indexes);
+    tIndexes = TIndexes::create(tcenvb, this, indexes);
     TFields::create{fields, symbolFields, tIndexes, call, new, isArray}
   }
 
-  fun newStatic(subst: mutable Subst, className: Name): TType {
-    obj = this.newStaticObject(subst, className);
+  fun newStatic(tcenvb: mutable TCEnvBase, className: Name): TType {
+    obj = this.newStaticObject(tcenvb, className);
     TType::single(obj)
   }
 
-  private fun newStaticObject(subst: mutable Subst, className: Name): TObject {
-    c = this.getClass(subst, className);
+  private fun newStaticObject(
+    tcenvb: mutable TCEnvBase,
+    className: Name,
+  ): TObject {
+    c = this.getClass(tcenvb, className);
     targs = Array[];
     visitedClasses = SortedSet[];
     fields = mutable Map[];
     symbolFields = mutable Map[];
     indexes = mutable Vector[];
     constructor = this.addFields(
-      subst,
+      tcenvb,
       fields,
       symbolFields,
       indexes,
@@ -1149,9 +1233,9 @@ base class TEnv{
     pos = className.pos;
     new = constructor match {
     | Some(tfuns) -> tfuns
-    | None() -> this.makeEmptyConstructor(subst, pos, className, c)
+    | None() -> this.makeEmptyConstructor(tcenvb, pos, className, c)
     };
-    tIndexes = TIndexes::create(subst, this, indexes);
+    tIndexes = TIndexes::create(tcenvb, this, indexes);
     TObject::createSingleBranch(
       TFields::create{
         fields,
@@ -1295,7 +1379,7 @@ base class TEnv{
   }
 
   private fun processClassSetup(
-    subst: mutable Subst,
+    tcenvb: mutable TCEnvBase,
     visitedClasses: SortedSet<String>,
     withTParams: Bool,
     className: Name,
@@ -1313,7 +1397,7 @@ base class TEnv{
       );
     };
     !visitedClasses = visitedClasses.set(className.value);
-    defs = this.defMap.getAll(subst, className);
+    defs = this.defMap.getAll(tcenvb, className);
     defsCls = defs.filterMap(def ->
       def match {
       | cls @ Class _ -> Some(cls)
@@ -1328,7 +1412,7 @@ base class TEnv{
       )
     | 1 -> void
     | _ ->
-      subst.error(
+      tcenvb.error(
         Array[(className.pos, `Duplicate class declaration '${className}'`)],
         TSCode(2300),
       )
@@ -1338,7 +1422,7 @@ base class TEnv{
       (withTParams || targs.size() != 0) &&
       targs.size() != cls.tparams.size()
     ) {
-      subst.error(
+      tcenvb.error(
         Array[
           (
             className.pos,
@@ -1351,7 +1435,7 @@ base class TEnv{
     };
     if (withTParams) {
       !this = this.instantiateTParams(
-        subst,
+        tcenvb,
         className.pos,
         targs,
         cls.tparams,
@@ -1363,7 +1447,7 @@ base class TEnv{
 
   // Returns the type of the constructor, if any.
   private fun addFields(
-    subst: mutable Subst,
+    tcenvb: mutable TCEnvBase,
     acc: mutable Map<FieldNameString, TField>,
     symbolFields: mutable Map<FieldNameString, TField>,
     indexes: mutable Vector<(IndexKeyKinds, TField)>,
@@ -1374,7 +1458,7 @@ base class TEnv{
     filter: ClassFieldValue ~> Bool,
   ): ?TFuns {
     (!this, cls) = this.processClassSetup(
-      subst,
+      tcenvb,
       visitedClasses,
       isStatic is None(),
       className,
@@ -1383,9 +1467,9 @@ base class TEnv{
     for (extend in cls.extends_) {
       extend.value match {
       | TAInst(parentName, paramTArgs) ->
-        if (this.hasClassDef(subst, parentName)) {
+        if (this.hasClassDef(tcenvb, parentName)) {
           _ = this.addFields(
-            subst,
+            tcenvb,
             acc,
             symbolFields,
             indexes,
@@ -1393,7 +1477,7 @@ base class TEnv{
             isStatic,
             parentName,
             if (isStatic is Some _) Array[] else {
-              paramTArgs.map(targ -> this.normalize(subst, targ))
+              paramTArgs.map(targ -> this.normalize(tcenvb, targ))
             },
             filter,
           )
@@ -1404,7 +1488,7 @@ base class TEnv{
           // known members); the alias's members are merged structurally, as if
           // intersected with the interface body. Resolve and merge them here.
           this.addFieldsFromAliasBase(
-            subst,
+            tcenvb,
             acc,
             symbolFields,
             indexes,
@@ -1413,7 +1497,7 @@ base class TEnv{
           )
         }
       | _ ->
-        subst.error(
+        tcenvb.error(
           Array[
             (
               extend.pos,
@@ -1425,7 +1509,7 @@ base class TEnv{
       }
     };
     constructor: ?TFuns = None();
-    fields = this.getClassFields(subst.context, cls);
+    fields = this.getClassFields(tcenvb.context, cls);
     for (fieldType in fields) {
       fieldType match {
       | field @ ClassFieldValue _ ->
@@ -1441,7 +1525,7 @@ base class TEnv{
           | ModPrivate _ -> !fieldAccess = FAPrivate(cls.name)
           | ModProtected _ -> void /* protected is silently treated as public */
           | mod ->
-            subst.error(
+            tcenvb.error(
               Array[
                 (
                   modifier.pos,
@@ -1455,13 +1539,13 @@ base class TEnv{
         if (fieldIsStatic != isStatic.isSome()) continue;
         if (fieldIsStatic) {
           if (fieldIsReadonly is None()) {
-            subst.error(
+            tcenvb.error(
               Array[(field.pos, "A static field must be marked 'readonly'")],
               SKJSCode(2019),
             )
           };
           field.optional.each(pos ->
-            subst.error(
+            tcenvb.error(
               Array[(pos, "A static field cannot be optional")],
               SKJSCode(2020),
             )
@@ -1481,7 +1565,7 @@ base class TEnv{
           None()
         };
         type: TType = field.type match {
-        | Some(ty) -> this.normalize(subst, ty, isTopLevelConst, displayName)
+        | Some(ty) -> this.normalize(tcenvb, ty, isTopLevelConst, displayName)
         | None() ->
           // No annotation: synthesize a placeholder TInst whose name
           // isn't resolvable, so any later attempt to use the field's
@@ -1518,8 +1602,8 @@ base class TEnv{
 
           acc![f.name] = f
         | FNColon(indexName, indexType) ->
-          keyType = this.normalize(subst, indexType);
-          keyKinds = this.resolveIndexKeyKinds(subst, indexName.pos, keyType);
+          keyType = this.normalize(tcenvb, indexType);
+          keyKinds = this.resolveIndexKeyKinds(tcenvb, indexName.pos, keyType);
           indexes.push(
             (
               keyKinds,
@@ -1535,7 +1619,7 @@ base class TEnv{
             ),
           )
         | _ ->
-          subst.error(
+          tcenvb.error(
             Array[
               (field.pos, "This field name syntax is not supported by SKJS"),
             ],
@@ -1546,7 +1630,7 @@ base class TEnv{
         if (isStatic is None()) continue;
         constructor match {
         | Some(constructorTy) ->
-          subst.error(
+          tcenvb.error(
             Array[
               (fdPos, "Multiple constructor implementations are not allowed."),
               (constructorTy.pos, "Previous constructor was here"),
@@ -1556,7 +1640,7 @@ base class TEnv{
         | None() -> void
         };
         !constructor = Some(
-          this.makeConstructor(subst, className, isStatic.fromSome(), fd),
+          this.makeConstructor(tcenvb, className, isStatic.fromSome(), fd),
         )
       | fd @ ClassFieldMethod _ ->
         metIsStatic = fd.isStatic();
@@ -1576,7 +1660,7 @@ base class TEnv{
         } else {
           Some(TType::inst(className, TArgs(targs)))
         };
-        metTFuns = this.funDecl(subst, implicitThisOpt, fd, cgNode);
+        metTFuns = this.funDecl(tcenvb, implicitThisOpt, fd, cgNode);
         metType = TType::single(TObject::createCall(metTFuns));
         metAccess: FieldAccess = FAPublic();
         for (modifier in fd.modifiers.modifiers) {
@@ -1587,7 +1671,8 @@ base class TEnv{
         };
         fd.name match {
         | FNNormal(name) -> FKName(name, TString())
-        | FNComputed(keyExpr) -> this.resolveComputedKeyFieldKey(subst, keyExpr)
+        | FNComputed(keyExpr) ->
+          this.resolveComputedKeyFieldKey(tcenvb, keyExpr)
         } match {
         | FKSymbol(exprPos, uniqueId) ->
           field = TField::create{
@@ -1627,7 +1712,7 @@ base class TEnv{
   // Only instance members are inherited — a type alias declares no statics, so
   // the static-collection pass contributes nothing.
   private fun addFieldsFromAliasBase(
-    subst: mutable Subst,
+    tcenvb: mutable TCEnvBase,
     acc: mutable Map<FieldNameString, TField>,
     symbolFields: mutable Map<FieldNameString, TField>,
     indexes: mutable Vector<(IndexKeyKinds, TField)>,
@@ -1639,8 +1724,18 @@ base class TEnv{
     } else {
       // `normalize` resolves the alias (reporting "Cannot find name" if the
       // name is undefined); `expand` then drives it to its object structure.
-      aliasTy = this.normalize(subst, extend);
-      aliasTy.expand(subst, this, Some(Covariant())).clauses.getObject() match {
+      aliasTy = this.normalize(tcenvb, extend);
+      this.materializeReadContext<?TObject>(
+        tcenvb,
+        extend.pos,
+        context ->
+          context.expand(aliasTy, Some(Covariant())).clauses.getObject(),
+        (scratch, readEnv) ->
+          aliasTy
+            .expand(scratch, readEnv, Some(Covariant()))
+            .clauses.getObject()
+        ,
+      ) match {
       | Some(obj) if (obj.getBranches().size() == 1) ->
         tfields = obj.getBranches()[0];
         for (f in tfields.fields.toArray()) {
@@ -1657,7 +1752,7 @@ base class TEnv{
           tfields.call is CFunction() ||
           tfields.new is CPresent _
         ) {
-          subst.notSupported(
+          tcenvb.notSupported(
             extend.pos,
             "extending a type alias that has a call or construct signature",
           )
@@ -1691,7 +1786,7 @@ base class TEnv{
       | _ ->
         // Not an object type (a union, primitive, etc.). tsc rejects this
         // with TS2312; match it.
-        subst.error(
+        tcenvb.error(
           Array[
             (
               extend.pos,
@@ -1705,14 +1800,14 @@ base class TEnv{
   }
 
   private fun findConstructor(
-    subst: mutable Subst,
+    tcenvb: mutable TCEnvBase,
     visitedClasses: SortedSet<String>,
     className: Name,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
   ): ?TFuns {
     this.findConstructorMethod(
-      subst,
+      tcenvb,
       visitedClasses,
       className,
       tparams,
@@ -1720,25 +1815,25 @@ base class TEnv{
     ) match {
     | None() -> None()
     | Some((tenv, fd)) ->
-      Some(tenv.makeConstructor(subst, className, tparams, fd))
+      Some(tenv.makeConstructor(tcenvb, className, tparams, fd))
     }
   }
 
   private fun findConstructorMethod(
-    subst: mutable Subst,
+    tcenvb: mutable TCEnvBase,
     visitedClasses: SortedSet<String>,
     className: Name,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
   ): ?(this, ClassFieldMethod) {
     (!this, cls) = this.processClassSetup(
-      subst,
+      tcenvb,
       visitedClasses,
       true,
       className,
       targs,
     );
-    clsFields = this.getClassFields(subst.context, cls);
+    clsFields = this.getClassFields(tcenvb.context, cls);
     for (fieldType in clsFields) {
       fieldType match {
       | fd @ ClassFieldMethod _ if (
@@ -1756,17 +1851,17 @@ base class TEnv{
         // so skip it instead of resolving it as a class — recursing would
         // fatal "Cannot find name" on the alias (#798). Mirrors the
         // hasClassDef guard in addFields' extends walk.
-        if (this.hasClassDef(subst, parentName)) {
+        if (this.hasClassDef(tcenvb, parentName)) {
           return this.findConstructorMethod(
-            subst,
+            tcenvb,
             visitedClasses,
             parentName,
             tparams,
-            paramTArgs.map(targ -> this.normalize(subst, targ)),
+            paramTArgs.map(targ -> this.normalize(tcenvb, targ)),
           )
         }
       | _ ->
-        subst.error(
+        tcenvb.error(
           Array[
             (
               extend.pos,
@@ -2238,6 +2333,15 @@ base class TEnv{
               tparams,
               selfTd,
             )
+          | declaration @ TypeReadDeclaration _ ->
+            _ = this.instantiateTParams(
+              declaration,
+              n.pos,
+              normTargs,
+              tparams,
+              ProbeTypeArguments(),
+              selfTd,
+            )
           | _ ->
             _ = this.instantiateTParams(
               Subst::mcreate(tcenvb),
@@ -2337,11 +2441,6 @@ base class TEnv{
         )
       ,
     );
-    // This state is only used to render the failure diagnostics below.
-    subst = Subst::candidateOwner(tcenvb) match {
-    | Some(owner) -> owner.cloneForTypeDiagnostics()
-    | None() -> Subst::mcreate(tcenvb)
-    };
 
     // A hole whose type may not be interpolated at all is an error, as in tsc,
     // and takes precedence over any reduction. Checking continues as `string`,
@@ -2357,7 +2456,7 @@ base class TEnv{
             (
               ty.pos,
               `Type ${quoteRenderedType(
-                prettyPrintType(false, holeType, subst, this),
+                this.describeDeclarationType(tcenvb, holeType),
               )} is not assignable to type 'string | number | bigint | boolean | null | undefined'`,
             ),
           ],
@@ -2686,6 +2785,18 @@ base class TEnv{
     if (changed) result else ty
   }
 
+  fun describeDeclarationType(tcenvb: mutable TCEnvBase, type: TType): String {
+    tcenvb match {
+    | declaration @ TypeReadDeclaration _ -> declaration.describe(this, type)
+    | _ ->
+      diagnostic = Subst::candidateOwner(tcenvb) match {
+      | Some(owner) -> owner.cloneForTypeDiagnostics()
+      | None() -> Subst::mcreate(tcenvb)
+      };
+      prettyPrintType(false, type, diagnostic, this)
+    }
+  }
+
   fun typeOfExpr(tcenvb: mutable TCEnvBase, expr: Expr): TType {
     (this, tcenvb) match {
     | (tc @ TypeChecker _, tcenv @ TCEnv _) ->
@@ -2745,9 +2856,10 @@ base class TEnv{
           )
         | Class{kind => CKInterface()} -> !sawInterface = true
         | Class _ ->
-          return this.materializeTypeRead(
+          return this.materializeReadContext<TType>(
             tcenvb,
             varName.pos,
+            context -> context.classStatics(varName),
             (scratch, readEnv) -> readEnv.newStatic(scratch, varName),
           )
         | TypeDef _ -> !sawTypeAlias = true
@@ -2762,8 +2874,11 @@ base class TEnv{
         interfaceAsValueError(tcenvb, varName);
         // Continue as if the interface name were a value, without allowing
         // recovery normalization to bypass the ownership boundary.
-        this.materializeTypeRead(tcenvb, varName.pos, (scratch, readEnv) ->
-          readEnv.newStatic(scratch, varName)
+        this.materializeReadContext<TType>(
+          tcenvb,
+          varName.pos,
+          context -> context.classStatics(varName),
+          (scratch, readEnv) -> readEnv.newStatic(scratch, varName),
         )
       } else if (sawTypeAlias && !sawValueDef) {
         typeAliasAsValueError(varName)
@@ -2984,7 +3099,6 @@ base class TEnv{
   ): TFuns {
     tafun match {
     | TAFun(isMethod, tParams, params, retType, cgNode) ->
-      subst = Subst::mcreate(tcenvb);
       TypeChecker::checkTypeParams(
         tcenvb,
         tParams,
@@ -3101,7 +3215,10 @@ base class TEnv{
         | Some(wpos) ->
           !optionalWitness = Some(wpos);
           optionalParams.push(
-            TType::unionUndefined(subst, this, paramType, wpos),
+            TType::unionStructural(
+              paramType,
+              TType::single(TPrimUnit(TUndefined(), wpos)),
+            ),
           )
         }
       };

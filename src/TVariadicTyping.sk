@@ -369,11 +369,17 @@ class VariadicTyping() {
             | TAInst(Name(_, "Array"), _) -> true
             | _ -> false
             };
-            subst = Subst::mcreate(tcenvb);
             normalizedCstr = tenv.normalize(tcenvb, cstr);
             resolvedCstr = normalizedCstr.insts.getUnique() match {
             | Some(TSInst(name, cstrTArgs)) ->
-              tenv.instantiate(subst, subst, name, cstrTArgs)
+              tenv.materializeReadContext<TType>(
+                tcenvb,
+                name.pos,
+                context -> context.instantiate(name, cstrTArgs),
+                (scratch, readEnv) ->
+                  readEnv.instantiate(scratch, scratch, name, cstrTArgs)
+                ,
+              )
             | _ -> normalizedCstr
             };
             isExpandedMutableArray = resolvedCstr.insts.getUnique() match {

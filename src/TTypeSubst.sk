@@ -211,6 +211,10 @@ mutable class Subst private {
     tcenvb: mutable TCEnvBase,
     state: readonly SubstState = SavedSubst::empty,
   ): mutable Subst {
+    invariant(
+      !(tcenvb is TypeReadDeclaration _),
+      "Declaration reads cannot create a solver",
+    );
     // Normalization often asks for a fresh Subst even though its type operands
     // contain candidates. During an observation it must use the SAME snapshot
     // and read frame, not an empty or privately solvable candidate store.

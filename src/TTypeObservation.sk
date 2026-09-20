@@ -113,10 +113,48 @@ mutable class TypeReadLifetime private {private mutable active: Bool = true} {
   }
 }
 
+// Declaration evaluation can look up syntax and report diagnostics, but has no
+// candidate owner. Nested normalization borrows the same observation and read
+// frame. Compatibility checks return no inference result.
+mutable class TypeReadDeclaration private {
+  private reader: mutable TypeReadContext,
+} extends TCEnvBase {
+  mutable fun readIn<T>(tenv: TEnv, read: (mutable TypeReadContext) -> T): T {
+    this.reader.readIn(tenv, read)
+  }
+
+  mutable fun checkCompatibility(
+    tenv: TEnv,
+    pos: PosRange,
+    argument: TType,
+    constraint: TType,
+    constraintPos: PosRange,
+  ): void {
+    this.reader.checkDeclarationCompatibility(
+      tenv,
+      pos,
+      argument,
+      constraint,
+      constraintPos,
+    )
+  }
+
+  mutable fun describe(tenv: TEnv, type: TType): String {
+    this.reader.describeDeclaration(tenv, type)
+  }
+
+  static fun mcreate(
+    context: mutable SKStore.Context,
+    results: mutable TCResultsAcc,
+    reader: mutable TypeReadContext,
+  ): mutable TypeReadDeclaration {
+    mutable TypeReadDeclaration{context, results, reader}
+  }
+}
+
 // Restricted validation capability. Consumers cannot allocate, grow, seal,
 // select a representation, clone solver state, or obtain a mutable owner.
-// Head traversal and type algebra use fixed candidate reads. Declaration
-// expansion and symbol lookup still use the guarded legacy kernel.
+// Head traversal, type algebra and declaration normalization use fixed reads.
 mutable class TypeReadContext private {
   private scratch: mutable Subst,
   private tenv: TEnv,
@@ -145,6 +183,75 @@ mutable class TypeReadContext private {
     result.value.fromSome()
   }
 
+  // Preserve lifetime, snapshot, query state and recursive premises while
+  // declaration syntax changes the lexical bindings in the environment.
+  mutable fun readIn<T>(tenv: TEnv, read: (mutable TypeReadContext) -> T): T {
+    this.lifetime.checkActive();
+    read(this with {tenv})
+  }
+
+  private mutable fun declaration(): mutable TypeReadDeclaration {
+    this.lifetime.checkActive();
+    TypeReadDeclaration::mcreate(
+      this.scratch.context,
+      this.scratch.results,
+      this,
+    )
+  }
+
+  mutable fun checkDeclarationCompatibility(
+    tenv: TEnv,
+    pos: PosRange,
+    argument: TType,
+    constraint: TType,
+    constraintPos: PosRange,
+  ): void {
+    this.lifetime.checkActive();
+    this.scratch.withTypeArgumentProbe(probe ->
+      TypeArgumentCheck::checkConstraint(
+        probe,
+        this.scratch,
+        tenv,
+        pos,
+        argument,
+        constraint,
+        constraintPos,
+      )
+    )
+  }
+
+  mutable fun describeDeclaration(tenv: TEnv, type: TType): String {
+    this.lifetime.checkActive();
+    prettyPrintType(false, type, this.scratch.cloneForTypeDiagnostics(), tenv)
+  }
+
+  mutable fun instantiate(name: Name, targs: TArgs): TType {
+    this.tenv.instantiateDeclaration(this.declaration(), name, targs)
+  }
+
+  mutable fun classStatics(name: Name): TType {
+    this.tenv.newStatic(this.declaration(), name)
+  }
+
+  private mutable fun expandNamed(name: Name, targs: TArgs): TType {
+    declaration = this.declaration();
+    identity = this.tenv.typeDefinitionIdentity(declaration, name);
+    if (this.tenv.seenInstantiate.contains(identity)) {
+      TType::inst(name, targs)
+    } else {
+      key = ExpansionKey(identity, targs);
+      this.scratch.seenExpansion.maybeGet(key) match {
+      | Some(expanded) -> expanded
+      | None() ->
+        expanded = this.tenv.instantiateDeclaration(declaration, name, targs);
+        if (expanded != TType::inst(name, targs)) {
+          this.scratch.!seenExpansion[key] = expanded
+        };
+        expanded
+      }
+    }
+  }
+
   mutable fun peekRaw(tv: TVar): ?TType {
     this.lifetime.checkActive();
     this.scratch.peekRaw(tv)
@@ -160,8 +267,7 @@ mutable class TypeReadContext private {
   // Occurrence constraints use the same fixed-read intersection backend.
   private mutable fun expandInstance(inst: TInst, variance: ?Variance): ?TType {
     inst match {
-    | TSInst(name, targs) ->
-      Some(this.tenv.expandNamed(this.scratch, name, targs))
+    | TSInst(name, targs) -> Some(this.expandNamed(name, targs))
     | TInter(tys) ->
       context = this with {tenv => this.tenv with {expandInter => true}};
       types = tys.values();
@@ -245,14 +351,14 @@ mutable class TypeReadContext private {
     )
   }
 
-  // Projection assembly is structural. Primitive boxing still goes through
-  // the declaration adapter until class normalization has migrated.
+  // Projection assembly is structural; primitive boxing borrows this same
+  // declaration observation instead of creating an inference environment.
   mutable fun keyOf(type: TType, pos: PosRange): TType {
     this.lifetime.checkActive();
     this.tenv.keyOfFromClauses(
       this.expandClauses(type, Covariant()),
       pos,
-      name -> this.tenv.newObject(this.scratch, name, Array[]),
+      name -> this.tenv.newObject(this.declaration(), name, Array[]),
     )
   }
 
@@ -261,7 +367,7 @@ mutable class TypeReadContext private {
     this.tenv.numberIndexedFromClauses(
       this.expandClauses(type, Covariant()),
       pos,
-      name -> this.tenv.newObject(this.scratch, name, Array[]),
+      name -> this.tenv.newObject(this.declaration(), name, Array[]),
     )
   }
 
@@ -303,10 +409,10 @@ mutable class TypeReadContext private {
   }
 
   // Resolve the declaration's carrier, then use fixed-read property and type
-  // projection. Only the initial value-declaration lookup remains legacy.
+  // projection. Carrier declaration evaluation borrows this observation.
   private mutable fun symbolId(pos: PosRange, property: String): ?String {
     carrier = this.tenv.typeOfExpr(
-      this.scratch,
+      this.declaration(),
       Expr(pos, Var(Name(pos, "Symbol"))),
     );
     symbolType = this.typeOfProperty(carrier, Name(pos, property), pos);
