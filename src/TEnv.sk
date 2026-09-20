@@ -1944,9 +1944,7 @@ base class TEnv{
       )
     | TAKeyOf(ty) ->
       targetType = this.normalize(tcenvb, ty);
-      this.materializeTypeRead(tcenvb, pos, (scratch, readEnv) ->
-        readEnv.keyOfType(scratch, targetType, pos)
-      )
+      this.keyOfType(tcenvb, targetType, pos)
     | tafun @ TAFun _ ->
       tfuns = this.normalizeFun(tcenvb, pos, tafun);
       TType::single(TObject::createCallWithPos(tfuns, pos))
@@ -2280,8 +2278,17 @@ base class TEnv{
         // T[number] requires an established shape. A generic bound is not
         // an exact result type for every instantiation of the parameter.
         objType = this.normalize(tcenvb, tyObj);
-        this.materializeTypeRead(tcenvb, pos, (scratch, readEnv) ->
-          readEnv.numberIndexedType(scratch, objType, pos)
+        this.materializeReadContext<TType>(
+          tcenvb,
+          pos,
+          context -> context.numberIndexed(objType, pos),
+          (scratch, readEnv) ->
+            readEnv.numberIndexedFromClauses(
+              objType.expandToClauses(scratch, readEnv, Covariant()),
+              pos,
+              name -> readEnv.newObject(scratch, name, Array[]),
+            )
+          ,
         )
       | _ ->
         fatalError(
@@ -2638,8 +2645,17 @@ base class TEnv{
   // Extraction loses the guarantee that a class method runs on its original
   // carrier. Preserve the instance type as an explicit this requirement.
   fun extractedMethodType(subst: mutable Subst, ty: TType): TType {
+    TEnv::extractedMethodTypeWith(ty, map ->
+      ty.mapSTypes(subst, this, None(), map)
+    )
+  }
+
+  static fun extractedMethodTypeWith(
+    ty: TType,
+    mapTypes: ((?STypes) -> ?STypes) -> TType,
+  ): TType {
     changed = false;
-    result = ty.mapSTypes(subst, this, None(), stypes ->
+    result = mapTypes(stypes ->
       stypes.map(types ->
         types.mapSTypes(stype ->
           stype match {
@@ -2762,8 +2778,13 @@ base class TEnv{
         notSupported(propertyName.pos, "prototype access")
       };
       baseType = this.typeOfExpr(tcenvb, baseExpr);
-      this.materializeTypeRead(tcenvb, propertyName.pos, (scratch, readEnv) ->
-        readEnv.readTypeofProperty(scratch, baseType, propertyName, expr.pos)
+      this.materializeReadContext<TType>(
+        tcenvb,
+        propertyName.pos,
+        context -> context.typeOfProperty(baseType, propertyName, expr.pos),
+        (scratch, readEnv) ->
+          readEnv.readTypeofProperty(scratch, baseType, propertyName, expr.pos)
+        ,
       )
     | _ ->
       fatalError(
@@ -2784,22 +2805,30 @@ base class TEnv{
     propertyName: Name,
     pos: PosRange,
   ): TType {
-    baseType.getSTypes(subst, this, Covariant()).flatMap(sTypes ->
-      sTypes.singleElt()
-    ) match {
-    | Some(obj @ TObject _) ->
-      this.extractedMethodType(
-        subst,
-        obj.getType(subst, this, propertyName.value, pos),
-      )
+    TEnv::typeOfPropertyWith(
+      propertyName,
+      baseType.getSTypes(subst, this, Covariant()),
+      obj -> obj.getType(subst, this, propertyName.value, pos),
+      type -> this.extractedMethodType(subst, type),
+      () -> quoteRenderedType(prettyPrintType(false, baseType, subst, this)),
+    )
+  }
+
+  static fun typeOfPropertyWith(
+    propertyName: Name,
+    types: ?STypes,
+    member: TObject -> TType,
+    extractMethod: TType -> TType,
+    describeBase: () -> String,
+  ): TType {
+    types.flatMap(sTypes -> sTypes.singleElt()) match {
+    | Some(obj @ TObject _) -> extractMethod(member(obj))
     | _ ->
       fatalError(
         Array[
           (
             propertyName.pos,
-            `Cannot access a property on non-object type ${quoteRenderedType(
-              prettyPrintType(false, baseType, subst, this),
-            )}`,
+            `Cannot access a property on non-object type ${describeBase()}`,
           ),
         ],
         TSCode(2339),
@@ -3492,19 +3521,27 @@ base class TEnv{
     closedPos: PosRange,
     inner: TType,
   ): TType {
-    this.materializeTypeRead(
+    this.materializeReadContext<TType>(
       tcenvb,
       this.instantiateAt.default(closedPos),
-      (scratch, readEnv) -> readEnv.readClosedObject(scratch, closedPos, inner),
+      context -> context.closedObject(closedPos, inner),
+      (scratch, readEnv) ->
+        readEnv.closedObjectFrom(
+          closedPos,
+          inner,
+          inner.expand(scratch, readEnv, Some(Covariant())),
+          (messages, code) -> scratch.error(messages, code),
+        )
+      ,
     )
   }
 
-  private fun readClosedObject(
-    subst: mutable Subst,
+  fun closedObjectFrom(
     closedPos: PosRange,
     inner: TType,
+    expanded: TType,
+    report: (Array<(PosRange, String)>, ErrorCode) -> void,
   ): TType {
-    tcenvb: mutable TCEnvBase = subst;
     // Errors anchor at the instantiation site when there is one (for the
     // stub-alias route that is the innermost alias application: a direct
     // Closed<...> use anchors at the use site; a wrapper alias anchors at the
@@ -3516,7 +3553,6 @@ base class TEnv{
       | Some(i) -> !i.isSynthetic()
       | None() -> false
       };
-    expanded = inner.expand(subst, this, Some(Covariant()));
     // An abstract type parameter expands to a clause with non-empty vars —
     // possibly WITH the constraint's stypes (fromTParamWithConstraint), which
     // Clauses::getObject would happily return: without this guard, Closed<T>
@@ -3528,7 +3564,7 @@ base class TEnv{
     // the instantiation site when there is one.
     if (expanded.clauses.any(clause -> !clause.vars.isEmpty())) {
       if (!this.inTypeDefValidation) {
-        tcenvb.error(
+        report(
           Array[(errPos, "Closed<T> requires a statically known object type")],
           SKJSCode(9033),
         )
@@ -3544,7 +3580,7 @@ base class TEnv{
             hasDeclaredIndex(b.symbolIndex)
         )
       ) {
-        tcenvb.error(
+        report(
           Array[
             (
               errPos,
@@ -3570,13 +3606,13 @@ base class TEnv{
         TType::single(closed)
       }
     | Some _ ->
-      tcenvb.error(
+      report(
         Array[(errPos, "Closed<T> is not supported on array or tuple types")],
         SKJSCode(9033),
       );
       inner
     | None() ->
-      tcenvb.error(
+      report(
         Array[(errPos, "Closed<T> requires a statically known object type")],
         SKJSCode(9033),
       );
@@ -3615,25 +3651,31 @@ base class TEnv{
 
      Try to keep in synch with TypeChecker#get in TypeCheckExpr
   */
-  fun keyOfType(subst: mutable Subst, ty: TType, pos: PosRange): TType {
-    this.materializeTypeRead(subst, pos, (scratch, readEnv) ->
-      readEnv.readKeyOfType(scratch, ty, pos)
+  fun keyOfType(tcenvb: mutable TCEnvBase, ty: TType, pos: PosRange): TType {
+    this.materializeReadContext<TType>(
+      tcenvb,
+      pos,
+      context -> context.keyOf(ty, pos),
+      (scratch, readEnv) ->
+        readEnv.keyOfFromClauses(
+          ty.expandToClauses(scratch, readEnv, Covariant()),
+          pos,
+          name -> readEnv.newObject(scratch, name, Array[]),
+        )
+      ,
     )
   }
 
-  private fun readKeyOfType(
-    subst: mutable Subst,
-    ty: TType,
+  fun keyOfFromClauses(
+    clauses: Clauses,
     pos: PosRange,
+    boxedClass: Name -> TObject,
   ): TType {
-    clauses = ty.expandToClauses(subst, this, Covariant());
     this.checkAbstractProjection(clauses, pos, "keyof");
     if (
       clauses.any(clause -> (!clause.vars.isEmpty() || clause.stypes is None()))
     ) {
-      return TType::union(
-        subst,
-        this,
+      return TType::unionStructural(
         TType::single(TPrimValue(TString(), None(), pos)),
         TType::single(TPrimValue(TNum(), None(), pos)),
       )
@@ -3674,7 +3716,7 @@ base class TEnv{
             );
           }
         | prim @ TPrimValue _ ->
-          obj = this.newObject(subst, prim.asClassName(), Array[]);
+          obj = boxedClass(prim.asClassName());
           stypes.push(obj)
         | TPrimUnit _ -> void /* bottom */
         }
@@ -3707,7 +3749,7 @@ base class TEnv{
         resultTys.push(TType::single(TPrimValue(TSymbol(), Some(symLits), pos)))
       )
     };
-    TType::unionN(subst, this, pos, resultTys)
+    TType::unionStructuralN(pos, resultTys)
   }
 
   // `T[number]`: the element type of a known array or indexed object shape.
@@ -3716,12 +3758,11 @@ base class TEnv{
   // TODO: generalize to `T[K]` for any `K: TPrimValue` (e.g. `string`), by
   // parameterizing this over the index kind (numberIndex/stringIndex/
   // symbolIndex) instead of hardcoding numberIndex.
-  private fun numberIndexedType(
-    subst: mutable Subst,
-    objType: TType,
+  fun numberIndexedFromClauses(
+    clauses: Clauses,
     pos: PosRange,
+    boxedClass: Name -> TObject,
   ): TType {
-    clauses = objType.expandToClauses(subst, this, Covariant());
     this.checkAbstractProjection(clauses, pos, "Indexed access");
     if (clauses.any(clause -> clause.stypes is None())) {
       fatalError(
@@ -3754,7 +3795,7 @@ base class TEnv{
             }
           }
         | prim @ TPrimValue _ ->
-          expanded = this.newObject(subst, prim.asClassName(), Array[]);
+          expanded = boxedClass(prim.asClassName());
           stypes.push(expanded)
         | TPrimUnit _ -> void
         }
@@ -3768,7 +3809,7 @@ base class TEnv{
         SKJSCode(9021),
       )
     };
-    TType::unionN(subst, this, pos, resultTys)
+    TType::unionStructuralN(pos, resultTys)
   }
 }
 

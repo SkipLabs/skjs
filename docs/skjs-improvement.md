@@ -353,13 +353,12 @@ temporary source is removed after checking.
 
 Validation: 221 checker tests, 65 verifier suites and the unchanged 278 curated
 proofs pass, with no unexpected producer or proof outcomes. Formatting and shell
-checks pass. Three paired runs against the saved pre-materialization binary
-preserve exact diagnostics; median seconds before/after are 0.719/0.760 for
-array literals, 1.074/1.065 for generic membership and 5.218/5.284 for deep
-collections. A five-pair array-only repeat gives 0.747/0.747 seconds, so the
-initial small array gap did not reproduce. These samples show comparable timings,
-not a general performance guarantee. No source corpus fixtures changed; native tests do not
-change census selection.
+checks pass. Three paired runs against the saved pre-projection binary preserve
+exact diagnostics; median seconds before/after are 0.726/0.722 for array
+literals, 1.075/1.067 for generic membership and 5.327/5.221 for deep
+collections. These samples show comparable timings, not a general performance
+guarantee. No source corpus fixtures changed; native tests do not change census
+selection.
 
 The head-expansion traversal and result construction are now shared operations
 with no solver parameter. Inference supplies its existing solving adapter;
@@ -450,14 +449,25 @@ mapped-key, computed-key, index-key and receiver classification consume expanded
 data through shared structural helpers. Type-annotation union uses pure structural
 union directly. Subtraction and clause mapping also share solver-free cores.
 
-A2 is **not complete**. Eight raw materialization call sites remain, all in
-`TEnv`: named instantiation, `keyof` (two sites), numeric indexed access, class
-statics (two sites), `typeof` property reads and `Closed<T>`. Named expansion and
-symbol identity still let the fixed-read algebra reach this legacy declaration
-kernel, so the full call graph is not yet read-only. Migrate these operations,
-then remove the raw callback API and audit transitive capabilities. The explicit
-detached callback is for probes/diagnostics, not a validation fallback; inference
-keeps its own transactional adapters around shared structural rules.
+Declaration projections now also use fixed reads. `keyof`, numeric indexed
+access and `Closed<T>` share structural algorithms with detached normalization.
+`typeof` property reads use fixed head/member projection and a shared method
+extraction transform, preserving an implicit class receiver as an explicit
+requirement. Symbol identity uses that fixed property path after resolving its
+carrier declaration. Diagnostics receive only the reporting/formatting operations
+they need; they do not justify type decisions.
+
+A2 is **not complete**. Three raw materialization call sites remain in `TEnv`:
+named instantiation and class statics (two sites). The raw materialization helpers
+are now private, so ordinary consumers cannot introduce new unrestricted
+validation callbacks. Negative compilation probes reject external calls to both
+raw helpers; the temporary sources are removed and the restored tree checks. The transitive declaration dependencies still matter:
+`TypeReadContext` calls legacy named expansion, primitive-class construction and
+value-declaration lookup for symbol carriers. Class/alias declaration evaluation
+must be separated from its solver dependencies before this is end-to-end
+read-only. Remove the remaining private raw helpers only after those paths have
+migrated. Detached compatibility probes and diagnostics must remain explicitly
+separate from checking publication.
 
 ### Remaining A2 work and estimate
 
@@ -469,7 +479,7 @@ an estimate, not a closure claim; recursive normalization is the largest uncerta
 | --- | --- | --- |
 | Shape consumers | Structural traversal migrated for branch elimination and iterator/member projection; algebra and declaration dependencies remain in the next rows. | Structural migration done |
 | Read-only type algebra | Fixed-read intersection and subtype orchestration implemented using shared structural rules. Remaining legacy declaration dependencies are in the next row. | Backend implemented; declaration dependency open |
-| Declaration normalization | Migrate named expansion and the eight remaining raw materialization calls in `TEnv`. Checking and detached computation now have separately typed callbacks; audit declaration dependencies before retiring the raw API. | 1–2 |
+| Declaration normalization | Migrate named expansion, class/alias construction and symbol carrier lookup; three private raw materialization calls remain in `TEnv`. Audit transitive solver dependencies before retiring those helpers. | 1–2 |
 | Closure audit | Retire raw validation callbacks and superseded guards, exercise compiler-negative access checks, then qualify behavior, verifier outcomes and performance. | 1 |
 
 These packages share recursive dependencies and may need interleaving. A2 needs

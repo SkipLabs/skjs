@@ -27,7 +27,7 @@ extension base class TEnv {
   // Normalize children in their source checking environment BEFORE entering
   // here. This preserves mandatory written-type-argument checks and typeof's
   // expression semantics. Only the consuming type operation runs in scratch.
-  fun materializeRead<T>(
+  private fun materializeRead<T>(
     tcenvb: mutable TCEnvBase,
     pos: PosRange,
     read: (mutable Subst, TEnv) -> T,
@@ -112,7 +112,7 @@ extension base class TEnv {
     }
   }
 
-  fun materializeTypeRead(
+  private fun materializeTypeRead(
     tcenvb: mutable TCEnvBase,
     pos: PosRange,
     read: (mutable Subst, TEnv) -> TType,

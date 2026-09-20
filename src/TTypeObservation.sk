@@ -245,6 +245,80 @@ mutable class TypeReadContext private {
     )
   }
 
+  // Projection assembly is structural. Primitive boxing still goes through
+  // the declaration adapter until class normalization has migrated.
+  mutable fun keyOf(type: TType, pos: PosRange): TType {
+    this.lifetime.checkActive();
+    this.tenv.keyOfFromClauses(
+      this.expandClauses(type, Covariant()),
+      pos,
+      name -> this.tenv.newObject(this.scratch, name, Array[]),
+    )
+  }
+
+  mutable fun numberIndexed(type: TType, pos: PosRange): TType {
+    this.lifetime.checkActive();
+    this.tenv.numberIndexedFromClauses(
+      this.expandClauses(type, Covariant()),
+      pos,
+      name -> this.tenv.newObject(this.scratch, name, Array[]),
+    )
+  }
+
+  mutable fun closedObject(pos: PosRange, type: TType): TType {
+    this.lifetime.checkActive();
+    this.tenv.closedObjectFrom(
+      pos,
+      type,
+      this.expand(type, Some(Covariant())),
+      (messages, code) -> this.scratch.error(messages, code),
+    )
+  }
+
+  mutable fun typeOfProperty(base: TType, name: Name, pos: PosRange): TType {
+    this.lifetime.checkActive();
+    TEnv::typeOfPropertyWith(
+      name,
+      this.concreteTypes(base, Covariant()),
+      obj ->
+        this.readMember(obj, pos, fields -> fields.maybeGet(name.value)) match {
+        | Some(type) -> type
+        | None() -> obj.getTypeTypingError(name.value, pos)
+        },
+      type ->
+        TEnv::extractedMethodTypeWith(type, map ->
+          type.mapSTypesWith(inst -> this.expandInstance(inst, None()), map)
+        ),
+      () ->
+        quoteRenderedType(
+          prettyPrintType(
+            false,
+            base,
+            this.scratch.cloneForTypeDiagnostics(),
+            this.tenv,
+          ),
+        )
+      ,
+    )
+  }
+
+  // Resolve the declaration's carrier, then use fixed-read property and type
+  // projection. Only the initial value-declaration lookup remains legacy.
+  private mutable fun symbolId(pos: PosRange, property: String): ?String {
+    carrier = this.tenv.typeOfExpr(
+      this.scratch,
+      Expr(pos, Var(Name(pos, "Symbol"))),
+    );
+    symbolType = this.typeOfProperty(carrier, Name(pos, property), pos);
+    this.concreteTypes(symbolType, Covariant()).flatMap(types ~>
+      types.singleElt()
+    ) match {
+    | Some(TPrimValue(TSymbol(), Some(literals), _)) ->
+      literals.singleElt().map(literal -> literal.val)
+    | _ -> None()
+    }
+  }
+
   // The relation uses fixed payloads and structural rules. It never proposes a
   // solution, selects a literal representation or records inference edges.
   mutable fun isSubtype(source: TType, target: TType): Bool {
@@ -354,9 +428,7 @@ mutable class TypeReadContext private {
         | STOk() -> STOk()
         | err @ STErrorOnTFun _ -> STRecTFuns(err, a, b)
         },
-      (pos, name) ->
-        this.tenv.getWellKnownSymbolUniqueId(this.scratch, pos, name)
-      ,
+      (pos, name) -> this.symbolId(pos, name),
     )
   }
 
@@ -518,7 +590,7 @@ mutable class TypeReadContext private {
 
   private mutable fun iteratorElement(obj: TObject, pos: PosRange): ?TType {
     TType::iteratorElementWith(
-      this.tenv.getSymbolIteratorUniqueId(this.scratch, pos).flatMap(id ->
+      this.symbolId(pos, "iterator").flatMap(id ->
         this.readMember(obj, pos, fields -> fields.maybeGetSymbol(id))
       ),
       type -> this.objectHead(type, Covariant()),
