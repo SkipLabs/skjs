@@ -414,6 +414,16 @@ pure and cached construction and checks that unknown candidates remain unbound.
 This does not cover `TField`/`TFun` merges, which also compute intersections and
 still depend on inference machinery.
 
+Intersection distribution now also has no substitution or environment parameter:
+`Clauses`, `Clause`, `STypes` and object-branch distribution share a traversal
+whose only normalization capability is a supplied field-meet operation. Primitive
+intersection, parameter-set merging, alternative order, duplicate merging and the
+object-branch limit remain in that shared traversal. The inference entry points
+supply the existing field normalizer. This is a structural separation only: the
+supplied normalizer still has solver access, and validation still reaches this
+traversal through the observed legacy intersection entry point. Recursive-premise
+tracking, memo qualification and primitive/object subtype checks are unchanged.
+
 A2 is **not complete**. Named-type expansion, intersections (including occurrence
 constraints), field/callback intersection normalization and symbol-identity
 resolution still call the observed legacy kernel. Literal reads reached through those nested legacy

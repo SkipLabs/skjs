@@ -210,7 +210,9 @@ extension class TType {
       }
     | _ -> void
     };
-    clauses = Clauses::inter(subst, tenv, clauses1, clauses2);
+    clauses = Clauses::interWith(clauses1, clauses2, (left, right) ->
+      TFields::inter(subst, tenv, left, right)
+    );
     TType::fromClauses(ty1.pos, clauses);
   }
 
@@ -291,12 +293,12 @@ extension class TField {
 }
 
 extension class STypes {
-  // inter returns None when the intersection of the args is bottom
-  static fun inter(
-    subst: mutable Subst,
-    tenv: TEnv,
+  // Structural intersection delegates only object-field normalization. None
+  // denotes bottom; primitive and parameter algebra never accesses a solver.
+  static fun interWith(
     stypes1: STypes,
     stypes2: STypes,
+    meetFields: (TFields, TFields) -> ?TFields,
   ): ?STypes {
     stypes1.stypes.mapInterOption(stypes2.stypes, (sty1, sty2) -> {
       invariant(
@@ -309,7 +311,7 @@ extension class STypes {
       | (p1 @ TPrimValue _, p2 @ TPrimValue _) -> TPrimValue::inter(p1, p2)
 
       | (obj1 @ TObject _, obj2 @ TObject _) ->
-        TObject::inter(subst, tenv, obj1, obj2)
+        TObject::interWith(obj1, obj2, meetFields)
 
       | _ -> internal_error("Internal error")
       }
@@ -322,11 +324,10 @@ extension class STypes {
 
 extension class Clause {
   // Returns None if the result is bottom
-  static fun inter(
-    subst: mutable Subst,
-    tenv: TEnv,
+  static fun interWith(
     clause1: Clause,
     clause2: Clause,
+    meetFields: (TFields, TFields) -> ?TFields,
   ): ?Clause {
     vars = clause1.vars.union(clause2.vars);
     (clause1.stypes, clause2.stypes) match {
@@ -334,7 +335,7 @@ extension class Clause {
     | (stypes, None()) ->
       Some(Clause(vars, stypes))
     | (Some(stypes1), Some(stypes2)) ->
-      STypes::inter(subst, tenv, stypes1, stypes2).map(stypes ->
+      STypes::interWith(stypes1, stypes2, meetFields).map(stypes ->
         Clause(vars, Some(stypes))
       )
     }
@@ -342,16 +343,16 @@ extension class Clause {
 }
 
 extension class Clauses {
-  static fun inter(
-    subst: mutable Subst,
-    tenv: TEnv,
+  // Preserve distribution order and merge equal parameter sets structurally.
+  static fun interWith(
     clauses1: Clauses,
     clauses2: Clauses,
+    meetFields: (TFields, TFields) -> ?TFields,
   ): Clauses {
     result = SortedMap[];
     for (clause1 in clauses1) {
       for (clause2 in clauses2) {
-        Clause::inter(subst, tenv, clause1, clause2) match {
+        Clause::interWith(clause1, clause2, meetFields) match {
         | None() -> void
         | Some(inter) ->
           if (!result.containsKey(inter.vars)) {
@@ -622,10 +623,23 @@ extension class TObject {
     obj1: TObject,
     obj2: TObject,
   ): ?TObject {
+    TObject::interWith(obj1, obj2, (left, right) ->
+      TFields::inter(subst, tenv, left, right)
+    )
+  }
+
+  // Distribution has no checking authority. Only the supplied field meet may
+  // normalize contracts; both inference and read-only normalization can reuse
+  // this traversal without exposing a substitution to it.
+  static fun interWith(
+    obj1: TObject,
+    obj2: TObject,
+    meetFields: (TFields, TFields) -> ?TFields,
+  ): ?TObject {
     branches = mutable Vector[];
     for (fields1 in obj1.branches) {
       for (fields2 in obj2.branches) {
-        TFields::inter(subst, tenv, fields1, fields2) match {
+        meetFields(fields1, fields2) match {
         | None() -> void
         | Some(x) ->
           branches.push(x);
