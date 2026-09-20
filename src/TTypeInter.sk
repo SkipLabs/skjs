@@ -357,12 +357,7 @@ extension class Clauses {
           if (!result.containsKey(inter.vars)) {
             !result[inter.vars] = inter;
           } else {
-            !result[inter.vars] = Clause::union(
-              subst,
-              tenv,
-              result[inter.vars],
-              inter,
-            )
+            !result[inter.vars] = Clause::union(result[inter.vars], inter)
           }
         }
       }

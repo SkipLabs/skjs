@@ -15,41 +15,37 @@ extension class TType {
     TType::union(subst, tenv, typ, undef)
   }
 
-  // Caching is correct even when ty1 or ty2 contain TVars: union_ operates
+  // Caching is correct even when ty1 or ty2 contain TVars: unionStructural operates
   // on insts and clauses without expanding TVars. Any TVar in the operands
   // passes through to the result unchanged (as a TInst), so the cached
   // result remains valid regardless of later TVar growth.
   static fun union(
     subst: mutable Subst,
-    tenv: TEnv,
+    _tenv: TEnv,
     ty1: TType,
     ty2: TType,
   ): TType {
     if (ty1 == ty2) return ty1;
     subst.seenUnion.maybeGet((ty1, ty2)) match {
     | None() ->
-      result = TType::union_(subst, tenv, ty1, ty2);
+      result = TType::unionStructural(ty1, ty2);
       subst.!seenUnion[(ty1, ty2)] = result;
       result
     | Some(ty) -> ty
     }
   }
 
-  // No cycle detection needed: union_ operates on ty.insts and ty.clauses
-  // without expanding insts. Recursive types use nominal references (TSInst)
-  // in their fields, so TField::union always receives inst-level types for
-  // recursive fields, which bottom out in Clauses::union with empty clauses.
-  private static fun union_(
-    subst: mutable Subst,
-    tenv: TEnv,
-    ty1: TType,
-    ty2: TType,
-  ): TType {
+  // Structural union does not expand named types, candidate bindings or
+  // object fields. Recursive and constrained references remain symbolic;
+  // object alternatives remain separate branches. No owner or checking
+  // environment is available to read candidates or invoke inference.
+  static fun unionStructural(ty1: TType, ty2: TType): TType {
+    if (ty1 == ty2) return ty1;
     if (ty1.isTop() || ty2.isBottom()) return ty1;
     if (ty2.isTop() || ty1.isBottom()) return ty2;
 
     types = TInsts::union(ty1.insts, ty2.insts);
-    clauses = Clauses::union(subst, tenv, ty1.clauses, ty2.clauses);
+    clauses = Clauses::union(ty1.clauses, ty2.clauses);
     TType::create(ty1.pos, types, clauses)
   }
 
@@ -68,10 +64,33 @@ extension class TType {
     pos: PosRange,
     tysIt: mutable Iterator<TType>,
   ): TType {
-    tysIt.next() match {
+    TType::unionFold(pos, tysIt, (left, right) ->
+      TType::union(subst, tenv, left, right)
+    )
+  }
+
+  static fun unionStructuralN(
+    pos: PosRange,
+    types: readonly Sequence<TType>,
+  ): TType {
+    TType::unionStructuralIterator(pos, types.iterator())
+  }
+
+  static fun unionStructuralIterator(
+    pos: PosRange,
+    types: mutable Iterator<TType>,
+  ): TType {
+    TType::unionFold(pos, types, TType::unionStructural)
+  }
+
+  private static fun unionFold(
+    pos: PosRange,
+    types: mutable Iterator<TType>,
+    combine: (TType, TType) -> TType,
+  ): TType {
+    types.next() match {
     | None() -> TType::bottom(pos)
-    | Some(first) ->
-      tysIt.reduce((res, ty) -> TType::union(subst, tenv, res, ty), first)
+    | Some(first) -> types.reduce(combine, first)
     }
   }
 }
@@ -139,12 +158,7 @@ extension class TField {
 }
 
 extension class STypes {
-  static fun union(
-    subst: mutable Subst,
-    tenv: TEnv,
-    stypes1: STypes,
-    stypes2: STypes,
-  ): STypes {
+  static fun union(stypes1: STypes, stypes2: STypes): STypes {
     STypes(
       stypes1.stypes.mapUnion(stypes2.stypes, (sty1, sty2) -> {
         invariant(
@@ -156,8 +170,7 @@ extension class STypes {
 
         | (p1 @ TPrimValue _, p2 @ TPrimValue _) -> TPrimValue::union(p1, p2)
 
-        | (obj1 @ TObject _, obj2 @ TObject _) ->
-          TObject::union(subst, tenv, obj1, obj2)
+        | (obj1 @ TObject _, obj2 @ TObject _) -> TObject::union(obj1, obj2)
         | _ -> internal_error("Internal error")
         }
       }),
@@ -176,12 +189,7 @@ extension class TInsts {
 }
 
 extension class Clause {
-  static fun union(
-    subst: mutable Subst,
-    tenv: TEnv,
-    clause1: Clause,
-    clause2: Clause,
-  ): Clause {
+  static fun union(clause1: Clause, clause2: Clause): Clause {
     if (clause1.vars != clause2.vars) {
       internal_error("clause vars must be equal for union")
     };
@@ -189,39 +197,25 @@ extension class Clause {
     | (None(), _)
     | (_, None()) ->
       None()
-    | (Some(x), Some(y)) -> Some(STypes::union(subst, tenv, x, y))
+    | (Some(x), Some(y)) -> Some(STypes::union(x, y))
     };
     Clause(clause1.vars, stypesOpt)
   }
 }
 
 extension class Clauses {
-  static fun union(
-    subst: mutable Subst,
-    tenv: TEnv,
-    clauses1: Clauses,
-    clauses2: Clauses,
-  ): Clauses {
+  static fun union(clauses1: Clauses, clauses2: Clauses): Clauses {
     Clauses::create(
       clauses1.clauses.mapUnion(clauses2.clauses, (x, y) ->
-        Clause::union(subst, tenv, x, y)
+        Clause::union(x, y)
       ),
     )
   }
 
-  static fun unionN(
-    subst: mutable Subst,
-    tenv: TEnv,
-    clauses: readonly Vector<Clause>,
-  ): Clauses {
+  static fun unionN(clauses: readonly Vector<Clause>): Clauses {
     result = Clauses::empty();
     for (clause in clauses) {
-      !result = Clauses::union(
-        subst,
-        tenv,
-        result,
-        Clauses::singleClause(clause),
-      )
+      !result = Clauses::union(result, Clauses::singleClause(clause))
     };
     result
   }
@@ -248,12 +242,7 @@ extension class TPrimValue {
 }
 
 extension class TObject {
-  static fun union(
-    _subst: mutable Subst,
-    _tenv: TEnv,
-    obj1: TObject,
-    obj2: TObject,
-  ): TObject {
+  static fun union(obj1: TObject, obj2: TObject): TObject {
     TObject(obj1.branches.union(obj2.branches), None(), obj1.pos)
   }
 }

@@ -351,11 +351,11 @@ Six negative compilation probes reject allocation, growth, solver extraction,
 lifetime replacement/extraction and passing the context as a solver; their
 temporary source is removed after checking.
 
-Validation: 218 checker tests, 65 verifier suites and the unchanged 278 curated
+Validation: 219 checker tests, 65 verifier suites and the unchanged 278 curated
 proofs pass, as do formatting and shell checks. Three paired runs of the array,
 generic-membership and deep-collection controls preserve exact diagnostics;
-median seconds before/after the iterator migration are 0.744/0.753,
-1.125/1.092 and 5.255/5.306. This shows no observed regression in these samples,
+median seconds before/after the structural-union split are 0.742/0.730,
+1.090/1.090 and 5.270/5.254. This shows no observed regression in these samples,
 not a general performance guarantee. No source corpus fixtures changed; native
 tests do not change the repair-census selection.
 
@@ -398,12 +398,25 @@ writes retain their intersection merge in inference, while reads retain union
 merging. Optional reads still add undefined. A production iterator regression
 blocks at an unknown intermediate result without committing earlier reads, then
 checks that resolving it commits the inspected chain while leaving the returned
-element symbolic. Type unions and symbol-identity resolution still use guarded
-legacy adapters.
+element symbolic. Symbol-identity resolution still uses a guarded legacy adapter.
+
+Structural union is now an owner-free algebra end to end: `TType`, `Clauses`,
+`Clause`, `STypes` and `TObject` union, plus concrete-clause projection, receive
+neither a substitution nor a checking environment. They preserve constrained
+candidate references, nominal references and object branches without inspecting
+bindings. Validation uses this core for expansion assembly, optional reads,
+member/call-result unions and tuple-element unions. Inference retains its memoized
+union adapter; validation does not enter that mutable cache. The shared union
+fold preserves empty/singleton handling and left-to-right order. Removing the
+redundant clause-merge callback from expansion also removes a place where a
+mutable normalization operation could have been supplied. The regression compares
+pure and cached construction and checks that unknown candidates remain unbound.
+This does not cover `TField`/`TFun` merges, which also compute intersections and
+still depend on inference machinery.
 
 A2 is **not complete**. Named-type expansion, intersections (including occurrence
-constraints), clause/element normalization and symbol-identity resolution still
-call the observed legacy kernel. Literal reads reached through those nested legacy
+constraints), field/callback intersection normalization and symbol-identity
+resolution still call the observed legacy kernel. Literal reads reached through those nested legacy
 operations have not migrated yet. Nested candidate reads there still use its
 guarded `get`; mutation prohibition remains dynamic in those operations. The
 shared traversal cannot directly solve a candidate, but its normalization adapters
@@ -422,7 +435,7 @@ an estimate, not a closure claim; recursive normalization is the largest uncerta
 | Work package | Remaining change | Expected rounds |
 | --- | --- | --- |
 | Shape consumers | Structural traversal migrated for branch elimination and iterator/member projection; algebra and declaration dependencies remain in the next rows. | Structural migration done |
-| Read-only type algebra | Separate union/intersection/field normalization and the subtype checks they invoke from solver growth, literal choice and allocation. Preserve recursive premises and memo qualification. | 1–2 |
+| Read-only type algebra | Structural union is pure. Separate the remaining intersection/field/callback normalization and its subtype checks from solver growth, literal choice and allocation. Preserve recursive premises and memo qualification. | 1–2 |
 | Declaration normalization | Migrate named expansion and the materialization inventory: 28 call sites outside wrappers in `TType`, `TEnv`, `TypeCheckExpr` and `TypeCheckRefine`. Keep checking, probes and diagnostics distinct. | 1–2 |
 | Closure audit | Retire raw validation callbacks and superseded guards, exercise compiler-negative access checks, then qualify behavior, verifier outcomes and performance. | 1 |
 

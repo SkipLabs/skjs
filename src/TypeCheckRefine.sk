@@ -306,8 +306,6 @@ extension class TypeChecker {
       default = if (target) {
         Some(
           STypes::union(
-            tcenv.subst,
-            this,
             STypes::single(TPrimUnit(TNull(), typePos)),
             STypes::single(TObject::createEmpty(typePos)),
           ),

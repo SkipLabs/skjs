@@ -337,7 +337,7 @@ class TType private {
     for (clause in clauses) {
       clause.stypes match {
       | None() -> !incomplete = true
-      | Some(stypes) -> !concrete = STypes::union(subst, tenv, concrete, stypes)
+      | Some(stypes) -> !concrete = STypes::union(concrete, stypes)
       }
     };
     falsyCount: FalsyCount = FZero();
@@ -463,7 +463,7 @@ class TType private {
       TType::create(
         this.pos,
         TInsts::unionN(insts),
-        Clauses::unionN(subst, tenv, mappedClauses),
+        Clauses::unionN(mappedClauses),
       )
     }
   }
@@ -691,10 +691,7 @@ class TType private {
       | _ -> invariant_violation("unexpected unexpanded inst")
       }
     };
-    stypes = Clauses::unionN(subst, tenv, clausesVec).getSTypes(
-      subst,
-      tenv,
-    ) match {
+    stypes = Clauses::unionN(clausesVec).getSTypes() match {
     | None() ->
       tys.push(this);
       return true
@@ -734,7 +731,7 @@ class TType private {
   // so the return value over-approximates the type
   // Returns None() if the type eventually expands to Top
   fun getSTypes(subst: mutable Subst, tenv: TEnv, variance: Variance): ?STypes {
-    this.expandToClauses(subst, tenv, variance).getSTypes(subst, tenv)
+    this.expandToClauses(subst, tenv, variance).getSTypes()
   }
 
   fun expandToVectors(
@@ -795,20 +792,14 @@ class TType private {
   }
 
   fun expand(subst: mutable Subst, tenv: TEnv, expandTVars: ?Variance): TType {
-    this.expandWith(
-      inst -> this.expandInstance(subst, tenv, expandTVars, inst),
-      clauses -> Clauses::unionN(subst, tenv, clauses),
-    )
+    this.expandWith(inst -> this.expandInstance(subst, tenv, expandTVars, inst))
   }
 
-  fun expandWith(
-    expandInst: (TInst) -> ?TType,
-    mergeClauses: (mutable Vector<Clause>) -> Clauses,
-  ): TType {
+  fun expandWith(expandInst: (TInst) -> ?TType): TType {
     this.expandGraph(expandInst) match {
     | None() -> TType::top(this.pos)
     | Some((insts, clauses)) ->
-      TType::create(this.pos, TInsts::unionN(insts), mergeClauses(clauses))
+      TType::create(this.pos, TInsts::unionN(insts), Clauses::unionN(clauses))
     }
   }
 
@@ -819,7 +810,7 @@ class TType private {
   ): Clauses {
     this.expandToVectors(subst, tenv, Some(variance)) match {
     | None() -> Clauses::top()
-    | Some((_, clauses)) -> Clauses::unionN(subst, tenv, clauses)
+    | Some((_, clauses)) -> Clauses::unionN(clauses)
     }
   }
 
@@ -857,7 +848,7 @@ class TType private {
       TType::create(
         this.pos,
         TInsts::createFromMVector(insts),
-        Clauses::unionN(subst, tenv, clauses),
+        Clauses::unionN(clauses),
       )
     }
   }
@@ -1612,7 +1603,7 @@ extension class Clauses {
   // Projection is shared after either inference or validation has expanded the
   // head. Iterator/member normalization still uses the legacy guarded kernel.
   fun restElement(subst: mutable Subst, tenv: TEnv): ?TType {
-    this.getSTypes(subst, tenv).flatMap(stypes ~> stypes.singleElt()) match {
+    this.getSTypes().flatMap(stypes ~> stypes.singleElt()) match {
     | Some(obj @ TObject(_, _, objectPos)) ->
       tenv.getIteratorElementType(subst, obj, objectPos)
     | _ -> None()
@@ -3757,13 +3748,12 @@ class Clauses private (
   // Returns the actual STypes, forgetting type parameters,
   // so the return value over-approximates the type
   // Returns None() if the type eventually expands to Top
-  fun getSTypes(subst: mutable Subst, tenv: TEnv): ?STypes {
+  fun getSTypes(): ?STypes {
     result = STypes::empty();
     for (clause in this.clauses) {
       clause.stypes match {
       | None() -> return None()
-      | Some(clauseSTypes) ->
-        !result = STypes::union(subst, tenv, result, clauseSTypes)
+      | Some(clauseSTypes) -> !result = STypes::union(result, clauseSTypes)
       }
     };
     Some(result)

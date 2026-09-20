@@ -269,6 +269,7 @@ fun testStructuralUnionPreservesUnresolvedOperands(): void {
   object = SKJS.TType::single(
     SKJS.TObject::createSingleBranch(fields, None(), pos),
   );
+  pure = SKJS.TType::unionStructural(symbolic, object);
   stamp = subst.typeMutationStamp();
   observed = subst.withCommittedTypeDecision(scratch ->
     SKJS.TType::union(scratch, tenv, symbolic, object)
@@ -277,7 +278,9 @@ fun testStructuralUnionPreservesUnresolvedOperands(): void {
     true,
     observed match {
     | SKJS.TRReady(result) ->
-      result.insts == symbolic.insts && result.clauses == object.clauses
+      result == pure &&
+        result.insts == symbolic.insts &&
+        result.clauses == object.clauses
     | _ -> false
     },
   );

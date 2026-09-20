@@ -152,10 +152,7 @@ mutable class TypeReadContext private {
 
   mutable fun expand(type: TType, variance: ?Variance): TType {
     this.lifetime.checkActive();
-    type.expandWith(
-      inst -> this.expandInstance(inst, variance),
-      clauses -> Clauses::unionN(this.scratch, this.tenv, clauses),
-    )
+    type.expandWith(inst -> this.expandInstance(inst, variance))
   }
 
   // Candidate expansion is a tracked fixed-payload read, independent of
@@ -181,7 +178,7 @@ mutable class TypeReadContext private {
   private mutable fun expandClauses(type: TType, variance: Variance): Clauses {
     type.expandGraph(inst -> this.expandInstance(inst, Some(variance))) match {
     | None() -> Clauses::top()
-    | Some((_, clauses)) -> Clauses::unionN(this.scratch, this.tenv, clauses)
+    | Some((_, clauses)) -> Clauses::unionN(clauses)
     }
   }
 
@@ -194,7 +191,7 @@ mutable class TypeReadContext private {
 
   private mutable fun objectHead(type: TType, variance: Variance): ?TObject {
     this.expandClauses(type, variance)
-      .getSTypes(this.scratch, this.tenv)
+      .getSTypes()
       .flatMap(stypes -> stypes.singleElt())
       .flatMap(stype ->
         stype match {
@@ -214,12 +211,13 @@ mutable class TypeReadContext private {
       fields ->
         lookup(fields).map(field ->
           TFields::resolveFieldReadWith(field, pos, (type, position) ->
-            TType::unionUndefined(this.scratch, this.tenv, type, position)
+            TType::unionStructural(
+              type,
+              TType::single(TPrimUnit(TUndefined(), position)),
+            )
           )
         ),
-      (position, types) ->
-        TType::unionN(this.scratch, this.tenv, position, types)
-      ,
+      (position, types) -> TType::unionStructuralN(position, types),
     )
   }
 
@@ -233,9 +231,7 @@ mutable class TypeReadContext private {
         callable.projectBranches(
           callable.pos,
           fields -> fields.callReturnType(),
-          (position, types) ->
-            TType::unionN(this.scratch, this.tenv, position, types)
-          ,
+          (position, types) -> TType::unionStructuralN(position, types),
         ),
       (object, name) ->
         this.readMember(object, pos, fields -> fields.maybeGet(name))
@@ -249,9 +245,7 @@ mutable class TypeReadContext private {
   mutable fun singleTypes(type: TType): ?STypes {
     this.lifetime.checkActive();
     TypeReadContext::runObserved(this.scratch.clone(), this.tenv, probe ->
-      probe
-        .expandClauses(type, Covariant())
-        .getSTypes(probe.scratch, probe.tenv)
+      probe.expandClauses(type, Covariant()).getSTypes()
     )
   }
 
@@ -265,7 +259,7 @@ mutable class TypeReadContext private {
 
   private mutable fun tupleElements(clauses: Clauses): ?Array<TType> {
     clauses.getSingleTupleWith((pos, elements) ->
-      TType::unionN_it(this.scratch, this.tenv, pos, elements)
+      TType::unionStructuralIterator(pos, elements)
     )
   }
 
