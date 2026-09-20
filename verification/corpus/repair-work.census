@@ -1,8 +1,8 @@
 # census: repair-work
-# 40/150 verified, of 390 functions
-#   skjs-rejected: 240
+# 41/151 verified, of 393 functions
+#   skjs-rejected: 242
 #   gate: 87
-#   verified: 40
+#   verified: 41
 #   unproved: 23
 #
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldAfterAssignment
@@ -177,6 +177,8 @@ skjs-rejected	tests/expect-error/const-writes.ts	destructureConstant
 skjs-rejected	tests/expect-error/const-writes.ts	updateConstant
 skjs-rejected	tests/expect-error/contextual-hidden-escape.ts	contextualRoot
 skjs-rejected	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofInferredFieldNeedsAssignment
+skjs-rejected	tests/expect-error/delayed-literal-union-contract.ts	arrayUnionCrossedElements
+skjs-rejected	tests/expect-error/delayed-literal-union-contract.ts	tupleUnionCrossedElements
 skjs-rejected	tests/expect-error/destructuring-assignment.ts	keyClearsDefault
 skjs-rejected	tests/expect-error/destructuring-tuple-rest-union.ts	incompatibleRest
 skjs-rejected	tests/expect-error/destructuring-tuple-union.ts	missingPosition
@@ -373,6 +375,7 @@ verified	tests/expect-error/captured-read-stability.ts	snapshotCapturedLocal
 verified	tests/expect-error/captured-read-stability.ts	stableAnnotatedConstValue
 verified	tests/expect-error/compound-computed-key.ts	annotatedCompoundKey
 verified	tests/expect-error/const-writes.ts	mutateConstantObject
+verified	tests/expect-error/delayed-literal-union-contract.ts	tupleUnionSecondBranch
 verified	tests/expect-error/destructuring.ts	checkedStateAfterDefault
 verified	tests/expect-error/destructuring.ts	inferredFieldDefault
 verified	tests/expect-error/field-refinement.ts	inferredFieldComparison

@@ -424,6 +424,23 @@ This is a validation primitive, **not completion of A3**: the ordinary `TType.is
 and call drivers still mix proposal and checking. Their migration, representation
 proposals, constraint obligations and deferred publication remain required.
 
+The first integration audit found a concrete mismatch: delayed literals were
+accepted against element-wise joins of array/tuple union alternatives, although
+the chosen representation was not a subtype of the union. Contextual selection
+now tries whole alternatives, rolls back failures and checks the selected type
+against the full target. `delayed-literal-union-contract.ts` preserves the two
+rejected crossed-element witnesses and a valid tuple alternative. This repair
+removes one obstruction to the driver migration; it does not replace that migration.
+
+Checkpoint: 223 checker tests and 65 verifier suites pass; curated outcomes remain
+278 verified / 9 search failures / 18 unavailable. The repair census adds two
+producer rejections and one verified tuple alternative (41/151 accepted functions
+verify; 242 further functions are rejected). Three paired control medians before
+A3 / after this repair: array literals 0.741/0.744 s, generic membership
+1.107/1.104 s, deep collections 5.934/5.732 s; outputs agree. The next integration
+issue is avoiding unnecessary reads of unresolved target-union branches when a
+known alternative already proves the relation. Source reads must remain fixed.
+
 ### Acceptance criteria and migration discipline
 
 - For each migrated boundary, state which misuse has become unrepresentable,

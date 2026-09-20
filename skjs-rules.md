@@ -66,6 +66,7 @@ The ownership boundaries and validation lifetime rules are described in
 - **Commits to Tuple**: when assigned to a tuple type like `[number, string]`, or used only with literal indices
 - **Retained projections commit too**: `await` and default-value projections establish an array form before retaining the shape of an uncontextualized literal; unresolved ordinary generic candidates remain symbolic during awaited flattening.
 - **Structural validation commits too**: a retained subtype judgment selects a tuple when its context contains a tuple branch, and an array otherwise. A structural `{ readonly length: 1 }` view cannot borrow an uncommitted literal's temporary tuple length and then let that literal become a growing array.
+- **Union contexts preserve alternatives**: a literal must fit one complete array or tuple alternative. `[0, 0]` does not fit `[number, string] | [boolean, number]`, and `[0, "s"]` does not fit `number[] | string[]`. Element-wise unions would lose the required correlation.
 - **Once committed, cannot change**: using an array-committed literal as a tuple (or vice versa) is an error
 - **Example**: `const nums: number[] = [1, 2, 3];` commits to array; `const pair: [number, string] = [1, "hello"];` commits to tuple
 

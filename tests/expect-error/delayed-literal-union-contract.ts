@@ -6,11 +6,11 @@ function tupleUnionSecondBranch(): [number, string] | [boolean, number] {
 }
 
 function tupleUnionCrossedElements(): [number, string] | [boolean, number] {
-  // FIXME: SKJS currently accepts the product of the alternatives' elements.
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return [0, 0];
 }
 
 function arrayUnionCrossedElements(): number[] | string[] {
-  // FIXME: SKJS currently accepts Array<number | string> as this union.
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return [0, "s"];
 }

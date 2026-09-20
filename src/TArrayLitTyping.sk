@@ -37,8 +37,8 @@
  * Case 2: ArrayLit<α, elts> <: u2 (LHS is literal)
  *   2a. u2 is unconstrained type variable → commit to Tuple[elts], bind u2
  *   2a'. u2 is constrained type variable → commit to Tuple if constraint contains tuple, else Array
- *   2b. u2 contains Array<U> → commit to Array<union(elts)>
- *   2c. u2 is Tuple[...] → commit to Tuple[elts], check element subtyping
+ *   2b. u2 contains Array<U> → try each Array<U> alternative independently
+ *   2c. u2 contains Tuple[...] → try each whole tuple, check element subtyping
  *
  * ## Fresh Literal Elements
  *
@@ -448,15 +448,12 @@ class ArrayLitTyping() {
         return Some(TType::isSub(subst, tenv, committedTy, u2))
       | _ -> void
       };
-      // Case 2b: ArrayLit<α, elts> <: Array<U1> | ... | Array<Un>
-      arrayCandidates = ArrayLitTyping::arrayInstArgs(u2);
-      if (!arrayCandidates.isEmpty()) {
-        expectedEltType = TType::unionN(
-          subst,
-          tenv,
-          arrLit.selector.pos(),
-          arrayCandidates,
-        );
+      // Contextual widening chooses one complete alternative. A positional
+      // join of tuple alternatives, or Array<union(U1, U2)>, is only an
+      // over-approximation of the target union and cannot justify acceptance.
+      candidateError: ?STResult<TType> = None();
+      for (expectedEltType in ArrayLitTyping::arrayInstArgs(u2)) {
+        savedSubst = subst.save();
         litEltType = ArrayLitTyping::arrayLitEltTypeForTarget(
           subst,
           tenv,
@@ -464,27 +461,45 @@ class ArrayLitTyping() {
           expectedEltType,
         );
         result = TType::isSub(subst, tenv, litEltType, expectedEltType);
-        // Covariance is sound here: we're committing an uncommitted literal,
-        // not assigning an already-typed array. Future writes check against expectedEltType.
-        arrayTy = TType::inst(
-          Name(arrLit.selector.pos(), "Array"),
-          TArgs(Array[expectedEltType]),
-        );
-        ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, arrayTy);
-        return Some(result)
+        if (result is STOk()) {
+          arrayTy = TType::inst(
+            Name(arrLit.selector.pos(), "Array"),
+            TArgs(Array[expectedEltType]),
+          );
+          ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, arrayTy);
+          !result = TType::isSub(subst, tenv, arrayTy, u2);
+          if (result is STOk()) {
+            return Some(result)
+          }
+        };
+        subst.restore(savedSubst);
+        !candidateError = Some(result)
       };
-      // Case 2c: ArrayLit<α, elts> <: Tuple[U1, ...]
-      u2.getSTypes(subst, tenv, Covariant()).flatMap(sTypes ->
-        sTypes.getSingleTuple(subst, tenv)
-      ) match {
-      | Some(targetElts) if (targetElts.size() == arrLit.tupleElts.size()) ->
-        // Commit to the target tuple's element types (contextual widening).
-        // TS widens `[1, "x"]` to `[number, string]` when the target is a
-        // mutable tuple; we do the same by committing to the target elements
-        // and then verifying each literal element subtypes its target.
+
+      // This is candidate discovery, not a judgment: getSTypes may forget
+      // parameter constraints. The full target is checked after choosing a
+      // representation, including any constraints or extra fields it carries.
+      tupleCandidates: mutable Vector<Array<TType>> = mutable Vector[];
+      u2.getSTypes(subst, tenv, Covariant()).each(stypes -> {
+        for (stype in stypes) {
+          stype match {
+          | obj @ TObject _ ->
+            for (fields in obj.getAllFields()) {
+              fields.asTuple().each(elts -> {
+                if (elts.size() == arrLit.tupleElts.size()) {
+                  tupleCandidates.push(elts)
+                }
+              })
+            }
+          | _ -> void
+          }
+        }
+      });
+      for (targetElts in tupleCandidates) {
         savedSubst = subst.save();
         committedTy = TType::tuple(arrLit.selector.pos(), targetElts, false);
         ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, committedTy);
+        result: STResult<TType> = STOk();
         for (i in Range(0, targetElts.size())) {
           eltTy = ArrayLitTyping::effectiveElt(
             subst,
@@ -493,21 +508,22 @@ class ArrayLitTyping() {
             i,
             targetElts[i],
           );
-          TType::isSub(subst, tenv, eltTy, targetElts[i]) match {
-          | STOk() -> void
-          | err @ STError _ ->
-            subst.restore(savedSubst);
-            return Some(err)
+          !result = TType::isSub(subst, tenv, eltTy, targetElts[i]);
+          if (result is STError _) {
+            break void
           }
         };
-        return Some(STOk())
-      | Some(_) ->
-        // Arity mismatch: don't commit — let subsequent use sites commit
-        // against their own targets. Fall through so the caller sees this
-        // as an ArrayLit subtyping failure without locking the literal
-        // into a mismatched tuple shape.
-        void
-      | None() -> void
+        if (result is STOk()) {
+          !result = TType::isSub(subst, tenv, committedTy, u2);
+          if (result is STOk()) {
+            return Some(result)
+          }
+        };
+        subst.restore(savedSubst);
+        !candidateError = Some(result)
+      };
+      if (candidateError.isSome()) {
+        return candidateError
       }
     | None() -> void
     };
