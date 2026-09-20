@@ -257,17 +257,7 @@ extension class TField {
     } else {
       TType::unexpandedInter(x.get, y.get)
     };
-    isOptional = x.isOptional && y.isOptional;
-    TField{
-      pos => x.pos,
-      name => x.name,
-      isOptional,
-      get,
-      set,
-      access => x.access.combine(y.access),
-      // Either conjunct can establish that the present property is copied.
-      mayBeOmittedByCopy => x.mayBeOmittedByCopy && y.mayBeOmittedByCopy,
-    }
+    TField::interContracts(x, y, get, set)
   }
 
   static fun interIndex(
@@ -278,6 +268,16 @@ extension class TField {
   ): TField {
     get = TType::interForTypeConstruction(subst, tenv, x.get, y.get);
     set = TType::union(subst, tenv, x.set, y.set);
+    TField::interContracts(x, y, get, set)
+  }
+
+  // Assemble already-normalized read/write contracts without solver access.
+  static fun interContracts(
+    x: TField,
+    y: TField,
+    get: TType,
+    set: TType,
+  ): TField {
     isOptional = x.isOptional && y.isOptional;
     TField{
       pos => x.pos,

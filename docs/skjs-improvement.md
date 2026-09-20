@@ -351,13 +351,13 @@ Six negative compilation probes reject allocation, growth, solver extraction,
 lifetime replacement/extraction and passing the context as a solver; their
 temporary source is removed after checking.
 
-Validation: 219 checker tests, 65 verifier suites and the unchanged 278 curated
-proofs pass, as do formatting and shell checks. Three paired runs of the array,
-generic-membership and deep-collection controls preserve exact diagnostics;
-median seconds before/after the structural-union split are 0.742/0.730,
-1.090/1.090 and 5.270/5.254. This shows no observed regression in these samples,
-not a general performance guarantee. No source corpus fixtures changed; native
-tests do not change the repair-census selection.
+Validation: 220 checker tests, 65 verifier suites and the unchanged 278 curated
+proofs pass, with no unexpected producer or proof outcomes. Formatting and shell
+checks pass. Three paired runs against the saved pre-algebra binary preserve exact
+diagnostics; median seconds before/after are 0.744/0.728 for array literals,
+1.113/1.110 for generic membership and 5.295/5.274 for deep collections. This shows
+no observed slowdown in these samples, not a general performance guarantee.
+No source corpus fixtures changed; native tests do not change census selection.
 
 The head-expansion traversal and result construction are now shared operations
 with no solver parameter. Inference supplies its existing solving adapter;
@@ -386,8 +386,9 @@ mutation-stamp checks and `stablyDisjoint` helper are removed: every supported
 mutation in observation already latches Blocked before writing. The production
 regression checks elimination commitment, compatible alternatives, optional
 fields, unknown candidates and frozen candidates. This removes the raw
-`TypeCheckScope` callback, but disjointness still uses guarded legacy intersection
-normalization and is not an end-to-end read-only relation yet.
+`TypeCheckScope` callback. Disjointness now uses the fixed-read intersection
+backend described below; its remaining legacy dependencies are declaration
+expansion and symbol lookup.
 
 Iterator extraction now shares a solver-free protocol traversal between inference
 and validation. Each intermediate object head on the validation path expands
@@ -414,35 +415,32 @@ pure and cached construction and checks that unknown candidates remain unbound.
 This does not cover `TField`/`TFun` merges, which also compute intersections and
 still depend on inference machinery.
 
-Intersection distribution now also has no substitution or environment parameter:
-`Clauses`, `Clause`, `STypes` and object-branch distribution share a traversal
-whose only normalization capability is a supplied field-meet operation. Primitive
-intersection, parameter-set merging, alternative order, duplicate merging and the
-object-branch limit remain in that shared traversal. The inference entry points
-supply the existing field normalizer. This is a structural separation only: the
-supplied normalizer still has solver access, and validation still reaches this
-traversal through the observed legacy intersection entry point. Recursive-premise
-tracking, memo qualification and primitive/object subtype checks are unchanged.
+Intersection distribution and field-set assembly receive only their required
+normalization operations. Primitive intersections, parameter sets, index coverage,
+symbol fields, array/callability brands, duplicate merging and branch limits
+share structural rules between inference and validation. Signature selection
+receives a subtype decision and preserves left-first choice and merged call-graph
+nodes. Inference retains transactional adapters; validation supplies fixed reads.
 
-Field-set assembly now receives three explicit operations: named-field meet,
-index-field meet and signature meet. Index coverage, symbol fields, array brands
-and callability modes no longer receive a solver. Signature selection likewise
-receives only a subtype decision and preserves left-first choice and merged call
-graph nodes. The legacy adapters still supply inference-capable operations; the
-next step is to supply fixed-read operations using the same assembly. This does
-not yet make the normalization backend read-only.
+The read context now has its own intersection and subtype orchestration. It
+uses fixed candidate payloads and selected literal representations, shared
+field/callback assembly and shared structural subtype rules. It does not enter
+inference's proposal collection, growth, literal selection, rollback or call-graph
+publication. Occurrence constraints, explicit intersections and disjointness use
+this backend; recursive premises and memo qualification retain the existing
+policy. The callback regression now calls the restricted relation directly:
+blocking at an unresolved result commits no earlier parameter read, and resolving
+the result makes the complete comparison commit atomically.
 
-A2 is **not complete**. Named-type expansion, intersections (including occurrence
-constraints), field/callback intersection normalization and symbol-identity
-resolution still call the observed legacy kernel. Literal reads reached through those nested legacy
-operations have not migrated yet. Nested candidate reads there still use its
-guarded `get`; mutation prohibition remains dynamic in those operations. The
-shared traversal cannot directly solve a candidate, but its normalization adapters
-are not yet end-to-end read-only. The remaining raw production consumer is
-`TEnv.materializeRead` (including normalization and subtype decisions); the owner
-adapter and low-level protocol tests also retain the old boundary. Next migrate those normalization/projection
-operations behind restricted capabilities, then the remaining consumers; only
-then retire the old mutable callback API and checks whose purpose has disappeared.
+A2 is **not complete**. Named-type expansion and symbol-identity resolution still
+call the observed legacy declaration kernel. The new relation can reach legacy
+normalization through those operations, so its call graph is not yet end-to-end
+read-only. The remaining raw production consumer is `TEnv.materializeRead`
+(including normalization and subtype decisions); its owner adapter and low-level
+protocol tests also retain the old boundary. Migrate declaration normalization
+and those consumers before retiring the raw callback API and superseded dynamic
+guards. Inference keeps its separate transactional adapters around the shared
+structural subtype rules.
 
 ### Remaining A2 work and estimate
 
@@ -453,7 +451,7 @@ an estimate, not a closure claim; recursive normalization is the largest uncerta
 | Work package | Remaining change | Expected rounds |
 | --- | --- | --- |
 | Shape consumers | Structural traversal migrated for branch elimination and iterator/member projection; algebra and declaration dependencies remain in the next rows. | Structural migration done |
-| Read-only type algebra | Structural union is pure. Separate the remaining intersection/field/callback normalization and its subtype checks from solver growth, literal choice and allocation. Preserve recursive premises and memo qualification. | 1–2 |
+| Read-only type algebra | Fixed-read intersection and subtype orchestration implemented using shared structural rules. Remaining legacy declaration dependencies are in the next row. | Backend implemented; declaration dependency open |
 | Declaration normalization | Migrate named expansion and the materialization inventory: 28 call sites outside wrappers in `TType`, `TEnv`, `TypeCheckExpr` and `TypeCheckRefine`. Keep checking, probes and diagnostics distinct. | 1–2 |
 | Closure audit | Retire raw validation callbacks and superseded guards, exercise compiler-negative access checks, then qualify behavior, verifier outcomes and performance. | 1 |
 

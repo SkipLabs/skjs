@@ -115,8 +115,8 @@ mutable class TypeReadLifetime private {private mutable active: Bool = true} {
 
 // Restricted validation capability. Consumers cannot allocate, grow, seal,
 // select a representation, clone solver state, or obtain a mutable owner.
-// Head traversal uses fixed candidate reads. Normalization/projection behind
-// those reads still uses the observed legacy kernel with dynamic guards.
+// Head traversal and type algebra use fixed candidate reads. Declaration
+// expansion and symbol lookup still use the guarded legacy kernel.
 mutable class TypeReadContext private {
   private scratch: mutable Subst,
   private tenv: TEnv,
@@ -157,17 +157,23 @@ mutable class TypeReadContext private {
 
   // Candidate expansion is a tracked fixed-payload read, independent of
   // variance. It cannot invoke inference's covariant sealing/default rules.
-  // Constraint and named-type normalization still use the guarded backend.
+  // Occurrence constraints use the same fixed-read intersection backend.
   private mutable fun expandInstance(inst: TInst, variance: ?Variance): ?TType {
     inst match {
     | TSInst(name, targs) ->
       Some(this.tenv.expandNamed(this.scratch, name, targs))
-    | tInter @ TInter _ -> Some(tInter.expand(this.scratch, this.tenv))
+    | TInter(tys) ->
+      context = this with {tenv => this.tenv with {expandInter => true}};
+      types = tys.values();
+      first = types.next().fromSome();
+      Some(
+        types.reduce((left, right) -> context.intersection(left, right), first),
+      )
     | tv @ TVar _ ->
       variance.map(_ -> {
         value = this.peekRaw(tv).fromSome();
         for (constraint in tv.constraints) {
-          !value = TType::inter(this.scratch, this.tenv, value, constraint)
+          !value = this.intersection(value, constraint)
         };
         value
       })
@@ -180,6 +186,238 @@ mutable class TypeReadContext private {
     | None() -> Clauses::top()
     | Some((_, clauses)) -> Clauses::unionN(clauses)
     }
+  }
+
+  // The relation uses fixed payloads and structural rules. It never proposes a
+  // solution, selects a literal representation or records inference edges.
+  mutable fun isSubtype(source: TType, target: TType): Bool {
+    this.subtype(source, target) is STOk()
+  }
+
+  private mutable fun subtype(u1: TType, u2: TType): STResult<TType> {
+    this.lifetime.checkActive();
+    if (u1 == u2) return STOk();
+    pair = (u1, u2);
+    if (this.scratch.seenSub.contains(pair)) return STOk();
+    if (u2.isTop()) {
+      this.scratch.!seenSub = this.scratch.seenSub.set(pair);
+      return STOk()
+    };
+    this.scratch.withTypeQuery(() -> {
+      stamp = this.scratch.typeQueryReadStamp();
+      result = this.subtype_(u1, u2);
+      if (result is STOk() && this.scratch.canCacheTypeQuerySince(stamp)) {
+        this.scratch.!seenSub = this.scratch.seenSub.set(pair)
+      };
+      (result, result is STOk())
+    })
+  }
+
+  private mutable fun subtype_(u1: TType, u2: TType): STResult<TType> {
+    tenv = this.tenv;
+    if (tenv.seenSub.contains((this.scratch.inferenceVersion(), u1, u2))) {
+      this.scratch.recordRecursiveTypeQuery(
+        TQSubtype(this.scratch.inferenceVersion(), u1, u2),
+      );
+      return STOk()
+    };
+    // Two recursive aliases whose type arguments grow at each level never
+    // repeat a `seenSub` entry, so their descent is bounded by how many times
+    // it revisits the same pair of constructors (issue #997). Past the bound
+    // the recursion is refused as excessively deep, rather than assumed related,
+    // which would let an unsound program through. A finite nesting reaches any
+    // given pair only a few times, so it is untouched.
+    (u1.getSingleInst(), u2.getSingleInst()) match {
+    | (Some(inst1), Some(inst2)) ->
+      namedPair = (
+        this.scratch.inferenceVersion(),
+        tenv.expansionCacheKey(this.scratch, inst1.name, inst1.targs),
+        tenv.expansionCacheKey(this.scratch, inst2.name, inst2.targs),
+      );
+      if (tenv.seenNamedSub.contains(namedPair)) {
+        this.scratch.recordRecursiveTypeQuery(
+          TQNamedSubtype(namedPair.i0, namedPair.i1, namedPair.i2),
+        );
+        return STOk()
+      };
+      !tenv.seenNamedSub = tenv.seenNamedSub.set(namedPair);
+      this.scratch.introduceTypeQueryAssumption(
+        TQNamedSubtype(namedPair.i0, namedPair.i1, namedPair.i2),
+      );
+      key = (inst1.name.value, inst2.name.value);
+      count = tenv.subtypingHeadDepth.maybeGet(key).default(0);
+      if (count >= kMaxSubtypingHeadDepth) {
+        fatalError(
+          Array[
+            (
+              u1.pos,
+              "Type instantiation is excessively deep and possibly infinite",
+            ),
+          ],
+          TSCode(2589),
+        )
+      };
+      !tenv.subtypingHeadDepth = tenv.subtypingHeadDepth.set(key, count + 1)
+    | _ -> void
+    };
+    !tenv.seenSub = tenv.seenSub.set((this.scratch.inferenceVersion(), u1, u2));
+    this.scratch.introduceTypeQueryAssumption(
+      TQSubtype(this.scratch.inferenceVersion(), u1, u2),
+    );
+
+    // Shortcut: TInter(tys) <: u2 if u2 is one of the tys
+    u1.getSingleInter() match {
+    | Some(TInter(tys)) if (tys.containsElt(u2)) -> return STOk()
+    | _ -> void
+    };
+
+    context = this with {tenv};
+    left = context.expandClauses(u1, Covariant());
+    right = context.expandClauses(u2, Contravariant());
+    Clauses::isSubWith(left, right, (a, b) ->
+      STypes::isSubWith(a, b, (x, y) ->
+        TObject::isSubWith(x, y, (f, g) -> context.fieldsSubtype(f, g))
+      )
+    ) match {
+    | STOk() -> STOk()
+    | err @ STErrorOnClauses _ -> STRecType(err, u1, u2)
+    }
+  }
+
+  private mutable fun fieldsSubtype(
+    left: TFields,
+    right: TFields,
+  ): STResult<TFields> {
+    TFields::isSubWith(
+      left,
+      right,
+      (a, b) -> this.subtype(a, b),
+      (a, b) ->
+        this.functionSubtype(a.fun_, b.fun_) match {
+        | STOk() -> STOk()
+        | err @ STErrorOnTFun _ -> STRecTFuns(err, a, b)
+        },
+      (pos, name) ->
+        this.tenv.getWellKnownSymbolUniqueId(this.scratch, pos, name)
+      ,
+    )
+  }
+
+  private mutable fun functionSubtype(left: TFun, right: TFun): STResult<TFun> {
+    TFun::isSubWith(
+      left,
+      right,
+      (a, b) -> this.subtype(a, b),
+      spread -> spread.flatMap(type -> this.spreadTuple(type)),
+      (type, variance) -> this.restElement(type, variance),
+    )
+  }
+
+  mutable fun intersection(left: TType, right: TType): TType {
+    this.lifetime.checkActive();
+    if (left == right) return left;
+    pair = (left, right);
+    hasVar = left.getSingleVar().isSome() || right.getSingleVar().isSome();
+    if (!hasVar) {
+      this.scratch.seenInter.maybeGet(pair) match {
+      | Some(result) -> return result
+      | None() -> void
+      }
+    };
+    this.scratch.withTypeQuery(() -> {
+      stamp = this.scratch.typeQueryReadStamp();
+      result = this.intersection_(left, right);
+      if (!hasVar && this.scratch.canCacheTypeQuerySince(stamp)) {
+        this.scratch.seenInter.maybeGet(pair) match {
+        | Some(cached) -> !result = cached
+        | None() -> this.scratch.!seenInter[pair] = result
+        }
+      };
+      (result, true)
+    })
+  }
+
+  private mutable fun intersection_(left: TType, right: TType): TType {
+    if (right.isTop() || left.isBottom()) return left;
+    if (left.isTop() || right.isBottom()) return right;
+    // Inspect bare candidates just as the legacy intersection did. Unknown
+    // payloads block; field candidates retain their symbolic occurrence rule.
+    for ((candidate, other) in Array[
+      (left.getSingleVar(), right),
+      (right.getSingleVar(), left),
+    ]) {
+      candidate match {
+      | Some(tv) ->
+        _ = this.peekRaw(tv);
+        if (this.scratch.isOpen(tv) && tv.isForField()) {
+          return TType::var(tv.setConstraint(other))
+        }
+      | None() -> void
+      }
+    };
+    pair = (left, right);
+    if (this.tenv.seenInter.contains(pair)) {
+      this.scratch.recordRecursiveTypeQuery(TQIntersection(left, right));
+      return TType::unexpandedInter(left, right)
+    };
+    tenv = this.tenv with {seenInter => this.tenv.seenInter.set(pair)};
+    this.scratch.introduceTypeQueryAssumption(TQIntersection(left, right));
+    context = this with {tenv};
+    a = context.expandClauses(left, Covariant());
+    b = context.expandClauses(right, Covariant());
+    (a.primKind(), b.getObject()) match {
+    | (Some(name), Some(obj)) ->
+      if (
+        context.isSubtype(TType::inst(name, TArgs(Array[])), TType::single(obj))
+      ) return left
+    | _ -> void
+    };
+    (b.primKind(), a.getObject()) match {
+    | (Some(name), Some(obj)) ->
+      if (
+        context.isSubtype(TType::inst(name, TArgs(Array[])), TType::single(obj))
+      ) return right
+    | _ -> void
+    };
+    TType::ofClauses(
+      left.pos,
+      Clauses::interWith(a, b, (f, g) -> context.intersectFields(f, g)),
+    )
+  }
+
+  private mutable fun retainedIntersection(left: TType, right: TType): TType {
+    stamp = this.scratch.typeQueryReadStamp();
+    result = this.intersection(left, right);
+    if (this.scratch.canCacheTypeQuerySince(stamp)) result else {
+      TType::unexpandedInter(left, right)
+    }
+  }
+
+  private mutable fun intersectFields(left: TFields, right: TFields): ?TFields {
+    TFields::interWith(
+      left,
+      right,
+      (a, b) -> {
+        get = if (this.tenv.expandInter) {
+          this.retainedIntersection(a.get, b.get)
+        } else {
+          TType::unexpandedInter(a.get, b.get)
+        };
+        TField::interContracts(a, b, get, TType::unionStructural(a.set, b.set))
+      },
+      (a, b) ->
+        TField::interContracts(
+          a,
+          b,
+          this.retainedIntersection(a.get, b.get),
+          TType::unionStructural(a.set, b.set),
+        ),
+      (a, b) ->
+        TFun::interWith(a.fun_, b.fun_, (f, g) ->
+          this.functionSubtype(f, g) is STOk()
+        ).map(f -> TFuns::singleFun(f, a.pos))
+      ,
+    )
   }
 
   mutable fun restElement(type: TType, variance: Variance): ?TType {
@@ -254,7 +492,9 @@ mutable class TypeReadContext private {
   // comparison is redundant inside this capability. Keep the cache isolation.
   mutable fun disjoint(left: TType, right: TType): Bool {
     this.lifetime.checkActive();
-    TType::inter(this.scratch.clone(), this.tenv, left, right).isBottom()
+    TypeReadContext::runObserved(this.scratch.clone(), this.tenv, context ->
+      context.intersection(left, right).isBottom()
+    )
   }
 
   private mutable fun tupleElements(clauses: Clauses): ?Array<TType> {

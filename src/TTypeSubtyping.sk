@@ -984,7 +984,13 @@ extension class TFields {
     fields2: TFields,
   ): STResult<TFields> {
     savedSubst = subst.save();
-    res = TFields::isSub_(subst, tenv, fields1, fields2);
+    res = TFields::isSubWith(
+      fields1,
+      fields2,
+      (left, right) -> TType::isSub(subst, tenv, left, right),
+      (left, right) -> TFuns::isSub(subst, tenv, left, right),
+      (pos, name) -> tenv.getWellKnownSymbolUniqueId(subst, pos, name),
+    );
     if (res is STError _) subst.restore(savedSubst);
     res
   }
@@ -992,8 +998,7 @@ extension class TFields {
   // Check a single index kind: if super has an index, sub must also
   // have a compatible index for that kind.
   private static fun isSub_IndexPair(
-    subst: mutable Subst,
-    tenv: TEnv,
+    typeSub: (TType, TType) -> STResult<TType>,
     idx1: ?TField,
     idx2: ?TField,
     fields1: TFields,
@@ -1002,7 +1007,7 @@ extension class TFields {
     (idx1, idx2) match {
     | (_, None()) -> STOk()
     | (Some(index1), Some(index2)) ->
-      TType::isSub(subst, tenv, index1.get, index2.get) match {
+      typeSub(index1.get, index2.get) match {
       | err @ STErrorOnTType _ ->
         STRecFieldsIndexValue(
           err,
@@ -1013,7 +1018,7 @@ extension class TFields {
           fields2,
         )
       | STOk() ->
-        TType::isSub(subst, tenv, index2.set, index1.set) match {
+        typeSub(index2.set, index1.set) match {
         | err @ STErrorOnTType _ ->
           STRecFieldsIndexValue(
             err,
@@ -1039,11 +1044,11 @@ extension class TFields {
       // Sub has no index for this kind. Check against top/bottom so that
       // TVars in index2 still get unified. For concrete types this fails;
       // for synthetic index TVars this succeeds (unifying with top/bottom).
-      TType::isSub(subst, tenv, TType::top(index2.pos), index2.get) match {
+      typeSub(TType::top(index2.pos), index2.get) match {
       | err @ STErrorOnTType _ ->
         STRecFieldsMissingIndex(err, index2, fields1, fields2)
       | STOk() ->
-        TType::isSub(subst, tenv, index2.set, TType::bottom(index2.pos)) match {
+        typeSub(index2.set, TType::bottom(index2.pos)) match {
         | err @ STErrorOnTType _ ->
           STRecFieldsMissingIndex(err, index2, fields1, fields2)
         | STOk() -> STOk()
@@ -1055,8 +1060,7 @@ extension class TFields {
   // Check subtyping for named fields (sub vs super).
   // indexFor looks up the index covering a given field name in the given TFields.
   private static fun isSub_NamedFields(
-    subst: mutable Subst,
-    tenv: TEnv,
+    typeSub: (TType, TType) -> STResult<TType>,
     namedFields1: InternalKeyedArrayMap<FieldNameString, TField>,
     namedFields2: InternalKeyedArrayMap<FieldNameString, TField>,
     indexFor: (TFields, FieldNameString) -> ?TField,
@@ -1070,7 +1074,7 @@ extension class TFields {
         indexFor(fields2, f1.name) match {
         | None() -> void
         | Some(idx2) ->
-          TType::isSub(subst, tenv, f1.get, idx2.get) match {
+          typeSub(f1.get, idx2.get) match {
           | err @ STErrorOnTType _ ->
             return STRecFieldsFieldIndex(
               err,
@@ -1081,7 +1085,7 @@ extension class TFields {
               fields2,
             )
           | STOk() ->
-            TType::isSub(subst, tenv, idx2.set, f1.set) match {
+            typeSub(idx2.set, f1.set) match {
             | err @ STErrorOnTType _ ->
               return STRecFieldsFieldIndex(
                 err,
@@ -1122,7 +1126,7 @@ extension class TFields {
         | None() -> return STRecFieldsMissingField(f2, fields1, fields2)
         | Some(idx1) if (idx1.isSynthetic()) -> void
         | Some(idx1) ->
-          TType::isSub(subst, tenv, idx1.get, f2.get) match {
+          typeSub(idx1.get, f2.get) match {
           | err @ STErrorOnTType _ ->
             return STRecFieldsIndexField(
               err,
@@ -1133,7 +1137,7 @@ extension class TFields {
               fields2,
             )
           | STOk() ->
-            TType::isSub(subst, tenv, f2.set, idx1.set) match {
+            typeSub(f2.set, idx1.set) match {
             | err @ STErrorOnTType _ ->
               return STRecFieldsIndexField(
                 err,
@@ -1175,14 +1179,14 @@ extension class TFields {
         // PRESENT key holds a T, so the sub's field -- which describes present
         // values -- must satisfy bare T, never T | undefined (the | undefined
         // of an optional read accounts for ABSENCE only, the Right(f2) case).
-        setterResult = TType::isSub(subst, tenv, f2.set, f1.set);
+        setterResult = typeSub(f2.set, f1.set);
         // The getter is checked whether or not the setter passed: its result
         // decides both the getter error and whether `readonly` (which drops
         // the setter check) would fix a setter failure. Its inference commit
         // needs no cleanup when the setter failed -- this whole comparison
         // then returns an STError, and `TFields::isSub` restores the subst on
         // error (the invariant every `isSub` upholds).
-        getterResult = TType::isSub(subst, tenv, f1.get, f2.get);
+        getterResult = typeSub(f1.get, f2.get);
         setterResult match {
         | STOk() ->
           getterResult match {
@@ -1229,11 +1233,12 @@ extension class TFields {
     STOk()
   }
 
-  private static fun isSub_(
-    subst: mutable Subst,
-    tenv: TEnv,
+  static fun isSubWith(
     fields1: TFields,
     fields2: TFields,
+    typeSub: (TType, TType) -> STResult<TType>,
+    funsSub: (TFuns, TFuns) -> STResult<TFuns>,
+    symbolId: (PosRange, String) -> ?String,
   ): STResult<TFields> {
     // Function-like views can execute @@hasInstance even when the field is
     // omitted. Width subtyping must not erase that implicit call contract.
@@ -1244,8 +1249,7 @@ extension class TFields {
         fields2.call is CFunction() ||
         fields2.new is CPresent _)
     ) {
-      tenv.getWellKnownSymbolUniqueId(
-        subst,
+      symbolId(
         fields1.symbolFields.values().next().fromSome().pos,
         "hasInstance",
       ) match {
@@ -1264,8 +1268,7 @@ extension class TFields {
     // Process fields first so that tuple index type variables are resolved
     // before call/new signatures with union types.
     TFields::isSub_NamedFields(
-      subst,
-      tenv,
+      typeSub,
       fields1.fields,
       fields2.fields,
       (fs, name) -> fs.indexForFieldName(name.value),
@@ -1278,8 +1281,7 @@ extension class TFields {
     // Per-kind index checks: for each kind, if super has an index,
     // sub must also have a compatible index (or named fields that satisfy it).
     TFields::isSub_IndexPair(
-      subst,
-      tenv,
+      typeSub,
       fields1.stringIndex,
       fields2.stringIndex,
       fields1,
@@ -1301,8 +1303,7 @@ extension class TFields {
     | (effectiveNum1 @ Some _, _, effectiveNum2, _)
     | (None(), effectiveNum1, effectiveNum2, _) ->
       TFields::isSub_IndexPair(
-        subst,
-        tenv,
+        typeSub,
         effectiveNum1,
         effectiveNum2,
         fields1,
@@ -1313,8 +1314,7 @@ extension class TFields {
       }
     };
     TFields::isSub_IndexPair(
-      subst,
-      tenv,
+      typeSub,
       fields1.symbolIndex,
       fields2.symbolIndex,
       fields1,
@@ -1325,8 +1325,7 @@ extension class TFields {
     };
     // Symbol fields: same logic as string fields
     TFields::isSub_NamedFields(
-      subst,
-      tenv,
+      typeSub,
       fields1.symbolFields,
       fields2.symbolFields,
       (fs, _) -> fs.symbolIndex,
@@ -1336,13 +1335,13 @@ extension class TFields {
     | err @ STError _ -> return err
     | STOk() -> void
     };
-    TFields::isSubCallability(subst, tenv, fields1.call, fields2.call) match {
+    TFields::isSubCallabilityWith(fields1.call, fields2.call, funsSub) match {
     | None() -> return STRecFieldsCall(None(), fields1, fields2)
     | Some(STOk()) -> void
     | Some(err @ STErrorOnTFuns _) ->
       return STRecFieldsCall(Some(err), fields1, fields2)
     };
-    TFields::isSubCallability(subst, tenv, fields1.new, fields2.new) match {
+    TFields::isSubCallabilityWith(fields1.new, fields2.new, funsSub) match {
     | None() -> return STRecFieldsNew(None(), fields1, fields2)
     | Some(STOk()) -> void
     | Some(err @ STErrorOnTFuns _) ->
@@ -1356,6 +1355,16 @@ extension class TFields {
     tenv: TEnv,
     m1: Callability,
     m2: Callability,
+  ): ?STResult<TFuns> {
+    TFields::isSubCallabilityWith(m1, m2, (left, right) ->
+      TFuns::isSub(subst, tenv, left, right)
+    )
+  }
+
+  static fun isSubCallabilityWith(
+    m1: Callability,
+    m2: Callability,
+    funsSub: (TFuns, TFuns) -> STResult<TFuns>,
   ): ?STResult<TFuns> {
     (m1, m2) match {
     | (_, CUnknown()) -> Some(STOk())
@@ -1390,8 +1399,7 @@ extension class TFields {
     | (CAbsent(), CPresent _)
     | (CUnknown(), CPresent _) ->
       None()
-    | (CPresent(call1), CPresent(call2)) ->
-      Some(TFuns::isSub(subst, tenv, call1, call2))
+    | (CPresent(call1), CPresent(call2)) -> Some(funsSub(call1, call2))
     }
   }
 }
@@ -1404,6 +1412,18 @@ extension class STypes {
     stypes2: STypes,
   ): STResult<STypes> {
     savedSubst = subst.save();
+    result = STypes::isSubWith(stypes1, stypes2, (left, right) ->
+      TObject::isSub(subst, tenv, left, right)
+    );
+    if (result is STError _) subst.restore(savedSubst);
+    result
+  }
+
+  static fun isSubWith(
+    stypes1: STypes,
+    stypes2: STypes,
+    objectSub: (TObject, TObject) -> STResult<TObject>,
+  ): STResult<STypes> {
     stypes1.stypes.leq(stypes2.stypes, (sty1, sty2O) ->
       sty2O match {
       | Some(sty2) ->
@@ -1417,8 +1437,7 @@ extension class STypes {
         | (prim1 @ TPrimValue _, prim2 @ TPrimValue _) ->
           TPrimValue::isSub(prim1, prim2)
 
-        | (obj1 @ TObject _, obj2 @ TObject _) ->
-          TObject::isSub(subst, tenv, obj1, obj2)
+        | (obj1 @ TObject _, obj2 @ TObject _) -> objectSub(obj1, obj2)
 
         | _ -> internal_error("Internal error")
         } match {
@@ -1429,9 +1448,7 @@ extension class STypes {
       }
     ) match {
     | Success(void) -> STOk()
-    | Failure(err) ->
-      subst.restore(savedSubst);
-      STRecSTypes(err, stypes1, stypes2)
+    | Failure(err) -> STRecSTypes(err, stypes1, stypes2)
     }
   }
 }
@@ -1444,6 +1461,18 @@ extension class Clauses {
     clauses2: Clauses,
   ): STResult<Clauses> {
     savedSubst = subst.save();
+    result = Clauses::isSubWith(clauses1, clauses2, (left, right) ->
+      STypes::isSub(subst, tenv, left, right)
+    );
+    if (result is STError _) subst.restore(savedSubst);
+    result
+  }
+
+  static fun isSubWith(
+    clauses1: Clauses,
+    clauses2: Clauses,
+    concreteSub: (STypes, STypes) -> STResult<STypes>,
+  ): STResult<Clauses> {
     for (inter1 in clauses1) {
       errors = List[];
       for (inter2 in clauses2) {
@@ -1455,7 +1484,7 @@ extension class Clauses {
         | (Some _, None()) -> break void
         | (None(), Some _) -> continue
         | (Some(x1), Some(x2)) ->
-          STypes::isSub(subst, tenv, x1, x2) match {
+          concreteSub(x1, x2) match {
           | STOk() -> break void
           | err @ STErrorOnSTypes _ ->
             !errors = List.Cons((inter2, err), errors);
@@ -1463,7 +1492,6 @@ extension class Clauses {
           }
         }
       } else {
-        subst.restore(savedSubst);
         return STRecClauses(errors, inter1, clauses1, clauses2)
       }
     };
@@ -2076,7 +2104,15 @@ extension class TFun {
     // committed bindings. Exceptions abandon this subtype attempt too; restore
     // before rethrowing, just as the STError path below abandons its state.
     res = try {
-      TFun::isSub_(subst, tenv, f1, f2)
+      TFun::isSubWith(
+        f1,
+        f2,
+        (left, right) -> TType::isSub(subst, tenv, left, right),
+        spread -> VariadicTyping::resolveSubtypeRestTuple(subst, tenv, spread),
+        (spread, variance) ->
+          VariadicTyping::resolveRestElementType(subst, tenv, spread, variance)
+        ,
+      )
     } catch {
     | exn ->
       subst.restore(savedSubst);
@@ -2097,11 +2133,12 @@ extension class TFun {
     res
   }
 
-  private static fun isSub_(
-    subst: mutable Subst,
-    tenv: TEnv,
+  static fun isSubWith(
     f1: TFun,
     f2: TFun,
+    typeSub: (TType, TType) -> STResult<TType>,
+    restTuple: (?TType) -> ?Array<TType>,
+    restElement: (TType, Variance) -> ?TType,
   ): STResult<TFun> {
     if (f1.tparams.size() != f2.tparams.size()) {
       return STTypeParameterMismatch(f1, f2)
@@ -2115,7 +2152,7 @@ extension class TFun {
       | (Some _, None()) -> void
       | (None(), Some _) -> return STRecFunTParam(None(), i, f1, f2)
       | (Some(ty1), Some(ty2)) ->
-        TType::isSub(subst, tenv, ty2, ty1) match {
+        typeSub(ty2, ty1) match {
         | STOk() -> void
         | err @ STErrorOnTType _ -> return STRecFunTParam(Some(err), i, f1, f2)
         }
@@ -2160,7 +2197,7 @@ extension class TFun {
     | (tp1, tp2) ->
       this1 = tp1.tyOpt().fromSome();
       this2 = tp2.tyOpt().default(TType::top(this1.pos));
-      TType::isSub(subst, tenv, this2, this1) match {
+      typeSub(this2, this1) match {
       | STOk() -> void
       | err @ STErrorOnTType _ -> return STRecFunThisParam(Some(err), f1, f2)
       }
@@ -2170,13 +2207,7 @@ extension class TFun {
     // E.g. (...args: [A, B]) => R becomes (a: A, b: B) => R.
     // Optional params before the tuple become positionally required
     // since they can't be skipped to reach the tuple args.
-    (
-      f2params,
-      f2optionalParams,
-      f2spreadParam,
-    ) = VariadicTyping::resolveSubtypeRestTuple(
-      subst,
-      tenv,
+    (f2params, f2optionalParams, f2spreadParam) = restTuple(
       f2.spreadParam,
     ) match {
     | Some(tupleElts) ->
@@ -2187,13 +2218,7 @@ extension class TFun {
       (combined.toArray(), Array[], None())
     | None() -> (f2.params, f2.optionalParams, f2.spreadParam)
     };
-    (
-      f1params,
-      f1optionalParams,
-      f1spreadParam,
-    ) = VariadicTyping::resolveSubtypeRestTuple(
-      subst,
-      tenv,
+    (f1params, f1optionalParams, f1spreadParam) = restTuple(
       f1.spreadParam,
     ) match {
     | Some(tupleElts) ->
@@ -2212,12 +2237,7 @@ extension class TFun {
     spread1elt = f1spreadParam match {
     | None() -> None()
     | Some(spread1) ->
-      VariadicTyping::resolveRestElementType(
-        subst,
-        tenv,
-        spread1,
-        Contravariant(),
-      ) match {
+      restElement(spread1, Contravariant()) match {
       | None() -> return STInvalidSpread(spread1, f1, f2)
       | some @ Some _ -> some
       }
@@ -2235,7 +2255,7 @@ extension class TFun {
         | Some(p) -> p
         }
       };
-      TType::isSub(subst, tenv, p2, p1) match {
+      typeSub(p2, p1) match {
       | STOk() -> void
       | err @ STErrorOnTType _ -> return STRecFunParam(Some(err), i, f1, f2)
       }
@@ -2254,7 +2274,7 @@ extension class TFun {
         | Some(p) -> p
         }
       };
-      TType::isSub(subst, tenv, p2, p1) match {
+      typeSub(p2, p1) match {
       | STOk() -> void
       | err @ STErrorOnTType _ -> return STRecFunParam(Some(err), i, f1, f2)
       }
@@ -2279,12 +2299,7 @@ extension class TFun {
     | Some(spread2) ->
       // Positional checks above may have inferred symbolic element types.
       // Observe this projection now, without moving it ahead of those checks.
-      spread2elt = VariadicTyping::resolveRestElementType(
-        subst,
-        tenv,
-        spread2,
-        Covariant(),
-      ) match {
+      spread2elt = restElement(spread2, Covariant()) match {
       | None() -> return STInvalidSpread(spread2, f1, f2)
       | Some(spread2elt) -> spread2elt
       };
@@ -2292,7 +2307,7 @@ extension class TFun {
         f2params.size() + f2optionalParams.size() - f1params.size(),
         f1optionalParams.size(),
       )) {
-        TType::isSub(subst, tenv, spread2elt, f1optionalParams[io1]) match {
+        typeSub(spread2elt, f1optionalParams[io1]) match {
         | STOk() -> void
         | err @ STErrorOnTType _ ->
           return STRecFunOptionalSpread(err, io1 + f1params.size(), f1, f2)
@@ -2301,13 +2316,13 @@ extension class TFun {
       spread1elt match {
       | None() -> void
       | Some(s1) ->
-        TType::isSub(subst, tenv, spread2elt, s1) match {
+        typeSub(spread2elt, s1) match {
         | STOk() -> void
         | err @ STErrorOnTType _ -> return STRecFunSpread(Some(err), f1, f2)
         }
       }
     };
-    TType::isSub(subst, tenv, f1.retType, f2.retType) match {
+    typeSub(f1.retType, f2.retType) match {
     | STOk() -> STOk()
     | err @ STErrorOnTType _ -> STRecFunReturn(err, f1, f2)
     }
@@ -2322,18 +2337,30 @@ extension class TObject {
     obj2: TObject,
   ): STResult<TObject> {
     savedSubst = subst.save();
+    result = TObject::isSubWith(obj1, obj2, (left, right) -> {
+      savedBranchSubst = subst.save();
+      result = TFields::isSub(subst, tenv, left, right);
+      if (result is STError _) subst.restore(savedBranchSubst);
+      result
+    });
+    if (result is STError _) subst.restore(savedSubst);
+    result
+  }
+
+  static fun isSubWith(
+    obj1: TObject,
+    obj2: TObject,
+    fieldsSub: (TFields, TFields) -> STResult<TFields>,
+  ): STResult<TObject> {
     for (fields1 in obj1.branches) {
       errors = List[];
       for (fields2 in obj2.branches) {
-        savedBranchSubst = subst.save();
-        TFields::isSub(subst, tenv, fields1, fields2) match {
+        fieldsSub(fields1, fields2) match {
         | STOk() -> break void
         | err @ STErrorOnTFields _ ->
-          !errors = List.Cons((fields2, err), errors);
-          subst.restore(savedBranchSubst)
+          !errors = List.Cons((fields2, err), errors)
         }
       } else {
-        subst.restore(savedSubst);
         return STRecObject(errors, fields1, obj1, obj2)
       }
     };

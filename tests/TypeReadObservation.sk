@@ -1296,8 +1296,8 @@ fun testObservedCallbackSubtypeCommitsAtomically(): void {
   source = callback(observationNumber(), SKJS.TType::var(output));
   target = callback(SKJS.TType::var(input), observationString());
   check = () ->
-    subst.withCommittedTypeDecision<Bool>(scratch ->
-      SKJS.TType::isSub(scratch, tenv, source, target) is SKJS.STOk()
+    subst.withCommittedReadDecision<Bool>(tenv, context ->
+      context.isSubtype(source, target)
     );
   // The contravariant input is read before the unresolved covariant output.
   // A blocked comparison must not publish its earlier successful read.
