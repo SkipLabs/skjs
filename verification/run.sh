@@ -4,7 +4,7 @@
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$REPO"
+cd "$REPO" || exit 1
 
 SKJS_BIN="${SKJS_BIN:-target/host/dev/skjs}"
 BUILD=0

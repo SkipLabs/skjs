@@ -8,7 +8,7 @@
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$REPO"
+cd "$REPO" || exit 1
 
 CORPUS="${1:-verification/corpus/repair-work.json}"
 case "$CORPUS" in --*) CORPUS=verification/corpus/repair-work.json ;; *) shift || true ;; esac
