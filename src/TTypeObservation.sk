@@ -115,8 +115,8 @@ mutable class TypeReadLifetime private {private mutable active: Bool = true} {
 
 // Restricted validation capability. Consumers cannot allocate, grow, seal,
 // select a representation, clone solver state, or obtain a mutable owner.
-// The private expansion backend is still the observed legacy implementation;
-// migrating that kernel off mutable Subst is separate from this interface.
+// Head traversal uses fixed candidate reads. Normalization/projection behind
+// those reads still uses the observed legacy kernel with dynamic guards.
 mutable class TypeReadContext private {
   private scratch: mutable Subst,
   private tenv: TEnv,
@@ -152,27 +152,59 @@ mutable class TypeReadContext private {
 
   mutable fun expand(type: TType, variance: ?Variance): TType {
     this.lifetime.checkActive();
-    type.expand(this.scratch, this.tenv, variance)
+    type.expandWith(
+      inst -> this.expandInstance(inst, variance),
+      clauses -> Clauses::unionN(this.scratch, this.tenv, clauses),
+    )
+  }
+
+  // Candidate expansion is a tracked fixed-payload read, independent of
+  // variance. It cannot invoke inference's covariant sealing/default rules.
+  // Constraint and named-type normalization still use the guarded backend.
+  private mutable fun expandInstance(inst: TInst, variance: ?Variance): ?TType {
+    inst match {
+    | TSInst(name, targs) ->
+      Some(this.tenv.expandNamed(this.scratch, name, targs))
+    | tInter @ TInter _ -> Some(tInter.expand(this.scratch, this.tenv))
+    | tv @ TVar _ ->
+      variance.map(_ -> {
+        value = this.peekRaw(tv).fromSome();
+        for (constraint in tv.constraints) {
+          !value = TType::inter(this.scratch, this.tenv, value, constraint)
+        };
+        value
+      })
+    | arrLit @ TArrayLit _ ->
+      Some(ArrayLitTyping::expand(this.scratch, this.tenv, arrLit))
+    }
+  }
+
+  private mutable fun expandClauses(type: TType, variance: Variance): Clauses {
+    type.expandGraph(inst -> this.expandInstance(inst, Some(variance))) match {
+    | None() -> Clauses::top()
+    | Some((_, clauses)) -> Clauses::unionN(this.scratch, this.tenv, clauses)
+    }
   }
 
   mutable fun restElement(type: TType, variance: Variance): ?TType {
     this.lifetime.checkActive();
-    maybeGetRestElementType(this.scratch, this.tenv, type, variance)
+    this.expandClauses(type, variance).restElement(this.scratch, this.tenv)
   }
 
   // A constrained type subtypes its raw binding. The fallback therefore may
   // supply a supertype tuple shape; reading it still records the dependency.
   mutable fun spreadTuple(type: TType): ?Array<TType> {
     this.lifetime.checkActive();
-    clauses = type.expandToClauses(this.scratch, this.tenv, Covariant());
+    clauses = this.expandClauses(type, Covariant());
     clauses.getSingleTuple(this.scratch, this.tenv) match {
     | Some(elements) -> Some(elements)
     | None() ->
       type.getSingleVar().flatMap(tv ->
         this.peekRaw(tv).flatMap(bound ->
-          bound
-            .expandToClauses(this.scratch, this.tenv, Covariant())
-            .getSingleTuple(this.scratch, this.tenv)
+          this.expandClauses(bound, Covariant()).getSingleTuple(
+            this.scratch,
+            this.tenv,
+          )
         )
       )
     }

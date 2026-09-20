@@ -351,21 +351,36 @@ Six negative compilation probes reject allocation, growth, solver extraction,
 lifetime replacement/extraction and passing the context as a solver; their
 temporary source is removed after checking.
 
-Validation: 214 checker tests, 65 verifier suites and the unchanged 278 curated
+Validation: 215 checker tests, 65 verifier suites and the unchanged 278 curated
 proofs pass. Three isolated paired rounds have identical diagnostics; median
-seconds before/after are array 0.817/0.783, generic membership 1.147/1.101 and
-deep collection 6.066/5.944. No source corpus fixtures changed; native tests do
+seconds before/after the traversal split are array 0.937/0.817, generic membership
+1.228/1.227 and deep collection 6.828/5.887. These samples establish no observed
+regression, not a general speedup. No source corpus fixtures changed; native tests do
 not change the repair-census selection.
 
-A2 is **not complete**. The context's private expansion/projection implementation
-still invokes the observed legacy kernel, whose mutation prohibition is dynamic.
-It never passes that solver to the consumer callback, but this is not yet an
-end-to-end read-only kernel. The remaining raw production consumers are
+The head-expansion traversal and result construction are now shared operations
+with no solver parameter. Inference supplies its existing solving adapter;
+`TypeReadContext` supplies fixed-payload candidate reads, applying occurrence
+constraints without calling inference's `get`. Refinement, tuple shape and rest
+element head expansion use this path. Preserved symbolic occurrences are not
+inspected; unresolved candidates block instead of receiving an inference default.
+Cycle handling, top propagation and traversal order remain shared. Rest-element
+projection is also shared after head expansion, avoiding two iterator algorithms.
+The expansion tests exercise the production path: a closed outer binding with an
+open inner binding, symbolic preservation, unbound refusal and a contradictory
+occurrence constraint that leaves the underlying binding unchanged.
+
+A2 is **not complete**. Named-type expansion, intersections (including occurrence
+constraints), literal selectors, clause normalization and tuple/iterator projection
+still call the observed legacy kernel. Nested candidate reads there still use its
+guarded `get`; mutation prohibition remains dynamic in those operations. The
+shared traversal cannot directly solve a candidate, but its normalization adapters
+are not yet end-to-end read-only. The remaining raw production consumers are
 `TEnv.materializeRead` (including normalization and subtype decisions) and
 `TType.mayMatchAlternative`; the owner adapter and low-level protocol tests
-also retain the old boundary. Next migrate the recursive expansion and tuple/
-element projection kernel, then these remaining consumers; only then retire the
-old mutable callback API and the checks whose purpose has actually disappeared.
+also retain the old boundary. Next migrate those normalization/projection
+operations behind restricted capabilities, then the remaining consumers; only
+then retire the old mutable callback API and checks whose purpose has disappeared.
 
 ### Acceptance criteria and migration discipline
 
