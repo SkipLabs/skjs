@@ -35,11 +35,12 @@ fun observationBind(
 @test
 fun testObservedBindingIsCommitted(): void {
   subst = observationSubst();
+  tenv = observationTypeEnv(subst);
   tv = subst.gen(SKJS.PosRange::none);
   num = observationNumber();
   observationBind(subst, tv, num, false);
   epoch = subst.typeOwnerEpoch();
-  result = subst.withCommittedTypeReads(scratch -> scratch.peekRaw(tv));
+  result = subst.withCommittedReadContext(tenv, scratch -> scratch.peekRaw(tv));
   SKTest.expectEq(true, result is SKJS.TRReady _);
   SKTest.expectEq(true, subst.isClosed(tv));
   SKTest.expectEq(Some(num), subst.peekRaw(tv));
@@ -60,10 +61,11 @@ fun testUnboundObservationIsBlockedNotUnavailable(): void {
 @test
 fun testUnavailableObservationDoesNotCommit(): void {
   subst = observationSubst();
+  tenv = observationTypeEnv(subst);
   tv = subst.gen(SKJS.PosRange::none);
   observationBind(subst, tv, observationNumber(), false);
   epoch = subst.typeOwnerEpoch();
-  result = subst.withCommittedTypeReads<SKJS.TType>(scratch -> {
+  result = subst.withCommittedReadContext<SKJS.TType>(tenv, scratch -> {
     _ = scratch.peekRaw(tv);
     None()
   });
@@ -194,11 +196,12 @@ fun testFrozenAlreadyClosedReadSucceeds(): void {
 @test
 fun testOwnerRollbackInvalidatesInFlightRead(): void {
   subst = observationSubst();
+  tenv = observationTypeEnv(subst);
   tv = subst.gen(SKJS.PosRange::none);
   observationBind(subst, tv, observationNumber(), false);
   saved = subst.save();
   version = subst.inferenceVersion();
-  result = subst.withCommittedTypeReads(scratch -> {
+  result = subst.withCommittedReadContext(tenv, scratch -> {
     value = scratch.peekRaw(tv);
     subst.restore(saved);
     value
@@ -995,6 +998,57 @@ fun testObservedSubtypeDecisionDoesNotProposeGrowth(): void {
   // A false result commits the numeric read without proposing undefined.
   SKTest.expectEq(true, decision is SKJS.TRReady(false));
   SKTest.expectEq(true, subst.isClosed(target));
+}
+
+// A callback may capture its handle, but it must not learn further candidate
+// shapes after publication or after an exception has abandoned the read set.
+@test
+fun testReadContextExpiresOnEveryExit(): void {
+  for (fail in Array[false, true]) {
+    subst = observationSubst();
+    tenv = observationTypeEnv(subst);
+    inspected = subst.gen(SKJS.PosRange::none);
+    later = subst.gen(SKJS.PosRange::none);
+    observationBind(subst, inspected, observationNumber(), false);
+    observationBind(subst, later, observationString(), false);
+    escaped = SKJS.SubstReadCell::mcreate();
+    copied = SKJS.SubstReadCell::mcreate();
+    failed = false;
+    try {
+      _ = subst.withCommittedReadContext<SKJS.TType>(tenv, context -> {
+        escaped.!value = Some(context);
+        copied.!value = Some(context with {});
+        result = context.peekRaw(inspected);
+        if (fail) {
+          throw ObservationTestFailure()
+        } else {
+          result
+        }
+      })
+    } catch {
+    | ObservationTestFailure() -> !failed = true
+    | exn -> throw exn
+    };
+    SKTest.expectEq(fail, failed);
+    SKTest.expectEq(!fail, subst.isClosed(inspected));
+    blocked = false;
+    try {
+      _ = escaped.value.fromSome().peekRaw(later)
+    } catch {
+    | InvariantViolation(_) -> !blocked = true
+    | exn -> throw exn
+    };
+    SKTest.expectEq(true, blocked);
+    SKTest.expectEq(true, subst.isOpen(later));
+    copyBlocked = false;
+    try {
+      _ = copied.value.fromSome().peekRaw(later)
+    } catch {
+    | InvariantViolation(_) -> !copyBlocked = true
+    | exn -> throw exn
+    };
+    SKTest.expectEq(true, copyBlocked);
+  }
 }
 
 module end;

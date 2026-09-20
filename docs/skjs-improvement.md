@@ -131,8 +131,10 @@ callers. Declared parameters and hidden witnesses still share rigid algebra;
 owner/scope checks remain partly dynamic. Array representation selectors now
 have an opaque API distinct from value candidates, as described below.
 `Subst` combines candidate storage, commitments, rollback, query dependencies,
-caches and diagnostic/export state. `withCommittedTypeReads` passes a mutable
-`Subst` to its callback and detects forbidden operations dynamically.
+caches and diagnostic/export state. Rest-shape queries and refinement head expansion now receive a restricted
+`TypeReadContext`. The remaining `withCommittedTypeReads` consumers and the
+expansion backend still use mutable `Subst` and detect forbidden operations
+dynamically.
 `TType.isSub_` still proposes candidate growth, seals dependencies, establishes
 literal representations and checks the relation in one mutable transaction.
 Those mechanisms have been audited; their interfaces are not the target design.
@@ -173,7 +175,7 @@ diagnostic) is independent of variable role.
 ### Planned milestones
 
 These are architectural milestones A1–A4, separate from completed repair rows
-R1–R3/M1–M3. A1 is **done**; A2–A4 are **not started**.
+R1–R3/M1–M3. A1 is **done**; A2 is **in progress**; A3–A4 are **not started**.
 Names below describe responsibilities, not prescribed new class names.
 
 | ID | Deliverable | Closure evidence |
@@ -307,17 +309,63 @@ boundaries. Candidate state and identity replacement are unavailable to ordinary
 callers; role-specific creation, selector commitment and value growth are
 separate; rigid IDs cannot enter the solver. Occurrence constraints preserve
 identity. Clone/rollback/escape and literal controls remain required tests.
-A2–A4 are still open: validation callbacks receive mutable `Subst`, inference
+A2–A4 are still open: unmigrated validation callbacks receive mutable `Subst`, inference
 still participates in subtype checking, and the mutable routes have not yet
-been retired. The next step is an end-to-end restricted read context for rest
-shape extraction, including recursive expansion and its commitment boundary.
+been retired. The A2 checkpoint below records the first restricted consumer interface;
+its recursive expansion kernel and remaining consumers still need migration.
 
 Remaining dynamic enforcement includes checking-owner authority for witness allocation,
 checkpoint validity, observation read/commit checks, and the lifetime discipline
 of save/restore. The mutable state hierarchy is trusted implementation, not a
-security boundary against adding privileged subclasses/extensions. Validation
+security boundary against adding privileged subclasses/extensions. Unmigrated validation
 callbacks still receive mutable `Subst`; A2 removes that capability. No source
 acceptance or wire-format change is intended in this access-control slice.
+
+### A2 checkpoint: restricted rest and refinement consumers
+
+All four variadic shape boundaries (optional spread tuple, retained tuple
+absence, rest element, and combined call rest shape) now use `TypeReadContext`.
+Refinement head expansion uses the same capability. Its public instance
+operations expose only tracked reads; there is no allocation, growth, sealing,
+representation-selection, solver-cloning or mutable-owner accessor. The owner still
+performs atomic commitment before a result escapes. Optional absence commits
+nothing, while a retained negative/absent decision commits its inspected reads.
+
+The context expires when its callback returns or throws. Record copies share
+a private lifetime cell: a per-context Boolean was insufficient because an
+empty record copy duplicated its live flag. The lifecycle regression reproduced
+that escape before the shared-cell fix. Neither original nor copied handles can
+append reads after publication, and private fields cannot be used to replace the
+lifetime or obtain the backing substitution. This is runtime lifetime
+checking, not a static ownership proof. A callback that separately captures the
+original owner is still subject to the existing epoch/freeze checks. The generic
+callback result is not a proof certificate; callers still own its meaning.
+
+Cleanup removes the mutable-substitution rest-read helpers and four repeated
+environment-reset blocks. Existing layout tests now call the real production
+query instead of simulating its reads. Commitment, unavailable results and
+owner-rollback tests exercise the restricted boundary. A new lifecycle test
+checks normal and exceptional exits for both original and copied handles and
+refuses a subsequent uncommitted read.
+Six negative compilation probes reject allocation, growth, solver extraction,
+lifetime replacement/extraction and passing the context as a solver; their
+temporary source is removed after checking.
+
+Validation: 214 checker tests, 65 verifier suites and the unchanged 278 curated
+proofs pass. Three isolated paired rounds have identical diagnostics; median
+seconds before/after are array 0.817/0.783, generic membership 1.147/1.101 and
+deep collection 6.066/5.944. No source corpus fixtures changed; native tests do
+not change the repair-census selection.
+
+A2 is **not complete**. The context's private expansion/projection implementation
+still invokes the observed legacy kernel, whose mutation prohibition is dynamic.
+It never passes that solver to the consumer callback, but this is not yet an
+end-to-end read-only kernel. The remaining raw production consumers are
+`TEnv.materializeRead` (including normalization and subtype decisions) and
+`TType.mayMatchAlternative`; the owner adapter and low-level protocol tests
+also retain the old boundary. Next migrate the recursive expansion and tuple/
+element projection kernel, then these remaining consumers; only then retire the
+old mutable callback API and the checks whose purpose has actually disappeared.
 
 ### Acceptance criteria and migration discipline
 

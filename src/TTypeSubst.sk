@@ -623,6 +623,31 @@ mutable class Subst private {
     this.withCommittedTypeReads<T>(scratch -> Some(decide(scratch)))
   }
 
+  // Restricted consumer boundary. Clear caller recursion assumptions once,
+  // preserve them for nested observations, and retain the existing atomic
+  // owner commitment. The callback never receives the backing substitution.
+  mutable fun withCommittedReadContext<T>(
+    tenv: TEnv,
+    read: (mutable TypeReadContext) -> ?T,
+  ): TypeReadResult<T> {
+    readEnv = if (this.isObservingTypeReads()) {
+      tenv
+    } else {
+      tenv.forTypeReadObservation()
+    };
+    this.withCommittedTypeReads(scratch ->
+      TypeReadContext::runObserved(scratch, readEnv, read)
+    )
+  }
+
+  // A negative/absent decision still publishes the dependencies it inspected.
+  mutable fun withCommittedReadDecision<T>(
+    tenv: TEnv,
+    decide: (mutable TypeReadContext) -> T,
+  ): TypeReadResult<T> {
+    this.withCommittedReadContext<T>(tenv, context -> Some(decide(context)))
+  }
+
   // Record one supported mutation of inference state. Callers that need to
   // know whether a speculative computation was observationally pure compare
   // typeMutationStamp for a computation including scratch descendants;

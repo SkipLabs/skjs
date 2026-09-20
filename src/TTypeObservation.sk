@@ -6,7 +6,7 @@ module SKJS;
 
 // A snapshot is data, not evidence that a type judgment is valid. In particular,
 // this view is for diagnostics and read-only traversals; acceptance-relevant
-// shape inspection must use Subst.withCommittedTypeReads instead.
+// shape inspection must use a committed read boundary instead.
 class SubstSnapshot private (bindings: SortedMap<TVarID, SubstValue>) {
   static fun create(bindings: SortedMap<TVarID, SubstValue>): SubstSnapshot {
     SubstSnapshot(bindings)
@@ -94,6 +94,88 @@ mutable class SubstReadObservation private {
 
   readonly fun bindings(): SortedMap<TVarID, TType> {
     this.reads
+  }
+}
+
+// Shared by record copies of a capability. Copying a context must not copy
+// the expiration flag into an independently live handle.
+mutable class TypeReadLifetime private {private mutable active: Bool = true} {
+  static fun mcreate(): mutable TypeReadLifetime {
+    mutable TypeReadLifetime{}
+  }
+
+  mutable fun expire(): void {
+    this.!active = false
+  }
+
+  readonly fun checkActive(): void {
+    invariant(this.active, "A type-read context cannot outlive its callback")
+  }
+}
+
+// Restricted validation capability. Consumers cannot allocate, grow, seal,
+// select a representation, clone solver state, or obtain a mutable owner.
+// The private expansion backend is still the observed legacy implementation;
+// migrating that kernel off mutable Subst is separate from this interface.
+mutable class TypeReadContext private {
+  private scratch: mutable Subst,
+  private tenv: TEnv,
+  private lifetime: mutable TypeReadLifetime,
+} {
+  // Only the observation transaction may supply scratch. Always expire the
+  // capability, including on exceptions: retaining a handle cannot extend the
+  // transaction's read set after its commitments have already been published.
+  static fun runObserved<T>(
+    scratch: mutable Subst,
+    tenv: TEnv,
+    read: (mutable TypeReadContext) -> T,
+  ): T {
+    invariant(scratch.isObservingTypeReads());
+    lifetime = TypeReadLifetime::mcreate();
+    context = mutable TypeReadContext{scratch, tenv, lifetime};
+    result = SubstReadCell::mcreate();
+    try {
+      result.!value = Some(read(context))
+    } catch {
+    | exn ->
+      lifetime.expire();
+      throw exn
+    };
+    lifetime.expire();
+    result.value.fromSome()
+  }
+
+  mutable fun peekRaw(tv: TVar): ?TType {
+    this.lifetime.checkActive();
+    this.scratch.peekRaw(tv)
+  }
+
+  mutable fun expand(type: TType, variance: ?Variance): TType {
+    this.lifetime.checkActive();
+    type.expand(this.scratch, this.tenv, variance)
+  }
+
+  mutable fun restElement(type: TType, variance: Variance): ?TType {
+    this.lifetime.checkActive();
+    maybeGetRestElementType(this.scratch, this.tenv, type, variance)
+  }
+
+  // A constrained type subtypes its raw binding. The fallback therefore may
+  // supply a supertype tuple shape; reading it still records the dependency.
+  mutable fun spreadTuple(type: TType): ?Array<TType> {
+    this.lifetime.checkActive();
+    clauses = type.expandToClauses(this.scratch, this.tenv, Covariant());
+    clauses.getSingleTuple(this.scratch, this.tenv) match {
+    | Some(elements) -> Some(elements)
+    | None() ->
+      type.getSingleVar().flatMap(tv ->
+        this.peekRaw(tv).flatMap(bound ->
+          bound
+            .expandToClauses(this.scratch, this.tenv, Covariant())
+            .getSingleTuple(this.scratch, this.tenv)
+        )
+      )
+    }
   }
 }
 
