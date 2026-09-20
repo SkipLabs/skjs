@@ -1141,4 +1141,45 @@ fun testObservedLiteralRequiresCurrentSelection(): void {
   SKTest.expectEq(None(), selector.peek(subst, tenv));
 }
 
+// Elimination publishes a lasting fact; keeping an alternative does not.
+@test
+fun testAlternativePruningCommitsOnlyElimination(): void {
+  check = (
+    bound: ?SKJS.TType,
+    optional: Bool,
+    frozenCandidates: Bool,
+    eliminate: Bool,
+  ) -> {
+    subst = observationSubst();
+    tenv = observationTypeEnv(subst);
+    pos = SKJS.PosRange::none;
+    candidate = subst.gen(pos);
+    bound.each(ty -> observationBind(subst, candidate, ty, false));
+    objectType = (ty: SKJS.TType, isOptional: Bool) -> {
+      field = constructionField(ty) with {isOptional};
+      fields = SKJS.TFields::createFromSorted{
+        fields => SortedMap[].set(field.name, field),
+      };
+      SKJS.TType::single(SKJS.TObject::createSingleBranch(fields, None(), pos))
+    };
+    current = objectType(SKJS.TType::var(candidate), optional);
+    contract = objectType(observationString(), false);
+    subst.!freezeCandidates = frozenCandidates;
+    result = current.withStableContents(subst, tenv, contract, true);
+    SKTest.expectEq(eliminate, result.isBottom());
+    if (!eliminate) {
+      SKTest.expectEq(contract, result)
+    };
+    SKTest.expectEq(eliminate, subst.isClosed(candidate));
+    SKTest.expectEq(bound, subst.peekRaw(candidate));
+  };
+  check(Some(observationNumber()), false, false, true);
+  check(Some(observationString()), false, false, false);
+  // Optional fields do not prove separation, even with an unknown payload.
+  check(None(), true, false, false);
+  // Neither an unresolved payload nor a frozen open candidate permits pruning.
+  check(None(), false, false, false);
+  check(Some(observationNumber()), false, true, false);
+}
+
 module end;
