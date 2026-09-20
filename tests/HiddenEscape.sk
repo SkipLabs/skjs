@@ -59,17 +59,17 @@ fun testSubstSemanticEpochDoesNotRewind(): void {
   pos = SKJS.PosRange::none;
 
   saved = subst.save();
-  savedVersion = subst.version;
-  initialEpoch = subst.semanticEpoch;
+  savedVersion = subst.inferenceVersion();
+  initialEpoch = subst.typeOwnerEpoch();
   _ = subst.gen(pos);
-  afterGrowthEpoch = subst.semanticEpoch;
+  afterGrowthEpoch = subst.typeOwnerEpoch();
 
-  SKTest.expectEq(savedVersion + 1, subst.version);
+  SKTest.expectEq(savedVersion + 1, subst.inferenceVersion());
   SKTest.expectEq(initialEpoch + 1, afterGrowthEpoch);
 
   subst.restore(saved);
-  SKTest.expectEq(savedVersion, subst.version);
-  SKTest.expectEq(afterGrowthEpoch + 1, subst.semanticEpoch);
+  SKTest.expectEq(savedVersion, subst.inferenceVersion());
+  SKTest.expectEq(afterGrowthEpoch + 1, subst.typeOwnerEpoch());
 }
 
 // Hidden identity is separate from diagnostic spelling and survives renaming.

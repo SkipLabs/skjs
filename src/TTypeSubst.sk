@@ -80,14 +80,22 @@ mutable base class SubstState private {
   mutable seenExpansion: SortedMap<ExpansionKey, TType>,
   // Rollbackable inference-state version. TVar allocation uses this identity
   // space, so restore intentionally rewinds it with the rest of SubstState.
-  mutable version: Int,
+  protected mutable version: Int,
   // Monotone mutation identity for acceptance-relevant observations. Unlike
   // version, this never rewinds on restore: two states reached on different
   // timelines must not look unchanged merely because rollback reused a version.
-  mutable semanticEpoch: Int,
-  mutable values: SortedMap<TVarID, SubstValue>,
-  mutable origins: SortedMap<TVarID, TVarOrigin>,
+  protected mutable semanticEpoch: Int,
+  protected mutable values: SortedMap<TVarID, SubstValue>,
+  protected mutable origins: SortedMap<TVarID, TVarOrigin>,
 } {
+  // Immutable inspection only; mutation belongs to the owning substitution.
+  readonly fun inferenceVersion(): Int {
+    this.version
+  }
+  readonly fun typeOwnerEpoch(): Int {
+    this.semanticEpoch
+  }
+
   readonly fun save(): SavedSubst {
     SavedSubst::create(this)
   }
@@ -342,6 +350,12 @@ mutable class Subst private {
     }
   }
 
+  // Exporters receive an immutable map value, never writable owner storage.
+  // This is serialization data, not evidence for an acceptance decision.
+  readonly fun bindingsForExport(): SortedMap<TVarID, SubstValue> {
+    this.values
+  }
+
   // Read-only traversals that do not install materialized type facts use this
   // immutable view instead of the tracing live-state accessors.
   readonly fun snapshot(): SubstSnapshot {
@@ -433,25 +447,26 @@ mutable class Subst private {
   }
 
   mutable fun restore(saved: SavedSubst): void {
+    state: readonly SubstState = saved;
     this.readObservation match {
     | Some(frame) ->
       // Local cache rollback is harmless. Candidate-state replacement is not
       // a read, even if the caller plans to restore it again before returning.
-      if (saved.version != this.version || saved.values != this.values) {
+      if (state.version != this.version || state.values != this.values) {
         frame.block()
       }
     | None() -> void
     };
     // Restoring caches alone does not change candidate state. A real state
     // transition advances the shared stamp even when it rewinds the version.
-    if (saved.version != this.version || saved.values != this.values) {
+    if (state.version != this.version || state.values != this.values) {
       this.queryReads.!mutations = this.queryReads.mutations + 1
     };
     nextSemanticEpoch = this.semanticEpoch + 1;
-    this.!version = saved.version;
+    this.!version = state.version;
     this.!semanticEpoch = nextSemanticEpoch;
-    this.!values = saved.values;
-    this.!origins = saved.origins;
+    this.!values = state.values;
+    this.!origins = state.origins;
     this.readObservation match {
     | Some(_) ->
       // Equal candidate bindings do not establish a saved cache's provenance.
@@ -464,10 +479,10 @@ mutable class Subst private {
       this.!seenUnion = SortedMap[];
       this.!seenExpansion = SortedMap[]
     | None() ->
-      this.!seenSub = saved.seenSub;
-      this.!seenInter = saved.seenInter;
-      this.!seenUnion = saved.seenUnion;
-      this.!seenExpansion = saved.seenExpansion
+      this.!seenSub = state.seenSub;
+      this.!seenInter = state.seenInter;
+      this.!seenUnion = state.seenUnion;
+      this.!seenExpansion = state.seenExpansion
     }
   }
 
@@ -728,8 +743,7 @@ mutable class Subst private {
   }
 
   mutable fun gen(pos: PosRange): TVar {
-    id = this.bumpVersion();
-    TVar::create(pos, TVarID::create(id))
+    TVar::create(pos, TVarID::create(this))
   }
 
   // A scope may record allocation progress but cannot rewind the allocator.
@@ -738,18 +752,16 @@ mutable class Subst private {
   }
 
   readonly fun skolemIdsSince(first: Int): SortedSet<Id> {
-    ids = SortedSet[];
-    for (id in Range(first, this.nextSkolemId)) {
-      !ids = ids.set(Id::createHiddenWitness(id))
-    };
-    ids
+    Id::hiddenWitnessesSince(this, first)
   }
 
-  mutable fun genSkolemTParam(
-    pos: PosRange,
-    name: String,
-    cstr: ?TType,
-  ): TParamWithConstraint {
+  // Solver/witness factories consume owner-controlled serials, not an
+  // arbitrary caller-supplied number. Consuming a serial alone grants no ID.
+  mutable fun allocateCandidateSerial(): Int {
+    this.bumpVersion()
+  }
+
+  mutable fun allocateHiddenWitnessSerial(): Int {
     this.readObservation.each(frame -> frame.block());
     invariant(
       this.nextSkolemId >= 0,
@@ -759,17 +771,28 @@ mutable class Subst private {
     );
     id = this.nextSkolemId;
     this.!nextSkolemId = this.nextSkolemId + 1;
-    TParamWithConstraint(name, pos.fileName, Id::createHiddenWitness(id), cstr)
+    id
+  }
+
+  mutable fun genSkolemTParam(
+    pos: PosRange,
+    name: String,
+    cstr: ?TType,
+  ): TParamWithConstraint {
+    TParamWithConstraint(
+      name,
+      pos.fileName,
+      Id::createHiddenWitness(this),
+      cstr,
+    )
   }
 
   mutable fun genForField(pos: PosRange): TVar {
-    id = this.bumpVersion();
-    TVar::create(pos, TVarID::createForField(id))
+    TVar::create(pos, TVarID::createForField(this))
   }
 
   mutable fun genForLiteralCommitment(pos: PosRange): TVar {
-    id = this.bumpVersion();
-    TVar::create(pos, TVarID::createForLiteralCommitment(id))
+    TVar::create(pos, TVarID::createForLiteralCommitment(this))
   }
 
   mutable fun isOpen(tvar: TVar): Bool {

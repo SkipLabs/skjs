@@ -27,7 +27,7 @@ fun testTypeClaimSnapshotUnion(): void {
   };
   observationBind(subst, tv, SKJS.TType::top(pos), true);
   SKTest.expectEq(recorded.json, export(snapshot).json);
-  SKTest.expectEq(true, export(subst.values).top);
+  SKTest.expectEq(true, export(subst.bindingsForExport()).top);
   SKTest.expectEq("unbound-inference-variable", export(empty).reason);
   cyclic = empty.set(tv.id, SKJS.SVClosed(mixed));
   SKTest.expectEq("fuel-exhausted", export(cyclic).reason);

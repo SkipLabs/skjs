@@ -38,23 +38,23 @@ fun testObservedBindingIsCommitted(): void {
   tv = subst.gen(SKJS.PosRange::none);
   num = observationNumber();
   observationBind(subst, tv, num, false);
-  epoch = subst.semanticEpoch;
+  epoch = subst.typeOwnerEpoch();
   result = subst.withCommittedTypeReads(scratch -> scratch.peekRaw(tv));
   SKTest.expectEq(true, result is SKJS.TRReady _);
   SKTest.expectEq(true, subst.isClosed(tv));
   SKTest.expectEq(Some(num), subst.peekRaw(tv));
-  SKTest.expectEq(epoch + 1, subst.semanticEpoch);
+  SKTest.expectEq(epoch + 1, subst.typeOwnerEpoch());
 }
 
 @test
 fun testUnboundObservationIsBlockedNotUnavailable(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
-  epoch = subst.semanticEpoch;
+  epoch = subst.typeOwnerEpoch();
   result = subst.withCommittedTypeReads(scratch -> scratch.peekRaw(tv));
   SKTest.expectEq(true, result is SKJS.TRBlocked _);
   SKTest.expectEq(true, subst.isUnbound(tv));
-  SKTest.expectEq(epoch, subst.semanticEpoch);
+  SKTest.expectEq(epoch, subst.typeOwnerEpoch());
 }
 
 @test
@@ -62,14 +62,14 @@ fun testUnavailableObservationDoesNotCommit(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
   observationBind(subst, tv, observationNumber(), false);
-  epoch = subst.semanticEpoch;
+  epoch = subst.typeOwnerEpoch();
   result = subst.withCommittedTypeReads<SKJS.TType>(scratch -> {
     _ = scratch.peekRaw(tv);
     None()
   });
   SKTest.expectEq(true, result is SKJS.TRUnavailable _);
   SKTest.expectEq(true, subst.isOpen(tv));
-  SKTest.expectEq(epoch, subst.semanticEpoch);
+  SKTest.expectEq(epoch, subst.typeOwnerEpoch());
 }
 
 @test
@@ -138,7 +138,7 @@ fun testCaughtAllocationDoesNotAuthorizeObservation(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
   observationBind(subst, tv, observationNumber(), false);
-  epoch = subst.semanticEpoch;
+  epoch = subst.typeOwnerEpoch();
   result = subst.withCommittedTypeReads(scratch -> {
     saved = scratch.save();
     try {
@@ -154,7 +154,7 @@ fun testCaughtAllocationDoesNotAuthorizeObservation(): void {
   });
   SKTest.expectEq(true, result is SKJS.TRBlocked _);
   SKTest.expectEq(true, subst.isOpen(tv));
-  SKTest.expectEq(epoch, subst.semanticEpoch);
+  SKTest.expectEq(epoch, subst.typeOwnerEpoch());
 }
 
 @test
@@ -166,7 +166,7 @@ fun testFrozenTransferIsAtomic(): void {
   observationBind(subst, field, num, false);
   observationBind(subst, candidate, num, false);
   subst.!freezeCandidates = true;
-  epoch = subst.semanticEpoch;
+  epoch = subst.typeOwnerEpoch();
   result = subst.withCommittedTypeReads(scratch -> {
     _ = scratch.peekRaw(field);
     scratch.peekRaw(candidate)
@@ -176,7 +176,7 @@ fun testFrozenTransferIsAtomic(): void {
   // the complete read set would require sealing a frozen candidate.
   SKTest.expectEq(true, subst.isOpen(field));
   SKTest.expectEq(true, subst.isOpen(candidate));
-  SKTest.expectEq(epoch, subst.semanticEpoch);
+  SKTest.expectEq(epoch, subst.typeOwnerEpoch());
 }
 
 @test
@@ -185,10 +185,10 @@ fun testFrozenAlreadyClosedReadSucceeds(): void {
   tv = subst.gen(SKJS.PosRange::none);
   observationBind(subst, tv, observationNumber(), true);
   subst.!freezeCandidates = true;
-  epoch = subst.semanticEpoch;
+  epoch = subst.typeOwnerEpoch();
   result = subst.withCommittedTypeReads(scratch -> scratch.peekRaw(tv));
   SKTest.expectEq(true, result is SKJS.TRReady _);
-  SKTest.expectEq(epoch, subst.semanticEpoch);
+  SKTest.expectEq(epoch, subst.typeOwnerEpoch());
 }
 
 @test
@@ -197,13 +197,13 @@ fun testOwnerRollbackInvalidatesInFlightRead(): void {
   tv = subst.gen(SKJS.PosRange::none);
   observationBind(subst, tv, observationNumber(), false);
   saved = subst.save();
-  version = subst.version;
+  version = subst.inferenceVersion();
   result = subst.withCommittedTypeReads(scratch -> {
     value = scratch.peekRaw(tv);
     subst.restore(saved);
     value
   });
-  SKTest.expectEq(version, subst.version);
+  SKTest.expectEq(version, subst.inferenceVersion());
   SKTest.expectEq(true, result is SKJS.TRBlocked _);
   SKTest.expectEq(true, subst.isOpen(tv));
 }
@@ -382,13 +382,13 @@ fun testFalseTypeDecisionCommitsItsReads(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
   observationBind(subst, tv, observationNumber(), false);
-  epoch = subst.semanticEpoch;
+  epoch = subst.typeOwnerEpoch();
   result = subst.withCommittedTypeDecision<Bool>(scratch ->
     scratch.peekRaw(tv).fromSome().getSingleVar().isSome()
   );
   SKTest.expectEq(true, result is SKJS.TRReady(false));
   SKTest.expectEq(true, subst.isClosed(tv));
-  SKTest.expectEq(epoch + 1, subst.semanticEpoch);
+  SKTest.expectEq(epoch + 1, subst.typeOwnerEpoch());
 }
 
 // This is the shape of the function-subtyping tuple decision: no fixed tuple
@@ -410,13 +410,13 @@ fun testAbsentTupleDecisionCommitsItsReads(): void {
 fun testBlockedDecisionIsNotFalse(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
-  epoch = subst.semanticEpoch;
+  epoch = subst.typeOwnerEpoch();
   result = subst.withCommittedTypeDecision<Bool>(scratch ->
     scratch.isClosed(tv)
   );
   SKTest.expectEq(true, result is SKJS.TRBlocked _);
   SKTest.expectEq(true, subst.isUnbound(tv));
-  SKTest.expectEq(epoch, subst.semanticEpoch);
+  SKTest.expectEq(epoch, subst.typeOwnerEpoch());
 }
 
 // Catching a forbidden inference operation cannot produce a trusted negative
@@ -424,7 +424,7 @@ fun testBlockedDecisionIsNotFalse(): void {
 @test
 fun testCaughtBlockDoesNotAuthorizeNegativeDecision(): void {
   subst = observationSubst();
-  epoch = subst.semanticEpoch;
+  epoch = subst.typeOwnerEpoch();
   result = subst.withCommittedTypeDecision<Bool>(scratch -> {
     try {
       _ = scratch.gen(SKJS.PosRange::none)
@@ -435,7 +435,7 @@ fun testCaughtBlockDoesNotAuthorizeNegativeDecision(): void {
     false
   });
   SKTest.expectEq(true, result is SKJS.TRBlocked _);
-  SKTest.expectEq(epoch, subst.semanticEpoch);
+  SKTest.expectEq(epoch, subst.typeOwnerEpoch());
 }
 
 // The layout can inspect an outer binding without inspecting its element.
@@ -475,7 +475,7 @@ fun testRestLayoutCommitmentRollsBackWithAlternative(): void {
   SKTest.expectEq(true, subst.isClosed(tv));
   subst.restore(saved);
   SKTest.expectEq(true, subst.isOpen(tv));
-  SKTest.expectEq(saved.version, subst.version);
+  SKTest.expectEq(saved.inferenceVersion(), subst.inferenceVersion());
 }
 
 // Alias/class constraint probes may solve throwaway variables while a surrounding
@@ -486,7 +486,7 @@ fun testDetachedTypeArgumentProbeDoesNotBlockObservation(): void {
   subst = observationSubst();
   observed = subst.gen(SKJS.PosRange::none);
   observationBind(subst, observed, observationNumber(), false);
-  ownerVersion = subst.version;
+  ownerVersion = subst.inferenceVersion();
   result = subst.withCommittedTypeReads<Bool>(scratch -> {
     scratch.withTypeArgumentProbe(probe -> {
       // Both allocation and growth are confined to the detached probe.
@@ -504,13 +504,13 @@ fun testDetachedTypeArgumentProbeDoesNotBlockObservation(): void {
   SKTest.expectEq(true, subst.isClosed(observed));
   // Only committing the observed binding mutates the owner; speculative probe
   // allocation/growth lives on the detached clone.
-  SKTest.expectEq(ownerVersion + 1, subst.version);
+  SKTest.expectEq(ownerVersion + 1, subst.inferenceVersion());
 }
 
 @test
 fun testProbePurposeSurvivesCloneAndNormalization(): void {
   subst = observationSubst();
-  originalVersion = subst.version;
+  originalVersion = subst.inferenceVersion();
   subst.withTypeArgumentProbe(probe -> {
     child = probe.clone();
     fresh = SKJS.Subst::mcreate(child);
@@ -525,7 +525,7 @@ fun testProbePurposeSurvivesCloneAndNormalization(): void {
     });
     SKTest.expectEq(true, decision is SKJS.TRReady(true));
   });
-  SKTest.expectEq(originalVersion, subst.version);
+  SKTest.expectEq(originalVersion, subst.inferenceVersion());
   SKTest.expectEq(true, subst.typeComputationPurpose() is SKJS.TCPChecking());
 }
 
@@ -692,7 +692,9 @@ fun testRecursiveSubtypeMemoScope(): void {
   tenv = observationTypeEnv(subst);
   number = observationNumber();
   string = observationString();
-  assumed = tenv with {seenSub => SortedSet[(subst.version, number, string)]};
+  assumed = tenv with {
+    seenSub => SortedSet[(subst.inferenceVersion(), number, string)],
+  };
   conditional = SKJS.TType::isSub(subst, assumed, number, string);
   SKTest.expectEq(true, conditional is SKJS.STOk());
   // The conditional result must not escape its recursive context.
@@ -707,7 +709,9 @@ fun testIndependentSubtypeInsideRecursiveContextCanMemoize(): void {
   number = observationNumber();
   string = observationString();
   top = SKJS.TType::top(SKJS.PosRange::none);
-  assumed = tenv with {seenSub => SortedSet[(subst.version, number, string)]};
+  assumed = tenv with {
+    seenSub => SortedSet[(subst.inferenceVersion(), number, string)],
+  };
   result = SKJS.TType::isSub(subst, assumed, number, top);
   SKTest.expectEq(true, result is SKJS.STOk());
   SKTest.expectEq(true, subst.seenSub.contains((number, top)));
@@ -732,7 +736,9 @@ fun testRecursiveQueryInCloneSurvivesRollback(): void {
   tenv = observationTypeEnv(subst);
   number = observationNumber();
   string = observationString();
-  assumed = tenv with {seenSub => SortedSet[(subst.version, number, string)]};
+  assumed = tenv with {
+    seenSub => SortedSet[(subst.inferenceVersion(), number, string)],
+  };
   stamp = subst.typeQueryReadStamp();
   scratch = subst.clone();
   saved = scratch.save();
@@ -750,7 +756,7 @@ fun testRecursiveQueryInCloneSurvivesRollback(): void {
 fun testCompletedRecursiveQueryDischargesOwnPremise(): void {
   subst = observationSubst();
   premise = SKJS.TQSubtype(
-    subst.version,
+    subst.inferenceVersion(),
     observationNumber(),
     observationString(),
   );
@@ -772,7 +778,7 @@ fun testCompletedRecursiveQueryDischargesOwnPremise(): void {
 fun testAbandonedRecursiveQueryDoesNotDischargePremise(): void {
   subst = observationSubst();
   premise = SKJS.TQSubtype(
-    subst.version,
+    subst.inferenceVersion(),
     observationNumber(),
     observationString(),
   );

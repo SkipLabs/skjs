@@ -1919,8 +1919,10 @@ extension class TType {
     u1: TType,
     u2: TType,
   ): STResult<TType> {
-    if (tenv.seenSub.contains((subst.version, u1, u2))) {
-      subst.recordRecursiveTypeQuery(TQSubtype(subst.version, u1, u2));
+    if (tenv.seenSub.contains((subst.inferenceVersion(), u1, u2))) {
+      subst.recordRecursiveTypeQuery(
+        TQSubtype(subst.inferenceVersion(), u1, u2),
+      );
       return STOk()
     };
     // Two recursive aliases whose type arguments grow at each level never
@@ -1932,7 +1934,7 @@ extension class TType {
     (u1.getSingleInst(), u2.getSingleInst()) match {
     | (Some(inst1), Some(inst2)) ->
       namedPair = (
-        subst.version,
+        subst.inferenceVersion(),
         tenv.expansionCacheKey(subst, inst1.name, inst1.targs),
         tenv.expansionCacheKey(subst, inst2.name, inst2.targs),
       );
@@ -1962,8 +1964,10 @@ extension class TType {
       !tenv.subtypingHeadDepth = tenv.subtypingHeadDepth.set(key, count + 1)
     | _ -> void
     };
-    !tenv.seenSub = tenv.seenSub.set((subst.version, u1, u2));
-    subst.introduceTypeQueryAssumption(TQSubtype(subst.version, u1, u2));
+    !tenv.seenSub = tenv.seenSub.set((subst.inferenceVersion(), u1, u2));
+    subst.introduceTypeQueryAssumption(
+      TQSubtype(subst.inferenceVersion(), u1, u2),
+    );
 
     // Shortcut: TInter(tys) <: u2 if u2 is one of the tys
     u1.getSingleInter() match {

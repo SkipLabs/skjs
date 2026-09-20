@@ -3104,7 +3104,7 @@ class STypes private (
 //
 // *see Subst#get
 base class TVarID private final (
-  value: Int,
+  protected value: Int,
 ) uses Orderable, XXHashable, Hashable {
   children =
   // A normal type variable identifier
@@ -3116,16 +3116,16 @@ base class TVarID private final (
   // an ordinary inference candidate.
   | TVIDForLiteralCommitment
 
-  static fun create(id: Int): TVarID {
-    TVID(id)
+  static fun create(owner: mutable Subst): TVarID {
+    TVID(owner.allocateCandidateSerial())
   }
 
-  static fun createForField(id: Int): TVarID {
-    TVIDForField(id)
+  static fun createForField(owner: mutable Subst): TVarID {
+    TVIDForField(owner.allocateCandidateSerial())
   }
 
-  static fun createForLiteralCommitment(id: Int): TVarID {
-    TVIDForLiteralCommitment(id)
+  static fun createForLiteralCommitment(owner: mutable Subst): TVarID {
+    TVIDForLiteralCommitment(owner.allocateCandidateSerial())
   }
 
   fun toString(): String {
@@ -3351,8 +3351,8 @@ base class ParamOrigin uses XXHashable, Orderable {
 }
 
 value class Id private (
-  id: String,
-  origin: ParamOrigin,
+  private id: String,
+  private origin: ParamOrigin,
 ) uses XXHashable, Orderable, Show {
   static fun create(name: String, id: Int, lexer: readonly Lexer): Id {
     Id(`${name}:${id}:${lexer.relativeFileNameHash}`, PODeclared())
@@ -3372,8 +3372,24 @@ value class Id private (
 
   // Only the owning substitution allocates witness serials. A synthetic name
   // with the same spelling is a different identity by construction.
-  static fun createHiddenWitness(serial: Int): Id {
+  static fun createHiddenWitness(owner: mutable Subst): Id {
+    serial = owner.allocateHiddenWitnessSerial();
     Id(`synthetic:skolem:${serial}`, POHiddenWitness())
+  }
+
+  // Recover only witnesses already allocated by this owner. A checkpoint
+  // cannot fabricate an identity beyond the allocator's current extent.
+  static fun hiddenWitnessesSince(
+    owner: readonly Subst,
+    first: Int,
+  ): SortedSet<Id> {
+    last = owner.skolemCheckpoint();
+    invariant(first >= 0 && first <= last, "Invalid hidden-witness checkpoint");
+    ids = SortedSet[];
+    for (serial in Range(first, last)) {
+      !ids = ids.set(Id(`synthetic:skolem:${serial}`, POHiddenWitness()))
+    };
+    ids
   }
 
   fun isHiddenWitness(): Bool {

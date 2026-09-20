@@ -6,7 +6,7 @@ verification pipeline, and it is not a plan to make SKJS implement the Lean
 fragment.
 
 The bounded repair/lifetime audit is complete. The stronger architectural
-refactoring is **planned, not complete**: clarity, restricted capabilities and
+refactoring is **in progress, not complete**: clarity, restricted capabilities and
 separation of inference from validation are its additional completion criteria.
 See [Architectural end state](#architectural-end-state).
 
@@ -117,8 +117,11 @@ wrappers or regression examples around the same unrestricted state.
 ### Current gap
 
 `TParam` and `TVar` are separate, and parameter identity includes `ParamOrigin`.
-However, declared parameters and hidden witnesses still share a general `Id`
-interface; allocation and scope restrictions are partly runtime protocols.
+A1 now restricts solver/witness allocation to owner-controlled serials and
+protects identity payloads, binding storage and mutation counters from ordinary
+callers. Declared parameters and hidden witnesses still share rigid algebra;
+owner/scope checks remain partly dynamic. Candidate versus representation roles
+still need the migration described in the A1 checkpoint below.
 `Subst` combines candidate storage, commitments, rollback, query dependencies,
 caches and diagnostic/export state. `withCommittedTypeReads` passes a mutable
 `Subst` to its callback and detects forbidden operations dynamically.
@@ -162,7 +165,7 @@ diagnostic) is independent of variable role.
 ### Planned milestones
 
 These are architectural milestones A1–A4, separate from completed repair rows
-R1–R3/M1–M3. All are currently **not started**; this plan is not implementation.
+R1–R3/M1–M3. A1 is **in progress**; A2–A4 are **not started**.
 Names below describe responsibilities, not prescribed new class names.
 
 | ID | Deliverable | Closure evidence |
@@ -181,6 +184,56 @@ same unrestricted owner to the callback does not complete A2. For A3, use
 relation checked; include literal selectors, negative decisions and retained
 constructor results, not just the final Boolean. Reuse the consumer inventory
 and regression responsibilities in this guide for A4.
+
+### A1 checkpoint: owner-state and identity access
+
+Implemented in the first slice:
+
+- Binding/origin maps and the inference-version/owner-epoch counters are
+  protected within the substitution-state implementation. Ordinary consumers
+  use read-only counters; exporters receive an immutable map value through
+  `bindingsForExport`. Neither a direct write nor a `with` update of a saved
+  state's protected fields is available to ordinary callers.
+- Solver-ID factories and the hidden-witness factory consume serials from the
+  supplied owner; they no longer accept caller-chosen integers. The serial
+  allocators perform the existing observation/mutation or clone checks. Witness
+  enumeration is limited to the owner's allocated range. An allocation request
+  may consume a serial, but a returned integer cannot construct an identity.
+- Identity payloads are private/protected, so a `with` update cannot change an
+  ordinary parameter's origin to hidden or replace a solver serial. Rigid
+  parameters remain inadmissible to the solver's `TVar` argument.
+- Native fixtures use production growth/sealing operations, with no test-only
+  writable-store API. The old uninstrumented-store-mutation fixture instead
+  tests mismatched payload rejection at the read frame itself. Snapshot testing
+  uses legal growth and retains the immutable-snapshot assertion.
+
+Negative compilation probes confirmed rejection of all eight attempted bypasses:
+live binding write, epoch write, caller-chosen candidate/witness serials,
+witness-origin rewrite, solver-serial rewrite, solving a rigid parameter, and
+saved-binding replacement. The temporary probe was removed after checking;
+there are no intentionally uncompilable files in the source tree.
+
+Validation: all 211 checker tests and 65 independent verifier suites pass;
+the curated corpus retains 278 proofs with zero unexpected outcomes. Three
+isolated paired rounds retain exact diagnostics. Median seconds before/after:
+array 0.734/0.721, generic membership 1.074/1.068, deep collection 5.369/5.267.
+No TypeScript source regression was added or regrouped, so the repair-census
+selection and baseline remain unchanged; native tests are not corpus rows.
+
+A1 is not closed yet. `TArrayLit` still accepts a general `TVar`, and production
+`ArrayLitTyping.typeFromLiteral` uses ordinary `gen` for its representation
+selector. Conversely, `genForLiteralCommitment` also serves contextual literal
+value inference. These purposes must be separated deliberately: simply relabeling
+all such variables would change their freeze/growth behavior. Next, trace the
+selector and literal-value transitions, give their construction APIs distinct
+roles, and preserve the existing tuple/array and literal-precision controls.
+
+Remaining dynamic enforcement includes clone prohibition for witness allocation,
+checkpoint validity, observation read/commit checks, and the lifetime discipline
+of save/restore. The mutable state hierarchy is trusted implementation, not a
+security boundary against adding privileged subclasses/extensions. Validation
+callbacks still receive mutable `Subst`; A2 removes that capability. No source
+acceptance or wire-format change is intended in this access-control slice.
 
 ### Acceptance criteria and migration discipline
 

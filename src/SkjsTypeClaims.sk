@@ -140,7 +140,7 @@ fun buildFunTypeClaims(
     tcenv.claimedEnvs.toArray(),
     exprs.toArray(),
     lvalues.toArray(),
-    tcenv.subst.values,
+    tcenv.subst.bindingsForExport(),
     rigidTypes,
     tcenv.subst.popClaimedOpFrame(),
     aborted,
@@ -777,9 +777,9 @@ fun recordClosedClaimedOp(
 ): void {
   if (!getConfig(subst.context).emitSkjsTypeClaims) return void;
   if (src.clauses.isTop() || dst.clauses.isTop()) return void;
-  srcEx = claimTypeJsonBounded(src, true, true, subst.values, 64);
+  srcEx = claimTypeJsonBounded(src, true, true, subst.bindingsForExport(), 64);
   if (srcEx.reason != "") return void;
-  dstEx = claimTypeJsonBounded(dst, true, true, subst.values, 64);
+  dstEx = claimTypeJsonBounded(dst, true, true, subst.bindingsForExport(), 64);
   if (dstEx.reason != "") return void;
   if (kind == "expand" && srcEx.json == dstEx.json) return void;
   subst.recordClaimedOp(kind, srcEx.json, dstEx.json)
