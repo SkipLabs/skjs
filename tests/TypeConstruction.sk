@@ -188,6 +188,23 @@ fun testUncommittedLiteralIntersectionDoesNotBecomeStale(): void {
   SKTest.expectEq(true, reused == recomputed);
 }
 
+// Representation choice is one-shot even while ordinary candidates are frozen;
+// rolling back the enclosing alternative restores the uncommitted state.
+@test
+fun testLiteralSelectorCommitmentAndRollback(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  selector = subst.gen(SKJS.PosRange::none);
+  saved = subst.save();
+  subst.!freezeCandidates = true;
+  subst.grow(tenv, selector, observationNumber(), SKJS.Covariant());
+  subst.grow(tenv, selector, observationString(), SKJS.Covariant());
+  SKTest.expectEq(Some(observationNumber()), subst.peek(tenv, selector));
+  SKTest.expectEq(true, subst.isClosed(selector));
+  subst.restore(saved);
+  SKTest.expectEq(None(), subst.peek(tenv, selector));
+}
+
 @test
 fun testSubtypeLifetimeFollowsCallbackVariance(): void {
   subst = observationSubst();
