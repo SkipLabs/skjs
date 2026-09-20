@@ -48,6 +48,12 @@ mutable class SubstReadCell<T>{mutable value: ?T} {
   }
 }
 
+base class SubtypeValidationFailure uses Equality {
+  children =
+  | SVFUnresolved()
+  | SVFUnproved()
+}
+
 // A shape depends on an exact payload. A positive subtype target can instead
 // rely on its current lower bound: legal growth only adds inhabitants. Neither
 // requirement permits replacing a binding or surviving the owner's rollback.
@@ -66,7 +72,19 @@ mutable class SubstReadObservation private {
   private mutable lowerBounds: SortedMap<TVarID, TType> = SortedMap[],
   private mutable blocked: Bool = false,
   private mutable missingSubtypeTarget: Bool = false,
+  private mutable subtypeEdges: SortedSet<(CGNode, CGNode)> = SortedSet[],
 } {
+  readonly fun freeze(): SubstReadObservation {
+    SubstReadObservation{
+      snapshot => this.snapshot,
+      reads => this.reads,
+      lowerBounds => this.lowerBounds,
+      blocked => this.blocked,
+      missingSubtypeTarget => this.missingSubtypeTarget,
+      subtypeEdges => this.subtypeEdges,
+    }
+  }
+
   static fun mcreate(snapshot: SubstSnapshot): mutable SubstReadObservation {
     mutable SubstReadObservation{snapshot}
   }
@@ -116,6 +134,14 @@ mutable class SubstReadObservation private {
 
   readonly fun isBlocked(): Bool {
     this.blocked
+  }
+
+  mutable fun recordSubtypeEdge(source: CGNode, target: CGNode): void {
+    this.!subtypeEdges = this.subtypeEdges.set((source, target))
+  }
+
+  readonly fun validatedSubtypeEdges(): SortedSet<(CGNode, CGNode)> {
+    this.subtypeEdges
   }
 
   readonly fun bindings(): SortedMap<TVarID, TType> {
@@ -589,12 +615,28 @@ mutable class TypeReadContext private {
       context.expandClauses(u2, Contravariant())
     };
     Clauses::isSubWith(left, right, (a, b) ->
-      STypes::isSubWith(a, b, (x, y) ->
-        TObject::isSubWith(x, y, (f, g) -> context.fieldsSubtype(f, g))
-      )
+      STypes::isSubWith(a, b, (x, y) -> context.objectSubtype(x, y))
     ) match {
     | STOk() -> STOk()
     | err @ STErrorOnClauses _ -> STRecType(err, u1, u2)
+    }
+  }
+
+  private mutable fun objectSubtype(
+    left: TObject,
+    right: TObject,
+  ): STResult<TObject> {
+    // A proof can use exact union membership without inspecting unrelated
+    // alternatives. Keep this read-only shortcut out of proposal traversal.
+    remainder = left.mapOpt(fields ->
+      if (right.getAllFields().any(other -> fields == other)) None() else {
+        Some(fields)
+      }
+    );
+    remainder match {
+    | None() -> STOk()
+    | Some(required) ->
+      TObject::isSubWith(required, right, (f, g) -> this.fieldsSubtype(f, g))
     }
   }
 
@@ -616,13 +658,23 @@ mutable class TypeReadContext private {
   }
 
   private mutable fun functionSubtype(left: TFun, right: TFun): STResult<TFun> {
-    TFun::isSubWith(
+    result = TFun::isSubWith(
       left,
       right,
       (a, b) -> this.subtype(a, b),
       spread -> spread.flatMap(type -> this.spreadTuple(type)),
       (type, variance) -> this.restElement(type, variance),
-    )
+    );
+    if (result is STOk() && this.allowTargetGrowth) {
+      for (source in left.cgNodes.nodes) {
+        for (target in right.cgNodes.nodes) {
+          if (source != target) {
+            this.scratch.recordValidatedSubtypeEdge(source, target)
+          }
+        }
+      }
+    };
+    result
   }
 
   mutable fun intersection(left: TType, right: TType): TType {

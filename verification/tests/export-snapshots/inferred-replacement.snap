@@ -35,7 +35,6 @@ expr 540-546 `read()`: boolean
 lvalue 318-322 `cell`: null | { value: boolean | null } [call=unknown construct=unknown array=unknown]
 lvalue 384-388 `read`: () => boolean [construct=unknown array=unknown]
 lvalue 518-522 `cell`: null
-subtype boolean | null ≤ boolean | null
 subtype { value: boolean | null } [string-index=synthetic symbol-index=synthetic] ≤ null | { value: boolean | null } [call=unknown construct=unknown array=unknown]
 subtype false ≤ boolean
 subtype null ≤ null | { value: boolean | null } [call=unknown construct=unknown array=unknown]
@@ -71,7 +70,4 @@ lvalue 80-84 `cell`: { value: boolean | null } [string-index=synthetic symbol-in
 lvalue 112-116 `read`: () => boolean [construct=unknown array=unknown]
 lvalue 209-213 `cell`: { value: null | boolean } [string-index=synthetic symbol-index=synthetic]
 subtype false ≤ boolean
-expand null | boolean → boolean | null
-subtype boolean | null ≤ null | boolean
-subtype null | boolean ≤ boolean | null
 subtype { value: null | boolean } [string-index=synthetic symbol-index=synthetic] ≤ { value: boolean | null } [string-index=synthetic symbol-index=synthetic]

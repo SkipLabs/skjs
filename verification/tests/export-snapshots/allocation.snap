@@ -19,5 +19,5 @@ expr 131-138 `d.value`: boolean
 expr 133-138 `value`: "value"
 lvalue 41-42 `c`: { value: boolean } [string-index=synthetic symbol-index=synthetic]
 lvalue 70-71 `d`: { value: boolean } [call=unknown construct=unknown array=unknown]
-subtype boolean ≤ boolean
 subtype { value: boolean } [string-index=synthetic symbol-index=synthetic] ≤ { value: boolean } [call=unknown construct=unknown array=unknown]
+subtype boolean ≤ boolean

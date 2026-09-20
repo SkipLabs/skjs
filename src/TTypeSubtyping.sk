@@ -59,7 +59,7 @@ base class STResult<+T>
 /* T1 ⊑ T2 */
 class STOk<+T>() extends STResult<T>
 
-/* All other cases: T1 ⋢ T2 */
+/* Failure to establish assignability; not a semantic disproof. */
 base class STError<+T> extends STResult<T> uses Equality {
   // Hint wording is shared between the sites that emit hints and
   // extractReadonlyHint/extractContravarianceHint, which recover hints from
@@ -446,6 +446,7 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
   children =
   | STRecType(STErrorOnClauses)
   | STRecTypeWithHint(STErrorOnClauses, List<(PosRange, String)>)
+  | STUnvalidatedType(SubtypeValidationFailure)
 
   fun toError(
     subst: mutable Subst,
@@ -498,6 +499,23 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
         msgs
       }
     }
+  | STUnvalidatedType(failure, ty1, ty2) ->
+    label = failure match {
+    | SVFUnresolved() -> "unresolved interpretation"
+    | SVFUnproved() -> "unproved relation"
+    };
+    List[
+      (
+        ty1.pos,
+        `Subtype validation failed (${label}): ${prettyPrintType(
+          false,
+          ty1,
+          subst,
+          tenv,
+        )}`,
+      ),
+      (ty2.pos, `Required type: ${prettyPrintType(false, ty2, subst, tenv)}`),
+    ]
   | STRecTypeWithHint(err, hints, ty1, ty2) ->
     msgs = STRecType(err, ty1, ty2).toError(subst, tenv, detail);
     STError::concatNewHints(msgs, hints)
@@ -1921,6 +1939,55 @@ extension class TType {
     u2: TType,
   ): STResult<TType> {
     if (u1 == u2) return STOk();
+    if (u2.isTop()) {
+      subst.!seenSub = subst.seenSub.set((u1, u2));
+      return STOk()
+    };
+    if (subst.isProposingSubtype()) {
+      return static::subtypeProposal(subst, tenv, u1, u2)
+    };
+    if (!(subst.typeComputationPurpose() is TCPChecking())) {
+      return subst.proposeSubtype(tenv, u1, u2)
+    };
+    // If established meanings already prove the judgment, no proposal is
+    // needed. This is the same restricted proof used after inference, never a
+    // solver-cache shortcut. Failed observations publish no commitments.
+    if (subst.proveEstablishedSubtype(tenv, u1, u2) is TRReady _) {
+      recordClosedClaimedOp(subst, "subtype", u1, u2);
+      return STOk()
+    };
+    saved = subst.save();
+    result = try {
+      proposed = subst.proposeSubtype(tenv, u1, u2);
+      proposed match {
+      | err @ STErrorOnTType _ -> err
+      | STOk() ->
+        proof = subst.proveSubtype(tenv, u1, u2);
+        proof match {
+        | TRReady _ ->
+          recordClosedClaimedOp(subst, "subtype", u1, u2);
+          STOk()
+        | TRUnavailable() -> STUnvalidatedType(SVFUnproved(), u1, u2)
+        | TRBlocked() -> STUnvalidatedType(SVFUnresolved(), u1, u2)
+        }
+      }
+    } catch {
+    | exn ->
+      subst.restore(saved);
+      throw exn
+    };
+    if (result is STError _) subst.restore(saved);
+    result
+  }
+
+  static fun subtypeProposal(
+    subst: mutable Subst,
+    tenv: TEnv,
+    u1: TType,
+    u2: TType,
+  ): STResult<TType> {
+    invariant(subst.isProposingSubtype());
+    if (u1 == u2) return STOk();
     pair = (u1, u2);
     if (subst.seenSub.contains(pair)) return STOk();
     // Top needs no recursive premise or substitution read.
@@ -2033,24 +2100,7 @@ extension class TType {
     clauses2 = u2.expandToClauses(subst, tenv, Contravariant());
 
     Clauses::isSub(subst, tenv, clauses1, clauses2) match {
-    | STOk() ->
-      // Record the validation step, with types closed under the substitution
-      // that growth just produced. Clones have no frame, so speculative
-      // checks are not exported.
-      recordClosedClaimedOp(
-        subst,
-        "expand",
-        u1,
-        TType::ofClauses(u1.pos, clauses1),
-      );
-      recordClosedClaimedOp(
-        subst,
-        "expand",
-        u2,
-        TType::ofClauses(u2.pos, clauses2),
-      );
-      recordClosedClaimedOp(subst, "subtype", u1, u2);
-      STOk()
+    | STOk() -> STOk()
     | err @ STErrorOnClauses _ ->
       hints = static::originSuggestions(subst, tenv, u1, u2);
       constraintErr match {
@@ -2120,7 +2170,7 @@ extension class TFun {
     };
     if (res is STError _) {
       subst.restore(savedSubst)
-    } else {
+    } else if (!subst.isProposingSubtype()) {
       // Record subtyping edges: f1's cgNodes should be reachable from f2's
       f1.cgNodes.nodes.each(subNode -> {
         f2.cgNodes.nodes.each(supNode -> {

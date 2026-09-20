@@ -239,7 +239,18 @@ fun testSubtypeLifetimeFollowsCallbackVariance(): void {
   );
   SKTest.expectEq(
     true,
+    subst.proveEstablishedSubtype(tenv, source, target) is SKJS.TRBlocked _,
+  );
+  SKTest.expectEq(true, subst.isOpen(resultSource));
+  SKTest.expectEq(
+    true,
     subst.proveSubtype(tenv, source, target) is SKJS.TRReady _,
+  );
+  // A positive lower bound can justify the final proof, but cannot skip
+  // inference while that bound is still open.
+  SKTest.expectEq(
+    true,
+    subst.proveEstablishedSubtype(tenv, source, target) is SKJS.TRBlocked _,
   );
   // Contravariance makes the target's argument a source dependency.
   SKTest.expectEq(true, subst.isClosed(argumentTarget));

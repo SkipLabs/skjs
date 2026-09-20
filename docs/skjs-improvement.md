@@ -423,9 +423,32 @@ interpreting an unresolved alternative. This is union injection, not a default
 solution for the omitted candidate.
 Probes and diagnostics cannot use this checking publication entry point.
 
-This is a validation primitive, **not completion of A3**: the ordinary `TType.isSub`
-and call drivers still mix proposal and checking. Their migration, representation
-proposals, constraint obligations and deferred publication remain required.
+The ordinary `TType.isSub` entry point first attempts the actual restricted
+proof using already-established dependencies. An open source or target binding
+prevents this shortcut, so inference can still widen literal/storage contracts.
+Otherwise proposals run in a private owner scope and the original symbolic
+operands are validated afterward. Recursive proposal successes, including
+constraint-search steps, are not exported as checked judgments. The read frame
+collects callback reachability edges and publishes them only after its dependencies
+commit. A failed or blocked root restores the candidate/cache snapshot. Explicit
+probes and diagnostics remain detached. Exact object-union membership needs no
+read of the other alternatives.
+
+Each positive proof uses a fixed snapshot in a temporary allocation region.
+Only its immutable read footprint, outputs, and any exception cross that boundary;
+the updated declaration context is copied before an exception is rethrown.
+Candidate commitment remains in the owner afterward. Read/mutation counters retain
+their conservative qualification rules; recursion scopes are local to the proof,
+whose environment has no caller assumptions. This prevents temporary proof graphs
+from accumulating alongside inference's allocations. No inference cache is imported
+into validation and no validation bypass is present.
+
+**A3 remains in progress.** Calls still validate arguments individually while
+iterating inference. Whole-call obligation collection, explicit/dependent bounds,
+constructor-result publication, and independent validation of literal construction
+against its selected representation remain to be completed. The wider direct
+structural-helper/cache/clone inventory belongs to A4; do not mistake those legacy
+paths or their runtime scope checks for compiler-enforced capability separation.
 
 The first integration audit found a concrete mismatch: delayed literals were
 accepted against element-wise joins of array/tuple union alternatives, although
@@ -436,14 +459,12 @@ rejected crossed-element witnesses and a valid tuple alternative. This repair
 removes one obstruction to the driver migration; it does not replace that migration.
 
 Checkpoint: 223 checker tests and 65 verifier suites pass; curated outcomes remain
-278 verified / 9 search failures / 18 unavailable. The repair census adds two
-producer rejections and one verified tuple alternative (41/151 accepted functions
-verify; 242 further functions are rejected). Three paired control medians before
-A3 / after this repair: array literals 0.741/0.744 s, generic membership
-1.107/1.104 s, deep collections 5.934/5.732 s; outputs agree. Positive validation now avoids unnecessary reads of unresolved
-target-union branches when a known alternative already proves the relation.
-Source reads remain fixed; unsuccessful comparisons with an unresolved target
-still report blocked, not a negative fact.
+278 verified / 9 search failures / 18 unavailable. The repair census is unchanged:
+41/151 accepted functions verify; 242 further functions are rejected. Three paired
+control medians before A3 / after the subtype driver: array literals 0.705/0.842 s,
+generic membership 1.047/1.132 s, deep collections 5.173/5.855 s. Outputs agree
+exactly under the same 4 GB limit. Independent validation adds measurable overhead;
+the unbounded paging seen before allocation isolation is resolved.
 
 ### Acceptance criteria and migration discipline
 

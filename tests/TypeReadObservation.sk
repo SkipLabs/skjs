@@ -784,8 +784,11 @@ fun testRecursiveSubtypeMemoScope(): void {
   assumed = tenv with {
     seenSub => SortedSet[(subst.inferenceVersion(), number, string)],
   };
-  conditional = SKJS.TType::isSub(subst, assumed, number, string);
+  conditional = subst.proposeSubtype(assumed, number, string);
   SKTest.expectEq(true, conditional is SKJS.STOk());
+  // A proposal can use the supplied recursive assumption. Acceptance cannot.
+  validated = SKJS.TType::isSub(subst, assumed, number, string);
+  SKTest.expectEq(false, validated is SKJS.STOk());
   // The conditional result must not escape its recursive context.
   outside = SKJS.TType::isSub(subst, tenv, number, string);
   SKTest.expectEq(false, outside is SKJS.STOk());
@@ -1006,8 +1009,7 @@ fun testFrozenReadDependencySurvivesModeExit(): void {
   subst.grow(tenv, outer, SKJS.TType::var(inner), SKJS.Covariant());
   stamp = subst.typeQueryReadStamp();
   subst.!freezeCandidates = true;
-  result = SKJS.TType::isSub(
-    subst,
+  result = subst.proposeSubtype(
     tenv,
     SKJS.TType::var(outer),
     observationNumber(),

@@ -706,6 +706,22 @@ mutable class TCResultsAcc private {
     mutable static{errorHandling}
   }
 
+  // Import only the outputs of a completed isolated computation. The caller
+  // retains this accumulator's identity, including aliases held by its scopes.
+  mutable fun appendResults(other: TCResultsAcc): void {
+    this.errors.extend(other.errors);
+    this.warnings.extend(other.warnings);
+    this.callgraph.extend(other.callgraph);
+    this.classHierarchy.extend(other.classHierarchy);
+    for (edge in other.subtypingEdges) {
+      this.!subtypingEdges = this.subtypingEdges.set(edge)
+    };
+    for ((node, cfg) in other.cfgs.items()) this.!cfgs[node] = cfg;
+    for ((node, claims) in other.typeClaims.items()) {
+      this.!typeClaims[node] = claims
+    }
+  }
+
   readonly fun chill(): this {
     static{
       errorHandling => this.errorHandling,

@@ -774,6 +774,7 @@ fun recordClosedClaimedOp(
   src: TType,
   dst: TType,
 ): void {
+  if (subst.isProposingSubtype()) return void;
   if (!getConfig(subst.context).emitSkjsTypeClaims) return void;
   if (src.clauses.isTop() || dst.clauses.isTop()) return void;
   srcEx = claimTypeJsonBounded(src, true, true, subst.bindingsForExport(), 64);

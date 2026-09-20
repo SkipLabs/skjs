@@ -133,6 +133,7 @@ mutable class Subst private {
   // This purpose is not rollback state. A proposal/diagnostic computation may
   // normalize locally, but its results are not checking-owner evidence.
   private computationPurpose: TypeComputationPurpose = TCPChecking(),
+  private mutable subtypeProposal: Bool = false,
   // Present only on isolated shape-read state. Descendants share this frame;
   // save/restore never clear it. Normal inference retains its existing behavior.
   private readObservation: ?mutable SubstReadObservation = None(),
@@ -236,6 +237,9 @@ mutable class Subst private {
       computationPurpose => parentOpt
         .map(parent -> parent.typeComputationPurpose())
         .default(TCPChecking()),
+      subtypeProposal => parentOpt
+        .map(parent -> parent.isProposingSubtype())
+        .default(false),
       queryReads => parentOpt
         .map(parent -> parent.queryReads)
         .default(mutable TypeQueryReads{}),
@@ -289,6 +293,7 @@ mutable class Subst private {
     mutable Subst{
       queryReads => this.queryReads,
       computationPurpose => this.computationPurpose,
+      subtypeProposal => this.subtypeProposal,
       context => this.context,
       results => this.results,
       seenSub => this.seenSub,
@@ -301,6 +306,30 @@ mutable class Subst private {
       origins => this.origins,
       ppNames => this.ppNames,
     }
+  }
+
+  readonly fun isProposingSubtype(): Bool {
+    this.subtypeProposal
+  }
+
+  // Proposal results guide inference. The ordinary entry point separately
+  // validates its original operands before reporting an accepted judgment.
+  mutable fun proposeSubtype(
+    tenv: TEnv,
+    source: TType,
+    target: TType,
+  ): STResult<TType> {
+    wasProposing = this.subtypeProposal;
+    this.!subtypeProposal = true;
+    result = try {
+      TType::subtypeProposal(this, tenv, source, target)
+    } catch {
+    | exn ->
+      this.!subtypeProposal = wasProposing;
+      throw exn
+    };
+    this.!subtypeProposal = wasProposing;
+    result
   }
 
   readonly fun isObservingTypeReads(): Bool {
@@ -521,12 +550,18 @@ mutable class Subst private {
     }
   }
 
+  mutable fun recordValidatedSubtypeEdge(source: CGNode, target: CGNode): void {
+    invariant(this.isObservingTypeReads());
+    this.readObservation.each(frame -> frame.recordSubtypeEdge(source, target))
+  }
+
   // Establish all inspected payloads before exposing a materialized answer.
   // The first pass checks EVERY binding before the second pass writes ANY of
   // them, so a failed transfer never leaves a partially sealed parent.
   private mutable fun commitObservedBindings(
     frame: readonly SubstReadObservation,
     entryEpoch: Int,
+    allowSealing: Bool = true,
   ): Bool {
     if (frame.isBlocked() || this.semanticEpoch != entryEpoch) {
       return false
@@ -537,9 +572,9 @@ mutable class Subst private {
     // reads also present in bindings below take the stronger fixed requirement.
     for ((id, expected) in frame.monotoneBindings().items()) {
       this.values.maybeGet(id) match {
-      | Some(SVOpen(actual))
-      | Some(SVClosed(actual)) ->
-        if (actual != expected) return false
+      | Some(SVOpen(actual)) ->
+        if (!allowSealing || actual != expected) return false
+      | Some(SVClosed(actual)) -> if (actual != expected) return false
       | None() -> return false
       }
     };
@@ -550,7 +585,11 @@ mutable class Subst private {
           return false
         }
       | Some(SVOpen(actual)) ->
-        if (actual != expected || (this.freezeCandidates && id.isCandidate())) {
+        if (
+          !allowSealing ||
+          actual != expected ||
+          (this.freezeCandidates && id.isCandidate())
+        ) {
           return false
         }
       | None() -> return false
@@ -564,6 +603,9 @@ mutable class Subst private {
       // Validated by the first pass; already closed bindings need no write.
       | _ -> void
       }
+    };
+    for ((source, target) in frame.validatedSubtypeEdges()) {
+      this.results.recordSubtypingEdge(source, target)
     };
     true
   }
@@ -666,20 +708,113 @@ mutable class Subst private {
     source: TType,
     target: TType,
   ): TypeReadResult<Void> {
+    this.proveSubtypeRead(tenv, source, target, true)
+  }
+
+  // Skip proposals only when all inspected meanings are already established.
+  // Otherwise inference may still need to widen a literal/storage contract.
+  mutable fun proveEstablishedSubtype(
+    tenv: TEnv,
+    source: TType,
+    target: TType,
+  ): TypeReadResult<Void> {
+    this.proveSubtypeRead(tenv, source, target, false)
+  }
+
+  private mutable fun proveSubtypeRead(
+    tenv: TEnv,
+    source: TType,
+    target: TType,
+    allowSealing: Bool,
+  ): TypeReadResult<Void> {
     if (
       !(this.computationPurpose is TCPChecking()) ||
       this.isObservingTypeReads()
     ) {
       TRBlocked()
     } else {
-      this.withCommittedTypeReads(scratch ->
-        TypeReadContext::runSubtypeProof(
-          scratch,
-          tenv.forTypeReadObservation(),
-          source,
-          target,
+      bindings = this.values;
+      origins = this.origins;
+      version = this.version;
+      entryEpoch = this.semanticEpoch;
+      entryFreeze = this.freezeCandidates;
+      errorHandling = this.results.errorHandling;
+      readEnv = tenv.forTypeReadObservation();
+      // Proof search allocates large temporary declaration/type graphs. A region
+      // returns only its immutable read footprint and diagnostics; it cannot
+      // retain pointers into a discarded proof or mutate the candidate owner.
+      (
+        frame,
+        succeeded,
+        diagnostics,
+        reads,
+        mutations,
+        exception,
+      ) = SKStore.withRegion(this.context, (_, context) ~> {
+        observation = SubstReadObservation::mcreate(
+          SubstSnapshot::create(bindings),
+        );
+        results = TCResultsAcc::mcreate{errorHandling};
+        scratch = mutable Subst{
+          context,
+          results,
+          seenSub => SortedSet[],
+          seenInter => SortedMap[],
+          seenUnion => SortedMap[],
+          seenExpansion => SortedMap[],
+          version => version,
+          semanticEpoch => entryEpoch,
+          values => bindings,
+          origins => origins,
+          freezeCandidates => entryFreeze,
+          readObservation => Some(observation),
+        };
+        exception: ?Exception = None();
+        success = try {
+          TypeReadContext::runSubtypeProof(
+            scratch,
+            readEnv,
+            source,
+            target,
+          ).isSome()
+        } catch {
+        | SubstObservationBlocked() -> false
+        | exn ->
+          !exception = Some(exn);
+          false
+        };
+        (
+          observation.freeze(),
+          success,
+          results.chill(),
+          scratch.typeQueryReadStamp(),
+          scratch.typeMutationStamp(),
+          exception,
         )
-      )
+      });
+      // Preserve the existing conservative qualification counters. Query scopes
+      // themselves are local: readEnv carries no caller recursion assumptions.
+      this.queryReads.!unsealed = this.queryReads.unsealed + reads.i0;
+      this.queryReads.!recursive = this.queryReads.recursive + reads.i1;
+      this.queryReads.!provisional = this.queryReads.provisional + reads.i2;
+      this.queryReads.!mutations = this.queryReads.mutations + mutations;
+      this.results.appendResults(diagnostics);
+      // Return exceptions as data across the region, so both their payload and
+      // the updated declaration context are copied before any outer recovery.
+      exception.each(exn -> throw exn);
+      if (
+        frame.isBlocked() ||
+        this.semanticEpoch != entryEpoch ||
+        this.freezeCandidates != entryFreeze
+      ) {
+        TRBlocked()
+      } else if (!succeeded) {
+        TRUnavailable()
+      } else if (this.commitObservedBindings(frame, entryEpoch, allowSealing)) {
+        TRReady(void)
+      } else {
+        TRBlocked()
+      }
     }
   }
 
