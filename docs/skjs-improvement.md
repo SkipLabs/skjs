@@ -351,11 +351,11 @@ Six negative compilation probes reject allocation, growth, solver extraction,
 lifetime replacement/extraction and passing the context as a solver; their
 temporary source is removed after checking.
 
-Validation: 217 checker tests, 65 verifier suites and the unchanged 278 curated
+Validation: 218 checker tests, 65 verifier suites and the unchanged 278 curated
 proofs pass, as do formatting and shell checks. Three paired runs of the array,
 generic-membership and deep-collection controls preserve exact diagnostics;
-median seconds before/after the branch-elimination migration are 0.748/0.744,
-1.097/1.089 and 5.288/5.274. This shows no observed regression in these samples,
+median seconds before/after the iterator migration are 0.744/0.753,
+1.125/1.092 and 5.255/5.306. This shows no observed regression in these samples,
 not a general performance guarantee. No source corpus fixtures changed; native
 tests do not change the repair-census selection.
 
@@ -389,8 +389,20 @@ fields, unknown candidates and frozen candidates. This removes the raw
 `TypeCheckScope` callback, but disjointness still uses guarded legacy intersection
 normalization and is not an end-to-end read-only relation yet.
 
+Iterator extraction now shares a solver-free protocol traversal between inference
+and validation. Each intermediate object head on the validation path expands
+through `TypeReadContext`. Object-branch traversal, call-return selection and
+optional-field read selection are shared structural helpers; validation no longer
+calls the mutable named/symbol-member or return-projection entry points. Symbol
+writes retain their intersection merge in inference, while reads retain union
+merging. Optional reads still add undefined. A production iterator regression
+blocks at an unknown intermediate result without committing earlier reads, then
+checks that resolving it commits the inspected chain while leaving the returned
+element symbolic. Type unions and symbol-identity resolution still use guarded
+legacy adapters.
+
 A2 is **not complete**. Named-type expansion, intersections (including occurrence
-constraints), clause/tuple-element normalization and iterator projection still
+constraints), clause/element normalization and symbol-identity resolution still
 call the observed legacy kernel. Literal reads reached through those nested legacy
 operations have not migrated yet. Nested candidate reads there still use its
 guarded `get`; mutation prohibition remains dynamic in those operations. The
@@ -403,13 +415,13 @@ then retire the old mutable callback API and checks whose purpose has disappeare
 
 ### Remaining A2 work and estimate
 
-The remaining work is expected to take **4–6 substantial rounds including the
-branch-elimination migration**, not one final interface cleanup. This is an
-estimate, not a closure claim; recursive normalization is the largest uncertainty.
+After structural shape migration, the three backend/closure packages below are
+estimated at **3–5 substantial rounds**, not one final interface cleanup. This is
+an estimate, not a closure claim; recursive normalization is the largest uncertainty.
 
 | Work package | Remaining change | Expected rounds |
 | --- | --- | --- |
-| Shape consumers | Restricted branch elimination and iterator/member projection; retain centralized dependency publication and cache isolation. | 1 |
+| Shape consumers | Structural traversal migrated for branch elimination and iterator/member projection; algebra and declaration dependencies remain in the next rows. | Structural migration done |
 | Read-only type algebra | Separate union/intersection/field normalization and the subtype checks they invoke from solver growth, literal choice and allocation. Preserve recursive premises and memo qualification. | 1–2 |
 | Declaration normalization | Migrate named expansion and the materialization inventory: 28 call sites outside wrappers in `TType`, `TEnv`, `TypeCheckExpr` and `TypeCheckRefine`. Keep checking, probes and diagnostics distinct. | 1–2 |
 | Closure audit | Retire raw validation callbacks and superseded guards, exercise compiler-negative access checks, then qualify behavior, verifier outcomes and performance. | 1 |

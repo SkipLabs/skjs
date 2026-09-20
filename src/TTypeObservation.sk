@@ -187,7 +187,60 @@ mutable class TypeReadContext private {
 
   mutable fun restElement(type: TType, variance: Variance): ?TType {
     this.lifetime.checkActive();
-    this.expandClauses(type, variance).restElement(this.scratch, this.tenv)
+    this.objectHead(type, variance).flatMap(obj ->
+      this.iteratorElement(obj, obj.pos)
+    )
+  }
+
+  private mutable fun objectHead(type: TType, variance: Variance): ?TObject {
+    this.expandClauses(type, variance)
+      .getSTypes(this.scratch, this.tenv)
+      .flatMap(stypes -> stypes.singleElt())
+      .flatMap(stype ->
+        stype match {
+        | obj @ TObject _ -> Some(obj)
+        | TPrim _ -> None()
+        }
+      )
+  }
+
+  private mutable fun readMember(
+    obj: TObject,
+    pos: PosRange,
+    lookup: (TFields) -> ?TField,
+  ): ?TType {
+    obj.projectBranches(
+      pos,
+      fields ->
+        lookup(fields).map(field ->
+          TFields::resolveFieldReadWith(field, pos, (type, position) ->
+            TType::unionUndefined(this.scratch, this.tenv, type, position)
+          )
+        ),
+      (position, types) ->
+        TType::unionN(this.scratch, this.tenv, position, types)
+      ,
+    )
+  }
+
+  private mutable fun iteratorElement(obj: TObject, pos: PosRange): ?TType {
+    TType::iteratorElementWith(
+      this.tenv.getSymbolIteratorUniqueId(this.scratch, pos).flatMap(id ->
+        this.readMember(obj, pos, fields -> fields.maybeGetSymbol(id))
+      ),
+      type -> this.objectHead(type, Covariant()),
+      callable ->
+        callable.projectBranches(
+          callable.pos,
+          fields -> fields.callReturnType(),
+          (position, types) ->
+            TType::unionN(this.scratch, this.tenv, position, types)
+          ,
+        ),
+      (object, name) ->
+        this.readMember(object, pos, fields -> fields.maybeGet(name))
+      ,
+    )
   }
 
   // Isolate normalization caches as before, but expose neither the scratch

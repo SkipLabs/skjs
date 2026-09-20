@@ -2880,58 +2880,23 @@ base class TEnv{
     tObj: TObject,
     pos: PosRange,
   ): ?TType {
-    // Step 1: Look up [Symbol.iterator] symbol field
-    iteratorMethodType = this.getSymbolIteratorUniqueId(subst, pos).flatMap(
-      uniqueId -> tObj.maybeGetSymbolType(subst, this, uniqueId, pos, false),
-    ) match {
-    | Some(t) -> t
-    | None() -> return None()
-    };
-
-    // Step 2: Get return type of calling [Symbol.iterator]()
-    iteratorType = iteratorMethodType
-      .getSTypes(subst, this, Covariant())
-      .flatMap(stypes ~> stypes.singleElt()) match {
-    | Some(obj @ TObject(_, _, _)) ->
-      obj.maybeGetRetType(subst, this) match {
-      | Some(retType) -> retType
-      | None() -> return None()
-      }
-    | _ -> return None()
-    };
-
-    // Step 3: Look up "next" on the iterator object
-    nextMethodType = iteratorType
-      .getSTypes(subst, this, Covariant())
-      .flatMap(stypes ~> stypes.singleElt()) match {
-    | Some(obj @ TObject(_, _, _)) ->
-      obj.maybeGetType(subst, this, "next", pos) match {
-      | Some(t) -> t
-      | None() -> return None()
-      }
-    | _ -> return None()
-    };
-
-    // Step 4: Get return type of calling next()
-    nextResultType = nextMethodType
-      .getSTypes(subst, this, Covariant())
-      .flatMap(stypes ~> stypes.singleElt()) match {
-    | Some(obj @ TObject(_, _, _)) ->
-      obj.maybeGetRetType(subst, this) match {
-      | Some(retType) -> retType
-      | None() -> return None()
-      }
-    | _ -> return None()
-    };
-
-    // Step 5: Look up "value" on {value: T, done: boolean}
-    nextResultType.getSTypes(subst, this, Covariant()).flatMap(stypes ~>
-      stypes.singleElt()
-    ) match {
-    | Some(obj @ TObject(_, _, _)) ->
-      obj.maybeGetType(subst, this, "value", pos)
-    | _ -> None()
-    }
+    TType::iteratorElementWith(
+      this.getSymbolIteratorUniqueId(subst, pos).flatMap(uniqueId ->
+        tObj.maybeGetSymbolType(subst, this, uniqueId, pos, false)
+      ),
+      type ->
+        type
+          .getSTypes(subst, this, Covariant())
+          .flatMap(stypes -> stypes.singleElt())
+          .flatMap(stype ->
+            stype match {
+            | obj @ TObject _ -> Some(obj)
+            | TPrim _ -> None()
+            }
+          ),
+      obj -> obj.maybeGetRetType(subst, this),
+      (obj, name) -> obj.maybeGetType(subst, this, name, pos),
+    )
   }
 
   // An explicit `this: void` / `this: undefined` declares a function that
