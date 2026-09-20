@@ -87,7 +87,7 @@ class ArrayLitTyping() {
     tenv: TEnv,
     arrLit: TArrayLit,
   ): ?TType {
-    subst.peek(tenv, arrLit.tvar)
+    arrLit.selector.peek(subst, tenv)
   }
 
   // Default type when α is uncommitted: Tuple[...].
@@ -115,7 +115,7 @@ class ArrayLitTyping() {
   // Converts ArrayLit<α, elts> to Tuple[elts...] (mutable, matching TS:
   // `[1, 2]` is a mutable tuple unless `as const` is used).
   static private fun arrayLitToTupleType(arrLit: TArrayLit): TType {
-    TType::tuple(arrLit.tvar.pos, arrLit.tupleElts, false)
+    TType::tuple(arrLit.selector.pos(), arrLit.tupleElts, false)
   }
 
   // Computes the element type for an array literal by unioning all elements.
@@ -124,7 +124,7 @@ class ArrayLitTyping() {
     tenv: TEnv,
     arrLit: TArrayLit,
   ): TType {
-    eltType = TType::bottom(arrLit.tvar.pos);
+    eltType = TType::bottom(arrLit.selector.pos());
     for (elt in arrLit.tupleElts) {
       !eltType = TType::union(subst, tenv, eltType, elt)
     };
@@ -138,17 +138,17 @@ class ArrayLitTyping() {
     arrLit: TArrayLit,
   ): TType {
     eltType = ArrayLitTyping::arrayLitEltType(subst, tenv, arrLit);
-    TType::inst(Name(arrLit.tvar.pos, "Array"), TArgs(Array[eltType]))
+    TType::inst(Name(arrLit.selector.pos(), "Array"), TArgs(Array[eltType]))
   }
 
-  // Commits ArrayLit<α, elts> by binding α to committedTy (irreversible).
+  // Seals the representation choice until the enclosing transaction rolls back.
   static private fun arrayLitCommitType(
     subst: mutable Subst,
     tenv: TEnv,
     arrLit: TArrayLit,
     committedTy: TType,
   ): void {
-    subst.grow(tenv, arrLit.tvar, committedTy, Covariant());
+    arrLit.selector.commit(subst, tenv, committedTy);
   }
 
   // Extracts element types from Array<U> or ReadonlyArray<U> instances in ty (handles unions).
@@ -196,9 +196,8 @@ class ArrayLitTyping() {
   ): TType {
     invariant(!elementTypes.isEmpty());
     invariant(elementTypes.size() == freshElts.size());
-    tvar = tcenv.subst.gen(pos);
-    tcenv.subst.setOrigin(tvar, FromArrayLiteral(pos));
-    TType::arrayLit(tvar, elementTypes, freshElts)
+    selector = ArrayLiteralSelector::create(tcenv.subst, pos);
+    TType::arrayLit(selector, elementTypes, freshElts)
   }
 
   // True when checking against `target` should keep a fresh literal precise:
@@ -287,7 +286,7 @@ class ArrayLitTyping() {
     keepFresh =
       arrLit.freshElts.any(f -> f.isSome()) &&
       ArrayLitTyping::targetExpectsLiteral(subst, tenv, target);
-    eltType = TType::bottom(arrLit.tvar.pos);
+    eltType = TType::bottom(arrLit.selector.pos());
     for (i => elt in arrLit.tupleElts) {
       eff = if (keepFresh) arrLit.freshElts[i].default(elt) else elt;
       !eltType = TType::union(subst, tenv, eltType, eff)
@@ -455,7 +454,7 @@ class ArrayLitTyping() {
         expectedEltType = TType::unionN(
           subst,
           tenv,
-          arrLit.tvar.pos,
+          arrLit.selector.pos(),
           arrayCandidates,
         );
         litEltType = ArrayLitTyping::arrayLitEltTypeForTarget(
@@ -468,7 +467,7 @@ class ArrayLitTyping() {
         // Covariance is sound here: we're committing an uncommitted literal,
         // not assigning an already-typed array. Future writes check against expectedEltType.
         arrayTy = TType::inst(
-          Name(arrLit.tvar.pos, "Array"),
+          Name(arrLit.selector.pos(), "Array"),
           TArgs(Array[expectedEltType]),
         );
         ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, arrayTy);
@@ -484,7 +483,7 @@ class ArrayLitTyping() {
         // mutable tuple; we do the same by committing to the target elements
         // and then verifying each literal element subtypes its target.
         savedSubst = subst.save();
-        committedTy = TType::tuple(arrLit.tvar.pos, targetElts, false);
+        committedTy = TType::tuple(arrLit.selector.pos(), targetElts, false);
         ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, committedTy);
         for (i in Range(0, targetElts.size())) {
           eltTy = ArrayLitTyping::effectiveElt(

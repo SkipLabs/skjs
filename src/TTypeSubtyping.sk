@@ -1602,8 +1602,7 @@ extension class TType {
   // recursed into, exposing TVars hidden inside head-transparent type
   // aliases like `Maybe<T> = T | null`.
   //
-  // TArrayLit is ignored: its commitment TVar is not an inference TVar in
-  // the lattice-growth sense but a form-selector (Tuple vs Array),
+  // TArrayLit is ignored: its selector chooses Tuple versus Array,
   // committed by ArrayLitTyping based on the shape of the other side rather
   // than by bound-growth.
   private static fun collectTVars(

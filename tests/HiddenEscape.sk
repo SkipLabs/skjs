@@ -14,7 +14,7 @@ fun testHiddenEscapeThroughArrayCommitment(): void {
     pos,
     SKJS.Clauses::single(hidden.withoutConstraint()),
   );
-  commitment = subst.genForLiteralCommitment(pos);
+  commitment = SKJS.ArrayLiteralSelector::create(subst, pos);
   element = subst.gen(pos);
   root = SKJS.TType::arrayLit(commitment, Array[], Array[]);
   check = SKJS.HiddenEscapeCheck(
@@ -25,14 +25,13 @@ fun testHiddenEscapeThroughArrayCommitment(): void {
     2080,
   );
   SKTest.expectEq(false, check.fails(subst));
-  observationBind(
+  commitment.commit(
     subst,
-    commitment,
+    observationTypeEnv(observationSubst()),
     SKJS.TType::inst(
       SKJS.Name(pos, "Array"),
       SKJS.TArgs(Array[SKJS.TType::var(element)]),
     ),
-    true,
   );
   SKTest.expectEq(false, check.fails(subst));
   saved = subst.save();

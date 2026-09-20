@@ -791,8 +791,8 @@ mutable class Subst private {
     TVar::create(pos, TVarID::createForField(this))
   }
 
-  mutable fun genForLiteralCommitment(pos: PosRange): TVar {
-    TVar::create(pos, TVarID::createForLiteralCommitment(this))
+  mutable fun genForContextualElement(pos: PosRange): TVar {
+    TVar::create(pos, TVarID::createForContextualElement(this))
   }
 
   mutable fun isOpen(tvar: TVar): Bool {

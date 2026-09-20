@@ -166,7 +166,7 @@ fun testUncommittedLiteralIntersectionDoesNotBecomeStale(): void {
   );
   lexer = SKJS.Lexer::mcreate(file, "");
   pos = SKJS.PosRange::create(lexer, SKJS.Pos(0), SKJS.Pos(0));
-  commitment = subst.genForLiteralCommitment(pos);
+  commitment = SKJS.ArrayLiteralSelector::create(subst, pos);
   literal = SKJS.TType::arrayLit(
     commitment,
     Array[observationNumber()],
@@ -174,12 +174,12 @@ fun testUncommittedLiteralIntersectionDoesNotBecomeStale(): void {
   );
   object = SKJS.TType::single(SKJS.TObject::createEmpty(pos));
   _ = SKJS.TType::inter(subst, tenv, literal, object);
-  SKTest.expectEq(true, subst.isUnbound(commitment));
+  SKTest.expectEq(true, commitment.peek(subst, tenv).isNone());
   array = SKJS.TType::inst(
     SKJS.Name(pos, "Array"),
     SKJS.TArgs(Array[observationNumber()]),
   );
-  subst.grow(tenv, commitment, array, SKJS.Covariant());
+  commitment.commit(subst, tenv, array);
   reused = SKJS.TType::inter(subst, tenv, literal, object);
   fresh = subst.clone();
   fresh.!seenInter = SortedMap[];
@@ -194,15 +194,14 @@ fun testUncommittedLiteralIntersectionDoesNotBecomeStale(): void {
 fun testLiteralSelectorCommitmentAndRollback(): void {
   subst = observationSubst();
   tenv = observationTypeEnv(subst);
-  selector = subst.gen(SKJS.PosRange::none);
+  selector = SKJS.ArrayLiteralSelector::create(subst, SKJS.PosRange::none);
   saved = subst.save();
   subst.!freezeCandidates = true;
-  subst.grow(tenv, selector, observationNumber(), SKJS.Covariant());
-  subst.grow(tenv, selector, observationString(), SKJS.Covariant());
-  SKTest.expectEq(Some(observationNumber()), subst.peek(tenv, selector));
-  SKTest.expectEq(true, subst.isClosed(selector));
+  selector.commit(subst, tenv, observationNumber());
+  selector.commit(subst, tenv, observationString());
+  SKTest.expectEq(Some(observationNumber()), selector.peek(subst, tenv));
   subst.restore(saved);
-  SKTest.expectEq(None(), subst.peek(tenv, selector));
+  SKTest.expectEq(None(), selector.peek(subst, tenv));
 }
 
 @test

@@ -2945,7 +2945,7 @@ extension class TypeChecker {
             currentType = this.expr(tcenv, x, mostPrecise);
             ty = this.stableAliasExprType(tcenv, x, currentType);
             if (x.value is Object _ || ty.isConcretePrimitive()) {
-              this.makeBoundTVarForLiteralCommitment(
+              this.makeBoundTVarForContextualElement(
                 tcenv,
                 ty,
                 FromArrayElement(x.pos),

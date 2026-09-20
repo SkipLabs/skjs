@@ -120,8 +120,8 @@ wrappers or regression examples around the same unrestricted state.
 A1 now restricts solver/witness allocation to owner-controlled serials and
 protects identity payloads, binding storage and mutation counters from ordinary
 callers. Declared parameters and hidden witnesses still share rigid algebra;
-owner/scope checks remain partly dynamic. Candidate versus representation roles
-still need the migration described in the A1 checkpoint below.
+owner/scope checks remain partly dynamic. Array representation selectors now
+have an opaque API distinct from value candidates, as described below.
 `Subst` combines candidate storage, commitments, rollback, query dependencies,
 caches and diagnostic/export state. `withCommittedTypeReads` passes a mutable
 `Subst` to its callback and detects forbidden operations dynamically.
@@ -220,13 +220,38 @@ array 0.734/0.721, generic membership 1.074/1.068, deep collection 5.369/5.267.
 No TypeScript source regression was added or regrouped, so the repair-census
 selection and baseline remain unchanged; native tests are not corpus rows.
 
-A1 is not closed yet. `TArrayLit` still accepts a general `TVar`, and production
-`ArrayLitTyping.typeFromLiteral` uses ordinary `gen` for its representation
-selector. Conversely, `genForLiteralCommitment` also serves contextual literal
-value inference. These purposes must be separated deliberately: simply relabeling
-all such variables would change their freeze/growth behavior. Next, trace the
-selector and literal-value transitions, give their construction APIs distinct
-roles, and preserve the existing tuple/array and literal-precision controls.
+The second slice separates representation selection from contextual element
+inference. `TArrayLit` and `TType.arrayLit` require `ArrayLiteralSelector`, whose
+private backing variable is allocated through its owner. Its interface allows
+tracked reads, snapshot inspection, and one-shot commitment; it exposes no
+candidate, ID, growth, or occurrence-constraint operation. A selector cannot be
+passed to `Subst.grow` or `TType.var`, and a general candidate cannot construct a
+delayed literal. The owner still supplies storage, mutation tracking, freezing
+and rollback through the existing implementation. This is API separation, not a
+new proof of representation validity: the literal checker must still validate
+the chosen type against the elements.
+
+`TVIDForLiteralCommitment`/`genForLiteralCommitment` and their helper are renamed
+to contextual-element names, with unchanged growth/sealing policy. These value
+variables may widen before sealing; a selector only chooses once. Type
+transformers preserve selector identity and no longer map fictitious selector
+constraints. Escape traversal and export use snapshot inspection without
+obtaining its backing candidate. Existing literal-intersection and hidden-escape
+tests now construct actual selectors. The transition test covers choice while
+candidates are frozen, resistance to replacement, and enclosing rollback.
+
+Validation of this slice: 212 checker tests, 65 independent verifier suites,
+and the unchanged 278 curated proofs pass. Five negative compilation probes
+reject candidate-as-selector construction, selector growth, selector-as-value
+construction, backing-candidate access, and backing-candidate replacement. The
+probe source was removed. Three paired performance rounds have identical
+outputs; median seconds before/after are array 0.793/0.790, generic membership
+1.129/1.161, and deep collection 5.556/5.598. No source corpus fixtures changed.
+
+A1 remains in progress pending a final audit of the candidate/field/contextual
+transition surface and owner/scope boundaries. A2–A4 remain separate milestones;
+in particular the selector interface does not restrict the mutable context
+received by validation callbacks.
 
 Remaining dynamic enforcement includes clone prohibition for witness allocation,
 checkpoint validity, observation read/commit checks, and the lifetime discipline

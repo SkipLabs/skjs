@@ -337,9 +337,8 @@ fun claimTypeJsonBounded(
     // snapshot holds what the literal settled to, an Array or a tuple.
     arrayLit = ty.getSingleArrayLit() match {
     | Some(arrLit) ->
-      values.maybeGet(arrLit.tvar.id) match {
-      | Some(SVOpen(bound))
-      | Some(SVClosed(bound)) ->
+      arrLit.selector.peekSnapshot(SubstSnapshot::create(values)) match {
+      | Some(bound) ->
         Some(
           claimTypeJsonBounded(
             bound,
@@ -356,7 +355,7 @@ fun claimTypeJsonBounded(
         // elements, as its expansion does.
         Some(
           claimTypeJsonBounded(
-            TType::tuple(arrLit.tvar.pos, arrLit.tupleElts, false),
+            TType::tuple(arrLit.selector.pos(), arrLit.tupleElts, false),
             records,
             functions,
             values,
