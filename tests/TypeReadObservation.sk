@@ -1182,4 +1182,90 @@ fun testAlternativePruningCommitsOnlyElimination(): void {
   check(Some(observationNumber()), false, true, false);
 }
 
+@test
+fun testIteratorProjectionTracksIntermediateShapes(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  file = SKJS.FPath::create(
+    SKJS.RootId::project,
+    "tests/expect-error/type-query-memo-stability.ts",
+  );
+  lexer = SKJS.Lexer::mcreate(file, "");
+  pos = SKJS.PosRange::create(lexer, SKJS.Pos(0), SKJS.Pos(0));
+  symbolId = tenv.getSymbolIteratorUniqueId(subst, pos).fromSome();
+  object = (name: String, ty: SKJS.TType, symbol: Bool) -> {
+    field = constructionField(ty) with {name => SKJS.FieldNameString(name)};
+    fields = SortedMap[].set(field.name, field);
+    shape = if (symbol) {
+      SKJS.TFields::createFromSorted{symbolFields => fields}
+    } else {
+      SKJS.TFields::createFromSorted{fields}
+    };
+    SKJS.TType::single(SKJS.TObject::createSingleBranch(shape, None(), pos))
+  };
+  callable = (result: SKJS.TType) ->
+    SKJS.TType::single(
+      SKJS.TObject::createCall(
+        SKJS.TFuns::singleFun(
+          SKJS.TFun(
+            Array[],
+            SKJS.NoThis(),
+            Array[],
+            Array[],
+            None(),
+            result,
+            SKJS.CGNodes(SortedSet[]),
+          ),
+          pos,
+        ),
+      ),
+    );
+  element = subst.gen(pos);
+  nextResult = subst.gen(pos);
+  nextMethod = subst.gen(pos);
+  iterator = subst.gen(pos);
+  method = subst.gen(pos);
+  observationBind(
+    subst,
+    nextMethod,
+    callable(SKJS.TType::var(nextResult)),
+    false,
+  );
+  observationBind(
+    subst,
+    iterator,
+    object("next", SKJS.TType::var(nextMethod), false),
+    false,
+  );
+  observationBind(subst, method, callable(SKJS.TType::var(iterator)), false);
+  source = object(symbolId, SKJS.TType::var(method), true);
+  read = () ->
+    subst.withCommittedReadContext(tenv, context ->
+      context.restElement(source, SKJS.Covariant())
+    );
+  // Partial traversal must not publish the reads before an unknown result shape.
+  SKTest.expectEq(true, read() is SKJS.TRBlocked _);
+  for (candidate in Array[method, iterator, nextMethod]) {
+    SKTest.expectEq(true, subst.isOpen(candidate))
+  };
+  observationBind(
+    subst,
+    nextResult,
+    object("value", SKJS.TType::var(element), false),
+    false,
+  );
+  SKTest.expectEq(
+    true,
+    read() match {
+    | SKJS.TRReady(ty) -> ty == SKJS.TType::var(element)
+    | _ -> false
+    },
+  );
+  for (candidate in Array[method, iterator, nextMethod, nextResult]) {
+    SKTest.expectEq(true, subst.isClosed(candidate))
+  };
+  // The element is returned symbolically; discovering the protocol did not read it.
+  SKTest.expectEq(true, subst.isUnbound(element));
+}
+
 module end;
