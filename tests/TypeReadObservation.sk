@@ -77,17 +77,65 @@ fun testUnavailableObservationDoesNotCommit(): void {
 @test
 fun testObservedClosedOuterStillCommitsInnerRead(): void {
   subst = observationSubst();
+  tenv = observationTypeEnv(subst);
   outer = subst.gen(SKJS.PosRange::none);
   inner = subst.gen(SKJS.PosRange::none);
   observationBind(subst, outer, SKJS.TType::var(inner), true);
   observationBind(subst, inner, observationNumber(), false);
-  result = subst.withCommittedTypeReads(scratch ->
-    scratch.peekRaw(outer).flatMap(ty ->
-      ty.getSingleVar().flatMap(tv -> scratch.peekRaw(tv))
-    )
+  result = subst.withCommittedReadDecision(tenv, context ->
+    context.expand(SKJS.TType::var(outer), Some(SKJS.Covariant()))
   );
-  SKTest.expectEq(true, result is SKJS.TRReady _);
+  SKTest.expectEq(
+    true,
+    result match {
+    | SKJS.TRReady(ty) -> ty == observationNumber()
+    | _ -> false
+    },
+  );
   SKTest.expectEq(true, subst.isClosed(inner));
+}
+
+@test
+fun testReadExpansionPreservesSymbolicAndOccurrenceTypes(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  tv = subst.gen(SKJS.PosRange::none);
+  constrained = SKJS.TType::var(tv.setConstraint(observationString()));
+  // Preserving a symbolic occurrence must neither read an unbound candidate
+  // nor erase its local constraint.
+  symbolic = subst.withCommittedReadDecision(tenv, context ->
+    context.expand(constrained, None())
+  );
+  SKTest.expectEq(
+    true,
+    symbolic match {
+    | SKJS.TRReady(ty) -> ty == constrained
+    | _ -> false
+    },
+  );
+  SKTest.expectEq(true, subst.isUnbound(tv));
+  blocked = subst.withCommittedReadDecision(tenv, context ->
+    context.expand(constrained, Some(SKJS.Covariant()))
+  );
+  SKTest.expectEq(true, blocked is SKJS.TRBlocked _);
+  SKTest.expectEq(true, subst.isUnbound(tv));
+  observationBind(subst, tv, observationNumber(), false);
+  // Both polarities inspect the same fixed binding and apply the occurrence
+  // constraint. The bottom occurrence must not overwrite that binding.
+  for (variance in Array[SKJS.Covariant(), SKJS.Contravariant()]) {
+    result = subst.withCommittedReadDecision(tenv, context ->
+      context.expand(constrained, Some(variance))
+    );
+    SKTest.expectEq(
+      true,
+      result match {
+      | SKJS.TRReady(ty) -> ty.isBottom()
+      | _ -> false
+      },
+    );
+    SKTest.expectEq(Some(observationNumber()), subst.peekRaw(tv));
+    SKTest.expectEq(true, subst.isClosed(tv))
+  }
 }
 
 @test
