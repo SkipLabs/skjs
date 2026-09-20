@@ -44,8 +44,8 @@ merges. A blocked read is not permission to use an inferred approximation from
 a throwaway clone. Symbolic members that the operation does not inspect remain
 available to later inference. The diagnostic does not itself prove the program
 unsafe, and does not lift the existing restrictions on abstract projections.
-The ownership boundaries and remaining validation obligations are described in
-[the improvement guide](docs/skjs-improvement.md#native-ownership-boundaries-2026-09-19).
+The ownership boundaries and validation lifetime rules are described in
+[the improvement guide](docs/skjs-improvement.md#native-ownership-boundaries).
 
 ## Key Restrictions Discovered
 

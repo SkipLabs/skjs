@@ -1,7 +1,7 @@
 # census: repair-work
-# 40/148 verified, of 386 functions
-#   skjs-rejected: 238
-#   gate: 85
+# 40/150 verified, of 390 functions
+#   skjs-rejected: 240
+#   gate: 87
 #   verified: 40
 #   unproved: 23
 #
@@ -9,6 +9,7 @@ gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-so
 gate:a `let` needs an initializer	tests/expect-error/definite-assignment-tvar-soundness.ts	typeofUndefinedFieldAdmitsInitialValue
 gate:a `let` needs an initializer	tests/expect-error/test_ternary_refinements.ts	bothBranchesInitialize
 gate:a `let` pattern is outside the fragment	tests/expect-error/captured-read-stability.ts	checkedDestructuredDefault
+gate:a record with no field has no location	tests/expect-error/membership-protocol-erasure.ts	opaqueMembershipObject
 gate:a record with no field has no location	tests/expect-error/unsound-refinement.ts	grownAliasField
 gate:alias applications in alias bodies are outside the fragment	tests/expect-error/type-query-memo-stability.ts	queryCompoundIntersection
 gate:alias applications in alias bodies are outside the fragment	tests/expect-error/type-query-memo-stability.ts	queryInferenceStillWorks
@@ -37,6 +38,7 @@ gate:expected a required closure parameter	tests/expect-error/arrow-default-para
 gate:expected a required mutable field	tests/expect-error/destructuring.ts	checkedNestedPattern
 gate:expected a required mutable field	tests/expect-error/destructuring.ts	earlierPatternRead
 gate:expected a required mutable field	tests/expect-error/destructuring.ts	patternEarlierBinding
+gate:expected a required mutable field	tests/expect-error/membership-protocol-erasure.ts	retainedMembershipProtocol
 gate:expected a required mutable field	tests/expect-error/optional-chaining-method-call.ts	callResult
 gate:expected a required mutable field	tests/expect-error/unsound-refinement.ts	checkedDeclarationDefault
 gate:expected a required ordinary parameter	tests/expect-error/observed-rest-subtyping.ts	observedAliasedTupleLayout
@@ -224,6 +226,8 @@ skjs-rejected	tests/expect-error/logical-compound-flow.ts	skippedWrite
 skjs-rejected	tests/expect-error/loop-carried-narrowing.ts	staleForOfRead
 skjs-rejected	tests/expect-error/loop-carried-narrowing.ts	staleIncrementRead
 skjs-rejected	tests/expect-error/loop-carried-narrowing.ts	staleLoopRead
+skjs-rejected	tests/expect-error/membership-protocol-erasure.ts	erasedConstructorHook
+skjs-rejected	tests/expect-error/membership-protocol-erasure.ts	erasedFunctionHook
 skjs-rejected	tests/expect-error/normalization-owner.ts	projectedElementGrowth
 skjs-rejected	tests/expect-error/nullish-coalescing.ts	possibleFallback
 skjs-rejected	tests/expect-error/nullish-coalescing.ts	skippedFallback

@@ -44,9 +44,13 @@ of the work remaining.
 
 ## Measurement refresh: 20 September 2026
 
-The current baseline is **40/148 verified**, out of **386** selected functions:
-238 SKJS-rejected, 85 gated and 23 unproved/unavailable. The previous checkpoint
-below remains useful history. There are 67 new selected functions and three old
+The current baseline is **40/150 verified**, out of **390** selected functions:
+240 SKJS-rejected, 87 gated and 23 unproved/unavailable. The final qualification
+adds four membership-protocol tests: the two erasing conversions are rejected;
+the retained-protocol control is gated on its readonly/symbol field, and the
+opaque-object control on the empty record type. There is no new proof-coverage
+gain from that checker repair. The previous checkpoint
+below remains useful history. There are 71 new selected functions and three old
 normalization-owner functions now accepted by SKJS but gated by source syntax;
 none of the previously selected functions newly verifies.
 
