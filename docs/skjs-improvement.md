@@ -424,6 +424,14 @@ supplied normalizer still has solver access, and validation still reaches this
 traversal through the observed legacy intersection entry point. Recursive-premise
 tracking, memo qualification and primitive/object subtype checks are unchanged.
 
+Field-set assembly now receives three explicit operations: named-field meet,
+index-field meet and signature meet. Index coverage, symbol fields, array brands
+and callability modes no longer receive a solver. Signature selection likewise
+receives only a subtype decision and preserves left-first choice and merged call
+graph nodes. The legacy adapters still supply inference-capable operations; the
+next step is to supply fixed-read operations using the same assembly. This does
+not yet make the normalization backend read-only.
+
 A2 is **not complete**. Named-type expansion, intersections (including occurrence
 constraints), field/callback intersection normalization and symbol-identity
 resolution still call the observed legacy kernel. Literal reads reached through those nested legacy

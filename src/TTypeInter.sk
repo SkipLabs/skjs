@@ -425,33 +425,29 @@ extension base class SType {
 }
 
 extension class TIndexes {
-  static fun inter(
-    subst: mutable Subst,
-    tenv: TEnv,
+  static fun interWith(
     indexes1: TIndexesBase,
     indexes2: TIndexesBase,
+    meetIndex: (TField, TField) -> TField,
   ): TIndexes {
-    stringIndex = TFields::interOptIndex(
-      subst,
-      tenv,
+    stringIndex = TFields::interOptIndexWith(
       indexes1.stringIndex,
       indexes2.stringIndex,
+      meetIndex,
     );
-    numberIndex = TFields::interOptIndex(
-      subst,
-      tenv,
+    numberIndex = TFields::interOptIndexWith(
       indexes1.numberIndex,
       indexes2.numberIndex,
+      meetIndex,
     );
-    symbolIndex = TFields::interOptIndex(
-      subst,
-      tenv,
+    symbolIndex = TFields::interOptIndexWith(
       indexes1.symbolIndex,
       indexes2.symbolIndex,
+      meetIndex,
     );
     (stringIndex, numberIndex) match {
     | (Some(strIdx), Some(numIdx)) ->
-      !numberIndex = Some(TField::interIndex(subst, tenv, strIdx, numIdx))
+      !numberIndex = Some(meetIndex(strIdx, numIdx))
     | _ -> void
     };
     TIndexes{stringIndex, numberIndex, symbolIndex}
@@ -459,27 +455,27 @@ extension class TIndexes {
 }
 
 extension class TFields {
-  private static fun interNamedFields(
-    subst: mutable Subst,
-    tenv: TEnv,
+  private static fun interNamedFieldsWith(
     namedFields1: InternalKeyedArrayMap<FieldNameString, TField>,
     namedFields2: InternalKeyedArrayMap<FieldNameString, TField>,
     indexFor1: (FieldNameString) -> ?TField,
     indexFor2: (FieldNameString) -> ?TField,
+    meetField: (TField, TField) -> TField,
+    meetIndex: (TField, TField) -> TField,
   ): InternalKeyedArrayMap<FieldNameString, TField> {
     namedFields1.merge(namedFields2, ior ->
       ior match {
       | Left(f1) ->
         indexFor2(f1.name) match {
         | None() -> f1
-        | Some(idx) -> TField::interIndex(subst, tenv, f1, idx)
+        | Some(idx) -> meetIndex(f1, idx)
         }
       | Right(f2) ->
         indexFor1(f2.name) match {
         | None() -> f2
-        | Some(idx) -> TField::interIndex(subst, tenv, f2, idx)
+        | Some(idx) -> meetIndex(f2, idx)
         }
-      | Both(x, y) -> TField::inter(subst, tenv, x, y)
+      | Both(x, y) -> meetField(x, y)
       }
     )
   }
@@ -495,12 +491,11 @@ extension class TFields {
   // signature is kept rather than collapsing an inhabited intersection —
   // hybrid (() => void) & C types, and instanceof narrowing of a callable
   // against a class — to never.
-  private static fun interCallability(
-    subst: mutable Subst,
-    tenv: TEnv,
+  private static fun interCallabilityWith(
     m1: Callability,
     m2: Callability,
     isArray: ?Bool,
+    meetFunctions: (TFuns, TFuns) -> ?TFuns,
   ): ?Callability {
     (m1, m2) match {
     | (CUnknown(), m)
@@ -521,7 +516,7 @@ extension class TFields {
       Some(p)
     | (CFunction(), CFunction()) -> Some(CFunction())
     | (CPresent(f1), CPresent(f2)) ->
-      TFuns::inter(subst, tenv, f1, f2).map(f -> CPresent(f))
+      meetFunctions(f1, f2).map(f -> CPresent(f))
     }
   }
 
@@ -530,6 +525,25 @@ extension class TFields {
     tenv: TEnv,
     fields1: TFields,
     fields2: TFields,
+  ): ?TFields {
+    TFields::interWith(
+      fields1,
+      fields2,
+      (left, right) -> TField::inter(subst, tenv, left, right),
+      (left, right) -> TField::interIndex(subst, tenv, left, right),
+      (left, right) -> TFuns::inter(subst, tenv, left, right),
+    )
+  }
+
+  // Field/index assembly and callability brands have no solver authority.
+  // The three operations are distinct: named and indexed reads have different
+  // normalization policies, while signatures require a subtype decision.
+  static fun interWith(
+    fields1: TFields,
+    fields2: TFields,
+    meetField: (TField, TField) -> TField,
+    meetIndex: (TField, TField) -> TField,
+    meetFunctions: (TFuns, TFuns) -> ?TFuns,
   ): ?TFields {
     isArray = (fields1.isArray, fields2.isArray) match {
     | (Some(true), Some(false))
@@ -541,39 +555,37 @@ extension class TFields {
     };
     // Process fields first so that tuple index type variables are resolved
     // before call/new signatures with union types.
-    fields = TFields::interNamedFields(
-      subst,
-      tenv,
+    fields = TFields::interNamedFieldsWith(
       fields1.fields,
       fields2.fields,
       name -> fields1.indexForFieldName(name.value),
       name -> fields2.indexForFieldName(name.value),
+      meetField,
+      meetIndex,
     );
-    symbolFields = TFields::interNamedFields(
-      subst,
-      tenv,
+    symbolFields = TFields::interNamedFieldsWith(
       fields1.symbolFields,
       fields2.symbolFields,
       _ -> fields1.symbolIndex,
       _ -> fields2.symbolIndex,
+      meetField,
+      meetIndex,
     );
-    indexes = TIndexes::inter(subst, tenv, fields1, fields2);
-    call = TFields::interCallability(
-      subst,
-      tenv,
+    indexes = TIndexes::interWith(fields1, fields2, meetIndex);
+    call = TFields::interCallabilityWith(
       fields1.call,
       fields2.call,
       isArray,
+      meetFunctions,
     ) match {
     | None() -> return None()
     | Some(m) -> m
     };
-    new = TFields::interCallability(
-      subst,
-      tenv,
+    new = TFields::interCallabilityWith(
       fields1.new,
       fields2.new,
       isArray,
+      meetFunctions,
     ) match {
     | None() -> return None()
     | Some(m) -> m
@@ -599,19 +611,17 @@ extension class TFields {
     }
   }
 
-  static fun interOptIndex(
-    subst: mutable Subst,
-    tenv: TEnv,
+  static fun interOptIndexWith(
     idx1: ?TField,
     idx2: ?TField,
+    meetIndex: (TField, TField) -> TField,
   ): ?TField {
     (idx1, idx2) match {
     | (None(), None()) -> None()
     | (Some(index), None())
     | (None(), Some(index)) ->
       Some(index)
-    | (Some(index1), Some(index2)) ->
-      Some(TField::interIndex(subst, tenv, index1, index2))
+    | (Some(index1), Some(index2)) -> Some(meetIndex(index1, index2))
     }
   }
 }
@@ -676,16 +686,24 @@ extension class TFun {
     f1: TFun,
     f2: TFun,
   ): ?TFun {
+    TFun::interWith(f1, f2, (left, right) ->
+      TFun::isSub(subst, tenv, left, right) is STOk()
+    )
+  }
+
+  static fun interWith(
+    f1: TFun,
+    f2: TFun,
+    isSubtype: (TFun, TFun) -> Bool,
+  ): ?TFun {
     merged = f1.cgNodes.union(f2.cgNodes);
-    TFun::isSub(subst, tenv, f1, f2) match {
-    | STOk() -> return Some(f1 with {cgNodes => merged})
-    | STError _ -> void
-    };
-    TFun::isSub(subst, tenv, f2, f1) match {
-    | STOk() -> return Some(f2 with {cgNodes => merged})
-    | STError _ -> void
-    };
-    None()
+    if (isSubtype(f1, f2)) {
+      Some(f1 with {cgNodes => merged})
+    } else if (isSubtype(f2, f1)) {
+      Some(f2 with {cgNodes => merged})
+    } else {
+      None()
+    }
   }
 }
 
