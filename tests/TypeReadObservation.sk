@@ -1099,4 +1099,46 @@ fun testReadContextExpiresOnEveryExit(): void {
   }
 }
 
+@test
+fun testObservedLiteralRequiresCurrentSelection(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  file = SKJS.FPath::create(
+    SKJS.RootId::project,
+    "tests/expect-error/type-query-memo-stability.ts",
+  );
+  lexer = SKJS.Lexer::mcreate(file, "");
+  pos = SKJS.PosRange::create(lexer, SKJS.Pos(0), SKJS.Pos(0));
+  selector = SKJS.ArrayLiteralSelector::create(subst, pos);
+  literal = SKJS.TType::arrayLit(
+    selector,
+    Array[observationNumber()],
+    Array[None()],
+  );
+  saved = subst.save();
+  read = () ->
+    subst.withCommittedReadDecision(tenv, context ->
+      context.spreadTuple(literal)
+    );
+  SKTest.expectEq(true, read() is SKJS.TRBlocked _);
+  SKTest.expectEq(None(), selector.peek(subst, tenv));
+  selector.commit(
+    subst,
+    tenv,
+    SKJS.TType::tuple(pos, Array[observationNumber()], false),
+  );
+  result = read();
+  SKTest.expectEq(
+    true,
+    result match {
+    | SKJS.TRReady(Some(elements)) -> elements == Array[observationNumber()]
+    | _ -> false
+    },
+  );
+  subst.restore(saved);
+  // A successful read of the previous selection cannot survive rollback.
+  SKTest.expectEq(true, read() is SKJS.TRBlocked _);
+  SKTest.expectEq(None(), selector.peek(subst, tenv));
+}
+
 module end;
