@@ -396,13 +396,15 @@ fun testFalseTypeDecisionCommitsItsReads(): void {
 @test
 fun testAbsentTupleDecisionCommitsItsReads(): void {
   subst = observationSubst();
+  tenv = observationTypeEnv(subst);
   tv = subst.gen(SKJS.PosRange::none);
   observationBind(subst, tv, observationNumber(), false);
-  result = subst.withCommittedTypeDecision<?Array<SKJS.TType>>(scratch -> {
-    _ = scratch.peekRaw(tv);
-    None()
-  });
-  SKTest.expectEq(true, result is SKJS.TRReady(None()));
+  result = SKJS.VariadicTyping::resolveSubtypeRestTuple(
+    subst,
+    tenv,
+    Some(SKJS.TType::var(tv)),
+  );
+  SKTest.expectEq(None(), result);
   SKTest.expectEq(true, subst.isClosed(tv));
 }
 
@@ -443,18 +445,26 @@ fun testCaughtBlockDoesNotAuthorizeNegativeDecision(): void {
 @test
 fun testRestLayoutDecisionLeavesSymbolicElementOpen(): void {
   subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  file = SKJS.FPath::create(
+    SKJS.RootId::project,
+    "tests/expect-error/type-query-memo-stability.ts",
+  );
+  lexer = SKJS.Lexer::mcreate(file, "");
+  pos = SKJS.PosRange::create(lexer, SKJS.Pos(0), SKJS.Pos(0));
   outer = subst.gen(SKJS.PosRange::none);
   element = subst.gen(SKJS.PosRange::none);
   arrayTy = SKJS.TType::inst(
-    SKJS.Name(SKJS.PosRange::none, "Array"),
+    SKJS.Name(pos, "Array"),
     SKJS.TArgs(Array[SKJS.TType::var(element)]),
   );
   observationBind(subst, outer, arrayTy, false);
-  result = subst.withCommittedTypeDecision<?Array<SKJS.TType>>(scratch -> {
-    _ = scratch.peekRaw(outer);
-    None()
-  });
-  SKTest.expectEq(true, result is SKJS.TRReady(None()));
+  result = SKJS.VariadicTyping::resolveSubtypeRestTuple(
+    subst,
+    tenv,
+    Some(SKJS.TType::var(outer)),
+  );
+  SKTest.expectEq(None(), result);
   SKTest.expectEq(true, subst.isClosed(outer));
   SKTest.expectEq(true, subst.isUnbound(element));
 }
@@ -464,14 +474,16 @@ fun testRestLayoutDecisionLeavesSymbolicElementOpen(): void {
 @test
 fun testRestLayoutCommitmentRollsBackWithAlternative(): void {
   subst = observationSubst();
+  tenv = observationTypeEnv(subst);
   tv = subst.gen(SKJS.PosRange::none);
   observationBind(subst, tv, observationNumber(), false);
   saved = subst.save();
-  result = subst.withCommittedTypeDecision<Bool>(scratch -> {
-    _ = scratch.peekRaw(tv);
-    false
-  });
-  SKTest.expectEq(true, result is SKJS.TRReady(false));
+  result = SKJS.VariadicTyping::resolveSubtypeRestTuple(
+    subst,
+    tenv,
+    Some(SKJS.TType::var(tv)),
+  );
+  SKTest.expectEq(None(), result);
   SKTest.expectEq(true, subst.isClosed(tv));
   subst.restore(saved);
   SKTest.expectEq(true, subst.isOpen(tv));
