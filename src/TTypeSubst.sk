@@ -152,10 +152,12 @@ mutable class Subst private {
   // Fresh ids for skolem type parameters. This counter is separate from the
   // version and from SubstState because restore rewinds the version; reusing an
   // id on a restored timeline would merge two distinct hidden type arguments.
-  private mutable nextSkolemId: Int = 0,
+  // Disabled by default: only createCheckingOwner enables witness allocation.
+  // Scratch, normalization, observation and diagnostic state never gain it.
+  private mutable nextSkolemId: Int = -1,
   // Where the pretty-printer reports the type-parameter names it emits, set
   // for the length of one diagnostic's rendering (see PpNames). Unlike
-  // nextSkolemId below, a clone SHARES this rather than being cut off from
+  // witness allocation, a clone SHARES this rather than being cut off from
   // it: prettyPrintType renders through a clone, so a copy would lose exactly
   // the emissions it exists to collect. That is safe because it is a record
   // of output only -- nothing reads it back into typing, and save/restore
@@ -195,6 +197,14 @@ mutable class Subst private {
     };
     frame.push((kind, sourceJson, targetJson));
     this.opFrames![n - 1] = frame
+  }
+
+  // Only a fresh source-checking root owns a witness namespace. A light
+  // environment carries no existing candidate owner or rollback state.
+  static fun createCheckingOwner(tcenvl: mutable TCEnvLight): mutable Subst {
+    owner = static::mcreate(tcenvl);
+    owner.!nextSkolemId = 0;
+    owner
   }
 
   static fun mcreate(
@@ -285,12 +295,6 @@ mutable class Subst private {
       semanticEpoch => this.semanticEpoch,
       values => this.values,
       origins => this.origins,
-      // A skolem minted inside a clone would not advance the parent's
-      // counter, so the parent could later mint a distinct hidden type
-      // argument with the same id, silently merging the two. No caller mints
-      // skolems speculatively, so poison the counter: genSkolemTParam fails
-      // hard on it the moment that changes.
-      nextSkolemId => -1,
       ppNames => this.ppNames,
     }
   }
@@ -345,7 +349,6 @@ mutable class Subst private {
       values => this.values,
       origins => this.origins,
       freezeCandidates => this.freezeCandidates,
-      nextSkolemId => -1,
       ppNames => this.ppNames,
     }
   }
@@ -507,7 +510,6 @@ mutable class Subst private {
       values => parent.values,
       origins => parent.origins,
       freezeCandidates => parent.freezeCandidates,
-      nextSkolemId => -1,
       readObservation => Some(frame),
     }
   }
@@ -765,9 +767,8 @@ mutable class Subst private {
     this.readObservation.each(frame -> frame.block());
     invariant(
       this.nextSkolemId >= 0,
-      "A skolem must not be minted in a cloned Subst: its id could collide " +
-        "with one the parent mints later, merging two distinct hidden type " +
-        "arguments",
+      "A hidden witness must be minted in a checking owner, not in " +
+        "scratch, normalization or diagnostic state",
     );
     id = this.nextSkolemId;
     this.!nextSkolemId = this.nextSkolemId + 1;

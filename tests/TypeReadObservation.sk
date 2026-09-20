@@ -4,7 +4,7 @@ fun observationSubst(): mutable SKJS.Subst {
   context = SKStore.Context::mcreate{};
   results = SKJS.TCResultsAcc::mcreate{errorHandling => SKJS.EHDefault()};
   base = mutable SKJS.TCEnvLight{context, results};
-  SKJS.Subst::mcreate(base)
+  SKJS.Subst::createCheckingOwner(base)
 }
 
 fun observationNumber(): SKJS.TType {

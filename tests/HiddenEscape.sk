@@ -7,7 +7,7 @@ fun testHiddenEscapeThroughArrayCommitment(): void {
   context = SKStore.Context::mcreate{};
   results = SKJS.TCResultsAcc::mcreate{errorHandling => SKJS.EHDefault()};
   base = mutable SKJS.TCEnvLight{context, results};
-  subst = SKJS.Subst::mcreate(base);
+  subst = SKJS.Subst::createCheckingOwner(base);
   pos = SKJS.PosRange::none;
   hidden = subst.genSkolemTParam(pos, "hidden", None());
   hiddenType = SKJS.TType::ofClauses(
@@ -54,7 +54,7 @@ fun testSubstSemanticEpochDoesNotRewind(): void {
   context = SKStore.Context::mcreate{};
   results = SKJS.TCResultsAcc::mcreate{errorHandling => SKJS.EHDefault()};
   base = mutable SKJS.TCEnvLight{context, results};
-  subst = SKJS.Subst::mcreate(base);
+  subst = SKJS.Subst::createCheckingOwner(base);
   pos = SKJS.PosRange::none;
 
   saved = subst.save();
@@ -77,7 +77,7 @@ fun testHiddenWitnessSyntheticNamespace(): void {
   context = SKStore.Context::mcreate{};
   results = SKJS.TCResultsAcc::mcreate{errorHandling => SKJS.EHDefault()};
   base = mutable SKJS.TCEnvLight{context, results};
-  subst = SKJS.Subst::mcreate(base);
+  subst = SKJS.Subst::createCheckingOwner(base);
   hidden = subst.genSkolemTParam(SKJS.PosRange::none, "hidden", None());
   ordinary = SKJS.Id::createSynthetic("skolem:0");
   SKTest.expectEq(false, hidden.id == ordinary);
@@ -93,7 +93,7 @@ fun testHiddenWitnessAllocationDoesNotRewindWithInference(): void {
   context = SKStore.Context::mcreate{};
   results = SKJS.TCResultsAcc::mcreate{errorHandling => SKJS.EHDefault()};
   base = mutable SKJS.TCEnvLight{context, results};
-  subst = SKJS.Subst::mcreate(base);
+  subst = SKJS.Subst::createCheckingOwner(base);
   pos = SKJS.PosRange::none;
   before = subst.genSkolemTParam(pos, "hidden", None());
   checkpoint = subst.skolemCheckpoint();
@@ -134,17 +134,17 @@ fun testHiddenWitnessAllocationAuthorities(): void {
     None(),
     tryHiddenWitnessAllocation(owner.cloneForTypeDiagnostics()),
   );
-  // Baseline: these routes currently restart the owner's namespace.
+  // Detached construction must not restart the owner's namespace.
   SKTest.expectEq(
-    Some(first.id),
+    None(),
     tryHiddenWitnessAllocation(SKJS.Subst::mcreate(owner)),
   );
   SKTest.expectEq(
-    Some(first.id),
+    None(),
     tryHiddenWitnessAllocation(SKJS.Subst::mcreate(owner, owner.save())),
   );
   SKTest.expectEq(
-    Some(first.id),
+    None(),
     tryHiddenWitnessAllocation(
       SKJS.Subst::mcreateFromSaved(owner.context, owner.saveAll()),
     ),

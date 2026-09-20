@@ -173,7 +173,7 @@ diagnostic) is independent of variable role.
 ### Planned milestones
 
 These are architectural milestones A1–A4, separate from completed repair rows
-R1–R3/M1–M3. A1 is **in progress**; A2–A4 are **not started**.
+R1–R3/M1–M3. A1 is **done**; A2–A4 are **not started**.
 Names below describe responsibilities, not prescribed new class names.
 
 | ID | Deliverable | Closure evidence |
@@ -279,19 +279,40 @@ and `commitObservedBindings`:
 Save/restore preserves this state machine but rewinds candidate identities and
 bindings together. Abandoned speculative values must not escape rollback.
 Cross-owner use is still a caller lifetime obligation, not a statically checked
-owner brand. Hidden-witness allocation has a non-rewinding counter and clone
-prohibition. The audit found that fresh normalization substitutions and
-saved-diagnostic reconstruction still start their own counters: they currently
-have no production witness-allocation caller, but this boundary needs explicit
-restriction before A1 can close. The sole production minting path is
-`TEnv.makeSkolemTArgsOf`, reached from instance narrowing.
+owner brand. This applies to independent checking roots and to abandoning values
+when rolling back; the construction milestone does not prove those lifetimes.
 
-A1 remains in progress pending a final audit of the candidate/field/contextual
-transition surface and owner/scope boundaries. A2–A4 remain separate milestones;
-in particular the selector interface does not restrict the mutable context
-received by validation callbacks.
+Hidden-witness allocation is disabled by default on every substitution. Only
+`createCheckingOwner`, taking a light environment with no candidate owner,
+enables a fresh namespace. Source checking roots use that constructor; ordinary
+`mcreate`, saved-diagnostic reconstruction, clones, probes and observation state
+cannot mint witnesses. The runtime check is centralized in the serial allocator,
+and the counter never rewinds with solver state. This replaces repeated clone
+sentinels with one safe default. The sole production minting path remains
+`TEnv.makeSkolemTArgsOf`, reached from instance narrowing. A native regression
+covers detached normalization with and without saved state, saved diagnostics,
+ordinary and diagnostic clones, plus successful fresh allocation by the owner.
+The first three routes previously restarted the namespace; no production source
+acceptance bug was demonstrated through them.
 
-Remaining dynamic enforcement includes clone prohibition for witness allocation,
+Final A1 validation: 213 checker tests, 65 independent verifier suites, and
+278 curated proofs pass with no unexpected producer or proof outcomes. The
+identity factory/update bypasses are compiler-rejected. The additional test is
+native; no source corpus selection or census baseline changed. Earlier paired
+performance qualification remains recorded above; no new timing claim is made
+for the final identity/allocator access changes.
+
+A1's construction/transition milestone is complete within these explicit trust
+boundaries. Candidate state and identity replacement are unavailable to ordinary
+callers; role-specific creation, selector commitment and value growth are
+separate; rigid IDs cannot enter the solver. Occurrence constraints preserve
+identity. Clone/rollback/escape and literal controls remain required tests.
+A2–A4 are still open: validation callbacks receive mutable `Subst`, inference
+still participates in subtype checking, and the mutable routes have not yet
+been retired. The next step is an end-to-end restricted read context for rest
+shape extraction, including recursive expansion and its commitment boundary.
+
+Remaining dynamic enforcement includes checking-owner authority for witness allocation,
 checkpoint validity, observation read/commit checks, and the lifetime discipline
 of save/restore. The mutable state hierarchy is trusted implementation, not a
 security boundary against adding privileged subclasses/extensions. Validation
