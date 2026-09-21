@@ -100,6 +100,12 @@ establish separation. Keep remaining runtime enforcement and incomplete migratio
 explicit; do not describe the reorganization as complete while those milestones
 remain open.
 
+A1–A3 are complete. Before implementing A4, follow the
+[A4 implementation guide](docs/skjs-improvement.md#a4-implementation-guide):
+trace the remaining callers, migrate them by purpose, retire unrestricted paths,
+and satisfy its closure gates. Keep progress in that document; do not create
+handoff files.
+
 ## Measuring checker repair tests
 
 When adding or regrouping repair regressions, run `make verify-census` in the

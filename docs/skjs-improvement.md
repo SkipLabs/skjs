@@ -501,6 +501,315 @@ Batching avoids repeating independent validation during each call-inference pass
 the temporary proof allocation region prevents the earlier unbounded paging.
 These bounded controls establish comparable performance, not a general speedup.
 
+### A4 implementation guide
+
+A4 starts from the A3 closure at `34ee351e`. This is an implementation task,
+not another open-ended search for source counterexamples. Finish the migration
+of remaining consumers, remove the bypasses it makes unnecessary, and qualify
+the resulting architecture. Do not reopen A1–A3 wholesale or replace the shared
+type algebra. If a concrete counterexample disproves an A3 invariant, repair
+that boundary and report it explicitly.
+
+Keep the inventory and progress in this document. Do not create handoff files,
+parallel plans, or a second source of architectural status. Read root `AGENTS.md`,
+this architecture section, the lifetime audit below, and the writing/testing
+and commit guides before implementation. Read `verification/AGENTS.md` before
+changing the pipeline. The ordinary A4 task does not require a pipeline or
+calculus extension.
+
+#### Starting state and invariants to preserve
+
+The following are implemented, not suggestions for new abstractions:
+
+| Existing mechanism | Use and constraint |
+| --- | --- |
+| `Subst.proposeSubtype` | Inference only. Returns `SubtypeProposalResult`, not an accepted `STResult`. Failed proposals restore state. |
+| `TType.isSub` | Ordinary accepted-subtype driver: independent restricted proof, or proposal followed by proof of the original operands. Its recursive proposal implementation is not an alternative acceptance API. |
+| `Subst.proveSubtype` / `proveSubtypes` | Actual positive relation, fixed snapshot, dependency commitment. No arbitrary success callback. A batch publishes nothing unless every obligation succeeds. |
+| `TypeReadContext` / `TypeReadDeclaration` | Restricted observation and declaration lookup. No solver growth, candidate allocation, representation selection, or mutable-owner accessor. |
+| `withCommittedReadContext` / `withCommittedReadDecision` | Optional observation versus retained decision. A retained negative decision also needs dependencies; failure to prove a positive relation is not a stable negative fact. |
+| `CallSubtypePlan` and `callWithArgumentTypes` | Private, retained original obligations; common call/constructor validation; candidate, cache, publication and active claimed-operation rollback. Operand evaluation precedes the transaction. |
+| `ArrayLiteralSelector` and `TypeReadContext.literalSelection` | Representation choice is separate from value inference. Selection alone is not proof that the original initializers inhabit its storage. |
+| Positive proof allocation region | Scratch proof graphs and caches stay local. Only immutable footprint, diagnostics/publication data and exception payloads cross the region. |
+
+Preserve these distinctions throughout A4:
+
+- An exact source/shape read fixes the inspected meaning; a positive target lower
+  bound may remain growable. Callback inputs and setters reverse the subtype
+  direction. Do not globally close candidates to make migration easier.
+- A symbolic result may remain unresolved when nobody has inspected it. Do not
+  replace an unknown candidate with `unknown`, `never`, a widened union, or a
+  guessed literal form just to get a proof or materialized shape.
+- Declared parameters and hidden witnesses are rigid; inference candidates are
+  solvable. Literal selectors are neither rigid parameters nor ordinary monotone
+  value candidates. Computation purpose is a separate distinction.
+- A runtime location has one fixed world type. Flow contents and candidate
+  proposals do not authorize changing that storage contract.
+- Recursive assumptions are local to their proof. A successful recursive child
+  cannot publish an answer that depends on an unfinished ancestor premise.
+- Candidate/cache rollback and monotone query bookkeeping are different. Do not
+  rewind read/mutation counters, witness identities, or owner lifetime checks.
+
+#### A4.1 — Establish a caller inventory and choose one migration
+
+First verify the checkout and baseline; do not assume it still equals the commit
+above. Run `git status --short` and inspect intervening commits. Preserve unrelated
+work. Build once and save the resulting binary outside tracked source as the
+comparison baseline, recording its commit and build configuration here. If the
+checkout has advanced, establish its test/verifier/census outcomes before edits
+so pre-existing failures are not attributed to the migration.
+
+These searches seed the inventory; they are not a proof of completeness:
+
+```sh
+rg -n 'subtypeProposal|isProposingSubtype|typeComputationPurpose' src
+rg -n '(TFun|TFuns|TFields|TObject|STypes|Clauses)::isSub\(' src
+rg -n '::isSubWith\(|::interWith\(' src
+rg -n '\.clone\(|cloneForTypeDiagnostics|withTypeArgumentProbe|Subst::mcreate' src
+rg -n 'seenSub|seenInter|seenUnion|seenExpansion|canCacheTypeQuerySince' src
+rg -n 'peekRaw|bindingsForExport|snapshot\(|saveAll|mcreateFromSaved' src
+rg -n 'recordClosedClaimedOp|recordClaimedOp|recordCalls|subtypingEdges' src
+```
+
+For every relevant caller, record: symbol, purpose, inputs, returned/retained
+result, candidate owner, dependencies, final publication point, proposed action,
+and status. Follow the returned value to its consumer; a method name or comment
+is not evidence of its role. Exclude unrelated collection/SKStore clones.
+Classify each path as inference proposal, positive validation, retained
+shape/negative decision, symbolic construction, diagnostic/export, or internal
+query machinery. A path can contain several phases; record the transition.
+
+The following entry points were inspected when this guide was written. They are
+**audit targets, not a list of confirmed unsoundness bugs**. Expand the table with
+actual callers before claiming that a row is closed.
+
+| Target | Initial places to inspect | Required disposition |
+| --- | --- | --- |
+| Structural subtype adapters | `TTypeSubtyping.sk`: `TFuns`, `TFun`, `TFields`, `TObject`, `STypes`, `Clauses` mutable `isSub` entry points; `TType.subtypeProposal` | Separate proposal-only recursion from ordinary acceptance. Migrate any external acceptance consumer to the justified boundary. Share solver-free `isSubWith` rules with the restricted validator. Restrict/remove the old external entry point after the last caller moves. |
+| General substitution clones | `TTypeSubst.sk`: `clone`, `mcreate`, `mcreateFromSaved`, `detachedTypeComputation`, `observationScratch` | Every surviving constructor/clone must have a specific purpose and an explicit state-sharing rule. Remove the general-purpose public escape hatch once callers are migrated. Legitimate private scratch implementations may remain. |
+| Diagnostics and display | `TypeCheckExpr.checkComparisonOverlap`, `showTypes`; `TTypePp.prettyPrintType`, `prettyPrintPastableType`; diagnostic paths in `TEnv` and `TTypeSubtyping` | Diagnostics must not supply accepted type facts. Avoid nested generic clones when a diagnostic view already suffices. Preserve `ppNames` sharing and rendering behavior. Trace expression evaluation separately from rendering. |
+| Literal guidance | `TArrayLitTyping.sk`: `ArrayLitTyping.targetExpectsLiteral` and its clone | Guidance may propose a representation but cannot authorize acceptance. Preserve contextual literal precision and the independent original-element validation. |
+| `instanceof` branch preservation | `TypeCheckRefine.evalInstanceof`: probe construction, per-branch clone, direct `TFields::isSub` | Preserve the original branch on a justified preservation path; do not export the clone's inferred fields. Keep different branches' inference isolated and hidden witnesses fresh. Do not blindly substitute committed positive checking for an existential compatibility search. |
+| Observation descendants | `TypeReadContext` methods using `scratch.clone()` | Keep the same snapshot/read footprint and capability lifetime, with appropriately local caches. These are internal read computations, not ordinary inference clones. Narrow the API without breaking transitive read tracking. |
+| Type-argument probes | `TypeArgumentCheck.check`, `checkDeclaration`, `checkConstraint`; `TypeReadContext.checkDeclarationCompatibility`; `Subst.withTypeArgumentProbe` | Replace unnecessarily broad mutable callbacks with concrete operations where possible. No solved probe state or acceptance authority may escape. Constructor proposals must still defer to final whole-call bound validation. |
+| Materialization dispatch | `TTypeMaterialization.materializeReadContext` and callers supplying its detached branch | Verify that checking receives only the restricted context and that detached results cannot cross back into checking as facts. Retire redundant dispatch/adapters after caller migration; do not merge purposes for convenience. |
+| Cache access and publication | `SubstState`, query frames/counters, named expansion in `TEnv`, relation caches, `CallTyping`, results and claimed-operation frames | Restrict mutation/publication to the responsible implementation. Preserve dependency qualification, atomic batch commitment, and both completed and active claim rollback. |
+
+For each row choose **migrate**, **delete**, or **retain privately with a written
+reason**. “Audited, tests pass” is not a substitute for a capability restriction
+when the unrestricted entry point remains available to ordinary callers.
+
+A4.1 is complete when the inventory names the real consumers and the first
+bounded migration is chosen. Do not spend successive turns only counting callers.
+A good first slice is diagnostic-only clone consumers: small scope, clear outputs,
+and no need to change inference semantics.
+
+#### A4.2 — Migrate clone and probe consumers by purpose
+
+Do this by consumer family, not by renaming `clone` globally:
+
+1. Move display/advice consumers to the diagnostic path. Check that they return
+   only text or diagnostic decisions. A warning about overlap must not later be
+   reused to eliminate a branch. `showTypes` still evaluates its expression in
+   the real checker; moving rendering must not change that evaluation order.
+2. Move observation descendants to a private operation that preserves their
+   shared footprint and lifetime. Do not create a new empty solver for an
+   operand containing existing candidates.
+3. Trace literal guidance and `instanceof` compatibility through to their final
+   result. State what proves the result safe even though the probe is discarded.
+   Retain that mathematical distinction rather than forcing both through an
+   inappropriate positive-subtyping API. Give the operation a narrow interface;
+   do not merely return a mutable clone under a more specific name.
+4. Narrow declaration/type-argument probe operations. Prefer explicit operands
+   and a diagnostic-only result over a callback capable of capturing the live
+   owner. If an adapter must remain temporarily, list its exact callers and
+   remove it before A4 closes.
+5. Remove/restrict the general clone entry point and redundant clone layers.
+   Review fresh owner allocation, saved diagnostic reconstruction and all
+   `Subst::mcreate` callers using the same ownership distinctions.
+
+Each slice must identify the misuse the compiler now rejects and the dynamic
+check still required. A single additional `isDiagnostic`/`isProbe` test at a
+consumer is not the end state. Conversely, do not delete a useful purpose enum
+while dispatch genuinely needs to distinguish those cases.
+
+#### A4.3 — Close direct relation and cache/publication bypasses
+
+For each mutable structural helper, inspect **all callers**, including callbacks
+passed into shared helpers. The target arrangement is:
+
+- Inference-owned recursion may propose, grow and select representations. Its
+  results are explicitly proposals and cannot be returned as ordinary acceptance.
+- Accepted positive judgments go through the A3 driver or concrete positive
+  validator. Fixed shape/negative decisions go through A2 observation.
+- Structural decomposition is shared through solver-free helpers. Keep the
+  different orchestration of inference and fixed-read validation; merging them
+  into one flag-heavy function would undo the separation.
+- The final ordinary caller cannot call a lower-level mutable helper to obtain
+  an accepted judgment without its dependencies. Make the helper private where
+  Skip permits. Otherwise reduce its signature/capability and explain the
+  remaining trusted scope; do not claim compiler enforcement that does not exist.
+
+Then audit the four caches separately. For each, state the key's meaning,
+read dependencies, recursive-premise dependencies, allowed owner/purpose,
+rollback behavior and publication site. Move direct cache writes behind the
+responsible implementation where this excludes misuse. Do not introduce another
+memo table for the same relation merely to avoid migrating existing callers.
+
+Do not change memo qualification heuristics as part of an interface move.
+In particular, do not remove epoch/premise/provisional-read checks, add a
+whole-substitution cache key, or clear every cache on every operation. These
+choices previously caused serious performance failures or threatened correctness.
+If a performance repair is necessary, isolate it, measure it against the saved
+baseline and explain why the new reuse rule is valid.
+
+Audit output rollback alongside state rollback: callgraph/subtyping edges,
+completed type claims and active `opFrames` are distinct stores. Preserve facts
+from operand evaluation before the call checkpoint; discard facts produced by
+an abandoned call. Recovery may return an approximate value after an error, but
+must not mark that failed call accepted. Ordinary candidate rollback must not
+indiscriminately erase already-justified earlier facts.
+
+#### A4.4 — Remove obsolete machinery and qualify the result
+
+Re-run the searches after migration. Delete unused adapters, duplicate algorithms,
+mode branches and obsolete comments **when their last purpose is gone**. Keep
+an explicit list of necessary survivors with their remaining callers. A general
+public bypass is not a necessary survivor merely because migrating it is hard.
+Update the older lifetime audit tables below if names or responsibilities change.
+
+Review tests by invariant, using the regression-responsibility table below.
+Keep source regressions and native protocol tests when they establish different
+facts. A source example often cannot observe a stale cache or false recursive
+premise directly. Do not delete such a native test just because a superficially
+similar source example passes. Remove a test only when another retained test
+exercises the same failure mechanism and the deleted setup has no independent
+ownership, variance, rollback or performance purpose. Record that mapping in
+the commit description, not in a new handoff file.
+
+Use this validation sequence for a code slice:
+
+```sh
+make check-in-docker
+make build-in-docker
+# Run the relevant native test filter with skargo test inside the same container,
+# or use check-file-in-docker for the affected TypeScript source controls.
+make test-in-docker
+```
+
+Every code commit must be green. Add tests for a demonstrated new failure or
+capability boundary, not permutations of existing examples. Native assertions
+use `SKTest.expectEq(actual, expected, message)`; label fixture/setup assertions
+so a broken reproducer cannot be mistaken for confirmation of the target bug.
+For a source behavior repair, follow the test-before-fix commit policy. Do not
+update error annotations or snapshots until the actual difference is understood.
+
+At coherent checkpoints, and on the final A4 code, run:
+
+```sh
+verification/run.sh --suite all
+node verification/examples.mts
+make verify-census
+make check-fmt
+```
+
+The format target compares the working tree with the index; stage reviewed
+changes before running it. Use the existing Docker configuration consistently.
+A3 used `DOCKER_IMAGE=70511b0832ff` and
+`SKIP_DIR=/Users/cristianocalcagno/GitHub/skip`; these are local baseline details,
+not portable requirements. Check availability before copying those settings.
+The checkout may select the tested compiler through ignored `Makefile.local`;
+see [Docker toolchain setup](setup.md#docker-compiler-and-sibling-standard-library).
+Make exports those settings to its recipes; the direct commands above need them
+in their environment explicitly. Do not run host binaries built for the container
+directly on macOS.
+
+The A3 baseline is 226 checker tests, 65 verifier suites, and curated results
+278 verified / 9 search failures / 18 unavailable. The repair census has 393
+functions: 242 producer-rejected; of 151 accepted, 41 verified, 87 gated and
+23 unproved. New independent tests may increase counts. Existing source outcomes
+should remain stable unless a separately demonstrated repair explains the change.
+Review both acceptance and rejection changes, including newly accepted functions.
+Do not use `UPDATE=1` to bless unexplained differences. Re-run the census after
+committing new/regrouped source functions so commit-based selection includes them.
+Native tests are outside that census. Curated examples are not the repair corpus.
+
+Performance qualification must keep the three existing controls:
+
+- `tests/expect-error/array_literal_examples.ts`
+- `tests/expect-error/instanceof-generic-skolem-args.ts`
+- `tests/expect-error/eagercollection-deep-value-no-oom.ts`
+
+Compare baseline and candidate in the same container/toolchain, without other
+build/test loads, under the same 4 GB memory limit and 20-second per-file timeout.
+Run three alternating pairs, compare exit status and exact diagnostics, and
+report medians. A3's final candidate medians were 0.751, 1.109 and 5.177 seconds,
+respectively; compare against a newly measured baseline, not these numbers alone.
+Broaden the check to the source families affected by A4 and the full checker
+suite; do not assert a corpus-wide performance guarantee from three files.
+
+Validate any broader scan harness first on a known completing input and a
+controlled timeout/failure. Preserve per-file status, timing and partial output.
+A killed container or empty report is not a passing scan. Do not use
+`ulimit -v`: the Skip runtime reserves a 16 GiB virtual heap. An aggregate
+parallel scan under a small container limit can kill unrelated siblings; use
+bounded concurrency and distinguish harness failures from checker regressions.
+Do not use filenames containing dots as shell variable names.
+
+#### Failure handling and finite closure conditions
+
+The following prior pitfalls are constraints on this work:
+
+- Keep the positive validator's temporary allocation region. Without it, repeated
+  proof graphs accumulated beside inference and caused paging/OOM. Exceptions
+  must cross the region as data and be rethrown after its context/payload is
+  copied out; directly unwinding through it previously crashed a test worker.
+- An “already established” subtype shortcut must reject inspected open source
+  **and target** dependencies. Relaxing it prematurely committed literal/storage
+  choices. The normal positive proof's monotone target policy is different.
+- Keep the selected literal's original-element obligations, whole union
+  alternatives, and whole-call obligations across all inference passes.
+- Do not weaken the verifier, fabricate exported unions, or reclassify current
+  contents as a storage contract to make a regression verify. Fix an export
+  omission only when the checker already has the required justification.
+- A passing Lean suite certifies neither the full checker nor native protocol
+  tests. Do not spend time extracting new Lean programs unless a concrete
+  suspected defect warrants it. A proof-search failure is not a disproof.
+
+When blocked, name the exact consumer/invariant and the failed target outcome.
+Do not describe a recorded limitation as a completed migration. Continue on an
+independent inventory row if possible. Escalate a genuine semantic ambiguity
+with the competing rules and a minimal witness; do not ask for routine permission
+to repair a demonstrated violation within the authorized checker scope.
+
+A4 is complete only when all of the following hold:
+
+1. Every inventory row has traced consumers and a completed disposition. No
+   temporary adapter, unclassified general clone or external mutable acceptance
+   bypass remains. Necessary private inference/read/diagnostic machinery is
+   distinguished from such bypasses.
+2. Ordinary acceptance, retained shape/negative decisions and call publication
+   use their justified boundaries. Proposal and diagnostic results cannot be
+   substituted for acceptance; symbolic results preserve their operands.
+3. Cache/publication ownership and clone sharing are documented next to the
+   implementation. Superseded interfaces and duplicate mechanisms are removed.
+4. Remaining dynamic checks are named with their owner and reason: identity/scope,
+   observation lifetime, epoch/freeze, recursive-query qualification and rollback.
+   Compiler restrictions and trusted implementation conventions are reported
+   separately. Do not promise a static lifetime proof Skip cannot express.
+5. Full tests, independent suites, examples, census, formatting and performance
+   comparisons pass. Every intentional outcome change has a reviewed repair and
+   regression; updated expectations must pass too. No unresolved motivating
+   failure is hidden behind totals.
+6. This document and root instructions agree on completion and any separate future
+   work. The working tree contains only necessary implementation, tests and docs.
+
+Suggested commit boundaries follow A4.1–A4.4 and consumer families, not a fixed
+number of turns. Finish an entire family, test, and commit before moving to the
+next where possible. In progress reports state the removed capability, remaining
+callers, verification result and actual unresolved issue. Do not push without
+fresh explicit user permission, even when all work is committed and green.
+
 ### Acceptance criteria and migration discipline
 
 - For each migrated boundary, state which misuse has become unrepresentable,
@@ -556,8 +865,8 @@ while a positive result candidate can still grow without invalidating success.
 
 | Boundary | Why a retained result survives |
 | --- | --- |
-| Named expansion and source normalization | `materializeRead` observes a fixed snapshot with fresh scratch caches and no inherited caller proof assumptions. Descendants share the read frame; the actual owner commits matching payloads before return. Uninspected children remain symbolic. `expandNamed` is the single memoizing publication path. |
-| Explicit type arguments and call checking | Written constraints validate live, including phantom aliases and constructor arguments. Inference proposes bounds; the argument pass checks them. Its fixed point provides call-local consistency; later lifetime follows from the same commitments and variance rule as every successful subtype check. |
+| Named expansion and source normalization | `materializeReadContext` observes a fixed snapshot with fresh scratch caches and no inherited caller proof assumptions. Descendants share the read frame; the actual owner commits matching payloads before return. Uninspected children remain symbolic. `expandNamed` is the single memoizing publication path. |
+| Explicit type arguments and call checking | Written constraints validate live, including phantom aliases and constructor arguments. A3 retains call bounds and argument obligations through inference, then proves the whole batch in one fixed snapshot before publication. Later lifetime follows from committed exact dependencies and monotone positive target bounds. |
 | Defaults and definite assignment | Both positive and negative `materializeSubtypeDecision` results have owner-committed dependencies. Observed subtyping skips `growTVars`: deciding whether an existing type admits `undefined` must not propose a new solution. Default-result projections establish literal forms before retaining their shape. |
 | Refinement and alternative elimination | Equality, subtraction, truthiness and head-shape projections use committed observations. An unjustified optional refinement keeps the original type. Branch elimination observes all descendant reads and commits them before discarding an alternative. |
 | Variadic/callback shape extraction | The tuple/rest/callback shape observations include the raw-binding fallback. Failure to establish a read cannot select a more permissive fallback. The extracted element types may remain symbolic. |
