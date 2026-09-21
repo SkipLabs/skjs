@@ -81,9 +81,9 @@ mixing supported cell and function atoms with primitives. Existing limits on
 external cell parameters and nested record operands remain in force; fields
 and arrow operands admit bounded primitive/callable contracts, and an arrow parameter is assumed at its annotation.
 
-A zero-argument source arrow uses the existing graph arrow with domain `[3]`
-(undefined). The source AST retains whether the parameter and argument are
-absent; see [the callable protocol](REQUEST-PROTOCOL.md#expression-closures-and-calls).
+A zero-argument source arrow has an empty domain list `[]`; a unary
+`undefined` parameter has domain list `[[3]]`. Arity is retained in both
+the source AST and the graph; see [the callable protocol](REQUEST-PROTOCOL.md#expression-closures-and-calls).
 
 The table is the graph the functions are checked against. Row `i` is the list
 of clauses that label `i` denotes, and a clause names its operands as label
