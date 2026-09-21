@@ -177,9 +177,9 @@ private def UTy.le : UTy → UTy → Bool
   | .ground A, .ground B => A.all B.contains
   | _, _ => false
 
-private def UTy.render : UTy → String
+private def UTy.render (T : SourceTypes.Table) : UTy → String
   | .rigid a => a
-  | .ground A => s!"{A}"
+  | .ground A => SourceTypes.render T A
 
 private def ofClaim (role : String) : ClaimType → Except String UTy
   | .param name => pure (.rigid name)
@@ -271,7 +271,7 @@ private def find (f : Fragment.Fn) : Except String (Option Closure) := do
   return found
 
 /-- Introduction. The gate every accepted scheme passes, whatever its calls. -/
-private def introduce (c : Closure) (claims : Function) : Except String Unit := do
+private def introduce (T : SourceTypes.Table) (c : Closure) (claims : Function) : Except String Unit := do
   let some entry := claims.entries.find? (·.start == c.declStart)
     | throw "quantified closure declaration has no entry claim"
   -- Captures keep the types they already have; no instantiation may retype them.
@@ -281,7 +281,8 @@ private def introduce (c : Closure) (claims : Function) : Except String Unit := 
   let actual ← bodyUTy (c.paramNames.zip ps ++ outer) c.body
   let expected ← ofClaim "a quantified closure result" c.result
   unless actual.le expected do
-    throw s!"quantified closure body does not satisfy its scheme universally: cannot establish {actual.render} ≤ {expected.render} for every instantiation of {c.binders}"
+    let binders := String.intercalate ", " c.binders
+    throw s!"quantified closure body does not satisfy its scheme universally: cannot establish {actual.render T} ≤ {expected.render T} for every instantiation of [{binders}]"
 
 /-- Elimination, then compilation. Each call validates its own substitution;
 the arrows are derived from the scheme signature by that substitution, so a
@@ -292,7 +293,7 @@ private def compile (T : SourceTypes.Table) (f : Fragment.Fn) (claims : Function
       List (Span × List (List (Span × SourceClaims.Candidate)))) := do
   let some c ← find f
     | throw "a scheme claim has no quantified closure in its source"
-  introduce c claims
+  introduce T c claims
   let sites := claims.expressions.filterMap fun e => e.instantiate.map ((e.pos, ·))
   if sites.isEmpty then throw "a quantified closure has no checked instantiation"
   let subs ← sites.mapM fun (pos, inst) => do

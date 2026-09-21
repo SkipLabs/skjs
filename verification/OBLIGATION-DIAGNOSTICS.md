@@ -59,6 +59,9 @@ Rigid-generic validation and universal scheme introduction happen before a
 ground graph request exists. Their failures are `direct-obligation` records,
 with mandatory `sourceMap` and a `judgment` containing the checking `system` and
 the exact rejected `statement`. They must not be disguised as graph sequents.
+Lean diagnostics render ground types only through `SourceTypes.render`; numeric
+labels remain references inside the graph document and never become type names
+in user-facing judgments.
 
 Source extraction constructs one explicit plan for every decoded function:
 either a graph request or a successfully checked direct-generic plan. There is

@@ -22,6 +22,34 @@ def isPrimitive (i : Nat) : Bool := i < initial.length
 
 def graph (T : Table) : NormalGraph Nat := fun i => T[i]?.getD []
 
+/-- The one user-facing rendering boundary for graph types. Label numbers are
+implementation references into `Table`, so diagnostics must call this function
+rather than interpolate a `Ty Nat`. The fallback names the semantic kind and
+never exposes its row indices. -/
+private def clauseName : Clause (List Nat) → String
+  | .nul => "null"
+  | .bool => "boolean"
+  | .refs .. => "object"
+  | .arrs .. => "function"
+  | .boolLit true => "true"
+  | .boolLit false => "false"
+  | .num => "number"
+  | .numLit _ => "numeric literal"
+  | .undef => "undefined"
+  | .callable .. => "callable object"
+  | .top => "unknown"
+  | .str => "string"
+  | .strLit _ => "string literal"
+  | .list .. => "array"
+
+def render (T : Table) (A : Ty Nat) : String :=
+  match expand (graph T) A with
+  | [] => "never"
+  | [.boolLit true, .boolLit false] | [.boolLit false, .boolLit true] => "boolean"
+  | cs => String.intercalate " | " (cs.map clauseName).eraseDups
+
+#guard render initial [1, 2] == "boolean"
+
 /-- A missing clause gets the table length, never a different contract. -/
 def label (T : Table) (c : Clause (List Nat)) : Nat := T.idxOf [c]
 
