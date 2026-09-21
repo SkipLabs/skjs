@@ -264,13 +264,23 @@ mutable class Subst private {
     }
   }
 
-  // A normalization of its own, carrying this computation's bindings as a
-  // starting point but keeping its solver writes local: a probe or diagnostic
-  // instantiation must not pollute the state it borrowed them from. Inside an
-  // observation this is that observation's descendant instead, because the
-  // reads still belong to it.
-  mutable fun normalizationScratch(): mutable Subst {
-    static::mcreateWithState(this, this)
+  // The only consumer of a copied normalization state is detached declaration
+  // instantiation. Return its symbolic result, never the mutable state: a public
+  // normalizationScratch would recreate the general checking clone we retired.
+  mutable fun instantiateDetachedDeclaration(
+    tenv: TEnv,
+    name: Name,
+    targs: TArgs,
+  ): TType {
+    invariant(
+      !(this.typeComputationPurpose() is TCPChecking()),
+      "Detached declaration instantiation requires a detached computation",
+    );
+    tenv.instantiateDeclaration(
+      static::mcreateWithState(this, this),
+      name,
+      targs,
+    )
   }
 
   // Copying a state into a new substitution is how a caller would rebuild the

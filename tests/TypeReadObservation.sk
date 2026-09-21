@@ -812,7 +812,7 @@ fun testFrozenClosedOuterDoesNotHideNormalizerRead(): void {
   observationBind(subst, inner, observationNumber(), false);
   subst.!freezeCandidates = true;
   stamp = subst.typeQueryReadStamp();
-  scratch = subst.normalizationScratch();
+  scratch = subst.testMcreateWithState(subst);
   raw = scratch.peekRaw(outer);
   SKTest.expectEq(true, subst.canCacheTypeQuerySince(stamp));
   _ = raw.flatMap(ty -> ty.getSingleVar().flatMap(tv -> scratch.peekRaw(tv)));
@@ -1557,6 +1557,30 @@ fun testDeclarationNormalizationBorrowsFrameAndLifetime(): void {
   | exn -> throw exn
   };
   SKTest.expectEq(true, denied);
+}
+
+// A symbolic normalization operation must not be an alternate accepting clone.
+@test
+fun testDetachedDeclarationCannotCopyCheckingOwner(): void {
+  owner = observationSubst();
+  tenv = observationTypeEnv(owner);
+  tv = owner.gen(SKJS.PosRange::none);
+  observationBind(owner, tv, observationNumber(), false);
+  version = owner.inferenceVersion();
+  blocked = false;
+  try {
+    _ = owner.instantiateDetachedDeclaration(
+      tenv,
+      SKJS.Name(SKJS.PosRange::none, "Array"),
+      SKJS.TArgs(Array[SKJS.TType::var(tv)]),
+    )
+  } catch {
+  | InvariantViolation(_) -> !blocked = true
+  | exn -> throw exn
+  };
+  SKTest.expectEq(true, blocked);
+  SKTest.expectEq(true, owner.isOpen(tv));
+  SKTest.expectEq(version, owner.inferenceVersion());
 }
 
 module end;

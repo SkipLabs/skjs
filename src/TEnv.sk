@@ -324,11 +324,7 @@ base class TEnv{
       name.pos,
       context -> context.instantiate(name, targs),
       (scratch, readEnv) ->
-        readEnv.instantiateDeclaration(
-          scratch.normalizationScratch(),
-          name,
-          targs,
-        )
+        scratch.instantiateDetachedDeclaration(readEnv, name, targs)
       ,
     )
   }

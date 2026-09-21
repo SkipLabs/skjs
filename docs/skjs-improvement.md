@@ -873,7 +873,7 @@ remaining scope is named rather than claimed as enforcement.
 | 3 | Literal guidance | migrated to `Subst.guidanceSTypes` on a new `TCPGuidance` purpose | A representation peek no longer runs through the committing materialization branch. |
 | 4 | `instanceof` preservation | migrated to `TType.probeFieldsCompatible` | The existential search no longer runs the accepting relation, and the probe's solved fields cannot reach the branch that is kept. |
 | 5 | Type-argument probes | `withTypeArgumentProbe` deleted; replaced by `Subst.probeSubtypeProposal` and a role-taking `checkConstraint` | No caller receives a live probe substitution, so none can capture it. |
-| 6 | General clones | `Subst.clone` deleted; `mcreate` split into a public bindings-free form and a private stateful one; `computationOwner`, `normalizationScratch`, `diagnosticComputation` name the legitimate copies; `candidateOwner` is private now that nothing outside `Subst` needs it | A mutable copy of a checking owner that is itself a checking owner cannot be constructed, and the live owner cannot be extracted from an arbitrary environment. |
+| 6 | General clones | `Subst.clone` deleted; `mcreate` split into a public bindings-free form and a private stateful one; `computationOwner`, `instantiateDetachedDeclaration`, `diagnosticComputation` name the legitimate operations; `candidateOwner` is private now that nothing outside `Subst` needs it | A mutable copy of a checking owner that is itself a checking owner cannot be constructed, and the live owner cannot be extracted from an arbitrary environment. |
 | 7 | Structural relation entry points | six levels moved into `TType` as `private static`; `absorbsFun` and `probeFieldsCompatible` are what the two outside consumers may ask | The compiler rejects entering the relation below `TType::isSub` from any other class. |
 | 8 | Memo tables | fields `protected`; one read and one write operation each | No consumer can install a table of its own or carry one across owners. The qualification rule is unchanged and now sits with the fields. |
 | 9 | Publication | audited, unchanged | Already restricted at A3: `savePublication`/`restorePublication` bound a call's speculative callgraph, subtyping-edge, CFG and claim output, `appendDiagnostics` and `appendPublication` keep a failed isolated proof's diagnostics without its facts, and `opFrames` checkpoints roll back active claims separately from candidates. |
@@ -893,7 +893,7 @@ purpose no other can serve.
 | `createCheckingOwner` | the environment | everything else; it is the only route that owns a witness namespace | the source-checking roots in `TypeCheckDef`, `TypeCheckClass`, `TypeCheckEnum` |
 | `mcreate` | purpose, query bookkeeping, results | bindings, memos | `computationOwner`; the probe path in `TEnv.normalize`; the detached index merge in `TType` |
 | `computationOwner` | the environment's own owner when it has one | — | `TypeArgumentCheck.checkDeclaration`, `materializeReadContext`, `describeDeclarationType` |
-| `normalizationScratch` | purpose, bookkeeping, results, bindings, memos | subsequent writes | the detached branch of `TEnv.instantiate` |
+| `instantiateDetachedDeclaration` (internal copy) | purpose, bookkeeping, results, bindings, memos | subsequent writes and the mutable scratch handle | the detached branch of `TEnv.instantiate`; checking callers are refused |
 | `diagnosticComputation` | bindings, results, `ppNames` | purpose, memos | `TTypePp`, the overlap lint and `__SKJS_show`, subtype hints, `describeDeclaration` |
 | `guidanceSTypes` (internal) | bindings, results | purpose, memos | `ArrayLitTyping.containsLiteralType` |
 | `compatibilityProbe` | bindings, results, and the memos when the parent is not observing | purpose, subsequent writes | `probeSubtypeProposal`, `evalInstanceof`, `TType.probeFieldsCompatible` |
@@ -908,6 +908,8 @@ static guarantee, and Skip cannot express them as one:
   transaction's read set after publication.
 - Read-frame requirement — `observationDescendant` fails without a frame,
   which is what keeps it from being a general detaching clone.
+- Detached declaration normalization — `instantiateDetachedDeclaration` refuses
+  checking-purpose callers and returns only a type, never a mutable copy.
 - Foreign candidate state — the private stateful constructor blocks the frame
   when the supplied state's bindings are not the parent's.
 - Epoch and freeze — `proveSubtypesRead` and `withCommittedTypeReads` compare
@@ -920,25 +922,44 @@ static guarantee, and Skip cannot express them as one:
 - Rollback — candidate/cache `restore`, `restoreClaimedOps`,
   `restorePublication`; distinct stores, deliberately not one operation.
 
+**Review correction.** The first A4 version exposed `normalizationScratch`,
+which copied a checking owner's bindings and purpose into a public mutable
+substitution. Its sole production caller was safe, but its signature recreated
+the general clone rather than retiring it. It is now replaced by
+`instantiateDetachedDeclaration`: no scratch handle escapes, and a checking
+caller fails before normalization. A native regression checks that refusal and
+preservation of the owner's open candidate/version. Existing privileged tests
+still exercise the private stateful constructor's read tracking and witness
+allocation restrictions. No source-program acceptance defect was demonstrated.
+
 **What is not claimed.** Skip has no visibility level between class-private and
 module-wide, so a restriction is enforceable only when every legitimate caller
 can be gathered into one class. That worked for the structural relation and for
 the substitution constructors. It does not extend to the module's own
 publication implementation: `TypeCheckExpr`, `TypeCheckFun` and `Main` reach
 `results` directly, which is the responsible implementation doing its own job,
-not a bypass, but it is a convention rather than a compiler restriction. This
+not a bypass, but it is a convention rather than a compiler restriction.
+Memo insertion is likewise part of the trusted relation implementation: protected
+fields prevent whole-table replacement, but the narrow public insertion methods
+do not themselves prove `canCacheTypeQuerySince`. Their callers must qualify
+the result; this is not compiler-enforced proof provenance. This
 is also not a proof of the checker: the relation is now unreachable except
 through its driver, which is a statement about who may ask, not about what the
 answers mean.
 
-**Qualification.** 227 checker tests pass, against 226 at the A3 closure: one
-test was removed with the hazard it guarded, and two were added, for the probe
-and guidance operations. 65 independent verifier suites pass. The 64-file
+**Qualification.** 228 checker tests pass, against 226 at the A3 closure: one
+test was removed with the hazard it guarded, and three were added, for the probe,
+guidance and detached declaration operations. The reviewer reran the build and
+full checker suite after the correction above. 65 independent verifier suites pass. The 64-file
 example run is unchanged at 290 accepted / 15 rejected / 0 unrecorded, with 278
 verified / 9 search failed / 18 could not check, and zero expected-outcome
 mismatches or runner errors. The repair census is unchanged: 41 of 151 accepted
 functions verified, 242 of 393 producer-rejected, baseline unmoved.
-`make check-fmt` is clean.
+`make check-fmt` was clean at the original A4 closure. After the review
+correction, the full build/checker suite, 65 verifier suites, examples and census
+were rerun successfully; changed Skip files were formatted and the document
+passed Prettier. Three fresh alternating performance pairs retained identical
+exit statuses and output digests. Median A3/A4 times were `array_literal_examples.ts` 0.788/0.787s, `instanceof-generic-skolem-args.ts` 1.136/1.090s, `eagercollection-deep-value-no-oom.ts` 5.291/5.229s.
 
 Source outcomes were compared file by file rather than in aggregate. Both
 binaries ran over all 398 files in `tests/expect-error`, in the same container
