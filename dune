@@ -1,0 +1,3 @@
+; Only the OCaml producer is a dune project. Limiting the scan keeps dune out
+; of node_modules, the Lean build and the Skip target tree.
+(dirs verification)
