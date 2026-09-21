@@ -55,8 +55,13 @@ check-sh:
 #   make test-in-docker SKIP_DIR=/path/to/skip
 #   make test-in-docker DOCKER_IMAGE=skiplabs/skip:0.1.0
 # When running inside a devcontainer, commands run directly (no docker).
+# Optional checkout-local toolchain settings; environment/CLI overrides still win.
+-include Makefile.local
+
 DOCKER_IMAGE?=skiplabs/skip:latest
 SKIP_DIR?=$(CURDIR)/../skip
+# Verification recipes also launch Docker through their shell/Node helpers.
+export DOCKER_IMAGE SKIP_DIR
 
 DOCKER_ENV_FLAGS=$(if $(UPDATE_EXPECT),-e UPDATE_EXPECT=$(UPDATE_EXPECT))
 

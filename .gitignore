@@ -25,3 +25,6 @@ _skjs-debug/
 *.swo
 .idea/
 .svelte-check/
+
+# Checkout-local Docker/toolchain settings (see docs/setup.md).
+/Makefile.local
