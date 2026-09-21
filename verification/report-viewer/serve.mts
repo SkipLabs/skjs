@@ -135,6 +135,15 @@ async function readDraft(absolute: string, sourceSha256: string) {
   return { draft };
 }
 
+/**
+ * The producers the reader can ask for, each a collector below. A query string
+ * arrives from a browser, so a name that is not one of these names nothing to
+ * run and reads as the default rather than being passed on.
+ */
+const PRODUCERS = new Set(["skjs", "tsc", "ocaml"]);
+const producerAsked = (asked: string | null) =>
+  asked && PRODUCERS.has(asked) ? asked : "skjs";
+
 async function hasVerifier() {
   return fs.access(path.join(REPO, VERIFIER)).then(
     () => true,
@@ -213,6 +222,117 @@ async function tscAnalyse(
   }
 }
 
+/*
+ * The third producer: an independent OCaml implementation of claim inference.
+ * It reads the same Fragment the shared parser writes and emits the same
+ * SourceClaims document the SKJS export is converted into, so the same verifier
+ * adjudicates it and nothing here is a second opinion about what a claim means.
+ * `ocaml-producer/README.md` records what it implements; a source outside that
+ * is refused by name rather than collected as a report with nothing in it.
+ */
+const OCAML = "verification/ocaml-producer/_build/default/producer.exe";
+
+/**
+ * What a child wrote before failing, as the reason to show. The shared parser
+ * and the OCaml producer both name their own limits on stderr — `gate: …` and
+ * `unsupported: …` — and those are statements about the source, so they are
+ * reported in their own words rather than as a stack trace.
+ */
+const refusal = (thrown: unknown, what: string) =>
+  new Error(
+    `${what}: ${(outputOf(thrown, "stderr") || messageOf(thrown)).trim()}`,
+  );
+
+async function ocamlAnalyse(
+  relative: string,
+  source: string,
+  tmp: string,
+  options: RunOptions,
+): Promise<Bundle> {
+  const startedAt = Date.now();
+  try {
+    const producer = path.join(REPO, OCAML);
+    // Its build is not this server's to run: an absent executable says which
+    // command builds it, rather than failing as a missing file somewhere.
+    if (!(await fs.access(producer).then(() => true, () => false)))
+      throw new Error(
+        `${OCAML} is not built. Build it with: ` +
+          "dune build --root verification/ocaml-producer",
+      );
+    // The producer consumes the Fragment, never the source text: the shared
+    // parser stays the one front end, and its refusals are the fragment's.
+    let parsed;
+    try {
+      parsed = await execFile(
+        process.execPath,
+        ["verification/tools/fragment-parse.mts", relative],
+        options,
+      );
+    } catch (thrown) {
+      throw refusal(thrown, "The shared parser refused this source");
+    }
+    const fragment = path.join(tmp, "fragment.json");
+    await fs.writeFile(fragment, parsed.stdout);
+    let proposed;
+    try {
+      proposed = await execFile(producer, [fragment], options);
+    } catch (thrown) {
+      throw refusal(thrown, "The OCaml producer proposed no claims");
+    }
+    const claims = path.join(tmp, "claims.json");
+    await fs.writeFile(claims, proposed.stdout);
+    const args = [
+      "verification/tools/annotate-source.mts",
+      relative,
+      "--claims",
+      claims,
+      "--producer",
+      "ocaml",
+      "--format",
+      "source-claims",
+      "--stdout",
+      "json",
+    ];
+    // Whatever either step said while still succeeding, under the spans it
+    // names — the same place the SKJS producer's own errors are shown.
+    const said = ((parsed.stderr ?? "") + (proposed.stderr ?? "")).trim();
+    if (said) {
+      const diagnostics = path.join(tmp, "diagnostics.txt");
+      await fs.writeFile(diagnostics, said + "\n");
+      args.push("--diagnostics", diagnostics);
+    }
+    const verify = await hasVerifier();
+    if (verify) args.push("--verify", VERIFIER);
+    const result = await execFile(process.execPath, args, options);
+    const bundle = JSON.parse(String(result.stdout));
+    if (source !== (await fs.readFile(await repositoryPath(relative), "utf8")))
+      throw new Error("Source changed during collection; run again");
+    const digest = crypto.createHash("sha256").update(source).digest("hex");
+    if (bundle.manifest.source.sha256 !== digest)
+      throw new Error("Report source identity mismatch");
+    return {
+      source,
+      ...bundle,
+      collection: {
+        producer: "ocaml",
+        producerRun: true,
+        command: OCAML + " (fragment of " + relative + ")",
+        ranAt: new Date(startedAt).toISOString(),
+        durationMs: Date.now() - startedAt,
+        verified: Boolean(verify),
+      },
+      candidate: {
+        format: "source-claims",
+        file: relative,
+        sourceSha256: digest,
+        claims: JSON.parse(await fs.readFile(claims, "utf8")),
+      },
+    };
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+}
+
 async function analyse(relative: string, producer = "skjs"): Promise<Bundle> {
   const bundle = await collect(relative, producer);
   // The draft, where one is beside the source and is about this source. The
@@ -230,6 +350,8 @@ async function collect(relative: string, producer = "skjs"): Promise<Bundle> {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "claim-report-"));
   const options = { cwd: REPO, timeout: 120000, maxBuffer: 32 * 1024 * 1024 };
   if (producer === "tsc") return tscAnalyse(relative, source, tmp, options);
+  if (producer === "ocaml")
+    return ocamlAnalyse(relative, source, tmp, options);
   // Every request runs the producer: nothing here is cached or reused. The
   // reader shows when it ran, so a displayed report is never mistaken for an
   // older one.
@@ -452,9 +574,12 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { verifier: await hasVerifier() });
     if (url.pathname === "/api/files") {
       const examples = await exampleGroups();
+      // `viewerGroups`, not `groups`: the picker is a way to reach a file, and
+      // it also offers the OCaml producer's own fixtures, which are that
+      // producer's inventory rather than corpus policy.
       return send(res, 200, {
         files: examples.supported,
-        groups: examples.groups,
+        groups: examples.viewerGroups,
       });
     }
     if (url.pathname === "/api/sources") {
@@ -480,7 +605,7 @@ const server = http.createServer(async (req, res) => {
           200,
           await analyse(
             url.searchParams.get("path") || "",
-            url.searchParams.get("producer") === "tsc" ? "tsc" : "skjs",
+            producerAsked(url.searchParams.get("producer")),
           ),
         );
       } finally {

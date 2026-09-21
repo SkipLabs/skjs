@@ -19,6 +19,7 @@
   const PRODUCERS: { value: Producer; label: string }[] = [
     { value: "skjs", label: "SKJS claims" },
     { value: "tsc", label: "TypeScript claims" },
+    { value: "ocaml", label: "OCaml claims" },
   ];
 
   onMount(async () => {
@@ -28,7 +29,11 @@
     await reader.start();
     const params = new URLSearchParams(location.search);
     const wanted = params.get("file");
-    const producer = params.get("producer") === "tsc" ? "tsc" : "skjs";
+    // A link names a producer, and the link may be older than this list, so
+    // an unknown name reads as the default rather than as something to run.
+    const asked = params.get("producer");
+    const producer =
+      PRODUCERS.find((p) => p.value === asked)?.value ?? "skjs";
     const first = reader.groups[0]?.files[0];
     if (wanted || first) await reader.open(wanted || first!, producer);
     // A link may name a claim. It names a record of one snapshot, so it is

@@ -11,10 +11,16 @@ make viewer                                # builds and opens it
 node verification/report-viewer/serve.mts  # http://localhost:8731, without opening
 ```
 
-The producer selector chooses whose claims are read — **SKJS claims**, or
-**TypeScript claims** from `tools/tsc-claims.mts`. Both answer for the same
-sites and the same verifier adjudicates either, so switching re-reads the open
-file through the other one.
+The producer selector chooses whose claims are read — **SKJS claims**,
+**TypeScript claims** from `tools/tsc-claims.mts`, or **OCaml claims** from
+[`ocaml-producer/`](../ocaml-producer/README.md). They answer for the same
+sites and the same verifier adjudicates any of them, so switching re-reads the
+open file through another one. Each implements its own fragment of the
+language, and one that does not implement the open file says so in its own
+words rather than showing a report with nothing in it: the OCaml producer needs
+`dune build --root verification/ocaml-producer` to have been run, and refuses a
+source it does not cover at the boundary that refuses it — the shared parser's
+gate, or its own proposal.
 
 Pick an example, or type any repository-relative path into **Open any
 repository path…**; it suggests matching `.ts` sources as you type, and a full
@@ -182,7 +188,12 @@ end and exercised by `tests/report-viewer.mts` without a browser:
   structural one the surface reads. `report-viewer.mts` checks that printing
   and reading back returns the same encoding for every shape, and
   `annotated-source.mts` checks it over every claim in a real export.
-- `serve.mts` — runs the producer and the report writer, and writes drafts. It
+- `serve.mts` — runs the producer and the report writer, and writes drafts. A
+  producer is one collector here — SKJS in its container, `tsc-claims.mts`, or
+  the shared parser feeding `producer.exe` — each ending at the same
+  `annotate-source.mts --format source-claims --verify`, and a producer the
+  address bar names but this list does not is read as the default rather than
+  as something to run. It
   binds to loopback, runs one collection at a time, applies a 120-second
   timeout to each subprocess, rejects source changes detected during
   collection, and cleans temporary reports up either way. `SKJS_REPO`,
@@ -196,9 +207,17 @@ expression claims.
 The picker defaults to **Current verifier examples**, tested by the same source
 suites as `make verify`. **Claim repair** holds the deliberately rejected
 partial-collection exercise. **Unsupported examples** holds expected source
-limitations, and listing one never implies it is verified. The groups come from
-`examples.mts`, re-read for each page load, so adding an example needs no
-restart.
+limitations, and listing one never implies it is verified. The two **OCaml
+producer** groups are that producer's own fixtures, read from
+`ocaml-producer/cases.mts` so that a case added there is offered here without
+anything else changing; its negative controls and named gaps are listed beside
+its verified ones, and listing one implies nothing about it either.
+
+The groups come from `examples.mts`, re-read for each page load, so adding an
+example needs no restart. It exports two lists, because they answer different
+questions: `groups` is corpus policy, which `verification/examples.mts` runs
+SKJS and tsc over and holds to `expectedVerified`, and `viewerGroups` is what
+the picker offers, which also reaches another producer's fixtures.
 
 ## Source editing direction (not implemented)
 

@@ -17,7 +17,7 @@ import type { Span } from "../tools/span.mts";
 // syntax erasable: no `enum`, no `namespace`, no parameter properties.
 
 /** Which checker supplied the claims a report displays. */
-export type Producer = "skjs" | "tsc" | "manual" | "edited candidate";
+export type Producer = "skjs" | "tsc" | "ocaml" | "manual" | "edited candidate";
 
 /** What the verifier found for one function, over one producer's claims. */
 export type Status =

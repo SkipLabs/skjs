@@ -5,6 +5,9 @@ import { spawnSync } from "node:child_process";
 import { check, verifier } from "./check.mts";
 import { cases } from "./cases.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
+// The reader's collector, imported rather than served: `serve.mts` takes the
+// port only when it is run directly.
+import { analyse } from "../report-viewer/serve.mts";
 const here = import.meta.dirname;
 let good = "";
 let generic = "";
@@ -121,4 +124,56 @@ for (const site of ["initializer", "binding"] as const) {
   assert.equal(p.status, 1, p.stdout + p.stderr);
   assert.match(p.stdout + p.stderr, /generic (expression|entry) claim/);
   process.stdout.write(`tampered inferred generic ${site}: refused\n`);
+}
+
+/*
+ * The reader collects this producer too. It runs the same two steps `check`
+ * runs — the shared parser, then `producer.exe` over the Fragment — and hands
+ * what came out to the same verifier, so what it displays is this producer's
+ * own document adjudicated the same way. What is checked here is that
+ * correspondence: the claims the reader carries are the ones the producer
+ * wrote, the verdicts are the verifier's, and a source this producer does not
+ * implement is refused in its own words rather than collected as an empty
+ * report.
+ */
+const repositoryPath = (file: string) =>
+  `verification/ocaml-producer/examples/${file}.ts`;
+const collected = await analyse(repositoryPath("values"), "ocaml");
+assert.equal(collected.collection?.producer, "ocaml");
+assert.equal(collected.collection?.producerRun, true);
+assert.equal(collected.collection?.verified, true);
+assert.equal(collected.candidate?.format, "source-claims");
+// The document the reader offers for editing is the producer's own, not a
+// display shape derived from it: the same bytes `check` wrote beside `values`.
+assert.deepEqual(collected.candidate?.claims, {
+  ...original,
+  file: repositoryPath("values"),
+});
+assert.deepEqual(
+  (collected.manifest.results ?? []).map((r) => r.status),
+  ["verified", "verified"],
+);
+process.stdout.write(
+  `reader collection: ${collected.manifest.functions.length} functions, producer's own claims verified\n`,
+);
+
+// A negative control reaches the verifier and is displayed as no derivation
+// found — the reader's `✗`. It is not an error, and it is not a disproof.
+const rejected = await analyse(repositoryPath("invalid-return"), "ocaml");
+assert.deepEqual(
+  (rejected.manifest.results ?? []).map((r) => r.status),
+  ["not-established"],
+);
+process.stdout.write("reader collection: negative control not established\n");
+
+// What this producer does not implement is refused where it is refused, in the
+// words that boundary uses: the shared parser gates `generic-closure`, and the
+// producer itself refuses `unsupported`. Neither becomes a report with nothing
+// in it.
+for (const [file, says] of [
+  ["generic-closure", /shared parser refused this source: gate:/],
+  ["unsupported", /OCaml producer proposed no claims: unsupported:/],
+] as const) {
+  await assert.rejects(analyse(repositoryPath(file), "ocaml"), says);
+  process.stdout.write(`reader collection: ${file} refused by name\n`);
 }

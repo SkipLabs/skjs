@@ -1,3 +1,5 @@
+import type { Case } from "../ocaml-producer/cases.mts";
+import { cases } from "../ocaml-producer/cases.mts";
 
 // These files are exercised through the current source consumer by run.sh.
 const stateful = [
@@ -47,6 +49,17 @@ const generics = [
   "generic-bodies",
 ].map((name) => `verification/tests/stateful-source/${name}.ts`);
 const supported = [...stateful, ...callables, ...generics];
+/*
+ * The OCaml producer's own fixtures. `ocaml-producer/cases.mts` is its
+ * inventory — which case is expected to verify, which is a negative control,
+ * and which names a gap — so the lists below are read from it rather than
+ * written again here, and a case added there is offered by the reader without
+ * anything else changing. Listing one never implies it is verified.
+ */
+const ocamlExamples = (kinds: Case["kind"][]) =>
+  cases
+    .filter((c) => kinds.includes(c.kind))
+    .map((c) => `verification/ocaml-producer/examples/${c.file}.ts`);
 const groups = [
   { label: "Current verifier examples", files: stateful },
   { label: "Callables", files: [...callables, ...callableBoundaries] },
@@ -89,4 +102,22 @@ const groups = [
     ].map((name) => `verification/tests/unsupported/${name}.ts`),
   },
 ];
-export { supported, groups };
+/*
+ * Two lists, because they answer different questions. `groups` is corpus
+ * policy: `verification/examples.mts` runs SKJS and tsc over every file in it
+ * and holds each function to `expectedVerified`. The reader's picker is a way
+ * to reach a file, so it also offers another producer's fixtures, which carry
+ * their own expectations and are no part of that policy.
+ */
+const viewerGroups = [
+  ...groups,
+  {
+    label: "OCaml producer · verified fixtures",
+    files: ocamlExamples(["positive"]),
+  },
+  {
+    label: "OCaml producer · negative controls and named gaps",
+    files: ocamlExamples(["negative", "gap"]),
+  },
+];
+export { supported, groups, viewerGroups };
