@@ -18,6 +18,7 @@
     "*.mts",
     "../examples.mts",
     "../tests/*.mts",
+    "../ocaml-producer/*.mts",
     "../report-viewer/*.mts"
   ]
 }

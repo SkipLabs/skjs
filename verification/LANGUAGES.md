@@ -29,7 +29,7 @@ missing key is a type error rather than a run-time refusal.
 | --- | --- | --- | --- |
 | **Fragment** — the subset of TypeScript this pipeline accepts, as a tree | [Fragment.lean](lean/Verification/ExperimentState/Fragment.lean) | [fragment.mts](tools/fragment.mts), parsed by [fragment-parse.mts](tools/fragment-parse.mts) | the parser |
 | **Claim** — what a producer says a type is, and what a source annotation is written in | [Claim.lean](lean/Verification/ExperimentState/Claim.lean) | [claim.mts](tools/claim.mts), printed by [claim-text.mts](tools/claim-text.mts) | SKJS, `tsc-claims.mts` |
-| **SourceClaims** — claims attached to source spans, producer-independent | [SourceClaims.lean](lean/Verification/ExperimentState/SourceClaims.lean) | [source-claims.mts](tools/source-claims.mts) | either producer |
+| **SourceClaims** — claims attached to source spans, producer-independent | [SourceClaims.lean](lean/Verification/ExperimentState/SourceClaims.lean) | [source-claims.mts](tools/source-claims.mts) | SKJS, `tsc-claims.mts`, [OCaml prototype](ocaml-producer/README.md) |
 | **Calculus** — terms, tags, call codes: the operational language | [Calculus.lean](lean/Verification/ExperimentState/Calculus.lean) | [calculus.mts](tools/calculus.mts) | extraction |
 | **ControlFlow** — the program graph over those terms | [ControlFlow.lean](lean/Verification/ExperimentState/ControlFlow.lean) | [control-flow.mts](tools/control-flow.mts) | extraction |
 | **TypeGraph** — positive types as labelled rows | [PositiveNormalization.lean](lean/Verification/ExperimentState/PositiveNormalization.lean) | [type-graph.mts](tools/type-graph.mts) | extraction |
@@ -53,6 +53,13 @@ gives a function an identity to compare.
 
 Defining no language, and saying so: [Decode.lean](lean/Verification/ExperimentState/Decode.lean)
 (source spans and JSON accessors several decoders share) and [span.mts](tools/span.mts).
+
+The [OCaml prototype](ocaml-producer/README.md) consumes the existing Fragment
+and writes the existing SourceClaims document. Its internal typed view and
+inference types are not additional wire protocols. OCaml pattern matches are
+exhaustive over its implemented cases; unsupported source cases fail at decoding.
+The shared Lean decoder checks every exported document. Cross-language protocol
+drift currently causes a test failure/refusal, not an OCaml compilation error.
 
 ## Where the rule does not hold, and why
 
