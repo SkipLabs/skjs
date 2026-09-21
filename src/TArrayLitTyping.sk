@@ -212,7 +212,10 @@ class ArrayLitTyping() {
   // pin -- see firstCommitmentPinning in
   // tests/expect-error/contextual-literal-args.ts), while in const
   // (mostPrecise) contexts K resolves to its constraint.
-  // The peek runs as guidance, off the live substitution.
+  // The peek runs as guidance, off the live substitution. Discarding it is
+  // safe because it decides only how to spell the literal: whatever
+  // representation it steers towards, each original initializer is still
+  // checked against the selected storage before the literal is accepted.
   static private fun targetExpectsLiteral(
     subst: mutable Subst,
     tenv: TEnv,

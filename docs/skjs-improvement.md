@@ -884,19 +884,21 @@ whose hazard was the probe callback itself. Its replacement checks that a probe
 proposal leaves the owner's candidates and version alone whether it succeeds or
 fails, and a second new test covers the guidance computation.
 
-**Surviving construction routes**, each with its state-sharing rule:
+**Surviving construction routes**, each with its state-sharing rule and its
+remaining callers. Nothing here is a temporary adapter: every one of them has a
+purpose no other can serve.
 
-| Operation | Shares | Does not share |
-| --- | --- | --- |
-| `createCheckingOwner` | the environment | everything else; it is the only route that owns a witness namespace |
-| `mcreate` | purpose, query bookkeeping, results | bindings, memos |
-| `computationOwner` | the environment's own owner when it has one | — |
-| `normalizationScratch` | purpose, bookkeeping, results, bindings, memos | subsequent writes |
-| `diagnosticComputation` | bindings, results, `ppNames` | purpose, memos |
-| `guidanceSTypes` (internal) | bindings, results | purpose, memos |
-| `compatibilityProbe` | bindings, results, and the memos when the parent is not observing | purpose, subsequent writes |
-| `observationDescendant` | snapshot, read frame, bookkeeping | memos |
-| `mcreateFromSaved` | a saved state, for rendering a recorded error | everything live |
+| Operation | Shares | Does not share | Remaining callers |
+| --- | --- | --- | --- |
+| `createCheckingOwner` | the environment | everything else; it is the only route that owns a witness namespace | the source-checking roots in `TypeCheckDef`, `TypeCheckClass`, `TypeCheckEnum` |
+| `mcreate` | purpose, query bookkeeping, results | bindings, memos | `computationOwner`; the probe path in `TEnv.normalize`; the detached index merge in `TType` |
+| `computationOwner` | the environment's own owner when it has one | — | `TypeArgumentCheck.checkDeclaration`, `materializeReadContext`, `describeDeclarationType` |
+| `normalizationScratch` | purpose, bookkeeping, results, bindings, memos | subsequent writes | the detached branch of `TEnv.instantiate` |
+| `diagnosticComputation` | bindings, results, `ppNames` | purpose, memos | `TTypePp`, the overlap lint and `__SKJS_show`, subtype hints, `describeDeclaration` |
+| `guidanceSTypes` (internal) | bindings, results | purpose, memos | `ArrayLitTyping.containsLiteralType` |
+| `compatibilityProbe` | bindings, results, and the memos when the parent is not observing | purpose, subsequent writes | `probeSubtypeProposal`, `evalInstanceof`, `TType.probeFieldsCompatible` |
+| `observationDescendant` | snapshot, read frame, bookkeeping | memos | `TypeReadContext.runDescendant` |
+| `mcreateFromSaved` | a saved state, for rendering a recorded error | everything live | `TypingError.renderDetail` |
 
 **Remaining dynamic checks**, with their owner and reason. None of these is a
 static guarantee, and Skip cannot express them as one:

@@ -82,8 +82,15 @@ mutable base class SubstState private {
   // answer may be remembered at all is decided before it gets here, by the
   // query's own `canCacheTypeQuerySince` check; the owner's memoize operations
   // store what that check has already allowed and add no rule of their own.
+  // Keyed by the operand pair. Recursive premises are qualified before an
+  // entry is published, so a child that depends on an ancestor's unfinished
+  // premise cannot leave one behind.
   protected mutable seenSub: SortedSet<(TType, TType)>,
+  // Keyed by the operand pair, and only when neither side is a single
+  // candidate: an intersection over a solvable operand is not reusable.
   protected mutable seenInter: SortedMap<(TType, TType), TType>,
+  // Keyed by the operand pair. Structural union combines symbolic inputs
+  // without reading a payload, so it needs no dependency beyond the key.
   protected mutable seenUnion: SortedMap<(TType, TType), TType>,
   // TEnv.expandNamed is the sole named-expansion publisher. Checking entries
   // are released only after instantiate establishes its inspected payloads in
