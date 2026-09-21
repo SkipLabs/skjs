@@ -1200,7 +1200,7 @@ fun prettyPrintPastableType(
   tenv: TEnv,
 ): ?String {
   probe = mutable PpNames{};
-  !subst = subst.clone();
+  !subst = subst.cloneForTypeDiagnostics();
   subst.!ppNames = Some(probe);
   rendered = prettyPrintType(compact, ty, subst, tenv);
   if (probe.hasUnwritable()) None() else Some(rendered)
@@ -1213,7 +1213,6 @@ fun prettyPrintType(
   tenv: TEnv,
   max_depth: Int = kDefaultMaxDepth,
 ): String {
-  !subst = subst.clone();
   prettyPrint(subst, tenv, compact, pp -> {
     pp.type(0, Margin{max_depth}, ty);
   })

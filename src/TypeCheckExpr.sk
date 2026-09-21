@@ -1871,9 +1871,10 @@ extension class TypeChecker {
     ty1: TType,
     ty2: TType,
   ): void {
-    // Clone subst: this is a diagnostic check ("always false/true?"), not a
-    // type assignment. It should not grow type variables.
-    subst = tcenv.subst.clone();
+    // A diagnostic check ("always false/true?"), not a type assignment: it
+    // runs on a detached diagnostic computation, so the relations it consults
+    // neither grow type variables nor publish an accepted judgment.
+    subst = tcenv.subst.cloneForTypeDiagnostics();
     ty1.getSTypes(subst, this, Covariant()) match {
     | Some(stypes1) if (!stypes1.isEmpty()) ->
       ty2.getSTypes(subst, this, Covariant()) match {
@@ -1984,7 +1985,10 @@ extension class TypeChecker {
     pos: PosRange,
   ): TType {
     if (!args.isEmpty()) {
-      subst = tcenv.subst.clone();
+      // Rendering state only. The shown expression is still evaluated in the
+      // real checker below, in the same order, so the intrinsic reports the
+      // type the program actually gets.
+      subst = tcenv.subst.cloneForTypeDiagnostics();
       exprTy = this.expr(tcenv, args[0], true);
       max_depth = 10;
       actual = if (expand) {

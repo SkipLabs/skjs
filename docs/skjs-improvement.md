@@ -810,6 +810,54 @@ next where possible. In progress reports state the removed capability, remaining
 callers, verification result and actual unresolved issue. Do not push without
 fresh explicit user permission, even when all work is committed and green.
 
+#### A4 execution record
+
+**Baseline (2026-09-21).** The checkout had not advanced: `git status --short`
+showed only the uncommitted A4 guide, now committed, on top of the A3 closure
+`34ee351e`. Two host facts differ from A3 and are not portable, so they are
+recorded rather than assumed. `DOCKER_IMAGE=70511b0832ff` no longer exists
+locally; `skiplabs/skip:latest` (skc 0.3.3, skip `92ece2d3`) is used instead.
+That compiler rejects the `../skip` checkout's stdlib, which is 430 commits
+behind it, so `SKIP_DIR` points at a detached skip worktree pinned at
+`92ece2d3` with `libbacktrace` populated from the parent checkout. Work happens
+in a git worktree, whose `.git` is a pointer to a host path the container does
+not mount, so `build.sk`'s `git rev-parse` cannot run there; the commit hash
+reaches it through `GITHUB_SHA` baked into a one-layer derived image, which is
+also how `verification/skjs.sh` receives it, since that script forwards no
+`-e` flags. None of this touches tracked source.
+
+The baseline binary built under that configuration is kept outside the tree.
+`make test-in-docker` passes 226 checker tests (184 + 3 + 3 + 11 + 25), matching
+the A3 record.
+
+**Inventory.** Consumers were traced to their returned value, not classified by
+name. Unrelated collection and SKStore clones (`ArraySet`, `SKStoreUtils`) are
+excluded. Nine families cover every hit of the guide's searches.
+
+| # | Family | Traced consumers | Classification | Disposition |
+| --- | --- | --- | --- | --- |
+| 1 | Diagnostic clones | `TypeCheckExpr.checkComparisonOverlap` (warning only), `TypeCheckExpr.showTypes` (printed text and its expect assertion), `TTypePp.prettyPrintType`, `TTypePp.prettyPrintPastableType` (hint text) | diagnostic | migrate to `cloneForTypeDiagnostics` |
+| 2 | Observation descendants | `TTypeObservation.mergeIndexKind`, `singleTypes`, `disjoint`, each `this.scratch.clone()` reaching `Subst::observationScratch` through `clone`'s frame branch | internal read machinery | migrate to a named descendant operation |
+| 3 | Literal guidance | `ArrayLitTyping.containsLiteralType`, whose `Bool` selects a literal representation in `targetExpectsLiteral` | inference proposal | migrate to a detached guidance operation |
+| 4 | `instanceof` preservation | `TypeCheckRefine.evalInstanceof`: probe owner, per-branch re-clone, direct `TFields::isSub` | existential compatibility search | migrate to a named probe operation |
+| 5 | Type-argument probes | `Subst.withTypeArgumentProbe` from `TypeArgumentCheck.check` (a proposal callback from `CallSubtypePlan.propose`), `TypeArgumentCheck.checkDeclaration`, `TypeReadContext.checkDeclarationCompatibility` | inference proposal, diagnostic result | replace the mutable callback with concrete operations, then delete |
+| 6 | General clones | `Subst.clone` itself; `Subst::mcreate` in the detached branches of `TEnv.instantiate` and `TIndexes.merge`, in `materializeReadContext`, and for owner-less light environments; `mcreateFromSaved` in `TypingError.renderDetail` | escape hatch, plus purpose-specific survivors | delete `clone` once 1–4 land; retain the rest privately with written reasons |
+| 7 | Structural relation entry points | `TFuns`, `TFields`, `STypes`, `Clauses`, `TFun`, `TObject`, `TPrimValue` `::isSub`. All callers are inside `TTypeSubtyping`/`TTypeInter` recursion except family 4 | inference proposal | restrict the external surface after family 4 |
+| 8 | Caches | `seenSub` written by `TTypeSubtyping` and `TTypeObservation`; `seenInter` by `TTypeInter` and `TTypeObservation`; `seenUnion` by `TTypeUnion`; `seenExpansion` by `TTypeMaterialization` and `TTypeObservation` | internal query machinery | move writes behind owner operations; the four fields become `protected` like the rest of `SubstState` |
+| 9 | Publication | `recordClosedClaimedOp` to `Subst.recordClaimedOp`; `recordCalls` and `subtypingEdges` on `TCResultsAcc`; `opFrames` checkpoints | publication | already restricted; audit rollback only |
+
+Solver-free decomposition is already shared: every `isSubWith`/`interWith` rule
+serves both `TTypeSubtyping`'s inference orchestration and `TTypeObservation`'s
+fixed-read orchestration, so family 7 is a question of the external surface,
+not of duplicated algorithms.
+
+**First migration.** Family 1. Its consumers return text or a warning, it needs
+no change to inference semantics, and the bypass it closes is concrete: `clone`
+shares `results` and inherits `TCPChecking`, so a diagnostic clone today reaches
+`TType::isSub`'s accepting branch and can publish a claimed operation through
+`recordClosedClaimedOp` into the real results. `cloneForTypeDiagnostics` carries
+`TCPDiagnostic`, which that branch refuses.
+
 ### Acceptance criteria and migration discipline
 
 - For each migrated boundary, state which misuse has become unrepresentable,
