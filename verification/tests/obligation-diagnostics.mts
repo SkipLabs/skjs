@@ -4,7 +4,7 @@ import os from "node:os";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { hash, fromSourceClaims, verifySkjs, } from "../tools/annotate-source.mts";
-import { presentObligation } from "../tools/diagnostic-view.mts";
+import { formatJudgement, presentObligation } from "../tools/diagnostic-view.mts";
 import { parseGraph, printGraph } from "../tools/type-graph.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
 import { must } from "./edits.mts";
@@ -204,7 +204,7 @@ try {
     assert(d, r.stderr);
     assert.deepEqual(parseGraph(printGraph(d.types)),d.types);
     const shown = presentObligation(d,"");
-    assert.match(must(shown.judgement, "a judgement").text, /⊢/);
+    assert.match(formatJudgement(must(shown.judgement, "a judgement")), /⊢/);
     assert.equal(shown.graph.length,d.types.length);
     assert(d.kind === "edge-coverage");
     // A destination need not state a claim, and what follows needs this one to,

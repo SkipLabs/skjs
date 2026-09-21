@@ -151,35 +151,33 @@ private def Function.hasScheme (f : Function) : Bool :=
 
 /-- Direct rigid/scheme checks do not pretend to be ordinary graph sequents,
 but their failures use the same mandatory located diagnostic channel. The
-viewer consumes this record structurally; the prose is only its conclusion. -/
-private def directFailure (T : SourceTypes.Table) (pos : Span) (role system statement : String)
-    (context : List String := []) : String :=
-  RequestJson.withDiagnostic s!"source direct obligation at [{pos.1},{pos.2}): {statement}"
+viewer consumes this record structurally and derives all prose from it. -/
+private def directFailure (T : SourceTypes.Table) (failure : DirectObligation.Located) : String :=
+  let system := failure.judgment.system
+  let message := failure.judgment.message T
+  let context := failure.judgment.context.map fun binding => binding.name
+  RequestJson.withDiagnostic s!"source direct obligation at [{failure.pos.1},{failure.pos.2}): {message}"
     [("kind",toJson "direct-obligation"),("phase",toJson "request-validation"),
-     ("outcome",toJson "not-established"),("id",toJson s!"{system}:{pos.1}"),
-     ("sourceMap",toJson (SourceMapEntry.mk pos role none
+     ("outcome",toJson "not-established"),("id",toJson s!"{system}:{failure.pos.1}"),
+     ("sourceMap",toJson (SourceMapEntry.mk failure.pos failure.role.wire none
        (context.map fun name => (Descriptor.mk name none)))),
-     ("judgment",Json.mkObj [("system",toJson system),("statement",toJson statement)]),
+     ("judgment",failure.judgment.toJson),
      ("fuel",toJson 0),("types",toJson T)]
+
+private def sourceRefusal (T : SourceTypes.Table) (pos : Span)
+    (role : DirectObligation.SourceRole) (reason : String) : String :=
+  RequestJson.withDiagnostic s!"source refusal at [{pos.1},{pos.2}): {reason}"
+    [("kind",toJson "source-refusal"),("phase",toJson "request-validation"),
+     ("outcome",toJson "not-established"),("id",toJson s!"refusal:{pos.1}"),
+     ("sourceMap",toJson (SourceMapEntry.mk pos role.wire none [])),
+     ("reason",toJson reason),("fuel",toJson 0),("types",toJson T)]
 
 namespace Scheme
 
 /-- A universal type: a rigid binder of the scheme under check, or a ground
 graph type. No assignment identifies a ground type with an arbitrary binder,
 which is what keeps the gate independent of the calls a program happens to make. -/
-private inductive UTy where
-  | rigid : String → UTy
-  | ground : List Nat → UTy
-  deriving BEq, Repr
-
-private def UTy.le : UTy → UTy → Bool
-  | .rigid a, .rigid b => a == b
-  | .ground A, .ground B => A.all B.contains
-  | _, _ => false
-
-private def UTy.render (T : SourceTypes.Table) : UTy → String
-  | .rigid a => a
-  | .ground A => SourceTypes.render T A
+private abbrev UTy := DirectObligation.Ty
 
 private def ofClaim (role : String) : ClaimType → Except String UTy
   | .param name => pure (.rigid name)
@@ -271,18 +269,28 @@ private def find (f : Fragment.Fn) : Except String (Option Closure) := do
   return found
 
 /-- Introduction. The gate every accepted scheme passes, whatever its calls. -/
-private def introduce (T : SourceTypes.Table) (c : Closure) (claims : Function) : Except String Unit := do
+private def introduce (c : Closure) (claims : Function) : Except DirectObligation.Failure Unit := do
   let some entry := claims.entries.find? (·.start == c.declStart)
-    | throw "quantified closure declaration has no entry claim"
+    | throw (.refusal c.span .schemeIntroduction "quantified closure declaration has no entry claim")
   -- Captures keep the types they already have; no instantiation may retype them.
   let outer ← entry.bindings.mapM fun b => do
-    return (b.name, ← ofClaim "a quantified closure's captured scope" b.type)
-  let ps ← c.params.mapM (ofClaim "a quantified closure parameter")
-  let actual ← bodyUTy (c.paramNames.zip ps ++ outer) c.body
-  let expected ← ofClaim "a quantified closure result" c.result
+    return (b.name, ← (ofClaim "a quantified closure's captured scope" b.type).mapError
+      (DirectObligation.Failure.refusal c.span .schemeIntroduction))
+  let ps ← c.params.mapM fun p =>
+    (ofClaim "a quantified closure parameter" p).mapError
+      (DirectObligation.Failure.refusal c.span .schemeIntroduction)
+  let actual ← (bodyUTy (c.paramNames.zip ps ++ outer) c.body).mapError
+    (DirectObligation.Failure.refusal c.body.span .schemeIntroduction)
+  let expected ← (ofClaim "a quantified closure result" c.result).mapError
+    (DirectObligation.Failure.refusal c.span .schemeIntroduction)
   unless actual.le expected do
-    let binders := String.intercalate ", " c.binders
-    throw s!"quantified closure body does not satisfy its scheme universally: cannot establish {actual.render T} ≤ {expected.render T} for every instantiation of [{binders}]"
+    let parameters := c.binders.map fun name =>
+      DirectObligation.Parameter.mk name .quantified none
+    let context := (c.paramNames.zip ps ++ outer).map fun (name, type) =>
+      DirectObligation.Binding.mk name type
+    let subject := DirectObligation.Subject.closureBody c.body.span
+    throw (.obligation ⟨c.body.span, .schemeIntroduction,
+      .schemeIntroduction parameters context subject actual expected⟩)
 
 /-- Elimination, then compilation. Each call validates its own substitution;
 the arrows are derived from the scheme signature by that substitution, so a
@@ -293,7 +301,6 @@ private def compile (T : SourceTypes.Table) (f : Fragment.Fn) (claims : Function
       List (Span × List (List (Span × SourceClaims.Candidate)))) := do
   let some c ← find f
     | throw "a scheme claim has no quantified closure in its source"
-  introduce T c claims
   let sites := claims.expressions.filterMap fun e => e.instantiate.map ((e.pos, ·))
   if sites.isEmpty then throw "a quantified closure has no checked instantiation"
   let subs ← sites.mapM fun (pos, inst) => do
@@ -492,26 +499,31 @@ def extractPlans (ast claims : Json) (fileKey : String) : Except String (List Fu
         !c.expressions.all (fun e => sites.2.contains e.pos) then
       throw "claim site is not an entry or expression of the named source function"
     if !tps.isEmpty then
-      let genericClaims ← c.genericClaims d.types
+      let genericClaims ← match c.genericClaims d.types with
+        | .ok claims => pure claims
+        | .error reason =>
+          throw (sourceRefusal d.types f.namePos .genericValidation reason)
       match GenericSource.check f tps genericClaims with
       | .ok () => return .generic f.name f.namePos
-      | .error reason =>
-        throw (directFailure d.types f.namePos "generic-validation" "generic" reason
-          (f.params.map (·.name)))
+      | .error (.obligation failure) => throw (directFailure d.types failure)
+      | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)
     if c.hasScheme then
-      let schemePos ← match Scheme.find f with
-        | .ok (some closure) => pure closure.span
-        | .ok none => pure f.namePos
+      let closure ← match Scheme.find f with
+        | .ok (some closure) => pure closure
+        | .ok none => throw (sourceRefusal d.types f.namePos .schemeIntroduction
+            "a scheme claim has no quantified closure in its source")
         | .error reason =>
-          throw (directFailure d.types f.namePos "scheme-validation" "scheme" reason
-            (f.params.map (·.name)))
+          throw (sourceRefusal d.types f.namePos .schemeIntroduction reason)
+      match Scheme.introduce closure c with
+      | .error (.obligation failure) => throw (directFailure d.types failure)
+      | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)
+      | .ok () => pure ()
       match Scheme.compile d.types f c with
       | .ok (T, c, overlays) =>
         return .graph f.name f.namePos
           (← extractNormalizedFn T f { c.normalized with schemeArrows := overlays })
       | .error reason =>
-        throw (directFailure d.types schemePos "scheme-validation" "scheme" reason
-          (f.params.map (·.name)))
+        throw (sourceRefusal d.types closure.span .schemeIntroduction reason)
     return .graph f.name f.namePos (← extractNormalizedFn d.types f c.normalized)
 
 /-- Graph-only projection for proof fixtures that inspect extracted programs.

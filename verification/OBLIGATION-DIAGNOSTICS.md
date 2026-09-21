@@ -40,7 +40,7 @@ is untrusted display data; it cannot establish verification status.
 
 | Field | Meaning |
 |---|---|
-| `kind` | `node-typing`, `edge-coverage`, `expression-claim`, `direct-obligation`, or `production-failure`. |
+| `kind` | `node-typing`, `edge-coverage`, `expression-claim`, `direct-obligation`, `source-refusal`, or `production-failure`. |
 | `phase` | `proof-search`, `certificate-check`, or `request-validation`. |
 | `outcome` | `not-established`. |
 | `fuel` | Search depth used for this attempt, not a semantic bound or a diagnosis of exhaustion. |
@@ -57,11 +57,25 @@ saved results. They are not necessarily a source statement environment.
 
 Rigid-generic validation and universal scheme introduction happen before a
 ground graph request exists. Their failures are `direct-obligation` records,
-with mandatory `sourceMap` and a `judgment` containing the checking `system` and
-the exact rejected `statement`. They must not be disguised as graph sequents.
+with mandatory `sourceMap` and a closed, structured `judgment`. There is no
+prose field. A `subtyping` judgment carries declared parameters, their ambient
+or quantified scope, and bounds, a
+typed source context, a source subject, and its actual and expected types. A
+`scheme-introduction` judgment carries the same declared scope, the closure-body
+span, and its actual and expected types. Direct types are either a declared
+rigid name or ground graph labels. They must not be disguised as graph sequents.
 Lean diagnostics render ground types only through `SourceTypes.render`; numeric
 labels remain references inside the graph document and never become type names
 in user-facing judgments.
+
+The decoder checks scope rather than trusting names: parameters are unique,
+bounds mention only declared parameters, every rigid type is declared, and the
+source map has exactly the judgment's span and context names. Unknown judgment,
+subject, and type variants are rejected. Viewer text, including the turnstile,
+is derived by one exhaustive printer from the structured sides; no producer or
+call site can store arbitrary prose as a judgment. Unsupported source remains a
+separate `source-refusal`, with a mandatory source map and reason, and cannot be
+rendered as a failed semantic obligation or with a turnstile.
 
 Source extraction constructs one explicit plan for every decoded function:
 either a graph request or a successfully checked direct-generic plan. There is
@@ -267,8 +281,9 @@ being silently erased.
 
 The report writer attaches `obligationView` beside the exact raw `obligation`.
 `tools/diagnostic-view.mts` prepares it once; Svelte only renders the typed
-presentation. Its `judgement` has `assumptions`, `conclusion`, and their printed
-`A ⊢ B` form. Node and expression failures use the recorded sequent. Edge
+presentation. Its `judgement` has only structured `assumptions` and `conclusion`;
+Svelte calls the shared `formatJudgement` function for the printed `A ⊢ B` form.
+Node and expression failures use the recorded sequent. Edge
 failures state the available slots, branch premise, target mapping, and heap
 requirements explicitly; a transfer is not reduced to plain subtyping. A
 production failure without a goal has no invented sequent.

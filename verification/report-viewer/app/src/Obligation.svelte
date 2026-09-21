@@ -2,6 +2,7 @@
   // The report writer names values and prepares the comparison. The panel only
   // renders it; the exact sequent remains available alongside that explanation.
   import type { ShownFunction } from "../../model.mts";
+  import { formatJudgement } from "../../../tools/diagnostic-view.mts";
   let { fn, onselect }: {
     fn: ShownFunction;
     onselect: (offset: number) => void;
@@ -72,7 +73,7 @@
     <details class="technical">
       <summary>Exact obligation and type graph</summary>
       <p class="meta">{view.kindLabel} · {view.id} · {view.phase}</p>
-      {#if view.judgement}<pre>{view.judgement.text}</pre>{/if}
+      {#if view.judgement}<pre>{formatJudgement(view.judgement)}</pre>{/if}
       <div class="table-scroll">
         <table>
           <caption>Exact type graph</caption>

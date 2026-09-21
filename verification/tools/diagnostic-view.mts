@@ -9,7 +9,7 @@
 
 import surface from "./claim-text.mts";
 import { decodeGraph, numberOfBits, graphDefinitions, printLabels, type GraphDefinition, type Labels } from "./type-graph.mts";
-import type { HeapAtom, HeapKnowledge, ObligationDiagnostic, SourceMapEntry } from "./diagnostic.mts";
+import type { DirectJudgment, DirectType, HeapAtom, HeapKnowledge, ObligationDiagnostic, SourceMapEntry } from "./diagnostic.mts";
 import { printTerm, type Term } from "./calculus.mts";
 import type { Span } from "./span.mts";
 
@@ -68,7 +68,7 @@ export interface ObligationView {
   focus?: { subject: string; available: string; required: string; requiredLabel: string };
   /** Conclusion in source names; the complete assumptions are the context rows. */
   namedConclusion?: string;
-  judgement?: { assumptions: string[]; conclusion: string; text: string };
+  judgement?: { assumptions: string[]; conclusion: string };
   graph: GraphDefinition[];
   kind: string;
   kindLabel: string;
@@ -151,6 +151,7 @@ const KIND_LABEL: Record<string, string> = {
   "edge-coverage": "edge coverage",
   "expression-claim": "expression claim",
   "direct-obligation": "direct source obligation",
+  "source-refusal": "source refusal",
   "production-failure": "production failure",
 };
 
@@ -161,6 +162,40 @@ const KIND_LABEL: Record<string, string> = {
 function typeText(types: unknown, labels: unknown, depth = 3): string {
   if (!isList(labels)) return "(no type recorded)";
   return surface.printType(surface.lift(types, labels, null, depth)).text;
+}
+
+const unreachable = (value: never): never => { throw Error(`unhandled variant: ${JSON.stringify(value)}`); };
+function directTypeText(types: unknown, type: DirectType): string {
+  switch (type.kind) {
+    case "rigid": return type.name;
+    case "ground": return typeText(types,type.labels);
+    default: return unreachable(type);
+  }
+}
+function directView(types: unknown, judgment: DirectJudgment) {
+  const parameter = (p: DirectJudgment["parameters"][number]) =>
+    p.upper
+      ? `${p.name} ≤ ${directTypeText(types,p.upper)}`
+      : `${p.name} is ${p.scope === "quantified" ? "arbitrary" : "rigid"}`;
+  const assumptions = [
+    ...judgment.parameters.map(parameter),
+    ...judgment.context.map((b) => `${b.name}: ${directTypeText(types,b.type)}`),
+  ];
+  const conclusion = `${directTypeText(types,judgment.actual)} ≤ ${directTypeText(types,judgment.expected)}`;
+  switch (judgment.kind) {
+    case "subtyping":
+      return {title:"Generic source obligation", assumptions, conclusion,
+        summary:`The generic checker could not establish ${conclusion}.`};
+    case "scheme-introduction":
+      return {title:"Universal scheme obligation", assumptions, conclusion,
+        summary:`The closure body could not establish ${conclusion} for every permitted instantiation.`};
+    default: return unreachable(judgment);
+  }
+}
+
+/** The only printer for a turnstile. Callers supply both structured sides. */
+export function formatJudgement(judgement: {assumptions:string[]; conclusion:string}): string {
+  return `${judgement.assumptions.length ? judgement.assumptions.join("; ") : "∅"} ⊢ ${judgement.conclusion}`;
 }
 
 /* ---------- source maps ---------- */
@@ -261,7 +296,7 @@ function obligationView(ob: ObligationDiagnostic, source = ""): ObligationView {
   const sourceMap: SourceMapEntry | null =
     ob.kind === "production-failure"
       ? null
-      : ob.kind === "expression-claim" || ob.kind === "direct-obligation"
+      : ob.kind === "expression-claim" || ob.kind === "direct-obligation" || ob.kind === "source-refusal"
         ? ob.sourceMap
         : ob.kind === "edge-coverage" && specific(ob.destination.sourceMap)
           ? ob.destination.sourceMap
@@ -357,17 +392,18 @@ function obligationView(ob: ObligationDiagnostic, source = ""): ObligationView {
     view.conclusion = typeText(types, null);
     return view;
   }
+  if (ob.kind === "source-refusal") {
+    view.title = "Source form not accepted";
+    view.what = ob.reason;
+    view.summary = ob.reason;
+    return view;
+  }
   if (ob.kind === "direct-obligation") {
-    view.title = ob.judgment.system === "scheme"
-      ? "Universal scheme obligation"
-      : "Generic source obligation";
+    const direct = directView(types,ob.judgment);
+    view.title = direct.title;
     view.what = "The direct source checker could not establish this non-ground judgment.";
-    view.summary = ob.judgment.statement;
-    view.judgement = {
-      assumptions: [],
-      conclusion: ob.judgment.statement,
-      text: `∅ ⊢ ${ob.judgment.statement}`,
-    };
+    view.summary = direct.summary;
+    view.judgement = {assumptions:direct.assumptions,conclusion:direct.conclusion};
     return view;
   }
 
@@ -420,7 +456,7 @@ export function presentObligation(ob: ObligationDiagnostic, source: string): Obl
     view.what = ob.failure;
     return view;
   }
-  if (ob.kind === "direct-obligation") return view;
+  if (ob.kind === "direct-obligation" || ob.kind === "source-refusal") return view;
   const context = (entries: number[][], prefix = "slot") => entries.map((t,i) => `${prefix} ${i}: ${printLabels(t)}`);
   let assumptions: string[], conclusion: string;
   if (ob.kind === "edge-coverage") {
@@ -460,6 +496,6 @@ export function presentObligation(ob: ObligationDiagnostic, source: string): Obl
     assumptions = context(q.context);
     conclusion = `${printTerm(q.term)} : ${printLabels(q.type)}`;
   }
-  view.judgement = {assumptions,conclusion,text:`${assumptions.length ? assumptions.join("; ") : "∅"} ⊢ ${conclusion}`};
+  view.judgement = {assumptions,conclusion};
   return view;
 }

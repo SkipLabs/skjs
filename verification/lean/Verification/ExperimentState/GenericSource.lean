@@ -1,6 +1,7 @@
 import Verification.ExperimentState.Fragment
 import Verification.ExperimentState.CellClaims
 import Verification.ExperimentState.GenericBounds
+import Verification.ExperimentState.DirectObligation
 
 /-! Source extraction of first-order generic function bodies.
 
@@ -115,17 +116,27 @@ def checkScheme (f : Fragment.Fn) (typeParams : List Fragment.TypeParam)
   if (← typeIndex params fc.ret) != result then
     throw "claimed generic identity types differ from the source annotation"
 
-private def typeName (params : List String) (i : Nat) : String :=
-  if i == 0 then "boolean" else (params[i-1]?).getD "?"
+private def directTy (params : List String) (i : Nat) : DirectObligation.Ty :=
+  if i == 0 then .ground [1, 2] else .rigid ((params[i-1]?).getD "?")
+
+private def directParameters (params : List String) (edges : List (Nat × Nat)) : List DirectObligation.Parameter :=
+  params.zipIdx.map fun (name, i) =>
+    ⟨name, .quantified, (edges.find? (·.1 == i + 1)).map fun edge => directTy params edge.2⟩
+
+private def directContext (params : List String) (env : List (String × Nat)) : List DirectObligation.Binding :=
+  env.map fun (name, t) => ⟨name, directTy params t⟩
 
 private def requireSubtype (params : List String) (edges : List (Nat × Nat))
-    (env : List (String × Nat)) (pos : Span) (role subject : String)
-    (actual expected : Nat) : Except String Unit := do
+    (env : List (String × Nat)) (role : DirectObligation.SourceRole) (subject : DirectObligation.Subject)
+    (actual expected : Nat) : Except DirectObligation.Failure Unit := do
   unless subtype edges actual expected do
-    let context := String.intercalate "; " (env.map fun (name,t) => s!"{name}: {typeName params t}")
-    let bounds := String.intercalate ", " (edges.map fun (a,b) =>
-      s!"{typeName params a} ≤ {typeName params b}")
-    throw s!"generic {role} at [{pos.1},{pos.2}): {bounds}; {context} ⊢ {subject} : {typeName params expected}; cannot establish {typeName params actual} ≤ {typeName params expected}"
+    throw (.obligation ⟨subject.pos, role,
+      .subtyping (directParameters params edges) (directContext params env) subject
+        (directTy params actual) (directTy params expected)⟩)
+
+private def refuse (pos : Span) (role : DirectObligation.SourceRole)
+    (x : Except String α) : Except DirectObligation.Failure α :=
+  x.mapError (DirectObligation.Failure.refusal pos role)
 
 private def claimedType (params : List String) (pos : Span) (role : String)
     (ty : Json) : Except String Nat :=
@@ -135,30 +146,29 @@ private def claimedType (params : List String) (pos : Span) (role : String)
 
 private def entryClaims (params : List String) (edges : List (Nat × Nat))
     (fc : Fragment.Claims) (env : List (String × Nat)) (pos : Span) :
-    Except String (List (String × Nat)) := do
+    Except DirectObligation.Failure (List (String × Nat)) := do
   let some raw := fc.envs.lookup pos.1
-    | throw s!"generic entry claim at [{pos.1},{pos.2}): missing statement environment"
+    | throw (.refusal pos .entryClaim "missing statement environment")
   let names := raw.map Prod.fst
   if names.eraseDups.length != names.length then
-    throw s!"generic entry claim at [{pos.1},{pos.2}): duplicate binding"
+    throw (.refusal pos .entryClaim "duplicate binding")
   let source := raw
   if source.length != env.length || source.any (fun p => !(env.map Prod.fst).contains p.1) then
-    throw s!"generic entry claim at [{pos.1},{pos.2}): bindings differ from the source scope"
+    throw (.refusal pos .entryClaim "bindings differ from the source scope")
   env.mapM fun (name,actual) => do
-    let some ty := source.lookup name | throw s!"missing generic binding '{name}'"
-    let expected ← claimedType params pos "entry claim" ty
-    requireSubtype params edges env pos "entry claim" name actual expected
+    let some ty := source.lookup name | throw (.refusal pos .entryClaim s!"missing generic binding '{name}'")
+    let expected ← refuse pos .entryClaim (claimedType params pos "entry claim" ty)
+    requireSubtype params edges env .entryClaim (.binding name pos) actual expected
     return (name,expected)
 
 private def expressionClaim (params : List String) (edges : List (Nat × Nat))
     (fc : Fragment.Claims) (env : List (String × Nat)) (e : Fragment.Expr) :
-    Except String Nat := do
+    Except DirectObligation.Failure Nat := do
   let some ty := fc.exprs.lookup e.span
-    | throw s!"generic expression claim at [{e.span.1},{e.span.2}): missing expression claim"
-  let expected ← claimedType params e.span "expression claim" ty
-  let actual ← variableType env e
-  let subject := match e with | .var _ name => name | _ => "expression"
-  requireSubtype params edges env e.span "expression claim" subject actual expected
+    | throw (.refusal e.span .expressionClaim "missing expression claim")
+  let expected ← refuse e.span .expressionClaim (claimedType params e.span "expression claim" ty)
+  let actual ← refuse e.span .expressionClaim (variableType env e)
+  requireSubtype params edges env .expressionClaim (.expression e.span) actual expected
   return expected
 
 private def claimSites : List Fragment.Stmt → List Nat × List Span
@@ -172,12 +182,12 @@ private def claimSites : List Fragment.Stmt → List Nat × List Span
   | _ :: rest => claimSites rest
 
 private def bodyClaims (params : List String) (edges : List (Nat × Nat))
-    (fc : Fragment.Claims) (env : List (String × Nat)) (result : Nat) :
-    List Fragment.Stmt → Except String Unit
+    (fc : Fragment.Claims) (env : List (String × Nat)) (result : Nat) (origin : Span) :
+    List Fragment.Stmt → Except DirectObligation.Failure Unit
   | [.ret pos e] => do
     let H ← entryClaims params edges fc env pos
     let actual ← expressionClaim params edges fc H e
-    requireSubtype params edges H pos "return contract" "returned expression" actual result
+    requireSubtype params edges H .returnContract (.returned pos) actual result
   | .constants pos bindings :: rest => do
     -- One entry for the statement; each declarator's claim is checked in the
     -- scope the earlier ones extend.
@@ -187,32 +197,36 @@ private def bodyClaims (params : List String) (edges : List (Nat × Nat))
       -- Inference retains the checked initializer type, never a producer-selected
       -- binding type. A weakened expression claim can lose precision, not regain it.
       let expected ← match b.annot with
-        | some annot => typeIndex params annot
+        | some annot => refuse pos .bindingAnnotation (typeIndex params annot)
         | none => pure actual
-      requireSubtype params edges H pos "binding annotation" b.name actual expected
+      requireSubtype params edges H .bindingAnnotation (.binding b.name pos) actual expected
       return H ++ [(b.name,expected)]) H
-    bodyClaims params edges fc H result rest
-  | _ => throw "generic claim checking requires a checked variable-copy body"
+    bodyClaims params edges fc H result origin rest
+  | _ => throw (.refusal origin .genericValidation "generic claim checking requires a checked variable-copy body")
 
 /-- Both production and independent consumption reconstruct these obligations.
 Every source entry and expression must occur exactly once; no supplied point is
 silently ignored. Subtyping uses the proved rigid-bound relation. -/
 def check (f : Fragment.Fn) (typeParams : List Fragment.TypeParam)
-    (fc : Fragment.Claims) : Except String Unit := do
-  checkScheme f typeParams fc
+    (fc : Fragment.Claims) : Except DirectObligation.Failure Unit := do
   let params := typeParams.map (·.name)
-  let edges ← boundEdges typeParams
+  let edges ← refuse f.namePos .genericValidation (boundEdges typeParams)
   let (entries,expressions) := claimSites f.body
   let suppliedEntries := fc.envs.map Prod.fst
   let suppliedExpressions := fc.exprs.map Prod.fst
   if suppliedEntries.eraseDups.length != suppliedEntries.length ||
       suppliedEntries.length != entries.length || suppliedEntries.any (fun p => !entries.contains p) then
-    throw "generic entry claims: missing, duplicate or unmatched statement site"
+    throw (.refusal f.namePos .genericValidation "generic entry claims: missing, duplicate or unmatched statement site")
   if suppliedExpressions.eraseDups.length != suppliedExpressions.length ||
       suppliedExpressions.length != expressions.length || suppliedExpressions.any (fun p => !expressions.contains p) then
-    throw "generic expression claims: missing, duplicate or unmatched expression site"
-  let env ← f.params.mapM fun p => do return (p.name, ← typeIndex params p.ty)
-  bodyClaims params edges fc env (← typeIndex params f.ret) f.body
+    throw (.refusal f.namePos .genericValidation "generic expression claims: missing, duplicate or unmatched expression site")
+  let env ← f.params.mapM fun p => do
+    return (p.name, ← refuse f.namePos .genericValidation (typeIndex params p.ty))
+  bodyClaims params edges fc env
+    (← refuse f.namePos .genericValidation (typeIndex params f.ret)) f.namePos f.body
+  -- This checks the remaining source-shape and exact-signature invariants only
+  -- after the structured claim pass has exposed any failed subtype judgment.
+  refuse f.namePos .genericValidation (checkScheme f typeParams fc)
 
 private def paramT : Json :=
   Json.mkObj [("top", toJson false),

@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { check, verifier } from "./check.mts";
 import { cases } from "./cases.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
+import { readDiagnostic } from "../tools/diagnostic.mts";
 // The reader's collector, imported rather than served: `serve.mts` takes the
 // port only when it is run directly.
 import { analyse } from "../report-viewer/serve.mts";
@@ -171,8 +172,31 @@ for (const site of ["initializer", "binding"] as const) {
   assert.ifError(p.error);
   assert.equal(p.signal, null);
   assert.equal(p.status, 1, p.stdout + p.stderr);
-  assert.match(p.stdout + p.stderr, /generic (expression|entry) claim/);
+  assert.match(p.stdout + p.stderr, /generic obligation: cannot establish/);
+  assert.match(p.stdout + p.stderr, /"role":"(?:expression|entry)-claim"/);
   process.stdout.write(`tampered inferred generic ${site}: refused\n`);
+}
+
+// A malformed direct-check input is a located refusal, not prose disguised as
+// a failed judgment. The closed failure sum makes this branch mandatory at the
+// Lean boundary, and the reader must preserve the distinction.
+{
+  const claims = structuredClone(genericClaims);
+  const fn = claims.functions.find((f) => f.name === "inferred");
+  assert.ok(fn);
+  fn.expressions.pop();
+  const file = join(generic, "missing-generic-expression.json");
+  writeFileSync(file, JSON.stringify(claims));
+  const p = spawnSync(verifier, [
+    "--check-source-claims", join(generic, "fragment.json"), file,
+    join(generic, "source.ts"), join(generic, "evidence.json"),
+  ], {encoding:"utf8",timeout:30_000});
+  assert.equal(p.status,1,p.stdout+p.stderr);
+  const refusal = readDiagnostic(p.stdout+p.stderr);
+  assert(refusal?.kind === "source-refusal");
+  assert.deepEqual(refusal.sourceMap.pos,fn.namePos);
+  assert(!("judgment" in refusal));
+  process.stdout.write("malformed generic input: located refusal\n");
 }
 
 /*
@@ -231,6 +255,7 @@ const directControls = new Set([
   "invalid-generic-closure",
   "invalid-scheme-capture",
 ]);
+let testedDirectProtocol = false;
 for (const control of cases.filter((c) => c.kind === "negative")) {
   const shown = await analyse(repositoryPath(control.file), "ocaml");
   const results = shown.manifest.results ?? [];
@@ -250,6 +275,28 @@ for (const control of cases.filter((c) => c.kind === "negative")) {
       "direct-obligation",
       `${control.file}: a direct checker failure needs a structured judgment`,
     );
+    const direct = results[0]?.obligation;
+    assert(direct?.kind === "direct-obligation");
+    assert(!("statement" in direct.judgment), "direct judgments cannot store prose");
+    const judgmentView = results[0]?.obligationView?.judgement;
+    assert(judgmentView && !("text" in judgmentView),
+      "judgment text must be derived by the shared printer");
+    if (!testedDirectProtocol) {
+      testedDirectProtocol = true;
+      const {input: _input, ...wire} = direct;
+      const line = (value: unknown) =>
+        `obligation-diagnostic: ${JSON.stringify(value)}`;
+      assert(readDiagnostic(line(wire)), "the structured direct judgment decodes");
+      const unknown = structuredClone(wire);
+      unknown.judgment.kind = "future-judgment";
+      assert.equal(readDiagnostic(line(unknown)),undefined,"an unhandled judgment variant is refused");
+      const unscoped = structuredClone(wire);
+      unscoped.judgment.actual = {kind:"rigid",name:"Undeclared"};
+      assert.equal(readDiagnostic(line(unscoped)),undefined,"an undeclared rigid type is refused");
+      const misplaced = structuredClone(wire);
+      misplaced.sourceMap.pos = [0,0];
+      assert.equal(readDiagnostic(line(misplaced)),undefined,"a judgment cannot borrow another source span");
+    }
   }
 }
 process.stdout.write(

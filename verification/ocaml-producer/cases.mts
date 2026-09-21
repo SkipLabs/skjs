@@ -61,7 +61,7 @@ export const cases: Case[] = [
     "rigid fabrication",
     /generic.*(return|result)|not.*(bound|subtype)/,
   ),
-  negative("invalid-generic-copy", "inference cannot identify rigid parameters", /generic return/),
+  negative("invalid-generic-copy", "inference cannot identify rigid parameters", /generic obligation: cannot establish T ≤ U/),
   negative("invalid-readonly", "readonly write"),
   negative("invalid-array-write", "array write contract"),
   negative("invalid-tuple", "contextual tuple element obligation"),

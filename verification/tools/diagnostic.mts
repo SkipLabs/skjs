@@ -16,6 +16,7 @@ export type Kind =
   | "edge-coverage"
   | "expression-claim"
   | "direct-obligation"
+  | "source-refusal"
   | "production-failure";
 
 /**
@@ -144,6 +145,54 @@ export interface ExpressionClaimFailure extends Common {
   sequent: Sequent;
 }
 
+export type DirectType =
+  | { kind: "rigid"; name: string }
+  | { kind: "ground"; labels: Labels };
+export interface DirectParameter {
+  name: string;
+  scope: "ambient" | "quantified";
+  upper: DirectType | null;
+}
+export interface DirectBinding { name: string; type: DirectType }
+export type DirectSubject =
+  | { kind: "binding"; name: string; pos: Span }
+  | { kind: "expression"; pos: Span }
+  | { kind: "return-value"; pos: Span }
+  | { kind: "closure-body"; pos: Span };
+export type DirectJudgment =
+  | {
+      kind: "subtyping";
+      parameters: DirectParameter[];
+      context: DirectBinding[];
+      subject: DirectSubject;
+      actual: DirectType;
+      expected: DirectType;
+    }
+  | {
+      kind: "scheme-introduction";
+      parameters: DirectParameter[];
+      context: DirectBinding[];
+      body: Extract<DirectSubject, {kind: "closure-body"}>;
+      actual: DirectType;
+      expected: DirectType;
+    };
+
+// These records are compile-time exhaustiveness guards. Adding a wire variant
+// to one of the unions requires naming it here and handling it in the total
+// renderer; unknown input strings are still refused at runtime below.
+const DIRECT_TYPE_KINDS = {rigid:true,ground:true} satisfies Record<DirectType["kind"],true>;
+const DIRECT_SUBJECT_KINDS = {
+  binding:true,expression:true,"return-value":true,"closure-body":true,
+} satisfies Record<DirectSubject["kind"],true>;
+const DIRECT_JUDGMENT_KINDS = {
+  subtyping:true,"scheme-introduction":true,
+} satisfies Record<DirectJudgment["kind"],true>;
+const DIRECT_PARAMETER_SCOPES = {
+  ambient:true,quantified:true,
+} satisfies Record<DirectParameter["scope"],true>;
+const isDirectParameterScope = (v: unknown): v is DirectParameter["scope"] =>
+  typeof v === "string" && v in DIRECT_PARAMETER_SCOPES;
+
 /** A direct source checker stopped on a judgment that is not an
  * ordinary ground graph sequent, such as rigid generic subtyping or universal
  * scheme introduction. Its source place is mandatory. */
@@ -151,7 +200,16 @@ export interface DirectObligationFailure extends Common {
   kind: "direct-obligation";
   id: string;
   sourceMap: SourceMapEntry;
-  judgment: { system: string; statement: string };
+  judgment: DirectJudgment;
+}
+
+/** Source conversion stopped before a semantic judgment existed. This is a
+ * located refusal, never a sequent and never a failed proof. */
+export interface SourceRefusal extends Common {
+  kind: "source-refusal";
+  id: string;
+  sourceMap: SourceMapEntry;
+  reason: string;
 }
 
 /** Something was produced and then rejected by the independent check. */
@@ -165,6 +223,7 @@ export type ObligationDiagnostic =
   | EdgeCoverage
   | ExpressionClaimFailure
   | DirectObligationFailure
+  | SourceRefusal
   | ProductionFailure;
 
 const PHASES: readonly unknown[] = [
@@ -177,6 +236,7 @@ const KINDS: readonly unknown[] = [
   "edge-coverage",
   "expression-claim",
   "direct-obligation",
+  "source-refusal",
   "production-failure",
 ];
 const PREFIX = "obligation-diagnostic: ";
@@ -188,8 +248,8 @@ function record(v: unknown, required: string[], optional: string[] = []): Record
   return v;
 }
 function nat(v: unknown) { if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0) throw Error("invalid diagnostic index"); }
-function span(v: unknown) { if (!Array.isArray(v) || v.length !== 2) throw Error("invalid diagnostic span"); v.forEach(nat); if (v[1] < v[0]) throw Error("reversed span"); }
-function sourceMap(v: unknown) {
+function span(v: unknown): asserts v is Span { if (!Array.isArray(v) || v.length !== 2) throw Error("invalid diagnostic span"); v.forEach(nat); if (v[1] < v[0]) throw Error("reversed span"); }
+function sourceMap(v: unknown): asserts v is SourceMapEntry | null {
   if (v === null) return;
   const m = record(v,["pos","role","environmentStart","context"]);
   span(m.pos); if (typeof m.role !== "string") throw Error("invalid role");
@@ -200,6 +260,76 @@ function sourceMap(v: unknown) {
     if (typeof d.name !== "string") throw Error("invalid binding name");
     if (d.span !== null) span(d.span);
   }
+}
+
+function directType(v: unknown, size: number, scope: ReadonlySet<string>): DirectType {
+  const t = record(v,["kind"], ["name","labels"]);
+  if (typeof t.kind !== "string" || !(t.kind in DIRECT_TYPE_KINDS))
+    throw Error("unknown direct-obligation type");
+  if (t.kind === "rigid") {
+    if (typeof t.name !== "string" || !scope.has(t.name) || t.labels !== undefined)
+      throw Error("undeclared direct-obligation rigid type");
+    return {kind:"rigid",name:t.name};
+  }
+  if (t.kind === "ground") {
+    if (t.name !== undefined) throw Error("invalid direct-obligation ground type");
+    return {kind:"ground",labels:decodeLabels(t.labels,size)};
+  }
+  throw Error("unknown direct-obligation type");
+}
+function directSubject(v: unknown): DirectSubject {
+  const s = record(v,["kind","pos"],["name"]); span(s.pos);
+  if (typeof s.kind !== "string" || !(s.kind in DIRECT_SUBJECT_KINDS))
+    throw Error("unknown direct-obligation subject");
+  if (s.kind === "binding") {
+    if (typeof s.name !== "string") throw Error("invalid direct-obligation binding");
+    return {kind:"binding",name:s.name,pos:s.pos};
+  }
+  if (s.name !== undefined) throw Error("invalid direct-obligation subject name");
+  if (s.kind === "expression" || s.kind === "return-value" || s.kind === "closure-body")
+    return {kind:s.kind,pos:s.pos};
+  throw Error("unknown direct-obligation subject");
+}
+function directJudgment(v: unknown, size: number): DirectJudgment {
+  const j = record(v,["kind","parameters","context","actual","expected"],["subject","body"]);
+  if (typeof j.kind !== "string" || !(j.kind in DIRECT_JUDGMENT_KINDS))
+    throw Error("unknown direct-obligation judgment");
+  if (!Array.isArray(j.parameters) || !Array.isArray(j.context))
+    throw Error("invalid direct-obligation scope");
+  const scope = new Set<string>();
+  const rawParameters = j.parameters.map((raw) => {
+    const p = record(raw,["name","scope","upper"]);
+    if (typeof p.name !== "string" || !p.name || scope.has(p.name))
+      throw Error("invalid direct-obligation parameter");
+    if (!isDirectParameterScope(p.scope))
+      throw Error("invalid direct-obligation parameter scope");
+    scope.add(p.name);
+    return {name:p.name,scope:p.scope,upper:p.upper};
+  });
+  // Type parameters are in scope throughout their parameter list. The current
+  // source slice emits only earlier-parameter bounds, but the wire does not
+  // bake that implementation restriction into the eventual full language.
+  const parameters: DirectParameter[] = rawParameters.map((p) => ({
+    name:p.name, scope:p.scope,
+    upper:p.upper === null ? null : directType(p.upper,size,scope),
+  }));
+  const context: DirectBinding[] = j.context.map((raw) => {
+    const b = record(raw,["name","type"]);
+    if (typeof b.name !== "string") throw Error("invalid direct-obligation binding");
+    return {name:b.name,type:directType(b.type,size,scope)};
+  });
+  const actual = directType(j.actual,size,scope), expected = directType(j.expected,size,scope);
+  if (j.kind === "subtyping") {
+    if (j.body !== undefined) throw Error("invalid subtyping judgment fields");
+    return {kind:"subtyping",parameters,context,subject:directSubject(j.subject),actual,expected};
+  }
+  if (j.kind === "scheme-introduction") {
+    if (j.subject !== undefined) throw Error("invalid scheme judgment fields");
+    const body = directSubject(j.body);
+    if (body.kind !== "closure-body") throw Error("scheme introduction needs a closure body");
+    return {kind:"scheme-introduction",parameters,context,body,actual,expected};
+  }
+  throw Error("unknown direct-obligation judgment");
 }
 function knowledge(v: unknown) {
   if (v === null) return;
@@ -248,6 +378,7 @@ export function readDiagnostic(
     const variants: Record<string,string[]> = {
       "node-typing":["id","source","sequent"], "expression-claim":["id","sourceMap","sequent"],
       "direct-obligation":["id","sourceMap","judgment"],
+      "source-refusal":["id","sourceMap","reason"],
       "edge-coverage":["id","edgeIndex","source","destination","transfer"], "production-failure":["failure"],
     };
     if (typeof d.kind !== "string" || !variants[d.kind]) return undefined;
@@ -259,9 +390,16 @@ export function readDiagnostic(
     if (d.destination !== undefined) diagnosticNode(d.destination,types.length);
     if (d.sourceMap !== undefined) sourceMap(d.sourceMap);
     if (d.kind === "direct-obligation") {
-      const judgment = record(d.judgment,["system","statement"]);
-      if (typeof judgment.system !== "string" || typeof judgment.statement !== "string") return undefined;
+      const judgment = directJudgment(d.judgment,types.length);
+      const at = judgment.kind === "subtyping" ? judgment.subject.pos : judgment.body.pos;
+      const map = d.sourceMap;
+      if (map === null || map === undefined) return undefined;
+      if (map.pos[0] !== at[0] || map.pos[1] !== at[1] ||
+          map.context.map((x) => x.name).join("\0") !== judgment.context.map((x) => x.name).join("\0"))
+        return undefined;
+      d.judgment = judgment;
     }
+    if (d.kind === "source-refusal" && typeof d.reason !== "string") return undefined;
     if (d.kind === "production-failure" && typeof d.failure !== "string") return undefined;
     const labels = (v: unknown) => decodeLabels(v,types.length);
     if (d.requiredResult !== undefined) labels(d.requiredResult);

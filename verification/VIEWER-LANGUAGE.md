@@ -81,8 +81,14 @@ record is validated as program data rather than inferred from its expression.
 `tools/diagnostic.mts` reads the native failure record, checking its
 graph, sequent, mappings, source descriptors, and heap facts. Malformed or unknown
 records remain human diagnostics. `tools/diagnostic-view.mts` prepares a typed
-presentation at report generation, including `A ⊢ B` and the complete graph
-legend. The viewer renders `obligationView`; it does not infer an obligation
+presentation at report generation and the complete graph legend. Direct
+obligations use a closed union of subtyping and scheme-introduction judgments;
+their rigid and ground types, parameters, bounds, contexts and source subjects
+are decoded structurally, with every rigid reference checked against its scope.
+`formatJudgement` is the only `A ⊢ B` printer and takes the structured assumptions
+and conclusion, so neither a producer nor a presentation call site can put prose
+to the right of a turnstile. Its switches use `never` exhaustiveness checks, and
+the decoder rejects unknown variants. The viewer renders `obligationView`; it does not infer an obligation
 from a diagnostic sentence. [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md)
 owns the exact failure contract.
 

@@ -727,6 +727,7 @@ function verifySkjs(
         const diagnostic=readDiagnostic(rawDetail);
         const detail=diagnostic ? rawDetail.split("\nobligation-diagnostic: ")[0] : rawDetail;
         const direct=diagnostic?.kind==="direct-obligation" ? diagnostic : null;
+        const sourceRefusal=diagnostic?.kind==="source-refusal" ? diagnostic : null;
         const located=/^(?:reject: )?(source expression obligation|closure expression claim|source incoming edge obligation|unsupported source expression) at \[(\d+),(\d+)\):/.exec(detail);
         const genericPoint=/^(?:reject: )?generic (entry claim|expression claim|return contract|binding annotation) at \[(\d+),(\d+)\):/.exec(detail);
         const environment=/^(?:reject: )?source environment obligation at (\d+): (.*)$/.exec(detail);
@@ -745,7 +746,7 @@ function verifySkjs(
         // is held to: a finding about the claim, before any obligation is tried.
         const parameterClaim=/claimed parameter type differs from the source annotation for '([^']*)'$/.exec(detail);
         const outsideFragment=/outside the [^:]*fragment\.?$/.test(detail);
-        const location: Failure|null=direct ? {kind:"direct-obligation",pos:direct.sourceMap.pos} : genericPoint ? (genericPoint[1]==="entry claim" ?
+        const location: Failure|null=direct ? {kind:"direct-obligation",pos:direct.sourceMap.pos} : sourceRefusal ? {kind:"source-limitation",pos:sourceRefusal.sourceMap.pos,reason:sourceRefusal.reason} : genericPoint ? (genericPoint[1]==="entry claim" ?
           {kind:"environment-obligation",start:Number(genericPoint[2])} :
           {kind:"expression-obligation",pos:[Number(genericPoint[2]),Number(genericPoint[3])]}) : parameterClaim ? {kind:"parameter-claim",binding:parameterClaim[1]} : unavailableType ? {kind:"unavailable-type-claim",
           ...(unavailableBinding ? {start:Number(environment[1]),binding:unavailableBinding[1]} :
@@ -774,7 +775,7 @@ function verifySkjs(
         const obligation=diagnostic ? {...diagnostic,input:{file,functionName:f.name,
           namePos,sourceSha256:hash(source),claimsSha256:hash(JSON.stringify(c))}} : null;
         if(!location)throw Error(`verifier returned an unlocated failure for ${f.name}: ${detail}`);
-        return {status:"not-established",detail,...((unavailableType || nonInvariant) ? {stage:"source-extraction"} : {}),location,
+        return {status:"not-established",detail,...((sourceRefusal || unavailableType || nonInvariant) ? {stage:"source-extraction"} : {}),location,
           ...(obligation ? {obligation, obligationView: presentObligation(obligation, source)} : {})};
       }
       const checked=run(verifier,[normalized?"--check-source-claims":"--check-stateful-source",ap,cp,file,ep]);
