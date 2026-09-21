@@ -238,9 +238,40 @@ mutable class Subst private {
     owner
   }
 
-  static fun mcreate(
+  // A fresh normalization state for an environment: the caller's purpose,
+  // query bookkeeping and results, and no bindings of its own. Writes it makes
+  // stay in it. An environment that already owns candidates keeps them --
+  // nothing here copies them, which is why this cannot stand in for the
+  // retired general clone.
+  static fun mcreate(tcenvb: mutable TCEnvBase): mutable Subst {
+    static::mcreateWithState(tcenvb, SavedSubst::empty)
+  }
+
+  // The candidate owner a computation should run in: the environment's own,
+  // or a fresh state when it is a light or declaration environment that has
+  // none. Those carry no candidates, so nothing is shared or lost.
+  static fun computationOwner(tcenvb: mutable TCEnvBase): mutable Subst {
+    static::candidateOwner(tcenvb) match {
+    | Some(owner) -> owner
+    | None() -> static::mcreate(tcenvb)
+    }
+  }
+
+  // A normalization of its own, carrying this computation's bindings as a
+  // starting point but keeping its solver writes local: a probe or diagnostic
+  // instantiation must not pollute the state it borrowed them from. Inside an
+  // observation this is that observation's descendant instead, because the
+  // reads still belong to it.
+  mutable fun normalizationScratch(): mutable Subst {
+    static::mcreateWithState(this, this)
+  }
+
+  // Copying a state into a new substitution is how a caller would rebuild the
+  // retired clone, so it stays private: the operations above say which copies
+  // are legitimate and what each one is for.
+  private static fun mcreateWithState(
     tcenvb: mutable TCEnvBase,
-    state: readonly SubstState = SavedSubst::empty,
+    state: readonly SubstState,
   ): mutable Subst {
     invariant(
       !(tcenvb is TypeReadDeclaration _),

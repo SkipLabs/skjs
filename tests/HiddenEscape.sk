@@ -144,7 +144,7 @@ fun testHiddenWitnessAllocationAuthorities(): void {
   );
   SKTest.expectEq(
     None(),
-    tryHiddenWitnessAllocation(SKJS.Subst::mcreate(owner, owner.save())),
+    tryHiddenWitnessAllocation(owner.normalizationScratch()),
   );
   SKTest.expectEq(
     None(),

@@ -48,10 +48,7 @@ base class TypeArgumentCheck {
         constraintPos,
       )
     | _ ->
-      subst = Subst::candidateOwner(tcenvb) match {
-      | Some(owner) -> owner
-      | None() -> Subst::mcreate(tcenvb)
-      };
+      subst = Subst::computationOwner(tcenvb);
       static::checkConstraint(
         this,
         subst,
@@ -328,7 +325,7 @@ base class TEnv{
       context -> context.instantiate(name, targs),
       (scratch, readEnv) ->
         readEnv.instantiateDeclaration(
-          Subst::mcreate(scratch, scratch),
+          scratch.normalizationScratch(),
           name,
           targs,
         )
@@ -2791,10 +2788,7 @@ base class TEnv{
     tcenvb match {
     | declaration @ TypeReadDeclaration _ -> declaration.describe(this, type)
     | _ ->
-      diagnostic = Subst::candidateOwner(tcenvb) match {
-      | Some(owner) -> owner.cloneForTypeDiagnostics()
-      | None() -> Subst::mcreate(tcenvb)
-      };
+      diagnostic = Subst::computationOwner(tcenvb).cloneForTypeDiagnostics();
       prettyPrintType(false, type, diagnostic, this)
     }
   }

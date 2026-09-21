@@ -43,10 +43,7 @@ extension base class TEnv {
       return declaration.readIn(this, read)
     | _ -> void
     };
-    subst = Subst::candidateOwner(tcenvb) match {
-    | Some(owner) -> owner
-    | None() -> Subst::mcreate(tcenvb)
-    };
+    subst = Subst::computationOwner(tcenvb);
     subst.typeComputationPurpose() match {
     | TCPTypeArgumentProbe()
     | TCPGuidance()

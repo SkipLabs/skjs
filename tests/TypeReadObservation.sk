@@ -15,6 +15,13 @@ extension class Subst {
     this.withCommittedTypeReads(scratch -> Some(decide(scratch)))
   }
 
+  // Building a substitution from a state that is not this one's is what the
+  // private stateful constructor exists to guard; the test for that guard
+  // needs to be able to try it.
+  mutable fun testMcreateWithState(state: readonly SubstState): mutable Subst {
+    Subst::mcreateWithState(this, state)
+  }
+
   // The normalization memos themselves, so a test can seed one, clear one, or
   // compare two states entry by entry. Production consumers see only the
   // memoize operations: what is remembered, and what this owner has qualified.
@@ -410,7 +417,7 @@ fun testNestedForeignCandidateStateIsRefused(): void {
   observationBind(foreign, other, observationString(), false);
   foreignState = foreign.save();
   result = subst.testObservedReads(scratch -> {
-    child = SKJS.Subst::mcreate(scratch, foreignState);
+    child = scratch.testMcreateWithState(foreignState);
     child.peekRaw(tv)
   });
   SKTest.expectEq(true, result is SKJS.TRBlocked _);
@@ -799,7 +806,7 @@ fun testFrozenClosedOuterDoesNotHideNormalizerRead(): void {
   observationBind(subst, inner, observationNumber(), false);
   subst.!freezeCandidates = true;
   stamp = subst.typeQueryReadStamp();
-  scratch = SKJS.Subst::mcreate(subst, subst.save());
+  scratch = subst.normalizationScratch();
   raw = scratch.peekRaw(outer);
   SKTest.expectEq(true, subst.canCacheTypeQuerySince(stamp));
   _ = raw.flatMap(ty -> ty.getSingleVar().flatMap(tv -> scratch.peekRaw(tv)));
