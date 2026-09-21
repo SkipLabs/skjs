@@ -323,33 +323,6 @@ mutable class Subst private {
     }
   }
 
-  /* Use Subst#clone to create a temporary subst when there is already
-     one that shouldn't be polluted.
-     One would typically do this to check subtyping relations that are
-     non-mandatory. */
-  mutable fun clone(): mutable this {
-    this.readObservation match {
-    | Some(frame) -> return Subst::observationScratch(this, frame)
-    | None() -> void
-    };
-    mutable Subst{
-      queryReads => this.queryReads,
-      computationPurpose => this.computationPurpose,
-      subtypeProposal => this.subtypeProposal,
-      context => this.context,
-      results => this.results,
-      seenSub => this.seenSub,
-      seenInter => this.seenInter,
-      seenUnion => this.seenUnion,
-      seenExpansion => this.seenExpansion,
-      version => this.version,
-      semanticEpoch => this.semanticEpoch,
-      values => this.values,
-      origins => this.origins,
-      ppNames => this.ppNames,
-    }
-  }
-
   readonly fun isProposingSubtype(): Bool {
     this.subtypeProposal
   }

@@ -231,12 +231,12 @@ fun testUninspectedSymbolicMemberRemainsOpen(): void {
 }
 
 @test
-fun testNestedCloneContributesReadDependencies(): void {
+fun testNestedDescendantContributesReadDependencies(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
   observationBind(subst, tv, observationNumber(), false);
   result = subst.testObservedReads(scratch -> {
-    child = scratch.clone();
+    child = scratch.observationDescendant();
     child.peekRaw(tv)
   });
   SKTest.expectEq(true, result is SKJS.TRReady _);
@@ -481,7 +481,7 @@ fun testNestedObservedRestoreCannotImportOwnerCaches(): void {
   subst.testSetSeenSubtypes(SortedSet[(num, str)]);
   saved = subst.save();
   result = subst.testObservedReads<SKJS.TType>(scratch -> {
-    nested = scratch.clone();
+    nested = scratch.observationDescendant();
     nested.restore(saved);
     SKTest.expectEq(true, nested.testSeenSubtypes().isEmpty());
     Some(num)
@@ -777,13 +777,13 @@ fun testFrozenUnboundReadSurvivesRollback(): void {
 }
 
 @test
-fun testFrozenOpenReadInCloneCannotMemoize(): void {
+fun testFrozenOpenReadInProbeCannotMemoize(): void {
   subst = observationSubst();
   tv = subst.gen(SKJS.PosRange::none);
   observationBind(subst, tv, observationNumber(), false);
   subst.!freezeCandidates = true;
   stamp = subst.typeQueryReadStamp();
-  scratch = subst.clone();
+  scratch = subst.compatibilityProbe();
   saved = scratch.save();
   _ = scratch.peekRaw(tv);
   scratch.restore(saved);
@@ -889,7 +889,7 @@ fun testRecursiveIntersectionMemoScope(): void {
 }
 
 @test
-fun testRecursiveQueryInCloneSurvivesRollback(): void {
+fun testRecursiveQueryInProbeSurvivesRollback(): void {
   subst = observationSubst();
   tenv = observationTypeEnv(subst);
   number = observationNumber();
@@ -898,7 +898,7 @@ fun testRecursiveQueryInCloneSurvivesRollback(): void {
     seenSub => SortedSet[(subst.inferenceVersion(), number, string)],
   };
   stamp = subst.typeQueryReadStamp();
-  scratch = subst.clone();
+  scratch = subst.compatibilityProbe();
   saved = scratch.save();
   _ = SKJS.TType::isSub(scratch, assumed, number, string);
   scratch.restore(saved);
@@ -960,17 +960,17 @@ fun testAbandonedRecursiveQueryDoesNotDischargePremise(): void {
 }
 
 @test
-fun testQueryMutationInsideClone(): void {
+fun testQueryMutationInsideProbe(): void {
   subst = observationSubst();
   tenv = observationTypeEnv(subst);
   tv = subst.gen(SKJS.PosRange::none);
   subst.grow(tenv, tv, observationNumber(), SKJS.Contravariant());
   stamp = subst.typeMutationStamp();
-  scratch = subst.clone();
+  scratch = subst.compatibilityProbe();
   _ = scratch.get(tenv, tv, SKJS.Covariant());
   SKTest.expectEq(true, scratch.isClosed(tv));
   SKTest.expectEq(true, subst.isOpen(tv));
-  // The shared stamp sees the clone's commitment without changing the owner.
+  // The shared stamp sees the probe's commitment without changing the owner.
   SKTest.expectEq(false, subst.typeMutationStamp() == stamp);
 }
 
@@ -1097,14 +1097,14 @@ fun testFrozenReadDependencySurvivesModeExit(): void {
 }
 
 @test
-fun testFrozenCloneDependencySurvivesModeExitAndRestore(): void {
+fun testFrozenProbeDependencySurvivesModeExitAndRestore(): void {
   subst = observationSubst();
   tenv = observationTypeEnv(subst);
   tv = subst.gen(SKJS.PosRange::none);
   subst.grow(tenv, tv, observationNumber(), SKJS.Contravariant());
   saved = subst.save();
   stamp = subst.typeQueryReadStamp();
-  scratch = subst.clone();
+  scratch = subst.compatibilityProbe();
   scratch.!freezeCandidates = true;
   _ = scratch.get(tenv, tv, SKJS.Covariant());
   scratch.!freezeCandidates = false;

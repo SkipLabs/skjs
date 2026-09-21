@@ -129,7 +129,10 @@ fun testHiddenWitnessAllocationAuthorities(): void {
   owner = observationSubst();
   pos = SKJS.PosRange::none;
   first = owner.genSkolemTParam(pos, "hidden", None());
-  SKTest.expectEq(None(), tryHiddenWitnessAllocation(owner.clone()));
+  SKTest.expectEq(
+    None(),
+    tryHiddenWitnessAllocation(owner.compatibilityProbe()),
+  );
   SKTest.expectEq(
     None(),
     tryHiddenWitnessAllocation(owner.cloneForTypeDiagnostics()),
