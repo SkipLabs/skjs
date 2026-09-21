@@ -24,7 +24,7 @@ private def claims : SourceClaims.Function :=
   ⟨"invoke",(0,1),[("f",.ok [4,5])],.ok [1,2],
    [(2,[("f",.ok [4,5])])],
    [((3,16),.ok [1,2]),((3,12),.ok [6]),((7,12),.ok [1,2]),
-    ((7,8),.ok [4,5]),((9,10),.ok [0]),((14,15),.ok [0])],[],[]⟩
+    ((7,8),.ok [4,5]),((9,10),.ok [0]),((14,15),.ok [0])],[],[],[]⟩
 
 -- Primitive-only function unions decode and acquire direct recipes inside
 -- closures, preserving all alternatives and the source consumer checks.

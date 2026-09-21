@@ -11,7 +11,7 @@ private def source : Fragment.Fn :=
 -- These claims have no SKJS type atoms, implicit bindings or function modes.
 private def claims : SourceClaims.Function :=
   ⟨"identity",(0,1),[("flag",.ok [1,2])],.ok [1,2],
-   [(2,[("flag",.ok [1,2])])],[((3,4),.ok [1,2])],[],[]⟩
+   [(2,[("flag",.ok [1,2])])],[((3,4),.ok [1,2])],[],[],[]⟩
 private def check (c : SourceClaims.Function) : Except String Unit := do
   let r ← extractNormalizedFn SourceTypes.initial source c
   let wire := toJson r.toRequest

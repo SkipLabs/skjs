@@ -63,6 +63,14 @@ let encode (proposal : Proposal.t) =
         "result",claim_type signature.result]]
     | (Atoms _ | Union _) as t -> labels t
   in
+  (* The substitution is exported so Lean re-checks the elimination it names,
+     rather than re-inferring one of its own. A site that calls no quantified
+     callable omits the field: unlike `current`, its absence asserts nothing. *)
+  let instantiate = function
+    | None -> []
+    | Some subst -> ["instantiate",Array (List.map (fun (name,t) ->
+        Object ["name",String name; "type",claim_type t]) subst)]
+  in
   let point t extra = Object (extra @ ["type",claim_type t; "current",Null])
   in
   let named (n,b) = point (binding_type b) ["name",String n]
@@ -76,6 +84,7 @@ let encode (proposal : Proposal.t) =
       "entries",Array (List.map (fun (e : Proposal.entry) ->
         Object ["start",e.start;"bindings",Array (List.map named e.bindings)]) f.entries);
       "expressions",Array (List.map (fun (e : Proposal.expression) ->
-        point e.type_ ["pos",e.pos]) f.expressions)]) proposal.functions in
+        Object (["pos",e.pos; "type",claim_type e.type_; "current",Null]
+          @ instantiate e.instantiation)) f.expressions)]) proposal.functions in
   Object ["file",proposal.program.file; "sourceSha256",proposal.program.digest;
     "types",Array !rows; "functions",Array functions]

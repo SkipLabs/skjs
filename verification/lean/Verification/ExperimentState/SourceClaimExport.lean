@@ -71,7 +71,8 @@ private def convertFunction (f : Fragment.Fn) (c : Fragment.Claims) (generic : B
       continue
     let (A,current) ← candidate raw true
     issues := issues ++ note site raw A
-    expressions := expressions ++ [Expression.mk pos A current]
+    -- The export sidecar reports claims; it never proposes an elimination.
+    expressions := expressions ++ [Expression.mk pos A current none]
   return (⟨f.name,f.namePos,params,result,entries,expressions⟩,issues)
 
 /-- Returns a sidecar plus explicit omissions. The caller retains the raw export

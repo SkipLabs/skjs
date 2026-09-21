@@ -1027,24 +1027,45 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       (.makeAt (.closure arity body) (P.map Prod.fst) (values.map (·.term))) [C] .makeCallable
       (casts ++ bodies))
   | .lambda pos typeParams params ret body => do
-    if !typeParams.isEmpty then
-      throw "quantified closure checking requires the scheme evidence path"
     let paramNames := params.map Prod.fst
     if !distinct paramNames || paramNames.any (fun name => name == "" || name == "undefined" || (names scope).contains name) then
       throw "shadowing or duplicate closure parameter is outside the fragment"
-    let Ds ← params.mapM fun p => lower (Fragment.callableType p.2)
-    let R ← lower (Fragment.callableType ret)
     let inner := (paramNames.map fun name => held ⟨name,some pos⟩) ++ scope
-    let [.arrs L] := PositiveRules.expand G A | throw "closure claim must name a source arrow"
-    if L.isEmpty || !L.all (fun (Di,_) => Di.length == Ds.length && (Di.zip Ds).all (fun (D,A) => D.all A.contains)) then
-      throw "closure signature claim is outside the source annotation"
-    let b ← closureExpr fc inner (Ds ++ Γ) body
-    let annotation := DirectProof.cast (Ds ++ Γ) R b
-    obligation pos annotation.goal (some annotation) "closure-result" inner
-    let bodies ← L.mapM fun (Di,Ri) => do
-      if (Di,Ri) == (Ds,R) then pure annotation
-      else return DirectProof.cast (Di ++ Γ) Ri (← closureExpr fc inner (Di ++ Γ) body)
-    pure (DirectProof.node Γ (.make (.closure Ds.length b.term) .nul) A .funE bodies)
+    -- A compiled scheme elimination arrives with its interior claims already
+    -- substituted, one set per checked instantiation. The universal
+    -- introduction gate ran before this point; these derivations are its
+    -- consequences, so the body is lowered at each arrow's own types rather
+    -- than re-cast from a single claim that no polymorphic body can carry.
+    if let some overlays := fc.schemeArrows.lookup pos then
+      let [.arrs L] := PositiveRules.expand G A | throw "compiled scheme claim must name source arrows"
+      if L.isEmpty then throw "compiled scheme claim has no checked instantiation"
+      if overlays.length != L.length then
+        throw "compiled scheme interior claims do not match its arrows"
+      let mut bodies := []
+      let mut term := none
+      for ((Di,Ri),overlay) in L.zip overlays do
+        if Di.length != paramNames.length then
+          throw "compiled scheme arrow arity differs from its closure"
+        let bi ← closureExpr { fc with exprs := overlay ++ fc.exprs } inner (Di ++ Γ) body
+        if term.isNone then term := some bi.term
+        bodies := bodies ++ [DirectProof.cast (Di ++ Γ) Ri bi]
+      let some t := term | throw "compiled scheme claim has no checked instantiation"
+      pure (DirectProof.node Γ (.make (.closure paramNames.length t) .nul) A .funE bodies)
+    else do
+      if !typeParams.isEmpty then
+        throw "quantified closure checking requires the scheme evidence path"
+      let Ds ← params.mapM fun p => lower (Fragment.callableType p.2)
+      let R ← lower (Fragment.callableType ret)
+      let [.arrs L] := PositiveRules.expand G A | throw "closure claim must name a source arrow"
+      if L.isEmpty || !L.all (fun (Di,_) => Di.length == Ds.length && (Di.zip Ds).all (fun (D,A) => D.all A.contains)) then
+        throw "closure signature claim is outside the source annotation"
+      let b ← closureExpr fc inner (Ds ++ Γ) body
+      let annotation := DirectProof.cast (Ds ++ Γ) R b
+      obligation pos annotation.goal (some annotation) "closure-result" inner
+      let bodies ← L.mapM fun (Di,Ri) => do
+        if (Di,Ri) == (Ds,R) then pure annotation
+        else return DirectProof.cast (Di ++ Γ) Ri (← closureExpr fc inner (Di ++ Γ) body)
+      pure (DirectProof.node Γ (.make (.closure Ds.length b.term) .nul) A .funE bodies)
   let plan := DirectProof.cast Γ A p
   obligation e.span plan.goal (some plan) "expression-claim" scope
   -- Validate the supplied claim, but do not discard a stronger saved-read

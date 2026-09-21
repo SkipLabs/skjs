@@ -24,6 +24,8 @@ than erase a requirement.
 | `{ value: A = (B) }` | Storage invariant A and current-content assertion B |
 | `(A, B) => C` | Ordered parameters and result; zero parameters and nested functions are allowed |
 | `((A) => B) & { value: C }` | Combined invocation and field contract |
+| `T` | A rigid type parameter of the enclosing function or closure, by its source name |
+| `<T>(arg0: T) => T` | A quantified callable; binders carry `extends A` when bounded, and its parameters are shown positionally |
 | `T @{...}` | Explicit nondefault object metadata |
 
 Arrow alternatives in a union are parenthesized. Nondefault metadata on an

@@ -21,6 +21,13 @@ structure Function where
   is stated field by field; a point that names no record carries none. -/
   entryCurrent : List (Nat × List (String × List (String × Ty Nat))) := []
   exprCurrent : List (Span × List (String × Ty Nat)) := []
+  /-- Per-arrow interior claims for a compiled scheme closure, keyed by the
+  closure's span and ordered with the arrows of its claimed callable type. A
+  polymorphic body has one source span but a different type at each checked
+  instantiation, so the compilation supplies the substituted claims rather than
+  re-casting one claim to every arrow's result. Empty for every ordinary
+  closure. -/
+  schemeArrows : List (Span × List (List (Span × Candidate))) := []
 
 /-- Labels are checked against the request's own table, so even a direct caller
 cannot turn an out-of-range label into its empty default. -/

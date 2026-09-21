@@ -143,7 +143,10 @@ particular singleton. Generic variable-copy bodies admit distinct type parameter
 annotated `const` copies and results use those rigid types or `boolean`;
 conversions follow declared bounds only. Dependent parameters retain their rigid identity in raw SKJS exports. First-order aliases
 `type Id<T> = T` and `type Box<T> = { value: T }` remain single-parameter.
-Generic callbacks, call-site instantiation and other generic bodies remain outside.
+Generic callbacks and other generic bodies remain outside. Call-site
+instantiation is outside this declaration-level path, but an unbounded
+quantified closure held in a binding is checked by the separate scheme path in
+[SOURCE-CLAIMS.md](SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations).
 The fragment is smaller than the calculus,
 and the parser can represent syntax the Lean adapter then rejects: such a
 rejection is a limitation, never evidence that a producer claim is false.

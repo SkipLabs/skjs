@@ -22,6 +22,8 @@ def translate (c : Fragment.Claims) : Lowering SourceClaims.Function := do
     envs.map (fun (pos,vars) => (pos, vars.map fun (name,p) => (name, p.map (·.type)))),
     exprs.map (fun (pos,p) => (pos, p.map (·.type))),
     envs.map (fun (pos,vars) => (pos, vars.filterMap fun (name,p) => (current p).map (name,·))),
-    exprs.filterMap (fun (pos,p) => (current p).map (pos,·))⟩
+    exprs.filterMap (fun (pos,p) => (current p).map (pos,·)),
+    -- SKJS emits no quantified claims, so it compiles no scheme arrows.
+    []⟩
 
 end Verification.ExperimentState.SkjsSourceClaims

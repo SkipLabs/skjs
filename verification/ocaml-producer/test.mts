@@ -12,6 +12,7 @@ const here = import.meta.dirname;
 let good = "";
 let generic = "";
 let genericClosure = "";
+let twoCalls = "";
 let verifiedFunctions = 0;
 for (const test of cases) {
   const result = check(join(here, "examples", `${test.file}.ts`));
@@ -38,6 +39,7 @@ for (const test of cases) {
   if (test.file === "values") good = result.artifacts;
   if (test.file === "generic-inferred") generic = result.artifacts;
   if (test.file === "generic-closure") genericClosure = result.artifacts;
+  if (test.file === "generic-two-calls") twoCalls = result.artifacts;
 }
 process.stdout.write(
   `${verifiedFunctions} functions verified; ${cases.filter((c) => c.kind === "negative").length} negative controls; ${cases.filter((c) => c.kind === "gap").length} named gaps\n`,
@@ -113,6 +115,34 @@ const forgedScheme = join(genericClosure, "forged-scheme.json");
 writeFileSync(forgedScheme, JSON.stringify(closureClaims));
 invoke(forgedScheme, join(genericClosure, "evidence.json"), genericClosure);
 process.stdout.write("tampered quantified closure scheme: refused\n");
+
+// A call's substitution is the elimination it proposes, so evidence produced
+// for the checked substitutions cannot certify a different one. Retyping the
+// second call's type argument leaves one genuine instance of the same scheme,
+// which is why the argument — not the universal gate — is what refuses it.
+const twoCallClaims: SourceClaims = JSON.parse(
+  readFileSync(join(twoCalls, "claims.json"), "utf8"),
+);
+const instantiated = twoCallClaims.functions[0];
+assert.ok(instantiated);
+const sites = instantiated.expressions.filter((e) => e.instantiate);
+assert.equal(sites.length, 2, "both eliminations must carry a substitution");
+for (const [name, mutate] of [
+  ["substitution", (s: NonNullable<typeof sites[1]["instantiate"]>) => {
+    s[0]!.type = [1, 2];
+  }],
+  ["substitution domain", (s: NonNullable<typeof sites[1]["instantiate"]>) => {
+    s[0]!.name = "U";
+  }],
+] as const) {
+  const claims = structuredClone(twoCallClaims);
+  const forged = claims.functions[0]!.expressions.filter((e) => e.instantiate);
+  mutate(forged[1]!.instantiate!);
+  const file = join(twoCalls, `forged-${name.replace(/ /g, "-")}.json`);
+  writeFileSync(file, JSON.stringify(claims));
+  invoke(file, join(twoCalls, "evidence.json"), twoCalls);
+  process.stdout.write(`tampered ${name}: refused\n`);
+}
 
 // Generic bodies take the rigid-bound path in BOTH producer and consumer.
 // Reusing valid evidence must not let an inferred local trust a forged point type.

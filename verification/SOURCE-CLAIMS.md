@@ -29,6 +29,32 @@ still do not emit graph certificates. Ground functions cannot use rigid claims,
 and rigid claims cannot carry current-content assertions. Within this fragment,
 other types must denote Boolean; no parameter is replaced by its bound.
 
+## Quantified callables and their eliminations
+
+A `type` may also be `{"scheme":{"typeParams":[...],"params":[...],"result":...}}`:
+a callable quantified over its own binders, which a binding can hold. Binders
+shadow, so a nested scheme's own names hide an outer substitution.
+
+An expression that calls one carries the elimination it proposes:
+
+```json
+{"pos":[121,129],"type":[1,2],"current":null,
+ "instantiate":[{"name":"T","type":[1,2]}]}
+```
+
+`instantiate` is absent, or `null`, at every other site. Its names must be
+exactly the scheme's binders, and each type argument must be a ground type: an
+unresolved parameter or a nested scheme is refused. The consumer re-checks the
+substitution and derives the call's arrow from the scheme's own signature, so a
+forged `instantiate` can only name another genuine instance.
+
+Acceptance never rests on it. `SourceClaimJson`'s scheme section checks
+introduction first — the closure body, read from the source and not from its
+claim, must satisfy the declared signature for *every* assignment of the
+binders — and only then compiles the checked eliminations to ordinary arrows.
+A closure that satisfies each observed call but cannot produce an arbitrary
+rigid result is refused at that gate, whatever its calls.
+
 Both producers feed this format into `SourceClaimJson`. The native SKJS CLI
 entry points first run `SourceClaimExport`; they do not have another verifier.
 The viewer collects and edits this format for both producers. Original native

@@ -29,7 +29,7 @@ private def claims : SourceClaims.Function :=
   ⟨"cells",(0,1),[],.ok [0,1,2],[(2,[]),(8,[("cell",.ok [4,5])])],
    [((4,7),.ok [4]),((5,6),.ok [0]),((9,30),.ok [0,1,2]),((9,27),.ok [6]),
     ((12,20),.ok [0]),((12,13),.ok [4,5]),((19,20),.ok [0]),
-    ((24,27),.ok [0,1,2]),((24,25),.ok [4,5]),((29,30),.ok [0])],[],[]⟩
+    ((24,27),.ok [0,1,2]),((24,25),.ok [4,5]),((29,30),.ok [0])],[],[],[]⟩
 
 -- Both alternatives are locally allocated invariant cells. Closure recipes
 -- eliminate the saved receiver's union while retaining all operand checks.

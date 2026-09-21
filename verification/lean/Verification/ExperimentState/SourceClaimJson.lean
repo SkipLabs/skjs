@@ -78,11 +78,30 @@ structure Entry where
   start : Nat
   bindings : List Binding
   deriving ToJson, FromJson
+/-- The type arguments one call supplies for a scheme's binders. It is the
+producer's proposed elimination, re-checked here; it is never itself evidence. -/
+structure Instantiation where
+  name : String
+  type : ClaimType
+  deriving ToJson, FromJson, BEq
+
 structure Expression where
   pos : Span
   type : ClaimType
   current : Option CurrentFields := none
-  deriving ToJson, FromJson
+  instantiate : Option (List Instantiation) := none
+  deriving FromJson
+
+/-- `current` is required and explicitly `null`, because silence about a
+record's contents is itself an assertion. Absence of `instantiate` asserts
+nothing: the site simply calls no quantified callable, so it is omitted rather
+than stated, and no producer has to write it at every expression. -/
+instance : ToJson Expression where
+  toJson e := Json.mkObj ([("pos", toJson e.pos), ("type", toJson e.type),
+    ("current", toJson e.current)] ++
+    (match e.instantiate with
+     | none => []
+     | some xs => [("instantiate", toJson xs)]))
 structure Function where
   name : String
   namePos : Span
@@ -104,22 +123,23 @@ def Function.normalized (f : Function) : SourceClaims.Function :=
     f.entries.map (fun e => (e.start,e.bindings.map (fun b => (b.name,b.type.ground)))),
     f.expressions.map (fun e => (e.pos,e.type.ground)),
     f.entries.map (fun e => (e.start,e.bindings.filterMap fun b => b.current.map (b.name,·))),
-    f.expressions.filterMap (fun e => e.current.map (e.pos,·))⟩
+    f.expressions.filterMap (fun e => e.current.map (e.pos,·)),
+    -- Scheme compilation supplies these; an ordinary document has none.
+    []⟩
 
-private def identityScheme (name : String) : TypeSchemes.Scheme String :=
-  { binders := [name], bounds := [], signatures := [([[name]], [name])] }
+/-! ## Scheme compilation
 
--- The wire-name presentation of TypeSchemes.identityScheme. Keep this guard
--- beside the decoder so its executable special case cannot drift from the
--- universally quantified identity shape proved in TypeSchemes.
-#guard (identityScheme "T").binders == ["T"]
-#guard (identityScheme "T").bounds == []
-#guard (identityScheme "T").signatures == [([["T"]], ["T"])]
+The one interface between quantified source checking and the ordinary graph
+evidence engine. Introduction is checked first, universally, once per allocated
+closure and independently of how many calls the program makes or at what types.
+Each elimination then validates its own explicit substitution. Only after both
+does this section compile the checked eliminations into ordinary arrows.
 
-private def identityClaim (name : String) : ClaimType :=
-  let scheme := identityScheme name
-  .scheme (scheme.binders.map (·, none)) [.param name] (.param name)
-
+The per-arrow body derivations that produces are consequences of the universal
+result, never its justification: a closure that satisfies every observed call
+but cannot produce an arbitrary rigid result fails the gate below, before any
+arrow exists. Replacing this section with a first-class scheme certificate
+changes neither Fragment, SourceClaims, nor the producer's semantic types. -/
 private def claimHasScheme : ClaimType → Bool
   | .scheme .. => true
   | _ => false
@@ -129,64 +149,185 @@ private def Function.hasScheme (f : Function) : Bool :=
     f.entries.any (fun e => e.bindings.any (claimHasScheme ·.type)) ||
     f.expressions.any (claimHasScheme ·.type)
 
-private def specializeClaim (name : String) (arrow : Nat) : ClaimType → ClaimType
-  | .scheme [(binder, none)] [.param input] (.param output) =>
-      if binder == name && input == name && output == name then .labels [arrow]
-      else .unavailable "quantified callable differs from its source scheme"
-  | .param binder =>
-      if binder == name then .labels [1, 2]
-      else .unavailable "rigid parameter is outside the specialized scheme"
-  | claim => claim
+namespace Scheme
 
-private def specializeBinding (name : String) (arrow : Nat) (b : Binding) : Binding :=
-  { b with type := specializeClaim name arrow b.type }
+/-- A universal type: a rigid binder of the scheme under check, or a ground
+graph type. No assignment identifies a ground type with an arbitrary binder,
+which is what keeps the gate independent of the calls a program happens to make. -/
+private inductive UTy where
+  | rigid : String → UTy
+  | ground : List Nat → UTy
+  deriving BEq, Repr
 
-private def specializeFunction (name : String) (arrow : Nat) (f : Function) : Function :=
-  { f with
-    params := f.params.map (specializeBinding name arrow)
-    result := specializeClaim name arrow f.result
-    entries := f.entries.map fun e =>
-      { e with bindings := e.bindings.map (specializeBinding name arrow) }
-    expressions := f.expressions.map fun e =>
-      { e with type := specializeClaim name arrow e.type } }
+private def UTy.le : UTy → UTy → Bool
+  | .rigid a, .rigid b => a == b
+  | .ground A, .ground B => A.all B.contains
+  | _, _ => false
 
-/-- The first executable scheme path is deliberately narrow in syntax but not
-in meaning: the closure body is checked once as the universally quantified
-identity scheme, then the surrounding program is lowered at the independently
-claimed Boolean instantiation and goes through the ordinary graph proof. -/
-private def specializeIdentityClosure (T : SourceTypes.Table) (f : Fragment.Fn)
-    (claims : Function) : Except String (SourceTypes.Table × Fragment.Fn × Function) := do
-  let [.constants declaration [binding], .ret returnPos (.call callPos (.var calleePos callee) [argument])] := f.body
-    | throw "quantified closure checking currently requires one immutable closure followed by one call"
-  let .lambda lambdaPos [typeParam] [(parameter, parameterType)] resultType (.var bodyPos returned) := binding.init
-    | throw "quantified closure checking currently requires a unary identity closure"
-  if typeParam.bound.isSome || parameter != returned ||
-      (← GenericSource.paramName parameterType) != typeParam.name ||
-      (← GenericSource.paramName resultType) != typeParam.name then
-    throw "quantified closure body is not the declared identity scheme"
-  if callee != binding.name then throw "quantified call does not use the declared closure"
-  let expected := identityClaim typeParam.name
-  let requireExpression (pos : Span) (ty : ClaimType) (role : String) := do
-    let some claim := claims.expressions.find? (fun e => e.pos == pos)
-      | throw s!"missing quantified {role} claim"
-    if claim.type != ty then throw s!"quantified {role} claim differs from the source scheme"
-  requireExpression bodyPos (.param typeParam.name) "body"
-  requireExpression lambdaPos expected "closure"
-  requireExpression calleePos expected "callee"
-  requireExpression argument.span (.labels [1, 2]) "argument"
-  requireExpression callPos (.labels [1, 2]) "call result"
-  let entryHasScheme := claims.entries.any fun e =>
-    e.bindings.any fun b => b.name == binding.name && b.type == expected
-  if !entryHasScheme then throw "quantified closure binding claim differs from the source scheme"
-  let arrowClause : PositiveNormalization.Clause (List Nat) := .arrs [([[1, 2]], [1, 2])]
-  let T := SourceTypes.intern T arrowClause
-  let arrow := SourceTypes.label T arrowClause
-  let lambda := Fragment.Expr.lambda lambdaPos []
-    [(parameter, GenericSource.booleanType)] GenericSource.booleanType (.var bodyPos returned)
-  let binding := { binding with init := lambda }
-  let f := { f with body := [.constants declaration [binding],
-    .ret returnPos (.call callPos (.var calleePos callee) [argument])] }
-  return (T, f, specializeFunction typeParam.name arrow claims)
+private def UTy.render : UTy → String
+  | .rigid a => a
+  | .ground A => s!"{A}"
+
+private def ofClaim (role : String) : ClaimType → Except String UTy
+  | .param name => pure (.rigid name)
+  | .labels A => pure (.ground A)
+  | .scheme .. => throw s!"a nested scheme is outside {role}"
+  | .unavailable reason => throw reason
+
+private def groundOf (role : String) : ClaimType → Except String (List Nat)
+  | .labels A => pure A
+  | .param name => throw s!"{role} is still the rigid parameter '{name}'"
+  | .scheme .. => throw s!"{role} is a scheme, not a ground type"
+  | .unavailable reason => throw reason
+
+/-- The body's type is read from the source, never from its claim. Trusting a
+claimed body type is exactly what would let a closure that happens to work at
+every observed instantiation pass as universally valid. -/
+private def bodyUTy (env : List (String × UTy)) : Fragment.Expr → Except String UTy
+  | .var _ name => match env.lookup name with
+      | some t => pure t
+      | none => throw s!"quantified closure body refers to unbound '{name}'"
+  | .lit _ .vnull => pure (.ground [0])
+  | .lit _ (.vbool true) => pure (.ground [1])
+  | .lit _ (.vbool false) => pure (.ground [2])
+  | .lit _ .vundef => pure (.ground [3])
+  | _ => throw "quantified closure body is outside the checked fragment: a variable or a primitive literal"
+
+/-- Capture-avoiding: a nested scheme's own binders shadow the substitution. -/
+private partial def subst (σ : List (String × ClaimType)) : ClaimType → ClaimType
+  | .param name => (σ.lookup name).getD (.param name)
+  | .scheme tps ps r =>
+      let inner := σ.filter fun q => !(tps.map Prod.fst).contains q.1
+      .scheme (tps.map fun q => (q.1, q.2.map (subst inner))) (ps.map (subst inner))
+        (subst inner r)
+  | c => c
+
+/-- The wire presentation of a semantic scheme. `TypeSchemes.identityScheme` is
+the one scheme with a universal allocation theorem (`identity_scheme_safe`);
+the checker below is general and does not special-case it, so this keeps that
+theorem's scheme recognisable in the claim language and makes a drift on either
+side visible. It is a correspondence, not a proof that the checker implements
+the rule. -/
+private def ofScheme (names : List String) (s : TypeSchemes.Scheme Nat) :
+    Option ClaimType := do
+  let binder (i : Nat) : Option String := names[i-1]?
+  let rigid (p : List Nat) : Option ClaimType := do
+    let [i] := p | none
+    return .param (← binder i)
+  let [(ps, r)] := s.signatures | none
+  guard (s.bounds.isEmpty && s.binders == (List.range names.length).map (· + 1))
+  return .scheme (names.map (·, none)) (← ps.mapM rigid) (← rigid r)
+
+#guard ofScheme ["T"] TypeSchemes.identityScheme
+  == some (.scheme [("T", none)] [.param "T"] (.param "T"))
+
+private structure Closure where
+  span : Span
+  binding : String
+  binders : List String
+  paramNames : List String
+  params : List ClaimType
+  result : ClaimType
+  body : Fragment.Expr
+  declStart : Nat
+
+/-- One quantified closure per function in this slice. The declared signature
+must name the closure's own binders; bounded binders are a later row. -/
+private def find (f : Fragment.Fn) : Except String (Option Closure) := do
+  let mut found : Option Closure := none
+  for s in f.body do
+    if let .constants pos bs := s then
+      for b in bs do
+        if let .lambda lpos tps ps ret body := b.init then
+          if !tps.isEmpty then
+            if found.isSome then
+              throw "this slice checks one quantified closure per function"
+            if tps.any (·.bound.isSome) then
+              throw "a bounded quantified closure is not implemented yet"
+            let names := tps.map (·.name)
+            if names.eraseDups.length != names.length then throw "duplicate closure binder"
+            let params ← ps.mapM fun q => do
+              let n ← GenericSource.paramName q.2
+              if !names.contains n then
+                throw "a quantified closure parameter must name one of its own binders"
+              pure (ClaimType.param n)
+            let r ← GenericSource.paramName ret
+            if !names.contains r then
+              throw "a quantified closure result must name one of its own binders"
+            found := some ⟨lpos, b.name, names, ps.map Prod.fst, params, .param r, body, pos.1⟩
+  return found
+
+/-- Introduction. The gate every accepted scheme passes, whatever its calls. -/
+private def introduce (c : Closure) (claims : Function) : Except String Unit := do
+  let some entry := claims.entries.find? (·.start == c.declStart)
+    | throw "quantified closure declaration has no entry claim"
+  -- Captures keep the types they already have; no instantiation may retype them.
+  let outer ← entry.bindings.mapM fun b => do
+    return (b.name, ← ofClaim "a quantified closure's captured scope" b.type)
+  let ps ← c.params.mapM (ofClaim "a quantified closure parameter")
+  let actual ← bodyUTy (c.paramNames.zip ps ++ outer) c.body
+  let expected ← ofClaim "a quantified closure result" c.result
+  unless actual.le expected do
+    throw s!"quantified closure body does not satisfy its scheme universally: cannot establish {actual.render} ≤ {expected.render} for every instantiation of {c.binders}"
+
+/-- Elimination, then compilation. Each call validates its own substitution;
+the arrows are derived from the scheme signature by that substitution, so a
+forged instantiation can only name another genuine instance of a scheme that
+has already passed the universal gate. -/
+private def compile (T : SourceTypes.Table) (f : Fragment.Fn) (claims : Function) :
+    Except String (SourceTypes.Table × Function ×
+      List (Span × List (List (Span × SourceClaims.Candidate)))) := do
+  let some c ← find f
+    | throw "a scheme claim has no quantified closure in its source"
+  introduce c claims
+  let sites := claims.expressions.filterMap fun e => e.instantiate.map ((e.pos, ·))
+  if sites.isEmpty then throw "a quantified closure has no checked instantiation"
+  let subs ← sites.mapM fun (pos, inst) => do
+    let names := inst.map (·.name)
+    if names.eraseDups.length != names.length then
+      throw s!"duplicate type argument at [{pos.1},{pos.2})"
+    if names.length != c.binders.length || names.any (!c.binders.contains ·) then
+      throw s!"type arguments at [{pos.1},{pos.2}) do not instantiate exactly the closure's binders"
+    for i in inst do
+      let _ ← groundOf s!"the type argument for '{i.name}' at [{pos.1},{pos.2})" i.type
+    pure (inst.map fun i => (i.name, i.type))
+  let σs := subs.foldl (fun acc σ => if acc.contains σ then acc else acc ++ [σ]) []
+  let arrows ← σs.mapM fun σ => do
+    let ps ← c.params.mapM fun q => groundOf "a substituted parameter" (subst σ q)
+    let r ← groundOf "a substituted result" (subst σ c.result)
+    pure (ps, r)
+  let clause : PositiveNormalization.Clause (List Nat) := .arrs arrows
+  let T := SourceTypes.intern T clause
+  let arrow := SourceTypes.label T clause
+  let expected : ClaimType := .scheme (c.binders.map (·, none)) c.params c.result
+  let inside (p : Span) : Bool := c.span.1 ≤ p.1 && p.2 ≤ c.span.2
+  let retype (pos : Span) (t : ClaimType) : Except String ClaimType :=
+    match t with
+    | .scheme .. =>
+      if t == expected then pure (.labels [arrow])
+      else throw s!"quantified claim at [{pos.1},{pos.2}) differs from its source scheme"
+    | .param n =>
+      if inside pos then pure t
+      else throw s!"rigid parameter '{n}' escapes its closure at [{pos.1},{pos.2})"
+    | _ => pure t
+  let claims := { claims with
+    result := ← retype claims.namePos claims.result
+    params := ← claims.params.mapM fun b => do
+      return { b with type := ← retype claims.namePos b.type }
+    entries := ← claims.entries.mapM fun e => do
+      return { e with bindings := ← e.bindings.mapM fun b => do
+        return { b with type := ← retype (e.start, e.start + 1) b.type } }
+    expressions := ← claims.expressions.mapM fun e => do
+      return { e with type := ← retype e.pos e.type } }
+  -- One source span, one type per instantiation: the interior claims are
+  -- substituted rather than re-cast, which is what no single claim can do.
+  let interior := claims.expressions.filter fun e => inside e.pos && e.pos != c.span
+  let overlays := σs.map fun σ =>
+    interior.map fun e => (e.pos, (subst σ e.type).ground)
+  return (T, claims, [(c.span, overlays)])
+
+end Scheme
+
 
 /-- The table starts with the primitives and refers only to its own labels. -/
 private def validTable (T : SourceTypes.Table) : Bool :=
@@ -328,8 +469,8 @@ def extract (ast claims : Json) (fileKey : String) : Except String (List SourceR
       GenericSource.check f tps (← c.genericClaims d.types)
       return none
     if c.hasScheme then
-      let (T, f, c) ← specializeIdentityClosure d.types f c
-      return some (← extractNormalizedFn T f c.normalized)
+      let (T, c, overlays) ← Scheme.compile d.types f c
+      return some (← extractNormalizedFn T f { c.normalized with schemeArrows := overlays })
     return some (← extractNormalizedFn d.types f c.normalized)
   return rs.filterMap id
 

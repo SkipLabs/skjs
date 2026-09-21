@@ -68,10 +68,21 @@ export const cases: Case[] = [
   negative("invalid-context", "fresh initializer obligation"),
   negative("invalid-heap-refinement", "heap refinement invalidation"),
   positive("generic-closure", "polymorphic closure / fresh call inference"),
+  positive(
+    "generic-two-calls",
+    "one scheme, two independently substituted eliminations",
+  ),
   negative(
     "invalid-generic-closure",
     "universally quantified closure body",
-    /quantified closure checking currently requires a unary identity closure/,
+    /does not satisfy its scheme universally/,
+  ),
+  // Every observed call instantiates T at boolean, so the compiled arrow is
+  // satisfied: only the universal gate separates this from specialization.
+  negative(
+    "invalid-scheme-capture",
+    "scheme valid at every observed call but not universally",
+    /does not satisfy its scheme universally/,
   ),
   positive("generic-inferred", "inferred rigid copies / dependent bounds"),
   gap(

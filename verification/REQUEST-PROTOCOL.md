@@ -340,7 +340,13 @@ through annotated consts and return a variable. Parameters and annotations may
 name distinct declared parameters or boolean. A conversion requires identity
 or a forward path through the declared bounds, so `U extends T` permits `U`
 to `T` but never the reverse. A const retains its annotation after conversion.
-Generic callbacks and source call-site instantiation remain outside the fragment. A file of
+Generic callbacks remain outside the fragment, and so does call-site
+instantiation of a generic *declaration*. A quantified closure bound to a local
+takes a different route: its scheme claim is checked by the scheme section of
+`SourceClaimJson`, described in
+[SOURCE-CLAIMS.md](SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations),
+which validates each call's explicit substitution and compiles the checked
+eliminations to ordinary arrows. A file of
 only these schemes still produces an empty graph evidence bundle. Both production
 and consumption nevertheless check the source body, signature, and every source
 entry/expression claim. Sites must match exactly, without duplicates or missing
@@ -580,8 +586,12 @@ nested operands. No unsupported union alternative is discarded.
 `Fragment.callableType` lowers every supported operand to graph labels.
 See [callable integration](DESIGN.md#callable-integration) for the proof boundary.
 
-Source lambda ASTs carry `"params": [{"name": "x", "type": T}, ...]`;
-applications carry `"args": [expression, ...]` alongside `"callee"`.
+Source lambda ASTs carry `"params": [{"name": "x", "type": T}, ...]`, and a
+`"typeParams"` list in the same shape as a function's, empty for an ordinary
+closure. Live producers always write it; the decoder reads an absent list as
+the empty one, which is how proof fixtures predating quantified closures are
+still accepted. Applications carry `"args": [expression, ...]` alongside
+`"callee"`.
 Both use empty lists for zero-argument forms. A lambda's descriptor records its
 parameter count, with those bindings before captured variables. Calls evaluate
 the callee first and actuals left to right; checked signatures require the exact

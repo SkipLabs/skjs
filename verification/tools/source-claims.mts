@@ -55,8 +55,18 @@ export interface EntryClaim {
   bindings: NamedPoint[];
 }
 
+/** The type arguments one call supplies for a scheme's binders. It records the
+ * elimination a producer proposes; the verifier re-checks it against the
+ * scheme's signature and never infers one of its own. Absent at every site that
+ * is not a call to a quantified callable. */
+export interface TypeArgument {
+  name: string;
+  type: ClaimType;
+}
+
 export interface ExpressionClaim extends Point {
   pos: Span;
+  instantiate?: TypeArgument[] | null;
 }
 
 export interface FunctionClaims {

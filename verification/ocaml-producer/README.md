@@ -105,12 +105,16 @@ delayed literals are inference work, not new semantic types.
 
 The active architectural milestone is **polymorphic call inference**: scoped
 schemes, fresh inference variables, constraint proposals with retained
-obligations, and validation before publication. The first executable slice
-accepts a unary identity closure instantiated at Boolean. It preserves the
-scheme in SourceClaims, checks the body universally, and then sends the checked
-instance through the ordinary graph proof. General instantiation still needs a
-compositional scheme certificate. Keep inference-variable identities and write
-capabilities out of the published semantic-type API.
+obligations, and validation before publication. The executable path now accepts
+an unbounded quantified closure called any number of times at any ground types.
+It preserves the scheme in SourceClaims, checks the closure body once and
+universally against its declared signature, validates each call's own explicit
+substitution, and only then compiles the checked eliminations to ordinary graph
+arrows. The universal gate reads the body from the source rather than from its
+claim, so it does not depend on which calls the program makes. Bounds, nested
+and returned schemes, and a compositional scheme certificate are still missing.
+Keep inference-variable identities and write capabilities out of the published
+semantic-type API.
 
 The inferred-copy prerequisite is now supported: an unannotated immutable local
 retains its checked initializer type, and subsequent claims must follow from it.
@@ -137,9 +141,9 @@ truth for outcomes; this table records why the next rows matter.
 | Closure scope and partial application | complete | `blocks-bind.ts` | Retain captures and residual signatures |
 | Callable objects with fields | complete | `function-fields.ts` | Give one value call and field capabilities |
 | Generic declarations and rigid bounds | complete | `generics.ts`, `generic-inferred.ts` | Keep rigid identities distinct through copies and dependent bounds |
-| Quantified closure, one inferred call | first slice complete | `generic-closure.ts` | Keep a scheme in SourceClaims and validate its body universally |
-| One closure called at two types | next | call the same identity closure at two ground types | Give each call fresh proposal state; do not specialize the stored scheme |
-| Bounded quantified closure | queued | infer `T` for `<T extends U>` and reject a reversed bound | Export and validate the concrete substitution and every bound obligation |
+| Quantified closure, one inferred call | complete | `generic-closure.ts` | Keep a scheme in SourceClaims and validate its body universally |
+| One closure called at two types | complete | `generic-two-calls.ts`, `invalid-scheme-capture.ts` | Give each call fresh proposal state; do not specialize the stored scheme |
+| Bounded quantified closure | next | infer `T` for `<T extends U>` and reject a reversed bound | Export and validate the concrete substitution and every bound obligation |
 | Returned quantified/outer-dependent closure | queued | return a closure whose result retains an outer rigid parameter | Preserve nested scope and avoid capture during substitution |
 | Quantified closure with captured storage | queued | capture one explicitly typed mutable object | Keep one fixed world contract across every instantiation |
 | Generic callback argument | queued | infer through a callback parameter and reject wrong variance | Collect directional constraints without placing solver state in semantic types |
@@ -206,14 +210,19 @@ while retaining the same captured environment and world; outer parameter
 meanings cannot change. Scheme meanings are admissible closed-value families,
 so they can themselves serve as semantic type arguments.
 
-The exact unary identity scheme now has an executable path and a matching
-universal allocation theorem. The general rules are still **not** a general
-executable scheme certificate checker: arbitrary substitution evidence and body
-proof reconstruction still need implementing. Recursive scheme graph nodes also
-need the layer congruence/contractiveness argument; admissibility alone does not
-establish recursive interpretation. Extending only the parser or specializing
-each closure body at its observed calls would bypass the universal obligation.
-Follow this order:
+An unbounded scheme now has an executable path: `SourceClaimJson`'s scheme
+section checks introduction universally from the source, validates each call's
+explicit substitution, and compiles the checked eliminations to ordinary arrows.
+The general rules are still **not** a general executable scheme certificate
+checker: bounds, nested and returned schemes, arbitrary substitution evidence
+and body proof reconstruction still need implementing, and the compiled arrows
+are consequences carried by the graph rather than a certificate of the scheme
+itself. `identity_scheme_safe` remains a closed theorem about one term, tied to
+the executable path by wire-shape guards, not by a proof. Recursive scheme graph
+nodes also need the layer congruence/contractiveness argument; admissibility
+alone does not establish recursive interpretation. Extending only the parser or
+specializing each closure body at its observed calls would bypass the universal
+obligation. Follow this order:
 
 1. Represent scoped quantifiers at callable signatures, including bounds and
    occurrences inside fields, callbacks and results. Preserve the same structure
@@ -246,11 +255,15 @@ Follow this order:
    bounds, callback variance and a capture used as incompatible storage. Tamper
    with instantiation evidence and check rejection by the independent consumer.
 
-`generic-closure.ts` is the first end-to-end witness. Its producer proposal is
-not enough: a negative closure that fabricates `T` reaches Lean and is refused
-before specialization, while the accepted instance still receives the ordinary
-graph certificate. A successful OCaml solver unit test or an unchecked concrete
-specialization would not close that gap.
+`generic-closure.ts` is the first end-to-end witness and `generic-two-calls.ts`
+the first with two independently substituted eliminations of one retained
+scheme. Their producer proposals are not enough: a negative closure that
+fabricates `T` reaches Lean and is refused at the universal gate, while the
+accepted instances still receive the ordinary graph certificate.
+`invalid-scheme-capture.ts` is what separates this from specialization — every
+one of its calls instantiates `T` at Boolean, so the compiled arrow is
+satisfied, and only the universal check refuses it. A successful OCaml solver
+unit test or an unchecked concrete specialization would not close that gap.
 
 ### Subsequent flow work
 
@@ -272,8 +285,8 @@ survive those extensions rather than being replaced by subset shortcuts.
 
 [cases.mts](cases.mts) is the executable inventory, including expected phase
 and diagnostic for every negative control and known gap. The suite currently
-verifies **34 functions in 16 feature groups**, checks **14 negative controls**,
-and keeps **5 named gaps** visible. Seven independent evidence-tampering controls
+verifies **35 functions in 17 feature groups**, checks **15 negative controls**,
+and keeps **5 named gaps** visible. Nine independent evidence-tampering controls
 remain. These counts concern this prototype, not the SKJS repair census.
 
 | Architectural pressure                      | Small examples that verify                                     |
@@ -289,14 +302,14 @@ remain. These counts concern this prototype, not the SKJS repair census.
 | Closure-local scope and partial application | `blocks-bind.ts`                                               |
 | One value with both fields and calls        | `function-fields.ts`                                           |
 | Scoped parameters and substitution          | `generics.ts`, `generic-inferred.ts`, `aliases.ts`                  |
-| Quantified closure and fresh call inference | `generic-closure.ts`                                               |
+| Quantified closure and fresh call inference | `generic-closure.ts`, `generic-two-calls.ts`                   |
 | No usable result guarantee                  | `top-void.ts` (unknown, discarded callback result)             |
 
 Every negative control must reach validation and fail for its expected reason;
 a premature gate refusal is a test failure. Controls cover bad returns,
 local/aliased/array writes, readonly writes, callback arguments and variance,
-mutable captures, generic fabrication, bad contextual initializers and stale
-heap refinements. Contextual types cannot turn a bad initializer into a fact.
+mutable captures, generic fabrication, a closure valid at every observed call
+but not universally, bad contextual initializers and stale heap refinements. Contextual types cannot turn a bad initializer into a fact.
 
 The five named gaps are:
 

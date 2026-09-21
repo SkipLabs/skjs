@@ -4,7 +4,9 @@ open Source
 open Inference
 
 type entry = { start: Json.t; bindings: (string * binding) list }
-type expression = { pos: Json.t; type_: ty }
+(* A call site's validated substitution travels with its claim. It is proposal
+   output for Lean to re-check, never an acceptance fact. *)
+type expression = { pos: Json.t; type_: ty; instantiation: (string * ty) list option }
 type function_claim = { source: fn; entries: entry list; expressions: expression list }
 type t = { program: program; functions: function_claim list }
 let unsupported s = Json.fail ("unsupported: " ^ s)
@@ -70,7 +72,7 @@ let rec branch env cond truth = match cond.node with
 (* Expected types guide fresh construction only. They are never a shortcut
    claiming that an arbitrary expression already satisfies an annotation. *)
 let infer_function (f:Source.fn) =
-  let entries = ref [] and expressions = ref [] in
+  let entries = ref [] and expressions = ref [] and instantiations = ref [] in
   let entry env span = match Json.list span with
     | start::_ -> entries := {start;bindings=env} :: !entries
     | [] -> Json.fail "empty source span" in
@@ -119,6 +121,8 @@ let infer_function (f:Source.fn) =
           when signature.quantified<>[] && List.length signature.params=List.length args ->
         let actuals=List.map (expr env) args in
         let inferred=Inference.infer signature actuals in
+        instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
+          inferred.substitution) :: !instantiations;
         inferred.result
       | _ -> unsupported "call requires a single arrow with matching arity")
     | WithFields (fn,initial,ft,bag) ->
@@ -160,7 +164,8 @@ let infer_function (f:Source.fn) =
     (* Block wrappers correspond to statement entries, not expression sites. *)
     (match e.node with
       | DoneBody | ReturnBody _ | SequenceBody _ | LetBody _ | IfBody _ -> ()
-      | _ -> expressions := {pos=e.pos;type_=t} :: !expressions); t
+      | _ -> expressions := {pos=e.pos;type_=t;
+          instantiation=List.assoc_opt e.pos !instantiations} :: !expressions); t
   in
   let rec statements env ss = List.fold_left (fun env s ->
     entry env s.span;
