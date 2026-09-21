@@ -1456,19 +1456,19 @@ extension class TType {
   ): List<(PosRange, String)> {
     hints = List<(PosRange, String)>[];
     // Hints cannot establish checking facts or poison an observation's reads.
-    clonedSubst = subst.cloneForTypeDiagnostics();
+    diagnosticSubst = subst.diagnosticComputation();
     for (inst in u2.insts) {
       inst match {
       // Hints are diagnostics: they install no type fact, so they read the
       // explicit snapshot view rather than the tracing accessors.
-      | tvar @ TVar _ if (clonedSubst.snapshot().isClosed(tvar)) ->
-        rawSealed = clonedSubst.snapshot().peekRaw(tvar) match {
+      | tvar @ TVar _ if (diagnosticSubst.snapshot().isClosed(tvar)) ->
+        rawSealed = diagnosticSubst.snapshot().peekRaw(tvar) match {
         | Some(ty) -> ty
         | None() -> continue
         };
-        sealedType = rawSealed.expandTVarsForPp(clonedSubst, tenv);
-        expandedU1 = u1.expandTVarsForPp(clonedSubst, tenv);
-        widerType = TType::union(clonedSubst, tenv, sealedType, expandedU1);
+        sealedType = rawSealed.expandTVarsForPp(diagnosticSubst, tenv);
+        expandedU1 = u1.expandTVarsForPp(diagnosticSubst, tenv);
+        widerType = TType::union(diagnosticSubst, tenv, sealedType, expandedU1);
         // The example below embeds the type as code the user could paste
         // into an annotation, so it is deliberately NOT wrapped in
         // quoteRenderedType. It comes back None when the type has a spelling
@@ -1478,7 +1478,7 @@ extension class TType {
         widerExample = prettyPrintPastableType(
           false,
           widerType,
-          clonedSubst,
+          diagnosticSubst,
           tenv,
         );
         // `${advice}, e.g., ${example}` when the example is writable, else the
@@ -1488,7 +1488,7 @@ extension class TType {
           | Some(ex) -> `${advice}, e.g., ${ex}`
           | None() -> advice
           };
-        clonedSubst.getOrigin(tvar) match {
+        diagnosticSubst.getOrigin(tvar) match {
         | Some(FromGenericInst(pos, allTVars))
         | Some(FromGenericCall(pos, allTVars)) ->
           // The example lists every argument, so it is writable only when they
@@ -1497,12 +1497,12 @@ extension class TType {
             if (tv.identity() == tvar.identity()) {
               widerExample
             } else {
-              clonedSubst.snapshot().peekRaw(tv) match {
+              diagnosticSubst.snapshot().peekRaw(tv) match {
               | Some(ty) ->
                 prettyPrintPastableType(
                   false,
-                  ty.expandTVarsForPp(clonedSubst, tenv),
-                  clonedSubst,
+                  ty.expandTVarsForPp(diagnosticSubst, tenv),
+                  diagnosticSubst,
                   tenv,
                 )
               | None() -> Some("unknown")

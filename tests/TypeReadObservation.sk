@@ -702,7 +702,7 @@ fun testDiagnosticReadDoesNotContributeACommitment(): void {
   tv = subst.gen(SKJS.PosRange::none);
   observationBind(subst, tv, observationNumber(), false);
   result = subst.testObservedReads<Bool>(scratch -> {
-    diagnostic = scratch.cloneForTypeDiagnostics();
+    diagnostic = scratch.diagnosticComputation();
     _ = diagnostic.peekRaw(tv);
     _ = diagnostic.gen(SKJS.PosRange::none);
     SKTest.expectEq(
@@ -719,7 +719,7 @@ fun testDiagnosticReadDoesNotContributeACommitment(): void {
 fun testDetachedPurposeDoesNotChangeOnRestore(): void {
   subst = observationSubst();
   saved = subst.save();
-  diagnostic = subst.cloneForTypeDiagnostics();
+  diagnostic = subst.diagnosticComputation();
   diagnostic.restore(saved);
   SKTest.expectEq(
     true,
@@ -1435,7 +1435,7 @@ fun testMaterializationKeepsCheckingProbeAndDiagnosticPurposesSeparate(): void {
     ,
   );
   SKTest.expectEq(true, probing);
-  diagnostic = owner.cloneForTypeDiagnostics();
+  diagnostic = owner.diagnosticComputation();
   diagnosing = tenv.materializeReadContext<Bool>(
     diagnostic,
     pos,

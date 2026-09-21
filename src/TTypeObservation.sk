@@ -323,7 +323,7 @@ mutable class TypeReadContext private {
 
   mutable fun describeDeclaration(tenv: TEnv, type: TType): String {
     this.lifetime.checkActive();
-    prettyPrintType(false, type, this.scratch.cloneForTypeDiagnostics(), tenv)
+    prettyPrintType(false, type, this.scratch.diagnosticComputation(), tenv)
   }
 
   mutable fun instantiate(name: Name, targs: TArgs): TType {
@@ -587,7 +587,7 @@ mutable class TypeReadContext private {
           prettyPrintType(
             false,
             base,
-            this.scratch.cloneForTypeDiagnostics(),
+            this.scratch.diagnosticComputation(),
             this.tenv,
           ),
         )

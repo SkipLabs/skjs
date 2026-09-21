@@ -135,7 +135,7 @@ fun testHiddenWitnessAllocationAuthorities(): void {
   );
   SKTest.expectEq(
     None(),
-    tryHiddenWitnessAllocation(owner.cloneForTypeDiagnostics()),
+    tryHiddenWitnessAllocation(owner.diagnosticComputation()),
   );
   // Detached construction must not restart the owner's namespace.
   SKTest.expectEq(

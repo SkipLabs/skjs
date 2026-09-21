@@ -1179,7 +1179,7 @@ fun prettyPrint(
   compact: Bool,
   f: mutable TypePp -> void,
 ): String {
-  !subst = subst.cloneForTypeDiagnostics();
+  !subst = subst.diagnosticComputation();
   pp = mutable TypePp{
     compact,
     verbose => tenv.verbose,
@@ -1200,7 +1200,7 @@ fun prettyPrintPastableType(
   tenv: TEnv,
 ): ?String {
   probe = mutable PpNames{};
-  !subst = subst.cloneForTypeDiagnostics();
+  !subst = subst.diagnosticComputation();
   subst.!ppNames = Some(probe);
   rendered = prettyPrintType(compact, ty, subst, tenv);
   if (probe.hasUnwritable()) None() else Some(rendered)

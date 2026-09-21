@@ -2788,7 +2788,7 @@ base class TEnv{
     tcenvb match {
     | declaration @ TypeReadDeclaration _ -> declaration.describe(this, type)
     | _ ->
-      diagnostic = Subst::computationOwner(tcenvb).cloneForTypeDiagnostics();
+      diagnostic = Subst::computationOwner(tcenvb).diagnosticComputation();
       prettyPrintType(false, type, diagnostic, this)
     }
   }

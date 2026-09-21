@@ -482,7 +482,7 @@ mutable class Subst private {
 
   // Only rendering and error-hint construction may use this untraced state.
   // It must never supply a type fact to a checking consumer.
-  mutable fun cloneForTypeDiagnostics(): mutable Subst {
+  mutable fun diagnosticComputation(): mutable Subst {
     this.detachedTypeComputation(TCPDiagnostic())
   }
 
