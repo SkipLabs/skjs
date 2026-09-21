@@ -450,16 +450,13 @@ mutable class Subst private {
     source: TType,
     target: TType,
   ): SubtypeProposalResult {
-    this.detachedTypeComputation(TCPTypeArgumentProbe()).proposeSubtype(
-      tenv,
-      source,
-      target,
-    )
+    this.compatibilityProbe().proposeSubtype(tenv, source, target)
   }
 
-  // A detached inference state for an existential compatibility search: is
-  // there SOME instantiation of a probe view under which a branch already
-  // matches? The inference variables it mints never reach this substitution,
+  // A detached inference state for a compatibility question: whether a type
+  // argument could satisfy a constraint, or whether SOME instantiation of a
+  // view accepts a branch. Either way the answer is a decision, not a
+  // solution: the inference variables it mints never reach this substitution,
   // so there is nothing to roll back, and successive attempts taken from the
   // same probe cannot reach each other's solutions.
   mutable fun compatibilityProbe(): mutable Subst {
