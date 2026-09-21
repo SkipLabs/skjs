@@ -7,19 +7,23 @@ the source front end. The Lean model, lowering and proof rules are unchanged.
 
 ## Try it
 
-From the repository root, with OCaml 5 installed:
+From the repository root, with OCaml 5 and Dune 3 installed:
 
 ```sh
 npm ci --prefix verification/tools
 lake -d verification/lean build verifier
-make -C verification/ocaml-producer
+dune build --root verification/ocaml-producer
 node verification/ocaml-producer/check.mts verification/ocaml-producer/examples/callbacks.ts
-make -C verification/ocaml-producer test
+dune runtest --root verification/ocaml-producer
+node verification/ocaml-producer/test.mts
 ```
 
 Set `VERIFIER` to reuse a verifier executable built from this checkout's Lean
 sources. This avoids rebuilding Lean in a fresh worktree. The prototype requires
-no OCaml packages beyond the standard library, and no Skip toolchain or Docker.
+Dune for building, but no OCaml libraries beyond the standard library, and no
+Skip toolchain or Docker. Install Dune with `opam install dune` if needed.
+`dune runtest` runs the OCaml unit tests; `node test.mts` (from this directory)
+runs the end-to-end verification tests.
 
 The checker prints `verified`, `unverified`, `unsupported`, or `error`, with an
 artifact directory containing the exact source snapshot, Fragment, claims,
@@ -28,7 +32,7 @@ Proof search has fuel 12; each child process has a 30-second timeout. An
 `unverified` result is not a proof that the source is wrong. A timeout or failed
 executable is an infrastructure error. Artifacts remain available for inspection.
 
-The low-level `_build/producer fragment.json` command **only proposes claims**.
+The low-level `_build/default/producer.exe fragment.json` command **only proposes claims**.
 Its successful exit is never a type-checking verdict.
 
 ## Architecture, including the parts not implemented yet

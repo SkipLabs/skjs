@@ -67,7 +67,7 @@ export function check(source: string): Outcome {
         createHash("sha256").update(bytes).digest("hex")
     )
       throw Error("parser fingerprint differs from source snapshot");
-    const proposed = run(join(here, "_build/producer"), [ast]);
+    const proposed = run(join(here, "_build/default/producer.exe"), [ast]);
     writeFileSync(join(artifacts, "proposal.log"), proposed.detail);
     if (proposed.code !== 0)
       return { status: "unsupported", artifacts, detail: proposed.detail };

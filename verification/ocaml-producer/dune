@@ -1,0 +1,18 @@
+(env
+ (_
+  (flags (:standard -w +a-4-42-45-70 -warn-error -a+8))))
+
+(library
+ (name producer_core)
+ (wrapped false)
+ (modules json semantic environment source proposal claims))
+
+(executable
+ (name producer)
+ (modules producer)
+ (libraries producer_core))
+
+(test
+ (name unit)
+ (modules unit)
+ (libraries producer_core))
