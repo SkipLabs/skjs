@@ -99,10 +99,9 @@ extension class TType {
     ty2: TType,
   ): TType {
     if (ty1 == ty2) return ty1;
-    pair = (ty1, ty2);
     hasTVar = ty1.getSingleVar().isSome() || ty2.getSingleVar().isSome();
     if (!hasTVar) {
-      subst.seenInter.maybeGet(pair) match {
+      subst.memoizedIntersection(ty1, ty2) match {
       | Some(ty) -> return ty
       | None() -> void
       }
@@ -111,9 +110,9 @@ extension class TType {
       readStamp = subst.typeQueryReadStamp();
       result = TType::inter_(subst, tenv, ty1, ty2);
       if (!hasTVar && subst.canCacheTypeQuerySince(readStamp)) {
-        subst.seenInter.maybeGet(pair) match {
+        subst.memoizedIntersection(ty1, ty2) match {
         | Some(ty) -> !result = ty
-        | None() -> subst.!seenInter[pair] = result
+        | None() -> subst.memoizeIntersection(ty1, ty2, result)
         }
       };
       (result, true)

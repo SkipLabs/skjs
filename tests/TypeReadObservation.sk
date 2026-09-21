@@ -14,6 +14,53 @@ extension class Subst {
   ): TypeReadResult<T> {
     this.withCommittedTypeReads(scratch -> Some(decide(scratch)))
   }
+
+  // The normalization memos themselves, so a test can seed one, clear one, or
+  // compare two states entry by entry. Production consumers see only the
+  // memoize operations: what is remembered, and what this owner has qualified.
+  readonly fun testSeenSubtypes(): SortedSet<(TType, TType)> {
+    this.seenSub
+  }
+
+  mutable fun testSetSeenSubtypes(entries: SortedSet<(TType, TType)>): void {
+    this.!seenSub = entries
+  }
+
+  readonly fun testSeenIntersections(): SortedMap<(TType, TType), TType> {
+    this.seenInter
+  }
+
+  mutable fun testSetSeenIntersections(
+    entries: SortedMap<(TType, TType), TType>,
+  ): void {
+    this.!seenInter = entries
+  }
+
+  readonly fun testSeenUnions(): SortedMap<(TType, TType), TType> {
+    this.seenUnion
+  }
+
+  readonly fun testSeenExpansions(): SortedMap<ExpansionKey, TType> {
+    this.seenExpansion
+  }
+}
+
+extension base class SubstState {
+  readonly fun testStateSeenSubtypes(): SortedSet<(TType, TType)> {
+    this.seenSub
+  }
+
+  readonly fun testStateSeenIntersections(): SortedMap<(TType, TType), TType> {
+    this.seenInter
+  }
+
+  readonly fun testStateSeenUnions(): SortedMap<(TType, TType), TType> {
+    this.seenUnion
+  }
+
+  readonly fun testStateSeenExpansions(): SortedMap<ExpansionKey, TType> {
+    this.seenExpansion
+  }
 }
 
 module end;
@@ -312,16 +359,16 @@ fun testObservedScratchDoesNotInheritSuccessCaches(): void {
   subst = observationSubst();
   num = observationNumber();
   str = observationString();
-  subst.!seenSub = SortedSet[(num, str)];
-  subst.!seenInter[(num, str)] = num;
+  subst.testSetSeenSubtypes(SortedSet[(num, str)]);
+  subst.memoizeIntersection(num, str, num);
   result = subst.testObservedReads<SKJS.TType>(scratch -> {
-    SKTest.expectEq(true, scratch.seenSub.isEmpty());
-    SKTest.expectEq(true, scratch.seenInter.isEmpty());
-    scratch.!seenSub = SortedSet[(str, num)];
+    SKTest.expectEq(true, scratch.testSeenSubtypes().isEmpty());
+    SKTest.expectEq(true, scratch.testSeenIntersections().isEmpty());
+    scratch.testSetSeenSubtypes(SortedSet[(str, num)]);
     Some(num)
   });
   SKTest.expectEq(true, result is SKJS.TRReady _);
-  SKTest.expectEq(SortedSet[(num, str)], subst.seenSub);
+  SKTest.expectEq(SortedSet[(num, str)], subst.testSeenSubtypes());
 }
 
 @test
@@ -383,25 +430,28 @@ fun testObservedRestoreCannotImportOwnerCaches(): void {
     SKJS.TypeDefinitionIdentity(pos.fileName, "ObservedAlias", 0),
     SKJS.TArgs(Array[]),
   );
-  subst.!seenSub = SortedSet[(num, str)];
-  subst.!seenInter[(num, str)] = num;
-  subst.!seenUnion[(num, str)] = num;
-  subst.!seenExpansion[key] = str;
+  subst.testSetSeenSubtypes(SortedSet[(num, str)]);
+  subst.memoizeIntersection(num, str, num);
+  subst.memoizeUnion(num, str, num);
+  subst.memoizeExpansion(key, str);
   saved = subst.save();
   result = subst.testObservedReads<SKJS.TType>(scratch -> {
     scratch.restore(saved);
-    SKTest.expectEq(true, scratch.seenSub.isEmpty());
-    SKTest.expectEq(true, scratch.seenInter.isEmpty());
-    SKTest.expectEq(true, scratch.seenUnion.isEmpty());
-    SKTest.expectEq(true, scratch.seenExpansion.isEmpty());
+    SKTest.expectEq(true, scratch.testSeenSubtypes().isEmpty());
+    SKTest.expectEq(true, scratch.testSeenIntersections().isEmpty());
+    SKTest.expectEq(true, scratch.testSeenUnions().isEmpty());
+    SKTest.expectEq(true, scratch.testSeenExpansions().isEmpty());
     Some(num)
   });
   SKTest.expectEq(true, result is SKJS.TRReady _);
   // Scratch cleanup does not rewrite the live owner's inference caches.
-  SKTest.expectEq(saved.seenSub, subst.seenSub);
-  SKTest.expectEq(saved.seenInter, subst.seenInter);
-  SKTest.expectEq(saved.seenUnion, subst.seenUnion);
-  SKTest.expectEq(saved.seenExpansion, subst.seenExpansion);
+  SKTest.expectEq(saved.testStateSeenSubtypes(), subst.testSeenSubtypes());
+  SKTest.expectEq(
+    saved.testStateSeenIntersections(),
+    subst.testSeenIntersections(),
+  );
+  SKTest.expectEq(saved.testStateSeenUnions(), subst.testSeenUnions());
+  SKTest.expectEq(saved.testStateSeenExpansions(), subst.testSeenExpansions());
 }
 
 @test
@@ -413,10 +463,10 @@ fun testObservedLocalRestoreKeepsInspectedDependencies(): void {
   observationBind(subst, tv, num, false);
   result = subst.testObservedReads(scratch -> {
     observed = scratch.peekRaw(tv);
-    scratch.!seenSub = SortedSet[(num, str)];
+    scratch.testSetSeenSubtypes(SortedSet[(num, str)]);
     saved = scratch.save();
     scratch.restore(saved);
-    SKTest.expectEq(true, scratch.seenSub.isEmpty());
+    SKTest.expectEq(true, scratch.testSeenSubtypes().isEmpty());
     observed
   });
   SKTest.expectEq(true, result is SKJS.TRReady _);
@@ -428,12 +478,12 @@ fun testNestedObservedRestoreCannotImportOwnerCaches(): void {
   subst = observationSubst();
   num = observationNumber();
   str = observationString();
-  subst.!seenSub = SortedSet[(num, str)];
+  subst.testSetSeenSubtypes(SortedSet[(num, str)]);
   saved = subst.save();
   result = subst.testObservedReads<SKJS.TType>(scratch -> {
     nested = scratch.clone();
     nested.restore(saved);
-    SKTest.expectEq(true, nested.seenSub.isEmpty());
+    SKTest.expectEq(true, nested.testSeenSubtypes().isEmpty());
     Some(num)
   });
   SKTest.expectEq(true, result is SKJS.TRReady _);
@@ -444,14 +494,17 @@ fun testOrdinaryRestoreStillRestoresInferenceCaches(): void {
   subst = observationSubst();
   num = observationNumber();
   str = observationString();
-  subst.!seenSub = SortedSet[(num, str)];
-  subst.!seenInter[(num, str)] = num;
+  subst.testSetSeenSubtypes(SortedSet[(num, str)]);
+  subst.memoizeIntersection(num, str, num);
   saved = subst.save();
-  subst.!seenSub = SortedSet[];
-  subst.!seenInter = SortedMap[];
+  subst.testSetSeenSubtypes(SortedSet[]);
+  subst.testSetSeenIntersections(SortedMap[]);
   subst.restore(saved);
-  SKTest.expectEq(saved.seenSub, subst.seenSub);
-  SKTest.expectEq(saved.seenInter, subst.seenInter);
+  SKTest.expectEq(saved.testStateSeenSubtypes(), subst.testSeenSubtypes());
+  SKTest.expectEq(
+    saved.testStateSeenIntersections(),
+    subst.testSeenIntersections(),
+  );
 }
 
 // Unlike an optional read, a negative decision is consumed by the caller.
@@ -819,7 +872,7 @@ fun testIndependentSubtypeInsideRecursiveContextCanMemoize(): void {
   };
   result = SKJS.TType::isSub(subst, assumed, number, top);
   SKTest.expectEq(true, result is SKJS.STOk());
-  SKTest.expectEq(true, subst.seenSub.contains((number, top)));
+  SKTest.expectEq(true, subst.memoizedSubtype(number, top));
 }
 
 @test
@@ -944,9 +997,9 @@ fun testQueryCacheOnlyRestore(): void {
     observationNumber(),
     SKJS.TType::top(SKJS.PosRange::none),
   );
-  SKTest.expectEq(false, subst.seenSub.isEmpty());
+  SKTest.expectEq(false, subst.testSeenSubtypes().isEmpty());
   subst.restore(saved);
-  SKTest.expectEq(true, subst.seenSub.isEmpty());
+  SKTest.expectEq(true, subst.testSeenSubtypes().isEmpty());
   SKTest.expectEq(true, subst.typeMutationStamp() == stamp);
 }
 

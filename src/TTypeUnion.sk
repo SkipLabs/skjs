@@ -26,10 +26,10 @@ extension class TType {
     ty2: TType,
   ): TType {
     if (ty1 == ty2) return ty1;
-    subst.seenUnion.maybeGet((ty1, ty2)) match {
+    subst.memoizedUnion(ty1, ty2) match {
     | None() ->
       result = TType::unionStructural(ty1, ty2);
-      subst.!seenUnion[(ty1, ty2)] = result;
+      subst.memoizeUnion(ty1, ty2, result);
       result
     | Some(ty) -> ty
     }

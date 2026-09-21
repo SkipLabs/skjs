@@ -103,14 +103,14 @@ extension base class TEnv {
       TType::inst(name, targs)
     } else {
       key = ExpansionKey(identity, targs);
-      subst.seenExpansion.maybeGet(key) match {
+      subst.memoizedExpansion(key) match {
       | Some(expanded) -> expanded
       | None() ->
         expanded = this.instantiate(subst, subst, name, targs);
         if (expanded != TType::inst(name, targs)) {
           // In scratch this remains local/provisional; in the live owner the
           // outer observation has already established its inspected payloads.
-          subst.!seenExpansion[key] = expanded
+          subst.memoizeExpansion(key, expanded)
         };
         expanded
       }

@@ -75,16 +75,23 @@ mutable class TypeQueryReads{
 }
 
 mutable base class SubstState private {
-  mutable seenSub: SortedSet<(TType, TType)>,
-  mutable seenInter: SortedMap<(TType, TType), TType>,
-  mutable seenUnion: SortedMap<(TType, TType), TType>,
+  // The four normalization memos. An entry answers a query under the CURRENT
+  // bindings, so it belongs to this rollback state: `restore` rewinds it with
+  // them, and a scratch that reads under a different frame starts cold rather
+  // than inheriting entries whose provenance it cannot account for. Whether an
+  // answer may be remembered at all is decided before it gets here, by the
+  // query's own `canCacheTypeQuerySince` check; the owner's memoize operations
+  // store what that check has already allowed and add no rule of their own.
+  protected mutable seenSub: SortedSet<(TType, TType)>,
+  protected mutable seenInter: SortedMap<(TType, TType), TType>,
+  protected mutable seenUnion: SortedMap<(TType, TType), TType>,
   // TEnv.expandNamed is the sole named-expansion publisher. Checking entries
   // are released only after instantiate establishes its inspected payloads in
   // the candidate owner. Uninspected arguments remain symbolic. Observation,
   // probe and diagnostic caches are local and never transferred to the owner;
   // restore discards observed caches whose read-frame provenance is unknown.
   // This contract is not a proof of the other subtype/intersection caches.
-  mutable seenExpansion: SortedMap<ExpansionKey, TType>,
+  protected mutable seenExpansion: SortedMap<ExpansionKey, TType>,
   // Rollbackable inference-state version. TVar allocation uses this identity
   // space, so restore intentionally rewinds it with the rest of SubstState.
   protected mutable version: Int,
@@ -345,6 +352,46 @@ mutable class Subst private {
 
   readonly fun isProposingSubtype(): Bool {
     this.subtypeProposal
+  }
+
+  // Reads and writes of the normalization memos. They are deliberately the
+  // whole interface: a consumer can ask what this substitution remembers and
+  // tell it to remember an answer it has already qualified, and cannot swap
+  // in a table of its own or carry one across owners.
+  readonly fun memoizedSubtype(source: TType, target: TType): Bool {
+    this.seenSub.contains((source, target))
+  }
+
+  mutable fun memoizeSubtype(source: TType, target: TType): void {
+    this.!seenSub = this.seenSub.set((source, target))
+  }
+
+  readonly fun memoizedIntersection(left: TType, right: TType): ?TType {
+    this.seenInter.maybeGet((left, right))
+  }
+
+  mutable fun memoizeIntersection(
+    left: TType,
+    right: TType,
+    result: TType,
+  ): void {
+    this.!seenInter[(left, right)] = result
+  }
+
+  readonly fun memoizedUnion(left: TType, right: TType): ?TType {
+    this.seenUnion.maybeGet((left, right))
+  }
+
+  mutable fun memoizeUnion(left: TType, right: TType, result: TType): void {
+    this.!seenUnion[(left, right)] = result
+  }
+
+  readonly fun memoizedExpansion(key: ExpansionKey): ?TType {
+    this.seenExpansion.maybeGet(key)
+  }
+
+  mutable fun memoizeExpansion(key: ExpansionKey, expanded: TType): void {
+    this.!seenExpansion[key] = expanded
   }
 
   // Proposal results guide inference. The ordinary entry point separately

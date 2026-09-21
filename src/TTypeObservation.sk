@@ -341,12 +341,12 @@ mutable class TypeReadContext private {
       TType::inst(name, targs)
     } else {
       key = ExpansionKey(identity, targs);
-      this.scratch.seenExpansion.maybeGet(key) match {
+      this.scratch.memoizedExpansion(key) match {
       | Some(expanded) -> expanded
       | None() ->
         expanded = this.tenv.instantiateDeclaration(declaration, name, targs);
         if (expanded != TType::inst(name, targs)) {
-          this.scratch.!seenExpansion[key] = expanded
+          this.scratch.memoizeExpansion(key, expanded)
         };
         expanded
       }
@@ -622,17 +622,16 @@ mutable class TypeReadContext private {
   private mutable fun subtype(u1: TType, u2: TType): STResult<TType> {
     this.lifetime.checkActive();
     if (u1 == u2) return STOk();
-    pair = (u1, u2);
-    if (this.scratch.seenSub.contains(pair)) return STOk();
+    if (this.scratch.memoizedSubtype(u1, u2)) return STOk();
     if (u2.isTop()) {
-      this.scratch.!seenSub = this.scratch.seenSub.set(pair);
+      this.scratch.memoizeSubtype(u1, u2);
       return STOk()
     };
     this.scratch.withTypeQuery(() -> {
       stamp = this.scratch.typeQueryReadStamp();
       result = this.subtype_(u1, u2);
       if (result is STOk() && this.scratch.canCacheTypeQuerySince(stamp)) {
-        this.scratch.!seenSub = this.scratch.seenSub.set(pair)
+        this.scratch.memoizeSubtype(u1, u2)
       };
       (result, result is STOk())
     })
@@ -769,10 +768,9 @@ mutable class TypeReadContext private {
   mutable fun intersection(left: TType, right: TType): TType {
     this.lifetime.checkActive();
     if (left == right) return left;
-    pair = (left, right);
     hasVar = left.getSingleVar().isSome() || right.getSingleVar().isSome();
     if (!hasVar) {
-      this.scratch.seenInter.maybeGet(pair) match {
+      this.scratch.memoizedIntersection(left, right) match {
       | Some(result) -> return result
       | None() -> void
       }
@@ -782,9 +780,9 @@ mutable class TypeReadContext private {
       context = this with {allowTargetGrowth => false};
       result = context.intersection_(left, right);
       if (!hasVar && this.scratch.canCacheTypeQuerySince(stamp)) {
-        this.scratch.seenInter.maybeGet(pair) match {
+        this.scratch.memoizedIntersection(left, right) match {
         | Some(cached) -> !result = cached
-        | None() -> this.scratch.!seenInter[pair] = result
+        | None() -> this.scratch.memoizeIntersection(left, right, result)
         }
       };
       (result, true)

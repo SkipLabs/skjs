@@ -181,9 +181,10 @@ fun testUncommittedLiteralIntersectionDoesNotBecomeStale(): void {
   );
   commitment.commit(subst, tenv, array);
   reused = SKJS.TType::inter(subst, tenv, literal, object);
-  fresh = subst.clone();
-  fresh.!seenInter = SortedMap[];
-  recomputed = SKJS.TType::inter(fresh, tenv, literal, object);
+  // Ask the same question again with nothing remembered: a memo entry is only
+  // valid if a first-time query would compute the same answer.
+  subst.testSetSeenIntersections(SortedMap[]);
+  recomputed = SKJS.TType::inter(subst, tenv, literal, object);
   // A later commitment must give the same result as a fresh query.
   SKTest.expectEq(true, reused == recomputed);
 }
@@ -258,9 +259,10 @@ fun testSubtypeLifetimeFollowsCallbackVariance(): void {
   SKTest.expectEq(true, subst.isOpen(resultTarget));
   subst.grow(tenv, resultTarget, observationString(), SKJS.Contravariant());
   reused = SKJS.TType::isSub(subst, tenv, source, target);
-  fresh = subst.clone();
-  fresh.!seenSub = SortedSet[];
-  recomputed = SKJS.TType::isSub(fresh, tenv, source, target);
+  // Ask the same question again with nothing remembered: a memo entry is only
+  // valid if a first-time query would compute the same answer.
+  subst.testSetSeenSubtypes(SortedSet[]);
+  recomputed = SKJS.TType::isSub(subst, tenv, source, target);
   SKTest.expectEq(true, reused is SKJS.STOk());
   SKTest.expectEq(true, recomputed is SKJS.STOk());
 }

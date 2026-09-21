@@ -1940,7 +1940,7 @@ extension class TType {
   ): STResult<TType> {
     if (u1 == u2) return STOk();
     if (u2.isTop()) {
-      subst.!seenSub = subst.seenSub.set((u1, u2));
+      subst.memoizeSubtype(u1, u2);
       return STOk()
     };
     if (subst.isProposingSubtype()) {
@@ -1991,11 +1991,10 @@ extension class TType {
   ): STResult<TType> {
     invariant(subst.isProposingSubtype());
     if (u1 == u2) return STOk();
-    pair = (u1, u2);
-    if (subst.seenSub.contains(pair)) return STOk();
+    if (subst.memoizedSubtype(u1, u2)) return STOk();
     // Top needs no recursive premise or substitution read.
     if (u2.isTop()) {
-      subst.!seenSub = subst.seenSub.set(pair);
+      subst.memoizeSubtype(u1, u2);
       return STOk()
     };
     subst.withTypeQuery(() -> {
@@ -2004,7 +2003,7 @@ extension class TType {
       // Publish only after this query discharges its recursive premises and
       // establishes the existing frozen-candidate read requirement.
       if (res is STOk() && subst.canCacheTypeQuerySince(readStamp)) {
-        subst.!seenSub = subst.seenSub.set(pair)
+        subst.memoizeSubtype(u1, u2)
       };
       (res, res is STOk())
     })
