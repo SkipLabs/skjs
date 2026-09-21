@@ -410,6 +410,8 @@ layer's source connection is the identity scheme, `T extends boolean`, T-copy
 bodies, and the identity/cell aliases; it does not yet handle higher-rank
 polymorphism or parameter-changing recursion.
 
+### Quantified scheme layer
+
 Quantified local callables form a second layer rather than a graph clause.
 `TypeSchemes.schemeT` denotes one callable satisfying its signatures for every
 admissible assignment while retaining the same captured world and field
@@ -418,6 +420,40 @@ rigid binders, then compiles each checked ground elimination to ordinary arrow
 clauses. Thus the finite positive graph remains the ground evidence language;
 the universal scheme is neither erased to one observed arrow nor encoded as a
 recursive graph row.
+
+For a scheme $S$, outer assignment $\eta_0$, and assignment $\eta$, define
+
+$$
+\begin{aligned}
+\mathsf{Instance}_{G,P}(\eta_0,S,\eta)
+\;\overset{\mathrm{def}}{\Longleftrightarrow}\;&
+\mathsf{ClosedAssign}_P(\eta)
+\;\land\;
+\mathsf{Satisfies}_{G,P}(\eta,S.\mathsf{bounds})\\
+&\land\;
+\forall i\notin S.\mathsf{binders}.\;\eta(i)=\eta_0(i).
+\end{aligned}
+$$
+
+Writing $\mathsf{Sig}_{G,P,\eta}(S)$ for the scheme signatures interpreted
+under $\eta$, its denotation is exactly
+
+$$
+\begin{aligned}
+\llbracket S\rrbracket^{\mathsf{scheme}}_{G,P,\eta_0}(n,W,v)
+\;\overset{\mathrm{def}}{\Longleftrightarrow}\;&
+\mathsf{Callable}(v)\\
+&\land\;\forall\eta.\;
+\mathsf{Instance}_{G,P}(\eta_0,S,\eta)
+\Rightarrow
+\mathsf{Calls}(\mathsf{Sig}_{G,P,\eta}(S),n,W,v).
+\end{aligned}
+$$
+
+The quantifier is inside membership of one $v$ at one $n,W$. It therefore
+cannot be witnessed by allocating or checking a different closure for each
+observed call. The last conjunct of `Instance` keeps every non-binder meaning,
+including types used by the captured environment, fixed across instantiations.
 
 The program-typing theorem now incorporates these certificates, including an
 overload domain-splitting example. Executable program evidence checking and

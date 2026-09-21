@@ -2463,38 +2463,45 @@ every advertised signature before allocating one function object. Call selects
 an applicable member. Forgetting members is subsumption; no writable
 implementation cell is retyped.
 
-**Generic signatures.** Let $\bar X$ be fresh abstract type variables. Then
-**Call-Forall-I** is
+**Generic signatures.** Let $S$ be a scheme, $\eta_0$ the assignment outside
+its binders, and $\mathsf{Instance}_{G,P}(\eta_0,S,\eta)$ the closed,
+bound-satisfying assignment relation defined in
+[POSITIVE-TYPES.md](POSITIVE-TYPES.md#quantified-scheme-layer). The exact
+introduction rule **Call-Scheme-I**, implemented by `scheme_intro`, is
 
 $$
 \frac{
-\Gamma,\bar X\vdash_G^{\mathsf{call}}\kappa:[\sigma]
+\mathsf{Callable}(v)
 \qquad
-\bar X\notin
-\mathsf{FTV}(\Gamma,\mathcal I_{\mathrm{captured}})
+\forall\eta.\;
+\mathsf{Instance}_{G,P}(\eta_0,S,\eta)
+\Rightarrow
+\mathsf{Calls}(\mathsf{Sig}_{G,P,\eta}(S),n,W,v)
 }{
-\Gamma\vdash_G^{\mathsf{call}}\kappa:
-[\forall\bar X.\sigma]
+\llbracket S\rrbracket^{\mathsf{scheme}}_{G,P,\eta_0}(n,W,v)
 }.
 $$
 
-The proof is uniform in $\bar X$. Captured mutable cells retain the same
-invariant at every instantiation. **Call-Forall-E** is
+The value $v$, step index $n$, world $W$, and outer assignment $\eta_0$ are
+outside the quantifier. The proof is therefore uniform in the binders, and
+captured mutable cells retain the same invariant at every instantiation.
+Elimination **Call-Scheme-E**, implemented by `scheme_elim`, is
 
 $$
 \frac{
-\Gamma\vdash_G f:
-\mathsf{Callable}([\forall\bar X.\sigma];P)
-\qquad G\vdash\bar A\ \mathsf{admissible}
+\llbracket S\rrbracket^{\mathsf{scheme}}_{G,P,\eta_0}(n,W,v)
+\qquad
+\mathsf{Instance}_{G,P}(\eta_0,S,\eta)
 }{
-\Gamma\vdash_G f:
-\mathsf{Callable}([\sigma[\bar A/\bar X]];P)
+\mathsf{Calls}(\mathsf{Sig}_{G,P,\eta}(S),n,W,v)
 }.
 $$
 
-Instantiation preserves identity and properties. These are rules for quantified
-invocation contracts, not unrestricted generalization of an effectful
-allocation expression.
+The executable source substitution $[\bar A/\bar X]$ constructs one such
+$\eta$ only after its ground arguments and bounds have been checked. It selects
+a signature of the same callable; it neither allocates a new value nor changes
+the outer assignment. These are rules for quantified invocation contracts, not
+unrestricted generalization of an effectful allocation expression.
 
 [TypeSchemes.lean](lean/Verification/ExperimentState/TypeSchemes.lean) realizes
 these rules as `scheme_intro` and `scheme_elim`: one callable value and one
