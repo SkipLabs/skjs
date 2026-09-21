@@ -14,6 +14,7 @@
   import ClaimEditor from "./ClaimEditor.svelte";
   import FunctionContract from "./FunctionContract.svelte";
   import { proofLabel } from "../../marks.mts";
+  import { rigidAt } from "../../model.mts";
   import { editable, type ClaimSite } from "../../candidate.mts";
   import type { Report, ShownFunction, Site } from "../../model.mts";
   import type { Candidate } from "../../types.ts";
@@ -43,6 +44,17 @@
   } = $props();
 
   const picked = $derived<Site | null>(at === null ? null : (fn.sites[at] ?? null));
+
+  /*
+   * A claim of `T` says the whole type: `T` is rigid, so it has no value and
+   * nothing stands for it. What is known about it is the bound the source
+   * declares, which is not in the claim at all — it is read from the Fragment,
+   * which the verifier reads beside the claims, and it is what discharges
+   * `T ≤ boolean`. Showing the claim without it would show one premise of a
+   * check and hide the other. Both were printed at report generation; this
+   * only asks which of them belong to the selected site.
+   */
+  const rigid = $derived(picked ? rigidAt(picked) : []);
 
   /** Where the selected claim sits, in the terms a candidate is addressed by. */
   const site = $derived.by((): ClaimSite | null => {
@@ -124,6 +136,26 @@
       </p>
     {:else}
       <p class="gap">{picked.detail}</p>
+    {/if}
+
+    {#if rigid.length}
+      <dl class="rigid">
+        {#each rigid as p (p.name)}
+          <dt>{p.name}</dt>
+          <dd class="type">
+            {#if p.bound === null}
+              no declared bound
+            {:else}
+              extends {p.bound}
+            {/if}
+          </dd>
+        {/each}
+      </dl>
+      <p class="gap">
+        Declared in the source, not claimed here. A rigid parameter has no
+        value; its bound is the whole of what is known about it, and it is what
+        a check of this claim against a concrete type has to go through.
+      </p>
     {/if}
 
     {#if failure}
@@ -215,6 +247,16 @@
   dd {
     margin: 0;
     color: var(--claim);
+  }
+  /* Set apart from the claim above it: the bound is not something the
+     producer claimed, and it should not read as though it were. */
+  .rigid {
+    margin-top: -4px;
+    padding-top: 8px;
+    border-top: 1px dotted var(--rule);
+  }
+  .rigid dd {
+    color: var(--faint);
   }
   .failure {
     margin: 0 0 10px;

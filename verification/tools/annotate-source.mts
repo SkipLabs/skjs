@@ -26,6 +26,8 @@ import type { Failure, Result } from "../report-viewer/types.ts";
 import type { SkjsFile, SkjsFunction } from "./skjs-claims.mts";
 import type { ConversionManifest } from "./export-source-claims.mts";
 import { messageOf } from "./thrown.mts";
+import { rigidOf, rigidScopes, scopeOf } from "./rigid.mts";
+import type { RigidParameter, RigidScopes } from "./rigid.mts";
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 // The display helpers beside this file are plain JavaScript modules.
 const require = createRequire(import.meta.url);
@@ -51,11 +53,14 @@ interface DraftClaim {
   pos: number[];
   type: string;
   raw?: unknown;
+  /** The rigid parameters this claim names, with their declared bounds. */
+  rigid?: RigidParameter[];
 }
 interface DraftBinding {
   name: string;
   type: string;
   raw?: unknown;
+  rigid?: RigidParameter[];
 }
 interface DraftEntry {
   pos: number[];
@@ -86,7 +91,14 @@ interface DraftCollection {
 interface InputFunction {
   name: string;
   namePos: number[];
-  signature?: { params: { name: string; type: unknown }[]; retType: unknown };
+  /** The rigid parameters the source declares for it, with their bounds. */
+  typeParams?: RigidParameter[];
+  signature?: {
+    params: { name: string; type: unknown }[];
+    retType: unknown;
+    /** The parameters the claimed result names. */
+    resultRigid?: RigidParameter[];
+  };
   entries: DraftEntry[];
   expressions: DraftClaim[];
   unavailableTypes?: Unavailable[];
@@ -110,7 +122,11 @@ interface ReportInput {
 /** What the converters below build, which states a signature for every
  * function and carries the producer's own collection metadata. */
 interface DraftFunction extends InputFunction {
-  signature: { params: { name: string; type: unknown }[]; retType: unknown };
+  signature: {
+    params: { name: string; type: unknown }[];
+    retType: unknown;
+    resultRigid?: RigidParameter[];
+  };
 }
 interface DraftReport extends ReportInput {
   functions: DraftFunction[];
@@ -333,6 +349,9 @@ function fromSourceClaims(
   file: string,
   input: SourceClaims,
   producer: string,
+  // The Fragment's type parameters, where the caller read them. A source
+  // outside the fragment has none, and its claims name none either.
+  scopes: RigidScopes = new Map(),
 ): DraftReport {
   if(input.file!==file||input.sourceSha256!==hash(source))
     throw Error("source-claim source identity mismatch");
@@ -348,10 +367,17 @@ function fromSourceClaims(
     if(!Array.isArray(A)||A.some((i,k)=>!Number.isInteger(i)||i<0||i>=types.length||(k&&A[k-1]>=i)))throw Error("invalid source type labels");
     return obligationReader.typeText(types,A);
   };
+  // Each function's own parameters, so a claim of `T` is drawn with what the
+  // source says `T` is. Set per function below, before its points are built.
+  let scope: RigidParameter[]=[];
+  const rigid=(b: Point)=> {
+    const named=rigidOf(b.type,scope);
+    return named.length ? {rigid:named} : {};
+  };
   const point=(b: Point)=> {
     if(!Object.hasOwn(b,"current"))throw Error("every source-claim point requires an explicit current field");
     const ordinary=type(b.type);
-    if(b.current==null)return {type:ordinary,raw:b.type};
+    if(b.current==null)return {type:ordinary,raw:b.type,...rigid(b)};
     if(!Array.isArray(b.current)||!b.current.length||b.current.some((f)=>
         !Array.isArray(f)||f.length!==2||typeof f[0]!=="string"||
         !Array.isArray(f[1])||f[1].some((i)=>!Number.isInteger(i)||i<0)))
@@ -359,22 +385,30 @@ function fromSourceClaims(
     if(!Array.isArray(b.type))throw Error("rigid parameters cannot carry current contents");
     const lifted=surface.lift(types,b.type,b.current);
     if(!lifted)throw Error("invalid current-content assertion");
-    return {type:surface.printType(lifted).text,raw:{type:b.type,current:b.current}};
+    return {type:surface.printType(lifted).text,raw:{type:b.type,current:b.current},...rigid(b)};
   };
   const parameter=(b: NamedPoint)=> {
     if(b.current!=null)throw Error("function parameters cannot carry current-content assertions");
     return {name:b.name,type:point(b).type};
   };
+  // The result is claimed by the function rather than at a point, so its
+  // parameters are read from the same claim the result text is printed from.
+  const resultRigid=(A: import("./source-claims.mts").ClaimType)=>rigidOf(A,scope);
   const sf=parse(source,file),entries=new Map<number, number>();
   const walk=(n: ts.Node)=>{if(ts.isStatement(n))entries.set(n.getStart(sf),n.end);n.forEachChild(walk);};walk(sf);
   return {source:{file,sha256:input.sourceSha256},producer,
-    functions:input.functions.map(f=>({name:f.name,namePos:f.namePos,
-      signature:{params:f.params.map(parameter),retType:type(f.result)},
+    functions:input.functions.map(f=>{
+      scope=scopeOf(scopes,f.namePos);
+      return {name:f.name,namePos:f.namePos,
+      ...(scope.length?{typeParams:scope}:{}),
+      signature:{params:f.params.map(parameter),retType:type(f.result),
+        ...(resultRigid(f.result).length?{resultRigid:resultRigid(f.result)}:{})},
       entries:f.entries.map(e=> {
         const end=entries.get(e.start);
         if(end===undefined)throw Error("source entry claim is not attached to a statement");
         return {pos:[e.start,end],bindings:e.bindings.map(b=>({name:b.name,...point(b)}))};
-      }),expressions:f.expressions.map(e=>({pos:e.pos,...point(e)}))}))};
+      }),expressions:f.expressions.map(e=>({pos:e.pos,...point(e)}))};
+    })};
 }
 
 function attachConversion(
@@ -852,7 +886,14 @@ export function main(args: string[]) {
   }
   const input=wrapped ? read.claims : read;
   const file=options["file-key"] || sourcePath;
-  let report: ReportInput=options.format==="skjs" ? fromSkjs(source,file,input,options.producer) : options.format==="source-claims" ? fromSourceClaims(source,file,input,options.producer) : input;
+  // The bound of a rigid parameter is written in the source and nowhere in the
+  // claims, so it is read from the Fragment here, once, and printed into the
+  // report. A source the parser refuses declares no parameters to read: the
+  // report is still a report, so this is not the place to fail over it.
+  let scopes: RigidScopes=new Map();
+  try {scopes=rigidScopes(fragmentParse.parseFile(sourcePath));}
+  catch {scopes=new Map();}
+  let report: ReportInput=options.format==="skjs" ? fromSkjs(source,file,input,options.producer) : options.format==="source-claims" ? fromSourceClaims(source,file,input,options.producer,scopes) : input;
   let conversion: ConversionManifest|null=null,conversionBytes=null;
   if(options.conversion) {
     if(options.format!=="source-claims")throw Error("--conversion requires --format source-claims");

@@ -12,6 +12,7 @@ import type {
   SourceMapEntry,
 } from "../tools/diagnostic.mts";
 import type { Span } from "../tools/span.mts";
+import type { RigidParameter } from "../tools/rigid.mts";
 
 /*
  * What the reader shows for one function: the places it can point at, and the
@@ -26,6 +27,9 @@ export interface ShownBinding {
   type: string;
   /** The producer could not decode its type. */
   unavailable: boolean;
+  /** The rigid parameters its type names, printed with their bounds at
+   * report generation. Absent where it names none. */
+  rigid?: RigidParameter[];
 }
 
 /** A place in the function the reader can point at. */
@@ -36,6 +40,7 @@ export type Site =
       pos: Span;
       /** Surface syntax, printed from the producer's claimed result. */
       type: string;
+      rigid?: RigidParameter[];
     }
   | {
       kind: "expression";
@@ -45,6 +50,7 @@ export type Site =
       /** The producer's encoding as formatted JSON, for the inspector. */
       raw: string | null;
       recovery: boolean;
+      rigid?: RigidParameter[];
     }
   | {
       kind: "environment";
@@ -63,6 +69,34 @@ export type Site =
       reason: string;
       detail: string;
     };
+
+/**
+ * The rigid parameters a site's claims name, with their bounds.
+ *
+ * Exhaustive over `Site`: a kind added to the union stops compiling here
+ * rather than quietly drawing nothing, which for this particular panel would
+ * mean showing a claim of `T` again with no account of what `T` is. Nothing is
+ * worked out — each case hands back what report generation already printed.
+ */
+export function rigidAt(site: Site): RigidParameter[] {
+  switch (site.kind) {
+    case "result":
+    case "expression":
+      return site.rigid ?? [];
+    case "environment": {
+      // One environment can bind several names at the same parameter; the
+      // parameter is named once.
+      const byName = new Map<string, RigidParameter>();
+      for (const b of site.bindings)
+        for (const p of b.rigid ?? []) byName.set(p.name, p);
+      return [...byName.values()];
+    }
+    case "unclaimed":
+      return [];
+  }
+  const unhandled: never = site;
+  return unhandled;
+}
 
 /** The function's one failure: what stopped, and where it attached. */
 export interface Failure {
@@ -100,6 +134,9 @@ export interface ShownFunction {
   obligationView?: ObligationView;
   /** True for a source function the candidate says nothing about at all. */
   candidateMissing?: boolean;
+  /** Every rigid parameter the source declares for it, printed with its
+   * bound. The scope a claim of `T` is read in. */
+  typeParams?: RigidParameter[];
   /** Its parameter names, in source order, for the contract it needs. */
   parameters?: string[];
 }
@@ -412,6 +449,9 @@ function fromBundle(bundle: Bundle): ShownReport {
               kind: "result" as const,
               pos: span(f.resultPos),
               type: shown(f.signature.retType),
+              ...(f.signature.resultRigid?.length
+                ? { rigid: f.signature.resultRigid }
+                : {}),
             },
           ]
         : []),
@@ -424,6 +464,7 @@ function fromBundle(bundle: Bundle): ShownReport {
           name: b.name,
           type: display(b.raw, b.type),
           unavailable: unavailableClaim(b.raw),
+          ...(b.rigid?.length ? { rigid: b.rigid } : {}),
         })),
       })),
       ...f.expressions.map((e) => ({
@@ -432,6 +473,7 @@ function fromBundle(bundle: Bundle): ShownReport {
         recovery,
         type: display(e.raw, e.type),
         raw: raw(e.raw),
+        ...(e.rigid?.length ? { rigid: e.rigid } : {}),
       })),
       ...unclaimed(f, pos),
     ];
@@ -450,6 +492,7 @@ function fromBundle(bundle: Bundle): ShownReport {
       obligationView: result?.obligationView,
       collection: f.collection?.completion || "",
       quality: f.collection?.quality || "",
+      ...(f.typeParams?.length ? { typeParams: f.typeParams } : {}),
     };
   });
   for (const f of functions) {

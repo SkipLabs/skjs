@@ -3,6 +3,10 @@ import type { ObligationDiagnostic } from "../tools/diagnostic.mts";
 import type { SkjsClaims } from "../tools/skjs-claims.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import type { Span } from "../tools/span.mts";
+import type { RigidParameter } from "../tools/rigid.mts";
+/* Declared where it is computed: the reader prints the bound, it does not
+ * work one out. */
+export type { RigidParameter } from "../tools/rigid.mts";
 // The report the reader displays.
 //
 // One description of the shape that `tools/annotate-source.js` writes, the
@@ -97,12 +101,17 @@ export interface DisplayClaim {
   failure?: string;
   failureKind?: FailureKind;
   failureRole?: string;
+  /** The rigid parameters this claim names, with the bounds the source
+   * declares for them. A claim of `T` states the whole type; the bound is what
+   * is known about `T`, and it is written in the source, not in the claim. */
+  rigid?: RigidParameter[];
 }
 
 export interface Binding {
   name: string;
   type: string;
   raw?: unknown;
+  rigid?: RigidParameter[];
 }
 
 export interface Entry {
@@ -131,6 +140,8 @@ export interface MissingSite {
 export interface Signature {
   params: { name: string; type: unknown }[];
   retType: unknown;
+  /** The rigid parameters the claimed result names. */
+  resultRigid?: RigidParameter[];
 }
 
 /** How complete the producer's own collection was for this function. */
@@ -154,6 +165,8 @@ export interface ReportFunction {
   pos: Span;
   /** The declared result's annotation, where the source has one. */
   resultPos?: Span | null;
+  /** Every rigid parameter the source declares for it, in source order. */
+  typeParams?: RigidParameter[];
   signature?: Signature;
   entries: Entry[];
   expressions: DisplayClaim[];
