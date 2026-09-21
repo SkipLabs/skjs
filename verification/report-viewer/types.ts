@@ -16,6 +16,23 @@ import type { Span } from "../tools/span.mts";
 // import it need no build. The browser gets the compiled bundle. Keep the
 // syntax erasable: no `enum`, no `namespace`, no parameter properties.
 
+/** One source the reader offers, and what it is about where that is known.
+ * A name alone answers "which one was it called", which is a question about a
+ * file already seen; the description is what makes an unseen one findable. */
+export interface GroupFile {
+  path: string;
+  about?: string;
+}
+
+/** A named set of sources the picker offers, with what the set is. The label
+ * carries a claim — "unsafe programs accepted" is about SKJS — so the note
+ * says whose claim it is rather than leaving the heading to imply it. */
+export interface ExampleGroup {
+  label: string;
+  note?: string;
+  files: GroupFile[];
+}
+
 /** Which checker supplied the claims a report displays. */
 export type Producer = "skjs" | "tsc" | "ocaml" | "manual" | "edited candidate";
 

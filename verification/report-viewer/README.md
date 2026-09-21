@@ -22,12 +22,13 @@ words rather than showing a report with nothing in it: the OCaml producer needs
 source it does not cover at the boundary that refuses it — the shared parser's
 gate, or its own proposal.
 
-Pick an example, or type any repository-relative path into **Open any
-repository path…**; it suggests matching `.ts` sources as you type, and a full
-path works whether or not it is listed. Paths outside the repository are
-refused. The producer runs on every open — nothing is cached — and the verifier
-checks what it produced, so nothing is displayed as a result without having
-been checked.
+Opening the reader without a file in the link shows the **catalogue** — every
+source it offers, laid out to be read — and **browse sources** returns to it.
+Or type any repository-relative path into **Open any repository path…**; it
+suggests matching `.ts` sources as you type, and a full path works whether or
+not it is listed. Paths outside the repository are refused. The producer runs
+on every open — nothing is cached — and the verifier checks what it produced,
+so nothing is displayed as a result without having been checked.
 
 The address bar follows the view: `?file=…&producer=…#function:site`. Reopening
 that link restores it. A site is named by its function and its index in source
@@ -202,22 +203,43 @@ end and exercised by `tests/report-viewer.mts` without a browser:
 Function `pos` ranges in manifests use the same original UTF-16 offsets as
 expression claims.
 
-## Example selection
+## The catalogue
 
-The picker defaults to **Current verifier examples**, tested by the same source
-suites as `make verify`. **Claim repair** holds the deliberately rejected
-partial-collection exercise. **Unsupported examples** holds expected source
-limitations, and listing one never implies it is verified. The two **OCaml
-producer** groups are that producer's own fixtures, read from
-`ocaml-producer/cases.mts` so that a case added there is offered here without
-anything else changing; its negative controls and named gaps are listed beside
-its verified ones, and listing one implies nothing about it either.
+A dropdown of ninety-eight basenames answers "which one was it called", which
+is a question about a file already seen. The catalogue answers the other one.
+Every group is visible at once, so nothing has to be remembered to be found,
+and a file is never hidden behind a control — the same reason the source view
+draws every claim.
+
+A group says what it is, because a label states an outcome and a heading read
+as a promise is worse than no heading: **SKJS unsound** carries "findings about
+SKJS, kept as they are — do not make one verify", and **Unsupported examples**
+carries "listing one never implies it verifies". **Current verifier examples**
+is tested by the same source suites as `make verify`; **Claim repair** is the
+deliberately rejected partial-collection exercise; the two **OCaml producer**
+groups are that producer's own fixtures, its negative controls and named gaps
+listed beside its verified ones.
+
+A file says what it demonstrates where that is known — `callbacks.ts ·
+higher-order calls / variance / capture`. Those come from the `area` field of
+`ocaml-producer/cases.mts`, the inventory that already decides what each case
+must do; writing them again here would be a second opinion about the same
+fixture. Thirty-four of the ninety-eight have one. The rest are not described,
+because an invented description is a claim about a fixture nobody checked, and
+the gap is left visible rather than filled in.
 
 The groups come from `examples.mts`, re-read for each page load, so adding an
 example needs no restart. It exports two lists, because they answer different
 questions: `groups` is corpus policy, which `verification/examples.mts` runs
-SKJS and tsc over and holds to `expectedVerified`, and `viewerGroups` is what
-the picker offers, which also reaches another producer's fixtures.
+SKJS and tsc over and holds to `expectedVerified`, reading its `files` as
+paths; `viewerGroups` is what the reader lists, carrying the notes and
+descriptions and reaching another producer's fixtures. `ExampleGroup` in
+`types.ts` declares that shape for both the server and the page.
+
+`Catalogue.svelte` scrolls at its wrapper and flows its columns inside, which
+is load-bearing: flowing columns given a fixed height make further columns off
+to the side instead of balancing, and a container that scrolls only downwards
+then clips them — which hid two whole groups while this was being built.
 
 ## Source editing direction (not implemented)
 

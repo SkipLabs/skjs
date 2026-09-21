@@ -1,5 +1,6 @@
 import type { Case } from "../ocaml-producer/cases.mts";
 import { cases } from "../ocaml-producer/cases.mts";
+import type { ExampleGroup, GroupFile } from "./types.ts";
 
 // These files are exercised through the current source consumer by run.sh.
 const stateful = [
@@ -56,10 +57,16 @@ const supported = [...stateful, ...callables, ...generics];
  * written again here, and a case added there is offered by the reader without
  * anything else changing. Listing one never implies it is verified.
  */
-const ocamlExamples = (kinds: Case["kind"][]) =>
+const ocamlExamples = (kinds: Case["kind"][]): GroupFile[] =>
   cases
     .filter((c) => kinds.includes(c.kind))
-    .map((c) => `verification/ocaml-producer/examples/${c.file}.ts`);
+    .map((c) => ({
+      path: `verification/ocaml-producer/examples/${c.file}.ts`,
+      // Its `area` already says what the case is about, in the words of the
+      // inventory that decides what it must do. Writing a second description
+      // here would be a second opinion about the same fixture.
+      about: c.area,
+    }));
 const groups = [
   { label: "Current verifier examples", files: stateful },
   { label: "Callables", files: [...callables, ...callableBoundaries] },
@@ -103,20 +110,52 @@ const groups = [
   },
 ];
 /*
+ * What each group is, in one line. A label alone states an outcome — "unsafe
+ * programs accepted" is a finding about SKJS, not a property of the files —
+ * and a heading that is read as a promise is worse than no heading. These say
+ * whose claim it is, and what listing a file does and does not imply.
+ */
+const notes: Record<string, string> = {
+  "Current verifier examples": "the source suites `make verify` runs",
+  Callables: "call signatures, callable objects, arity",
+  "Generics · rigid parameters and bounds":
+    "type parameters under the source generic rules",
+  "Claim repair · producer rejects":
+    "a partial collection, rejected on purpose, to edit back into shape",
+  "SKJS incomplete · safe programs rejected":
+    "findings about SKJS, kept as they are — not bugs to fix here",
+  "SKJS unsound · unsafe programs accepted":
+    "findings about SKJS, kept as they are — do not make one verify",
+  "SKJS repaired · unsafe programs rejected":
+    "an unsoundness since repaired",
+  "Unsupported examples · expected limitations":
+    "outside the fragment on purpose; listing one never implies it verifies",
+};
+
+/*
  * Two lists, because they answer different questions. `groups` is corpus
  * policy: `verification/examples.mts` runs SKJS and tsc over every file in it
- * and holds each function to `expectedVerified`. The reader's picker is a way
- * to reach a file, so it also offers another producer's fixtures, which carry
- * their own expectations and are no part of that policy.
+ * and holds each function to `expectedVerified`, and reads `files` as paths.
+ * The reader's list is for finding a file, so it carries what each group and
+ * each file is, and reaches another producer's fixtures besides.
  */
-const viewerGroups = [
-  ...groups,
+const viewerGroups: ExampleGroup[] = [
+  ...groups.map((group) => ({
+    label: group.label,
+    note: notes[group.label],
+    // No description is written for these yet. An invented one would be a
+    // claim about a fixture nobody checked, so the name stands alone and the
+    // gap stays visible.
+    files: group.files.map((path) => ({ path })),
+  })),
   {
     label: "OCaml producer · verified fixtures",
+    note: "checked end to end by ocaml-producer/test.mts",
     files: ocamlExamples(["positive"]),
   },
   {
     label: "OCaml producer · negative controls and named gaps",
+    note: "expected not to verify — each names the boundary it stops at",
     files: ocamlExamples(["negative", "gap"]),
   },
 ];

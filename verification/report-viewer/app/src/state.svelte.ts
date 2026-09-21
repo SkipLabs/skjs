@@ -39,6 +39,11 @@ export class Reader {
   /** The repository-relative source being read. */
   path = $state("");
   producer = $state<Producer>("skjs");
+  /** True while the catalogue is up instead of a report. Opening the reader
+   * without a file in the link starts here: what can be read is the first
+   * thing to find out, and a file chosen for you answers a question nobody
+   * asked. */
+  browsing = $state(false);
   bundle = $state<Bundle | null>(null);
   report = $state<Report | null>(null);
   collection = $state<CollectionRun | null>(null);
@@ -119,6 +124,7 @@ export class Reader {
     this.error = "";
     try {
       const bundle = await analyse(path, producer);
+      this.browsing = false;
       this.path = path;
       this.producer = producer;
       this.bundle = bundle;

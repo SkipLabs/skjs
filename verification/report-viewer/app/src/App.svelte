@@ -7,6 +7,7 @@
    * file read through one producer; nothing here decides an outcome.
    */
   import { onMount } from "svelte";
+  import Catalogue from "./Catalogue.svelte";
   import FunctionList from "./FunctionList.svelte";
   import Obligation from "./Obligation.svelte";
   import OpenPath from "./OpenPath.svelte";
@@ -34,8 +35,10 @@
     const asked = params.get("producer");
     const producer =
       PRODUCERS.find((p) => p.value === asked)?.value ?? "skjs";
-    const first = reader.groups[0]?.files[0];
-    if (wanted || first) await reader.open(wanted || first!, producer);
+    // A link that names a file opens it; one that does not shows what there
+    // is, rather than opening whichever source happens to be listed first.
+    if (wanted) await reader.open(wanted, producer);
+    else reader.browsing = true;
     // A link may name a claim. It names a record of one snapshot, so it is
     // honoured where it still resolves and dropped where it does not.
     const fn = reader.functions.find((f) => f.name === fnName);
@@ -118,20 +121,15 @@
 
 <div class="app">
   <header class="bar">
-    <select
-      aria-label="Source file"
-      value={reader.path}
-      onchange={(e) => choose(e.currentTarget.value)}
-      disabled={reader.busy}
+    <!-- The catalogue is a view, not a menu: what can be read is laid out to
+         be read, and this returns to it. -->
+    <button
+      class="plain"
+      aria-pressed={reader.browsing}
+      onclick={() => (reader.browsing = !reader.browsing)}
+      disabled={reader.busy || (!reader.report && !reader.browsing)}
+      >{reader.browsing && reader.report ? "back to the report" : "browse sources"}</button
     >
-      {#each reader.groups as group (group.label)}
-        <optgroup label={group.label}>
-          {#each group.files as file (file)}
-            <option value={file}>{file.split("/").pop()}</option>
-          {/each}
-        </optgroup>
-      {/each}
-    </select>
 
     <select
       aria-label="Claim producer"
@@ -218,7 +216,14 @@
     <p class="stale" role="status">{reader.staleDraft}</p>
   {/if}
 
-  {#if reader.report && reader.selected}
+  {#if reader.browsing}
+    <Catalogue
+      groups={reader.groups}
+      busy={reader.busy}
+      current={reader.path}
+      onopen={choose}
+    />
+  {:else if reader.report && reader.selected}
     {@const report = reader.report}
     {@const fn = reader.selected}
     <div class="body">

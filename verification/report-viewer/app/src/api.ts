@@ -7,13 +7,11 @@
  * an outcome in a bundle was reached by the verifier, and a bundle that carries
  * none says so rather than being filled in.
  */
-import type { Bundle, Candidate, Producer } from "../../types.ts";
+import type { Bundle, Candidate, ExampleGroup, Producer } from "../../types.ts";
 
-/** A named group of corpus files, as the example picker lists them. */
-export interface Group {
-  label: string;
-  files: string[];
-}
+/* What the picker lists, declared where the reader's other documents are so
+ * the server and the page cannot drift apart over it. */
+export type { ExampleGroup as Group } from "../../types.ts";
 
 export class ApiError extends Error {
   readonly status: number;
@@ -45,7 +43,7 @@ export function health() {
 
 /** The corpus, as the picker groups it. */
 export function files() {
-  return get<{ files: string[]; groups: Group[] }>("/api/files");
+  return get<{ files: string[]; groups: ExampleGroup[] }>("/api/files");
 }
 
 /** Repository sources matching a query, for the path field's suggestions. */
