@@ -123,6 +123,58 @@ theorem invocation_of_scheme_body {G : NormalGraph ι} {P outer s Γ ρ n W b ar
   intro η hη
   exact invocation_of_bodyP hη.1 (he η hη) hlen (hb η hη)
 
+/-! The executable source path starts with this scheme. The theorem states the
+universal fact checked syntactically there: one allocated identity closure is
+callable at every closed interpretation of its binder, in the same world. -/
+def identityScheme : Scheme Nat :=
+  { binders := [1], bounds := [], signatures := [TypeParams.idSig] }
+
+theorem identity_scheme_safe (outer : Nat → Fam) (n : Nat) (W : WorldT n)
+    (heap : Heap) (hw : WorldAdm W) (hh : HeapOk n W heap) :
+    Safe (schemeT TypeParams.idG TypeParams.idP outer identityScheme) n W heap
+      (.make (.closure 1 (.var 0)) .nul) := by
+  have hbody : ∀ η, Instance TypeParams.idG TypeParams.idP outer identityScheme η →
+      InvocationSpec 1 (signatures TypeParams.idG TypeParams.idP η identityScheme)
+        n W (.var 0) := by
+    intro η hη
+    have henv : ∀ ζ, Instance TypeParams.idG TypeParams.idP outer identityScheme ζ →
+        EnvOkP TypeParams.idG TypeParams.idP ζ [] (fun _ => .nul) n W := by
+      intro ζ _
+      exact ⟨fun _ => by simp [Scoped], fun i A hi => by cases hi⟩
+    have hlen : ∀ p ∈ identityScheme.signatures, p.1.length = 1 := by
+      intro p hp
+      have : p = TypeParams.idSig := List.mem_singleton.mp hp
+      subst this
+      rfl
+    have hb : ∀ ζ, Instance TypeParams.idG TypeParams.idP outer identityScheme ζ →
+        ∀ p ∈ identityScheme.signatures, ∀ j U localHeap env,
+          EnvOkP TypeParams.idG TypeParams.idP ζ (p.1 ++ []) env j U →
+          WorldAdm U → HeapOk j U localHeap →
+          Safe (meaningP TypeParams.idG TypeParams.idP ζ p.2) j U localHeap
+            (instantiate 0 env (.var 0)) := by
+      intro ζ hζ p hp j U localHeap env he hu hh
+      have : p = TypeParams.idSig := List.mem_singleton.mp hp
+      subst this
+      exact TypeParams.var_safeP hζ.1 rfl he hu hh
+    have hi := invocation_of_scheme_body (s := identityScheme) (Γ := [])
+      (ρ := fun _ => .nul) (n := n) (W := W) (b := .var 0) (arity := 1)
+      henv hlen hb η hη
+    simpa [instantiate] using hi
+  have both := make_scheme_fields (G := TypeParams.idG) (P := TypeParams.idP)
+    (outer := outer) (s := identityScheme) (As := [nulT])
+    (by
+      intro A hA
+      have : A = nulT := List.mem_singleton.mp hA
+      subst A
+      exact nulT_adm) 1 n W heap [valueField] [.nul] (.var 0)
+    (by decide) rfl rfl (by simp [isVal]) (by simp [Scoped]) hbody hw hh
+    (by
+      intro p hp
+      have : p = (nulT, .nul) := List.mem_singleton.mp hp
+      subst p
+      rfl)
+  exact Safe_mono n (fun _ _ _ _ h => h.2) W heap _ both
+
 #print axioms scheme_adm
 #print axioms scheme_valOnly
 #print axioms scheme_closed
@@ -132,4 +184,5 @@ theorem invocation_of_scheme_body {G : NormalGraph ι} {P outer s Γ ρ n W b ar
 #print axioms scheme_call
 #print axioms make_scheme_fields
 #print axioms invocation_of_scheme_body
+#print axioms identity_scheme_safe
 end Verification.ExperimentState.TypeSchemes

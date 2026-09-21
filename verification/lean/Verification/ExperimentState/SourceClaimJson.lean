@@ -109,6 +109,13 @@ def Function.normalized (f : Function) : SourceClaims.Function :=
 private def identityScheme (name : String) : TypeSchemes.Scheme String :=
   { binders := [name], bounds := [], signatures := [([[name]], [name])] }
 
+-- The wire-name presentation of TypeSchemes.identityScheme. Keep this guard
+-- beside the decoder so its executable special case cannot drift from the
+-- universally quantified identity shape proved in TypeSchemes.
+#guard (identityScheme "T").binders == ["T"]
+#guard (identityScheme "T").bounds == []
+#guard (identityScheme "T").signatures == [([["T"]], ["T"])]
+
 private def identityClaim (name : String) : ClaimType :=
   let scheme := identityScheme name
   .scheme (scheme.binders.map (·, none)) [.param name] (.param name)
