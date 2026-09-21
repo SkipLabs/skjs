@@ -15,6 +15,7 @@ export type Kind =
   | "node-typing"
   | "edge-coverage"
   | "expression-claim"
+  | "direct-obligation"
   | "production-failure";
 
 /**
@@ -143,6 +144,16 @@ export interface ExpressionClaimFailure extends Common {
   sequent: Sequent;
 }
 
+/** A direct source checker stopped on a judgment that is not an
+ * ordinary ground graph sequent, such as rigid generic subtyping or universal
+ * scheme introduction. Its source place is mandatory. */
+export interface DirectObligationFailure extends Common {
+  kind: "direct-obligation";
+  id: string;
+  sourceMap: SourceMapEntry;
+  judgment: { system: string; statement: string };
+}
+
 /** Something was produced and then rejected by the independent check. */
 export interface ProductionFailure extends Common {
   kind: "production-failure";
@@ -153,6 +164,7 @@ export type ObligationDiagnostic =
   | NodeTyping
   | EdgeCoverage
   | ExpressionClaimFailure
+  | DirectObligationFailure
   | ProductionFailure;
 
 const PHASES: readonly unknown[] = [
@@ -164,6 +176,7 @@ const KINDS: readonly unknown[] = [
   "node-typing",
   "edge-coverage",
   "expression-claim",
+  "direct-obligation",
   "production-failure",
 ];
 const PREFIX = "obligation-diagnostic: ";
@@ -234,6 +247,7 @@ export function readDiagnostic(
     d = parsed;
     const variants: Record<string,string[]> = {
       "node-typing":["id","source","sequent"], "expression-claim":["id","sourceMap","sequent"],
+      "direct-obligation":["id","sourceMap","judgment"],
       "edge-coverage":["id","edgeIndex","source","destination","transfer"], "production-failure":["failure"],
     };
     if (typeof d.kind !== "string" || !variants[d.kind]) return undefined;
@@ -244,6 +258,10 @@ export function readDiagnostic(
     if (d.source !== undefined) diagnosticNode(d.source,types.length);
     if (d.destination !== undefined) diagnosticNode(d.destination,types.length);
     if (d.sourceMap !== undefined) sourceMap(d.sourceMap);
+    if (d.kind === "direct-obligation") {
+      const judgment = record(d.judgment,["system","statement"]);
+      if (typeof judgment.system !== "string" || typeof judgment.statement !== "string") return undefined;
+    }
     if (d.kind === "production-failure" && typeof d.failure !== "string") return undefined;
     const labels = (v: unknown) => decodeLabels(v,types.length);
     if (d.requiredResult !== undefined) labels(d.requiredResult);

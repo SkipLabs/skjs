@@ -220,14 +220,41 @@ assert.match(
 );
 process.stdout.write("reader collection: quantified callable rendered\n");
 
-// A negative control reaches the verifier and is displayed as no derivation
-// found — the reader's `✗`. It is not an error, and it is not a disproof.
-const rejected = await analyse(repositoryPath("invalid-return"), "ocaml");
-assert.deepEqual(
-  (rejected.manifest.results ?? []).map((r) => r.status),
-  ["not-established"],
+// A negative control must reach validation and fail there. Failing there means
+// failing an obligation, which the reader can show at its span; an adapter that
+// throws before any obligation exists has refused, not validated, and the
+// reader can point at nothing. Ranging over the inventory is what keeps a new
+// control from escaping this.
+const directControls = new Set([
+  "invalid-generic",
+  "invalid-generic-copy",
+  "invalid-generic-closure",
+  "invalid-scheme-capture",
+]);
+for (const control of cases.filter((c) => c.kind === "negative")) {
+  const shown = await analyse(repositoryPath(control.file), "ocaml");
+  const results = shown.manifest.results ?? [];
+  assert.deepEqual(
+    results.map((r) => r.status),
+    ["not-established"],
+    `${control.file}: reader must show it as not established`,
+  );
+  assert.notEqual(
+    results[0]?.location,
+    undefined,
+    `${control.file}: reached no obligation, so the reader has nothing to show`,
+  );
+  if (directControls.has(control.file)) {
+    assert.equal(
+      results[0]?.obligation?.kind,
+      "direct-obligation",
+      `${control.file}: a direct checker failure needs a structured judgment`,
+    );
+  }
+}
+process.stdout.write(
+  `reader collection: ${cases.filter((c) => c.kind === "negative").length} negative controls failed an obligation\n`,
 );
-process.stdout.write("reader collection: negative control not established\n");
 
 // What this producer does not implement is refused where it is refused, in the
 // words that boundary uses. It does not become a report with nothing in it.

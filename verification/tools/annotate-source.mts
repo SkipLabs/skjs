@@ -28,6 +28,11 @@ import type { ConversionManifest } from "./export-source-claims.mts";
 import { messageOf } from "./thrown.mts";
 import { rigidOf, rigidScopes, scopeOf } from "./rigid.mts";
 import type { RigidParameter, RigidScopes } from "./rigid.mts";
+type FunctionResult = Result extends infer R
+  ? R extends Result
+    ? Omit<R, "function">
+    : never
+  : never;
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 // The display helpers beside this file are plain JavaScript modules.
 const require = createRequire(import.meta.url);
@@ -671,7 +676,7 @@ function verifySkjs(
     } catch(error) {
       const detail=messageOf(error);
       if(!detail.startsWith("gate:"))throw Error(`source parser failed: ${detail}`);
-      return {identity,results:report.functions.map((): Omit<Result,"function">=>({status:"unsupported",detail:detail.trim()}))};
+      return {identity,results:report.functions.map((): FunctionResult=>({status:"unsupported",detail:detail.trim()}))};
     }
     ast.file=file;
     // Whole file first. The per-function pass below exists to attribute a
@@ -694,13 +699,13 @@ function verifySkjs(
       const checked=run(verifier,[normalized?"--check-source-claims":"--check-stateful-source",ap,cp,file,ep]);
       if(checked.status!==0)return null;
       const certificateSha256=hash(fs.readFileSync(ep));
-      return report.functions.map((): Omit<Result,"function">=>({status:"verified",scope:"modeled function and required claims",certificateSha256}));
+      return report.functions.map((): FunctionResult=>({status:"verified",scope:"modeled function and required claims",certificateSha256}));
     })();
     if(whole) {
       if(fs.readFileSync(sourcePath,"utf8")!==source)throw Error("source changed during verification");
       return {identity,results:whole};
     }
-    const results=report.functions.map((f): Omit<Result,"function">=> {
+    const results=report.functions.map((f): FunctionResult=> {
       const named=(g: { name: string; namePos: Span })=>g.name===f.name && JSON.stringify(g.namePos)===JSON.stringify(f.namePos);
       const a=clone(ast);a.functions=a.functions.filter(named);
       if(a.functions.length!==1)throw Error("function identity mismatch during verification");
@@ -721,6 +726,7 @@ function verifySkjs(
         const rawDetail=(produced.stderr||produced.stdout).trim();
         const diagnostic=readDiagnostic(rawDetail);
         const detail=diagnostic ? rawDetail.split("\nobligation-diagnostic: ")[0] : rawDetail;
+        const direct=diagnostic?.kind==="direct-obligation" ? diagnostic : null;
         const located=/^(?:reject: )?(source expression obligation|closure expression claim|source incoming edge obligation|unsupported source expression) at \[(\d+),(\d+)\):/.exec(detail);
         const genericPoint=/^(?:reject: )?generic (entry claim|expression claim|return contract|binding annotation) at \[(\d+),(\d+)\):/.exec(detail);
         const environment=/^(?:reject: )?source environment obligation at (\d+): (.*)$/.exec(detail);
@@ -739,7 +745,7 @@ function verifySkjs(
         // is held to: a finding about the claim, before any obligation is tried.
         const parameterClaim=/claimed parameter type differs from the source annotation for '([^']*)'$/.exec(detail);
         const outsideFragment=/outside the [^:]*fragment\.?$/.test(detail);
-        const location: Failure|null=genericPoint ? (genericPoint[1]==="entry claim" ?
+        const location: Failure|null=direct ? {kind:"direct-obligation",pos:direct.sourceMap.pos} : genericPoint ? (genericPoint[1]==="entry claim" ?
           {kind:"environment-obligation",start:Number(genericPoint[2])} :
           {kind:"expression-obligation",pos:[Number(genericPoint[2]),Number(genericPoint[3])]}) : parameterClaim ? {kind:"parameter-claim",binding:parameterClaim[1]} : unavailableType ? {kind:"unavailable-type-claim",
           ...(unavailableBinding ? {start:Number(environment[1]),binding:unavailableBinding[1]} :
@@ -767,11 +773,12 @@ function verifySkjs(
         const namePos: Span=[f.namePos[0],f.namePos[1]];
         const obligation=diagnostic ? {...diagnostic,input:{file,functionName:f.name,
           namePos,sourceSha256:hash(source),claimsSha256:hash(JSON.stringify(c))}} : null;
-        return {status:"not-established",detail,...((unavailableType || nonInvariant) ? {stage:"source-extraction"} : {}),...(location ? {location} : {}),
+        if(!location)throw Error(`verifier returned an unlocated failure for ${f.name}: ${detail}`);
+        return {status:"not-established",detail,...((unavailableType || nonInvariant) ? {stage:"source-extraction"} : {}),location,
           ...(obligation ? {obligation, obligationView: presentObligation(obligation, source)} : {})};
       }
       const checked=run(verifier,[normalized?"--check-source-claims":"--check-stateful-source",ap,cp,file,ep]);
-      if(checked.status!==0)return {status:"not-established",detail:(checked.stderr||checked.stdout).trim()};
+      if(checked.status!==0)throw Error(`independent certificate check failed for ${f.name}: ${(checked.stderr||checked.stdout).trim()}`);
       return {status:"verified",scope:"modeled function and required claims",certificateSha256:hash(fs.readFileSync(ep))};
     });
     if(fs.readFileSync(sourcePath,"utf8")!==source)throw Error("source changed during verification");

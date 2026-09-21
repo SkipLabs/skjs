@@ -1550,11 +1550,6 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
   | .write _ fld receiver rhs =>
     let B ← exprType fc receiver
     let C ← exprType fc rhs
-    -- A view permits reads only: say so, rather than fail the search.
-    match PositiveRules.expand (SourceTypes.graph (← table)) B with
-    | [.refs fs [] vs] =>
-      if (fs.lookup fld).isNone && (vs.lookup fld).isSome then throw s!"write to a readonly field '{fld}'"
-    | _ => pure ()
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+2))⟩
     -- JS assignment returns its evaluated RHS; the calculus write returns null.

@@ -17,8 +17,10 @@ obligation-diagnostic: {"phase":"proof-search","outcome":"not-established",...}
 human sentence. A record it cannot decode field by field, and a duplicate
 record, are not interpreted: the reader requires the fields below and refuses
 what it does not recognize, so a record it accepts is one of exactly this
-shape. Failures that reach no calculus obligation carry human text and
-an optional `location` instead of a record.
+shape. Every `not-established` result has a `location`. A failed direct
+generic/scheme judgment carries the `direct-obligation` record described below;
+source-conversion refusals use their typed source location. A verifier failure
+that supplies neither is an internal protocol error and no report is written.
 Absence of a structured record never changes a failure into success.
 
 `annotate-source.mts` preserves recognized records as `results[i].obligation` and
@@ -38,7 +40,7 @@ is untrusted display data; it cannot establish verification status.
 
 | Field | Meaning |
 |---|---|
-| `kind` | `node-typing`, `edge-coverage`, `expression-claim`, or `production-failure`. |
+| `kind` | `node-typing`, `edge-coverage`, `expression-claim`, `direct-obligation`, or `production-failure`. |
 | `phase` | `proof-search`, `certificate-check`, or `request-validation`. |
 | `outcome` | `not-established`. |
 | `fuel` | Search depth used for this attempt, not a semantic bound or a diagnosis of exhaustion. |
@@ -50,6 +52,19 @@ The exact calculus term and type graph use the encodings in
 [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md). Sequents have `context`, `term`, and `type`.
 Context entries are de Bruijn slots, most recent first, and may include anonymous
 saved results. They are not necessarily a source statement environment.
+
+## Direct obligations
+
+Rigid-generic validation and universal scheme introduction happen before a
+ground graph request exists. Their failures are `direct-obligation` records,
+with mandatory `sourceMap` and a `judgment` containing the checking `system` and
+the exact rejected `statement`. They must not be disguised as graph sequents.
+
+Source extraction constructs one explicit plan for every decoded function:
+either a graph request or a successfully checked direct-generic plan. There is
+no optional request and no filtering step, so adding a source function cannot
+silently omit it from validation. A direct check that fails stops request
+construction through the located diagnostic channel.
 
 ## Node and expression obligations
 
@@ -134,12 +149,14 @@ Readers of the diagnostic record should:
    Keep generic roles generic. Do not label a participant as the wrong claim.
 4. Render internal types through the supplied graph table, or clearly show a
    technical fallback. Do not assume all IDs are the current primitive profile.
-5. Preserve the existing first-failure and not-a-disproof wording, freshness
-   rules, and fallback for failures without structured metadata.
+5. Preserve the existing first-failure and not-a-disproof wording and freshness
+   rules. Treat a failed verifier result without a recognized location as a
+   protocol error rather than inventing display metadata.
 
 No recursive proof-search trace, minimal failing premise, or complete dependency
-graph is promised. Extraction/type-decoding/missing-claim failures and some
-independent consumer failures still use the existing diagnostic path. A source map entry
+graph is promised. Extraction/type-decoding/missing-claim failures use typed
+source locations. An independent certificate rejection is an internal error,
+because the producer just emitted evidence that its consumer rejects. A source map entry
 does not identify every contributing source claim or prove any premise separately.
 There are no retained mutable-heap observations. Future overloads and generics
 should extend explicit obligation data rather than force them into

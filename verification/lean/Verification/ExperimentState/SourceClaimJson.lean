@@ -149,6 +149,19 @@ private def Function.hasScheme (f : Function) : Bool :=
     f.entries.any (fun e => e.bindings.any (claimHasScheme ·.type)) ||
     f.expressions.any (claimHasScheme ·.type)
 
+/-- Direct rigid/scheme checks do not pretend to be ordinary graph sequents,
+but their failures use the same mandatory located diagnostic channel. The
+viewer consumes this record structurally; the prose is only its conclusion. -/
+private def directFailure (T : SourceTypes.Table) (pos : Span) (role system statement : String)
+    (context : List String := []) : String :=
+  RequestJson.withDiagnostic s!"source direct obligation at [{pos.1},{pos.2}): {statement}"
+    [("kind",toJson "direct-obligation"),("phase",toJson "request-validation"),
+     ("outcome",toJson "not-established"),("id",toJson s!"{system}:{pos.1}"),
+     ("sourceMap",toJson (SourceMapEntry.mk pos role none
+       (context.map fun name => (Descriptor.mk name none)))),
+     ("judgment",Json.mkObj [("system",toJson system),("statement",toJson statement)]),
+     ("fuel",toJson 0),("types",toJson T)]
+
 namespace Scheme
 
 /-- A universal type: a rigid binder of the scheme under check, or a ground
@@ -444,7 +457,19 @@ private def Function.genericClaims (T : SourceTypes.Table) (c : Function) : Exce
       (fun b => do return (b.name,← genericType T b.type)))),
     ← c.expressions.mapM (fun e => do return (e.pos,← genericType T e.type))⟩
 
-def extract (ast claims : Json) (fileKey : String) : Except String (List SourceRequest) := do
+inductive FunctionPlan where
+  | graph (name : String) (namePos : Span) (request : SourceRequest)
+  | generic (name : String) (namePos : Span)
+
+/-- Projection for the graph evidence engine. Unlike the former `Option` plus
+`filterMap`, every omitted request is named by the `generic` constructor and
+was checked by the direct rigid-parameter checker while building the plan. -/
+def FunctionPlan.requests : List FunctionPlan → List SourceRequest
+  | [] => []
+  | .graph _ _ request :: rest => request :: FunctionPlan.requests rest
+  | .generic .. :: rest => FunctionPlan.requests rest
+
+def extractPlans (ast claims : Json) (fileKey : String) : Except String (List FunctionPlan) := do
   let d ← decode claims
   if d.file != fileKey || (← jStr (← jField ast "file")) != fileKey then throw "source claim file identity mismatch"
   if (← jStr (← jField ast "sourceSha256")) != d.sourceSha256 then throw "source claim fingerprint mismatch"
@@ -457,7 +482,7 @@ def extract (ast claims : Json) (fileKey : String) : Except String (List SourceR
   if fs.isEmpty then throw "no source functions to verify"
   if (fs.map (fun f => (f.name,f.namePos))).eraseDups.length != fs.length then throw "duplicate source function identities"
   if fs.length != d.functions.length then throw "function claim count mismatch"
-  let rs ← decoded.mapM fun (f,tps) => do
+  decoded.mapM fun (f,tps) => do
     let c ← match d.functions.find? (fun c => c.name == f.name && c.namePos == f.namePos) with
       | some c => pure c
       | none => throw s!"missing claims for '{f.name}'"
@@ -466,22 +491,45 @@ def extract (ast claims : Json) (fileKey : String) : Except String (List SourceR
         !c.expressions.all (fun e => sites.2.contains e.pos) then
       throw "claim site is not an entry or expression of the named source function"
     if !tps.isEmpty then
-      GenericSource.check f tps (← c.genericClaims d.types)
-      return none
+      let genericClaims ← c.genericClaims d.types
+      match GenericSource.check f tps genericClaims with
+      | .ok () => return .generic f.name f.namePos
+      | .error reason =>
+        throw (directFailure d.types f.namePos "generic-validation" "generic" reason
+          (f.params.map (·.name)))
     if c.hasScheme then
-      let (T, c, overlays) ← Scheme.compile d.types f c
-      return some (← extractNormalizedFn T f { c.normalized with schemeArrows := overlays })
-    return some (← extractNormalizedFn d.types f c.normalized)
-  return rs.filterMap id
+      let schemePos ← match Scheme.find f with
+        | .ok (some closure) => pure closure.span
+        | .ok none => pure f.namePos
+        | .error reason =>
+          throw (directFailure d.types f.namePos "scheme-validation" "scheme" reason
+            (f.params.map (·.name)))
+      match Scheme.compile d.types f c with
+      | .ok (T, c, overlays) =>
+        return .graph f.name f.namePos
+          (← extractNormalizedFn T f { c.normalized with schemeArrows := overlays })
+      | .error reason =>
+        throw (directFailure d.types schemePos "scheme-validation" "scheme" reason
+          (f.params.map (·.name)))
+    return .graph f.name f.namePos (← extractNormalizedFn d.types f c.normalized)
+
+/-- Graph-only projection for proof fixtures that inspect extracted programs.
+The name makes its loss of successfully checked direct-generic plans explicit;
+production and checking use `extractPlans`, whose result has exactly one
+constructor per decoded source function. -/
+def extractGraphRequests (ast claims : Json) (fileKey : String) : Except String (List SourceRequest) := do
+  return FunctionPlan.requests (← extractPlans ast claims fileKey)
 
 def checkJson (ast claims : Json) (fileKey : String) (evidence : Json) : Except String Unit := do
-  let rs ← extract ast claims fileKey
+  let plans ← extractPlans ast claims fileKey
+  let rs := FunctionPlan.requests plans
   let b : Bundle ← decodeStrict evidence
   if checkRequests rs b then return ()
   throw "source evidence does not justify the extracted program and exact claims"
 
 def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat) : Except String Json := do
-  let rs ← extract ast claims fileKey
+  let plans ← extractPlans ast claims fileKey
+  let rs := FunctionPlan.requests plans
   let es ← rs.mapM fun r => ExpressionClaims.produce (RequestJson.graph r.toRequest)
     r.searchLabels r.types.length fuel r.obligations
   let cs ← (rs.zip es).mapM fun (r,proofs) => do
@@ -494,20 +542,21 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat) : Except Str
 /-- Acceptance uses the same proved consumer as SKJS-backed extraction. -/
 theorem checkJson_checked {ast claims evidence : Json} {fileKey : String}
     (h : checkJson ast claims fileKey evidence = .ok ()) :
-    ∃ rs b, extract ast claims fileKey = .ok rs ∧
-      decodeStrict evidence = .ok b ∧ checkRequests rs b = true := by
+    ∃ plans b, extractPlans ast claims fileKey = .ok plans ∧
+      decodeStrict evidence = .ok b ∧
+      checkRequests (FunctionPlan.requests plans) b = true := by
   unfold checkJson at h
-  cases he : extract ast claims fileKey with
+  cases he : extractPlans ast claims fileKey with
   | error e => simp only [he] at h; contradiction
-  | ok rs =>
+  | ok plans =>
     cases hb : (decodeStrict evidence : Except String Bundle) with
     | error e => simp only [he, hb] at h; contradiction
     | ok b =>
       simp only [he, hb] at h
-      change (if checkRequests rs b = true then Except.ok () else
+      change (if checkRequests (FunctionPlan.requests plans) b = true then Except.ok () else
         Except.error "source evidence does not justify the extracted program and exact claims") = .ok () at h
       split at h
-      · exact ⟨rs,b,rfl,rfl,by assumption⟩
+      · exact ⟨plans,b,rfl,rfl,by assumption⟩
       · contradiction
 
 #print axioms checkJson_checked

@@ -150,6 +150,7 @@ const KIND_LABEL: Record<string, string> = {
   "node-typing": "node typing",
   "edge-coverage": "edge coverage",
   "expression-claim": "expression claim",
+  "direct-obligation": "direct source obligation",
   "production-failure": "production failure",
 };
 
@@ -260,7 +261,7 @@ function obligationView(ob: ObligationDiagnostic, source = ""): ObligationView {
   const sourceMap: SourceMapEntry | null =
     ob.kind === "production-failure"
       ? null
-      : ob.kind === "expression-claim"
+      : ob.kind === "expression-claim" || ob.kind === "direct-obligation"
         ? ob.sourceMap
         : ob.kind === "edge-coverage" && specific(ob.destination.sourceMap)
           ? ob.destination.sourceMap
@@ -356,6 +357,19 @@ function obligationView(ob: ObligationDiagnostic, source = ""): ObligationView {
     view.conclusion = typeText(types, null);
     return view;
   }
+  if (ob.kind === "direct-obligation") {
+    view.title = ob.judgment.system === "scheme"
+      ? "Universal scheme obligation"
+      : "Generic source obligation";
+    view.what = "The direct source checker could not establish this non-ground judgment.";
+    view.summary = ob.judgment.statement;
+    view.judgement = {
+      assumptions: [],
+      conclusion: ob.judgment.statement,
+      text: `∅ ⊢ ${ob.judgment.statement}`,
+    };
+    return view;
+  }
 
   const sequent = ob.sequent;
   const names = bindingsOf(sourceMap, source);
@@ -406,6 +420,7 @@ export function presentObligation(ob: ObligationDiagnostic, source: string): Obl
     view.what = ob.failure;
     return view;
   }
+  if (ob.kind === "direct-obligation") return view;
   const context = (entries: number[][], prefix = "slot") => entries.map((t,i) => `${prefix} ${i}: ${printLabels(t)}`);
   let assumptions: string[], conclusion: string;
   if (ob.kind === "edge-coverage") {

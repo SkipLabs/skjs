@@ -60,6 +60,8 @@ export type Status =
 export type FailureKind =
   /** An expression's own claim did not follow. */
   | "expression-obligation"
+  /** A rigid-generic or universal-scheme judgment checked outside the ground graph. */
+  | "direct-obligation"
   /** An edge into a statement entry did not justify what the entry claims. */
   | "edge-obligation"
   /** A statement entry's environment did not convert. */
@@ -213,10 +215,9 @@ export interface Gap {
   status: string;
 }
 
-export interface Result {
+interface ResultFields {
   /** The function's `id`, not its name: names repeat across files. */
   function: string;
-  status: Status;
   /**
    * Where checking stopped short of proof search — set when the producer's
    * claims could not be converted, so the outcome is about the input rather
@@ -225,7 +226,6 @@ export interface Result {
   stage?: "source-extraction";
   /** The verifier's own message, kept verbatim. */
   detail?: string;
-  location?: Failure;
   /** Explanatory metadata about an unsuccessful attempt. Never evidence: the
    * writer attaches the record the verifier's own decoder read back, and what
    * the reader makes of it changes no outcome. */
@@ -236,6 +236,16 @@ export interface Result {
   /** The certificate that was checked, for provenance only. */
   certificateSha256?: string;
 }
+
+/** A failed derivation is unrepresentable without the exact source place at
+ * which validation stopped. Other outcomes may carry a location as additional
+ * explanation, but only `not-established` requires one. */
+export type Result =
+  | (ResultFields & { status: "not-established"; location: Failure })
+  | (ResultFields & {
+      status: Exclude<Status, "not-established">;
+      location?: Failure;
+    });
 
 export interface Manifest {
   source: { file: string; sha256: string };
