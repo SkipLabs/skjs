@@ -217,6 +217,18 @@ the model**, and **accepted by the source checker** wherever those statuses diff
 Avoid temporary paths, task handoffs and duplicate field tables in maintained
 docs. Lean definitions and tests remain the implementation evidence; cite them.
 
+What a change must carry depends on the layer it touches. A new typing or
+subtyping rule needs its soundness lemma in the model and a `#print axioms`
+line. A new lowering or adapter case needs no lemma, but it must emit its
+checks as located obligations (never a bare string), reuse an existing rule
+rather than add an approximate one, and come with a positive witness, an
+independent negative control and a tampering test; see the
+[test index](tests/README.md). A new wire field needs its decoder, every
+producer and consumer updated together, and a tampering test for the field.
+A compilation of one form into existing rules needs a statement of what
+justifies it — the compiled derivations are consequences, never the reason for
+acceptance — and one interface so a later certificate can replace it.
+
 The source boundary starts in
 [Fragment.lean](lean/Verification/ExperimentState/Fragment.lean) and
 [SourceExtraction.lean](lean/Verification/ExperimentState/SourceExtraction.lean);

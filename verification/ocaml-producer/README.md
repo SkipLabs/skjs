@@ -121,6 +121,50 @@ retains its checked initializer type, and subsequent claims must follow from it.
 This includes dependent bounds and sequential declarators. It adds no inference
 metavariables and is not evidence that polymorphic call inference works.
 
+## Extending the producer
+
+Every row runs these steps. Each names the document that owns the rule it
+applies; this file records only what is specific to this producer.
+
+1. Add the motivating positive and negative sources without simplifying away
+   the feature. Add them to [`cases.mts`](cases.mts) with their expected phase
+   and diagnostic; that file is the executable source of truth, and the reader
+   lists its cases without further registration.
+2. Run the case once and identify the first honest boundary: shared parsing,
+   OCaml proposal, Lean obligation reconstruction, evidence production, or
+   evidence checking.
+3. Extend an existing shared representation in place; the
+   [languages index](../LANGUAGES.md) says which file owns each. If Fragment
+   or SourceClaims changes, update every producer, decoder, printer and
+   consumer; never add an OCaml-only format or a second accepted wire shape.
+   What the change must carry — soundness lemma, located obligations, or a
+   tampering test — is set by
+   [documentation ownership](../README.md#documentation-ownership).
+4. Keep inference candidates in `inference.ml`. Published `Semantic.ty` values
+   may contain rigid binders and schemes, never solver metavariables or an
+   unresolved substitution. A proposal is not an acceptance fact.
+5. Make Lean reconstruct every obligation from source and claims. A check that
+   can fail is an obligation with a source span, reported through the
+   [located diagnostic channel](../OBLIGATION-DIAGNOSTICS.md#direct-obligations);
+   a bare error string is a defect. Add a negative control that is
+   [independent](../tests/README.md) — it reaches that obligation and fails
+   there, and no shortcut that accepts the positives also rejects it — plus a
+   mutation showing that valid evidence cannot certify a forged claim or
+   substitution.
+6. Run `dune build --root verification/ocaml-producer`,
+   `dune runtest --root verification/ocaml-producer`,
+   `lake -d verification/lean build` (all of it: fixtures construct shared
+   structures), and `node verification/ocaml-producer/test.mts`. Run the shared
+   TypeScript check and the viewer tests when their files change. SKJS suites
+   are unnecessary unless a `.sk` file changes.
+7. Update the documents that own what changed, per
+   [documentation ownership](../README.md#documentation-ownership) — wire
+   fields in the protocol documents, the notation in the viewer language, the
+   decision in DESIGN — then the table and measured counts below from the
+   final test output. Name any remaining blocked witness; passing adjacent
+   examples does not complete its row. Do not create a handoff or checkpoint
+   file.
+
 ## Breadth progress and work queue
 
 The current goal is breadth: exercise each major language mechanism with the
@@ -175,30 +219,8 @@ and fail the universal gate. First-class scheme hypotheses in the request
 protocol remain a later certificate-depth milestone; they do not block this
 breadth row.
 
-For each row:
-
-1. Add the motivating positive and negative sources without simplifying away
-   the feature. Add them to `cases.mts` with their expected phase and diagnostic.
-2. Run the case once and identify the first honest boundary: shared parsing,
-   OCaml proposal, Lean evidence production, or evidence checking.
-3. Extend an existing shared representation in place. If Fragment or
-   SourceClaims changes, update every producer, decoder, printer and consumer;
-   do not introduce an OCaml-only format or a second accepted wire shape.
-4. Keep inference candidates in `inference.ml`. Published `Semantic.ty` values
-   may contain rigid binders and schemes, but never solver metavariables or an
-   unresolved substitution. A proposal is not an acceptance fact.
-5. Make Lean reconstruct the obligation from source and claims. Add a negative
-   control that reaches validation, plus a mutation showing that valid evidence
-   cannot certify a forged claim or substitution.
-6. Run `dune build --root verification/ocaml-producer`,
-   `dune runtest --root verification/ocaml-producer`, the targeted Lean build,
-   `lake -d verification/lean build verifier`, and
-   `node verification/ocaml-producer/test.mts`. Run the shared TypeScript and
-   viewer checks when their files change. SKJS tests are unnecessary unless a
-   `.sk` file changes.
-7. Update this table and the measured counts below from the final test output.
-   State a remaining blocked witness by name; passing adjacent examples does not
-   complete its row. Do not create a handoff or checkpoint file.
+The procedure for a row is [Extending the producer](#extending-the-producer)
+above.
 
 ### Polymorphic calls and closures: next implementation boundary
 

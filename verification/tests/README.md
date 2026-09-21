@@ -60,6 +60,16 @@ and the independent consumer, then move it into the supported group and remove
 its expected rejection. Promotion depends on implemented semantics and checking,
 not merely on the parser accepting the syntax.
 
+A negative control must be independent: it must fail the check being added and
+pass every shortcut that would also accept the positives. A bad program that
+any lowering refuses proves nothing about the new rule. For a universal check,
+this means a program that satisfies every observed instance and fails only the
+universal obligation — `ocaml-producer/examples/invalid-scheme-capture.ts`
+instantiates its binder at `boolean` at every call, so per-call specialization
+accepts it and only scheme introduction refuses it. A control must reach that
+obligation and fail there; a refusal before any obligation exists is a boundary
+fixture, not a control, and is filed as one.
+
 `negation.mts` checks Boolean negation and reversed immutable refinements in branches, closures and loops, including forged claims and an effectful operand.
 
 Producer examples are separated by the direction of the failure:
