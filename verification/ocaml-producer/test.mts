@@ -3,31 +3,38 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { check, verifier } from "./check.mts";
+import { cases } from "./cases.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 const here = import.meta.dirname;
-const outcomes = [
-  ["values", "verified"],
-  ["branches", "verified"],
-  ["objects", "verified"],
-  ["callbacks", "verified"],
-  ["generics", "verified"],
-  ["generic-inferred", "unverified"],
-  ["invalid-return", "unverified"],
-  ["invalid-local-write", "unverified"],
-  ["invalid-callback", "unverified"],
-  ["invalid-variance", "unverified"],
-  ["invalid-write", "unverified"],
-  ["invalid-capture", "unverified"],
-  ["invalid-generic", "unverified"],
-  ["unsupported", "unsupported"],
-];
 let good = "";
-for (const [name, expected] of outcomes) {
-  const result = check(join(here, "examples", `${name}.ts`));
-  assert.equal(result.status, expected, `${name}: ${JSON.stringify(result)}`);
-  process.stdout.write(`${name}: ${result.status}\n`);
-  if (name === "values") good = result.artifacts;
+let verifiedFunctions = 0;
+for (const test of cases) {
+  const result = check(join(here, "examples", `${test.file}.ts`));
+  assert.equal(
+    result.status,
+    test.status,
+    `${test.file}: ${JSON.stringify(result)}`,
+  );
+  assert.equal(result.phase, test.phase, `${test.file}: wrong boundary`);
+  if (test.diagnostic) {
+    assert.notEqual(result.status, "verified");
+    if (result.status !== "verified")
+      assert.match(
+        result.detail,
+        test.diagnostic,
+        `${test.file}: wrong failure`,
+      );
+  }
+  if (result.status === "verified")
+    verifiedFunctions += result.functions.length;
+  process.stdout.write(
+    `${test.file}: ${result.status} (${result.phase}, ${test.kind})\n`,
+  );
+  if (test.file === "values") good = result.artifacts;
 }
+process.stdout.write(
+  `${verifiedFunctions} functions verified; ${cases.filter((c) => c.kind === "negative").length} negative controls; ${cases.filter((c) => c.kind === "gap").length} named gaps\n`,
+);
 // Mutations work on the shared typed wire document. JSON is first checked by
 // Lean above; no second hand-maintained SourceClaims shape is introduced here.
 const original: SourceClaims = JSON.parse(

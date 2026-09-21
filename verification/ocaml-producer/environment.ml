@@ -8,3 +8,9 @@ let lookup env name = match List.assoc_opt name env with
 let extend env name binding =
   if List.mem_assoc name env then Json.fail ("unsupported: shadowing " ^ name);
   env @ [name,binding]
+
+(* Only immutable values are refined. Mutable reads still expose their fixed
+   contract; heap contents require a separate alias/effect analysis. *)
+let refine_value env name refine = List.map (fun (n,b) ->
+  if n=name then n,(match b with Value t -> Value (refine t) | Storage _ -> b)
+  else n,b) env

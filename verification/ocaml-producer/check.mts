@@ -9,12 +9,19 @@ const repo = resolve(here, "../..");
 export const verifier =
   process.env.VERIFIER ??
   resolve(repo, "verification/lean/.lake/build/bin/verifier");
+export type Phase = "source" | "proposal" | "search" | "check";
 export type Outcome =
-  | { status: "verified"; artifacts: string }
+  | {
+      status: "verified";
+      artifacts: string;
+      functions: string[];
+      phase: "check";
+    }
   | {
       status: "unsupported" | "unverified" | "error";
       artifacts: string;
       detail: string;
+      phase: Phase;
     };
 function run(command: string, args: string[]) {
   const p = spawnSync(command, args, {
@@ -37,6 +44,7 @@ function run(command: string, args: string[]) {
  * cannot construct the public verified outcome: both Lean phases must succeed. */
 export function check(source: string): Outcome {
   const artifacts = mkdtempSync(join(tmpdir(), "ocaml-producer-"));
+  let phase: Phase = "source";
   try {
     // Parse a snapshot, not a path whose contents may change during verification.
     const snapshot = join(artifacts, "source.ts");
@@ -55,7 +63,12 @@ export function check(source: string): Outcome {
     ]);
     writeFileSync(join(artifacts, "parse.log"), parsed.detail);
     if (parsed.code !== 0)
-      return { status: "unsupported", artifacts, detail: parsed.detail };
+      return {
+        status: parsed.detail.startsWith("gate:") ? "unsupported" : "error",
+        artifacts,
+        phase,
+        detail: parsed.detail,
+      };
     const ast = join(artifacts, "fragment.json");
     writeFileSync(ast, parsed.out);
     const parsedData: unknown = JSON.parse(parsed.out);
@@ -67,13 +80,34 @@ export function check(source: string): Outcome {
         createHash("sha256").update(bytes).digest("hex")
     )
       throw Error("parser fingerprint differs from source snapshot");
+    if (!("functions" in parsedData) || !Array.isArray(parsedData.functions))
+      throw Error("parser omitted functions");
+    const functions = parsedData.functions.map((f: unknown) => {
+      if (
+        !f ||
+        typeof f !== "object" ||
+        !("name" in f) ||
+        typeof f.name !== "string"
+      )
+        throw Error("invalid function identity");
+      return f.name;
+    });
+    phase = "proposal";
     const proposed = run(join(here, "_build/default/producer.exe"), [ast]);
     writeFileSync(join(artifacts, "proposal.log"), proposed.detail);
     if (proposed.code !== 0)
-      return { status: "unsupported", artifacts, detail: proposed.detail };
+      return {
+        status: proposed.detail.startsWith("unsupported:")
+          ? "unsupported"
+          : "error",
+        artifacts,
+        phase,
+        detail: proposed.detail,
+      };
     const claims = join(artifacts, "claims.json"),
       evidence = join(artifacts, "evidence.json");
     writeFileSync(claims, proposed.out);
+    phase = "search";
     const produced = run(verifier, [
       "--produce-source-claims",
       ast,
@@ -84,7 +118,13 @@ export function check(source: string): Outcome {
     ]);
     writeFileSync(join(artifacts, "search.log"), produced.detail);
     if (produced.code !== 0)
-      return { status: "unverified", artifacts, detail: produced.detail };
+      return {
+        status: "unverified",
+        artifacts,
+        phase,
+        detail: produced.detail,
+      };
+    phase = "check";
     const checked = run(verifier, [
       "--check-source-claims",
       ast,
@@ -94,12 +134,13 @@ export function check(source: string): Outcome {
     ]);
     writeFileSync(join(artifacts, "check.log"), checked.detail);
     if (checked.code !== 0)
-      return { status: "unverified", artifacts, detail: checked.detail };
-    return { status: "verified", artifacts };
+      return { status: "unverified", artifacts, phase, detail: checked.detail };
+    return { status: "verified", artifacts, phase, functions };
   } catch (e) {
     return {
       status: "error",
       artifacts,
+      phase,
       detail: e instanceof Error ? e.message : String(e),
     };
   }
