@@ -276,6 +276,16 @@ mutable class TypeReadContext private {
     })
   }
 
+  // Isolate a nested normalization's caches without leaving this observation.
+  // The descendant shares the snapshot and the read frame, so its reads are
+  // published or discarded with the enclosing transaction, and the shape
+  // consumer never receives the scratch substitution or its solver.
+  private mutable fun runDescendant<T>(
+    read: (mutable TypeReadContext) -> T,
+  ): T {
+    static::runObserved(this.scratch.observationDescendant(), this.tenv, read)
+  }
+
   // Preserve lifetime, snapshot, query state and recursive premises while
   // declaration syntax changes the lexical bindings in the environment.
   mutable fun readIn<T>(tenv: TEnv, read: (mutable TypeReadContext) -> T): T {
@@ -518,7 +528,7 @@ mutable class TypeReadContext private {
 
   mutable fun mergeIndexKind(indexes: readonly Vector<TField>): ?TField {
     this.lifetime.checkActive();
-    TypeReadContext::runObserved(this.scratch.clone(), this.tenv, context ->
+    this.runDescendant(context ->
       TIndexes::mergeKindWith(indexes, (left, right) ->
         TField::interContracts(
           left,
@@ -928,7 +938,7 @@ mutable class TypeReadContext private {
   // the observation frame, so every nested read contributes to publication.
   mutable fun singleTypes(type: TType): ?STypes {
     this.lifetime.checkActive();
-    TypeReadContext::runObserved(this.scratch.clone(), this.tenv, probe ->
+    this.runDescendant(probe ->
       probe.expandClauses(type, Covariant()).getSTypes()
     )
   }
@@ -937,9 +947,7 @@ mutable class TypeReadContext private {
   // retain the observation frame, including reads made by failed comparisons.
   mutable fun disjoint(left: TType, right: TType): Bool {
     this.lifetime.checkActive();
-    TypeReadContext::runObserved(this.scratch.clone(), this.tenv, context ->
-      context.intersection(left, right).isBottom()
-    )
+    this.runDescendant(context -> context.intersection(left, right).isBottom())
   }
 
   private mutable fun tupleElements(clauses: Clauses): ?Array<TType> {

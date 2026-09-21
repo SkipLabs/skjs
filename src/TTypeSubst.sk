@@ -304,6 +304,18 @@ mutable class Subst private {
     }
   }
 
+  // A nested read computation of the SAME observation: the parent's snapshot
+  // and read frame, with isolated normalization caches. This is not an
+  // inference clone -- every read the descendant makes still belongs to the
+  // enclosing observation, so it is published or discarded with it.
+  mutable fun observationDescendant(): mutable Subst {
+    this.readObservation match {
+    | Some(frame) -> Subst::observationScratch(this, frame)
+    | None() ->
+      invariant_violation("An observation descendant requires a read frame")
+    }
+  }
+
   /* Use Subst#clone to create a temporary subst when there is already
      one that shouldn't be polluted.
      One would typically do this to check subtyping relations that are
