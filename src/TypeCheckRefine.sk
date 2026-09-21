@@ -402,10 +402,11 @@ extension class TypeChecker {
     skolemTArgs = this.makeSkolemTArgsOf(tcenv.subst, c, className);
     skolemFields = this.newFieldsOf(tcenv.subst, c, className, skolemTArgs);
     // The fields the preservation check below matches branches against, built
-    // once. Their inference variables are minted in a throwaway clone, so the
-    // real substitution never sees them and there is nothing to roll back;
-    // each branch re-clones it, so one branch's inference cannot reach another.
-    probeSubst = tcenv.subst.clone();
+    // once. Their inference variables are minted in a compatibility probe, so
+    // the real substitution never sees them and there is nothing to roll back;
+    // each branch takes its own attempt from the probe, so one branch's
+    // inference cannot reach another.
+    probeSubst = tcenv.subst.compatibilityProbe();
     probeFields = this.newFieldsOf(
       probeSubst,
       c,
@@ -428,14 +429,7 @@ extension class TypeChecker {
         branches = mutable Vector[];
         rewritten = false;
         for (fields in tObj.getBranches()) {
-          if (
-            TFields::isSub(
-              probeSubst.clone(),
-              this,
-              fields,
-              probeFields,
-            ) is STOk _
-          ) {
+          if (probeSubst.probeFieldsCompatible(this, fields, probeFields)) {
             branches.push(fields)
           } else {
             !rewritten = true;

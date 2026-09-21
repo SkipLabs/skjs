@@ -398,6 +398,28 @@ mutable class Subst private {
     check(this.detachedTypeComputation(TCPTypeArgumentProbe()))
   }
 
+  // A detached inference state for an existential compatibility search: is
+  // there SOME instantiation of a probe view under which a branch already
+  // matches? The inference variables it mints never reach this substitution,
+  // so there is nothing to roll back, and successive attempts taken from the
+  // same probe cannot reach each other's solutions.
+  mutable fun compatibilityProbe(): mutable Subst {
+    this.detachedTypeComputation(TCPTypeArgumentProbe())
+  }
+
+  // One such attempt. Only the Bool escapes: a positive answer licenses
+  // keeping the ORIGINAL source fields, never exporting the view's solved
+  // ones, and a negative answer leaves no bindings behind. This is a search
+  // for a witness, not a committed positive judgment, so it deliberately does
+  // not run the checking relation.
+  mutable fun probeFieldsCompatible(
+    tenv: TEnv,
+    source: TFields,
+    view: TFields,
+  ): Bool {
+    TFields::isSub(this.compatibilityProbe(), tenv, source, view) is STOk _
+  }
+
   // Representation guidance: what a contextual target contains, looked at on
   // a detached computation. The answer selects an inference proposal and
   // nothing more -- it establishes no read dependency in this substitution,
