@@ -3,7 +3,8 @@
 An independent OCaml producer with **verified acceptance**, using the existing
 Fragment → SourceClaims → Lean evidence pipeline. It does not invoke SKJS or
 TypeScript's type checker to infer claims. The shared TypeScript parser remains
-the source front end. The Lean model, lowering and proof rules are unchanged.
+the source front end. The producer uses the shared Lean model, lowering and
+proof rules; it has no separate acceptance calculus.
 
 ## Try it
 
@@ -97,11 +98,20 @@ metavariables and is not evidence that polymorphic call inference works.
 
 ### Polymorphic calls and closures: next implementation boundary
 
-The current model already interprets rigid labels under an assignment in
-`TypeParams.lean`, proves parameter/field substitution equations and specializes
-an identity theorem at a concrete argument. It does **not** yet expose a general
-source-level scheme introduction/elimination checker. Extending only the parser
-or specializing each closure body at its observed calls would bypass the
+The model interprets rigid labels under an assignment in `TypeParams.lean` and
+proves parameter/field substitution equations. `TypeSchemes.lean` now provides
+general semantic scheme introduction/elimination, call safety, and allocation
+with fixed field contracts. Its closure-body rule quantifies over assignments
+while retaining the same captured environment and world; outer parameter
+meanings cannot change. Scheme meanings are admissible closed-value families,
+so they can themselves serve as semantic type arguments.
+
+This is the semantic foundation, **not** an executable scheme certificate checker.
+The quantified source/wire syntax, general substitution evidence and body proof
+reconstruction still need implementing. Recursive scheme graph nodes also need
+the layer congruence/contractiveness argument; admissibility alone does not
+establish recursive interpretation. Extending only the parser or
+specializing each closure body at its observed calls would bypass the
 universal obligation. Follow this order:
 
 1. Represent scoped quantifiers at callable signatures, including bounds and
@@ -110,15 +120,17 @@ universal obligation. Follow this order:
    spelling-only top-level `{param: "T"}` cannot identify nested, shadowing
    binders. Update all producers and consumers together; do not add an OCaml-only
    encoding or flatten quantifiers into monomorphic arrows.
-2. Establish scheme introduction and elimination in the model and evidence
-   consumer. Introduction checks the body under fresh rigid parameters for every
-   admissible assignment satisfying its bounds. Captures retain their existing
+2. Connect the established semantic introduction/elimination rules to an
+   executable evidence consumer. Introduction checks the body under fresh rigid
+   parameters for every admissible assignment satisfying its bounds. Captures retain their existing
    types and location contracts; an already allocated location must not acquire
    a different contract at each instantiation. Elimination supplies an explicit
    substitution and proves substituted bounds and argument obligations. Its
-   result follows by capture-avoiding substitution. General substitution and
-   captured-state preservation need proofs; the existing identity example alone
-   does not provide them.
+   result follows by capture-avoiding substitution. General syntactic substitution
+   still needs proof. `make_scheme_fields` already proves allocation with field
+   contracts independent of the call instantiation, and
+   `invocation_of_scheme_body` retains the same capture environment. The source
+   checker must establish these premises, not simply trust an inferred scheme.
 3. Give each call fresh proposal-only inference candidates in a separate solver
    module. Collect directional constraints, including reversed callback inputs
    and both read/write obligations for writable fields. Retain the original

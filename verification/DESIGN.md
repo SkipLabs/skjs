@@ -473,6 +473,29 @@ claim; the neutral consumer checks it against the source binders and bounds.
 This checks variable-copy bodies; generic callbacks, source call-site
 instantiation, higher-rank and parameter-changing forms remain later work.
 
+[TypeSchemes.lean](lean/Verification/ExperimentState/TypeSchemes.lean) provides
+semantic rules for the next callable extension. A scheme denotes one callable
+value satisfying its signatures under every admissible assignment of its bound
+parameters; the assignment is fixed outside those binders and must satisfy the
+declared bounds. Callable shape is required even if no assignment satisfies the
+bounds. Introduction therefore proves a universal property of the same value,
+not just safety of different evaluations at a sample of type arguments.
+Elimination specializes that property, and `scheme_call` uses the existing
+operand-effect and future-world call rule. `make_scheme_fields` performs one
+allocation with fixed field contracts before quantifying over the callable's
+signatures. `invocation_of_scheme_body` checks all instantiations against the
+same captured environment and world. Scheme meanings are admissible closed-value
+families, so semantic higher-order composition uses the existing type universe.
+
+These theorems do not yet extend source acceptance. There is no executable
+scheme certificate syntax or general syntactic substitution proof yet; nested
+quantifiers still need representation in the shared source/type graph interface.
+Recursive scheme nodes additionally need layer congruence/contractiveness; the
+admissibility theorem for a fixed scheme does not establish that extension.
+The OCaml producer's `generic-closure.ts` remains gated, and no additional source
+function is counted as verified by these model-only rules.
+
+
 This is independent of the mutation and loop source-fragment targets above.
 Those remain the next programs to cover with the existing stateful
 foundation; they are not a prerequisite for exporting and checking SKJS
