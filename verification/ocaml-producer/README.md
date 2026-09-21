@@ -156,6 +156,21 @@ closure to the finite overloads observed in that program, checking its body once
 per observed call, or replacing its scheme claim with a monomorphic arrow does
 not satisfy the row.
 
+For this breadth row, a universal Lean source checker may establish scheme
+introduction first and then compile each validated elimination to the ordinary
+graph arrows that the existing evidence engine understands. The graph may
+therefore contain redundant per-arrow body derivations. They are consequences
+of the universal result, not its justification: acceptance must always require
+the universal check independently of the number and types of observed calls,
+and each call must validate its fresh substitution and bounds before lowering.
+Keep this compilation behind one interface so a later first-class scheme
+certificate can replace it without changing Fragment, SourceClaims, OCaml
+semantic types or inference. A negative closure that happens to work at every
+observed call type but cannot produce an arbitrary rigid result must reach Lean
+and fail the universal gate. First-class scheme hypotheses in the request
+protocol remain a later certificate-depth milestone; they do not block this
+breadth row.
+
 For each row:
 
 1. Add the motivating positive and negative sources without simplifying away
