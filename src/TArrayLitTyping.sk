@@ -212,8 +212,7 @@ class ArrayLitTyping() {
   // pin -- see firstCommitmentPinning in
   // tests/expect-error/contextual-literal-args.ts), while in const
   // (mostPrecise) contexts K resolves to its constraint.
-  // Peeks on a clone of the substitution: resolving the target covariantly on
-  // the live substitution would close open inference variables prematurely.
+  // The peek runs as guidance, off the live substitution.
   static private fun targetExpectsLiteral(
     subst: mutable Subst,
     tenv: TEnv,
@@ -239,7 +238,7 @@ class ArrayLitTyping() {
     tenv: TEnv,
     ty: TType,
   ): Bool {
-    ty.getSTypes(subst.clone(), tenv, Covariant()) match {
+    subst.guidanceSTypes(tenv, ty, Covariant()) match {
     | Some(stypes) ->
       stypes.any(stype ->
         stype match {

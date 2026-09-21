@@ -8,6 +8,11 @@ base class TypeComputationPurpose {
   children =
   | TCPChecking()
   | TCPTypeArgumentProbe()
+  // Representation guidance. Dispatches like a diagnostic -- detached, no
+  // committed read -- but the two differ in who may consume the answer: a
+  // diagnostic result may only be rendered, while a guidance result may
+  // select an inference proposal. Neither may authorize acceptance.
+  | TCPGuidance()
   | TCPDiagnostic()
 }
 
@@ -44,6 +49,7 @@ extension base class TEnv {
     };
     subst.typeComputationPurpose() match {
     | TCPTypeArgumentProbe()
+    | TCPGuidance()
     | TCPDiagnostic() ->
       detached(subst, this)
     | TCPChecking() ->

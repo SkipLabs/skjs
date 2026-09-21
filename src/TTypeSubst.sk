@@ -398,6 +398,20 @@ mutable class Subst private {
     check(this.detachedTypeComputation(TCPTypeArgumentProbe()))
   }
 
+  // Representation guidance: what a contextual target contains, looked at on
+  // a detached computation. The answer selects an inference proposal and
+  // nothing more -- it establishes no read dependency in this substitution,
+  // closes no candidate and cannot authorize acceptance. Resolving the target
+  // covariantly on the live state would instead close open inference
+  // variables prematurely.
+  mutable fun guidanceSTypes(
+    tenv: TEnv,
+    ty: TType,
+    variance: Variance,
+  ): ?STypes {
+    ty.getSTypes(this.detachedTypeComputation(TCPGuidance()), tenv, variance)
+  }
+
   // Only rendering and error-hint construction may use this untraced state.
   // It must never supply a type fact to a checking consumer.
   mutable fun cloneForTypeDiagnostics(): mutable Subst {
