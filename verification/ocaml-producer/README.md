@@ -90,6 +90,55 @@ matching proof interface. Do not call aliases or rigid identity examples proof
 that a solver architecture works. Keep inference-variable identities and write
 capabilities out of the published semantic-type API.
 
+The inferred-copy prerequisite is now supported: an unannotated immutable local
+retains its checked initializer type, and subsequent claims must follow from it.
+This includes dependent bounds and sequential declarators. It adds no inference
+metavariables and is not evidence that polymorphic call inference works.
+
+### Polymorphic calls and closures: next implementation boundary
+
+The current model already interprets rigid labels under an assignment in
+`TypeParams.lean`, proves parameter/field substitution equations and specializes
+an identity theorem at a concrete argument. It does **not** yet expose a general
+source-level scheme introduction/elimination checker. Extending only the parser
+or specializing each closure body at its observed calls would bypass the
+universal obligation. Follow this order:
+
+1. Represent scoped quantifiers at callable signatures, including bounds and
+   occurrences inside fields, callbacks and results. Preserve the same structure
+   in Fragment, semantic types and the single SourceClaims representation. A
+   spelling-only top-level `{param: "T"}` cannot identify nested, shadowing
+   binders. Update all producers and consumers together; do not add an OCaml-only
+   encoding or flatten quantifiers into monomorphic arrows.
+2. Establish scheme introduction and elimination in the model and evidence
+   consumer. Introduction checks the body under fresh rigid parameters for every
+   admissible assignment satisfying its bounds. Captures retain their existing
+   types and location contracts; an already allocated location must not acquire
+   a different contract at each instantiation. Elimination supplies an explicit
+   substitution and proves substituted bounds and argument obligations. Its
+   result follows by capture-avoiding substitution. General substitution and
+   captured-state preservation need proofs; the existing identity example alone
+   does not provide them.
+3. Give each call fresh proposal-only inference candidates in a separate solver
+   module. Collect directional constraints, including reversed callback inputs
+   and both read/write obligations for writable fields. Retain the original
+   operands and bounds. A candidate solution produces a concrete substitution
+   to check, never an acceptance fact. No unresolved candidate ID appears in
+   published semantic types or evidence. Hidden existential witnesses remain
+   rigid and cannot be solved as inference candidates.
+4. Implement simple explicit and inferred calls through that interface first.
+   Test one closure at two distinct argument types, a returned closure retaining
+   its outer parameter, a dependent bound, and a captured fixed-contract object.
+   Negative controls must reach validation: fabricated generic results, reversed
+   bounds, callback variance and a capture used as incompatible storage. Tamper
+   with instantiation evidence and check rejection by the independent consumer.
+
+Keep `generic-closure.ts` as the original motivating witness until it verifies;
+currently it still fails at the shared source parser. A successful OCaml solver
+unit test or a concrete monomorphic specialization does not close that gap.
+
+### Subsequent flow work
+
 Then extend flow analysis with location identity, alias/effect tracking and
 invariant proposals. For inferred storage, solve one lifetime contract against
 initialization and **all** writes before publication. For heap flow facts, keep
@@ -108,8 +157,8 @@ survive those extensions rather than being replaced by subset shortcuts.
 
 [cases.mts](cases.mts) is the executable inventory, including expected phase
 and diagnostic for every negative control and known gap. The suite currently
-verifies **31 functions in 14 feature groups**, checks **12 negative controls**,
-and keeps **7 named gaps** visible. Four independent evidence-tampering controls
+verifies **33 functions in 15 feature groups**, checks **13 negative controls**,
+and keeps **6 named gaps** visible. Six independent evidence-tampering controls
 remain. These counts concern this prototype, not the SKJS repair census.
 
 | Architectural pressure                      | Small examples that verify                                     |
@@ -124,7 +173,7 @@ remain. These counts concern this prototype, not the SKJS repair census.
 | Higher-order values and variance            | `callbacks.ts`                                                 |
 | Closure-local scope and partial application | `blocks-bind.ts`                                               |
 | One value with both fields and calls        | `function-fields.ts`                                           |
-| Scoped parameters and substitution          | `generics.ts`, `aliases.ts`                                    |
+| Scoped parameters and substitution          | `generics.ts`, `generic-inferred.ts`, `aliases.ts`                                    |
 | No usable result guarantee                  | `top-void.ts` (unknown, discarded callback result)             |
 
 Every negative control must reach validation and fail for its expected reason;
@@ -133,12 +182,10 @@ local/aliased/array writes, readonly writes, callback arguments and variance,
 mutable captures, generic fabrication, bad contextual initializers and stale
 heap refinements. Contextual types cannot turn a bad initializer into a fact.
 
-The seven named gaps are:
+The six named gaps are:
 
 - `generic-closure.ts`: the shared parser refuses polymorphic closures; general
   instantiation and inference are not implemented.
-- `generic-inferred.ts`: the existing generic adapter requires an explicit type
-  on a copied `const`. Its annotated counterpart verifies.
 - `unsupported.ts`: OCaml refuses an unannotated mutable binding rather than
   guessing a lifetime contract. Constraint-based contract inference is pending.
 - `dynamic-index.ts`: the existing lowering needs a proved array-index singleton;

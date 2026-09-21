@@ -7,6 +7,7 @@ import { cases } from "./cases.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 const here = import.meta.dirname;
 let good = "";
+let generic = "";
 let verifiedFunctions = 0;
 for (const test of cases) {
   const result = check(join(here, "examples", `${test.file}.ts`));
@@ -31,6 +32,7 @@ for (const test of cases) {
     `${test.file}: ${result.status} (${result.phase}, ${test.kind})\n`,
   );
   if (test.file === "values") good = result.artifacts;
+  if (test.file === "generic-inferred") generic = result.artifacts;
 }
 process.stdout.write(
   `${verifiedFunctions} functions verified; ${cases.filter((c) => c.kind === "negative").length} negative controls; ${cases.filter((c) => c.kind === "gap").length} named gaps\n`,
@@ -89,3 +91,34 @@ const badEvidence = join(good, "bad-evidence.json");
 writeFileSync(badEvidence, "{}");
 invoke(join(good, "claims.json"), badEvidence);
 process.stdout.write("tampered evidence: refused\n");
+
+// Generic bodies take the rigid-bound path in BOTH producer and consumer.
+// Reusing valid evidence must not let an inferred local trust a forged point type.
+const genericClaims: SourceClaims = JSON.parse(
+  readFileSync(join(generic, "claims.json"), "utf8"),
+);
+for (const site of ["initializer", "binding"] as const) {
+  const claims = structuredClone(genericClaims);
+  const fn = claims.functions.find((f) => f.name === "inferred");
+  assert.ok(fn);
+  if (site === "initializer") {
+    const initial = fn.expressions[0];
+    assert.ok(initial);
+    initial.type = [1, 2];
+  } else {
+    const saved = fn.entries.flatMap((e) => e.bindings).find((b) => b.name === "saved");
+    assert.ok(saved);
+    saved.type = [1, 2];
+  }
+  const file = join(generic, `forged-${site}.json`);
+  writeFileSync(file, JSON.stringify(claims));
+  const p = spawnSync(verifier, [
+    "--check-source-claims", join(generic, "fragment.json"), file,
+    join(generic, "source.ts"), join(generic, "evidence.json"),
+  ], {encoding: "utf8", timeout: 30_000});
+  assert.ifError(p.error);
+  assert.equal(p.signal, null);
+  assert.equal(p.status, 1, p.stdout + p.stderr);
+  assert.match(p.stdout + p.stderr, /generic (expression|entry) claim/);
+  process.stdout.write(`tampered inferred generic ${site}: refused\n`);
+}

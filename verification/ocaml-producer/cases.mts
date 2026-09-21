@@ -61,6 +61,7 @@ export const cases: Case[] = [
     "rigid fabrication",
     /generic.*(return|result)|not.*(bound|subtype)/,
   ),
+  negative("invalid-generic-copy", "inference cannot identify rigid parameters", /generic return/),
   negative("invalid-readonly", "readonly write", /write to a readonly field/),
   negative("invalid-array-write", "array write contract"),
   negative("invalid-tuple", "contextual tuple element obligation"),
@@ -73,13 +74,7 @@ export const cases: Case[] = [
     "source",
     /non-generic synchronous closure/,
   ),
-  gap(
-    "generic-inferred",
-    "inferred generic local",
-    "unverified",
-    "search",
-    /generic const requires a type annotation/,
-  ),
+  positive("generic-inferred", "inferred rigid copies / dependent bounds"),
   gap(
     "unsupported",
     "inferred lifetime contract",

@@ -5,7 +5,7 @@ import Verification.ExperimentState.GenericBounds
 /-! Source extraction of first-order generic function bodies.
 
 Variable-copy bodies are checked under distinct rigid parameters and forward
-upper bounds by the existing variable, let and subtype rules. Bodies may copy `T` through `const y: T = x` and
+upper bounds by the existing variable, let and subtype rules. Bodies may copy `T` through annotated or inferred immutable locals and
 extra parameters (`fst`), along `letE_safeP` and `var_safeP`.
 `T extends boolean` is an assumption `T ≤ boolean`:
 `asBoolean<T extends boolean>(x: T): boolean { return x }` transports along
@@ -79,9 +79,10 @@ partial def copyBody (params : List String) (edges : List (Nat × Nat))
   | .constants pos (b :: more) :: rest => do
     if b.name == "undefined" then throw "shadowing undefined is outside the fragment"
     if env.any (fun p => p.1 == b.name) then throw "active-name shadowing is outside the fragment"
-    let some annot := b.annot | throw "generic const requires a type annotation"
-    let expected ← typeIndex params annot
     let actual ← variableType env b.init
+    let expected ← match b.annot with
+      | some annot => typeIndex params annot
+      | none => pure actual
     unless subtype edges actual expected do
       throw "generic const is not justified by the declared upper bounds"
     copyBody params edges (env ++ [(b.name, expected)]) result
@@ -182,10 +183,12 @@ private def bodyClaims (params : List String) (edges : List (Nat × Nat))
     -- scope the earlier ones extend.
     let H ← entryClaims params edges fc env pos
     let H ← bindings.foldlM (fun H b => do
-      let some annot := b.annot
-        | throw "generic claim checking requires a checked variable-copy body"
       let actual ← expressionClaim params edges fc H b.init
-      let expected ← typeIndex params annot
+      -- Inference retains the checked initializer type, never a producer-selected
+      -- binding type. A weakened expression claim can lose precision, not regain it.
+      let expected ← match b.annot with
+        | some annot => typeIndex params annot
+        | none => pure actual
       requireSubtype params edges H pos "binding annotation" b.name actual expected
       return H ++ [(b.name,expected)]) H
     bodyClaims params edges fc H result rest
@@ -271,6 +274,6 @@ private def fstClaims : Fragment.Claims :=
 #guard (match checkScheme {bindFn with body :=
     [.cst (2, 3) "y" none (.var (4, 5) "x"),
      .ret (6, 7) (.var (8, 9) "y")]} [tpT] bindClaims with
-  | .error e => "generic const requires".isPrefixOf e | _ => false)
+  | .ok () => true | _ => false)
 
 end Verification.ExperimentState.GenericSource

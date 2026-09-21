@@ -440,8 +440,10 @@ that inclusion. It does not justify `true ≤ T`. Bodies that copy `T` through
 The source adapter also admits `U extends T` when `T` is declared earlier,
 retaining distinct rigid labels. `GenericBounds.follows_sound` proves every
 successful finite upper-bound traversal derives `SubP`; `SubP.sound` supplies
-semantic inclusion under assignments satisfying those bounds. Annotated copies
-and returns use that traversal, including chains ending at boolean. Bounds
+semantic inclusion under assignments satisfying those bounds. Copies and
+returns use that traversal, including chains ending at boolean. An unannotated
+immutable copy retains the checked initializer type; a producer cannot choose
+a stronger binding type. Every declarator sees the preceding checked copies. Bounds
 cannot be reversed, and a widened const keeps its annotated type. The parser
 and consumer reject duplicate names, forward bounds and cycles independently.
 SKJS captures each function's already-installed rigid declaration bindings.
@@ -687,7 +689,7 @@ bodies with distinct parameters and directed dependent bounds. See [GenericSourc
 before that check and before ground extraction. See
 [GenericAlias.lean](lean/Verification/ExperimentState/GenericAlias.lean).
 `T extends boolean` is an assumption in `Δ`; returning `x` at `boolean` is
-transport along `SubP`. A generic body may copy `T` through annotated `const`
+transport along `SubP`. A generic body may copy `T` through annotated or inferred `const`
 bindings and extra parameters, with bounds to boolean or an earlier parameter.
 See [GenericSource.lean](lean/Verification/ExperimentState/GenericSource.lean).
 

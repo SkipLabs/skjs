@@ -89,7 +89,7 @@ try {
   expect("dependent bounds verify from unedited SKJS claims", run(ast, rawClaims), true);
   const noAnnot = clone(ast);
   sole(stmt(nth(functionIn(noAnnot, "bind").body, 0), "const")).annot = null;
-  expect("generic const requires a T annotation", run(noAnnot, claims), false, "generic const requires");
+  expect("generic const infers the rigid initializer type", run(noAnnot, claims), true);
   const badInit = clone(ast);
   sole(stmt(nth(functionIn(badInit, "bind").body, 0), "const")).init = {
     k: "lit",
