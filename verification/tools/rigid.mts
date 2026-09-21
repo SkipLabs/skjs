@@ -37,7 +37,7 @@ const key = (namePos: readonly number[]) => namePos.join(":");
 /**
  * Which parameters a claim names.
  *
- * `ClaimType` is a three-way union and each case is answered here, so a fourth
+ * `ClaimType` is a closed union and each case is answered here, so a new form
  * added to the wire format stops compiling rather than silently drawing
  * nothing: a label list is ground and names none, `{param}` names exactly one,
  * and an unavailable type states no type at all.
@@ -51,14 +51,39 @@ export function rigidOf(
   type: ClaimType,
   scope: RigidParameter[],
 ): RigidParameter[] {
-  if (Array.isArray(type)) return [];
-  if ("param" in type) {
-    const declared = scope.find((p) => p.name === type.param);
-    return declared ? [declared] : [];
-  }
-  if ("unavailable" in type) return [];
-  const unhandled: never = type;
-  return unhandled;
+  const visit = (type: ClaimType, hidden: Set<string>): RigidParameter[] => {
+    if (Array.isArray(type)) return [];
+    if ("param" in type) {
+      if (hidden.has(type.param)) return [];
+      const declared = scope.find((p) => p.name === type.param);
+      return declared ? [declared] : [];
+    }
+    if ("unavailable" in type) return [];
+    if ("scheme" in type) {
+      const seen = new Set(hidden);
+      const fromBounds = type.scheme.typeParams.flatMap((p) => {
+        const found = p.bound ? visit(p.bound, seen) : [];
+        seen.add(p.name);
+        return found;
+      });
+      const local = new Set([
+        ...hidden,
+        ...type.scheme.typeParams.map((p) => p.name),
+      ]);
+      return [
+        ...fromBounds,
+        ...type.scheme.params.flatMap((p) => visit(p, local)),
+        ...visit(type.scheme.result, local),
+      ].filter(
+        (p, index, all) =>
+          all.findIndex((q) => q.name === p.name && q.bound === p.bound) ===
+          index,
+      );
+    }
+    const unhandled: never = type;
+    return unhandled;
+  };
+  return visit(type, new Set());
 }
 
 /**

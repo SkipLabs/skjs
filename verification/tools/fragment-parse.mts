@@ -23,6 +23,7 @@ import type {
   SourceFile,
   Statement,
   TypeAliasDeclaration,
+  TypeParameterDeclaration,
   VariableStatement,
   TypeNode,
 } from "typescript/unstable/ast";
@@ -135,11 +136,60 @@ class Gate {
   // Written out rather than a parameter property: node strips types, it does
   // not compile them, so the syntax has to be erasable.
   private readonly file: SourceFile;
-  private readonly typeParams = new Set<string>();
+  /* Type-parameter names are resolved lexically. Keeping frames, rather than
+   * one file-wide set, makes nested quantified callables representable without
+   * conflating an inner binder with an outer binder of the same spelling. */
+  private readonly typeParamScopes: Set<string>[] = [];
   private readonly aliasNames = new Set<string>();
   private aliasApps = false;
   constructor(file: SourceFile) {
     this.file = file;
+  }
+
+  private hasTypeParam(name: string): boolean {
+    return this.typeParamScopes.some((scope) => scope.has(name));
+  }
+
+  private enterTypeParams(
+    parameters: readonly TypeParameterDeclaration[] | undefined,
+  ): TypeParamAst[] {
+    const local = new Set<string>();
+    const result: TypeParamAst[] = [];
+    this.typeParamScopes.unshift(local);
+    try {
+      for (const tp of parameters ?? []) {
+        if (tp.defaultType)
+          this.fail(tp, "type parameter defaults are outside the fragment");
+        if (tp.name.kind !== ts.SyntaxKind.Identifier)
+          this.fail(tp, "expected a type-parameter name");
+        if (local.has(tp.name.text)) this.fail(tp, "duplicate type parameter");
+        let bound: ClaimType | null = null;
+        if (tp.constraint) {
+          const earlier =
+            ts.isTypeReferenceNode(tp.constraint) &&
+            tp.constraint.typeName.kind === ts.SyntaxKind.Identifier &&
+            !tp.constraint.typeArguments?.length &&
+            this.hasTypeParam(tp.constraint.typeName.text);
+          if (tp.constraint.kind !== ts.SyntaxKind.BooleanKeyword && !earlier)
+            this.fail(
+              tp.constraint,
+              "only `extends boolean` or an earlier type parameter is in the fragment",
+            );
+          bound = this.typeOf(tp.constraint);
+        }
+        result.push({ name: tp.name.text, bound });
+        local.add(tp.name.text);
+      }
+      return result;
+    } catch (error) {
+      this.typeParamScopes.shift();
+      throw error;
+    }
+  }
+
+  private leaveTypeParams(): void {
+    if (!this.typeParamScopes.shift())
+      throw new Error("internal: no type-parameter scope to leave");
   }
 
   registerAlias(name: string, node: Node): void {
@@ -305,7 +355,7 @@ class Gate {
         });
         return;
       }
-      if (!this.typeParams.has(name)) this.fail(node, "unknown type parameter");
+      if (!this.hasTypeParam(name)) this.fail(node, "unknown type parameter");
       acc.push({ a: "param", name });
       return;
     }
@@ -1054,42 +1104,48 @@ class Gate {
   // owns what the source means.
 
   private lambda(node: ArrowFunction): Expr {
-    if (node.modifiers?.length || node.typeParameters?.length)
-      this.fail(node, "expected a non-generic synchronous closure");
-    // Each name is taken where its parameter has just been checked: a
-    // narrowing does not survive into the second pass over the same list.
-    const names = node.parameters.map((p) => {
-      if (
-        !ts.isIdentifier(p.name) ||
-        p.name.text === "this" ||
-        p.questionToken ||
-        p.dotDotDotToken ||
-        p.initializer
-      )
-        this.fail(p, "expected a required closure parameter");
-      if (p.name.text === "undefined")
-        this.fail(p, "shadowing undefined is outside the fragment");
-      return p.name.text;
-    });
-
-    const result = () => this.typeOf(node.type);
-    const body = ts.isBlock(node.body)
-      ? this.closureBlock(
-          node.body,
-          node.body.statements.map((s) => this.stmt(s)),
-          result,
+    if (node.modifiers?.length)
+      this.fail(node, "expected a synchronous closure without modifiers");
+    const typeParams = this.enterTypeParams(node.typeParameters);
+    try {
+      // Each name is taken where its parameter has just been checked: a
+      // narrowing does not survive into the second pass over the same list.
+      const names = node.parameters.map((p) => {
+        if (
+          !ts.isIdentifier(p.name) ||
+          p.name.text === "this" ||
+          p.questionToken ||
+          p.dotDotDotToken ||
+          p.initializer
         )
-      : this.expr(node.body);
-    return {
-      k: "lambda",
-      pos: this.span(node),
-      params: node.parameters.map((p, i) => ({
-        name: names[i],
-        type: this.typeOf(p.type),
-      })),
-      result: this.typeOf(node.type),
-      body,
-    };
+          this.fail(p, "expected a required closure parameter");
+        if (p.name.text === "undefined")
+          this.fail(p, "shadowing undefined is outside the fragment");
+        return p.name.text;
+      });
+
+      const result = () => this.typeOf(node.type);
+      const body = ts.isBlock(node.body)
+        ? this.closureBlock(
+            node.body,
+            node.body.statements.map((s) => this.stmt(s)),
+            result,
+          )
+        : this.expr(node.body);
+      return {
+        k: "lambda",
+        pos: this.span(node),
+        typeParams,
+        params: node.parameters.map((p, i) => ({
+          name: names[i],
+          type: this.typeOf(p.type),
+        })),
+        result: this.typeOf(node.type),
+        body,
+      };
+    } finally {
+      this.leaveTypeParams();
+    }
   }
 
   private closureBlock(
@@ -1423,7 +1479,7 @@ class Gate {
     if (tp.name.kind !== ts.SyntaxKind.Identifier)
       this.fail(tp, "expected a type-parameter name");
     const param = tp.name.text;
-    this.typeParams.add(param);
+    this.typeParamScopes.unshift(new Set([param]));
     this.aliasApps = false;
     try {
       return {
@@ -1432,7 +1488,7 @@ class Gate {
         body: this.typeOf(node.type),
       };
     } finally {
-      this.typeParams.clear();
+      this.leaveTypeParams();
     }
   }
 
@@ -1448,33 +1504,7 @@ class Gate {
         "modifiers (export/async/declare) are outside the fragment",
       );
     if (!node.body) this.fail(node, "a function must have a body");
-    const typeParams: TypeParamAst[] = [];
-    if (node.typeParameters?.length) {
-      for (const tp of node.typeParameters) {
-        if (tp.defaultType)
-          this.fail(tp, "type parameter defaults are outside the fragment");
-        if (tp.name.kind !== ts.SyntaxKind.Identifier)
-          this.fail(tp, "expected a type-parameter name");
-        if (this.typeParams.has(tp.name.text))
-          this.fail(tp, "duplicate type parameter");
-        let bound: ClaimType | null = null;
-        if (tp.constraint) {
-          const earlier =
-            ts.isTypeReferenceNode(tp.constraint) &&
-            tp.constraint.typeName.kind === ts.SyntaxKind.Identifier &&
-            !tp.constraint.typeArguments?.length &&
-            this.typeParams.has(tp.constraint.typeName.text);
-          if (tp.constraint.kind !== ts.SyntaxKind.BooleanKeyword && !earlier)
-            this.fail(
-              tp.constraint,
-              "only `extends boolean` or an earlier type parameter is in the fragment",
-            );
-          bound = this.typeOf(tp.constraint);
-        }
-        typeParams.push({ name: tp.name.text, bound });
-        this.typeParams.add(tp.name.text);
-      }
-    }
+    const typeParams = this.enterTypeParams(node.typeParameters);
     try {
       const params = node.parameters.map((p) => {
         if (p.name.kind !== ts.SyntaxKind.Identifier)
@@ -1502,7 +1532,7 @@ class Gate {
         body: this.block(node.body),
       };
     } finally {
-      this.typeParams.clear();
+      this.leaveTypeParams();
     }
   }
 }

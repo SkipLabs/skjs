@@ -103,12 +103,13 @@ binders. They belong to proposal/search state; they cannot be substituted into
 published semantic types without discharging retained obligations. Likewise,
 delayed literals are inference work, not new semantic types.
 
-The next architectural milestone is **polymorphic call inference**: scoped
+The active architectural milestone is **polymorphic call inference**: scoped
 schemes, fresh inference variables, constraint proposals with retained
-obligations, and validation before publication. The generic-closure fixture is
-currently refused by the shared parser; general instantiation also needs a
-matching proof interface. Do not call aliases or rigid identity examples proof
-that a solver architecture works. Keep inference-variable identities and write
+obligations, and validation before publication. The first executable slice
+accepts a unary identity closure instantiated at Boolean. It preserves the
+scheme in SourceClaims, checks the body universally, and then sends the checked
+instance through the ordinary graph proof. General instantiation still needs a
+compositional scheme certificate. Keep inference-variable identities and write
 capabilities out of the published semantic-type API.
 
 The inferred-copy prerequisite is now supported: an unannotated immutable local
@@ -165,9 +166,11 @@ universal obligation. Follow this order:
    bounds, callback variance and a capture used as incompatible storage. Tamper
    with instantiation evidence and check rejection by the independent consumer.
 
-Keep `generic-closure.ts` as the original motivating witness until it verifies;
-currently it still fails at the shared source parser. A successful OCaml solver
-unit test or a concrete monomorphic specialization does not close that gap.
+`generic-closure.ts` is the first end-to-end witness. Its producer proposal is
+not enough: a negative closure that fabricates `T` reaches Lean and is refused
+before specialization, while the accepted instance still receives the ordinary
+graph certificate. A successful OCaml solver unit test or an unchecked concrete
+specialization would not close that gap.
 
 ### Subsequent flow work
 

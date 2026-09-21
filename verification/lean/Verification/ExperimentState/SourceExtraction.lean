@@ -228,7 +228,8 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
     | .field s => return .indexWrite p (some s) r key rhs
     | .element => return .elemWrite p r key rhs
   | .withValue p f i ft bt => return .withValue p (← comparisonsExpr fc f) (← comparisonsExpr fc i) ft bt
-  | .lambda p ps result b => return .lambda p ps result (← comparisonsExpr fc b)
+  | .lambda p tps ps result b =>
+    return .lambda p tps ps result (← comparisonsExpr fc b)
   | .bindWithReceiver p c r args => return .bindWithReceiver p (← comparisonsExpr fc c) (← comparisonsExpr fc r) (← args.mapM (comparisonsExpr fc))
   | .callWithReceiver p c r args => return .callWithReceiver p (← comparisonsExpr fc c) (← comparisonsExpr fc r) (← args.mapM (comparisonsExpr fc))
   | .call p c args => return .call p (← comparisonsExpr fc c) (← args.mapM (comparisonsExpr fc))
@@ -269,7 +270,7 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .var .. | .lit .. | .done .. => false
   | .assign _ target _ rhs | .nullishAssign _ target _ rhs => target == name || assignsExpr name rhs
   | .not _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e
-  | .lambda _ _ _ e => assignsExpr name e
+  | .lambda _ _ _ _ e => assignsExpr name e
   | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .withValue _ a b _ _ | .index _ _ a b
   | .seqBody _ a b | .letBody _ _ _ a b => assignsExpr name a || assignsExpr name b
@@ -1025,7 +1026,9 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     pure (DirectProof.node Γ
       (.makeAt (.closure arity body) (P.map Prod.fst) (values.map (·.term))) [C] .makeCallable
       (casts ++ bodies))
-  | .lambda pos params ret body => do
+  | .lambda pos typeParams params ret body => do
+    if !typeParams.isEmpty then
+      throw "quantified closure checking requires the scheme evidence path"
     let paramNames := params.map Prod.fst
     if !distinct paramNames || paramNames.any (fun name => name == "" || name == "undefined" || (names scope).contains name) then
       throw "shadowing or duplicate closure parameter is outside the fragment"

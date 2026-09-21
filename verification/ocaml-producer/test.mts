@@ -11,6 +11,7 @@ import { analyse } from "../report-viewer/serve.mts";
 const here = import.meta.dirname;
 let good = "";
 let generic = "";
+let genericClosure = "";
 let verifiedFunctions = 0;
 for (const test of cases) {
   const result = check(join(here, "examples", `${test.file}.ts`));
@@ -36,6 +37,7 @@ for (const test of cases) {
   );
   if (test.file === "values") good = result.artifacts;
   if (test.file === "generic-inferred") generic = result.artifacts;
+  if (test.file === "generic-closure") genericClosure = result.artifacts;
 }
 process.stdout.write(
   `${verifiedFunctions} functions verified; ${cases.filter((c) => c.kind === "negative").length} negative controls; ${cases.filter((c) => c.kind === "gap").length} named gaps\n`,
@@ -45,14 +47,14 @@ process.stdout.write(
 const original: SourceClaims = JSON.parse(
   readFileSync(join(good, "claims.json"), "utf8"),
 );
-const invoke = (claims: string, evidence: string) => {
+const invoke = (claims: string, evidence: string, artifacts = good) => {
   const p = spawnSync(
     verifier,
     [
       "--check-source-claims",
-      join(good, "fragment.json"),
+      join(artifacts, "fragment.json"),
       claims,
-      join(good, "source.ts"),
+      join(artifacts, "source.ts"),
       evidence,
     ],
     { encoding: "utf8", timeout: 30_000 },
@@ -94,6 +96,23 @@ const badEvidence = join(good, "bad-evidence.json");
 writeFileSync(badEvidence, "{}");
 invoke(join(good, "claims.json"), badEvidence);
 process.stdout.write("tampered evidence: refused\n");
+
+// A graph certificate for the checked Boolean instance cannot validate a
+// different quantified contract. The scheme itself is independently consumed.
+const closureClaims: SourceClaims = JSON.parse(
+  readFileSync(join(genericClosure, "claims.json"), "utf8"),
+);
+const closure = closureClaims.functions[0];
+assert.ok(closure);
+const schemePoint = closure.expressions.find(
+  (e) => !Array.isArray(e.type) && "scheme" in e.type,
+);
+assert.ok(schemePoint && !Array.isArray(schemePoint.type) && "scheme" in schemePoint.type);
+schemePoint.type.scheme.result = [1, 2];
+const forgedScheme = join(genericClosure, "forged-scheme.json");
+writeFileSync(forgedScheme, JSON.stringify(closureClaims));
+invoke(forgedScheme, join(genericClosure, "evidence.json"), genericClosure);
+process.stdout.write("tampered quantified closure scheme: refused\n");
 
 // Generic bodies take the rigid-bound path in BOTH producer and consumer.
 // Reusing valid evidence must not let an inferred local trust a forged point type.
@@ -157,6 +176,20 @@ process.stdout.write(
   `reader collection: ${collected.manifest.functions.length} functions, producer's own claims verified\n`,
 );
 
+const collectedGeneric = await analyse(
+  repositoryPath("generic-closure"),
+  "ocaml",
+);
+assert.equal(collectedGeneric.collection?.verified, true);
+assert.equal(collectedGeneric.candidate?.format, "source-claims");
+assert.match(
+  collectedGeneric.manifest.functions[0]?.expressions.find((e) =>
+    e.type.startsWith("<"),
+  )?.type ?? "",
+  /^<T>\(arg0: T\) => T$/,
+);
+process.stdout.write("reader collection: quantified callable rendered\n");
+
 // A negative control reaches the verifier and is displayed as no derivation
 // found — the reader's `✗`. It is not an error, and it is not a disproof.
 const rejected = await analyse(repositoryPath("invalid-return"), "ocaml");
@@ -167,11 +200,8 @@ assert.deepEqual(
 process.stdout.write("reader collection: negative control not established\n");
 
 // What this producer does not implement is refused where it is refused, in the
-// words that boundary uses: the shared parser gates `generic-closure`, and the
-// producer itself refuses `unsupported`. Neither becomes a report with nothing
-// in it.
+// words that boundary uses. It does not become a report with nothing in it.
 for (const [file, says] of [
-  ["generic-closure", /shared parser refused this source: gate:/],
   ["unsupported", /OCaml producer proposed no claims: unsupported:/],
 ] as const) {
   await assert.rejects(analyse(repositoryPath(file), "ocaml"), says);

@@ -1,4 +1,5 @@
 import Verification.ExperimentState.SourceExtraction
+import Verification.ExperimentState.TypeSchemes
 
 /-! Strict producer-independent sidecars. A document carries its own type table,
 which its labels index; the primitives are its first four rows. The external
@@ -12,26 +13,55 @@ interpreted as a ground graph label or replaced with its upper bound. -/
 inductive ClaimType where
   | labels : List Nat → ClaimType
   | param : String → ClaimType
+  | scheme : List (String × Option ClaimType) → List ClaimType → ClaimType → ClaimType
   | unavailable : String → ClaimType
+  deriving Repr, BEq
 instance : Coe (List Nat) ClaimType := ⟨ClaimType.labels⟩
+
+private partial def ClaimType.toJson : ClaimType → Json
+  | .labels A => Lean.toJson A
+  | .param name => Json.mkObj [("param", Lean.toJson name)]
+  | .scheme typeParams params result => Json.mkObj [("scheme", Json.mkObj [
+      ("typeParams", Lean.toJson (typeParams.map fun p => Json.mkObj [
+        ("name", Lean.toJson p.1), ("bound", p.2.map ClaimType.toJson |>.getD Json.null)])),
+      ("params", Lean.toJson (params.map ClaimType.toJson)),
+      ("result", ClaimType.toJson result)])]
+  | .unavailable reason => Json.mkObj [("unavailable", Lean.toJson reason)]
+
 instance : ToJson ClaimType where
-  toJson
-    | .labels A => toJson A
-    | .param name => Json.mkObj [("param",toJson name)]
-    | .unavailable reason => Json.mkObj [("unavailable",toJson reason)]
+  toJson := ClaimType.toJson
+
+private partial def ClaimType.fromJson (j : Json) : Except String ClaimType :=
+  match j with
+  | .arr _ => ClaimType.labels <$> Lean.fromJson? j
+  | _ => do
+    if let .ok reason := j.getObjValAs? String "unavailable" then
+      if j != Json.mkObj [("unavailable", Lean.toJson reason)] || reason.isEmpty then
+        throw "invalid unavailable claim"
+      return .unavailable reason
+    if let .ok s := j.getObjVal? "scheme" then
+      CellClaims.fieldsExactly j ["scheme"]
+      CellClaims.fieldsExactly s ["typeParams", "params", "result"]
+      let typeParams ← (← jArr s "typeParams").mapM fun p => do
+        CellClaims.fieldsExactly p ["name", "bound"]
+        let name ← jStr (← jField p "name")
+        let bound ← jField p "bound"
+        let bound ← if bound == .null then pure none else do
+          pure (some (← ClaimType.fromJson bound))
+        return (name, bound)
+      let params ← (← jArr s "params").mapM ClaimType.fromJson
+      return .scheme typeParams params (← ClaimType.fromJson (← jField s "result"))
+    let name ← jStr (← jField j "param")
+    if j != Json.mkObj [("param", Lean.toJson name)] || name.isEmpty then
+      throw "invalid rigid parameter claim"
+    return .param name
+
 instance : FromJson ClaimType where
-  fromJson? j := match j with
-    | .arr _ => ClaimType.labels <$> fromJson? j
-    | _ => do
-      if let .ok reason := j.getObjValAs? String "unavailable" then
-        if j != Json.mkObj [("unavailable",toJson reason)] || reason.isEmpty then throw "invalid unavailable claim"
-        return .unavailable reason
-      let name ← jStr (← jField j "param")
-      if j != Json.mkObj [("param",toJson name)] || name.isEmpty then throw "invalid rigid parameter claim"
-      return .param name
+  fromJson? := ClaimType.fromJson
 private def ClaimType.ground : ClaimType → SourceClaims.Candidate
   | .labels A => .ok A
   | .param _ => .error "rigid parameter outside generic function"
+  | .scheme .. => .error "quantified callable requires scheme checking"
   | .unavailable reason => .error reason
 
 /-- What a point currently holds, field by field: an object has one location
@@ -76,11 +106,91 @@ def Function.normalized (f : Function) : SourceClaims.Function :=
     f.entries.map (fun e => (e.start,e.bindings.filterMap fun b => b.current.map (b.name,·))),
     f.expressions.filterMap (fun e => e.current.map (e.pos,·))⟩
 
+private def identityScheme (name : String) : TypeSchemes.Scheme String :=
+  { binders := [name], bounds := [], signatures := [([[name]], [name])] }
+
+private def identityClaim (name : String) : ClaimType :=
+  let scheme := identityScheme name
+  .scheme (scheme.binders.map (·, none)) [.param name] (.param name)
+
+private def claimHasScheme : ClaimType → Bool
+  | .scheme .. => true
+  | _ => false
+
+private def Function.hasScheme (f : Function) : Bool :=
+  claimHasScheme f.result || f.params.any (claimHasScheme ·.type) ||
+    f.entries.any (fun e => e.bindings.any (claimHasScheme ·.type)) ||
+    f.expressions.any (claimHasScheme ·.type)
+
+private def specializeClaim (name : String) (arrow : Nat) : ClaimType → ClaimType
+  | .scheme [(binder, none)] [.param input] (.param output) =>
+      if binder == name && input == name && output == name then .labels [arrow]
+      else .unavailable "quantified callable differs from its source scheme"
+  | .param binder =>
+      if binder == name then .labels [1, 2]
+      else .unavailable "rigid parameter is outside the specialized scheme"
+  | claim => claim
+
+private def specializeBinding (name : String) (arrow : Nat) (b : Binding) : Binding :=
+  { b with type := specializeClaim name arrow b.type }
+
+private def specializeFunction (name : String) (arrow : Nat) (f : Function) : Function :=
+  { f with
+    params := f.params.map (specializeBinding name arrow)
+    result := specializeClaim name arrow f.result
+    entries := f.entries.map fun e =>
+      { e with bindings := e.bindings.map (specializeBinding name arrow) }
+    expressions := f.expressions.map fun e =>
+      { e with type := specializeClaim name arrow e.type } }
+
+/-- The first executable scheme path is deliberately narrow in syntax but not
+in meaning: the closure body is checked once as the universally quantified
+identity scheme, then the surrounding program is lowered at the independently
+claimed Boolean instantiation and goes through the ordinary graph proof. -/
+private def specializeIdentityClosure (T : SourceTypes.Table) (f : Fragment.Fn)
+    (claims : Function) : Except String (SourceTypes.Table × Fragment.Fn × Function) := do
+  let [.constants declaration [binding], .ret returnPos (.call callPos (.var calleePos callee) [argument])] := f.body
+    | throw "quantified closure checking currently requires one immutable closure followed by one call"
+  let .lambda lambdaPos [typeParam] [(parameter, parameterType)] resultType (.var bodyPos returned) := binding.init
+    | throw "quantified closure checking currently requires a unary identity closure"
+  if typeParam.bound.isSome || parameter != returned ||
+      (← GenericSource.paramName parameterType) != typeParam.name ||
+      (← GenericSource.paramName resultType) != typeParam.name then
+    throw "quantified closure body is not the declared identity scheme"
+  if callee != binding.name then throw "quantified call does not use the declared closure"
+  let expected := identityClaim typeParam.name
+  let requireExpression (pos : Span) (ty : ClaimType) (role : String) := do
+    let some claim := claims.expressions.find? (fun e => e.pos == pos)
+      | throw s!"missing quantified {role} claim"
+    if claim.type != ty then throw s!"quantified {role} claim differs from the source scheme"
+  requireExpression bodyPos (.param typeParam.name) "body"
+  requireExpression lambdaPos expected "closure"
+  requireExpression calleePos expected "callee"
+  requireExpression argument.span (.labels [1, 2]) "argument"
+  requireExpression callPos (.labels [1, 2]) "call result"
+  let entryHasScheme := claims.entries.any fun e =>
+    e.bindings.any fun b => b.name == binding.name && b.type == expected
+  if !entryHasScheme then throw "quantified closure binding claim differs from the source scheme"
+  let arrowClause : PositiveNormalization.Clause (List Nat) := .arrs [([[1, 2]], [1, 2])]
+  let T := SourceTypes.intern T arrowClause
+  let arrow := SourceTypes.label T arrowClause
+  let lambda := Fragment.Expr.lambda lambdaPos []
+    [(parameter, GenericSource.booleanType)] GenericSource.booleanType (.var bodyPos returned)
+  let binding := { binding with init := lambda }
+  let f := { f with body := [.constants declaration [binding],
+    .ret returnPos (.call callPos (.var calleePos callee) [argument])] }
+  return (T, f, specializeFunction typeParam.name arrow claims)
+
 /-- The table starts with the primitives and refers only to its own labels. -/
 private def validTable (T : SourceTypes.Table) : Bool :=
   SourceTypes.initial.isPrefixOf T && (T.flatMap id |>.flatMap clauseTypes).all (validTy T.length)
-private def validType (T : SourceTypes.Table) : ClaimType → Bool
+private partial def validType (T : SourceTypes.Table) : ClaimType → Bool
   | .param name => !name.isEmpty
+  | .scheme typeParams params result =>
+      !typeParams.isEmpty &&
+      (typeParams.map Prod.fst).eraseDups.length == typeParams.length &&
+      typeParams.all (fun p => !p.1.isEmpty && p.2.all (validType T)) &&
+      params.all (validType T) && validType T result
   | .unavailable reason => !reason.isEmpty
   | .labels A => validTy T.length A && A == A.mergeSort (· ≤ ·) && A.eraseDups == A
 /-- Every asserted field is one the point's own record contract names, each at
@@ -124,7 +234,7 @@ private abbrev Sites := List Nat × List Span
 private def joinSites (a b : Sites) : Sites := (a.1 ++ b.1,a.2 ++ b.2)
 private partial def exprSites : Fragment.Expr → Sites
   | .var p _ | .lit p _ => ([],[p])
-  | .shapeTest p _ _ e | .not p e | .cast p _ e | .read p _ e | .lambda p _ _ e => joinSites ([],[p]) (exprSites e)
+  | .shapeTest p _ _ e | .not p e | .cast p _ e | .read p _ e | .lambda p _ _ _ e => joinSites ([],[p]) (exprSites e)
   | .alloc p _ es => es.foldl (fun acc a => joinSites acc (exprSites a)) ([],[p])
   | .withValue p a b _ _ | .write p _ a b | .singletonTest p _ _ _ a b | .equality p _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
   -- An assignment is an expression site, and the name it assigns is not one:
@@ -168,6 +278,7 @@ def functionSites (f : Fragment.Fn) : List Nat × List Span :=
 private def genericType (T : SourceTypes.Table) : ClaimType → Except String Json
   | .unavailable reason => throw reason
   | .param name => pure (Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj [("a",toJson "param"),("name",toJson name)]])])
+  | .scheme .. => throw "nested quantified callable requires scheme checking"
   | .labels A => do
     let rows := PositiveRules.expand (SourceTypes.graph T) A
     -- Semantic top passes through as itself: it permits nothing.
@@ -209,6 +320,9 @@ def extract (ast claims : Json) (fileKey : String) : Except String (List SourceR
     if !tps.isEmpty then
       GenericSource.check f tps (← c.genericClaims d.types)
       return none
+    if c.hasScheme then
+      let (T, f, c) ← specializeIdentityClosure d.types f c
+      return some (← extractNormalizedFn T f c.normalized)
     return some (← extractNormalizedFn d.types f c.normalized)
   return rs.filterMap id
 

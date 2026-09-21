@@ -90,7 +90,7 @@ function claimSlot(candidate: Candidate, fn: FunctionRef, item: SiteRef): Slot {
 // {top, atoms} form or the marker saying the producer could not decode one.
 // Anything else is not a claim about this site at all; the verifier would reject
 // it later, with a message about a place rather than about what was typed here.
-const claimedType = (t: unknown) =>
+const claimedType = (t: unknown): boolean =>
   isList(t)
     ? t.every(
         (label) =>
@@ -99,6 +99,19 @@ const claimedType = (t: unknown) =>
     : isRecord(t) &&
       (typeof t.unavailable === "string" ||
         typeof t.param === "string" ||
+        (isRecord(t.scheme) &&
+          isList(t.scheme.typeParams) &&
+          t.scheme.typeParams.length > 0 &&
+          t.scheme.typeParams.every(
+            (p) =>
+              isRecord(p) &&
+              typeof p.name === "string" &&
+              p.name.length > 0 &&
+              (p.bound === null || claimedType(p.bound)),
+          ) &&
+          isList(t.scheme.params) &&
+          t.scheme.params.every(claimedType) &&
+          claimedType(t.scheme.result)) ||
         t.unsupported === true ||
         (typeof t.top === "boolean" && isList(t.atoms)));
 // There is one editor and it speaks the producer's structural encoding. A
@@ -117,6 +130,8 @@ const point = (
   if (isRecord(value)) {
     if (typeof value.param === "string")
       return { current, type: { param: value.param } };
+    if (isRecord(value.scheme))
+      return { current, type: value as ClaimType };
     if (typeof value.unavailable === "string")
       return { current, type: { unavailable: value.unavailable } };
     const atoms = isList(value.atoms) ? value.atoms : [];
@@ -357,8 +372,10 @@ function editable(candidate: Candidate, fn: FunctionRef, item: SiteRef) {
   const types = candidate.claims.types;
   const lifted = (labels: ClaimType, current: CurrentFields | null) => {
     const type =
-      isRecord(labels) && "param" in labels
-        ? { top: false, atoms: [{ a: "param", name: labels.param }] }
+      isRecord(labels)
+        ? "param" in labels
+          ? { top: false, atoms: [{ a: "param", name: labels.param }] }
+          : labels
         : surface.lift(types, labels, current);
     return type && surface.roundTrips(type) ? type : labels;
   };

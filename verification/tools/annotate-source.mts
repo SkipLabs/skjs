@@ -357,9 +357,18 @@ function fromSourceClaims(
     throw Error("source-claim source identity mismatch");
   const types=input.types;
   if(!Array.isArray(types)||types.length<4)throw Error("invalid source type table");
-  const type=(A: import("./source-claims.mts").ClaimType)=> {
+  const type=(A: import("./source-claims.mts").ClaimType):string=> {
     if(!Array.isArray(A)) {
       if("unavailable" in A && Object.keys(A).length===1 && typeof A.unavailable==="string" && A.unavailable)return "(unavailable)";
+      if("scheme" in A) {
+        const s=A.scheme;
+        if(!Array.isArray(s.typeParams)||!s.typeParams.length||!Array.isArray(s.params))throw Error("invalid quantified callable claim");
+        const binders=s.typeParams.map(p=>{
+          if(!p||typeof p.name!=="string"||!p.name)throw Error("invalid quantified callable binder");
+          return p.name+(p.bound===null?"":` extends ${type(p.bound)}`);
+        }).join(", ");
+        return `<${binders}>(${s.params.map((p,i)=>`arg${i}: ${type(p)}`).join(", ")}) => ${type(s.result)}`;
+      }
       if(!("param" in A))throw Error("invalid source claim type");
       if(Object.keys(A).join()!=="param" || typeof A.param!=="string" || !A.param)throw Error("invalid rigid parameter claim");
       return A.param;

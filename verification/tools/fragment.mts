@@ -86,6 +86,7 @@ export type Expr =
   | {
       k: "lambda";
       pos: Span;
+      typeParams: TypeParamAst[];
       params: { name: string; type: ClaimType }[];
       result: ClaimType;
       body: Expr;

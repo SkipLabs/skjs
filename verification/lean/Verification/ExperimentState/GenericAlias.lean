@@ -224,9 +224,11 @@ partial def expandExpr (aliases : List Alias) (e : Fragment.Expr) : Except Strin
   | .withValue p fn initial ft bt =>
     return .withValue p (← expandExpr aliases fn) (← expandExpr aliases initial)
       (← expandType aliases ft) (← expandType aliases bt)
-  | .lambda p ps result body =>
+  | .lambda p tps ps result body =>
     let ps ← ps.mapM fun (n, t) => expandNamed aliases n t
-    return .lambda p ps (← expandType aliases result) (← expandExpr aliases body)
+    let tps ← tps.mapM fun tp => do
+      return { tp with bound := ← tp.bound.mapM (expandType aliases) }
+    return .lambda p tps ps (← expandType aliases result) (← expandExpr aliases body)
   | .bindWithReceiver p c r args =>
     return .bindWithReceiver p (← expandExpr aliases c) (← expandExpr aliases r)
       (← args.mapM (expandExpr aliases))

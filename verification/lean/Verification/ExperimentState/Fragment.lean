@@ -159,6 +159,19 @@ structure ArrayElem (Expr : Type) where
   namePos : Span
   default_ : Option Expr
 
+/-- A lexically scoped rigid binder. Bounds may mention outer or preceding
+binders; the source decoder that consumes the expression checks that scope. -/
+structure TypeParam where
+  name : String
+  bound : Option Json
+
+def decodeTypeParam (j : Json) : Except String TypeParam := do
+  CellClaims.fieldsExactly j ["name", "bound"]
+  let name ← jStr (← jField j "name")
+  if name.isEmpty then throw "empty type-parameter name"
+  let b ← jField j "bound"
+  return ⟨name, if b == Json.null then none else some b⟩
+
 inductive Expr where
   | var (pos : Span) (name : String)
   | lit (pos : Span) (v : Claim.Val)
@@ -208,7 +221,8 @@ inductive Expr where
   value written, where the calculus's write yields null. -/
   | assign (pos : Span) (name : String) (namePos : Span) (rhs : Expr)
   | withValue (pos : Span) (fn initial : Expr) (functionType bagType : Json)
-  | lambda (pos : Span) (params : List (String × Json)) (result : Json) (body : Expr)
+  | lambda (pos : Span) (typeParams : List TypeParam)
+      (params : List (String × Json)) (result : Json) (body : Expr)
   | bindWithReceiver (pos : Span) (callee receiver : Expr) (args : List Expr)
   | callWithReceiver (pos : Span) (callee receiver : Expr) (args : List Expr)
   | call (pos : Span) (callee : Expr) (args : List Expr)
@@ -224,7 +238,7 @@ inductive Expr where
 
 /-- Singleton notation for small source-adapter fixtures. -/
 abbrev Expr.lam (p : Span) (name : String) (arg result : Json) (body : Expr) : Expr :=
-  .lambda p [(name,arg)] result body
+  .lambda p [] [(name,arg)] result body
 abbrev Expr.app (p : Span) (callee arg : Expr) : Expr := .call p callee [arg]
 
 def Expr.span : Expr → Span
@@ -232,7 +246,7 @@ def Expr.span : Expr → Span
   | .ifBody p _ _ _ _ | .done p | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
   | .arrayLit p _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .cast p _ _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ | .call p _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .cast p _ _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ _ | .call p _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ => p
 
 /-- One declarator of a `const` or `let`. -/
 structure Binding where
@@ -384,11 +398,21 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     return .withValue p (← decodeExpr (← jField j "fn")) (← decodeExpr (← jField j "initial"))
       (← jField j "functionType") (← jField j "bagType")
   | "lambda" => do
-    CellClaims.fieldsExactly j ["k","pos","params","result","body"]
+    -- Two proof fixtures embed parser snapshots from before quantified lambdas.
+    -- Live producers always write `typeParams`; absence in those snapshots is
+    -- the unique encoding of the former, necessarily empty list.
+    let typeParams ← match (j.getObjVal? "typeParams").toOption with
+      | some raw => do
+        CellClaims.fieldsExactly j ["k","pos","typeParams","params","result","body"]
+        (← raw.getArr?).toList.mapM decodeTypeParam
+      | none => do
+        CellClaims.fieldsExactly j ["k","pos","params","result","body"]
+        pure []
     let params ← (← jArr j "params").mapM fun param => do
       CellClaims.fieldsExactly param ["name","type"]
       return (← jStr (← jField param "name"), ← jField param "type")
-    return .lambda p params (← jField j "result") (← decodeExpr (← jField j "body"))
+    return .lambda p typeParams params (← jField j "result")
+      (← decodeExpr (← jField j "body"))
   | "doneBody" => return .done p
   | "seqBody" => return .seqBody p (← decodeExpr (← jField j "init")) (← decodeExpr (← jField j "body"))
   | "ifBody" =>
@@ -471,17 +495,6 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
       | _ => throw "malformed else branch"
     return .ite p (← decodeExpr (← jField j "cond")) thn els
   | _ => throw "statement outside the stateful fragment"
-
-structure TypeParam where
-  name : String
-  bound : Option Json
-
-def decodeTypeParam (j : Json) : Except String TypeParam := do
-  CellClaims.fieldsExactly j ["name", "bound"]
-  let name ← jStr (← jField j "name")
-  if name.isEmpty then throw "empty type-parameter name"
-  let b ← jField j "bound"
-  return ⟨name, if b == Json.null then none else some b⟩
 
 def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
   let typeParams ← (← jArr j "typeParams").mapM decodeTypeParam

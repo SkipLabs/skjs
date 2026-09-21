@@ -5,11 +5,15 @@ and rigid = { scope: int; index: int; spelling: string }
 and atom = Nul | Undef | True | False | Num | Str | NumLit of int64 | StrLit of string | Top
          | Shape of shape
 and field = { name: string; optional: bool; read: ty; write: ty option }
-and signature = { params: ty list; result: ty }
+and quantifier = { identity: rigid; bound: ty option }
+and signature = { quantified: quantifier list; params: ty list; result: ty }
 and sequence = { required: ty list; optional_elements: ty list; rest: ty option; readonly: bool }
 and shape = { fields: field list; calls: signature list; elements: sequence option }
 let record fields = Atoms [Shape {fields;calls=[];elements=None}]
-let arrow params result = Atoms [Shape {fields=[];calls=[{params;result}];elements=None}]
+let arrow params result =
+  Atoms [Shape {fields=[];calls=[{quantified=[];params;result}];elements=None}]
+let quantified_arrow quantified params result =
+  Atoms [Shape {fields=[];calls=[{quantified;params;result}];elements=None}]
 let ground xs = Atoms (List.sort_uniq compare xs)
 let bool = ground [True;False]
 let union a b = match a,b with

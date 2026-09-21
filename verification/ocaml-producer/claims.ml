@@ -29,6 +29,7 @@ let encode (proposal : Proposal.t) =
         Array [String f.name;labels f.read]) fs) in
       let fields,views = fields true writes,fields false reads in
       let arrows = Array (List.map (fun (a:Semantic.signature) ->
+        if a.quantified <> [] then unsupported "quantified callable claim encoding";
         Array [Array (List.map labels a.params);labels a.result]) shape.calls) in
       let clause = match shape.elements with
         | Some sequence ->
@@ -49,7 +50,18 @@ let encode (proposal : Proposal.t) =
             Object ["callable",Object ["first",fields;"rest",Array [];"arrows",arrows]] in
       intern (Array [clause])
   in
-  let claim_type = function Rigid n -> Object ["param",String n.spelling] | (Atoms _ | Union _) as t -> labels t
+  let rec claim_type = function
+    | Rigid n -> Object ["param",String n.spelling]
+    | Atoms [Shape {fields=[];calls=[signature];elements=None}]
+        when signature.quantified <> [] ->
+      let type_params = Array (List.map (fun (q:Semantic.quantifier) -> Object [
+        "name",String q.identity.spelling;
+        "bound",(match q.bound with None -> Null | Some t -> claim_type t)])
+        signature.quantified) in
+      Object ["scheme",Object ["typeParams",type_params;
+        "params",Array (List.map claim_type signature.params);
+        "result",claim_type signature.result]]
+    | (Atoms _ | Union _) as t -> labels t
   in
   let point t extra = Object (extra @ ["type",claim_type t; "current",Null])
   in

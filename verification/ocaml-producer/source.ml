@@ -49,6 +49,26 @@ let literal j = match text "a" j with
   | "booleanlit" -> LBool (text "v" j = "true")
   | "numberlit" -> LNumber (text "v" j) | "stringlit" -> LString (text "v" j)
   | k -> unsupported ("literal " ^ k)
+let optional_type binders = function Null -> None | j -> Some (annotation binders j)
+let span_start j = match list j with
+  | Number n :: _ -> int_of_string n
+  | _ -> Json.fail "empty source span"
+
+(* Decode binders in declaration order. A bound sees outer and preceding
+   binders, while the signature and body see the complete local frame. An
+   inner spelling shadows an outer one without identifying their rigid IDs. *)
+let quantify binders scope parameters =
+  let rec loop index binders accumulated = function
+    | [] -> binders,List.rev accumulated
+    | p::rest ->
+      let spelling=text "name" p in
+      if List.exists (fun (q:quantifier) -> q.identity.spelling=spelling) accumulated
+      then Json.fail "duplicate type parameter";
+      let identity={scope;index;spelling} in
+      let quantified={identity;bound=optional_type binders (field "bound" p)} in
+      let binders={binders with bindings=(spelling,Rigid identity)::binders.bindings} in
+      loop (index+1) binders (quantified::accumulated) rest in
+  loop 0 binders [] parameters
 type arithmetic = Add | Sub | Mul | Div
 type equality = StrictEqual | StrictUnequal | LooseEqual | LooseUnequal
 
@@ -59,7 +79,8 @@ and expr_node =
   | Id of string | Literal of literal | Not of expr | Arith of arithmetic * expr * expr
   | Equality of equality * expr * expr | Alloc of (string * expr) list
   | Read of expr * string | Write of expr * string * expr
-  | Assign of string * expr | Lambda of (string * ty) list * ty * expr
+  | Assign of string * expr
+  | Lambda of quantifier list * (string * ty) list * ty * expr
   | Call of expr * expr option * expr list
   | Conditional of expr * expr * expr | Coalesce of expr * expr
   | ArrayLiteral of expr list | Index of expr * expr | IndexWrite of expr * expr * expr
@@ -74,8 +95,7 @@ and stmt_node =
   | Declare of bool * (string * ty option * expr) list
   | Return of expr | Effect of expr | If of expr * stmt list * stmt list
   | While of expr * stmt list | Break | Continue
-and quantified = { identity: rigid; bound: ty option }
-and fn = { quantified: quantified list; name: string; name_pos: Json.t; params: (string * ty) list;
+and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: (string * ty) list;
            result: ty; body: stmt list }
 type program = { file: Json.t; digest: Json.t; functions: fn list }
 let rec expr binders j =
@@ -94,8 +114,14 @@ let rec expr binders j =
   | "read" -> Read (sub "e",text "field" j)
   | "write" -> Write (sub "receiver",text "field" j,sub "rhs")
   | "assign" -> Assign (text "name" j,sub "rhs")
-  | "lambda" -> Lambda (List.map (fun p -> text "name" p,annotation binders (field "type" p))
-      (items "params" j),annotation binders (field "result" j),sub "body")
+  | "lambda" ->
+      let inner,quantified = quantify binders (-1 - span_start (field "pos" j))
+        (items "typeParams" j) in
+      Lambda (quantified,
+        List.map (fun p -> text "name" p,annotation inner (field "type" p))
+          (items "params" j),
+        annotation inner (field "result" j),
+        expr inner (field "body" j))
   | "apply" -> Call (sub "callee",None,List.map (expr binders) (items "args" j))
   | "callWithReceiver" -> Call (sub "callee",Some (sub "receiver"),List.map (expr binders) (items "args" j))
   | "coalesce" -> Coalesce (sub "left",sub "right")
@@ -111,7 +137,6 @@ let rec expr binders j =
   | "ifBody" -> IfBody (annotation binders (field "result" j),sub "cond",sub "then",sub "else_")
   | "conditional" -> Conditional (sub "cond",sub "then",sub "else_")
   | k -> unsupported ("expression " ^ k) in {pos=field "pos" j;node}
-let optional_type binders = function Null -> None | j -> Some (annotation binders j)
 let rec stmt binders j =
   let statement = match text "k" j with
   | "const" | "let" -> Declare (text "k" j="let",List.map (fun b ->
@@ -127,12 +152,8 @@ let decode ast =
   { file=field "file" ast;digest=field "sourceSha256" ast;
     functions=List.mapi (fun scope f ->
       let parameters = items "typeParams" f in
-      let binders = List.mapi (fun index p -> let spelling=text "name" p in
-        spelling,{scope;index;spelling}) parameters in
-      let identities = binders in
-      let binders = {bindings=List.map (fun (n,id) -> n,Rigid id) identities; aliases; expanding=[]} in
-      let quantified = List.map2 (fun (_,identity) p ->
-        {identity;bound=optional_type binders (field "bound" p)}) identities parameters in
+      let initial={bindings=[];aliases;expanding=[]} in
+      let binders,quantified = quantify initial scope parameters in
       {quantified;name=text "name" f; name_pos=field "namePos" f;
       params=List.map (fun p -> text "name" p,annotation binders (field "type" p)) (items "params" f);
       result=annotation binders (field "retType" f);body=List.map (stmt binders) (items "body" f)}) (items "functions" ast) }

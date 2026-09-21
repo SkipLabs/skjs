@@ -16,4 +16,10 @@ let () =
   and b = Rigid {scope=1;index=0;spelling="T"} in
   assert (a <> b);
   assert (union a b <> a);
-  print_endline "JSON codec and rigid identity: passed"
+  let identity={scope=2;index=0;spelling="T"} in
+  let signature={quantified=[{identity;bound=None}];params=[Rigid identity];result=Rigid identity} in
+  let inferred:Inference.instantiation=Inference.infer signature [bool] in
+  assert (inferred.Inference.params=[bool]);
+  assert (inferred.Inference.result=bool);
+  assert (inferred.Inference.substitution=[identity,bool]);
+  print_endline "JSON codec, rigid identity and generic inference: passed"

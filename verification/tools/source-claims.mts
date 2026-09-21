@@ -13,8 +13,21 @@ import type { Span } from "./span.mts";
 import type { Labels, Row } from "./type-graph.mts";
 export type { Labels, Row } from "./type-graph.mts";
 
-/** Ground graph labels or a reference to the enclosing function's source binder. */
-export type ClaimType = Labels | { param: string } | { unavailable: string };
+/** A quantified callable. Parameter references inside it are resolved
+ * lexically: its binders shadow enclosing binders only within this value. */
+export interface SchemeClaim {
+  typeParams: { name: string; bound: ClaimType | null }[];
+  params: ClaimType[];
+  result: ClaimType;
+}
+
+/** Ground graph labels, a lexically scoped rigid parameter, or a quantified
+ * callable. This is the one type language shared by every producer. */
+export type ClaimType =
+  | Labels
+  | { param: string }
+  | { scheme: SchemeClaim }
+  | { unavailable: string };
 
 /**
  * What a producer believes at one site: the type it claims, and — where the

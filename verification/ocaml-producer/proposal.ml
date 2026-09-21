@@ -1,6 +1,7 @@
 open Semantic
 open Environment
 open Source
+open Inference
 
 type entry = { start: Json.t; bindings: (string * binding) list }
 type expression = { pos: Json.t; type_: ty }
@@ -103,15 +104,22 @@ let infer_function (f:Source.fn) =
     | Assign (n,rhs) -> (match lookup env n with
       | Storage contract -> expr ~expected:contract env rhs
       | Value _ -> unsupported "assignment to immutable binding")
-    | Lambda (ps,result,body) ->
+    | Lambda (quantified,ps,result,body) ->
       let inner = List.fold_left (fun env (n,t) -> extend env n (Value t)) env ps in
-      ignore (expr ~expected:result inner body); arrow (List.map snd ps) result
+      ignore (expr ~expected:result inner body);
+      quantified_arrow quantified (List.map snd ps) result
     | Call (callee,receiver,args) ->
       let callee = expr env callee in
       Option.iter (fun e -> ignore (expr env e)) receiver;
-      (match callee with Atoms [Shape {calls=[signature];_}] when List.length signature.params=List.length args ->
+      (match callee with Atoms [Shape {calls=[signature];_}]
+          when signature.quantified=[] && List.length signature.params=List.length args ->
         List.iter2 (fun contract e -> ignore (expr ~expected:contract env e)) signature.params args;
         signature.result
+      | Atoms [Shape {calls=[signature];_}]
+          when signature.quantified<>[] && List.length signature.params=List.length args ->
+        let actuals=List.map (expr env) args in
+        let inferred=Inference.infer signature actuals in
+        inferred.result
       | _ -> unsupported "call requires a single arrow with matching arity")
     | WithFields (fn,initial,ft,bag) ->
       ignore (expr ~expected:ft env fn); ignore (expr ~expected:bag env initial);
@@ -121,7 +129,8 @@ let infer_function (f:Source.fn) =
         | _ -> unsupported "function field construction requires a callable and a record contract")
     | Bind (callee,receiver,args) ->
       let callee=expr env callee in ignore (expr env receiver);
-      (match callee with Atoms [Shape {calls=[signature];_}] when List.length args<=List.length signature.params ->
+      (match callee with Atoms [Shape {calls=[signature];_}]
+          when signature.quantified=[] && List.length args<=List.length signature.params ->
         let rec prefix ps args = match ps,args with
           | rest,[] -> rest
           | p::ps,e::es -> ignore (expr ~expected:p env e); prefix ps es

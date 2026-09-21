@@ -67,12 +67,11 @@ export const cases: Case[] = [
   negative("invalid-tuple", "contextual tuple element obligation"),
   negative("invalid-context", "fresh initializer obligation"),
   negative("invalid-heap-refinement", "heap refinement invalidation"),
-  gap(
-    "generic-closure",
-    "polymorphic inference",
-    "unsupported",
-    "source",
-    /non-generic synchronous closure/,
+  positive("generic-closure", "polymorphic closure / fresh call inference"),
+  negative(
+    "invalid-generic-closure",
+    "universally quantified closure body",
+    /quantified closure checking currently requires a unary identity closure/,
   ),
   positive("generic-inferred", "inferred rigid copies / dependent bounds"),
   gap(
