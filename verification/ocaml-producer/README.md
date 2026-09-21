@@ -127,13 +127,14 @@ while retaining the same captured environment and world; outer parameter
 meanings cannot change. Scheme meanings are admissible closed-value families,
 so they can themselves serve as semantic type arguments.
 
-This is the semantic foundation, **not** an executable scheme certificate checker.
-The quantified source/wire syntax, general substitution evidence and body proof
-reconstruction still need implementing. Recursive scheme graph nodes also need
-the layer congruence/contractiveness argument; admissibility alone does not
-establish recursive interpretation. Extending only the parser or
-specializing each closure body at its observed calls would bypass the
-universal obligation. Follow this order:
+The exact unary identity scheme now has an executable path and a matching
+universal allocation theorem. The general rules are still **not** a general
+executable scheme certificate checker: arbitrary substitution evidence and body
+proof reconstruction still need implementing. Recursive scheme graph nodes also
+need the layer congruence/contractiveness argument; admissibility alone does not
+establish recursive interpretation. Extending only the parser or specializing
+each closure body at its observed calls would bypass the universal obligation.
+Follow this order:
 
 1. Represent scoped quantifiers at callable signatures, including bounds and
    occurrences inside fields, callbacks and results. Preserve the same structure
@@ -192,8 +193,8 @@ survive those extensions rather than being replaced by subset shortcuts.
 
 [cases.mts](cases.mts) is the executable inventory, including expected phase
 and diagnostic for every negative control and known gap. The suite currently
-verifies **33 functions in 15 feature groups**, checks **13 negative controls**,
-and keeps **6 named gaps** visible. Six independent evidence-tampering controls
+verifies **34 functions in 16 feature groups**, checks **14 negative controls**,
+and keeps **5 named gaps** visible. Seven independent evidence-tampering controls
 remain. These counts concern this prototype, not the SKJS repair census.
 
 | Architectural pressure                      | Small examples that verify                                     |
@@ -208,7 +209,8 @@ remain. These counts concern this prototype, not the SKJS repair census.
 | Higher-order values and variance            | `callbacks.ts`                                                 |
 | Closure-local scope and partial application | `blocks-bind.ts`                                               |
 | One value with both fields and calls        | `function-fields.ts`                                           |
-| Scoped parameters and substitution          | `generics.ts`, `generic-inferred.ts`, `aliases.ts`                                    |
+| Scoped parameters and substitution          | `generics.ts`, `generic-inferred.ts`, `aliases.ts`                  |
+| Quantified closure and fresh call inference | `generic-closure.ts`                                               |
 | No usable result guarantee                  | `top-void.ts` (unknown, discarded callback result)             |
 
 Every negative control must reach validation and fail for its expected reason;
@@ -217,10 +219,8 @@ local/aliased/array writes, readonly writes, callback arguments and variance,
 mutable captures, generic fabrication, bad contextual initializers and stale
 heap refinements. Contextual types cannot turn a bad initializer into a fact.
 
-The six named gaps are:
+The five named gaps are:
 
-- `generic-closure.ts`: the shared parser refuses polymorphic closures; general
-  instantiation and inference are not implemented.
 - `unsupported.ts`: OCaml refuses an unannotated mutable binding rather than
   guessing a lifetime contract. Constraint-based contract inference is pending.
 - `dynamic-index.ts`: the existing lowering needs a proved array-index singleton;
