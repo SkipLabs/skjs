@@ -980,39 +980,7 @@ base class STErrorOnTFields(
   }
 }
 
-extension class TFuns {
-  static fun isSub(
-    subst: mutable Subst,
-    tenv: TEnv,
-    funs1: TFuns,
-    funs2: TFuns,
-  ): STResult<TFuns> {
-    TFun::isSub(subst, tenv, funs1.fun_, funs2.fun_) match {
-    | STOk() -> STOk()
-    | err @ STErrorOnTFun _ -> STRecTFuns(err, funs1, funs2)
-    }
-  }
-}
-
 extension class TFields {
-  static fun isSub(
-    subst: mutable Subst,
-    tenv: TEnv,
-    fields1: TFields,
-    fields2: TFields,
-  ): STResult<TFields> {
-    savedSubst = subst.save();
-    res = TFields::isSubWith(
-      fields1,
-      fields2,
-      (left, right) -> TType::isSub(subst, tenv, left, right),
-      (left, right) -> TFuns::isSub(subst, tenv, left, right),
-      (pos, name) -> tenv.getWellKnownSymbolUniqueId(subst, pos, name),
-    );
-    if (res is STError _) subst.restore(savedSubst);
-    res
-  }
-
   // Check a single index kind: if super has an index, sub must also
   // have a compatible index for that kind.
   private static fun isSub_IndexPair(
@@ -1368,17 +1336,6 @@ extension class TFields {
     STOk()
   }
 
-  static fun isSubCallability(
-    subst: mutable Subst,
-    tenv: TEnv,
-    m1: Callability,
-    m2: Callability,
-  ): ?STResult<TFuns> {
-    TFields::isSubCallabilityWith(m1, m2, (left, right) ->
-      TFuns::isSub(subst, tenv, left, right)
-    )
-  }
-
   static fun isSubCallabilityWith(
     m1: Callability,
     m2: Callability,
@@ -1423,20 +1380,6 @@ extension class TFields {
 }
 
 extension class STypes {
-  static fun isSub(
-    subst: mutable Subst,
-    tenv: TEnv,
-    stypes1: STypes,
-    stypes2: STypes,
-  ): STResult<STypes> {
-    savedSubst = subst.save();
-    result = STypes::isSubWith(stypes1, stypes2, (left, right) ->
-      TObject::isSub(subst, tenv, left, right)
-    );
-    if (result is STError _) subst.restore(savedSubst);
-    result
-  }
-
   static fun isSubWith(
     stypes1: STypes,
     stypes2: STypes,
@@ -1472,20 +1415,6 @@ extension class STypes {
 }
 
 extension class Clauses {
-  static fun isSub(
-    subst: mutable Subst,
-    tenv: TEnv,
-    clauses1: Clauses,
-    clauses2: Clauses,
-  ): STResult<Clauses> {
-    savedSubst = subst.save();
-    result = Clauses::isSubWith(clauses1, clauses2, (left, right) ->
-      STypes::isSub(subst, tenv, left, right)
-    );
-    if (result is STError _) subst.restore(savedSubst);
-    result
-  }
-
   static fun isSubWith(
     clauses1: Clauses,
     clauses2: Clauses,
@@ -2009,6 +1938,162 @@ extension class TType {
     })
   }
 
+  // The levels of the mutable structural relation. Each bridges a solver-free
+  // `isSubWith` rule to the solver and owns the rollback for its level. They
+  // are private to `TType`, which is the enforceable boundary available here:
+  // Skip has no visibility between class-private and module-wide, and the
+  // recursion crosses classes, so gathering the levels in the class that
+  // drives them is what makes them unreachable from anywhere else. No
+  // consumer can descend into the relation and take an accepted judgment
+  // without the dependencies `isSub` establishes around it.
+  private static fun isSubFuns(
+    subst: mutable Subst,
+    tenv: TEnv,
+    funs1: TFuns,
+    funs2: TFuns,
+  ): STResult<TFuns> {
+    static::isSubFun(subst, tenv, funs1.fun_, funs2.fun_) match {
+    | STOk() -> STOk()
+    | err @ STErrorOnTFun _ -> STRecTFuns(err, funs1, funs2)
+    }
+  }
+
+  private static fun isSubFields(
+    subst: mutable Subst,
+    tenv: TEnv,
+    fields1: TFields,
+    fields2: TFields,
+  ): STResult<TFields> {
+    savedSubst = subst.save();
+    res = TFields::isSubWith(
+      fields1,
+      fields2,
+      (left, right) -> static::isSub(subst, tenv, left, right),
+      (left, right) -> static::isSubFuns(subst, tenv, left, right),
+      (pos, name) -> tenv.getWellKnownSymbolUniqueId(subst, pos, name),
+    );
+    if (res is STError _) subst.restore(savedSubst);
+    res
+  }
+
+  private static fun isSubSTypes(
+    subst: mutable Subst,
+    tenv: TEnv,
+    stypes1: STypes,
+    stypes2: STypes,
+  ): STResult<STypes> {
+    savedSubst = subst.save();
+    result = STypes::isSubWith(stypes1, stypes2, (left, right) ->
+      static::isSubObject(subst, tenv, left, right)
+    );
+    if (result is STError _) subst.restore(savedSubst);
+    result
+  }
+
+  private static fun isSubClauses(
+    subst: mutable Subst,
+    tenv: TEnv,
+    clauses1: Clauses,
+    clauses2: Clauses,
+  ): STResult<Clauses> {
+    savedSubst = subst.save();
+    result = Clauses::isSubWith(clauses1, clauses2, (left, right) ->
+      static::isSubSTypes(subst, tenv, left, right)
+    );
+    if (result is STError _) subst.restore(savedSubst);
+    result
+  }
+
+  private static fun isSubObject(
+    subst: mutable Subst,
+    tenv: TEnv,
+    obj1: TObject,
+    obj2: TObject,
+  ): STResult<TObject> {
+    savedSubst = subst.save();
+    result = TObject::isSubWith(obj1, obj2, (left, right) -> {
+      savedBranchSubst = subst.save();
+      result = static::isSubFields(subst, tenv, left, right);
+      if (result is STError _) subst.restore(savedBranchSubst);
+      result
+    });
+    if (result is STError _) subst.restore(savedSubst);
+    result
+  }
+
+  private static fun isSubFun(
+    subst: mutable Subst,
+    tenv: TEnv,
+    f1: TFun,
+    f2: TFun,
+  ): STResult<TFun> {
+    savedSubst = subst.save();
+    // A later rest projection can be blocked after an earlier layout decision
+    // committed bindings. Exceptions abandon this subtype attempt too; restore
+    // before rethrowing, just as the STError path below abandons its state.
+    res = try {
+      TFun::isSubWith(
+        f1,
+        f2,
+        (left, right) -> static::isSub(subst, tenv, left, right),
+        spread -> VariadicTyping::resolveSubtypeRestTuple(subst, tenv, spread),
+        (spread, variance) ->
+          VariadicTyping::resolveRestElementType(subst, tenv, spread, variance)
+        ,
+      )
+    } catch {
+    | exn ->
+      subst.restore(savedSubst);
+      throw exn
+    };
+    if (res is STError _) {
+      subst.restore(savedSubst)
+    } else if (!subst.isProposingSubtype()) {
+      // Record subtyping edges: f1's cgNodes should be reachable from f2's
+      f1.cgNodes.nodes.each(subNode -> {
+        f2.cgNodes.nodes.each(supNode -> {
+          if (subNode != supNode) {
+            subst.results.recordSubtypingEdge(subNode, supNode)
+          }
+        })
+      })
+    };
+    res
+  }
+
+  // What the two consumers outside this relation are allowed to ask of it.
+  // Both receive a decision, not a judgment they could publish.
+  //
+  // Overload absorption, for the inference intersection: keep the more
+  // specific of two signatures.
+  static fun absorbsFun(
+    subst: mutable Subst,
+    tenv: TEnv,
+    general: TFun,
+    specific: TFun,
+  ): Bool {
+    static::isSubFun(subst, tenv, general, specific) is STOk()
+  }
+
+  // One attempt of an existential compatibility search, for `instanceof`
+  // branch preservation: is there an instantiation of `view` under which
+  // `source` already matches? The attempt runs on its own detached state, so
+  // a positive answer licenses keeping the ORIGINAL source fields and never
+  // exports the view's solved ones, and a negative one leaves nothing behind.
+  static fun probeFieldsCompatible(
+    probe: mutable Subst,
+    tenv: TEnv,
+    source: TFields,
+    view: TFields,
+  ): Bool {
+    static::isSubFields(
+      probe.compatibilityProbe(),
+      tenv,
+      source,
+      view,
+    ) is STOk _
+  }
+
   private static fun isSub_(
     subst: mutable Subst,
     tenv: TEnv,
@@ -2101,7 +2186,7 @@ extension class TType {
     clauses1 = u1.expandToClauses(subst, tenv, Covariant());
     clauses2 = u2.expandToClauses(subst, tenv, Contravariant());
 
-    Clauses::isSub(subst, tenv, clauses1, clauses2) match {
+    static::isSubClauses(subst, tenv, clauses1, clauses2) match {
     | STOk() -> STOk()
     | err @ STErrorOnClauses _ ->
       hints = static::originSuggestions(subst, tenv, u1, u2);
@@ -2145,46 +2230,6 @@ extension class TPrimValue {
 }
 
 extension class TFun {
-  static fun isSub(
-    subst: mutable Subst,
-    tenv: TEnv,
-    f1: TFun,
-    f2: TFun,
-  ): STResult<TFun> {
-    savedSubst = subst.save();
-    // A later rest projection can be blocked after an earlier layout decision
-    // committed bindings. Exceptions abandon this subtype attempt too; restore
-    // before rethrowing, just as the STError path below abandons its state.
-    res = try {
-      TFun::isSubWith(
-        f1,
-        f2,
-        (left, right) -> TType::isSub(subst, tenv, left, right),
-        spread -> VariadicTyping::resolveSubtypeRestTuple(subst, tenv, spread),
-        (spread, variance) ->
-          VariadicTyping::resolveRestElementType(subst, tenv, spread, variance)
-        ,
-      )
-    } catch {
-    | exn ->
-      subst.restore(savedSubst);
-      throw exn
-    };
-    if (res is STError _) {
-      subst.restore(savedSubst)
-    } else if (!subst.isProposingSubtype()) {
-      // Record subtyping edges: f1's cgNodes should be reachable from f2's
-      f1.cgNodes.nodes.each(subNode -> {
-        f2.cgNodes.nodes.each(supNode -> {
-          if (subNode != supNode) {
-            subst.results.recordSubtypingEdge(subNode, supNode)
-          }
-        })
-      })
-    };
-    res
-  }
-
   static fun isSubWith(
     f1: TFun,
     f2: TFun,
@@ -2382,23 +2427,6 @@ extension class TFun {
 }
 
 extension class TObject {
-  static fun isSub(
-    subst: mutable Subst,
-    tenv: TEnv,
-    obj1: TObject,
-    obj2: TObject,
-  ): STResult<TObject> {
-    savedSubst = subst.save();
-    result = TObject::isSubWith(obj1, obj2, (left, right) -> {
-      savedBranchSubst = subst.save();
-      result = TFields::isSub(subst, tenv, left, right);
-      if (result is STError _) subst.restore(savedBranchSubst);
-      result
-    });
-    if (result is STError _) subst.restore(savedSubst);
-    result
-  }
-
   static fun isSubWith(
     obj1: TObject,
     obj2: TObject,

@@ -429,7 +429,9 @@ extension class TypeChecker {
         branches = mutable Vector[];
         rewritten = false;
         for (fields in tObj.getBranches()) {
-          if (probeSubst.probeFieldsCompatible(this, fields, probeFields)) {
+          if (
+            TType::probeFieldsCompatible(probeSubst, this, fields, probeFields)
+          ) {
             branches.push(fields)
           } else {
             !rewritten = true;

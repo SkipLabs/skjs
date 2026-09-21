@@ -686,7 +686,7 @@ extension class TFun {
     f2: TFun,
   ): ?TFun {
     TFun::interWith(f1, f2, (left, right) ->
-      TFun::isSub(subst, tenv, left, right) is STOk()
+      TType::absorbsFun(subst, tenv, left, right)
     )
   }
 
