@@ -117,6 +117,70 @@ retains its checked initializer type, and subsequent claims must follow from it.
 This includes dependent bounds and sequential declarators. It adds no inference
 metavariables and is not evidence that polymorphic call inference works.
 
+## Breadth progress and work queue
+
+The current goal is breadth: exercise each major language mechanism with the
+smallest source that forces the final architecture to represent it honestly.
+Small examples are intentional; subset-specific representations are not. A row
+is complete only when its positive witness reaches `verified`, its relevant bad
+program reaches validation and is rejected there, and any new evidence field is
+covered by a tampering test. [`cases.mts`](cases.mts) is the executable source of
+truth for outcomes; this table records why the next rows matter.
+
+| Slice | State | Existing witness or next acceptance test | Architectural pressure |
+| --- | --- | --- | --- |
+| Primitive values and fixed local storage | complete | `values.ts` | Separate value snapshots from location contracts |
+| Branches, nullish flow and loops | complete | `branches.ts`, `flow.ts`, `loops.ts` | Join path knowledge without changing storage types |
+| Multi-field objects and aliases | complete | `objects.ts`, `aliases.ts` | Preserve field identity and capture-avoiding substitution |
+| Arrays, tuples and readonly views | complete | `arrays.ts`, `readonly.ts` | Separate sequence presence, reads and writes |
+| Higher-order callbacks and variance | complete | `callbacks.ts` | Check parameters contravariantly through ordinary evidence |
+| Closure scope and partial application | complete | `blocks-bind.ts` | Retain captures and residual signatures |
+| Callable objects with fields | complete | `function-fields.ts` | Give one value call and field capabilities |
+| Generic declarations and rigid bounds | complete | `generics.ts`, `generic-inferred.ts` | Keep rigid identities distinct through copies and dependent bounds |
+| Quantified closure, one inferred call | first slice complete | `generic-closure.ts` | Keep a scheme in SourceClaims and validate its body universally |
+| One closure called at two types | next | call the same identity closure at two ground types | Give each call fresh proposal state; do not specialize the stored scheme |
+| Bounded quantified closure | queued | infer `T` for `<T extends U>` and reject a reversed bound | Export and validate the concrete substitution and every bound obligation |
+| Returned quantified/outer-dependent closure | queued | return a closure whose result retains an outer rigid parameter | Preserve nested scope and avoid capture during substitution |
+| Quantified closure with captured storage | queued | capture one explicitly typed mutable object | Keep one fixed world contract across every instantiation |
+| Generic callback argument | queued | infer through a callback parameter and reject wrong variance | Collect directional constraints without placing solver state in semantic types |
+| Optional object-field presence | blocked at shared source/proof boundary | `optional-field.ts` | Model absence separately from a present `undefined` value |
+| Bare return and implicit completion | blocked at shared parser | `bare-return.ts`, `empty-closure.ts` | Represent completion and discarded results explicitly |
+| Arbitrary numeric array indexing | blocked in lowering | `dynamic-index.ts` | Prove a general index obligation rather than inventing a singleton key |
+| Inferred mutable lifetime contract | deferred flow milestone | `unsupported.ts` | Solve one invariant against initialization and every write before publication |
+
+Agents should take the first incomplete row whose prerequisite representation
+already exists. For the quantified rows, the next one is the two-instantiation
+witness. It closes only when the same allocated closure is retained as a scheme
+while both calls carry independently checked substitutions. Rewriting the
+closure to the finite overloads observed in that program, checking its body once
+per observed call, or replacing its scheme claim with a monomorphic arrow does
+not satisfy the row.
+
+For each row:
+
+1. Add the motivating positive and negative sources without simplifying away
+   the feature. Add them to `cases.mts` with their expected phase and diagnostic.
+2. Run the case once and identify the first honest boundary: shared parsing,
+   OCaml proposal, Lean evidence production, or evidence checking.
+3. Extend an existing shared representation in place. If Fragment or
+   SourceClaims changes, update every producer, decoder, printer and consumer;
+   do not introduce an OCaml-only format or a second accepted wire shape.
+4. Keep inference candidates in `inference.ml`. Published `Semantic.ty` values
+   may contain rigid binders and schemes, but never solver metavariables or an
+   unresolved substitution. A proposal is not an acceptance fact.
+5. Make Lean reconstruct the obligation from source and claims. Add a negative
+   control that reaches validation, plus a mutation showing that valid evidence
+   cannot certify a forged claim or substitution.
+6. Run `dune build --root verification/ocaml-producer`,
+   `dune runtest --root verification/ocaml-producer`, the targeted Lean build,
+   `lake -d verification/lean build verifier`, and
+   `node verification/ocaml-producer/test.mts`. Run the shared TypeScript and
+   viewer checks when their files change. SKJS tests are unnecessary unless a
+   `.sk` file changes.
+7. Update this table and the measured counts below from the final test output.
+   State a remaining blocked witness by name; passing adjacent examples does not
+   complete its row. Do not create a handoff or checkpoint file.
+
 ### Polymorphic calls and closures: next implementation boundary
 
 The model interprets rigid labels under an assignment in `TypeParams.lean` and
