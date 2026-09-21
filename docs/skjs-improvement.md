@@ -929,6 +929,39 @@ is also not a proof of the checker: the relation is now unreachable except
 through its driver, which is a statement about who may ask, not about what the
 answers mean.
 
+**Qualification.** 227 checker tests pass, against 226 at the A3 closure: one
+test was removed with the hazard it guarded, and two were added, for the probe
+and guidance operations. 65 independent verifier suites pass. The 64-file
+example run is unchanged at 290 accepted / 15 rejected / 0 unrecorded, with 278
+verified / 9 search failed / 18 could not check, and zero expected-outcome
+mismatches or runner errors. The repair census is unchanged: 41 of 151 accepted
+functions verified, 242 of 393 producer-rejected, baseline unmoved.
+`make check-fmt` is clean.
+
+Source outcomes were compared file by file rather than in aggregate. Both
+binaries ran over all 398 files in `tests/expect-error`, in the same container
+under the same 4 GB limit and 20-second per-file bound: exit status and output
+digest agree on every file, twice -- once mid-migration and once on the final
+binary. That pass is evidence of outcome agreement only. Its aggregate time
+moved by +0.6% and then -8.8% between the two runs, which is what a single
+unpaired pass measures, so it supports no performance claim.
+
+The three named controls, three alternating pairs each, medians in seconds:
+
+| Control | A3 | A4 |
+| --- | --- | --- |
+| `array_literal_examples.ts` | 0.776 | 0.766 |
+| `instanceof-generic-skolem-args.ts` | 1.116 | 1.057 |
+| `eagercollection-deep-value-no-oom.ts` | 5.241 | 5.155 |
+
+The `instanceof` control is the one that moved beyond noise, which is
+consistent with branch preservation no longer running the accepting relation.
+These are bounded controls, not a corpus-wide performance guarantee.
+
+The comparison baseline is `34ee351e` rebuilt under the toolchain recorded
+above, not the binary from the A3 session: the pinned image was gone, so
+comparing against that binary would have measured the compiler change too.
+
 ### Acceptance criteria and migration discipline
 
 - For each migrated boundary, state which misuse has become unrepresentable,
