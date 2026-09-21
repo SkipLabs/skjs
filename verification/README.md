@@ -140,7 +140,7 @@ so a captured reader of a numeric `let` verifies. Numeric current-content assert
 numeric contents of local cells; a broad `number` assertion does not establish a
 particular singleton. Generic variable-copy bodies admit distinct type parameters and bounds to
 `boolean` or an earlier parameter, including transitive chains. Parameters,
-annotated `const` copies and results use those rigid types or `boolean`;
+annotated `const` copies, inferred immutable copies and results use those rigid types or `boolean`;
 conversions follow declared bounds only. Dependent parameters retain their rigid identity in raw SKJS exports. First-order aliases
 `type Id<T> = T` and `type Box<T> = { value: T }` remain single-parameter.
 Generic callbacks and other generic bodies remain outside. Call-site

@@ -336,7 +336,8 @@ admitted alias schemes; a one-argument named instantiation is an `alias` atom
 The adapter substitutes using the identity and cell theorems before identity
 checking or ground extraction. `asBoolean<T extends boolean>(x: T): boolean { return x }`
 is accepted; returning `true` as `T` is not. A generic body may copy `T`
-through annotated consts and return a variable. Parameters and annotations may
+through annotated consts or an unannotated immutable const whose checked
+initializer retains `T`, and return a variable. Parameters and annotations may
 name distinct declared parameters or boolean. A conversion requires identity
 or a forward path through the declared bounds, so `U extends T` permits `U`
 to `T` but never the reverse. A const retains its annotation after conversion.

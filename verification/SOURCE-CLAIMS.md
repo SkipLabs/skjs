@@ -55,6 +55,15 @@ binders — and only then compiles the checked eliminations to ordinary arrows.
 A closure that satisfies each observed call but cannot produce an arbitrary
 rigid result is refused at that gate, whatever its calls.
 
+The executable source slice is narrower than the semantic scheme rules. A
+containing function may declare one immutable quantified closure. Its binders
+are unbounded; each parameter and the result must name one of them; and the body
+is currently a variable or primitive literal. At least one expression claim
+must carry a complete ground instantiation. Multiple calls may carry different
+instantiations, but they all eliminate the same universally checked closure.
+Bounded or nested schemes, general closure bodies and calls to generic function
+declarations remain outside this path.
+
 Both producers feed this format into `SourceClaimJson`. The native SKJS CLI
 entry points first run `SourceClaimExport`; they do not have another verifier.
 The viewer collects and edits this format for both producers. Original native

@@ -391,12 +391,11 @@ Checking several concrete instantiations remains regression testing; it does
 not certify a generic body universally. The [established calculus
 boundary](#types-and-recursion) leaves that explicit.
 
-### Preferred next milestone
+### Operation bridge and generic milestone
 
-The next model-to-checker milestone is the operation-level bridge, followed
-by a deliberately small generic fragment. The aim is a reference for
-repairing SKJS's reasoning, not a commitment to formalizing the current
-implementation wholesale.
+The operation-level bridge and deliberately small generic fragment provide a
+reference for repairing SKJS's reasoning, without committing to formalizing
+the current implementation wholesale.
 
 The first slice of the operation-level bridge is implemented: SKJS exports
 closed subtype and expansion judgments from a function body, serialized under
@@ -406,8 +405,9 @@ with the current subtype consumer. Live inference variables are not the
 representation; clones do not contribute; a failed search is unproved, not a
 disproof. See [Request protocol](REQUEST-PROTOCOL.md#closed-operation-export).
 
-The first-order generic fragment is implemented in the model, and the identity
-scheme is connected through source extraction. Rigid parameters are labels
+The first-order generic fragment is implemented in the model. Generic function
+declarations use the rigid-parameter source path, and local quantified closures
+use the separate scheme path described below. Rigid parameters are labels
 interpreted by an assignment `η`.
 Substituting `A` for `T` on the identity alias and on `Ref T` is interpreting
 the original syntax under `η[T ↦ ⟦A⟧]`. The identity function inhabits
@@ -470,8 +470,11 @@ payloads and collection history are import provenance. There is one whole-file
 producer/consumer implementation, in `SourceClaimJson`. The TS exporter
 preserves compiler symbol identity as a function-scoped `{param: "T"}` source
 claim; the neutral consumer checks it against the source binders and bounds.
-This checks variable-copy bodies; generic callbacks, source call-site
-instantiation, higher-rank and parameter-changing forms remain later work.
+This checks variable-copy bodies. Calls to generic function declarations,
+generic callbacks, higher-rank and parameter-changing forms remain later work.
+Local quantified closures are the separate source form below; their call sites
+carry checked scheme eliminations and do not add declaration-call inference to
+this path.
 
 [TypeSchemes.lean](lean/Verification/ExperimentState/TypeSchemes.lean) provides
 semantic rules for the next callable extension. A scheme denotes one callable
@@ -487,13 +490,24 @@ signatures. `invocation_of_scheme_body` checks all instantiations against the
 same captured environment and world. Scheme meanings are admissible closed-value
 families, so semantic higher-order composition uses the existing type universe.
 
-These theorems do not yet extend source acceptance. There is no executable
-scheme certificate syntax or general syntactic substitution proof yet; nested
-quantifiers still need representation in the shared source/type graph interface.
-Recursive scheme nodes additionally need layer congruence/contractiveness; the
-admissibility theorem for a fixed scheme does not establish that extension.
-The OCaml producer's `generic-closure.ts` remains gated, and no additional source
-function is counted as verified by these model-only rules.
+The source interface now connects a deliberately narrow executable slice of
+these rules. One immutable local quantified closure is admitted per containing
+function. Its binders are unbounded; every parameter and its result name one of
+those binders; and its body is currently a variable or primitive literal. Scheme
+introduction checks that body once under rigid binders, independently of which
+calls happen to appear. At least one call-site claim must then supply a complete
+ground substitution. Each substitution is checked and compiled to an ordinary
+arrow used by the existing graph proof; several calls may choose different
+ground types without rechecking the body at each type.
+
+The scheme itself is a source-claim form and semantic layer, not a new positive
+graph clause. No scheme certificate is serialized yet: introduction is checked
+directly during source request construction, while the compiled eliminations
+produce ordinary graph evidence. Nested or bounded quantified closures,
+general closure bodies, calls to generic declarations, recursive scheme nodes
+and higher-rank schemes remain outside. Recursive schemes additionally need
+layer congruence and contractiveness; admissibility of a fixed scheme does not
+establish that extension.
 
 
 This is independent of the mutation and loop source-fragment targets above.
@@ -1273,7 +1287,7 @@ assumptions and historical coverage counts are not an implementation plan.
 | Mutable structural objects | Specify field presence, width, aliasing and allowed mutation; extend beyond the current invariant cells and export their types. |
 | More primitives and operators | Numbers are admitted as opaque values with singleton literal types, in closure signatures and as the storage contract of a mutable local; finite singleton comparisons are supported, and a comparison on the broad family branches both ways; arithmetic on numbers is the IEEE-754 double operation yielding the number family, with compound assignments, increments and logical assignments to fields and elements evaluating their target once, the Boolean logical forms needing a Boolean target; strings are admitted on the same terms, opaque with literal singletons and equality against a literal; concatenation, general equality and truthiness are not, and each needs its runtime behavior defined and agreement validated. Numeric current-content predicates now cover both singletons and the number family, with checked transfer across graph edges. |
 | Graph-backed closure bodies | Extend the call/body interface if source functions require graph control flow internally; surrounding graph loops are insufficient. |
-| Generics and bounds | The model slice is in [TypeParams.lean](lean/Verification/ExperimentState/TypeParams.lean). Source extraction of identity, `T extends boolean`, `const y: T = x`, and extra `T` parameters is in [GenericSource.lean](lean/Verification/ExperimentState/GenericSource.lean). Source extraction of `type Id<T> = T` and `type Box<T> = { value: T }` is in [GenericAlias.lean](lean/Verification/ExperimentState/GenericAlias.lean). Distinct parameters and dependent upper-bound chains in variable-copy bodies are checked using [GenericBounds.lean](lean/Verification/ExperimentState/GenericBounds.lean). Remaining: generic callbacks and source call-site instantiation, conditional types, higher-rank polymorphism or parameter-changing recursion. Generic parameters, inference variables and hidden object type arguments are not interchangeable. Checking concrete instantiations remains regression testing, not universal certification of a generic body. |
+| Generics and bounds | The rigid model slice is in [TypeParams.lean](lean/Verification/ExperimentState/TypeParams.lean). Source extraction of identity, `T extends boolean`, annotated and inferred immutable copies, and extra `T` parameters is in [GenericSource.lean](lean/Verification/ExperimentState/GenericSource.lean). Source extraction of `type Id<T> = T` and `type Box<T> = { value: T }` is in [GenericAlias.lean](lean/Verification/ExperimentState/GenericAlias.lean). Distinct parameters and dependent upper-bound chains in variable-copy bodies are checked using [GenericBounds.lean](lean/Verification/ExperimentState/GenericBounds.lean). [TypeSchemes.lean](lean/Verification/ExperimentState/TypeSchemes.lean) gives quantified callable semantics; source extraction connects the narrow unbounded local-closure slice described above, checks introduction universally, and compiles checked ground eliminations to graph arrows. Remaining: calls to generic declarations, generic callbacks, bounded or nested local schemes, general quantified closure bodies, conditional types, higher-rank polymorphism and parameter-changing recursion. Generic parameters, inference variables and hidden object type arguments are not interchangeable. Observing several calls is not universal certification; the separate introduction check is. |
 | Difference and negation | Supply sound rules or approximations: pointwise complement need not preserve admissibility. They do not follow from positive normalization. |
 | Exceptions | Model abrupt completion, state at raising, and pending returns/exceptions through `finally`; ordinary graph edges alone are insufficient. |
 

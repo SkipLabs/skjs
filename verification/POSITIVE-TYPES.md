@@ -410,6 +410,15 @@ layer's source connection is the identity scheme, `T extends boolean`, T-copy
 bodies, and the identity/cell aliases; it does not yet handle higher-rank
 polymorphism or parameter-changing recursion.
 
+Quantified local callables form a second layer rather than a graph clause.
+`TypeSchemes.schemeT` denotes one callable satisfying its signatures for every
+admissible assignment while retaining the same captured world and field
+contracts. The current source slice checks one unbounded local closure under
+rigid binders, then compiles each checked ground elimination to ordinary arrow
+clauses. Thus the finite positive graph remains the ground evidence language;
+the universal scheme is neither erased to one observed arrow nor encoded as a
+recursive graph row.
+
 The program-typing theorem now incorporates these certificates, including an
 overload domain-splitting example. Executable program evidence checking and
 local supplied-environment edge obligations are now proved as well. The next

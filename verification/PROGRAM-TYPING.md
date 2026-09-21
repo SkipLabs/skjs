@@ -1889,7 +1889,17 @@ that satisfies `Δ`. `T extends boolean` yields `T ≤ boolean`, not `true ≤ T
 Source extraction of `id<T>(x: T): T { return x }` is connected, as is
 `type Id<T> = T` / `type Box<T> = { value: T }` via substitution,
 `T extends boolean` as `T ≤ boolean`, and bodies that copy `T` through
-`const` and extra parameters. Other generic bodies are not.
+annotated or inferred immutable `const` bindings and extra parameters. Calls to
+generic declarations and other generic declaration bodies are not connected.
+
+A separate executable slice connects local quantified closures to the scheme
+rules below. One unbounded closure per containing function is checked once under
+its rigid binders; its parameters and result name those binders, and its body is
+currently a variable or primitive literal. Every observed call supplies a
+complete ground substitution checked as elimination evidence. Those
+instantiations are compiled to ordinary arrows for the surrounding graph, so
+two calls at different types share one universal introduction check rather than
+typing the body once per call.
 
 **Effects and state.** The behavioural obligation must use the computation
 semantics, not just a relation between input and output values. Schematically,
@@ -2485,6 +2495,14 @@ $$
 Instantiation preserves identity and properties. These are rules for quantified
 invocation contracts, not unrestricted generalization of an effectful
 allocation expression.
+
+[TypeSchemes.lean](lean/Verification/ExperimentState/TypeSchemes.lean) realizes
+these rules as `scheme_intro` and `scheme_elim`: one callable value and one
+captured world satisfy every admissible assignment, while elimination selects a
+signature only afterwards. The source checker admits the restricted local
+closure form described above. Schemes do not become graph clauses; checked
+eliminations become ordinary graph arrows, and introduction is currently a
+direct source obligation rather than serialized certificate evidence.
 
 **Bound functions.** The internal bound-call descriptor has the rule
 **Bound-Code**:
