@@ -100,11 +100,12 @@ establish separation. Keep remaining runtime enforcement and incomplete migratio
 explicit; do not describe the reorganization as complete while those milestones
 remain open.
 
-A1–A3 are complete. Before implementing A4, follow the
-[A4 implementation guide](docs/skjs-improvement.md#a4-implementation-guide):
-trace the remaining callers, migrate them by purpose, retire unrestricted paths,
-and satisfy its closure gates. Keep progress in that document; do not create
-handoff files.
+A1–A4 are complete. The
+[A4 execution record](docs/skjs-improvement.md#a4-execution-record) lists what
+each migration made unrepresentable, the substitution constructions that
+survive and what each one shares, and the checks that remain dynamic because
+Skip cannot express them statically. Keep any further progress in that
+document; do not create handoff files.
 
 ## Measuring checker repair tests
 

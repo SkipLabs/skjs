@@ -429,7 +429,10 @@ mutable class Subst private {
     this.readObservation.isSome()
   }
 
-  static fun candidateOwner(tcenvb: mutable TCEnvBase): ?mutable Subst {
+  // Extracting the live mutable owner from an environment is `Subst`'s own
+  // business: `computationOwner` is what a consumer asks for, and it refuses
+  // a declaration environment, which has no owner to hand out.
+  private static fun candidateOwner(tcenvb: mutable TCEnvBase): ?mutable Subst {
     tcenvb match {
     | subst @ Subst _ -> Some(subst)
     | tcenv @ TCEnv _ -> Some(tcenv.subst)

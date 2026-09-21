@@ -137,8 +137,11 @@ kernel is private; consumers receive `TypeReadContext`. A3 now separates ordinar
 inference from the validation and publication of subtype/call judgments.
 `TType.isSub_` remains the mutable proposal implementation, including candidate
 growth and literal selection; its success no longer authorizes ordinary subtype
-or call acceptance. A4 retires the remaining unrestricted structural-helper,
-cache and clone paths outside these migrated boundaries.
+or call acceptance. A4 retired the remaining unrestricted structural-helper,
+cache and clone paths: the relation's levels are private to `TType`, the memo
+tables are behind their owner, and the general substitution clone is gone, so
+every detached computation names its purpose. What remains dynamic rather than
+compiler-enforced is listed in the A4 execution record below.
 
 ### Responsibilities and permitted interaction
 
@@ -176,7 +179,7 @@ diagnostic) is independent of variable role.
 ### Planned milestones
 
 These are architectural milestones A1–A4, separate from completed repair rows
-R1–R3/M1–M3. A1–A3 are **done**; A4 is **not started**.
+R1–R3/M1–M3. A1–A4 are **done**.
 Names below describe responsibilities, not prescribed new class names.
 
 | ID | Deliverable | Closure evidence |
@@ -288,13 +291,14 @@ when rolling back; the construction milestone does not prove those lifetimes.
 Hidden-witness allocation is disabled by default on every substitution. Only
 `createCheckingOwner`, taking a light environment with no candidate owner,
 enables a fresh namespace. Source checking roots use that constructor; ordinary
-`mcreate`, saved-diagnostic reconstruction, clones, probes and observation state
-cannot mint witnesses. The runtime check is centralized in the serial allocator,
-and the counter never rewinds with solver state. This replaces repeated clone
+`mcreate`, saved-diagnostic reconstruction, normalization scratches, probes and
+observation state cannot mint witnesses. The runtime check is centralized in the serial allocator,
+and the counter never rewinds with solver state. This replaces repeated scratch
 sentinels with one safe default. The sole production minting path remains
 `TEnv.makeSkolemTArgsOf`, reached from instance narrowing. A native regression
-covers detached normalization with and without saved state, saved diagnostics,
-ordinary and diagnostic clones, plus successful fresh allocation by the owner.
+covers detached normalization with and without carried state, saved diagnostics,
+compatibility probes and diagnostic computations, plus successful fresh
+allocation by the owner.
 The first three routes previously restarted the namespace; no production source
 acceptance bug was demonstrated through them.
 
@@ -309,10 +313,10 @@ A1's construction/transition milestone is complete within these explicit trust
 boundaries. Candidate state and identity replacement are unavailable to ordinary
 callers; role-specific creation, selector commitment and value growth are
 separate; rigid IDs cannot enter the solver. Occurrence constraints preserve
-identity. Clone/rollback/escape and literal controls remain required tests.
-The A2 closure below records the subsequent migration of committed shape
-observations. The A3 closure covers ordinary subtype/call inference; A4 remains
-the wider consumer migration.
+identity. Detached-computation, rollback, escape and literal controls remain
+required tests. The A2 closure below records the subsequent migration of
+committed shape observations. The A3 closure covers ordinary subtype/call
+inference, and the A4 execution record the wider consumer migration.
 
 Remaining dynamic enforcement includes checking-owner authority for witness
 allocation, checkpoint validity, observation read/commit checks, and save/restore
@@ -836,7 +840,7 @@ excluded. Nine families cover every hit of the guide's searches.
 
 | # | Family | Traced consumers | Classification | Disposition |
 | --- | --- | --- | --- | --- |
-| 1 | Diagnostic clones | `TypeCheckExpr.checkComparisonOverlap` (warning only), `TypeCheckExpr.showTypes` (printed text and its expect assertion), `TTypePp.prettyPrintType`, `TTypePp.prettyPrintPastableType` (hint text) | diagnostic | migrate to `cloneForTypeDiagnostics` |
+| 1 | Diagnostic clones | `TypeCheckExpr.checkComparisonOverlap` (warning only), `TypeCheckExpr.showTypes` (printed text and its expect assertion), `TTypePp.prettyPrintType`, `TTypePp.prettyPrintPastableType` (hint text) | diagnostic | migrate to the detached diagnostic computation |
 | 2 | Observation descendants | `TTypeObservation.mergeIndexKind`, `singleTypes`, `disjoint`, each `this.scratch.clone()` reaching `Subst::observationScratch` through `clone`'s frame branch | internal read machinery | migrate to a named descendant operation |
 | 3 | Literal guidance | `ArrayLitTyping.containsLiteralType`, whose `Bool` selects a literal representation in `targetExpectsLiteral` | inference proposal | migrate to a detached guidance operation |
 | 4 | `instanceof` preservation | `TypeCheckRefine.evalInstanceof`: probe owner, per-branch re-clone, direct `TFields::isSub` | existential compatibility search | migrate to a named probe operation |
@@ -855,8 +859,75 @@ not of duplicated algorithms.
 no change to inference semantics, and the bypass it closes is concrete: `clone`
 shares `results` and inherits `TCPChecking`, so a diagnostic clone today reaches
 `TType::isSub`'s accepting branch and can publish a claimed operation through
-`recordClosedClaimedOp` into the real results. `cloneForTypeDiagnostics` carries
+`recordClosedClaimedOp` into the real results. A diagnostic computation carries
 `TCPDiagnostic`, which that branch refuses.
+
+**Dispositions.** Every inventory row is closed. What the compiler now refuses
+is listed beside each one; where Skip cannot express the restriction, the
+remaining scope is named rather than claimed as enforcement.
+
+| # | Family | Disposition | What is now unrepresentable |
+| --- | --- | --- | --- |
+| 1 | Diagnostic clones | migrated to `diagnosticComputation` | A rendering state no longer inherits `TCPChecking`, so the relations it consults take the proposal branch and cannot publish a claimed operation into the shared results. |
+| 2 | Observation descendants | migrated to `Subst.observationDescendant` and the private `TypeReadContext.runDescendant` | The descendant requires a read frame, so it cannot be used to detach from an observation, and the shape consumer still never receives the scratch substitution. |
+| 3 | Literal guidance | migrated to `Subst.guidanceSTypes` on a new `TCPGuidance` purpose | A representation peek no longer runs through the committing materialization branch. |
+| 4 | `instanceof` preservation | migrated to `TType.probeFieldsCompatible` | The existential search no longer runs the accepting relation, and the probe's solved fields cannot reach the branch that is kept. |
+| 5 | Type-argument probes | `withTypeArgumentProbe` deleted; replaced by `Subst.probeSubtypeProposal` and a role-taking `checkConstraint` | No caller receives a live probe substitution, so none can capture it. |
+| 6 | General clones | `Subst.clone` deleted; `mcreate` split into a public bindings-free form and a private stateful one; `computationOwner`, `normalizationScratch`, `diagnosticComputation` name the legitimate copies; `candidateOwner` is private now that nothing outside `Subst` needs it | A mutable copy of a checking owner that is itself a checking owner cannot be constructed, and the live owner cannot be extracted from an arbitrary environment. |
+| 7 | Structural relation entry points | six levels moved into `TType` as `private static`; `absorbsFun` and `probeFieldsCompatible` are what the two outside consumers may ask | The compiler rejects entering the relation below `TType::isSub` from any other class. |
+| 8 | Memo tables | fields `protected`; one read and one write operation each | No consumer can install a table of its own or carry one across owners. The qualification rule is unchanged and now sits with the fields. |
+| 9 | Publication | audited, unchanged | Already restricted at A3: `savePublication`/`restorePublication` bound a call's speculative callgraph, subtyping-edge, CFG and claim output, `appendDiagnostics` and `appendPublication` keep a failed isolated proof's diagnostics without its facts, and `opFrames` checkpoints roll back active claims separately from candidates. |
+
+Two deletions: `TFields::isSubCallability`, which had no callers once only its
+solver-free `With` form was used, and `testProbeExceptionDoesNotGetSwallowed`,
+whose hazard was the probe callback itself. Its replacement checks that a probe
+proposal leaves the owner's candidates and version alone whether it succeeds or
+fails, and a second new test covers the guidance computation.
+
+**Surviving construction routes**, each with its state-sharing rule:
+
+| Operation | Shares | Does not share |
+| --- | --- | --- |
+| `createCheckingOwner` | the environment | everything else; it is the only route that owns a witness namespace |
+| `mcreate` | purpose, query bookkeeping, results | bindings, memos |
+| `computationOwner` | the environment's own owner when it has one | — |
+| `normalizationScratch` | purpose, bookkeeping, results, bindings, memos | subsequent writes |
+| `diagnosticComputation` | bindings, results, `ppNames` | purpose, memos |
+| `guidanceSTypes` (internal) | bindings, results | purpose, memos |
+| `compatibilityProbe` | bindings, results, and the memos when the parent is not observing | purpose, subsequent writes |
+| `observationDescendant` | snapshot, read frame, bookkeeping | memos |
+| `mcreateFromSaved` | a saved state, for rendering a recorded error | everything live |
+
+**Remaining dynamic checks**, with their owner and reason. None of these is a
+static guarantee, and Skip cannot express them as one:
+
+- Observation lifetime — `TypeReadLifetime`, expired by `runObserved` on every
+  exit including exceptions. A retained context handle cannot extend a
+  transaction's read set after publication.
+- Read-frame requirement — `observationDescendant` fails without a frame,
+  which is what keeps it from being a general detaching clone.
+- Foreign candidate state — the private stateful constructor blocks the frame
+  when the supplied state's bindings are not the parent's.
+- Epoch and freeze — `proveSubtypesRead` and `withCommittedTypeReads` compare
+  `semanticEpoch` and `freezeCandidates` at entry and exit, because a rollback
+  can reuse a version but not an epoch.
+- Recursive-query qualification — `TypeQueryReads` counts unsealed, provisional
+  and out-of-tree premises; a memo entry needs `canCacheTypeQuerySince`.
+- Witness allocation — `genSkolemTParam` requires an enabled namespace, which
+  only a checking owner has.
+- Rollback — candidate/cache `restore`, `restoreClaimedOps`,
+  `restorePublication`; distinct stores, deliberately not one operation.
+
+**What is not claimed.** Skip has no visibility level between class-private and
+module-wide, so a restriction is enforceable only when every legitimate caller
+can be gathered into one class. That worked for the structural relation and for
+the substitution constructors. It does not extend to the module's own
+publication implementation: `TypeCheckExpr`, `TypeCheckFun` and `Main` reach
+`results` directly, which is the responsible implementation doing its own job,
+not a bypass, but it is a convention rather than a compiler restriction. This
+is also not a proof of the checker: the relation is now unreachable except
+through its driver, which is a statement about who may ask, not about what the
+answers mean.
 
 ### Acceptance criteria and migration discipline
 
@@ -920,7 +991,7 @@ while a positive result candidate can still grow without invalidating success.
 | Variadic/callback shape extraction | The tuple/rest/callback shape observations include the raw-binding fallback. Failure to establish a read cannot select a more permissive fallback. The extracted element types may remain symbolic. |
 | Delayed array literals and `await` | A selector is a representation choice, not monotone lower-bound growth. Subtype validation establishes its array/tuple form, including through aliases, unions and intersections. Awaited flattening establishes inspected literal forms while preserving unresolved ordinary candidates. Provisional defaults cannot justify retained intersections or query caches. |
 | Successful subtype alternatives | Successful branches retain their commitments. Failed alternatives restore values and caches together. `growTVars.isCovered` probes only guide proposals; live checking validates the final relation. A redundant-constraint shortcut additionally requires no shared mutation and reusable query dependencies. |
-| Remaining speculative clones | `instanceof` preservation returns the original branch, not the clone's solved type; the other branch uses fresh rigid witnesses. Literal-precision probes choose element guidance followed by live element validation. Detached declaration probes return no type result; rigid declaration checking and retained argument constraints justify use. Diagnostic overlap, display and advice do not authorize acceptance. |
+| Remaining speculative computations | `instanceof` preservation returns the original branch, not the probe's solved type; the other branch uses fresh rigid witnesses. Literal-precision probes choose element guidance followed by live element validation. Detached declaration probes return no type result; rigid declaration checking and retained argument constraints justify use. Diagnostic overlap, display and advice do not authorize acceptance. |
 | Hidden escape raw reads | Raw traversal installs no rebuilt type. Persistent symbolic roots are retained and rechecked after later inference growth, under the existing R1 boundary. |
 | Runtime value projections | Destructuring/property reads and object/array spread extract current values or allocate copies. Nested types retain their identities; covariant candidate reads establish inspected payloads. Retained alias-shape projections, notably mixed `await`, additionally establish literal selectors. Mutation of runtime objects is the separate M1 obligation. |
 
@@ -934,7 +1005,7 @@ The cache argument is compositional, not an entire-substitution cache key:
   a child depending on an ancestor's unfinished premise cannot publish it.
 - `seenInter` may publish only reusable computations. Frozen candidate reads
   and uncommitted literal defaults mark the shared query frame provisional,
-  even across scratch clones and freeze-mode exit. Retained constructors use
+  even across scratch computations and freeze-mode exit. Retained constructors use
   `interForTypeConstruction` to preserve operands when simplification is not
   justified for later reuse.
 - Rollback restores candidate values and caches together. Observation frames,
@@ -948,7 +1019,7 @@ array made the returned length `2`. The repaired checker rejects those promises;
 the corresponding numeric-length views remain usable. Existing contextual
 single/union tuple tests and generic async inference remain positive controls.
 Native tests cover stale literal intersections, observed validation without
-inference, callback variance, recursive publication, rollback and clone reads.
+inference, callback variance, recursive publication, rollback and detached reads.
 
 Final gates: 211 checker tests passed; 65 independent verifier suites passed;
 the 64-file example run retained 278 proofs with zero expected-outcome
@@ -970,7 +1041,7 @@ For a new typing consumer, identify what escapes: a value type, an eliminated
 alternative, a negative decision, or a cached success. Use committed observation
 for materialized facts, preserve symbolic operands when simplifying is
 provisional, or validate live and explain the variance/commitment lifetime.
-A detached clone's success, a call-local fixed point, an exported closed record,
+A detached computation's success, a call-local fixed point, an exported closed record,
 and a green suite are not substitutes for that argument. Representation
 selectors must be fixed before their default shapes escape; ordinary monotone
 candidate growth must not be confused with changing that representation.
@@ -1142,7 +1213,7 @@ and fixed hidden witnesses retain their identities and bounds.
 
 | Boundary | Established rule and evidence |
 | --- | --- |
-| Hidden identity creation | `evalInstanceof` is the sole consumer of hidden argument creation. `genSkolemTParam` never rewinds on rollback and refuses creation in a speculative clone. Different discoveries therefore do not reuse an identity within a substitution. |
+| Hidden identity creation | `evalInstanceof` is the sole consumer of hidden argument creation. `genSkolemTParam` never rewinds on rollback and refuses creation in a detached computation. Different discoveries therefore do not reuse an identity within a substitution. |
 | Parameter bounds | Declaration parameters stay rigid; inferred arguments remain candidates; hidden arguments are rigid identities. Later bounds refer to the corresponding earlier arguments. `hidden-dependent-bounds.ts` exercises same-witness inclusion, forbidden reversal, cross-witness writes and constructor inference. |
 | Callback publication | The complete signature and enclosing bindings are retained as escape roots. This includes contextual parameters supplied by a temporary generic receiver and explicit `typeof` results. `contextual-hidden-escape.ts` and the closure cases in `instanceof-generic-skolem-args.ts` distinguish escaping identities from opaque results and invocation-local inference. |
 | Repeated execution | While/for checks include conditions and increments; for initializers persist, while for-in/of iteration bindings are fresh. Persistent binding roots reject pooling; per-iteration containers remain accepted in `instanceof-generic-skolem-args.ts`. |
@@ -1182,7 +1253,7 @@ different ownership or variance cases duplicates.
 
 | Family | Distinct obligation |
 | --- | --- |
-| `TypeReadObservation.sk` | Owner commitment, negative/blocked results, clone and rollback transfer, detached purposes, recursive-premise publication, frozen-mode exit and mutation stamps. |
+| `TypeReadObservation.sk` | Owner commitment, negative/blocked results, descendant and rollback transfer, detached purposes, recursive-premise publication, frozen-mode exit and mutation stamps. |
 | `TypeConstruction.sk` | Parameter substitution, field read/write variance, callback input/result variance, generic bounds and literal selectors retain their dependencies. |
 | `HiddenEscape.sk`, `hidden-dependent-bounds.ts`, `contextual-hidden-escape.ts`, `instanceof-generic-skolem-args.ts` | Distinct witness identity, dependent bounds, callback publication, persistent versus per-iteration roots, later candidate growth. |
 | `observed-*.ts`, `normalization-owner.ts`, `alias-inference-stability.ts` | Actual source consumers of observed layouts and normalization, with symbolic-member and later-growth controls. |
@@ -1250,10 +1321,11 @@ and supported implicit effects invalidate transient facts; distinct regressions
 and legitimate controls pass; and broader qualification reports actual outcomes
 and cost. A new counterexample reopens its boundary even if every suite is green.
 
-The next milestone is A4 in [Architectural end state](#architectural-end-state):
-migrate the remaining consumers and retire unrestricted paths. A1–A3 are complete.
-This strengthens implementation clarity and enforcement without requiring new
-language features. Beyond that refactoring, separate work remains:
+A1–A4 in [Architectural end state](#architectural-end-state) are complete: the
+consumers are migrated and the unrestricted paths are retired, with the checks
+that remain dynamic named in the A4 execution record. That is a restriction on
+who may ask the checker's relations for an answer, not a statement about what
+the answers mean. Separate work remains:
 
 - A soundness proof of the full subtype/normalization algorithm, recursive types,
   and the whole source checker. The current source audit is not such a proof.

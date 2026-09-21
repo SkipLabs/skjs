@@ -15,6 +15,12 @@ extension class Subst {
     this.withCommittedTypeReads(scratch -> Some(decide(scratch)))
   }
 
+  // A declaration environment owns no candidates; that is the premise behind
+  // the refusal in the private stateful constructor.
+  static fun testCandidateOwner(tcenvb: mutable TCEnvBase): ?mutable Subst {
+    static::candidateOwner(tcenvb)
+  }
+
   // Building a substitution from a state that is not this one's is what the
   // private stateful constructor exists to guard; the test for that guard
   // needs to be able to try it.
@@ -1511,7 +1517,10 @@ fun testDeclarationNormalizationBorrowsFrameAndLifetime(): void {
         context,
       );
       escaped.!value = Some(declaration);
-      SKTest.expectEq(true, SKJS.Subst::candidateOwner(declaration).isNone());
+      SKTest.expectEq(
+        true,
+        SKJS.Subst::testCandidateOwner(declaration).isNone(),
+      );
       scope.normalize(declaration, syntax)
     });
   blocked = query();
