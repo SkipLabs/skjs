@@ -391,11 +391,19 @@ mutable class Subst private {
     this.computationPurpose
   }
 
-  // The compatibility caller may report failure, but receives no solved type,
-  // environment, cache or success receipt from this operation. The callback is
-  // audited at TypeArgumentCheck.check; it must not publish captured probe state.
-  mutable fun withTypeArgumentProbe(check: (mutable Subst) -> void): void {
-    check(this.detachedTypeComputation(TCPTypeArgumentProbe()))
+  // A type-argument probe's proposal, run on a detached computation. The
+  // caller may learn that the relation could not be proposed, and nothing
+  // else: no solved type, environment, cache or success receipt crosses back.
+  mutable fun probeSubtypeProposal(
+    tenv: TEnv,
+    source: TType,
+    target: TType,
+  ): SubtypeProposalResult {
+    this.detachedTypeComputation(TCPTypeArgumentProbe()).proposeSubtype(
+      tenv,
+      source,
+      target,
+    )
   }
 
   // A detached inference state for an existential compatibility search: is

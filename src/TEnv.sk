@@ -14,12 +14,18 @@ base class TypeArgumentCheck {
   | ValidateTypeArguments()
   | ProbeTypeArguments()
 
-  // Call inference owns this proposal callback. Its result cannot replace
-  // the independent whole-call validation of the retained bound.
-  fun check(subst: mutable Subst, runCheck: (mutable Subst) -> void): void {
+  // Call inference proposes through here. A proposal is not a proof: its
+  // result cannot replace the independent whole-call validation of the
+  // retained bound, and a probe's proposal does not even reach `subst`.
+  fun proposeSubtype(
+    subst: mutable Subst,
+    tenv: TEnv,
+    source: TType,
+    target: TType,
+  ): SubtypeProposalResult {
     this match {
-    | ValidateTypeArguments() -> runCheck(subst)
-    | ProbeTypeArguments() -> subst.withTypeArgumentProbe(runCheck)
+    | ValidateTypeArguments() -> subst.proposeSubtype(tenv, source, target)
+    | ProbeTypeArguments() -> subst.probeSubtypeProposal(tenv, source, target)
     }
   }
 
@@ -46,62 +52,57 @@ base class TypeArgumentCheck {
       | Some(owner) -> owner
       | None() -> Subst::mcreate(tcenvb)
       };
-      this match {
-      | ValidateTypeArguments() ->
-        static::checkConstraint(
-          subst,
-          subst,
-          tenv,
-          pos,
-          argument,
-          constraint,
-          constraintPos,
-        )
-      | ProbeTypeArguments() ->
-        subst.withTypeArgumentProbe(probe ->
-          static::checkConstraint(
-            probe,
-            subst,
-            tenv,
-            pos,
-            argument,
-            constraint,
-            constraintPos,
-          )
-        )
-      }
+      static::checkConstraint(
+        this,
+        subst,
+        tenv,
+        pos,
+        argument,
+        constraint,
+        constraintPos,
+      )
     }
   }
 
   // Only reports diagnostics. No solved type, state or success receipt escapes
-  // a compatibility probe into declaration construction.
+  // a compatibility probe into declaration construction. A validating check
+  // runs the accepting relation in `owner`; a probe proposes on a detached
+  // computation and brings back only the failure it has to report.
   static fun checkConstraint(
-    checker: mutable Subst,
-    diagnostic: mutable Subst,
+    role: TypeArgumentCheck,
+    owner: mutable Subst,
     tenv: TEnv,
     pos: PosRange,
     argument: TType,
     constraint: TType,
     constraintPos: PosRange,
   ): void {
-    TType::isSub(checker, tenv, argument, constraint) match {
+    outcome = role match {
+    | ValidateTypeArguments() -> TType::isSub(owner, tenv, argument, constraint)
+    | ProbeTypeArguments() ->
+      owner.probeSubtypeProposal(tenv, argument, constraint) match {
+      | SubtypeProposed() -> STOk()
+      | SubtypeProposalRejected(err) -> err
+      }
+    };
+    outcome match {
     | STOk() -> void
     | err @ STErrorOnTType _ ->
-      checker.subtypingError(
-        diagnostic,
+      owner.subtypingError(
+        owner,
         tenv,
         Array[
           (pos, "Type argument does not satisfy the constraint"),
           (
             argument.pos,
             `This is of type: ${quoteRenderedType(
-              prettyPrintType(false, argument, diagnostic, tenv),
+              prettyPrintType(false, argument, owner, tenv),
             )}`,
           ),
           (
             constraintPos,
             `It does not satisfy the constraint: ${quoteRenderedType(
-              prettyPrintType(false, constraint, diagnostic, tenv),
+              prettyPrintType(false, constraint, owner, tenv),
             )}`,
           ),
         ],

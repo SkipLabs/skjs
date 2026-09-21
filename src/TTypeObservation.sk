@@ -310,16 +310,14 @@ mutable class TypeReadContext private {
     constraintPos: PosRange,
   ): void {
     this.lifetime.checkActive();
-    this.scratch.withTypeArgumentProbe(probe ->
-      TypeArgumentCheck::checkConstraint(
-        probe,
-        this.scratch,
-        tenv,
-        pos,
-        argument,
-        constraint,
-        constraintPos,
-      )
+    TypeArgumentCheck::checkConstraint(
+      ProbeTypeArguments(),
+      this.scratch,
+      tenv,
+      pos,
+      argument,
+      constraint,
+      constraintPos,
     )
   }
 

@@ -577,43 +577,41 @@ fun testDetachedTypeArgumentProbeDoesNotBlockObservation(): void {
   observationBind(subst, observed, observationNumber(), false);
   ownerVersion = subst.inferenceVersion();
   result = subst.testObservedReads<Bool>(scratch -> {
-    scratch.withTypeArgumentProbe(probe -> {
-      // Both allocation and growth are confined to the detached probe.
-      speculative = probe.gen(SKJS.PosRange::none);
-      observationBind(probe, speculative, observationString(), false);
-      SKTest.expectEq(
-        true,
-        probe.typeComputationPurpose() is SKJS.TCPTypeArgumentProbe(),
-      );
-    });
+    probe = scratch.compatibilityProbe();
+    // Both allocation and growth are confined to the detached probe.
+    speculative = probe.gen(SKJS.PosRange::none);
+    observationBind(probe, speculative, observationString(), false);
+    SKTest.expectEq(
+      true,
+      probe.typeComputationPurpose() is SKJS.TCPTypeArgumentProbe(),
+    );
     _ = scratch.peekRaw(observed);
     Some(true)
   });
   SKTest.expectEq(true, result is SKJS.TRReady(true));
   SKTest.expectEq(true, subst.isClosed(observed));
   // Only committing the observed binding mutates the owner; speculative probe
-  // allocation/growth lives on the detached clone.
+  // allocation/growth lives on the detached probe.
   SKTest.expectEq(ownerVersion + 1, subst.inferenceVersion());
 }
 
 @test
-fun testProbePurposeSurvivesCloneAndNormalization(): void {
+fun testProbePurposeSurvivesAttemptsAndNormalization(): void {
   subst = observationSubst();
   originalVersion = subst.inferenceVersion();
-  subst.withTypeArgumentProbe(probe -> {
-    child = probe.clone();
-    fresh = SKJS.Subst::mcreate(child);
-    SKTest.expectEq(
-      true,
-      fresh.typeComputationPurpose() is SKJS.TCPTypeArgumentProbe(),
-    );
-    _ = fresh.gen(SKJS.PosRange::none);
-    decision = probe.testObservedDecision<Bool>(scratch -> {
-      nested = SKJS.Subst::mcreate(scratch.clone());
-      nested.typeComputationPurpose() is SKJS.TCPTypeArgumentProbe()
-    });
-    SKTest.expectEq(true, decision is SKJS.TRReady(true));
+  probe = subst.compatibilityProbe();
+  attempt = probe.compatibilityProbe();
+  fresh = SKJS.Subst::mcreate(attempt);
+  SKTest.expectEq(
+    true,
+    fresh.typeComputationPurpose() is SKJS.TCPTypeArgumentProbe(),
+  );
+  _ = fresh.gen(SKJS.PosRange::none);
+  decision = probe.testObservedDecision<Bool>(scratch -> {
+    nested = SKJS.Subst::mcreate(scratch.observationDescendant());
+    nested.typeComputationPurpose() is SKJS.TCPTypeArgumentProbe()
   });
+  SKTest.expectEq(true, decision is SKJS.TRReady(true));
   SKTest.expectEq(originalVersion, subst.inferenceVersion());
   SKTest.expectEq(true, subst.typeComputationPurpose() is SKJS.TCPChecking());
 }
@@ -625,9 +623,12 @@ fun testProbeCannotInstallAnObservedPayload(): void {
   num = observationNumber();
   observationBind(subst, tv, num, false);
   result = subst.testObservedReads(scratch -> {
-    scratch.withTypeArgumentProbe(probe -> {
-      observationBind(probe, tv, observationString(), true);
-    });
+    observationBind(
+      scratch.compatibilityProbe(),
+      tv,
+      observationString(),
+      true,
+    );
     scratch.peekRaw(tv)
   });
   SKTest.expectEq(true, result is SKJS.TRReady _);
@@ -668,19 +669,31 @@ fun testDetachedPurposeDoesNotChangeOnRestore(): void {
   SKTest.expectEq(true, child.typeComputationPurpose() is SKJS.TCPDiagnostic());
 }
 
+// A probe proposal reports its outcome and nothing else. Whether it succeeds
+// or fails, the owner's candidates and version are untouched, so no consumer
+// can read a decision back out of the state the probe left behind.
 @test
-fun testProbeExceptionDoesNotGetSwallowed(): void {
+fun testProbeSubtypeProposalLeavesTheOwnerAlone(): void {
   subst = observationSubst();
-  caught = false;
-  try {
-    subst.withTypeArgumentProbe(_probe -> {
-      throw ObservationTestFailure()
-    });
-  } catch {
-  | ObservationTestFailure() -> !caught = true
-  | exn -> throw exn
-  };
-  SKTest.expectEq(true, caught);
+  tenv = observationTypeEnv(subst);
+  tv = subst.gen(SKJS.PosRange::none);
+  version = subst.inferenceVersion();
+  accepted = subst.probeSubtypeProposal(
+    tenv,
+    observationNumber(),
+    SKJS.TType::var(tv),
+  );
+  SKTest.expectEq(true, accepted is SKJS.SubtypeProposed());
+  // The proposal solved the candidate in the probe, not here.
+  SKTest.expectEq(true, subst.isUnbound(tv));
+  SKTest.expectEq(version, subst.inferenceVersion());
+  rejected = subst.probeSubtypeProposal(
+    tenv,
+    observationNumber(),
+    observationString(),
+  );
+  SKTest.expectEq(true, rejected is SKJS.SubtypeProposalRejected _);
+  SKTest.expectEq(version, subst.inferenceVersion());
 }
 
 // Frozen-query memo eligibility is based on the reads of this computation,
@@ -1352,18 +1365,16 @@ fun testMaterializationKeepsCheckingProbeAndDiagnosticPurposesSeparate(): void {
     (_scratch, _env) -> false,
   );
   SKTest.expectEq(true, checking);
-  owner.withTypeArgumentProbe(probe -> {
-    probing = tenv.materializeReadContext<Bool>(
-      probe,
-      pos,
-      _context -> false,
-      (scratch, _) ->
-        !scratch.isObservingTypeReads() &&
-          scratch.typeComputationPurpose() is SKJS.TCPTypeArgumentProbe()
-      ,
-    );
-    SKTest.expectEq(true, probing)
-  });
+  probing = tenv.materializeReadContext<Bool>(
+    owner.compatibilityProbe(),
+    pos,
+    _context -> false,
+    (scratch, _) ->
+      !scratch.isObservingTypeReads() &&
+        scratch.typeComputationPurpose() is SKJS.TCPTypeArgumentProbe()
+    ,
+  );
+  SKTest.expectEq(true, probing);
   diagnostic = owner.cloneForTypeDiagnostics();
   diagnosing = tenv.materializeReadContext<Bool>(
     diagnostic,
@@ -1376,6 +1387,22 @@ fun testMaterializationKeepsCheckingProbeAndDiagnosticPurposesSeparate(): void {
   );
   SKTest.expectEq(true, diagnosing);
   SKTest.expectEq(true, owner.typeComputationPurpose() is SKJS.TCPChecking());
+}
+
+// Guidance answers a representation question off the live state: it reports
+// what the target contains without closing the candidate it looked through,
+// so a literal choice is still only a proposal when it is made.
+@test
+fun testGuidanceReadsWithoutClosingTheOwner(): void {
+  owner = observationSubst();
+  tenv = observationTypeEnv(owner);
+  tv = owner.gen(SKJS.PosRange::none);
+  owner.grow(tenv, tv, observationNumber(), SKJS.Contravariant());
+  version = owner.inferenceVersion();
+  stypes = owner.guidanceSTypes(tenv, SKJS.TType::var(tv), SKJS.Covariant());
+  SKTest.expectEq(true, stypes.isSome());
+  SKTest.expectEq(true, owner.isOpen(tv));
+  SKTest.expectEq(version, owner.inferenceVersion());
 }
 
 // Declaration normalization changes lexical environments while borrowing one

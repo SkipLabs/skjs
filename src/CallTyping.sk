@@ -34,14 +34,12 @@ mutable class CallSubtypePlan private {
         CallSubtypeObligation{source, target, messages, code},
       )
     };
-    argumentCheck.check(tcenv.subst, owner -> {
-      owner.proposeSubtype(tenv, source, target) match {
-      | SubtypeProposed() -> void
-      | SubtypeProposalRejected(err) ->
-        this.!failed = true;
-        tcenv.subtypingError(tcenv.subst, tenv, messages, err, code)
-      }
-    })
+    argumentCheck.proposeSubtype(tcenv.subst, tenv, source, target) match {
+    | SubtypeProposed() -> void
+    | SubtypeProposalRejected(err) ->
+      this.!failed = true;
+      tcenv.subtypingError(tcenv.subst, tenv, messages, err, code)
+    }
   }
 
   readonly fun hasFailed(): Bool {
