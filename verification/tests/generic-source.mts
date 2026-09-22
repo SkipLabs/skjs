@@ -58,7 +58,7 @@ try {
     pos: returned.e.pos,
     lit: { a: "booleanlit", v: "true" },
   };
-  expect("returning true is not identity", run(wrongBody, claims), false, "generic identity requires");
+  expect("returning true is not identity", run(wrongBody, claims), false, "cannot establish true ≤ T");
   const twoParams = clone(ast);
   twoParams.functions[0].typeParams = [
     { name: "T", bound: null },

@@ -96,14 +96,14 @@ try {
     pos: bound.init.pos,
     lit: { a: "booleanlit", v: "true" },
   };
-  expect("const cannot be initialized from true", run(badInit, claims), false, "generic body requires");
+  expect("const cannot be initialized from true", run(badInit, claims), false, "cannot establish true ≤ T");
   const fstTrue = clone(ast);
   stmt(nth(functionIn(fstTrue, "fst").body, 0), "return").e = {
     k: "lit",
     pos: stmt(nth(fst.body, 0), "return").e.pos,
     lit: { a: "booleanlit", v: "true" },
   };
-  expect("fst returning true is not a T-copy", run(fstTrue, claims), false, "generic identity requires");
+  expect("fst returning true is not a T-copy", run(fstTrue, claims), false, "cannot establish true ≤ T");
   // These mutations leave producer claims alone: source obligations must reject
   // reverse bounds and parameter conflation even with plausible signatures.
   const mutate = (name: string, edit: (f: FunctionAst) => void) => {
@@ -113,20 +113,20 @@ try {
   };
   expect("distinct parameters cannot be interchanged", mutate("second", f => {
     exprOf(stmt(nth(f.body, 0), "return").e, "id").name = "x";
-  }), false, "generic return");
+  }), false, "cannot establish T ≤ U");
   expect("a missing dependent bound cannot justify the const", mutate("upper", f => {
     must(f.typeParams[1], "a type parameter").bound = null;
-  }), false, "generic const");
+  }), false, "generic binding annotation at");
   expect("dependent inclusion cannot be reversed", mutate("upper", f => {
     must(f.params[0], "a parameter").type = t;
     sole(stmt(nth(f.body, 0), "const")).annot = { top: false, atoms: [{ a: "param", name: "U" }] };
-  }), false, "generic const");
+  }), false, "cannot establish T ≤ U");
   expect("a widened const cannot recover the narrower parameter", mutate("upper", f => {
     f.retType = { top: false, atoms: [{ a: "param", name: "U" }] };
-  }), false, "generic return");
+  }), false, "cannot establish");
   expect("a broken transitive bound chain cannot reach boolean", mutate("boundChain", f => {
     must(f.typeParams[1], "a type parameter").bound = null;
-  }), false, "generic return");
+  }), false, "cannot establish");
   expect("forward and cyclic bounds are refused", mutate("boundChain", f => {
     must(f.typeParams[0], "a type parameter").bound = { top: false, atoms: [{ a: "param", name: "V" }] };
   }), false, "earlier type parameter");

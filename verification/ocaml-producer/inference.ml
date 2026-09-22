@@ -48,14 +48,28 @@ let infer (signature:signature) actuals =
     unsupported "generic call argument count differs from its signature";
   let domain = List.map (fun q -> q.identity) signature.quantified in
   let solution = ref [] in
+  (* The first occurrence, in signature order, proposes the binder's type; a
+     later occurrence that disagrees is not refused here. A proposal is not an
+     acceptance fact: every argument is validated against the substituted
+     signature, so a callback whose parameter reverses the inclusion fails
+     there, at an obligation, rather than being hidden by a producer refusal. *)
   let propose identity actual =
     if not (List.mem identity domain) then ()
-    else match List.assoc_opt identity !solution with
-      | None -> solution := (identity,actual) :: !solution
-      | Some previous when previous=actual -> ()
-      | Some _ -> unsupported ("incompatible inferences for " ^ identity.spelling) in
-  let constrain expected actual = match expected with
-    | Rigid identity -> propose identity actual
+    else if not (List.mem_assoc identity !solution) then
+      solution := (identity,actual) :: !solution in
+  (* Constraints are collected through callable shapes: a callback's parameters
+     flow from the scheme to the argument, its result from the argument to the
+     scheme. Each occurrence proposes an equality for the binder it names. The
+     first proposal wins; every occurrence is then validated by Lean against
+     the substitution this returns, so no solver state is published. *)
+  let rec constrain expected actual = match expected, actual with
+    | Rigid identity, _ -> propose identity actual
+    | Atoms [Shape {calls=[e];fields=[];elements=None}],
+      Atoms [Shape {calls=[a];fields=[];elements=None}]
+        when e.quantified=[] && a.quantified=[]
+          && List.length e.params=List.length a.params ->
+      List.iter2 constrain e.params a.params;
+      constrain e.result a.result
     | _ -> () in
   List.iter2 constrain signature.params actuals;
   List.iter (fun q -> if not (List.mem_assoc q.identity !solution) then

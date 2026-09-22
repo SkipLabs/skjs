@@ -492,12 +492,18 @@ families, so semantic higher-order composition uses the existing type universe.
 
 The source interface now connects a deliberately narrow executable slice of
 these rules. One immutable local quantified closure is admitted per containing
-function. Its binders are unbounded; every parameter and its result name one of
-those binders; and its body is currently a variable or primitive literal. Scheme
+function. A binder may be bounded by an earlier binder or `boolean`; every
+parameter and the result name one of those binders or are function types over
+them; and the body is a variable, a primitive literal, an assignment to a captured
+cell, a call to a callback known over the binders, or a closure whose
+annotation names the binders, checked under them like
+the outer body and whose claim must be exactly that annotation. A captured cell
+keeps its declared contract at every instantiation; a write of `T` into it is
+refused as an obligation. Scheme
 introduction checks that body once under rigid binders, independently of which
 calls happen to appear. At least one call-site claim must then supply a complete
-ground substitution. Each substitution is checked and compiled to an ordinary
-arrow used by the existing graph proof; several calls may choose different
+ground substitution. Each substitution must satisfy every substituted bound at
+its call, and is then compiled to an ordinary arrow used by the existing graph proof; several calls may choose different
 ground types without rechecking the body at each type.
 
 The scheme itself is a source-claim form and semantic layer, not a new positive

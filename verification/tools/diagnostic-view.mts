@@ -169,6 +169,8 @@ function directTypeText(types: unknown, type: DirectType): string {
   switch (type.kind) {
     case "rigid": return type.name;
     case "ground": return typeText(types,type.labels);
+    case "arrow":
+      return `(${type.params.map((p) => directTypeText(types,p)).join(", ")}) => ${directTypeText(types,type.result)}`;
     default: return unreachable(type);
   }
 }

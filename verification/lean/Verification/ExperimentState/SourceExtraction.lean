@@ -1054,9 +1054,17 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     else do
       if !typeParams.isEmpty then
         throw "quantified closure checking requires the scheme evidence path"
-      let Ds ← params.mapM fun p => lower (Fragment.callableType p.2)
-      let R ← lower (Fragment.callableType ret)
       let [.arrs L] := PositiveRules.expand G A | throw "closure claim must name a source arrow"
+      -- A closure annotated with an enclosing scheme's binder has no ground
+      -- annotation to lower. Scheme introduction required its claim to be
+      -- exactly that annotation, and the compiled overlay is the claim under
+      -- the checked substitution, so the one compiled arrow supplies its types.
+      let (Ds, R) ← if (params.map Prod.snd ++ [ret]).any GenericSource.mentionsParam then
+          match L with
+          | [(Di, Ri)] => pure (Di, Ri)
+          | _ => throw "a closure annotated with a scheme binder must carry one substituted arrow"
+        else do
+          pure (← params.mapM fun p => lower (Fragment.callableType p.2), ← lower (Fragment.callableType ret))
       if L.isEmpty || !L.all (fun (Di,_) => Di.length == Ds.length && (Di.zip Ds).all (fun (D,A) => D.all A.contains)) then
         throw "closure signature claim is outside the source annotation"
       let b ← closureExpr fc inner (Ds ++ Γ) body

@@ -140,12 +140,17 @@ so a captured reader of a numeric `let` verifies. Numeric current-content assert
 numeric contents of local cells; a broad `number` assertion does not establish a
 particular singleton. Generic variable-copy bodies admit distinct type parameters and bounds to
 `boolean` or an earlier parameter, including transitive chains. Parameters,
-annotated `const` copies, inferred immutable copies and results use those rigid types or `boolean`;
-conversions follow declared bounds only. Dependent parameters retain their rigid identity in raw SKJS exports. First-order aliases
+annotated `const` copies, inferred immutable copies and results use those rigid
+types, `boolean`, or function types over them; conversions follow declared
+bounds only. One checker, `GenericSource`, types every body under rigid binders
+— a declaration's and a quantified closure's alike — and every failed inclusion
+is a located obligation. Dependent parameters retain their rigid identity in raw SKJS exports. First-order aliases
 `type Id<T> = T` and `type Box<T> = { value: T }` remain single-parameter.
-Generic callbacks and other generic bodies remain outside. Call-site
-instantiation is outside this declaration-level path, but an unbounded
-quantified closure held in a binding is checked by the separate scheme path in
+Generic declarations taking callbacks, and other generic declaration bodies,
+remain outside; a quantified closure taking a callback is checked by the scheme
+path. Call-site
+instantiation is outside this declaration-level path, but a quantified closure
+held in a binding, bounded or not, is checked by the separate scheme path in
 [SOURCE-CLAIMS.md](SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations).
 The fragment is smaller than the calculus,
 and the parser can represent syntax the Lean adapter then rejects: such a

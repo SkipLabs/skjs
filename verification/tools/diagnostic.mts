@@ -147,7 +147,9 @@ export interface ExpressionClaimFailure extends Common {
 
 export type DirectType =
   | { kind: "rigid"; name: string }
-  | { kind: "ground"; labels: Labels };
+  | { kind: "ground"; labels: Labels }
+  /** A callable whose signature mentions a rigid parameter, such as `() => T`. */
+  | { kind: "arrow"; params: DirectType[]; result: DirectType };
 export interface DirectParameter {
   name: string;
   scope: "ambient" | "quantified";
@@ -180,7 +182,7 @@ export type DirectJudgment =
 // These records are compile-time exhaustiveness guards. Adding a wire variant
 // to one of the unions requires naming it here and handling it in the total
 // renderer; unknown input strings are still refused at runtime below.
-const DIRECT_TYPE_KINDS = {rigid:true,ground:true} satisfies Record<DirectType["kind"],true>;
+const DIRECT_TYPE_KINDS = {rigid:true,ground:true,arrow:true} satisfies Record<DirectType["kind"],true>;
 const DIRECT_SUBJECT_KINDS = {
   binding:true,expression:true,"return-value":true,"closure-body":true,
 } satisfies Record<DirectSubject["kind"],true>;
@@ -263,7 +265,7 @@ function sourceMap(v: unknown): asserts v is SourceMapEntry | null {
 }
 
 function directType(v: unknown, size: number, scope: ReadonlySet<string>): DirectType {
-  const t = record(v,["kind"], ["name","labels"]);
+  const t = record(v,["kind"], ["name","labels","params","result"]);
   if (typeof t.kind !== "string" || !(t.kind in DIRECT_TYPE_KINDS))
     throw Error("unknown direct-obligation type");
   if (t.kind === "rigid") {
@@ -272,8 +274,15 @@ function directType(v: unknown, size: number, scope: ReadonlySet<string>): Direc
     return {kind:"rigid",name:t.name};
   }
   if (t.kind === "ground") {
-    if (t.name !== undefined) throw Error("invalid direct-obligation ground type");
+    if (t.name !== undefined || t.params !== undefined || t.result !== undefined)
+      throw Error("invalid direct-obligation ground type");
     return {kind:"ground",labels:decodeLabels(t.labels,size)};
+  }
+  if (t.kind === "arrow") {
+    if (t.name !== undefined || t.labels !== undefined || !Array.isArray(t.params))
+      throw Error("invalid direct-obligation arrow type");
+    return {kind:"arrow",params:t.params.map((p) => directType(p,size,scope)),
+      result:directType(t.result,size,scope)};
   }
   throw Error("unknown direct-obligation type");
 }

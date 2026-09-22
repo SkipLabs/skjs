@@ -26,6 +26,7 @@ than erase a requirement.
 | `((A) => B) & { value: C }` | Combined invocation and field contract |
 | `T` | A rigid type parameter of the enclosing function or closure, by its source name |
 | `<T>(arg0: T) => T` | A quantified callable; binders carry `extends A` when bounded, and its parameters are shown positionally |
+| `() => T` | A callable over an enclosing rigid parameter, with no binders of its own |
 | `T @{...}` | Explicit nondefault object metadata |
 
 Arrow alternatives in a union are parenthesized. Nondefault metadata on an
@@ -50,6 +51,13 @@ The text grammar is a claim language, not all TypeScript syntax. Syntactic
 expressibility is distinct from verification support: optional or multiple
 fields can be entered, but the source adapter still supports its documented
 cell/callable fragment. No SKJS inference or acceptance is changed by editing.
+
+Human editing must not expose a bare graph-label list such as `[5]` as the
+ordinary claim language. The primary editor should resolve it to structural
+text and parse edits back through the typed codec, while showing `#5` only as
+auxiliary graph identity. Exact label JSON remains available in the technical
+graph editor for recursive or not-yet-expressible types; it is not a readable
+standalone claim because its meaning depends on the accompanying graph.
 
 ## Native graph and term language
 

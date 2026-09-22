@@ -50,10 +50,28 @@ let encode (proposal : Proposal.t) =
             Object ["callable",Object ["first",fields;"rest",Array [];"arrows",arrows]] in
       intern (Array [clause])
   in
+  (* A callable whose signature mentions a rigid parameter has no graph row:
+     it is exported in the scheme form, with its own binders (possibly none),
+     so a returned closure can retain an outer binder in its result. *)
+  let rec contains_rigid = function
+    | Rigid _ -> true
+    | Union ts -> List.exists contains_rigid ts
+    | Atoms atoms -> List.exists (function
+        | Shape s ->
+          List.exists (fun (f:Semantic.field) -> contains_rigid f.read
+            || Option.fold ~none:false ~some:contains_rigid f.write) s.fields
+          || List.exists (fun (a:Semantic.signature) ->
+              List.exists contains_rigid (a.result :: a.params)
+              || List.exists (fun (q:Semantic.quantifier) ->
+                  Option.fold ~none:false ~some:contains_rigid q.bound) a.quantified) s.calls
+          || (match s.elements with None -> false | Some e ->
+              List.exists contains_rigid (e.required @ e.optional_elements @ Option.to_list e.rest))
+        | _ -> false) atoms
+  in
   let rec claim_type = function
     | Rigid n -> Object ["param",String n.spelling]
     | Atoms [Shape {fields=[];calls=[signature];elements=None}]
-        when signature.quantified <> [] ->
+        when signature.quantified <> [] || List.exists contains_rigid (signature.result :: signature.params) ->
       let type_params = Array (List.map (fun (q:Semantic.quantifier) -> Object [
         "name",String q.identity.spelling;
         "bound",(match q.bound with None -> Null | Some t -> claim_type t)])

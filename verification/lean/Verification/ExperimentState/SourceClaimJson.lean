@@ -15,7 +15,7 @@ inductive ClaimType where
   | param : String → ClaimType
   | scheme : List (String × Option ClaimType) → List ClaimType → ClaimType → ClaimType
   | unavailable : String → ClaimType
-  deriving Repr, BEq
+  deriving Repr, BEq, Inhabited
 instance : Coe (List Nat) ClaimType := ⟨ClaimType.labels⟩
 
 private partial def ClaimType.toJson : ClaimType → Json
@@ -140,6 +140,37 @@ result, never its justification: a closure that satisfies every observed call
 but cannot produce an arbitrary rigid result fails the gate below, before any
 arrow exists. Replacing this section with a first-class scheme certificate
 changes neither Fragment, SourceClaims, nor the producer's semantic types. -/
+private partial def ofClaim (role : String) : ClaimType → Except String DirectObligation.Ty
+  | .param name => pure (.rigid name)
+  | .labels A => pure (.ground A)
+  | .scheme [] ps r => do return .arrow (← ps.mapM (ofClaim role)) (← ofClaim role r)
+  | .scheme .. => throw s!"a nested scheme is outside {role}"
+  | .unavailable reason => throw reason
+
+/-- The sidecar's claims as direct types, decoded once for the rigid checker.
+A generic declaration's claims must all be direct. A function holding a
+quantified closure also claims that closure's scheme at its sites; those are
+the scheme compiler's concern, not the body checker's, and are left out when
+`withinScheme` — the checker never looks a quantified scheme up. -/
+private def Function.directClaims (c : Function) (withinScheme : Bool := false) :
+    Except String GenericSource.Claims := do
+  if c.entries.any (fun e => e.bindings.any (fun b => b.current.isSome)) ||
+      c.expressions.any (fun e => e.current.isSome) then
+    throw "generic claims cannot assert current contents"
+  let quantified : ClaimType → Bool
+    | .scheme (_ :: _) _ _ => true
+    | _ => false
+  let ty := ofClaim "a rigid claim"
+  let keep (t : ClaimType) : Bool := !(withinScheme && quantified t)
+  return ⟨c.name, c.namePos,
+    ← (c.params.filter (keep ·.type)).mapM (fun b => do return (b.name, ← ty b.type)),
+    ← (if keep c.result then ty c.result else pure (.ground [])),
+    -- `this` is a claimed binding of every function and no source name.
+    ← c.entries.mapM (fun e => do return (e.start,
+      ← (e.bindings.filter fun b => b.name != "this" && keep b.type).mapM
+        (fun b => do return (b.name, ← ty b.type)))),
+    ← (c.expressions.filter (keep ·.type)).mapM (fun e => do return (e.pos, ← ty e.type))⟩
+
 private def claimHasScheme : ClaimType → Bool
   | .scheme .. => true
   | _ => false
@@ -153,8 +184,20 @@ private def Function.hasScheme (f : Function) : Bool :=
 but their failures use the same mandatory located diagnostic channel. The
 viewer consumes this record structurally and derives all prose from it. -/
 private def directFailure (T : SourceTypes.Table) (failure : DirectObligation.Located) : String :=
-  let system := failure.judgment.system
-  let message := failure.judgment.message T
+  -- A substituted bound at a call is a subtyping judgment like a generic one,
+  -- but it belongs to the scheme it eliminates, and says so.
+  let system := if failure.role == .schemeElimination then "scheme" else failure.judgment.system
+  let words : DirectObligation.SourceRole → Option String
+    | .entryClaim => some "entry claim" | .expressionClaim => some "expression claim"
+    | .returnContract => some "return contract" | .bindingAnnotation => some "binding annotation"
+    | .storageWrite => some "captured storage write"
+    | .callArgument => some "call argument"
+    | _ => none
+  let message := if failure.role == .schemeElimination
+    then s!"quantified call does not satisfy the closure's bound: cannot establish {failure.judgment.render T}"
+    else match words failure.role with
+      | some role => s!"generic {role} at [{failure.pos.1},{failure.pos.2}): cannot establish {failure.judgment.render T}"
+      | none => failure.judgment.message T
   let context := failure.judgment.context.map fun binding => binding.name
   RequestJson.withDiagnostic s!"source direct obligation at [{failure.pos.1},{failure.pos.2}): {message}"
     [("kind",toJson "direct-obligation"),("phase",toJson "request-validation"),
@@ -174,15 +217,33 @@ private def sourceRefusal (T : SourceTypes.Table) (pos : Span)
 
 namespace Scheme
 
-/-- A universal type: a rigid binder of the scheme under check, or a ground
-graph type. No assignment identifies a ground type with an arbitrary binder,
-which is what keeps the gate independent of the calls a program happens to make. -/
-private abbrev UTy := DirectObligation.Ty
+/-- A direct type in the claim language: the wire form of what the checker
+established. -/
+private partial def claimOfTy : DirectObligation.Ty → ClaimType
+  | .rigid name => .param name
+  | .ground A => .labels A
+  | .arrow ps r => .scheme [] (ps.map claimOfTy) (claimOfTy r)
 
-private def ofClaim (role : String) : ClaimType → Except String UTy
-  | .param name => pure (.rigid name)
-  | .labels A => pure (.ground A)
-  | .scheme .. => throw s!"a nested scheme is outside {role}"
+/-- A quantified closure's annotation, in the claim language, by the one
+converter every annotation takes. -/
+private def claimOfType (names : List String) (j : Json) : SourceTypes.Lowering ClaimType :=
+  claimOfTy <$> GenericSource.annotationTy names j
+
+/-- Ground a claim, interning any callable it contains. Only after substitution
+does a rigid arrow such as `() => T` have a graph row. -/
+private partial def groundIn (T : SourceTypes.Table) :
+    ClaimType → Except String (SourceTypes.Table × List Nat)
+  | .labels A => pure (T, A)
+  | .scheme [] ps r => do
+      let (T, ps) ← ps.foldlM (fun (T, acc) p => do
+        let (T, a) ← groundIn T p
+        pure (T, acc ++ [a])) (T, [])
+      let (T, r) ← groundIn T r
+      let clause : PositiveNormalization.Clause (List Nat) := .arrs [(ps, r)]
+      let T := SourceTypes.intern T clause
+      pure (T, [SourceTypes.label T clause])
+  | .param name => throw s!"still the rigid parameter '{name}'"
+  | .scheme .. => throw "a scheme is not a ground type"
   | .unavailable reason => throw reason
 
 private def groundOf (role : String) : ClaimType → Except String (List Nat)
@@ -190,19 +251,6 @@ private def groundOf (role : String) : ClaimType → Except String (List Nat)
   | .param name => throw s!"{role} is still the rigid parameter '{name}'"
   | .scheme .. => throw s!"{role} is a scheme, not a ground type"
   | .unavailable reason => throw reason
-
-/-- The body's type is read from the source, never from its claim. Trusting a
-claimed body type is exactly what would let a closure that happens to work at
-every observed instantiation pass as universally valid. -/
-private def bodyUTy (env : List (String × UTy)) : Fragment.Expr → Except String UTy
-  | .var _ name => match env.lookup name with
-      | some t => pure t
-      | none => throw s!"quantified closure body refers to unbound '{name}'"
-  | .lit _ .vnull => pure (.ground [0])
-  | .lit _ (.vbool true) => pure (.ground [1])
-  | .lit _ (.vbool false) => pure (.ground [2])
-  | .lit _ .vundef => pure (.ground [3])
-  | _ => throw "quantified closure body is outside the checked fragment: a variable or a primitive literal"
 
 /-- Capture-avoiding: a nested scheme's own binders shadow the substitution. -/
 private partial def subst (σ : List (String × ClaimType)) : ClaimType → ClaimType
@@ -235,16 +283,20 @@ private def ofScheme (names : List String) (s : TypeSchemes.Scheme Nat) :
 private structure Closure where
   span : Span
   binding : String
-  binders : List String
-  paramNames : List String
+  /-- Declared in order; a bound names an earlier binder or `boolean`. -/
+  parameters : List DirectObligation.Parameter
+  /-- The source parameter and result annotations, as written. -/
+  sourceParams : List (String × Json)
+  sourceResult : Json
   params : List ClaimType
   result : ClaimType
   body : Fragment.Expr
   declStart : Nat
 
 /-- One quantified closure per function in this slice. The declared signature
-must name the closure's own binders; bounded binders are a later row. -/
-private def find (f : Fragment.Fn) : Except String (Option Closure) := do
+must name the closure's own binders. A bound names an earlier binder or
+`boolean`, exactly as for generic declarations. -/
+private def find (f : Fragment.Fn) : SourceTypes.Lowering (Option Closure) := do
   let mut found : Option Closure := none
   for s in f.body do
     if let .constants pos bs := s then
@@ -253,83 +305,100 @@ private def find (f : Fragment.Fn) : Except String (Option Closure) := do
           if !tps.isEmpty then
             if found.isSome then
               throw "this slice checks one quantified closure per function"
-            if tps.any (·.bound.isSome) then
-              throw "a bounded quantified closure is not implemented yet"
             let names := tps.map (·.name)
             if names.eraseDups.length != names.length then throw "duplicate closure binder"
-            let params ← ps.mapM fun q => do
-              let n ← GenericSource.paramName q.2
-              if !names.contains n then
-                throw "a quantified closure parameter must name one of its own binders"
-              pure (ClaimType.param n)
-            let r ← GenericSource.paramName ret
-            if !names.contains r then
-              throw "a quantified closure result must name one of its own binders"
-            found := some ⟨lpos, b.name, names, ps.map Prod.fst, params, .param r, body, pos.1⟩
+            let parameters ← GenericSource.parametersOf tps
+            let params ← ps.mapM fun q => claimOfType names q.2
+            let r ← claimOfType names ret
+            found := some ⟨lpos, b.name, parameters, ps, ret, params, r, body, pos.1⟩
   return found
 
-/-- Introduction. The gate every accepted scheme passes, whatever its calls. -/
-private def introduce (c : Closure) (claims : Function) : Except DirectObligation.Failure Unit := do
+/-- Introduction. The gate every accepted scheme passes, whatever its calls:
+the quantified closure is checked as a closure under its own binders, in the
+scope its declaration sees, by the same checker as a generic declaration. The
+enclosing function's cells are the only names it may assign; each keeps its
+fixed contract at every instantiation. Returns the table, grown by any ground
+annotation met on the way. -/
+private def introduce (T : SourceTypes.Table) (f : Fragment.Fn) (c : Closure) (claims : Function) :
+    Except DirectObligation.Failure SourceTypes.Table := do
+  let refuse := DirectObligation.Failure.refusal c.span .schemeIntroduction
   let some entry := claims.entries.find? (·.start == c.declStart)
-    | throw (.refusal c.span .schemeIntroduction "quantified closure declaration has no entry claim")
+    | throw (refuse "quantified closure declaration has no entry claim")
   -- Captures keep the types they already have; no instantiation may retype them.
   let outer ← entry.bindings.mapM fun b => do
-    return (b.name, ← (ofClaim "a quantified closure's captured scope" b.type).mapError
-      (DirectObligation.Failure.refusal c.span .schemeIntroduction))
-  let ps ← c.params.mapM fun p =>
-    (ofClaim "a quantified closure parameter" p).mapError
-      (DirectObligation.Failure.refusal c.span .schemeIntroduction)
-  let actual ← (bodyUTy (c.paramNames.zip ps ++ outer) c.body).mapError
-    (DirectObligation.Failure.refusal c.body.span .schemeIntroduction)
-  let expected ← (ofClaim "a quantified closure result" c.result).mapError
-    (DirectObligation.Failure.refusal c.span .schemeIntroduction)
-  unless actual.le expected do
-    let parameters := c.binders.map fun name =>
-      DirectObligation.Parameter.mk name .quantified none
-    let context := (c.paramNames.zip ps ++ outer).map fun (name, type) =>
-      DirectObligation.Binding.mk name type
-    let subject := DirectObligation.Subject.closureBody c.body.span
-    throw (.obligation ⟨c.body.span, .schemeIntroduction,
-      .schemeIntroduction parameters context subject actual expected⟩)
+    return (b.name, ← (ofClaim "a quantified closure's captured scope" b.type).mapError refuse)
+  let direct ← (claims.directClaims (withinScheme := true)).mapError refuse
+  let cells := f.body.flatMap fun
+    | .mutables _ bs => bs.map (·.name)
+    | _ => []
+  let ctx : GenericSource.Ctx := ⟨c.parameters, direct, cells⟩
+  let (_, T) ← (GenericSource.closureTy ctx outer c.span c.sourceParams c.sourceResult c.body).run T
+  return T
 
 /-- Elimination, then compilation. Each call validates its own substitution;
 the arrows are derived from the scheme signature by that substitution, so a
 forged instantiation can only name another genuine instance of a scheme that
 has already passed the universal gate. -/
 private def compile (T : SourceTypes.Table) (f : Fragment.Fn) (claims : Function) :
-    Except String (SourceTypes.Table × Function ×
+    Except DirectObligation.Failure (SourceTypes.Table × Function ×
       List (Span × List (List (Span × SourceClaims.Candidate)))) := do
-  let some c ← find f
-    | throw "a scheme claim has no quantified closure in its source"
+  let refuse (pos : Span) (reason : String) : DirectObligation.Failure :=
+    .refusal pos .schemeElimination reason
+  let (c, T) ← match (find f).run T with
+    | .ok (some c, T) => pure (c, T)
+    | .ok (none, _) => throw (refuse f.namePos "a scheme claim has no quantified closure in its source")
+    | .error reason => throw (refuse f.namePos reason)
+  let parameters := c.parameters
+  let names := parameters.map (·.name)
+  let binders := parameters.map fun q => (q.name, q.upper.map claimOfTy)
   let sites := claims.expressions.filterMap fun e => e.instantiate.map ((e.pos, ·))
-  if sites.isEmpty then throw "a quantified closure has no checked instantiation"
+  if sites.isEmpty then throw (refuse c.span "a quantified closure has no checked instantiation")
   let subs ← sites.mapM fun (pos, inst) => do
-    let names := inst.map (·.name)
-    if names.eraseDups.length != names.length then
-      throw s!"duplicate type argument at [{pos.1},{pos.2})"
-    if names.length != c.binders.length || names.any (!c.binders.contains ·) then
-      throw s!"type arguments at [{pos.1},{pos.2}) do not instantiate exactly the closure's binders"
+    let given := inst.map (·.name)
+    if given.eraseDups.length != given.length then
+      throw (refuse pos "duplicate type argument")
+    if given.length != names.length || given.any (!names.contains ·) then
+      throw (refuse pos "type arguments do not instantiate exactly the closure's binders")
     for i in inst do
-      let _ ← groundOf s!"the type argument for '{i.name}' at [{pos.1},{pos.2})" i.type
-    pure (inst.map fun i => (i.name, i.type))
+      let _ ← (groundOf s!"the type argument for '{i.name}'" i.type).mapError (refuse pos)
+    let σ := inst.map fun i => (i.name, i.type)
+    -- Elimination proves every substituted bound. The obligation is located at
+    -- the call, under the closure's declared parameters, so a reversed bound
+    -- is shown as the inclusion that failed rather than refused by name.
+    for (name, bound) in binders do
+      if let some upper := bound then
+        let some argument := σ.lookup name | throw (refuse pos s!"no type argument for '{name}'")
+        let actual ← (groundOf s!"the type argument for '{name}'" argument).mapError (refuse pos)
+        let required ← (groundOf s!"the bound of '{name}'" (subst σ upper)).mapError (refuse pos)
+        let actual := DirectObligation.Ty.ground actual
+        let required := DirectObligation.Ty.ground required
+        unless actual.le required do
+          throw (.obligation ⟨pos, .schemeElimination,
+            .subtyping parameters [] (.expression pos) actual required⟩)
+    pure σ
   let σs := subs.foldl (fun acc σ => if acc.contains σ then acc else acc ++ [σ]) []
-  let arrows ← σs.mapM fun σ => do
-    let ps ← c.params.mapM fun q => groundOf "a substituted parameter" (subst σ q)
-    let r ← groundOf "a substituted result" (subst σ c.result)
-    pure (ps, r)
+  let (T, arrows) ← σs.foldlM (fun (T, acc) σ => do
+    let (T, ps) ← c.params.foldlM (fun (T, ps) q => do
+      let (T, p) ← (groundIn T (subst σ q)).mapError (refuse c.span)
+      pure (T, ps ++ [p])) (T, [])
+    let (T, r) ← (groundIn T (subst σ c.result)).mapError (refuse c.span)
+    pure (T, acc ++ [(ps, r)])) (T, [])
   let clause : PositiveNormalization.Clause (List Nat) := .arrs arrows
   let T := SourceTypes.intern T clause
   let arrow := SourceTypes.label T clause
-  let expected : ClaimType := .scheme (c.binders.map (·, none)) c.params c.result
+  let expected : ClaimType := .scheme binders c.params c.result
   let inside (p : Span) : Bool := c.span.1 ≤ p.1 && p.2 ≤ c.span.2
-  let retype (pos : Span) (t : ClaimType) : Except String ClaimType :=
+  let retype (pos : Span) (t : ClaimType) : Except DirectObligation.Failure ClaimType :=
     match t with
+    | .scheme [] _ _ =>
+      if inside pos then pure t
+      else throw (refuse pos "a callable over a rigid parameter escapes its closure")
     | .scheme .. =>
       if t == expected then pure (.labels [arrow])
-      else throw s!"quantified claim at [{pos.1},{pos.2}) differs from its source scheme"
+      else throw (refuse pos "quantified claim differs from its source scheme")
     | .param n =>
       if inside pos then pure t
-      else throw s!"rigid parameter '{n}' escapes its closure at [{pos.1},{pos.2})"
+      else throw (refuse pos s!"rigid parameter '{n}' escapes its closure")
     | _ => pure t
   let claims := { claims with
     result := ← retype claims.namePos claims.result
@@ -343,8 +412,12 @@ private def compile (T : SourceTypes.Table) (f : Fragment.Fn) (claims : Function
   -- One source span, one type per instantiation: the interior claims are
   -- substituted rather than re-cast, which is what no single claim can do.
   let interior := claims.expressions.filter fun e => inside e.pos && e.pos != c.span
-  let overlays := σs.map fun σ =>
-    interior.map fun e => (e.pos, (subst σ e.type).ground)
+  let (T, overlays) ← σs.foldlM (fun (T, acc) σ => do
+    let (T, overlay) ← interior.foldlM (fun (T, overlay) e => do
+      match groundIn T (subst σ e.type) with
+      | .ok (T, A) => pure (T, overlay ++ [(e.pos, (.ok A : SourceClaims.Candidate))])
+      | .error reason => pure (T, overlay ++ [(e.pos, (.error reason : SourceClaims.Candidate))])) (T, [])
+    pure (T, acc ++ [overlay])) (T, [])
   return (T, claims, [(c.span, overlays)])
 
 end Scheme
@@ -356,7 +429,8 @@ private def validTable (T : SourceTypes.Table) : Bool :=
 private partial def validType (T : SourceTypes.Table) : ClaimType → Bool
   | .param name => !name.isEmpty
   | .scheme typeParams params result =>
-      !typeParams.isEmpty &&
+      -- With no binders of its own this is a callable that mentions an
+      -- enclosing rigid parameter, such as a returned `() => T`.
       (typeParams.map Prod.fst).eraseDups.length == typeParams.length &&
       typeParams.all (fun p => !p.1.isEmpty && p.2.all (validType T)) &&
       params.all (validType T) && validType T result
@@ -444,27 +518,6 @@ private partial def stmtSites : Fragment.Stmt → Sites
 def functionSites (f : Fragment.Fn) : List Nat × List Span :=
   f.body.foldl (fun s st => joinSites s (stmtSites st)) ([],[])
 
-private def genericType (T : SourceTypes.Table) : ClaimType → Except String Json
-  | .unavailable reason => throw reason
-  | .param name => pure (Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj [("a",toJson "param"),("name",toJson name)]])])
-  | .scheme .. => throw "nested quantified callable requires scheme checking"
-  | .labels A => do
-    let rows := PositiveRules.expand (SourceTypes.graph T) A
-    -- Semantic top passes through as itself: it permits nothing.
-    if rows == [.top] then return Json.mkObj [("top",toJson true),("atoms",toJson ([] : List Json))]
-    if rows != [.bool] && rows != [.boolLit true,.boolLit false] && rows != [.boolLit false,.boolLit true] then
-      throw "generic claim requires a rigid parameter or boolean"
-    return Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj [("a",toJson "boolean")]])]
-private def Function.genericClaims (T : SourceTypes.Table) (c : Function) : Except String Fragment.Claims := do
-  if c.entries.any (fun e => e.bindings.any (fun b => b.current.isSome)) ||
-      c.expressions.any (fun e => e.current.isSome) then throw "generic claims cannot assert current contents"
-  return ⟨c.name,c.namePos,← c.params.mapM (fun b => do return (b.name,← genericType T b.type)),
-    ← genericType T c.result,
-    -- `this` is a claimed binding of every function and no source name.
-    ← c.entries.mapM (fun e => do return (e.start,← (e.bindings.filter (·.name != "this")).mapM
-      (fun b => do return (b.name,← genericType T b.type)))),
-    ← c.expressions.mapM (fun e => do return (e.pos,← genericType T e.type))⟩
-
 inductive FunctionPlan where
   | graph (name : String) (namePos : Span) (request : SourceRequest)
   | generic (name : String) (namePos : Span)
@@ -499,31 +552,31 @@ def extractPlans (ast claims : Json) (fileKey : String) : Except String (List Fu
         !c.expressions.all (fun e => sites.2.contains e.pos) then
       throw "claim site is not an entry or expression of the named source function"
     if !tps.isEmpty then
-      let genericClaims ← match c.genericClaims d.types with
+      let direct ← match c.directClaims with
         | .ok claims => pure claims
         | .error reason =>
           throw (sourceRefusal d.types f.namePos .genericValidation reason)
-      match GenericSource.check f tps genericClaims with
+      match (GenericSource.check f tps direct).run' d.types with
       | .ok () => return .generic f.name f.namePos
       | .error (.obligation failure) => throw (directFailure d.types failure)
       | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)
     if c.hasScheme then
-      let closure ← match Scheme.find f with
-        | .ok (some closure) => pure closure
-        | .ok none => throw (sourceRefusal d.types f.namePos .schemeIntroduction
+      let (closure, T) ← match (Scheme.find f).run d.types with
+        | .ok (some closure, T) => pure (closure, T)
+        | .ok (none, _) => throw (sourceRefusal d.types f.namePos .schemeIntroduction
             "a scheme claim has no quantified closure in its source")
         | .error reason =>
           throw (sourceRefusal d.types f.namePos .schemeIntroduction reason)
-      match Scheme.introduce closure c with
-      | .error (.obligation failure) => throw (directFailure d.types failure)
-      | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)
-      | .ok () => pure ()
-      match Scheme.compile d.types f c with
+      let T ← match Scheme.introduce T f closure c with
+        | .error (.obligation failure) => throw (directFailure d.types failure)
+        | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)
+        | .ok T => pure T
+      match Scheme.compile T f c with
       | .ok (T, c, overlays) =>
         return .graph f.name f.namePos
           (← extractNormalizedFn T f { c.normalized with schemeArrows := overlays })
-      | .error reason =>
-        throw (sourceRefusal d.types closure.span .schemeIntroduction reason)
+      | .error (.obligation failure) => throw (directFailure d.types failure)
+      | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)
     return .graph f.name f.namePos (← extractNormalizedFn d.types f c.normalized)
 
 /-- Graph-only projection for proof fixtures that inspect extracted programs.

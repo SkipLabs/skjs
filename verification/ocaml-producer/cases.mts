@@ -61,7 +61,11 @@ export const cases: Case[] = [
     "rigid fabrication",
     /generic.*(return|result)|not.*(bound|subtype)/,
   ),
-  negative("invalid-generic-copy", "inference cannot identify rigid parameters", /generic obligation: cannot establish T ≤ U/),
+  negative(
+    "invalid-generic-copy",
+    "inference cannot identify rigid parameters",
+    /generic return contract at \[\d+,\d+\): cannot establish T ≤ U/,
+  ),
   negative("invalid-readonly", "readonly write"),
   negative("invalid-array-write", "array write contract"),
   negative("invalid-tuple", "contextual tuple element obligation"),
@@ -85,6 +89,56 @@ export const cases: Case[] = [
     /cannot establish boolean ≤ T for every instantiation of \[T\]/,
   ),
   positive("generic-inferred", "inferred rigid copies / dependent bounds"),
+  positive("generic-bounded", "bounded scheme / substituted bound at each call"),
+  positive(
+    "generic-returned",
+    "returned closure retaining the outer binder in its result",
+  ),
+  positive(
+    "generic-captured-store",
+    "quantified closure reading a captured cell at one fixed contract",
+  ),
+  // A write into the captured cell is an obligation on the value against the
+  // cell's fixed contract; `T` never meets `number`, whatever the calls.
+  negative(
+    "invalid-captured-write",
+    "captured cell written at the binder's type",
+    /captured storage write at \[\d+,\d+\): cannot establish T ≤ number under \[T\]/,
+  ),
+  positive(
+    "generic-callback",
+    "binder inferred through a callback parameter and a callback result",
+  ),
+  // The callback's parameter is checked contravariantly against the
+  // substituted signature at the graph: a `number` callback cannot take `T`
+  // at boolean, whatever the producer proposed.
+  negative("invalid-callback-variance", "callback parameter variance"),
+  negative(
+    "invalid-callback-result",
+    "closure fabricating a result the callback should supply",
+    /does not satisfy its scheme universally: cannot establish boolean ≤ T/,
+  ),
+  // The nested body is checked under the outer binders like the outer body:
+  // a capture that happens to fit every observed call is still not `T`.
+  negative(
+    "invalid-returned-capture",
+    "nested closure body against its rigid result",
+    /does not satisfy its scheme universally: cannot establish boolean ≤ T/,
+  ),
+  // The reversed bound is an elimination obligation at the call, under the
+  // closure's declared parameters: the inclusion that failed, by name.
+  negative(
+    "invalid-bound-reversed",
+    "substituted bound obligation",
+    /does not satisfy the closure's bound: cannot establish boolean ≤ true under \[U, T ≤ U\]/,
+  ),
+  // The bound justifies T ≤ U, never U ≤ T; every observed call could still
+  // agree, so only introduction refuses it.
+  negative(
+    "invalid-bound-body",
+    "reversed bound in a scheme body",
+    /does not satisfy its scheme universally: cannot establish U ≤ T/,
+  ),
   gap(
     "unsupported",
     "inferred lifetime contract",

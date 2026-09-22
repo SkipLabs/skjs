@@ -1,17 +1,18 @@
 import Verification.ExperimentState.Fragment
 import Verification.ExperimentState.CellClaims
-import Verification.ExperimentState.GenericBounds
 import Verification.ExperimentState.DirectObligation
 
-/-! Source extraction of first-order generic function bodies.
+/-! Bodies under rigid binders: the one checker for a generic declaration's
+body and for a quantified closure's, whatever its nesting.
 
-Variable-copy bodies are checked under distinct rigid parameters and forward
-upper bounds by the existing variable, let and subtype rules. Bodies may copy `T` through annotated or inferred immutable locals and
-extra parameters (`fst`), along `letE_safeP` and `var_safeP`.
-`T extends boolean` is an assumption `T ≤ boolean`:
-`asBoolean<T extends boolean>(x: T): boolean { return x }` transports along
-that inclusion. It does not justify `true ≤ T`. Other generic shapes remain
-outside the fragment. Producer claims enter through the shared source interface. -/
+A body is a variable, a primitive literal, or a closure whose annotation names
+the binders in scope; a declaration body is a sequence of immutable copies and
+a return. Everything is typed from the source under distinct rigid parameters
+and forward upper bounds, along `letE_safeP` and `var_safeP`; `T extends
+boolean` is the assumption `T ≤ boolean`, walked by the proved
+`GenericBounds.follows`, and never justifies `true ≤ T`. A failed inclusion is
+an obligation at its span, never a sentence. Producer claims enter already
+decoded to direct types, so no claim representation is re-parsed here. -/
 namespace Verification.ExperimentState.GenericSource
 open Lean Claim
 
@@ -31,144 +32,188 @@ def booleanType : Json :=
 
 def isBooleanType (j : Json) : Bool := j == booleanType
 
-/-- Label zero is boolean; distinct declared parameters get distinct positive labels. -/
-def typeIndex (params : List String) (j : Json) : Except String Nat := do
-  if isBooleanType j then return 0
-  let name ← paramName j
-  let some index := params.idxOf? name | throw s!"undeclared type parameter '{name}'"
-  return index + 1
+open DirectObligation
 
-def boundEdges (params : List Fragment.TypeParam) : Except String (List (Nat × Nat)) := do
-  let mut seen : List String := []
-  let mut edges := []
-  for tp in params do
+/-- Whether a source type annotation names a type parameter anywhere. -/
+partial def mentionsParam : Json → Bool
+  | .obj kvs =>
+      (match kvs.get? "a" with
+        | some v => (match v.getStr? with | .ok "param" => true | _ => false)
+        | none => false) ||
+      kvs.foldl (fun acc _ v => acc || mentionsParam v) false
+  | .arr xs => xs.any mentionsParam
+  | _ => false
+
+/-- A source annotation as a direct type. A declared binder is rigid; a
+function type that mentions a binder is a callable over direct types; every
+other annotation is lowered to graph labels by the one translation all
+annotations take, so `number` here is the `number` the graph knows. -/
+partial def annotationTy (names : List String) (j : Json) :
+    SourceTypes.Lowering DirectObligation.Ty := do
+  if let .ok name := paramName j then
+    if !names.contains name then throw s!"undeclared type parameter '{name}'"
+    return .rigid name
+  if mentionsParam j then
+    let [atom] ← jArr j "atoms"
+      | throw "a rigid annotation is a binder, a function type over binders, or a ground type"
+    if (← jStr (← jField atom "a")) != "function" then
+      throw "a rigid annotation is a binder, a function type over binders, or a ground type"
+    let params ← (← jArr atom "params").mapM (annotationTy names)
+    return .arrow params (← annotationTy names (← jField atom "result"))
+  return .ground (← Fragment.translate j)
+
+/-- Rigid binders in declaration order. A bound is `boolean` or an earlier
+binder; duplicate names, forward references and cycles are refused. -/
+def parametersOf (typeParams : List Fragment.TypeParam) : Except String (List Parameter) := do
+  let mut seen : List Parameter := []
+  for tp in typeParams do
     if tp.name == "undefined" then throw "shadowing undefined is outside the fragment"
-    if tp.name ∈ seen then throw "duplicate type parameter"
-    if let some bound := tp.bound then
-      let upper ← match typeIndex seen bound with
-        | .ok i => pure i
-        | .error _ => throw "only `extends boolean` or an earlier type parameter is in the fragment"
-      edges := edges ++ [(seen.length + 1, upper)]
-    seen := seen ++ [tp.name]
-  return edges
+    if seen.any (·.name == tp.name) then throw "duplicate type parameter"
+    let outside := "only `extends boolean` or an earlier type parameter is in the fragment"
+    let upper : Option DirectObligation.Ty ← match tp.bound with
+      | none => pure none
+      | some bound =>
+        if isBooleanType bound then
+          pure (some (DirectObligation.Ty.ground [1, 2]))
+        else
+          match paramName bound with
+          | .ok u =>
+            if seen.any (·.name == u) then pure (some (DirectObligation.Ty.rigid u))
+            else throw outside
+          | .error _ => throw outside
+    seen := seen ++ [⟨tp.name, .quantified, upper⟩]
+  return seen
 
-def variableType (env : List (String × Nat)) : Fragment.Expr → Except String Nat
-  | .var _ name =>
-    match env.find? (fun p => p.1 == name) with
-    | some p => return p.2
-    | none => throw s!"generic body refers to unbound variable '{name}'"
-  | _ => throw "generic body requires a variable copy"
+/-- What a producer claims, already as direct types. The sidecar and the SKJS
+export each decode to this once; nothing here re-parses a claim. -/
+structure Claims where
+  name : String
+  namePos : Span
+  params : List (String × DirectObligation.Ty)
+  ret : DirectObligation.Ty
+  entries : List (Nat × List (String × DirectObligation.Ty))
+  exprs : List (Span × DirectObligation.Ty)
 
-/-- The executable relation has a `SubP` soundness proof in `GenericBounds`.
-Bounds originate only at positive parameter labels. -/
-def subtype (edges : List (Nat × Nat)) (a b : Nat) : Bool :=
-  GenericBounds.follows edges (edges.length + 1) a b
+/-- Checking runs over the type table, because a ground annotation met on the
+way may need a row the table does not have yet. -/
+abbrev M := StateT SourceTypes.Table (Except Failure)
 
-partial def copyBody (params : List String) (edges : List (Nat × Nat))
-    (env : List (String × Nat)) (result : Nat) : List Fragment.Stmt → Except String Unit
-  | [] => throw "generic identity requires an explicit return"
-  | [.ret _ e] => do
-    let actual ← match e with
-      | .lit _ (.vbool true) =>
-        if !edges.isEmpty then throw "an upper bound does not justify true ≤ T"
-        else throw "generic identity requires returning a variable"
-      | _ => variableType env e
-    unless subtype edges actual result do
-      throw "generic return is not justified by the declared upper bounds (returning T as boolean requires T extends boolean)"
-  -- The declarators of one `const` are copies in turn, each seeing the earlier.
-  | .constants _ [] :: rest => copyBody params edges env result rest
-  | .constants pos (b :: more) :: rest => do
-    if b.name == "undefined" then throw "shadowing undefined is outside the fragment"
-    if env.any (fun p => p.1 == b.name) then throw "active-name shadowing is outside the fragment"
-    let actual ← variableType env b.init
-    let expected ← match b.annot with
-      | some annot => typeIndex params annot
-      | none => pure actual
-    unless subtype edges actual expected do
-      throw "generic const is not justified by the declared upper bounds"
-    copyBody params edges (env ++ [(b.name, expected)]) result
-      (if more.isEmpty then rest else .constants pos more :: rest)
-  | _ => throw "generic identity requires const copies followed by a return"
+private def lower (pos : Span) (role : SourceRole) (x : SourceTypes.Lowering α) : M α := do
+  match x.run (← get) with
+  | .ok (a, T) => set T; pure a
+  | .error e => throw (.refusal pos role e)
 
-/-- Check generic variable-copy bodies using distinct rigid parameters and
-forward upper bounds, including dependent chains. Producer signatures must
-match source annotations exactly; bounds never identify their endpoints. -/
-def checkScheme (f : Fragment.Fn) (typeParams : List Fragment.TypeParam)
-    (fc : Fragment.Claims) : Except String Unit := do
-  if f.name != fc.name || f.namePos != fc.namePos then
-    throw "function claim identity mismatch"
-  if typeParams.isEmpty then throw "generic body requires type parameters"
-  let edges ← boundEdges typeParams
-  let params := typeParams.map (·.name)
-  if f.params.isEmpty then throw "generic body requires a value parameter"
-  let names := f.params.map (·.name)
-  if names.eraseDups.length != names.length then throw "duplicate source parameter"
-  let env ← f.params.mapM fun p => do
-    if p.name == "undefined" then throw "shadowing undefined is outside the fragment"
-    return (p.name, ← typeIndex params p.ty)
-  let result ← typeIndex params f.ret
-  copyBody params edges env result f.body
-  if f.params.length != fc.params.length then throw "parameter claim count mismatch"
-  for (p, c) in f.params.zip fc.params do
-    if p.name != c.1 then throw "parameter claim name or order mismatch"
-    if (← typeIndex params p.ty) != (← typeIndex params c.2) then
-      throw "claimed generic identity types differ from the source annotation"
-  if (← typeIndex params fc.ret) != result then
-    throw "claimed generic identity types differ from the source annotation"
+private def refuse (pos : Span) (role : SourceRole) (x : Except String α) : M α :=
+  match x with
+  | .ok a => pure a
+  | .error e => throw (.refusal pos role e)
 
-private def directTy (params : List String) (i : Nat) : DirectObligation.Ty :=
-  if i == 0 then .ground [1, 2] else .rigid ((params[i-1]?).getD "?")
+/-- What a body is checked against: the binders in scope, the claims, and which
+names are cells, so that only a cell may be assigned. -/
+structure Ctx where
+  parameters : List Parameter
+  claims : Claims
+  cells : List String
 
-private def directParameters (params : List String) (edges : List (Nat × Nat)) : List DirectObligation.Parameter :=
-  params.zipIdx.map fun (name, i) =>
-    ⟨name, .quantified, (edges.find? (·.1 == i + 1)).map fun edge => directTy params edge.2⟩
-
-private def directContext (params : List String) (env : List (String × Nat)) : List DirectObligation.Binding :=
-  env.map fun (name, t) => ⟨name, directTy params t⟩
-
-private def requireSubtype (params : List String) (edges : List (Nat × Nat))
-    (env : List (String × Nat)) (role : DirectObligation.SourceRole) (subject : DirectObligation.Subject)
-    (actual expected : Nat) : Except DirectObligation.Failure Unit := do
-  unless subtype edges actual expected do
+private def requireLe (c : Ctx) (env : List (String × DirectObligation.Ty))
+    (role : SourceRole) (subject : Subject) (actual expected : DirectObligation.Ty) : M Unit := do
+  unless actual.leUnder c.parameters expected do
     throw (.obligation ⟨subject.pos, role,
-      .subtyping (directParameters params edges) (directContext params env) subject
-        (directTy params actual) (directTy params expected)⟩)
+      .subtyping c.parameters (env.map fun (name, type) => ⟨name, type⟩) subject actual expected⟩)
 
-private def refuse (pos : Span) (role : DirectObligation.SourceRole)
-    (x : Except String α) : Except DirectObligation.Failure α :=
-  x.mapError (DirectObligation.Failure.refusal pos role)
+mutual
 
-private def claimedType (params : List String) (pos : Span) (role : String)
-    (ty : Json) : Except String Nat :=
-  match typeIndex params ty with
-  | .ok t => pure t
-  | .error reason => throw s!"generic {role} at [{pos.1},{pos.2}): {reason}"
+/-- An expression's type, read from the source and never from its claim:
+trusting a claimed type is exactly what would let a body that happens to fit
+every observed instantiation pass as universally valid. A write into a cell
+is an obligation on the value against the cell's fixed contract; no
+instantiation retypes the cell. -/
+partial def exprTy (c : Ctx) (env : List (String × DirectObligation.Ty)) :
+    Fragment.Expr → M DirectObligation.Ty
+  | .var pos name => match env.lookup name with
+      | some t => pure t
+      | none => throw (.refusal pos .genericValidation s!"body refers to unbound variable '{name}'")
+  | .lit _ .vnull => pure (.ground [0])
+  | .lit _ (.vbool true) => pure (.ground [1])
+  | .lit _ (.vbool false) => pure (.ground [2])
+  | .lit _ .vundef => pure (.ground [3])
+  | .assign pos name _ rhs => do
+      if !c.cells.contains name then
+        throw (.refusal pos .storageWrite s!"assignment to '{name}', which is not a cell")
+      let some contract := env.lookup name
+        | throw (.refusal pos .storageWrite s!"assignment to unbound '{name}'")
+      let actual ← exprTy c env rhs
+      requireLe c env .storageWrite (.expression pos) actual contract
+      return actual
+  | .call pos callee args => do
+      -- A call to a callable the body knows over rigid types, such as a
+      -- callback parameter `(arg: T) => number`: each argument is an
+      -- obligation against that parameter, and the result is the callable's.
+      let .var cpos name := callee
+        | throw (.refusal pos .callArgument "a call in a rigid body names a callable binding")
+      let some (.arrow ps r) := env.lookup name
+        | throw (.refusal cpos .callArgument s!"'{name}' is not a callable over rigid types")
+      if ps.length != args.length then
+        throw (.refusal pos .callArgument "call arity differs from the callable's parameters")
+      for (p, a) in ps.zip args do
+        let actual ← exprTy c env a
+        requireLe c env .callArgument (.expression a.span) actual p
+      return r
+  | .lambda pos tps ps ret body => do
+      if !tps.isEmpty then
+        throw (.refusal pos .schemeIntroduction "a nested quantified closure is outside the checked fragment")
+      -- The compiled graph takes a nested closure's types from its claim, so
+      -- the claim must be exactly the source annotation.
+      let names := c.parameters.map (·.name)
+      let source ← lower pos .schemeIntroduction (do
+        let ps ← ps.mapM fun (q : String × Json) => annotationTy names q.2
+        pure (DirectObligation.Ty.arrow ps (← annotationTy names ret)))
+      let some claim := c.claims.exprs.lookup pos
+        | throw (.refusal pos .schemeIntroduction "nested closure has no claim")
+      if claim != source then
+        throw (.refusal pos .schemeIntroduction "nested closure claim differs from its source annotation")
+      closureTy c env pos ps ret body
+  | e => throw (.refusal e.span .genericValidation
+      "body requires a variable, a primitive literal, an assignment, a call or a closure")
 
-private def entryClaims (params : List String) (edges : List (Nat × Nat))
-    (fc : Fragment.Claims) (env : List (String × Nat)) (pos : Span) :
-    Except DirectObligation.Failure (List (String × Nat)) := do
-  let some raw := fc.envs.lookup pos.1
+/-- A closure's type is its annotation once its body establishes that
+annotation under the binders in scope. A quantified closure and every closure
+nested in it are checked here alike; failure is an obligation at the body. -/
+partial def closureTy (c : Ctx) (env : List (String × DirectObligation.Ty))
+    (pos : Span) (ps : List (String × Json)) (ret : Json) (body : Fragment.Expr) :
+    M DirectObligation.Ty := do
+  let names := c.parameters.map (·.name)
+  let inner ← ps.mapM fun q => do return (q.1, ← lower pos .schemeIntroduction (annotationTy names q.2))
+  let declared ← lower pos .schemeIntroduction (annotationTy names ret)
+  let actual ← exprTy c (inner ++ env) body
+  unless actual.leUnder c.parameters declared do
+    let context := (inner ++ env).map fun (name, type) => Binding.mk name type
+    throw (.obligation ⟨body.span, .schemeIntroduction,
+      .schemeIntroduction c.parameters context (.closureBody body.span) actual declared⟩)
+  return .arrow (inner.map Prod.snd) declared
+
+end
+
+private def entryClaims (c : Ctx) (env : List (String × DirectObligation.Ty)) (pos : Span) :
+    M (List (String × DirectObligation.Ty)) := do
+  let some source := c.claims.entries.lookup pos.1
     | throw (.refusal pos .entryClaim "missing statement environment")
-  let names := raw.map Prod.fst
-  if names.eraseDups.length != names.length then
-    throw (.refusal pos .entryClaim "duplicate binding")
-  let source := raw
+  let names := source.map Prod.fst
+  if names.eraseDups.length != names.length then throw (.refusal pos .entryClaim "duplicate binding")
   if source.length != env.length || source.any (fun p => !(env.map Prod.fst).contains p.1) then
     throw (.refusal pos .entryClaim "bindings differ from the source scope")
-  env.mapM fun (name,actual) => do
-    let some ty := source.lookup name | throw (.refusal pos .entryClaim s!"missing generic binding '{name}'")
-    let expected ← refuse pos .entryClaim (claimedType params pos "entry claim" ty)
-    requireSubtype params edges env .entryClaim (.binding name pos) actual expected
-    return (name,expected)
+  env.mapM fun (name, actual) => do
+    let some expected := source.lookup name
+      | throw (.refusal pos .entryClaim s!"missing generic binding '{name}'")
+    requireLe c env .entryClaim (.binding name pos) actual expected
+    return (name, expected)
 
-private def expressionClaim (params : List String) (edges : List (Nat × Nat))
-    (fc : Fragment.Claims) (env : List (String × Nat)) (e : Fragment.Expr) :
-    Except DirectObligation.Failure Nat := do
-  let some ty := fc.exprs.lookup e.span
+private def expressionClaim (c : Ctx) (env : List (String × DirectObligation.Ty))
+    (e : Fragment.Expr) : M DirectObligation.Ty := do
+  let some expected := c.claims.exprs.lookup e.span
     | throw (.refusal e.span .expressionClaim "missing expression claim")
-  let expected ← refuse e.span .expressionClaim (claimedType params e.span "expression claim" ty)
-  let actual ← refuse e.span .expressionClaim (variableType env e)
-  requireSubtype params edges env .expressionClaim (.expression e.span) actual expected
+  let actual ← exprTy c env e
+  requireLe c env .expressionClaim (.expression e.span) actual expected
   return expected
 
 private def claimSites : List Fragment.Stmt → List Nat × List Span
@@ -181,39 +226,60 @@ private def claimSites : List Fragment.Stmt → List Nat × List Span
     (pos.1 :: entries,bs.map (·.init.span) ++ expressions)
   | _ :: rest => claimSites rest
 
-private def bodyClaims (params : List String) (edges : List (Nat × Nat))
-    (fc : Fragment.Claims) (env : List (String × Nat)) (result : Nat) (origin : Span) :
-    List Fragment.Stmt → Except DirectObligation.Failure Unit
+/-- A declaration body: immutable copies, each seeing the earlier, then a
+return. One entry per statement; each declarator's claim is checked in the
+scope the earlier ones extend. -/
+private def bodyClaims (c : Ctx) (env : List (String × DirectObligation.Ty))
+    (result : DirectObligation.Ty) (origin : Span) : List Fragment.Stmt → M Unit
   | [.ret pos e] => do
-    let H ← entryClaims params edges fc env pos
-    let actual ← expressionClaim params edges fc H e
-    requireSubtype params edges H .returnContract (.returned pos) actual result
+    let H ← entryClaims c env pos
+    let actual ← expressionClaim c H e
+    requireLe c H .returnContract (.returned pos) actual result
   | .constants pos bindings :: rest => do
-    -- One entry for the statement; each declarator's claim is checked in the
-    -- scope the earlier ones extend.
-    let H ← entryClaims params edges fc env pos
+    let H ← entryClaims c env pos
     let H ← bindings.foldlM (fun H b => do
-      let actual ← expressionClaim params edges fc H b.init
+      let actual ← expressionClaim c H b.init
       -- Inference retains the checked initializer type, never a producer-selected
       -- binding type. A weakened expression claim can lose precision, not regain it.
       let expected ← match b.annot with
-        | some annot => refuse pos .bindingAnnotation (typeIndex params annot)
+        | some annot => lower pos .bindingAnnotation (annotationTy (c.parameters.map (·.name)) annot)
         | none => pure actual
-      requireSubtype params edges H .bindingAnnotation (.binding b.name pos) actual expected
-      return H ++ [(b.name,expected)]) H
-    bodyClaims params edges fc H result origin rest
+      requireLe c H .bindingAnnotation (.binding b.name pos) actual expected
+      return H ++ [(b.name, expected)]) H
+    bodyClaims c H result origin rest
   | _ => throw (.refusal origin .genericValidation "generic claim checking requires a checked variable-copy body")
+
+/-- The declared signature and the claimed one must agree exactly; a bound
+never identifies its endpoints. -/
+def checkScheme (f : Fragment.Fn) (typeParams : List Fragment.TypeParam)
+    (claims : Claims) : SourceTypes.Lowering Unit := do
+  if f.name != claims.name || f.namePos != claims.namePos then
+    throw "function claim identity mismatch"
+  if typeParams.isEmpty then throw "generic body requires type parameters"
+  let names := (← parametersOf typeParams).map (·.name)
+  if f.params.isEmpty then throw "generic body requires a value parameter"
+  let sourceNames := f.params.map (·.name)
+  if sourceNames.eraseDups.length != sourceNames.length then throw "duplicate source parameter"
+  for p in f.params do
+    if p.name == "undefined" then throw "shadowing undefined is outside the fragment"
+  if f.params.length != claims.params.length then throw "parameter claim count mismatch"
+  for (p, c) in f.params.zip claims.params do
+    if p.name != c.1 then throw "parameter claim name or order mismatch"
+    if (← annotationTy names p.ty) != c.2 then
+      throw "claimed generic identity types differ from the source annotation"
+  if claims.ret != (← annotationTy names f.ret) then
+    throw "claimed generic identity types differ from the source annotation"
 
 /-- Both production and independent consumption reconstruct these obligations.
 Every source entry and expression must occur exactly once; no supplied point is
-silently ignored. Subtyping uses the proved rigid-bound relation. -/
-def check (f : Fragment.Fn) (typeParams : List Fragment.TypeParam)
-    (fc : Fragment.Claims) : Except DirectObligation.Failure Unit := do
-  let params := typeParams.map (·.name)
-  let edges ← refuse f.namePos .genericValidation (boundEdges typeParams)
-  let (entries,expressions) := claimSites f.body
-  let suppliedEntries := fc.envs.map Prod.fst
-  let suppliedExpressions := fc.exprs.map Prod.fst
+silently ignored. -/
+def check (f : Fragment.Fn) (typeParams : List Fragment.TypeParam) (claims : Claims) : M Unit := do
+  let parameters ← refuse f.namePos .genericValidation (parametersOf typeParams)
+  let names := parameters.map (·.name)
+  let c : Ctx := ⟨parameters, claims, []⟩
+  let (entries, expressions) := claimSites f.body
+  let suppliedEntries := claims.entries.map Prod.fst
+  let suppliedExpressions := claims.exprs.map Prod.fst
   if suppliedEntries.eraseDups.length != suppliedEntries.length ||
       suppliedEntries.length != entries.length || suppliedEntries.any (fun p => !entries.contains p) then
     throw (.refusal f.namePos .genericValidation "generic entry claims: missing, duplicate or unmatched statement site")
@@ -221,73 +287,76 @@ def check (f : Fragment.Fn) (typeParams : List Fragment.TypeParam)
       suppliedExpressions.length != expressions.length || suppliedExpressions.any (fun p => !expressions.contains p) then
     throw (.refusal f.namePos .genericValidation "generic expression claims: missing, duplicate or unmatched expression site")
   let env ← f.params.mapM fun p => do
-    return (p.name, ← refuse f.namePos .genericValidation (typeIndex params p.ty))
-  bodyClaims params edges fc env
-    (← refuse f.namePos .genericValidation (typeIndex params f.ret)) f.namePos f.body
-  -- This checks the remaining source-shape and exact-signature invariants only
-  -- after the structured claim pass has exposed any failed subtype judgment.
-  refuse f.namePos .genericValidation (checkScheme f typeParams fc)
+    return (p.name, ← lower f.namePos .genericValidation (annotationTy names p.ty))
+  bodyClaims c env (← lower f.namePos .genericValidation (annotationTy names f.ret)) f.namePos f.body
+  -- The remaining source-shape and exact-signature invariants, once the claim
+  -- pass has exposed any failed inclusion.
+  lower f.namePos .genericValidation (checkScheme f typeParams claims)
 
 private def paramT : Json :=
   Json.mkObj [("top", toJson false),
     ("atoms", toJson [Json.mkObj [("a", toJson "param"), ("name", toJson "T")]])]
+private def T : DirectObligation.Ty := .rigid "T"
+private def bool : DirectObligation.Ty := .ground [1, 2]
+private def tpT : Fragment.TypeParam := ⟨"T", none⟩
+private def tpTbool : Fragment.TypeParam := ⟨"T", some booleanType⟩
 
 private def idFn : Fragment.Fn :=
   ⟨"id", (0, 2), [⟨"x", paramT⟩], paramT, [.ret (10, 18) (.var (17, 18) "x")]⟩
-
-private def idClaims : Fragment.Claims :=
-  ⟨"id", (0, 2), [("x", paramT)], paramT, [], []⟩
-
-private def tpT : Fragment.TypeParam := ⟨"T", none⟩
-
-private def tpTbool : Fragment.TypeParam := ⟨"T", some booleanType⟩
-
+private def idClaims : Claims :=
+  ⟨"id", (0, 2), [("x", T)], T, [(10, [("x", T)])], [((17, 18), T)]⟩
 private def asBoolFn : Fragment.Fn :=
   ⟨"asBoolean", (0, 2), [⟨"x", paramT⟩], booleanType, [.ret (10, 18) (.var (17, 18) "x")]⟩
+private def asBoolClaims : Claims :=
+  ⟨"asBoolean", (0, 2), [("x", T)], bool, [(10, [("x", T)])], [((17, 18), T)]⟩
 
-private def asBoolClaims : Fragment.Claims :=
-  ⟨"asBoolean", (0, 2), [("x", paramT)], booleanType, [], []⟩
+private def run (x : M α) : Except Failure α := x.run' SourceTypes.initial
+private def ok (x : Except ε α) : Bool := match x with | .ok _ => true | .error _ => false
+private def failsAt (role : SourceRole) (x : Except Failure α) : Bool :=
+  match x with | .error (.obligation l) => l.role == role | _ => false
+private def refusedWith (text : String) (x : Except Failure α) : Bool :=
+  match x with | .error (.refusal _ _ e) => text.isPrefixOf e | _ => false
 
-#guard (match checkScheme idFn [tpT] idClaims with | .ok () => true | _ => false)
-#guard (match checkScheme {idFn with body := [.effect (10, 18) (.var (17, 18) "x")]} [tpT] idClaims with
-  | .error e => "generic identity requires".isPrefixOf e
-  | _ => false)
-#guard (match checkScheme idFn [tpT, tpT] idClaims with
+#guard ok ((checkScheme idFn [tpT] idClaims).run' SourceTypes.initial)
+#guard ok (run (check idFn [tpT] idClaims))
+-- A body that is not copies-then-return is refused as such, once its (absent)
+-- claim sites agree with the source.
+#guard refusedWith "generic claim checking requires"
+  (run (check {idFn with body := [.effect (10, 18) (.var (17, 18) "x")]} [tpT]
+    {idClaims with entries := [], exprs := []}))
+#guard (match (checkScheme idFn [tpT, tpT] idClaims).run' SourceTypes.initial with
   | .error e => "duplicate type parameter".isPrefixOf e
   | _ => false)
-#guard (match checkScheme asBoolFn [tpTbool] asBoolClaims with | .ok () => true | _ => false)
-#guard (match checkScheme asBoolFn [tpT] asBoolClaims with
-  | .error e => "generic return".isPrefixOf e
-  | _ => false)
-#guard (match checkScheme {idFn with body := [.ret (10, 18) (.lit (17, 18) (.vbool true))]}
-    [tpTbool] idClaims with
-  | .error e => "an upper bound does not justify true".isPrefixOf e
-  | _ => false)
+-- `T extends boolean` transports `T` to `boolean`; an unbounded `T` does not.
+#guard ok (run (check asBoolFn [tpTbool] asBoolClaims))
+#guard failsAt .returnContract (run (check asBoolFn [tpT] asBoolClaims))
+-- An upper bound never justifies `true ≤ T`.
+#guard failsAt .returnContract (run (check
+  {idFn with body := [.ret (10, 18) (.lit (17, 18) (.vbool true))]}
+  [tpTbool] {idClaims with exprs := [((17, 18), .ground [1])]}))
 
 private def bindFn : Fragment.Fn :=
   ⟨"bind", (0, 2), [⟨"x", paramT⟩], paramT,
     [.cst (2, 3) "y" (some paramT) (.var (4, 5) "x"),
      .ret (6, 7) (.var (8, 9) "y")]⟩
-
-private def bindClaims : Fragment.Claims :=
-  ⟨"bind", (0, 2), [("x", paramT)], paramT, [], []⟩
-
+private def bindClaims : Claims :=
+  ⟨"bind", (0, 2), [("x", T)], T,
+   [(2, [("x", T)]), (6, [("x", T), ("y", T)])], [((4, 5), T), ((8, 9), T)]⟩
 private def fstFn : Fragment.Fn :=
   ⟨"fst", (0, 2), [⟨"x", paramT⟩, ⟨"y", paramT⟩], paramT,
     [.ret (10, 18) (.var (17, 18) "x")]⟩
+private def fstClaims : Claims :=
+  ⟨"fst", (0, 2), [("x", T), ("y", T)], T, [(10, [("x", T), ("y", T)])], [((17, 18), T)]⟩
 
-private def fstClaims : Fragment.Claims :=
-  ⟨"fst", (0, 2), [("x", paramT), ("y", paramT)], paramT, [], []⟩
-
-#guard (match checkScheme bindFn [tpT] bindClaims with | .ok () => true | _ => false)
-#guard (match checkScheme fstFn [tpT] fstClaims with | .ok () => true | _ => false)
-#guard (match checkScheme {bindFn with body :=
-    [.cst (2, 3) "y" (some paramT) (.var (4, 5) "x"),
-     .ret (6, 7) (.var (8, 9) "x")]} [tpT] bindClaims with
-  | .ok () => true | _ => false)
-#guard (match checkScheme {bindFn with body :=
-    [.cst (2, 3) "y" none (.var (4, 5) "x"),
-     .ret (6, 7) (.var (8, 9) "y")]} [tpT] bindClaims with
-  | .ok () => true | _ => false)
+#guard ok (run (check bindFn [tpT] bindClaims))
+#guard ok (run (check fstFn [tpT] fstClaims))
+-- A copy may be returned through either name, and an unannotated copy keeps
+-- the checked initializer type.
+#guard ok (run (check {bindFn with body :=
+    [.cst (2, 3) "y" (some paramT) (.var (4, 5) "x"), .ret (6, 7) (.var (8, 9) "x")]}
+  [tpT] bindClaims))
+#guard ok (run (check {bindFn with body :=
+    [.cst (2, 3) "y" none (.var (4, 5) "x"), .ret (6, 7) (.var (8, 9) "y")]}
+  [tpT] bindClaims))
 
 end Verification.ExperimentState.GenericSource

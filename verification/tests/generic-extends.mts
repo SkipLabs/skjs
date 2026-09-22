@@ -58,10 +58,10 @@ try {
   const trap = clone(ast);
   const returned = stmt(at(fn(trap, "idBounded").body, 0), "return");
   returned.e = { k: "lit", pos: returned.e.pos, lit: { a: "booleanlit", v: "true" } };
-  expect("true as T is not justified by extends boolean", run(trap, claims), false, "does not justify true");
+  expect("true as T is not justified by extends boolean", run(trap, claims), false, "cannot establish true ≤ T under [T ≤ boolean]");
   const unbounded = clone(ast);
   fn(unbounded, "asBoolean").typeParams[0].bound = null;
-  expect("returning T as boolean requires the bound", run(unbounded, claims), false, "requires T extends boolean");
+  expect("returning T as boolean requires the bound", run(unbounded, claims), false, "cannot establish T ≤ boolean under [T]");
   const notBoolean = clone(ast);
   fn(notBoolean, "asBoolean").typeParams[0].bound = t;
   expect("a parameter cannot be its own bound", run(notBoolean, claims), false, "only `extends boolean`");

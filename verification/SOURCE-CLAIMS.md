@@ -56,13 +56,27 @@ A closure that satisfies each observed call but cannot produce an arbitrary
 rigid result is refused at that gate, whatever its calls.
 
 The executable source slice is narrower than the semantic scheme rules. A
-containing function may declare one immutable quantified closure. Its binders
-are unbounded; each parameter and the result must name one of them; and the body
-is currently a variable or primitive literal. At least one expression claim
+containing function may declare one immutable quantified closure. A binder may
+be bounded by an earlier binder or `boolean`; introduction checks the body under
+those bounds, and every instantiation must satisfy each substituted bound at its
+call. Each parameter and the result must name a binder or a function type over
+binders and `boolean`; a callable that mentions an enclosing binder, such as a
+returned `() => T`, is written in the `scheme` form with empty `typeParams`. The
+body is a variable, a primitive literal, an assignment to a captured cell, a
+call to a callable the body knows over rigid types — such as a callback
+parameter `(arg: T) => number`, whose arguments are obligations against those
+parameters — or a closure whose annotation names the binders; such a closure is checked under
+them like the outer body, and its claim must be exactly its source annotation,
+since the compiled graph takes its types from that claim. A captured cell keeps
+the contract its declaration states at every instantiation: a write into it is
+an obligation on the value against that contract, and `T` never meets it.
+Ground annotations in a signature — `number`, a record — are lowered by the
+same translation every annotation takes, so the checker knows every type the
+graph does, not only `boolean`. At least one expression claim
 must carry a complete ground instantiation. Multiple calls may carry different
 instantiations, but they all eliminate the same universally checked closure.
-Bounded or nested schemes, general closure bodies and calls to generic function
-declarations remain outside this path.
+Nested quantified schemes, general closure bodies and calls to generic
+function declarations remain outside this path.
 
 Both producers feed this format into `SourceClaimJson`. The native SKJS CLI
 entry points first run `SourceClaimExport`; they do not have another verifier.

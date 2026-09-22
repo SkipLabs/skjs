@@ -367,12 +367,15 @@ function fromSourceClaims(
       if("unavailable" in A && Object.keys(A).length===1 && typeof A.unavailable==="string" && A.unavailable)return "(unavailable)";
       if("scheme" in A) {
         const s=A.scheme;
-        if(!Array.isArray(s.typeParams)||!s.typeParams.length||!Array.isArray(s.params))throw Error("invalid quantified callable claim");
+        if(!Array.isArray(s.typeParams)||!Array.isArray(s.params))throw Error("invalid quantified callable claim");
         const binders=s.typeParams.map(p=>{
           if(!p||typeof p.name!=="string"||!p.name)throw Error("invalid quantified callable binder");
           return p.name+(p.bound===null?"":` extends ${type(p.bound)}`);
         }).join(", ");
-        return `<${binders}>(${s.params.map((p,i)=>`arg${i}: ${type(p)}`).join(", ")}) => ${type(s.result)}`;
+        // With no binders of its own this is a callable over an enclosing
+        // binder, such as a returned `() => T`; it prints without a prefix.
+        const prefix=s.typeParams.length?`<${binders}>`:"";
+        return `${prefix}(${s.params.map((p,i)=>`arg${i}: ${type(p)}`).join(", ")}) => ${type(s.result)}`;
       }
       if(!("param" in A))throw Error("invalid source claim type");
       if(Object.keys(A).join()!=="param" || typeof A.param!=="string" || !A.param)throw Error("invalid rigid parameter claim");
@@ -746,7 +749,7 @@ function verifySkjs(
         // is held to: a finding about the claim, before any obligation is tried.
         const parameterClaim=/claimed parameter type differs from the source annotation for '([^']*)'$/.exec(detail);
         const outsideFragment=/outside the [^:]*fragment\.?$/.test(detail);
-        const location: Failure|null=direct ? {kind:"direct-obligation",pos:direct.sourceMap.pos} : sourceRefusal ? {kind:"source-limitation",pos:sourceRefusal.sourceMap.pos,reason:sourceRefusal.reason} : genericPoint ? (genericPoint[1]==="entry claim" ?
+        const location: Failure|null=direct ? (direct.sourceMap.role==="entry-claim" ? {kind:"environment-obligation",start:direct.sourceMap.pos[0]} : direct.sourceMap.role==="expression-claim" ? {kind:"expression-obligation",pos:direct.sourceMap.pos} : {kind:"direct-obligation",pos:direct.sourceMap.pos}) : sourceRefusal ? {kind:"source-limitation",pos:sourceRefusal.sourceMap.pos,reason:sourceRefusal.reason} : genericPoint ? (genericPoint[1]==="entry claim" ?
           {kind:"environment-obligation",start:Number(genericPoint[2])} :
           {kind:"expression-obligation",pos:[Number(genericPoint[2]),Number(genericPoint[3])]}) : parameterClaim ? {kind:"parameter-claim",binding:parameterClaim[1]} : unavailableType ? {kind:"unavailable-type-claim",
           ...(unavailableBinding ? {start:Number(environment[1]),binding:unavailableBinding[1]} :

@@ -10,10 +10,18 @@ import { readDiagnostic } from "../tools/diagnostic.mts";
 // port only when it is run directly.
 import { analyse } from "../report-viewer/serve.mts";
 const here = import.meta.dirname;
+function must<T>(value: T | null | undefined, message: string): T {
+  assert.ok(value !== null && value !== undefined, message);
+  return value;
+}
 let good = "";
 let generic = "";
 let genericClosure = "";
 let twoCalls = "";
+let bounded = "";
+let returned = "";
+let captured = "";
+let callback = "";
 let verifiedFunctions = 0;
 for (const test of cases) {
   const result = check(join(here, "examples", `${test.file}.ts`));
@@ -41,6 +49,10 @@ for (const test of cases) {
   if (test.file === "generic-inferred") generic = result.artifacts;
   if (test.file === "generic-closure") genericClosure = result.artifacts;
   if (test.file === "generic-two-calls") twoCalls = result.artifacts;
+  if (test.file === "generic-bounded") bounded = result.artifacts;
+  if (test.file === "generic-returned") returned = result.artifacts;
+  if (test.file === "generic-captured-store") captured = result.artifacts;
+  if (test.file === "generic-callback") callback = result.artifacts;
 }
 process.stdout.write(
   `${verifiedFunctions} functions verified; ${cases.filter((c) => c.kind === "negative").length} negative controls; ${cases.filter((c) => c.kind === "gap").length} named gaps\n`,
@@ -65,6 +77,9 @@ const invoke = (claims: string, evidence: string, artifacts = good) => {
   assert.ifError(p.error);
   assert.equal(p.signal, null);
   assert.equal(p.status, 1, p.stdout + p.stderr);
+  // Returned so a caller can assert the refusal is for the intended reason,
+  // not merely that something refused.
+  return p.stdout + p.stderr;
 };
 for (const [name, mutate] of new Map<string, (c: SourceClaims) => void>([
   [
@@ -130,19 +145,121 @@ const sites = instantiated.expressions.filter((e) => e.instantiate);
 assert.equal(sites.length, 2, "both eliminations must carry a substitution");
 for (const [name, mutate] of [
   ["substitution", (s: NonNullable<typeof sites[1]["instantiate"]>) => {
-    s[0]!.type = [1, 2];
+    must(s[0], "the inferred type argument").type = [1, 2];
   }],
   ["substitution domain", (s: NonNullable<typeof sites[1]["instantiate"]>) => {
-    s[0]!.name = "U";
+    must(s[0], "the inferred type argument").name = "U";
   }],
 ] as const) {
   const claims = structuredClone(twoCallClaims);
-  const forged = claims.functions[0]!.expressions.filter((e) => e.instantiate);
-  mutate(forged[1]!.instantiate!);
+  const forged = must(claims.functions[0], "the containing function").expressions.filter((e) => e.instantiate);
+  mutate(must(must(forged[1], "the second call").instantiate, "the second substitution"));
   const file = join(twoCalls, `forged-${name.replace(/ /g, "-")}.json`);
   writeFileSync(file, JSON.stringify(claims));
   invoke(file, join(twoCalls, "evidence.json"), twoCalls);
   process.stdout.write(`tampered ${name}: refused\n`);
+}
+
+// A substitution is checked against every declared bound before it is
+// compiled. Reversing one call's type arguments keeps them ground and complete,
+// so the domain check passes and only the bound obligation can refuse it.
+const boundedClaims: SourceClaims = JSON.parse(
+  readFileSync(join(bounded, "claims.json"), "utf8"),
+);
+{
+  const claims = structuredClone(boundedClaims);
+  const call = must(claims.functions[0], "the containing function").expressions.find((e) => e.instantiate);
+  assert.ok(call?.instantiate);
+  const [u, t] = call.instantiate;
+  assert.ok(u && t && u.name === "U" && t.name === "T");
+  u.type = [1];
+  t.type = [1, 2];
+  const file = join(bounded, "forged-bound.json");
+  writeFileSync(file, JSON.stringify(claims));
+  const said = invoke(file, join(bounded, "evidence.json"), bounded);
+  assert.match(said, /does not satisfy the closure's bound: cannot establish boolean ≤ true/);
+  process.stdout.write("tampered substituted bound: refused\n");
+}
+
+// A nested closure's claim is the type the compiled graph will use for it, so
+// introduction requires it to be exactly the source annotation `() => T`: a
+// ground `() => boolean` claim fits every observed call and is still refused.
+// And a callable over the binder is meaningful only inside its closure: the
+// same claim placed on an expression outside it is refused as an escape.
+const returnedClaims: SourceClaims = JSON.parse(
+  readFileSync(join(returned, "claims.json"), "utf8"),
+);
+{
+  const fn = must(returnedClaims.functions[0], "the containing function");
+  const nested = fn.expressions.find(
+    (e) => !Array.isArray(e.type) && "scheme" in e.type && e.type.scheme.typeParams.length === 0,
+  );
+  assert.ok(nested && !Array.isArray(nested.type) && "scheme" in nested.type);
+  const outer = fn.expressions.find(
+    (e) => !Array.isArray(e.type) && "scheme" in e.type && e.type.scheme.typeParams.length > 0,
+  );
+  assert.ok(outer && !Array.isArray(outer.type) && "scheme" in outer.type);
+  const grounded = structuredClone(returnedClaims);
+  const g = must(grounded.functions[0], "the containing function").expressions.find((e) => e.pos[0] === nested.pos[0] && e.pos[1] === nested.pos[1]);
+  assert.ok(g && !Array.isArray(g.type) && "scheme" in g.type);
+  g.type.scheme.result = [1, 2];
+  const groundedFile = join(returned, "forged-nested-claim.json");
+  writeFileSync(groundedFile, JSON.stringify(grounded));
+  assert.match(invoke(groundedFile, join(returned, "evidence.json"), returned),
+    /nested closure claim differs from its source annotation/);
+  process.stdout.write("tampered nested closure claim: refused\n");
+
+  const escaped = structuredClone(returnedClaims);
+  const outside = must(escaped.functions[0], "the containing function").expressions.find(
+    (e) => e.pos[0] > outer.pos[1] && Array.isArray(e.type),
+  );
+  assert.ok(outside, "an expression after the closure");
+  outside.type = nested.type;
+  const escapedFile = join(returned, "forged-escape.json");
+  writeFileSync(escapedFile, JSON.stringify(escaped));
+  assert.match(invoke(escapedFile, join(returned, "evidence.json"), returned),
+    /escapes its closure/);
+  process.stdout.write("tampered rigid callable escape: refused\n");
+}
+
+// A captured cell keeps the contract its declaration states. Retyping it in the
+// entry claim the closure is checked against changes what the body reads, so
+// the scheme's own body check refuses: a capture is never retyped per call.
+const capturedClaims: SourceClaims = JSON.parse(
+  readFileSync(join(captured, "claims.json"), "utf8"),
+);
+{
+  const claims = structuredClone(capturedClaims);
+  const fn = must(claims.functions[0], "the containing function");
+  const declaration = fn.entries.find((e) => e.bindings.some((b) => b.name === "store") && !e.bindings.some((b) => b.name === "read"));
+  assert.ok(declaration, "the entry at the closure's declaration");
+  const store = declaration.bindings.find((b) => b.name === "store");
+  assert.ok(store);
+  store.type = [1, 2];
+  const file = join(captured, "forged-capture.json");
+  writeFileSync(file, JSON.stringify(claims));
+  assert.match(invoke(file, join(captured, "evidence.json"), captured),
+    /does not satisfy its scheme universally: cannot establish boolean ≤ number/);
+  process.stdout.write("tampered captured cell contract: refused\n");
+}
+
+// A substitution proposed through a callback is validated like any other:
+// naming `number` for the call whose value is `flag` yields a genuine instance
+// of the scheme whose value parameter the argument then fails to meet.
+const callbackClaims: SourceClaims = JSON.parse(
+  readFileSync(join(callback, "claims.json"), "utf8"),
+);
+{
+  const claims = structuredClone(callbackClaims);
+  const fn = claims.functions.find((f) => f.name === "throughCallback");
+  assert.ok(fn);
+  const site = fn.expressions.find((e) => e.instantiate?.some((i) => Array.isArray(i.type) && i.type.length === 2));
+  assert.ok(site?.instantiate, "the call instantiated at boolean");
+  must(site.instantiate[0], "the callback substitution").type = [4];
+  const file = join(callback, "forged-callback-instance.json");
+  writeFileSync(file, JSON.stringify(claims));
+  invoke(file, join(callback, "evidence.json"), callback);
+  process.stdout.write("tampered callback instantiation: refused\n");
 }
 
 // Generic bodies take the rigid-bound path in BOTH producer and consumer.
@@ -172,7 +289,7 @@ for (const site of ["initializer", "binding"] as const) {
   assert.ifError(p.error);
   assert.equal(p.signal, null);
   assert.equal(p.status, 1, p.stdout + p.stderr);
-  assert.match(p.stdout + p.stderr, /generic obligation: cannot establish/);
+  assert.match(p.stdout + p.stderr, /generic (entry claim|expression claim|binding annotation|return contract) at \[\d+,\d+\): cannot establish/);
   assert.match(p.stdout + p.stderr, /"role":"(?:expression|entry)-claim"/);
   process.stdout.write(`tampered inferred generic ${site}: refused\n`);
 }
@@ -288,7 +405,9 @@ for (const control of cases.filter((c) => c.kind === "negative")) {
         `obligation-diagnostic: ${JSON.stringify(value)}`;
       assert(readDiagnostic(line(wire)), "the structured direct judgment decodes");
       const unknown = structuredClone(wire);
-      unknown.judgment.kind = "future-judgment";
+      // Deliberately outside the typed union: the reader must refuse it at run time.
+      // Reflect keeps this malformed-wire test from weakening the typed source.
+      Reflect.set(unknown.judgment, "kind", "future-judgment");
       assert.equal(readDiagnostic(line(unknown)),undefined,"an unhandled judgment variant is refused");
       const unscoped = structuredClone(wire);
       unscoped.judgment.actual = {kind:"rigid",name:"Undeclared"};

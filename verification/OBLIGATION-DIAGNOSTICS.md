@@ -62,8 +62,17 @@ prose field. A `subtyping` judgment carries declared parameters, their ambient
 or quantified scope, and bounds, a
 typed source context, a source subject, and its actual and expected types. A
 `scheme-introduction` judgment carries the same declared scope, the closure-body
-span, and its actual and expected types. Direct types are either a declared
-rigid name or ground graph labels. They must not be disguised as graph sequents.
+span, and its actual and expected types. A scheme elimination is a `subtyping`
+judgment under the role `scheme-elimination`: the closure's declared parameters
+with their bounds, the call as its subject, and one substituted type argument
+against its substituted bound. A write into a captured cell inside a checked
+body is a `subtyping` judgment under `storage-write`: the value against the
+cell's fixed contract. An argument to a callable the body knows over rigid
+types is one under `call-argument`: the argument against that parameter. The reader locates a direct obligation by the claim it
+concerns — an `entry-claim` at its statement start, an `expression-claim` at
+its span — and any other role at the judgment's own span. Direct types are a declared rigid
+name, ground graph labels, or a callable over those, such as the `() => T` a
+closure returns. They must not be disguised as graph sequents.
 Lean diagnostics render ground types only through `SourceTypes.render`; numeric
 labels remain references inside the graph document and never become type names
 in user-facing judgments.
