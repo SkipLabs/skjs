@@ -21,11 +21,12 @@ export interface SchemeClaim {
   result: ClaimType;
 }
 
-/** Ground graph labels, a lexically scoped rigid parameter, or a quantified
+/** Ground graph labels, a lexically scoped rigid parameter, their union, or a quantified
  * callable. This is the one type language shared by every producer. */
 export type ClaimType =
   | Labels
   | { param: string }
+  | { union: ClaimType[] }
   | { scheme: SchemeClaim }
   | { unavailable: string };
 

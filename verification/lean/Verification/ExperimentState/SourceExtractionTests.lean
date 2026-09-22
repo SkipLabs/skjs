@@ -805,4 +805,25 @@ private def nullishAssignmentClaims : Fragment.Claims :=
      reachesWrite r.program r.program.length no.label then
     throw "only the nullish arm may evaluate the assignment")
 
+-- Delaying literal-closure allocations must preserve the order of executing
+-- defaults. Two forward captures become available between the effects, and
+-- each parameter occurs exactly once in the resulting schedule.
+private def scheduledParameters : List (String × Json) :=
+  ["first", "second", "before", "later", "after"].map (·, Json.null)
+private def scheduledDefaults : List (Nat × Fragment.Expr) :=
+  [(0, .lambda (1,2) [] [] [] Json.null (.var (1,2) "second")),
+   (1, .lambda (3,4) [] [] [] Json.null (.var (3,4) "later")),
+   (2, .write (5,6) "value" (.var (5,6) "cell") (.lit (5,6) (.vbool false))),
+   (3, .read (7,8) "value" (.var (7,8) "cell")),
+   (4, .write (9,10) "value" (.var (9,10) "cell") (.lit (9,10) (.vbool true)))]
+#guard is (Fragment.parameterOrder scheduledParameters scheduledDefaults) [2,3,1,0,4]
+-- Reading, invoking or exposing a pending closure must fail even though its
+-- eventual function type is valid. Capture cycles cannot be scheduled either.
+#guard !ok (Fragment.parameterOrder scheduledParameters
+  (scheduledDefaults.map fun (i,e) => (i, if i == 3 then
+    .call (7,8) (.var (7,8) "first") [] else e)))
+#guard !ok (Fragment.parameterOrder scheduledParameters
+  (scheduledDefaults.map fun (i,e) => (i, if i == 1 then
+    .lambda (3,4) [] [] [] Json.null (.var (3,4) "first") else e)))
+
 end Verification.ExperimentState.SourceExtractionTests

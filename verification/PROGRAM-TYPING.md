@@ -1420,19 +1420,37 @@ implemented.
 
 ### Universal parameter initialization
 
-The direct generic certificate has a `defaultE i B d` constructor. For a ground
-input slot `Γ(i) = A`, it checks `A ⊆ B ∪ {undefined}` and checks `d : B` under
-the same rigid binders. Its term is `if isUndefined(var i) then d else var i`,
-and its result is `B`. The initializer's proof is required even when observed
-calls supply that argument. A sequential `let` prologue binds the initialized
-value before checking subsequent defaults and the body.
+The direct generic certificate distinguishes value slots, cell identities, and
+raw defaulted argument slots. An argument slot carrying contract `B` denotes
+`⟦B⟧η ∪ undefT`; `B` may contain rigid parameters. It has no ordinary variable
+or cell-read rule. `defaultE i d` is the only rule that consumes it:
 
-`GenericCertificate.Proof.check_safe` covers this constructor for every rigid
-assignment. Its undefined branch uses the initializer certificate; its other
-branch removes the undefined alternative from the supplied value. Ground input
-labels do not restrict other parameters or the result to ground types. This
-rule does not yet express an input union containing a rigid type or a closure
-that reads a parameter initialized later; those remain explicit source gaps.
+```text
+Γ(i) = argument(B)       Δ; Γ ⊢ d : B
+────────────────────────────────────────────────────────────
+Δ; Γ ⊢ if isUndefined(var i) then d else var i : B
+```
+
+`GenericCertificate.Proof.check_safe` proves this for every admissible rigid
+assignment `η`. The undefined branch uses the initializer's proof; the other
+branch has meaning `⟦B⟧η`. This does not assume `undefined ∉ ⟦B⟧η`.
+`ClosureCertificate.inputs` distinguishes ordinary and defaulted inputs, and
+`invocation_of_inputs` connects their denotations to the closure's actual
+argument binding. The universal proof is required even if every observed call
+supplies the argument. A `let` prologue then exposes each initialized value.
+`CertificateJudgments.check_iff_Typed` includes this rule.
+
+The source adapter also performs acyclic closure conversion for literal
+closures capturing later parameters. `Fragment.parameterOrder` delays only
+closure allocations, until their dependencies are initialized; no executing
+initializer may read or expose a pending closure. Potentially effectful defaults
+keep their relative order. A closure is allocated once and captures initialized
+immutable parameters and unchanged outer cell identities. This preserves
+sharing and observations up to renaming fresh locations. Cycles and pending
+closure exposure are refused. This source-correspondence argument remains in
+the trusted adapter; it is not claimed as a Lean proof about JavaScript.
+The same schedule drives graph lowering and universal certificate construction.
+No heap location changes its fixed world type.
 
 ## Callables
 

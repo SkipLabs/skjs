@@ -23,13 +23,12 @@ whose contract admits `undefined`, which is the value the machine binds there;
 `x?: T` is carried as `T | undefined`. A parameter may instead carry a default,
 `y: B = e`: its position admits `undefined` for the same reason, and `e`
 replaces that value before the body runs, so the body reads `B`; a default may
-read the parameters declared before it. Initialization exposes parameter names
-in declaration order; a current or later raw argument slot is not a readable
-binding. Default-created closures capturing later parameters are currently
-refused, even when their invocation would occur after initialization.
-Quantified closures support ground-typed defaults through a universal
-initialization certificate. Defaults whose input type needs a rigid union
-(`T | undefined`) remain outside the claim/certificate language.
+read initialized earlier parameters. A current or later raw argument slot is
+not a readable binding. Literal closures may capture later parameters through
+acyclic closure conversion: their allocation waits until their captures are
+initialized, and no executing initializer may read or expose a pending closure.
+Effectful defaults retain source order. Quantified defaults, including inputs
+of type `T | undefined`, have universal initialization certificates.
 Callables pass as
 arguments, return as results, escape as closures and appear as thunks; they form
 unions with null and with each other, are selected by
@@ -73,27 +72,41 @@ restrictions belong to the
 2. **Overloads:** implemented with validated per-signature interior claims,
    including captured-field refinements. Each signature checks the same lowered
    body. Both CLI entry points reject malformed or misplaced rows.
-3. **Defaults:** sequential initialization and ground-typed defaults under rigid
-   binders are implemented and certified. **This milestone is not fully closed.**
-   Two safe source witnesses remain named gaps in the OCaml inventory:
-   `generic-rigid-default` and `default-deferred-capture`.
+3. **Defaults:** closed for this breadth milestone. Sequential initialization,
+   rigid defaults, and acyclic forward captures are implemented. Both formerly
+   gated witnesses, `generic-rigid-default` and `default-deferred-capture`, now
+   verify. The former also covers `T` containing `undefined` and a generic
+   forward capture; the latter checks a capture chain across effectful defaults.
+   Early invocation and a Boolean initializer falsely claimed at arbitrary `T`
+   are negative controls. Both verifier entry points reject early invocation,
+   and the viewer receives a located refusal.
 
-To finish (3), extend the existing rigid type language with unions and prove
-its semantic interpretation/subtyping cases; use the same representation in
-claims, the direct checker, certificates, producers and printers. `T` must stay
-rigid when the input is `T | undefined`, and the initializer must establish `T`
-for every assignment, including when observed calls only use Boolean.
+The universal certificate distinguishes an unreadable raw argument slot of
+meaning `T ∪ {undefined}` from an initialized value binding of type `T`.
+Initialization must establish `T` for every admissible assignment; observed
+calls cannot justify it. The source claim uses an ordinary union, and scheme
+compilation substitutes the initialized annotation separately from the input
+contract. In particular it must not obtain `T` by deleting `undefined` from the
+input: `T` can itself contain `undefined`.
 
-Forward captures need one shared parameter initialization environment: closure
-creation captures binding identity, later initialization supplies its value,
-and an early read remains a temporal-dead-zone error. Model initializedness
-separately from the fixed world type. Prove initialization and invocation safety
-before accepting these programs. Do not expose raw argument values, retype a
-location at initialization, or move potentially effectful defaults. The closure
-must read the initialized value even when the actual was undefined and a later
-default replaced it. A companion control must invoke that closure during the
-later parameter's initializer and be refused. This is an additional semantic
-extension, not a reason to remove the existing refusal.
+Forward capture support uses closure conversion in the trusted Lean extractor,
+not a new mutable-world rule. A literal closure allocation can wait until its
+captures are initialized because no pending closure is exposed and parameters
+are immutable in this fragment. It is allocated once, preserving sharing, and
+captures outer mutable cells by identity. All potentially effectful defaults
+retain source order. `Fragment.parameterOrder` is shared by ordinary lowering
+and universal certificates, and its dependency traversal is exhaustive.
+
+This closes the planned breadth witnesses, not all JavaScript initialization
+patterns. Cyclic captures and exposing a pending closure during initialization
+are conservatively refused, even where a supplied actual could avoid the default.
+Supporting those patterns later needs an explicit initialization frame with
+initializedness separate from fixed world types; it must not expose raw actuals
+or retype locations. The closure-conversion argument is part of the trusted
+source adapter, as other JavaScript-to-calculus correspondence is; Lean proves
+safety of the resulting term, not equivalence to a formal JavaScript semantics.
+Generic field-write defaults still await the generic effect certificate, an
+independent restriction of generic bodies rather than a missing default rule.
 
 ### Order of extension
 

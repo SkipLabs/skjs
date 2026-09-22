@@ -241,6 +241,63 @@ inductive Expr where
   | ifBody (pos : Span) (result : Option Json) (cond thn els : Expr)
   | letBody (pos : Span) (name : String) (annot : Option Json) (init body : Expr)
 
+/-- Lexical dependencies, including deferred bodies. Exhaustive so a new
+executable source form cannot bypass parameter-initialization checks. -/
+partial def Expr.freeNames : Expr → List String
+  | .var _ n => [n]
+  | .lit .. | .done .. => []
+  | .lambda _ _ ps ds _ b =>
+    ((ds.flatMap fun d => d.2.freeNames) ++ b.freeNames).filter
+      (fun n => !(ps.map Prod.fst).contains n)
+  | .shapeTest _ _ _ e | .not _ e | .cast _ _ e | .read _ _ e | .atEnv _ e => e.freeNames
+  | .alloc _ _ es | .arrayLit _ es => es.flatMap Expr.freeNames
+  | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
+  | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
+  | .elemAt _ a b | .arith _ _ a b | .logicalAssign _ _ a b
+  | .withValue _ a b _ _ | .seqBody _ a b => a.freeNames ++ b.freeNames
+  | .indexWrite _ _ a b c | .elemWrite _ a b c | .ifBody _ _ a b c =>
+    a.freeNames ++ b.freeNames ++ c.freeNames
+  | .update _ _ a b _ => a.freeNames ++ (b.map Expr.freeNames).getD []
+  | .assign _ n _ e | .nullishAssign _ n _ e => n :: e.freeNames
+  | .arrayAssign _ targets rhs => rhs.freeNames ++ targets.flatMap
+      (fun q => q.name :: (q.default_.map Expr.freeNames).getD [])
+  | .bindWithReceiver _ f r args | .callWithReceiver _ f r args =>
+    f.freeNames ++ r.freeNames ++ args.flatMap Expr.freeNames
+  | .call _ f args => f.freeNames ++ args.flatMap Expr.freeNames
+  | .letBody _ n _ a b => a.freeNames ++ b.freeNames.filter (· != n)
+
+/-- Closure conversion for acyclic forward captures. Only a literal closure's
+allocation can move; every potentially effectful initializer keeps source order.
+No pending binding may be read or exposed by another executing initializer.
+A deferred closure is allocated exactly once, after its captures exist. Source
+parameters are immutable in this fragment, and mutable outer captures retain
+cell identity. Thus delaying this unobservable allocation preserves captures,
+aliasing and effects (up to fresh-location renaming). Cyclic/escaping pending
+closures require an explicit initialization frame and are refused here. -/
+def parameterOrder (ps : List (String × Json)) (defaults : List (Nat × Expr)) :
+    Except String (List Nat) := do
+  let names := ps.map Prod.fst
+  let dependencies (i : Nat) := ((defaults.lookup i).map Expr.freeNames).getD []
+    |>.filter names.contains
+  let ready (done : List Nat) (i : Nat) :=
+    (dependencies i).all fun n => done.any fun j => names[j]? == some n
+  let mut done := []
+  let mut pending := []
+  for i in List.range ps.length do
+    if ready done i then done := done ++ [i]
+    else
+      match defaults.lookup i with
+      | some (.lambda ..) => pending := pending ++ [i]
+      | _ => throw "parameter default may only read initialized earlier parameters and captures; a pending closure cannot be invoked or exposed"
+    -- At most one new dependency is discharged per iteration; the bounded
+    -- fixpoint also handles chains of literal closures capturing one another.
+    for _ in List.range ps.length do
+      if let some j := pending.find? (ready done) then
+        done := done ++ [j]
+        pending := pending.filter (· != j)
+  if !pending.isEmpty then throw "cyclic parameter-default captures require an initialization frame"
+  return done
+
 /-- Singleton notation for small source-adapter fixtures. -/
 abbrev Expr.lam (p : Span) (name : String) (arg result : Json) (body : Expr) : Expr :=
   .lambda p [] [(name,arg)] [] result body

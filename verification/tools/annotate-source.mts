@@ -365,6 +365,7 @@ function fromSourceClaims(
   const type=(A: import("./source-claims.mts").ClaimType):string=> {
     if(!Array.isArray(A)) {
       if("unavailable" in A && Object.keys(A).length===1 && typeof A.unavailable==="string" && A.unavailable)return "(unavailable)";
+      if("union" in A) return A.union.map(t => `(${type(t)})`).join(" | ");
       if("scheme" in A) {
         const s=A.scheme;
         if(!Array.isArray(s.typeParams)||!Array.isArray(s.params))throw Error("invalid quantified callable claim");

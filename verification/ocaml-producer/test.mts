@@ -7,7 +7,7 @@ import { cases } from "./cases.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
 import { checkOverloads } from "./overload-claims.mts";
-import { checkDefaults, checkSchemeDefaults } from "./default-parameters.mts";
+import { checkDefaults, checkSchemeDefaults, checkEarlyDefault } from "./default-parameters.mts";
 // The reader's collector, imported rather than served: `serve.mts` takes the
 // port only when it is run directly.
 import { analyse } from "../report-viewer/serve.mts";
@@ -51,6 +51,7 @@ for (const test of cases) {
   if (test.file === "overloads") checkOverloads(verifier, result.artifacts);
   if (test.file === "values") good = result.artifacts;
   if (test.file === "default-parameter-scope") checkDefaults(verifier, result.artifacts);
+  if (test.file === "invalid-default-invocation") checkEarlyDefault(verifier, result.artifacts);
   if (test.file === "generic-default") checkSchemeDefaults(verifier, result.artifacts);
   if (test.file === "generic-inferred") generic = result.artifacts;
   if (test.file === "generic-closure") genericClosure = result.artifacts;
@@ -394,6 +395,15 @@ assert.match(
 );
 process.stdout.write("reader collection: quantified callable rendered\n");
 
+const collectedDefaults = await analyse(repositoryPath("generic-rigid-default"), "ocaml");
+assert.equal(collectedDefaults.collection?.verified, true);
+assert.match(
+  collectedDefaults.manifest.functions[0]?.expressions.find(e => e.type.startsWith("<"))?.type ?? "",
+  /arg1: \(T\) \| \(undefined\)/,
+);
+process.stdout.write("reader collection: rigid default union rendered\n");
+
+
 // A negative control must reach validation and fail there. Failing there means
 // failing an obligation, which the reader can show at its span; an adapter that
 // throws before any obligation exists has refused, not validated, and the
@@ -405,6 +415,7 @@ const directControls = new Set([
   "invalid-generic-closure",
   "invalid-scheme-capture",
   "invalid-generic-default",
+  "invalid-rigid-default",
 ]);
 let testedDirectProtocol = false;
 for (const control of cases.filter((c) => c.kind === "negative")) {

@@ -53,7 +53,7 @@ export function checkDefaults(verifier: string, artifacts: string): void {
     assert.equal(result.status, 1);
     assert.match(
       result.stdout + result.stderr,
-      /unbound or uninitialized closure variable 'second'/,
+      /parameter default may only read initialized earlier parameters/,
     );
   }
 
@@ -70,12 +70,28 @@ export function checkDefaults(verifier: string, artifacts: string): void {
     () => execute("default-later-parameter", "laterDefault()"),
     /Cannot access 'second' before initialization/,
   );
+  assert.throws(
+    () => execute("invalid-default-invocation", "defaultInvokedTooEarly()"),
+    /Cannot access 'later' before initialization/,
+  );
   assert.equal(execute("generic-default", "genericDefault(true)"), null);
+  assert.equal(
+    execute("generic-rigid-default", "undefinedRigidDefault(undefined)"),
+    undefined,
+  );
   for (const seed of [true, false]) {
-    // Named completeness gaps are safe programs, not negative controls.
+    assert.equal(
+      execute("generic-rigid-default", `genericDeferredDefault(${seed})`),
+      seed,
+    );
+    // Both formerly gated safe defaults now verify.
     assert.equal(
       execute("default-deferred-capture", `deferredDefaultCapture(${seed})`),
       seed,
+    );
+    assert.equal(
+      execute("default-deferred-capture", `deferredChain(${seed})`),
+      false,
     );
     assert.equal(
       execute("generic-rigid-default", `rigidDefault(${seed})`),
@@ -143,6 +159,35 @@ export function checkSchemeDefaults(verifier: string, artifacts: string): void {
     const diagnostic = readDiagnostic(result.stdout + result.stderr);
     assert(diagnostic?.kind === "source-refusal");
     assert.equal(diagnostic.sourceMap.role, "generic-validation");
+    assert(diagnostic.sourceMap.pos[0] < diagnostic.sourceMap.pos[1]);
+  }
+}
+
+/** A proposed well-typed closure still cannot read its capture during TDZ.
+ * This must be a located refusal from both independent entry points. */
+export function checkEarlyDefault(verifier: string, artifacts: string): void {
+  writeFileSync(join(artifacts, "evidence.json"), "{}");
+  for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+    const result = spawnSync(
+      verifier,
+      [
+        mode,
+        join(artifacts, "fragment.json"),
+        join(artifacts, "claims.json"),
+        join(artifacts, "source.ts"),
+        join(artifacts, "evidence.json"),
+        ...(mode === "--produce-source-claims" ? ["12"] : []),
+      ],
+      { encoding: "utf8", timeout: 30_000 },
+    );
+    assert.ifError(result.error);
+    assert.equal(result.signal, null);
+    assert.equal(result.status, 1);
+    const output = result.stdout + result.stderr;
+    assert.match(output, /pending closure cannot be invoked or exposed/);
+    const diagnostic = readDiagnostic(output);
+    assert(diagnostic?.kind === "source-refusal");
+    assert.equal(diagnostic.sourceMap.role, "binding-annotation");
     assert(diagnostic.sourceMap.pos[0] < diagnostic.sourceMap.pos[1]);
   }
 }

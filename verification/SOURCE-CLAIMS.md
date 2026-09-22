@@ -75,12 +75,19 @@ checking. Captured runtime slots distinguish values from cell identities, and
 cell contracts come from the source's storage annotations. Ordinary variable
 proofs cannot expose these private identities; reading one requires a cell-read
 proof. Writes within a quantified body still lack a certificate constructor.
-Quantified closures with ground-typed defaults reconstruct initialization in
-that universal certificate, in parameter order, before the body. Omitted inputs
-admit `undefined`; each initializer establishes its parameter's declared type
-under all rigid assignments. Initializers use the same supported expression
-language as the rigid body. Rigid input unions such as `T | undefined` remain
-unrepresented; defaults with those contracts are explicitly refused.
+Quantified closures with defaults reconstruct initialization in the universal
+certificate. The source input `T | undefined` is represented as
+`{"union":[{"param":"T"},[3]]}`; union arms are recursive claim types and
+ground-only types continue to use label lists. Substitution recursively grounds
+these arms. The initialized annotation is substituted separately from the raw
+input contract, since `T` itself may contain `undefined`. The certificate has a
+private raw-argument slot that ordinary variable proofs cannot read; its
+initialization rule establishes the declared type under every rigid assignment.
+Initializers use the same supported expression language as the rigid body.
+Acyclic literal-closure forward captures use the same checked initialization
+schedule as ordinary graph extraction. Effects keep source order; pending
+closure exposure and cycles are refused. See
+[the rule and trust boundary](PROGRAM-TYPING.md#universal-parameter-initialization).
 
 The executable source slice is narrower than the semantic scheme rules. A
 containing function may declare one immutable quantified closure. A binder may

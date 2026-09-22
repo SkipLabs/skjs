@@ -36,13 +36,33 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
-  gap("generic-rigid-default", "A rigid default needs the universally quantified input union T | undefined",
-    "unsupported", "proposal", /rigid type nested in a graph type/),
-  gap("default-deferred-capture", "A default-created closure needs the later parameter's initialized binding",
-    "unsupported", "proposal", /parameter default may only read initialized earlier parameters/),
-  positive("generic-defaults", "Universally certified default initialization before rigid results and callbacks"),
-  negative("invalid-generic-default", "An observed Boolean call cannot justify a default for every T",
-    /generic binding annotation.*cannot establish T ≤ boolean/),
+  positive(
+    "generic-rigid-default",
+    "A universally certified rigid default replaces omitted arguments without specializing T",
+  ),
+  positive(
+    "default-deferred-capture",
+    "Deferred closures capture initialized parameters while effectful defaults keep source order",
+  ),
+  negative(
+    "invalid-default-invocation",
+    "A default-created closure cannot be invoked while its capture is uninitialized",
+    /pending closure cannot be invoked or exposed/,
+  ),
+  negative(
+    "invalid-rigid-default",
+    "A default must establish T universally even when every observed call uses boolean",
+    /generic binding annotation.*cannot establish true ≤ T/,
+  ),
+  positive(
+    "generic-defaults",
+    "Universally certified default initialization before rigid results and callbacks",
+  ),
+  negative(
+    "invalid-generic-default",
+    "An observed Boolean call cannot justify a default for every T",
+    /generic binding annotation.*cannot establish T ≤ boolean/,
+  ),
   positive(
     "default-parameter-scope",
     "Sequential defaults, effects, and captured initialized parameters",

@@ -16,6 +16,9 @@ structure Overlay where
   entryCurrent : List (Nat × List (String × List (String × Ty Nat))) := []
   exprCurrent : List (Span × List (String × Ty Nat)) := []
 
+  /-- Source annotations after a checked scheme substitution; not producer claims. -/
+  initializedParams : Option (List (Ty Nat)) := none
+
 structure Function where
   name : String
   namePos : Span

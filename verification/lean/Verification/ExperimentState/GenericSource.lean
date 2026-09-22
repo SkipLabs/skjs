@@ -431,6 +431,8 @@ private partial def closureProof (c : Ctx) (env : List (String × GenericCertifi
   | .var pos name => match proofLookup name env with
       | some (index, .value _) => pure (some (.var index))
       | some (index, .cell _) => pure (some (.read index))
+      | some (_, .argument _) => throw (.refusal pos .schemeIntroduction
+          "a raw argument is not an initialized source binding")
       | none => throw (.refusal pos .schemeIntroduction s!"unbound capture '{name}'")
   | .lambda pos tps ps defaults ret body => do
       if !tps.isEmpty || !defaults.isEmpty then return none
@@ -480,12 +482,15 @@ private def proofBody (c : Ctx) (initial : List (String × DirectObligation.Ty))
         "generic expression has no semantic certificate constructor")
   return initializers.foldr GenericCertificate.Proof.letE (.widen result body)
 
-/-- Default initialization is checked under the universal binders, in source
-order, before body checking. It cannot borrow types from observed calls. -/
+/-- Default initialization is checked under the universal binders, preserving
+source effect order and capture dependencies before body checking. It cannot
+borrow types from observed calls. -/
 def parameterDefaults (c : Ctx) (env : List (String × DirectObligation.Ty))
     (pos : Span) (ps : List (String × Json)) (defaults : List (Nat × Fragment.Expr)) : M Unit := do
   let mut scope := env
-  for ((name, annot), i) in ps.zipIdx do
+  let order ← refuse pos .schemeIntroduction (Fragment.parameterOrder ps defaults)
+  for i in order do
+    let some (name, annot) := ps[i]? | throw (.refusal pos .schemeIntroduction "invalid parameter schedule")
     let expected ← lower pos .schemeIntroduction (annotationTy (c.parameters.map (·.name)) annot)
     if let some init := defaults.lookup i then
       let actual ← exprTy c scope init
@@ -516,23 +521,20 @@ def closureCertificate (c : Ctx) (env : List (String × DirectObligation.Ty))
   let inner ← ps.mapM fun q => do
     return (q.1, ← lower pos .schemeIntroduction (annotationTy names q.2))
   let result ← lower pos .schemeIntroduction (annotationTy names ret)
-  let inputs ← inner.zipIdx.mapM fun ((_, A), i) => do
-    if (defaults.lookup i).isNone then pure A
-    else match A with
-      | .ground labels => pure (.ground ((labels ++ [3]).eraseDups))
-      | _ => throw (.refusal pos .schemeIntroduction
-          "a default whose parameter type mentions a rigid binder needs a union type certificate")
-  let mut slots := ((inner.map Prod.fst).zip inputs).map fun (name, A) =>
-    (if defaults.isEmpty then name else "", GenericCertificate.Slot.value A)
+  let inputs := inner.zipIdx.map fun ((_, A), i) =>
+    if (defaults.lookup i).isNone then GenericCertificate.Input.value A else .defaulted A
+  let mut slots := ((inner.map Prod.fst).zip inputs).map fun (name, input) =>
+    (if defaults.isEmpty then name else "", input.slot)
   slots := slots ++ captures
   let mut initializers : List GenericCertificate.Proof := []
-  for ((name, A), i) in inner.zipIdx do
+  let order ← refuse pos .schemeIntroduction (Fragment.parameterOrder ps defaults)
+  for i in order do
+    let some (name, A) := inner[i]? | throw (.refusal pos .schemeIntroduction "invalid parameter schedule")
     match defaults.lookup i with
     | none => slots := slots.set (initializers.length + i) (name, .value A)
     | some init =>
-      let .ground labels := A | return none
       let some proof ← closureProof c slots init | return none
-      initializers := initializers ++ [.defaultE (initializers.length + i) labels proof]
+      initializers := initializers ++ [.defaultE (initializers.length + i) proof]
       slots := (name, .value A) :: slots
   let some proof ← closureProof c slots body | return none
   return some ⟨c.parameters, inputs, captures.map Prod.snd, result,

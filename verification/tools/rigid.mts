@@ -58,6 +58,7 @@ export function rigidOf(
       const declared = scope.find((p) => p.name === type.param);
       return declared ? [declared] : [];
     }
+    if ("union" in type) return type.union.flatMap((t) => visit(t, hidden));
     if ("unavailable" in type) return [];
     if ("scheme" in type) {
       const seen = new Set(hidden);

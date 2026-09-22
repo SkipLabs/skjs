@@ -12,6 +12,7 @@ open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs 
 interpreted as a ground graph label or replaced with its upper bound. -/
 inductive ClaimType where
   | labels : List Nat → ClaimType
+  | union : List ClaimType → ClaimType
   | param : String → ClaimType
   | scheme : List (String × Option ClaimType) → List ClaimType → ClaimType → ClaimType
   | unavailable : String → ClaimType
@@ -20,6 +21,7 @@ instance : Coe (List Nat) ClaimType := ⟨ClaimType.labels⟩
 
 private partial def ClaimType.toJson : ClaimType → Json
   | .labels A => Lean.toJson A
+  | .union ts => Json.mkObj [("union", Lean.toJson (ts.map ClaimType.toJson))]
   | .param name => Json.mkObj [("param", Lean.toJson name)]
   | .scheme typeParams params result => Json.mkObj [("scheme", Json.mkObj [
       ("typeParams", Lean.toJson (typeParams.map fun p => Json.mkObj [
@@ -39,6 +41,9 @@ private partial def ClaimType.fromJson (j : Json) : Except String ClaimType :=
       if j != Json.mkObj [("unavailable", Lean.toJson reason)] || reason.isEmpty then
         throw "invalid unavailable claim"
       return .unavailable reason
+    if let .ok _ := j.getObjVal? "union" then
+      CellClaims.fieldsExactly j ["union"]
+      return .union (← (← jArr j "union").mapM ClaimType.fromJson)
     if let .ok s := j.getObjVal? "scheme" then
       CellClaims.fieldsExactly j ["scheme"]
       CellClaims.fieldsExactly s ["typeParams", "params", "result"]
@@ -58,7 +63,10 @@ private partial def ClaimType.fromJson (j : Json) : Except String ClaimType :=
 
 instance : FromJson ClaimType where
   fromJson? := ClaimType.fromJson
-private def ClaimType.ground : ClaimType → SourceClaims.Candidate
+private partial def ClaimType.ground : ClaimType → SourceClaims.Candidate
+  | .union ts => do
+      let arms ← ts.mapM ClaimType.ground
+      return (arms.flatten.eraseDups.mergeSort (· ≤ ·))
   | .labels A => .ok A
   | .param _ => .error "rigid parameter outside generic function"
   | .scheme .. => .error "quantified callable requires scheme checking"
@@ -155,7 +163,7 @@ def Function.normalized (f : Function) : SourceClaims.Function :=
       ⟨row.expressions.map (fun e => (e.pos,e.type.ground)),
        row.entries.map (fun e => (e.start,e.bindings.map (fun b => (b.name,b.type.ground)))),
        row.entries.map (fun e => (e.start,e.bindings.filterMap fun b => b.current.map (b.name,·))),
-       row.expressions.filterMap (fun e => e.current.map (e.pos,·))⟩)))⟩
+       row.expressions.filterMap (fun e => e.current.map (e.pos,·)), none⟩)))⟩
 
 /-! ## Scheme compilation
 
@@ -172,6 +180,7 @@ arrow exists. Replacing this section with a first-class scheme certificate
 changes neither Fragment, SourceClaims, nor the producer's semantic types. -/
 private partial def ofClaim (role : String) : ClaimType → Except String DirectObligation.Ty
   | .param name => pure (.rigid name)
+  | .union _ => throw s!"a union containing rigid types is outside {role}"
   | .labels A => pure (.ground A)
   | .scheme [] ps r => do return .arrow (← ps.mapM (ofClaim role)) (← ofClaim role r)
   | .scheme .. => throw s!"a nested scheme is outside {role}"
@@ -263,6 +272,11 @@ private def claimOfType (names : List String) (j : Json) : SourceTypes.Lowering 
 does a rigid arrow such as `() => T` have a graph row. -/
 private partial def groundIn (T : SourceTypes.Table) :
     ClaimType → Except String (SourceTypes.Table × List Nat)
+  | .union ts => do
+      let (T, arms) ← ts.foldlM (fun (T, acc) t => do
+        let (T, A) ← groundIn T t
+        pure (T, acc ++ A)) (T, [])
+      pure (T, arms.eraseDups.mergeSort (· ≤ ·))
   | .labels A => pure (T, A)
   | .scheme [] ps r => do
       let (T, ps) ← ps.foldlM (fun (T, acc) p => do
@@ -277,6 +291,7 @@ private partial def groundIn (T : SourceTypes.Table) :
   | .unavailable reason => throw reason
 
 private def groundOf (role : String) : ClaimType → Except String (List Nat)
+  | .union _ => throw s!"{role} requires grounding a union"
   | .labels A => pure A
   | .param name => throw s!"{role} is still the rigid parameter '{name}'"
   | .scheme .. => throw s!"{role} is a scheme, not a ground type"
@@ -284,6 +299,7 @@ private def groundOf (role : String) : ClaimType → Except String (List Nat)
 
 /-- Capture-avoiding: a nested scheme's own binders shadow the substitution. -/
 private partial def subst (σ : List (String × ClaimType)) : ClaimType → ClaimType
+  | .union ts => .union (ts.map (subst σ))
   | .param name => (σ.lookup name).getD (.param name)
   | .scheme tps ps r =>
       let inner := σ.filter fun q => !(tps.map Prod.fst).contains q.1
@@ -346,7 +362,7 @@ private def find (f : Fragment.Fn) : SourceTypes.Lowering (Option Closure) := do
               if (defaults.lookup i).isNone then pure t
               else match t with
                 | .labels A => pure (.labels ((A ++ [3]).eraseDups |>.mergeSort (· ≤ ·)))
-                | _ => throw "a default whose parameter type mentions a rigid binder needs a union type certificate"
+                | _ => pure (.union [t, .labels [3]])
             let r ← claimOfType names ret
             found := some ⟨lpos, b.name, parameters, ps, defaults, ret, params, r, body, pos.1⟩
   return found
@@ -460,9 +476,13 @@ private def compile (T : SourceTypes.Table) (f : Fragment.Fn) (claims : Function
       match groundIn T (subst σ e.type) with
       | .ok (T, A) => pure (T, overlay ++ [(e.pos, (.ok A : SourceClaims.Candidate))])
       | .error reason => pure (T, overlay ++ [(e.pos, (.error reason : SourceClaims.Candidate))])) (T, [])
-    -- A scheme's entries are the ones its single body states; only the
-    -- expression claims are substituted.
-    pure (T, acc ++ [({ exprs := overlay } : SourceClaims.Overlay)])) init
+    let (original, T) ← match (c.sourceParams.mapM fun q => claimOfType names q.2).run T with
+      | .ok (ps, T) => pure (ps, T)
+      | .error reason => throw (refuse c.span reason)
+    let (T, initialized) ← original.foldlM (fun (T, acc) q => do
+      let (T, A) ← (groundIn T (subst σ q)).mapError (refuse c.span)
+      pure (T, acc ++ [A])) (T, [])
+    pure (T, acc ++ [({ exprs := overlay, initializedParams := some initialized } : SourceClaims.Overlay)])) init
   return (T, claims, [(c.span, overlays)])
 
 end Scheme
@@ -472,6 +492,7 @@ end Scheme
 private def validTable (T : SourceTypes.Table) : Bool :=
   SourceTypes.initial.isPrefixOf T && (T.flatMap id |>.flatMap clauseTypes).all (validTy T.length)
 private partial def validType (T : SourceTypes.Table) : ClaimType → Bool
+  | .union ts => !ts.isEmpty && ts.all (validType T)
   | .param name => !name.isEmpty
   | .scheme typeParams params result =>
       -- With no binders of its own this is a callable that mentions an

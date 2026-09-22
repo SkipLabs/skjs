@@ -79,6 +79,14 @@ let encode (proposal : Proposal.t) =
       Object ["scheme",Object ["typeParams",type_params;
         "params",Array (List.map claim_type signature.params);
         "result",claim_type signature.result]]
+    | Atoms (_::_::_ as atoms) when contains_rigid (Atoms atoms) ->
+      let rigid, ground = List.partition (fun a -> contains_rigid (Atoms [a])) atoms in
+      let parts = List.map (fun a -> Atoms [a]) rigid @
+        (if ground=[] then [] else [Atoms ground]) in
+      Object ["union", Array (List.map claim_type parts)]
+    | Union ts when List.exists contains_rigid ts ->
+      let rigid, ground = List.partition contains_rigid ts in
+      Object ["union", Array (List.map claim_type (rigid @ ground))]
     | (Atoms _ | Union _) as t -> labels t
   in
   (* The substitution is exported so Lean re-checks the elimination it names,

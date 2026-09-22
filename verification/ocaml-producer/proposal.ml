@@ -113,11 +113,17 @@ let infer_function (f:Source.fn) =
       | Storage contract -> expr ~expected:contract env rhs
       | Value _ -> unsupported "assignment to immutable binding")
     | Lambda (quantified,ps,defaults,result,body) ->
-      (* Initialization has a separate, sequential scope. The current and later
-         parameters are not readable merely because their raw actuals exist. *)
+      (* Executing defaults see only earlier bindings. A literal closure may
+         capture later parameters; this is a proposal about its eventual body,
+         not permission to invoke it during initialization. Lean independently
+         schedules acyclic captures and rejects pending closure exposure. *)
       let inner = List.fold_left (fun env (i,(n,t)) ->
         Option.iter (fun d ->
-          try ignore (expr ~expected:t env d) with
+          let scope = match d.node with
+            | Lambda _ -> List.fold_left (fun scope (n,t) ->
+                if List.mem_assoc n scope then scope else extend scope n (Value t)) env ps
+            | _ -> env in
+          try ignore (expr ~expected:t scope d) with
           | Json.Error message when String.starts_with ~prefix:"unbound name " message ->
             unsupported ("parameter default may only read initialized earlier parameters and captures: " ^ message))
           (List.assoc_opt i defaults);

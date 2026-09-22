@@ -23,11 +23,14 @@ is internal to certificates, not a second source type representation. -/
 inductive Slot where
   | value (type : Ty)
   | cell (contract : Ty)
+  /-- A raw actual for a defaulted parameter. Only initialization may read it. -/
+  | argument (contract : Ty)
   deriving Repr, BEq
 
 def Slot.denote (G : NormalGraph Nat) (eta : String → Fam) : Slot → Fam
   | .value A => A.denote G eta
   | .cell A => bagT [(valueField, A.denote G eta)]
+  | .argument A => unionT (A.denote G eta) undefT
 
 /-- A runtime environment realizes the slot contracts in the certificate. -/
 def EnvOk (G : NormalGraph Nat) (eta : String -> Fam)
@@ -54,6 +57,34 @@ theorem Slot.denote_adm {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta) :
     ∀ A : Slot, Adm (A.denote G eta)
   | .value A => Ty.denote_adm hC A
   | .cell _ => bagT_adm _
+  | .argument A => unionT_adm _ _ (Ty.denote_adm hC A)
+      ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+
+/-- An invocation input is a value or an argument awaiting a default.
+Storage identities cannot be passed off as source value parameters. -/
+inductive Input where
+  | value (type : Ty)
+  | defaulted (type : Ty)
+  deriving Repr, BEq
+
+def Input.slot : Input → Slot
+  | .value A => .value A
+  | .defaulted A => .argument A
+
+def Input.denote (G : NormalGraph Nat) (eta : String → Fam) (p : Input) : Fam :=
+  p.slot.denote G eta
+
+theorem Input.denote_value {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta)
+    {p : Input} {n W v} (h : p.denote G eta n W v) :
+    isVal v = true ∧ Scoped 0 v := by
+  cases p with
+  | value A => exact Ty.denote_value hC h
+  | defaulted A =>
+    rcases h with h | h
+    · exact Ty.denote_value hC h
+    · change v = .undef at h
+      subst v
+      exact ⟨rfl, trivial⟩
 
 theorem EnvOk.transfer {G : NormalGraph Nat} {eta Gamma rho n W}
     (hC : ClosedAssign eta) (he : EnvOk G eta Gamma rho n W)
@@ -80,36 +111,49 @@ theorem EnvOk.push_value {G : NormalGraph Nat} {eta Gamma rho n W A a}
       exact ha
     | succ i => exact he.2 i B hi
 
-theorem EnvOk.prepend {G : NormalGraph Nat} {eta Gamma rho n W args} {As : List Ty}
+theorem EnvOk.prependInputs {G : NormalGraph Nat} {eta Gamma rho n W args} {As : List Input}
     (hC : ClosedAssign eta) (he : EnvOk G eta Gamma rho n W)
-    (ha : ArgsT (As.map (Ty.denote G eta)) n W args) :
-    EnvOk G eta (As.map Slot.value ++ Gamma) (prependArgs args rho) n W := by
+    (ha : ArgsT (As.map (Input.denote G eta)) n W args) :
+    EnvOk G eta (As.map Input.slot ++ Gamma) (prependArgs args rho) n W := by
   induction As generalizing args with
   | nil => cases args <;> simp_all [ArgsT, prependArgs]
   | cons A As ih =>
     cases args with
     | nil => exact False.elim ha
-    | cons a args => exact (ih ha.2).push_value hC ha.1
+    | cons a args =>
+      have he' := ih ha.2
+      refine ⟨?_, ?_⟩
+      · intro i
+        cases i with
+        | zero => exact (Input.denote_value hC ha.1).2
+        | succ i => exact he'.1 i
+      · intro i B hi
+        cases i with
+        | zero =>
+          simp only [List.map_cons, List.cons_append, List.getElem?_cons_zero, Option.some.injEq] at hi
+          subst B
+          exact ha.1
+        | succ i => exact he'.2 i B hi
 
 /-- The same body rule serves nested monomorphic closures and quantified
 introduction. Parameters precede captures, which retain their runtime values. -/
-theorem invocation_of_body {G : NormalGraph Nat} {eta Gamma term n W rho}
-    {inputs : List Ty} {result : Ty}
+theorem invocation_of_inputs {G : NormalGraph Nat} {eta Gamma term n W rho}
+    {inputs : List Input} {result : Ty}
     (hC : ClosedAssign eta) (he : EnvOk G eta Gamma rho n W)
-    (safe : ∀ j U heap env, EnvOk G eta (inputs.map Slot.value ++ Gamma) env j U →
+    (safe : ∀ j U heap env, EnvOk G eta (inputs.map Input.slot ++ Gamma) env j U →
       WorldAdm U → HeapOk j U heap →
       Safe (result.denote G eta) j U heap (instantiate 0 env term)) :
-    InvocationSpec inputs.length [(inputs.map (Ty.denote G eta), result.denote G eta)]
+    InvocationSpec inputs.length [(inputs.map (Input.denote G eta), result.denote G eta)]
       n W (instantiate inputs.length rho term) := by
   refine ⟨instantiate_scoped rho he.1 term inputs.length, ?_⟩
   intro p hp j hj U hx hu heap hh args ha
-  have hp' : p = (inputs.map (Ty.denote G eta), result.denote G eta) :=
+  have hp' : p = (inputs.map (Input.denote G eta), result.denote G eta) :=
     List.mem_singleton.mp hp
   subst p
   have hlength : args.length = inputs.length := by
     simpa only [List.length_map] using ArgsT_length ha
-  have he' := (he.transfer hC j (Nat.le_of_lt hj) U hx).prepend hC ha
-  have hscoped : ∀ (As : List Ty) args, ArgsT (As.map (Ty.denote G eta)) j U args →
+  have he' := (he.transfer hC j (Nat.le_of_lt hj) U hx).prependInputs hC ha
+  have hscoped : ∀ (As : List Input) args, ArgsT (As.map (Input.denote G eta)) j U args →
       ∀ a ∈ args, Scoped 0 a := by
     intro As
     induction As with
@@ -121,13 +165,26 @@ theorem invocation_of_body {G : NormalGraph Nat} {eta Gamma term n W rho}
       | cons a args =>
         intro v hv
         rcases List.mem_cons.mp hv with rfl | hv
-        · exact (Ty.denote_value hC ha.1).2
+        · exact (Input.denote_value hC ha.1).2
         · exact ih args ha.2 v hv
   unfold CallArguments.bindParameters
   rw [← hlength, CallArguments.parameters_exact]
   rw [show args.length = 0 + args.length from (Nat.zero_add _).symm,
     instantiate_args rho he.1 (hscoped inputs args ha)]
   exact safe j U heap _ he' hu hh
+
+theorem invocation_of_body {G : NormalGraph Nat} {eta Gamma term n W rho}
+    {inputs : List Ty} {result : Ty}
+    (hC : ClosedAssign eta) (he : EnvOk G eta Gamma rho n W)
+    (safe : ∀ j U heap env, EnvOk G eta (inputs.map Slot.value ++ Gamma) env j U →
+      WorldAdm U → HeapOk j U heap →
+      Safe (result.denote G eta) j U heap (instantiate 0 env term)) :
+    InvocationSpec inputs.length [(inputs.map (Ty.denote G eta), result.denote G eta)]
+      n W (instantiate inputs.length rho term) := by
+  simpa only [List.map_map, List.length_map, Function.comp_def, Input.slot, Input.denote,
+    Slot.denote] using invocation_of_inputs (inputs := inputs.map Input.value)
+      (result := result) (term := term) hC he (by
+        simpa only [List.map_map, Function.comp_def, Input.slot] using safe)
 
 theorem Ty.denoteList_eq_map (G : NormalGraph Nat) (eta : String → Fam) (As : List Ty) :
     Ty.denoteList G eta As = As.map (Ty.denote G eta) := by
@@ -163,9 +220,9 @@ inductive Proof where
   | lit (v : Claim.Val)
   | widen (expected : Ty) (body : Proof)
   | letE (init body : Proof)
-  /-- Initialize a ground parameter from its raw argument or a checked default.
-  The raw slot may additionally contain undefined; its location/type never changes. -/
-  | defaultE (index : Nat) (result : List Nat) (init : Proof)
+  /-- Initialize a parameter from its raw argument or a universally checked default.
+  The raw slot may additionally contain undefined; initialization binds a new value. -/
+  | defaultE (index : Nat) (init : Proof)
   | lambda (inputs : List Ty) (body : Proof)
   | call (callee : Proof) (args : List Proof)
   deriving Repr, BEq
@@ -175,21 +232,21 @@ def Proof.check (parameters : List Parameter) (Gamma : List Slot) :
     Proof -> Option (Tm × Ty)
   | .var index => match Gamma[index]? with
       | some (.value A) => some (.var index, A)
-      | some (.cell _) | none => none
+      | some (.cell _) | some (.argument _) | none => none
   | .read index => match Gamma[index]? with
       | some (.cell A) => some (.read (.var index), A)
-      | some (.value _) | none => none
+      | some (.value _) | some (.argument _) | none => none
   | .lit .vnull => some (.nul, .ground [0])
   | .lit .vundef => some (.undef, .ground [3])
   | .lit (.vbool true) => some (.tru, .ground [1])
   | .lit (.vbool false) => some (.fls, .ground [2])
   | .lit _ => none
 
-  | .defaultE index B init => do
-      let some (.value (.ground A)) := Gamma[index]? | none
+  | .defaultE index init => do
+      let some (.argument B) := Gamma[index]? | none
       let (term, actual) ← init.check parameters Gamma
-      if A.all (fun a => (B ++ [3]).contains a) && actual.leUnder parameters (.ground B) then
-        some (.ite (.test .isUndef (.var index)) term (.var index), .ground B)
+      if actual.leUnder parameters B then
+        some (.ite (.test .isUndef (.var index)) term (.var index), B)
       else none
   | .lambda inputs body => match body.check parameters (inputs.map Slot.value ++ Gamma) with
       | some (term, result) => some (.make (.closure inputs.length term) .nul, .arrow inputs result)
@@ -240,17 +297,16 @@ private theorem let_safe {G : NormalGraph Nat} {eta} {Gamma : List Slot} {A B : 
     exact ihb k _ heap' (push av rho) he' (WorldAdm_trunc _ hu)
       (HeapOk_trunc k U heap' hok)
 
-private theorem default_safe {G : NormalGraph Nat} {eta Gamma index A B init n W heap rho}
-    (hC : ClosedAssign eta) (hG : Primitives G)
-    (hi : Gamma[index]? = some (.value (.ground A)))
-    (hab : A.all (fun a => (B ++ [3]).contains a) = true)
+private theorem default_safe {G : NormalGraph Nat} {eta Gamma index B init n W heap rho}
+    (hC : ClosedAssign eta)
+    (hi : Gamma[index]? = some (.argument B))
     (safe : ∀ n W heap rho, EnvOk G eta Gamma rho n W → WorldAdm W → HeapOk n W heap →
-      Safe (meaning G B) n W heap (instantiate 0 rho init))
+      Safe (B.denote G eta) n W heap (instantiate 0 rho init))
     (he : EnvOk G eta Gamma rho n W) (hw : WorldAdm W) (hh : HeapOk n W heap) :
-    Safe (meaning G B) n W heap
+    Safe (B.denote G eta) n W heap
       (instantiate 0 rho (.ite (.test .isUndef (.var index)) init (.var index))) := by
   have hv := he.2 _ _ hi
-  have hvval := (Ty.denote_value hC hv).1
+  have hvval := (Input.denote_value (p := .defaulted B) hC hv).1
   simp only [instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero]
   cases n with
   | zero => trivial
@@ -266,18 +322,11 @@ private theorem default_safe {G : NormalGraph Nat} {eta Gamma index A B init n W
           (WorldAdm_trunc _ hw) (by
             simpa only [trunc_trunc] using HeapOk_trunc k _ heap (HeapOk_trunc (k+1) W heap hh))
       · intro hnot
-        have hvalue : meaning G B k (trunc k (by omega) W) (rho index) := by
-          have hdown := (meaning_adm G A).down_le _ k (by omega) W _ hv
-          obtain ⟨a, ha, hav⟩ := hdown
-          have hm : a ∈ B ++ [3] := List.contains_iff_mem.mp (List.all_eq_true.mp hab a ha)
-          rcases List.mem_append.mp hm with hb | hu
-          · exact ⟨a, hb, hav⟩
-          · have eq : a = 3 := List.mem_singleton.mp hu
-            subst a
-            have undef : meaning G [3] k (trunc k (by omega) W) (rho index) := ⟨3, by simp, hav⟩
-            have eq := (represents_sem hG.represents_undef _ _ _).mp undef
-            simp only [PositiveNormalization.sem, undefT] at eq
-            rw [eq] at hnot
+        have hvalue : B.denote G eta k (trunc k (by omega) W) (rho index) := by
+          rcases hv with hb | hu
+          · exact (Ty.denote_adm hC B).down_le _ k (by omega) W _ hb
+          · change rho index = .undef at hu
+            rw [hu] at hnot
             simp [tagHolds] at hnot
         exact value_safe _ _ _ _ _ hvval hvalue
 
@@ -343,7 +392,7 @@ theorem Proof.check_safe {G : NormalGraph Nat} {parameters} {Gamma : List Slot}
     | none => simp [Proof.check, hi] at hc
     | some slot =>
       cases slot with
-      | cell A' => simp [Proof.check, hi] at hc
+      | cell A' | argument A' => simp [Proof.check, hi] at hc
       | value A' =>
         simp only [Proof.check, hi, Option.some.injEq, Prod.mk.injEq] at hc
         obtain ⟨rfl, rfl⟩ := hc
@@ -355,7 +404,7 @@ theorem Proof.check_safe {G : NormalGraph Nat} {parameters} {Gamma : List Slot}
     | none => simp [Proof.check, hi] at hc
     | some slot =>
       cases slot with
-      | value A' => simp [Proof.check, hi] at hc
+      | value A' | argument A' => simp [Proof.check, hi] at hc
       | cell A' =>
         simp only [Proof.check, hi, Option.some.injEq, Prod.mk.injEq] at hc
         obtain ⟨rfl, rfl⟩ := hc
@@ -391,39 +440,32 @@ theorem Proof.check_safe {G : NormalGraph Nat} {parameters} {Gamma : List Slot}
         intro n W heap rho he hw hh
         exact let_safe hC (Proof.check_safe (proof := init) hpInit hC hs hG)
           (Proof.check_safe (proof := body) hpBody hC hs hG) he hw hh
-  | defaultE index B init =>
+  | defaultE index init =>
     simp only [hproof] at hc
     cases hi : Gamma[index]? with
     | none => simp [Proof.check, hi] at hc
     | some slot =>
       cases slot with
-      | cell A => simp [Proof.check, hi] at hc
-      | value A =>
-        cases A with
-        | rigid name => simp [Proof.check, hi] at hc
-        | arrow inputs result => simp [Proof.check, hi] at hc
-        | ground A =>
-          cases hp : init.check parameters Gamma with
-          | none => simp [Proof.check, hi, hp] at hc
-          | some pair =>
-            obtain ⟨t, actual⟩ := pair
-            simp only [Proof.check, hi] at hc
-            rw [hp] at hc
-            change (if (A.all (fun a => (B ++ [3]).contains a) && actual.leUnder parameters (.ground B)) = true
-              then some (Tm.ite (.test .isUndef (.var index)) t (.var index), Ty.ground B)
-              else none) = some (term, _) at hc
-            by_cases h : (A.all (fun a => (B ++ [3]).contains a) && actual.leUnder parameters (.ground B)) = true
-            · rw [if_pos h] at hc
-              obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj hc)
-              simp only [Bool.and_eq_true] at h
-              obtain ⟨hab, hle⟩ := h
-              intro n W heap rho he hw hh
-              apply default_safe hC hG hi hab _ he hw hh
-              intro n W heap rho he hw hh
-              exact Safe_mono n (fun k _ => Ty.leUnder_sound hs hle k) W heap _
-                (Proof.check_safe hp hC hs hG n W heap rho he hw hh)
-            · rw [if_neg h] at hc
-              contradiction
+      | cell _ | value _ => simp [Proof.check, hi] at hc
+      | argument B =>
+        cases hp : init.check parameters Gamma with
+        | none => simp [Proof.check, hi, hp] at hc
+        | some pair =>
+          obtain ⟨t, actual⟩ := pair
+          simp only [Proof.check, hi] at hc
+          rw [hp] at hc
+          change (if actual.leUnder parameters B = true
+            then some (Tm.ite (.test .isUndef (.var index)) t (.var index), B)
+            else none) = some (term, _) at hc
+          split at hc
+          · next hle =>
+            obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj hc)
+            intro n W heap rho he hw hh
+            apply default_safe hC hi _ he hw hh
+            intro n W heap rho he hw hh
+            exact Safe_mono n (fun k _ => Ty.leUnder_sound hs hle k) W heap _
+              (Proof.check_safe hp hC hs hG n W heap rho he hw hh)
+          · contradiction
   | lambda inputs body =>
     simp only [hproof] at hc
     cases hp : body.check parameters (inputs.map Slot.value ++ Gamma) with
@@ -543,14 +585,14 @@ theorem Certificate.check_safe {G : NormalGraph Nat} (hG : Primitives G) {c : Ce
 environment is held fixed across all interpretations of the quantified names. -/
 structure ClosureCertificate where
   parameters : List Parameter
-  inputs : List Ty
+  inputs : List Input
   captures : List Slot
   result : Ty
   proof : Proof
   deriving Repr, BEq
 
 def ClosureCertificate.body (c : ClosureCertificate) : Certificate :=
-  ⟨c.parameters, c.inputs.map Slot.value ++ c.captures, c.result, c.proof⟩
+  ⟨c.parameters, c.inputs.map Input.slot ++ c.captures, c.result, c.proof⟩
 
 def ClosureCertificate.check (c : ClosureCertificate) : Option Tm := c.body.check
 
@@ -563,7 +605,7 @@ def ClosureCertificate.Safe (G : NormalGraph Nat) (c : ClosureCertificate) : Pro
         EnvOk G eta c.captures rho n W) →
       ∀ eta, ClosedAssign eta → DirectObligation.Satisfies G eta c.parameters →
         InvocationSpec c.inputs.length
-          [(c.inputs.map (Ty.denote G eta), c.result.denote G eta)] n W
+          [(c.inputs.map (Input.denote G eta), c.result.denote G eta)] n W
           (instantiate c.inputs.length rho term)
 
 theorem ClosureCertificate.check_safe {G : NormalGraph Nat} (hG : Primitives G)
@@ -574,8 +616,9 @@ theorem ClosureCertificate.check_safe {G : NormalGraph Nat} (hG : Primitives G)
   obtain ⟨body, hb, safe⟩ := Certificate.check_safe (G := G) hG hc
   have eq : body = term := Option.some.inj (hb.symm.trans hc)
   subst body
-  exact invocation_of_body hC he (safe eta hC hs)
+  exact invocation_of_inputs hC he (safe eta hC hs)
 
+#print axioms invocation_of_inputs
 #print axioms invocation_of_body
 #print axioms ClosureCertificate.check_safe
 end Verification.ExperimentState.GenericCertificate

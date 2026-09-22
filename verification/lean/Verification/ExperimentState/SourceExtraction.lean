@@ -83,6 +83,17 @@ private structure Built where
   expression is affected. -/
   resultOverride : Option (Span × Ty Nat) := none
 
+/-- Source-validation failures that already know their source site use the same
+structured channel as proof obligations. Keeping the diagnostic construction
+here prevents an adapter check from degrading into an unlocated exception. -/
+private def locatedRefusal (T : SourceTypes.Table) (pos : Span)
+    (role : DirectObligation.SourceRole) (reason : String) : String :=
+  RequestJson.withDiagnostic s!"source refusal at [{pos.1},{pos.2}): {reason}"
+    [("kind",toJson "source-refusal"),("phase",toJson "request-validation"),
+     ("outcome",toJson "not-established"),("id",toJson s!"refusal:{pos.1}"),
+     ("sourceMap",toJson (SourceMapEntry.mk pos role.wire none [])),
+     ("reason",toJson reason),("fuel",toJson 0),("types",toJson T)]
+
 private abbrev Compiler := StateT Built (Except String)
 
 private def table : Compiler SourceTypes.Table := do return (← get).types
@@ -1094,8 +1105,9 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     if !distinct paramNames || paramNames.any (fun name => name == "" || name == "undefined" || (names scope).contains name) then
       throw "shadowing or duplicate closure parameter is outside the fragment"
     -- With defaults, no parameter name is initially available. Raw argument
-    -- slots are not initialized source bindings: names become visible in
-    -- declaration order, only after their initializer has finished.
+    -- slots are not initialized source bindings: names become visible only
+    -- after initialization. Literal forward-capturing closures use the checked
+    -- dependency schedule below; potentially effectful defaults keep order.
     let defaulted := defaults.map Prod.fst
     let inner := (paramNames.map fun name =>
       held ⟨if defaults.isEmpty then name else "", some pos⟩) ++ scope
@@ -1112,18 +1124,26 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     -- overloaded closure does have one, so it takes the ordinary path below
     -- and uses its per-arrow claims there.
     let compileBody (fc : SourceClaims.Function) (result : Option (Ty Nat))
-        (H : List (Ty Nat)) : Compiler DirectProof.Plan := do
+        (H : List (Ty Nat)) (initialized : Option (List (Ty Nat)) := none) : Compiler DirectProof.Plan := do
       let previousResult := (← get).resultOverride
       modify fun st => { st with resultOverride := result.map (body.span, ·) }
       let mut ds := inner
       let mut ctx := H
       let mut prologue : List (List (Ty Nat) × DirectProof.Plan) := []
-      for ((name, sourceType),i) in params.zipIdx do
+      let order ← match Fragment.parameterOrder params defaults with
+        | .ok order => pure order
+        | .error reason => throw (locatedRefusal (← table) pos .bindingAnnotation reason)
+      for i in order do
+        let some (name, sourceType) := params[i]? | throw "invalid parameter schedule"
         match defaults.lookup i with
         | none =>
           ds := ds.set (prologue.length + i) (held ⟨name,some pos⟩)
         | some d =>
-          let B ← lower (Fragment.callableType sourceType)
+          let B ← match initialized with
+            | some ps => match ps[i]? with
+              | some B => pure B
+              | none => throw "missing instantiated parameter annotation"
+            | none => lower (Fragment.callableType sourceType)
           let dp ← closureExpr fc ds ctx d
           let value ← defaultValuePlan G ctx (prologue.length + i) B (DirectProof.cast ctx B dp)
           prologue := prologue ++ [(ctx,value)]
@@ -1144,7 +1164,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       for ((Di,Ri),overlay) in L.zip overlays do
         if Di.length != paramNames.length then
           throw "an arrow's arity differs from its closure"
-        let bi ← compileBody (fc.withOverlay overlay) none (Di ++ Γ)
+        let bi ← compileBody (fc.withOverlay overlay) none (Di ++ Γ) overlay.initializedParams
         if let some existing := term then
           if existing != bi.term then throw "a scheme body lowers differently under one of its instantiations"
         else term := some bi.term
@@ -1174,8 +1194,8 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         if defaulted.contains i then ((D ++ [3]).mergeSort (· ≤ ·)).eraseDups else D
       if L.isEmpty || !L.all (fun (Di,_) => Di.length == Ds.length && (Di.zip Ds).all (fun (D,A) => D.all A.contains)) then
         throw "closure signature claim is outside the source annotation"
-      -- One prologue binding per defaulted parameter, in declaration order, so
-      -- a later default may read an earlier parameter's replaced value.
+      -- One prologue binding per defaulted parameter, in the checked schedule,
+      -- so reads use initialized values and effects retain source order.
       -- An overloaded closure states what its body claims under each of its
       -- signatures: one body, a separate obligation at each arrow, and the
       -- same lowered term for all of them.
@@ -2021,17 +2041,6 @@ def SourceRequest.searchLabels (r : SourceRequest) : List Nat :=
   (List.range r.types.length).foldl (fun known _ =>
     (known ++ known.flatMap (fun i => (r.types[i]?.getD []).flatMap
       (fun c => (RequestJson.clauseTypes c).flatten))).eraseDups) roots
-
-/-- Source-validation failures that already know their source site use the same
-structured channel as proof obligations. Keeping the diagnostic construction
-here prevents an adapter check from degrading into an unlocated exception. -/
-private def locatedRefusal (T : SourceTypes.Table) (pos : Span)
-    (role : DirectObligation.SourceRole) (reason : String) : String :=
-  RequestJson.withDiagnostic s!"source refusal at [{pos.1},{pos.2}): {reason}"
-    [("kind",toJson "source-refusal"),("phase",toJson "request-validation"),
-     ("outcome",toJson "not-established"),("id",toJson s!"refusal:{pos.1}"),
-     ("sourceMap",toJson (SourceMapEntry.mk pos role.wire none [])),
-     ("reason",toJson reason),("fuel",toJson 0),("types",toJson T)]
 
 /-- The table is the one the claims were lowered into; annotations the claims
 did not mention grow it, and the request carries the result. -/
