@@ -47,10 +47,7 @@ function run(a: Ast, c: SkjsClaims) {
       encoding: "utf8",
     });
     const output = checked.stdout + checked.stderr;
-    if (
-      checked.status !== 1 ||
-      !output.includes("generic body has no semantic certificate")
-    )
+    if (checked.status !== 0)
       throw Error(`unexpected final certification result: ${output}`);
   }
   return r;
@@ -204,7 +201,7 @@ try {
   fs.writeFileSync(np,JSON.stringify(neutral));
   expect("native claims produce common evidence",run(ast,rawClaims),true);
   const consumed=spawnSync(verifier,["--check-source-claims",astPath,np,fileKey,path.join(tmp,"evidence.json")],{encoding:"utf8"});
-  expect("neutral claims reach the same certification boundary",consumed,false,"generic body has no semantic certificate");
+  expect("neutral claims receive semantic certification",consumed,true);
   neutral.functions[0].expressions[0].type=[1,2];
   fs.writeFileSync(np,JSON.stringify(neutral));
   expect("neutral edit rejects with native-import evidence",spawnSync(verifier,["--check-source-claims",astPath,np,fileKey,path.join(tmp,"evidence.json")],{encoding:"utf8"}),false,"generic expression claim");

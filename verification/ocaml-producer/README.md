@@ -193,7 +193,7 @@ truth for outcomes; this table records why the next rows matter.
 | Higher-order callbacks and variance | complete | `callbacks.ts` | Check parameters contravariantly through ordinary evidence |
 | Closure scope and partial application | complete | `blocks-bind.ts` | Retain captures and residual signatures |
 | Callable objects with fields | complete | `function-fields.ts` | Give one value call and field capabilities |
-| Generic declarations and rigid bounds | implementation complete; certification pending | `generics.ts`, `generic-inferred.ts` | Keep rigid identities distinct through copies and dependent bounds |
+| Generic declarations and rigid bounds | complete | `generics.ts`, `generic-inferred.ts` | Keep rigid identities distinct through copies and dependent bounds |
 | Quantified closure, one inferred call | implementation complete; certification pending | `generic-closure.ts` | Keep a scheme in SourceClaims and validate its body universally |
 | One closure called at two types | implementation complete; certification pending | `generic-two-calls.ts`, `invalid-scheme-capture.ts` | Give each call fresh proposal state; do not specialize the stored scheme |
 | Bounded quantified closure | implementation complete; certification pending | `generic-bounded.ts`, `invalid-bound-reversed.ts`, `invalid-bound-body.ts` | Export and validate the concrete substitution and every bound obligation |
@@ -205,8 +205,8 @@ truth for outcomes; this table records why the next rows matter.
 | Arbitrary numeric array indexing | blocked in lowering | `dynamic-index.ts` | Prove a general index obligation rather than inventing a singleton key |
 | Inferred mutable lifetime contract | deferred flow milestone | `unsupported.ts` | Solve one invariant against initialization and every write before publication |
 
-Agents should first close semantic certification for the implemented quantified
-rows. Their source and inference implementations are present, but their positive
+Agents should next close semantic certification for the implemented quantified
+closure rows. Their source and inference implementations are present, but their positive
 witnesses deliberately remain gaps until the executable checker is connected to
 the scheme semantics. After that, take the first incomplete row whose prerequisite
 representation already exists. This slice admits one quantified closure per
@@ -348,10 +348,11 @@ mutable captures, generic fabrication, a closure valid at every observed call
 but not universally, a reversed substituted bound at a call, a body that
 reverses its binder's bound, bad contextual initializers and stale heap refinements. Contextual types cannot turn a bad initializer into a fact.
 
-Nine breadth examples reach the rigid or scheme checker and generate any
-applicable ground graph evidence, but final certification now keeps them as
-located gaps: `generics.ts`, `aliases.ts`, `generic-closure.ts`,
-`generic-two-calls.ts`, `generic-inferred.ts`, `generic-bounded.ts`,
+Three direct generic examples now cross the semantic-certificate boundary:
+`generics.ts`, `aliases.ts` and `generic-inferred.ts`. The remaining six breadth
+examples reach the scheme checker and generate applicable ground graph evidence,
+but final certification keeps them as located gaps: `generic-closure.ts`,
+`generic-two-calls.ts`, `generic-bounded.ts`,
 `generic-returned.ts`, `generic-captured-store.ts` and `generic-callback.ts`.
 They become verified only when the source checker is proved to establish the
 semantic scheme premises.

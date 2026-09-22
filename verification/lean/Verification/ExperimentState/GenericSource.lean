@@ -1,6 +1,6 @@
 import Verification.ExperimentState.Fragment
 import Verification.ExperimentState.CellClaims
-import Verification.ExperimentState.DirectObligation
+import Verification.ExperimentState.GenericCertificate
 
 /-! Bodies under rigid binders: the one checker for a generic declaration's
 body and for a quantified closure's, whatever its nesting.
@@ -12,7 +12,10 @@ and forward upper bounds, along `letE_safeP` and `var_safeP`; `T extends
 boolean` is the assumption `T ≤ boolean`, walked by the direct relation whose
 accepted comparisons imply semantic inclusion, and never justifies `true ≤ T`.
 A failed inclusion is an obligation at its span, never a sentence. Producer claims enter already
-decoded to direct types, so no claim representation is re-parsed here. -/
+decoded to direct types, so no claim representation is re-parsed here. Accepted
+variable-copy declarations also produce a `GenericCertificate`; its independent
+checker reconstructs a calculus term and proves the result for every admissible
+rigid assignment satisfying the bounds. -/
 namespace Verification.ExperimentState.GenericSource
 open Lean Claim
 
@@ -270,10 +273,58 @@ def checkScheme (f : Fragment.Fn) (typeParams : List Fragment.TypeParam)
   if claims.ret != (← annotationTy names f.ret) then
     throw "claimed generic identity types differ from the source annotation"
 
+private def proofLookup (name : String) :
+    List (String × DirectObligation.Ty) → Option (Nat × DirectObligation.Ty)
+  | [] => none
+  | (candidate, type) :: rest =>
+    if candidate == name then some (0, type)
+    else (proofLookup name rest).map fun (index, found) => (index + 1, found)
+
+/-- Compile the already-supported immutable source fragment to the independent
+semantic proof language. Unsupported forms remain an explicit certification
+gap even if a proposal-only source check knows their type. -/
+private def proofExpr (env : List (String × DirectObligation.Ty)) :
+    Fragment.Expr → M (GenericCertificate.Proof × DirectObligation.Ty)
+  | .var pos name => match proofLookup name env with
+      | some (index, type) => pure (.var index, type)
+      | none => throw (.refusal pos .genericValidation
+          s!"certificate refers to unbound variable '{name}'")
+  | e => throw (.refusal e.span .genericValidation
+      "generic expression has no semantic certificate constructor")
+
+private def proofShape (origin : Span) :
+    List Fragment.Stmt → M (List Fragment.Binding × Fragment.Expr)
+  | [.ret _ e] => pure ([], e)
+  | .constants _ bindings :: rest => do
+      let (tail, e) ← proofShape origin rest
+      return (bindings ++ tail, e)
+  | _ => throw (.refusal origin .genericValidation
+      "generic body has no semantic certificate constructor")
+
+private def proofBody (c : Ctx) (initial : List (String × DirectObligation.Ty))
+    (result : DirectObligation.Ty) (origin : Span)
+    (statements : List Fragment.Stmt) : M GenericCertificate.Proof := do
+  let (bindings, returned) ← proofShape origin statements
+  let (env, initializers) ← bindings.foldlM (fun (env, initializers) b => do
+    let (init, actual) ← proofExpr env b.init
+    let expected ← (match b.annot with
+      | some annot => lower b.namePos .bindingAnnotation
+          (annotationTy (c.parameters.map (·.name)) annot)
+      | none => pure actual)
+    unless actual.leUnder c.parameters expected do
+      throw (.obligation ⟨b.namePos, .bindingAnnotation,
+        .subtyping c.parameters (env.map fun (name, type) => ⟨name, type⟩)
+          (.binding b.name b.namePos) actual expected⟩)
+    return ((b.name, expected) :: env, initializers ++ [(.widen expected init)]))
+    (initial, [])
+  let (body, _) ← proofExpr env returned
+  return initializers.foldr GenericCertificate.Proof.letE (.widen result body)
+
 /-- Both production and independent consumption reconstruct these obligations.
 Every source entry and expression must occur exactly once; no supplied point is
 silently ignored. -/
-def check (f : Fragment.Fn) (typeParams : List Fragment.TypeParam) (claims : Claims) : M Unit := do
+def check (f : Fragment.Fn) (typeParams : List Fragment.TypeParam) (claims : Claims) :
+    M GenericCertificate.Certificate := do
   let parameters ← refuse f.namePos .genericValidation (parametersOf typeParams)
   let names := parameters.map (·.name)
   let c : Ctx := ⟨parameters, claims, []⟩
@@ -292,6 +343,13 @@ def check (f : Fragment.Fn) (typeParams : List Fragment.TypeParam) (claims : Cla
   -- The remaining source-shape and exact-signature invariants, once the claim
   -- pass has exposed any failed inclusion.
   lower f.namePos .genericValidation (checkScheme f typeParams claims)
+  let result ← lower f.namePos .genericValidation (annotationTy names f.ret)
+  let proof ← proofBody c env result f.namePos f.body
+  let certificate : GenericCertificate.Certificate :=
+    ⟨parameters, env.map Prod.snd, result, proof⟩
+  if certificate.check.isNone then
+    throw (.refusal f.namePos .genericValidation "generated generic certificate is invalid")
+  return certificate
 
 private def paramT : Json :=
   Json.mkObj [("top", toJson false),

@@ -144,7 +144,9 @@ annotated `const` copies, inferred immutable copies and results use those rigid
 types, `boolean`, or function types over them; conversions follow declared
 bounds only. One checker, `GenericSource`, types every body under rigid binders
 — a declaration's and a quantified closure's alike — and every failed inclusion
-is a located obligation. Dependent parameters retain their rigid identity in raw SKJS exports. First-order aliases
+is a located obligation. Direct variable-copy declarations additionally emit a
+checked semantic certificate whose soundness theorem covers every admissible
+interpretation of the rigid parameters satisfying those bounds. Dependent parameters retain their rigid identity in raw SKJS exports. First-order aliases
 `type Id<T> = T` and `type Box<T> = { value: T }` remain single-parameter.
 Generic declarations taking callbacks, and other generic declaration bodies,
 remain outside; a quantified closure taking a callback is checked by the scheme

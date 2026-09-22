@@ -32,10 +32,10 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tsc-claims-"));
 // Why each file lands where it does. A verified file says tsc's claims are
 // derivable in the calculus; a failing one names what stops them.
 const expected = {
-  "stateful-source/generic-identity": "certificate-gap",
-  "stateful-source/generic-extends": "certificate-gap",
-  "stateful-source/generic-aliases": "certificate-gap",
-  "stateful-source/generic-bodies": "certificate-gap",
+  "stateful-source/generic-identity": "verified",
+  "stateful-source/generic-extends": "verified",
+  "stateful-source/generic-aliases": "verified",
+  "stateful-source/generic-bodies": "verified",
   // A stateful callback crosses a higher-order parameter boundary.
   "callables/arguments": "verified",
   "callables/cells": "verified",
@@ -237,11 +237,8 @@ for (const [name, want] of Object.entries(expected)) {
           return run(verifier,["--check-source-claims",ast,claims,file,evidence]);
         };
         const certification = consume(original);
-        assert.equal(certification.status,1,"generic source needs a universal semantic certificate");
-        assert.match(certification.stdout + certification.stderr,/generic body has no semantic certificate/);
+        assert.equal(certification.status,0,certification.stdout + certification.stderr);
         fs.writeFileSync(claims,JSON.stringify(original));
-        got = "certificate-gap";
-        detail = "direct validation passed; universal semantic certificate missing";
       }
       if (got === "failed")
         detail = (checked.stderr || "").split("\n")[0].replace(/^reject: /, "");

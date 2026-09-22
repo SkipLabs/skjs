@@ -521,16 +521,23 @@ def functionSites (f : Fragment.Fn) : List Nat × List Span :=
 inductive FunctionPlan where
   | graph (name : String) (namePos : Span) (request : SourceRequest)
   | scheme (name : String) (namePos : Span) (request : SourceRequest)
-  | generic (name : String) (namePos : Span)
+  | generic (name : String) (namePos : Span) (types : SourceTypes.Table)
+      (certificate : GenericCertificate.Certificate)
 
-/-- A plan admitted by the top-level verified outcome. There is deliberately
-one constructor: adding another source-plan variant cannot silently enter the
-verified path through a projection. -/
+/-- A plan admitted by the top-level verified outcome. Each constructor carries
+its own checked evidence: graph evidence is consumed separately, while a generic
+plan stores the direct certificate's successful check. Adding a source-plan
+variant cannot silently enter this exhaustive boundary through a projection. -/
 inductive CertifiedPlan where
   | graph (name : String) (namePos : Span) (request : SourceRequest)
+  | generic (name : String) (namePos : Span) (types : SourceTypes.Table)
+      (certificate : GenericCertificate.Certificate) (term : Tm)
+      (checked : certificate.check = some term)
 
-def CertifiedPlan.request : CertifiedPlan → SourceRequest
-  | .graph _ _ request => request
+def CertifiedPlan.requests : List CertifiedPlan → List SourceRequest
+  | [] => []
+  | .graph _ _ request :: rest => request :: CertifiedPlan.requests rest
+  | .generic .. :: rest => CertifiedPlan.requests rest
 
 /-- Graph projection for search and inspection. This is intentionally not the
 acceptance boundary: a scheme has useful ground graph evidence while its
@@ -548,8 +555,10 @@ def FunctionPlan.certify : FunctionPlan → Except String CertifiedPlan
   | .graph name pos request => pure (.graph name pos request)
   | .scheme _ pos _ => throw (sourceRefusal SourceTypes.initial pos .schemeIntroduction
       "quantified callable has no universal semantic certificate")
-  | .generic _ pos => throw (sourceRefusal SourceTypes.initial pos .genericValidation
-      "generic body has no semantic certificate")
+  | .generic name pos types certificate => match h : certificate.check with
+      | some term => pure (.generic name pos types certificate term h)
+      | none => throw (sourceRefusal types pos .genericValidation
+          "generic semantic certificate is invalid")
 
 def certifyPlans (plans : List FunctionPlan) : Except String (List CertifiedPlan) :=
   plans.mapM FunctionPlan.certify
@@ -580,8 +589,8 @@ def extractPlans (ast claims : Json) (fileKey : String) : Except String (List Fu
         | .ok claims => pure claims
         | .error reason =>
           throw (sourceRefusal d.types f.namePos .genericValidation reason)
-      match (GenericSource.check f tps direct).run' d.types with
-      | .ok () => return .generic f.name f.namePos
+      match (GenericSource.check f tps direct).run d.types with
+      | .ok (certificate, types) => return .generic f.name f.namePos types certificate
       | .error (.obligation failure) => throw (directFailure d.types failure)
       | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)
     if c.hasScheme then
@@ -610,7 +619,7 @@ def extractGraphRequests (ast claims : Json) (fileKey : String) : Except String 
 def checkJson (ast claims : Json) (fileKey : String) (evidence : Json) : Except String Unit := do
   let plans ← extractPlans ast claims fileKey
   let certified ← certifyPlans plans
-  let rs := certified.map CertifiedPlan.request
+  let rs := CertifiedPlan.requests certified
   let b : Bundle ← decodeStrict evidence
   if checkRequests rs b then return ()
   throw "source evidence does not justify the extracted program and exact claims"
@@ -632,18 +641,22 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat) : Except Str
   return evidence
 
 /-- Top-level acceptance has no lossy projection: every extracted plan first
-becomes a `CertifiedPlan`, whose only current constructor is graph evidence. -/
+becomes a `CertifiedPlan` carrying either checked graph evidence or a checked
+universal direct-body certificate. -/
 theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
     (h : checkJson ast claims fileKey evidence = .ok ()) :
     ∃ plans certified b, extractPlans ast claims fileKey = .ok plans ∧
       certifyPlans plans = .ok certified ∧
       decodeStrict evidence = .ok b ∧
-      checkRequests (certified.map CertifiedPlan.request) b = true ∧
-      ∀ r c, (r,c) ∈ (certified.map CertifiedPlan.request).zip b.functions →
+      checkRequests (CertifiedPlan.requests certified) b = true ∧
+      (∀ r c, (r,c) ∈ (CertifiedPlan.requests certified).zip b.functions →
         ∀ n W heap ρ, EnvOk (RequestJson.graph r.toRequest) r.inputs ρ n W →
           WorldAdm W → HeapOk n W heap →
           SafeGraph r.program (meaning (RequestJson.graph r.toRequest) r.result)
-            n W heap (.at r.start ρ) := by
+            n W heap (.at r.start ρ)) ∧
+      ∀ name pos types certificate term checked,
+        CertifiedPlan.generic name pos types certificate term checked ∈ certified →
+        certificate.Safe (SourceTypes.graph types) := by
   unfold checkJson at h
   cases he : extractPlans ast claims fileKey with
   | error e =>
@@ -664,10 +677,12 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
         contradiction
       | ok b =>
         rw [hb] at h
-        by_cases hx : checkRequests (certified.map CertifiedPlan.request) b = true
-        · refine ⟨plans,certified,b,rfl,hc,rfl,hx,?_⟩
+        by_cases hx : checkRequests (CertifiedPlan.requests certified) b = true
+        · refine ⟨plans,certified,b,rfl,hc,rfl,hx,?_,?_⟩
           intro r c hm n W heap ρ he hw hh
           exact checkRequests_safe hx hm n W heap ρ he hw hh
+          intro _ _ _ certificate _ checked _
+          exact GenericCertificate.Certificate.check_safe checked
         · simp [hx] at h
 
 #print axioms checkJson_safe
