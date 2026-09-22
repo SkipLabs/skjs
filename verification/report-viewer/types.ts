@@ -20,12 +20,12 @@ export type { RigidParameter } from "../tools/rigid.mts";
 // import it need no build. The browser gets the compiled bundle. Keep the
 // syntax erasable: no `enum`, no `namespace`, no parameter properties.
 
-/** One source the reader offers, and what it is about where that is known.
+/** One source the reader offers, with a required one-line description.
  * A name alone answers "which one was it called", which is a question about a
  * file already seen; the description is what makes an unseen one findable. */
 export interface GroupFile {
   path: string;
-  about?: string;
+  about: string;
 }
 
 /** A named set of sources the picker offers, with what the set is. The label

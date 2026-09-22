@@ -26,6 +26,41 @@ import { readDiagnostic } from "../tools/diagnostic.mts";
 import { atom, must, rows } from "./edits.mts";
 import type { Atom, ClaimType } from "../tools/claim.mts";
 
+import { groups, viewerGroups } from "../report-viewer/examples.mts";
+import { cases as ocamlCases } from "../ocaml-producer/cases.mts";
+
+// The corpus projection must retain the viewer's described entries, including
+// examples that also appear in a producer-specific group.
+for (const group of groups) {
+  const shown = must(
+    viewerGroups.find((g) => g.label === group.label),
+    group.label,
+  );
+  assert.deepEqual(
+    group.files,
+    shown.files.map((file) => file.path),
+  );
+}
+for (const group of viewerGroups) {
+  for (const file of group.files) {
+    assert.ok(file.about.trim(), `${file.path}: missing description`);
+    assert.doesNotMatch(
+      file.about,
+      /[\r\n]/u,
+      `${file.path}: multiline description`,
+    );
+    const c = ocamlCases.find(
+      (c) => file.path === `verification/ocaml-producer/examples/${c.file}.ts`,
+    );
+    if (c)
+      assert.equal(
+        file.about,
+        c.area,
+        `${file.path}: inventory description drift`,
+      );
+  }
+}
+
 /** One end of an obligation, as the record names it. */
 const sourceMapAt = (
   pos: Span,

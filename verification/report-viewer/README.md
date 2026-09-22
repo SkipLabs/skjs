@@ -220,13 +220,14 @@ deliberately rejected partial-collection exercise; the two **OCaml producer**
 groups are that producer's own fixtures, its negative controls and named gaps
 listed beside its verified ones.
 
-A file says what it demonstrates where that is known — `callbacks.ts ·
+A file always says what it demonstrates — `callbacks.ts ·
 higher-order calls / variance / capture`. Those come from the `area` field of
 `ocaml-producer/cases.mts`, the inventory that already decides what each case
 must do; writing them again here would be a second opinion about the same
-fixture. Thirty-four of the ninety-eight have one. The rest are not described,
-because an invented description is a claim about a fixture nobody checked, and
-the gap is left visible rather than filled in.
+fixture, including when it appears in the producer-comparison group. Other
+examples pair their paths with descriptions in the catalogue. `GroupFile.about`
+is required, and catalogue construction rejects empty or multiline text, even
+when loaded by Node without type checking. The page renders it unconditionally.
 
 The groups come from `examples.mts`, re-read for each page load, so adding an
 example needs no restart. It exports two lists, because they answer different

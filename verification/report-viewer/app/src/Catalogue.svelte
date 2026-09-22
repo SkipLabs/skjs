@@ -49,7 +49,7 @@
                 onclick={() => onopen(file.path)}
               >
                 <span class="name">{name(file.path)}</span>
-                {#if file.about}<span class="about">{file.about}</span>{/if}
+                <span class="about">{file.about}</span>
               </button>
             </li>
           {/each}
