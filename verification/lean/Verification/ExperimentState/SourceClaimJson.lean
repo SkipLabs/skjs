@@ -537,9 +537,11 @@ inductive CertifiedPlan where
   | scheme (name : String) (namePos : Span) (request : SourceRequest)
       (types : SourceTypes.Table) (certificate : GenericCertificate.ClosureCertificate)
       (term : Tm) (checked : certificate.check = some term)
+      (primitives : GenericCertificate.Primitives (SourceTypes.graph types))
   | generic (name : String) (namePos : Span) (types : SourceTypes.Table)
       (certificate : GenericCertificate.Certificate) (term : Tm)
       (checked : certificate.check = some term)
+      (primitives : GenericCertificate.Primitives (SourceTypes.graph types))
 
 def CertifiedPlan.requests : List CertifiedPlan → List SourceRequest
   | [] => []
@@ -564,6 +566,21 @@ def FunctionPlan.requests : List FunctionPlan → List SourceRequest
   | .scheme _ _ request .. :: rest => request :: FunctionPlan.requests rest
   | .generic .. :: rest => FunctionPlan.requests rest
 
+/-- The table's first four rows are the primitives. Every decoded table has
+them; a certificate's literal types name them. -/
+def primitiveRows (T : SourceTypes.Table) : Prop :=
+  T[0]? = some [.nul] ∧ T[1]? = some [.boolLit true] ∧
+    T[2]? = some [.boolLit false] ∧ T[3]? = some [.undef]
+
+instance (T : SourceTypes.Table) : Decidable (primitiveRows T) := by
+  unfold primitiveRows; infer_instance
+
+theorem primitives_of_rows {T : SourceTypes.Table} (h : primitiveRows T) :
+    GenericCertificate.Primitives (SourceTypes.graph T) := by
+  obtain ⟨h0, h1, h2, h3⟩ := h
+  exact ⟨by simp [SourceTypes.graph, h0], by simp [SourceTypes.graph, h1],
+    by simp [SourceTypes.graph, h2], by simp [SourceTypes.graph, h3]⟩
+
 /-- The sole conversion into the verified-plan type. Missing semantic
 certificates are ordinary located source limitations. Exhaustive matching makes
 a new `FunctionPlan` constructor a compile error here. -/
@@ -572,11 +589,17 @@ def FunctionPlan.certify : FunctionPlan → Except String CertifiedPlan
   | .scheme _ pos _ types none => throw (sourceRefusal types pos .schemeIntroduction
       "quantified callable has no universal semantic certificate")
   | .scheme name pos request types (some certificate) => match h : certificate.check with
-      | some term => pure (.scheme name pos request types certificate term h)
+      | some term =>
+        if hp : primitiveRows types then
+          pure (.scheme name pos request types certificate term h (primitives_of_rows hp))
+        else throw (sourceRefusal types pos .schemeIntroduction "type table lacks the primitive rows")
       | none => throw (sourceRefusal types pos .schemeIntroduction
           "quantified callable semantic certificate is invalid")
   | .generic name pos types certificate => match h : certificate.check with
-      | some term => pure (.generic name pos types certificate term h)
+      | some term =>
+        if hp : primitiveRows types then
+          pure (.generic name pos types certificate term h (primitives_of_rows hp))
+        else throw (sourceRefusal types pos .genericValidation "type table lacks the primitive rows")
       | none => throw (sourceRefusal types pos .genericValidation
           "generic semantic certificate is invalid")
 
@@ -702,10 +725,10 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
           intro plan _
           cases plan with
           | graph => trivial
-          | generic _ _ _ certificate _ checked =>
-            exact GenericCertificate.Certificate.check_safe checked
-          | scheme _ _ _ _ certificate _ checked =>
-            exact GenericCertificate.ClosureCertificate.check_safe checked
+          | generic _ _ _ certificate _ checked primitives =>
+            exact GenericCertificate.Certificate.check_safe primitives checked
+          | scheme _ _ _ _ certificate _ checked primitives =>
+            exact GenericCertificate.ClosureCertificate.check_safe primitives checked
         · simp [hx] at h
 
 #print axioms checkJson_safe

@@ -16,6 +16,36 @@ inductive Ty where
   | arrow (params : List Ty) (result : Ty)
   deriving BEq, Repr, Inhabited
 
+mutual
+def Ty.decEq : (a b : Ty) → Decidable (a = b)
+  | .rigid x, .rigid y =>
+    if h : x = y then isTrue (by rw [h]) else isFalse (fun e => h (Ty.rigid.inj e))
+  | .ground A, .ground B =>
+    if h : A = B then isTrue (by rw [h]) else isFalse (fun e => h (Ty.ground.inj e))
+  | .arrow ps r, .arrow qs t =>
+    match Ty.decEqList ps qs, Ty.decEq r t with
+    | isTrue h1, isTrue h2 => isTrue (by rw [h1, h2])
+    | isFalse h1, _ => isFalse (fun e => h1 (Ty.arrow.inj e).1)
+    | _, isFalse h2 => isFalse (fun e => h2 (Ty.arrow.inj e).2)
+  | .rigid _, .ground _ => isFalse nofun
+  | .rigid _, .arrow _ _ => isFalse nofun
+  | .ground _, .rigid _ => isFalse nofun
+  | .ground _, .arrow _ _ => isFalse nofun
+  | .arrow _ _, .rigid _ => isFalse nofun
+  | .arrow _ _, .ground _ => isFalse nofun
+def Ty.decEqList : (as bs : List Ty) → Decidable (as = bs)
+  | [], [] => isTrue rfl
+  | a :: as, b :: bs =>
+    match Ty.decEq a b, Ty.decEqList as bs with
+    | isTrue h1, isTrue h2 => isTrue (by rw [h1, h2])
+    | isFalse h1, _ => isFalse (fun e => h1 (List.cons.inj e).1)
+    | _, isFalse h2 => isFalse (fun e => h2 (List.cons.inj e).2)
+  | [], _ :: _ => isFalse nofun
+  | _ :: _, [] => isFalse nofun
+end
+
+instance : DecidableEq Ty := Ty.decEq
+
 inductive ParameterScope where
   | ambient | quantified
   deriving BEq, Repr
@@ -163,14 +193,22 @@ def Ty.leUnderFuel (fuel : Nat) (parameters : List Parameter) : Ty → Ty → Bo
             Ty.leUnderFuel n parameters r t
       | _, _ => false
 
-private def Ty.depth : Ty → Nat
+def Ty.depth : Ty → Nat
   | .rigid _ | .ground _ => 1
   | .arrow ps r => 1 + (ps.map Ty.depth).foldl max r.depth
 
+/-- The structure a walk may have to enter through declared bounds. -/
+def upperDepths (parameters : List Parameter) : Nat :=
+  (parameters.map fun p => (p.upper.map Ty.depth).getD 0).foldl (· + ·) 0
+
 /-- Inclusion under declared upper bounds. Ground unions use inclusion;
-callables are contravariant in parameters and covariant in their result. -/
+callables are contravariant in parameters and covariant in their result.
+The fuel pays for every structural step of both sides and, once per
+parameter, for entering that parameter's bound: `RigidJudgments` shows the
+former alone rejects a declaratively valid inclusion through a callable bound. -/
 def Ty.leUnder (parameters : List Parameter) (a b : Ty) : Bool :=
-  Ty.leUnderFuel (parameters.length + a.depth + b.depth + 1) parameters a b
+  Ty.leUnderFuel (parameters.length + upperDepths parameters + a.depth + b.depth + 1)
+    parameters a b
 
 private theorem denoteList_argsLe {G : NormalGraph Nat} {η parameters fuel qs ps}
     (hlen : ps.length = qs.length)

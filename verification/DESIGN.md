@@ -636,13 +636,38 @@ finite evidence**. It does not mean every inclusion true in the semantic model
 is derivable. Nor is there a completeness theorem for graph checking or for the
 producer's search.
 
-For the evolving rigid/scheme source fragment, decision completeness is planned
-after the accepted language stabilizes. The current closure condition is useful
-completeness: each intended positive example must cross the exhaustive
-`CertifiedPlan` boundary, while its negative controls must reach validation and
-fail their specified obligations. A later theorem will relate the executable
-direct checker in both directions to an explicit declarative judgment; it is not
-a prerequisite for adding and semantically certifying the present breadth rows.
+For the rigid/scheme source fragment, decision completeness is now stated and
+proved against explicit declarative judgments, independent of the algorithms.
+[POSITIVE-TYPES](POSITIVE-TYPES.md#rigid-inclusion) states inclusion under
+declared bounds, `RigidJudgments.Sub`; `Ty.leUnder` decides it on well-formed
+parameter lists (`leUnder_iff_Sub`), every list `parametersOf` builds is
+well-formed (`parametersOf_wellFormed`), and the judgment is semantically sound
+on its own (`Sub.sound`). [PROGRAM-TYPING](PROGRAM-TYPING.md#decision-completeness-of-the-direct-checker)
+states typing of calculus terms (`CertificateJudgments.Typed`, equivalent to
+the existence of an accepted certificate: `check_iff_Typed`) and of lowered source bodies
+(`SourceJudgments.HasTy` and `Checked`, decided by `exprTyB` and
+`bodyClaimsB`). The operational closure condition remains in force: each
+positive example crosses the exhaustive `CertifiedPlan` boundary, and each
+negative control fails its specified obligation.
+
+Three counterexamples were found and repaired on the way, without weakening a
+rule. The structural fuel of `Ty.leUnder` could not decide an inclusion through
+a callable bound (`RigidJudgments.counterexample_derivable`, kernel-checked
+against the old fuel). `GenericSource.check` refused a declaration returning
+a call because its certificate compiler accepted only variables; declarations
+and closures now share one compiler. Returned primitive literals lacked a
+proof constructor; `Proof.lit` now expresses them. Its safety case, and so
+`Proof.check_safe`, now assume
+`GenericCertificate.Primitives`: the graph's first four rows are the
+primitives. Every decoded table has them, and `FunctionPlan.certify`
+establishes it for each certified plan, so the headline theorem is unchanged
+in strength. These are component completeness results: there is no theorem
+yet that `GenericSource.check` or the complete CLI accepts every source body
+admitted by the source judgment. Annotation lowering, signature/site checks,
+and certificate generation remain additional boundaries. In particular,
+`HasTy.assign` can type a captured-cell write, but `closureProof` still has no
+write constructor. OCaml substitution inference and graph proof search are
+also outside these results.
 
 The stateful safety results are partial-correctness results, not termination
 proofs. Returned values meet the declared result type at each positive remaining

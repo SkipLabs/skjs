@@ -385,14 +385,23 @@ Overloads/intersections, recursive types, modules, classes/prototypes, exception
 async behavior and general effects still need separate work; this is breadth
 across the current calculus's major mechanisms, not the full language.
 
-Decision completeness is a later stabilization milestone. While the fragment
-is still moving, the immediate completeness target is operational: every
-declared positive row reaches final semantic certification, and every negative
-control reaches validation and fails its intended obligation. Once the direct
-language and its rules settle, state a declarative rigid/scheme judgment and
-prove that `Ty.leUnder` and `GenericSource.check` decide it. This is completeness
-for the declared rules, not for every inclusion that happens to hold in the
-semantic model, and it is separate from completeness of graph proof search.
+Decision completeness is stated and proved for the rigid fragment:
+`RigidJudgments.Sub` is inclusion under declared bounds, decided by
+`Ty.leUnder` on the well-formed parameter lists `parametersOf` builds;
+`SourceJudgments.HasTy` and `Checked` are typing of lowered closure and
+declaration bodies, decided by the pure checker `GenericSource` runs after
+lowering; `CertificateJudgments.Typed` types calculus terms, and every
+derivation has a certificate accepted by `Proof.check`. Each is stated by
+rules, without proof terms or fuel, and each
+theorem gives both directions. This is completeness for the declared rules,
+not for every inclusion that happens to hold in the semantic model, and it is
+separate from completeness of graph proof search. The operational target
+stands beside it: every positive row reaches final semantic certification and
+every negative control fails its intended obligation. [DESIGN.md](../DESIGN.md) records the
+counterexamples repaired to get here. These are component results, not a
+completeness theorem for the complete source-to-certificate pipeline or for
+OCaml inference. Captured-cell writes still have a source typing rule but no
+direct certificate constructor.
 
 ### OCaml inference completeness
 

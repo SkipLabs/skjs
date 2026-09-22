@@ -1973,6 +1973,58 @@ $$
 This is the universal invocation premise of scheme introduction, independent
 of observed calls. `SourceClaimJson.checkJson_safe` requires it alongside the
 enclosing graph's safety proof through exhaustive `CertifiedPlan` cases.
+
+### Decision completeness of the direct checker
+
+Declarative judgments state the direct checkers' contracts by rules, without
+proof terms or fuel. Source checking is a decision procedure; certificate
+completeness states existence of evidence, not a search procedure for it.
+
+`CertificateJudgments.Typed ps Γ t A` types a calculus term over a slot
+environment: primitive literals, variables and cell reads from their slots, subsumption along
+`RigidJudgments.Sub`, immutable `let`, closures, and calls whose arguments
+are each below the callable's parameters. `check_iff_Typed` proves, for
+well-formed parameters,
+
+$$
+\bigl(\exists p.\;\mathsf{check}(\bar P,\Gamma,p) = (t, A)\bigr)
+\quad\Longleftrightarrow\quad
+\bar P;\Gamma \vdash t : A .
+$$
+
+Left to right needs no hypothesis (`Typed_of_check`). The reverse direction
+constructs an accepted certificate from a derivation; `Typed.safe` composes
+that direction with `Proof.check_safe`, so
+every derivation is safe for every admissible assignment satisfying the bounds.
+
+`SourceJudgments.HasTy c env b t` types a lowered source body — a variable,
+a primitive literal, a write into a captured cell below its contract, a call
+to a callable binding with each argument below its parameter, or a closure
+claimed exactly as annotated with its body below its declared result — and
+`SourceJudgments.Checked c env result stmts` types a declaration body: at each
+statement the claimed environment has distinct names, exactly the scope's
+names, and each claim above the established type; each initializer and the
+return is claimed above its established type; a copy's binding type is its
+annotation or its initializer's claim; the return's claim is below the
+declared result. `exprTyB_iff_HasTy` and `bodyClaimsB_iff_Checked` prove that
+the pure checker decides both on well-formed binders, both directions.
+
+`GenericSource.check` is annotation lowering, then that pure checker, then the
+signature check, then certificate generation. Lowering is the trusted
+translation every annotation takes and is outside these judgments. The
+certificate compiler is one for declarations and closures; a body the
+judgment accepts and the proof language cannot express is refused by name.
+Two such gaps are now closed: a returned call and a returned
+primitive literal, both refused before, are certified, the literal through
+`Proof.lit` under `GenericCertificate.Primitives`, the assumption that the
+graph's first four rows are the primitives, which `FunctionPlan.certify`
+establishes for every certified plan. Kernel guards in `SourceJudgments`
+record both. This is not an end-to-end completeness theorem for
+`GenericSource.check`: lowering, exact signature/site checks and certificate
+generation are additional conditions. Captured-cell writes are still typed
+by `HasTy.assign` but not expressible by `closureProof`. Certificate existence
+also does not prove that OCaml inference finds a suitable substitution or that
+graph proof search finds evidence.
 Certificates are reconstructed in Lean on consumption; source-to-calculus
 correspondence remains part of the stated trust boundary. These theorems prove
 soundness of accepted certificates, not decision completeness of proof search.

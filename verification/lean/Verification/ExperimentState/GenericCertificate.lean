@@ -135,12 +135,32 @@ theorem Ty.denoteList_eq_map (G : NormalGraph Nat) (eta : String → Fam) (As : 
   | nil => rfl
   | cons A As ih => simp only [Ty.denoteList, List.map_cons, ih]
 
+/-- The graph's first four rows are the primitives, as `SourceTypes.initial`
+lays them out. A literal's direct type names one of them, so its safety
+needs this of the graph; every source table has it. -/
+def Primitives (G : NormalGraph Nat) : Prop :=
+  G 0 = [.nul] ∧ G 1 = [.boolLit true] ∧ G 2 = [.boolLit false] ∧ G 3 = [.undef]
+
+theorem Primitives.represents_nul {G : NormalGraph Nat} (hG : Primitives G) :
+    Represents G [0] .nul := by
+  simp [Represents, PositiveRules.expand, hG.1]
+theorem Primitives.represents_tru {G : NormalGraph Nat} (hG : Primitives G) :
+    Represents G [1] (.boolLit true) := by
+  simp [Represents, PositiveRules.expand, hG.2.1]
+theorem Primitives.represents_fls {G : NormalGraph Nat} (hG : Primitives G) :
+    Represents G [2] (.boolLit false) := by
+  simp [Represents, PositiveRules.expand, hG.2.2.1]
+theorem Primitives.represents_undef {G : NormalGraph Nat} (hG : Primitives G) :
+    Represents G [3] .undef := by
+  simp [Represents, PositiveRules.expand, hG.2.2.2]
+
 /-- Producer-independent proof terms for direct source typing. Widening and
 call compatibility use subtyping; their Boolean premises are covered by
-`DirectObligation.Ty.leUnder_sound`. -/
+`DirectObligation.Ty.leUnder_sound`. A primitive literal is its own proof. -/
 inductive Proof where
   | var (index : Nat)
   | read (index : Nat)
+  | lit (v : Claim.Val)
   | widen (expected : Ty) (body : Proof)
   | letE (init body : Proof)
   | lambda (inputs : List Ty) (body : Proof)
@@ -156,6 +176,11 @@ def Proof.check (parameters : List Parameter) (Gamma : List Slot) :
   | .read index => match Gamma[index]? with
       | some (.cell A) => some (.read (.var index), A)
       | some (.value _) | none => none
+  | .lit .vnull => some (.nul, .ground [0])
+  | .lit .vundef => some (.undef, .ground [3])
+  | .lit (.vbool true) => some (.tru, .ground [1])
+  | .lit (.vbool false) => some (.fls, .ground [2])
+  | .lit _ => none
 
   | .lambda inputs body => match body.check parameters (inputs.map Slot.value ++ Gamma) with
       | some (term, result) => some (.make (.closure inputs.length term) .nul, .arrow inputs result)
@@ -230,10 +255,38 @@ interpretation satisfying the declared bounds. -/
 theorem Proof.check_safe {G : NormalGraph Nat} {parameters} {Gamma : List Slot}
     {proof : Proof} {term : Tm} {A : Ty}
     (hc : proof.check parameters Gamma = some (term, A)) {eta}
-    (hC : ClosedAssign eta) (hs : DirectObligation.Satisfies G eta parameters) :
+    (hC : ClosedAssign eta) (hs : DirectObligation.Satisfies G eta parameters)
+    (hG : Primitives G) :
     forall n W heap rho, EnvOk G eta Gamma rho n W -> WorldAdm W -> HeapOk n W heap ->
       Safe (A.denote G eta) n W heap (instantiate 0 rho term) := by
   cases hproof : proof with
+  | lit v =>
+    simp only [hproof] at hc
+    cases v with
+    | vnull =>
+      simp only [Proof.check, Option.some.injEq, Prod.mk.injEq] at hc
+      obtain ⟨rfl, rfl⟩ := hc
+      intro n W heap rho _ _ _
+      exact value_safe _ _ _ _ _ rfl ((represents_sem hG.represents_nul n W _).mpr rfl)
+    | vundef =>
+      simp only [Proof.check, Option.some.injEq, Prod.mk.injEq] at hc
+      obtain ⟨rfl, rfl⟩ := hc
+      intro n W heap rho _ _ _
+      exact value_safe _ _ _ _ _ rfl ((represents_sem hG.represents_undef n W _).mpr rfl)
+    | vbool b =>
+      cases b with
+      | true =>
+        simp only [Proof.check, Option.some.injEq, Prod.mk.injEq] at hc
+        obtain ⟨rfl, rfl⟩ := hc
+        intro n W heap rho _ _ _
+        exact value_safe _ _ _ _ _ rfl ((represents_sem hG.represents_tru n W _).mpr rfl)
+      | false =>
+        simp only [Proof.check, Option.some.injEq, Prod.mk.injEq] at hc
+        obtain ⟨rfl, rfl⟩ := hc
+        intro n W heap rho _ _ _
+        exact value_safe _ _ _ _ _ rfl ((represents_sem hG.represents_fls n W _).mpr rfl)
+    | vnum _ => simp [Proof.check] at hc
+    | vstr _ => simp [Proof.check] at hc
   | var index =>
     simp only [hproof] at hc
     cases hi : Gamma[index]? with
@@ -271,7 +324,7 @@ theorem Proof.check_safe {G : NormalGraph Nat} {parameters} {Gamma : List Slot}
         obtain ⟨rfl, rfl⟩ := hc
         intro n W heap rho he hw hh
         exact Safe_mono n (fun k _ => Ty.leUnder_sound hs hle k) W heap _
-          (Proof.check_safe (proof := body) hp hC hs n W heap rho he hw hh)
+          (Proof.check_safe (proof := body) hp hC hs hG n W heap rho he hw hh)
       · simp [Proof.check, hp, hle] at hc
   | letE init body =>
     simp only [hproof] at hc
@@ -286,8 +339,8 @@ theorem Proof.check_safe {G : NormalGraph Nat} {parameters} {Gamma : List Slot}
         simp only [Proof.check, hpInit, hpBody, Option.some.injEq, Prod.mk.injEq] at hc
         obtain ⟨rfl, rfl⟩ := hc
         intro n W heap rho he hw hh
-        exact let_safe hC (Proof.check_safe (proof := init) hpInit hC hs)
-          (Proof.check_safe (proof := body) hpBody hC hs) he hw hh
+        exact let_safe hC (Proof.check_safe (proof := init) hpInit hC hs hG)
+          (Proof.check_safe (proof := body) hpBody hC hs hG) he hw hh
   | lambda inputs body =>
     simp only [hproof] at hc
     cases hp : body.check parameters (inputs.map Slot.value ++ Gamma) with
@@ -298,7 +351,7 @@ theorem Proof.check_safe {G : NormalGraph Nat} {parameters} {Gamma : List Slot}
       obtain ⟨rfl, rfl⟩ := hc
       intro n W heap rho he hw hh
       simp only [instantiate, Nat.zero_add]
-      have code := invocation_of_body hC he (Proof.check_safe (proof := body) hp hC hs)
+      have code := invocation_of_body hC he (Proof.check_safe (proof := body) hp hC hs hG)
       have hs := make_callable_rule nulT_adm inputs.length n W heap _ .nul code rfl hw hh rfl
       apply Safe_mono n _ W heap _ hs
       intro j hj U v hv
@@ -335,14 +388,14 @@ theorem Proof.check_safe {G : NormalGraph Nat} {parameters} {Gamma : List Slot}
               hw hh
             apply (by simpa only [List.map_map, Function.comp_def] using call)
             · have safe := Safe_mono n (fun j _ => Ty.leUnder_sound hs ht j)
-                W heap _ (Proof.check_safe (proof := callee) hf hC hs n W heap rho he hw hh)
+                W heap _ (Proof.check_safe (proof := callee) hf hC hs hG n W heap rho he hw hh)
               simpa only [Ty.denote, Ty.denoteList_eq_map, List.map_map,
                 Function.comp_def] using safe
             · intro p hp
               obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
               obtain ⟨arg, harg, hcArg⟩ := checked_argument ha hq
               intro j hj U hx hu heap' hh'
-              exact Proof.check_safe (proof := arg) hcArg hC hs j U heap' rho
+              exact Proof.check_safe (proof := arg) hcArg hC hs hG j U heap' rho
                 (he.transfer hC j hj U hx) hu hh'
           · simp [Proof.check, hf, ha, ht] at hc
 termination_by sizeOf proof
@@ -376,7 +429,7 @@ def Certificate.Safe (G : NormalGraph Nat) (c : Certificate) : Prop :=
         Verification.ExperimentState.Safe (c.result.denote G eta) n W heap
           (instantiate 0 rho term)
 
-theorem Certificate.check_safe {G : NormalGraph Nat} {c : Certificate} {term}
+theorem Certificate.check_safe {G : NormalGraph Nat} (hG : Primitives G) {c : Certificate} {term}
     (hc : c.check = some term) : c.Safe G := by
   unfold Certificate.check at hc
   cases hp : c.proof.check c.parameters c.inputs with
@@ -394,7 +447,7 @@ theorem Certificate.check_safe {G : NormalGraph Nat} {c : Certificate} {term}
       · simp [Certificate.check, hp, hr]
       · intro eta hC hs n W heap rho he hw hh
         exact Safe_mono n (fun k _ => Ty.leUnder_sound hs hr k) W heap _
-          (c.proof.check_safe hp hC hs n W heap rho he hw hh)
+          (c.proof.check_safe hp hC hs hG n W heap rho he hw hh)
     · have hf : result.leUnder c.parameters c.result = false := eq_false_of_ne_true hr
       change (if result.leUnder c.parameters c.result then some body else none) = some term at hc
       rw [hf] at hc
@@ -430,12 +483,12 @@ def ClosureCertificate.Safe (G : NormalGraph Nat) (c : ClosureCertificate) : Pro
           [(c.inputs.map (Ty.denote G eta), c.result.denote G eta)] n W
           (instantiate c.inputs.length rho term)
 
-theorem ClosureCertificate.check_safe {G : NormalGraph Nat} {c : ClosureCertificate} {term}
-    (hc : c.check = some term) : c.Safe G := by
+theorem ClosureCertificate.check_safe {G : NormalGraph Nat} (hG : Primitives G)
+    {c : ClosureCertificate} {term} (hc : c.check = some term) : c.Safe G := by
   refine ⟨term, hc, ?_⟩
   intro n W rho henv eta hC hs
   have he := henv eta hC hs
-  obtain ⟨body, hb, safe⟩ := Certificate.check_safe (G := G) hc
+  obtain ⟨body, hb, safe⟩ := Certificate.check_safe (G := G) hG hc
   have eq : body = term := Option.some.inj (hb.symm.trans hc)
   subst body
   exact invocation_of_body hC he (safe eta hC hs)

@@ -395,6 +395,45 @@ separate typing theorem and incorporates checked subsumption. The operational
 language and trust boundary are documented in
 [SEMANTICS.md](SEMANTICS.md).
 
+## Rigid inclusion
+
+Direct types are a rigid name, ground graph labels, or a callable over direct
+types. Inclusion under declared bounds, `RigidJudgments.Sub ps a b`, is stated
+by four rules and no algorithm: a rigid name is below itself; it is below
+whatever its declared bound is below; ground label lists are compared by
+inclusion; and a callable is below another when the other's parameters are
+each below its own and its result is below the other's. There is no
+transitivity rule; the chain rule carries it. `Sub.refl` holds for every type.
+
+`Sub.sound` proves the judgment semantically sound on its own: under any
+assignment satisfying the declared bounds, a derivable inclusion is an
+inclusion of families. It does not go through the executable relation.
+
+`Ty.leUnder` is the executable relation, a fuelled walk. `leUnder_iff_Sub`
+proves, for well-formed parameter lists,
+
+$$
+\mathsf{leUnder}(\bar P, a, b) = \mathsf{true}
+\quad\Longleftrightarrow\quad
+\bar P \vdash a \le b .
+$$
+
+Well-formed means the names are distinct, every rigid bound names an earlier
+parameter, and every bound is ground or rigid; `SourceJudgments.parametersOf_wellFormed`
+proves every list the source checker builds is. The left-to-right direction,
+`Sub_of_leUnder`, needs no hypothesis.
+
+Separately, the work exposed insufficient fuel outside the theorem's
+well-formed-bound restriction. The old fuel charged for
+the structure of the two sides and one step per parameter, and a parameter
+bounded by a deep callable is declaratively below that callable while the
+walk into the bound needs as many steps as the callable is deep.
+`RigidJudgments.counterexample_derivable` is the derivation, and two kernel
+guards record that the old fuel rejects it and the repaired fuel, which also
+pays for each parameter's bound, accepts it. Callable bounds are excluded by
+`WellFormed`, so this regression does not establish completeness for callable
+bounds in general.
+
 ## Scope and next decisions
 
 The representational blocker for positive intersections of references is
