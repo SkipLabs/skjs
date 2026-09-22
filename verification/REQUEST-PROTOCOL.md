@@ -243,8 +243,9 @@ overload, each body under its argument binder. Its result has a single initial
 bag contract; subtyping can add equivalent invariant requirements. `callCallable`
 selects an advertised signature, while `readCallable` and `writeCallable` use
 the first invariant bag operand. Every nested operand label is bounds checked.
-These rules are available to calculus requests; combined callable/property
-source types are not yet emitted by the source exporter.
+These rules are available to calculus requests. The source exporter emits a
+combined callable/property type for one required `value` field on a function;
+other property shapes meet the cell refusal reasons.
 
 The `ifBool` expression rule checks an ordinary `ite` with three premises:
 the Boolean condition, the true arm, and the false arm. Each arm has the root's
@@ -698,7 +699,7 @@ nested arms, unreachable continuations and active-name shadowing remain gated. S
 the invariant-cell slice; exact union absorption does not admit them on their own.
 
 Proof recipes are internal producer data, not wire fields. Their construction
-and reuse are described in [source integration](DESIGN.md#source-integration-current-slice-and-next-milestone).
+and reuse are described in [source integration](DESIGN.md#source-integration).
 
 Source assertion requirements are reconstructed from the source/claim inputs,
 not read from the certificate. Every statement entry requires certificate input
@@ -718,7 +719,7 @@ The whole lambda is also checked by the ordinary program certificate.
 Callable parameters are admitted at their source annotations; named top-level
 calls and external cell parameters remain outside the fragment. Evaluation order,
 capture lowering and assignment temporaries are described in
-[source integration](DESIGN.md#source-integration-current-slice-and-next-milestone).
+[source integration](DESIGN.md#source-integration).
 
 ### Singleton comparisons
 

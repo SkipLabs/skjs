@@ -764,7 +764,7 @@ remain outside that theorem. This concerns today's supported language and its
 compilation, not equivalence with an earlier implementation or a second pipeline.
 Full TypeScript formalization is not a prerequisite.
 
-## Source integration: current slice and next milestone
+## Source integration
 
 [SourceExtraction.lean](lean/Verification/ExperimentState/SourceExtraction.lean)
 connects independently parsed source and actual SKJS exports to the stateful
@@ -1386,12 +1386,13 @@ unions, returned closures and captured-cell mutation. This establishes integrati
 of the bounded callable model with the existing pipeline. The
 [protocol](REQUEST-PROTOCOL.md#expression-closures-and-calls) owns the signature
 encoding and restrictions; the [Callables coverage map](tests/callables/README.md)
-owns examples, adversarial checks and runtime observations. Arrow-row interpretation
-is characterized by `SourceTypes.arrow_exact`; recursive source decoding and
+owns examples, adversarial checks, runtime observations, and the
+[callable surface](tests/callables/README.md#the-callable-surface): which
+TypeScript callable forms are supported, where each unsupported one stops, and
+the order in which they are to be taken. Arrow-row interpretation is
+characterized by `SourceTypes.arrow_exact`; recursive source decoding and
 extraction remain reviewed boundaries.
 
-Graph-backed closure loops, multiple/optional/rest arguments, `this`, generics,
-function properties and identity comparisons remain separate obligations.
 Additional tests should isolate a new obligation or a credible suspected defect.
 Exact executions of extracted Lean programs are deferred unless a concrete
 discrepancy warrants investigation; checked Boolean results and JavaScript
@@ -1409,82 +1410,55 @@ descriptors. Their source pipeline checks creation, delayed captured reads,
 stored replacements, and invocation through both producers.
 
 The [argument preparation interface](SEMANTICS.md#argument-list-preparation)
-now separates callee evaluation, left-to-right argument evaluation and readiness
-for invocation. Its singleton case agrees with existing unary congruence rules.
-`tests/callables/arity.ts` fixes the required source evaluation order with a
-JavaScript witness and remains an explicitly unsupported source fixture.
-Parameter binding now preserves declaration order and captures, pads missing
-actuals with undefined, and discards extra values only after preparation. The
-current unary beta step uses the shared binder. List-based invocation contracts
-now distinguish declared parameter count from each overload's actual argument
-count; the existing unary code judgment specializes them. Dispatch now connects
-ready frames to the stored code and its safety contract, and preparation plus
-dispatch is proved equivalent to the maintained unary application step. The runtime descriptor now carries its parameter count, and
-scope, substitution,
-coherence and beta use it. Unary semantic arrows constrain the supplied actual
-independently of that count. List-signature callable types now lift those code
-contracts to values, with dispatch safety, admissibility and guarded congruence;
-the existing unary type reuses the general proofs through singleton equivalence.
-Application syntax now uses a native argument list, with the old unary constructor
-replaced by singleton notation. All binding and syntax-validation traversals cover
-the full list. Ready native calls now dispatch arbitrary argument lists, and
-`call_elim` proves their safety from list-signature membership; unary application
-uses that general rule. Native operand reduction now handles any argument count:
-callee first, then the leftmost unfinished actual. Its transitions are proved
-equivalent to the preparation/dispatch interface, deterministic, and coherent.
-Compositional call safety now covers effectful callees and argument lists; both
-application typing proofs use it, preserving saved values across effects.
-Graph signatures now store ordered domain lists. Their normalization and
-subtyping use native callable semantics directly; the unary graph adapters and
-separate unary coverage rules have been retired. Subtype search can split a union
-at any parameter position. Creation typing, its evidence checker, and the
-producer accept native parameter counts, requiring every overload to match the
-descriptor's arity and placing all parameters before captured bindings.
-The JSON protocol, source claim producers, and report rendering use the same
-list-shaped signatures. A three-parameter creation/widening example goes through
-production and JSON consumption; a mismatched descriptor arity is rejected.
-Application typing, evidence checking, and proof search now accept full argument
-lists, including zero arguments. Evidence preserves operand order and requires
-one premise per actual; search requires an exact signature argument count.
-Pipeline checks cover native calls and a callable cell written by one operand
-and read by the next, as well as omitted, extra, and reordered operands.
-Source function types now preserve all required parameters through annotations,
-SKJS claim decoding, the TypeScript claim producer, and the report editor.
-A two-argument function crosses a mutable cell and escapes with a narrower first
-domain; forged widening or omission of its second domain fails.
-Source calls and lambdas now lower native argument and parameter lists.
-The callee is saved first, then actuals left to right; temporary-slot maps retain
-the original bindings. Lambda bodies put parameters in source order before
-captures. Union-callee elimination saves all operands before splitting the
-callee's type. Zero-argument calls and closures use empty lists and arity zero;
-the synthetic undefined argument and anonymous parameter have been retired.
-The source suite covers effect order, a returned closure capturing the second
-parameter, and a multi-argument union callee. Calls require an exact signature
+separates callee evaluation, left-to-right argument evaluation and readiness for
+invocation, and dispatch connects a ready frame to the stored code and its safety
+contract. Preparation plus dispatch is proved equivalent to the unary application
+step, deterministic and coherent. Parameter binding preserves declaration order
+and places parameters before captures, pads missing actuals with undefined, and
+discards extra values only after preparation. A runtime descriptor carries its
+parameter count; invocation contracts distinguish that declared count from each
+overload's actual argument count.
+
+Argument lists are native throughout. Operand reduction takes the callee first
+and then the leftmost unfinished actual, at any argument count. `call_elim`
+proves a ready call safe from list-signature membership, and compositional call safety covers effectful callees
+and argument lists, preserving saved values across effects. Graph signatures store
+ordered domain lists whose normalization and subtyping use native callable
+semantics, and subtype search can split a union at any parameter position.
+Creation typing, its evidence checker and the producer require every overload to
+match the descriptor's arity. The JSON protocol, source claim producers and report
+rendering use the same list-shaped signatures; application typing, evidence
+checking and proof search accept full argument lists including the empty one, with
+one premise per actual in operand order. Source calls and lambdas lower those
+lists: the callee is saved first, then actuals left to right, and union-callee
+elimination saves all operands before splitting the callee's type. Source
+function types keep every required parameter through annotations, SKJS claim
+decoding, the TypeScript producer and the report editor. The unary type,
+judgment and application step remain, specialized from the general proofs through
+singleton equivalence. Calls require an exact signature
 argument count; optional/rest parameters and spread actuals remain excluded.
 
-### Next callable and object milestones
+### Next object milestone
 
-Required record fields can store callbacks using the existing reference and
-arrow rules. The source tests distinguish a saved callback from a replacement and
-tie recursive invocation through a cell. The next milestones should expose new
-behavior through actual producer claims and independent consumption:
+Multi-field objects are finite maps from field names to locations, fixed at
+allocation, each field invariant on its own: `make_fields_rule` allocates one
+location per named field, `covers_recs` composes contracts field by field, and a
+current-content assertion names the field it is about. Required record fields
+store callbacks through the existing reference and arrow rules, and the source
+tests distinguish a saved callback from a replacement and tie recursive
+invocation through a cell.
 
-| Milestone | Completion example | Semantic work to preserve |
-| --- | --- | --- |
-| Function-shape guards | Select a callable from a mixed union with `typeof x === "function"`, then invoke it. | Complete through the existing `isFun` tag rule and checked source refinements; includes mixed unions, captured guards and effectful operands. No signature is invented. |
-| Required argument lists | Two arguments with effects distinguish callee-first and left-to-right evaluation, and a wrong second argument fails. | Complete through source lowering and both producers, including native zero-argument thunks. Optional/rest parameters and spread actuals remain separate work. |
-| Initialized function field | A fresh arrow receives a named field, an alias observes a write, then calls the function. | Complete through both producers and the existing native callable allocation/read/write/call rules. Construction is restricted to explicitly typed `Object.assign` of a fresh arrow and a fresh object literal; its fields are named by the program. |
-| ~~Multiple object fields~~ | *Done.* An object is a finite map from field names to locations, fixed at allocation; each field is invariant on its own. `make_fields_rule` allocates one location per named field, `covers_recs` composes contracts field by field, and a current-content assertion names the field it is about. | |
-| Optional fields | Distinguish an absent field from a present field containing `undefined`, including reads and initialization. | Define presence separately from value type, then support the chosen presence tests and mutation policy. |
-| `.call` | Explicit receiver and argument effects reach the intended function; incompatible receiver or argument claims fail. | Local source-created arrows now preserve receiver evaluation through the pipeline. Receiver-dependent methods remain pending. [call-objects.ts](tests/callables/call-objects.ts) is the boundary example: an extracted method uses a new receiver, while an arrow retains its capture. Establish the intrinsic operation rather than assuming every property named `call` is `Function.prototype.call`. |
+Optional fields are the open one: an absent field must be distinguished from a
+present field holding `undefined`, on reads and at initialization. That means
+defining presence separately from value type, then choosing the presence tests
+and the mutation policy. A milestone is reached through producer claims and
+independent consumption, not through a model fixture alone.
 
-Functions returning functions, including escaping callback parameters, already
-have pipeline coverage. Partial `.bind` on local arrows now saves required
-arguments through the pipeline. `.apply`, optional/rest arguments, constructors
-and receiver-dependent methods extend the call interface further; they should
+The callable forms still to be taken, and their order, are the
+[callable surface](tests/callables/README.md#the-callable-surface). Each should
 follow explicit argument and receiver contracts rather than be erased into free
-unary calls. These milestones are not prerequisites for the completed bounded
-callable-model integration.
+unary calls. None of them is a prerequisite for the bounded callable-model
+integration above.
 
 ### Negated Boolean conditions
 

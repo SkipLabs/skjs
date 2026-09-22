@@ -184,9 +184,9 @@ graph is promised. Extraction/type-decoding/missing-claim failures use typed
 source locations. An independent certificate rejection is an internal error,
 because the producer just emitted evidence that its consumer rejects. A source map entry
 does not identify every contributing source claim or prove any premise separately.
-There are no retained mutable-heap observations. Future overloads and generics
-should extend explicit obligation data rather than force them into
-an `in / claim / out` triple or infer their roles in the viewer.
+There are no retained mutable-heap observations. Generics added their own
+obligation roles this way; overloads must do the same, rather than be forced
+into an `in / claim / out` triple or have their roles inferred in the viewer.
 
 `tests/obligation-diagnostics.mts` exercises the three partial repairs and full
 repair of the return example, identical spans with different obligations,

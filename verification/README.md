@@ -21,7 +21,7 @@ cell fields, and callbacks with ordered required parameters. The
 [undefined examples](tests/stateful-source/undefined.ts) exercise contracts, alias
 writes, strict comparisons and nullish coalescing. This does not imply support
 for `void`, optional properties or implicit returns; see the
-[current fragment](DESIGN.md#source-integration-current-slice-and-next-milestone).
+[current fragment](DESIGN.md#source-integration).
 
 ## Run
 
@@ -162,13 +162,16 @@ The fragment is smaller than the calculus,
 and the parser can represent syntax the Lean adapter then rejects: such a
 rejection is a limitation, never evidence that a producer claim is false.
 
-[Design](DESIGN.md#source-integration-current-slice-and-next-milestone) owns what
+[Design](DESIGN.md#source-integration) owns what
 is accepted and why, together with the gates and the loop, closure and
 continuation constructions; [the protocol](REQUEST-PROTOCOL.md#source-mode) owns
 the source-mode commands, the type and claim encodings, and their exact
 restrictions. Worked examples of each construct live in
 [the corpus](tests/README.md), including the [Callables coverage map](tests/callables/README.md)
-and [producer counterexamples](tests/skjs-unsound/README.md).
+and [producer counterexamples](tests/skjs-unsound/README.md). The
+[callable surface](tests/callables/README.md#the-callable-surface) states which
+TypeScript callable forms are supported, where each unsupported one stops, and
+the order in which they are to be taken.
 
 ## Reports and examples
 

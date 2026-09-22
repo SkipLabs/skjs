@@ -107,30 +107,25 @@ Inference metavariables and existential witnesses are **not implemented**.
 When introduced, they must have separate identities and capabilities from rigid
 binders. They belong to proposal/search state; they cannot be substituted into
 published semantic types without discharging retained obligations. Likewise,
-delayed literals are inference work, not new semantic types.
+delayed literals are inference work, not new semantic types. Keep
+inference-variable identities and write capabilities out of the published
+semantic-type API.
 
-The active architectural milestone remains **polymorphic call inference**:
-scoped schemes, fresh inference variables, constraint proposals with retained
-obligations, and validation before publication. The current executable breadth
-path accepts
-a quantified closure, bounded by earlier binders or `boolean` or not, called any
-number of times at any ground types.
-It preserves the scheme in SourceClaims, checks the closure body once and
+The implemented slice accepts a quantified closure — unbounded, or bounded by
+`boolean` or by an earlier binder — called any number of times at any ground
+types. It preserves the scheme in SourceClaims, checks the closure body once and
 universally against its declared signature, validates each call's own explicit
 substitution, and only then compiles the checked eliminations to ordinary graph
 arrows. The universal gate reads the body from the source rather than from its
-claim, so it does not depend on which calls the program makes. Nested
-quantified schemes throughout the direct checker, fresh inference variables,
-and a compositional scheme certificate are still missing.
-An unquantified returned closure may retain an outer binder in the implemented
-slice; that is not a nested quantified scheme.
-Keep inference-variable identities and write capabilities out of the published
-semantic-type API.
+claim, so acceptance does not depend on which calls the program makes. One
+quantified closure per containing function is admitted; a second is refused by
+name. An unannotated immutable local retains its checked initializer type,
+through dependent bounds and sequential declarators alike.
 
-The inferred-copy prerequisite is now supported: an unannotated immutable local
-retains its checked initializer type, and subsequent claims must follow from it.
-This includes dependent bounds and sequential declarators. It adds no inference
-metavariables and is not evidence that polymorphic call inference works.
+Missing: nested quantified schemes throughout the direct checker, fresh
+inference variables, and a compositional scheme certificate. An unquantified
+returned closure may retain an outer binder in the implemented slice; that is
+not a nested quantified scheme.
 
 ## Extending the producer
 
@@ -171,8 +166,7 @@ applies; this file records only what is specific to this producer.
 7. Update the documents that own what changed, per
    [documentation ownership](../README.md#documentation-ownership) — wire
    fields in the protocol documents, the notation in the viewer language, the
-   decision in DESIGN — then the table below from the
-   final test output. Name any remaining blocked witness; passing adjacent
+   decision in DESIGN — then the queue below from the final test output. Name any remaining blocked witness; passing adjacent
    examples does not complete its row. Do not create a handoff or checkpoint
    file.
 
@@ -184,137 +178,100 @@ Small examples are intentional; subset-specific representations are not. A row
 is complete only when its positive witness reaches `verified`, its relevant bad
 program reaches validation and is rejected there, and any new evidence field is
 covered by a tampering test. [`cases.mts`](cases.mts) is the executable source of
-truth for outcomes; this table records why the next rows matter.
+truth for outcomes; the queue below records why the open rows matter.
 
-| Slice | State | Existing witness or next acceptance test | Architectural pressure |
+Complete, with their witnesses in [`cases.mts`](cases.mts): primitive values and
+fixed local storage; branches, nullish flow and loops; multi-field objects and
+aliases; arrays, tuples and readonly views; higher-order callbacks and variance;
+closure scope and partial application; callable objects with fields; generic
+declarations and rigid bounds; quantified closures — one inferred call, one
+closure called at two types, bounded, returned or outer-dependent, reading
+captured storage, and as a callback argument; and generic inference constraints,
+for the maintained witnesses.
+
+| Open row | State | Witness | Architectural pressure |
 | --- | --- | --- | --- |
-| Primitive values and fixed local storage | complete | `values.ts` | Separate value snapshots from location contracts |
-| Branches, nullish flow and loops | complete | `branches.ts`, `flow.ts`, `loops.ts` | Join path knowledge without changing storage types |
-| Multi-field objects and aliases | complete | `objects.ts`, `aliases.ts` | Preserve field identity and capture-avoiding substitution |
-| Arrays, tuples and readonly views | complete | `arrays.ts`, `readonly.ts` | Separate sequence presence, reads and writes |
-| Higher-order callbacks and variance | complete | `callbacks.ts` | Check parameters contravariantly through ordinary evidence |
-| Closure scope and partial application | complete | `blocks-bind.ts` | Retain captures and residual signatures |
-| Callable objects with fields | complete | `function-fields.ts` | Give one value call and field capabilities |
-| Generic declarations and rigid bounds | complete | `generics.ts`, `generic-inferred.ts` | Keep rigid identities distinct through copies and dependent bounds |
-| Quantified closure, one inferred call | complete | `generic-closure.ts` | Keep a scheme in SourceClaims and validate its body universally |
-| One closure called at two types | complete | `generic-two-calls.ts`, `invalid-scheme-capture.ts` | Give each call fresh proposal state; do not specialize the stored scheme |
-| Bounded quantified closure | complete | `generic-bounded.ts`, `invalid-bound-argument.ts`, `invalid-bound-body.ts` | Export and validate the concrete substitution and every bound obligation |
-| Generic inference constraints | complete for maintained witnesses | `generic-inference.ts`, `generic-dependent-inference.ts` | Join lower bounds, intersect primitive upper bounds, propagate dependencies without changing acceptance |
-| Returned quantified/outer-dependent closure | complete | `generic-returned.ts`, `invalid-returned-capture.ts` | Preserve nested scope and avoid capture during substitution |
-| Quantified closure reading captured storage | complete | `generic-captured-store.ts`, `invalid-captured-write.ts` | Keep one fixed world contract across every instantiation |
-| Generic callback argument | complete | `generic-callback.ts`, `invalid-callback-variance.ts`, `invalid-callback-result.ts` | Collect directional constraints without placing solver state in semantic types |
 | Optional object-field presence | blocked at shared source/proof boundary | `optional-field.ts` | Model absence separately from a present `undefined` value |
 | Bare return and implicit completion | blocked at shared parser | `bare-return.ts`, `empty-closure.ts` | Represent completion and discarded results explicitly |
 | Arbitrary numeric array indexing | blocked in lowering | `dynamic-index.ts` | Prove a general index obligation rather than inventing a singleton key |
 | Inferred mutable lifetime contract | deferred flow milestone | `unsupported.ts` | Solve one invariant against initialization and every write before publication |
 
-The useful-completeness target for the previously flipped examples is closed:
-all their positive witnesses have semantic certificates. Captured slots are
-represented as cell identities with source-declared fixed contracts, and reads
-are proved through those cells. This is not decision completeness or support
-for every source form the preliminary checker understands: writes inside a
-quantified body still need their own certificate constructor. Next, take the first incomplete row whose prerequisite
-representation already exists. This slice admits one quantified closure per
-containing function and refuses a second by name. For every quantified row, rewriting a closure to the finite overloads observed in that
-program, checking its body once per observed call, or replacing its scheme claim
-with a monomorphic arrow does not satisfy the row.
-
-For this breadth row, a universal Lean source checker may establish scheme
-introduction first and then compile each validated elimination to the ordinary
-graph arrows that the existing evidence engine understands. The graph may
-therefore contain redundant per-arrow body derivations. They are consequences
-of the universal result, not its justification: acceptance must always require
-the universal check independently of the number and types of observed calls,
-and each call must validate its fresh substitution and bounds before lowering.
-Keep this compilation behind one interface so a later first-class scheme
-certificate can replace it without changing Fragment, SourceClaims, OCaml
-semantic types or inference. A negative closure that happens to work at every
-observed call type but cannot produce an arbitrary rigid result must reach Lean
-and fail the universal gate. First-class scheme hypotheses in the request
-protocol remain a later certificate-depth milestone; they do not block this
-breadth row.
+Take the first open row whose prerequisite representation already exists. For
+every quantified row, rewriting a closure to the finite overloads observed in
+that program, checking its body once per observed call, or replacing its scheme
+claim with a monomorphic arrow does not satisfy the row: acceptance must require
+the universal check independently of the number and types of observed calls, and
+each call must validate its fresh substitution and bounds before lowering. The
+compiled arrows stay behind one interface, so a later first-class scheme
+certificate can replace them without changing Fragment, SourceClaims, OCaml
+semantic types or inference.
 
 The procedure for a row is [Extending the producer](#extending-the-producer)
 above.
 
-### Polymorphic calls and closures: next implementation boundary
+### Schemes: what exists, what is missing
 
 The model interprets rigid labels under an assignment in `TypeParams.lean` and
-proves parameter/field substitution equations. `TypeSchemes.lean` now provides
-general semantic scheme introduction/elimination, call safety, and allocation
-with fixed field contracts. Its closure-body rule quantifies over assignments
-while retaining the same captured environment and world; outer parameter
-meanings cannot change. Scheme meanings are admissible closed-value families,
-so they can themselves serve as semantic type arguments.
+proves parameter/field substitution equations. `TypeSchemes.lean` provides
+semantic scheme introduction/elimination, call safety, and allocation with fixed
+field contracts (`make_scheme_fields` allocates independently of the call
+instantiation, and `invocation_of_scheme_body` retains the same capture
+environment). Its closure-body rule quantifies over assignments while retaining
+the same captured environment and world, so outer parameter meanings cannot
+change, and scheme meanings are admissible closed-value families that can
+themselves serve as semantic type arguments.
 
-A scheme, bounded or not, now has an executable path: `SourceClaimJson`'s scheme
-section checks introduction universally from the source, validates each call's
-explicit substitution, and compiles the checked eliminations to ordinary arrows.
-The executable subtype gate is connected to ordinary semantic families:
-`DirectObligation.Ty.leUnder_sound` proves its rigid-bound, ground-union and
-contravariant/covariant arrow cases denote inclusion. For immutable
-reads, captured-cell reads, nested closures and callback calls, `GenericSource.closureCertificate` reconstructs a
-proof independently of observed calls.
-`GenericCertificate.ClosureCertificate.check_safe` establishes `InvocationSpec`
-for every admissible assignment satisfying the bounds, with one unchanged
-capture environment and world. This is the universal code premise of scheme
-introduction. Final acceptance requires this certificate as well as the
-enclosing function's graph evidence. Cell slots carry their declaration's fixed
-contract; `bag_read` proves reads through the captured identity. Nested closure
-proofs use safe allocation and the same invocation
-lemma as universal introduction. Callback proofs use the existing effectful
-call rule for the callee and every argument, with subtyping at the call boundary.
-The general rules are still **not** a general executable scheme certificate
-checker: nested quantified schemes, arbitrary substitution evidence
-and further body proof constructors still need implementing, and the compiled arrows
-are consequences carried by the graph rather than a certificate of the scheme
-itself. `identity_scheme_safe` is a closed model example; executable acceptance
-uses the general `ClosureCertificate.check_safe` theorem instead. Recursive scheme graph
-nodes also need the layer congruence/contractiveness argument; admissibility
-alone does not establish recursive interpretation. Extending only the parser or
-specializing each closure body at its observed calls would bypass the universal
-obligation. Follow this order:
+The executable path runs from `SourceClaimJson`'s scheme section, which checks
+introduction universally from the source, validates each call's explicit
+substitution and compiles the checked eliminations to ordinary arrows.
+`DirectObligation.Ty.leUnder_sound` proves the executable subtype gate's
+rigid-bound, ground-union and contravariant/covariant arrow cases denote
+inclusion. `GenericSource.closureCertificate` reconstructs a proof for immutable
+reads, captured-cell reads, nested closures and callback calls independently of
+the observed calls — nested closure proofs use safe allocation and the same
+invocation lemma as universal introduction, and callback proofs use the existing
+effectful call rule for the callee and every argument, with subtyping at the call
+boundary. `GenericCertificate.ClosureCertificate.check_safe` then establishes
+`InvocationSpec` for every admissible assignment satisfying the bounds, with one
+unchanged capture environment and world: the universal code premise of scheme
+introduction. Final acceptance requires that certificate as well as the enclosing
+function's graph evidence. Cell slots carry their declaration's fixed contract,
+and `bag_read` proves reads through the captured identity.
 
-1. Represent scoped quantifiers at callable signatures, including bounds and
-   occurrences inside fields, callbacks and results. Preserve the same structure
-   in Fragment, semantic types and the single SourceClaims representation. A
-   spelling-only top-level `{param: "T"}` cannot identify nested, shadowing
-   binders. Update all producers and consumers together; do not add an OCaml-only
-   encoding or flatten quantifiers into monomorphic arrows.
-2. Connect the established semantic introduction/elimination rules to an
-   executable evidence consumer. Introduction checks the body under fresh rigid
-   parameters for every admissible assignment satisfying its bounds. Captures retain their existing
-   types and location contracts; an already allocated location must not acquire
-   a different contract at each instantiation. Elimination supplies an explicit
-   substitution and proves substituted bounds and argument obligations. Its
-   result follows by capture-avoiding substitution. General syntactic substitution
-   still needs proof. `make_scheme_fields` already proves allocation with field
-   contracts independent of the call instantiation, and
-   `invocation_of_scheme_body` retains the same capture environment. The source
-   checker must establish these premises, not simply trust an inferred scheme.
-3. Give each call fresh proposal-only inference candidates in a separate solver
-   module. Collect directional constraints, including reversed callback inputs
-   and both read/write obligations for writable fields. Retain the original
-   operands and bounds. A candidate solution produces a concrete substitution
-   to check, never an acceptance fact. No unresolved candidate ID appears in
-   published semantic types or evidence. Hidden existential witnesses remain
-   rigid and cannot be solved as inference candidates.
-4. Implement simple explicit and inferred calls through that interface first.
-   Test one closure at two distinct argument types, a returned closure retaining
-   its outer parameter, a dependent bound, and a captured fixed-contract object.
-   Negative controls must reach validation: fabricated generic results, reversed
-   bounds, callback variance and a capture used as incompatible storage. Tamper
-   with instantiation evidence and check rejection by the independent consumer.
+Missing: nested quantified schemes, arbitrary substitution evidence, a proof of
+general syntactic substitution, further body proof constructors, and recursive
+scheme graph nodes, which need the layer congruence/contractiveness argument —
+admissibility alone does not establish recursive interpretation. There is no
+general executable scheme certificate checker; the compiled arrows are
+consequences carried by the graph rather than a certificate of the scheme itself.
+First-class scheme hypotheses in the request protocol are a later
+certificate-depth milestone. `identity_scheme_safe` is a closed model example;
+executable acceptance uses the general `ClosureCertificate.check_safe` theorem
+instead.
+
+Invariants any extension must keep. Scoped quantifiers have one shared
+representation across Fragment, semantic types and SourceClaims, including bounds
+and occurrences inside fields, callbacks and results; a spelling-only top-level
+`{param: "T"}` cannot identify nested, shadowing binders, and no producer may add
+its own encoding or flatten quantifiers into monomorphic arrows. Introduction
+checks the body under fresh rigid parameters for every admissible assignment
+satisfying its bounds, captures keep their types and location contracts, and an
+already allocated location must not acquire a different contract at each
+instantiation. Elimination supplies an explicit substitution and proves the
+substituted bounds and argument obligations. Each call gets fresh proposal-only
+candidates in the solver module, including reversed callback inputs and both
+read/write obligations for writable fields; no unresolved candidate ID appears in
+published semantic types or evidence, and hidden existential witnesses remain
+rigid rather than being solved as candidates. Extending only the parser, or
+specializing each closure body at its observed calls, would bypass the universal
+obligation.
 
 `generic-closure.ts` is the first end-to-end witness and `generic-two-calls.ts`
-the first with two independently substituted eliminations of one retained
-scheme. Their producer proposals are not enough: a negative closure that
-fabricates `T` reaches Lean and is refused at the universal gate, while the
-accepted instances still receive the ordinary graph certificate.
-`invalid-scheme-capture.ts` is what separates this from specialization — every
-one of its calls instantiates `T` at Boolean, so the compiled arrow is
-satisfied, and only the universal check refuses it. A successful OCaml solver
-unit test or an unchecked concrete specialization would not close that gap.
+the first with two independently substituted eliminations of one retained scheme.
+`invalid-scheme-capture.ts` is what separates this from specialization: every one
+of its calls instantiates `T` at Boolean, so the compiled arrow is satisfied, and
+only the universal check refuses it. A successful OCaml solver unit test or an
+unchecked concrete specialization would not close that gap.
 
 ### Subsequent flow work
 
@@ -352,6 +309,8 @@ controls hold; the numbers live in its output, not here.
 | Closure-local scope and partial application | `blocks-bind.ts`                                               |
 | One value with both fields and calls        | `function-fields.ts`                                           |
 | No usable result guarantee                  | `top-void.ts` (unknown, discarded callback result)             |
+| Rigid parameters and dependent bounds       | `generics.ts`, `aliases.ts`, `generic-inferred.ts`             |
+| Quantified closures and their calls         | `generic-closure.ts`, `generic-two-calls.ts`, `generic-bounded.ts`, `generic-returned.ts`, `generic-captured-store.ts`, `generic-callback.ts` |
 
 Every negative control must reach validation and fail for its expected reason;
 a premature gate refusal is a test failure. Controls cover bad returns,
@@ -360,16 +319,7 @@ mutable captures, generic fabrication, a closure valid at every observed call
 but not universally, a type argument violating its bound, a body that
 reverses its binder's bound, bad contextual initializers and stale heap refinements. Contextual types cannot turn a bad initializer into a fact.
 
-Three direct generic examples now cross the semantic-certificate boundary:
-`generics.ts`, `aliases.ts` and `generic-inferred.ts`. Universal closure
-certification also restores `generic-closure.ts`, `generic-two-calls.ts` and
-`generic-bounded.ts`, plus the returned closure in `generic-returned.ts` and both
-callback functions in `generic-callback.ts`. `capturedStore` in
-`generic-captured-store.ts` now verifies through the fixed-contract cell-read
-certificate. All nine files that flipped when the acceptance hole was sealed
-are restored without weakening that boundary.
-
-The five remaining named gaps are:
+The named gaps are:
 
 - `unsupported.ts`: OCaml refuses an unannotated mutable binding rather than
   guessing a lifetime contract. Constraint-based contract inference is pending.

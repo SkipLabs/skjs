@@ -9,29 +9,255 @@ fail even when its components pass separately. Minor syntax variations alone
 do not warrant another example. If a standalone Lean test takes too long to
 develop or check, defer it until the case is expressible through the pipeline.
 
-| Example in [unions.ts](unions.ts) | What it establishes |
+## The callable surface
+
+The principal callable forms in the current roadmap, and where each stands. This is the
+plan: a form leaves the table below only when a witness verifies through both a
+producer and the independent consumer.
+
+Supported. A function declaration is the checked unit and arrows are its callable
+values; a call to a named top-level function is rejected by the source fragment.
+Parameter lists of any length are checked at exact arity, with the callee
+evaluated before the actuals and the actuals left to right. Callables pass as
+arguments, return as results, escape as closures and appear as thunks; they form
+unions with null and with each other, are selected by
+`typeof x === "function"` guards, and are held in cells, including recursive
+invocation through one. A fresh arrow takes one initialized `value` field through
+explicitly typed `Object.assign`. `.call` applies to local arrows and their
+immutable aliases, with the receiver evaluated and then discarded. `.bind` saves
+an argument prefix on the same arrows through tsc's claims; SKJS rejects it
+([finding](../skjs-incomplete/bound-arguments.ts)). Rigid generic declarations
+and bounds have source support. Quantified local closures have an independently
+certified OCaml path; TS accepting their source does not imply its exporter can
+represent their schemes. Keep those outcomes separate.
+
+Not supported, with the refusal each one meets:
+
+| Form                                                                             | Where it stops                                                                                                                                                                                                                           |
+| -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Optional parameters, calls with fewer actuals                                    | parsed, then `function-optional-parameter`; checked calls require the exact count                                                                                                                                                        |
+| Default parameters                                                               | no wire form: a lambda parameter carries a name and a type only                                                                                                                                                                          |
+| Rest parameters, spread actuals, `arguments`                                     | `function-rest-parameter`; the protocol excludes spread and argument-count introspection                                                                                                                                                 |
+| Overloads, arrow intersections                                                   | the model has the algebra (`calls_append`, `overload_append`, `SourceCallableUnionTests.lean`); no source encoding, and SKJS collapses incomparable arrow intersections to `never` ([finding](../skjs-incomplete/arrow-intersection.ts)) |
+| `this` parameters, receiver-dependent methods, `.apply`                          | `function-this-parameter`; the calculus has no receiver, so `.call` discards one ([boundary example](call-objects.ts), [receiver plan](#receiver-implementation-plan))                                                                                                                   |
+| Construct signatures, `new`, classes, accessors                                  | `function-constructible`; accessor execution is a separate semantic obligation                                                                                                                                                           |
+| Index signatures and array brands on functions                                   | `function-index-signature`, `function-is-array`                                                                                                                                                                                          |
+| Function expressions as values                                                   | only arrows lower to `lambda`                                                                                                                                                                                                            |
+| Async functions, generators, function identity comparison, loops inside closures | outside the fragment                                                                                                                                                                                                                     |
+| Generic signatures through SKJS                                                  | `function-generic`: SKJS types quantified closures but exports them as unavailable, so the OCaml witnesses carry these rows                                                                                                              |
+
+Refusal reasons are defined in
+[obligation diagnostics](../../OBLIGATION-DIAGNOSTICS.md); the encoding and its
+restrictions belong to the
+[protocol](../../REQUEST-PROTOCOL.md#expression-closures-and-calls).
+
+### Order of extension
+
+Breadth first, cheapest new representation first:
+
+1. **Optional parameters and short calls.** One declared-optional position and a
+   body obligation of `T | undefined`. The binder already pads missing actuals
+   with undefined; only the checked source path requires an exact count. Absence
+   of an object _field_ is a different obligation and stays where it is.
+2. **Overloads at the source boundary.** The algebra is proved; what is missing
+   is a source encoding and a call-site dispatch rule. It also turns an existing
+   SKJS finding into a producer comparison.
+3. **Default parameters.** Reuse the undefined test, but specify a separate
+   parameter-initialization scope: earlier parameters are available, later ones
+   are uninitialized, and body declarations must not become visible to defaults.
+   Effect order and closures created by defaults need independent obligations.
+4. **Rest parameters and spread actuals.** Needs a sequence type in signature
+   position.
+5. **`this` and methods**, following the receiver plan below. `.apply` then adds
+   array-like argument preparation; it is not spread's iterator operation.
+   Construct signatures follow separately. Decide the receiver interface now
+   and use it when extending signatures in steps 1–4, even before source methods
+   are admitted.
+
+### Receiver implementation plan
+
+**Status: design, not implemented.** This section owns the receiver design;
+the semantic and protocol documents must acquire the implemented rules alongside
+the corresponding code. The current calculus has no receiver. Existing arrows
+and their ignored `.call` receivers do not establish method support.
+
+#### Contract and runtime interface
+
+Use one signature with separate components `receiver`, `parameters`, and
+`result`, underneath any quantifier. A receiver is not parameter zero: it does
+not change arity, optional positions, rest collection, or future `arguments`.
+Use one native invocation `invoke(callee, receiver, actuals)` and a ready frame
+carrying all three evaluated components. Retire the old call representation in
+the same migration; any receiverless notation is an abbreviation supplying
+`undefined`, not a second evaluator or protocol encoding.
+
+The body frame is fixed as `[this, parameter_0, ..., parameter_n-1, captures...]`.
+The runtime arity remains `n`; scope and substitution traverse a body under
+`n + 1` binders. Argument padding/truncation applies only to the ordinary
+parameters, after every actual has been evaluated. This layout must be shared
+by `bindArgs`, closure scope, source slots and certificate environments.
+
+Ordinary strict functions use the incoming receiver slot. Arrows ignore that
+slot: a source occurrence of `this` resolves to an immutable lexical capture
+from the nearest enclosing non-arrow receiver binding. Allocate that capture
+with the other captures; do not snapshot the receiver's mutable fields.
+Nested ordinary functions establish their own receiver binding. Thus an arrow
+and an ordinary function can share the same core closure code representation
+without sharing the source lookup rule for `this`.
+
+Receiver-insensitive callable contracts have receiver family `top`; an explicit
+receiver contract has its stated family. Omitting a receiver annotation is not
+evidence that the body ignores `this`: initially require an explicit receiver
+annotation on any ordinary function that uses it. Reject unsupported receiver
+annotations rather than applying the existing discarded-result `void` conversion
+in an input position. Arrow annotations cannot declare a dynamic receiver.
+
+The first implementation admits ordinary receiver-dependent functions only when
+the trusted parser establishes ECMAScript strict code, through a module or an
+applicable directive prologue. TypeScript's `strict` type-checking option is not
+that evidence. Record this source fact in the fragment and validate it on
+consumption. An enclosing directive can cover methods without adding a directive
+inside a function with default parameters. Sloppy receiver-dependent functions
+stay a located source limitation until global-object substitution and primitive
+boxing have operational rules; neither may be approximated by the strict rule.
+This matches the distinction in
+[OrdinaryCallBindThis](https://tc39.es/ecma262/#sec-ordinarycallbindthis).
+
+#### Source calls, saved values and intrinsics
+
+Source call targets must retain a typed distinction between a value and a
+property reference. It is lost only when lowering constructs the explicit
+receiver. Do not first lower `obj.method` to a bare callable value and try to
+recover its receiver later. The parser preserves this distinction through
+parentheses; a copied method is a value. This follows
+[EvaluateCall](https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-evaluatecall).
+
+| Source                  | Lowering and required order                                                                                                     |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `f(a, b)`               | Save `f`, use `undefined` as receiver, evaluate `a` then `b`, invoke.                                                           |
+| `obj.m(a, b)`           | Save `obj`, read and save its method, evaluate actuals, invoke the saved method with the saved object.                          |
+| `obj[key](a)`           | Save object, evaluate key, read and save method, evaluate `a`, invoke. Initially retain the existing singleton-key restriction. |
+| `(obj.m)(a)`            | Preserve the property reference and hence the receiver.                                                                         |
+| `const f = obj.m; f(a)` | The saved value does not retain the property reference; pass `undefined`. A receiver-requiring signature must reject this call. |
+| `f.call(r, a)`          | Establish the intrinsic lookup, save target, evaluate `r` then `a`, invoke with that receiver.                                  |
+| `f.bind(r, a)`          | Establish the intrinsic, evaluate and save target, receiver and prefix now; allocate a bound callable.                          |
+
+Give bound call code an explicit forwarding descriptor storing target, saved
+receiver and saved argument prefix. Its call operation ignores the new receiver
+and forwards prefix followed by newly evaluated actuals. Rebinding cannot
+replace the first receiver. Ordinary object fields and this hidden bound state
+are different; aliases cannot write the latter. Traversal/substitution and
+admissibility must cover this constructor. This preserves a place for later
+bound construction semantics; do not encode `new` as ordinary invocation or
+pretend an ordinary wrapper has all bound-function behavior. See
+[bound function invocation](https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-bound-function-exotic-objects-call-thisargument-argumentslist).
+
+Keep the existing intrinsic provenance check. A structural callable type does
+not establish that a property named `call`, `bind` or `apply` is the built-in.
+Initially extend the known fresh-function/immutable-alias cases, with no writes
+or shadowing of intrinsic properties or prototype mutation. Other cases fail
+with a located limitation; they must not be silently lowered as intrinsics.
+Actual accessor or proxy lookup remains outside this slice, not an effect-free
+read justified by method syntax.
+
+For `.apply`, first evaluate target, receiver and argument-list expression;
+then read the list's length and indexed elements in order before invocation.
+Null/undefined argument lists give zero actuals. Start with supported tuple or
+array-like contracts and explicit length/element obligations; general accessors
+and coercions stay gated. Share the eventual prepared actual list with ordinary
+calls, but not the preparation algorithm with iterable spread. See
+[Function.prototype.apply](https://tc39.es/ecma262/multipage/fundamental-objects.html#sec-function.prototype.apply).
+
+#### Proof obligations and shared encoding
+
+Write callable membership as `Calls(R, As, B)`: invocation is safe for every
+receiver in `R` and ordinary argument list in `As`, at every admissible world
+and heap. Establish the receiver premise at the final invocation world after
+operand evaluation, using admissibility/world extension for saved values.
+Do not preserve mutable receiver-field refinements across effectful actuals
+unless existing checked heap transfer establishes them.
+
+The introduction environment is `this : R, parameters : As, captures : Γ`.
+An arrow's incoming `this : top` is unused and its lexical receiver retains
+the captured contract. Elimination requires a separate receiver-typing premise
+as well as the callee and ordered-argument premises. Subtyping is contravariant
+in `R` and each ordinary input, covariant in the result:
+
+`R₂ ≤ R₁, As₂ ≤ As₁, B₁ ≤ B₂` implies
+`Calls(R₁, As₁, B₁) ≤ Calls(R₂, As₂, B₂)`.
+
+A receiver-ignoring arrow can satisfy a more specific receiver requirement;
+a receiver-dependent method cannot be widened to accept arbitrary receivers.
+A method that writes a receiver field needs the existing write capability;
+readonly access does not grant it, and the location's world type never changes.
+Generic introduction quantifies over the receiver type along with the other
+types, while retaining captured receiver identities and fixed location contracts.
+
+Update the single shared callable signature in Lean, Fragment, SourceClaims,
+SKJS conversion, TS export, OCaml semantic types, inference, claim editing and
+printing. Receiver constraints are input constraints, including variance reversal
+when traversing callback types. No producer-specific receiver encoding or missing
+field fallback is permitted. A forged `top` receiver must fail source/signature
+comparison or body certification. Receiver failure is a structured obligation
+with its source span, environment, actual type and required receiver type.
+
+#### Execution order and closure conditions
+
+| Step                     | Work and gate before proceeding                                                                                                                                                                                                                                                                                                                       |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1: core invocation      | Migrate call syntax, ready frames and binder layout in `Calculus`, `Bindings`, `CallArguments`, `Types`, `Safety`, and coherence traversals. Prove order, determinism, receiver/argument binding and invocation safety. Existing arrows acquire the explicit ignored slot.                                                                            |
+| R2: certificates         | Thread receiver families and premises through positive graphs, creation/elimination rules, `ProgramCertificates`, `GenericCertificate` and scheme introduction/elimination. Extend exhaustive certification and rebuild `SourceClaimJson.checkJson_safe` with its exact CLI-success premise unchanged. No source method is accepted before this gate. |
+| R3: source and producers | Add method/function expressions, strictness facts, lexical `this` resolution and reference-preserving call targets. Update all typed mirrors and display/editor syntax together. OCaml and TS witnesses must independently verify; SKJS export refusals remain separately reported, with no checker change hidden in this extension.                  |
+| R4: binding              | Add the forwarding descriptor and prove receiver/prefix preservation and its residual signature. Integrate `.bind` and the existing intrinsic guards.                                                                                                                                                                                                 |
+| R5: apply                | Add checked array-like preparation, retaining its effects and order, then reuse the proved invocation rule.                                                                                                                                                                                                                                           |
+
+Required distinct witnesses: (1) property call versus extracted-method call;
+(2) `.call` rebinding an ordinary method while an escaping inner arrow retains
+the original receiver; (3) an actual replacing the receiver's method field,
+showing the selected callee was already saved; (4) an actual mutating a receiver
+field before the body reads it; (5) binding followed by mutation and rebinding,
+showing saved identity, live fields and the original bound receiver;
+(6) receiver write through a readonly view rejected; (7) forged receiver type,
+dropped receiver premise and reused evidence after receiver substitution rejected;
+(8) one generic callable instantiated with different receiver contracts without
+retyping captured storage. For `.apply`, add ordered indexed reads and a control
+that distinguishes them from iterator consumption. Each negative must reach its
+intended check, not pass because the parser refused it.
+
+Promote `call-objects.ts` from boundary to verified coverage only after adding
+strict-mode evidence to that fixture and independently certifying both its
+ordinary method and lexical arrow behavior. Extend the direct completeness
+judgments with receiver premises wherever the direct checker accepts the new
+forms; do not describe the old receiverless theorem as covering them. Keep
+sloppy functions, `super`/home objects, construction/`new.target`, and reflective
+bound-function properties as explicit later obligations. The receiver interface
+is shared with those future extensions; their semantics are not implied by it.
+
+## Examples
+
+| Example in [unions.ts](unions.ts) | What it establishes                                                                                                                                                                                                            |
 | --- | --- |
-| `guardedCallableUnion` | A null guard permits calling either remaining signature and preserves both possible results. |
-| `andGuardedCallable` | `&&` calls only the non-null function; its true result does not erase the skipped false result. |
-| `orGuardedCallable` | `||` skips the call for null, preserving true alongside the callable's false result. |
-| `coalescedCallable` | Null and undefined select a fallback function before invocation; either callable can supply the result. |
-| `capturedGuardedCallable` | A returned closure retains the immutable capture's non-null refinement and both callable alternatives after the branch ends. |
-| `aliasedCallableSelection` | A selected local alias retains both callable alternatives through a nested closure; its callability does not transfer to the original nullable input. |
-| `sharedCallableDomain` | A call must fit the shared argument domain of Boolean-accepting and true-only alternatives, while retaining both possible results. |
-| `branchLocalCallableDomains` | Branch-refined Boolean arguments satisfy different callable domains; neither branch facts nor singleton results can be transferred to the other branch. |
-| `callableArgumentWrite` | An assignment used as a call argument checks both storage and parameter contracts; its false RHS admits an explicitly refined false-only callable view. |
-| `selectedCallableAfterMutation` | A selected callable remains fixed while a shared-cell write changes its live capture. A JavaScript witness distinguishes live from snapshot behavior, and a same-typed callee substitution needs fresh evidence. |
-| `callbackProbeDoesNotNarrow` | A Boolean-returning probe has no type-predicate contract: its true result cannot narrow the captured callback in the caller, whose own null guard remains required. |
-| `ambiguousCaptureGuard` | A successful disjunction may be justified by a separate Boolean flag; the returned closure must retain the nullable capture and guard it itself. The tsc suite checks both alternatives survive. |
-| `compoundAbsenceCapture` | A returning null-or-undefined guard must exclude both tags before closure creation. Both producers verify it, and the tsc suite checks both exclusions. |
-| `twoAbsenceCapture` | Eliminating undefined must retain null in a returned closure capture; its inner null guard is still needed. Both producers verify it; the tsc suite checks that undefined is removed while null remains. |
-| `laterGuardedCallback` | A guard after closure creation cannot refine its earlier capture; the closure needs its own guard. The tsc suite checks the pre-guard nullable claim, and a reversed inner guard fails independently of the later outer guard. |
-| `escapedLocalCallback` | A returned closure captures a guarded nullable const whose declaration is wider than its initializer. Both producers verify it; the tsc suite checks that its callee claim retains the creation-time guard. |
-| `distinctNullableCallbacks` | Same-typed local callbacks require independent null guards; the tsc suite checks that guarding the first leaves the second nullable, then each own guard permits its call. |
-| `nullableFactoryResult` | A factory result can mix a callable with null; both alternatives survive the factory contract and invocation, and the caller must guard the returned value before calling it. |
-| `returnedCallableDomain` | Factory branches with Boolean and true-only callable domains both implement a true-only result contract; neither the nested result claim nor a later call can widen that shared domain. |
-| `branchReturnedCapture` | A factory returns different closures from a null-test branch; the escaping closure retains its own factory argument's refinement, which cannot transfer to the nullable caller capture. |
-| `nestedCallableArgumentWrite` | A write inside a closure's call argument preserves the captured receiver and named RHS through temporary bindings; a same-typed capture cannot replace the parameter in the evidence. |
+| `guardedCallableUnion`            | A null guard permits calling either remaining signature and preserves both possible results.                                                                                                                                   |
+| `andGuardedCallable`              | `&&` calls only the non-null function; its true result does not erase the skipped false result.                                                                                                                                |
+| `orGuardedCallable` | `\|\|` skips the call for null, preserving true alongside the callable's false result. |
+| `coalescedCallable`               | Null and undefined select a fallback function before invocation; either callable can supply the result.                                                                                                                        |
+| `capturedGuardedCallable`         | A returned closure retains the immutable capture's non-null refinement and both callable alternatives after the branch ends.                                                                                                   |
+| `aliasedCallableSelection`        | A selected local alias retains both callable alternatives through a nested closure; its callability does not transfer to the original nullable input.                                                                          |
+| `sharedCallableDomain`            | A call must fit the shared argument domain of Boolean-accepting and true-only alternatives, while retaining both possible results.                                                                                             |
+| `branchLocalCallableDomains`      | Branch-refined Boolean arguments satisfy different callable domains; neither branch facts nor singleton results can be transferred to the other branch.                                                                        |
+| `callableArgumentWrite`           | An assignment used as a call argument checks both storage and parameter contracts; its false RHS admits an explicitly refined false-only callable view.                                                                        |
+| `selectedCallableAfterMutation`   | A selected callable remains fixed while a shared-cell write changes its live capture. A JavaScript witness distinguishes live from snapshot behavior, and a same-typed callee substitution needs fresh evidence.               |
+| `callbackProbeDoesNotNarrow`      | A Boolean-returning probe has no type-predicate contract: its true result cannot narrow the captured callback in the caller, whose own null guard remains required.                                                            |
+| `ambiguousCaptureGuard`           | A successful disjunction may be justified by a separate Boolean flag; the returned closure must retain the nullable capture and guard it itself. The tsc suite checks both alternatives survive.                               |
+| `compoundAbsenceCapture`          | A returning null-or-undefined guard must exclude both tags before closure creation. Both producers verify it, and the tsc suite checks both exclusions.                                                                        |
+| `twoAbsenceCapture`               | Eliminating undefined must retain null in a returned closure capture; its inner null guard is still needed. Both producers verify it; the tsc suite checks that undefined is removed while null remains.                       |
+| `laterGuardedCallback`            | A guard after closure creation cannot refine its earlier capture; the closure needs its own guard. The tsc suite checks the pre-guard nullable claim, and a reversed inner guard fails independently of the later outer guard. |
+| `escapedLocalCallback`            | A returned closure captures a guarded nullable const whose declaration is wider than its initializer. Both producers verify it; the tsc suite checks that its callee claim retains the creation-time guard.                    |
+| `distinctNullableCallbacks`       | Same-typed local callbacks require independent null guards; the tsc suite checks that guarding the first leaves the second nullable, then each own guard permits its call.                                                     |
+| `nullableFactoryResult`           | A factory result can mix a callable with null; both alternatives survive the factory contract and invocation, and the caller must guard the returned value before calling it.                                                  |
+| `returnedCallableDomain`          | Factory branches with Boolean and true-only callable domains both implement a true-only result contract; neither the nested result claim nor a later call can widen that shared domain.                                        |
+| `branchReturnedCapture`           | A factory returns different closures from a null-test branch; the escaping closure retains its own factory argument's refinement, which cannot transfer to the nullable caller capture.                                        |
+| `nestedCallableArgumentWrite`     | A write inside a closure's call argument preserves the captured receiver and named RHS through temporary bindings; a same-typed capture cannot replace the parameter in the evidence.                                          |
 
 [callables.mts](../callables.mts) checks original SKJS claims, forged claims,
 reused evidence and report round trips. [tsc-claims.mts](../tsc-claims.mts) checks
@@ -123,9 +349,9 @@ example's result. SKJS and strict TypeScript accept it, and JavaScript controls
 check both seeds.
 
 This is a **boundary example**, shown in the Callables group but not counted as
-source-verifiable. The independent verifier still needs multi-field objects,
-ordinary receiver-dependent methods, and receiver-dependent `Function.prototype.call`
-behavior. Its parser currently rejects the multi-field allocation.
+source-verifiable. Multi-field objects are supported; the remaining boundary is
+ordinary receiver-dependent methods and receiver-dependent `Function.prototype.call`
+behavior. The receiver plan above owns its promotion criteria.
 
 [function-field.ts](function-field.ts) initializes one mutable field on a fresh
 arrow, writes through the original reference and reads/calls through an alias.

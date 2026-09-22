@@ -1582,8 +1582,8 @@ own obligation even when its separate contents observation is provable.
 Typed reads retain current heap
 facts and read links when every alternative has the same invariant operand.
 The regression keeps a known `false` fact about another cell across a neutral
-read, then checks a singleton result from that cell through the JSON pipeline. Source export of combined callable/property types
-remains future work.
+read, then checks a singleton result from that cell through the JSON pipeline. Source export of a combined callable/property type covers one required `value`
+field on a function.
 Source integration also needs explicit property-presence/initialization rules:
 the model's initial function bag does not establish a source `value` field.
 Object parameters are admitted at their annotation: the interpretation of a

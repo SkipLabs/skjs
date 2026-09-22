@@ -4,7 +4,7 @@ The stateful development in [ExperimentState](lean/Verification/ExperimentState)
 provides the semantic foundation for the positive-type rules specified in
 [POSITIVE-TYPES.md](POSITIVE-TYPES.md). This is the semantics used by the current verifier. [PROGRAM-TYPING.md](PROGRAM-TYPING.md) specifies the proved program
 typing system and checked control-flow graphs. The
-[source integration status](DESIGN.md#source-integration-current-slice-and-next-milestone)
+[source integration status](DESIGN.md#source-integration)
 distinguishes the supported source fragment from model-only features.
 
 ## Operational language
