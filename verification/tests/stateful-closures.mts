@@ -182,7 +182,6 @@ try {
     ["missing closure else gated","(u: null): boolean => { if (true) { return true; } }"],
     ["async closure gated","async (u: null): Promise<boolean> => true"],
     ["optional closure parameter gated","(u?: null): boolean => true"],
-    ["generic closure gated","<T>(u: T): T => u"],
   ]){
     const file=path.join(tmp,"gate.ts");fs.writeFileSync(file,`function gated(): null { const f = ${closure}; return null; }`);
     const r=spawnSync(process.execPath,[parser,file],{encoding:"utf8"});

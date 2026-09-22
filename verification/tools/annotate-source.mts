@@ -782,7 +782,23 @@ function verifySkjs(
           ...(obligation ? {obligation, obligationView: presentObligation(obligation, source)} : {})};
       }
       const checked=run(verifier,[normalized?"--check-source-claims":"--check-stateful-source",ap,cp,file,ep]);
-      if(checked.status!==0)throw Error(`independent certificate check failed for ${f.name}: ${(checked.stderr||checked.stdout).trim()}`);
+      if(checked.status!==0) {
+        // Evidence production may expose proved graph consequences while final
+        // acceptance still refuses a source-plan variant whose semantic
+        // certificate is missing. Preserve that located refusal as the result;
+        // the existence of the graph bundle must never promote it to verified.
+        const rawDetail=(checked.stderr||checked.stdout).trim();
+        const diagnostic=readDiagnostic(rawDetail);
+        if(diagnostic?.kind!=="source-refusal")
+          throw Error(`independent certificate check failed for ${f.name}: ${rawDetail}`);
+        const detail=rawDetail.split("\nobligation-diagnostic: ")[0];
+        const namePos: Span=[f.namePos[0],f.namePos[1]];
+        const obligation={...diagnostic,input:{file,functionName:f.name,namePos,
+          sourceSha256:hash(source),claimsSha256:hash(JSON.stringify(c))}};
+        return {status:"not-established",detail,stage:"source-extraction",
+          location:{kind:"source-limitation",pos:diagnostic.sourceMap.pos,reason:diagnostic.reason},
+          obligation,obligationView:presentObligation(obligation,source)};
+      }
       return {status:"verified",scope:"modeled function and required claims",certificateSha256:hash(fs.readFileSync(ep))};
     });
     if(fs.readFileSync(sourcePath,"utf8")!==source)throw Error("source changed during verification");

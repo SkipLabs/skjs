@@ -154,7 +154,10 @@ assert.deepEqual(
       editClaim(tabled, fn, env, [{ name: "cell", type: [4], current }]),
     );
   tabled.claims.types.pop();
-  assert.deepEqual(editable(tabled, fn, item), { top: false, atoms: [{ a: "boolean" }] });
+  assert.deepEqual(editable(tabled, fn, item), {
+    top: false,
+    atoms: [{ a: "boolean" }],
+  });
   const boolean = { top: false, atoms: [{ a: "boolean" }] };
   const cell = {
     top: false,

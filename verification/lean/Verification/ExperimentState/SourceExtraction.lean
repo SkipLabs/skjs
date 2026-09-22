@@ -1894,6 +1894,17 @@ def SourceRequest.searchLabels (r : SourceRequest) : List Nat :=
     (known ++ known.flatMap (fun i => (r.types[i]?.getD []).flatMap
       (fun c => (RequestJson.clauseTypes c).flatten))).eraseDups) roots
 
+/-- Source-validation failures that already know their source site use the same
+structured channel as proof obligations. Keeping the diagnostic construction
+here prevents an adapter check from degrading into an unlocated exception. -/
+private def locatedRefusal (T : SourceTypes.Table) (pos : Span)
+    (role : DirectObligation.SourceRole) (reason : String) : String :=
+  RequestJson.withDiagnostic s!"source refusal at [{pos.1},{pos.2}): {reason}"
+    [("kind",toJson "source-refusal"),("phase",toJson "request-validation"),
+     ("outcome",toJson "not-established"),("id",toJson s!"refusal:{pos.1}"),
+     ("sourceMap",toJson (SourceMapEntry.mk pos role.wire none [])),
+     ("reason",toJson reason),("fuel",toJson 0),("types",toJson T)]
+
 /-- The table is the one the claims were lowered into; annotations the claims
 did not mention grow it, and the request carries the result. -/
 def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceClaims.Function) :
@@ -1926,7 +1937,9 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
       if A != B then throw s!"claimed parameter type differs from the source annotation for '{name}'"
     let R ← lower (Fragment.translate f.ret)
     let claimedR ← SourceClaims.resolve (← table).length fc.ret
-    if R != claimedR then throw "claimed return type differs from the source annotation"
+    if R != claimedR then
+      throw (locatedRefusal (← table) f.namePos .returnContract
+        "claimed return type differs from the source annotation")
     let stmts ← f.body.mapM (comparisonsStmt fc)
     let bodyScope : List ScopeBinding ← (scope.zip inputs).mapM fun (pair : ScopeBinding × Ty Nat) => do
       let (b,contract) := pair

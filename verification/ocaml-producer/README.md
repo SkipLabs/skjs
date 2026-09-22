@@ -326,7 +326,7 @@ and diagnostic for every negative control and known gap. `node test.mts` prints
 what the suite verifies, refuses and keeps visible, and how many tampering
 controls hold; the numbers live in its output, not here.
 
-| Architectural pressure                      | Small examples that verify                                     |
+| Architectural pressure                      | Small examples with full certificates                          |
 | ------------------------------------------- | -------------------------------------------------------------- |
 | Stable storage vs value snapshots           | `values.ts`, captured storage in `callbacks.ts`                |
 | Field identity and aliasing                 | `objects.ts`                                                   |
@@ -338,12 +338,6 @@ controls hold; the numbers live in its output, not here.
 | Higher-order values and variance            | `callbacks.ts`                                                 |
 | Closure-local scope and partial application | `blocks-bind.ts`                                               |
 | One value with both fields and calls        | `function-fields.ts`                                           |
-| Scoped parameters and substitution          | `generics.ts`, `generic-inferred.ts`, `aliases.ts`                  |
-| Quantified closure and fresh call inference | `generic-closure.ts`, `generic-two-calls.ts`                   |
-| Bounded scheme and substituted bound obligations | `generic-bounded.ts` |
-| Returned closure retaining an outer binder | `generic-returned.ts` |
-| Captured cell at one fixed contract under a scheme | `generic-captured-store.ts` |
-| Binder inferred through a callback, checked contravariantly | `generic-callback.ts` |
 | No usable result guarantee                  | `top-void.ts` (unknown, discarded callback result)             |
 
 Every negative control must reach validation and fail for its expected reason;
@@ -353,7 +347,15 @@ mutable captures, generic fabrication, a closure valid at every observed call
 but not universally, a reversed substituted bound at a call, a body that
 reverses its binder's bound, bad contextual initializers and stale heap refinements. Contextual types cannot turn a bad initializer into a fact.
 
-The five named gaps are:
+Nine breadth examples reach the rigid or scheme checker and generate any
+applicable ground graph evidence, but final certification now keeps them as
+located gaps: `generics.ts`, `aliases.ts`, `generic-closure.ts`,
+`generic-two-calls.ts`, `generic-inferred.ts`, `generic-bounded.ts`,
+`generic-returned.ts`, `generic-captured-store.ts` and `generic-callback.ts`.
+They become verified only when the source checker is proved to establish the
+semantic scheme premises.
+
+The other five named gaps are:
 
 - `unsupported.ts`: OCaml refuses an unannotated mutable binding rather than
   guessing a lifetime contract. Constraint-based contract inference is pending.
@@ -371,11 +373,12 @@ across the current calculus's major mechanisms, not the full language.
 
 ## What is proved, and what is trusted
 
-Successful checking uses the existing Lean certificate consumer and its
+Successful certification uses the existing Lean certificate consumer and its
 soundness theorems for the modeled fragment. The OCaml inference algorithm is
 not itself proved correct; a bad proposal must fail validation. Generic
-variable-copy checking uses the existing direct generic checker in both Lean
-phases rather than ordinary graph evidence.
+variable-copy and scheme checking still run in both Lean phases, but their
+success is not promoted to verification until the missing semantic theorem is
+connected to `CertifiedPlan`.
 
 The shared parser, source-to-calculus correspondence, executable toolchain and
 runner remain part of the trust boundary. Source lowering being written in Lean

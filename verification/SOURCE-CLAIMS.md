@@ -17,16 +17,19 @@ verification/lean/.lake/build/bin/verifier --check-source-claims \
 The consumer reconstructs the calculus requests and required claim obligations
 from the AST and sidecar. It checks evidence using the same `checkRequests`
 function and soundness theorems as SKJS-backed source checking.
-`SourceClaimJson.checkJson_graph_requests_checked` ties acceptance of the graph
-projection of this interface to those checks. Direct generic plans still need
-their own semantic certificate. No SKJS invocation or `--keep-going` is needed.
+`SourceClaimJson.checkJson_safe` states that every accepted plan first becomes
+a `CertifiedPlan` and that every such function has the calculus safety
+guarantee. Direct generic and quantified-scheme plans remain visible but cannot
+become certified until their semantic certificate exists. No SKJS invocation
+or `--keep-going` is needed.
 
 Generic variable-copy functions use the same sidecar: any `type` or `result`
 may be `{"param":"T"}`, referring to that function's source type parameter.
 The TS exporter matches compiler symbol identities before emitting this name.
 Bounds come from the source, never from producer assertions. Generic claims are
 checked directly by `GenericSource` on both production and consumption; they
-still do not emit graph certificates. Ground functions cannot use rigid claims,
+still do not emit semantic certificates and therefore receive a located
+not-established result at final certification. Ground functions cannot use rigid claims,
 and rigid claims cannot carry current-content assertions. Within this fragment,
 other types must denote Boolean; no parameter is replaced by its bound.
 
@@ -49,12 +52,19 @@ unresolved parameter or a nested scheme is refused. The consumer re-checks the
 substitution and derives the call's arrow from the scheme's own signature, so a
 forged `instantiate` can only name another genuine instance.
 
-Acceptance never rests on it. `SourceClaimJson`'s scheme section checks
+The intermediate graph compilation never rests on observed calls alone.
+`SourceClaimJson`'s scheme section checks
 introduction first — the closure body, read from the source and not from its
 claim, must satisfy the declared signature for *every* assignment of the
 binders — and only then compiles the checked eliminations to ordinary arrows.
 A closure that satisfies each observed call but cannot produce an arbitrary
 rigid result is refused at that gate, whatever its calls.
+
+That executable universal check is not yet its semantic certificate. Search
+may emit independently checked graph evidence for the ground eliminations, but
+final acceptance refuses the `scheme` plan until the checker is proved to
+establish `TypeSchemes.scheme_intro`. The viewer therefore shows these breadth
+examples as located certification gaps rather than verified functions.
 
 The executable source slice is narrower than the semantic scheme rules. A
 containing function may declare one immutable quantified closure. A binder may

@@ -77,6 +77,29 @@ corpus file, one worker per core, and colour decided once in the parent.
 
 ## What a result means
 
+### Acceptance/soundness invariant
+
+The verifier's successful CLI outcome must imply the modeled safety property
+for every extracted function. Preserve this by construction:
+
+- The acceptance path consumes the complete `FunctionPlan` sum through one
+  exhaustive conversion to `CertifiedPlan`. It must never use `filterMap`, an
+  `Option`, or a projection that can discard a plan variant.
+- A new plan constructor must make that conversion fail to compile. It may
+  become a certified constructor only with a checker and a theorem connecting
+  its successful check to the semantic property. Until then it is a located
+  gap, never `verified`.
+- Keep one headline theorem, currently `SourceClaimJson.checkJson_safe`, whose
+  premise is the exact CLI success condition and whose conclusion gives safety
+  for every accepted function. A theorem about a retained subset, decoded
+  bundle, or Boolean alone is not an acceptance soundness theorem.
+- `#print axioms` checks how a theorem was proved, not whether it proves the
+  required statement. Review the theorem's premise and conclusion whenever the
+  accepted plan type or CLI path changes.
+- Search output, direct-check success and compiled ground consequences are
+  intermediate artifacts. The runner and viewer must not label them verified
+  before the corresponding plan reaches `CertifiedPlan`.
+
 - The corpus prints a pair per producer, `SKJS ✓→✓ · tsc ✓→✗`: the producer's
   own verdict on the program, then whether the verifier derives the claims it
   made. `✗` on the right means proof search found no derivation; it is never a

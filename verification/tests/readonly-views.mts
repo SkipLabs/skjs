@@ -13,7 +13,7 @@ import { atom, binding, claimAt, claimType, expr, fn, must, stmt } from "./edits
 // Readonly views: a read capability on a field, at a sound upper bound on its
 // contents, with no write permission through the view and no retyping of the
 // backing invariant. Both producers verify the fixture. A write through the
-// view is refused; a view of a mutable Boolean cell cannot claim readonly
+// view produces an unsatisfied write obligation; a view of a mutable Boolean cell cannot claim readonly
 // `true` from its current contents; a narrower bound than the invariant's is
 // refused; a stronger, invariant claim for a view is accepted.
 
@@ -75,7 +75,7 @@ try {
   const viewed = skjsFor(claims, "viewOfMutable");
   const at = functionOf(viewed, fileKey, "viewOfMutable");
   claimAt(at, write.receiver.pos).type = binding(at, startOf("viewOfMutable", "x.f = 2"), "y").type;
-  expect("a write through the view is refused", run("stateful-source", through, viewed), false, "readonly field");
+  expect("a write through the view is not established", run("stateful-source", through, viewed), false, "evidence search failed");
 
   // A mutable Boolean cell viewed as readonly Boolean: after the write, the
   // view cannot claim `true`, and the invariant is not retyped.

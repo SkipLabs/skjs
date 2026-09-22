@@ -38,7 +38,7 @@ export type SiteRef = { kind: Site["kind"]; pos: Span };
 // Candidates are untrusted inputs. Editing never changes a source snapshot or
 // establishes a verification result. Keep producer data separate from the draft.
 const isRecord = (v: unknown): v is Record<string, unknown> =>
-  !!v && typeof v === "object";
+  !!v && typeof v === "object" && !Array.isArray(v);
 const isList = (v: unknown): v is unknown[] => Array.isArray(v);
 const sameSpan = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);

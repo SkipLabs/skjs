@@ -32,10 +32,10 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tsc-claims-"));
 // Why each file lands where it does. A verified file says tsc's claims are
 // derivable in the calculus; a failing one names what stops them.
 const expected = {
-  "stateful-source/generic-identity": "verified",
-  "stateful-source/generic-extends": "verified",
-  "stateful-source/generic-aliases": "verified",
-  "stateful-source/generic-bodies": "verified",
+  "stateful-source/generic-identity": "certificate-gap",
+  "stateful-source/generic-extends": "certificate-gap",
+  "stateful-source/generic-aliases": "certificate-gap",
+  "stateful-source/generic-bodies": "certificate-gap",
   // A stateful callback crosses a higher-order parameter boundary.
   "callables/arguments": "verified",
   "callables/cells": "verified",
@@ -230,30 +230,18 @@ for (const [name, want] of Object.entries(expected)) {
           detail = consumed.stderr;
         }
       }
-      if (got === "verified" && ["stateful-source/generic-identity","stateful-source/generic-bodies"].includes(name)) {
+      if (got === "verified" && ["stateful-source/generic-identity","stateful-source/generic-extends","stateful-source/generic-aliases","stateful-source/generic-bodies"].includes(name)) {
         const original: SourceClaims = JSON.parse(fs.readFileSync(claims,"utf8"));
         const consume = (doc: SourceClaims) => {
           fs.writeFileSync(claims,JSON.stringify(doc));
           return run(verifier,["--check-source-claims",ast,claims,file,evidence]);
         };
-        assert.equal(consume(original).status,0,"independent generic consumer");
-        const mutate = (change: (doc: SourceClaims)=>void) => {
-          const doc=structuredClone(original); change(doc);
-          assert.notEqual(consume(doc).status,0,"saved evidence must reject changed generic claims");
-        };
-        mutate(d=>{d.functions[0].expressions[0].type=[1,2];});
-        mutate(d=>{d.functions[0].entries[0].bindings[0].type={param:"NotInScope"};});
-        mutate(d=>{d.functions[0].expressions.pop();});
-        mutate(d=>{d.functions[0].expressions[0].current=[["value",[1]]];});
-        if(name.endsWith("generic-bodies")) {
-          mutate(d=>{claimsFor(d,"second").result={param:"T"};});
-          const weak=structuredClone(original);
-          const chain=claimsFor(weak,"boundChain");
-          chain.entries[0].bindings[0].type=[1,2];
-          chain.expressions[0].type=[1,2];
-          assert.equal(consume(weak).status,0,"declared bound chain permits Boolean weakening");
-        }
+        const certification = consume(original);
+        assert.equal(certification.status,1,"generic source needs a universal semantic certificate");
+        assert.match(certification.stdout + certification.stderr,/generic body has no semantic certificate/);
         fs.writeFileSync(claims,JSON.stringify(original));
+        got = "certificate-gap";
+        detail = "direct validation passed; universal semantic certificate missing";
       }
       if (got === "failed")
         detail = (checked.stderr || "").split("\n")[0].replace(/^reject: /, "");

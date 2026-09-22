@@ -6,7 +6,7 @@ which its labels index; the primitives are its first four rows. The external
 parser supplies the source fingerprint; this module checks agreement, not hashing
 or the parser's semantic correctness. Saved statuses are not part of the schema. -/
 namespace Verification.ExperimentState.SourceClaimJson
-open Lean ProgramTyping RequestJson SourceExtraction
+open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules
 
 /-- A rigid name refers to the enclosing source function's binder. It is never
 interpreted as a ground graph label or replaced with its upper bound. -/
@@ -520,15 +520,39 @@ def functionSites (f : Fragment.Fn) : List Nat × List Span :=
 
 inductive FunctionPlan where
   | graph (name : String) (namePos : Span) (request : SourceRequest)
+  | scheme (name : String) (namePos : Span) (request : SourceRequest)
   | generic (name : String) (namePos : Span)
 
-/-- Projection for the graph evidence engine. Unlike the former `Option` plus
-`filterMap`, every omitted request is named by the `generic` constructor and
-was checked by the direct rigid-parameter checker while building the plan. -/
+/-- A plan admitted by the top-level verified outcome. There is deliberately
+one constructor: adding another source-plan variant cannot silently enter the
+verified path through a projection. -/
+inductive CertifiedPlan where
+  | graph (name : String) (namePos : Span) (request : SourceRequest)
+
+def CertifiedPlan.request : CertifiedPlan → SourceRequest
+  | .graph _ _ request => request
+
+/-- Graph projection for search and inspection. This is intentionally not the
+acceptance boundary: a scheme has useful ground graph evidence while its
+universal certificate is still missing. -/
 def FunctionPlan.requests : List FunctionPlan → List SourceRequest
   | [] => []
   | .graph _ _ request :: rest => request :: FunctionPlan.requests rest
+  | .scheme _ _ request :: rest => request :: FunctionPlan.requests rest
   | .generic .. :: rest => FunctionPlan.requests rest
+
+/-- The sole conversion into the verified-plan type. Missing semantic
+certificates are ordinary located source limitations. Exhaustive matching makes
+a new `FunctionPlan` constructor a compile error here. -/
+def FunctionPlan.certify : FunctionPlan → Except String CertifiedPlan
+  | .graph name pos request => pure (.graph name pos request)
+  | .scheme _ pos _ => throw (sourceRefusal SourceTypes.initial pos .schemeIntroduction
+      "quantified callable has no universal semantic certificate")
+  | .generic _ pos => throw (sourceRefusal SourceTypes.initial pos .genericValidation
+      "generic body has no semantic certificate")
+
+def certifyPlans (plans : List FunctionPlan) : Except String (List CertifiedPlan) :=
+  plans.mapM FunctionPlan.certify
 
 def extractPlans (ast claims : Json) (fileKey : String) : Except String (List FunctionPlan) := do
   let d ← decode claims
@@ -573,22 +597,20 @@ def extractPlans (ast claims : Json) (fileKey : String) : Except String (List Fu
         | .ok T => pure T
       match Scheme.compile T f c with
       | .ok (T, c, overlays) =>
-        return .graph f.name f.namePos
+        return .scheme f.name f.namePos
           (← extractNormalizedFn T f { c.normalized with schemeArrows := overlays })
       | .error (.obligation failure) => throw (directFailure d.types failure)
       | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)
     return .graph f.name f.namePos (← extractNormalizedFn d.types f c.normalized)
 
-/-- Graph-only projection for proof fixtures that inspect extracted programs.
-The name makes its loss of successfully checked direct-generic plans explicit;
-production and checking use `extractPlans`, whose result has exactly one
-constructor per decoded source function. -/
+/-- Graph-only projection for proof fixtures that inspect extracted programs. -/
 def extractGraphRequests (ast claims : Json) (fileKey : String) : Except String (List SourceRequest) := do
   return FunctionPlan.requests (← extractPlans ast claims fileKey)
 
 def checkJson (ast claims : Json) (fileKey : String) (evidence : Json) : Except String Unit := do
   let plans ← extractPlans ast claims fileKey
-  let rs := FunctionPlan.requests plans
+  let certified ← certifyPlans plans
+  let rs := certified.map CertifiedPlan.request
   let b : Bundle ← decodeStrict evidence
   if checkRequests rs b then return ()
   throw "source evidence does not justify the extracted program and exact claims"
@@ -602,30 +624,51 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat) : Except Str
     let j ← RequestJson.produceJson (toJson r.toRequest) fuel [] proofs r.sourceMap (some r.searchLabels) r.assertions r.cuts
     decodeResponse r.toRequest j
   let evidence := toJson (Bundle.mk cs es)
-  checkJson ast claims fileKey evidence
+  -- Search may expose the graph consequences of an uncertified scheme. It
+  -- does not turn those consequences into top-level semantic acceptance.
+  let b : Bundle ← decodeStrict evidence
+  if !checkRequests rs b then
+    throw "source evidence does not justify the extracted graph requests"
   return evidence
 
-/-- Acceptance checks every graph request with the proved consumer. Direct
-generic plans are deliberately visible in `plans` but have no certificate in
-the bundle yet; this theorem therefore does not claim their semantic safety. -/
-theorem checkJson_graph_requests_checked {ast claims evidence : Json} {fileKey : String}
+/-- Top-level acceptance has no lossy projection: every extracted plan first
+becomes a `CertifiedPlan`, whose only current constructor is graph evidence. -/
+theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
     (h : checkJson ast claims fileKey evidence = .ok ()) :
-    ∃ plans b, extractPlans ast claims fileKey = .ok plans ∧
+    ∃ plans certified b, extractPlans ast claims fileKey = .ok plans ∧
+      certifyPlans plans = .ok certified ∧
       decodeStrict evidence = .ok b ∧
-      checkRequests (FunctionPlan.requests plans) b = true := by
+      checkRequests (certified.map CertifiedPlan.request) b = true ∧
+      ∀ r c, (r,c) ∈ (certified.map CertifiedPlan.request).zip b.functions →
+        ∀ n W heap ρ, EnvOk (RequestJson.graph r.toRequest) r.inputs ρ n W →
+          WorldAdm W → HeapOk n W heap →
+          SafeGraph r.program (meaning (RequestJson.graph r.toRequest) r.result)
+            n W heap (.at r.start ρ) := by
   unfold checkJson at h
   cases he : extractPlans ast claims fileKey with
-  | error e => simp only [he] at h; contradiction
+  | error e =>
+    rw [he] at h
+    contradiction
   | ok plans =>
-    cases hb : (decodeStrict evidence : Except String Bundle) with
-    | error e => simp only [he, hb] at h; contradiction
-    | ok b =>
-      simp only [he, hb] at h
-      change (if checkRequests (FunctionPlan.requests plans) b = true then Except.ok () else
-        Except.error "source evidence does not justify the extracted program and exact claims") = .ok () at h
-      split at h
-      · exact ⟨plans,b,rfl,rfl,by assumption⟩
-      · contradiction
+    rw [he] at h
+    simp only [Bind.bind, Except.bind] at h
+    cases hc : certifyPlans plans with
+    | error e =>
+      rw [hc] at h
+      contradiction
+    | ok certified =>
+      rw [hc] at h
+      cases hb : (decodeStrict evidence : Except String Bundle) with
+      | error e =>
+        rw [hb] at h
+        contradiction
+      | ok b =>
+        rw [hb] at h
+        by_cases hx : checkRequests (certified.map CertifiedPlan.request) b = true
+        · refine ⟨plans,certified,b,rfl,hc,rfl,hx,?_⟩
+          intro r c hm n W heap ρ he hw hh
+          exact checkRequests_safe hx hm n W heap ρ he hw hh
+        · simp [hx] at h
 
-#print axioms checkJson_graph_requests_checked
+#print axioms checkJson_safe
 end Verification.ExperimentState.SourceClaimJson

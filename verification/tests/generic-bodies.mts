@@ -46,7 +46,12 @@ function run(a: Ast, c: SkjsClaims) {
     const checked = spawnSync(verifier, ["--check-stateful-source", ap, cp, fileKey, ep], {
       encoding: "utf8",
     });
-    if (checked.status !== 0) throw Error(`certificate rejected: ${checked.stderr}`);
+    const output = checked.stdout + checked.stderr;
+    if (
+      checked.status !== 1 ||
+      !output.includes("generic body has no semantic certificate")
+    )
+      throw Error(`unexpected final certification result: ${output}`);
   }
   return r;
 }
@@ -79,14 +84,14 @@ try {
   const independentClaims = clone(rawClaims).filter((f) => f.file === fileKey);
   const independentFile = must(independentClaims[0], "the claim file");
   independentFile.functions = independentFile.functions.filter((f) => f.name === "second");
-  expect("distinct parameters verify from unedited SKJS claims", run(independentAst, independentClaims), true);
+  expect("distinct parameters pass direct validation from unedited SKJS claims", run(independentAst, independentClaims), true);
   for (const [name, parameter] of [["upper", "U"], ["boundChain", "V"]]) {
     const f = functionOf(claims, fileKey, name);
     const expected = { top: false, atoms: [{ a: "param", name: parameter }] };
     if (JSON.stringify(must(f.params[0], "a parameter").type) !== JSON.stringify(expected))
       throw Error(`${name}: SKJS must preserve dependent parameter ${parameter}`);
   }
-  expect("dependent bounds verify from unedited SKJS claims", run(ast, rawClaims), true);
+  expect("dependent bounds pass direct validation from unedited SKJS claims", run(ast, rawClaims), true);
   const noAnnot = clone(ast);
   sole(stmt(nth(functionIn(noAnnot, "bind").body, 0), "const")).annot = null;
   expect("generic const infers the rigid initializer type", run(noAnnot, claims), true);
@@ -199,7 +204,7 @@ try {
   fs.writeFileSync(np,JSON.stringify(neutral));
   expect("native claims produce common evidence",run(ast,rawClaims),true);
   const consumed=spawnSync(verifier,["--check-source-claims",astPath,np,fileKey,path.join(tmp,"evidence.json")],{encoding:"utf8"});
-  expect("neutral claims consume native-import evidence",consumed,true);
+  expect("neutral claims reach the same certification boundary",consumed,false,"generic body has no semantic certificate");
   neutral.functions[0].expressions[0].type=[1,2];
   fs.writeFileSync(np,JSON.stringify(neutral));
   expect("neutral edit rejects with native-import evidence",spawnSync(verifier,["--check-source-claims",astPath,np,fileKey,path.join(tmp,"evidence.json")],{encoding:"utf8"}),false,"generic expression claim");

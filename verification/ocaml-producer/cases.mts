@@ -35,19 +35,27 @@ const gap = (
   phase: Phase,
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
+const certificateGap = (file: string, area: string): Case =>
+  gap(
+    file,
+    area,
+    "unverified",
+    "check",
+    /(?:generic body|quantified callable) has no (?:universal )?semantic certificate/,
+  );
 export const cases: Case[] = [
   positive("values", "immutable snapshots / fixed storage"),
   positive("branches", "branch scopes / arithmetic"),
   positive("objects", "multi-field objects / aliases"),
   positive("callbacks", "higher-order calls / variance / capture"),
-  positive("generics", "rigid parameters / bounds"),
+  certificateGap("generics", "rigid parameters / bounds"),
   positive("contextual", "contextual object and tuple construction"),
   positive("readonly", "readonly capabilities / covariance"),
   positive("arrays", "array writes / tuple presence"),
   positive("flow", "immutable refinements / nullish paths"),
   positive("loops", "loop invariants / break / continue"),
   positive("blocks-bind", "closure scopes / partial application"),
-  positive("aliases", "capture-avoiding alias substitution"),
+  certificateGap("aliases", "capture-avoiding alias substitution"),
   positive("top-void", "unknown / discarded callback result"),
   positive("function-fields", "one object with fields and calls"),
   negative("invalid-return", "return contract"),
@@ -71,8 +79,8 @@ export const cases: Case[] = [
   negative("invalid-tuple", "contextual tuple element obligation"),
   negative("invalid-context", "fresh initializer obligation"),
   negative("invalid-heap-refinement", "heap refinement invalidation"),
-  positive("generic-closure", "polymorphic closure / fresh call inference"),
-  positive(
+  certificateGap("generic-closure", "polymorphic closure / fresh call inference"),
+  certificateGap(
     "generic-two-calls",
     "one scheme, two independently substituted eliminations",
   ),
@@ -88,13 +96,13 @@ export const cases: Case[] = [
     "scheme valid at every observed call but not universally",
     /cannot establish boolean ≤ T for every instantiation of \[T\]/,
   ),
-  positive("generic-inferred", "inferred rigid copies / dependent bounds"),
-  positive("generic-bounded", "bounded scheme / substituted bound at each call"),
-  positive(
+  certificateGap("generic-inferred", "inferred rigid copies / dependent bounds"),
+  certificateGap("generic-bounded", "bounded scheme / substituted bound at each call"),
+  certificateGap(
     "generic-returned",
     "returned closure retaining the outer binder in its result",
   ),
-  positive(
+  certificateGap(
     "generic-captured-store",
     "quantified closure reading a captured cell at one fixed contract",
   ),
@@ -105,7 +113,7 @@ export const cases: Case[] = [
     "captured cell written at the binder's type",
     /captured storage write at \[\d+,\d+\): cannot establish T ≤ number under \[T\]/,
   ),
-  positive(
+  certificateGap(
     "generic-callback",
     "binder inferred through a callback parameter and a callback result",
   ),
