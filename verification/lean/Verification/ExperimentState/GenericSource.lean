@@ -9,9 +9,9 @@ A body is a variable, a primitive literal, or a closure whose annotation names
 the binders in scope; a declaration body is a sequence of immutable copies and
 a return. Everything is typed from the source under distinct rigid parameters
 and forward upper bounds, along `letE_safeP` and `var_safeP`; `T extends
-boolean` is the assumption `T ≤ boolean`, walked by the proved
-`GenericBounds.follows`, and never justifies `true ≤ T`. A failed inclusion is
-an obligation at its span, never a sentence. Producer claims enter already
+boolean` is the assumption `T ≤ boolean`, walked by the direct relation whose
+accepted comparisons imply semantic inclusion, and never justifies `true ≤ T`.
+A failed inclusion is an obligation at its span, never a sentence. Producer claims enter already
 decoded to direct types, so no claim representation is re-parsed here. -/
 namespace Verification.ExperimentState.GenericSource
 open Lean Claim

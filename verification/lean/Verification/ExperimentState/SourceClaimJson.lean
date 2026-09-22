@@ -605,8 +605,10 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat) : Except Str
   checkJson ast claims fileKey evidence
   return evidence
 
-/-- Acceptance uses the same proved consumer as SKJS-backed extraction. -/
-theorem checkJson_checked {ast claims evidence : Json} {fileKey : String}
+/-- Acceptance checks every graph request with the proved consumer. Direct
+generic plans are deliberately visible in `plans` but have no certificate in
+the bundle yet; this theorem therefore does not claim their semantic safety. -/
+theorem checkJson_graph_requests_checked {ast claims evidence : Json} {fileKey : String}
     (h : checkJson ast claims fileKey evidence = .ok ()) :
     ∃ plans b, extractPlans ast claims fileKey = .ok plans ∧
       decodeStrict evidence = .ok b ∧
@@ -625,5 +627,5 @@ theorem checkJson_checked {ast claims evidence : Json} {fileKey : String}
       · exact ⟨plans,b,rfl,rfl,by assumption⟩
       · contradiction
 
-#print axioms checkJson_checked
+#print axioms checkJson_graph_requests_checked
 end Verification.ExperimentState.SourceClaimJson

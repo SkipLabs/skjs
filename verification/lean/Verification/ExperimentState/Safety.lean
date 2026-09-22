@@ -247,6 +247,23 @@ theorem ArgsT_length {As k W args} (h : ArgsT As k W args) :
     | nil => exact False.elim h
     | cons a args => exact congrArg Nat.succ (ih h.2)
 
+/-- Argument membership is covariant pointwise. This is the list-shaped
+premise used by callable subtyping: an implementation accepting `Bs` can be
+used where callers supply the narrower `As` when every `A ≤ B`. -/
+inductive ArgsLe : List Fam → List Fam → Prop where
+  | nil : ArgsLe [] []
+  | cons : FamLe A B → ArgsLe As Bs → ArgsLe (A :: As) (B :: Bs)
+
+theorem ArgsT_mono {As Bs : List Fam} (h : ArgsLe As Bs) {k W args}
+    (ha : ArgsT As k W args) : ArgsT Bs k W args := by
+  induction h generalizing args with
+  | nil =>
+    cases args <;> exact ha
+  | cons hab _ ih =>
+    cases args with
+    | nil => exact False.elim ha
+    | cons a args => exact ⟨hab k W a ha.1, ih ha.2⟩
+
 /-- Position by position, which is what an allocation needs. -/
 theorem ArgsT_zip {As k W args} (h : ArgsT As k W args) :
     ∀ p ∈ As.zip args, p.1 k W p.2 := by
@@ -385,6 +402,22 @@ theorem callsT_adm (L : List (List Fam × Fam)) : Adm (callsT L) := by
   · rintro n W U hx v ⟨arity, b, l, hv, hs⟩
     exact ⟨arity, b, l, hv, hs.mono hx⟩
 
+/-- A callable signature is contravariant in its ordered arguments and
+covariant in its result. This is semantic inclusion, independently of any
+syntactic subtype checker that may use it. -/
+theorem callsT_single_mono {Ps Qs : List Fam} {R T : Fam}
+    (hdom : ArgsLe Qs Ps) (hresult : FamLe R T) :
+    FamLe (callsT [(Ps, R)]) (callsT [(Qs, T)]) := by
+  intro k W v hv
+  obtain ⟨arity, body, fields, heq, hscope, hcall⟩ := hv
+  refine ⟨arity, body, fields, heq, hscope, ?_⟩
+  intro signature hsignature j hj U hx hu heap hh args hargs
+  have hs : signature = (Qs, T) := List.mem_singleton.mp hsignature
+  subst signature
+  have source := hcall (Ps, R) (by simp) j hj U hx hu heap hh args
+    (ArgsT_mono hdom hargs)
+  exact Safe_mono j (fun m _ => hresult m) U heap _ source
+
 /-- List signatures guard every domain position and the result. This is the
 congruence needed to interpret recursive call types in the existing tower. -/
 theorem callsT_congr {α : Type} (l : List α) (f g : α → List Fam × Fam) {n : Nat}
@@ -511,6 +544,8 @@ theorem CodeSpec.mono {L n W W' b} (hx : WExt W W') (h : CodeSpec L n W b) :
 #print axioms arrowsT_callsT
 #print axioms ArgsT_length
 #print axioms ArgsT_values
+#print axioms ArgsT_mono
+#print axioms callsT_single_mono
 #print axioms InvocationSpec.down
 #print axioms InvocationSpec.mono
 #print axioms InvocationSpec.invoke

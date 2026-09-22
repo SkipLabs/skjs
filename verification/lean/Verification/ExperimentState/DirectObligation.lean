@@ -1,5 +1,4 @@
 import Verification.ExperimentState.SourceTypes
-import Verification.ExperimentState.GenericBounds
 
 /-! Structured judgments checked before a ground graph request exists.
 
@@ -83,40 +82,202 @@ partial def Ty.render (T : SourceTypes.Table) : Ty → String
   | .arrow params result =>
       s!"({String.intercalate ", " (params.map (Ty.render T))}) => {result.render T}"
 
-/-- Rigid parameters as the labels `GenericBounds.follows` walks: a parameter's
-position plus one, with `0` left for the ground world. -/
-private def index (parameters : List Parameter) (name : String) : Option Nat :=
-  ((parameters.map (·.name)).idxOf? name).map (· + 1)
+open PositiveRules PositiveGraphs
 
-/-- A bound that names an earlier parameter is an edge; every other bound ends
-a chain at a ground or callable type. -/
-private def edges (parameters : List Parameter) : List (Nat × Nat) :=
-  parameters.zipIdx.filterMap fun (p, i) => match p.upper with
-    | some (.rigid y) => (index parameters y).map fun j => (i + 1, j)
-    | _ => none
+mutual
+  /-- Direct types denote ordinary semantic families once rigid names have an
+  assignment. Callables use the calculus's ordered-argument semantics. -/
+  def Ty.denote (G : NormalGraph Nat) (η : String → Fam) : Ty → Fam
+    | .rigid name => η name
+    | .ground labels => meaning G labels
+    | .arrow params result =>
+        callsT [(Ty.denoteList G η params, Ty.denote G η result)]
+  def Ty.denoteList (G : NormalGraph Nat) (η : String → Fam) : List Ty → List Fam
+    | [] => []
+    | t :: ts => Ty.denote G η t :: Ty.denoteList G η ts
+end
 
-/-- Inclusion under declared upper bounds. Rigid chains are walked by the
-proved `GenericBounds.follows`, never by a second relation here: a parameter is
-below another when the bound chain reaches it, and below a ground or callable
-type when the chain ends in a bound that is. Ground types are compared by
-inclusion and callables contravariantly in their parameters and covariantly in
-their result. A ground type is never below a rigid parameter, which is what
-keeps a universal check independent of the instantiations it happens to see. -/
-partial def Ty.leUnder (parameters : List Parameter) (a b : Ty) : Bool :=
-  let reaches (x y : String) : Bool :=
-    match index parameters x, index parameters y with
-    | some i, some j => GenericBounds.follows (edges parameters) parameters.length i j
-    | _, _ => false
-  match a, b with
-  | .rigid x, .rigid y => reaches x y
-  | .rigid x, _ => parameters.any fun q => match q.upper with
-      | some (.rigid _) | none => false
-      | some terminal => reaches x q.name && Ty.leUnder parameters terminal b
-  | .ground A, .ground B => A.all B.contains
-  | .arrow ps r, .arrow qs t =>
-      ps.length == qs.length && (qs.zip ps).all (fun (q, p) => Ty.leUnder parameters q p)
-        && Ty.leUnder parameters r t
-  | _, _ => false
+/-- Every declared upper bound is true of the rigid family assigned to its
+parameter. Unbounded parameters impose no accidental top bound. -/
+def Satisfies (G : NormalGraph Nat) (η : String → Fam)
+    (parameters : List Parameter) : Prop :=
+  ∀ p ∈ parameters, ∀ upper, p.upper = some upper → FamLe (η p.name) (upper.denote G η)
+
+/-- Follow only declared rigid-to-rigid upper bounds. Names stay separate from
+ground graph labels, so a binder cannot be confused with a graph row. -/
+def follows (parameters : List Parameter) : Nat → String → String → Bool
+  | fuel, x, y =>
+    if x == y then true else match fuel with
+      | 0 => false
+      | n + 1 => parameters.any fun p =>
+          p.name == x && match p.upper with
+            | some (.rigid upper) => follows parameters n upper y
+            | _ => false
+
+theorem follows_sound {G : NormalGraph Nat} {η parameters fuel x y}
+    (hs : Satisfies G η parameters) (h : follows parameters fuel x y = true) :
+    FamLe (η x) (η y) := by
+  induction fuel generalizing x with
+  | zero =>
+    simp only [follows] at h
+    split at h
+    · next heq =>
+      have : x = y := beq_iff_eq.mp heq
+      subst y
+      exact fun _ _ _ hx => hx
+    · contradiction
+  | succ n ih =>
+    simp only [follows] at h
+    split at h
+    · next heq =>
+      have : x = y := beq_iff_eq.mp heq
+      subst y
+      exact fun _ _ _ hx => hx
+    · obtain ⟨p, hp, hstep⟩ := List.any_eq_true.mp h
+      have hname : p.name = x := beq_iff_eq.mp (Bool.and_eq_true_iff.mp hstep).1
+      have htail := (Bool.and_eq_true_iff.mp hstep).2
+      split at htail <;> try contradiction
+      next upper hu =>
+        have hbound : FamLe (η x) (η upper) := by
+          rw [← hname]
+          change FamLe (η p.name) (Ty.denote G η (.rigid upper))
+          exact hs p hp (.rigid upper) hu
+        have hrest := ih htail
+        exact fun k W v hv => hrest k W v (hbound k W v hv)
+
+/-- Fuel makes the checker total even for a malformed cyclic bound document.
+Successful checks are sound at every fuel; exhaustion only loses completeness. -/
+def Ty.leUnderFuel (fuel : Nat) (parameters : List Parameter) : Ty → Ty → Bool
+  | a, b => match fuel with
+    | 0 => false
+    | n + 1 => match a, b with
+      | .rigid x, .rigid y => follows parameters parameters.length x y
+      | .rigid x, _ => parameters.any fun q => match q.upper with
+          | some (.rigid _) | none => false
+          | some terminal => follows parameters parameters.length x q.name &&
+              Ty.leUnderFuel n parameters terminal b
+      | .ground A, .ground B => A.all B.contains
+      | .arrow ps r, .arrow qs t =>
+          ps.length == qs.length &&
+            (qs.zip ps).all (fun (q, p) => Ty.leUnderFuel n parameters q p) &&
+            Ty.leUnderFuel n parameters r t
+      | _, _ => false
+
+private def Ty.depth : Ty → Nat
+  | .rigid _ | .ground _ => 1
+  | .arrow ps r => 1 + (ps.map Ty.depth).foldl max r.depth
+
+/-- Inclusion under declared upper bounds. Ground unions use inclusion;
+callables are contravariant in parameters and covariant in their result. -/
+def Ty.leUnder (parameters : List Parameter) (a b : Ty) : Bool :=
+  Ty.leUnderFuel (parameters.length + a.depth + b.depth + 1) parameters a b
+
+private theorem denoteList_argsLe {G : NormalGraph Nat} {η parameters fuel qs ps}
+    (hlen : ps.length = qs.length)
+    (hall : (qs.zip ps).all (fun (q, p) => Ty.leUnderFuel fuel parameters q p) = true)
+    (ih : ∀ {a b}, Ty.leUnderFuel fuel parameters a b = true →
+      FamLe (a.denote G η) (b.denote G η)) :
+    ArgsLe (Ty.denoteList G η qs) (Ty.denoteList G η ps) := by
+  induction qs generalizing ps with
+  | nil =>
+    cases ps with
+    | nil => exact .nil
+    | cons p ps => simp at hlen
+  | cons q qs ihList =>
+    cases ps with
+    | nil => simp at hlen
+    | cons p ps =>
+      simp only [List.length_cons] at hlen
+      simp only [List.zip_cons_cons, List.all_cons, Bool.and_eq_true] at hall
+      exact .cons (ih hall.1) (ihList (Nat.add_right_cancel hlen) hall.2)
+
+/-- The executable direct-subtyping check is semantically sound. This is the
+bridge that prevents a producer-specific generic checker from inventing an
+inclusion unsupported by the calculus. -/
+theorem Ty.leUnderFuel_sound {G : NormalGraph Nat} {η parameters fuel a b}
+    (hs : Satisfies G η parameters)
+    (h : Ty.leUnderFuel fuel parameters a b = true) :
+    FamLe (a.denote G η) (b.denote G η) := by
+  induction fuel generalizing a b with
+  | zero =>
+    simp only [Ty.leUnderFuel] at h
+    contradiction
+  | succ n ih =>
+    cases a with
+    | rigid x =>
+      cases b with
+      | rigid y =>
+        exact follows_sound hs h
+      | ground B =>
+        simp only [Ty.leUnderFuel] at h
+        obtain ⟨q, hq, hstep⟩ := List.any_eq_true.mp h
+        cases hu : q.upper with
+        | none => simp [hu] at hstep
+        | some upper => cases upper with
+        | rigid name => simp [hu] at hstep
+        | arrow ps r =>
+          simp only [hu, Bool.and_eq_true] at hstep
+          obtain ⟨hreach, hterminal⟩ := hstep
+          have hrigid : FamLe (η x) (Ty.denote G η (.arrow ps r)) :=
+            fun k W v hv =>
+              (hs q hq (.arrow ps r) hu) k W v
+                ((follows_sound hs hreach) k W v hv)
+          exact fun k W v hv => (ih hterminal) k W v (hrigid k W v hv)
+        | ground A =>
+          simp only [hu, Bool.and_eq_true] at hstep
+          obtain ⟨hreach, hterminal⟩ := hstep
+          have hrigid : FamLe (η x) (Ty.denote G η (.ground A)) :=
+            fun k W v hv =>
+              (hs q hq (.ground A) hu) k W v
+                ((follows_sound hs hreach) k W v hv)
+          exact fun k W v hv => (ih hterminal) k W v (hrigid k W v hv)
+      | arrow qs t =>
+        simp only [Ty.leUnderFuel] at h
+        obtain ⟨q, hq, hstep⟩ := List.any_eq_true.mp h
+        cases hu : q.upper with
+        | none => simp [hu] at hstep
+        | some upper => cases upper with
+        | rigid name => simp [hu] at hstep
+        | ground A =>
+          simp only [hu, Bool.and_eq_true] at hstep
+          obtain ⟨hreach, hterminal⟩ := hstep
+          have hrigid : FamLe (η x) (Ty.denote G η (.ground A)) :=
+            fun k W v hv =>
+              (hs q hq (.ground A) hu) k W v
+                ((follows_sound hs hreach) k W v hv)
+          exact fun k W v hv => (ih hterminal) k W v (hrigid k W v hv)
+        | arrow ps r =>
+          simp only [hu, Bool.and_eq_true] at hstep
+          obtain ⟨hreach, hterminal⟩ := hstep
+          have hrigid : FamLe (η x) (Ty.denote G η (.arrow ps r)) :=
+            fun k W v hv =>
+              (hs q hq (.arrow ps r) hu) k W v
+                ((follows_sound hs hreach) k W v hv)
+          exact fun k W v hv => (ih hterminal) k W v (hrigid k W v hv)
+    | ground A =>
+      cases b with
+      | rigid y => simp [Ty.leUnderFuel] at h
+      | arrow qs t => simp [Ty.leUnderFuel] at h
+      | ground B =>
+        simp only [Ty.leUnderFuel] at h
+        intro k W v hv
+        obtain ⟨label, hlabel, hv⟩ := hv
+        exact ⟨label, by simpa using (List.all_eq_true.mp h) label hlabel, hv⟩
+    | arrow ps r =>
+      cases b with
+      | rigid y => simp [Ty.leUnderFuel] at h
+      | ground B => simp [Ty.leUnderFuel] at h
+      | arrow qs t =>
+        simp only [Ty.leUnderFuel, Bool.and_eq_true] at h
+        have hdom := denoteList_argsLe (G := G) (η := η) (beq_iff_eq.mp h.1.1) h.1.2
+          (fun hsub => ih hsub)
+        have hresult := ih h.2
+        exact callsT_single_mono hdom hresult
+
+theorem Ty.leUnder_sound {G : NormalGraph Nat} {η parameters a b}
+    (hs : Satisfies G η parameters) (h : Ty.leUnder parameters a b = true) :
+    FamLe (a.denote G η) (b.denote G η) :=
+  Ty.leUnderFuel_sound hs h
 
 /-- Inclusion with no parameters in scope: the same relation, with nothing to
 chain through. -/
@@ -185,5 +346,9 @@ def Judgment.message (T : SourceTypes.Table) : Judgment → String
   | j@(.subtyping ..) => s!"generic obligation: cannot establish {j.render T}"
   | j@(.schemeIntroduction ..) =>
       s!"quantified closure body does not satisfy its scheme universally: cannot establish {j.render T}"
+
+#print axioms follows_sound
+#print axioms Ty.leUnderFuel_sound
+#print axioms Ty.leUnder_sound
 
 end Verification.ExperimentState.DirectObligation

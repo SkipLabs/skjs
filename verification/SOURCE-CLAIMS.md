@@ -17,8 +17,9 @@ verification/lean/.lake/build/bin/verifier --check-source-claims \
 The consumer reconstructs the calculus requests and required claim obligations
 from the AST and sidecar. It checks evidence using the same `checkRequests`
 function and soundness theorems as SKJS-backed source checking.
-`SourceClaimJson.checkJson_checked` ties acceptance of this interface to those
-checks. No SKJS invocation or `--keep-going` is needed.
+`SourceClaimJson.checkJson_graph_requests_checked` ties acceptance of the graph
+projection of this interface to those checks. Direct generic plans still need
+their own semantic certificate. No SKJS invocation or `--keep-going` is needed.
 
 Generic variable-copy functions use the same sidecar: any `type` or `result`
 may be `{"param":"T"}`, referring to that function's source type parameter.

@@ -244,10 +244,10 @@ so they can themselves serve as semantic type arguments.
 A scheme, bounded or not, now has an executable path: `SourceClaimJson`'s scheme
 section checks introduction universally from the source, validates each call's
 explicit substitution, and compiles the checked eliminations to ordinary arrows.
-This executable gate is not yet connected to the semantic rule by a soundness
-theorem. `GenericBounds.follows_sound` justifies rigid bound traversal, but no
-theorem yet states that recursive `DirectObligation.Ty.leUnder` (including its
-arrow case) implies semantic inclusion, or that `GenericSource.closureTy`
+The executable subtype gate is connected to ordinary semantic families:
+`DirectObligation.Ty.leUnder_sound` proves its rigid-bound, ground-union and
+contravariant/covariant arrow cases denote inclusion. What is not yet connected
+is the source checker: no theorem states that `GenericSource.closureTy`
 establishes the premises of `TypeSchemes.scheme_intro`. Consequently the graph
 certificates prove the compiled ground instances used by the current program;
 they do not certify the universal scheme claim itself.

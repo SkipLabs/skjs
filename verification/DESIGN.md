@@ -509,7 +509,9 @@ ground types without rechecking the body at each type.
 The scheme itself is a source-claim form and semantic layer, not a new positive
 graph clause. No scheme certificate is serialized yet: introduction is checked
 directly during source request construction, while the compiled eliminations
-produce ordinary graph evidence. Nested or bounded quantified closures,
+produce ordinary graph evidence. Bounds to `boolean` or an earlier binder,
+callbacks over the binders, captured fixed-contract writes and returned closures
+that retain an outer binder are implemented. Nested quantified closures,
 general closure bodies, calls to generic declarations, recursive scheme nodes
 and higher-rank schemes remain outside. Recursive schemes additionally need
 layer congruence and contractiveness; admissibility of a fixed scheme does not
