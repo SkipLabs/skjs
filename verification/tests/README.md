@@ -72,6 +72,12 @@ fixture, not a control, and is filed as one.
 
 `negation.mts` checks Boolean negation and reversed immutable refinements in branches, closures and loops, including forged claims and an effectful operand.
 
+The OCaml producer's positives on which SKJS or tsc stop short are the corpus
+group `Producer gaps · OCaml witnesses under SKJS and tsc`; the pipeline runs
+both producers over them and holds SKJS to the expected outcomes named in
+`examples.mts`, one reason per function. Files SKJS cannot parse are not in
+the group: a parse failure is not type incompleteness.
+
 Producer examples are separated by the direction of the failure:
 
 - [`skjs-unsound/`](skjs-unsound/README.md): SKJS accepts a program with a runtime type counterexample.

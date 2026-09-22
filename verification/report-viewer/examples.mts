@@ -36,8 +36,7 @@ const stateful = [
   "logical-assignments",
   "void-results",
   "readonly-views",
-  "arrays",
-].map((name) => `verification/tests/stateful-source/${name}.ts`)
+  ].map((name) => `verification/tests/stateful-source/${name}.ts`)
   .concat("verification/tests/export-snapshots/inferred-replacement.ts");
 const callables = ["unions", "factories", "arguments", "cells", "thunks", "arity", "guards", "function-field", "receiver-call"].map((name) => `verification/tests/callables/${name}.ts`);
 const callableBoundaries = ["verification/tests/callables/call-objects.ts"];
@@ -102,6 +101,23 @@ const groups = [
     files: ["verification/tests/skjs-unsound/compound-write-refinement.ts"],
   },
   {
+    // The OCaml producer's positives on which SKJS or tsc stop short. The
+    // pipeline runs both producers over them; which SKJS functions are
+    // expected not to verify, and why, is policy in `examples.mts`.
+    label: "Producer gaps · OCaml witnesses under SKJS and tsc",
+    files: [
+      "objects",
+      "blocks-bind",
+      "top-void",
+            "generic-closure",
+      "generic-two-calls",
+      "generic-bounded",
+      "generic-captured-store",
+      "generic-callback",
+                  "generic-dependent-inference",
+    ].map((name) => `verification/ocaml-producer/examples/${name}.ts`),
+  },
+  {
     label: "Unsupported examples · expected limitations",
     files: [
       "typeof_narrow",
@@ -130,6 +146,8 @@ const notes: Record<string, string> = {
     "an unsoundness since repaired",
   "Unsupported examples · expected limitations":
     "outside the fragment on purpose; listing one never implies it verifies",
+  "Producer gaps · OCaml witnesses under SKJS and tsc":
+    "programs the OCaml producer verifies and another producer cannot claim or establish — findings, kept as they are",
 };
 
 /*

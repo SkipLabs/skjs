@@ -69,7 +69,31 @@ function run(command: string, args: string[]) {
 }
 // Expected outcomes are corpus policy, not evidence. The partial fixture contains
 // two invalid definitions and a valid one; a rejection alone proves no bug.
+// The OCaml producer verifies every function of these files; SKJS falls short
+// on the ones named here, each for a reason its export exposes. Files SKJS
+// cannot parse are left out: a parse failure is not type incompleteness.
+// tsc's column carries no policy; its gaps on the same files are noted beside.
+const ocamlWitnessGaps: Record<string, string[]> = {
+  // Both: the fresh literal is claimed with the singleton `ready: true` where
+  // the location contract is `boolean`, and the parameter's record fields are
+  // exported in another order than the annotation writes them.
+  "objects.ts": ["aliasWrite", "objectParameter"],
+  // `choose.bind(null, seed)`: no claim is exported for the bound call.
+  "blocks-bind.ts": ["partialApplication"],
+  // No statement environment is exported at the return of a discarded result.
+  "top-void.ts": ["ignoredCallbackResult"],
+  // A quantified closure is typed but exported as unavailable
+  // (`SkjsTypeClaims.sk`, "function-generic"); tsc exports no claims either.
+  "generic-closure.ts": ["polymorphicUse"],
+  "generic-two-calls.ts": ["instantiateTwice"],
+  "generic-bounded.ts": ["boundedPick"],
+  "generic-captured-store.ts": ["capturedStore"],
+  "generic-callback.ts": ["throughCallback", "throughResult"],
+  "generic-dependent-inference.ts": ["propagatedBound"],
+};
 function expectedVerified(file: string, name: string) {
+  const witness = /^verification\/ocaml-producer\/examples\/(.*)$/.exec(file);
+  if (witness) return !(ocamlWitnessGaps[witness[1]] ?? []).includes(name);
   // SKJS loses the initializer's singleton; the TS column verifies this case.
   if (file.endsWith("/mutable-locals.ts") && name === "preciseSnapshot")
     return false;
