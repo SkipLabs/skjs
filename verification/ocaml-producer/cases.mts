@@ -35,14 +35,6 @@ const gap = (
   phase: Phase,
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
-const certificateGap = (file: string, area: string): Case =>
-  gap(
-    file,
-    area,
-    "unverified",
-    "check",
-    /(?:generic body|quantified callable) has no (?:universal )?semantic certificate/,
-  );
 export const cases: Case[] = [
   positive("values", "immutable snapshots / fixed storage"),
   positive("branches", "branch scopes / arithmetic"),
@@ -98,11 +90,11 @@ export const cases: Case[] = [
   ),
   positive("generic-inferred", "inferred rigid copies / dependent bounds"),
   positive("generic-bounded", "bounded scheme / substituted bound at each call"),
-  certificateGap(
+  positive(
     "generic-returned",
     "returned closure retaining the outer binder in its result",
   ),
-  certificateGap(
+  positive(
     "generic-captured-store",
     "quantified closure reading a captured cell at one fixed contract",
   ),
@@ -113,7 +105,7 @@ export const cases: Case[] = [
     "captured cell written at the binder's type",
     /captured storage write at \[\d+,\d+\): cannot establish T ≤ number under \[T\]/,
   ),
-  certificateGap(
+  positive(
     "generic-callback",
     "binder inferred through a callback parameter and a callback result",
   ),

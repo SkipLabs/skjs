@@ -520,10 +520,14 @@ establish that extension.
 Graph evidence for those eliminations is an intermediate result. The accepted
 source path converts every `FunctionPlan` exhaustively to `CertifiedPlan`;
 direct generic variable-copy plans carry a checked `GenericCertificate`.
-Immutable variable-return schemes additionally carry a `ClosureCertificate`:
+Schemes built from immutable or captured-cell reads, nested closures and callback calls
+additionally carry a `ClosureCertificate`:
 its soundness theorem establishes the universal invocation premise in the same
-captured environment and world, independently of observed calls. Other scheme
-bodies still produce a located certification gap. `checkJson_safe` concludes
+captured environment and world, independently of observed calls. Nested closure
+allocation and effectful calls use the existing semantic rules. Captured cell
+slots carry their source-declared invariant, and reads use `bag_read`; an ordinary
+variable proof cannot expose the private cell. Writes inside a quantified body
+still need a certificate constructor. `checkJson_safe` concludes
 calculus safety for every graph request, semantic safety for every direct
 generic certificate, and universal invocation safety for every admitted scheme.
 The graph evidence for a scheme never replaces its universal certificate.

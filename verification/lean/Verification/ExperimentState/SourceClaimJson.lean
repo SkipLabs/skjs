@@ -328,12 +328,13 @@ private def introduce (T : SourceTypes.Table) (f : Fragment.Fn) (c : Closure) (c
   let outer ← entry.bindings.mapM fun b => do
     return (b.name, ← (ofClaim "a quantified closure's captured scope" b.type).mapError refuse)
   let direct ← (claims.directClaims (withinScheme := true)).mapError refuse
-  let cells := f.body.flatMap fun
-    | .mutables _ bs => bs.map (·.name)
+  let storage := f.body.flatMap fun
+    | .mutables _ bs => bs
     | _ => []
+  let cells := storage.map (·.name)
   let ctx : GenericSource.Ctx := ⟨c.parameters, direct, cells⟩
   let (_, T) ← (GenericSource.closureTy ctx outer c.span c.sourceParams c.sourceResult c.body).run T
-  let (certificate, T) ← (GenericSource.closureCertificate ctx outer c.span
+  let (certificate, T) ← (GenericSource.closureCertificate ctx outer storage c.span
     c.sourceParams c.sourceResult c.body).run T
   return (T, certificate)
 

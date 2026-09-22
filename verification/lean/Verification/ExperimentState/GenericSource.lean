@@ -274,7 +274,7 @@ def checkScheme (f : Fragment.Fn) (typeParams : List Fragment.TypeParam)
     throw "claimed generic identity types differ from the source annotation"
 
 private def proofLookup (name : String) :
-    List (String × DirectObligation.Ty) → Option (Nat × DirectObligation.Ty)
+    List (String × α) → Option (Nat × α)
   | [] => none
   | (candidate, type) :: rest =>
     if candidate == name then some (0, type)
@@ -320,24 +320,56 @@ private def proofBody (c : Ctx) (initial : List (String × DirectObligation.Ty))
   let (body, _) ← proofExpr env returned
   return initializers.foldr GenericCertificate.Proof.letE (.widen result body)
 
+/-- Only source forms with semantic proof constructors can reach certification.
+The default refusal is intentional for future forms until a proof rule exists. -/
+private partial def closureProof (c : Ctx) (env : List (String × GenericCertificate.Slot)) :
+    Fragment.Expr → M (Option GenericCertificate.Proof)
+  | .var pos name => match proofLookup name env with
+      | some (index, .value _) => pure (some (.var index))
+      | some (index, .cell _) => pure (some (.read index))
+      | none => throw (.refusal pos .schemeIntroduction s!"unbound capture '{name}'")
+  | .lambda pos tps ps ret body => do
+      if !tps.isEmpty then return none
+      let names := c.parameters.map (·.name)
+      let inner ← ps.mapM fun q => do
+        return (q.1, ← lower pos .schemeIntroduction (annotationTy names q.2))
+      let result ← lower pos .schemeIntroduction (annotationTy names ret)
+      let slots := inner.map fun (name, A) => (name, GenericCertificate.Slot.value A)
+      let some proof ← closureProof c (slots ++ env) body | return none
+      return some (.lambda (inner.map Prod.snd) (.widen result proof))
+  | .call _ callee args => do
+      let some fn ← closureProof c env callee | return none
+      let proofs ← args.mapM (closureProof c env)
+      let some actuals := proofs.mapM id | return none
+      return some (.call fn actuals)
+  | _ => pure none
+
 /-- Reconstruct a universal closure certificate independently of observed calls.
-The current proof language handles immutable reads; a cell read must never be
+The proof language handles immutable reads, closures and calls; a cell read must never be
 compiled as a read of the cell identity. Missing constructors stay explicit at
 the final certification boundary. -/
 def closureCertificate (c : Ctx) (env : List (String × DirectObligation.Ty))
+    (storage : List Fragment.Binding)
     (pos : Span) (ps : List (String × Json)) (ret : Json) (body : Fragment.Expr) :
     M (Option GenericCertificate.ClosureCertificate) := do
-  let .var .. := body | return none
-  -- Captured slots must denote the runtime values themselves. A mutable slot
-  -- holds a cell, whereas this environment records its contents contract.
-  -- Until cell certificates exist, refuse the whole mutable capture context.
-  if !c.cells.isEmpty then return none
+  -- Runtime cell identities carry the source's fixed storage annotation. An
+  -- entry claim about current contents cannot supply this lifetime contract.
+  let captures ← env.mapM fun (name, actual) => do
+    if c.cells.contains name then
+      let some binding := storage.find? (·.name == name)
+        | throw (.refusal pos .schemeIntroduction s!"missing storage declaration for '{name}'")
+      let some annot := binding.annot
+        | throw (.refusal binding.namePos .schemeIntroduction "captured storage needs a fixed annotation")
+      let contract ← lower binding.namePos .schemeIntroduction (annotationTy [] annot)
+      return (name, GenericCertificate.Slot.cell contract)
+    else return (name, GenericCertificate.Slot.value actual)
   let names := c.parameters.map (·.name)
   let inner ← ps.mapM fun q => do
     return (q.1, ← lower pos .schemeIntroduction (annotationTy names q.2))
   let result ← lower pos .schemeIntroduction (annotationTy names ret)
-  let (proof, _) ← proofExpr (inner ++ env) body
-  return some ⟨c.parameters, inner.map Prod.snd, env.map Prod.snd, result,
+  let slots := inner.map fun (name, A) => (name, GenericCertificate.Slot.value A)
+  let some proof ← closureProof c (slots ++ captures) body | return none
+  return some ⟨c.parameters, inner.map Prod.snd, captures.map Prod.snd, result,
     .widen result proof⟩
 
 /-- Both production and independent consumption reconstruct these obligations.
@@ -366,7 +398,7 @@ def check (f : Fragment.Fn) (typeParams : List Fragment.TypeParam) (claims : Cla
   let result ← lower f.namePos .genericValidation (annotationTy names f.ret)
   let proof ← proofBody c env result f.namePos f.body
   let certificate : GenericCertificate.Certificate :=
-    ⟨parameters, env.map Prod.snd, result, proof⟩
+    ⟨parameters, env.map (fun p => GenericCertificate.Slot.value p.2), result, proof⟩
   if certificate.check.isNone then
     throw (.refusal f.namePos .genericValidation "generated generic certificate is invalid")
   return certificate

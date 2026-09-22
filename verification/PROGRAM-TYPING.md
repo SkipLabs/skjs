@@ -1893,13 +1893,89 @@ annotated or inferred immutable `const` bindings and extra parameters. Calls to
 generic declarations and other generic declaration bodies are not connected.
 
 A separate executable slice connects local quantified closures to the scheme
-rules below. One unbounded closure per containing function is checked once under
-its rigid binders; its parameters and result name those binders, and its body is
-currently a variable or primitive literal. Every observed call supplies a
-complete ground substitution checked as elimination evidence. Those
-instantiations are compiled to ordinary arrows for the surrounding graph, so
-two calls at different types share one universal introduction check rather than
-typing the body once per call.
+rules below. One closure per containing function is checked under its rigid
+binders and declared bounds. Its certified body may read immutable values or
+captured cells, construct a nested closure, or call a callback. Every observed
+call supplies a complete ground substitution checked as elimination evidence.
+Those instantiations become ordinary arrows for the surrounding graph. Final
+acceptance additionally requires the universal certificate described next;
+per-instance graph derivations cannot replace it.
+
+**Executable rigid-body certificates.**
+[GenericCertificate.lean](lean/Verification/ExperimentState/GenericCertificate.lean)
+implements proof constructors over the existing calculus. These extend the
+certificate checker, not the calculus's runtime or semantic typing rules.
+Write $\Delta;\Sigma\vdash p\leadsto e:A$ when a proof $p$ checks, reconstructing
+term $e$ and direct type $A$. $\Delta$ contains rigid parameters and bounds;
+$\Sigma$ describes runtime slots as either $\mathsf{value}(A)$ or
+$\mathsf{cell}(A)$. The latter is a private location with fixed contract $A$,
+not a source-visible value type.
+
+The value and captured-cell rules are:
+
+$$
+\frac{\Sigma_i=\mathsf{value}(A)}
+ {\Delta;\Sigma\vdash\mathsf{var}(i)\leadsto\mathsf{var}(i):A}
+\qquad
+\frac{\Sigma_i=\mathsf{cell}(A)}
+ {\Delta;\Sigma\vdash\mathsf{read}(i)\leadsto\mathsf{read}(\mathsf{var}(i)):A}.
+$$
+
+There is no ordinary variable rule for a cell slot. The source lowering takes
+its contract from the mutable declaration, never from a point-specific content
+claim. Semantically,
+
+$$
+\llbracket\mathsf{value}(A)\rrbracket_\eta=\llbracket A\rrbracket_\eta,
+\qquad
+\llbracket\mathsf{cell}(A)\rrbracket_\eta=
+\mathsf{bagT}[(\mathsf{valueField},\llbracket A\rrbracket_\eta)].
+$$
+
+Thus `bag_read` reads through the registered location in a satisfying heap;
+it does not preserve a snapshot of its contents or change its world contract.
+
+Nested closure construction and callback invocation have the rules:
+
+$$
+\frac{\Delta;\mathsf{value}(\bar A){+\!+}\Sigma\vdash p\leadsto b:B}
+ {\Delta;\Sigma\vdash\mathsf{lambda}(\bar A,p)\leadsto
+   \mathsf{make}(\mathsf{closure}(|\bar A|,b),\mathsf{null}):\bar A\to B}
+$$
+
+$$
+\frac{\Delta;\Sigma\vdash p_f\leadsto f:\bar A\to B
+ \qquad\Delta;\Sigma\vdash\bar p\leadsto\bar e:\bar C
+ \qquad\Delta\vdash(\bar A\to B)\le(\bar C\to B)}
+ {\Delta;\Sigma\vdash\mathsf{call}(p_f,\bar p)\leadsto
+   \mathsf{call}(f,\bar e):B}.
+$$
+
+The arrow comparison enforces equal arity and contravariant argument
+compatibility. `invocation_of_body` and `make_callable_rule` justify closure
+construction, retaining the outer environment. `call_safe` checks the callee
+and every effectful argument in future worlds before invocation. The existing
+`let_rule` justifies immutable copies; `widen` applies the proved bounded
+subtype relation. No inferred type or producer success flag is a premise.
+
+`Proof.check_safe` proves these constructors safe for every admissible rigid
+assignment satisfying $\Delta$, in every admissible world and satisfying heap.
+For a quantified closure, `ClosureCertificate.check_safe` holds the captured
+environment $\rho$ and world $W$ fixed while quantifying over assignments:
+
+$$
+\forall\eta\models\Delta.\quad
+\mathsf{InvocationSpec}\bigl(|\bar A|,
+ [(\llbracket\bar A\rrbracket_\eta,\llbracket B\rrbracket_\eta)],n,W,
+ \mathsf{instantiate}(|\bar A|,\rho,b)\bigr).
+$$
+
+This is the universal invocation premise of scheme introduction, independent
+of observed calls. `SourceClaimJson.checkJson_safe` requires it alongside the
+enclosing graph's safety proof through exhaustive `CertifiedPlan` cases.
+Certificates are reconstructed in Lean on consumption; source-to-calculus
+correspondence remains part of the stated trust boundary. These theorems prove
+soundness of accepted certificates, not decision completeness of proof search.
 
 **Effects and state.** The behavioural obligation must use the computation
 semantics, not just a relation between input and output values. Schematically,
@@ -2508,8 +2584,9 @@ these rules as `scheme_intro` and `scheme_elim`: one callable value and one
 captured world satisfy every admissible assignment, while elimination selects a
 signature only afterwards. The source checker admits the restricted local
 closure form described above. Schemes do not become graph clauses; checked
-eliminations become ordinary graph arrows, and introduction is currently a
-direct source obligation rather than serialized certificate evidence.
+eliminations become ordinary graph arrows. Introduction requires the
+independently reconstructed rigid-body certificate described above; it is not
+yet serialized as a first-class scheme node in the graph evidence.
 
 **Bound functions.** The internal bound-call descriptor has the rule
 **Bound-Code**:

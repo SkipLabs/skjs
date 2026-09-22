@@ -17,11 +17,23 @@ def ClosedAssign (eta : String -> Fam) : Prop :=
   forall name, Adm (eta name) /\ ValOnly (eta name) /\
     forall n W v, eta name n W v -> Scoped 0 v
 
-/-- A runtime environment realizes the direct types in the certificate. -/
+/-- Runtime slots distinguish immutable values from private mutable locations.
+`cell A` records the location's fixed contract, never its current contents. It
+is internal to certificates, not a second source type representation. -/
+inductive Slot where
+  | value (type : Ty)
+  | cell (contract : Ty)
+  deriving Repr, BEq
+
+def Slot.denote (G : NormalGraph Nat) (eta : String → Fam) : Slot → Fam
+  | .value A => A.denote G eta
+  | .cell A => bagT [(valueField, A.denote G eta)]
+
+/-- A runtime environment realizes the slot contracts in the certificate. -/
 def EnvOk (G : NormalGraph Nat) (eta : String -> Fam)
-    (Gamma : List Ty) (rho : Env) (n : Nat) (W : WorldT n) : Prop :=
+    (Gamma : List Slot) (rho : Env) (n : Nat) (W : WorldT n) : Prop :=
   (forall i, Scoped 0 (rho i)) /\
-    forall i (A : Ty), Gamma[i]? = some A -> Ty.denote G eta A n W (rho i)
+    forall i (A : Slot), Gamma[i]? = some A -> A.denote G eta n W (rho i)
 
 theorem Ty.denote_adm {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta) :
     forall A : Ty, Adm (A.denote G eta)
@@ -38,18 +50,23 @@ theorem Ty.denote_value {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta)
   | arrow params result =>
     exact ⟨(callsT_callable h).val, (callsT_callable h).scoped⟩
 
+theorem Slot.denote_adm {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta) :
+    ∀ A : Slot, Adm (A.denote G eta)
+  | .value A => Ty.denote_adm hC A
+  | .cell _ => bagT_adm _
+
 theorem EnvOk.transfer {G : NormalGraph Nat} {eta Gamma rho n W}
     (hC : ClosedAssign eta) (he : EnvOk G eta Gamma rho n W)
     (j : Nat) (hj : j <= n) (U : WorldT j) (hx : WExt (trunc j hj W) U) :
     EnvOk G eta Gamma rho j U :=
   ⟨he.1, fun i A hi =>
-    (Ty.denote_adm hC A).mono j _ U hx _
-      ((Ty.denote_adm hC A).down_le n j hj W _ (he.2 i A hi))⟩
+    (Slot.denote_adm hC A).mono j _ U hx _
+      ((Slot.denote_adm hC A).down_le n j hj W _ (he.2 i A hi))⟩
 
 theorem EnvOk.push_value {G : NormalGraph Nat} {eta Gamma rho n W A a}
     (hC : ClosedAssign eta) (he : EnvOk G eta Gamma rho n W)
     (ha : A.denote G eta n W a) :
-    EnvOk G eta (A :: Gamma) (push a rho) n W := by
+    EnvOk G eta (.value A :: Gamma) (push a rho) n W := by
   refine ⟨?_, ?_⟩
   · intro i
     cases i with
@@ -63,44 +80,115 @@ theorem EnvOk.push_value {G : NormalGraph Nat} {eta Gamma rho n W A a}
       exact ha
     | succ i => exact he.2 i B hi
 
-/-- Producer-independent proof terms for direct source typing. `widen` is the
-only place subtyping enters; its Boolean premise is covered by
+theorem EnvOk.prepend {G : NormalGraph Nat} {eta Gamma rho n W args} {As : List Ty}
+    (hC : ClosedAssign eta) (he : EnvOk G eta Gamma rho n W)
+    (ha : ArgsT (As.map (Ty.denote G eta)) n W args) :
+    EnvOk G eta (As.map Slot.value ++ Gamma) (prependArgs args rho) n W := by
+  induction As generalizing args with
+  | nil => cases args <;> simp_all [ArgsT, prependArgs]
+  | cons A As ih =>
+    cases args with
+    | nil => exact False.elim ha
+    | cons a args => exact (ih ha.2).push_value hC ha.1
+
+/-- The same body rule serves nested monomorphic closures and quantified
+introduction. Parameters precede captures, which retain their runtime values. -/
+theorem invocation_of_body {G : NormalGraph Nat} {eta Gamma term n W rho}
+    {inputs : List Ty} {result : Ty}
+    (hC : ClosedAssign eta) (he : EnvOk G eta Gamma rho n W)
+    (safe : ∀ j U heap env, EnvOk G eta (inputs.map Slot.value ++ Gamma) env j U →
+      WorldAdm U → HeapOk j U heap →
+      Safe (result.denote G eta) j U heap (instantiate 0 env term)) :
+    InvocationSpec inputs.length [(inputs.map (Ty.denote G eta), result.denote G eta)]
+      n W (instantiate inputs.length rho term) := by
+  refine ⟨instantiate_scoped rho he.1 term inputs.length, ?_⟩
+  intro p hp j hj U hx hu heap hh args ha
+  have hp' : p = (inputs.map (Ty.denote G eta), result.denote G eta) :=
+    List.mem_singleton.mp hp
+  subst p
+  have hlength : args.length = inputs.length := by
+    simpa only [List.length_map] using ArgsT_length ha
+  have he' := (he.transfer hC j (Nat.le_of_lt hj) U hx).prepend hC ha
+  have hscoped : ∀ (As : List Ty) args, ArgsT (As.map (Ty.denote G eta)) j U args →
+      ∀ a ∈ args, Scoped 0 a := by
+    intro As
+    induction As with
+    | nil => intro args ha; cases args <;> simp_all [ArgsT]
+    | cons A As ih =>
+      intro args ha
+      cases args with
+      | nil => exact False.elim ha
+      | cons a args =>
+        intro v hv
+        rcases List.mem_cons.mp hv with rfl | hv
+        · exact (Ty.denote_value hC ha.1).2
+        · exact ih args ha.2 v hv
+  unfold CallArguments.bindParameters
+  rw [← hlength, CallArguments.parameters_exact]
+  rw [show args.length = 0 + args.length from (Nat.zero_add _).symm,
+    instantiate_args rho he.1 (hscoped inputs args ha)]
+  exact safe j U heap _ he' hu hh
+
+theorem Ty.denoteList_eq_map (G : NormalGraph Nat) (eta : String → Fam) (As : List Ty) :
+    Ty.denoteList G eta As = As.map (Ty.denote G eta) := by
+  induction As with
+  | nil => rfl
+  | cons A As ih => simp only [Ty.denoteList, List.map_cons, ih]
+
+/-- Producer-independent proof terms for direct source typing. Widening and
+call compatibility use subtyping; their Boolean premises are covered by
 `DirectObligation.Ty.leUnder_sound`. -/
 inductive Proof where
   | var (index : Nat)
+  | read (index : Nat)
   | widen (expected : Ty) (body : Proof)
   | letE (init body : Proof)
+  | lambda (inputs : List Ty) (body : Proof)
+  | call (callee : Proof) (args : List Proof)
   deriving Repr, BEq
 
 /-- Validation reconstructs both the calculus term and its direct type. -/
-def Proof.check (parameters : List Parameter) (Gamma : List Ty) :
+def Proof.check (parameters : List Parameter) (Gamma : List Slot) :
     Proof -> Option (Tm × Ty)
   | .var index => match Gamma[index]? with
-      | some A => some (.var index, A)
+      | some (.value A) => some (.var index, A)
+      | some (.cell _) | none => none
+  | .read index => match Gamma[index]? with
+      | some (.cell A) => some (.read (.var index), A)
+      | some (.value _) | none => none
+
+  | .lambda inputs body => match body.check parameters (inputs.map Slot.value ++ Gamma) with
+      | some (term, result) => some (.make (.closure inputs.length term) .nul, .arrow inputs result)
       | none => none
+  | .call callee args => do
+      let (fn, .arrow inputs result) ← callee.check parameters Gamma | none
+      let actuals ← args.mapM (fun arg => arg.check parameters Gamma)
+      if (Ty.arrow inputs result).leUnder parameters (.arrow (actuals.map Prod.snd) result) then
+        some (.call fn (actuals.map Prod.fst), result)
+      else none
   | .widen expected body => match body.check parameters Gamma with
       | some (term, actual) =>
         if actual.leUnder parameters expected then some (term, expected) else none
       | none => none
   | .letE init body => match init.check parameters Gamma with
-      | some (a, A) => match body.check parameters (A :: Gamma) with
+      | some (a, A) => match body.check parameters (.value A :: Gamma) with
           | some (b, B) => some (.letE a b, B)
           | none => none
       | none => none
 
 private theorem var_safe {G : NormalGraph Nat} {eta Gamma i A n W heap rho}
-    (hC : ClosedAssign eta) (hi : Gamma[i]? = some A)
+    (hC : ClosedAssign eta) (hi : Gamma[i]? = some (.value A))
     (he : EnvOk G eta Gamma rho n W) :
     Safe (A.denote G eta) n W heap (instantiate 0 rho (.var i)) := by
   simp only [instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero]
   exact value_safe _ _ _ _ _ (Ty.denote_value hC (he.2 _ _ hi)).1 (he.2 _ _ hi)
 
-private theorem let_safe {G : NormalGraph Nat} {eta} {Gamma : List Ty} {A B : Ty}
+private theorem let_safe {G : NormalGraph Nat} {eta} {Gamma : List Slot} {A B : Ty}
     {a b n W heap rho}
     (hC : ClosedAssign eta)
     (iha : forall n W heap rho, EnvOk G eta Gamma rho n W -> WorldAdm W -> HeapOk n W heap ->
       Safe (A.denote G eta) n W heap (instantiate 0 rho a))
-    (ihb : forall n W heap rho, EnvOk G eta (A :: Gamma) rho n W -> WorldAdm W -> HeapOk n W heap ->
+    (ihb : forall n W heap rho, EnvOk G eta (.value A :: Gamma) rho n W -> WorldAdm W -> HeapOk n W heap ->
       Safe (B.denote G eta) n W heap (instantiate 0 rho b))
     (he : EnvOk G eta Gamma rho n W) (hw : WorldAdm W) (hh : HeapOk n W heap) :
     Safe (B.denote G eta) n W heap (instantiate 0 rho (.letE a b)) := by
@@ -118,24 +206,62 @@ private theorem let_safe {G : NormalGraph Nat} {eta} {Gamma : List Ty} {A B : Ty
     exact ihb k _ heap' (push av rho) he' (WorldAdm_trunc _ hu)
       (HeapOk_trunc k U heap' hok)
 
+private theorem checked_argument {f : α → Option β} {xs : List α} {ys : List β}
+    (h : xs.mapM f = some ys) {y : β} (hy : y ∈ ys) :
+    ∃ x ∈ xs, f x = some y := by
+  induction xs generalizing ys with
+  | nil => simp at h; subst ys; contradiction
+  | cons x xs ih =>
+    cases hx : f x with
+    | none => simp [List.mapM_cons, hx] at h
+    | some v =>
+      cases ht : xs.mapM f with
+      | none => simp [List.mapM_cons, hx, ht] at h
+      | some vs =>
+        simp [List.mapM_cons, hx, ht] at h
+        subst ys
+        rcases List.mem_cons.mp hy with rfl | hy
+        · exact ⟨x, by simp, hx⟩
+        · obtain ⟨a, ha, hf⟩ := ih ht hy
+          exact ⟨a, by simp [ha], hf⟩
+
 /-- Successful validation is a semantic certificate for every admissible
 interpretation satisfying the declared bounds. -/
-theorem Proof.check_safe {G : NormalGraph Nat} {parameters} {Gamma : List Ty}
+theorem Proof.check_safe {G : NormalGraph Nat} {parameters} {Gamma : List Slot}
     {proof : Proof} {term : Tm} {A : Ty}
     (hc : proof.check parameters Gamma = some (term, A)) {eta}
     (hC : ClosedAssign eta) (hs : DirectObligation.Satisfies G eta parameters) :
     forall n W heap rho, EnvOk G eta Gamma rho n W -> WorldAdm W -> HeapOk n W heap ->
       Safe (A.denote G eta) n W heap (instantiate 0 rho term) := by
-  induction proof generalizing Gamma term A with
+  cases hproof : proof with
   | var index =>
+    simp only [hproof] at hc
     cases hi : Gamma[index]? with
     | none => simp [Proof.check, hi] at hc
-    | some A' =>
-      simp only [Proof.check, hi, Option.some.injEq, Prod.mk.injEq] at hc
-      obtain ⟨rfl, rfl⟩ := hc
-      intro n W heap rho he _ _
-      exact var_safe hC hi he
-  | widen expected body ih =>
+    | some slot =>
+      cases slot with
+      | cell A' => simp [Proof.check, hi] at hc
+      | value A' =>
+        simp only [Proof.check, hi, Option.some.injEq, Prod.mk.injEq] at hc
+        obtain ⟨rfl, rfl⟩ := hc
+        intro n W heap rho he _ _
+        exact var_safe hC hi he
+  | read index =>
+    simp only [hproof] at hc
+    cases hi : Gamma[index]? with
+    | none => simp [Proof.check, hi] at hc
+    | some slot =>
+      cases slot with
+      | value A' => simp [Proof.check, hi] at hc
+      | cell A' =>
+        simp only [Proof.check, hi, Option.some.injEq, Prod.mk.injEq] at hc
+        obtain ⟨rfl, rfl⟩ := hc
+        intro n W heap rho he hw hh
+        simp only [Tm.read, instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero]
+        exact bag_read (fun _ _ _ hv => (Ty.denote_value hC hv).1)
+          (List.mem_singleton_self _) (he.2 _ _ hi) hw hh
+  | widen expected body =>
+    simp only [hproof] at hc
     cases hp : body.check parameters Gamma with
     | none => simp [Proof.check, hp] at hc
     | some pair =>
@@ -145,28 +271,93 @@ theorem Proof.check_safe {G : NormalGraph Nat} {parameters} {Gamma : List Ty}
         obtain ⟨rfl, rfl⟩ := hc
         intro n W heap rho he hw hh
         exact Safe_mono n (fun k _ => Ty.leUnder_sound hs hle k) W heap _
-          (ih hp n W heap rho he hw hh)
+          (Proof.check_safe (proof := body) hp hC hs n W heap rho he hw hh)
       · simp [Proof.check, hp, hle] at hc
-  | letE init body ihInit ihBody =>
+  | letE init body =>
+    simp only [hproof] at hc
     cases hpInit : init.check parameters Gamma with
     | none => simp [Proof.check, hpInit] at hc
     | some pair =>
       obtain ⟨a, TA⟩ := pair
-      cases hpBody : body.check parameters (TA :: Gamma) with
+      cases hpBody : body.check parameters (.value TA :: Gamma) with
       | none => simp [Proof.check, hpInit, hpBody] at hc
       | some pair =>
         obtain ⟨b, TB⟩ := pair
         simp only [Proof.check, hpInit, hpBody, Option.some.injEq, Prod.mk.injEq] at hc
         obtain ⟨rfl, rfl⟩ := hc
         intro n W heap rho he hw hh
-        exact let_safe hC (ihInit hpInit) (ihBody hpBody) he hw hh
+        exact let_safe hC (Proof.check_safe (proof := init) hpInit hC hs)
+          (Proof.check_safe (proof := body) hpBody hC hs) he hw hh
+  | lambda inputs body =>
+    simp only [hproof] at hc
+    cases hp : body.check parameters (inputs.map Slot.value ++ Gamma) with
+    | none => simp [Proof.check, hp] at hc
+    | some pair =>
+      obtain ⟨b, B⟩ := pair
+      simp only [Proof.check, hp, Option.some.injEq, Prod.mk.injEq] at hc
+      obtain ⟨rfl, rfl⟩ := hc
+      intro n W heap rho he hw hh
+      simp only [instantiate, Nat.zero_add]
+      have code := invocation_of_body hC he (Proof.check_safe (proof := body) hp hC hs)
+      have hs := make_callable_rule nulT_adm inputs.length n W heap _ .nul code rfl hw hh rfl
+      apply Safe_mono n _ W heap _ hs
+      intro j hj U v hv
+      simpa only [Ty.denote, Ty.denoteList_eq_map] using hv.2
+  | call callee args =>
+    simp only [hproof] at hc
+    cases hf : callee.check parameters Gamma with
+    | none => simp [Proof.check, hf] at hc
+    | some pair =>
+      obtain ⟨f, F⟩ := pair
+      cases F with
+      | rigid name => simp [Proof.check, hf] at hc
+      | ground labels => simp [Proof.check, hf] at hc
+      | arrow inputs result =>
+        cases ha : args.mapM (fun arg => arg.check parameters Gamma) with
+        | none => simp [Proof.check, hf, ha] at hc
+        | some actuals =>
+          by_cases ht : (Ty.arrow inputs result).leUnder parameters
+              (.arrow (actuals.map Prod.snd) result) = true
+          · simp [Proof.check, hf, ha, ht] at hc
+            obtain ⟨rfl, rfl⟩ := hc
+            intro n W heap rho he hw hh
+            simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
+            have call := call_safe (B := result.denote G eta) (f := instantiate 0 rho f)
+              (actuals.map fun p => (p.2.denote G eta, instantiate 0 rho p.1))
+              (by
+                intro p hp
+                obtain ⟨q, _, rfl⟩ := List.mem_map.mp hp
+                exact Ty.denote_adm hC q.2)
+              (by
+                intro p hp
+                obtain ⟨q, _, rfl⟩ := List.mem_map.mp hp
+                exact fun _ _ _ hv => (Ty.denote_value hC hv).1)
+              hw hh
+            apply (by simpa only [List.map_map, Function.comp_def] using call)
+            · have safe := Safe_mono n (fun j _ => Ty.leUnder_sound hs ht j)
+                W heap _ (Proof.check_safe (proof := callee) hf hC hs n W heap rho he hw hh)
+              simpa only [Ty.denote, Ty.denoteList_eq_map, List.map_map,
+                Function.comp_def] using safe
+            · intro p hp
+              obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+              obtain ⟨arg, harg, hcArg⟩ := checked_argument ha hq
+              intro j hj U hx hu heap' hh'
+              exact Proof.check_safe (proof := arg) hcArg hC hs j U heap' rho
+                (he.transfer hC j hj U hx) hu hh'
+          · simp [Proof.check, hf, ha, ht] at hc
+termination_by sizeOf proof
+decreasing_by
+  all_goals simp_all
+  all_goals try omega
+  all_goals have hsize := List.sizeOf_lt_of_mem harg
+  all_goals omega
 
 /-- A complete direct-body certificate. The result is stored separately so
-the acceptance boundary can demand that proof checking reconstruct exactly
-the declared contract. -/
+the acceptance boundary checks the reconstructed result against the declared
+contract using the proved subtype relation. -/
 structure Certificate where
   parameters : List Parameter
-  inputs : List Ty
+  inputs : List Slot
   result : Ty
   proof : Proof
   deriving Repr, BEq
@@ -217,26 +408,15 @@ environment is held fixed across all interpretations of the quantified names. -/
 structure ClosureCertificate where
   parameters : List Parameter
   inputs : List Ty
-  captures : List Ty
+  captures : List Slot
   result : Ty
   proof : Proof
   deriving Repr, BEq
 
 def ClosureCertificate.body (c : ClosureCertificate) : Certificate :=
-  ⟨c.parameters, c.inputs ++ c.captures, c.result, c.proof⟩
+  ⟨c.parameters, c.inputs.map Slot.value ++ c.captures, c.result, c.proof⟩
 
 def ClosureCertificate.check (c : ClosureCertificate) : Option Tm := c.body.check
-
-theorem EnvOk.prepend {G : NormalGraph Nat} {eta Gamma rho n W As args}
-    (hC : ClosedAssign eta) (he : EnvOk G eta Gamma rho n W)
-    (ha : ArgsT (As.map (Ty.denote G eta)) n W args) :
-    EnvOk G eta (As ++ Gamma) (prependArgs args rho) n W := by
-  induction As generalizing args with
-  | nil => cases args <;> simp_all [ArgsT, prependArgs]
-  | cons A As ih =>
-    cases args with
-    | nil => exact False.elim ha
-    | cons a args => exact (ih ha.2).push_value hC ha.1
 
 /-- Universal code safety in one captured environment and world. This is the
 invocation premise of scheme introduction, not a list of observed instances. -/
@@ -255,36 +435,11 @@ theorem ClosureCertificate.check_safe {G : NormalGraph Nat} {c : ClosureCertific
   refine ⟨term, hc, ?_⟩
   intro n W rho henv eta hC hs
   have he := henv eta hC hs
-  refine ⟨instantiate_scoped rho he.1 term c.inputs.length, ?_⟩
-  intro p hp j hj U hx hu heap hh args ha
-  have hp' : p = (c.inputs.map (Ty.denote G eta), c.result.denote G eta) :=
-    List.mem_singleton.mp hp
-  subst p
-  have hlength : args.length = c.inputs.length := by
-    simpa only [List.length_map] using ArgsT_length ha
-  have he' := (he.transfer hC j (Nat.le_of_lt hj) U hx).prepend hC ha
-  have hscoped : ∀ (As : List Ty) args, ArgsT (As.map (Ty.denote G eta)) j U args →
-      ∀ a ∈ args, Scoped 0 a := by
-    intro As
-    induction As with
-    | nil => intro args ha; cases args <;> simp_all [ArgsT]
-    | cons A As ih =>
-      intro args ha
-      cases args with
-      | nil => exact False.elim ha
-      | cons a args =>
-        intro v hv
-        rcases List.mem_cons.mp hv with rfl | hv
-        · exact (Ty.denote_value hC ha.1).2
-        · exact ih args ha.2 v hv
-  unfold CallArguments.bindParameters
-  rw [← hlength, CallArguments.parameters_exact]
-  rw [show args.length = 0 + args.length from (Nat.zero_add _).symm,
-    instantiate_args rho he.1 (hscoped c.inputs args ha)]
   obtain ⟨body, hb, safe⟩ := Certificate.check_safe (G := G) hc
   have eq : body = term := Option.some.inj (hb.symm.trans hc)
   subst body
-  exact safe eta hC hs j U heap _ he' hu hh
+  exact invocation_of_body hC he (safe eta hC hs)
 
+#print axioms invocation_of_body
 #print axioms ClosureCertificate.check_safe
 end Verification.ExperimentState.GenericCertificate

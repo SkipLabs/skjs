@@ -62,12 +62,15 @@ A closure that satisfies each observed call but cannot produce an arbitrary
 rigid result is refused at that gate, whatever its calls.
 
 Final acceptance also requires a semantic certificate for that universal check.
-Immutable variable-return closures reconstruct a `ClosureCertificate`, checked
+Closures built from immutable reads, captured-cell reads, nested closures and callback calls
+reconstruct a `ClosureCertificate`, checked
 independently of observed calls. Its theorem establishes the invocation
 contract for every admissible instantiation, keeping the captured environment
 and world fixed. The enclosing function must also pass ordinary graph evidence
-checking. Returned closures, callbacks and mutable capture contexts still lack
-these certificates and appear as located certification gaps in the viewer.
+checking. Captured runtime slots distinguish values from cell identities, and
+cell contracts come from the source's storage annotations. Ordinary variable
+proofs cannot expose these private identities; reading one requires a cell-read
+proof. Writes within a quantified body still lack a certificate constructor.
 
 The executable source slice is narrower than the semantic scheme rules. A
 containing function may declare one immutable quantified closure. A binder may

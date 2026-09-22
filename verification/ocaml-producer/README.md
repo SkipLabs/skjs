@@ -197,18 +197,20 @@ truth for outcomes; this table records why the next rows matter.
 | Quantified closure, one inferred call | complete | `generic-closure.ts` | Keep a scheme in SourceClaims and validate its body universally |
 | One closure called at two types | complete | `generic-two-calls.ts`, `invalid-scheme-capture.ts` | Give each call fresh proposal state; do not specialize the stored scheme |
 | Bounded quantified closure | complete | `generic-bounded.ts`, `invalid-bound-reversed.ts`, `invalid-bound-body.ts` | Export and validate the concrete substitution and every bound obligation |
-| Returned quantified/outer-dependent closure | implementation complete; certification pending | `generic-returned.ts`, `invalid-returned-capture.ts` | Preserve nested scope and avoid capture during substitution |
-| Quantified closure with captured storage | implementation complete; certification pending | `generic-captured-store.ts`, `invalid-captured-write.ts` | Keep one fixed world contract across every instantiation |
-| Generic callback argument | implementation complete; certification pending | `generic-callback.ts`, `invalid-callback-variance.ts`, `invalid-callback-result.ts` | Collect directional constraints without placing solver state in semantic types |
+| Returned quantified/outer-dependent closure | complete | `generic-returned.ts`, `invalid-returned-capture.ts` | Preserve nested scope and avoid capture during substitution |
+| Quantified closure reading captured storage | complete | `generic-captured-store.ts`, `invalid-captured-write.ts` | Keep one fixed world contract across every instantiation |
+| Generic callback argument | complete | `generic-callback.ts`, `invalid-callback-variance.ts`, `invalid-callback-result.ts` | Collect directional constraints without placing solver state in semantic types |
 | Optional object-field presence | blocked at shared source/proof boundary | `optional-field.ts` | Model absence separately from a present `undefined` value |
 | Bare return and implicit completion | blocked at shared parser | `bare-return.ts`, `empty-closure.ts` | Represent completion and discarded results explicitly |
 | Arbitrary numeric array indexing | blocked in lowering | `dynamic-index.ts` | Prove a general index obligation rather than inventing a singleton key |
 | Inferred mutable lifetime contract | deferred flow milestone | `unsupported.ts` | Solve one invariant against initialization and every write before publication |
 
-Agents should next close semantic certification for the implemented quantified
-closure rows. Their source and inference implementations are present, but their positive
-witnesses deliberately remain gaps until the executable checker is connected to
-the scheme semantics. After that, take the first incomplete row whose prerequisite
+The useful-completeness target for the previously flipped examples is closed:
+all their positive witnesses have semantic certificates. Captured slots are
+represented as cell identities with source-declared fixed contracts, and reads
+are proved through those cells. This is not decision completeness or support
+for every source form the preliminary checker understands: writes inside a
+quantified body still need their own certificate constructor. Next, take the first incomplete row whose prerequisite
 representation already exists. This slice admits one quantified closure per
 containing function and refuses a second by name. For every quantified row, rewriting a closure to the finite overloads observed in that
 program, checking its body once per observed call, or replacing its scheme claim
@@ -248,18 +250,20 @@ explicit substitution, and compiles the checked eliminations to ordinary arrows.
 The executable subtype gate is connected to ordinary semantic families:
 `DirectObligation.Ty.leUnder_sound` proves its rigid-bound, ground-union and
 contravariant/covariant arrow cases denote inclusion. For immutable
-variable-return closures, `GenericSource.closureCertificate` reconstructs a
+reads, captured-cell reads, nested closures and callback calls, `GenericSource.closureCertificate` reconstructs a
 proof independently of observed calls.
 `GenericCertificate.ClosureCertificate.check_safe` establishes `InvocationSpec`
 for every admissible assignment satisfying the bounds, with one unchanged
 capture environment and world. This is the universal code premise of scheme
 introduction. Final acceptance requires this certificate as well as the
-enclosing function's graph evidence. The broader `GenericSource.closureTy`
-checker remains uncertified for returned closures, callbacks and captured cells;
-those plans still fail final certification.
+enclosing function's graph evidence. Cell slots carry their declaration's fixed
+contract; `bag_read` proves reads through the captured identity. Nested closure
+proofs use safe allocation and the same invocation
+lemma as universal introduction. Callback proofs use the existing effectful
+call rule for the callee and every argument, with subtyping at the call boundary.
 The general rules are still **not** a general executable scheme certificate
 checker: nested quantified schemes, arbitrary substitution evidence
-and body proof reconstruction still need implementing, and the compiled arrows
+and further body proof constructors still need implementing, and the compiled arrows
 are consequences carried by the graph rather than a certificate of the scheme
 itself. `identity_scheme_safe` is a closed model example; executable acceptance
 uses the general `ClosureCertificate.check_safe` theorem instead. Recursive scheme graph
@@ -356,14 +360,13 @@ reverses its binder's bound, bad contextual initializers and stale heap refineme
 Three direct generic examples now cross the semantic-certificate boundary:
 `generics.ts`, `aliases.ts` and `generic-inferred.ts`. Universal closure
 certification also restores `generic-closure.ts`, `generic-two-calls.ts` and
-`generic-bounded.ts`. Four functions in the remaining three breadth files reach
-the scheme checker and generate applicable ground graph evidence, but final
-certification keeps them as located gaps: `generic-returned.ts`,
-`generic-captured-store.ts` and `generic-callback.ts`.
-They become verified only when the source checker is proved to establish the
-semantic scheme premises.
+`generic-bounded.ts`, plus the returned closure in `generic-returned.ts` and both
+callback functions in `generic-callback.ts`. `capturedStore` in
+`generic-captured-store.ts` now verifies through the fixed-contract cell-read
+certificate. All nine files that flipped when the acceptance hole was sealed
+are restored without weakening that boundary.
 
-The other five named gaps are:
+The five remaining named gaps are:
 
 - `unsupported.ts`: OCaml refuses an unannotated mutable binding rather than
   guessing a lifetime contract. Constraint-based contract inference is pending.
@@ -393,7 +396,7 @@ semantic model, and it is separate from completeness of graph proof search.
 Successful certification uses the existing Lean certificate consumer and its
 soundness theorems for the modeled fragment. The OCaml inference algorithm is
 not itself proved correct; a bad proposal must fail validation. Generic
-variable-copy certificates and immutable variable-return closure certificates
+variable-copy certificates and immutable read/closure/call certificates
 are checked at the `CertifiedPlan` boundary and covered by `checkJson_safe`.
 Other scheme checking still runs in both Lean phases, but its success is not
 promoted to verification until the missing semantic theorem is connected there.
