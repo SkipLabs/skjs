@@ -87,7 +87,10 @@ export type Expr =
       k: "lambda";
       pos: Span;
       typeParams: TypeParamAst[];
-      params: { name: string; type: ClaimType }[];
+      /* `type` is what the body reads. A parameter with a `default` also
+         admits `undefined` where the closure is called: that is the value a
+         short call binds, and the default replaces it before the body runs. */
+      params: { name: string; type: ClaimType; default?: Expr }[];
       result: ClaimType;
       body: Expr;
     }

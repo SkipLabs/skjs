@@ -247,6 +247,27 @@ theorem ArgsT_length {As k W args} (h : ArgsT As k W args) :
     | nil => exact False.elim h
     | cons a args => exact congrArg Nat.succ (ih h.2)
 
+theorem ArgsT_append {As Bs : List Fam} {k W args brgs}
+    (h : ArgsT As k W args) (h' : ArgsT Bs k W brgs) :
+    ArgsT (As ++ Bs) k W (args ++ brgs) := by
+  induction As generalizing args with
+  | nil => cases args with
+    | nil => exact h'
+    | cons a args => exact False.elim h
+  | cons A As ih =>
+    cases args with
+    | nil => exact False.elim h
+    | cons a args => exact ⟨h.1, ih h.2⟩
+
+/-- Contracts that admit `undefined` are satisfied by the slots a short call
+leaves for the machine to pad. -/
+theorem ArgsT_undef {Us : List Fam} {k W} (h : ∀ A ∈ Us, A k W .undef) :
+    ArgsT Us k W (List.replicate Us.length .undef) := by
+  induction Us with
+  | nil => trivial
+  | cons A Us ih =>
+    exact ⟨h A (by simp), ih fun B hB => h B (by simp [hB])⟩
+
 /-- Argument membership is covariant pointwise. This is the list-shaped
 premise used by callable subtyping: an implementation accepting `Bs` can be
 used where callers supply the narrower `As` when every `A ≤ B`. -/
@@ -450,6 +471,25 @@ theorem callsT_invoke {L k W v} (hf : callsT L k W v)
   obtain ⟨arity, b, fs, rfl, hs⟩ := hf
   have hi := CallArguments.Invoke.closure (fs := fs) (body := b) (arity := arity) (ArgsT_values hA ha)
   exact ⟨_, hi, hs.invoke hp hj hx hu hh ha hi⟩
+
+/-- A call may omit trailing actuals. The selected signature still covers the
+list padded with `undefined`, and the dispatched body is the same term, because
+`parameters` already supplies `undefined` for every slot the call does not
+write. Omission is therefore not a second binding rule. -/
+theorem callsT_invoke_short {L k W v} (hf : callsT L k W v)
+    {p : List Fam × Fam} (hp : p ∈ L) {j : Nat} (hj : j < k) {U : WorldT j}
+    (hx : WExt (trunc j (Nat.le_of_lt hj) W) U) (hu : WorldAdm U)
+    {heap : Heap} (hh : HeapOk j U heap) {args pad : List Tm}
+    (hpad : ∀ a ∈ pad, a = .undef)
+    (hA : ∀ A ∈ p.1, ValOnly A) (ha : ArgsT p.1 j U (args ++ pad)) :
+    ∃ result, CallArguments.Invoke ⟨v, args⟩ result ∧ Safe p.2 j U heap result := by
+  obtain ⟨arity, b, fs, rfl, hs⟩ := hf
+  have hvals := ArgsT_values hA ha
+  refine ⟨_, CallArguments.Invoke.closure (fs := fs) (body := b) (arity := arity)
+    (fun a hm => hvals a (List.mem_append_left pad hm)), ?_⟩
+  have hsafe := hs.invoke hp hj hx hu hh ha
+    (CallArguments.Invoke.closure (fs := fs) (body := b) (arity := arity) hvals)
+  rwa [CallArguments.bindParameters_pad arity args pad b hpad] at hsafe
 
 /-- The existing unary judgment is a specialization of list invocation. -/
 def CodeSpec (L : List (Fam × Fam)) (k : Nat) (W : WorldT k) (b : Tm) : Prop :=

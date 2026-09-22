@@ -169,6 +169,31 @@ theorem parameters_exact (args : List Tm) : parameters args.length args = args :
   | nil => rfl
   | cons a args ih => simp [parameters, ih]
 
+/-- Trailing `undefined` actuals are exactly what padding already supplies, so a
+call that omits them dispatches the same body term as the call that writes them
+out. An omitted parameter is therefore not a second binding rule. -/
+theorem parameters_pad (n : Nat) (args pad : List Tm) (hp : ∀ a ∈ pad, a = .undef) :
+    parameters n (args ++ pad) = parameters n args := by
+  induction n generalizing args pad with
+  | zero => rfl
+  | succ n ih =>
+    cases args with
+    | nil =>
+      cases pad with
+      | nil => rfl
+      | cons a pad =>
+        cases hp a (by simp)
+        simp only [List.nil_append, parameters]
+        exact congrArg _ (ih [] pad fun v hv => hp v (by simp [hv]))
+    | cons a args =>
+      simp only [List.cons_append, parameters]
+      exact congrArg _ (ih args pad hp)
+
+theorem bindParameters_pad (arity : Nat) (args pad : List Tm) (body : Tm)
+    (hp : ∀ a ∈ pad, a = .undef) :
+    bindParameters arity (args ++ pad) body = bindParameters arity args body := by
+  simp only [bindParameters, parameters_pad arity args pad hp]
+
 /-- Position i receives actual i if present, otherwise undefined. -/
 theorem parameter_at (hi : i < n) :
     (parameters n args)[i]? = some (args[i]?.getD .undef) := by

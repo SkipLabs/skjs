@@ -71,8 +71,13 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   -- bag, so the shape of that allocation is fixed here rather than claimed.
   | .funE, .makeAt (.closure arity b) ns inits, ps =>
     ns = [valueField] ∧ inits = [Tm.nul] ∧ funEPremises G j.context j.type arity b ps
+  -- The actual premises come first, in order, then one premise per position the
+  -- selected signature declares and this call omits. Each of those proves
+  -- `undefined` at its declared type: the value the machine binds there.
   | .app, .call f args, jf :: jas =>
-    jf.context = j.context ∧ jf.term = f ∧ jas.map Sequent.term = args ∧
+    jf.context = j.context ∧ jf.term = f ∧
+    (jas.take args.length).map Sequent.term = args ∧
+    (∀ ja ∈ jas.drop args.length, ja.term = .undef) ∧
     (∀ ja ∈ jas, ja.context = j.context) ∧
     match expand G jf.type with
     | [.arrs L] => (jas.map Sequent.type, j.type) ∈ L
@@ -179,7 +184,9 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
       ps.drop ns.length = L.map (fun p => ⟨p.1 ++ j.context,b,p.2⟩)
     | _ => False
   | .callCallable, .call f args, jf :: jas =>
-    jf.context = j.context ∧ jf.term = f ∧ jas.map Sequent.term = args ∧
+    jf.context = j.context ∧ jf.term = f ∧
+    (jas.take args.length).map Sequent.term = args ∧
+    (∀ ja ∈ jas.drop args.length, ja.term = .undef) ∧
     (∀ ja ∈ jas, ja.context = j.context) ∧
     match expand G jf.type with
     | [.callable _ _ L] => (jas.map Sequent.type,j.type) ∈ L
@@ -277,19 +284,33 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
       exact List.mem_map.mpr ⟨p, hmem, rfl⟩
     · contradiction
   · rename_i f args jf jas
-    rcases hl with ⟨hΓf, htf, hargs, hcontexts, hL⟩
+    rcases hl with ⟨hΓf, htf, hargs, hundef, hcontexts, hL⟩
     have hf := hp jf (by simp)
     rw [hΓf, htf] at hf
     split at hL
     · rename_i L he
-      have ha : ∀ p ∈ jas.map (fun ja => (ja.type,ja.term)), HasTy G Γ p.2 p.1 := by
+      -- The actual premises and the omitted-position premises are the same list,
+      -- split at the number of actuals the call writes.
+      have ha : ∀ p ∈ (jas.take args.length).map (fun ja => (ja.type,ja.term)),
+          HasTy G Γ p.2 p.1 := by
         intro p hm
         obtain ⟨ja,hja,rfl⟩ := List.mem_map.mp hm
-        have h := hp ja (List.mem_cons_of_mem _ hja)
-        rw [hcontexts ja hja] at h
+        have h := hp ja (List.mem_cons_of_mem _ (List.mem_of_mem_take hja))
+        rw [hcontexts ja (List.mem_of_mem_take hja)] at h
         exact h
-      have h := HasTy.app hf he (xs := jas.map (fun ja => (ja.type,ja.term)))
-        (by simpa only [List.map_map,Function.comp_def] using hL) ha
+      have hu : ∀ A ∈ (jas.drop args.length).map Sequent.type, HasTy G Γ .undef A := by
+        intro A hm
+        obtain ⟨ja,hja,rfl⟩ := List.mem_map.mp hm
+        have h := hp ja (List.mem_cons_of_mem _ (List.mem_of_mem_drop hja))
+        rw [hcontexts ja (List.mem_of_mem_drop hja), hundef ja hja] at h
+        exact h
+      have hsplit : ((jas.take args.length).map (fun ja => (ja.type,ja.term))).map Prod.fst
+          ++ (jas.drop args.length).map Sequent.type = jas.map Sequent.type := by
+        simp only [List.map_map, Function.comp_def]
+        rw [← List.map_append, List.take_append_drop]
+      have h := HasTy.app hf he (xs := (jas.take args.length).map (fun ja => (ja.type,ja.term)))
+        (Us := (jas.drop args.length).map Sequent.type)
+        (by rw [hsplit]; exact hL) ha hu
       simpa only [List.map_map,Function.comp_def,hargs] using h
     · contradiction
   · rename_i a b ja jb
@@ -547,19 +568,33 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
       exact this
     · contradiction
   · rename_i f args jf jas
-    rcases hl with ⟨hΓf, htf, hargs, hcontexts, hL⟩
+    rcases hl with ⟨hΓf, htf, hargs, hundef, hcontexts, hL⟩
     have hf := hp jf (by simp)
     rw [hΓf, htf] at hf
     split at hL
     · rename_i P Ps L he
-      have ha : ∀ p ∈ jas.map (fun ja => (ja.type,ja.term)), HasTy G Γ p.2 p.1 := by
+      -- The actual premises and the omitted-position premises are the same list,
+      -- split at the number of actuals the call writes.
+      have ha : ∀ p ∈ (jas.take args.length).map (fun ja => (ja.type,ja.term)),
+          HasTy G Γ p.2 p.1 := by
         intro p hm
         obtain ⟨ja,hja,rfl⟩ := List.mem_map.mp hm
-        have h := hp ja (List.mem_cons_of_mem _ hja)
-        rw [hcontexts ja hja] at h
+        have h := hp ja (List.mem_cons_of_mem _ (List.mem_of_mem_take hja))
+        rw [hcontexts ja (List.mem_of_mem_take hja)] at h
         exact h
-      have h := HasTy.callCallable hf he (xs := jas.map (fun ja => (ja.type,ja.term)))
-        (by simpa only [List.map_map,Function.comp_def] using hL) ha
+      have hu : ∀ A ∈ (jas.drop args.length).map Sequent.type, HasTy G Γ .undef A := by
+        intro A hm
+        obtain ⟨ja,hja,rfl⟩ := List.mem_map.mp hm
+        have h := hp ja (List.mem_cons_of_mem _ (List.mem_of_mem_drop hja))
+        rw [hcontexts ja (List.mem_of_mem_drop hja), hundef ja hja] at h
+        exact h
+      have hsplit : ((jas.take args.length).map (fun ja => (ja.type,ja.term))).map Prod.fst
+          ++ (jas.drop args.length).map Sequent.type = jas.map Sequent.type := by
+        simp only [List.map_map, Function.comp_def]
+        rw [← List.map_append, List.take_append_drop]
+      have h := HasTy.callCallable hf he (xs := (jas.take args.length).map (fun ja => (ja.type,ja.term)))
+        (Us := (jas.drop args.length).map Sequent.type)
+        (by rw [hsplit]; exact hL) ha hu
       simpa only [List.map_map,Function.comp_def,hargs] using h
     · contradiction
   · rename_i a ja
@@ -682,20 +717,39 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
         exact ih p hp
       · obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hj
         exact ihb p hp
-  | @callCallable Γ f F P Ps L xs B hf hr hp ha ihf iha =>
+  | @callCallable Γ f F P Ps L xs B Us hf hr hp ha hu ihf iha ihu =>
     apply node_complete (r := .callCallable)
-      (js := ⟨Γ,f,F⟩ :: xs.map (fun p => ⟨Γ,p.2,p.1⟩))
-    · refine ⟨rfl,rfl,?_,?_,?_⟩
-      · simp only [List.map_map,Function.comp_def]
-      · intro ja hj
-        obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hj
+      (js := ⟨Γ,f,F⟩ :: (xs.map (fun p => ⟨Γ,p.2,p.1⟩) ++ Us.map (fun A => ⟨Γ,.undef,A⟩)))
+    · have hlenx : (xs.map (fun p => (⟨Γ,p.2,p.1⟩ : Sequent ι))).length
+          = (xs.map Prod.snd).length := by simp
+      refine ⟨rfl,rfl,?_,?_,?_,?_⟩
+      · rw [List.take_left' hlenx]
+        simp only [List.map_map,Function.comp_def]
+      · rw [List.drop_left' hlenx]
+        intro ja hj
+        obtain ⟨A,hA,rfl⟩ := List.mem_map.mp hj
         rfl
-      · simpa only [show expand G F = [.callable P Ps L] from hr,List.map_map,Function.comp_def] using hp
+      · intro ja hj
+        rcases List.mem_append.mp hj with hj | hj
+        · obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hj
+          rfl
+        · obtain ⟨A,hA,rfl⟩ := List.mem_map.mp hj
+          rfl
+      · have heq : ((xs.map (fun p => (⟨Γ,p.2,p.1⟩ : Sequent ι))
+            ++ Us.map (fun A => (⟨Γ,.undef,A⟩ : Sequent ι))).map Sequent.type)
+            = xs.map Prod.fst ++ Us := by
+          rw [List.map_append, List.map_map, List.map_map]
+          simp [Function.comp_def]
+        rw [show expand G F = [.callable P Ps L] from hr, heq]
+        exact hp
     · intro j hj
       rcases List.mem_cons.mp hj with rfl | hj
       · exact ihf
-      · obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hj
-        exact iha p hp
+      · rcases List.mem_append.mp hj with hj | hj
+        · obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hj
+          exact iha p hp
+        · obtain ⟨A,hA,rfl⟩ := List.mem_map.mp hj
+          exact ihu A hA
   | @readCallable Γ a F P Ps L f A ha hr hm ih =>
     apply node_complete (G := G) (j := ⟨Γ,.readAt f a,A⟩) (r := .readCallable) (js := [⟨Γ,a,F⟩])
     · simpa [Local,show expand G F = [.callable P Ps L] from hr] using hm
@@ -711,20 +765,39 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       rcases hj with rfl | rfl
       · exact iha
       · exact ihb
-  | @app Γ f F L xs B hf hr hp ha ihf iha =>
+  | @app Γ f F L xs B Us hf hr hp ha hu ihf iha ihu =>
     apply node_complete (r := .app)
-      (js := ⟨Γ,f,F⟩ :: xs.map (fun p => ⟨Γ,p.2,p.1⟩))
-    · refine ⟨rfl,rfl,?_,?_,?_⟩
-      · simp only [List.map_map,Function.comp_def]
-      · intro ja hj
-        obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hj
+      (js := ⟨Γ,f,F⟩ :: (xs.map (fun p => ⟨Γ,p.2,p.1⟩) ++ Us.map (fun A => ⟨Γ,.undef,A⟩)))
+    · have hlenx : (xs.map (fun p => (⟨Γ,p.2,p.1⟩ : Sequent ι))).length
+          = (xs.map Prod.snd).length := by simp
+      refine ⟨rfl,rfl,?_,?_,?_,?_⟩
+      · rw [List.take_left' hlenx]
+        simp only [List.map_map,Function.comp_def]
+      · rw [List.drop_left' hlenx]
+        intro ja hj
+        obtain ⟨A,hA,rfl⟩ := List.mem_map.mp hj
         rfl
-      · simpa only [show expand G F = [.arrs L] from hr,List.map_map,Function.comp_def] using hp
+      · intro ja hj
+        rcases List.mem_append.mp hj with hj | hj
+        · obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hj
+          rfl
+        · obtain ⟨A,hA,rfl⟩ := List.mem_map.mp hj
+          rfl
+      · have heq : ((xs.map (fun p => (⟨Γ,p.2,p.1⟩ : Sequent ι))
+            ++ Us.map (fun A => (⟨Γ,.undef,A⟩ : Sequent ι))).map Sequent.type)
+            = xs.map Prod.fst ++ Us := by
+          rw [List.map_append, List.map_map, List.map_map]
+          simp [Function.comp_def]
+        rw [show expand G F = [.arrs L] from hr, heq]
+        exact hp
     · intro j hj
       rcases List.mem_cons.mp hj with rfl | hj
       · exact ihf
-      · obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hj
-        exact iha p hp
+      · rcases List.mem_append.mp hj with hj | hj
+        · obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hj
+          exact iha p hp
+        · obtain ⟨A,hA,rfl⟩ := List.mem_map.mp hj
+          exact ihu A hA
   | @letE Γ a A b B ha hb iha ihb =>
     apply node_complete (r := .letE) (js := [⟨Γ,a,A⟩, ⟨A::Γ,b,B⟩])
     · exact ⟨rfl, rfl, rfl⟩

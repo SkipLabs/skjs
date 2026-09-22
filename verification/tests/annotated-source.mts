@@ -55,13 +55,21 @@ try {
       assert.equal(surface.roundTrips(type),true);
   });
 
-  test("required-parameter gate checks later positions",()=>{
-    for (const parameter of ["second?: null", "...rest: null[]"]) {
-      const input=path.join(tmp,"later-parameter.ts");
+  test("parameter gate checks later positions",()=>{
+    // Each case gets its own path: the gate's compiler keeps what it has read.
+    let index=0;
+    const write=(parameter: string)=>{
+      const input=path.join(tmp,`later-parameter-${index++}.ts`);
       fs.writeFileSync(input,`function f(callback: (first: boolean, ${parameter}) => boolean): null { return null; }
 `);
-      assert.throws(()=>parseFile(input),/required ordinary parameter/);
-    }
+      return input;
+    };
+    assert.throws(()=>parseFile(write("...rest: null[]")),/ordinary parameter/);
+    // An optional position is carried as the union its contract admits. A
+    // required position after it would leave a hole no call can omit.
+    assert.doesNotThrow(()=>parseFile(write("second?: null")));
+    assert.throws(()=>parseFile(write("second?: null, third: boolean")),
+      /required parameter cannot follow an optional one/);
   });
   const source='// Unicode: 😀\nfunction f(x: boolean): boolean { return x; }\n';
   const ns=source.indexOf("f("), es=source.lastIndexOf("x;");

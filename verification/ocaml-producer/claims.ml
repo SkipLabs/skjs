@@ -96,13 +96,23 @@ let encode (proposal : Proposal.t) =
   in
   let functions = List.map (fun (f : Proposal.function_claim) ->
     let source = f.source in
-    Object ["name",String source.name; "namePos",source.name_pos;
+    let expressions row = Array (List.map (fun (e : Proposal.expression) ->
+      Object (["pos",e.pos; "type",claim_type e.type_; "current",Null]
+        @ instantiate e.instantiation)) row) in
+    (* One set of interior claims per advertised signature, in signature order,
+       stated only by a closure that advertises more than one. *)
+    let entries es = Array (List.map (fun (e : Proposal.entry) ->
+      Object ["start",e.start;"bindings",Array (List.map named e.bindings)]) es) in
+    let arrows = if f.arrows = [] then [] else
+      ["arrows",Array (List.map (fun (pos,rows) ->
+        Object ["pos",pos;"rows",Array (List.map (fun (o : Proposal.overlay) ->
+          Object ["expressions",expressions o.row_expressions;
+                  "entries",entries o.row_entries]) rows)]) f.arrows)] in
+    Object (["name",String source.name; "namePos",source.name_pos;
       "params",Array (List.map (fun (n,t) -> named (n,Value t)) source.params);
       "result",claim_type source.result;
-      "entries",Array (List.map (fun (e : Proposal.entry) ->
-        Object ["start",e.start;"bindings",Array (List.map named e.bindings)]) f.entries);
-      "expressions",Array (List.map (fun (e : Proposal.expression) ->
-        Object (["pos",e.pos; "type",claim_type e.type_; "current",Null]
-          @ instantiate e.instantiation)) f.expressions)]) proposal.functions in
+      "entries",entries f.entries;
+      "expressions",expressions f.expressions]
+      @ arrows)) proposal.functions in
   Object ["file",proposal.program.file; "sourceSha256",proposal.program.digest;
     "types",Array !rows; "functions",Array functions]

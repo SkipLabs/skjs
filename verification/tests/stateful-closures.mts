@@ -181,12 +181,26 @@ try {
     ["partially returning nested arm gated","(u: null): boolean => { if (true) { if (true) { return true; } } return false; }"],
     ["missing closure else gated","(u: null): boolean => { if (true) { return true; } }"],
     ["async closure gated","async (u: null): Promise<boolean> => true"],
-    ["optional closure parameter gated","(u?: null): boolean => true"],
+    ["required parameter after an optional one gated","(u?: null, v: boolean): boolean => true"],
   ]){
     const file=path.join(tmp,"gate.ts");fs.writeFileSync(file,`function gated(): null { const f = ${closure}; return null; }`);
     const r=spawnSync(process.execPath,[parser,file],{encoding:"utf8"});
     if(r.error||r.signal||r.status!==1||!r.stderr.includes("gate:"))throw Error(`${name}: ${r.stderr}`);
     passed++;console.log(`  ${name}: OK`);
+  }
+  // An optional parameter is not a second arity record: the fragment carries
+  // it as the union the body reads, and a call omits that trailing position.
+  {
+    const file=path.join(tmp,"optional.ts");
+    fs.writeFileSync(file,`function opt(): null { const f = (u?: null): boolean => true; return null; }`);
+    const r=spawnSync(process.execPath,[parser,file],{encoding:"utf8"});
+    if(r.status!==0)throw Error(`optional closure parameter accepted: ${r.stderr}`);
+    const ast: Ast = JSON.parse(r.stdout);
+    const params=lambda(fn(ast,"opt"),0).params;
+    const atoms=params[0].type.atoms.map((a:{a:string})=>a.a).sort();
+    if(JSON.stringify(atoms)!==JSON.stringify(["null","undefined"]))
+      throw Error(`optional closure parameter type: ${JSON.stringify(params[0].type)}`);
+    passed++;console.log("  optional closure parameter reads its union: OK");
   }
   console.log(`Stateful closures: ${passed} passed, 0 failed`);
 } finally {fs.rmSync(tmp,{recursive:true,force:true});}

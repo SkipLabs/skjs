@@ -181,12 +181,16 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           | [.callable _ _ L] => some (L,Rule.callCallable)
           | _ => none
         L.findSome? fun p => do
-          -- Require every operand before searching the premises.
-          if args.length != p.1.length then none else do
+          -- Require every operand before searching the premises. A signature
+          -- with more positions than the call writes is usable when each
+          -- remaining contract admits `undefined`, the value bound there.
+          if args.length > p.1.length then none else do
+            let omitted := p.1.drop args.length
             let _ ← subtype G pool p.2 A
             let ef ← recur Γ f F
             let eas ← (args.zip p.1).mapM fun (a,D) => recur Γ a D
-            coerce G pool (.node ⟨Γ,t,p.2⟩ r (ef :: eas)) A
+            let eus ← omitted.mapM fun D => recur Γ .undef D
+            coerce G pool (.node ⟨Γ,t,p.2⟩ r (ef :: eas ++ eus)) A
       if let some e := direct then return some e
       return splitReceiver f
     | .makeAt .absent ns inits =>

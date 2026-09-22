@@ -28,6 +28,14 @@ let rec widen = function
       | a -> [a]) xs)
   | Rigid _ as t -> t | Union ts -> List.fold_left union (Atoms []) (List.map widen ts)
 let array elements = Atoms [Shape {fields=[];calls=[];elements=Some elements}]
+(* A call may omit a trailing position exactly when its contract admits
+   `undefined`: that is the value bound there. Optionality is a property of the
+   declared type, not a separate arity record. *)
+let rec admits_undefined = function
+  | Atoms xs -> List.exists (function Undef | Top -> true | _ -> false) xs
+  | Rigid _ -> false
+  | Union ts -> List.exists admits_undefined ts
+
 let rec without_nullish = function
   | Atoms xs -> ground (List.filter (function Nul | Undef -> false | _ -> true) xs)
   | Rigid _ as t -> t | Union ts -> List.fold_left union (Atoms []) (List.map without_nullish ts)

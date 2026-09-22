@@ -6,6 +6,8 @@ import { check, verifier } from "./check.mts";
 import { cases } from "./cases.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
+import { checkOverloads } from "./overload-claims.mts";
+import { checkDefaults, checkSchemeDefaults } from "./default-parameters.mts";
 // The reader's collector, imported rather than served: `serve.mts` takes the
 // port only when it is run directly.
 import { analyse } from "../report-viewer/serve.mts";
@@ -46,7 +48,10 @@ for (const test of cases) {
   process.stdout.write(
     `${test.file}: ${result.status} (${result.phase}, ${test.kind})\n`,
   );
+  if (test.file === "overloads") checkOverloads(verifier, result.artifacts);
   if (test.file === "values") good = result.artifacts;
+  if (test.file === "default-parameter-scope") checkDefaults(verifier, result.artifacts);
+  if (test.file === "generic-default") checkSchemeDefaults(verifier, result.artifacts);
   if (test.file === "generic-inferred") generic = result.artifacts;
   if (test.file === "generic-closure") genericClosure = result.artifacts;
   if (test.file === "generic-two-calls") twoCalls = result.artifacts;
@@ -348,6 +353,14 @@ for (const site of ["initializer", "binding"] as const) {
  */
 const repositoryPath = (file: string) =>
   `verification/ocaml-producer/examples/${file}.ts`;
+{
+  const shown = await analyse(repositoryPath("generic-default"), "ocaml");
+  const results = shown.manifest.results ?? [];
+  assert.deepEqual(results.map((r) => r.status), ["not-established"]);
+  assert.notEqual(results[0]?.location, undefined);
+  assert.match(JSON.stringify(results), /body requires a variable, a primitive literal, an assignment, a call or a closure/);
+  process.stdout.write("reader collection: uncertified scheme defaults visibly refused\n");
+}
 const collected = await analyse(repositoryPath("values"), "ocaml");
 assert.equal(collected.collection?.producer, "ocaml");
 assert.equal(collected.collection?.producerRun, true);
@@ -391,6 +404,7 @@ const directControls = new Set([
   "invalid-generic-copy",
   "invalid-generic-closure",
   "invalid-scheme-capture",
+  "invalid-generic-default",
 ]);
 let testedDirectProtocol = false;
 for (const control of cases.filter((c) => c.kind === "negative")) {

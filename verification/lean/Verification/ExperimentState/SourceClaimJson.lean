@@ -102,6 +102,19 @@ instance : ToJson Expression where
     (match e.instantiate with
      | none => []
      | some xs => [("instantiate", toJson xs)]))
+/-- Interior claims for one closure, one set per signature of its claimed
+callable type, in that order. A closure advertising several signatures has one
+body and a different obligation at each: the producer states the claims that
+body has under each, as scheme compilation states them under each checked
+instantiation. -/
+structure ArrowRow where
+  expressions : List Expression
+  entries : List Entry := []
+  deriving ToJson, FromJson
+structure ArrowClaims where
+  pos : Span
+  rows : List ArrowRow
+  deriving ToJson, FromJson
 structure Function where
   name : String
   namePos : Span
@@ -109,7 +122,19 @@ structure Function where
   result : ClaimType
   entries : List Entry
   expressions : List Expression
-  deriving ToJson, FromJson
+  /-- Omitted by a document whose closures each advertise one signature. -/
+  arrows : Option (List ArrowClaims) := none
+  deriving FromJson
+
+/-- Absence asserts nothing: a document whose closures each advertise one
+signature states no per-arrow claims, and no producer writes an empty list. -/
+instance : ToJson Function where
+  toJson f := Json.mkObj ([("name", toJson f.name), ("namePos", toJson f.namePos),
+    ("params", toJson f.params), ("result", toJson f.result),
+    ("entries", toJson f.entries), ("expressions", toJson f.expressions)] ++
+    (match f.arrows with
+     | none | some [] => []
+     | some rows => [("arrows", toJson rows)]))
 structure Document where
   file : String
   sourceSha256 : String
@@ -124,8 +149,13 @@ def Function.normalized (f : Function) : SourceClaims.Function :=
     f.expressions.map (fun e => (e.pos,e.type.ground)),
     f.entries.map (fun e => (e.start,e.bindings.filterMap fun b => b.current.map (b.name,·))),
     f.expressions.filterMap (fun e => e.current.map (e.pos,·)),
-    -- Scheme compilation supplies these; an ordinary document has none.
-    []⟩
+    -- Stated by the producer for an overloaded closure, and supplied by scheme
+    -- compilation for a quantified one.
+    (f.arrows.getD []).map (fun a => (a.pos, a.rows.map (fun row =>
+      ⟨row.expressions.map (fun e => (e.pos,e.type.ground)),
+       row.entries.map (fun e => (e.start,e.bindings.map (fun b => (b.name,b.type.ground)))),
+       row.entries.map (fun e => (e.start,e.bindings.filterMap fun b => b.current.map (b.name,·))),
+       row.expressions.filterMap (fun e => e.current.map (e.pos,·))⟩)))⟩
 
 /-! ## Scheme compilation
 
@@ -287,6 +317,9 @@ private structure Closure where
   parameters : List DirectObligation.Parameter
   /-- The source parameter and result annotations, as written. -/
   sourceParams : List (String × Json)
+  /-- Initialization is part of the source closure, never discard it while
+  selecting the universal certificate path. -/
+  defaults : List (Nat × Fragment.Expr)
   sourceResult : Json
   params : List ClaimType
   result : ClaimType
@@ -301,16 +334,21 @@ private def find (f : Fragment.Fn) : SourceTypes.Lowering (Option Closure) := do
   for s in f.body do
     if let .constants pos bs := s then
       for b in bs do
-        if let .lambda lpos tps ps ret body := b.init then
+        if let .lambda lpos tps ps defaults ret body := b.init then
           if !tps.isEmpty then
             if found.isSome then
               throw "this slice checks one quantified closure per function"
             let names := tps.map (·.name)
             if names.eraseDups.length != names.length then throw "duplicate closure binder"
             let parameters ← GenericSource.parametersOf tps
-            let params ← ps.mapM fun q => claimOfType names q.2
+            let params ← ps.zipIdx.mapM fun (q,i) => do
+              let t ← claimOfType names q.2
+              if (defaults.lookup i).isNone then pure t
+              else match t with
+                | .labels A => pure (.labels ((A ++ [3]).eraseDups |>.mergeSort (· ≤ ·)))
+                | _ => throw "a default whose parameter type mentions a rigid binder needs a union type certificate"
             let r ← claimOfType names ret
-            found := some ⟨lpos, b.name, parameters, ps, ret, params, r, body, pos.1⟩
+            found := some ⟨lpos, b.name, parameters, ps, defaults, ret, params, r, body, pos.1⟩
   return found
 
 /-- Introduction. The gate every accepted scheme passes, whatever its calls:
@@ -333,9 +371,10 @@ private def introduce (T : SourceTypes.Table) (f : Fragment.Fn) (c : Closure) (c
     | _ => []
   let cells := storage.map (·.name)
   let ctx : GenericSource.Ctx := ⟨c.parameters, direct, cells⟩
+  let (_, T) ← (GenericSource.parameterDefaults ctx outer c.span c.sourceParams c.defaults).run T
   let (_, T) ← (GenericSource.closureTy ctx outer c.span c.sourceParams c.sourceResult c.body).run T
   let (certificate, T) ← (GenericSource.closureCertificate ctx outer storage c.span
-    c.sourceParams c.sourceResult c.body).run T
+    c.sourceParams c.sourceResult c.body c.defaults).run T
   return (T, certificate)
 
 /-- Elimination, then compilation. Each call validates its own substitution;
@@ -344,7 +383,7 @@ forged instantiation can only name another genuine instance of a scheme that
 has already passed the universal gate. -/
 private def compile (T : SourceTypes.Table) (f : Fragment.Fn) (claims : Function) :
     Except DirectObligation.Failure (SourceTypes.Table × Function ×
-      List (Span × List (List (Span × SourceClaims.Candidate)))) := do
+      List (Span × List SourceClaims.Overlay)) := do
   let refuse (pos : Span) (reason : String) : DirectObligation.Failure :=
     .refusal pos .schemeElimination reason
   let (c, T) ← match (find f).run T with
@@ -415,12 +454,15 @@ private def compile (T : SourceTypes.Table) (f : Fragment.Fn) (claims : Function
   -- One source span, one type per instantiation: the interior claims are
   -- substituted rather than re-cast, which is what no single claim can do.
   let interior := claims.expressions.filter fun e => inside e.pos && e.pos != c.span
+  let init : SourceTypes.Table × List SourceClaims.Overlay := (T, [])
   let (T, overlays) ← σs.foldlM (fun (T, acc) σ => do
     let (T, overlay) ← interior.foldlM (fun (T, overlay) e => do
       match groundIn T (subst σ e.type) with
       | .ok (T, A) => pure (T, overlay ++ [(e.pos, (.ok A : SourceClaims.Candidate))])
       | .error reason => pure (T, overlay ++ [(e.pos, (.error reason : SourceClaims.Candidate))])) (T, [])
-    pure (T, acc ++ [overlay])) (T, [])
+    -- A scheme's entries are the ones its single body states; only the
+    -- expression claims are substituted.
+    pure (T, acc ++ [({ exprs := overlay } : SourceClaims.Overlay)])) init
   return (T, claims, [(c.span, overlays)])
 
 end Scheme
@@ -456,13 +498,23 @@ private def validBindings (T : SourceTypes.Table) (bs : List Binding) : Bool :=
   (bs.map (·.name)).eraseDups.length == bs.length &&
     bs.all (fun b => !b.name.isEmpty && validType T b.type && validCurrent T b.type b.current)
 private def validSpan (p : Span) : Bool := p.1 < p.2
+private def validInterior (T : SourceTypes.Table) (entries : List Entry)
+    (expressions : List Expression) : Bool :=
+  (entries.map (·.start)).eraseDups.length == entries.length &&
+  (expressions.map (·.pos)).eraseDups.length == expressions.length &&
+  entries.all (fun e => validBindings T e.bindings) &&
+  expressions.all (fun e => validSpan e.pos && validType T e.type && validCurrent T e.type e.current)
 private def validFunction (T : SourceTypes.Table) (f : Function) : Bool :=
   !f.name.isEmpty && validSpan f.namePos && validBindings T f.params &&
   f.params.all (fun b => b.current.isNone) && validType T f.result &&
-  (f.entries.map (·.start)).eraseDups.length == f.entries.length &&
-  (f.expressions.map (·.pos)).eraseDups.length == f.expressions.length &&
-  f.entries.all (fun e => validBindings T e.bindings) &&
-  f.expressions.all (fun e => validSpan e.pos && validType T e.type && validCurrent T e.type e.current)
+  validInterior T f.entries f.expressions &&
+  let arrows := f.arrows.getD []
+  (arrows.map (·.pos)).eraseDups.length == arrows.length &&
+  arrows.all (fun a => validSpan a.pos && !a.rows.isEmpty && a.rows.all (fun row =>
+    validInterior T row.entries row.expressions &&
+    -- These are ground overload rows. Quantified eliminations are checked by
+    -- the scheme gate, never silently discarded during ground normalization.
+    row.expressions.all (fun e => e.instantiate.isNone)))
 
 def decode (j : Json) : Except String Document := do
   let d : Document ← decodeStrict j
@@ -476,50 +528,59 @@ def decode (j : Json) : Except String Document := do
     throw "duplicate function claims"
   return d
 
-private abbrev Sites := List Nat × List Span
-private def joinSites (a b : Sites) : Sites := (a.1 ++ b.1,a.2 ++ b.2)
+private abbrev Sites := List Nat × List Span × List Span
+private def joinSites (a b : Sites) : Sites := (a.1 ++ b.1,a.2.1 ++ b.2.1,a.2.2 ++ b.2.2)
 private partial def exprSites : Fragment.Expr → Sites
-  | .var p _ | .lit p _ => ([],[p])
-  | .shapeTest p _ _ e | .not p e | .cast p _ e | .read p _ e | .lambda p _ _ _ e => joinSites ([],[p]) (exprSites e)
-  | .alloc p _ es => es.foldl (fun acc a => joinSites acc (exprSites a)) ([],[p])
-  | .withValue p a b _ _ | .write p _ a b | .singletonTest p _ _ _ a b | .equality p _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
+  | .var p _ | .lit p _ => ([],[p],[])
+  -- A defaulted parameter's expression is an ordinary source expression, so it
+  -- is a claim site like any other; the parameter name is not one.
+  | .lambda p _ _ defaults _ e =>
+    defaults.attach.foldl (fun acc ⟨d,_⟩ => joinSites acc (exprSites d.2))
+      (joinSites ([],[p],[p]) (exprSites e))
+  | .shapeTest p _ _ e | .not p e | .cast p _ e | .read p _ e => joinSites ([],[p],[]) (exprSites e)
+  | .alloc p _ es => es.foldl (fun acc a => joinSites acc (exprSites a)) ([],[p],[])
+  | .withValue p a b _ _ | .write p _ a b | .singletonTest p _ _ _ a b | .equality p _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p],[]) (joinSites (exprSites a) (exprSites b))
   -- An assignment is an expression site, and the name it assigns is not one:
   -- the producer claims the value written, not the location.
-  | .index p _ a b | .arith p _ a b | .logicalAssign p _ a b | .elemAt p a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
-  | .arrayLit p es => es.foldl (fun acc a => joinSites acc (exprSites a)) ([],[p])
+  | .index p _ a b | .arith p _ a b | .logicalAssign p _ a b | .elemAt p a b => joinSites ([],[p],[]) (joinSites (exprSites a) (exprSites b))
+  | .arrayLit p es => es.foldl (fun acc a => joinSites acc (exprSites a)) ([],[p],[])
   | .arrayAssign p targets rhs => targets.foldl (fun acc q => match q.default_ with
-      | some d => joinSites acc (exprSites d) | none => acc) (joinSites ([],[p]) (exprSites rhs))
-  | .elemWrite p a b c => joinSites ([],[p]) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
-  | .update p _ a none _ => joinSites ([],[p]) (exprSites a)
-  | .update p _ a (some r) _ => joinSites ([],[p]) (joinSites (exprSites a) (exprSites r))
-  | .indexWrite p _ a b c => joinSites ([],[p]) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
-  | .nullishAssign p _ np e => joinSites ([],[p,np]) (exprSites e)
-  | .assign p _ _ e => joinSites ([],[p]) (exprSites e)
-  | .atEnv p e => joinSites ([p.1],[]) (exprSites e)
+      | some d => joinSites acc (exprSites d) | none => acc) (joinSites ([],[p],[]) (exprSites rhs))
+  | .elemWrite p a b c => joinSites ([],[p],[]) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
+  | .update p _ a none _ => joinSites ([],[p],[]) (exprSites a)
+  | .update p _ a (some r) _ => joinSites ([],[p],[]) (joinSites (exprSites a) (exprSites r))
+  | .indexWrite p _ a b c => joinSites ([],[p],[]) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
+  | .nullishAssign p _ np e => joinSites ([],[p,np],[]) (exprSites e)
+  | .assign p _ _ e => joinSites ([],[p],[]) (exprSites e)
+  | .atEnv p e => joinSites ([p.1],[],[]) (exprSites e)
   | .bindWithReceiver p f receiver args | .callWithReceiver p f receiver args => args.foldl (fun acc a => joinSites acc (exprSites a))
-      (joinSites ([],[p]) (joinSites (exprSites f) (exprSites receiver)))
-  | .call p f args => args.foldl (fun acc a => joinSites acc (exprSites a)) (joinSites ([],[p]) (exprSites f))
-  | .done _ => ([],[])
-  | .seqBody p a b | .letBody p _ _ a b => joinSites ([p.1],[]) (joinSites (exprSites a) (exprSites b))
-  | .ifBody p result a b c => joinSites (if result.isSome then ([p.1],[]) else ([],[p])) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
+      (joinSites ([],[p],[]) (joinSites (exprSites f) (exprSites receiver)))
+  | .call p f args => args.foldl (fun acc a => joinSites acc (exprSites a)) (joinSites ([],[p],[]) (exprSites f))
+  | .done _ => ([],[],[])
+  | .seqBody p a b | .letBody p _ _ a b => joinSites ([p.1],[],[]) (joinSites (exprSites a) (exprSites b))
+  | .ifBody p result a b c => joinSites (if result.isSome then ([p.1],[],[]) else ([],[p],[])) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
 private partial def stmtSites : Fragment.Stmt → Sites
-  | .brk p | .cont p => ([p.1],[])
-  | .ret p e | .effect p e => joinSites ([p.1],[]) (exprSites e)
+  | .brk p | .cont p => ([p.1],[],[])
+  | .ret p e | .effect p e => joinSites ([p.1],[],[]) (exprSites e)
   -- One entry for the statement; every declarator's initializer is a site.
-  | .constants p bs | .mutables p bs => bs.foldl (fun acc b => joinSites acc (exprSites b.init)) ([p.1],[])
+  | .constants p bs | .mutables p bs => bs.foldl (fun acc b => joinSites acc (exprSites b.init)) ([p.1],[],[])
   -- The initializer and each default are sites; the pattern's reads are not.
   | .pattern p props init => props.foldl (fun acc q => match q.default_ with
-      | some d => joinSites acc (exprSites d) | none => acc) (joinSites ([p.1],[]) (exprSites init))
+      | some d => joinSites acc (exprSites d) | none => acc) (joinSites ([p.1],[],[]) (exprSites init))
   | .arrayPattern p elems init => elems.foldl (fun acc q => match q.default_ with
-      | some d => joinSites acc (exprSites d) | none => acc) (joinSites ([p.1],[]) (exprSites init))
-  | .loop p c body => joinSites ([p.1],[]) (joinSites (exprSites c)
-      (body.foldl (fun s st => joinSites s (stmtSites st)) ([],[])))
+      | some d => joinSites acc (exprSites d) | none => acc) (joinSites ([p.1],[],[]) (exprSites init))
+  | .loop p c body => joinSites ([p.1],[],[]) (joinSites (exprSites c)
+      (body.foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])))
   | .ite p c a b =>
-    joinSites ([p.1],[]) (joinSites (exprSites c)
-      ((a ++ b.getD []).foldl (fun s st => joinSites s (stmtSites st)) ([],[])))
+    joinSites ([p.1],[],[]) (joinSites (exprSites c)
+      ((a ++ b.getD []).foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])))
+
+private def allFunctionSites (f : Fragment.Fn) : Sites :=
+  f.body.foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])
 
 def functionSites (f : Fragment.Fn) : List Nat × List Span :=
-  f.body.foldl (fun s st => joinSites s (stmtSites st)) ([],[])
+  let sites := allFunctionSites f
+  (sites.1, sites.2.1)
 
 inductive FunctionPlan where
   | graph (name : String) (namePos : Span) (request : SourceRequest)
@@ -627,6 +688,16 @@ def extractPlans (ast claims : Json) (fileKey : String) : Except String (List Fu
     if !c.entries.all (fun e => sites.1.contains e.start) ||
         !c.expressions.all (fun e => sites.2.contains e.pos) then
       throw "claim site is not an entry or expression of the named source function"
+    let closures := (allFunctionSites f).2.2
+    for a in c.arrows.getD [] do
+      if !closures.contains a.pos then throw "per-arrow claims must name a source closure"
+      for row in a.rows do
+        if !row.entries.all (fun e => sites.1.contains e.start && a.pos.1 ≤ e.start && e.start < a.pos.2) ||
+            !row.expressions.all (fun e => sites.2.contains e.pos && a.pos != e.pos &&
+              a.pos.1 ≤ e.pos.1 && e.pos.2 ≤ a.pos.2) then
+          throw "per-arrow claim site is outside its source closure"
+    if (!tps.isEmpty || c.hasScheme) && !(c.arrows.getD []).isEmpty then
+      throw "per-arrow source claims are for ground closures, not quantified schemes"
     if !tps.isEmpty then
       let direct ← match c.directClaims with
         | .ok claims => pure claims
@@ -650,7 +721,7 @@ def extractPlans (ast claims : Json) (fileKey : String) : Except String (List Fu
       match Scheme.compile T f c with
       | .ok (T, c, overlays) =>
         return .scheme f.name f.namePos
-          (← extractNormalizedFn T f { c.normalized with schemeArrows := overlays }) T certificate
+          (← extractNormalizedFn T f { c.normalized with arrowClaims := overlays }) T certificate
       | .error (.obligation failure) => throw (directFailure d.types failure)
       | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)
     return .graph f.name f.namePos (← extractNormalizedFn d.types f c.normalized)

@@ -8,9 +8,15 @@ let rec annotation binders j =
   if boolean (field "top" j) then Atoms [Top]
   else List.fold_left union (Atoms []) (List.map (annotation_atom binders) (items "atoms" j))
 and annotation_atom binders j =
-  (match List.assoc_opt "and" (obj j) with
-    | None | Some (Array []) -> ()
-    | Some _ -> unsupported "intersection annotation");
+  (* An intersection of arrows is one value with several call signatures: the
+     shape's calls list, not a second kind of type. Other intersections have no
+     representation here. *)
+  let conjuncts = match List.assoc_opt "and" (obj j) with
+    | None | Some (Array []) -> []
+    | Some (Array others) -> others
+    | Some _ -> unsupported "intersection annotation" in
+  if conjuncts <> [] && text "a" j <> "function" then
+    unsupported "intersection annotation";
   match text "a" j with
   | "null" -> Atoms [Nul] | "undefined" -> Atoms [Undef]
   | "boolean" -> bool | "number" -> Atoms [Num] | "string" -> Atoms [Str]
@@ -41,7 +47,13 @@ and annotation_atom binders j =
       optional_elements=List.map (annotation binders) (items "optional" j);
       rest=(match field "rest" j with Null -> None | t -> Some (annotation binders t));
       readonly=boolean (field "readonly" j) }
-  | "function" -> arrow (List.map (annotation binders) (items "params" j)) (annotation binders (field "result" j))
+  | "function" ->
+    let signature a = { quantified=[];
+      params=List.map (annotation binders) (items "params" a);
+      result=annotation binders (field "result" a) } in
+    List.iter (fun a -> if text "a" a <> "function" then
+      unsupported "intersection annotation") conjuncts;
+    Atoms [Shape {fields=[];calls=List.map signature (j::conjuncts);elements=None}]
   | k -> unsupported ("annotation " ^ k)
 type literal = LNull | LUndefined | LBool of bool | LNumber of string | LString of string
 let literal j = match text "a" j with
@@ -80,7 +92,9 @@ and expr_node =
   | Equality of equality * expr * expr | Alloc of (string * expr) list
   | Read of expr * string | Write of expr * string * expr
   | Assign of string * expr
-  | Lambda of quantifier list * (string * ty) list * ty * expr
+  (* A parameter's type is what the body reads. A defaulted one also admits
+     `undefined` where the closure is called; the default replaces it. *)
+  | Lambda of quantifier list * (string * ty) list * (int * expr) list * ty * expr
   | Call of expr * expr option * expr list
   | Conditional of expr * expr * expr | Coalesce of expr * expr
   | ArrayLiteral of expr list | Index of expr * expr | IndexWrite of expr * expr * expr
@@ -117,9 +131,13 @@ let rec expr binders j =
   | "lambda" ->
       let inner,quantified = quantify binders (-1 - span_start (field "pos" j))
         (items "typeParams" j) in
+      let parameters = items "params" j in
       Lambda (quantified,
-        List.map (fun p -> text "name" p,annotation inner (field "type" p))
-          (items "params" j),
+        List.map (fun p -> text "name" p,annotation inner (field "type" p)) parameters,
+        List.filter_map (fun (i,p) -> match List.assoc_opt "default" (obj p) with
+          | None -> None
+          | Some d -> Some (i, expr inner d))
+          (List.mapi (fun i p -> i,p) parameters),
         annotation inner (field "result" j),
         expr inner (field "body" j))
   | "apply" -> Call (sub "callee",None,List.map (expr binders) (items "args" j))

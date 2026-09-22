@@ -13,24 +13,24 @@ rule statements, side conditions, soundness scope and evidence construction;
 
 ## Notation
 
-| | Ranges over |
-| --- | --- |
-| $t$, $u$ | [terms](SEMANTICS.md#operational-language) |
-| $t_1$, $t_2$ | a branch's two arms, in that order |
-| $a$, $a'$ | terms, where a rule admits an arbitrary one rather than a variable |
-| $x$, $y$, $z$ | variables, which are terms |
-| $c$ | a term in condition position |
-| $\gamma$ | a [clause](POSITIVE-TYPES.md#representation-and-mathematical-rules) |
-| $r$ | the binding a rule gives its result |
-| $k$ | one of the tests in [the operational language](SEMANTICS.md#operational-language) |
-| $A$, $B$, $C$ | types, each a finite list of graph labels read as their union |
-| $R$ | a finite disjunction of primitive predicates |
-| $\operatorname{pred}(A)$ | the predicate disjunction $A$ denotes, defined for supported primitives (`HeapKnowledge.atoms`) |
-| $G$ | the normalized positive graph |
-| $\Gamma$ | a typing context, one type per variable |
-| $\Pi$, $\Sigma$ | the [equality and heap parts](#checked-expression-postconditions) of the assertion state |
-| $\rho$, $h$, $W$, $n$ | an environment, heap, world and budget, from [the model](SEMANTICS.md#types-worlds-and-heaps) |
-| $\Delta$ | a target claim environment, and in [POSITIVE-TYPES](POSITIVE-TYPES.md) a table of subtype obligations |
+|                          | Ranges over                                                                                           |
+| ------------------------ | ----------------------------------------------------------------------------------------------------- |
+| $t$, $u$                 | [terms](SEMANTICS.md#operational-language)                                                            |
+| $t_1$, $t_2$             | a branch's two arms, in that order                                                                    |
+| $a$, $a'$                | terms, where a rule admits an arbitrary one rather than a variable                                    |
+| $x$, $y$, $z$            | variables, which are terms                                                                            |
+| $c$                      | a term in condition position                                                                          |
+| $\gamma$                 | a [clause](POSITIVE-TYPES.md#representation-and-mathematical-rules)                                   |
+| $r$                      | the binding a rule gives its result                                                                   |
+| $k$                      | one of the tests in [the operational language](SEMANTICS.md#operational-language)                     |
+| $A$, $B$, $C$            | types, each a finite list of graph labels read as their union                                         |
+| $R$                      | a finite disjunction of primitive predicates                                                          |
+| $\operatorname{pred}(A)$ | the predicate disjunction $A$ denotes, defined for supported primitives (`HeapKnowledge.atoms`)       |
+| $G$                      | the normalized positive graph                                                                         |
+| $\Gamma$                 | a typing context, one type per variable                                                               |
+| $\Pi$, $\Sigma$          | the [equality and heap parts](#checked-expression-postconditions) of the assertion state              |
+| $\rho$, $h$, $W$, $n$    | an environment, heap, world and budget, from [the model](SEMANTICS.md#types-worlds-and-heaps)         |
+| $\Delta$                 | a target claim environment, and in [POSITIVE-TYPES](POSITIVE-TYPES.md) a table of subtype obligations |
 
 $r$ never names an operand, and a premise can never mention it: it is bound by
 the rule's conclusion and scoped to the postcondition.
@@ -91,13 +91,28 @@ $$
      {\Gamma\vdash_G \lambda\vec x.t:\bigwedge_{(\vec A,B)\in L}(\vec A\to B)}
 \qquad
 \frac{\Gamma\vdash_G f:\bigwedge_{(\vec C,D)\in L}(\vec C\to D)
-      \quad(\vec A,B)\in L\quad\forall i.\;\Gamma\vdash_G a_i:A_i}
+      \quad(\vec A\,\vec U,B)\in L\quad\forall i.\;\Gamma\vdash_G a_i:A_i
+      \quad\forall U\in\vec U.\;\Gamma\vdash_G \mathsf{undefined}:U}
      {\Gamma\vdash_G f(\vec a):B}
 $$
 
-Application requires an exact argument count: $|\vec a|=|\vec A|$ is part of
-selecting $(\vec A,B)$ from $L$. An empty parameter list is a zero-argument
-call, not an absent one. Optional and rest parameters need further rules.
+A call writes a prefix of the positions the selected signature declares:
+$|\vec a|=|\vec A|$, and $\vec U$ are the positions it omits. Omission is
+admissible exactly when each omitted contract admits `undefined`, which is the
+value the machine binds there — `CallArguments.parameters` pads a short actual
+list, so the body dispatched for $f(\vec a)$ is the same term as for the call
+that writes those `undefined`s out. With $\vec U$ empty this is the
+exact-arity rule. No actual is invented: the call term keeps the arguments the
+source writes, and `CallArguments.parameters_pad` is where the two agree.
+
+Optionality is therefore a property of a declared contract, not a separate
+arity record: `x?: T` is carried as `T | undefined`, which is what the body
+reads and what licenses the omission. Declared arity is not observable in this
+fragment, so a call may also omit a trailing position a producer declared as
+`T | undefined` without writing `?`, which TypeScript rejects; the verifier
+proves such a call safe rather than enforcing that surface rule. An empty
+parameter list is a zero-argument call, not an absent one. Rest parameters
+need further rules.
 
 $$
 \frac{\Gamma\vdash_G a:A\quad\Gamma,x:A\vdash_G b:B}
@@ -165,7 +180,7 @@ into the same top: the callee still runs and its effects still happen, only
 the result's contract says nothing. `undefined` remains a particular value,
 which a body produces by completing, and there is no void value or tag.
 
-A record clause also carries *views*: fields read through a capability. A
+A record clause also carries _views_: fields read through a capability. A
 view names a location whose stored contract implies the stated family, so a
 read through it, by `readView`, observes that family; nothing permits a write
 through it, and the backing invariant, which may be stronger, is never
@@ -175,7 +190,7 @@ viewed as readonly Boolean without ever acquiring a persistent readonly-`true`
 guarantee from its current contents; current-content observations stay
 separate and subject to invalidation. `readonly` fields are these views.
 
-An array is an object whose store field holds a *store*: the location of each
+An array is an object whose store field holds a _store_: the location of each
 element in order, or a hole. Identity, aliasing and mutation are the object's;
 the store is a value the object replaces when the array grows. A `list` clause
 is one or more tuple contracts on a store: required positions, each a
@@ -474,14 +489,14 @@ The graph checker below discharges that enumeration obligation.
 language. A program is a finite list of nodes indexed by label; each node is one
 [term](SEMANTICS.md#operational-language) and one of these six continuations:
 
-| Continuation | Action after evaluating the expression |
-| --- | --- |
-| `ret` | Return its value as the graph's declared result type. |
-| `bind` to a target | Push the value, apply the target slot map, and enter its label. |
-| `effect`, then a target | Discard the value, apply the target slot map, and enter its label. |
-| `branch` | Select a target according to the Boolean value and apply its slot map. |
-| `branchBind` | Select a target, push the tested Boolean, and apply its slot map with a singleton refinement. |
-| `tagBind` | Test the returned value's shape, select a target, push that value, and apply its slot map with the refinement the answer justifies. |
+| Continuation            | Action after evaluating the expression                                                                                              |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `ret`                   | Return its value as the graph's declared result type.                                                                               |
+| `bind` to a target      | Push the value, apply the target slot map, and enter its label.                                                                     |
+| `effect`, then a target | Discard the value, apply the target slot map, and enter its label.                                                                  |
+| `branch`                | Select a target according to the Boolean value and apply its slot map.                                                              |
+| `branchBind`            | Select a target, push the tested Boolean, and apply its slot map with a singleton refinement.                                       |
+| `tagBind`               | Test the returned value's shape, select a target, push that value, and apply its slot map with the refinement the answer justifies. |
 
 Conditionals therefore exist at two levels: `if` inside a single node's term, and
 these branch continuations between nodes. Source lowering uses the continuations
@@ -566,7 +581,6 @@ an in-memory certificate producer; [REQUEST-PROTOCOL.md](REQUEST-PROTOCOL.md)
 describes its serialized consumer boundary. No graph-level completeness theorem is claimed here; the
 program-evidence and edge-evidence completeness results above retain their
 stated scope.
-
 
 #### Refinement under an observed outcome
 
@@ -721,13 +735,13 @@ same effect. Allocation uses `alloc_observed` to return an invariant reference
 and the exact appended heap; `alloc_new` and `alloc_frame` give the fresh fact and
 preservation of existing facts.
 
-| Rule | Premise and consequence |
-| --- | --- |
-| `test_refines` | A current lookup links the tested value to the cell; a predicate on that value then refines current contents. An old snapshot alone does not suffice. |
-| `call_forget` | Ordinary arrow membership supplies result safety and heap-invariant preservation, with postcondition `True`. It supplies no retained observation. |
-| `bind` | For an evaluation context that lifts steps, its continuation receives the actual resulting heap, value membership and postcondition in the future world at the remaining budget. |
-| `consequence` | Implication weakens the result family and postcondition. |
-| `write_then_read` | Composing write, bind, beta and read proves that the immediate subsequent read returns the written value; there is no ownership or non-escape premise. |
+| Rule              | Premise and consequence                                                                                                                                                          |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test_refines`    | A current lookup links the tested value to the cell; a predicate on that value then refines current contents. An old snapshot alone does not suffice.                            |
+| `call_forget`     | Ordinary arrow membership supplies result safety and heap-invariant preservation, with postcondition `True`. It supplies no retained observation.                                |
+| `bind`            | For an evaluation context that lifts steps, its continuation receives the actual resulting heap, value membership and postcondition in the future world at the remaining budget. |
+| `consequence`     | Implication weakens the result family and postcondition.                                                                                                                         |
+| `write_then_read` | Composing write, bind, beta and read proves that the immediate subsequent read returns the written value; there is no ownership or non-escape premise.                           |
 
 The finite assertion layer represents a fact as a slot $i$, a field name and
 an $R$ from the [primitive predicate grammar](POSITIVE-TYPES.md#state-assertion-grammar).
@@ -801,7 +815,7 @@ the derivation; only $\Pi$ and $\Sigma$ are transformed. Note that $\Gamma$ and 
 constrain the environment, in different languages: $\Gamma$ gives each variable a
 graph type, and $\Pi$'s primitive predicates refine that for primitives — `valuesAt`
 reads a value fact when there is one and falls back to the variable's type when
-there is not. What $\Pi$ adds beyond $\Gamma$ is equalities *between* variables,
+there is not. What $\Pi$ adds beyond $\Gamma$ is equalities _between_ variables,
 which a type cannot express.
 
 Every rule binds the value it produces. Write $r$ for that binding, so a
@@ -1010,16 +1024,16 @@ As above, the initial world must be admissible and the heap must satisfy it.
 The checker binds evidence to the requested expression and type and checks scope.
 It computes a guaranteed output, not an assumed postcondition:
 
-| Evidence | Guaranteed output in the result-pushed frame |
-| --- | --- |
-| Pure value or variable copy | Preserve facts and links; copies establish slot equality and duplicate existing facts. Literals establish their exact result even when their supplied type is wider. Lambda bodies require ordinary typing, without captured heap facts. |
-| Pure test or conditional | Preserve existing facts and links, shifted past the result slot. Every evaluated subexpression must be syntactically pure; no new result-to-cell link is invented. |
-| Ordinary typed read | Preserve facts and record read links to the receiver and witnessed aliases, retaining its plain or callable descriptor; no prior current-content fact is needed. Its result has the supplied type. |
-| Observed read | Preserve facts and links; record the result's primitive predicate and its current read relationship. That set must fit the requested ordinary result type. |
-| Known immutable value | Check the requested primitive type against a proved slot fact or the slot's ordinary primitive type. |
-| Allocation | Check ordinary creation evidence and scope for either descriptor, preserve old facts, and add the fresh bag's initial contents from a checked value slot. Closure code is not executed. |
-| Write | Check ordinary write evidence (no old-content premise), discard all old cell facts, record new contents for the receiver and its witnessed aliases, and preserve immutable facts and slot equalities. Read links are discarded. |
-| Ordinary expression, including calls | Check ordinary evidence, discard cell facts and read links, preserving immutable facts and slot equalities. |
+| Evidence                             | Guaranteed output in the result-pushed frame                                                                                                                                                                                             |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pure value or variable copy          | Preserve facts and links; copies establish slot equality and duplicate existing facts. Literals establish their exact result even when their supplied type is wider. Lambda bodies require ordinary typing, without captured heap facts. |
+| Pure test or conditional             | Preserve existing facts and links, shifted past the result slot. Every evaluated subexpression must be syntactically pure; no new result-to-cell link is invented.                                                                       |
+| Ordinary typed read                  | Preserve facts and record read links to the receiver and witnessed aliases, retaining its plain or callable descriptor; no prior current-content fact is needed. Its result has the supplied type.                                       |
+| Observed read                        | Preserve facts and links; record the result's primitive predicate and its current read relationship. That set must fit the requested ordinary result type.                                                                               |
+| Known immutable value                | Check the requested primitive type against a proved slot fact or the slot's ordinary primitive type.                                                                                                                                     |
+| Allocation                           | Check ordinary creation evidence and scope for either descriptor, preserve old facts, and add the fresh bag's initial contents from a checked value slot. Closure code is not executed.                                                  |
+| Write                                | Check ordinary write evidence (no old-content premise), discard all old cell facts, record new contents for the receiver and its witnessed aliases, and preserve immutable facts and slot equalities. Read links are discarded.          |
+| Ordinary expression, including calls | Check ordinary evidence, discard cell facts and read links, preserving immutable facts and slot equalities.                                                                                                                              |
 
 `typedRead_sound`, `read_sound`, `alloc_sound` and `write_sound` prove the four
 rules above. None of them takes a premise about a cell's old contents, and the
@@ -1158,7 +1172,7 @@ $$
 The next statement is checked from $(\Gamma_l,K_l)$, independently of any
 stronger facts proved by predecessors. Loop heads use the same interface on both
 initial and back edges. Empty knowledge means forget all extra facts; an empty
-*content predicate* remains an impossible observation, not an absent one.
+_content predicate_ remains an impossible observation, not an absent one.
 
 **Expression claims are local obligations within a statement, not full-state
 interfaces.** Their supplied result type must be justified at the expression;
@@ -1334,7 +1348,6 @@ whose Boolean/null observations justify the intermediate and successor contexts.
 It also checks the complete expression claim using the derived expression form.
 Thus graph decomposition cannot silently discard the producer's condition type.
 
-
 Closure branches whose two arms fall through require no additional typing rule.
 Their extracted shape is:
 
@@ -1370,7 +1383,6 @@ shared join would. `early_return_trace` checks both outcomes of an extracted
 closure: an early return skips the later write, while the other arm executes it.
 General partially returning nested arms remain gated.
 
-
 A local continuation shared by multiple paths is a derived construction:
 
 $$
@@ -1391,7 +1403,6 @@ The checked example has two paths calling the same reader continuation and
 one early-return path bypassing it. This is a calculus construction; source
 lowering of general partially returning nested arms remains gated.
 
-
 Later refinements can instead be passed as explicit continuation arguments:
 
 $$
@@ -1406,6 +1417,22 @@ $\Delta$. `passed_refinement_paths` checks two surviving paths into one
 or the wrong slot. Passing this one refined value is established; translating
 arbitrary supplied entry environments into continuation parameters is not yet
 implemented.
+
+### Universal parameter initialization
+
+The direct generic certificate has a `defaultE i B d` constructor. For a ground
+input slot `Γ(i) = A`, it checks `A ⊆ B ∪ {undefined}` and checks `d : B` under
+the same rigid binders. Its term is `if isUndefined(var i) then d else var i`,
+and its result is `B`. The initializer's proof is required even when observed
+calls supply that argument. A sequential `let` prologue binds the initialized
+value before checking subsequent defaults and the body.
+
+`GenericCertificate.Proof.check_safe` covers this constructor for every rigid
+assignment. Its undefined branch uses the initializer certificate; its other
+branch removes the undefined alternative from the supplied value. Ground input
+labels do not restrict other parameters or the result to ground types. This
+rule does not yet express an input union containing a rigid type or a closure
+that reads a parameter initialized later; those remain explicit source gaps.
 
 ## Callables
 
@@ -1627,16 +1654,16 @@ operations, and separate call and construction behaviours. Call that design
 **C\***. The proposal's operations, types and rules are recovered below as
 special cases, and the sentences that say so name it as the first proposal.
 
-| Notation | Meaning |
-| --- | --- |
-| $\Gamma\vdash_G t:A\;!E$ | a computation whose normal results have type $A$ and whose thrown values have type $E$; $E=\bot$ when unannotated |
-| $\vdash_G^{\mathsf{call}}$, $\vdash_G^{\mathsf{construct}}$, $\vdash_G^{\mathsf{init}}$ | auxiliary judgments on invocation programs and initial property layouts |
-| $\sigma=(R;\alpha)\xrightarrow{E}B$ | a call signature: receiver contract $R$, argument-list contract $\alpha$, exception bound $E$, result $B$ |
-| $\nu=(N;\alpha)\xRightarrow{E}B$ | a construction signature, with $N$ the contract on `new.target` |
-| $\bar a$, $\bar p$ | an actual argument list, and stored bound arguments |
-| $\mathsf{Obj}(P)$, $\mathsf{Fun}$, $\mathsf{Ctor}$ | objects meeting the property contract $P$; objects with `[[Call]]`; objects with `[[Construct]]` |
-| $\top_p$ | the property contract imposing no requirement |
-| $\ell$, $\delta$, $\pi$, $\kappa$, $\eta$ | an identity, an operation descriptor, and its property, call and construction components |
+| Notation                                                                                | Meaning                                                                                                           |
+| --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| $\Gamma\vdash_G t:A\;!E$                                                                | a computation whose normal results have type $A$ and whose thrown values have type $E$; $E=\bot$ when unannotated |
+| $\vdash_G^{\mathsf{call}}$, $\vdash_G^{\mathsf{construct}}$, $\vdash_G^{\mathsf{init}}$ | auxiliary judgments on invocation programs and initial property layouts                                           |
+| $\sigma=(R;\alpha)\xrightarrow{E}B$                                                     | a call signature: receiver contract $R$, argument-list contract $\alpha$, exception bound $E$, result $B$         |
+| $\nu=(N;\alpha)\xRightarrow{E}B$                                                        | a construction signature, with $N$ the contract on `new.target`                                                   |
+| $\bar a$, $\bar p$                                                                      | an actual argument list, and stored bound arguments                                                               |
+| $\mathsf{Obj}(P)$, $\mathsf{Fun}$, $\mathsf{Ctor}$                                      | objects meeting the property contract $P$; objects with `[[Call]]`; objects with `[[Construct]]`                  |
+| $\top_p$                                                                                | the property contract imposing no requirement                                                                     |
+| $\ell$, $\delta$, $\pi$, $\kappa$, $\eta$                                               | an identity, an operation descriptor, and its property, call and construction components                          |
 
 ### One object identity, several operations
 
@@ -1721,16 +1748,16 @@ one such algorithm — not the definition of invocation for every callable.
 The following are cases of that interface, rather than competing
 representations:
 
-| Source form | Account in C\* |
-| --- | --- |
+| Source form                                 | Account in C\*                                                                                                                                                          |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Ordinary function declaration or expression | A closure with an environment and the appropriate strict or non-strict receiver discipline. Declaration versus expression also affects when its binding is initialized. |
-| Arrow function | A closure whose references to `this`, `arguments`, `super`, and `new.target` resolve through the enclosing lexical environment. It has no construction operation. |
-| Object or class method | A function whose invocation receives the call-site receiver; its home-object association supports `super`. Extracting the function does not bind that receiver. |
-| Class-field arrow | Arrow creation performed during instance initialization, producing a distinct function identity for each instance. |
-| Bound function | A fresh object whose call operation forwards to a target with stored receiver and arguments. Construction, when supported, has its own forwarding rule. |
-| Class constructor | An object with a construction operation and a call operation that throws. Function shape therefore does not imply a successful ordinary call. |
-| Callable proxy | A fresh object whose operations dispatch through proxy algorithms, consulting its target, handler, and revocation state. |
-| Async or generator function | A function whose invocation uses the corresponding promise or suspended-computation semantics. |
+| Arrow function                              | A closure whose references to `this`, `arguments`, `super`, and `new.target` resolve through the enclosing lexical environment. It has no construction operation.       |
+| Object or class method                      | A function whose invocation receives the call-site receiver; its home-object association supports `super`. Extracting the function does not bind that receiver.         |
+| Class-field arrow                           | Arrow creation performed during instance initialization, producing a distinct function identity for each instance.                                                      |
+| Bound function                              | A fresh object whose call operation forwards to a target with stored receiver and arguments. Construction, when supported, has its own forwarding rule.                 |
+| Class constructor                           | An object with a construction operation and a call operation that throws. Function shape therefore does not imply a successful ordinary call.                           |
+| Callable proxy                              | A fresh object whose operations dispatch through proxy algorithms, consulting its target, handler, and revocation state.                                                |
+| Async or generator function                 | A function whose invocation uses the corresponding promise or suspended-computation semantics.                                                                          |
 
 The ordinary-function, arrow, method, and class distinctions come from the
 function-creation and invocation rules; in particular, an arrow captures an
@@ -2068,7 +2095,7 @@ The rules below extend the first proposal's callable introduction,
 application, property access, and subsumption. They retain the ordinary
 judgment $\Gamma\vdash_G t:A$; exception bounds, construction contracts, and the
 stateful judgments are explicit additions. These are proposed rules, not claims
-about what is already implemented or proved. The four that *are* implemented
+about what is already implemented or proved. The four that _are_ implemented
 and proved are the ones stated above under
 [Judgments and constructor views](#judgments-and-constructor-views) —
 `makeCallable`, `callCallable`, `readCallable` and `writeCallable`, over the
@@ -2813,12 +2840,12 @@ nonthrowing signature; handler and target obligations remain.
 
 SKJS's call modes obtain the following views:
 
-| Mode | View | $\mathsf{isFun}$ |
-| --- | --- | --- |
-| `CPresent(L)` | $\mathsf{Callable}(L;P)$, with advertised signatures | true |
-| `CFunction` | $\mathsf{Callable}([];P)$ | true |
-| `CAbsent` | $\mathsf{Plain}(P)$ | false |
-| `CUnknown` | $\mathsf{Obj}(P)$ | unknown |
+| Mode          | View                                                 | $\mathsf{isFun}$ |
+| ------------- | ---------------------------------------------------- | ---------------- |
+| `CPresent(L)` | $\mathsf{Callable}(L;P)$, with advertised signatures | true             |
+| `CFunction`   | $\mathsf{Callable}([];P)$                            | true             |
+| `CAbsent`     | $\mathsf{Plain}(P)$                                  | false            |
+| `CUnknown`    | $\mathsf{Obj}(P)$                                    | unknown          |
 
 This retains SKJS's distinction between known function shape and unknown
 callability, while supplying the structural object view.

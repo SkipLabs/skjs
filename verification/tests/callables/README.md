@@ -17,8 +17,20 @@ producer and the independent consumer.
 
 Supported. A function declaration is the checked unit and arrows are its callable
 values; a call to a named top-level function is rejected by the source fragment.
-Parameter lists of any length are checked at exact arity, with the callee
-evaluated before the actuals and the actuals left to right. Callables pass as
+Parameter lists of any length are checked, with the callee evaluated before the
+actuals and the actuals left to right. A call may omit a trailing position
+whose contract admits `undefined`, which is the value the machine binds there;
+`x?: T` is carried as `T | undefined`. A parameter may instead carry a default,
+`y: B = e`: its position admits `undefined` for the same reason, and `e`
+replaces that value before the body runs, so the body reads `B`; a default may
+read the parameters declared before it. Initialization exposes parameter names
+in declaration order; a current or later raw argument slot is not a readable
+binding. Default-created closures capturing later parameters are currently
+refused, even when their invocation would occur after initialization.
+Quantified closures support ground-typed defaults through a universal
+initialization certificate. Defaults whose input type needs a rigid union
+(`T | undefined`) remain outside the claim/certificate language.
+Callables pass as
 arguments, return as results, escape as closures and appear as thunks; they form
 unions with null and with each other, are selected by
 `typeof x === "function"` guards, and are held in cells, including recursive
@@ -26,7 +38,11 @@ invocation through one. A fresh arrow takes one initialized `value` field throug
 explicitly typed `Object.assign`. `.call` applies to local arrows and their
 immutable aliases, with the receiver evaluated and then discarded. `.bind` saves
 an argument prefix on the same arrows through tsc's claims; SKJS rejects it
-([finding](../skjs-incomplete/bound-arguments.ts)). Rigid generic declarations
+([finding](../skjs-incomplete/bound-arguments.ts)). One closure may advertise several signatures — an intersection of arrows —
+and is then checked once per signature, each a separate obligation on the same
+body; its producer states what that body claims under each. TypeScript rejects
+the implementations this accepts, so those witnesses are the OCaml producer's
+alone. Rigid generic declarations
 and bounds have source support. Quantified local closures have an independently
 certified OCaml path; TS accepting their source does not imply its exporter can
 represent their schemes. Keep those outcomes separate.
@@ -35,44 +51,69 @@ Not supported, with the refusal each one meets:
 
 | Form                                                                             | Where it stops                                                                                                                                                                                                                           |
 | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Optional parameters, calls with fewer actuals                                    | parsed, then `function-optional-parameter`; checked calls require the exact count                                                                                                                                                        |
-| Default parameters                                                               | no wire form: a lambda parameter carries a name and a type only                                                                                                                                                                          |
 | Rest parameters, spread actuals, `arguments`                                     | `function-rest-parameter`; the protocol excludes spread and argument-count introspection                                                                                                                                                 |
-| Overloads, arrow intersections                                                   | the model has the algebra (`calls_append`, `overload_append`, `SourceCallableUnionTests.lean`); no source encoding, and SKJS collapses incomparable arrow intersections to `never` ([finding](../skjs-incomplete/arrow-intersection.ts)) |
-| `this` parameters, receiver-dependent methods, `.apply`                          | `function-this-parameter`; the calculus has no receiver, so `.call` discards one ([boundary example](call-objects.ts), [receiver plan](#receiver-implementation-plan))                                                                                                                   |
+| `this` parameters, receiver-dependent methods, `.apply`                          | `function-this-parameter`; the calculus has no receiver, so `.call` discards one ([boundary example](call-objects.ts), [receiver plan](#receiver-implementation-plan))                                                                   |
 | Construct signatures, `new`, classes, accessors                                  | `function-constructible`; accessor execution is a separate semantic obligation                                                                                                                                                           |
 | Index signatures and array brands on functions                                   | `function-index-signature`, `function-is-array`                                                                                                                                                                                          |
 | Function expressions as values                                                   | only arrows lower to `lambda`                                                                                                                                                                                                            |
 | Async functions, generators, function identity comparison, loops inside closures | outside the fragment                                                                                                                                                                                                                     |
 | Generic signatures through SKJS                                                  | `function-generic`: SKJS types quantified closures but exports them as unavailable, so the OCaml witnesses carry these rows                                                                                                              |
+| Optional and defaulted parameters through SKJS                                   | `function-optional-parameter`: SKJS types them and exports every claim mentioning the signature as unavailable                                                                                                                           |
+| Overloads through SKJS and tsc                                                   | both reject the implementation of an intersection-typed closure, and neither states per-signature interior claims; SKJS also collapses incomparable arrow intersections to `never` ([finding](../skjs-incomplete/arrow-intersection.ts)) |
 
 Refusal reasons are defined in
 [obligation diagnostics](../../OBLIGATION-DIAGNOSTICS.md); the encoding and its
 restrictions belong to the
 [protocol](../../REQUEST-PROTOCOL.md#expression-closures-and-calls).
 
+### Closure status for milestones 1–3
+
+1. **Optional positions:** implemented, with independent omission evidence,
+   including a contract admitting undefined through semantic top.
+2. **Overloads:** implemented with validated per-signature interior claims,
+   including captured-field refinements. Each signature checks the same lowered
+   body. Both CLI entry points reject malformed or misplaced rows.
+3. **Defaults:** sequential initialization and ground-typed defaults under rigid
+   binders are implemented and certified. **This milestone is not fully closed.**
+   Two safe source witnesses remain named gaps in the OCaml inventory:
+   `generic-rigid-default` and `default-deferred-capture`.
+
+To finish (3), extend the existing rigid type language with unions and prove
+its semantic interpretation/subtyping cases; use the same representation in
+claims, the direct checker, certificates, producers and printers. `T` must stay
+rigid when the input is `T | undefined`, and the initializer must establish `T`
+for every assignment, including when observed calls only use Boolean.
+
+Forward captures need one shared parameter initialization environment: closure
+creation captures binding identity, later initialization supplies its value,
+and an early read remains a temporal-dead-zone error. Model initializedness
+separately from the fixed world type. Prove initialization and invocation safety
+before accepting these programs. Do not expose raw argument values, retype a
+location at initialization, or move potentially effectful defaults. The closure
+must read the initialized value even when the actual was undefined and a later
+default replaced it. A companion control must invoke that closure during the
+later parameter's initializer and be refused. This is an additional semantic
+extension, not a reason to remove the existing refusal.
+
 ### Order of extension
 
 Breadth first, cheapest new representation first:
 
-1. **Optional parameters and short calls.** One declared-optional position and a
-   body obligation of `T | undefined`. The binder already pads missing actuals
-   with undefined; only the checked source path requires an exact count. Absence
-   of an object _field_ is a different obligation and stays where it is.
-2. **Overloads at the source boundary.** The algebra is proved; what is missing
-   is a source encoding and a call-site dispatch rule. It also turns an existing
-   SKJS finding into a producer comparison.
-3. **Default parameters.** Reuse the undefined test, but specify a separate
-   parameter-initialization scope: earlier parameters are available, later ones
-   are uninitialized, and body declarations must not become visible to defaults.
-   Effect order and closures created by defaults need independent obligations.
-4. **Rest parameters and spread actuals.** Needs a sequence type in signature
-   position.
-5. **`this` and methods**, following the receiver plan below. `.apply` then adds
+1. **Rest parameters and spread actuals.** Unlike the three rows above, this
+   one is not type-level. A rest parameter collects its surplus arguments into
+   a fresh array, and invocation does not allocate: `bindParameters` binds the
+   prepared actuals and nothing else, so `Invoke`, the step relation and every
+   proof about them would acquire a heap. Packing the surplus at the source
+   instead is only sound when the callee really has a rest parameter, so the
+   signature would have to record which position is the rest one — an inert
+   marker inside a type whose meaning would not change, which is the kind of
+   thing the clause language deliberately does not carry. Decide between the
+   two before writing either; the rest of the fragment does not depend on it.
+2. **`this` and methods**, following the receiver plan below. `.apply` then adds
    array-like argument preparation; it is not spread's iterator operation.
    Construct signatures follow separately. Decide the receiver interface now
-   and use it when extending signatures in steps 1–4, even before source methods
-   are admitted.
+   and use it when extending signatures in the steps above, even before source
+   methods are admitted.
 
 ### Receiver implementation plan
 
@@ -236,10 +277,10 @@ is shared with those future extensions; their semantics are not implied by it.
 ## Examples
 
 | Example in [unions.ts](unions.ts) | What it establishes                                                                                                                                                                                                            |
-| --- | --- |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `guardedCallableUnion`            | A null guard permits calling either remaining signature and preserves both possible results.                                                                                                                                   |
 | `andGuardedCallable`              | `&&` calls only the non-null function; its true result does not erase the skipped false result.                                                                                                                                |
-| `orGuardedCallable` | `\|\|` skips the call for null, preserving true alongside the callable's false result. |
+| `orGuardedCallable`               | `\|\|` skips the call for null, preserving true alongside the callable's false result.                                                                                                                                         |
 | `coalescedCallable`               | Null and undefined select a fallback function before invocation; either callable can supply the result.                                                                                                                        |
 | `capturedGuardedCallable`         | A returned closure retains the immutable capture's non-null refinement and both callable alternatives after the branch ends.                                                                                                   |
 | `aliasedCallableSelection`        | A selected local alias retains both callable alternatives through a nested closure; its callability does not transfer to the original nullable input.                                                                          |
@@ -333,6 +374,30 @@ function through a mutable cell and narrows its first domain on return. Both
 producers verify it; the argument suite rejects a widened second domain and a
 dropped second parameter. Required function **types** can now carry multiple
 parameters through the source pipeline, with native call and lambda lowering.
+
+Overloaded closures are the OCaml producer's
+[`overloads.ts`](../../ocaml-producer/examples/overloads.ts), with
+`invalid-overload.ts` claiming a signature its body does not implement. The
+claims carry one interior set per signature, the same mechanism compiled scheme
+eliminations use, and a block body is checked at each signature's own result
+rather than at its one enclosing annotation.
+
+[optional-arguments.ts](optional-arguments.ts) omits an optional trailing
+argument, writes it, and writes `undefined` for it. The three agree at run time,
+and the JavaScript witness in [optional-arguments.mts](../optional-arguments.mts)
+establishes what omission means before any claim is read. Forging the optional
+position's contract to drop `undefined` makes the same call fail, in the
+consumer and in production: the licence to omit is the contract, and no actual
+is invented to repair it. The tsc producer verifies all three functions; SKJS
+types them and exports every claim mentioning the closure as unavailable
+(`function-optional-parameter`), which the corpus records as its outcome.
+
+[default-arguments.ts](default-arguments.ts) gives a parameter a default,
+writes the argument anyway, and reads an earlier parameter in a default. The
+lowering binds the parameter's own slot anonymously and binds its name to the
+value that replaces an omitted argument, so no name is invented and nothing
+shadows. The suite forges the default out of its parameter's contract and
+removes `undefined` from the position it fills; both must fail.
 
 [guards.ts](guards.ts) selects existing callable signatures with strict
 `typeof ... === "function"` and `!==` guards. It covers a mixed runtime-shape

@@ -7,7 +7,12 @@ type entry = { start: Json.t; bindings: (string * binding) list }
 (* A call site's validated substitution travels with its claim. It is proposal
    output for Lean to re-check, never an acceptance fact. *)
 type expression = { pos: Json.t; type_: ty; instantiation: (string * ty) list option }
-type function_claim = { source: fn; entries: entry list; expressions: expression list }
+(* One closure advertising several signatures has one body and a separate
+   obligation at each: the interior claims are collected once per signature,
+   keyed by the closure's span and ordered with the signatures. *)
+type overlay = { row_entries: entry list; row_expressions: expression list }
+type function_claim = { source: fn; entries: entry list; expressions: expression list;
+                        arrows: (Json.t * overlay list) list }
 type t = { program: program; functions: function_claim list }
 let unsupported s = Json.fail ("unsupported: " ^ s)
 let combine = List.fold_left union (Atoms [])
@@ -73,6 +78,7 @@ let rec branch env cond truth = match cond.node with
    claiming that an arbitrary expression already satisfies an annotation. *)
 let infer_function (f:Source.fn) =
   let entries = ref [] and expressions = ref [] and instantiations = ref [] in
+  let arrows = ref [] in
   let entry env span = match Json.list span with
     | start::_ -> entries := {start;bindings=env} :: !entries
     | [] -> Json.fail "empty source span" in
@@ -106,25 +112,88 @@ let infer_function (f:Source.fn) =
     | Assign (n,rhs) -> (match lookup env n with
       | Storage contract -> expr ~expected:contract env rhs
       | Value _ -> unsupported "assignment to immutable binding")
-    | Lambda (quantified,ps,result,body) ->
-      let inner = List.fold_left (fun env (n,t) -> extend env n (Value t)) env ps in
+    | Lambda (quantified,ps,defaults,result,body) ->
+      (* Initialization has a separate, sequential scope. The current and later
+         parameters are not readable merely because their raw actuals exist. *)
+      let inner = List.fold_left (fun env (i,(n,t)) ->
+        Option.iter (fun d ->
+          try ignore (expr ~expected:t env d) with
+          | Json.Error message when String.starts_with ~prefix:"unbound name " message ->
+            unsupported ("parameter default may only read initialized earlier parameters and captures: " ^ message))
+          (List.assoc_opt i defaults);
+        extend env n (Value t)) env (List.mapi (fun i p -> i,p) ps) in
       ignore (expr ~expected:result inner body);
-      quantified_arrow quantified (List.map snd ps) result
+      let params = List.mapi (fun i (_,t) ->
+        if List.mem_assoc i defaults then union t (Atoms [Undef]) else t) ps in
+      let own = quantified_arrow quantified params result in
+      (* A contract advertising several signatures is implemented by this one
+         closure. Propose that contract and state what the body claims under
+         each signature; Lean checks every one of them. *)
+      let implements (s:Semantic.signature) =
+        s.quantified=[] && List.length s.params=List.length ps in
+      (match expected with
+       | Some (Atoms [Shape {calls=(_::_::_ as calls);fields=[];elements=None}] as contract)
+         when quantified=[] && defaults=[] && List.for_all implements calls ->
+         let row (s:Semantic.signature) =
+           let saved = !expressions and saved_entries = !entries in
+           expressions := []; entries := [];
+           let env_row = List.fold_left2 (fun env (n,_) t -> extend env n (Value t))
+             env ps s.params in
+           ignore (expr ~expected:s.result env_row body);
+           (* An entry environment replaces the context it is checked against,
+              so a body's entries are stated per signature like its
+              expressions. *)
+           let claims = {row_expressions=List.rev !expressions;
+                         row_entries=List.rev !entries} in
+           expressions := saved; entries := saved_entries;
+           claims in
+         let rows = List.map row calls in
+         arrows := (e.pos,rows) :: !arrows;
+         contract
+       | _ -> own)
     | Call (callee,receiver,args) ->
       let callee = expr env callee in
       Option.iter (fun e -> ignore (expr env e)) receiver;
+      (* A call writes a prefix of the declared positions. The rest are omitted,
+         which is admissible exactly when each of their contracts admits
+         `undefined`; Lean checks that premise for itself. *)
+      let callable (signature:Semantic.signature) =
+        let declared = List.length signature.params and written = List.length args in
+        written <= declared
+        && List.for_all Semantic.admits_undefined
+             (List.filteri (fun i _ -> i >= written) signature.params) in
       (match callee with Atoms [Shape {calls=[signature];_}]
-          when signature.quantified=[] && List.length signature.params=List.length args ->
-        List.iter2 (fun contract e -> ignore (expr ~expected:contract env e)) signature.params args;
+          when signature.quantified=[] && callable signature ->
+        List.iteri (fun i e ->
+          ignore (expr ~expected:(List.nth signature.params i) env e)) args;
         signature.result
       | Atoms [Shape {calls=[signature];_}]
-          when signature.quantified<>[] && List.length signature.params=List.length args ->
-        let actuals=List.map (expr env) args in
+          when signature.quantified<>[] && callable signature ->
+        (* Omission contributes undefined to inference, but no expression or
+           claim is inserted into the source's argument list. *)
+        let actuals=List.map (expr env) args @
+          List.init (List.length signature.params - List.length args) (fun _ -> Atoms [Undef]) in
         let inferred=Inference.infer signature actuals in
         instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
           inferred.substitution) :: !instantiations;
         inferred.result
-      | _ -> unsupported "call requires a single arrow with matching arity")
+      (* Several advertised signatures on one value. The actuals are typed on
+         their own — contextual construction inside such a call is not guided —
+         and the signature whose domains they match is proposed. Lean selects
+         the row it checks and re-checks every argument obligation. *)
+      | Atoms [Shape {calls=(_::_::_ as calls);_}]
+          when List.for_all (fun (s:Semantic.signature) -> s.quantified=[]) calls ->
+        let actuals = List.map (expr env) args in
+        let usable = List.filter callable calls in
+        let matching = List.filter (fun (s:Semantic.signature) ->
+          let declared = List.filteri (fun i _ -> i < List.length actuals) s.params in
+          declared = actuals) usable in
+        (match matching,usable with
+         | s :: _,_ -> s.result
+         | [],(first :: rest) when List.for_all (fun (s:Semantic.signature) ->
+             s.result = first.result) rest -> first.result
+         | _ -> unsupported "overloaded call needs a signature its arguments match")
+      | _ -> unsupported "call requires a single arrow the arguments can call")
     | WithFields (fn,initial,ft,bag) ->
       ignore (expr ~expected:ft env fn); ignore (expr ~expected:bag env initial);
       (match ft,bag with
@@ -186,5 +255,6 @@ let infer_function (f:Source.fn) =
       ignore (statements (branch env c true) body); env
     | Break | Continue -> env) env ss in
   ignore (statements (List.map (fun (n,t) -> n,Value t) f.params) f.body);
-  {source=f;entries=List.rev !entries;expressions=List.rev !expressions}
+  {source=f;entries=List.rev !entries;expressions=List.rev !expressions;
+   arrows=List.rev !arrows}
 let infer program = {program;functions=List.map infer_function program.Source.functions}

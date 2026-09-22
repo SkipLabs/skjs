@@ -40,6 +40,26 @@ theorem call_elim {L : List (List Fam × Fam)} {p : List Fam × Fam}
       (WExt_refl _) hu hh' hAv ha'
     exact Or.inr ⟨U, heap, body, WExt_refl _, hu, hi.step heap, hh', hs⟩
 
+/-- A ready call that omits trailing actuals. Every omitted position's contract
+admits `undefined`, which is the value the machine binds there, so the selected
+signature covers the padded list and the same body runs. -/
+theorem call_elim_short {L : List (List Fam × Fam)} {p : List Fam × Fam}
+    (hA : ∀ A ∈ p.1, Adm A) (hAv : ∀ A ∈ p.1, ValOnly A)
+    {n : Nat} {W : WorldT n} {f : Tm} {args pad : List Tm} {heap : Heap}
+    (hpad : ∀ a ∈ pad, a = .undef)
+    (hf : callsT L n W f) (hp : p ∈ L) (ha : ArgsT p.1 n W (args ++ pad))
+    (hw : WorldAdm W) (hh : HeapOk n W heap) : Safe p.2 n W heap (.call f args) := by
+  cases n with
+  | zero => trivial
+  | succ n =>
+    let U := trunc n (Nat.le_succ n) W
+    have hu : WorldAdm U := WorldAdm_trunc _ hw
+    have hh' : HeapOk n U heap := HeapOk_trunc n W heap hh
+    have ha' := ArgsT_transfer hA ha n (Nat.le_succ n) U (WExt_refl _)
+    obtain ⟨body, hi, hs⟩ := callsT_invoke_short hf hp (Nat.lt_succ_self n)
+      (WExt_refl _) hu hh' hpad hAv ha'
+    exact Or.inr ⟨U, heap, body, WExt_refl _, hu, hi.step heap, hh', hs⟩
+
 /-- Same-budget application compatibility, the rule needed for the fundamental
  theorem under semantic environments. Both values are available at the current
 budget; beta consumes one step and uses the function guarantee below it. -/

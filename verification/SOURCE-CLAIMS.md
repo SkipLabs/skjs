@@ -43,8 +43,12 @@ shadow, so a nested scheme's own names hide an outer substitution.
 An expression that calls one carries the elimination it proposes:
 
 ```json
-{"pos":[121,129],"type":[1,2],"current":null,
- "instantiate":[{"name":"T","type":[1,2]}]}
+{
+  "pos": [121, 129],
+  "type": [1, 2],
+  "current": null,
+  "instantiate": [{ "name": "T", "type": [1, 2] }]
+}
 ```
 
 `instantiate` is absent, or `null`, at every other site. Its names must be
@@ -56,7 +60,7 @@ forged `instantiate` can only name another genuine instance.
 The intermediate graph compilation never rests on observed calls alone.
 `SourceClaimJson`'s scheme section checks
 introduction first — the closure body, read from the source and not from its
-claim, must satisfy the declared signature for *every* assignment of the
+claim, must satisfy the declared signature for _every_ assignment of the
 binders — and only then compiles the checked eliminations to ordinary arrows.
 A closure that satisfies each observed call but cannot produce an arbitrary
 rigid result is refused at that gate, whatever its calls.
@@ -71,6 +75,12 @@ checking. Captured runtime slots distinguish values from cell identities, and
 cell contracts come from the source's storage annotations. Ordinary variable
 proofs cannot expose these private identities; reading one requires a cell-read
 proof. Writes within a quantified body still lack a certificate constructor.
+Quantified closures with ground-typed defaults reconstruct initialization in
+that universal certificate, in parameter order, before the body. Omitted inputs
+admit `undefined`; each initializer establishes its parameter's declared type
+under all rigid assignments. Initializers use the same supported expression
+language as the rigid body. Rigid input unions such as `T | undefined` remain
+unrepresented; defaults with those contracts are explicitly refused.
 
 The executable source slice is narrower than the semantic scheme rules. A
 containing function may declare one immutable quantified closure. A binder may
@@ -104,6 +114,16 @@ this format, but verification requires the real source parser and stays unavaila
 
 ## Encoding
 
+An optional function-level `arrows` field supplies per-signature interior claims
+for overloaded closures: `[{pos, rows: [{expressions, entries}]}]`. Each row uses
+the same expression and entry encodings as the enclosing function. The consumer
+checks the body separately for every advertised signature; rows are producer
+claims, not evidence of acceptance. Owners must be distinct source closures;
+row sites must lie inside their owner, with no duplicate sites, invalid labels,
+or unchecked substitutions. Row-specific current-content assertions replace the
+whole assertion at that site, including its absence; they are never discarded
+or combined with another signature's refinement.
+
 Every field shown below is required. Unknown fields, including stored verification
 statuses, are rejected. This illustrative document must be given the actual file
 identity, SHA-256 digest and UTF-16 source positions before use:
@@ -112,18 +132,27 @@ identity, SHA-256 digest and UTF-16 source positions before use:
 {
   "file": "input.ts",
   "sourceSha256": "REPLACE_WITH_SHA256_OF_EXACT_SOURCE_BYTES",
-  "types": [["nul"], [{"boolLit": {"value": true}}], [{"boolLit": {"value": false}}], ["undef"]],
-  "functions": [{
-    "name": "identity",
-    "namePos": [9, 17],
-    "params": [{"name": "flag", "type": [1, 2], "current": null}],
-    "result": [1, 2],
-    "entries": [{
-      "start": 43,
-      "bindings": [{"name": "flag", "type": [1, 2], "current": null}]
-    }],
-    "expressions": [{"pos": [50, 54], "type": [1, 2], "current": null}]
-  }]
+  "types": [
+    ["nul"],
+    [{ "boolLit": { "value": true } }],
+    [{ "boolLit": { "value": false } }],
+    ["undef"]
+  ],
+  "functions": [
+    {
+      "name": "identity",
+      "namePos": [9, 17],
+      "params": [{ "name": "flag", "type": [1, 2], "current": null }],
+      "result": [1, 2],
+      "entries": [
+        {
+          "start": 43,
+          "bindings": [{ "name": "flag", "type": [1, 2], "current": null }]
+        }
+      ],
+      "expressions": [{ "pos": [50, 54], "type": [1, 2], "current": null }]
+    }
+  ]
 }
 ```
 
@@ -155,12 +184,12 @@ The table is the graph the functions are checked against. Row `i` is the list
 of clauses that label `i` denotes, and a clause names its operands as label
 lists into the same table:
 
-| Row | Clause | Meaning |
-| --- | --- | --- |
-| `0`, `1`, `2`, `3` | `"nul"`, `boolLit true`, `boolLit false`, `"undef"` | The primitives, fixed |
-| any | `{"refs": {"first": [["value", A]], "rest": [], "views": []}}` | A plain record with an invariant `value` field holding the union `A` |
-| any | `{"refs": {"first": F, "rest": [H, ...], "views": V}}` | One record under every listed field contract; `F`, `H` and `V` are lists of `[name, labels]` pairs. `V` names readonly views: fields read at a sound upper bound on their contents, with no write permission through this contract |
-| any | `{"arrs": {"arrows": [[D, R]]}}` | A signature with ordered domain list `D` and result union `R` |
+| Row                | Clause                                                         | Meaning                                                                                                                                                                                                                            |
+| ------------------ | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`, `1`, `2`, `3` | `"nul"`, `boolLit true`, `boolLit false`, `"undef"`            | The primitives, fixed                                                                                                                                                                                                              |
+| any                | `{"refs": {"first": [["value", A]], "rest": [], "views": []}}` | A plain record with an invariant `value` field holding the union `A`                                                                                                                                                               |
+| any                | `{"refs": {"first": F, "rest": [H, ...], "views": V}}`         | One record under every listed field contract; `F`, `H` and `V` are lists of `[name, labels]` pairs. `V` names readonly views: fields read at a sound upper bound on their contents, with no write permission through this contract |
+| any                | `{"arrs": {"arrows": [[D, R]]}}`                               | A signature with ordered domain list `D` and result union `R`                                                                                                                                                                      |
 
 The table starts with the four primitives and holds one further row per compound
 type the source mentions, in order of first use: a compound type gets a row the
@@ -277,7 +306,7 @@ duplicate-free; extraction requires it to denote a finite primitive predicate
 document whose row 4 is `Ref<boolean>`:
 
 ```json
-{"name":"cell","type":[4],"current":[["value",[1]]]}
+{ "name": "cell", "type": [4], "current": [["value", [1]]] }
 ```
 
 This displays as `{ value: boolean = (true) }`. The storage invariant and current

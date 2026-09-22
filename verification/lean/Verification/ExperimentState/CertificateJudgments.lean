@@ -30,6 +30,11 @@ inductive Typed (ps : List Parameter) : List Slot → Tm → Ty → Prop
   | letE {Γ : List Slot} {a b : Tm} {A B : Ty}
       (ha : Typed ps Γ a A) (hb : Typed ps (.value A :: Γ) b B) :
       Typed ps Γ (.letE a b) B
+  | defaultE {Γ : List Slot} {i : Nat} {A B : List Nat} {init : Tm}
+      (hi : Γ[i]? = some (.value (.ground A)))
+      (hab : ∀ a ∈ A, a ∈ B ∨ a = 3)
+      (hd : Typed ps Γ init (.ground B)) :
+      Typed ps Γ (.ite (.test .isUndef (.var i)) init (.var i)) (.ground B)
   | lambda {Γ : List Slot} {inputs : List Ty} {body : Tm} {B : Ty}
       (h : Typed ps (inputs.map Slot.value ++ Γ) body B) :
       Typed ps Γ (.make (.closure inputs.length body) .nul) (.arrow inputs B)
@@ -147,6 +152,33 @@ theorem Typed_of_check {ps : List Parameter} :
           simp only [Proof.check, ha, hb, Option.some.injEq, Prod.mk.injEq] at hc
           obtain ⟨rfl, rfl⟩ := hc
           exact .letE (Typed_of_check init ha) (Typed_of_check body hb)
+  | .defaultE i B init, Γ, t, result, hc => by
+      cases hi : Γ[i]? with
+      | none => simp [Proof.check, hi] at hc
+      | some slot =>
+        cases slot with
+        | cell _ => simp [Proof.check, hi] at hc
+        | value A =>
+          cases A with
+          | rigid _ => simp [Proof.check, hi] at hc
+          | arrow _ _ => simp [Proof.check, hi] at hc
+          | ground A =>
+            cases hd : init.check ps Γ with
+            | none => simp [Proof.check, hi, hd] at hc
+            | some pair =>
+              obtain ⟨term, actual⟩ := pair
+              simp only [Proof.check, hi] at hc
+              rw [hd] at hc
+              change (if (A.all (fun a => (B ++ [3]).contains a) && actual.leUnder ps (.ground B)) = true
+                then some (Tm.ite (.test .isUndef (.var i)) term (.var i), Ty.ground B)
+                else none) = some (t, result) at hc
+              split at hc
+              · next h =>
+                obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj hc)
+                simp only [Bool.and_eq_true] at h
+                refine .defaultE hi (by simpa using h.1) ?_
+                exact .sub (Typed_of_check init hd) (Sub_of_leUnder h.2)
+              · contradiction
   | .lambda inputs body, Γ, t, A, hc => by
       cases hb : body.check ps (inputs.map Slot.value ++ Γ) with
       | none => simp [Proof.check, hb] at hc
@@ -210,6 +242,16 @@ theorem check_of_Typed {ps : List Parameter} (hw : WellFormed ps) {Γ : List Slo
     obtain ⟨pa, hpa⟩ := iha
     obtain ⟨pb, hpb⟩ := ihb
     exact ⟨.letE pa pb, by simp [Proof.check, hpa, hpb]⟩
+  | @defaultE Γ i A B init hi hab _ ih =>
+    obtain ⟨p, hp⟩ := ih
+    refine ⟨.defaultE i B p, ?_⟩
+    simp only [Proof.check, hi]
+    rw [hp]
+    change (if (A.all (fun a => (B ++ [3]).contains a) &&
+      (Ty.ground B).leUnder ps (.ground B)) = true then some _ else none) = some _
+    have hab' : A.all (fun a => (B ++ [3]).contains a) = true := by simpa using hab
+    rw [hab', leUnder_of_Sub hw (Sub.refl ps (.ground B))]
+    rfl
   | @lambda Γ inputs body B _ ih =>
     obtain ⟨pb, hpb⟩ := ih
     exact ⟨.lambda inputs pb, by simp [Proof.check, hpb]⟩

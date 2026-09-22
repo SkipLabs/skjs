@@ -152,6 +152,14 @@ const callables = examples("verification/tests/callables", [
     "Use one object through both its fields and its call signature.",
   ],
   ["receiver-call", "Check explicit .call receivers and forwarded arguments."],
+  [
+    "optional-arguments",
+    "Omit, write, or pass undefined for an optional trailing parameter.",
+  ],
+  [
+    "default-arguments",
+    "Replace an omitted argument with a default, including one reading an earlier parameter.",
+  ],
 ]);
 const callableBoundaries = examples("verification/tests/callables", [
   [
@@ -187,6 +195,7 @@ const ocamlExample = (c: Case): GroupFile => ({
 const ocamlExamples = (kinds: Case["kind"][]): GroupFile[] =>
   cases.filter((c) => kinds.includes(c.kind)).map(ocamlExample);
 const ocamlWitnesses = [
+  "overloads",
   "objects",
   "blocks-bind",
   "top-void",

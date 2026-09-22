@@ -73,7 +73,7 @@ private def convertFunction (f : Fragment.Fn) (c : Fragment.Claims) (generic : B
     issues := issues ++ note site raw A
     -- The export sidecar reports claims; it never proposes an elimination.
     expressions := expressions ++ [Expression.mk pos A current none]
-  return (⟨f.name,f.namePos,params,result,entries,expressions⟩,issues)
+  return (⟨f.name,f.namePos,params,result,entries,expressions,none⟩,issues)
 
 /-- Returns a sidecar plus explicit omissions. The caller retains the raw export
 and collection metadata separately; neither is admitted as proof evidence. -/

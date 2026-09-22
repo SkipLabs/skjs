@@ -109,7 +109,7 @@ for every extracted function. Preserve this by construction:
   from unsoundness findings. TS now states primitive field-content assertions
   for direct reads at statement entry.
 - Expected outcomes are policy, in `expectedVerified` in `examples.mts`: a
-  witness fixture is expected *not* to verify, and a run fails when any
+  witness fixture is expected _not_ to verify, and a run fails when any
   function's outcome contradicts the policy, in either direction.
 - Fixtures under `tests/skjs-unsound/` and `tests/skjs-incomplete/` are
   findings about SKJS and carry their own comment; the group README says what
@@ -184,4 +184,12 @@ an exporter change needs a place to show, one phenomenon per file.
 - Lean: no `sorry`, no project axioms; `#print axioms` on every soundness
   theorem stays in the file. Build only the module you changed while
   iterating (`lake build Verification.ExperimentState.<Module>`).
+- New executable fields on an existing AST constructor need an explicit audit
+  of every lowering and certification path. Exhaustive constructor matching
+  alone cannot detect a discarded field. Each path must check the field's
+  execution or refuse it with a located diagnostic. In particular, a lambda
+  body certificate does not cover parameter-default execution. Lowering tests
+  must exercise source evaluation order and binding scope, including forged
+  producer claims against both evidence production and consumption; calculus
+  safety alone does not prove correspondence with JavaScript execution.
 - Docs: a doc-only change needs no suite run; check anchors and prose.

@@ -163,6 +163,9 @@ inductive Proof where
   | lit (v : Claim.Val)
   | widen (expected : Ty) (body : Proof)
   | letE (init body : Proof)
+  /-- Initialize a ground parameter from its raw argument or a checked default.
+  The raw slot may additionally contain undefined; its location/type never changes. -/
+  | defaultE (index : Nat) (result : List Nat) (init : Proof)
   | lambda (inputs : List Ty) (body : Proof)
   | call (callee : Proof) (args : List Proof)
   deriving Repr, BEq
@@ -182,6 +185,12 @@ def Proof.check (parameters : List Parameter) (Gamma : List Slot) :
   | .lit (.vbool false) => some (.fls, .ground [2])
   | .lit _ => none
 
+  | .defaultE index B init => do
+      let some (.value (.ground A)) := Gamma[index]? | none
+      let (term, actual) ← init.check parameters Gamma
+      if A.all (fun a => (B ++ [3]).contains a) && actual.leUnder parameters (.ground B) then
+        some (.ite (.test .isUndef (.var index)) term (.var index), .ground B)
+      else none
   | .lambda inputs body => match body.check parameters (inputs.map Slot.value ++ Gamma) with
       | some (term, result) => some (.make (.closure inputs.length term) .nul, .arrow inputs result)
       | none => none
@@ -230,6 +239,47 @@ private theorem let_safe {G : NormalGraph Nat} {eta} {Gamma : List Slot} {A B : 
       k (Nat.le_succ k) (trunc k (Nat.le_succ k) U) (WExt_refl _)
     exact ihb k _ heap' (push av rho) he' (WorldAdm_trunc _ hu)
       (HeapOk_trunc k U heap' hok)
+
+private theorem default_safe {G : NormalGraph Nat} {eta Gamma index A B init n W heap rho}
+    (hC : ClosedAssign eta) (hG : Primitives G)
+    (hi : Gamma[index]? = some (.value (.ground A)))
+    (hab : A.all (fun a => (B ++ [3]).contains a) = true)
+    (safe : ∀ n W heap rho, EnvOk G eta Gamma rho n W → WorldAdm W → HeapOk n W heap →
+      Safe (meaning G B) n W heap (instantiate 0 rho init))
+    (he : EnvOk G eta Gamma rho n W) (hw : WorldAdm W) (hh : HeapOk n W heap) :
+    Safe (meaning G B) n W heap
+      (instantiate 0 rho (.ite (.test .isUndef (.var index)) init (.var index))) := by
+  have hv := he.2 _ _ hi
+  have hvval := (Ty.denote_value hC hv).1
+  simp only [instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero]
+  cases n with
+  | zero => trivial
+  | succ n =>
+    cases n with
+    | zero =>
+      exact Or.inr ⟨trunc 0 (by omega) W, heap, _, WExt_refl _, WorldAdm_trunc _ hw,
+        .iteC (.testV hvval), HeapOk_trunc 0 W heap hh, trivial⟩
+    | succ k =>
+      apply ite_test_rule .isUndef (rho index) hvval _ _ k W heap hw hh
+      · intro _
+        exact safe k _ heap rho (he.transfer hC k (by omega) _ (WExt_refl _))
+          (WorldAdm_trunc _ hw) (by
+            simpa only [trunc_trunc] using HeapOk_trunc k _ heap (HeapOk_trunc (k+1) W heap hh))
+      · intro hnot
+        have hvalue : meaning G B k (trunc k (by omega) W) (rho index) := by
+          have hdown := (meaning_adm G A).down_le _ k (by omega) W _ hv
+          obtain ⟨a, ha, hav⟩ := hdown
+          have hm : a ∈ B ++ [3] := List.contains_iff_mem.mp (List.all_eq_true.mp hab a ha)
+          rcases List.mem_append.mp hm with hb | hu
+          · exact ⟨a, hb, hav⟩
+          · have eq : a = 3 := List.mem_singleton.mp hu
+            subst a
+            have undef : meaning G [3] k (trunc k (by omega) W) (rho index) := ⟨3, by simp, hav⟩
+            have eq := (represents_sem hG.represents_undef _ _ _).mp undef
+            simp only [PositiveNormalization.sem, undefT] at eq
+            rw [eq] at hnot
+            simp [tagHolds] at hnot
+        exact value_safe _ _ _ _ _ hvval hvalue
 
 private theorem checked_argument {f : α → Option β} {xs : List α} {ys : List β}
     (h : xs.mapM f = some ys) {y : β} (hy : y ∈ ys) :
@@ -341,6 +391,39 @@ theorem Proof.check_safe {G : NormalGraph Nat} {parameters} {Gamma : List Slot}
         intro n W heap rho he hw hh
         exact let_safe hC (Proof.check_safe (proof := init) hpInit hC hs hG)
           (Proof.check_safe (proof := body) hpBody hC hs hG) he hw hh
+  | defaultE index B init =>
+    simp only [hproof] at hc
+    cases hi : Gamma[index]? with
+    | none => simp [Proof.check, hi] at hc
+    | some slot =>
+      cases slot with
+      | cell A => simp [Proof.check, hi] at hc
+      | value A =>
+        cases A with
+        | rigid name => simp [Proof.check, hi] at hc
+        | arrow inputs result => simp [Proof.check, hi] at hc
+        | ground A =>
+          cases hp : init.check parameters Gamma with
+          | none => simp [Proof.check, hi, hp] at hc
+          | some pair =>
+            obtain ⟨t, actual⟩ := pair
+            simp only [Proof.check, hi] at hc
+            rw [hp] at hc
+            change (if (A.all (fun a => (B ++ [3]).contains a) && actual.leUnder parameters (.ground B)) = true
+              then some (Tm.ite (.test .isUndef (.var index)) t (.var index), Ty.ground B)
+              else none) = some (term, _) at hc
+            by_cases h : (A.all (fun a => (B ++ [3]).contains a) && actual.leUnder parameters (.ground B)) = true
+            · rw [if_pos h] at hc
+              obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj hc)
+              simp only [Bool.and_eq_true] at h
+              obtain ⟨hab, hle⟩ := h
+              intro n W heap rho he hw hh
+              apply default_safe hC hG hi hab _ he hw hh
+              intro n W heap rho he hw hh
+              exact Safe_mono n (fun k _ => Ty.leUnder_sound hs hle k) W heap _
+                (Proof.check_safe hp hC hs hG n W heap rho he hw hh)
+            · rw [if_neg h] at hc
+              contradiction
   | lambda inputs body =>
     simp only [hproof] at hc
     cases hp : body.check parameters (inputs.map Slot.value ++ Gamma) with

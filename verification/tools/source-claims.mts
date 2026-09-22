@@ -76,6 +76,11 @@ export interface FunctionClaims {
   result: ClaimType;
   entries: EntryClaim[];
   expressions: ExpressionClaim[];
+  /** One interior claim set per advertised signature of the closure at pos. */
+  arrows?: {
+    pos: Span;
+    rows: { expressions: ExpressionClaim[]; entries: EntryClaim[] }[];
+  }[];
 }
 
 export interface SourceClaims {

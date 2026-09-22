@@ -23,8 +23,8 @@ Save this minimal request as `request.json`:
 ```json
 {
   "types": [["nul"]],
-  "program": [{"expression": "nul", "continuation": "ret"}],
-  "claims": [{"context": [], "type": [0]}],
+  "program": [{ "expression": "nul", "continuation": "ret" }],
+  "claims": [{ "context": [], "type": [0] }],
   "result": [0],
   "start": 0,
   "inputs": []
@@ -49,14 +49,14 @@ return nonzero.
 
 All fields are explicit; object field order is immaterial.
 
-| Field | Meaning |
-| --- | --- |
-| `types` | A finite array of normalized type-graph nodes. Its array positions are type labels. |
-| `program` | A finite array of calculus nodes. Its positions are control-flow labels. |
-| `claims` | One entry context and expression-result type per program node, in the same order. |
-| `result` | The required result type of the graph. |
-| `start` | The designated control-flow entry label. |
-| `inputs` | External argument types in slot order. The designated entry context must equal this contract. Use `[]` for closed invocation. |
+| Field     | Meaning                                                                                                                       |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `types`   | A finite array of normalized type-graph nodes. Its array positions are type labels.                                           |
+| `program` | A finite array of calculus nodes. Its positions are control-flow labels.                                                      |
+| `claims`  | One entry context and expression-result type per program node, in the same order.                                             |
+| `result`  | The required result type of the graph.                                                                                        |
+| `start`   | The designated control-flow entry label.                                                                                      |
+| `inputs`  | External argument types in slot order. The designated entry context must equal this contract. Use `[]` for closed invocation. |
 
 A type is a list of type labels, interpreted as their union. The empty list
 means bottom. Every label, including labels in unused type definitions and
@@ -67,16 +67,16 @@ checked by the graph consumer.
 
 Each type-graph node is a union of clauses:
 
-| Clause | JSON example |
-| --- | --- |
-| Top: every value, permitting no operation | `"top"` |
-| Null | `"nul"` |
-| Boolean | `"bool"` |
-| Boolean singleton | `{"boolLit":{"value":true}}` (or `false`) |
-| Invariant reference with optional additional contract requirements, and readonly views: fields read at a sound upper bound, with no write permission through this contract | `{"refs":{"first":[["value",[1]]],"rest":[],"views":[["seen",[1]]]}}` |
-| Intersection of arrows | `{"arrs":{"arrows":[[[[0]],[1]],[[[1]],[0]]]}}` |
-| Array store: simultaneous tuple contracts, each with required, optional and rest positions; readonly contracts give element read capabilities | `{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],"readonly":false},"rest":[]}}` |
-| Callable with invariant bag requirements and overloads | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[[[[0]],[1]]]}}` |
+| Clause                                                                                                                                                                     | JSON example                                                                                |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Top: every value, permitting no operation                                                                                                                                  | `"top"`                                                                                     |
+| Null                                                                                                                                                                       | `"nul"`                                                                                     |
+| Boolean                                                                                                                                                                    | `"bool"`                                                                                    |
+| Boolean singleton                                                                                                                                                          | `{"boolLit":{"value":true}}` (or `false`)                                                   |
+| Invariant reference with optional additional contract requirements, and readonly views: fields read at a sound upper bound, with no write permission through this contract | `{"refs":{"first":[["value",[1]]],"rest":[],"views":[["seen",[1]]]}}`                       |
+| Intersection of arrows                                                                                                                                                     | `{"arrs":{"arrows":[[[[0]],[1]],[[[1]],[0]]]}}`                                             |
+| Array store: simultaneous tuple contracts, each with required, optional and rest positions; readonly contracts give element read capabilities                              | `{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],"readonly":false},"rest":[]}}` |
+| Callable with invariant bag requirements and overloads                                                                                                                     | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[[[[0]],[1]]]}}`                   |
 
 The arrow example contains two argument-list/result pairs, each with one
 argument. Each argument type is itself a list of union labels. References and arrow
@@ -106,13 +106,13 @@ are strings; other constructors are single-key objects containing named fields.
 For example:
 
 ```json
-{"app":{"f":{"var":{"i":0}},"a":"nul"}}
+{ "app": { "f": { "var": { "i": 0 } }, "a": "nul" } }
 ```
 
 This applies slot zero to null. A mapped bind continuation is:
 
 ```json
-{"bind":{"next":{"label":3,"mapping":[0,2]}}}
+{ "bind": { "next": { "label": 3, "mapping": [0, 2] } } }
 ```
 
 Its map acts after pushing the result: target slot zero receives source slot
@@ -125,23 +125,23 @@ The encoding follows mechanically from the
 [continuations](PROGRAM-TYPING.md#checked-control-flow-graphs). In full, writing
 `t` for a nested term and `T` for a target object:
 
-| Term | JSON | Continuation | JSON |
-| --- | --- | --- | --- |
-| slot $i$ | `{"var":{"i":0}}` | `ret` | `"ret"` |
-| $\mathsf{let}(t,t)$ | `{"letE":{"a":t,"b":t}}` | `bind` | `{"bind":{"next":T}}` |
-| $\mathsf{call}(t,[t,\ldots])$ | `{"call":{"f":t,"args":[t]}}` | `effect` | `{"effect":{"next":T}}` |
-| null, undefined, true, false | `"nul"`, `"undef"`, `"tru"`, `"fls"` | `branch` | `{"branch":{"yes":T,"no":T}}` |
-| object with named locations | `{"objAt":{"fields":[["value",0]],"call":c}}` | `branchBind` | `{"branchBind":{"yes":T,"no":T}}` |
-| allocation with ordered initializers | `{"makeAt":{"call":c,"names":["value"],"inits":[t]}}` | `tagBind` | `{"tagBind":{"test":"isNul","yes":T,"no":T}}` |
-| field read | `{"readAt":{"field":"value","a":t}}` | | |
-| field write | `{"writeAt":{"field":"value","a":t,"b":t}}` | | |
-| $\mathsf{test}_k(t)$ | `{"test":{"k":"isNul","a":t}}` | | |
-| $\mathsf{if}\;t\;t\;t$ | `{"ite":{"c":t,"t":t,"e":t}}` | | |
-| arithmetic | `{"arith":{"op":"add","a":t,"b":t}}` | | |
-| array store with initial elements | `{"arrLit":{"inits":[t]}}` | | |
-| element at a numeric index | `{"elemAt":{"a":t,"i":t}}` | | |
-| store with an element set | `{"setElem":{"a":t,"i":t,"v":t}}` | | |
-| length of a store | `{"lenOf":{"a":t}}` | | |
+| Term                                 | JSON                                                  | Continuation | JSON                                          |
+| ------------------------------------ | ----------------------------------------------------- | ------------ | --------------------------------------------- |
+| slot $i$                             | `{"var":{"i":0}}`                                     | `ret`        | `"ret"`                                       |
+| $\mathsf{let}(t,t)$                  | `{"letE":{"a":t,"b":t}}`                              | `bind`       | `{"bind":{"next":T}}`                         |
+| $\mathsf{call}(t,[t,\ldots])$        | `{"call":{"f":t,"args":[t]}}`                         | `effect`     | `{"effect":{"next":T}}`                       |
+| null, undefined, true, false         | `"nul"`, `"undef"`, `"tru"`, `"fls"`                  | `branch`     | `{"branch":{"yes":T,"no":T}}`                 |
+| object with named locations          | `{"objAt":{"fields":[["value",0]],"call":c}}`         | `branchBind` | `{"branchBind":{"yes":T,"no":T}}`             |
+| allocation with ordered initializers | `{"makeAt":{"call":c,"names":["value"],"inits":[t]}}` | `tagBind`    | `{"tagBind":{"test":"isNul","yes":T,"no":T}}` |
+| field read                           | `{"readAt":{"field":"value","a":t}}`                  |              |                                               |
+| field write                          | `{"writeAt":{"field":"value","a":t,"b":t}}`           |              |                                               |
+| $\mathsf{test}_k(t)$                 | `{"test":{"k":"isNul","a":t}}`                        |              |                                               |
+| $\mathsf{if}\;t\;t\;t$               | `{"ite":{"c":t,"t":t,"e":t}}`                         |              |                                               |
+| arithmetic                           | `{"arith":{"op":"add","a":t,"b":t}}`                  |              |                                               |
+| array store with initial elements    | `{"arrLit":{"inits":[t]}}`                            |              |                                               |
+| element at a numeric index           | `{"elemAt":{"a":t,"i":t}}`                            |              |                                               |
+| store with an element set            | `{"setElem":{"a":t,"i":t,"v":t}}`                     |              |                                               |
+| length of a store                    | `{"lenOf":{"a":t}}`                                   |              |                                               |
 
 A descriptor `c` is `"absent"` or `{"closure":{"arity":2,"body":t}}`. Plain allocation
 uses the absent descriptor; function creation uses a closure descriptor and an
@@ -241,7 +241,9 @@ The callable expression rules use the existing term syntax. `makeCallable`
 checks one initializer premise followed by one body premise per advertised
 overload, each body under its argument binder. Its result has a single initial
 bag contract; subtyping can add equivalent invariant requirements. `callCallable`
-selects an advertised signature, while `readCallable` and `writeCallable` use
+selects an advertised signature and, like `app`, carries one premise per
+position that signature declares and the call omits, each proving `undefined`
+at that position's contract; `readCallable` and `writeCallable` use
 the first invariant bag operand. Every nested operand label is bounds checked.
 These rules are available to calculus requests. The source exporter emits a
 combined callable/property type for one required `value` field on a function;
@@ -343,7 +345,7 @@ name distinct declared parameters or boolean. A conversion requires identity
 or a forward path through the declared bounds, so `U extends T` permits `U`
 to `T` but never the reverse. A const retains its annotation after conversion.
 Generic callbacks remain outside the fragment, and so does call-site
-instantiation of a generic *declaration*. A quantified closure bound to a local
+instantiation of a generic _declaration_. A quantified closure bound to a local
 takes a different route: its scheme claim is checked by the scheme section of
 `SourceClaimJson`, described in
 [SOURCE-CLAIMS.md](SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations),
@@ -456,13 +458,15 @@ The SKJS claim exporter additionally supports this bounded record atom:
 ```json
 {
   "a": "record",
-  "fields": [{
-    "name": "value",
-    "optional": false,
-    "read": {"top": false, "atoms": [{"a": "boolean"}]},
-    "write": {"top": false, "atoms": [{"a": "boolean"}]}
-  }],
-  "indexes": {"string": "absent", "number": "absent", "symbol": "absent"},
+  "fields": [
+    {
+      "name": "value",
+      "optional": false,
+      "read": { "top": false, "atoms": [{ "a": "boolean" }] },
+      "write": { "top": false, "atoms": [{ "a": "boolean" }] }
+    }
+  ],
+  "indexes": { "string": "absent", "number": "absent", "symbol": "absent" },
   "call": "unknown",
   "construct": "unknown",
   "array": "unknown"
@@ -505,8 +509,8 @@ semantic disproof. This export does not change SKJS acceptance.
 ```json
 {
   "kind": "subtype",
-  "source": {"top": false, "atoms": [{"a": "booleanlit", "v": "true"}]},
-  "target": {"top": false, "atoms": [{"a": "boolean"}]}
+  "source": { "top": false, "atoms": [{ "a": "booleanlit", "v": "true" }] },
+  "target": { "top": false, "atoms": [{ "a": "boolean" }] }
 }
 ```
 
@@ -570,35 +574,54 @@ The bounded function atom is:
 ```json
 {
   "a": "function",
-  "params": [{"top": false, "atoms": [{"a": "null"}]}],
-  "result": {"top": false, "atoms": [{"a": "boolean"}]},
+  "params": [{ "top": false, "atoms": [{ "a": "null" }] }],
+  "result": { "top": false, "atoms": [{ "a": "boolean" }] },
   "construct": "unknown",
   "array": "unknown"
 }
 ```
 
-The exporter preserves the ordered list of free required parameters and the result. It rejects
-`this` requirements, generics, optional/rest parameters, unsupported fields, indexes, positive
+The exporter preserves the ordered list of free parameters and the result, an
+optional parameter appearing as the union its contract admits. It rejects
+`this` requirements, generics, rest parameters, unsupported fields, indexes, positive
 construct requirements and record-valued operands. Arrow arguments and results
 may recursively union bounded function contracts with the
-supported primitives null, undefined, true and false. The SKJS exporter uses
+supported primitives null, undefined, true and false, and semantic top (`unknown`). The SKJS exporter uses
 bounded recursion, and the tsc producer applies a depth limit when translating
 nested operands. No unsupported union alternative is discarded.
 
 `Fragment.callableType` lowers every supported operand to graph labels.
 See [callable integration](DESIGN.md#callable-integration) for the proof boundary.
 
-Source lambda ASTs carry `"params": [{"name": "x", "type": T}, ...]`, and a
-`"typeParams"` list in the same shape as a function's, empty for an ordinary
+Source lambda ASTs carry `"params": [{"name": "x", "type": T}, ...]`, where a
+parameter may add `"default": expression`: its position also admits `undefined`,
+and the default replaces that value before the body runs, so `type` stays what
+the body reads. A default is an ordinary expression of its function, with its
+own claim site.
+
+A closure that advertises several signatures carries one interior claim set per
+signature. The claims document states them as `"arrows": [{"pos": span,
+"rows": [{"expressions": [...], "entries": [...]}, ...]}]`, ordered with the
+arrows of the closure's claimed type: one body, a separate obligation at each
+signature, and an entry environment per signature because an entry replaces the
+context it is checked against. Absence asserts nothing, and a compiled scheme
+supplies the same internal structure from its checked instantiations. Row sites,
+labels and refinements are validated; source-supplied rows cannot assert generic
+instantiations that would disappear during normalization.
+
+A lambda also carries a `"typeParams"` list in the same shape as a function's, empty for an ordinary
 closure. Live producers always write it; the decoder reads an absent list as
 the empty one, which is how proof fixtures predating quantified closures are
 still accepted. Applications carry `"args": [expression, ...]` alongside
 `"callee"`.
 Both use empty lists for zero-argument forms. A lambda's descriptor records its
 parameter count, with those bindings before captured variables. Calls evaluate
-the callee first and actuals left to right; checked signatures require the exact
-actual count. No synthetic undefined actual, anonymous parameter, or source
-claim is introduced for an empty list. Optional/rest parameters, spread actuals,
+the callee first and actuals left to right; a checked signature admits a call
+that writes a prefix of its positions, provided every position the call omits
+admits `undefined`. No synthetic undefined actual, anonymous parameter, or source
+claim is introduced for an empty list, nor for an omitted optional position:
+`x?: T` is carried as the union `T | undefined` and the call term keeps the
+actuals the source writes. Rest parameters, spread actuals,
 `arguments`, receiver-dependent bodies and argument-count introspection remain excluded.
 
 A strict `typeof e === "function"` or `!==` comparison has source AST shape

@@ -76,6 +76,12 @@ private structure Built where
   /-- Labels the program mentions but no claim does, such as a pattern's
   literal index: search hints, never part of what is checked. -/
   hints : List Nat := []
+  /-- The result an overloaded closure's body carries under the signature being
+  compiled. A block body's type is its enclosing result annotation, which is
+  one type for every signature; a closure that advertises several needs the
+  one it is being checked against. Keyed by that body's span, so no nested
+  expression is affected. -/
+  resultOverride : Option (Span × Ty Nat) := none
 
 private abbrev Compiler := StateT Built (Except String)
 
@@ -228,8 +234,9 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
     | .field s => return .indexWrite p (some s) r key rhs
     | .element => return .elemWrite p r key rhs
   | .withValue p f i ft bt => return .withValue p (← comparisonsExpr fc f) (← comparisonsExpr fc i) ft bt
-  | .lambda p tps ps result b =>
-    return .lambda p tps ps result (← comparisonsExpr fc b)
+  | .lambda p tps ps defaults result b =>
+    return .lambda p tps ps (← defaults.attach.mapM fun ⟨(i,d),_⟩ => do
+      return (i, ← comparisonsExpr fc d)) result (← comparisonsExpr fc b)
   | .bindWithReceiver p c r args => return .bindWithReceiver p (← comparisonsExpr fc c) (← comparisonsExpr fc r) (← args.mapM (comparisonsExpr fc))
   | .callWithReceiver p c r args => return .callWithReceiver p (← comparisonsExpr fc c) (← comparisonsExpr fc r) (← args.mapM (comparisonsExpr fc))
   | .call p c args => return .call p (← comparisonsExpr fc c) (← args.mapM (comparisonsExpr fc))
@@ -269,8 +276,10 @@ choose which parameters are mutable. -/
 private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .var .. | .lit .. | .done .. => false
   | .assign _ target _ rhs | .nullishAssign _ target _ rhs => target == name || assignsExpr name rhs
-  | .not _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e
-  | .lambda _ _ _ _ e => assignsExpr name e
+  | .lambda _ _ _ defaults _ e =>
+    defaults.attach.any (fun ⟨d,_⟩ => assignsExpr name d.2) || assignsExpr name e
+  | .not _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e =>
+    assignsExpr name e
   | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .withValue _ a b _ _ | .index _ _ a b
   | .seqBody _ a b | .letBody _ _ _ a b => assignsExpr name a || assignsExpr name b
@@ -305,7 +314,10 @@ private partial def assignsStmt (name : String) : Fragment.Stmt → Bool
 
 /-- A terminal branch uses the enclosing source result annotation, not a
 fabricated expression claim at the if statement's span. -/
-private def closureType (fc : SourceClaims.Function) : Fragment.Expr → Compiler (Ty Nat)
+private def closureType (fc : SourceClaims.Function) (e : Fragment.Expr) : Compiler (Ty Nat) := do
+  if let some (p, T) := (← get).resultOverride then
+    if p == e.span then return T
+  match e with
   | .atEnv _ b | .letBody _ _ _ _ b | .seqBody _ _ b => closureType fc b
   | .done _ => pure [0]
   | .ifBody _ (some result) _ _ _ => do lower (Fragment.callableType result)
@@ -573,6 +585,27 @@ private def tagTestPlan (G : PositiveGraphs.NormalGraph Nat) (tag : Tag) (Γ : L
       [DirectProof.cast H A (DirectProof.node H value B rule)])
   pure (DirectProof.node Γ term A (.unionVar slot) children)
 
+/-- A defaulted parameter's slot holds its declared type or `undefined`: the
+value a call that omits the position binds there. This is the replacement the
+body sees, and it is the same shape as `??`, on the `undefined` tag alone. -/
+private def defaultValuePlan (G : PositiveGraphs.NormalGraph Nat) (Γ : List (Ty Nat))
+    (slot : Nat) (B : Ty Nat) (d : DirectProof.Plan) : Except String DirectProof.Plan := do
+  let some C := Γ[slot]? | throw "internal default-parameter slot mismatch"
+  let term := Tm.ite (.test .isUndef (.var slot)) d.term (.var slot)
+  let children := C.map fun label =>
+    let L := Γ.set slot [label]
+    let q := decide (Answers G [label] .isUndef true)
+    let selected := if q then DirectProof.cast L B d else DirectProof.var L slot B
+    if q || decide (Answers G [label] .isUndef false) then
+      DirectProof.node L term B (if q then .ifTrue else .ifFalse) [selected]
+    else
+      -- A mixed label (notably unknown) needs a real Boolean branch. Both
+      -- alternatives must establish B; no tag answer is assumed for it.
+      let test := DirectProof.node L (.test .isUndef (.var slot)) [1,2] .test
+        [DirectProof.var L slot [label]]
+      DirectProof.node L term B .ifBool [test, DirectProof.cast L B d, DirectProof.var L slot B]
+  pure (DirectProof.node Γ term B (.unionVar slot) children)
+
 /-- Shared conditional proof construction for statement branches, ternaries and
 short-circuit operators. Branch builders retain their own source claims; a
 logical operator's constant arm is administrative and needs no invented claim. -/
@@ -615,13 +648,38 @@ private def conditionalPlan (scope : List ScopeBinding) (H : List (Ty Nat)) (A :
       let e ← noBranch scope H
       pure (DirectProof.ifE G H A c t e)
 
-/-- Select an exact-arity signature, preferring one covering every actual type. -/
-private def selectSignature (L : PositiveRules.Ops Nat) (As : List (Ty Nat)) :
+/-- Label 3 is `undefined`: see `SourceTypes.initial`. A position a call may
+omit is one whose declared contract admits that value, because `undefined` is
+what the machine binds there. -/
+private def admitsUndefined (G : PositiveGraphs.NormalGraph Nat) (A : Ty Nat) : Bool :=
+  (PositiveRules.expand G A).any fun
+    | .undef | .top => true
+    | _ => false
+
+/-- Select a signature these actuals can call: one declaring exactly the
+arguments written, or a longer one whose remaining positions admit `undefined`.
+An exact signature is preferred, then one covering every actual type. No actual
+is invented for an omitted position; the call term keeps the arguments the
+source writes. -/
+private def selectSignature (G : PositiveGraphs.NormalGraph Nat) (L : PositiveRules.Ops Nat) (As : List (Ty Nat)) :
     Except String (List (Ty Nat) × Ty Nat) := do
-  let choices := L.filter fun p => p.1.length == As.length
-  let some p := (choices.find? fun p => (As.zip p.1).all fun (A,D) => A.all D.contains) <|> choices.head?
+  let covers (p : List (Ty Nat) × Ty Nat) :=
+    (As.zip p.1).all fun (A,D) => A.all D.contains
+  let pick (choices : List (List (Ty Nat) × Ty Nat)) :=
+    (choices.find? covers) <|> choices.head?
+  let exact := L.filter fun p => p.1.length == As.length
+  let short := L.filter fun p =>
+    As.length < p.1.length && (p.1.drop As.length).all (admitsUndefined G)
+  let some p := pick exact <|> pick short
     | throw "callee has no signature with the actual argument count"
   return p
+
+/-- One premise per position the selected signature declares and the call
+omits, each proving `undefined` at that position's contract. -/
+private def omittedPremises (Γ : List (Ty Nat)) (Ds : List (Ty Nat)) (supplied : Nat) :
+    List DirectProof.Plan :=
+  (Ds.drop supplied).map fun D =>
+    DirectProof.cast Γ D (DirectProof.node Γ .undef [3] .undef)
 
 /-- Nest saved operand plans in their original evaluation order. -/
 private def saveOperands (ps : List DirectProof.Plan) (body : DirectProof.Plan) : DirectProof.Plan :=
@@ -871,7 +929,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       | [.arrs L] | [.callable _ _ L] => pure L
       | _ => throw "bind target requires a single callable contract"
     let boundTypes := (plans.drop 2).map (·.type)
-    let (domains,result) ← selectSignature L (boundTypes ++ Ds)
+    let (domains,result) ← selectSignature G L (boundTypes ++ Ds)
     let H := Ds ++ K
     let indexes := (List.range args.length).map (fun i => Ds.length + args.length - 1 - i) ++
       List.range Ds.length
@@ -881,7 +939,8 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       | [.callable ..] => ProgramCertificates.Rule.callCallable
       | _ => .app
     let body := DirectProof.cast H R
-      (DirectProof.node H (.call fn.term (actuals.map (·.term))) result rule (fn::actuals))
+      (DirectProof.node H (.call fn.term (actuals.map (·.term))) result rule
+        (fn :: actuals ++ omittedPremises H domains actuals.length))
     let bound := DirectProof.node K (.make (.closure Ds.length body.term) .nul) A .funE [body]
     pure (saveOperands plans bound)
   | .callWithReceiver _ f receiver args => do
@@ -894,12 +953,14 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let L ← match PositiveRules.expand G callee.type with
       | [.arrs L] | [.callable _ _ L] => pure L
       | _ => throw ".call target requires a single callable contract"
-    let (Ds,R) ← selectSignature L (actuals.map (·.type))
+    let (Ds,R) ← selectSignature G L (actuals.map (·.type))
     let rule := match PositiveRules.expand G callee.type with
       | [.callable ..] => ProgramCertificates.Rule.callCallable
       | _ => .app
     let call := DirectProof.node H (.call (.var 1) (actuals.map (·.term))) R rule
-      (DirectProof.var H 1 callee.type :: (actuals.zip Ds).map fun (a,D) => DirectProof.cast H D a)
+      (DirectProof.var H 1 callee.type
+        :: ((actuals.zip Ds).map fun (a,D) => DirectProof.cast H D a)
+          ++ omittedPremises H Ds actuals.length)
     pure (DirectProof.letE Γ callee (DirectProof.letE K receiverPlan call))
   | .call _ f args => do
     let callee ← closureExpr fc scope Γ f
@@ -909,9 +970,10 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         | [.callable ..] => ProgramCertificates.Rule.callCallable
         | _ => .app
       let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr fc scope Γ a
-      let (Ds,R) ← selectSignature L (actuals.map (·.type))
+      let (Ds,R) ← selectSignature G L (actuals.map (·.type))
       pure (DirectProof.node Γ (.call callee.term (actuals.map (·.term))) R rule
-        (callee :: (actuals.zip Ds).map fun (a,D) => DirectProof.cast Γ D a))
+        (callee :: ((actuals.zip Ds).map fun (a,D) => DirectProof.cast Γ D a)
+          ++ omittedPremises Γ Ds actuals.length))
     | _ =>
       if callee.type.length ≤ 1 then throw "callee must name a source arrow"
       -- Save callee first, then each actual, before splitting its immutable slot.
@@ -923,7 +985,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       let alternatives ← callee.type.mapM fun label => do
         let [.arrs L] := PositiveRules.expand G [label]
           | throw "every callee alternative must name a source arrow"
-        let (Ds,R) ← selectSignature L As
+        let (Ds,R) ← selectSignature G L As
         pure (label,Ds,R)
       let R := (alternatives.flatMap fun (_,_,R) => R).eraseDups
       let n := As.length
@@ -934,7 +996,8 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         DirectProof.cast branch R (DirectProof.node branch term result .app
           (DirectProof.var branch n [label] ::
             ((As.zip Ds).zipIdx.map fun ((A,D),i) =>
-              DirectProof.cast branch D (DirectProof.var branch (n-1-i) A))))
+              DirectProof.cast branch D (DirectProof.var branch (n-1-i) A))
+            ++ omittedPremises branch Ds n))
       pure (saveOperands (callee::actuals)
         (DirectProof.node H term R (.unionVar n) children))
   | .write _ fld receiver rhs => do
@@ -1026,34 +1089,73 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     pure (DirectProof.node Γ
       (.makeAt (.closure arity body) (P.map Prod.fst) (values.map (·.term))) [C] .makeCallable
       (casts ++ bodies))
-  | .lambda pos typeParams params ret body => do
+  | .lambda pos typeParams params defaults ret body => do
     let paramNames := params.map Prod.fst
     if !distinct paramNames || paramNames.any (fun name => name == "" || name == "undefined" || (names scope).contains name) then
       throw "shadowing or duplicate closure parameter is outside the fragment"
-    let inner := (paramNames.map fun name => held ⟨name,some pos⟩) ++ scope
-    -- A compiled scheme elimination arrives with its interior claims already
-    -- substituted, one set per checked instantiation. The universal
-    -- introduction gate ran before this point; these derivations are its
-    -- consequences, so the body is lowered at each arrow's own types rather
-    -- than re-cast from a single claim that no polymorphic body can carry.
-    if let some overlays := fc.schemeArrows.lookup pos then
-      let [.arrs L] := PositiveRules.expand G A | throw "compiled scheme claim must name source arrows"
-      if L.isEmpty then throw "compiled scheme claim has no checked instantiation"
+    -- With defaults, no parameter name is initially available. Raw argument
+    -- slots are not initialized source bindings: names become visible in
+    -- declaration order, only after their initializer has finished.
+    let defaulted := defaults.map Prod.fst
+    let inner := (paramNames.map fun name =>
+      held ⟨if defaults.isEmpty then name else "", some pos⟩) ++ scope
+    -- A closure with one set of interior claims per arrow: a compiled scheme
+    -- elimination, whose claims are already substituted for each checked
+    -- instantiation, or an overloaded closure, whose producer states what its
+    -- body claims under each advertised signature. The body is lowered at each
+    -- arrow's own types rather than re-cast from a single claim that no
+    -- polymorphic or overloaded body can carry. For a scheme the universal
+    -- introduction gate ran before this point, so these derivations are its
+    -- consequences, never its justification.
+    -- A compiled scheme has no ground annotation to lower: its arrows are the
+    -- checked instantiations, and each carries its own substituted claims. An
+    -- overloaded closure does have one, so it takes the ordinary path below
+    -- and uses its per-arrow claims there.
+    let compileBody (fc : SourceClaims.Function) (result : Option (Ty Nat))
+        (H : List (Ty Nat)) : Compiler DirectProof.Plan := do
+      let previousResult := (← get).resultOverride
+      modify fun st => { st with resultOverride := result.map (body.span, ·) }
+      let mut ds := inner
+      let mut ctx := H
+      let mut prologue : List (List (Ty Nat) × DirectProof.Plan) := []
+      for ((name, sourceType),i) in params.zipIdx do
+        match defaults.lookup i with
+        | none =>
+          ds := ds.set (prologue.length + i) (held ⟨name,some pos⟩)
+        | some d =>
+          let B ← lower (Fragment.callableType sourceType)
+          let dp ← closureExpr fc ds ctx d
+          let value ← defaultValuePlan G ctx (prologue.length + i) B (DirectProof.cast ctx B dp)
+          prologue := prologue ++ [(ctx,value)]
+          ctx := B :: ctx
+          ds := held ⟨name,some pos⟩ :: ds
+      let b ← closureExpr fc ds ctx body
+      modify fun st => { st with resultOverride := previousResult }
+      pure (prologue.foldr (fun (K,value) acc => DirectProof.letE K value acc) b)
+    let polymorphic := !typeParams.isEmpty ||
+      (params.map Prod.snd ++ [ret]).any GenericSource.mentionsParam
+    if let some overlays := (if polymorphic then fc.arrowClaims.lookup pos else none) then
+      let [.arrs L] := PositiveRules.expand G A | throw "per-arrow claims must name source arrows"
+      if L.isEmpty then throw "per-arrow claims name no arrow"
       if overlays.length != L.length then
-        throw "compiled scheme interior claims do not match its arrows"
+        throw "per-arrow interior claims do not match the claimed arrows"
       let mut bodies := []
       let mut term := none
       for ((Di,Ri),overlay) in L.zip overlays do
         if Di.length != paramNames.length then
-          throw "compiled scheme arrow arity differs from its closure"
-        let bi ← closureExpr { fc with exprs := overlay ++ fc.exprs } inner (Di ++ Γ) body
-        if term.isNone then term := some bi.term
+          throw "an arrow's arity differs from its closure"
+        let bi ← compileBody (fc.withOverlay overlay) none (Di ++ Γ)
+        if let some existing := term then
+          if existing != bi.term then throw "a scheme body lowers differently under one of its instantiations"
+        else term := some bi.term
         bodies := bodies ++ [DirectProof.cast (Di ++ Γ) Ri bi]
-      let some t := term | throw "compiled scheme claim has no checked instantiation"
+      let some t := term | throw "per-arrow claims name no arrow"
       pure (DirectProof.node Γ (.make (.closure paramNames.length t) .nul) A .funE bodies)
     else do
       if !typeParams.isEmpty then
         throw "quantified closure checking requires the scheme evidence path"
+      if !defaults.isEmpty && (params.map Prod.snd ++ [ret]).any GenericSource.mentionsParam then
+        throw "a defaulted parameter under a scheme binder is outside the fragment"
       let [.arrs L] := PositiveRules.expand G A | throw "closure claim must name a source arrow"
       -- A closure annotated with an enclosing scheme's binder has no ground
       -- annotation to lower. Scheme introduction required its claim to be
@@ -1065,14 +1167,40 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
           | _ => throw "a closure annotated with a scheme binder must carry one substituted arrow"
         else do
           pure (← params.mapM fun p => lower (Fragment.callableType p.2), ← lower (Fragment.callableType ret))
+      -- The advertised domain at a defaulted position also admits `undefined`:
+      -- a call may omit it, and the default is what replaces the value bound
+      -- there. The body still reads the declared type.
+      let Ds := Ds.zipIdx.map fun (D,i) =>
+        if defaulted.contains i then ((D ++ [3]).mergeSort (· ≤ ·)).eraseDups else D
       if L.isEmpty || !L.all (fun (Di,_) => Di.length == Ds.length && (Di.zip Ds).all (fun (D,A) => D.all A.contains)) then
         throw "closure signature claim is outside the source annotation"
-      let b ← closureExpr fc inner (Ds ++ Γ) body
+      -- One prologue binding per defaulted parameter, in declaration order, so
+      -- a later default may read an earlier parameter's replaced value.
+      -- An overloaded closure states what its body claims under each of its
+      -- signatures: one body, a separate obligation at each arrow, and the
+      -- same lowered term for all of them.
+      let overlays := (fc.arrowClaims.lookup pos).getD []
+      if !overlays.isEmpty && overlays.length != L.length then
+        throw "per-arrow interior claims do not match the claimed arrows"
+      let b ← compileBody fc none (Ds ++ Γ)
       let annotation := DirectProof.cast (Ds ++ Γ) R b
       obligation pos annotation.goal (some annotation) "closure-result" inner
-      let bodies ← L.mapM fun (Di,Ri) => do
-        if (Di,Ri) == (Ds,R) then pure annotation
-        else return DirectProof.cast (Di ++ Γ) Ri (← closureExpr fc inner (Di ++ Γ) body)
+      let bodies ← L.zipIdx.mapM fun ((Di,Ri),i) => do
+        let row := match overlays[i]? with
+          | some o => fc.withOverlay o
+          | none => fc
+        if (Di,Ri) == (Ds,R) && overlays.isEmpty then pure annotation
+        else do
+          -- Each signature's derivation is about the same body at that
+          -- signature's result, which a block body cannot read from its one
+          -- enclosing annotation.
+          let plan ← compileBody row (if overlays.isEmpty then none else some Ri) (Di ++ Γ)
+          -- One body, one lowered term: every signature's derivation is about
+          -- the same closure. A claim that changes the lowering is refused
+          -- here rather than failing as an unexplained search.
+          if plan.goal.term != b.goal.term then
+            throw "an overloaded closure's body lowers differently under one of its signatures"
+          return DirectProof.cast (Di ++ Γ) Ri plan
       pure (DirectProof.node Γ (.make (.closure Ds.length b.term) .nul) A .funE bodies)
   let plan := DirectProof.cast Γ A p
   obligation e.span plan.goal (some plan) "expression-claim" scope

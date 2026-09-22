@@ -183,18 +183,20 @@ truth for outcomes; the queue below records why the open rows matter.
 Complete, with their witnesses in [`cases.mts`](cases.mts): primitive values and
 fixed local storage; branches, nullish flow and loops; multi-field objects and
 aliases; arrays, tuples and readonly views; higher-order callbacks and variance;
-closure scope and partial application; callable objects with fields; generic
+closure scope and partial application; callable objects with fields; omitted
+trailing arguments, for optional and for defaulted parameters; closures
+advertising several signatures, checked once per signature; generic
 declarations and rigid bounds; quantified closures — one inferred call, one
 closure called at two types, bounded, returned or outer-dependent, reading
 captured storage, and as a callback argument; and generic inference constraints,
 for the maintained witnesses.
 
-| Open row | State | Witness | Architectural pressure |
-| --- | --- | --- | --- |
-| Optional object-field presence | blocked at shared source/proof boundary | `optional-field.ts` | Model absence separately from a present `undefined` value |
-| Bare return and implicit completion | blocked at shared parser | `bare-return.ts`, `empty-closure.ts` | Represent completion and discarded results explicitly |
-| Arbitrary numeric array indexing | blocked in lowering | `dynamic-index.ts` | Prove a general index obligation rather than inventing a singleton key |
-| Inferred mutable lifetime contract | deferred flow milestone | `unsupported.ts` | Solve one invariant against initialization and every write before publication |
+| Open row                            | State                                   | Witness                              | Architectural pressure                                                        |
+| ----------------------------------- | --------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------- |
+| Optional object-field presence      | blocked at shared source/proof boundary | `optional-field.ts`                  | Model absence separately from a present `undefined` value                     |
+| Bare return and implicit completion | blocked at shared parser                | `bare-return.ts`, `empty-closure.ts` | Represent completion and discarded results explicitly                         |
+| Arbitrary numeric array indexing    | blocked in lowering                     | `dynamic-index.ts`                   | Prove a general index obligation rather than inventing a singleton key        |
+| Inferred mutable lifetime contract  | deferred flow milestone                 | `unsupported.ts`                     | Solve one invariant against initialization and every write before publication |
 
 Take the first open row whose prerequisite representation already exists. For
 every quantified row, rewriting a closure to the finite overloads observed in
@@ -296,20 +298,20 @@ and diagnostic for every negative control and known gap. `node test.mts` prints
 what the suite verifies, refuses and keeps visible, and how many tampering
 controls hold; the numbers live in its output, not here.
 
-| Architectural pressure                      | Small examples with full certificates                          |
-| ------------------------------------------- | -------------------------------------------------------------- |
-| Stable storage vs value snapshots           | `values.ts`, captured storage in `callbacks.ts`                |
-| Field identity and aliasing                 | `objects.ts`                                                   |
-| Bidirectional construction hints            | `contextual.ts` (fresh object and tuple)                       |
-| Read permission vs write permission         | `readonly.ts` (alias view, array covariance)                   |
-| Sequence shape and presence                 | `arrays.ts` (write, inferred literal, optional tuple position) |
-| Path-local knowledge                        | `flow.ts` (null test, conditional, nullish expression)         |
-| Cyclic control flow                         | `loops.ts` (invariant, break, continue)                        |
-| Higher-order values and variance            | `callbacks.ts`                                                 |
-| Closure-local scope and partial application | `blocks-bind.ts`                                               |
-| One value with both fields and calls        | `function-fields.ts`                                           |
-| No usable result guarantee                  | `top-void.ts` (unknown, discarded callback result)             |
-| Rigid parameters and dependent bounds       | `generics.ts`, `aliases.ts`, `generic-inferred.ts`             |
+| Architectural pressure                      | Small examples with full certificates                                                                                                         |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stable storage vs value snapshots           | `values.ts`, captured storage in `callbacks.ts`                                                                                               |
+| Field identity and aliasing                 | `objects.ts`                                                                                                                                  |
+| Bidirectional construction hints            | `contextual.ts` (fresh object and tuple)                                                                                                      |
+| Read permission vs write permission         | `readonly.ts` (alias view, array covariance)                                                                                                  |
+| Sequence shape and presence                 | `arrays.ts` (write, inferred literal, optional tuple position)                                                                                |
+| Path-local knowledge                        | `flow.ts` (null test, conditional, nullish expression)                                                                                        |
+| Cyclic control flow                         | `loops.ts` (invariant, break, continue)                                                                                                       |
+| Higher-order values and variance            | `callbacks.ts`                                                                                                                                |
+| Closure-local scope and partial application | `blocks-bind.ts`                                                                                                                              |
+| One value with both fields and calls        | `function-fields.ts`                                                                                                                          |
+| No usable result guarantee                  | `top-void.ts` (unknown, discarded callback result)                                                                                            |
+| Rigid parameters and dependent bounds       | `generics.ts`, `aliases.ts`, `generic-inferred.ts`                                                                                            |
 | Quantified closures and their calls         | `generic-closure.ts`, `generic-two-calls.ts`, `generic-bounded.ts`, `generic-returned.ts`, `generic-captured-store.ts`, `generic-callback.ts` |
 
 Every negative control must reach validation and fail for its expected reason;

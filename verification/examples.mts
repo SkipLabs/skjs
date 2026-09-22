@@ -90,6 +90,11 @@ const ocamlWitnessGaps: Record<string, string[]> = {
   "generic-captured-store.ts": ["capturedStore"],
   "generic-callback.ts": ["throughCallback", "throughResult"],
   "generic-dependent-inference.ts": ["propagatedBound"],
+  // One closure, two advertised signatures. Its body carries a separate
+  // obligation under each, which only a producer stating per-signature claims
+  // can discharge; SKJS collapses the intersection and tsc states one claim
+  // set for the body.
+  "overloads.ts": ["guardedOverload", "overloadAtNull", "overloadCapture"],
 };
 function expectedVerified(file: string, name: string) {
   const witness = /^verification\/ocaml-producer\/examples\/(.*)$/.exec(file);
@@ -97,6 +102,13 @@ function expectedVerified(file: string, name: string) {
   // SKJS loses the initializer's singleton; the TS column verifies this case.
   if (file.endsWith("/mutable-locals.ts") && name === "preciseSnapshot")
     return false;
+  // SKJS types these but exports no claim for a signature with an optional
+  // parameter (`SkjsTypeClaims.sk`, "function-optional-parameter"). The TS
+  // column verifies all three.
+  if (file.endsWith("/optional-arguments.ts")) return false;
+  // The same refusal covers a defaulted parameter, whose position admits
+  // `undefined` for the same reason.
+  if (file.endsWith("/default-arguments.ts")) return false;
   // These array cases need numeric-property or iterator contracts that the
   // source fragment does not yet establish.
   if (

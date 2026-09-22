@@ -27,7 +27,7 @@ private def callableShape (a : Json) : Except String (List Json × Json) := do
 Every union and overload arm is checked; record operands remain excluded. -/
 partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
   CellClaims.fieldsExactly j ["top","atoms"]
-  if ← (← jField j "top").getBool? then throw "top is outside callable operands"
+  if ← (← jField j "top").getBool? then return [← SourceTypes.use .top]
   let arms ← (← jArr j "atoms").mapM fun atom => do
     if (← jStr (← jField atom "a")) == "function" then
       let signatures ← (← CellClaims.conjuncts atom).mapM fun a => do
@@ -221,8 +221,13 @@ inductive Expr where
   value written, where the calculus's write yields null. -/
   | assign (pos : Span) (name : String) (namePos : Span) (rhs : Expr)
   | withValue (pos : Span) (fn initial : Expr) (functionType bagType : Json)
+  /-- `params` are what the body reads. `defaults` names the positions a call
+  may omit and the expression that replaces the `undefined` bound there; the
+  advertised domain at such a position is the parameter's type with
+  `undefined`. -/
   | lambda (pos : Span) (typeParams : List TypeParam)
-      (params : List (String × Json)) (result : Json) (body : Expr)
+      (params : List (String × Json)) (defaults : List (Nat × Expr))
+      (result : Json) (body : Expr)
   | bindWithReceiver (pos : Span) (callee receiver : Expr) (args : List Expr)
   | callWithReceiver (pos : Span) (callee receiver : Expr) (args : List Expr)
   | call (pos : Span) (callee : Expr) (args : List Expr)
@@ -238,7 +243,7 @@ inductive Expr where
 
 /-- Singleton notation for small source-adapter fixtures. -/
 abbrev Expr.lam (p : Span) (name : String) (arg result : Json) (body : Expr) : Expr :=
-  .lambda p [] [(name,arg)] result body
+  .lambda p [] [(name,arg)] [] result body
 abbrev Expr.app (p : Span) (callee arg : Expr) : Expr := .call p callee [arg]
 
 def Expr.span : Expr → Span
@@ -246,7 +251,7 @@ def Expr.span : Expr → Span
   | .ifBody p _ _ _ _ | .done p | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
   | .arrayLit p _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .cast p _ _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ _ | .call p _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .cast p _ _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ _ _ | .call p _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ => p
 
 /-- One declarator of a `const` or `let`. -/
 structure Binding where
@@ -408,10 +413,18 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       | none => do
         CellClaims.fieldsExactly j ["k","pos","params","result","body"]
         pure []
-    let params ← (← jArr j "params").mapM fun param => do
-      CellClaims.fieldsExactly param ["name","type"]
+    let raw ← jArr j "params"
+    let params ← raw.mapM fun param => do
+      if (param.getObjVal? "default").toOption.isSome then
+        CellClaims.fieldsExactly param ["name","type","default"]
+      else
+        CellClaims.fieldsExactly param ["name","type"]
       return (← jStr (← jField param "name"), ← jField param "type")
-    return .lambda p typeParams params (← jField j "result")
+    let defaults ← raw.zipIdx.filterMapM fun (param,i) => do
+      match (param.getObjVal? "default").toOption with
+      | none => return none
+      | some d => return some (i, ← decodeExpr d)
+    return .lambda p typeParams params defaults (← jField j "result")
       (← decodeExpr (← jField j "body"))
   | "doneBody" => return .done p
   | "seqBody" => return .seqBody p (← decodeExpr (← jField j "init")) (← decodeExpr (← jField j "body"))

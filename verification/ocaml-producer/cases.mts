@@ -36,6 +36,31 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  gap("generic-rigid-default", "A rigid default needs the universally quantified input union T | undefined",
+    "unsupported", "proposal", /rigid type nested in a graph type/),
+  gap("default-deferred-capture", "A default-created closure needs the later parameter's initialized binding",
+    "unsupported", "proposal", /parameter default may only read initialized earlier parameters/),
+  positive("generic-defaults", "Universally certified default initialization before rigid results and callbacks"),
+  negative("invalid-generic-default", "An observed Boolean call cannot justify a default for every T",
+    /generic binding annotation.*cannot establish T ≤ boolean/),
+  positive(
+    "default-parameter-scope",
+    "Sequential defaults, effects, and captured initialized parameters",
+  ),
+  gap(
+    "default-later-parameter",
+    "A later parameter is uninitialized while an earlier default runs",
+    "unsupported",
+    "proposal",
+    /parameter default may only read initialized earlier parameters/,
+  ),
+  gap(
+    "generic-default",
+    "A generic default field write cannot be discarded when no certificate models it",
+    "unverified",
+    "search",
+    /body requires a variable, a primitive literal, an assignment, a call or a closure/,
+  ),
   positive("values", "immutable snapshots / fixed storage"),
   positive("branches", "branch scopes / arithmetic"),
   positive("objects", "multi-field objects / aliases"),
@@ -50,6 +75,18 @@ export const cases: Case[] = [
   positive("aliases", "capture-avoiding alias substitution"),
   positive("top-void", "unknown / discarded callback result"),
   positive("function-fields", "one object with fields and calls"),
+  positive(
+    "optional-parameters",
+    "omitted trailing arguments / optional parameter contracts",
+  ),
+  positive(
+    "overloads",
+    "one closure advertising two signatures, checked and called at each",
+  ),
+  positive(
+    "default-parameters",
+    "defaults replacing an omitted argument, including one reading an earlier parameter",
+  ),
   negative("invalid-return", "return contract"),
   negative("invalid-local-write", "fixed storage contract"),
   negative("invalid-callback", "argument contract"),
@@ -71,6 +108,22 @@ export const cases: Case[] = [
   negative("invalid-tuple", "contextual tuple element obligation"),
   negative("invalid-context", "fresh initializer obligation"),
   negative("invalid-heap-refinement", "heap refinement invalidation"),
+  // The optional parameter is read at its declared contract, which admits
+  // `undefined`; returning it as a Boolean is an obligation, not an arity
+  // question.
+  negative(
+    "invalid-optional-body",
+    "optional parameter returned without its guard",
+  ),
+  // The default is checked against the type the body reads, like any other
+  // expression obligation.
+  // Each advertised signature is a separate obligation on the same body: the
+  // Boolean one promises `true` and the body returns its argument.
+  negative("invalid-overload", "signature the body does not implement"),
+  negative(
+    "invalid-default-parameter",
+    "default value outside its parameter's contract",
+  ),
   positive("generic-closure", "polymorphic closure / fresh call inference"),
   positive(
     "generic-two-calls",
@@ -89,9 +142,18 @@ export const cases: Case[] = [
     /cannot establish boolean ≤ T for every instantiation of \[T\]/,
   ),
   positive("generic-inferred", "inferred rigid copies / dependent bounds"),
-  positive("generic-inference", "joined lower bounds / contravariant upper bounds"),
-  positive("generic-dependent-inference", "propagated dependent inference bounds"),
-  positive("generic-bounded", "bounded scheme / substituted bound at each call"),
+  positive(
+    "generic-inference",
+    "joined lower bounds / contravariant upper bounds",
+  ),
+  positive(
+    "generic-dependent-inference",
+    "propagated dependent inference bounds",
+  ),
+  positive(
+    "generic-bounded",
+    "bounded scheme / substituted bound at each call",
+  ),
   positive(
     "generic-returned",
     "returned closure retaining the outer binder in its result",

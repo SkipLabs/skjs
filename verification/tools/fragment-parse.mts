@@ -46,6 +46,15 @@ import type {
 import type { Span } from "./span.mts";
 import { messageOf } from "./thrown.mts";
 
+/** A question-mark parameter requires an optional suffix. A default may
+ * precede a required parameter: callers supply undefined in that position. */
+function firstOptional(
+  parameters: readonly { questionToken?: unknown; initializer?: unknown }[],
+): number {
+  const i = parameters.findIndex((p) => !!p.questionToken);
+  return i < 0 ? parameters.length : i;
+}
+
 /* --------------------------------------------------------- the compiler -- */
 // The compiler runs out of process and is addressed through one API instance.
 // Opening it costs more than reading any one file, so a process that parses
@@ -237,15 +246,21 @@ class Gate {
         if (
           !ts.isIdentifier(p.name) ||
           p.name.text === "this" ||
-          p.questionToken ||
           p.dotDotDotToken ||
           p.initializer
         )
-          this.fail(p, "expected a required ordinary parameter");
+          this.fail(p, "expected an ordinary parameter");
+        if (
+          !p.questionToken &&
+          node.parameters.indexOf(p) > firstOptional(node.parameters)
+        )
+          this.fail(p, "a required parameter cannot follow an optional one");
       }
       acc.push({
         a: "function",
-        params: node.parameters.map((p) => this.typeOf(p.type)),
+        params: node.parameters.map((p) =>
+          p.questionToken ? this.optionalTypeOf(p.type) : this.typeOf(p.type),
+        ),
         result: this.typeOf(node.type),
         construct: "unknown",
         array: "unknown",
@@ -483,6 +498,17 @@ class Gate {
   /** Whether the type being read mentioned `unknown`, which absorbs the
    * rest of its union: semantic top. */
   private top = false;
+
+  /** `x?: T` is `T | undefined` where the parameter is read: `undefined` is the
+   * value bound when a call omits that position. The fragment carries the
+   * union, so nothing downstream needs a second representation of optionality.
+   * A call may omit a trailing position exactly when its contract admits
+   * `undefined`; declared arity is not observable in this fragment. */
+  optionalTypeOf(node: TypeNode | undefined): ClaimType {
+    const type = this.typeOf(node);
+    if (type.top || type.atoms.some((a) => a.a === "undefined")) return type;
+    return { top: false, atoms: [...type.atoms, { a: "undefined" }] };
+  }
 
   typeOf(node: TypeNode | undefined): ClaimType {
     if (!node) this.fail(null, "missing type annotation");
@@ -1111,14 +1137,16 @@ class Gate {
       // Each name is taken where its parameter has just been checked: a
       // narrowing does not survive into the second pass over the same list.
       const names = node.parameters.map((p) => {
+        if (!ts.isIdentifier(p.name) || p.name.text === "this" || p.dotDotDotToken)
+          this.fail(p, "expected an ordinary closure parameter");
+        if (p.questionToken && p.initializer)
+          this.fail(p, "a parameter cannot be both optional and defaulted");
         if (
-          !ts.isIdentifier(p.name) ||
-          p.name.text === "this" ||
-          p.questionToken ||
-          p.dotDotDotToken ||
-          p.initializer
+          !p.questionToken &&
+          !p.initializer &&
+          node.parameters.indexOf(p) > firstOptional(node.parameters)
         )
-          this.fail(p, "expected a required closure parameter");
+          this.fail(p, "a required parameter cannot follow an optional one");
         if (p.name.text === "undefined")
           this.fail(p, "shadowing undefined is outside the fragment");
         return p.name.text;
@@ -1138,7 +1166,12 @@ class Gate {
         typeParams,
         params: node.parameters.map((p, i) => ({
           name: names[i],
-          type: this.typeOf(p.type),
+          // A defaulted parameter's type is what the body reads; the default
+          // itself is the expression that replaces an omitted argument.
+          type: p.questionToken
+            ? this.optionalTypeOf(p.type)
+            : this.typeOf(p.type),
+          ...(p.initializer ? { default: this.expr(p.initializer) } : {}),
         })),
         result: this.typeOf(node.type),
         body,
@@ -1511,8 +1544,11 @@ class Gate {
           this.fail(p, "destructuring parameter");
         if (p.name.text === "undefined")
           this.fail(p, "shadowing undefined is outside the fragment");
-        if (p.questionToken)
-          this.fail(p, "optional parameters are outside the fragment");
+        if (
+          !p.questionToken &&
+          node.parameters.indexOf(p) > firstOptional(node.parameters)
+        )
+          this.fail(p, "a required parameter cannot follow an optional one");
         if (p.dotDotDotToken)
           this.fail(p, "rest parameters are outside the fragment");
         if (p.initializer)
@@ -1520,7 +1556,9 @@ class Gate {
         return {
           name: p.name.text,
           pos: this.span(p.name),
-          type: this.typeOf(p.type),
+          type: p.questionToken
+            ? this.optionalTypeOf(p.type)
+            : this.typeOf(p.type),
         };
       });
       return {

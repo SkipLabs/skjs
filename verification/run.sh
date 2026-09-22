@@ -176,6 +176,8 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   CALLABLE_CELLS=verification/tests/callables/cells.ts
   BOUND_ARGUMENTS=verification/tests/skjs-incomplete/bound-arguments.ts
   RECEIVER_CALL=verification/tests/callables/receiver-call.ts
+  OPTIONAL_ARGUMENTS=verification/tests/callables/optional-arguments.ts
+  DEFAULT_ARGUMENTS=verification/tests/callables/default-arguments.ts
   CALLABLE_FIELD=verification/tests/callables/function-field.ts
   CALLABLE_GUARDS=verification/tests/callables/guards.ts
   CALLABLE_ARITY=verification/tests/callables/arity.ts
@@ -215,6 +217,16 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   build fixture factories "$FACTORIES"
   build fixture callable_thunks "$CALLABLE_THUNKS"
   build fixture callable_cells "$CALLABLE_CELLS"
+  optional_arguments_fixture() {
+    fixture optional_arguments "$OPTIONAL_ARGUMENTS" &&
+      node verification/tools/tsc-claims.mts "$OPTIONAL_ARGUMENTS" --out "$WORK/optional_arguments.tsc"
+  }
+  build optional_arguments_fixture
+  default_arguments_fixture() {
+    fixture default_arguments "$DEFAULT_ARGUMENTS" &&
+      node verification/tools/tsc-claims.mts "$DEFAULT_ARGUMENTS" --out "$WORK/default_arguments.tsc"
+  }
+  build default_arguments_fixture
   bound_arguments_fixture() {
     rejected_fixture bound_arguments "$BOUND_ARGUMENTS" 2 &&
       node verification/tools/tsc-claims.mts "$BOUND_ARGUMENTS" --out "$WORK/bound_arguments.tsc"
@@ -399,6 +411,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Undefined values and contracts" node verification/tests/undefined.mts        "$WORK/undefined.ast" "$WORK/undefined.claims" "$UNDEFINED_SOURCE" "$VERIFIER"
   run_test "Closures" node verification/tests/stateful-closures.mts        "$WORK/closures.ast" "$WORK/closures.claims" "$CLOSURES" "$VERIFIER"
   run_test "Callables" node verification/tests/callables.mts "$WORK/callables.ast" "$WORK/callables.claims" "$CALLABLES" "$VERIFIER"
+  run_test "Omitted arguments" node verification/tests/optional-arguments.mts "$WORK/optional_arguments.ast" "$WORK/optional_arguments.claims" "$OPTIONAL_ARGUMENTS" "$VERIFIER" "$WORK/optional_arguments.tsc" "$WORK/default_arguments.ast" "$WORK/default_arguments.claims" "$DEFAULT_ARGUMENTS" "$WORK/default_arguments.tsc"
   run_test "Bound arrow arguments" node verification/tests/bound-arguments.mts "$WORK/bound_arguments.ast" "$WORK/bound_arguments.claims" "$BOUND_ARGUMENTS" "$VERIFIER" "$WORK/bound_arguments.tsc"
   run_test "Local arrow receiver calls" node verification/tests/receiver-call.mts "$WORK/receiver_call.ast" "$WORK/receiver_call.claims" "$RECEIVER_CALL" "$VERIFIER"
   run_test "Initialized callable field" node verification/tests/function-field.mts "$WORK/callable_field.ast" "$WORK/callable_field.claims" "$CALLABLE_FIELD" "$VERIFIER"

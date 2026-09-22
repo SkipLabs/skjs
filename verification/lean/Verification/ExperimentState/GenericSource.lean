@@ -163,9 +163,11 @@ def translate (names : List String) : Fragment.Expr → M Body
       let callee ← translate names callee
       let args ← args.attach.mapM fun ⟨a, _⟩ => translate names a
       return .call pos callee args
-  | .lambda pos tps ps ret body => do
+  | .lambda pos tps ps defaults ret body => do
       if !tps.isEmpty then
         throw (.refusal pos .schemeIntroduction "a nested quantified closure is outside the checked fragment")
+      if !defaults.isEmpty then
+        throw (.refusal pos .schemeIntroduction "a defaulted closure parameter is outside the rigid checker")
       let inner ← ps.mapM fun (q : String × Json) => do
         return (q.1, ← lower pos .schemeIntroduction (annotationTy names q.2))
       let declared ← lower pos .schemeIntroduction (annotationTy names ret)
@@ -430,8 +432,8 @@ private partial def closureProof (c : Ctx) (env : List (String × GenericCertifi
       | some (index, .value _) => pure (some (.var index))
       | some (index, .cell _) => pure (some (.read index))
       | none => throw (.refusal pos .schemeIntroduction s!"unbound capture '{name}'")
-  | .lambda pos tps ps ret body => do
-      if !tps.isEmpty then return none
+  | .lambda pos tps ps defaults ret body => do
+      if !tps.isEmpty || !defaults.isEmpty then return none
       let names := c.parameters.map (·.name)
       let inner ← ps.mapM fun q => do
         return (q.1, ← lower pos .schemeIntroduction (annotationTy names q.2))
@@ -478,13 +480,26 @@ private def proofBody (c : Ctx) (initial : List (String × DirectObligation.Ty))
         "generic expression has no semantic certificate constructor")
   return initializers.foldr GenericCertificate.Proof.letE (.widen result body)
 
+/-- Default initialization is checked under the universal binders, in source
+order, before body checking. It cannot borrow types from observed calls. -/
+def parameterDefaults (c : Ctx) (env : List (String × DirectObligation.Ty))
+    (pos : Span) (ps : List (String × Json)) (defaults : List (Nat × Fragment.Expr)) : M Unit := do
+  let mut scope := env
+  for ((name, annot), i) in ps.zipIdx do
+    let expected ← lower pos .schemeIntroduction (annotationTy (c.parameters.map (·.name)) annot)
+    if let some init := defaults.lookup i then
+      let actual ← exprTy c scope init
+      liftE (requireLeE c scope .bindingAnnotation (.expression init.span) actual expected)
+    scope := (name, expected) :: scope
+
 /-- Reconstruct a universal closure certificate independently of observed calls.
 The proof language handles immutable reads, closures and calls; a cell read must never be
 compiled as a read of the cell identity. Missing constructors stay explicit at
 the final certification boundary. -/
 def closureCertificate (c : Ctx) (env : List (String × DirectObligation.Ty))
     (storage : List Fragment.Binding)
-    (pos : Span) (ps : List (String × Json)) (ret : Json) (body : Fragment.Expr) :
+    (pos : Span) (ps : List (String × Json)) (ret : Json) (body : Fragment.Expr)
+    (defaults : List (Nat × Fragment.Expr) := []) :
     M (Option GenericCertificate.ClosureCertificate) := do
   -- Runtime cell identities carry the source's fixed storage annotation. An
   -- entry claim about current contents cannot supply this lifetime contract.
@@ -501,10 +516,27 @@ def closureCertificate (c : Ctx) (env : List (String × DirectObligation.Ty))
   let inner ← ps.mapM fun q => do
     return (q.1, ← lower pos .schemeIntroduction (annotationTy names q.2))
   let result ← lower pos .schemeIntroduction (annotationTy names ret)
-  let slots := inner.map fun (name, A) => (name, GenericCertificate.Slot.value A)
-  let some proof ← closureProof c (slots ++ captures) body | return none
-  return some ⟨c.parameters, inner.map Prod.snd, captures.map Prod.snd, result,
-    .widen result proof⟩
+  let inputs ← inner.zipIdx.mapM fun ((_, A), i) => do
+    if (defaults.lookup i).isNone then pure A
+    else match A with
+      | .ground labels => pure (.ground ((labels ++ [3]).eraseDups))
+      | _ => throw (.refusal pos .schemeIntroduction
+          "a default whose parameter type mentions a rigid binder needs a union type certificate")
+  let mut slots := ((inner.map Prod.fst).zip inputs).map fun (name, A) =>
+    (if defaults.isEmpty then name else "", GenericCertificate.Slot.value A)
+  slots := slots ++ captures
+  let mut initializers : List GenericCertificate.Proof := []
+  for ((name, A), i) in inner.zipIdx do
+    match defaults.lookup i with
+    | none => slots := slots.set (initializers.length + i) (name, .value A)
+    | some init =>
+      let .ground labels := A | return none
+      let some proof ← closureProof c slots init | return none
+      initializers := initializers ++ [.defaultE (initializers.length + i) labels proof]
+      slots := (name, .value A) :: slots
+  let some proof ← closureProof c slots body | return none
+  return some ⟨c.parameters, inputs, captures.map Prod.snd, result,
+    initializers.foldr GenericCertificate.Proof.letE (.widen result proof)⟩
 
 /-- Both production and independent consumption reconstruct these obligations.
 Every source entry and expression must occur exactly once; no supplied point is

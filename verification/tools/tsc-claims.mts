@@ -151,6 +151,9 @@ function walkExpr(e: Expr, out: Sites): void {
       return;
     case "lambda":
       addExpr(out, e.pos, "lambda");
+      // A parameter's default is an ordinary expression of this function, and
+      // a claim site like any other.
+      for (const p of e.params) if (p.default) walkExpr(p.default, out);
       walkExpr(e.body, out);
       return;
     case "write":
@@ -516,8 +519,15 @@ function tryRecord(
 }
 
 type ArrowRead =
-  | { ok: true; domains: Type[]; result: Type }
+  /** `defaulted[i]` marks a position whose declaration supplies a default: the
+   * call may omit it, so its contract also admits `undefined`, while the body
+   * reads the type the checker reports. */
+  | { ok: true; domains: Type[]; defaulted: boolean[]; result: Type }
   | { ok: false; reason?: string };
+
+/** Label 3 is `undefined` (`SourceTypes.initial`). */
+const admitUndefined = (labels: number[]): number[] =>
+  labels.includes(3) ? labels : [...labels, 3].sort((a, b) => a - b);
 
 /**
  * One signature with ordered required parameters, no
@@ -557,20 +567,28 @@ function tryArrow(type: Type, checker: Checker): ArrowRead {
   }
   // Optionality is on the declared parameter: a signature transports its
   // parameters as ids, and asking the checker for one of those symbols is
-  // not the way to reach a type here — `getParameterType` is.
+  // not the way to reach a type here — `getParameterType` is, and for an
+  // optional parameter it answers with the union that includes `undefined`,
+  // which is exactly the contract a call omitting that position must meet. A
+  // default parameter is a different obligation and stays refused.
+  // A defaulted parameter's position also admits `undefined` at the call: the
+  // default replaces that value before the body runs, and the checker reports
+  // the type the body reads, so the union is added here.
   const declared = sig.declaration?.resolve();
-  if (
-    declared &&
-    isSignatureDeclaration(declared) &&
-    declared.parameters.some((p) => p.questionToken || p.initializer)
-  )
-    return { ok: false, reason: "optional-param" };
+  const defaulted =
+    declared && isSignatureDeclaration(declared)
+      ? declared.parameters.map((p) => !!p.initializer)
+      : [];
   return {
     ok: true,
     domains: sig.parameters
       .slice(0, parameterCount)
       .map((_, i) => must(checker.getParameterType(sig, i), "parameter-type"))
       .concat(tail),
+    defaulted: sig.parameters
+      .slice(0, parameterCount)
+      .map((_, i) => !!defaulted[i])
+      .concat(tail.map(() => false)),
     result: must(checker.getReturnTypeOfSignature(sig), "return-type"),
   };
 }
@@ -663,9 +681,10 @@ function tryArrowIntersection(
   const arrows: [number[][], number[]][] = [];
   for (const r of read) {
     const pair: [number[][], number[]] = [
-      r.domains.map((domain) =>
-        translateType(domain, checker, types, false, fuel - 1),
-      ),
+      r.domains.map((domain, i) => {
+        const labels = translateType(domain, checker, types, false, fuel - 1);
+        return r.defaulted[i] ? admitUndefined(labels) : labels;
+      }),
       translateType(r.result, checker, types, false, fuel - 1),
     ];
     if (!arrows.some((a) => JSON.stringify(a) === JSON.stringify(pair)))
@@ -766,9 +785,10 @@ function translateType(
       f.name,
       translateType(f.type, checker, types, false, fuel - 1),
     ]);
-    const Ds = arrow.domains.map((D) =>
-      translateType(D, checker, types, false, fuel - 1),
-    );
+    const Ds = arrow.domains.map((D, i) => {
+      const labels = translateType(D, checker, types, false, fuel - 1);
+      return arrow.defaulted[i] ? admitUndefined(labels) : labels;
+    });
     const R = translateType(arrow.result, checker, types, false, fuel - 1);
     return [
       internRow(types, [
@@ -819,9 +839,10 @@ function translateType(
   const arr = tryArrow(type, checker);
   if (arr.ok) {
     const pair: [number[][], number[]] = [
-      arr.domains.map((domain) =>
-        translateType(domain, checker, types, false, fuel - 1),
-      ),
+      arr.domains.map((domain, i) => {
+        const labels = translateType(domain, checker, types, false, fuel - 1);
+        return arr.defaulted[i] ? admitUndefined(labels) : labels;
+      }),
       translateType(arr.result, checker, types, false, fuel - 1),
     ];
     return [internRow(types, [{ arrs: { arrows: [pair] } }])];
