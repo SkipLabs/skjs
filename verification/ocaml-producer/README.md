@@ -82,10 +82,12 @@ language. The boundaries are:
    refinement or inference operation can replace that contract.
 4. `proposal.ml` infers immutable candidate claims. It neither validates nor
    publishes acceptance. For a call to a quantified callable, `inference.ml`
-   collects constraints through callable shapes — a callback's parameters from
-   the scheme, its result from the argument — and the first occurrence of a
-   binder proposes its type; a later disagreement is not refused, because every
-   argument is validated against the substituted signature and fails there. It conservatively joins branches and infers local
+   accumulates directional lower/upper constraints through callable shapes,
+   reversing direction at each callback parameter and preserving it at results.
+   Declared dependent bounds propagate lower constraints forward and upper
+   constraints backward to a fixed point. Candidate types join lower bounds;
+   upper-only candidates intersect primitive bounds when representable. Every
+   argument and substituted bound is still validated by Lean. It conservatively joins branches and infers local
    values, object shapes, callback results and calls from explicit signatures.
    Expected types guide fresh object/array construction, while the actual
    initializer claims remain separate obligations. Immutable branch refinements
@@ -196,7 +198,8 @@ truth for outcomes; this table records why the next rows matter.
 | Generic declarations and rigid bounds | complete | `generics.ts`, `generic-inferred.ts` | Keep rigid identities distinct through copies and dependent bounds |
 | Quantified closure, one inferred call | complete | `generic-closure.ts` | Keep a scheme in SourceClaims and validate its body universally |
 | One closure called at two types | complete | `generic-two-calls.ts`, `invalid-scheme-capture.ts` | Give each call fresh proposal state; do not specialize the stored scheme |
-| Bounded quantified closure | complete | `generic-bounded.ts`, `invalid-bound-reversed.ts`, `invalid-bound-body.ts` | Export and validate the concrete substitution and every bound obligation |
+| Bounded quantified closure | complete | `generic-bounded.ts`, `invalid-bound-argument.ts`, `invalid-bound-body.ts` | Export and validate the concrete substitution and every bound obligation |
+| Generic inference constraints | complete for maintained witnesses | `generic-inference.ts`, `generic-dependent-inference.ts` | Join lower bounds, intersect primitive upper bounds, propagate dependencies without changing acceptance |
 | Returned quantified/outer-dependent closure | complete | `generic-returned.ts`, `invalid-returned-capture.ts` | Preserve nested scope and avoid capture during substitution |
 | Quantified closure reading captured storage | complete | `generic-captured-store.ts`, `invalid-captured-write.ts` | Keep one fixed world contract across every instantiation |
 | Generic callback argument | complete | `generic-callback.ts`, `invalid-callback-variance.ts`, `invalid-callback-result.ts` | Collect directional constraints without placing solver state in semantic types |
@@ -354,7 +357,7 @@ Every negative control must reach validation and fail for its expected reason;
 a premature gate refusal is a test failure. Controls cover bad returns,
 local/aliased/array writes, readonly writes, callback arguments and variance,
 mutable captures, generic fabrication, a closure valid at every observed call
-but not universally, a reversed substituted bound at a call, a body that
+but not universally, a type argument violating its bound, a body that
 reverses its binder's bound, bad contextual initializers and stale heap refinements. Contextual types cannot turn a bad initializer into a fact.
 
 Three direct generic examples now cross the semantic-certificate boundary:
@@ -390,6 +393,38 @@ language and its rules settle, state a declarative rigid/scheme judgment and
 prove that `Ty.leUnder` and `GenericSource.check` decide it. This is completeness
 for the declared rules, not for every inclusion that happens to hold in the
 semantic model, and it is separate from completeness of graph proof search.
+
+### OCaml inference completeness
+
+`inference.ml` proposes one substitution per call. It now accumulates constraints
+instead of committing to the first occurrence. The original witness
+`second(true, flag)` in `generic-inference.ts` infers `boolean`; callback-only
+constraints can infer the intersection `true` of upper bounds `boolean` and
+`true`. A dependent constraint `T ≤ U` propagates every lower bound of `T` to
+`U`, and every upper bound of `U` to `T`. If `U` has a chosen lower-bound join,
+that choice also constrains an upper-only `T`; otherwise `U = true` could still
+leave `T = boolean`. Each saturation copies finite seed sets (including these
+chosen joins), so cycles terminate without a heuristic fuel limit.
+Solver variables are local records keyed by scoped binder identities, never
+semantic types or exported inference state.
+
+The former `invalid-bound-reversed.ts` is preserved as the positive
+`generic-dependent-inference.ts`: `pick(true, flag)` has the valid substitution
+`U = T = boolean`. TypeScript 7.0.2's implicit inference rejects this call;
+the verifier accepts the OCaml producer's explicit substitution. The genuine
+negative `invalid-bound-argument.ts` supplies `number` for `T extends boolean`.
+Existing forged-substitution and callback-variance controls still fail Lean
+obligations; inference does not publish acceptance or hide contradictions.
+
+This is still not a complete solver. Constraint decomposition covers bare
+binders and simple monomorphic callable shapes, not generic record/array
+positions, overload alternatives or higher-rank schemes. Upper-only primitive
+intersections are computed; unrepresentable structural/rigid intersections
+fall back to a deterministic existing upper candidate that Lean must validate.
+There is no search over alternative substitutions or result-context inference.
+A binder with neither argument constraints nor a usable declared bound is
+explicitly unsupported. Further work must retain these constraints and the
+independent acceptance boundary, not add a permissive subtype checker here.
 
 ## What is proved, and what is trusted
 

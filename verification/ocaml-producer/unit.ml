@@ -22,4 +22,32 @@ let () =
   assert (inferred.Inference.params=[bool]);
   assert (inferred.Inference.result=bool);
   assert (inferred.Inference.substitution=[identity,bool]);
+  let infer params actuals = Inference.infer {signature with params} actuals in
+  let t=Rigid identity and tru=ground [True] and num=ground [Num] in
+  (* Repeated lower constraints join independently of argument order. *)
+  assert ((infer [t;t] [tru;bool]).Inference.result=bool);
+  assert ((infer [t;t] [bool;tru]).Inference.result=bool);
+  (* Contravariant occurrences meet upper bounds, even if the broader one is first. *)
+  assert ((infer [arrow [t] bool;arrow [t] bool]
+    [arrow [bool] bool;arrow [tru] bool]).Inference.result=tru);
+  (* Two parameter reversals recover covariance. *)
+  let nested ty=arrow [arrow [ty] bool] bool in
+  assert ((infer [nested t;nested t] [nested tru;nested bool]).Inference.result=bool);
+  (* A contradiction must still reach independent validation. *)
+  assert ((infer [t;arrow [t] num] [bool;arrow [num] num]).Inference.result=bool);
+  let u={scope=2;index=1;spelling="U"} and v={scope=2;index=2;spelling="V"} in
+  let chain={quantified=[{identity=u;bound=None};{identity;bound=Some (Rigid u)};
+    {identity=v;bound=Some t}];params=[Rigid u;t;Rigid v];result=Rigid u} in
+  let propagated=Inference.infer chain [tru;tru;bool] in
+  assert (List.for_all (fun (_,ty) -> ty=bool) propagated.Inference.substitution);
+  let boundedUpper={signature with quantified=[{identity=u;bound=None};
+    {identity;bound=Some (Rigid u)}];params=[Rigid u;arrow [t] bool]} in
+  assert ((Inference.infer boundedUpper [tru;arrow [bool] bool]).Inference.substitution=
+    [u,tru;identity,tru]);
+  (* Cyclic proposal dependencies terminate; they cannot create semantic types. *)
+  let cyclic={signature with quantified=[{identity;bound=Some (Rigid u)};
+    {identity=u;bound=Some t}];params=[t;Rigid u]} in
+  assert ((Inference.infer cyclic [tru;bool]).Inference.substitution=[identity,bool;u,bool]);
+  (* Equal spellings from a different scope are rigid, not solver variables. *)
+  assert ((infer [t] [a]).Inference.substitution=[identity,a]);
   print_endline "JSON codec, rigid identity and generic inference: passed"

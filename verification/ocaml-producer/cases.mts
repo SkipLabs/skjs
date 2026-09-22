@@ -89,6 +89,8 @@ export const cases: Case[] = [
     /cannot establish boolean ≤ T for every instantiation of \[T\]/,
   ),
   positive("generic-inferred", "inferred rigid copies / dependent bounds"),
+  positive("generic-inference", "joined lower bounds / contravariant upper bounds"),
+  positive("generic-dependent-inference", "propagated dependent inference bounds"),
   positive("generic-bounded", "bounded scheme / substituted bound at each call"),
   positive(
     "generic-returned",
@@ -125,12 +127,12 @@ export const cases: Case[] = [
     "nested closure body against its rigid result",
     /does not satisfy its scheme universally: cannot establish boolean ≤ T/,
   ),
-  // The reversed bound is an elimination obligation at the call, under the
-  // closure's declared parameters: the inclusion that failed, by name.
+  // A genuine bound violation survives inference: number cannot instantiate
+  // a binder constrained to boolean, regardless of candidate selection.
   negative(
-    "invalid-bound-reversed",
+    "invalid-bound-argument",
     "substituted bound obligation",
-    /does not satisfy the closure's bound: cannot establish boolean ≤ true under \[U, T ≤ U\]/,
+    /does not satisfy the closure's bound: cannot establish number ≤ boolean/,
   ),
   // The bound justifies T ≤ U, never U ≤ T; every observed call could still
   // agree, so only introduction refuses it.

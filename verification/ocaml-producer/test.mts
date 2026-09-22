@@ -22,6 +22,7 @@ let bounded = "";
 let returned = "";
 let captured = "";
 let callback = "";
+let inference = "";
 let verifiedFunctions = 0;
 for (const test of cases) {
   const result = check(join(here, "examples", `${test.file}.ts`));
@@ -53,6 +54,7 @@ for (const test of cases) {
   if (test.file === "generic-returned") returned = result.artifacts;
   if (test.file === "generic-captured-store") captured = result.artifacts;
   if (test.file === "generic-callback") callback = result.artifacts;
+  if (test.file === "generic-inference") inference = result.artifacts;
 }
 process.stdout.write(
   `${verifiedFunctions} functions verified; ${cases.filter((c) => c.kind === "negative").length} negative controls; ${cases.filter((c) => c.kind === "gap").length} named gaps\n`,
@@ -114,6 +116,24 @@ const badEvidence = join(good, "bad-evidence.json");
 writeFileSync(badEvidence, "{}");
 invoke(join(good, "claims.json"), badEvidence);
 process.stdout.write("tampered evidence: refused\n");
+
+// A graph certificate for the checked Boolean instance cannot validate a
+// narrower first-occurrence proposal after inference has joined both arguments.
+{
+  const claims: SourceClaims = JSON.parse(readFileSync(join(inference, "claims.json"), "utf8"));
+  const joined = must(claims.functions.find(f => f.name === "joinedArguments"), "joined arguments");
+  const call = must(joined.expressions.find(e => e.instantiate), "inferred call");
+  assert.deepEqual(call.instantiate, [{name: "T", type: [1, 2]}]);
+  const upper = must(claims.functions.find(f => f.name === "callbackUpperBounds"), "upper bounds");
+  assert.deepEqual(must(upper.expressions.find(e => e.instantiate), "upper call").instantiate,
+    [{name: "T", type: [1]}]);
+  must(must(call.instantiate, "substitution")[0], "type argument").type = [1];
+  call.type = [1];
+  const file = join(inference, "forged-first-candidate.json");
+  writeFileSync(file, JSON.stringify(claims));
+  invoke(file, join(inference, "evidence.json"), inference);
+  process.stdout.write("tampered joined inference candidate: refused\n");
+}
 
 // A graph certificate for the checked Boolean instance cannot validate a
 // different quantified contract. The scheme itself is independently consumed.

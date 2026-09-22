@@ -42,43 +42,99 @@ and substitute_signature solution signature =
     params=List.map (substitute solution) signature.params;
     result=substitute solution signature.result }
 
+(* These are proposal constraints, not semantic type nodes or acceptance facts.
+   Edges retain dependencies until all concrete bounds have propagated. *)
+type variable = { identity: rigid; mutable lower: ty list; mutable upper: ty list }
+
+(* Compute representable primitive intersections for upper-only inference.
+   Different structural shapes are not assumed disjoint. A missing meet leaves
+   a candidate to be validated, rather than inventing an intersection type. *)
+let meet_atom a b =
+  if a=b then Some [a] else match a,b with
+  | Top,x | x,Top -> Some [x]
+  | Num,NumLit _ -> Some [b] | NumLit _,Num -> Some [a]
+  | Str,StrLit _ -> Some [b] | StrLit _,Str -> Some [a]
+  | Shape _,_ | _,Shape _ -> None
+  | (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _),
+    (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _) -> Some []
+
+let meet a b =
+  if a=b then Some a else match a,b with
+  | Atoms xs,Atoms ys ->
+    let rec collect acc = function
+      | [] -> Some (ground acc)
+      | (x,y)::rest -> (match meet_atom x y with
+          | Some atoms -> collect (atoms @ acc) rest
+          | None -> None) in
+    collect [] (List.concat_map (fun x -> List.map (fun y -> x,y) ys) xs)
+  | _ -> None (* General intersections/rigid meets have no representation yet. *)
+
+let upper_candidate = function
+  | [] -> None
+  | first::rest ->
+    let intersection = List.fold_left (fun acc t -> Option.bind acc (fun a -> meet a t))
+      (Some first) rest in
+    Some (Option.value intersection ~default:first)
+
 let infer (signature:signature) actuals =
   if signature.quantified=[] then unsupported "generic inference requires a quantified signature";
   if List.length signature.params<>List.length actuals then
     unsupported "generic call argument count differs from its signature";
-  let domain = List.map (fun q -> q.identity) signature.quantified in
-  let solution = ref [] in
-  (* The first occurrence, in signature order, proposes the binder's type; a
-     later occurrence that disagrees is not refused here. A proposal is not an
-     acceptance fact: every argument is validated against the substituted
-     signature, so a callback whose parameter reverses the inclusion fails
-     there, at an obligation, rather than being hidden by a producer refusal. *)
-  let propose identity actual =
-    if not (List.mem identity domain) then ()
-    else if not (List.mem_assoc identity !solution) then
-      solution := (identity,actual) :: !solution in
-  (* Constraints are collected through callable shapes: a callback's parameters
-     flow from the scheme to the argument, its result from the argument to the
-     scheme. Each occurrence proposes an equality for the binder it names. The
-     first proposal wins; every occurrence is then validated by Lean against
-     the substitution this returns, so no solver state is published. *)
-  let rec constrain expected actual = match expected, actual with
-    | Rigid identity, _ -> propose identity actual
-    | Atoms [Shape {calls=[e];fields=[];elements=None}],
-      Atoms [Shape {calls=[a];fields=[];elements=None}]
-        when e.quantified=[] && a.quantified=[]
-          && List.length e.params=List.length a.params ->
+  let variables = List.map (fun (q:quantifier) ->
+    {identity=q.identity;lower=[];upper=[]}) signature.quantified in
+  let find identity = List.find_opt (fun (v:variable) -> v.identity=identity) variables in
+  let local = function Rigid identity -> find identity | Atoms _ | Union _ -> None in
+  let edges = ref [] in
+  let add xs t = List.sort_uniq compare (t::xs) in
+  (* constrain left right records left <= right. Callback parameters reverse
+     the direction; callback results preserve it, at every nesting depth. *)
+  let rec constrain left right = match local left,local right with
+    | Some x,Some y -> edges := (x,y)::!edges
+    | None,Some y -> y.lower <- add y.lower left
+    | Some x,None -> x.upper <- add x.upper right
+    | None,None -> (match left,right with
+      | Atoms [Shape {calls=[a];fields=[];elements=None}],
+      Atoms [Shape {calls=[e];fields=[];elements=None}]
+        when a.quantified=[] && e.quantified=[]
+          && List.length a.params=List.length e.params ->
       List.iter2 constrain e.params a.params;
-      constrain e.result a.result
-    | _ -> () in
-  List.iter2 constrain signature.params actuals;
-  List.iter (fun q -> if not (List.mem_assoc q.identity !solution) then
-    unsupported ("cannot infer " ^ q.identity.spelling ^ " from call arguments"))
-    signature.quantified;
-  let substitution = List.rev !solution in
+      constrain a.result e.result
+      | _ -> ()) (* Unsupported structure contributes no guessed constraints;
+                    Lean still checks the entire substituted signature. *) in
+  List.iter2 constrain actuals signature.params;
+  List.iter (fun (q:quantifier) ->
+    Option.iter (constrain (Rigid q.identity)) q.bound) signature.quantified;
+  let saturate () =
+    let changed = ref true in
+    while !changed do
+      changed := false;
+      List.iter (fun (lower,upper) ->
+        let lows=List.sort_uniq compare (lower.lower @ upper.lower)
+        and highs=List.sort_uniq compare (lower.upper @ upper.upper) in
+        if lows<>upper.lower || highs<>lower.upper then changed := true;
+        upper.lower <- lows;
+        lower.upper <- highs) !edges
+    done in
+  saturate ();
+  let join = function [] -> None | first::rest -> Some (List.fold_left union first rest) in
+  (* If U has a chosen lower-bound join, an upper-only T <= U must also fit
+     that choice. Propagating only U's declared uppers would miss this case. *)
+  List.iter (fun (lower,upper) ->
+    Option.iter (fun chosen -> lower.upper <- add lower.upper chosen) (join upper.lower)) !edges;
+  saturate ();
+  (* Each saturation only copies its finite seed sets, so it terminates
+     even with cycles. Prefer joined lower bounds; upper-only candidates use a
+     representable meet. Contradictions remain Lean obligations, not refusals. *)
+  let substitution = List.map (fun v ->
+    let candidate = match join v.lower with
+      | Some _ as chosen -> chosen
+      | None -> upper_candidate v.upper in
+    match candidate with
+    | Some t -> v.identity,t
+    | None -> unsupported ("cannot infer " ^ v.identity.spelling ^ " from call arguments or bounds")) variables in
   let params = List.map (substitute substitution) signature.params in
   let result = substitute substitution signature.result in
-  let bounds = List.filter_map (fun q -> Option.map (fun upper ->
+  let bounds = List.filter_map (fun (q:quantifier) -> Option.map (fun upper ->
     (List.assoc q.identity substitution,substitute substitution upper)) q.bound)
     signature.quantified in
   {substitution;params;result;bounds}
