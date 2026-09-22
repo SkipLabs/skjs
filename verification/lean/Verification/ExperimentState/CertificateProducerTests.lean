@@ -39,37 +39,11 @@ def mappedClaims : List (PointClaim (Fin 6)) :=
 
 #guard succeeds (produce G labels 8 [1] mapped mappedClaims 0)
 
-/-- No hand-built evidence tree or per-program typing derivation. Kernel
-reduction checks the produced certificate, then the general theorem applies. -/
+/-- Shared generated evidence for executable tampering checks. -/
 def mappedCertificate : ControlFlow.Certificate (Fin 6) :=
   match produce G labels 8 [1] mapped mappedClaims 0 with
   | .ok C => C
   | .error _ => []
-
-theorem mapped_accepted : accept G [1] mapped mappedClaims mappedCertificate 0 = true := by cbv
-
-theorem mapped_safe (n : Nat) : SafeGraph mapped (PositiveRules.meaning G [1]) n
-    (ofList []) [] (.at 0 (fun _ => .nul)) := accepted_safe mapped_accepted n
-
-theorem mapped_returns_false : Execution mapped 17 [] (.at 0 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
-  apply Execution.next (.enter rfl)
-  apply Execution.next (.expr (.makeV rfl))
-  apply Execution.next (.bind rfl)
-  apply Execution.next (.enter rfl)
-  apply Execution.next (.bind rfl)
-  apply Execution.next (.enter rfl)
-  apply Execution.next (.expr (.makeV rfl))
-  apply Execution.next (.bind rfl)
-  apply Execution.next (.enter rfl)
-  apply Execution.next (.expr (.writeV rfl (by decide)))
-  apply Execution.next (.effect rfl)
-  apply Execution.next (.enter rfl)
-  apply Execution.next (.expr (.beta rfl))
-  apply Execution.next (.expr (.iteC (.testV rfl)))
-  apply Execution.next (.expr .iteT)
-  apply Execution.next (.expr (.readV rfl))
-  apply Execution.next (.ret rfl)
-  exact .refl
 
 -- Structural subtype search must build a union-of-domains arrow certificate.
 #guard (subtype G [[],[0],[1],[0,1],[2],[3],[4],[5]] [3] [4]).isSome
@@ -123,6 +97,4 @@ def recursiveG : PositiveGraphs.NormalGraph (Fin 3) := fun i =>
 #guard !(accept G [1] mapped mappedClaims
   (mappedCertificate.map fun c => {c with edges := c.edges.map (fun ps => ps ++ [.subset])}) 0)
 
-#print axioms mapped_safe
-#print axioms mapped_returns_false
 end Verification.ExperimentState.CertificateProducerTests

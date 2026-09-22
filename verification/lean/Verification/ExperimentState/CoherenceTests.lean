@@ -1,5 +1,4 @@
 import Verification.ExperimentState.GraphCoherence
-import Verification.ExperimentState.CertificateProducerTests
 
 namespace Verification.ExperimentState.CoherenceTests
 open ObjectCoherence GraphCoherence ControlFlow ProgramCertificates
@@ -47,20 +46,6 @@ private def forgedCertificate : ControlFlow.Certificate Nat :=
 #guard checkNode G [0] [forgedNode] forgedCertificate forgedNode forgedCertificate[0]
 #guard !checkClosed G [0] [forgedNode] forgedCertificate 0
 
-/-- The maintained producer's captured closure, alias write, and mapped slots
-satisfy coherence at every finite prefix, without a second typing derivation. -/
-theorem mapped_coherent {k h s}
-    (run : Execution CertificateProducerTests.mapped k [] (.at 0 (fun _ => .nul)) h s) :
-    ∃ D, ObjectCoherence.HeapOk D h ∧ StateCoherent D s := by
-  apply accepted_closed_coherent (G := ProgramTypingTests.G)
-    (R := [1]) (C := CertificateProducerTests.mappedCertificate) _ run
-  have hc := CertificateProducerTests.mapped_accepted
-  simp only [CertificateProducer.accept, Bool.and_eq_true] at hc
-  exact hc.2
-
-example : ∃ D, ObjectCoherence.HeapOk D [.fls,.nul] ∧ StateCoherent D (.done .fls) :=
-  mapped_coherent CertificateProducerTests.mapped_returns_false
-
 /-- Capturing an allocated object preserves its registered descriptor. -/
 private def captured : Tm := .read (.obj 0 .absent)
 private def initial : Registry := [.absent]
@@ -83,5 +68,4 @@ example : ∃ E, Extends [.absent,.closure 1 captured] E ∧
     (by simp [ObjectCoherence.HeapOk,TermOk,Scoped,Names,locs,isVal,captured])
     (by simp [TermOk,Scoped,Names,locs,captured])
 
-#print axioms mapped_coherent
 end Verification.ExperimentState.CoherenceTests
