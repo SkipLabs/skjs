@@ -403,6 +403,12 @@ completeness theorem for the complete source-to-certificate pipeline or for
 OCaml inference. Captured-cell writes still have a source typing rule but no
 direct certificate constructor.
 
+Callable upper bounds are outside the current completeness theorem, not the
+semantic soundness result. The [planned extension](../POSITIVE-TYPES.md#planned-completeness-extension-callable-upper-bounds)
+starts with acyclic bounds referring to earlier binders; recursive bounds
+require separate work. The repaired fuel regression is not a general
+completeness proof for those bounds.
+
 ### OCaml inference completeness
 
 `inference.ml` proposes one substitution per call. It now accumulates constraints

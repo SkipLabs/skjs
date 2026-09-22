@@ -434,6 +434,26 @@ pays for each parameter's bound, accepts it. Callable bounds are excluded by
 `WellFormed`, so this regression does not establish completeness for callable
 bounds in general.
 
+### Planned completeness extension: callable upper bounds
+
+The restriction matches the current source bound parser and simplifies the
+proof; it is not a design restriction on the eventual language or evidence
+that completeness with callable bounds is false. Both `Sub.sound` and
+`Ty.leUnder_sound` already cover callable bounds. What remains unproved is
+that the executable relation accepts every derivable inclusion with such
+bounds; repairing the one fuel counterexample does not settle that question.
+
+First extend well-formedness to acyclic callable bounds whose rigid references,
+including references inside parameter and result types, name earlier binders.
+Prove a sufficient fuel bound or replace the walk with an algorithm whose
+termination measure accounts for entering bounds and reversing comparisons
+at callable parameters. Then extend `leUnder_iff_Sub` and the source bound
+parser, preserving the existing semantic soundness connection. This is
+expected to be achievable without changing the declarative rules, but that
+expectation is not a theorem. Recursive bounds are a separate extension and
+must not be admitted merely by removing the current restriction or increasing
+fuel again.
+
 ## Scope and next decisions
 
 The representational blocker for positive intersections of references is
