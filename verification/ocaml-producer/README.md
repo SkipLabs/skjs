@@ -193,22 +193,23 @@ truth for outcomes; this table records why the next rows matter.
 | Higher-order callbacks and variance | complete | `callbacks.ts` | Check parameters contravariantly through ordinary evidence |
 | Closure scope and partial application | complete | `blocks-bind.ts` | Retain captures and residual signatures |
 | Callable objects with fields | complete | `function-fields.ts` | Give one value call and field capabilities |
-| Generic declarations and rigid bounds | complete | `generics.ts`, `generic-inferred.ts` | Keep rigid identities distinct through copies and dependent bounds |
-| Quantified closure, one inferred call | complete | `generic-closure.ts` | Keep a scheme in SourceClaims and validate its body universally |
-| One closure called at two types | complete | `generic-two-calls.ts`, `invalid-scheme-capture.ts` | Give each call fresh proposal state; do not specialize the stored scheme |
-| Bounded quantified closure | complete | `generic-bounded.ts`, `invalid-bound-reversed.ts`, `invalid-bound-body.ts` | Export and validate the concrete substitution and every bound obligation |
-| Returned quantified/outer-dependent closure | complete | `generic-returned.ts`, `invalid-returned-capture.ts` | Preserve nested scope and avoid capture during substitution |
-| Quantified closure with captured storage | complete | `generic-captured-store.ts`, `invalid-captured-write.ts` | Keep one fixed world contract across every instantiation |
-| Generic callback argument | complete | `generic-callback.ts`, `invalid-callback-variance.ts`, `invalid-callback-result.ts` | Collect directional constraints without placing solver state in semantic types |
+| Generic declarations and rigid bounds | implementation complete; certification pending | `generics.ts`, `generic-inferred.ts` | Keep rigid identities distinct through copies and dependent bounds |
+| Quantified closure, one inferred call | implementation complete; certification pending | `generic-closure.ts` | Keep a scheme in SourceClaims and validate its body universally |
+| One closure called at two types | implementation complete; certification pending | `generic-two-calls.ts`, `invalid-scheme-capture.ts` | Give each call fresh proposal state; do not specialize the stored scheme |
+| Bounded quantified closure | implementation complete; certification pending | `generic-bounded.ts`, `invalid-bound-reversed.ts`, `invalid-bound-body.ts` | Export and validate the concrete substitution and every bound obligation |
+| Returned quantified/outer-dependent closure | implementation complete; certification pending | `generic-returned.ts`, `invalid-returned-capture.ts` | Preserve nested scope and avoid capture during substitution |
+| Quantified closure with captured storage | implementation complete; certification pending | `generic-captured-store.ts`, `invalid-captured-write.ts` | Keep one fixed world contract across every instantiation |
+| Generic callback argument | implementation complete; certification pending | `generic-callback.ts`, `invalid-callback-variance.ts`, `invalid-callback-result.ts` | Collect directional constraints without placing solver state in semantic types |
 | Optional object-field presence | blocked at shared source/proof boundary | `optional-field.ts` | Model absence separately from a present `undefined` value |
 | Bare return and implicit completion | blocked at shared parser | `bare-return.ts`, `empty-closure.ts` | Represent completion and discarded results explicitly |
 | Arbitrary numeric array indexing | blocked in lowering | `dynamic-index.ts` | Prove a general index obligation rather than inventing a singleton key |
 | Inferred mutable lifetime contract | deferred flow milestone | `unsupported.ts` | Solve one invariant against initialization and every write before publication |
 
-Agents should take the first incomplete row whose prerequisite representation
-already exists. The quantified rows are complete for this slice; what remains
-is blocked at the shared boundaries the table names, so take the first row
-whose boundary has moved. This slice admits one quantified closure per
+Agents should first close semantic certification for the implemented quantified
+rows. Their source and inference implementations are present, but their positive
+witnesses deliberately remain gaps until the executable checker is connected to
+the scheme semantics. After that, take the first incomplete row whose prerequisite
+representation already exists. This slice admits one quantified closure per
 containing function and refuses a second by name. For every quantified row, rewriting a closure to the finite overloads observed in that
 program, checking its body once per observed call, or replacing its scheme claim
 with a monomorphic arrow does not satisfy the row.
@@ -370,6 +371,15 @@ rewritten into an easier witness, or allowed to disappear behind another error.
 Overloads/intersections, recursive types, modules, classes/prototypes, exceptions,
 async behavior and general effects still need separate work; this is breadth
 across the current calculus's major mechanisms, not the full language.
+
+Decision completeness is a later stabilization milestone. While the fragment
+is still moving, the immediate completeness target is operational: every
+declared positive row reaches final semantic certification, and every negative
+control reaches validation and fails its intended obligation. Once the direct
+language and its rules settle, state a declarative rigid/scheme judgment and
+prove that `Ty.leUnder` and `GenericSource.check` decide it. This is completeness
+for the declared rules, not for every inclusion that happens to hold in the
+semantic model, and it is separate from completeness of graph proof search.
 
 ## What is proved, and what is trusted
 

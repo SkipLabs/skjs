@@ -628,6 +628,14 @@ finite evidence**. It does not mean every inclusion true in the semantic model
 is derivable. Nor is there a completeness theorem for graph checking or for the
 producer's search.
 
+For the evolving rigid/scheme source fragment, decision completeness is planned
+after the accepted language stabilizes. The current closure condition is useful
+completeness: each intended positive example must cross the exhaustive
+`CertifiedPlan` boundary, while its negative controls must reach validation and
+fail their specified obligations. A later theorem will relate the executable
+direct checker in both directions to an explicit declarative judgment; it is not
+a prerequisite for adding and semantically certifying the present breadth rows.
+
 The stateful safety results are partial-correctness results, not termination
 proofs. Returned values meet the declared result type at each positive remaining
 budget in an admissible world satisfied by the final heap. The exact statements
