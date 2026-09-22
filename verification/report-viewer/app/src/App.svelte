@@ -209,6 +209,17 @@
     {/if}
   </header>
 
+  {#if reader.showProducerErrors && !reader.browsing}
+    <section class="producer-diagnostics" aria-label="Producer diagnostics">
+      <strong>Producer diagnostics</strong>
+      {#if reader.report?.diagnostics?.trim()}
+        <pre>{reader.report.diagnostics}</pre>
+      {:else}
+        <p>No producer diagnostics were recorded for this report.</p>
+      {/if}
+    </section>
+  {/if}
+
   {#if reader.error}
     <p class="error" role="status">{reader.error}</p>
   {/if}
@@ -270,6 +281,22 @@
 </div>
 
 <style>
+  .producer-diagnostics {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--panel);
+    max-height: 25vh;
+    overflow: auto;
+    flex-shrink: 0;
+  }
+  .producer-diagnostics pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin: 6px 0 0;
+  }
+  .producer-diagnostics p {
+    margin: 6px 0 0;
+  }
   .app {
     display: flex;
     flex-direction: column;

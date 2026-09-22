@@ -177,6 +177,8 @@ async function tscAnalyse(
       claims,
       "--producer",
       "tsc",
+      "--diagnostics",
+      claims + ".diagnostics.txt",
       "--format",
       "source-claims",
       "--stdout",
@@ -392,7 +394,7 @@ async function collect(relative: string, producer = "skjs"): Promise<Bundle> {
       )
         throw thrown;
       // The producer refused the program and still wrote its claims.
-      run = { stdout: outputOf(thrown, "stdout") };
+      run = { stdout: outputOf(thrown, "stdout"), stderr: outputOf(thrown, "stderr") };
     }
     const nativeClaims = path.join(tmp, "native-claims.json");
     await fs.writeFile(nativeClaims, run.stdout);

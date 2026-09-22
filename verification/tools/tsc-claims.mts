@@ -25,7 +25,7 @@ import {
   TypeFlags,
   isUnionType,
 } from "typescript/unstable/sync";
-import type { Checker, Symbol, Type } from "typescript/unstable/sync";
+import type { Checker, Diagnostic, Symbol, Type } from "typescript/unstable/sync";
 import { isTupleType } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type {
@@ -1934,6 +1934,24 @@ export interface Produced {
   ast: Ast;
   /** The checker's own verdict, per function: what `tsc --noEmit` would say. */
   accepted: Map<string, boolean>;
+  /** The checker's messages, including locations and chained explanations. */
+  diagnostics: string;
+}
+
+function diagnosticText(d: Diagnostic): string {
+  return [d.text, ...(d.messageChain ?? []).map(diagnosticText)].join("\n");
+}
+
+// Use the report's existing located-message format. Keep unlocated messages
+// too: the diagnostics panel shows them even when no inline mark is possible.
+function formatProducerDiagnostic(d: Diagnostic, file: string, source: string): string {
+  const message = `TS${d.code}: ${diagnosticText(d)}`;
+  if (d.pos < 0 || (d.fileName && resolve(d.fileName) !== resolve(file)))
+    return `${d.fileName ? d.fileName + ": " : ""}${message}`;
+  const before = source.slice(0, d.pos);
+  const line = before.split("\n").length;
+  const start = before.lastIndexOf("\n") + 1;
+  return `File "${file}", line ${line}, character ${d.pos - start + 1}-${Math.max(d.pos + 1, d.end) - start + 1}:\n${message}`;
 }
 
 export { close };
@@ -2014,6 +2032,7 @@ export function produce(file: string): Produced {
     omissions,
     ast,
     accepted,
+    diagnostics: diagnostics.map((d) => formatProducerDiagnostic(d, file, sf.text)).join("\n"),
   };
 }
 
@@ -2040,7 +2059,8 @@ if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
     process.exit(1);
   }
   try {
-    const { doc, omissions, accepted } = produce(file);
+    const { doc, omissions, accepted, diagnostics } = produce(file);
+    writeFileSync(out + ".diagnostics.txt", diagnostics);
     writeFileSync(
       out + ".outcomes.json",
       JSON.stringify(Object.fromEntries(accepted)) + "\n",

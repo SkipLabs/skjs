@@ -57,7 +57,11 @@ producer never visited is dashed.
 
 Two ticks change what else is drawn, both off by default because they answer
 questions about the producer's run rather than about what it claims: **producer
-diagnostics** puts its own errors under the spans they name, and **undecoded
+diagnostics** opens the recorded messages and puts located errors under the
+spans they name. An empty report explicitly says no diagnostics were recorded;
+messages without a usable source span remain visible in the panel. TS checker
+messages travel with its claims, and SKJS rejection preserves stderr as well
+as the partial claims. **Undecoded
 bindings** shows the bindings whose types it could not state.
 
 **The selected claim**, docked beneath the source rather than in a rail away

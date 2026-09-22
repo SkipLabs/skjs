@@ -13,6 +13,7 @@ import {
 } from "../report-viewer/candidate.mts";
 import { candidateReport, analyse } from "../report-viewer/serve.mts";
 import { fromBundle } from "../report-viewer/model.mts";
+import { producerMarks } from "../report-viewer/marks.mts";
 import type {
   Bundle,
   Candidate,
@@ -460,3 +461,13 @@ assert.deepEqual(editable(genericCandidate,genericFn,genericItem),parameterT);
 assert.deepEqual(claimValue(editClaim(genericCandidate,genericFn,genericItem,parameterT),genericFn,genericItem),{param:"T"});
 const genericModel = fromBundle(genericBundle);
 assert.equal(genericModel.functions[0].collection,"complete");
+assert.equal(genericModel.diagnostics, "");
+
+// A TS rejection must survive exporter -> collector -> report -> source mark,
+// even when its generic closure cannot be exported as a claim.
+const rejectedBundle = await analyse("verification/ocaml-producer/examples/generic-dependent-inference.ts", "tsc");
+const rejectedModel = fromBundle(rejectedBundle);
+assert.match(rejectedModel.diagnostics ?? "", /TS2345: Argument of type 'boolean'/);
+const diagnosticMarks = producerMarks(rejectedModel);
+assert.equal(diagnosticMarks.length, 1);
+assert.equal(rejectedModel.source.slice(...diagnosticMarks[0].pos), "flag");
