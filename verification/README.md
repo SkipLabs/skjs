@@ -150,7 +150,11 @@ interpretation of the rigid parameters satisfying those bounds. Dependent parame
 `type Id<T> = T` and `type Box<T> = { value: T }` remain single-parameter.
 Generic declarations taking callbacks, and other generic declaration bodies,
 remain outside; a quantified closure taking a callback is checked by the scheme
-path. Call-site
+path, but final semantic certification remains pending for callback bodies.
+Immutable variable-return closures, including dependent bounds and separate
+instantiations at different types, have universal invocation certificates in
+addition to their enclosing graph evidence. Returned closures and captured-cell
+bodies still have explicit certification gaps. Call-site
 instantiation is outside this declaration-level path, but a quantified closure
 held in a binding, bounded or not, is checked by the separate scheme path in
 [SOURCE-CLAIMS.md](SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations).

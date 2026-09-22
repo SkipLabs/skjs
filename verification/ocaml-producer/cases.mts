@@ -79,8 +79,8 @@ export const cases: Case[] = [
   negative("invalid-tuple", "contextual tuple element obligation"),
   negative("invalid-context", "fresh initializer obligation"),
   negative("invalid-heap-refinement", "heap refinement invalidation"),
-  certificateGap("generic-closure", "polymorphic closure / fresh call inference"),
-  certificateGap(
+  positive("generic-closure", "polymorphic closure / fresh call inference"),
+  positive(
     "generic-two-calls",
     "one scheme, two independently substituted eliminations",
   ),
@@ -97,7 +97,7 @@ export const cases: Case[] = [
     /cannot establish boolean ≤ T for every instantiation of \[T\]/,
   ),
   positive("generic-inferred", "inferred rigid copies / dependent bounds"),
-  certificateGap("generic-bounded", "bounded scheme / substituted bound at each call"),
+  positive("generic-bounded", "bounded scheme / substituted bound at each call"),
   certificateGap(
     "generic-returned",
     "returned closure retaining the outer binder in its result",

@@ -519,12 +519,14 @@ establish that extension.
 
 Graph evidence for those eliminations is an intermediate result. The accepted
 source path converts every `FunctionPlan` exhaustively to `CertifiedPlan`;
-direct generic variable-copy plans carry a checked `GenericCertificate`, while
-scheme plans still produce a located gap until their universal introduction is
-connected to `scheme_intro`. `checkJson_safe` concludes calculus safety for
-every graph request and semantic safety for every direct generic certificate
-that can pass that boundary. Adding a plan variant cannot silently omit it from
-the theorem through a request projection.
+direct generic variable-copy plans carry a checked `GenericCertificate`.
+Immutable variable-return schemes additionally carry a `ClosureCertificate`:
+its soundness theorem establishes the universal invocation premise in the same
+captured environment and world, independently of observed calls. Other scheme
+bodies still produce a located certification gap. `checkJson_safe` concludes
+calculus safety for every graph request, semantic safety for every direct
+generic certificate, and universal invocation safety for every admitted scheme.
+The graph evidence for a scheme never replaces its universal certificate.
 
 
 This is independent of the mutation and loop source-fragment targets above.

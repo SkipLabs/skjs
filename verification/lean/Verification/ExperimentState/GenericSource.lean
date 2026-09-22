@@ -320,6 +320,26 @@ private def proofBody (c : Ctx) (initial : List (String × DirectObligation.Ty))
   let (body, _) ← proofExpr env returned
   return initializers.foldr GenericCertificate.Proof.letE (.widen result body)
 
+/-- Reconstruct a universal closure certificate independently of observed calls.
+The current proof language handles immutable reads; a cell read must never be
+compiled as a read of the cell identity. Missing constructors stay explicit at
+the final certification boundary. -/
+def closureCertificate (c : Ctx) (env : List (String × DirectObligation.Ty))
+    (pos : Span) (ps : List (String × Json)) (ret : Json) (body : Fragment.Expr) :
+    M (Option GenericCertificate.ClosureCertificate) := do
+  let .var .. := body | return none
+  -- Captured slots must denote the runtime values themselves. A mutable slot
+  -- holds a cell, whereas this environment records its contents contract.
+  -- Until cell certificates exist, refuse the whole mutable capture context.
+  if !c.cells.isEmpty then return none
+  let names := c.parameters.map (·.name)
+  let inner ← ps.mapM fun q => do
+    return (q.1, ← lower pos .schemeIntroduction (annotationTy names q.2))
+  let result ← lower pos .schemeIntroduction (annotationTy names ret)
+  let (proof, _) ← proofExpr (inner ++ env) body
+  return some ⟨c.parameters, inner.map Prod.snd, env.map Prod.snd, result,
+    .widen result proof⟩
+
 /-- Both production and independent consumption reconstruct these obligations.
 Every source entry and expression must occur exactly once; no supplied point is
 silently ignored. -/

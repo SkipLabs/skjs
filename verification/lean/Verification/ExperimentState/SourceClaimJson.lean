@@ -320,7 +320,7 @@ enclosing function's cells are the only names it may assign; each keeps its
 fixed contract at every instantiation. Returns the table, grown by any ground
 annotation met on the way. -/
 private def introduce (T : SourceTypes.Table) (f : Fragment.Fn) (c : Closure) (claims : Function) :
-    Except DirectObligation.Failure SourceTypes.Table := do
+    Except DirectObligation.Failure (SourceTypes.Table × Option GenericCertificate.ClosureCertificate) := do
   let refuse := DirectObligation.Failure.refusal c.span .schemeIntroduction
   let some entry := claims.entries.find? (·.start == c.declStart)
     | throw (refuse "quantified closure declaration has no entry claim")
@@ -333,7 +333,9 @@ private def introduce (T : SourceTypes.Table) (f : Fragment.Fn) (c : Closure) (c
     | _ => []
   let ctx : GenericSource.Ctx := ⟨c.parameters, direct, cells⟩
   let (_, T) ← (GenericSource.closureTy ctx outer c.span c.sourceParams c.sourceResult c.body).run T
-  return T
+  let (certificate, T) ← (GenericSource.closureCertificate ctx outer c.span
+    c.sourceParams c.sourceResult c.body).run T
+  return (T, certificate)
 
 /-- Elimination, then compilation. Each call validates its own substitution;
 the arrows are derived from the scheme signature by that substitution, so a
@@ -521,15 +523,19 @@ def functionSites (f : Fragment.Fn) : List Nat × List Span :=
 inductive FunctionPlan where
   | graph (name : String) (namePos : Span) (request : SourceRequest)
   | scheme (name : String) (namePos : Span) (request : SourceRequest)
+      (types : SourceTypes.Table) (certificate : Option GenericCertificate.ClosureCertificate)
   | generic (name : String) (namePos : Span) (types : SourceTypes.Table)
       (certificate : GenericCertificate.Certificate)
 
-/-- A plan admitted by the top-level verified outcome. Each constructor carries
-its own checked evidence: graph evidence is consumed separately, while a generic
-plan stores the direct certificate's successful check. Adding a source-plan
+/-- A plan admitted by the top-level verified outcome. Graph evidence is
+consumed separately. Generic and scheme plans store the successful checks of
+their direct-body and universal-invocation certificates. Adding a source-plan
 variant cannot silently enter this exhaustive boundary through a projection. -/
 inductive CertifiedPlan where
   | graph (name : String) (namePos : Span) (request : SourceRequest)
+  | scheme (name : String) (namePos : Span) (request : SourceRequest)
+      (types : SourceTypes.Table) (certificate : GenericCertificate.ClosureCertificate)
+      (term : Tm) (checked : certificate.check = some term)
   | generic (name : String) (namePos : Span) (types : SourceTypes.Table)
       (certificate : GenericCertificate.Certificate) (term : Tm)
       (checked : certificate.check = some term)
@@ -537,7 +543,16 @@ inductive CertifiedPlan where
 def CertifiedPlan.requests : List CertifiedPlan → List SourceRequest
   | [] => []
   | .graph _ _ request :: rest => request :: CertifiedPlan.requests rest
+  | .scheme _ _ request .. :: rest => request :: CertifiedPlan.requests rest
   | .generic .. :: rest => CertifiedPlan.requests rest
+
+/-- Semantic obligations beyond the graph execution, by plan variant. Keep this
+match exhaustive so extending the accepted language also requires deciding its
+universal guarantee in the headline theorem. Graph plans need no extra premise. -/
+def CertifiedPlan.UniversalSafety : CertifiedPlan → Prop
+  | .graph .. => True
+  | .generic _ _ types certificate .. => certificate.Safe (SourceTypes.graph types)
+  | .scheme _ _ _ types certificate .. => certificate.Safe (SourceTypes.graph types)
 
 /-- Graph projection for search and inspection. This is intentionally not the
 acceptance boundary: a scheme has useful ground graph evidence while its
@@ -545,7 +560,7 @@ universal certificate is still missing. -/
 def FunctionPlan.requests : List FunctionPlan → List SourceRequest
   | [] => []
   | .graph _ _ request :: rest => request :: FunctionPlan.requests rest
-  | .scheme _ _ request :: rest => request :: FunctionPlan.requests rest
+  | .scheme _ _ request .. :: rest => request :: FunctionPlan.requests rest
   | .generic .. :: rest => FunctionPlan.requests rest
 
 /-- The sole conversion into the verified-plan type. Missing semantic
@@ -553,8 +568,12 @@ certificates are ordinary located source limitations. Exhaustive matching makes
 a new `FunctionPlan` constructor a compile error here. -/
 def FunctionPlan.certify : FunctionPlan → Except String CertifiedPlan
   | .graph name pos request => pure (.graph name pos request)
-  | .scheme _ pos _ => throw (sourceRefusal SourceTypes.initial pos .schemeIntroduction
+  | .scheme _ pos _ types none => throw (sourceRefusal types pos .schemeIntroduction
       "quantified callable has no universal semantic certificate")
+  | .scheme name pos request types (some certificate) => match h : certificate.check with
+      | some term => pure (.scheme name pos request types certificate term h)
+      | none => throw (sourceRefusal types pos .schemeIntroduction
+          "quantified callable semantic certificate is invalid")
   | .generic name pos types certificate => match h : certificate.check with
       | some term => pure (.generic name pos types certificate term h)
       | none => throw (sourceRefusal types pos .genericValidation
@@ -600,14 +619,14 @@ def extractPlans (ast claims : Json) (fileKey : String) : Except String (List Fu
             "a scheme claim has no quantified closure in its source")
         | .error reason =>
           throw (sourceRefusal d.types f.namePos .schemeIntroduction reason)
-      let T ← match Scheme.introduce T f closure c with
+      let (T, certificate) ← match Scheme.introduce T f closure c with
         | .error (.obligation failure) => throw (directFailure d.types failure)
         | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)
-        | .ok T => pure T
+        | .ok result => pure result
       match Scheme.compile T f c with
       | .ok (T, c, overlays) =>
         return .scheme f.name f.namePos
-          (← extractNormalizedFn T f { c.normalized with schemeArrows := overlays })
+          (← extractNormalizedFn T f { c.normalized with schemeArrows := overlays }) T certificate
       | .error (.obligation failure) => throw (directFailure d.types failure)
       | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)
     return .graph f.name f.namePos (← extractNormalizedFn d.types f c.normalized)
@@ -640,9 +659,9 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat) : Except Str
     throw "source evidence does not justify the extracted graph requests"
   return evidence
 
-/-- Top-level acceptance has no lossy projection: every extracted plan first
-becomes a `CertifiedPlan` carrying either checked graph evidence or a checked
-universal direct-body certificate. -/
+/-- Every extracted plan crosses the exhaustive certification boundary. Graph
+requests prove the enclosing execution safe; direct generic and scheme plans
+add their universal semantic guarantees, independently of observed calls. -/
 theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
     (h : checkJson ast claims fileKey evidence = .ok ()) :
     ∃ plans certified b, extractPlans ast claims fileKey = .ok plans ∧
@@ -654,9 +673,7 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
           WorldAdm W → HeapOk n W heap →
           SafeGraph r.program (meaning (RequestJson.graph r.toRequest) r.result)
             n W heap (.at r.start ρ)) ∧
-      ∀ name pos types certificate term checked,
-        CertifiedPlan.generic name pos types certificate term checked ∈ certified →
-        certificate.Safe (SourceTypes.graph types) := by
+      ∀ plan ∈ certified, plan.UniversalSafety := by
   unfold checkJson at h
   cases he : extractPlans ast claims fileKey with
   | error e =>
@@ -681,8 +698,13 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
         · refine ⟨plans,certified,b,rfl,hc,rfl,hx,?_,?_⟩
           intro r c hm n W heap ρ he hw hh
           exact checkRequests_safe hx hm n W heap ρ he hw hh
-          intro _ _ _ certificate _ checked _
-          exact GenericCertificate.Certificate.check_safe checked
+          intro plan _
+          cases plan with
+          | graph => trivial
+          | generic _ _ _ certificate _ checked =>
+            exact GenericCertificate.Certificate.check_safe checked
+          | scheme _ _ _ _ certificate _ checked =>
+            exact GenericCertificate.ClosureCertificate.check_safe checked
         · simp [hx] at h
 
 #print axioms checkJson_safe

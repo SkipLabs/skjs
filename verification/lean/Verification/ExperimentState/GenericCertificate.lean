@@ -211,4 +211,80 @@ theorem Certificate.check_safe {G : NormalGraph Nat} {c : Certificate} {term}
 
 #print axioms Proof.check_safe
 #print axioms Certificate.check_safe
+
+/-- A closure checks its parameters before its captures. The captured runtime
+environment is held fixed across all interpretations of the quantified names. -/
+structure ClosureCertificate where
+  parameters : List Parameter
+  inputs : List Ty
+  captures : List Ty
+  result : Ty
+  proof : Proof
+  deriving Repr, BEq
+
+def ClosureCertificate.body (c : ClosureCertificate) : Certificate :=
+  ⟨c.parameters, c.inputs ++ c.captures, c.result, c.proof⟩
+
+def ClosureCertificate.check (c : ClosureCertificate) : Option Tm := c.body.check
+
+theorem EnvOk.prepend {G : NormalGraph Nat} {eta Gamma rho n W As args}
+    (hC : ClosedAssign eta) (he : EnvOk G eta Gamma rho n W)
+    (ha : ArgsT (As.map (Ty.denote G eta)) n W args) :
+    EnvOk G eta (As ++ Gamma) (prependArgs args rho) n W := by
+  induction As generalizing args with
+  | nil => cases args <;> simp_all [ArgsT, prependArgs]
+  | cons A As ih =>
+    cases args with
+    | nil => exact False.elim ha
+    | cons a args => exact (ih ha.2).push_value hC ha.1
+
+/-- Universal code safety in one captured environment and world. This is the
+invocation premise of scheme introduction, not a list of observed instances. -/
+def ClosureCertificate.Safe (G : NormalGraph Nat) (c : ClosureCertificate) : Prop :=
+  ∃ term, c.check = some term ∧
+    ∀ n W rho,
+      (∀ eta, ClosedAssign eta → DirectObligation.Satisfies G eta c.parameters →
+        EnvOk G eta c.captures rho n W) →
+      ∀ eta, ClosedAssign eta → DirectObligation.Satisfies G eta c.parameters →
+        InvocationSpec c.inputs.length
+          [(c.inputs.map (Ty.denote G eta), c.result.denote G eta)] n W
+          (instantiate c.inputs.length rho term)
+
+theorem ClosureCertificate.check_safe {G : NormalGraph Nat} {c : ClosureCertificate} {term}
+    (hc : c.check = some term) : c.Safe G := by
+  refine ⟨term, hc, ?_⟩
+  intro n W rho henv eta hC hs
+  have he := henv eta hC hs
+  refine ⟨instantiate_scoped rho he.1 term c.inputs.length, ?_⟩
+  intro p hp j hj U hx hu heap hh args ha
+  have hp' : p = (c.inputs.map (Ty.denote G eta), c.result.denote G eta) :=
+    List.mem_singleton.mp hp
+  subst p
+  have hlength : args.length = c.inputs.length := by
+    simpa only [List.length_map] using ArgsT_length ha
+  have he' := (he.transfer hC j (Nat.le_of_lt hj) U hx).prepend hC ha
+  have hscoped : ∀ (As : List Ty) args, ArgsT (As.map (Ty.denote G eta)) j U args →
+      ∀ a ∈ args, Scoped 0 a := by
+    intro As
+    induction As with
+    | nil => intro args ha; cases args <;> simp_all [ArgsT]
+    | cons A As ih =>
+      intro args ha
+      cases args with
+      | nil => exact False.elim ha
+      | cons a args =>
+        intro v hv
+        rcases List.mem_cons.mp hv with rfl | hv
+        · exact (Ty.denote_value hC ha.1).2
+        · exact ih args ha.2 v hv
+  unfold CallArguments.bindParameters
+  rw [← hlength, CallArguments.parameters_exact]
+  rw [show args.length = 0 + args.length from (Nat.zero_add _).symm,
+    instantiate_args rho he.1 (hscoped c.inputs args ha)]
+  obtain ⟨body, hb, safe⟩ := Certificate.check_safe (G := G) hc
+  have eq : body = term := Option.some.inj (hb.symm.trans hc)
+  subst body
+  exact safe eta hC hs j U heap _ he' hu hh
+
+#print axioms ClosureCertificate.check_safe
 end Verification.ExperimentState.GenericCertificate

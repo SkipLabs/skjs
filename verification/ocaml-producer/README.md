@@ -194,9 +194,9 @@ truth for outcomes; this table records why the next rows matter.
 | Closure scope and partial application | complete | `blocks-bind.ts` | Retain captures and residual signatures |
 | Callable objects with fields | complete | `function-fields.ts` | Give one value call and field capabilities |
 | Generic declarations and rigid bounds | complete | `generics.ts`, `generic-inferred.ts` | Keep rigid identities distinct through copies and dependent bounds |
-| Quantified closure, one inferred call | implementation complete; certification pending | `generic-closure.ts` | Keep a scheme in SourceClaims and validate its body universally |
-| One closure called at two types | implementation complete; certification pending | `generic-two-calls.ts`, `invalid-scheme-capture.ts` | Give each call fresh proposal state; do not specialize the stored scheme |
-| Bounded quantified closure | implementation complete; certification pending | `generic-bounded.ts`, `invalid-bound-reversed.ts`, `invalid-bound-body.ts` | Export and validate the concrete substitution and every bound obligation |
+| Quantified closure, one inferred call | complete | `generic-closure.ts` | Keep a scheme in SourceClaims and validate its body universally |
+| One closure called at two types | complete | `generic-two-calls.ts`, `invalid-scheme-capture.ts` | Give each call fresh proposal state; do not specialize the stored scheme |
+| Bounded quantified closure | complete | `generic-bounded.ts`, `invalid-bound-reversed.ts`, `invalid-bound-body.ts` | Export and validate the concrete substitution and every bound obligation |
 | Returned quantified/outer-dependent closure | implementation complete; certification pending | `generic-returned.ts`, `invalid-returned-capture.ts` | Preserve nested scope and avoid capture during substitution |
 | Quantified closure with captured storage | implementation complete; certification pending | `generic-captured-store.ts`, `invalid-captured-write.ts` | Keep one fixed world contract across every instantiation |
 | Generic callback argument | implementation complete; certification pending | `generic-callback.ts`, `invalid-callback-variance.ts`, `invalid-callback-result.ts` | Collect directional constraints without placing solver state in semantic types |
@@ -247,17 +247,22 @@ section checks introduction universally from the source, validates each call's
 explicit substitution, and compiles the checked eliminations to ordinary arrows.
 The executable subtype gate is connected to ordinary semantic families:
 `DirectObligation.Ty.leUnder_sound` proves its rigid-bound, ground-union and
-contravariant/covariant arrow cases denote inclusion. What is not yet connected
-is the source checker: no theorem states that `GenericSource.closureTy`
-establishes the premises of `TypeSchemes.scheme_intro`. Consequently the graph
-certificates prove the compiled ground instances used by the current program;
-they do not certify the universal scheme claim itself.
+contravariant/covariant arrow cases denote inclusion. For immutable
+variable-return closures, `GenericSource.closureCertificate` reconstructs a
+proof independently of observed calls.
+`GenericCertificate.ClosureCertificate.check_safe` establishes `InvocationSpec`
+for every admissible assignment satisfying the bounds, with one unchanged
+capture environment and world. This is the universal code premise of scheme
+introduction. Final acceptance requires this certificate as well as the
+enclosing function's graph evidence. The broader `GenericSource.closureTy`
+checker remains uncertified for returned closures, callbacks and captured cells;
+those plans still fail final certification.
 The general rules are still **not** a general executable scheme certificate
 checker: nested quantified schemes, arbitrary substitution evidence
 and body proof reconstruction still need implementing, and the compiled arrows
 are consequences carried by the graph rather than a certificate of the scheme
-itself. `identity_scheme_safe` remains a closed theorem about one term, tied to
-the executable path by wire-shape guards, not by a proof. Recursive scheme graph
+itself. `identity_scheme_safe` is a closed model example; executable acceptance
+uses the general `ClosureCertificate.check_safe` theorem instead. Recursive scheme graph
 nodes also need the layer congruence/contractiveness argument; admissibility
 alone does not establish recursive interpretation. Extending only the parser or
 specializing each closure body at its observed calls would bypass the universal
@@ -349,11 +354,12 @@ but not universally, a reversed substituted bound at a call, a body that
 reverses its binder's bound, bad contextual initializers and stale heap refinements. Contextual types cannot turn a bad initializer into a fact.
 
 Three direct generic examples now cross the semantic-certificate boundary:
-`generics.ts`, `aliases.ts` and `generic-inferred.ts`. The remaining six breadth
-examples reach the scheme checker and generate applicable ground graph evidence,
-but final certification keeps them as located gaps: `generic-closure.ts`,
-`generic-two-calls.ts`, `generic-bounded.ts`,
-`generic-returned.ts`, `generic-captured-store.ts` and `generic-callback.ts`.
+`generics.ts`, `aliases.ts` and `generic-inferred.ts`. Universal closure
+certification also restores `generic-closure.ts`, `generic-two-calls.ts` and
+`generic-bounded.ts`. Four functions in the remaining three breadth files reach
+the scheme checker and generate applicable ground graph evidence, but final
+certification keeps them as located gaps: `generic-returned.ts`,
+`generic-captured-store.ts` and `generic-callback.ts`.
 They become verified only when the source checker is proved to establish the
 semantic scheme premises.
 
@@ -387,9 +393,10 @@ semantic model, and it is separate from completeness of graph proof search.
 Successful certification uses the existing Lean certificate consumer and its
 soundness theorems for the modeled fragment. The OCaml inference algorithm is
 not itself proved correct; a bad proposal must fail validation. Generic
-variable-copy and scheme checking still run in both Lean phases, but their
-success is not promoted to verification until the missing semantic theorem is
-connected to `CertifiedPlan`.
+variable-copy certificates and immutable variable-return closure certificates
+are checked at the `CertifiedPlan` boundary and covered by `checkJson_safe`.
+Other scheme checking still runs in both Lean phases, but its success is not
+promoted to verification until the missing semantic theorem is connected there.
 
 The shared parser, source-to-calculus correspondence, executable toolchain and
 runner remain part of the trust boundary. Source lowering being written in Lean

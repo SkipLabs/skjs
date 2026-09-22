@@ -19,17 +19,18 @@ from the AST and sidecar. It checks evidence using the same `checkRequests`
 function and soundness theorems as SKJS-backed source checking.
 `SourceClaimJson.checkJson_safe` states that every accepted plan first becomes
 a `CertifiedPlan` and that every such function has the calculus safety
-guarantee. Direct generic and quantified-scheme plans remain visible but cannot
-become certified until their semantic certificate exists. No SKJS invocation
+guarantee. Direct generic and quantified-scheme plans cannot become certified
+without their own semantic certificate. No SKJS invocation
 or `--keep-going` is needed.
 
 Generic variable-copy functions use the same sidecar: any `type` or `result`
 may be `{"param":"T"}`, referring to that function's source type parameter.
 The TS exporter matches compiler symbol identities before emitting this name.
 Bounds come from the source, never from producer assertions. Generic claims are
-checked directly by `GenericSource` on both production and consumption; they
-still do not emit semantic certificates and therefore receive a located
-not-established result at final certification. Ground functions cannot use rigid claims,
+checked directly by `GenericSource` on both production and consumption;
+variable-copy bodies reconstruct independent semantic certificates whose
+soundness theorem quantifies over all admissible rigid assignments satisfying
+the source bounds. Ground functions cannot use rigid claims,
 and rigid claims cannot carry current-content assertions. Within this fragment,
 other types must denote Boolean; no parameter is replaced by its bound.
 
@@ -60,11 +61,13 @@ binders — and only then compiles the checked eliminations to ordinary arrows.
 A closure that satisfies each observed call but cannot produce an arbitrary
 rigid result is refused at that gate, whatever its calls.
 
-That executable universal check is not yet its semantic certificate. Search
-may emit independently checked graph evidence for the ground eliminations, but
-final acceptance refuses the `scheme` plan until the checker is proved to
-establish `TypeSchemes.scheme_intro`. The viewer therefore shows these breadth
-examples as located certification gaps rather than verified functions.
+Final acceptance also requires a semantic certificate for that universal check.
+Immutable variable-return closures reconstruct a `ClosureCertificate`, checked
+independently of observed calls. Its theorem establishes the invocation
+contract for every admissible instantiation, keeping the captured environment
+and world fixed. The enclosing function must also pass ordinary graph evidence
+checking. Returned closures, callbacks and mutable capture contexts still lack
+these certificates and appear as located certification gaps in the viewer.
 
 The executable source slice is narrower than the semantic scheme rules. A
 containing function may declare one immutable quantified closure. A binder may
