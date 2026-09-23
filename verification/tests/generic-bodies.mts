@@ -131,7 +131,7 @@ try {
   }), false, "cannot establish");
   expect("forward and cyclic bounds are refused", mutate("boundChain", f => {
     must(f.typeParams[0], "a type parameter").bound = { top: false, atoms: [{ a: "param", name: "V" }] };
-  }), false, "earlier type parameter");
+  }), false, "bound must name an earlier parameter");
   expect("duplicate type parameters are refused", mutate("second", f => {
     must(f.typeParams[1], "a type parameter").name = "T";
   }), false, "duplicate type parameter");

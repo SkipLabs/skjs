@@ -11,6 +11,7 @@ import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 import type { Bundle, Candidate } from "./types.ts";
 import { fieldOf, messageOf, outputOf } from "../tools/thrown.mts";
+import { cases } from "../ocaml-producer/cases.mts";
 
 /** What the page posts: the candidate to check or keep, and — for a draft —
  * what to do with it. Discarding one names the source alone, and everything
@@ -254,6 +255,9 @@ async function ocamlAnalyse(
   const startedAt = Date.now();
   try {
     const producer = path.join(REPO, OCAML);
+    const fixture = cases.find(
+      (c) => relative === `verification/ocaml-producer/examples/${c.file}.ts`,
+    );
     // Its build is not this server's to run: an absent executable says which
     // command builds it, rather than failing as a missing file somewhere.
     if (!(await fs.access(producer).then(() => true, () => false)))
@@ -265,11 +269,9 @@ async function ocamlAnalyse(
     // parser stays the one front end, and its refusals are the fragment's.
     let parsed;
     try {
-      parsed = await execFile(
-        process.execPath,
-        ["verification/tools/fragment-parse.mts", relative],
-        options,
-      );
+      const parseArgs = ["verification/tools/fragment-parse.mts", relative];
+      if (fixture?.project) parseArgs.push("--project", fixture.project);
+      parsed = await execFile(process.execPath, parseArgs, options);
     } catch (thrown) {
       throw refusal(thrown, "The shared parser refused this source");
     }
@@ -295,6 +297,7 @@ async function ocamlAnalyse(
       "--stdout",
       "json",
     ];
+    if (fixture?.project) args.push("--project", fixture.project);
     // Whatever either step said while still succeeding, under the spans it
     // names — the same place the SKJS producer's own errors are shown.
     const said = ((parsed.stderr ?? "") + (proposed.stderr ?? "")).trim();

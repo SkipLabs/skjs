@@ -9,7 +9,8 @@ A body is a variable, a primitive literal, or a closure whose annotation names
 the binders in scope; a declaration body is a sequence of immutable copies and
 a return. Everything is typed from the source under distinct rigid parameters
 and forward upper bounds, along `letE_safeP` and `var_safeP`; `T extends
-boolean` is the assumption `T ≤ boolean`, walked by the direct relation whose
+boolean` is the assumption `T ≤ boolean`, and an imported graph bound such as
+`T extends Json` is the assumption `T ≤ Json`. Both are walked by the direct relation whose
 accepted comparisons imply semantic inclusion, and never justifies `true ≤ T`.
 A failed inclusion is an obligation at its span, never a sentence. Producer claims enter already
 decoded to direct types, so no claim representation is re-parsed here. Accepted
@@ -81,21 +82,38 @@ partial def receiverTy (names : List String) (j : Json) :
   annotationTy names j
 end
 
-/-- A binder's bound: `boolean`, or an earlier binder. -/
-def boundOf (seen : List Parameter) : Option Json → Except String (Option DirectObligation.Ty)
+/-- A ground imported bound names a row installed from the source import
+document. Raw source cannot supply this internal atom. -/
+def importedBound (T : SourceTypes.Table) (bound : Json) : Except String Nat := do
+  CellClaims.fieldsExactly bound ["top", "atoms"]
+  if ← (← jField bound "top").getBool? then throw "a bound cannot be unknown"
+  let [atom] ← jArr bound "atoms" | throw "expected one imported graph atom"
+  CellClaims.fieldsExactly atom ["a", "label"]
+  if (← jStr (← jField atom "a")) != "graph" then throw "expected an imported graph atom"
+  let label ← (← jField atom "label").getNat?
+  if label >= T.length then throw "imported bound graph label is absent"
+  return label
+
+/-- A binder's bound: `boolean`, an earlier binder, or a source-derived
+imported graph node. -/
+def boundOf (T : SourceTypes.Table) (seen : List Parameter) :
+    Option Json → Except String (Option DirectObligation.Ty)
   | none => .ok none
   | some bound =>
     if isBooleanType bound then .ok (some (DirectObligation.Ty.ground [1, 2]))
     else match paramName bound with
       | .ok u =>
         if seen.any (·.name == u) then .ok (some (DirectObligation.Ty.rigid u))
-        else .error "only `extends boolean` or an earlier type parameter is in the fragment"
-      | .error _ => .error "only `extends boolean` or an earlier type parameter is in the fragment"
+        else .error "a type-parameter bound must name an earlier parameter"
+      | .error _ => match importedBound T bound with
+        | .ok label => .ok (some (.ground [label]))
+        | .error _ => .error "only `extends boolean`, an earlier type parameter, or an imported graph type is in the fragment"
 
-/-- Rigid binders in declaration order. A bound is `boolean` or an earlier
-binder; duplicate names, forward references and cycles are refused.
+/-- Rigid binders in declaration order. A bound is `boolean`, an earlier
+binder, or a source-derived imported graph node. Duplicate names, forward
+references and cycles are refused.
 `SourceJudgments.parametersOf_wellFormed` states what this establishes. -/
-def parametersOf (typeParams : List Fragment.TypeParam) : Except String (List Parameter) :=
+def parametersOf (T : SourceTypes.Table) (typeParams : List Fragment.TypeParam) : Except String (List Parameter) :=
   go [] typeParams
 where
   go (seen : List Parameter) : List Fragment.TypeParam → Except String (List Parameter)
@@ -103,7 +121,7 @@ where
     | tp :: rest =>
       if tp.name == "undefined" then .error "shadowing undefined is outside the fragment"
       else if seen.any (·.name == tp.name) then .error "duplicate type parameter"
-      else match boundOf seen tp.bound with
+      else match boundOf T seen tp.bound with
         | .error e => .error e
         | .ok upper => go (seen ++ [⟨tp.name, .quantified, upper⟩]) rest
 
@@ -481,7 +499,7 @@ def checkScheme (f : Fragment.Fn) (typeParams : List Fragment.TypeParam)
   if f.name != claims.name || f.namePos != claims.namePos then
     throw "function claim identity mismatch"
   if typeParams.isEmpty then throw "generic body requires type parameters"
-  let names := (← parametersOf typeParams).map (·.name)
+  let names := (← parametersOf (← get) typeParams).map (·.name)
   if f.params.isEmpty then throw "generic body requires a value parameter"
   if f.params.dropLast.any (·.rest) then throw "a rest parameter must be the last one"
   let sourceNames := f.params.map (·.name)
@@ -666,7 +684,7 @@ Every source entry and expression must occur exactly once; no supplied point is
 silently ignored. -/
 def check (f : Fragment.Fn) (typeParams : List Fragment.TypeParam) (claims : Claims) :
     M GenericCertificate.ClosureCertificate := do
-  let parameters ← refuse f.namePos .genericValidation (parametersOf typeParams)
+  let parameters ← refuse f.namePos .genericValidation (parametersOf (← get) typeParams)
   let names := parameters.map (·.name)
   let c : Ctx := ⟨parameters, claims, []⟩
   let statements ← translateStmts names f.namePos f.body

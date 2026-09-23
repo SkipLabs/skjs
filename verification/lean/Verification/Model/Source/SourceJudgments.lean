@@ -70,18 +70,20 @@ theorem WellFormed.snoc {ps : List Parameter} (hw : WellFormed ps) {q : Paramete
       · exact .inl ⟨A, hA⟩
       · exact .inr ⟨y, hy⟩
 
-private theorem boundOf_some (seen : List Parameter) (bound : Lean.Json) :
-    boundOf seen (some bound) =
+private theorem boundOf_some (T : SourceTypes.Table) (seen : List Parameter) (bound : Lean.Json) :
+    boundOf T seen (some bound) =
       (if isBooleanType bound then .ok (some (DirectObligation.Ty.ground [1, 2]))
       else match paramName bound with
         | .ok u =>
           if seen.any (·.name == u) then .ok (some (DirectObligation.Ty.rigid u))
-          else .error "only `extends boolean` or an earlier type parameter is in the fragment"
-        | .error _ => .error "only `extends boolean` or an earlier type parameter is in the fragment") :=
+          else .error "a type-parameter bound must name an earlier parameter"
+        | .error _ => match importedBound T bound with
+          | .ok label => .ok (some (.ground [label]))
+          | .error _ => .error "only `extends boolean`, an earlier type parameter, or an imported graph type is in the fragment") :=
   rfl
 
-theorem boundOf_upper {seen : List Parameter} {b : Option Lean.Json} {u : Ty}
-    (h : boundOf seen b = .ok (some u)) :
+theorem boundOf_upper {T : SourceTypes.Table} {seen : List Parameter} {b : Option Lean.Json} {u : Ty}
+    (h : boundOf T seen b = .ok (some u)) :
     (∃ A, u = .ground A) ∨ (∃ y, u = .rigid y ∧ ∃ p ∈ seen, p.name = y) := by
   cases b with
   | none => cases h
@@ -96,19 +98,21 @@ theorem boundOf_upper {seen : List Parameter} {b : Option Lean.Json} {u : Ty}
           obtain ⟨p, hp, hpn⟩ := List.any_eq_true.mp hany
           exact .inr ⟨name, (Option.some.inj (Except.ok.inj h)).symm, p, hp, beq_iff_eq.mp hpn⟩
         · cases h
-      · cases h
+      · split at h
+        · exact .inl ⟨_, (Option.some.inj (Except.ok.inj h)).symm⟩
+        · cases h
 
-private theorem go_cons (seen : List Parameter) (tp : Fragment.TypeParam) (rest : List Fragment.TypeParam) :
-    parametersOf.go seen (tp :: rest) =
+private theorem go_cons (T : SourceTypes.Table) (seen : List Parameter) (tp : Fragment.TypeParam) (rest : List Fragment.TypeParam) :
+    parametersOf.go T seen (tp :: rest) =
       (if tp.name == "undefined" then .error "shadowing undefined is outside the fragment"
       else if seen.any (·.name == tp.name) then .error "duplicate type parameter"
-      else match boundOf seen tp.bound with
+      else match boundOf T seen tp.bound with
         | .error e => .error e
-        | .ok upper => parametersOf.go (seen ++ [⟨tp.name, .quantified, upper⟩]) rest) :=
+        | .ok upper => parametersOf.go T (seen ++ [⟨tp.name, .quantified, upper⟩]) rest) :=
   rfl
 
-theorem go_wellFormed : ∀ (tps : List Fragment.TypeParam) (seen ps : List Parameter),
-    WellFormed seen → parametersOf.go seen tps = .ok ps → WellFormed ps
+theorem go_wellFormed (T : SourceTypes.Table) : ∀ (tps : List Fragment.TypeParam) (seen ps : List Parameter),
+    WellFormed seen → parametersOf.go T seen tps = .ok ps → WellFormed ps
   | [], seen, ps, hw, h => by
       cases Except.ok.inj (h : (Except.ok seen : Except String (List Parameter)) = .ok ps)
       exact hw
@@ -122,7 +126,7 @@ theorem go_wellFormed : ∀ (tps : List Fragment.TypeParam) (seen ps : List Para
       split at h
       · cases h
       next upper hupper =>
-      refine go_wellFormed rest _ ps (WellFormed.snoc hw ?_ ?_) h
+      refine go_wellFormed T rest _ ps (WellFormed.snoc hw ?_ ?_) h
       · intro p hp heq
         apply hdup
         exact List.any_eq_true.mpr ⟨p, hp, beq_iff_eq.mpr heq⟩
@@ -133,12 +137,12 @@ theorem go_wellFormed : ∀ (tps : List Fragment.TypeParam) (seen ps : List Para
 
 /-- Every parameter list the checker builds is well-formed, so the executable
 inclusion relation decides the declarative judgment on it. -/
-theorem parametersOf_wellFormed {tps : List Fragment.TypeParam} {ps : List Parameter}
-    (h : parametersOf tps = .ok ps) : WellFormed ps :=
-  go_wellFormed tps [] ps WellFormed.nil h
+theorem parametersOf_wellFormed {T : SourceTypes.Table} {tps : List Fragment.TypeParam} {ps : List Parameter}
+    (h : parametersOf T tps = .ok ps) : WellFormed ps :=
+  go_wellFormed T tps [] ps WellFormed.nil h
 
-theorem leUnder_iff_Sub_of_parametersOf {tps : List Fragment.TypeParam} {ps : List Parameter}
-    (h : parametersOf tps = .ok ps) {a b : Ty} : Ty.leUnder ps a b = true ↔ Sub ps a b :=
+theorem leUnder_iff_Sub_of_parametersOf {T : SourceTypes.Table} {tps : List Fragment.TypeParam} {ps : List Parameter}
+    (h : parametersOf T tps = .ok ps) {a b : Ty} : Ty.leUnder ps a b = true ↔ Sub ps a b :=
   leUnder_iff_Sub (parametersOf_wellFormed h)
 
 #print axioms parametersOf_wellFormed

@@ -1,6 +1,6 @@
 /** Resolve a named import to the declaration it actually denotes. This is
  * source provenance, not a proof of the imported declaration's contract. The
- * caller supplies an explicit, fingerprinted module universe: an absent or
+ * caller supplies an explicit source module universe: an absent or
  * ambiguous edge is an error, never an ambient TypeScript declaration. */
 import { createHash } from "node:crypto";
 import { posix } from "node:path";
@@ -78,8 +78,6 @@ function resolveImports(
   const universe = new Map<string, ModuleSource>();
   for (const module of modules) {
     if (universe.has(module.id)) throw Error(`duplicate module ${module.id}`);
-    if (createHash("sha256").update(module.source.getFullText()).digest("hex") !== module.sha256)
-      throw Error(`module fingerprint differs: ${module.id}`);
     universe.set(module.id, module);
   }
   for (const [virtual, mapping] of config.links) {

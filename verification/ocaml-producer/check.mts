@@ -65,7 +65,7 @@ export function check(source: string, importUniverse?: ImportUniverse): Outcome 
     const parsed = importUniverse
       ? (() => {
           try {
-            return { code: 0, out: JSON.stringify(parseFile(snapshot, false, importUniverse)), detail: "" };
+            return { code: 0, out: JSON.stringify(parseFile(snapshot, false, importUniverse, source)), detail: "" };
           } catch (error) {
             return { code: 1, out: "", detail: error instanceof Error ? error.message : String(error) };
           }

@@ -52,10 +52,13 @@ import { messageOf } from "./thrown.mts";
 import { moduleEdges } from "./module-deps.mts";
 import { resolveNamedImports, type ModuleSource, type ResolutionConfig } from "./module-resolve.mts";
 import { collectImportDocument } from "./module-closure.mts";
+import { crossCheckImports, ImportMismatch } from "./import-crosscheck.mts";
 
 export type ImportUniverse = {
   modules: readonly ModuleSource[];
   config: ResolutionConfig;
+  /** Configured TypeScript project used for independent resolution, if explicit. */
+  tsconfigPath?: string;
 };
 
 /** A question-mark parameter requires an optional suffix. A default may
@@ -255,10 +258,15 @@ class Gate {
             tp.constraint.typeName.kind === ts.SyntaxKind.Identifier &&
             !tp.constraint.typeArguments?.length &&
             this.hasTypeParam(tp.constraint.typeName.text);
-          if (tp.constraint.kind !== ts.SyntaxKind.BooleanKeyword && !earlier)
+          const imported =
+            ts.isTypeReferenceNode(tp.constraint) &&
+            tp.constraint.typeName.kind === ts.SyntaxKind.Identifier &&
+            !tp.constraint.typeArguments?.length &&
+            this.importedAliases.get(tp.constraint.typeName.text) === 0;
+          if (tp.constraint.kind !== ts.SyntaxKind.BooleanKeyword && !earlier && !imported)
             this.fail(
               tp.constraint,
-              "only `extends boolean` or an earlier type parameter is in the fragment",
+              "only `extends boolean`, an earlier type parameter, or a non-generic imported type is in the fragment",
             );
           bound = this.typeOf(tp.constraint);
         }
@@ -2026,7 +2034,7 @@ class Gate {
  * function that depends on one fails on that claim, in its own words.
  */
 export function parseFile(file: string, carriesContext = false,
-  importUniverse?: ImportUniverse): Ast {
+  importUniverse?: ImportUniverse, resolutionFile = file): Ast {
   const absolute = resolve(file);
   const text = readFileSync(absolute, "utf8");
   const source = openFile(absolute, text);
@@ -2069,8 +2077,13 @@ export function parseFile(file: string, carriesContext = false,
     try {
       const roots = resolveNamedImports(source, universe.modules, universe.config);
       imports = collectImportDocument(roots, universe.modules, universe.config);
+      crossCheckImports(source, imports, universe.modules, resolve(resolutionFile),
+        universe.tsconfigPath);
     } catch (error) {
-      gate.fail(first, messageOf(error));
+      const at = error instanceof ImportMismatch
+        ? importNodes.find(node => node.getStart(source) === error.clientSpan[0]) ?? first
+        : first;
+      gate.fail(at, messageOf(error));
     }
     for (const root of imports.roots) {
       const identity = root.declaration;
@@ -2183,16 +2196,23 @@ export function typeOf(node: TypeNode): ClaimType {
 // annotation encoding must have exactly one implementation: a second one would
 // be a second opinion about what a source type means.
 if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
-  const file = process.argv[2];
-  if (!file) {
-    process.stderr.write("usage: fragment-parse.ts <file.ts>\n");
+  const args = process.argv.slice(2);
+  if (!(args.length === 1 || (args.length === 3 && args[1] === "--project"))) {
+    process.stderr.write("usage: fragment-parse.mts <file.ts> [--project source-tree]\n");
     process.exit(2);
   }
-  try {
-    process.stdout.write(JSON.stringify(parseFile(file), null, 1));
-    close();
-  } catch (error) {
-    process.stderr.write(messageOf(error) + "\n");
-    process.exit(1);
-  }
+  // The loader imports openText from this module. Start the asynchronous CLI
+  // after evaluation so that circular import can finish before it is awaited.
+  void (async () => {
+    try {
+      const universe = args[2]
+        ? (await import("./import-universe-project.mts")).loadImportUniverseFromProject(args[2])
+        : undefined;
+      process.stdout.write(JSON.stringify(parseFile(args[0], false, universe), null, 1));
+      close();
+    } catch (error) {
+      process.stderr.write(messageOf(error) + "\n");
+      process.exitCode = 1;
+    }
+  })();
 }

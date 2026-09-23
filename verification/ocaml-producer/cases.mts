@@ -8,6 +8,8 @@ export interface Case {
   status: Outcome["status"];
   phase: Phase;
   diagnostic?: RegExp;
+  /** Source tree supplying named imports; the reader and suite use the same path. */
+  project?: string;
 }
 const positive = (file: string, area: string): Case => ({
   file,
@@ -36,13 +38,18 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
-  gap(
-    "recursive-json",
-    "Canonical Skip Runtime Json import, recursive array/object value and sound missing-key read",
-    "unsupported",
-    "source",
-    /imports need an explicit module universe/,
-  ),
+  { ...positive("recursive-json", "Imported recursive Json: nested value and sound dictionary read"),
+    project: "verification/ocaml-producer/upstream" },
+  { ...positive("recursive-json-values", "Boolean, number, string, array and object values passed to a Json consumer"),
+    project: "verification/ocaml-producer/upstream" },
+  { ...positive("recursive-json-variants", "T extends imported Json, called with primitive, array and object values"),
+    project: "verification/ocaml-producer/upstream" },
+  { ...negative("invalid-recursive-json-member", "A function-valued dictionary member violates imported Json"),
+    project: "verification/ocaml-producer/upstream" },
+  { ...negative("invalid-recursive-json-missing", "An absent JsonObject key can read undefined"),
+    project: "verification/ocaml-producer/upstream" },
+  { ...negative("invalid-recursive-json-bound", "A function cannot instantiate T extends imported Json"),
+    project: "verification/ocaml-producer/upstream" },
   gap(
     "reactive-sum-prettier-ignore",
     "Unmodified Skip Runtime sum example: imports precede its mapper and resource classes",

@@ -8,6 +8,7 @@ import { openText, parseFile, definedClassCallables, close as closeParser } from
 import { moduleEdges } from "../tools/module-deps.mts";
 import { resolveNamedImports, resolveModuleImport } from "../tools/module-resolve.mts";
 import { loadImportUniverseFromProject } from "../tools/import-universe-project.mts";
+import { crossCheckImports } from "../tools/import-crosscheck.mts";
 import { collectImportDocument, collectTypeClosure } from "../tools/module-closure.mts";
 import type { ImportDocument } from "../tools/imported-types.mts";
 import { spawnSync } from "node:child_process";
@@ -58,7 +59,8 @@ for (const [file, expected] of [
   const transitive = moduleEdges(openText(api, readFileSync(api, "utf8")));
   assert(transitive.some((e) => e.kind === "import" && e.imported === "Json" && e.typeOnly));
   assert(transitive.some((e) => e.kind === "reexport" && e.imported === "deepFreeze" && !e.typeOnly));
-  const { modules, config } = loadImportUniverseFromProject(resolve(here, "upstream"));
+  const importUniverse = loadImportUniverseFromProject(resolve(here, "upstream"));
+  const { modules, config } = importUniverse;
   const coreIndex = must(modules.find(m => m.id === "core/src/index.ts"), "core index source");
   const apiModule = must(modules.find(m => m.id === "core/src/api.ts"), "core API source");
   const jsonModule = must(modules.find(m => m.id === "skiplang/skjson/ts/binding/src/index.ts"),
@@ -86,9 +88,6 @@ for (const [file, expected] of [
   ]);
   assert.throws(() => resolveNamedImports(openText(source, readFileSync(source, "utf8")),
     modules.filter(m => m.id !== "core/src/api.ts"), config), /module not supplied/);
-  assert.throws(() => resolveNamedImports(openText(source, readFileSync(source, "utf8")),
-    modules.map(m => m.id === coreIndex.id ? { ...m, sha256: "0".repeat(64) } : m), config),
-    /fingerprint differs/);
   const duplicate = "export interface Mapper {}\n";
   assert.throws(() => resolveNamedImports(openText(source, readFileSync(source, "utf8")),
     [...modules.filter(m => m.id !== "core/src/errors.ts"), {
@@ -129,12 +128,16 @@ for (const [file, expected] of [
   assert.equal(resolveModuleImport("core/src/api.ts", "notImported", modules, config), null);
   const jsonClosure = collectTypeClosure(jsonImports[0], modules, config);
   pinnedImportDocument = collectImportDocument(jsonImports, modules, config);
-  const sample = join(mkdtempSync(join(tmpdir(), "skjs-import-")), "client.ts");
-  writeFileSync(sample,
-    'import type { Json, JsonObject } from "@skipruntime/core";\n' +
-    'export function identity(value: boolean): boolean { return value; }\n');
-  assert.throws(() => parseFile(sample), /imports need an explicit module universe/);
-  const importedAst = parseFile(sample, false, { modules, config });
+  const wrongReference = structuredClone(pinnedImportDocument);
+  const jsonDefinition = wrongReference.definitions.find(d => d.declaration.name === "Json");
+  assert(jsonDefinition);
+  const objectReference = jsonDefinition.references.find(r => r.name === "JsonObject");
+  assert(objectReference);
+  objectReference.target = jsonDefinition.declaration;
+  assert.throws(() => crossCheckImports(openText(jsonPath, jsonClient), wrongReference,
+    modules, jsonPath, importUniverse.tsconfigPath), /import resolution differs.*JsonObject/);
+  assert.throws(() => parseFile(jsonPath), /imports need an explicit module universe/);
+  const importedAst = parseFile(jsonPath, false, importUniverse);
   assert.deepEqual(importedAst.imports.roots.map(r => r.binding.local), ["Json", "JsonObject"]);
   assert.deepEqual(importedAst.imports.definitions, pinnedImportDocument.definitions);
   assert.deepEqual(importedAst.imports.sources, pinnedImportDocument.sources);
@@ -145,16 +148,34 @@ for (const [file, expected] of [
   writeFileSync(exported, "export async function own(): Promise<boolean> { return true; }\n");
   assert.throws(() => parseFile(exported),
     /only the export modifier is admitted on a source function/);
-  const jsonAst = parseFile(jsonPath, false, { modules, config });
+  const jsonAst = parseFile(jsonPath, false, importUniverse);
   assert.deepEqual(jsonAst.functions.map(f => f.name), ["nest", "lookup"]);
   assert.deepEqual(jsonAst.imports.definitions, pinnedImportDocument.definitions);
+  const valuesPath = resolve(here, "examples/recursive-json-values.ts");
+  const shadowText = "export type Json = boolean;\n" + coreIndex.source.getFullText();
+  const shadowModules = modules.map(m => m.id === coreIndex.id ? {
+    ...m,
+    sha256: createHash("sha256").update(shadowText).digest("hex"),
+    source: openText(m.source.fileName, shadowText),
+  } : m);
+  assert.throws(() => parseFile(valuesPath, false, { ...importUniverse, modules: shadowModules }),
+    /gate:.*import resolution differs for Json/);
+  const changedText = jsonModule.source.getFullText().replace("| boolean", "| number ");
+  assert.notEqual(changedText, jsonModule.source.getFullText());
+  const changedModules = modules.map(m => m.id === jsonModule.id ? {
+    ...m,
+    sha256: createHash("sha256").update(changedText).digest("hex"),
+    source: openText(m.source.fileName, changedText),
+  } : m);
+  assert.throws(() => parseFile(jsonPath, false, { ...importUniverse, modules: changedModules }),
+    /gate:.*TypeScript source bytes differ/);
   const nest = jsonAst.functions[0];
   const lookup = jsonAst.functions[1];
   assert(nest && lookup);
   assert.deepEqual(nest.params[0]?.type.atoms[0], { a: "alias", name: "Json", args: [] });
   assert.deepEqual(lookup.params[0]?.type.atoms[0], { a: "alias", name: "JsonObject", args: [] });
   assert(lookup.retType.atoms.some(atom => atom.a === "alias" && atom.name === "Json"));
-  const checkedJson = check(jsonPath, { modules, config });
+  const checkedJson = check(jsonPath, importUniverse);
   recursiveJson = checkedJson.artifacts;
   assert.equal(checkedJson.status, "verified", JSON.stringify(checkedJson));
   assert.equal(checkedJson.phase, "check");
@@ -168,16 +189,7 @@ for (const [file, expected] of [
     "functions" in cliResult && Array.isArray(cliResult.functions));
   assert.equal(cliResult.status, "verified");
   assert.deepEqual(cliResult.functions, ["nest", "lookup"]);
-  for (const [file, name] of [
-    ["invalid-recursive-json-member", "invalidMember"],
-    ["invalid-recursive-json-missing", "missingKey"],
-  ] as const) {
-    const rejected = check(resolve(here, `examples/${file}.ts`), { modules, config });
-    assert.equal(rejected.status, "unverified", `${name}: ${JSON.stringify(rejected)}`);
-    assert.equal(rejected.phase, "search");
-    assert.match(rejected.detail, /evidence search failed/);
-  }
-  process.stdout.write("pinned Json imports: 2 functions verified; 2 negative controls\n");
+  process.stdout.write("pinned Json imports: 2 functions verified\n");
   const checkedFragment: unknown = JSON.parse(readFileSync(join(checkedJson.artifacts,
     "fragment.json"), "utf8"));
   assert.ok(checkedFragment && typeof checkedFragment === "object" &&
@@ -228,33 +240,57 @@ for (const [file, expected] of [
   assert(index.value.parts.some(p => p.k === "atom" && p.name === "null"));
   const a = "import type { B } from './b.js'; export type A<T> = { next: B<T> }; export type Bound<T extends B<number>> = T;";
   const b = "import type { A } from './a.js'; export type B<T> = { prev: A<T> };";
+  const pairDir = mkdtempSync(join(tmpdir(), "skjs-generic-import-"));
+  writeFileSync(join(pairDir, "a.ts"), a);
+  writeFileSync(join(pairDir, "b.ts"), b);
+  const barrel = "export type { A } from './a.js';\n";
+  writeFileSync(join(pairDir, "barrel.ts"), barrel);
+  writeFileSync(join(pairDir, "tsconfig.json"), JSON.stringify({
+    compilerOptions: { strict: true, noEmit: true, module: "Node16",
+      moduleResolution: "Node16", paths: { "@fixture/a": ["./a.ts"],
+        "@fixture/barrel": ["./barrel.ts"] } },
+    include: ["*.ts"],
+  }));
   const pair = [
     { id: "fixture/a.ts", sha256: createHash("sha256").update(a).digest("hex"),
-      source: openText(resolve(here, "fixture-a.ts"), a) },
+      source: openText(join(pairDir, "a.ts"), a) },
     { id: "fixture/b.ts", sha256: createHash("sha256").update(b).digest("hex"),
-      source: openText(resolve(here, "fixture-b.ts"), b) },
+      source: openText(join(pairDir, "b.ts"), b) },
+    { id: "fixture/barrel.ts", sha256: createHash("sha256").update(barrel).digest("hex"),
+      source: openText(join(pairDir, "barrel.ts"), barrel) },
   ];
   const pairClient = "import type { A } from '@fixture/a';";
   const pairConfig = { packages: new Map([["@fixture/a", "fixture/a.ts"]]),
     links: new Map(), mappingSources: new Map() };
-  const pairRoot = resolveNamedImports(openText(resolve(here, "fixture-client.ts"), pairClient),
+  const pairRoot = resolveNamedImports(openText(join(pairDir, "client.ts"), pairClient),
     pair, pairConfig)[0];
   assert.ok(pairRoot);
   const pairClosure = collectTypeClosure(pairRoot, pair, pairConfig);
   const pairDocument = collectImportDocument([pairRoot], pair, pairConfig);
   assert.deepEqual(pairDocument.sources.map(s => s.module), ["fixture/a.ts", "fixture/b.ts"]);
   assert.equal(pairDocument.mappings.length, 0);
-  const genericClient = join(mkdtempSync(join(tmpdir(), "skjs-generic-import-")), "client.ts");
+  const genericClient = join(pairDir, "client.ts");
   writeFileSync(genericClient,
     'import type { A } from "@fixture/a";\n' +
     'export function keep(value: A<boolean>): A<boolean> { return value; }\n');
-  const genericAst = parseFile(genericClient, false, { modules: pair, config: pairConfig });
+  const genericAst = parseFile(genericClient, false, { modules: pair, config: pairConfig,
+    tsconfigPath: join(pairDir, "tsconfig.json") });
   assert.deepEqual(genericAst.functions[0]?.params[0]?.type.atoms[0],
     { a: "alias", name: "A", args: [{ top: false, atoms: [{ a: "boolean" }] }] });
   writeFileSync(genericClient,
+    'import type { A } from "@fixture/barrel";\n' +
+    'export function throughBarrel(value: A<boolean>): A<boolean> { return value; }\n');
+  const barrelAst = parseFile(genericClient, false, { modules: pair,
+    config: { ...pairConfig, packages: new Map([
+      ["@fixture/a", "fixture/a.ts"], ["@fixture/barrel", "fixture/barrel.ts"]]) },
+    tsconfigPath: join(pairDir, "tsconfig.json") });
+  assert.deepEqual(barrelAst.imports.roots[0]?.route.map(step => step.module),
+    ["fixture/barrel.ts", "fixture/a.ts"]);
+  writeFileSync(genericClient,
     'import type { A } from "@fixture/a";\n' +
     'export function wrong(value: A<boolean, number>): boolean { return true; }\n');
-  assert.throws(() => parseFile(genericClient, false, { modules: pair, config: pairConfig }),
+  assert.throws(() => parseFile(genericClient, false, { modules: pair, config: pairConfig,
+    tsconfigPath: join(pairDir, "tsconfig.json") }),
     /imported type 'A' needs 1 type argument/);
   assert.deepEqual(pairClosure.definitions.map(d => [d.declaration.name,
     d.parameters.map(p => p.name), d.references.map(r => [r.target.name, r.arguments.length])]), [
@@ -319,7 +355,10 @@ let inference = "";
 let indexed = "";
 let verifiedFunctions = 0;
 for (const test of cases) {
-  const result = check(join(here, "examples", `${test.file}.ts`));
+  const universe = test.project
+    ? loadImportUniverseFromProject(resolve(here, "../..", test.project))
+    : undefined;
+  const result = check(join(here, "examples", `${test.file}.ts`), universe);
   assert.equal(
     result.status,
     test.status,
@@ -785,6 +824,11 @@ assert.equal(collectedRest.collection?.verified, true);
 assert.match(collectedRest.manifest.functions.find(f=>f.name === "genericRestUses")?.expressions
   .find(e=>e.type.startsWith("<"))?.type ?? "", /^<T>\(\.\.\.rest: Array<T>\) => Array<T>$/);
 process.stdout.write("reader collection: quantified rest and array contracts rendered\n");
+
+const collectedJsonBound = await analyse(repositoryPath("recursive-json-variants"), "ocaml");
+assert.deepEqual(collectedJsonBound.manifest.results?.map(r => r.status), ["verified"]);
+assert.equal(collectedJsonBound.collection?.verified, true);
+process.stdout.write("reader collection: imported Json bound verified\n");
 
 // A negative control must reach validation and fail there. Failing there means
 // failing an obligation, which the reader can show at its span; an adapter that

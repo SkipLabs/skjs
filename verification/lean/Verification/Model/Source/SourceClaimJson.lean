@@ -405,7 +405,7 @@ private def find (f : Fragment.Fn) : SourceTypes.Lowering (Option Closure) := do
               throw "this slice checks one quantified closure per function"
             let names := tps.map (·.name)
             if names.eraseDups.length != names.length then throw "duplicate closure binder"
-            let parameters ← GenericSource.parametersOf tps
+            let parameters ← GenericSource.parametersOf (← get) tps
             let params : List ClaimType ← ps.zipIdx.mapM fun (q,i) => do
               let t ← claimOfType names q.2
               if (defaults.lookup i).isNone then pure t

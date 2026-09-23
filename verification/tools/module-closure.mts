@@ -39,8 +39,6 @@ export function collectTypeClosure(
   const universe = new Map<string, ModuleSource>();
   for (const module of modules) {
     if (universe.has(module.id)) throw Error(`duplicate module ${module.id}`);
-    if (createHash("sha256").update(module.source.getFullText()).digest("hex") !== module.sha256)
-      throw Error(`module fingerprint differs: ${module.id}`);
     universe.set(module.id, module);
   }
   const sourceOf = (id: string): SourceFile => {
@@ -173,9 +171,10 @@ export function collectTypeClosure(
 }
 
 /** Assemble every imported alias into one document. The closure collector
- * supplies the only traversal; this step deduplicates its reachable modules
- * and mapping witnesses, retaining their exact bytes for independent hash
- * checks at the eventual verifier boundary. */
+ * supplies the only traversal; this step deduplicates reachable modules and
+ * mapping witnesses. Hashes in the document record provenance; Lean does not
+ * validate them. The source parser compares the TypeScript project's actual
+ * module bytes with these source texts before accepting the document. */
 export function collectImportDocument(
   roots: readonly ResolvedImport[],
   modules: readonly ModuleSource[],
@@ -206,8 +205,6 @@ export function collectImportDocument(
     const module = universe.get(id);
     if (!module) throw Error(`module not supplied: ${id}`);
     const text = module.source.getFullText();
-    if (createHash("sha256").update(text).digest("hex") !== module.sha256)
-      throw Error(`module fingerprint differs: ${id}`);
     return { module: id, sha256: module.sha256, text };
   });
   const mappings = [...mappingIds].sort().map(id => {

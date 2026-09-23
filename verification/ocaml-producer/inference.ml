@@ -139,9 +139,17 @@ let infer ?receiver (signature:signature) actuals =
      even with cycles. Prefer joined lower bounds; upper-only candidates use a
      representable meet. Contradictions remain Lean obligations, not refusals. *)
   let substitution = List.map (fun v ->
-    let candidate = match join v.lower with
+    (* A graph bound is a legal (possibly less precise) instantiation for
+       every value below it. Choosing it is only a proposal: Lean checks both
+       the concrete argument against the instantiated parameter and the
+       substitution against every bound. *)
+    let imported_upper = List.find_opt (function
+      | Atoms [Named (_,[])] -> true | _ -> false) v.upper in
+    let candidate = match imported_upper with
       | Some _ as chosen -> chosen
-      | None -> upper_candidate v.upper in
+      | None -> (match join v.lower with
+        | Some _ as chosen -> chosen
+        | None -> upper_candidate v.upper) in
     match candidate with
     | Some t -> v.identity,t
     | None -> unsupported ("cannot infer " ^ v.identity.spelling ^ " from call arguments or bounds")) variables in

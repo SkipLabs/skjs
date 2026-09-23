@@ -85,5 +85,6 @@ export function loadImportUniverseFromProject(directory: string): ImportUniverse
     mappingSources.set(source, canonicalPath);
     links.set(virtual, { virtual, canonical, source, sha256: digest(canonicalPath) });
   }
-  return { modules, config: { packages, links, mappingSources } };
+  return { modules, config: { packages, links, mappingSources },
+    tsconfigPath: join(root, "tsconfig.json") };
 }

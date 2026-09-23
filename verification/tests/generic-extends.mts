@@ -64,7 +64,7 @@ try {
   expect("returning T as boolean requires the bound", run(unbounded, claims), false, "cannot establish T ≤ boolean under [T]");
   const notBoolean = clone(ast);
   fn(notBoolean, "asBoolean").typeParams[0].bound = t;
-  expect("a parameter cannot be its own bound", run(notBoolean, claims), false, "only `extends boolean`");
+  expect("a parameter cannot be its own bound", run(notBoolean, claims), false, "bound must name an earlier parameter");
   console.log(`Generic extends: ${passed} passed`);
 } catch (e) {
   console.error(e);
