@@ -318,6 +318,7 @@ for (const [file, expected] of [
     "export interface Labeled { readonly label: string; }\n" +
     "export interface MultipleBases extends Box, Labeled { readonly count: number; }\n";
   const genericShapes = "export type GenericBox<T> = { readonly value: T };\n" +
+    "export type ImportedId<T> = T;\n" +
     "export type GenericPair<L, R> = { readonly left: L; readonly right: R };\n" +
     "export type GenericOuter<T> = { readonly inner: GenericBox<T> };\n" +
     "export type GenericTuple<T> = readonly [T, number];\n" +
@@ -439,6 +440,14 @@ for (const [file, expected] of [
   assert.equal(checkedInherited.status, "verified", JSON.stringify(checkedInherited));
   assert.deepEqual(checkedInherited.functions,
     ["inherited", "owned", "multiple", "genericBase"]);
+  const importedIdentityClient = join(pairDir, "imported-identity-client.ts");
+  writeFileSync(importedIdentityClient,
+    'import type { ImportedId } from "@fixture/box";\n' +
+    'export function rigid<T>(value: ImportedId<T>): T { return value; }\n' +
+    'export function ground(value: ImportedId<boolean>): boolean { return value; }\n');
+  const importedIdentity = check(importedIdentityClient, boxUniverse);
+  assert.equal(importedIdentity.status, "verified", JSON.stringify(importedIdentity));
+  assert.deepEqual(importedIdentity.functions, ["rigid", "ground"]);
   const inheritedText = readFileSync(inheritedClient, "utf8");
   const inheritedSource = openText(inheritedClient, inheritedText);
   const inheritedRoots = resolveNamedImports(inheritedSource, pair, boxConfig);
@@ -632,7 +641,7 @@ for (const [file, expected] of [
     'export function wrong(value: A<boolean, number>): boolean { return true; }\n');
   assert.throws(() => parseFile(genericClient, false, { modules: pair, config: pairConfig,
     tsconfigPath: join(pairDir, "tsconfig.json") }),
-    /imported type 'A' needs 1 type argument/);
+    /type 'A' needs 1 type argument/);
   assert.deepEqual(pairClosure.definitions.map(d => [d.declaration.name,
     d.parameters.map(p => p.name), d.references.map(r => [r.target.name, r.arguments.length])]), [
     ["A", ["T"], [["B", 1]]],

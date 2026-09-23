@@ -64,6 +64,13 @@ abbrev Lowering := StateT Table (Except String)
 def use (c : Clause (List Nat)) : Lowering Nat :=
   modifyGet fun T => let T' := intern T c; (label T' c, T')
 
+/-- Intern a finite union as one graph row. It remains a union of its clauses;
+this does not make it an intersection or assert a producer equation. -/
+def useRow (row : List (Clause (List Nat))) : Lowering Nat :=
+  modifyGet fun T =>
+    let T' := if row ∈ T then T else T ++ [row]
+    (T'.idxOf row, T')
+
 /-- Keep the table as it was when a translation fails, so a rejected candidate
 leaves no rows behind. -/
 def attempt (m : Lowering α) : Lowering (Except String α) := fun T =>

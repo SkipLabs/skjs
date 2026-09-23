@@ -807,13 +807,15 @@ use the graph's conjunction operation. OCaml's view of inherited fields is a
 candidate hint only, and overlapping fields or richer inherited contracts may
 still be refused there. The acceptance path never trusts an OCaml-flattened
 interface equation.
-Supported interfaces declared in the checked file now enter that same
-declaration graph as imported interfaces. A local root names its declaration
-directly; an import root adds a resolution route, but both feed the same Lean
-lowering. This is a migration step, not the end state: local generic aliases
-still use `GenericAlias` expansion, and local source annotations still arrive
-in the older claim-shaped type syntax. Those parallel paths must converge
-before declaration location is truly irrelevant to the fragment.
+Supported interfaces and aliases declared in the checked file now enter that
+same source declaration graph as imported declarations. A local root names its
+declaration directly; an import root adds a resolution route. General ground aliases
+feed the same Lean graph lowering. Admitted identity and mutable-box aliases
+use specialized substitution for ground and rigid applications alike, derived
+from the source equation with no parser-authored alias body. General rigid generic
+applications and function annotations in the older claim-shaped syntax remain
+parallel paths to retire; declaration location itself has no separate type
+meaning in the admitted fragment.
 `T extends boolean` is an assumption in `Δ`; returning `x` at `boolean` is
 transport along `SubP`. A generic body may copy `T` through annotated or inferred `const`
 bindings and extra parameters, with bounds to Boolean, an earlier parameter,

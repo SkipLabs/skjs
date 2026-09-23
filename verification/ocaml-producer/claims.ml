@@ -20,14 +20,14 @@ let encode (proposal : Proposal.t) =
       | r::rs -> if r=row then n else find (n+1) rs in find 0 !rows
   in
   let rec labels = function Rigid _ | Union _ -> unsupported "rigid type nested in a graph type"
-    | Atoms atoms -> Array (List.map int (List.sort_uniq compare (List.map atom_label atoms)))
-  and atom_label = function
-    | Nul -> 0 | True -> 1 | False -> 2 | Undef -> 3
-    | Num -> intern (Array [String "num"]) | Str -> intern (Array [String "str"])
-    | NumLit bits -> intern (Array [Object ["numLit",Object ["bits",String (Printf.sprintf "%Lu" bits)]]])
-    | StrLit value -> intern (Array [Object ["strLit",Object ["value",String value]]])
-    | Top -> intern (Array [String "top"])
-    | Named (id,args) -> imported_label id args
+    | Atoms atoms -> Array (List.map int (List.sort_uniq compare (List.concat_map atom_labels atoms)))
+  and atom_labels = function
+    | Nul -> [0] | True -> [1] | False -> [2] | Undef -> [3]
+    | Num -> [intern (Array [String "num"])] | Str -> [intern (Array [String "str"])]
+    | NumLit bits -> [intern (Array [Object ["numLit",Object ["bits",String (Printf.sprintf "%Lu" bits)]]])]
+    | StrLit value -> [intern (Array [Object ["strLit",Object ["value",String value]]])]
+    | Top -> [intern (Array [String "top"])]
+    | Named (id,args) -> imported_labels id args
     | Shape shape ->
       let writes,reads = List.partition (fun (f:Semantic.field) -> f.write <> None) shape.fields in
       let fields writable fs = Array (List.map (fun (f:Semantic.field) ->
@@ -69,20 +69,30 @@ let encode (proposal : Proposal.t) =
           | _,_,_ ->
             if reads <> [] then unsupported "callable with readonly fields";
             Object ["callable",Object (["first",fields;"rest",Array []] @ calls)] in
-      intern (Array [clause])
-  and imported_label id args =
+      [intern (Array [clause])]
+  and imported_labels id args =
     let rec find i = function
       | [] -> unsupported ("unknown imported declaration " ^ id)
       | (d:Source.imported_definition)::rest ->
         if d.id=id then
-          if d.parameters=[] && args=[] then i+4
+          if d.parameters=[] && args=[] then [i+4]
           else if List.length args <= List.length d.parameters then begin
             if List.mem id !active_imports then
               unsupported "recursive generic imported application needs memoized rows";
             active_imports := id::!active_imports;
             let result = try (match Proposal.definition imports id args with
-              | Atoms [atom] -> atom_label atom
-              | _ -> unsupported "generic imported application needs one graph clause")
+              | Atoms atoms ->
+                let labels = List.sort_uniq compare (List.concat_map atom_labels atoms) in
+                (match labels with
+                | [] -> unsupported "generic imported application has no inhabited graph clause"
+                | [label] -> [label]
+                | labels ->
+                  let row = List.concat_map (fun label ->
+                    match List.nth_opt !rows label with
+                    | Some (Array clauses) -> clauses
+                    | _ -> fail "imported application references a missing graph row") labels in
+                  [intern (Array row)])
+              | _ -> unsupported "generic imported application needs a ground graph type")
               with e -> active_imports := List.tl !active_imports; raise e in
             active_imports := List.tl !active_imports;
             result

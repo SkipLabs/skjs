@@ -46,19 +46,48 @@ def admit (a : Alias) : Except String Unit :=
   if isIdentity a || isBox a then return ()
   else throw "only identity (`type Id<T> = T`) and cell (`type Box<T> = { value: T }`) aliases are in the fragment"
 
-def decodeAlias (j : Json) : Except String Alias := do
-  CellClaims.fieldsExactly j ["name", "typeParams", "body"]
-  let name ← jStr (← jField j "name")
-  if name.isEmpty then throw "empty alias name"
-  if name == "undefined" then throw "shadowing undefined is outside the fragment"
-  let [p] ← (← jArr j "typeParams").mapM Fragment.decodeTypeParam
-    | throw "only one type parameter is in the fragment"
-  if p.name == "undefined" then throw "shadowing undefined is outside the fragment"
-  if p.bound.isSome then throw "type parameter bounds on aliases are outside the fragment"
-  return ⟨name, p.name, ← jField j "body"⟩
+private def sourceAlias (root : Json) (definitions : List Json) : Except String (Option Alias) := do
+  let identity ← jField root "declaration"
+  let some definition := definitions.find? (fun d =>
+    (d.getObjVal? "declaration").toOption == some identity)
+    | throw "declaration root has no source equation"
+  let [parameter] := (← jArr definition "parameters")
+    | return none
+  if (← jField parameter "bound") != Json.null || (← jField parameter "default") != Json.null ||
+      !(← jArr definition "bases").isEmpty then return none
+  let name ← jStr (← jField (← jField root "binding") "local")
+  let param ← jStr (← jField parameter "name")
+  let body ← jField definition "expression"
+  let paramAtZero (j : Json) : Bool :=
+    (j.getObjVal? "k").toOption == some (Json.str "parameter") &&
+    (j.getObjVal? "index").toOption == some (toJson (0 : Nat))
+  if paramAtZero body then return some ⟨name, param, paramType param⟩
+  if (body.getObjVal? "k").toOption != some (Json.str "object") then return none
+  if (body.getObjVal? "stringIndex").toOption != some Json.null then return none
+  if !(← jArr body "calls").isEmpty then return none
+  let [field] := (← jArr body "fields") | return none
+  if (field.getObjVal? "name").toOption != some (Json.str "value") ||
+      (field.getObjVal? "optional").toOption != some (Json.bool false) ||
+      (field.getObjVal? "readonly").toOption != some (Json.bool false) ||
+      !paramAtZero (← jField field "type") then return none
+  let record := Json.mkObj [("a", toJson "record"),
+    ("fields", toJson [Json.mkObj [("name", toJson "value"),
+      ("optional", toJson false), ("read", paramType param),
+      ("write", paramType param)]]),
+    ("indexes", Json.mkObj [("string", toJson "absent"),
+      ("number", toJson "absent"), ("symbol", toJson "absent")]),
+    ("call", toJson "unknown"), ("construct", toJson "unknown"),
+    ("array", toJson "unknown")]
+  return some ⟨name, param, Json.mkObj [("top", toJson false),
+    ("atoms", toJson [record])]⟩
 
 def decodeAliases (ast : Json) : Except String (List Alias) := do
-  let aliases ← (← jArr ast "aliases").mapM decodeAlias
+  if !(← jArr ast "aliases").isEmpty then
+    throw "alias definitions must come from the source declaration graph"
+  let imports ← jField ast "imports"
+  let definitions ← jArr imports "definitions"
+  let source ← (← jArr imports "roots").mapM (sourceAlias · definitions)
+  let aliases := source.filterMap id
   let names := aliases.map (·.name)
   if names.eraseDups.length != names.length then throw "duplicate type alias"
   return aliases

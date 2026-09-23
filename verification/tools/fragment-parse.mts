@@ -197,12 +197,10 @@ class Gate {
    * one file-wide set, makes nested quantified callables representable without
    * conflating an inner binder with an outer binder of the same spelling. */
   private readonly typeParamScopes: Set<string>[] = [];
-  private readonly aliasNames = new Set<string>();
-  /** Local spelling to the arity of its resolved, declaration-identified root
-   * in the Fragment's import document. An alias atom retains this spelling;
-   * the document, never a global name table, resolves it. */
-  private readonly importedAliases = new Map<string, { required: number; total: number }>();
-  private aliasApps = false;
+  /** Local spelling to the arity of its declaration-identified root.
+   * An alias atom retains this spelling; the source declaration document
+   * resolves it regardless of where the declaration was written. */
+  private readonly declaredTypes = new Map<string, { required: number; total: number }>();
   /* Whether the code being read is strict, by a module or a "use strict"
    * directive (ECMAScript's, not TypeScript's `strict` option). An ordinary
    * function records it: its receiver rule is the strict one. */
@@ -260,15 +258,15 @@ class Gate {
             tp.constraint.typeName.kind === ts.SyntaxKind.Identifier &&
             !tp.constraint.typeArguments?.length &&
             this.hasTypeParam(tp.constraint.typeName.text);
-          const imported =
+          const declared =
             ts.isTypeReferenceNode(tp.constraint) &&
             tp.constraint.typeName.kind === ts.SyntaxKind.Identifier &&
             !tp.constraint.typeArguments?.length &&
-            this.importedAliases.get(tp.constraint.typeName.text)?.total === 0;
-          if (tp.constraint.kind !== ts.SyntaxKind.BooleanKeyword && !earlier && !imported)
+            this.declaredTypes.get(tp.constraint.typeName.text)?.total === 0;
+          if (tp.constraint.kind !== ts.SyntaxKind.BooleanKeyword && !earlier && !declared)
             this.fail(
               tp.constraint,
-              "only `extends boolean`, an earlier type parameter, or a non-generic imported type is in the fragment",
+              "only `extends boolean`, an earlier type parameter, or a non-generic named type is in the fragment",
             );
           bound = this.typeOf(tp.constraint);
         }
@@ -287,20 +285,10 @@ class Gate {
       throw new Error("internal: no type-parameter scope to leave");
   }
 
-  registerAlias(name: string, node: Node): void {
-    if (this.aliasNames.has(name) || this.importedAliases.has(name))
-      this.fail(node, "duplicate type alias");
-    this.aliasNames.add(name);
-  }
-
-  registerImportedAlias(name: string, required: number, total: number, node: Node): void {
-    if (this.importedAliases.has(name) || this.aliasNames.has(name))
-      this.fail(node, "duplicate imported type name");
-    this.importedAliases.set(name, { required, total });
-  }
-
-  enableAliasApps(): void {
-    this.aliasApps = true;
+  registerDeclaredType(name: string, required: number, total: number, node: Node): void {
+    if (this.declaredTypes.has(name))
+      this.fail(node, "duplicate type name");
+    this.declaredTypes.set(name, { required, total });
   }
 
   fail(node: Node | null, message: string): never {
@@ -509,34 +497,19 @@ class Gate {
       if (node.typeName.kind !== ts.SyntaxKind.Identifier)
         this.fail(node, "type reference outside the fragment");
       const name = node.typeName.text;
-      const importedArity = this.importedAliases.get(name);
-      if (importedArity !== undefined && !this.hasTypeParam(name)) {
+      const declaredArity = this.declaredTypes.get(name);
+      if (declaredArity !== undefined && !this.hasTypeParam(name)) {
         const args = node.typeArguments?.map(arg => this.typeOf(arg)) ?? [];
-        if (args.length < importedArity.required || args.length > importedArity.total) {
-          const count = importedArity.required === importedArity.total
-            ? `${importedArity.total}`
-            : `${importedArity.required} to ${importedArity.total}`;
-          this.fail(node, `imported type '${name}' needs ${count} type argument(s)`);
+        if (args.length < declaredArity.required || args.length > declaredArity.total) {
+          const count = declaredArity.required === declaredArity.total
+            ? `${declaredArity.total}`
+            : `${declaredArity.required} to ${declaredArity.total}`;
+          this.fail(node, `type '${name}' needs ${count} type argument(s)`);
         }
         acc.push({ a: "alias", name, args });
         return;
       }
-      if (node.typeArguments?.length) {
-        if (!this.aliasApps)
-          this.fail(
-            node,
-            "alias applications in alias bodies are outside the fragment",
-          );
-        if (node.typeArguments.length !== 1)
-          this.fail(node, "only one type argument is in the fragment");
-        if (!this.aliasNames.has(name)) this.fail(node, "unknown type alias");
-        acc.push({
-          a: "alias",
-          name,
-          args: [this.typeOf(node.typeArguments[0])],
-        });
-        return;
-      }
+      if (node.typeArguments?.length) this.fail(node, "unknown type alias");
       if (!this.hasTypeParam(name)) this.fail(node, "unknown type parameter");
       acc.push({ a: "param", name });
       return;
@@ -1905,38 +1878,6 @@ class Gate {
     );
   }
 
-  /* ---------------------------------------------------------- aliases -- */
-
-  aliasDecl(node: TypeAliasDeclaration): TypeAliasAst {
-    if (!node.name) this.fail(node, "anonymous type alias");
-    if (node.name.text === "undefined")
-      this.fail(node, "shadowing undefined is outside the fragment");
-    if (node.modifiers?.length)
-      this.fail(node, "modifiers (export/declare) are outside the fragment");
-    if (!node.typeParameters || node.typeParameters.length !== 1)
-      this.fail(node, "only one type parameter is in the fragment");
-    const tp = node.typeParameters[0];
-    if (tp.constraint || tp.defaultType)
-      this.fail(
-        tp,
-        "type parameter bounds and defaults are outside the fragment",
-      );
-    if (tp.name.kind !== ts.SyntaxKind.Identifier)
-      this.fail(tp, "expected a type-parameter name");
-    const param = tp.name.text;
-    this.typeParamScopes.unshift(new Set([param]));
-    this.aliasApps = false;
-    try {
-      return {
-        name: node.name.text,
-        typeParams: [{ name: param, bound: null }],
-        body: this.typeOf(node.type),
-      };
-    } finally {
-      this.leaveTypeParams();
-    }
-  }
-
   /* --------------------------------------------------------- functions -- */
 
   functionDecl(node: FunctionDeclaration): FunctionAst {
@@ -2075,8 +2016,15 @@ export function parseFile(file: string, carriesContext = false,
     interfaceNodes.some(node => node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword)) ||
     fnNodes.some(fn => fn.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword));
   let imports: Ast["imports"] = { roots: [], definitions: [], sources: [], mappings: [] };
-  if (importNodes.length || interfaceNodes.length) {
-    const first = importNodes[0] ?? interfaceNodes[0];
+  const statable = (node: TypeAliasDeclaration): boolean => {
+    const params = node.typeParameters;
+    return !node.modifiers?.length && params?.length === 1 &&
+      !params[0].constraint && !params[0].defaultType;
+  };
+  const localNodes: Array<TypeAliasDeclaration | InterfaceDeclaration> =
+    [...(carriesContext ? aliasNodes.filter(statable) : aliasNodes), ...interfaceNodes];
+  if (importNodes.length || localNodes.length) {
+    const first = importNodes[0] ?? localNodes[0];
     if (!first) throw Error("missing declaration root");
     const universe = importUniverse;
     if (importNodes.length && !universe)
@@ -2095,7 +2043,7 @@ export function parseFile(file: string, carriesContext = false,
     try {
       const importedRoots = importNodes.length
         ? resolveNamedImports(source, modules, config) : [];
-      const localRoots: LocalTypeRoot[] = interfaceNodes.map(node => {
+      const localRoots: LocalTypeRoot[] = localNodes.map(node => {
         const name = node.name.text;
         const span = gate.span(node);
         return { binding: { kind: "local", span, local: name },
@@ -2107,7 +2055,7 @@ export function parseFile(file: string, carriesContext = false,
         universe?.tsconfigPath);
     } catch (error) {
       const at = error instanceof ImportMismatch
-        ? [...importNodes, ...interfaceNodes].find(node =>
+        ? [...importNodes, ...localNodes].find(node =>
             node.getStart(source) === error.clientSpan[0]) ?? first
         : first;
       gate.fail(at, messageOf(error));
@@ -2120,33 +2068,16 @@ export function parseFile(file: string, carriesContext = false,
         d.declaration.span[1] === identity.span[1]);
       if (!definition)
         return gate.fail(first, `imported type definition missing: ${identity.module}#${identity.name}`);
-      const node = [...importNodes, ...interfaceNodes].find(n =>
+      const node = [...importNodes, ...localNodes].find(n =>
         n.getStart(source) === root.binding.span[0]) ?? first;
-      gate.registerImportedAlias(root.binding.local,
+      gate.registerDeclaredType(root.binding.local,
         definition.parameters.filter(p => p.default === null).length,
         definition.parameters.length, node);
     }
   }
-  // Carried context holds aliases this fragment cannot state — more than one
-  // parameter, a bound, none at all. They are skipped rather than rejected,
-  // on the same terms as the other declarations: unregistered, so a function
-  // that names one fails on that name instead of on its neighbour's shape.
-  const statable = (n: TypeAliasDeclaration): boolean => {
-    const tp = n.typeParameters;
-    return (
-      !n.modifiers?.length &&
-      tp?.length === 1 &&
-      !tp[0].constraint &&
-      !tp[0].defaultType
-    );
-  };
-  const stated = carriesContext ? aliasNodes.filter(statable) : aliasNodes;
-  for (const node of stated) {
-    if (!node.name) gate.fail(node, "anonymous type alias");
-    gate.registerAlias(node.name.text, node);
-  }
-  const aliases = stated.map((s) => gate.aliasDecl(s));
-  gate.enableAliasApps();
+  // Carried context skips aliases its old fragment could not state. Every
+  // retained declaration now has one source equation, shared with imports.
+  const aliases: TypeAliasAst[] = [];
   // A function without a body is a declaration, not an example of one.
   const declared = carriesContext ? fnNodes.filter((s) => s.body) : fnNodes;
   const functions = declared.map((s) => gate.functionDecl(s));

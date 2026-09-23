@@ -57,6 +57,13 @@ private abbrev Lowering := StateT SourceTypes.Table (Except String)
 
 private def use (clause : Clause (List Nat)) : Lowering Nat := SourceTypes.use clause
 
+private partial def hasRigidParameter : Json → Bool
+  | .obj fields =>
+    (fields.toList.lookup "a" == some (.str "param")) ||
+      fields.toList.any (fun p => hasRigidParameter p.2)
+  | .arr values => values.any hasRigidParameter
+  | _ => false
+
 /-- For disjoint plain record fields, a source heritage intersection has the
 same contract as one record operand with those fields. Canonicalizing that
 case also gives the proposal and the source one graph row. Other combinations
@@ -267,16 +274,22 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table) :
   return table
 
 private partial def rewrite (ds : Array Definition) (roots : Array (String × Nat))
+    (substituted : List String)
     (j : Json) : Lowering Json := do
   match j with
-  | .arr values => return .arr (← values.mapM (rewrite ds roots))
+  | .arr values => return .arr (← values.mapM (rewrite ds roots substituted))
   | .obj fields =>
     if (j.getObjVal? "a").toOption == some (.str "graph") then
       throw "source cannot state an internal graph label"
     if (j.getObjVal? "a").toOption == some (.str "alias") then
       let name ← str j "name"
       if let some (_, index) := roots.toList.find? (fun p => p.1 == name) then
-        let args ← (← arr j "args").mapM (rewrite ds roots)
+        let args ← (← arr j "args").mapM (rewrite ds roots substituted)
+        -- The admitted identity and box schemes are substituted from their
+        -- source equation, retaining the argument's canonical claim shape.
+        if substituted.contains name || args.any hasRigidParameter then
+          return Json.mkObj [("a", toJson "alias"), ("name", toJson name),
+            ("args", toJson args)]
         if ds[index]!.parameters.isEmpty then
           if !args.isEmpty then throw "imported type application has wrong arity"
           return Json.mkObj [("a", toJson "graph"), ("label", toJson (rowIndex ds index))]
@@ -287,16 +300,22 @@ private partial def rewrite (ds : Array Definition) (roots : Array (String × Na
           else (← lowerDefinitionRows ds index values [index]).mapM use
         match labels with
         | [label] => return Json.mkObj [("a", toJson "graph"), ("label", toJson label)]
-        | _ => throw "generic imported application needs one graph clause"
+        | [] => throw "generic imported application has no inhabited graph clause"
+        | labels =>
+          let table ← get
+          let clauses := labels.flatMap (SourceTypes.graph table)
+          let label ← SourceTypes.useRow clauses
+          return Json.mkObj [("a", toJson "graph"), ("label", toJson label)]
     let pairs ← fields.toArray.mapM fun (name, value) => do
-      return (name, ← rewrite ds roots value)
+      return (name, ← rewrite ds roots substituted value)
     return Json.mkObj pairs.toList
   | _ => return j
 
 /-- Replace only the producer's empty reserved rows with equations derived
 from source declarations. The AST copy contains internal graph atoms only after
 the original source tree has been checked for them. -/
-def prepare (ast : Json) (candidate : SourceTypes.Table) :
+def prepare (ast : Json) (candidate : SourceTypes.Table)
+    (substituted : List String) :
     Except String (Json × SourceTypes.Table) := do
   let imports ← field ast "imports"
   CellClaims.fieldsExactly imports ["roots", "definitions", "sources", "mappings"]
@@ -308,8 +327,8 @@ def prepare (ast : Json) (candidate : SourceTypes.Table) :
   if (roots.toList.map (·.1)).eraseDups.length != roots.size then
     throw "duplicate imported local type"
   let types ← fillRows ds candidate
-  let (aliases, types) ← (rewrite ds roots (← field ast "aliases")).run types
-  let (functions, types) ← (rewrite ds roots (← field ast "functions")).run types
+  let (aliases, types) ← (rewrite ds roots substituted (← field ast "aliases")).run types
+  let (functions, types) ← (rewrite ds roots substituted (← field ast "functions")).run types
   let empty := Json.mkObj [("roots", toJson ([] : List Json)),
     ("definitions", toJson ([] : List Json)), ("sources", toJson ([] : List Json)),
     ("mappings", toJson ([] : List Json))]

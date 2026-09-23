@@ -3,8 +3,9 @@ open Semantic
 let unsupported s = fail ("unsupported: " ^ s)
 let text k j = str (field k j)
 let items k j = list (field k j)
-type type_context = { bindings: (string * ty) list; aliases: (string * Json.t) list;
-                      imported: (string * (string * int * int)) list; expanding: string list }
+type type_context = { bindings: (string * ty) list;
+                      imported: (string * (string * int * int)) list;
+                      symbolic: (string * (rigid * ty)) list }
 let identity declaration =
   let span = list (field "span" declaration) in
   match span with
@@ -54,14 +55,11 @@ and annotation_atom binders j =
     | Some (id,required,total) ->
       if List.length args < required || List.length args > total then
         fail ("imported alias arity: " ^ name);
-      Atoms [Named (id,args)]
-    | None ->
-      if List.mem name binders.expanding then unsupported ("recursive alias " ^ name);
-      let a = match List.assoc_opt name binders.aliases with Some a -> a | None -> fail ("unknown alias " ^ name) in
-      let ps = items "typeParams" a in
-      if List.length ps <> List.length args then fail ("alias arity: " ^ name);
-      let bindings = List.map2 (fun p arg -> text "name" p,arg) ps args in
-      annotation {binders with bindings; expanding=name::binders.expanding} (field "body" a))
+      (match args,List.assoc_opt id binders.symbolic with
+      | [arg],Some (parameter,body) ->
+        Inference.substitute [parameter,arg] body
+      | _ -> Atoms [Named (id,args)])
+    | None -> fail ("unknown type declaration " ^ name))
   | "array" -> array {
       required=List.map (annotation binders) (items "required" j);
       optional_elements=List.map (annotation binders) (items "optional" j);
@@ -309,12 +307,25 @@ let decode ast =
     (items "roots" imports) in
   if List.length (List.sort_uniq compare (List.map fst imported)) <> List.length imported then
     fail "duplicate imported local type";
-  let aliases = List.map (fun a -> text "name" a,a) (items "aliases" ast) in
+  if items "aliases" ast <> [] then
+    fail "alias definitions must come from the source declaration graph";
+  let symbolic = List.filter_map (fun d ->
+    match d.parameters,d.defaults,d.bases,d.expression with
+    | [parameter],[None],[],(Rigid identity as body) when identity=parameter ->
+      Some (d.id,(parameter,body))
+    | [parameter],[None],[],(Atoms [Shape shape] as body) ->
+      (match shape.fields,shape.string_index,shape.calls,shape.elements with
+      | [{name="value";optional=false;read=Rigid identity;
+          write=Some (Rigid written)}],None,[],None
+          when identity=parameter && written=parameter ->
+        Some (d.id,(parameter,body))
+      | _ -> None)
+    | _ -> None) definitions in
   { file=field "file" ast;digest=field "sourceSha256" ast;
     imports=definitions;
     functions=List.mapi (fun scope f ->
       let parameters = items "typeParams" f in
-      let initial={bindings=[];aliases;imported;expanding=[]} in
+      let initial={bindings=[];imported;symbolic} in
       let binders,quantified = quantify initial scope parameters in
       {quantified;name=text "name" f; name_pos=field "namePos" f;
       params=List.map (fun p -> text "name" p,annotation binders (field "type" p)) (items "params" f);

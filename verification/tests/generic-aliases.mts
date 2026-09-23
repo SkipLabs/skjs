@@ -3,14 +3,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { decodeClaimType } from "../tools/claim.mts";
+import { decodeClaimType, type ClaimType } from "../tools/claim.mts";
 import type { Ast } from "../tools/fragment.mts";
 import { functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
 import { atom, claimType, fn, must } from "./edits.mts";
 
-/** One type alias of a parse, by name. */
-const alias = (a: Ast, name: string) =>
-  must(a.aliases.find((x) => x.name === name), `the alias ${name}`);
+/** The source equation selected by a local declaration root. */
+const alias = (a: Ast, name: string) => {
+  const root = must(a.imports.roots.find((x) => x.binding.local === name), `the root ${name}`);
+  return must(a.imports.definitions.find((x) =>
+    JSON.stringify(x.declaration) === JSON.stringify(root.declaration)), `the equation ${name}`);
+};
 // Source extraction of first-order generic aliases: Id<T> = T and Box<T> = { value: T }.
 
 const [astPath, claimsPath, fileKey, verifier] = process.argv.slice(2);
@@ -40,14 +43,13 @@ function expect(name: string, r: ReturnType<typeof run>, accept: boolean, messag
   console.log(`  ${name}: OK`);
 }
 try {
-  const names = ast.aliases.map((a) => a.name).sort();
+  const names = ast.imports.roots.map((r) => r.binding.local).sort();
   if (JSON.stringify(names) !== JSON.stringify(["Box", "Id"]))
     throw Error("expected Id and Box aliases");
   const id = alias(ast, "Id");
-  const t = { top: false, atoms: [{ a: "param", name: "T" }] };
-  decodeClaimType(id.body);
-  if (JSON.stringify(id.body) !== JSON.stringify(t))
-    throw Error("Id body should be param T");
+  const t: ClaimType = { top: false, atoms: [{ a: "param", name: "T" }] };
+  if (id.expression.k !== "parameter" || id.expression.index !== 0)
+    throw Error("Id source equation should be its first parameter");
   const wrap = fn(ast, "wrap");
   const wrapped = must(wrap.params[0], "a parameter").type;
   decodeClaimType(wrapped);
@@ -60,11 +62,9 @@ try {
     throw Error("SKJS should export alias Id");
   expect("generic aliases are accepted", run(ast, claims), true);
   const badBody = clone(ast);
-  alias(badBody, "Id").body = {
-    top: false,
-    atoms: [{ a: "boolean" }],
-  };
-  expect("Id<T> = boolean is not the identity alias", run(badBody, claims), false, "only identity");
+  badBody.aliases = [{ name: "Id", typeParams: [{ name: "T", bound: null }], body: t }];
+  expect("parser-authored alias body is refused", run(badBody, claims), false,
+    "alias definitions must come from the source declaration graph");
   const unknown = clone(ast);
   must(fn(unknown, "wrap").params[0], "a parameter").type = {
     top: false,
@@ -72,11 +72,10 @@ try {
   };
   expect("unknown type alias is rejected", run(unknown, claims), false, "unknown type alias");
   const twoParams = clone(ast);
-  alias(twoParams, "Id").typeParams = [
-    { name: "T", bound: null },
-    { name: "U", bound: null },
-  ];
-  expect("two alias type parameters are outside the fragment", run(twoParams, claims), false, "only one type parameter");
+  const original = alias(twoParams, "Id").parameters[0];
+  if (!original) throw Error("missing Id parameter");
+  alias(twoParams, "Id").parameters.push({ ...original, name: "U" });
+  expect("unmatched source declaration arity is refused", run(twoParams, claims), false);
   console.log(`Generic aliases: ${passed} passed`);
 } catch (e) {
   console.error(e);
