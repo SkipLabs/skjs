@@ -3,7 +3,14 @@ open Semantic
 let unsupported s = fail ("unsupported: " ^ s)
 let text k j = str (field k j)
 let items k j = list (field k j)
-type type_context = { bindings: (string * ty) list; aliases: (string * Json.t) list; expanding: string list }
+type type_context = { bindings: (string * ty) list; aliases: (string * Json.t) list;
+                      imported: (string * (string * int)) list; expanding: string list }
+let identity declaration =
+  let span = list (field "span" declaration) in
+  match span with
+  | [Number first;Number last] ->
+    str (field "module" declaration) ^ "#" ^ first ^ ":" ^ last
+  | _ -> fail "invalid imported declaration identity"
 let rec annotation binders j =
   if boolean (field "top" j) then Atoms [Top]
   else List.fold_left union (Atoms []) (List.map (annotation_atom binders) (items "atoms" j))
@@ -42,12 +49,18 @@ and annotation_atom binders j =
     Atoms [Shape {fields=fs;string_index;calls=[];elements=None}]
   | "alias" ->
     let name = text "name" j in
-    if List.mem name binders.expanding then unsupported ("recursive alias " ^ name);
-    let a = match List.assoc_opt name binders.aliases with Some a -> a | None -> fail ("unknown alias " ^ name) in
-    let ps = items "typeParams" a and args = List.map (annotation binders) (items "args" j) in
-    if List.length ps <> List.length args then fail ("alias arity: " ^ name);
-    let bindings = List.map2 (fun p arg -> text "name" p,arg) ps args in
-    annotation {binders with bindings; expanding=name::binders.expanding} (field "body" a)
+    let args = List.map (annotation binders) (items "args" j) in
+    (match List.assoc_opt name binders.imported with
+    | Some (id,arity) ->
+      if List.length args <> arity then fail ("imported alias arity: " ^ name);
+      Atoms [Named (id,args)]
+    | None ->
+      if List.mem name binders.expanding then unsupported ("recursive alias " ^ name);
+      let a = match List.assoc_opt name binders.aliases with Some a -> a | None -> fail ("unknown alias " ^ name) in
+      let ps = items "typeParams" a in
+      if List.length ps <> List.length args then fail ("alias arity: " ^ name);
+      let bindings = List.map2 (fun p arg -> text "name" p,arg) ps args in
+      annotation {binders with bindings; expanding=name::binders.expanding} (field "body" a))
   | "array" -> array {
       required=List.map (annotation binders) (items "required" j);
       optional_elements=List.map (annotation binders) (items "optional" j);
@@ -130,7 +143,44 @@ and stmt_node =
   | While of expr * stmt list | Break | Continue
 and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: (string * ty) list;
            result: ty; body: stmt list }
-type program = { file: Json.t; digest: Json.t; functions: fn list }
+type imported_definition = { id: string; parameters: string list; expression: ty }
+type program = { file: Json.t; digest: Json.t; imports: imported_definition list; functions: fn list }
+
+(* Candidate-only view of a source equation. Lean independently derives the
+   authoritative graph row from the same import document. Named edges remain
+   named here, including cycles; no recursive declaration is unfolded. *)
+let rec imported_type j =
+  match text "k" j with
+  | "atom" -> (match text "name" j with
+    | "null" -> Atoms [Nul] | "undefined" -> Atoms [Undef]
+    | "boolean" -> bool | "number" -> Atoms [Num]
+    | "string" -> Atoms [Str] | "unknown" | "void" -> top
+    | "never" -> Atoms [] | name -> unsupported ("imported atom " ^ name))
+  | "literal" -> (match text "name" j with
+    | "true" -> Atoms [True] | "false" -> Atoms [False]
+    | "number" -> number_literal (text "text" j)
+    | "string" -> Atoms [StrLit (text "text" j)]
+    | name -> unsupported ("imported literal " ^ name))
+  | "union" -> List.fold_left union (Atoms []) (List.map imported_type (items "parts" j))
+  | "array" -> array {required=[];optional_elements=[];
+      rest=Some (imported_type (field "element" j));readonly=boolean (field "readonly" j)}
+  | "object" ->
+    let fields = List.map (fun f ->
+      let t = imported_type (field "type" f) in
+      {name=text "name" f;optional=boolean (field "optional" f);
+       read=t;write=(if boolean (field "readonly" f) then None else Some t)})
+      (items "fields" j) in
+    let string_index = match field "stringIndex" j with
+      | Null -> None
+      | index -> let t = imported_type (field "value" index) in
+        Some {value=t;writable=(if boolean (field "readonly" index) then None else Some t)} in
+    Atoms [Shape {fields;string_index;calls=[];elements=None}]
+  | "reference" ->
+    let args = List.map imported_type (items "args" j) in
+    Atoms [Named (identity (field "target" (field "reference" j)), args)]
+  | "parameter" -> unsupported "imported generic body needs parameter substitution"
+  | "intersection" -> unsupported "imported intersection needs source graph conjunction"
+  | k -> unsupported ("imported type expression " ^ k)
 let rec expr binders j =
   let sub k = expr binders (field k j) in
   let node = match text "k" j with
@@ -208,14 +258,26 @@ let rec stmt binders j =
   | k -> unsupported ("statement " ^ k) in {span=field "pos" j;statement}
 let decode ast =
   let imports = field "imports" ast in
-  if List.exists (fun name -> items name imports <> [])
-      ["roots"; "definitions"; "sources"; "mappings"] then
-    unsupported "imported type definitions need a certified graph interpretation";
+  let definitions = List.map (fun definition ->
+    let declaration = field "declaration" definition in
+    {id=identity declaration;
+     parameters=List.map (fun p -> text "name" p) (items "parameters" definition);
+     expression=imported_type (field "expression" definition)})
+    (items "definitions" imports) in
+  let imported = List.map (fun root ->
+    let id=identity (field "declaration" root) in
+    let definition = match List.find_opt (fun d -> d.id=id) definitions with
+      | Some d -> d | None -> fail ("import root lacks definition " ^ id) in
+    text "local" (field "binding" root), (id,List.length definition.parameters))
+    (items "roots" imports) in
+  if List.length (List.sort_uniq compare (List.map fst imported)) <> List.length imported then
+    fail "duplicate imported local type";
   let aliases = List.map (fun a -> text "name" a,a) (items "aliases" ast) in
   { file=field "file" ast;digest=field "sourceSha256" ast;
+    imports=definitions;
     functions=List.mapi (fun scope f ->
       let parameters = items "typeParams" f in
-      let initial={bindings=[];aliases;expanding=[]} in
+      let initial={bindings=[];aliases;imported;expanding=[]} in
       let binders,quantified = quantify initial scope parameters in
       {quantified;name=text "name" f; name_pos=field "namePos" f;
       params=List.map (fun p -> text "name" p,annotation binders (field "type" p)) (items "params" f);

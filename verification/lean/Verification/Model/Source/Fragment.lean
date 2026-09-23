@@ -68,7 +68,12 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
   CellClaims.fieldsExactly j ["top","atoms"]
   if ← (← jField j "top").getBool? then return [← SourceTypes.use .top]
   let arms ← (← jArr j "atoms").mapM fun atom => do
-    if (← jStr (← jField atom "a")) == "function" then
+    if (← jStr (← jField atom "a")) == "graph" then
+      CellClaims.fieldsExactly atom ["a", "label"]
+      let label ← (← jField atom "label").getNat?
+      if label >= (← get).length then throw "imported graph label is absent"
+      return [label]
+    else if (← jStr (← jField atom "a")) == "function" then
       let signatures ← (← CellClaims.conjuncts atom).mapM fun a => do
         let (recv, args, result, rest) ← callableShape a
         return (← receiverType recv, ← args.mapM callableType, ← rest.mapM callableType,
@@ -234,6 +239,11 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
   let arms ← (tagged.filter (fun p => p.1 != "record")).mapM fun (_,atom) => do
     let single := Json.mkObj [("top",toJson false),("atoms",toJson [atom])]
     match ← jStr (← jField atom "a") with
+    | "graph" =>
+      CellClaims.fieldsExactly atom ["a", "label"]
+      let label ← (← jField atom "label").getNat?
+      if label >= (← get).length then throw "imported graph label is absent"
+      return [label]
     | "callable" => return [← callableObject atom]
     | "array" | "store" => return [← arrayType atom]
     | "function" => callableType single

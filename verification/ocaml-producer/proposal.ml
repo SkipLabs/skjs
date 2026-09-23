@@ -23,7 +23,13 @@ let literal_type = function
 
 (* Read permissions do not imply write permissions. All candidates still pass
    through reconstructed obligations, including readonly view conversion. *)
-let rec field_type t name = match t with
+let definition imports id args =
+  if args <> [] then unsupported "parameterized imported use needs substitution";
+  match List.find_opt (fun (d:Source.imported_definition) -> d.id=id) imports with
+  | Some d when d.parameters=[] -> d.expression
+  | Some _ -> unsupported "parameterized imported definition needs substitution"
+  | None -> unsupported ("missing imported definition " ^ id)
+let rec field_type imports seen t name = match t with
   | Atoms atoms -> combine (List.map (function
       | Shape {elements=Some _;_} when name="length" -> Atoms [Num]
       | Shape shape -> (match List.find_opt (fun (f:Semantic.field) -> f.name=name) shape.fields with
@@ -31,10 +37,13 @@ let rec field_type t name = match t with
           | None -> (match shape.string_index with
             | Some index -> union index.value (Atoms [Undef])
             | None -> unsupported ("missing field " ^ name)))
+      | Named (id,args) ->
+        if List.mem id seen then unsupported "unguarded imported field cycle";
+        field_type imports (id::seen) (definition imports id args) name
       | _ -> unsupported "field read on non-object") atoms)
-  | Union ts -> combine (List.map (fun t -> field_type t name) ts)
+  | Union ts -> combine (List.map (fun t -> field_type imports seen t name) ts)
   | Rigid _ -> unsupported "field read on rigid parameter"
-let rec index_type receiver key = match receiver with
+let rec index_type imports seen receiver key = match receiver with
   | Atoms atoms -> combine (List.map (function
       | Shape {elements=Some sequence;_} ->
         let at i = if i < 0 then Atoms [Undef]
@@ -49,14 +58,34 @@ let rec index_type receiver key = match receiver with
             else Atoms [Undef]
           | _ -> combine (Atoms [Undef] :: sequence.required @ sequence.optional_elements @ Option.to_list sequence.rest))
       | Shape shape -> (match key with
-          | Atoms [StrLit name] -> field_type (Atoms [Shape shape]) name
+          | Atoms [StrLit name] -> field_type imports seen (Atoms [Shape shape]) name
           | Atoms [Str] -> (match shape.string_index with
               | Some index -> union index.value (Atoms [Undef])
               | None -> unsupported "dynamic string index requires a dictionary")
           | _ -> unsupported "record index requires a string key")
+      | Named (id,args) ->
+        if List.mem id seen then unsupported "unguarded imported index cycle";
+        index_type imports (id::seen) (definition imports id args) key
       | _ -> unsupported "indexed read on non-object") atoms)
-  | Union ts -> combine (List.map (fun t -> index_type t key) ts)
+  | Union ts -> combine (List.map (fun t -> index_type imports seen t key) ts)
   | Rigid _ -> unsupported "indexed read on rigid parameter"
+
+(* A fresh literal may establish the dictionary arm of a recursive expected
+   type. This is a construction hint only: every field still has a source
+   obligation against the declared index contract. Existing objects never
+   gain a dictionary guarantee by this lookup. *)
+let rec dictionary_hint imports seen = function
+  | Atoms atoms ->
+    let choices = List.filter_map (function
+      | Shape ({string_index=Some _;_} as shape) -> Some shape
+      | Named (id,args) when not (List.mem id seen) ->
+        dictionary_hint imports (id::seen) (definition imports id args)
+      | _ -> None) atoms in
+    (match choices with [shape] -> Some shape | _ -> None)
+  | Union parts ->
+    (match List.filter_map (dictionary_hint imports seen) parts with
+    | [shape] -> Some shape | _ -> None)
+  | Rigid _ -> None
 
 (* Branch restrictions only affect immutable values. Unknown/rigid predicates
    conservatively retain their type; proof checking validates each narrower cut. *)
@@ -66,7 +95,7 @@ let restrict literal equal t = match t with
         | Nul,LNull | Undef,LUndefined | True,LBool true | False,LBool false -> Some true
         | NumLit a,LNumber b -> Some (Int64.float_of_bits a = float_of_string b)
         | StrLit a,LString b -> Some (a=b)
-        | (Top | Num | Str | Shape _),_ -> None
+        | (Top | Num | Str | Shape _ | Named _),_ -> None
         | _,_ -> Some false in
       match known with Some result -> result=equal | None -> true) xs)
   | Rigid _ | Union _ -> t
@@ -82,7 +111,7 @@ let rec branch env cond truth = match cond.node with
 
 (* Expected types guide fresh construction only. They are never a shortcut
    claiming that an arbitrary expression already satisfies an annotation. *)
-let infer_function (f:Source.fn) =
+let infer_function imports (f:Source.fn) =
   let entries = ref [] and expressions = ref [] and instantiations = ref [] in
   let arrows = ref [] in
   let entry env span = match Json.list span with
@@ -96,7 +125,10 @@ let infer_function (f:Source.fn) =
     | Arith (_,l,r) -> ignore (expr env l); ignore (expr env r); Atoms [Num]
     | Equality (_,l,r) -> ignore (expr env l); ignore (expr env r); bool
     | Alloc fs ->
-      let contract = match expected with Some (Atoms [Shape s]) when s.elements=None -> Some s | _ -> None in
+      let contract = match expected with
+        | Some (Atoms [Shape s]) when s.elements=None -> Some s
+        | Some expected -> dictionary_hint imports [] expected
+        | None -> None in
       let fields = List.map (fun (name,e) ->
         let hint = Option.bind contract (fun s -> List.find_opt (fun (f:Semantic.field) -> f.name=name) s.fields) in
         let expected = match contract with
@@ -118,8 +150,8 @@ let infer_function (f:Source.fn) =
       (match contract with
         | Some s -> array s
         | None -> array {required=[];optional_elements=[];rest=Some (widen (combine types));readonly=false})
-    | Read (e,n) -> field_type (expr env e) n
-    | Index (e,key) -> let receiver=expr env e in let key=expr env key in index_type receiver key
+    | Read (e,n) -> field_type imports [] (expr env e) n
+    | Index (e,key) -> let receiver=expr env e in let key=expr env key in index_type imports [] receiver key
     | IndexWrite (receiver,key,rhs) -> ignore (expr env receiver); ignore (expr env key); expr env rhs
     | Write (receiver,_,rhs) -> ignore (expr env receiver); expr env rhs
     | Assign (n,rhs) -> (match lookup env n with
@@ -395,4 +427,4 @@ let infer_function (f:Source.fn) =
   ignore (statements (List.map (fun (n,t) -> n,Value t) f.params) f.body);
   {source=f;entries=List.rev !entries;expressions=List.rev !expressions;
    arrows=List.rev !arrows}
-let infer program = {program;functions=List.map infer_function program.Source.functions}
+let infer program = {program;functions=List.map (infer_function program.Source.imports) program.Source.functions}

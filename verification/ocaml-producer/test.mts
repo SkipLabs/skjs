@@ -29,6 +29,7 @@ const here = import.meta.dirname;
   assert.equal(parseFile(source).functions[0]?.name, "after");
 }
 let pinnedImportDocument: ImportDocument | null = null;
+let recursiveJson = "";
 // The framework fixture is the upstream source, including its imports and
 // classes. A simplified replacement must not quietly inherit its census row.
 for (const [file, expected] of [
@@ -188,9 +189,20 @@ for (const [file, expected] of [
   assert.deepEqual(lookup.params[0]?.type.atoms[0], { a: "alias", name: "JsonObject", args: [] });
   assert(lookup.retType.atoms.some(atom => atom.a === "alias" && atom.name === "Json"));
   const checkedJson = check(jsonPath, { modules, config });
-  assert.equal(checkedJson.status, "unsupported");
-  assert.equal(checkedJson.phase, "proposal");
-  assert.match(checkedJson.detail, /imported type definitions need a certified graph interpretation/);
+  recursiveJson = checkedJson.artifacts;
+  assert.equal(checkedJson.status, "verified", JSON.stringify(checkedJson));
+  assert.equal(checkedJson.phase, "check");
+  assert.deepEqual(checkedJson.functions, ["nest", "lookup"]);
+  for (const [file, name] of [
+    ["invalid-recursive-json-member", "invalidMember"],
+    ["invalid-recursive-json-missing", "missingKey"],
+  ] as const) {
+    const rejected = check(resolve(here, `examples/${file}.ts`), { modules, config });
+    assert.equal(rejected.status, "unverified", `${name}: ${JSON.stringify(rejected)}`);
+    assert.equal(rejected.phase, "search");
+    assert.match(rejected.detail, /evidence search failed/);
+  }
+  process.stdout.write("pinned Json imports: 2 functions verified; 2 negative controls\n");
   const checkedFragment: unknown = JSON.parse(readFileSync(join(checkedJson.artifacts,
     "fragment.json"), "utf8"));
   assert.ok(checkedFragment && typeof checkedFragment === "object" &&
@@ -399,12 +411,50 @@ const invoke = (claims: string, evidence: string, artifacts = good,
 };
 const fragment: unknown = JSON.parse(readFileSync(join(good, "fragment.json"), "utf8"));
 assert.ok(fragment && typeof fragment === "object" && !Array.isArray(fragment));
+assert.ok("file" in fragment && typeof fragment.file === "string");
+{
+  const forged = structuredClone(fragment);
+  assert.ok("functions" in forged && Array.isArray(forged.functions));
+  const first: unknown = forged.functions[0];
+  assert.ok(first && typeof first === "object" && "retType" in first);
+  first.retType = { top: false, atoms: [{ a: "graph", label: 4 }] };
+  const ast = join(good, "raw-graph-conversion.json");
+  const claims = join(good, "empty-native-claims.json");
+  writeFileSync(ast, JSON.stringify(forged));
+  writeFileSync(claims, "[]");
+  const converted = spawnSync(verifier,
+    ["--export-source-claims", ast, claims, fragment.file], { encoding: "utf8" });
+  assert.equal(converted.status, 1);
+  assert.match(converted.stderr, /source cannot state an internal graph label/);
+  process.stdout.write("raw graph label at native conversion: refused\n");
+}
 const forgedImport = join(good, "forged-import.json");
 writeFileSync(forgedImport, JSON.stringify({ ...fragment,
   imports: must(pinnedImportDocument, "the pinned Json import document") }));
 assert.match(invoke(join(good, "claims.json"), join(good, "evidence.json"), good,
-  forgedImport), /imported type definitions have no certified graph interpretation/);
+  forgedImport), /imported graph rows are missing/);
 process.stdout.write("forged import closure: refused\n");
+{
+  const claims: SourceClaims = JSON.parse(readFileSync(join(recursiveJson, "claims.json"), "utf8"));
+  assert.deepEqual(claims.types[4], []);
+  claims.types[4] = ["top"];
+  const forged = join(recursiveJson, "forged-imported-row.json");
+  writeFileSync(forged, JSON.stringify(claims));
+  assert.match(invoke(forged, join(recursiveJson, "evidence.json"), recursiveJson),
+    /producer supplied an imported declaration equation/);
+  process.stdout.write("producer-authored imported equation: refused\n");
+}
+{
+  const ast = readFileSync(join(recursiveJson, "fragment.json"), "utf8");
+  const original = '{"a":"alias","name":"Json","args":[]}';
+  assert.ok(ast.includes(original));
+  const forged = join(recursiveJson, "forged-internal-label.json");
+  writeFileSync(forged, ast.replace(original, '{"a":"graph","label":4}'));
+  assert.match(invoke(join(recursiveJson, "claims.json"),
+    join(recursiveJson, "evidence.json"), recursiveJson, forged),
+    /source cannot state an internal graph label/);
+  process.stdout.write("source-authored internal graph label: refused\n");
+}
 const extraField = join(good, "extra-ast-field.json");
 writeFileSync(extraField, JSON.stringify({ ...fragment, unexamined: true }));
 assert.match(invoke(join(good, "claims.json"), join(good, "evidence.json"), good,

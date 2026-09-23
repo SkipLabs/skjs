@@ -6,9 +6,20 @@ open Proposal
 let unsupported s = fail ("unsupported: " ^ s)
 let encode (proposal : Proposal.t) =
   (* The graph is just the existing SourceClaims wire format, interned structurally. *)
-  let rows = ref [Array [String "nul"]; Array [Object ["boolLit",Object ["value",Bool true]]];
-                  Array [Object ["boolLit",Object ["value",Bool false]]]; Array [String "undef"]]
+  (* Empty reserved rows are references, never producer-authored equations.
+     Lean replaces them from the snapshotted declarations before extraction. *)
+  let imports = proposal.program.imports in
+  let rows = ref ([Array [String "nul"]; Array [Object ["boolLit",Object ["value",Bool true]]];
+                   Array [Object ["boolLit",Object ["value",Bool false]]]; Array [String "undef"]]
+                  @ List.map (fun _ -> Array []) imports)
   in
+  let imported_label id args =
+    if args <> [] then unsupported "parameterized imported graph needs substitution";
+    let rec find i = function
+      | [] -> unsupported ("unknown imported declaration " ^ id)
+      | (d:Source.imported_definition)::rest ->
+        if d.id=id then i+4 else find (i+1) rest in
+    find 0 imports in
   let intern row =
     let rec find n = function [] -> rows := !rows @ [row]; n
       | r::rs -> if r=row then n else find (n+1) rs in find 0 !rows
@@ -21,6 +32,7 @@ let encode (proposal : Proposal.t) =
     | NumLit bits -> intern (Array [Object ["numLit",Object ["bits",String (Printf.sprintf "%Lu" bits)]]])
     | StrLit value -> intern (Array [Object ["strLit",Object ["value",String value]]])
     | Top -> intern (Array [String "top"])
+    | Named (id,args) -> imported_label id args
     | Shape shape ->
       let writes,reads = List.partition (fun (f:Semantic.field) -> f.write <> None) shape.fields in
       let fields writable fs = Array (List.map (fun (f:Semantic.field) ->
@@ -66,27 +78,28 @@ let encode (proposal : Proposal.t) =
   (* A callable whose signature mentions a rigid parameter has no graph row:
      it is exported in the scheme form, with its own binders (possibly none),
      so a returned closure can retain an outer binder in its result. *)
-  let rec contains_rigid = function
+  let rec contains_symbolic = function
     | Rigid _ -> true
-    | Union ts -> List.exists contains_rigid ts
+    | Union ts -> List.exists contains_symbolic ts
     | Atoms atoms -> List.exists (function
+        | Named (_,args) -> List.exists contains_symbolic args
         | Shape s ->
-          List.exists (fun (f:Semantic.field) -> contains_rigid f.read
-            || Option.fold ~none:false ~some:contains_rigid f.write) s.fields
+          List.exists (fun (f:Semantic.field) -> contains_symbolic f.read
+            || Option.fold ~none:false ~some:contains_symbolic f.write) s.fields
           || Option.fold ~none:false ~some:(fun (i:Semantic.index_signature) ->
-              contains_rigid i.value || Option.fold ~none:false ~some:contains_rigid i.writable) s.string_index
+              contains_symbolic i.value || Option.fold ~none:false ~some:contains_symbolic i.writable) s.string_index
           || List.exists (fun (a:Semantic.signature) ->
-              List.exists contains_rigid (a.receiver :: a.result :: a.params @ Option.to_list a.variadic)
+              List.exists contains_symbolic (a.receiver :: a.result :: a.params @ Option.to_list a.variadic)
               || List.exists (fun (q:Semantic.quantifier) ->
-                  Option.fold ~none:false ~some:contains_rigid q.bound) a.quantified) s.calls
+                  Option.fold ~none:false ~some:contains_symbolic q.bound) a.quantified) s.calls
           || (match s.elements with None -> false | Some e ->
-              List.exists contains_rigid (e.required @ e.optional_elements @ Option.to_list e.rest))
+              List.exists contains_symbolic (e.required @ e.optional_elements @ Option.to_list e.rest))
         | _ -> false) atoms
   in
   let rec claim_type = function
     | Rigid n -> Object ["param",String n.spelling]
     | Atoms [Shape {fields=[];string_index=None;calls=[signature];elements=None}]
-        when signature.quantified <> [] || List.exists contains_rigid
+        when signature.quantified <> [] || List.exists contains_symbolic
           (signature.receiver :: signature.result :: signature.params @ Option.to_list signature.variadic) ->
       let type_params = Array (List.map (fun (q:Semantic.quantifier) -> Object [
         "name",String q.identity.spelling;
@@ -99,14 +112,14 @@ let encode (proposal : Proposal.t) =
         "result",claim_type signature.result]]
     | Atoms [Shape {fields=[];string_index=None;calls=[];elements=Some
         {required=[];optional_elements=[];rest=Some element;readonly=false}}]
-        when contains_rigid element -> Object ["array",claim_type element]
-    | Atoms (_::_::_ as atoms) when contains_rigid (Atoms atoms) ->
-      let rigid, ground = List.partition (fun a -> contains_rigid (Atoms [a])) atoms in
+        when contains_symbolic element -> Object ["array",claim_type element]
+    | Atoms (_::_::_ as atoms) when contains_symbolic (Atoms atoms) ->
+      let rigid, ground = List.partition (fun a -> contains_symbolic (Atoms [a])) atoms in
       let parts = List.map (fun a -> Atoms [a]) rigid @
         (if ground=[] then [] else [Atoms ground]) in
       Object ["union", Array (List.map claim_type parts)]
-    | Union ts when List.exists contains_rigid ts ->
-      let rigid, ground = List.partition contains_rigid ts in
+    | Union ts when List.exists contains_symbolic ts ->
+      let rigid, ground = List.partition contains_symbolic ts in
       Object ["union", Array (List.map claim_type (rigid @ ground))]
     | (Atoms _ | Union _) as t -> labels t
   in

@@ -65,8 +65,9 @@ language. The boundaries are:
 
 1. `source.ml` decodes the shared Fragment into typed OCaml data. It preserves
    source positions, declared contracts, and quantified parameters with bounds.
-   Alias substitution uses a fresh parameter environment, retaining the scoped
-   identities of its actual arguments; recursive expansion is explicitly refused.
+   Local alias substitution uses a fresh parameter environment, retaining the scoped
+   identities of its actual arguments. Imported recursive aliases retain named
+   declaration identities; the producer never expands their equations.
    Unsupported constructs fail explicitly. It does not lower JavaScript into a
    second calculus; existing Lean lowering owns that step.
 2. `semantic.ml` describes immutable semantic types. Rigid binder identity
@@ -96,8 +97,10 @@ language. The boundaries are:
    validated by the existing control-flow checker. Declared types are candidates to prove, not proof that their bodies satisfy
    them. There is no second, approximate subtype relation used for acceptance.
 5. `claims.ml` serializes those candidates into the existing producer-neutral
-   SourceClaims protocol. Graph interning is local to one document. Graph
-   labels are an export detail, not type-variable identities.
+   SourceClaims protocol. It reserves empty rows for imported declaration
+   identities. Lean alone fills those rows from the source equations; OCaml
+   cannot supply a competing interpretation. Graph interning is local to one
+   document. Graph labels are an export detail, not type-variable identities.
 6. `check.mts` freezes source bytes, runs the parser and OCaml producer, asks Lean
    to reconstruct obligations and produce evidence, then invokes the independent
    evidence consumer. Every source function must be covered. Acceptance is
@@ -479,7 +482,7 @@ callables from the pinned syntax, so the coverage denominator cannot drift.
 
 ### Cross-file recursive `Json` milestone
 
-**Status: open.** The concrete target is to verify small source functions that
+**Status: partly implemented.** The concrete target is to verify small source functions that
 import and use the *actual* `Json` declaration at the pinned upstream revision,
 then use the same contract in `Mapper` bounds. Passing a locally rewritten or
 nonrecursive approximation of `Json` does not close this milestone. This is a
@@ -501,35 +504,43 @@ Other declaration kinds and type-binding forms still refuse explicitly. The
 Fragment document now has one required `imports` slot, emitted empty by the
 source parser. The collector can assemble both real `Json` imports into that
 shared slot with deduplicated declaration equations, module bytes, route
-fingerprints, and the `prebuild.mjs` mapping bytes. The OCaml suite submits
-this actual document as a forged Fragment and confirms Lean refuses it. The
-trusted parser also fills the slot for named type-only imports when its caller
-supplies an explicit, fingerprinted module universe; a source-only client test
-checks the real `Json` route. The CLI and OCaml driver do not yet supply that
-universe. The parser represents imported references in function annotations as
-alias atoms whose local spellings resolve through the declaration-identified
-import roots; its test parses both functions in the actual `recursive-json.ts`
-with an explicit universe. Exported source functions are accepted as strict
-module code. The programmatic OCaml driver now accepts that universe, stores
-the resulting Fragment, and reaches an explicit producer refusal: imported
-definitions still need a certified graph interpretation. Its ordinary CLI
-invocation supplies no universe. Lean requires the exact document shape and
-refuses every nonempty
-import document until a certified graph interpretation exists. This does not
-change verification coverage or admit imports at the verifier. The
-[`recursive-json.ts`](examples/recursive-json.ts)
-source is a named suite/viewer gap there: both functions remain unchecked.
+fingerprints, and the `prebuild.mjs` mapping bytes. The trusted parser fills
+the slot for named type-only imports when its caller supplies an explicit,
+fingerprinted module universe. The parser represents imported references in
+function annotations as alias atoms whose local spellings resolve through the
+declaration-identified roots. Exported source functions are accepted as strict
+module code. With that universe, both `nest` and `lookup` in
+[`recursive-json.ts`](examples/recursive-json.ts) now reach Lean evidence
+production and checking and verify. Two invalid clients using the same pinned
+universe reach search and fail: a non-JSON dictionary member and a missing-key
+read without `undefined`. OCaml reserves empty rows for imported declarations;
+Lean derives and fills their equations from the Fragment's source-type
+expressions. The suite refuses producer-filled rows and source-authored internal
+graph labels. The ordinary CLI and viewer still do not supply a module universe,
+so their `recursive-json.ts` entry remains an explicit source gap. This is
+conditional verification relative to the trusted import document, not closure
+of the full milestone.
+
+OCaml also reads the same source-type expressions to choose useful candidates
+for fresh literals, including a dictionary candidate for `{ child: ... }`.
+That inspection has no authority over the imported graph: a wrong hint can
+lose a proof or propose a false claim, but Lean derives the graph equation and
+checks every field obligation independently. This keeps candidate search from
+becoming a second implementation of the imported type's meaning.
 
 The import document is self-contained for the collected declaration equations
-and their source bytes, but **not yet for route authority**. The resolver's
+and their source bytes, but **not yet for independently checked source or route
+authority**. The TypeScript parser and resolver are trusted to derive equations
+from the supplied source bytes; Lean interprets those equations but does not
+reparse TypeScript or recompute the recorded SHA-256 fingerprints. The resolver's
 package map and workspace links are caller-supplied; hashing `package.json`
 and `prebuild.mjs` in the fixture test does not prove that the entries in a
-later request were derived from those files. Before any nonempty import document
-is accepted, the independent check must either reconstruct those route facts
-from snapshotted package and mapping bytes or expose them as explicit external
-assumptions in the acceptance theorem and report. A matching hash on a route
-chosen by the caller is insufficient. The current OCaml and Lean refusals keep
-this boundary closed.
+later request were derived from those files. The present successful result is
+therefore relative to the explicit, pinned module universe supplied by the
+test. Independent source and route reconstruction, or explicit assumptions in
+the acceptance theorem and viewer report, remain necessary before presenting
+it as verification of arbitrary resolved TypeScript imports. A matching hash
+on a route chosen by the caller is insufficient.
 
 `core/src/api.ts` imports `Json`, `JsonObject` and `DepSafe` from
 `../skiplang-json/index.js`. In the Skip checkout, `prebuild.mjs` makes
@@ -566,7 +577,8 @@ readonly-view roles. The mixed `readMixed` example checks a computed key;
 `invalid-mixed-index-read.ts` checks absence even when another field is
 required. Mixed-literal construction and a precise read of a named field from
 such a contract remain outside this slice. The graph's `dict` clause supports
-recursive index operands, but this slice does not yet import `Json`.
+recursive index operands; the explicit-universe `Json` example above now
+exercises that path.
 
 Implementation checkpoints, in dependency order:
 

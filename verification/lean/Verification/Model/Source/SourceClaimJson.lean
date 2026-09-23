@@ -1,4 +1,5 @@
 import Verification.Model.Source.SourceExtraction
+import Verification.Model.Source.ImportedGraph
 import Verification.Model.Types.TypeSchemes
 
 /-! Strict producer-independent sidecars. A document carries its own type table,
@@ -765,6 +766,9 @@ def extractPlans (ast claims : Json) (fileKey : String) : Except String (List Fu
   let d ← decode claims
   if d.file != fileKey || (← jStr (← jField ast "file")) != fileKey then throw "source claim file identity mismatch"
   if (← jStr (← jField ast "sourceSha256")) != d.sourceSha256 then throw "source claim fingerprint mismatch"
+  let (ast, types) ← ImportedGraph.prepare ast d.types
+  let d := { d with types }
+  if !validTable d.types then throw "imported graph has an invalid type reference"
   let aliases ← GenericAlias.decodeAliases ast
   for a in aliases do GenericAlias.admit a
   let decoded ← Fragment.decodeAstWithParams ast
