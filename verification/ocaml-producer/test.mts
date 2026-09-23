@@ -209,7 +209,13 @@ for (const [file, expected] of [
     "export type BoundedDefault<T extends boolean = boolean> = { readonly value: T };\n";
   const inheritedGeneric =
     "export interface GenericDerived<T> extends GenericBox<T> { readonly label: string; }\n";
-  writeFileSync(join(pairDir, "box.ts"), box + genericShapes + inheritedGeneric);
+  const literalShapes =
+    "export type Flag = true;\n" +
+    "export type Kind = \"on\";\n" +
+    "export type Overload = ((x: boolean) => number) & ((x: number) => boolean);\n" +
+    "export type Both = { readonly a: boolean } & { readonly b: number };\n";
+  writeFileSync(join(pairDir, "box.ts"),
+    box + genericShapes + inheritedGeneric + literalShapes);
   const globalText = "interface GlobalBox { readonly flag: boolean; }\n";
   writeFileSync(join(pairDir, "global.d.ts"), globalText);
   const pairConfig = join(pairDir, "tsconfig.json");
@@ -354,6 +360,27 @@ for (const [file, expected] of [
   const groundCall = parity("ground-call", callableLocal, callableImported,
     "export function applyGround(f: GenericCallable<boolean>): boolean { return f(true); }\n");
   assert.equal(groundCall.status, "verified", JSON.stringify(groundCall));
+  // Literal and intersection equations agree too. A nullary declaration
+  // whose row equals an annotation's row is the same type.
+  const literalLocal = 'type Flag = true;\ntype Kind = "on";\n' +
+    "type Overload = ((x: boolean) => number) & ((x: number) => boolean);\n";
+  const literalImported = 'import type { Flag, Kind, Overload } from "@fixture/box";\n';
+  const literals = parity("literals", literalLocal, literalImported,
+    "export function keepFlag(f: Flag): true { return f; }\n" +
+    'export function keepKind(k: Kind): "on" { return k; }\n' +
+    "export function callOver(f: Overload): number { return f(true); }\n");
+  assert.equal(literals.status, "verified", JSON.stringify(literals));
+  const wrongLiteral = parity("wrong-literal", literalLocal, literalImported,
+    "export function badFlag(f: Flag): false { return f; }\n");
+  assert.equal(wrongLiteral.status, "unverified", JSON.stringify(wrongLiteral));
+  assert.equal(wrongLiteral.phase, "search");
+  // A record intersection needs graph conjunction the producer lacks.
+  const recordMeet = parity("record-meet",
+    "type Both = { readonly a: boolean } & { readonly b: number };\n",
+    'import type { Both } from "@fixture/box";\n',
+    "export function readBoth(x: Both): number { return x.b; }\n");
+  assert.equal(recordMeet.status, "unsupported", JSON.stringify(recordMeet));
+  assert.match(recordMeet.detail, /declaration intersection needs source graph conjunction/);
   const badInheritedClient = join(pairDir, "bad-inherited-client.ts");
   writeFileSync(badInheritedClient,
     'import type { GenericDerived } from "@fixture/box";\n' +

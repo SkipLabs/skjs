@@ -94,10 +94,32 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     | "unknown" | "void" => return [← use .top]
     | "never" => return []
     | _ => throw "unsupported imported primitive"
+  | "literal" =>
+    CellClaims.fieldsExactly term ["k", "name", "text", "span"]
+    -- The same literal rules as an annotation's literal atom.
+    let atom ← match ← str term "name" with
+      | "true" => pure (Json.mkObj [("a", toJson "booleanlit"), ("v", toJson "true")])
+      | "false" => pure (Json.mkObj [("a", toJson "booleanlit"), ("v", toJson "false")])
+      | "number" => pure (Json.mkObj [("a", toJson "numberlit"), ("v", ← field term "text")])
+      | "string" => pure (Json.mkObj [("a", toJson "stringlit"), ("v", ← field term "text")])
+      | _ => throw "unsupported declaration literal"
+    Fragment.translate (Json.mkObj [("top", toJson false), ("atoms", toJson [atom])])
   | "union" =>
     let parts ← arr term "parts"
     let arms ← parts.mapM (lowerType ds owner params seen)
     return arms.toList.flatten.eraseDups.mergeSort (· ≤ ·)
+  | "intersection" =>
+    -- The positive meet of the operands' clauses: record operands on one
+    -- object, function operands as one overloaded callable.
+    let parts ← arr term "parts"
+    let rows ← parts.mapM fun part => do
+      let labels ← lowerType ds owner params seen part
+      let table ← get
+      return labels.flatMap (SourceTypes.graph table)
+    let some first := rows[0]? | throw "empty declaration intersection"
+    let meet := rows.toList.drop 1 |>.foldl PositiveNormalization.meetLists first
+    if meet.isEmpty then throw "declaration intersection has no representable clause"
+    return [← SourceTypes.useRow meet]
   | "parameter" =>
     CellClaims.fieldsExactly term ["k", "index", "span"]
     let i ← (← field term "index").getNat?

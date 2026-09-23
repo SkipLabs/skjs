@@ -64,6 +64,14 @@ abbrev Lowering := StateT Table (Except String)
 def use (c : Clause (List Nat)) : Lowering Nat :=
   modifyGet fun T => let T' := intern T c; (label T' c, T')
 
+/-- A type with each label replaced by the first row of the same content.
+Rows with identical clauses denote the same type: a declaration's row and an
+annotation's row can coincide without being the same label, for instance when
+a producer interned the annotation before the declaration row was filled. -/
+def canonical (T : Table) (A : List Nat) : List Nat :=
+  (A.map fun label => (List.range T.length).find? (fun m => T[m]? == T[label]?) |>.getD label)
+    |>.eraseDups.mergeSort (· ≤ ·)
+
 /-- Intern a finite union as one graph row. It remains a union of its clauses;
 this does not make it an intersection or assert a producer equation. -/
 def useRow (row : List (Clause (List Nat))) : Lowering Nat :=

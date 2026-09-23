@@ -307,9 +307,11 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         if (literal.kind === ts.SyntaxKind.TrueKeyword || literal.kind === ts.SyntaxKind.FalseKeyword)
           return { k: "literal", name: literal.kind === ts.SyntaxKind.TrueKeyword ? "true" : "false",
             text: literal.getText(source), span: pos };
+        // The literal's value, as an annotation's literal atom records it:
+        // a string without its quotes, a number as its decimal spelling.
         if (ts.isStringLiteral(literal) || ts.isNumericLiteral(literal))
           return { k: "literal", name: ts.isStringLiteral(literal) ? "string" : "number",
-            text: literal.getText(source), span: pos };
+            text: literal.text, span: pos };
       }
       if (ts.isTypeLiteralNode(part)) {
         return parseMembers(part.members, pos, false);

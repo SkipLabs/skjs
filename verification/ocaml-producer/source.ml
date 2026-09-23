@@ -205,7 +205,13 @@ let rec imported_type owner parameters j =
     (match List.nth_opt parameters index with
     | Some identity -> Rigid identity
     | None -> fail "imported parameter index outside declaration")
-  | "intersection" -> unsupported "imported intersection needs source graph conjunction"
+  | "intersection" ->
+    (* Function operands are one overloaded callable; other operands need the
+       source graph's conjunction, which the proposal does not model. *)
+    let calls = List.concat_map (fun part -> match imported_type owner parameters part with
+      | Atoms [Shape {fields=[];string_index=None;calls;elements=None}] when calls <> [] -> calls
+      | _ -> unsupported "declaration intersection needs source graph conjunction") (items "parts" j) in
+    Atoms [Shape {fields=[];string_index=None;calls;elements=None}]
   | k -> unsupported ("imported type expression " ^ k)
 let rec expr binders j =
   let sub k = expr binders (field k j) in

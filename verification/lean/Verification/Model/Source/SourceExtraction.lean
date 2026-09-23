@@ -2728,10 +2728,12 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
     for ((p, A), (name, claimed)) in (f.params.zip bindings).zip fc.params do
       if p.name != name then throw "parameter claim name or order mismatch"
       let B ← SourceClaims.resolve (← table).length claimed
-      if A != B then throw s!"claimed parameter type differs from the source annotation for '{name}'"
+      let T ← table
+      if SourceTypes.canonical T A != SourceTypes.canonical T B then
+        throw s!"claimed parameter type differs from the source annotation for '{name}'"
     let R ← lower (Fragment.translate f.ret)
     let claimedR ← SourceClaims.resolve (← table).length fc.ret
-    if R != claimedR then
+    if SourceTypes.canonical (← table) R != SourceTypes.canonical (← table) claimedR then
       throw (locatedRefusal (← table) f.namePos .returnContract
         "claimed return type differs from the source annotation")
     let stmts ← f.body.mapM (comparisonsStmt fc)
