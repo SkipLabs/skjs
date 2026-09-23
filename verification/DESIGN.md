@@ -730,7 +730,7 @@ modeling choices; they do not replace proof.
 - For imported types, the source resolver's declaration identities and source
   bytes are cross-checked against TypeScript's checker in a separate project
   instance. This assumes the snapshot `tsconfig.json` (including its source
-  package mappings) reflects the real upstream build, and trusts TypeScript's
+  package mappings and loaded standard-library set) reflects the real upstream build, and trusts TypeScript's
   own resolution. The Lean theorem does not validate the recorded import or
   mapping hashes; they are provenance, not proof of that assumption.
 - Source and claim translation preserve intended control flow, lexical binding,

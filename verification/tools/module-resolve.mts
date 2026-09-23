@@ -1,7 +1,7 @@
-/** Resolve a named import to the declaration it actually denotes. This is
- * source provenance, not a proof of the imported declaration's contract. The
- * caller supplies an explicit source module universe: an absent or
- * ambiguous edge is an error, never an ambient TypeScript declaration. */
+/** Resolve a named import or configured global to its source declaration.
+ * This is provenance, not a proof of the declaration's contract. The caller
+ * supplies an explicit source universe: an absent or ambiguous edge is an
+ * error, never an unexamined ambient TypeScript declaration. */
 import { createHash } from "node:crypto";
 import { posix } from "node:path";
 import * as ts from "typescript/unstable/ast";
@@ -17,10 +17,37 @@ export type ModuleSource = {
 };
 export type ResolutionConfig = {
   packages: ReadonlyMap<string, string>;
+  /** Declaration files loaded as globals by the configured TypeScript project. */
+  globals: ReadonlySet<string>;
   /** Exact workspace links, justified by a pinned file such as prebuild.mjs. */
   links: ReadonlyMap<string, MappingStep>;
   mappingSources: ReadonlyMap<string, string>;
 };
+
+/** Resolve a bare type name against configured global declaration files. The
+ * source scan chooses the candidate; the separate checker must confirm its
+ * exact declaration identity before the closure can be used. */
+export function resolveGlobalType(
+  name: string,
+  modules: readonly ModuleSource[],
+  config: ResolutionConfig,
+): { declaration: DeclarationIdentity; route: ResolvedImport["route"] } | null {
+  const universe = new Map(modules.map(module => [module.id, module]));
+  const found: { declaration: DeclarationIdentity; route: ResolvedImport["route"] }[] = [];
+  for (const id of config.globals) {
+    const module = universe.get(id);
+    if (!module) throw Error(`global module not supplied: ${id}`);
+    for (const statement of module.source.statements) {
+      if (!(ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement)) ||
+          statement.name.text !== name) continue;
+      found.push({ declaration: { module: id, name,
+        span: [statement.getStart(module.source), statement.end], capability: "type" },
+        route: [{ module: id, sha256: module.sha256 }] });
+    }
+  }
+  if (found.length > 1) throw Error(`ambiguous global type ${name}`);
+  return found[0] ?? null;
+}
 
 function exported(statement: { modifiers?: readonly { kind: number }[] }): boolean {
   return statement.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword) === true;

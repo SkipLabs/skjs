@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { openText, parseFile, definedClassCallables, close as closeParser } from "../tools/fragment-parse.mts";
 import { moduleEdges } from "../tools/module-deps.mts";
-import { resolveNamedImports, resolveModuleImport } from "../tools/module-resolve.mts";
+import { resolveGlobalType, resolveNamedImports, resolveModuleImport } from "../tools/module-resolve.mts";
 import { loadImportUniverseFromProject } from "../tools/import-universe-project.mts";
 import { crossCheckImports, crossCheckResolvedBindings } from "../tools/import-crosscheck.mts";
 import { collectImportDocument, collectTypeClosure } from "../tools/module-closure.mts";
@@ -88,8 +88,11 @@ for (const [file, expected] of [
   ]);
   const mapperRoot = must(resolved.find(r => r.binding.local === "Mapper"),
     "Mapper import");
+  const iterable = resolveGlobalType("Iterable", modules, config);
+  assert.equal(iterable?.declaration.module, "typescript/lib/lib.es2015.iterable.d.ts");
+  assert.equal(iterable?.declaration.name, "Iterable");
   assert.throws(() => collectTypeClosure(mapperRoot, modules, config),
-    /unresolved type reference core\/src\/api.ts#Iterable/);
+    /type argument arity: typescript\/lib\/lib.es2015.iterable.d.ts#Iterable/);
   crossCheckResolvedBindings(openText(source, readFileSync(source, "utf8")), resolved,
     modules, source, importUniverse.tsconfigPath);
   const wrongMapper = structuredClone(resolved);
@@ -281,6 +284,7 @@ for (const [file, expected] of [
   const barrel = "export type { A } from './a.js';\n";
   writeFileSync(join(pairDir, "barrel.ts"), barrel);
   const box = "export interface Box { readonly flag: boolean; }\n" +
+    "export interface FromGlobal { readonly item: GlobalBox; }\n" +
     "export interface Node { readonly next: Node | null; }\n" +
     "export interface CallableBox { readonly invoke: (value: number) => boolean; }\n" +
     "export interface WithMethod { read(): boolean; }\n" +
@@ -290,6 +294,8 @@ for (const [file, expected] of [
     "export interface OptionalMethod { read(value?: boolean): boolean; }\n" +
     "export interface Derived extends Box { readonly label: string; }\n";
   writeFileSync(join(pairDir, "box.ts"), box);
+  const globalText = "interface GlobalBox { readonly flag: boolean; }\n";
+  writeFileSync(join(pairDir, "global.d.ts"), globalText);
   writeFileSync(join(pairDir, "tsconfig.json"), JSON.stringify({
     compilerOptions: { strict: true, noEmit: true, module: "Node16",
       moduleResolution: "Node16", paths: { "@fixture/a": ["./a.ts"],
@@ -306,10 +312,12 @@ for (const [file, expected] of [
       source: openText(join(pairDir, "barrel.ts"), barrel) },
     { id: "fixture/box.ts", sha256: createHash("sha256").update(box).digest("hex"),
       source: openText(join(pairDir, "box.ts"), box) },
+    { id: "fixture/global.d.ts", sha256: createHash("sha256").update(globalText).digest("hex"),
+      source: openText(join(pairDir, "global.d.ts"), globalText) },
   ];
   const pairClient = "import type { A } from '@fixture/a';";
   const pairConfig = { packages: new Map([["@fixture/a", "fixture/a.ts"]]),
-    links: new Map(), mappingSources: new Map() };
+    globals: new Set<string>(), links: new Map(), mappingSources: new Map() };
   const pairRoot = resolveNamedImports(openText(join(pairDir, "client.ts"), pairClient),
     pair, pairConfig)[0];
   assert.ok(pairRoot);
@@ -336,20 +344,40 @@ for (const [file, expected] of [
     ["fixture/barrel.ts", "fixture/a.ts"]);
   const boxClient = join(pairDir, "box-client.ts");
   writeFileSync(boxClient,
-    'import type { Box, Node, CallableBox, WithMethod, WithMethodAlias } from "@fixture/box";\n' +
+    'import type { Box, FromGlobal, Node, CallableBox, WithMethod, WithMethodAlias } from "@fixture/box";\n' +
     'export function readBox(box: Box): boolean { return box.flag; }\n' +
+    'export function readGlobal(box: FromGlobal): boolean { return box.item.flag; }\n' +
     'export function nextNode(node: Node): Node | null { return node.next; }\n' +
     'export function invokeBox(box: CallableBox): boolean { return box.invoke(1); }\n' +
     'export function callMethod(box: WithMethod): boolean { return box.read(); }\n' +
     'export function callMethodAlias(box: WithMethodAlias): boolean { return box.read(); }\n');
-  const boxConfig = { ...pairConfig, packages: new Map([
+  const boxConfig = { ...pairConfig, globals: new Set(["fixture/global.d.ts"]), packages: new Map([
     ["@fixture/box", "fixture/box.ts"]]) };
   const boxUniverse = { modules: pair, config: boxConfig,
     tsconfigPath: join(pairDir, "tsconfig.json") };
   const checkedBox = check(boxClient, boxUniverse);
   assert.equal(checkedBox.status, "verified", JSON.stringify(checkedBox));
   assert.deepEqual(checkedBox.functions,
-    ["readBox", "nextNode", "invokeBox", "callMethod", "callMethodAlias"]);
+    ["readBox", "readGlobal", "nextNode", "invokeBox", "callMethod", "callMethodAlias"]);
+  const boxAst = parseFile(boxClient, false, boxUniverse);
+  assert.equal(boxAst.imports.definitions.find(d => d.declaration.name === "GlobalBox")?.
+    declaration.module, "fixture/global.d.ts");
+  const alteredGlobalText = globalText.replace("boolean", "unknown");
+  const alteredGlobalModules = pair.map(m => m.id === "fixture/global.d.ts" ? {
+    ...m, source: openText(m.source.fileName, alteredGlobalText),
+    sha256: createHash("sha256").update(alteredGlobalText).digest("hex"),
+  } : m);
+  assert.throws(() => crossCheckImports(openText(boxClient,
+    readFileSync(boxClient, "utf8")), boxAst.imports, alteredGlobalModules,
+    boxClient, boxUniverse.tsconfigPath),
+  /TypeScript source bytes differ for fixture\/global.d.ts/);
+  const duplicateGlobal = "interface GlobalBox { readonly other: number; }\n";
+  const secondGlobal = { id: "fixture/other-global.d.ts",
+    sha256: createHash("sha256").update(duplicateGlobal).digest("hex"),
+    source: openText(join(pairDir, "other-global.d.ts"), duplicateGlobal) };
+  assert.throws(() => resolveGlobalType("GlobalBox", [...pair, secondGlobal],
+    { ...boxConfig, globals: new Set(["fixture/global.d.ts", secondGlobal.id]) }),
+  /ambiguous global type GlobalBox/);
   const badBoxClient = join(pairDir, "bad-box-client.ts");
   writeFileSync(badBoxClient,
     'import type { Box } from "@fixture/box";\n' +
@@ -441,7 +469,7 @@ for (const [file, expected] of [
     sha256: createHash("sha256").update(missing).digest("hex"),
     source: openText(resolve(here, "fixture-missing.ts"), missing) }];
   const missingConfig = { packages: new Map([["@fixture/missing", "fixture/missing.ts"]]),
-    links: new Map(), mappingSources: new Map() };
+    globals: new Set<string>(), links: new Map(), mappingSources: new Map() };
   const missingRoot = resolveNamedImports(openText(resolve(here, "missing-client.ts"),
     "import type { MissingEdge } from '@fixture/missing';"), missingModule, missingConfig)[0];
   assert.ok(missingRoot);
@@ -454,11 +482,12 @@ for (const [file, expected] of [
   const conditionalRoot = resolveNamedImports(openText(resolve(here, "conditional-client.ts"),
     "import type { Conditional } from '@fixture/conditional';"), conditionalModule,
   { packages: new Map([["@fixture/conditional", "fixture/conditional.ts"]]),
-    links: new Map(), mappingSources: new Map() })[0];
+    globals: new Set<string>(), links: new Map(), mappingSources: new Map() })[0];
   assert(conditionalRoot);
   assert.throws(() => collectTypeClosure(conditionalRoot, conditionalModule,
     { packages: new Map([["@fixture/conditional", "fixture/conditional.ts"]]),
-      links: new Map(), mappingSources: new Map() }), /unsupported type syntax ConditionalType/);
+      globals: new Set<string>(), links: new Map(), mappingSources: new Map() }),
+    /unsupported type syntax ConditionalType/);
   closeParser();
 }
 function must<T>(value: T | null | undefined, message: string): T {

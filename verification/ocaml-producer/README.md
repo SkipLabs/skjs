@@ -488,9 +488,13 @@ parameter to `instantiate`. The `runService` value import and its return type
 are a separate, effectful module contract. Each dependency must either be
 interpreted and certified or appear as an explicit external assumption.
 Collecting the pinned `Mapper` declaration alone now reaches its method and
-refuses its `Iterable` result reference, which is a TypeScript library type
-outside the explicit source module universe. Tuple results, generic interface
-substitution and the other API dependencies remain after that refusal.
+resolves its `Iterable` result reference to the configured TypeScript project's
+`lib.es2015.iterable.d.ts` declaration. It then refuses the omitted defaulted
+type arguments: the source writes one argument for an interface with three
+parameters. The library interface also contains a computed-symbol method and
+references to `Iterator`, so resolving its name is not interpreting it.
+Tuple results, generic interface substitution and the other API dependencies
+remain after that refusal.
 
 The next file-level steps are to model the top-level initializer and other
 declarations without dropping their effects, and extend the admitted interface
@@ -531,8 +535,12 @@ source parser. The collector can assemble both real `Json` imports into that
 shared slot with deduplicated declaration equations, module bytes, route
 fingerprints, and the workspace symlink target. The source parser fills
 the slot for named type-only imports when its caller supplies an explicit
-module universe. Before admitting it, a separate TypeScript checker instance
-resolves each client import and every reference inside the collected type
+module universe. The configured TypeScript project contributes the standard
+library declaration files it actually loaded; these are scanned as candidate
+global type sources, and ambiguous names refuse. A synthetic global interface
+verifies end to end, while altered global source bytes are refused. Before
+admitting a closure, a separate TypeScript checker instance resolves each
+client import and every reference inside the collected type
 definitions to exactly one alias or interface declaration. Its real file path and span must
 match our resolver's choice; every touched module's TypeScript source text must
 match the text from which our equations were parsed. The parser represents imported references in
@@ -639,11 +647,11 @@ Current progress against the `Json` prerequisite:
 
 | Checkpoint | Current result | Remaining boundary |
 | --- | --- | --- |
-| 1. Source closure | Canonical `Json`/`JsonObject` cycle, workspace link, cross-file generic cycle, and single field/index/callable-property/method interfaces collected. | Nested or generic methods, inheritance, merging and value declarations remain outside this collector. |
-| 2. Shared graph and gate | Imported alias and supported interface equations reach the common Fragment and Lean request; TypeScript checks declaration identities and source bytes. | The configured project and source parser remain trusted; richer declarations are refused. |
+| 1. Source closure | Canonical `Json`/`JsonObject` cycle, workspace link, cross-file generic cycle, single field/index/callable-property/method interfaces, and configured global declaration sources collected. | Defaulted type arguments, computed-symbol methods, inheritance, merging and value declarations remain outside this collector. |
+| 2. Shared graph and gate | Imported alias and supported interface equations, including a global declaration, reach the common Fragment and Lean request; TypeScript checks declaration identities and source bytes. | The configured project and source parser remain trusted; richer declarations are refused. |
 | 3. Semantic interpretation | Recursive readonly array, dictionary, fixed callable, and interface method receiver clauses reach `CertifiedPlan` and `checkJson_safe`. | Generic-interface, mutable dictionary and implementation contracts need their own certified paths. |
 | 4. Relative contracts and controls | Forged alias equations, targets, source bytes and evidence have negative controls. | External value-contract assumptions and their eventual discharge are not yet represented. |
-| 5. Actual-source acceptance | Imported `Json` clients, a bound-instantiation case and four negative controls run end to end. | Actual `Mapper` bounds and bodies are blocked by interface imports, classes and their dependencies. |
+| 5. Actual-source acceptance | Imported `Json` clients, a bound-instantiation case and four negative controls run end to end. | Actual `Mapper` first refuses defaulted `Iterable` arguments; library iterator semantics, generic interfaces, classes and their dependencies follow. |
 
 The checkpoints below state the design obligations in dependency order; the
 table above records which parts have actually been implemented.

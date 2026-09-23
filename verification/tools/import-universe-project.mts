@@ -1,10 +1,11 @@
 /** Build an explicit import universe from a source checkout. Package entries,
- * TypeScript modules and workspace symlinks come from the files on disk; no
- * type definitions or module routes are handwritten in a sidecar. */
+ * TypeScript modules and workspace symlinks come from the files on disk. The
+ * configured project's loaded standard libraries supply candidate global
+ * declaration files, not a chosen symbol target. */
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
-import { openText, type ImportUniverse } from "./fragment-parse.mts";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { openText, projectFor, type ImportUniverse } from "./fragment-parse.mts";
 
 function text(value: unknown, what: string): string {
   if (typeof value !== "string" || !value) throw Error(`source project: missing ${what}`);
@@ -48,6 +49,22 @@ export function loadImportUniverseFromProject(directory: string): ImportUniverse
   });
   const moduleIds = new Set(modules.map(module => module.id));
   if (moduleIds.size !== modules.length) throw Error("source project: duplicate module identity");
+  const tsconfigPath = join(root, "tsconfig.json");
+  const apiPath = join(root, "skipruntime-ts/core/src/api.ts");
+  const project = projectFor(apiPath);
+  if (project.configFileName !== tsconfigPath)
+    throw Error(`source project: ${apiPath} is not in ${tsconfigPath}`);
+  const globals = new Set<string>();
+  for (const absolute of project.program.getSourceFileNames()) {
+    const file = basename(absolute);
+    if (!/^lib\..*\.d\.ts$/.test(file)) continue;
+    const id = `typescript/lib/${file}`;
+    if (moduleIds.has(id)) throw Error(`source project: duplicate module identity ${id}`);
+    const bytes = readFileSync(absolute, "utf8");
+    modules.push({ id, sha256: digest(bytes), source: openText(absolute, bytes) });
+    moduleIds.add(id);
+    globals.add(id);
+  }
   const packages = new Map<string, string>();
   for (const entry of readdirSync(join(root, "skipruntime-ts"), { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
@@ -85,6 +102,6 @@ export function loadImportUniverseFromProject(directory: string): ImportUniverse
     mappingSources.set(source, canonicalPath);
     links.set(virtual, { virtual, canonical, source, sha256: digest(canonicalPath) });
   }
-  return { modules, config: { packages, links, mappingSources },
-    tsconfigPath: join(root, "tsconfig.json") };
+  return { modules, config: { packages, globals, links, mappingSources },
+    tsconfigPath };
 }

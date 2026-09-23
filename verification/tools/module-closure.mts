@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import * as ts from "typescript/unstable/ast";
 import type { InterfaceDeclaration, SourceFile, TypeAliasDeclaration, TypeElement, TypeNode } from "typescript/unstable/ast";
-import { resolveModuleImport, type DeclarationIdentity,
+import { resolveGlobalType, resolveModuleImport, type DeclarationIdentity,
   type ModuleSource, type ResolutionConfig, type ResolvedImport } from "./module-resolve.mts";
 import type { Span } from "./span.mts";
 import type { ImportDocument, Reference, TypeClosure, TypeDefinition, TypeTerm } from "./imported-types.mts";
@@ -143,7 +143,8 @@ export function collectTypeClosure(
         }
         const local = localTypeDeclaration(source, identity.module, name);
         const imported = local ? null : resolveModuleImport(identity.module, name, modules, config);
-        const target = local ?? imported?.declaration;
+        const global = local || imported ? null : resolveGlobalType(name, modules, config);
+        const target = local ?? imported?.declaration ?? global?.declaration;
         if (!target || target.capability === "value")
           throw Error(`unresolved type reference ${identity.module}#${name}`);
         const targetNode = typeDeclaration(sourceOf(target.module), target);
@@ -152,7 +153,7 @@ export function collectTypeClosure(
           throw Error(`type argument arity: ${target.module}#${target.name}`);
         const reference: Reference = { name, span: pos,
           arguments: arguments_.map(arg => [arg.getStart(source), arg.end]),
-          target, route: imported?.route ?? [{ module: identity.module,
+          target, route: imported?.route ?? global?.route ?? [{ module: identity.module,
             sha256: module.sha256 }], mappings: imported?.mappings ?? [] };
         references.push(reference);
         queue.push(target);
