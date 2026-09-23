@@ -95,7 +95,7 @@ theorem make_callable_rule {P : Fam} {L : List (List Fam × Fam)} (hA : Adm P)
   apply make_rule hA n W h (.closure arity b) v hval hadm hok hv
   intro j hj U hx hr
   have hf' := (callsT_adm L).mono j _ U hx _ ((callsT_adm L).down_le n j
-    (Nat.le_of_lt hj) W _ ((callsT_code_iff L arity [(valueField, h.length)] b n W).mpr hf))
+    (Nat.le_of_lt hj) W _ (callsT_of_invocationSpec [(valueField, h.length)] hf))
   exact ⟨⟨_, .closure arity b, rfl, rfl, hr⟩, hf'⟩
 
 /-- The same, for a bag with any named fields. The call contracts survive the
@@ -112,7 +112,7 @@ theorem make_callable_fields_rule {P : List Fam} {L : List (List Fam × Fam)}
   apply make_fields_rule hA n W h (.closure arity b) ns vs hnd hns hPs hvals hadm hok hv
   intro j hj U hx hrec
   have hf' := (callsT_adm L).mono j _ U hx _ ((callsT_adm L).down_le n j
-    (Nat.le_of_lt hj) W _ ((callsT_code_iff L arity (slots h.length ns) b n W).mpr hf))
+    (Nat.le_of_lt hj) W _ (callsT_of_invocationSpec (slots h.length ns) hf))
   exact ⟨⟨_, .closure arity b, rfl, rfl, hrec⟩, hf'⟩
 
 /-- Creation checks the code and the stored value separately, then allocates a

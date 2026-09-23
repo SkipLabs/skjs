@@ -159,7 +159,12 @@ function bareAtomText(atom: unknown, state: PrintState): string {
   if (atom.a === "function" && Array.isArray(atom.params))
     return (
       "(" +
-      atom.params.map((p: unknown) => typeText(p, state)).join(", ") +
+      [
+        ...atom.params.map((p: unknown) => typeText(p, state)),
+        ...(atom.rest === undefined
+          ? []
+          : ["...Array<" + typeText(atom.rest, state) + ">"]),
+      ].join(", ") +
       ") => " +
       typeText(atom.result, state)
     );
@@ -536,7 +541,30 @@ function parseType(text: string): ClaimType {
     };
     take("(");
     const params: ClaimType[] = [];
+    // `...Array<T>` last: any number of further actuals, each a `T`.
+    let rest: ClaimType | undefined;
     while (peek() !== ")") {
+      if (peek() === "...") {
+        take("...");
+        const t = union();
+        const a = t.atoms[0];
+        if (
+          t.top ||
+          t.atoms.length !== 1 ||
+          a.a !== "array" ||
+          a.required.length ||
+          a.optional.length ||
+          a.rest === null ||
+          a.readonly
+        )
+          throw new TypeSyntaxError(
+            "a rest parameter needs an Array<T> contract",
+          );
+        rest = a.rest;
+        if (peek() !== ")")
+          throw new TypeSyntaxError("a rest parameter must be the last one");
+        break;
+      }
       params.push(union());
       if (peek() === ",") take(",");
       else break;
@@ -544,7 +572,13 @@ function parseType(text: string): ClaimType {
     take(")");
     take("=>");
     const result = union();
-    return { ...base, a: "function", params, result };
+    return {
+      ...base,
+      a: "function",
+      params,
+      ...(rest === undefined ? {} : { rest }),
+      result,
+    };
   };
 
   const value = union();
@@ -684,7 +718,8 @@ function outsideFragment(type: unknown): string | undefined {
     }
     if (atom.a === "function") {
       const params: unknown[] = Array.isArray(atom.params) ? atom.params : [];
-      for (const part of [...params, atom.result]) {
+      const rest = atom.rest === undefined ? [] : [atom.rest];
+      for (const part of [...params, ...rest, atom.result]) {
         const found = outsideFragment(part);
         if (found) return found;
       }
@@ -955,41 +990,57 @@ function liftClause(types: unknown, clause: unknown, depth: number): unknown {
   if (callable) {
     const c: Record<string, unknown> = isObject(callable) ? callable : {};
     const rest: unknown[] = Array.isArray(c.rest) ? c.rest : [];
-    const arrows: unknown[] = Array.isArray(c.arrows) ? c.arrows : [];
-    if (rest.length || arrows.length !== 1) return JSON.stringify(clause);
-    const [Ds, R]: unknown[] = Array.isArray(arrows[0]) ? arrows[0] : [];
-    const domains: unknown[] = Array.isArray(Ds) ? Ds : [];
+    const signatures = liftSignatures(types, c.arrows, c.variadic, depth);
+    if (rest.length || signatures.length !== 1) return JSON.stringify(clause);
     return {
       a: "callable",
-      function: {
-        a: "function",
-        construct: "unknown",
-        array: "unknown",
-        params: domains.map((D) => liftType(types, D, depth - 1)),
-        result: liftType(types, R, depth - 1),
-      },
+      function: signatures[0],
       bag: cell(types, c.first, null, depth - 1),
     };
   }
   const arrs = body("arrs");
-  const stated: unknown[] =
-    isObject(arrs) && Array.isArray(arrs.arrows) ? arrs.arrows : [];
-  if (arrs && stated.length) {
-    const arrows = stated.map((arrow) => {
-      const [domain, result]: unknown[] = Array.isArray(arrow) ? arrow : [];
-      const domains: unknown[] = Array.isArray(domain) ? domain : [];
-      return {
-        a: "function",
-        construct: "unknown",
-        array: "unknown",
-        params: domains.map((D) => liftType(types, D, depth - 1)),
-        result: liftType(types, result, depth - 1),
-      };
-    });
-    return arrows.length === 1 ? arrows[0] : shown(arrows);
+  if (isObject(arrs)) {
+    const arrows = liftSignatures(types, arrs.arrows, arrs.variadic, depth);
+    if (arrows.length) return arrows.length === 1 ? arrows[0] : shown(arrows);
   }
   // Unknown clauses are shown as their encoding rather than guessed at.
   return JSON.stringify(clause);
+}
+
+/** A clause's call signatures as function atoms: its fixed arrows, then its
+variadic ones, whose further actuals are at `rest`. */
+function liftSignatures(
+  types: unknown,
+  fixed: unknown,
+  variadic: unknown,
+  depth: number,
+): Record<string, unknown>[] {
+  const atom = (domain: unknown, result: unknown, element?: unknown) => {
+    const domains: unknown[] = Array.isArray(domain) ? domain : [];
+    return {
+      a: "function",
+      construct: "unknown",
+      array: "unknown",
+      params: domains.map((D) => liftType(types, D, depth - 1)),
+      ...(element === undefined
+        ? {}
+        : { rest: liftType(types, element, depth - 1) }),
+      result: liftType(types, result, depth - 1),
+    };
+  };
+  const arrows: unknown[] = Array.isArray(fixed) ? fixed : [];
+  const sigs: unknown[] = Array.isArray(variadic) ? variadic : [];
+  return [
+    ...arrows.map((arrow) => {
+      const [domain, result]: unknown[] = Array.isArray(arrow) ? arrow : [];
+      return atom(domain, result);
+    }),
+    ...sigs.map((sig) => {
+      const [domain, tail]: unknown[] = Array.isArray(sig) ? sig : [];
+      const [element, result]: unknown[] = Array.isArray(tail) ? tail : [];
+      return atom(domain, result, element);
+    }),
+  ];
 }
 
 function liftType(types: unknown, labels: unknown, depth: number): Shown {
@@ -1200,18 +1251,20 @@ function lowerAtom(types: unknown, atom: unknown): number[] {
       );
     if (!Array.isArray(f.params))
       throw new TypeSyntaxError("a function needs a parameter list");
+    const Ds = f.params.map((D: unknown) => lowerType(types, D));
+    const R = lowerType(types, f.result);
     return [
       intern(types, [
         {
           callable: {
             first: bagFields.map((fd) => namedField(types, fd, "write")),
             rest: [],
-            arrows: [
-              [
-                f.params.map((D: unknown) => lowerType(types, D)),
-                lowerType(types, f.result),
-              ],
-            ],
+            ...(f.rest === undefined
+              ? { arrows: [[Ds, R]] }
+              : {
+                  arrows: [],
+                  variadic: [[Ds, [lowerType(types, f.rest), R]]],
+                }),
           },
         },
       ]),
@@ -1223,6 +1276,22 @@ function lowerAtom(types: unknown, atom: unknown): number[] {
     const domains = atom.params.map((domain: unknown) =>
       lowerType(types, domain),
     );
+    if (atom.rest !== undefined)
+      return [
+        intern(types, [
+          {
+            arrs: {
+              arrows: [],
+              variadic: [
+                [
+                  domains,
+                  [lowerType(types, atom.rest), lowerType(types, atom.result)],
+                ],
+              ],
+            },
+          },
+        ]),
+      ];
     return [
       intern(types, [
         { arrs: { arrows: [[domains, lowerType(types, atom.result)]] } },
@@ -1332,7 +1401,12 @@ function fullAtomText(atom: unknown): string {
   else if (atom.a === "function" && Array.isArray(atom.params))
     text =
       "(" +
-      atom.params.map((p: unknown) => fullTypeText(p)).join(", ") +
+      [
+        ...atom.params.map((p: unknown) => fullTypeText(p)),
+        ...(atom.rest === undefined
+          ? []
+          : ["...Array<" + fullTypeText(atom.rest) + ">"]),
+      ].join(", ") +
       ") => " +
       fullTypeText(atom.result) +
       modesText(atom);

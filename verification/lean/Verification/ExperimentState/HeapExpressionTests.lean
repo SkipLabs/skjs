@@ -103,7 +103,7 @@ private def invalidWrite : Evidence Nat := .node narrowWrite .write
 #guard !pureTerm (.alloc .tru)
 
 -- A creation preserves old facts even when its uncalled body would mutate a cell.
-private def CG := SourceTypes.graph (T ++ [[.arrs []]])
+private def CG := SourceTypes.graph (T ++ [[.arrs [] []]])
 private def creationClaim : Sequent Nat :=
   ⟨[refBool,boolTy,refBool,boolTy],.funE (.write (.var 1) .fls),[5]⟩
 private def creationProof : Evidence Nat := .node creationClaim .funE []

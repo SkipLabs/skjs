@@ -597,8 +597,8 @@ private def run (x : M α) : Except Failure α := x.run' SourceTypes.initial
 -- `<T>(f: () => T): T { return f(); }`: a call the judgment accepts and the
 -- proof language expresses, now certified.
 private def applyFn : Fragment.Fn :=
-  ⟨"apply", (0, 2), [⟨"f", thunkT⟩], paramT,
-    [.ret (10, 18) (.call (12, 18) (.var (12, 13) "f") [])]⟩
+  ⟨"apply", (0, 2), [⟨"f", thunkT, false⟩], paramT,
+    [.ret (10, 18) (.call (12, 18) (.var (12, 13) "f") [] [])]⟩
 private def applyClaims : Claims :=
   ⟨"apply", (0, 2), [("f", .arrow [] T)], T, [(10, [("f", .arrow [] T)])], [((12, 18), T)]⟩
 #guard (match run (check applyFn [tpT] applyClaims) with | .ok _ => true | .error _ => false)
@@ -606,7 +606,7 @@ private def applyClaims : Claims :=
 -- `<T>(x: T): boolean { return true; }`: a literal the judgment accepts,
 -- now certified through `Proof.lit` under the table's primitive rows.
 private def literalFn : Fragment.Fn :=
-  ⟨"always", (0, 2), [⟨"x", paramT⟩], booleanType, [.ret (10, 18) (.lit (17, 18) (.vbool true))]⟩
+  ⟨"always", (0, 2), [⟨"x", paramT, false⟩], booleanType, [.ret (10, 18) (.lit (17, 18) (.vbool true))]⟩
 private def literalClaims : Claims :=
   ⟨"always", (0, 2), [("x", T)], .ground [1, 2], [(10, [("x", T)])], [((17, 18), .ground [1])]⟩
 private def literalCtx : Ctx := ⟨[⟨"T", .quantified, none⟩], literalClaims, []⟩

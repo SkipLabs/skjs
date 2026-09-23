@@ -178,6 +178,8 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   RECEIVER_CALL=verification/tests/callables/receiver-call.ts
   OPTIONAL_ARGUMENTS=verification/tests/callables/optional-arguments.ts
   DEFAULT_ARGUMENTS=verification/tests/callables/default-arguments.ts
+  REST_ARGUMENTS=verification/tests/callables/rest-arguments.ts
+  VARIADIC_ARGUMENTS=verification/tests/callables/variadic-arguments.ts
   CALLABLE_FIELD=verification/tests/callables/function-field.ts
   CALLABLE_GUARDS=verification/tests/callables/guards.ts
   CALLABLE_ARITY=verification/tests/callables/arity.ts
@@ -227,6 +229,18 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
       node verification/tools/tsc-claims.mts "$DEFAULT_ARGUMENTS" --out "$WORK/default_arguments.tsc"
   }
   build default_arguments_fixture
+  rest_arguments_fixture() {
+    fixture rest_arguments "$REST_ARGUMENTS" &&
+      node verification/tools/tsc-claims.mts "$REST_ARGUMENTS" --out "$WORK/rest_arguments.tsc"
+  }
+  build rest_arguments_fixture
+  # SKJS reads a rest parameter as a readonly array and rejects these; the
+  # rejection is the fixture, and TypeScript's claims carry the verification.
+  variadic_arguments_fixture() {
+    rejected_fixture variadic_arguments "$VARIADIC_ARGUMENTS" 2 &&
+      node verification/tools/tsc-claims.mts "$VARIADIC_ARGUMENTS" --out "$WORK/variadic_arguments.tsc"
+  }
+  build variadic_arguments_fixture
   bound_arguments_fixture() {
     rejected_fixture bound_arguments "$BOUND_ARGUMENTS" 2 &&
       node verification/tools/tsc-claims.mts "$BOUND_ARGUMENTS" --out "$WORK/bound_arguments.tsc"
@@ -411,6 +425,8 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Undefined values and contracts" node verification/tests/undefined.mts        "$WORK/undefined.ast" "$WORK/undefined.claims" "$UNDEFINED_SOURCE" "$VERIFIER"
   run_test "Closures" node verification/tests/stateful-closures.mts        "$WORK/closures.ast" "$WORK/closures.claims" "$CLOSURES" "$VERIFIER"
   run_test "Callables" node verification/tests/callables.mts "$WORK/callables.ast" "$WORK/callables.claims" "$CALLABLES" "$VERIFIER"
+  run_test "Rest and spread arguments" node verification/tests/rest-arguments.mts "$WORK/rest_arguments.ast" "$WORK/rest_arguments.claims" "$REST_ARGUMENTS" "$VERIFIER" "$WORK/rest_arguments.tsc"
+  run_test "Variadic arguments" node verification/tests/variadic-arguments.mts "$WORK/variadic_arguments.ast" "$WORK/variadic_arguments.claims" "$VARIADIC_ARGUMENTS" "$VERIFIER" "$WORK/variadic_arguments.tsc" verification/tests/callables/variadic-holes.ts verification/tests/callables/variadic-order.ts verification/tests/callables/variadic-copy-element.ts
   run_test "Omitted arguments" node verification/tests/optional-arguments.mts "$WORK/optional_arguments.ast" "$WORK/optional_arguments.claims" "$OPTIONAL_ARGUMENTS" "$VERIFIER" "$WORK/optional_arguments.tsc" "$WORK/default_arguments.ast" "$WORK/default_arguments.claims" "$DEFAULT_ARGUMENTS" "$WORK/default_arguments.tsc"
   run_test "Bound arrow arguments" node verification/tests/bound-arguments.mts "$WORK/bound_arguments.ast" "$WORK/bound_arguments.claims" "$BOUND_ARGUMENTS" "$VERIFIER" "$WORK/bound_arguments.tsc"
   run_test "Local arrow receiver calls" node verification/tests/receiver-call.mts "$WORK/receiver_call.ast" "$WORK/receiver_call.claims" "$RECEIVER_CALL" "$VERIFIER"

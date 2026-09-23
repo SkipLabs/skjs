@@ -10,12 +10,12 @@ HasTy  (ProgramTyping.lean)
   num : Represents G A .num → HasTy G Γ (.num b) A
   strLit : Represents G A (.strLit s) → HasTy G Γ (.str s) A
   str : Represents G A .str → HasTy G Γ (.str s) A
-  funE : Represents G F (.arrs L) → (∀ p ∈ L, p.1.length = arity) → (∀ p ∈ L, HasTy G (p.1 ++ Γ) b p.2) → HasTy G Γ (.make (.closure arity b) .nul) F
-  makeCallable {parts : List (String × Ty ι × Tm)} : Represents G F (.callable (parts.map fun p => (p.1, p.2.1)) [] L) → (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → (∀ p ∈ L, p.1.length = arity) → (∀ p ∈ L, HasTy G (p.1 ++ Γ) b p.2) → HasTy G Γ (.makeAt (.closure arity b) (parts.map Prod.fst) (parts.map fun p => p.2.2)) F
-  callCallable {Us : List (Ty ι)} : HasTy G Γ f F → Represents G F (.callable P Ps L) → ((xs : List (Ty ι × Tm)).map Prod.fst ++ Us, B) ∈ L → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → (∀ A ∈ Us, HasTy G Γ .undef A) → HasTy G Γ (.call f (xs.map Prod.snd)) B
-  readCallable : HasTy G Γ a F → Represents G F (.callable P Ps L) → (f, A) ∈ P → HasTy G Γ (.readAt f a) A
-  writeCallable : HasTy G Γ a F → Represents G F (.callable P Ps L) → (f, A) ∈ P → HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
-  app {Us : List (Ty ι)} : HasTy G Γ f F → Represents G F (.arrs L) → ((xs : List (Ty ι × Tm)).map Prod.fst ++ Us, B) ∈ L → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → (∀ A ∈ Us, HasTy G Γ .undef A) → HasTy G Γ (.call f (xs.map Prod.snd)) B
+  funE : Represents G F (.arrs L []) → (∀ p ∈ L, p.1.length = arity) → (∀ p ∈ L, HasTy G (p.1 ++ Γ) b p.2) → HasTy G Γ (.make (.closure arity b) .nul) F
+  makeCallable {parts : List (String × Ty ι × Tm)} : Represents G F (.callable (parts.map fun p => (p.1, p.2.1)) [] L []) → (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → (∀ p ∈ L, p.1.length = arity) → (∀ p ∈ L, HasTy G (p.1 ++ Γ) b p.2) → HasTy G Γ (.makeAt (.closure arity b) (parts.map Prod.fst) (parts.map fun p => p.2.2)) F
+  callCallable {Us : List (Ty ι)} : HasTy G Γ f F → Represents G F (.callable P Ps L S) → ((xs : List (Ty ι × Tm)).map Prod.fst ++ Us, B) ∈ L → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → (∀ A ∈ Us, HasTy G Γ .undef A) → HasTy G Γ (.call f (xs.map Prod.snd)) B
+  readCallable : HasTy G Γ a F → Represents G F (.callable P Ps L S) → (f, A) ∈ P → HasTy G Γ (.readAt f a) A
+  writeCallable : HasTy G Γ a F → Represents G F (.callable P Ps L S) → (f, A) ∈ P → HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
+  app {Us : List (Ty ι)} : HasTy G Γ f F → Represents G F (.arrs L S) → ((xs : List (Ty ι × Tm)).map Prod.fst ++ Us, B) ∈ L → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → (∀ A ∈ Us, HasTy G Γ .undef A) → HasTy G Γ (.call f (xs.map Prod.snd)) B
   letE : HasTy G Γ a A → HasTy G (A :: Γ) b B → HasTy G Γ (.letE a b) B
   alloc {parts : List (String × Ty ι × Tm)} : (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) [] []) → HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
   read : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs) → (f, A) ∈ fs → HasTy G Γ (.readAt f a) A
@@ -34,6 +34,10 @@ HasTy  (ProgramTyping.lean)
   ifBoolVar : Γ[i]? = some C → Answers G C .isBool true → Represents G T (.boolLit true) → Represents G F (.boolLit false) → HasTy G (Γ.set i T) t A → HasTy G (Γ.set i F) e A → HasTy G Γ (.ite (.var i) t e) A
   ifTag : Γ[i]? = some A → Answers G A tag q → (q = true → HasTy G Γ u B) → (q = false → HasTy G Γ e B) → HasTy G Γ (.ite (.test tag (.var i)) u e) B
   unionVar : Γ[i]? = some C → (∀ a ∈ C, HasTy G (Γ.set i [a]) t A) → HasTy G Γ t A
+  funRest {Γ : List (Ty ι)} {F : Ty ι} {L : List (List (Ty ι) × Ty ι × Ty ι)} {As : List (Ty ι)} {n : Nat} {b : Tm} : Represents G F (.arrs [] L) → L.length = As.length → (∀ p ∈ L.zip As, p.1.1.length = n ∧ RestArray G p.2 p.1.2.1) → (∀ p ∈ L.zip As, HasTy G (p.2 :: p.1.1 ++ Γ) b p.1.2.2) → HasTy G Γ (.make (.variadic n b) .nul) F
+  makeCallableRest {Γ : List (Ty ι)} {F : Ty ι} {parts : List (String × Ty ι × Tm)} {L : List (List (Ty ι) × Ty ι × Ty ι)} {As : List (Ty ι)} {n : Nat} {b : Tm} : Represents G F (.callable (parts.map fun p => (p.1, p.2.1)) [] [] L) → (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → L.length = As.length → (∀ p ∈ L.zip As, p.1.1.length = n ∧ RestArray G p.2 p.1.2.1) → (∀ p ∈ L.zip As, HasTy G (p.2 :: p.1.1 ++ Γ) b p.1.2.2) → HasTy G Γ (.makeAt (.variadic n b) (parts.map Prod.fst) (parts.map fun p => p.2.2)) F
+  arrCopy {Γ : List (Ty ι)} {s : Tm} {S T E : Ty ι} : HasTy G Γ s S → SpreadsInto G S E → Represents G T (.list ⟨[], [], some E, false⟩ []) → HasTy G Γ (.arrLit [.spread s]) T
+  callRest {Γ : List (Ty ι)} {f : Tm} {F : Ty ι} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} {E B : Ty ι} {parts : List (Bool × Ty ι × Tm)} : HasTy G Γ f F → (xs.map Prod.fst ++ Us, E, B) ∈ restSigs G F → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → (∀ A ∈ Us, HasTy G Γ .undef A) → (Us = [] ∨ parts = []) → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → (∀ p ∈ parts, p.1 = false → p.2.1 = E) → (∀ p ∈ parts, p.1 = true → SpreadsInto G p.2.1 E) → HasTy G Γ (.call f (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2))) B
   sub : HasTy G Γ t A → PositiveCertificates.check G A B cert = true → HasTy G Γ t B
 
 Rule  (ProgramCertificates.lean)
@@ -73,6 +77,10 @@ Rule  (ProgramCertificates.lean)
   callCallable
   readCallable
   writeCallable
+  funRest (arrays : List (Ty ι))
+  makeCallableRest (arrays : List (Ty ι))
+  arrCopy (elem : Ty ι)
+  callRest (fixed omitted : Nat) (spreads : List Bool) (elem : Ty ι)
   sub (proof : PositiveCertificates.Proof ι)
 
 Proof  (PositiveCertificates.lean)
@@ -83,6 +91,7 @@ Proof  (PositiveCertificates.lean)
 ArrowCert  (PositiveCertificates.lean)
   empty
   source (p : List (List ι) × List ι)
+  rest (s : List (List ι) × List ι × List ι)
   union (pre : List (List ι)) (a b : List ι) (suffix : List (List ι)) (left right : ArrowCert ι)
   combine (b b' : List ι) (left right : ArrowCert ι)
 

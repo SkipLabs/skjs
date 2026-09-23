@@ -14,7 +14,7 @@ private def record (T : Json) : Json := Json.mkObj
    ("call",toJson "unknown"),("construct",toJson "unknown"),("array",toJson "unknown")]
 private def union : Json := Json.mkObj [("top",toJson false),("atoms",toJson [record result,record null])]
 private def table : SourceTypes.Table := SourceTypes.initial ++
-  [[.refs [(valueField, [0,1,2])] [] []],[.refs [(valueField, [0])] [] []],[.arrs [([[0]],[0,1,2])]]]
+  [[.refs [(valueField, [0,1,2])] [] []],[.refs [(valueField, [0])] [] []],[.arrs [([[0]],[0,1,2])] []]]
 private def read : Fragment.Expr := .read (24,27) valueField (.var (24,25) "cell")
 private def write : Fragment.Expr := .write (12,20) valueField (.var (12,13) "cell") (.var (19,20) "unit")
 private def withBody (body : Fragment.Expr) : Fragment.Fn :=
@@ -72,7 +72,7 @@ private def observed (R : Ty Nat) : SourceClaims.Function :=
 #guard !ok (check (source false) {claims with exprs := claims.exprs.map fun (pos,c) =>
   if pos == (24,27) then (pos,.ok [0]) else (pos,c)})
 -- An externally supplied cell union is admitted at its annotation.
-#guard match extractNormalizedFn table {(source false) with params := [⟨"external",union⟩]}
+#guard match extractNormalizedFn table {(source false) with params := [⟨"external",union,false⟩]}
     {claims with params := [("external",.ok [4,5])]
                  envs := claims.envs.map fun pv => (pv.1,("external",Except.ok [4,5]) :: pv.2)} with
   | .ok _ => true

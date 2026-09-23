@@ -6,7 +6,7 @@ open Lean SourceExtraction ProgramTyping
 private def boolean : Json := Json.mkObj [("top",toJson false),
   ("atoms",toJson [Json.mkObj [("a",toJson "boolean")]])]
 private def source : Fragment.Fn :=
-  ⟨"identity",(0,1),[⟨"flag",boolean⟩],boolean,
+  ⟨"identity",(0,1),[⟨"flag",boolean,false⟩],boolean,
    [.ret (2,5) (.var (3,4) "flag")]⟩
 -- These claims have no SKJS type atoms, implicit bindings or function modes.
 private def claims : SourceClaims.Function :=

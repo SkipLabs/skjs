@@ -69,7 +69,7 @@ theorem app_elim {A B : Fam} (hA : Adm A) (hAv : ValOnly A)
     (hw : WorldAdm W) (hh : HeapOk n W heap) : Safe B n W heap (.app f a) := by
   apply call_elim (L := [([A], B)]) (p := ([A], B))
     (by simpa using hA) (by simpa using hAv)
-  · exact (arrowsT_callsT [(A, B)] n W f).mp ((arrowsT_singleton A B n W f).mpr hf)
+  · exact callsT_of_arrowsT (L := [(A, B)]) ((arrowsT_singleton A B n W f).mpr hf)
   · simp
   · exact ⟨ha, trivial⟩
   · exact hw

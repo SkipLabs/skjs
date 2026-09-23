@@ -35,7 +35,7 @@ def signatures (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam)
 /-- Callable shape is required even if the bounds have no satisfying assignment. -/
 def schemeT (G : NormalGraph ι) (P : ι → Bool) (outer : ι → Fam)
     (s : Scheme ι) : Fam := fun n W v =>
-  Callable v ∧ ∀ η, Instance G P outer s η → callsT (signatures G P η s) n W v
+  Invocable v ∧ ∀ η, Instance G P outer s η → callsT (signatures G P η s) n W v
 
 theorem scheme_adm (G : NormalGraph ι) (P : ι → Bool) (outer : ι → Fam)
     (s : Scheme ι) : Adm (schemeT G P outer s) := by
@@ -58,7 +58,7 @@ theorem scheme_closed (G : NormalGraph ι) (P : ι → Bool) (outer : ι → Fam
 
 /-- Introduction must establish every interpretation for the SAME value. -/
 theorem scheme_intro {G : NormalGraph ι} {P outer s n W v}
-    (hc : Callable v)
+    (hc : Invocable v)
     (h : ∀ η, Instance G P outer s η → callsT (signatures G P η s) n W v) :
     schemeT G P outer s n W v := ⟨hc, h⟩
 
@@ -103,10 +103,10 @@ theorem make_scheme_fields {G : NormalGraph ι} {P outer s}
       (.makeAt (.closure arity b) ns vs) := by
   apply make_fields_rule hA n W h (.closure arity b) ns vs hnd hns hAs hvals hw hh hv
   intro j hj U hx hrec
-  refine ⟨⟨_, .closure arity b, rfl, rfl, hrec⟩, ⟨arity, b, _, rfl, hb⟩, ?_⟩
+  refine ⟨⟨_, .closure arity b, rfl, rfl, hrec⟩,
+    Callable.invocable ⟨arity, b, _, rfl, hb⟩, ?_⟩
   intro η hη
-  have hc := (callsT_code_iff (signatures G P η s) arity (slots h.length ns) b n W).mpr
-    (hf η hη)
+  have hc := callsT_of_invocationSpec (slots h.length ns) (hf η hη)
   exact (callsT_adm _).mono j _ U hx _
     ((callsT_adm _).down_le n j (Nat.le_of_lt hj) W _ hc)
 

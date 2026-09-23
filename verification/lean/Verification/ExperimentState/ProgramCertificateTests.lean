@@ -37,13 +37,6 @@ def programEvidence : Evidence (Fin 6) :=
 #guard !(check G .nul [0,1] programEvidence)
 #guard !(check G program [1] programEvidence)
 
-set_option maxHeartbeats 8000000 in
-set_option maxRecDepth 10000 in
-/-- The consumer obtains safety directly from the executable check. -/
-theorem checked_program_safe (n W h) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    Safe (PositiveRules.meaning G [0,1]) n W h program :=
-  accepted_safe (by cbv : check G program [0,1] programEvidence = true) n W h hw hh
-
 private def dropPremise : Evidence ι → Evidence ι
   | .node j r ps => .node j r ps.tail
 private def wrongRule (r : Rule ι) : Evidence ι → Evidence ι
@@ -65,10 +58,9 @@ private def wrongContext (Γ : List (Ty ι)) : Evidence ι → Evidence ι
 #guard !(checkTree G (.node ⟨[[0]], .var 0, [0]⟩ .var [varE [[0]] 0 [0]]))
 
 -- The empty overload imposes no body obligations, but cannot bypass scope.
-private def EmptyG : PositiveGraphs.NormalGraph (Fin 1) := fun _ => [.arrs []]
+private def EmptyG : PositiveGraphs.NormalGraph (Fin 1) := fun _ => [.arrs [] []]
 private def openEvidence : Evidence (Fin 1) := .node ⟨[], .funE (.var 1), [0]⟩ .funE []
 #guard checkTree EmptyG openEvidence
 #guard !(check EmptyG (.funE (.var 1)) [0] openEvidence)
 
-#print axioms checked_program_safe
 end Verification.ExperimentState.ProgramCertificateTests

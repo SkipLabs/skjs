@@ -112,7 +112,7 @@ let infer_function (f:Source.fn) =
     | Assign (n,rhs) -> (match lookup env n with
       | Storage contract -> expr ~expected:contract env rhs
       | Value _ -> unsupported "assignment to immutable binding")
-    | Lambda (quantified,ps,defaults,result,body) ->
+    | Lambda (quantified,ps,defaults,rest,result,body) ->
       (* Executing defaults see only earlier bindings. A literal closure may
          capture later parameters; this is a proposal about its eventual body,
          not permission to invoke it during initialization. Lean independently
@@ -131,12 +131,25 @@ let infer_function (f:Source.fn) =
       ignore (expr ~expected:result inner body);
       let params = List.mapi (fun i (_,t) ->
         if List.mem_assoc i defaults then union t (Atoms [Undef]) else t) ps in
-      let own = quantified_arrow quantified params result in
+      (* A tuple rest is one binding and several positions: the signature
+         carries the elements, the body reads the tuple. An array rest is one
+         binding and any number of positions, each at its element type. *)
+      let params,element = if not rest then params,None else
+        match List.rev params with
+        | last :: fixed ->
+          (match Semantic.tuple_positions last,Semantic.array_element last with
+           | Some elements,_ -> List.rev fixed @ elements,None
+           | None,Some element when quantified=[] && defaults=[] -> List.rev fixed,Some element
+           | _ -> unsupported "a rest parameter needs a tuple of required positions or a mutable array")
+        | [] -> unsupported "a rest parameter needs a parameter" in
+      let own = match element with
+        | Some element -> variadic_arrow params element result
+        | None -> quantified_arrow quantified params result in
       (* A contract advertising several signatures is implemented by this one
          closure. Propose that contract and state what the body claims under
          each signature; Lean checks every one of them. *)
       let implements (s:Semantic.signature) =
-        s.quantified=[] && List.length s.params=List.length ps in
+        s.quantified=[] && s.variadic=None && element=None && List.length s.params=List.length ps in
       (match expected with
        | Some (Atoms [Shape {calls=(_::_::_ as calls);fields=[];elements=None}] as contract)
          when quantified=[] && defaults=[] && List.for_all implements calls ->
@@ -157,21 +170,65 @@ let infer_function (f:Source.fn) =
          arrows := (e.pos,rows) :: !arrows;
          contract
        | _ -> own)
-    | Call (callee,receiver,args) ->
+    | Call (callee,receiver,args,spreads) ->
       let callee = expr env callee in
       Option.iter (fun e -> ignore (expr env e)) receiver;
+      (match callee with
+       | Atoms [Shape {calls=[{quantified=[];variadic=Some element;params;result}];_}] ->
+         (* A variadic callee: the fixed actuals at its parameters, every
+            further actual at its element type, and a spread at its own array
+            contract, whose elements Lean checks against the element type. *)
+         (* A shorter call omits trailing fixed positions, each admitting
+            `undefined`, and writes nothing further. *)
+         if List.length args < List.length params
+            && not (List.for_all Semantic.admits_undefined
+                      (List.filteri (fun i _ -> i >= List.length args) params))
+         then unsupported "a variadic call omits a fixed parameter that does not admit undefined";
+         List.iteri (fun i e ->
+           if List.mem i spreads then ignore (expr env e)
+           else match List.nth_opt params i with
+             | Some p -> ignore (expr ~expected:p env e)
+             | None -> ignore (expr ~expected:element env e)) args;
+         result
+       | _ ->
+      let spread = spreads <> [] in
+      if spread && spreads <> [List.length args - 1] then
+        unsupported "a spread into fixed parameters is the last argument";
       (* A call writes a prefix of the declared positions. The rest are omitted,
          which is admissible exactly when each of their contracts admits
          `undefined`; Lean checks that premise for itself. *)
+      (* A spread argument stands for the required elements of its operand's
+         tuple contract: the call writes those positions. *)
+      (* Counting the positions must not state the operand's claim twice, so a
+         name is read from the environment and anything else is typed once,
+         here, and not again below. *)
+      let spread_type = lazy (match List.rev args with
+        | { node = Id name; _ } :: _ -> binding_type (lookup env name)
+        | last :: _ -> expr env last
+        | [] -> unsupported "a spread argument needs an operand") in
+      let named_spread = match List.rev args with
+        | { node = Id _; _ } :: _ -> true | _ -> false in
+      let spread_positions () =
+        match Semantic.tuple_positions (Lazy.force spread_type) with
+        | Some elements -> List.length elements
+        | None -> unsupported "a spread argument needs a tuple of required positions" in
+      let written_positions =
+        if not spread then List.length args
+        else List.length args - 1 + spread_positions () in
       let callable (signature:Semantic.signature) =
-        let declared = List.length signature.params and written = List.length args in
-        written <= declared
-        && List.for_all Semantic.admits_undefined
-             (List.filteri (fun i _ -> i >= written) signature.params) in
+        let declared = List.length signature.params and written = written_positions in
+        (signature.variadic <> None && written >= declared)
+        || (written <= declared
+            && List.for_all Semantic.admits_undefined
+                 (List.filteri (fun i _ -> i >= written) signature.params)) in
       (match callee with Atoms [Shape {calls=[signature];_}]
           when signature.quantified=[] && callable signature ->
+        (* A spread operand is checked at its own tuple contract; Lean reads
+           the positions from that contract and checks each of them. *)
         List.iteri (fun i e ->
-          ignore (expr ~expected:(List.nth signature.params i) env e)) args;
+          if spread && i = List.length args - 1 then
+            (if named_spread then ignore (expr env e))
+          else ignore (expr ~expected:(List.nth signature.params i) env e)) args;
         signature.result
       | Atoms [Shape {calls=[signature];_}]
           when signature.quantified<>[] && callable signature ->
@@ -193,13 +250,17 @@ let infer_function (f:Source.fn) =
         let usable = List.filter callable calls in
         let matching = List.filter (fun (s:Semantic.signature) ->
           let declared = List.filteri (fun i _ -> i < List.length actuals) s.params in
-          declared = actuals) usable in
+          let further = List.filteri (fun i _ -> i >= List.length s.params) actuals in
+          declared = List.filteri (fun i _ -> i < List.length s.params) actuals
+          && (match s.variadic with
+              | Some element -> List.for_all (fun t -> t = element) further
+              | None -> further = [])) usable in
         (match matching,usable with
          | s :: _,_ -> s.result
          | [],(first :: rest) when List.for_all (fun (s:Semantic.signature) ->
              s.result = first.result) rest -> first.result
          | _ -> unsupported "overloaded call needs a signature its arguments match")
-      | _ -> unsupported "call requires a single arrow the arguments can call")
+      | _ -> unsupported "call requires a single arrow the arguments can call"))
     | WithFields (fn,initial,ft,bag) ->
       ignore (expr ~expected:ft env fn); ignore (expr ~expected:bag env initial);
       (match ft,bag with

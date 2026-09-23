@@ -61,6 +61,8 @@ partial def annotationTy (names : List String) (j : Json) :
       | throw "a rigid annotation is a binder, a function type over binders, or a ground type"
     if (← jStr (← jField atom "a")) != "function" then
       throw "a rigid annotation is a binder, a function type over binders, or a ground type"
+    if (atom.getObjVal? "rest").toOption.isSome then
+      throw "a variadic function type over binders is outside the rigid checker"
     let params ← (← jArr atom "params").mapM (annotationTy names)
     return .arrow params (← annotationTy names (← jField atom "result"))
   return .ground (← Fragment.translate j)
@@ -159,15 +161,19 @@ def translate (names : List String) : Fragment.Expr → M Body
   | .var pos name => pure (.var pos name)
   | .lit pos v => pure (.lit pos v)
   | .assign pos name _ rhs => do return .assign pos name (← translate names rhs)
-  | .call pos callee args => do
+  | .call pos callee args spreads => do
+      if !spreads.isEmpty then
+        throw (.refusal pos .schemeIntroduction "a spread argument is outside the rigid checker")
       let callee ← translate names callee
       let args ← args.attach.mapM fun ⟨a, _⟩ => translate names a
       return .call pos callee args
-  | .lambda pos tps ps defaults ret body => do
+  | .lambda pos tps ps defaults rest ret body => do
       if !tps.isEmpty then
         throw (.refusal pos .schemeIntroduction "a nested quantified closure is outside the checked fragment")
       if !defaults.isEmpty then
         throw (.refusal pos .schemeIntroduction "a defaulted closure parameter is outside the rigid checker")
+      if rest then
+        throw (.refusal pos .schemeIntroduction "a rest closure parameter is outside the rigid checker")
       let inner ← ps.mapM fun (q : String × Json) => do
         return (q.1, ← lower pos .schemeIntroduction (annotationTy names q.2))
       let declared ← lower pos .schemeIntroduction (annotationTy names ret)
@@ -392,6 +398,7 @@ def checkScheme (f : Fragment.Fn) (typeParams : List Fragment.TypeParam)
   if f.name != claims.name || f.namePos != claims.namePos then
     throw "function claim identity mismatch"
   if typeParams.isEmpty then throw "generic body requires type parameters"
+  if f.params.any (·.rest) then throw "a rest parameter requires a generic argument-collection certificate"
   let names := (← parametersOf typeParams).map (·.name)
   if f.params.isEmpty then throw "generic body requires a value parameter"
   let sourceNames := f.params.map (·.name)
@@ -434,8 +441,8 @@ private partial def closureProof (c : Ctx) (env : List (String × GenericCertifi
       | some (_, .argument _) => throw (.refusal pos .schemeIntroduction
           "a raw argument is not an initialized source binding")
       | none => throw (.refusal pos .schemeIntroduction s!"unbound capture '{name}'")
-  | .lambda pos tps ps defaults ret body => do
-      if !tps.isEmpty || !defaults.isEmpty then return none
+  | .lambda pos tps ps defaults rest ret body => do
+      if !tps.isEmpty || !defaults.isEmpty || rest then return none
       let names := c.parameters.map (·.name)
       let inner ← ps.mapM fun q => do
         return (q.1, ← lower pos .schemeIntroduction (annotationTy names q.2))
@@ -443,7 +450,8 @@ private partial def closureProof (c : Ctx) (env : List (String × GenericCertifi
       let slots := inner.map fun (name, A) => (name, GenericCertificate.Slot.value A)
       let some proof ← closureProof c (slots ++ env) body | return none
       return some (.lambda (inner.map Prod.snd) (.widen result proof))
-  | .call _ callee args => do
+  | .call _ callee args spreads => do
+      if !spreads.isEmpty then return none
       let some fn ← closureProof c env callee | return none
       let proofs ← args.mapM (closureProof c env)
       let some actuals := proofs.mapM id | return none
@@ -545,6 +553,9 @@ Every source entry and expression must occur exactly once; no supplied point is
 silently ignored. -/
 def check (f : Fragment.Fn) (typeParams : List Fragment.TypeParam) (claims : Claims) :
     M GenericCertificate.Certificate := do
+  if f.params.any (·.rest) then
+    throw (.refusal f.namePos .genericValidation
+      "a rest parameter requires a generic argument-collection certificate")
   let parameters ← refuse f.namePos .genericValidation (parametersOf typeParams)
   let names := parameters.map (·.name)
   let c : Ctx := ⟨parameters, claims, []⟩
@@ -582,11 +593,11 @@ private def tpT : Fragment.TypeParam := ⟨"T", none⟩
 private def tpTbool : Fragment.TypeParam := ⟨"T", some booleanType⟩
 
 private def idFn : Fragment.Fn :=
-  ⟨"id", (0, 2), [⟨"x", paramT⟩], paramT, [.ret (10, 18) (.var (17, 18) "x")]⟩
+  ⟨"id", (0, 2), [⟨"x", paramT, false⟩], paramT, [.ret (10, 18) (.var (17, 18) "x")]⟩
 private def idClaims : Claims :=
   ⟨"id", (0, 2), [("x", T)], T, [(10, [("x", T)])], [((17, 18), T)]⟩
 private def asBoolFn : Fragment.Fn :=
-  ⟨"asBoolean", (0, 2), [⟨"x", paramT⟩], booleanType, [.ret (10, 18) (.var (17, 18) "x")]⟩
+  ⟨"asBoolean", (0, 2), [⟨"x", paramT, false⟩], booleanType, [.ret (10, 18) (.var (17, 18) "x")]⟩
 private def asBoolClaims : Claims :=
   ⟨"asBoolean", (0, 2), [("x", T)], bool, [(10, [("x", T)])], [((17, 18), T)]⟩
 
@@ -616,14 +627,14 @@ private def refusedWith (text : String) (x : Except Failure α) : Bool :=
   [tpTbool] {idClaims with exprs := [((17, 18), .ground [1])]}))
 
 private def bindFn : Fragment.Fn :=
-  ⟨"bind", (0, 2), [⟨"x", paramT⟩], paramT,
+  ⟨"bind", (0, 2), [⟨"x", paramT, false⟩], paramT,
     [.cst (2, 3) "y" (some paramT) (.var (4, 5) "x"),
      .ret (6, 7) (.var (8, 9) "y")]⟩
 private def bindClaims : Claims :=
   ⟨"bind", (0, 2), [("x", T)], T,
    [(2, [("x", T)]), (6, [("x", T), ("y", T)])], [((4, 5), T), ((8, 9), T)]⟩
 private def fstFn : Fragment.Fn :=
-  ⟨"fst", (0, 2), [⟨"x", paramT⟩, ⟨"y", paramT⟩], paramT,
+  ⟨"fst", (0, 2), [⟨"x", paramT, false⟩, ⟨"y", paramT, false⟩], paramT,
     [.ret (10, 18) (.var (17, 18) "x")]⟩
 private def fstClaims : Claims :=
   ⟨"fst", (0, 2), [("x", T), ("y", T)], T, [(10, [("x", T), ("y", T)])], [((17, 18), T)]⟩

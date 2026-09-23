@@ -15,6 +15,40 @@ deriving instance ToJson, FromJson for Arith
 deriving instance ToJson, FromJson for Tm, CallCode
 deriving instance ToJson, FromJson for PositiveNormalization.Tuple
 deriving instance ToJson, FromJson for Clause
+
+/-- A call clause's variadic signatures are left out of its JSON when there are
+none: that is the one spelling of none, so strict decoding, which re-encodes
+and compares, still refuses an explicit empty list. -/
+private def withoutEmptyVariadic (j : Json) : Json :=
+  ["arrs", "callable"].foldl (fun j key =>
+    match j.getObjVal? key with
+    | .ok body@(.obj _) =>
+      match body.getObjVal? "variadic" with
+      | .ok (.arr xs) =>
+        if xs.isEmpty then
+          let fields := match body.getObj? with
+            | .ok kvs => kvs.toArray.toList.filter (·.1 != "variadic")
+            | .error _ => []
+          j.setObjVal! key (Json.mkObj fields)
+        else j
+      | _ => j
+    | _ => j) j
+
+private def withEmptyVariadic (j : Json) : Json :=
+  ["arrs", "callable"].foldl (fun j key =>
+    match j.getObjVal? key with
+    | .ok body@(.obj _) =>
+      if (body.getObjVal? "variadic").toOption.isSome then j
+      else j.setObjVal! key (body.setObjVal! "variadic" (.arr #[]))
+    | _ => j) j
+
+private def derivedClauseToJson [ToJson α] : Clause α → Json := toJson
+private def derivedClauseFromJson [FromJson α] : Json → Except String (Clause α) := fromJson?
+
+instance (priority := high) [ToJson α] : ToJson (Clause α) :=
+  ⟨fun c => withoutEmptyVariadic (derivedClauseToJson c)⟩
+instance (priority := high) [FromJson α] : FromJson (Clause α) :=
+  ⟨fun j => derivedClauseFromJson (withEmptyVariadic j)⟩
 deriving instance ToJson, FromJson for Target
 deriving instance ToJson, FromJson for Continuation
 deriving instance ToJson, FromJson for Node
@@ -54,9 +88,10 @@ def clauseTypes : Clause (Ty Nat) → List (Ty Nat)
   | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .str | .strLit _ | .top => []
   | .list a bs => (a :: bs).flatMap fun t => t.required ++ t.optional ++ t.rest.toList
   | .refs A bs vs => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd
-  | .arrs L => L.flatMap (fun p => p.1 ++ [p.2])
-  | .callable A bs L =>
-      A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ L.flatMap (fun p => p.1 ++ [p.2])
+  | .arrs L S => L.flatMap (fun p => p.1 ++ [p.2]) ++ S.flatMap (fun p => p.1 ++ [p.2.1, p.2.2])
+  | .callable A bs L S =>
+      A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ L.flatMap (fun p => p.1 ++ [p.2]) ++
+        S.flatMap (fun p => p.1 ++ [p.2.1, p.2.2])
 
 def validClaim (bound : Nat) (c : PointClaim Nat) : Bool :=
   (c.type :: c.context).all (validTy bound)
@@ -71,6 +106,7 @@ def validRequest (r : Request) : Bool :=
 def arrowTypes : PositiveCertificates.ArrowCert Nat → List (Ty Nat)
   | .empty => []
   | .source p => p.1 ++ [p.2]
+  | .rest s => s.1 ++ [s.2.1, s.2.2]
   | .union pre a b suffix l r => pre ++ [a,b] ++ suffix ++ arrowTypes l ++ arrowTypes r
   | .combine a b l r => a :: b :: (arrowTypes l ++ arrowTypes r)
 
@@ -86,6 +122,10 @@ def validEvidence (bound : Nat) : ProgramCertificates.Evidence Nat → Bool
     (match r with
       | .sub p => (proofTypes p).all (validTy bound)
       | .ifBoolVar T F => validTy bound T && validTy bound F
+      | .funRest As | .makeCallableRest As => As.all (validTy bound)
+      | .callRest _ _ _ E => validTy bound E
+      | .arrCopy E => validTy bound E
+      | .elemOpt U | .elemAny U => validTy bound U
       | _ => true) &&
     ps.attach.all (fun p => validEvidence bound p.val)
 termination_by e => sizeOf e

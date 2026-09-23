@@ -21,9 +21,11 @@ private def toNatClause : PositiveNormalization.Clause (List (Fin 6)) → Positi
   | .strLit v => .strLit v
   | .refs a bs vs => .refs (a.map fun (f,A) => (f,A.map Fin.val)) (bs.map fun fs => fs.map fun (f,A) => (f,A.map Fin.val))
       (vs.map fun (f,A) => (f,A.map Fin.val))
-  | .arrs L => .arrs (L.map fun (a,b) => (a.map (List.map Fin.val),b.map Fin.val))
-  | .callable a bs L => .callable (a.map fun (f,A) => (f,A.map Fin.val)) (bs.map fun fs => fs.map fun (f,A) => (f,A.map Fin.val))
+  | .arrs L S => .arrs (L.map fun (a,b) => (a.map (List.map Fin.val),b.map Fin.val))
+      (S.map fun (a,e,r) => (a.map (List.map Fin.val),e.map Fin.val,r.map Fin.val))
+  | .callable a bs L S => .callable (a.map fun (f,A) => (f,A.map Fin.val)) (bs.map fun fs => fs.map fun (f,A) => (f,A.map Fin.val))
       (L.map fun (a,b) => (a.map (List.map Fin.val),b.map Fin.val))
+      (S.map fun (a,e,r) => (a.map (List.map Fin.val),e.map Fin.val,r.map Fin.val))
 
 def types : List (List (PositiveNormalization.Clause (List Nat))) :=
   (List.finRange 6).map (fun i => (ProgramTypingTests.G i).map toNatClause)

@@ -283,7 +283,7 @@ private partial def groundIn (T : SourceTypes.Table) :
         let (T, a) ← groundIn T p
         pure (T, acc ++ [a])) (T, [])
       let (T, r) ← groundIn T r
-      let clause : PositiveNormalization.Clause (List Nat) := .arrs [(ps, r)]
+      let clause : PositiveNormalization.Clause (List Nat) := .arrs [(ps, r)] []
       let T := SourceTypes.intern T clause
       pure (T, [SourceTypes.label T clause])
   | .param name => throw s!"still the rigid parameter '{name}'"
@@ -350,8 +350,9 @@ private def find (f : Fragment.Fn) : SourceTypes.Lowering (Option Closure) := do
   for s in f.body do
     if let .constants pos bs := s then
       for b in bs do
-        if let .lambda lpos tps ps defaults ret body := b.init then
+        if let .lambda lpos tps ps defaults rest ret body := b.init then
           if !tps.isEmpty then
+            if rest then throw "a quantified rest parameter requires an argument-collection certificate"
             if found.isSome then
               throw "this slice checks one quantified closure per function"
             let names := tps.map (·.name)
@@ -441,7 +442,7 @@ private def compile (T : SourceTypes.Table) (f : Fragment.Fn) (claims : Function
       pure (T, ps ++ [p])) (T, [])
     let (T, r) ← (groundIn T (subst σ c.result)).mapError (refuse c.span)
     pure (T, acc ++ [(ps, r)])) (T, [])
-  let clause : PositiveNormalization.Clause (List Nat) := .arrs arrows
+  let clause : PositiveNormalization.Clause (List Nat) := .arrs arrows []
   let T := SourceTypes.intern T clause
   let arrow := SourceTypes.label T clause
   let expected : ClaimType := .scheme binders c.params c.result
@@ -555,7 +556,7 @@ private partial def exprSites : Fragment.Expr → Sites
   | .var p _ | .lit p _ => ([],[p],[])
   -- A defaulted parameter's expression is an ordinary source expression, so it
   -- is a claim site like any other; the parameter name is not one.
-  | .lambda p _ _ defaults _ e =>
+  | .lambda p _ _ defaults _ _ e =>
     defaults.attach.foldl (fun acc ⟨d,_⟩ => joinSites acc (exprSites d.2))
       (joinSites ([],[p],[p]) (exprSites e))
   | .shapeTest p _ _ e | .not p e | .cast p _ e | .read p _ e => joinSites ([],[p],[]) (exprSites e)
@@ -576,7 +577,7 @@ private partial def exprSites : Fragment.Expr → Sites
   | .atEnv p e => joinSites ([p.1],[],[]) (exprSites e)
   | .bindWithReceiver p f receiver args | .callWithReceiver p f receiver args => args.foldl (fun acc a => joinSites acc (exprSites a))
       (joinSites ([],[p],[]) (joinSites (exprSites f) (exprSites receiver)))
-  | .call p f args => args.foldl (fun acc a => joinSites acc (exprSites a)) (joinSites ([],[p],[]) (exprSites f))
+  | .call p f args _ => args.foldl (fun acc a => joinSites acc (exprSites a)) (joinSites ([],[p],[]) (exprSites f))
   | .done _ => ([],[],[])
   | .seqBody p a b | .letBody p _ _ a b => joinSites ([p.1],[],[]) (joinSites (exprSites a) (exprSites b))
   | .ifBody p result a b c => joinSites (if result.isSome then ([p.1],[],[]) else ([],[p],[])) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))

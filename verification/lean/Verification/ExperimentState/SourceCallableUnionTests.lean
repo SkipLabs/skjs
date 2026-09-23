@@ -13,9 +13,9 @@ private def arrow (arg result : Json) : Json := Json.mkObj
 private def union : Json := Json.mkObj [("top",toJson false),("atoms",toJson
   [arrow (primitive "null") (literal true),arrow (primitive "null") (literal false)])]
 private def table : SourceTypes.Table := SourceTypes.initial ++
-  [[.arrs [([[0]],[1])]], [.arrs [([[0]],[2])]], [.arrs [([[0]],[1,2])]]]
+  [[.arrs [([[0]],[1])] []], [.arrs [([[0]],[2])] []], [.arrs [([[0]],[1,2])] []]]
 private def source : Fragment.Fn :=
-  ⟨"invoke",(0,1),[⟨"f",union⟩],primitive "boolean",
+  ⟨"invoke",(0,1),[⟨"f",union,false⟩],primitive "boolean",
    [.ret (2,16) (.app (3,16)
      (.lam (3,12) "unit" (primitive "null") (primitive "boolean")
        (.app (7,12) (.var (7,8) "f") (.var (9,10) "unit")))
@@ -63,16 +63,16 @@ private def wrongArgument : Fragment.Fn := {source with body :=
 -- One successful alternative does not excuse another incompatible domain.
 private def mixedDomain : Json := Json.mkObj [("top",toJson false),("atoms",toJson
   [arrow (primitive "null") (literal true),arrow (primitive "boolean") (literal false)])]
-#guard (extractNormalizedFn (table.set 5 [.arrs [([[1,2]],[2])]])
-  {source with params := [⟨"f",mixedDomain⟩]} claims).toOption.isSome
-#guard !ok (checkWith (table.set 5 [.arrs [([[1,2]],[2])]])
-  {source with params := [⟨"f",mixedDomain⟩]} claims)
+#guard (extractNormalizedFn (table.set 5 [.arrs [([[1,2]],[2])] []])
+  {source with params := [⟨"f", mixedDomain, false⟩]} claims).toOption.isSome
+#guard !ok (checkWith (table.set 5 [.arrs [([[1,2]],[2])] []])
+  {source with params := [⟨"f", mixedDomain, false⟩]} claims)
 
 -- A source-level nullable function remains gated until a guard establishes
 -- callability; it cannot borrow the callable union branch's signature.
 private def nullable : Json := Json.mkObj [("top",toJson false),("atoms",toJson
   [Json.mkObj [("a",toJson "null")],arrow (primitive "null") (literal true)])]
-#guard !ok (check {source with params := [⟨"f",nullable⟩]}
+#guard !ok (check {source with params := [⟨"f", nullable, false⟩]}
   {claims with
     params := [("f",.ok [0,4])]
     envs := [(2,[("f",.ok [0,4])])]
@@ -94,9 +94,9 @@ private def overloadUnion (missingNull : Bool := false) : Json := Json.mkObj
      if missingNull then arrow (primitive "boolean") (literal true)
      else overloaded (primitive "boolean") (literal true) (primitive "null") (literal false)])]
 private def overloadTable : SourceTypes.Table :=
-  (table.set 4 [.arrs [([[0]],[1]),([[1,2]],[2])]]).set 5 [.arrs [([[1,2]],[1]),([[0]],[2])]]
+  (table.set 4 [.arrs [([[0]],[1]),([[1,2]],[2])] []]).set 5 [.arrs [([[1,2]],[1]),([[0]],[2])] []]
 private def overloadSource (booleanArg : Bool) : Fragment.Fn :=
-  {(if booleanArg then wrongArgument else source) with params := [⟨"f",overloadUnion⟩]}
+  {(if booleanArg then wrongArgument else source) with params := [⟨"f", overloadUnion, false⟩]}
 private def overloadClaims (booleanArg : Bool) : SourceClaims.Function :=
   {claims with exprs := claims.exprs.map fun (pos,c) =>
     if booleanArg && pos == (9,10) then (pos,.ok [1]) else (pos,c)}
@@ -108,8 +108,8 @@ private def overloadClaims (booleanArg : Bool) : SourceClaims.Function :=
       if pos == (7,12) then (pos,.ok [1]) else (pos,c)})
 -- A sibling's null overload cannot rescue a Boolean-only alternative.
 private def incompleteOverloadSource : Fragment.Fn :=
-  {source with params := [⟨"f",overloadUnion true⟩]}
-private def incompleteOverloadTable := overloadTable.set 5 [.arrs [([[1,2]],[1])]]
+  {source with params := [⟨"f",overloadUnion true,false⟩]}
+private def incompleteOverloadTable := overloadTable.set 5 [.arrs [([[1,2]],[1])] []]
 #guard (extractNormalizedFn incompleteOverloadTable incompleteOverloadSource claims).toOption.isSome
 #guard !ok (checkWith incompleteOverloadTable incompleteOverloadSource claims)
 end Verification.ExperimentState.SourceCallableUnionTests

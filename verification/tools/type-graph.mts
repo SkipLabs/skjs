@@ -33,8 +33,19 @@ export type Clause =
   /** A tuple contract on an array store: required positions, optional
    * positions, and the rest, or null when no further position may exist. */
   | { list: { first: Tuple; rest: Tuple[] } }
-  | { arrs: { arrows: Arrow[] } }
-  | { callable: { first: Fields; rest: Fields[]; arrows: Arrow[] } };
+  /** `variadic` signatures take any number of actuals past their fixed
+   * parameters, each at the element contract; the field is left out when
+   * there are none. */
+  | { arrs: { arrows: Arrow[]; variadic?: RestArrow[] } }
+  | {
+      callable: {
+        first: Fields;
+        rest: Fields[];
+        arrows: Arrow[];
+        variadic?: RestArrow[];
+      };
+    };
+export type RestArrow = [domains: Labels[], [element: Labels, result: Labels]];
 export type Row = Clause[];
 export type TypeGraph = Row[];
 
@@ -81,6 +92,19 @@ function obj(v: unknown, keys: string[]): Record<string, unknown> {
     throw Error("unexpected type graph fields");
   return v;
 }
+function objOptional(
+  v: unknown,
+  keys: string[],
+  optional: string[],
+): Record<string, unknown> {
+  if (
+    !isRecord(v) ||
+    keys.some((k) => !(k in v)) ||
+    Object.keys(v).some((k) => !keys.includes(k) && !optional.includes(k))
+  )
+    throw Error("unexpected type graph fields");
+  return v;
+}
 function array(v: unknown): unknown[] {
   if (!Array.isArray(v)) throw Error("expected graph list");
   return v;
@@ -106,6 +130,21 @@ export function decodeGraph(value: unknown): TypeGraph {
       array(pair[0]).forEach(labels);
       labels(pair[1]);
     });
+  // Left out when empty: an explicit empty list is not the canonical form.
+  const variadic = (v: unknown) => {
+    const sigs = array(v);
+    if (!sigs.length)
+      throw Error("an empty variadic list is written by omitting it");
+    sigs.forEach((s) => {
+      const sig = array(s);
+      if (sig.length !== 2) throw Error("expected a variadic signature");
+      array(sig[0]).forEach(labels);
+      const tail = array(sig[1]);
+      if (tail.length !== 2) throw Error("expected an element and a result");
+      labels(tail[0]);
+      labels(tail[1]);
+    });
+  };
   const fields = (v: unknown) => {
     const names = new Set<string>();
     array(v).forEach((f) => {
@@ -163,12 +202,17 @@ export function decodeGraph(value: unknown): TypeGraph {
       tuple(r.first);
       array(r.rest).forEach(tuple);
     },
-    arrs: (b) => arrows(obj(b, ["arrows"]).arrows),
+    arrs: (b) => {
+      const r = objOptional(b, ["arrows"], ["variadic"]);
+      arrows(r.arrows);
+      if ("variadic" in r) variadic(r.variadic);
+    },
     callable: (b) => {
-      const r = obj(b, ["first", "rest", "arrows"]);
+      const r = objOptional(b, ["first", "rest", "arrows"], ["variadic"]);
       fields(r.first);
       array(r.rest).forEach(fields);
       arrows(r.arrows);
+      if ("variadic" in r) variadic(r.variadic);
     },
   };
 
@@ -197,6 +241,8 @@ export const printLabels = (labels: Labels): string =>
   labels.length ? labels.map((l) => `#${l}`).join(" | ") : "never";
 const arrowText = ([domains, result]: Arrow) =>
   `(${domains.map(printLabels).join(", ")}) => ${printLabels(result)}`;
+const restArrowText = ([domains, [element, result]]: RestArrow) =>
+  `(${[...domains.map(printLabels), `...(${printLabels(element)})[]`].join(", ")}) => ${printLabels(result)}`;
 const printTuple = (t: Tuple) =>
   `${t.readonly ? "readonly " : ""}[${[
     ...t.required.map(printLabels),
@@ -218,9 +264,11 @@ function clauseText(c: Clause): string {
       [c.refs.first, ...c.refs.rest].map(printFields).join(" & "),
       ...(c.refs.views.length ? [`readonly ${printFields(c.refs.views)}`] : []),
     ].join(" & ");
-  if ("arrs" in c) return `calls[${c.arrs.arrows.map(arrowText).join("; ")}]`;
+  const calls = (arrows: Arrow[], variadic: RestArrow[] = []) =>
+    `calls[${[...arrows.map(arrowText), ...variadic.map(restArrowText)].join("; ")}]`;
+  if ("arrs" in c) return calls(c.arrs.arrows, c.arrs.variadic);
   if ("callable" in c)
-    return `object[${[c.callable.first, ...c.callable.rest].map(printFields).join(" & ")}; calls[${c.callable.arrows.map(arrowText).join("; ")}]]`;
+    return `object[${[c.callable.first, ...c.callable.rest].map(printFields).join(" & ")}; ${calls(c.callable.arrows, c.callable.variadic)}]`;
   return assertNever(c);
 }
 export interface GraphDefinition {

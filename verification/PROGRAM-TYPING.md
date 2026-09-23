@@ -81,8 +81,8 @@ $$
 $$
 
 Functions take ordered parameter lists. Write $\vec A$ for a signature's
-parameter types and $|\vec A|$ for its length. Every signature of a created
-function has the descriptor's arity, and its body is typed under all of that
+parameter types and $|\vec A|$ for its length. In the ordinary-closure creation
+rule below, every signature has the descriptor's arity, and its body is typed under all of that
 signature's parameters followed by the captured bindings:
 
 $$
@@ -98,12 +98,13 @@ $$
 
 A call writes a prefix of the positions the selected signature declares:
 $|\vec a|=|\vec A|$, and $\vec U$ are the positions it omits. Omission is
-admissible exactly when each omitted contract admits `undefined`, which is the
-value the machine binds there — `CallArguments.parameters` pads a short actual
-list, so the body dispatched for $f(\vec a)$ is the same term as for the call
-that writes those `undefined`s out. With $\vec U$ empty this is the
-exact-arity rule. No actual is invented: the call term keeps the arguments the
-source writes, and `CallArguments.parameters_pad` is where the two agree.
+admissible exactly when each omitted contract admits `undefined`: that is part
+of what the signature promises (below), and closure code keeps the promise
+because `CallArguments.parameters` pads a short actual list, so the body
+dispatched for $f(\vec a)$ is the same term as for the call that writes those
+`undefined`s out (`CallArguments.parameters_pad`, used once, in
+`callsT_of_invocationSpec`). With $\vec U$ empty this is the exact-arity rule.
+No actual is invented: the call term keeps the arguments the source writes.
 
 Optionality is therefore a property of a declared contract, not a separate
 arity record: `x?: T` is carried as `T | undefined`, which is what the body
@@ -111,8 +112,101 @@ reads and what licenses the omission. Declared arity is not observable in this
 fragment, so a call may also omit a trailing position a producer declared as
 `T | undefined` without writing `?`, which TypeScript rejects; the verifier
 proves such a call safe rather than enforcing that surface rule. An empty
-parameter list is a zero-argument call, not an absent one. Rest parameters
-need further rules.
+parameter list is a zero-argument call, not an absent one. A tuple rest
+parameter and a tuple spread are a fixed number of positions each, so they need
+no rule of their own here: the signature carries the positions, and the array a
+rest parameter binds is allocated by the ordinary store and allocation rules.
+
+A function type is a promise about the actual lists a caller may write, not
+about the callee's code. A fixed signature $\vec A\to B$ admits the prefixes of
+$\vec A$ whose omitted positions admit `undefined`, and a variadic signature
+$\vec A,\ldots E\to B$ admits those and every list of all of $\vec A$ followed by
+any number of actuals in $E$:
+
+$$
+\operatorname{Adm}(\vec A)=\{\vec v\mid |\vec v|\le|\vec A|,\ \forall i<|\vec v|.\,v_i\in A_i,\ \forall |\vec v|\le i<|\vec A|.\,\mathsf{undefined}\in A_i\}
+$$
+
+$$
+\operatorname{Adm}(\vec A;E)=\operatorname{Adm}(\vec A)\cup\{\vec a\,\vec e\mid \vec a\in\vec A,\ \forall j.\,e_j\in E\}.
+$$
+
+A value meets a signature when every admitted list of values invokes it safely
+at $B$, at every later world and budget (`Safety.Promise`, `callsT`, `restsT`).
+This instantiates the [common behavioral equation](SEMANTICS.md#one-meaning-for-callable-contracts),
+which also explains overload conjunction, callable fields and quantification.
+Code enters only where it is created: closure code pads a short list
+(`callsT_of_invocationSpec`), and variadic code collects the actuals past its
+$k$ fixed parameters into a fresh array, which the term invocation yields
+allocates with the ordinary steps (`RestCalls.restsT_of_restSpec`):
+
+$$
+\operatorname{invoke}(\langle k,t\rangle^{\ldots},\vec v)=
+\mathsf{let}\ r=\mathsf{alloc}\{[\,]:\mathsf{arr}(v_k,v_{k+1},\ldots)\}\ \mathsf{in}\ t[\vec x:=\operatorname{pad}_k(\vec v)]
+\qquad(\texttt{bindRest})
+$$
+
+So one value may meet fixed and variadic signatures at once, and a graph call
+clause carries both: `arrs L S`, `callable P Ps L S`. Write
+$\operatorname{Array}_G(R,E)$ when $R$ is an object whose store field holds a
+store of any length at $E$ (`RestArray`), and $\operatorname{Spreads}_G(S,E)$
+when $S$ is a store contract every position of which is within $E$, with
+$\mathsf{undefined}$ in $E$ if the store may have a hole — at an optional
+position or among its rest (`SpreadsInto`). Creation checks the body once per
+variadic signature, with the rest array in slot 0 above the fixed parameters
+(`funRest`; `makeCallableRest` adds a field bag as `makeCallable` does):
+
+$$
+\frac{\forall(\vec A,E,B)\in S.\;|\vec A|=k\quad\operatorname{Array}_G(R_{\vec A,E,B},E)
+      \quad\Gamma,\vec x{:}\vec A,r{:}R_{\vec A,E,B}\vdash_G t:B}
+     {\Gamma\vdash_G \lambda\vec x,\ldots r.\,t:\textstyle\bigwedge_{(\vec A,E,B)\in S}(\vec A,\ldots E\to B)}
+$$
+
+A call writes the fixed actuals, or a prefix whose omitted positions admit
+`undefined`, then any number of parts, each an actual in $E$ or a spread of a
+store whose elements are; a call that omits a fixed position writes no part
+(`callRest`):
+
+$$
+\frac{\begin{array}{c}\Gamma\vdash_G f:F\quad(\vec A\,\vec U,E,B)\in\operatorname{restSigs}_G(F)
+      \quad\forall i.\;\Gamma\vdash_G a_i:A_i\quad\forall U\in\vec U.\;\Gamma\vdash_G\mathsf{undefined}:U\\
+      \vec U=\varepsilon\lor\vec p=\varepsilon\qquad
+      \forall p\in\vec p.\;\Gamma\vdash_G p:E\ \ \lor\ \ (p={\ldots}s\ \land\ \Gamma\vdash_G s:S\ \land\ \operatorname{Spreads}_G(S,E))\end{array}}
+     {\Gamma\vdash_G f(\vec a,\vec p):B}
+$$
+
+A spread is read by the call once every earlier actual is a value, the store's
+elements replacing it in order, `undefined` at a hole
+(`Step.callSpread`, `spread_parts_safe`):
+
+$$
+(h,\ f(\vec v,\ {\ldots}\mathsf{arr}(\vec\ell),\ \vec p))\longrightarrow
+(h,\ f(\vec v,\ h(\ell_1),\ldots,h(\ell_m),\ \vec p))
+$$
+
+A spread followed by an actual that runs code is copied where it is written,
+`[...s]`, a fresh store the call then spreads, so the later actual cannot
+change what it passes (`Step.arrSpread`, `copy_safe`, `arrCopy`):
+
+$$
+\frac{\Gamma\vdash_G s:S\quad\operatorname{Spreads}_G(S,E)}
+     {\Gamma\vdash_G [{\ldots}s]:\mathsf{List}([\,],[\,],E)}
+$$
+
+Covering compares admitted lists. A variadic source covers a fixed target whose
+first positions are within its fixed parameters and whose further positions are
+within its element contract (`RestFixed`, a `CallArrow` case), and a variadic
+target whose parameters are, and whose element contract is, within its own
+(`RestCovers`); results are covariant. A fixed source never covers a variadic
+target: it promises nothing past its positions.
+
+$$
+\frac{k=|\vec P|\le|\vec A|\quad\forall i<k.\;A_i\le P_i\quad\forall k\le i<|\vec A|.\;A_i\le E\quad B\le D}
+     {(\vec P,\ldots E\to B)\le(\vec A\to D)}
+\qquad
+\frac{k=|\vec P|\le|\vec Q|\quad\forall i<k.\;Q_i\le P_i\quad\forall k\le i<|\vec Q|.\;Q_i\le E\quad E'\le E\quad B\le D}
+     {(\vec P,\ldots E\to B)\le(\vec Q,\ldots E'\to D)}
+$$
 
 $$
 \frac{\Gamma\vdash_G a:A\quad\Gamma,x:A\vdash_G b:B}
@@ -1495,15 +1589,17 @@ contracts on the same value. `CodeSpec` checks invocation bodies separately
 from object membership. `EnvOk.prepend` extends environments with ordered
 parameter lists, and `HasTy.invocationSpec` derives an exact-arity native call
 contract from body derivations under those parameters and captured bindings.
-All signatures in this rule have the descriptor's arity; optional and rest
-parameters need further typing rules. Creation evidence now checks descriptor arity and uses
+All signatures in this ordinary-closure creation rule have the descriptor's
+arity; optional calls and variadic creation use the rules in
+[Expressions](#expressions). Creation evidence checks descriptor arity and uses
 this general environment construction directly. Source functions and shared continuations now lower
 to `funE`, and the certificate producer and consumer use its allocating typing
 rule. A checked creation effect preserves existing heap knowledge without
 executing the body. Allocation, application, bag reads and writes,
 and overload conjunction have safety proofs. The graph clause
-`callable first rest arrows` combines a nonempty conjunction of bag invariants
-with overloads on one object. Normalization merges both lists; structural
+`callable first rest arrows variadic` combines a nonempty conjunction of bag
+invariants with fixed and variadic call promises on one object. Normalization
+merges the corresponding lists; structural
 subtyping checks invariant bag coverage and arrow coverage separately, and can
 forget properties to obtain `arrs`. The producer and consumer support
 `makeCallable`, `callCallable`, `readCallable`, and `writeCallable` evidence.
@@ -1534,8 +1630,8 @@ The existing
 `refT` and graph reference clauses still mean plain objects. A callability-neutral
 bag view can be expressed as `refs P Ps | callable P Ps []` using two graph
 labels. `CallableConjunctions.neutral_iff` proves that this union is precisely
-the bag conjunction on scoped values; it forgets invocation promises without
-changing the object. `NeutralBagTests` supplies checked `unionVar` derivations
+the bag conjunction on scoped values, whatever code they carry; it forgets
+invocation promises without changing the object. `NeutralBagTests` supplies checked `unionVar` derivations
 for reads and writes through this view. Proof search first tries a single
 constructor view, then splits an explicitly union-typed receiver variable for
 reads, writes, and calls, using the existing `unionVar` evidence. Every alternative
@@ -1856,6 +1952,13 @@ $$
 \cap \mathsf{Props}(P)
 \cap \bigcap_{\sigma\in L}\mathsf{CallSpec}(\sigma).
 $$
+
+This is also the organizing equation of the implemented model, not just the
+future object design. [SEMANTICS.md](SEMANTICS.md#one-meaning-for-callable-contracts)
+states the indexed call promise precisely and maps each component to Lean.
+Fixed and variadic signatures share that promise; code-specific binding rules
+establish it at creation. Construction and receivers below remain planned
+extensions, and quantified rest signatures remain a source/certificate gap.
 
 For construction contracts,
 

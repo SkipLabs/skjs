@@ -11,8 +11,8 @@ open ProgramTyping ProgramCertificates SourceTypes PositiveRules HeapExpressionR
 -- Interning gives distinct contracts distinct labels, returns a known label
 -- without a new row, and never lets undefined collapse into a smaller operand.
 private def lowered : Except String (List Nat × Table) :=
-  (do return [← CellClaims.cellReference [3], ← CellClaims.cellReference [], ← use (.arrs [([[3]],[1,2])]),
-      ← use (.arrs [([[]],[1,2])]), ← CellClaims.cellReference [3]]).run initial
+  (do return [← CellClaims.cellReference [3], ← CellClaims.cellReference [], ← use (.arrs [([[3]],[1,2])] []),
+      ← use (.arrs [([[]],[1,2])] []), ← CellClaims.cellReference [3]]).run initial
 #guard lowered.toOption.map (·.1) == some [4,5,6,7,4]
 #guard lowered.toOption.map (·.2.length) == some 8
 -- A clause the table lacks is out of range, never a different contract.

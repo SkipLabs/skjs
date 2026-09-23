@@ -51,7 +51,7 @@ theorem Ty.denote_value {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta)
   | rigid name => exact ⟨(hC name).2.1 n W v h, (hC name).2.2 n W v h⟩
   | ground labels => exact ProgramTyping.meaning_value h
   | arrow params result =>
-    exact ⟨(callsT_callable h).val, (callsT_callable h).scoped⟩
+    exact ⟨h.1.val, h.1.scoped⟩
 
 theorem Slot.denote_adm {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta) :
     ∀ A : Slot, Adm (A.denote G eta)

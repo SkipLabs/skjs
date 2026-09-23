@@ -100,6 +100,32 @@ export const cases: Case[] = [
     "omitted trailing arguments / optional parameter contracts",
   ),
   positive(
+    "rest-parameters",
+    "A tuple rest collected into a fresh array, read by index and in a closure",
+  ),
+  negative(
+    "invalid-rest-element",
+    "rest element returned at another position's contract",
+  ),
+  positive(
+    "spread-arguments",
+    "A tuple spread written in place of the last arguments, read after the others",
+  ),
+  negative(
+    "invalid-spread-element",
+    "spread element at another position's contract",
+  ),
+  positive(
+    "rest-unbounded",
+    "Array rests: any number of arguments, spreads among them read where written, a fixed-signature use, omission before the rest, and a callable field",
+  ),
+  negative("invalid-rest-actual", "an actual outside a rest's element type"),
+  negative(
+    "spread-holes",
+    "TypeScript accepts a sparse Boolean array spread that puts undefined into a Boolean rest",
+    /a spread of an array that may have holes passes `undefined`/,
+  ),
+  positive(
     "overloads",
     "one closure advertising two signatures, checked and called at each",
   ),

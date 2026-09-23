@@ -186,7 +186,7 @@ private def variableClaims (q : Bool) : Fragment.Claims :=
 -- Source input slots follow declaration order, independently of export order
 -- inside each environment. Newly declared locals still push ahead of them.
 private def parameterFn : Fragment.Fn :=
-  ⟨"parameters",(0,1),[⟨"first",(wireTy ⟨false,[.null]⟩)⟩,⟨"second",(wireTy ⟨false,[.bool]⟩)⟩],
+  ⟨"parameters",(0,1),[⟨"first",(wireTy ⟨false,[.null]⟩),false⟩,⟨"second",(wireTy ⟨false,[.bool]⟩),false⟩],
     (wireTy ⟨false,[.bool]⟩),[.ret (2,5) (.var (4,5) "second")]⟩
 private def parameterClaims : Fragment.Claims :=
   ⟨"parameters",(0,1),[("first",(wireTy ⟨false,[.null]⟩)),("second",(wireTy ⟨false,[.bool]⟩))],
@@ -628,7 +628,7 @@ private def lowered (j : Json) : Except String (Ty Nat) :=
 -- parameter is admitted like a primitive or an arrow.
 private def nullableCell : Json := joined [wireTy ⟨false,[.null]⟩,cellWire]
 private def externalFn : Fragment.Fn :=
-  { branchFn true with params := [⟨"external",nullableCell⟩] }
+  { branchFn true with params := [⟨"external",nullableCell,false⟩] }
 private def externalEnvs : List (Nat × List (String × Json)) :=
   (branchClaims true).envs.map fun pv => (pv.1,("external",nullableCell) :: pv.2)
 private def externalClaims : Fragment.Claims :=
@@ -686,9 +686,9 @@ private def rowOf (j : Json) : Option (List (Clause (List Nat))) :=
   == some [.refs [(valueField, [0])] [[(valueField,[1])],[(valueField,[1,2])]] []]
 private def trueToNull := arrowOf ⟨false,[.boolLit true]⟩ ⟨false,[.null]⟩
 private def falseToNull := arrowOf ⟨false,[.boolLit false]⟩ ⟨false,[.null]⟩
-#guard rowOf (conjoined trueToNull [falseToNull]) == some [.arrs [([[1]],[0]),([[2]],[0])]]
-#guard rowOf (conjoined falseToNull [trueToNull]) == some [.arrs [([[2]],[0]),([[1]],[0])]]
-#guard rowOf (conjoined trueToNull [trueToNull]) == some [.arrs [([[1]],[0])]]
+#guard rowOf (conjoined trueToNull [falseToNull]) == some [.arrs [([[1]],[0]),([[2]],[0])] []]
+#guard rowOf (conjoined falseToNull [trueToNull]) == some [.arrs [([[2]],[0]),([[1]],[0])] []]
+#guard rowOf (conjoined trueToNull [trueToNull]) == some [.arrs [([[1]],[0])] []]
 
 -- A lambda claimed at two signatures is proved once per signature; the call
 -- resolves to the first signature admitting its argument.
@@ -729,7 +729,7 @@ private def overloadClaims : Fragment.Claims :=
 -- that contradicts the annotation is refused by name, and a cell parameter
 -- claimed as an arrow where it is called is refused by proof search.
 private def callerFn : Fragment.Fn :=
-  ⟨"caller",(0,1),[⟨"a",trueToNull⟩],wireTy ⟨false,[.null]⟩,
+  ⟨"caller",(0,1),[⟨"a",trueToNull,false⟩],wireTy ⟨false,[.null]⟩,
     [.ret (2,9) (.app (4,9) (.var (4,5) "a") (.lit (6,7) (.vbool true)))]⟩
 private def callerClaims : Fragment.Claims :=
   ⟨"caller",(0,1),[("a",trueToNull)],wireTy ⟨false,[.null]⟩,[(2,[("a",trueToNull)])],
@@ -743,14 +743,14 @@ private def callerClaims : Fragment.Claims :=
   | .error e => e == "claimed parameter type differs from the source annotation for 'a'"
   | .ok _ => false)
 #guard !ok (do
-  let r ← extractFn { callerFn with params := [⟨"a",cellWire⟩] } { callerClaims with params := [("a",cellWire)] }
+  let r ← extractFn { callerFn with params := [⟨"a",cellWire,false⟩] } { callerClaims with params := [("a",cellWire)] }
   produceSourceJson (toJson r.toRequest) 8)
 
 -- Entry allocation replaces exactly the assigned parameter slots. The middle
 -- parameter stays a value; both private cells start with their own argument.
 private def assignedParametersFn : Fragment.Fn :=
   let B := wireTy ⟨false,[.bool]⟩
-  ⟨"parameters",(0,1),[⟨"x",B⟩,⟨"keep",B⟩,⟨"z",B⟩],B,
+  ⟨"parameters",(0,1),[⟨"x",B,false⟩,⟨"keep",B,false⟩,⟨"z",B,false⟩],B,
     [.effect (2,5) (.assign (2,5) "x" (2,3) (.var (4,5) "z")),
      .effect (6,9) (.assign (6,9) "z" (6,7) (.lit (8,9) (.vbool false))),
      .ret (10,13) (.var (12,13) "x")]⟩
@@ -784,7 +784,7 @@ private def reachesWrite (P : ControlFlow.Program) : Nat → Nat → Bool
 
 private def nullishAssignmentFn : Fragment.Fn :=
   let B := wireTy ⟨false,[.bool,.null]⟩
-  ⟨"fallback",(0,1),[⟨"x",B⟩],wireTy ⟨false,[.bool]⟩,
+  ⟨"fallback",(0,1),[⟨"x",B,false⟩],wireTy ⟨false,[.bool]⟩,
     [.ret (2,7) (.nullishAssign (3,7) "x" (3,4) (.lit (6,7) (.vbool true)))]⟩
 private def nullishAssignmentClaims : Fragment.Claims :=
   let B := wireTy ⟨false,[.bool,.null]⟩
@@ -811,8 +811,8 @@ private def nullishAssignmentClaims : Fragment.Claims :=
 private def scheduledParameters : List (String × Json) :=
   ["first", "second", "before", "later", "after"].map (·, Json.null)
 private def scheduledDefaults : List (Nat × Fragment.Expr) :=
-  [(0, .lambda (1,2) [] [] [] Json.null (.var (1,2) "second")),
-   (1, .lambda (3,4) [] [] [] Json.null (.var (3,4) "later")),
+  [(0, .lambda (1,2) [] [] [] false Json.null (.var (1,2) "second")),
+   (1, .lambda (3,4) [] [] [] false Json.null (.var (3,4) "later")),
    (2, .write (5,6) "value" (.var (5,6) "cell") (.lit (5,6) (.vbool false))),
    (3, .read (7,8) "value" (.var (7,8) "cell")),
    (4, .write (9,10) "value" (.var (9,10) "cell") (.lit (9,10) (.vbool true)))]
@@ -821,9 +821,9 @@ private def scheduledDefaults : List (Nat × Fragment.Expr) :=
 -- eventual function type is valid. Capture cycles cannot be scheduled either.
 #guard !ok (Fragment.parameterOrder scheduledParameters
   (scheduledDefaults.map fun (i,e) => (i, if i == 3 then
-    .call (7,8) (.var (7,8) "first") [] else e)))
+    .call (7,8) (.var (7,8) "first") [] [] else e)))
 #guard !ok (Fragment.parameterOrder scheduledParameters
   (scheduledDefaults.map fun (i,e) => (i, if i == 1 then
-    .lambda (3,4) [] [] [] Json.null (.var (3,4) "first") else e)))
+    .lambda (3,4) [] [] [] false Json.null (.var (3,4) "first") else e)))
 
 end Verification.ExperimentState.SourceExtractionTests

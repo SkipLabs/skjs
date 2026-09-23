@@ -50,6 +50,7 @@ and annotation_atom binders j =
   | "function" ->
     let signature a = { quantified=[];
       params=List.map (annotation binders) (items "params" a);
+      variadic=Option.map (annotation binders) (List.assoc_opt "rest" (obj a));
       result=annotation binders (field "result" a) } in
     List.iter (fun a -> if text "a" a <> "function" then
       unsupported "intersection annotation") conjuncts;
@@ -93,9 +94,13 @@ and expr_node =
   | Read of expr * string | Write of expr * string * expr
   | Assign of string * expr
   (* A parameter's type is what the body reads. A defaulted one also admits
-     `undefined` where the closure is called; the default replaces it. *)
-  | Lambda of quantifier list * (string * ty) list * (int * expr) list * ty * expr
-  | Call of expr * expr option * expr list
+     `undefined` where the closure is called; the default replaces it. A rest
+     parameter reads the tuple its arguments are collected into, and the
+     signature has one position per required element of that tuple. *)
+  | Lambda of quantifier list * (string * ty) list * (int * expr) list * bool * ty * expr
+  (* The positions of the arguments written with `...`: each stands for the
+     elements of its operand, read where it is written. *)
+  | Call of expr * expr option * expr list * int list
   | Conditional of expr * expr * expr | Coalesce of expr * expr
   | ArrayLiteral of expr list | Index of expr * expr | IndexWrite of expr * expr * expr
   | Bind of expr * expr * expr list
@@ -132,16 +137,23 @@ let rec expr binders j =
       let inner,quantified = quantify binders (-1 - span_start (field "pos" j))
         (items "typeParams" j) in
       let parameters = items "params" j in
+      let rest = List.exists (fun p -> List.mem_assoc "rest" (obj p)) parameters in
       Lambda (quantified,
         List.map (fun p -> text "name" p,annotation inner (field "type" p)) parameters,
         List.filter_map (fun (i,p) -> match List.assoc_opt "default" (obj p) with
           | None -> None
           | Some d -> Some (i, expr inner d))
           (List.mapi (fun i p -> i,p) parameters),
+        rest,
         annotation inner (field "result" j),
         expr inner (field "body" j))
-  | "apply" -> Call (sub "callee",None,List.map (expr binders) (items "args" j))
-  | "callWithReceiver" -> Call (sub "callee",Some (sub "receiver"),List.map (expr binders) (items "args" j))
+  | "apply" ->
+    let spreads = match List.assoc_opt "spreads" (obj j) with
+      | None -> [] | Some s -> List.map (fun n -> int_of_string (match n with
+          | Json.Number n -> n | _ -> Json.fail "a spread position is a number")) (list s) in
+    Call (sub "callee",None,List.map (expr binders) (items "args" j),spreads)
+  | "callWithReceiver" ->
+    Call (sub "callee",Some (sub "receiver"),List.map (expr binders) (items "args" j),[])
   | "coalesce" -> Coalesce (sub "left",sub "right")
   | "arrayLit" -> ArrayLiteral (List.map (expr binders) (items "elems" j))
   | "index" -> Index (sub "e",sub "key")

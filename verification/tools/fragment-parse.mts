@@ -55,6 +55,31 @@ function firstOptional(
   return i < 0 ? parameters.length : i;
 }
 
+/** The positions a rest parameter stands for, where its contract is a tuple
+ * of required positions: a fixed number of further arguments, which is what
+ * the callable signature says. */
+function tupleRestPositions(type: ClaimType): ClaimType[] | null {
+  if (type.top || type.atoms.length !== 1) return null;
+  const atom = type.atoms[0];
+  if (!atom || atom.a !== "array" || atom.readonly) return null;
+  if (atom.optional.length || atom.rest !== null) return null;
+  return atom.required;
+}
+
+/** The contract of each further argument, where a rest parameter's contract
+ * is a mutable `T[]`: any number of them, collected into a fresh array. */
+function arrayRestElement(type: ClaimType): ClaimType | null {
+  if (type.top || type.atoms.length !== 1) return null;
+  const atom = type.atoms[0];
+  if (!atom || atom.a !== "array" || atom.readonly) return null;
+  if (atom.required.length || atom.optional.length || atom.rest === null)
+    return null;
+  return atom.rest;
+}
+
+const REST_CONTRACT =
+  "a rest parameter needs a tuple of required positions or a mutable array";
+
 /* --------------------------------------------------------- the compiler -- */
 // The compiler runs out of process and is addressed through one API instance.
 // Opening it costs more than reading any one file, so a process that parses
@@ -243,24 +268,42 @@ class Gate {
       if (node.typeParameters?.length)
         this.fail(node, "generic function types are outside the fragment");
       for (const p of node.parameters) {
-        if (
-          !ts.isIdentifier(p.name) ||
-          p.name.text === "this" ||
-          p.dotDotDotToken ||
-          p.initializer
-        )
+        if (!ts.isIdentifier(p.name) || p.name.text === "this" || p.initializer)
           this.fail(p, "expected an ordinary parameter");
         if (
+          p.dotDotDotToken &&
+          p !== node.parameters[node.parameters.length - 1]
+        )
+          this.fail(p, "a rest parameter must be the last one");
+        if (
           !p.questionToken &&
+          !p.dotDotDotToken &&
           node.parameters.indexOf(p) > firstOptional(node.parameters)
         )
           this.fail(p, "a required parameter cannot follow an optional one");
       }
+      // A tuple rest is a fixed number of further positions, which is how
+      // TypeScript itself reads it, so the signature carries them. An array
+      // rest is any number of them: the signature says what each one is.
+      const positions: ClaimType[] = [];
+      let element: ClaimType | undefined;
+      for (const p of node.parameters) {
+        if (p.dotDotDotToken) {
+          const type = this.typeOf(p.type);
+          const tuple = tupleRestPositions(type);
+          const each = arrayRestElement(type);
+          if (tuple) positions.push(...tuple);
+          else if (each) element = each;
+          else this.fail(p, REST_CONTRACT);
+        } else
+          positions.push(
+            p.questionToken ? this.optionalTypeOf(p.type) : this.typeOf(p.type),
+          );
+      }
       acc.push({
         a: "function",
-        params: node.parameters.map((p) =>
-          p.questionToken ? this.optionalTypeOf(p.type) : this.typeOf(p.type),
-        ),
+        params: positions,
+        ...(element ? { rest: element } : {}),
         result: this.typeOf(node.type),
         construct: "unknown",
         array: "unknown",
@@ -802,20 +845,28 @@ class Gate {
           args: node.arguments.slice(1).map((arg) => this.expr(arg)),
         };
       }
-      if (
-        node.questionDotToken ||
-        node.typeArguments?.length ||
-        node.arguments.some((arg) => ts.isSpreadElement(arg))
-      )
+      if (node.questionDotToken || node.typeArguments?.length)
         this.fail(
           node,
-          "expected ordinary call arguments without spread or type arguments",
+          "expected ordinary call arguments without type arguments",
         );
+      // A spread writes the elements of one array in place of several
+      // arguments, read where it is written: after every argument before it
+      // and before every one after it. What it stands for — a tuple's
+      // required positions, or elements a variadic callee collects — the
+      // checker reads from the claims.
+      const spreads: number[] = [];
+      const args = node.arguments.map((arg, i) => {
+        if (!ts.isSpreadElement(arg)) return this.expr(arg);
+        spreads.push(i);
+        return this.expr(arg.expression);
+      });
       return {
         k: "apply",
         pos: this.span(node),
         callee: this.expr(node.expression),
-        args: node.arguments.map((arg) => this.expr(arg)),
+        args,
+        ...(spreads.length ? { spreads } : {}),
       };
     }
 
@@ -1137,13 +1188,23 @@ class Gate {
       // Each name is taken where its parameter has just been checked: a
       // narrowing does not survive into the second pass over the same list.
       const names = node.parameters.map((p) => {
-        if (!ts.isIdentifier(p.name) || p.name.text === "this" || p.dotDotDotToken)
+        if (!ts.isIdentifier(p.name) || p.name.text === "this")
           this.fail(p, "expected an ordinary closure parameter");
         if (p.questionToken && p.initializer)
           this.fail(p, "a parameter cannot be both optional and defaulted");
+        if (p.dotDotDotToken) {
+          if (p.questionToken || p.initializer)
+            this.fail(p, "a rest parameter is neither optional nor defaulted");
+          if (p !== node.parameters[node.parameters.length - 1])
+            this.fail(p, "a rest parameter must be the last one");
+          const type = this.typeOf(p.type);
+          if (!tupleRestPositions(type) && !arrayRestElement(type))
+            this.fail(p, REST_CONTRACT);
+        }
         if (
           !p.questionToken &&
           !p.initializer &&
+          !p.dotDotDotToken &&
           node.parameters.indexOf(p) > firstOptional(node.parameters)
         )
           this.fail(p, "a required parameter cannot follow an optional one");
@@ -1167,11 +1228,13 @@ class Gate {
         params: node.parameters.map((p, i) => ({
           name: names[i],
           // A defaulted parameter's type is what the body reads; the default
-          // itself is the expression that replaces an omitted argument.
+          // itself is the expression that replaces an omitted argument. A rest
+          // parameter's type is the tuple its arguments are collected into.
           type: p.questionToken
             ? this.optionalTypeOf(p.type)
             : this.typeOf(p.type),
           ...(p.initializer ? { default: this.expr(p.initializer) } : {}),
+          ...(p.dotDotDotToken ? { rest: true as const } : {}),
         })),
         result: this.typeOf(node.type),
         body,
@@ -1546,11 +1609,18 @@ class Gate {
           this.fail(p, "shadowing undefined is outside the fragment");
         if (
           !p.questionToken &&
+          !p.dotDotDotToken &&
           node.parameters.indexOf(p) > firstOptional(node.parameters)
         )
           this.fail(p, "a required parameter cannot follow an optional one");
-        if (p.dotDotDotToken)
-          this.fail(p, "rest parameters are outside the fragment");
+        if (p.dotDotDotToken) {
+          if (p.questionToken) this.fail(p, "a rest parameter is not optional");
+          if (p !== node.parameters[node.parameters.length - 1])
+            this.fail(p, "a rest parameter must be the last one");
+          const type = this.typeOf(p.type);
+          if (!tupleRestPositions(type) && !arrayRestElement(type))
+            this.fail(p, REST_CONTRACT);
+        }
         if (p.initializer)
           this.fail(p, "default parameters are outside the fragment");
         return {
@@ -1559,6 +1629,7 @@ class Gate {
           type: p.questionToken
             ? this.optionalTypeOf(p.type)
             : this.typeOf(p.type),
+          ...(p.dotDotDotToken ? { rest: true as const } : {}),
         };
       });
       return {

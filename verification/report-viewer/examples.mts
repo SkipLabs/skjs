@@ -157,6 +157,14 @@ const callables = examples("verification/tests/callables", [
     "Omit, write, or pass undefined for an optional trailing parameter.",
   ],
   [
+    "rest-arguments",
+    "Collect a tuple rest, spread one in place of arguments, and read it after an effect.",
+  ],
+  [
+    "variadic-arguments",
+    "Collect any number of arguments into an array rest, and spread arrays among them.",
+  ],
+  [
     "default-arguments",
     "Replace an omitted argument with a default, including one reading an earlier parameter.",
   ],

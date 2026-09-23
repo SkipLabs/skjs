@@ -23,7 +23,20 @@ whose contract admits `undefined`, which is the value the machine binds there;
 `x?: T` is carried as `T | undefined`. A parameter may instead carry a default,
 `y: B = e`: its position admits `undefined` for the same reason, and `e`
 replaces that value before the body runs, so the body reads `B`; a default may
-read initialized earlier parameters. A current or later raw argument slot is
+read initialized earlier parameters. A rest parameter whose contract is a tuple
+of required positions, `...rest: [B, C]`, is those positions in the signature
+and one fresh array in the body, allocated where the parameter is bound. A
+spread writes the elements of such a tuple in place of the last arguments, read
+after every earlier argument has been evaluated. A rest parameter whose
+contract is a mutable array, `...rest: T[]`, makes the closure variadic: it
+takes any number of actuals past its fixed parameters, each at `T`, and the
+call collects them into a fresh array. Spreads into it may stand anywhere among
+those actuals, any number of them, each read where it is written: a spread
+followed by an actual that runs code is copied there. An optional fixed
+parameter before the rest may be omitted. A function type promises which actual
+lists a caller may write, not which code the callee has, so a variadic closure
+meets a fixed signature whose positions it admits, one value may carry fixed and
+variadic signatures, and a callable object may be variadic. A current or later raw argument slot is
 not a readable binding. Literal closures may capture later parameters through
 acyclic closure conversion: their allocation waits until their captures are
 initialized, and no executing initializer may read or expose a pending closure.
@@ -48,24 +61,33 @@ represent their schemes. Keep those outcomes separate.
 
 Not supported, with the refusal each one meets:
 
-| Form                                                                             | Where it stops                                                                                                                                                                                                                           |
-| -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Rest parameters, spread actuals, `arguments`                                     | `function-rest-parameter`; the protocol excludes spread and argument-count introspection                                                                                                                                                 |
-| `this` parameters, receiver-dependent methods, `.apply`                          | `function-this-parameter`; the calculus has no receiver, so `.call` discards one ([boundary example](call-objects.ts), [receiver plan](#receiver-implementation-plan))                                                                   |
-| Construct signatures, `new`, classes, accessors                                  | `function-constructible`; accessor execution is a separate semantic obligation                                                                                                                                                           |
-| Index signatures and array brands on functions                                   | `function-index-signature`, `function-is-array`                                                                                                                                                                                          |
-| Function expressions as values                                                   | only arrows lower to `lambda`                                                                                                                                                                                                            |
-| Async functions, generators, function identity comparison, loops inside closures | outside the fragment                                                                                                                                                                                                                     |
-| Generic signatures through SKJS                                                  | `function-generic`: SKJS types quantified closures but exports them as unavailable, so the OCaml witnesses carry these rows                                                                                                              |
-| Optional and defaulted parameters through SKJS                                   | `function-optional-parameter`: SKJS types them and exports every claim mentioning the signature as unavailable                                                                                                                           |
-| Overloads through SKJS and tsc                                                   | both reject the implementation of an intersection-typed closure, and neither states per-signature interior claims; SKJS also collapses incomparable arrow intersections to `never` ([finding](../skjs-incomplete/arrow-intersection.ts)) |
+| Form                                                                                         | Where it stops                                                                                                                                                                                                                           |
+| -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `arguments`, argument-count introspection                                                    | the protocol excludes argument-count introspection                                                                                                                                                                                       |
+| A spread of an array that may have holes into a rest whose element type lacks `undefined`    | named refusal: a hole spreads `undefined`, which the rest would hold; TypeScript accepts the call ([witness](variadic-holes.ts))                                                                                                         |
+| A spread copied before a later actual runs, into a rest whose element type lacks `undefined` | named refusal: the copy is typed as an array of any length, which may have holes ([witness](variadic-copy-element.ts))                                                                                                                   |
+| A spread into fixed parameters other than a last tuple spread                                | named refusal                                                                                                                                                                                                                            |
+| Quantified variadic signatures, `<T>(...xs: T[]) => T[]`                                     | refused by the rigid checker, which has no array of a binder; argument-sequence inference and tuple packs are not in the fragment                                                                                                        |
+| `this` parameters, receiver-dependent methods, `.apply`                                      | `function-this-parameter`; the calculus has no receiver, so `.call` discards one ([boundary example](call-objects.ts), [receiver plan](#receiver-implementation-plan))                                                                   |
+| Construct signatures, `new`, classes, accessors                                              | `function-constructible`; accessor execution is a separate semantic obligation                                                                                                                                                           |
+| Index signatures and array brands on functions                                               | `function-index-signature`, `function-is-array`                                                                                                                                                                                          |
+| Function expressions as values                                                               | only arrows lower to `lambda`                                                                                                                                                                                                            |
+| Async functions, generators, function identity comparison, loops inside closures             | outside the fragment                                                                                                                                                                                                                     |
+| Generic signatures through SKJS                                                              | `function-generic`: SKJS types quantified closures but exports them as unavailable, so the OCaml witnesses carry these rows                                                                                                              |
+| Optional and defaulted parameters through SKJS                                               | `function-optional-parameter`: SKJS types them and exports every claim mentioning the signature as unavailable                                                                                                                           |
+| Overloads through SKJS and tsc                                                               | both reject the implementation of an intersection-typed closure, and neither states per-signature interior claims; SKJS also collapses incomparable arrow intersections to `never` ([finding](../skjs-incomplete/arrow-intersection.ts)) |
 
 Refusal reasons are defined in
 [obligation diagnostics](../../OBLIGATION-DIAGNOSTICS.md); the encoding and its
 restrictions belong to the
 [protocol](../../REQUEST-PROTOCOL.md#expression-closures-and-calls).
 
-### Closure status for milestones 1–3
+The hole-spread witness writes index 2 of a one-element Boolean array, leaving
+index 1 absent. Spreading it materializes `undefined` at that index in the
+returned `boolean[]`. TypeScript accepts this actual contract violation; the
+runtime test executes the same source that the verifier rejects.
+
+### Closure status for milestones 1–4
 
 1. **Optional positions:** implemented, with independent omission evidence,
    including a contract admitting undefined through semantic top.
@@ -108,21 +130,26 @@ safety of the resulting term, not equivalence to a formal JavaScript semantics.
 Generic field-write defaults still await the generic effect certificate, an
 independent restriction of generic bodies rather than a missing default rule.
 
+4. **Rest and spread: still open.** The calculus and graph now share one
+   behavioral call meaning for fixed and variadic signatures. Array rests,
+   spread evaluation before later effects, variadic-to-fixed callback use,
+   optional-prefix omission, callable fields and mixed signatures have checked
+   witnesses. The remaining integration obligation from the part 4 review is
+   ordinary quantified rest, such as `<T>(...xs: T[]) => T[]`: the rigid source
+   checker still cannot express its array binding. This is separate from future
+   tuple packs and argument-sequence inference. A copied dense spread also loses
+   its density guarantee, so a safe call may be refused unless the rest admits
+   `undefined`; that is a precision gap, not the actual-hole soundness rejection.
+
+The [common function equation](../../SEMANTICS.md#one-meaning-for-callable-contracts)
+is the foundation for these extensions. Named refusals and passing tests do not
+close the remaining integration obligation or authorize narrowing the milestone.
+
 ### Order of extension
 
 Breadth first, cheapest new representation first:
 
-1. **Rest parameters and spread actuals.** Unlike the three rows above, this
-   one is not type-level. A rest parameter collects its surplus arguments into
-   a fresh array, and invocation does not allocate: `bindParameters` binds the
-   prepared actuals and nothing else, so `Invoke`, the step relation and every
-   proof about them would acquire a heap. Packing the surplus at the source
-   instead is only sound when the callee really has a rest parameter, so the
-   signature would have to record which position is the rest one — an inert
-   marker inside a type whose meaning would not change, which is the kind of
-   thing the clause language deliberately does not carry. Decide between the
-   two before writing either; the rest of the fragment does not depend on it.
-2. **`this` and methods**, following the receiver plan below. `.apply` then adds
+1. **`this` and methods**, following the receiver plan below. `.apply` then adds
    array-like argument preparation; it is not spread's iterator operation.
    Construct signatures follow separately. Decide the receiver interface now
    and use it when extending signatures in the steps above, even before source
@@ -394,6 +421,34 @@ Overloaded closures are the OCaml producer's
 claims carry one interior set per signature, the same mechanism compiled scheme
 eliminations use, and a block body is checked at each signature's own result
 rather than at its one enclosing annotation.
+
+[rest-arguments.ts](rest-arguments.ts) collects a tuple rest, reads it by
+index, and spreads one in place of the last arguments, with and without fixed
+arguments before it. Both producers verify all four functions.
+[rest-arguments.mts](../rest-arguments.mts) runs the JavaScript witnesses —
+each call collects its own array, and a spread reads its elements after the
+arguments written before it — and forges the tuple contract those positions
+come from, dropping and retyping a position, which both verifier entry points
+must reject. The ordering witness stays a runtime one: the fragment has no
+array write inside a closure, so no certified example can observe it. A spread
+relies on the array's positions being what it yields, which holds because this
+fragment cannot install an iterator of its own.
+
+[variadic-arguments.ts](variadic-arguments.ts) collects an array rest in a
+declaration and in closures, calls them with any number of actuals and with
+several spreads among them, spreads a tuple into an array rest, passes a
+variadic closure to a function that calls it, calls one through a fixed
+signature, omits an optional parameter before the rest, gives one value fixed
+and variadic signatures, and makes a variadic callable object with a field;
+[variadic-order.ts](variadic-order.ts) spreads an array and then writes it in a
+later actual. The TypeScript and OCaml producers verify every function; SKJS reads a rest parameter as a readonly
+array, rejects them, and names the signatures it cannot export
+(`function-rest-parameter`). [variadic-arguments.mts](../variadic-arguments.mts)
+runs the JavaScript witnesses — each call collects its own array, a hole
+spreads `undefined`, a spread is read where it is written — forges a narrower
+element type and a fixed arrow in place of a variadic one, which both verifier
+entry points reject, verifies the ordering witness, and checks the two named
+refusals.
 
 [optional-arguments.ts](optional-arguments.ts) omits an optional trailing
 argument, writes it, and writes `undefined` for it. The three agree at run time,

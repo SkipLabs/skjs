@@ -109,6 +109,9 @@ function expectedVerified(file: string, name: string) {
   // The same refusal covers a defaulted parameter, whose position admits
   // `undefined` for the same reason.
   if (file.endsWith("/default-arguments.ts")) return false;
+  // The TypeScript producer states and verifies these variadic signatures;
+  // SKJS currently rejects or cannot export the corresponding claims.
+  if (file.endsWith("/variadic-arguments.ts")) return false;
   // These array cases need numeric-property or iterator contracts that the
   // source fragment does not yet establish.
   if (

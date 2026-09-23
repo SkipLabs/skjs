@@ -98,12 +98,21 @@ inductive Tm where
   hole or past the end, into a fresh location the returned store records. -/
   | setElem (a i v : Tm)
   | lenOf (a : Tm)
+  /-- An actual that stands for the elements of the store `a` evaluates to,
+  read in order when every earlier actual is a value. Only an argument list
+  gives it meaning: anywhere else it is stuck. -/
+  | spread (a : Tm)
   deriving Repr
 
 /-- Invocation code is not a runtime value. A plain object has no call code. -/
 inductive CallCode where
   | absent
   | closure (arity : Nat) (body : Tm)
+  /-- Code that takes `fixed` parameters and collects every further actual into
+  one fresh array. Its body is scoped under `fixed + 1` binders: slot 0 is that
+  array and slots `1 .. fixed` are the parameters. Invocation binds what it is
+  given; the array is allocated by the ordinary steps of the term it yields. -/
+  | variadic (fixed : Nat) (body : Tm)
   deriving Repr
 end
 
@@ -150,6 +159,34 @@ def bitsOfNat (n : Nat) : UInt64 := n.toFloat.toBits
 /-- The location an index names in a store: none at a hole or past the end. -/
 def elemLoc (ls : List (Option Nat)) (b : UInt64) : Option Nat :=
   (indexOfBits b).bind fun k => (ls[k]?).bind id
+
+/-- The elements a store holds, in order: `undefined` at a hole, as iterating
+an array answers. None when a location is missing from the heap. -/
+def readElems (h : List Tm) : List (Option Nat) → Option (List Tm)
+  | [] => some []
+  | none :: ls => (readElems h ls).map (.undef :: ·)
+  | some l :: ls => h[l]?.bind fun v => (readElems h ls).map (v :: ·)
+
+theorem readElems_mem {h : List Tm} {ls : List (Option Nat)} {vs : List Tm}
+    (hr : readElems h ls = some vs) : ∀ v ∈ vs, v = .undef ∨ ∃ l : Nat, h[l]? = some v := by
+  induction ls generalizing vs with
+  | nil => cases hr; simp
+  | cons o ls ih =>
+    cases o with
+    | none =>
+      simp only [readElems, Option.map_eq_some_iff] at hr
+      obtain ⟨ws, hw, rfl⟩ := hr
+      intro v hv
+      rcases List.mem_cons.mp hv with rfl | hv
+      · exact Or.inl rfl
+      · exact ih hw v hv
+    | some l =>
+      simp only [readElems, Option.bind_eq_some_iff, Option.map_eq_some_iff] at hr
+      obtain ⟨w, hl, ws, hw, rfl⟩ := hr
+      intro v hv
+      rcases List.mem_cons.mp hv with rfl | hv
+      · exact Or.inr ⟨l, hl⟩
+      · exact ih hw v hv
 
 /-- One fresh location per element, in order, as a literal allocates them. -/
 def elemSlots (base n : Nat) : List (Option Nat) := (List.range n).map fun i => some (base + i)
@@ -252,6 +289,9 @@ def tmDecEq (a b : Tm) : Decidable (a = b) := by
   case lenOf.lenOf a0 b0 =>
     haveI : Decidable (a0 = b0) := tmDecEq a0 b0
     exact decidable_of_iff (a0 = b0) (by simp only [Tm.lenOf.injEq])
+  case spread.spread a0 b0 =>
+    haveI : Decidable (a0 = b0) := tmDecEq a0 b0
+    exact decidable_of_iff (a0 = b0) (by simp only [Tm.spread.injEq])
 termination_by sizeOf a
 
 def callCodeDecEq (a b : CallCode) : Decidable (a = b) := by
@@ -261,6 +301,9 @@ def callCodeDecEq (a b : CallCode) : Decidable (a = b) := by
   case closure.closure a0 a1 b0 b1 =>
     haveI : Decidable (a1 = b1) := tmDecEq a1 b1
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [CallCode.closure.injEq])
+  case variadic.variadic a0 a1 b0 b1 =>
+    haveI : Decidable (a1 = b1) := tmDecEq a1 b1
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [CallCode.variadic.injEq])
 termination_by sizeOf a
 def argsDecEq (a b : List Tm) : Decidable (a = b) := by
   cases a <;> cases b <;> try (solve | apply isFalse; intro h; cases h)
@@ -355,6 +398,8 @@ theorem lookup_slots {ns : List String} (hnd : ns.Nodup) {base i : Nat}
     (objAbsent : ∀ fs, P (.objAt fs .absent))
     (objClosure : ∀ fs n b, P b → P (.objAt fs (.closure n b)))
     (attach : ∀ n b ns args, P b → (∀ a ∈ args, P a) → P (.makeAt (.closure n b) ns args))
+    (objVariadic : ∀ fs n b, P b → P (.objAt fs (.variadic n b)))
+    (makeVariadic : ∀ n b ns args, P b → (∀ a ∈ args, P a) → P (.makeAt (.variadic n b) ns args))
     (alloc : ∀ ns args, (∀ a ∈ args, P a) → P (.makeAt .absent ns args))
     (read : ∀ f a, P a → P (.readAt f a))
     (write : ∀ f a b, P a → P b → P (.writeAt f a b))
@@ -365,12 +410,14 @@ theorem lookup_slots {ns : List String} (hnd : ns.Nodup) {base i : Nat}
     (arrLit : ∀ inits, (∀ a ∈ inits, P a) → P (.arrLit inits))
     (elemAt : ∀ a i, P a → P i → P (.elemAt a i))
     (setElem : ∀ a i v, P a → P i → P v → P (.setElem a i v))
-    (lenOf : ∀ a, P a → P (.lenOf a)) (t : Tm) : P t := by
+    (lenOf : ∀ a, P a → P (.lenOf a))
+    (spread : ∀ a, P a → P (.spread a)) (t : Tm) : P t := by
   apply Tm.rec (motive_1 := P)
-    (motive_2 := fun c => match c with | .absent => True | .closure _ b => P b)
+    (motive_2 := fun c => match c with
+      | .absent => True | .closure _ b => P b | .variadic _ b => P b)
     (motive_3 := fun args => ∀ a ∈ args, P a)
-    var call letE nul undef tru fls num str ?_ ?_ read write test ite arith arr arrLit elemAt setElem lenOf
-    True.intro (fun _ _ h => h) (by simp) (by
+    var call letE nul undef tru fls num str ?_ ?_ read write test ite arith arr arrLit elemAt setElem lenOf spread
+    True.intro (fun _ _ h => h) (fun _ _ h => h) (by simp) (by
       intro a args ha ih v hv
       rcases List.mem_cons.mp hv with rfl | hv
       · exact ha
@@ -379,10 +426,12 @@ theorem lookup_slots {ns : List String} (hnd : ns.Nodup) {base i : Nat}
     cases c with
     | absent => exact objAbsent fs
     | closure n b => exact objClosure fs n b ih
+    | variadic n b => exact objVariadic fs n b ih
   · intro c ns args ihc iha
     cases c with
     | absent => exact alloc ns args iha
     | closure n b => exact attach n b ns args ihc iha
+    | variadic n b => exact makeVariadic n b ns args ihc iha
 
 
 
@@ -417,6 +466,7 @@ def tagHolds : Tag → Val → Bool
   | .strEq s, .str t => s == t
   | .isRef, .objAt _ .absent => true
   | .isFun, .objAt _ (.closure _ _) => true
+  | .isFun, .objAt _ (.variadic _ _) => true
   | _, _ => false
 
 mutual
@@ -433,6 +483,8 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .objAt fs .absent => .objAt fs .absent
   | .objAt fs (.closure n b) => .objAt fs (.closure n (subst (j + n) a b))
   | .makeAt (.closure n b) ns xs => .makeAt (.closure n (subst (j + n) a b)) ns (substArgs j a xs)
+  | .objAt fs (.variadic n b) => .objAt fs (.variadic n (subst (j + n + 1) a b))
+  | .makeAt (.variadic n b) ns xs => .makeAt (.variadic n (subst (j + n + 1) a b)) ns (substArgs j a xs)
   | .makeAt .absent ns xs => .makeAt .absent ns (substArgs j a xs)
   | .readAt f x => .readAt f (subst j a x)
   | .writeAt f x y => .writeAt f (subst j a x) (subst j a y)
@@ -444,6 +496,7 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .elemAt x y => .elemAt (subst j a x) (subst j a y)
   | .setElem x y z => .setElem (subst j a x) (subst j a y) (subst j a z)
   | .lenOf x => .lenOf (subst j a x)
+  | .spread x => .spread (subst j a x)
 
 termination_by structural t => t
 
@@ -482,6 +535,19 @@ def parameters : Nat → List Tm → List Tm
 def bindParameters (arity : Nat) (args : List Tm) (body : Tm) : Tm :=
   bindArgs 0 (parameters arity args) body
 
+/-- The field an array object keeps its store in: `SourceTypes.storeField`. -/
+def arrayStoreField : String := "[]"
+
+/-- A fresh array holding `vs`: a store, then the object holding it. These are
+the same two allocations an array literal takes, performed by ordinary steps. -/
+def restArray (vs : List Tm) : Tm := .makeAt .absent [arrayStoreField] [.arrLit vs]
+
+/-- Variadic dispatch binds the fixed parameters as `parameters` does, and the
+actuals after them become the array the body finds in slot 0. Invocation itself
+still allocates nothing: the yielded term does, when it runs. -/
+def bindRest (fixed : Nat) (args : List Tm) (body : Tm) : Tm :=
+  .letE (restArray (args.drop fixed)) (bindArgs 1 (parameters fixed args) body)
+
 end CallArguments
 
 abbrev Heap := List Val
@@ -499,6 +565,15 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   /-- Invocation executes the object's stored code in one step. -/
   | callV : (∀ a ∈ args, isVal a = true) →
       Step h (.call (.objAt fs (.closure n b)) args) h (CallArguments.bindParameters n args b)
+  /-- Variadic invocation likewise takes one step and changes no heap. -/
+  | callRest : (∀ a ∈ args, isVal a = true) →
+      Step h (.call (.objAt fs (.variadic n b)) args) h (CallArguments.bindRest n args b)
+  /-- A spread actual whose store is ready is replaced by the store's elements
+  once every earlier actual is a value, so later actuals run after the read. -/
+  | spreadC : Step h a h' a' → Step h (.spread a) h' (.spread a')
+  | callSpread {args pre post : List Tm} {ls : List (Option Nat)} {vs : List Tm} :
+      isVal f = true → args = pre ++ .spread (.arr ls) :: post → (∀ v ∈ pre, isVal v = true) →
+      readElems h ls = some vs → Step h (.call f args) h (.call f (pre ++ vs ++ post))
   /-- Initializers are evaluated left to right, like actual arguments. -/
   | makeArg {c : CallCode} {ns : List String} {inits : List Tm} {i : Nat}
       {h h' : Heap} {a a' : Tm} : inits[i]? = some a →
@@ -532,6 +607,11 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | arrArg {inits : List Tm} {i : Nat} {h h' : Heap} {a a' : Tm} : inits[i]? = some a →
       (∀ j, j < i → ∀ v, inits[j]? = some v → isVal v = true) →
       Step h a h' a' → Step h (.arrLit inits) h' (.arrLit (inits.set i a'))
+  /-- A spread among a literal's initializers is replaced by its store's
+  elements once every earlier initializer is a value, as in a call. -/
+  | arrSpread {inits pre post : List Tm} {ls : List (Option Nat)} {vs : List Tm} {h : Heap} :
+      inits = pre ++ .spread (.arr ls) :: post → (∀ v ∈ pre, isVal v = true) →
+      readElems h ls = some vs → Step h (.arrLit inits) h (.arrLit (pre ++ vs ++ post))
   /-- A store takes one fresh location per element, in order. -/
   | arrAlloc {vs : List Tm} {h : Heap} : (∀ v ∈ vs, isVal v = true) →
       Step h (.arrLit vs) (h ++ vs) (.arr (elemSlots h.length vs.length))
@@ -600,6 +680,68 @@ theorem Step.beta {fs : List (String × Nat)} (ha : isVal a = true) :
     Step h (.app (.objAt fs (.closure n b)) a) h (CallArguments.bindParameters n [a] b) :=
   .callV (by simpa using ha)
 
+theorem value_no_step {v : Val} (hv : isVal v = true) {h h' t} : ¬ Step h v h' t := by
+  intro hs
+  cases v <;> simp [isVal] at hv <;> cases hs
+
+theorem spread_arr_no_step {ls h h' t} : ¬ Step h (.spread (.arr ls)) h' t := by
+  intro hs
+  cases hs with
+  | spreadC s => exact value_no_step rfl s
+
+/-- A list with a spread in it is not all values. -/
+theorem spread_not_values {args pre post : List Tm} {a : Tm}
+    (he : args = pre ++ .spread a :: post) (hv : ∀ v ∈ args, isVal v = true) : False := by
+  have := hv (.spread a) (by simp [he])
+  simp [isVal] at this
+
+/-- A spread whose store is ready is the first actual still to run, so no
+earlier actual steps and it has no step of its own. -/
+theorem spread_blocks_arg {args pre post : List Tm} {ls : List (Option Nat)}
+    (he : args = pre ++ .spread (.arr ls) :: post) (hpre : ∀ v ∈ pre, isVal v = true)
+    {i : Nat} {a : Tm} (hg : args[i]? = some a)
+    (hb : ∀ j, j < i → ∀ v, args[j]? = some v → isVal v = true)
+    {h h' a'} (s : Step h a h' a') : False := by
+  subst he
+  rcases Nat.lt_trichotomy i pre.length with hi | hi | hi
+  · rw [List.getElem?_append_left hi] at hg
+    exact value_no_step (hpre a (List.mem_of_getElem? hg)) s
+  · subst hi
+    rw [List.getElem?_append_right (Nat.le_refl _)] at hg
+    simp only [Nat.sub_self, List.getElem?_cons_zero, Option.some.injEq] at hg
+    subst hg
+    exact spread_arr_no_step s
+  · have := hb pre.length hi (.spread (.arr ls)) (by simp)
+    simp [isVal] at this
+
+/-- The first actual that is not a value is where a list splits. -/
+theorem split_unique {pre post pre' post' : List Tm} {x x' : Tm}
+    (he : pre ++ x :: post = pre' ++ x' :: post')
+    (hp : ∀ v ∈ pre, isVal v = true) (hp' : ∀ v ∈ pre', isVal v = true)
+    (hx : isVal x = false) (hx' : isVal x' = false) : pre = pre' ∧ x = x' ∧ post = post' := by
+  induction pre generalizing pre' with
+  | nil =>
+    cases pre' with
+    | nil => simp_all
+    | cons y pre' =>
+      simp only [List.nil_append, List.cons_append, List.cons.injEq] at he
+      have := hp' y (by simp)
+      rw [← he.1] at this
+      simp [hx] at this
+  | cons y pre ih =>
+    cases pre' with
+    | nil =>
+      simp only [List.nil_append, List.cons_append, List.cons.injEq] at he
+      have := hp y (by simp)
+      rw [he.1] at this
+      simp [hx'] at this
+    | cons y' pre' =>
+      simp only [List.cons_append, List.cons.injEq] at he
+      obtain ⟨rfl, he⟩ := he
+      obtain ⟨rfl, rfl, rfl⟩ := ih he (fun v hv => hp v (by simp [hv]))
+        (fun v hv => hp' v (by simp [hv]))
+      exact ⟨rfl, rfl, rfl⟩
+
 theorem nul_no_step {h h' t} : ¬ Step h .nul h' t := by intro s; cases s
 theorem tru_no_step {h h' t} : ¬ Step h .tru h' t := by intro s; cases s
 theorem fls_no_step {h h' t} : ¬ Step h .fls h' t := by intro s; cases s
@@ -634,14 +776,11 @@ theorem stuck_no_step {h h' t} : ¬ Step h (.app .nul .nul) h' t := by
   | callArg _ hg _ hs =>
     obtain ⟨rfl, rfl⟩ := singleton_get hg
     exact nul_no_step hs
+  | callSpread _ he _ _ => exact spread_not_values he (by simp [isVal])
 
 theorem closed_omega : Closed omegaTm := by
   intro k a
   simp [omegaTm, delta, subst]
-
-theorem value_no_step {v : Val} (hv : isVal v = true) {h h' t} : ¬ Step h v h' t := by
-  intro hs
-  cases v <;> simp [isVal] at hv <;> cases hs
 
 /-- **Evaluation is deterministic.** One term in one heap has at most one next
 state. Nothing in the safety definition says so — it quantifies existentially
@@ -655,6 +794,8 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | callL s' => exact (ih s').imp id (congrArg (Tm.call · _))
     | callArg hv _ _ _ => exact False.elim (value_no_step hv s)
     | callV => exact False.elim (obj_no_step s)
+    | callRest => exact False.elim (obj_no_step s)
+    | callSpread hv _ _ _ => exact False.elim (value_no_step hv s)
   | @callArg f args i a h h1 a1 hv hg hb s ih =>
     cases s2 with
     | callL s' => exact False.elim (value_no_step hv s')
@@ -672,6 +813,22 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
       obtain ⟨rfl, rfl⟩ := ih s'
       exact ⟨rfl, rfl⟩
     | callV hvs => exact False.elim (value_no_step (hvs _ (List.mem_of_getElem? hg)) s)
+    | callRest hvs => exact False.elim (value_no_step (hvs _ (List.mem_of_getElem? hg)) s)
+    | callSpread _ he hpre _ => exact False.elim (spread_blocks_arg he hpre hg hb s)
+  | spreadC s ih =>
+    cases s2 with
+    | spreadC s' => exact (ih s').imp id (congrArg Tm.spread)
+  | callSpread hf he hpre hr =>
+    cases s2 with
+    | callL s' => exact False.elim (value_no_step hf s')
+    | callArg _ hg hb s' => exact False.elim (spread_blocks_arg he hpre hg hb s')
+    | callV hvs => exact False.elim (spread_not_values he hvs)
+    | callRest hvs => exact False.elim (spread_not_values he hvs)
+    | callSpread _ he' hpre' hr' =>
+      obtain ⟨rfl, hx, rfl⟩ := split_unique (he.symm.trans he') hpre hpre' rfl rfl
+      cases hx
+      cases Option.some.inj (hr.symm.trans hr')
+      exact ⟨rfl, rfl⟩
   | letC hs ih =>
     cases s2 with
     | letC hs' => exact (ih hs').imp id (congrArg (Tm.letE · _))
@@ -685,6 +842,13 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | callL hs => exact absurd hs obj_no_step
     | callArg _ hg _ hs => exact absurd hs (value_no_step (hv _ (List.mem_of_getElem? hg)))
     | callV => exact ⟨rfl, rfl⟩
+    | callSpread _ he _ _ => exact False.elim (spread_not_values he hv)
+  | callRest hv =>
+    cases s2 with
+    | callL hs => exact absurd hs obj_no_step
+    | callArg _ hg _ hs => exact absurd hs (value_no_step (hv _ (List.mem_of_getElem? hg)))
+    | callRest => exact ⟨rfl, rfl⟩
+    | callSpread _ he _ _ => exact False.elim (spread_not_values he hv)
   | @makeArg c ns inits i h h1 a a1 hg hb s ih =>
     cases s2 with
     | @makeArg _ _ _ j _ _ b b1 hg' hb' s' =>
@@ -784,10 +948,21 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
       obtain ⟨rfl, rfl⟩ := ih s'
       exact ⟨rfl, rfl⟩
     | arrAlloc hvs => exact False.elim (value_no_step (hvs _ (List.mem_of_getElem? hg)) s)
+    | arrSpread he hpre _ => exact False.elim (spread_blocks_arg he hpre hg hb s)
+  | arrSpread he hpre hr =>
+    cases s2 with
+    | arrArg hg hb s' => exact False.elim (spread_blocks_arg he hpre hg hb s')
+    | arrAlloc hvs => exact False.elim (spread_not_values he hvs)
+    | arrSpread he' hpre' hr' =>
+      obtain ⟨rfl, hx, rfl⟩ := split_unique (he.symm.trans he') hpre hpre' rfl rfl
+      cases hx
+      cases Option.some.inj (hr.symm.trans hr')
+      exact ⟨rfl, rfl⟩
   | arrAlloc hv =>
     cases s2 with
     | arrArg hg _ s' => exact False.elim (value_no_step (hv _ (List.mem_of_getElem? hg)) s')
     | arrAlloc _ => exact ⟨rfl, rfl⟩
+    | arrSpread he _ _ => exact False.elim (spread_not_values he hv)
   | elemC1 s ih =>
     cases s2 with
     | elemC1 s' => exact (ih s').imp id (congrArg (Tm.elemAt · _))
@@ -879,6 +1054,7 @@ theorem beta_inv {b a : Tm} {fs : List (String × Nat)} (ha : isVal a = true) {h
     obtain ⟨rfl, rfl⟩ := singleton_get hg
     exact False.elim (value_no_step ha hs)
   | callV => exact ⟨rfl, rfl⟩
+  | callSpread _ he _ _ => exact False.elim (spread_not_values he (by simp [ha]))
 
 /-- Binding a value spends one step and leaves the heap unchanged. -/
 theorem let_step_inv {b a : Tm} (ha : isVal a = true) {h h' t}

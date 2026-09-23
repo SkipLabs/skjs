@@ -25,7 +25,12 @@ import {
   TypeFlags,
   isUnionType,
 } from "typescript/unstable/sync";
-import type { Checker, Diagnostic, Symbol, Type } from "typescript/unstable/sync";
+import type {
+  Checker,
+  Diagnostic,
+  Symbol,
+  Type,
+} from "typescript/unstable/sync";
 import { isTupleType } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type {
@@ -58,6 +63,7 @@ import {
   numberOfBits,
   type Fields,
   type Labels,
+  type RestArrow,
   type Tuple,
 } from "./type-graph.mts";
 import type { Ast, Expr, FunctionAst, Stmt } from "./fragment.mts";
@@ -522,7 +528,14 @@ type ArrowRead =
   /** `defaulted[i]` marks a position whose declaration supplies a default: the
    * call may omit it, so its contract also admits `undefined`, while the body
    * reads the type the checker reports. */
-  | { ok: true; domains: Type[]; defaulted: boolean[]; result: Type }
+  | {
+      ok: true;
+      domains: Type[];
+      defaulted: boolean[];
+      /** The contract of each actual after `domains`, for a `...rest: T[]`. */
+      rest?: Type;
+      result: Type;
+    }
   | { ok: false; reason?: string };
 
 /** Label 3 is `undefined` (`SourceTypes.initial`). */
@@ -547,22 +560,29 @@ function tryArrow(type: Type, checker: Checker): ArrowRead {
     return { ok: false, reason: "this-param" };
   let parameterCount = sig.parameters.length;
   let tail: Type[] = [];
+  let element: Type | undefined;
   if (sig.hasRestParameter) {
     // Instantiated bind results use (...args: [A, B]) internally. Expand only
-    // fixed required tuples; their syntax is not a variadic source contract.
+    // fixed required tuples into positions; a mutable `T[]` rest takes any
+    // number of further actuals, each a `T`.
     const symbol = sig.getParameters().at(-1);
     const rest = symbol && checker.getTypeOfSymbol(symbol);
     if (!rest?.isTypeReference()) return { ok: false, reason: "arrow-arity" };
     const target = rest.getTarget();
-    if (!target.isTupleType()) return { ok: false, reason: "arrow-arity" };
-    tail = [...checker.getTypeArguments(rest)];
-    const flags = target.elementFlags ?? [];
-    if (
-      flags.length !== tail.length ||
-      target.fixedLength !== flags.length ||
-      flags.some((flag) => flag !== ElementFlags.Required)
-    )
-      return { ok: false, reason: "arrow-arity" };
+    if (checker.isArrayType(rest) && target.getSymbol()?.name === "Array") {
+      element = checker.getTypeArguments(rest)[0];
+      if (!element) return { ok: false, reason: "arrow-arity" };
+    } else {
+      if (!target.isTupleType()) return { ok: false, reason: "arrow-arity" };
+      tail = [...checker.getTypeArguments(rest)];
+      const flags = target.elementFlags ?? [];
+      if (
+        flags.length !== tail.length ||
+        target.fixedLength !== flags.length ||
+        flags.some((flag) => flag !== ElementFlags.Required)
+      )
+        return { ok: false, reason: "arrow-arity" };
+    }
     parameterCount--;
   }
   // Optionality is on the declared parameter: a signature transports its
@@ -589,6 +609,7 @@ function tryArrow(type: Type, checker: Checker): ArrowRead {
       .slice(0, parameterCount)
       .map((_, i) => !!defaulted[i])
       .concat(tail.map(() => false)),
+    ...(element ? { rest: element } : {}),
     result: must(checker.getReturnTypeOfSignature(sig), "return-type"),
   };
 }
@@ -662,6 +683,10 @@ function tryRecordIntersection(
 const refusals = (results: (RecordRead | ArrowRead)[]): string[] =>
   results.flatMap((r) => (r.ok || r.reason === undefined ? [] : [r.reason]));
 
+/** The fixed and the variadic signatures of one call contract. The variadic
+list is left out when empty, which is its one spelling of none. */
+type CallRow = { arrows: [number[][], number[]][]; variadic?: RestArrow[] };
+
 /** An intersection of arrows, in declaration order, exact repeats dropped. */
 function tryArrowIntersection(
   type: Type,
@@ -669,7 +694,7 @@ function tryArrowIntersection(
   parts: readonly Type[],
   types: Row[],
   fuel: number,
-): [number[][], number[]][] | null {
+): CallRow | null {
   const results = parts.map((t) => tryArrow(t, checker));
   const read = results.flatMap((r) => (r.ok ? [r] : []));
   if (read.length !== results.length) {
@@ -679,18 +704,35 @@ function tryArrowIntersection(
     return null;
   }
   const arrows: [number[][], number[]][] = [];
+  const variadic: RestArrow[] = [];
   for (const r of read) {
-    const pair: [number[][], number[]] = [
-      r.domains.map((domain, i) => {
-        const labels = translateType(domain, checker, types, false, fuel - 1);
-        return r.defaulted[i] ? admitUndefined(labels) : labels;
-      }),
-      translateType(r.result, checker, types, false, fuel - 1),
-    ];
-    if (!arrows.some((a) => JSON.stringify(a) === JSON.stringify(pair)))
-      arrows.push(pair);
+    const row = callRow(r, checker, types, fuel);
+    for (const pair of row.arrows)
+      if (!arrows.some((a) => JSON.stringify(a) === JSON.stringify(pair)))
+        arrows.push(pair);
+    for (const sig of row.variadic ?? [])
+      if (!variadic.some((a) => JSON.stringify(a) === JSON.stringify(sig)))
+        variadic.push(sig);
   }
-  return arrows;
+  return variadic.length ? { arrows, variadic } : { arrows };
+}
+
+/** One signature as a call contract: a fixed arrow, or a variadic signature
+whose further actuals are at its element contract. */
+function callRow(
+  r: Extract<ArrowRead, { ok: true }>,
+  checker: Checker,
+  types: Row[],
+  fuel: number,
+): CallRow {
+  const domains = r.domains.map((domain, i) => {
+    const labels = translateType(domain, checker, types, false, fuel - 1);
+    return r.defaulted[i] ? admitUndefined(labels) : labels;
+  });
+  const result = translateType(r.result, checker, types, false, fuel - 1);
+  if (!r.rest) return { arrows: [[domains, result]] };
+  const element = translateType(r.rest, checker, types, false, fuel - 1);
+  return { arrows: [], variadic: [[domains, [element, result]]] };
 }
 
 // Arrow operands can contain further arrows, with bounded recursion for
@@ -785,14 +827,15 @@ function translateType(
       f.name,
       translateType(f.type, checker, types, false, fuel - 1),
     ]);
-    const Ds = arrow.domains.map((D, i) => {
-      const labels = translateType(D, checker, types, false, fuel - 1);
-      return arrow.defaulted[i] ? admitUndefined(labels) : labels;
-    });
-    const R = translateType(arrow.result, checker, types, false, fuel - 1);
     return [
       internRow(types, [
-        { callable: { first: P, rest: [], arrows: [[Ds, R]] } },
+        {
+          callable: {
+            first: P,
+            rest: [],
+            ...callRow(arrow, checker, types, fuel),
+          },
+        },
       ]),
     ];
   }
@@ -802,8 +845,8 @@ function translateType(
       ? tryRecordIntersection(type, checker, parts, types, fuel)
       : null;
     if (refs) return [internRow(types, [{ refs }])];
-    const arrows = tryArrowIntersection(type, checker, parts, types, fuel);
-    if (arrows) return [internRow(types, [{ arrs: { arrows } }])];
+    const arrs = tryArrowIntersection(type, checker, parts, types, fuel);
+    if (arrs) return [internRow(types, [{ arrs }])];
     throw new Refusal("mixed-intersection", checker.typeToString(type));
   }
   // A union is a label list, and the format admits one mixing cell and arrow
@@ -837,16 +880,8 @@ function translateType(
     ];
   if (rec.reason) throw new Refusal(rec.reason, checker.typeToString(type));
   const arr = tryArrow(type, checker);
-  if (arr.ok) {
-    const pair: [number[][], number[]] = [
-      arr.domains.map((domain, i) => {
-        const labels = translateType(domain, checker, types, false, fuel - 1);
-        return arr.defaulted[i] ? admitUndefined(labels) : labels;
-      }),
-      translateType(arr.result, checker, types, false, fuel - 1),
-    ];
-    return [internRow(types, [{ arrs: { arrows: [pair] } }])];
-  }
+  if (arr.ok)
+    return [internRow(types, [{ arrs: callRow(arr, checker, types, fuel) }])];
   if (arr.reason) throw new Refusal(arr.reason, checker.typeToString(type));
   throw new Refusal(basicReason(type), checker.typeToString(type));
 }
@@ -1181,7 +1216,9 @@ function tagGuardLabels(
             (clause) =>
               (clause !== null &&
                 typeof clause === "object" &&
-                ("arrs" in clause || "callable" in clause)) ===
+                ("arrs" in clause ||
+                  "callable" in clause ||
+                  "rests" in clause)) ===
               (test.equal === truth),
           ) ?? true)
         : (label === test.label) === (test.equal === truth),
@@ -1965,7 +2002,11 @@ function diagnosticText(d: Diagnostic): string {
 
 // Use the report's existing located-message format. Keep unlocated messages
 // too: the diagnostics panel shows them even when no inline mark is possible.
-function formatProducerDiagnostic(d: Diagnostic, file: string, source: string): string {
+function formatProducerDiagnostic(
+  d: Diagnostic,
+  file: string,
+  source: string,
+): string {
   const message = `TS${d.code}: ${diagnosticText(d)}`;
   if (d.pos < 0 || (d.fileName && resolve(d.fileName) !== resolve(file)))
     return `${d.fileName ? d.fileName + ": " : ""}${message}`;
@@ -2053,7 +2094,9 @@ export function produce(file: string): Produced {
     omissions,
     ast,
     accepted,
-    diagnostics: diagnostics.map((d) => formatProducerDiagnostic(d, file, sf.text)).join("\n"),
+    diagnostics: diagnostics
+      .map((d) => formatProducerDiagnostic(d, file, sf.text))
+      .join("\n"),
   };
 }
 

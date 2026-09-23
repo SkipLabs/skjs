@@ -25,6 +25,9 @@ export interface RecordAtom {
 export interface FunctionAtom {
   a: "function";
   params: ClaimType[];
+  /* The contract of each actual after `params`, when the signature takes any
+     number of them: `(...rest: T[]) => R` has no params and rest `T`. */
+  rest?: ClaimType;
   result: ClaimType;
   construct: string;
   array: string;
@@ -136,8 +139,9 @@ function atom(v: unknown): void {
       break;
     }
     case "function":
-      keys(o, ["a", "params", "result", "construct", "array"], ["and"]);
+      keys(o, ["a", "params", "result", "construct", "array"], ["and", "rest"]);
       list(o.params).forEach(decodeClaimType);
+      if (o.rest !== undefined) decodeClaimType(o.rest);
       decodeClaimType(o.result);
       str(o.construct);
       str(o.array);

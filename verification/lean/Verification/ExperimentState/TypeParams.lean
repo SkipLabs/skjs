@@ -44,10 +44,12 @@ def substClause [DecidableEq ι] (p : ι) (A : List ι) : Clause (List ι) → C
   | .str => .str
   | .strLit v => .strLit v
   | .refs a bs vs => .refs (substFields p A a) (bs.map (substFields p A)) (substFields p A vs)
-  | .arrs L => .arrs (L.map fun q => (q.1.map (substTy p A), substTy p A q.2))
-  | .callable a bs L =>
+  | .arrs L S => .arrs (L.map fun q => (q.1.map (substTy p A), substTy p A q.2))
+      (S.map fun q => (q.1.map (substTy p A), substTy p A q.2.1, substTy p A q.2.2))
+  | .callable a bs L S =>
       .callable (substFields p A a) (bs.map (substFields p A))
         (L.map fun q => (q.1.map (substTy p A), substTy p A q.2))
+        (S.map fun q => (q.1.map (substTy p A), substTy p A q.2.1, substTy p A q.2.2))
 
 def substGraph [DecidableEq ι] (p : ι) (A : List ι) (G : NormalGraph ι) : NormalGraph ι :=
   fun i => (G i).map (substClause p A)
@@ -246,20 +248,7 @@ theorem meaningP_value {G : NormalGraph ι} {P η} {A n W v}
     exact ⟨(hC i hp).2.1 n W v hv', (hC i hp).2.2 n W v hv'⟩
   · have hn : P i = false := eq_false_of_ne_true hp
     obtain ⟨c, _, hc⟩ := (unfold_nonparam hn n W v).mp hv
-    cases c with
-    | nul => subst v; exact ⟨rfl, trivial⟩
-    | bool => rcases hc with rfl | rfl <;> exact ⟨rfl, trivial⟩
-    | boolLit b => cases b <;> cases hc <;> exact ⟨rfl, trivial⟩
-    | num => obtain ⟨b, rfl⟩ := hc; exact ⟨rfl, trivial⟩
-    | numLit b => subst v; exact ⟨rfl, trivial⟩
-    | refs a rest => obtain ⟨flds, rfl, _⟩ := hc.1.1; exact ⟨rfl, trivial⟩
-    | arrs L => exact ⟨(callsT_callable hc).val, (callsT_callable hc).scoped⟩
-    | callable a bs L => exact ⟨(callsT_callable hc.2).val, (callsT_callable hc.2).scoped⟩
-    | undef => subst v; exact ⟨rfl, trivial⟩
-    | top => exact hc
-    | list a bs => obtain ⟨ls, rfl, _⟩ := hc.1; exact ⟨rfl, trivial⟩
-    | str => obtain ⟨s, rfl⟩ := hc; exact ⟨rfl, trivial⟩
-    | strLit s => subst v; exact ⟨rfl, trivial⟩
+    exact sem_value hc
 
 theorem meaningP_valOnly {G : NormalGraph ι} {P η} (hC : ClosedAssign P η)
     (A : Ty ι) : ValOnly (meaningP G P η A) :=
@@ -371,7 +360,7 @@ theorem invocation_of_bodyP {G : NormalGraph ι} {P η} {Γ ρ n W b arity}
   exact hb q hq j U heap _ henv hu hok
 
 theorem funE_safeP {G : NormalGraph ι} {P η} {Γ F L arity b n W h ρ}
-    (hC : ClosedAssign P η) (hr : Represents G F (.arrs L))
+    (hC : ClosedAssign P η) (hr : Represents G F (.arrs L []))
     (hF : ∀ i ∈ F, P i = false) (hlen : ∀ p ∈ L, p.1.length = arity)
     (hb : ∀ p ∈ L, ∀ j U heap env, EnvOkP G P η (p.1 ++ Γ) env j U →
       WorldAdm U → HeapOk j U heap →
@@ -382,11 +371,12 @@ theorem funE_safeP {G : NormalGraph ι} {P η} {Γ F L arity b n W h ρ}
   simp only [instantiate, Nat.zero_add]
   have hcode := invocation_of_bodyP hC he hlen hb
   have hs := make_callable_rule nulT_adm arity n W h _ .nul hcode rfl hw hh rfl
-  exact Safe_mono n (fun k _ U v hv => (represents_semP hr hF k U v).mpr hv.2) W h _ hs
+  exact Safe_mono n (fun k _ U v hv => (represents_semP hr hF k U v).mpr
+    ⟨hv.2, hv.2.1, by simp⟩) W h _ hs
 
 theorem app_safeP {G : NormalGraph ι} {P η} {Γ F B f n W h ρ}
-    {L : List (List (Ty ι) × Ty ι)} {xs : List (Ty ι × Tm)}
-    (hC : ClosedAssign P η) (hr : Represents G F (.arrs L))
+    {L : List (List (Ty ι) × Ty ι)} {S : List (List (Ty ι) × Ty ι × Ty ι)} {xs : List (Ty ι × Tm)}
+    (hC : ClosedAssign P η) (hr : Represents G F (.arrs L S))
     (hF : ∀ i ∈ F, P i = false) (hp : (xs.map Prod.fst, B) ∈ L)
     (ihf : ∀ n W h ρ, EnvOkP G P η Γ ρ n W → WorldAdm W → HeapOk n W h →
       Safe (meaningP G P η F) n W h (instantiate 0 ρ f))
@@ -407,7 +397,7 @@ theorem app_safeP {G : NormalGraph ι} {P η} {Γ F B f n W h ρ}
   · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
     intro k hk U v hv
     simpa only [List.map_map, Function.comp_def] using
-      callsT_select ((represents_semP hr hF k U v).mp hv)
+      callsT_select ((represents_semP hr hF k U v).mp hv).1
         (List.mem_map.mpr ⟨(xs.map Prod.fst, B), hp, rfl⟩)
   · intro p hp'
     obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp'
@@ -659,7 +649,7 @@ theorem unionVar_safeP {G : NormalGraph ι} {P η} {Γ i C t A n W h ρ}
 
 theorem makeCallable_safeP {G : NormalGraph ι} {P η} {Γ F Bag arity a b n W h ρ}
     {L : List (List (Ty ι) × Ty ι)}
-    (hC : ClosedAssign P η) (hr : Represents G F (.callable [(valueField, Bag)] [] L))
+    (hC : ClosedAssign P η) (hr : Represents G F (.callable [(valueField, Bag)] [] L []))
     (hF : ∀ i ∈ F, P i = false) (hlen : ∀ p ∈ L, p.1.length = arity)
     (iha : ∀ n W h ρ, EnvOkP G P η Γ ρ n W → WorldAdm W → HeapOk n W h →
       Safe (meaningP G P η Bag) n W h (instantiate 0 ρ a))
@@ -676,16 +666,16 @@ theorem makeCallable_safeP {G : NormalGraph ι} {P η} {Γ F Bag arity a b n W h
   intro j hj U hx hu heap av hok hav ha'
   have hc : InvocationSpec arity (L.map fun p => (p.1.map (meaningP G P η), meaningP G P η p.2))
       j U (instantiate arity ρ b) :=
-    (callsT_code_iff _ arity [] _ j U).mp ((callsT_adm _).mono j _ U hx _
-      ((callsT_adm _).down_le n j hj W _ ((callsT_code_iff _ arity [] _ n W).mpr hcode)))
+    (codeCallsT_code_iff _ arity [] _ j U).mp ((codeCallsT_adm _).mono j _ U hx _
+      ((codeCallsT_adm _).down_le n j hj W _ ((codeCallsT_code_iff _ arity [] _ n W).mpr hcode)))
   have hs := make_callable_rule (meaningP_adm G P η (fun i hi => (hC i hi).1) Bag)
     arity j U heap _ av hc hav hu hok ha'
-  exact Safe_mono j (fun k _ V v hv => (represents_semP hr hF k V v).mpr ⟨⟨hv.1, by simp⟩, hv.2⟩)
-    U heap _ hs
+  exact Safe_mono j (fun k _ V v hv => (represents_semP hr hF k V v).mpr
+    ⟨⟨⟨hv.1, by simp⟩, hv.2⟩, hv.2.1, by simp⟩) U heap _ hs
 
 theorem callCallable_safeP {G : NormalGraph ι} {P η} {Γ F Bag Ps B f n W h ρ}
-    {L : List (List (Ty ι) × Ty ι)} {xs : List (Ty ι × Tm)}
-    (hC : ClosedAssign P η) (hr : Represents G F (.callable Bag Ps L))
+    {L : List (List (Ty ι) × Ty ι)} {S : List (List (Ty ι) × Ty ι × Ty ι)} {xs : List (Ty ι × Tm)}
+    (hC : ClosedAssign P η) (hr : Represents G F (.callable Bag Ps L S))
     (hF : ∀ i ∈ F, P i = false) (hp : (xs.map Prod.fst, B) ∈ L)
     (ihf : ∀ n W h ρ, EnvOkP G P η Γ ρ n W → WorldAdm W → HeapOk n W h →
       Safe (meaningP G P η F) n W h (instantiate 0 ρ f))
@@ -706,15 +696,15 @@ theorem callCallable_safeP {G : NormalGraph ι} {P η} {Γ F Bag Ps B f n W h ρ
   · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
     intro k hk U v hv
     simpa only [List.map_map, Function.comp_def] using
-      callsT_select (((represents_semP hr hF k U v).mp hv).2)
+      callsT_select (((represents_semP hr hF k U v).mp hv).1.2)
         (List.mem_map.mpr ⟨(xs.map Prod.fst, B), hp, rfl⟩)
   · intro p hp'
     obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp'
     intro j hj U hx hu heap hok
     exact iha q hq j U heap ρ (he.transfer hC j hj U hx) hu hok
 
-theorem readCallable_safeP {G : NormalGraph ι} {P η} {Γ a F Bag A f Ps L n W h ρ}
-    (hC : ClosedAssign P η) (hr : Represents G F (.callable Bag Ps L))
+theorem readCallable_safeP {G : NormalGraph ι} {P η} {Γ a F Bag A f Ps L S n W h ρ}
+    (hC : ClosedAssign P η) (hr : Represents G F (.callable Bag Ps L S))
     (hm : (f, A) ∈ Bag) (hF : ∀ i ∈ F, P i = false)
     (ih : ∀ n W h ρ, EnvOkP G P η Γ ρ n W → WorldAdm W → HeapOk n W h →
       Safe (meaningP G P η F) n W h (instantiate 0 ρ a))
@@ -724,10 +714,10 @@ theorem readCallable_safeP {G : NormalGraph ι} {P η} {Γ a F Bag A f Ps L n W 
   apply bind (Tm.readAt f) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
   intro j hj U hx hu heap v hok hv ha'
   exact bag_read (meaningP_valOnly hC A) (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
-    ((represents_semP hr hF j U v).mp ha').1.1 hu hok
+    ((represents_semP hr hF j U v).mp ha').1.1.1 hu hok
 
-theorem writeCallable_safeP {G : NormalGraph ι} {P η} {Γ a b F Bag A f Ps L N n W h ρ}
-    (hC : ClosedAssign P η) (hr : Represents G F (.callable Bag Ps L))
+theorem writeCallable_safeP {G : NormalGraph ι} {P η} {Γ a b F Bag A f Ps L S N n W h ρ}
+    (hC : ClosedAssign P η) (hr : Represents G F (.callable Bag Ps L S))
     (hm : (f, A) ∈ Bag) (hF : ∀ i ∈ F, P i = false) (hn : Represents G N .nul)
     (hN : ∀ i ∈ N, P i = false)
     (iha : ∀ n W h ρ, EnvOkP G P η Γ ρ n W → WorldAdm W → HeapOk n W h →
@@ -749,19 +739,19 @@ theorem writeCallable_safeP {G : NormalGraph ι} {P η} {Γ a b F Bag A f Ps L N
   apply Safe_mono k (fun i _ X v hval => (represents_semP hn hN i X v).mpr hval)
   exact bag_write (meaningP_adm G P η (fun i hi => (hC i hi).1) A)
     (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
-    ((represents_semP hr hF k V av).mp ha'').1.1 hb' hbval hv hok'
+    ((represents_semP hr hF k V av).mp ha'').1.1.1 hb' hbval hv hok'
 
 /-- Generic identity: `function id<T>(x: T): T { return x }`. Label 0 is the
 scheme `T → T`; label 1 is the rigid parameter. -/
 def idG : NormalGraph Nat
-  | 0 => [.arrs [([ [1] ], [1])]]
+  | 0 => [.arrs [([ [1] ], [1])] []]
   | _ => []
 
 def idP : Nat → Bool := fun i => i == 1
 
 def idSig : List (List Nat) × List Nat := ([ [1] ], [1])
 
-theorem id_represents : Represents idG [0] (.arrs [idSig]) := rfl
+theorem id_represents : Represents idG [0] (.arrs [idSig] []) := rfl
 
 theorem id_hasTy : HasTy idG [] (.make (.closure 1 (.var 0)) .nul) [0] :=
   HasTy.funE id_represents

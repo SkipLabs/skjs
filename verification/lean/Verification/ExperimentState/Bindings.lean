@@ -16,6 +16,8 @@ def Scoped (d : Nat) : Tm → Prop
   | .objAt _ .absent => True
   | .objAt _ (.closure n b) => Scoped (d + n) b
   | .makeAt (.closure n b) _ args => Scoped (d + n) b ∧ ScopedArgs d args
+  | .objAt _ (.variadic n b) => Scoped (d + n + 1) b
+  | .makeAt (.variadic n b) _ args => Scoped (d + n + 1) b ∧ ScopedArgs d args
   | .makeAt .absent _ args => ScopedArgs d args
   | .letE a b => Scoped d a ∧ Scoped (d + 1) b
   | .call f args => Scoped d f ∧ ScopedArgs d args
@@ -24,6 +26,7 @@ def Scoped (d : Nat) : Tm → Prop
   | .ite c a b | .setElem c a b => Scoped d c ∧ Scoped d a ∧ Scoped d b
   | .arrLit args => ScopedArgs d args
   | .lenOf a => Scoped d a
+  | .spread a => Scoped d a
   | _ => True
 
 def ScopedArgs (d : Nat) : List Tm → Prop
@@ -47,6 +50,9 @@ theorem Scoped.mono {t : Tm} {d e : Nat} (h : Scoped d t) (hde : d ≤ e) :
   case letE a b iha ihb => exact ⟨iha h.1 hde, ihb h.2 (by omega)⟩
   case attach n f ns args ihf ihargs =>
     exact ⟨ihf h.1 (by omega), fun a ha => ihargs a ha (h.2 a ha) hde⟩
+  case objVariadic l n b ih => exact ih h (by omega)
+  case makeVariadic n f ns args ihf ihargs =>
+    exact ⟨ihf h.1 (by omega), fun a ha => ihargs a ha (h.2 a ha) hde⟩
   case write f a b iha ihb => exact ⟨iha h.1 hde, ihb h.2 hde⟩
   case arith op a b iha ihb => exact ⟨iha h.1 hde, ihb h.2 hde⟩
   case ite c a b ihc iha ihb => exact ⟨ihc h.1 hde, iha h.2.1 hde, ihb h.2.2 hde⟩
@@ -55,6 +61,7 @@ theorem Scoped.mono {t : Tm} {d e : Nat} (h : Scoped d t) (hde : d ≤ e) :
   case elemAt a b iha ihb => exact ⟨iha h.1 hde, ihb h.2 hde⟩
   case setElem a b c iha ihb ihc => exact ⟨iha h.1 hde, ihb h.2.1 hde, ihc h.2.2 hde⟩
   case lenOf a ih => exact ih h hde
+  case spread a ih => exact ih h hde
   case read f a ih => exact ih h hde
   case test k a ih => exact ih h hde
   all_goals trivial
@@ -73,6 +80,11 @@ theorem subst_above {t : Tm} {d j : Nat} (h : Scoped d t) (hj : d ≤ j) (a : Tm
     have hmap : args.map (subst j a) = args := by
       simpa using (List.map_congr_left (g := id) (fun x hx => ihargs x hx (h.2 x hx) hj))
     rw [ihf h.1 (by omega), hmap]
+  case objVariadic l n b ih => rw [ih h (by omega)]
+  case makeVariadic n f ns args ihf ihargs =>
+    have hmap : args.map (subst j a) = args := by
+      simpa using (List.map_congr_left (g := id) (fun x hx => ihargs x hx (h.2 x hx) hj))
+    rw [ihf h.1 (by omega), hmap]
   case write f b c ihb ihc => rw [ihb h.1 hj, ihc h.2 hj]
   case arith op b c ihb ihc => rw [ihb h.1 hj, ihc h.2 hj]
   case ite c b e ihc ihb ihe => rw [ihc h.1 hj, ihb h.2.1 hj, ihe h.2.2 hj]
@@ -87,6 +99,7 @@ theorem subst_above {t : Tm} {d j : Nat} (h : Scoped d t) (hj : d ≤ j) (a : Tm
   case elemAt b c ihb ihc => rw [ihb h.1 hj, ihc h.2 hj]
   case setElem b c e ihb ihc ihe => rw [ihb h.1 hj, ihc h.2.1 hj, ihe h.2.2 hj]
   case lenOf b ih => rw [ih h hj]
+  case spread b ih => rw [ih h hj]
   case read f b ih => rw [ih h hj]
   case test k b ih => rw [ih h hj]
   all_goals rfl
@@ -115,6 +128,13 @@ theorem subst_scoped {t a : Tm} {d j : Nat} (ht : Scoped (d + 1) t)
     intro v hv
     obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
     exact ihargs x hx (ht.2 x hx) hj
+  case objVariadic l n b ih =>
+    exact ih (by simpa [Nat.add_right_comm, Nat.add_assoc] using ht) (by omega)
+  case makeVariadic n f ns args ihf ihargs =>
+    refine ⟨ihf (by simpa [Nat.add_right_comm, Nat.add_assoc] using ht.1) (by omega), ?_⟩
+    intro v hv
+    obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
+    exact ihargs x hx (ht.2 x hx) hj
   case write f b c ihb ihc => exact ⟨ihb ht.1 hj, ihc ht.2 hj⟩
   case arith op b c ihb ihc => exact ⟨ihb ht.1 hj, ihc ht.2 hj⟩
   case ite c b e ihc ihb ihe => exact ⟨ihc ht.1 hj, ihb ht.2.1 hj, ihe ht.2.2 hj⟩
@@ -129,6 +149,7 @@ theorem subst_scoped {t a : Tm} {d j : Nat} (ht : Scoped (d + 1) t)
   case elemAt b c ihb ihc => exact ⟨ihb ht.1 hj, ihc ht.2 hj⟩
   case setElem b c e ihb ihc ihe => exact ⟨ihb ht.1 hj, ihc ht.2.1 hj, ihe ht.2.2 hj⟩
   case lenOf b ih => exact ih ht hj
+  case spread b ih => exact ih ht hj
   case read f b ih => exact ih ht hj
   case test k b ih => exact ih ht hj
   all_goals trivial
@@ -149,6 +170,9 @@ def instantiate (d : Nat) (ρ : Env) : Tm → Tm
   | .call f args => .call (instantiate d ρ f) (instantiateArgs d ρ args)
   | .makeAt (.closure n b) ns args =>
       .makeAt (.closure n (instantiate (d + n) ρ b)) ns (instantiateArgs d ρ args)
+  | .objAt fs (.variadic n b) => .objAt fs (.variadic n (instantiate (d + n + 1) ρ b))
+  | .makeAt (.variadic n b) ns args =>
+      .makeAt (.variadic n (instantiate (d + n + 1) ρ b)) ns (instantiateArgs d ρ args)
   | .makeAt .absent ns args => .makeAt .absent ns (instantiateArgs d ρ args)
   | .readAt f a => .readAt f (instantiate d ρ a)
   | .writeAt f a b => .writeAt f (instantiate d ρ a) (instantiate d ρ b)
@@ -159,6 +183,7 @@ def instantiate (d : Nat) (ρ : Env) : Tm → Tm
   | .elemAt a b => .elemAt (instantiate d ρ a) (instantiate d ρ b)
   | .setElem a b c => .setElem (instantiate d ρ a) (instantiate d ρ b) (instantiate d ρ c)
   | .lenOf a => .lenOf (instantiate d ρ a)
+  | .spread a => .spread (instantiate d ρ a)
   | t => t
 
 def instantiateArgs (d : Nat) (ρ : Env) : List Tm → List Tm
@@ -186,6 +211,12 @@ theorem instantiate_scoped (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (t : Tm) (d
     intro v hv
     obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
     exact ihargs x hx d
+  case objVariadic l n b ih => exact ih _
+  case makeVariadic n f ns args ihf ihargs =>
+    refine ⟨ihf _, ?_⟩
+    intro v hv
+    obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
+    exact ihargs x hx d
   case write f a b iha ihb => exact ⟨iha _, ihb _⟩
   case arith op a b iha ihb => exact ⟨iha _, ihb _⟩
   case ite c a b ihc iha ihb => exact ⟨ihc _, iha _, ihb _⟩
@@ -200,6 +231,7 @@ theorem instantiate_scoped (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (t : Tm) (d
   case elemAt a b iha ihb => exact ⟨iha _, ihb _⟩
   case setElem a b c iha ihb ihc => exact ⟨iha _, ihb _, ihc _⟩
   case lenOf a ih => exact ih _
+  case spread a ih => exact ih _
   case read f a ih => exact ih d
   case test k a ih => exact ih d
   all_goals trivial
@@ -231,6 +263,13 @@ theorem instantiate_beta (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (a t : Tm) (d
     apply List.map_congr_left
     intro x hx
     exact ihargs x hx d
+  case objVariadic l n b ih => rw [show d + 1 + n + 1 = d + n + 1 + 1 by omega, ih]
+  case makeVariadic n f ns args ihf ihargs =>
+    rw [show d + 1 + n + 1 = d + n + 1 + 1 by omega, ihf, List.map_map]
+    congr 1
+    apply List.map_congr_left
+    intro x hx
+    exact ihargs x hx d
   case write f b c ihb ihc => rw [ihb, ihc]
   case arith op b c ihb ihc => rw [ihb, ihc]
   case ite c b e ihc ihb ihe => rw [ihc, ihb, ihe]
@@ -249,6 +288,7 @@ theorem instantiate_beta (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (a t : Tm) (d
   case elemAt b c ihb ihc => rw [ihb, ihc]
   case setElem b c e ihb ihc ihe => rw [ihb, ihc, ihe]
   case lenOf b ih => rw [ih]
+  case spread b ih => rw [ih]
   case read f b ih => rw [ih]
   case test k b ih => rw [ih]
   all_goals rfl
@@ -296,6 +336,11 @@ theorem instantiate_above {t : Tm} {d : Nat} (ht : Scoped d t) (ρ : Env) :
     have hmap : args.map (instantiate d ρ) = args := by
       simpa using (List.map_congr_left (g := id) (fun x hx => ihargs x hx (ht.2 x hx)))
     rw [ihf ht.1, hmap]
+  case objVariadic l n b ih => rw [ih ht]
+  case makeVariadic n f ns args ihf ihargs =>
+    have hmap : args.map (instantiate d ρ) = args := by
+      simpa using (List.map_congr_left (g := id) (fun x hx => ihargs x hx (ht.2 x hx)))
+    rw [ihf ht.1, hmap]
   case write f a b iha ihb => rw [iha ht.1, ihb ht.2]
   case arith op a b iha ihb => rw [iha ht.1, ihb ht.2]
   case ite c a b ihc iha ihb => rw [ihc ht.1, iha ht.2.1, ihb ht.2.2]
@@ -310,6 +355,7 @@ theorem instantiate_above {t : Tm} {d : Nat} (ht : Scoped d t) (ρ : Env) :
   case elemAt a b iha ihb => rw [iha ht.1, ihb ht.2]
   case setElem a b c iha ihb ihc => rw [iha ht.1, ihb ht.2.1, ihc ht.2.2]
   case lenOf a ih => rw [ih ht]
+  case spread a ih => rw [ih ht]
   case read f a ih => rw [ih ht]
   case test k a ih => rw [ih ht]
   all_goals rfl

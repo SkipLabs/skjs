@@ -74,12 +74,15 @@ Each type-graph node is a union of clauses:
 | Boolean                                                                                                                                                                    | `"bool"`                                                                                    |
 | Boolean singleton                                                                                                                                                          | `{"boolLit":{"value":true}}` (or `false`)                                                   |
 | Invariant reference with optional additional contract requirements, and readonly views: fields read at a sound upper bound, with no write permission through this contract | `{"refs":{"first":[["value",[1]]],"rest":[],"views":[["seen",[1]]]}}`                       |
-| Intersection of arrows                                                                                                                                                     | `{"arrs":{"arrows":[[[[0]],[1]],[[[1]],[0]]]}}`                                             |
+| Intersection of arrows, with variadic signatures `[params, [element, result]]` when there are any                                                                          | `{"arrs":{"arrows":[[[[0]],[1]],[[[1]],[0]]]}}`                                             |
 | Array store: simultaneous tuple contracts, each with required, optional and rest positions; readonly contracts give element read capabilities                              | `{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],"readonly":false},"rest":[]}}` |
-| Callable with invariant bag requirements and overloads                                                                                                                     | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[[[[0]],[1]]]}}`                   |
+| Callable with invariant bag requirements and overloads, fixed and variadic                                                                                                 | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[[[[0]],[1]]]}}`                   |
 
 The arrow example contains two argument-list/result pairs, each with one
-argument. Each argument type is itself a list of union labels. References and arrow
+argument. A call clause may add `"variadic": [[params, [element, result]], ...]`,
+signatures taking any number of actuals past `params`, each in `element`; the
+field is left out when there are none, which is its one spelling, so strict
+decoding refuses an explicit empty list. Each argument type is itself a list of union labels. References and arrow
 operands may point back to the same finite graph, representing guarded regular
 recursion. The request already contains normalized clauses: this grammar has no conjunction
 above the clause level, so nothing here needs normalizing. A producer that does
@@ -165,7 +168,8 @@ one subtype-evidence list per outgoing edge. A derivation node names the
 `strLit`, `str`, `funE`, `app`, `letE`, `alloc`,
 `read`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
 `unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `arith`, `test`,
-`arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, or `sub`.
+`arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, `funRest`, `makeCallableRest`,
+`callRest`, `arrCopy`, or `sub`.
 The array rules act on a store, the value an array object holds in its store
 field: `arrLit` allocates one location per element under the positions of a
 tuple contract; `elem` reads a required position named by a literal index at
@@ -195,7 +199,9 @@ certificate contains `pre`, `a`, `b`, `suffix`, `left`, and `right`: `pre` and
 `suffix` are lists of unchanged argument types, and the selected argument splits
 from `a ++ b` into the two branches. `combine` retains its result types `b` and
 `b'` and two branches; `empty` requires an empty type at some argument position,
-not merely a zero-length argument list. Every label in these fields is bounds
+not merely a zero-length argument list. A `rest` certificate's `s` is a variadic
+source signature `[params, [element, result]]` covering the target arrow: its
+first positions within `params`, the rest within `element`. Every label in these fields is bounds
 checked. Graph subtype search supports native argument lists and splits any
 position. Source function types, closures and calls preserve required parameter
 lists, including empty lists for zero-argument thunks. There is one accepted certificate shape.
@@ -245,6 +251,15 @@ selects an advertised signature and, like `app`, carries one premise per
 position that signature declares and the call omits, each proving `undefined`
 at that position's contract; `readCallable` and `writeCallable` use
 the first invariant bag operand. Every nested operand label is bounds checked.
+`funRest` creates variadic code: one body premise per variadic signature of
+its type, each with that signature's rest-array type, named by the rule, in
+slot 0 above the fixed parameters; `makeCallableRest` adds a field bag's
+initializer premises first, as `makeCallable` does. `callRest` carries the
+callee premise, one premise per fixed actual, one `undefined` premise per fixed
+position the call omits, then one per further part: the actual at the element
+type the rule names, or, for a part the rule flags as a spread, the store the
+spread reads, at a type whose elements that element type admits. `arrCopy`
+types `[...s]` with one premise, the store `s`.
 These rules are available to calculus requests. The source exporter emits a
 combined callable/property type for one required `value` field on a function;
 other property shapes meet the cell refusal reasons.
@@ -583,8 +598,14 @@ The bounded function atom is:
 
 The exporter preserves the ordered list of free parameters and the result, an
 optional parameter appearing as the union its contract admits. It rejects
-`this` requirements, generics, rest parameters, unsupported fields, indexes, positive
-construct requirements and record-valued operands. Arrow arguments and results
+`this` requirements, generics, unsupported fields, indexes, positive
+construct requirements and record-valued operands. A rest parameter with a
+tuple contract of required positions is exported as those positions, which is
+what the signature has. A rest parameter whose contract is a mutable `T[]` is
+exported as `"rest": T` beside `"params"`, the contract of each further actual;
+it lowers to a variadic signature of the call clause, beside any fixed arrows
+of the same value, and a callable object may carry it. Arrow arguments and
+results
 may recursively union bounded function contracts with the
 supported primitives null, undefined, true and false, and semantic top (`unknown`). The SKJS exporter uses
 bounded recursion, and the tsc producer applies a depth limit when translating
@@ -621,7 +642,24 @@ that writes a prefix of its positions, provided every position the call omits
 admits `undefined`. No synthetic undefined actual, anonymous parameter, or source
 claim is introduced for an empty list, nor for an omitted optional position:
 `x?: T` is carried as the union `T | undefined` and the call term keeps the
-actuals the source writes. Rest parameters, spread actuals,
+actuals the source writes.
+
+A parameter may carry `"rest": true`, and then its type is the array its
+arguments are collected into: a tuple of required positions, which are
+positions of the signature and which the closure allocates where the parameter
+is bound; or a mutable `T[]`, which makes the closure variadic. An application
+may carry `"spreads": [i, ...]`, the increasing positions of the arguments
+written with `...`. Into fixed parameters only a last tuple spread is accepted,
+standing for the tuple's required elements; into a variadic callee a spread may
+be any argument past the fixed ones, lowered to the calculus term
+`{"spread": {"a": store}}` that the call replaces by the store's elements. A
+spread followed by an argument that runs code is copied where it is written, the
+literal `{"arrLit": {"inits": [{"spread": ...}]}}`, and the call spreads the
+copy. Evidence names these calls `{"callRest": {"fixed": k, "omitted": u,
+"spreads": [flags], "elem": E}}`, copies `{"arrCopy": {"elem": E}}`, variadic
+creation `{"funRest": {"arrays": [A, ...]}}` and variadic callable objects
+`{"makeCallableRest": {"arrays": [A, ...]}}`, one rest-array type per
+signature; the request validation range-checks every type they carry.
 `arguments`, receiver-dependent bodies and argument-count introspection remain excluded.
 
 A strict `typeof e === "function"` or `!==` comparison has source AST shape

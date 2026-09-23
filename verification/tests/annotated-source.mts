@@ -64,7 +64,25 @@ try {
 `);
       return input;
     };
-    assert.throws(()=>parseFile(write("...rest: null[]")),/ordinary parameter/);
+    // A tuple rest of required positions is those positions in the signature;
+    // a mutable array rest is any number of them, each at its element type.
+    // Nothing else is a rest contract.
+    {
+      const ast=parseFile(write("...rest: null[]"));
+      const atom=ast.functions[0]?.params[0]?.type.atoms[0];
+      if(!atom||atom.a!=="function")throw Error("expected a function contract");
+      assert.equal(atom.params.length,1,"an array rest adds no fixed position");
+      assert.deepEqual(atom.rest,{top:false,atoms:[{a:"null"}]},"an array rest carries its element");
+    }
+    assert.throws(()=>parseFile(write("...rest: readonly [null]")),/tuple of required positions or a mutable array/);
+    assert.throws(()=>parseFile(write("...rest: readonly null[]")),/tuple of required positions or a mutable array/);
+    assert.throws(()=>parseFile(write("...rest: [null], last: boolean")),/rest parameter must be the last one/);
+    {
+      const ast=parseFile(write("...rest: [null, boolean]"));
+      const atom=ast.functions[0]?.params[0]?.type.atoms[0];
+      if(!atom||atom.a!=="function")throw Error("expected a function contract");
+      assert.equal(atom.params.length,3,"a tuple rest carries one position per element");
+    }
     // An optional position is carried as the union its contract admits. A
     // required position after it would leave a hole no call can omit.
     assert.doesNotThrow(()=>parseFile(write("second?: null")));

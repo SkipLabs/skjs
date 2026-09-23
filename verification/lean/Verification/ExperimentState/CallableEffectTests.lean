@@ -11,7 +11,7 @@ open ProgramTyping ProgramCertificates PositiveGraphs PositiveRules HeapExpressi
 open ControlFlow CertificateProducer RequestJson
 
 private def types := CallableGraphTests.types ++
-  [[PositiveNormalization.Clause.boolLit false], [.callable [(valueField, [1])] [] [([[0]],[0])]]]
+  [[PositiveNormalization.Clause.boolLit false], [.callable [(valueField, [1])] [] [([[0]],[0])] []]]
 private def G : NormalGraph Nat := fun i => types[i]?.getD []
 private def labels := List.range types.length
 private def pool := vocabulary G labels [] [[1],[2],[5],[8]]
@@ -34,7 +34,7 @@ private def proof (j : Sequent Nat) : Evidence Nat :=
 #guard allocationSlot (.attach .nul (.write (.var 1) .tru)) == none
 
 -- Empty overloads cannot hide out-of-scope captures behind allocation evidence.
-private def emptyG : NormalGraph Nat := fun i => if i == 9 then [.callable [(valueField, [1])] [] []] else G i
+private def emptyG : NormalGraph Nat := fun i => if i == 9 then [.callable [(valueField, [1])] [] [] []] else G i
 private def escaped : Sequent Nat := ⟨[[1]],.attach (.var 2) (.var 0),[9]⟩
 private def escapedProof : Evidence Nat := .node escaped .makeCallable
   [.node ⟨[[1]],.var 0,[1]⟩ .var []]

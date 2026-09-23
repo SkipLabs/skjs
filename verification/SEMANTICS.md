@@ -10,7 +10,8 @@ distinguishes the supported source fragment from model-only features.
 ## Operational language
 
 `Calculus.lean` defines an untyped call-by-value language with a mutable heap.
-This is the whole term syntax:
+The following is the original one-field kernel notation, not an exhaustive
+constructor inventory (see `Tm` in `Calculus.lean` for the maintained syntax):
 
 $$t ::= x_i\mid t\,t\mid\mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}
 \mid\mathsf{obj}(\ell,c)\mid\mathsf{make}(c,t)\mid\mathsf{let}(t,t)
@@ -25,7 +26,7 @@ the subset
 
 $$v ::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}\mid\mathsf{obj}(\ell,c),$$
 
-where $c ::= \mathsf{absent}\mid\mathsf{closure}(m,t)$ is a separate invocation
+where $c ::= \mathsf{absent}\mid\mathsf{closure}(m,t)\mid\mathsf{variadic}(m,t)$ is a separate invocation
 descriptor with a declared parameter count `m`. `make c a` evaluates its initializer `a`, then appends that value
 to the heap and returns `obj h.length c`, where `h.length` is the length
 before appending.
@@ -107,146 +108,116 @@ scope and simultaneous closing substitution, including its beta law. The program
 typing theorem uses semantic environments of closed values; its closed-program
 interface explicitly checks scope.
 
+## One meaning for callable contracts
+
+The core equation is a behavioral promise, shared by fixed signatures, rest
+signatures, overloads and callable objects. Let $\mathcal A$ describe the
+admitted lists of actual values and $R$ the result family. Then
+
+$$
+f\in\mathcal F(\mathcal A,R)(n,W)\iff
+\operatorname{Invocable}(f)\ \land\
+\forall j<n,\ U\succeq W{\downarrow}j,\ h,\vec v.\;
+\begin{aligned}
+&\operatorname{WorldAdm}(U)\land\operatorname{HeapOk}(j,U,h)
+ \land\operatorname{Values}(\vec v)\land\mathcal A(j,U,\vec v)\\
+&\quad\Longrightarrow\exists t.\;
+ \operatorname{Invoke}(f,\vec v,t)\land\operatorname{Safe}(R,j,U,h,t).
+\end{aligned}
+$$
+
+This is `Invocable` together with `Safety.Promise`. `Invoke` dispatches the
+saved code and yields a term; `Safe` describes its execution, including any
+allocation, mutation or further call. The call spends a step before using
+this lower-budget guarantee. Safety permits nontermination. Neither the
+contract nor the equation requires a particular parameter-binding descriptor.
+
+This supplies the call component of the existing
+[callable-object equation](PROGRAM-TYPING.md#types-describe-behaviour-not-internal-storage):
+
+$$
+\mathsf{Callable}(L;P)=\mathsf{Fun}\cap\mathsf{Props}(P)
+  \cap\bigcap_{\sigma\in L}\mathsf{CallSpec}(\sigma).
+$$
+
+Here `Invocable` supplies function shape, `propsT` supplies the field
+requirements, and `Promise` supplies each call specification. The same value
+must satisfy every conjunct; neither overloads nor generic instantiation
+allocate a replacement function or choose a new storage contract.
+
+All the callable uses build on this equation:
+
+- A fixed signature uses `ArgsShort`: written actuals meet their corresponding
+  domains, and each omitted trailing domain admits `undefined`. A rest
+  signature uses `ArgsRest`: it additionally admits arbitrarily many extra
+  values at its element contract. `callsT` and `restsT` conjoin `Promise` over
+  their respective signature lists.
+- Overloads conjoin promises on **one value**. The `arrs L S` clause combines
+  fixed and variadic promises; either list may be empty. Thus compatible
+  fixed and variadic contracts overlap. Their syntax does not divide runtime
+  functions into disjoint type shapes.
+- A callable object's field contract is intersected with these same promises:
+  `callable P Ps L S` means `propsT P Ps ∩ callsT L ∩ restsT S`.
+  Reads and writes use the fixed world contracts of the fields; invocation
+  uses the call promises on that same object. Returning, passing or capturing
+  a callback simply uses this family as a result, domain or environment type.
+- Quantification requires the same value, in the same world, to satisfy the
+  promises at every admissible binder assignment. `TypeSchemes.schemeT`
+  universally quantifies the instantiated `callsT`; its shape condition is
+  `Invocable`, even when no assignment satisfies the bounds. Its current
+  executable signature syntax is still fixed-only: quantified array rests
+  remain an explicit source/certificate gap, not a different function meaning.
+- Contract weakening follows `Promise.weaken`: admit fewer argument lists
+  and weaken the result. Fixed-to-variadic coverage is not generally valid
+  from a fixed contract alone, since it promises nothing about longer lists.
+  A concrete ordinary closure can nevertheless have stronger behavior.
+
+The [typing rules](PROGRAM-TYPING.md#expressions) build creation and
+application rules on this meaning. `InvocationSpec` and `RestCalls.RestSpec`
+are code-specific introduction premises. `callsT_of_invocationSpec` and
+`restsT_of_restSpec` turn them into the behavioral contracts above. The older
+unary `arrowT`, `arrowsT` and fixed-code `codeCallsT` remain specialized
+semantic lemmas for ordinary closure code; they are not the graph's definition
+of all function values. `callsT_of_arrowsT` embeds that specialized guarantee.
+
 ## Argument-list preparation
 
-Applications use the native constructor `call f args`, where `args` is a list
-of terms. `app f a` is only notation for `call f [a]`; the old binary constructor
-has been removed. Term induction, structural equality, substitution, capture
-instantiation, scope checking and object-name traversal all visit the full list.
-The list traversal helpers are structurally recursive and proved equivalent to
-`map` or universal membership, so the existing singleton computations still
-reduce directly.
+Applications use `call f args`; `app f a` abbreviates the singleton case.
+Substitution, scope checking, capture instantiation and object-name traversal
+visit the entire list and both code descriptors. `CallArguments.Frame` keeps
+the callee and ordered arguments separate from invocation.
 
-`Step.callV` dispatches any native call whose callee carries code and whose
-actuals are all values. The previous unary `Step.beta` is its singleton
-specialization. `Step.callL` evaluates the callee with any argument list. Once it
-is a value,
-`Step.callArg` reduces one indexed argument, requiring every earlier position to
-be a value; later positions remain untouched. Unary `appL` and `appR` are
-specializations of these rules. Certificate typing still covers singleton calls.
+`Prepare` evaluates the callee, then processes arguments from left to right.
+`Step.callArg` requires earlier arguments to be values. A `spread` is not a
+value: `Step.callSpread` consumes its ready store before any later argument
+can step, replacing holes with `undefined`. Splicing can change list length;
+`ArgStep.length_preserved` applies to an individual operand reduction, not to
+all preparation. `prepare_deterministic` and `call_step_iff` connect preparation
+and invocation to the deterministic term machine. A ready frame has value
+operands; readiness alone does not establish callability or typing.
 
-[CallArguments.lean](lean/Verification/ExperimentState/CallArguments.lean)
-defines preparation separately from invocation. A frame contains a callee term
-and an ordered list of argument terms. `Prepare` steps the callee until it is a
-value, then `ArgStep` steps the leftmost non-value argument using the existing
-term machine and heap. Previously evaluated operands remain in their original
-positions. No argument binding, padding, truncation or body invocation occurs
-in this relation.
+Ordinary code uses `parameters n args` to pad missing positions with
+`undefined` and discard extra positions after their effects have occurred.
+`bindArgs` substitutes these values without allocating. Variadic code uses
+`bindRest`: fixed positions are padded in the same way, while `args.drop n`
+becomes a fresh rest array. Padding never enters the rest array. Dispatch
+itself leaves the heap unchanged; the yielded term allocates the array using
+ordinary store and object allocation steps. These operational distinctions
+are independent of the contracts callers use.
 
-`prepare_deterministic`, `arity_preserved`, `callee_preserved` and `prefix_iff`
-prove unique next states, unchanged list length, stability of the saved callee,
-and preservation of every completed argument prefix. `unary_step` embeds each
-single-argument preparation step into the current application's congruence
-rules. A ready frame has a value callee and value arguments; readiness does not
-establish callability, arity compatibility or typing. A stuck operand blocks later
-effects rather than being skipped.
+`callsT_invoke` obtains safe dispatch from a behavioral promise.
+`ProgramTyping.call_safe` first evaluates the callee and composes effectful
+arguments using `bind_list` and `FutureSafe`. `ArgsT_transfer` preserves saved
+value types as the budget decreases and the world extends. Variadic calls
+add `RestCalls.spread_parts_safe` and `call_elim_rest`; source lowering copies
+a spread's elements at its evaluation point when later operands run code.
+The copy preserves element values, including object references, rather than
+merely saving the source array's identity.
 
-After preparation, `parameters n args` supplies exactly `n` parameter values:
-actual position `i` when present, otherwise `undefined`. Extra actuals do not
-occupy parameter slots; their effects have already happened during preparation.
-`parameter_at` and `parameters_length` establish this for every list and arity.
-The type contract must separately justify any missing argument.
-
-`bindArgs` substitutes parameter slots from highest to lowest, preserving earlier
-arguments and nested body binders. Parameters use declaration order: the first
-parameter is slot zero, and captures begin after the full parameter list.
-`instantiate_args` proves that closing captures then binding parameters agrees
-with one simultaneous substitution. `bound_body_closed` establishes that a body
-scoped to its parameters is closed after binding closed actuals. Binding performs
-no heap operation.
-
-[Safety.lean](lean/Verification/ExperimentState/Safety.lean) defines `ArgsT` for
-an ordered list of actual-argument types and `InvocationSpec` for code with a
-declared parameter count. Each overload fixes its actual argument count, which
-can differ from the declared count. The safety obligation uses the normalized
-parameter list, so omitted parameters must be safe as `undefined`; extra actuals
-still satisfy their own domains. These are semantic code obligations, not a
-source policy allowing omitted required arguments. `ArgsT_length` establishes
-the actual count, and `ArgsT_values` establishes readiness when the domains
-contain only values. Invocation contracts survive budget reduction and world
-extension.
-
-`Invoke` dispatches a ready frame to the immutable code on its saved callee,
-using `bindParameters`. It performs no heap operation and cannot overlap a
-preparation step. All actuals must be values, including those discarded during
-normalization. `invoke_iff` characterizes dispatch exactly; readiness alone does
-not make a primitive or a plain object callable. `invoke_closed` preserves closed
-scope, and `InvocationSpec.invoke` supplies the promised body safety for an
-admitted actual list. The descriptor carries its parameter count explicitly;
-`Scoped`, substitution, capture instantiation and the certificate scope check
-all traverse its body under that many binders. Object coherence preserves both
-arity and body at an identity. `Step.beta` and dispatch use the same normalized
-binding operation, including when a unary application supplies fewer or more
-actuals than the descriptor declares.
-
-`focus_iff` proves that `ArgStep` selects exactly the indexed position allowed
-by `Step.callArg`. `call_step_iff` then proves both directions of the connection
-to the maintained machine for every argument count: every call step is
-preparation or dispatch, and either operation reconstructs a call step.
-`unary_step_iff` specializes this to singleton application notation.
-`Invoke.step` embeds dispatch of every ready argument list into native reduction. `ready_step_iff` proves the converse:
-a ready call can only dispatch the saved code, and that step leaves the heap
-unchanged.
-
-`callsT` lifts list-signature code contracts to callable values. An overload can
-admit any fixed actual count, including zero, independently of the descriptor's
-parameter count. `callsT_invoke` obtains both a dispatch and its safe body from
-membership and typed value arguments. `ArgsT_transfer` preserves the saved
-arguments' types as budget decreases and the world extends. `call_elim` uses
-that transfer to prove same-budget safety of a native call on typed values: the
-call spends one step and the body uses the remaining budget. The existing unary
-`app_elim` now specializes this list-call rule.
-
-`ProgramTyping.call_safe` extends that rule to effectful operand expressions.
-`FutureSafe` requires a pending argument to remain safe after earlier operands
-spend budget and change the heap. `bind_list` evaluates the arguments in order,
-transfers saved values' types to each later world, and invokes its continuation
-only after the complete list is ready. `call_safe` first evaluates the callee,
-then uses that list composition and `call_elim`. Both application cases
-in the typing soundness theorem use this proof for ordered lists of typed
-operands. Their certificate rules require the same operand terms in the same
-order, with one premise per argument and a matching signature domain list.
-
-`callsT_adm` proves admissibility without assuming admissible domains, and
-`callsT_congr` proves that every argument position and result is guarded by the
-call step. `ArgsAgree` requires corresponding domain positions and equal list
-lengths. `arrowsT_callsT` establishes exact equivalence to the existing unary
-overload type for singleton domains; the unary admissibility and congruence
-proofs now use these general results.
-
-The existing `CodeSpec` is now the one-parameter, singleton-domain specialization
-of `InvocationSpec`. `CodeSpec_iff` proves equivalence to its previous unary
-obligation, and existing callable creation proofs use that equivalence. The
-current beta rule and semantic call helper both use `bindParameters` with the
-saved descriptor's arity. `arrowsT_invocation_iff` connects unary actual-argument
-contracts to code of any declared arity. Source creation still uses arity one
-(including the current implicit-undefined thunk encoding). List-domain type-graph
-nodes, typing certificates and source integration remain
-to be added before multi-argument source calls are enabled.
-
-## Types, worlds and heaps
-
-A semantic family has type
-
-```lean
-Fam := (n : Nat) → WorldT n → Val → Prop
-```
-
-A world records the invariant contract of each allocated location. At level
-`n`, a contract can inspect lower levels and their worlds. `WorldAdm` requires
-contracts to survive extension by further allocations. `HeapOk` says the heap
-has the world's allocated locations and their contents satisfy those contracts
-at lower levels. `Heaps.lean` proves that appropriate writes and allocation
-preserve heap satisfaction.
-
-`Adm` requires a family to be downward closed when both budget and world are
-truncated, and monotone under world extension. Unions and intersections are
-pointwise disjunction and conjunction; both preserve admissibility.
-
-`refT A` means that the value is a location whose stored contract agrees with
-`A` at every lower level and world. It is invariant in its operand, not a
-covariant container. `ReferenceConjunctions.lean` retains multiple requirements
-on this same contract and proves their read/write rules.
+`callsT_adm`, `restsT_adm` and the corresponding congruence lemmas establish
+world monotonicity and guardedness of both domains and results. The
+source/calculus correspondence remains the documented trusted-adapter
+boundary; these theorems establish safety of the extracted program.
 
 Worlds have different types at different budgets. Consequently, “the type is
 just the intersection of its approximations” is not a complete standalone
@@ -278,35 +249,15 @@ admissible future, and remain safe there. `Safe` is the special case with no
 graph. Starting a graph means starting at $\mathsf{at}(p,\rho)$ for the entry
 point and the input environment.
 
-`CallableConjunctions.objectsT` combines invariant bag requirements and
-ordered argument-list overloads on one value. `TypeAlgebra.calls_append` proves
-that merging overload lists preserves the same immutable descriptor, even when
-the admitted actual counts differ. Guardedness covers every argument position
-and the result, while bag invariants remain separate. The
-`callable first rest arrows` graph clause now stores ordered domain lists and
-uses `objectsT` directly. The plain `arrs` clause likewise uses `callsT`; no unary
-graph adapter remains.
-Normalization concatenates bag requirements and signatures; it retains
-incompatible invariant operands at low budgets just as reference conjunctions
-do. Subtyping can forget properties but cannot widen an invariant bag or turn
-a function into a plain reference. Checked creation proves the stored value
-and all code obligations separately. Graph calls, reads, and writes then use
-the corresponding part of that same object's contract.
-
-An arrow contains **function objects with closed invocation code** whose
-substituted bodies are safe at every
-smaller budget, every admissible future world, every satisfying heap, and every
-argument in the domain there. The guarantee concerns the body after beta; the
-actual application spends that step before invoking it. Consequently `app_elim`
-proves same-budget application compatibility from function and argument
-membership. Quantification over future worlds remains essential for allocation.
-
-In notation, for every $j<n$ and admissible future $U$ and satisfying heap $h$,
-
-$$\mathsf{obj}(\ell,\mathsf{closure}(m,b))\in\llbracket A\to B\rrbracket(n,W)
-\Longrightarrow
-\big(a\in\llbracket A\rrbracket(j,U)\Rightarrow
-\operatorname{Safe}(B,j,U,h,\operatorname{bindParameters}(m,[a],b))\big).$$
+`CallableConjunctions.objectsT` combines invariant field requirements and
+fixed call promises on one value. `PositiveNormalization.sem` intersects it
+with `restsT` for the graph's `callable first rest arrows variadic` clause.
+The plain `arrs arrows variadic` clause carries the same call promises without
+field requirements. Normalization concatenates both kinds of signature and
+retains invariant field operands. Checked creation establishes field storage
+and code obligations separately; calls, reads and writes use the corresponding
+part of the same object's contract. The common function equation above governs
+all these call obligations.
 
 A guarded operator consults recursive operands only below the current budget.
 Its approximation tower stabilizes at every finite observation level, and the

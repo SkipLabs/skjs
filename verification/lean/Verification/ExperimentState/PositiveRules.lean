@@ -117,88 +117,214 @@ theorem Domains.sound {G : NormalGraph ι} {R As Bs n}
       | nil => exact False.elim ha
       | cons a args => exact ⟨hr A B hd.1 W a ha.1, ih hd.2 ha.2⟩
 
-/-- A union at any argument position splits calls without reordering positions. -/
-theorem args_union {G : NormalGraph ι} (pre : List (List ι)) (a b : List ι)
-    (suffix : List (List ι)) (n W args) :
-    ArgsT ((pre ++ (a ++ b) :: suffix).map (meaning G)) n W args ↔
-      ArgsT ((pre ++ a :: suffix).map (meaning G)) n W args ∨
-      ArgsT ((pre ++ b :: suffix).map (meaning G)) n W args := by
-  induction pre generalizing args with
-  | nil =>
-    cases args with
-    | nil => simp [ArgsT]
-    | cons v args =>
-      simp only [List.nil_append, List.map_cons, ArgsT]
-      have hm : meaning G (a ++ b) n W v ↔ meaning G a n W v ∨ meaning G b n W v := by
-        simp [meaning, setSem, List.mem_append, or_and_right, exists_or]
-      rw [hm]
-      exact or_and_right
-  | cons A pre ih =>
-    cases args with
-    | nil => simp [ArgsT]
-    | cons v args =>
-      simp only [List.cons_append, List.map_cons, ArgsT, ih]
-      exact and_or_left
+/-- Domains pointwise below others at one budget admit, there, every list
+the others admit. -/
+theorem Domains.short {G : NormalGraph ι} {R : List ι → List ι → Prop} {j : Nat}
+    (hr : ∀ a b, R a b → FamLeAt G a b j) {W : WorldT j} :
+    ∀ {As Bs : List (List ι)} {args : List Tm}, Domains R As Bs →
+      ArgsShort (As.map (meaning G)) j W args → ArgsShort (Bs.map (meaning G)) j W args
+  | [], [], _, _, h => h
+  | [], _ :: _, _, hd, _ | _ :: _, [], _, hd, _ => hd.elim
+  | A :: As, B :: Bs, [], hd, h => by
+    simp only [List.map_cons, ArgsShort_nil_args, List.mem_cons, forall_eq_or_imp] at h ⊢
+    have := Domains.short hr (args := []) hd.2 (ArgsShort_nil_args.mpr h.2)
+    exact ⟨hr A B hd.1 W _ h.1, ArgsShort_nil_args.mp this⟩
+  | A :: As, B :: Bs, a :: args, hd, h => by
+    simp only [List.map_cons, ArgsShort_cons] at h ⊢
+    exact ⟨hr A B hd.1 W a h.1, Domains.short hr hd.2 h.2⟩
 
-theorem args_empty {G : NormalGraph ι} {As : List (List ι)} {n W args} (he : [] ∈ As)
-    (ha : ArgsT (As.map (meaning G)) n W args) : False := by
-  induction As generalizing args with
-  | nil => simp at he
-  | cons A As ih =>
+/-- An empty position admits no list: no value is written there, and
+`undefined` is not in it either. -/
+theorem short_empty {G : NormalGraph ι} {j : Nat} {W : WorldT j} :
+    ∀ {As : List (List ι)} {args : List Tm}, [] ∈ As →
+      ¬ ArgsShort (As.map (meaning G)) j W args
+  | [], _, he => by simp at he
+  | A :: As, args, he => by
+    intro h
+    have hnone : ∀ u, ¬ meaning G [] j W u := by
+      intro u ⟨i, hi, _⟩; simp at hi
     cases args with
-    | nil => exact ha
+    | nil =>
+      simp only [List.map_cons, ArgsShort_nil_args, List.mem_cons, forall_eq_or_imp] at h
+      rcases List.mem_cons.mp he with rfl | he
+      · exact hnone _ h.1
+      · exact short_empty he (ArgsShort_nil_args.mpr h.2)
     | cons a args =>
-      rcases List.mem_cons.mp he with he | he
-      · subst A; obtain ⟨i, hi, _⟩ := ha.1; simp at hi
-      · exact ih he ha.2
+      simp only [List.map_cons, ArgsShort_cons] at h
+      rcases List.mem_cons.mp he with rfl | he
+      · exact hnone _ h.1
+      · exact short_empty he h.2
 
-/-- Declarative overload coverage for native argument-list signatures. -/
+/-- A union at any position splits the admitted lists without reordering. -/
+theorem short_union {G : NormalGraph ι} (a b : List ι) (suffix : List (List ι)) {j : Nat}
+    {W : WorldT j} : ∀ (pre : List (List ι)) {args : List Tm},
+      ArgsShort ((pre ++ (a ++ b) :: suffix).map (meaning G)) j W args →
+      ArgsShort ((pre ++ a :: suffix).map (meaning G)) j W args ∨
+        ArgsShort ((pre ++ b :: suffix).map (meaning G)) j W args
+  | [], [], h => by
+    simp only [List.nil_append, List.map_cons, ArgsShort_nil_args, List.mem_cons,
+      forall_eq_or_imp] at h ⊢
+    obtain ⟨⟨i, hi, hv⟩, hs⟩ := h
+    rcases List.mem_append.mp hi with hi | hi
+    · exact Or.inl ⟨⟨i, hi, hv⟩, hs⟩
+    · exact Or.inr ⟨⟨i, hi, hv⟩, hs⟩
+  | [], x :: args, h => by
+    simp only [List.nil_append, List.map_cons, ArgsShort_cons] at h ⊢
+    obtain ⟨⟨i, hi, hv⟩, hs⟩ := h
+    rcases List.mem_append.mp hi with hi | hi
+    · exact Or.inl ⟨⟨i, hi, hv⟩, hs⟩
+    · exact Or.inr ⟨⟨i, hi, hv⟩, hs⟩
+  | P :: pre, [], h => by
+    simp only [List.cons_append, List.map_cons, ArgsShort_nil_args, List.mem_cons,
+      forall_eq_or_imp] at h ⊢
+    rcases short_union a b suffix pre (args := []) (ArgsShort_nil_args.mpr h.2) with h' | h'
+    · exact Or.inl ⟨h.1, ArgsShort_nil_args.mp h'⟩
+    · exact Or.inr ⟨h.1, ArgsShort_nil_args.mp h'⟩
+  | P :: pre, x :: args, h => by
+    simp only [List.cons_append, List.map_cons, ArgsShort_cons] at h ⊢
+    rcases short_union a b suffix pre h.2 with h' | h'
+    · exact Or.inl ⟨h.1, h'⟩
+    · exact Or.inr ⟨h.1, h'⟩
+
+/-- A variadic signature admits, at one budget, every list a fixed one admits
+when its fixed parameters come first, pointwise wider, and the fixed one's
+further positions are within its element contract. -/
+theorem rest_short {G : NormalGraph ι} {R : List ι → List ι → Prop} {j : Nat}
+    (hr : ∀ a b, R a b → FamLeAt G a b j) {W : WorldT j} {E : List ι} :
+    ∀ {Ps As : List (List ι)} {args : List Tm}, Domains R (As.take Ps.length) Ps →
+      (∀ A ∈ As.drop Ps.length, R A E) →
+      ArgsShort (As.map (meaning G)) j W args →
+      ArgsRest (Ps.map (meaning G)) (meaning G E) j W args
+  | [], As, args, _, hel, h => by
+    rw [List.map_nil, ArgsRest_nil_params]
+    obtain ⟨-, ht, -⟩ := h
+    refine ArgsT_all_le (E := meaning G E) (fun A hA u hu => ?_) ht
+    rw [← List.map_take] at hA
+    obtain ⟨A0, hA0, rfl⟩ := List.mem_map.mp hA
+    exact hr A0 E (hel A0 (by simpa using List.mem_of_mem_take hA0)) W u hu
+  | _ :: _, [], _, hd, _, _ => hd.elim
+  | P :: Ps, A :: As, [], hd, hel, h => by
+    simp only [List.length_cons, List.take_succ_cons, List.drop_succ_cons] at hd hel
+    simp only [List.map_cons, ArgsShort_nil_args, ArgsRest_nil_args, List.mem_cons,
+      forall_eq_or_imp] at h ⊢
+    have := rest_short hr (args := []) hd.2 hel (ArgsShort_nil_args.mpr h.2)
+    exact ⟨hr A P hd.1 W _ h.1, ArgsRest_nil_args.mp this⟩
+  | P :: Ps, A :: As, a :: args, hd, hel, h => by
+    simp only [List.length_cons, List.take_succ_cons, List.drop_succ_cons] at hd hel
+    simp only [List.map_cons, ArgsShort_cons, ArgsRest_cons] at h ⊢
+    exact ⟨hr A P hd.1 W a h.1, rest_short hr hd.2 hel h.2⟩
+
+/-- A variadic signature admits, at one budget, every list a narrower variadic
+signature admits. -/
+theorem rest_rest {G : NormalGraph ι} {R : List ι → List ι → Prop} {j : Nat}
+    (hr : ∀ a b, R a b → FamLeAt G a b j) {W : WorldT j} {E F : List ι} (hfe : R F E) :
+    ∀ {Ps Qs : List (List ι)} {args : List Tm}, Domains R (Qs.take Ps.length) Ps →
+      (∀ Q ∈ Qs.drop Ps.length, R Q E) →
+      ArgsRest (Qs.map (meaning G)) (meaning G F) j W args →
+      ArgsRest (Ps.map (meaning G)) (meaning G E) j W args
+  | [], Qs, args, _, hel, h => by
+    rw [List.map_nil, ArgsRest_nil_params]
+    have hle : ∀ A ∈ Qs.map (meaning G), ∀ u, A j W u → meaning G E j W u := by
+      intro A hA u hu
+      obtain ⟨Q, hQ, rfl⟩ := List.mem_map.mp hA
+      exact hr Q E (hel Q (by simpa using hQ)) W u hu
+    rcases h with ⟨-, ht, -⟩ | ⟨-, ht, hx⟩
+    · exact ArgsT_all_le (E := meaning G E) (fun A hA u hu => hle A (List.mem_of_mem_take hA) u hu) ht
+    · intro e he
+      rw [← List.take_append_drop (Qs.map (meaning G)).length args] at he
+      rcases List.mem_append.mp he with he | he
+      · exact ArgsT_all_le hle ht e he
+      · exact hr F E hfe W e (hx e he)
+  | _ :: _, [], _, hd, _, _ => hd.elim
+  | P :: Ps, Q :: Qs, [], hd, hel, h => by
+    simp only [List.length_cons, List.take_succ_cons, List.drop_succ_cons] at hd hel
+    simp only [List.map_cons, ArgsRest_nil_args, List.mem_cons, forall_eq_or_imp] at h ⊢
+    have := rest_rest hr hfe (args := []) hd.2 hel (ArgsRest_nil_args.mpr h.2)
+    exact ⟨hr Q P hd.1 W _ h.1, ArgsRest_nil_args.mp this⟩
+  | P :: Ps, Q :: Qs, a :: args, hd, hel, h => by
+    simp only [List.length_cons, List.take_succ_cons, List.drop_succ_cons] at hd hel
+    simp only [List.map_cons, ArgsRest_cons] at h ⊢
+    exact ⟨hr Q P hd.1 W a h.1, rest_rest hr hfe hd.2 hel h.2⟩
+
+/-- A variadic signature covers a fixed arrow when the arrow's first positions
+are within its fixed parameters, its further positions within its element
+contract, and its result within the arrow's. -/
+def RestFixed (R : List ι → List ι → Prop) (s : List (List ι) × List ι × List ι)
+    (As : List (List ι)) (d : List ι) : Prop :=
+  Domains R (As.take s.1.length) s.1 ∧ (∀ A ∈ As.drop s.1.length, R A s.2.1) ∧
+    (s.2.2 = [] ∨ R s.2.2 d)
+
+/-- One variadic signature covers another: the target's fixed parameters are
+within the source's, then within its element contract; the target's element
+contract is within the source's; results are covariant. -/
+def RestCovers (R : List ι → List ι → Prop) (p q : List (List ι) × List ι × List ι) : Prop :=
+  Domains R (q.1.take p.1.length) p.1 ∧ (∀ A ∈ q.1.drop p.1.length, R A p.2.1) ∧
+    R q.2.1 p.2.1 ∧ R p.2.2 q.2.2
+
+/-- Declarative overload coverage for native argument-list signatures. A
+target arrow is covered by a fixed source arrow, by a variadic source
+signature, by splitting a union position, or by combining two coverings. -/
 inductive CallArrow (G : NormalGraph ι) (R : List ι → List ι → Prop)
-    (L : List (List (List ι) × List ι)) : List (List ι) → List ι → Prop where
-  | empty : [] ∈ As → CallArrow G R L As d
-  | source : p ∈ L → Domains R As p.1 → (p.2 = [] ∨ R p.2 d) → CallArrow G R L As d
-  | union : CallArrow G R L (pre ++ a :: suffix) d →
-      CallArrow G R L (pre ++ b :: suffix) d →
-      CallArrow G R L (pre ++ (a ++ b) :: suffix) d
-  | combine : CallArrow G R L As b → CallArrow G R L As b' →
-      (∀ i ∈ b, ∀ k ∈ b', compatible G i k = true → R [i] d) → CallArrow G R L As d
+    (L : List (List (List ι) × List ι)) (S : List (List (List ι) × List ι × List ι)) :
+    List (List ι) → List ι → Prop where
+  | empty : [] ∈ As → CallArrow G R L S As d
+  | source : p ∈ L → Domains R As p.1 → (p.2 = [] ∨ R p.2 d) → CallArrow G R L S As d
+  | rest : s ∈ S → RestFixed R s As d → CallArrow G R L S As d
+  | union : CallArrow G R L S (pre ++ a :: suffix) d →
+      CallArrow G R L S (pre ++ b :: suffix) d →
+      CallArrow G R L S (pre ++ (a ++ b) :: suffix) d
+  | combine : CallArrow G R L S As b → CallArrow G R L S As b' →
+      (∀ i ∈ b, ∀ k ∈ b', compatible G i k = true → R [i] d) → CallArrow G R L S As d
 
-theorem CallArrow.sound {G : NormalGraph ι} {R L As d} (hc : CallArrow G R L As d) (n : Nat)
+/-- An arrow's source result within the target's, or empty. -/
+theorem arrow_result {G : NormalGraph ι} {R : List ι → List ι → Prop} {n : Nat} {r d : List ι}
+    (hr : ∀ j, j < n → ∀ a b, R a b → FamLeAt G a b j) (hc : r = [] ∨ R r d) :
+    ∀ m, m < n → ∀ (V : WorldT m) u, meaning G r m V u → meaning G d m V u := by
+  intro m hm V u hu
+  rcases hc with he | he
+  · obtain ⟨i, hi, _⟩ := hu; simp [he] at hi
+  · exact hr m hm _ _ he V u hu
+
+theorem CallArrow.sound {G : NormalGraph ι} {R L S As d} (hc : CallArrow G R L S As d) (n : Nat)
     (hr : ∀ j, j < n → ∀ a b, R a b → FamLeAt G a b j)
     (W : WorldT n) (v : Val)
-    (hv : callsT (L.map fun p => (p.1.map (meaning G), meaning G p.2)) n W v) :
-    callsT [(As.map (meaning G), meaning G d)] n W v := by
-  obtain ⟨arity, body, loc, rfl, hscope, hs⟩ := hv
-  refine ⟨arity, body, loc, rfl, hscope, ?_⟩
-  intro p hp
-  have he : p = (As.map (meaning G), meaning G d) := List.mem_singleton.mp hp
-  subst p
-  clear hp
+    (hv : callsT (L.map fun p => (p.1.map (meaning G), meaning G p.2)) n W v ∧
+      restsT (S.map fun s => (s.1.map (meaning G), meaning G s.2.1, meaning G s.2.2)) n W v) :
+    Promise (ArgsShort (As.map (meaning G))) (meaning G d) n W v := by
   induction hc with
   | empty he =>
-    intro j hj U hx hu heap hh args ha
-    exact False.elim (args_empty he ha)
-  | source hm hd hc =>
-    intro j hj U hx hu heap hh args ha
-    have hb := hs _ (List.mem_map_of_mem hm) j hj U hx hu heap hh args
-      (hd.sound (hr j hj) ha)
-    apply Safe_mono j _ U heap _ hb
-    intro r hb V u hu
-    rcases hc with he | he
-    · obtain ⟨i, hi, _⟩ := hu; simp [he] at hi
-    · exact hr r (by omega) _ _ he V u hu
+    intro j hj U hx hu heap hh args hvals ha
+    exact False.elim (short_empty he ha)
+  | source hm hd hres =>
+    exact (hv.1.2 _ (List.mem_map_of_mem hm)).weaken
+      (fun j hj U args ha => Domains.short (hr j hj) hd ha) (arrow_result hr hres)
+  | rest hs hrf =>
+    exact (hv.2.2 _ (List.mem_map_of_mem hs)).weaken
+      (fun j hj U args ha => rest_short (hr j hj) (by simpa using hrf.1)
+        (by simpa using hrf.2.1) ha) (arrow_result hr hrf.2.2)
   | union _ _ hl hh =>
-    intro j hj U hx hu heap hok args ha
-    rcases (args_union _ _ _ _ j U args).mp ha with ha | ha
-    · exact hl j hj U hx hu heap hok args ha
-    · exact hh j hj U hx hu heap hok args ha
+    intro j hj U hx hu heap hok args hvals ha
+    rcases short_union _ _ _ _ ha with ha | ha
+    · exact hl j hj U hx hu heap hok args hvals ha
+    · exact hh j hj U hx hu heap hok args hvals ha
   | combine _ _ hg hl hh =>
-    intro j hj U hx hu heap hok args ha
-    apply safe_cross_upto j _ U U heap _ hok hok
-      (hl j hj U hx hu heap hok args ha) (hh j hj U hx hu heap hok args ha)
+    intro j hj U hx hu heap hok args hvals ha
+    obtain ⟨r1, hi1, hs1⟩ := hl j hj U hx hu heap hok args hvals ha
+    obtain ⟨r2, hi2, hs2⟩ := hh j hj U hx hu heap hok args hvals ha
+    cases CallArguments.invoke_deterministic hi1 hi2
+    refine ⟨r1, hi1, safe_cross_upto j ?_ U U heap _ hok hok hs1 hs2⟩
     rintro r hb V V' heap h1 h2 u ⟨i, hi, hv1⟩ ⟨k, hk, hv2⟩
     exact hr r (by omega) _ _ (hg i hi k hk (compatible_sound hv1 hv2)) V u
       ⟨i, by simp, hv1⟩
+
+theorem rest_covers_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
+    {p q : List (List ι) × List ι × List ι} (hc : RestCovers R p q) (n : Nat)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j) (W : WorldT n) (v : Val)
+    (hv : Promise (ArgsRest (p.1.map (meaning G)) (meaning G p.2.1)) (meaning G p.2.2) n W v) :
+    Promise (ArgsRest (q.1.map (meaning G)) (meaning G q.2.1)) (meaning G q.2.2) n W v := by
+  obtain ⟨hd, hel, he, hres⟩ := hc
+  exact hv.weaken (fun j hj U args ha => rest_rest (hr j hj) he (by simpa using hd)
+    (by simpa using hel) ha) (fun m hm U u hu => hr m hm _ _ hres U u hu)
 
 /-- One record conjunction covers another when every field any target operand
 names is named by some source operand, with contracts that imply each other.
@@ -245,10 +371,11 @@ def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
   | .strLit _, .str => True
   | .strLit a, .strLit b => a = b
   | .refs a bs vs, .refs c ds ws => CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws
-  | .arrs L, .arrs M | .callable _ _ L, .arrs M => ∀ p ∈ M, CallArrow G R L p.1 p.2
-  | .callable a bs L, .callable c ds M =>
+  | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
+      (∀ p ∈ M, CallArrow G R L S p.1 p.2) ∧ ∀ t ∈ T, ∃ s ∈ S, RestCovers R s t
+  | .callable a bs L S, .callable c ds M T =>
       CoversFields R (a :: bs) (c :: ds) ∧
-      ∀ p ∈ M, CallArrow G R L p.1 p.2
+      (∀ p ∈ M, CallArrow G R L S p.1 p.2) ∧ ∀ t ∈ T, ∃ s ∈ S, RestCovers R s t
   | _, _ => False
 
 /-- Covering field by field is enough: the operands all constrain the same
@@ -419,10 +546,12 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
     intro hv
     exact ⟨covers_fields_sound hc.1 n hr W v hv.1, covers_views_sound hc.2 n hr W v hv⟩
   · intro hv
-    apply callsT_of_signatures (callsT_callable hv)
-    intro p hp
-    obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
-    exact CallArrow.sound (hc q hq) n hr W v hv
+    refine ⟨⟨hv.1.1, fun p hp => ?_⟩, ⟨hv.1.1, fun t ht => ?_⟩⟩
+    · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+      exact CallArrow.sound (hc.1 q hq) n hr W v hv
+    · obtain ⟨t0, ht0, rfl⟩ := List.mem_map.mp ht
+      obtain ⟨s, hs, hst⟩ := hc.2 t0 ht0
+      exact rest_covers_sound hst n hr W v (hv.2.2 _ (List.mem_map_of_mem hs))
   · rename_i b
     cases b <;> intro hv <;> cases hv
     · exact Or.inr rfl
@@ -437,17 +566,21 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
     cases hc; exact id
   · exact id
   · intro hv
-    apply callsT_of_signatures (callsT_callable hv.2)
-    intro p hp
-    obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp
-    exact CallArrow.sound (hc q hq) n hr W v hv.2
-  · rename_i a bs L c ds M
+    refine ⟨⟨hv.1.2.1, fun p hp => ?_⟩, ⟨hv.1.2.1, fun t ht => ?_⟩⟩
+    · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+      exact CallArrow.sound (hc.1 q hq) n hr W v ⟨hv.1.2, hv.2⟩
+    · obtain ⟨t0, ht0, rfl⟩ := List.mem_map.mp ht
+      obtain ⟨s, hs, hst⟩ := hc.2 t0 ht0
+      exact rest_covers_sound hst n hr W v (hv.2.2 _ (List.mem_map_of_mem hs))
+  · rename_i a bs L S c ds M T
     intro hv
-    refine ⟨covers_bags_sound hc.1 n hr W v hv.1, ?_⟩
-    apply callsT_of_signatures (callsT_callable hv.2)
-    intro p hp
-    obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp
-    exact CallArrow.sound (hc.2 q hq) n hr W v hv.2
+    refine ⟨⟨covers_bags_sound hc.1 n hr W v hv.1.1, hv.1.2.1, fun p hp => ?_⟩,
+      ⟨hv.1.2.1, fun t ht => ?_⟩⟩
+    · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+      exact CallArrow.sound (hc.2.1 q hq) n hr W v ⟨hv.1.2, hv.2⟩
+    · obtain ⟨t0, ht0, rfl⟩ := List.mem_map.mp ht
+      obtain ⟨s, hs, hst⟩ := hc.2.2 t0 ht0
+      exact rest_covers_sound hst n hr W v (hv.2.2 _ (List.mem_map_of_mem hs))
   · -- str ≤ str
     exact id
   · -- strLit ≤ str: the singleton inhabits the family

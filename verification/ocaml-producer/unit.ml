@@ -17,7 +17,7 @@ let () =
   assert (a <> b);
   assert (union a b <> a);
   let identity={scope=2;index=0;spelling="T"} in
-  let signature={quantified=[{identity;bound=None}];params=[Rigid identity];result=Rigid identity} in
+  let signature={quantified=[{identity;bound=None}];params=[Rigid identity];variadic=None;result=Rigid identity} in
   let inferred:Inference.instantiation=Inference.infer signature [bool] in
   assert (inferred.Inference.params=[bool]);
   assert (inferred.Inference.result=bool);
@@ -37,7 +37,7 @@ let () =
   assert ((infer [t;arrow [t] num] [bool;arrow [num] num]).Inference.result=bool);
   let u={scope=2;index=1;spelling="U"} and v={scope=2;index=2;spelling="V"} in
   let chain={quantified=[{identity=u;bound=None};{identity;bound=Some (Rigid u)};
-    {identity=v;bound=Some t}];params=[Rigid u;t;Rigid v];result=Rigid u} in
+    {identity=v;bound=Some t}];params=[Rigid u;t;Rigid v];variadic=None;result=Rigid u} in
   let propagated=Inference.infer chain [tru;tru;bool] in
   assert (List.for_all (fun (_,ty) -> ty=bool) propagated.Inference.substitution);
   let boundedUpper={signature with quantified=[{identity=u;bound=None};

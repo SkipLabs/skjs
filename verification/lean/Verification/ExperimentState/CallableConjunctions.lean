@@ -20,7 +20,8 @@ theorem props_merge (A C : Fields) (Bs Ds : List Fields) (n W v) :
   · rintro ⟨⟨ha,hb⟩,hc,hd⟩; exact ⟨ha,hb,hc,hd⟩
 
 /-- A callability-neutral bag needs no new clause: plain bags and callable
-bags with no invocation promises cover exactly the scoped bag values. -/
+bags with no invocation promises cover exactly the scoped bag values, whatever
+code they carry. -/
 theorem neutral_iff (A : Fields) (Bs : List Fields) (n W v) :
     unionT (ReferenceConjunctions.refsT A Bs) (objectsT A Bs []) n W v ↔
       propsT A Bs n W v ∧ Scoped 0 v := by
@@ -30,7 +31,7 @@ theorem neutral_iff (A : Fields) (Bs : List Fields) (n W v) :
     · refine ⟨⟨recT_bag h.1, fun B hb => recT_bag (h.2 B hb)⟩, ?_⟩
       obtain ⟨flds,rfl,_⟩ := h.1
       trivial
-    · exact ⟨h.1,(callsT_callable h.2).scoped⟩
+    · exact ⟨h.1,h.2.1.scoped⟩
   · rintro ⟨h,hs⟩
     obtain ⟨flds,code,rfl,_,hr⟩ := h.1
     cases code with
@@ -43,7 +44,10 @@ theorem neutral_iff (A : Fields) (Bs : List Fields) (n W v) :
       exact hr
     | closure arity b =>
       right
-      exact ⟨h,arity,b,flds,rfl,(by simpa [Scoped] using hs),by simp⟩
+      exact ⟨h,⟨flds,_,rfl,by simp,hs⟩,by simp⟩
+    | variadic k b =>
+      right
+      exact ⟨h,⟨flds,_,rfl,by simp,hs⟩,by simp⟩
 
 theorem merge (A C : Fields) (Bs Ds : List Fields) (L M : List (List Fam × Fam)) (n W v) :
     objectsT A (Bs ++ C :: Ds) (L ++ M) n W v ↔

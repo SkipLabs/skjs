@@ -63,10 +63,13 @@ def Names (D : Registry) : Tm → Prop
   | .objAt fs (.closure n b) =>
       (∀ l ∈ locs fs, D[l]? = some (.closure n b)) ∧ Scoped n b ∧ Names D b
   | .makeAt (.closure _ b) _ args => Names D b ∧ NamesArgs D args
+  | .objAt fs (.variadic n b) =>
+      (∀ l ∈ locs fs, D[l]? = some (.variadic n b)) ∧ Scoped (n + 1) b ∧ Names D b
+  | .makeAt (.variadic _ b) _ args => Names D b ∧ NamesArgs D args
   | .makeAt .absent _ args => NamesArgs D args
   | .call f args => Names D f ∧ NamesArgs D args
   | .letE a b | .writeAt _ a b | .arith _ a b | .elemAt a b => Names D a ∧ Names D b
-  | .readAt _ a | .test _ a | .lenOf a => Names D a
+  | .readAt _ a | .test _ a | .lenOf a | .spread a => Names D a
   | .setElem a b c => Names D a ∧ Names D b ∧ Names D c
   | .arrLit args => NamesArgs D args
   | .arr ls => ∀ l ∈ ls.filterMap id, D[l]? = some .absent
@@ -87,12 +90,14 @@ theorem Names.mono {D E t} (ht : Names D t) (hx : Extends D E) : Names E t := by
   case arr ls => exact fun l hl => hx l _ (ht l hl)
   case objAbsent fs => exact fun l hl => hx _ _ (ht l hl)
   case objClosure fs n b ih => exact fun l hl => hx _ _ (ht.1 l hl)
+  case objVariadic fs n b ih => exact fun l hl => hx _ _ (ht.1 l hl)
 
 theorem Names.descriptor {D fs c} (ht : Names D (.objAt fs c)) :
     ∀ l ∈ locs fs, D[l]? = some c := by
   cases c with
   | absent => exact ht
   | closure n b => exact ht.1
+  | variadic n b => exact ht.1
 
 /-- Same identity means exactly the same descriptor, including its body. An
 identity is its fields, so this needs one of them to name. -/
@@ -105,6 +110,7 @@ theorem Names.subst {D t a} (ht : Names D t) (ha : Names D a) (j : Nat) :
   induction t using Tm.induct generalizing j <;> simp only [Names, namesArgs_iff, ExperimentState.subst, substArgs_eq_map] at *
   case var i => split <;> (try split) <;> simp_all [Names]
   case objClosure l n b ih => rw [subst_above ht.2.1 (by omega)]; exact ht
+  case objVariadic l n b ih => rw [subst_above ht.2.1 (by omega)]; exact ht
   all_goals simp_all
 
 theorem Names.bindArgs {D t args} (ht : Names D t)
@@ -125,6 +131,7 @@ theorem Names.instantiate {D t} (ht : Names D t) (ρ : Env)
   induction t using Tm.induct generalizing d <;> simp only [Names, namesArgs_iff, ExperimentState.instantiate, instantiateArgs_eq_map] at *
   case var i => split <;> simp_all [Names]
   case objClosure l n b ih => rw [instantiate_above (ht.2.1.mono (by omega))]; exact ht
+  case objVariadic l n b ih => rw [instantiate_above (ht.2.1.mono (by omega))]; exact ht
   all_goals simp_all
 
 /-! Program syntax cannot manufacture an already allocated identity, even in
@@ -133,10 +140,11 @@ mutual
 def sourceTerm : Tm → Bool
   | .objAt .. => false
   | .makeAt (.closure _ b) _ args => sourceTerm b && sourceArgs args
+  | .makeAt (.variadic _ b) _ args => sourceTerm b && sourceArgs args
   | .makeAt .absent _ args => sourceArgs args
   | .call f args => sourceTerm f && sourceArgs args
   | .letE a b | .writeAt _ a b | .arith _ a b | .elemAt a b => sourceTerm a && sourceTerm b
-  | .readAt _ a | .test _ a | .lenOf a => sourceTerm a
+  | .readAt _ a | .test _ a | .lenOf a | .spread a => sourceTerm a
   | .setElem a b c => sourceTerm a && sourceTerm b && sourceTerm c
   | .arrLit args => sourceArgs args
   | .arr .. => false
@@ -225,6 +233,16 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
     · exact CallArguments.bound_body_closed (by simpa [Scoped] using ht.1.1)
         ht.1.2
     · exact ht.2.1.2.2.bindParameters ht.2.2 _
+  | @callRest args _ fs n b hv =>
+    intro D hh ht
+    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht
+    refine ⟨D,.refl D,hh,?_,?_⟩
+    · exact CallArguments.invoke_closed (CallArguments.Invoke.variadic (fs := fs) hv)
+        (by simpa [Scoped] using ht.1.1) ht.1.2
+    · simp only [CallArguments.bindRest, CallArguments.restArray, Names, namesArgs_iff,
+        List.mem_singleton, forall_eq]
+      exact ⟨fun a hm => ht.2.2 a (List.mem_of_mem_drop hm),
+        ht.2.1.2.2.bindArgs (CallArguments.parameters_property (by trivial) ht.2.2) 1⟩
   | @makeArg c ns inits i h h' a a' hg hb step ih =>
     intro D hh ht
     have hm := List.mem_of_getElem? hg
@@ -241,7 +259,7 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
         rcases List.mem_or_eq_of_mem_set hv with hv | rfl
         · exact (ht.2 v hv).mono hx
         · exact hn
-    | closure n b =>
+    | closure n b | variadic n b =>
       simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
       obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2 _ hm,ht.2.2 _ hm⟩
       refine ⟨E,hx,hh',⟨ht.1.1,?_⟩,ht.2.1.mono hx,?_⟩
@@ -269,7 +287,7 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
       simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
       exact ⟨_,hx,hh.alloc (fun v hv' => ⟨hv v hv',ht.1 v hv',ht.2 v hv'⟩) .absent,
         trivial,hfield⟩
-    | closure n b =>
+    | closure n b | variadic n b =>
       simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
       refine ⟨_,hx,hh.alloc (fun v hv' => ⟨hv v hv',ht.1.2 v hv',ht.2.2 v hv'⟩) _,?_,?_⟩
       · simpa using ht.1.1
@@ -389,6 +407,49 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
   | lenV =>
     intro D hh ht
     exact ⟨D,.refl D,hh,trivial,trivial⟩
+  | spreadC step ih =>
+    intro D hh ht
+    exact ih D hh ht
+  | arrSpread he hp hr =>
+    intro D hh ht
+    subst he
+    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
+    have hvs : ∀ v ∈ _, isVal v = true ∧ TermOk D v := fun v hv =>
+      (readElems_mem hr v hv).elim (fun he => he ▸ ⟨rfl, trivial, trivial⟩)
+        (fun ⟨_, hl⟩ => hh.lookup hl)
+    refine ⟨D,.refl D,hh,?_,?_⟩
+    · intro v hv
+      rcases List.mem_append.mp hv with hv | hv
+      · rcases List.mem_append.mp hv with hv | hv
+        · exact ht.1 v (by simp [hv])
+        · exact (hvs v hv).2.1
+      · exact ht.1 v (by simp [hv])
+    · intro v hv
+      rcases List.mem_append.mp hv with hv | hv
+      · rcases List.mem_append.mp hv with hv | hv
+        · exact ht.2 v (by simp [hv])
+        · exact (hvs v hv).2.2
+      · exact ht.2 v (by simp [hv])
+  | callSpread hf he hp hr =>
+    intro D hh ht
+    subst he
+    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
+    have hvs : ∀ v ∈ _, isVal v = true ∧ TermOk D v := fun v hv =>
+      (readElems_mem hr v hv).elim (fun he => he ▸ ⟨rfl, trivial, trivial⟩)
+        (fun ⟨_, hl⟩ => hh.lookup hl)
+    refine ⟨D,.refl D,hh,⟨ht.1.1,?_⟩,ht.2.1,?_⟩
+    · intro v hv
+      rcases List.mem_append.mp hv with hv | hv
+      · rcases List.mem_append.mp hv with hv | hv
+        · exact ht.1.2 v (by simp [hv])
+        · exact (hvs v hv).2.1
+      · exact ht.1.2 v (by simp [hv])
+    · intro v hv
+      rcases List.mem_append.mp hv with hv | hv
+      · rcases List.mem_append.mp hv with hv | hv
+        · exact ht.2.2 v (by simp [hv])
+        · exact (hvs v hv).2.2
+      · exact ht.2.2 v (by simp [hv])
 
 #print axioms descriptor_unique
 #print axioms step_preserves

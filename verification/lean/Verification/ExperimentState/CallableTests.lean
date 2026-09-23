@@ -143,7 +143,7 @@ example (n W) : ¬ refT boolT n W (.obj 0 (.closure 1 (.var 0))) := by
 
 /-- Function-shape refinement recognizes the new inhabitants of arrows. -/
 example : PositiveNormalization.valueShape (.obj 0 (.closure 1 (.var 0))) =
-    PositiveNormalization.shape (α := Nat) (.arrs []) := rfl
+    PositiveNormalization.shape (α := Nat) (.arrs [] []) := rfl
 
 #print axioms identity_creation
 #print axioms identity_operations

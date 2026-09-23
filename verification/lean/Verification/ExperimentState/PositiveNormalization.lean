@@ -1,4 +1,5 @@
 import Verification.ExperimentState.CallableConjunctions
+import Verification.ExperimentState.RestCalls
 
 /-! Finite positive normalization with nonempty reference conjunctions. Operands
 are parameters: normalization never distributes through invariant contracts or
@@ -28,7 +29,10 @@ inductive Clause (α : Type) where
   object rather than one location twice. -/
   | refs (first : List (String × α)) (rest : List (List (String × α)))
       (views : List (String × α))
-  | arrs (arrows : List (List α × α))
+  /-- A callable value meeting every fixed arrow and every variadic signature:
+  fixed parameters, the contract of each further actual, and the result. The
+  two describe the actual lists a caller may write, not the callee's code. -/
+  | arrs (arrows : List (List α × α)) (variadic : List (List α × α × α))
   | boolLit (value : Bool)
   /-- Numbers, and one number. The spelling is canonical, so `numLit` singletons
   are distinct exactly when the numbers are. -/
@@ -37,7 +41,7 @@ inductive Clause (α : Type) where
   /-- The value a body produces by completing rather than returning. -/
   | undef
   | callable (first : List (String × α)) (rest : List (List (String × α)))
-      (arrows : List (List α × α))
+      (arrows : List (List α × α)) (variadic : List (List α × α × α))
   /-- Semantic top: every value. Membership grants no operation, so nothing
   reads, calls or tests through it without a narrowing fact. `unknown`
   denotes it; a `void` result forgets its guarantee into it. -/
@@ -66,10 +70,12 @@ def sem (X : α → Fam) : Clause α → Fam
   | .strLit s => fun _ _ v => v = .str s
   | .refs a bs vs => fun n W v =>
       refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧ viewT (famsOf X vs) n W v
-  | .arrs L => callsT (L.map fun p => (p.1.map X, X p.2))
-  | .callable a bs L =>
-      CallableConjunctions.objectsT (famsOf X a) (bs.map (famsOf X))
-        (L.map fun p => (p.1.map X,X p.2))
+  | .arrs L S => interT (callsT (L.map fun p => (p.1.map X, X p.2)))
+      (restsT (S.map fun s => (s.1.map X, X s.2.1, X s.2.2)))
+  | .callable a bs L S =>
+      interT (CallableConjunctions.objectsT (famsOf X a) (bs.map (famsOf X))
+        (L.map fun p => (p.1.map X,X p.2)))
+        (restsT (S.map fun s => (s.1.map X, X s.2.1, X s.2.2)))
 
 def semList (X : α → Fam) (L : List (Clause α)) : Fam := setSem (sem X) L
 
@@ -102,10 +108,10 @@ def meet : Clause α → Clause α → List (Clause α)
   | .str, .strLit s | .strLit s, .str => [.strLit s]
   | .strLit a, .strLit b => if a == b then [.strLit a] else []
   | .refs a bs vs, .refs c ds ws => [.refs a (bs ++ c :: ds) (vs ++ ws)]
-  | .arrs L, .arrs M => [.arrs (L ++ M)]
-  | .callable a bs L, .callable c ds M => [.callable a (bs ++ c :: ds) (L ++ M)]
-  | .callable a bs L, .arrs M => [.callable a bs (L ++ M)]
-  | .arrs L, .callable a bs M => [.callable a bs (M ++ L)]
+  | .arrs L S, .arrs M T => [.arrs (L ++ M) (S ++ T)]
+  | .callable a bs L S, .callable c ds M T => [.callable a (bs ++ c :: ds) (L ++ M) (S ++ T)]
+  | .callable a bs L S, .arrs M T => [.callable a bs (L ++ M) (S ++ T)]
+  | .arrs L S, .callable a bs M T => [.callable a bs (M ++ L) (T ++ S)]
   | _, _ => []
 
 def meetLists (A B : List (Clause α)) : List (Clause α) :=
@@ -130,7 +136,7 @@ def shape : Clause α → Nat
 
 def valueShape : Val → Nat
   | .nul => 0 | .tru | .fls => 1 | .objAt _ .absent => 2 | .undef => 4
-  | .objAt _ (.closure _ _) => 3
+  | .objAt _ (.closure _ _) | .objAt _ (.variadic _ _) => 3
   | .num _ => 5
   | .str _ => 6
   | .arr _ => 8
@@ -148,8 +154,8 @@ theorem sem_value {X : α → Fam} {c : Clause α} {n W v}
   | num => obtain ⟨b, rfl⟩ := h; exact ⟨rfl, trivial⟩
   | numLit b => subst v; exact ⟨rfl, trivial⟩
   | refs a rest => obtain ⟨flds, rfl, _⟩ := h.1.1; exact ⟨rfl, trivial⟩
-  | arrs L => exact ⟨(callsT_callable h).val, (callsT_callable h).scoped⟩
-  | callable a bs L => exact ⟨(callsT_callable h.2).val,(callsT_callable h.2).scoped⟩
+  | arrs L S => exact ⟨h.1.1.val, h.1.1.scoped⟩
+  | callable a bs L S => exact ⟨h.1.2.1.val, h.1.2.1.scoped⟩
   | undef => subst v; exact ⟨rfl, trivial⟩
   | str => obtain ⟨s, rfl⟩ := h; exact ⟨rfl, trivial⟩
   | strLit s => subst v; exact ⟨rfl, trivial⟩
@@ -166,9 +172,13 @@ theorem sem_shape {X : α → Fam} {c : Clause α} {n W v} (hc : c ≠ .top)
   | num => obtain ⟨b, rfl⟩ := h; rfl
   | numLit b => cases h; rfl
   | refs a bs => obtain ⟨flds, rfl, _⟩ := h.1.1; rfl
-  | arrs L => rcases callsT_callable h with ⟨arity, b, l, rfl, _⟩; rfl
+  | arrs L S =>
+    obtain ⟨fs, code, rfl, hc, -⟩ := h.1.1
+    cases code <;> simp_all [valueShape, shape]
   | undef => cases h; rfl
-  | callable a bs L => rcases callsT_callable h.2 with ⟨arity,b,l,rfl,_⟩; rfl
+  | callable a bs L S =>
+    obtain ⟨fs, code, rfl, hc, -⟩ := h.1.2.1
+    cases code <;> simp_all [valueShape, shape]
   | str => obtain ⟨s, rfl⟩ := h; rfl
   | strLit s => cases h; rfl
 
@@ -196,10 +206,16 @@ theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (
       rw [merge _ _ _ _ n W v, famsOf_append, viewT_append]
       simp only [interT]
       exact ⟨fun h => ⟨⟨h.1.1, h.2.1⟩, ⟨h.1.2, h.2.2⟩⟩, fun h => ⟨⟨h.1.1, h.2.1⟩, ⟨h.1.2, h.2.2⟩⟩⟩
-    · simp only [meet, singleton_sem, sem, List.map_append]
-      exact TypeAlgebra.calls_append _ _ n W v
-    · simp only [meet, singleton_sem, sem, List.map_append]
-      exact (CallableConjunctions.calls_merge _ _ _ _ n W v).trans and_comm
+    · -- arrs ∩ arrs
+      simp only [meet, singleton_sem, sem, List.map_append]
+      rw [interT, TypeAlgebra.calls_append, TypeAlgebra.rests_append]
+      simp only [interT]
+      exact ⟨fun ⟨⟨a, b⟩, c, d⟩ => ⟨⟨a, c⟩, b, d⟩, fun ⟨⟨a, c⟩, b, d⟩ => ⟨⟨a, b⟩, c, d⟩⟩
+    · -- arrs ∩ callable
+      simp only [meet, singleton_sem, sem, List.map_append]
+      rw [interT, CallableConjunctions.calls_merge, TypeAlgebra.rests_append]
+      simp only [interT]
+      exact ⟨fun ⟨⟨o, c⟩, t, r⟩ => ⟨⟨c, r⟩, o, t⟩, fun ⟨⟨c, r⟩, o, t⟩ => ⟨⟨o, c⟩, t, r⟩⟩
     · rename_i b
       cases b <;> simp [meet, singleton_sem, sem, interT, boolT]
       all_goals intro hv; subst v; simp
@@ -223,10 +239,16 @@ theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (
       · simp [meet, semList, setSem, sem, interT, hab]
         intro hv; subst hv; simp [hab]
     · simp [meet, singleton_sem, sem, interT]
-    · simp only [meet, singleton_sem, sem, List.map_append]
-      exact CallableConjunctions.calls_merge _ _ _ _ n W v
-    · simp only [meet, singleton_sem, sem, List.map_append, List.map_cons]
-      exact CallableConjunctions.merge _ _ _ _ _ _ n W v
+    · -- callable ∩ arrs
+      simp only [meet, singleton_sem, sem, List.map_append]
+      rw [interT, CallableConjunctions.calls_merge, TypeAlgebra.rests_append]
+      simp only [interT]
+      exact ⟨fun ⟨⟨o, c⟩, r, t⟩ => ⟨⟨o, r⟩, c, t⟩, fun ⟨⟨o, r⟩, c, t⟩ => ⟨⟨o, c⟩, r, t⟩⟩
+    · -- callable ∩ callable
+      simp only [meet, singleton_sem, sem, List.map_append, List.map_cons]
+      rw [interT, CallableConjunctions.merge, TypeAlgebra.rests_append]
+      simp only [interT]
+      exact ⟨fun ⟨⟨o, p⟩, r, t⟩ => ⟨⟨o, r⟩, p, t⟩, fun ⟨⟨o, r⟩, p, t⟩ => ⟨⟨o, p⟩, r, t⟩⟩
     · -- str ∩ str
       simp [meet, singleton_sem, sem, interT, strT]
     · -- str ∩ strLit
@@ -290,8 +312,8 @@ theorem sem_adm (X : α → Fam) (c : Clause α) : Adm (sem X c) := by
   | numLit b => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | refs a bs vs => exact ⟨fun n W v h => ⟨(adm _ _).down n W v h.1, (viewT_adm _).down n W v h.2⟩,
       fun n W U hx v h => ⟨(adm _ _).mono n W U hx v h.1, (viewT_adm _).mono n W U hx v h.2⟩⟩
-  | arrs L => exact callsT_adm _
-  | callable a bs L => exact CallableConjunctions.adm _ _ _
+  | arrs L S => exact interT_adm _ _ (callsT_adm _) (restsT_adm _)
+  | callable a bs L S => exact interT_adm _ _ (CallableConjunctions.adm _ _ _) (restsT_adm _)
   | undef => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | top => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | list a bs => exact ⟨fun n W v h => ⟨(listT_adm _).down n W v h.1,
@@ -344,13 +366,20 @@ theorem sem_congr (X Y : α → Fam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
   | list a bs =>
     exact and_congr (list_congr_below X Y a n h W v) (forall_congr' fun b => forall_congr' fun _ => list_congr_below X Y b n h W v)
   | refs a bs vs => exact and_congr (congr_below X Y a bs n h W v) (view_congr_below X Y vs n h W v)
-  | arrs L =>
+  | arrs L S =>
     have hd : ∀ As : List α, ArgsAgree n (As.map X) (As.map Y) := by
       intro As; induction As with
       | nil => exact .nil
       | cons a As ih => exact .cons (h a) ih
-    exact callsT_congr L _ _ (fun p _ => ⟨hd p.1, h p.2⟩) W v
-  | callable a bs L => exact CallableConjunctions.congr_below X Y a bs L n h W v
+    exact and_congr (callsT_congr L _ _ (fun p _ => ⟨hd p.1, h p.2⟩) W v)
+      (restsT_congr S _ _ (fun s _ => ⟨hd s.1, h s.2.1, h s.2.2⟩) W v)
+  | callable a bs L S =>
+    have hd : ∀ As : List α, ArgsAgree n (As.map X) (As.map Y) := by
+      intro As; induction As with
+      | nil => exact .nil
+      | cons a As ih => exact .cons (h a) ih
+    exact and_congr (CallableConjunctions.congr_below X Y a bs L n h W v)
+      (restsT_congr S _ _ (fun s _ => ⟨hd s.1, h s.2.1, h s.2.2⟩) W v)
 
 #print axioms normalize_sound
 end Verification.ExperimentState.PositiveNormalization

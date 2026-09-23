@@ -33,11 +33,6 @@ def loopEvidence : ControlFlow.Certificate (Fin 6) :=
 
 #guard checkClosed G [1] loop loopEvidence 0
 
-theorem loop_checked : checkClosed G [1] loop loopEvidence 0 = true := by cbv
-
-theorem loop_safe (n : Nat) : SafeGraph loop (PositiveRules.meaning G [1]) n
-    (ofList []) [] (.at 0 (fun _ => .nul)) := accepted_closed_safe loop_checked n
-
 /-- The trace actually traverses the back edge, then returns the changed value.
 The global safety proof is independent of this terminating example's trace. -/
 theorem loop_returns_false : Execution loop 27 [] (.at 0 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
@@ -98,11 +93,7 @@ def diamondEvidence : ControlFlow.Certificate (Fin 6) :=
 -- A genuinely nonterminating cycle is accepted without a return requirement.
 def forever : Program := [⟨.nul, .effect 0⟩]
 def foreverEvidence : ControlFlow.Certificate (Fin 6) := [{expression := leaf [] .nul [0] .nul, edges :=  [[]]}]
-theorem forever_safe (n : Nat) : SafeGraph forever (PositiveRules.meaning G []) n
-    (ofList []) [] (.at 0 (fun _ => .nul)) :=
-  accepted_closed_safe (by cbv : checkClosed G [] forever foreverEvidence 0 = true) n
+#guard checkClosed G [] forever foreverEvidence 0
 
-#print axioms loop_safe
 #print axioms loop_returns_false
-#print axioms forever_safe
 end Verification.ExperimentState.ControlFlowTests

@@ -254,14 +254,13 @@ theorem translate_exact {T : Table} (hT : initial <+: T) {t : Claim.Ty} {A u v}
   · contradiction
 
 /-- Exact arrow interpretation, including its contravariant domain, over any
-table holding the row. -/
-theorem arrow_exact {T : Table} {D R : Ty Nat} (hm : [.arrs [([D],R)]] ∈ T) (n W v) :
-    meaning (graph T) [label T (.arrs [([D],R)])] n W v ↔
-      arrowT (meaning (graph T) D) (meaning (graph T) R) n W v := by
+table holding the row: the one-domain call contract, whatever code meets it. -/
+theorem arrow_exact {T : Table} {D R : Ty Nat} (hm : [.arrs [([D],R)] []] ∈ T) (n W v) :
+    meaning (graph T) [label T (.arrs [([D],R)] [])] n W v ↔
+      callsT [([meaning (graph T) D], meaning (graph T) R)] n W v := by
   rw [label_meaning hm]
   simp only [PositiveNormalization.sem, List.map_cons, List.map_nil]
-  exact (arrowsT_callsT [(meaning (graph T) D,meaning (graph T) R)] n W v).symm.trans
-    (arrowsT_singleton (meaning (graph T) D) (meaning (graph T) R) n W v)
+  exact ⟨fun h => h.1, fun h => ⟨h, h.1, by simp⟩⟩
 
 #print axioms arrow_exact
 #print axioms translate_exact

@@ -7,9 +7,9 @@ def G : NormalGraph (Fin 6) := fun i => match i.val with
   | 0 => [.nul]
   | 1 => [.bool]
   | 2 => [.refs [(valueField, [1])] [] []]
-  | 3 => [.arrs [([[0]], [1]), ([[1]], [0])]]
-  | 4 => [.arrs [([[0, 1]], [0, 1])]]
-  | _ => [.arrs [([[3]], [1])]]
+  | 3 => [.arrs [([[0]], [1]), ([[1]], [0])] []]
+  | 4 => [.arrs [([[0, 1]], [0, 1])] []]
+  | _ => [.arrs [([[3]], [1])] []]
 
 /-- A single closure implements both signatures. `var 1` is the captured cell. -/
 def dispatch : Tm := .funE (.ite (.test .isNul (.var 0)) (.read (.var 1)) .nul)

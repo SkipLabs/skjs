@@ -5,7 +5,7 @@ namespace Verification.ExperimentState.BooleanConditionalTests
 open Lean ProgramTyping ProgramCertificates ControlFlow RequestJson PositiveGraphs
 
 private def types : List (List (PositiveNormalization.Clause (List Nat))) :=
-  [[.bool],[.nul],[.refs [(valueField, [0])] [] []],[.arrs [([[1]],[0])]]]
+  [[.bool],[.nul],[.refs [(valueField, [0])] [] []],[.arrs [([[1]],[0])] []]]
 private def ok (r : Except String α) : Bool := match r with | .ok _ => true | .error _ => false
 private def roundtrip (r : Request) : Except String Unit := do
   let input ← Json.parse (toJson r).compress

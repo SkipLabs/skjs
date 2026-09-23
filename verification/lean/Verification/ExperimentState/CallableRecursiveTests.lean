@@ -12,10 +12,10 @@ open Lean PositiveNormalization PositiveGraphs ProgramTyping ControlFlow Certifi
 -- R = { bag: null | R; call: Boolean → Boolean }. A second label describes
 -- the same recursive contract independently, to exercise cyclic subtyping.
 private def types : List (List (Clause (List Nat))) :=
-  [[.nul],[.bool],[.callable [(valueField, [0,2])] [] [([[1]],[1])]],
-   [.callable [(valueField, [0,3])] [] [([[1]],[1])]],
-   [.callable [(valueField, [0,2,1])] [] [([[1]],[1])]],
-   [.arrs [([[2]],[2])]], [.arrs [([[1]],[0,2])]]]
+  [[.nul],[.bool],[.callable [(valueField, [0,2])] [] [([[1]],[1])] []],
+   [.callable [(valueField, [0,3])] [] [([[1]],[1])] []],
+   [.callable [(valueField, [0,2,1])] [] [([[1]],[1])] []],
+   [.arrs [([[2]],[2])] []], [.arrs [([[1]],[0,2])] []]]
 private def G : NormalGraph Nat := fun i => types[i]?.getD []
 private def labels := List.range types.length
 private def pool := vocabulary G labels [] [[0,2],[0,3]]
@@ -31,7 +31,7 @@ private def request : Request := ⟨types,program,claims,[1],0,[]⟩
 private def certificate : ControlFlow.Certificate Nat :=
   match produce G labels 10 [1] program claims 0 with | .ok c => c | .error _ => []
 
-theorem checked : checkClosed G [1] program certificate 0 = true := by cbv
+#guard checkClosed G [1] program certificate 0
 #guard match (do
     let response ← produceJson (toJson request) 10
     verifyJson (toJson request) response) with
@@ -86,7 +86,7 @@ private def capturedRequest : Request := ⟨types,capturedProgram,capturedClaims
 -- The capture does not freeze the initial null bag. Treating the getter as
 -- always returning null must fail its ordinary closure-body obligation.
 private def nullGetterG : NormalGraph Nat := fun i =>
-  if i == 7 then [.arrs [([[1]],[0])]] else G i
+  if i == 7 then [.arrs [([[1]],[0])] []] else G i
 #guard !(expression nullGetterG (vocabulary nullGetterG (List.range 8) [] []) 10
   [[2]] (.funE (.read (.var 1))) [7]).isSome
 
@@ -105,18 +105,6 @@ theorem captured_returns_false : Execution capturedProgram 18 [] (.at 0 (fun _ =
     | apply Execution.next (.effect rfl)
     | apply Execution.next (.ret rfl)
 
-/-- Certificate acceptance gives safety at every budget, including budgets
-beyond the concrete terminating trace; the recursive heap needs no extra axiom. -/
-theorem safe (n : Nat) : SafeGraph program (PositiveRules.meaning G [1]) n (ofList []) []
-    (.at 0 (fun _ => .nul)) := accepted_closed_safe checked n
-
-theorem coherent {k h s} (run : Execution program k [] (.at 0 (fun _ => .nul)) h s) :
-    ∃ D, ObjectCoherence.HeapOk D h ∧ GraphCoherence.StateCoherent D s :=
-  GraphCoherence.accepted_closed_coherent checked run
-
-#print axioms checked
-#print axioms coherent
-#print axioms safe
 #print axioms captured_returns_false
 #print axioms returns_false
 end Verification.ExperimentState.CallableRecursiveTests

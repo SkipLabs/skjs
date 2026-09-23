@@ -74,7 +74,9 @@ export type Expr =
       bagType: ClaimType;
     }
   | { k: "functionTest"; pos: Span; equal: boolean; e: Expr }
-  | { k: "apply"; pos: Span; callee: Expr; args: Expr[] }
+  /* `spreads` are the indices of the arguments written with `...`: each
+     stands for the elements of its operand, read where it is written. */
+  | { k: "apply"; pos: Span; callee: Expr; args: Expr[]; spreads?: number[] }
   | {
       k: "callWithReceiver" | "bindWithReceiver";
       pos: Span;
@@ -89,8 +91,11 @@ export type Expr =
       typeParams: TypeParamAst[];
       /* `type` is what the body reads. A parameter with a `default` also
          admits `undefined` where the closure is called: that is the value a
-         short call binds, and the default replaces it before the body runs. */
-      params: { name: string; type: ClaimType; default?: Expr }[];
+         short call binds, and the default replaces it before the body runs. A
+         `rest` parameter's type is the array its arguments are collected into:
+         a tuple, whose required elements are positions of the signature, or a
+         `T[]`, which collects any number of them. */
+      params: { name: string; type: ClaimType; default?: Expr; rest?: true }[];
       result: ClaimType;
       body: Expr;
     }
@@ -174,7 +179,7 @@ export interface FunctionAst {
   name: string;
   namePos: Span;
   typeParams: TypeParamAst[];
-  params: { name: string; pos: Span; type: ClaimType }[];
+  params: { name: string; pos: Span; type: ClaimType; rest?: true }[];
   retType: ClaimType;
   body: Stmt[];
 }

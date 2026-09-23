@@ -55,12 +55,32 @@ def renderAt (G : NormalGraph Nat) (pool : List (Ty Nat)) :
       pure (.node ⟨Γ,j.term,j.type⟩ .letE [ea,eb])
     | .funE, .make (.closure arity _) .nul, bs =>
       -- One body plan per signature, in the signature order the checker expects.
-      let [.arrs L] := expand G j.type | none
+      let [.arrs L []] := expand G j.type | none
       if L.length != bs.length || !L.all (fun p => p.1.length == arity) then none else do
         let es ← (L.zip bs).attach.mapM fun q => renderAt G pool depth (q.val.1.1 ++ Γ) q.val.2
         pure (.node ⟨Γ,j.term,j.type⟩ .funE es)
+    | .funRest As, .make (.variadic arity _) .nul, bs =>
+      -- One body plan per signature, with that signature's rest array in slot 0.
+      let [.arrs [] L] := expand G j.type | none
+      if L.length != bs.length || As.length != L.length ||
+          !L.all (fun p => p.1.length == arity) then none else do
+        let es ← ((L.zip As).zip bs).attach.mapM fun q =>
+          renderAt G pool depth (q.val.1.2 :: q.val.1.1.1 ++ Γ) q.val.2
+        pure (.node ⟨Γ,j.term,j.type⟩ (.funRest As) es)
+    | .makeCallableRest As, .makeAt (.variadic arity _) _ _, ps =>
+      let [.callable P [] [] L] := expand G j.type | none
+      let as := ps.take P.length
+      let bs := ps.drop P.length
+      if as.length != P.length then none else do
+      if L.length != bs.length || As.length != L.length ||
+          !L.all (fun p => p.1.length == arity) then none else do
+        let eas ← (as.zip (P.map Prod.snd)).attach.mapM fun q => do
+          coerce G pool (← renderAt G pool depth Γ q.val.1) q.val.2
+        let es ← ((L.zip As).zip bs).attach.mapM fun q =>
+          renderAt G pool depth (q.val.1.2 :: q.val.1.1.1 ++ Γ) q.val.2
+        pure (.node ⟨Γ,j.term,j.type⟩ (.makeCallableRest As) (eas ++ es))
     | .makeCallable, .makeAt (.closure arity _) _ _, ps =>
-      let [.callable P [] L] := expand G j.type | none
+      let [.callable P [] L []] := expand G j.type | none
       let as := ps.take P.length
       let bs := ps.drop P.length
       if as.length != P.length then none else do

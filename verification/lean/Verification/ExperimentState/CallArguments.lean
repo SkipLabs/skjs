@@ -116,6 +116,11 @@ inductive Prepare : Heap → Frame → Heap → Frame → Prop where
   | callee : Step h f h' f' → Prepare h ⟨f,args⟩ h' ⟨f',args⟩
   | args : isVal f = true → ArgStep h args h' args' →
       Prepare h ⟨f,args⟩ h' ⟨f,args'⟩
+  /-- A spread whose store is ready, after a completed prefix, becomes the
+  store's elements; the heap is only read. -/
+  | splice {pre post : List Tm} {ls : List (Option Nat)} {vs : List Tm} :
+      isVal f = true → args = pre ++ .spread (.arr ls) :: post → Values pre →
+      readElems h ls = some vs → Prepare h ⟨f,args⟩ h ⟨f,pre ++ vs ++ post⟩
 
 def Frame.ready (f : Frame) : Prop := isVal f.callee = true ∧ Values f.args
 
@@ -126,36 +131,53 @@ theorem prepare_deterministic (s : Prepare h f h1 f1) (t : Prepare h f h2 f2) :
     cases t with
     | callee ht => obtain ⟨rfl,rfl⟩ := Step_det hs ht; exact ⟨rfl,rfl⟩
     | args hv _ => exact False.elim (value_no_step hv hs)
+    | splice hv _ _ _ => exact False.elim (value_no_step hv hs)
   | args hv hs =>
     cases t with
     | callee ht => exact False.elim (value_no_step hv ht)
     | args _ ht => obtain ⟨rfl,rfl⟩ := deterministic hs ht; exact ⟨rfl,rfl⟩
-
-theorem arity_preserved (s : Prepare h f h' f') : f'.args.length = f.args.length := by
-  cases s with
-  | callee _ => rfl
-  | args _ hs => exact length_preserved hs
+    | splice _ he hp _ =>
+      obtain ⟨i, a, a', hg, hb, ha, -⟩ := focus_iff.mp hs
+      exact False.elim (spread_blocks_arg he hp hg hb ha)
+  | splice hv he hp hr =>
+    cases t with
+    | callee ht => exact False.elim (value_no_step hv ht)
+    | args _ ht =>
+      obtain ⟨i, a, a', hg, hb, ha, -⟩ := focus_iff.mp ht
+      exact False.elim (spread_blocks_arg he hp hg hb ha)
+    | splice _ he' hp' hr' =>
+      obtain ⟨rfl, hx, rfl⟩ := split_unique (he.symm.trans he') hp hp' rfl rfl
+      cases hx
+      cases Option.some.inj (hr.symm.trans hr')
+      exact ⟨rfl, rfl⟩
 
 theorem callee_preserved (hv : isVal f.callee = true) (s : Prepare h f h' f') :
     f'.callee = f.callee := by
   cases s with
   | callee hs => exact False.elim (value_no_step hv hs)
   | args _ _ => rfl
+  | splice _ _ _ _ => rfl
 
 theorem ready_no_prepare (hf : f.ready) : ¬ Prepare h f h' f' := by
   intro s
   cases s with
   | callee hs => exact value_no_step hf.1 hs
   | args _ hs => exact values_no_step hf.2 hs
+  | splice _ he _ _ => exact spread_not_values he hf.2
 
-/-- Current unary evaluation embeds in this preparation interface before beta. -/
-theorem unary_step (s : Prepare h ⟨f,[a]⟩ h' frame) :
+/-- Current unary evaluation embeds in this preparation interface before beta,
+unless the one actual is a spread, which may stand for any number. -/
+theorem unary_step (hn : ∀ x, a ≠ .spread x) (s : Prepare h ⟨f,[a]⟩ h' frame) :
     ∃ f' a', frame = ⟨f',[a']⟩ ∧ Step h (.app f a) h' (.app f' a') := by
   cases s with
   | callee hs => exact ⟨_,_,rfl,.appL hs⟩
   | args hv hs =>
     obtain ⟨a',rfl,ha⟩ := singleton.mp hs
     exact ⟨_,_,rfl,.appR hv ha⟩
+  | @splice _ _ _ pre post ls vs _ he _ _ =>
+    cases pre with
+    | nil => cases he; exact False.elim (hn _ rfl)
+    | cons _ pre => cases pre <;> simp at he
 
 theorem parameters_length (n : Nat) (args : List Tm) :
     (parameters n args).length = n := by
@@ -257,16 +279,23 @@ must be values before normalization. Invocation itself performs no heap effect. 
 inductive Invoke : Frame → Tm → Prop where
   | closure : Values args →
       Invoke ⟨.objAt fs (.closure arity body), args⟩ (bindParameters arity args body)
+  | variadic : Values args →
+      Invoke ⟨.objAt fs (.variadic fixed body), args⟩ (bindRest fixed args body)
+
+/-- The term each kind of code yields for a ready argument list. -/
+def dispatch : CallCode → List Tm → Option Tm
+  | .closure arity body, args => some (bindParameters arity args body)
+  | .variadic fixed body, args => some (bindRest fixed args body)
+  | .absent, _ => none
 
 theorem invoke_ready (hi : Invoke frame body) : frame.ready := by
   cases hi with
   | closure hv => exact ⟨rfl, hv⟩
+  | variadic hv => exact ⟨rfl, hv⟩
 
 theorem invoke_deterministic (hi : Invoke frame body) (hi' : Invoke frame body') :
     body = body' := by
-  cases hi
-  cases hi'
-  rfl
+  cases hi <;> cases hi' <;> rfl
 
 theorem invoke_no_prepare (hi : Invoke frame body) : ¬ Prepare h frame h' frame' :=
   ready_no_prepare (invoke_ready hi)
@@ -274,27 +303,41 @@ theorem invoke_no_prepare (hi : Invoke frame body) : ¬ Prepare h frame h' frame
 /-- Readiness is sufficient for dispatch precisely when the saved callee has
 invocation code. No scope or type test is added to the untyped machine. -/
 theorem invoke_iff : Invoke frame result ↔
-    ∃ fs arity body, frame.callee = .objAt fs (.closure arity body) ∧ Values frame.args ∧
-      result = bindParameters arity frame.args body := by
+    ∃ fs code, frame.callee = .objAt fs code ∧ Values frame.args ∧
+      dispatch code frame.args = some result := by
   constructor
   · intro hi
     cases hi with
-    | closure hv => exact ⟨_, _, _, rfl, hv, rfl⟩
+    | closure hv => exact ⟨_, _, rfl, hv, rfl⟩
+    | variadic hv => exact ⟨_, _, rfl, hv, rfl⟩
   · rcases frame with ⟨f, args⟩
-    rintro ⟨fs, arity, body, hf, hv, rfl⟩
+    rintro ⟨fs, code, hf, hv, hd⟩
     cases hf
-    exact .closure hv
+    cases code with
+    | absent => cases hd
+    | closure arity body => cases hd; exact .closure hv
+    | variadic fixed body => cases hd; exact .variadic hv
 
 theorem invoke_closed (hi : Invoke frame result) (hf : Scoped 0 frame.callee)
     (ha : ∀ a ∈ frame.args, Scoped 0 a) : Scoped 0 result := by
   cases hi with
   | closure _ => exact bound_body_closed (by simpa [Scoped] using hf) ha
+  | @variadic args fs fixed body _ =>
+    refine ⟨?_, ?_⟩
+    · simp only [restArray, Scoped, scopedArgs_iff, List.mem_singleton, forall_eq]
+      intro a hm
+      exact ha a (List.mem_of_mem_drop hm)
+    · apply bindArgs_scoped
+      · have hb : Scoped (0 + fixed + 1) body := by simpa [Scoped] using hf
+        rw [parameters_length]; simpa [Nat.add_comm] using hb
+      · exact parameters_property (by trivial) ha
 
 /-- Prepared list dispatch is a step of the maintained term machine. -/
 theorem Invoke.step (hi : Invoke frame body) (h : Heap) :
     Step h (.call frame.callee frame.args) h body := by
   cases hi with
   | closure hv => exact .callV hv
+  | variadic hv => exact .callRest hv
 
 /-- A ready native call can only dispatch its saved code, without a heap change. -/
 theorem ready_step_iff (hf : frame.ready) :
@@ -306,6 +349,8 @@ theorem ready_step_iff (hf : frame.ready) :
     | callL hs => exact False.elim (value_no_step hf.1 hs)
     | callArg _ hg _ hs => exact False.elim (value_no_step (hf.2 _ (List.mem_of_getElem? hg)) hs)
     | callV hv => exact ⟨rfl, .closure hv⟩
+    | callRest hv => exact ⟨rfl, .variadic hv⟩
+    | callSpread _ he _ _ => exact False.elim (spread_not_values he hf.2)
   · rintro ⟨rfl, hi⟩
     exact hi.step _
 
@@ -317,6 +362,7 @@ theorem Prepare.step (hp : Prepare h frame h' frame') :
   | args hv hs =>
     obtain ⟨i, a, a', hg, hb, hstep, rfl⟩ := focus_iff.mp hs
     exact .callArg hv hg hb hstep
+  | splice hv he hp hr => exact .callSpread hv he hp hr
 
 /-- Every native call step is preparation or dispatch, and both reconstruct
 that same machine step. This includes all argument counts. -/
@@ -330,18 +376,20 @@ theorem call_step_iff : Step h (.call f args) h' result ↔
     | callArg hv hg hb hs =>
       exact Or.inl ⟨_, .args hv (focus_iff.mpr ⟨_, _, _, hg, hb, hs, rfl⟩), rfl⟩
     | callV hv => exact Or.inr ⟨rfl, .closure hv⟩
+    | callRest hv => exact Or.inr ⟨rfl, .variadic hv⟩
+    | callSpread hv he hp hr => exact Or.inl ⟨_, .splice hv he hp hr, rfl⟩
   · rintro (⟨frame, hp, rfl⟩ | ⟨rfl, hi⟩)
     · exact hp.step
     · exact hi.step _
 
 /-- The source pipeline's singleton application view is preserved. -/
-theorem unary_step_iff : Step h (.app f a) h' result ↔
+theorem unary_step_iff (hn : ∀ x, a ≠ .spread x) : Step h (.app f a) h' result ↔
     (∃ f' a', Prepare h ⟨f, [a]⟩ h' ⟨f', [a']⟩ ∧ result = .app f' a') ∨
     (h' = h ∧ Invoke ⟨f, [a]⟩ result) := by
   rw [call_step_iff]
   constructor
   · rintro (⟨frame, hp, he⟩ | hi)
-    · obtain ⟨f', a', rfl, _⟩ := unary_step hp
+    · obtain ⟨f', a', rfl, _⟩ := unary_step hn hp
       exact Or.inl ⟨f', a', hp, he⟩
     · exact Or.inr hi
   · rintro (⟨f', a', hp, he⟩ | hi)

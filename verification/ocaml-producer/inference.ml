@@ -40,6 +40,7 @@ and substitute_signature solution signature =
   { quantified=List.map (fun q -> {q with bound=Option.map (substitute solution) q.bound})
       signature.quantified;
     params=List.map (substitute solution) signature.params;
+    variadic=Option.map (substitute solution) signature.variadic;
     result=substitute solution signature.result }
 
 (* These are proposal constraints, not semantic type nodes or acceptance facts.

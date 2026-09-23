@@ -9,6 +9,8 @@ open PositiveNormalization PositiveGraphs PositiveRules
 inductive ArrowCert (ι : Type) where
   | empty
   | source (p : List (List ι) × List ι)
+  /-- A variadic source signature covers the target arrow. -/
+  | rest (s : List (List ι) × List ι × List ι)
   | union (pre : List (List ι)) (a b : List ι) (suffix : List (List ι))
       (left right : ArrowCert ι)
   | combine (b b' : List ι) (left right : ArrowCert ι)
@@ -25,26 +27,51 @@ theorem checkDomains_iff [DecidableEq ι] {table} (As Bs : List (List ι)) :
   | nil => cases Bs <;> simp [checkDomains, Domains]
   | cons a As ih => cases Bs <;> simp [checkDomains, Domains, ih]
 
+/-- A variadic source signature covering a fixed arrow, decided. -/
+def checkRestFixed [DecidableEq ι] (table : Table ι) (s : List (List ι) × List ι × List ι)
+    (As : List (List ι)) (d : List ι) : Bool :=
+  checkDomains table (As.take s.1.length) s.1 &&
+    decide ((∀ A ∈ As.drop s.1.length, Rel table A s.2.1) ∧ (s.2.2 = [] ∨ Rel table s.2.2 d))
+
+theorem checkRestFixed_iff [DecidableEq ι] {table : Table ι} {s As d} :
+    checkRestFixed table s As d = true ↔ RestFixed (Rel table) s As d := by
+  simp [checkRestFixed, RestFixed, checkDomains_iff]
+
+/-- One variadic signature covering another, decided. -/
+def checkRestCovers [DecidableEq ι] (table : Table ι) (p q : List (List ι) × List ι × List ι) : Bool :=
+  checkDomains table (q.1.take p.1.length) p.1 &&
+    decide ((∀ A ∈ q.1.drop p.1.length, Rel table A p.2.1) ∧ Rel table q.2.1 p.2.1 ∧
+      Rel table p.2.2 q.2.2)
+
+theorem checkRestCovers_iff [DecidableEq ι] {table : Table ι} {p q} :
+    checkRestCovers table p q = true ↔ RestCovers (Rel table) p q := by
+  simp [checkRestCovers, RestCovers, checkDomains_iff, and_assoc]
+
 /-- One checker for ordered argument-list coverage; every union certificate
 identifies the unchanged positions as well as the position being split. -/
 def checkArrow [DecidableEq ι] (G : NormalGraph ι) (table : Table ι)
-    (L : List (List (List ι) × List ι)) (As : List (List ι)) (d : List ι) : ArrowCert ι → Bool
+    (L : List (List (List ι) × List ι)) (S : List (List (List ι) × List ι × List ι))
+    (As : List (List ι)) (d : List ι) : ArrowCert ι → Bool
   | .empty => decide ([] ∈ As)
   | .source p => decide (p ∈ L ∧ (p.2 = [] ∨ Rel table p.2 d)) && checkDomains table As p.1
+  | .rest s => decide (s ∈ S) && checkRestFixed table s As d
   | .union pre a b suffix left right => decide (As = pre ++ (a ++ b) :: suffix) &&
-      checkArrow G table L (pre ++ a :: suffix) d left &&
-      checkArrow G table L (pre ++ b :: suffix) d right
+      checkArrow G table L S (pre ++ a :: suffix) d left &&
+      checkArrow G table L S (pre ++ b :: suffix) d right
   | .combine b b' left right =>
-      checkArrow G table L As b left && checkArrow G table L As b' right &&
+      checkArrow G table L S As b left && checkArrow G table L S As b' right &&
       decide (∀ i ∈ b, ∀ k ∈ b', compatible G i k = true → Rel table [i] d)
 
-theorem checkArrow_sound [DecidableEq ι] {G : NormalGraph ι} {table L As d cert}
-    (h : checkArrow G table L As d cert = true) : CallArrow G (Rel table) L As d := by
+theorem checkArrow_sound [DecidableEq ι] {G : NormalGraph ι} {table L S As d cert}
+    (h : checkArrow G table L S As d cert = true) : CallArrow G (Rel table) L S As d := by
   induction cert generalizing As d with
   | empty => exact .empty (of_decide_eq_true h)
   | source p =>
     simp only [checkArrow, Bool.and_eq_true, decide_eq_true_eq, checkDomains_iff] at h
     exact .source h.1.1 h.2 h.1.2
+  | rest s =>
+    simp only [checkArrow, Bool.and_eq_true, decide_eq_true_eq, checkRestFixed_iff] at h
+    exact .rest h.1 h.2
   | union pre a b suffix left right ih ih' =>
     simp only [checkArrow, Bool.and_eq_true, decide_eq_true_eq] at h
     rw [h.1.1]
@@ -53,13 +80,17 @@ theorem checkArrow_sound [DecidableEq ι] {G : NormalGraph ι} {table L As d cer
     simp only [checkArrow, Bool.and_eq_true, decide_eq_true_eq] at h
     exact .combine (ih h.1.1) (ih' h.1.2) h.2
 
-theorem checkArrow_complete [DecidableEq ι] {G : NormalGraph ι} {table L As d}
-    (h : CallArrow G (Rel table) L As d) : ∃ cert, checkArrow G table L As d cert = true := by
+theorem checkArrow_complete [DecidableEq ι] {G : NormalGraph ι} {table L S As d}
+    (h : CallArrow G (Rel table) L S As d) : ∃ cert, checkArrow G table L S As d cert = true := by
   induction h with
   | empty he => exact ⟨.empty, by simpa [checkArrow] using he⟩
   | source hp hd hc =>
     rename_i p As d
     exact ⟨.source p, by simp [checkArrow, hp, hd, hc, checkDomains_iff]⟩
+  | rest hs hr =>
+    rename_i s As d
+    exact ⟨.rest s, by simp only [checkArrow, Bool.and_eq_true, decide_eq_true_eq,
+      checkRestFixed_iff]; exact ⟨hs, hr⟩⟩
   | @union pre a suffix d b ha hb ih ih' =>
     obtain ⟨left, hl⟩ := ih
     obtain ⟨right, hr⟩ := ih'
@@ -82,6 +113,11 @@ instance {R : List ι → List ι → Prop} [DecidableRel R] (p q : Tuple (List 
     Decidable (CoversTuple R p q) := by
   unfold CoversTuple; infer_instance
 
+/-- Every target arrow has checked evidence from the source's signatures. -/
+abbrev ArrowsChecked [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs : Evidence ι)
+    (L : Ops ι) (S : List (List (List ι) × List ι × List ι)) (M : Ops ι) : Prop :=
+  ∀ p ∈ M, ∃ e ∈ proofs, e.1 = L ∧ e.2.1 = p ∧ checkArrow G table L S p.1 p.2 e.2.2 = true
+
 set_option synthInstance.maxSize 1024 in
 def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs : Evidence ι) :
     Clause (List ι) → Clause (List ι) → Bool
@@ -100,12 +136,11 @@ def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs
   | .strLit a, .strLit b => decide (a = b)
   | .refs a bs vs, .refs c ds ws =>
       decide (CoversFields (Rel table) (a :: bs) (c :: ds) ∧ CoversViews (Rel table) (a :: bs) vs ws)
-  | .arrs L, .arrs M | .callable _ _ L, .arrs M => decide (∀ p ∈ M, ∃ e ∈ proofs,
-      e.1 = L ∧ e.2.1 = p ∧ checkArrow G table L p.1 p.2 e.2.2 = true)
-  | .callable a bs L, .callable c ds M => decide
-      (CoversFields (Rel table) (a :: bs) (c :: ds) ∧
-       ∀ p ∈ M, ∃ e ∈ proofs,
-         e.1 = L ∧ e.2.1 = p ∧ checkArrow G table L p.1 p.2 e.2.2 = true)
+  | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T => decide
+      (ArrowsChecked G table proofs L S M ∧ ∀ t ∈ T, ∃ s ∈ S, checkRestCovers table s t = true)
+  | .callable a bs L S, .callable c ds M T => decide
+      (CoversFields (Rel table) (a :: bs) (c :: ds) ∧ ArrowsChecked G table proofs L S M ∧
+       ∀ t ∈ T, ∃ s ∈ S, checkRestCovers table s t = true)
   | _, _ => false
 
 
@@ -117,21 +152,18 @@ theorem checkClause_sound [DecidableEq ι] {G : NormalGraph ι} {table proofs a 
   all_goals try trivial
   · exact of_decide_eq_true h
   · have hh := of_decide_eq_true h
-    intro p hp
-    obtain ⟨e, _, _, _, he⟩ := hh p hp
-    exact checkArrow_sound he
+    exact ⟨fun p hp => by obtain ⟨e, _, _, _, he⟩ := hh.1 p hp; exact checkArrow_sound he,
+      fun t ht => by obtain ⟨s, hs, hc⟩ := hh.2 t ht; exact ⟨s, hs, checkRestCovers_iff.mp hc⟩⟩
   · exact of_decide_eq_true h
   · -- numLit ≤ numLit
     exact of_decide_eq_true h
   · have hh := of_decide_eq_true h
-    intro p hp
-    obtain ⟨e,_,_,_,he⟩ := hh p hp
-    exact checkArrow_sound he
+    exact ⟨fun p hp => by obtain ⟨e, _, _, _, he⟩ := hh.1 p hp; exact checkArrow_sound he,
+      fun t ht => by obtain ⟨s, hs, hc⟩ := hh.2 t ht; exact ⟨s, hs, checkRestCovers_iff.mp hc⟩⟩
   · have hh := of_decide_eq_true h
-    refine ⟨hh.1,?_⟩
-    intro p hp
-    obtain ⟨e,_,_,_,he⟩ := hh.2 p hp
-    exact checkArrow_sound he
+    exact ⟨hh.1,
+      fun p hp => by obtain ⟨e, _, _, _, he⟩ := hh.2.1 p hp; exact checkArrow_sound he,
+      fun t ht => by obtain ⟨s, hs, hc⟩ := hh.2.2 t ht; exact ⟨s, hs, checkRestCovers_iff.mp hc⟩⟩
   · -- strLit ≤ strLit
     exact of_decide_eq_true h
   · exact of_decide_eq_true h
@@ -160,16 +192,19 @@ theorem checkClause_mono [DecidableEq ι] {G : NormalGraph ι} {table a b es es'
   all_goals try contradiction
   all_goals try trivial
   all_goals first
-    | (intro p hp; obtain ⟨e,he,hL,hP,hc⟩ := h p hp; exact ⟨e,hm e he,hL,hP,hc⟩)
-    | (refine ⟨h.1,?_⟩; intro p hp; obtain ⟨e,he,hL,hP,hc⟩ := h.2 p hp;
+    | exact h
+    | (refine ⟨fun p hp => ?_, h.2⟩; obtain ⟨e,he,hL,hP,hc⟩ := h.1 p hp;
+       exact ⟨e,hm e he,hL,hP,hc⟩)
+    | (refine ⟨h.1, fun p hp => ?_, h.2.2⟩; obtain ⟨e,he,hL,hP,hc⟩ := h.2.1 p hp;
        exact ⟨e,hm e he,hL,hP,hc⟩)
 
 private theorem arrow_evidence_complete [DecidableEq ι] {G : NormalGraph ι} {table} {L M : Ops ι}
-    (h : ∀ p ∈ M, CallArrow G (Rel table) L p.1 p.2) :
+    {S : List (List (List ι) × List ι × List ι)}
+    (h : ∀ p ∈ M, CallArrow G (Rel table) L S p.1 p.2) :
     ∃ es : Evidence ι, ∀ p ∈ M, ∃ e ∈ es,
-      e.1 = L ∧ e.2.1 = p ∧ checkArrow G table L p.1 p.2 e.2.2 = true := by
+      e.1 = L ∧ e.2.1 = p ∧ checkArrow G table L S p.1 p.2 e.2.2 = true := by
   have hx : ∀ p ∈ M, ∃ es : Evidence ι, ∃ e ∈ es,
-      e.1 = L ∧ e.2.1 = p ∧ checkArrow G table L p.1 p.2 e.2.2 = true := by
+      e.1 = L ∧ e.2.1 = p ∧ checkArrow G table L S p.1 p.2 e.2.2 = true := by
     intro p hp
     obtain ⟨pc, hc⟩ := checkArrow_complete (h p hp)
     exact ⟨[(L, (p, pc))], (L, (p, pc)), by simp, rfl, rfl, hc⟩
@@ -188,9 +223,10 @@ theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table a b}
   · exact ⟨[], rfl⟩
   · exact ⟨[], rfl⟩
   · exact ⟨[], by simpa only [checkClause, decide_eq_true_eq] using h⟩
-  · rename_i L M
-    obtain ⟨es,he⟩ := arrow_evidence_complete h
-    exact ⟨es,by simpa only [checkClause,decide_eq_true_eq] using he⟩
+  · obtain ⟨es,he⟩ := arrow_evidence_complete h.1
+    refine ⟨es, ?_⟩
+    simp only [checkClause, decide_eq_true_eq]
+    exact ⟨he, fun t ht => by obtain ⟨s, hs, hc⟩ := h.2 t ht; exact ⟨s, hs, checkRestCovers_iff.mpr hc⟩⟩
   · exact ⟨[], rfl⟩
   · exact ⟨[], by simpa [checkClause] using h⟩
   · -- num ≤ num
@@ -200,10 +236,15 @@ theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table a b}
   · -- numLit ≤ numLit
     exact ⟨[], by simpa [checkClause] using h⟩
   · exact ⟨[], rfl⟩
-  · obtain ⟨es,he⟩ := arrow_evidence_complete h
-    exact ⟨es,by simpa only [checkClause,decide_eq_true_eq] using he⟩
-  · obtain ⟨es,he⟩ := arrow_evidence_complete h.2
-    exact ⟨es,by simpa only [checkClause,decide_eq_true_eq] using And.intro h.1 he⟩
+  · obtain ⟨es,he⟩ := arrow_evidence_complete h.1
+    refine ⟨es, ?_⟩
+    simp only [checkClause, decide_eq_true_eq]
+    exact ⟨he, fun t ht => by obtain ⟨s, hs, hc⟩ := h.2 t ht; exact ⟨s, hs, checkRestCovers_iff.mpr hc⟩⟩
+  · obtain ⟨es,he⟩ := arrow_evidence_complete h.2.1
+    refine ⟨es, ?_⟩
+    simp only [checkClause, decide_eq_true_eq]
+    exact ⟨h.1, he,
+      fun t ht => by obtain ⟨s, hs, hc⟩ := h.2.2 t ht; exact ⟨s, hs, checkRestCovers_iff.mpr hc⟩⟩
   · -- str ≤ str
     exact ⟨[], rfl⟩
   · -- strLit ≤ str

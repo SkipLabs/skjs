@@ -7,8 +7,8 @@ open PositiveNormalization PositiveGraphs PositiveRules ProgramTyping ControlFlo
 open CertificateProducer RequestJson
 
 private def types : List (List (Clause (List Nat))) :=
-  [[.nul],[.bool],[.refs [(valueField, [1])] [] []],[.callable [(valueField, [1])] [] []],
-   [.arrs [([[0]],[1])]], [.arrs [([[4]],[1])]], [.boolLit false]]
+  [[.nul],[.bool],[.refs [(valueField, [1])] [] []],[.callable [(valueField, [1])] [] [] []],
+   [.arrs [([[0]],[1])] []], [.arrs [([[4]],[1])] []], [.boolLit false]]
 private def G : NormalGraph Nat := fun i => types[i]?.getD []
 private def labels := List.range types.length
 
@@ -40,7 +40,7 @@ private def request (callable fresh : Bool) : Request :=
 -- Neither an entry-time read nor the current heap becomes a permanent false
 -- result contract for the function; every invocation checks only the invariant.
 private def badG : NormalGraph Nat := fun i =>
-  if i == 7 then [.arrs [([[4]],[6])]] else G i
+  if i == 7 then [.arrs [([[4]],[6])] []] else G i
 private def pool := vocabulary badG (List.range 8) claims []
 #guard [false,true].all fun fresh =>
   !(expression badG pool 12 [[2,3]] (.funE (body fresh)) [7]).isSome

@@ -6,14 +6,18 @@ and atom = Nul | Undef | True | False | Num | Str | NumLit of int64 | StrLit of 
          | Shape of shape
 and field = { name: string; optional: bool; read: ty; write: ty option }
 and quantifier = { identity: rigid; bound: ty option }
-and signature = { quantified: quantifier list; params: ty list; result: ty }
+(* `variadic` is the contract of each actual after `params`, for a signature that
+   takes any number of them. *)
+and signature = { quantified: quantifier list; params: ty list; variadic: ty option; result: ty }
 and sequence = { required: ty list; optional_elements: ty list; rest: ty option; readonly: bool }
 and shape = { fields: field list; calls: signature list; elements: sequence option }
 let record fields = Atoms [Shape {fields;calls=[];elements=None}]
 let arrow params result =
-  Atoms [Shape {fields=[];calls=[{quantified=[];params;result}];elements=None}]
+  Atoms [Shape {fields=[];calls=[{quantified=[];params;variadic=None;result}];elements=None}]
 let quantified_arrow quantified params result =
-  Atoms [Shape {fields=[];calls=[{quantified;params;result}];elements=None}]
+  Atoms [Shape {fields=[];calls=[{quantified;params;variadic=None;result}];elements=None}]
+let variadic_arrow params element result =
+  Atoms [Shape {fields=[];calls=[{quantified=[];params;variadic=Some element;result}];elements=None}]
 let ground xs = Atoms (List.sort_uniq compare xs)
 let bool = ground [True;False]
 let union a b = match a,b with
@@ -31,6 +35,21 @@ let array elements = Atoms [Shape {fields=[];calls=[];elements=Some elements}]
 (* A call may omit a trailing position exactly when its contract admits
    `undefined`: that is the value bound there. Optionality is a property of the
    declared type, not a separate arity record. *)
+(* The positions a rest parameter stands for: the required elements of the
+   tuple its arguments are collected into. A contract with optional or
+   unbounded positions is not a fixed number of further arguments. *)
+let tuple_positions = function
+  | Atoms [Shape {fields=[];calls=[];elements=Some s}]
+    when s.optional_elements=[] && s.rest=None && not s.readonly -> Some s.required
+  | _ -> None
+
+(* The contract of each further argument, where a rest parameter's contract is
+   a mutable `T[]`: it collects any number of them. *)
+let array_element = function
+  | Atoms [Shape {fields=[];calls=[];elements=Some s}]
+    when s.required=[] && s.optional_elements=[] && not s.readonly -> s.rest
+  | _ -> None
+
 let rec admits_undefined = function
   | Atoms xs -> List.exists (function Undef | Top -> true | _ -> false) xs
   | Rigid _ -> false

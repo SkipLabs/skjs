@@ -24,22 +24,18 @@ theorem inter_idemp (A : Fam) (n : Nat) (W : WorldT n) (v : Val) :
 admit different actual counts. -/
 theorem calls_append (L M : List (List Fam × Fam)) (n : Nat) (W : WorldT n) (v : Val) :
     callsT (L ++ M) n W v ↔ interT (callsT L) (callsT M) n W v := by
-  constructor
-  · rintro ⟨arity, body, loc, he, hc, hs⟩
-    exact ⟨⟨arity, body, loc, he, hc, fun p hp => hs p (List.mem_append_left M hp)⟩,
-      ⟨arity, body, loc, he, hc, fun p hp => hs p (List.mem_append_right L hp)⟩⟩
-  · rintro ⟨⟨arity, body, loc, rfl, hc, hs⟩, ⟨arity', body', loc', he, _, ht⟩⟩
-    cases he
-    refine ⟨arity, body, loc, rfl, hc, ?_⟩
-    intro p hp
-    rcases List.mem_append.mp hp with hp | hp
-    · exact hs p hp
-    · exact ht p hp
+  simp only [callsT, interT, List.mem_append, or_imp, forall_and]
+  exact ⟨fun ⟨hc, hl, hm⟩ => ⟨⟨hc, hl⟩, hc, hm⟩, fun ⟨⟨hc, hl⟩, _, hm⟩ => ⟨hc, hl, hm⟩⟩
+
+theorem rests_append (S T : List (List Fam × Fam × Fam)) (n : Nat) (W : WorldT n) (v : Val) :
+    restsT (S ++ T) n W v ↔ interT (restsT S) (restsT T) n W v := by
+  simp only [restsT, interT, List.mem_append, or_imp, forall_and]
+  exact ⟨fun ⟨hc, hl, hm⟩ => ⟨⟨hc, hl⟩, hc, hm⟩, fun ⟨⟨hc, hl⟩, _, hm⟩ => ⟨hc, hl, hm⟩⟩
 
 theorem overload_append (L M : List (Fam × Fam)) (n : Nat) (W : WorldT n) (v : Val) :
     arrowsT (L ++ M) n W v ↔ interT (arrowsT L) (arrowsT M) n W v := by
-  simpa only [interT, ← arrowsT_callsT, ← List.map_append] using
-    calls_append (L.map fun p => ([p.1], p.2)) (M.map fun p => ([p.1], p.2)) n W v
+  simp only [arrowsT, interT, List.mem_append, or_imp, forall_and]
+  exact ⟨fun ⟨hc, hl, hm⟩ => ⟨⟨hc, hl⟩, hc, hm⟩, fun ⟨⟨hc, hl⟩, _, hm⟩ => ⟨hc, hl, hm⟩⟩
 
 #print axioms calls_append
 #print axioms overload_append

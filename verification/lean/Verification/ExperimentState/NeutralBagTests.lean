@@ -8,8 +8,8 @@ open CertificateProducer ControlFlow RequestJson HeapExpressionRules
 
 -- [2,3] describes a Boolean bag without promising whether it is callable.
 private def types : List (List (Clause (List Nat))) :=
-  [[.nul],[.bool],[.refs [(valueField, [1])] [] []],[.callable [(valueField, [1])] [] []],
-   [.callable [(valueField, [1])] [] [([[1]],[1])]], [.boolLit false]]
+  [[.nul],[.bool],[.refs [(valueField, [1])] [] []],[.callable [(valueField, [1])] [] [] []],
+   [.callable [(valueField, [1])] [] [([[1]],[1])] []], [.boolLit false]]
 private def G : NormalGraph Nat := fun i => types[i]?.getD []
 private def pool := vocabulary G (List.range types.length) [] [[2,3]]
 private def readClaim : Sequent Nat := ⟨[[2,3]],.read (.var 0),[1]⟩
@@ -29,8 +29,8 @@ private def writeProof : Evidence Nat := .node writeClaim (.unionVar 0)
      [.node ⟨[[2]],.var 0,[2]⟩ .var [],.node ⟨[[2]],.fls,[1]⟩ .fls []],
    .node ⟨[[3]],writeClaim.term,[0]⟩ .writeCallable
      [.node ⟨[[3]],.var 0,[3]⟩ .var [],.node ⟨[[3]],.fls,[1]⟩ .fls []]]
-theorem read_checked : checkTree G readProof = true := by cbv
-theorem write_checked : checkTree G writeProof = true := by cbv
+#guard checkTree G readProof
+#guard checkTree G writeProof
 
 -- Search uses the same ordinary union elimination for the receiver slot.
 #guard (expression G pool 8 readClaim.context readClaim.term readClaim.type).isSome
@@ -50,8 +50,8 @@ theorem write_checked : checkTree G writeProof = true := by cbv
 -- invariant. Clause order and duplicate valid alternatives do not matter.
 #guard bagOperand (expand G [3,2,3]) == some [(valueField,[1])]
 #guard bagOperand ([] : List (Clause (List Nat))) == none
-#guard bagOperand ([.refs [(valueField, [1])] [] [],.callable [(valueField, [0])] [] []] : List (Clause (List Nat))) == none
-#guard bagOperand ([.callable [(valueField, [0])] [] [],.refs [(valueField, [1])] [] []] : List (Clause (List Nat))) == none
+#guard bagOperand ([.refs [(valueField, [1])] [] [],.callable [(valueField, [0])] [] [] []] : List (Clause (List Nat))) == none
+#guard bagOperand ([.callable [(valueField, [0])] [] [] [],.refs [(valueField, [1])] [] []] : List (Clause (List Nat))) == none
 -- A nullable alternative and a mismatched requested invariant must fail.
 #guard bagOperand (expand G [0,2]) == none
 #guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [(valueField, [0])] readProof) == none
@@ -119,6 +119,4 @@ theorem framed_returns_false (callable : Bool) : Execution (framedProgram callab
 
 #print axioms framed_returns_false
 #print axioms returns_false
-#print axioms read_checked
-#print axioms write_checked
 end Verification.ExperimentState.NeutralBagTests

@@ -44,6 +44,13 @@ it is a real type: every function object with closed invocation code inhabits it
 abbreviates $\mathsf{fun}\land(A\to B)$, since arrow membership already requires
 closed invocation code.
 
+For the maintained argument-list graph, `arrs L S` carries fixed signatures
+`L` and variadic signatures `S` on the same function shape. Both instantiate
+the [common behavioral call promise](SEMANTICS.md#one-meaning-for-callable-contracts);
+they do not select disjoint code kinds. The empty function contract has both
+lists empty. Callable fields add invariant property requirements to that same
+value, and overload normalization conjoins its call promises.
+
 References are asymmetric to arrows here: $r$ always carries a first operand, so
 there is no bare "any location" clause. A cell's operand is the invariant that
 makes it readable and writable at all; the nearest expressible thing is

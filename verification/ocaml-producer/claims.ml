@@ -28,9 +28,17 @@ let encode (proposal : Proposal.t) =
         if writable && f.write <> Some f.read then unsupported "asymmetric read/write capability export";
         Array [String f.name;labels f.read]) fs) in
       let fields,views = fields true writes,fields false reads in
+      List.iter (fun (a:Semantic.signature) ->
+        if a.quantified <> [] then unsupported "quantified callable claim encoding") shape.calls;
+      (* Fixed arrows and variadic signatures of one value share its clause; the
+         variadic list is left out when empty, its one spelling of none. *)
+      let fixed = List.filter (fun (a:Semantic.signature) -> a.variadic = None) shape.calls in
       let arrows = Array (List.map (fun (a:Semantic.signature) ->
-        if a.quantified <> [] then unsupported "quantified callable claim encoding";
-        Array [Array (List.map labels a.params);labels a.result]) shape.calls) in
+        Array [Array (List.map labels a.params);labels a.result]) fixed) in
+      let variadic = List.filter_map (fun (a:Semantic.signature) ->
+        Option.map (fun element -> Array [Array (List.map labels a.params);
+          Array [labels element;labels a.result]]) a.variadic) shape.calls in
+      let calls = ("arrows",arrows) :: (if variadic = [] then [] else ["variadic",Array variadic]) in
       let clause = match shape.elements with
         | Some sequence ->
           if shape.fields <> [] || shape.calls <> [] then unsupported "array with additional fields or calls";
@@ -44,10 +52,10 @@ let encode (proposal : Proposal.t) =
             "rest",Array [];"views",(if sequence.readonly then storage else Array [])]]
         | None -> match shape.fields,shape.calls with
           | _,[] -> Object ["refs",Object ["first",fields;"rest",Array [];"views",views]]
-          | [],_ -> Object ["arrs",Object ["arrows",arrows]]
+          | [],_ -> Object ["arrs",Object calls]
           | _,_ ->
             if reads <> [] then unsupported "callable with readonly fields";
-            Object ["callable",Object ["first",fields;"rest",Array [];"arrows",arrows]] in
+            Object ["callable",Object (["first",fields;"rest",Array []] @ calls)] in
       intern (Array [clause])
   in
   (* A callable whose signature mentions a rigid parameter has no graph row:
@@ -61,7 +69,7 @@ let encode (proposal : Proposal.t) =
           List.exists (fun (f:Semantic.field) -> contains_rigid f.read
             || Option.fold ~none:false ~some:contains_rigid f.write) s.fields
           || List.exists (fun (a:Semantic.signature) ->
-              List.exists contains_rigid (a.result :: a.params)
+              List.exists contains_rigid (a.result :: a.params @ Option.to_list a.variadic)
               || List.exists (fun (q:Semantic.quantifier) ->
                   Option.fold ~none:false ~some:contains_rigid q.bound) a.quantified) s.calls
           || (match s.elements with None -> false | Some e ->
@@ -72,6 +80,7 @@ let encode (proposal : Proposal.t) =
     | Rigid n -> Object ["param",String n.spelling]
     | Atoms [Shape {fields=[];calls=[signature];elements=None}]
         when signature.quantified <> [] || List.exists contains_rigid (signature.result :: signature.params) ->
+      if signature.variadic <> None then unsupported "a variadic scheme";
       let type_params = Array (List.map (fun (q:Semantic.quantifier) -> Object [
         "name",String q.identity.spelling;
         "bound",(match q.bound with None -> Null | Some t -> claim_type t)])

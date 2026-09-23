@@ -1444,10 +1444,32 @@ binds the raw slot anonymously and the parameter's name to the value that
 replaces an omitted argument. One closure may advertise several signatures and
 is checked once per signature, each a separate obligation on the same body,
 from the interior claims its producer states per signature — the mechanism
-compiled scheme eliminations already use. Rest parameters and spread actuals
-remain excluded: a rest parameter collects its arguments into an array that
-invocation does not allocate today, and lowering the packing at the source
-would need the signature to record which position is the rest one.
+compiled scheme eliminations already use. A rest parameter whose contract is a tuple of
+required positions is those positions in the signature and one fresh array in
+the body, allocated where the parameter is bound — a store and the object that
+holds it, the same two steps an array literal takes. A spread writes the
+elements of such a tuple in place of the last arguments, read after every
+earlier argument, which is where a call reads them. A rest parameter whose
+contract is a mutable `T[]` makes the closure's code variadic
+(`CallCode.variadic`): invocation binds the fixed parameters and yields a term
+that allocates the array of the remaining actuals with the ordinary store and
+allocation steps, so invocation still changes no heap. A function type does not
+say which code a value has: it promises which actual lists a caller may write
+and what the call then guarantees (`Safety.callsT`, `restsT`), and the code's
+own contract is proved once, where the value is created. So a variadic value
+meets a fixed signature whose positions it admits, one value may carry fixed and
+variadic signatures, and a call clause holds both. A spread among the actuals
+of a variadic call is a `spread` term, replaced by its store's elements once
+every earlier actual is a value — `undefined` at a hole, as iteration answers —
+so a spread of an array that may have holes needs an element type admitting
+`undefined`. A spread followed by an actual that runs code is copied where it
+is written, and the call spreads the copy.
+
+The common [behavioral equation](SEMANTICS.md#one-meaning-for-callable-contracts)
+defines these call contracts independently of the binding descriptor, and the
+[callable milestone status](tests/callables/README.md#closure-status-for-milestones-14)
+records the remaining quantified-rest integration obligation. Part 4 is not
+closed merely because its currently accepted fragment is sound.
 
 ### Next object milestone
 

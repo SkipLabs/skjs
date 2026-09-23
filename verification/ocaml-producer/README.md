@@ -185,7 +185,8 @@ fixed local storage; branches, nullish flow and loops; multi-field objects and
 aliases; arrays, tuples and readonly views; higher-order callbacks and variance;
 closure scope and partial application; callable objects with fields; omitted
 trailing arguments, for optional and for defaulted parameters; closures
-advertising several signatures, checked once per signature; universally checked
+advertising several signatures, checked once per signature; rest parameters,
+tuple or mutable array, and spreads among the actuals; universally checked
 rigid defaults and acyclic forward captures with preserved effect order; generic
 declarations and rigid bounds; quantified closures — one inferred call, one
 closure called at two types, bounded, returned or outer-dependent, reading
