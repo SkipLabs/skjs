@@ -5,7 +5,8 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { openText, definedClassCallables, close as closeParser } from "../tools/fragment-parse.mts";
 import { moduleEdges } from "../tools/module-deps.mts";
-import { resolveNamedImports, type ModuleSource } from "../tools/module-resolve.mts";
+import { resolveNamedImports, resolveModuleImport, type ModuleSource } from "../tools/module-resolve.mts";
+import { collectTypeClosure } from "../tools/module-closure.mts";
 import { spawnSync } from "node:child_process";
 import { check, verifier } from "./check.mts";
 import { cases } from "./cases.mts";
@@ -28,6 +29,8 @@ for (const [file, expected] of [
   ["upstream/skipruntime-ts/server/src/server-prettier-ignore.ts", "4a438a5801ff5e99db09b3006971df36e086b0c3da3a358052c79c5fa665458e"],
   ["upstream/skipruntime-ts/core/package-prettier-ignore.json", "edf6f423e4ead592191f34bd14a563014b5afe73568fc15644f624ff0e4e4e54"],
   ["upstream/skipruntime-ts/server/package-prettier-ignore.json", "22a88f9e8400004fecd6e2b05d4d4f3397e727b92445efdbb96e79315754052a"],
+  ["upstream/skiplang/skjson/ts/binding/src/index-prettier-ignore.ts", "f1a66edb8c1ee719f867c7202a6edf1bb90bac60dab84914a06ae22ba4ef5ffc"],
+  ["upstream/prebuild-prettier-ignore.mjs", "e5ca823bf0cd6f2d6fc0109ad8146b6424ccbc946b62f730b1b6ffe02182bdbb"],
 ] as const) {
   assert.equal(createHash("sha256").update(readFileSync(join(here, file))).digest("hex"), expected,
     `${file}: update the upstream provenance and census before replacing this fixture`);
@@ -52,16 +55,18 @@ for (const [file, expected] of [
   assert(transitive.some((e) => e.kind === "import" && e.imported === "Json" && e.typeOnly));
   assert(transitive.some((e) => e.kind === "reexport" && e.imported === "deepFreeze" && !e.typeOnly));
   const module = (id: string, fixture: string): ModuleSource => {
-    const path = resolve(here, "upstream/skipruntime-ts", fixture);
+    const path = resolve(here, "upstream", fixture);
     const bytes = readFileSync(path, "utf8");
     return { id, sha256: createHash("sha256").update(bytes).digest("hex"),
       source: openText(path, bytes) };
   };
   const modules = [
-    module("core/src/index.ts", "core/src/index-prettier-ignore.ts"),
-    module("core/src/api.ts", "api-prettier-ignore.ts"),
-    module("core/src/errors.ts", "core/src/errors-prettier-ignore.ts"),
-    module("server/src/server.ts", "server/src/server-prettier-ignore.ts"),
+    module("core/src/index.ts", "skipruntime-ts/core/src/index-prettier-ignore.ts"),
+    module("core/src/api.ts", "skipruntime-ts/api-prettier-ignore.ts"),
+    module("core/src/errors.ts", "skipruntime-ts/core/src/errors-prettier-ignore.ts"),
+    module("server/src/server.ts", "skipruntime-ts/server/src/server-prettier-ignore.ts"),
+    module("skiplang/skjson/ts/binding/src/index.ts",
+      "skiplang/skjson/ts/binding/src/index-prettier-ignore.ts"),
   ];
   const packages = new Map([
     ["@skipruntime/core", "core/src/index.ts"],
@@ -78,8 +83,17 @@ for (const [file, expected] of [
     assert.equal(data.name, name);
     assert.equal(data.exports["."], entry);
   }
+  const mappingText = readFileSync(resolve(here, "upstream/prebuild-prettier-ignore.mjs"), "utf8");
+  assert.match(mappingText, /"skiplang-json": "\.\/skiplang\/skjson\/ts\/binding\/src"/);
+  const config = { packages, mappingSources: new Map([["prebuild.mjs", mappingText]]),
+    links: new Map([["core/skiplang-json/index.ts", {
+    virtual: "core/skiplang-json/index.ts",
+    canonical: "skiplang/skjson/ts/binding/src/index.ts",
+    source: "prebuild.mjs",
+    sha256: createHash("sha256").update(mappingText).digest("hex"),
+  }]]) };
   const resolved = resolveNamedImports(openText(source, readFileSync(source, "utf8")),
-    modules, packages);
+    modules, config);
   assert.deepEqual(resolved.map(r => [r.binding.local, r.declaration.module,
     r.declaration.name, r.declaration.capability, r.route.map(m => m.module)]), [
     ["EagerCollection", "core/src/api.ts", "EagerCollection", "type",
@@ -94,9 +108,9 @@ for (const [file, expected] of [
       ["server/src/server.ts"]],
   ]);
   assert.throws(() => resolveNamedImports(openText(source, readFileSync(source, "utf8")),
-    modules.slice(0, 2), packages), /module not supplied/);
+    modules.slice(0, 2), config), /module not supplied/);
   assert.throws(() => resolveNamedImports(openText(source, readFileSync(source, "utf8")),
-    [{ ...modules[0], sha256: "0".repeat(64) }, ...modules.slice(1)], packages),
+    [{ ...modules[0], sha256: "0".repeat(64) }, ...modules.slice(1)], config),
     /fingerprint differs/);
   const duplicate = "export interface Mapper {}\n";
   assert.throws(() => resolveNamedImports(openText(source, readFileSync(source, "utf8")),
@@ -104,7 +118,7 @@ for (const [file, expected] of [
       id: "core/src/errors.ts",
       sha256: createHash("sha256").update(duplicate).digest("hex"),
       source: openText(resolve(here, "duplicate-errors.ts"), duplicate),
-    }, modules[3]], packages), /ambiguous export core\/src\/index.ts#Mapper/);
+    }, modules[3]], config), /ambiguous export core\/src\/index.ts#Mapper/);
   const broken = "export { Mapper } from './empty.js';\n";
   const empty = "export const other = 1;\n";
   assert.throws(() => resolveNamedImports(openText(source, readFileSync(source, "utf8")),
@@ -116,7 +130,74 @@ for (const [file, expected] of [
       id: "core/src/empty.ts",
       sha256: createHash("sha256").update(empty).digest("hex"),
       source: openText(resolve(here, "empty.ts"), empty),
-    }], packages), /broken named reexport core\/src\/errors.ts#Mapper/);
+    }], config), /broken named reexport core\/src\/errors.ts#Mapper/);
+  const jsonPath = resolve(here, "examples/recursive-json.ts");
+  const jsonClient = readFileSync(jsonPath, "utf8");
+  const jsonImports = resolveNamedImports(openText(jsonPath, jsonClient),
+    modules, config);
+  assert.deepEqual(jsonImports.map(r => [r.binding.local, r.declaration.module,
+    r.declaration.name, r.available, r.route.map(m => m.module)]), [
+    ["Json", "skiplang/skjson/ts/binding/src/index.ts", "Json", "type",
+      ["core/src/index.ts", "core/src/api.ts", "skiplang/skjson/ts/binding/src/index.ts"]],
+    ["JsonObject", "skiplang/skjson/ts/binding/src/index.ts", "JsonObject", "type",
+      ["core/src/index.ts", "core/src/api.ts", "skiplang/skjson/ts/binding/src/index.ts"]],
+  ]);
+  assert.deepEqual(jsonImports.map(r => r.mappings.map(m => m.source)),
+    [["prebuild.mjs"], ["prebuild.mjs"]]);
+  assert.throws(() => resolveNamedImports(openText(jsonPath, jsonClient),
+    modules, { ...config, mappingSources: new Map([["prebuild.mjs", "changed"]]) }),
+    /mapping fingerprint differs/);
+  const apiJson = resolveModuleImport("core/src/api.ts", "Json", modules, config);
+  assert.equal(apiJson?.declaration.module, "skiplang/skjson/ts/binding/src/index.ts");
+  assert.equal(resolveModuleImport("core/src/api.ts", "notImported", modules, config), null);
+  const jsonClosure = collectTypeClosure(jsonImports[0], modules, config);
+  assert.deepEqual(jsonClosure.definitions.map(d => [d.declaration.name,
+    d.references.map(r => r.target.name)]), [
+    ["Json", ["Json", "JsonObject"]],
+    ["JsonObject", ["Json"]],
+  ]);
+  assert(jsonClosure.definitions.every(d =>
+    d.declaration.module === "skiplang/skjson/ts/binding/src/index.ts" &&
+    d.sha256 === modules[4].sha256));
+  const a = "import type { B } from './b.js'; export type A<T> = { next: B<T> }; export type Bound<T extends B<number>> = T;";
+  const b = "import type { A } from './a.js'; export type B<T> = { prev: A<T> };";
+  const pair = [
+    { id: "fixture/a.ts", sha256: createHash("sha256").update(a).digest("hex"),
+      source: openText(resolve(here, "fixture-a.ts"), a) },
+    { id: "fixture/b.ts", sha256: createHash("sha256").update(b).digest("hex"),
+      source: openText(resolve(here, "fixture-b.ts"), b) },
+  ];
+  const pairClient = "import type { A } from '@fixture/a';";
+  const pairConfig = { packages: new Map([["@fixture/a", "fixture/a.ts"]]),
+    links: new Map(), mappingSources: new Map() };
+  const pairRoot = resolveNamedImports(openText(resolve(here, "fixture-client.ts"), pairClient),
+    pair, pairConfig)[0];
+  assert.ok(pairRoot);
+  const pairClosure = collectTypeClosure(pairRoot, pair, pairConfig);
+  assert.deepEqual(pairClosure.definitions.map(d => [d.declaration.name,
+    d.parameters.map(p => p.name), d.references.map(r => [r.target.name, r.arguments.length])]), [
+    ["A", ["T"], [["B", 1]]],
+    ["B", ["T"], [["A", 1]]],
+  ]);
+  const boundClient = "import type { Bound } from '@fixture/a';";
+  const boundRoot = resolveNamedImports(openText(resolve(here, "bound-client.ts"), boundClient),
+    pair, pairConfig)[0];
+  assert.ok(boundRoot);
+  assert.deepEqual(collectTypeClosure(boundRoot, pair, pairConfig).definitions.map(d =>
+    [d.declaration.name, d.references.map(r => r.target.name)]), [
+    ["Bound", ["B"]], ["B", ["A"]], ["A", ["B"]],
+  ]);
+  const missing = "export type MissingEdge = NoDefinition;";
+  const missingModule = [{ id: "fixture/missing.ts",
+    sha256: createHash("sha256").update(missing).digest("hex"),
+    source: openText(resolve(here, "fixture-missing.ts"), missing) }];
+  const missingConfig = { packages: new Map([["@fixture/missing", "fixture/missing.ts"]]),
+    links: new Map(), mappingSources: new Map() };
+  const missingRoot = resolveNamedImports(openText(resolve(here, "missing-client.ts"),
+    "import type { MissingEdge } from '@fixture/missing';"), missingModule, missingConfig)[0];
+  assert.ok(missingRoot);
+  assert.throws(() => collectTypeClosure(missingRoot, missingModule, missingConfig),
+    /unresolved type reference fixture\/missing.ts#NoDefinition/);
   closeParser();
 }
 function must<T>(value: T | null | undefined, message: string): T {

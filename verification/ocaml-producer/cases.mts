@@ -37,6 +37,13 @@ const gap = (
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
   gap(
+    "recursive-json",
+    "Canonical Skip Runtime Json import, recursive array/object value and sound missing-key read",
+    "unsupported",
+    "source",
+    /top-level statement outside the fragment \(ImportDeclaration\)/,
+  ),
+  gap(
     "reactive-sum-prettier-ignore",
     "Unmodified Skip Runtime sum example: imports precede its mapper and resource classes",
     "unsupported",

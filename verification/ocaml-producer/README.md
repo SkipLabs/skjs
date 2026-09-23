@@ -485,6 +485,18 @@ nonrecursive approximation of `Json` does not close this milestone. This is a
 prerequisite of the mapper and collection milestones below, not a claim that
 the runtime implementation satisfies its API contracts.
 
+Checkpoint 1 has a **provenance-only implementation for type aliases** in
+[`module-closure.mts`](../tools/module-closure.mts). The fixture pins the tracked
+`skiplang-json` source and `prebuild.mjs`; the resolver follows the core star
+export, API-local `export type`, and the workspace link to that source. The
+collector reaches `Json` and `JsonObject` as two nodes without inlining either,
+and a separate two-file generic cycle checks binder and argument retention.
+Other declaration kinds and type-binding forms still refuse explicitly. No
+declaration closure is yet carried into Fragment, SourceClaims or Lean, so this
+progress does not change verification coverage or admit imports at the source
+gate. The [`recursive-json.ts`](examples/recursive-json.ts) source is a named
+suite/viewer gap at that gate: both of its functions remain unchecked.
+
 `core/src/api.ts` imports `Json`, `JsonObject` and `DepSafe` from
 `../skiplang-json/index.js`. In the Skip checkout, `prebuild.mjs` makes
 `skipruntime-ts/core/skiplang-json` a symlink to the tracked
