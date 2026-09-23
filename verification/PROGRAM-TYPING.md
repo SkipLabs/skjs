@@ -193,6 +193,12 @@ $$
      {\Gamma\vdash_G [{\ldots}s]:\mathsf{List}([\,],[\,],E)}
 $$
 
+For a required tuple, source lowering instead reads its known positions in
+order into an ordinary array literal before evaluating later actuals. The
+existing element-read and array-literal rules preserve the tuple's exact
+contract, including density. This avoids weakening a dense Boolean tuple to
+an unbounded store that would require `undefined` when spread again.
+
 Covering compares admitted lists. A variadic source covers a fixed target whose
 first positions are within its fixed parameters and whose further positions are
 within its element contract (`RestFixed`, a `CallArrow` case), and a variadic

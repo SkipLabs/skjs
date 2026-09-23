@@ -217,17 +217,24 @@ try {
   passed++;
   console.log("  a spread before a later write reads the array first: OK");
 
-  // TypeScript-valid calls refused, each with its reason: a spread of an
-  // array that may have holes into a rest that does not admit `undefined`, and
-  // a copied spread into such a rest, since the copy is typed as an array of
-  // any length.
+  // Copying a known dense tuple preserves its contract across a later effect.
+  {
+    const text = fs.readFileSync(copyFile, "utf8");
+    for (const seed of [false, true])
+      assert.equal(execute(text, `JSON.stringify(copiesIntoStrictRest(${seed}))`),
+        JSON.stringify([seed, seed, !seed]));
+    const { ast, claims } = parseAndClaim(copyFile, "copy");
+    for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+      const r = check(mode, ast, claims, copyFile);
+      assert.equal(r.status, 0, `dense copy ${mode}: ${r.stdout}${r.stderr}`);
+    }
+  }
+  passed++;
+  console.log("  a dense spread copy into a Boolean rest: OK");
+
+  // A genuinely sparse array still cannot supply a Boolean rest.
   const refusals: [string, string, RegExp][] = [
     [holesFile, "holes", /may have holes passes `undefined`/],
-    [
-      copyFile,
-      "copy",
-      /copied before a later actual runs needs a rest element type/,
-    ],
   ];
   for (const [negative, name, reason] of refusals) {
     const { ast, claims } = parseAndClaim(negative, name);

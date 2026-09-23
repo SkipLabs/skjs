@@ -65,7 +65,6 @@ Not supported, with the refusal each one meets:
 | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `arguments`, argument-count introspection                                                    | the protocol excludes argument-count introspection                                                                                                                                                                                       |
 | A spread of an array that may have holes into a rest whose element type lacks `undefined`    | named refusal: a hole spreads `undefined`, which the rest would hold; TypeScript accepts the call ([witness](variadic-holes.ts))                                                                                                         |
-| A spread copied before a later actual runs, into a rest whose element type lacks `undefined` | named refusal: the copy is typed as an array of any length, which may have holes ([witness](variadic-copy-element.ts))                                                                                                                   |
 | A spread into fixed parameters other than a last tuple spread                                | named refusal                                                                                                                                                                                                                            |
 | Quantified variadic signatures, `<T>(...xs: T[]) => T[]`                                     | refused by the rigid checker, which has no array of a binder; argument-sequence inference and tuple packs are not in the fragment                                                                                                        |
 | `this` parameters, receiver-dependent methods, `.apply`                                      | `function-this-parameter`; the calculus has no receiver, so `.call` discards one ([boundary example](call-objects.ts), [receiver plan](#receiver-implementation-plan))                                                                   |
@@ -137,13 +136,28 @@ independent restriction of generic bodies rather than a missing default rule.
    witnesses. The remaining integration obligation from the part 4 review is
    ordinary quantified rest, such as `<T>(...xs: T[]) => T[]`: the rigid source
    checker still cannot express its array binding. This is separate from future
-   tuple packs and argument-sequence inference. A copied dense spread also loses
-   its density guarantee, so a safe call may be refused unless the rest admits
-   `undefined`; that is a precision gap, not the actual-hole soundness rejection.
+   tuple packs and argument-sequence inference. Copying a required tuple now
+   preserves its exact dense contract across later argument effects; the
+   actual-hole soundness rejection remains in force.
 
 The [common function equation](../../SEMANTICS.md#one-meaning-for-callable-contracts)
 is the foundation for these extensions. Named refusals and passing tests do not
 close the remaining integration obligation or authorize narrowing the milestone.
+
+To close quantified rest, extend the existing rigid type language
+(`DirectObligation.Ty`) with compositional array contracts and variadic
+signatures, with their interpretations using the existing list/heap families
+and `Safety.Promise`. Carry those forms through the structured diagnostic
+protocol and exhaustive printers. Extend the rigid inclusion rules and their
+soundness argument, then `GenericCertificate` with universally checked rest
+creation and calls. Finally remove the corresponding gates in `GenericSource`,
+`SourceClaimJson.Scheme`, and the OCaml producer. Both generic declarations and
+quantified local closures must reach the existing certified-plan acceptance
+path; specialized observed calls must never replace the universal proof.
+Closure witnesses should cover returning the collected `T[]`, independent
+Boolean and numeric instantiations of one closure, and a negative control that
+tries to insert a Boolean into the rest at arbitrary `T`. Tuple-pack inference
+is a separate later extension.
 
 ### Order of extension
 
@@ -447,8 +461,12 @@ array, rejects them, and names the signatures it cannot export
 runs the JavaScript witnesses — each call collects its own array, a hole
 spreads `undefined`, a spread is read where it is written — forges a narrower
 element type and a fixed arrow in place of a variadic one, which both verifier
-entry points reject, verifies the ordering witness, and checks the two named
-refusals.
+entry points reject, verifies the ordering witness, and checks the actual-hole
+refusal. [variadic-copy-element.ts](variadic-copy-element.ts) additionally
+copies a dense Boolean tuple before a later argument changes its first element.
+The copy keeps the old values and its required-position contract, so it can
+feed a Boolean rest without introducing `undefined`. Both verifier entry points
+accept the unchanged TypeScript claims, and the runtime test checks the same source.
 
 [optional-arguments.ts](optional-arguments.ts) omits an optional trailing
 argument, writes it, and writes `undefined` for it. The three agree at run time,

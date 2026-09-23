@@ -1645,18 +1645,24 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
         "a spread into fixed parameters must be the last argument")
     let spread := !variadic && !spreads.isEmpty
     let As₀ ← operands.mapM (exprType fc)
-    -- A copy is a store of any length at the rest's element type.
-    let copyTy : Option (Ty Nat) ← if copied.isEmpty then pure none else do
+    -- A dense tuple keeps its exact positions when copied. Other arrays use
+    -- the existing unbounded copy rule, whose result may have holes.
+    let copyTypes ← copied.mapM fun i => do
       let G := SourceTypes.graph (← table)
+      let some original := As₀[i]? | throw "a spread argument needs an operand"
+      if let some S := storeOf G original then
+        if let [.list T []] := PositiveRules.expand G S then
+          if T.optional.isEmpty && T.rest.isNone then
+            return (i, S)
       let some (_, E, _) := (ProgramTyping.restSigs G B).head? | throw "a spread needs a variadic callee"
       if !E.contains 3 then
         throw (locatedRefusal (← table) e.span .bindingAnnotation
           "a spread copied before a later actual runs needs a rest element type that admits `undefined`")
       let C ← lower (SourceTypes.use (.list ⟨[], [], some E, false⟩ []))
       modify fun st => {st with hints := C :: st.hints}
-      pure (some [C])
+      pure (i, [C])
     let As := As₀.zipIdx.map fun (A, i) =>
-      if copied.contains i then copyTy.getD A else A
+      (copyTypes.lookup i).getD A
     -- A store that may have a hole, at an optional position or among its
     -- rest, spreads `undefined` there; a rest whose element type does not
     -- admit it cannot collect such a spread, whatever TypeScript says.
@@ -1722,7 +1728,14 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
         let m := (next.mapping.getD (List.range (ctx.length + 1))).map fun j =>
           if j == 0 then 0 else j + 1
         let some C := As[i]? | throw "a spread argument needs an operand"
-        let copy ← emitAt arg.span (.arrLit [.spread (.readAt SourceTypes.storeField (.var 0))])
+        let inits ← match PositiveRules.expand (SourceTypes.graph (← table)) C with
+          | [.list T []] =>
+            if T.optional.isEmpty && T.rest.isNone then
+              (List.range T.required.length).mapM fun j => do
+                return Tm.elemAt (.readAt SourceTypes.storeField (.var 0)) (← indexTerm j)
+            else pure [.spread (.readAt SourceTypes.storeField (.var 0))]
+          | _ => throw "a spread copy needs an array store contract"
+        let copy ← emitAt arg.span (.arrLit inits)
           (.bind ⟨next.label, some m⟩) (A :: ctx) C "spread-copy"
           (scope := held ⟨"",some arg.span⟩ :: sc)
         compileExpr fc sc ctx arg ⟨copy.label, none⟩
