@@ -465,9 +465,13 @@ declarations, with exactly one declaration and matching source bytes. Forged
 interface and function targets and altered API bytes are refused. This is
 resolution inventory, not acceptance of those contracts. The source gate
 currently admits named type-only imports of aliases and single interfaces
-whose fields, string indexes, fixed function-valued properties or fixed method
-signatures fit the imported graph. Synthetic `Box`, recursive `Node`,
-callable-property `CallableBox` and method-bearing `WithMethod` interfaces,
+whose fields, string indexes, function-valued properties or method signatures
+fit the imported graph. An optional parameter contributes `T | undefined` at
+its position; an array rest parameter contributes its element contract to the
+existing variadic call clause. These are the same call clauses as local
+functions, with no new callable semantics or proof rule.
+Synthetic `Box`, recursive `Node`, callable-property `CallableBox` and
+method-bearing `WithMethod` interfaces,
 plus required, optional and rest tuple aliases (mutable or readonly), verify through the same Lean
 path. A detached method call fails its receiver
 obligation, while an incorrect callable result fails its return obligation.
@@ -475,7 +479,7 @@ The method graph promises safe invocation for every receiver satisfying the
 interface, which is stronger than TypeScript's structural method declaration.
 This is a relative client contract; imported runtime values cannot be granted
 it without an explicit assumption or a checked implementation.
-Inheritance, nested methods, optional and generic methods, and declaration
+Inheritance, nested methods, optional method *presence*, generic methods, and declaration
 merging refuse. All four runtime API
 interfaces have unsupported members or dependencies, and `runService` is a
 value import. The new interface slice therefore does not yet admit `sum.ts`.

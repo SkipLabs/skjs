@@ -173,7 +173,8 @@ let rec imported_type owner j =
       | Null -> top | source -> imported_type owner source in
     let signature = {quantified=[];receiver;
       params=List.map (imported_type owner) (items "params" j);
-      variadic=None;result=imported_type owner (field "result" j)} in
+      variadic=(match field "rest" j with Null -> None | t -> Some (imported_type owner t));
+      result=imported_type owner (field "result" j)} in
     Atoms [Shape {fields=[];string_index=None;calls=[signature];elements=None}]
   | "self" -> Atoms [Named (owner,[])]
   | "object" ->

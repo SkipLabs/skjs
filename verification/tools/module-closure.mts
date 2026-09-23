@@ -126,13 +126,8 @@ export function collectTypeClosure(
             throw Error(`unsupported function receiver in ${identity.module}#${identity.name}`);
           receiver = parse(head.type);
         }
-        const params = parameters.map(p => {
-          if (!ts.isIdentifier(p.name) || !p.type || p.questionToken ||
-              p.dotDotDotToken || p.initializer || p.name.text === "this")
-            throw Error(`unsupported function parameter in ${identity.module}#${identity.name}`);
-          return parse(p.type);
-        });
-        return { k: "function", receiver, params, result: parse(part.type), span: pos };
+        const { params, rest } = parseParameters(parameters, "function");
+        return { k: "function", receiver, params, rest, result: parse(part.type), span: pos };
       }
       if (ts.isTypeReferenceNode(part)) {
         if (!ts.isIdentifier(part.typeName))
@@ -186,6 +181,33 @@ export function collectTypeClosure(
       }
       return { k: "tuple", readonly, required, optional, rest, span: pos };
     };
+    const parseParameters = (parameters: readonly ts.ParameterDeclaration[], kind: string) => {
+      const params: TypeTerm[] = [];
+      let rest: TypeTerm | null = null;
+      let optional = false;
+      for (const [index, parameter] of parameters.entries()) {
+        if (!ts.isIdentifier(parameter.name) || !parameter.type || parameter.initializer ||
+            parameter.name.text === "this")
+          throw Error(`unsupported ${kind} parameter in ${identity.module}#${identity.name}`);
+        if (parameter.dotDotDotToken) {
+          if (rest || index !== parameters.length - 1 || parameter.questionToken ||
+              !ts.isArrayTypeNode(parameter.type))
+            throw Error(`unsupported ${kind} rest parameter in ${identity.module}#${identity.name}`);
+          rest = parse(parameter.type.elementType);
+        } else {
+          if (optional && !parameter.questionToken)
+            throw Error(`required ${kind} parameter after optional in ${identity.module}#${identity.name}`);
+          const type = parse(parameter.type);
+          if (parameter.questionToken) {
+            optional = true;
+            params.push({ k: "union", parts: [type,
+              { k: "atom", name: "undefined", span: [parameter.getStart(source), parameter.end] }],
+              span: [parameter.getStart(source), parameter.end] });
+          } else params.push(type);
+        }
+      }
+      return { params, rest };
+    };
     const parseMembers = (members: readonly TypeElement[], pos: Span,
       allowMethods: boolean): TypeTerm => {
       const fields: Extract<TypeTerm, { k: "object" }>["fields"] = [];
@@ -212,16 +234,11 @@ export function collectTypeClosure(
           const name = member.name.text;
           if (names.has(name)) throw Error(`duplicate named field ${identity.module}#${name}`);
           names.add(name);
-          const params = member.parameters.map(p => {
-            if (!ts.isIdentifier(p.name) || !p.type || p.questionToken ||
-                p.dotDotDotToken || p.initializer || p.name.text === "this")
-              throw Error(`unsupported method parameter in ${identity.module}#${identity.name}`);
-            return parse(p.type);
-          });
+          const { params, rest } = parseParameters(member.parameters, "method");
           const methodSpan: Span = [member.getStart(source), member.end];
           fields.push({ name, optional: false, readonly: false,
             type: { k: "function", receiver: { k: "self", span: methodSpan },
-              params, result: parse(member.type), span: methodSpan },
+              params, rest, result: parse(member.type), span: methodSpan },
             span: methodSpan });
         } else if (ts.isIndexSignatureDeclaration(member)) {
           if (stringIndex || member.parameters.length !== 1 ||

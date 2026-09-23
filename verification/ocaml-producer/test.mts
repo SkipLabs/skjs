@@ -287,7 +287,9 @@ for (const [file, expected] of [
     "export interface FromGlobal { readonly item: GlobalBox; }\n" +
     "export interface Node { readonly next: Node | null; }\n" +
     "export interface CallableBox { readonly invoke: (value: number) => boolean; }\n" +
+    "export interface OptionalCallable { readonly invoke: (value?: number) => boolean; }\n" +
     "export interface WithMethod { read(): boolean; }\n" +
+    "export interface RestMethod { accepts(...values: number[]): boolean; }\n" +
     "export type WithMethodAlias = WithMethod;\n" +
     "export type Pair = [boolean, number];\n" +
     "export type ReadonlyPair = readonly [boolean, number];\n" +
@@ -349,13 +351,15 @@ for (const [file, expected] of [
     ["fixture/barrel.ts", "fixture/a.ts"]);
   const boxClient = join(pairDir, "box-client.ts");
   writeFileSync(boxClient,
-    'import type { Box, FromGlobal, Node, CallableBox, WithMethod, WithMethodAlias, Pair, ReadonlyPair, OptionalPair, RestPair } from "@fixture/box";\n' +
+    'import type { Box, FromGlobal, Node, CallableBox, OptionalCallable, WithMethod, WithMethodAlias, RestMethod, Pair, ReadonlyPair, OptionalPair, RestPair } from "@fixture/box";\n' +
     'export function readBox(box: Box): boolean { return box.flag; }\n' +
     'export function readGlobal(box: FromGlobal): boolean { return box.item.flag; }\n' +
     'export function nextNode(node: Node): Node | null { return node.next; }\n' +
     'export function invokeBox(box: CallableBox): boolean { return box.invoke(1); }\n' +
+    'export function omitOptional(box: OptionalCallable): boolean { return box.invoke(); }\n' +
     'export function callMethod(box: WithMethod): boolean { return box.read(); }\n' +
     'export function callMethodAlias(box: WithMethodAlias): boolean { return box.read(); }\n' +
+    'export function callRestMethod(box: RestMethod): boolean { return box.accepts(1, 2); }\n' +
     'export function pairFirst(pair: Pair): boolean { return pair[0]; }\n' +
     'export function readonlyPairSecond(pair: ReadonlyPair): number { return pair[1]; }\n' +
     'export function optionalSecond(pair: OptionalPair): number | undefined { return pair[1]; }\n' +
@@ -368,7 +372,8 @@ for (const [file, expected] of [
   const checkedBox = check(boxClient, boxUniverse);
   assert.equal(checkedBox.status, "verified", JSON.stringify(checkedBox));
   assert.deepEqual(checkedBox.functions,
-    ["readBox", "readGlobal", "nextNode", "invokeBox", "callMethod", "callMethodAlias",
+    ["readBox", "readGlobal", "nextNode", "invokeBox", "omitOptional", "callMethod",
+      "callMethodAlias", "callRestMethod",
       "pairFirst", "readonlyPairSecond", "optionalSecond", "restHead", "restTail"]);
   const boxAst = parseFile(boxClient, false, boxUniverse);
   assert.equal(boxAst.imports.definitions.find(d => d.declaration.name === "GlobalBox")?.
@@ -434,11 +439,19 @@ for (const [file, expected] of [
   assert(genericMethodRoot);
   assert.throws(() => collectTypeClosure(genericMethodRoot, pair, boxConfig),
     /unsupported method signature in fixture\/box.ts#GenericMethod/);
-  const optionalMethodRoot = resolveNamedImports(openText(boxClient,
-    'import type { OptionalMethod } from "@fixture/box";'), pair, boxConfig)[0];
-  assert(optionalMethodRoot);
-  assert.throws(() => collectTypeClosure(optionalMethodRoot, pair, boxConfig),
-    /unsupported method parameter in fixture\/box.ts#OptionalMethod/);
+  const optionalMethodClient = join(pairDir, "optional-method-client.ts");
+  writeFileSync(optionalMethodClient,
+    'import type { OptionalMethod } from "@fixture/box";\n' +
+    'export function callOptional(box: OptionalMethod): boolean { return box.read(); }\n');
+  const checkedOptionalMethod = check(optionalMethodClient, boxUniverse);
+  assert.equal(checkedOptionalMethod.status, "verified", JSON.stringify(checkedOptionalMethod));
+  const wrongRestClient = join(pairDir, "wrong-rest-client.ts");
+  writeFileSync(wrongRestClient,
+    'import type { RestMethod } from "@fixture/box";\n' +
+    'export function wrongRest(box: RestMethod): boolean { return box.accepts("bad"); }\n');
+  const rejectedRest = check(wrongRestClient, boxUniverse);
+  assert.equal(rejectedRest.status, "unverified", JSON.stringify(rejectedRest));
+  assert.equal(rejectedRest.phase, "search");
   const derivedRoot = resolveNamedImports(openText(boxClient,
     'import type { Derived } from "@fixture/box";'), pair, boxConfig)[0];
   assert(derivedRoot);

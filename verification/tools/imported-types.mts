@@ -51,7 +51,7 @@ export type TypeTerm =
   | { k: "object"; fields: { name: string; optional: boolean; readonly: boolean; type: TypeTerm; span: Span }[];
       stringIndex: { readonly: boolean; value: TypeTerm; span: Span } | null; span: Span }
   | { k: "function"; receiver: TypeTerm | null; params: TypeTerm[];
-      result: TypeTerm; span: Span }
+      rest: TypeTerm | null; result: TypeTerm; span: Span }
   /** The containing declaration is the implicit receiver of a method signature. */
   | { k: "self"; span: Span }
   | { k: "parameter"; index: number; span: Span }

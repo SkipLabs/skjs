@@ -94,12 +94,17 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       else use (.refs [(SourceTypes.storeField, [store])] [] [])
     return [row]
   | "function" =>
-    CellClaims.fieldsExactly term ["k", "receiver", "params", "result", "span"]
+    CellClaims.fieldsExactly term ["k", "receiver", "params", "rest", "result", "span"]
     let recv ← field term "receiver"
     let receiver ← if recv == .null then pure [← use .top] else lowerType ds owner recv
     let params ← (← arr term "params").mapM (lowerType ds owner)
+    let restTerm ← field term "rest"
+    let rest ← if restTerm == .null then pure none else some <$> lowerType ds owner restTerm
     let result ← lowerType ds owner (← field term "result")
-    return [← use (.arrs [(receiver, params.toList, result)] [])]
+    let row : Clause (List Nat) := match rest with
+      | none => .arrs [(receiver, params.toList, result)] []
+      | some element => .arrs [] [(receiver, params.toList, element, result)]
+    return [← use row]
   | "object" =>
     let fs ← (← arr term "fields").mapM fun f => do
       if ← bool f "optional" then throw "optional imported fields need presence semantics"
