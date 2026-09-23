@@ -1,5 +1,11 @@
 # Intersection types against the model
 
+This is a historical design analysis, written before the current Lean model.
+Its example definitions are not a specification of the maintained calculus.
+For implemented behavior, use [SEMANTICS.md](SEMANTICS.md),
+[POSITIVE-TYPES.md](POSITIVE-TYPES.md), and
+[PROGRAM-TYPING.md](PROGRAM-TYPING.md).
+
 A design note, ahead of any Lean. TypeScript uses intersection types in a
 handful of recurring patterns. This asks, for each, whether the semantic model
 in [SEMANTICS.md](SEMANTICS.md) can state the conjuncts, whether their

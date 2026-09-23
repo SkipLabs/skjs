@@ -6,7 +6,9 @@ use the same source adapter and independently checked certificates. We do not
 assume SKJS or proof search is sound.
 
 There is one maintained calculus and verifier. Its implementation lives in
-`lean/Verification/ExperimentState/` (the directory name is historical).
+`lean/Verification/ExperimentState/`. `ExperimentState` is the original Lean
+namespace, retained in module imports and the Lake targets after this became
+the sole maintained verifier; it does not name a separate experimental model.
 [DESIGN.md](DESIGN.md) describes the architecture and trust boundary.
 
 The base language everything else is defined over is small, and stated in two
@@ -224,6 +226,7 @@ owner; other documents link to them and give only the context their readers need
 | [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md) | Failure records, source maps, outcome classification and reason vocabulary. |
 | [Viewer README](report-viewer/README.md) | Viewer/editor UX, local server, implementation structure and browser integration. |
 | [Test index](tests/README.md) and linked corpus READMEs | Regression coverage, runnable witnesses, producer/runtime outcomes and exact candidate repairs. |
+| [INTERSECTIONS](INTERSECTIONS.md) | Historical design analysis from before the present Lean model. Read the current rules and proofs above for implemented behavior. |
 
 When adding a rule, put its mathematical statement and proof scope in
 `PROGRAM-TYPING` (or `POSITIVE-TYPES` for subtyping). New semantic predicates go
@@ -251,6 +254,17 @@ The source boundary starts in
 [SourceExtraction.lean](lean/Verification/ExperimentState/SourceExtraction.lean);
 [RequestJson.lean](lean/Verification/ExperimentState/RequestJson.lean) checks the
 resulting requests and evidence.
+
+The Lean files currently share one flat `ExperimentState` directory. This map
+locates the main entry points without treating the directory name as a layer:
+
+| Layer | Entry points |
+| --- | --- |
+| Operational semantics and worlds | [Calculus](lean/Verification/ExperimentState/Calculus.lean), [Worlds](lean/Verification/ExperimentState/Worlds.lean), [ObjectCoherence](lean/Verification/ExperimentState/ObjectCoherence.lean) |
+| Semantic families and graph types | [Types](lean/Verification/ExperimentState/Types.lean), [PositiveGraphs](lean/Verification/ExperimentState/PositiveGraphs.lean), [PositiveRules](lean/Verification/ExperimentState/PositiveRules.lean) |
+| Program typing and checked evidence | [ProgramTyping](lean/Verification/ExperimentState/ProgramTyping.lean), [ProgramCertificates](lean/Verification/ExperimentState/ProgramCertificates.lean), [CertificateProducer](lean/Verification/ExperimentState/CertificateProducer.lean) |
+| Source boundary and CLI | [Fragment](lean/Verification/ExperimentState/Fragment.lean), [SourceExtraction](lean/Verification/ExperimentState/SourceExtraction.lean), [SourceClaimJson](lean/Verification/ExperimentState/SourceClaimJson.lean), [RequestCli](lean/Verification/ExperimentState/RequestCli.lean) |
+| Other code and tests | [OCaml producer](ocaml-producer/README.md), [Node tools](tools/), [report viewer](report-viewer/README.md), [regression index](tests/README.md) |
 
 `tools/export-source-claims.mts` converts an existing SKJS export into editable
 calculus-label claims. Conversion records unsupported candidates and provenance;
