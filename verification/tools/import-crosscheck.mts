@@ -53,7 +53,7 @@ function crossCheckProgram(
   roots: readonly ResolvedImport[],
   definitions: readonly TypeDefinition[],
   requiredSourceIds: readonly string[],
-  aliasOnlyRoots: boolean,
+  typeDefinitionsOnly: boolean,
   modules: readonly ModuleSource[],
   program: Program,
   checker: Checker,
@@ -78,7 +78,7 @@ function crossCheckProgram(
     at: Span,
     name: string,
     identifier: Identifier,
-    aliasOnly: boolean,
+    typeDefinitionOnly: boolean,
   ): void => {
     const symbol = checker.getSymbolAtLocation(identifier);
     if (!symbol)
@@ -100,10 +100,11 @@ function crossCheckProgram(
         `TypeScript found ${target.declarations.length} declarations for ${name}`,
       );
     const node = target.declarations[0].resolve();
-    if (!node || (aliasOnly && !ts.isTypeAliasDeclaration(node)))
+    if (!node || (typeDefinitionOnly &&
+        !(ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node))))
       throw new ImportMismatch(
         at,
-        `TypeScript target for ${name} is not ${aliasOnly ? "one type alias" : "one declaration"}`,
+        `TypeScript target for ${name} is not ${typeDefinitionOnly ? "one type definition" : "one declaration"}`,
       );
     const actual = node.getSourceFile();
     const expected = moduleById.get(id);
@@ -151,7 +152,7 @@ function crossCheckProgram(
       binding.span,
       binding.local,
       specifier.name,
-      aliasOnlyRoots,
+      typeDefinitionsOnly,
     );
   }
 
@@ -160,14 +161,14 @@ function crossCheckProgram(
     const source = sourceOf(id, origin);
     const declaration = source.statements.find(
       (node) =>
-        ts.isTypeAliasDeclaration(node) &&
+        (ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)) &&
         node.getStart(source) === definition.declaration.span[0] &&
         node.end === definition.declaration.span[1],
     );
     if (!declaration)
       throw new ImportMismatch(
         origin,
-        `TypeScript did not load alias ${id}#${definition.declaration.name}`,
+        `TypeScript did not load type definition ${id}#${definition.declaration.name}`,
       );
     for (const reference of definition.references) {
       const node = referenceAt(declaration, source, reference.span);
@@ -213,7 +214,7 @@ function crossCheckSource(
   roots: readonly ResolvedImport[],
   definitions: readonly TypeDefinition[],
   requiredSourceIds: readonly string[],
-  aliasOnlyRoots: boolean,
+  typeDefinitionsOnly: boolean,
   modules: readonly ModuleSource[],
   resolutionFile: string,
   tsconfigPath?: string,
@@ -248,7 +249,7 @@ function crossCheckSource(
       roots,
       definitions,
       requiredSourceIds,
-      aliasOnlyRoots,
+      typeDefinitionsOnly,
       modules,
       project.program,
       project.checker,

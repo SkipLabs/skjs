@@ -464,11 +464,12 @@ that TypeScript resolves all five bindings to those same interface or function
 declarations, with exactly one declaration and matching source bytes. Forged
 interface and function targets and altered API bytes are refused. This is
 resolution inventory, not acceptance of those contracts. The source gate
-currently admits **named type-only imports whose targets are type aliases**;
-these four runtime API types are interfaces, and `runService` is a value import.
-`Values` also depends
-on `Iterable` and `DepSafe`. The `Json` examples prove the type-alias slice,
-not the interface/value-import slice needed by `sum.ts`.
+currently admits named type-only imports of aliases and single interfaces
+whose fields or string indexes fit the imported graph. A synthetic `Box`
+interface and a recursive `Node` interface verify through the same Lean path;
+inheritance, methods and declaration merging refuse. All four runtime API
+interfaces have unsupported members or dependencies, and `runService` is a
+value import. The new interface slice therefore does not yet admit `sum.ts`.
 
 The admitted contract work is larger than recognizing the declaration keyword:
 `Mapper` has four `Json`-bounded parameters and a method returning
@@ -480,9 +481,9 @@ are a separate, effectful module contract. Each dependency must either be
 interpreted and certified or appear as an explicit external assumption.
 
 The next file-level steps are to model the top-level initializer and other
-declarations without dropping their effects, and extend the admitted import
-closure from alias definitions to interface and value contracts. Then
-represent the imported API contracts as explicit client assumptions; checking
+declarations without dropping their effects, and extend the admitted interface
+slice to methods, inheritance and generic instantiation, together with value
+imports. Then represent the imported API contracts as explicit client assumptions; checking
 the runtime's implementations is the separate third milestone below. Class construction,
 parameter properties, `implements`, method receivers and prototype lookup must
 be certified before counting a mapper body. Later source statements include
@@ -499,7 +500,8 @@ nonrecursive approximation of `Json` does not close this milestone. This is a
 prerequisite of the mapper and collection milestones below, not a claim that
 the runtime implementation satisfies its API contracts.
 
-Checkpoint 1 has a **provenance-only implementation for type aliases** in
+Checkpoint 1 has a source-closure implementation for aliases and single
+field/index interfaces in
 [`module-closure.mts`](../tools/module-closure.mts). The fixture pins the tracked
 `skiplang-json` source and `prebuild.mjs`; the resolver follows the core star
 export, API-local `export type`, and the workspace link to that source. The
@@ -510,15 +512,16 @@ pinned `Json` cycle retains its readonly array, dictionary index, unions,
 `null`, and declaration-identified references; the generic cycle retains
 binder indices and applied arguments. Unsupported syntax is refused during
 collection rather than left inside an opaque span.
-Other declaration kinds and type-binding forms still refuse explicitly. The
+Methods, inheritance, merging and other declaration kinds still refuse
+explicitly. The
 Fragment document now has one required `imports` slot, emitted empty by the
 source parser. The collector can assemble both real `Json` imports into that
 shared slot with deduplicated declaration equations, module bytes, route
 fingerprints, and the workspace symlink target. The source parser fills
 the slot for named type-only imports when its caller supplies an explicit
 module universe. Before admitting it, a separate TypeScript checker instance
-resolves each client import and every reference inside the collected alias
-bodies to exactly one type-alias declaration. Its real file path and span must
+resolves each client import and every reference inside the collected type
+definitions to exactly one alias or interface declaration. Its real file path and span must
 match our resolver's choice; every touched module's TypeScript source text must
 match the text from which our equations were parsed. The parser represents imported references in
 function annotations as alias atoms whose local spellings resolve through the
@@ -624,9 +627,9 @@ Current progress against the `Json` prerequisite:
 
 | Checkpoint | Current result | Remaining boundary |
 | --- | --- | --- |
-| 1. Source closure | Canonical `Json`/`JsonObject` cycle, workspace link and a cross-file generic cycle collected. | Interface and value declarations are outside this collector. |
-| 2. Shared graph and gate | Imported alias equations reach the common Fragment and Lean request; TypeScript checks declaration identities and source bytes. | The configured project and source parser remain trusted; imports beyond named type aliases are refused. |
-| 3. Semantic interpretation | Recursive readonly array and dictionary clauses reach `CertifiedPlan` and `checkJson_safe`. | Broader interface, mutable dictionary and implementation contracts need their own certified paths. |
+| 1. Source closure | Canonical `Json`/`JsonObject` cycle, workspace link, cross-file generic cycle, and single field/index interfaces collected. | Interface methods, inheritance, merging and value declarations remain outside this collector. |
+| 2. Shared graph and gate | Imported alias and supported interface equations reach the common Fragment and Lean request; TypeScript checks declaration identities and source bytes. | The configured project and source parser remain trusted; richer declarations are refused. |
+| 3. Semantic interpretation | Recursive readonly array and dictionary clauses, including a recursive field interface, reach `CertifiedPlan` and `checkJson_safe`. | Method, generic-interface, mutable dictionary and implementation contracts need their own certified paths. |
 | 4. Relative contracts and controls | Forged alias equations, targets, source bytes and evidence have negative controls. | External value-contract assumptions and their eventual discharge are not yet represented. |
 | 5. Actual-source acceptance | Imported `Json` clients, a bound-instantiation case and four negative controls run end to end. | Actual `Mapper` bounds and bodies are blocked by interface imports, classes and their dependencies. |
 

@@ -276,10 +276,16 @@ for (const [file, expected] of [
   writeFileSync(join(pairDir, "b.ts"), b);
   const barrel = "export type { A } from './a.js';\n";
   writeFileSync(join(pairDir, "barrel.ts"), barrel);
+  const box = "export interface Box { readonly flag: boolean; }\n" +
+    "export interface Node { readonly next: Node | null; }\n" +
+    "export interface WithMethod { read(): boolean; }\n" +
+    "export interface Derived extends Box { readonly label: string; }\n";
+  writeFileSync(join(pairDir, "box.ts"), box);
   writeFileSync(join(pairDir, "tsconfig.json"), JSON.stringify({
     compilerOptions: { strict: true, noEmit: true, module: "Node16",
       moduleResolution: "Node16", paths: { "@fixture/a": ["./a.ts"],
-        "@fixture/barrel": ["./barrel.ts"] } },
+        "@fixture/barrel": ["./barrel.ts"], "@fixture/box": ["./box.ts"],
+        "@fixture/merged": ["./merged.ts"] } },
     include: ["*.ts"],
   }));
   const pair = [
@@ -289,6 +295,8 @@ for (const [file, expected] of [
       source: openText(join(pairDir, "b.ts"), b) },
     { id: "fixture/barrel.ts", sha256: createHash("sha256").update(barrel).digest("hex"),
       source: openText(join(pairDir, "barrel.ts"), barrel) },
+    { id: "fixture/box.ts", sha256: createHash("sha256").update(box).digest("hex"),
+      source: openText(join(pairDir, "box.ts"), box) },
   ];
   const pairClient = "import type { A } from '@fixture/a';";
   const pairConfig = { packages: new Map([["@fixture/a", "fixture/a.ts"]]),
@@ -317,6 +325,51 @@ for (const [file, expected] of [
     tsconfigPath: join(pairDir, "tsconfig.json") });
   assert.deepEqual(barrelAst.imports.roots[0]?.route.map(step => step.module),
     ["fixture/barrel.ts", "fixture/a.ts"]);
+  const boxClient = join(pairDir, "box-client.ts");
+  writeFileSync(boxClient,
+    'import type { Box, Node } from "@fixture/box";\n' +
+    'export function readBox(box: Box): boolean { return box.flag; }\n' +
+    'export function nextNode(node: Node): Node | null { return node.next; }\n');
+  const boxConfig = { ...pairConfig, packages: new Map([
+    ["@fixture/box", "fixture/box.ts"]]) };
+  const boxUniverse = { modules: pair, config: boxConfig,
+    tsconfigPath: join(pairDir, "tsconfig.json") };
+  const checkedBox = check(boxClient, boxUniverse);
+  assert.equal(checkedBox.status, "verified", JSON.stringify(checkedBox));
+  assert.deepEqual(checkedBox.functions, ["readBox", "nextNode"]);
+  const badBoxClient = join(pairDir, "bad-box-client.ts");
+  writeFileSync(badBoxClient,
+    'import type { Box } from "@fixture/box";\n' +
+    'export function badBox(box: Box): number { return box.flag; }\n');
+  const rejectedBox = check(badBoxClient, boxUniverse);
+  assert.equal(rejectedBox.status, "unverified", JSON.stringify(rejectedBox));
+  assert.equal(rejectedBox.phase, "search");
+  assert.match(rejectedBox.detail, /evidence search failed/);
+  const methodRoot = resolveNamedImports(openText(boxClient,
+    'import type { WithMethod } from "@fixture/box";'), pair, boxConfig)[0];
+  assert(methodRoot);
+  assert.throws(() => collectTypeClosure(methodRoot, pair, boxConfig),
+    /unsupported object member in fixture\/box.ts#WithMethod/);
+  const derivedRoot = resolveNamedImports(openText(boxClient,
+    'import type { Derived } from "@fixture/box";'), pair, boxConfig)[0];
+  assert(derivedRoot);
+  assert.throws(() => collectTypeClosure(derivedRoot, pair, boxConfig),
+    /interface inheritance in fixture\/box.ts#Derived is not collected/);
+  const merged = "export interface Merge { readonly flag: boolean; }\n" +
+    "export interface Merge { readonly label: string; }\n";
+  writeFileSync(join(pairDir, "merged.ts"), merged);
+  const mergedClient = join(pairDir, "merged-client.ts");
+  writeFileSync(mergedClient,
+    'import type { Merge } from "@fixture/merged";\n' +
+    'export function readMerged(value: Merge): boolean { return value.flag; }\n');
+  const mergedModule = { id: "fixture/merged.ts",
+    sha256: createHash("sha256").update(merged).digest("hex"),
+    source: openText(join(pairDir, "merged.ts"), merged) };
+  const mergedConfig = { ...pairConfig,
+    packages: new Map([["@fixture/merged", "fixture/merged.ts"]]) };
+  assert.throws(() => parseFile(mergedClient, false, { modules: [...pair, mergedModule],
+    config: mergedConfig, tsconfigPath: join(pairDir, "tsconfig.json") }),
+    /TypeScript found 2 declarations for Merge/);
   writeFileSync(genericClient,
     'import type { A } from "@fixture/a";\n' +
     'export function wrong(value: A<boolean, number>): boolean { return true; }\n');

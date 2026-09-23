@@ -1,29 +1,35 @@
 /** The reachable *source declaration* closure of an imported type. This is a
  * finite provenance graph, not yet an interpretation of those declarations as
- * semantic types. Unsupported binding forms fail instead of disappearing. */
+ * semantic types. Single interfaces with supported members share the same
+ * source equation path as aliases; unsupported forms fail instead of disappearing. */
 import { createHash } from "node:crypto";
 import * as ts from "typescript/unstable/ast";
-import type { SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
+import type { InterfaceDeclaration, SourceFile, TypeAliasDeclaration, TypeElement, TypeNode } from "typescript/unstable/ast";
 import { resolveModuleImport, type DeclarationIdentity,
   type ModuleSource, type ResolutionConfig, type ResolvedImport } from "./module-resolve.mts";
 import type { Span } from "./span.mts";
 import type { ImportDocument, Reference, TypeClosure, TypeDefinition, TypeTerm } from "./imported-types.mts";
 export type { Reference, TypeClosure, TypeDefinition, TypeTerm } from "./imported-types.mts";
 
-function alias(source: SourceFile, identity: DeclarationIdentity): TypeAliasDeclaration {
+type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration;
+
+function typeDeclaration(source: SourceFile, identity: DeclarationIdentity): TypeDeclaration {
   const matches = source.statements.filter(statement =>
-    ts.isTypeAliasDeclaration(statement) && statement.name.text === identity.name &&
+    (ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement)) &&
+    statement.name.text === identity.name &&
     statement.getStart(source) === identity.span[0] && statement.end === identity.span[1]);
-  if (matches.length !== 1 || !ts.isTypeAliasDeclaration(matches[0]))
-    throw Error(`type alias identity not found: ${identity.module}#${identity.name}`);
+  if (matches.length !== 1 ||
+      !(ts.isTypeAliasDeclaration(matches[0]) || ts.isInterfaceDeclaration(matches[0])))
+    throw Error(`type declaration identity not found: ${identity.module}#${identity.name}`);
   return matches[0];
 }
 
-function localAlias(source: SourceFile, moduleId: string, name: string):
+function localTypeDeclaration(source: SourceFile, moduleId: string, name: string):
   DeclarationIdentity | null {
   const matches = source.statements.filter(statement =>
-    ts.isTypeAliasDeclaration(statement) && statement.name.text === name);
-  if (matches.length > 1) throw Error(`ambiguous local alias ${moduleId}#${name}`);
+    (ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement)) &&
+    statement.name.text === name);
+  if (matches.length > 1) throw Error(`ambiguous local type ${moduleId}#${name}`);
   const found = matches[0];
   if (!found) return null;
   return { module: moduleId, name,
@@ -58,7 +64,9 @@ export function collectTypeClosure(
     const module = universe.get(identity.module);
     if (!module) throw Error(`module not supplied: ${identity.module}`);
     const source = module.source;
-    const node = alias(source, identity);
+    const node = typeDeclaration(source, identity);
+    if (ts.isInterfaceDeclaration(node) && node.heritageClauses?.length)
+      throw Error(`interface inheritance in ${identity.module}#${identity.name} is not collected`);
     const parameterNodes = node.typeParameters ?? [];
     const parameterNames = parameterNodes.map(parameter => parameter.name.text);
     if (new Set(parameterNames).size !== parameterNames.length)
@@ -99,31 +107,7 @@ export function collectTypeClosure(
             text: literal.getText(source), span: pos };
       }
       if (ts.isTypeLiteralNode(part)) {
-        const fields: Extract<TypeTerm, { k: "object" }>["fields"] = [];
-        let stringIndex: Extract<TypeTerm, { k: "object" }>["stringIndex"] = null;
-        const names = new Set<string>();
-        for (const member of part.members) {
-          if (ts.isPropertySignatureDeclaration(member)) {
-            if (!member.name || !member.type ||
-                !(ts.isIdentifier(member.name) || ts.isStringLiteral(member.name)) ||
-                member.modifiers?.some(m => m.kind !== ts.SyntaxKind.ReadonlyKeyword))
-              throw Error(`unsupported property signature in ${identity.module}#${identity.name}`);
-            const name = member.name.text;
-            if (names.has(name)) throw Error(`duplicate named field ${identity.module}#${name}`);
-            names.add(name);
-            fields.push({ name, optional: member.postfixToken?.kind === ts.SyntaxKind.QuestionToken,
-              readonly: member.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true,
-              type: parse(member.type), span: [member.getStart(source), member.end] });
-          } else if (ts.isIndexSignatureDeclaration(member)) {
-            if (stringIndex || member.parameters.length !== 1 ||
-                member.parameters[0]?.type?.kind !== ts.SyntaxKind.StringKeyword || !member.type ||
-                member.modifiers?.some(m => m.kind !== ts.SyntaxKind.ReadonlyKeyword))
-              throw Error(`unsupported index signature in ${identity.module}#${identity.name}`);
-            stringIndex = { readonly: member.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true,
-              value: parse(member.type), span: [member.getStart(source), member.end] };
-          } else throw Error(`unsupported object member in ${identity.module}#${identity.name}`);
-        }
-        return { k: "object", fields, stringIndex, span: pos };
+        return parseMembers(part.members, pos);
       }
       if (ts.isTypeReferenceNode(part)) {
         if (!ts.isIdentifier(part.typeName))
@@ -135,12 +119,12 @@ export function collectTypeClosure(
             throw Error(`type parameter applied as constructor: ${name}`);
           return { k: "parameter", index, span: pos };
         }
-        const local = localAlias(source, identity.module, name);
+        const local = localTypeDeclaration(source, identity.module, name);
         const imported = local ? null : resolveModuleImport(identity.module, name, modules, config);
         const target = local ?? imported?.declaration;
         if (!target || target.capability === "value")
           throw Error(`unresolved type reference ${identity.module}#${name}`);
-        const targetNode = alias(sourceOf(target.module), target);
+        const targetNode = typeDeclaration(sourceOf(target.module), target);
         const arguments_ = part.typeArguments ?? [];
         if (arguments_.length !== (targetNode.typeParameters?.length ?? 0))
           throw Error(`type argument arity: ${target.module}#${target.name}`);
@@ -155,6 +139,33 @@ export function collectTypeClosure(
       throw Error(`unsupported type syntax ${ts.SyntaxKind[part.kind]} in ` +
         `${identity.module}#${identity.name} at [${pos[0]},${pos[1]})`);
     };
+    const parseMembers = (members: readonly TypeElement[], pos: Span): TypeTerm => {
+      const fields: Extract<TypeTerm, { k: "object" }>["fields"] = [];
+      let stringIndex: Extract<TypeTerm, { k: "object" }>["stringIndex"] = null;
+      const names = new Set<string>();
+      for (const member of members) {
+        if (ts.isPropertySignatureDeclaration(member)) {
+          if (!member.name || !member.type ||
+              !(ts.isIdentifier(member.name) || ts.isStringLiteral(member.name)) ||
+              member.modifiers?.some(m => m.kind !== ts.SyntaxKind.ReadonlyKeyword))
+            throw Error(`unsupported property signature in ${identity.module}#${identity.name}`);
+          const name = member.name.text;
+          if (names.has(name)) throw Error(`duplicate named field ${identity.module}#${name}`);
+          names.add(name);
+          fields.push({ name, optional: member.postfixToken?.kind === ts.SyntaxKind.QuestionToken,
+            readonly: member.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true,
+            type: parse(member.type), span: [member.getStart(source), member.end] });
+        } else if (ts.isIndexSignatureDeclaration(member)) {
+          if (stringIndex || member.parameters.length !== 1 ||
+              member.parameters[0]?.type?.kind !== ts.SyntaxKind.StringKeyword || !member.type ||
+              member.modifiers?.some(m => m.kind !== ts.SyntaxKind.ReadonlyKeyword))
+            throw Error(`unsupported index signature in ${identity.module}#${identity.name}`);
+          stringIndex = { readonly: member.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true,
+            value: parse(member.type), span: [member.getStart(source), member.end] };
+        } else throw Error(`unsupported object member in ${identity.module}#${identity.name}`);
+      }
+      return { k: "object", fields, stringIndex, span: pos };
+    };
     const parameters = parameterNodes.map(parameter => {
       if (parameter.defaultType)
         throw Error(`type parameter default in ${identity.module}#${identity.name} is not collected`);
@@ -162,15 +173,19 @@ export function collectTypeClosure(
       return { name: parameter.name.text, span: parameterSpan,
         bound: parameter.constraint ? parse(parameter.constraint) : null };
     });
-    const expression = parse(node.type);
+    const expression = ts.isTypeAliasDeclaration(node)
+      ? parse(node.type)
+      : parseMembers(node.members, [node.getStart(source), node.end]);
     definitions.push({ declaration: identity,
       sha256: module.sha256,
-      parameters, body: [node.type.getStart(source), node.type.end], expression, references });
+      parameters, body: ts.isTypeAliasDeclaration(node)
+        ? [node.type.getStart(source), node.type.end]
+        : [node.getStart(source), node.end], expression, references });
   }
   return { root, definitions };
 }
 
-/** Assemble every imported alias into one document. The closure collector
+/** Assemble every imported type definition into one document. The closure collector
  * supplies the only traversal; this step deduplicates reachable modules and
  * mapping witnesses. Hashes in the document record provenance; Lean does not
  * validate them. The source parser compares the TypeScript project's actual

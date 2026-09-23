@@ -1,11 +1,11 @@
 import Verification.Model.Source.Fragment
 
-/-! Imported aliases are source equations, not rows supplied by a producer.
+/-! Imported type declarations are source equations, not rows supplied by a producer.
 The producer reserves one empty row per declaration and may refer to those
 labels in its own candidate rows. This module fills the reserved rows from the
-source equations before any source obligation is extracted. A direct alias is
-expanded only to its first constructor; references under arrays and object
-fields stay cyclic graph labels. -/
+source equations before any source obligation is extracted. A direct type
+reference is expanded only to its first constructor; references under arrays
+and object fields stay cyclic graph labels. -/
 namespace Verification.Model.ImportedGraph
 open Lean PositiveNormalization PositiveRules
 
