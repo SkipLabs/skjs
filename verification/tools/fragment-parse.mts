@@ -21,6 +21,7 @@ import type {
   FunctionDeclaration,
   FunctionExpression,
   Identifier,
+  ImportDeclaration,
   MethodDeclaration,
   Node,
   SourceFile,
@@ -48,6 +49,14 @@ import type {
 } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { messageOf } from "./thrown.mts";
+import { moduleEdges } from "./module-deps.mts";
+import { resolveNamedImports, type ModuleSource, type ResolutionConfig } from "./module-resolve.mts";
+import { collectImportDocument } from "./module-closure.mts";
+
+export type ImportUniverse = {
+  modules: readonly ModuleSource[];
+  config: ResolutionConfig;
+};
 
 /** A question-mark parameter requires an optional suffix. A default may
  * precede a required parameter: callers supply undefined in that position. */
@@ -1991,13 +2000,15 @@ class Gate {
  * is verified. A type they introduce still has to be sayable in a claim, so a
  * function that depends on one fails on that claim, in its own words.
  */
-export function parseFile(file: string, carriesContext = false): Ast {
+export function parseFile(file: string, carriesContext = false,
+  importUniverse?: ImportUniverse): Ast {
   const absolute = resolve(file);
   const text = readFileSync(absolute, "utf8");
   const source = openFile(absolute, text);
   const gate = new Gate(source);
   const aliasNodes: TypeAliasDeclaration[] = [];
   const fnNodes: FunctionDeclaration[] = [];
+  const importNodes: ImportDeclaration[] = [];
   // A "use strict" directive prologue makes the whole file strict.
   const prologue = gate.useStrict(source.statements);
   gate.strict = prologue.strict;
@@ -2005,12 +2016,36 @@ export function parseFile(file: string, carriesContext = false): Ast {
     if (prologue.skip.has(s)) continue;
     if (ts.isTypeAliasDeclaration(s)) aliasNodes.push(s);
     else if (ts.isFunctionDeclaration(s)) fnNodes.push(s);
+    else if (ts.isImportDeclaration(s) && !carriesContext) {
+      if (!importUniverse) gate.fail(s, "imports need an explicit module universe");
+      importNodes.push(s);
+    }
     else if (carriesContext) continue;
     else
       gate.fail(
         s,
         `top-level statement outside the fragment (${ts.SyntaxKind[s.kind]})`,
       );
+  }
+  // Every module body is strict, including one whose only module syntax is a
+  // type-only import. This decides the receiver rule for nested ordinary
+  // functions when imported declarations become certifiable.
+  gate.strict = prologue.strict || importNodes.length > 0;
+  let imports: Ast["imports"] = { roots: [], definitions: [], sources: [], mappings: [] };
+  if (importNodes.length) {
+    const first = importNodes[0];
+    const universe = importUniverse;
+    if (!universe) return gate.fail(first, "imports need an explicit module universe");
+    const edges = moduleEdges(source).filter(edge => edge.kind === "import");
+    if (edges.some(edge => !edge.typeOnly || !edge.imported ||
+        edge.imported === "*" || edge.imported === "default"))
+      gate.fail(first, "only named type-only imports are in the source fragment");
+    try {
+      const roots = resolveNamedImports(source, universe.modules, universe.config);
+      imports = collectImportDocument(roots, universe.modules, universe.config);
+    } catch (error) {
+      gate.fail(first, messageOf(error));
+    }
   }
   // Carried context holds aliases this fragment cannot state — more than one
   // parameter, a bound, none at all. They are skipped rather than rejected,
@@ -2039,7 +2074,7 @@ export function parseFile(file: string, carriesContext = false): Ast {
   return {
     file,
     sourceSha256: createHash("sha256").update(text).digest("hex"),
-    imports: { roots: [], definitions: [], sources: [], mappings: [] },
+    imports,
     aliases,
     functions,
   };

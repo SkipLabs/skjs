@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
-import { openText, definedClassCallables, close as closeParser } from "../tools/fragment-parse.mts";
+import { openText, parseFile, definedClassCallables, close as closeParser } from "../tools/fragment-parse.mts";
 import { moduleEdges } from "../tools/module-deps.mts";
 import { resolveNamedImports, resolveModuleImport, type ModuleSource } from "../tools/module-resolve.mts";
 import { collectImportDocument, collectTypeClosure } from "../tools/module-closure.mts";
@@ -154,6 +155,18 @@ for (const [file, expected] of [
   assert.equal(resolveModuleImport("core/src/api.ts", "notImported", modules, config), null);
   const jsonClosure = collectTypeClosure(jsonImports[0], modules, config);
   pinnedImportDocument = collectImportDocument(jsonImports, modules, config);
+  const sample = join(mkdtempSync(join(tmpdir(), "skjs-import-")), "client.ts");
+  writeFileSync(sample,
+    'import type { Json, JsonObject } from "@skipruntime/core";\n' +
+    'function identity(value: boolean): boolean { return value; }\n');
+  assert.throws(() => parseFile(sample), /imports need an explicit module universe/);
+  const importedAst = parseFile(sample, false, { modules, config });
+  assert.deepEqual(importedAst.imports.roots.map(r => r.binding.local), ["Json", "JsonObject"]);
+  assert.deepEqual(importedAst.imports.definitions, pinnedImportDocument.definitions);
+  assert.deepEqual(importedAst.imports.sources, pinnedImportDocument.sources);
+  assert.deepEqual(importedAst.imports.mappings, pinnedImportDocument.mappings);
+  assert.throws(() => parseFile(jsonPath, false, { modules, config }),
+    /modifiers \(export\/async\/declare\) are outside the fragment/);
   assert.deepEqual(pinnedImportDocument.roots.map(r => r.binding.local), ["Json", "JsonObject"]);
   assert.deepEqual(pinnedImportDocument.definitions.map(d => d.declaration.name),
     ["Json", "JsonObject"]);

@@ -502,11 +502,15 @@ Fragment document now has one required `imports` slot, emitted empty by the
 source parser. The collector can assemble both real `Json` imports into that
 shared slot with deduplicated declaration equations, module bytes, route
 fingerprints, and the `prebuild.mjs` mapping bytes. The OCaml suite submits
-this actual document as a forged Fragment and confirms Lean refuses it. Lean
-requires the exact document shape and refuses every nonempty import closure
-until a certified graph interpretation exists; the collector is not yet wired
-to the source parser, SourceClaims, or Lean's semantic graph. This does not
-change verification coverage or admit imports at the source gate. The
+this actual document as a forged Fragment and confirms Lean refuses it. The
+trusted parser also fills the slot for named type-only imports when its caller
+supplies an explicit, fingerprinted module universe; a source-only client test
+checks the real `Json` route. The CLI and OCaml driver do not yet supply that
+universe, and the parser cannot yet express imported references in function
+annotations. The actual `recursive-json.ts` also reaches the existing export
+modifier gate once its imports resolve. Lean requires the exact document shape and refuses every nonempty
+import document until a certified graph interpretation exists. This does not
+change verification coverage or admit imports at the verifier. The
 [`recursive-json.ts`](examples/recursive-json.ts)
 source is a named suite/viewer gap there: both functions remain unchecked.
 
