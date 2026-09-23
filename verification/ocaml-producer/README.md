@@ -397,6 +397,68 @@ A binder with neither argument constraints nor a usable declared bound is
 explicitly unsupported. Further work must retain these constraints and the
 independent acceptance boundary, not add a permissive subtype checker here.
 
+## After callable part 5: reactive-runtime integration
+
+Status: **planned, not measured**. Reassess after the receiver work in the
+[callable roadmap](../tests/callables/README.md) is certified. Closing part 5
+does not itself close classes, construction, or the runtime's generic API.
+The target is Skip's `skipruntime-ts` TypeScript API and implementation, not
+the native runtime written in Skip. The initial assessment inspected
+`skipruntime-ts/core/src/api.ts` and `skipruntime-ts/examples/sum.ts` in the
+sibling `skip` checkout; it is not a coverage census.
+
+Use the real `sum.ts` mapper/resource shapes as the first integration target.
+Preserve its classes, signatures and library interactions: do not rewrite it
+into today's fragment and call that runtime coverage. At the start of this
+work, record the upstream revision and retain the selected sources as fixtures,
+with provenance and expected outcomes in `cases.mts`. Measure each function's
+first blocker through parsing, proposal, lowering, evidence production and
+independent checking. Report verified, rejected and unsupported separately.
+
+| Requirement | Work to assess after part 5 |
+| --- | --- |
+| Mutable objects, captured callbacks, fixed storage contracts | Existing foundations; exercise them together on actual runtime clients. |
+| Methods using `this` | Part 5 prerequisite; verify its coverage against mapper methods. |
+| Classes, constructors, `new`, field initialization | Additional semantics and certified lowering; construction is not ordinary invocation. |
+| `Mapper<K1, V1, K2, V2>` and bounds such as `K extends Json` | Multiple parameters, structural bounds and richer generic bodies beyond the current rigid slice. |
+| `new (...params: Params) => Mapper<…>` | Constructor contracts and generic tuple packs; ordinary quantified array-rest support is insufficient. |
+| Recursive `Json`, dictionaries and optional fields | Recursive types, index contracts and field presence, preserving the distinction between absence and present-undefined. |
+| `Iterable`, iteration and array/library methods | Explicit contracts and execution semantics, including callback effects and iterator behavior. |
+| Promises, exceptions and native/Wasm bindings | Further model extensions and explicit external assumptions for the implementation. |
+
+Track three milestones, all initially open:
+
+1. **One actual mapper class.** Verify constructor initialization, method
+   receiver use and callback results end to end. Include independent failures
+   for an invalid initialization/receiver/result and forged evidence. Merely
+   accepting the class declaration or trusting its method signature is not
+   completion.
+2. **A synchronous collection graph.** Verify the synchronous mapper/resource
+   portion of `sum.ts`, including generic collection methods, constructor
+   arguments and iteration, against explicit runtime contracts. Record which
+   contracts are external assumptions; keep service startup and asynchronous
+   shutdown visible as remaining work. This establishes client typing relative
+   to those contracts, not correctness of the runtime implementation.
+3. **Runtime implementation.** Check the TypeScript implementation behind those
+   contracts, extending to asynchronous behavior, exceptions and native/Wasm
+   boundaries. Discharge the contracts where implementation is modeled and
+   enumerate the remaining external assumptions. Count checked implementations,
+   not declarations, toward this milestone.
+
+Type safety alone does **not** establish reactive dependency correctness. The
+API's mapper-construction and `DepSafe` restrictions aim to keep dependencies
+trackable. That requires a separately stated property and justification; a
+brand, interface or successful ordinary typing certificate is not its proof.
+Keep this obligation distinct from the three typing milestones, with its
+scope and completion criteria to be specified before claiming reactive
+correctness.
+
+For every extension, follow [Extending the producer](#extending-the-producer):
+shared representations, reconstructed obligations, semantic certification and
+tampering controls remain mandatory. Design for the full language while
+implementing these milestones incrementally; record a remaining blocker rather
+than weakening a witness or silently narrowing a milestone.
+
 ## What is proved, and what is trusted
 
 Successful certification uses the existing Lean certificate consumer and its
