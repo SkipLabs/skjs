@@ -465,10 +465,16 @@ declarations, with exactly one declaration and matching source bytes. Forged
 interface and function targets and altered API bytes are refused. This is
 resolution inventory, not acceptance of those contracts. The source gate
 currently admits named type-only imports of aliases and single interfaces
-whose fields, string indexes or fixed function-valued properties fit the imported
-graph. Synthetic `Box`, recursive `Node`, and callable-property `CallableBox`
-interfaces verify through the same Lean path; an incorrect callable result
-fails its return obligation. Inheritance, method shorthand and declaration
+whose fields, string indexes, fixed function-valued properties or fixed method
+signatures fit the imported graph. Synthetic `Box`, recursive `Node`,
+callable-property `CallableBox` and method-bearing `WithMethod` interfaces
+verify through the same Lean path. A detached method call fails its receiver
+obligation, while an incorrect callable result fails its return obligation.
+The method graph promises safe invocation for every receiver satisfying the
+interface, which is stronger than TypeScript's structural method declaration.
+This is a relative client contract; imported runtime values cannot be granted
+it without an explicit assumption or a checked implementation.
+Inheritance, nested methods, optional and generic methods, and declaration
 merging refuse. All four runtime API
 interfaces have unsupported members or dependencies, and `runService` is a
 value import. The new interface slice therefore does not yet admit `sum.ts`.
@@ -481,10 +487,14 @@ generic `map`/`merge` calls used below; `Resource` connects a collections
 parameter to `instantiate`. The `runService` value import and its return type
 are a separate, effectful module contract. Each dependency must either be
 interpreted and certified or appear as an explicit external assumption.
+Collecting the pinned `Mapper` declaration alone now reaches its method and
+refuses its `Iterable` result reference, which is a TypeScript library type
+outside the explicit source module universe. Tuple results, generic interface
+substitution and the other API dependencies remain after that refusal.
 
 The next file-level steps are to model the top-level initializer and other
 declarations without dropping their effects, and extend the admitted interface
-slice to methods, inheritance and generic instantiation, together with value
+slice to generic methods, inheritance and generic instantiation, together with value
 imports. Then represent the imported API contracts as explicit client assumptions; checking
 the runtime's implementations is the separate third milestone below. Class construction,
 parameter properties, `implements`, method receivers and prototype lookup must
@@ -503,7 +513,7 @@ prerequisite of the mapper and collection milestones below, not a claim that
 the runtime implementation satisfies its API contracts.
 
 Checkpoint 1 has a source-closure implementation for aliases and single
-field/index/callable-property interfaces in
+field/index/callable-property/method interfaces in
 [`module-closure.mts`](../tools/module-closure.mts). The fixture pins the tracked
 `skiplang-json` source and `prebuild.mjs`; the resolver follows the core star
 export, API-local `export type`, and the workspace link to that source. The
@@ -514,8 +524,8 @@ pinned `Json` cycle retains its readonly array, dictionary index, unions,
 `null`, and declaration-identified references; the generic cycle retains
 binder indices and applied arguments. Unsupported syntax is refused during
 collection rather than left inside an opaque span.
-Method shorthand, inheritance, merging and other declaration kinds still refuse
-explicitly. The
+Nested, optional and generic methods, inheritance, merging and other declaration
+kinds still refuse explicitly. The
 Fragment document now has one required `imports` slot, emitted empty by the
 source parser. The collector can assemble both real `Json` imports into that
 shared slot with deduplicated declaration equations, module bytes, route
@@ -629,9 +639,9 @@ Current progress against the `Json` prerequisite:
 
 | Checkpoint | Current result | Remaining boundary |
 | --- | --- | --- |
-| 1. Source closure | Canonical `Json`/`JsonObject` cycle, workspace link, cross-file generic cycle, and single field/index/callable-property interfaces collected. | Method shorthand, inheritance, merging and value declarations remain outside this collector. |
+| 1. Source closure | Canonical `Json`/`JsonObject` cycle, workspace link, cross-file generic cycle, and single field/index/callable-property/method interfaces collected. | Nested or generic methods, inheritance, merging and value declarations remain outside this collector. |
 | 2. Shared graph and gate | Imported alias and supported interface equations reach the common Fragment and Lean request; TypeScript checks declaration identities and source bytes. | The configured project and source parser remain trusted; richer declarations are refused. |
-| 3. Semantic interpretation | Recursive readonly array, dictionary, and fixed callable clauses, including a recursive field interface, reach `CertifiedPlan` and `checkJson_safe`. | Method receivers, generic-interface, mutable dictionary and implementation contracts need their own certified paths. |
+| 3. Semantic interpretation | Recursive readonly array, dictionary, fixed callable, and interface method receiver clauses reach `CertifiedPlan` and `checkJson_safe`. | Generic-interface, mutable dictionary and implementation contracts need their own certified paths. |
 | 4. Relative contracts and controls | Forged alias equations, targets, source bytes and evidence have negative controls. | External value-contract assumptions and their eventual discharge are not yet represented. |
 | 5. Actual-source acceptance | Imported `Json` clients, a bound-instantiation case and four negative controls run end to end. | Actual `Mapper` bounds and bodies are blocked by interface imports, classes and their dependencies. |
 

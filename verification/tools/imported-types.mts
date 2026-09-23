@@ -50,6 +50,8 @@ export type TypeTerm =
       stringIndex: { readonly: boolean; value: TypeTerm; span: Span } | null; span: Span }
   | { k: "function"; receiver: TypeTerm | null; params: TypeTerm[];
       result: TypeTerm; span: Span }
+  /** The containing declaration is the implicit receiver of a method signature. */
+  | { k: "self"; span: Span }
   | { k: "parameter"; index: number; span: Span }
   | { k: "reference"; reference: Reference; args: TypeTerm[]; span: Span };
 export type TypeDefinition = {

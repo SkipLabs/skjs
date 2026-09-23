@@ -107,7 +107,7 @@ export function collectTypeClosure(
             text: literal.getText(source), span: pos };
       }
       if (ts.isTypeLiteralNode(part)) {
-        return parseMembers(part.members, pos);
+        return parseMembers(part.members, pos, false);
       }
       if (ts.isFunctionTypeNode(part)) {
         if (part.typeParameters?.length)
@@ -161,7 +161,8 @@ export function collectTypeClosure(
       throw Error(`unsupported type syntax ${ts.SyntaxKind[part.kind]} in ` +
         `${identity.module}#${identity.name} at [${pos[0]},${pos[1]})`);
     };
-    const parseMembers = (members: readonly TypeElement[], pos: Span): TypeTerm => {
+    const parseMembers = (members: readonly TypeElement[], pos: Span,
+      allowMethods: boolean): TypeTerm => {
       const fields: Extract<TypeTerm, { k: "object" }>["fields"] = [];
       let stringIndex: Extract<TypeTerm, { k: "object" }>["stringIndex"] = null;
       const names = new Set<string>();
@@ -177,6 +178,26 @@ export function collectTypeClosure(
           fields.push({ name, optional: member.postfixToken?.kind === ts.SyntaxKind.QuestionToken,
             readonly: member.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true,
             type: parse(member.type), span: [member.getStart(source), member.end] });
+        } else if (ts.isMethodSignatureDeclaration(member)) {
+          if (!allowMethods || !member.name || !member.type ||
+              !(ts.isIdentifier(member.name) || ts.isStringLiteral(member.name)) ||
+              member.postfixToken?.kind === ts.SyntaxKind.QuestionToken ||
+              member.typeParameters?.length || member.modifiers?.length)
+            throw Error(`unsupported method signature in ${identity.module}#${identity.name}`);
+          const name = member.name.text;
+          if (names.has(name)) throw Error(`duplicate named field ${identity.module}#${name}`);
+          names.add(name);
+          const params = member.parameters.map(p => {
+            if (!ts.isIdentifier(p.name) || !p.type || p.questionToken ||
+                p.dotDotDotToken || p.initializer || p.name.text === "this")
+              throw Error(`unsupported method parameter in ${identity.module}#${identity.name}`);
+            return parse(p.type);
+          });
+          const methodSpan: Span = [member.getStart(source), member.end];
+          fields.push({ name, optional: false, readonly: false,
+            type: { k: "function", receiver: { k: "self", span: methodSpan },
+              params, result: parse(member.type), span: methodSpan },
+            span: methodSpan });
         } else if (ts.isIndexSignatureDeclaration(member)) {
           if (stringIndex || member.parameters.length !== 1 ||
               member.parameters[0]?.type?.kind !== ts.SyntaxKind.StringKeyword || !member.type ||
@@ -197,7 +218,7 @@ export function collectTypeClosure(
     });
     const expression = ts.isTypeAliasDeclaration(node)
       ? parse(node.type)
-      : parseMembers(node.members, [node.getStart(source), node.end]);
+      : parseMembers(node.members, [node.getStart(source), node.end], true);
     definitions.push({ declaration: identity,
       sha256: module.sha256,
       parameters, body: ts.isTypeAliasDeclaration(node)

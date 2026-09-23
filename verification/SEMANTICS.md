@@ -165,6 +165,19 @@ allocation, mutation or further call. The call spends a step before using
 this lower-budget guarantee. Safety permits nontermination. Neither the
 contract nor the equation requires a particular parameter-binding descriptor.
 
+An imported interface method `m(P): R` is lowered to a writable `m` field
+whose function contract is $\mathcal F(I,P,R)$, where $I$ is the containing
+interface's recursive graph node. Thus a call through `value.m` passes the
+required $I$ receiver; copying the function and calling it plainly passes
+`undefined` and cannot use that promise. This uses the same field and call
+rules as an explicitly function-valued property. It is a client contract
+relative to the imported declaration, not a proof of the method's implementation.
+It is stronger than TypeScript's structural method declaration: a method body
+may depend on implementation-private state and fail when called with another
+structurally matching receiver. A checked implementation or an explicit external
+assumption must establish this promise before any imported runtime value is
+claimed to inhabit the interface.
+
 This supplies the call component of the existing
 [callable-object equation](PROGRAM-TYPING.md#types-describe-behaviour-not-internal-storage):
 

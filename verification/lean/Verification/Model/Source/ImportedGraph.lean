@@ -51,7 +51,8 @@ private abbrev Lowering := StateT SourceTypes.Table (Except String)
 private def use (clause : Clause (List Nat)) : Lowering Nat := SourceTypes.use clause
 
 mutual
-private partial def lowerType (ds : Array Definition) (term : Json) : Lowering (List Nat) := do
+private partial def lowerType (ds : Array Definition) (owner : Nat)
+    (term : Json) : Lowering (List Nat) := do
   match ← str term "k" with
   | "atom" =>
     match ← str term "name" with
@@ -65,11 +66,17 @@ private partial def lowerType (ds : Array Definition) (term : Json) : Lowering (
     | _ => throw "unsupported imported primitive"
   | "union" =>
     let parts ← arr term "parts"
-    let arms ← parts.mapM (lowerType ds)
+    let arms ← parts.mapM (lowerType ds owner)
     return arms.toList.flatten.eraseDups.mergeSort (· ≤ ·)
+  | "self" =>
+    CellClaims.fieldsExactly term ["k", "span"]
+    -- Method syntax binds its receiver to the declaration being lowered. A
+    -- direct alias expansion changes that owner before reaching this arm.
+    if owner >= ds.size then throw "imported method has no containing declaration"
+    return [4 + owner]
   | "reference" => return [4 + (← referenceIndex ds term)]
   | "array" =>
-    let element ← lowerType ds (← field term "element")
+    let element ← lowerType ds owner (← field term "element")
     let readonly ← bool term "readonly"
     let store ← use (.list ⟨[], [], some element, readonly⟩ [])
     let row ← if readonly then use (.refs [] [] [(SourceTypes.storeField, [store])])
@@ -78,22 +85,22 @@ private partial def lowerType (ds : Array Definition) (term : Json) : Lowering (
   | "function" =>
     CellClaims.fieldsExactly term ["k", "receiver", "params", "result", "span"]
     let recv ← field term "receiver"
-    let receiver ← if recv == .null then pure [← use .top] else lowerType ds recv
-    let params ← (← arr term "params").mapM (lowerType ds)
-    let result ← lowerType ds (← field term "result")
+    let receiver ← if recv == .null then pure [← use .top] else lowerType ds owner recv
+    let params ← (← arr term "params").mapM (lowerType ds owner)
+    let result ← lowerType ds owner (← field term "result")
     return [← use (.arrs [(receiver, params.toList, result)] [])]
   | "object" =>
     let fs ← (← arr term "fields").mapM fun f => do
       if ← bool f "optional" then throw "optional imported fields need presence semantics"
       let name ← str f "name"
-      let value ← lowerType ds (← field f "type")
+      let value ← lowerType ds owner (← field f "type")
       return (name, value, ← bool f "readonly")
     let names := fs.toList.map (·.1)
     if names.eraseDups.length != names.length then throw "duplicate imported field"
     let index ← field term "stringIndex"
     let indexes ← if index == .null then pure ([] : List (List Nat)) else do
       if !(← bool index "readonly") then throw "mutable imported index needs a fixed contract"
-      let value ← lowerType ds (← field index "value")
+      let value ← lowerType ds owner (← field index "value")
       pure ([value] : List (List Nat))
     let writes := fs.toList.filterMap fun (name, value, readonly) =>
       if readonly then none else some (name, value)
@@ -104,19 +111,19 @@ private partial def lowerType (ds : Array Definition) (term : Json) : Lowering (
     return [row]
   | _ => throw "imported source type constructor outside the graph fragment"
 
-private partial def lowerHead (ds : Array Definition) (seen : List Nat)
+private partial def lowerHead (ds : Array Definition) (owner : Nat) (seen : List Nat)
     (term : Json) : Lowering (List (Clause (List Nat))) := do
   match ← str term "k" with
   | "union" =>
     let parts ← arr term "parts"
-    let rows ← parts.mapM (lowerHead ds seen)
+    let rows ← parts.mapM (lowerHead ds owner seen)
     return rows.toList.flatten.eraseDups
   | "reference" =>
     let i ← referenceIndex ds term
     if seen.contains i then throw "unguarded imported alias cycle"
-    lowerHead ds (i :: seen) ds[i]!.expression
+    lowerHead ds i (i :: seen) ds[i]!.expression
   | _ =>
-    let labels ← lowerType ds term
+    let labels ← lowerType ds owner term
     let table ← get
     return labels.flatMap (SourceTypes.graph table)
 end
@@ -130,7 +137,7 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table) :
       throw "parameterized imported graph needs substitution"
   let mut table := candidate
   for i in [:ds.size] do
-    let (row, expanded) ← (lowerHead ds [i] ds[i]!.expression).run table
+    let (row, expanded) ← (lowerHead ds i [i] ds[i]!.expression).run table
     table := expanded.set (4+i) row
   return table
 

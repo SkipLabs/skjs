@@ -86,6 +86,10 @@ for (const [file, expected] of [
     ["runService", "server/src/server.ts", "runService", "value",
       ["server/src/server.ts"]],
   ]);
+  const mapperRoot = must(resolved.find(r => r.binding.local === "Mapper"),
+    "Mapper import");
+  assert.throws(() => collectTypeClosure(mapperRoot, modules, config),
+    /unresolved type reference core\/src\/api.ts#Iterable/);
   crossCheckResolvedBindings(openText(source, readFileSync(source, "utf8")), resolved,
     modules, source, importUniverse.tsconfigPath);
   const wrongMapper = structuredClone(resolved);
@@ -280,6 +284,10 @@ for (const [file, expected] of [
     "export interface Node { readonly next: Node | null; }\n" +
     "export interface CallableBox { readonly invoke: (value: number) => boolean; }\n" +
     "export interface WithMethod { read(): boolean; }\n" +
+    "export type WithMethodAlias = WithMethod;\n" +
+    "export type NestedMethod = { inner: { read(): boolean } };\n" +
+    "export interface GenericMethod { read<T>(value: T): T; }\n" +
+    "export interface OptionalMethod { read(value?: boolean): boolean; }\n" +
     "export interface Derived extends Box { readonly label: string; }\n";
   writeFileSync(join(pairDir, "box.ts"), box);
   writeFileSync(join(pairDir, "tsconfig.json"), JSON.stringify({
@@ -328,17 +336,20 @@ for (const [file, expected] of [
     ["fixture/barrel.ts", "fixture/a.ts"]);
   const boxClient = join(pairDir, "box-client.ts");
   writeFileSync(boxClient,
-    'import type { Box, Node, CallableBox } from "@fixture/box";\n' +
+    'import type { Box, Node, CallableBox, WithMethod, WithMethodAlias } from "@fixture/box";\n' +
     'export function readBox(box: Box): boolean { return box.flag; }\n' +
     'export function nextNode(node: Node): Node | null { return node.next; }\n' +
-    'export function invokeBox(box: CallableBox): boolean { return box.invoke(1); }\n');
+    'export function invokeBox(box: CallableBox): boolean { return box.invoke(1); }\n' +
+    'export function callMethod(box: WithMethod): boolean { return box.read(); }\n' +
+    'export function callMethodAlias(box: WithMethodAlias): boolean { return box.read(); }\n');
   const boxConfig = { ...pairConfig, packages: new Map([
     ["@fixture/box", "fixture/box.ts"]]) };
   const boxUniverse = { modules: pair, config: boxConfig,
     tsconfigPath: join(pairDir, "tsconfig.json") };
   const checkedBox = check(boxClient, boxUniverse);
   assert.equal(checkedBox.status, "verified", JSON.stringify(checkedBox));
-  assert.deepEqual(checkedBox.functions, ["readBox", "nextNode", "invokeBox"]);
+  assert.deepEqual(checkedBox.functions,
+    ["readBox", "nextNode", "invokeBox", "callMethod", "callMethodAlias"]);
   const badBoxClient = join(pairDir, "bad-box-client.ts");
   writeFileSync(badBoxClient,
     'import type { Box } from "@fixture/box";\n' +
@@ -354,11 +365,29 @@ for (const [file, expected] of [
   const rejectedInvoke = check(badInvokeClient, boxUniverse);
   assert.equal(rejectedInvoke.status, "unverified", JSON.stringify(rejectedInvoke));
   assert.equal(rejectedInvoke.phase, "search");
-  const methodRoot = resolveNamedImports(openText(boxClient,
-    'import type { WithMethod } from "@fixture/box";'), pair, boxConfig)[0];
-  assert(methodRoot);
-  assert.throws(() => collectTypeClosure(methodRoot, pair, boxConfig),
-    /unsupported object member in fixture\/box.ts#WithMethod/);
+  const detachedClient = join(pairDir, "detached-method-client.ts");
+  writeFileSync(detachedClient,
+    'import type { WithMethod } from "@fixture/box";\n' +
+    'export function detached(box: WithMethod): boolean { const read = box.read; return read(); }\n');
+  const detached = check(detachedClient, boxUniverse);
+  assert.equal(detached.status, "unverified", JSON.stringify(detached));
+  assert.equal(detached.phase, "search");
+  assert.match(detached.detail, /method-receiver/);
+  const nestedRoot = resolveNamedImports(openText(boxClient,
+    'import type { NestedMethod } from "@fixture/box";'), pair, boxConfig)[0];
+  assert(nestedRoot);
+  assert.throws(() => collectTypeClosure(nestedRoot, pair, boxConfig),
+    /unsupported method signature in fixture\/box.ts#NestedMethod/);
+  const genericMethodRoot = resolveNamedImports(openText(boxClient,
+    'import type { GenericMethod } from "@fixture/box";'), pair, boxConfig)[0];
+  assert(genericMethodRoot);
+  assert.throws(() => collectTypeClosure(genericMethodRoot, pair, boxConfig),
+    /unsupported method signature in fixture\/box.ts#GenericMethod/);
+  const optionalMethodRoot = resolveNamedImports(openText(boxClient,
+    'import type { OptionalMethod } from "@fixture/box";'), pair, boxConfig)[0];
+  assert(optionalMethodRoot);
+  assert.throws(() => collectTypeClosure(optionalMethodRoot, pair, boxConfig),
+    /unsupported method parameter in fixture\/box.ts#OptionalMethod/);
   const derivedRoot = resolveNamedImports(openText(boxClient,
     'import type { Derived } from "@fixture/box";'), pair, boxConfig)[0];
   assert(derivedRoot);

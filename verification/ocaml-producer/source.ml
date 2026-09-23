@@ -149,7 +149,7 @@ type program = { file: Json.t; digest: Json.t; imports: imported_definition list
 (* Candidate-only view of a source equation. Lean independently derives the
    authoritative graph row from the same import document. Named edges remain
    named here, including cycles; no recursive declaration is unfolded. *)
-let rec imported_type j =
+let rec imported_type owner j =
   match text "k" j with
   | "atom" -> (match text "name" j with
     | "null" -> Atoms [Nul] | "undefined" -> Atoms [Undef]
@@ -161,29 +161,30 @@ let rec imported_type j =
     | "number" -> number_literal (text "text" j)
     | "string" -> Atoms [StrLit (text "text" j)]
     | name -> unsupported ("imported literal " ^ name))
-  | "union" -> List.fold_left union (Atoms []) (List.map imported_type (items "parts" j))
+  | "union" -> List.fold_left union (Atoms []) (List.map (imported_type owner) (items "parts" j))
   | "array" -> array {required=[];optional_elements=[];
-      rest=Some (imported_type (field "element" j));readonly=boolean (field "readonly" j)}
+      rest=Some (imported_type owner (field "element" j));readonly=boolean (field "readonly" j)}
   | "function" ->
     let receiver = match field "receiver" j with
-      | Null -> top | source -> imported_type source in
+      | Null -> top | source -> imported_type owner source in
     let signature = {quantified=[];receiver;
-      params=List.map imported_type (items "params" j);
-      variadic=None;result=imported_type (field "result" j)} in
+      params=List.map (imported_type owner) (items "params" j);
+      variadic=None;result=imported_type owner (field "result" j)} in
     Atoms [Shape {fields=[];string_index=None;calls=[signature];elements=None}]
+  | "self" -> Atoms [Named (owner,[])]
   | "object" ->
     let fields = List.map (fun f ->
-      let t = imported_type (field "type" f) in
+      let t = imported_type owner (field "type" f) in
       {name=text "name" f;optional=boolean (field "optional" f);
        read=t;write=(if boolean (field "readonly" f) then None else Some t)})
       (items "fields" j) in
     let string_index = match field "stringIndex" j with
       | Null -> None
-      | index -> let t = imported_type (field "value" index) in
+      | index -> let t = imported_type owner (field "value" index) in
         Some {value=t;writable=(if boolean (field "readonly" index) then None else Some t)} in
     Atoms [Shape {fields;string_index;calls=[];elements=None}]
   | "reference" ->
-    let args = List.map imported_type (items "args" j) in
+    let args = List.map (imported_type owner) (items "args" j) in
     Atoms [Named (identity (field "target" (field "reference" j)), args)]
   | "parameter" -> unsupported "imported generic body needs parameter substitution"
   | "intersection" -> unsupported "imported intersection needs source graph conjunction"
@@ -269,7 +270,7 @@ let decode ast =
     let declaration = field "declaration" definition in
     {id=identity declaration;
      parameters=List.map (fun p -> text "name" p) (items "parameters" definition);
-     expression=imported_type (field "expression" definition)})
+     expression=imported_type (identity declaration) (field "expression" definition)})
     (items "definitions" imports) in
   let imported = List.map (fun root ->
     let id=identity (field "declaration" root) in
