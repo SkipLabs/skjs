@@ -544,7 +544,7 @@ binder indices and applied arguments. Unsupported syntax is refused during
 collection rather than left inside an opaque span.
 Nested, optional and generic methods, inheritance, merging and other declaration
 kinds still refuse explicitly. The
-Fragment document has one required `imports` slot: the roots and the
+Fragment document has one required `declarations` slot: the roots and the
 deduplicated declaration equations. The source parser fills it for named
 type-only imports and for the file's own declarations. TypeScript's checker, in
 the file's configured project, decides what every name denotes: each client
@@ -623,7 +623,7 @@ Bounded declarations and recursive applications over a binder refuse.
 Declaration location is no longer a separate type meaning.
 
 The present source checker recognizes `boolean`, an earlier rigid parameter,
-and a non-generic imported graph node as bounds. This is a translation gap,
+and a non-generic declared graph node as bounds. This is a translation gap,
 not a semantic restriction on generics: a well-formed bound can be any type
 the model interprets. General ground bounds should go through the same
 annotation-to-graph translation as parameter and result types, with the

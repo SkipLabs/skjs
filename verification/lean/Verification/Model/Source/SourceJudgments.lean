@@ -77,9 +77,9 @@ private theorem boundOf_some (T : SourceTypes.Table) (seen : List Parameter) (bo
         | .ok u =>
           if seen.any (·.name == u) then .ok (some (DirectObligation.Ty.rigid u))
           else .error "a type-parameter bound must name an earlier parameter"
-        | .error _ => match importedBound T bound with
+        | .error _ => match declaredBound T bound with
           | .ok label => .ok (some (.ground [label]))
-          | .error _ => .error "only `extends boolean`, an earlier type parameter, or an imported graph type is in the fragment") :=
+          | .error _ => .error "only `extends boolean`, an earlier type parameter, or a declared graph type is in the fragment") :=
   rfl
 
 theorem boundOf_upper {T : SourceTypes.Table} {seen : List Parameter} {b : Option Lean.Json} {u : Ty}

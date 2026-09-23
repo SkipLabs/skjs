@@ -62,7 +62,7 @@ export type TypeDefinition = {
 };
 /** Every declaration reachable from the roots, each once. `sha256` on a
  * definition records the bytes of its module; nothing checks it. */
-export type ImportDocument = {
+export type DeclarationDocument = {
   roots: TypeRoot[];
   definitions: TypeDefinition[];
 };

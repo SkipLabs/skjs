@@ -12,8 +12,8 @@ import * as ts from "typescript/unstable/ast";
 import type { ExportDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
 import { members, typeTerm, type TermScope } from "./type-term.mts";
-import type { DeclarationIdentity, ImportDocument, Reference, TypeDefinition, TypeRoot, TypeTerm } from "./imported-types.mts";
-export type { DeclarationIdentity, ImportDocument, Reference, TypeDefinition, TypeRoot, TypeTerm } from "./imported-types.mts";
+import type { DeclarationIdentity, DeclarationDocument, Reference, TypeDefinition, TypeRoot, TypeTerm } from "./declaration-types.mts";
+export type { DeclarationIdentity, DeclarationDocument, Reference, TypeDefinition, TypeRoot, TypeTerm } from "./declaration-types.mts";
 
 type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration;
 
@@ -142,7 +142,7 @@ export function collectDeclarations(file: string, options: {
   tsconfigPath?: string;
   client?: SourceFile;
   locals?: readonly Span[];
-} = {}): ImportDocument {
+} = {}): DeclarationDocument {
   const clientFile = resolve(file);
   return withProject(clientFile, options.tsconfigPath, (checker, client, root, program) => {
     if (options.client && options.client.getFullText() !== client.getFullText())

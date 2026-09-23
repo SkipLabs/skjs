@@ -37,7 +37,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Atom } from "./claim.mts";
-import type { DeclarationIdentity, TypeTerm } from "./imported-types.mts";
+import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
 import { optionalTerm, restPositions, REST_CONTRACT, typeTerm, type TermScope } from "./type-term.mts";
 import type {
   Ast,
@@ -1675,7 +1675,7 @@ export function parseFile(file: string, carriesContext = false,
   gate.strict = prologue.strict || importNodes.length > 0 ||
     interfaceNodes.some(node => node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword)) ||
     fnNodes.some(fn => fn.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword));
-  let imports: Ast["imports"] = { roots: [], definitions: [] };
+  let declarations: Ast["declarations"] = { roots: [], definitions: [] };
   const statable = (node: TypeAliasDeclaration): boolean => {
     const params = node.typeParameters;
     return !node.modifiers?.length && params?.length === 1 &&
@@ -1699,7 +1699,7 @@ export function parseFile(file: string, carriesContext = false,
     // TypeScript resolves every name, in the project that owns the file or the
     // one named explicitly: the declaration graph is the compiler's.
     try {
-      imports = collectDeclarations(resolutionFile, { tsconfigPath, client: source,
+      declarations = collectDeclarations(resolutionFile, { tsconfigPath, client: source,
         locals: localNodes.map(node => gate.span(node)) });
     } catch (error) {
       const at = error instanceof DeclarationError
@@ -1708,14 +1708,14 @@ export function parseFile(file: string, carriesContext = false,
         : first;
       gate.fail(at, messageOf(error));
     }
-    for (const root of imports.roots) {
+    for (const root of declarations.roots) {
       const identity = root.declaration;
-      const definition = imports.definitions.find(d =>
+      const definition = declarations.definitions.find(d =>
         d.declaration.module === identity.module && d.declaration.name === identity.name &&
         d.declaration.span[0] === identity.span[0] &&
         d.declaration.span[1] === identity.span[1]);
       if (!definition)
-        return gate.fail(first, `imported type definition missing: ${identity.module}#${identity.name}`);
+        return gate.fail(first, `type definition missing: ${identity.module}#${identity.name}`);
       const node = [...importNodes, ...localNodes].find(n =>
         n.getStart(source) === root.binding.span[0]) ?? first;
       gate.registerDeclaredType(root.binding.local,
@@ -1732,7 +1732,7 @@ export function parseFile(file: string, carriesContext = false,
   return {
     file,
     sourceSha256: createHash("sha256").update(text).digest("hex"),
-    imports,
+    declarations,
     functions,
   };
 }

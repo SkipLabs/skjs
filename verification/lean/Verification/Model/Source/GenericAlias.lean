@@ -5,7 +5,7 @@ import Verification.Model.Programs.CellClaims
 
 SKJS writes a single-argument named instantiation as an alias atom. The
 converter expands `type Id<T> = T` and `type Box<T> = { value: T }` here, at the
-claim level. Source annotations do not use this module: `ImportedGraph` interprets
+claim level. Source annotations do not use this module: `DeclarationGraph` interprets
 every declaration application from its source equation. -/
 namespace Verification.Model.GenericAlias
 open Lean
@@ -82,9 +82,9 @@ private def sourceAlias (root : Json) (definitions : List Json) : Except String 
     ("atoms", toJson [record])]⟩
 
 def decodeAliases (ast : Json) : Except String (List Alias) := do
-  let imports ← jField ast "imports"
-  let definitions ← jArr imports "definitions"
-  let source ← (← jArr imports "roots").mapM (sourceAlias · definitions)
+  let document ← jField ast "declarations"
+  let definitions ← jArr document "definitions"
+  let source ← (← jArr document "roots").mapM (sourceAlias · definitions)
   let aliases := source.filterMap id
   let names := aliases.map (·.name)
   if names.eraseDups.length != names.length then throw "duplicate type alias"

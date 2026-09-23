@@ -5,7 +5,7 @@
  * Every annotation is a source type term, the language of declaration bodies.
  */
 import type { Atom } from "./claim.mts";
-import type { ImportDocument, TypeTerm } from "./imported-types.mts";
+import type { DeclarationDocument, TypeTerm } from "./declaration-types.mts";
 import type { Span } from "./span.mts";
 
 export type ArithOp = "add" | "sub" | "mul" | "div";
@@ -216,6 +216,6 @@ export interface Ast {
   sourceSha256: string;
   /** Resolved, fingerprinted source declarations. Lean refuses nonempty
    * closures until their graph interpretation joins the certified plan. */
-  imports: ImportDocument;
+  declarations: DeclarationDocument;
   functions: FunctionAst[];
 }

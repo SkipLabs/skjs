@@ -143,9 +143,9 @@ let infer ?receiver (signature:signature) actuals =
        every value below it. Choosing it is only a proposal: Lean checks both
        the concrete argument against the instantiated parameter and the
        substitution against every bound. *)
-    let imported_upper = List.find_opt (function
+    let declared_upper = List.find_opt (function
       | Atoms [Named (_,[])] -> true | _ -> false) v.upper in
-    let candidate = match imported_upper with
+    let candidate = match declared_upper with
       | Some _ as chosen -> chosen
       | None -> (match join v.lower with
         | Some _ as chosen -> chosen

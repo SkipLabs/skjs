@@ -9,7 +9,7 @@ A body is a variable, a primitive literal, or a closure whose annotation names
 the binders in scope; a declaration body is a sequence of immutable copies and
 a return. Everything is typed from the source under distinct rigid parameters
 and forward upper bounds, along `letE_safeP` and `var_safeP`; `T extends
-boolean` is the assumption `T ≤ boolean`, and an imported graph bound such as
+boolean` is the assumption `T ≤ boolean`, and a declared graph bound such as
 `T extends Json` is the assumption `T ≤ Json`. Both are walked by the direct relation whose
 accepted comparisons imply semantic inclusion, and never justifies `true ≤ T`.
 A failed inclusion is an obligation at its span, never a sentence. Producer claims enter already
@@ -82,20 +82,20 @@ partial def receiverTy (names : List String) (j : Json) :
   annotationTy names j
 end
 
-/-- A ground imported bound names a row installed from the source import
+/-- A ground declared bound names a row installed from the source declaration
 document. Raw source cannot supply this internal atom. -/
-def importedBound (T : SourceTypes.Table) (bound : Json) : Except String Nat := do
+def declaredBound (T : SourceTypes.Table) (bound : Json) : Except String Nat := do
   CellClaims.fieldsExactly bound ["top", "atoms"]
   if ← (← jField bound "top").getBool? then throw "a bound cannot be unknown"
-  let [atom] ← jArr bound "atoms" | throw "expected one imported graph atom"
+  let [atom] ← jArr bound "atoms" | throw "expected one declared graph atom"
   CellClaims.fieldsExactly atom ["a", "label"]
-  if (← jStr (← jField atom "a")) != "graph" then throw "expected an imported graph atom"
+  if (← jStr (← jField atom "a")) != "graph" then throw "expected a declared graph atom"
   let label ← (← jField atom "label").getNat?
-  if label >= T.length then throw "imported bound graph label is absent"
+  if label >= T.length then throw "declared bound graph label is absent"
   return label
 
 /-- A binder's bound: `boolean`, an earlier binder, or a source-derived
-imported graph node. -/
+declared graph node. -/
 def boundOf (T : SourceTypes.Table) (seen : List Parameter) :
     Option Json → Except String (Option DirectObligation.Ty)
   | none => .ok none
@@ -105,12 +105,12 @@ def boundOf (T : SourceTypes.Table) (seen : List Parameter) :
       | .ok u =>
         if seen.any (·.name == u) then .ok (some (DirectObligation.Ty.rigid u))
         else .error "a type-parameter bound must name an earlier parameter"
-      | .error _ => match importedBound T bound with
+      | .error _ => match declaredBound T bound with
         | .ok label => .ok (some (.ground [label]))
-        | .error _ => .error "only `extends boolean`, an earlier type parameter, or an imported graph type is in the fragment"
+        | .error _ => .error "only `extends boolean`, an earlier type parameter, or a declared graph type is in the fragment"
 
 /-- Rigid binders in declaration order. A bound is `boolean`, an earlier
-binder, or a source-derived imported graph node. Duplicate names, forward
+binder, or a source-derived declared graph node. Duplicate names, forward
 references and cycles are refused.
 `SourceJudgments.parametersOf_wellFormed` states what this establishes. -/
 def parametersOf (T : SourceTypes.Table) (typeParams : List Fragment.TypeParam) : Except String (List Parameter) :=

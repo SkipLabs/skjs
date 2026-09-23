@@ -35,7 +35,7 @@ let literal_type = function
 
 (* Read permissions do not imply write permissions. All candidates still pass
    through reconstructed obligations, including readonly view conversion. *)
-let definition imports id args =
+let definition declarations id args =
   let merge base own = match base,own with
     | Atoms [Shape inherited],Atoms [Shape local]
       when inherited.calls=[] && local.calls=[] &&
@@ -44,15 +44,15 @@ let definition imports id args =
       let names = List.map (fun (field:Semantic.field) -> field.name)
         (inherited.fields @ local.fields) in
       if List.length names <> List.length (List.sort_uniq compare names) then
-        unsupported "overlapping imported inherited fields need compatibility checking";
+        unsupported "overlapping inherited fields need compatibility checking";
       Atoms [Shape {local with fields=inherited.fields @ local.fields}]
-    | _ -> unsupported "imported inheritance needs plain object contracts" in
+    | _ -> unsupported "inheritance needs plain object contracts" in
   let rec instantiate seen id args =
-  if List.mem id seen then unsupported "cyclic imported inheritance";
-  match List.find_opt (fun (d:Source.imported_definition) -> d.id=id) imports with
+  if List.mem id seen then unsupported "cyclic inheritance";
+  match List.find_opt (fun (d:Source.declaration) -> d.id=id) declarations with
   | Some d ->
     if List.length args > List.length d.parameters then
-      unsupported "imported type application has wrong arity";
+      unsupported "type application has wrong arity";
     let rec complete previous supplied parameters defaults =
       match parameters, defaults with
       | [], [] -> List.rev previous
@@ -61,29 +61,29 @@ let definition imports id args =
           | value::tail -> value,tail
           | [] -> (match default with
             | Some value -> value,[]
-            | None -> unsupported "imported type application has missing required argument") in
+            | None -> unsupported "type application has missing required argument") in
         let value = Inference.substitute (List.rev previous) value in
         complete ((parameter,value)::previous) supplied rest other
-      | _ -> unsupported "imported parameter/default length mismatch" in
+      | _ -> unsupported "declaration parameter/default length mismatch" in
     let solution = complete [] args d.parameters d.defaults in
     let body = Inference.substitute solution d.expression in
     List.fold_left (fun own base ->
       match Inference.substitute solution base with
       | Atoms [Named (baseId,baseArgs)] ->
         merge (instantiate (id::seen) baseId baseArgs) own
-      | _ -> unsupported "imported heritage is not a named base")
+      | _ -> unsupported "heritage is not a named base")
       body d.bases
-  | None -> unsupported ("missing imported definition " ^ id) in
+  | None -> unsupported ("missing declaration " ^ id) in
   instantiate [] id args
-(* Inspect an imported callable's source equation for proposal purposes only.
+(* Inspect a declared callable's source equation for proposal purposes only.
    The point claim remains the named type; Lean independently fills and checks
    that graph row from the same declaration. *)
-let rec imported_head imports seen = function
+let rec declared_head declarations seen = function
   | Atoms [Named (id,args)] ->
-    if List.mem id seen then unsupported "unguarded imported callable alias cycle";
-    imported_head imports (id::seen) (definition imports id args)
+    if List.mem id seen then unsupported "unguarded callable alias cycle";
+    declared_head declarations (id::seen) (definition declarations id args)
   | t -> t
-let rec field_type imports seen t name = match t with
+let rec field_type declarations seen t name = match t with
   | Atoms atoms -> combine (List.map (function
       | Shape {elements=Some _;_} when name="length" -> Atoms [Num]
       | Shape shape -> (match List.find_opt (fun (f:Semantic.field) -> f.name=name) shape.fields with
@@ -92,12 +92,12 @@ let rec field_type imports seen t name = match t with
             | Some index -> union index.value (Atoms [Undef])
             | None -> unsupported ("missing field " ^ name)))
       | Named (id,args) ->
-        if List.mem id seen then unsupported "unguarded imported field cycle";
-        field_type imports (id::seen) (definition imports id args) name
+        if List.mem id seen then unsupported "unguarded field cycle";
+        field_type declarations (id::seen) (definition declarations id args) name
       | _ -> unsupported "field read on non-object") atoms)
-  | Union ts -> combine (List.map (fun t -> field_type imports seen t name) ts)
+  | Union ts -> combine (List.map (fun t -> field_type declarations seen t name) ts)
   | Rigid _ -> unsupported "field read on rigid parameter"
-let rec index_type imports seen receiver key = match receiver with
+let rec index_type declarations seen receiver key = match receiver with
   | Atoms atoms -> combine (List.map (function
       | Shape {elements=Some sequence;_} ->
         let at i = if i < 0 then Atoms [Undef]
@@ -112,32 +112,32 @@ let rec index_type imports seen receiver key = match receiver with
             else Atoms [Undef]
           | _ -> combine (Atoms [Undef] :: sequence.required @ sequence.optional_elements @ Option.to_list sequence.rest))
       | Shape shape -> (match key with
-          | Atoms [StrLit name] -> field_type imports seen (Atoms [Shape shape]) name
+          | Atoms [StrLit name] -> field_type declarations seen (Atoms [Shape shape]) name
           | Atoms [Str] -> (match shape.string_index with
               | Some index -> union index.value (Atoms [Undef])
               | None -> unsupported "dynamic string index requires a dictionary")
           | _ -> unsupported "record index requires a string key")
       | Named (id,args) ->
-        if List.mem id seen then unsupported "unguarded imported index cycle";
-        index_type imports (id::seen) (definition imports id args) key
+        if List.mem id seen then unsupported "unguarded index cycle";
+        index_type declarations (id::seen) (definition declarations id args) key
       | _ -> unsupported "indexed read on non-object") atoms)
-  | Union ts -> combine (List.map (fun t -> index_type imports seen t key) ts)
+  | Union ts -> combine (List.map (fun t -> index_type declarations seen t key) ts)
   | Rigid _ -> unsupported "indexed read on rigid parameter"
 
 (* A fresh literal may establish the dictionary arm of a recursive expected
    type. This is a construction hint only: every field still has a source
    obligation against the declared index contract. Existing objects never
    gain a dictionary guarantee by this lookup. *)
-let rec dictionary_hint imports seen = function
+let rec dictionary_hint declarations seen = function
   | Atoms atoms ->
     let choices = List.filter_map (function
       | Shape ({string_index=Some _;_} as shape) -> Some shape
       | Named (id,args) when not (List.mem id seen) ->
-        dictionary_hint imports (id::seen) (definition imports id args)
+        dictionary_hint declarations (id::seen) (definition declarations id args)
       | _ -> None) atoms in
     (match choices with [shape] -> Some shape | _ -> None)
   | Union parts ->
-    (match List.filter_map (dictionary_hint imports seen) parts with
+    (match List.filter_map (dictionary_hint declarations seen) parts with
     | [shape] -> Some shape | _ -> None)
   | Rigid _ -> None
 
@@ -165,7 +165,7 @@ let rec branch env cond truth = match cond.node with
 
 (* Expected types guide fresh construction only. They are never a shortcut
    claiming that an arbitrary expression already satisfies an annotation. *)
-let infer_function imports (f:Source.fn) =
+let infer_function declarations (f:Source.fn) =
   let entries = ref [] and expressions = ref [] and instantiations = ref [] in
   let arrows = ref [] in
   let entry env span = match Json.list span with
@@ -181,7 +181,7 @@ let infer_function imports (f:Source.fn) =
     | Alloc fs ->
       let contract = match expected with
         | Some (Atoms [Shape s]) when s.elements=None -> Some s
-        | Some expected -> dictionary_hint imports [] expected
+        | Some expected -> dictionary_hint declarations [] expected
         | None -> None in
       let fields = List.map (fun (name,e) ->
         let hint = Option.bind contract (fun s -> List.find_opt (fun (f:Semantic.field) -> f.name=name) s.fields) in
@@ -204,8 +204,8 @@ let infer_function imports (f:Source.fn) =
       (match contract with
         | Some s -> array s
         | None -> array {required=[];optional_elements=[];rest=Some (widen (combine types));readonly=false})
-    | Read (e,n) -> field_type imports [] (expr env e) n
-    | Index (e,key) -> let receiver=expr env e in let key=expr env key in index_type imports [] receiver key
+    | Read (e,n) -> field_type declarations [] (expr env e) n
+    | Index (e,key) -> let receiver=expr env e in let key=expr env key in index_type declarations [] receiver key
     | IndexWrite (receiver,key,rhs) -> ignore (expr env receiver); ignore (expr env key); expr env rhs
     | Write (receiver,_,rhs) -> ignore (expr env receiver); expr env rhs
     | Assign (n,rhs) -> (match lookup env n with
@@ -283,7 +283,7 @@ let infer_function imports (f:Source.fn) =
         | Invoke (c,a,s) -> c,None,a,s
         | _ -> assert false in
       let target = callee in
-      let callee = imported_head imports [] (expr env callee) in
+      let callee = declared_head declarations [] (expr env callee) in
       (* The receiver the call passes: the `.call` operand, the object a
          method is read from, or `undefined`. A scheme infers from it too. *)
       let receiver_type = match receiver, target.node with
@@ -407,7 +407,7 @@ let infer_function imports (f:Source.fn) =
     | Apply (callee,receiver,list) ->
       (* The list is typed at its own contract; Lean reads each element's
          type from it and checks the call against the target's signature. *)
-      let callee = imported_head imports [] (expr env callee) in
+      let callee = declared_head declarations [] (expr env callee) in
       ignore (expr env receiver);
       Option.iter (fun l -> ignore (expr env l)) list;
       (match callee with
@@ -420,7 +420,7 @@ let infer_function imports (f:Source.fn) =
           Atoms [Shape {b with calls=f.calls}]
         | _ -> unsupported "function field construction requires a callable and a record contract")
     | Bind (callee,receiver,args) ->
-      let callee=imported_head imports [] (expr env callee) in ignore (expr env receiver);
+      let callee=declared_head declarations [] (expr env callee) in ignore (expr env receiver);
       (match callee with Atoms [Shape {calls=[signature];_}]
           when signature.quantified=[] && (signature.variadic<>None
             || List.length args<=List.length signature.params) ->
@@ -487,4 +487,4 @@ let infer_function imports (f:Source.fn) =
   ignore (statements (List.map (fun (n,t) -> n,Value t) f.params) f.body);
   {source=f;entries=List.rev !entries;expressions=List.rev !expressions;
    arrows=List.rev !arrows}
-let infer program = {program;functions=List.map (infer_function program.Source.imports) program.Source.functions}
+let infer program = {program;functions=List.map (infer_function program.Source.declarations) program.Source.functions}

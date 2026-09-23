@@ -1,7 +1,8 @@
 import Verification.Model.Source.Fragment
 import Verification.Model.Programs.CertificateProducer
 
-/-! Imported type declarations are source equations, not rows supplied by a producer.
+/-! Type declarations, local or imported, are source equations, not rows supplied
+by a producer.
 The producer reserves one empty row per nullary declaration and may refer to
 those labels in its candidate rows. This module fills them from source
 equations. Finite ground applications of generic declarations are interned
@@ -9,7 +10,7 @@ from their substituted equations; recursive generic applications are refused
 until they have application-indexed memo rows. Function annotations are written
 in the same source terms, and `prepare` converts each to the claim form the
 source readers take. -/
-namespace Verification.Model.ImportedGraph
+namespace Verification.Model.DeclarationGraph
 open Lean PositiveNormalization PositiveRules
 
 private def field (j : Json) (name : String) : Except String Json :=
@@ -31,8 +32,8 @@ private structure Definition where
   expression : Json
   deriving Inhabited
 
-private def definitions (imports : Json) : Except String (Array Definition) := do
-  (← arr imports "definitions").mapM fun j => do
+private def definitions (document : Json) : Except String (Array Definition) := do
+  (← arr document "definitions").mapM fun j => do
     CellClaims.fieldsExactly j ["declaration", "sha256", "parameters", "body", "bases", "expression", "references"]
     return ⟨← field j "declaration", ← arr j "parameters",
       ← arr j "bases", ← field j "expression"⟩
@@ -41,8 +42,8 @@ private def findDefinition (ds : Array Definition) (identity : Json) : Except St
   let found := (List.range ds.size).filter fun i => ds[i]!.identity == identity
   match found with
   | [i] => return i
-  | [] => throw "imported reference has no declaration equation"
-  | _ => throw "duplicate imported declaration identity"
+  | [] => throw "reference has no declaration equation"
+  | _ => throw "duplicate declaration identity"
 
 private def rowIndex (ds : Array Definition) (i : Nat) : Nat :=
   4 + ((List.range i).filter fun n => ds[n]!.parameters.isEmpty).length
@@ -85,7 +86,7 @@ private def inheritRows (own base : List (Clause (List Nat))) : Except String (L
   | [.refs writes [] views], [.refs inherited [] inheritedViews] =>
     let names := (writes ++ views ++ inherited ++ inheritedViews).map Prod.fst
     if names.eraseDups.length != names.length then
-      throw "overlapping imported inherited fields need compatibility checking"
+      throw "overlapping inherited fields need compatibility checking"
     return [.refs (inherited ++ writes) [] (inheritedViews ++ views)]
   | _, _ =>
     let rows := PositiveNormalization.meetLists own base
@@ -105,7 +106,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     | "string" => return [← use .str]
     | "unknown" | "void" => return [← use .top]
     | "never" => return []
-    | _ => throw "unsupported imported primitive"
+    | _ => throw "unsupported declaration primitive"
   | "literal" =>
     Fragment.translate (Json.mkObj [("top", toJson false), ("atoms", toJson [← literalAtom term])])
   | "union" =>
@@ -129,22 +130,22 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let i ← (← field term "index").getNat?
     match params[i]? with
     | some value => return value
-    | none => throw "imported parameter index outside application"
+    | none => throw "declaration parameter index outside application"
   | "self" =>
     CellClaims.fieldsExactly term ["k", "span"]
     -- Method syntax binds its receiver to the declaration being lowered. A
     -- direct alias expansion changes that owner before reaching this arm.
-    if owner >= ds.size then throw "imported method has no containing declaration"
+    if owner >= ds.size then throw "method has no containing declaration"
     if !ds[owner]!.parameters.isEmpty then
-      throw "generic imported method receiver needs an application row"
+      throw "generic method receiver needs an application row"
     return [rowIndex ds owner]
   | "reference" =>
     let i ← referenceIndex ds term
     let args ← arr term "args"
     if ds[i]!.parameters.isEmpty then
-      if !args.isEmpty then throw "imported reference has too many arguments"
+      if !args.isEmpty then throw "reference has too many type arguments"
       else return [rowIndex ds i]
-    if seen.contains i then throw "recursive generic imported application needs memoized rows"
+    if seen.contains i then throw "recursive generic application needs memoized rows"
     let values ← args.mapM (lowerType ds owner params seen)
     let values ← lowerApplication ds i values seen
     if ds[i]!.bases.isEmpty then
@@ -187,15 +188,15 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
   | "object" =>
     CellClaims.fieldsExactly term ["k", "fields", "stringIndex", "calls", "span"]
     let fs ← (← arr term "fields").mapM fun f => do
-      if ← bool f "optional" then throw "optional imported fields need presence semantics"
+      if ← bool f "optional" then throw "optional declaration fields need presence semantics"
       let name ← str f "name"
       let value ← lowerType ds owner params seen (← field f "type")
       return (name, value, ← bool f "readonly")
     let names := fs.toList.map (·.1)
-    if names.eraseDups.length != names.length then throw "duplicate imported field"
+    if names.eraseDups.length != names.length then throw "duplicate declaration field"
     let index ← field term "stringIndex"
     let indexes ← if index == .null then pure ([] : List (List Nat)) else do
-      if !(← bool index "readonly") then throw "mutable imported index needs a fixed contract"
+      if !(← bool index "readonly") then throw "mutable declaration index needs a fixed contract"
       let value ← lowerType ds owner params seen (← field index "value")
       pure ([value] : List (List Nat))
     let writes := fs.toList.filterMap fun (name, value, readonly) =>
@@ -206,7 +207,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let mut variadic : List (List Nat × List (List Nat) × List Nat × List Nat) := []
     for call in ← arr term "calls" do
       CellClaims.fieldsExactly call ["k", "receiver", "params", "rest", "result", "span"]
-      if (← str call "k") != "function" then throw "imported call signature is not a function"
+      if (← str call "k") != "function" then throw "call signature is not a function"
       let recv ← field call "receiver"
       let receiver ← if recv == .null then pure [← use .top] else
         lowerType ds owner params seen recv
@@ -220,21 +221,21 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
         if indexes.isEmpty then use (.refs writes [] views)
         else use (.dict writes [] views indexes)
       else if !indexes.isEmpty || !views.isEmpty then
-        throw "imported callable object with index or readonly field needs a combined clause"
+        throw "callable object with index or readonly field needs a combined clause"
       else if writes.isEmpty then use (.arrs fixed variadic)
       else use (.callable writes [] fixed variadic)
     return [row]
-  | _ => throw "imported source type constructor outside the graph fragment"
+  | _ => throw "source type constructor outside the graph fragment"
 
 private partial def lowerApplication (ds : Array Definition) (i : Nat)
     (supplied : Array (List Nat)) (seen : List Nat) : Lowering (Array (List Nat)) := do
   let d := ds[i]!
-  if supplied.size > d.parameters.size then throw "imported reference has too many arguments"
+  if supplied.size > d.parameters.size then throw "reference has too many type arguments"
   let mut values := supplied
   for p in d.parameters.toList.drop supplied.size do
     CellClaims.fieldsExactly p ["name", "span", "bound", "default"]
     let default ← field p "default"
-    if default == .null then throw "imported type application has missing required argument"
+    if default == .null then throw "type application has missing required argument"
     values := values.push (← lowerType ds i values (i :: seen) default)
   for index in [:d.parameters.size] do
     let p := d.parameters[index]!
@@ -248,7 +249,7 @@ private partial def lowerApplication (ds : Array Definition) (i : Nat)
       let pool := (actual :: upper :: (List.range table.length).map (fun n => [n])).eraseDups
       let name ← str p "name"
       let span ← field p "span"
-      let refusal := s!"imported type argument does not establish its declared bound for {name} at {span.compress}: {SourceTypes.render table actual} ≤ {SourceTypes.render table upper}"
+      let refusal := s!"type argument does not establish its declared bound for {name} at {span.compress}: {SourceTypes.render table actual} ≤ {SourceTypes.render table upper}"
       match CertificateProducer.subtype graph pool actual upper with
       | some proof =>
         if !PositiveCertificates.check graph actual upper proof then
@@ -266,7 +267,7 @@ private partial def lowerHead (ds : Array Definition) (owner : Nat)
     return rows.toList.flatten.eraseDups
   | "reference" =>
     let i ← referenceIndex ds term
-    if seen.contains i then throw "unguarded imported alias cycle"
+    if seen.contains i then throw "unguarded alias cycle"
     let args ← arr term "args"
     let values ← args.mapM (lowerType ds owner params seen)
     let values ← lowerApplication ds i values seen
@@ -288,10 +289,10 @@ end
 
 private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table) :
     Except String SourceTypes.Table := do
-  if candidate.length < 4 + nullaryCount ds then throw "imported graph rows are missing"
+  if candidate.length < 4 + nullaryCount ds then throw "declaration graph rows are missing"
   for i in [:ds.size] do
     if ds[i]!.parameters.isEmpty && candidate[rowIndex ds i]! != [] then
-      throw "producer supplied an imported declaration equation"
+      throw "producer supplied a declaration equation"
   let mut table := candidate
   for i in [:ds.size] do
     if ds[i]!.parameters.isEmpty then
@@ -548,20 +549,20 @@ from source declarations. The AST copy contains internal graph atoms only after
 the original source tree has been checked for them. -/
 def prepare (ast : Json) (candidate : SourceTypes.Table) :
     Except String (Json × SourceTypes.Table) := do
-  let imports ← field ast "imports"
-  CellClaims.fieldsExactly imports ["roots", "definitions"]
-  let ds ← definitions imports
-  let roots ← (← arr imports "roots").mapM fun root => do
+  let document ← field ast "declarations"
+  CellClaims.fieldsExactly document ["roots", "definitions"]
+  let ds ← definitions document
+  let roots ← (← arr document "roots").mapM fun root => do
     let name ← str (← field root "binding") "local"
     let i ← findDefinition ds (← field root "declaration")
     return (name, i)
   if (roots.toList.map (·.1)).eraseDups.length != roots.size then
-    throw "duplicate imported local type"
+    throw "duplicate declaration root name"
   let types ← fillRows ds candidate
   let (functions, types) ← (rewrite ds (← field ast "functions")).run types
   let empty := Json.mkObj [("roots", toJson ([] : List Json)),
     ("definitions", toJson ([] : List Json))]
-  let ast := ast.setObjVal! "imports" empty
+  let ast := ast.setObjVal! "declarations" empty
   return (ast.setObjVal! "functions" functions, types)
 
-end Verification.Model.ImportedGraph
+end Verification.Model.DeclarationGraph

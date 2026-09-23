@@ -16,7 +16,7 @@ let identity declaration =
   match span with
   | [Number first;Number last] ->
     str (field "module" declaration) ^ "#" ^ first ^ ":" ^ last
-  | _ -> fail "invalid imported declaration identity"
+  | _ -> fail "invalid declaration identity"
 (* The source type terms function annotations and declaration bodies share.
    This is a candidate-only view: Lean independently derives the authoritative
    graph rows from the same terms. Named edges remain named here, including
@@ -55,7 +55,7 @@ let rec source_type ctx j =
   | "self" -> (match ctx.owner with
     | None -> fail "a method receiver outside a declaration"
     | Some owner ->
-      if ctx.positional<>[] then unsupported "generic imported method receiver needs an application row";
+      if ctx.positional<>[] then unsupported "generic method receiver needs an application row";
       Atoms [Named (owner,[])])
   | "object" ->
     let fields = List.map (fun f ->
@@ -170,9 +170,9 @@ and stmt_node =
   | While of expr * stmt list | Break | Continue
 and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: (string * ty) list;
            result: ty; body: stmt list }
-type imported_definition = { id: string; parameters: rigid list;
+type declaration = { id: string; parameters: rigid list;
   defaults: ty option list; bases: ty list; expression: ty }
-type program = { file: Json.t; digest: Json.t; imports: imported_definition list; functions: fn list }
+type program = { file: Json.t; digest: Json.t; declarations: declaration list; functions: fn list }
 
 let rec expr binders j =
   let sub k = expr binders (field k j) in
@@ -250,12 +250,12 @@ let rec stmt binders j =
       match field "else_" j with Null -> [] | xs -> List.map (stmt binders) (list xs))
   | k -> unsupported ("statement " ^ k) in {span=field "pos" j;statement}
 let decode ast =
-  let imports = field "imports" ast in
+  let document = field "declarations" ast in
   let arity = List.map (fun definition ->
     let parameters = items "parameters" definition in
     identity (field "declaration" definition),
       (List.length (List.filter (fun p -> field "default" p = Null) parameters),
-       List.length parameters)) (items "definitions" imports) in
+       List.length parameters)) (items "definitions" document) in
   let definitions = List.mapi (fun index definition ->
     let id = identity (field "declaration" definition) in
     let parameters = List.mapi (fun i p -> {scope= -1-index;index=i;spelling=text "name" p})
@@ -266,14 +266,14 @@ let decode ast =
        | Null -> None | j -> Some (body j)) (items "parameters" definition);
      bases=List.map body (items "bases" definition);
      expression=body (field "expression" definition)})
-    (items "definitions" imports) in
+    (items "definitions" document) in
   let locals = List.map (fun root ->
     let id=identity (field "declaration" root) in
     if not (List.exists (fun d -> d.id=id) definitions) then
       fail ("import root lacks definition " ^ id);
-    text "local" (field "binding" root)) (items "roots" imports) in
+    text "local" (field "binding" root)) (items "roots" document) in
   if List.length (List.sort_uniq compare locals) <> List.length locals then
-    fail "duplicate imported local type";
+    fail "duplicate declaration root name";
   let symbolic = List.filter_map (fun d ->
     match d.parameters,d.defaults,d.bases,d.expression with
     | [parameter],[None],[],(Rigid identity as body) when identity=parameter ->
@@ -287,7 +287,7 @@ let decode ast =
       | _ -> None)
     | _ -> None) definitions in
   { file=field "file" ast;digest=field "sourceSha256" ast;
-    imports=definitions;
+    declarations=definitions;
     functions=List.mapi (fun scope f ->
       let parameters = items "typeParams" f in
       let initial={bindings=[];owner=None;positional=[];arity;symbolic} in

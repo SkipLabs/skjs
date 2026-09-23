@@ -8,11 +8,11 @@ let encode (proposal : Proposal.t) =
   (* The graph is just the existing SourceClaims wire format, interned structurally. *)
   (* Empty reserved rows are references, never producer-authored equations.
      Lean replaces them from the snapshotted declarations before extraction. *)
-  let imports = proposal.program.imports in
+  let declarations = proposal.program.declarations in
   let rows = ref ([Array [String "nul"]; Array [Object ["boolLit",Object ["value",Bool true]]];
                    Array [Object ["boolLit",Object ["value",Bool false]]]; Array [String "undef"]]
-                  @ List.filter_map (fun (d:Source.imported_definition) ->
-                    if d.parameters=[] then Some (Array []) else None) imports)
+                  @ List.filter_map (fun (d:Source.declaration) ->
+                    if d.parameters=[] then Some (Array []) else None) declarations)
   in
   let active_imports = ref [] in
   let intern row =
@@ -27,7 +27,7 @@ let encode (proposal : Proposal.t) =
     | NumLit bits -> [intern (Array [Object ["numLit",Object ["bits",String (Printf.sprintf "%Lu" bits)]]])]
     | StrLit value -> [intern (Array [Object ["strLit",Object ["value",String value]]])]
     | Top -> [intern (Array [String "top"])]
-    | Named (id,args) -> imported_labels id args
+    | Named (id,args) -> declaration_labels id args
     | Shape shape ->
       let writes,reads = List.partition (fun (f:Semantic.field) -> f.write <> None) shape.fields in
       let fields writable fs = Array (List.map (fun (f:Semantic.field) ->
@@ -70,35 +70,35 @@ let encode (proposal : Proposal.t) =
             if reads <> [] then unsupported "callable with readonly fields";
             Object ["callable",Object (["first",fields;"rest",Array []] @ calls)] in
       [intern (Array [clause])]
-  and imported_labels id args =
+  and declaration_labels id args =
     let rec find i = function
-      | [] -> unsupported ("unknown imported declaration " ^ id)
-      | (d:Source.imported_definition)::rest ->
+      | [] -> unsupported ("unknown declaration " ^ id)
+      | (d:Source.declaration)::rest ->
         if d.id=id then
           if d.parameters=[] && args=[] then [i+4]
           else if List.length args <= List.length d.parameters then begin
             if List.mem id !active_imports then
-              unsupported "recursive generic imported application needs memoized rows";
+              unsupported "recursive generic application needs memoized rows";
             active_imports := id::!active_imports;
-            let result = try (match Proposal.definition imports id args with
+            let result = try (match Proposal.definition declarations id args with
               | Atoms atoms ->
                 let labels = List.sort_uniq compare (List.concat_map atom_labels atoms) in
                 (match labels with
-                | [] -> unsupported "generic imported application has no inhabited graph clause"
+                | [] -> unsupported "generic application has no inhabited graph clause"
                 | [label] -> [label]
                 | labels ->
                   let row = List.concat_map (fun label ->
                     match List.nth_opt !rows label with
                     | Some (Array clauses) -> clauses
-                    | _ -> fail "imported application references a missing graph row") labels in
+                    | _ -> fail "application references a missing graph row") labels in
                   [intern (Array row)])
-              | _ -> unsupported "generic imported application needs a ground graph type")
+              | _ -> unsupported "generic application needs a ground graph type")
               with e -> active_imports := List.tl !active_imports; raise e in
             active_imports := List.tl !active_imports;
             result
-          end else unsupported "imported type application has wrong arity"
+          end else unsupported "type application has wrong arity"
         else find (i + if d.parameters=[] then 1 else 0) rest in
-    find 0 imports
+    find 0 declarations
   in
   (* A callable whose signature mentions a rigid parameter has no graph row:
      it is exported in the scheme form, with its own binders (possibly none),
@@ -129,7 +129,7 @@ let encode (proposal : Proposal.t) =
         | Named (_,args) -> List.exists contains_symbolic args | _ -> false) atoms ->
       List.fold_left (fun acc atom -> union acc (match atom with
         | Named (id,args) when List.exists contains_symbolic args ->
-          expand_rigid (Proposal.definition imports id args)
+          expand_rigid (Proposal.definition declarations id args)
         | atom -> Atoms [atom])) (Atoms []) atoms
     | t -> t
   in

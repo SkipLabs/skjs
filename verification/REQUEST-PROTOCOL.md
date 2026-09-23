@@ -373,15 +373,16 @@ outside this lowering.
 The identity scheme `id<T>(x: T): T { return x }` is also accepted, with
 each distinct type parameter exported as a `param` atom. Function AST objects always
 include `typeParams` (empty when the function is not generic). Each type
-parameter is `{ "name": "T", "bound": null }` or `{ "name": "T", "bound": boolean }`
-for `T extends boolean`; a bound may also be a `param` atom naming an earlier
-parameter or a source-imported non-generic type declaration translated to its graph node.
-Duplicate names, forward bounds and cycles are rejected. Local and imported
-alias declarations are source equations in `imports`; the file AST has no
-separate alias-definition field. `type Id<T> = T` and
-`type Box<T> = { value: T }` are the admitted substitution schemes; a
-one-argument named instantiation is an `alias` atom
-`{ "a": "alias", "name": "Id", "args": [A] }`.
+parameter is `{ "name": "T", "bound": null }` or has a source type term as its
+bound: `boolean` for `T extends boolean`, a `binder` term naming an earlier
+parameter, or a reference to a non-generic type declaration, translated to its
+graph node. Duplicate names, forward bounds and cycles are rejected. Local and
+imported declarations are source equations in `declarations`, and an
+annotation's `reference` term names the declaration TypeScript resolved; the
+file AST has no separate alias-definition field. In SKJS's claims,
+`type Id<T> = T` and `type Box<T> = { value: T }` are the admitted
+substitution schemes, and a one-argument named instantiation is an `alias`
+atom `{ "a": "alias", "name": "Id", "args": [A] }`.
 The adapter substitutes using the identity and cell theorems before identity
 checking or ground extraction. `asBoolean<T extends boolean>(x: T): boolean { return x }`
 is accepted; returning `true` as `T` is not. A generic body may copy `T`

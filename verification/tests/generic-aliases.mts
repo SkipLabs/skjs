@@ -10,8 +10,8 @@ import { atom, claimType, fn, must, term } from "./edits.mts";
 
 /** The source equation selected by a local declaration root. */
 const alias = (a: Ast, name: string) => {
-  const root = must(a.imports.roots.find((x) => x.binding.local === name), `the root ${name}`);
-  return must(a.imports.definitions.find((x) =>
+  const root = must(a.declarations.roots.find((x) => x.binding.local === name), `the root ${name}`);
+  return must(a.declarations.definitions.find((x) =>
     JSON.stringify(x.declaration) === JSON.stringify(root.declaration)), `the equation ${name}`);
 };
 // Source extraction of first-order generic aliases: Id<T> = T and Box<T> = { value: T }.
@@ -43,7 +43,7 @@ function expect(name: string, r: ReturnType<typeof run>, accept: boolean, messag
   console.log(`  ${name}: OK`);
 }
 try {
-  const names = ast.imports.roots.map((r) => r.binding.local).sort();
+  const names = ast.declarations.roots.map((r) => r.binding.local).sort();
   if (JSON.stringify(names) !== JSON.stringify(["Box", "Id"]))
     throw Error("expected Id and Box aliases");
   const id = alias(ast, "Id");

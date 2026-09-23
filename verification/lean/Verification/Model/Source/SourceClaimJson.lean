@@ -1,5 +1,5 @@
 import Verification.Model.Source.SourceExtraction
-import Verification.Model.Source.ImportedGraph
+import Verification.Model.Source.DeclarationGraph
 import Verification.Model.Types.TypeSchemes
 
 /-! Strict producer-independent sidecars. A document carries its own type table,
@@ -768,9 +768,9 @@ def extractPlans (ast claims : Json) (fileKey : String) : Except String (List Fu
   if (← jStr (← jField ast "sourceSha256")) != d.sourceSha256 then throw "source claim fingerprint mismatch"
   -- Every declaration application in the source becomes a graph row, or, over
   -- a rigid binder, the claim type of its expanded source equation.
-  let (ast, types) ← ImportedGraph.prepare ast d.types
+  let (ast, types) ← DeclarationGraph.prepare ast d.types
   let d := { d with types }
-  if !validTable d.types then throw "imported graph has an invalid type reference"
+  if !validTable d.types then throw "declaration graph has an invalid type reference"
   let decoded ← Fragment.decodeAstWithParams ast
   let fs := decoded.map Prod.fst
   if fs.isEmpty then throw "no source functions to verify"

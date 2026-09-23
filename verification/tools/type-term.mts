@@ -5,7 +5,7 @@
 import * as ts from "typescript/unstable/ast";
 import type { Node, SourceFile, TypeElement, TypeNode, TypeReferenceNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
-import type { TypeTerm } from "./imported-types.mts";
+import type { TypeTerm } from "./declaration-types.mts";
 
 // Numeric literals in the fragment are plain decimals; every other spelling
 // (hex, binary, octal, separators, bigint) is outside it.

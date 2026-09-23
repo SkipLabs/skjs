@@ -13,7 +13,7 @@
 import type { Ast, BindingAst, Expr, FunctionAst, Stmt } from "../tools/fragment.mts";
 import type { Span } from "../tools/span.mts";
 import { decodeClaimType, type Atom, type ClaimType } from "../tools/claim.mts";
-import type { TypeTerm } from "../tools/imported-types.mts";
+import type { TypeTerm } from "../tools/declaration-types.mts";
 import type {
   SkjsClaims,
   SkjsEntry,

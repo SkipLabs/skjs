@@ -1,8 +1,8 @@
 /** A source type term in the structural claim form, for tools that display a
  * source annotation or offer it as a template for a claim. The verifier reads
- * annotations itself (ImportedGraph.lean); this rendering decides nothing. */
+ * annotations itself (DeclarationGraph.lean); this rendering decides nothing. */
 import type { Atom, ClaimType } from "./claim.mts";
-import type { TypeTerm } from "./imported-types.mts";
+import type { TypeTerm } from "./declaration-types.mts";
 
 const never: ClaimType = { top: false, atoms: [] };
 

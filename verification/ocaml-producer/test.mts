@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { parseFile, definedClassCallables, close as closeParser } from "../tools/fragment-parse.mts";
 import { collectDeclarations, importTargets, tsconfigOf } from "../tools/declaration-graph.mts";
-import type { ImportDocument } from "../tools/imported-types.mts";
+import type { DeclarationDocument } from "../tools/declaration-types.mts";
 import type { Ast } from "../tools/fragment.mts";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { check, verifier } from "./check.mts";
@@ -27,12 +27,12 @@ const here = import.meta.dirname;
   writeFileSync(source, "function after(): boolean { return false; }\n");
   assert.equal(parseFile(source).functions[0]?.name, "after");
 }
-let pinnedImportDocument: ImportDocument | null = null;
+let pinnedDeclarationDocument: DeclarationDocument | null = null;
 {
   const local = parseFile(resolve(here, "examples/local-inheritance.ts"));
-  assert.deepEqual(local.imports.roots.map(root => [root.binding.kind, root.binding.local]),
+  assert.deepEqual(local.declarations.roots.map(root => [root.binding.kind, root.binding.local]),
     [["local", "Base"], ["local", "Derived"]]);
-  assert.deepEqual(local.imports.definitions.map(definition =>
+  assert.deepEqual(local.declarations.definitions.map(definition =>
     [definition.declaration.name, definition.bases.length]),
     [["Base", 0], ["Derived", 1]]);
 }
@@ -77,8 +77,8 @@ for (const [file, expected] of [
   // reexports and the workspace symlink; TypeScript follows all three.
   const jsonPath = resolve(here, "examples/recursive-json.ts");
   const jsonClient = readFileSync(jsonPath, "utf8");
-  pinnedImportDocument = collectDeclarations(jsonPath, { tsconfigPath: upstreamConfig });
-  assert.deepEqual(pinnedImportDocument.roots.map(r => [r.binding.local, r.declaration.module,
+  pinnedDeclarationDocument = collectDeclarations(jsonPath, { tsconfigPath: upstreamConfig });
+  assert.deepEqual(pinnedDeclarationDocument.roots.map(r => [r.binding.local, r.declaration.module,
     r.declaration.name]), [
     ["Json", "skiplang/skjson/ts/binding/src/index.ts", "Json"],
     ["JsonObject", "skiplang/skjson/ts/binding/src/index.ts", "JsonObject"],
@@ -86,7 +86,7 @@ for (const [file, expected] of [
   // Without the project that configures the package, the import has no meaning.
   assert.throws(() => parseFile(jsonPath), /gate:/);
   const importedAst = parseFile(jsonPath, false, upstreamConfig);
-  assert.deepEqual(importedAst.imports, pinnedImportDocument);
+  assert.deepEqual(importedAst.declarations, pinnedDeclarationDocument);
   const exported = join(mkdtempSync(join(tmpdir(), "skjs-export-")), "client.ts");
   writeFileSync(exported, "export function own(this: undefined): undefined { return this; }\n");
   assert.equal(parseFile(exported).functions[0]?.body[0]?.k, "return");
@@ -137,9 +137,9 @@ for (const [file, expected] of [
   const checkedFragment: unknown = JSON.parse(readFileSync(join(checkedJson.artifacts,
     "fragment.json"), "utf8"));
   assert.ok(checkedFragment && typeof checkedFragment === "object" &&
-    "imports" in checkedFragment);
-  assert.deepEqual(checkedFragment.imports, jsonAst.imports);
-  const jsonDefinitions = pinnedImportDocument.definitions;
+    "declarations" in checkedFragment);
+  assert.deepEqual(checkedFragment.declarations, jsonAst.declarations);
+  const jsonDefinitions = pinnedDeclarationDocument.definitions;
   assert.deepEqual(jsonDefinitions.map(d => [d.declaration.name,
     d.references.map(r => r.target.name)]), [
     ["Json", ["Json", "JsonObject"]],
@@ -262,15 +262,15 @@ for (const [file, expected] of [
   assert.equal(recursiveGeneric.status, "unsupported", JSON.stringify(recursiveGeneric));
   assert.equal(recursiveGeneric.phase, "proposal");
   assert.match(recursiveGeneric.detail,
-    /recursive generic imported application needs memoized rows/);
+    /recursive generic application needs memoized rows/);
   // A name imported through a barrel is the declaration the barrel reexports.
   writeFileSync(genericClient,
     'import type { A } from "@fixture/barrel";\n' +
     'export function throughBarrel(value: A<boolean>): A<boolean> { return value; }\n');
   const barrelAst = parseFile(genericClient, false, pairConfig);
-  assert.equal(barrelAst.imports.roots[0]?.declaration.module, "a.ts");
-  assert.equal(barrelAst.imports.roots[0]?.binding.kind === "import" &&
-    barrelAst.imports.roots[0].binding.specifier, "@fixture/barrel");
+  assert.equal(barrelAst.declarations.roots[0]?.declaration.module, "a.ts");
+  assert.equal(barrelAst.declarations.roots[0]?.binding.kind === "import" &&
+    barrelAst.declarations.roots[0].binding.specifier, "@fixture/barrel");
   const boxClient = join(pairDir, "box-client.ts");
   writeFileSync(boxClient,
     'import type { Box, FromGlobal, Node, CallableBox, OptionalCallable, WithMethod, WithMethodAlias, RestMethod, Overloaded, TaggedCallable, VariadicCallable, CallableAlias, Pair, ReadonlyPair, OptionalPair, RestPair } from "@fixture/box";\n' +
@@ -419,7 +419,7 @@ for (const [file, expected] of [
     'export function invalidBound(value: BoundedBox<number>): number { return value.value; }\n');
   const invalidBound = check(invalidBoundClient, pairConfig);
   assert.equal(invalidBound.status, "unverified", JSON.stringify(invalidBound));
-  assert.match(invalidBound.detail, /imported type argument does not establish its declared bound/);
+  assert.match(invalidBound.detail, /type argument does not establish its declared bound/);
   const defaultClient = join(pairDir, "default-client.ts");
   writeFileSync(defaultClient,
     'import type { DefaultBox, DependentDefault, DependentBound, BoundedDefault } from "@fixture/box";\n' +
@@ -439,10 +439,10 @@ for (const [file, expected] of [
   const invalidDependent = check(invalidDependentClient, pairConfig);
   assert.equal(invalidDependent.status, "unverified", JSON.stringify(invalidDependent));
   assert.match(invalidDependent.detail,
-    /imported type argument does not establish its declared bound/);
+    /type argument does not establish its declared bound/);
   // A global declaration file of the project supplies an unimported name.
   const boxAst = parseFile(boxClient, false, pairConfig);
-  assert.equal(boxAst.imports.definitions.find(d => d.declaration.name === "GlobalBox")?.
+  assert.equal(boxAst.declarations.definitions.find(d => d.declaration.name === "GlobalBox")?.
     declaration.module, "global.d.ts");
   const badBoxClient = join(pairDir, "bad-box-client.ts");
   writeFileSync(badBoxClient,
@@ -503,8 +503,8 @@ for (const [file, expected] of [
   assert.equal(rejectedOverload.status, "unverified", JSON.stringify(rejectedOverload));
   assert.equal(rejectedOverload.phase, "search");
   for (const [name, detail] of [
-    ["ReadonlyCallable", /imported callable object with index or readonly field/],
-    ["IndexedCallable", /imported callable object with index or readonly field/],
+    ["ReadonlyCallable", /callable object with index or readonly field/],
+    ["IndexedCallable", /callable object with index or readonly field/],
   ] as const) {
     const client = join(pairDir, `unsupported-${name}.ts`);
     writeFileSync(client,
@@ -678,9 +678,9 @@ assert.ok("file" in fragment && typeof fragment.file === "string");
 }
 const forgedImport = join(good, "forged-import.json");
 writeFileSync(forgedImport, JSON.stringify({ ...fragment,
-  imports: must(pinnedImportDocument, "the pinned Json import document") }));
+  declarations: must(pinnedDeclarationDocument, "the pinned Json import document") }));
 assert.match(invoke(join(good, "claims.json"), join(good, "evidence.json"), good,
-  forgedImport), /imported graph rows are missing/);
+  forgedImport), /declaration graph rows are missing/);
 process.stdout.write("forged import closure: refused\n");
 {
   const claims: SourceClaims = JSON.parse(readFileSync(join(recursiveJson, "claims.json"), "utf8"));
@@ -689,7 +689,7 @@ process.stdout.write("forged import closure: refused\n");
   const forged = join(recursiveJson, "forged-imported-row.json");
   writeFileSync(forged, JSON.stringify(claims));
   assert.match(invoke(forged, join(recursiveJson, "evidence.json"), recursiveJson),
-    /producer supplied an imported declaration equation/);
+    /producer supplied a declaration equation/);
   process.stdout.write("producer-authored imported equation: refused\n");
 }
 {

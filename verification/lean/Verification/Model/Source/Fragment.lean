@@ -71,7 +71,7 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
     if (← jStr (← jField atom "a")) == "graph" then
       CellClaims.fieldsExactly atom ["a", "label"]
       let label ← (← jField atom "label").getNat?
-      if label >= (← get).length then throw "imported graph label is absent"
+      if label >= (← get).length then throw "graph label is absent"
       return [label]
     else if (← jStr (← jField atom "a")) == "function" then
       let signatures ← (← CellClaims.conjuncts atom).mapM fun a => do
@@ -242,7 +242,7 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
     | "graph" =>
       CellClaims.fieldsExactly atom ["a", "label"]
       let label ← (← jField atom "label").getNat?
-      if label >= (← get).length then throw "imported graph label is absent"
+      if label >= (← get).length then throw "graph label is absent"
       return [label]
     | "callable" => return [← callableObject atom]
     | "array" | "store" => return [← arrayType atom]
@@ -798,11 +798,11 @@ def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
     ← jField j "retType", ← (← jArr j "body").mapM decodeStmt⟩, typeParams)
 
 def decodeAstWithParams (j : Json) : Except String (List (Fn × List TypeParam)) := do
-  CellClaims.fieldsExactly j ["file", "sourceSha256", "imports", "functions"]
-  let imports ← jField j "imports"
-  CellClaims.fieldsExactly imports ["roots", "definitions"]
-  if !(← jArr imports "roots").isEmpty || !(← jArr imports "definitions").isEmpty then
-    throw "imported type definitions have no certified graph interpretation"
+  CellClaims.fieldsExactly j ["file", "sourceSha256", "declarations", "functions"]
+  let document ← jField j "declarations"
+  CellClaims.fieldsExactly document ["roots", "definitions"]
+  if !(← jArr document "roots").isEmpty || !(← jArr document "definitions").isEmpty then
+    throw "type declarations have no certified graph interpretation"
   (← jArr j "functions").mapM decodeFn
 
 def decodeAst (j : Json) : Except String (List Fn) := do
