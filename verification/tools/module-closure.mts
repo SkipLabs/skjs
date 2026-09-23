@@ -4,40 +4,11 @@
 import { createHash } from "node:crypto";
 import * as ts from "typescript/unstable/ast";
 import type { SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
-import type { Span } from "./span.mts";
-import { resolveModuleImport, type DeclarationIdentity, type MappingStep,
+import { resolveModuleImport, type DeclarationIdentity,
   type ModuleSource, type ResolutionConfig, type ResolvedImport } from "./module-resolve.mts";
-
-export type Reference = {
-  name: string;
-  span: Span;
-  arguments: Span[];
-  target: DeclarationIdentity;
-  route: ResolvedImport["route"];
-  mappings: MappingStep[];
-};
-/** A source type equation, before translating it to the verifier's positive
- * graph. References carry declaration identities, never a bare spelling;
- * binders are indexed within their declaring alias. Unsupported syntax is
- * refused while constructing this tree rather than silently traversed. */
-export type TypeTerm =
-  | { k: "atom"; name: "null" | "undefined" | "boolean" | "number" | "string" | "unknown" | "never" | "void"; span: Span }
-  | { k: "literal"; name: "true" | "false" | "string" | "number"; text: string; span: Span }
-  | { k: "union" | "intersection"; parts: TypeTerm[]; span: Span }
-  | { k: "array"; readonly: boolean; element: TypeTerm; span: Span }
-  | { k: "object"; fields: { name: string; optional: boolean; readonly: boolean; type: TypeTerm; span: Span }[];
-      stringIndex: { readonly: boolean; value: TypeTerm; span: Span } | null; span: Span }
-  | { k: "parameter"; index: number; span: Span }
-  | { k: "reference"; reference: Reference; args: TypeTerm[]; span: Span };
-export type TypeDefinition = {
-  declaration: DeclarationIdentity;
-  sha256: string;
-  parameters: { name: string; span: Span; bound: TypeTerm | null }[];
-  body: Span;
-  expression: TypeTerm;
-  references: Reference[];
-};
-export type TypeClosure = { root: ResolvedImport; definitions: TypeDefinition[] };
+import type { Span } from "./span.mts";
+import type { Reference, TypeClosure, TypeDefinition, TypeTerm } from "./imported-types.mts";
+export type { Reference, TypeClosure, TypeDefinition, TypeTerm } from "./imported-types.mts";
 
 function alias(source: SourceFile, identity: DeclarationIdentity): TypeAliasDeclaration {
   const matches = source.statements.filter(statement =>

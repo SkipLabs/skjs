@@ -788,6 +788,9 @@ def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
     ← jField j "retType", ← (← jArr j "body").mapM decodeStmt⟩, typeParams)
 
 def decodeAstWithParams (j : Json) : Except String (List (Fn × List TypeParam)) := do
+  CellClaims.fieldsExactly j ["file", "sourceSha256", "imports", "aliases", "functions"]
+  if !(← jArr j "imports").isEmpty then
+    throw "imported type definitions have no certified graph interpretation"
   (← jArr j "functions").mapM decodeFn
 
 def decodeAst (j : Json) : Except String (List Fn) := do

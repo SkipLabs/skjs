@@ -6,39 +6,20 @@ import { createHash } from "node:crypto";
 import { posix } from "node:path";
 import * as ts from "typescript/unstable/ast";
 import type { SourceFile } from "typescript/unstable/ast";
-import type { Span } from "./span.mts";
-import { moduleEdges, type ModuleEdge } from "./module-deps.mts";
+import { moduleEdges } from "./module-deps.mts";
+import type { DeclarationIdentity, MappingStep, ResolvedImport } from "./imported-types.mts";
+export type { DeclarationIdentity, MappingStep, ResolvedImport } from "./imported-types.mts";
 
 export type ModuleSource = {
   id: string;
   sha256: string;
   source: SourceFile;
 };
-export type DeclarationIdentity = {
-  module: string;
-  name: string;
-  span: Span;
-  capability: "type" | "value" | "both";
-};
-export type MappingStep = {
-  virtual: string;
-  canonical: string;
-  source: string;
-  sha256: string;
-};
 export type ResolutionConfig = {
   packages: ReadonlyMap<string, string>;
   /** Exact workspace links, justified by a pinned file such as prebuild.mjs. */
   links: ReadonlyMap<string, MappingStep>;
   mappingSources: ReadonlyMap<string, string>;
-};
-export type ResolvedImport = {
-  binding: ModuleEdge;
-  declaration: DeclarationIdentity;
-  available: DeclarationIdentity["capability"];
-  /** Every file whose bytes determined the route, including the final one. */
-  route: { module: string; sha256: string }[];
-  mappings: MappingStep[];
 };
 
 function exported(statement: { modifiers?: readonly { kind: number }[] }): boolean {

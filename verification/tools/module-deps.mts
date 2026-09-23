@@ -4,16 +4,8 @@
  */
 import * as ts from "typescript/unstable/ast";
 import type { SourceFile } from "typescript/unstable/ast";
-import type { Span } from "./span.mts";
-
-export type ModuleEdge = {
-  span: Span;
-  specifier: string;
-  kind: "import" | "reexport";
-  imported: string;
-  local: string;
-  typeOnly: boolean;
-};
+import type { ModuleEdge } from "./imported-types.mts";
+export type { ModuleEdge } from "./imported-types.mts";
 
 /** Preserve each binding separately. `*` marks a namespace or star reexport;
  * an empty imported name is a side-effect-only import. This is an inventory,

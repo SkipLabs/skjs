@@ -299,12 +299,13 @@ process.stdout.write(
 const original: SourceClaims = JSON.parse(
   readFileSync(join(good, "claims.json"), "utf8"),
 );
-const invoke = (claims: string, evidence: string, artifacts = good) => {
+const invoke = (claims: string, evidence: string, artifacts = good,
+  ast = join(artifacts, "fragment.json")) => {
   const p = spawnSync(
     verifier,
     [
       "--check-source-claims",
-      join(artifacts, "fragment.json"),
+      ast,
       claims,
       join(artifacts, "source.ts"),
       evidence,
@@ -318,6 +319,18 @@ const invoke = (claims: string, evidence: string, artifacts = good) => {
   // not merely that something refused.
   return p.stdout + p.stderr;
 };
+const fragment: unknown = JSON.parse(readFileSync(join(good, "fragment.json"), "utf8"));
+assert.ok(fragment && typeof fragment === "object" && !Array.isArray(fragment));
+const forgedImport = join(good, "forged-import.json");
+writeFileSync(forgedImport, JSON.stringify({ ...fragment, imports: [{}] }));
+assert.match(invoke(join(good, "claims.json"), join(good, "evidence.json"), good,
+  forgedImport), /imported type definitions have no certified graph interpretation/);
+process.stdout.write("forged import closure: refused\n");
+const extraField = join(good, "extra-ast-field.json");
+writeFileSync(extraField, JSON.stringify({ ...fragment, unexamined: true }));
+assert.match(invoke(join(good, "claims.json"), join(good, "evidence.json"), good,
+  extraField), /unexpected fields/);
+process.stdout.write("unexamined source field: refused\n");
 for (const [name, mutate] of new Map<string, (c: SourceClaims) => void>([
   [
     "fingerprint",

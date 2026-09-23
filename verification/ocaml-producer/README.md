@@ -497,11 +497,15 @@ pinned `Json` cycle retains its readonly array, dictionary index, unions,
 `null`, and declaration-identified references; the generic cycle retains
 binder indices and applied arguments. Unsupported syntax is refused during
 collection rather than left inside an opaque span.
-Other declaration kinds and type-binding forms still refuse explicitly. No
-declaration closure is yet carried into Fragment, SourceClaims or Lean, so this
-progress does not change verification coverage or admit imports at the source
-gate. The [`recursive-json.ts`](examples/recursive-json.ts) source is a named
-suite/viewer gap at that gate: both of its functions remain unchecked.
+Other declaration kinds and type-binding forms still refuse explicitly. The
+Fragment document now has one required `imports` slot, emitted empty by the
+source parser. Lean requires the exact document shape and refuses every
+nonempty import closure until a certified graph interpretation exists; a
+forged closure cannot be ignored while the client verifies. The collector's
+declarations are not yet carried into that slot, SourceClaims, or Lean's
+semantic graph, so this does not change verification coverage or admit imports
+at the source gate. The [`recursive-json.ts`](examples/recursive-json.ts)
+source is a named suite/viewer gap there: both functions remain unchecked.
 
 `core/src/api.ts` imports `Json`, `JsonObject` and `DepSafe` from
 `../skiplang-json/index.js`. In the Skip checkout, `prebuild.mjs` makes
