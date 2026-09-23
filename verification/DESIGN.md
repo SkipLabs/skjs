@@ -1468,8 +1468,13 @@ is written, and the call spreads the copy.
 The common [behavioral equation](SEMANTICS.md#one-meaning-for-callable-contracts)
 defines these call contracts independently of the binding descriptor, and the
 [callable milestone status](tests/callables/README.md#closure-status-for-milestones-14)
-records the remaining quantified-rest integration obligation. Part 4 is not
-closed merely because its currently accepted fragment is sound.
+records Part 4's closure, including quantified rest. The universal certificate
+checks its body over arbitrary element families and proves fresh rest-array
+allocation; independently checked substitutions supply the surrounding graph's
+variadic signatures. Observed call specializations cannot replace that proof.
+Direct generic declarations now consume the same invocation certificates as
+local schemes, including argument collection, and validate every operand claim.
+Tuple-pack and argument-sequence inference remain later extensions.
 
 ### Next object milestone
 

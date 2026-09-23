@@ -168,6 +168,9 @@ const unreachable = (value: never): never => { throw Error(`unhandled variant: $
 function directTypeText(types: unknown, type: DirectType): string {
   switch (type.kind) {
     case "rigid": return type.name;
+    case "variadic":
+      return `(${[...type.params.map(p=>directTypeText(types,p)), `...Array<${directTypeText(types,type.element)}>`].join(", ")}) => ${directTypeText(types,type.result)}`;
+    case "array": return `Array<${directTypeText(types,type.element)}>`;
     case "ground": return typeText(types,type.labels);
     case "arrow":
       return `(${type.params.map((p) => directTypeText(types,p)).join(", ")}) => ${directTypeText(types,type.result)}`;

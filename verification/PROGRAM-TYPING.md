@@ -1964,7 +1964,8 @@ future object design. [SEMANTICS.md](SEMANTICS.md#one-meaning-for-callable-contr
 states the indexed call promise precisely and maps each component to Lean.
 Fixed and variadic signatures share that promise; code-specific binding rules
 establish it at creation. Construction and receivers below remain planned
-extensions, and quantified rest signatures remain a source/certificate gap.
+extensions. Quantified rest signatures use the same universal introduction
+and instantiated call promises as fixed signatures.
 
 For construction contracts,
 
@@ -2051,7 +2052,7 @@ rules below. One closure per containing function is checked under its rigid
 binders and declared bounds. Its certified body may read immutable values or
 captured cells, construct a nested closure, or call a callback. Every observed
 call supplies a complete ground substitution checked as elimination evidence.
-Those instantiations become ordinary arrows for the surrounding graph. Final
+Those instantiations become fixed or variadic signatures for the surrounding graph. Final
 acceptance additionally requires the universal certificate described next;
 per-instance graph derivations cannot replace it.
 
@@ -2127,6 +2128,71 @@ $$
 This is the universal invocation premise of scheme introduction, independent
 of observed calls. `SourceClaimJson.checkJson_safe` requires it alongside the
 enclosing graph's safety proof through exhaustive `CertifiedPlan` cases.
+
+### Universal rest collection
+
+Direct types include arrays and variadic signatures over rigid parameters:
+
+$$
+\begin{aligned}
+\llbracket\mathsf{Array}(E)\rrbracket_\eta
+ &= \mathsf{recT}[(\texttt{[]},
+       \mathsf{listT}(\langle[],[],\mathsf{some}(\llbracket E\rrbracket_\eta),
+                        \mathsf{false}\rangle))],\\
+\llbracket(\bar P;E^*)\Rightarrow R\rrbracket_\eta
+ &= \mathsf{restsT}[(\llbracket\bar P\rrbracket_\eta,
+                     \llbracket E\rrbracket_\eta,\llbracket R\rrbracket_\eta)].
+\end{aligned}
+$$
+
+`Array(E)` is an ordinary mutable array contract, not a frozen array or an
+inference variable. The world's store contract is invariant. The direct
+comparison currently requires identical element types; it never derives array
+covariance from an upper bound on `E`.
+
+The allocation premise of rest introduction is proved for arbitrary admissible
+value families, not just ground graph labels:
+
+$$
+\frac{\forall a\in\bar a.\;a:\llbracket E\rrbracket_\eta}
+ {\mathsf{restArray}(\bar a):\mathsf{Array}(\llbracket E\rrbracket_\eta)}.
+$$
+
+`GenericCertificate.array_collect_safe` supplies the indexed, heap-safe form.
+Together with a universal body derivation it yields:
+
+$$
+\frac{\forall\eta\models\Delta.\quad
+  \rho:\Gamma_\eta\ ;\ xs:\mathsf{Array}(E_\eta),\bar x:\bar P_\eta
+  \vdash b:R_\eta}
+ {\forall\eta\models\Delta.\quad
+  \mathsf{RestSpec}(|\bar P|,\bar P_\eta,E_\eta,R_\eta,n,W,
+    \mathsf{instantiate}(|\bar P|+1,\rho,b))}.
+$$
+
+The same captured environment and world occur at every assignment.
+`rest_invocation_of_inputs` proves this step; `ClosureCertificate.check_safe`
+uses it for both generic declarations and local quantified closures.
+`restsT_of_restSpec` then supplies the common behavioral promise. Rest binding
+uses slot zero; fixed inputs and captures follow. Parameter defaults retain
+their universal initialization obligations.
+
+A direct call through a variadic callback uses a finite-arity consequence:
+
+$$
+\frac{f:(\bar P;E^*)\Rightarrow R}
+ {f:(\bar P\mathbin{+\!+}\underbrace{[E,\ldots,E]}_{m})\Rightarrow R}
+ \quad(m\geq0).
+$$
+
+`DirectObligation.variadic_fixed` proves that every actual list admitted by
+this fixed view is admitted by the rest promise, including its licensed
+omissions. The existing widening and call certificate rules then apply.
+The direct subtype decision includes this rule and reflexivity of variadic
+signatures; general variance between distinct variadic direct signatures is
+not yet part of that decision relation. Ground graph subtyping has its own
+broader signature-coverage rules. The decision-completeness theorems below
+cover the extended declarative relation, not all semantic inclusions.
 
 ### Decision completeness of the direct checker
 
@@ -2753,12 +2819,13 @@ introduction rule **Call-Scheme-I**, implemented by `scheme_intro`, is
 
 $$
 \frac{
-\mathsf{Callable}(v)
+\mathsf{Invocable}(v)
 \qquad
 \forall\eta.\;
 \mathsf{Instance}_{G,P}(\eta_0,S,\eta)
 \Rightarrow
-\mathsf{Calls}(\mathsf{Sig}_{G,P,\eta}(S),n,W,v)
+(\mathsf{Calls}(\mathsf{Sig}_{G,P,\eta}(S),n,W,v)
+\land\mathsf{Rests}(\mathsf{RestSig}_{G,P,\eta}(S),n,W,v))
 }{
 \llbracket S\rrbracket^{\mathsf{scheme}}_{G,P,\eta_0}(n,W,v)
 }.
@@ -2767,7 +2834,7 @@ $$
 The value $v$, step index $n$, world $W$, and outer assignment $\eta_0$ are
 outside the quantifier. The proof is therefore uniform in the binders, and
 captured mutable cells retain the same invariant at every instantiation.
-Elimination **Call-Scheme-E**, implemented by `scheme_elim`, is
+Fixed-signature elimination **Call-Scheme-E**, implemented by `scheme_elim`, is
 
 $$
 \frac{
@@ -2778,6 +2845,9 @@ $$
 \mathsf{Calls}(\mathsf{Sig}_{G,P,\eta}(S),n,W,v)
 }.
 $$
+
+For rest signatures, `scheme_rest_elim` gives the corresponding conclusion
+$\mathsf{Rests}(\mathsf{RestSig}_{G,P,\eta}(S),n,W,v)$ from the same premises.
 
 The executable source substitution $[\bar A/\bar X]$ constructs one such
 $\eta$ only after its ground arguments and bounds have been checked. It selects
@@ -2790,7 +2860,7 @@ these rules as `scheme_intro` and `scheme_elim`: one callable value and one
 captured world satisfy every admissible assignment, while elimination selects a
 signature only afterwards. The source checker admits the restricted local
 closure form described above. Schemes do not become graph clauses; checked
-eliminations become ordinary graph arrows. Introduction requires the
+eliminations become fixed or variadic graph signatures. Introduction requires the
 independently reconstructed rigid-body certificate described above; it is not
 yet serialized as a first-class scheme node in the graph evidence.
 

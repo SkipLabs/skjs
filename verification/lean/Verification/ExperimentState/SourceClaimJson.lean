@@ -14,7 +14,8 @@ inductive ClaimType where
   | labels : List Nat → ClaimType
   | union : List ClaimType → ClaimType
   | param : String → ClaimType
-  | scheme : List (String × Option ClaimType) → List ClaimType → ClaimType → ClaimType
+  | array : ClaimType → ClaimType
+  | scheme : List (String × Option ClaimType) → List ClaimType → Option ClaimType → ClaimType → ClaimType
   | unavailable : String → ClaimType
   deriving Repr, BEq, Inhabited
 instance : Coe (List Nat) ClaimType := ⟨ClaimType.labels⟩
@@ -22,11 +23,13 @@ instance : Coe (List Nat) ClaimType := ⟨ClaimType.labels⟩
 private partial def ClaimType.toJson : ClaimType → Json
   | .labels A => Lean.toJson A
   | .union ts => Json.mkObj [("union", Lean.toJson (ts.map ClaimType.toJson))]
+  | .array e => Json.mkObj [("array", e.toJson)]
   | .param name => Json.mkObj [("param", Lean.toJson name)]
-  | .scheme typeParams params result => Json.mkObj [("scheme", Json.mkObj [
+  | .scheme typeParams params rest result => Json.mkObj [("scheme", Json.mkObj [
       ("typeParams", Lean.toJson (typeParams.map fun p => Json.mkObj [
         ("name", Lean.toJson p.1), ("bound", p.2.map ClaimType.toJson |>.getD Json.null)])),
       ("params", Lean.toJson (params.map ClaimType.toJson)),
+      ("rest", rest.map ClaimType.toJson |>.getD Json.null),
       ("result", ClaimType.toJson result)])]
   | .unavailable reason => Json.mkObj [("unavailable", Lean.toJson reason)]
 
@@ -44,9 +47,12 @@ private partial def ClaimType.fromJson (j : Json) : Except String ClaimType :=
     if let .ok _ := j.getObjVal? "union" then
       CellClaims.fieldsExactly j ["union"]
       return .union (← (← jArr j "union").mapM ClaimType.fromJson)
+    if let .ok e := j.getObjVal? "array" then
+      CellClaims.fieldsExactly j ["array"]
+      return .array (← ClaimType.fromJson e)
     if let .ok s := j.getObjVal? "scheme" then
       CellClaims.fieldsExactly j ["scheme"]
-      CellClaims.fieldsExactly s ["typeParams", "params", "result"]
+      CellClaims.fieldsExactly s ["typeParams", "params", "rest", "result"]
       let typeParams ← (← jArr s "typeParams").mapM fun p => do
         CellClaims.fieldsExactly p ["name", "bound"]
         let name ← jStr (← jField p "name")
@@ -55,7 +61,9 @@ private partial def ClaimType.fromJson (j : Json) : Except String ClaimType :=
           pure (some (← ClaimType.fromJson bound))
         return (name, bound)
       let params ← (← jArr s "params").mapM ClaimType.fromJson
-      return .scheme typeParams params (← ClaimType.fromJson (← jField s "result"))
+      let rest ← jField s "rest"
+      let rest ← if rest == .null then pure none else some <$> ClaimType.fromJson rest
+      return .scheme typeParams params rest (← ClaimType.fromJson (← jField s "result"))
     let name ← jStr (← jField j "param")
     if j != Json.mkObj [("param", Lean.toJson name)] || name.isEmpty then
       throw "invalid rigid parameter claim"
@@ -68,6 +76,7 @@ private partial def ClaimType.ground : ClaimType → SourceClaims.Candidate
       let arms ← ts.mapM ClaimType.ground
       return (arms.flatten.eraseDups.mergeSort (· ≤ ·))
   | .labels A => .ok A
+  | .array _ => .error "array over a rigid parameter requires scheme checking"
   | .param _ => .error "rigid parameter outside generic function"
   | .scheme .. => .error "quantified callable requires scheme checking"
   | .unavailable reason => .error reason
@@ -179,10 +188,16 @@ but cannot produce an arbitrary rigid result fails the gate below, before any
 arrow exists. Replacing this section with a first-class scheme certificate
 changes neither Fragment, SourceClaims, nor the producer's semantic types. -/
 private partial def ofClaim (role : String) : ClaimType → Except String DirectObligation.Ty
+  | .array e => return .array (← ofClaim role e)
   | .param name => pure (.rigid name)
   | .union _ => throw s!"a union containing rigid types is outside {role}"
   | .labels A => pure (.ground A)
-  | .scheme [] ps r => do return .arrow (← ps.mapM (ofClaim role)) (← ofClaim role r)
+  | .scheme [] ps rest r => do
+    let params ← ps.mapM (ofClaim role)
+    let result ← ofClaim role r
+    match rest with
+    | none => return .arrow params result
+    | some e => return .variadic params (← ofClaim role e) result
   | .scheme .. => throw s!"a nested scheme is outside {role}"
   | .unavailable reason => throw reason
 
@@ -197,7 +212,7 @@ private def Function.directClaims (c : Function) (withinScheme : Bool := false) 
       c.expressions.any (fun e => e.current.isSome) then
     throw "generic claims cannot assert current contents"
   let quantified : ClaimType → Bool
-    | .scheme (_ :: _) _ _ => true
+    | .scheme (_ :: _) _ _ _ => true
     | _ => false
   let ty := ofClaim "a rigid claim"
   let keep (t : ClaimType) : Bool := !(withinScheme && quantified t)
@@ -259,9 +274,11 @@ namespace Scheme
 /-- A direct type in the claim language: the wire form of what the checker
 established. -/
 private partial def claimOfTy : DirectObligation.Ty → ClaimType
+  | .variadic ps e r => .scheme [] (ps.map claimOfTy) (some (claimOfTy e)) (claimOfTy r)
+  | .array e => .array (claimOfTy e)
   | .rigid name => .param name
   | .ground A => .labels A
-  | .arrow ps r => .scheme [] (ps.map claimOfTy) (claimOfTy r)
+  | .arrow ps r => .scheme [] (ps.map claimOfTy) none (claimOfTy r)
 
 /-- A quantified closure's annotation, in the claim language, by the one
 converter every annotation takes. -/
@@ -278,12 +295,23 @@ private partial def groundIn (T : SourceTypes.Table) :
         pure (T, acc ++ A)) (T, [])
       pure (T, arms.eraseDups.mergeSort (· ≤ ·))
   | .labels A => pure (T, A)
-  | .scheme [] ps r => do
+  | .array e => do
+      let (T, E) ← groundIn T e
+      let store := PositiveNormalization.Clause.list ⟨[], [], some E, false⟩ []
+      let T := SourceTypes.intern T store
+      let array := PositiveNormalization.Clause.refs [(CallArguments.arrayStoreField, [SourceTypes.label T store])] [] []
+      let T := SourceTypes.intern T array
+      pure (T, [SourceTypes.label T array])
+  | .scheme [] ps rest r => do
       let (T, ps) ← ps.foldlM (fun (T, acc) p => do
         let (T, a) ← groundIn T p
         pure (T, acc ++ [a])) (T, [])
       let (T, r) ← groundIn T r
-      let clause : PositiveNormalization.Clause (List Nat) := .arrs [(ps, r)] []
+      let (T, clause) ← match rest with
+        | none => pure (T, PositiveNormalization.Clause.arrs [(ps, r)] [])
+        | some e => do
+          let (T, E) ← groundIn T e
+          pure (T, PositiveNormalization.Clause.arrs [] [(ps, E, r)])
       let T := SourceTypes.intern T clause
       pure (T, [SourceTypes.label T clause])
   | .param name => throw s!"still the rigid parameter '{name}'"
@@ -291,6 +319,7 @@ private partial def groundIn (T : SourceTypes.Table) :
   | .unavailable reason => throw reason
 
 private def groundOf (role : String) : ClaimType → Except String (List Nat)
+  | .array _ => throw s!"{role} requires grounding an array"
   | .union _ => throw s!"{role} requires grounding a union"
   | .labels A => pure A
   | .param name => throw s!"{role} is still the rigid parameter '{name}'"
@@ -299,12 +328,13 @@ private def groundOf (role : String) : ClaimType → Except String (List Nat)
 
 /-- Capture-avoiding: a nested scheme's own binders shadow the substitution. -/
 private partial def subst (σ : List (String × ClaimType)) : ClaimType → ClaimType
+  | .array e => .array (subst σ e)
   | .union ts => .union (ts.map (subst σ))
   | .param name => (σ.lookup name).getD (.param name)
-  | .scheme tps ps r =>
+  | .scheme tps ps rest r =>
       let inner := σ.filter fun q => !(tps.map Prod.fst).contains q.1
       .scheme (tps.map fun q => (q.1, q.2.map (subst inner))) (ps.map (subst inner))
-        (subst inner r)
+        (rest.map (subst inner)) (subst inner r)
   | c => c
 
 /-- The wire presentation of a semantic scheme. `TypeSchemes.identityScheme` is
@@ -320,11 +350,11 @@ private def ofScheme (names : List String) (s : TypeSchemes.Scheme Nat) :
     let [i] := p | none
     return .param (← binder i)
   let [(ps, r)] := s.signatures | none
-  guard (s.bounds.isEmpty && s.binders == (List.range names.length).map (· + 1))
-  return .scheme (names.map (·, none)) (← ps.mapM rigid) (← rigid r)
+  guard (s.variadic.isEmpty && s.bounds.isEmpty && s.binders == (List.range names.length).map (· + 1))
+  return .scheme (names.map (·, none)) (← ps.mapM rigid) none (← rigid r)
 
 #guard ofScheme ["T"] TypeSchemes.identityScheme
-  == some (.scheme [("T", none)] [.param "T"] (.param "T"))
+  == some (.scheme [("T", none)] [.param "T"] none (.param "T"))
 
 private structure Closure where
   span : Span
@@ -336,6 +366,7 @@ private structure Closure where
   /-- Initialization is part of the source closure, never discard it while
   selecting the universal certificate path. -/
   defaults : List (Nat × Fragment.Expr)
+  rest : Option ClaimType
   sourceResult : Json
   params : List ClaimType
   result : ClaimType
@@ -352,20 +383,24 @@ private def find (f : Fragment.Fn) : SourceTypes.Lowering (Option Closure) := do
       for b in bs do
         if let .lambda lpos tps ps defaults rest ret body := b.init then
           if !tps.isEmpty then
-            if rest then throw "a quantified rest parameter requires an argument-collection certificate"
             if found.isSome then
               throw "this slice checks one quantified closure per function"
             let names := tps.map (·.name)
             if names.eraseDups.length != names.length then throw "duplicate closure binder"
             let parameters ← GenericSource.parametersOf tps
-            let params ← ps.zipIdx.mapM fun (q,i) => do
+            let params : List ClaimType ← ps.zipIdx.mapM fun (q,i) => do
               let t ← claimOfType names q.2
               if (defaults.lookup i).isNone then pure t
               else match t with
                 | .labels A => pure (.labels ((A ++ [3]).eraseDups |>.mergeSort (· ≤ ·)))
                 | _ => pure (.union [t, .labels [3]])
+            let (params, element) ← if rest then
+              match params.reverse with
+              | .array e :: fixed => pure (fixed.reverse, some e)
+              | _ => throw "a quantified rest requires a mutable array contract"
+              else pure (params, none)
             let r ← claimOfType names ret
-            found := some ⟨lpos, b.name, parameters, ps, defaults, ret, params, r, body, pos.1⟩
+            found := some ⟨lpos, b.name, parameters, ps, defaults, element, ret, params, r, body, pos.1⟩
   return found
 
 /-- Introduction. The gate every accepted scheme passes, whatever its calls:
@@ -391,7 +426,7 @@ private def introduce (T : SourceTypes.Table) (f : Fragment.Fn) (c : Closure) (c
   let (_, T) ← (GenericSource.parameterDefaults ctx outer c.span c.sourceParams c.defaults).run T
   let (_, T) ← (GenericSource.closureTy ctx outer c.span c.sourceParams c.sourceResult c.body).run T
   let (certificate, T) ← (GenericSource.closureCertificate ctx outer storage c.span
-    c.sourceParams c.sourceResult c.body c.defaults).run T
+    c.sourceParams c.sourceResult c.body c.defaults c.rest.isSome).run T
   return (T, certificate)
 
 /-- Elimination, then compilation. Each call validates its own substitution;
@@ -436,20 +471,24 @@ private def compile (T : SourceTypes.Table) (f : Fragment.Fn) (claims : Function
             .subtyping parameters [] (.expression pos) actual required⟩)
     pure σ
   let σs := subs.foldl (fun acc σ => if acc.contains σ then acc else acc ++ [σ]) []
-  let (T, arrows) ← σs.foldlM (fun (T, acc) σ => do
+  let (T, arrows, variadic) ← σs.foldlM (fun (T, acc, rest) σ => do
     let (T, ps) ← c.params.foldlM (fun (T, ps) q => do
       let (T, p) ← (groundIn T (subst σ q)).mapError (refuse c.span)
       pure (T, ps ++ [p])) (T, [])
     let (T, r) ← (groundIn T (subst σ c.result)).mapError (refuse c.span)
-    pure (T, acc ++ [(ps, r)])) (T, [])
-  let clause : PositiveNormalization.Clause (List Nat) := .arrs arrows []
+    match c.rest with
+    | none => pure (T, acc ++ [(ps, r)], rest)
+    | some e => do
+      let (T, E) ← (groundIn T (subst σ e)).mapError (refuse c.span)
+      pure (T, acc, rest ++ [(ps, E, r)])) (T, [], [])
+  let clause : PositiveNormalization.Clause (List Nat) := .arrs arrows variadic
   let T := SourceTypes.intern T clause
   let arrow := SourceTypes.label T clause
-  let expected : ClaimType := .scheme binders c.params c.result
+  let expected : ClaimType := .scheme binders c.params c.rest c.result
   let inside (p : Span) : Bool := c.span.1 ≤ p.1 && p.2 ≤ c.span.2
   let retype (pos : Span) (t : ClaimType) : Except DirectObligation.Failure ClaimType :=
     match t with
-    | .scheme [] _ _ =>
+    | .scheme [] _ _ _ =>
       if inside pos then pure t
       else throw (refuse pos "a callable over a rigid parameter escapes its closure")
     | .scheme .. =>
@@ -494,13 +533,14 @@ private def validTable (T : SourceTypes.Table) : Bool :=
   SourceTypes.initial.isPrefixOf T && (T.flatMap id |>.flatMap clauseTypes).all (validTy T.length)
 private partial def validType (T : SourceTypes.Table) : ClaimType → Bool
   | .union ts => !ts.isEmpty && ts.all (validType T)
+  | .array e => validType T e
   | .param name => !name.isEmpty
-  | .scheme typeParams params result =>
+  | .scheme typeParams params rest result =>
       -- With no binders of its own this is a callable that mentions an
       -- enclosing rigid parameter, such as a returned `() => T`.
       (typeParams.map Prod.fst).eraseDups.length == typeParams.length &&
       typeParams.all (fun p => !p.1.isEmpty && p.2.all (validType T)) &&
-      params.all (validType T) && validType T result
+      params.all (validType T) && rest.all (validType T) && validType T result
   | .unavailable reason => !reason.isEmpty
   | .labels A => validTy T.length A && A == A.mergeSort (· ≤ ·) && A.eraseDups == A
 /-- Every asserted field is one the point's own record contract names, each at
@@ -609,7 +649,7 @@ inductive FunctionPlan where
   | scheme (name : String) (namePos : Span) (request : SourceRequest)
       (types : SourceTypes.Table) (certificate : Option GenericCertificate.ClosureCertificate)
   | generic (name : String) (namePos : Span) (types : SourceTypes.Table)
-      (certificate : GenericCertificate.Certificate)
+      (certificate : GenericCertificate.ClosureCertificate)
 
 /-- A plan admitted by the top-level verified outcome. Graph evidence is
 consumed separately. Generic and scheme plans store the successful checks of
@@ -622,7 +662,7 @@ inductive CertifiedPlan where
       (term : Tm) (checked : certificate.check = some term)
       (primitives : GenericCertificate.Primitives (SourceTypes.graph types))
   | generic (name : String) (namePos : Span) (types : SourceTypes.Table)
-      (certificate : GenericCertificate.Certificate) (term : Tm)
+      (certificate : GenericCertificate.ClosureCertificate) (term : Tm)
       (checked : certificate.check = some term)
       (primitives : GenericCertificate.Primitives (SourceTypes.graph types))
 
@@ -819,7 +859,7 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
           cases plan with
           | graph => trivial
           | generic _ _ _ certificate _ checked primitives =>
-            exact GenericCertificate.Certificate.check_safe primitives checked
+            exact GenericCertificate.ClosureCertificate.check_safe primitives checked
           | scheme _ _ _ _ certificate _ checked primitives =>
             exact GenericCertificate.ClosureCertificate.check_safe primitives checked
         · simp [hx] at h

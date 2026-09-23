@@ -32,13 +32,19 @@ variable-copy bodies reconstruct independent semantic certificates whose
 soundness theorem quantifies over all admissible rigid assignments satisfying
 the source bounds. Ground functions cannot use rigid claims,
 and rigid claims cannot carry current-content assertions. Within this fragment,
-other types must denote Boolean; no parameter is replaced by its bound.
+ground annotations retain their ordinary graph meanings; no parameter is
+replaced by its bound. Declarations certify invocation as well as body safety,
+and every supplied callee and operand claim is checked at its source span.
 
 ## Quantified callables and their eliminations
 
-A `type` may also be `{"scheme":{"typeParams":[...],"params":[...],"result":...}}`:
+A `type` may also be `{"scheme":{"typeParams":[...],"params":[...],"rest":null,"result":...}}`:
 a callable quantified over its own binders, which a binding can hold. Binders
-shadow, so a nested scheme's own names hide an outer substitution.
+shadow, so a nested scheme's own names hide an outer substitution. `rest` is
+required: `null` for a fixed signature, otherwise the type of each surplus
+actual. A mutable array over a binder is `{"array":{"param":"T"}}`;
+its store contract is invariant. After substitution it is interned through the
+same list-store and object graph rows as every ordinary array.
 
 An expression that calls one carries the elimination it proposes:
 
@@ -89,12 +95,21 @@ schedule as ordinary graph extraction. Effects keep source order; pending
 closure exposure and cycles are refused. See
 [the rule and trust boundary](PROGRAM-TYPING.md#universal-parameter-initialization).
 
+Quantified array rests have universal collection certificates. The rest binding
+occupies slot zero, before fixed inputs and captures; invocation allocates a
+fresh array whose element contract is the assigned family. The same certificate
+format covers top-level generic declarations. Local schemes additionally compile
+each validated substitution to a variadic graph signature. An array over `T`
+can be returned or passed intact, and a variadic callback over `T` can be called
+at a finite arity using a proved consequence of its rest promise. Its body is
+never checked only at the observed Boolean or numeric instances.
+
 The executable source slice is narrower than the semantic scheme rules. A
 containing function may declare one immutable quantified closure. A binder may
 be bounded by an earlier binder or `boolean`; introduction checks the body under
 those bounds, and every instantiation must satisfy each substituted bound at its
-call. Each parameter and the result must name a binder or a function type over
-binders and `boolean`; a callable that mentions an enclosing binder, such as a
+call. Parameters and results may contain a binder, a mutable array over a
+binder, fixed or variadic function types over those, and ground types; a callable that mentions an enclosing binder, such as a
 returned `() => T`, is written in the `scheme` form with empty `typeParams`. The
 body is a variable, a primitive literal, an assignment to a captured cell, a
 call to a callable the body knows over rigid types — such as a callback

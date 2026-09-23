@@ -149,7 +149,9 @@ export type DirectType =
   | { kind: "rigid"; name: string }
   | { kind: "ground"; labels: Labels }
   /** A callable whose signature mentions a rigid parameter, such as `() => T`. */
-  | { kind: "arrow"; params: DirectType[]; result: DirectType };
+  | { kind: "arrow"; params: DirectType[]; result: DirectType }
+  | { kind: "array"; element: DirectType }
+  | { kind: "variadic"; params: DirectType[]; element: DirectType; result: DirectType };
 export interface DirectParameter {
   name: string;
   scope: "ambient" | "quantified";
@@ -182,7 +184,7 @@ export type DirectJudgment =
 // These records are compile-time exhaustiveness guards. Adding a wire variant
 // to one of the unions requires naming it here and handling it in the total
 // renderer; unknown input strings are still refused at runtime below.
-const DIRECT_TYPE_KINDS = {rigid:true,ground:true,arrow:true} satisfies Record<DirectType["kind"],true>;
+const DIRECT_TYPE_KINDS = {rigid:true,ground:true,arrow:true,array:true,variadic:true} satisfies Record<DirectType["kind"],true>;
 const DIRECT_SUBJECT_KINDS = {
   binding:true,expression:true,"return-value":true,"closure-body":true,
 } satisfies Record<DirectSubject["kind"],true>;
@@ -265,9 +267,20 @@ function sourceMap(v: unknown): asserts v is SourceMapEntry | null {
 }
 
 function directType(v: unknown, size: number, scope: ReadonlySet<string>): DirectType {
-  const t = record(v,["kind"], ["name","labels","params","result"]);
+  const t = record(v,["kind"], ["name","labels","params","result","element"]);
   if (typeof t.kind !== "string" || !(t.kind in DIRECT_TYPE_KINDS))
     throw Error("unknown direct-obligation type");
+  if (t.kind === "variadic") {
+    record(v,["kind","params","element","result"]);
+    if (!Array.isArray(t.params)) throw Error("invalid variadic parameters");
+    return {kind:"variadic",params:t.params.map(p=>directType(p,size,scope)),
+      element:directType(t.element,size,scope),result:directType(t.result,size,scope)};
+  }
+  if (t.kind === "array") {
+    record(v,["kind","element"]);
+    return {kind:"array",element:directType(t.element,size,scope)};
+  }
+  if (t.element !== undefined) throw Error("unexpected direct-obligation element");
   if (t.kind === "rigid") {
     if (typeof t.name !== "string" || !scope.has(t.name) || t.labels !== undefined)
       throw Error("undeclared direct-obligation rigid type");

@@ -139,11 +139,11 @@ let infer_function (f:Source.fn) =
         | last :: fixed ->
           (match Semantic.tuple_positions last,Semantic.array_element last with
            | Some elements,_ -> List.rev fixed @ elements,None
-           | None,Some element when quantified=[] && defaults=[] -> List.rev fixed,Some element
+           | None,Some element -> List.rev fixed,Some element
            | _ -> unsupported "a rest parameter needs a tuple of required positions or a mutable array")
         | [] -> unsupported "a rest parameter needs a parameter" in
       let own = match element with
-        | Some element -> variadic_arrow params element result
+        | Some element -> variadic_arrow ~quantified params element result
         | None -> quantified_arrow quantified params result in
       (* A contract advertising several signatures is implemented by this one
          closure. Propose that contract and state what the body claims under
@@ -190,6 +190,23 @@ let infer_function (f:Source.fn) =
              | Some p -> ignore (expr ~expected:p env e)
              | None -> ignore (expr ~expected:element env e)) args;
          result
+       | Atoms [Shape {calls=[signature];_}]
+           when signature.quantified<>[] && signature.variadic<>None ->
+         let actuals = List.concat (List.mapi (fun i arg ->
+           let actual = expr env arg in
+           if not (List.mem i spreads) then [actual]
+           else if i < List.length signature.params then
+             unsupported "a spread cannot fill fixed parameters of a variadic signature"
+           else match Semantic.tuple_positions actual, Semantic.array_element actual with
+             | Some positions,_ -> positions
+             | None,Some element -> [union element (Atoms [Undef])]
+             | _ -> unsupported "generic spread requires a mutable array or required tuple") args) in
+         let missing = max 0 (List.length signature.params - List.length actuals) in
+         let inferred = Inference.infer signature
+           (actuals @ List.init missing (fun _ -> Atoms [Undef])) in
+         instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
+           inferred.substitution) :: !instantiations;
+         inferred.result
        | _ ->
       let spread = spreads <> [] in
       if spread && spreads <> [List.length args - 1] then
@@ -235,7 +252,7 @@ let infer_function (f:Source.fn) =
         (* Omission contributes undefined to inference, but no expression or
            claim is inserted into the source's argument list. *)
         let actuals=List.map (expr env) args @
-          List.init (List.length signature.params - List.length args) (fun _ -> Atoms [Undef]) in
+          List.init (max 0 (List.length signature.params - List.length args)) (fun _ -> Atoms [Undef]) in
         let inferred=Inference.infer signature actuals in
         instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
           inferred.substitution) :: !instantiations;

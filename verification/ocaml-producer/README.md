@@ -186,7 +186,8 @@ aliases; arrays, tuples and readonly views; higher-order callbacks and variance;
 closure scope and partial application; callable objects with fields; omitted
 trailing arguments, for optional and for defaulted parameters; closures
 advertising several signatures, checked once per signature; rest parameters,
-tuple or mutable array, and spreads among the actuals; universally checked
+tuple or mutable array, and spreads among the actuals; universally certified
+quantified array rests and calls through variadic callbacks; universally checked
 rigid defaults and acyclic forward captures with preserved effect order; generic
 declarations and rigid bounds; quantified closures — one inferred call, one
 closure called at two types, bounded, returned or outer-dependent, reading
@@ -314,6 +315,7 @@ controls hold; the numbers live in its output, not here.
 | One value with both fields and calls        | `function-fields.ts`                                                                                                                          |
 | No usable result guarantee                  | `top-void.ts` (unknown, discarded callback result)                                                                                            |
 | Rigid parameters and dependent bounds       | `generics.ts`, `aliases.ts`, `generic-inferred.ts`                                                                                            |
+| Quantified rest collection and callbacks | `generic-rest.ts` (declaration, fresh arrays, independent instances, prefixes, spreads, defaults, callback invocation) |
 | Quantified closures and their calls         | `generic-closure.ts`, `generic-two-calls.ts`, `generic-bounded.ts`, `generic-returned.ts`, `generic-captured-store.ts`, `generic-callback.ts` |
 
 Every negative control must reach validation and fail for its expected reason;

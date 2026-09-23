@@ -36,6 +36,10 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  negative("invalid-generic-rest-argument", "A variadic callback cannot receive Boolean at arbitrary T", /generic call argument.*true ≤ T/),
+  positive("generic-rest", "Universal rest collection with independent Boolean and numeric calls"),
+  negative("invalid-generic-rest", "Observed Boolean rest calls cannot establish a universal array result",
+    /quantified closure body does not satisfy its scheme universally/),
   positive(
     "generic-rigid-default",
     "A universally certified rigid default replaces omitted arguments without specializing T",

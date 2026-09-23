@@ -146,10 +146,12 @@ The encoding follows mechanically from the
 | store with an element set            | `{"setElem":{"a":t,"i":t,"v":t}}`                     |              |                                               |
 | length of a store                    | `{"lenOf":{"a":t}}`                                   |              |                                               |
 
-A descriptor `c` is `"absent"` or `{"closure":{"arity":2,"body":t}}`. Plain allocation
-uses the absent descriptor; function creation uses a closure descriptor and an
-ordered field initializers. The body is under `arity` parameter binders, in declaration
-order, before any captures. Creation evidence requires each overload to have
+A descriptor `c` is `"absent"`, `{"closure":{"arity":2,"body":t}}`, or
+`{"variadic":{"fixed":2,"body":t}}`. Plain allocation uses the absent
+descriptor; function creation uses a code descriptor and ordered field
+initializers. A fixed body is under `arity` parameter binders, in declaration
+order, before captures. A variadic body has its fresh rest array in slot zero,
+then `fixed` parameters, then captures. Creation evidence requires each overload to have
 that many argument types. Application evidence carries every actual argument in order. Runtime object terms
 are rejected in supplied graph syntax, including inside unused branches and
 closure bodies.
@@ -660,6 +662,9 @@ copy. Evidence names these calls `{"callRest": {"fixed": k, "omitted": u,
 creation `{"funRest": {"arrays": [A, ...]}}` and variadic callable objects
 `{"makeCallableRest": {"arrays": [A, ...]}}`, one rest-array type per
 signature; the request validation range-checks every type they carry.
+Quantified rest uses the same source flag and graph rules after its universal
+certificate is checked; its compositional claim forms are defined in
+[SOURCE-CLAIMS.md](SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations).
 `arguments`, receiver-dependent bodies and argument-count introspection remain excluded.
 
 A strict `typeof e === "function"` or `!==` comparison has source AST shape

@@ -481,9 +481,9 @@ polymorphism or parameter-changing recursion.
 Quantified local callables form a second layer rather than a graph clause.
 `TypeSchemes.schemeT` denotes one callable satisfying its signatures for every
 admissible assignment while retaining the same captured world and field
-contracts. The current source slice checks one unbounded local closure under
-rigid binders, then compiles each checked ground elimination to ordinary arrow
-clauses. Thus the finite positive graph remains the ground evidence language;
+contracts. The current source slice checks one local closure under
+rigid binders and their bounds, then compiles each checked ground elimination
+to fixed or variadic graph signatures. Thus the finite positive graph remains the ground evidence language;
 the universal scheme is neither erased to one observed arrow nor encoded as a
 recursive graph row.
 
@@ -501,18 +501,19 @@ $$
 \end{aligned}
 $$
 
-Writing $\mathsf{Sig}_{G,P,\eta}(S)$ for the scheme signatures interpreted
-under $\eta$, its denotation is exactly
+Writing $\mathsf{Sig}_{G,P,\eta}(S)$ and $\mathsf{RestSig}_{G,P,\eta}(S)$
+for its fixed and variadic signatures interpreted under $\eta$, its denotation is exactly
 
 $$
 \begin{aligned}
 \llbracket S\rrbracket^{\mathsf{scheme}}_{G,P,\eta_0}(n,W,v)
 \;\overset{\mathrm{def}}{\Longleftrightarrow}\;&
-\mathsf{Callable}(v)\\
+\mathsf{Invocable}(v)\\
 &\land\;\forall\eta.\;
 \mathsf{Instance}_{G,P}(\eta_0,S,\eta)
 \Rightarrow
-\mathsf{Calls}(\mathsf{Sig}_{G,P,\eta}(S),n,W,v).
+(\mathsf{Calls}(\mathsf{Sig}_{G,P,\eta}(S),n,W,v)
+\land\mathsf{Rests}(\mathsf{RestSig}_{G,P,\eta}(S),n,W,v)).
 \end{aligned}
 $$
 

@@ -14,6 +14,9 @@ inductive Ty where
   /-- A callable whose signature mentions a rigid parameter, such as the result
   `() => T` of a closure that retains its outer binder. -/
   | arrow (params : List Ty) (result : Ty)
+  /-- Mutable array storage keeps one invariant element contract. -/
+  | array (element : Ty)
+  | variadic (params : List Ty) (element result : Ty)
   deriving BEq, Repr, Inhabited
 
 mutual
@@ -27,6 +30,20 @@ def Ty.decEq : (a b : Ty) → Decidable (a = b)
     | isTrue h1, isTrue h2 => isTrue (by rw [h1, h2])
     | isFalse h1, _ => isFalse (fun e => h1 (Ty.arrow.inj e).1)
     | _, isFalse h2 => isFalse (fun e => h2 (Ty.arrow.inj e).2)
+  | .variadic ps e r, .variadic qs f t =>
+    match Ty.decEqList ps qs, Ty.decEq e f, Ty.decEq r t with
+    | isTrue hp, isTrue he, isTrue hr => isTrue (by rw [hp, he, hr])
+    | isFalse hp, _, _ => isFalse (fun h => hp (Ty.variadic.inj h).1)
+    | _, isFalse he, _ => isFalse (fun h => he (Ty.variadic.inj h).2.1)
+    | _, _, isFalse hr => isFalse (fun h => hr (Ty.variadic.inj h).2.2)
+  | .variadic .., .rigid _ | .variadic .., .ground _ | .variadic .., .arrow .. | .variadic .., .array _ => isFalse nofun
+  | .rigid _, .variadic .. | .ground _, .variadic .. | .arrow .., .variadic .. | .array _, .variadic .. => isFalse nofun
+  | .array a, .array b =>
+    match Ty.decEq a b with
+    | isTrue h => isTrue (by rw [h])
+    | isFalse h => isFalse (fun e => h (Ty.array.inj e))
+  | .array _, .rigid _ | .array _, .ground _ | .array _, .arrow _ _ => isFalse nofun
+  | .rigid _, .array _ | .ground _, .array _ | .arrow _ _, .array _ => isFalse nofun
   | .rigid _, .ground _ => isFalse nofun
   | .rigid _, .arrow _ _ => isFalse nofun
   | .ground _, .rigid _ => isFalse nofun
@@ -107,7 +124,9 @@ def SourceRole.wire : SourceRole → String
   | .callArgument => "call-argument"
 
 partial def Ty.render (T : SourceTypes.Table) : Ty → String
+  | .variadic ps e r => s!"({String.intercalate ", " (ps.map (Ty.render T) ++ [s!"...Array<{e.render T}>"])}) => {r.render T}"
   | .rigid name => name
+  | .array element => s!"Array<{element.render T}>"
   | .ground labels => SourceTypes.render T labels
   | .arrow params result =>
       s!"({String.intercalate ", " (params.map (Ty.render T))}) => {result.render T}"
@@ -118,6 +137,9 @@ mutual
   /-- Direct types denote ordinary semantic families once rigid names have an
   assignment. Callables use the calculus's ordered-argument semantics. -/
   def Ty.denote (G : NormalGraph Nat) (η : String → Fam) : Ty → Fam
+    | .variadic ps e r => restsT [(Ty.denoteList G η ps, e.denote G η, r.denote G η)]
+    | .array element => recT [(CallArguments.arrayStoreField,
+        listT ⟨[], [], some (Ty.denote G η element), false⟩)]
     | .rigid name => η name
     | .ground labels => meaning G labels
     | .arrow params result =>
@@ -126,6 +148,12 @@ mutual
     | [] => []
     | t :: ts => Ty.denote G η t :: Ty.denoteList G η ts
 end
+
+theorem Ty.denoteList_eq_map (G : NormalGraph Nat) (eta : String → Fam) (As : List Ty) :
+    Ty.denoteList G eta As = As.map (Ty.denote G eta) := by
+  induction As with
+  | nil => rfl
+  | cons A As ih => simp only [Ty.denoteList, List.map_cons, ih]
 
 /-- Every declared upper bound is true of the rigid family assigned to its
 parameter. Unbounded parameters impose no accidental top bound. -/
@@ -175,6 +203,54 @@ theorem follows_sound {G : NormalGraph Nat} {η parameters fuel x y}
         have hrest := ih htail
         exact fun k W v hv => hrest k W v (hbound k W v hv)
 
+/-- A variadic promise includes each finite fixed-arity view. Optional omissions
+in that view also remain admissible: omitted positions must admit undefined. -/
+private theorem short_replicate {E : Fam} {n j W args}
+    (h : ArgsShort (List.replicate n E) j W args) : ∀ a ∈ args, E j W a := by
+  induction n generalizing args with
+  | zero =>
+    have hl := h.1
+    simp only [List.length_replicate] at hl
+    have : args = [] := by simpa using hl
+    subst args
+    simp
+  | succ n ih =>
+    cases args with
+    | nil => simp
+    | cons a args =>
+      rw [List.replicate_succ, ArgsShort_cons] at h
+      intro v hv
+      rcases List.mem_cons.mp hv with rfl | hv
+      · exact h.1
+      · exact ih h.2 v hv
+
+private theorem short_rest {Ps : List Fam} {E : Fam} {n j W args}
+    (h : ArgsShort (Ps ++ List.replicate n E) j W args) : ArgsRest Ps E j W args := by
+  induction Ps generalizing args with
+  | nil => exact ArgsRest_nil_params.mpr (short_replicate h)
+  | cons P Ps ih =>
+    cases args with
+    | nil =>
+      apply ArgsRest_nil_args.mpr
+      have hu := ArgsShort_nil_args.mp h
+      exact fun A hm => hu A (List.mem_append_left _ hm)
+    | cons a args =>
+      rw [List.cons_append, ArgsShort_cons] at h
+      exact ArgsRest_cons.mpr ⟨h.1, ih h.2⟩
+
+theorem variadic_fixed (Ps : List Fam) (E R : Fam) (extra : Nat) :
+    FamLe (restsT [(Ps, E, R)]) (callsT [(Ps ++ List.replicate extra E, R)]) := by
+  intro n W v hv
+  refine ⟨hv.1, ?_⟩
+  intro p hp
+  have hp := List.mem_singleton.mp hp
+  subst p
+  apply (hv.2 (Ps, E, R) (by simp)).weaken
+  · intro j hj U args ha
+    exact short_rest ha
+  · intro j hj U a ha
+    exact ha
+
 /-- Fuel makes the checker total even for a malformed cyclic bound document.
 Successful checks are sound at every fuel; exhaustion only loses completeness. -/
 def Ty.leUnderFuel (fuel : Nat) (parameters : List Parameter) : Ty → Ty → Bool
@@ -187,6 +263,10 @@ def Ty.leUnderFuel (fuel : Nat) (parameters : List Parameter) : Ty → Ty → Bo
           | some terminal => follows parameters parameters.length x q.name &&
               Ty.leUnderFuel n parameters terminal b
       | .ground A, .ground B => A.all B.contains
+      | .array a, .array b => decide (a = b)
+      | a@(.variadic ..), b@(.variadic ..) => decide (a = b)
+      | .variadic ps e r, .arrow qs t =>
+          decide (qs = ps ++ List.replicate (qs.length - ps.length) e ∧ r = t)
       | .arrow ps r, .arrow qs t =>
           ps.length == qs.length &&
             (qs.zip ps).all (fun (q, p) => Ty.leUnderFuel n parameters q p) &&
@@ -195,6 +275,8 @@ def Ty.leUnderFuel (fuel : Nat) (parameters : List Parameter) : Ty → Ty → Bo
 
 def Ty.depth : Ty → Nat
   | .rigid _ | .ground _ => 1
+  | .array a => 1 + a.depth
+  | .variadic ps e r => 1 + (ps.map Ty.depth).foldl max (max e.depth r.depth)
   | .arrow ps r => 1 + (ps.map Ty.depth).foldl max r.depth
 
 /-- The structure a walk may have to enter through declared bounds. -/
@@ -246,55 +328,20 @@ theorem Ty.leUnderFuel_sound {G : NormalGraph Nat} {η parameters fuel a b}
       cases b with
       | rigid y =>
         exact follows_sound hs h
-      | ground B =>
+      | ground B | arrow qs t | array e | variadic ps e r =>
         simp only [Ty.leUnderFuel] at h
         obtain ⟨q, hq, hstep⟩ := List.any_eq_true.mp h
         cases hu : q.upper with
         | none => simp [hu] at hstep
         | some upper => cases upper with
-        | rigid name => simp [hu] at hstep
-        | arrow ps r =>
-          simp only [hu, Bool.and_eq_true] at hstep
-          obtain ⟨hreach, hterminal⟩ := hstep
-          have hrigid : FamLe (η x) (Ty.denote G η (.arrow ps r)) :=
-            fun k W v hv =>
-              (hs q hq (.arrow ps r) hu) k W v
-                ((follows_sound hs hreach) k W v hv)
-          exact fun k W v hv => (ih hterminal) k W v (hrigid k W v hv)
-        | ground A =>
-          simp only [hu, Bool.and_eq_true] at hstep
-          obtain ⟨hreach, hterminal⟩ := hstep
-          have hrigid : FamLe (η x) (Ty.denote G η (.ground A)) :=
-            fun k W v hv =>
-              (hs q hq (.ground A) hu) k W v
-                ((follows_sound hs hreach) k W v hv)
-          exact fun k W v hv => (ih hterminal) k W v (hrigid k W v hv)
-      | arrow qs t =>
-        simp only [Ty.leUnderFuel] at h
-        obtain ⟨q, hq, hstep⟩ := List.any_eq_true.mp h
-        cases hu : q.upper with
-        | none => simp [hu] at hstep
-        | some upper => cases upper with
-        | rigid name => simp [hu] at hstep
-        | ground A =>
-          simp only [hu, Bool.and_eq_true] at hstep
-          obtain ⟨hreach, hterminal⟩ := hstep
-          have hrigid : FamLe (η x) (Ty.denote G η (.ground A)) :=
-            fun k W v hv =>
-              (hs q hq (.ground A) hu) k W v
-                ((follows_sound hs hreach) k W v hv)
-          exact fun k W v hv => (ih hterminal) k W v (hrigid k W v hv)
-        | arrow ps r =>
-          simp only [hu, Bool.and_eq_true] at hstep
-          obtain ⟨hreach, hterminal⟩ := hstep
-          have hrigid : FamLe (η x) (Ty.denote G η (.arrow ps r)) :=
-            fun k W v hv =>
-              (hs q hq (.arrow ps r) hu) k W v
-                ((follows_sound hs hreach) k W v hv)
-          exact fun k W v hv => (ih hterminal) k W v (hrigid k W v hv)
+          | rigid name => simp [hu] at hstep
+          | ground A | arrow ps r | array e | variadic ps e r =>
+            simp only [hu, Bool.and_eq_true] at hstep
+            exact fun k W v hv => (ih hstep.2) k W v
+              ((hs q hq _ hu) k W v ((follows_sound hs hstep.1) k W v hv))
     | ground A =>
       cases b with
-      | rigid y => simp [Ty.leUnderFuel] at h
+      | rigid y | array _ | variadic _ _ _ => simp [Ty.leUnderFuel] at h
       | arrow qs t => simp [Ty.leUnderFuel] at h
       | ground B =>
         simp only [Ty.leUnderFuel] at h
@@ -303,7 +350,7 @@ theorem Ty.leUnderFuel_sound {G : NormalGraph Nat} {η parameters fuel a b}
         exact ⟨label, by simpa using (List.all_eq_true.mp h) label hlabel, hv⟩
     | arrow ps r =>
       cases b with
-      | rigid y => simp [Ty.leUnderFuel] at h
+      | rigid y | array _ | variadic _ _ _ => simp [Ty.leUnderFuel] at h
       | ground B => simp [Ty.leUnderFuel] at h
       | arrow qs t =>
         simp only [Ty.leUnderFuel, Bool.and_eq_true] at h
@@ -311,6 +358,30 @@ theorem Ty.leUnderFuel_sound {G : NormalGraph Nat} {η parameters fuel a b}
           (fun hsub => ih hsub)
         have hresult := ih h.2
         exact callsT_single_mono hdom hresult
+    | array e =>
+      cases b with
+      | rigid _ | ground _ | arrow _ _ | variadic _ _ _ => simp [Ty.leUnderFuel] at h
+      | array f =>
+        have heq : e = f := by simpa [Ty.leUnderFuel] using h
+        subst f
+        exact fun _ _ _ hv => hv
+    | variadic ps e r =>
+      cases b with
+      | rigid _ | ground _ | array _ => simp [Ty.leUnderFuel] at h
+      | arrow qs t =>
+        have hh : qs = ps ++ List.replicate (qs.length - ps.length) e ∧ r = t := by
+          simpa [Ty.leUnderFuel] using h
+        obtain ⟨hq, rfl⟩ := hh
+        simp only [Ty.denote]
+        have heq : Ty.denoteList G η qs = Ty.denoteList G η ps ++
+            List.replicate (qs.length - ps.length) (e.denote G η) := by
+          exact (congrArg (Ty.denoteList G η) hq).trans (by simp [Ty.denoteList_eq_map])
+        rw [heq]
+        exact variadic_fixed _ _ _ _
+      | variadic qs f t =>
+        have heq : Ty.variadic ps e r = .variadic qs f t := by simpa [Ty.leUnderFuel] using h
+        rw [heq]
+        exact fun _ _ _ hv => hv
 
 theorem Ty.leUnder_sound {G : NormalGraph Nat} {η parameters a b}
     (hs : Satisfies G η parameters) (h : Ty.leUnder parameters a b = true) :
@@ -335,6 +406,9 @@ def Subject.toJson : Subject → Json
       [("kind", Lean.toJson "closure-body"), ("pos", Lean.toJson pos)]
 
 partial def Ty.toJson : Ty → Json
+  | .variadic ps e r => Json.mkObj [("kind", Lean.toJson "variadic"),
+      ("params", Lean.toJson (ps.map Ty.toJson)), ("element", e.toJson), ("result", r.toJson)]
+  | .array element => Json.mkObj [("kind", Lean.toJson "array"), ("element", element.toJson)]
   | .rigid name => Json.mkObj [("kind", Lean.toJson "rigid"), ("name", Lean.toJson name)]
   | .ground labels => Json.mkObj [("kind", Lean.toJson "ground"), ("labels", Lean.toJson labels)]
   | .arrow params result => Json.mkObj [("kind", Lean.toJson "arrow"),

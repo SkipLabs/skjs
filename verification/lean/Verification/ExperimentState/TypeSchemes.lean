@@ -20,6 +20,7 @@ structure Scheme (ι : Type) where
   binders : List ι
   bounds : List (ι × List ι)
   signatures : List (List (List ι) × List ι)
+  variadic : List (List (List ι) × List ι × List ι) := []
 
 /-- Outer rigid meanings cannot change when a nested callable is instantiated.
 An executable scheme decoder must additionally check binder scope/well-formedness. -/
@@ -32,18 +33,29 @@ def signatures (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam)
     (s : Scheme ι) : List (List Fam × Fam) :=
   s.signatures.map fun p => (p.1.map (meaningP G P η), meaningP G P η p.2)
 
+def restSignatures (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam)
+    (s : Scheme ι) : List (List Fam × Fam × Fam) :=
+  s.variadic.map fun p => (p.1.map (meaningP G P η), meaningP G P η p.2.1, meaningP G P η p.2.2)
+
+/-- Fixed and rest clauses use the same behavioral promise on the same value. -/
+def instanceT (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam) (s : Scheme ι) : Fam :=
+  interT (callsT (signatures G P η s)) (restsT (restSignatures G P η s))
+
+theorem instance_adm (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam) (s : Scheme ι) :
+    Adm (instanceT G P η s) := interT_adm _ _ (callsT_adm _) (restsT_adm _)
+
 /-- Callable shape is required even if the bounds have no satisfying assignment. -/
 def schemeT (G : NormalGraph ι) (P : ι → Bool) (outer : ι → Fam)
     (s : Scheme ι) : Fam := fun n W v =>
-  Invocable v ∧ ∀ η, Instance G P outer s η → callsT (signatures G P η s) n W v
+  Invocable v ∧ ∀ η, Instance G P outer s η → instanceT G P η s n W v
 
 theorem scheme_adm (G : NormalGraph ι) (P : ι → Bool) (outer : ι → Fam)
     (s : Scheme ι) : Adm (schemeT G P outer s) := by
   constructor
   · intro n W v hv
-    exact ⟨hv.1, fun η hη => (callsT_adm _).down n W v (hv.2 η hη)⟩
+    exact ⟨hv.1, fun η hη => (instance_adm G P η s).down n W v (hv.2 η hη)⟩
   · intro n W U hx v hv
-    exact ⟨hv.1, fun η hη => (callsT_adm _).mono n W U hx v (hv.2 η hη)⟩
+    exact ⟨hv.1, fun η hη => (instance_adm G P η s).mono n W U hx v (hv.2 η hη)⟩
 
 theorem scheme_valOnly (G : NormalGraph ι) (P : ι → Bool) (outer : ι → Fam)
     (s : Scheme ι) : ValOnly (schemeT G P outer s) :=
@@ -59,14 +71,20 @@ theorem scheme_closed (G : NormalGraph ι) (P : ι → Bool) (outer : ι → Fam
 /-- Introduction must establish every interpretation for the SAME value. -/
 theorem scheme_intro {G : NormalGraph ι} {P outer s n W v}
     (hc : Invocable v)
-    (h : ∀ η, Instance G P outer s η → callsT (signatures G P η s) n W v) :
+    (h : ∀ η, Instance G P outer s η → instanceT G P η s n W v) :
     schemeT G P outer s n W v := ⟨hc, h⟩
 
 /-- A call selects an assignment only after its bounds and outer scope hold. -/
 theorem scheme_elim {G : NormalGraph ι} {P outer s η}
     (hη : Instance G P outer s η) :
     FamLe (schemeT G P outer s) (callsT (signatures G P η s)) :=
-  fun _ _ _ hv => hv.2 η hη
+  fun _ _ _ hv => (hv.2 η hη).1
+
+/-- Rest elimination selects the same admissible assignment as fixed elimination. -/
+theorem scheme_rest_elim {G : NormalGraph ι} {P outer s η}
+    (hη : Instance G P outer s η) :
+    FamLe (schemeT G P outer s) (restsT (restSignatures G P η s)) :=
+  fun _ _ _ hv => (hv.2 η hη).2
 
 theorem scheme_elim_safe {G : NormalGraph ι} {P outer s η n W h t}
     (hη : Instance G P outer s η)
@@ -97,6 +115,7 @@ theorem make_scheme_fields {G : NormalGraph ι} {P outer s}
     (arity n : Nat) (W : WorldT n) (h : Heap) (ns : List String) (vs : List Val) (b : Tm)
     (hnd : ns.Nodup) (hns : ns.length = vs.length) (hAs : As.length = vs.length)
     (hvals : ∀ v ∈ vs, isVal v = true) (hb : Scoped arity b)
+    (hfixed : s.variadic = [])
     (hf : ∀ η, Instance G P outer s η → InvocationSpec arity (signatures G P η s) n W b)
     (hw : WorldAdm W) (hh : HeapOk n W h) (hv : ∀ p ∈ As.zip vs, p.1 n W p.2) :
     Safe (interT (bagT (ns.zip As)) (schemeT G P outer s)) n W h
@@ -107,8 +126,10 @@ theorem make_scheme_fields {G : NormalGraph ι} {P outer s}
     Callable.invocable ⟨arity, b, _, rfl, hb⟩, ?_⟩
   intro η hη
   have hc := callsT_of_invocationSpec (slots h.length ns) (hf η hη)
-  exact (callsT_adm _).mono j _ U hx _
-    ((callsT_adm _).down_le n j (Nat.le_of_lt hj) W _ hc)
+  refine ⟨(callsT_adm _).mono j _ U hx _
+    ((callsT_adm _).down_le n j (Nat.le_of_lt hj) W _ hc), ?_⟩
+  refine ⟨hc.1, ?_⟩
+  simp [restSignatures, hfixed]
 
 /-- Body checking is universal in the new binders; the captured environment is
 unchanged. In particular, the premise cannot retype a captured location per call. -/
@@ -167,7 +188,7 @@ theorem identity_scheme_safe (outer : Nat → Fam) (n : Nat) (W : WorldT n)
       have : A = nulT := List.mem_singleton.mp hA
       subst A
       exact nulT_adm) 1 n W heap [valueField] [.nul] (.var 0)
-    (by decide) rfl rfl (by simp [isVal]) (by simp [Scoped]) hbody hw hh
+    (by decide) rfl rfl (by simp [isVal]) (by simp [Scoped]) rfl hbody hw hh
     (by
       intro p hp
       have : p = (nulT, .nul) := List.mem_singleton.mp hp
@@ -180,6 +201,7 @@ theorem identity_scheme_safe (outer : Nat → Fam) (n : Nat) (W : WorldT n)
 #print axioms scheme_closed
 #print axioms scheme_intro
 #print axioms scheme_elim
+#print axioms scheme_rest_elim
 #print axioms scheme_elim_safe
 #print axioms scheme_call
 #print axioms make_scheme_fields

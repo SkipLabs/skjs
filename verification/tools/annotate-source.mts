@@ -365,6 +365,7 @@ function fromSourceClaims(
   const type=(A: import("./source-claims.mts").ClaimType):string=> {
     if(!Array.isArray(A)) {
       if("unavailable" in A && Object.keys(A).length===1 && typeof A.unavailable==="string" && A.unavailable)return "(unavailable)";
+      if("array" in A) return `Array<${type(A.array)}>`;
       if("union" in A) return A.union.map(t => `(${type(t)})`).join(" | ");
       if("scheme" in A) {
         const s=A.scheme;
@@ -376,7 +377,7 @@ function fromSourceClaims(
         // With no binders of its own this is a callable over an enclosing
         // binder, such as a returned `() => T`; it prints without a prefix.
         const prefix=s.typeParams.length?`<${binders}>`:"";
-        return `${prefix}(${s.params.map((p,i)=>`arg${i}: ${type(p)}`).join(", ")}) => ${type(s.result)}`;
+        return `${prefix}(${[...s.params.map((p,i)=>`arg${i}: ${type(p)}`), ...(s.rest === null ? [] : [`...rest: Array<${type(s.rest)}>`])].join(", ")}) => ${type(s.result)}`;
       }
       if(!("param" in A))throw Error("invalid source claim type");
       if(Object.keys(A).join()!=="param" || typeof A.param!=="string" || !A.param)throw Error("invalid rigid parameter claim");

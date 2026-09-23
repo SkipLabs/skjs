@@ -66,7 +66,6 @@ Not supported, with the refusal each one meets:
 | `arguments`, argument-count introspection                                                    | the protocol excludes argument-count introspection                                                                                                                                                                                       |
 | A spread of an array that may have holes into a rest whose element type lacks `undefined`    | named refusal: a hole spreads `undefined`, which the rest would hold; TypeScript accepts the call ([witness](variadic-holes.ts))                                                                                                         |
 | A spread into fixed parameters other than a last tuple spread                                | named refusal                                                                                                                                                                                                                            |
-| Quantified variadic signatures, `<T>(...xs: T[]) => T[]`                                     | refused by the rigid checker, which has no array of a binder; argument-sequence inference and tuple packs are not in the fragment                                                                                                        |
 | `this` parameters, receiver-dependent methods, `.apply`                                      | `function-this-parameter`; the calculus has no receiver, so `.call` discards one ([boundary example](call-objects.ts), [receiver plan](#receiver-implementation-plan))                                                                   |
 | Construct signatures, `new`, classes, accessors                                              | `function-constructible`; accessor execution is a separate semantic obligation                                                                                                                                                           |
 | Index signatures and array brands on functions                                               | `function-index-signature`, `function-is-array`                                                                                                                                                                                          |
@@ -129,35 +128,38 @@ safety of the resulting term, not equivalence to a formal JavaScript semantics.
 Generic field-write defaults still await the generic effect certificate, an
 independent restriction of generic bodies rather than a missing default rule.
 
-4. **Rest and spread: still open.** The calculus and graph now share one
-   behavioral call meaning for fixed and variadic signatures. Array rests,
-   spread evaluation before later effects, variadic-to-fixed callback use,
-   optional-prefix omission, callable fields and mixed signatures have checked
-   witnesses. The remaining integration obligation from the part 4 review is
-   ordinary quantified rest, such as `<T>(...xs: T[]) => T[]`: the rigid source
-   checker still cannot express its array binding. This is separate from future
-   tuple packs and argument-sequence inference. Copying a required tuple now
-   preserves its exact dense contract across later argument effects; the
-   actual-hole soundness rejection remains in force.
+4. **Rest and spread: closed.** Fixed and variadic signatures share the
+   behavioral call meaning. Array rests, ordered spread snapshots,
+   variadic-to-fixed callback use, optional-prefix omission, callable fields
+   and mixed signatures have checked witnesses. Quantified rest now also
+   reaches the certified-plan boundary, for declarations and local closures.
+   Required tuple snapshots retain their dense contract; potentially sparse
+   arrays still need an element contract admitting `undefined`.
 
 The [common function equation](../../SEMANTICS.md#one-meaning-for-callable-contracts)
-is the foundation for these extensions. Named refusals and passing tests do not
-close the remaining integration obligation or authorize narrowing the milestone.
+remains the foundation. `DirectObligation.Ty` represents arrays over rigid
+parameters and variadic signatures. `GenericCertificate.array_collect_safe`
+proves fresh rest allocation and `rest_invocation_of_inputs` lifts a universal
+body proof to the variadic code contract. Direct callback calls use the proved
+finite-arity consequence of that same promise; they do not choose an
+instantiation for the body. Both declaration and closure certificates are
+consumed by `SourceClaimJson.checkJson_safe`.
 
-To close quantified rest, extend the existing rigid type language
-(`DirectObligation.Ty`) with compositional array contracts and variadic
-signatures, with their interpretations using the existing list/heap families
-and `Safety.Promise`. Carry those forms through the structured diagnostic
-protocol and exhaustive printers. Extend the rigid inclusion rules and their
-soundness argument, then `GenericCertificate` with universally checked rest
-creation and calls. Finally remove the corresponding gates in `GenericSource`,
-`SourceClaimJson.Scheme`, and the OCaml producer. Both generic declarations and
-quantified local closures must reach the existing certified-plan acceptance
-path; specialized observed calls must never replace the universal proof.
-Closure witnesses should cover returning the collected `T[]`, independent
-Boolean and numeric instantiations of one closure, and a negative control that
-tries to insert a Boolean into the rest at arbitrary `T`. Tuple-pack inference
-is a separate later extension.
+The OCaml producer's [`generic-rest.ts`](../../ocaml-producer/examples/generic-rest.ts)
+checks a returned `T[]`, independent Boolean and numeric uses of one closure,
+a fixed prefix with empty rest and tuple spread, a universal default,
+a possibly sparse spread, and a variadic callback inside a generic body.
+The negative controls reject a captured Boolean array as arbitrary `T[]` and a
+Boolean actual sent to a rest callback at arbitrary `T`. Both CLI entry points
+reject altered rest contracts, substitutions, source binding flags and operand
+claims; the viewer renders the types and located failures. These are universal
+certificates plus ground consequences, never observed-call monomorphization.
+
+Tuple packs and argument-sequence inference remain later work, as planned.
+The existing restrictions on generic body forms, nested quantification and
+calls to top-level declarations remain explicit in
+[SOURCE-CLAIMS.md](../../SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations).
+This milestone does not claim semantic completeness of direct subtyping.
 
 ### Order of extension
 

@@ -16,8 +16,8 @@ let arrow params result =
   Atoms [Shape {fields=[];calls=[{quantified=[];params;variadic=None;result}];elements=None}]
 let quantified_arrow quantified params result =
   Atoms [Shape {fields=[];calls=[{quantified;params;variadic=None;result}];elements=None}]
-let variadic_arrow params element result =
-  Atoms [Shape {fields=[];calls=[{quantified=[];params;variadic=Some element;result}];elements=None}]
+let variadic_arrow ?(quantified=[]) params element result =
+  Atoms [Shape {fields=[];calls=[{quantified;params;variadic=Some element;result}];elements=None}]
 let ground xs = Atoms (List.sort_uniq compare xs)
 let bool = ground [True;False]
 let union a b = match a,b with

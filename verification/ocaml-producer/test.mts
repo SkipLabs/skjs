@@ -6,6 +6,7 @@ import { check, verifier } from "./check.mts";
 import { cases } from "./cases.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
+import { checkGenericRest } from "./generic-rest.mts";
 import { checkOverloads } from "./overload-claims.mts";
 import { checkDefaults, checkSchemeDefaults, checkEarlyDefault } from "./default-parameters.mts";
 // The reader's collector, imported rather than served: `serve.mts` takes the
@@ -48,6 +49,7 @@ for (const test of cases) {
   process.stdout.write(
     `${test.file}: ${result.status} (${result.phase}, ${test.kind})\n`,
   );
+  if (test.file === "generic-rest") checkGenericRest(verifier, result.artifacts);
   if (test.file === "overloads") checkOverloads(verifier, result.artifacts);
   if (test.file === "values") good = result.artifacts;
   if (test.file === "default-parameter-scope") checkDefaults(verifier, result.artifacts);
@@ -404,12 +406,20 @@ assert.match(
 process.stdout.write("reader collection: rigid default union rendered\n");
 
 
+const collectedRest = await analyse(repositoryPath("generic-rest"), "ocaml");
+assert.equal(collectedRest.collection?.verified, true);
+assert.match(collectedRest.manifest.functions.find(f=>f.name === "genericRestUses")?.expressions
+  .find(e=>e.type.startsWith("<"))?.type ?? "", /^<T>\(\.\.\.rest: Array<T>\) => Array<T>$/);
+process.stdout.write("reader collection: quantified rest and array contracts rendered\n");
+
 // A negative control must reach validation and fail there. Failing there means
 // failing an obligation, which the reader can show at its span; an adapter that
 // throws before any obligation exists has refused, not validated, and the
 // reader can point at nothing. Ranging over the inventory is what keeps a new
 // control from escaping this.
 const directControls = new Set([
+  "invalid-generic-rest",
+  "invalid-generic-rest-argument",
   "invalid-generic",
   "invalid-generic-copy",
   "invalid-generic-closure",

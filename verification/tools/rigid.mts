@@ -58,6 +58,7 @@ export function rigidOf(
       const declared = scope.find((p) => p.name === type.param);
       return declared ? [declared] : [];
     }
+    if ("array" in type) return visit(type.array, hidden);
     if ("union" in type) return type.union.flatMap((t) => visit(t, hidden));
     if ("unavailable" in type) return [];
     if ("scheme" in type) {
@@ -75,6 +76,7 @@ export function rigidOf(
         ...fromBounds,
         ...type.scheme.params.flatMap((p) => visit(p, local)),
         ...visit(type.scheme.result, local),
+        ...(type.scheme.rest === null ? [] : visit(type.scheme.rest, local)),
       ].filter(
         (p, index, all) =>
           all.findIndex((q) => q.name === p.name && q.bound === p.bound) ===

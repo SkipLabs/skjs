@@ -57,14 +57,17 @@ partial def annotationTy (names : List String) (j : Json) :
     if !names.contains name then throw s!"undeclared type parameter '{name}'"
     return .rigid name
   if mentionsParam j then
+    if let some element := Fragment.arrayElement j then
+      return .array (← annotationTy names element)
     let [atom] ← jArr j "atoms"
       | throw "a rigid annotation is a binder, a function type over binders, or a ground type"
     if (← jStr (← jField atom "a")) != "function" then
       throw "a rigid annotation is a binder, a function type over binders, or a ground type"
-    if (atom.getObjVal? "rest").toOption.isSome then
-      throw "a variadic function type over binders is outside the rigid checker"
     let params ← (← jArr atom "params").mapM (annotationTy names)
-    return .arrow params (← annotationTy names (← jField atom "result"))
+    let result ← annotationTy names (← jField atom "result")
+    match (atom.getObjVal? "rest").toOption with
+    | some e => return .variadic params (← annotationTy names e) result
+    | none => return .arrow params result
   return .ground (← Fragment.translate j)
 
 /-- A binder's bound: `boolean`, or an earlier binder. -/
@@ -231,6 +234,12 @@ def exprTyB (c : Ctx) (env : List (String × DirectObligation.Ty)) :
           else match argsTyB c env ps args with
             | .error e => .error e
             | .ok () => .ok r
+        | some (.variadic ps e r) =>
+          if ps.length > args.length then
+            .error (.refusal pos .callArgument "variadic call omits a required fixed parameter")
+          else match argsTyB c env (ps ++ List.replicate (args.length - ps.length) e) args with
+            | .error e => .error e
+            | .ok () => .ok r
         | _ => .error (.refusal cpos .callArgument s!"'{name}' is not a callable over rigid types")
       | _ => .error (.refusal pos .callArgument "a call in a rigid body names a callable binding")
   | .lambda pos ps declared body =>
@@ -349,15 +358,24 @@ def expressionClaimB (c : Ctx) (env : List (String × DirectObligation.Ty)) (e :
       | .error err => .error err
       | .ok () => .ok expected
 
-private def claimSites : List Fragment.Stmt → List Nat × List Span
-  | [] => ([],[])
+private def Body.sites : Body → List Span
+  | b@(.var ..) | b@(.lit ..) => [b.span]
+  | .assign p _ rhs => p :: rhs.sites
+  | .call p fn args => p :: fn.sites ++ args.attach.flatMap (fun ⟨a, _⟩ => a.sites)
+  | .lambda p _ _ body => p :: body.sites
+termination_by b => sizeOf b
+decreasing_by
+  all_goals simp_wf
+  all_goals first | omega | (have := List.sizeOf_lt_of_mem ‹_ ∈ _›; omega)
+
+private def claimSites : List StmtT → List Nat × List Span
+  | [] => ([], [])
   | .ret pos e :: rest =>
-    let (entries,expressions) := claimSites rest
-    (pos.1 :: entries,e.span :: expressions)
+    let (entries, expressions) := claimSites rest
+    (pos.1 :: entries, e.sites ++ expressions)
   | .constants pos bs :: rest =>
-    let (entries,expressions) := claimSites rest
-    (pos.1 :: entries,bs.map (·.init.span) ++ expressions)
-  | _ :: rest => claimSites rest
+    let (entries, expressions) := claimSites rest
+    (pos.1 :: entries, bs.flatMap (·.init.sites) ++ expressions)
 
 /-- The declarators of one `const`, each seeing the earlier. Inference retains
 the checked initializer type, never a producer-selected binding type: a
@@ -391,6 +409,42 @@ def bodyClaimsB (c : Ctx) (env : List (String × DirectObligation.Ty))
         | .ok H => bodyClaimsB c H result origin rest
   | _ => .error (.refusal origin .genericValidation "generic claim checking requires a checked variable-copy body")
 
+/-- Claims on operands are obligations too. Checking a call's result must not
+silently discard the producer's claims on the callee or actuals. -/
+private def nestedClaims (c : Ctx) (env : List (String × DirectObligation.Ty)) :
+    Body → Except Failure Unit
+  | b@(.var ..) | b@(.lit ..) => do
+      let _ ← expressionClaimB c env b
+      pure ()
+  | b@(.assign _ _ rhs) => do
+      let _ ← expressionClaimB c env b
+      nestedClaims c env rhs
+  | b@(.call _ callee args) => do
+      let _ ← expressionClaimB c env b
+      nestedClaims c env callee
+      args.attach.forM fun ⟨arg, _⟩ => nestedClaims c env arg
+  | b@(.lambda _ ps _ body) => do
+      let _ ← expressionClaimB c env b
+      nestedClaims c (ps ++ env) body
+termination_by b => sizeOf b
+decreasing_by
+  all_goals simp_wf
+  all_goals first | omega | (have := List.sizeOf_lt_of_mem ‹_ ∈ _›; omega)
+
+private def nestedStatementClaims (c : Ctx) (env : List (String × DirectObligation.Ty)) :
+    List StmtT → Except Failure Unit
+  | [] => pure ()
+  | .ret pos e :: rest => do
+      let H ← entryClaimsB c env pos
+      nestedClaims c H e
+      nestedStatementClaims c H rest
+  | .constants pos bs :: rest => do
+      let H ← entryClaimsB c env pos
+      let H ← bs.foldlM (fun H b => do
+        nestedClaims c H b.init
+        bindingsB c pos H [b]) H
+      nestedStatementClaims c H rest
+
 /-- The declared signature and the claimed one must agree exactly; a bound
 never identifies its endpoints. -/
 def checkScheme (f : Fragment.Fn) (typeParams : List Fragment.TypeParam)
@@ -398,9 +452,9 @@ def checkScheme (f : Fragment.Fn) (typeParams : List Fragment.TypeParam)
   if f.name != claims.name || f.namePos != claims.namePos then
     throw "function claim identity mismatch"
   if typeParams.isEmpty then throw "generic body requires type parameters"
-  if f.params.any (·.rest) then throw "a rest parameter requires a generic argument-collection certificate"
   let names := (← parametersOf typeParams).map (·.name)
   if f.params.isEmpty then throw "generic body requires a value parameter"
+  if f.params.dropLast.any (·.rest) then throw "a rest parameter must be the last one"
   let sourceNames := f.params.map (·.name)
   if sourceNames.eraseDups.length != sourceNames.length then throw "duplicate source parameter"
   for p in f.params do
@@ -455,6 +509,10 @@ private partial def closureProof (c : Ctx) (env : List (String × GenericCertifi
       let some fn ← closureProof c env callee | return none
       let proofs ← args.mapM (closureProof c env)
       let some actuals := proofs.mapM id | return none
+      let fn := match fn.check c.parameters (env.map Prod.snd) with
+        | some (_, .variadic ps e r) =>
+          GenericCertificate.Proof.widen (.arrow (ps ++ List.replicate (args.length - ps.length) e) r) fn
+        | _ => fn
       return some (.call fn actuals)
   | _ => pure none
 
@@ -512,7 +570,7 @@ the final certification boundary. -/
 def closureCertificate (c : Ctx) (env : List (String × DirectObligation.Ty))
     (storage : List Fragment.Binding)
     (pos : Span) (ps : List (String × Json)) (ret : Json) (body : Fragment.Expr)
-    (defaults : List (Nat × Fragment.Expr) := []) :
+    (defaults : List (Nat × Fragment.Expr) := []) (rest : Bool := false) :
     M (Option GenericCertificate.ClosureCertificate) := do
   -- Runtime cell identities carry the source's fixed storage annotation. An
   -- entry claim about current contents cannot supply this lifetime contract.
@@ -529,37 +587,47 @@ def closureCertificate (c : Ctx) (env : List (String × DirectObligation.Ty))
   let inner ← ps.mapM fun q => do
     return (q.1, ← lower pos .schemeIntroduction (annotationTy names q.2))
   let result ← lower pos .schemeIntroduction (annotationTy names ret)
+  let (inner, restBinding) ← if rest then
+    match inner.reverse with
+    | (name, .array E) :: fixed => pure (fixed.reverse, some (name, E))
+    | _ => throw (.refusal pos .schemeIntroduction "a quantified rest requires a mutable array contract")
+    else pure (inner, none)
   let inputs := inner.zipIdx.map fun ((_, A), i) =>
     if (defaults.lookup i).isNone then GenericCertificate.Input.value A else .defaulted A
   let mut slots := ((inner.map Prod.fst).zip inputs).map fun (name, input) =>
     (if defaults.isEmpty then name else "", input.slot)
-  slots := slots ++ captures
+  slots := (match restBinding with
+    | none => slots
+    | some (name, E) => (if defaults.isEmpty then name else "", .value (.array E)) :: slots) ++ captures
+  let offset := if restBinding.isSome then 1 else 0
   let mut initializers : List GenericCertificate.Proof := []
   let order ← refuse pos .schemeIntroduction (Fragment.parameterOrder ps defaults)
   for i in order do
-    let some (name, A) := inner[i]? | throw (.refusal pos .schemeIntroduction "invalid parameter schedule")
-    match defaults.lookup i with
-    | none => slots := slots.set (initializers.length + i) (name, .value A)
-    | some init =>
-      let some proof ← closureProof c slots init | return none
-      initializers := initializers ++ [.defaultE (initializers.length + i) proof]
-      slots := (name, .value A) :: slots
+    if rest && i == inner.length then
+      let some (name, E) := restBinding | throw (.refusal pos .schemeIntroduction "missing rest binding")
+      slots := slots.set initializers.length (name, .value (.array E))
+    else
+      let some (name, A) := inner[i]? | throw (.refusal pos .schemeIntroduction "invalid parameter schedule")
+      match defaults.lookup i with
+      | none => slots := slots.set (initializers.length + offset + i) (name, .value A)
+      | some init =>
+        let some proof ← closureProof c slots init | return none
+        initializers := initializers ++ [.defaultE (initializers.length + offset + i) proof]
+        slots := (name, .value A) :: slots
   let some proof ← closureProof c slots body | return none
   return some ⟨c.parameters, inputs, captures.map Prod.snd, result,
-    initializers.foldr GenericCertificate.Proof.letE (.widen result proof)⟩
+    initializers.foldr GenericCertificate.Proof.letE (.widen result proof), restBinding.map Prod.snd⟩
 
 /-- Both production and independent consumption reconstruct these obligations.
 Every source entry and expression must occur exactly once; no supplied point is
 silently ignored. -/
 def check (f : Fragment.Fn) (typeParams : List Fragment.TypeParam) (claims : Claims) :
-    M GenericCertificate.Certificate := do
-  if f.params.any (·.rest) then
-    throw (.refusal f.namePos .genericValidation
-      "a rest parameter requires a generic argument-collection certificate")
+    M GenericCertificate.ClosureCertificate := do
   let parameters ← refuse f.namePos .genericValidation (parametersOf typeParams)
   let names := parameters.map (·.name)
   let c : Ctx := ⟨parameters, claims, []⟩
-  let (entries, expressions) := claimSites f.body
+  let statements ← translateStmts names f.namePos f.body
+  let (entries, expressions) := claimSites statements
   let suppliedEntries := claims.entries.map Prod.fst
   let suppliedExpressions := claims.exprs.map Prod.fst
   if suppliedEntries.eraseDups.length != suppliedEntries.length ||
@@ -571,15 +639,21 @@ def check (f : Fragment.Fn) (typeParams : List Fragment.TypeParam) (claims : Cla
   let env ← f.params.mapM fun p => do
     return (p.name, ← lower f.namePos .genericValidation (annotationTy names p.ty))
   let result ← lower f.namePos .genericValidation (annotationTy names f.ret)
-  let statements ← translateStmts names f.namePos f.body
+  liftE (nestedStatementClaims c env statements)
   liftE (bodyClaimsB c env result f.namePos statements)
   -- The remaining source-shape and exact-signature invariants, once the claim
   -- pass has exposed any failed inclusion.
   lower f.namePos .genericValidation (checkScheme f typeParams claims)
   let result ← lower f.namePos .genericValidation (annotationTy names f.ret)
-  let proof ← proofBody c env result f.namePos f.body
-  let certificate : GenericCertificate.Certificate :=
-    ⟨parameters, env.map (fun p => GenericCertificate.Slot.value p.2), result, proof⟩
+  let (bodyEnv, fixed, rest) ← if f.params.any (·.rest) then
+    match env.reverse with
+    | (name, .array E) :: earlier =>
+      pure ((name, .array E) :: earlier.reverse, earlier.reverse, some E)
+    | _ => throw (.refusal f.namePos .genericValidation "a quantified rest requires a mutable array contract")
+    else pure (env, env, none)
+  let proof ← proofBody c bodyEnv result f.namePos f.body
+  let certificate : GenericCertificate.ClosureCertificate :=
+    ⟨parameters, fixed.map (fun p => GenericCertificate.Input.value p.2), [], result, proof, rest⟩
   if certificate.check.isNone then
     throw (.refusal f.namePos .genericValidation "generated generic certificate is invalid")
   return certificate

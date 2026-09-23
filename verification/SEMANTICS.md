@@ -163,10 +163,11 @@ All the callable uses build on this equation:
   a callback simply uses this family as a result, domain or environment type.
 - Quantification requires the same value, in the same world, to satisfy the
   promises at every admissible binder assignment. `TypeSchemes.schemeT`
-  universally quantifies the instantiated `callsT`; its shape condition is
-  `Invocable`, even when no assignment satisfies the bounds. Its current
-  executable signature syntax is still fixed-only: quantified array rests
-  remain an explicit source/certificate gap, not a different function meaning.
+  universally quantifies the conjunction of instantiated `callsT` and `restsT`;
+  its shape condition is `Invocable`, even when no assignment satisfies the
+  bounds. The executable universal certificate covers both fixed and rest
+  descriptors. `T[]` denotes invariant array storage under the same assignment,
+  and each invocation allocates its rest array with that contract.
 - Contract weakening follows `Promise.weaken`: admit fewer argument lists
   and weaken the result. Fixed-to-variadic coverage is not generally valid
   from a fixed contract alone, since it promises nothing about longer lists.

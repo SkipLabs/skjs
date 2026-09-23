@@ -79,8 +79,11 @@ let upper_candidate = function
 
 let infer (signature:signature) actuals =
   if signature.quantified=[] then unsupported "generic inference requires a quantified signature";
-  if List.length signature.params<>List.length actuals then
-    unsupported "generic call argument count differs from its signature";
+  let domains = match signature.variadic with
+    | None when List.length signature.params = List.length actuals -> signature.params
+    | Some element when List.length signature.params <= List.length actuals ->
+        signature.params @ List.init (List.length actuals - List.length signature.params) (fun _ -> element)
+    | None | Some _ -> unsupported "generic call argument count differs from its signature" in
   let variables = List.map (fun (q:quantifier) ->
     {identity=q.identity;lower=[];upper=[]}) signature.quantified in
   let find identity = List.find_opt (fun (v:variable) -> v.identity=identity) variables in
@@ -102,7 +105,7 @@ let infer (signature:signature) actuals =
       constrain a.result e.result
       | _ -> ()) (* Unsupported structure contributes no guessed constraints;
                     Lean still checks the entire substituted signature. *) in
-  List.iter2 constrain actuals signature.params;
+  List.iter2 constrain actuals domains;
   List.iter (fun (q:quantifier) ->
     Option.iter (constrain (Rigid q.identity)) q.bound) signature.quantified;
   let saturate () =

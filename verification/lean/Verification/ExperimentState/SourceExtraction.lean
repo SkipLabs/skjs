@@ -1165,30 +1165,76 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     -- the call collected in slot 0, above the fixed parameters.
     if let some (restName, restJson) := (if rest then params.getLast? else none) then
       if let some elementJson := Fragment.arrayElement restJson then
-        if !typeParams.isEmpty || !defaults.isEmpty ||
-            (params.map Prod.snd ++ [ret]).any GenericSource.mentionsParam then
-          throw (locatedRefusal (← table) pos .bindingAnnotation
-            "a variadic closure is neither quantified nor defaulted")
         let fixedParams := params.dropLast
-        let fixed ← fixedParams.mapM fun p => lower (Fragment.callableType p.2)
+        let compileRestBody (claims : SourceClaims.Function) (fixed : List (Ty Nat))
+            (restTy R : Ty Nat) (initialized : List (Ty Nat)) : Compiler DirectProof.Plan := do
+          let mut ds := held ⟨if defaults.isEmpty then restName else "", some pos⟩ ::
+            (fixedParams.map fun (name,_) => held ⟨if defaults.isEmpty then name else "", some pos⟩) ++ scope
+          let mut H := restTy :: fixed ++ Γ
+          let mut prologue : List (List (Ty Nat) × DirectProof.Plan) := []
+          let order ← match Fragment.parameterOrder params defaults with
+            | .ok order => pure order
+            | .error reason => throw (locatedRefusal (← table) pos .bindingAnnotation reason)
+          for i in order do
+            if i == fixedParams.length then
+              ds := ds.set prologue.length (held ⟨restName, some pos⟩)
+            else
+              let some (name, _) := fixedParams[i]? | throw "invalid parameter schedule"
+              match defaults.lookup i with
+              | none => ds := ds.set (prologue.length + 1 + i) (held ⟨name, some pos⟩)
+              | some d =>
+                let some B := initialized[i]? | throw "missing initialized rest-prefix contract"
+                let dp ← closureExpr claims ds H d
+                let value ← defaultValuePlan (SourceTypes.graph (← table)) H (prologue.length + 1 + i)
+                  B (DirectProof.cast H B dp)
+                prologue := prologue ++ [(H, value)]
+                H := B :: H
+                ds := held ⟨name, some pos⟩ :: ds
+          let previous := (← get).resultOverride
+          modify fun st => {st with resultOverride := some (body.span, R)}
+          let b ← closureExpr claims ds H body
+          modify fun st => {st with resultOverride := previous}
+          let annotation := DirectProof.cast H R b
+          obligation pos annotation.goal (some annotation) "closure-result" ds
+          return prologue.foldr (fun (K, value) acc => DirectProof.letE K value acc) annotation
+        let polymorphic := !typeParams.isEmpty ||
+          (params.map Prod.snd ++ [ret]).any GenericSource.mentionsParam
+        if polymorphic then
+          let some overlays := fc.arrowClaims.lookup pos
+            | throw "quantified rest checking requires the scheme evidence path"
+          let [.arrs [] signatures] := PositiveRules.expand G A
+            | throw "quantified rest claims must name variadic signatures"
+          if signatures.isEmpty || signatures.length != overlays.length then
+            throw "per-signature claims do not match the quantified rest signatures"
+          let mut bodies := []
+          let mut arrays := []
+          let mut term := none
+          for ((Ds, _, R), overlay) in signatures.zip overlays do
+            if Ds.length != fixedParams.length then throw "variadic fixed-prefix arity differs from source"
+            let some initialized := overlay.initializedParams
+              | throw "missing instantiated parameter annotations"
+            let some restTy := initialized.getLast? | throw "missing instantiated rest annotation"
+            if initialized.length != params.length then throw "instantiated rest parameter count differs from source"
+            let b ← compileRestBody (fc.withOverlay overlay) Ds restTy R initialized
+            if let some existing := term then
+              if existing != b.term then throw "a rest body lowers differently under one of its instantiations"
+            else term := some b.term
+            bodies := bodies ++ [b]
+            arrays := arrays ++ [restTy]
+          let some t := term | throw "quantified rest has no instantiation"
+          return DirectProof.node Γ (.make (.variadic fixedParams.length t) .nul) A
+            (.funRest arrays) bodies
+        let initialized ← fixedParams.mapM fun p => lower (Fragment.callableType p.2)
+        let fixed := initialized.zipIdx.map fun (B, i) =>
+          if (defaults.lookup i).isSome then (B ++ [3]).eraseDups.mergeSort (· ≤ ·) else B
         let E ← lower (Fragment.callableType elementJson)
         let restTy ← lower (Fragment.translate restJson)
         let R ← lower (Fragment.callableType ret)
-        -- The closure is created at its own variadic signature; the claim,
-        -- which may state fixed arrows or several signatures, is reached by
-        -- the ordinary cast, and subtyping decides whether it follows.
         let own ← lower (SourceTypes.use (.arrs [] [(fixed, E, R)]))
-        -- Search hints only: the signature and array the closure is created at.
         modify fun st => {st with hints := own :: restTy ++ st.hints}
-        let Ds := fixed
-        let ds := held ⟨restName, some pos⟩ ::
-          (fixedParams.map fun (name,_) => held ⟨name, some pos⟩) ++ scope
-        let H := restTy :: Ds ++ Γ
-        let b ← closureExpr fc ds H body
-        let annotation := DirectProof.cast H R b
-        obligation pos annotation.goal (some annotation) "closure-result" ds
+        let b ← compileRestBody fc fixed restTy R initialized
         return DirectProof.node Γ (.make (.variadic fixed.length b.term) .nul) [own]
-          (.funRest [restTy]) [annotation]
+          (.funRest [restTy]) [b]
     -- A rest parameter stands for the required positions of its tuple
     -- contract: the signature has one position per element, and the body sees
     -- the array this closure allocates from them, as the call allocates one at

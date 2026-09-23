@@ -18,6 +18,7 @@ export type { Labels, Row } from "./type-graph.mts";
 export interface SchemeClaim {
   typeParams: { name: string; bound: ClaimType | null }[];
   params: ClaimType[];
+  rest: ClaimType | null;
   result: ClaimType;
 }
 
@@ -26,6 +27,7 @@ export interface SchemeClaim {
 export type ClaimType =
   | Labels
   | { param: string }
+  | { array: ClaimType }
   | { union: ClaimType[] }
   | { scheme: SchemeClaim }
   | { unavailable: string };

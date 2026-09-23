@@ -537,6 +537,8 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       | none => pure ()
       | some marked =>
         if !(← marked.getBool?) then throw "a rest parameter is marked by `true`"
+        if (param.getObjVal? "default").toOption.isSome then
+          throw "a rest parameter cannot have a default"
       return (← jStr (← jField param "name"), ← jField param "type")
     let defaults ← raw.zipIdx.filterMapM fun (param,i) => do
       match (param.getObjVal? "default").toOption with

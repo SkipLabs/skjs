@@ -99,9 +99,10 @@ const claimedType = (t: unknown): boolean =>
     : isRecord(t) &&
       (typeof t.unavailable === "string" ||
         typeof t.param === "string" ||
+        ("array" in t && claimedType(t.array)) ||
+        (isList(t.union) && t.union.every(claimedType)) ||
         (isRecord(t.scheme) &&
           isList(t.scheme.typeParams) &&
-          t.scheme.typeParams.length > 0 &&
           t.scheme.typeParams.every(
             (p) =>
               isRecord(p) &&
@@ -111,6 +112,7 @@ const claimedType = (t: unknown): boolean =>
           ) &&
           isList(t.scheme.params) &&
           t.scheme.params.every(claimedType) &&
+          (t.scheme.rest === null || claimedType(t.scheme.rest)) &&
           claimedType(t.scheme.result)) ||
         t.unsupported === true ||
         (typeof t.top === "boolean" && isList(t.atoms)));
@@ -130,7 +132,7 @@ const point = (
   if (isRecord(value)) {
     if (typeof value.param === "string")
       return { current, type: { param: value.param } };
-    if (isRecord(value.scheme))
+    if (isRecord(value.scheme) || "array" in value || "union" in value)
       return { current, type: value as ClaimType };
     if (typeof value.unavailable === "string")
       return { current, type: { unavailable: value.unavailable } };

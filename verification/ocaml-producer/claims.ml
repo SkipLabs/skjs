@@ -79,15 +79,18 @@ let encode (proposal : Proposal.t) =
   let rec claim_type = function
     | Rigid n -> Object ["param",String n.spelling]
     | Atoms [Shape {fields=[];calls=[signature];elements=None}]
-        when signature.quantified <> [] || List.exists contains_rigid (signature.result :: signature.params) ->
-      if signature.variadic <> None then unsupported "a variadic scheme";
+        when signature.quantified <> [] || List.exists contains_rigid (signature.result :: signature.params @ Option.to_list signature.variadic) ->
       let type_params = Array (List.map (fun (q:Semantic.quantifier) -> Object [
         "name",String q.identity.spelling;
         "bound",(match q.bound with None -> Null | Some t -> claim_type t)])
         signature.quantified) in
       Object ["scheme",Object ["typeParams",type_params;
         "params",Array (List.map claim_type signature.params);
+        "rest",(match signature.variadic with None -> Null | Some t -> claim_type t);
         "result",claim_type signature.result]]
+    | Atoms [Shape {fields=[];calls=[];elements=Some
+        {required=[];optional_elements=[];rest=Some element;readonly=false}}]
+        when contains_rigid element -> Object ["array",claim_type element]
     | Atoms (_::_::_ as atoms) when contains_rigid (Atoms atoms) ->
       let rigid, ground = List.partition (fun a -> contains_rigid (Atoms [a])) atoms in
       let parts = List.map (fun a -> Atoms [a]) rigid @

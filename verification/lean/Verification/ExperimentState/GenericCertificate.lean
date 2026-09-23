@@ -43,6 +43,8 @@ theorem Ty.denote_adm {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta) :
   | .rigid name => (hC name).1
   | .ground labels => meaning_adm G labels
   | .arrow _ _ => callsT_adm _
+  | .array _ => recT_adm _
+  | .variadic .. => restsT_adm _
 
 theorem Ty.denote_value {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta)
     {A : Ty} {n W v} (h : A.denote G eta n W v) :
@@ -50,8 +52,11 @@ theorem Ty.denote_value {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta)
   cases A with
   | rigid name => exact ⟨(hC name).2.1 n W v h, (hC name).2.2 n W v h⟩
   | ground labels => exact ProgramTyping.meaning_value h
-  | arrow params result =>
+  | variadic _ _ _ | arrow params result =>
     exact ⟨h.1.val, h.1.scoped⟩
+  | array element =>
+    obtain ⟨fields, rfl, _⟩ := h
+    exact ⟨rfl, trivial⟩
 
 theorem Slot.denote_adm {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta) :
     ∀ A : Slot, Adm (A.denote G eta)
@@ -185,12 +190,6 @@ theorem invocation_of_body {G : NormalGraph Nat} {eta Gamma term n W rho}
     Slot.denote] using invocation_of_inputs (inputs := inputs.map Input.value)
       (result := result) (term := term) hC he (by
         simpa only [List.map_map, Function.comp_def, Input.slot] using safe)
-
-theorem Ty.denoteList_eq_map (G : NormalGraph Nat) (eta : String → Fam) (As : List Ty) :
-    Ty.denoteList G eta As = As.map (Ty.denote G eta) := by
-  induction As with
-  | nil => rfl
-  | cons A As ih => simp only [Ty.denoteList, List.map_cons, ih]
 
 /-- The graph's first four rows are the primitives, as `SourceTypes.initial`
 lays them out. A literal's direct type names one of them, so its safety
@@ -488,7 +487,7 @@ theorem Proof.check_safe {G : NormalGraph Nat} {parameters} {Gamma : List Slot}
     | some pair =>
       obtain ⟨f, F⟩ := pair
       cases F with
-      | rigid name => simp [Proof.check, hf] at hc
+      | rigid name | array _ | variadic _ _ _ => simp [Proof.check, hf] at hc
       | ground labels => simp [Proof.check, hf] at hc
       | arrow inputs result =>
         cases ha : args.mapM (fun arg => arg.check parameters Gamma) with
@@ -581,6 +580,98 @@ theorem Certificate.check_safe {G : NormalGraph Nat} (hG : Primitives G) {c : Ce
 #print axioms Proof.check_safe
 #print axioms Certificate.check_safe
 
+/-- Collect arbitrary values satisfying one rigid element contract into fresh,
+invariant array storage. No instantiation is chosen by this rule. -/
+theorem array_collect_safe {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta)
+    (E : Ty) {n : Nat} {W : WorldT n} {h : Heap} {extra : List Tm}
+    (hw : WorldAdm W) (hh : HeapOk n W h)
+    (he : ∀ e ∈ extra, E.denote G eta n W e) :
+    Safe ((Ty.array E).denote G eta) n W h (CallArguments.restArray extra) := by
+  let S := listT ⟨[], [], some (E.denote G eta), false⟩
+  apply bind_list [(S, .arrLit extra)] (by simp [S, listT_adm])
+    (fun args => .makeAt .absent [CallArguments.arrayStoreField] args)
+    (fun hs => CallArguments.Step.makeArgs hs) hw hh
+  · intro p hp j hj U hx hu heap hok
+    simp only [List.mem_singleton] at hp
+    subst p
+    have he' : ∀ e ∈ extra, E.denote G eta j U e := fun e hm =>
+      (Ty.denote_adm hC E).mono j _ U hx e
+        ((Ty.denote_adm hC E).down_le n j hj W e (he e hm))
+    apply arr_alloc_rule (As := List.replicate extra.length (E.denote G eta))
+      (by intro A hA; rw [List.eq_of_mem_replicate hA]; exact Ty.denote_adm hC E)
+      j U heap extra (by simp) (fun v hv => (Ty.denote_value hC (he' v hv)).1) hu hok
+      (by
+        intro p hp
+        rw [List.eq_of_mem_replicate (List.of_mem_zip hp).1]
+        exact he' p.2 (List.of_mem_zip hp).2)
+    intro k hk V hy hl
+    have ht := listT_alloc (T := ⟨[], [], some (E.denote G eta), false⟩)
+      (As := List.replicate extra.length (E.denote G eta))
+      (by simp) (by simp) (by
+        intro i A hA
+        obtain ⟨hi, rfl⟩ := List.getElem?_eq_some_iff.mp hA
+        simp [positionFam]) hl
+    simpa [S] using ht
+  · intro j hj U hx hu heap args hok hargs
+    have hlen := ArgsT_length hargs
+    apply make_fields_rule (As := [S]) (by simp [S, listT_adm]) j U heap .absent
+      [CallArguments.arrayStoreField] args (by simp) (by simpa using hlen.symm)
+      (by simpa using hlen.symm)
+      (ArgsT_values (by
+        intro A hA
+        change A ∈ [S] at hA
+        rw [List.mem_singleton] at hA
+        subst A
+        intro k V v hv
+        obtain ⟨ls, rfl, _⟩ := hv
+        rfl) hargs) hu hok (ArgsT_zip hargs)
+    intro k hk V hy hrec
+    exact hrec
+
+/-- The universal body premise becomes a variadic code contract by allocating
+slot zero and binding the fixed arguments after it. Captures keep their one
+environment across every interpretation of the quantified element type. -/
+theorem rest_invocation_of_inputs {G : NormalGraph Nat} {eta Gamma term n W rho}
+    {inputs : List Input} {element result : Ty}
+    (hC : ClosedAssign eta) (he : EnvOk G eta Gamma rho n W)
+    (safe : ∀ j U heap env,
+      EnvOk G eta (.value (.array element) :: inputs.map Input.slot ++ Gamma) env j U →
+      WorldAdm U → HeapOk j U heap →
+      Safe (result.denote G eta) j U heap (instantiate 0 env term)) :
+    RestCalls.RestSpec inputs.length (inputs.map (Input.denote G eta))
+      (element.denote G eta) (result.denote G eta) n W
+      (instantiate (inputs.length + 1) rho term) := by
+  apply RestCalls.restSpec_of_body (instantiate_scoped rho he.1 term (inputs.length + 1))
+    (by simp) (by
+      intro A hA
+      obtain ⟨p, _, rfl⟩ := List.mem_map.mp hA
+      exact Slot.denote_adm hC p.slot)
+    (Ty.denote_adm hC (.array element))
+    (fun _ _ _ _ hw hh hx => array_collect_safe hC element hw hh hx)
+  intro j hj U hx hu heap hh args a ha harr _
+  have he' := (he.transfer hC j (Nat.le_of_lt hj) U hx).prependInputs hC ha
+  have argsScoped : ∀ (ps : List Input) args, ArgsT (ps.map (Input.denote G eta)) j U args →
+      ∀ a ∈ args, Scoped 0 a := by
+    intro ps
+    induction ps with
+    | nil => intro args h; cases args <;> simp_all [ArgsT]
+    | cons p ps ih =>
+      intro args h
+      cases args with
+      | nil => exact False.elim h
+      | cons a args =>
+        intro v hv
+        rcases List.mem_cons.mp hv with rfl | hv
+        · exact (Input.denote_value hC h.1).2
+        · exact ih args h.2 v hv
+  have hsc := argsScoped inputs args ha
+  have hl : args.length = inputs.length := by simpa using ArgsT_length ha
+  have hbeta := instantiate_beta _ (prependArgs_scoped hsc he.1) a term 0
+  rw [Nat.zero_add] at hbeta
+  rw [show inputs.length + 1 = 1 + args.length by omega,
+    instantiate_args rho he.1 hsc term 1, hbeta]
+  exact safe j U heap _ (he'.push_value hC harr) hu hh
+
 /-- A closure checks its parameters before its captures. The captured runtime
 environment is held fixed across all interpretations of the quantified names. -/
 structure ClosureCertificate where
@@ -589,10 +680,13 @@ structure ClosureCertificate where
   captures : List Slot
   result : Ty
   proof : Proof
+  rest : Option Ty := none
   deriving Repr, BEq
 
 def ClosureCertificate.body (c : ClosureCertificate) : Certificate :=
-  ⟨c.parameters, c.inputs.map Input.slot ++ c.captures, c.result, c.proof⟩
+  ⟨c.parameters, (match c.rest with
+    | none => c.inputs.map Input.slot ++ c.captures
+    | some E => .value (.array E) :: c.inputs.map Input.slot ++ c.captures), c.result, c.proof⟩
 
 def ClosureCertificate.check (c : ClosureCertificate) : Option Tm := c.body.check
 
@@ -604,9 +698,13 @@ def ClosureCertificate.Safe (G : NormalGraph Nat) (c : ClosureCertificate) : Pro
       (∀ eta, ClosedAssign eta → DirectObligation.Satisfies G eta c.parameters →
         EnvOk G eta c.captures rho n W) →
       ∀ eta, ClosedAssign eta → DirectObligation.Satisfies G eta c.parameters →
-        InvocationSpec c.inputs.length
-          [(c.inputs.map (Input.denote G eta), c.result.denote G eta)] n W
-          (instantiate c.inputs.length rho term)
+        match c.rest with
+        | none => InvocationSpec c.inputs.length
+            [(c.inputs.map (Input.denote G eta), c.result.denote G eta)] n W
+            (instantiate c.inputs.length rho term)
+        | some E => RestCalls.RestSpec c.inputs.length (c.inputs.map (Input.denote G eta))
+            (E.denote G eta) (c.result.denote G eta) n W
+            (instantiate (c.inputs.length + 1) rho term)
 
 theorem ClosureCertificate.check_safe {G : NormalGraph Nat} (hG : Primitives G)
     {c : ClosureCertificate} {term} (hc : c.check = some term) : c.Safe G := by
@@ -616,7 +714,11 @@ theorem ClosureCertificate.check_safe {G : NormalGraph Nat} (hG : Primitives G)
   obtain ⟨body, hb, safe⟩ := Certificate.check_safe (G := G) hG hc
   have eq : body = term := Option.some.inj (hb.symm.trans hc)
   subst body
-  exact invocation_of_inputs hC he (safe eta hC hs)
+  cases hr : c.rest with
+  | none => exact invocation_of_inputs hC he (by simpa [ClosureCertificate.body, hr] using safe eta hC hs)
+  | some E =>
+    exact rest_invocation_of_inputs hC he
+      (by simpa [ClosureCertificate.body, hr] using safe eta hC hs)
 
 #print axioms invocation_of_inputs
 #print axioms invocation_of_body
