@@ -77,9 +77,9 @@ run_test() {
   local index=${#suite_names[@]}
   local log="$WORK/suite-$index.out"
   ( "$@" ) > "$log" 2>&1 &
-  suite_names[$index]="$name"
-  suite_pids[$index]=$!
-  suite_logs[$index]="$log"
+  suite_names[index]="$name"
+  suite_pids[index]=$!
+  suite_logs[index]="$log"
 }
 
 report_tests() {
