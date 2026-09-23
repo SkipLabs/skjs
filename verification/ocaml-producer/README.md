@@ -445,6 +445,23 @@ separately fingerprinted in evidence. The present single-file `Ast` and
 `check.mts` snapshot do not yet provide this identity, so merely skipping
 imports in the gate would be an unsound shortcut.
 
+The first module inventory is executable in
+[`module-deps.mts`](../tools/module-deps.mts) and checked against the pinned
+sources by `test.mts`. It records four erased type bindings from
+`@skipruntime/core` (`EagerCollection`, `Mapper`, `Resource`, `Values`) and one
+runtime value binding from `@skipruntime/server` (`runService`), with source
+spans. The core package's `exports["."]` points to `core/src/index.ts`, which
+reexports `core/src/api.ts`; the server package points to
+`server/src/server.ts`. Both paths are at the pinned upstream revision, so an
+imported `Mapper` contract must follow that reexport before it reaches the
+snapshot here. `api.ts` itself imports `Json` and `DepSafe` from generated
+`skiplang-json` declarations: resolving only the first edge would still leave
+those bounds unjustified. The inventory is not accepted evidence, and source
+files with imports are still refused. The next change must resolve the module
+graph, retain identities and bytes in the verifier request, and state which
+external contracts remain assumptions. Only then may the source gate accept
+imports.
+
 For classes, preserve separate `[[Call]]` and `[[Construct]]` capabilities on
 one function object. `new` allocates an instance, runs its constructor with
 that instance as receiver, and exposes it only under the JavaScript

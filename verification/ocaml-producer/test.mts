@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import { resolve } from "node:path";
+import { openText, close as closeParser } from "../tools/fragment-parse.mts";
+import { moduleEdges } from "../tools/module-deps.mts";
 import { spawnSync } from "node:child_process";
 import { check, verifier } from "./check.mts";
 import { cases } from "./cases.mts";
@@ -22,6 +25,23 @@ for (const [file, expected] of [
 ] as const) {
   assert.equal(createHash("sha256").update(readFileSync(join(here, file))).digest("hex"), expected,
     `${file}: update the upstream provenance and census before replacing this fixture`);
+}
+{
+  const source = resolve(here, "examples/reactive-sum-prettier-ignore.ts");
+  const edges = moduleEdges(openText(source, readFileSync(source, "utf8")));
+  assert.deepEqual(edges.map(({ specifier, imported, typeOnly }) =>
+    [specifier, imported, typeOnly]), [
+    ["@skipruntime/core", "EagerCollection", true],
+    ["@skipruntime/core", "Mapper", true],
+    ["@skipruntime/core", "Resource", true],
+    ["@skipruntime/core", "Values", true],
+    ["@skipruntime/server", "runService", false],
+  ]);
+  const api = resolve(here, "upstream/skipruntime-ts/api-prettier-ignore.ts");
+  const transitive = moduleEdges(openText(api, readFileSync(api, "utf8")));
+  assert(transitive.some((e) => e.kind === "import" && e.imported === "Json" && e.typeOnly));
+  assert(transitive.some((e) => e.kind === "reexport" && e.imported === "deepFreeze" && !e.typeOnly));
+  closeParser();
 }
 function must<T>(value: T | null | undefined, message: string): T {
   assert.ok(value !== null && value !== undefined, message);
