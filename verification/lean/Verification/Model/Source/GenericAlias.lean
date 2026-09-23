@@ -4,9 +4,10 @@ import Verification.Model.Programs.CellClaims
 /-! Source extraction of first-order generic aliases.
 
 `type Id<T> = T` and `type Box<T> = { value: T }` are the admitted schemes.
-Applying an alias is the substitution already proved as `instantiate_param`
-and `instantiate_ref`: it is not a second type. Other alias bodies, nullary
-aliases, and alias applications in alias bodies remain outside the fragment. -/
+Applying either of these aliases is the substitution already proved as
+`instantiate_param` and `instantiate_ref`: it is not a second type. Other
+ground declarations use the source graph; unsupported rigid applications
+and recursive generic applications remain outside this fragment. -/
 namespace Verification.Model.GenericAlias
 open Lean
 
@@ -82,8 +83,6 @@ private def sourceAlias (root : Json) (definitions : List Json) : Except String 
     ("atoms", toJson [record])]⟩
 
 def decodeAliases (ast : Json) : Except String (List Alias) := do
-  if !(← jArr ast "aliases").isEmpty then
-    throw "alias definitions must come from the source declaration graph"
   let imports ← jField ast "imports"
   let definitions ← jArr imports "definitions"
   let source ← (← jArr imports "roots").mapM (sourceAlias · definitions)

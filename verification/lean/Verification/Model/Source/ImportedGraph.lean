@@ -327,12 +327,11 @@ def prepare (ast : Json) (candidate : SourceTypes.Table)
   if (roots.toList.map (·.1)).eraseDups.length != roots.size then
     throw "duplicate imported local type"
   let types ← fillRows ds candidate
-  let (aliases, types) ← (rewrite ds roots substituted (← field ast "aliases")).run types
   let (functions, types) ← (rewrite ds roots substituted (← field ast "functions")).run types
   let empty := Json.mkObj [("roots", toJson ([] : List Json)),
     ("definitions", toJson ([] : List Json)), ("sources", toJson ([] : List Json)),
     ("mappings", toJson ([] : List Json))]
   let ast := ast.setObjVal! "imports" empty
-  return (ast.setObjVal! "aliases" aliases |>.setObjVal! "functions" functions, types)
+  return (ast.setObjVal! "functions" functions, types)
 
 end Verification.Model.ImportedGraph

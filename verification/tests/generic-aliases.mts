@@ -62,9 +62,8 @@ try {
     throw Error("SKJS should export alias Id");
   expect("generic aliases are accepted", run(ast, claims), true);
   const badBody = clone(ast);
-  badBody.aliases = [{ name: "Id", typeParams: [{ name: "T", bound: null }], body: t }];
-  expect("parser-authored alias body is refused", run(badBody, claims), false,
-    "alias definitions must come from the source declaration graph");
+  Object.assign(badBody, { aliases: [{ name: "Id", typeParams: [{ name: "T", bound: null }], body: t }] });
+  expect("retired parser-authored alias field is refused", run(badBody, claims), false);
   const unknown = clone(ast);
   must(fn(unknown, "wrap").params[0], "a parameter").type = {
     top: false,

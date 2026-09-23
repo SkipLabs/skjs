@@ -798,7 +798,7 @@ def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
     ← jField j "retType", ← (← jArr j "body").mapM decodeStmt⟩, typeParams)
 
 def decodeAstWithParams (j : Json) : Except String (List (Fn × List TypeParam)) := do
-  CellClaims.fieldsExactly j ["file", "sourceSha256", "imports", "aliases", "functions"]
+  CellClaims.fieldsExactly j ["file", "sourceSha256", "imports", "functions"]
   let imports ← jField j "imports"
   CellClaims.fieldsExactly imports ["roots", "definitions", "sources", "mappings"]
   if !(← jArr imports "roots").isEmpty || !(← jArr imports "definitions").isEmpty ||

@@ -210,18 +210,11 @@ export interface FunctionAst {
   body: Stmt[];
 }
 
-export interface TypeAliasAst {
-  name: string;
-  typeParams: TypeParamAst[];
-  body: ClaimType;
-}
-
 export interface Ast {
   file: string;
   sourceSha256: string;
   /** Resolved, fingerprinted source declarations. Lean refuses nonempty
    * closures until their graph interpretation joins the certified plan. */
   imports: ImportDocument;
-  aliases: TypeAliasAst[];
   functions: FunctionAst[];
 }

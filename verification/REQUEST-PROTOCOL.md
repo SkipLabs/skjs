@@ -376,9 +376,11 @@ include `typeParams` (empty when the function is not generic). Each type
 parameter is `{ "name": "T", "bound": null }` or `{ "name": "T", "bound": boolean }`
 for `T extends boolean`; a bound may also be a `param` atom naming an earlier
 parameter or a source-imported non-generic type declaration translated to its graph node.
-Duplicate names, forward bounds and cycles are rejected. The file AST always includes `aliases` (empty when the
-file declares none). `type Id<T> = T` and `type Box<T> = { value: T }` are the
-admitted alias schemes; a one-argument named instantiation is an `alias` atom
+Duplicate names, forward bounds and cycles are rejected. Local and imported
+alias declarations are source equations in `imports`; the file AST has no
+separate alias-definition field. `type Id<T> = T` and
+`type Box<T> = { value: T }` are the admitted substitution schemes; a
+one-argument named instantiation is an `alias` atom
 `{ "a": "alias", "name": "Id", "args": [A] }`.
 The adapter substitutes using the identity and cell theorems before identity
 checking or ground extraction. `asBoolean<T extends boolean>(x: T): boolean { return x }`

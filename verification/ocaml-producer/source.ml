@@ -307,8 +307,6 @@ let decode ast =
     (items "roots" imports) in
   if List.length (List.sort_uniq compare (List.map fst imported)) <> List.length imported then
     fail "duplicate imported local type";
-  if items "aliases" ast <> [] then
-    fail "alias definitions must come from the source declaration graph";
   let symbolic = List.filter_map (fun d ->
     match d.parameters,d.defaults,d.bases,d.expression with
     | [parameter],[None],[],(Rigid identity as body) when identity=parameter ->

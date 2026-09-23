@@ -43,7 +43,6 @@ import type {
   FunctionAst,
   PatternPropAst,
   Stmt,
-  TypeAliasAst,
   TypeParamAst,
   ArithOp,
   ArrayElemAst,
@@ -2077,7 +2076,6 @@ export function parseFile(file: string, carriesContext = false,
   }
   // Carried context skips aliases its old fragment could not state. Every
   // retained declaration now has one source equation, shared with imports.
-  const aliases: TypeAliasAst[] = [];
   // A function without a body is a declaration, not an example of one.
   const declared = carriesContext ? fnNodes.filter((s) => s.body) : fnNodes;
   const functions = declared.map((s) => gate.functionDecl(s));
@@ -2086,7 +2084,6 @@ export function parseFile(file: string, carriesContext = false,
     file,
     sourceSha256: createHash("sha256").update(text).digest("hex"),
     imports,
-    aliases,
     functions,
   };
 }
