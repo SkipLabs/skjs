@@ -3,8 +3,8 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { createHash } from "node:crypto";
-import { parseFile, type ImportUniverse } from "../tools/fragment-parse.mts";
-import { loadImportUniverseFromProject } from "../tools/import-universe-project.mts";
+import { parseFile } from "../tools/fragment-parse.mts";
+import { tsconfigOf } from "../tools/declaration-graph.mts";
 
 const here = import.meta.dirname;
 const repo = resolve(here, "../..");
@@ -44,7 +44,7 @@ function run(command: string, args: string[]) {
 }
 /** Acceptance is deliberately private to this module. An OCaml proposal alone
  * cannot construct the public verified outcome: both Lean phases must succeed. */
-export function check(source: string, importUniverse?: ImportUniverse): Outcome {
+export function check(source: string, tsconfigPath?: string): Outcome {
   const artifacts = mkdtempSync(join(tmpdir(), "ocaml-producer-"));
   let phase: Phase = "source";
   try {
@@ -59,13 +59,15 @@ export function check(source: string, importUniverse?: ImportUniverse): Outcome 
         files: ["source.ts"],
       }),
     );
-    // A caller may supply an explicit module universe. Its resolved, hashed
-    // source closure is carried in the Fragment; the producer and verifier
-    // still decide independently whether they can interpret it.
-    const parsed = importUniverse
+    // A caller may name the TypeScript project the source belongs to. The
+    // snapshot is parsed, and TypeScript resolves its imports as the original
+    // file in that project; the parser requires both to have the same bytes.
+    // The producer and verifier still decide whether they can interpret the
+    // declarations reached.
+    const parsed = tsconfigPath
       ? (() => {
           try {
-            return { code: 0, out: JSON.stringify(parseFile(snapshot, false, importUniverse, source)), detail: "" };
+            return { code: 0, out: JSON.stringify(parseFile(snapshot, false, tsconfigPath, resolve(source))), detail: "" };
           } catch (error) {
             return { code: 1, out: "", detail: error instanceof Error ? error.message : String(error) };
           }
@@ -161,11 +163,11 @@ export function check(source: string, importUniverse?: ImportUniverse): Outcome 
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   const args = process.argv.slice(2);
   if (!(args.length === 1 || (args.length === 3 && args[1] === "--project"))) {
-    process.stderr.write("usage: node check.mts file.ts [--project source-tree]\n");
+    process.stderr.write("usage: node check.mts file.ts [--project tsconfig-or-directory]\n");
     process.exitCode = 2;
   } else {
     try {
-      const result = check(args[0], args[2] ? loadImportUniverseFromProject(args[2]) : undefined);
+      const result = check(args[0], args[2] ? tsconfigOf(args[2]) : undefined);
       process.stdout.write(JSON.stringify(result, null, 2) + "\n");
       process.exitCode = result.status === "verified" ? 0 : 1;
     } catch (error) {

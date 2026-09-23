@@ -727,12 +727,16 @@ modeling choices; they do not replace proof.
 ### What remains assumed
 
 - The independent parser faithfully represents the supported source text.
-- For imported types, the source resolver's declaration identities and source
-  bytes are cross-checked against TypeScript's checker in a separate project
-  instance. This assumes the snapshot `tsconfig.json` (including its source
-  package mappings and loaded standard-library set) reflects the real upstream build, and trusts TypeScript's
-  own resolution. The Lean theorem does not validate the recorded import or
-  mapping hashes; they are provenance, not proof of that assumption.
+- For imported and local types, TypeScript's checker decides which declaration
+  each name denotes, in the file's configured project
+  ([`declaration-graph.mts`](tools/declaration-graph.mts)); the parser checks
+  that TypeScript read the same client bytes it parsed. Code the graph uses
+  must be code TypeScript accepts: an error TypeScript reports in a collected
+  declaration, or on an import or export statement the resolution passes
+  through, refuses the graph. This trusts TypeScript's
+  resolution and assumes the project's `tsconfig.json` (its `paths`, links and
+  standard-library set) reflects the real build. The hash recorded on each
+  definition is provenance; the Lean theorem does not validate it.
 - Source and claim translation preserve intended control flow, lexical binding,
   annotations and type meaning. Scope association cannot be recovered merely
   by checking that two slots have compatible types.
@@ -799,8 +803,8 @@ from the source equation. The OCaml producer may propose a matching row, but
 cannot supply the equation or waive a bound. Recursive generic applications
 still need application-indexed memo rows; this finite-ground path does not
 interpret them or prove a universally quantified imported declaration body.
-An interface's `extends` clauses are retained as source reference edges and
-cross-checked against TypeScript's chosen declarations. Lean interprets the
+An interface's `extends` clauses are retained as source reference edges, each
+resolved by TypeScript like any other reference. Lean interprets the
 local and inherited contracts together. Disjoint plain record fields are
 canonicalized to one equivalent record row; other representable combinations
 use the graph's conjunction operation. OCaml's view of inherited fields is a
@@ -809,7 +813,8 @@ still be refused there. The acceptance path never trusts an OCaml-flattened
 interface equation.
 Supported interfaces and aliases declared in the checked file now enter that
 same source declaration graph as imported declarations. A local root names its
-declaration directly; an import root adds a resolution route. General ground aliases
+declaration directly; an import root names the declaration TypeScript binds the
+imported name to. General ground aliases
 feed the same Lean graph lowering. Admitted identity and mutable-box aliases
 use specialized substitution for ground and rigid applications alike, derived
 from the source equation with no parser-authored alias body. General rigid generic

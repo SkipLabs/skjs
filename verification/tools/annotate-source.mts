@@ -15,7 +15,7 @@ import { readDiagnostic } from "./diagnostic.mts";
 // The source annotation encoding has exactly one implementation; a second
 // would be a second opinion about what a source type means.
 import * as fragmentParse from "./fragment-parse.mts";
-import { loadImportUniverseFromProject } from "./import-universe-project.mts";
+import { tsconfigOf } from "./declaration-graph.mts";
 import type {
   Labels,
   NamedPoint,
@@ -670,7 +670,7 @@ function verifySkjs(
   verifier: string,
   depth: number,
   normalized = false,
-  universe?: fragmentParse.ImportUniverse,
+  tsconfigPath?: string,
 ) {
   const temp=fs.mkdtempSync(path.join(os.tmpdir(),"annotated-source-"));
   try {
@@ -681,7 +681,7 @@ function verifySkjs(
     const identity={verifierSha256:hash(fs.readFileSync(verifier))};
     let ast;
     try {
-      ast=fragmentParse.parseFile(sourcePath,false,universe);
+      ast=fragmentParse.parseFile(sourcePath,false,tsconfigPath);
     } catch(error) {
       const detail=messageOf(error);
       if(!detail.startsWith("gate:"))throw Error(`source parser failed: ${detail}`);
@@ -928,13 +928,13 @@ export function main(args: string[]) {
   }
   const input=wrapped ? read.claims : read;
   const file=options["file-key"] || sourcePath;
-  const universe=options.project ? loadImportUniverseFromProject(options.project) : undefined;
+  const tsconfigPath=options.project ? tsconfigOf(options.project) : undefined;
   // The bound of a rigid parameter is written in the source and nowhere in the
   // claims, so it is read from the Fragment here, once, and printed into the
   // report. A source the parser refuses declares no parameters to read: the
   // report is still a report, so this is not the place to fail over it.
   let scopes: RigidScopes=new Map();
-  try {scopes=rigidScopes(fragmentParse.parseFile(sourcePath,false,universe));}
+  try {scopes=rigidScopes(fragmentParse.parseFile(sourcePath,false,tsconfigPath));}
   catch {scopes=new Map();}
   let report: ReportInput=options.format==="skjs" ? fromSkjs(source,file,input,options.producer) : options.format==="source-claims" ? fromSourceClaims(source,file,input,options.producer,scopes) : input;
   let conversion: ConversionManifest|null=null,conversionBytes=null;
@@ -958,7 +958,7 @@ export function main(args: string[]) {
     identity.baselineSha256=hash(baselineBytes);
   }
   if(options.verify) {
-    const verified=verifySkjs(sourcePath,source,input,file,report,path.resolve(options.verify),Number(options.depth),options.format==="source-claims",universe);
+    const verified=verifySkjs(sourcePath,source,input,file,report,path.resolve(options.verify),Number(options.depth),options.format==="source-claims",tsconfigPath);
     results=verified.results;identity={...identity,...verified.identity};
   }
   const diagnostics=options.diagnostics ? fs.readFileSync(options.diagnostics,"utf8") : null;

@@ -49,18 +49,7 @@ import type {
 } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { messageOf } from "./thrown.mts";
-import { moduleEdges } from "./module-deps.mts";
-import { resolveNamedImports, type ModuleSource, type ResolutionConfig } from "./module-resolve.mts";
-import { collectImportDocument } from "./module-closure.mts";
-import { crossCheckImports, ImportMismatch } from "./import-crosscheck.mts";
-import type { LocalTypeRoot } from "./imported-types.mts";
-
-export type ImportUniverse = {
-  modules: readonly ModuleSource[];
-  config: ResolutionConfig;
-  /** Configured TypeScript project used for independent resolution, if explicit. */
-  tsconfigPath?: string;
-};
+import { collectDeclarations, DeclarationError, tsconfigOf } from "./declaration-graph.mts";
 
 /** A question-mark parameter requires an optional suffix. A default may
  * precede a required parameter: callers supply undefined in that position. */
@@ -1980,7 +1969,7 @@ class Gate {
  * function that depends on one fails on that claim, in its own words.
  */
 export function parseFile(file: string, carriesContext = false,
-  importUniverse?: ImportUniverse, resolutionFile = file): Ast {
+  tsconfigPath?: string, resolutionFile = file): Ast {
   const absolute = resolve(file);
   const text = readFileSync(absolute, "utf8");
   const source = openFile(absolute, text);
@@ -1997,10 +1986,7 @@ export function parseFile(file: string, carriesContext = false,
     if (ts.isTypeAliasDeclaration(s)) aliasNodes.push(s);
     else if (ts.isInterfaceDeclaration(s) && !carriesContext) interfaceNodes.push(s);
     else if (ts.isFunctionDeclaration(s)) fnNodes.push(s);
-    else if (ts.isImportDeclaration(s) && !carriesContext) {
-      if (!importUniverse) gate.fail(s, "imports need an explicit module universe");
-      importNodes.push(s);
-    }
+    else if (ts.isImportDeclaration(s) && !carriesContext) importNodes.push(s);
     else if (carriesContext) continue;
     else
       gate.fail(
@@ -2014,7 +2000,7 @@ export function parseFile(file: string, carriesContext = false,
   gate.strict = prologue.strict || importNodes.length > 0 ||
     interfaceNodes.some(node => node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword)) ||
     fnNodes.some(fn => fn.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword));
-  let imports: Ast["imports"] = { roots: [], definitions: [], sources: [], mappings: [] };
+  let imports: Ast["imports"] = { roots: [], definitions: [] };
   const statable = (node: TypeAliasDeclaration): boolean => {
     const params = node.typeParameters;
     return !node.modifiers?.length && params?.length === 1 &&
@@ -2025,37 +2011,25 @@ export function parseFile(file: string, carriesContext = false,
   if (importNodes.length || localNodes.length) {
     const first = importNodes[0] ?? localNodes[0];
     if (!first) throw Error("missing declaration root");
-    const universe = importUniverse;
-    if (importNodes.length && !universe)
-      return gate.fail(first, "imports need an explicit module universe");
-    const digest = createHash("sha256").update(text).digest("hex");
-    const sourceId = resolve(resolutionFile);
-    const modules = [...(universe?.modules ?? []),
-      { id: sourceId, sha256: digest, source: openFile(sourceId, text) }];
-    const config: ResolutionConfig = universe?.config ?? {
-      packages: new Map(), globals: new Set(), links: new Map(), mappingSources: new Map(),
-    };
-    const edges = moduleEdges(source).filter(edge => edge.kind === "import");
-    if (edges.some(edge => !edge.typeOnly || !edge.imported ||
-        edge.imported === "*" || edge.imported === "default"))
-      gate.fail(first, "only named type-only imports are in the source fragment");
+    for (const node of importNodes) {
+      const clause = node.importClause;
+      // The unstable AST exposes this runtime field but omits it from the
+      // ImportClause interface. Narrow it before reading it.
+      const typeOnly = !!clause && "isTypeOnly" in clause && clause.isTypeOnly === true;
+      if (!clause || clause.name || !clause.namedBindings ||
+          !ts.isNamedImports(clause.namedBindings) ||
+          !(typeOnly || clause.namedBindings.elements.every(e => e.isTypeOnly)))
+        gate.fail(node, "only named type-only imports are in the source fragment");
+    }
+    // TypeScript resolves every name, in the project that owns the file or the
+    // one named explicitly: the declaration graph is the compiler's.
     try {
-      const importedRoots = importNodes.length
-        ? resolveNamedImports(source, modules, config) : [];
-      const localRoots: LocalTypeRoot[] = localNodes.map(node => {
-        const name = node.name.text;
-        const span = gate.span(node);
-        return { binding: { kind: "local", span, local: name },
-          declaration: { module: sourceId, name, span, capability: "type" },
-          available: "type", route: [{ module: sourceId, sha256: digest }], mappings: [] };
-      });
-      imports = collectImportDocument([...importedRoots, ...localRoots], modules, config);
-      crossCheckImports(source, imports, modules, resolve(resolutionFile),
-        universe?.tsconfigPath);
+      imports = collectDeclarations(resolutionFile, { tsconfigPath, client: source,
+        locals: localNodes.map(node => gate.span(node)) });
     } catch (error) {
-      const at = error instanceof ImportMismatch
+      const at = error instanceof DeclarationError
         ? [...importNodes, ...localNodes].find(node =>
-            node.getStart(source) === error.clientSpan[0]) ?? first
+            node.getStart(source) === error.at[0]) ?? first
         : first;
       gate.fail(at, messageOf(error));
     }
@@ -2156,21 +2130,15 @@ export function typeOf(node: TypeNode): ClaimType {
 if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
   const args = process.argv.slice(2);
   if (!(args.length === 1 || (args.length === 3 && args[1] === "--project"))) {
-    process.stderr.write("usage: fragment-parse.mts <file.ts> [--project source-tree]\n");
+    process.stderr.write("usage: fragment-parse.mts <file.ts> [--project tsconfig-or-directory]\n");
     process.exit(2);
   }
-  // The loader imports openText from this module. Start the asynchronous CLI
-  // after evaluation so that circular import can finish before it is awaited.
-  void (async () => {
-    try {
-      const universe = args[2]
-        ? (await import("./import-universe-project.mts")).loadImportUniverseFromProject(args[2])
-        : undefined;
-      process.stdout.write(JSON.stringify(parseFile(args[0], false, universe), null, 1));
-      close();
-    } catch (error) {
-      process.stderr.write(messageOf(error) + "\n");
-      process.exitCode = 1;
-    }
-  })();
+  try {
+    process.stdout.write(JSON.stringify(parseFile(args[0], false,
+      args[2] ? tsconfigOf(args[2]) : undefined), null, 1));
+    close();
+  } catch (error) {
+    process.stderr.write(messageOf(error) + "\n");
+    process.exitCode = 1;
+  }
 }

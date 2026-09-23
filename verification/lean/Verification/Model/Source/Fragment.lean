@@ -800,9 +800,8 @@ def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
 def decodeAstWithParams (j : Json) : Except String (List (Fn × List TypeParam)) := do
   CellClaims.fieldsExactly j ["file", "sourceSha256", "imports", "functions"]
   let imports ← jField j "imports"
-  CellClaims.fieldsExactly imports ["roots", "definitions", "sources", "mappings"]
-  if !(← jArr imports "roots").isEmpty || !(← jArr imports "definitions").isEmpty ||
-      !(← jArr imports "sources").isEmpty || !(← jArr imports "mappings").isEmpty then
+  CellClaims.fieldsExactly imports ["roots", "definitions"]
+  if !(← jArr imports "roots").isEmpty || !(← jArr imports "definitions").isEmpty then
     throw "imported type definitions have no certified graph interpretation"
   (← jArr j "functions").mapM decodeFn
 

@@ -1,52 +1,32 @@
-/** The declaration document shared by resolution, the Fragment AST,
- * and readers. Local and imported roots have the same source equations. They are not evidence that a
- * producer's claim follows from them. This module has no runtime dependencies
- * so importing its types does not pull the resolver into a reader's project. */
+/** The declaration document shared by the source parser, the Fragment AST
+ * and readers. TypeScript's checker, under the source's configured project,
+ * decides which declaration each name denotes; the document records the source
+ * equations of the declarations reached. They are not evidence that a
+ * producer's claim follows from them. This module has no runtime dependencies,
+ * so importing its types does not pull the compiler into a reader's project. */
 import type { Span } from "./span.mts";
-
-export type ModuleEdge = {
-  span: Span;
-  specifier: string;
-  kind: "import" | "reexport";
-  imported: string;
-  local: string;
-  typeOnly: boolean;
-};
+/** One type alias or interface: its module (a path relative to the project's
+ * tsconfig, the client's absolute path, or `typescript/lib/<file>`), its name
+ * and its span there. */
 export type DeclarationIdentity = {
   module: string;
   name: string;
   span: Span;
-  capability: "type" | "value" | "both";
 };
-export type MappingStep = {
-  virtual: string;
-  canonical: string;
-  source: string;
-  sha256: string;
-};
-export type RouteStep = { module: string; sha256: string };
-export type ResolvedImport = {
-  binding: ModuleEdge;
+/** A name the client binds to a declaration: an imported name (the span is
+ * the import declaration's) or one of the client's own declarations. */
+export type TypeRoot = {
+  binding:
+    | { kind: "import"; local: string; imported: string; specifier: string; span: Span }
+    | { kind: "local"; local: string; span: Span };
   declaration: DeclarationIdentity;
-  available: DeclarationIdentity["capability"];
-  route: RouteStep[];
-  mappings: MappingStep[];
 };
-export type LocalTypeRoot = {
-  binding: { kind: "local"; local: string; span: Span };
-  declaration: DeclarationIdentity;
-  available: "type";
-  route: RouteStep[];
-  mappings: [];
-};
-export type ResolvedTypeRoot = ResolvedImport | LocalTypeRoot;
+/** A reference inside a declaration, with the declaration TypeScript resolves it to. */
 export type Reference = {
   name: string;
   span: Span;
   arguments: Span[];
   target: DeclarationIdentity;
-  route: RouteStep[];
-  mappings: MappingStep[];
 };
 /** A source type equation before translation to the positive graph. */
 export type TypeTerm =
@@ -76,13 +56,9 @@ export type TypeDefinition = {
   expression: TypeTerm;
   references: Reference[];
 };
-export type TypeClosure = { root: ResolvedTypeRoot; definitions: TypeDefinition[] };
-/** The complete, self-contained source provenance for one client's declarations.
- * Source and mapping bytes are each stored once even when several roots share
- * a reexport route or a mutually recursive definition. */
+/** Every declaration reachable from the roots, each once. `sha256` on a
+ * definition records the bytes of its module; nothing checks it. */
 export type ImportDocument = {
-  roots: ResolvedTypeRoot[];
+  roots: TypeRoot[];
   definitions: TypeDefinition[];
-  sources: { module: string; sha256: string; text: string }[];
-  mappings: { source: string; sha256: string; text: string }[];
 };

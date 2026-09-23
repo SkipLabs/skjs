@@ -438,7 +438,7 @@ The baseline is pinned to upstream `skip` commit
 `cb030b5ac7beda28fd5f65e3292a485173d5faef`. The byte-for-byte
 [`sum.ts`](examples/reactive-sum-prettier-ignore.ts) and
 [`api.ts`](upstream/skipruntime-ts/core/src/api.ts) snapshots are checked by SHA-256 in
-`test.mts`. The executable case supplies the snapshot's import universe and
+`test.mts`. The executable case names the snapshot's TypeScript project and
 records the actual first refusal: the top-level `platform` initializer at line
 10 is outside the source fragment. Thus **zero of the six class callables below
 are currently checked**; no producer proposal, Lean lowering, or certificate is
@@ -455,17 +455,15 @@ gates are lifted:
 | `Add.instantiate` | top-level `platform` initializer | external collection method and generic constructor argument |
 | `Sub.instantiate` | top-level `platform` initializer | chained generic collection methods and constructor arguments |
 
-The module inventory in [`module-deps.mts`](../tools/module-deps.mts) identifies
-four type imports from `@skipruntime/core` (`EagerCollection`, `Mapper`,
-`Resource`, `Values`) and the runtime value import `runService` from
-`@skipruntime/server`. [`module-resolve.mts`](../tools/module-resolve.mts)
-follows package exports and the core reexport to source declarations, and the
-test pins the routes and all six class callables. The configured TypeScript
-project now includes the unchanged `sum.ts`; a separate preflight test checks
-that TypeScript resolves all five bindings to those same interface or function
-declarations, with exactly one declaration and matching source bytes. Forged
-interface and function targets and altered API bytes are refused. This is
-resolution inventory, not acceptance of those contracts. The source gate
+The configured TypeScript project includes the unchanged `sum.ts`. TypeScript
+resolves its four type imports from `@skipruntime/core` (`EagerCollection`,
+`Mapper`, `Resource`, `Values`) to interfaces in `core/src/api.ts`, and the
+runtime value import `runService` from `@skipruntime/server` to a function in
+`server/src/server.ts` (`importTargets` in
+[`declaration-graph.mts`](../tools/declaration-graph.mts)); the test pins those
+targets and all six class callables. The value import makes the whole
+declaration graph refuse. This is resolution inventory, not acceptance of
+those contracts. The source gate
 currently admits named type-only imports of aliases and single interfaces
 whose fields, string indexes, function-valued properties or method signatures
 fit the imported graph. An optional parameter contributes `T | undefined` at
@@ -534,9 +532,9 @@ the runtime implementation satisfies its API contracts.
 
 Checkpoint 1 has a source-closure implementation for aliases and single
 field/index/callable-property/method interfaces in
-[`module-closure.mts`](../tools/module-closure.mts). The fixture pins the tracked
-`skiplang-json` source and `prebuild.mjs`; the resolver follows the core star
-export, API-local `export type`, and the workspace link to that source. The
+[`declaration-graph.mts`](../tools/declaration-graph.mts). The fixture pins the
+tracked `skiplang-json` source; TypeScript follows the core star export,
+API-local `export type`, and the workspace link to that source. The
 collector reaches `Json` and `JsonObject` as two nodes without inlining either,
 and a separate two-file generic cycle checks binder and argument retention.
 Each collected alias now also has a structural source-type expression: the
@@ -546,23 +544,25 @@ binder indices and applied arguments. Unsupported syntax is refused during
 collection rather than left inside an opaque span.
 Nested, optional and generic methods, inheritance, merging and other declaration
 kinds still refuse explicitly. The
-Fragment document now has one required `imports` slot, emitted empty by the
-source parser. The collector can assemble both real `Json` imports into that
-shared slot with deduplicated declaration equations, module bytes, route
-fingerprints, and the workspace symlink target. The source parser fills
-the slot for named type-only imports when its caller supplies an explicit
-module universe. The configured TypeScript project contributes the standard
-library declaration files it actually loaded; these are scanned as candidate
-global type sources, and ambiguous names refuse. A synthetic global interface
-verifies end to end, while altered global source bytes are refused. Before
-admitting a closure, a separate TypeScript checker instance resolves each
-client import and every reference inside the collected type
-definitions to exactly one alias or interface declaration. Its real file path and span must
-match our resolver's choice; every touched module's TypeScript source text must
-match the text from which our equations were parsed. The parser represents imported references in
+Fragment document has one required `imports` slot: the roots and the
+deduplicated declaration equations. The source parser fills it for named
+type-only imports and for the file's own declarations. TypeScript's checker, in
+the file's configured project, decides what every name denotes: each client
+import, and every reference and `extends` clause inside a collected
+declaration, must resolve to exactly one alias or interface declaration. Global
+declaration files the project loads, the standard library included, supply
+unimported names; merged declarations refuse. Code the graph uses must be code
+TypeScript accepts: an error TypeScript reports in a collected declaration (an
+interface that incorrectly extends its base) or on an import or export
+statement the resolution passes through (an ambiguous star reexport) refuses
+the graph. Errors elsewhere in those files are not the graph's: the snapshot's
+core barrel has errors for modules it omits, none of them on the `Json` route.
+A synthetic global interface verifies end to end. TypeScript reads the declarations it resolves once, and
+the equations are parsed from its own trees; the parser only checks that
+TypeScript read the same client bytes it parsed. The parser represents imported references in
 function annotations as alias atoms whose local spellings resolve through the
 declaration-identified roots. Exported source functions are accepted as strict
-module code. With that universe, both `nest` and `lookup` in
+module code. With that project, both `nest` and `lookup` in
 [`recursive-json.ts`](examples/recursive-json.ts) now reach Lean evidence
 production and checking and verify. In
 [`recursive-json-values.ts`](examples/recursive-json-values.ts), Boolean,
@@ -572,7 +572,7 @@ kinds of values pass to a universally checked `<T extends Json>` closure.
 At each call OCaml proposes the imported `Json` bound as a widened
 instantiation of `T`; Lean checks the concrete argument and the bound. These
 calls do not establish separate precise inferred types for `T`. Four invalid
-clients using the same pinned universe reach search and fail: a non-JSON
+clients in the same project reach search and fail: a non-JSON
 dictionary member, a missing-key read without `undefined`, and a function
 passed to `<T extends Json>`, and a `boolean[]` assigned to a writable `Json[]`
 alias before a string write and Boolean read. TypeScript accepts the last
@@ -607,9 +607,8 @@ closure of the full milestone.
 
 An interface or alias declared in the client file now uses that same source
 declaration graph. The local `Derived extends Base` example verifies, and an
-incorrect inherited-field result fails. Its root has no import route; the
-TypeScript cross-check confirms the local declaration identity and source
-bytes. General ground alias applications use the graph for both local and
+incorrect inherited-field result fails. TypeScript resolves the local root to
+the declaration itself, as it resolves an imported one. General ground alias applications use the graph for both local and
 imported declarations. The admitted identity and mutable-box aliases use
 specialized substitution for ground and rigid applications alike, deriving the
 body from that same source equation rather than a second parser-authored alias field. General
@@ -632,20 +631,20 @@ lose a proof or propose a false claim, but Lean derives the graph equation and
 checks every field obligation independently. This keeps candidate search from
 becoming a second implementation of the imported type's meaning.
 
-The import document contains the collected declaration equations and their
-source bytes. Resolution is cross-checked against TypeScript under the
-snapshot's dedicated [`upstream/tsconfig.json`](upstream/tsconfig.json), which
-includes the imported-`Json` clients and mirrors upstream's strict Node16
-resolution. The checker opens this configured project explicitly, leaving the
-other OCaml examples' TypeScript project unchanged. Because the snapshot
+The import document contains the collected declaration equations. Resolution
+is TypeScript's, under the snapshot's dedicated
+[`upstream/tsconfig.json`](upstream/tsconfig.json), which includes the
+imported-`Json` clients and mirrors upstream's strict Node16 resolution;
+`--project` names it explicitly, leaving the other OCaml examples' TypeScript
+project unchanged. Because the snapshot
 contains neither built `dist`
 declarations nor npm's workspace links, its two package entry points have
 explicit source `paths` mappings; the `skiplang-json` workspace link is real.
 The remaining trust assumption is that this project configuration agrees with
 the actual upstream build. The TypeScript checker and our source-type parser
 remain trusted: Lean interprets the collected equations but does not reparse
-TypeScript, reconstruct package exports or symlink routes, or check the
-`imports.sources` and `mappings` hashes. Those hashes record provenance only.
+TypeScript, reconstruct package exports or symlink routes, or check the hash
+recorded on each definition. That hash records provenance only.
 The test's pinned hashes guard accidental fixture changes and are not a
 soundness argument. The result remains relative to the supplied source tree
 and this front end, rather than verification of arbitrary imports.

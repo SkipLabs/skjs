@@ -318,7 +318,7 @@ def prepare (ast : Json) (candidate : SourceTypes.Table)
     (substituted : List String) :
     Except String (Json × SourceTypes.Table) := do
   let imports ← field ast "imports"
-  CellClaims.fieldsExactly imports ["roots", "definitions", "sources", "mappings"]
+  CellClaims.fieldsExactly imports ["roots", "definitions"]
   let ds ← definitions imports
   let roots ← (← arr imports "roots").mapM fun root => do
     let name ← str (← field root "binding") "local"
@@ -329,8 +329,7 @@ def prepare (ast : Json) (candidate : SourceTypes.Table)
   let types ← fillRows ds candidate
   let (functions, types) ← (rewrite ds roots substituted (← field ast "functions")).run types
   let empty := Json.mkObj [("roots", toJson ([] : List Json)),
-    ("definitions", toJson ([] : List Json)), ("sources", toJson ([] : List Json)),
-    ("mappings", toJson ([] : List Json))]
+    ("definitions", toJson ([] : List Json))]
   let ast := ast.setObjVal! "imports" empty
   return (ast.setObjVal! "functions" functions, types)
 
