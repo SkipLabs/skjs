@@ -2019,6 +2019,31 @@ export function definedFunctions(
   return out;
 }
 
+/** Class bodies named for coverage accounting only. Discovering a callable
+ * does not lower or certify it: `new`, initialization, and prototype method
+ * lookup still need their own source and semantic rules. */
+export function definedClassCallables(
+  file: string,
+): { name: string; namePos: Span }[] {
+  const absolute = resolve(file);
+  const source = projectFor(absolute).program.getSourceFile(absolute);
+  if (!source) throw new Error(`the compiler produced no tree for ${file}`);
+  const out: { name: string; namePos: Span }[] = [];
+  for (const statement of source.statements) {
+    if (!ts.isClassDeclaration(statement) || !statement.name) continue;
+    for (const member of statement.members) {
+      if (ts.isConstructorDeclaration(member) && member.body) {
+        out.push({ name: `${statement.name.text}.constructor`,
+          namePos: [member.getStart(source), member.end] });
+      } else if (ts.isMethodDeclaration(member) && member.body) {
+        out.push({ name: `${statement.name.text}.${member.name.getText(source)}`,
+          namePos: [member.name.getStart(source), member.name.end] });
+      }
+    }
+  }
+  return out;
+}
+
 /**
  * The fragment's reading of one type annotation, for a trusted tool that has a
  * node and needs the type the gate would give it. The annotation's own file is

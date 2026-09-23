@@ -462,6 +462,20 @@ graph, retain identities and bytes in the verifier request, and state which
 external contracts remain assumptions. Only then may the source gate accept
 imports.
 
+The first provenance step is now [`module-resolve.mts`](../tools/module-resolve.mts).
+The fixture pins the complete core entry point, its other star-exported
+`errors.ts`, the server entry point, and both package export maps at the same
+upstream revision. Given an explicit package map and those hashed files,
+resolution follows the star
+exports and identifies the declaration and source span: the four client types
+land in `core/src/api.ts`; `runService` lands in `server/src/server.ts`. A
+missing module, ambiguous export route, unsupported import form, or changed
+file hash is refused. This is not yet contract evidence: the API's `Json` and
+`DepSafe` bounds and the server implementation's imports remain unresolved.
+Those dependencies and their eventual evidence must enter the verifier request
+before the source gate admits imports. The test also enumerates the six class
+callables from the pinned syntax, so the coverage denominator cannot drift.
+
 For classes, preserve separate `[[Call]]` and `[[Construct]]` capabilities on
 one function object. `new` allocates an instance, runs its constructor with
 that instance as receiver, and exposes it only under the JavaScript

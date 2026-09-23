@@ -3,8 +3,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
-import { openText, close as closeParser } from "../tools/fragment-parse.mts";
+import { openText, definedClassCallables, close as closeParser } from "../tools/fragment-parse.mts";
 import { moduleEdges } from "../tools/module-deps.mts";
+import { resolveNamedImports, type ModuleSource } from "../tools/module-resolve.mts";
 import { spawnSync } from "node:child_process";
 import { check, verifier } from "./check.mts";
 import { cases } from "./cases.mts";
@@ -22,12 +23,21 @@ const here = import.meta.dirname;
 for (const [file, expected] of [
   ["examples/reactive-sum-prettier-ignore.ts", "f6463ff031d46252cc2a1442c022ea3d709758233e91607eec9673595ea9e271"],
   ["upstream/skipruntime-ts/api-prettier-ignore.ts", "3bfa83b7c2328f4adda5f0bb54569a46c0d776d93184fdb5eb0e789f4b190909"],
+  ["upstream/skipruntime-ts/core/src/index-prettier-ignore.ts", "bebd40823a41907ade68b39f755bbceeea5d2afd6ccaaca519e7b6f51ee5586b"],
+  ["upstream/skipruntime-ts/core/src/errors-prettier-ignore.ts", "37d2dc3269d9b9ffdd27f50718b5167549e4050edcbbf24491cc477af91c1d27"],
+  ["upstream/skipruntime-ts/server/src/server-prettier-ignore.ts", "4a438a5801ff5e99db09b3006971df36e086b0c3da3a358052c79c5fa665458e"],
+  ["upstream/skipruntime-ts/core/package-prettier-ignore.json", "edf6f423e4ead592191f34bd14a563014b5afe73568fc15644f624ff0e4e4e54"],
+  ["upstream/skipruntime-ts/server/package-prettier-ignore.json", "22a88f9e8400004fecd6e2b05d4d4f3397e727b92445efdbb96e79315754052a"],
 ] as const) {
   assert.equal(createHash("sha256").update(readFileSync(join(here, file))).digest("hex"), expected,
     `${file}: update the upstream provenance and census before replacing this fixture`);
 }
 {
   const source = resolve(here, "examples/reactive-sum-prettier-ignore.ts");
+  assert.deepEqual(definedClassCallables(source).map(c => c.name), [
+    "AddIndex.constructor", "AddIndex.mapEntry", "Plus.mapEntry",
+    "Minus.mapEntry", "Add.instantiate", "Sub.instantiate",
+  ]);
   const edges = moduleEdges(openText(source, readFileSync(source, "utf8")));
   assert.deepEqual(edges.map(({ specifier, imported, typeOnly }) =>
     [specifier, imported, typeOnly]), [
@@ -41,6 +51,72 @@ for (const [file, expected] of [
   const transitive = moduleEdges(openText(api, readFileSync(api, "utf8")));
   assert(transitive.some((e) => e.kind === "import" && e.imported === "Json" && e.typeOnly));
   assert(transitive.some((e) => e.kind === "reexport" && e.imported === "deepFreeze" && !e.typeOnly));
+  const module = (id: string, fixture: string): ModuleSource => {
+    const path = resolve(here, "upstream/skipruntime-ts", fixture);
+    const bytes = readFileSync(path, "utf8");
+    return { id, sha256: createHash("sha256").update(bytes).digest("hex"),
+      source: openText(path, bytes) };
+  };
+  const modules = [
+    module("core/src/index.ts", "core/src/index-prettier-ignore.ts"),
+    module("core/src/api.ts", "api-prettier-ignore.ts"),
+    module("core/src/errors.ts", "core/src/errors-prettier-ignore.ts"),
+    module("server/src/server.ts", "server/src/server-prettier-ignore.ts"),
+  ];
+  const packages = new Map([
+    ["@skipruntime/core", "core/src/index.ts"],
+    ["@skipruntime/server", "server/src/server.ts"],
+  ]);
+  for (const [name, file, entry] of [
+    ["@skipruntime/core", "core/package-prettier-ignore.json", "./dist/src/index.js"],
+    ["@skipruntime/server", "server/package-prettier-ignore.json", "./dist/src/server.js"],
+  ]) {
+    const data: unknown = JSON.parse(readFileSync(resolve(here, "upstream/skipruntime-ts", file), "utf8"));
+    assert.ok(data && typeof data === "object" && "name" in data &&
+      "exports" in data && data.exports && typeof data.exports === "object" &&
+      "." in data.exports);
+    assert.equal(data.name, name);
+    assert.equal(data.exports["."], entry);
+  }
+  const resolved = resolveNamedImports(openText(source, readFileSync(source, "utf8")),
+    modules, packages);
+  assert.deepEqual(resolved.map(r => [r.binding.local, r.declaration.module,
+    r.declaration.name, r.declaration.capability, r.route.map(m => m.module)]), [
+    ["EagerCollection", "core/src/api.ts", "EagerCollection", "type",
+      ["core/src/index.ts", "core/src/api.ts"]],
+    ["Mapper", "core/src/api.ts", "Mapper", "type",
+      ["core/src/index.ts", "core/src/api.ts"]],
+    ["Resource", "core/src/api.ts", "Resource", "type",
+      ["core/src/index.ts", "core/src/api.ts"]],
+    ["Values", "core/src/api.ts", "Values", "type",
+      ["core/src/index.ts", "core/src/api.ts"]],
+    ["runService", "server/src/server.ts", "runService", "value",
+      ["server/src/server.ts"]],
+  ]);
+  assert.throws(() => resolveNamedImports(openText(source, readFileSync(source, "utf8")),
+    modules.slice(0, 2), packages), /module not supplied/);
+  assert.throws(() => resolveNamedImports(openText(source, readFileSync(source, "utf8")),
+    [{ ...modules[0], sha256: "0".repeat(64) }, ...modules.slice(1)], packages),
+    /fingerprint differs/);
+  const duplicate = "export interface Mapper {}\n";
+  assert.throws(() => resolveNamedImports(openText(source, readFileSync(source, "utf8")),
+    [...modules.slice(0, 2), {
+      id: "core/src/errors.ts",
+      sha256: createHash("sha256").update(duplicate).digest("hex"),
+      source: openText(resolve(here, "duplicate-errors.ts"), duplicate),
+    }, modules[3]], packages), /ambiguous export core\/src\/index.ts#Mapper/);
+  const broken = "export { Mapper } from './empty.js';\n";
+  const empty = "export const other = 1;\n";
+  assert.throws(() => resolveNamedImports(openText(source, readFileSync(source, "utf8")),
+    [...modules.slice(0, 2), {
+      id: "core/src/errors.ts",
+      sha256: createHash("sha256").update(broken).digest("hex"),
+      source: openText(resolve(here, "broken-errors.ts"), broken),
+    }, modules[3], {
+      id: "core/src/empty.ts",
+      sha256: createHash("sha256").update(empty).digest("hex"),
+      source: openText(resolve(here, "empty.ts"), empty),
+    }], packages), /broken named reexport core\/src\/errors.ts#Mapper/);
   closeParser();
 }
 function must<T>(value: T | null | undefined, message: string): T {
