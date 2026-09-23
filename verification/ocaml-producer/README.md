@@ -520,6 +520,17 @@ change verification coverage or admit imports at the verifier. The
 [`recursive-json.ts`](examples/recursive-json.ts)
 source is a named suite/viewer gap there: both functions remain unchecked.
 
+The import document is self-contained for the collected declaration equations
+and their source bytes, but **not yet for route authority**. The resolver's
+package map and workspace links are caller-supplied; hashing `package.json`
+and `prebuild.mjs` in the fixture test does not prove that the entries in a
+later request were derived from those files. Before any nonempty import document
+is accepted, the independent check must either reconstruct those route facts
+from snapshotted package and mapping bytes or expose them as explicit external
+assumptions in the acceptance theorem and report. A matching hash on a route
+chosen by the caller is insufficient. The current OCaml and Lean refusals keep
+this boundary closed.
+
 `core/src/api.ts` imports `Json`, `JsonObject` and `DepSafe` from
 `../skiplang-json/index.js`. In the Skip checkout, `prebuild.mjs` makes
 `skipruntime-ts/core/skiplang-json` a symlink to the tracked
@@ -575,8 +586,11 @@ Implementation checkpoints, in dependency order:
    a second accepted wire format. The trusted source parser must derive the
    graph from the snapshotted declarations and distinguish type-only imports
    from runtime values. The request and evidence must bind the client, every
-   declaration and the resulting graph to their bytes. Keep imports refused
-   until the independent checker consumes and validates this information.
+   declaration and the resulting graph to their bytes. Include the authority
+   for package exports and workspace links, not only their chosen destinations;
+   validate that authority independently or state it as an external assumption.
+   Keep imports refused until the independent checker consumes and validates
+   this information.
 3. **Semantic interpretation and proof.** Extend the existing guarded
    recursive-graph interpretation with the dictionary constructor and prove
    that the accepted graph equations denote admissible semantic types. Define
