@@ -27,17 +27,17 @@ missing key is a type error rather than a run-time refusal.
 
 | Language | Lean | TypeScript | Produced by |
 | --- | --- | --- | --- |
-| **Fragment** — the subset of TypeScript this pipeline accepts, as a tree | [Fragment.lean](lean/Verification/ExperimentState/Fragment.lean) | [fragment.mts](tools/fragment.mts), parsed by [fragment-parse.mts](tools/fragment-parse.mts) | the parser |
-| **Claim** — what a producer says a type is, and what a source annotation is written in | [Claim.lean](lean/Verification/ExperimentState/Claim.lean) | [claim.mts](tools/claim.mts), printed by [claim-text.mts](tools/claim-text.mts) | SKJS, `tsc-claims.mts` |
-| **SourceClaims** — claims attached to source spans, producer-independent | [SourceClaims.lean](lean/Verification/ExperimentState/SourceClaims.lean) | [source-claims.mts](tools/source-claims.mts) | SKJS, `tsc-claims.mts`, [OCaml prototype](ocaml-producer/README.md) |
-| **Calculus** — terms, tags, call codes: the operational language | [Calculus.lean](lean/Verification/ExperimentState/Calculus.lean) | [calculus.mts](tools/calculus.mts) | extraction |
-| **ControlFlow** — the program graph over those terms | [ControlFlow.lean](lean/Verification/ExperimentState/ControlFlow.lean) | [control-flow.mts](tools/control-flow.mts) | extraction |
-| **TypeGraph** — positive types as labelled rows | [PositiveNormalization.lean](lean/Verification/ExperimentState/PositiveNormalization.lean) | [type-graph.mts](tools/type-graph.mts) | extraction |
-| **Request** — the whole verification request | [RequestJson.lean](lean/Verification/ExperimentState/RequestJson.lean) | — | extraction |
-| **Evidence** — certificates the checker validates | [ProgramCertificates.lean](lean/Verification/ExperimentState/ProgramCertificates.lean), [PositiveCertificates.lean](lean/Verification/ExperimentState/PositiveCertificates.lean) | — | proof search |
-| **Diagnostic** — why an attempt did not succeed | in [RequestJson.lean](lean/Verification/ExperimentState/RequestJson.lean) | [diagnostic.mts](tools/diagnostic.mts), rendered by [diagnostic-view.mts](tools/diagnostic-view.mts) | the verifier |
-| **SKJS claims** — what SKJS's checker believes at each site of one file | decoded by `decodeClaims` in [Fragment.lean](lean/Verification/ExperimentState/Fragment.lean) | [skjs-claims.mts](tools/skjs-claims.mts) | SKJS |
-| **SKJS operations** — the closed judgments SKJS records | checked by [SkjsOperations.lean](lean/Verification/ExperimentState/SkjsOperations.lean) | [skjs-operations.mts](tools/skjs-operations.mts) | SKJS |
+| **Fragment** — the subset of TypeScript this pipeline accepts, as a tree | [Fragment.lean](lean/Verification/Model/Source/Fragment.lean) | [fragment.mts](tools/fragment.mts), parsed by [fragment-parse.mts](tools/fragment-parse.mts) | the parser |
+| **Claim** — what a producer says a type is, and what a source annotation is written in | [Claim.lean](lean/Verification/Model/Types/Claim.lean) | [claim.mts](tools/claim.mts), printed by [claim-text.mts](tools/claim-text.mts) | SKJS, `tsc-claims.mts` |
+| **SourceClaims** — claims attached to source spans, producer-independent | [SourceClaims.lean](lean/Verification/Model/Source/SourceClaims.lean) | [source-claims.mts](tools/source-claims.mts) | SKJS, `tsc-claims.mts`, [OCaml prototype](ocaml-producer/README.md) |
+| **Calculus** — terms, tags, call codes: the operational language | [Calculus.lean](lean/Verification/Model/Semantics/Calculus.lean) | [calculus.mts](tools/calculus.mts) | extraction |
+| **ControlFlow** — the program graph over those terms | [ControlFlow.lean](lean/Verification/Model/Programs/ControlFlow.lean) | [control-flow.mts](tools/control-flow.mts) | extraction |
+| **TypeGraph** — positive types as labelled rows | [PositiveNormalization.lean](lean/Verification/Model/Types/PositiveNormalization.lean) | [type-graph.mts](tools/type-graph.mts) | extraction |
+| **Request** — the whole verification request | [RequestJson.lean](lean/Verification/Model/Source/RequestJson.lean) | — | extraction |
+| **Evidence** — certificates the checker validates | [ProgramCertificates.lean](lean/Verification/Model/Programs/ProgramCertificates.lean), [PositiveCertificates.lean](lean/Verification/Model/Types/PositiveCertificates.lean) | — | proof search |
+| **Diagnostic** — why an attempt did not succeed | in [RequestJson.lean](lean/Verification/Model/Source/RequestJson.lean) | [diagnostic.mts](tools/diagnostic.mts), rendered by [diagnostic-view.mts](tools/diagnostic-view.mts) | the verifier |
+| **SKJS claims** — what SKJS's checker believes at each site of one file | decoded by `decodeClaims` in [Fragment.lean](lean/Verification/Model/Source/Fragment.lean) | [skjs-claims.mts](tools/skjs-claims.mts) | SKJS |
+| **SKJS operations** — the closed judgments SKJS records | checked by [SkjsOperations.lean](lean/Verification/Model/Source/SkjsOperations.lean) | [skjs-operations.mts](tools/skjs-operations.mts) | SKJS |
 
 Named fields cut across most of these at once, and they are named the same way
 everywhere. An object is a finite map from field names to locations, fixed at
@@ -51,7 +51,7 @@ is what a *mutable local's* own cell is called, an internal slot the lowering
 invents, and what a source function's property bag is called, which is what
 gives a function an identity to compare.
 
-Defining no language, and saying so: [Decode.lean](lean/Verification/ExperimentState/Decode.lean)
+Defining no language, and saying so: [Decode.lean](lean/Verification/Model/Types/Decode.lean)
 (source spans and JSON accessors several decoders share) and [span.mts](tools/span.mts).
 
 The [OCaml prototype](ocaml-producer/README.md) consumes the existing Fragment

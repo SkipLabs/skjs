@@ -85,7 +85,7 @@ or termination claim is involved.
 SKJS rejects the singleton result annotation, whereas TypeScript accepts it.
 Normal first-error collection records the final read as `boolean`.
 
-[WriteRefinedRead.lean](../../lean/Verification/ExperimentState/WriteRefinedRead.lean)
+[WriteRefinedRead.lean](../../lean/Verification/Model/Programs/WriteRefinedRead.lean)
 proves the modeled body safe at true and separately proves its terminating
 execution. [Program typing](../../PROGRAM-TYPING.md#current-content-rules-semantic-layer)
 documents the rules used by that proof.

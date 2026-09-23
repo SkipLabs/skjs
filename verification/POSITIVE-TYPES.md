@@ -488,7 +488,7 @@ than null/undefined/boolean, object records, or a surface `extends` language.
 First-order rigid parameters are a layer over graph labels, not a new clause:
 a parameter is a label whose meaning is an assignment `η`, and substituting a
 type argument is interpreting the original syntax under `η[T ↦ ⟦A⟧]`. See
-[TypeParams.lean](lean/Verification/ExperimentState/TypeParams.lean). That
+[TypeParams.lean](lean/Verification/Model/Types/TypeParams.lean). That
 layer's source connection is the identity scheme, `T extends boolean`, T-copy
 bodies, and the identity/cell aliases; it does not yet handle higher-rank
 polymorphism or parameter-changing recursion.
@@ -554,15 +554,15 @@ preservation and subtype soundness already give the guarantees needed here.
 
 Implementation files:
 
-- `lean/Verification/ExperimentState/ReferenceConjunctions.lean`
-- `lean/Verification/ExperimentState/PositiveNormalization.lean`
-- `lean/Verification/ExperimentState/PositiveGraphs.lean`
-- `lean/Verification/ExperimentState/PositiveRules.lean`
-- `lean/Verification/ExperimentState/PositiveCertificates.lean`
-- `lean/Verification/ExperimentState/PositiveNormalizationTests.lean`
-- `lean/Verification/ExperimentState/TypeParams.lean`
-- `lean/Verification/ExperimentState/GenericSource.lean`
-- `lean/Verification/ExperimentState/GenericAlias.lean`
+- `lean/Verification/Model/Types/ReferenceConjunctions.lean`
+- `lean/Verification/Model/Types/PositiveNormalization.lean`
+- `lean/Verification/Model/Types/PositiveGraphs.lean`
+- `lean/Verification/Model/Types/PositiveRules.lean`
+- `lean/Verification/Model/Types/PositiveCertificates.lean`
+- `lean/Verification/Model/Tests/PositiveNormalizationTests.lean`
+- `lean/Verification/Model/Types/TypeParams.lean`
+- `lean/Verification/Model/Source/GenericSource.lean`
+- `lean/Verification/Model/Source/GenericAlias.lean`
 
 Tests cover distribution, cross-shape elimination, retained incompatible
 contracts, nested constraints, cyclic normalization/checking, domain splitting,

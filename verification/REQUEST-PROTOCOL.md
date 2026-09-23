@@ -173,15 +173,15 @@ Tests are `isNul`, `isUndef`, `isNullish`, `isBool`, `isRef` and `isFun`.
 `isNullish` accepts null and undefined; false takes its negative branch. A location never appears
 in a supplied program: it arises only during execution. These are Lean's derived
 codecs, so the field names are the constructor's own; they live in
-[RequestJson.lean](lean/Verification/ExperimentState/RequestJson.lean).
+[RequestJson.lean](lean/Verification/Model/Source/RequestJson.lean).
 
 The evidence file is an object with one field, `certificate`, a list of
 `NodeEvidence` objects. Each node supplies its expression derivation tree and
 one subtype-evidence list per outgoing edge. A derivation node names the
 [typing rule](PROGRAM-TYPING.md#judgments-and-constructor-views) it applies:
 `var`, `nul`, `undef`, `tru`, `fls`, `truLit`, `flsLit`, `numLit`, `num`,
-`strLit`, `str`, `funE`, `app`, `letE`, `alloc`,
-`read`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
+`strLit`, `str`, `funE`, `app`, `letE`, `alloc`, `allocDict`,
+`read`, `readDict`, `indexDict`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
 `unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `arith`, `test`,
 `arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, `funRest`, `makeCallableRest`,
 `callRest`, `arrCopy`, `bindE`, `bindRestE`, or `sub`.
@@ -243,7 +243,7 @@ facts about another. These are finite state assertions, not extra type labels.
 one of the checked `StepEvidence` constructors (`ordinary`, `pure`,
 `typedRead`, `observedRead`, `knownValue`, `created`, `allocated`, `written`). Constructor payloads use
 Lean's derived JSON encoding, with strict decode/re-encode checking; the
-[graph regression](lean/Verification/ExperimentState/HeapGraphTests.lean) tests a
+[graph regression](lean/Verification/Model/Tests/HeapGraphTests.lean) tests a
 round trip with nonempty facts and effect evidence.
 
 The effect checker binds to the root expression sequent and must establish exactly
@@ -428,7 +428,7 @@ with source-graph label bounds checks. Generic functions use the shared rigid
 checker. See [the source-claim interface](SOURCE-CLAIMS.md).
 
 The adapter represents boolean as the union of exact true and false labels.
-[SourceTypes.lean](lean/Verification/ExperimentState/SourceTypes.lean) proves
+[SourceTypes.lean](lean/Verification/Model/Source/SourceTypes.lean) proves
 this primitive translation exact. Unsupported types are rejected. Each source
 expression's exported type remains its result claim; source annotations and
 return requirements are separate synthetic-node obligations. Statement claims

@@ -442,7 +442,7 @@ those execution checks remain deferred unless a concrete discrepancy warrants
 investigation. The [protocol](../../REQUEST-PROTOCOL.md#expression-closures-and-calls)
 owns callable signature restrictions.
 
-Core semantic regressions remain in `lean/Verification/ExperimentState/`.
+Core semantic regressions remain in `lean/Verification/Model/`.
 `SourceCallableUnionTests.lean` isolates union decoding, operand-slot lowering
 and overloaded union calls with explicit claims. Null and Boolean arguments
 select different signatures in each alternative; narrowing the joined result or

@@ -6,9 +6,11 @@ use the same source adapter and independently checked certificates. We do not
 assume SKJS or proof search is sound.
 
 There is one maintained calculus and verifier. Its implementation lives in
-`lean/Verification/ExperimentState/`. `ExperimentState` is the original Lean
-namespace, retained in module imports and the Lake targets after this became
-the sole maintained verifier; it does not name a separate experimental model.
+`lean/Verification/Model/`, organized by semantics, types, program rules,
+source integration, and tests. Declarations share the `Verification.Model`
+namespace; module paths identify their topic. These folders aid navigation,
+not an enforced dependency order: some derived semantic lemmas depend on
+program rules.
 [DESIGN.md](DESIGN.md) describes the architecture and trust boundary.
 
 The base language everything else is defined over is small, and stated in two
@@ -250,20 +252,19 @@ justifies it — the compiled derivations are consequences, never the reason for
 acceptance — and one interface so a later certificate can replace it.
 
 The source boundary starts in
-[Fragment.lean](lean/Verification/ExperimentState/Fragment.lean) and
-[SourceExtraction.lean](lean/Verification/ExperimentState/SourceExtraction.lean);
-[RequestJson.lean](lean/Verification/ExperimentState/RequestJson.lean) checks the
+[Fragment.lean](lean/Verification/Model/Source/Fragment.lean) and
+[SourceExtraction.lean](lean/Verification/Model/Source/SourceExtraction.lean);
+[RequestJson.lean](lean/Verification/Model/Source/RequestJson.lean) checks the
 resulting requests and evidence.
 
-The Lean files currently share one flat `ExperimentState` directory. This map
-locates the main entry points without treating the directory name as a layer:
+The main Lean entry points are:
 
-| Layer | Entry points |
+| Area | Entry points |
 | --- | --- |
-| Operational semantics and worlds | [Calculus](lean/Verification/ExperimentState/Calculus.lean), [Worlds](lean/Verification/ExperimentState/Worlds.lean), [ObjectCoherence](lean/Verification/ExperimentState/ObjectCoherence.lean) |
-| Semantic families and graph types | [Types](lean/Verification/ExperimentState/Types.lean), [PositiveGraphs](lean/Verification/ExperimentState/PositiveGraphs.lean), [PositiveRules](lean/Verification/ExperimentState/PositiveRules.lean) |
-| Program typing and checked evidence | [ProgramTyping](lean/Verification/ExperimentState/ProgramTyping.lean), [ProgramCertificates](lean/Verification/ExperimentState/ProgramCertificates.lean), [CertificateProducer](lean/Verification/ExperimentState/CertificateProducer.lean) |
-| Source boundary and CLI | [Fragment](lean/Verification/ExperimentState/Fragment.lean), [SourceExtraction](lean/Verification/ExperimentState/SourceExtraction.lean), [SourceClaimJson](lean/Verification/ExperimentState/SourceClaimJson.lean), [RequestCli](lean/Verification/ExperimentState/RequestCli.lean) |
+| Operational semantics and worlds | [Calculus](lean/Verification/Model/Semantics/Calculus.lean), [Worlds](lean/Verification/Model/Semantics/Worlds.lean), [ObjectCoherence](lean/Verification/Model/Semantics/ObjectCoherence.lean) |
+| Semantic families and graph types | [Types](lean/Verification/Model/Types/Types.lean), [PositiveGraphs](lean/Verification/Model/Types/PositiveGraphs.lean), [PositiveRules](lean/Verification/Model/Types/PositiveRules.lean) |
+| Program typing and checked evidence | [ProgramTyping](lean/Verification/Model/Programs/ProgramTyping.lean), [ProgramCertificates](lean/Verification/Model/Programs/ProgramCertificates.lean), [CertificateProducer](lean/Verification/Model/Programs/CertificateProducer.lean) |
+| Source boundary and CLI | [Fragment](lean/Verification/Model/Source/Fragment.lean), [SourceExtraction](lean/Verification/Model/Source/SourceExtraction.lean), [SourceClaimJson](lean/Verification/Model/Source/SourceClaimJson.lean), [RequestCli](lean/Verification/Model/Source/RequestCli.lean) |
 | Other code and tests | [OCaml producer](ocaml-producer/README.md), [Node tools](tools/), [report viewer](report-viewer/README.md), [regression index](tests/README.md) |
 
 `tools/export-source-claims.mts` converts an existing SKJS export into editable

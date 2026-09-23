@@ -1,6 +1,6 @@
 # Semantics
 
-The stateful development in [ExperimentState](lean/Verification/ExperimentState)
+The stateful development in [Model](lean/Verification/Model)
 provides the semantic foundation for the positive-type rules specified in
 [POSITIVE-TYPES.md](POSITIVE-TYPES.md). This is the semantics used by the current verifier. [PROGRAM-TYPING.md](PROGRAM-TYPING.md) specifies the proved program
 typing system and checked control-flow graphs. The
@@ -44,7 +44,7 @@ The closure body is not evaluated during creation. There is no bare lambda value
 the fresh object's descriptor. `alloc_rule` and `attach_rule` specialize that
 proof to plain reference and callable contracts.
 
-[ObjectCoherence.lean](lean/Verification/ExperimentState/ObjectCoherence.lean)
+[ObjectCoherence.lean](lean/Verification/Model/Semantics/ObjectCoherence.lean)
 proves the separate identity invariant. An append-only ghost registry records
 each allocation's descriptor. Every object occurrence in terms, closure bodies,
 and heap cells agrees with that registry; an already allocated closure has no
@@ -53,7 +53,7 @@ descriptor. `step_preserves` follows the existing `Step` relation and proves tha
 reads, writes, calls, and allocation preserve coherence, including heap cycles.
 The registry is proof data, not an additional runtime heap.
 
-[GraphCoherence.lean](lean/Verification/ExperimentState/GraphCoherence.lean)
+[GraphCoherence.lean](lean/Verification/Model/Semantics/GraphCoherence.lean)
 lifts this to the existing graph execution, including saved environments and
 slot maps. The graph consumer checks `sourceTerm` on every node, forbidding
 embedded runtime identities even inside unselected branches and empty-overload
@@ -346,7 +346,7 @@ $$
 \equiv \operatorname{Ref}(B)(n,W,\ell)\land\operatorname{Obs}(h,\ell,R).
 $$
 
-`ObservedRef` in [HeapObservations.lean](lean/Verification/ExperimentState/HeapObservations.lean)
+`ObservedRef` in [HeapObservations.lean](lean/Verification/Model/Semantics/HeapObservations.lean)
 is used with `HeapOk(n,W,h)`. For primitive predicates this requires the contents
 to satisfy both the storage invariant and the observation. Consequently
 `{ value: true = false }` is inconsistent in a satisfying heap at every positive
@@ -421,7 +421,7 @@ At budget zero it is true. The `postcondition` theorem proves `Q` for an actual
 terminating execution observed with one remaining level; divergence is permitted.
 `erase` yields ordinary safety, and `forget` embeds ordinary safety with `Q = True`.
 
-[HeapObservationTests.lean](lean/Verification/ExperimentState/HeapObservationTests.lean)
+[HeapObservationTests.lean](lean/Verification/Model/Tests/HeapObservationTests.lean)
 proves the important counterexamples. `observation_not_a_value_type` excludes
 representing current contents by a heap-independent value family.
 `observation_does_not_narrow_invariant` gives a Boolean cell currently true that
@@ -501,7 +501,7 @@ quantification over semantic families alone is not a generics result.
 Rigid parameters, substitution on the identity and `Ref T` aliases (source
 `type Id<T> = T` and `type Box<T> = { value: T }`), and the
 identity function at every `T` are in
-[TypeParams.lean](lean/Verification/ExperimentState/TypeParams.lean).
+[TypeParams.lean](lean/Verification/Model/Types/TypeParams.lean).
 Receivers follow the strict rule only: sloppy code's global-object substitution
 and primitive boxing, `super` and home objects, construction and `new.target`,
 and a bound function's reflective properties (`name`, `length`) are later

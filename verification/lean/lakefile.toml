@@ -3,7 +3,14 @@ defaultTargets = ["verifier", "Verification", "cell_claim_tests"]
 
 [[lean_lib]]
 name = "Verification"
-globs = ["Verification", "Verification.ExperimentState.+"]
+globs = [
+  "Verification",
+  "Verification.Model.Semantics.+",
+  "Verification.Model.Types.+",
+  "Verification.Model.Programs.+",
+  "Verification.Model.Source.+",
+  "Verification.Model.Tests.+",
+]
 
 [[lean_exe]]
 name = "verifier"
@@ -11,4 +18,4 @@ root = "Main"
 
 [[lean_exe]]
 name = "cell_claim_tests"
-root = "Verification.ExperimentState.CellClaimIntegration"
+root = "Verification.Model.Tests.CellClaimIntegration"

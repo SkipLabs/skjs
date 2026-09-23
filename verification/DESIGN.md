@@ -95,7 +95,7 @@ loop must verify, with supplied invariants on every incoming edge and no
 fixed-point inference.
 
 The storage decision is taken and implemented, in
-[SourceExtraction.lean](lean/Verification/ExperimentState/SourceExtraction.lean).
+[SourceExtraction.lean](lean/Verification/Model/Source/SourceExtraction.lean).
 An initialized, annotated `let` lowers to a private cell using the existing
 heap semantics, one representation whether or not it is captured: the slot
 holds the cell's identity, a source read is a read of the cell, and assignment
@@ -426,7 +426,7 @@ is safe at `T → T` for every admissible `T`. Instantiating and applying
 satisfying `Δ`: `T extends boolean` derives `T ≤ boolean` and, independently,
 `true ≤ boolean`. It does not derive `true ≤ T`. Transport of a checked
 term along `SubP` is `sub_safeP`. See
-[TypeParams.lean](lean/Verification/ExperimentState/TypeParams.lean).
+[TypeParams.lean](lean/Verification/Model/Types/TypeParams.lean).
 
 Source extraction of `id<T>(x: T): T { return x }` is connected: the parser
 admits distinct type parameters, SKJS exports each as a rigid `param`
@@ -478,7 +478,7 @@ Local quantified closures are the separate source form below; their call sites
 carry checked scheme eliminations and do not add declaration-call inference to
 this path.
 
-[TypeSchemes.lean](lean/Verification/ExperimentState/TypeSchemes.lean) provides
+[TypeSchemes.lean](lean/Verification/Model/Types/TypeSchemes.lean) provides
 semantic rules for the next callable extension. A scheme denotes one callable
 value satisfying its signatures under every admissible assignment of its bound
 parameters; the assignment is fixed outside those binders and must satisfy the
@@ -687,7 +687,7 @@ spans, claimed signatures, expression types and statement-entry environments.
 The adapter compares signatures with independently parsed source annotations.
 Expression lookup uses full spans; environment lookup uses statement starts
 because the parsers differ on trailing semicolons. Primitive claim decoding lives
-in [Claim.lean](lean/Verification/ExperimentState/Claim.lean); cell and function
+in [Claim.lean](lean/Verification/Model/Types/Claim.lean); cell and function
 contracts have separate bounded decoders. This claim language is not a second
 calculus or an executable source model.
 
@@ -767,7 +767,7 @@ Full TypeScript formalization is not a prerequisite.
 
 ## Source integration
 
-[SourceExtraction.lean](lean/Verification/ExperimentState/SourceExtraction.lean)
+[SourceExtraction.lean](lean/Verification/Model/Source/SourceExtraction.lean)
 connects independently parsed source and actual SKJS exports to the stateful
 consumer. It accepts primitive or bounded callable parameters, initialized `const` declarations,
 nested boolean branches, block-bodied `while` loops and returns, with variables, null/undefined/boolean literals,
@@ -778,16 +778,16 @@ It rejects active-name shadowing, calls to named top-level functions, statements
 an explicit return, and unsupported types. This is a coverage gate for the fragment, not the intended final dead-code policy.
 The identity scheme `id<T>(x: T): T { return x }` is checked under a rigid
 parameter and omitted from the graph request; the same path admits variable-copy
-bodies with distinct parameters and directed dependent bounds. See [GenericSource.lean](lean/Verification/ExperimentState/GenericSource.lean).
+bodies with distinct parameters and directed dependent bounds. See [GenericSource.lean](lean/Verification/Model/Source/GenericSource.lean).
 `type Id<T> = T` and `type Box<T> = { value: T }` are expanded by substitution
 before that check and before ground extraction. See
-[GenericAlias.lean](lean/Verification/ExperimentState/GenericAlias.lean).
+[GenericAlias.lean](lean/Verification/Model/Source/GenericAlias.lean).
 `T extends boolean` is an assumption in `Δ`; returning `x` at `boolean` is
 transport along `SubP`. A generic body may copy `T` through annotated or inferred `const`
 bindings and extra parameters, with bounds to boolean or an earlier parameter.
-See [GenericSource.lean](lean/Verification/ExperimentState/GenericSource.lean).
+See [GenericSource.lean](lean/Verification/Model/Source/GenericSource.lean).
 
-[SourceTypes.lean](lean/Verification/ExperimentState/SourceTypes.lean) translates
+[SourceTypes.lean](lean/Verification/Model/Source/SourceTypes.lean) translates
 null, undefined, boolean, their singleton types, unions and bottom exactly into
 four primitive labels, and interns each compound type a program mentions, an
 invariant reference, a conjunction of references or a callable signature, as one row
@@ -828,7 +828,7 @@ submitted certificates. Graph safety is proved; source evaluation order and
 binding preservation remain part of the reviewed compiler boundary.
 
 The result-binding branch rule and its environment-transfer theorem are proved
-in [BranchRefinement.lean](lean/Verification/ExperimentState/BranchRefinement.lean),
+in [BranchRefinement.lean](lean/Verification/Model/Programs/BranchRefinement.lean),
 with mathematical rules in [PROGRAM-TYPING](PROGRAM-TYPING.md#refinement-under-an-observed-outcome).
 For `if (x)`, the source compiler maps `x` to the tested value on each edge.
 Its true/false singleton can therefore justify SKJS's claimed refinement.
@@ -854,7 +854,7 @@ closures use the existing lambda/application rules; graph-backed closure bodies
 and external callers remain separate integration work.
 
 The cell-contract boundary is implemented in
-[CellClaims.lean](lean/Verification/ExperimentState/CellClaims.lean). SKJS exports
+[CellClaims.lean](lean/Verification/Model/Programs/CellClaims.lean). SKJS exports
 a bounded record with separate read/write types per field, optionality and
 object-mode flags. Synthetic index markers are recorded separately from runtime
 permissions; real indexes remain unsupported. The Lean gate requires at least one
@@ -894,7 +894,7 @@ is refused before proof search. This does not admit record-valued parameters
 or establish contracts for unchecked JavaScript callers.
 
 Object branches are exported faithfully as separate atoms in the existing union
-format. [CellUnion.lean](lean/Verification/ExperimentState/CellUnion.lean) validates
+format. [CellUnion.lean](lean/Verification/Model/Types/CellUnion.lean) validates
 all record arms before allowing a redundant arm to be absorbed by an **existing
 invariant arm**. No malformed arm or unsupported field type is dropped.
 
@@ -917,7 +917,7 @@ and preservation of both aliases' contracts after a write. This export mapping
 is explicit but is not a proved correspondence with SKJS's internal semantics.
 
 Cell programs now pass through source extraction, certificate production and
-independent consumption. [Fragment.lean](lean/Verification/ExperimentState/Fragment.lean)
+independent consumption. [Fragment.lean](lean/Verification/Model/Source/Fragment.lean)
 decodes the source AST and routes record types through the contract gate. Every nested expression retains
 its own supplied claim. Expression lowering saves intermediate values in
 anonymous slots and evaluates the receiver before the RHS. A write uses the
@@ -926,7 +926,7 @@ semantics; temporary slots are discarded by explicit edge maps. An execution
 regression checks the extracted alias-assignment graph's heap and result.
 
 Closure contracts are decoded by
-[Fragment.lean](lean/Verification/ExperimentState/Fragment.lean).
+[Fragment.lean](lean/Verification/Model/Source/Fragment.lean).
 `callableType` checks ordered required-parameter signature shapes and recursively lowers primitive
 and callable arguments and results, including every union and overload arm.
 Bodies compose literals, variables, cell allocation, reads, assignments and
@@ -934,7 +934,7 @@ calls, including nested expression arrows.
 An internal expression claim can differ from the declared result: both are
 checked independently.
 
-[ExpressionClaims.lean](lean/Verification/ExperimentState/ExpressionClaims.lean)
+[ExpressionClaims.lean](lean/Verification/Model/Programs/ExpressionClaims.lean)
 checks supplemental sequents for every closure-body expression, using its exact
 lexical context, lowered term and supplied type. Source annotations produce
 additional result obligations. The source consumer reconstructs this ordered
@@ -1351,7 +1351,7 @@ assumptions and historical coverage counts are not an implementation plan.
 | Mutable structural objects             | Specify field presence, width, aliasing and allowed mutation; extend beyond the current invariant cells and export their types.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | More primitives and operators          | Numbers are admitted as opaque values with singleton literal types, in closure signatures and as the storage contract of a mutable local; finite singleton comparisons are supported, and a comparison on the broad family branches both ways; arithmetic on numbers is the IEEE-754 double operation yielding the number family, with compound assignments, increments and logical assignments to fields and elements evaluating their target once, the Boolean logical forms needing a Boolean target; strings are admitted on the same terms, opaque with literal singletons and equality against a literal; concatenation, general equality and truthiness are not, and each needs its runtime behavior defined and agreement validated. Numeric current-content predicates now cover both singletons and the number family, with checked transfer across graph edges.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Graph-backed closure bodies            | Extend the call/body interface if source functions require graph control flow internally; surrounding graph loops are insufficient.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Generics and bounds                    | The rigid model slice is in [TypeParams.lean](lean/Verification/ExperimentState/TypeParams.lean). Source extraction of identity, `T extends boolean`, annotated and inferred immutable copies, and extra `T` parameters is in [GenericSource.lean](lean/Verification/ExperimentState/GenericSource.lean). Source extraction of `type Id<T> = T` and `type Box<T> = { value: T }` is in [GenericAlias.lean](lean/Verification/ExperimentState/GenericAlias.lean). Distinct parameters and dependent upper-bound chains in variable-copy bodies are checked using [GenericBounds.lean](lean/Verification/ExperimentState/GenericBounds.lean). [TypeSchemes.lean](lean/Verification/ExperimentState/TypeSchemes.lean) gives quantified callable semantics; source extraction connects the narrow unbounded local-closure slice described above, checks introduction universally, and compiles checked ground eliminations to graph arrows. Remaining: calls to generic declarations, generic callbacks, bounded or nested local schemes, general quantified closure bodies, conditional types, higher-rank polymorphism and parameter-changing recursion. Generic parameters, inference variables and hidden object type arguments are not interchangeable. Observing several calls is not universal certification; the separate introduction check is. |
+| Generics and bounds                    | The rigid model slice is in [TypeParams.lean](lean/Verification/Model/Types/TypeParams.lean). Source extraction of identity, `T extends boolean`, annotated and inferred immutable copies, and extra `T` parameters is in [GenericSource.lean](lean/Verification/Model/Source/GenericSource.lean). Source extraction of `type Id<T> = T` and `type Box<T> = { value: T }` is in [GenericAlias.lean](lean/Verification/Model/Source/GenericAlias.lean). Distinct parameters and dependent upper-bound chains in variable-copy bodies are checked using [GenericBounds.lean](lean/Verification/Model/Types/GenericBounds.lean). [TypeSchemes.lean](lean/Verification/Model/Types/TypeSchemes.lean) gives quantified callable semantics; source extraction connects the narrow unbounded local-closure slice described above, checks introduction universally, and compiles checked ground eliminations to graph arrows. Remaining: calls to generic declarations, generic callbacks, bounded or nested local schemes, general quantified closure bodies, conditional types, higher-rank polymorphism and parameter-changing recursion. Generic parameters, inference variables and hidden object type arguments are not interchangeable. Observing several calls is not universal certification; the separate introduction check is. |
 | Difference and negation                | Supply sound rules or approximations: pointwise complement need not preserve admissibility. They do not follow from positive normalization.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Exceptions                             | Model abrupt completion, state at raising, and pending returns/exceptions through `finally`; ordinary graph edges alone are insufficient.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 

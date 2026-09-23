@@ -28,22 +28,22 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-const LEAN = "verification/lean/Verification/ExperimentState";
+const LEAN = "verification/lean/Verification/Model";
 const DOCS = "verification";
 
 /** A rule-bearing inductive: the acceptance language the docs describe. */
 const DECLARATIONS: readonly { type: string; file: string; what: string }[] = [
-  { type: "HasTy", file: "ProgramTyping.lean", what: "typing rules" },
-  { type: "Rule", file: "ProgramCertificates.lean", what: "evidence rules" },
-  { type: "Proof", file: "PositiveCertificates.lean", what: "subtype proofs" },
+  { type: "HasTy", file: "Programs/ProgramTyping.lean", what: "typing rules" },
+  { type: "Rule", file: "Programs/ProgramCertificates.lean", what: "evidence rules" },
+  { type: "Proof", file: "Types/PositiveCertificates.lean", what: "subtype proofs" },
   {
     type: "ArrowCert",
-    file: "PositiveCertificates.lean",
+    file: "Types/PositiveCertificates.lean",
     what: "arrow certificates",
   },
   {
     type: "StepEvidence",
-    file: "HeapExpressionRules.lean",
+    file: "Programs/HeapExpressionRules.lean",
     what: "effect evidence",
   },
 ];

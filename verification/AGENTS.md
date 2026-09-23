@@ -183,7 +183,7 @@ an exporter change needs a place to show, one phenomenon per file.
   outside reads them, and there is no older document to keep working.
 - Lean: no `sorry`, no project axioms; `#print axioms` on every soundness
   theorem stays in the file. Build only the module you changed while
-  iterating (`lake build Verification.ExperimentState.<Module>`).
+  iterating (`lake build Verification.Model.<Layer>.<Module>`).
 - New executable fields on an existing AST constructor need an explicit audit
   of every lowering and certification path. Exhaustive constructor matching
   alone cannot detect a discarded field. Each path must check the field's
