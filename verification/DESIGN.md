@@ -1686,8 +1686,12 @@ argument for `.call` and `.apply`. An ordinary function expression or
 object-literal method binds it as `this`, in the slot before its parameters; an
 arrow resolves `this` to the enclosing ordinary function's slot, as a capture.
 The receiver rule is the strict one, so the fragment records strictness — a
-`"use strict"` directive of the file, the enclosing declaration or the function
-itself — and the decoder refuses a function reading `this` in sloppy code. A
+`"use strict"` directive of the file or an enclosing function body (including
+an arrow body). The parser checks strictness at every `this` read, including
+declaration entry points and lexical captures, using the binding function's
+mode rather than a capturing arrow's mode; the decoder additionally checks
+ordinary closure bodies against their recorded strictness. Sloppy receiver
+conversion is not modeled, so these reads are refused in sloppy code. A
 receiver annotation is lowered like a record contract with its readonly members
 as views, so writing through a readonly receiver field is refused. A method call
 saves the object, then the method read from it, then the actuals, then invokes;

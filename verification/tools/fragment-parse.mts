@@ -183,9 +183,9 @@ class Gate {
    * directive (ECMAScript's, not TypeScript's `strict` option). An ordinary
    * function records it: its receiver rule is the strict one. */
   strict = false;
-  /* Whether `this` has a binding here: inside an ordinary function expression,
-   * including an arrow nested in one, which captures it. */
-  private receiverBound = false;
+  // Mode of the ordinary function that bound `this`, or no binding. A strict
+  // arrow captures its creator's already-converted receiver; it cannot rebind it.
+  private receiverMode: "strict" | "sloppy" | null = null;
   constructor(file: SourceFile) {
     this.file = file;
   }
@@ -639,8 +639,13 @@ class Gate {
     if (node.kind === ts.SyntaxKind.ThisKeyword) {
       // Only an ordinary function expression, a method, or a declaration
       // stating a `this` parameter binds a receiver.
-      if (!this.receiverBound)
+      if (this.receiverMode === null)
         this.fail(node, "`this` where no receiver is bound");
+      // Check every source read here, including declaration bodies and lexical
+      // captures. The calculus has no sloppy receiver conversion; checking only
+      // lambda construction leaves declaration entry points unprotected.
+      if (this.receiverMode === "sloppy")
+        this.fail(node, "a function that reads `this` must be strict code");
       return { k: "this", pos: this.span(node) };
     }
 
@@ -1412,7 +1417,7 @@ class Gate {
     // A directive prologue in the function's own body makes it strict. It
     // is a syntax error beside parameters that are not simple.
     const prologue =
-      ordinary && ts.isBlock(body)
+      ts.isBlock(body)
         ? this.useStrict(body.statements)
         : { strict: false, skip: new Set<Statement>() };
     if (
@@ -1421,9 +1426,11 @@ class Gate {
     )
       this.fail(node, '"use strict" beside non-simple parameters');
     const outerStrict = this.strict;
-    const outerBound = this.receiverBound;
+    const outerReceiverMode = this.receiverMode;
     this.strict = outerStrict || prologue.strict;
-    if (ordinary) this.receiverBound = true;
+    if (ordinary) {
+      this.receiverMode = this.strict ? "strict" : "sloppy";
+    }
     const typeParams = this.enterTypeParams(node.typeParameters);
     try {
       const receiver = !ordinary
@@ -1494,7 +1501,7 @@ class Gate {
     } finally {
       this.leaveTypeParams();
       this.strict = outerStrict;
-      this.receiverBound = outerBound;
+      this.receiverMode = outerReceiverMode;
     }
   }
 
@@ -1870,8 +1877,8 @@ class Gate {
       !!head && ts.isIdentifier(head.name) && head.name.text === "this";
     if (receiverParam && (!head.type || head.questionToken || head.dotDotDotToken))
       this.fail(head, "a receiver needs a required type annotation");
-    const outerBound = this.receiverBound;
-    this.receiverBound = receiverParam;
+    const outerReceiverMode = this.receiverMode;
+    this.receiverMode = receiverParam ? (this.strict ? "strict" : "sloppy") : null;
     const typeParams = this.enterTypeParams(node.typeParameters);
     try {
       const params = node.parameters.map((p) => {
@@ -1917,7 +1924,7 @@ class Gate {
     } finally {
       this.leaveTypeParams();
       this.strict = outerStrict;
-      this.receiverBound = outerBound;
+      this.receiverMode = outerReceiverMode;
     }
   }
 }

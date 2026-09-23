@@ -309,6 +309,12 @@ with its source span, environment, actual type and required receiver type.
 
 #### Implementation status
 
+Strictness is checked at every source `this` read, including declaration entry
+points. Arrow-body directive prologues affect nested code, but an arrow's
+captured receiver retains its binding function's mode. `methods.mts` checks
+both distinctions against JavaScript execution and independent certification;
+forged sloppy closure modes are rejected by both evidence entry points.
+
 - **R1.** `Tm.invoke f r args` replaced the receiverless call; `call` and `app`
   abbreviate it with `undefined`. Ready frames carry the receiver, evaluated
   after the callee and before the actuals (`Step.callRecv`), and determinism,

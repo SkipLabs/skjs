@@ -64,16 +64,9 @@ try {
   fs.writeFileSync(sloppy, source.replace('"use strict";\n', ""));
   fs.writeFileSync(path.join(work, "tsconfig.json"),
     JSON.stringify({compilerOptions: {strict: true}, files: ["sloppy.ts"]}));
-  const sloppyAst = path.join(work, "sloppy.ast.json");
   const reparsed = run(process.execPath, ["verification/tools/fragment-parse.mts", sloppy]);
-  assert.equal(reparsed.status, 0, reparsed.stderr);
-  fs.writeFileSync(sloppyAst, reparsed.stdout);
-  const sloppyClaims = path.join(work, "sloppy.claims.json");
-  const reproduced = run(process.execPath, ["verification/tools/tsc-claims.mts", sloppy, "--out", sloppyClaims]);
-  assert.equal(reproduced.status, 0, reproduced.stderr);
-  const rejected = run(verifier, ["--produce-source-claims", sloppyAst, sloppyClaims, sloppy, evidence, "10"]);
-  assert.notEqual(rejected.status, 0);
-  assert.match(rejected.stdout + rejected.stderr, /a function that reads `this` must be strict code/);
+  assert.notEqual(reparsed.status, 0);
+  assert.match(reparsed.stdout + reparsed.stderr, /a function that reads `this` must be strict code/);
   console.log("  the method in sloppy code is refused: OK");
 } finally {
   fs.rmSync(work, {recursive: true, force: true});

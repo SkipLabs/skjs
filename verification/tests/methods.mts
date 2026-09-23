@@ -253,13 +253,89 @@ try {
   {
     const sloppy = snapshot(source.replace('"use strict";\n', ""));
     const parsed = run(process.execPath, ["verification/tools/fragment-parse.mts", sloppy]);
-    assert.equal(parsed.status, 0, parsed.stderr);
-    const tree: Ast = JSON.parse(parsed.stdout);
-    const p = produced(sloppy);
-    const r = verify(sloppy, tree, p.claims);
+    assert.notEqual(parsed.status, 0);
+    assert.match(parsed.stderr, /a function that reads `this` must be strict code/);
+    ok("a receiver-dependent function in sloppy code is refused at its span");
+  }
+  // The independent decoder must still reject a closure whose recorded mode
+  // is sloppy, even when supplied with evidence produced for strict code.
+  {
+    const edited = structuredClone(ast);
+    let changed = 0;
+    const visit = (x: unknown): void => {
+      if (Array.isArray(x)) return x.forEach(visit);
+      if (!x || typeof x !== "object") return;
+      if ("k" in x && x.k === "lambda" && "receiver" in x) {
+        const receiver = x.receiver;
+        if (receiver && typeof receiver === "object" && "strict" in receiver) {
+          receiver.strict = false;
+          changed++;
+        }
+      }
+      Object.values(x).forEach(visit);
+    };
+    visit(edited);
+    assert(changed > 0);
+    for (const reused of [undefined, evidence]) {
+      const r = verify(at, edited, claims, reused);
+      assert.notEqual(r.status, 0);
+      assert.match(r.stderr, /a function that reads `this` must be strict code/);
+    }
+    ok("both evidence entry points reject a sloppy closure mode");
+  }
+  // Declaration entry points obey the same rule as expressions. In sloppy
+  // JavaScript a supplied undefined becomes the global object before the body.
+  {
+    const text = "function sloppyEntry(this: undefined): undefined { return this; }";
+    assert.equal(execute(text, "typeof sloppyEntry.call(undefined)"), "object");
+    const bad = snapshot(text);
+    const r = run(process.execPath, ["verification/tools/fragment-parse.mts", bad]);
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /a function that reads `this` must be strict code/);
-    ok("a receiver-dependent function in sloppy code is refused at its span");
+    assert.equal(ocamlCheck(bad).status, "unsupported");
+    const good = snapshot(text.replace("{ return", '{ "use strict"; return'));
+    const p = produced(good);
+    const v = verify(good, p.ast, p.claims);
+    assert.equal(v.status, 0, v.stderr);
+    assert.equal(verify(good, p.ast, p.claims, JSON.parse(fs.readFileSync(v.out, "utf8"))).status, 0);
+    assert.equal(ocamlCheck(good).status, "verified");
+    ok("declaration receivers require strict code, including a body directive");
+  }
+  // Arrow bodies have directive prologues too. The nested ordinary function
+  // inherits strictness even though the arrow inherits its receiver lexically.
+  {
+    const text = `function nestedStrict(): boolean {
+      const outer = (): boolean => {
+        "use strict";
+        const f = function(this: undefined): undefined { return this; };
+        return f() === undefined;
+      };
+      return outer();
+    }`;
+    assert.equal(execute(text, "nestedStrict()"), true);
+    const good = snapshot(text);
+    const p = produced(good);
+    const v = verify(good, p.ast, p.claims);
+    assert.equal(v.status, 0, v.stderr);
+    assert.equal(verify(good, p.ast, p.claims, JSON.parse(fs.readFileSync(v.out, "utf8"))).status, 0);
+    assert.equal(ocamlCheck(good).status, "verified");
+    const bad = snapshot(text.replace('"use strict";', '"use sloppy";'));
+    const r = run(process.execPath, ["verification/tools/fragment-parse.mts", bad]);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /a function that reads `this` must be strict code/);
+    ok("arrow directive prologues establish inherited strictness");
+  }
+  {
+    const text = `function capturedSloppy(this: undefined): undefined {
+      const read = (): undefined => { "use strict"; return this; };
+      return read();
+    }`;
+    assert.equal(execute(text, "typeof capturedSloppy.call(undefined)"), "object");
+    const bad = snapshot(text);
+    const r = run(process.execPath, ["verification/tools/fragment-parse.mts", bad]);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /a function that reads `this` must be strict code/);
+    ok("a strict arrow cannot undo its creator's sloppy receiver conversion");
   }
   // `this` in a function declaration names nothing the fragment binds.
   {
