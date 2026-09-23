@@ -511,7 +511,8 @@ ground types without rechecking the body at each type.
 The scheme itself is a source-claim form and semantic layer, not a new positive
 graph clause. No scheme certificate is serialized yet: introduction is checked
 directly during source request construction, while the compiled eliminations
-produce ordinary graph evidence. Bounds to `boolean` or an earlier binder,
+produce ordinary graph evidence. Bounds to `boolean`, an earlier binder, or a
+source-imported non-generic graph type such as `Json`,
 callbacks over the binders, captured fixed-contract writes and returned closures
 that retain an outer binder are implemented. Nested quantified closures,
 general closure bodies, calls to generic declarations, recursive scheme nodes
@@ -726,6 +727,12 @@ modeling choices; they do not replace proof.
 ### What remains assumed
 
 - The independent parser faithfully represents the supported source text.
+- For imported types, the source resolver's declaration identities and source
+  bytes are cross-checked against TypeScript's checker in a separate project
+  instance. This assumes the snapshot `tsconfig.json` (including its source
+  package mappings) reflects the real upstream build, and trusts TypeScript's
+  own resolution. The Lean theorem does not validate the recorded import or
+  mapping hashes; they are provenance, not proof of that assumption.
 - Source and claim translation preserve intended control flow, lexical binding,
   annotations and type meaning. Scope association cannot be recovered merely
   by checking that two slots have compatible types.
@@ -784,7 +791,9 @@ before that check and before ground extraction. See
 [GenericAlias.lean](lean/Verification/Model/Source/GenericAlias.lean).
 `T extends boolean` is an assumption in `Δ`; returning `x` at `boolean` is
 transport along `SubP`. A generic body may copy `T` through annotated or inferred `const`
-bindings and extra parameters, with bounds to boolean or an earlier parameter.
+bindings and extra parameters, with bounds to Boolean, an earlier parameter,
+or a source-imported non-generic graph type. This is a source-checker coverage
+limit, not a restriction of the rigid-bound semantics.
 See [GenericSource.lean](lean/Verification/Model/Source/GenericSource.lean).
 
 [SourceTypes.lean](lean/Verification/Model/Source/SourceTypes.lean) translates

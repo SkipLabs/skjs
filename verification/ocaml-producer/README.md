@@ -17,14 +17,17 @@ dune build --root verification/ocaml-producer
 node verification/ocaml-producer/check.mts verification/ocaml-producer/examples/callbacks.ts
 node verification/ocaml-producer/check.mts verification/ocaml-producer/examples/recursive-json.ts \
   --project verification/ocaml-producer/upstream
+node verification/ocaml-producer/check.mts verification/ocaml-producer/examples/recursive-json-variants.ts \
+  --project verification/ocaml-producer/upstream
 dune runtest --root verification/ocaml-producer
 node verification/ocaml-producer/test.mts
 ```
 
-The `--project` argument may also point at the actual Skip checkout (for
-example `../skip`); the command reads its TypeScript files, package exports,
-and workspace symlinks directly. The checked-in `upstream` directory is a
-small source-tree snapshot used to make the test reproducible.
+The `--project` argument reads TypeScript files, package exports, workspace
+symlinks, and a `tsconfig.json` that includes the client. The checked-in
+`upstream` directory is a small source-tree snapshot with that project setup.
+A full Skip checkout needs an equivalent client project before its imports can
+pass the new TypeScript resolution check.
 
 Set `VERIFIER` to reuse a verifier executable built from this checkout's Lean
 sources. This avoids rebuilding Lean in a fresh worktree. The prototype requires
@@ -480,8 +483,9 @@ upstream revision. Given an explicit package map and those hashed files,
 resolution follows the star
 exports and identifies the declaration and source span: the four client types
 land in `core/src/api.ts`; `runService` lands in `server/src/server.ts`. A
-missing module, ambiguous export route, unsupported import form, or changed
-file hash is refused. This is not yet contract evidence: the API's `Json` and
+missing module, ambiguous export route, or unsupported import form is refused.
+The test's pinned hashes guard fixture changes, not checker soundness. This is
+not yet contract evidence: the API's `Json` and
 `DepSafe` bounds and the server implementation's imports remain unresolved.
 Those dependencies and their eventual evidence must enter the verifier request
 before the source gate admits imports. The test also enumerates the six class
@@ -511,25 +515,45 @@ Other declaration kinds and type-binding forms still refuse explicitly. The
 Fragment document now has one required `imports` slot, emitted empty by the
 source parser. The collector can assemble both real `Json` imports into that
 shared slot with deduplicated declaration equations, module bytes, route
-fingerprints, and the workspace symlink target. The trusted parser fills
-the slot for named type-only imports when its caller supplies an explicit,
-fingerprinted module universe. The parser represents imported references in
+fingerprints, and the workspace symlink target. The source parser fills
+the slot for named type-only imports when its caller supplies an explicit
+module universe. Before admitting it, a separate TypeScript checker instance
+resolves each client import and every reference inside the collected alias
+bodies to exactly one type-alias declaration. Its real file path and span must
+match our resolver's choice; every touched module's TypeScript source text must
+match the text from which our equations were parsed. The parser represents imported references in
 function annotations as alias atoms whose local spellings resolve through the
 declaration-identified roots. Exported source functions are accepted as strict
 module code. With that universe, both `nest` and `lookup` in
 [`recursive-json.ts`](examples/recursive-json.ts) now reach Lean evidence
-production and checking and verify. Two invalid clients using the same pinned
-universe reach search and fail: a non-JSON dictionary member and a missing-key
-read without `undefined`. OCaml reserves empty rows for imported declarations;
+production and checking and verify. In
+[`recursive-json-values.ts`](examples/recursive-json-values.ts), Boolean,
+number, string, array and object values pass to a `Json` consumer. In
+[`recursive-json-variants.ts`](examples/recursive-json-variants.ts), those
+kinds of values pass to a universally checked `<T extends Json>` closure.
+At each call OCaml proposes the imported `Json` bound as a widened
+instantiation of `T`; Lean checks the concrete argument and the bound. These
+calls do not establish separate precise inferred types for `T`. Three invalid
+clients using the same pinned universe reach search and fail: a non-JSON
+dictionary member, a missing-key read without `undefined`, and a function
+passed to `<T extends Json>`. OCaml reserves empty rows for imported declarations;
 Lean derives and fills their equations from the Fragment's source-type
 expressions. The suite refuses producer-filled rows and source-authored internal
 graph labels. The CLI accepts `--project` with a source checkout containing the
 TypeScript files, package manifests and workspace symlinks; the test and command
 above read the same checked-in source snapshot. All intermediate JSON is
-generated from that source tree. A bare CLI invocation and the viewer still do not
-supply a module universe, so their `recursive-json.ts` entry remains an explicit source gap. This is
-conditional verification relative to the trusted import document, not closure
-of the full milestone.
+generated from that source tree. The viewer uses the same project mapping from
+the executable case inventory; a bare CLI invocation still needs `--project`.
+This is conditional verification relative to the trusted import document, not
+closure of the full milestone.
+
+The present source checker recognizes `boolean`, an earlier rigid parameter,
+and a non-generic imported graph node as bounds. This is a translation gap,
+not a semantic restriction on generics: a well-formed bound can be any type
+the model interprets. General ground bounds should go through the same
+annotation-to-graph translation as parameter and result types, with the
+translated upper bound checked under the preceding binders. Adding individual
+special cases for `number`, objects, or arrays would leave the wrong boundary.
 
 OCaml also reads the same source-type expressions to choose useful candidates
 for fresh literals, including a dictionary candidate for `{ child: ... }`.
@@ -538,20 +562,23 @@ lose a proof or propose a false claim, but Lean derives the graph equation and
 checks every field obligation independently. This keeps candidate search from
 becoming a second implementation of the imported type's meaning.
 
-The import document is self-contained for the collected declaration equations
-and their source bytes, but **not yet for independently checked source or route
-authority**. The TypeScript parser and resolver are trusted to derive equations
-from the supplied source bytes; Lean interprets those equations but does not
-reparse TypeScript or recompute the recorded SHA-256 fingerprints. The CLI
-builds the universe from the checkout's `.ts` files, package `exports`, and
-actual workspace symlinks, hashing each input before parsing. This removes a
-handwritten route manifest, but Lean still trusts that front-end construction:
-its acceptance theorem does not independently prove that a given package
-export or symlink came from those filesystem inputs. The present result is
-relative to the supplied source tree and that trusted front end. Independent
-route reconstruction, or explicit assumptions in the acceptance theorem and
-viewer report, remain necessary before presenting this as verification of
-arbitrary resolved TypeScript imports.
+The import document contains the collected declaration equations and their
+source bytes. Resolution is cross-checked against TypeScript under the
+snapshot's dedicated [`upstream/tsconfig.json`](upstream/tsconfig.json), which
+includes the imported-`Json` clients and mirrors upstream's strict Node16
+resolution. The checker opens this configured project explicitly, leaving the
+other OCaml examples' TypeScript project unchanged. Because the snapshot
+contains neither built `dist`
+declarations nor npm's workspace links, its two package entry points have
+explicit source `paths` mappings; the `skiplang-json` workspace link is real.
+The remaining trust assumption is that this project configuration agrees with
+the actual upstream build. The TypeScript checker and our source-type parser
+remain trusted: Lean interprets the collected equations but does not reparse
+TypeScript, reconstruct package exports or symlink routes, or check the
+`imports.sources` and `mappings` hashes. Those hashes record provenance only.
+The test's pinned hashes guard accidental fixture changes and are not a
+soundness argument. The result remains relative to the supplied source tree
+and this front end, rather than verification of arbitrary imports.
 
 `core/src/api.ts` imports `Json`, `JsonObject` and `DepSafe` from
 `../skiplang-json/index.js`. In the Skip checkout, `prebuild.mjs` makes

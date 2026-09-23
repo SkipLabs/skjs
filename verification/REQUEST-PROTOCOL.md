@@ -375,7 +375,8 @@ each distinct type parameter exported as a `param` atom. Function AST objects al
 include `typeParams` (empty when the function is not generic). Each type
 parameter is `{ "name": "T", "bound": null }` or `{ "name": "T", "bound": boolean }`
 for `T extends boolean`; a bound may also be a `param` atom naming an earlier
-parameter. Duplicate names, forward bounds and cycles are rejected. The file AST always includes `aliases` (empty when the
+parameter or a source-imported non-generic alias translated to its graph node.
+Duplicate names, forward bounds and cycles are rejected. The file AST always includes `aliases` (empty when the
 file declares none). `type Id<T> = T` and `type Box<T> = { value: T }` are the
 admitted alias schemes; a one-argument named instantiation is an `alias` atom
 `{ "a": "alias", "name": "Id", "args": [A] }`.

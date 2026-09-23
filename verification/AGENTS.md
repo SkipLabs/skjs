@@ -35,6 +35,11 @@ make verify-examples-tsc         # only that producer
 make viewer                      # the claim report reader on http://localhost:8731
 ```
 
+`make verify-test` includes the OCaml producer's Dune unit tests and its
+end-to-end source cases, including imports from the pinned upstream source
+tree. Install OCaml and Dune as described in
+[the producer guide](ocaml-producer/README.md#try-it) before running it.
+
 One file end to end, with `$F` a repository-relative path:
 
 ```sh
@@ -70,7 +75,7 @@ anything added; the runner summary reports the current suite count.
   output is buffered and reported in order, and a failure is counted, never
   fatal. A suite reads the fixtures the script built and runs the verifier
   binary; it does not build Lean, does not run SKJS, and does not run the
-  corpus.
+  corpus. The OCaml suite also builds its Dune executable before its tests.
 
 `examples.mts` follows the same rules on its own: one producer run for every
 corpus file, one worker per core, and colour decided once in the parent.
