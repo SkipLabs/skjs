@@ -261,12 +261,17 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
       return splitReceiver f
     | .makeAt .absent ns inits =>
       return (A :: pool).findSome? fun R => do
-        let [.refs B [] []] := expand G R | none
-        if B.map Prod.fst != ns then none else do
         if !(decide ns.Nodup) then none else do
         if inits.length != ns.length then none else do
-        let ps ← (inits.zip (B.map Prod.snd)).mapM fun (a,D) => recur Γ a D
-        coerce G pool (.node ⟨Γ,t,R⟩ .alloc ps) A
+        match expand G R with
+        | [.refs B [] []] =>
+          if B.map Prod.fst != ns then none else do
+          let ps ← (inits.zip (B.map Prod.snd)).mapM fun (a,D) => recur Γ a D
+          coerce G pool (.node ⟨Γ,t,R⟩ .alloc ps) A
+        | [.dict [] [] [] [E]] =>
+          let ps ← inits.mapM fun a => recur Γ a E
+          coerce G pool (.node ⟨Γ,t,R⟩ .allocDict ps) A
+        | _ => none
     | .readAt f a =>
       let direct := pool.findSome? fun R => do
         -- An invariant field reads at its contract; a view field at its bound.

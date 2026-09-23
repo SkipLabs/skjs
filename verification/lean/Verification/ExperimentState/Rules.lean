@@ -303,6 +303,32 @@ theorem make_fields_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
       rw [this]
       simp [List.getElem?_map, List.getElem?_eq_getElem (show i < As.length by omega)]
 
+/-- Fresh dictionary construction chooses the index element contract for
+every location it creates. The rule does not coerce an open record: its
+premises type *all* initializers at the index contract. -/
+theorem make_dict_rule {Q A : Fam} (hA : Adm A)
+    (n : Nat) (W : WorldT n) (h : Heap) (ns : List String) (vs : List Val)
+    (hnd : ns.Nodup) (hlen : ns.length = vs.length)
+    (hvals : ∀ v ∈ vs, isVal v = true)
+    (hadm : WorldAdm W) (hok : HeapOk n W h)
+    (hv : ∀ p ∈ (List.replicate vs.length A).zip vs, p.1 n W p.2)
+    (result : ∀ j (hj : j < n) (U : WorldT j),
+      WExt (trunc j (Nat.le_of_lt hj) W) U →
+      dictViewT A j U (.objAt (slots h.length ns) .absent) →
+      Q j U (.objAt (slots h.length ns) .absent)) :
+    Safe Q n W h (.makeAt .absent ns vs) := by
+  apply make_fields_rule (As := List.replicate vs.length A)
+    (by intro B hB; simp at hB; simpa [hB] using hA)
+    n W h .absent ns vs hnd hlen (by simp) hvals hadm hok
+  · exact hv
+  · intro j hj U he hrec
+    apply result j hj U he
+    have hrec' : recT (ns.zip (List.replicate ns.length A)) j U
+        (.objAt (slots h.length ns) .absent) := by simpa [hlen] using hrec
+    exact recT_fresh_dict hrec'
+
+#print axioms make_dict_rule
+
 /-- **A literal allocates a store.** One fresh location per element, each
 under its family, and the store meets the claimed tuple contract by
 `listT_alloc`; the continuation sees it at the extended world. -/

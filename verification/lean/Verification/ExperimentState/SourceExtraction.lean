@@ -911,20 +911,23 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       obligation e.span check.goal (some check) "cast-annotation" (held ⟨"",some a.span⟩ :: scope)
     pure (DirectProof.cast Γ A p)
   | .alloc _ ns es => do
-    let [.refs B [] []] := PositiveRules.expand G A
-      | throw "allocation claim must name a record contract"
-    if B.length != ns.length then throw "allocation claim names different fields"
-    let B ← ns.mapM fun name => do
-      let some D := B.lookup name | throw "allocation claim names different fields"
-      pure (name,D)
-    let Ref ← lower (CellClaims.reference B)
     if es.length != ns.length then throw "allocation initializer count mismatch"
-    -- Every initializer is checked in the lexical context of the literal, which
-    -- is what the allocation rule asks for; the calculus still evaluates them
-    -- left to right, and the rule's soundness carries each claim forward.
     let ps ← es.mapM fun a => closureExpr fc scope Γ a
-    let casts := (ps.zip (B.map Prod.snd)).map fun (p,D) => DirectProof.cast Γ D p
-    pure (DirectProof.node Γ (.makeAt .absent ns (ps.map (·.term))) [Ref] .alloc casts)
+    match PositiveRules.expand G A with
+    | [.refs B [] []] =>
+      if B.length != ns.length then throw "allocation claim names different fields"
+      let B ← ns.mapM fun name => do
+        let some D := B.lookup name | throw "allocation claim names different fields"
+        pure (name,D)
+      let Ref ← lower (CellClaims.reference B)
+      -- The calculus evaluates these initializers from left to right.
+      let casts := (ps.zip (B.map Prod.snd)).map fun (p,D) => DirectProof.cast Γ D p
+      pure (DirectProof.node Γ (.makeAt .absent ns (ps.map (·.term))) [Ref] .alloc casts)
+    | [.dict [] [] [] [E]] =>
+      if ns.eraseDups.length != ns.length then throw "duplicate dictionary literal key"
+      let casts := ps.map fun p => DirectProof.cast Γ E p
+      pure (DirectProof.node Γ (.makeAt .absent ns (ps.map (·.term))) A .allocDict casts)
+    | _ => throw "allocation claim must name a record or readonly dictionary contract"
   | .read _ fld a => do
     let receiver := a
     let a ← closureExpr fc scope Γ a

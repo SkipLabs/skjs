@@ -10,3 +10,8 @@ function readPossiblyAbsent(x: {
 }): boolean | undefined {
   return x["missing"];
 }
+
+// All locations are allocated here, so every present value can be checked.
+function makeDictionary(): { readonly [key: string]: boolean } {
+  return { ready: true, done: false };
+}

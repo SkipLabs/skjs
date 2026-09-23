@@ -83,9 +83,11 @@ recursive labels, and the checked covering rule can compare dictionary views.
 The source parser and OCaml producer lower inline readonly string-index
 annotations into that clause. A named key read uses the proved `readDict` rule
 and carries `undefined` in its result. This path reaches the same certified
-source acceptance theorem as other expressions. Fresh dictionary construction,
-dynamic keys and imported recursive declarations remain outside the source
-fragment.
+source acceptance theorem as other expressions. The `allocDict` rule checks
+every initializer at the index element contract and uses the exact fresh
+field map to establish a dictionary view; it cannot retype an existing open
+record. Dynamic keys and imported recursive declarations remain outside the
+source fragment.
 
 Term and descriptor equality use explicit structural comparisons, each returning
 a kernel-checked `Decidable` result and recurring only on strict subterms. This

@@ -352,6 +352,61 @@ theorem dictViewT_present {A : Fam} {k : Nat} {W : WorldT k}
   cases heq
   exact hf f l hl
 
+private theorem lookup_pair_mem {fs : List (String × Nat)} {f : String} {l : Nat}
+    (h : fs.lookup f = some l) : (f, l) ∈ fs := by
+  induction fs with
+  | nil => simp [List.lookup] at h
+  | cons p fs ih =>
+    obtain ⟨name, loc⟩ := p
+    rw [List.lookup_cons] at h
+    split at h
+    · rename_i he
+      have hn : f = name := by simpa using he
+      cases hn
+      cases h
+      simp
+    · exact List.mem_cons_of_mem _ (ih h)
+
+private theorem slots_names (base : Nat) (ns : List String) :
+    (slots base ns).map Prod.fst = ns := by
+  induction ns generalizing base with
+  | nil => simp [slots]
+  | cons name rest ih => simp [slots, ih]
+
+private theorem zip_replicate_fields (ns : List String) (A : Fam) :
+    ns.zip (List.replicate ns.length A) = ns.map (fun name => (name, A)) := by
+  induction ns with
+  | nil => simp
+  | cons name rest ih =>
+    simpa only [List.length_cons, List.replicate_succ, List.zip_cons_cons,
+      List.map_cons] using congrArg (List.cons (name, A)) ih
+
+/-- An exact fresh object whose every allocated location has contract `A`
+establishes a readonly dictionary view. The exact `slots` map matters:
+an open record with the same named fields may have additional fields. -/
+theorem recT_fresh_dict {A : Fam} {k : Nat} {W : WorldT k}
+    {base : Nat} {ns : List String}
+    (h : recT (ns.zip (List.replicate ns.length A)) k W
+      (.objAt (slots base ns) .absent)) :
+    dictViewT A k W (.objAt (slots base ns) .absent) := by
+  obtain ⟨flds, heq, hf⟩ := h
+  cases heq
+  refine ⟨slots base ns, rfl, ?_⟩
+  intro f l hl
+  have hp : (f, l) ∈ slots base ns := lookup_pair_mem hl
+  have hn : f ∈ ns := by
+    rw [← slots_names base ns]
+    exact List.mem_map_of_mem hp
+  have hm : (f, A) ∈ ns.zip (List.replicate ns.length A) := by
+    rw [zip_replicate_fields]
+    exact List.mem_map_of_mem hn
+  obtain ⟨l', c, hl', hw, hc⟩ := hf f A hm
+  rw [hl] at hl'
+  cases hl'
+  exact ⟨c, hw, fun j hj V u hu => (hc j hj V u).mp hu⟩
+
+#print axioms recT_fresh_dict
+
 /-- Even a Boolean dictionary admits an empty object. Its missing read is
 `undefined`, which is not Boolean; the indexed-read result must include it. -/
 theorem empty_bool_dict_missing {k : Nat} {W : WorldT k} {h : Heap} {f : String} :

@@ -95,10 +95,17 @@ let infer_function (f:Source.fn) =
       let contract = match expected with Some (Atoms [Shape s]) when s.elements=None -> Some s | _ -> None in
       let fields = List.map (fun (name,e) ->
         let hint = Option.bind contract (fun s -> List.find_opt (fun (f:Semantic.field) -> f.name=name) s.fields) in
-        let expected = Option.map (fun (f:Semantic.field) -> f.read) hint in
+        let expected = match contract with
+          | Some {string_index=Some index;_} -> Some index.value
+          | _ -> Option.map (fun (f:Semantic.field) -> f.read) hint in
         let inferred=expr ?expected env e in
         let t=Option.value expected ~default:(widen inferred) in
-        {name;optional=false;read=t;write=Some t}) fs in record fields
+        {name;optional=false;read=t;write=Some t}) fs in
+      (match contract with
+       | Some {fields=[];string_index=Some index;calls=[];elements=None}
+           when index.writable=None ->
+         Atoms [Shape {fields=[];string_index=Some index;calls=[];elements=None}]
+       | _ -> record fields)
     | ArrayLiteral es ->
       let contract = match expected with Some (Atoms [Shape {elements=Some s;_}]) -> Some s | _ -> None in
       let types = List.mapi (fun i e ->
