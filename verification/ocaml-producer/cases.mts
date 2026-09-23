@@ -110,6 +110,7 @@ export const cases: Case[] = [
   negative("invalid-index-signature-read", "A missing dictionary key cannot be promised Boolean"),
   negative("invalid-index-signature-construction", "Every fresh field must meet the dictionary element contract"),
   negative("invalid-dynamic-index-read", "A runtime string key can miss a dictionary property"),
+  negative("invalid-mixed-index-read", "A named field does not make other runtime keys present"),
   positive("arrays", "array writes / tuple presence"),
   positive("flow", "immutable refinements / nullish paths"),
   positive("loops", "loop invariants / break / continue"),

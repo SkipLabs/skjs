@@ -325,6 +325,25 @@ process.stdout.write("tampered evidence: refused\n");
   process.stdout.write("tampered dynamic-key rule: refused\n");
 }
 
+// The named view remains part of a mixed dictionary's source contract: an
+// index-only replacement must not certify a function annotated with both.
+{
+  const claims: SourceClaims = JSON.parse(readFileSync(join(indexed, "claims.json"), "utf8"));
+  const mixed = claims.types.find((row) =>
+    row.length === 1 && typeof row[0] === "object" && "dict" in row[0] &&
+    row[0].dict.views.some(([name]) => name === "ready"),
+  );
+  assert(mixed);
+  const clause = mixed[0];
+  assert(typeof clause === "object" && "dict" in clause);
+  clause.dict.views = [];
+  const forged = join(indexed, "forged-missing-named-view.json");
+  writeFileSync(forged, JSON.stringify(claims));
+  assert.match(invoke(forged, join(indexed, "evidence.json"), indexed),
+    /claimed parameter type differs from the source annotation/);
+  process.stdout.write("tampered mixed dictionary view: refused\n");
+}
+
 // A graph certificate for the checked Boolean instance cannot validate a
 // narrower first-occurrence proposal after inference has joined both arguments.
 {

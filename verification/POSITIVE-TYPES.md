@@ -96,6 +96,8 @@ Index operands are guarded through the world, so a recursive graph can contain
 Inline readonly string-index annotations now translate to `dict` for the OCaml
 producer, with a named indexed read checked by the graph's `readDict` rule and
 a computed string-key read checked by `indexDict`.
+Required named fields can accompany the index as invariants or readonly views;
+the checked source annotation retains both obligations in one clause.
 Translation of the imported recursive `Json` declaration is a separate source
 closure step. The `allocDict` rule proves a fresh literal's dictionary view
 from every initializer at the index element type.

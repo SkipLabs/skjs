@@ -168,8 +168,9 @@ private def arrayKeyTerm (K : Ty Nat) : Compiler Tm := do
   modify fun s => {s with hints := label :: s.hints}
   return .num b
 
-/-- What a computed key names, by its claimed type: a field, for a string
-singleton, or an element of the array's store, for a number. The key stays in
+/-- What a computed key names, by its claimed type: a field for a string
+singleton, a dictionary lookup for a broad string, or an element of the
+array's store for a number. The key stays in
 the program, evaluated after the receiver and before any right side, and its
 expression obligation must establish that claim. -/
 private inductive KeyKind where

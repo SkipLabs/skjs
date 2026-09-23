@@ -85,8 +85,26 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
         (atom.getObjVal? "indexSignature").toOption.isSome then
       CellClaims.fieldsExactly atom
         ["a", "fields", "indexes", "indexSignature", "call", "construct", "array"]
-      if !(← jArr atom "fields").isEmpty then
-        throw "named fields with a string index signature are not yet in the source fragment"
+      -- Keep named invariants and readonly views alongside the index view in
+      -- one clause. A mutable named field has one lifetime contract; a
+      -- readonly named field contributes no write capability.
+      let fields ← (← jArr atom "fields").mapM fun field => do
+        CellClaims.fieldsExactly field ["name", "optional", "read", "write"]
+        let name ← jStr (← jField field "name")
+        if name == SourceTypes.storeField then
+          throw "the array store is internal, not a source property"
+        if ← (← jField field "optional").getBool? then
+          throw "optional named fields with a string index signature are not yet in the source fragment"
+        let read ← callableType (← jField field "read")
+        let write ← jField field "write"
+        if write == Json.mkObj [("top", toJson false), ("atoms", toJson ([] : List Json))] then
+          return (name, read, false)
+        let written ← callableType write
+        if read != written then
+          throw "a mutable named field needs one fixed read/write contract"
+        return (name, read, true)
+      if (fields.map fun (name, _, _) => name).eraseDups.length != fields.length then
+        throw "duplicate named field in an indexed object"
       let index ← jField atom "indexSignature"
       CellClaims.fieldsExactly index ["read", "write"]
       let write ← jField index "write"
@@ -103,7 +121,11 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
         if mode != "absent" && mode != "synthetic" then
           throw "unsupported synthetic index marker"
       let element ← callableType (← jField index "read")
-      return [← SourceTypes.use (.dict [] [] [] [element])]
+      let invariant := fields.filterMap fun (name, A, writable) =>
+        if writable then some (name, A) else none
+      let views := fields.filterMap fun (name, A, writable) =>
+        if writable then none else some (name, A)
+      return [← SourceTypes.use (.dict invariant [] views [element])]
     else
       let single := Json.mkObj [("top",toJson false),("atoms",toJson [atom])]
       -- The callable table grows as this walks it, so a numeric parameter or

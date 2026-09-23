@@ -26,8 +26,8 @@ export type Expr =
   /* An object literal: one named field per initializer, in source order. */
   | { k: "alloc"; pos: Span; fields: { name: string; e: Expr }[] }
   | { k: "read"; pos: Span; field: string; e: Expr }
-  /* `e[key]`: the receiver, then the key, then the read of the field the
-     key's claimed type names, a string singleton. */
+  /* `e[key]`: evaluate the receiver, then the key. A string singleton names
+     one field; a broad string reads through a dictionary view. */
   | { k: "index"; pos: Span; e: Expr; key: Expr }
   /* An array literal: one element per initializer, in source order. */
   | { k: "arrayLit"; pos: Span; elems: Expr[] }

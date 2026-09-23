@@ -23,3 +23,22 @@ function readDynamic(
 ): boolean | undefined {
   return x[key];
 }
+
+// A required named view and a string index constrain the same object.
+function preserveMixed(x: {
+  readonly ready: boolean;
+  readonly [key: string]: boolean;
+}): {
+  readonly ready: boolean;
+  readonly [key: string]: boolean;
+} {
+  return x;
+}
+
+// The computed key can still miss, despite the required named field.
+function readMixed(
+  x: { readonly ready: boolean; readonly [key: string]: boolean },
+  key: string,
+): boolean | undefined {
+  return x[key];
+}

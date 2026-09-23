@@ -307,7 +307,7 @@ controls hold; the numbers live in its output, not here.
 | Field identity and aliasing                 | `objects.ts`                                                                                                                                  |
 | Bidirectional construction hints            | `contextual.ts` (fresh object and tuple)                                                                                                      |
 | Read permission vs write permission         | `readonly.ts` (alias view, array covariance)                                                                                                  |
-| Indexed reads and absent keys                | `index-signature.ts` (readonly dictionary identity, fresh construction, and a result including `undefined`)                                  |
+| Indexed reads and absent keys                | `index-signature.ts` (readonly dictionary identity, mixed named views, fresh construction, and results including `undefined`)                |
 | Sequence shape and presence                 | `arrays.ts` (write, inferred literal, optional tuple position)                                                                                |
 | Path-local knowledge                        | `flow.ts` (null test, conditional, nullish expression)                                                                                        |
 | Cyclic control flow                         | `loops.ts` (invariant, break, continue)                                                                                                       |
@@ -527,8 +527,13 @@ read cannot establish plain `boolean` although `tsc --strict` accepts it.
 `invalid-index-signature-construction.ts` confirms that every fresh field must
 meet the index value type. `invalid-dynamic-index-read.ts` checks the same
 missing-key bound for a computed key; its certificate has a tampering control.
-The graph's `dict` clause supports recursive index operands, but this slice
-does not yet import `Json` or combine named fields with its index.
+The same source path now accepts required named fields alongside a readonly
+string index in parameter and result contracts, preserving their invariant or
+readonly-view roles. The mixed `readMixed` example checks a computed key;
+`invalid-mixed-index-read.ts` checks absence even when another field is
+required. Mixed-literal construction and a precise read of a named field from
+such a contract remain outside this slice. The graph's `dict` clause supports
+recursive index operands, but this slice does not yet import `Json`.
 
 Implementation checkpoints, in dependency order:
 
