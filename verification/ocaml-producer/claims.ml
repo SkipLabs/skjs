@@ -121,7 +121,19 @@ let encode (proposal : Proposal.t) =
               List.exists contains_symbolic (e.required @ e.optional_elements @ Option.to_list e.rest))
         | _ -> false) atoms
   in
-  let rec claim_type = function
+  (* A declaration applied to a rigid argument has no graph row of its own:
+     its definition, with the argument substituted, is the claim, exactly as
+     Lean expands the source equation. Ground applications keep their rows. *)
+  let rec expand_rigid = function
+    | Atoms atoms when List.exists (function
+        | Named (_,args) -> List.exists contains_symbolic args | _ -> false) atoms ->
+      List.fold_left (fun acc atom -> union acc (match atom with
+        | Named (id,args) when List.exists contains_symbolic args ->
+          expand_rigid (Proposal.definition imports id args)
+        | atom -> Atoms [atom])) (Atoms []) atoms
+    | t -> t
+  in
+  let rec claim_type t = match expand_rigid t with
     | Rigid n -> Object ["param",String n.spelling]
     | Atoms [Shape {fields=[];string_index=None;calls=[signature];elements=None}]
         when signature.quantified <> [] || List.exists contains_symbolic

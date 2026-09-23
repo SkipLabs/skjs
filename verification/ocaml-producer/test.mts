@@ -322,6 +322,38 @@ for (const [file, expected] of [
   const importedIdentity = check(importedIdentityClient, pairConfig);
   assert.equal(importedIdentity.status, "verified", JSON.stringify(importedIdentity));
   assert.deepEqual(importedIdentity.functions, ["rigid", "ground"]);
+  // Local/imported parity for declarations applied to a rigid binder: one
+  // source-equation expansion serves both. The same function is written with a
+  // local declaration and with the imported one; the outcomes must agree.
+  const parity = (name: string, local: string, imported: string, body: string) => {
+    const localClient = join(pairDir, `parity-local-${name}.ts`);
+    writeFileSync(localClient, local + body);
+    const importedClient = join(pairDir, `parity-imported-${name}.ts`);
+    writeFileSync(importedClient, imported + body);
+    const l = check(localClient, pairConfig), i = check(importedClient, pairConfig);
+    const outcome = (o: typeof l) => [o.status, o.phase,
+      o.status === "verified" ? "" : o.detail.split("\n")[0]?.replace(/\[\d+,\d+\)/g, "[span]")];
+    assert.deepEqual(outcome(l), outcome(i), `${name}: local and imported outcomes differ`);
+    return l;
+  };
+  const callableLocal = "type GenericCallable<T> = (value: T) => T;\n";
+  const callableImported = 'import type { GenericCallable } from "@fixture/box";\n';
+  const rigidCall = parity("rigid-call", callableLocal, callableImported,
+    "export function applyRigid<T>(f: GenericCallable<T>, x: T): T { return f(x); }\n");
+  assert.equal(rigidCall.status, "verified", JSON.stringify(rigidCall));
+  const wrongRigidCall = parity("wrong-rigid-call", callableLocal, callableImported,
+    "export function wrongRigid<T>(f: GenericCallable<T>, x: T): boolean { return f(x); }\n");
+  assert.equal(wrongRigidCall.status, "unverified", JSON.stringify(wrongRigidCall));
+  assert.match(wrongRigidCall.detail, /cannot establish T ≤ boolean/);
+  // A record over a rigid binder is outside the generic checker for both.
+  const rigidRecord = parity("rigid-record", "type GenericBox<T> = { readonly value: T };\n",
+    'import type { GenericBox } from "@fixture/box";\n',
+    "export function unboxRigid<T>(value: GenericBox<T>): T { return value.value; }\n");
+  assert.equal(rigidRecord.status, "unsupported", JSON.stringify(rigidRecord));
+  // Ground applications agree as well.
+  const groundCall = parity("ground-call", callableLocal, callableImported,
+    "export function applyGround(f: GenericCallable<boolean>): boolean { return f(true); }\n");
+  assert.equal(groundCall.status, "verified", JSON.stringify(groundCall));
   const badInheritedClient = join(pairDir, "bad-inherited-client.ts");
   writeFileSync(badInheritedClient,
     'import type { GenericDerived } from "@fixture/box";\n' +

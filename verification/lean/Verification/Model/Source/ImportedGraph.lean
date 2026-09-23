@@ -273,49 +273,173 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table) :
       table := expanded.set (rowIndex ds i) row
   return table
 
+private def claimType (atoms : List Json) : Json :=
+  Json.mkObj [("top", toJson false), ("atoms", toJson atoms)]
+
+private def topClaim : Json :=
+  Json.mkObj [("top", toJson true), ("atoms", toJson ([] : List Json))]
+
+private def isTopClaim (claim : Json) : Bool :=
+  (claim.getObjVal? "top").toOption == some (.bool true)
+
+private def claimAtoms (claim : Json) : List Json :=
+  match (claim.getObjVal? "atoms").toOption with
+  | some (.arr atoms) => atoms.toList
+  | _ => []
+
+private def graphClaim (labels : List Nat) : Json :=
+  claimType (labels.map fun label => Json.mkObj [("a", toJson "graph"), ("label", toJson label)])
+
+private partial def mentionsParameter : Json → Bool
+  | .obj fields =>
+    (fields.toList.lookup "k" == some (.str "parameter")) ||
+      fields.toList.any (fun p => mentionsParameter p.2)
+  | .arr values => values.any mentionsParameter
+  | _ => false
+
+mutual
+/-- A declaration's source equation under its parameters, each bound to a
+claim that may mention the enclosing function's rigid binders. Parts without a
+parameter are ground and lower to graph rows like any other application; the
+parts over parameters are rebuilt as the claim forms the rigid checker reads.
+This is the one path for every declaration applied to a rigid argument. -/
+private partial def rigidClaim (ds : Array Definition) (owner : Nat) (env : Array Json)
+    (seen : List Nat) (term : Json) : Lowering Json := do
+  if !mentionsParameter term then
+    return graphClaim (← lowerType ds owner #[] seen term)
+  match ← str term "k" with
+  | "parameter" =>
+    CellClaims.fieldsExactly term ["k", "index", "span"]
+    let i ← (← field term "index").getNat?
+    match env[i]? with
+    | some claim => return claim
+    | none => throw "declaration parameter index outside application"
+  | "union" =>
+    let parts ← (← arr term "parts").mapM (rigidClaim ds owner env seen)
+    if parts.any isTopClaim then return topClaim
+    return claimType (parts.toList.flatMap claimAtoms)
+  | "function" =>
+    CellClaims.fieldsExactly term ["k", "receiver", "params", "rest", "result", "span"]
+    let recv ← field term "receiver"
+    let receiver ← if recv == .null then pure topClaim else rigidClaim ds owner env seen recv
+    let params ← (← arr term "params").mapM (rigidClaim ds owner env seen)
+    let restTerm ← field term "rest"
+    let rest ← if restTerm == .null then pure [] else
+      pure [("rest", ← rigidClaim ds owner env seen restTerm)]
+    let result ← rigidClaim ds owner env seen (← field term "result")
+    return claimType [Json.mkObj ([("a", toJson "function"), ("this", receiver),
+      ("params", toJson params)] ++ rest ++ [("result", result),
+      ("construct", toJson "unknown"), ("array", toJson "unknown")])]
+  | "array" =>
+    let element ← rigidClaim ds owner env seen (← field term "element")
+    return claimType [Json.mkObj [("a", toJson "array"), ("required", toJson ([] : List Json)),
+      ("optional", toJson ([] : List Json)), ("rest", element),
+      ("readonly", toJson (← bool term "readonly"))]]
+  | "tuple" =>
+    CellClaims.fieldsExactly term ["k", "readonly", "required", "optional", "rest", "span"]
+    let required ← (← arr term "required").mapM (rigidClaim ds owner env seen)
+    let optional ← (← arr term "optional").mapM (rigidClaim ds owner env seen)
+    let restTerm ← field term "rest"
+    let rest ← if restTerm == .null then pure Json.null else
+      rigidClaim ds owner env seen restTerm
+    return claimType [Json.mkObj [("a", toJson "array"), ("required", toJson required),
+      ("optional", toJson optional), ("rest", rest),
+      ("readonly", toJson (← bool term "readonly"))]]
+  | "object" =>
+    CellClaims.fieldsExactly term ["k", "fields", "stringIndex", "calls", "span"]
+    if (← field term "stringIndex") != .null || !(← arr term "calls").isEmpty then
+      throw "a declaration with call or index signatures applied to a type parameter is outside the fragment"
+    let fields ← (← arr term "fields").mapM fun f => do
+      if ← bool f "optional" then throw "optional declaration fields need presence semantics"
+      let value ← rigidClaim ds owner env seen (← field f "type")
+      let write := if ← bool f "readonly" then claimType [] else value
+      return Json.mkObj [("name", ← field f "name"), ("optional", toJson false),
+        ("read", value), ("write", write)]
+    return claimType [Json.mkObj [("a", toJson "record"), ("fields", toJson fields),
+      ("indexes", Json.mkObj [("string", toJson "absent"), ("number", toJson "absent"),
+        ("symbol", toJson "absent")]),
+      ("call", toJson "unknown"), ("construct", toJson "unknown"), ("array", toJson "unknown")]]
+  | "reference" =>
+    let i ← referenceIndex ds term
+    let args ← (← arr term "args").mapM (rigidClaim ds owner env seen)
+    expandApplication ds i args seen
+  | "self" => throw "a method receiver of a declaration applied to a type parameter is outside the fragment"
+  | _ => throw "declaration source constructor applied to a type parameter is outside the fragment"
+
+/-- Apply declaration `i` to claims over the enclosing rigid binders. -/
+private partial def expandApplication (ds : Array Definition) (i : Nat)
+    (supplied : Array Json) (seen : List Nat) : Lowering Json := do
+  let d := ds[i]!
+  if seen.contains i then
+    throw "recursive generic application over a type parameter needs memoized rows"
+  if !d.bases.isEmpty then
+    throw "an interface with bases applied to a type parameter is outside the fragment"
+  if supplied.size > d.parameters.size then throw "declaration applied to too many type arguments"
+  let mut values := supplied
+  for p in d.parameters.toList.drop supplied.size do
+    CellClaims.fieldsExactly p ["name", "span", "bound", "default"]
+    let default ← field p "default"
+    if default == .null then throw "declaration application has a missing required type argument"
+    values := values.push (← rigidClaim ds i values (i :: seen) default)
+  for p in d.parameters do
+    if (← field p "bound") != .null then
+      throw "a bounded declaration applied to a type parameter needs a rigid bound check"
+  rigidClaim ds i values (i :: seen) d.expression
+end
+
 private partial def rewrite (ds : Array Definition) (roots : Array (String × Nat))
-    (substituted : List String)
     (j : Json) : Lowering Json := do
   match j with
-  | .arr values => return .arr (← values.mapM (rewrite ds roots substituted))
+  | .arr values => return .arr (← values.mapM (rewrite ds roots))
   | .obj fields =>
     if (j.getObjVal? "a").toOption == some (.str "graph") then
       throw "source cannot state an internal graph label"
-    if (j.getObjVal? "a").toOption == some (.str "alias") then
-      let name ← str j "name"
-      if let some (_, index) := roots.toList.find? (fun p => p.1 == name) then
-        let args ← (← arr j "args").mapM (rewrite ds roots substituted)
-        -- The admitted identity and box schemes are substituted from their
-        -- source equation, retaining the argument's canonical claim shape.
-        if substituted.contains name || args.any hasRigidParameter then
-          return Json.mkObj [("a", toJson "alias"), ("name", toJson name),
-            ("args", toJson args)]
-        if ds[index]!.parameters.isEmpty then
-          if !args.isEmpty then throw "imported type application has wrong arity"
-          return Json.mkObj [("a", toJson "graph"), ("label", toJson (rowIndex ds index))]
-        let values ← args.mapM Fragment.translate
-        let values ← lowerApplication ds index values []
-        let labels ← if ds[index]!.bases.isEmpty then
-            lowerType ds index values [index] ds[index]!.expression
-          else (← lowerDefinitionRows ds index values [index]).mapM use
-        match labels with
-        | [label] => return Json.mkObj [("a", toJson "graph"), ("label", toJson label)]
-        | [] => throw "generic imported application has no inhabited graph clause"
-        | labels =>
-          let table ← get
-          let clauses := labels.flatMap (SourceTypes.graph table)
-          let label ← SourceTypes.useRow clauses
-          return Json.mkObj [("a", toJson "graph"), ("label", toJson label)]
+    -- A claim type: an application over a rigid binder expands to a claim
+    -- type, which may contribute several atoms, or top.
+    if let (.ok (.bool false), .ok (.arr atoms)) := (j.getObjVal? "top", j.getObjVal? "atoms") then
+      let mut out : List Json := []
+      for atom in atoms do
+        match ← rewriteAtom ds roots atom with
+        | .inl atom => out := out ++ [atom]
+        | .inr claim =>
+          if isTopClaim claim then return topClaim
+          out := out ++ claimAtoms claim
+      return claimType out
     let pairs ← fields.toArray.mapM fun (name, value) => do
-      return (name, ← rewrite ds roots substituted value)
+      return (name, ← rewrite ds roots value)
     return Json.mkObj pairs.toList
   | _ => return j
+where
+  /-- A declaration application becomes one graph atom when its arguments are
+  ground, or the claim type of its expanded equation when one mentions a
+  rigid binder. Any other atom is rewritten structurally. -/
+  rewriteAtom (ds : Array Definition) (roots : Array (String × Nat)) (atom : Json) :
+      Lowering (Json ⊕ Json) := do
+    if (atom.getObjVal? "a").toOption != some (.str "alias") then
+      return .inl (← rewrite ds roots atom)
+    let name ← str atom "name"
+    let some (_, index) := roots.toList.find? (fun p => p.1 == name)
+      | throw s!"unknown type alias '{name}'"
+    let args ← (← arr atom "args").mapM (rewrite ds roots)
+    if args.any hasRigidParameter then
+      return .inr (← expandApplication ds index args [])
+    if ds[index]!.parameters.isEmpty then
+      if !args.isEmpty then throw "imported type application has wrong arity"
+      return .inl (Json.mkObj [("a", toJson "graph"), ("label", toJson (rowIndex ds index))])
+    let values ← args.mapM Fragment.translate
+    let values ← lowerApplication ds index values []
+    let labels ← if ds[index]!.bases.isEmpty then
+        lowerType ds index values [index] ds[index]!.expression
+      else (← lowerDefinitionRows ds index values [index]).mapM use
+    -- A union result keeps its labels: `Id<boolean>` is exactly `[1, 2]`, the
+    -- type a producer claims, not a new row with the same meaning.
+    if labels.isEmpty then throw "generic imported application has no inhabited graph clause"
+    return .inr (graphClaim labels)
 
 /-- Replace only the producer's empty reserved rows with equations derived
 from source declarations. The AST copy contains internal graph atoms only after
 the original source tree has been checked for them. -/
-def prepare (ast : Json) (candidate : SourceTypes.Table)
-    (substituted : List String) :
+def prepare (ast : Json) (candidate : SourceTypes.Table) :
     Except String (Json × SourceTypes.Table) := do
   let imports ← field ast "imports"
   CellClaims.fieldsExactly imports ["roots", "definitions"]
@@ -327,7 +451,7 @@ def prepare (ast : Json) (candidate : SourceTypes.Table)
   if (roots.toList.map (·.1)).eraseDups.length != roots.size then
     throw "duplicate imported local type"
   let types ← fillRows ds candidate
-  let (functions, types) ← (rewrite ds roots substituted (← field ast "functions")).run types
+  let (functions, types) ← (rewrite ds roots (← field ast "functions")).run types
   let empty := Json.mkObj [("roots", toJson ([] : List Json)),
     ("definitions", toJson ([] : List Json))]
   let ast := ast.setObjVal! "imports" empty

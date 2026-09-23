@@ -1,13 +1,12 @@
 import Verification.Model.Source.Fragment
 import Verification.Model.Programs.CellClaims
 
-/-! Source extraction of first-order generic aliases.
+/-! Alias applications in SKJS's exported claims.
 
-`type Id<T> = T` and `type Box<T> = { value: T }` are the admitted schemes.
-Applying either of these aliases is the substitution already proved as
-`instantiate_param` and `instantiate_ref`: it is not a second type. Other
-ground declarations use the source graph; unsupported rigid applications
-and recursive generic applications remain outside this fragment. -/
+SKJS writes a single-argument named instantiation as an alias atom. The
+converter expands `type Id<T> = T` and `type Box<T> = { value: T }` here, at the
+claim level. Source annotations do not use this module: `ImportedGraph` interprets
+every declaration application from its source equation. -/
 namespace Verification.Model.GenericAlias
 open Lean
 
@@ -218,125 +217,9 @@ partial def expandType (aliases : List Alias) (ty : Json) : Except String Json :
   return Json.mkObj [("top", toJson false), ("atoms", toJson (parts.flatMap atomsOf))]
 end
 
-def expandOpt (aliases : List Alias) : Option Json → Except String (Option Json)
-  | none => return none
-  | some ty => do
-    let t ← expandType aliases ty
-    return some t
-
 def expandNamed (aliases : List Alias) (n : String) (t : Json) : Except String (String × Json) := do
   let t ← expandType aliases t
   return (n, t)
-
-partial def expandExpr (aliases : List Alias) (e : Fragment.Expr) : Except String Fragment.Expr := do
-  match e with
-  | .var p n => return .var p n
-  | .lit p v => return .lit p v
-  | .logical p a l r =>
-    return .logical p a (← expandExpr aliases l) (← expandExpr aliases r)
-  | .coalesce p l r =>
-    return .coalesce p (← expandExpr aliases l) (← expandExpr aliases r)
-  | .nullishAssign p n np r => return .nullishAssign p n np (← expandExpr aliases r)
-  | .assign p n np r => return .assign p n np (← expandExpr aliases r)
-  | .shapeTest p tag equal e =>
-    return .shapeTest p tag equal (← expandExpr aliases e)
-  | .equality p eq l r =>
-    return .equality p eq (← expandExpr aliases l) (← expandExpr aliases r)
-  | .singletonTest p t eq tl l r =>
-    return .singletonTest p t eq tl (← expandExpr aliases l) (← expandExpr aliases r)
-  | .not p e => return .not p (← expandExpr aliases e)
-  | .cast p annot e => return .cast p (← expandOpt aliases annot) (← expandExpr aliases e)
-  | .alloc p ns es => return .alloc p ns (← es.mapM (expandExpr aliases))
-  | .read p f e => return .read p f (← expandExpr aliases e)
-  | .write p f r rhs =>
-    return .write p f (← expandExpr aliases r) (← expandExpr aliases rhs)
-  | .index p f e key => return .index p f (← expandExpr aliases e) (← expandExpr aliases key)
-  | .arrayLit p es => return .arrayLit p (← es.mapM (expandExpr aliases))
-  | .arrayAssign p targets rhs =>
-    let targets' ← targets.mapM fun q => do
-      return { q with default_ := ← q.default_.mapM (expandExpr aliases) }
-    return .arrayAssign p targets' (← expandExpr aliases rhs)
-  | .elemAt p e key => return .elemAt p (← expandExpr aliases e) (← expandExpr aliases key)
-  | .elemWrite p r key rhs =>
-    return .elemWrite p (← expandExpr aliases r) (← expandExpr aliases key) (← expandExpr aliases rhs)
-  | .arith p op l r => return .arith p op (← expandExpr aliases l) (← expandExpr aliases r)
-  | .logicalAssign p op target rhs =>
-    return .logicalAssign p op (← expandExpr aliases target) (← expandExpr aliases rhs)
-  | .update p op target rhs post =>
-    return .update p op (← expandExpr aliases target) (← rhs.mapM (expandExpr aliases)) post
-  | .indexWrite p f r key rhs =>
-    return .indexWrite p f (← expandExpr aliases r) (← expandExpr aliases key) (← expandExpr aliases rhs)
-  | .withValue p fn initial ft bt =>
-    return .withValue p (← expandExpr aliases fn) (← expandExpr aliases initial)
-      (← expandType aliases ft) (← expandType aliases bt)
-  | .lambda p receiver tps ps defaults rest result body =>
-    let receiver ← expandOpt aliases receiver
-    let ps ← ps.mapM fun (n, t) => expandNamed aliases n t
-    let tps ← tps.mapM fun tp => do
-      return { tp with bound := ← tp.bound.mapM (expandType aliases) }
-    let defaults ← defaults.attach.mapM fun ⟨(i, d), _⟩ => do
-      return (i, ← expandExpr aliases d)
-    return .lambda p receiver tps ps defaults rest (← expandType aliases result) (← expandExpr aliases body)
-  | .bindWithReceiver p c r args =>
-    return .bindWithReceiver p (← expandExpr aliases c) (← expandExpr aliases r)
-      (← args.mapM (expandExpr aliases))
-  | .callWithReceiver p c r args =>
-    return .callWithReceiver p (← expandExpr aliases c) (← expandExpr aliases r)
-      (← args.mapM (expandExpr aliases))
-  | .applyWithReceiver p c r list =>
-    return .applyWithReceiver p (← expandExpr aliases c) (← expandExpr aliases r)
-      (← list.mapM (expandExpr aliases))
-  | .call p c args spread =>
-    return .call p (← expandExpr aliases c) (← args.mapM (expandExpr aliases)) spread
-  | .invoke p c args spreads =>
-    return .invoke p (← expandExpr aliases c) (← args.mapM (expandExpr aliases)) spreads
-  | .atEnv p e => return .atEnv p (← expandExpr aliases e)
-  | .done p => return .done p
-  | .seqBody p i b =>
-    return .seqBody p (← expandExpr aliases i) (← expandExpr aliases b)
-  | .ifBody p result c t e =>
-    let result' ← expandOpt aliases result
-    return .ifBody p result' (← expandExpr aliases c) (← expandExpr aliases t)
-      (← expandExpr aliases e)
-  | .letBody p n annot i b =>
-    let annot' ← expandOpt aliases annot
-    return .letBody p n annot' (← expandExpr aliases i) (← expandExpr aliases b)
-
-private def expandBinding (aliases : List Alias) (b : Fragment.Binding) : Except String Fragment.Binding := do
-  return { b with annot := ← expandOpt aliases b.annot, init := ← expandExpr aliases b.init }
-
-partial def expandStmt (aliases : List Alias) (s : Fragment.Stmt) : Except String Fragment.Stmt := do
-  match s with
-  | .ret p e => return .ret p (← expandExpr aliases e)
-  | .constants p bs => return .constants p (← bs.mapM (expandBinding aliases))
-  | .mutables p bs => return .mutables p (← bs.mapM (expandBinding aliases))
-  | .pattern p props init =>
-    let props' ← props.mapM fun q => do
-      return { q with default_ := ← q.default_.mapM (expandExpr aliases) }
-    return .pattern p props' (← expandExpr aliases init)
-  | .arrayPattern p elems init =>
-    let elems' ← elems.mapM fun q => do
-      return { q with default_ := ← q.default_.mapM (expandExpr aliases) }
-    return .arrayPattern p elems' (← expandExpr aliases init)
-  | .ite p c t e =>
-    let t' ← t.mapM (expandStmt aliases)
-    let e' ← match e with
-      | none => pure none
-      | some body => (body.mapM (expandStmt aliases)).map some
-    return .ite p (← expandExpr aliases c) t' e'
-  | .brk p => return .brk p
-  | .cont p => return .cont p
-  | .loop p c b =>
-    return .loop p (← expandExpr aliases c) (← b.mapM (expandStmt aliases))
-  | .effect p e => return .effect p (← expandExpr aliases e)
-
-def expandFn (aliases : List Alias) (f : Fragment.Fn) : Except String Fragment.Fn := do
-  let params ← f.params.mapM fun p => do
-    let ty ← expandType aliases p.ty
-    return { p with ty }
-  let ret ← expandType aliases f.ret
-  let body ← f.body.mapM (expandStmt aliases)
-  return { f with params, ret, body }
 
 def expandClaims (aliases : List Alias) (c : Fragment.Claims) :
     Except String Fragment.Claims := do

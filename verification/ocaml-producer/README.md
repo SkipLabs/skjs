@@ -608,13 +608,20 @@ closure of the full milestone.
 An interface or alias declared in the client file now uses that same source
 declaration graph. The local `Derived extends Base` example verifies, and an
 incorrect inherited-field result fails. TypeScript resolves the local root to
-the declaration itself, as it resolves an imported one. General ground alias applications use the graph for both local and
-imported declarations. The admitted identity and mutable-box aliases use
-specialized substitution for ground and rigid applications alike, deriving the
-body from that same source equation rather than a second parser-authored alias field. General
-rigid generic applications and the older claim-shaped syntax for function
-annotations remain architectural migration work; declaration location is no
-longer a separate type meaning.
+the declaration itself, as it resolves an imported one. Every declaration
+application, local or imported, has one interpretation from its source
+equation. With ground arguments it lowers to graph rows. With an argument over
+the enclosing function's rigid binders, Lean expands the equation with the
+arguments substituted: parameters, functions and arrays become the forms the
+rigid checker reads, and parameter-free parts still lower to graph rows. The
+OCaml encoder expands the same application from the same definition. So
+`GenericCallable<T> = (value: T) => T` applied to a rigid `T` verifies, and a
+wrong result fails with the same generic obligation, whether the declaration
+is local or imported; `test.mts` compares the two outcomes. A record over a
+rigid binder (`{ readonly value: T }`) stays outside the rigid checker for both.
+Bounded declarations and recursive applications over a binder refuse. The
+older claim-shaped syntax for function annotations remains migration work;
+declaration location is no longer a separate type meaning.
 
 The present source checker recognizes `boolean`, an earlier rigid parameter,
 and a non-generic imported graph node as bounds. This is a translation gap,

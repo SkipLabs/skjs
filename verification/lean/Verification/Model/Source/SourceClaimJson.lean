@@ -766,14 +766,12 @@ def extractPlans (ast claims : Json) (fileKey : String) : Except String (List Fu
   let d ← decode claims
   if d.file != fileKey || (← jStr (← jField ast "file")) != fileKey then throw "source claim file identity mismatch"
   if (← jStr (← jField ast "sourceSha256")) != d.sourceSha256 then throw "source claim fingerprint mismatch"
-  let aliases ← GenericAlias.decodeAliases ast
-  let (ast, types) ← ImportedGraph.prepare ast d.types (aliases.map (·.name))
+  -- Every declaration application in the source becomes a graph row, or, over
+  -- a rigid binder, the claim type of its expanded source equation.
+  let (ast, types) ← ImportedGraph.prepare ast d.types
   let d := { d with types }
   if !validTable d.types then throw "imported graph has an invalid type reference"
-  for a in aliases do GenericAlias.admit a
   let decoded ← Fragment.decodeAstWithParams ast
-  let decoded ← decoded.mapM fun (f,tps) => do
-    return (← GenericAlias.expandFn aliases f,tps)
   let fs := decoded.map Prod.fst
   if fs.isEmpty then throw "no source functions to verify"
   if (fs.map (fun f => (f.name,f.namePos))).eraseDups.length != fs.length then throw "duplicate source function identities"

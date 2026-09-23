@@ -82,13 +82,13 @@ def convert (ast claims : Json) (fileKey : String) : Except String Json := do
   -- Conversion is not an acceptance path, but it must share the source gate:
   -- raw source must not smuggle an internal graph label into its output.
   let aliases ← GenericAlias.decodeAliases ast
-  let (ast, _) ← ImportedGraph.prepare ast SourceTypes.initial (aliases.map (·.name))
+  let (ast, _) ← ImportedGraph.prepare ast SourceTypes.initial
   let selected ← (← claims.getArr?).toList.filterM fun f => do
     return (← jStr (← jField f "file")) == fileKey
   if selected.length != 1 then throw "expected exactly one matching claim file"
   for a in aliases do GenericAlias.admit a
   let decoded ← Fragment.decodeAstWithParams ast
-  let fs ← decoded.mapM fun (f,_) => GenericAlias.expandFn aliases f
+  let fs := decoded.map Prod.fst
   let cs ← Fragment.decodeTypeClaims claims fileKey
   let cs ← cs.mapM (GenericAlias.expandClaims aliases)
   if (fs.map (fun f => (f.name,f.namePos))).eraseDups.length != fs.length ||
