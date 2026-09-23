@@ -31,6 +31,14 @@ const here = import.meta.dirname;
   assert.equal(parseFile(source).functions[0]?.name, "after");
 }
 let pinnedImportDocument: ImportDocument | null = null;
+{
+  const local = parseFile(resolve(here, "examples/local-inheritance.ts"));
+  assert.deepEqual(local.imports.roots.map(root => [root.binding.kind, root.binding.local]),
+    [["local", "Base"], ["local", "Derived"]]);
+  assert.deepEqual(local.imports.definitions.map(definition =>
+    [definition.declaration.name, definition.bases.length]),
+    [["Base", 0], ["Derived", 1]]);
+}
 let recursiveJson = "";
 // The framework fixture is the upstream source, including its imports and
 // classes. A simplified replacement must not quietly inherit its census row.

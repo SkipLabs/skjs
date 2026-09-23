@@ -16,7 +16,7 @@ import type {
   TypeReferenceNode,
   ExpressionWithTypeArguments,
 } from "typescript/unstable/ast";
-import type { ImportDocument, ResolvedImport, TypeDefinition } from "./imported-types.mts";
+import type { ImportDocument, ResolvedImport, ResolvedTypeRoot, TypeDefinition } from "./imported-types.mts";
 import type { ModuleSource } from "./module-resolve.mts";
 import type { Span } from "./span.mts";
 
@@ -51,7 +51,7 @@ function referenceAt(
 
 function crossCheckProgram(
   client: SourceFile,
-  roots: readonly ResolvedImport[],
+  roots: readonly ResolvedTypeRoot[],
   definitions: readonly TypeDefinition[],
   requiredSourceIds: readonly string[],
   typeDefinitionsOnly: boolean,
@@ -124,6 +124,19 @@ function crossCheckProgram(
 
   for (const root of roots) {
     const binding = root.binding;
+    if (binding.kind === "local") {
+      const declaration = client.statements.find(node =>
+        (ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)) &&
+        node.name.text === binding.local &&
+        node.getStart(client) === binding.span[0] && node.end === binding.span[1]);
+      if (!declaration ||
+          !(ts.isTypeAliasDeclaration(declaration) || ts.isInterfaceDeclaration(declaration)))
+        throw new ImportMismatch(binding.span,
+          `TypeScript local declaration missing: ${binding.local}`);
+      compare(root.declaration.module, root.declaration.span, binding.span,
+        binding.local, declaration.name, typeDefinitionsOnly);
+      continue;
+    }
     const imported = client.statements
       .filter(ts.isImportDeclaration)
       .filter(
@@ -213,7 +226,7 @@ function crossCheckProgram(
 
 function crossCheckSource(
   client: SourceFile,
-  roots: readonly ResolvedImport[],
+  roots: readonly ResolvedTypeRoot[],
   definitions: readonly TypeDefinition[],
   requiredSourceIds: readonly string[],
   typeDefinitionsOnly: boolean,

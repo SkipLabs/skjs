@@ -22,6 +22,7 @@ import type {
   FunctionExpression,
   Identifier,
   ImportDeclaration,
+  InterfaceDeclaration,
   MethodDeclaration,
   Node,
   SourceFile,
@@ -53,6 +54,7 @@ import { moduleEdges } from "./module-deps.mts";
 import { resolveNamedImports, type ModuleSource, type ResolutionConfig } from "./module-resolve.mts";
 import { collectImportDocument } from "./module-closure.mts";
 import { crossCheckImports, ImportMismatch } from "./import-crosscheck.mts";
+import type { LocalTypeRoot } from "./imported-types.mts";
 
 export type ImportUniverse = {
   modules: readonly ModuleSource[];
@@ -2044,6 +2046,7 @@ export function parseFile(file: string, carriesContext = false,
   const source = openFile(absolute, text);
   const gate = new Gate(source);
   const aliasNodes: TypeAliasDeclaration[] = [];
+  const interfaceNodes: InterfaceDeclaration[] = [];
   const fnNodes: FunctionDeclaration[] = [];
   const importNodes: ImportDeclaration[] = [];
   // A "use strict" directive prologue makes the whole file strict.
@@ -2052,6 +2055,7 @@ export function parseFile(file: string, carriesContext = false,
   for (const s of source.statements) {
     if (prologue.skip.has(s)) continue;
     if (ts.isTypeAliasDeclaration(s)) aliasNodes.push(s);
+    else if (ts.isInterfaceDeclaration(s) && !carriesContext) interfaceNodes.push(s);
     else if (ts.isFunctionDeclaration(s)) fnNodes.push(s);
     else if (ts.isImportDeclaration(s) && !carriesContext) {
       if (!importUniverse) gate.fail(s, "imports need an explicit module universe");
@@ -2068,24 +2072,43 @@ export function parseFile(file: string, carriesContext = false,
   // type-only import. This decides the receiver rule for nested ordinary
   // functions when imported declarations become certifiable.
   gate.strict = prologue.strict || importNodes.length > 0 ||
+    interfaceNodes.some(node => node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword)) ||
     fnNodes.some(fn => fn.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword));
   let imports: Ast["imports"] = { roots: [], definitions: [], sources: [], mappings: [] };
-  if (importNodes.length) {
-    const first = importNodes[0];
+  if (importNodes.length || interfaceNodes.length) {
+    const first = importNodes[0] ?? interfaceNodes[0];
+    if (!first) throw Error("missing declaration root");
     const universe = importUniverse;
-    if (!universe) return gate.fail(first, "imports need an explicit module universe");
+    if (importNodes.length && !universe)
+      return gate.fail(first, "imports need an explicit module universe");
+    const digest = createHash("sha256").update(text).digest("hex");
+    const sourceId = resolve(resolutionFile);
+    const modules = [...(universe?.modules ?? []),
+      { id: sourceId, sha256: digest, source: openFile(sourceId, text) }];
+    const config: ResolutionConfig = universe?.config ?? {
+      packages: new Map(), globals: new Set(), links: new Map(), mappingSources: new Map(),
+    };
     const edges = moduleEdges(source).filter(edge => edge.kind === "import");
     if (edges.some(edge => !edge.typeOnly || !edge.imported ||
         edge.imported === "*" || edge.imported === "default"))
       gate.fail(first, "only named type-only imports are in the source fragment");
     try {
-      const roots = resolveNamedImports(source, universe.modules, universe.config);
-      imports = collectImportDocument(roots, universe.modules, universe.config);
-      crossCheckImports(source, imports, universe.modules, resolve(resolutionFile),
-        universe.tsconfigPath);
+      const importedRoots = importNodes.length
+        ? resolveNamedImports(source, modules, config) : [];
+      const localRoots: LocalTypeRoot[] = interfaceNodes.map(node => {
+        const name = node.name.text;
+        const span = gate.span(node);
+        return { binding: { kind: "local", span, local: name },
+          declaration: { module: sourceId, name, span, capability: "type" },
+          available: "type", route: [{ module: sourceId, sha256: digest }], mappings: [] };
+      });
+      imports = collectImportDocument([...importedRoots, ...localRoots], modules, config);
+      crossCheckImports(source, imports, modules, resolve(resolutionFile),
+        universe?.tsconfigPath);
     } catch (error) {
       const at = error instanceof ImportMismatch
-        ? importNodes.find(node => node.getStart(source) === error.clientSpan[0]) ?? first
+        ? [...importNodes, ...interfaceNodes].find(node =>
+            node.getStart(source) === error.clientSpan[0]) ?? first
         : first;
       gate.fail(at, messageOf(error));
     }
@@ -2097,7 +2120,8 @@ export function parseFile(file: string, carriesContext = false,
         d.declaration.span[1] === identity.span[1]);
       if (!definition)
         return gate.fail(first, `imported type definition missing: ${identity.module}#${identity.name}`);
-      const node = importNodes.find(n => n.getStart(source) === root.binding.span[0]) ?? first;
+      const node = [...importNodes, ...interfaceNodes].find(n =>
+        n.getStart(source) === root.binding.span[0]) ?? first;
       gate.registerImportedAlias(root.binding.local,
         definition.parameters.filter(p => p.default === null).length,
         definition.parameters.length, node);

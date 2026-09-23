@@ -1,5 +1,5 @@
-/** The imported declaration document shared by resolution, the Fragment AST,
- * and readers. These are source equations and provenance, not evidence that a
+/** The declaration document shared by resolution, the Fragment AST,
+ * and readers. Local and imported roots have the same source equations. They are not evidence that a
  * producer's claim follows from them. This module has no runtime dependencies
  * so importing its types does not pull the resolver into a reader's project. */
 import type { Span } from "./span.mts";
@@ -32,6 +32,14 @@ export type ResolvedImport = {
   route: RouteStep[];
   mappings: MappingStep[];
 };
+export type LocalTypeRoot = {
+  binding: { kind: "local"; local: string; span: Span };
+  declaration: DeclarationIdentity;
+  available: "type";
+  route: RouteStep[];
+  mappings: [];
+};
+export type ResolvedTypeRoot = ResolvedImport | LocalTypeRoot;
 export type Reference = {
   name: string;
   span: Span;
@@ -68,12 +76,12 @@ export type TypeDefinition = {
   expression: TypeTerm;
   references: Reference[];
 };
-export type TypeClosure = { root: ResolvedImport; definitions: TypeDefinition[] };
-/** The complete, self-contained source provenance for one client's imports.
+export type TypeClosure = { root: ResolvedTypeRoot; definitions: TypeDefinition[] };
+/** The complete, self-contained source provenance for one client's declarations.
  * Source and mapping bytes are each stored once even when several roots share
  * a reexport route or a mutually recursive definition. */
 export type ImportDocument = {
-  roots: ResolvedImport[];
+  roots: ResolvedTypeRoot[];
   definitions: TypeDefinition[];
   sources: { module: string; sha256: string; text: string }[];
   mappings: { source: string; sha256: string; text: string }[];

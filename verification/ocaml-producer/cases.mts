@@ -126,6 +126,8 @@ export const cases: Case[] = [
   positive("loops", "loop invariants / break / continue"),
   positive("blocks-bind", "closure scopes / partial application"),
   positive("aliases", "capture-avoiding alias substitution"),
+  positive("local-inheritance", "Local interface heritage uses the same declaration graph as imported types"),
+  negative("invalid-local-inheritance", "A local inherited field cannot establish a wrong result type"),
   positive("top-void", "unknown / discarded callback result"),
   positive("function-fields", "one object with fields and calls"),
   positive(

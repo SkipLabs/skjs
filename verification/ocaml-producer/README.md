@@ -605,6 +605,14 @@ the executable case inventory; a bare CLI invocation still needs `--project`.
 This is conditional verification relative to the trusted import document, not
 closure of the full milestone.
 
+An interface declared in the client file now uses that same declaration graph
+and Lean lowering. The local `Derived extends Base` example verifies, and an
+incorrect inherited-field result fails. Its root has no import route; the
+TypeScript cross-check confirms the local declaration identity and source
+bytes. Local generic aliases still take the older `GenericAlias` path. Unifying
+those aliases and source annotations is the remaining architectural migration;
+the current split is not a difference in type meaning.
+
 The present source checker recognizes `boolean`, an earlier rigid parameter,
 and a non-generic imported graph node as bounds. This is a translation gap,
 not a semantic restriction on generics: a well-formed bound can be any type

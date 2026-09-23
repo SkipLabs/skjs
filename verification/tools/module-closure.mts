@@ -1,4 +1,4 @@
-/** The reachable *source declaration* closure of an imported type. This is a
+/** The reachable *source declaration* closure of a local or imported type. This is a
  * finite provenance graph, not yet an interpretation of those declarations as
  * semantic types. Single interfaces with supported members share the same
  * source equation path as aliases; unsupported forms fail instead of disappearing. */
@@ -8,7 +8,7 @@ import type { InterfaceDeclaration, SourceFile, TypeAliasDeclaration, TypeElemen
 import { resolveGlobalType, resolveModuleImport, type DeclarationIdentity,
   type ModuleSource, type ResolutionConfig, type ResolvedImport } from "./module-resolve.mts";
 import type { Span } from "./span.mts";
-import type { ImportDocument, Reference, TypeClosure, TypeDefinition, TypeTerm } from "./imported-types.mts";
+import type { ImportDocument, Reference, ResolvedTypeRoot, TypeClosure, TypeDefinition, TypeTerm } from "./imported-types.mts";
 export type { Reference, TypeClosure, TypeDefinition, TypeTerm } from "./imported-types.mts";
 
 type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration;
@@ -37,7 +37,7 @@ function localTypeDeclaration(source: SourceFile, moduleId: string, name: string
 }
 
 export function collectTypeClosure(
-  root: ResolvedImport,
+  root: ResolvedTypeRoot,
   modules: readonly ModuleSource[],
   config: ResolutionConfig,
 ): TypeClosure {
@@ -303,13 +303,13 @@ export function collectTypeClosure(
   return { root, definitions };
 }
 
-/** Assemble every imported type definition into one document. The closure collector
+/** Assemble every type definition into one document. The closure collector
  * supplies the only traversal; this step deduplicates reachable modules and
  * mapping witnesses. Hashes in the document record provenance; Lean does not
  * validate them. The source parser compares the TypeScript project's actual
  * module bytes with these source texts before accepting the document. */
 export function collectImportDocument(
-  roots: readonly ResolvedImport[],
+  roots: readonly ResolvedTypeRoot[],
   modules: readonly ModuleSource[],
   config: ResolutionConfig,
 ): ImportDocument {
