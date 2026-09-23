@@ -59,3 +59,12 @@ export type TypeDefinition = {
   references: Reference[];
 };
 export type TypeClosure = { root: ResolvedImport; definitions: TypeDefinition[] };
+/** The complete, self-contained source provenance for one client's imports.
+ * Source and mapping bytes are each stored once even when several roots share
+ * a reexport route or a mutually recursive definition. */
+export type ImportDocument = {
+  roots: ResolvedImport[];
+  definitions: TypeDefinition[];
+  sources: { module: string; sha256: string; text: string }[];
+  mappings: { source: string; sha256: string; text: string }[];
+};

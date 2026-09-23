@@ -2039,7 +2039,7 @@ export function parseFile(file: string, carriesContext = false): Ast {
   return {
     file,
     sourceSha256: createHash("sha256").update(text).digest("hex"),
-    imports: [],
+    imports: { roots: [], definitions: [], sources: [], mappings: [] },
     aliases,
     functions,
   };

@@ -4,7 +4,7 @@
  * names are the contract. The parser that produces a tree is fragment-parse.mts.
  */
 import type { ClaimType, Atom } from "./claim.mts";
-import type { TypeClosure } from "./imported-types.mts";
+import type { ImportDocument } from "./imported-types.mts";
 import type { Span } from "./span.mts";
 
 export type ArithOp = "add" | "sub" | "mul" | "div";
@@ -221,7 +221,7 @@ export interface Ast {
   sourceSha256: string;
   /** Resolved, fingerprinted source declarations. Lean refuses nonempty
    * closures until their graph interpretation joins the certified plan. */
-  imports: TypeClosure[];
+  imports: ImportDocument;
   aliases: TypeAliasAst[];
   functions: FunctionAst[];
 }

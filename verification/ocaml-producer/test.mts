@@ -6,7 +6,8 @@ import { resolve } from "node:path";
 import { openText, definedClassCallables, close as closeParser } from "../tools/fragment-parse.mts";
 import { moduleEdges } from "../tools/module-deps.mts";
 import { resolveNamedImports, resolveModuleImport, type ModuleSource } from "../tools/module-resolve.mts";
-import { collectTypeClosure } from "../tools/module-closure.mts";
+import { collectImportDocument, collectTypeClosure } from "../tools/module-closure.mts";
+import type { ImportDocument } from "../tools/imported-types.mts";
 import { spawnSync } from "node:child_process";
 import { check, verifier } from "./check.mts";
 import { cases } from "./cases.mts";
@@ -19,6 +20,7 @@ import { checkDefaults, checkSchemeDefaults, checkEarlyDefault } from "./default
 // port only when it is run directly.
 import { analyse } from "../report-viewer/serve.mts";
 const here = import.meta.dirname;
+let pinnedImportDocument: ImportDocument | null = null;
 // The framework fixture is the upstream source, including its imports and
 // classes. A simplified replacement must not quietly inherit its census row.
 for (const [file, expected] of [
@@ -151,6 +153,25 @@ for (const [file, expected] of [
   assert.equal(apiJson?.declaration.module, "skiplang/skjson/ts/binding/src/index.ts");
   assert.equal(resolveModuleImport("core/src/api.ts", "notImported", modules, config), null);
   const jsonClosure = collectTypeClosure(jsonImports[0], modules, config);
+  pinnedImportDocument = collectImportDocument(jsonImports, modules, config);
+  assert.deepEqual(pinnedImportDocument.roots.map(r => r.binding.local), ["Json", "JsonObject"]);
+  assert.deepEqual(pinnedImportDocument.definitions.map(d => d.declaration.name),
+    ["Json", "JsonObject"]);
+  assert.deepEqual(pinnedImportDocument.sources.map(s => s.module), [
+    "core/src/api.ts", "core/src/index.ts", "skiplang/skjson/ts/binding/src/index.ts",
+  ]);
+  assert.deepEqual(pinnedImportDocument.mappings.map(m => m.source), ["prebuild.mjs"]);
+  for (const source of pinnedImportDocument.sources)
+    assert.equal(createHash("sha256").update(source.text).digest("hex"), source.sha256);
+  for (const mapping of pinnedImportDocument.mappings)
+    assert.equal(createHash("sha256").update(mapping.text).digest("hex"), mapping.sha256);
+  assert.throws(() => collectImportDocument([
+    { ...jsonImports[0], route: [{ ...jsonImports[0].route[0], sha256: "0".repeat(64) },
+      ...jsonImports[0].route.slice(1)] },
+  ], modules, config), /route fingerprint differs/);
+  assert.throws(() => collectImportDocument([
+    { ...jsonImports[0], mappings: [{ ...jsonImports[0].mappings[0], sha256: "0".repeat(64) }] },
+  ], modules, config), /mapping route differs/);
   assert.deepEqual(jsonClosure.definitions.map(d => [d.declaration.name,
     d.references.map(r => r.target.name)]), [
     ["Json", ["Json", "JsonObject"]],
@@ -191,6 +212,9 @@ for (const [file, expected] of [
     pair, pairConfig)[0];
   assert.ok(pairRoot);
   const pairClosure = collectTypeClosure(pairRoot, pair, pairConfig);
+  const pairDocument = collectImportDocument([pairRoot], pair, pairConfig);
+  assert.deepEqual(pairDocument.sources.map(s => s.module), ["fixture/a.ts", "fixture/b.ts"]);
+  assert.equal(pairDocument.mappings.length, 0);
   assert.deepEqual(pairClosure.definitions.map(d => [d.declaration.name,
     d.parameters.map(p => p.name), d.references.map(r => [r.target.name, r.arguments.length])]), [
     ["A", ["T"], [["B", 1]]],
@@ -322,7 +346,8 @@ const invoke = (claims: string, evidence: string, artifacts = good,
 const fragment: unknown = JSON.parse(readFileSync(join(good, "fragment.json"), "utf8"));
 assert.ok(fragment && typeof fragment === "object" && !Array.isArray(fragment));
 const forgedImport = join(good, "forged-import.json");
-writeFileSync(forgedImport, JSON.stringify({ ...fragment, imports: [{}] }));
+writeFileSync(forgedImport, JSON.stringify({ ...fragment,
+  imports: must(pinnedImportDocument, "the pinned Json import document") }));
 assert.match(invoke(join(good, "claims.json"), join(good, "evidence.json"), good,
   forgedImport), /imported type definitions have no certified graph interpretation/);
 process.stdout.write("forged import closure: refused\n");

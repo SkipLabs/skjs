@@ -499,12 +499,15 @@ binder indices and applied arguments. Unsupported syntax is refused during
 collection rather than left inside an opaque span.
 Other declaration kinds and type-binding forms still refuse explicitly. The
 Fragment document now has one required `imports` slot, emitted empty by the
-source parser. Lean requires the exact document shape and refuses every
-nonempty import closure until a certified graph interpretation exists; a
-forged closure cannot be ignored while the client verifies. The collector's
-declarations are not yet carried into that slot, SourceClaims, or Lean's
-semantic graph, so this does not change verification coverage or admit imports
-at the source gate. The [`recursive-json.ts`](examples/recursive-json.ts)
+source parser. The collector can assemble both real `Json` imports into that
+shared slot with deduplicated declaration equations, module bytes, route
+fingerprints, and the `prebuild.mjs` mapping bytes. The OCaml suite submits
+this actual document as a forged Fragment and confirms Lean refuses it. Lean
+requires the exact document shape and refuses every nonempty import closure
+until a certified graph interpretation exists; the collector is not yet wired
+to the source parser, SourceClaims, or Lean's semantic graph. This does not
+change verification coverage or admit imports at the source gate. The
+[`recursive-json.ts`](examples/recursive-json.ts)
 source is a named suite/viewer gap there: both functions remain unchecked.
 
 `core/src/api.ts` imports `Json`, `JsonObject` and `DepSafe` from

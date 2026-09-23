@@ -7,7 +7,7 @@ import type { SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unst
 import { resolveModuleImport, type DeclarationIdentity,
   type ModuleSource, type ResolutionConfig, type ResolvedImport } from "./module-resolve.mts";
 import type { Span } from "./span.mts";
-import type { Reference, TypeClosure, TypeDefinition, TypeTerm } from "./imported-types.mts";
+import type { ImportDocument, Reference, TypeClosure, TypeDefinition, TypeTerm } from "./imported-types.mts";
 export type { Reference, TypeClosure, TypeDefinition, TypeTerm } from "./imported-types.mts";
 
 function alias(source: SourceFile, identity: DeclarationIdentity): TypeAliasDeclaration {
@@ -170,4 +170,71 @@ export function collectTypeClosure(
       parameters, body: [node.type.getStart(source), node.type.end], expression, references });
   }
   return { root, definitions };
+}
+
+/** Assemble every imported alias into one document. The closure collector
+ * supplies the only traversal; this step deduplicates its reachable modules
+ * and mapping witnesses, retaining their exact bytes for independent hash
+ * checks at the eventual verifier boundary. */
+export function collectImportDocument(
+  roots: readonly ResolvedImport[],
+  modules: readonly ModuleSource[],
+  config: ResolutionConfig,
+): ImportDocument {
+  const definitions: TypeDefinition[] = [];
+  const seen = new Set<string>();
+  const moduleIds = new Set<string>();
+  const mappingIds = new Set<string>();
+  const includeRoute = (route: ResolvedImport["route"], mappings: ResolvedImport["mappings"]) => {
+    for (const step of route) moduleIds.add(step.module);
+    for (const mapping of mappings) mappingIds.add(mapping.source);
+  };
+  for (const root of roots) {
+    includeRoute(root.route, root.mappings);
+    for (const definition of collectTypeClosure(root, modules, config).definitions) {
+      const key = `${definition.declaration.module}#${definition.declaration.span.join(":")}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      moduleIds.add(definition.declaration.module);
+      for (const reference of definition.references)
+        includeRoute(reference.route, reference.mappings);
+      definitions.push(definition);
+    }
+  }
+  const universe = new Map(modules.map(module => [module.id, module]));
+  const sources = [...moduleIds].sort().map(id => {
+    const module = universe.get(id);
+    if (!module) throw Error(`module not supplied: ${id}`);
+    const text = module.source.getFullText();
+    if (createHash("sha256").update(text).digest("hex") !== module.sha256)
+      throw Error(`module fingerprint differs: ${id}`);
+    return { module: id, sha256: module.sha256, text };
+  });
+  const mappings = [...mappingIds].sort().map(id => {
+    const text = config.mappingSources.get(id);
+    if (text === undefined) throw Error(`mapping source not supplied: ${id}`);
+    const sha256 = createHash("sha256").update(text).digest("hex");
+    return { source: id, sha256, text };
+  });
+  const sourceById = new Map(sources.map(source => [source.module, source]));
+  const mappingById = new Map(mappings.map(mapping => [mapping.source, mapping]));
+  const checkRoute = (route: ResolvedImport["route"], steps: ResolvedImport["mappings"]) => {
+    for (const step of route)
+      if (sourceById.get(step.module)?.sha256 !== step.sha256)
+        throw Error(`route fingerprint differs: ${step.module}`);
+    for (const step of steps) {
+      const actual = config.links.get(step.virtual);
+      if (!actual || actual.canonical !== step.canonical || actual.source !== step.source ||
+          actual.sha256 !== step.sha256 || mappingById.get(step.source)?.sha256 !== step.sha256)
+        throw Error(`mapping route differs: ${step.virtual}`);
+    }
+  };
+  for (const root of roots) checkRoute(root.route, root.mappings);
+  for (const definition of definitions) {
+    if (sourceById.get(definition.declaration.module)?.sha256 !== definition.sha256)
+      throw Error(`definition fingerprint differs: ${definition.declaration.module}`);
+    for (const reference of definition.references)
+      checkRoute(reference.route, reference.mappings);
+  }
+  return { roots: [...roots], definitions, sources, mappings };
 }
