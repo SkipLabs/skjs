@@ -510,7 +510,11 @@ universe. The parser represents imported references in function annotations as
 alias atoms whose local spellings resolve through the declaration-identified
 import roots; its test parses both functions in the actual `recursive-json.ts`
 with an explicit universe. Exported source functions are accepted as strict
-module code. Lean requires the exact document shape and refuses every nonempty
+module code. The programmatic OCaml driver now accepts that universe, stores
+the resulting Fragment, and reaches an explicit producer refusal: imported
+definitions still need a certified graph interpretation. Its ordinary CLI
+invocation supplies no universe. Lean requires the exact document shape and
+refuses every nonempty
 import document until a certified graph interpretation exists. This does not
 change verification coverage or admit imports at the verifier. The
 [`recursive-json.ts`](examples/recursive-json.ts)

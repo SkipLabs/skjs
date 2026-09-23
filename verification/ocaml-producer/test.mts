@@ -187,6 +187,15 @@ for (const [file, expected] of [
   assert.deepEqual(nest.params[0]?.type.atoms[0], { a: "alias", name: "Json", args: [] });
   assert.deepEqual(lookup.params[0]?.type.atoms[0], { a: "alias", name: "JsonObject", args: [] });
   assert(lookup.retType.atoms.some(atom => atom.a === "alias" && atom.name === "Json"));
+  const checkedJson = check(jsonPath, { modules, config });
+  assert.equal(checkedJson.status, "unsupported");
+  assert.equal(checkedJson.phase, "proposal");
+  assert.match(checkedJson.detail, /imported type definitions need a certified graph interpretation/);
+  const checkedFragment: unknown = JSON.parse(readFileSync(join(checkedJson.artifacts,
+    "fragment.json"), "utf8"));
+  assert.ok(checkedFragment && typeof checkedFragment === "object" &&
+    "imports" in checkedFragment);
+  assert.deepEqual(checkedFragment.imports, jsonAst.imports);
   assert.deepEqual(pinnedImportDocument.roots.map(r => r.binding.local), ["Json", "JsonObject"]);
   assert.deepEqual(pinnedImportDocument.definitions.map(d => d.declaration.name),
     ["Json", "JsonObject"]);

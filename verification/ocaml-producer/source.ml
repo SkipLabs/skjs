@@ -207,6 +207,10 @@ let rec stmt binders j =
       match field "else_" j with Null -> [] | xs -> List.map (stmt binders) (list xs))
   | k -> unsupported ("statement " ^ k) in {span=field "pos" j;statement}
 let decode ast =
+  let imports = field "imports" ast in
+  if List.exists (fun name -> items name imports <> [])
+      ["roots"; "definitions"; "sources"; "mappings"] then
+    unsupported "imported type definitions need a certified graph interpretation";
   let aliases = List.map (fun a -> text "name" a,a) (items "aliases" ast) in
   { file=field "file" ast;digest=field "sourceSha256" ast;
     functions=List.mapi (fun scope f ->

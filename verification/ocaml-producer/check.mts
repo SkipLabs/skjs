@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { createHash } from "node:crypto";
+import { parseFile, type ImportUniverse } from "../tools/fragment-parse.mts";
 
 const here = import.meta.dirname;
 const repo = resolve(here, "../..");
@@ -42,7 +43,7 @@ function run(command: string, args: string[]) {
 }
 /** Acceptance is deliberately private to this module. An OCaml proposal alone
  * cannot construct the public verified outcome: both Lean phases must succeed. */
-export function check(source: string): Outcome {
+export function check(source: string, importUniverse?: ImportUniverse): Outcome {
   const artifacts = mkdtempSync(join(tmpdir(), "ocaml-producer-"));
   let phase: Phase = "source";
   try {
@@ -57,10 +58,21 @@ export function check(source: string): Outcome {
         files: ["source.ts"],
       }),
     );
-    const parsed = run(process.execPath, [
-      resolve(repo, "verification/tools/fragment-parse.mts"),
-      snapshot,
-    ]);
+    // A caller may supply an explicit module universe. Its resolved, hashed
+    // source closure is carried in the Fragment; the producer and verifier
+    // still decide independently whether they can interpret it.
+    const parsed = importUniverse
+      ? (() => {
+          try {
+            return { code: 0, out: JSON.stringify(parseFile(snapshot, false, importUniverse)), detail: "" };
+          } catch (error) {
+            return { code: 1, out: "", detail: error instanceof Error ? error.message : String(error) };
+          }
+        })()
+      : run(process.execPath, [
+          resolve(repo, "verification/tools/fragment-parse.mts"),
+          snapshot,
+        ]);
     writeFileSync(join(artifacts, "parse.log"), parsed.detail);
     if (parsed.code !== 0)
       return {
