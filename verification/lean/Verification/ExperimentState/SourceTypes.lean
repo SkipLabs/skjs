@@ -30,6 +30,7 @@ private def clauseName : Clause (List Nat) → String
   | .nul => "null"
   | .bool => "boolean"
   | .refs .. => "object"
+  | .dict .. => "indexed object"
   | .arrs .. => "function"
   | .boolLit true => "true"
   | .boolLit false => "false"

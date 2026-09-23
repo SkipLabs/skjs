@@ -76,12 +76,25 @@ A graph body is a finite positive formula over clauses:
 $$P ::= \bot\mid c\mid P\lor P\mid P\land P.$$
 
 In the Lean development and the [request encoding](REQUEST-PROTOCOL.md#request-fields)
-these clauses are `nul`, `undef`, `bool`, `boolLit`, `refs`, `arrs`, and `callable`, where a reference
+these clauses include `nul`, `undef`, `bool`, `boolLit`, `refs`, `dict`, `arrs`, and `callable`, where a reference
 conjunction is a first operand plus the rest, and an arrow intersection is a
 possibly-empty list of domain/result pairs. A `callable` clause carries a first
 bag invariant, a list of further bag invariants, and its domain/result pairs.
 All constraints apply to one object. Its shape is function, as for `arrs`;
 `refs` still means a plain object. There is no callability-neutral bag clause yet.
+
+The `dict` clause extends a plain object with readonly string-index contracts.
+Its index operands constrain **every present own field**, including named
+fields, through a read capability; they grant no write permission. The object
+may have no fields, so an arbitrary indexed read has type `A | undefined`,
+even when its index contract is `A`. Normalization retains all index operands
+when dictionaries intersect each other or a named-field record. A checked
+dictionary-to-dictionary inclusion covers every target index operand with a
+source operand at a subtype, while retaining the named-field obligations.
+Index operands are guarded through the world, so a recursive graph can contain
+`JsonObject = { readonly [key: string]: Json | null }` without finite unfolding.
+The source and producer wire formats do not yet translate that declaration to
+`dict`; the clause is currently available at the independent graph layer.
 
 A callable intersection concatenates both lists of requirements. Intersecting
 it with `arrs` adds call obligations while retaining its bag invariants.

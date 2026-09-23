@@ -162,6 +162,9 @@ def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs
   | .strLit a, .strLit b => decide (a = b)
   | .refs a bs vs, .refs c ds ws =>
       decide (CoversFields (Rel table) (a :: bs) (c :: ds) ∧ CoversViews (Rel table) (a :: bs) vs ws)
+  | .dict a bs vs ix, .dict c ds ws iy =>
+      decide (CoversFields (Rel table) (a :: bs) (c :: ds) ∧
+        CoversViews (Rel table) (a :: bs) vs ws ∧ ∀ y ∈ iy, ∃ x ∈ ix, Rel table x y)
   | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T => decide
       (ArrowsChecked G table proofs L S M ∧ ∀ t ∈ T, ∃ s ∈ S, checkRestCovers table s t = true)
   | .callable a bs L S, .callable c ds M T => decide
@@ -176,6 +179,7 @@ theorem checkClause_sound [DecidableEq ι] {G : NormalGraph ι} {table proofs a 
   cases a <;> cases b <;> simp only [checkClause, Bool.false_eq_true, Covers] at *
   all_goals try contradiction
   all_goals try trivial
+  · exact of_decide_eq_true h
   · exact of_decide_eq_true h
   · have hh := of_decide_eq_true h
     exact ⟨fun p hp => by obtain ⟨e, _, _, _, he⟩ := hh.1 p hp; exact checkArrow_sound he,
@@ -248,6 +252,7 @@ theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table a b}
   all_goals try exact absurd rfl hb
   · exact ⟨[], rfl⟩
   · exact ⟨[], rfl⟩
+  · exact ⟨[], by simpa only [checkClause, decide_eq_true_eq] using h⟩
   · exact ⟨[], by simpa only [checkClause, decide_eq_true_eq] using h⟩
   · obtain ⟨es,he⟩ := arrow_evidence_complete h.1
     refine ⟨es, ?_⟩

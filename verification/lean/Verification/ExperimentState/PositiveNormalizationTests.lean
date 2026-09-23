@@ -16,6 +16,21 @@ private def checkCoreSource [DecidableEq ι] (G : PositiveGraphs.Graph ι) (S T 
   (.atom (.arrs [(2, [1], 0)] []))) = [.arrs [(2, [0], 1), (2, [1], 0)] []]
 #guard normalize (Formula.inter (.atom (.refs [("value", (0 : Nat))] [] [])) (.atom .bool)) = []
 
+-- A dictionary constrains every present field. Normalization preserves its
+-- index obligation when meeting another dictionary or a named-field record.
+#guard normalize (Formula.inter (.atom (.dict [] [] [] [0]))
+  (.atom (.dict [] [] [] [1]))) = [.dict [] [[]] [] [0, 1]]
+#guard normalize (Formula.inter (.atom (.refs [("x", (0 : Nat))] [] []))
+  (.atom (.dict [] [] [] [1]))) = [.dict [("x", 0)] [[]] [] [1]]
+
+private def jsonCycle : PositiveGraphs.Graph (Fin 2) := fun i =>
+  if i.val = 0 then .union (.atom .bool) (.atom (.dict [] [] [] [[1]]))
+  else .atom (.dict [] [] [] [[0]])
+
+example : Adm (PositiveGraphs.denote jsonCycle 0) := PositiveGraphs.admissible _ _
+#guard checkCoreSource jsonCycle [1] [1]
+  ⟨[([1], [1]), ([0], [0])], []⟩
+
 def G : PositiveGraphs.Graph (Fin 12) := fun i => match i.val with
   | 0 => .atom .nul
   | 1 => .atom .bool

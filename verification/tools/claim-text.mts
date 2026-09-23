@@ -909,6 +909,7 @@ const _handled = {
   numLit: 1,
   strLit: 1,
   refs: 1,
+  dict: 1,
   arrs: 1,
   callable: 1,
 } satisfies Record<StringClause | ClauseKey, 1>;

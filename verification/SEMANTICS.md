@@ -78,9 +78,10 @@ and admissible even when `A` is recursive, and it grants no write permission.
 `empty_bool_dict_missing` witnesses the distinction: an empty object satisfies
 the Boolean dictionary view, while a read of any key yields `undefined`, which
 is not Boolean. An arbitrary indexed read therefore needs a result including
-`undefined`. The source parser, positive graph, certificate rules and producer
-do not yet accept an index signature; these semantic lemmas alone are not
-source verification.
+`undefined`. The positive graph now has a `dict` clause whose operands are
+guarded recursive labels, and the checked covering rule can compare dictionary
+views. The source parser and producer do not yet lower an index signature into
+that clause; these semantic results alone are not source verification.
 
 Term and descriptor equality use explicit structural comparisons, each returning
 a kernel-checked `Decidable` result and recurring only on strict subterms. This

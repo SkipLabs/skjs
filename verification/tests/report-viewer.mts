@@ -1162,15 +1162,18 @@ assert.equal(must(failedAt(absentEnv), 'a located failure').site, "unclaimed");
     [{callable:{first: [["value", [0]]],rest: [[["value", [1]]]],arrows:[[[4],[[[0],[1]],[1]]],[[4],[[],[]]]]}}],
     [{arrs:{arrows:[]}}], ["bool"], ["undef"], ["nul"],
     [{boolLit:{value:false}}], [{boolLit:{value:true}}],
+    [{dict:{first:[],rest:[],views:[],indexes:[[8]]}}],
   ]);
   assert.deepEqual(parseGraph(printGraph(graph)),graph);
   const rows = graphDefinitions(graph);
   assert.equal(rows[0].definition,'ref{value: #0} & ref{value: #1}');
   assert.match(rows[1].definition,/\(this: #4, #0, #1\) => #1; \(this: #4\) => never/);
+  assert.match(rows[8].definition,/readonly \{\[key: string\]: #8\}/);
   assert.equal(rows.length,graph.length);
   assert.equal(ob.typeText(graph,[6,7]),'boolean');
   for (const invalid of [[["new-clause"]],[[{refs:{first: [["value", [1]]],rest:[], views: []}}]],[[{boolLit:{value:true,extra:0}}]]])
     assert.throws(() => decodeGraph(invalid));
+  assert.throws(() => decodeGraph([[{dict:{first:[],rest:[],views:[],indexes:[[1]]}}]]));
   const term = decodeTerm({makeAt:{call:{closure:{arity:2,body:{invoke:{f:{var:{i:0}},r:"undef",args:["tru","nul"]}}}},names:["left","right"],inits:["undef","tru"]}});
   for (const code of [{variadic:{fixed:1,body:{var:{i:1}}}},{bound:{target:{var:{i:0}},receiver:"nul",pre:["tru"]}}])
     assert.deepEqual(decodeTerm({makeAt:{call:code,names:[],inits:[]}}),{makeAt:{call:code,names:[],inits:[]}});

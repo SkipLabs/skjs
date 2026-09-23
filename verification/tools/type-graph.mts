@@ -32,6 +32,15 @@ export type Clause =
   /** `views` are read capabilities: a field read at a sound upper bound on
    * its contents, with no write permission through this contract. */
   | { refs: { first: Fields; rest: Fields[]; views: Fields } }
+  /** Readonly string index views apply to every present own field. */
+  | {
+      dict: {
+        first: Fields;
+        rest: Fields[];
+        views: Fields;
+        indexes: Labels[];
+      };
+    }
   /** A tuple contract on an array store: required positions, optional
    * positions, and the rest, or null when no further position may exist. */
   | { list: { first: Tuple; rest: Tuple[] } }
@@ -208,6 +217,13 @@ export function decodeGraph(value: unknown): TypeGraph {
       array(r.rest).forEach(fields);
       fields(r.views);
     },
+    dict: (b) => {
+      const r = obj(b, ["first", "rest", "views", "indexes"]);
+      fields(r.first);
+      array(r.rest).forEach(fields);
+      fields(r.views);
+      array(r.indexes).forEach(labels);
+    },
     list: (b) => {
       const r = obj(b, ["first", "rest"]);
       tuple(r.first);
@@ -277,6 +293,12 @@ function clauseText(c: Clause): string {
     return [
       [c.refs.first, ...c.refs.rest].map(printFields).join(" & "),
       ...(c.refs.views.length ? [`readonly ${printFields(c.refs.views)}`] : []),
+    ].join(" & ");
+  if ("dict" in c)
+    return [
+      [c.dict.first, ...c.dict.rest].map(printFields).join(" & "),
+      ...(c.dict.views.length ? [`readonly ${printFields(c.dict.views)}`] : []),
+      ...c.dict.indexes.map((index) => `readonly {[key: string]: ${printLabels(index)}}`),
     ].join(" & ");
   const calls = (arrows: Arrow[], variadic: RestArrow[] = []) =>
     `calls[${[...arrows.map(arrowText), ...variadic.map(restArrowText)].join("; ")}]`;

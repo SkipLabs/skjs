@@ -29,6 +29,12 @@ inductive Clause (α : Type) where
   object rather than one location twice. -/
   | refs (first : List (String × α)) (rest : List (List (String × α)))
       (views : List (String × α))
+  /-- A plain object with invariant named fields, readonly named views, and
+  readonly string-index views. The index operands apply to every present own
+  field, including named ones. A first record operand fixes the object shape;
+  it may be empty for a pure dictionary. -/
+  | dict (first : List (String × α)) (rest : List (List (String × α)))
+      (views : List (String × α)) (indexes : List α)
   /-- A callable value meeting every fixed signature, `(receiver, parameters,
   result)`, and every variadic one, `(receiver, fixed parameters, element,
   result)`: the receiver a call may pass, the contract of each actual, and
@@ -72,6 +78,9 @@ def sem (X : α → Fam) : Clause α → Fam
   | .strLit s => fun _ _ v => v = .str s
   | .refs a bs vs => fun n W v =>
       refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧ viewT (famsOf X vs) n W v
+  | .dict a bs vs ds => fun n W v =>
+      refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧
+      viewT (famsOf X vs) n W v ∧ ∀ d ∈ ds, dictViewT (X d) n W v
   | .arrs L S => interT (callsT (L.map fun p => (X p.1, p.2.1.map X, X p.2.2)))
       (restsT (S.map fun s => (X s.1, s.2.1.map X, X s.2.2.1, X s.2.2.2)))
   | .callable a bs L S =>
@@ -110,6 +119,9 @@ def meet : Clause α → Clause α → List (Clause α)
   | .str, .strLit s | .strLit s, .str => [.strLit s]
   | .strLit a, .strLit b => if a == b then [.strLit a] else []
   | .refs a bs vs, .refs c ds ws => [.refs a (bs ++ c :: ds) (vs ++ ws)]
+  | .refs a bs vs, .dict c ds ws ix => [.dict a (bs ++ c :: ds) (vs ++ ws) ix]
+  | .dict a bs vs ix, .refs c ds ws => [.dict a (bs ++ c :: ds) (vs ++ ws) ix]
+  | .dict a bs vs ix, .dict c ds ws iy => [.dict a (bs ++ c :: ds) (vs ++ ws) (ix ++ iy)]
   | .arrs L S, .arrs M T => [.arrs (L ++ M) (S ++ T)]
   | .callable a bs L S, .callable c ds M T => [.callable a (bs ++ c :: ds) (L ++ M) (S ++ T)]
   | .callable a bs L S, .arrs M T => [.callable a bs (L ++ M) (S ++ T)]
@@ -132,7 +144,7 @@ private theorem nil_sem (X : α → Fam) (n W v) : ¬ semList X [] n W v := by
   simp [semList, setSem]
 
 def shape : Clause α → Nat
-  | .nul => 0 | .bool | .boolLit _ => 1 | .refs .. => 2 | .arrs .. | .callable .. => 3
+  | .nul => 0 | .bool | .boolLit _ => 1 | .refs .. | .dict .. => 2 | .arrs .. | .callable .. => 3
   | .undef => 4 | .num | .numLit _ => 5 | .str | .strLit _ => 6
   | .top => 7 | .list .. => 8
 
@@ -156,6 +168,7 @@ theorem sem_value {X : α → Fam} {c : Clause α} {n W v}
   | num => obtain ⟨b, rfl⟩ := h; exact ⟨rfl, trivial⟩
   | numLit b => subst v; exact ⟨rfl, trivial⟩
   | refs a rest => obtain ⟨flds, rfl, _⟩ := h.1.1; exact ⟨rfl, trivial⟩
+  | dict a rest vs ds => obtain ⟨flds, rfl, _⟩ := h.1.1; exact ⟨rfl, trivial⟩
   | arrs L S => exact ⟨h.1.1.val, h.1.1.scoped⟩
   | callable a bs L S => exact ⟨h.1.2.1.val, h.1.2.1.scoped⟩
   | undef => subst v; exact ⟨rfl, trivial⟩
@@ -174,6 +187,7 @@ theorem sem_shape {X : α → Fam} {c : Clause α} {n W v} (hc : c ≠ .top)
   | num => obtain ⟨b, rfl⟩ := h; rfl
   | numLit b => cases h; rfl
   | refs a bs => obtain ⟨flds, rfl, _⟩ := h.1.1; rfl
+  | dict a bs vs ds => obtain ⟨flds, rfl, _⟩ := h.1.1; rfl
   | arrs L S =>
     obtain ⟨fs, code, rfl, hc, -⟩ := h.1.1
     cases code <;> simp_all [valueShape, shape]
@@ -208,6 +222,22 @@ theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (
       rw [merge _ _ _ _ n W v, famsOf_append, viewT_append]
       simp only [interT]
       exact ⟨fun h => ⟨⟨h.1.1, h.2.1⟩, ⟨h.1.2, h.2.2⟩⟩, fun h => ⟨⟨h.1.1, h.2.1⟩, ⟨h.1.2, h.2.2⟩⟩⟩
+    · -- refs ∩ dictionary
+      simp only [meet, singleton_sem, sem, List.map_append, List.map_cons]
+      rw [merge _ _ _ _ n W v, famsOf_append, viewT_append]
+      simp only [interT]
+      simp only [and_assoc, and_left_comm, and_comm]
+    · -- dictionary ∩ refs
+      simp only [meet, singleton_sem, sem, List.map_append, List.map_cons]
+      rw [merge _ _ _ _ n W v, famsOf_append, viewT_append]
+      simp only [interT]
+      simp only [and_assoc, and_left_comm, and_comm]
+    · -- dictionary ∩ dictionary
+      simp only [meet, singleton_sem, sem, List.map_append, List.map_cons,
+        List.mem_append, or_imp, forall_and]
+      rw [merge _ _ _ _ n W v, famsOf_append, viewT_append]
+      simp only [interT]
+      simp only [and_assoc, and_left_comm, and_comm]
     · -- arrs ∩ arrs
       simp only [meet, singleton_sem, sem, List.map_append]
       rw [interT, TypeAlgebra.calls_append, TypeAlgebra.rests_append]
@@ -314,6 +344,14 @@ theorem sem_adm (X : α → Fam) (c : Clause α) : Adm (sem X c) := by
   | numLit b => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | refs a bs vs => exact ⟨fun n W v h => ⟨(adm _ _).down n W v h.1, (viewT_adm _).down n W v h.2⟩,
       fun n W U hx v h => ⟨(adm _ _).mono n W U hx v h.1, (viewT_adm _).mono n W U hx v h.2⟩⟩
+  | dict a bs vs ds =>
+    refine ⟨?_, ?_⟩
+    · intro n W v h
+      exact ⟨(adm _ _).down n W v h.1, (viewT_adm _).down n W v h.2.1,
+        fun d hd => (dictViewT_adm _).down n W v (h.2.2 d hd)⟩
+    · intro n W U hx v h
+      exact ⟨(adm _ _).mono n W U hx v h.1, (viewT_adm _).mono n W U hx v h.2.1,
+        fun d hd => (dictViewT_adm _).mono n W U hx v (h.2.2 d hd)⟩
   | arrs L S => exact interT_adm _ _ (callsT_adm _) (restsT_adm _)
   | callable a bs L S => exact interT_adm _ _ (CallableConjunctions.adm _ _ _) (restsT_adm _)
   | undef => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
@@ -368,6 +406,10 @@ theorem sem_congr (X Y : α → Fam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
   | list a bs =>
     exact and_congr (list_congr_below X Y a n h W v) (forall_congr' fun b => forall_congr' fun _ => list_congr_below X Y b n h W v)
   | refs a bs vs => exact and_congr (congr_below X Y a bs n h W v) (view_congr_below X Y vs n h W v)
+  | dict a bs vs ds =>
+    exact and_congr (congr_below X Y a bs n h W v)
+      (and_congr (view_congr_below X Y vs n h W v)
+        (forall_congr' fun d => forall_congr' fun _ => dictViewT_congr (h d) W v))
   | arrs L S =>
     have hd : ∀ As : List α, ArgsAgree n (As.map X) (As.map Y) := by
       intro As; induction As with

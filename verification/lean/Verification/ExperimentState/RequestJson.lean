@@ -88,6 +88,7 @@ def clauseTypes : Clause (Ty Nat) → List (Ty Nat)
   | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .str | .strLit _ | .top => []
   | .list a bs => (a :: bs).flatMap fun t => t.required ++ t.optional ++ t.rest.toList
   | .refs A bs vs => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd
+  | .dict A bs vs ds => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd ++ ds
   | .arrs L S => L.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++
       S.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2.1, p.2.2.2])
   | .callable A bs L S =>

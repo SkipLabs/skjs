@@ -398,6 +398,9 @@ def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
   | .strLit _, .str => True
   | .strLit a, .strLit b => a = b
   | .refs a bs vs, .refs c ds ws => CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws
+  | .dict a bs vs ix, .dict c ds ws iy =>
+      CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws ∧
+      ∀ y ∈ iy, ∃ x ∈ ix, R x y
   | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
       (∀ p ∈ M, CallArrow G R L S p.1 p.2.1 p.2.2) ∧ ∀ t ∈ T, ∃ s ∈ S, RestCovers R s t
   | .callable a bs L S, .callable c ds M T =>
@@ -572,6 +575,17 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
   · rename_i a bs vs c ds ws
     intro hv
     exact ⟨covers_fields_sound hc.1 n hr W v hv.1, covers_views_sound hc.2 n hr W v hv⟩
+  · rename_i a bs vs ix c ds ws iy
+    intro hv
+    refine ⟨covers_fields_sound hc.1 n hr W v hv.1,
+      covers_views_sound hc.2.1 n hr W v ⟨hv.1, hv.2.1⟩, ?_⟩
+    intro y hy
+    obtain ⟨x, hx, hxy⟩ := hc.2.2 y hy
+    obtain ⟨flds, he, hfs⟩ := hv.2.2 x hx
+    refine ⟨flds, he, ?_⟩
+    intro f l hl
+    obtain ⟨c, hw, hag⟩ := hfs f l hl
+    exact ⟨c, hw, fun j hj W' u hu => hr j hj x y hxy W' u (hag j hj W' u hu)⟩
   · intro hv
     refine ⟨⟨hv.1.1, fun p hp => ?_⟩, ⟨hv.1.1, fun t ht => ?_⟩⟩
     · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
