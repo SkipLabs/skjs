@@ -41,7 +41,8 @@ let encode (proposal : Proposal.t) =
       let calls = ("arrows",arrows) :: (if variadic = [] then [] else ["variadic",Array variadic]) in
       let clause = match shape.elements with
         | Some sequence ->
-          if shape.fields <> [] || shape.calls <> [] then unsupported "array with additional fields or calls";
+          if shape.fields <> [] || shape.calls <> [] || shape.string_index <> None
+          then unsupported "array with additional fields, indexes or calls";
           let store = intern (Array [Object ["list",Object ["first",Object [
             "required",Array (List.map labels sequence.required);
             "optional",Array (List.map labels sequence.optional_elements);
@@ -50,10 +51,14 @@ let encode (proposal : Proposal.t) =
           let storage = Array [Array [String "[]";Array [int store]]] in
           Object ["refs",Object ["first",(if sequence.readonly then Array [] else storage);
             "rest",Array [];"views",(if sequence.readonly then storage else Array [])]]
-        | None -> match shape.fields,shape.calls with
-          | _,[] -> Object ["refs",Object ["first",fields;"rest",Array [];"views",views]]
-          | [],_ -> Object ["arrs",Object calls]
-          | _,_ ->
+        | None -> match shape.fields,shape.string_index,shape.calls with
+          | _,Some index,[] ->
+            if index.writable <> None then unsupported "mutable string index signature";
+            Object ["dict",Object ["first",fields;"rest",Array [];"views",views;
+              "indexes",Array [labels index.value]]]
+          | _,None,[] -> Object ["refs",Object ["first",fields;"rest",Array [];"views",views]]
+          | [],None,_ -> Object ["arrs",Object calls]
+          | _,_,_ ->
             if reads <> [] then unsupported "callable with readonly fields";
             Object ["callable",Object (["first",fields;"rest",Array []] @ calls)] in
       intern (Array [clause])
@@ -68,6 +73,8 @@ let encode (proposal : Proposal.t) =
         | Shape s ->
           List.exists (fun (f:Semantic.field) -> contains_rigid f.read
             || Option.fold ~none:false ~some:contains_rigid f.write) s.fields
+          || Option.fold ~none:false ~some:(fun (i:Semantic.index_signature) ->
+              contains_rigid i.value || Option.fold ~none:false ~some:contains_rigid i.writable) s.string_index
           || List.exists (fun (a:Semantic.signature) ->
               List.exists contains_rigid (a.receiver :: a.result :: a.params @ Option.to_list a.variadic)
               || List.exists (fun (q:Semantic.quantifier) ->
@@ -78,7 +85,7 @@ let encode (proposal : Proposal.t) =
   in
   let rec claim_type = function
     | Rigid n -> Object ["param",String n.spelling]
-    | Atoms [Shape {fields=[];calls=[signature];elements=None}]
+    | Atoms [Shape {fields=[];string_index=None;calls=[signature];elements=None}]
         when signature.quantified <> [] || List.exists contains_rigid
           (signature.receiver :: signature.result :: signature.params @ Option.to_list signature.variadic) ->
       let type_params = Array (List.map (fun (q:Semantic.quantifier) -> Object [
@@ -90,7 +97,7 @@ let encode (proposal : Proposal.t) =
         "params",Array (List.map claim_type signature.params);
         "rest",(match signature.variadic with None -> Null | Some t -> claim_type t);
         "result",claim_type signature.result]]
-    | Atoms [Shape {fields=[];calls=[];elements=Some
+    | Atoms [Shape {fields=[];string_index=None;calls=[];elements=Some
         {required=[];optional_elements=[];rest=Some element;readonly=false}}]
         when contains_rigid element -> Object ["array",claim_type element]
     | Atoms (_::_::_ as atoms) when contains_rigid (Atoms atoms) ->

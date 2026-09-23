@@ -194,7 +194,10 @@ class Gate {
    * there is one, and how many statements the prologue's "use strict" members
    * occupy, which are dropped since they do nothing else. Another directive
    * stays an ordinary statement. */
-  useStrict(statements: readonly Statement[]): { strict: boolean; skip: Set<Statement> } {
+  useStrict(statements: readonly Statement[]): {
+    strict: boolean;
+    skip: Set<Statement>;
+  } {
     const skip = new Set<Statement>();
     for (const statement of statements) {
       if (
@@ -301,10 +304,7 @@ class Gate {
       const head = node.parameters[0];
       const stated =
         head && ts.isIdentifier(head.name) && head.name.text === "this";
-      if (
-        stated &&
-        (!head.type || head.questionToken || head.dotDotDotToken)
-      )
+      if (stated && (!head.type || head.questionToken || head.dotDotDotToken))
         this.fail(head, "a receiver needs a required type annotation");
       const receiver: ClaimType = stated
         ? this.typeOf(head.type)
@@ -315,10 +315,7 @@ class Gate {
       for (const p of parameters) {
         if (!ts.isIdentifier(p.name) || p.name.text === "this" || p.initializer)
           this.fail(p, "expected an ordinary parameter");
-        if (
-          p.dotDotDotToken &&
-          p !== parameters[parameters.length - 1]
-        )
+        if (p.dotDotDotToken && p !== parameters[parameters.length - 1])
           this.fail(p, "a rest parameter must be the last one");
         if (
           !p.questionToken &&
@@ -360,44 +357,77 @@ class Gate {
     if (ts.isTypeLiteralNode(node)) {
       if (!node.members.length)
         this.fail(node, "a record with no field has no location");
-      const names = new Set<string>();
-      const fields = node.members.map((f) => {
-        // A `readonly` member is a read capability: its write contract is
-        // `never`, and nothing else about the field changes.
-        const readonly =
-          ts.isPropertySignatureDeclaration(f) &&
-          f.modifiers?.every(
-            (m) => m.kind === ts.SyntaxKind.ReadonlyKeyword,
-          ) === true;
-        if (
-          !ts.isPropertySignatureDeclaration(f) ||
-          !ts.isIdentifier(f.name) ||
-          // A member's `?` (or `!`) is its postfix token; a parameter's is a
-          // question token. Different nodes, different names.
-          f.postfixToken ||
-          (f.modifiers?.length && !readonly)
-        )
-          this.fail(f, "expected a required mutable field");
-        const name =
-          ts.isPropertySignatureDeclaration(f) && ts.isIdentifier(f.name)
-            ? f.name.text
-            : this.fail(f, "expected a required mutable field");
-        if (names.has(name)) this.fail(f, "duplicate field name in a record");
-        names.add(name);
-        const t = this.typeOf(
-          ts.isPropertySignatureDeclaration(f) ? f.type : undefined,
+      const indexMembers = node.members.filter(ts.isIndexSignatureDeclaration);
+      if (indexMembers.length > 1)
+        this.fail(
+          node,
+          "multiple string index signatures are outside the fragment",
         );
-        return {
-          name,
-          optional: false,
-          read: t,
-          write: readonly ? { top: false, atoms: [] } : t,
+      let indexSignature: { read: ClaimType; write: ClaimType } | undefined;
+      if (indexMembers.length) {
+        const index = indexMembers[0];
+        const parameter = index?.parameters[0];
+        if (
+          !index ||
+          index.parameters.length !== 1 ||
+          !parameter ||
+          parameter.type?.kind !== ts.SyntaxKind.StringKeyword ||
+          !index.type ||
+          index.modifiers?.length !== 1 ||
+          index.modifiers[0]?.kind !== ts.SyntaxKind.ReadonlyKeyword
+        )
+          this.fail(
+            index ?? node,
+            "expected a readonly string index signature",
+          );
+        indexSignature = {
+          read: this.typeOf(index.type),
+          write: { top: false, atoms: [] },
         };
-      });
+      }
+      const names = new Set<string>();
+      const fields = node.members
+        .filter(ts.isPropertySignatureDeclaration)
+        .map((f) => {
+          // A `readonly` member is a read capability: its write contract is
+          // `never`, and nothing else about the field changes.
+          const readonly =
+            ts.isPropertySignatureDeclaration(f) &&
+            f.modifiers?.every(
+              (m) => m.kind === ts.SyntaxKind.ReadonlyKeyword,
+            ) === true;
+          if (
+            !ts.isPropertySignatureDeclaration(f) ||
+            !ts.isIdentifier(f.name) ||
+            // A member's `?` (or `!`) is its postfix token; a parameter's is a
+            // question token. Different nodes, different names.
+            f.postfixToken ||
+            (f.modifiers?.length && !readonly)
+          )
+            this.fail(f, "expected a required mutable field");
+          const name =
+            ts.isPropertySignatureDeclaration(f) && ts.isIdentifier(f.name)
+              ? f.name.text
+              : this.fail(f, "expected a required mutable field");
+          if (names.has(name)) this.fail(f, "duplicate field name in a record");
+          names.add(name);
+          const t = this.typeOf(
+            ts.isPropertySignatureDeclaration(f) ? f.type : undefined,
+          );
+          return {
+            name,
+            optional: false,
+            read: t,
+            write: readonly ? { top: false, atoms: [] } : t,
+          };
+        });
+      if (fields.length + indexMembers.length !== node.members.length)
+        this.fail(node, "unsupported member in a record type");
       acc.push({
         a: "record",
         fields,
         indexes: { string: "absent", number: "absent", symbol: "absent" },
+        ...(indexSignature ? { indexSignature } : {}),
         call: "unknown",
         construct: "unknown",
         array: "unknown",
@@ -708,8 +738,7 @@ class Gate {
         // `super` or construction here, which is all that tells them apart.
         if (ts.isMethodDeclaration(f) && ts.isIdentifier(f.name)) {
           const name = f.name.text;
-          if (seen.has(name))
-            this.fail(f, "duplicate field name in a record");
+          if (seen.has(name)) this.fail(f, "duplicate field name in a record");
           if (name === "__proto__")
             this.fail(f, "prototype initializers are outside the fragment");
           seen.add(name);
@@ -1067,7 +1096,10 @@ class Gate {
       ) {
         let target: Expression = n.left;
         while (ts.isParenthesizedExpression(target)) target = target.expression;
-        if (ts.isPropertyAccessExpression(target) && target.name.text === member)
+        if (
+          ts.isPropertyAccessExpression(target) &&
+          target.name.text === member
+        )
           found = true;
         if (
           ts.isElementAccessExpression(target) &&
@@ -1400,7 +1432,10 @@ class Gate {
           );
       }
       if (ts.isMethodDeclaration(node) && node.postfixToken)
-        this.fail(node, "an optional or definite method is outside the fragment");
+        this.fail(
+          node,
+          "an optional or definite method is outside the fragment",
+        );
     }
     // An ordinary function's leading `this: T` states its receiver; without
     // one, any receiver is accepted. An arrow cannot declare one.
@@ -1409,17 +1444,22 @@ class Gate {
       !!head && ts.isIdentifier(head.name) && head.name.text === "this";
     if (stated && !ordinary)
       this.fail(head, "an arrow cannot declare a receiver");
-    if (stated && (!head.type || head.questionToken || head.dotDotDotToken || head.initializer))
+    if (
+      stated &&
+      (!head.type ||
+        head.questionToken ||
+        head.dotDotDotToken ||
+        head.initializer)
+    )
       this.fail(head, "a receiver needs a required type annotation");
     const parameters = stated ? node.parameters.slice(1) : [...node.parameters];
     const body = node.body;
     if (!body) this.fail(node, "a function must have a body");
     // A directive prologue in the function's own body makes it strict. It
     // is a syntax error beside parameters that are not simple.
-    const prologue =
-      ts.isBlock(body)
-        ? this.useStrict(body.statements)
-        : { strict: false, skip: new Set<Statement>() };
+    const prologue = ts.isBlock(body)
+      ? this.useStrict(body.statements)
+      : { strict: false, skip: new Set<Statement>() };
     if (
       prologue.strict &&
       parameters.some((p) => p.initializer || p.dotDotDotToken)
@@ -1875,10 +1915,17 @@ class Gate {
     const head = node.parameters[0];
     const receiverParam =
       !!head && ts.isIdentifier(head.name) && head.name.text === "this";
-    if (receiverParam && (!head.type || head.questionToken || head.dotDotDotToken))
+    if (
+      receiverParam &&
+      (!head.type || head.questionToken || head.dotDotDotToken)
+    )
       this.fail(head, "a receiver needs a required type annotation");
     const outerReceiverMode = this.receiverMode;
-    this.receiverMode = receiverParam ? (this.strict ? "strict" : "sloppy") : null;
+    this.receiverMode = receiverParam
+      ? this.strict
+        ? "strict"
+        : "sloppy"
+      : null;
     const typeParams = this.enterTypeParams(node.typeParameters);
     try {
       const params = node.parameters.map((p) => {
@@ -2033,11 +2080,15 @@ export function definedClassCallables(
     if (!ts.isClassDeclaration(statement) || !statement.name) continue;
     for (const member of statement.members) {
       if (ts.isConstructorDeclaration(member) && member.body) {
-        out.push({ name: `${statement.name.text}.constructor`,
-          namePos: [member.getStart(source), member.end] });
+        out.push({
+          name: `${statement.name.text}.constructor`,
+          namePos: [member.getStart(source), member.end],
+        });
       } else if (ts.isMethodDeclaration(member) && member.body) {
-        out.push({ name: `${statement.name.text}.${member.name.getText(source)}`,
-          namePos: [member.name.getStart(source), member.name.end] });
+        out.push({
+          name: `${statement.name.text}.${member.name.getText(source)}`,
+          namePos: [member.name.getStart(source), member.name.end],
+        });
       }
     }
   }

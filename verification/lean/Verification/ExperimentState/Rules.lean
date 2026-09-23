@@ -168,6 +168,28 @@ theorem read_view_rule {code : CallCode} {flds : List (String × Nat)} {f : Stri
     | zero => trivial
     | succ q => exact Or.inl ⟨hA _ _ _ hAv, hAv⟩
 
+/-- A string dictionary covers every present field, while a missing name
+reads `undefined`. A lookup cannot discard that alternative. -/
+theorem read_dict_rule {flds : List (String × Nat)} {f : String} {A : Fam}
+    (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap)
+    (hadm : WorldAdm W) (hok : HeapOk n W h)
+    (hd : dictViewT A n W (.objAt flds .absent)) :
+    Safe (unionT A undefT) n W h (.readAt f (.objAt flds .absent)) := by
+  cases hlook : flds.lookup f with
+  | some l =>
+    obtain ⟨c, hc, hag⟩ := dictViewT_present hd hlook
+    apply Safe_mono n (fun _ _ _ _ ha => Or.inl ha) W h _
+      (read_view_rule hA n W h l hadm hok hlook hc hag)
+  | none =>
+    cases n with
+    | zero => trivial
+    | succ p =>
+      refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, .undef, WExt_refl _,
+        WorldAdm_trunc _ hadm, .readMissing hlook, HeapOk_trunc p W h hok, ?_⟩
+      cases p with
+      | zero => trivial
+      | succ q => exact Or.inl ⟨rfl, Or.inr rfl⟩
+
 /-- **Write.** -/
 theorem write_rule {code : CallCode} {flds : List (String × Nat)} {f : String} {A : Fam}
     (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (l : Nat)

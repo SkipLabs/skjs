@@ -81,6 +81,29 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
       return [← SourceTypes.use (.arrs fixed.eraseDups variadic.eraseDups)]
     else if ["array", "store"].contains (← jStr (← jField atom "a")) then
       return [← arrayType atom]
+    else if (← jStr (← jField atom "a")) == "record" &&
+        (atom.getObjVal? "indexSignature").toOption.isSome then
+      CellClaims.fieldsExactly atom
+        ["a", "fields", "indexes", "indexSignature", "call", "construct", "array"]
+      if !(← jArr atom "fields").isEmpty then
+        throw "named fields with a string index signature are not yet in the source fragment"
+      let index ← jField atom "indexSignature"
+      CellClaims.fieldsExactly index ["read", "write"]
+      let write ← jField index "write"
+      if write != Json.mkObj [("top", toJson false), ("atoms", toJson ([] : List Json))] then
+        throw "only readonly string index signatures are in the source fragment"
+      for key in ["call", "construct", "array"] do
+        let mode ← jStr (← jField atom key)
+        if mode != "unknown" && mode != "absent" then
+          throw "unsupported indexed object mode"
+      let indexes ← jField atom "indexes"
+      CellClaims.fieldsExactly indexes ["string", "number", "symbol"]
+      for key in ["string", "number", "symbol"] do
+        let mode ← jStr (← jField indexes key)
+        if mode != "absent" && mode != "synthetic" then
+          throw "unsupported synthetic index marker"
+      let element ← callableType (← jField index "read")
+      return [← SourceTypes.use (.dict [] [] [] [element])]
     else
       let single := Json.mkObj [("top",toJson false),("atoms",toJson [atom])]
       -- The callable table grows as this walks it, so a numeric parameter or
@@ -180,7 +203,11 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
   let (conjoined, plain) :=
     ((tagged.filter (fun p => p.1 == "record")).map (·.2)).partition
       (fun a => (a.getObjVal? "and").toOption.isSome)
+  let (indexed, plain) := plain.partition
+    (fun a => (a.getObjVal? "indexSignature").toOption.isSome)
   let records ← CellUnion.lower (← plain.mapM cellContract)
+  let dictionaries ← indexed.mapM fun atom =>
+    callableType (Json.mkObj [("top", toJson false), ("atoms", toJson [atom])])
   let conjunctions ← conjoined.mapM fun a => do return [← cellConjunction a]
   let arms ← (tagged.filter (fun p => p.1 != "record")).mapM fun (_,atom) => do
     let single := Json.mkObj [("top",toJson false),("atoms",toJson [atom])]
@@ -193,7 +220,7 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
     | "number" | "numberlit" | "string" | "stringlit" | "void" =>
       SourceTypes.numberLabels (← CellClaims.primitive single)
     | _ => SourceTypes.translate (← CellClaims.primitive single)
-  return (records ++ conjunctions ++ arms).flatten.mergeSort (· ≤ ·) |>.eraseDups
+  return (records ++ dictionaries ++ conjunctions ++ arms).flatten.mergeSort (· ≤ ·) |>.eraseDups
 
 /-- A point assertion separates the persistent reference type from a current
 contents predicate. It is never accepted by erasing `current`. Ordinary function

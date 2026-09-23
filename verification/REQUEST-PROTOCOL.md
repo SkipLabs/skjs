@@ -526,6 +526,13 @@ variables are not exported. It preserves readonly setters as `never` and marks
 optional fields explicitly. `unknown` and `absent` object modes are distinct
 exports, though both are compatible with the future plain-cell interpretation.
 
+The shared source claim format also has an optional `indexSignature` on a
+record atom, with separate `read` and `write` types. It describes an actual
+string index permission, unlike the synthetic `indexes` markers above. The
+current source fragment and OCaml producer emit only readonly signatures
+(`write: never`); the SKJS bounded exporter still rejects real index
+signatures. A pure readonly index lowers to a dictionary graph clause.
+
 Function claims retain the substitution snapshot taken after checking the body.
 Serialization follows only isolated, bound inference variables without
 constraints, up to a fixed recursion limit. It reads both open and closed

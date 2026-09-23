@@ -865,6 +865,12 @@ field passes; a readonly Boolean field has `never` writes and fails this
 particular invariant-cell gate. Readonly objects need a different capability
 interface; this rejection does not mean they are unsafe.
 
+This restriction is specific to the invariant-cell translation of SKJS record
+claims. The source fragment and OCaml producer separately support a readonly
+string index signature as a dictionary view: every present property must meet
+the value contract, while a missing property reads as `undefined`. This view
+does not justify writing through the index.
+
 Theorems preserve both primitive sides of an accepted contract and show that
 the chosen reference label denotes exactly that invariant. This is not
 an equivalence theorem for TypeScript records and calculus references. Record

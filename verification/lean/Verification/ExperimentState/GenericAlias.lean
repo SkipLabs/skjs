@@ -83,7 +83,12 @@ partial def substAtom (p : String) (arg : Json) (atom : Json) : Except String Js
       return putFields field
         [("read", ← substType p arg (← jField field "read")),
          ("write", ← substType p arg (← jField field "write"))]
-    return putFields atom [("fields", toJson fields)]
+    let index ← match (atom.getObjVal? "indexSignature").toOption with
+      | none => pure []
+      | some signature => pure [("indexSignature", putFields signature
+          [("read", ← substType p arg (← jField signature "read")),
+           ("write", ← substType p arg (← jField signature "write"))])]
+    return putFields atom ([("fields", toJson fields)] ++ index)
   | "array" | "store" =>
     let required ← (← jArr atom "required").mapM (substType p arg)
     let optional ← (← jArr atom "optional").mapM (substType p arg)
@@ -143,8 +148,13 @@ partial def expandAtom (aliases : List Alias) (atom : Json) : Except String Json
       return putFields field
         [("read", ← expandType aliases (← jField field "read")),
          ("write", ← expandType aliases (← jField field "write"))]
+    let index ← match (atom.getObjVal? "indexSignature").toOption with
+      | none => pure []
+      | some signature => pure [("indexSignature", putFields signature
+          [("read", ← expandType aliases (← jField signature "read")),
+           ("write", ← expandType aliases (← jField signature "write"))])]
     return Json.mkObj [("top", toJson false),
-      ("atoms", toJson [putFields atom [("fields", toJson fields)]])]
+      ("atoms", toJson [putFields atom ([("fields", toJson fields)] ++ index)])]
   | "array" | "store" =>
     let required ← (← jArr atom "required").mapM (expandType aliases)
     let optional ← (← jArr atom "optional").mapM (expandType aliases)

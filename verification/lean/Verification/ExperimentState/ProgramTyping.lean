@@ -743,6 +743,10 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   /-- A view field reads at its bound: a capability, never a write permission. -/
   | readView : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs) → (f, A) ∈ vs →
       HasTy G Γ (.readAt f a) A
+  /-- A dictionary read may miss even when every present value has type `A`. -/
+  | readDict : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix) →
+      A ∈ ix → Represents G U .undef →
+      HasTy G Γ (.readAt f a) (A ++ U)
   | write : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs) → (f, A) ∈ fs →
       HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
   /-- Arithmetic needs two operands the number test answers for, and yields
@@ -1085,6 +1089,15 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ :=
       viewT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) ((represents_sem hr j U v).mp ha').2
     exact read_view_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag
+  | @readDict Γ a Ref fs vs ix A U f ha hr hm hUnd ih =>
+    intro n W h ρ he hw hh
+    apply bind (Tm.readAt f) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
+    intro j hj V hx hv heap v hok hval ha'
+    have hd := ((represents_sem hr j V v).mp ha').2.2 A hm
+    obtain ⟨flds, rfl, _⟩ := ((represents_sem hr j V v).mp ha').1.1
+    apply Safe_mono j (fun k _ X u hu => (meaning_append G A U k X u).mpr
+      (hu.elim Or.inl (fun h => Or.inr ((represents_sem hUnd k X u).mpr h)))) V heap _
+      (read_dict_rule (meaning_valOnly G A) j V heap hv hok hd)
   | @arrLit Γ L T xs hr hreq hbound hpos hx ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]

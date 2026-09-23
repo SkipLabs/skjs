@@ -307,6 +307,7 @@ controls hold; the numbers live in its output, not here.
 | Field identity and aliasing                 | `objects.ts`                                                                                                                                  |
 | Bidirectional construction hints            | `contextual.ts` (fresh object and tuple)                                                                                                      |
 | Read permission vs write permission         | `readonly.ts` (alias view, array covariance)                                                                                                  |
+| Indexed reads and absent keys                | `index-signature.ts` (readonly dictionary identity and a result including `undefined`)                                                       |
 | Sequence shape and presence                 | `arrays.ts` (write, inferred literal, optional tuple position)                                                                                |
 | Path-local knowledge                        | `flow.ts` (null test, conditional, nullish expression)                                                                                        |
 | Cyclic control flow                         | `loops.ts` (invariant, break, continue)                                                                                                       |
@@ -517,6 +518,15 @@ inlining an alias, choosing an arbitrary unfolding depth, or replacing a cycle
 with `unknown` changes the contract. Type parameters on other declarations
 must remain binders and arguments on graph edges, rather than becoming global
 names or a finite set of observed instantiations.
+
+The first index-signature slice is now verified independently: inline
+`{ readonly [key: string]: boolean }` parameter and result contracts, and a
+named indexed read returning `boolean | undefined`, pass through OCaml claims,
+Lean source lowering and evidence checking. `invalid-index-signature-read.ts`
+shows the same missing-key read cannot establish plain `boolean` although
+`tsc --strict` accepts it. The graph's `dict` clause supports recursive index
+operands, but this slice does not yet import `Json`, construct a fresh dictionary,
+combine named fields with its index, or evaluate a dynamic key.
 
 Implementation checkpoints, in dependency order:
 

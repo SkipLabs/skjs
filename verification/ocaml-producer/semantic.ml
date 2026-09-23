@@ -5,6 +5,7 @@ and rigid = { scope: int; index: int; spelling: string }
 and atom = Nul | Undef | True | False | Num | Str | NumLit of int64 | StrLit of string | Top
          | Shape of shape
 and field = { name: string; optional: bool; read: ty; write: ty option }
+and index_signature = { value: ty; writable: ty option }
 and quantifier = { identity: rigid; bound: ty option }
 (* `receiver` is the `this` value a call may pass: `Top` for a signature
    indifferent to it. `variadic` is the contract of each actual after `params`,
@@ -12,15 +13,15 @@ and quantifier = { identity: rigid; bound: ty option }
 and signature = { quantified: quantifier list; receiver: ty; params: ty list;
                   variadic: ty option; result: ty }
 and sequence = { required: ty list; optional_elements: ty list; rest: ty option; readonly: bool }
-and shape = { fields: field list; calls: signature list; elements: sequence option }
-let record fields = Atoms [Shape {fields;calls=[];elements=None}]
+and shape = { fields: field list; string_index: index_signature option; calls: signature list; elements: sequence option }
+let record fields = Atoms [Shape {fields;string_index=None;calls=[];elements=None}]
 let top = Atoms [Top]
 let arrow params result =
-  Atoms [Shape {fields=[];calls=[{quantified=[];receiver=top;params;variadic=None;result}];elements=None}]
+  Atoms [Shape {fields=[];string_index=None;calls=[{quantified=[];receiver=top;params;variadic=None;result}];elements=None}]
 let quantified_arrow ?(receiver=top) quantified params result =
-  Atoms [Shape {fields=[];calls=[{quantified;receiver;params;variadic=None;result}];elements=None}]
+  Atoms [Shape {fields=[];string_index=None;calls=[{quantified;receiver;params;variadic=None;result}];elements=None}]
 let variadic_arrow ?(quantified=[]) ?(receiver=top) params element result =
-  Atoms [Shape {fields=[];calls=[{quantified;receiver;params;variadic=Some element;result}];elements=None}]
+  Atoms [Shape {fields=[];string_index=None;calls=[{quantified;receiver;params;variadic=Some element;result}];elements=None}]
 let ground xs = Atoms (List.sort_uniq compare xs)
 let bool = ground [True;False]
 let union a b = match a,b with
@@ -34,7 +35,7 @@ let rec widen = function
       | True | False -> [True;False] | NumLit _ -> [Num] | StrLit _ -> [Str]
       | a -> [a]) xs)
   | Rigid _ as t -> t | Union ts -> List.fold_left union (Atoms []) (List.map widen ts)
-let array elements = Atoms [Shape {fields=[];calls=[];elements=Some elements}]
+let array elements = Atoms [Shape {fields=[];string_index=None;calls=[];elements=Some elements}]
 (* A call may omit a trailing position exactly when its contract admits
    `undefined`: that is the value bound there. Optionality is a property of the
    declared type, not a separate arity record. *)
@@ -42,14 +43,14 @@ let array elements = Atoms [Shape {fields=[];calls=[];elements=Some elements}]
    tuple its arguments are collected into. A contract with optional or
    unbounded positions is not a fixed number of further arguments. *)
 let tuple_positions = function
-  | Atoms [Shape {fields=[];calls=[];elements=Some s}]
+  | Atoms [Shape {fields=[];string_index=None;calls=[];elements=Some s}]
     when s.optional_elements=[] && s.rest=None && not s.readonly -> Some s.required
   | _ -> None
 
 (* The contract of each further argument, where a rest parameter's contract is
    a mutable `T[]`: it collects any number of them. *)
 let array_element = function
-  | Atoms [Shape {fields=[];calls=[];elements=Some s}]
+  | Atoms [Shape {fields=[];string_index=None;calls=[];elements=Some s}]
     when s.required=[] && s.optional_elements=[] && not s.readonly -> s.rest
   | _ -> None
 

@@ -17,6 +17,9 @@ export interface RecordAtom {
   a: "record";
   fields: Field[];
   indexes: { string: string; number: string; symbol: string };
+  /** A real string index contract, distinct from the producer's synthetic
+   * index markers above. A readonly signature has a never write type. */
+  indexSignature?: { read: ClaimType; write: ClaimType };
   call: string;
   construct: string;
   array: string;
@@ -119,7 +122,7 @@ function atom(v: unknown): void {
       keys(
         o,
         ["a", "fields", "indexes", "call", "construct", "array"],
-        ["and"],
+        ["and", "indexSignature"],
       );
       const names = new Set();
       for (const f of list(o.fields)) {
@@ -135,6 +138,12 @@ function atom(v: unknown): void {
       const indexes = object(o.indexes);
       keys(indexes, ["string", "number", "symbol"]);
       Object.values(indexes).forEach(str);
+      if (o.indexSignature !== undefined) {
+        const index = object(o.indexSignature);
+        keys(index, ["read", "write"]);
+        decodeClaimType(index.read);
+        decodeClaimType(index.write);
+      }
       str(o.call);
       str(o.construct);
       str(o.array);
@@ -142,7 +151,11 @@ function atom(v: unknown): void {
       break;
     }
     case "function":
-      keys(o, ["a", "this", "params", "result", "construct", "array"], ["and", "rest"]);
+      keys(
+        o,
+        ["a", "this", "params", "result", "construct", "array"],
+        ["and", "rest"],
+      );
       decodeClaimType(o.this);
       list(o.params).forEach(decodeClaimType);
       if (o.rest !== undefined) decodeClaimType(o.rest);

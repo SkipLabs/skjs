@@ -1197,5 +1197,12 @@ assert.equal(must(failedAt(absentEnv), 'a located failure').site, "unclaimed");
   const point = surface.lower(rows,multi);
   assert.deepEqual(point.current, [["value",[1]]]);
   assert.equal(surface.printType(surface.lift(rows,point.type,point.current)).text, surface.printType(multi).text);
+  const dictionary = surface.parseType("{ readonly [key: string]: boolean }");
+  const dictionaryPoint = surface.lower(rows, dictionary);
+  assert.equal(
+    surface.printType(surface.lift(rows, dictionaryPoint.type, dictionaryPoint.current)).text,
+    surface.printType(dictionary).text,
+  );
+  assert.deepEqual(surface.parseType(surface.printType(dictionary).text), dictionary);
   assert.throws(() => surface.lower(rows,surface.parseType('{ value: boolean } @{"call":"custom"}')),/mode/);
 }

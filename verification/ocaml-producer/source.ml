@@ -33,7 +33,13 @@ and annotation_atom binders j =
         write=(if w=Atoms [] then None else Some w) }) (items "fields" j) in
     List.iter (fun k -> if text k j <> "absent" && text k j <> "unknown" then unsupported ("record " ^ k)) ["call";"construct";"array"];
     List.iter (fun (_,v) -> if str v <> "absent" && str v <> "unknown" then unsupported "index signature") (obj (field "indexes" j));
-    record fs
+    let string_index = match List.assoc_opt "indexSignature" (obj j) with
+      | None -> None
+      | Some signature ->
+        let value = annotation binders (field "read" signature) in
+        let writable = annotation binders (field "write" signature) in
+        Some {value;writable=(if writable=Atoms [] then None else Some writable)} in
+    Atoms [Shape {fields=fs;string_index;calls=[];elements=None}]
   | "alias" ->
     let name = text "name" j in
     if List.mem name binders.expanding then unsupported ("recursive alias " ^ name);
@@ -55,7 +61,7 @@ and annotation_atom binders j =
       result=annotation binders (field "result" a) } in
     List.iter (fun a -> if text "a" a <> "function" then
       unsupported "intersection annotation") conjuncts;
-    Atoms [Shape {fields=[];calls=List.map signature (j::conjuncts);elements=None}]
+    Atoms [Shape {fields=[];string_index=None;calls=List.map signature (j::conjuncts);elements=None}]
   | k -> unsupported ("annotation " ^ k)
 type literal = LNull | LUndefined | LBool of bool | LNumber of string | LString of string
 let literal j = match text "a" j with

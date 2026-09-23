@@ -274,6 +274,9 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           | [.refs fs [] vs] =>
             (fs.lookup f).map (·,Rule.read) <|> (vs.lookup f).map (·,Rule.readView)
           | [.callable fs _ _ _] => (fs.lookup f).map (·,Rule.readCallable)
+          | [.dict _ [] _ (B :: _)] =>
+            pool.findSome? fun U =>
+              if expand G U == [.undef] then some (B ++ U, Rule.readDict B U) else none
           | _ => none
         let _ ← subtype G pool B A
         let ea ← recur Γ a R

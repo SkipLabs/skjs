@@ -126,11 +126,18 @@ function bareAtomText(atom: unknown, state: PrintState): string {
     Number.isFinite(Number(atom.v))
   )
     return String(atom.v);
-  if (atom.a === "record" && isRecordList(atom.fields))
+  if (atom.a === "record" && isRecordList(atom.fields)) {
+    const index = isObject(atom.indexSignature) ? atom.indexSignature : null;
+    const never = (t: unknown) =>
+      isObject(t) &&
+      t.top === false &&
+      Array.isArray(t.atoms) &&
+      t.atoms.length === 0;
+    if (index && !never(index.write)) return JSON.stringify(atom);
     return (
       "{ " +
-      atom.fields
-        .map((field) => {
+      [
+        ...atom.fields.map((field) => {
           // A name the surface can write is written, anything else quoted. A
           // nonstring name prints the same either way: the regexp coerced it
           // before testing it, and the quoted form is that same text.
@@ -148,10 +155,14 @@ function bareAtomText(atom: unknown, state: PrintState): string {
           return read === write
             ? name + ": " + read
             : name + ": " + write + " = (" + read + ")";
-        })
-        .join(", ") +
+        }),
+        ...(index
+          ? [`readonly [key: string]: ${typeText(index.read, state)}`]
+          : []),
+      ].join(", ") +
       " }"
     );
+  }
   if (atom.a === "callable")
     return (
       "(" + atomText(atom.function, state) + ") & " + atomText(atom.bag, state)
@@ -499,7 +510,23 @@ function parseType(text: string): ClaimType {
     };
     take("{");
     const fields: Field[] = [];
+    let indexSignature: RecordAtom["indexSignature"];
     while (peek() !== "}") {
+      if (peek() === "readonly" && tokens[i + 1] === "[") {
+        if (indexSignature)
+          throw new TypeSyntaxError("duplicate string index signature");
+        take("readonly");
+        take("[");
+        take("key");
+        take(":");
+        take("string");
+        take("]");
+        take(":");
+        indexSignature = { read: union(), write: { top: false, atoms: [] } };
+        if (peek() === ",") take(",");
+        else break;
+        continue;
+      }
       const rawName = take();
       // A quoted token is JSON, so it reads back as the string it spells.
       const name: string = rawName?.startsWith('"')
@@ -531,7 +558,12 @@ function parseType(text: string): ClaimType {
     }
     take("}");
     // Bare records assert no call/construct/array restriction.
-    return { ...base, a: "record", fields };
+    return {
+      ...base,
+      a: "record",
+      fields,
+      ...(indexSignature ? { indexSignature } : {}),
+    };
   };
 
   const arrow = (): FunctionAtom => {
@@ -728,6 +760,10 @@ function outsideFragment(type: unknown): string | undefined {
       for (const field of isRecordList(atom.fields) ? atom.fields : []) {
         const found =
           outsideFragment(field.read) || outsideFragment(field.write);
+        if (found) return found;
+      }
+      if (isObject(atom.indexSignature)) {
+        const found = outsideFragment(atom.indexSignature.read);
         if (found) return found;
       }
       continue;
@@ -1003,6 +1039,24 @@ function liftClause(types: unknown, clause: unknown, depth: number): unknown {
     }
     return cells.length === 1 ? cells[0] : shown(cells);
   }
+  const dict = body("dict");
+  if (isObject(dict)) {
+    if (
+      !Array.isArray(dict.rest) ||
+      dict.rest.length ||
+      !Array.isArray(dict.indexes) ||
+      dict.indexes.length !== 1
+    )
+      return JSON.stringify(clause);
+    const record = cell(types, dict.first, null, depth - 1, dict.views);
+    return {
+      ...record,
+      indexSignature: {
+        read: liftType(types, dict.indexes[0], depth - 1),
+        write: { top: false, atoms: [] },
+      },
+    };
+  }
   const callable = body("callable");
   if (callable) {
     const c: Record<string, unknown> = isObject(callable) ? callable : {};
@@ -1221,7 +1275,7 @@ function lowerAtom(types: unknown, atom: unknown): number[] {
   }
   if (atom.a === "record") {
     const fields = isRecordList(atom.fields) ? atom.fields : [];
-    if (!fields.length)
+    if (!fields.length && !atom.indexSignature)
       throw new TypeSyntaxError("a record with no field has no location");
     if (fields.some((f) => f.optional))
       throw new TypeSyntaxError("an optional field is not an invariant cell");
@@ -1238,15 +1292,33 @@ function lowerAtom(types: unknown, atom: unknown): number[] {
         "what a cell holds is asserted at the top of a claim, not inside a type",
       );
 
+    const indexSignature = isObject(atom.indexSignature)
+      ? atom.indexSignature
+      : null;
+    if (indexSignature && !never(indexSignature.write))
+      throw new TypeSyntaxError(
+        "only readonly string index signatures are supported",
+      );
+    const first = invariant.map((f) => namedField(types, f, "write"));
+    const readViews = views.map((f) => namedField(types, f, "read"));
     return [
       intern(types, [
-        {
-          refs: {
-            first: invariant.map((f) => namedField(types, f, "write")),
-            rest: [],
-            views: views.map((f) => namedField(types, f, "read")),
-          },
-        },
+        indexSignature
+          ? {
+              dict: {
+                first,
+                rest: [],
+                views: readViews,
+                indexes: [lowerType(types, indexSignature.read)],
+              },
+            }
+          : {
+              refs: {
+                first,
+                rest: [],
+                views: readViews,
+              },
+            },
       ]),
     ];
   }
@@ -1314,7 +1386,10 @@ function lowerAtom(types: unknown, atom: unknown): number[] {
                   receiver,
                   [
                     domains,
-                    [lowerType(types, atom.rest), lowerType(types, atom.result)],
+                    [
+                      lowerType(types, atom.rest),
+                      lowerType(types, atom.result),
+                    ],
                   ],
                 ],
               ],
@@ -1411,11 +1486,22 @@ function fullAtomText(atom: unknown): string {
   if (!isObject(atom)) return String(atom);
   if (atom.unsupported === true) return "(unavailable)";
   let text;
-  if (atom.a === "record" && isRecordList(atom.fields))
+  if (atom.a === "record" && isRecordList(atom.fields)) {
+    const index = isObject(atom.indexSignature) ? atom.indexSignature : null;
+    if (
+      index &&
+      !(
+        isObject(index.write) &&
+        index.write.top === false &&
+        Array.isArray(index.write.atoms) &&
+        index.write.atoms.length === 0
+      )
+    )
+      return JSON.stringify(atom);
     text =
       "{ " +
-      atom.fields
-        .map((field) => {
+      [
+        ...atom.fields.map((field) => {
           const name =
             (typeof field.name === "string" &&
             /^[A-Za-z_$][\w$]*$/.test(field.name)
@@ -1426,11 +1512,14 @@ function fullAtomText(atom: unknown): string {
           return read === write
             ? name + ": " + read
             : name + ": " + write + " = (" + read + ")";
-        })
-        .join(", ") +
+        }),
+        ...(index
+          ? [`readonly [key: string]: ${fullTypeText(index.read)}`]
+          : []),
+      ].join(", ") +
       " }" +
       modesText(atom);
-  else if (atom.a === "callable")
+  } else if (atom.a === "callable")
     text = "(" + fullAtomText(atom.function) + ") & " + fullAtomText(atom.bag);
   else if (atom.a === "function" && Array.isArray(atom.params))
     text =

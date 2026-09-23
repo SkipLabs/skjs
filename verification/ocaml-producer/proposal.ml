@@ -28,7 +28,9 @@ let rec field_type t name = match t with
       | Shape {elements=Some _;_} when name="length" -> Atoms [Num]
       | Shape shape -> (match List.find_opt (fun (f:Semantic.field) -> f.name=name) shape.fields with
           | Some f -> if f.optional then union f.read (Atoms [Undef]) else f.read
-          | None -> unsupported ("missing field " ^ name))
+          | None -> (match shape.string_index with
+            | Some index -> union index.value (Atoms [Undef])
+            | None -> unsupported ("missing field " ^ name)))
       | _ -> unsupported "field read on non-object") atoms)
   | Union ts -> combine (List.map (fun t -> field_type t name) ts)
   | Rigid _ -> unsupported "field read on rigid parameter"
@@ -157,7 +159,7 @@ let infer_function (f:Source.fn) =
       let implements (s:Semantic.signature) =
         s.quantified=[] && s.variadic=None && element=None && List.length s.params=List.length ps in
       (match expected with
-       | Some (Atoms [Shape {calls=(_::_::_ as calls);fields=[];elements=None}] as contract)
+       | Some (Atoms [Shape {calls=(_::_::_ as calls);fields=[];string_index=None;elements=None}] as contract)
          when quantified=[] && defaults=[] && List.for_all implements calls ->
          let row (s:Semantic.signature) =
            let saved = !expressions and saved_entries = !entries in

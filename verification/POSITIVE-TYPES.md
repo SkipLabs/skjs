@@ -93,8 +93,11 @@ dictionary-to-dictionary inclusion covers every target index operand with a
 source operand at a subtype, while retaining the named-field obligations.
 Index operands are guarded through the world, so a recursive graph can contain
 `JsonObject = { readonly [key: string]: Json | null }` without finite unfolding.
-The source and producer wire formats do not yet translate that declaration to
-`dict`; the clause is currently available at the independent graph layer.
+Inline readonly string-index annotations now translate to `dict` for the OCaml
+producer, with a named indexed read checked by the graph's `readDict` rule.
+Translation of the imported recursive `Json` declaration is a separate source
+closure step; fresh dictionary allocation and dynamic-key reads still need
+their own rules.
 
 A callable intersection concatenates both lists of requirements. Intersecting
 it with `arrs` adds call obligations while retaining its bag invariants.

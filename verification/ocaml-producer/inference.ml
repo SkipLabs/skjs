@@ -25,6 +25,9 @@ and substitute_shape solution shape = {
   fields=List.map (fun field -> {field with
     read=substitute solution field.read;
     write=Option.map (substitute solution) field.write}) shape.fields;
+  string_index=Option.map (fun (index:Semantic.index_signature) -> {
+    value=substitute solution index.value;
+    writable=Option.map (substitute solution) index.writable}) shape.string_index;
   calls=List.map (substitute_signature solution) shape.calls;
   elements=Option.map (fun sequence -> {
     sequence with
@@ -98,8 +101,8 @@ let infer ?receiver (signature:signature) actuals =
     | None,Some y -> y.lower <- add y.lower left
     | Some x,None -> x.upper <- add x.upper right
     | None,None -> (match left,right with
-      | Atoms [Shape {calls=[a];fields=[];elements=None}],
-      Atoms [Shape {calls=[e];fields=[];elements=None}]
+      | Atoms [Shape {calls=[a];fields=[];string_index=None;elements=None}],
+      Atoms [Shape {calls=[e];fields=[];string_index=None;elements=None}]
         when a.quantified=[] && e.quantified=[]
           && List.length a.params=List.length e.params ->
       constrain e.receiver a.receiver;

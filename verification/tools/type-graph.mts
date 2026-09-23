@@ -154,7 +154,8 @@ export function decodeGraph(value: unknown): TypeGraph {
       throw Error("an empty variadic list is written by omitting it");
     sigs.forEach((s) => {
       const outer = array(s);
-      if (outer.length !== 2) throw Error("expected a receiver and a signature");
+      if (outer.length !== 2)
+        throw Error("expected a receiver and a signature");
       labels(outer[0]);
       const sig = array(outer[1]);
       if (sig.length !== 2) throw Error("expected a variadic signature");
@@ -298,7 +299,9 @@ function clauseText(c: Clause): string {
     return [
       [c.dict.first, ...c.dict.rest].map(printFields).join(" & "),
       ...(c.dict.views.length ? [`readonly ${printFields(c.dict.views)}`] : []),
-      ...c.dict.indexes.map((index) => `readonly {[key: string]: ${printLabels(index)}}`),
+      ...c.dict.indexes.map(
+        (index) => `readonly {[key: string]: ${printLabels(index)}}`,
+      ),
     ].join(" & ");
   const calls = (arrows: Arrow[], variadic: RestArrow[] = []) =>
     `calls[${[...arrows.map(arrowText), ...variadic.map(restArrowText)].join("; ")}]`;

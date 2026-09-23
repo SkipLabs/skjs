@@ -30,6 +30,7 @@ def namedAt (T : Tuple (Ty ι)) (b : UInt64) : Option (Ty ι) :=
 inductive Rule (ι : Type) where
   | var | nul | undef | tru | fls | truLit | flsLit | numLit | num | strLit | str
   | funE | app | letE | alloc | read | readView | write | arith | test
+  | readDict (element undef : Ty ι)
   | arrLit | elem | setElem | len
   | elemOpt (undef : Ty ι)
   | elemAny (undef : Ty ι)
@@ -146,6 +147,11 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     ja.context = j.context ∧ ja.term = a ∧
     (match expand G ja.type with
      | [.refs _ [] vs] => (f, j.type) ∈ vs
+     | _ => False)
+  | .readDict A U, .readAt f a, [ja] =>
+    ja.context = j.context ∧ ja.term = a ∧ Represents G U .undef ∧ j.type = A ++ U ∧
+    (match expand G ja.type with
+     | [.dict _ [] _ ix] => A ∈ ix
      | _ => False)
   | .write, .writeAt f a b, [ja, jb] =>
     ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
@@ -487,6 +493,15 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     split at hr
     · rename_i fs vs he
       exact .readView ha he hr
+    · contradiction
+  · rename_i A U f a ja
+    rcases hl with ⟨hΓ, ht, hUnd, eq, hr⟩
+    have ha := hp ja (by simp)
+    rw [hΓ, ht] at ha
+    split at hr
+    · rename_i fs vs ix he
+      subst eq
+      exact .readDict ha he hr hUnd
     · contradiction
   · rename_i f a b ja jb
     rcases hl with ⟨hΓa, hta, hΓb, htb, hn, hr⟩
@@ -1091,6 +1106,11 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
   | @readView Γ a Ref fs vs f A ha hr hm ih =>
     apply node_complete (G := G) (j := ⟨Γ, .readAt f a, A⟩) (r := .readView) (js := [⟨Γ,a,Ref⟩])
       ⟨rfl,rfl,by simp only [show expand G Ref = [.refs fs [] vs] from hr]; exact hm⟩
+    simpa using ih
+  | @readDict Γ a Ref fs vs ix A U f ha hr hm hUnd ih =>
+    apply node_complete (G := G) (j := ⟨Γ, .readAt f a, A ++ U⟩)
+      (r := .readDict A U) (js := [⟨Γ,a,Ref⟩])
+      ⟨rfl,rfl,hUnd,rfl,by simp only [show expand G Ref = [.dict fs [] vs ix] from hr]; exact hm⟩
     simpa using ih
   | @arrLit Γ L T xs hr hreq hbound hpos hx ih =>
     apply node_complete (G := G) (j := ⟨Γ, .arrLit (xs.map Prod.snd), L⟩) (r := .arrLit)

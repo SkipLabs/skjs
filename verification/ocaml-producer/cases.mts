@@ -106,6 +106,8 @@ export const cases: Case[] = [
   positive("generics", "rigid parameters / bounds"),
   positive("contextual", "contextual object and tuple construction"),
   positive("readonly", "readonly capabilities / covariance"),
+  positive("index-signature", "Readonly string dictionary and possibly absent indexed read"),
+  negative("invalid-index-signature-read", "A missing dictionary key cannot be promised Boolean"),
   positive("arrays", "array writes / tuple presence"),
   positive("flow", "immutable refinements / nullish paths"),
   positive("loops", "loop invariants / break / continue"),
