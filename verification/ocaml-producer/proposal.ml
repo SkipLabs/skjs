@@ -36,6 +36,19 @@ let literal_type = function
 (* Read permissions do not imply write permissions. All candidates still pass
    through reconstructed obligations, including readonly view conversion. *)
 let definition imports id args =
+  let merge base own = match base,own with
+    | Atoms [Shape inherited],Atoms [Shape local]
+      when inherited.calls=[] && local.calls=[] &&
+           inherited.string_index=None && local.string_index=None &&
+           inherited.elements=None && local.elements=None ->
+      let names = List.map (fun (field:Semantic.field) -> field.name)
+        (inherited.fields @ local.fields) in
+      if List.length names <> List.length (List.sort_uniq compare names) then
+        unsupported "overlapping imported inherited fields need compatibility checking";
+      Atoms [Shape {local with fields=inherited.fields @ local.fields}]
+    | _ -> unsupported "imported inheritance needs plain object contracts" in
+  let rec instantiate seen id args =
+  if List.mem id seen then unsupported "cyclic imported inheritance";
   match List.find_opt (fun (d:Source.imported_definition) -> d.id=id) imports with
   | Some d ->
     if List.length args > List.length d.parameters then
@@ -52,8 +65,16 @@ let definition imports id args =
         let value = Inference.substitute (List.rev previous) value in
         complete ((parameter,value)::previous) supplied rest other
       | _ -> unsupported "imported parameter/default length mismatch" in
-    Inference.substitute (complete [] args d.parameters d.defaults) d.expression
-  | None -> unsupported ("missing imported definition " ^ id)
+    let solution = complete [] args d.parameters d.defaults in
+    let body = Inference.substitute solution d.expression in
+    List.fold_left (fun own base ->
+      match Inference.substitute solution base with
+      | Atoms [Named (baseId,baseArgs)] ->
+        merge (instantiate (id::seen) baseId baseArgs) own
+      | _ -> unsupported "imported heritage is not a named base")
+      body d.bases
+  | None -> unsupported ("missing imported definition " ^ id) in
+  instantiate [] id args
 (* Inspect an imported callable's source equation for proposal purposes only.
    The point claim remains the named type; Lean independently fills and checks
    that graph row from the same declaration. *)

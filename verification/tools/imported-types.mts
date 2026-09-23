@@ -63,6 +63,8 @@ export type TypeDefinition = {
   parameters: { name: string; span: Span; bound: TypeTerm | null;
     default: TypeTerm | null }[];
   body: Span;
+  /** Interface heritage remains a source edge; consumers derive its members. */
+  bases: TypeTerm[];
   expression: TypeTerm;
   references: Reference[];
 };

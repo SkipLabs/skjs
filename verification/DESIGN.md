@@ -799,6 +799,14 @@ from the source equation. The OCaml producer may propose a matching row, but
 cannot supply the equation or waive a bound. Recursive generic applications
 still need application-indexed memo rows; this finite-ground path does not
 interpret them or prove a universally quantified imported declaration body.
+An interface's `extends` clauses are retained as source reference edges and
+cross-checked against TypeScript's chosen declarations. Lean interprets the
+local and inherited contracts together. Disjoint plain record fields are
+canonicalized to one equivalent record row; other representable combinations
+use the graph's conjunction operation. OCaml's view of inherited fields is a
+candidate hint only, and overlapping fields or richer inherited contracts may
+still be refused there. The acceptance path never trusts an OCaml-flattened
+interface equation.
 `T extends boolean` is an assumption in `Δ`; returning `x` at `boolean` is
 transport along `SubP`. A generic body may copy `T` through annotated or inferred `const`
 bindings and extra parameters, with bounds to Boolean, an earlier parameter,

@@ -65,14 +65,32 @@ export function collectTypeClosure(
     if (!module) throw Error(`module not supplied: ${identity.module}`);
     const source = module.source;
     const node = typeDeclaration(source, identity);
-    if (ts.isInterfaceDeclaration(node) && node.heritageClauses?.length)
-      throw Error(`interface inheritance in ${identity.module}#${identity.name} is not collected`);
     const parameterNodes = node.typeParameters ?? [];
     const parameterNames = parameterNodes.map(parameter => parameter.name.text);
     if (new Set(parameterNames).size !== parameterNames.length)
       throw Error(`duplicate binder in ${identity.module}#${identity.name}`);
     const references: Reference[] = [];
     const span = (part: TypeNode): Span => [part.getStart(source), part.end];
+    const reference = (name: string, arguments_: readonly TypeNode[], pos: Span): TypeTerm => {
+      const local = localTypeDeclaration(source, identity.module, name);
+      const imported = local ? null : resolveModuleImport(identity.module, name, modules, config);
+      const global = local || imported ? null : resolveGlobalType(name, modules, config);
+      const target = local ?? imported?.declaration ?? global?.declaration;
+      if (!target || target.capability === "value")
+        throw Error(`unresolved type reference ${identity.module}#${name}`);
+      const targetNode = typeDeclaration(sourceOf(target.module), target);
+      const targetParameters = targetNode.typeParameters ?? [];
+      const required = targetParameters.filter(p => !p.defaultType).length;
+      if (arguments_.length < required || arguments_.length > targetParameters.length)
+        throw Error(`type argument arity: ${target.module}#${target.name}`);
+      const edge: Reference = { name, span: pos,
+        arguments: arguments_.map(arg => [arg.getStart(source), arg.end]),
+        target, route: imported?.route ?? global?.route ?? [{ module: identity.module,
+          sha256: module.sha256 }], mappings: imported?.mappings ?? [] };
+      references.push(edge);
+      queue.push(target);
+      return { k: "reference", reference: edge, args: arguments_.map(parse), span: pos };
+    };
     const parse = (part: TypeNode): TypeTerm => {
       const pos = span(part);
       const atom = (name: Extract<TypeTerm, { k: "atom" }>["name"]): TypeTerm =>
@@ -139,25 +157,7 @@ export function collectTypeClosure(
             throw Error(`type parameter applied as constructor: ${name}`);
           return { k: "parameter", index, span: pos };
         }
-        const local = localTypeDeclaration(source, identity.module, name);
-        const imported = local ? null : resolveModuleImport(identity.module, name, modules, config);
-        const global = local || imported ? null : resolveGlobalType(name, modules, config);
-        const target = local ?? imported?.declaration ?? global?.declaration;
-        if (!target || target.capability === "value")
-          throw Error(`unresolved type reference ${identity.module}#${name}`);
-        const targetNode = typeDeclaration(sourceOf(target.module), target);
-        const arguments_ = part.typeArguments ?? [];
-        const targetParameters = targetNode.typeParameters ?? [];
-        const required = targetParameters.filter(p => !p.defaultType).length;
-        if (arguments_.length < required || arguments_.length > targetParameters.length)
-          throw Error(`type argument arity: ${target.module}#${target.name}`);
-        const reference: Reference = { name, span: pos,
-          arguments: arguments_.map(arg => [arg.getStart(source), arg.end]),
-          target, route: imported?.route ?? global?.route ?? [{ module: identity.module,
-            sha256: module.sha256 }], mappings: imported?.mappings ?? [] };
-        references.push(reference);
-        queue.push(target);
-        return { k: "reference", reference, args: arguments_.map(parse), span: pos };
+        return reference(name, part.typeArguments ?? [], pos);
       }
       throw Error(`unsupported type syntax ${ts.SyntaxKind[part.kind]} in ` +
         `${identity.module}#${identity.name} at [${pos[0]},${pos[1]})`);
@@ -282,11 +282,23 @@ export function collectTypeClosure(
     const expression = ts.isTypeAliasDeclaration(node)
       ? parse(node.type)
       : parseMembers(node.members, [node.getStart(source), node.end], true);
+    const bases = ts.isInterfaceDeclaration(node)
+      ? (node.heritageClauses ?? []).flatMap(clause => {
+          if (clause.token !== ts.SyntaxKind.ExtendsKeyword)
+            throw Error(`unsupported heritage in ${identity.module}#${identity.name}`);
+          return clause.types.map(base => {
+            if (!ts.isIdentifier(base.expression))
+              throw Error(`qualified heritage in ${identity.module}#${identity.name}`);
+            return reference(base.expression.text, base.typeArguments ?? [],
+              [base.getStart(source), base.end]);
+          });
+        })
+      : [];
     definitions.push({ declaration: identity,
       sha256: module.sha256,
       parameters, body: ts.isTypeAliasDeclaration(node)
         ? [node.type.getStart(source), node.type.end]
-        : [node.getStart(source), node.end], expression, references });
+        : [node.getStart(source), node.end], bases, expression, references });
   }
   return { root, definitions };
 }

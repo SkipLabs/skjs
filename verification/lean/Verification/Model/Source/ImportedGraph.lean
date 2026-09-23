@@ -25,13 +25,15 @@ private def bool (j : Json) (name : String) : Except String Bool :=
 private structure Definition where
   identity : Json
   parameters : Array Json
+  bases : Array Json
   expression : Json
   deriving Inhabited
 
 private def definitions (imports : Json) : Except String (Array Definition) := do
   (← arr imports "definitions").mapM fun j => do
-    CellClaims.fieldsExactly j ["declaration", "sha256", "parameters", "body", "expression", "references"]
-    return ⟨← field j "declaration", ← arr j "parameters", ← field j "expression"⟩
+    CellClaims.fieldsExactly j ["declaration", "sha256", "parameters", "body", "bases", "expression", "references"]
+    return ⟨← field j "declaration", ← arr j "parameters",
+      ← arr j "bases", ← field j "expression"⟩
 
 private def findDefinition (ds : Array Definition) (identity : Json) : Except String Nat := do
   let found := (List.range ds.size).filter fun i => ds[i]!.identity == identity
@@ -54,6 +56,22 @@ private def referenceIndex (ds : Array Definition) (term : Json) : Except String
 private abbrev Lowering := StateT SourceTypes.Table (Except String)
 
 private def use (clause : Clause (List Nat)) : Lowering Nat := SourceTypes.use clause
+
+/-- For disjoint plain record fields, a source heritage intersection has the
+same contract as one record operand with those fields. Canonicalizing that
+case also gives the proposal and the source one graph row. Other combinations
+keep the general intersection representation. -/
+private def inheritRows (own base : List (Clause (List Nat))) : Except String (List (Clause (List Nat))) := do
+  match own, base with
+  | [.refs writes [] views], [.refs inherited [] inheritedViews] =>
+    let names := (writes ++ views ++ inherited ++ inheritedViews).map Prod.fst
+    if names.eraseDups.length != names.length then
+      throw "overlapping imported inherited fields need compatibility checking"
+    return [.refs (inherited ++ writes) [] (inheritedViews ++ views)]
+  | _, _ =>
+    let rows := PositiveNormalization.meetLists own base
+    if rows.isEmpty then throw "inherited interface contracts have no representable intersection"
+    return rows
 
 mutual
 private partial def lowerType (ds : Array Definition) (owner : Nat)
@@ -96,7 +114,10 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     if seen.contains i then throw "recursive generic imported application needs memoized rows"
     let values ← args.mapM (lowerType ds owner params seen)
     let values ← lowerApplication ds i values seen
-    lowerType ds i values (i :: seen) ds[i]!.expression
+    if ds[i]!.bases.isEmpty then
+      lowerType ds i values (i :: seen) ds[i]!.expression
+    else
+      (← lowerDefinitionRows ds i values (i :: seen)).mapM use
   | "array" =>
     let element ← lowerType ds owner params seen (← field term "element")
     let readonly ← bool term "readonly"
@@ -216,11 +237,20 @@ private partial def lowerHead (ds : Array Definition) (owner : Nat)
     let args ← arr term "args"
     let values ← args.mapM (lowerType ds owner params seen)
     let values ← lowerApplication ds i values seen
-    lowerHead ds i values (i :: seen) ds[i]!.expression
+    lowerDefinitionRows ds i values (i :: seen)
   | _ =>
     let labels ← lowerType ds owner params seen term
     let table ← get
     return labels.flatMap (SourceTypes.graph table)
+
+private partial def lowerDefinitionRows (ds : Array Definition) (i : Nat)
+    (params : Array (List Nat)) (seen : List Nat) :
+    Lowering (List (Clause (List Nat))) := do
+  let mut rows ← lowerHead ds i params seen ds[i]!.expression
+  for base in ds[i]!.bases do
+    let inherited ← lowerHead ds i params seen base
+    rows ← inheritRows rows inherited
+  return rows
 end
 
 private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table) :
@@ -232,7 +262,7 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table) :
   let mut table := candidate
   for i in [:ds.size] do
     if ds[i]!.parameters.isEmpty then
-      let (row, expanded) ← (lowerHead ds i #[] [i] ds[i]!.expression).run table
+      let (row, expanded) ← (lowerDefinitionRows ds i #[] [i]).run table
       table := expanded.set (rowIndex ds i) row
   return table
 
@@ -252,7 +282,9 @@ private partial def rewrite (ds : Array Definition) (roots : Array (String × Na
           return Json.mkObj [("a", toJson "graph"), ("label", toJson (rowIndex ds index))]
         let values ← args.mapM Fragment.translate
         let values ← lowerApplication ds index values []
-        let labels ← lowerType ds index values [index] ds[index]!.expression
+        let labels ← if ds[index]!.bases.isEmpty then
+            lowerType ds index values [index] ds[index]!.expression
+          else (← lowerDefinitionRows ds index values [index]).mapM use
         match labels with
         | [label] => return Json.mkObj [("a", toJson "graph"), ("label", toJson label)]
         | _ => throw "generic imported application needs one graph clause"

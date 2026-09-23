@@ -92,7 +92,7 @@ for (const [file, expected] of [
   assert.equal(iterable?.declaration.module, "typescript/lib/lib.es2015.iterable.d.ts");
   assert.equal(iterable?.declaration.name, "Iterable");
   assert.throws(() => collectTypeClosure(mapperRoot, modules, config),
-    /interface inheritance in core\/src\/api.ts#Values is not collected/);
+    /unsupported method signature in core\/src\/api.ts#Context/);
   crossCheckResolvedBindings(openText(source, readFileSync(source, "utf8")), resolved,
     modules, source, importUniverse.tsconfigPath);
   const wrongMapper = structuredClone(resolved);
@@ -306,7 +306,9 @@ for (const [file, expected] of [
     "export type NestedMethod = { inner: { read(): boolean } };\n" +
     "export interface GenericMethod { read<T>(value: T): T; }\n" +
     "export interface OptionalMethod { read(value?: boolean): boolean; }\n" +
-    "export interface Derived extends Box { readonly label: string; }\n";
+    "export interface Derived extends Box { readonly label: string; }\n" +
+    "export interface Labeled { readonly label: string; }\n" +
+    "export interface MultipleBases extends Box, Labeled { readonly count: number; }\n";
   const genericShapes = "export type GenericBox<T> = { readonly value: T };\n" +
     "export type GenericPair<L, R> = { readonly left: L; readonly right: R };\n" +
     "export type GenericOuter<T> = { readonly inner: GenericBox<T> };\n" +
@@ -318,7 +320,9 @@ for (const [file, expected] of [
     "export type DependentDefault<T, U = T> = { readonly first: T; readonly second: U };\n" +
     "export type DependentBound<T, U extends T = T> = { readonly second: U };\n" +
     "export type BoundedDefault<T extends boolean = boolean> = { readonly value: T };\n";
-  writeFileSync(join(pairDir, "box.ts"), box + genericShapes);
+  const inheritedGeneric =
+    "export interface GenericDerived<T> extends GenericBox<T> { readonly label: string; }\n";
+  writeFileSync(join(pairDir, "box.ts"), box + genericShapes + inheritedGeneric);
   const globalText = "interface GlobalBox { readonly flag: boolean; }\n";
   writeFileSync(join(pairDir, "global.d.ts"), globalText);
   writeFileSync(join(pairDir, "tsconfig.json"), JSON.stringify({
@@ -335,8 +339,8 @@ for (const [file, expected] of [
       source: openText(join(pairDir, "b.ts"), b) },
     { id: "fixture/barrel.ts", sha256: createHash("sha256").update(barrel).digest("hex"),
       source: openText(join(pairDir, "barrel.ts"), barrel) },
-    { id: "fixture/box.ts", sha256: createHash("sha256").update(box + genericShapes).digest("hex"),
-      source: openText(join(pairDir, "box.ts"), box + genericShapes) },
+    { id: "fixture/box.ts", sha256: createHash("sha256").update(box + genericShapes + inheritedGeneric).digest("hex"),
+      source: openText(join(pairDir, "box.ts"), box + genericShapes + inheritedGeneric) },
     { id: "fixture/global.d.ts", sha256: createHash("sha256").update(globalText).digest("hex"),
       source: openText(join(pairDir, "global.d.ts"), globalText) },
   ];
@@ -416,6 +420,37 @@ for (const [file, expected] of [
   assert.equal(checkedGenericShapes.status, "verified", JSON.stringify(checkedGenericShapes));
   assert.deepEqual(checkedGenericShapes.functions,
     ["unbox", "right", "nested", "first", "applied"]);
+  const inheritedClient = join(pairDir, "inherited-client.ts");
+  writeFileSync(inheritedClient,
+    'import type { Derived, MultipleBases, GenericDerived } from "@fixture/box";\n' +
+    'export function inherited(value: Derived): boolean { return value.flag; }\n' +
+    'export function owned(value: Derived): string { return value.label; }\n' +
+    'export function multiple(value: MultipleBases): number { return value.count; }\n' +
+    'export function genericBase(value: GenericDerived<boolean>): boolean { return value.value; }\n');
+  const checkedInherited = check(inheritedClient, boxUniverse);
+  assert.equal(checkedInherited.status, "verified", JSON.stringify(checkedInherited));
+  assert.deepEqual(checkedInherited.functions,
+    ["inherited", "owned", "multiple", "genericBase"]);
+  const inheritedText = readFileSync(inheritedClient, "utf8");
+  const inheritedSource = openText(inheritedClient, inheritedText);
+  const inheritedRoots = resolveNamedImports(inheritedSource, pair, boxConfig);
+  const inheritedDocument = collectImportDocument(inheritedRoots, pair, boxConfig);
+  crossCheckImports(inheritedSource, inheritedDocument, pair,
+    inheritedClient, boxUniverse.tsconfigPath);
+  const wrongHeritage = structuredClone(inheritedDocument);
+  const derived = must(wrongHeritage.definitions.find(d => d.declaration.name === "Derived"),
+    "Derived declaration");
+  must(derived.references[0], "Derived heritage reference").target = must(wrongHeritage.definitions.find(d =>
+    d.declaration.name === "Labeled"), "Labeled declaration").declaration;
+  assert.throws(() => crossCheckImports(inheritedSource, wrongHeritage, pair,
+    inheritedClient, boxUniverse.tsconfigPath), /import resolution differs for fixture\/box.ts#Box/);
+  const badInheritedClient = join(pairDir, "bad-inherited-client.ts");
+  writeFileSync(badInheritedClient,
+    'import type { GenericDerived } from "@fixture/box";\n' +
+    'export function wrong(value: GenericDerived<boolean>): number { return value.value; }\n');
+  const badInherited = check(badInheritedClient, boxUniverse);
+  assert.equal(badInherited.status, "unverified", JSON.stringify(badInherited));
+  assert.equal(badInherited.phase, "search");
   const badGenericShapeClient = join(pairDir, "bad-generic-shape-client.ts");
   writeFileSync(badGenericShapeClient,
     'import type { GenericBox } from "@fixture/box";\n' +
@@ -567,8 +602,8 @@ for (const [file, expected] of [
   const derivedRoot = resolveNamedImports(openText(boxClient,
     'import type { Derived } from "@fixture/box";'), pair, boxConfig)[0];
   assert(derivedRoot);
-  assert.throws(() => collectTypeClosure(derivedRoot, pair, boxConfig),
-    /interface inheritance in fixture\/box.ts#Derived is not collected/);
+  assert.deepEqual(collectTypeClosure(derivedRoot, pair, boxConfig).definitions.map(d =>
+    [d.declaration.name, d.bases.length]), [["Derived", 1], ["Box", 0]]);
   const merged = "export interface Merge { readonly flag: boolean; }\n" +
     "export interface Merge { readonly label: string; }\n";
   writeFileSync(join(pairDir, "merged.ts"), merged);

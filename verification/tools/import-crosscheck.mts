@@ -14,6 +14,7 @@ import type {
   Node,
   SourceFile,
   TypeReferenceNode,
+  ExpressionWithTypeArguments,
 } from "typescript/unstable/ast";
 import type { ImportDocument, ResolvedImport, TypeDefinition } from "./imported-types.mts";
 import type { ModuleSource } from "./module-resolve.mts";
@@ -33,11 +34,11 @@ function referenceAt(
   root: Node,
   source: SourceFile,
   span: Span,
-): TypeReferenceNode | null {
-  let found: TypeReferenceNode | null = null;
+): TypeReferenceNode | ExpressionWithTypeArguments | null {
+  let found: TypeReferenceNode | ExpressionWithTypeArguments | null = null;
   const visit = (node: Node): void => {
     if (
-      ts.isTypeReferenceNode(node) &&
+      (ts.isTypeReferenceNode(node) || ts.isExpressionWithTypeArguments(node)) &&
       node.getStart(source) === span[0] &&
       node.end === span[1]
     )
@@ -172,7 +173,8 @@ function crossCheckProgram(
       );
     for (const reference of definition.references) {
       const node = referenceAt(declaration, source, reference.span);
-      if (!node || !ts.isIdentifier(node.typeName))
+      const identifier = node && (ts.isTypeReferenceNode(node) ? node.typeName : node.expression);
+      if (!identifier || !ts.isIdentifier(identifier))
         throw new ImportMismatch(
           origin,
           `TypeScript reference missing at ${id} [${key(reference.span)})`,
@@ -182,7 +184,7 @@ function crossCheckProgram(
         reference.target.span,
         origin,
         `${id}#${reference.name} [${key(reference.span)})`,
-        node.typeName,
+        identifier,
         true,
       );
     }

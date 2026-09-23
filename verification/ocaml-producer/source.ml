@@ -145,7 +145,7 @@ and stmt_node =
 and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: (string * ty) list;
            result: ty; body: stmt list }
 type imported_definition = { id: string; parameters: rigid list;
-  defaults: ty option list; expression: ty }
+  defaults: ty option list; bases: ty list; expression: ty }
 type program = { file: Json.t; digest: Json.t; imports: imported_definition list; functions: fn list }
 
 (* Candidate-only view of a source equation. Lean independently derives the
@@ -295,6 +295,8 @@ let decode ast =
      defaults=List.map (fun p -> match field "default" p with
        | Null -> None | j -> Some (imported_type (identity declaration) parameters j))
        (items "parameters" definition);
+     bases=List.map (imported_type (identity declaration) parameters)
+       (items "bases" definition);
      expression=imported_type (identity declaration) parameters (field "expression" definition)})
     (items "definitions" imports) in
   let imported = List.map (fun root ->
