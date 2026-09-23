@@ -476,6 +476,96 @@ Those dependencies and their eventual evidence must enter the verifier request
 before the source gate admits imports. The test also enumerates the six class
 callables from the pinned syntax, so the coverage denominator cannot drift.
 
+### Cross-file recursive `Json` milestone
+
+**Status: open.** The concrete target is to verify small source functions that
+import and use the *actual* `Json` declaration at the pinned upstream revision,
+then use the same contract in `Mapper` bounds. Passing a locally rewritten or
+nonrecursive approximation of `Json` does not close this milestone. This is a
+prerequisite of the mapper and collection milestones below, not a claim that
+the runtime implementation satisfies its API contracts.
+
+`core/src/api.ts` imports `Json`, `JsonObject` and `DepSafe` from
+`../skiplang-json/index.js`. In the Skip checkout, `prebuild.mjs` makes
+`skipruntime-ts/core/skiplang-json` a symlink to the tracked
+`skiplang/skjson/ts/binding/src` directory. The canonical declaration is
+`skiplang/skjson/ts/binding/src/index.ts`, not a generated copy under `core`.
+At commit `cb030b5ac7beda28fd5f65e3292a485173d5faef`, it says:
+
+```ts
+type Json = boolean | number | string | readonly (Json | null)[] | JsonObject;
+type JsonObject = { readonly [key: string]: Json | null };
+```
+
+The type equations are one mutually dependent graph: `J = boolean ∪ number ∪
+string ∪ readonlyArray(J ∪ null) ∪ O`, and `O = readonlyStringDictionary(J ∪
+null)`. `null` is admitted *inside* those collections, not as a top-level
+`Json`. Keep the named nodes and their declaration identities; recursively
+inlining an alias, choosing an arbitrary unfolding depth, or replacing a cycle
+with `unknown` changes the contract. Type parameters on other declarations
+must remain binders and arguments on graph edges, rather than becoming global
+names or a finite set of observed instantiations.
+
+Implementation checkpoints, in dependency order:
+
+1. **Canonical source closure.** Pin the tracked `skiplang-json` declaration
+   bytes and the `prebuild.mjs` mapping at the upstream revision. Extend module
+   resolution through local `export type { Json }`, relative imports and the
+   mapped workspace path. Starting from a requested imported declaration,
+   collect exactly its reachable type definitions across files, including
+   cycles, with module-qualified declaration identities, binders, source spans
+   and a fingerprint for every file and mapping used. Resolve each edge once;
+   report absent, ambiguous or unsupported edges at their source location.
+   This is still provenance, not type acceptance.
+2. **One shared graph format and source gate.** Represent that closure in the
+   existing Fragment/claim language, including parameterized references,
+   recursive nodes, readonly arrays and string index signatures. Update all
+   producers, decoders and printers together; do not add an OCaml-only shape or
+   a second accepted wire format. The trusted source parser must derive the
+   graph from the snapshotted declarations and distinguish type-only imports
+   from runtime values. The request and evidence must bind the client, every
+   declaration and the resulting graph to their bytes. Keep imports refused
+   until the independent checker consumes and validates this information.
+3. **Semantic interpretation and proof.** Extend the existing guarded
+   recursive-graph interpretation with the dictionary constructor and prove
+   that the accepted graph equations denote admissible semantic types. Define
+   indexed lookup over actual JavaScript properties, including absence: a
+   missing key reads `undefined`, so an arbitrary `JsonObject[key]` cannot be
+   promised only `Json | null` merely because TypeScript says so. A readonly
+   index is a read view, not a claim that no other alias can mutate the object;
+   writes and flow refinements still obey fixed world contracts. Extend
+   subtyping, indexed-read obligations, normalization and evidence checking
+   with their safety proofs. A successful graph check must enter the exhaustive
+   `CertifiedPlan` path and the `SourceClaimJson.checkJson_safe` conclusion;
+   an unconnected Lean lemma or OCaml proposal is not verification.
+4. **Relative contracts and controls.** Imported value contracts are explicit
+   assumptions for client safety until their implementations are checked; an
+   imported type definition is an interpreted graph, not an assertion that a
+   runtime value implements it. Make those assumptions visible in the report
+   and theorem boundary. Mutate a declaration, reexport, symlink mapping,
+   graph equation, binder argument, source hash and certificate independently;
+   both evidence production and checking must refuse the forged documents.
+   Include a cross-file mutually recursive fixture and an invalid unguarded
+   cycle, so this is general graph support rather than a special `Json` case.
+5. **Actual-source acceptance.** Add positive OCaml-producer cases that import
+   the pinned `Json` through the real package path, build nested arrays and
+   objects containing `null`, read them safely, and instantiate a bound such
+   as `T extends Json`. Add negative cases for a non-JSON nested value and a
+   missing dictionary key used as though it could not be `undefined`. Each
+   case must reach independent Lean evidence checking with its expected
+   outcome; record the first blocker if one remains. Then use the same graph
+   for `Mapper<string, number, string, [number, number]>`'s four bound
+   obligations. `DepSafe`, `Values`, `Iterable` and class bodies may still be
+   separately unsupported; do not count those as failures of this milestone
+   or silently weaken their contracts to make the mapper pass.
+
+The milestone closes when at least one real-import `Json` example and its
+bound-instantiation case verify against the canonical declaration, the negative
+and forged controls fail at their intended obligations, the recursive graph is
+accepted through the soundness theorem, and the reader states any remaining
+external assumptions. Check that all new cases are counted by the OCaml suite
+and viewer; report verified, rejected and unsupported outcomes separately.
+
 For classes, preserve separate `[[Call]]` and `[[Construct]]` capabilities on
 one function object. `new` allocates an instance, runs its constructor with
 that instance as receiver, and exposes it only under the JavaScript
@@ -495,7 +585,7 @@ initialization, receiver, result and forged evidence.
 | Classes, constructors, `new`, field initialization | Additional semantics and certified lowering; construction is not ordinary invocation. |
 | `Mapper<K1, V1, K2, V2>` and bounds such as `K extends Json` | Multiple parameters, structural bounds and richer generic bodies beyond the current rigid slice. |
 | `new (...params: Params) => Mapper<…>` | Constructor contracts and generic tuple packs; ordinary quantified array-rest support is insufficient. |
-| Recursive `Json`, dictionaries and optional fields | Recursive types, index contracts and field presence, preserving the distinction between absence and present-undefined. |
+| Recursive `Json`, dictionaries and optional fields | The [cross-file `Json` milestone](#cross-file-recursive-json-milestone) covers the canonical recursive type and indexed reads; optional named-field presence is a further extension, still distinct from present-undefined. |
 | `Iterable`, iteration and array/library methods | Explicit contracts and execution semantics, including callback effects and iterator behavior. |
 | Promises, exceptions and native/Wasm bindings | Further model extensions and explicit external assumptions for the implementation. |
 
