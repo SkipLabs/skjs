@@ -164,6 +164,13 @@ let rec imported_type j =
   | "union" -> List.fold_left union (Atoms []) (List.map imported_type (items "parts" j))
   | "array" -> array {required=[];optional_elements=[];
       rest=Some (imported_type (field "element" j));readonly=boolean (field "readonly" j)}
+  | "function" ->
+    let receiver = match field "receiver" j with
+      | Null -> top | source -> imported_type source in
+    let signature = {quantified=[];receiver;
+      params=List.map imported_type (items "params" j);
+      variadic=None;result=imported_type (field "result" j)} in
+    Atoms [Shape {fields=[];string_index=None;calls=[signature];elements=None}]
   | "object" ->
     let fields = List.map (fun f ->
       let t = imported_type (field "type" f) in

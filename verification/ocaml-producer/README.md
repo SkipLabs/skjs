@@ -465,9 +465,11 @@ declarations, with exactly one declaration and matching source bytes. Forged
 interface and function targets and altered API bytes are refused. This is
 resolution inventory, not acceptance of those contracts. The source gate
 currently admits named type-only imports of aliases and single interfaces
-whose fields or string indexes fit the imported graph. A synthetic `Box`
-interface and a recursive `Node` interface verify through the same Lean path;
-inheritance, methods and declaration merging refuse. All four runtime API
+whose fields, string indexes or fixed function-valued properties fit the imported
+graph. Synthetic `Box`, recursive `Node`, and callable-property `CallableBox`
+interfaces verify through the same Lean path; an incorrect callable result
+fails its return obligation. Inheritance, method shorthand and declaration
+merging refuse. All four runtime API
 interfaces have unsupported members or dependencies, and `runService` is a
 value import. The new interface slice therefore does not yet admit `sum.ts`.
 
@@ -501,7 +503,7 @@ prerequisite of the mapper and collection milestones below, not a claim that
 the runtime implementation satisfies its API contracts.
 
 Checkpoint 1 has a source-closure implementation for aliases and single
-field/index interfaces in
+field/index/callable-property interfaces in
 [`module-closure.mts`](../tools/module-closure.mts). The fixture pins the tracked
 `skiplang-json` source and `prebuild.mjs`; the resolver follows the core star
 export, API-local `export type`, and the workspace link to that source. The
@@ -512,7 +514,7 @@ pinned `Json` cycle retains its readonly array, dictionary index, unions,
 `null`, and declaration-identified references; the generic cycle retains
 binder indices and applied arguments. Unsupported syntax is refused during
 collection rather than left inside an opaque span.
-Methods, inheritance, merging and other declaration kinds still refuse
+Method shorthand, inheritance, merging and other declaration kinds still refuse
 explicitly. The
 Fragment document now has one required `imports` slot, emitted empty by the
 source parser. The collector can assemble both real `Json` imports into that
@@ -627,9 +629,9 @@ Current progress against the `Json` prerequisite:
 
 | Checkpoint | Current result | Remaining boundary |
 | --- | --- | --- |
-| 1. Source closure | Canonical `Json`/`JsonObject` cycle, workspace link, cross-file generic cycle, and single field/index interfaces collected. | Interface methods, inheritance, merging and value declarations remain outside this collector. |
+| 1. Source closure | Canonical `Json`/`JsonObject` cycle, workspace link, cross-file generic cycle, and single field/index/callable-property interfaces collected. | Method shorthand, inheritance, merging and value declarations remain outside this collector. |
 | 2. Shared graph and gate | Imported alias and supported interface equations reach the common Fragment and Lean request; TypeScript checks declaration identities and source bytes. | The configured project and source parser remain trusted; richer declarations are refused. |
-| 3. Semantic interpretation | Recursive readonly array and dictionary clauses, including a recursive field interface, reach `CertifiedPlan` and `checkJson_safe`. | Method, generic-interface, mutable dictionary and implementation contracts need their own certified paths. |
+| 3. Semantic interpretation | Recursive readonly array, dictionary, and fixed callable clauses, including a recursive field interface, reach `CertifiedPlan` and `checkJson_safe`. | Method receivers, generic-interface, mutable dictionary and implementation contracts need their own certified paths. |
 | 4. Relative contracts and controls | Forged alias equations, targets, source bytes and evidence have negative controls. | External value-contract assumptions and their eventual discharge are not yet represented. |
 | 5. Actual-source acceptance | Imported `Json` clients, a bound-instantiation case and four negative controls run end to end. | Actual `Mapper` bounds and bodies are blocked by interface imports, classes and their dependencies. |
 

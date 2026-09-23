@@ -75,6 +75,13 @@ private partial def lowerType (ds : Array Definition) (term : Json) : Lowering (
     let row ← if readonly then use (.refs [] [] [(SourceTypes.storeField, [store])])
       else use (.refs [(SourceTypes.storeField, [store])] [] [])
     return [row]
+  | "function" =>
+    CellClaims.fieldsExactly term ["k", "receiver", "params", "result", "span"]
+    let recv ← field term "receiver"
+    let receiver ← if recv == .null then pure [← use .top] else lowerType ds recv
+    let params ← (← arr term "params").mapM (lowerType ds)
+    let result ← lowerType ds (← field term "result")
+    return [← use (.arrs [(receiver, params.toList, result)] [])]
   | "object" =>
     let fs ← (← arr term "fields").mapM fun f => do
       if ← bool f "optional" then throw "optional imported fields need presence semantics"

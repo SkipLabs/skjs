@@ -48,6 +48,8 @@ export type TypeTerm =
   | { k: "array"; readonly: boolean; element: TypeTerm; span: Span }
   | { k: "object"; fields: { name: string; optional: boolean; readonly: boolean; type: TypeTerm; span: Span }[];
       stringIndex: { readonly: boolean; value: TypeTerm; span: Span } | null; span: Span }
+  | { k: "function"; receiver: TypeTerm | null; params: TypeTerm[];
+      result: TypeTerm; span: Span }
   | { k: "parameter"; index: number; span: Span }
   | { k: "reference"; reference: Reference; args: TypeTerm[]; span: Span };
 export type TypeDefinition = {

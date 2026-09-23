@@ -109,6 +109,28 @@ export function collectTypeClosure(
       if (ts.isTypeLiteralNode(part)) {
         return parseMembers(part.members, pos);
       }
+      if (ts.isFunctionTypeNode(part)) {
+        if (part.typeParameters?.length)
+          throw Error(`generic function type in ${identity.module}#${identity.name} is not collected`);
+        if (!part.type)
+          throw Error(`function result type in ${identity.module}#${identity.name} is missing`);
+        const head = part.parameters[0];
+        const hasReceiver = !!head && ts.isIdentifier(head.name) && head.name.text === "this";
+        const parameters = hasReceiver ? part.parameters.slice(1) : part.parameters;
+        let receiver: TypeTerm | null = null;
+        if (hasReceiver) {
+          if (!head?.type || head.questionToken || head.dotDotDotToken)
+            throw Error(`unsupported function receiver in ${identity.module}#${identity.name}`);
+          receiver = parse(head.type);
+        }
+        const params = parameters.map(p => {
+          if (!ts.isIdentifier(p.name) || !p.type || p.questionToken ||
+              p.dotDotDotToken || p.initializer || p.name.text === "this")
+            throw Error(`unsupported function parameter in ${identity.module}#${identity.name}`);
+          return parse(p.type);
+        });
+        return { k: "function", receiver, params, result: parse(part.type), span: pos };
+      }
       if (ts.isTypeReferenceNode(part)) {
         if (!ts.isIdentifier(part.typeName))
           throw Error(`qualified type reference in ${identity.module}#${identity.name}`);

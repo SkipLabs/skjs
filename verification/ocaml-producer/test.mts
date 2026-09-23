@@ -278,6 +278,7 @@ for (const [file, expected] of [
   writeFileSync(join(pairDir, "barrel.ts"), barrel);
   const box = "export interface Box { readonly flag: boolean; }\n" +
     "export interface Node { readonly next: Node | null; }\n" +
+    "export interface CallableBox { readonly invoke: (value: number) => boolean; }\n" +
     "export interface WithMethod { read(): boolean; }\n" +
     "export interface Derived extends Box { readonly label: string; }\n";
   writeFileSync(join(pairDir, "box.ts"), box);
@@ -327,16 +328,17 @@ for (const [file, expected] of [
     ["fixture/barrel.ts", "fixture/a.ts"]);
   const boxClient = join(pairDir, "box-client.ts");
   writeFileSync(boxClient,
-    'import type { Box, Node } from "@fixture/box";\n' +
+    'import type { Box, Node, CallableBox } from "@fixture/box";\n' +
     'export function readBox(box: Box): boolean { return box.flag; }\n' +
-    'export function nextNode(node: Node): Node | null { return node.next; }\n');
+    'export function nextNode(node: Node): Node | null { return node.next; }\n' +
+    'export function invokeBox(box: CallableBox): boolean { return box.invoke(1); }\n');
   const boxConfig = { ...pairConfig, packages: new Map([
     ["@fixture/box", "fixture/box.ts"]]) };
   const boxUniverse = { modules: pair, config: boxConfig,
     tsconfigPath: join(pairDir, "tsconfig.json") };
   const checkedBox = check(boxClient, boxUniverse);
   assert.equal(checkedBox.status, "verified", JSON.stringify(checkedBox));
-  assert.deepEqual(checkedBox.functions, ["readBox", "nextNode"]);
+  assert.deepEqual(checkedBox.functions, ["readBox", "nextNode", "invokeBox"]);
   const badBoxClient = join(pairDir, "bad-box-client.ts");
   writeFileSync(badBoxClient,
     'import type { Box } from "@fixture/box";\n' +
@@ -345,6 +347,13 @@ for (const [file, expected] of [
   assert.equal(rejectedBox.status, "unverified", JSON.stringify(rejectedBox));
   assert.equal(rejectedBox.phase, "search");
   assert.match(rejectedBox.detail, /evidence search failed/);
+  const badInvokeClient = join(pairDir, "bad-invoke-client.ts");
+  writeFileSync(badInvokeClient,
+    'import type { CallableBox } from "@fixture/box";\n' +
+    'export function badInvoke(box: CallableBox): number { return box.invoke(1); }\n');
+  const rejectedInvoke = check(badInvokeClient, boxUniverse);
+  assert.equal(rejectedInvoke.status, "unverified", JSON.stringify(rejectedInvoke));
+  assert.equal(rejectedInvoke.phase, "search");
   const methodRoot = resolveNamedImports(openText(boxClient,
     'import type { WithMethod } from "@fixture/box";'), pair, boxConfig)[0];
   assert(methodRoot);
