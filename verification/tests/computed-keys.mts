@@ -12,8 +12,9 @@ import { stripTypes } from "../tools/strip-types.mts";
 import { claimAt, fn, must } from "./edits.mts";
 // Computed keys: the receiver, then the key, then the field the key's claimed
 // string singleton names. Both producers verify the fixture. A key claimed as
-// a broader string selects no field; one claimed as a different singleton is
-// refused by the key's own obligation; and a ternary's effect in the key is a
+// a broader string cannot read a fixed record without a dictionary contract;
+// one claimed as a different singleton is refused by the key's own obligation;
+// and a ternary's effect in the key is a
 // graph node, so a claim contradicting the value it wrote is refused.
 
 const [astPath, claimsPath, tscPath, fileKey, verifier] = process.argv.slice(2);
@@ -65,12 +66,12 @@ try {
   for (const name of names)
     expect(`tsc verifies ${name}`, run("source-claims", only(ast, name), tscFor(tsc, name)), true);
 
-  // The field is the key's claimed singleton: a broader claim names none.
+  // A broad string key needs a dictionary receiver; this is only a fixed record.
   const broad = skjsFor(claims, "twoFields");
   claimAt(functionOf(broad, fileKey, "twoFields"), spanOf("twoFields", '"a"')).type =
     { top: false, atoms: [{ a: "string" }] };
   expect("a key claimed as a broad string is refused",
-    run("stateful-source", only(ast, "twoFields"), broad), false, "string singleton or a numeric array-index singleton");
+    run("stateful-source", only(ast, "twoFields"), broad), false, "source expression obligation");
 
   // Claiming the other field's name for the literal "a" selects `b`, and the
   // literal's own obligation to that claim fails.
