@@ -344,7 +344,7 @@ skolems, closures and loops.
    obligations.
 
 The last contract is already a theme of the
-[mathematical audit](../docs/skjs-type-soundness.tex). That model
+[mathematical audit](https://github.com/SkipLabs/skjs/blob/bf20814b4c0bfc72305e9e58411e13da68f94bca/docs/skjs-type-soundness.tex). That model
 distinguishes inference guidance from validation ("Guidance vs. Validation")
 and treats stale-state reads and caches as failures of judgment stability.
 Those arguments are a starting specification. They are not Lean proofs of
