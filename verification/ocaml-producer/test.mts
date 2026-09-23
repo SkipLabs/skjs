@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { check, verifier } from "./check.mts";
 import { cases } from "./cases.mts";
@@ -13,6 +14,15 @@ import { checkDefaults, checkSchemeDefaults, checkEarlyDefault } from "./default
 // port only when it is run directly.
 import { analyse } from "../report-viewer/serve.mts";
 const here = import.meta.dirname;
+// The framework fixture is the upstream source, including its imports and
+// classes. A simplified replacement must not quietly inherit its census row.
+for (const [file, expected] of [
+  ["examples/reactive-sum-prettier-ignore.ts", "f6463ff031d46252cc2a1442c022ea3d709758233e91607eec9673595ea9e271"],
+  ["upstream/skipruntime-ts/api-prettier-ignore.ts", "3bfa83b7c2328f4adda5f0bb54569a46c0d776d93184fdb5eb0e789f4b190909"],
+] as const) {
+  assert.equal(createHash("sha256").update(readFileSync(join(here, file))).digest("hex"), expected,
+    `${file}: update the upstream provenance and census before replacing this fixture`);
+}
 function must<T>(value: T | null | undefined, message: string): T {
   assert.ok(value !== null && value !== undefined, message);
   return value;

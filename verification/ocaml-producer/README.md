@@ -399,9 +399,9 @@ independent acceptance boundary, not add a permissive subtype checker here.
 
 ## After callable part 5: reactive-runtime integration
 
-Status: **planned, not measured**. Reassess after the receiver work in the
-[callable roadmap](../tests/callables/README.md) is certified. Closing part 5
-does not itself close classes, construction, or the runtime's generic API.
+Status: **baseline measured; all three milestones open**. The receiver work in
+the [callable roadmap](../tests/callables/README.md) is certified. Closing part
+5 did not close classes, construction, or the runtime's generic API.
 The target is Skip's `skipruntime-ts` TypeScript API and implementation, not
 the native runtime written in Skip. The initial assessment inspected
 `skipruntime-ts/core/src/api.ts` and `skipruntime-ts/examples/sum.ts` in the
@@ -414,6 +414,48 @@ work, record the upstream revision and retain the selected sources as fixtures,
 with provenance and expected outcomes in `cases.mts`. Measure each function's
 first blocker through parsing, proposal, lowering, evidence production and
 independent checking. Report verified, rejected and unsupported separately.
+
+The baseline is pinned to upstream `skip` commit
+`cb030b5ac7beda28fd5f65e3292a485173d5faef`. The byte-for-byte
+[`sum.ts`](examples/reactive-sum-prettier-ignore.ts) and
+[`api.ts`](upstream/skipruntime-ts/api-prettier-ignore.ts) snapshots are checked by SHA-256 in
+`test.mts`. `cases.mts` records the real program as `unsupported` at the
+source gate: the first `ImportDeclaration` precedes every class. Thus **zero
+of the six class callables below are currently checked**; no producer proposal,
+Lean lowering, or certificate is reached. This is one file-level blocker, not
+six independent findings. It is still the honest first blocker for each row:
+
+| `sum.ts` callable | First reached boundary | Next source feature once imports are represented |
+| --- | --- | --- |
+| `AddIndex.constructor` | `ImportDeclaration` | parameter property and initialized instance storage |
+| `AddIndex.mapEntry` | `ImportDeclaration` | method receiver, external `Values.getUnique`, tuple result |
+| `Plus.mapEntry` | `ImportDeclaration` | external `Values.toArray`, array reduction callback |
+| `Minus.mapEntry` | `ImportDeclaration` | nullable accumulator, array sort/reduction |
+| `Add.instantiate` | `ImportDeclaration` | external collection method and generic constructor argument |
+| `Sub.instantiate` | `ImportDeclaration` | chained generic collection methods and constructor arguments |
+
+The next implementation boundary is **module contracts**, followed by class
+construction. Keep imported API declarations distinct from implementations:
+client verification may assume a named external contract, while runtime
+verification must discharge that contract separately. A module import needs a
+resolved identity and the exact exported declaration it denotes; dropping the
+import while retaining a spelling would let the checker attach an arbitrary
+contract to a source name. The source file and imported API must remain
+separately fingerprinted in evidence. The present single-file `Ast` and
+`check.mts` snapshot do not yet provide this identity, so merely skipping
+imports in the gate would be an unsound shortcut.
+
+For classes, preserve separate `[[Call]]` and `[[Construct]]` capabilities on
+one function object. `new` allocates an instance, runs its constructor with
+that instance as receiver, and exposes it only under the JavaScript
+constructor-return rules. Prototype lookup supplies methods on instances;
+their receiver comes from the call reference as in part 5. Instance fields
+and parameter properties need initialization obligations before the instance
+can satisfy its exported class contract. Do not lower `new C` to an ordinary
+call or treat an `implements Mapper` clause as proof of the constructor and
+method bodies. The first mapper milestone ends only when those bodies and the
+actual imported method contracts are certified, with independent failures for
+initialization, receiver, result and forged evidence.
 
 | Requirement | Work to assess after part 5 |
 | --- | --- |

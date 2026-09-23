@@ -36,6 +36,13 @@ const gap = (
   diagnostic: RegExp,
 ): Case => ({ file, area, kind: "gap", status, phase, diagnostic });
 export const cases: Case[] = [
+  gap(
+    "reactive-sum-prettier-ignore",
+    "Unmodified Skip Runtime sum example: imports precede its mapper and resource classes",
+    "unsupported",
+    "source",
+    /top-level statement outside the fragment \(ImportDeclaration\)/,
+  ),
   negative("invalid-generic-rest-argument", "A variadic callback cannot receive Boolean at arbitrary T", /generic call argument.*true ≤ T/),
   positive("generic-rest", "Universal rest collection with independent Boolean and numeric calls"),
   negative("invalid-generic-rest", "Observed Boolean rest calls cannot establish a universal array result",
