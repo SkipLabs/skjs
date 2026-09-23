@@ -76,7 +76,7 @@ let encode (proposal : Proposal.t) =
       | (d:Source.imported_definition)::rest ->
         if d.id=id then
           if d.parameters=[] && args=[] then i+4
-          else if List.length d.parameters=List.length args then begin
+          else if List.length args <= List.length d.parameters then begin
             if List.mem id !active_imports then
               unsupported "recursive generic imported application needs memoized rows";
             active_imports := id::!active_imports;

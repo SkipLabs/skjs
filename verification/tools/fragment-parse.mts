@@ -199,7 +199,7 @@ class Gate {
   /** Local spelling to the arity of its resolved, declaration-identified root
    * in the Fragment's import document. An alias atom retains this spelling;
    * the document, never a global name table, resolves it. */
-  private readonly importedAliases = new Map<string, number>();
+  private readonly importedAliases = new Map<string, { required: number; total: number }>();
   private aliasApps = false;
   /* Whether the code being read is strict, by a module or a "use strict"
    * directive (ECMAScript's, not TypeScript's `strict` option). An ordinary
@@ -262,7 +262,7 @@ class Gate {
             ts.isTypeReferenceNode(tp.constraint) &&
             tp.constraint.typeName.kind === ts.SyntaxKind.Identifier &&
             !tp.constraint.typeArguments?.length &&
-            this.importedAliases.get(tp.constraint.typeName.text) === 0;
+            this.importedAliases.get(tp.constraint.typeName.text)?.total === 0;
           if (tp.constraint.kind !== ts.SyntaxKind.BooleanKeyword && !earlier && !imported)
             this.fail(
               tp.constraint,
@@ -291,10 +291,10 @@ class Gate {
     this.aliasNames.add(name);
   }
 
-  registerImportedAlias(name: string, arity: number, node: Node): void {
+  registerImportedAlias(name: string, required: number, total: number, node: Node): void {
     if (this.importedAliases.has(name) || this.aliasNames.has(name))
       this.fail(node, "duplicate imported type name");
-    this.importedAliases.set(name, arity);
+    this.importedAliases.set(name, { required, total });
   }
 
   enableAliasApps(): void {
@@ -510,8 +510,12 @@ class Gate {
       const importedArity = this.importedAliases.get(name);
       if (importedArity !== undefined && !this.hasTypeParam(name)) {
         const args = node.typeArguments?.map(arg => this.typeOf(arg)) ?? [];
-        if (args.length !== importedArity)
-          this.fail(node, `imported type '${name}' needs ${importedArity} type argument(s)`);
+        if (args.length < importedArity.required || args.length > importedArity.total) {
+          const count = importedArity.required === importedArity.total
+            ? `${importedArity.total}`
+            : `${importedArity.required} to ${importedArity.total}`;
+          this.fail(node, `imported type '${name}' needs ${count} type argument(s)`);
+        }
         acc.push({ a: "alias", name, args });
         return;
       }
@@ -2094,7 +2098,9 @@ export function parseFile(file: string, carriesContext = false,
       if (!definition)
         return gate.fail(first, `imported type definition missing: ${identity.module}#${identity.name}`);
       const node = importNodes.find(n => n.getStart(source) === root.binding.span[0]) ?? first;
-      gate.registerImportedAlias(root.binding.local, definition.parameters.length, node);
+      gate.registerImportedAlias(root.binding.local,
+        definition.parameters.filter(p => p.default === null).length,
+        definition.parameters.length, node);
     }
   }
   // Carried context holds aliases this fragment cannot state — more than one

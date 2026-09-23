@@ -60,7 +60,8 @@ export type TypeTerm =
 export type TypeDefinition = {
   declaration: DeclarationIdentity;
   sha256: string;
-  parameters: { name: string; span: Span; bound: TypeTerm | null }[];
+  parameters: { name: string; span: Span; bound: TypeTerm | null;
+    default: TypeTerm | null }[];
   body: Span;
   expression: TypeTerm;
   references: Reference[];

@@ -4,7 +4,7 @@ let unsupported s = fail ("unsupported: " ^ s)
 let text k j = str (field k j)
 let items k j = list (field k j)
 type type_context = { bindings: (string * ty) list; aliases: (string * Json.t) list;
-                      imported: (string * (string * int)) list; expanding: string list }
+                      imported: (string * (string * int * int)) list; expanding: string list }
 let identity declaration =
   let span = list (field "span" declaration) in
   match span with
@@ -51,8 +51,9 @@ and annotation_atom binders j =
     let name = text "name" j in
     let args = List.map (annotation binders) (items "args" j) in
     (match List.assoc_opt name binders.imported with
-    | Some (id,arity) ->
-      if List.length args <> arity then fail ("imported alias arity: " ^ name);
+    | Some (id,required,total) ->
+      if List.length args < required || List.length args > total then
+        fail ("imported alias arity: " ^ name);
       Atoms [Named (id,args)]
     | None ->
       if List.mem name binders.expanding then unsupported ("recursive alias " ^ name);
@@ -143,7 +144,8 @@ and stmt_node =
   | While of expr * stmt list | Break | Continue
 and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: (string * ty) list;
            result: ty; body: stmt list }
-type imported_definition = { id: string; parameters: rigid list; expression: ty }
+type imported_definition = { id: string; parameters: rigid list;
+  defaults: ty option list; expression: ty }
 type program = { file: Json.t; digest: Json.t; imports: imported_definition list; functions: fn list }
 
 (* Candidate-only view of a source equation. Lean independently derives the
@@ -290,13 +292,18 @@ let decode ast =
       (items "parameters" definition) in
     {id=identity declaration;
      parameters;
+     defaults=List.map (fun p -> match field "default" p with
+       | Null -> None | j -> Some (imported_type (identity declaration) parameters j))
+       (items "parameters" definition);
      expression=imported_type (identity declaration) parameters (field "expression" definition)})
     (items "definitions" imports) in
   let imported = List.map (fun root ->
     let id=identity (field "declaration" root) in
     let definition = match List.find_opt (fun d -> d.id=id) definitions with
       | Some d -> d | None -> fail ("import root lacks definition " ^ id) in
-    text "local" (field "binding" root), (id,List.length definition.parameters))
+    text "local" (field "binding" root),
+      (id,List.length (List.filter Option.is_none definition.defaults),
+       List.length definition.parameters))
     (items "roots" imports) in
   if List.length (List.sort_uniq compare (List.map fst imported)) <> List.length imported then
     fail "duplicate imported local type";

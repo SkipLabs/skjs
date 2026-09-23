@@ -147,7 +147,9 @@ export function collectTypeClosure(
           throw Error(`unresolved type reference ${identity.module}#${name}`);
         const targetNode = typeDeclaration(sourceOf(target.module), target);
         const arguments_ = part.typeArguments ?? [];
-        if (arguments_.length !== (targetNode.typeParameters?.length ?? 0))
+        const targetParameters = targetNode.typeParameters ?? [];
+        const required = targetParameters.filter(p => !p.defaultType).length;
+        if (arguments_.length < required || arguments_.length > targetParameters.length)
           throw Error(`type argument arity: ${target.module}#${target.name}`);
         const reference: Reference = { name, span: pos,
           arguments: arguments_.map(arg => [arg.getStart(source), arg.end]),
@@ -267,12 +269,15 @@ export function collectTypeClosure(
       }
       return { k: "object", fields, stringIndex, calls, span: pos };
     };
+    let sawDefault = false;
     const parameters = parameterNodes.map(parameter => {
-      if (parameter.defaultType)
-        throw Error(`type parameter default in ${identity.module}#${identity.name} is not collected`);
+      if (sawDefault && !parameter.defaultType)
+        throw Error(`required type parameter after default in ${identity.module}#${identity.name}`);
+      sawDefault ||= !!parameter.defaultType;
       const parameterSpan: Span = [parameter.getStart(source), parameter.end];
       return { name: parameter.name.text, span: parameterSpan,
-        bound: parameter.constraint ? parse(parameter.constraint) : null };
+        bound: parameter.constraint ? parse(parameter.constraint) : null,
+        default: parameter.defaultType ? parse(parameter.defaultType) : null };
     });
     const expression = ts.isTypeAliasDeclaration(node)
       ? parse(node.type)

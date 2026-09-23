@@ -789,6 +789,16 @@ bodies with distinct parameters and directed dependent bounds. See [GenericSourc
 `type Id<T> = T` and `type Box<T> = { value: T }` are expanded by substitution
 before that check and before ground extraction. See
 [GenericAlias.lean](lean/Verification/Model/Source/GenericAlias.lean).
+Imported generic declarations use the same graph meaning as other imported
+types once their arguments are ground. The import document retains each
+parameter's source bound and trailing default. Application fills omitted
+arguments in declaration order, substitutes earlier arguments into later
+defaults and bounds, and checks each resulting inclusion with a
+`PositiveCertificates` proof before deriving the instantiated graph clause
+from the source equation. The OCaml producer may propose a matching row, but
+cannot supply the equation or waive a bound. Recursive generic applications
+still need application-indexed memo rows; this finite-ground path does not
+interpret them or prove a universally quantified imported declaration body.
 `T extends boolean` is an assumption in `Δ`; returning `x` at `boolean` is
 transport along `SubP`. A generic body may copy `T` through annotated or inferred `const`
 bindings and extra parameters, with bounds to Boolean, an earlier parameter,

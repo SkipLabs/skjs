@@ -37,9 +37,22 @@ let literal_type = function
    through reconstructed obligations, including readonly view conversion. *)
 let definition imports id args =
   match List.find_opt (fun (d:Source.imported_definition) -> d.id=id) imports with
-  | Some d when List.length d.parameters=List.length args ->
-    Inference.substitute (List.combine d.parameters args) d.expression
-  | Some _ -> unsupported "imported type application has wrong arity"
+  | Some d ->
+    if List.length args > List.length d.parameters then
+      unsupported "imported type application has wrong arity";
+    let rec complete previous supplied parameters defaults =
+      match parameters, defaults with
+      | [], [] -> List.rev previous
+      | parameter::rest, default::other ->
+        let value, supplied = match supplied with
+          | value::tail -> value,tail
+          | [] -> (match default with
+            | Some value -> value,[]
+            | None -> unsupported "imported type application has missing required argument") in
+        let value = Inference.substitute (List.rev previous) value in
+        complete ((parameter,value)::previous) supplied rest other
+      | _ -> unsupported "imported parameter/default length mismatch" in
+    Inference.substitute (complete [] args d.parameters d.defaults) d.expression
   | None -> unsupported ("missing imported definition " ^ id)
 (* Inspect an imported callable's source equation for proposal purposes only.
    The point claim remains the named type; Lean independently fills and checks

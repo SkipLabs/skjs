@@ -501,14 +501,15 @@ are a separate, effectful module contract. Each dependency must either be
 interpreted and certified or appear as an explicit external assumption.
 Collecting the pinned `Mapper` declaration alone now reaches its method and
 resolves its `Iterable` result reference to the configured TypeScript project's
-`lib.es2015.iterable.d.ts` declaration. It then refuses the omitted defaulted
-type arguments: the source writes one argument for an interface with three
-parameters. The library interface also contains a computed-symbol method and
-references to `Iterator`, so resolving its name is not interpreting it.
+`lib.es2015.iterable.d.ts` declaration. The collector now retains omitted
+trailing type arguments as source defaults and advances to `Values`, where it
+refuses interface inheritance. The library interface also contains a
+computed-symbol method and references to `Iterator`, so resolving its name is
+not interpreting it.
 The tuple shape in that result is now interpreted by the imported graph;
-finite ground applications of unbounded generic records are supported, while
-bound verification for imported generics, defaulted arguments, computed-symbol
-methods and the other API dependencies remain after that refusal. Named tuple position
+finite ground applications of imported generics can use their source bounds and
+trailing defaults, while computed-symbol methods and the other API
+dependencies remain after that refusal. Named tuple position
 labels in imported declarations still refuse explicitly.
 
 The next file-level steps are to model the top-level initializer and other
@@ -584,8 +585,11 @@ uses that row as a candidate, while Lean independently substitutes the source
 binder arguments and derives the row before checking the client. Synthetic
 cross-file clients now verify unary, two-parameter, and transitive record
 applications, plus tuple and callable applications; a wrong result fails proof search. Recursive generic applications
-need memoized application rows, and bounded or defaulted imported applications
-still refuse explicitly. The suite refuses producer-filled rows and source-authored internal
+need memoized application rows. Imported bounds are checked using the existing
+certified subtype relation after each argument is completed; failed bounds
+refuse, including a supplied argument that violates its bound. Source defaults
+are applied in declaration order, so a later default may use an earlier
+argument. The suite refuses producer-filled rows and source-authored internal
 graph labels. The CLI accepts `--project` with a source checkout containing the
 TypeScript files, package manifests and workspace symlinks; the test and command
 above read the same checked-in source snapshot. All intermediate JSON is
@@ -669,11 +673,11 @@ Current progress against the `Json` prerequisite:
 
 | Checkpoint | Current result | Remaining boundary |
 | --- | --- | --- |
-| 1. Source closure | Canonical `Json`/`JsonObject` cycle, workspace link, cross-file generic cycle, single field/index/callable-property/method interfaces, and configured global declaration sources collected. | Defaulted type arguments, computed-symbol methods, inheritance, merging and value declarations remain outside this collector. |
+| 1. Source closure | Canonical `Json`/`JsonObject` cycle, workspace link, cross-file generic cycle, trailing type-parameter defaults, single field/index/callable-property/method interfaces, and configured global declaration sources collected. | Computed-symbol methods, inheritance, merging and value declarations remain outside this collector. |
 | 2. Shared graph and gate | Imported alias and supported interface equations, including a global declaration, reach the common Fragment and Lean request; TypeScript checks declaration identities and source bytes. | The configured project and source parser remain trusted; richer declarations are refused. |
-| 3. Semantic interpretation | Recursive readonly array, dictionary, fixed callable, interface method receiver, and finite ground imported generic record, tuple and callable applications reach `CertifiedPlan` and `checkJson_safe`. | Recursive or bounded generic applications, mutable dictionary and implementation contracts need their own certified paths. |
+| 3. Semantic interpretation | Recursive readonly array, dictionary, fixed callable, interface method receiver, and finite ground imported generic record, tuple and callable applications with bounds and defaults reach `CertifiedPlan` and `checkJson_safe`. | Recursive generic applications, mutable dictionary and implementation contracts need their own certified paths. |
 | 4. Relative contracts and controls | Forged alias equations, targets, source bytes and evidence have negative controls. | External value-contract assumptions and their eventual discharge are not yet represented. |
-| 5. Actual-source acceptance | Imported `Json` clients, a bound-instantiation case and four negative controls run end to end; synthetic cross-file generic record applications also verify. | Actual `Mapper` first refuses defaulted `Iterable` arguments; library iterator semantics, richer generic interfaces, classes and their dependencies follow. |
+| 5. Actual-source acceptance | Imported `Json` clients, a bound-instantiation case and four negative controls run end to end; synthetic cross-file generic applications with bounds and defaults also verify. | Actual `Mapper` first refuses `Values` inheritance; library iterator semantics, richer generic interfaces, classes and their dependencies follow. |
 
 The checkpoints below state the design obligations in dependency order; the
 table above records which parts have actually been implemented.
@@ -758,7 +762,7 @@ initialization, receiver, result and forged evidence.
 | Mutable objects, captured callbacks, fixed storage contracts | Existing foundations; exercise them together on actual runtime clients. |
 | Methods using `this` | Part 5 prerequisite; verify its coverage against mapper methods. |
 | Classes, constructors, `new`, field initialization | Additional semantics and certified lowering; construction is not ordinary invocation. |
-| `Mapper<K1, V1, K2, V2>` and bounds such as `K extends Json` | Ground multiple-parameter applications work for simple shapes; structural bound checking and the actual richer generic body remain. |
+| `Mapper<K1, V1, K2, V2>` and bounds such as `K extends Json` | Ground multiple-parameter applications and source bound checking work for simple shapes; the actual richer generic body and inherited dependencies remain. |
 | `new (...params: Params) => Mapper<…>` | Constructor contracts and generic tuple packs; ordinary quantified array-rest support is insufficient. |
 | Recursive `Json`, dictionaries and optional fields | The [cross-file `Json` milestone](#cross-file-recursive-json-milestone) covers the canonical recursive type and indexed reads; optional named-field presence is a further extension, still distinct from present-undefined. |
 | `Iterable`, iteration and array/library methods | Explicit contracts and execution semantics, including callback effects and iterator behavior. |

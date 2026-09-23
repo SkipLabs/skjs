@@ -92,7 +92,7 @@ for (const [file, expected] of [
   assert.equal(iterable?.declaration.module, "typescript/lib/lib.es2015.iterable.d.ts");
   assert.equal(iterable?.declaration.name, "Iterable");
   assert.throws(() => collectTypeClosure(mapperRoot, modules, config),
-    /type argument arity: typescript\/lib\/lib.es2015.iterable.d.ts#Iterable/);
+    /interface inheritance in core\/src\/api.ts#Values is not collected/);
   crossCheckResolvedBindings(openText(source, readFileSync(source, "utf8")), resolved,
     modules, source, importUniverse.tsconfigPath);
   const wrongMapper = structuredClone(resolved);
@@ -312,7 +312,12 @@ for (const [file, expected] of [
     "export type GenericOuter<T> = { readonly inner: GenericBox<T> };\n" +
     "export type GenericTuple<T> = readonly [T, number];\n" +
     "export type GenericCallable<T> = (value: T) => T;\n" +
-    "export type BoundedBox<T extends boolean> = { readonly value: T };\n";
+    "export type BoundedBox<T extends boolean> = { readonly value: T };\n" +
+    "export type BoundedNested<T extends GenericBox<boolean>> = { readonly value: T };\n" +
+    "export type DefaultBox<T = boolean> = { readonly value: T };\n" +
+    "export type DependentDefault<T, U = T> = { readonly first: T; readonly second: U };\n" +
+    "export type DependentBound<T, U extends T = T> = { readonly second: U };\n" +
+    "export type BoundedDefault<T extends boolean = boolean> = { readonly value: T };\n";
   writeFileSync(join(pairDir, "box.ts"), box + genericShapes);
   const globalText = "interface GlobalBox { readonly flag: boolean; }\n";
   writeFileSync(join(pairDir, "global.d.ts"), globalText);
@@ -423,8 +428,40 @@ for (const [file, expected] of [
     'import type { BoundedBox } from "@fixture/box";\n' +
     'export function bounded(value: BoundedBox<boolean>): boolean { return value.value; }\n');
   const boundedShape = check(boundedShapeClient, boxUniverse);
-  assert.equal(boundedShape.status, "unverified", JSON.stringify(boundedShape));
-  assert.match(boundedShape.detail, /bounded imported application needs bound verification/);
+  assert.equal(boundedShape.status, "verified", JSON.stringify(boundedShape));
+  const boundedNestedClient = join(pairDir, "bounded-nested-client.ts");
+  writeFileSync(boundedNestedClient,
+    'import type { BoundedNested, GenericBox } from "@fixture/box";\n' +
+    'export function nestedBound(value: BoundedNested<GenericBox<boolean>>): boolean { return value.value.value; }\n');
+  const boundedNested = check(boundedNestedClient, boxUniverse);
+  assert.equal(boundedNested.status, "verified", JSON.stringify(boundedNested));
+  const invalidBoundClient = join(pairDir, "invalid-bound-client.ts");
+  writeFileSync(invalidBoundClient,
+    'import type { BoundedBox } from "@fixture/box";\n' +
+    'export function invalidBound(value: BoundedBox<number>): number { return value.value; }\n');
+  const invalidBound = check(invalidBoundClient, boxUniverse);
+  assert.equal(invalidBound.status, "unverified", JSON.stringify(invalidBound));
+  assert.match(invalidBound.detail, /imported type argument does not establish its declared bound/);
+  const defaultClient = join(pairDir, "default-client.ts");
+  writeFileSync(defaultClient,
+    'import type { DefaultBox, DependentDefault, DependentBound, BoundedDefault } from "@fixture/box";\n' +
+    'export function defaulted(value: DefaultBox): boolean { return value.value; }\n' +
+    'export function overridden(value: DefaultBox<number>): number { return value.value; }\n' +
+    'export function dependent(value: DependentDefault<boolean>): boolean { return value.second; }\n' +
+    'export function dependentBound(value: DependentBound<boolean>): boolean { return value.second; }\n' +
+    'export function boundedDefault(value: BoundedDefault): boolean { return value.value; }\n');
+  const defaults = check(defaultClient, boxUniverse);
+  assert.equal(defaults.status, "verified", JSON.stringify(defaults));
+  assert.deepEqual(defaults.functions,
+    ["defaulted", "overridden", "dependent", "dependentBound", "boundedDefault"]);
+  const invalidDependentClient = join(pairDir, "invalid-dependent-client.ts");
+  writeFileSync(invalidDependentClient,
+    'import type { DependentBound } from "@fixture/box";\n' +
+    'export function invalidDependent(value: DependentBound<boolean, number>): number { return value.second; }\n');
+  const invalidDependent = check(invalidDependentClient, boxUniverse);
+  assert.equal(invalidDependent.status, "unverified", JSON.stringify(invalidDependent));
+  assert.match(invalidDependent.detail,
+    /imported type argument does not establish its declared bound/);
   const boxAst = parseFile(boxClient, false, boxUniverse);
   assert.equal(boxAst.imports.definitions.find(d => d.declaration.name === "GlobalBox")?.
     declaration.module, "fixture/global.d.ts");

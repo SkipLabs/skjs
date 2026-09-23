@@ -1,4 +1,5 @@
 import Verification.Model.Source.Fragment
+import Verification.Model.Programs.CertificateProducer
 
 /-! Imported type declarations are source equations, not rows supplied by a producer.
 The producer reserves one empty row per nullary declaration and may refer to
@@ -50,12 +51,6 @@ private def referenceIndex (ds : Array Definition) (term : Json) : Except String
   let reference ← field term "reference"
   findDefinition ds (← field reference "target")
 
-private def checkUnbounded (d : Definition) : Except String Unit := do
-  for p in d.parameters do
-    CellClaims.fieldsExactly p ["name", "span", "bound"]
-    if (← field p "bound") != .null then
-      throw "bounded imported application needs bound verification"
-
 private abbrev Lowering := StateT SourceTypes.Table (Except String)
 
 private def use (clause : Clause (List Nat)) : Lowering Nat := SourceTypes.use clause
@@ -98,10 +93,9 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     if ds[i]!.parameters.isEmpty then
       if !args.isEmpty then throw "imported reference has too many arguments"
       else return [rowIndex ds i]
-    if args.size != ds[i]!.parameters.size then throw "imported reference arity differs"
-    checkUnbounded ds[i]!
     if seen.contains i then throw "recursive generic imported application needs memoized rows"
     let values ← args.mapM (lowerType ds owner params seen)
+    let values ← lowerApplication ds i values seen
     lowerType ds i values (i :: seen) ds[i]!.expression
   | "array" =>
     let element ← lowerType ds owner params seen (← field term "element")
@@ -178,6 +172,36 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     return [row]
   | _ => throw "imported source type constructor outside the graph fragment"
 
+private partial def lowerApplication (ds : Array Definition) (i : Nat)
+    (supplied : Array (List Nat)) (seen : List Nat) : Lowering (Array (List Nat)) := do
+  let d := ds[i]!
+  if supplied.size > d.parameters.size then throw "imported reference has too many arguments"
+  let mut values := supplied
+  for p in d.parameters.toList.drop supplied.size do
+    CellClaims.fieldsExactly p ["name", "span", "bound", "default"]
+    let default ← field p "default"
+    if default == .null then throw "imported type application has missing required argument"
+    values := values.push (← lowerType ds i values (i :: seen) default)
+  for index in [:d.parameters.size] do
+    let p := d.parameters[index]!
+    CellClaims.fieldsExactly p ["name", "span", "bound", "default"]
+    let bound ← field p "bound"
+    if bound != .null then
+      let actual := values[index]!
+      let upper ← lowerType ds i (values.toList.take index).toArray (i :: seen) bound
+      let table ← get
+      let graph := SourceTypes.graph table
+      let pool := (actual :: upper :: (List.range table.length).map (fun n => [n])).eraseDups
+      let name ← str p "name"
+      let span ← field p "span"
+      let refusal := s!"imported type argument does not establish its declared bound for {name} at {span.compress}: {SourceTypes.render table actual} ≤ {SourceTypes.render table upper}"
+      match CertificateProducer.subtype graph pool actual upper with
+      | some proof =>
+        if !PositiveCertificates.check graph actual upper proof then
+          throw refusal
+      | none => throw refusal
+  return values
+
 private partial def lowerHead (ds : Array Definition) (owner : Nat)
     (params : Array (List Nat)) (seen : List Nat)
     (term : Json) : Lowering (List (Clause (List Nat))) := do
@@ -190,9 +214,8 @@ private partial def lowerHead (ds : Array Definition) (owner : Nat)
     let i ← referenceIndex ds term
     if seen.contains i then throw "unguarded imported alias cycle"
     let args ← arr term "args"
-    if args.size != ds[i]!.parameters.size then throw "imported reference arity differs"
-    checkUnbounded ds[i]!
     let values ← args.mapM (lowerType ds owner params seen)
+    let values ← lowerApplication ds i values seen
     lowerHead ds i values (i :: seen) ds[i]!.expression
   | _ =>
     let labels ← lowerType ds owner params seen term
@@ -224,12 +247,11 @@ private partial def rewrite (ds : Array Definition) (roots : Array (String × Na
       let name ← str j "name"
       if let some (_, index) := roots.toList.find? (fun p => p.1 == name) then
         let args ← (← arr j "args").mapM (rewrite ds roots)
-        if args.size != ds[index]!.parameters.size then
-          throw "imported type application has wrong arity"
-        if args.isEmpty then
+        if ds[index]!.parameters.isEmpty then
+          if !args.isEmpty then throw "imported type application has wrong arity"
           return Json.mkObj [("a", toJson "graph"), ("label", toJson (rowIndex ds index))]
-        checkUnbounded ds[index]!
         let values ← args.mapM Fragment.translate
+        let values ← lowerApplication ds index values []
         let labels ← lowerType ds index values [index] ds[index]!.expression
         match labels with
         | [label] => return Json.mkObj [("a", toJson "graph"), ("label", toJson label)]
