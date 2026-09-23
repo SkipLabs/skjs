@@ -70,6 +70,18 @@ heap. Only `b` is under the new binder. `HasTy.letE`, source lowering, and the
 certificate producer and consumer all use that constructor. `Step_det` proves
 that a term and heap have at most one successor.
 
+A read of a named property on an object with no such own field steps to
+`undefined` (`Step.readMissing`); a present field still reads its heap location.
+The semantic readonly string-dictionary view `dictViewT A` requires every
+*present* field's stored contract to imply `A` at lower budgets. This is guarded
+and admissible even when `A` is recursive, and it grants no write permission.
+`empty_bool_dict_missing` witnesses the distinction: an empty object satisfies
+the Boolean dictionary view, while a read of any key yields `undefined`, which
+is not Boolean. An arbitrary indexed read therefore needs a result including
+`undefined`. The source parser, positive graph, certificate rules and producer
+do not yet accept an index signature; these semantic lemmas alone are not
+source verification.
+
 Term and descriptor equality use explicit structural comparisons, each returning
 a kernel-checked `Decidable` result and recurring only on strict subterms. This
 keeps certificate equality executable for list-valued

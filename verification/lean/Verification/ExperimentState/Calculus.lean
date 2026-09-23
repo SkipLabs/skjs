@@ -632,6 +632,9 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | readField {f : String} {fs : List (String × Nat)} {c : CallCode} {l : Nat}
       {h : Heap} {v : Val} : fs.lookup f = some l → h[l]? = some v →
       Step h (.readAt f (.objAt fs c)) h v
+  /-- JavaScript property lookup produces undefined when the name is absent. -/
+  | readMissing {f : String} {fs : List (String × Nat)} {c : CallCode} {h : Heap} :
+      fs.lookup f = none → Step h (.readAt f (.objAt fs c)) h .undef
   | writeC1 : Step h a h' a' → Step h (.writeAt f a b) h' (.writeAt f a' b)
   | writeC2 : isVal a = true → Step h b h' b' → Step h (.writeAt f a b) h' (.writeAt f a b')
   | writeField {f : String} {fs : List (String × Nat)} {c : CallCode} {l : Nat}
@@ -942,12 +945,19 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     cases s2 with
     | readC s' => exact (ih s').imp id (congrArg (Tm.readAt _))
     | readField _ _ => exact absurd s obj_no_step
+    | readMissing _ => exact absurd s obj_no_step
   | readField hl he =>
     cases s2 with
     | readC s' => exact absurd s' obj_no_step
     | readField hl' he' =>
       cases Option.some.inj (hl.symm.trans hl')
       exact ⟨rfl, Option.some.inj (he.symm.trans he')⟩
+    | readMissing hm => simp [hl] at hm
+  | readMissing hm =>
+    cases s2 with
+    | readC s' => exact absurd s' obj_no_step
+    | readField hl _ => simp [hm] at hl
+    | readMissing _ => exact ⟨rfl, rfl⟩
   | writeC1 s ih =>
     cases s2 with
     | writeC1 s' => exact (ih s').imp id (congrArg (Tm.writeAt _ · _))
@@ -1142,6 +1152,7 @@ theorem read_step_inv {r : Nat} {c : CallCode} {h h' t} (hs : Step h (.read (.ob
     rw [lookup_value] at hl
     cases hl
     exact ⟨rfl, he⟩
+  | readMissing hm => simp at hm
 
 
 end ExperimentState

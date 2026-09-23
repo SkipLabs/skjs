@@ -318,6 +318,50 @@ def viewT (fs : Fields) : Fam := fun k W v =>
       flds.lookup f = some l ∧ lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → T j W' u
 
+/-- A readonly string index signature constrains every *present* own field.
+The map of locations is finite, while the signature ranges over all strings.
+An absent key has no location and is read as `undefined` by `Step.readMissing`.
+This is a read capability: the actual cell contract may be stricter than `A`.
+The plain-object restriction is the same one used by `recT` and `viewT`. -/
+def dictViewT (A : Fam) : Fam := fun k W v =>
+  ∃ flds : List (String × Nat), v = .objAt flds .absent ∧
+    ∀ (f : String) (l : Nat), flds.lookup f = some l →
+      ∃ c : Ctr k, lookup W l = some c ∧
+        ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → A j W' u
+
+/-- A dictionary's read guarantee is guarded by the world level, including
+when its element type is a recursive graph label. -/
+theorem dictViewT_congr {A B : Fam} {k : Nat} (h : Agree A B k)
+    (W : WorldT k) (v : Val) : dictViewT A k W v ↔ dictViewT B k W v := by
+  constructor <;> rintro ⟨flds, rfl, hf⟩ <;> refine ⟨flds, rfl, ?_⟩
+  · intro f l hl
+    obtain ⟨c, hc, hA⟩ := hf f l hl
+    exact ⟨c, hc, fun j hj W' u hu => (h j hj W' u).mp (hA j hj W' u hu)⟩
+  · intro f l hl
+    obtain ⟨c, hc, hB⟩ := hf f l hl
+    exact ⟨c, hc, fun j hj W' u hu => (h j hj W' u).mpr (hB j hj W' u hu)⟩
+
+/-- A dictionary view supplies a contract for a key only when that key is
+present. Looking up an arbitrary string cannot use this witness alone. -/
+theorem dictViewT_present {A : Fam} {k : Nat} {W : WorldT k}
+    {fs : List (String × Nat)} (hd : dictViewT A k W (.objAt fs .absent))
+    {f : String} {l : Nat} (hl : fs.lookup f = some l) :
+    ∃ c : Ctr k, lookup W l = some c ∧
+      ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → A j W' u := by
+  obtain ⟨fs', heq, hf⟩ := hd
+  cases heq
+  exact hf f l hl
+
+/-- Even a Boolean dictionary admits an empty object. Its missing read is
+`undefined`, which is not Boolean; the indexed-read result must include it. -/
+theorem empty_bool_dict_missing {k : Nat} {W : WorldT k} {h : Heap} {f : String} :
+    dictViewT boolT k W (.objAt [] .absent) ∧
+    Step h (.readAt f (.objAt [] .absent)) h .undef ∧
+    ¬ boolT k W .undef := by
+  refine ⟨⟨[], rfl, ?_⟩, .readMissing (by simp), ?_⟩
+  · intro f' l hl; simp at hl
+  · simp [boolT]
+
 theorem viewT_at {fs : Fields} {f : String} {A : Fam} (hm : (f, A) ∈ fs)
     {k} {W : WorldT k} {v} (h : viewT fs k W v) :
     ∃ (flds : List (String × Nat)) (l : Nat) (c : Ctr k),
@@ -548,6 +592,22 @@ theorem viewT_adm (fs : Fields) : Adm (viewT fs) := by
   · intro n W W' hx v h f T hm
     obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ := h f T hm
     exact ⟨flds, l, c, rfl, hf, WExt_lookup hx hl, hag⟩
+
+theorem dictViewT_adm (A : Fam) : Adm (dictViewT A) := by
+  refine ⟨?_, ?_⟩
+  · intro n W v h
+    obtain ⟨flds, rfl, hf⟩ := h
+    refine ⟨flds, rfl, ?_⟩
+    intro f l hl
+    obtain ⟨c, hc, hag⟩ := hf f l hl
+    exact ⟨_, lookup_trunc (Nat.le_succ n) W l c hc,
+      fun j hj W' u hu => hag j (by omega) W' u hu⟩
+  · intro n W W' hx v h
+    obtain ⟨flds, rfl, hf⟩ := h
+    refine ⟨flds, rfl, ?_⟩
+    intro f l hl
+    obtain ⟨c, hc, hag⟩ := hf f l hl
+    exact ⟨c, WExt_lookup hx hc, hag⟩
 
 theorem iter_adm (F : Fam → Fam) (hF : ∀ T, Adm T → Adm (F T)) : ∀ k, Adm (iter F k)
   | 0 => topF_adm

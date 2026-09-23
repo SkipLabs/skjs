@@ -358,6 +358,9 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
   | readField hl hv =>
     intro D hh ht
     exact ⟨D,.refl D,hh,(hh.lookup hv).2⟩
+  | readMissing _ =>
+    intro D hh ht
+    exact ⟨D,.refl D,hh,by simp [TermOk, Scoped, Names]⟩
   | writeC1 step ih =>
     intro D hh ht
     obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.1,ht.2.1⟩
