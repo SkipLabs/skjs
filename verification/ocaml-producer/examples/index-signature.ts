@@ -15,3 +15,11 @@ function readPossiblyAbsent(x: {
 function makeDictionary(): { readonly [key: string]: boolean } {
   return { ready: true, done: false };
 }
+
+// The key is evaluated at runtime; its value is not a known string singleton.
+function readDynamic(
+  x: { readonly [key: string]: boolean },
+  key: string,
+): boolean | undefined {
+  return x[key];
+}

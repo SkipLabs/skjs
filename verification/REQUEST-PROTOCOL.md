@@ -142,6 +142,7 @@ The encoding follows mechanically from the
 | object with named locations          | `{"objAt":{"fields":[["value",0]],"call":c}}`         | `branchBind` | `{"branchBind":{"yes":T,"no":T}}`             |
 | allocation with ordered initializers | `{"makeAt":{"call":c,"names":["value"],"inits":[t]}}` | `tagBind`    | `{"tagBind":{"test":"isNul","yes":T,"no":T}}` |
 | field read                           | `{"readAt":{"field":"value","a":t}}`                  |              |                                               |
+| computed string-key read             | `{"indexAt":{"a":t,"key":t}}`                          |              |                                               |
 | field write                          | `{"writeAt":{"field":"value","a":t,"b":t}}`           |              |                                               |
 | $\mathsf{test}_k(t)$                 | `{"test":{"k":"isNul","a":t}}`                        |              |                                               |
 | $\mathsf{if}\;t\;t\;t$               | `{"ite":{"c":t,"t":t,"e":t}}`                         |              |                                               |

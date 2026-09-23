@@ -754,6 +754,10 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   | readDict : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix) →
       A ∈ ix → Represents G U .undef →
       HasTy G Γ (.readAt f a) (A ++ U)
+  | indexDict : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix) →
+      HasTy G Γ key K → Represents G K .str →
+      A ∈ ix → Represents G U .undef →
+      HasTy G Γ (.indexAt a key) (A ++ U)
   | write : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs) → (f, A) ∈ fs →
       HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
   /-- Arithmetic needs two operands the number test answers for, and yields
@@ -1143,6 +1147,22 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     apply Safe_mono j (fun k _ X u hu => (meaning_append G A U k X u).mpr
       (hu.elim Or.inl (fun h => Or.inr ((represents_sem hUnd k X u).mpr h)))) V heap _
       (read_dict_rule (meaning_valOnly G A) j V heap hv hok hd)
+  | @indexDict Γ a Ref fs vs ix key K A U ha hr hk hStr hm hUnd iha ihk =>
+    intro n W h ρ he hw hh
+    apply bind (fun v => .indexAt v (instantiate 0 ρ key)) Step.indexC1 n W h _ hw hh
+      (iha n W h ρ he hw hh)
+    intro j hj V hx hv heap av hok hav ha'
+    apply bind (Tm.indexAt av) (Step.indexC2 hav) j V heap _ hv hok
+      (ihk j V heap ρ (he.transfer j hj V hx) hv hok)
+    intro k hk X hy hX heap' kv hok' hkv hk'
+    have ha'' := (meaning_adm G Ref).mono k _ X hy av
+      ((meaning_adm G Ref).down_le j k hk V av ha')
+    obtain ⟨s, rfl⟩ := (represents_sem hStr k X kv).mp hk'
+    have hd := ((represents_sem hr k X av).mp ha'').2.2 A hm
+    obtain ⟨flds, rfl, _⟩ := ((represents_sem hr k X av).mp ha'').1.1
+    apply Safe_mono k (fun i _ Y u hu => (meaning_append G A U i Y u).mpr
+      (hu.elim Or.inl (fun h => Or.inr ((represents_sem hUnd i Y u).mpr h)))) X heap' _
+      (index_dict_rule (meaning_valOnly G A) k X heap' hX hok' hd)
   | @arrLit Γ L T xs hr hreq hbound hpos hx ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]

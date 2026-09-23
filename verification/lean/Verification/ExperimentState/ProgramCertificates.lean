@@ -31,6 +31,7 @@ inductive Rule (ι : Type) where
   | var | nul | undef | tru | fls | truLit | flsLit | numLit | num | strLit | str
   | funE | app | letE | alloc | allocDict | read | readView | write | arith | test
   | readDict (element undef : Ty ι)
+  | indexDict (element undef : Ty ι)
   | arrLit | elem | setElem | len
   | elemOpt (undef : Ty ι)
   | elemAny (undef : Ty ι)
@@ -156,6 +157,13 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
      | _ => False)
   | .readDict A U, .readAt f a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧ Represents G U .undef ∧ j.type = A ++ U ∧
+    (match expand G ja.type with
+     | [.dict _ [] _ ix] => A ∈ ix
+     | _ => False)
+  | .indexDict A U, .indexAt a key, [ja, jk] =>
+    ja.context = j.context ∧ ja.term = a ∧
+    jk.context = j.context ∧ jk.term = key ∧
+    Represents G jk.type .str ∧ Represents G U .undef ∧ j.type = A ++ U ∧
     (match expand G ja.type with
      | [.dict _ [] _ ix] => A ∈ ix
      | _ => False)
@@ -358,7 +366,8 @@ def checkScope (d : Nat) : Tm → Bool
   | .makeAt .absent _ args => checkScopes d args
   | .letE a b => checkScope d a && checkScope (d+1) b
   | .invoke f r args => checkScope d f && checkScope d r && checkScopes d args
-  | .writeAt _ a b | .arith _ a b | .elemAt a b => checkScope d a && checkScope d b
+  | .writeAt _ a b | .arith _ a b | .elemAt a b | .indexAt a b =>
+      checkScope d a && checkScope d b
   | .readAt _ a | .test _ a | .lenOf a | .spread a => checkScope d a
   | .setElem a b c => checkScope d a && checkScope d b && checkScope d c
   | .arrLit args => checkScopes d args
@@ -537,6 +546,17 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     · rename_i fs vs ix he
       subst eq
       exact .readDict ha he hr hUnd
+    · contradiction
+  · rename_i E U a key ja jk
+    rcases hl with ⟨hΓa, hta, hΓk, htk, hStr, hUnd, eq, hr⟩
+    have ha := hp ja (by simp)
+    have hk := hp jk (by simp)
+    rw [hΓa, hta] at ha
+    rw [hΓk, htk] at hk
+    split at hr
+    · rename_i fs vs ix he
+      subst eq
+      exact .indexDict ha he hk hStr hr hUnd
     · contradiction
   · rename_i f a b ja jb
     rcases hl with ⟨hΓa, hta, hΓb, htb, hn, hr⟩
@@ -1159,6 +1179,16 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       (r := .readDict A U) (js := [⟨Γ,a,Ref⟩])
       ⟨rfl,rfl,hUnd,rfl,by simp only [show expand G Ref = [.dict fs [] vs ix] from hr]; exact hm⟩
     simpa using ih
+  | @indexDict Γ a Ref fs vs ix key K A U ha hr hk hStr hm hUnd iha ihk =>
+    apply node_complete (G := G) (j := ⟨Γ, .indexAt a key, A ++ U⟩)
+      (r := .indexDict A U) (js := [⟨Γ,a,Ref⟩, ⟨Γ,key,K⟩])
+      ⟨rfl,rfl,rfl,rfl,hStr,hUnd,rfl,
+        by simp only [show expand G Ref = [.dict fs [] vs ix] from hr]; exact hm⟩
+    intro p hp
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
+    rcases hp with rfl | rfl
+    · exact iha
+    · exact ihk
   | @arrLit Γ L T xs hr hreq hbound hpos hx ih =>
     apply node_complete (G := G) (j := ⟨Γ, .arrLit (xs.map Prod.snd), L⟩) (r := .arrLit)
       (js := xs.map fun p => ⟨Γ, p.2, p.1⟩)

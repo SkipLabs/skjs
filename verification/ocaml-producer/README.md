@@ -520,14 +520,15 @@ must remain binders and arguments on graph edges, rather than becoming global
 names or a finite set of observed instantiations.
 
 The inline readonly string-index slice now verifies parameter and result
-contracts, a named indexed read returning `boolean | undefined`, and a fresh
-two-field dictionary literal through OCaml claims, Lean source lowering and
+contracts, named and computed string-key reads returning `boolean | undefined`,
+and a fresh two-field dictionary literal through OCaml claims, Lean source lowering and
 evidence checking. `invalid-index-signature-read.ts` shows that a missing-key
 read cannot establish plain `boolean` although `tsc --strict` accepts it.
 `invalid-index-signature-construction.ts` confirms that every fresh field must
-meet the index value type. The graph's `dict` clause supports recursive index
-operands, but this slice does not yet import `Json`, combine named fields with
-its index, or evaluate a dynamic key.
+meet the index value type. `invalid-dynamic-index-read.ts` checks the same
+missing-key bound for a computed key; its certificate has a tampering control.
+The graph's `dict` clause supports recursive index operands, but this slice
+does not yet import `Json` or combine named fields with its index.
 
 Implementation checkpoints, in dependency order:
 

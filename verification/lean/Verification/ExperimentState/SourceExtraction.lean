@@ -174,6 +174,7 @@ the program, evaluated after the receiver and before any right side, and its
 expression obligation must establish that claim. -/
 private inductive KeyKind where
   | field (name : String)
+  | dynamic
   | element
 
 private def keyField (fc : SourceClaims.Function) (key : Fragment.Expr) : Compiler KeyKind := do
@@ -182,7 +183,7 @@ private def keyField (fc : SourceClaims.Function) (key : Fragment.Expr) : Compil
   | [.strLit s] =>
     if s == SourceTypes.storeField then throw "the array store is internal, not a source property"
     else pure (.field s)
-  | [.str] => throw "a computed key requires a string singleton or a numeric array-index singleton"
+  | [.str] => pure .dynamic
   | _ =>
     let _ ← arrayIndex (SourceTypes.graph (← table)) K
     pure .element
@@ -228,6 +229,7 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
     let e ← comparisonsExpr fc e
     match ← keyField fc key with
     | .field s => return .index p (some s) e key
+    | .dynamic => return .index p none e key
     | .element => return .elemAt p e key
   | .arrayLit p es => return .arrayLit p (← es.mapM (comparisonsExpr fc))
   | .arrayAssign p targets rhs =>
@@ -251,6 +253,7 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
     let rhs ← comparisonsExpr fc rhs
     match ← keyField fc key with
     | .field s => return .indexWrite p (some s) r key rhs
+    | .dynamic => throw "a dynamic string index write is outside the readonly dictionary fragment"
     | .element => return .elemWrite p r key rhs
   | .withValue p f i ft bt => return .withValue p (← comparisonsExpr fc f) (← comparisonsExpr fc i) ft bt
   | .lambda p receiver tps ps defaults rest result b =>
@@ -946,6 +949,18 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let H := k.type::r.type::Γ
     let read ← readCell G H fld (DirectProof.var H 1 r.type)
     pure (DirectProof.letE Γ r (DirectProof.letE (r.type::Γ) k read))
+  | .index _ none receiver key => do
+    let r ← closureExpr fc scope Γ receiver
+    let k ← closureExpr fc (held ⟨"",some receiver.span⟩ :: scope) (r.type::Γ) key
+    let G := SourceTypes.graph (← table)
+    let [.dict _ [] _ (E :: _)] := PositiveRules.expand G r.type
+      | throw "a dynamic string index requires a dictionary receiver"
+    let [.str] := PositiveRules.expand G k.type
+      | throw "a dynamic dictionary key must have string type"
+    let H := k.type::r.type::Γ
+    let read := DirectProof.node H (.indexAt (.var 1) (.var 0)) (E ++ [3])
+      (.indexDict E [3]) [DirectProof.var H 1 r.type, DirectProof.var H 0 k.type]
+    pure (DirectProof.letE Γ r (DirectProof.letE (r.type::Γ) k read))
   | .indexWrite _ (some fld) receiver key rhs => do
     let B ← exprType fc receiver
     let r ← closureExpr fc scope Γ receiver
@@ -955,7 +970,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let write ← writeCell G H fld B a.type 2
     let done := DirectProof.letE H write (DirectProof.var ([0]::H) 1 a.type)
     pure (DirectProof.letE Γ r (DirectProof.letE (B::Γ) k (DirectProof.letE (k.type::B::Γ) a done)))
-  | .index _ none .. | .indexWrite _ none .. => throw "internal unresolved computed key"
+  | .indexWrite _ none .. => throw "internal unresolved computed key"
   | .arith _ op l r => do
     -- Both operands are checked as numbers by the rule; the result is the
     -- number family, whatever its bits.
@@ -2178,6 +2193,16 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let node ← emitAt e.span (.readAt fld (.var 1)) (.bind drop) (K::B::Γ) A (scope := temporaries)
     let right ← compileExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key node
     compileExpr fc scope Γ receiver right
+  | .index _ none receiver key =>
+    let B ← exprType fc receiver
+    let K ← exprType fc key
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else i+2))⟩
+    let temporaries := held ⟨"",some key.span⟩::held ⟨"",some receiver.span⟩ :: scope
+    let node ← emitAt e.span (.indexAt (.var 1) (.var 0)) (.bind drop) (K::B::Γ) A
+      (scope := temporaries)
+    let right ← compileExpr fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key node
+    compileExpr fc scope Γ receiver right
   | .indexWrite _ (some fld) receiver key rhs =>
     let B ← exprType fc receiver
     let K ← exprType fc key
@@ -2312,7 +2337,7 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     parts.attach.zipIdx.reverse.foldlM (fun next (⟨part,_⟩,i) =>
       compileExpr fc ((parts.take i |>.map fun p => held ⟨"",some p.span⟩).reverse ++ scope)
         ((types.take i).reverse ++ Γ) part next) read
-  | .index _ none .. | .indexWrite _ none .. => throw "internal unresolved computed key"
+  | .indexWrite _ none .. => throw "internal unresolved computed key"
   | .write _ fld receiver rhs =>
     let B ← exprType fc receiver
     let C ← exprType fc rhs

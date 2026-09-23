@@ -272,6 +272,18 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           let ps ← inits.mapM fun a => recur Γ a E
           coerce G pool (.node ⟨Γ,t,R⟩ .allocDict ps) A
         | _ => none
+    | .indexAt a key =>
+      return (A :: pool).findSome? fun R => do
+        let [.dict _ [] _ (E :: _)] := expand G R | none
+        (A :: pool).findSome? fun K => do
+          if expand G K != [.str] then none else do
+          (A :: pool).findSome? fun U => do
+            if expand G U != [.undef] then none else do
+            let B := E ++ U
+            let _ ← subtype G pool B A
+            let ea ← recur Γ a R
+            let ek ← recur Γ key K
+            coerce G pool (.node ⟨Γ,t,B⟩ (.indexDict E U) [ea, ek]) A
     | .readAt f a =>
       let direct := pool.findSome? fun R => do
         -- An invariant field reads at its contract; a view field at its bound.

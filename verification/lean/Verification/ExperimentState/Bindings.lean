@@ -25,7 +25,8 @@ def Scoped (d : Nat) : Tm → Prop
   | .letE a b => Scoped d a ∧ Scoped (d + 1) b
   | .invoke f r args => Scoped d f ∧ Scoped d r ∧ ScopedArgs d args
   | .readAt _ a | .test _ a => Scoped d a
-  | .writeAt _ a b | .arith _ a b | .elemAt a b => Scoped d a ∧ Scoped d b
+  | .writeAt _ a b | .arith _ a b | .elemAt a b | .indexAt a b =>
+      Scoped d a ∧ Scoped d b
   | .ite c a b | .setElem c a b => Scoped d c ∧ Scoped d a ∧ Scoped d b
   | .arrLit args => ScopedArgs d args
   | .lenOf a => Scoped d a
@@ -68,6 +69,7 @@ theorem Scoped.mono {t : Tm} {d e : Nat} (h : Scoped d t) (hde : d ≤ e) :
   case alloc ns args ihargs => exact fun a ha => ihargs a ha (h a ha) hde
   case arrLit args ihargs => exact fun a ha => ihargs a ha (h a ha) hde
   case elemAt a b iha ihb => exact ⟨iha h.1 hde, ihb h.2 hde⟩
+  case index a b iha ihb => exact ⟨iha h.1 hde, ihb h.2 hde⟩
   case setElem a b c iha ihb ihc => exact ⟨iha h.1 hde, ihb h.2.1 hde, ihc h.2.2 hde⟩
   case lenOf a ih => exact ih h hde
   case spread a ih => exact ih h hde
@@ -120,6 +122,7 @@ theorem subst_above {t : Tm} {d j : Nat} (h : Scoped d t) (hj : d ≤ j) (a : Tm
   case lenOf b ih => rw [ih h hj]
   case spread b ih => rw [ih h hj]
   case read f b ih => rw [ih h hj]
+  case index b key ihb ihkey => rw [ihb h.1 hj, ihkey h.2 hj]
   case test k b ih => rw [ih h hj]
   all_goals rfl
 
@@ -181,6 +184,7 @@ theorem subst_scoped {t a : Tm} {d j : Nat} (ht : Scoped (d + 1) t)
     obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
     exact ihargs x hx (ht x hx) hj
   case elemAt b c ihb ihc => exact ⟨ihb ht.1 hj, ihc ht.2 hj⟩
+  case index b c ihb ihc => exact ⟨ihb ht.1 hj, ihc ht.2 hj⟩
   case setElem b c e ihb ihc ihe => exact ⟨ihb ht.1 hj, ihc ht.2.1 hj, ihe ht.2.2 hj⟩
   case lenOf b ih => exact ih ht hj
   case spread b ih => exact ih ht hj
@@ -214,6 +218,7 @@ def instantiate (d : Nat) (ρ : Env) : Tm → Tm
         (instantiateArgs d ρ args)
   | .makeAt .absent ns args => .makeAt .absent ns (instantiateArgs d ρ args)
   | .readAt f a => .readAt f (instantiate d ρ a)
+  | .indexAt a key => .indexAt (instantiate d ρ a) (instantiate d ρ key)
   | .writeAt f a b => .writeAt f (instantiate d ρ a) (instantiate d ρ b)
   | .test k a => .test k (instantiate d ρ a)
   | .ite c a b => .ite (instantiate d ρ c) (instantiate d ρ a) (instantiate d ρ b)
@@ -281,6 +286,7 @@ theorem instantiate_scoped (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (t : Tm) (d
     obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
     exact ihargs x hx d
   case elemAt a b iha ihb => exact ⟨iha _, ihb _⟩
+  case index a b iha ihb => exact ⟨iha _, ihb _⟩
   case setElem a b c iha ihb ihc => exact ⟨iha _, ihb _, ihc _⟩
   case lenOf a ih => exact ih _
   case spread a ih => exact ih _
@@ -355,6 +361,7 @@ theorem instantiate_beta (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (a t : Tm) (d
   case lenOf b ih => rw [ih]
   case spread b ih => rw [ih]
   case read f b ih => rw [ih]
+  case index b key ihb ihkey => rw [ihb, ihkey]
   case test k b ih => rw [ih]
   all_goals rfl
 
@@ -428,6 +435,7 @@ theorem instantiate_above {t : Tm} {d : Nat} (ht : Scoped d t) (ρ : Env) :
       simpa using (List.map_congr_left (g := id) (fun x hx => ihargs x hx (ht x hx)))
     rw [hmap]
   case elemAt a b iha ihb => rw [iha ht.1, ihb ht.2]
+  case index a b iha ihb => rw [iha ht.1, ihb ht.2]
   case setElem a b c iha ihb ihc => rw [iha ht.1, ihb ht.2.1, ihc ht.2.2]
   case lenOf a ih => rw [ih ht]
   case spread a ih => rw [ih ht]

@@ -35,6 +35,7 @@ export type Term =
   | { objAt: { fields: [string, number][]; call: CallCode } }
   | { makeAt: { call: CallCode; names: string[]; inits: Term[] } }
   | { readAt: { field: string; a: Term } }
+  | { indexAt: { a: Term; key: Term } }
   | { writeAt: { field: string; a: Term; b: Term } }
   | { test: { k: Tag; a: Term } }
   | { ite: { c: Term; t: Term; e: Term } }
@@ -154,6 +155,7 @@ export function decodeTerm(value: unknown): Term {
     objAt: ["fields", "call"],
     makeAt: ["call", "names", "inits"],
     readAt: ["field", "a"],
+    indexAt: ["a", "key"],
     writeAt: ["field", "a", "b"],
     test: ["k", "a"],
     ite: ["c", "t", "e"],

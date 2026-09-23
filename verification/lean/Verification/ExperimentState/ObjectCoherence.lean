@@ -73,7 +73,8 @@ def Names (D : Registry) : Tm → Prop
       Names D t ∧ Names D r ∧ NamesArgs D pre ∧ NamesArgs D args
   | .makeAt .absent _ args => NamesArgs D args
   | .invoke f r args => Names D f ∧ Names D r ∧ NamesArgs D args
-  | .letE a b | .writeAt _ a b | .arith _ a b | .elemAt a b => Names D a ∧ Names D b
+  | .letE a b | .writeAt _ a b | .arith _ a b | .elemAt a b
+  | .indexAt a b => Names D a ∧ Names D b
   | .readAt _ a | .test _ a | .lenOf a | .spread a => Names D a
   | .setElem a b c => Names D a ∧ Names D b ∧ Names D c
   | .arrLit args => NamesArgs D args
@@ -167,7 +168,8 @@ def sourceTerm : Tm → Bool
       sourceTerm t && sourceTerm r && sourceArgs pre && sourceArgs args
   | .makeAt .absent _ args => sourceArgs args
   | .invoke f r args => sourceTerm f && sourceTerm r && sourceArgs args
-  | .letE a b | .writeAt _ a b | .arith _ a b | .elemAt a b => sourceTerm a && sourceTerm b
+  | .letE a b | .writeAt _ a b | .arith _ a b | .elemAt a b
+  | .indexAt a b => sourceTerm a && sourceTerm b
   | .readAt _ a | .test _ a | .lenOf a | .spread a => sourceTerm a
   | .setElem a b c => sourceTerm a && sourceTerm b && sourceTerm c
   | .arrLit args => sourceArgs args
@@ -359,6 +361,20 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
     intro D hh ht
     exact ⟨D,.refl D,hh,(hh.lookup hv).2⟩
   | readMissing _ =>
+    intro D hh ht
+    exact ⟨D,.refl D,hh,by simp [TermOk, Scoped, Names]⟩
+  | indexC1 step ih =>
+    intro D hh ht
+    obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.1,ht.2.1⟩
+    exact ⟨E,hx,hh',⟨hs,ht.1.2⟩,hn,ht.2.2.mono hx⟩
+  | indexC2 hv step ih =>
+    intro D hh ht
+    obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2,ht.2.2⟩
+    exact ⟨E,hx,hh',⟨ht.1.1,hs⟩,ht.2.1.mono hx,hn⟩
+  | indexField hl hv =>
+    intro D hh ht
+    exact ⟨D,.refl D,hh,(hh.lookup hv).2⟩
+  | indexMissing _ =>
     intro D hh ht
     exact ⟨D,.refl D,hh,by simp [TermOk, Scoped, Names]⟩
   | writeC1 step ih =>

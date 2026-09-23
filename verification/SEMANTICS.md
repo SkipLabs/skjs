@@ -81,13 +81,15 @@ is not Boolean. An arbitrary indexed read therefore needs a result including
 `undefined`. The positive graph has a `dict` clause whose operands are guarded
 recursive labels, and the checked covering rule can compare dictionary views.
 The source parser and OCaml producer lower inline readonly string-index
-annotations into that clause. A named key read uses the proved `readDict` rule
-and carries `undefined` in its result. This path reaches the same certified
+annotations into that clause. A named key read uses the proved `readDict` rule;
+a computed string key uses `indexAt`, which evaluates the receiver before the
+key and then reads the selected field (or `undefined` if it is absent). The
+proved `indexDict` rule checks the key at `string`. Both reads carry
+`undefined` in their result. This path reaches the same certified
 source acceptance theorem as other expressions. The `allocDict` rule checks
 every initializer at the index element contract and uses the exact fresh
 field map to establish a dictionary view; it cannot retype an existing open
-record. Dynamic keys and imported recursive declarations remain outside the
-source fragment.
+record. Imported recursive declarations remain outside the source fragment.
 
 Term and descriptor equality use explicit structural comparisons, each returning
 a kernel-checked `Decidable` result and recurring only on strict subterms. This

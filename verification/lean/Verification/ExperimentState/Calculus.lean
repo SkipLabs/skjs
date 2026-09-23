@@ -83,6 +83,8 @@ inductive Tm where
   are evaluated; code binds its declared parameter count. -/
   | makeAt (call : CallCode) (names : List String) (inits : List Tm)
   | readAt (field : String) (a : Tm)
+  /-- Evaluate the receiver, then a string key, then read the named property. -/
+  | indexAt (a key : Tm)
   | writeAt (field : String) (a b : Tm)
   | test (k : Tag) (a : Tm)
   | ite (c t e : Tm)
@@ -276,6 +278,10 @@ def tmDecEq (a b : Tm) : Decidable (a = b) := by
   case readAt.readAt a0 a1 b0 b1 =>
     haveI : Decidable (a1 = b1) := tmDecEq a1 b1
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.readAt.injEq])
+  case indexAt.indexAt a0 a1 b0 b1 =>
+    haveI : Decidable (a0 = b0) := tmDecEq a0 b0
+    haveI : Decidable (a1 = b1) := tmDecEq a1 b1
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.indexAt.injEq])
   case writeAt.writeAt a0 a1 a2 b0 b1 b2 =>
     haveI : Decidable (a1 = b1) := tmDecEq a1 b1
     haveI : Decidable (a2 = b2) := tmDecEq a2 b2
@@ -430,6 +436,7 @@ theorem lookup_slots {ns : List String} (hnd : ns.Nodup) {base i : Nat}
       P (.makeAt (.bound t r pre) ns args))
     (alloc : ∀ ns args, (∀ a ∈ args, P a) → P (.makeAt .absent ns args))
     (read : ∀ f a, P a → P (.readAt f a))
+    (index : ∀ a key, P a → P key → P (.indexAt a key))
     (write : ∀ f a b, P a → P b → P (.writeAt f a b))
     (test : ∀ k a, P a → P (.test k a))
     (ite : ∀ c a b, P c → P a → P b → P (.ite c a b))
@@ -445,7 +452,7 @@ theorem lookup_slots {ns : List String} (hnd : ns.Nodup) {base i : Nat}
       | .absent => True | .closure _ b => P b | .variadic _ b => P b
       | .bound t r pre => P t ∧ P r ∧ ∀ a ∈ pre, P a)
     (motive_3 := fun args => ∀ a ∈ args, P a)
-    var invoke letE nul undef tru fls num str ?_ ?_ read write test ite arith arr arrLit elemAt setElem lenOf spread
+    var invoke letE nul undef tru fls num str ?_ ?_ read index write test ite arith arr arrLit elemAt setElem lenOf spread
     True.intro (fun _ _ h => h) (fun _ _ h => h) (fun _ _ _ ht hr hp => ⟨ht, hr, hp⟩) (by simp) (by
       intro a args ha ih v hv
       rcases List.mem_cons.mp hv with rfl | hv
@@ -522,6 +529,7 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
       .makeAt (.bound (subst j a t) (subst j a r) (substArgs j a pre)) ns (substArgs j a xs)
   | .makeAt .absent ns xs => .makeAt .absent ns (substArgs j a xs)
   | .readAt f x => .readAt f (subst j a x)
+  | .indexAt x key => .indexAt (subst j a x) (subst j a key)
   | .writeAt f x y => .writeAt f (subst j a x) (subst j a y)
   | .test k x => .test k (subst j a x)
   | .ite c x y => .ite (subst j a c) (subst j a x) (subst j a y)
@@ -635,6 +643,14 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   /-- JavaScript property lookup produces undefined when the name is absent. -/
   | readMissing {f : String} {fs : List (String × Nat)} {c : CallCode} {h : Heap} :
       fs.lookup f = none → Step h (.readAt f (.objAt fs c)) h .undef
+  | indexC1 : Step h a h' a' → Step h (.indexAt a key) h' (.indexAt a' key)
+  | indexC2 : isVal a = true → Step h key h' key' →
+      Step h (.indexAt a key) h' (.indexAt a key')
+  | indexField {f : String} {fs : List (String × Nat)} {c : CallCode} {l : Nat}
+      {h : Heap} {v : Val} : fs.lookup f = some l → h[l]? = some v →
+      Step h (.indexAt (.objAt fs c) (.str f)) h v
+  | indexMissing {f : String} {fs : List (String × Nat)} {c : CallCode} {h : Heap} :
+      fs.lookup f = none → Step h (.indexAt (.objAt fs c) (.str f)) h .undef
   | writeC1 : Step h a h' a' → Step h (.writeAt f a b) h' (.writeAt f a' b)
   | writeC2 : isVal a = true → Step h b h' b' → Step h (.writeAt f a b) h' (.writeAt f a b')
   | writeField {f : String} {fs : List (String × Nat)} {c : CallCode} {l : Nat}
@@ -958,6 +974,32 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | readC s' => exact absurd s' obj_no_step
     | readField hl _ => simp [hm] at hl
     | readMissing _ => exact ⟨rfl, rfl⟩
+  | indexC1 s ih =>
+    cases s2 with
+    | indexC1 s' => exact (ih s').imp id (congrArg (Tm.indexAt · _))
+    | indexC2 hv _ => exact False.elim (value_no_step hv s)
+    | indexField _ _ => exact absurd s obj_no_step
+    | indexMissing _ => exact absurd s obj_no_step
+  | indexC2 hv s ih =>
+    cases s2 with
+    | indexC1 s' => exact False.elim (value_no_step hv s')
+    | indexC2 _ s' => exact (ih s').imp id (congrArg (Tm.indexAt _ ·))
+    | indexField _ _ => exact False.elim (value_no_step rfl s)
+    | indexMissing _ => exact False.elim (value_no_step rfl s)
+  | indexField hl he =>
+    cases s2 with
+    | indexC1 s' => exact absurd s' obj_no_step
+    | indexC2 _ s' => exact False.elim (value_no_step rfl s')
+    | indexField hl' he' =>
+      cases Option.some.inj (hl.symm.trans hl')
+      exact ⟨rfl, Option.some.inj (he.symm.trans he')⟩
+    | indexMissing hm => simp [hl] at hm
+  | indexMissing hm =>
+    cases s2 with
+    | indexC1 s' => exact absurd s' obj_no_step
+    | indexC2 _ s' => exact False.elim (value_no_step rfl s')
+    | indexField hl _ => simp [hm] at hl
+    | indexMissing _ => exact ⟨rfl, rfl⟩
   | writeC1 s ih =>
     cases s2 with
     | writeC1 s' => exact (ih s').imp id (congrArg (Tm.writeAt _ · _))

@@ -48,8 +48,12 @@ let rec index_type receiver key = match receiver with
             if n >= 0. && n < float_of_int max_int && Float.floor n=n then at (int_of_float n)
             else Atoms [Undef]
           | _ -> combine (Atoms [Undef] :: sequence.required @ sequence.optional_elements @ Option.to_list sequence.rest))
-      | Shape shape -> (match key with Atoms [StrLit name] -> field_type (Atoms [Shape shape]) name
-          | _ -> unsupported "record index requires a string singleton")
+      | Shape shape -> (match key with
+          | Atoms [StrLit name] -> field_type (Atoms [Shape shape]) name
+          | Atoms [Str] -> (match shape.string_index with
+              | Some index -> union index.value (Atoms [Undef])
+              | None -> unsupported "dynamic string index requires a dictionary")
+          | _ -> unsupported "record index requires a string key")
       | _ -> unsupported "indexed read on non-object") atoms)
   | Union ts -> combine (List.map (fun t -> index_type t key) ts)
   | Rigid _ -> unsupported "indexed read on rigid parameter"

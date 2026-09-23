@@ -190,6 +190,38 @@ theorem read_dict_rule {flds : List (String × Nat)} {f : String} {A : Fam}
       | zero => trivial
       | succ q => exact Or.inl ⟨rfl, Or.inr rfl⟩
 
+/-- The same dictionary guarantee when the property name was evaluated at
+runtime. The caller must separately prove that the key is a string. -/
+theorem index_dict_rule {flds : List (String × Nat)} {f : String} {A : Fam}
+    (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap)
+    (hadm : WorldAdm W) (hok : HeapOk n W h)
+    (hd : dictViewT A n W (.objAt flds .absent)) :
+    Safe (unionT A undefT) n W h (.indexAt (.objAt flds .absent) (.str f)) := by
+  cases hlook : flds.lookup f with
+  | some l =>
+    obtain ⟨c, hc, hag⟩ := dictViewT_present hd hlook
+    cases n with
+    | zero => trivial
+    | succ p =>
+      obtain ⟨v, hv, hmem⟩ := hok.2 l c hc
+      have hAv : A p (trunc p (Nat.le_succ p) W) v := hag p (by omega) _ v (hmem p (by omega))
+      refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, v, WExt_refl _,
+        WorldAdm_trunc _ hadm, .indexField hlook hv, HeapOk_trunc p W h hok, ?_⟩
+      cases p with
+      | zero => trivial
+      | succ q => exact Or.inl ⟨hA _ _ _ hAv, Or.inl hAv⟩
+  | none =>
+    cases n with
+    | zero => trivial
+    | succ p =>
+      refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, .undef, WExt_refl _,
+        WorldAdm_trunc _ hadm, .indexMissing hlook, HeapOk_trunc p W h hok, ?_⟩
+      cases p with
+      | zero => trivial
+      | succ q => exact Or.inl ⟨rfl, Or.inr rfl⟩
+
+#print axioms index_dict_rule
+
 /-- **Write.** -/
 theorem write_rule {code : CallCode} {flds : List (String × Nat)} {f : String} {A : Fam}
     (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (l : Nat)

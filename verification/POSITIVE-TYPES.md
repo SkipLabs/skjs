@@ -94,11 +94,11 @@ source operand at a subtype, while retaining the named-field obligations.
 Index operands are guarded through the world, so a recursive graph can contain
 `JsonObject = { readonly [key: string]: Json | null }` without finite unfolding.
 Inline readonly string-index annotations now translate to `dict` for the OCaml
-producer, with a named indexed read checked by the graph's `readDict` rule.
+producer, with a named indexed read checked by the graph's `readDict` rule and
+a computed string-key read checked by `indexDict`.
 Translation of the imported recursive `Json` declaration is a separate source
 closure step. The `allocDict` rule proves a fresh literal's dictionary view
-from every initializer at the index element type. Dynamic-key reads still need
-their own rule.
+from every initializer at the index element type.
 
 A callable intersection concatenates both lists of requirements. Intersecting
 it with `arrs` adds call obligations while retaining its bag invariants.

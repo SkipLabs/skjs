@@ -213,6 +213,7 @@ let returned = "";
 let captured = "";
 let callback = "";
 let inference = "";
+let indexed = "";
 let verifiedFunctions = 0;
 for (const test of cases) {
   const result = check(join(here, "examples", `${test.file}.ts`));
@@ -250,6 +251,7 @@ for (const test of cases) {
   if (test.file === "generic-captured-store") captured = result.artifacts;
   if (test.file === "generic-callback") callback = result.artifacts;
   if (test.file === "generic-inference") inference = result.artifacts;
+  if (test.file === "index-signature") indexed = result.artifacts;
 }
 process.stdout.write(
   `${verifiedFunctions} functions verified; ${cases.filter((c) => c.kind === "negative").length} negative controls; ${cases.filter((c) => c.kind === "gap").length} named gaps\n`,
@@ -311,6 +313,17 @@ const badEvidence = join(good, "bad-evidence.json");
 writeFileSync(badEvidence, "{}");
 invoke(join(good, "claims.json"), badEvidence);
 process.stdout.write("tampered evidence: refused\n");
+
+// The dynamic-key rule is bound to the actual indexed term, not interchangeable
+// with the static-field rule, even when both promise T | undefined.
+{
+  const evidence = readFileSync(join(indexed, "evidence.json"), "utf8");
+  assert.match(evidence, /"indexDict"/);
+  const forged = join(indexed, "forged-static-read.json");
+  writeFileSync(forged, evidence.replaceAll('"indexDict"', '"readDict"'));
+  invoke(join(indexed, "claims.json"), forged, indexed);
+  process.stdout.write("tampered dynamic-key rule: refused\n");
+}
 
 // A graph certificate for the checked Boolean instance cannot validate a
 // narrower first-occurrence proposal after inference has joined both arguments.
