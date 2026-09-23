@@ -11,7 +11,8 @@ import {
   type SkjsClaims,
   type SkjsFunction,
 } from "../tools/skjs-claims.mts";
-import { allocField, atom, binding, claimAt, claimType, entryAt, expr, field, fn, list, must, at as nth, record, rows, sole, stmt, written } from "./edits.mts";
+import { allocField, atom, binding, claimAt, claimType, entryAt, expr, field, fn, list, must, at as nth, record, rows, sole, sourceType, stmt, written } from "./edits.mts";
+import { claimOfTerm } from "../tools/term-claim.mts";
 const __dirname = path.dirname(import.meta.filename);
 const [astPath,claimsPath,fileKey,verifier]=process.argv.slice(2);
 const ast: Ast=JSON.parse(fs.readFileSync(astPath,"utf8"));
@@ -57,8 +58,8 @@ try {
     ["capture claim must match binding",(a,c)=>{at(c,expr(lambda(sf(a),1).body,"read").e).type=lit("true");}],
     ["unbound capture rejected",a=>{expr(expr(lambda(sf(a),1).body,"read").e,"id").name="missing";}],
     ["closure signature cannot narrow",(a,c)=>{atom(claimType(at(c,lambda(sf(a),1))).atoms[0],"function").result=lit("true");}],
-    ["closure annotation checked",a=>{lambda(sf(a),1).result=lit("true");}],
-    ["consistent false closure claim",(a,c)=>{const e=lambda(sf(a),1);e.result=lit("true");atom(claimType(at(c,e)).atoms[0],"function").result=lit("true");at(c,e.body).type=lit("true");}],
+    ["closure annotation checked",a=>{lambda(sf(a),1).result=sourceType(lit("true"));}],
+    ["consistent false closure claim",(a,c)=>{const e=lambda(sf(a),1);e.result=sourceType(lit("true"));atom(claimType(at(c,e)).atoms[0],"function").result=lit("true");at(c,e.body).type=lit("true");}],
     ["wrong call result",(a,c)=>{at(c,stmt(nth(sf(a).body,4),"return").e).type=lit("true");}],
     ["wrong call argument",(a,c)=>{const e=expr(must(call(sf(a)).args[0],"an argument"),"lit");e.lit={a:"booleanlit",v:"true"};at(c,e).type=lit("true");}],
     ["callee claim is checked",(a,c)=>{at(c,call(sf(a)).callee).type=lit("true");}],
@@ -121,7 +122,7 @@ try {
   }
   for (const [name,edit] of rows<[string, (a: FunctionAst, fc: SkjsFunction) => void]>([
     ["missing local statement claim", (a,fc)=>{const p=local(a).pos;fc.envs=fc.envs.filter((q) =>q.pos[0]!==p[0]);}],
-    ["wrong local annotation", a=>{local(a).annot=lit("true");}],
+    ["wrong local annotation", a=>{local(a).annot=sourceType(lit("true"));}],
     ["shadowing local gated", a=>{local(a).name="cell";}],
     ["unjustified local entry", (a,fc)=>{binding(fc,expr(local(a).body,"letBody").pos[0],"saved").type=lit("true");}],
   ])) {
@@ -134,7 +135,7 @@ try {
     ["missing branch entry", (b,fc)=>{fc.envs=fc.envs.filter((q) =>q.pos[0]!==b.then.pos[0]);}],
     ["wrong false-arm refinement", (b,fc)=>{binding(fc,b.else_.pos[0],"flag").type=lit("true");}],
     ["branch cannot narrow parameter", (b,fc)=>{binding(fc,b.then.pos[0],"unit").type=lit("true");}],
-    ["branch result annotation checked", b=>{b.result=lit("false");}],
+    ["branch result annotation checked", b=>{b.result=sourceType(lit("false"));}],
     ["non-Boolean closure condition", b=>{b.cond={k:"lit",pos:b.cond.pos,lit:{a:"null"}};}],
   ])) {
     const a=clone(ast),c=clone(claims);
@@ -197,7 +198,7 @@ try {
     if(r.status!==0)throw Error(`optional closure parameter accepted: ${r.stderr}`);
     const ast: Ast = JSON.parse(r.stdout);
     const params=lambda(fn(ast,"opt"),0).params;
-    const atoms=params[0].type.atoms.map((a:{a:string})=>a.a).sort();
+    const atoms=claimOfTerm(params[0].type).atoms.map((a:{a:string})=>a.a).sort();
     if(JSON.stringify(atoms)!==JSON.stringify(["null","undefined"]))
       throw Error(`optional closure parameter type: ${JSON.stringify(params[0].type)}`);
     passed++;console.log("  optional closure parameter reads its union: OK");

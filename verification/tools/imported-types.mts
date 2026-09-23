@@ -28,7 +28,8 @@ export type Reference = {
   arguments: Span[];
   target: DeclarationIdentity;
 };
-/** A source type equation before translation to the positive graph. */
+/** A source type before translation to the positive graph: a declaration's
+ * equation or a function annotation, read by type-term.mts. */
 export type TypeTerm =
   | { k: "atom"; name: "null" | "undefined" | "boolean" | "number" | "string" | "unknown" | "never" | "void"; span: Span }
   | { k: "literal"; name: "true" | "false" | "string" | "number"; text: string; span: Span }
@@ -44,6 +45,9 @@ export type TypeTerm =
   /** The containing declaration is the implicit receiver of a method signature. */
   | { k: "self"; span: Span }
   | { k: "parameter"; index: number; span: Span }
+  /** A type parameter of an enclosing function, by its spelling: annotations
+   * only. A declaration's own parameters are positional. */
+  | { k: "binder"; name: string; span: Span }
   | { k: "reference"; reference: Reference; args: TypeTerm[]; span: Span };
 export type TypeDefinition = {
   declaration: DeclarationIdentity;

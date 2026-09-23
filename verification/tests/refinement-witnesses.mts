@@ -49,7 +49,7 @@ const strip = (x: unknown): unknown =>
     : x && typeof x === "object"
       ? Object.fromEntries(
           Object.entries(x)
-            .filter(([k]) => !["pos", "namePos"].includes(k))
+            .filter(([k]) => !["pos", "namePos", "span"].includes(k))
             .map(([k, v]) => [k, strip(v)]),
         )
       : x;

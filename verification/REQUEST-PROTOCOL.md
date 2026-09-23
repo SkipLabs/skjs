@@ -928,7 +928,7 @@ and nested callable objects are outside the fragment.
 
 The initialization AST is
 `{"k":"withValue","pos":[start,end],"fn":arrow,"initial":objectLiteral,"functionType":F,"bagType":B}`.
-Here the annotation fields are claim types, not atoms. The parser emits this only
+Here the annotation fields are source type terms, as every annotation is. The parser emits this only
 for standard `Object.assign<F, B>(freshArrow, {value: initializer})`, with no
 shadowed `Object`, extra arguments, spread or accessors. Both explicit type
 arguments and both source expression claims are independently checked before

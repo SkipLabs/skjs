@@ -10,7 +10,7 @@ import type { ClaimType } from "../tools/claim.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import { fileOf, functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
 import { stripTypes } from "../tools/strip-types.mts";
-import { at, claimAt, expr, fn, must, sole, stmt } from "./edits.mts";
+import { at, claimAt, expr, fn, must, sole, sourceType, stmt } from "./edits.mts";
 // Type assertions: the operand's value, retyped at the assertion's own claim,
 // which must follow from the operand. Both producers verify the fixture; the
 // edits show that an assertion never establishes what a guard would, that
@@ -89,7 +89,7 @@ try {
 
   // The annotation binds the operand: `satisfies boolean` on a number fails.
   const mistyped = only(ast, "satisfiedSnapshot");
-  assertionOf(mistyped, "satisfiedSnapshot", 1).annot = { top: false, atoms: [{ a: "boolean" }] };
+  assertionOf(mistyped, "satisfiedSnapshot", 1).annot = sourceType({ top: false, atoms: [{ a: "boolean" }] });
   expect(
     "the annotation is an obligation on the operand",
     run("stateful-source", mistyped, skjsFor(claims, "satisfiedSnapshot")),

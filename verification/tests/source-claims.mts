@@ -13,7 +13,7 @@ import type {
   SourceClaims,
 } from "../tools/source-claims.mts";
 import type { Manifest } from "../report-viewer/types.ts";
-import { atom, expr as exprOf, must, at as nth, sole, stmt, written } from "./edits.mts";
+import { atom, expr as exprOf, must, at as nth, sole, stmt, term, written } from "./edits.mts";
 
 /** The claim a document states for one expression's span. */
 const claimAt = (d: SourceClaims, pos: readonly number[]) =>
@@ -91,10 +91,9 @@ try {
       const parsedAst: Ast=JSON.parse(p.stdout);
       const f=must(parsedAst.functions[0],"the parsed function");
       const declaration=stmt(nth(f.body,0),"const"),cst=sole(declaration),ret=stmt(nth(f.body,1),"return");
-      // The parser writes the second signature under `and` on the first.
-      const annot=must(cst.annot,"the binding's annotation");
-      assert.deepEqual(annot.atoms.map((x) =>x.a),["function"]);
-      assert.equal(must(atom(annot.atoms[0],"function").and,"a second signature").length,1);
+      // The parser writes the two signatures as one intersection.
+      const annot=term(must(cst.annot,"the binding's annotation"),"intersection");
+      assert.deepEqual(annot.parts.map((x) =>x.k),["function","function"]);
       const lambda=exprOf(cst.init,"lambda"),call=exprOf(ret.e,"apply");
       const expressions: ExpressionClaim[]=[{pos:cst.init.pos,type:[4],current:null},{pos:lambda.body.pos,type:bodyType,current:null},
         {pos:ret.e.pos,type:[0],current:null},{pos:call.callee.pos,type:[4],current:null},{pos:must(call.args[0],"an argument").pos,type:[1],current:null}];

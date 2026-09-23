@@ -20,6 +20,7 @@ import {
   at as nth,
   sole,
   stmt,
+  sourceType,
 } from "./edits.mts";
 // Exercise the source consumer using actual parser output and SKJS exports.
 
@@ -73,7 +74,7 @@ try {
   expect("independent source consumer", run("--check-stateful-source", ast, claims, evidence), true);
   const cases: [string, (a: Ast, c: SkjsClaims) => void, string?][] = [
     ["false claim for true initializer", (a,c) => { claimFrom(fn(c), copied(a).init.pos[0]).type = ty("false"); }, "evidence search failed"],
-    ["source annotation independently enforced", a => { copied(a).annot = ty("false"); }, "evidence search failed"],
+    ["source annotation independently enforced", a => { copied(a).annot = sourceType(ty("false")); }, "evidence search failed"],
     ["incoming edge rejects invented refinement", (a,c) => { binding(fn(c), nth(a.functions[0].body, 1).pos[0], "x").type = ty("false"); }, "evidence search failed"],
     ["missing statement environment", (a,c) => { fn(c).envs = []; }, "missing statement environment"],
     ["missing expression claim", (a,c) => { fn(c).exprs = []; }, "no claimed type"],

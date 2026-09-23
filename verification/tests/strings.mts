@@ -7,7 +7,7 @@ import { decodeClaimType, type ClaimType } from "../tools/claim.mts";
 import type { Ast } from "../tools/fragment.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import { fileOf, functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
-import { at, claimAt, fn, stmt } from "./edits.mts";
+import { at, claimAt, fn, sourceType, stmt } from "./edits.mts";
 // Strings in the source fragment: the family, its singletons, the one
 // inclusion between them, and equality with a literal. Both producers verify
 // the fixture; the edits check that nothing wider is admitted and that an
@@ -68,7 +68,7 @@ try {
   expect("the family cannot stand in for a singleton result",
     run("stateful-source", ast, widen), false, "from the source annotation");
   const narrow = clone(ast);
-  fn(narrow, "idString").retType = lit("on");
+  fn(narrow, "idString").retType = sourceType(lit("on"));
   expect("a string result cannot be narrowed to a singleton", run("stateful-source", narrow, claims), false);
 
   // Distinct singletons are unrelated in both directions.

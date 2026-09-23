@@ -819,10 +819,14 @@ declaration directly; an import root names the declaration TypeScript binds the
 imported name to. General ground aliases
 feed the same Lean graph lowering. Admitted identity and mutable-box aliases
 use specialized substitution for ground and rigid applications alike, derived
-from the source equation with no parser-authored alias body. General rigid generic
-applications and function annotations in the older claim-shaped syntax remain
-parallel paths to retire; declaration location itself has no separate type
-meaning in the admitted fragment.
+from the source equation with no parser-authored alias body. Function
+annotations are written in the same source type terms as declaration bodies,
+read by one parser ([type-term.mts](tools/type-term.mts)); a reference in an
+annotation names the declaration TypeScript resolved. Lean converts each
+annotation once, in `ImportedGraph.prepare`, to the claim form the source
+readers take, and a claim-shaped annotation in the source tree is refused.
+Declaration location itself has no separate type meaning in the admitted
+fragment.
 `T extends boolean` is an assumption in `Δ`; returning `x` at `boolean` is
 transport along `SubP`. A generic body may copy `T` through annotated or inferred `const`
 bindings and extra parameters, with bounds to Boolean, an earlier parameter,

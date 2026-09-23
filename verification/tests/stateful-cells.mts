@@ -12,7 +12,7 @@ import type { ClaimType, RecordAtom } from "../tools/claim.mts";
 import type { Span } from "../tools/span.mts";
 import type { SpawnSyncReturns } from "node:child_process";
 import { functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
-import { allocField, at as nth, atom, claimAt, claimType, expr, fn, must, rows, sole, stmt } from "./edits.mts";
+import { allocField, at as nth, atom, claimAt, claimType, expr, fn, must, rows, sole, sourceType, stmt, term } from "./edits.mts";
 
 const [astPath, claimsPath, fileKey, verifier] = process.argv.slice(2);
 const ast: Ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
@@ -71,7 +71,7 @@ try {
   }
   /** The cell's declared contract, which the source states on the binding. */
   const declared = (a: Ast,n: string) =>
-    atom(must(allocation(a,n).annot,"a cell annotation").atoms[0],"record");
+    term(must(allocation(a,n).annot,"a cell annotation"),"object");
   const written = (a: Ast,n: string,i: number) =>
     expr(stmt(nth(source(a,n).body,i),"effect").e,"write");
   const cases: [string, (a: Ast, c: SkjsClaims) => void][] = [
@@ -85,7 +85,7 @@ try {
     ["assignment result is checked",(a,c)=>{claim(c,"assignmentResult",stmt(nth(source(a,"assignmentResult").body,1),"return").e).type=lit("true");}],
     ["post-write read cannot invent refinement",(a,c)=>{claim(c,"aliasWrite",stmt(nth(source(a,"aliasWrite").body,3),"return").e).type=lit("true");}],
     ["setter cannot be forgotten",(a,c)=>{atom(at(c,"aliasWrite",allocation(a,"aliasWrite").init).atoms[0],"record").fields[0].write={top:false,atoms:[]};}],
-    ["source cell annotation is enforced",a=>{declared(a,"aliasWrite").fields[0].read=lit("true");declared(a,"aliasWrite").fields[0].write=lit("true");}],
+    ["source cell annotation is enforced",a=>{const f=must(declared(a,"aliasWrite").fields[0],"a field");f.type=sourceType(lit("true"));f.readonly=false;}],
     ["nested assignment claim is checked",(a,c)=>{claim(c,"nestedWrite",written(a,"nestedWrite",1).rhs).type=lit("true");}],
   ];
   for(const [name,edit] of cases) {

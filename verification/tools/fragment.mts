@@ -2,9 +2,10 @@
  * abstract syntax tree. Mirrors Fragment.lean, whose decoders read exactly these
  * shapes. They are structural on purpose: this is a wire format, and its field
  * names are the contract. The parser that produces a tree is fragment-parse.mts.
+ * Every annotation is a source type term, the language of declaration bodies.
  */
-import type { ClaimType, Atom } from "./claim.mts";
-import type { ImportDocument } from "./imported-types.mts";
+import type { Atom } from "./claim.mts";
+import type { ImportDocument, TypeTerm } from "./imported-types.mts";
 import type { Span } from "./span.mts";
 
 export type ArithOp = "add" | "sub" | "mul" | "div";
@@ -21,7 +22,7 @@ export type Expr =
       k: "cast";
       pos: Span;
       cast: "as" | "satisfies" | "nonNull";
-      annot: ClaimType | null;
+      annot: TypeTerm | null;
       e: Expr;
     }
   /* An object literal: one named field per initializer, in source order. */
@@ -74,8 +75,8 @@ export type Expr =
       pos: Span;
       fn: Expr;
       initial: Expr;
-      functionType: ClaimType;
-      bagType: ClaimType;
+      functionType: TypeTerm;
+      bagType: TypeTerm;
     }
   | { k: "functionTest"; pos: Span; equal: boolean; e: Expr }
   /* `spreads` are the indices of the arguments written with `...`: each
@@ -115,14 +116,14 @@ export type Expr =
          `rest` parameter's type is the array its arguments are collected into:
          a tuple, whose required elements are positions of the signature, or a
          `T[]`, which collects any number of them. */
-      params: { name: string; type: ClaimType; default?: Expr; rest?: true }[];
+      params: { name: string; type: TypeTerm; default?: Expr; rest?: true }[];
       /* An arrow has none. An ordinary function expression binds the
          receiver of each call: `type` is its `this` annotation, `unknown`
          where it states none, and `strict` records that the code is strict
          (a module or a "use strict" directive), which the receiver rule
          assumes. */
-      receiver: { type: ClaimType; strict: boolean } | null;
-      result: ClaimType;
+      receiver: { type: TypeTerm; strict: boolean } | null;
+      result: TypeTerm;
       body: Expr;
     }
   /* A block-bodied closure, lowered to nested expressions: the calculus has no
@@ -135,14 +136,14 @@ export type Expr =
       k: "letBody";
       pos: Span;
       name: string;
-      annot: ClaimType | null;
+      annot: TypeTerm | null;
       init: Expr;
       body: Expr;
     }
   | {
       k: "ifBody";
       pos: Span;
-      result: ClaimType;
+      result: TypeTerm;
       cond: Expr;
       then: Expr;
       else_: Expr;
@@ -192,21 +193,21 @@ export interface PatternPropAst {
 export interface BindingAst {
   name: string;
   namePos: Span;
-  annot: ClaimType | null;
+  annot: TypeTerm | null;
   init: Expr;
 }
 
 export interface TypeParamAst {
   name: string;
-  bound: ClaimType | null;
+  bound: TypeTerm | null;
 }
 
 export interface FunctionAst {
   name: string;
   namePos: Span;
   typeParams: TypeParamAst[];
-  params: { name: string; pos: Span; type: ClaimType; rest?: true }[];
-  retType: ClaimType;
+  params: { name: string; pos: Span; type: TypeTerm; rest?: true }[];
+  retType: TypeTerm;
   body: Stmt[];
 }
 

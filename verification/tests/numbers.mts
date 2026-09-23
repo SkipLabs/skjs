@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import { decodeClaimType, type ClaimType } from "../tools/claim.mts";
 import type { Ast } from "../tools/fragment.mts";
 import { fileOf, functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
-import { fn } from "./edits.mts";
+import { fn, sourceType } from "./edits.mts";
 // Numbers in the source fragment: the family, its singletons, and the one
 // inclusion between them. Mutations check that nothing wider is admitted.
 
@@ -66,7 +66,7 @@ try {
     run(ast, widen), false, "from the source annotation");
 
   const narrow = clone(ast);
-  fn(narrow, "idNumber").retType = one;
+  fn(narrow, "idNumber").retType = sourceType(one);
   expect("a number result cannot be narrowed to a singleton",
     run(narrow, claims), false);
 
@@ -86,7 +86,7 @@ try {
 
   // Dropping null from the declared parameter is not something the guard grants.
   const dropNull = clone(ast);
-  fn(dropNull, "guardNumber").params[0].type = number;
+  fn(dropNull, "guardNumber").params[0].type = sourceType(number);
   expect("the guarded parameter keeps its null arm", run(dropNull, claims), false);
 
   console.log(`Numbers: ${passed} passed`);

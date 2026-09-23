@@ -7,7 +7,8 @@ import { resolve } from "node:path";
 import { parseFile, definedClassCallables, close as closeParser } from "../tools/fragment-parse.mts";
 import { collectDeclarations, importTargets, tsconfigOf } from "../tools/declaration-graph.mts";
 import type { ImportDocument } from "../tools/imported-types.mts";
-import { spawnSync } from "node:child_process";
+import type { Ast } from "../tools/fragment.mts";
+import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { check, verifier } from "./check.mts";
 import { cases } from "./cases.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
@@ -103,9 +104,13 @@ for (const [file, expected] of [
   const nest = jsonAst.functions[0];
   const lookup = jsonAst.functions[1];
   assert(nest && lookup);
-  assert.deepEqual(nest.params[0]?.type.atoms[0], { a: "alias", name: "Json", args: [] });
-  assert.deepEqual(lookup.params[0]?.type.atoms[0], { a: "alias", name: "JsonObject", args: [] });
-  assert(lookup.retType.atoms.some(atom => atom.a === "alias" && atom.name === "Json"));
+  // Annotations name the declarations TypeScript resolved.
+  const nestParam = nest.params[0]?.type;
+  assert(nestParam?.k === "reference" && nestParam.reference.name === "Json" && !nestParam.args.length);
+  const lookupParam = lookup.params[0]?.type;
+  assert(lookupParam?.k === "reference" && lookupParam.reference.name === "JsonObject");
+  const lookupResult = lookup.retType.k === "union" ? lookup.retType.parts : [lookup.retType];
+  assert(lookupResult.some(t => t.k === "reference" && t.reference.name === "Json"));
   const checkedJson = check(jsonPath, upstreamConfig);
   recursiveJson = checkedJson.artifacts;
   assert.equal(checkedJson.status, "verified", JSON.stringify(checkedJson));
@@ -250,8 +255,9 @@ for (const [file, expected] of [
     'import type { A } from "@fixture/a";\n' +
     'export function keep(value: A<boolean>): A<boolean> { return value; }\n');
   const genericAst = parseFile(genericClient, false, pairConfig);
-  assert.deepEqual(genericAst.functions[0]?.params[0]?.type.atoms[0],
-    { a: "alias", name: "A", args: [{ top: false, atoms: [{ a: "boolean" }] }] });
+  const genericParam = genericAst.functions[0]?.params[0]?.type;
+  assert(genericParam?.k === "reference" && genericParam.reference.name === "A" &&
+    genericParam.args[0]?.k === "atom" && genericParam.args[0].name === "boolean");
   const recursiveGeneric = check(genericClient, pairConfig);
   assert.equal(recursiveGeneric.status, "unsupported", JSON.stringify(recursiveGeneric));
   assert.equal(recursiveGeneric.phase, "proposal");
@@ -380,7 +386,7 @@ for (const [file, expected] of [
     'import type { Both } from "@fixture/box";\n',
     "export function readBoth(x: Both): number { return x.b; }\n");
   assert.equal(recordMeet.status, "unsupported", JSON.stringify(recordMeet));
-  assert.match(recordMeet.detail, /declaration intersection needs source graph conjunction/);
+  assert.match(recordMeet.detail, /intersection needs source graph conjunction/);
   const badInheritedClient = join(pairDir, "bad-inherited-client.ts");
   writeFileSync(badInheritedClient,
     'import type { GenericDerived } from "@fixture/box";\n' +
@@ -470,7 +476,7 @@ for (const [file, expected] of [
   assert.equal(rejectedPair.phase, "search");
   // Forms the fragment cannot state are refused where the graph reaches them.
   for (const [name, refusal] of [
-    ["NamedPair", /named tuple position in box.ts#NamedPair/],
+    ["NamedPair", /named tuple members are outside the fragment in box.ts#NamedPair/],
     ["NestedMethod", /unsupported method signature in box.ts#NestedMethod/],
     ["GenericMethod", /unsupported method signature in box.ts#GenericMethod/],
     ["GenericCall", /generic or incomplete call signature in box.ts#GenericCall/],
@@ -556,7 +562,7 @@ for (const [file, expected] of [
   writeFileSync(join(pairDir, "conditional.ts"),
     "export type Conditional<T> = T extends boolean ? number : string;");
   assert.throws(() => graphOf("import type { Conditional } from './conditional.js';"),
-    /unsupported type syntax ConditionalType/);
+    /type outside the fragment \(ConditionalType\) in conditional.ts#Conditional/);
   // A second global declaration merges with the first: no single equation.
   writeFileSync(join(pairDir, "other-global.d.ts"), "interface GlobalBox { readonly other: number; }\n");
   assert.throws(() => parseFile(boxClient, false, pairConfig),
@@ -653,16 +659,22 @@ assert.ok("file" in fragment && typeof fragment.file === "string");
   assert.ok("functions" in forged && Array.isArray(forged.functions));
   const first: unknown = forged.functions[0];
   assert.ok(first && typeof first === "object" && "retType" in first);
-  first.retType = { top: false, atoms: [{ a: "graph", label: 4 }] };
   const ast = join(good, "raw-graph-conversion.json");
   const claims = join(good, "empty-native-claims.json");
-  writeFileSync(ast, JSON.stringify(forged));
   writeFileSync(claims, "[]");
-  const converted = spawnSync(verifier,
-    ["--export-source-claims", ast, claims, fragment.file], { encoding: "utf8" });
-  assert.equal(converted.status, 1);
-  assert.match(converted.stderr, /source cannot state an internal graph label/);
-  process.stdout.write("raw graph label at native conversion: refused\n");
+  // The source states type terms: neither a graph label nor a claim.
+  for (const [retType, refusal] of [
+    [{ a: "graph", label: 4 }, /source cannot state an internal graph label/],
+    [{ top: false, atoms: [{ a: "boolean" }] }, /a source annotation is a type term, not a claim/],
+  ] as const) {
+    Object.assign(first, { retType });
+    writeFileSync(ast, JSON.stringify(forged));
+    const converted: SpawnSyncReturns<string> = spawnSync(verifier,
+      ["--export-source-claims", ast, claims, fragment.file], { encoding: "utf8" });
+    assert.equal(converted.status, 1);
+    assert.match(converted.stderr, refusal);
+  }
+  process.stdout.write("raw graph label and claim-shaped annotation at native conversion: refused\n");
 }
 const forgedImport = join(good, "forged-import.json");
 writeFileSync(forgedImport, JSON.stringify({ ...fragment,
@@ -681,11 +693,13 @@ process.stdout.write("forged import closure: refused\n");
   process.stdout.write("producer-authored imported equation: refused\n");
 }
 {
-  const ast = readFileSync(join(recursiveJson, "fragment.json"), "utf8");
-  const original = '{"a":"alias","name":"Json","args":[]}';
-  assert.ok(ast.includes(original));
+  const ast: Ast = JSON.parse(readFileSync(join(recursiveJson, "fragment.json"), "utf8"));
+  const parameter = ast.functions[0]?.params[0];
+  assert.ok(parameter?.type.k === "reference" && parameter.type.reference.name === "Json");
+  const labelled: unknown = { a: "graph", label: 4 };
+  Object.assign(parameter, { type: labelled });
   const forged = join(recursiveJson, "forged-internal-label.json");
-  writeFileSync(forged, ast.replace(original, '{"a":"graph","label":4}'));
+  writeFileSync(forged, JSON.stringify(ast));
   assert.match(invoke(join(recursiveJson, "claims.json"),
     join(recursiveJson, "evidence.json"), recursiveJson, forged),
     /source cannot state an internal graph label/);

@@ -559,9 +559,9 @@ the graph. Errors elsewhere in those files are not the graph's: the snapshot's
 core barrel has errors for modules it omits, none of them on the `Json` route.
 A synthetic global interface verifies end to end. TypeScript reads the declarations it resolves once, and
 the equations are parsed from its own trees; the parser only checks that
-TypeScript read the same client bytes it parsed. The parser represents imported references in
-function annotations as alias atoms whose local spellings resolve through the
-declaration-identified roots. Exported source functions are accepted as strict
+TypeScript read the same client bytes it parsed. Function annotations are
+source type terms like declaration bodies, and a reference in one names the
+declaration TypeScript resolved; the producer decodes both with one decoder. Exported source functions are accepted as strict
 module code. With that project, both `nest` and `lookup` in
 [`recursive-json.ts`](examples/recursive-json.ts) now reach Lean evidence
 production and checking and verify. In
@@ -619,9 +619,8 @@ OCaml encoder expands the same application from the same definition. So
 wrong result fails with the same generic obligation, whether the declaration
 is local or imported; `test.mts` compares the two outcomes. A record over a
 rigid binder (`{ readonly value: T }`) stays outside the rigid checker for both.
-Bounded declarations and recursive applications over a binder refuse. The
-older claim-shaped syntax for function annotations remains migration work;
-declaration location is no longer a separate type meaning.
+Bounded declarations and recursive applications over a binder refuse.
+Declaration location is no longer a separate type meaning.
 
 The present source checker recognizes `boolean`, an earlier rigid parameter,
 and a non-generic imported graph node as bounds. This is a translation gap,

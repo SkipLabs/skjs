@@ -7,6 +7,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fromSkjs, verifySkjs } from "../tools/annotate-source.mts";
 import { decodeClaimType, type ClaimType } from "../tools/claim.mts";
+import { claimOfTerm } from "../tools/term-claim.mts";
 import type { Ast, FunctionAst } from "../tools/fragment.mts";
 import {
   fileOf,
@@ -21,6 +22,7 @@ import {
   at as nth,
   sole,
   stmt,
+  sourceType,
 } from "./edits.mts";
 // Source extraction of generic bodies that copy T through const and fst.
 
@@ -64,9 +66,7 @@ try {
   const bind = functionIn(ast, "bind");
   const fst = functionIn(ast, "fst");
   const bound = sole(stmt(nth(bind.body, 0), "const"));
-  decodeClaimType(must(bind.params[0], "a parameter").type);
-  decodeClaimType(must(bound.annot, "the binding's annotation"));
-  if (JSON.stringify(bound.annot) !== JSON.stringify(t))
+  if (JSON.stringify(claimOfTerm(must(bound.annot, "the binding's annotation"))) !== JSON.stringify(t))
     throw Error("bind const should be annotated T");
   if (fst.params.length !== 2) throw Error("fst should have two parameters");
   const exported = fileOf(claims, fileKey).functions;
@@ -120,17 +120,17 @@ try {
     must(f.typeParams[1], "a type parameter").bound = null;
   }), false, "generic binding annotation at");
   expect("dependent inclusion cannot be reversed", mutate("upper", f => {
-    must(f.params[0], "a parameter").type = t;
-    sole(stmt(nth(f.body, 0), "const")).annot = { top: false, atoms: [{ a: "param", name: "U" }] };
+    must(f.params[0], "a parameter").type = sourceType(t);
+    sole(stmt(nth(f.body, 0), "const")).annot = sourceType({ top: false, atoms: [{ a: "param", name: "U" }] });
   }), false, "cannot establish T ≤ U");
   expect("a widened const cannot recover the narrower parameter", mutate("upper", f => {
-    f.retType = { top: false, atoms: [{ a: "param", name: "U" }] };
+    f.retType = sourceType({ top: false, atoms: [{ a: "param", name: "U" }] });
   }), false, "cannot establish");
   expect("a broken transitive bound chain cannot reach boolean", mutate("boundChain", f => {
     must(f.typeParams[1], "a type parameter").bound = null;
   }), false, "cannot establish");
   expect("forward and cyclic bounds are refused", mutate("boundChain", f => {
-    must(f.typeParams[0], "a type parameter").bound = { top: false, atoms: [{ a: "param", name: "V" }] };
+    must(f.typeParams[0], "a type parameter").bound = sourceType({ top: false, atoms: [{ a: "param", name: "V" }] });
   }), false, "bound must name an earlier parameter");
   expect("duplicate type parameters are refused", mutate("second", f => {
     must(f.typeParams[1], "a type parameter").name = "T";

@@ -6,7 +6,9 @@ The producer reserves one empty row per nullary declaration and may refer to
 those labels in its candidate rows. This module fills them from source
 equations. Finite ground applications of generic declarations are interned
 from their substituted equations; recursive generic applications are refused
-until they have application-indexed memo rows. -/
+until they have application-indexed memo rows. Function annotations are written
+in the same source terms, and `prepare` converts each to the claim form the
+source readers take. -/
 namespace Verification.Model.ImportedGraph
 open Lean PositiveNormalization PositiveRules
 
@@ -55,6 +57,16 @@ private def referenceIndex (ds : Array Definition) (term : Json) : Except String
 
 private abbrev Lowering := StateT SourceTypes.Table (Except String)
 
+/-- A literal type as the claim atom of its value. -/
+private def literalAtom (term : Json) : Except String Json := do
+  CellClaims.fieldsExactly term ["k", "name", "text", "span"]
+  match ← str term "name" with
+  | "true" => return Json.mkObj [("a", toJson "booleanlit"), ("v", toJson "true")]
+  | "false" => return Json.mkObj [("a", toJson "booleanlit"), ("v", toJson "false")]
+  | "number" => return Json.mkObj [("a", toJson "numberlit"), ("v", ← field term "text")]
+  | "string" => return Json.mkObj [("a", toJson "stringlit"), ("v", ← field term "text")]
+  | _ => throw "unsupported source literal"
+
 private def use (clause : Clause (List Nat)) : Lowering Nat := SourceTypes.use clause
 
 private partial def hasRigidParameter : Json → Bool
@@ -95,15 +107,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     | "never" => return []
     | _ => throw "unsupported imported primitive"
   | "literal" =>
-    CellClaims.fieldsExactly term ["k", "name", "text", "span"]
-    -- The same literal rules as an annotation's literal atom.
-    let atom ← match ← str term "name" with
-      | "true" => pure (Json.mkObj [("a", toJson "booleanlit"), ("v", toJson "true")])
-      | "false" => pure (Json.mkObj [("a", toJson "booleanlit"), ("v", toJson "false")])
-      | "number" => pure (Json.mkObj [("a", toJson "numberlit"), ("v", ← field term "text")])
-      | "string" => pure (Json.mkObj [("a", toJson "stringlit"), ("v", ← field term "text")])
-      | _ => throw "unsupported declaration literal"
-    Fragment.translate (Json.mkObj [("top", toJson false), ("atoms", toJson [atom])])
+    Fragment.translate (Json.mkObj [("top", toJson false), ("atoms", toJson [← literalAtom term])])
   | "union" =>
     let parts ← arr term "parts"
     let arms ← parts.mapM (lowerType ds owner params seen)
@@ -409,54 +413,135 @@ private partial def expandApplication (ds : Array Definition) (i : Nat)
   rigidClaim ds i values (i :: seen) d.expression
 end
 
-private partial def rewrite (ds : Array Definition) (roots : Array (String × Nat))
-    (j : Json) : Lowering Json := do
-  match j with
-  | .arr values => return .arr (← values.mapM (rewrite ds roots))
-  | .obj fields =>
-    if (j.getObjVal? "a").toOption == some (.str "graph") then
-      throw "source cannot state an internal graph label"
-    -- A claim type: an application over a rigid binder expands to a claim
-    -- type, which may contribute several atoms, or top.
-    if let (.ok (.bool false), .ok (.arr atoms)) := (j.getObjVal? "top", j.getObjVal? "atoms") then
-      let mut out : List Json := []
-      for atom in atoms do
-        match ← rewriteAtom ds roots atom with
-        | .inl atom => out := out ++ [atom]
-        | .inr claim =>
-          if isTopClaim claim then return topClaim
-          out := out ++ claimAtoms claim
-      return claimType out
-    let pairs ← fields.toArray.mapM fun (name, value) => do
-      return (name, ← rewrite ds roots value)
-    return Json.mkObj pairs.toList
-  | _ => return j
-where
-  /-- A declaration application becomes one graph atom when its arguments are
-  ground, or the claim type of its expanded equation when one mentions a
-  rigid binder. Any other atom is rewritten structurally. -/
-  rewriteAtom (ds : Array Definition) (roots : Array (String × Nat)) (atom : Json) :
-      Lowering (Json ⊕ Json) := do
-    if (atom.getObjVal? "a").toOption != some (.str "alias") then
-      return .inl (← rewrite ds roots atom)
-    let name ← str atom "name"
-    let some (_, index) := roots.toList.find? (fun p => p.1 == name)
-      | throw s!"unknown type alias '{name}'"
-    let args ← (← arr atom "args").mapM (rewrite ds roots)
-    if args.any hasRigidParameter then
-      return .inr (← expandApplication ds index args [])
+private def arrayClaim (required optional : List Json) (rest : Json) (readonly : Bool) : Json :=
+  claimType [Json.mkObj [("a", toJson "array"), ("required", toJson required),
+    ("optional", toJson optional), ("rest", rest), ("readonly", toJson readonly)]]
+
+/-- The source states no claim: neither a claim-shaped type nor an internal
+graph label. -/
+private def sourceObject (j : Json) : Except String Unit := do
+  if (j.getObjVal? "a").toOption == some (.str "graph") then
+    throw "source cannot state an internal graph label"
+  if (j.getObjVal? "atoms").isOk then
+    throw "a source annotation is a type term, not a claim"
+
+/-- A source annotation as the claim form the source readers take. The terms
+are the ones declaration bodies use; a reference resolves to the declaration
+TypeScript named, by identity. A ground application is its graph labels, and
+one over an enclosing function's binder is its expanded equation. -/
+private partial def annotationClaim (ds : Array Definition) (term : Json) : Lowering Json := do
+  let recur := annotationClaim ds
+  sourceObject term
+  match ← str term "k" with
+  | "atom" =>
+    CellClaims.fieldsExactly term ["k", "name", "span"]
+    match ← str term "name" with
+    | "unknown" => return topClaim
+    | "never" => return claimType []
+    | name =>
+      if ["null", "undefined", "boolean", "number", "string", "void"].contains name then
+        return claimType [Json.mkObj [("a", toJson name)]]
+      throw s!"unsupported source atom {name}"
+  | "literal" => return claimType [← literalAtom term]
+  | "union" =>
+    CellClaims.fieldsExactly term ["k", "parts", "span"]
+    let parts ← (← arr term "parts").mapM recur
+    if parts.any isTopClaim then return topClaim
+    return claimType (parts.toList.flatMap claimAtoms).eraseDups
+  | "intersection" =>
+    -- Conjunction exists only inside a record or function atom.
+    CellClaims.fieldsExactly term ["k", "parts", "span"]
+    let parts ← (← arr term "parts").mapM recur
+    let atoms ← parts.toList.mapM fun part => do
+      match isTopClaim part, claimAtoms part with
+      | false, [atom] => pure atom
+      | _, _ => throw "an intersection operand must be a single type"
+    let some head := atoms.head? | throw "empty intersection"
+    let shape := (head.getObjVal? "a").toOption
+    if atoms.any (fun atom => (atom.getObjVal? "a").toOption != shape) then
+      throw "intersection operands must have the same shape"
+    if shape != some (.str "record") && shape != some (.str "function") then
+      throw "an intersection of anything but records or functions is outside the fragment"
+    return claimType [head.setObjVal! "and" (toJson atoms.tail)]
+  | "array" =>
+    CellClaims.fieldsExactly term ["k", "readonly", "element", "span"]
+    return arrayClaim [] [] (← recur (← field term "element")) (← bool term "readonly")
+  | "tuple" =>
+    CellClaims.fieldsExactly term ["k", "readonly", "required", "optional", "rest", "span"]
+    let restTerm ← field term "rest"
+    let rest ← if restTerm == .null then pure Json.null else recur restTerm
+    return arrayClaim (← (← arr term "required").mapM recur).toList
+      (← (← arr term "optional").mapM recur).toList rest (← bool term "readonly")
+  | "function" =>
+    CellClaims.fieldsExactly term ["k", "receiver", "params", "rest", "result", "span"]
+    let recv ← field term "receiver"
+    let receiver ← if recv == .null then pure topClaim else recur recv
+    let params ← (← arr term "params").mapM recur
+    let restTerm ← field term "rest"
+    let rest ← if restTerm == .null then pure [] else pure [("rest", ← recur restTerm)]
+    return claimType [Json.mkObj ([("a", toJson "function"), ("this", receiver),
+      ("params", toJson params)] ++ rest ++ [("result", ← recur (← field term "result")),
+      ("construct", toJson "unknown"), ("array", toJson "unknown")])]
+  | "object" =>
+    CellClaims.fieldsExactly term ["k", "fields", "stringIndex", "calls", "span"]
+    if !(← arr term "calls").isEmpty then
+      throw "a call signature in a source annotation is outside the fragment"
+    let fields ← (← arr term "fields").mapM fun f => do
+      CellClaims.fieldsExactly f ["name", "optional", "readonly", "type", "span"]
+      if ← bool f "optional" then throw "an optional field needs presence semantics"
+      let value ← recur (← field f "type")
+      let write := if ← bool f "readonly" then claimType [] else value
+      return Json.mkObj [("name", ← field f "name"), ("optional", toJson false),
+        ("read", value), ("write", write)]
+    let index ← field term "stringIndex"
+    if fields.isEmpty && index == .null then throw "a record with no field has no location"
+    let signature ← if index == .null then pure [] else do
+      CellClaims.fieldsExactly index ["readonly", "value", "span"]
+      if !(← bool index "readonly") then throw "expected a readonly string index signature"
+      pure [("indexSignature", Json.mkObj [("read", ← recur (← field index "value")),
+        ("write", claimType [])])]
+    return claimType [Json.mkObj ([("a", toJson "record"), ("fields", toJson fields),
+      ("indexes", Json.mkObj [("string", toJson "absent"), ("number", toJson "absent"),
+        ("symbol", toJson "absent")])] ++ signature ++
+      [("call", toJson "unknown"), ("construct", toJson "unknown"), ("array", toJson "unknown")])]
+  | "binder" =>
+    CellClaims.fieldsExactly term ["k", "name", "span"]
+    return claimType [Json.mkObj [("a", toJson "param"), ("name", ← field term "name")]]
+  | "reference" =>
+    let index ← referenceIndex ds term
+    let args ← (← arr term "args").mapM recur
+    -- An application over a rigid binder is its expanded equation; a ground
+    -- one is its graph labels, so `Id<boolean>` is exactly `[1, 2]`, the
+    -- type a producer claims, not a new row with the same meaning.
+    if args.any hasRigidParameter then return ← expandApplication ds index args []
     if ds[index]!.parameters.isEmpty then
-      if !args.isEmpty then throw "imported type application has wrong arity"
-      return .inl (Json.mkObj [("a", toJson "graph"), ("label", toJson (rowIndex ds index))])
+      if !args.isEmpty then throw "type application has wrong arity"
+      return graphClaim [rowIndex ds index]
     let values ← args.mapM Fragment.translate
     let values ← lowerApplication ds index values []
     let labels ← if ds[index]!.bases.isEmpty then
         lowerType ds index values [index] ds[index]!.expression
       else (← lowerDefinitionRows ds index values [index]).mapM use
-    -- A union result keeps its labels: `Id<boolean>` is exactly `[1, 2]`, the
-    -- type a producer claims, not a new row with the same meaning.
-    if labels.isEmpty then throw "generic imported application has no inhabited graph clause"
-    return .inr (graphClaim labels)
+    if labels.isEmpty then throw "generic application has no inhabited graph clause"
+    return graphClaim labels
+  | k => throw s!"declaration syntax '{k}' in a source annotation"
+
+/-- The fields of the Fragment AST that hold a source annotation. -/
+private def annotationFields : List String :=
+  ["annot", "functionType", "bagType", "type", "result", "bound", "retType"]
+
+/-- Every annotation of the function tree in claim form. -/
+private partial def rewrite (ds : Array Definition) (j : Json) : Lowering Json := do
+  match j with
+  | .arr values => return .arr (← values.mapM (rewrite ds))
+  | .obj fields =>
+    sourceObject j
+    let pairs ← fields.toArray.mapM fun (name, value) => do
+      if annotationFields.contains name && value != .null then
+        return (name, ← annotationClaim ds value)
+      return (name, ← rewrite ds value)
+    return Json.mkObj pairs.toList
+  | _ => return j
 
 /-- Replace only the producer's empty reserved rows with equations derived
 from source declarations. The AST copy contains internal graph atoms only after
@@ -473,7 +558,7 @@ def prepare (ast : Json) (candidate : SourceTypes.Table) :
   if (roots.toList.map (·.1)).eraseDups.length != roots.size then
     throw "duplicate imported local type"
   let types ← fillRows ds candidate
-  let (functions, types) ← (rewrite ds roots (← field ast "functions")).run types
+  let (functions, types) ← (rewrite ds (← field ast "functions")).run types
   let empty := Json.mkObj [("roots", toJson ([] : List Json)),
     ("definitions", toJson ([] : List Json))]
   let ast := ast.setObjVal! "imports" empty

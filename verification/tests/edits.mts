@@ -13,6 +13,7 @@
 import type { Ast, BindingAst, Expr, FunctionAst, Stmt } from "../tools/fragment.mts";
 import type { Span } from "../tools/span.mts";
 import { decodeClaimType, type Atom, type ClaimType } from "../tools/claim.mts";
+import type { TypeTerm } from "../tools/imported-types.mts";
 import type {
   SkjsClaims,
   SkjsEntry,
@@ -183,3 +184,50 @@ export const written = (node: object): Record<string, unknown> =>
  * An annotation the compiler checks against every row, where the cast this
  * replaces would have been believed instead. */
 export const rows = <T,>(table: T[]): T[] => table;
+
+/** The source term an annotation writes for a claim-shaped type: the fragment
+ * tree states annotations as terms, and a suite that alters one says what it
+ * means in the claim language it checks against. Spans are empty; nothing
+ * reads them. */
+export function sourceType(type: ClaimType): TypeTerm {
+  const span: Span = [0, 0];
+  const of = (a: Atom): TypeTerm => {
+    const and = "and" in a && a.and?.length ? a.and : null;
+    if (and) return { k: "intersection", parts: [of({ ...a, and: [] } as Atom), ...and.map(of)], span };
+    switch (a.a) {
+      case "null": case "undefined": case "boolean": case "number": case "string": case "void":
+        return { k: "atom", name: a.a, span };
+      case "booleanlit":
+        return { k: "literal", name: a.v === "true" ? "true" : "false", text: a.v, span };
+      case "numberlit": case "stringlit":
+        return { k: "literal", name: a.a === "numberlit" ? "number" : "string", text: a.v, span };
+      case "param": return { k: "binder", name: a.name, span };
+      case "array":
+        return !a.required.length && !a.optional.length && a.rest
+          ? { k: "array", readonly: a.readonly, element: sourceType(a.rest), span }
+          : { k: "tuple", readonly: a.readonly, required: a.required.map(sourceType),
+              optional: a.optional.map(sourceType), rest: a.rest ? sourceType(a.rest) : null, span };
+      case "function":
+        return { k: "function", receiver: a.this.top ? null : sourceType(a.this),
+          params: a.params.map(sourceType), rest: a.rest ? sourceType(a.rest) : null,
+          result: sourceType(a.result), span };
+      case "record":
+        return { k: "object", fields: a.fields.map(f => ({ name: f.name, optional: f.optional,
+          readonly: !f.write.top && !f.write.atoms.length && (f.read.top || f.read.atoms.length > 0),
+          type: sourceType(f.read), span })),
+          stringIndex: a.indexSignature ? { readonly: true, value: sourceType(a.indexSignature.read), span } : null,
+          calls: [], span };
+      default: throw Error(`no source term for a ${a.a} atom`);
+    }
+  };
+  if (type.top) return { k: "atom", name: "unknown", span };
+  const parts = type.atoms.map(of);
+  if (!parts.length) return { k: "atom", name: "never", span };
+  return parts.length === 1 && parts[0] ? parts[0] : { k: "union", parts, span };
+}
+
+/** The source term of one kind the fixture's annotation must be. */
+export function term<K extends TypeTerm["k"]>(t: TypeTerm | null | undefined, k: K): OfKind<TypeTerm, K> {
+  if (!t || t.k !== k) throw Error(`this fixture has no ${k} term`);
+  return t as OfKind<TypeTerm, K>;
+}

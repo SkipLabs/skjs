@@ -8,6 +8,7 @@ import { fromSkjs, verifySkjs } from "../tools/annotate-source.mts";
 import type { Ast } from "../tools/fragment.mts";
 import type { ClaimType } from "../tools/claim.mts";
 import type { Span } from "../tools/span.mts";
+import { claimOfTerm } from "../tools/term-claim.mts";
 import {
   fileOf,
   functionOf,
@@ -119,8 +120,8 @@ test("safe source matches the allocate/write/read body proved in Lean", () => {
     cell = sole(stmt(nth(f.body, 0), "const"));
   assert.equal(f.name, "writeRefinedRead");
   assert.deepEqual(f.params, []);
-  assert.deepEqual(f.retType, lit(true));
-  assert.deepEqual(atom(must(cell.annot, "the annotation").atoms[0], "record").fields, [
+  assert.deepEqual(claimOfTerm(f.retType), lit(true));
+  assert.deepEqual(atom(claimOfTerm(must(cell.annot, "the annotation")).atoms[0], "record").fields, [
     { name: "value", optional: false, read: bool, write: bool },
   ]);
   assert.deepEqual(stripPositions(f.body), [

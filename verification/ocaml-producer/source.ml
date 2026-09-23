@@ -3,8 +3,13 @@ open Semantic
 let unsupported s = fail ("unsupported: " ^ s)
 let text k j = str (field k j)
 let items k j = list (field k j)
+(* Where a source type's names resolve. A function annotation reads its
+   enclosing binders by spelling; a declaration body reads its own parameters
+   by position and its method receiver as the declaration. A reference names
+   its declaration by identity. *)
 type type_context = { bindings: (string * ty) list;
-                      imported: (string * (string * int * int)) list;
+                      owner: string option; positional: rigid list;
+                      arity: (string * (int * int)) list;
                       symbolic: (string * (rigid * ty)) list }
 let identity declaration =
   let span = list (field "span" declaration) in
@@ -12,76 +17,99 @@ let identity declaration =
   | [Number first;Number last] ->
     str (field "module" declaration) ^ "#" ^ first ^ ":" ^ last
   | _ -> fail "invalid imported declaration identity"
-let rec annotation binders j =
-  if boolean (field "top" j) then Atoms [Top]
-  else List.fold_left union (Atoms []) (List.map (annotation_atom binders) (items "atoms" j))
-and annotation_atom binders j =
-  (* An intersection of arrows is one value with several call signatures: the
-     shape's calls list, not a second kind of type. Other intersections have no
-     representation here. *)
-  let conjuncts = match List.assoc_opt "and" (obj j) with
-    | None | Some (Array []) -> []
-    | Some (Array others) -> others
-    | Some _ -> unsupported "intersection annotation" in
-  if conjuncts <> [] && text "a" j <> "function" then
-    unsupported "intersection annotation";
-  match text "a" j with
-  | "null" -> Atoms [Nul] | "undefined" -> Atoms [Undef]
-  | "boolean" -> bool | "number" -> Atoms [Num] | "string" -> Atoms [Str]
-  | "void" -> Atoms [Top]
-  | "numberlit" -> number_literal (text "v" j)
-  | "stringlit" -> Atoms [StrLit (text "v" j)]
-  | "booleanlit" -> Atoms [if text "v" j = "true" then True else False]
-  | "param" -> (match List.assoc_opt (text "name" j) binders.bindings with
-    | Some t -> t | None -> fail "unbound rigid parameter")
-  | "record" ->
-    let fs = List.map (fun f ->
-      let r = annotation binders (field "read" f) and w = annotation binders (field "write" f) in
-      { name=text "name" f; optional=boolean (field "optional" f); read=r;
-        write=(if w=Atoms [] then None else Some w) }) (items "fields" j) in
-    List.iter (fun k -> if text k j <> "absent" && text k j <> "unknown" then unsupported ("record " ^ k)) ["call";"construct";"array"];
-    List.iter (fun (_,v) -> if str v <> "absent" && str v <> "unknown" then unsupported "index signature") (obj (field "indexes" j));
-    let string_index = match List.assoc_opt "indexSignature" (obj j) with
-      | None -> None
-      | Some signature ->
-        let value = annotation binders (field "read" signature) in
-        let writable = annotation binders (field "write" signature) in
-        Some {value;writable=(if writable=Atoms [] then None else Some writable)} in
-    Atoms [Shape {fields=fs;string_index;calls=[];elements=None}]
-  | "alias" ->
-    let name = text "name" j in
-    let args = List.map (annotation binders) (items "args" j) in
-    (match List.assoc_opt name binders.imported with
-    | Some (id,required,total) ->
-      if List.length args < required || List.length args > total then
-        fail ("imported alias arity: " ^ name);
-      (match args,List.assoc_opt id binders.symbolic with
-      | [arg],Some (parameter,body) ->
-        Inference.substitute [parameter,arg] body
-      | _ -> Atoms [Named (id,args)])
-    | None -> fail ("unknown type declaration " ^ name))
-  | "array" -> array {
-      required=List.map (annotation binders) (items "required" j);
-      optional_elements=List.map (annotation binders) (items "optional" j);
-      rest=(match field "rest" j with Null -> None | t -> Some (annotation binders t));
-      readonly=boolean (field "readonly" j) }
+(* The source type terms function annotations and declaration bodies share.
+   This is a candidate-only view: Lean independently derives the authoritative
+   graph rows from the same terms. Named edges remain named here, including
+   cycles; no recursive declaration is unfolded. *)
+let rec source_type ctx j =
+  let recur = source_type ctx in
+  match text "k" j with
+  | "atom" -> (match text "name" j with
+    | "null" -> Atoms [Nul] | "undefined" -> Atoms [Undef]
+    | "boolean" -> bool | "number" -> Atoms [Num]
+    | "string" -> Atoms [Str] | "unknown" | "void" -> top
+    | "never" -> Atoms [] | name -> unsupported ("atom " ^ name))
+  | "literal" -> (match text "name" j with
+    | "true" -> Atoms [True] | "false" -> Atoms [False]
+    | "number" -> number_literal (text "text" j)
+    | "string" -> Atoms [StrLit (text "text" j)]
+    | name -> unsupported ("literal type " ^ name))
+  | "union" ->
+    (* `unknown` absorbs the rest of its union: semantic top. *)
+    (match List.fold_left union (Atoms []) (List.map recur (items "parts" j)) with
+    | Atoms atoms when List.mem Top atoms -> top
+    | t -> t)
+  | "array" -> array {required=[];optional_elements=[];
+      rest=Some (recur (field "element" j));readonly=boolean (field "readonly" j)}
+  | "tuple" -> array {required=List.map recur (items "required" j);
+      optional_elements=List.map recur (items "optional" j);
+      rest=(match field "rest" j with Null -> None | t -> Some (recur t));
+      readonly=boolean (field "readonly" j)}
   | "function" ->
-    let signature a = { quantified=[];
-      receiver=annotation binders (field "this" a);
-      params=List.map (annotation binders) (items "params" a);
-      variadic=Option.map (annotation binders) (List.assoc_opt "rest" (obj a));
-      result=annotation binders (field "result" a) } in
-    List.iter (fun a -> if text "a" a <> "function" then
-      unsupported "intersection annotation") conjuncts;
-    Atoms [Shape {fields=[];string_index=None;calls=List.map signature (j::conjuncts);elements=None}]
-  | k -> unsupported ("annotation " ^ k)
+    let receiver = match field "receiver" j with Null -> top | source -> recur source in
+    let signature = {quantified=[];receiver;
+      params=List.map recur (items "params" j);
+      variadic=(match field "rest" j with Null -> None | t -> Some (recur t));
+      result=recur (field "result" j)} in
+    Atoms [Shape {fields=[];string_index=None;calls=[signature];elements=None}]
+  | "self" -> (match ctx.owner with
+    | None -> fail "a method receiver outside a declaration"
+    | Some owner ->
+      if ctx.positional<>[] then unsupported "generic imported method receiver needs an application row";
+      Atoms [Named (owner,[])])
+  | "object" ->
+    let fields = List.map (fun f ->
+      let t = recur (field "type" f) in
+      {name=text "name" f;optional=boolean (field "optional" f);
+       read=t;write=(if boolean (field "readonly" f) then None else Some t)})
+      (items "fields" j) in
+    let string_index = match field "stringIndex" j with
+      | Null -> None
+      | index -> let t = recur (field "value" index) in
+        Some {value=t;writable=(if boolean (field "readonly" index) then None else Some t)} in
+    let calls = List.map (fun c -> match recur c with
+      | Atoms [Shape {fields=[];string_index=None;calls=[signature];elements=None}] -> signature
+      | _ -> unsupported "call signature") (items "calls" j) in
+    Atoms [Shape {fields;string_index;calls;elements=None}]
+  | "reference" ->
+    let id = identity (field "target" (field "reference" j)) in
+    let args = List.map recur (items "args" j) in
+    (match List.assoc_opt id ctx.arity with
+    | Some (required,total) when List.length args < required || List.length args > total ->
+      fail ("type application arity: " ^ id)
+    | Some _ -> ()
+    | None -> fail ("reference lacks a declaration " ^ id));
+    (* An annotation applies a one-parameter cell or identity declaration
+       directly: its body is the argument, substituted. *)
+    (match ctx.owner,args,List.assoc_opt id ctx.symbolic with
+    | None,[arg],Some (parameter,body) -> Inference.substitute [parameter,arg] body
+    | _ -> Atoms [Named (id,args)])
+  | "parameter" ->
+    let index = match field "index" j with
+      | Number n -> (match int_of_string_opt n with
+        | Some i when i >= 0 -> i
+        | _ -> fail "invalid declaration parameter index")
+      | _ -> fail "invalid declaration parameter index" in
+    (match List.nth_opt ctx.positional index with
+    | Some identity -> Rigid identity
+    | None -> fail "declaration parameter index outside declaration")
+  | "binder" -> (match List.assoc_opt (text "name" j) ctx.bindings with
+    | Some t -> t | None -> fail "unbound rigid parameter")
+  | "intersection" ->
+    (* Function operands are one overloaded callable; other operands need the
+       source graph's conjunction, which the proposal does not model. *)
+    let calls = List.concat_map (fun part -> match recur part with
+      | Atoms [Shape {fields=[];string_index=None;calls;elements=None}] when calls <> [] -> calls
+      | _ -> unsupported "intersection needs source graph conjunction") (items "parts" j) in
+    Atoms [Shape {fields=[];string_index=None;calls;elements=None}]
+  | k -> unsupported ("type term " ^ k)
 type literal = LNull | LUndefined | LBool of bool | LNumber of string | LString of string
 let literal j = match text "a" j with
   | "null" -> LNull | "undefined" -> LUndefined
   | "booleanlit" -> LBool (text "v" j = "true")
   | "numberlit" -> LNumber (text "v" j) | "stringlit" -> LString (text "v" j)
   | k -> unsupported ("literal " ^ k)
-let optional_type binders = function Null -> None | j -> Some (annotation binders j)
+let optional_type binders = function Null -> None | j -> Some (source_type binders j)
 let span_start j = match list j with
   | Number n :: _ -> int_of_string n
   | _ -> Json.fail "empty source span"
@@ -146,73 +174,6 @@ type imported_definition = { id: string; parameters: rigid list;
   defaults: ty option list; bases: ty list; expression: ty }
 type program = { file: Json.t; digest: Json.t; imports: imported_definition list; functions: fn list }
 
-(* Candidate-only view of a source equation. Lean independently derives the
-   authoritative graph row from the same import document. Named edges remain
-   named here, including cycles; no recursive declaration is unfolded. *)
-let rec imported_type owner parameters j =
-  match text "k" j with
-  | "atom" -> (match text "name" j with
-    | "null" -> Atoms [Nul] | "undefined" -> Atoms [Undef]
-    | "boolean" -> bool | "number" -> Atoms [Num]
-    | "string" -> Atoms [Str] | "unknown" | "void" -> top
-    | "never" -> Atoms [] | name -> unsupported ("imported atom " ^ name))
-  | "literal" -> (match text "name" j with
-    | "true" -> Atoms [True] | "false" -> Atoms [False]
-    | "number" -> number_literal (text "text" j)
-    | "string" -> Atoms [StrLit (text "text" j)]
-    | name -> unsupported ("imported literal " ^ name))
-  | "union" -> List.fold_left union (Atoms []) (List.map (imported_type owner parameters) (items "parts" j))
-  | "array" -> array {required=[];optional_elements=[];
-      rest=Some (imported_type owner parameters (field "element" j));readonly=boolean (field "readonly" j)}
-  | "tuple" -> array {required=List.map (imported_type owner parameters) (items "required" j);
-      optional_elements=List.map (imported_type owner parameters) (items "optional" j);
-      rest=(match field "rest" j with Null -> None | t -> Some (imported_type owner parameters t));
-      readonly=boolean (field "readonly" j)}
-  | "function" ->
-    let receiver = match field "receiver" j with
-      | Null -> top | source -> imported_type owner parameters source in
-    let signature = {quantified=[];receiver;
-      params=List.map (imported_type owner parameters) (items "params" j);
-      variadic=(match field "rest" j with Null -> None | t -> Some (imported_type owner parameters t));
-      result=imported_type owner parameters (field "result" j)} in
-    Atoms [Shape {fields=[];string_index=None;calls=[signature];elements=None}]
-  | "self" ->
-    if parameters<>[] then unsupported "generic imported method receiver needs an application row";
-    Atoms [Named (owner,[])]
-  | "object" ->
-    let fields = List.map (fun f ->
-      let t = imported_type owner parameters (field "type" f) in
-      {name=text "name" f;optional=boolean (field "optional" f);
-       read=t;write=(if boolean (field "readonly" f) then None else Some t)})
-      (items "fields" j) in
-    let string_index = match field "stringIndex" j with
-      | Null -> None
-      | index -> let t = imported_type owner parameters (field "value" index) in
-        Some {value=t;writable=(if boolean (field "readonly" index) then None else Some t)} in
-    let calls = List.map (fun c -> match imported_type owner parameters c with
-      | Atoms [Shape {fields=[];string_index=None;calls=[signature];elements=None}] -> signature
-      | _ -> unsupported "imported call signature") (items "calls" j) in
-    Atoms [Shape {fields;string_index;calls;elements=None}]
-  | "reference" ->
-    let args = List.map (imported_type owner parameters) (items "args" j) in
-    Atoms [Named (identity (field "target" (field "reference" j)), args)]
-  | "parameter" ->
-    let index = match field "index" j with
-      | Number n -> (match int_of_string_opt n with
-        | Some i when i >= 0 -> i
-        | _ -> fail "invalid imported parameter index")
-      | _ -> fail "invalid imported parameter index" in
-    (match List.nth_opt parameters index with
-    | Some identity -> Rigid identity
-    | None -> fail "imported parameter index outside declaration")
-  | "intersection" ->
-    (* Function operands are one overloaded callable; other operands need the
-       source graph's conjunction, which the proposal does not model. *)
-    let calls = List.concat_map (fun part -> match imported_type owner parameters part with
-      | Atoms [Shape {fields=[];string_index=None;calls;elements=None}] when calls <> [] -> calls
-      | _ -> unsupported "declaration intersection needs source graph conjunction") (items "parts" j) in
-    Atoms [Shape {fields=[];string_index=None;calls;elements=None}]
-  | k -> unsupported ("imported type expression " ^ k)
 let rec expr binders j =
   let sub k = expr binders (field k j) in
   let node = match text "k" j with
@@ -241,15 +202,15 @@ let rec expr binders j =
           (* The receiver rule is the strict one; sloppy code substitutes the
              global object, which nothing here models. *)
           if not (boolean (field "strict" r)) then unsupported "an ordinary function in sloppy code";
-          Some (annotation inner (field "type" r)) in
+          Some (source_type inner (field "type" r)) in
       Lambda (receiver,quantified,
-        List.map (fun p -> text "name" p,annotation inner (field "type" p)) parameters,
+        List.map (fun p -> text "name" p,source_type inner (field "type" p)) parameters,
         List.filter_map (fun (i,p) -> match List.assoc_opt "default" (obj p) with
           | None -> None
           | Some d -> Some (i, expr inner d))
           (List.mapi (fun i p -> i,p) parameters),
         rest,
-        annotation inner (field "result" j),
+        source_type inner (field "result" j),
         expr inner (field "body" j))
   | "apply" ->
     let spreads = match List.assoc_opt "spreads" (obj j) with
@@ -269,13 +230,13 @@ let rec expr binders j =
   | "arrayLit" -> ArrayLiteral (List.map (expr binders) (items "elems" j))
   | "index" -> Index (sub "e",sub "key")
   | "indexWrite" -> IndexWrite (sub "receiver",sub "key",sub "rhs")
-  | "withValue" -> WithFields (sub "fn",sub "initial",annotation binders (field "functionType" j),annotation binders (field "bagType" j))
+  | "withValue" -> WithFields (sub "fn",sub "initial",source_type binders (field "functionType" j),source_type binders (field "bagType" j))
   | "bindWithReceiver" -> Bind (sub "callee",sub "receiver",List.map (expr binders) (items "args" j))
-  | "cast" -> Cast (text "cast" j,(match field "annot" j with Null -> None | a -> Some (annotation binders a)),sub "e")
+  | "cast" -> Cast (text "cast" j,(match field "annot" j with Null -> None | a -> Some (source_type binders a)),sub "e")
   | "doneBody" -> DoneBody | "returnBody" -> ReturnBody (sub "e")
   | "seqBody" -> SequenceBody (sub "init",sub "body")
-  | "letBody" -> LetBody (text "name" j,(match field "annot" j with Null -> None | a -> Some (annotation binders a)),sub "init",sub "body")
-  | "ifBody" -> IfBody (annotation binders (field "result" j),sub "cond",sub "then",sub "else_")
+  | "letBody" -> LetBody (text "name" j,(match field "annot" j with Null -> None | a -> Some (source_type binders a)),sub "init",sub "body")
+  | "ifBody" -> IfBody (source_type binders (field "result" j),sub "cond",sub "then",sub "else_")
   | "conditional" -> Conditional (sub "cond",sub "then",sub "else_")
   | k -> unsupported ("expression " ^ k) in {pos=field "pos" j;node}
 let rec stmt binders j =
@@ -290,28 +251,28 @@ let rec stmt binders j =
   | k -> unsupported ("statement " ^ k) in {span=field "pos" j;statement}
 let decode ast =
   let imports = field "imports" ast in
+  let arity = List.map (fun definition ->
+    let parameters = items "parameters" definition in
+    identity (field "declaration" definition),
+      (List.length (List.filter (fun p -> field "default" p = Null) parameters),
+       List.length parameters)) (items "definitions" imports) in
   let definitions = List.mapi (fun index definition ->
-    let declaration = field "declaration" definition in
+    let id = identity (field "declaration" definition) in
     let parameters = List.mapi (fun i p -> {scope= -1-index;index=i;spelling=text "name" p})
       (items "parameters" definition) in
-    {id=identity declaration;
-     parameters;
+    let body = source_type {bindings=[];owner=Some id;positional=parameters;arity;symbolic=[]} in
+    {id;parameters;
      defaults=List.map (fun p -> match field "default" p with
-       | Null -> None | j -> Some (imported_type (identity declaration) parameters j))
-       (items "parameters" definition);
-     bases=List.map (imported_type (identity declaration) parameters)
-       (items "bases" definition);
-     expression=imported_type (identity declaration) parameters (field "expression" definition)})
+       | Null -> None | j -> Some (body j)) (items "parameters" definition);
+     bases=List.map body (items "bases" definition);
+     expression=body (field "expression" definition)})
     (items "definitions" imports) in
-  let imported = List.map (fun root ->
+  let locals = List.map (fun root ->
     let id=identity (field "declaration" root) in
-    let definition = match List.find_opt (fun d -> d.id=id) definitions with
-      | Some d -> d | None -> fail ("import root lacks definition " ^ id) in
-    text "local" (field "binding" root),
-      (id,List.length (List.filter Option.is_none definition.defaults),
-       List.length definition.parameters))
-    (items "roots" imports) in
-  if List.length (List.sort_uniq compare (List.map fst imported)) <> List.length imported then
+    if not (List.exists (fun d -> d.id=id) definitions) then
+      fail ("import root lacks definition " ^ id);
+    text "local" (field "binding" root)) (items "roots" imports) in
+  if List.length (List.sort_uniq compare locals) <> List.length locals then
     fail "duplicate imported local type";
   let symbolic = List.filter_map (fun d ->
     match d.parameters,d.defaults,d.bases,d.expression with
@@ -329,8 +290,8 @@ let decode ast =
     imports=definitions;
     functions=List.mapi (fun scope f ->
       let parameters = items "typeParams" f in
-      let initial={bindings=[];imported;symbolic} in
+      let initial={bindings=[];owner=None;positional=[];arity;symbolic} in
       let binders,quantified = quantify initial scope parameters in
       {quantified;name=text "name" f; name_pos=field "namePos" f;
-      params=List.map (fun p -> text "name" p,annotation binders (field "type" p)) (items "params" f);
-      result=annotation binders (field "retType" f);body=List.map (stmt binders) (items "body" f)}) (items "functions" ast) }
+      params=List.map (fun p -> text "name" p,source_type binders (field "type" p)) (items "params" f);
+      result=source_type binders (field "retType" f);body=List.map (stmt binders) (items "body" f)}) (items "functions" ast) }

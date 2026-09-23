@@ -15,6 +15,7 @@ import { readDiagnostic } from "./diagnostic.mts";
 // The source annotation encoding has exactly one implementation; a second
 // would be a second opinion about what a source type means.
 import * as fragmentParse from "./fragment-parse.mts";
+import { claimOfTerm } from "./term-claim.mts";
 import { tsconfigOf } from "./declaration-graph.mts";
 import type {
   Labels,
@@ -833,7 +834,7 @@ function checkFresh(output: string) {
 // as undecoded rather than guessing at.
 const namedBinding=(name: string, typeNode: ts.TypeNode | undefined)=>{
   let type=null;
-  try{type=typeNode?fragmentParse.typeOf(typeNode):null;}catch(e){type=null;}
+  try{type=typeNode?claimOfTerm(fragmentParse.typeOf(typeNode)):null;}catch(e){type=null;}
   return {name,type};
 };
 // A declaration the surface names with a plain identifier; a binding pattern

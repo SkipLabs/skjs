@@ -1,5 +1,6 @@
 /** Structural claim language at the producer/viewer boundary, mirroring
- * Claim.lean. Source annotations use the same types. Runtime data is decoded
+ * Claim.lean. Source annotations are type terms (imported-types.mts); Lean
+ * converts them to these types for its source readers. Runtime data is decoded
  * before it is accepted as text; unsupported producer shapes stay in the raw
  * JSON editor. Its surface text is in claim-text.mts.
  */

@@ -22,6 +22,7 @@ import {
   only as only_,
   sole,
   stmt,
+  sourceType,
 } from "./edits.mts";
 // Private-cell lowering: source execution witnesses complement checked
 // certificates, while claim mutations exercise the trusted lowering boundary.
@@ -105,7 +106,7 @@ try {
   // The storage contract is the annotation. Narrow it to `true` and the
   // assignment of `false` no longer meets it: the write is the check.
   const narrowed = only(ast, "capturedReaderObservesWrite");
-  sole(stmt(at(narrowed.functions[0].body, 0), "let")).annot = tru;
+  sole(stmt(at(narrowed.functions[0].body, 0), "let")).annot = sourceType(tru);
   expect(
     "a value outside the storage contract is refused",
     run(narrowed, claimsFor("capturedReaderObservesWrite")),
@@ -180,7 +181,7 @@ try {
     );
   }
   const wrongTag = only(ast, "mutableTag");
-  wrongTag.functions[0].retType = tru;
+  wrongTag.functions[0].retType = sourceType(tru);
   const wrongClaims = claimsFor("mutableTag");
   const tagged = only_(wrongClaims, fileKey);
   tagged.retType = tru;

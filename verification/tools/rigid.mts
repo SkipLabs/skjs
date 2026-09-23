@@ -17,6 +17,7 @@
 import type { ClaimType } from "./source-claims.mts";
 import type { Ast } from "./fragment.mts";
 import surface from "./claim-text.mts";
+import { claimOfTerm } from "./term-claim.mts";
 
 /**
  * One parameter a function declares. `bound` is `null` where the source
@@ -102,7 +103,7 @@ export function rigidScopes(ast: Ast): RigidScopes {
       key(fn.namePos),
       fn.typeParams.map((p) => ({
         name: p.name,
-        bound: p.bound ? surface.printType(p.bound).text : null,
+        bound: p.bound ? surface.printType(claimOfTerm(p.bound)).text : null,
       })),
     );
   return scopes;

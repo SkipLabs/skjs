@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { decodeClaimType } from "../tools/claim.mts";
+import { claimOfTerm } from "../tools/term-claim.mts";
 import type { Ast } from "../tools/fragment.mts";
 import { functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
 import { at, fn as functionIn, stmt } from "./edits.mts";
@@ -41,9 +42,9 @@ try {
   if (JSON.stringify(fn.typeParams) !== JSON.stringify([{ name: "T", bound: null }]))
     throw Error("id should declare type parameter T");
   const t = { top: false, atoms: [{ a: "param", name: "T" }] };
-  decodeClaimType(fn.params[0].type);
-  decodeClaimType(fn.retType);
-  if (JSON.stringify(fn.params[0].type) !== JSON.stringify(t))
+  decodeClaimType(claimOfTerm(fn.params[0].type));
+  decodeClaimType(claimOfTerm(fn.retType));
+  if (JSON.stringify(claimOfTerm(fn.params[0].type)) !== JSON.stringify(t))
     throw Error("parameter type should be param T");
   const exported = functionOf(claims, fileKey, "id");
   decodeClaimType(exported.params[0].type);

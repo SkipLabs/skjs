@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import { decodeClaimType, type ClaimType } from "../tools/claim.mts";
 import type { Ast } from "../tools/fragment.mts";
 import { functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
-import { atom, claimType, fn, must } from "./edits.mts";
+import { atom, claimType, fn, must, term } from "./edits.mts";
 
 /** The source equation selected by a local declaration root. */
 const alias = (a: Ast, name: string) => {
@@ -52,9 +52,8 @@ try {
     throw Error("Id source equation should be its first parameter");
   const wrap = fn(ast, "wrap");
   const wrapped = must(wrap.params[0], "a parameter").type;
-  decodeClaimType(wrapped);
-  if (atom(wrapped.atoms[0], "alias").name !== "Id")
-    throw Error("wrap parameter should be alias Id");
+  if (term(wrapped, "reference").reference.name !== "Id")
+    throw Error("wrap parameter should reference Id");
   const exported = functionOf(claims, fileKey, "wrap");
   const claimed = claimType(must(exported.params[0], "a parameter"));
   decodeClaimType(exported.retType);
@@ -65,11 +64,12 @@ try {
   Object.assign(badBody, { aliases: [{ name: "Id", typeParams: [{ name: "T", bound: null }], body: t }] });
   expect("retired parser-authored alias field is refused", run(badBody, claims), false);
   const unknown = clone(ast);
-  must(fn(unknown, "wrap").params[0], "a parameter").type = {
-    top: false,
-    atoms: [{ a: "alias", name: "Missing", args: [{ top: false, atoms: [{ a: "boolean" }] }] }],
-  };
-  expect("unknown type alias is rejected", run(unknown, claims), false, "unknown type alias");
+  must(fn(unknown, "wrap").params[0], "a parameter").type = { k: "reference",
+    reference: { name: "Missing", span: [0, 0], arguments: [[0, 0]],
+      target: { module: "missing.ts", name: "Missing", span: [0, 0] } },
+    args: [{ k: "atom", name: "boolean", span: [0, 0] }], span: [0, 0] };
+  expect("a reference to no declaration is rejected", run(unknown, claims), false,
+    "no declaration equation");
   const twoParams = clone(ast);
   const original = alias(twoParams, "Id").parameters[0];
   if (!original) throw Error("missing Id parameter");

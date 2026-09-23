@@ -4,9 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { decodeClaimType, type ClaimType } from "../tools/claim.mts";
+import { claimOfTerm } from "../tools/term-claim.mts";
 import type { Ast } from "../tools/fragment.mts";
 import { functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
-import { at, fn, stmt } from "./edits.mts";
+import { at, fn, sourceType, stmt } from "./edits.mts";
 // Source extraction of T extends boolean: T ≤ boolean, not true ≤ T.
 
 const [astPath, claimsPath, fileKey, verifier] = process.argv.slice(2);
@@ -39,13 +40,12 @@ function expect(name: string, r: ReturnType<typeof run>, accept: boolean, messag
 }
 try {
   const asBoolean = fn(ast, "asBoolean");
-  if (JSON.stringify(asBoolean.typeParams) !== JSON.stringify([{ name: "T", bound: boolean }]))
+  if (JSON.stringify(asBoolean.typeParams.map(p => ({ name: p.name,
+      bound: p.bound && claimOfTerm(p.bound) }))) !== JSON.stringify([{ name: "T", bound: boolean }]))
     throw Error("asBoolean should declare T extends boolean");
-  decodeClaimType(asBoolean.params[0].type);
-  decodeClaimType(asBoolean.retType);
-  if (JSON.stringify(asBoolean.params[0].type) !== JSON.stringify(t))
+  if (JSON.stringify(claimOfTerm(asBoolean.params[0].type)) !== JSON.stringify(t))
     throw Error("parameter type should be param T");
-  if (JSON.stringify(asBoolean.retType) !== JSON.stringify(boolean))
+  if (JSON.stringify(claimOfTerm(asBoolean.retType)) !== JSON.stringify(boolean))
     throw Error("result should be boolean");
   const exported = functionOf(claims, fileKey, "asBoolean");
   decodeClaimType(exported.params[0].type);
@@ -63,7 +63,7 @@ try {
   fn(unbounded, "asBoolean").typeParams[0].bound = null;
   expect("returning T as boolean requires the bound", run(unbounded, claims), false, "cannot establish T ≤ boolean under [T]");
   const notBoolean = clone(ast);
-  fn(notBoolean, "asBoolean").typeParams[0].bound = t;
+  fn(notBoolean, "asBoolean").typeParams[0].bound = sourceType(t);
   expect("a parameter cannot be its own bound", run(notBoolean, claims), false, "bound must name an earlier parameter");
   console.log(`Generic extends: ${passed} passed`);
 } catch (e) {

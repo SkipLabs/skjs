@@ -25,6 +25,7 @@ import type {
   InterfaceDeclaration,
   MethodDeclaration,
   Node,
+  ParameterDeclaration,
   SourceFile,
   Statement,
   TypeAliasDeclaration,
@@ -35,7 +36,9 @@ import type {
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import type { ClaimType, Atom } from "./claim.mts";
+import type { Atom } from "./claim.mts";
+import type { DeclarationIdentity, TypeTerm } from "./imported-types.mts";
+import { optionalTerm, restPositions, REST_CONTRACT, typeTerm, type TermScope } from "./type-term.mts";
 import type {
   Ast,
   BindingAst,
@@ -59,31 +62,6 @@ function firstOptional(
   const i = parameters.findIndex((p) => !!p.questionToken);
   return i < 0 ? parameters.length : i;
 }
-
-/** The positions a rest parameter stands for, where its contract is a tuple
- * of required positions: a fixed number of further arguments, which is what
- * the callable signature says. */
-function tupleRestPositions(type: ClaimType): ClaimType[] | null {
-  if (type.top || type.atoms.length !== 1) return null;
-  const atom = type.atoms[0];
-  if (!atom || atom.a !== "array" || atom.readonly) return null;
-  if (atom.optional.length || atom.rest !== null) return null;
-  return atom.required;
-}
-
-/** The contract of each further argument, where a rest parameter's contract
- * is a mutable `T[]`: any number of them, collected into a fresh array. */
-function arrayRestElement(type: ClaimType): ClaimType | null {
-  if (type.top || type.atoms.length !== 1) return null;
-  const atom = type.atoms[0];
-  if (!atom || atom.a !== "array" || atom.readonly) return null;
-  if (atom.required.length || atom.optional.length || atom.rest === null)
-    return null;
-  return atom.rest;
-}
-
-const REST_CONTRACT =
-  "a rest parameter needs a tuple of required positions or a mutable array";
 
 /* --------------------------------------------------------- the compiler -- */
 // The compiler runs out of process and is addressed through one API instance.
@@ -175,8 +153,6 @@ export function close(): void {
 // (hex, binary, octal, separators, bigint) is outside it.
 const DECIMAL = /^[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?$/;
 
-const NULL_TYPE: ClaimType = { top: false, atoms: [{ a: "null" }] };
-
 class Gate {
   // Written out rather than a parameter property: node strips types, it does
   // not compile them, so the syntax has to be erasable.
@@ -185,10 +161,10 @@ class Gate {
    * one file-wide set, makes nested quantified callables representable without
    * conflating an inner binder with an outer binder of the same spelling. */
   private readonly typeParamScopes: Set<string>[] = [];
-  /** Local spelling to the arity of its declaration-identified root.
-   * An alias atom retains this spelling; the source declaration document
-   * resolves it regardless of where the declaration was written. */
-  private readonly declaredTypes = new Map<string, { required: number; total: number }>();
+  /** Local spelling to the arity and identity of its declaration root. A
+   * reference names the declaration TypeScript resolved the spelling to. */
+  private readonly declaredTypes = new Map<string,
+    { required: number; total: number; declaration: DeclarationIdentity }>();
   /* Whether the code being read is strict, by a module or a "use strict"
    * directive (ECMAScript's, not TypeScript's `strict` option). An ordinary
    * function records it: its receiver rule is the strict one. */
@@ -198,6 +174,7 @@ class Gate {
   private receiverMode: "strict" | "sloppy" | null = null;
   constructor(file: SourceFile) {
     this.file = file;
+    this.scope = this.termScope();
   }
 
   /** The leading `"use strict"` directives of a directive prologue: whether
@@ -239,7 +216,7 @@ class Gate {
         if (tp.name.kind !== ts.SyntaxKind.Identifier)
           this.fail(tp, "expected a type-parameter name");
         if (local.has(tp.name.text)) this.fail(tp, "duplicate type parameter");
-        let bound: ClaimType | null = null;
+        let bound: TypeTerm | null = null;
         if (tp.constraint) {
           const earlier =
             ts.isTypeReferenceNode(tp.constraint) &&
@@ -273,10 +250,11 @@ class Gate {
       throw new Error("internal: no type-parameter scope to leave");
   }
 
-  registerDeclaredType(name: string, required: number, total: number, node: Node): void {
+  registerDeclaredType(name: string, required: number, total: number,
+      declaration: DeclarationIdentity, node: Node): void {
     if (this.declaredTypes.has(name))
       this.fail(node, "duplicate type name");
-    this.declaredTypes.set(name, { required, total });
+    this.declaredTypes.set(name, { required, total, declaration });
   }
 
   fail(node: Node | null, message: string): never {
@@ -297,355 +275,56 @@ class Gate {
 
   /* ------------------------------------------------------------- types -- */
 
-  atomsOf(node: TypeNode, acc: Atom[]): void {
-    // `kind` narrows nothing here: the AST module's TypeNode is one base
-    // interface rather than a union, so each shape is recognized by its own
-    // predicate, which is what lets the compiler read the fields below.
-    if (ts.isParenthesizedTypeNode(node)) return this.atomsOf(node.type, acc);
-
-    if (ts.isUnionTypeNode(node)) {
-      for (const t of node.types) this.atomsOf(t, acc);
-      return;
-    }
-
-    if (ts.isFunctionTypeNode(node)) {
-      if (node.typeParameters?.length)
-        this.fail(node, "generic function types are outside the fragment");
-      // A leading `this: T` is the receiver a call must pass. Without one the
-      // signature accepts any receiver.
-      const head = node.parameters[0];
-      const stated =
-        head && ts.isIdentifier(head.name) && head.name.text === "this";
-      if (stated && (!head.type || head.questionToken || head.dotDotDotToken))
-        this.fail(head, "a receiver needs a required type annotation");
-      const receiver: ClaimType = stated
-        ? this.typeOf(head.type)
-        : { top: true, atoms: [] };
-      const parameters = stated
-        ? node.parameters.slice(1)
-        : [...node.parameters];
-      for (const p of parameters) {
-        if (!ts.isIdentifier(p.name) || p.name.text === "this" || p.initializer)
-          this.fail(p, "expected an ordinary parameter");
-        if (p.dotDotDotToken && p !== parameters[parameters.length - 1])
-          this.fail(p, "a rest parameter must be the last one");
-        if (
-          !p.questionToken &&
-          !p.dotDotDotToken &&
-          parameters.indexOf(p) > firstOptional(parameters)
-        )
-          this.fail(p, "a required parameter cannot follow an optional one");
-      }
-      // A tuple rest is a fixed number of further positions, which is how
-      // TypeScript itself reads it, so the signature carries them. An array
-      // rest is any number of them: the signature says what each one is.
-      const positions: ClaimType[] = [];
-      let element: ClaimType | undefined;
-      for (const p of parameters) {
-        if (p.dotDotDotToken) {
-          const type = this.typeOf(p.type);
-          const tuple = tupleRestPositions(type);
-          const each = arrayRestElement(type);
-          if (tuple) positions.push(...tuple);
-          else if (each) element = each;
-          else this.fail(p, REST_CONTRACT);
-        } else
-          positions.push(
-            p.questionToken ? this.optionalTypeOf(p.type) : this.typeOf(p.type),
-          );
-      }
-      acc.push({
-        a: "function",
-        this: receiver,
-        params: positions,
-        ...(element ? { rest: element } : {}),
-        result: this.typeOf(node.type),
-        construct: "unknown",
-        array: "unknown",
-      });
-      return;
-    }
-
-    if (ts.isTypeLiteralNode(node)) {
-      if (!node.members.length)
-        this.fail(node, "a record with no field has no location");
-      const indexMembers = node.members.filter(ts.isIndexSignatureDeclaration);
-      if (indexMembers.length > 1)
-        this.fail(
-          node,
-          "multiple string index signatures are outside the fragment",
-        );
-      let indexSignature: { read: ClaimType; write: ClaimType } | undefined;
-      if (indexMembers.length) {
-        const index = indexMembers[0];
-        const parameter = index?.parameters[0];
-        if (
-          !index ||
-          index.parameters.length !== 1 ||
-          !parameter ||
-          parameter.type?.kind !== ts.SyntaxKind.StringKeyword ||
-          !index.type ||
-          index.modifiers?.length !== 1 ||
-          index.modifiers[0]?.kind !== ts.SyntaxKind.ReadonlyKeyword
-        )
-          this.fail(
-            index ?? node,
-            "expected a readonly string index signature",
-          );
-        indexSignature = {
-          read: this.typeOf(index.type),
-          write: { top: false, atoms: [] },
-        };
-      }
-      const names = new Set<string>();
-      const fields = node.members
-        .filter(ts.isPropertySignatureDeclaration)
-        .map((f) => {
-          // A `readonly` member is a read capability: its write contract is
-          // `never`, and nothing else about the field changes.
-          const readonly =
-            ts.isPropertySignatureDeclaration(f) &&
-            f.modifiers?.every(
-              (m) => m.kind === ts.SyntaxKind.ReadonlyKeyword,
-            ) === true;
-          if (
-            !ts.isPropertySignatureDeclaration(f) ||
-            !ts.isIdentifier(f.name) ||
-            // A member's `?` (or `!`) is its postfix token; a parameter's is a
-            // question token. Different nodes, different names.
-            f.postfixToken ||
-            (f.modifiers?.length && !readonly)
-          )
-            this.fail(f, "expected a required mutable field");
-          const name =
-            ts.isPropertySignatureDeclaration(f) && ts.isIdentifier(f.name)
-              ? f.name.text
-              : this.fail(f, "expected a required mutable field");
-          if (names.has(name)) this.fail(f, "duplicate field name in a record");
-          names.add(name);
-          const t = this.typeOf(
-            ts.isPropertySignatureDeclaration(f) ? f.type : undefined,
-          );
-          return {
-            name,
-            optional: false,
-            read: t,
-            write: readonly ? { top: false, atoms: [] } : t,
-          };
-        });
-      if (fields.length + indexMembers.length !== node.members.length)
-        this.fail(node, "unsupported member in a record type");
-      acc.push({
-        a: "record",
-        fields,
-        indexes: { string: "absent", number: "absent", symbol: "absent" },
-        ...(indexSignature ? { indexSignature } : {}),
-        call: "unknown",
-        construct: "unknown",
-        array: "unknown",
-      });
-      return;
-    }
-
-    if (ts.isIntersectionTypeNode(node)) {
-      // Union is the atom list; conjunction lives inside the atom kinds that
-      // have one, mirroring the clause language, where only a location under
-      // several contracts and a function with several signatures conjoin.
-      // Nothing else does, so nothing else may be written here: a format
-      // that could say `null & boolean` would say something no clause holds.
-      // Conjunction is associative, so a parenthesized intersection inside
-      // one contributes its operands to the same flat list.
-      const operands: TypeNode[] = [];
-      const flatten = (t: TypeNode): void => {
-        while (ts.isParenthesizedTypeNode(t)) t = t.type;
-        if (ts.isIntersectionTypeNode(t)) t.types.forEach(flatten);
-        else operands.push(t);
-      };
-      flatten(node);
-      const parts = operands.map((operand) => {
-        const one: Atom[] = [];
-        this.atomsOf(operand, one);
-        if (one.length !== 1)
-          this.fail(operand, "an intersection operand must be a single type");
-        return one[0];
-      });
-      const head = parts[0];
-      if (parts.some((p) => p.a !== head.a))
-        this.fail(node, "intersection operands must have the same shape");
-      if (head.a !== "record" && head.a !== "function")
-        this.fail(
-          node,
-          `intersection of ${head.a} types is outside the fragment`,
-        );
-      acc.push({ ...head, and: parts.slice(1) });
-      return;
-    }
-
-    if (ts.isTypeReferenceNode(node)) {
-      if (node.typeName.kind !== ts.SyntaxKind.Identifier)
-        this.fail(node, "type reference outside the fragment");
-      const name = node.typeName.text;
-      const declaredArity = this.declaredTypes.get(name);
-      if (declaredArity !== undefined && !this.hasTypeParam(name)) {
-        const args = node.typeArguments?.map(arg => this.typeOf(arg)) ?? [];
-        if (args.length < declaredArity.required || args.length > declaredArity.total) {
-          const count = declaredArity.required === declaredArity.total
-            ? `${declaredArity.total}`
-            : `${declaredArity.required} to ${declaredArity.total}`;
-          this.fail(node, `type '${name}' needs ${count} type argument(s)`);
-        }
-        acc.push({ a: "alias", name, args });
-        return;
-      }
-      if (node.typeArguments?.length) this.fail(node, "unknown type alias");
-      if (!this.hasTypeParam(name)) this.fail(node, "unknown type parameter");
-      acc.push({ a: "param", name });
-      return;
-    }
-
-    if (ts.isLiteralTypeNode(node)) {
-      // `literal` is declared as a bare Node, so it too is read by predicate.
-      const lit = node.literal;
-      if (lit.kind === ts.SyntaxKind.NullKeyword) {
-        acc.push({ a: "null" });
-        return;
-      }
-      if (ts.isStringLiteral(lit)) {
-        acc.push({ a: "stringlit", v: lit.text });
-        return;
-      }
-      if (ts.isNumericLiteral(lit)) {
-        if (!DECIMAL.test(lit.text))
-          this.fail(lit, "non-decimal numeric literal type");
-        acc.push({ a: "numberlit", v: lit.text });
-        return;
-      }
-      if (lit.kind === ts.SyntaxKind.TrueKeyword) {
-        acc.push({ a: "booleanlit", v: "true" });
-        return;
-      }
-      if (lit.kind === ts.SyntaxKind.FalseKeyword) {
-        acc.push({ a: "booleanlit", v: "false" });
-        return;
-      }
-      this.fail(lit, "literal type outside the fragment");
-    }
-
-    switch (node.kind) {
-      // Keyword types carry nothing to read: the kind is the whole node.
-      case ts.SyntaxKind.NeverKeyword:
-        // The empty union: no atoms. Nothing inhabits it, so it contributes
-        // nothing to the alternatives a value of this type may take.
-        return;
-
-      case ts.SyntaxKind.StringKeyword:
-        acc.push({ a: "string" });
-        return;
-      case ts.SyntaxKind.NumberKeyword:
-        acc.push({ a: "number" });
-        return;
-      case ts.SyntaxKind.BooleanKeyword:
-        acc.push({ a: "boolean" });
-        return;
-      case ts.SyntaxKind.UndefinedKeyword:
-        acc.push({ a: "undefined" });
-        return;
-      // An array: a tuple contract on its store. `T[]` is a rest contract;
-      // a tuple names its required positions, its optional ones and its rest.
-      case ts.SyntaxKind.ArrayType: {
-        const elem = ts.isArrayTypeNode(node) ? node.elementType : undefined;
-        acc.push({
-          a: "array",
-          required: [],
-          optional: [],
-          rest: this.typeOf(elem),
-          readonly: false,
-        });
-        return;
-      }
-      case ts.SyntaxKind.TupleType: {
-        const elements = ts.isTupleTypeNode(node) ? node.elements : [];
-        const required: ClaimType[] = [],
-          optional: ClaimType[] = [];
-        let rest: ClaimType | null = null;
-        for (const e of elements) {
-          if (ts.isNamedTupleMember(e))
-            this.fail(e, "named tuple members are outside the fragment");
-          if (ts.isRestTypeNode(e)) {
-            if (rest !== null || !ts.isArrayTypeNode(e.type))
-              this.fail(e, "a tuple rest must be one final array");
-            rest = this.typeOf(e.type.elementType);
-          } else if (ts.isOptionalTypeNode(e)) {
-            if (rest !== null)
-              this.fail(e, "an optional position cannot follow the rest");
-            optional.push(this.typeOf(e.type));
-          } else {
-            if (optional.length || rest !== null)
-              this.fail(e, "a required position cannot follow an optional one");
-            required.push(this.typeOf(e));
+  /** Type syntax reads through the one source-term reader. A name is a
+   * binder of an enclosing function or a declaration root; every declaration
+   * root was resolved by TypeScript's checker. */
+  private readonly scope: TermScope;
+  private termScope(): TermScope {
+    return {
+      source: this.file,
+      annotation: true,
+      fail: (node, message) => this.fail(node, message),
+      named: (node, span, read) => {
+        const name = (node.typeName as Identifier).text;
+        const declared = this.declaredTypes.get(name);
+        if (declared !== undefined && !this.hasTypeParam(name)) {
+          const args = node.typeArguments ?? [];
+          if (args.length < declared.required || args.length > declared.total) {
+            const count = declared.required === declared.total
+              ? `${declared.total}`
+              : `${declared.required} to ${declared.total}`;
+            this.fail(node, `type '${name}' needs ${count} type argument(s)`);
           }
+          return { k: "reference", reference: { name, span,
+            arguments: args.map(arg => this.span(arg)), target: declared.declaration },
+            args: args.map(read), span };
         }
-        acc.push({ a: "array", required, optional, rest, readonly: false });
-        return;
-      }
-      case ts.SyntaxKind.TypeOperator: {
-        // `readonly T[]` and `readonly [..]`: the same contract as a view.
-        if (
-          !ts.isTypeOperatorNode(node) ||
-          node.operator !== ts.SyntaxKind.ReadonlyKeyword
-        )
-          this.fail(
-            node,
-            `type outside the fragment (${ts.SyntaxKind[node.kind]})`,
-          );
-        const inner: Atom[] = [];
-        this.atomsOf(node.type, inner);
-        for (const a of inner) {
-          if (a.a !== "array")
-            this.fail(node, "readonly applies to an array or tuple type");
-          acc.push({ ...a, readonly: true });
-        }
-        return;
-      }
-      // A `void` result: no usable guarantee about the value.
-      case ts.SyntaxKind.VoidKeyword:
-        acc.push({ a: "void" });
-        return;
-      case ts.SyntaxKind.UnknownKeyword:
-        this.top = true;
-        return;
-
-      default:
-        this.fail(
-          node,
-          `type outside the fragment (${ts.SyntaxKind[node.kind]})`,
-        );
-    }
+        if (node.typeArguments?.length) this.fail(node, "unknown type alias");
+        if (!this.hasTypeParam(name)) this.fail(node, "unknown type parameter");
+        return { k: "binder", name, span };
+      },
+    };
   }
 
-  /** Whether the type being read mentioned `unknown`, which absorbs the
-   * rest of its union: semantic top. */
-  private top = false;
+  typeOf(node: TypeNode | undefined, at: Node | null = null): TypeTerm {
+    return typeTerm(this.scope, node, at);
+  }
 
   /** `x?: T` is `T | undefined` where the parameter is read: `undefined` is the
    * value bound when a call omits that position. The fragment carries the
    * union, so nothing downstream needs a second representation of optionality.
    * A call may omit a trailing position exactly when its contract admits
    * `undefined`; declared arity is not observable in this fragment. */
-  optionalTypeOf(node: TypeNode | undefined): ClaimType {
-    const type = this.typeOf(node);
-    if (type.top || type.atoms.some((a) => a.a === "undefined")) return type;
-    return { top: false, atoms: [...type.atoms, { a: "undefined" }] };
+  optionalTypeOf(node: TypeNode | undefined, at: Node): TypeTerm {
+    return optionalTerm(this.typeOf(node, at), this.span(at));
   }
 
-  typeOf(node: TypeNode | undefined): ClaimType {
-    if (!node) this.fail(null, "missing type annotation");
-    const atoms: Atom[] = [];
-    this.top = false;
-    this.atomsOf(node, atoms);
-    const top = this.top;
-    this.top = false;
-    return top ? { top: true, atoms: [] } : { top: false, atoms };
+  /** A rest parameter's contract: its tuple of required positions or its
+   * mutable array. */
+  restType(p: ParameterDeclaration): TypeTerm {
+    const type = this.typeOf(p.type, p);
+    if (!restPositions(type)) this.fail(p, REST_CONTRACT);
+    return type;
   }
 
   /* ------------------------------------------------------- expressions -- */
@@ -1486,8 +1165,8 @@ class Gate {
         ? null
         : {
             type: stated
-              ? this.typeOf(head.type)
-              : ({ top: true, atoms: [] } as ClaimType),
+              ? this.typeOf(head.type, head)
+              : ({ k: "atom", name: "unknown", span: this.span(node) } as TypeTerm),
             strict: this.strict,
           };
       // Each name is taken where its parameter has just been checked: a
@@ -1502,9 +1181,7 @@ class Gate {
             this.fail(p, "a rest parameter is neither optional nor defaulted");
           if (p !== parameters[parameters.length - 1])
             this.fail(p, "a rest parameter must be the last one");
-          const type = this.typeOf(p.type);
-          if (!tupleRestPositions(type) && !arrayRestElement(type))
-            this.fail(p, REST_CONTRACT);
+          this.restType(p);
         }
         if (
           !p.questionToken &&
@@ -1539,8 +1216,8 @@ class Gate {
           // itself is the expression that replaces an omitted argument. A rest
           // parameter's type is the tuple its arguments are collected into.
           type: p.questionToken
-            ? this.optionalTypeOf(p.type)
-            : this.typeOf(p.type),
+            ? this.optionalTypeOf(p.type, p)
+            : this.typeOf(p.type, p),
           ...(p.initializer ? { default: this.expr(p.initializer) } : {}),
           ...(p.dotDotDotToken ? { rest: true as const } : {}),
         })),
@@ -1557,7 +1234,7 @@ class Gate {
   private closureBlock(
     at: Node,
     statements: Stmt[],
-    result: () => ClaimType,
+    result: () => TypeTerm,
   ): Expr {
     const hasReturn = (xs: Stmt[]): boolean =>
       xs.some(
@@ -1590,7 +1267,7 @@ class Gate {
             const init: Expr = {
               k: "ifBody",
               pos: st.pos,
-              result: NULL_TYPE,
+              result: { k: "atom", name: "null", span: st.pos },
               cond: st.cond,
               then: arm(yes),
               else_: arm(no),
@@ -1920,9 +1597,7 @@ class Gate {
           if (p.questionToken) this.fail(p, "a rest parameter is not optional");
           if (p !== node.parameters[node.parameters.length - 1])
             this.fail(p, "a rest parameter must be the last one");
-          const type = this.typeOf(p.type);
-          if (!tupleRestPositions(type) && !arrayRestElement(type))
-            this.fail(p, REST_CONTRACT);
+          this.restType(p);
         }
         if (p.initializer)
           this.fail(p, "default parameters are outside the fragment");
@@ -1930,8 +1605,8 @@ class Gate {
           name: p.name.text,
           pos: this.span(p.name),
           type: p.questionToken
-            ? this.optionalTypeOf(p.type)
-            : this.typeOf(p.type),
+            ? this.optionalTypeOf(p.type, p)
+            : this.typeOf(p.type, p),
           ...(p.dotDotDotToken ? { rest: true as const } : {}),
         };
       });
@@ -2045,7 +1720,7 @@ export function parseFile(file: string, carriesContext = false,
         n.getStart(source) === root.binding.span[0]) ?? first;
       gate.registerDeclaredType(root.binding.local,
         definition.parameters.filter(p => p.default === null).length,
-        definition.parameters.length, node);
+        definition.parameters.length, identity, node);
     }
   }
   // Carried context skips aliases its old fragment could not state. Every
@@ -2118,7 +1793,7 @@ export function definedClassCallables(
  * node and needs the type the gate would give it. The annotation's own file is
  * the place a rejection names, which is why the node carries it.
  */
-export function typeOf(node: TypeNode): ClaimType {
+export function typeOf(node: TypeNode): TypeTerm {
   return new Gate(node.getSourceFile()).typeOf(node);
 }
 

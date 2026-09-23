@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import type { Ast } from "../tools/fragment.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import { stripTypes } from "../tools/strip-types.mts";
-import { must, expr, stmt } from "./edits.mts";
+import { must, expr, sourceType, stmt } from "./edits.mts";
 
 const [astPath, raw, tsc, file, verifier] = process.argv.slice(2);
 const work = fs.mkdtempSync(os.tmpdir() + "/nullish-assignment-");
@@ -69,10 +69,10 @@ try {
       at(assignment.pos).type = [1, number];
       // Permit either result at every later interface, isolating the storage
       // contract rather than rejecting merely at the function's return type.
-      f.retType = {
+      f.retType = sourceType({
         top: false,
         atoms: [{ a: "booleanlit", v: "true" }, { a: "number" }],
-      };
+      });
       fc.result = [1, number];
       const returned = stmt(f.body[1], "return");
       at(returned.e.pos).type = [1, number];
