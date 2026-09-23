@@ -1910,10 +1910,10 @@ class Gate {
     if (!node.name) this.fail(node, "anonymous function");
     if (node.name.text === "undefined")
       this.fail(node, "shadowing undefined is outside the fragment");
-    if (node.modifiers?.length)
+    if (node.modifiers?.some(modifier => modifier.kind !== ts.SyntaxKind.ExportKeyword))
       this.fail(
         node,
-        "modifiers (export/async/declare) are outside the fragment",
+        "only the export modifier is admitted on a source function",
       );
     if (!node.body) this.fail(node, "a function must have a body");
     const prologue = this.useStrict(node.body.statements);
@@ -2036,7 +2036,8 @@ export function parseFile(file: string, carriesContext = false,
   // Every module body is strict, including one whose only module syntax is a
   // type-only import. This decides the receiver rule for nested ordinary
   // functions when imported declarations become certifiable.
-  gate.strict = prologue.strict || importNodes.length > 0;
+  gate.strict = prologue.strict || importNodes.length > 0 ||
+    fnNodes.some(fn => fn.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword));
   let imports: Ast["imports"] = { roots: [], definitions: [], sources: [], mappings: [] };
   if (importNodes.length) {
     const first = importNodes[0];

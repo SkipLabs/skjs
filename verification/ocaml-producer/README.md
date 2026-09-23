@@ -507,8 +507,9 @@ trusted parser also fills the slot for named type-only imports when its caller
 supplies an explicit, fingerprinted module universe; a source-only client test
 checks the real `Json` route. The CLI and OCaml driver do not yet supply that
 universe, and the parser cannot yet express imported references in function
-annotations. The actual `recursive-json.ts` also reaches the existing export
-modifier gate once its imports resolve. Lean requires the exact document shape and refuses every nonempty
+annotations. Exported source functions are accepted as strict module code; the
+actual `recursive-json.ts` now reaches the imported type annotation gate after
+its imports resolve. Lean requires the exact document shape and refuses every nonempty
 import document until a certified graph interpretation exists. This does not
 change verification coverage or admit imports at the verifier. The
 [`recursive-json.ts`](examples/recursive-json.ts)

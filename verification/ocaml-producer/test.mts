@@ -165,15 +165,21 @@ for (const [file, expected] of [
   const sample = join(mkdtempSync(join(tmpdir(), "skjs-import-")), "client.ts");
   writeFileSync(sample,
     'import type { Json, JsonObject } from "@skipruntime/core";\n' +
-    'function identity(value: boolean): boolean { return value; }\n');
+    'export function identity(value: boolean): boolean { return value; }\n');
   assert.throws(() => parseFile(sample), /imports need an explicit module universe/);
   const importedAst = parseFile(sample, false, { modules, config });
   assert.deepEqual(importedAst.imports.roots.map(r => r.binding.local), ["Json", "JsonObject"]);
   assert.deepEqual(importedAst.imports.definitions, pinnedImportDocument.definitions);
   assert.deepEqual(importedAst.imports.sources, pinnedImportDocument.sources);
   assert.deepEqual(importedAst.imports.mappings, pinnedImportDocument.mappings);
+  const exported = join(mkdtempSync(join(tmpdir(), "skjs-export-")), "client.ts");
+  writeFileSync(exported, "export function own(this: undefined): undefined { return this; }\n");
+  assert.equal(parseFile(exported).functions[0]?.body[0]?.k, "return");
+  writeFileSync(exported, "export async function own(): Promise<boolean> { return true; }\n");
+  assert.throws(() => parseFile(exported),
+    /only the export modifier is admitted on a source function/);
   assert.throws(() => parseFile(jsonPath, false, { modules, config }),
-    /modifiers \(export\/async\/declare\) are outside the fragment/);
+    /unknown type parameter/);
   assert.deepEqual(pinnedImportDocument.roots.map(r => r.binding.local), ["Json", "JsonObject"]);
   assert.deepEqual(pinnedImportDocument.definitions.map(d => d.declaration.name),
     ["Json", "JsonObject"]);
