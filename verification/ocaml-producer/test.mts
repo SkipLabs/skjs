@@ -6,7 +6,8 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { openText, parseFile, definedClassCallables, close as closeParser } from "../tools/fragment-parse.mts";
 import { moduleEdges } from "../tools/module-deps.mts";
-import { resolveNamedImports, resolveModuleImport, type ModuleSource } from "../tools/module-resolve.mts";
+import { resolveNamedImports, resolveModuleImport } from "../tools/module-resolve.mts";
+import { loadImportUniverseFromProject } from "../tools/import-universe-project.mts";
 import { collectImportDocument, collectTypeClosure } from "../tools/module-closure.mts";
 import type { ImportDocument } from "../tools/imported-types.mts";
 import { spawnSync } from "node:child_process";
@@ -34,14 +35,6 @@ let recursiveJson = "";
 // classes. A simplified replacement must not quietly inherit its census row.
 for (const [file, expected] of [
   ["examples/reactive-sum-prettier-ignore.ts", "f6463ff031d46252cc2a1442c022ea3d709758233e91607eec9673595ea9e271"],
-  ["upstream/skipruntime-ts/api-prettier-ignore.ts", "3bfa83b7c2328f4adda5f0bb54569a46c0d776d93184fdb5eb0e789f4b190909"],
-  ["upstream/skipruntime-ts/core/src/index-prettier-ignore.ts", "bebd40823a41907ade68b39f755bbceeea5d2afd6ccaaca519e7b6f51ee5586b"],
-  ["upstream/skipruntime-ts/core/src/errors-prettier-ignore.ts", "37d2dc3269d9b9ffdd27f50718b5167549e4050edcbbf24491cc477af91c1d27"],
-  ["upstream/skipruntime-ts/server/src/server-prettier-ignore.ts", "4a438a5801ff5e99db09b3006971df36e086b0c3da3a358052c79c5fa665458e"],
-  ["upstream/skipruntime-ts/core/package-prettier-ignore.json", "edf6f423e4ead592191f34bd14a563014b5afe73568fc15644f624ff0e4e4e54"],
-  ["upstream/skipruntime-ts/server/package-prettier-ignore.json", "22a88f9e8400004fecd6e2b05d4d4f3397e727b92445efdbb96e79315754052a"],
-  ["upstream/skiplang/skjson/ts/binding/src/index-prettier-ignore.ts", "f1a66edb8c1ee719f867c7202a6edf1bb90bac60dab84914a06ae22ba4ef5ffc"],
-  ["upstream/prebuild-prettier-ignore.mjs", "e5ca823bf0cd6f2d6fc0109ad8146b6424ccbc946b62f730b1b6ffe02182bdbb"],
 ] as const) {
   assert.equal(createHash("sha256").update(readFileSync(join(here, file))).digest("hex"), expected,
     `${file}: update the upstream provenance and census before replacing this fixture`);
@@ -61,48 +54,21 @@ for (const [file, expected] of [
     ["@skipruntime/core", "Values", true],
     ["@skipruntime/server", "runService", false],
   ]);
-  const api = resolve(here, "upstream/skipruntime-ts/api-prettier-ignore.ts");
+  const api = resolve(here, "upstream/skipruntime-ts/core/src/api.ts");
   const transitive = moduleEdges(openText(api, readFileSync(api, "utf8")));
   assert(transitive.some((e) => e.kind === "import" && e.imported === "Json" && e.typeOnly));
   assert(transitive.some((e) => e.kind === "reexport" && e.imported === "deepFreeze" && !e.typeOnly));
-  const module = (id: string, fixture: string): ModuleSource => {
-    const path = resolve(here, "upstream", fixture);
-    const bytes = readFileSync(path, "utf8");
-    return { id, sha256: createHash("sha256").update(bytes).digest("hex"),
-      source: openText(path, bytes) };
-  };
-  const modules = [
-    module("core/src/index.ts", "skipruntime-ts/core/src/index-prettier-ignore.ts"),
-    module("core/src/api.ts", "skipruntime-ts/api-prettier-ignore.ts"),
-    module("core/src/errors.ts", "skipruntime-ts/core/src/errors-prettier-ignore.ts"),
-    module("server/src/server.ts", "skipruntime-ts/server/src/server-prettier-ignore.ts"),
-    module("skiplang/skjson/ts/binding/src/index.ts",
-      "skiplang/skjson/ts/binding/src/index-prettier-ignore.ts"),
-  ];
-  const packages = new Map([
-    ["@skipruntime/core", "core/src/index.ts"],
-    ["@skipruntime/server", "server/src/server.ts"],
-  ]);
-  for (const [name, file, entry] of [
-    ["@skipruntime/core", "core/package-prettier-ignore.json", "./dist/src/index.js"],
-    ["@skipruntime/server", "server/package-prettier-ignore.json", "./dist/src/server.js"],
-  ]) {
-    const data: unknown = JSON.parse(readFileSync(resolve(here, "upstream/skipruntime-ts", file), "utf8"));
-    assert.ok(data && typeof data === "object" && "name" in data &&
-      "exports" in data && data.exports && typeof data.exports === "object" &&
-      "." in data.exports);
-    assert.equal(data.name, name);
-    assert.equal(data.exports["."], entry);
-  }
-  const mappingText = readFileSync(resolve(here, "upstream/prebuild-prettier-ignore.mjs"), "utf8");
-  assert.match(mappingText, /"skiplang-json": "\.\/skiplang\/skjson\/ts\/binding\/src"/);
-  const config = { packages, mappingSources: new Map([["prebuild.mjs", mappingText]]),
-    links: new Map([["core/skiplang-json/index.ts", {
-    virtual: "core/skiplang-json/index.ts",
-    canonical: "skiplang/skjson/ts/binding/src/index.ts",
-    source: "prebuild.mjs",
-    sha256: createHash("sha256").update(mappingText).digest("hex"),
-  }]]) };
+  const { modules, config } = loadImportUniverseFromProject(resolve(here, "upstream"));
+  const coreIndex = must(modules.find(m => m.id === "core/src/index.ts"), "core index source");
+  const apiModule = must(modules.find(m => m.id === "core/src/api.ts"), "core API source");
+  const jsonModule = must(modules.find(m => m.id === "skiplang/skjson/ts/binding/src/index.ts"),
+    "Json source");
+  assert.equal(apiModule.sha256,
+    "3bfa83b7c2328f4adda5f0bb54569a46c0d776d93184fdb5eb0e789f4b190909");
+  assert.equal(jsonModule.sha256,
+    "f1a66edb8c1ee719f867c7202a6edf1bb90bac60dab84914a06ae22ba4ef5ffc");
+  assert.equal(config.mappingSources.get("symlink:core/skiplang-json"),
+    "skiplang/skjson/ts/binding/src");
   const resolved = resolveNamedImports(openText(source, readFileSync(source, "utf8")),
     modules, config);
   assert.deepEqual(resolved.map(r => [r.binding.local, r.declaration.module,
@@ -119,25 +85,25 @@ for (const [file, expected] of [
       ["server/src/server.ts"]],
   ]);
   assert.throws(() => resolveNamedImports(openText(source, readFileSync(source, "utf8")),
-    modules.slice(0, 2), config), /module not supplied/);
+    modules.filter(m => m.id !== "core/src/api.ts"), config), /module not supplied/);
   assert.throws(() => resolveNamedImports(openText(source, readFileSync(source, "utf8")),
-    [{ ...modules[0], sha256: "0".repeat(64) }, ...modules.slice(1)], config),
+    modules.map(m => m.id === coreIndex.id ? { ...m, sha256: "0".repeat(64) } : m), config),
     /fingerprint differs/);
   const duplicate = "export interface Mapper {}\n";
   assert.throws(() => resolveNamedImports(openText(source, readFileSync(source, "utf8")),
-    [...modules.slice(0, 2), {
+    [...modules.filter(m => m.id !== "core/src/errors.ts"), {
       id: "core/src/errors.ts",
       sha256: createHash("sha256").update(duplicate).digest("hex"),
       source: openText(resolve(here, "duplicate-errors.ts"), duplicate),
-    }, modules[3]], config), /ambiguous export core\/src\/index.ts#Mapper/);
+    }], config), /ambiguous export core\/src\/index.ts#Mapper/);
   const broken = "export { Mapper } from './empty.js';\n";
   const empty = "export const other = 1;\n";
   assert.throws(() => resolveNamedImports(openText(source, readFileSync(source, "utf8")),
-    [...modules.slice(0, 2), {
+    [...modules.filter(m => m.id !== "core/src/errors.ts"), {
       id: "core/src/errors.ts",
       sha256: createHash("sha256").update(broken).digest("hex"),
       source: openText(resolve(here, "broken-errors.ts"), broken),
-    }, modules[3], {
+    }, {
       id: "core/src/empty.ts",
       sha256: createHash("sha256").update(empty).digest("hex"),
       source: openText(resolve(here, "empty.ts"), empty),
@@ -154,9 +120,9 @@ for (const [file, expected] of [
       ["core/src/index.ts", "core/src/api.ts", "skiplang/skjson/ts/binding/src/index.ts"]],
   ]);
   assert.deepEqual(jsonImports.map(r => r.mappings.map(m => m.source)),
-    [["prebuild.mjs"], ["prebuild.mjs"]]);
+    [["symlink:core/skiplang-json"], ["symlink:core/skiplang-json"]]);
   assert.throws(() => resolveNamedImports(openText(jsonPath, jsonClient),
-    modules, { ...config, mappingSources: new Map([["prebuild.mjs", "changed"]]) }),
+    modules, { ...config, mappingSources: new Map([["symlink:core/skiplang-json", "changed"]]) }),
     /mapping fingerprint differs/);
   const apiJson = resolveModuleImport("core/src/api.ts", "Json", modules, config);
   assert.equal(apiJson?.declaration.module, "skiplang/skjson/ts/binding/src/index.ts");
@@ -193,6 +159,15 @@ for (const [file, expected] of [
   assert.equal(checkedJson.status, "verified", JSON.stringify(checkedJson));
   assert.equal(checkedJson.phase, "check");
   assert.deepEqual(checkedJson.functions, ["nest", "lookup"]);
+  const cli = spawnSync(process.execPath, [join(here, "check.mts"), jsonPath,
+    "--project", join(here, "upstream")], { encoding: "utf8", timeout: 30_000 });
+  assert.ifError(cli.error);
+  assert.equal(cli.status, 0, cli.stdout + cli.stderr);
+  const cliResult: unknown = JSON.parse(cli.stdout);
+  assert.ok(cliResult && typeof cliResult === "object" && "status" in cliResult &&
+    "functions" in cliResult && Array.isArray(cliResult.functions));
+  assert.equal(cliResult.status, "verified");
+  assert.deepEqual(cliResult.functions, ["nest", "lookup"]);
   for (const [file, name] of [
     ["invalid-recursive-json-member", "invalidMember"],
     ["invalid-recursive-json-missing", "missingKey"],
@@ -214,7 +189,7 @@ for (const [file, expected] of [
   assert.deepEqual(pinnedImportDocument.sources.map(s => s.module), [
     "core/src/api.ts", "core/src/index.ts", "skiplang/skjson/ts/binding/src/index.ts",
   ]);
-  assert.deepEqual(pinnedImportDocument.mappings.map(m => m.source), ["prebuild.mjs"]);
+  assert.deepEqual(pinnedImportDocument.mappings.map(m => m.source), ["symlink:core/skiplang-json"]);
   for (const source of pinnedImportDocument.sources)
     assert.equal(createHash("sha256").update(source.text).digest("hex"), source.sha256);
   for (const mapping of pinnedImportDocument.mappings)
@@ -233,7 +208,7 @@ for (const [file, expected] of [
   ]);
   assert(jsonClosure.definitions.every(d =>
     d.declaration.module === "skiplang/skjson/ts/binding/src/index.ts" &&
-    d.sha256 === modules[4].sha256));
+    d.sha256 === jsonModule.sha256));
   const json = jsonClosure.definitions.find(d => d.declaration.name === "Json");
   const jsonObject = jsonClosure.definitions.find(d => d.declaration.name === "JsonObject");
   assert(json && jsonObject && json.expression.k === "union" &&

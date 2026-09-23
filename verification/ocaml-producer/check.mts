@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { createHash } from "node:crypto";
 import { parseFile, type ImportUniverse } from "../tools/fragment-parse.mts";
+import { loadImportUniverseFromProject } from "../tools/import-universe-project.mts";
 
 const here = import.meta.dirname;
 const repo = resolve(here, "../..");
@@ -158,13 +159,18 @@ export function check(source: string, importUniverse?: ImportUniverse): Outcome 
   }
 }
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
-  const source = process.argv[2];
-  if (!source) {
-    process.stderr.write("usage: node check.mts file.ts\n");
+  const args = process.argv.slice(2);
+  if (!(args.length === 1 || (args.length === 3 && args[1] === "--project"))) {
+    process.stderr.write("usage: node check.mts file.ts [--project source-tree]\n");
     process.exitCode = 2;
   } else {
-    const result = check(source);
-    process.stdout.write(JSON.stringify(result, null, 2) + "\n");
-    process.exitCode = result.status === "verified" ? 0 : 1;
+    try {
+      const result = check(args[0], args[2] ? loadImportUniverseFromProject(args[2]) : undefined);
+      process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+      process.exitCode = result.status === "verified" ? 0 : 1;
+    } catch (error) {
+      process.stderr.write((error instanceof Error ? error.message : String(error)) + "\n");
+      process.exitCode = 1;
+    }
   }
 }

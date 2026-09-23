@@ -15,9 +15,16 @@ npm ci --prefix verification/tools
 lake -d verification/lean build verifier
 dune build --root verification/ocaml-producer
 node verification/ocaml-producer/check.mts verification/ocaml-producer/examples/callbacks.ts
+node verification/ocaml-producer/check.mts verification/ocaml-producer/examples/recursive-json.ts \
+  --project verification/ocaml-producer/upstream
 dune runtest --root verification/ocaml-producer
 node verification/ocaml-producer/test.mts
 ```
+
+The `--project` argument may also point at the actual Skip checkout (for
+example `../skip`); the command reads its TypeScript files, package exports,
+and workspace symlinks directly. The checked-in `upstream` directory is a
+small source-tree snapshot used to make the test reproducible.
 
 Set `VERIFIER` to reuse a verifier executable built from this checkout's Lean
 sources. This avoids rebuilding Lean in a fresh worktree. The prototype requires
@@ -422,7 +429,7 @@ independent checking. Report verified, rejected and unsupported separately.
 The baseline is pinned to upstream `skip` commit
 `cb030b5ac7beda28fd5f65e3292a485173d5faef`. The byte-for-byte
 [`sum.ts`](examples/reactive-sum-prettier-ignore.ts) and
-[`api.ts`](upstream/skipruntime-ts/api-prettier-ignore.ts) snapshots are checked by SHA-256 in
+[`api.ts`](upstream/skipruntime-ts/core/src/api.ts) snapshots are checked by SHA-256 in
 `test.mts`. `cases.mts` records the real program as `unsupported` at the
 source gate: the first `ImportDeclaration` precedes every class. Thus **zero
 of the six class callables below are currently checked**; no producer proposal,
@@ -504,7 +511,7 @@ Other declaration kinds and type-binding forms still refuse explicitly. The
 Fragment document now has one required `imports` slot, emitted empty by the
 source parser. The collector can assemble both real `Json` imports into that
 shared slot with deduplicated declaration equations, module bytes, route
-fingerprints, and the `prebuild.mjs` mapping bytes. The trusted parser fills
+fingerprints, and the workspace symlink target. The trusted parser fills
 the slot for named type-only imports when its caller supplies an explicit,
 fingerprinted module universe. The parser represents imported references in
 function annotations as alias atoms whose local spellings resolve through the
@@ -516,8 +523,11 @@ universe reach search and fail: a non-JSON dictionary member and a missing-key
 read without `undefined`. OCaml reserves empty rows for imported declarations;
 Lean derives and fills their equations from the Fragment's source-type
 expressions. The suite refuses producer-filled rows and source-authored internal
-graph labels. The ordinary CLI and viewer still do not supply a module universe,
-so their `recursive-json.ts` entry remains an explicit source gap. This is
+graph labels. The CLI accepts `--project` with a source checkout containing the
+TypeScript files, package manifests and workspace symlinks; the test and command
+above read the same checked-in source snapshot. All intermediate JSON is
+generated from that source tree. A bare CLI invocation and the viewer still do not
+supply a module universe, so their `recursive-json.ts` entry remains an explicit source gap. This is
 conditional verification relative to the trusted import document, not closure
 of the full milestone.
 
@@ -532,15 +542,16 @@ The import document is self-contained for the collected declaration equations
 and their source bytes, but **not yet for independently checked source or route
 authority**. The TypeScript parser and resolver are trusted to derive equations
 from the supplied source bytes; Lean interprets those equations but does not
-reparse TypeScript or recompute the recorded SHA-256 fingerprints. The resolver's
-package map and workspace links are caller-supplied; hashing `package.json`
-and `prebuild.mjs` in the fixture test does not prove that the entries in a
-later request were derived from those files. The present successful result is
-therefore relative to the explicit, pinned module universe supplied by the
-test. Independent source and route reconstruction, or explicit assumptions in
-the acceptance theorem and viewer report, remain necessary before presenting
-it as verification of arbitrary resolved TypeScript imports. A matching hash
-on a route chosen by the caller is insufficient.
+reparse TypeScript or recompute the recorded SHA-256 fingerprints. The CLI
+builds the universe from the checkout's `.ts` files, package `exports`, and
+actual workspace symlinks, hashing each input before parsing. This removes a
+handwritten route manifest, but Lean still trusts that front-end construction:
+its acceptance theorem does not independently prove that a given package
+export or symlink came from those filesystem inputs. The present result is
+relative to the supplied source tree and that trusted front end. Independent
+route reconstruction, or explicit assumptions in the acceptance theorem and
+viewer report, remain necessary before presenting this as verification of
+arbitrary resolved TypeScript imports.
 
 `core/src/api.ts` imports `Json`, `JsonObject` and `DepSafe` from
 `../skiplang-json/index.js`. In the Skip checkout, `prebuild.mjs` makes
