@@ -159,6 +159,23 @@ for (const [file, expected] of [
   assert(jsonClosure.definitions.every(d =>
     d.declaration.module === "skiplang/skjson/ts/binding/src/index.ts" &&
     d.sha256 === modules[4].sha256));
+  const json = jsonClosure.definitions.find(d => d.declaration.name === "Json");
+  const jsonObject = jsonClosure.definitions.find(d => d.declaration.name === "JsonObject");
+  assert(json && jsonObject && json.expression.k === "union" &&
+    jsonObject.expression.k === "object");
+  const array = json.expression.parts.find(p => p.k === "array");
+  const objectRef = json.expression.parts.find(p => p.k === "reference" &&
+    p.reference.target.name === "JsonObject");
+  assert(array && array.k === "array" && array.readonly &&
+    array.element.k === "union" && objectRef && objectRef.k === "reference");
+  assert(array.element.parts.some(p => p.k === "reference" &&
+    p.reference.target.name === "Json" && p.reference.target.module === json.declaration.module));
+  assert(array.element.parts.some(p => p.k === "atom" && p.name === "null"));
+  const index = jsonObject.expression.stringIndex;
+  assert(index && index.readonly && index.value.k === "union");
+  assert(index.value.parts.some(p => p.k === "reference" &&
+    p.reference.target.name === "Json" && p.reference.target.module === json.declaration.module));
+  assert(index.value.parts.some(p => p.k === "atom" && p.name === "null"));
   const a = "import type { B } from './b.js'; export type A<T> = { next: B<T> }; export type Bound<T extends B<number>> = T;";
   const b = "import type { A } from './a.js'; export type B<T> = { prev: A<T> };";
   const pair = [
@@ -179,6 +196,12 @@ for (const [file, expected] of [
     ["A", ["T"], [["B", 1]]],
     ["B", ["T"], [["A", 1]]],
   ]);
+  const aDef = pairClosure.definitions.find(d => d.declaration.name === "A");
+  assert(aDef && aDef.expression.k === "object");
+  const next = aDef.expression.fields.find(f => f.name === "next");
+  assert(next && next.type.k === "reference" && next.type.args[0]?.k === "parameter");
+  assert.equal(next.type.reference.target.module, "fixture/b.ts");
+  assert.equal(next.type.args[0].index, 0);
   const boundClient = "import type { Bound } from '@fixture/a';";
   const boundRoot = resolveNamedImports(openText(resolve(here, "bound-client.ts"), boundClient),
     pair, pairConfig)[0];
@@ -187,6 +210,9 @@ for (const [file, expected] of [
     [d.declaration.name, d.references.map(r => r.target.name)]), [
     ["Bound", ["B"]], ["B", ["A"]], ["A", ["B"]],
   ]);
+  const bound = collectTypeClosure(boundRoot, pair, pairConfig).definitions[0]?.parameters[0]?.bound;
+  assert(bound && bound.k === "reference" && bound.args[0]?.k === "atom");
+  assert.equal(bound.args[0].name, "number");
   const missing = "export type MissingEdge = NoDefinition;";
   const missingModule = [{ id: "fixture/missing.ts",
     sha256: createHash("sha256").update(missing).digest("hex"),
@@ -198,6 +224,18 @@ for (const [file, expected] of [
   assert.ok(missingRoot);
   assert.throws(() => collectTypeClosure(missingRoot, missingModule, missingConfig),
     /unresolved type reference fixture\/missing.ts#NoDefinition/);
+  const conditional = "export type Conditional<T> = T extends boolean ? number : string;";
+  const conditionalModule = [{ id: "fixture/conditional.ts",
+    sha256: createHash("sha256").update(conditional).digest("hex"),
+    source: openText(resolve(here, "fixture-conditional.ts"), conditional) }];
+  const conditionalRoot = resolveNamedImports(openText(resolve(here, "conditional-client.ts"),
+    "import type { Conditional } from '@fixture/conditional';"), conditionalModule,
+  { packages: new Map([["@fixture/conditional", "fixture/conditional.ts"]]),
+    links: new Map(), mappingSources: new Map() })[0];
+  assert(conditionalRoot);
+  assert.throws(() => collectTypeClosure(conditionalRoot, conditionalModule,
+    { packages: new Map([["@fixture/conditional", "fixture/conditional.ts"]]),
+      links: new Map(), mappingSources: new Map() }), /unsupported type syntax ConditionalType/);
   closeParser();
 }
 function must<T>(value: T | null | undefined, message: string): T {

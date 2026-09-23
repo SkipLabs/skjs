@@ -492,6 +492,11 @@ Checkpoint 1 has a **provenance-only implementation for type aliases** in
 export, API-local `export type`, and the workspace link to that source. The
 collector reaches `Json` and `JsonObject` as two nodes without inlining either,
 and a separate two-file generic cycle checks binder and argument retention.
+Each collected alias now also has a structural source-type expression: the
+pinned `Json` cycle retains its readonly array, dictionary index, unions,
+`null`, and declaration-identified references; the generic cycle retains
+binder indices and applied arguments. Unsupported syntax is refused during
+collection rather than left inside an opaque span.
 Other declaration kinds and type-binding forms still refuse explicitly. No
 declaration closure is yet carried into Fragment, SourceClaims or Lean, so this
 progress does not change verification coverage or admit imports at the source

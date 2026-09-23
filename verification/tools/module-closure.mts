@@ -3,7 +3,7 @@
  * semantic types. Unsupported binding forms fail instead of disappearing. */
 import { createHash } from "node:crypto";
 import * as ts from "typescript/unstable/ast";
-import type { Node, SourceFile, TypeAliasDeclaration } from "typescript/unstable/ast";
+import type { SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
 import { resolveModuleImport, type DeclarationIdentity, type MappingStep,
   type ModuleSource, type ResolutionConfig, type ResolvedImport } from "./module-resolve.mts";
@@ -16,11 +16,25 @@ export type Reference = {
   route: ResolvedImport["route"];
   mappings: MappingStep[];
 };
+/** A source type equation, before translating it to the verifier's positive
+ * graph. References carry declaration identities, never a bare spelling;
+ * binders are indexed within their declaring alias. Unsupported syntax is
+ * refused while constructing this tree rather than silently traversed. */
+export type TypeTerm =
+  | { k: "atom"; name: "null" | "undefined" | "boolean" | "number" | "string" | "unknown" | "never" | "void"; span: Span }
+  | { k: "literal"; name: "true" | "false" | "string" | "number"; text: string; span: Span }
+  | { k: "union" | "intersection"; parts: TypeTerm[]; span: Span }
+  | { k: "array"; readonly: boolean; element: TypeTerm; span: Span }
+  | { k: "object"; fields: { name: string; optional: boolean; readonly: boolean; type: TypeTerm; span: Span }[];
+      stringIndex: { readonly: boolean; value: TypeTerm; span: Span } | null; span: Span }
+  | { k: "parameter"; index: number; span: Span }
+  | { k: "reference"; reference: Reference; args: TypeTerm[]; span: Span };
 export type TypeDefinition = {
   declaration: DeclarationIdentity;
   sha256: string;
-  parameters: { name: string; span: Span }[];
+  parameters: { name: string; span: Span; bound: TypeTerm | null }[];
   body: Span;
+  expression: TypeTerm;
   references: Reference[];
 };
 export type TypeClosure = { root: ResolvedImport; definitions: TypeDefinition[] };
@@ -76,54 +90,113 @@ export function collectTypeClosure(
     if (!module) throw Error(`module not supplied: ${identity.module}`);
     const source = module.source;
     const node = alias(source, identity);
-    const parameters = node.typeParameters?.map(parameter => {
-      const span: Span = [parameter.getStart(source), parameter.end];
-      return { name: parameter.name.text, span };
-    }) ?? [];
-    if (new Set(parameters.map(p => p.name)).size !== parameters.length)
+    const parameterNodes = node.typeParameters ?? [];
+    const parameterNames = parameterNodes.map(parameter => parameter.name.text);
+    if (new Set(parameterNames).size !== parameterNames.length)
       throw Error(`duplicate binder in ${identity.module}#${identity.name}`);
-    const bound = new Set(parameters.map(p => p.name));
     const references: Reference[] = [];
-    const visit = (part: Node): void => {
-      if (ts.isImportTypeNode(part) || ts.isTypeQueryNode(part) ||
-          ts.isConditionalTypeNode(part) || ts.isMappedTypeNode(part) ||
-          ts.isInferTypeNode(part))
-        throw Error(`unsupported type binding in ${identity.module}#${identity.name}`);
+    const span = (part: TypeNode): Span => [part.getStart(source), part.end];
+    const parse = (part: TypeNode): TypeTerm => {
+      const pos = span(part);
+      const atom = (name: Extract<TypeTerm, { k: "atom" }>["name"]): TypeTerm =>
+        ({ k: "atom", name, span: pos });
+      switch (part.kind) {
+        case ts.SyntaxKind.NullKeyword: return atom("null");
+        case ts.SyntaxKind.UndefinedKeyword: return atom("undefined");
+        case ts.SyntaxKind.BooleanKeyword: return atom("boolean");
+        case ts.SyntaxKind.NumberKeyword: return atom("number");
+        case ts.SyntaxKind.StringKeyword: return atom("string");
+        case ts.SyntaxKind.UnknownKeyword: return atom("unknown");
+        case ts.SyntaxKind.NeverKeyword: return atom("never");
+        case ts.SyntaxKind.VoidKeyword: return atom("void");
+      }
+      if (ts.isParenthesizedTypeNode(part)) return parse(part.type);
+      if (ts.isUnionTypeNode(part) || ts.isIntersectionTypeNode(part))
+        return { k: ts.isUnionTypeNode(part) ? "union" : "intersection",
+          parts: part.types.map(parse), span: pos };
+      if (ts.isArrayTypeNode(part))
+        return { k: "array", readonly: false, element: parse(part.elementType), span: pos };
+      if (ts.isTypeOperatorNode(part) && part.operator === ts.SyntaxKind.ReadonlyKeyword &&
+          ts.isArrayTypeNode(part.type))
+        return { k: "array", readonly: true, element: parse(part.type.elementType), span: pos };
+      if (ts.isLiteralTypeNode(part)) {
+        const literal = part.literal;
+        if (literal.kind === ts.SyntaxKind.NullKeyword) return atom("null");
+        if (literal.kind === ts.SyntaxKind.TrueKeyword || literal.kind === ts.SyntaxKind.FalseKeyword)
+          return { k: "literal", name: literal.kind === ts.SyntaxKind.TrueKeyword ? "true" : "false",
+            text: literal.getText(source), span: pos };
+        if (ts.isStringLiteral(literal) || ts.isNumericLiteral(literal))
+          return { k: "literal", name: ts.isStringLiteral(literal) ? "string" : "number",
+            text: literal.getText(source), span: pos };
+      }
+      if (ts.isTypeLiteralNode(part)) {
+        const fields: Extract<TypeTerm, { k: "object" }>["fields"] = [];
+        let stringIndex: Extract<TypeTerm, { k: "object" }>["stringIndex"] = null;
+        const names = new Set<string>();
+        for (const member of part.members) {
+          if (ts.isPropertySignatureDeclaration(member)) {
+            if (!member.name || !member.type ||
+                !(ts.isIdentifier(member.name) || ts.isStringLiteral(member.name)) ||
+                member.modifiers?.some(m => m.kind !== ts.SyntaxKind.ReadonlyKeyword))
+              throw Error(`unsupported property signature in ${identity.module}#${identity.name}`);
+            const name = member.name.text;
+            if (names.has(name)) throw Error(`duplicate named field ${identity.module}#${name}`);
+            names.add(name);
+            fields.push({ name, optional: member.postfixToken?.kind === ts.SyntaxKind.QuestionToken,
+              readonly: member.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true,
+              type: parse(member.type), span: [member.getStart(source), member.end] });
+          } else if (ts.isIndexSignatureDeclaration(member)) {
+            if (stringIndex || member.parameters.length !== 1 ||
+                member.parameters[0]?.type?.kind !== ts.SyntaxKind.StringKeyword || !member.type ||
+                member.modifiers?.some(m => m.kind !== ts.SyntaxKind.ReadonlyKeyword))
+              throw Error(`unsupported index signature in ${identity.module}#${identity.name}`);
+            stringIndex = { readonly: member.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true,
+              value: parse(member.type), span: [member.getStart(source), member.end] };
+          } else throw Error(`unsupported object member in ${identity.module}#${identity.name}`);
+        }
+        return { k: "object", fields, stringIndex, span: pos };
+      }
       if (ts.isTypeReferenceNode(part)) {
         if (!ts.isIdentifier(part.typeName))
           throw Error(`qualified type reference in ${identity.module}#${identity.name}`);
         const name = part.typeName.text;
-        if (bound.has(name)) {
+        const index = parameterNames.indexOf(name);
+        if (index >= 0) {
           if (part.typeArguments?.length)
             throw Error(`type parameter applied as constructor: ${name}`);
-        } else {
-          const local = localAlias(source, identity.module, name);
-          const imported = local ? null :
-            resolveModuleImport(identity.module, name, modules, config);
-          const target = local ?? imported?.declaration;
-          if (!target || target.capability === "value")
-            throw Error(`unresolved type reference ${identity.module}#${name}`);
-          const targetNode = alias(sourceOf(target.module), target);
-          const arguments_ = part.typeArguments ?? [];
-          if (arguments_.length !== (targetNode.typeParameters?.length ?? 0))
-            throw Error(`type argument arity: ${target.module}#${target.name}`);
-          references.push({ name, span: [part.getStart(source), part.end],
-            arguments: arguments_.map(arg => [arg.getStart(source), arg.end]),
-            target, route: imported?.route ?? [{ module: identity.module,
-              sha256: module.sha256 }], mappings: imported?.mappings ?? [] });
-          queue.push(target);
+          return { k: "parameter", index, span: pos };
         }
+        const local = localAlias(source, identity.module, name);
+        const imported = local ? null : resolveModuleImport(identity.module, name, modules, config);
+        const target = local ?? imported?.declaration;
+        if (!target || target.capability === "value")
+          throw Error(`unresolved type reference ${identity.module}#${name}`);
+        const targetNode = alias(sourceOf(target.module), target);
+        const arguments_ = part.typeArguments ?? [];
+        if (arguments_.length !== (targetNode.typeParameters?.length ?? 0))
+          throw Error(`type argument arity: ${target.module}#${target.name}`);
+        const reference: Reference = { name, span: pos,
+          arguments: arguments_.map(arg => [arg.getStart(source), arg.end]),
+          target, route: imported?.route ?? [{ module: identity.module,
+            sha256: module.sha256 }], mappings: imported?.mappings ?? [] };
+        references.push(reference);
+        queue.push(target);
+        return { k: "reference", reference, args: arguments_.map(parse), span: pos };
       }
-      part.forEachChild(child => { visit(child); });
+      throw Error(`unsupported type syntax ${ts.SyntaxKind[part.kind]} in ` +
+        `${identity.module}#${identity.name} at [${pos[0]},${pos[1]})`);
     };
-    for (const parameter of node.typeParameters ?? []) {
-      if (parameter.constraint) visit(parameter.constraint);
-      if (parameter.defaultType) visit(parameter.defaultType);
-    }
-    visit(node.type);
+    const parameters = parameterNodes.map(parameter => {
+      if (parameter.defaultType)
+        throw Error(`type parameter default in ${identity.module}#${identity.name} is not collected`);
+      const parameterSpan: Span = [parameter.getStart(source), parameter.end];
+      return { name: parameter.name.text, span: parameterSpan,
+        bound: parameter.constraint ? parse(parameter.constraint) : null };
+    });
+    const expression = parse(node.type);
     definitions.push({ declaration: identity,
       sha256: module.sha256,
-      parameters, body: [node.type.getStart(source), node.type.end], references });
+      parameters, body: [node.type.getStart(source), node.type.end], expression, references });
   }
   return { root, definitions };
 }

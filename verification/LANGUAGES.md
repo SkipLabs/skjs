@@ -28,6 +28,7 @@ missing key is a type error rather than a run-time refusal.
 | Language | Lean | TypeScript | Produced by |
 | --- | --- | --- | --- |
 | **Fragment** — the subset of TypeScript this pipeline accepts, as a tree | [Fragment.lean](lean/Verification/Model/Source/Fragment.lean) | [fragment.mts](tools/fragment.mts), parsed by [fragment-parse.mts](tools/fragment-parse.mts) | the parser |
+| **Imported declaration closure** — source type equations with resolved declaration identities and binder indices; provenance only, not yet accepted by the verifier | — | [module-closure.mts](tools/module-closure.mts) | the pinned-module collector |
 | **Claim** — what a producer says a type is, and what a source annotation is written in | [Claim.lean](lean/Verification/Model/Types/Claim.lean) | [claim.mts](tools/claim.mts), printed by [claim-text.mts](tools/claim-text.mts) | SKJS, `tsc-claims.mts` |
 | **SourceClaims** — claims attached to source spans, producer-independent | [SourceClaims.lean](lean/Verification/Model/Source/SourceClaims.lean) | [source-claims.mts](tools/source-claims.mts) | SKJS, `tsc-claims.mts`, [OCaml prototype](ocaml-producer/README.md) |
 | **Calculus** — terms, tags, call codes: the operational language | [Calculus.lean](lean/Verification/Model/Semantics/Calculus.lean) | [calculus.mts](tools/calculus.mts) | extraction |
