@@ -403,7 +403,7 @@ function parseType(text: string): ClaimType {
       if (tokens[i + 1] === "<") {
         const name = take();
         take("<");
-        const args = [union()];
+        const args = peek() === ">" ? [] : [union()];
         while (peek() === ",") {
           take(",");
           args.push(union());

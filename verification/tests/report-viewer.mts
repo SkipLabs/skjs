@@ -551,6 +551,12 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
     top: false,
     atoms: [{ a: "booleanlit", v: "true" }, { a: "null" }],
   });
+  // Nullary imported aliases retain their own identity in the editable claim
+  // language; bare names denote rigid parameters instead.
+  const imported = of({ a: "alias", name: "Json", args: [] });
+  assert.equal(surface.printType(imported).text, "Json<>");
+  assert.deepEqual(surface.parseType(surface.printType(imported).text), imported);
+  assert.deepEqual(surface.parseType("Json"), of({ a: "param", name: "Json" }));
 
   // Missing objects and free signatures use the same self-contained language.
   assert.equal(surface.parseType("{ value: boolean }").atoms[0].a, "record");
