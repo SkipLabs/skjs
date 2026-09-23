@@ -193,6 +193,10 @@ class Gate {
    * conflating an inner binder with an outer binder of the same spelling. */
   private readonly typeParamScopes: Set<string>[] = [];
   private readonly aliasNames = new Set<string>();
+  /** Local spelling to the arity of its resolved, declaration-identified root
+   * in the Fragment's import document. An alias atom retains this spelling;
+   * the document, never a global name table, resolves it. */
+  private readonly importedAliases = new Map<string, number>();
   private aliasApps = false;
   /* Whether the code being read is strict, by a module or a "use strict"
    * directive (ECMAScript's, not TypeScript's `strict` option). An ordinary
@@ -274,8 +278,15 @@ class Gate {
   }
 
   registerAlias(name: string, node: Node): void {
-    if (this.aliasNames.has(name)) this.fail(node, "duplicate type alias");
+    if (this.aliasNames.has(name) || this.importedAliases.has(name))
+      this.fail(node, "duplicate type alias");
     this.aliasNames.add(name);
+  }
+
+  registerImportedAlias(name: string, arity: number, node: Node): void {
+    if (this.importedAliases.has(name) || this.aliasNames.has(name))
+      this.fail(node, "duplicate imported type name");
+    this.importedAliases.set(name, arity);
   }
 
   enableAliasApps(): void {
@@ -488,6 +499,14 @@ class Gate {
       if (node.typeName.kind !== ts.SyntaxKind.Identifier)
         this.fail(node, "type reference outside the fragment");
       const name = node.typeName.text;
+      const importedArity = this.importedAliases.get(name);
+      if (importedArity !== undefined && !this.hasTypeParam(name)) {
+        const args = node.typeArguments?.map(arg => this.typeOf(arg)) ?? [];
+        if (args.length !== importedArity)
+          this.fail(node, `imported type '${name}' needs ${importedArity} type argument(s)`);
+        acc.push({ a: "alias", name, args });
+        return;
+      }
       if (node.typeArguments?.length) {
         if (!this.aliasApps)
           this.fail(
@@ -2052,6 +2071,17 @@ export function parseFile(file: string, carriesContext = false,
       imports = collectImportDocument(roots, universe.modules, universe.config);
     } catch (error) {
       gate.fail(first, messageOf(error));
+    }
+    for (const root of imports.roots) {
+      const identity = root.declaration;
+      const definition = imports.definitions.find(d =>
+        d.declaration.module === identity.module && d.declaration.name === identity.name &&
+        d.declaration.span[0] === identity.span[0] &&
+        d.declaration.span[1] === identity.span[1]);
+      if (!definition)
+        return gate.fail(first, `imported type definition missing: ${identity.module}#${identity.name}`);
+      const node = importNodes.find(n => n.getStart(source) === root.binding.span[0]) ?? first;
+      gate.registerImportedAlias(root.binding.local, definition.parameters.length, node);
     }
   }
   // Carried context holds aliases this fragment cannot state — more than one

@@ -178,8 +178,15 @@ for (const [file, expected] of [
   writeFileSync(exported, "export async function own(): Promise<boolean> { return true; }\n");
   assert.throws(() => parseFile(exported),
     /only the export modifier is admitted on a source function/);
-  assert.throws(() => parseFile(jsonPath, false, { modules, config }),
-    /unknown type parameter/);
+  const jsonAst = parseFile(jsonPath, false, { modules, config });
+  assert.deepEqual(jsonAst.functions.map(f => f.name), ["nest", "lookup"]);
+  assert.deepEqual(jsonAst.imports.definitions, pinnedImportDocument.definitions);
+  const nest = jsonAst.functions[0];
+  const lookup = jsonAst.functions[1];
+  assert(nest && lookup);
+  assert.deepEqual(nest.params[0]?.type.atoms[0], { a: "alias", name: "Json", args: [] });
+  assert.deepEqual(lookup.params[0]?.type.atoms[0], { a: "alias", name: "JsonObject", args: [] });
+  assert(lookup.retType.atoms.some(atom => atom.a === "alias" && atom.name === "Json"));
   assert.deepEqual(pinnedImportDocument.roots.map(r => r.binding.local), ["Json", "JsonObject"]);
   assert.deepEqual(pinnedImportDocument.definitions.map(d => d.declaration.name),
     ["Json", "JsonObject"]);
@@ -241,6 +248,18 @@ for (const [file, expected] of [
   const pairDocument = collectImportDocument([pairRoot], pair, pairConfig);
   assert.deepEqual(pairDocument.sources.map(s => s.module), ["fixture/a.ts", "fixture/b.ts"]);
   assert.equal(pairDocument.mappings.length, 0);
+  const genericClient = join(mkdtempSync(join(tmpdir(), "skjs-generic-import-")), "client.ts");
+  writeFileSync(genericClient,
+    'import type { A } from "@fixture/a";\n' +
+    'export function keep(value: A<boolean>): A<boolean> { return value; }\n');
+  const genericAst = parseFile(genericClient, false, { modules: pair, config: pairConfig });
+  assert.deepEqual(genericAst.functions[0]?.params[0]?.type.atoms[0],
+    { a: "alias", name: "A", args: [{ top: false, atoms: [{ a: "boolean" }] }] });
+  writeFileSync(genericClient,
+    'import type { A } from "@fixture/a";\n' +
+    'export function wrong(value: A<boolean, number>): boolean { return true; }\n');
+  assert.throws(() => parseFile(genericClient, false, { modules: pair, config: pairConfig }),
+    /imported type 'A' needs 1 type argument/);
   assert.deepEqual(pairClosure.definitions.map(d => [d.declaration.name,
     d.parameters.map(p => p.name), d.references.map(r => [r.target.name, r.arguments.length])]), [
     ["A", ["T"], [["B", 1]]],
