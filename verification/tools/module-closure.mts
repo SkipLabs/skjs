@@ -93,9 +93,12 @@ export function collectTypeClosure(
           parts: part.types.map(parse), span: pos };
       if (ts.isArrayTypeNode(part))
         return { k: "array", readonly: false, element: parse(part.elementType), span: pos };
+      if (ts.isTupleTypeNode(part)) return parseTuple(part, false, pos);
       if (ts.isTypeOperatorNode(part) && part.operator === ts.SyntaxKind.ReadonlyKeyword &&
           ts.isArrayTypeNode(part.type))
         return { k: "array", readonly: true, element: parse(part.type.elementType), span: pos };
+      if (ts.isTypeOperatorNode(part) && part.operator === ts.SyntaxKind.ReadonlyKeyword &&
+          ts.isTupleTypeNode(part.type)) return parseTuple(part.type, true, pos);
       if (ts.isLiteralTypeNode(part)) {
         const literal = part.literal;
         if (literal.kind === ts.SyntaxKind.NullKeyword) return atom("null");
@@ -161,6 +164,27 @@ export function collectTypeClosure(
       }
       throw Error(`unsupported type syntax ${ts.SyntaxKind[part.kind]} in ` +
         `${identity.module}#${identity.name} at [${pos[0]},${pos[1]})`);
+    };
+    const parseTuple = (part: ts.TupleTypeNode, readonly: boolean, pos: Span): TypeTerm => {
+      const required: TypeTerm[] = [], optional: TypeTerm[] = [];
+      let rest: TypeTerm | null = null;
+      for (const element of part.elements) {
+        if (ts.isNamedTupleMember(element))
+          throw Error(`named tuple position in ${identity.module}#${identity.name} is not collected`);
+        if (ts.isRestTypeNode(element)) {
+          if (rest || !ts.isArrayTypeNode(element.type))
+            throw Error(`tuple rest in ${identity.module}#${identity.name} needs a final array element`);
+          rest = parse(element.type.elementType);
+        } else if (ts.isOptionalTypeNode(element)) {
+          if (rest) throw Error(`tuple optional after rest in ${identity.module}#${identity.name}`);
+          optional.push(parse(element.type));
+        } else {
+          if (optional.length || rest)
+            throw Error(`tuple required after optional or rest in ${identity.module}#${identity.name}`);
+          required.push(parse(element));
+        }
+      }
+      return { k: "tuple", readonly, required, optional, rest, span: pos };
     };
     const parseMembers = (members: readonly TypeElement[], pos: Span,
       allowMethods: boolean): TypeTerm => {

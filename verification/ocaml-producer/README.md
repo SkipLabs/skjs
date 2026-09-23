@@ -467,8 +467,9 @@ resolution inventory, not acceptance of those contracts. The source gate
 currently admits named type-only imports of aliases and single interfaces
 whose fields, string indexes, fixed function-valued properties or fixed method
 signatures fit the imported graph. Synthetic `Box`, recursive `Node`,
-callable-property `CallableBox` and method-bearing `WithMethod` interfaces
-verify through the same Lean path. A detached method call fails its receiver
+callable-property `CallableBox` and method-bearing `WithMethod` interfaces,
+plus required, optional and rest tuple aliases (mutable or readonly), verify through the same Lean
+path. A detached method call fails its receiver
 obligation, while an incorrect callable result fails its return obligation.
 The method graph promises safe invocation for every receiver satisfying the
 interface, which is stronger than TypeScript's structural method declaration.
@@ -493,8 +494,10 @@ resolves its `Iterable` result reference to the configured TypeScript project's
 type arguments: the source writes one argument for an interface with three
 parameters. The library interface also contains a computed-symbol method and
 references to `Iterator`, so resolving its name is not interpreting it.
-Tuple results, generic interface substitution and the other API dependencies
-remain after that refusal.
+The tuple shape in that result is now interpreted by the imported graph;
+generic interface substitution, defaulted arguments, computed-symbol methods
+and the other API dependencies remain after that refusal. Named tuple position
+labels in imported declarations still refuse explicitly.
 
 The next file-level steps are to model the top-level initializer and other
 declarations without dropping their effects, and extend the admitted interface

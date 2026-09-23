@@ -164,6 +164,10 @@ let rec imported_type owner j =
   | "union" -> List.fold_left union (Atoms []) (List.map (imported_type owner) (items "parts" j))
   | "array" -> array {required=[];optional_elements=[];
       rest=Some (imported_type owner (field "element" j));readonly=boolean (field "readonly" j)}
+  | "tuple" -> array {required=List.map (imported_type owner) (items "required" j);
+      optional_elements=List.map (imported_type owner) (items "optional" j);
+      rest=(match field "rest" j with Null -> None | t -> Some (imported_type owner t));
+      readonly=boolean (field "readonly" j)}
   | "function" ->
     let receiver = match field "receiver" j with
       | Null -> top | source -> imported_type owner source in

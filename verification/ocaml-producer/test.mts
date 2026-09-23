@@ -289,6 +289,11 @@ for (const [file, expected] of [
     "export interface CallableBox { readonly invoke: (value: number) => boolean; }\n" +
     "export interface WithMethod { read(): boolean; }\n" +
     "export type WithMethodAlias = WithMethod;\n" +
+    "export type Pair = [boolean, number];\n" +
+    "export type ReadonlyPair = readonly [boolean, number];\n" +
+    "export type OptionalPair = [boolean, number?];\n" +
+    "export type RestPair = [boolean, ...number[]];\n" +
+    "export type NamedPair = [flag: boolean, count: number];\n" +
     "export type NestedMethod = { inner: { read(): boolean } };\n" +
     "export interface GenericMethod { read<T>(value: T): T; }\n" +
     "export interface OptionalMethod { read(value?: boolean): boolean; }\n" +
@@ -344,13 +349,18 @@ for (const [file, expected] of [
     ["fixture/barrel.ts", "fixture/a.ts"]);
   const boxClient = join(pairDir, "box-client.ts");
   writeFileSync(boxClient,
-    'import type { Box, FromGlobal, Node, CallableBox, WithMethod, WithMethodAlias } from "@fixture/box";\n' +
+    'import type { Box, FromGlobal, Node, CallableBox, WithMethod, WithMethodAlias, Pair, ReadonlyPair, OptionalPair, RestPair } from "@fixture/box";\n' +
     'export function readBox(box: Box): boolean { return box.flag; }\n' +
     'export function readGlobal(box: FromGlobal): boolean { return box.item.flag; }\n' +
     'export function nextNode(node: Node): Node | null { return node.next; }\n' +
     'export function invokeBox(box: CallableBox): boolean { return box.invoke(1); }\n' +
     'export function callMethod(box: WithMethod): boolean { return box.read(); }\n' +
-    'export function callMethodAlias(box: WithMethodAlias): boolean { return box.read(); }\n');
+    'export function callMethodAlias(box: WithMethodAlias): boolean { return box.read(); }\n' +
+    'export function pairFirst(pair: Pair): boolean { return pair[0]; }\n' +
+    'export function readonlyPairSecond(pair: ReadonlyPair): number { return pair[1]; }\n' +
+    'export function optionalSecond(pair: OptionalPair): number | undefined { return pair[1]; }\n' +
+    'export function restHead(pair: RestPair): boolean { return pair[0]; }\n' +
+    'export function restTail(pair: RestPair): number | undefined { return pair[1]; }\n');
   const boxConfig = { ...pairConfig, globals: new Set(["fixture/global.d.ts"]), packages: new Map([
     ["@fixture/box", "fixture/box.ts"]]) };
   const boxUniverse = { modules: pair, config: boxConfig,
@@ -358,7 +368,8 @@ for (const [file, expected] of [
   const checkedBox = check(boxClient, boxUniverse);
   assert.equal(checkedBox.status, "verified", JSON.stringify(checkedBox));
   assert.deepEqual(checkedBox.functions,
-    ["readBox", "readGlobal", "nextNode", "invokeBox", "callMethod", "callMethodAlias"]);
+    ["readBox", "readGlobal", "nextNode", "invokeBox", "callMethod", "callMethodAlias",
+      "pairFirst", "readonlyPairSecond", "optionalSecond", "restHead", "restTail"]);
   const boxAst = parseFile(boxClient, false, boxUniverse);
   assert.equal(boxAst.imports.definitions.find(d => d.declaration.name === "GlobalBox")?.
     declaration.module, "fixture/global.d.ts");
@@ -401,6 +412,18 @@ for (const [file, expected] of [
   assert.equal(detached.status, "unverified", JSON.stringify(detached));
   assert.equal(detached.phase, "search");
   assert.match(detached.detail, /method-receiver/);
+  const badPairClient = join(pairDir, "bad-pair-client.ts");
+  writeFileSync(badPairClient,
+    'import type { Pair } from "@fixture/box";\n' +
+    'export function badPair(pair: Pair): number { return pair[0]; }\n');
+  const rejectedPair = check(badPairClient, boxUniverse);
+  assert.equal(rejectedPair.status, "unverified", JSON.stringify(rejectedPair));
+  assert.equal(rejectedPair.phase, "search");
+  const namedPairRoot = resolveNamedImports(openText(boxClient,
+    'import type { NamedPair } from "@fixture/box";'), pair, boxConfig)[0];
+  assert(namedPairRoot);
+  assert.throws(() => collectTypeClosure(namedPairRoot, pair, boxConfig),
+    /named tuple position in fixture\/box.ts#NamedPair/);
   const nestedRoot = resolveNamedImports(openText(boxClient,
     'import type { NestedMethod } from "@fixture/box";'), pair, boxConfig)[0];
   assert(nestedRoot);

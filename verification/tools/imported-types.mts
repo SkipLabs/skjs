@@ -46,6 +46,8 @@ export type TypeTerm =
   | { k: "literal"; name: "true" | "false" | "string" | "number"; text: string; span: Span }
   | { k: "union" | "intersection"; parts: TypeTerm[]; span: Span }
   | { k: "array"; readonly: boolean; element: TypeTerm; span: Span }
+  | { k: "tuple"; readonly: boolean; required: TypeTerm[];
+      optional: TypeTerm[]; rest: TypeTerm | null; span: Span }
   | { k: "object"; fields: { name: string; optional: boolean; readonly: boolean; type: TypeTerm; span: Span }[];
       stringIndex: { readonly: boolean; value: TypeTerm; span: Span } | null; span: Span }
   | { k: "function"; receiver: TypeTerm | null; params: TypeTerm[];

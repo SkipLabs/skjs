@@ -82,6 +82,17 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let row ← if readonly then use (.refs [] [] [(SourceTypes.storeField, [store])])
       else use (.refs [(SourceTypes.storeField, [store])] [] [])
     return [row]
+  | "tuple" =>
+    CellClaims.fieldsExactly term ["k", "readonly", "required", "optional", "rest", "span"]
+    let required ← (← arr term "required").mapM (lowerType ds owner)
+    let optional ← (← arr term "optional").mapM (lowerType ds owner)
+    let restTerm ← field term "rest"
+    let rest ← if restTerm == .null then pure none else some <$> lowerType ds owner restTerm
+    let readonly ← bool term "readonly"
+    let store ← use (.list ⟨required.toList, optional.toList, rest, readonly⟩ [])
+    let row ← if readonly then use (.refs [] [] [(SourceTypes.storeField, [store])])
+      else use (.refs [(SourceTypes.storeField, [store])] [] [])
+    return [row]
   | "function" =>
     CellClaims.fieldsExactly term ["k", "receiver", "params", "result", "span"]
     let recv ← field term "receiver"
