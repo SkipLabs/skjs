@@ -307,7 +307,13 @@ for (const [file, expected] of [
     "export interface GenericMethod { read<T>(value: T): T; }\n" +
     "export interface OptionalMethod { read(value?: boolean): boolean; }\n" +
     "export interface Derived extends Box { readonly label: string; }\n";
-  writeFileSync(join(pairDir, "box.ts"), box);
+  const genericShapes = "export type GenericBox<T> = { readonly value: T };\n" +
+    "export type GenericPair<L, R> = { readonly left: L; readonly right: R };\n" +
+    "export type GenericOuter<T> = { readonly inner: GenericBox<T> };\n" +
+    "export type GenericTuple<T> = readonly [T, number];\n" +
+    "export type GenericCallable<T> = (value: T) => T;\n" +
+    "export type BoundedBox<T extends boolean> = { readonly value: T };\n";
+  writeFileSync(join(pairDir, "box.ts"), box + genericShapes);
   const globalText = "interface GlobalBox { readonly flag: boolean; }\n";
   writeFileSync(join(pairDir, "global.d.ts"), globalText);
   writeFileSync(join(pairDir, "tsconfig.json"), JSON.stringify({
@@ -324,8 +330,8 @@ for (const [file, expected] of [
       source: openText(join(pairDir, "b.ts"), b) },
     { id: "fixture/barrel.ts", sha256: createHash("sha256").update(barrel).digest("hex"),
       source: openText(join(pairDir, "barrel.ts"), barrel) },
-    { id: "fixture/box.ts", sha256: createHash("sha256").update(box).digest("hex"),
-      source: openText(join(pairDir, "box.ts"), box) },
+    { id: "fixture/box.ts", sha256: createHash("sha256").update(box + genericShapes).digest("hex"),
+      source: openText(join(pairDir, "box.ts"), box + genericShapes) },
     { id: "fixture/global.d.ts", sha256: createHash("sha256").update(globalText).digest("hex"),
       source: openText(join(pairDir, "global.d.ts"), globalText) },
   ];
@@ -347,6 +353,12 @@ for (const [file, expected] of [
     tsconfigPath: join(pairDir, "tsconfig.json") });
   assert.deepEqual(genericAst.functions[0]?.params[0]?.type.atoms[0],
     { a: "alias", name: "A", args: [{ top: false, atoms: [{ a: "boolean" }] }] });
+  const recursiveGeneric = check(genericClient, { modules: pair, config: pairConfig,
+    tsconfigPath: join(pairDir, "tsconfig.json") });
+  assert.equal(recursiveGeneric.status, "unsupported", JSON.stringify(recursiveGeneric));
+  assert.equal(recursiveGeneric.phase, "proposal");
+  assert.match(recursiveGeneric.detail,
+    /recursive generic imported application needs memoized rows/);
   writeFileSync(genericClient,
     'import type { A } from "@fixture/barrel";\n' +
     'export function throughBarrel(value: A<boolean>): A<boolean> { return value; }\n');
@@ -387,6 +399,32 @@ for (const [file, expected] of [
       "callMethodAlias", "callRestMethod", "callOverload", "callTagged",
       "callVariadic", "callAlias",
       "pairFirst", "readonlyPairSecond", "optionalSecond", "restHead", "restTail"]);
+  const genericShapesClient = join(pairDir, "generic-shapes-client.ts");
+  writeFileSync(genericShapesClient,
+    'import type { GenericBox, GenericPair, GenericOuter, GenericTuple, GenericCallable } from "@fixture/box";\n' +
+    'export function unbox(value: GenericBox<boolean>): boolean { return value.value; }\n' +
+    'export function right(value: GenericPair<boolean, number>): number { return value.right; }\n' +
+    'export function nested(value: GenericOuter<boolean>): boolean { return value.inner.value; }\n' +
+    'export function first(value: GenericTuple<boolean>): boolean { return value[0]; }\n' +
+    'export function applied(value: GenericCallable<boolean>): boolean { return value(true); }\n');
+  const checkedGenericShapes = check(genericShapesClient, boxUniverse);
+  assert.equal(checkedGenericShapes.status, "verified", JSON.stringify(checkedGenericShapes));
+  assert.deepEqual(checkedGenericShapes.functions,
+    ["unbox", "right", "nested", "first", "applied"]);
+  const badGenericShapeClient = join(pairDir, "bad-generic-shape-client.ts");
+  writeFileSync(badGenericShapeClient,
+    'import type { GenericBox } from "@fixture/box";\n' +
+    'export function wrong(value: GenericBox<boolean>): number { return value.value; }\n');
+  const rejectedGenericShape = check(badGenericShapeClient, boxUniverse);
+  assert.equal(rejectedGenericShape.status, "unverified", JSON.stringify(rejectedGenericShape));
+  assert.equal(rejectedGenericShape.phase, "search");
+  const boundedShapeClient = join(pairDir, "bounded-shape-client.ts");
+  writeFileSync(boundedShapeClient,
+    'import type { BoundedBox } from "@fixture/box";\n' +
+    'export function bounded(value: BoundedBox<boolean>): boolean { return value.value; }\n');
+  const boundedShape = check(boundedShapeClient, boxUniverse);
+  assert.equal(boundedShape.status, "unverified", JSON.stringify(boundedShape));
+  assert.match(boundedShape.detail, /bounded imported application needs bound verification/);
   const boxAst = parseFile(boxClient, false, boxUniverse);
   assert.equal(boxAst.imports.definitions.find(d => d.declaration.name === "GlobalBox")?.
     declaration.module, "fixture/global.d.ts");

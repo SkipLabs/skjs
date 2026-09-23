@@ -1,11 +1,11 @@
 import Verification.Model.Source.Fragment
 
 /-! Imported type declarations are source equations, not rows supplied by a producer.
-The producer reserves one empty row per declaration and may refer to those
-labels in its own candidate rows. This module fills the reserved rows from the
-source equations before any source obligation is extracted. A direct type
-reference is expanded only to its first constructor; references under arrays
-and object fields stay cyclic graph labels. -/
+The producer reserves one empty row per nullary declaration and may refer to
+those labels in its candidate rows. This module fills them from source
+equations. Finite ground applications of generic declarations are interned
+from their substituted equations; recursive generic applications are refused
+until they have application-indexed memo rows. -/
 namespace Verification.Model.ImportedGraph
 open Lean PositiveNormalization PositiveRules
 
@@ -39,12 +39,22 @@ private def findDefinition (ds : Array Definition) (identity : Json) : Except St
   | [] => throw "imported reference has no declaration equation"
   | _ => throw "duplicate imported declaration identity"
 
+private def rowIndex (ds : Array Definition) (i : Nat) : Nat :=
+  4 + ((List.range i).filter fun n => ds[n]!.parameters.isEmpty).length
+
+private def nullaryCount (ds : Array Definition) : Nat :=
+  (ds.toList.filter fun d => d.parameters.isEmpty).length
+
 private def referenceIndex (ds : Array Definition) (term : Json) : Except String Nat := do
   CellClaims.fieldsExactly term ["k", "reference", "args", "span"]
-  if !(← arr term "args").isEmpty then
-    throw "parameterized imported references need substitution"
   let reference ← field term "reference"
   findDefinition ds (← field reference "target")
+
+private def checkUnbounded (d : Definition) : Except String Unit := do
+  for p in d.parameters do
+    CellClaims.fieldsExactly p ["name", "span", "bound"]
+    if (← field p "bound") != .null then
+      throw "bounded imported application needs bound verification"
 
 private abbrev Lowering := StateT SourceTypes.Table (Except String)
 
@@ -52,7 +62,7 @@ private def use (clause : Clause (List Nat)) : Lowering Nat := SourceTypes.use c
 
 mutual
 private partial def lowerType (ds : Array Definition) (owner : Nat)
-    (term : Json) : Lowering (List Nat) := do
+    (params : Array (List Nat)) (seen : List Nat) (term : Json) : Lowering (List Nat) := do
   match ← str term "k" with
   | "atom" =>
     match ← str term "name" with
@@ -66,17 +76,35 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     | _ => throw "unsupported imported primitive"
   | "union" =>
     let parts ← arr term "parts"
-    let arms ← parts.mapM (lowerType ds owner)
+    let arms ← parts.mapM (lowerType ds owner params seen)
     return arms.toList.flatten.eraseDups.mergeSort (· ≤ ·)
+  | "parameter" =>
+    CellClaims.fieldsExactly term ["k", "index", "span"]
+    let i ← (← field term "index").getNat?
+    match params[i]? with
+    | some value => return value
+    | none => throw "imported parameter index outside application"
   | "self" =>
     CellClaims.fieldsExactly term ["k", "span"]
     -- Method syntax binds its receiver to the declaration being lowered. A
     -- direct alias expansion changes that owner before reaching this arm.
     if owner >= ds.size then throw "imported method has no containing declaration"
-    return [4 + owner]
-  | "reference" => return [4 + (← referenceIndex ds term)]
+    if !ds[owner]!.parameters.isEmpty then
+      throw "generic imported method receiver needs an application row"
+    return [rowIndex ds owner]
+  | "reference" =>
+    let i ← referenceIndex ds term
+    let args ← arr term "args"
+    if ds[i]!.parameters.isEmpty then
+      if !args.isEmpty then throw "imported reference has too many arguments"
+      else return [rowIndex ds i]
+    if args.size != ds[i]!.parameters.size then throw "imported reference arity differs"
+    checkUnbounded ds[i]!
+    if seen.contains i then throw "recursive generic imported application needs memoized rows"
+    let values ← args.mapM (lowerType ds owner params seen)
+    lowerType ds i values (i :: seen) ds[i]!.expression
   | "array" =>
-    let element ← lowerType ds owner (← field term "element")
+    let element ← lowerType ds owner params seen (← field term "element")
     let readonly ← bool term "readonly"
     let store ← use (.list ⟨[], [], some element, readonly⟩ [])
     let row ← if readonly then use (.refs [] [] [(SourceTypes.storeField, [store])])
@@ -84,10 +112,11 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     return [row]
   | "tuple" =>
     CellClaims.fieldsExactly term ["k", "readonly", "required", "optional", "rest", "span"]
-    let required ← (← arr term "required").mapM (lowerType ds owner)
-    let optional ← (← arr term "optional").mapM (lowerType ds owner)
+    let required ← (← arr term "required").mapM (lowerType ds owner params seen)
+    let optional ← (← arr term "optional").mapM (lowerType ds owner params seen)
     let restTerm ← field term "rest"
-    let rest ← if restTerm == .null then pure none else some <$> lowerType ds owner restTerm
+    let rest ← if restTerm == .null then pure none else
+      some <$> lowerType ds owner params seen restTerm
     let readonly ← bool term "readonly"
     let store ← use (.list ⟨required.toList, optional.toList, rest, readonly⟩ [])
     let row ← if readonly then use (.refs [] [] [(SourceTypes.storeField, [store])])
@@ -96,28 +125,30 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
   | "function" =>
     CellClaims.fieldsExactly term ["k", "receiver", "params", "rest", "result", "span"]
     let recv ← field term "receiver"
-    let receiver ← if recv == .null then pure [← use .top] else lowerType ds owner recv
-    let params ← (← arr term "params").mapM (lowerType ds owner)
+    let receiver ← if recv == .null then pure [← use .top] else
+      lowerType ds owner params seen recv
+    let domains ← (← arr term "params").mapM (lowerType ds owner params seen)
     let restTerm ← field term "rest"
-    let rest ← if restTerm == .null then pure none else some <$> lowerType ds owner restTerm
-    let result ← lowerType ds owner (← field term "result")
+    let rest ← if restTerm == .null then pure none else
+      some <$> lowerType ds owner params seen restTerm
+    let result ← lowerType ds owner params seen (← field term "result")
     let row : Clause (List Nat) := match rest with
-      | none => .arrs [(receiver, params.toList, result)] []
-      | some element => .arrs [] [(receiver, params.toList, element, result)]
+      | none => .arrs [(receiver, domains.toList, result)] []
+      | some element => .arrs [] [(receiver, domains.toList, element, result)]
     return [← use row]
   | "object" =>
     CellClaims.fieldsExactly term ["k", "fields", "stringIndex", "calls", "span"]
     let fs ← (← arr term "fields").mapM fun f => do
       if ← bool f "optional" then throw "optional imported fields need presence semantics"
       let name ← str f "name"
-      let value ← lowerType ds owner (← field f "type")
+      let value ← lowerType ds owner params seen (← field f "type")
       return (name, value, ← bool f "readonly")
     let names := fs.toList.map (·.1)
     if names.eraseDups.length != names.length then throw "duplicate imported field"
     let index ← field term "stringIndex"
     let indexes ← if index == .null then pure ([] : List (List Nat)) else do
       if !(← bool index "readonly") then throw "mutable imported index needs a fixed contract"
-      let value ← lowerType ds owner (← field index "value")
+      let value ← lowerType ds owner params seen (← field index "value")
       pure ([value] : List (List Nat))
     let writes := fs.toList.filterMap fun (name, value, readonly) =>
       if readonly then none else some (name, value)
@@ -129,13 +160,14 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       CellClaims.fieldsExactly call ["k", "receiver", "params", "rest", "result", "span"]
       if (← str call "k") != "function" then throw "imported call signature is not a function"
       let recv ← field call "receiver"
-      let receiver ← if recv == .null then pure [← use .top] else lowerType ds owner recv
-      let params ← (← arr call "params").mapM (lowerType ds owner)
+      let receiver ← if recv == .null then pure [← use .top] else
+        lowerType ds owner params seen recv
+      let domains ← (← arr call "params").mapM (lowerType ds owner params seen)
       let rest ← field call "rest"
-      let result ← lowerType ds owner (← field call "result")
-      if rest == .null then fixed := fixed ++ [(receiver, params.toList, result)]
-      else variadic := variadic ++ [(receiver, params.toList,
-        ← lowerType ds owner rest, result)]
+      let result ← lowerType ds owner params seen (← field call "result")
+      if rest == .null then fixed := fixed ++ [(receiver, domains.toList, result)]
+      else variadic := variadic ++ [(receiver, domains.toList,
+        ← lowerType ds owner params seen rest, result)]
     let row ← if fixed.isEmpty && variadic.isEmpty then
         if indexes.isEmpty then use (.refs writes [] views)
         else use (.dict writes [] views indexes)
@@ -146,50 +178,64 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     return [row]
   | _ => throw "imported source type constructor outside the graph fragment"
 
-private partial def lowerHead (ds : Array Definition) (owner : Nat) (seen : List Nat)
+private partial def lowerHead (ds : Array Definition) (owner : Nat)
+    (params : Array (List Nat)) (seen : List Nat)
     (term : Json) : Lowering (List (Clause (List Nat))) := do
   match ← str term "k" with
   | "union" =>
     let parts ← arr term "parts"
-    let rows ← parts.mapM (lowerHead ds owner seen)
+    let rows ← parts.mapM (lowerHead ds owner params seen)
     return rows.toList.flatten.eraseDups
   | "reference" =>
     let i ← referenceIndex ds term
     if seen.contains i then throw "unguarded imported alias cycle"
-    lowerHead ds i (i :: seen) ds[i]!.expression
+    let args ← arr term "args"
+    if args.size != ds[i]!.parameters.size then throw "imported reference arity differs"
+    checkUnbounded ds[i]!
+    let values ← args.mapM (lowerType ds owner params seen)
+    lowerHead ds i values (i :: seen) ds[i]!.expression
   | _ =>
-    let labels ← lowerType ds owner term
+    let labels ← lowerType ds owner params seen term
     let table ← get
     return labels.flatMap (SourceTypes.graph table)
 end
 
 private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table) :
     Except String SourceTypes.Table := do
-  if candidate.length < 4 + ds.size then throw "imported graph rows are missing"
+  if candidate.length < 4 + nullaryCount ds then throw "imported graph rows are missing"
   for i in [:ds.size] do
-    if candidate[4+i]! != [] then throw "producer supplied an imported declaration equation"
-    if !ds[i]!.parameters.isEmpty then
-      throw "parameterized imported graph needs substitution"
+    if ds[i]!.parameters.isEmpty && candidate[rowIndex ds i]! != [] then
+      throw "producer supplied an imported declaration equation"
   let mut table := candidate
   for i in [:ds.size] do
-    let (row, expanded) ← (lowerHead ds i [i] ds[i]!.expression).run table
-    table := expanded.set (4+i) row
+    if ds[i]!.parameters.isEmpty then
+      let (row, expanded) ← (lowerHead ds i #[] [i] ds[i]!.expression).run table
+      table := expanded.set (rowIndex ds i) row
   return table
 
-private partial def rewrite (roots : Array (String × Nat)) (j : Json) : Except String Json := do
+private partial def rewrite (ds : Array Definition) (roots : Array (String × Nat))
+    (j : Json) : Lowering Json := do
   match j with
-  | .arr values => return .arr (← values.mapM (rewrite roots))
+  | .arr values => return .arr (← values.mapM (rewrite ds roots))
   | .obj fields =>
     if (j.getObjVal? "a").toOption == some (.str "graph") then
       throw "source cannot state an internal graph label"
     if (j.getObjVal? "a").toOption == some (.str "alias") then
       let name ← str j "name"
       if let some (_, index) := roots.toList.find? (fun p => p.1 == name) then
-        if !(← arr j "args").isEmpty then
-          throw "parameterized imported aliases need substitution"
-        return Json.mkObj [("a", toJson "graph"), ("label", toJson index)]
+        let args ← (← arr j "args").mapM (rewrite ds roots)
+        if args.size != ds[index]!.parameters.size then
+          throw "imported type application has wrong arity"
+        if args.isEmpty then
+          return Json.mkObj [("a", toJson "graph"), ("label", toJson (rowIndex ds index))]
+        checkUnbounded ds[index]!
+        let values ← args.mapM Fragment.translate
+        let labels ← lowerType ds index values [index] ds[index]!.expression
+        match labels with
+        | [label] => return Json.mkObj [("a", toJson "graph"), ("label", toJson label)]
+        | _ => throw "generic imported application needs one graph clause"
     let pairs ← fields.toArray.mapM fun (name, value) => do
-      return (name, ← rewrite roots value)
+      return (name, ← rewrite ds roots value)
     return Json.mkObj pairs.toList
   | _ => return j
 
@@ -204,12 +250,12 @@ def prepare (ast : Json) (candidate : SourceTypes.Table) :
   let roots ← (← arr imports "roots").mapM fun root => do
     let name ← str (← field root "binding") "local"
     let i ← findDefinition ds (← field root "declaration")
-    return (name, 4+i)
+    return (name, i)
   if (roots.toList.map (·.1)).eraseDups.length != roots.size then
     throw "duplicate imported local type"
   let types ← fillRows ds candidate
-  let aliases ← rewrite roots (← field ast "aliases")
-  let functions ← rewrite roots (← field ast "functions")
+  let (aliases, types) ← (rewrite ds roots (← field ast "aliases")).run types
+  let (functions, types) ← (rewrite ds roots (← field ast "functions")).run types
   let empty := Json.mkObj [("roots", toJson ([] : List Json)),
     ("definitions", toJson ([] : List Json)), ("sources", toJson ([] : List Json)),
     ("mappings", toJson ([] : List Json))]

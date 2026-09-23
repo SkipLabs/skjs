@@ -11,15 +11,10 @@ let encode (proposal : Proposal.t) =
   let imports = proposal.program.imports in
   let rows = ref ([Array [String "nul"]; Array [Object ["boolLit",Object ["value",Bool true]]];
                    Array [Object ["boolLit",Object ["value",Bool false]]]; Array [String "undef"]]
-                  @ List.map (fun _ -> Array []) imports)
+                  @ List.filter_map (fun (d:Source.imported_definition) ->
+                    if d.parameters=[] then Some (Array []) else None) imports)
   in
-  let imported_label id args =
-    if args <> [] then unsupported "parameterized imported graph needs substitution";
-    let rec find i = function
-      | [] -> unsupported ("unknown imported declaration " ^ id)
-      | (d:Source.imported_definition)::rest ->
-        if d.id=id then i+4 else find (i+1) rest in
-    find 0 imports in
+  let active_imports = ref [] in
   let intern row =
     let rec find n = function [] -> rows := !rows @ [row]; n
       | r::rs -> if r=row then n else find (n+1) rs in find 0 !rows
@@ -75,6 +70,25 @@ let encode (proposal : Proposal.t) =
             if reads <> [] then unsupported "callable with readonly fields";
             Object ["callable",Object (["first",fields;"rest",Array []] @ calls)] in
       intern (Array [clause])
+  and imported_label id args =
+    let rec find i = function
+      | [] -> unsupported ("unknown imported declaration " ^ id)
+      | (d:Source.imported_definition)::rest ->
+        if d.id=id then
+          if d.parameters=[] && args=[] then i+4
+          else if List.length d.parameters=List.length args then begin
+            if List.mem id !active_imports then
+              unsupported "recursive generic imported application needs memoized rows";
+            active_imports := id::!active_imports;
+            let result = try (match Proposal.definition imports id args with
+              | Atoms [atom] -> atom_label atom
+              | _ -> unsupported "generic imported application needs one graph clause")
+              with e -> active_imports := List.tl !active_imports; raise e in
+            active_imports := List.tl !active_imports;
+            result
+          end else unsupported "imported type application has wrong arity"
+        else find (i + if d.parameters=[] then 1 else 0) rest in
+    find 0 imports
   in
   (* A callable whose signature mentions a rigid parameter has no graph row:
      it is exported in the scheme form, with its own binders (possibly none),

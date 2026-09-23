@@ -107,9 +107,11 @@ language. The boundaries are:
    validated by the existing control-flow checker. Declared types are candidates to prove, not proof that their bodies satisfy
    them. There is no second, approximate subtype relation used for acceptance.
 5. `claims.ml` serializes those candidates into the existing producer-neutral
-   SourceClaims protocol. It reserves empty rows for imported declaration
-   identities. Lean alone fills those rows from the source equations; OCaml
-   cannot supply a competing interpretation. Graph interning is local to one
+   SourceClaims protocol. It reserves empty rows for imported declarations
+   without parameters and proposes interned rows for finite ground generic
+   applications. Lean fills the reserved rows and reconstructs every generic
+   application from the source equations; OCaml cannot supply a competing
+   interpretation. Graph interning is local to one
    document. Graph labels are an export detail, not type-variable identities.
 6. `check.mts` freezes source bytes, runs the parser and OCaml producer, asks Lean
    to reconstruct obligations and produce evidence, then invokes the independent
@@ -504,13 +506,14 @@ type arguments: the source writes one argument for an interface with three
 parameters. The library interface also contains a computed-symbol method and
 references to `Iterator`, so resolving its name is not interpreting it.
 The tuple shape in that result is now interpreted by the imported graph;
-generic interface substitution, defaulted arguments, computed-symbol methods
-and the other API dependencies remain after that refusal. Named tuple position
+finite ground applications of unbounded generic records are supported, while
+bound verification for imported generics, defaulted arguments, computed-symbol
+methods and the other API dependencies remain after that refusal. Named tuple position
 labels in imported declarations still refuse explicitly.
 
 The next file-level steps are to model the top-level initializer and other
 declarations without dropping their effects, and extend the admitted interface
-slice to generic methods, inheritance and generic instantiation, together with value
+slice to generic methods, inheritance and bounded or recursive generic instantiation, together with value
 imports. Then represent the imported API contracts as explicit client assumptions; checking
 the runtime's implementations is the separate third milestone below. Class construction,
 parameter properties, `implements`, method receivers and prototype lookup must
@@ -573,9 +576,16 @@ dictionary member, a missing-key read without `undefined`, and a function
 passed to `<T extends Json>`, and a `boolean[]` assigned to a writable `Json[]`
 alias before a string write and Boolean read. TypeScript accepts the last
 program; the verifier refuses the alias assignment because a location's write
-contract cannot widen. OCaml reserves empty rows for imported declarations;
-Lean derives and fills their equations from the Fragment's source-type
-expressions. The suite refuses producer-filled rows and source-authored internal
+contract cannot widen. OCaml reserves empty rows for imported declarations
+without parameters; Lean derives and fills their equations from the Fragment's
+source-type expressions. A finite ground application of an unbounded imported
+generic instead gets an interned row for its substituted equation. The producer
+uses that row as a candidate, while Lean independently substitutes the source
+binder arguments and derives the row before checking the client. Synthetic
+cross-file clients now verify unary, two-parameter, and transitive record
+applications, plus tuple and callable applications; a wrong result fails proof search. Recursive generic applications
+need memoized application rows, and bounded or defaulted imported applications
+still refuse explicitly. The suite refuses producer-filled rows and source-authored internal
 graph labels. The CLI accepts `--project` with a source checkout containing the
 TypeScript files, package manifests and workspace symlinks; the test and command
 above read the same checked-in source snapshot. All intermediate JSON is
@@ -661,9 +671,9 @@ Current progress against the `Json` prerequisite:
 | --- | --- | --- |
 | 1. Source closure | Canonical `Json`/`JsonObject` cycle, workspace link, cross-file generic cycle, single field/index/callable-property/method interfaces, and configured global declaration sources collected. | Defaulted type arguments, computed-symbol methods, inheritance, merging and value declarations remain outside this collector. |
 | 2. Shared graph and gate | Imported alias and supported interface equations, including a global declaration, reach the common Fragment and Lean request; TypeScript checks declaration identities and source bytes. | The configured project and source parser remain trusted; richer declarations are refused. |
-| 3. Semantic interpretation | Recursive readonly array, dictionary, fixed callable, and interface method receiver clauses reach `CertifiedPlan` and `checkJson_safe`. | Generic-interface, mutable dictionary and implementation contracts need their own certified paths. |
+| 3. Semantic interpretation | Recursive readonly array, dictionary, fixed callable, interface method receiver, and finite ground imported generic record, tuple and callable applications reach `CertifiedPlan` and `checkJson_safe`. | Recursive or bounded generic applications, mutable dictionary and implementation contracts need their own certified paths. |
 | 4. Relative contracts and controls | Forged alias equations, targets, source bytes and evidence have negative controls. | External value-contract assumptions and their eventual discharge are not yet represented. |
-| 5. Actual-source acceptance | Imported `Json` clients, a bound-instantiation case and four negative controls run end to end. | Actual `Mapper` first refuses defaulted `Iterable` arguments; library iterator semantics, generic interfaces, classes and their dependencies follow. |
+| 5. Actual-source acceptance | Imported `Json` clients, a bound-instantiation case and four negative controls run end to end; synthetic cross-file generic record applications also verify. | Actual `Mapper` first refuses defaulted `Iterable` arguments; library iterator semantics, richer generic interfaces, classes and their dependencies follow. |
 
 The checkpoints below state the design obligations in dependency order; the
 table above records which parts have actually been implemented.
@@ -748,7 +758,7 @@ initialization, receiver, result and forged evidence.
 | Mutable objects, captured callbacks, fixed storage contracts | Existing foundations; exercise them together on actual runtime clients. |
 | Methods using `this` | Part 5 prerequisite; verify its coverage against mapper methods. |
 | Classes, constructors, `new`, field initialization | Additional semantics and certified lowering; construction is not ordinary invocation. |
-| `Mapper<K1, V1, K2, V2>` and bounds such as `K extends Json` | Multiple parameters, structural bounds and richer generic bodies beyond the current rigid slice. |
+| `Mapper<K1, V1, K2, V2>` and bounds such as `K extends Json` | Ground multiple-parameter applications work for simple shapes; structural bound checking and the actual richer generic body remain. |
 | `new (...params: Params) => Mapper<…>` | Constructor contracts and generic tuple packs; ordinary quantified array-rest support is insufficient. |
 | Recursive `Json`, dictionaries and optional fields | The [cross-file `Json` milestone](#cross-file-recursive-json-milestone) covers the canonical recursive type and indexed reads; optional named-field presence is a further extension, still distinct from present-undefined. |
 | `Iterable`, iteration and array/library methods | Explicit contracts and execution semantics, including callback effects and iterator behavior. |

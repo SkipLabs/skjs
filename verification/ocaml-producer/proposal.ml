@@ -36,10 +36,10 @@ let literal_type = function
 (* Read permissions do not imply write permissions. All candidates still pass
    through reconstructed obligations, including readonly view conversion. *)
 let definition imports id args =
-  if args <> [] then unsupported "parameterized imported use needs substitution";
   match List.find_opt (fun (d:Source.imported_definition) -> d.id=id) imports with
-  | Some d when d.parameters=[] -> d.expression
-  | Some _ -> unsupported "parameterized imported definition needs substitution"
+  | Some d when List.length d.parameters=List.length args ->
+    Inference.substitute (List.combine d.parameters args) d.expression
+  | Some _ -> unsupported "imported type application has wrong arity"
   | None -> unsupported ("missing imported definition " ^ id)
 (* Inspect an imported callable's source equation for proposal purposes only.
    The point claim remains the named type; Lean independently fills and checks
