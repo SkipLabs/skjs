@@ -125,9 +125,15 @@ export function projectFor(absolute: string) {
   // for a path can change between two opens in one process, and reusing the
   // first tree would leave every span pointing into a file that is no longer
   // there.
+  const changed = opened.has(absolute);
+  // The compiler keeps an open file's old text even when `fileChanges` names
+  // it. Release that open document first, then reopen it from our current
+  // snapshot bytes; otherwise a changed source can receive a stale tree.
+  if (changed)
+    compiler.updateSnapshot({ closeFiles: [absolute], fileChanges: { changed: [absolute] } });
   const snapshot = compiler.updateSnapshot({
     openFiles: [absolute],
-    ...(opened.has(absolute) ? { fileChanges: { changed: [absolute] } } : {}),
+    ...(changed ? { fileChanges: { changed: [absolute] } } : {}),
   });
   opened.add(absolute);
   const project = snapshot.getDefaultProjectForFile(absolute);

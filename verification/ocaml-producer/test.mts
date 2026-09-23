@@ -21,6 +21,13 @@ import { checkDefaults, checkSchemeDefaults, checkEarlyDefault } from "./default
 // port only when it is run directly.
 import { analyse } from "../report-viewer/serve.mts";
 const here = import.meta.dirname;
+{
+  const source = join(mkdtempSync(join(tmpdir(), "skjs-reopen-")), "client.ts");
+  writeFileSync(source, "function before(): boolean { return true; }\n");
+  assert.equal(parseFile(source).functions[0]?.name, "before");
+  writeFileSync(source, "function after(): boolean { return false; }\n");
+  assert.equal(parseFile(source).functions[0]?.name, "after");
+}
 let pinnedImportDocument: ImportDocument | null = null;
 // The framework fixture is the upstream source, including its imports and
 // classes. A simplified replacement must not quietly inherit its census row.
