@@ -14,21 +14,28 @@ namespace Verification
 namespace ExperimentState
 
 /-- The invocation code of an existing object establishes safety at every smaller
-budget. Application, rather than this obligation, spends the beta step. -/
-theorem fn_intro {l : Nat} {A B : Fam} (b : Tm) (k : Nat) (W : WorldT k) (hc : Scoped 1 b)
+budget. Application, rather than this obligation, spends the beta step. The
+body is under the frame `[this, x]`: a plain application binds `undefined` in
+slot 0 and the argument in slot 1. -/
+theorem fn_intro {l : Nat} {A B : Fam} (b : Tm) (k : Nat) (W : WorldT k) (hc : Scoped 2 b)
     (h : ∀ (j : Nat) (hj : j < k) (U : WorldT j),
       WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U →
       ∀ (heap : Heap), HeapOk j U heap → ∀ a, A j U a →
-        Safe B j U heap (subst 0 a b)) : arrowT A B k W (.fn l b) :=
-  ⟨⟨1, b, _, rfl, hc⟩, h⟩
+        Safe B j U heap (subst 0 .undef (subst 1 a b))) : arrowT A B k W (.fn l b) := by
+  refine ⟨⟨1, b, _, rfl, hc⟩, ?_⟩
+  intro j hj U hx hu heap hh a ha
+  simpa [callBody, CallArguments.bindParameters, CallArguments.parameters, bindArgs]
+    using h j hj U hx hu heap hh a ha
 
 /-- Ready native list calls consume one step, then satisfy the chosen result
-contract. The domains transfer all saved actuals to that smaller budget. -/
-theorem call_elim {L : List (List Fam × Fam)} {p : List Fam × Fam}
-    (hA : ∀ A ∈ p.1, Adm A) (hAv : ∀ A ∈ p.1, ValOnly A)
-    {n : Nat} {W : WorldT n} {f : Tm} {args : List Tm} {heap : Heap}
-    (hf : callsT L n W f) (hp : p ∈ L) (ha : ArgsT p.1 n W args)
-    (hw : WorldAdm W) (hh : HeapOk n W heap) : Safe p.2 n W heap (.call f args) := by
+contract. The receiver's contract and the domains transfer the saved receiver
+and actuals to that smaller budget. -/
+theorem call_elim {L : List (Fam × List Fam × Fam)} {p : Fam × List Fam × Fam}
+    (hR : Adm p.1) (hA : ∀ A ∈ p.2.1, Adm A) (hAv : ∀ A ∈ p.2.1, ValOnly A)
+    {n : Nat} {W : WorldT n} {f r : Tm} {args : List Tm} {heap : Heap}
+    (hrv : isVal r = true) (hf : callsT L n W f) (hp : p ∈ L) (hr : p.1 n W r)
+    (ha : ArgsT p.2.1 n W args)
+    (hw : WorldAdm W) (hh : HeapOk n W heap) : Safe p.2.2 n W heap (.invoke f r args) := by
   cases n with
   | zero => trivial
   | succ n =>
@@ -36,19 +43,20 @@ theorem call_elim {L : List (List Fam × Fam)} {p : List Fam × Fam}
     have hu : WorldAdm U := WorldAdm_trunc _ hw
     have hh' : HeapOk n U heap := HeapOk_trunc n W heap hh
     have ha' := ArgsT_transfer hA ha n (Nat.le_succ n) U (WExt_refl _)
+    have hr' : p.1 n U r := hR.down n W r hr
     obtain ⟨body, hi, hs⟩ := callsT_invoke hf hp (Nat.lt_succ_self n)
-      (WExt_refl _) hu hh' hAv ha'
+      (WExt_refl _) hu hh' hrv hr' hAv ha'
     exact Or.inr ⟨U, heap, body, WExt_refl _, hu, hi.step heap, hh', hs⟩
 
 /-- A ready call that omits trailing actuals. Every omitted position's contract
 admits `undefined`, which is the value the machine binds there, so the selected
 signature covers the padded list and the same body runs. -/
-theorem call_elim_short {L : List (List Fam × Fam)} {p : List Fam × Fam}
-    (hA : ∀ A ∈ p.1, Adm A) (hAv : ∀ A ∈ p.1, ValOnly A)
-    {n : Nat} {W : WorldT n} {f : Tm} {args pad : List Tm} {heap : Heap}
-    (hpad : ∀ a ∈ pad, a = .undef)
-    (hf : callsT L n W f) (hp : p ∈ L) (ha : ArgsT p.1 n W (args ++ pad))
-    (hw : WorldAdm W) (hh : HeapOk n W heap) : Safe p.2 n W heap (.call f args) := by
+theorem call_elim_short {L : List (Fam × List Fam × Fam)} {p : Fam × List Fam × Fam}
+    (hR : Adm p.1) (hA : ∀ A ∈ p.2.1, Adm A) (hAv : ∀ A ∈ p.2.1, ValOnly A)
+    {n : Nat} {W : WorldT n} {f r : Tm} {args pad : List Tm} {heap : Heap}
+    (hpad : ∀ a ∈ pad, a = .undef) (hrv : isVal r = true)
+    (hf : callsT L n W f) (hp : p ∈ L) (hr : p.1 n W r) (ha : ArgsT p.2.1 n W (args ++ pad))
+    (hw : WorldAdm W) (hh : HeapOk n W heap) : Safe p.2.2 n W heap (.invoke f r args) := by
   cases n with
   | zero => trivial
   | succ n =>
@@ -56,8 +64,9 @@ theorem call_elim_short {L : List (List Fam × Fam)} {p : List Fam × Fam}
     have hu : WorldAdm U := WorldAdm_trunc _ hw
     have hh' : HeapOk n U heap := HeapOk_trunc n W heap hh
     have ha' := ArgsT_transfer hA ha n (Nat.le_succ n) U (WExt_refl _)
+    have hr' : p.1 n U r := hR.down n W r hr
     obtain ⟨body, hi, hs⟩ := callsT_invoke_short hf hp (Nat.lt_succ_self n)
-      (WExt_refl _) hu hh' hpad hAv ha'
+      (WExt_refl _) hu hh' hrv hr' hpad hAv ha'
     exact Or.inr ⟨U, heap, body, WExt_refl _, hu, hi.step heap, hh', hs⟩
 
 /-- Same-budget application compatibility, the rule needed for the fundamental
@@ -67,10 +76,11 @@ theorem app_elim {A B : Fam} (hA : Adm A) (hAv : ValOnly A)
     {n : Nat} {W : WorldT n} {f a : Tm} {heap : Heap}
     (hf : arrowT A B n W f) (ha : A n W a)
     (hw : WorldAdm W) (hh : HeapOk n W heap) : Safe B n W heap (.app f a) := by
-  apply call_elim (L := [([A], B)]) (p := ([A], B))
-    (by simpa using hA) (by simpa using hAv)
+  apply call_elim (L := [(undefT, [A], B)]) (p := (undefT, [A], B)) undefT_adm
+    (by simpa using hA) (by simpa using hAv) rfl
   · exact callsT_of_arrowsT (L := [(A, B)]) ((arrowsT_singleton A B n W f).mpr hf)
   · simp
+  · rfl
   · exact ⟨ha, trivial⟩
   · exact hw
   · exact hh
@@ -78,10 +88,11 @@ theorem app_elim {A B : Fam} (hA : Adm A) (hAv : ValOnly A)
 /-- **Beta.** -/
 theorem beta_rule {l : Nat} {B : Fam} (b a : Tm) (hval : isVal a = true) (p : Nat) (W : WorldT (p + 1))
     (h : Heap) (hadm : WorldAdm W) (hok : HeapOk (p + 1) W h)
-    (hb : Safe B p (trunc p (Nat.le_succ p) W) h (subst 0 a b)) :
+    (hb : Safe B p (trunc p (Nat.le_succ p) W) h (subst 0 .undef (subst 1 a b))) :
     Safe B (p + 1) W h (.app (.fn l b) a) :=
   Or.inr ⟨_, h, _, WExt_refl _, WorldAdm_trunc _ hadm, .beta hval,
-    HeapOk_trunc p W h hok, hb⟩
+    HeapOk_trunc p W h hok, by
+      simpa [CallArguments.bindParameters, CallArguments.parameters, bindArgs] using hb⟩
 
 /-- A binding consumes one step after its initializer has become a value. -/
 theorem let_rule {B : Fam} (b a : Tm) (hval : isVal a = true) (p : Nat) (W : WorldT (p + 1))
@@ -472,7 +483,7 @@ theorem stuck_not_safe (B : Fam) (k : Nat) (W : WorldT (k + 1)) (h : Heap) :
 /-- An arrow with an uninhabited domain constrains nothing: every function has
 that type, including one that would get stuck if it were ever applied. -/
 theorem vacuous_arrow {l : Nat} {A B : Fam} (hA : ∀ (j : Nat) (W : WorldT j) (v : Val), ¬ A j W v)
-    (b : Tm) (k : Nat) (W : WorldT k) (hc : Scoped 1 b) : arrowT A B k W (.fn l b) :=
+    (b : Tm) (k : Nat) (W : WorldT k) (hc : Scoped 2 b) : arrowT A B k W (.fn l b) :=
   ⟨⟨1, b, _, rfl, hc⟩, fun _ _ _ _ _ _ _ a ha => absurd ha (hA _ _ a)⟩
 
 /-! ## Testing a value's shape, and branching on the answer

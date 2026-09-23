@@ -74,6 +74,7 @@ export function rigidOf(
       ]);
       return [
         ...fromBounds,
+        ...visit(type.scheme.this, local),
         ...type.scheme.params.flatMap((p) => visit(p, local)),
         ...visit(type.scheme.result, local),
         ...(type.scheme.rest === null ? [] : visit(type.scheme.rest, local)),

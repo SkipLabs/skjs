@@ -8,21 +8,23 @@ open CertificateProducer RequestJson
 
 private def types : List (List (Clause (List Nat))) :=
   [[.nul],[.bool],[.refs [(valueField, [1])] [] []],[.callable [(valueField, [1])] [] [] []],
-   [.arrs [([[0]],[1])] []], [.arrs [([[4]],[1])] []], [.boolLit false]]
+   [.arrs [([7],[[0]],[1])] []], [.arrs [([7],[[4]],[1])] []], [.boolLit false], [.top], [.undef]]
 private def G : NormalGraph Nat := fun i => types[i]?.getD []
 private def labels := List.range types.length
 
--- At entry: callback, captured bag. The two lets save a read, then a callback
--- result. Returning the saved read and rereading the bag are different programs.
+-- At entry: receiver, callback, captured bag. The two lets save a read, then a
+-- callback result. Returning the saved read and rereading the bag are different
+-- programs.
 private def body (fresh : Bool) : Tm :=
-  .letE (.read (.var 1))
-    (.letE (.app (.var 1) .nul) (if fresh then .read (.var 3) else .var 1))
--- At entry: null argument, captured function, captured bag. The nested callback
--- returns false and performs no reentry, so the complete invocation terminates.
+  .letE (.read (.var 2))
+    (.letE (.app (.var 2) .nul) (if fresh then .read (.var 4) else .var 1))
+-- At entry: receiver, null argument, captured function, captured bag. The
+-- nested callback returns false and performs no reentry, so the complete
+-- invocation terminates.
 private def callback : Tm :=
-  .letE (.write (.var 2) .tru) (.app (.var 2) (.funE .fls))
+  .letE (.write (.var 3) .tru) (.app (.var 3) (.funE .fls))
 private def program (callable fresh : Bool) : Program :=
-  [⟨if callable then .attach (.var 0) .fls else .alloc .fls,.bind 1⟩,
+  [⟨if callable then .attach (.var 1) .fls else .alloc .fls,.bind 1⟩,
    ⟨.funE (body fresh),.bind 2⟩,
    ⟨.funE callback,.bind 3⟩,
    ⟨.app (.var 1) (.var 0),.ret⟩]
@@ -40,10 +42,10 @@ private def request (callable fresh : Bool) : Request :=
 -- Neither an entry-time read nor the current heap becomes a permanent false
 -- result contract for the function; every invocation checks only the invariant.
 private def badG : NormalGraph Nat := fun i =>
-  if i == 7 then [.arrs [([[4]],[6])] []] else G i
-private def pool := vocabulary badG (List.range 8) claims []
+  if i == 9 then [.arrs [([7],[[4]],[6])] []] else G i
+private def pool := vocabulary badG (List.range 10) claims []
 #guard [false,true].all fun fresh =>
-  !(expression badG pool 12 [[2,3]] (.funE (body fresh)) [7]).isSome
+  !(expression badG pool 12 [[2,3]] (.funE (body fresh)) [9]).isSome
 -- The reentrant function requires a Boolean-returning callback.
 #guard !(expression G (vocabulary G labels claims []) 10 [[5]]
   (.app (.var 0) (.funE .nul)) [1]).isSome

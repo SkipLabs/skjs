@@ -39,7 +39,7 @@ try {
     const truth: ClaimType={top:false,atoms:[{a:"booleanlit",v:"true"}]};
     const falsity: ClaimType={top:false,atoms:[{a:"booleanlit",v:"false"}]};
     const arrow=(params: ClaimType[],result: ClaimType,construct="unknown"): FunctionAtom=>
-      ({a:"function",params,result,construct,array:"unknown"});
+      ({a:"function",this:{top:true,atoms:[]},params,result,construct,array:"unknown"});
     const callableUnion: ClaimType={top:false,atoms:[arrow([unit],truth),arrow([unit],falsity,"absent")]};
     for(const type of [callableUnion,{top:false,atoms:[{a:"null"},...callableUnion.atoms]},
       {top:false,atoms:[arrow([callableUnion],unit)]},

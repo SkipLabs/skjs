@@ -88,10 +88,11 @@ def clauseTypes : Clause (Ty Nat) → List (Ty Nat)
   | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .str | .strLit _ | .top => []
   | .list a bs => (a :: bs).flatMap fun t => t.required ++ t.optional ++ t.rest.toList
   | .refs A bs vs => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd
-  | .arrs L S => L.flatMap (fun p => p.1 ++ [p.2]) ++ S.flatMap (fun p => p.1 ++ [p.2.1, p.2.2])
+  | .arrs L S => L.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++
+      S.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2.1, p.2.2.2])
   | .callable A bs L S =>
-      A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ L.flatMap (fun p => p.1 ++ [p.2]) ++
-        S.flatMap (fun p => p.1 ++ [p.2.1, p.2.2])
+      A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ L.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++
+        S.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2.1, p.2.2.2])
 
 def validClaim (bound : Nat) (c : PointClaim Nat) : Bool :=
   (c.type :: c.context).all (validTy bound)
@@ -104,17 +105,19 @@ def validRequest (r : Request) : Bool :=
   r.inputs.all (validTy r.types.length)
 
 def arrowTypes : PositiveCertificates.ArrowCert Nat → List (Ty Nat)
-  | .empty => []
-  | .source p => p.1 ++ [p.2]
-  | .rest s => s.1 ++ [s.2.1, s.2.2]
+  | .empty | .emptyRecv => []
+  | .source p => p.1 :: p.2.1 ++ [p.2.2]
+  | .rest s => s.1 :: s.2.1 ++ [s.2.2.1, s.2.2.2]
   | .union pre a b suffix l r => pre ++ [a,b] ++ suffix ++ arrowTypes l ++ arrowTypes r
+  | .recvUnion a b l r => a :: b :: (arrowTypes l ++ arrowTypes r)
   | .combine a b l r => a :: b :: (arrowTypes l ++ arrowTypes r)
 
 def proofTypes : PositiveCertificates.Proof Nat → List (Ty Nat)
   | .subset => []
   | .trans middle l r => middle :: (proofTypes l ++ proofTypes r)
   | .core c => c.table.flatMap (fun p => [p.1,p.2]) ++ c.arrows.flatMap (fun e =>
-      e.1.flatMap (fun p => p.1 ++ [p.2]) ++ e.2.1.1 ++ [e.2.1.2] ++ arrowTypes e.2.2)
+      e.1.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++ e.2.1.1 :: e.2.1.2.1 ++ [e.2.1.2.2] ++
+        arrowTypes e.2.2)
 
 def validEvidence (bound : Nat) : ProgramCertificates.Evidence Nat → Bool
   | .node j r ps =>

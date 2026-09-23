@@ -4,10 +4,10 @@ import Verification.ExperimentState.CertificateProducerTests
 namespace Verification.ExperimentState.RequestJsonTests
 open Lean ProgramTyping ControlFlow CertificateProducer RequestJson
 
-private def toNatClause : PositiveNormalization.Clause (List (Fin 6)) → PositiveNormalization.Clause (List Nat)
+private def toNatClause : PositiveNormalization.Clause (List (Fin 7)) → PositiveNormalization.Clause (List Nat)
   | .top => .top
   | .list a bs =>
-    let tuple := fun (t : PositiveNormalization.Tuple (List (Fin 6))) =>
+    let tuple := fun (t : PositiveNormalization.Tuple (List (Fin 7))) =>
       (⟨t.required.map (List.map Fin.val), t.optional.map (List.map Fin.val), t.rest.map (List.map Fin.val), t.readonly⟩ :
         PositiveNormalization.Tuple (List Nat))
     .list (tuple a) (bs.map tuple)
@@ -21,16 +21,16 @@ private def toNatClause : PositiveNormalization.Clause (List (Fin 6)) → Positi
   | .strLit v => .strLit v
   | .refs a bs vs => .refs (a.map fun (f,A) => (f,A.map Fin.val)) (bs.map fun fs => fs.map fun (f,A) => (f,A.map Fin.val))
       (vs.map fun (f,A) => (f,A.map Fin.val))
-  | .arrs L S => .arrs (L.map fun (a,b) => (a.map (List.map Fin.val),b.map Fin.val))
-      (S.map fun (a,e,r) => (a.map (List.map Fin.val),e.map Fin.val,r.map Fin.val))
+  | .arrs L S => .arrs (L.map fun (c,a,b) => (c.map Fin.val,a.map (List.map Fin.val),b.map Fin.val))
+      (S.map fun (c,a,e,r) => (c.map Fin.val,a.map (List.map Fin.val),e.map Fin.val,r.map Fin.val))
   | .callable a bs L S => .callable (a.map fun (f,A) => (f,A.map Fin.val)) (bs.map fun fs => fs.map fun (f,A) => (f,A.map Fin.val))
-      (L.map fun (a,b) => (a.map (List.map Fin.val),b.map Fin.val))
-      (S.map fun (a,e,r) => (a.map (List.map Fin.val),e.map Fin.val,r.map Fin.val))
+      (L.map fun (c,a,b) => (c.map Fin.val,a.map (List.map Fin.val),b.map Fin.val))
+      (S.map fun (c,a,e,r) => (c.map Fin.val,a.map (List.map Fin.val),e.map Fin.val,r.map Fin.val))
 
 def types : List (List (PositiveNormalization.Clause (List Nat))) :=
-  (List.finRange 6).map (fun i => (ProgramTypingTests.G i).map toNatClause)
+  (List.finRange 7).map (fun i => (ProgramTypingTests.G i).map toNatClause)
 
-def natClaim (c : PointClaim (Fin 6)) : PointClaim Nat :=
+def natClaim (c : PointClaim (Fin 7)) : PointClaim Nat :=
   ⟨c.context.map (List.map Fin.val), c.type.map Fin.val⟩
 
 def mappedRequest : Request := ⟨types, CertificateProducerTests.mapped,

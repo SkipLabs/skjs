@@ -26,8 +26,13 @@ the subset
 
 $$v ::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}\mid\mathsf{obj}(\ell,c),$$
 
-where $c ::= \mathsf{absent}\mid\mathsf{closure}(m,t)\mid\mathsf{variadic}(m,t)$ is a separate invocation
-descriptor with a declared parameter count `m`. `make c a` evaluates its initializer `a`, then appends that value
+where $c ::= \mathsf{absent}\mid\mathsf{closure}(m,t)\mid\mathsf{variadic}(m,t)\mid\mathsf{bound}(f,r,\vec p)$ is a separate invocation
+descriptor, the first two with a declared parameter count `m`. A closure body is
+under `m + 1` binders: the receiver of the call in slot 0, then its parameters.
+A variadic body has its rest array in slot 0, the receiver in slot 1, then `m`
+parameters. `bound` is the forwarding descriptor `.bind` creates: the target, the
+receiver and the argument prefix it saved, values that no field holds and no
+write can reach. `make c a` evaluates its initializer `a`, then appends that value
 to the heap and returns `obj h.length c`, where `h.length` is the length
 before appending.
 `alloc a` abbreviates `make absent a`; `attach b a` abbreviates
@@ -111,22 +116,29 @@ interface explicitly checks scope.
 ## One meaning for callable contracts
 
 The core equation is a behavioral promise, shared by fixed signatures, rest
-signatures, overloads and callable objects. Let $\mathcal A$ describe the
-admitted lists of actual values and $R$ the result family. Then
+signatures, overloads and callable objects. Let $R_c$ be the receiver family,
+$\mathcal A$ describe the admitted lists of actual values and $R$ the result
+family. Then
 
 $$
-f\in\mathcal F(\mathcal A,R)(n,W)\iff
+f\in\mathcal F(R_c,\mathcal A,R)(n,W)\iff
 \operatorname{Invocable}(f)\ \land\
-\forall j<n,\ U\succeq W{\downarrow}j,\ h,\vec v.\;
+\forall j<n,\ U\succeq W{\downarrow}j,\ h,r,\vec v.\;
 \begin{aligned}
 &\operatorname{WorldAdm}(U)\land\operatorname{HeapOk}(j,U,h)
- \land\operatorname{Values}(\vec v)\land\mathcal A(j,U,\vec v)\\
+ \land r\in R_c(j,U)\land\operatorname{Values}(\vec v)\land\mathcal A(j,U,\vec v)\\
 &\quad\Longrightarrow\exists t.\;
- \operatorname{Invoke}(f,\vec v,t)\land\operatorname{Safe}(R,j,U,h,t).
+ \operatorname{Invoke}(f,r,\vec v,t)\land\operatorname{Safe}(R,j,U,h,t).
 \end{aligned}
 $$
 
-This is `Invocable` together with `Safety.Promise`. `Invoke` dispatches the
+This is `Invocable` together with `Safety.Promise`. The receiver is not an
+actual: it changes no arity, optional position or rest, and $\mathcal A$
+never sees it. A plain call passes `undefined`; a method call, the object the
+method was read from; `.call`, its first argument. A signature indifferent to
+its receiver states top. Weakening is contravariant in $R_c$ as in each
+domain: a function that ignores its receiver meets any receiver requirement,
+and one that reads its receiver cannot be widened to accept arbitrary ones. `Invoke` dispatches the
 saved code and yields a term; `Safe` describes its execution, including any
 allocation, mutation or further call. The call spends a step before using
 this lower-budget guarantee. Safety permits nontermination. Neither the
@@ -183,12 +195,16 @@ of all function values. `callsT_of_arrowsT` embeds that specialized guarantee.
 
 ## Argument-list preparation
 
-Applications use `call f args`; `app f a` abbreviates the singleton case.
-Substitution, scope checking, capture instantiation and object-name traversal
-visit the entire list and both code descriptors. `CallArguments.Frame` keeps
-the callee and ordered arguments separate from invocation.
+Applications use `invoke f r args`: the callee, the receiver, the ordered
+actuals. `call f args` abbreviates `invoke f undefined args`, and `app f a` the
+singleton call; neither is a second form of call. Substitution, scope checking,
+capture instantiation and object-name traversal visit the receiver, the entire
+list and every code descriptor, including a `bound` descriptor's saved values.
+`CallArguments.Frame` keeps the callee, the receiver and ordered arguments
+separate from invocation.
 
-`Prepare` evaluates the callee, then processes arguments from left to right.
+`Prepare` evaluates the callee, then the receiver, then processes arguments from
+left to right.
 `Step.callArg` requires earlier arguments to be values. A `spread` is not a
 value: `Step.callSpread` consumes its ready store before any later argument
 can step, replacing holes with `undefined`. Splicing can change list length;
@@ -199,12 +215,31 @@ operands; readiness alone does not establish callability or typing.
 
 Ordinary code uses `parameters n args` to pad missing positions with
 `undefined` and discard extra positions after their effects have occurred.
-`bindArgs` substitutes these values without allocating. Variadic code uses
+`bindParameters` substitutes the receiver in slot 0 and these values after it,
+without allocating. Variadic code uses
 `bindRest`: fixed positions are padded in the same way, while `args.drop n`
 becomes a fresh rest array. Padding never enters the rest array. Dispatch
 itself leaves the heap unchanged; the yielded term allocates the array using
 ordinary store and object allocation steps. These operational distinctions
 are independent of the contracts callers use.
+
+A `bound` descriptor dispatches without binding anything: `Step.callBound`
+turns `invoke (bound f r₀ p⃗) r a⃗` into `invoke f r₀ (p⃗ ++ a⃗)`, dropping the
+receiver `r` it was given. `bound_ignores_receiver` states that the yielded term
+is the same whatever `r` is, and `rebind_keeps_receiver` that binding a bound
+function forwards to it, which forwards with the first saved receiver.
+`callsT_bound` proves the residual contract: a target meeting
+$(R_t, \vec P \mathbin{+\!\!+} \vec D, R)$ with a saved receiver in $R_t$ and a
+saved prefix in $\vec P$ gives an object meeting $(R_c, \vec D, R)$ for any
+$R_c$, and `restsT_bound` the same for a variadic target, whose residual keeps
+its element contract. There is no forwarding wrapper closure: construction and
+`new.target` are not modelled, and a bound function has no own fields.
+
+`.apply` is a source lowering onto these steps, not a new preparation: it saves
+the target, the receiver and the list, then reads the list's length and each
+index in order with the ordinary store operations, then invokes the target with
+those elements. It never iterates the list, so it shares the prepared actual
+list with ordinary calls but not the spread's operation.
 
 `callsT_invoke` obtains safe dispatch from a behavioral promise.
 `ProgramTyping.call_safe` first evaluates the callee and composes effectful
@@ -446,6 +481,10 @@ Rigid parameters, substitution on the identity and `Ref T` aliases (source
 `type Id<T> = T` and `type Box<T> = { value: T }`), and the
 identity function at every `T` are in
 [TypeParams.lean](lean/Verification/ExperimentState/TypeParams.lean).
+Receivers follow the strict rule only: sloppy code's global-object substitution
+and primitive boxing, `super` and home objects, construction and `new.target`,
+and a bound function's reflective properties (`name`, `length`) are later
+obligations, not approximated by the strict rule.
 The intended path is the
 [operation-level contracts, then a small first-order fragment](DESIGN.md#semantic-contracts-for-skjs-operations).
 [Design](DESIGN.md#later-feature-gates) owns the feature roadmap and priorities.

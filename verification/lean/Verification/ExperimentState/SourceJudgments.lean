@@ -164,17 +164,20 @@ inductive HasTy (c : Ctx) : List (String × Ty) → Body → Ty → Prop
       (hc : c.cells.contains name = true) (hk : env.lookup name = some k)
       (h : HasTy c env rhs t) (hle : Sub c.parameters t k) :
       HasTy c env (.assign pos name rhs) t
-  /-- Each argument has a type below its parameter; `ts` lists those types. -/
+  /-- Each argument has a type below its parameter; `ts` lists those types.
+  The call passes `undefined` as the receiver, which the callable admits. -/
   | call {env : List (String × Ty)} {pos cpos : Span} {name : String} {args : List Body}
-      {ps ts : List Ty} {r : Ty}
-      (hf : env.lookup name = some (.arrow ps r)) (hlen : ps.length = args.length)
+      {rc : Ty} {ps ts : List Ty} {r : Ty}
+      (hf : env.lookup name = some (.arrow rc ps r)) (hrecv : Sub c.parameters (.ground [3]) rc)
+      (hlen : ps.length = args.length)
       (hts : ts.length = args.length)
       (hargs : ∀ i (ha : i < args.length) (ht : i < ts.length), HasTy c env args[i] ts[i])
       (hle : ∀ i (ht : i < ts.length) (hp : i < ps.length), Sub c.parameters ts[i] ps[i]) :
       HasTy c env (.call pos (.var cpos name) args) r
   | callRest {env : List (String × Ty)} {pos cpos : Span} {name : String} {args : List Body}
-      {ps ts : List Ty} {e r : Ty}
-      (hf : env.lookup name = some (.variadic ps e r)) (hlen : ps.length ≤ args.length)
+      {rc : Ty} {ps ts : List Ty} {e r : Ty}
+      (hf : env.lookup name = some (.variadic rc ps e r)) (hrecv : Sub c.parameters (.ground [3]) rc)
+      (hlen : ps.length ≤ args.length)
       (hts : ts.length = args.length)
       (hargs : ∀ i (ha : i < args.length) (ht : i < ts.length), HasTy c env args[i] ts[i])
       (hle : ∀ i (ht : i < ts.length)
@@ -183,9 +186,9 @@ inductive HasTy (c : Ctx) : List (String × Ty) → Body → Ty → Prop
       HasTy c env (.call pos (.var cpos name) args) r
   | lambda {env : List (String × Ty)} {pos : Span} {ps : List (String × Ty)} {declared : Ty}
       {body : Body} {t : Ty}
-      (hclaim : c.claims.exprs.lookup pos = some (.arrow (ps.map Prod.snd) declared))
+      (hclaim : c.claims.exprs.lookup pos = some (.arrow .top (ps.map Prod.snd) declared))
       (h : HasTy c (ps ++ env) body t) (hle : Sub c.parameters t declared) :
-      HasTy c env (.lambda pos ps declared body) (.arrow (ps.map Prod.snd) declared)
+      HasTy c env (.lambda pos ps declared body) (.arrow .top (ps.map Prod.snd) declared)
 
 theorem requireLeE_ok {c : Ctx} {env : List (String × Ty)} {role : SourceRole}
     {subject : Subject} {a b : Ty} :
@@ -248,30 +251,36 @@ theorem HasTy_of_exprTyB {c : Ctx} : ∀ (b : Body) {env : List (String × Ty)} 
       | var cpos name =>
         simp only [exprTyB] at h
         split at h
-        · next ps r hf =>
+        · next rc ps r hf =>
           split at h
           · cases h
-          · next hlen =>
+          · next hrecv =>
             split at h
             · cases h
-            · next hargs =>
-              cases h
-              have hlen' : ps.length = args.length := by simpa using hlen
-              obtain ⟨ts, hts, hty, hsub⟩ := Args_of_argsTyB ps args hargs hlen'
-              exact .call hf hlen' hts hty hsub
-        · next ps e r hf =>
+            · next hlen =>
+              split at h
+              · cases h
+              · next hargs =>
+                cases h
+                have hlen' : ps.length = args.length := by simpa using hlen
+                obtain ⟨ts, hts, hty, hsub⟩ := Args_of_argsTyB ps args hargs hlen'
+                exact .call hf (Sub_of_leUnder (by simpa using hrecv)) hlen' hts hty hsub
+        · next rc ps e r hf =>
           split at h
           · cases h
-          · next hlen =>
+          · next hrecv =>
             split at h
             · cases h
-            · next hargs =>
-              cases h
-              have hlen' : ps.length ≤ args.length := by omega
-              have hl : (ps ++ List.replicate (args.length - ps.length) e).length = args.length := by
-                simp only [List.length_append, List.length_replicate]; omega
-              obtain ⟨ts, hts, hty, hsub⟩ := Args_of_argsTyB _ args hargs hl
-              exact .callRest hf hlen' hts hty hsub
+            · next hlen =>
+              split at h
+              · cases h
+              · next hargs =>
+                cases h
+                have hlen' : ps.length ≤ args.length := by omega
+                have hl : (ps ++ List.replicate (args.length - ps.length) e).length = args.length := by
+                  simp only [List.length_append, List.length_replicate]; omega
+                obtain ⟨ts, hts, hty, hsub⟩ := Args_of_argsTyB _ args hargs hl
+                exact .callRest hf (Sub_of_leUnder (by simpa using hrecv)) hlen' hts hty hsub
         · cases h
       | lit _ _ => simp only [exprTyB] at h; cases h
       | assign _ _ _ => simp only [exprTyB] at h; cases h
@@ -366,14 +375,14 @@ theorem exprTyB_of_HasTy {c : Ctx} (hw : WellFormed c.parameters) {env : List (S
     have hle' := requireLeE_of_le c env .storageWrite (.expression pos) (leUnder_of_Sub hw hle)
     have hmem : name ∈ c.cells := by simpa using hc
     simp [exprTyB, hmem, hk, ih, hle']
-  | @call env pos cpos name args ps ts r hf hlen hts _ hsub ih =>
+  | @call env pos cpos name args rc ps ts r hf hrecv hlen hts _ hsub ih =>
     have hargs := argsTyB_of_Args hw ps ts args hlen hts ih hsub
-    simp [exprTyB, hf, hlen, hargs]
-  | @callRest env pos cpos name args ps ts e r hf hlen hts _ hsub ih =>
+    simp [exprTyB, hf, hlen, hargs, leUnder_of_Sub hw hrecv]
+  | @callRest env pos cpos name args rc ps ts e r hf hrecv hlen hts _ hsub ih =>
     have hl : (ps ++ List.replicate (args.length - ps.length) e).length = args.length := by
       simp only [List.length_append, List.length_replicate]; omega
     have hargs := argsTyB_of_Args hw _ ts args hl hts ih hsub
-    simp [exprTyB, hf, show ¬ps.length > args.length by omega, hargs]
+    simp [exprTyB, hf, show ¬ps.length > args.length by omega, hargs, leUnder_of_Sub hw hrecv]
   | lambda hclaim _ hle ih =>
     simp [exprTyB, hclaim, closureTyB, ih, leUnder_of_Sub hw hle]
 
@@ -382,6 +391,32 @@ theorem exprTyB_iff_HasTy {c : Ctx} (hw : WellFormed c.parameters) {env : List (
   ⟨HasTy_of_exprTyB b, exprTyB_of_HasTy hw⟩
 
 #print axioms exprTyB_iff_HasTy
+
+/-- A closure is accepted exactly when its body has a type at most its
+declared result, under its parameters and then the scope around it. A
+quantified ordinary function is the case whose scope starts with `this` at
+its receiver annotation (`GenericSource.closureTy`): the receiver premise is
+that binding, and every use of `this` is judged against it. -/
+theorem closureTyB_iff {c : Ctx} (hw : WellFormed c.parameters) {env : List (String × Ty)}
+    {pos : Span} {ps : List (String × Ty)} {declared : Ty} {body : Body} :
+    (∃ t, closureTyB c env pos ps declared body = .ok t) ↔
+      ∃ t, HasTy c (ps ++ env) body t ∧ Sub c.parameters t declared := by
+  constructor
+  · rintro ⟨t, h⟩
+    unfold closureTyB at h
+    split at h
+    · cases h
+    · next actual hb =>
+      split at h
+      · next hle => exact ⟨actual, HasTy_of_exprTyB body hb, Sub_of_leUnder hle⟩
+      · cases h
+  · rintro ⟨t, ht, hle⟩
+    refine ⟨.arrow .top (ps.map Prod.snd) declared, ?_⟩
+    unfold closureTyB
+    rw [exprTyB_of_HasTy hw ht]
+    simp [leUnder_of_Sub hw hle]
+
+#print axioms closureTyB_iff
 
 /-! ## Declaration bodies
 
@@ -615,6 +650,7 @@ private def paramT : Lean.Json :=
 private def thunkT : Lean.Json :=
   Lean.Json.mkObj [("top", Lean.toJson false),
     ("atoms", Lean.toJson [Lean.Json.mkObj [("a", Lean.toJson "function"),
+      ("this", Lean.Json.mkObj [("top", Lean.toJson true), ("atoms", Lean.toJson ([] : List Lean.Json))]),
       ("params", Lean.toJson ([] : List Lean.Json)), ("result", paramT),
       ("construct", Lean.toJson "unknown"), ("array", Lean.toJson "unknown")]])]
 private def T : Ty := .rigid "T"
@@ -627,7 +663,8 @@ private def applyFn : Fragment.Fn :=
   ⟨"apply", (0, 2), [⟨"f", thunkT, false⟩], paramT,
     [.ret (10, 18) (.call (12, 18) (.var (12, 13) "f") [] [])]⟩
 private def applyClaims : Claims :=
-  ⟨"apply", (0, 2), [("f", .arrow [] T)], T, [(10, [("f", .arrow [] T)])], [((12, 18), T), ((12, 13), .arrow [] T)]⟩
+  ⟨"apply", (0, 2), [("f", .arrow .top [] T)], T, [(10, [("f", .arrow .top [] T)])],
+    [((12, 18), T), ((12, 13), .arrow .top [] T)]⟩
 #guard (match run (check applyFn [tpT] applyClaims) with | .ok _ => true | .error _ => false)
 
 -- `<T>(x: T): boolean { return true; }`: a literal the judgment accepts,

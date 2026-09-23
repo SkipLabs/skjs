@@ -45,7 +45,15 @@ const expected = {
   "callables/function-field": "verified",
   "callables/receiver-call": "verified",
   "skjs-incomplete/bound-arguments": "verified",
-  "callables/call-objects": "out-of-fragment",
+  "callables/call-objects": "verified",
+  // Receivers: property, parenthesized and copied calls, .call rebinding,
+  // saved callees, live receiver fields and receiver writes.
+  "callables/methods": "verified",
+  // `.apply`: the list's length and indices read after the receiver runs.
+  "callables/apply": "verified",
+  // A quantified method at two receivers: the scheme and each call's
+  // instantiation, read from the receiver the call passes.
+  "callables/generic-receivers": "verified",
   // Factories return closures that capture either private or shared cells.
   "callables/factories": "verified",
   // Compound absence guards preserve all facts established by their outcome.

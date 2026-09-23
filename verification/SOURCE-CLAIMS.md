@@ -38,11 +38,13 @@ and every supplied callee and operand claim is checked at its source span.
 
 ## Quantified callables and their eliminations
 
-A `type` may also be `{"scheme":{"typeParams":[...],"params":[...],"rest":null,"result":...}}`:
+A `type` may also be `{"scheme":{"typeParams":[...],"this":...,"params":[...],"rest":null,"result":...}}`:
 a callable quantified over its own binders, which a binding can hold. Binders
-shadow, so a nested scheme's own names hide an outer substitution. `rest` is
-required: `null` for a fixed signature, otherwise the type of each surplus
-actual. A mutable array over a binder is `{"array":{"param":"T"}}`;
+shadow, so a nested scheme's own names hide an outer substitution. `this` is
+required: the receiver a call must pass, top for an arrow, and for an ordinary
+function its `this` annotation, which may be a binder, so that each call's
+receiver instantiates it. `rest` is required: `null` for a fixed signature,
+otherwise the type of each surplus actual. A mutable array over a binder is `{"array":{"param":"T"}}`;
 its store contract is invariant. After substitution it is interned through the
 same list-store and object graph rows as every ordinary array.
 
@@ -96,7 +98,7 @@ closure exposure and cycles are refused. See
 [the rule and trust boundary](PROGRAM-TYPING.md#universal-parameter-initialization).
 
 Quantified array rests have universal collection certificates. The rest binding
-occupies slot zero, before fixed inputs and captures; invocation allocates a
+occupies slot zero, before the receiver, fixed inputs and captures; invocation allocates a
 fresh array whose element contract is the assigned family. The same certificate
 format covers top-level generic declarations. Local schemes additionally compile
 each validated substitution to a variadic graph signature. An array over `T`
@@ -111,7 +113,11 @@ those bounds, and every instantiation must satisfy each substituted bound at its
 call. Parameters and results may contain a binder, a mutable array over a
 binder, fixed or variadic function types over those, and ground types; a callable that mentions an enclosing binder, such as a
 returned `() => T`, is written in the `scheme` form with empty `typeParams`. The
-body is a variable, a primitive literal, an assignment to a captured cell, a
+closure may be an ordinary function expression whose receiver annotation names
+a binder, as in `function <R>(this: R): R { return this; }`: its body sees
+`this` at that binder, and `.call`, `.apply` or a method call instantiates it at
+the receiver passed. The body — the returned expression of a block, or an
+arrow's expression — is a variable, a primitive literal, an assignment to a captured cell, a
 call to a callable the body knows over rigid types — such as a callback
 parameter `(arg: T) => number`, whose arguments are obligations against those
 parameters — or a closure whose annotation names the binders; such a closure is checked under
@@ -189,6 +195,9 @@ claims use complete spans. Sites must occur in the named function's decoded
 body, including loop heads and supported closure bodies. A loop-head entry is
 the invariant candidate checked on initial entry and every back edge. The existing extractor resolves names
 against initialized lexical bindings and retains its shadowing restrictions.
+A `this` binding in an entry is ignored: a receiver is immutable and bound by
+the call, so it keeps the type its function's receiver gives it, and a `this`
+expression is an ordinary expression site claimed like a variable.
 Declaration IDs are not part of this interface.
 
 Type references are sorted, duplicate-free lists of labels into the document's
@@ -211,7 +220,7 @@ lists into the same table:
 | `0`, `1`, `2`, `3` | `"nul"`, `boolLit true`, `boolLit false`, `"undef"`            | The primitives, fixed                                                                                                                                                                                                              |
 | any                | `{"refs": {"first": [["value", A]], "rest": [], "views": []}}` | A plain record with an invariant `value` field holding the union `A`                                                                                                                                                               |
 | any                | `{"refs": {"first": F, "rest": [H, ...], "views": V}}`         | One record under every listed field contract; `F`, `H` and `V` are lists of `[name, labels]` pairs. `V` names readonly views: fields read at a sound upper bound on their contents, with no write permission through this contract |
-| any                | `{"arrs": {"arrows": [[D, R]]}}`                               | A signature with ordered domain list `D` and result union `R`                                                                                                                                                                      |
+| any                | `{"arrs": {"arrows": [[T, [D, R]]]}}`                          | A signature with receiver union `T`, ordered domain list `D` and result union `R`; a signature indifferent to its receiver names a `"top"` row                                                                                     |
 
 The table starts with the four primitives and holds one further row per compound
 type the source mentions, in order of first use: a compound type gets a row the

@@ -939,7 +939,8 @@ supplemental proofs do not establish source semantic preservation: attaching
 the right terms and contexts remains part of the trusted compiler.
 
 The source closure becomes an ordinary lambda over the captured environment.
-Its parameter occupies slot zero; captured bindings shift by one. Calls evaluate
+Its receiver occupies slot zero and its parameter slot one; captured bindings
+shift by two. Calls evaluate
 the callee and argument once in that order. The existing lambda and application
 rules establish safety, including future heaps after alias writes. No capture
 analysis, new store model or additional semantic axiom is introduced. Real-export
@@ -1653,14 +1654,16 @@ unexposed arrow and temporary object allocations into one initialized callable
 allocation, preserving initializer evaluation. This is part of the reviewed
 source extraction boundary, not a theorem about arbitrary JavaScript builtins.
 Explicit type arguments avoid SKJS's current inference of `never` for the
-unannotated construction. Named/multiple/optional fields, general expando
-assignment and receiver-dependent functions remain separate milestones.
+unannotated construction. Named/multiple/optional fields and general expando
+assignment remain separate milestones; receiver-dependent functions are
+[below](#receivers-and-methods).
 
 ### Local arrow receiver calls
 
-The source gate recognizes `.call` only on fresh arrows, the restricted callable
-field initializer, and immutable lexical aliases of those values, including
-captures. It checks lexical bindings rather than relying on a type's call
+The source gate recognizes `.call`, `.bind` and `.apply` only on fresh arrows
+and function expressions, the restricted callable field initializer, function
+members of a `const` object literal that no write in the file can replace, and
+immutable lexical aliases of those values, including captures. It checks lexical bindings rather than relying on a type's call
 signature: an arbitrary function parameter or call result could have its own
 `call` property. The supported source fragment cannot write that property or
 mutate the standard function prototype. As with `Object.assign`, identification
@@ -1668,11 +1671,41 @@ of the standard intrinsic belongs to the trusted source boundary.
 
 `receiver-call.ts` exercises a function with a field and a captured nullary arrow.
 Both producers verify its claims. Lowering saves the callee, evaluates and checks
-the receiver, then evaluates actuals left to right. The native call receives only
-the actuals. The receiver's effects persist even though arrows ignore its value;
-a JavaScript control that omits the write changes the result. The independent
-consumer rejects changed receiver evidence, false receiver claims and wrong
-actual counts. Ordinary `this`-dependent methods still require receiver semantics.
+the receiver, then evaluates actuals left to right, and invokes the callee with
+the receiver: `invoke f r args`. The receiver's effects persist even though
+arrows ignore its value; a JavaScript control that omits the write changes the
+result. The independent consumer rejects changed receiver evidence, false
+receiver claims and wrong actual counts. Ordinary `this`-dependent methods are
+the next section.
+
+### Receivers and methods
+
+Every signature states its receiver, and every call passes one: `undefined` for
+a plain call, the object for a method call `o.m(a)` or `(o.m)(a)`, the first
+argument for `.call` and `.apply`. An ordinary function expression or
+object-literal method binds it as `this`, in the slot before its parameters; an
+arrow resolves `this` to the enclosing ordinary function's slot, as a capture.
+The receiver rule is the strict one, so the fragment records strictness — a
+`"use strict"` directive of the file, the enclosing declaration or the function
+itself — and the decoder refuses a function reading `this` in sloppy code. A
+receiver annotation is lowered like a record contract with its readonly members
+as views, so writing through a readonly receiver field is refused. A method call
+saves the object, then the method read from it, then the actuals, then invokes;
+`methods.ts` shows the saved callee, the live receiver fields, `.call`
+rebinding, and a copied method whose plain call fails its `method-receiver`
+obligation. `.apply` reads a tuple list's length and indices in order after its
+receiver runs (`apply.ts`). `generic-receivers.ts` introduces one quantified
+function whose receiver is its binder and eliminates it at two receiver
+contracts, with a captured cell keeping its one contract.
+
+Both the TypeScript and the OCaml producers verify `methods.ts`,
+`call-objects.ts`, `apply.ts` and `generic-receivers.ts` independently. For a
+quantified closure the TypeScript producer states the scheme and reads each
+call's instantiation from the receiver and actuals it passes, since
+TypeScript's own `.call` forgets the binder. SKJS does not parse the directive, so the
+corpus reports these files unparsed in its column rather than as rejections, and
+the SKJS exporter's `function-this-parameter` refusal is unchanged: no checker
+change was made to SKJS for receivers.
 
 The captured receiver test also covers SKJS's optimized local-object assignment
 path. That path records the receiver's pre-write type for export without routing
@@ -1684,11 +1717,16 @@ collection obligation independently of the `.call` source lowering.
 
 `bound-arguments.ts` distinguishes saved argument values from a target's live
 cell capture and returns a fully bound nullary function. The parser restricts
-`.bind` to the same source-established arrow provenance as `.call`; a bound
-result retains that provenance. Receiver and prefix expressions run once at
-binding time, in source order. Lowering saves them in native lets and constructs
-an ordinary closure that calls the saved target with the saved prefix followed
-by its new parameters. No new runtime operation or semantic axiom is introduced.
+`.bind` to the same source-established provenance as `.call`; a bound
+result retains that provenance. Target, receiver and prefix expressions run once
+at binding time, in source order. Lowering saves them in native lets, re-binds
+the receiver and each prefix value at the contract the selected signature gives
+it, and allocates the forwarding descriptor `bound(target, receiver, prefix)`:
+invoking it drops its own receiver and invokes the target with the saved one and
+the prefix before the new actuals. It is a runtime descriptor, with its own step
+and its own safety proof (`callsT_bound`), not an ordinary wrapper closure, so a
+second `.bind` or a `.call` on a bound function cannot replace the first
+receiver (`rebind_keeps_receiver`).
 
 The claimed result signature determines the proposed remaining parameters, but
 does not authorize them: the independent consumer checks their concatenation

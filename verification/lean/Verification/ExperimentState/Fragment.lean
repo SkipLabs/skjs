@@ -14,18 +14,20 @@ namespace Verification.ExperimentState.Fragment
 open Lean ProgramTyping PositiveRules
 
 /-- Validate a free required-parameter signature without projecting away object
-requirements. The third component is the contract of each further actual, for
-a signature that takes any number of them. -/
-private def callableShape (a : Json) : Except String (List Json × Json × Option Json) := do
+requirements: the receiver contract, the parameters, the result, and the
+contract of each further actual, for a signature that takes any number of
+them. Every signature states its receiver; one indifferent to it states
+`unknown`. -/
+private def callableShape (a : Json) : Except String (Json × List Json × Json × Option Json) := do
   let rest := (a.getObjVal? "rest").toOption
   CellClaims.fieldsExactly a
-    (["a","params","result","construct","array"] ++ (if rest.isSome then ["rest"] else []))
+    (["a","this","params","result","construct","array"] ++ (if rest.isSome then ["rest"] else []))
   if (← jStr (← jField a "a")) != "function" then throw "expected a function atom"
   for key in ["construct","array"] do
     let mode ← jStr (← jField a key)
     if mode != "unknown" && mode != "absent" then throw "unsupported function object mode"
   let args ← jArr a "params"
-  return (args, ← jField a "result", rest)
+  return (← jField a "this", args, ← jField a "result", rest)
 
 /-- The positions a rest parameter stands for: the required elements of its
 tuple contract. A contract with optional or unbounded positions is not a fixed
@@ -68,12 +70,14 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
   let arms ← (← jArr j "atoms").mapM fun atom => do
     if (← jStr (← jField atom "a")) == "function" then
       let signatures ← (← CellClaims.conjuncts atom).mapM fun a => do
-        let (args, result, rest) ← callableShape a
-        return (← args.mapM callableType, ← rest.mapM callableType, ← callableType result)
+        let (recv, args, result, rest) ← callableShape a
+        return (← receiverType recv, ← args.mapM callableType, ← rest.mapM callableType,
+          ← callableType result)
       -- Fixed and variadic signatures of one value sit in one clause: each
-      -- says which actual lists a caller may write.
-      let fixed := signatures.filterMap fun (Ds, E, R) => if E.isNone then some (Ds, R) else none
-      let variadic := signatures.filterMap fun (Ds, E, R) => E.map fun E => (Ds, E, R)
+      -- says which receivers and actual lists a caller may write.
+      let fixed := signatures.filterMap fun (Rc, Ds, E, R) =>
+        if E.isNone then some (Rc, Ds, R) else none
+      let variadic := signatures.filterMap fun (Rc, Ds, E, R) => E.map fun E => (Rc, Ds, E, R)
       return [← SourceTypes.use (.arrs fixed.eraseDups variadic.eraseDups)]
     else if ["array", "store"].contains (← jStr (← jField atom "a")) then
       return [← arrayType atom]
@@ -83,6 +87,27 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
       -- result is interned rather than refused for being outside the four
       -- fixed labels.
       SourceTypes.translateArm (← CellClaims.primitive single)
+  return arms.flatten.mergeSort (· ≤ ·) |>.eraseDups
+
+/-- A receiver contract: what a callable operand may be, or an object whose
+fields hold such contracts, invariantly or, where the read and write sides
+differ, as a view. -/
+partial def receiverType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
+  CellClaims.fieldsExactly j ["top","atoms"]
+  if ← (← jField j "top").getBool? then return [← SourceTypes.use .top]
+  let arms ← (← jArr j "atoms").mapM fun atom => do
+    if (← jStr (← jField atom "a")) == "record" then
+      if (atom.getObjVal? "and").toOption.isSome then
+        throw "a receiver contract is one record, not a conjunction"
+      let fields ← CellClaims.decodeShapes
+        (Json.mkObj [("top",toJson false),("atoms",toJson [atom])])
+      let lowered ← fields.mapM fun (name, read, write) => do
+        return (name, ← callableType read, ← callableType write)
+      let invariant := lowered.filterMap fun (n, r, w) => if r == w then some (n, w) else none
+      let views := lowered.filterMap fun (n, r, w) => if r == w then none else some (n, r)
+      return [← SourceTypes.use (.refs invariant [] views)]
+    else
+      callableType (Json.mkObj [("top",toJson false),("atoms",toJson [atom])])
   return arms.flatten.mergeSort (· ≤ ·) |>.eraseDups
 
 /-- An array type: a tuple contract on a store, held by an object in its store
@@ -124,7 +149,8 @@ private def cellConjunction (atom : Json) : SourceTypes.Lowering Nat := do
 private def callableObject (atom : Json) : SourceTypes.Lowering Nat := do
   CellClaims.fieldsExactly atom ["a","function","bag"]
   let fn ← jField atom "function"
-  let (args,result,rest) ← callableShape fn
+  let (recv,args,result,rest) ← callableShape fn
+  let Rc ← receiverType recv
   let Ds ← args.mapM callableType
   let E ← rest.mapM callableType
   let R ← callableType result
@@ -132,8 +158,8 @@ private def callableObject (atom : Json) : SourceTypes.Lowering Nat := do
   if !CellUnion.invariant c then
     throw "callable field requires an invariant read/write contract"
   match E with
-  | none => SourceTypes.use (.callable (c.map fun f => (f.name, f.write)) [] [(Ds,R)] [])
-  | some E => SourceTypes.use (.callable (c.map fun f => (f.name, f.write)) [] [] [(Ds,E,R)])
+  | none => SourceTypes.use (.callable (c.map fun f => (f.name, f.write)) [] [(Rc,Ds,R)] [])
+  | some E => SourceTypes.use (.callable (c.map fun f => (f.name, f.write)) [] [] [(Rc,Ds,E,R)])
 
 /-- Validate every union arm. Record alternatives may absorb a redundant
 read/write contract into an existing invariant alternative (CellUnion.normalize_exact).
@@ -271,16 +297,27 @@ inductive Expr where
   /-- `params` are what the body reads. `defaults` names the positions a call
   may omit and the expression that replaces the `undefined` bound there; the
   advertised domain at such a position is the parameter's type with
-  `undefined`. -/
-  | lambda (pos : Span) (typeParams : List TypeParam)
+  `undefined`. `receiver` is none for an arrow, whose `this` is a capture; an
+  ordinary (strict) function binds the receiver of each call as `this`, at the
+  annotation given here. -/
+  | lambda (pos : Span) (receiver : Option Json) (typeParams : List TypeParam)
       (params : List (String × Json)) (defaults : List (Nat × Expr)) (rest : Bool)
       (result : Json) (body : Expr)
   | bindWithReceiver (pos : Span) (callee receiver : Expr) (args : List Expr)
   | callWithReceiver (pos : Span) (callee receiver : Expr) (args : List Expr)
+  /-- `f.apply(r, list)`: the target, the receiver and the list are saved,
+  then the list's length and each index are read in order, before the call. No
+  list, or a null or undefined one, gives no actuals. -/
+  | applyWithReceiver (pos : Span) (callee receiver : Expr) (list : Option Expr)
   /-- `spreads` are the positions of the arguments written with `...`, in
   increasing order: each stands for the elements of its operand, read where it
   is written. -/
   | call (pos : Span) (callee : Expr) (args : List Expr) (spreads : List Nat)
+  /-- A call through a property reference, `o.m(a)`: `callee` is the `read`
+  (or `index`) of the method; its object is the receiver. The object is saved,
+  the method read and saved, the actuals evaluated, then the saved method is
+  invoked with the saved object. -/
+  | invoke (pos : Span) (callee : Expr) (args : List Expr) (spreads : List Nat)
   /-- The return statement's entry environment; the expression retains its own span. -/
   | atEnv (pos : Span) (body : Expr)
   /-- Administrative completion and sequencing; neither invents a source expression claim. -/
@@ -296,9 +333,10 @@ executable source form cannot bypass parameter-initialization checks. -/
 partial def Expr.freeNames : Expr → List String
   | .var _ n => [n]
   | .lit .. | .done .. => []
-  | .lambda _ _ ps ds _ _ b =>
+  | .lambda _ receiver _ ps ds _ _ b =>
+    -- An ordinary function binds its own `this`; an arrow captures it.
     ((ds.flatMap fun d => d.2.freeNames) ++ b.freeNames).filter
-      (fun n => !(ps.map Prod.fst).contains n)
+      (fun n => !(ps.map Prod.fst).contains n && (receiver.isNone || n != "this"))
   | .shapeTest _ _ _ e | .not _ e | .cast _ _ e | .read _ _ e | .atEnv _ e => e.freeNames
   | .alloc _ _ es | .arrayLit _ es => es.flatMap Expr.freeNames
   | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
@@ -313,7 +351,8 @@ partial def Expr.freeNames : Expr → List String
       (fun q => q.name :: (q.default_.map Expr.freeNames).getD [])
   | .bindWithReceiver _ f r args | .callWithReceiver _ f r args =>
     f.freeNames ++ r.freeNames ++ args.flatMap Expr.freeNames
-  | .call _ f args _ => f.freeNames ++ args.flatMap Expr.freeNames
+  | .applyWithReceiver _ f r list => f.freeNames ++ r.freeNames ++ (list.map Expr.freeNames).getD []
+  | .call _ f args _ | .invoke _ f args _ => f.freeNames ++ args.flatMap Expr.freeNames
   | .letBody _ n _ a b => a.freeNames ++ b.freeNames.filter (· != n)
 
 /-- Closure conversion for acyclic forward captures. Only a literal closure's
@@ -350,7 +389,7 @@ def parameterOrder (ps : List (String × Json)) (defaults : List (Nat × Expr)) 
 
 /-- Singleton notation for small source-adapter fixtures. -/
 abbrev Expr.lam (p : Span) (name : String) (arg result : Json) (body : Expr) : Expr :=
-  .lambda p [] [(name,arg)] [] false result body
+  .lambda p none [] [(name,arg)] [] false result body
 abbrev Expr.app (p : Span) (callee arg : Expr) : Expr := .call p callee [arg] []
 
 def Expr.span : Expr → Span
@@ -358,7 +397,7 @@ def Expr.span : Expr → Span
   | .ifBody p _ _ _ _ | .done p | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
   | .arrayLit p _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .cast p _ _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ _ _ _ | .call p _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .cast p _ _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ _ _ _ _ | .call p _ _ _ | .invoke p _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ => p
 
 /-- One declarator of a `const` or `let`. -/
 structure Binding where
@@ -443,6 +482,10 @@ partial def decodeExpr (j : Json) : Except String Expr := do
   let p ← jSpan j "pos"
   match ← jStr (← jField j "k") with
   | "id" => return .var p (← jStr (← jField j "name"))
+  -- No declaration can bind the name `this`, so it names the receiver slot.
+  | "this" =>
+    CellClaims.fieldsExactly j ["k","pos"]
+    return .var p "this"
   | "lit" => return .lit p (← decodeVal (← jField j "lit"))
   | "bin" =>
     let op ← jStr (← jField j "op")
@@ -508,6 +551,13 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     CellClaims.fieldsExactly j ["k","pos","callee","receiver","args"]
     return .callWithReceiver p (← decodeExpr (← jField j "callee"))
       (← decodeExpr (← jField j "receiver")) (← (← jArr j "args").mapM decodeExpr)
+  | "applyWithReceiver" => do
+    CellClaims.fieldsExactly j ["k","pos","callee","receiver","list"]
+    let list ← match ← jField j "list" with
+      | .null => pure none
+      | l => some <$> decodeExpr l
+    return .applyWithReceiver p (← decodeExpr (← jField j "callee"))
+      (← decodeExpr (← jField j "receiver")) list
   | "withValue" => do
     CellClaims.fieldsExactly j ["k","pos","fn","initial","functionType","bagType"]
     return .withValue p (← decodeExpr (← jField j "fn")) (← decodeExpr (← jField j "initial"))
@@ -516,13 +566,22 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     -- Two proof fixtures embed parser snapshots from before quantified lambdas.
     -- Live producers always write `typeParams`; absence in those snapshots is
     -- the unique encoding of the former, necessarily empty list.
-    let typeParams ← match (j.getObjVal? "typeParams").toOption with
+    let (typeParams, receiver) ← match (j.getObjVal? "typeParams").toOption with
       | some raw => do
-        CellClaims.fieldsExactly j ["k","pos","typeParams","params","result","body"]
-        (← raw.getArr?).toList.mapM decodeTypeParam
+        CellClaims.fieldsExactly j ["k","pos","typeParams","receiver","params","result","body"]
+        -- An ordinary function records its receiver annotation and whether
+        -- its code is strict. Its receiver rule is the strict one: sloppy code
+        -- substitutes the global object and boxes primitives, which nothing
+        -- here models, so a sloppy function that reads `this` is refused.
+        let receiver ← match ← jField j "receiver" with
+          | .null => pure none
+          | r => do
+            CellClaims.fieldsExactly r ["type","strict"]
+            pure (some (← jField r "type", ← (← jField r "strict").getBool?))
+        pure ((← (← raw.getArr?).toList.mapM decodeTypeParam), receiver)
       | none => do
         CellClaims.fieldsExactly j ["k","pos","params","result","body"]
-        pure []
+        pure ([], none)
     let raw ← jArr j "params"
     let restAt := raw.zipIdx.filterMap fun (param,i) =>
       if (param.getObjVal? "rest").toOption.isSome then some i else none
@@ -544,8 +603,12 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       match (param.getObjVal? "default").toOption with
       | none => return none
       | some d => return some (i, ← decodeExpr d)
-    return .lambda p typeParams params defaults (!restAt.isEmpty) (← jField j "result")
-      (← decodeExpr (← jField j "body"))
+    let body ← decodeExpr (← jField j "body")
+    if let some (_, false) := receiver then
+      if (body :: defaults.map Prod.snd).any (·.freeNames.contains "this") then
+        throw s!"unsupported source expression at [{p.1},{p.2}): a function that reads `this` must be strict code"
+    return .lambda p (receiver.map Prod.fst) typeParams params defaults (!restAt.isEmpty)
+      (← jField j "result") body
   | "doneBody" => return .done p
   | "seqBody" => return .seqBody p (← decodeExpr (← jField j "init")) (← decodeExpr (← jField j "body"))
   | "ifBody" =>
@@ -577,6 +640,27 @@ partial def decodeExpr (j : Json) : Except String Expr := do
           throw "spread positions are listed once each, in order"
         pure spreads
     return .call p (← decodeExpr (← jField j "callee")) args spreads
+  | "invoke" => do
+    let args ← (← jArr j "args").mapM decodeExpr
+    let spreads ← match (j.getObjVal? "spreads").toOption with
+      | none => do
+        CellClaims.fieldsExactly j ["k","pos","callee","args"]
+        pure []
+      | some marked => do
+        CellClaims.fieldsExactly j ["k","pos","callee","args","spreads"]
+        let spreads ← (← marked.getArr?).toList.mapM fun i => do
+          let i ← i.getNat?
+          if i ≥ args.length then throw "a spread position names no argument"
+          pure i
+        if spreads.isEmpty then throw "an empty spread list is written by omitting it"
+        if !(spreads.zip spreads.tail).all (fun (a,b) => a < b) then
+          throw "spread positions are listed once each, in order"
+        pure spreads
+    let callee ← decodeExpr (← jField j "callee")
+    match callee with
+    | .read .. | .index .. => pure ()
+    | _ => throw "a method call's target is a property reference"
+    return .invoke p callee args spreads
   | "write" =>
     return .write p (← jStr (← jField j "field")) (← decodeExpr (← jField j "receiver"))
       (← decodeExpr (← jField j "rhs"))

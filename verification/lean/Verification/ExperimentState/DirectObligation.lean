@@ -12,11 +12,14 @@ inductive Ty where
   | rigid (name : String)
   | ground (labels : List Nat)
   /-- A callable whose signature mentions a rigid parameter, such as the result
-  `() => T` of a closure that retains its outer binder. -/
-  | arrow (params : List Ty) (result : Ty)
+  `() => T` of a closure that retains its outer binder: the receiver a call
+  may pass, the parameters, the result. -/
+  | arrow (receiver : Ty) (params : List Ty) (result : Ty)
   /-- Mutable array storage keeps one invariant element contract. -/
   | array (element : Ty)
-  | variadic (params : List Ty) (element result : Ty)
+  | variadic (receiver : Ty) (params : List Ty) (element result : Ty)
+  /-- Every value: the receiver of a signature indifferent to its receiver. -/
+  | top
   deriving BEq, Repr, Inhabited
 
 mutual
@@ -25,31 +28,38 @@ def Ty.decEq : (a b : Ty) → Decidable (a = b)
     if h : x = y then isTrue (by rw [h]) else isFalse (fun e => h (Ty.rigid.inj e))
   | .ground A, .ground B =>
     if h : A = B then isTrue (by rw [h]) else isFalse (fun e => h (Ty.ground.inj e))
-  | .arrow ps r, .arrow qs t =>
-    match Ty.decEqList ps qs, Ty.decEq r t with
-    | isTrue h1, isTrue h2 => isTrue (by rw [h1, h2])
-    | isFalse h1, _ => isFalse (fun e => h1 (Ty.arrow.inj e).1)
-    | _, isFalse h2 => isFalse (fun e => h2 (Ty.arrow.inj e).2)
-  | .variadic ps e r, .variadic qs f t =>
-    match Ty.decEqList ps qs, Ty.decEq e f, Ty.decEq r t with
-    | isTrue hp, isTrue he, isTrue hr => isTrue (by rw [hp, he, hr])
-    | isFalse hp, _, _ => isFalse (fun h => hp (Ty.variadic.inj h).1)
-    | _, isFalse he, _ => isFalse (fun h => he (Ty.variadic.inj h).2.1)
-    | _, _, isFalse hr => isFalse (fun h => hr (Ty.variadic.inj h).2.2)
+  | .arrow a ps r, .arrow b qs t =>
+    match Ty.decEq a b, Ty.decEqList ps qs, Ty.decEq r t with
+    | isTrue h0, isTrue h1, isTrue h2 => isTrue (by rw [h0, h1, h2])
+    | isFalse h0, _, _ => isFalse (fun e => h0 (Ty.arrow.inj e).1)
+    | _, isFalse h1, _ => isFalse (fun e => h1 (Ty.arrow.inj e).2.1)
+    | _, _, isFalse h2 => isFalse (fun e => h2 (Ty.arrow.inj e).2.2)
+  | .variadic a ps e r, .variadic b qs f t =>
+    match Ty.decEq a b, Ty.decEqList ps qs, Ty.decEq e f, Ty.decEq r t with
+    | isTrue h0, isTrue hp, isTrue he, isTrue hr => isTrue (by rw [h0, hp, he, hr])
+    | isFalse h0, _, _, _ => isFalse (fun h => h0 (Ty.variadic.inj h).1)
+    | _, isFalse hp, _, _ => isFalse (fun h => hp (Ty.variadic.inj h).2.1)
+    | _, _, isFalse he, _ => isFalse (fun h => he (Ty.variadic.inj h).2.2.1)
+    | _, _, _, isFalse hr => isFalse (fun h => hr (Ty.variadic.inj h).2.2.2)
   | .variadic .., .rigid _ | .variadic .., .ground _ | .variadic .., .arrow .. | .variadic .., .array _ => isFalse nofun
   | .rigid _, .variadic .. | .ground _, .variadic .. | .arrow .., .variadic .. | .array _, .variadic .. => isFalse nofun
   | .array a, .array b =>
     match Ty.decEq a b with
     | isTrue h => isTrue (by rw [h])
     | isFalse h => isFalse (fun e => h (Ty.array.inj e))
-  | .array _, .rigid _ | .array _, .ground _ | .array _, .arrow _ _ => isFalse nofun
-  | .rigid _, .array _ | .ground _, .array _ | .arrow _ _, .array _ => isFalse nofun
+  | .array _, .rigid _ | .array _, .ground _ | .array _, .arrow _ _ _ => isFalse nofun
+  | .rigid _, .array _ | .ground _, .array _ | .arrow _ _ _, .array _ => isFalse nofun
+  | .top, .top => isTrue rfl
+  | .top, .rigid _ | .top, .ground _ | .top, .arrow .. | .top, .array _ | .top, .variadic .. =>
+    isFalse nofun
+  | .rigid _, .top | .ground _, .top | .arrow .., .top | .array _, .top | .variadic .., .top =>
+    isFalse nofun
   | .rigid _, .ground _ => isFalse nofun
-  | .rigid _, .arrow _ _ => isFalse nofun
+  | .rigid _, .arrow _ _ _ => isFalse nofun
   | .ground _, .rigid _ => isFalse nofun
-  | .ground _, .arrow _ _ => isFalse nofun
-  | .arrow _ _, .rigid _ => isFalse nofun
-  | .arrow _ _, .ground _ => isFalse nofun
+  | .ground _, .arrow _ _ _ => isFalse nofun
+  | .arrow _ _ _, .rigid _ => isFalse nofun
+  | .arrow _ _ _, .ground _ => isFalse nofun
 def Ty.decEqList : (as bs : List Ty) → Decidable (as = bs)
   | [], [] => isTrue rfl
   | a :: as, b :: bs =>
@@ -124,12 +134,20 @@ def SourceRole.wire : SourceRole → String
   | .callArgument => "call-argument"
 
 partial def Ty.render (T : SourceTypes.Table) : Ty → String
-  | .variadic ps e r => s!"({String.intercalate ", " (ps.map (Ty.render T) ++ [s!"...Array<{e.render T}>"])}) => {r.render T}"
+  | .variadic rc ps e r =>
+      s!"({String.intercalate ", " (receiverText T rc ++ ps.map (Ty.render T) ++ [s!"...Array<{e.render T}>"])}) => {r.render T}"
   | .rigid name => name
+  | .top => "unknown"
   | .array element => s!"Array<{element.render T}>"
   | .ground labels => SourceTypes.render T labels
-  | .arrow params result =>
-      s!"({String.intercalate ", " (params.map (Ty.render T))}) => {result.render T}"
+  | .arrow rc params result =>
+      s!"({String.intercalate ", " (receiverText T rc ++ params.map (Ty.render T))}) => {result.render T}"
+where
+  /-- A signature indifferent to its receiver shows none; `this: R` otherwise. -/
+  receiverText (T : SourceTypes.Table) (rc : Ty) : List String :=
+    match rc with
+    | .ground [l] => if T[l]? == some [.top] then [] else [s!"this: {rc.render T}"]
+    | _ => [s!"this: {rc.render T}"]
 
 open PositiveRules PositiveGraphs
 
@@ -137,13 +155,15 @@ mutual
   /-- Direct types denote ordinary semantic families once rigid names have an
   assignment. Callables use the calculus's ordered-argument semantics. -/
   def Ty.denote (G : NormalGraph Nat) (η : String → Fam) : Ty → Fam
-    | .variadic ps e r => restsT [(Ty.denoteList G η ps, e.denote G η, r.denote G η)]
+    | .variadic rc ps e r =>
+        restsT [(rc.denote G η, Ty.denoteList G η ps, e.denote G η, r.denote G η)]
     | .array element => recT [(CallArguments.arrayStoreField,
         listT ⟨[], [], some (Ty.denote G η element), false⟩)]
     | .rigid name => η name
+    | .top => PositiveNormalization.topT
     | .ground labels => meaning G labels
-    | .arrow params result =>
-        callsT [(Ty.denoteList G η params, Ty.denote G η result)]
+    | .arrow rc params result =>
+        callsT [(rc.denote G η, Ty.denoteList G η params, Ty.denote G η result)]
   def Ty.denoteList (G : NormalGraph Nat) (η : String → Fam) : List Ty → List Fam
     | [] => []
     | t :: ts => Ty.denote G η t :: Ty.denoteList G η ts
@@ -238,14 +258,16 @@ private theorem short_rest {Ps : List Fam} {E : Fam} {n j W args}
       rw [List.cons_append, ArgsShort_cons] at h
       exact ArgsRest_cons.mpr ⟨h.1, ih h.2⟩
 
-theorem variadic_fixed (Ps : List Fam) (E R : Fam) (extra : Nat) :
-    FamLe (restsT [(Ps, E, R)]) (callsT [(Ps ++ List.replicate extra E, R)]) := by
+theorem variadic_fixed (Rc : Fam) (Ps : List Fam) (E R : Fam) (extra : Nat) :
+    FamLe (restsT [(Rc, Ps, E, R)]) (callsT [(Rc, Ps ++ List.replicate extra E, R)]) := by
   intro n W v hv
   refine ⟨hv.1, ?_⟩
   intro p hp
   have hp := List.mem_singleton.mp hp
   subst p
-  apply (hv.2 (Ps, E, R) (by simp)).weaken
+  apply (hv.2 (Rc, Ps, E, R) (by simp)).weaken
+  · intro j hj U r hr
+    exact hr
   · intro j hj U args ha
     exact short_rest ha
   · intro j hj U a ha
@@ -258,6 +280,8 @@ def Ty.leUnderFuel (fuel : Nat) (parameters : List Parameter) : Ty → Ty → Bo
     | 0 => false
     | n + 1 => match a, b with
       | .rigid x, .rigid y => follows parameters parameters.length x y
+      -- Every value is below top; a rigid name only through its bound.
+      | .ground _, .top | .arrow .., .top | .array _, .top | .variadic .., .top | .top, .top => true
       | .rigid x, _ => parameters.any fun q => match q.upper with
           | some (.rigid _) | none => false
           | some terminal => follows parameters parameters.length x q.name &&
@@ -265,19 +289,19 @@ def Ty.leUnderFuel (fuel : Nat) (parameters : List Parameter) : Ty → Ty → Bo
       | .ground A, .ground B => A.all B.contains
       | .array a, .array b => decide (a = b)
       | a@(.variadic ..), b@(.variadic ..) => decide (a = b)
-      | .variadic ps e r, .arrow qs t =>
-          decide (qs = ps ++ List.replicate (qs.length - ps.length) e ∧ r = t)
-      | .arrow ps r, .arrow qs t =>
-          ps.length == qs.length &&
+      | .variadic rc ps e r, .arrow rd qs t =>
+          decide (rc = rd ∧ qs = ps ++ List.replicate (qs.length - ps.length) e ∧ r = t)
+      | .arrow rc ps r, .arrow rd qs t =>
+          Ty.leUnderFuel n parameters rd rc && ps.length == qs.length &&
             (qs.zip ps).all (fun (q, p) => Ty.leUnderFuel n parameters q p) &&
             Ty.leUnderFuel n parameters r t
       | _, _ => false
 
 def Ty.depth : Ty → Nat
-  | .rigid _ | .ground _ => 1
+  | .rigid _ | .ground _ | .top => 1
   | .array a => 1 + a.depth
-  | .variadic ps e r => 1 + (ps.map Ty.depth).foldl max (max e.depth r.depth)
-  | .arrow ps r => 1 + (ps.map Ty.depth).foldl max r.depth
+  | .variadic rc ps e r => 1 + (ps.map Ty.depth).foldl max (max rc.depth (max e.depth r.depth))
+  | .arrow rc ps r => 1 + (ps.map Ty.depth).foldl max (max rc.depth r.depth)
 
 /-- The structure a walk may have to enter through declared bounds. -/
 def upperDepths (parameters : List Parameter) : Nat :=
@@ -328,58 +352,71 @@ theorem Ty.leUnderFuel_sound {G : NormalGraph Nat} {η parameters fuel a b}
       cases b with
       | rigid y =>
         exact follows_sound hs h
-      | ground B | arrow qs t | array e | variadic ps e r =>
+      | ground B | arrow _ qs t | array e | variadic _ ps e r | top =>
         simp only [Ty.leUnderFuel] at h
         obtain ⟨q, hq, hstep⟩ := List.any_eq_true.mp h
         cases hu : q.upper with
         | none => simp [hu] at hstep
         | some upper => cases upper with
           | rigid name => simp [hu] at hstep
-          | ground A | arrow ps r | array e | variadic ps e r =>
+          | ground A | arrow _ ps r | array e | variadic _ ps e r | top =>
             simp only [hu, Bool.and_eq_true] at hstep
             exact fun k W v hv => (ih hstep.2) k W v
               ((hs q hq _ hu) k W v ((follows_sound hs hstep.1) k W v hv))
+    | top =>
+      cases b with
+      | top => exact fun _ _ _ hv => hv
+      | rigid _ | ground _ | array _ | variadic _ _ _ _ | arrow _ _ _ =>
+        simp [Ty.leUnderFuel] at h
     | ground A =>
       cases b with
-      | rigid y | array _ | variadic _ _ _ => simp [Ty.leUnderFuel] at h
-      | arrow qs t => simp [Ty.leUnderFuel] at h
+      | rigid y | array _ | variadic _ _ _ _ => simp [Ty.leUnderFuel] at h
+      | top => exact fun _ _ _ hv => ProgramTyping.meaning_value hv
+      | arrow _ qs t => simp [Ty.leUnderFuel] at h
       | ground B =>
         simp only [Ty.leUnderFuel] at h
         intro k W v hv
         obtain ⟨label, hlabel, hv⟩ := hv
         exact ⟨label, by simpa using (List.all_eq_true.mp h) label hlabel, hv⟩
-    | arrow ps r =>
+    | arrow rc ps r =>
       cases b with
-      | rigid y | array _ | variadic _ _ _ => simp [Ty.leUnderFuel] at h
+      | rigid y | array _ | variadic _ _ _ _ => simp [Ty.leUnderFuel] at h
+      | top => exact fun _ _ _ hv => ⟨hv.1.val, hv.1.scoped⟩
       | ground B => simp [Ty.leUnderFuel] at h
-      | arrow qs t =>
+      | arrow rd qs t =>
         simp only [Ty.leUnderFuel, Bool.and_eq_true] at h
-        have hdom := denoteList_argsLe (G := G) (η := η) (beq_iff_eq.mp h.1.1) h.1.2
+        have hrecv := ih h.1.1.1
+        have hdom := denoteList_argsLe (G := G) (η := η) (beq_iff_eq.mp h.1.1.2) h.1.2
           (fun hsub => ih hsub)
         have hresult := ih h.2
-        exact callsT_single_mono hdom hresult
+        exact callsT_single_mono hrecv hdom hresult
     | array e =>
       cases b with
-      | rigid _ | ground _ | arrow _ _ | variadic _ _ _ => simp [Ty.leUnderFuel] at h
+      | rigid _ | ground _ | arrow _ _ _ | variadic _ _ _ _ => simp [Ty.leUnderFuel] at h
+      | top =>
+        intro _ _ _ hv
+        obtain ⟨fields, rfl, _⟩ := hv
+        exact ⟨rfl, trivial⟩
       | array f =>
         have heq : e = f := by simpa [Ty.leUnderFuel] using h
         subst f
         exact fun _ _ _ hv => hv
-    | variadic ps e r =>
+    | variadic rc ps e r =>
       cases b with
       | rigid _ | ground _ | array _ => simp [Ty.leUnderFuel] at h
-      | arrow qs t =>
-        have hh : qs = ps ++ List.replicate (qs.length - ps.length) e ∧ r = t := by
+      | top => exact fun _ _ _ hv => ⟨hv.1.val, hv.1.scoped⟩
+      | arrow rd qs t =>
+        have hh : rc = rd ∧ qs = ps ++ List.replicate (qs.length - ps.length) e ∧ r = t := by
           simpa [Ty.leUnderFuel] using h
-        obtain ⟨hq, rfl⟩ := hh
+        obtain ⟨rfl, hq, rfl⟩ := hh
         simp only [Ty.denote]
         have heq : Ty.denoteList G η qs = Ty.denoteList G η ps ++
             List.replicate (qs.length - ps.length) (e.denote G η) := by
           exact (congrArg (Ty.denoteList G η) hq).trans (by simp [Ty.denoteList_eq_map])
         rw [heq]
-        exact variadic_fixed _ _ _ _
-      | variadic qs f t =>
-        have heq : Ty.variadic ps e r = .variadic qs f t := by simpa [Ty.leUnderFuel] using h
+        exact variadic_fixed _ _ _ _ _
+      | variadic rd qs f t =>
+        have heq : Ty.variadic rc ps e r = .variadic rd qs f t := by simpa [Ty.leUnderFuel] using h
         rw [heq]
         exact fun _ _ _ hv => hv
 
@@ -406,12 +443,15 @@ def Subject.toJson : Subject → Json
       [("kind", Lean.toJson "closure-body"), ("pos", Lean.toJson pos)]
 
 partial def Ty.toJson : Ty → Json
-  | .variadic ps e r => Json.mkObj [("kind", Lean.toJson "variadic"),
-      ("params", Lean.toJson (ps.map Ty.toJson)), ("element", e.toJson), ("result", r.toJson)]
+  | .variadic rc ps e r => Json.mkObj [("kind", Lean.toJson "variadic"),
+      ("receiver", rc.toJson), ("params", Lean.toJson (ps.map Ty.toJson)),
+      ("element", e.toJson), ("result", r.toJson)]
   | .array element => Json.mkObj [("kind", Lean.toJson "array"), ("element", element.toJson)]
   | .rigid name => Json.mkObj [("kind", Lean.toJson "rigid"), ("name", Lean.toJson name)]
+  | .top => Json.mkObj [("kind", Lean.toJson "top")]
   | .ground labels => Json.mkObj [("kind", Lean.toJson "ground"), ("labels", Lean.toJson labels)]
-  | .arrow params result => Json.mkObj [("kind", Lean.toJson "arrow"),
+  | .arrow rc params result => Json.mkObj [("kind", Lean.toJson "arrow"),
+      ("receiver", rc.toJson),
       ("params", Json.arr (params.map Ty.toJson).toArray), ("result", result.toJson)]
 
 def Parameter.toJson (p : Parameter) : Json := Json.mkObj

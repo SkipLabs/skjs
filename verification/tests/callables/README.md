@@ -66,10 +66,9 @@ Not supported, with the refusal each one meets:
 | `arguments`, argument-count introspection                                                    | the protocol excludes argument-count introspection                                                                                                                                                                                       |
 | A spread of an array that may have holes into a rest whose element type lacks `undefined`    | named refusal: a hole spreads `undefined`, which the rest would hold; TypeScript accepts the call ([witness](variadic-holes.ts))                                                                                                         |
 | A spread into fixed parameters other than a last tuple spread                                | named refusal                                                                                                                                                                                                                            |
-| `this` parameters, receiver-dependent methods, `.apply`                                      | `function-this-parameter`; the calculus has no receiver, so `.call` discards one ([boundary example](call-objects.ts), [receiver plan](#receiver-implementation-plan))                                                                   |
+| `this` parameters through SKJS                                                               | `function-this-parameter`; SKJS also does not parse the `"use strict"` directive the receiver witnesses need ([methods.ts](methods.ts), [receiver plan](#receiver-implementation-plan))                                                   |
 | Construct signatures, `new`, classes, accessors                                              | `function-constructible`; accessor execution is a separate semantic obligation                                                                                                                                                           |
 | Index signatures and array brands on functions                                               | `function-index-signature`, `function-is-array`                                                                                                                                                                                          |
-| Function expressions as values                                                               | only arrows lower to `lambda`                                                                                                                                                                                                            |
 | Async functions, generators, function identity comparison, loops inside closures             | outside the fragment                                                                                                                                                                                                                     |
 | Generic signatures through SKJS                                                              | `function-generic`: SKJS types quantified closures but exports them as unavailable, so the OCaml witnesses carry these rows                                                                                                              |
 | Optional and defaulted parameters through SKJS                                               | `function-optional-parameter`: SKJS types them and exports every claim mentioning the signature as unavailable                                                                                                                           |
@@ -165,18 +164,18 @@ This milestone does not claim semantic completeness of direct subtyping.
 
 Breadth first, cheapest new representation first:
 
-1. **`this` and methods**, following the receiver plan below. `.apply` then adds
-   array-like argument preparation; it is not spread's iterator operation.
-   Construct signatures follow separately. Decide the receiver interface now
-   and use it when extending signatures in the steps above, even before source
-   methods are admitted.
+1. **`this` and methods**, following the receiver plan below: implemented, with
+   `.bind`'s forwarding descriptor and `.apply`'s array-like preparation.
+   Construct signatures follow separately.
 
 ### Receiver implementation plan
 
-**Status: design, not implemented.** This section owns the receiver design;
-the semantic and protocol documents must acquire the implemented rules alongside
-the corresponding code. The current calculus has no receiver. Existing arrows
-and their ignored `.call` receivers do not establish method support.
+**Status: implemented, R1–R5, with the deviations and limits listed under
+[implementation status](#implementation-status) below.** This section owns the
+receiver design; [SEMANTICS](../../SEMANTICS.md#one-meaning-for-callable-contracts),
+[PROGRAM-TYPING](../../PROGRAM-TYPING.md#judgments-and-constructor-views),
+[REQUEST-PROTOCOL](../../REQUEST-PROTOCOL.md#receivers) and
+[DESIGN](../../DESIGN.md#receivers-and-methods) state the implemented rules.
 
 #### Contract and runtime interface
 
@@ -307,6 +306,53 @@ with its source span, environment, actual type and required receiver type.
 | R3: source and producers | Add method/function expressions, strictness facts, lexical `this` resolution and reference-preserving call targets. Update all typed mirrors and display/editor syntax together. OCaml and TS witnesses must independently verify; SKJS export refusals remain separately reported, with no checker change hidden in this extension.                  |
 | R4: binding              | Add the forwarding descriptor and prove receiver/prefix preservation and its residual signature. Integrate `.bind` and the existing intrinsic guards.                                                                                                                                                                                                 |
 | R5: apply                | Add checked array-like preparation, retaining its effects and order, then reuse the proved invocation rule.                                                                                                                                                                                                                                           |
+
+#### Implementation status
+
+- **R1.** `Tm.invoke f r args` replaced the receiverless call; `call` and `app`
+  abbreviate it with `undefined`. Ready frames carry the receiver, evaluated
+  after the callee and before the actuals (`Step.callRecv`), and determinism,
+  preparation and safety cover it. The body frame is the layout above,
+  `[this, parameter_0, …, captures…]`, everywhere: `bindArgs`, closure scope,
+  source slots and certificate environments; a variadic body has its rest
+  array before the receiver. Arity, optional positions and rest collection
+  are unaffected, since the receiver is not a parameter.
+- **R2.** Signatures are `(receiver, parameters, result)` in graphs, wire,
+  certificates (`ArrowCert.emptyRecv`, `recvUnion`; contravariant receivers),
+  `ProgramCertificates` (receiver premise after the callee), generic
+  certificates and schemes (`ClaimType.scheme` has `this`).
+- **R3.** Function expressions and object-literal methods lower to lambdas with
+  a receiver and a strictness fact; `this` resolves to the nearest ordinary
+  function's receiver slot, an arrow's `this` being a capture; `o.m(a)` and
+  `(o.m)(a)` lower to `invoke` on the saved object and method; every call's
+  receiver is a located `method-receiver` obligation. Lean, Fragment,
+  SourceClaims, the SKJS conversion (`this: unknown`, and its unchanged
+  `function-this-parameter` refusal), the TypeScript producer, the OCaml
+  producer's signatures and inference, claim text, the diagnostic view and the
+  term codec all carry the receiver.
+- **R4.** `CallCode.bound` with `Step.callBound`; `callsT_bound` and
+  `restsT_bound` (residual fixed and variadic signatures at any receiver),
+  `bound_ignores_receiver`, `rebind_keeps_receiver`; `HasTy.bindE`,
+  `HasTy.bindRestE` and their evidence rules, with soundness and certificate
+  completeness.
+- **R5.** `.apply` saves target, receiver and list, then reads `length` and each
+  index in order, then invokes; a list of unknown length is passed by its
+  store's positions to a rest-only target; a missing, null or undefined list
+  gives none.
+
+Method calls take fixed and variadic signatures, spread actuals and element
+targets as plain calls do; `.bind` takes fixed and variadic targets
+(`bindRestE`, `restsT_bound`); `.apply` takes tuples, lists of unknown length
+into a rest-only target, and nullish lists; a declaration's `this` parameter is
+an assumed input; a named function expression is accepted where its body does
+not refer to its name. The TypeScript producer states quantified closures and
+reads each call's instantiation from the receiver and actuals it passes, so
+every witness is verified by both producers. What stays refused is refused
+for every function, not for receivers: sloppy code reading `this` (the plan's
+later obligation), a function expression referring to its own name (a
+recursive binding, as a cyclic closure initialization is), and inside a closure
+body the array operations — element reads and spreads — that no closure call
+has.
 
 Required distinct witnesses: (1) property call versus extracted-method call;
 (2) `.call` rebinding an ordinary method while an escaping inner arrow retains
@@ -501,10 +547,12 @@ its lexical capture. Both outcomes matter: changing either behavior flips the
 example's result. SKJS and strict TypeScript accept it, and JavaScript controls
 check both seeds.
 
-This is a **boundary example**, shown in the Callables group but not counted as
-source-verifiable. Multi-field objects are supported; the remaining boundary is
-ordinary receiver-dependent methods and receiver-dependent `Function.prototype.call`
-behavior. The receiver plan above owns its promotion criteria.
+It carries a `"use strict"` directive, the strict-mode evidence the receiver
+rule needs, and is source-verifiable: the TypeScript and the OCaml producers'
+claims both verify, with the method in sloppy code refused
+([call-objects.mts](../call-objects.mts)). [methods.ts](methods.ts),
+[apply.ts](apply.ts) and [generic-receivers.ts](generic-receivers.ts) carry the
+receiver plan's required witnesses, each run by its own suite.
 
 [function-field.ts](function-field.ts) initializes one mutable field on a fresh
 arrow, writes through the original reference and reads/calls through an alias.
@@ -520,7 +568,7 @@ arrow. The receiver expression is evaluated before actuals even though its value
 is ignored. [receiver-call.mts](../receiver-call.mts) distinguishes dropping that
 effect, checks exact arity and receiver claims, and rejects targets whose inherited
 intrinsic is not established by their source construction. Both producers verify
-these examples; ordinary receiver-dependent methods remain outside the fragment.
+these examples; ordinary receiver-dependent methods are the receiver witnesses above.
 
 Partial `.bind` is covered by the [incompleteness example](../skjs-incomplete/bound-arguments.ts):
 SKJS rejects it, while tsc's claims independently verify. Its fixture notes live

@@ -1,11 +1,14 @@
+"use strict";
 /**
  * An object holds both an ordinary method and an arrow. Extracting the method
  * and using .call supplies a different receiver; .call on the arrow preserves
  * its lexical capture. The result is true for either seed.
  *
- * SKJS checks this example, but the independent verifier does not yet model
- * multi-field objects or receiver-dependent methods. Local-arrow .call is
- * covered separately in receiver-call.ts.
+ * The directive makes the code strict, the receiver rule the verifier models.
+ * Both the TypeScript and the OCaml producers' claims verify. SKJS does not
+ * parse the directive, so its refusal is reported with the corpus. `.call` is
+ * the intrinsic here because `owner` is a `const` object literal and nothing
+ * in the file writes `choose` or `read`.
  */
 function callObjects(seed: boolean): boolean {
   const owner = {

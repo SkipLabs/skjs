@@ -112,6 +112,15 @@ function expectedVerified(file: string, name: string) {
   // The TypeScript producer states and verifies these variadic signatures;
   // SKJS currently rejects or cannot export the corresponding claims.
   if (file.endsWith("/variadic-arguments.ts")) return false;
+  // Receivers need strict code, which a "use strict" directive establishes;
+  // SKJS does not parse the directive. The TS column verifies both files, and
+  // the OCaml producer independently (tests/methods.mts, call-objects.mts).
+  if (
+    ["methods.ts", "call-objects.ts", "apply.ts", "generic-receivers.ts"].some((name) =>
+      file.endsWith(`/callables/${name}`),
+    )
+  )
+    return false;
   // These array cases need numeric-property or iterator contracts that the
   // source fragment does not yet establish.
   if (
@@ -212,6 +221,12 @@ try {
   // starting containers; the claim array names each file, so one run serves
   // them all.
   const sources = [...new Set(groups.flatMap((g) => g.files))];
+  // SKJS does not parse a "use strict" directive, which the receiver fixtures
+  // need. Such a file is left out of the one SKJS batch, whose single parse
+  // error would otherwise lose every file's claims, and its column says so.
+  const unparsed = sources.filter((file) =>
+    fs.readFileSync(file, "utf8").startsWith('"use strict";'),
+  );
   // Asking for one producer runs only that producer: the SKJS collection is
   // a container start and a check over every example, which is the run's
   // largest single cost and is pure waste when its column is not shown.
@@ -222,7 +237,7 @@ try {
       : run("bash", [
           "verification/skjs.sh",
           "--emit-skjs-type-claims",
-          ...sources,
+          ...sources.filter((file) => !unparsed.includes(file)),
         ]);
   const claims = JSON.parse(collected.stdout);
   if (!Array.isArray(claims))
@@ -230,6 +245,9 @@ try {
   // Diagnostics stay with the file they belong to. SKJS prefixes each with the
   // path it is about, so the combined stream partitions on those markers.
   const diagnostics = new Map();
+  if (producers.skjs)
+    for (const file of unparsed)
+      diagnostics.set(file, 'SKJS does not parse the "use strict" directive; no claims\n');
   {
     let current = null;
     for (const line of (collected.stderr || "").split("\n")) {
@@ -335,10 +353,12 @@ try {
         }
       // Without its column there is nothing to attribute, so neither the
       // report nor the verification is built.
-      const report = producers.skjs
+      // A file SKJS does not parse has no SKJS claims to attribute.
+      const skjsHere = producers.skjs && !unparsed.includes(file);
+      const report = skjsHere
         ? fromSkjs(source, file, claims, "skjs")
         : { functions: [] };
-      const { results } = producers.skjs
+      const { results } = skjsHere
         ? verifySkjs(file, source, claims, file, report, verifier, 10)
         : { results: [] };
       const functions = definedFunctions(file);
@@ -353,7 +373,7 @@ try {
         const producer = report.functions[index]?.collection?.completion;
         const producerMark =
           producer === "complete" ? "✓" : producer === "aborted" ? "✗" : "·";
-        if (producers.skjs) {
+        if (skjsHere) {
           if (producer === "complete") producerAccepted++;
           else if (producer === "aborted") producerRejected++;
           else producerUnknown++;
@@ -375,7 +395,7 @@ try {
         const pair = (own: string, proof: string, flag: boolean) =>
           `${marked(own, own)}→${marked(proof, proof)}` +
           (flag && own === "✓" && proof === "✗" ? color(33, " ⚠") : "");
-        if (producers.skjs) {
+        if (skjsHere) {
           if (accepted) verified++;
           else if (mark === "?") unavailable++;
           else failed++;
@@ -383,7 +403,7 @@ try {
         // Expected outcomes are policy about SKJS's claims; with that column
         // off there is no policy to hold anything to.
         const matches =
-          !producers.skjs ||
+          !skjsHere ||
           (index >= 0 && accepted === expectedVerified(file, f.name));
         if (!matches) unexpected++;
         const disagrees =
@@ -392,7 +412,8 @@ try {
         say(
           `    ${f.name}: ` +
             [
-              producers.skjs && `SKJS ${pair(producerMark, mark, true)}`,
+              producers.skjs &&
+                (skjsHere ? `SKJS ${pair(producerMark, mark, true)}` : "SKJS unparsed (\"use strict\")"),
               producers.tsc && `tsc ${pair(tscOwn, tscProof, false)}`,
             ]
               .filter(Boolean)

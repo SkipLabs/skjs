@@ -15,14 +15,16 @@ changes only as those steps run.
 -/
 namespace Verification.ExperimentState.RestCalls
 
-/-- What variadic code promises: for fixed actuals in `Ps`, followed by any
-number of further actuals in `E`, the term invocation yields is safe at `R`. -/
-def RestSpec (n : Nat) (Ps : List Fam) (E R : Fam) (k : Nat) (W : WorldT k) (b : Tm) : Prop :=
-  Scoped (n + 1) b ∧ Ps.length = n ∧
+/-- What variadic code promises: for a receiver in `Rc` and fixed actuals in
+`Ps`, followed by any number of further actuals in `E`, the term invocation
+yields is safe at `R`. -/
+def RestSpec (n : Nat) (Rc : Fam) (Ps : List Fam) (E R : Fam) (k : Nat) (W : WorldT k)
+    (b : Tm) : Prop :=
+  Scoped (n + 2) b ∧ Ps.length = n ∧
   ∀ (j : Nat) (hj : j < k) (W' : WorldT j),
     WExt (trunc j (Nat.le_of_lt hj) W) W' → WorldAdm W' → ∀ (h : Heap), HeapOk j W' h →
-      ∀ args extra, ArgsT Ps j W' args → (∀ e ∈ extra, E j W' e) →
-        Safe R j W' h (CallArguments.bindRest n (args ++ extra) b)
+      ∀ r, Rc j W' r → ∀ args extra, ArgsT Ps j W' args → (∀ e ∈ extra, E j W' e) →
+        Safe R j W' h (CallArguments.bindRest n (args ++ extra) r b)
 
 /-- Fixed actuals exactly as many as the parameters bind as themselves; the
 rest are left to the array. -/
@@ -32,17 +34,18 @@ theorem parameters_prefix (args extra : List Tm) :
   | nil => rfl
   | cons a args ih => simp [CallArguments.parameters, ih]
 
-theorem RestSpec.down {n Ps E R k W b} (h : RestSpec n Ps E R (k + 1) W b) :
-    RestSpec n Ps E R k (trunc k (Nat.le_succ k) W) b := by
+theorem RestSpec.down {n Rc Ps E R k W b} (h : RestSpec n Rc Ps E R (k + 1) W b) :
+    RestSpec n Rc Ps E R k (trunc k (Nat.le_succ k) W) b := by
   refine ⟨h.1, h.2.1, ?_⟩
-  intro j hj U hx hu heap hh args extra ha he
-  exact h.2.2 j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh args extra ha he
+  intro j hj U hx hu heap hh r hr args extra ha he
+  exact h.2.2 j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh r hr args extra ha he
 
-theorem RestSpec.mono {n Ps E R k W W' b} (hx : WExt W W')
-    (h : RestSpec n Ps E R k W b) : RestSpec n Ps E R k W' b := by
+theorem RestSpec.mono {n Rc Ps E R k W W' b} (hx : WExt W W')
+    (h : RestSpec n Rc Ps E R k W b) : RestSpec n Rc Ps E R k W' b := by
   refine ⟨h.1, h.2.1, ?_⟩
-  intro j hj U hy hu heap hh args extra ha he
-  exact h.2.2 j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh args extra ha he
+  intro j hj U hy hu heap hh r hr args extra ha he
+  exact h.2.2 j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh r hr args
+    extra ha he
 
 /-- Binding fewer actuals than parameters pads the rest with `undefined`. -/
 theorem parameters_short : ∀ (n : Nat) (args : List Tm), args.length ≤ n →
@@ -57,17 +60,17 @@ theorem parameters_short : ∀ (n : Nat) (args : List Tm), args.length ≤ n →
 /-- Variadic code meeting its code contract meets the signature: a list its
 fixed parameters admit binds as the padded one, collecting nothing, and a
 longer one binds its fixed prefix and collects the rest. -/
-theorem restsT_of_restSpec {n : Nat} {Ps : List Fam} {E R : Fam} {k : Nat} {W : WorldT k}
-    {b : Tm} (fs : List (String × Nat)) (hs : RestSpec n Ps E R k W b) :
-    restsT [(Ps, E, R)] k W (.objAt fs (.variadic n b)) := by
-  refine ⟨⟨fs, _, rfl, by simp, by simpa [Scoped] using hs.1⟩, ?_⟩
-  intro s hsm j hj U hx hu heap hh args hvals ha
+theorem restsT_of_restSpec {n : Nat} {Rc : Fam} {Ps : List Fam} {E R : Fam} {k : Nat}
+    {W : WorldT k} {b : Tm} (fs : List (String × Nat)) (hs : RestSpec n Rc Ps E R k W b) :
+    restsT [(Rc, Ps, E, R)] k W (.objAt fs (.variadic n b)) := by
+  refine ⟨⟨fs, _, rfl, by simp, by simpa [Scoped, Nat.add_comm, Nat.add_left_comm] using hs.1⟩, ?_⟩
+  intro s hsm j hj U hx hu heap hh r hrv hr args hvals ha
   cases List.mem_singleton.mp hsm
-  refine ⟨_, .variadic hvals, ?_⟩
+  refine ⟨_, .variadic hrv hvals, ?_⟩
   rcases ha with ha | ⟨hm, ht, hx'⟩
   · have hl : args.length ≤ Ps.length := ha.1
     have hn : Ps.length = n := hs.2.1
-    have hsafe := hs.2.2 j hj U hx hu heap hh _ [] (ArgsShort_pad ha) (by simp)
+    have hsafe := hs.2.2 j hj U hx hu heap hh r hr _ [] (ArgsShort_pad ha) (by simp)
     simp only [List.append_nil] at hsafe
     unfold CallArguments.bindRest at hsafe ⊢
     have hlen : (args ++ List.replicate (Ps.length - args.length) Tm.undef).length = n := by
@@ -75,16 +78,18 @@ theorem restsT_of_restSpec {n : Nat} {Ps : List Fam} {E R : Fam} {k : Nat} {W : 
     rw [List.drop_eq_nil_of_le (by omega), ← hlen, CallArguments.parameters_exact] at hsafe
     rw [List.drop_eq_nil_of_le (by omega), parameters_short n args (by omega), ← hn]
     exact hsafe
-  · have hsafe := hs.2.2 j hj U hx hu heap hh _ _ ht hx'
+  · have hsafe := hs.2.2 j hj U hx hu heap hh r hr _ _ ht hx'
     rwa [List.take_append_drop] at hsafe
 
 /-- A ready variadic call consumes one step, then meets the result contract. -/
-theorem call_elim_rest {S : List (List Fam × Fam × Fam)} {s : List Fam × Fam × Fam}
-    (hs : s ∈ S) (hA : ∀ A ∈ s.1, Adm A) (hAv : ∀ A ∈ s.1, ValOnly A)
-    (hE : Adm s.2.1) (hEv : ValOnly s.2.1)
-    {n : Nat} {W : WorldT n} {f : Tm} {args extra : List Tm} {heap : Heap}
-    (hf : restsT S n W f) (ha : ArgsT s.1 n W args) (he : ∀ e ∈ extra, s.2.1 n W e)
-    (hw : WorldAdm W) (hh : HeapOk n W heap) : Safe s.2.2 n W heap (.call f (args ++ extra)) := by
+theorem call_elim_rest {S : List (Fam × List Fam × Fam × Fam)} {s : Fam × List Fam × Fam × Fam}
+    (hs : s ∈ S) (hR : Adm s.1) (hA : ∀ A ∈ s.2.1, Adm A) (hAv : ∀ A ∈ s.2.1, ValOnly A)
+    (hE : Adm s.2.2.1) (hEv : ValOnly s.2.2.1)
+    {n : Nat} {W : WorldT n} {f r : Tm} {args extra : List Tm} {heap : Heap}
+    (hrv : isVal r = true) (hr : s.1 n W r)
+    (hf : restsT S n W f) (ha : ArgsT s.2.1 n W args) (he : ∀ e ∈ extra, s.2.2.1 n W e)
+    (hw : WorldAdm W) (hh : HeapOk n W heap) :
+    Safe s.2.2.2 n W heap (.invoke f r (args ++ extra)) := by
   cases n with
   | zero => trivial
   | succ n =>
@@ -92,14 +97,15 @@ theorem call_elim_rest {S : List (List Fam × Fam × Fam)} {s : List Fam × Fam 
     have hu : WorldAdm U := WorldAdm_trunc _ hw
     have hh' : HeapOk n U heap := HeapOk_trunc n W heap hh
     have ha' := ArgsT_transfer hA ha n (Nat.le_succ n) U (WExt_refl _)
-    have he' : ∀ e ∈ extra, s.2.1 n U e := fun e hm => hE.down n W e (he e hm)
+    have he' : ∀ e ∈ extra, s.2.2.1 n U e := fun e hm => hE.down n W e (he e hm)
+    have hr' : s.1 n U r := hR.down n W r hr
     have hvals : CallArguments.Values (args ++ extra) := by
       intro a hm
       rcases List.mem_append.mp hm with hm | hm
       · exact ArgsT_values hAv ha' a hm
       · exact hEv n U a (he' a hm)
     obtain ⟨body, hi, hsafe⟩ := hf.2 s hs n (Nat.lt_succ_self n) U (WExt_refl _) hu heap hh'
-      _ hvals (ArgsRest_of_exact_extra ha' he')
+      r hrv hr' _ hvals (ArgsRest_of_exact_extra ha' he')
     exact Or.inr ⟨U, heap, body, WExt_refl _, hu, hi.step heap, hh', hsafe⟩
 
 /-- Run a subterm in an evaluation context, then continue with its value. -/
@@ -122,20 +128,22 @@ theorem ctx_bind {A B : Fam} (C : Tm → Tm)
       apply WExt_trans _ hx'
       simpa only [trunc_trunc] using WExt_trunc hj hx
 
-/-- **Creating a variadic value.** Code whose body is safe with any fixed
-actuals in `Ps` and any array in `Arr` in slot 0 meets the variadic signature,
-provided collecting further actuals in `E` allocates such an array. -/
-theorem restSpec_of_body {n : Nat} {Ps : List Fam} {E Arr R : Fam} {k : Nat} {W : WorldT k} {b : Tm}
-    (hscope : Scoped (n + 1) b) (hlen : Ps.length = n)
+/-- **Creating a variadic value.** Code whose body is safe with any receiver
+in `Rc` (slot 1), any fixed actuals in `Ps` (from slot 2) and any array in `Arr` in slot 0 meets the
+variadic signature, provided collecting further actuals in `E` allocates such
+an array. -/
+theorem restSpec_of_body {n : Nat} {Rc : Fam} {Ps : List Fam} {E Arr R : Fam} {k : Nat}
+    {W : WorldT k} {b : Tm}
+    (hscope : Scoped (n + 2) b) (hlen : Ps.length = n) (hRc : Adm Rc)
     (hP : ∀ A ∈ Ps, Adm A) (hArr : Adm Arr)
     (halloc : ∀ j (U : WorldT j) h extra, WorldAdm U → HeapOk j U h →
       (∀ e ∈ extra, E j U e) → Safe Arr j U h (CallArguments.restArray extra))
     (hbody : ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
-      WorldAdm U → ∀ h, HeapOk j U h → ∀ args a, ArgsT Ps j U args → Arr j U a →
-        isVal a = true → Safe R j U h (subst 0 a (bindArgs 1 args b))) :
-    RestSpec n Ps E R k W b := by
+      WorldAdm U → ∀ h, HeapOk j U h → ∀ r, Rc j U r → ∀ args a, ArgsT Ps j U args →
+        Arr j U a → isVal a = true → Safe R j U h (subst 0 a (bindArgs 1 (r :: args) b))) :
+    RestSpec n Rc Ps E R k W b := by
   refine ⟨hscope, hlen, ?_⟩
-  intro j hj U hx hu h hh args extra ha he
+  intro j hj U hx hu h hh r hr args extra ha he
   have hl : args.length = n := (ArgsT_length ha).trans hlen
   unfold CallArguments.bindRest
   rw [List.drop_left' hl, ← hl, parameters_prefix]
@@ -150,7 +158,8 @@ theorem restSpec_of_body {n : Nat} {Ps : List Fam} {E Arr R : Fam} {k : Nat} {W 
     have hWV : WExt (trunc p (by omega) W) (trunc p (Nat.le_succ p) V) := by
       apply WExt_trans _ hUV
       simpa only [trunc_trunc] using WExt_trunc (show p ≤ j by omega) hx
-    exact hbody p (by omega) _ hWV (WorldAdm_trunc _ hv) h' (HeapOk_trunc p V h' hh') args a
+    exact hbody p (by omega) _ hWV (WorldAdm_trunc _ hv) h' (HeapOk_trunc p V h' hh') r
+      (hRc.mono p _ _ hUV r (hRc.down_le j p (by omega) U r hr)) args a
       (ArgsT_transfer hP ha p (by omega) _ hUV) (hArr.down p V a harr) hval
 
 /-! ## Spread actuals
@@ -242,10 +251,11 @@ theorem listT_spreads {T : TupleF} {E : Fam}
   exact ⟨ls, vs, rfl, hr, he⟩
 
 /-- A step of the actual after a completed prefix is a step of the call. -/
-theorem call_lift {h h' : Heap} {f t t' : Tm} {pre rest : List Tm}
-    (hf : isVal f = true) (hp : CallArguments.Values pre) (s : Step h t h' t') :
-    Step h (.call f (pre ++ t :: rest)) h' (.call f (pre ++ t' :: rest)) :=
-  (CallArguments.Prepare.args (args := pre ++ t :: rest) hf
+theorem call_lift {h h' : Heap} {f r t t' : Tm} {pre rest : List Tm}
+    (hf : isVal f = true) (hr : isVal r = true) (hp : CallArguments.Values pre)
+    (s : Step h t h' t') :
+    Step h (.invoke f r (pre ++ t :: rest)) h' (.invoke f r (pre ++ t' :: rest)) :=
+  (CallArguments.Prepare.args (r := r) (args := pre ++ t :: rest) hf hr
     (CallArguments.keep_prefix hp (.head s))).step
 
 /-- The term a part is written as: itself, or a spread of it. -/
@@ -258,7 +268,8 @@ def partTerm (p : Option Fam × Tm) : Tm :=
 spread of a store in a family that spreads into `E`; they run left to right,
 each spread read as soon as its store is ready, and the continuation receives
 every element and actual at `E`. -/
-theorem spread_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) {f : Tm} (hf : isVal f = true) :
+theorem spread_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) {f r : Tm}
+    (hf : isVal f = true) (hrv : isVal r = true) :
     ∀ (parts : List (Option Fam × Tm)) (n : Nat) (W : WorldT n) (heap : Heap) (pre : List Tm),
       (∀ p ∈ parts, ∀ S, p.1 = some S → Adm S ∧ Spreads S E) →
       WorldAdm W → HeapOk n W heap → CallArguments.Values pre →
@@ -266,16 +277,16 @@ theorem spread_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) {f : Tm} (h
         ∀ heap, HeapOk j U heap → Safe (p.1.getD E) j U heap p.2) →
       (∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
         ∀ heap extra, HeapOk j U heap → (∀ e ∈ extra, E j U e) →
-          Safe R j U heap (.call f (pre ++ extra))) →
-      Safe R n W heap (.call f (pre ++ parts.map partTerm))
+          Safe R j U heap (.invoke f r (pre ++ extra))) →
+      Safe R n W heap (.invoke f r (pre ++ parts.map partTerm))
   | [], n, W, heap, pre, _, hw, hh, _, _, hk => by
     simpa using hk n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap [] hh (by simp)
   | (none, a) :: parts, n, W, heap, pre, hS, hw, hh, hp, ht, hk => by
     have ha := ht (none, a) (by simp) n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap hh
-    apply ctx_bind (A := E) (fun t => .call f (pre ++ t :: parts.map partTerm))
-      (fun s => call_lift hf hp s) n W heap a hw hh ha
+    apply ctx_bind (A := E) (fun t => .invoke f r (pre ++ t :: parts.map partTerm))
+      (fun s => call_lift hf hrv hp s) n W heap a hw hh ha
     intro j hj U hx hu heap' v hh' hv hEv'
-    have hrest := spread_parts_safe hE hEv hf parts j U heap' (pre ++ [v])
+    have hrest := spread_parts_safe hE hEv hf hrv parts j U heap' (pre ++ [v])
       (fun p hm => hS p (by simp [hm])) hu hh'
       (by intro x hx'; rcases List.mem_append.mp hx' with hx' | hx'
           · exact hp x hx'
@@ -300,24 +311,24 @@ theorem spread_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) {f : Tm} (h
   | (some S, s) :: parts, n, W, heap, pre, hS, hw, hh, hp, ht, hk => by
     obtain ⟨hSa, hSs⟩ := hS (some S, s) (by simp) S rfl
     have hs := ht (some S, s) (by simp) n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap hh
-    show Safe R n W heap (.call f (pre ++ .spread s :: parts.map partTerm))
-    apply ctx_bind (A := S) (fun t => .call f (pre ++ .spread t :: parts.map partTerm))
-      (fun s => call_lift hf hp (.spreadC s)) n W heap s hw hh hs
+    show Safe R n W heap (.invoke f r (pre ++ .spread s :: parts.map partTerm))
+    apply ctx_bind (A := S) (fun t => .invoke f r (pre ++ .spread t :: parts.map partTerm))
+      (fun s => call_lift hf hrv hp (.spreadC s)) n W heap s hw hh hs
     intro j hj U hx hu heap' v hh' _ hv
     obtain ⟨ls, vs, rfl, hr, he⟩ := hSs j U heap' _ hh' hv
     cases j with
     | zero => trivial
     | succ p =>
       have hvs : CallArguments.Values vs := fun e hm => hEv p _ e (he e hm p (by omega))
-      refine Or.inr ⟨trunc p (Nat.le_succ p) U, heap', .call f (pre ++ vs ++ parts.map partTerm), WExt_refl _,
-        WorldAdm_trunc _ hu, .callSpread hf rfl hp hr, HeapOk_trunc p U heap' hh', ?_⟩
+      refine Or.inr ⟨trunc p (Nat.le_succ p) U, heap', .invoke f r (pre ++ vs ++ parts.map partTerm), WExt_refl _,
+        WorldAdm_trunc _ hu, .callSpread hf hrv rfl hp hr, HeapOk_trunc p U heap' hh', ?_⟩
       have hUV : ∀ i (hi : i ≤ p) (X : WorldT i),
           WExt (trunc i hi (trunc p (Nat.le_succ p) U)) X → WExt (trunc i (by omega) W) X := by
         intro i hi X hy
         apply WExt_trans _ hy
         have := WExt_trunc (show i ≤ p + 1 by omega) hx
         simpa only [trunc_trunc] using this
-      have hrest := spread_parts_safe hE hEv hf parts p _ heap' (pre ++ vs)
+      have hrest := spread_parts_safe hE hEv hf hrv parts p _ heap' (pre ++ vs)
         (fun q hm => hS q (by simp [hm])) (WorldAdm_trunc _ hu) (HeapOk_trunc p U heap' hh')
         (by intro x hx'; rcases List.mem_append.mp hx' with hx' | hx'
             · exact hp x hx'

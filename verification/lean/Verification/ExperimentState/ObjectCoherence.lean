@@ -61,13 +61,18 @@ mutual
 def Names (D : Registry) : Tm → Prop
   | .objAt fs .absent => ∀ l ∈ locs fs, D[l]? = some .absent
   | .objAt fs (.closure n b) =>
-      (∀ l ∈ locs fs, D[l]? = some (.closure n b)) ∧ Scoped n b ∧ Names D b
+      (∀ l ∈ locs fs, D[l]? = some (.closure n b)) ∧ Scoped (n + 1) b ∧ Names D b
   | .makeAt (.closure _ b) _ args => Names D b ∧ NamesArgs D args
   | .objAt fs (.variadic n b) =>
-      (∀ l ∈ locs fs, D[l]? = some (.variadic n b)) ∧ Scoped (n + 1) b ∧ Names D b
+      (∀ l ∈ locs fs, D[l]? = some (.variadic n b)) ∧ Scoped (n + 2) b ∧ Names D b
   | .makeAt (.variadic _ b) _ args => Names D b ∧ NamesArgs D args
+  | .objAt fs (.bound t r pre) =>
+      (∀ l ∈ locs fs, D[l]? = some (.bound t r pre)) ∧
+        (Scoped 0 t ∧ Scoped 0 r ∧ ScopedArgs 0 pre) ∧ Names D t ∧ Names D r ∧ NamesArgs D pre
+  | .makeAt (.bound t r pre) _ args =>
+      Names D t ∧ Names D r ∧ NamesArgs D pre ∧ NamesArgs D args
   | .makeAt .absent _ args => NamesArgs D args
-  | .call f args => Names D f ∧ NamesArgs D args
+  | .invoke f r args => Names D f ∧ Names D r ∧ NamesArgs D args
   | .letE a b | .writeAt _ a b | .arith _ a b | .elemAt a b => Names D a ∧ Names D b
   | .readAt _ a | .test _ a | .lenOf a | .spread a => Names D a
   | .setElem a b c => Names D a ∧ Names D b ∧ Names D c
@@ -91,6 +96,7 @@ theorem Names.mono {D E t} (ht : Names D t) (hx : Extends D E) : Names E t := by
   case objAbsent fs => exact fun l hl => hx _ _ (ht l hl)
   case objClosure fs n b ih => exact fun l hl => hx _ _ (ht.1 l hl)
   case objVariadic fs n b ih => exact fun l hl => hx _ _ (ht.1 l hl)
+  case objBound fs t r pre iht ihr ihp => exact fun l hl => hx _ _ (ht.1 l hl)
 
 theorem Names.descriptor {D fs c} (ht : Names D (.objAt fs c)) :
     ∀ l ∈ locs fs, D[l]? = some c := by
@@ -98,6 +104,7 @@ theorem Names.descriptor {D fs c} (ht : Names D (.objAt fs c)) :
   | absent => exact ht
   | closure n b => exact ht.1
   | variadic n b => exact ht.1
+  | bound t r pre => exact ht.1
 
 /-- Same identity means exactly the same descriptor, including its body. An
 identity is its fields, so this needs one of them to name. -/
@@ -111,6 +118,12 @@ theorem Names.subst {D t a} (ht : Names D t) (ha : Names D a) (j : Nat) :
   case var i => split <;> (try split) <;> simp_all [Names]
   case objClosure l n b ih => rw [subst_above ht.2.1 (by omega)]; exact ht
   case objVariadic l n b ih => rw [subst_above ht.2.1 (by omega)]; exact ht
+  case objBound fs t r pre iht ihr ihp =>
+    have hpre : pre.map (ExperimentState.subst j a) = pre := by
+      simpa using (List.map_congr_left (g := id)
+        (fun x hx => subst_above ((scopedArgs_iff _ _).mp ht.2.1.2.2 x hx) (Nat.zero_le j) a))
+    rw [subst_above ht.2.1.1 (Nat.zero_le j), subst_above ht.2.1.2.1 (Nat.zero_le j), hpre]
+    exact ht
   all_goals simp_all
 
 theorem Names.bindArgs {D t args} (ht : Names D t)
@@ -121,10 +134,11 @@ theorem Names.bindArgs {D t args} (ht : Names D t)
     exact (ih (fun v hv => ha v (List.mem_cons_of_mem a hv)) (d + 1)).subst
       (ha a (by simp)) d
 
-theorem Names.bindParameters {D t args} (ht : Names D t)
+theorem Names.bindParameters {D t r args} (ht : Names D t) (hr : Names D r)
     (ha : ∀ a ∈ args, Names D a) (arity : Nat) :
-    Names D (CallArguments.bindParameters arity args t) :=
-  ht.bindArgs (CallArguments.parameters_property (by trivial) ha) 0
+    Names D (CallArguments.bindParameters arity args r t) :=
+  ht.bindArgs (fun a hm => (List.mem_cons.mp hm).elim (fun h => h ▸ hr)
+    (CallArguments.parameters_property (by trivial) ha a)) 0
 
 theorem Names.instantiate {D t} (ht : Names D t) (ρ : Env)
     (hρ : ∀ i, Names D (ρ i)) (d : Nat) : Names D (instantiate d ρ t) := by
@@ -132,6 +146,14 @@ theorem Names.instantiate {D t} (ht : Names D t) (ρ : Env)
   case var i => split <;> simp_all [Names]
   case objClosure l n b ih => rw [instantiate_above (ht.2.1.mono (by omega))]; exact ht
   case objVariadic l n b ih => rw [instantiate_above (ht.2.1.mono (by omega))]; exact ht
+  case objBound fs t r pre iht ihr ihp =>
+    have hpre : pre.map (ExperimentState.instantiate d ρ) = pre := by
+      simpa using (List.map_congr_left (g := id)
+        (fun x hx => instantiate_above
+          (((scopedArgs_iff _ _).mp ht.2.1.2.2 x hx).mono (Nat.zero_le d)) ρ))
+    rw [instantiate_above (ht.2.1.1.mono (Nat.zero_le d)),
+      instantiate_above (ht.2.1.2.1.mono (Nat.zero_le d)), hpre]
+    exact ht
   all_goals simp_all
 
 /-! Program syntax cannot manufacture an already allocated identity, even in
@@ -141,8 +163,10 @@ def sourceTerm : Tm → Bool
   | .objAt .. => false
   | .makeAt (.closure _ b) _ args => sourceTerm b && sourceArgs args
   | .makeAt (.variadic _ b) _ args => sourceTerm b && sourceArgs args
+  | .makeAt (.bound t r pre) _ args =>
+      sourceTerm t && sourceTerm r && sourceArgs pre && sourceArgs args
   | .makeAt .absent _ args => sourceArgs args
-  | .call f args => sourceTerm f && sourceArgs args
+  | .invoke f r args => sourceTerm f && sourceTerm r && sourceArgs args
   | .letE a b | .writeAt _ a b | .arith _ a b | .elemAt a b => sourceTerm a && sourceTerm b
   | .readAt _ a | .test _ a | .lenOf a | .spread a => sourceTerm a
   | .setElem a b c => sourceTerm a && sourceTerm b && sourceTerm c
@@ -204,20 +228,26 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
     intro D hh ht
     simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
     obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.1,ht.2.1⟩
-    exact ⟨E,hx,hh',⟨hs,ht.1.2⟩,hn,fun v hv => (ht.2.2 v hv).mono hx⟩
-  | callArg hv hg hb step ih =>
+    exact ⟨E,hx,hh',⟨hs,ht.1.2⟩,hn,ht.2.2.1.mono hx,fun v hv => (ht.2.2.2 v hv).mono hx⟩
+  | callRecv hv step ih =>
+    intro D hh ht
+    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
+    obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2.1,ht.2.2.1⟩
+    exact ⟨E,hx,hh',⟨ht.1.1,hs,ht.1.2.2⟩,ht.2.1.mono hx,hn,
+      fun v hv => (ht.2.2.2 v hv).mono hx⟩
+  | callArg hv hr hg hb step ih =>
     intro D hh ht
     simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
     have hm := List.mem_of_getElem? hg
-    obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2 _ hm,ht.2.2 _ hm⟩
-    refine ⟨E,hx,hh',⟨ht.1.1,?_⟩,ht.2.1.mono hx,?_⟩
+    obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2.2 _ hm,ht.2.2.2 _ hm⟩
+    refine ⟨E,hx,hh',⟨ht.1.1,ht.1.2.1,?_⟩,ht.2.1.mono hx,ht.2.2.1.mono hx,?_⟩
     · intro v hv
       rcases List.mem_or_eq_of_mem_set hv with hv | rfl
-      · exact ht.1.2 v hv
+      · exact ht.1.2.2 v hv
       · exact hs
     · intro v hv
       rcases List.mem_or_eq_of_mem_set hv with hv | rfl
-      · exact (ht.2.2 v hv).mono hx
+      · exact (ht.2.2.2 v hv).mono hx
       · exact hn
   | letC step ih =>
     intro D hh ht
@@ -226,23 +256,35 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
   | letV hv =>
     intro D hh ht
     exact ⟨D,.refl D,hh,subst_scoped ht.1.2 ht.1.1 (by omega),ht.2.2.subst ht.2.1 0⟩
-  | callV hv =>
+  | callV hr hv =>
     intro D hh ht
     simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht
     refine ⟨D,.refl D,hh,?_,?_⟩
-    · exact CallArguments.bound_body_closed (by simpa [Scoped] using ht.1.1)
-        ht.1.2
-    · exact ht.2.1.2.2.bindParameters ht.2.2 _
-  | @callRest args _ fs n b hv =>
+    · exact CallArguments.bound_body_closed (by simpa [Scoped, Nat.add_comm] using ht.1.1)
+        ht.1.2.1 ht.1.2.2
+    · exact ht.2.1.2.2.bindParameters ht.2.2.1 ht.2.2.2 _
+  | @callRest r args _ fs n b hr hv =>
     intro D hh ht
     simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht
     refine ⟨D,.refl D,hh,?_,?_⟩
-    · exact CallArguments.invoke_closed (CallArguments.Invoke.variadic (fs := fs) hv)
-        (by simpa [Scoped] using ht.1.1) ht.1.2
+    · exact CallArguments.invoke_closed (CallArguments.Invoke.variadic (fs := fs) hr hv)
+        (by simpa [Scoped] using ht.1.1) ht.1.2.1 ht.1.2.2
     · simp only [CallArguments.bindRest, CallArguments.restArray, Names, namesArgs_iff,
         List.mem_singleton, forall_eq]
-      exact ⟨fun a hm => ht.2.2 a (List.mem_of_mem_drop hm),
-        ht.2.1.2.2.bindArgs (CallArguments.parameters_property (by trivial) ht.2.2) 1⟩
+      exact ⟨fun a hm => ht.2.2.2 a (List.mem_of_mem_drop hm),
+        ht.2.1.2.2.bindArgs (fun a hm => (List.mem_cons.mp hm).elim (fun h => h ▸ ht.2.2.1)
+          (CallArguments.parameters_property (by trivial) ht.2.2.2 a)) 1⟩
+  | callBound hr hv =>
+    intro D hh ht
+    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
+    obtain ⟨⟨_, _, hsa⟩, ⟨_, ⟨hst, hsr, hsp⟩, hnt, hnr, hnp⟩, _, hna⟩ := ht
+    refine ⟨D, .refl D, hh, ⟨hst, hsr, fun a hm => ?_⟩, hnt, hnr, fun a hm => ?_⟩
+    · rcases List.mem_append.mp hm with hm | hm
+      · exact hsp a hm
+      · exact hsa a hm
+    · rcases List.mem_append.mp hm with hm | hm
+      · exact hnp a hm
+      · exact hna a hm
   | @makeArg c ns inits i h h' a a' hg hb step ih =>
     intro D hh ht
     have hm := List.mem_of_getElem? hg
@@ -271,6 +313,19 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
         rcases List.mem_or_eq_of_mem_set hv with hv | rfl
         · exact (ht.2.2 v hv).mono hx
         · exact hn
+    | bound t r pre =>
+      simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
+      obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2.2.2 _ hm,ht.2.2.2.2 _ hm⟩
+      refine ⟨E,hx,hh',⟨ht.1.1,ht.1.2.1,ht.1.2.2.1,?_⟩,ht.2.1.mono hx,ht.2.2.1.mono hx,
+        fun v hv => (ht.2.2.2.1 v hv).mono hx,?_⟩
+      · intro v hv
+        rcases List.mem_or_eq_of_mem_set hv with hv | rfl
+        · exact ht.1.2.2.2 v hv
+        · exact hs
+      · intro v hv
+        rcases List.mem_or_eq_of_mem_set hv with hv | rfl
+        · exact (ht.2.2.2.2 v hv).mono hx
+        · exact hn
   | @makeFields c ns vs h hv hlen =>
     intro D hh ht
     have hx := extends_append D (List.replicate vs.length c)
@@ -292,6 +347,11 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
       refine ⟨_,hx,hh.alloc (fun v hv' => ⟨hv v hv',ht.1.2 v hv',ht.2.2 v hv'⟩) _,?_,?_⟩
       · simpa using ht.1.1
       · exact ⟨hfield,by simpa using ht.1.1,ht.2.1.mono hx⟩
+    | bound t r pre =>
+      simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
+      refine ⟨_,hx,hh.alloc (fun v hv' => ⟨hv v hv',ht.1.2.2.2 v hv',ht.2.2.2.2 v hv'⟩) _,
+        ⟨ht.1.1,ht.1.2.1,ht.1.2.2.1⟩,hfield,⟨ht.1.1,ht.1.2.1,ht.1.2.2.1⟩,ht.2.1.mono hx,
+        ht.2.2.1.mono hx,fun v hv => (ht.2.2.2.1 v hv).mono hx⟩
   | readC step ih =>
     intro D hh ht
     exact ih D hh ht
@@ -430,26 +490,26 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
         · exact ht.2 v (by simp [hv])
         · exact (hvs v hv).2.2
       · exact ht.2 v (by simp [hv])
-  | callSpread hf he hp hr =>
+  | callSpread hf hrv he hp hr =>
     intro D hh ht
     subst he
     simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
     have hvs : ∀ v ∈ _, isVal v = true ∧ TermOk D v := fun v hv =>
       (readElems_mem hr v hv).elim (fun he => he ▸ ⟨rfl, trivial, trivial⟩)
         (fun ⟨_, hl⟩ => hh.lookup hl)
-    refine ⟨D,.refl D,hh,⟨ht.1.1,?_⟩,ht.2.1,?_⟩
+    refine ⟨D,.refl D,hh,⟨ht.1.1,ht.1.2.1,?_⟩,ht.2.1,ht.2.2.1,?_⟩
     · intro v hv
       rcases List.mem_append.mp hv with hv | hv
       · rcases List.mem_append.mp hv with hv | hv
-        · exact ht.1.2 v (by simp [hv])
+        · exact ht.1.2.2 v (by simp [hv])
         · exact (hvs v hv).2.1
-      · exact ht.1.2 v (by simp [hv])
+      · exact ht.1.2.2 v (by simp [hv])
     · intro v hv
       rcases List.mem_append.mp hv with hv | hv
       · rcases List.mem_append.mp hv with hv | hv
-        · exact ht.2.2 v (by simp [hv])
+        · exact ht.2.2.2 v (by simp [hv])
         · exact (hvs v hv).2.2
-      · exact ht.2.2 v (by simp [hv])
+      · exact ht.2.2.2 v (by simp [hv])
 
 #print axioms descriptor_unique
 #print axioms step_preserves

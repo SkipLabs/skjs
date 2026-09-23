@@ -253,13 +253,18 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
     | .field s => return .indexWrite p (some s) r key rhs
     | .element => return .elemWrite p r key rhs
   | .withValue p f i ft bt => return .withValue p (← comparisonsExpr fc f) (← comparisonsExpr fc i) ft bt
-  | .lambda p tps ps defaults rest result b =>
-    return .lambda p tps ps (← defaults.attach.mapM fun ⟨(i,d),_⟩ => do
+  | .lambda p receiver tps ps defaults rest result b =>
+    return .lambda p receiver tps ps (← defaults.attach.mapM fun ⟨(i,d),_⟩ => do
       return (i, ← comparisonsExpr fc d)) rest result (← comparisonsExpr fc b)
   | .bindWithReceiver p c r args => return .bindWithReceiver p (← comparisonsExpr fc c) (← comparisonsExpr fc r) (← args.mapM (comparisonsExpr fc))
   | .callWithReceiver p c r args => return .callWithReceiver p (← comparisonsExpr fc c) (← comparisonsExpr fc r) (← args.mapM (comparisonsExpr fc))
+  | .applyWithReceiver p c r list => return .applyWithReceiver p (← comparisonsExpr fc c) (← comparisonsExpr fc r) (← list.mapM (comparisonsExpr fc))
   | .call p c args spread =>
     return .call p (← comparisonsExpr fc c) (← args.mapM (comparisonsExpr fc)) spread
+  | .invoke p c args spreads =>
+    -- A field, by name or by a string key, or an array element by a numeric
+    -- key: `comparisonsExpr` resolves the key from its claim.
+    return .invoke p (← comparisonsExpr fc c) (← args.mapM (comparisonsExpr fc)) spreads
   | .atEnv p e => return .atEnv p (← comparisonsExpr fc e)
   | .seqBody p i b => return .seqBody p (← comparisonsExpr fc i) (← comparisonsExpr fc b)
   | .ifBody p result c t e => return .ifBody p result (← comparisonsExpr fc c) (← comparisonsExpr fc t) (← comparisonsExpr fc e)
@@ -296,7 +301,7 @@ choose which parameters are mutable. -/
 private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .var .. | .lit .. | .done .. => false
   | .assign _ target _ rhs | .nullishAssign _ target _ rhs => target == name || assignsExpr name rhs
-  | .lambda _ _ _ defaults _ _ e =>
+  | .lambda _ _ _ _ defaults _ _ e =>
     defaults.attach.any (fun ⟨d,_⟩ => assignsExpr name d.2) || assignsExpr name e
   | .not _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e =>
     assignsExpr name e
@@ -315,9 +320,11 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
     (match target with | .var _ n => n == name | _ => false) ||
       assignsExpr name target || (rhs.map (assignsExpr name)).getD false
   | .alloc _ _ es => es.any (assignsExpr name)
-  | .call _ f args _ => assignsExpr name f || args.any (assignsExpr name)
+  | .call _ f args _ | .invoke _ f args _ => assignsExpr name f || args.any (assignsExpr name)
   | .callWithReceiver _ f r args | .bindWithReceiver _ f r args =>
     assignsExpr name f || assignsExpr name r || args.any (assignsExpr name)
+  | .applyWithReceiver _ f r list =>
+    assignsExpr name f || assignsExpr name r || (list.map (assignsExpr name)).getD false
   | .ifBody _ _ c t e => assignsExpr name c || assignsExpr name t || assignsExpr name e
 
 private partial def assignsStmt (name : String) : Fragment.Stmt → Bool
@@ -504,7 +511,7 @@ private def readOnly : Fragment.Expr → Bool
   | .seqBody _ a b | .letBody _ _ _ a b | .index _ _ a b | .arith _ _ a b | .elemAt _ a b => readOnly a && readOnly b
   | .ifBody _ _ c t e => readOnly c && readOnly t && readOnly e
   | .alloc .. | .write .. | .indexWrite .. | .update .. | .logicalAssign .. | .assign .. | .arrayLit .. | .elemWrite .. | .arrayAssign .. | .nullishAssign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
-  | .callWithReceiver .. | .call .. => false
+  | .callWithReceiver .. | .applyWithReceiver .. | .call .. | .invoke .. => false
 
 /-- The other operand of a singleton comparison, when saving the tested read
 before it changes nothing: a literal, a name, or one field read. Each is
@@ -543,7 +550,10 @@ private def closureEnv (fc : SourceClaims.Function) (pos : Nat) (scope : List Sc
   -- The closure's environment keeps each captured binding's storage: a
   -- captured mutable local is the cell's identity, and rebuilding it from its
   -- name would type the slot by what the cell currently holds.
-  let captured := scope.filter (fun b => b.source.name != "" && !isSnapshot b.source.name)
+  -- A receiver slot is immutable and bound by the call, so it keeps its
+  -- checked type like an anonymous slot; no statement claim names `this`.
+  let captured := scope.filter (fun b => b.source.name != "" && b.source.name != "this" &&
+    !isSnapshot b.source.name)
   let named := captured.map (·.source.name)
   let H ← env fc pos (captured.map fun b => { b with source := ⟨b.source.name,none⟩ })
   for (b,A) in captured.zip H do
@@ -560,7 +570,7 @@ private def closureEnv (fc : SourceClaims.Function) (pos : Nat) (scope : List Sc
         observed scope Γ (snapshotName name fld) ⟨name,none⟩ (pos,pos+1) receiver fld R
   (scope.zipIdx).mapM fun (b,i) => do
     let name := b.source.name
-    let A := if name == "" || isSnapshot name then Γ[i]? else H[named.idxOf name]?
+    let A := if name == "" || name == "this" || isSnapshot name then Γ[i]? else H[named.idxOf name]?
     match A with
     | some A => pure A
     | none => throw "internal closure slot mismatch"
@@ -681,18 +691,33 @@ arguments written, or a longer one whose remaining positions admit `undefined`.
 An exact signature is preferred, then one covering every actual type. No actual
 is invented for an omitted position; the call term keeps the arguments the
 source writes. -/
-private def selectSignature (G : PositiveGraphs.NormalGraph Nat) (L : PositiveRules.Ops Nat) (As : List (Ty Nat)) :
-    Except String (List (Ty Nat) × Ty Nat) := do
-  let covers (p : List (Ty Nat) × Ty Nat) :=
-    (As.zip p.1).all fun (A,D) => A.all D.contains
-  let pick (choices : List (List (Ty Nat) × Ty Nat)) :=
-    (choices.find? covers) <|> choices.head?
-  let exact := L.filter fun p => p.1.length == As.length
+private def selectSignature (G : PositiveGraphs.NormalGraph Nat) (L : PositiveRules.Ops Nat) (As : List (Ty Nat))
+    (Rr : Ty Nat := [3]) :
+    Except String (Ty Nat × List (Ty Nat) × Ty Nat) := do
+  let covers (p : Ty Nat × List (Ty Nat) × Ty Nat) :=
+    (As.zip p.2.1).all fun (A,D) => A.all D.contains
+  -- Instances of one scheme may differ only in their receiver: prefer the
+  -- signature naming the receiver passed.
+  let receives (p : Ty Nat × List (Ty Nat) × Ty Nat) := Rr.all p.1.contains
+  let pick (choices : List (Ty Nat × List (Ty Nat) × Ty Nat)) :=
+    (choices.find? fun p => covers p && receives p) <|> (choices.find? covers) <|> choices.head?
+  let exact := L.filter fun p => p.2.1.length == As.length
   let short := L.filter fun p =>
-    As.length < p.1.length && (p.1.drop As.length).all (admitsUndefined G)
+    As.length < p.2.1.length && (p.2.1.drop As.length).all (admitsUndefined G)
   let some p := pick exact <|> pick short
     | throw "callee has no signature with the actual argument count"
   return p
+
+/-- A list `.apply` reads no element of: every member null or undefined. -/
+private def nullishList (G : PositiveGraphs.NormalGraph Nat) (T : Ty Nat) : Bool :=
+  !T.isEmpty && (PositiveRules.expand G T).all fun
+    | .nul | .undef => true
+    | _ => false
+
+/-- A plain call passes `undefined` as its receiver: the premise proves it at
+the selected signature's receiver contract. -/
+private def plainReceiver (Γ : List (Ty Nat)) (Rt : Ty Nat) : DirectProof.Plan :=
+  DirectProof.cast Γ Rt (DirectProof.node Γ .undef [3] .undef)
 
 /-- One premise per position the selected signature declares and the call
 omits, each proving `undefined` at that position's contract. -/
@@ -940,6 +965,10 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     closureExpr fc scope Γ (.nullishAssign pos name np rhs)
   | .logicalAssign .. => throw "logical assignment inside a closed expression is outside the fragment"
   | .bindWithReceiver _ f receiver args => do
+    -- The target, the receiver and the prefix, each evaluated once and saved,
+    -- then a forwarding descriptor holding the saved values: invoking it
+    -- ignores its own receiver and calls the target with the saved one and the
+    -- prefix before the new actuals (`CallCode.bound`).
     let callee ← closureExpr fc scope Γ f
     let receiverPlan ← closureExpr fc (held ⟨"",some f.span⟩ :: scope) (callee.type::Γ) receiver
     let startScope := held ⟨"",some receiver.span⟩::held ⟨"",some f.span⟩ :: scope
@@ -948,26 +977,68 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       pure (ps ++ [p],p.type::H,held ⟨"",some arg.span⟩ :: ds))
       ([callee,receiverPlan],receiverPlan.type::callee.type::Γ,startScope)
     let G := SourceTypes.graph (← table)
-    let [.arrs [(Ds,R)] []] := PositiveRules.expand G A
-      | throw "bound function claim requires one free signature"
+    let n := args.length
+    let boundTypes := (plans.drop 2).map (·.type)
+    -- A fixed signature of the target leaves a fixed signature; a variadic one
+    -- leaves the positions the prefix did not take, then its element contract.
+    let (Rt, prefixTys, own, rule) ← match PositiveRules.expand G A with
+      | [.arrs [(Rb,Ds,_)] []] => do
+        let L ← match PositiveRules.expand G callee.type with
+          | [.arrs L _] | [.callable _ _ L _] => pure L
+          | _ => throw "bind target requires a single callable contract"
+        let (Rt,domains,result) ← selectSignature G L (boundTypes ++ Ds) receiverPlan.type
+        if domains.length < n then throw "bind prefix exceeds the target's parameters"
+        let own ← lower (SourceTypes.use (.arrs [(Rb, domains.drop n, result)] []))
+        pure (Rt, domains.take n, own, ProgramCertificates.Rule.bindE)
+      | [.arrs [] [(Rb,_,_,_)]] => do
+        let sigs := ProgramTyping.restSigs G callee.type
+        let some (Rt, Ps, E, R) := (sigs.find? fun (Rt,_,_,_) => receiverPlan.type.all Rt.contains) <|> sigs.head?
+          | throw "a variadic bound function needs a variadic target"
+        let own ← lower (SourceTypes.use (.arrs [] [(Rb, Ps.drop n, E, R)]))
+        pure (Rt, Ps.take n ++ List.replicate (n - Ps.length) E, own, ProgramCertificates.Rule.bindRestE)
+      | _ => throw "bound function claim requires one free signature"
+    -- The descriptor stores the slots as they are, so each is re-bound at the
+    -- contract the selected signature gives it: the receiver, then the prefix.
+    let receiverCopy := DirectProof.cast K Rt (DirectProof.var K n receiverPlan.type)
+    let (copies, H) ← (List.range n).foldlM (fun (cs, H) i => do
+      let some D := prefixTys[i]? | throw "internal bind prefix mismatch"
+      let some B := boundTypes[i]? | throw "internal bind prefix mismatch"
+      let c := DirectProof.cast H D (DirectProof.var H (n - 1 - i + cs.length) B)
+      pure (cs ++ [c], D :: H))
+      ([receiverCopy], Rt :: K)
+    let bound := DirectProof.node H
+      (.makeAt (.bound (.var (2*n+2)) (.var n) ((List.range n).map fun i => .var (n-1-i))) [] [])
+      [own] rule []
+    pure (saveOperands (plans ++ copies) (DirectProof.cast H A bound))
+  | .applyWithReceiver _ f receiver list => do
+    -- The target, the receiver and the list, saved in order. A null or
+    -- undefined list gives no actuals; reading an array's elements is an array
+    -- operation, which a closed expression does not have.
+    let callee ← closureExpr fc scope Γ f
+    let K := callee.type :: Γ
+    let receiverPlan ← closureExpr fc (held ⟨"",some f.span⟩ :: scope) K receiver
+    let H := receiverPlan.type :: K
+    let ds := held ⟨"",some receiver.span⟩::held ⟨"",some f.span⟩ :: scope
+    let (saved, J, dsJ) ← match list with
+      | none => pure ([], H, ds)
+      | some xs => do
+        let lp ← closureExpr fc ds H xs
+        if !nullishList G lp.type then
+          throw "an array argument list inside a closed expression is outside the fragment"
+        pure ([lp], lp.type :: H, held ⟨"",some xs.span⟩ :: ds)
+    let m := saved.length
     let L ← match PositiveRules.expand G callee.type with
       | [.arrs L _] | [.callable _ _ L _] => pure L
-      | _ => throw "bind target requires a single callable contract"
-    let boundTypes := (plans.drop 2).map (·.type)
-    let (domains,result) ← selectSignature G L (boundTypes ++ Ds)
-    let H := Ds ++ K
-    let indexes := (List.range args.length).map (fun i => Ds.length + args.length - 1 - i) ++
-      List.range Ds.length
-    let fn := DirectProof.var H (Ds.length + args.length + 1) callee.type
-    let actuals := (indexes.zip domains).map fun (i,D) => DirectProof.var H i D
+      | _ => throw ".apply target requires a single callable contract"
+    let (Rt,Ds,R) ← selectSignature G L [] receiverPlan.type
+    let receiverCheck := DirectProof.cast J Rt (DirectProof.var J m receiverPlan.type)
+    obligation receiver.span receiverCheck.goal (some receiverCheck) "method-receiver" dsJ
     let rule := match PositiveRules.expand G callee.type with
       | [.callable ..] => ProgramCertificates.Rule.callCallable
       | _ => .app
-    let body := DirectProof.cast H R
-      (DirectProof.node H (.call fn.term (actuals.map (·.term))) result rule
-        (fn :: actuals ++ omittedPremises H domains actuals.length))
-    let bound := DirectProof.node K (.make (.closure Ds.length body.term) .nul) A .funE [body]
-    pure (saveOperands plans bound)
+    let call := DirectProof.node J (.invoke (.var (m+1)) (.var m) []) R rule
+      (DirectProof.var J (m+1) callee.type :: receiverCheck :: omittedPremises J Ds 0)
+    pure (saveOperands ([callee, receiverPlan] ++ saved) call)
   | .callWithReceiver _ f receiver args => do
     let callee ← closureExpr fc scope Γ f
     let K := callee.type :: Γ
@@ -978,15 +1049,78 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let L ← match PositiveRules.expand G callee.type with
       | [.arrs L _] | [.callable _ _ L _] => pure L
       | _ => throw ".call target requires a single callable contract"
-    let (Ds,R) ← selectSignature G L (actuals.map (·.type))
+    let (Rt,Ds,R) ← selectSignature G L (actuals.map (·.type)) receiverPlan.type
     let rule := match PositiveRules.expand G callee.type with
       | [.callable ..] => ProgramCertificates.Rule.callCallable
       | _ => .app
-    let call := DirectProof.node H (.call (.var 1) (actuals.map (·.term))) R rule
+    -- `.call` passes its first argument as the receiver.
+    let receiverCheck := DirectProof.cast H Rt (DirectProof.var H 0 receiverPlan.type)
+    obligation receiver.span receiverCheck.goal (some receiverCheck) "method-receiver" ds
+    let call := DirectProof.node H (.invoke (.var 1) (.var 0) (actuals.map (·.term))) R rule
       (DirectProof.var H 1 callee.type
+        :: receiverCheck
         :: ((actuals.zip Ds).map fun (a,D) => DirectProof.cast H D a)
           ++ omittedPremises H Ds actuals.length)
     pure (DirectProof.letE Γ callee (DirectProof.letE K receiverPlan call))
+  | .invoke _ callee args spreads => do
+    -- The object, then a computed key, then the method read from the object,
+    -- each saved; the actuals; the saved method invoked with the saved object.
+    -- Reading an element or a spread's store is an array operation, which a
+    -- closed expression does not have, as for any call here.
+    if !spreads.isEmpty then throw "a spread argument inside a closed expression is outside the fragment"
+    let (o, fld, key) ← match callee with
+      | .read _ fld o => pure (o, fld, none)
+      | .index _ (some fld) o key => pure (o, fld, some key)
+      | _ => throw "array operations inside a closed expression are outside the fragment"
+    let r ← closureExpr fc scope Γ o
+    let K₀ := r.type :: Γ
+    let ds₀ := held ⟨"",some o.span⟩ :: scope
+    let (saved, K, ds) ← match key with
+      | none => pure ([r], K₀, ds₀)
+      | some key => do
+        let k ← closureExpr fc ds₀ K₀ key
+        pure ([r,k], k.type :: K₀, held ⟨"",some key.span⟩ :: ds₀)
+    let ri := saved.length - 1
+    let M ← exprType fc callee
+    let read ← readCell G K fld (DirectProof.var K ri r.type)
+    let method := DirectProof.cast K M read
+    obligation callee.span method.goal (some method) "expression-claim" ds
+    let H := M :: K
+    let dsH := held ⟨"",some callee.span⟩ :: ds
+    let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr fc dsH H a
+    let fixedFits := match PositiveRules.expand G M with
+      | [.arrs L _] | [.callable _ _ L _] => L.any fun p => args.length ≤ p.2.1.length
+      | _ => false
+    let term := Tm.invoke (.var 0) (.var (ri+1)) (actuals.map (·.term))
+    let call ← match PositiveRules.expand G M, ProgramTyping.restSigs G M with
+      | _, sigs@(_ :: _) =>
+        -- A variadic method: the fixed actuals at its parameters, trailing
+        -- ones omitted as `undefined`, every further actual at its element.
+        if fixedFits then throw "a call both a fixed and a variadic signature take is outside the fragment"
+        let some (Rt, Ps, E, R) := (sigs.find? fun (Rt,_,_,_) => r.type.all Rt.contains) <|> sigs.head?
+          | throw "internal variadic signature"
+        let receiver := DirectProof.cast H Rt (DirectProof.var H (ri+1) r.type)
+        obligation o.span receiver.goal (some receiver) "method-receiver" dsH
+        let k := min actuals.length Ps.length
+        let extra := actuals.drop k
+        pure (DirectProof.node H term R
+          (.callRest k (Ps.length - k) (extra.map fun _ => false) E)
+          (DirectProof.var H 0 M :: receiver ::
+            ((actuals.take k).zip Ps).map (fun (a,D) => DirectProof.cast H D a)
+            ++ omittedPremises H Ps k ++ extra.map (DirectProof.cast H E)))
+      | [.arrs L _], [] | [.callable _ _ L _], [] =>
+        let (Rt,Ds,R) ← selectSignature G L (actuals.map (·.type)) r.type
+        let receiver := DirectProof.cast H Rt (DirectProof.var H (ri+1) r.type)
+        obligation o.span receiver.goal (some receiver) "method-receiver" dsH
+        let rule := match PositiveRules.expand G M with
+          | [.callable ..] => ProgramCertificates.Rule.callCallable
+          | _ => .app
+        pure (DirectProof.node H term R rule
+          (DirectProof.var H 0 M :: receiver
+            :: ((actuals.zip Ds).map fun (a,D) => DirectProof.cast H D a)
+              ++ omittedPremises H Ds actuals.length))
+      | _, _ => throw "a method call's target requires one callable contract"
+    pure (saveOperands (saved ++ [method]) call)
   | .call _ f args spreads => do
     -- Reading a spread operand's elements is an array operation, which a
     -- closed expression does not have.
@@ -996,26 +1130,31 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     -- fixed parameters, trailing ones omitted as `undefined`, then every
     -- further actual at its element type.
     let fixedFits := match PositiveRules.expand G callee.type with
-      | [.arrs L _] | [.callable _ _ L _] => L.any fun p => args.length ≤ p.1.length
+      | [.arrs L _] | [.callable _ _ L _] => L.any fun p => args.length ≤ p.2.1.length
       | _ => false
     match PositiveRules.expand G callee.type, ProgramTyping.restSigs G callee.type with
-    | _, (Ps, E, R) :: _ =>
+    | _, (Rt, Ps, E, R) :: _ =>
       if fixedFits then throw "a call both a fixed and a variadic signature take is outside the fragment"
       let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr fc scope Γ a
       let k := min actuals.length Ps.length
       let extra := actuals.drop k
       pure (DirectProof.node Γ (.call callee.term (actuals.map (·.term))) R
         (.callRest k (Ps.length - k) (extra.map fun _ => false) E)
-        (callee :: ((actuals.take k).zip Ps).map (fun (a,D) => DirectProof.cast Γ D a)
+        (callee :: plainReceiver Γ Rt :: ((actuals.take k).zip Ps).map (fun (a,D) => DirectProof.cast Γ D a)
           ++ omittedPremises Γ Ps k ++ extra.map (DirectProof.cast Γ E)))
     | [.arrs L _], [] | [.callable _ _ L _], [] =>
       let rule := match PositiveRules.expand G callee.type with
         | [.callable ..] => ProgramCertificates.Rule.callCallable
         | _ => .app
       let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr fc scope Γ a
-      let (Ds,R) ← selectSignature G L (actuals.map (·.type))
+      let (Rt,Ds,R) ← selectSignature G L (actuals.map (·.type))
+      -- A plain call passes `undefined`: a signature that needs a receiver
+      -- is a located obligation, apart from the call's own typing.
+      if !admitsUndefined G Rt then
+        let plan := plainReceiver Γ Rt
+        obligation f.span plan.goal (some plan) "method-receiver" scope
       pure (DirectProof.node Γ (.call callee.term (actuals.map (·.term))) R rule
-        (callee :: ((actuals.zip Ds).map fun (a,D) => DirectProof.cast Γ D a)
+        (callee :: plainReceiver Γ Rt :: ((actuals.zip Ds).map fun (a,D) => DirectProof.cast Γ D a)
           ++ omittedPremises Γ Ds actuals.length))
     | _, _ =>
       if callee.type.length ≤ 1 then throw "callee must name a source arrow"
@@ -1028,16 +1167,16 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       let alternatives ← callee.type.mapM fun label => do
         let [.arrs L _] := PositiveRules.expand G [label]
           | throw "every callee alternative must name a source arrow"
-        let (Ds,R) ← selectSignature G L As
-        pure (label,Ds,R)
-      let R := (alternatives.flatMap fun (_,_,R) => R).eraseDups
+        let (Rt,Ds,R) ← selectSignature G L As
+        pure (label,Rt,Ds,R)
+      let R := (alternatives.flatMap fun (_,_,_,R) => R).eraseDups
       let n := As.length
       let H := As.reverse ++ callee.type::Γ
       let term := Tm.call (.var n) ((List.range n).map fun i => .var (n-1-i))
-      let children := alternatives.map fun (label,Ds,result) =>
+      let children := alternatives.map fun (label,Rt,Ds,result) =>
         let branch := As.reverse ++ [label]::Γ
         DirectProof.cast branch R (DirectProof.node branch term result .app
-          (DirectProof.var branch n [label] ::
+          (DirectProof.var branch n [label] :: plainReceiver branch Rt ::
             ((As.zip Ds).zipIdx.map fun ((A,D),i) =>
               DirectProof.cast branch D (DirectProof.var branch (n-1-i) A))
             ++ omittedPremises branch Ds n))
@@ -1156,8 +1295,22 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     pure (DirectProof.node Γ
       (.makeAt (.closure arity body) (P.map Prod.fst) (values.map (·.term))) [C] .makeCallable
       (casts ++ bodies))
-  | .lambda pos typeParams params defaults rest ret body => do
+  | .lambda pos receiverAnnot typeParams params defaults rest ret body => do
     let paramNames := params.map Prod.fst
+    -- An ordinary function names its receiver slot `this`: its body and any
+    -- arrow inside it resolve `this` to that slot, the arrow as a capture.
+    -- An arrow's slot is anonymous, so its `this` resolves outward.
+    let receiverName := if receiverAnnot.isSome then "this" else ""
+    -- The receiver the source states, `top` for an arrow, which never reads
+    -- its own, and for an ordinary function that states none.
+    -- A quantified closure takes each arrow's receiver from its checked
+    -- instantiation; only a ground annotation is lowered here.
+    let Rsource ← match receiverAnnot with
+      | some annot =>
+        if GenericSource.mentionsParam annot || !typeParams.isEmpty then
+          pure [← lower (SourceTypes.use .top)]
+        else lower (Fragment.receiverType annot)
+      | none => pure [← lower (SourceTypes.use .top)]
     if !distinct paramNames || paramNames.any (fun name => name == "" || name == "undefined" || (names scope).contains name) then
       throw "shadowing or duplicate closure parameter is outside the fragment"
     -- A rest parameter whose contract is a mutable `T[]` collects any number
@@ -1166,11 +1319,14 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     if let some (restName, restJson) := (if rest then params.getLast? else none) then
       if let some elementJson := Fragment.arrayElement restJson then
         let fixedParams := params.dropLast
-        let compileRestBody (claims : SourceClaims.Function) (fixed : List (Ty Nat))
+        let compileRestBody (claims : SourceClaims.Function) (Rt : Ty Nat) (fixed : List (Ty Nat))
             (restTy R : Ty Nat) (initialized : List (Ty Nat)) : Compiler DirectProof.Plan := do
+          -- The frame: the collected array, the receiver, which an arrow
+          -- never reads, then the fixed parameters.
           let mut ds := held ⟨if defaults.isEmpty then restName else "", some pos⟩ ::
+            held ⟨receiverName, some pos⟩ ::
             (fixedParams.map fun (name,_) => held ⟨if defaults.isEmpty then name else "", some pos⟩) ++ scope
-          let mut H := restTy :: fixed ++ Γ
+          let mut H := restTy :: Rt :: fixed ++ Γ
           let mut prologue : List (List (Ty Nat) × DirectProof.Plan) := []
           let order ← match Fragment.parameterOrder params defaults with
             | .ok order => pure order
@@ -1181,11 +1337,11 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
             else
               let some (name, _) := fixedParams[i]? | throw "invalid parameter schedule"
               match defaults.lookup i with
-              | none => ds := ds.set (prologue.length + 1 + i) (held ⟨name, some pos⟩)
+              | none => ds := ds.set (prologue.length + 2 + i) (held ⟨name, some pos⟩)
               | some d =>
                 let some B := initialized[i]? | throw "missing initialized rest-prefix contract"
                 let dp ← closureExpr claims ds H d
-                let value ← defaultValuePlan (SourceTypes.graph (← table)) H (prologue.length + 1 + i)
+                let value ← defaultValuePlan (SourceTypes.graph (← table)) H (prologue.length + 2 + i)
                   B (DirectProof.cast H B dp)
                 prologue := prologue ++ [(H, value)]
                 H := B :: H
@@ -1209,13 +1365,13 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
           let mut bodies := []
           let mut arrays := []
           let mut term := none
-          for ((Ds, _, R), overlay) in signatures.zip overlays do
+          for ((Rt, Ds, _, R), overlay) in signatures.zip overlays do
             if Ds.length != fixedParams.length then throw "variadic fixed-prefix arity differs from source"
             let some initialized := overlay.initializedParams
               | throw "missing instantiated parameter annotations"
             let some restTy := initialized.getLast? | throw "missing instantiated rest annotation"
             if initialized.length != params.length then throw "instantiated rest parameter count differs from source"
-            let b ← compileRestBody (fc.withOverlay overlay) Ds restTy R initialized
+            let b ← compileRestBody (fc.withOverlay overlay) Rt Ds restTy R initialized
             if let some existing := term then
               if existing != b.term then throw "a rest body lowers differently under one of its instantiations"
             else term := some b.term
@@ -1230,9 +1386,9 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         let E ← lower (Fragment.callableType elementJson)
         let restTy ← lower (Fragment.translate restJson)
         let R ← lower (Fragment.callableType ret)
-        let own ← lower (SourceTypes.use (.arrs [] [(fixed, E, R)]))
+        let own ← lower (SourceTypes.use (.arrs [] [(Rsource, fixed, E, R)]))
         modify fun st => {st with hints := own :: restTy ++ st.hints}
-        let b ← compileRestBody fc fixed restTy R initialized
+        let b ← compileRestBody fc Rsource fixed restTy R initialized
         return DirectProof.node Γ (.make (.variadic fixed.length b.term) .nul) [own]
           (.funRest [restTy]) [b]
     -- A rest parameter stands for the required positions of its tuple
@@ -1255,7 +1411,9 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let defaulted := defaults.map Prod.fst
     if rest && (defaulted.contains (params.length - 1) || !typeParams.isEmpty) then
       throw "a rest parameter is neither defaulted nor quantified"
-    let inner := ((fixedParams.map fun (name,_) =>
+    -- The frame: the receiver, which an arrow never reads (a source `this`
+    -- in an arrow is a capture), then the parameters, then the captures.
+    let inner := held ⟨receiverName, some pos⟩ :: ((fixedParams.map fun (name,_) =>
       held ⟨if defaults.isEmpty then name else "", some pos⟩) ++
       restElements.map (fun _ => held ⟨"", some pos⟩)) ++ scope
     -- A closure with one set of interior claims per arrow: a compiled scheme
@@ -1284,7 +1442,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         let some (name, sourceType) := fixedParams[i]? | throw "invalid parameter schedule"
         match defaults.lookup i with
         | none =>
-          ds := ds.set (prologue.length + i) (held ⟨name,some pos⟩)
+          ds := ds.set (prologue.length + 1 + i) (held ⟨name,some pos⟩)
         | some d =>
           let B ← match initialized with
             | some ps => match ps[i]? with
@@ -1292,7 +1450,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
               | none => throw "missing instantiated parameter annotation"
             | none => lower (Fragment.callableType sourceType)
           let dp ← closureExpr fc ds ctx d
-          let value ← defaultValuePlan G ctx (prologue.length + i) B (DirectProof.cast ctx B dp)
+          let value ← defaultValuePlan G ctx (prologue.length + 1 + i) B (DirectProof.cast ctx B dp)
           prologue := prologue ++ [(ctx,value)]
           ctx := B :: ctx
           ds := held ⟨name,some pos⟩ :: ds
@@ -1308,7 +1466,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
           | throw "a rest parameter needs an array contract"
         let elements ← restElements.mapM fun ty => lower (Fragment.callableType ty)
         let slots := elements.zipIdx.map fun (E,j) =>
-          DirectProof.var ctx (prologue.length + fixedParams.length + j) E
+          DirectProof.var ctx (prologue.length + 1 + fixedParams.length + j) E
         let store := DirectProof.node ctx (.arrLit (slots.map (·.term))) S .arrLit slots
         prologue := prologue ++ [(ctx,store)]
         ctx := S :: ctx
@@ -1331,14 +1489,14 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         throw "per-arrow interior claims do not match the claimed arrows"
       let mut bodies := []
       let mut term := none
-      for ((Di,Ri),overlay) in L.zip overlays do
+      for ((Rt,Di,Ri),overlay) in L.zip overlays do
         if Di.length != paramNames.length then
           throw "an arrow's arity differs from its closure"
-        let bi ← compileBody (fc.withOverlay overlay) none (Di ++ Γ) overlay.initializedParams
+        let bi ← compileBody (fc.withOverlay overlay) none (Rt :: Di ++ Γ) overlay.initializedParams
         if let some existing := term then
           if existing != bi.term then throw "a scheme body lowers differently under one of its instantiations"
         else term := some bi.term
-        bodies := bodies ++ [DirectProof.cast (Di ++ Γ) Ri bi]
+        bodies := bodies ++ [DirectProof.cast (Rt :: Di ++ Γ) Ri bi]
       let some t := term | throw "per-arrow claims name no arrow"
       pure (DirectProof.node Γ (.make (.closure paramNames.length t) .nul) A .funE bodies)
     else do
@@ -1353,7 +1511,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       -- the checked substitution, so the one compiled arrow supplies its types.
       let (Ds, R) ← if (params.map Prod.snd ++ [ret]).any GenericSource.mentionsParam then
           match L with
-          | [(Di, Ri)] => pure (Di, Ri)
+          | [(_, Di, Ri)] => pure (Di, Ri)
           | _ => throw "a closure annotated with a scheme binder must carry one substituted arrow"
         else do
           pure (← fixedParams.mapM (fun p => lower (Fragment.callableType p.2)) >>= fun fixed => do
@@ -1364,8 +1522,14 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       -- there. The body still reads the declared type.
       let Ds := Ds.zipIdx.map fun (D,i) =>
         if defaulted.contains i then ((D ++ [3]).mergeSort (· ≤ ·)).eraseDups else D
-      if L.isEmpty || !L.all (fun (Di,_) => Di.length == Ds.length && (Di.zip Ds).all (fun (D,A) => D.all A.contains)) then
+      if L.isEmpty || !L.all (fun (_,Di,_) => Di.length == Ds.length && (Di.zip Ds).all (fun (D,A) => D.all A.contains)) then
         throw "closure signature claim is outside the source annotation"
+      -- An ordinary function may be claimed at fewer receivers than it
+      -- states, never at more: its body reads the one it is given.
+      let anyReceiver := Rsource == [← lower (SourceTypes.use .top)]
+      if !anyReceiver && !L.all (fun (Rt,_,_) => Rt.all Rsource.contains) then
+        throw (locatedRefusal (← table) pos .bindingAnnotation
+          "closure receiver claim is outside the source annotation")
       -- One prologue binding per defaulted parameter, in the checked schedule,
       -- so reads use initialized values and effects retain source order.
       -- An overloaded closure states what its body claims under each of its
@@ -1374,25 +1538,27 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       let overlays := (fc.arrowClaims.lookup pos).getD []
       if !overlays.isEmpty && overlays.length != L.length then
         throw "per-arrow interior claims do not match the claimed arrows"
-      let b ← compileBody fc none (Ds ++ Γ)
-      let annotation := DirectProof.cast (Ds ++ Γ) R b
+      -- The annotation's own derivation is at the receiver the source
+      -- states: top for an arrow, which never reads it.
+      let b ← compileBody fc none (Rsource :: Ds ++ Γ)
+      let annotation := DirectProof.cast (Rsource :: Ds ++ Γ) R b
       obligation pos annotation.goal (some annotation) "closure-result" inner
-      let bodies ← L.zipIdx.mapM fun ((Di,Ri),i) => do
+      let bodies ← L.zipIdx.mapM fun ((Rt,Di,Ri),i) => do
         let row := match overlays[i]? with
           | some o => fc.withOverlay o
           | none => fc
-        if (Di,Ri) == (Ds,R) && overlays.isEmpty then pure annotation
+        if (Rt,Di,Ri) == (Rsource,Ds,R) && overlays.isEmpty then pure annotation
         else do
           -- Each signature's derivation is about the same body at that
           -- signature's result, which a block body cannot read from its one
           -- enclosing annotation.
-          let plan ← compileBody row (if overlays.isEmpty then none else some Ri) (Di ++ Γ)
+          let plan ← compileBody row (if overlays.isEmpty then none else some Ri) (Rt :: Di ++ Γ)
           -- One body, one lowered term: every signature's derivation is about
           -- the same closure. A claim that changes the lowering is refused
           -- here rather than failing as an unexplained search.
           if plan.goal.term != b.goal.term then
             throw "an overloaded closure's body lowers differently under one of its signatures"
-          return DirectProof.cast (Di ++ Γ) Ri plan
+          return DirectProof.cast (Rt :: Di ++ Γ) Ri plan
       pure (DirectProof.node Γ (.make (.closure Ds.length b.term) .nul) A .funE bodies)
   let plan := DirectProof.cast Γ A p
   obligation e.span plan.goal (some plan) "expression-claim" scope
@@ -1668,14 +1834,126 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
       (scope := held ⟨"",some right.span⟩::held ⟨"",some left.span⟩ :: scope)
     let right ← compileExpr fc (held ⟨"",some left.span⟩ :: scope) (B::Γ) right test
     compileExpr fc scope Γ left right
-  | .call _ callee args _ | .callWithReceiver _ callee _ args =>
+  | .applyWithReceiver _ callee receiver list =>
+    -- Function.prototype.apply: the target, the receiver and the list are
+    -- saved in order; then the list's length and each index are read in order
+    -- (CreateListFromArrayLike), and the target is invoked with the receiver
+    -- and those elements. A missing, null or undefined list gives none. The
+    -- list is never iterated: this is not the spread operation.
+    let B ← exprType fc callee
+    let R₀ ← exprType fc receiver
+    let listTy ← list.mapM (exprType fc)
+    let G := SourceTypes.graph (← table)
+    -- A tuple of required positions is read index by index. An array of any
+    -- length goes to a signature that takes only a rest: its store's positions
+    -- are the actuals, `undefined` at a hole, as `CreateListFromArrayLike`
+    -- reads them; nothing here iterates.
+    let (elements, dynamic) : List (Ty Nat) × Bool ← match listTy with
+      | none => pure ([], false)
+      | some T =>
+        if nullishList G T then pure ([], false) else
+        let some S := storeOf G T
+          | throw (locatedRefusal (← table) e.span .bindingAnnotation
+              ".apply needs an array list, or a null or undefined one")
+        match PositiveRules.expand G S with
+        | [.list Tp []] =>
+          if Tp.optional.isEmpty && Tp.rest.isNone then pure (Tp.required, false)
+          else if Tp.required.isEmpty && Tp.optional.isEmpty &&
+              (ProgramTyping.restSigs G B).any (fun (_, Ps, _, _) => Ps.isEmpty) then
+            -- A hole among the list's positions is read as `undefined`.
+            if !(ProgramTyping.restSigs G B).any (fun (_, Ps, E, _) => Ps.isEmpty && E.contains 3) then
+              throw (locatedRefusal (← table) e.span .bindingAnnotation
+                "an .apply list that may have holes passes `undefined`, which the rest's element type does not admit")
+            pure ([], true)
+          else throw (locatedRefusal (← table) e.span .bindingAnnotation
+            ".apply with a list of unknown length needs a target taking only a rest parameter")
+        | _ => throw (locatedRefusal (← table) e.span .bindingAnnotation
+            ".apply needs an array list, or a null or undefined one")
+    let reads := match listTy with
+      | some T => !nullishList G T
+      | none => false
+    let k := elements.length
+    let saved := (listTy.toList.reverse) ++ [R₀, B]
+    let s := saved.length
+    let N : Ty Nat := [← lower (SourceTypes.use .num)]
+    -- Slots above the saved operands: the length, then each element read.
+    let prepared := if reads then elements.reverse ++ [N] else []
+    let p := prepared.length
+    let anonymous := held ⟨"",some e.span⟩
+    let operandScope := (list.toList.map fun a => held ⟨"",some a.span⟩) ++
+      [held ⟨"",some receiver.span⟩, held ⟨"",some callee.span⟩]
+    let callEnv := prepared ++ saved ++ Γ
+    let callScope := List.replicate p anonymous ++ operandScope ++ scope
+    let Rt ← if dynamic then
+        let sigs := (ProgramTyping.restSigs G B).filter fun (_, Ps, _, _) => Ps.isEmpty
+        match (sigs.find? fun (Rt,_,_,_) => R₀.all Rt.contains) <|> sigs.head? with
+        | some (Rt,_,_,_) => pure Rt
+        | none => throw ".apply target requires a rest signature"
+      else do
+        let L ← match PositiveRules.expand G B with
+          | [.arrs L _] | [.callable _ _ L _] => pure L
+          | _ => throw ".apply target requires a single callable contract"
+        let (Rt,_,_) ← selectSignature G L elements R₀
+        pure Rt
+    let receiverIndex := p + s - 2
+    let receiverCheck := DirectProof.cast callEnv Rt (DirectProof.var callEnv receiverIndex R₀)
+    obligation receiver.span receiverCheck.goal (some receiverCheck) "method-receiver" callScope
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else i+p+s))⟩
+    -- The list is the slot below the length.
+    let actuals := if dynamic then [Tm.spread (.readAt SourceTypes.storeField (.var 1))]
+      else (List.range k).map fun j => Tm.var (k-1-j)
+    let call ← emitAt e.span (.invoke (.var (p+s-1)) (.var receiverIndex) actuals) (.bind drop)
+      callEnv A (scope := callScope)
+    -- The reads run in position order, after the length, so they are emitted
+    -- from the last back. The list is the slot just below the length.
+    let afterLength ← (List.range k).reverse.foldlM (fun next j => do
+      let some E := elements[j]? | throw "an element has no contract"
+      let index ← indexTerm j
+      let env := (elements.take j).reverse ++ N :: saved ++ Γ
+      emitAt e.span (.elemAt (.readAt SourceTypes.storeField (.var (j+1))) index) (.bind next)
+        env E "apply-element"
+        (scope := List.replicate (j+1) anonymous ++ operandScope ++ scope)) call
+    let prepare ← if reads then
+        emitAt e.span (.lenOf (.readAt SourceTypes.storeField (.var 0))) (.bind afterLength)
+          (saved ++ Γ) N "apply-length" (scope := operandScope ++ scope)
+      else pure call
+    let afterList ← match list with
+      | none => pure prepare
+      | some xs => compileExpr fc (operandScope.drop 1 ++ scope) (saved.drop 1 ++ Γ) xs prepare
+    let afterReceiver ← compileExpr fc (held ⟨"",some callee.span⟩ :: scope) (B::Γ) receiver afterList
+    compileExpr fc scope Γ callee afterReceiver
+  | .call _ callee args _ | .callWithReceiver _ callee _ args | .invoke _ callee args _ =>
     let operands := match e with
       | .callWithReceiver _ _ receiver _ => receiver :: args
       | _ => args
     let spreads := match e with
-      | .call _ _ _ s => s
+      | .call _ _ _ s | .invoke _ _ _ s => s
       | _ => []
+    -- A method call saves the object, a computed key, then the method read
+    -- from it; the method is the callee and the object the receiver. The
+    -- saved slots sit where a plain call's one callee slot does.
+    let method : Option (Fragment.Expr × Option Fragment.Expr × (Tm → Tm)) ← match e with
+      | .invoke _ (.read _ fld o) _ _ => pure (some (o, none, fun obj => .readAt fld obj))
+      | .invoke _ (.index _ (some fld) o key) _ _ => pure (some (o, some key, fun obj => .readAt fld obj))
+      | .invoke _ (.elemAt _ o key) _ _ => do
+        let K ← exprType fc key
+        let index ← arrayKeyTerm K
+        pure (some (o, some key, fun obj => .elemAt (.readAt SourceTypes.storeField obj) index))
+      | .invoke .. => throw "a method call's target must name a field or an element"
+      | _ => pure none
     let B ← exprType fc callee
+    let headTys : List (Ty Nat) ← match method with
+      | none => pure [B]
+      | some (o, key, _) => do
+        let O ← exprType fc o
+        let keyTy ← key.mapM (exprType fc)
+        pure (B :: keyTy.toList ++ [O])
+    let headScope := match method with
+      | none => [held ⟨"",some callee.span⟩]
+      | some (o, key, _) => held ⟨"",some callee.span⟩ ::
+          (key.map fun k => held ⟨"",some k.span⟩).toList ++ [held ⟨"",some o.span⟩]
+    let h := headTys.length
     -- Into a variadic callee a spread may be anywhere among the actuals past
     -- the fixed ones. The call reads a spread once every actual is evaluated;
     -- a spread followed by an actual that runs code is therefore copied where
@@ -1700,7 +1978,7 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
         if let [.list T []] := PositiveRules.expand G S then
           if T.optional.isEmpty && T.rest.isNone then
             return (i, S)
-      let some (_, E, _) := (ProgramTyping.restSigs G B).head? | throw "a spread needs a variadic callee"
+      let some (_, _, E, _) := (ProgramTyping.restSigs G B).head? | throw "a spread needs a variadic callee"
       if !E.contains 3 then
         throw (locatedRefusal (← table) e.span .bindingAnnotation
           "a spread copied before a later actual runs needs a rest element type that admits `undefined`")
@@ -1714,7 +1992,7 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     -- admit it cannot collect such a spread, whatever TypeScript says.
     if variadic then
       let G := SourceTypes.graph (← table)
-      let admitsUndefined := (ProgramTyping.restSigs G B).any fun (_, E, _) => E.contains 3
+      let admitsUndefined := (ProgramTyping.restSigs G B).any fun (_, _, E, _) => E.contains 3
       for i in spreads do
         let some arrayTy := As₀[i]? | throw "a spread argument needs an operand"
         if let some S := storeOf G arrayTy then
@@ -1742,9 +2020,9 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let k := elements.length
     let fixedActuals := if spread then args.length - 1 else args.length
     let anonymous := held ⟨"",some e.span⟩
-    let temporaries := (operands.map fun a => held ⟨"",some a.span⟩).reverse ++ [held ⟨"",some callee.span⟩]
+    let temporaries := (operands.map fun a => held ⟨"",some a.span⟩).reverse ++ headScope
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
-      (fun i => if i == 0 then 0 else i+n+1+k))⟩
+      (fun i => if i == 0 then 0 else i+n+h+k))⟩
     -- An actual sits above the elements a spread reads; a receiver, which is
     -- an operand and not an actual, sits below them all.
     let actuals := ((List.range fixedActuals).map fun i =>
@@ -1752,21 +2030,61 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
         if copied.contains i then .spread v
         else if spreads.contains i && variadic then .spread (.readAt SourceTypes.storeField v) else v) ++
       (List.range k).map fun j => Tm.var (k-1-j)
-    let callEnv := elements.reverse ++ As.reverse ++ B::Γ
-    let call ← emitAt e.span (.call (.var (k+n)) actuals) (.bind drop) callEnv A
+    let callEnv := elements.reverse ++ As.reverse ++ headTys ++ Γ
+    -- `.call` passes its first operand as the receiver; a plain call passes
+    -- `undefined`.
+    let callTerm := match e with
+      | .callWithReceiver .. => Tm.invoke (.var (k+n)) (.var (k+n-1)) actuals
+      | .invoke .. => Tm.invoke (.var (k+n)) (.var (k+n+h-1)) actuals
+      | _ => Tm.call (.var (k+n)) actuals
+    -- The receiver the call passes, the `.call` operand or `undefined`, is
+    -- checked where the call is made at the selected signature's receiver:
+    -- a located obligation, apart from the call's own typing.
+    let G := SourceTypes.graph (← table)
+    let callScope := (List.replicate k anonymous) ++ temporaries ++ scope
+    -- The receiver's selected contract: a fixed signature taking these
+    -- actuals, or the variadic signature the call uses.
+    let receiverOf (Rr : Ty Nat) (actualTys : List (Ty Nat)) : Option (Ty Nat) :=
+      if variadic then
+        let sigs := ProgramTyping.restSigs G B
+        ((sigs.find? fun (Rt,_,_,_) => Rr.all Rt.contains) <|> sigs.head?).map (·.1)
+      else if spread then none
+      else match PositiveRules.expand G B with
+        | [.arrs L _] | [.callable _ _ L _] =>
+          match selectSignature G L actualTys Rr with
+          | .ok (Rt,_,_) => some Rt
+          | .error _ => none
+        | _ => none
+    match e, method with
+    | .callWithReceiver _ _ r _, _ =>
+      if let some R₀ := As.head? then
+        if let some Rt := receiverOf R₀ (As.drop 1) then
+          let plan := DirectProof.cast callEnv Rt (DirectProof.var callEnv (k+n-1) R₀)
+          obligation r.span plan.goal (some plan) "method-receiver" callScope
+    | .invoke .., some (o, _, _) =>
+      if let some O := headTys.getLast? then
+        if let some Rt := receiverOf O As then
+          let plan := DirectProof.cast callEnv Rt (DirectProof.var callEnv (k+n+h-1) O)
+          obligation o.span plan.goal (some plan) "method-receiver" callScope
+    | _, _ =>
+      if let some Rt := receiverOf [3] As then
+        if !admitsUndefined G Rt then
+          let plan := DirectProof.cast callEnv Rt (DirectProof.node callEnv .undef [3] .undef)
+          obligation callee.span plan.goal (some plan) "method-receiver" callScope
+    let call ← emitAt e.span callTerm (.bind drop) callEnv A
       (scope := (List.replicate k anonymous) ++ temporaries ++ scope)
     -- The reads run in position order, so they are emitted from the last back.
     let reads ← (List.range k).reverse.foldlM (fun next j => do
       let some E := elements[j]? | throw "a spread element has no contract"
       let index ← indexTerm j
-      let env := (elements.take j).reverse ++ As.reverse ++ B::Γ
+      let env := (elements.take j).reverse ++ As.reverse ++ headTys ++ Γ
       emitAt e.span (.elemAt (.readAt SourceTypes.storeField (.var j)) index) (.bind next)
         env E "spread-element"
         (scope := (List.replicate j anonymous) ++ temporaries ++ scope)) call
     let right ← operands.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) => do
       let sc := (operands.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++
-        held ⟨"",some callee.span⟩ :: scope
-      let ctx := (As.take i).reverse ++ B::Γ
+        headScope ++ scope
+      let ctx := (As.take i).reverse ++ headTys ++ Γ
       if copied.contains i then
         -- The copy takes the operand's slot: the continuation sees the copied
         -- store where it would have seen the array.
@@ -1786,7 +2104,19 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
           (scope := held ⟨"",some arg.span⟩ :: sc)
         compileExpr fc sc ctx arg ⟨copy.label, none⟩
       else compileExpr fc sc ctx arg next) reads
-    compileExpr fc scope Γ callee right
+    match method with
+    | none => compileExpr fc scope Γ callee right
+    | some (o, key, readTerm) =>
+      -- The method is read from the saved object, below any saved key.
+      let saved := headTys.drop 1
+      let read ← emitAt callee.span (readTerm (.var (saved.length - 1))) (.bind ⟨right.label, none⟩)
+        (saved ++ Γ) B (scope := headScope.drop 1 ++ scope)
+      let afterObject ← match key with
+        | none => pure read
+        | some key => do
+          let some O := headTys.getLast? | throw "internal method call slots"
+          compileExpr fc (held ⟨"",some o.span⟩ :: scope) (O::Γ) key read
+      compileExpr fc scope Γ o afterObject
   | .arrayLit _ elems =>
     -- The elements, in order, then the store they fill, then the array
     -- object holding it: two nodes, so the allocation's slots are variables.

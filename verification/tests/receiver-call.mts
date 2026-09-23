@@ -84,7 +84,7 @@ try {
     const r = spawnSync(process.execPath, ["verification/tools/fragment-parse.mts", probe], {encoding: "utf8"});
     if (r.error || r.signal) throw r.error || Error(String(r.signal));
     assert.notEqual(r.status, 0, text);
-    assert.match(r.stderr, /\.call requires a known local arrow/);
+    assert.match(r.stderr, /\.call requires a known local function/);
   }
   console.log("  local arrow .call: receiver effects, captured thunk, checked claims, exact arity and intrinsic provenance OK");
 } finally {

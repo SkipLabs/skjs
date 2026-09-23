@@ -87,7 +87,7 @@ theorem bag_write {fs : Fields} {f : String} {P : Fam} (hP : Adm P)
   exact write_rule (code := code) hP n W h l a hval hw hh hf hl hc ha
 
 /-- Native creation preserves every list signature across allocation. -/
-theorem make_callable_rule {P : Fam} {L : List (List Fam × Fam)} (hA : Adm P)
+theorem make_callable_rule {P : Fam} {L : List (Fam × List Fam × Fam)} (hA : Adm P)
     (arity n : Nat) (W : WorldT n) (h : Heap) (b v : Tm)
     (hf : InvocationSpec arity L n W b) (hval : isVal v = true)
     (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : P n W v) :
@@ -101,7 +101,7 @@ theorem make_callable_rule {P : Fam} {L : List (List Fam × Fam)} (hA : Adm P)
 /-- The same, for a bag with any named fields. The call contracts survive the
 extended world exactly as they do for one field; nothing here depends on the
 arity of the bag or on what its fields are called. -/
-theorem make_callable_fields_rule {P : List Fam} {L : List (List Fam × Fam)}
+theorem make_callable_fields_rule {P : List Fam} {L : List (Fam × List Fam × Fam)}
     (hA : ∀ A ∈ P, Adm A) (arity n : Nat) (W : WorldT n) (h : Heap)
     (ns : List String) (vs : List Val) (b : Tm)
     (hnd : ns.Nodup) (hns : ns.length = vs.length) (hPs : P.length = vs.length)

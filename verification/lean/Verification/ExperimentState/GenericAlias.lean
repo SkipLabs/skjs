@@ -96,7 +96,8 @@ partial def substAtom (p : String) (arg : Json) (atom : Json) : Except String Js
       | some r => pure [("rest", ← substType p arg r)]
       | none => pure []
     return putFields atom
-      ([("params", toJson params), ("result", ← substType p arg (← jField atom "result"))] ++ rest)
+      ([("this", ← substType p arg (← jField atom "this")), ("params", toJson params),
+        ("result", ← substType p arg (← jField atom "result"))] ++ rest)
   | "callable" =>
     return Json.mkObj [("a", toJson "callable"),
       ("function", ← substAtom p arg (← jField atom "function")),
@@ -157,7 +158,7 @@ partial def expandAtom (aliases : List Alias) (atom : Json) : Except String Json
       | none => pure []
     return Json.mkObj [("top", toJson false),
       ("atoms", toJson [putFields atom
-        ([("params", toJson params),
+        ([("this", ← expandType aliases (← jField atom "this")), ("params", toJson params),
          ("result", ← expandType aliases (← jField atom "result"))] ++ rest)])]
   | "callable" =>
     let fnTy ← expandAtom aliases (← jField atom "function")
@@ -230,21 +231,27 @@ partial def expandExpr (aliases : List Alias) (e : Fragment.Expr) : Except Strin
   | .withValue p fn initial ft bt =>
     return .withValue p (← expandExpr aliases fn) (← expandExpr aliases initial)
       (← expandType aliases ft) (← expandType aliases bt)
-  | .lambda p tps ps defaults rest result body =>
+  | .lambda p receiver tps ps defaults rest result body =>
+    let receiver ← expandOpt aliases receiver
     let ps ← ps.mapM fun (n, t) => expandNamed aliases n t
     let tps ← tps.mapM fun tp => do
       return { tp with bound := ← tp.bound.mapM (expandType aliases) }
     let defaults ← defaults.attach.mapM fun ⟨(i, d), _⟩ => do
       return (i, ← expandExpr aliases d)
-    return .lambda p tps ps defaults rest (← expandType aliases result) (← expandExpr aliases body)
+    return .lambda p receiver tps ps defaults rest (← expandType aliases result) (← expandExpr aliases body)
   | .bindWithReceiver p c r args =>
     return .bindWithReceiver p (← expandExpr aliases c) (← expandExpr aliases r)
       (← args.mapM (expandExpr aliases))
   | .callWithReceiver p c r args =>
     return .callWithReceiver p (← expandExpr aliases c) (← expandExpr aliases r)
       (← args.mapM (expandExpr aliases))
+  | .applyWithReceiver p c r list =>
+    return .applyWithReceiver p (← expandExpr aliases c) (← expandExpr aliases r)
+      (← list.mapM (expandExpr aliases))
   | .call p c args spread =>
     return .call p (← expandExpr aliases c) (← args.mapM (expandExpr aliases)) spread
+  | .invoke p c args spreads =>
+    return .invoke p (← expandExpr aliases c) (← args.mapM (expandExpr aliases)) spreads
   | .atEnv p e => return .atEnv p (← expandExpr aliases e)
   | .done p => return .done p
   | .seqBody p i b =>

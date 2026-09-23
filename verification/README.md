@@ -100,12 +100,15 @@ producers. Property assignment targets remain outside this form.
 
 A fresh arrow can acquire one initialized mutable `value` field using explicitly
 typed `Object.assign`; aliases preserve both the field invariant and call signature.
-See [function-field.ts](tests/callables/function-field.ts). Known local arrows and
-their immutable aliases support `.call(receiver, ...actuals)`: the receiver is
-evaluated before the actuals, then discarded. Arbitrary callable parameters and
-receiver-dependent methods remain excluded. `.bind` on the same local arrows
-saves a required argument prefix and returns a closure over the remaining
-parameters, including a thunk when all parameters are bound. SKJS rejects this
+See [function-field.ts](tests/callables/function-field.ts). Known local
+functions and their immutable aliases support `.call(receiver, ...actuals)`,
+`.bind(receiver, ...prefix)` and `.apply(receiver, list)`, and in strict code
+ordinary function expressions and methods bind the receiver of each call as
+`this` while arrows capture it ([methods.ts](tests/callables/methods.ts),
+[apply.ts](tests/callables/apply.ts)). Arbitrary callable parameters remain
+excluded as `.call` targets. `.bind` saves the target, the receiver and a
+required argument prefix in a forwarding descriptor that ignores the receiver
+it is later called with, including a thunk when all parameters are bound. SKJS rejects this
 partial binding; the [incompleteness example](tests/skjs-incomplete/bound-arguments.ts)
 verifies using TypeScript’s claims.
 

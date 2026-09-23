@@ -47,12 +47,16 @@ partial def mentionsParam : Json → Bool
   | .arr xs => xs.any mentionsParam
   | _ => false
 
+mutual
 /-- A source annotation as a direct type. A declared binder is rigid; a
 function type that mentions a binder is a callable over direct types; every
 other annotation is lowered to graph labels by the one translation all
 annotations take, so `number` here is the `number` the graph knows. -/
 partial def annotationTy (names : List String) (j : Json) :
     SourceTypes.Lowering DirectObligation.Ty := do
+  -- `unknown` is top, which every value inhabits, including the `undefined`
+  -- a plain call passes as its receiver.
+  if (j.getObjVal? "top").toOption == some (toJson true) then return .top
   if let .ok name := paramName j then
     if !names.contains name then throw s!"undeclared type parameter '{name}'"
     return .rigid name
@@ -63,12 +67,19 @@ partial def annotationTy (names : List String) (j : Json) :
       | throw "a rigid annotation is a binder, a function type over binders, or a ground type"
     if (← jStr (← jField atom "a")) != "function" then
       throw "a rigid annotation is a binder, a function type over binders, or a ground type"
+    let receiver ← receiverTy names (← jField atom "this")
     let params ← (← jArr atom "params").mapM (annotationTy names)
     let result ← annotationTy names (← jField atom "result")
     match (atom.getObjVal? "rest").toOption with
-    | some e => return .variadic params (← annotationTy names e) result
-    | none => return .arrow params result
+    | some e => return .variadic receiver params (← annotationTy names e) result
+    | none => return .arrow receiver params result
   return .ground (← Fragment.translate j)
+
+/-- A receiver contract as a direct type, by the one annotation converter. -/
+partial def receiverTy (names : List String) (j : Json) :
+    SourceTypes.Lowering DirectObligation.Ty :=
+  annotationTy names j
+end
 
 /-- A binder's bound: `boolean`, or an earlier binder. -/
 def boundOf (seen : List Parameter) : Option Json → Except String (Option DirectObligation.Ty)
@@ -163,6 +174,9 @@ are refused here, by name, at their span. -/
 def translate (names : List String) : Fragment.Expr → M Body
   | .var pos name => pure (.var pos name)
   | .lit pos v => pure (.lit pos v)
+  -- A block body `{ return e; }` is its returned expression; the statement
+  -- entry around it is a claim site of the stateful lowering, not a value.
+  | .atEnv _ e => translate names e
   | .assign pos name _ rhs => do return .assign pos name (← translate names rhs)
   | .call pos callee args spreads => do
       if !spreads.isEmpty then
@@ -170,7 +184,9 @@ def translate (names : List String) : Fragment.Expr → M Body
       let callee ← translate names callee
       let args ← args.attach.mapM fun ⟨a, _⟩ => translate names a
       return .call pos callee args
-  | .lambda pos tps ps defaults rest ret body => do
+  | .lambda pos receiver tps ps defaults rest ret body => do
+      if receiver.isSome then
+        throw (.refusal pos .schemeIntroduction "an ordinary function is outside the rigid checker")
       if !tps.isEmpty then
         throw (.refusal pos .schemeIntroduction "a nested quantified closure is outside the checked fragment")
       if !defaults.isEmpty then
@@ -228,14 +244,18 @@ def exprTyB (c : Ctx) (env : List (String × DirectObligation.Ty)) :
       -- obligation against that parameter, and the result is the callable's.
       match callee with
       | .var cpos name => match env.lookup name with
-        | some (.arrow ps r) =>
-          if ps.length != args.length then
+        | some (.arrow rc ps r) =>
+          if !(DirectObligation.Ty.ground [3]).leUnder c.parameters rc then
+            .error (.refusal pos .callArgument "a plain call passes `undefined`, which the callable's receiver does not admit")
+          else if ps.length != args.length then
             .error (.refusal pos .callArgument "call arity differs from the callable's parameters")
           else match argsTyB c env ps args with
             | .error e => .error e
             | .ok () => .ok r
-        | some (.variadic ps e r) =>
-          if ps.length > args.length then
+        | some (.variadic rc ps e r) =>
+          if !(DirectObligation.Ty.ground [3]).leUnder c.parameters rc then
+            .error (.refusal pos .callArgument "a plain call passes `undefined`, which the callable's receiver does not admit")
+          else if ps.length > args.length then
             .error (.refusal pos .callArgument "variadic call omits a required fixed parameter")
           else match argsTyB c env (ps ++ List.replicate (args.length - ps.length) e) args with
             | .error e => .error e
@@ -248,7 +268,7 @@ def exprTyB (c : Ctx) (env : List (String × DirectObligation.Ty)) :
       match c.claims.exprs.lookup pos with
       | none => .error (.refusal pos .schemeIntroduction "nested closure has no claim")
       | some claim =>
-        if claim = DirectObligation.Ty.arrow (ps.map Prod.snd) declared then
+        if claim = DirectObligation.Ty.arrow .top (ps.map Prod.snd) declared then
           closureTyB c env pos ps declared body
         else .error (.refusal pos .schemeIntroduction "nested closure claim differs from its source annotation")
 
@@ -271,7 +291,7 @@ def closureTyB (c : Ctx) (env : List (String × DirectObligation.Ty)) (pos : Spa
   match exprTyB c (ps ++ env) body with
   | .error e => .error e
   | .ok actual =>
-    if actual.leUnder c.parameters declared then .ok (.arrow (ps.map Prod.snd) declared)
+    if actual.leUnder c.parameters declared then .ok (.arrow .top (ps.map Prod.snd) declared)
     else .error (.obligation ⟨body.span, .schemeIntroduction,
       .schemeIntroduction c.parameters ((ps ++ env).map fun (name, type) => Binding.mk name type)
         (.closureBody body.span) actual declared⟩)
@@ -283,13 +303,22 @@ def exprTy (c : Ctx) (env : List (String × DirectObligation.Ty)) (e : Fragment.
     M DirectObligation.Ty := do
   liftE (exprTyB c env (← translate (c.parameters.map (·.name)) e))
 
+/-- A quantified closure's type. An ordinary function binds `this` at its
+receiver annotation, which may name the closure's binders; an arrow has none
+of its own. -/
 def closureTy (c : Ctx) (env : List (String × DirectObligation.Ty))
-    (pos : Span) (ps : List (String × Json)) (ret : Json) (body : Fragment.Expr) :
-    M DirectObligation.Ty := do
+    (pos : Span) (ps : List (String × Json)) (ret : Json) (body : Fragment.Expr)
+    (receiver : Option Json := none) : M DirectObligation.Ty := do
   let names := c.parameters.map (·.name)
   let inner ← ps.mapM fun q => do return (q.1, ← lower pos .schemeIntroduction (annotationTy names q.2))
   let declared ← lower pos .schemeIntroduction (annotationTy names ret)
-  liftE (closureTyB c env pos inner declared (← translate names body))
+  match receiver with
+  | none => liftE (closureTyB c env pos inner declared (← translate names body))
+  | some annot =>
+    let R ← lower pos .schemeIntroduction (receiverTy names annot)
+    match ← liftE (closureTyB c (("this", R) :: env) pos inner declared (← translate names body)) with
+    | .arrow _ ps r => pure (.arrow R ps r)
+    | t => pure t
 
 /-! ### Declaration bodies -/
 
@@ -489,29 +518,33 @@ private partial def closureProof (c : Ctx) (env : List (String × GenericCertifi
     Fragment.Expr → M (Option GenericCertificate.Proof)
   | .lit _ (.vnum _) | .lit _ (.vstr _) => pure none
   | .lit _ v => pure (some (.lit v))
+  | .atEnv _ e => closureProof c env e
   | .var pos name => match proofLookup name env with
       | some (index, .value _) => pure (some (.var index))
       | some (index, .cell _) => pure (some (.read index))
       | some (_, .argument _) => throw (.refusal pos .schemeIntroduction
           "a raw argument is not an initialized source binding")
       | none => throw (.refusal pos .schemeIntroduction s!"unbound capture '{name}'")
-  | .lambda pos tps ps defaults rest ret body => do
-      if !tps.isEmpty || !defaults.isEmpty || rest then return none
+  | .lambda pos receiver tps ps defaults rest ret body => do
+      if receiver.isSome || !tps.isEmpty || !defaults.isEmpty || rest then return none
       let names := c.parameters.map (·.name)
       let inner ← ps.mapM fun q => do
         return (q.1, ← lower pos .schemeIntroduction (annotationTy names q.2))
       let result ← lower pos .schemeIntroduction (annotationTy names ret)
+      -- An arrow's own receiver slot precedes its parameters; its source
+      -- `this` would be a capture, never that slot.
       let slots := inner.map fun (name, A) => (name, GenericCertificate.Slot.value A)
-      let some proof ← closureProof c (slots ++ env) body | return none
-      return some (.lambda (inner.map Prod.snd) (.widen result proof))
+      let some proof ← closureProof c (("", .value .top) :: slots ++ env) body | return none
+      return some (.lambda .top (inner.map Prod.snd) (.widen result proof))
   | .call _ callee args spreads => do
       if !spreads.isEmpty then return none
       let some fn ← closureProof c env callee | return none
       let proofs ← args.mapM (closureProof c env)
       let some actuals := proofs.mapM id | return none
       let fn := match fn.check c.parameters (env.map Prod.snd) with
-        | some (_, .variadic ps e r) =>
-          GenericCertificate.Proof.widen (.arrow (ps ++ List.replicate (args.length - ps.length) e) r) fn
+        | some (_, .variadic rc ps e r) =>
+          GenericCertificate.Proof.widen
+            (.arrow rc (ps ++ List.replicate (args.length - ps.length) e) r) fn
         | _ => fn
       return some (.call fn actuals)
   | _ => pure none
@@ -539,7 +572,7 @@ private def proofBody (c : Ctx) (initial : List (String × DirectObligation.Ty))
       | none => pure actual)
     unless actual.leUnder c.parameters expected do
       throw (.obligation ⟨b.namePos, .bindingAnnotation,
-        .subtyping c.parameters (env.map fun (name, type) => ⟨name, type⟩)
+        .subtyping c.parameters ((env.filter (·.1 != "")).map fun (name, type) => ⟨name, type⟩)
           (.binding b.name b.namePos) actual expected⟩)
     return ((b.name, expected) :: env, initializers ++ [(.widen expected init)]))
     (initial, [])
@@ -570,7 +603,8 @@ the final certification boundary. -/
 def closureCertificate (c : Ctx) (env : List (String × DirectObligation.Ty))
     (storage : List Fragment.Binding)
     (pos : Span) (ps : List (String × Json)) (ret : Json) (body : Fragment.Expr)
-    (defaults : List (Nat × Fragment.Expr) := []) (rest : Bool := false) :
+    (defaults : List (Nat × Fragment.Expr) := []) (rest : Bool := false)
+    (receiver : Option Json := none) :
     M (Option GenericCertificate.ClosureCertificate) := do
   -- Runtime cell identities carry the source's fixed storage annotation. An
   -- entry claim about current contents cannot supply this lifetime contract.
@@ -587,6 +621,11 @@ def closureCertificate (c : Ctx) (env : List (String × DirectObligation.Ty))
   let inner ← ps.mapM fun q => do
     return (q.1, ← lower pos .schemeIntroduction (annotationTy names q.2))
   let result ← lower pos .schemeIntroduction (annotationTy names ret)
+  -- An ordinary function's receiver slot is `this`, at its annotation; an
+  -- arrow's is anonymous and top.
+  let (receiverName, R) ← match receiver with
+    | some annot => do pure ("this", ← lower pos .schemeIntroduction (receiverTy names annot))
+    | none => pure ("", DirectObligation.Ty.top)
   let (inner, restBinding) ← if rest then
     match inner.reverse with
     | (name, .array E) :: fixed => pure (fixed.reverse, some (name, E))
@@ -596,10 +635,13 @@ def closureCertificate (c : Ctx) (env : List (String × DirectObligation.Ty))
     if (defaults.lookup i).isNone then GenericCertificate.Input.value A else .defaulted A
   let mut slots := ((inner.map Prod.fst).zip inputs).map fun (name, input) =>
     (if defaults.isEmpty then name else "", input.slot)
+  -- The receiver slot precedes the parameters, after a rest array; an arrow
+  -- never reads it.
   slots := (match restBinding with
-    | none => slots
-    | some (name, E) => (if defaults.isEmpty then name else "", .value (.array E)) :: slots) ++ captures
-  let offset := if restBinding.isSome then 1 else 0
+    | none => []
+    | some (name, E) => [(if defaults.isEmpty then name else "", .value (.array E))]) ++
+    (receiverName, .value R) :: slots ++ captures
+  let offset := if restBinding.isSome then 2 else 1
   let mut initializers : List GenericCertificate.Proof := []
   let order ← refuse pos .schemeIntroduction (Fragment.parameterOrder ps defaults)
   for i in order do
@@ -616,7 +658,8 @@ def closureCertificate (c : Ctx) (env : List (String × DirectObligation.Ty))
         slots := (name, .value A) :: slots
   let some proof ← closureProof c slots body | return none
   return some ⟨c.parameters, inputs, captures.map Prod.snd, result,
-    initializers.foldr GenericCertificate.Proof.letE (.widen result proof), restBinding.map Prod.snd⟩
+    initializers.foldr GenericCertificate.Proof.letE (.widen result proof), restBinding.map Prod.snd,
+    R⟩
 
 /-- Both production and independent consumption reconstruct these obligations.
 Every source entry and expression must occur exactly once; no supplied point is
@@ -645,15 +688,18 @@ def check (f : Fragment.Fn) (typeParams : List Fragment.TypeParam) (claims : Cla
   -- pass has exposed any failed inclusion.
   lower f.namePos .genericValidation (checkScheme f typeParams claims)
   let result ← lower f.namePos .genericValidation (annotationTy names f.ret)
+  -- The body sees the rest array, then the receiver slot, which a declaration
+  -- checked here never reads, then the fixed parameters.
   let (bodyEnv, fixed, rest) ← if f.params.any (·.rest) then
     match env.reverse with
     | (name, .array E) :: earlier =>
-      pure ((name, .array E) :: earlier.reverse, earlier.reverse, some E)
+      pure ((name, .array E) :: ("", .top) :: earlier.reverse, earlier.reverse, some E)
     | _ => throw (.refusal f.namePos .genericValidation "a quantified rest requires a mutable array contract")
-    else pure (env, env, none)
+    else pure (("", .top) :: env, env, none)
   let proof ← proofBody c bodyEnv result f.namePos f.body
   let certificate : GenericCertificate.ClosureCertificate :=
-    ⟨parameters, fixed.map (fun p => GenericCertificate.Input.value p.2), [], result, proof, rest⟩
+    ⟨parameters, fixed.map (fun p => GenericCertificate.Input.value p.2), [], result, proof, rest,
+      .top⟩
   if certificate.check.isNone then
     throw (.refusal f.namePos .genericValidation "generated generic certificate is invalid")
   return certificate

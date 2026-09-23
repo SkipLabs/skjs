@@ -74,12 +74,15 @@ Each type-graph node is a union of clauses:
 | Boolean                                                                                                                                                                    | `"bool"`                                                                                    |
 | Boolean singleton                                                                                                                                                          | `{"boolLit":{"value":true}}` (or `false`)                                                   |
 | Invariant reference with optional additional contract requirements, and readonly views: fields read at a sound upper bound, with no write permission through this contract | `{"refs":{"first":[["value",[1]]],"rest":[],"views":[["seen",[1]]]}}`                       |
-| Intersection of arrows, with variadic signatures `[params, [element, result]]` when there are any                                                                          | `{"arrs":{"arrows":[[[[0]],[1]],[[[1]],[0]]]}}`                                             |
+| Intersection of arrows `[receiver, [params, result]]`, with variadic signatures `[receiver, [params, [element, result]]]` when there are any                                 | `{"arrs":{"arrows":[[[5],[[[0]],[1]]],[[5],[[[1]],[0]]]]}}`                                 |
 | Array store: simultaneous tuple contracts, each with required, optional and rest positions; readonly contracts give element read capabilities                              | `{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],"readonly":false},"rest":[]}}` |
-| Callable with invariant bag requirements and overloads, fixed and variadic                                                                                                 | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[[[[0]],[1]]]}}`                   |
+| Callable with invariant bag requirements and overloads, fixed and variadic                                                                                                 | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[[[5],[[[0]],[1]]]]}}`             |
 
-The arrow example contains two argument-list/result pairs, each with one
-argument. A call clause may add `"variadic": [[params, [element, result]], ...]`,
+The arrow example contains two signatures, each with one argument and the
+receiver label 5. Every signature states its receiver: the value a call passes
+as `this`, `undefined` for a plain call. A signature indifferent to it names a
+`"top"` row; there is no missing-field default. A call clause may add
+`"variadic": [[receiver, [params, [element, result]]], ...]`,
 signatures taking any number of actuals past `params`, each in `element`; the
 field is left out when there are none, which is its one spelling, so strict
 decoding refuses an explicit empty list. Each argument type is itself a list of union labels. References and arrow
@@ -109,10 +112,11 @@ are strings; other constructors are single-key objects containing named fields.
 For example:
 
 ```json
-{ "app": { "f": { "var": { "i": 0 } }, "a": "nul" } }
+{ "invoke": { "f": { "var": { "i": 0 } }, "r": "undef", "args": ["nul"] } }
 ```
 
-This applies slot zero to null. A mapped bind continuation is:
+This invokes slot zero with the receiver `undefined` and the one actual null:
+a plain call. A mapped bind continuation is:
 
 ```json
 { "bind": { "next": { "label": 3, "mapping": [0, 2] } } }
@@ -132,7 +136,7 @@ The encoding follows mechanically from the
 | ------------------------------------ | ----------------------------------------------------- | ------------ | --------------------------------------------- |
 | slot $i$                             | `{"var":{"i":0}}`                                     | `ret`        | `"ret"`                                       |
 | $\mathsf{let}(t,t)$                  | `{"letE":{"a":t,"b":t}}`                              | `bind`       | `{"bind":{"next":T}}`                         |
-| $\mathsf{call}(t,[t,\ldots])$        | `{"call":{"f":t,"args":[t]}}`                         | `effect`     | `{"effect":{"next":T}}`                       |
+| $\mathsf{invoke}(t,t,[t,\ldots])$   | `{"invoke":{"f":t,"r":t,"args":[t]}}`                 | `effect`     | `{"effect":{"next":T}}`                       |
 | null, undefined, true, false         | `"nul"`, `"undef"`, `"tru"`, `"fls"`                  | `branch`     | `{"branch":{"yes":T,"no":T}}`                 |
 | object with named locations          | `{"objAt":{"fields":[["value",0]],"call":c}}`         | `branchBind` | `{"branchBind":{"yes":T,"no":T}}`             |
 | allocation with ordered initializers | `{"makeAt":{"call":c,"names":["value"],"inits":[t]}}` | `tagBind`    | `{"tagBind":{"test":"isNul","yes":T,"no":T}}` |
@@ -145,13 +149,20 @@ The encoding follows mechanically from the
 | element at a numeric index           | `{"elemAt":{"a":t,"i":t}}`                            |              |                                               |
 | store with an element set            | `{"setElem":{"a":t,"i":t,"v":t}}`                     |              |                                               |
 | length of a store                    | `{"lenOf":{"a":t}}`                                   |              |                                               |
+| store locations, a hole as `null`    | `{"arr":{"elems":[0,null]}}`                          |              |                                               |
+| spread actual                        | `{"spread":{"a":t}}`                                  |              |                                               |
 
-A descriptor `c` is `"absent"`, `{"closure":{"arity":2,"body":t}}`, or
-`{"variadic":{"fixed":2,"body":t}}`. Plain allocation uses the absent
-descriptor; function creation uses a code descriptor and ordered field
-initializers. A fixed body is under `arity` parameter binders, in declaration
-order, before captures. A variadic body has its fresh rest array in slot zero,
-then `fixed` parameters, then captures. Creation evidence requires each overload to have
+A descriptor `c` is `"absent"`, `{"closure":{"arity":2,"body":t}}`,
+`{"variadic":{"fixed":2,"body":t}}` or
+`{"bound":{"target":t,"receiver":t,"pre":[t]}}`. Plain allocation uses the
+absent descriptor; function creation uses a code descriptor and ordered field
+initializers. A fixed body has the receiver's binder in slot zero, then
+`arity` parameter binders in declaration order, before captures. A variadic
+body has its fresh rest array in slot zero, the receiver in slot one, then
+`fixed` parameters, then captures. A `bound` descriptor is what `.bind` creates: it holds the target,
+the receiver and the argument prefix as values and allocates no field; its
+invocation drops the receiver it is called with and invokes the target with the
+saved one and the prefix before the new actuals. Creation evidence requires each overload to have
 that many argument types. Application evidence carries every actual argument in order. Runtime object terms
 are rejected in supplied graph syntax, including inside unused branches and
 closure bodies.
@@ -171,7 +182,7 @@ one subtype-evidence list per outgoing edge. A derivation node names the
 `read`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
 `unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `arith`, `test`,
 `arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, `funRest`, `makeCallableRest`,
-`callRest`, `arrCopy`, or `sub`.
+`callRest`, `arrCopy`, `bindE`, `bindRestE`, or `sub`.
 The array rules act on a store, the value an array object holds in its store
 field: `arrLit` allocates one location per element under the positions of a
 tuple contract; `elem` reads a required position named by a literal index at
@@ -195,14 +206,18 @@ contexts, terms and result types. The consumer checks these against the request;
 this redundancy cannot substitute a different program or different claims.
 
 Subtype arrow certificates use ordered lists of argument types. A `source`
-certificate's `p` is `[domains, result]`, for example
-`{"source":{"p":[[[0],[1]],[1]]}}` for a two-argument signature. A `union`
+certificate's `p` is `[receiver, [domains, result]]`, for example
+`{"source":{"p":[[5],[[[0],[1]],[1]]]}}` for a two-argument signature whose
+receiver is label 5; the receiver is contravariant, like the domains. A `union`
 certificate contains `pre`, `a`, `b`, `suffix`, `left`, and `right`: `pre` and
 `suffix` are lists of unchanged argument types, and the selected argument splits
 from `a ++ b` into the two branches. `combine` retains its result types `b` and
 `b'` and two branches; `empty` requires an empty type at some argument position,
-not merely a zero-length argument list. A `rest` certificate's `s` is a variadic
-source signature `[params, [element, result]]` covering the target arrow: its
+not merely a zero-length argument list; `emptyRecv` requires the target's
+receiver to be empty, so that no call is named; `recvUnion` splits the target's
+receiver `a ++ b` into two branches, like `union` for an argument. A `rest`
+certificate's `s` is a variadic source signature
+`[receiver, [params, [element, result]]]` covering the target arrow: its
 first positions within `params`, the rest within `element`. Every label in these fields is bounds
 checked. Graph subtype search supports native argument lists and splits any
 position. Source function types, closures and calls preserve required parameter
@@ -253,9 +268,18 @@ selects an advertised signature and, like `app`, carries one premise per
 position that signature declares and the call omits, each proving `undefined`
 at that position's contract; `readCallable` and `writeCallable` use
 the first invariant bag operand. Every nested operand label is bounds checked.
+`app`, `callCallable` and `callRest` take the callee premise, then the
+receiver premise at the selected signature's receiver, then the actuals: the
+term is `invoke f r args`, and a plain call's receiver is `undefined`.
+`bindE` has no premises: its term is `makeAt (bound (var t) (var r) pre) [] []`
+with every prefix entry a slot, and the rule reads the target's type, the
+receiver's and the prefix's from the context. One fixed signature of the
+target must be the receiver slot's type, the prefix slots' types followed by
+the result's parameters, and the result's result; the result is one signature
+at any receiver.
 `funRest` creates variadic code: one body premise per variadic signature of
 its type, each with that signature's rest-array type, named by the rule, in
-slot 0 above the fixed parameters; `makeCallableRest` adds a field bag's
+slot 0, above the receiver and the fixed parameters; `makeCallableRest` adds a field bag's
 initializer premises first, as `makeCallable` does. `callRest` carries the
 callee premise, one premise per fixed actual, one `undefined` premise per fixed
 position the call omits, then one per further part: the actual at the element
@@ -565,8 +589,9 @@ Their source correspondence remains a reviewed compilation obligation.
 
 Use `fragment-parse.mts <file.ts>` for the extended source gate. It accepts
 only plain `{ value: e }` allocations, `.value` reads and assignments, with the
-required invariant-cell contracts above. Methods, accessors, computed keys,
-spreads, extra fields and optional access are rejected. Cell parameters are
+required invariant-cell contracts above. Accessors, computed keys, spreads,
+extra fields and optional access are rejected; a method is an ordinary function
+expression in its field (see [receivers](#receivers)). Cell parameters are
 also rejected until a plain-data boundary for external objects is supplied.
 
 The stateful input decoder keeps types separate from the earlier primitive AST.
@@ -591,6 +616,7 @@ The bounded function atom is:
 ```json
 {
   "a": "function",
+  "this": { "top": true, "atoms": [] },
   "params": [{ "top": false, "atoms": [{ "a": "null" }] }],
   "result": { "top": false, "atoms": [{ "a": "boolean" }] },
   "construct": "unknown",
@@ -598,10 +624,16 @@ The bounded function atom is:
 }
 ```
 
-The exporter preserves the ordered list of free parameters and the result, an
-optional parameter appearing as the union its contract admits. It rejects
-`this` requirements, generics, unsupported fields, indexes, positive
-construct requirements and record-valued operands. A rest parameter with a
+Every function atom states its receiver in `"this"`: `unknown` for a signature
+indifferent to it, the `this` parameter's type otherwise. A receiver contract
+may be a record, lowered with its readonly members as views, so a method that
+writes through its receiver needs the field's write capability. There is no
+missing-field default. The exporter preserves the ordered list of free
+parameters and the result, an optional parameter appearing as the union its
+contract admits. SKJS refuses `this` requirements
+(`function-this-parameter`), generics, unsupported fields, indexes, positive
+construct requirements and record-valued operands; the TypeScript producer
+states a `this` parameter as the receiver. A rest parameter with a
 tuple contract of required positions is exported as those positions, which is
 what the signature has. A rest parameter whose contract is a mutable `T[]` is
 exported as `"rest": T` beside `"params"`, the contract of each further actual;
@@ -665,7 +697,58 @@ signature; the request validation range-checks every type they carry.
 Quantified rest uses the same source flag and graph rules after its universal
 certificate is checked; its compositional claim forms are defined in
 [SOURCE-CLAIMS.md](SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations).
-`arguments`, receiver-dependent bodies and argument-count introspection remain excluded.
+`arguments` and argument-count introspection remain excluded.
+
+### Receivers
+
+A lambda carries `"receiver"`: `null` for an arrow, and for an ordinary
+function expression or object-literal method
+`{"type": T, "strict": true}`, its `this` annotation (`unknown` when it states
+none) and whether its code is strict, by a `"use strict"` directive of the file,
+the enclosing declaration or its own body. The receiver rule modelled is the
+strict one; the decoder refuses a function that reads `this` unless `strict` is
+true. An ordinary function binds the receiver of each call in slot zero, before
+its parameters, named `this`; an arrow's slot is anonymous, so its `this`
+resolves outward, to the enclosing ordinary function's, as a capture. `this` has
+the AST shape `{"k":"this","pos":span}`. A function declaration is the entry
+point, not a callable of the fragment: a `this: T` parameter is kept as its
+first parameter, named `this`, an input assumed at its annotation like the
+others. Where no receiver is bound the trusted parser refuses `this`. A named
+function expression is accepted when its body never refers to its name; a
+reference to it is a recursive binding, refused as for a cyclic closure
+initialization.
+
+A call through a property reference, parenthesized or not, is
+`{"k":"invoke","pos":span,"callee":read,"args":[...]}`, with `"spreads"` as for
+`apply`, where `callee` is the `read`, or the `index` by a string key or a
+numeric one, of the method. A method call takes fixed or variadic signatures
+and spread actuals exactly as a plain call does. It lowers to: the object, saved;
+the method read from it, saved, with the callee's own claim; the actuals; then
+`invoke method object args`. A copied method is a value: its call is `apply`,
+whose receiver is `undefined`. Each call checks the receiver it passes against
+the selected signature's receiver as a located obligation with role
+`method-receiver`: the object for a method call, the first argument of `.call`,
+and `undefined` for a plain call to a signature that does not admit it.
+
+`f.call(r, ...)`, `f.bind(r, ...)` and `f.apply(r, list)` are the intrinsics
+only where `f` is a known local function: a function expression or arrow, an
+immutable alias of one, the result of `.bind` on one, or a function member of a
+`const` object literal that nothing in the file can overwrite. `.call` lowers to
+`invoke f r args`. `.bind` saves the target, the receiver and the prefix, then
+allocates a `bound` descriptor; each saved value is re-bound at the contract the
+selected signature gives it, which `bindE` reads; binding a variadic target,
+checked by `bindRestE`, takes its first fixed positions and, past them, its
+element contract, and leaves the positions not taken then the element
+contract. `.apply` is
+`{"k":"applyWithReceiver","pos":span,"callee":f,"receiver":r,"list":l}`, `list`
+`null` when absent: the target, the receiver and the list are saved; then, for
+a tuple of required positions, the list's length (`lenOf`) and each index
+(`elemAt`) are read in order before `invoke f r [elements]`. A list of unknown
+length goes, after its length is read, to a target signature taking only a rest
+parameter, as its store's positions, `undefined` at a hole, so that element
+contract must admit `undefined`; TypeScript admits no other target for such a
+list. A missing, null or undefined list gives no actuals. The list is read as
+an array-like and never iterated.
 
 A strict `typeof e === "function"` or `!==` comparison has source AST shape
 `{"k":"functionTest","pos":[start,end],"equal":true,"e":operand}`.
@@ -841,20 +924,21 @@ constructing the initialized callable.
 
 Local-arrow `.call` expressions use
 `{"k":"callWithReceiver","pos":[start,end],"callee":expression,"receiver":expression,"args":[expression,...]}`.
-The trusted parser requires a source-created arrow (possibly initialized with a
-field) or an immutable lexical alias of one. Parameters, arbitrary call results,
-optional access/calls, spreads and omitted receivers are refused. The standard
-intrinsic is a source-boundary assumption, not inferred from a call signature.
-The adapter evaluates the callee, receiver and actuals in that order, checking
-every operand claim. It discards only the receiver value and invokes the existing
-native call rule with exactly the listed actuals. No receiver binding is added
-to the arrow body; this slice does not implement ordinary function `this`.
+The trusted parser requires a known local function (see [receivers](#receivers)).
+Parameters, arbitrary call results, optional access/calls, spreads and omitted
+receivers are refused. The standard intrinsic is a source-boundary assumption,
+not inferred from a call signature. The adapter evaluates the callee, receiver
+and actuals in that order, checking every operand claim, and invokes the callee
+with that receiver and exactly the listed actuals. An arrow ignores the receiver;
+an ordinary function binds it as `this`.
 
-A bound local arrow uses the same operand fields as `callWithReceiver`, with
+A bound function uses the same operand fields as `callWithReceiver`, with
 `"k":"bindWithReceiver"`: `callee`, `receiver`, and `args` (the saved prefix).
-The decoder requires that exact shape. The source gate establishes a local arrow
-or bound-arrow target, without optional calls, spread or missing receivers.
-The result claim must be a single free signature. Its parameters describe the
-remaining actuals; their ordered concatenation with the bound prefix must satisfy
-the target's exact signature. The adapter saves operands once and creates a
-native closure. Binding every parameter yields an ordinary zero-argument closure.
+The decoder requires that exact shape. The source gate establishes a local
+function or bound-function target, without optional calls, spread or missing
+receivers. The result claim must be a single free signature. Its parameters
+describe the remaining actuals; their ordered concatenation with the bound
+prefix must satisfy the target's exact signature. The adapter saves operands
+once, re-binds the receiver and the prefix at the selected signature's
+contracts, and allocates a `bound` descriptor, checked by `bindE`. Binding every
+parameter yields a zero-argument bound function.

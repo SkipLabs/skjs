@@ -29,10 +29,12 @@ inductive Clause (α : Type) where
   object rather than one location twice. -/
   | refs (first : List (String × α)) (rest : List (List (String × α)))
       (views : List (String × α))
-  /-- A callable value meeting every fixed arrow and every variadic signature:
-  fixed parameters, the contract of each further actual, and the result. The
-  two describe the actual lists a caller may write, not the callee's code. -/
-  | arrs (arrows : List (List α × α)) (variadic : List (List α × α × α))
+  /-- A callable value meeting every fixed signature, `(receiver, parameters,
+  result)`, and every variadic one, `(receiver, fixed parameters, element,
+  result)`: the receiver a call may pass, the contract of each actual, and
+  the result. They describe the calls a caller may write, not the callee's
+  code; a signature indifferent to its receiver has receiver `top`. -/
+  | arrs (arrows : List (α × List α × α)) (variadic : List (α × List α × α × α))
   | boolLit (value : Bool)
   /-- Numbers, and one number. The spelling is canonical, so `numLit` singletons
   are distinct exactly when the numbers are. -/
@@ -41,7 +43,7 @@ inductive Clause (α : Type) where
   /-- The value a body produces by completing rather than returning. -/
   | undef
   | callable (first : List (String × α)) (rest : List (List (String × α)))
-      (arrows : List (List α × α)) (variadic : List (List α × α × α))
+      (arrows : List (α × List α × α)) (variadic : List (α × List α × α × α))
   /-- Semantic top: every value. Membership grants no operation, so nothing
   reads, calls or tests through it without a narrowing fact. `unknown`
   denotes it; a `void` result forgets its guarantee into it. -/
@@ -70,12 +72,12 @@ def sem (X : α → Fam) : Clause α → Fam
   | .strLit s => fun _ _ v => v = .str s
   | .refs a bs vs => fun n W v =>
       refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧ viewT (famsOf X vs) n W v
-  | .arrs L S => interT (callsT (L.map fun p => (p.1.map X, X p.2)))
-      (restsT (S.map fun s => (s.1.map X, X s.2.1, X s.2.2)))
+  | .arrs L S => interT (callsT (L.map fun p => (X p.1, p.2.1.map X, X p.2.2)))
+      (restsT (S.map fun s => (X s.1, s.2.1.map X, X s.2.2.1, X s.2.2.2)))
   | .callable a bs L S =>
       interT (CallableConjunctions.objectsT (famsOf X a) (bs.map (famsOf X))
-        (L.map fun p => (p.1.map X,X p.2)))
-        (restsT (S.map fun s => (s.1.map X, X s.2.1, X s.2.2)))
+        (L.map fun p => (X p.1, p.2.1.map X, X p.2.2)))
+        (restsT (S.map fun s => (X s.1, s.2.1.map X, X s.2.2.1, X s.2.2.2)))
 
 def semList (X : α → Fam) (L : List (Clause α)) : Fam := setSem (sem X) L
 
@@ -136,7 +138,7 @@ def shape : Clause α → Nat
 
 def valueShape : Val → Nat
   | .nul => 0 | .tru | .fls => 1 | .objAt _ .absent => 2 | .undef => 4
-  | .objAt _ (.closure _ _) | .objAt _ (.variadic _ _) => 3
+  | .objAt _ (.closure _ _) | .objAt _ (.variadic _ _) | .objAt _ (.bound _ _ _) => 3
   | .num _ => 5
   | .str _ => 6
   | .arr _ => 8
@@ -371,15 +373,15 @@ theorem sem_congr (X Y : α → Fam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
       intro As; induction As with
       | nil => exact .nil
       | cons a As ih => exact .cons (h a) ih
-    exact and_congr (callsT_congr L _ _ (fun p _ => ⟨hd p.1, h p.2⟩) W v)
-      (restsT_congr S _ _ (fun s _ => ⟨hd s.1, h s.2.1, h s.2.2⟩) W v)
+    exact and_congr (callsT_congr L _ _ (fun p _ => ⟨h p.1, hd p.2.1, h p.2.2⟩) W v)
+      (restsT_congr S _ _ (fun s _ => ⟨h s.1, hd s.2.1, h s.2.2.1, h s.2.2.2⟩) W v)
   | callable a bs L S =>
     have hd : ∀ As : List α, ArgsAgree n (As.map X) (As.map Y) := by
       intro As; induction As with
       | nil => exact .nil
       | cons a As ih => exact .cons (h a) ih
     exact and_congr (CallableConjunctions.congr_below X Y a bs L n h W v)
-      (restsT_congr S _ _ (fun s _ => ⟨hd s.1, h s.2.1, h s.2.2⟩) W v)
+      (restsT_congr S _ _ (fun s _ => ⟨h s.1, hd s.2.1, h s.2.2.1, h s.2.2.2⟩) W v)
 
 #print axioms normalize_sound
 end Verification.ExperimentState.PositiveNormalization

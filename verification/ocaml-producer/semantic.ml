@@ -6,18 +6,21 @@ and atom = Nul | Undef | True | False | Num | Str | NumLit of int64 | StrLit of 
          | Shape of shape
 and field = { name: string; optional: bool; read: ty; write: ty option }
 and quantifier = { identity: rigid; bound: ty option }
-(* `variadic` is the contract of each actual after `params`, for a signature that
-   takes any number of them. *)
-and signature = { quantified: quantifier list; params: ty list; variadic: ty option; result: ty }
+(* `receiver` is the `this` value a call may pass: `Top` for a signature
+   indifferent to it. `variadic` is the contract of each actual after `params`,
+   for a signature that takes any number of them. *)
+and signature = { quantified: quantifier list; receiver: ty; params: ty list;
+                  variadic: ty option; result: ty }
 and sequence = { required: ty list; optional_elements: ty list; rest: ty option; readonly: bool }
 and shape = { fields: field list; calls: signature list; elements: sequence option }
 let record fields = Atoms [Shape {fields;calls=[];elements=None}]
+let top = Atoms [Top]
 let arrow params result =
-  Atoms [Shape {fields=[];calls=[{quantified=[];params;variadic=None;result}];elements=None}]
-let quantified_arrow quantified params result =
-  Atoms [Shape {fields=[];calls=[{quantified;params;variadic=None;result}];elements=None}]
-let variadic_arrow ?(quantified=[]) params element result =
-  Atoms [Shape {fields=[];calls=[{quantified;params;variadic=Some element;result}];elements=None}]
+  Atoms [Shape {fields=[];calls=[{quantified=[];receiver=top;params;variadic=None;result}];elements=None}]
+let quantified_arrow ?(receiver=top) quantified params result =
+  Atoms [Shape {fields=[];calls=[{quantified;receiver;params;variadic=None;result}];elements=None}]
+let variadic_arrow ?(quantified=[]) ?(receiver=top) params element result =
+  Atoms [Shape {fields=[];calls=[{quantified;receiver;params;variadic=Some element;result}];elements=None}]
 let ground xs = Atoms (List.sort_uniq compare xs)
 let bool = ground [True;False]
 let union a b = match a,b with

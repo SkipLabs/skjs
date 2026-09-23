@@ -112,7 +112,13 @@ let infer_function (f:Source.fn) =
     | Assign (n,rhs) -> (match lookup env n with
       | Storage contract -> expr ~expected:contract env rhs
       | Value _ -> unsupported "assignment to immutable binding")
-    | Lambda (quantified,ps,defaults,rest,result,body) ->
+    | Lambda (receiver,quantified,ps,defaults,rest,result,body) ->
+      (* An ordinary function binds its own `this`, replacing an enclosing
+         one; an arrow keeps the enclosing binding, as a capture. *)
+      let env = match receiver with
+        | Some t -> List.remove_assoc "this" env @ ["this",Value t]
+        | None -> env in
+      let receiver = Option.value receiver ~default:Semantic.top in
       (* Executing defaults see only earlier bindings. A literal closure may
          capture later parameters; this is a proposal about its eventual body,
          not permission to invoke it during initialization. Lean independently
@@ -143,8 +149,8 @@ let infer_function (f:Source.fn) =
            | _ -> unsupported "a rest parameter needs a tuple of required positions or a mutable array")
         | [] -> unsupported "a rest parameter needs a parameter" in
       let own = match element with
-        | Some element -> variadic_arrow ~quantified params element result
-        | None -> quantified_arrow quantified params result in
+        | Some element -> variadic_arrow ~quantified ~receiver params element result
+        | None -> quantified_arrow ~receiver quantified params result in
       (* A contract advertising several signatures is implemented by this one
          closure. Propose that contract and state what the body claims under
          each signature; Lean checks every one of them. *)
@@ -170,11 +176,26 @@ let infer_function (f:Source.fn) =
          arrows := (e.pos,rows) :: !arrows;
          contract
        | _ -> own)
-    | Call (callee,receiver,args,spreads) ->
+    | Call _ | Invoke _ ->
+      (* A method call types its callee, the read of the method, and so its
+         object; the receiver Lean checks is that object. *)
+      let callee,receiver,args,spreads = match e.node with
+        | Call (c,r,a,s) -> c,r,a,s
+        | Invoke (c,a,s) -> c,None,a,s
+        | _ -> assert false in
+      let target = callee in
       let callee = expr env callee in
-      Option.iter (fun e -> ignore (expr env e)) receiver;
+      (* The receiver the call passes: the `.call` operand, the object a
+         method is read from, or `undefined`. A scheme infers from it too. *)
+      let receiver_type = match receiver, target.node with
+        | Some r, _ -> expr env r
+        | None, (Read (o,_) | Index (o,_)) when (match e.node with Invoke _ -> true | _ -> false) ->
+          (match List.find_opt (fun (x:expression) -> x.pos = o.pos) !expressions with
+           | Some x -> x.type_
+           | None -> Atoms [Undef])
+        | None, _ -> Atoms [Undef] in
       (match callee with
-       | Atoms [Shape {calls=[{quantified=[];variadic=Some element;params;result}];_}] ->
+       | Atoms [Shape {calls=[{quantified=[];variadic=Some element;params;result;_}];_}] ->
          (* A variadic callee: the fixed actuals at its parameters, every
             further actual at its element type, and a spread at its own array
             contract, whose elements Lean checks against the element type. *)
@@ -202,7 +223,7 @@ let infer_function (f:Source.fn) =
              | None,Some element -> [union element (Atoms [Undef])]
              | _ -> unsupported "generic spread requires a mutable array or required tuple") args) in
          let missing = max 0 (List.length signature.params - List.length actuals) in
-         let inferred = Inference.infer signature
+         let inferred = Inference.infer ~receiver:receiver_type signature
            (actuals @ List.init missing (fun _ -> Atoms [Undef])) in
          instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
            inferred.substitution) :: !instantiations;
@@ -253,7 +274,7 @@ let infer_function (f:Source.fn) =
            claim is inserted into the source's argument list. *)
         let actuals=List.map (expr env) args @
           List.init (max 0 (List.length signature.params - List.length args)) (fun _ -> Atoms [Undef]) in
-        let inferred=Inference.infer signature actuals in
+        let inferred=Inference.infer ~receiver:receiver_type signature actuals in
         instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
           inferred.substitution) :: !instantiations;
         inferred.result
@@ -278,6 +299,15 @@ let infer_function (f:Source.fn) =
              s.result = first.result) rest -> first.result
          | _ -> unsupported "overloaded call needs a signature its arguments match")
       | _ -> unsupported "call requires a single arrow the arguments can call"))
+    | Apply (callee,receiver,list) ->
+      (* The list is typed at its own contract; Lean reads each element's
+         type from it and checks the call against the target's signature. *)
+      let callee = expr env callee in
+      ignore (expr env receiver);
+      Option.iter (fun l -> ignore (expr env l)) list;
+      (match callee with
+       | Atoms [Shape {calls=[{quantified=[];result;_}];_}] -> result
+       | _ -> unsupported ".apply requires a single arrow")
     | WithFields (fn,initial,ft,bag) ->
       ignore (expr ~expected:ft env fn); ignore (expr ~expected:bag env initial);
       (match ft,bag with
@@ -287,12 +317,21 @@ let infer_function (f:Source.fn) =
     | Bind (callee,receiver,args) ->
       let callee=expr env callee in ignore (expr env receiver);
       (match callee with Atoms [Shape {calls=[signature];_}]
-          when signature.quantified=[] && List.length args<=List.length signature.params ->
+          when signature.quantified=[] && (signature.variadic<>None
+            || List.length args<=List.length signature.params) ->
+        (* The prefix takes the first positions; past a variadic signature's
+           fixed ones, each is at its element contract. What is left is the
+           bound function's signature, at any receiver. *)
         let rec prefix ps args = match ps,args with
           | rest,[] -> rest
           | p::ps,e::es -> ignore (expr ~expected:p env e); prefix ps es
-          | [],_::_ -> unsupported "bind argument prefix exceeds arity" in
-        arrow (prefix signature.params args) signature.result
+          | [],e::es -> (match signature.variadic with
+              | Some element -> ignore (expr ~expected:element env e); prefix [] es
+              | None -> unsupported "bind argument prefix exceeds arity") in
+        let rest = prefix signature.params args in
+        (match signature.variadic with
+         | Some element -> variadic_arrow rest element signature.result
+         | None -> arrow rest signature.result)
       | _ -> unsupported "bind requires a single arrow and a valid argument prefix")
     | Conditional (c,a,b) -> ignore (expr env c);
       let left = expr ?expected (branch env c true) a in
@@ -310,7 +349,9 @@ let infer_function (f:Source.fn) =
     | SequenceBody (init,body) -> entry env e.pos; ignore (expr env init); expr ?expected env body
     | LetBody (name,written,init,body) -> entry env e.pos;
       let initial=expr ?expected:written env init in
-      expr ?expected (extend env name (Value (Option.value written ~default:initial))) body
+      (* An unnamed slot holds a discarded statement value; no claim names it. *)
+      if name = "" then expr ?expected env body
+      else expr ?expected (extend env name (Value (Option.value written ~default:initial))) body
     | IfBody (result,c,a,b) -> entry env e.pos; ignore (expr env c);
       let left=expr ~expected:result (branch env c true) a in
       let right=expr ~expected:result (branch env c false) b in union left right in

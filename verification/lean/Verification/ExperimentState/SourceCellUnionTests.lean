@@ -14,7 +14,8 @@ private def record (T : Json) : Json := Json.mkObj
    ("call",toJson "unknown"),("construct",toJson "unknown"),("array",toJson "unknown")]
 private def union : Json := Json.mkObj [("top",toJson false),("atoms",toJson [record result,record null])]
 private def table : SourceTypes.Table := SourceTypes.initial ++
-  [[.refs [(valueField, [0,1,2])] [] []],[.refs [(valueField, [0])] [] []],[.arrs [([[0]],[0,1,2])] []]]
+  [[.refs [(valueField, [0,1,2])] [] []],[.refs [(valueField, [0])] [] []],[.arrs [([7],[[0]],[0,1,2])] []],
+   [.top]]
 private def read : Fragment.Expr := .read (24,27) valueField (.var (24,25) "cell")
 private def write : Fragment.Expr := .write (12,20) valueField (.var (12,13) "cell") (.var (19,20) "unit")
 private def withBody (body : Fragment.Expr) : Fragment.Fn :=
@@ -89,15 +90,17 @@ private def wrongClaims : SourceClaims.Function := {claims with
 
 -- The anonymous receiver slot shifts the named RHS parameter correctly. The
 -- assignment evaluates each operand once and returns its saved RHS value.
+-- Inside the closure, slot 0 is its own receiver, slot 1 the parameter and
+-- the captured cell slot 2.
 #guard match extractNormalizedFn table (source true) claims with
   | .error _ => false
   | .ok r => r.obligations.any fun q => q.pos == (12,20) &&
-      q.sequent.term == .letE (.var 1) (.letE (.var 1)
+      q.sequent.term == .letE (.var 2) (.letE (.var 2)
         (.letE (.write (.var 1) (.var 0)) (.var 1)))
 #guard match extractNormalizedFn table (source false) claims with
   | .error _ => false
   | .ok r => r.obligations.any fun q => q.pos == (24,27) &&
-      q.sequent.term == .letE (.var 1) (.read (.var 0))
+      q.sequent.term == .letE (.var 2) (.read (.var 0))
 
 -- Statement-entry observations name the captured binding. Nested closures and
 -- preceding expression statements add parameter and anonymous evaluation slots;
@@ -127,7 +130,7 @@ private def entryClaims (nested : Bool) (R : Ty Nat) : SourceClaims.Function :=
     (r.obligations.any fun q => q.pos == (23,24) && q.role == "heap-observation" &&
       q.sequent.context == [[0,1,2]] && q.context == [⟨"cell",none⟩]) &&
     (r.obligations.any fun q => q.pos == (24,27) &&
-      q.sequent.term == .letE (.var 3) (.read (.var 0)))
+      q.sequent.term == .letE (.var 5) (.read (.var 0)))
 -- A false entry environment cannot erase the Boolean-capable alternative,
 -- even when its separate contents observation is valid for the narrowed type.
 private def narrowedEntry : SourceClaims.Function :=

@@ -115,7 +115,7 @@ try {
   console.log("  SKJS refuses to export an optional parameter: OK");
 
   /** The arrow this file's closure interns, in one function's claims. */
-  const signature = (c: SourceClaims, name: string): Arrow => {
+  const signature = (c: SourceClaims, name: string): Arrow[1] => {
     const f = must(
       c.functions.find((g) => g.name === name),
       "the function's claims",
@@ -126,7 +126,7 @@ try {
       const row = c.types[must(labels[0], "a label")];
       const clause = row && row[0];
       if (clause && typeof clause !== "string" && "arrs" in clause)
-        return must(clause.arrs.arrows[0], "an arrow");
+        return must(clause.arrs.arrows[0], "an arrow")[1];
     }
     throw Error(`no arrow claim in ${name}`);
   };
@@ -234,7 +234,7 @@ try {
             for (const clause of row)
               if (typeof clause !== "string" && "arrs" in clause)
                 for (const arrow of clause.arrs.arrows)
-                  arrow[0] = arrow[0].map((labels) =>
+                  arrow[1][0] = arrow[1][0].map((labels) =>
                     labels.filter((l) => l !== 3),
                   );
         },

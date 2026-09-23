@@ -120,7 +120,7 @@ try {
           : "refs" in clause
             ? [clause.refs.first, ...clause.refs.rest].flatMap((fs) => fs.map(([, ls]) => ls))
             : "arrs" in clause
-              ? clause.arrs.arrows.flatMap(([As, B]) => [...As, B])
+              ? clause.arrs.arrows.flatMap(([Rt, [As, B]]) => [Rt, ...As, B])
               : [];
       assert(
         operands.every((A) => A.every((j) => j < i)),

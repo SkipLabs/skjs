@@ -39,6 +39,7 @@ and substitute_signature solution signature =
   let solution = List.filter (fun (identity,_) -> not (List.mem identity local)) solution in
   { quantified=List.map (fun q -> {q with bound=Option.map (substitute solution) q.bound})
       signature.quantified;
+    receiver=substitute solution signature.receiver;
     params=List.map (substitute solution) signature.params;
     variadic=Option.map (substitute solution) signature.variadic;
     result=substitute solution signature.result }
@@ -77,7 +78,7 @@ let upper_candidate = function
       (Some first) rest in
     Some (Option.value intersection ~default:first)
 
-let infer (signature:signature) actuals =
+let infer ?receiver (signature:signature) actuals =
   if signature.quantified=[] then unsupported "generic inference requires a quantified signature";
   let domains = match signature.variadic with
     | None when List.length signature.params = List.length actuals -> signature.params
@@ -101,11 +102,15 @@ let infer (signature:signature) actuals =
       Atoms [Shape {calls=[e];fields=[];elements=None}]
         when a.quantified=[] && e.quantified=[]
           && List.length a.params=List.length e.params ->
+      constrain e.receiver a.receiver;
       List.iter2 constrain e.params a.params;
       constrain a.result e.result
       | _ -> ()) (* Unsupported structure contributes no guessed constraints;
                     Lean still checks the entire substituted signature. *) in
   List.iter2 constrain actuals domains;
+  (* The receiver is an input like the actuals: the one passed must fit the
+     signature's. *)
+  Option.iter (fun r -> constrain r signature.receiver) receiver;
   List.iter (fun (q:quantifier) ->
     Option.iter (constrain (Rigid q.identity)) q.bound) signature.quantified;
   let saturate () =

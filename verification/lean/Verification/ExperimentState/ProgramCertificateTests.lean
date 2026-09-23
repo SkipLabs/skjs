@@ -4,25 +4,28 @@ import Verification.ExperimentState.ProgramTypingTests
 namespace Verification.ExperimentState.ProgramCertificateTests
 open ProgramTyping ProgramTypingTests ProgramCertificates
 
-private def leaf (Γ : List (Ty (Fin 6))) (t : Tm) (A : Ty (Fin 6)) (r : Rule (Fin 6)) : Evidence (Fin 6) :=
+private def leaf (Γ : List (Ty (Fin 7))) (t : Tm) (A : Ty (Fin 7)) (r : Rule (Fin 7)) : Evidence (Fin 7) :=
   .node ⟨Γ, t, A⟩ r []
-private def varE (Γ : List (Ty (Fin 6))) (i : Nat) (A : Ty (Fin 6)) := leaf Γ (.var i) A .var
-private def subE (e : Evidence (Fin 6)) (B : Ty (Fin 6)) (p : PositiveCertificates.Proof (Fin 6)) : Evidence (Fin 6) :=
+private def varE (Γ : List (Ty (Fin 7))) (i : Nat) (A : Ty (Fin 7)) := leaf Γ (.var i) A .var
+private def subE (e : Evidence (Fin 7)) (B : Ty (Fin 7)) (p : PositiveCertificates.Proof (Fin 7)) : Evidence (Fin 7) :=
   .node ⟨(claim e).context, (claim e).term, B⟩ (.sub p) [e]
-private def appE (f a : Evidence (Fin 6)) (B : Ty (Fin 6)) : Evidence (Fin 6) :=
-  .node ⟨(claim f).context, .app (claim f).term (claim a).term, B⟩ .app [f,a]
-private def letE (a b : Evidence (Fin 6)) : Evidence (Fin 6) :=
+/-- A plain call: the callee, the `undefined` receiver at label 6, the actual. -/
+private def appE (f a : Evidence (Fin 7)) (B : Ty (Fin 7)) : Evidence (Fin 7) :=
+  .node ⟨(claim f).context, .app (claim f).term (claim a).term, B⟩ .app
+    [f, .node ⟨(claim f).context, .undef, [6]⟩ .undef [], a]
+private def letE (a b : Evidence (Fin 7)) : Evidence (Fin 7) :=
   .node ⟨(claim a).context, .letE (claim a).term (claim b).term, (claim b).type⟩ .letE [a,b]
 
-def dispatchEvidence : Evidence (Fin 6) :=
+/-- Each body sees the receiver (label 6), then its parameter, then the cell. -/
+def dispatchEvidence : Evidence (Fin 7) :=
   .node ⟨[[2]], dispatch, [3]⟩ .funE
-    [.node ⟨[[0],[2]], .ite (.test .isNul (.var 0)) (.read (.var 1)) .nul, [1]⟩ .ifTrue
-      [.node ⟨[[0],[2]], .read (.var 1), [1]⟩ .read [varE [[0],[2]] 1 [2]]],
-     .node ⟨[[1],[2]], .ite (.test .isNul (.var 0)) (.read (.var 1)) .nul, [0]⟩ .ifFalse
-      [leaf [[1],[2]] .nul [0] .nul]]
+    [.node ⟨[[6],[0],[2]], .ite (.test .isNul (.var 1)) (.read (.var 2)) .nul, [1]⟩ .ifTrue
+      [.node ⟨[[6],[0],[2]], .read (.var 2), [1]⟩ .read [varE [[6],[0],[2]] 2 [2]]],
+     .node ⟨[[6],[1],[2]], .ite (.test .isNul (.var 1)) (.read (.var 2)) .nul, [0]⟩ .ifFalse
+      [leaf [[6],[1],[2]] .nul [0] .nul]]
 
 /-- Explicit data, with no embedded Lean typing proof. -/
-def programEvidence : Evidence (Fin 6) :=
+def programEvidence : Evidence (Fin 7) :=
   letE (.node ⟨[], .alloc .tru, [2]⟩ .alloc [leaf [] .tru [1] .tru])
     (letE dispatchEvidence
       (letE (varE [[3],[2]] 1 [2])
@@ -48,8 +51,14 @@ private def wrongContext (Γ : List (Ty ι)) : Evidence ι → Evidence ι
 #guard !(checkTree G (dropPremise dispatchEvidence))
 #guard !(checkTree G (wrongContext [[1]] dispatchEvidence))
 #guard !(checkTree G (wrongRule .ifFalse
-  (.node ⟨[[0],[2]], .ite (.test .isNul (.var 0)) (.read (.var 1)) .nul, [1]⟩ .ifTrue
-    [.node ⟨[[0],[2]], .read (.var 1), [1]⟩ .read [varE [[0],[2]] 1 [2]]])))
+  (.node ⟨[[6],[0],[2]], .ite (.test .isNul (.var 1)) (.read (.var 2)) .nul, [1]⟩ .ifTrue
+    [.node ⟨[[6],[0],[2]], .read (.var 2), [1]⟩ .read [varE [[6],[0],[2]] 2 [2]]])))
+-- A body checked without its receiver slot reads the wrong binder.
+#guard !(checkTree G (.node ⟨[[2]], dispatch, [3]⟩ .funE
+    [.node ⟨[[0],[2]], .ite (.test .isNul (.var 1)) (.read (.var 2)) .nul, [1]⟩ .ifTrue
+      [.node ⟨[[0],[2]], .read (.var 2), [1]⟩ .read [varE [[0],[2]] 2 [2]]],
+     .node ⟨[[1],[2]], .ite (.test .isNul (.var 1)) (.read (.var 2)) .nul, [0]⟩ .ifFalse
+      [leaf [[1],[2]] .nul [0] .nul]]))
 
 -- An invented write or subtype fact cannot be supplied as evidence.
 #guard !(checkTree G (.node ⟨[[2]], .write (.var 0) .nul, [0]⟩ .write
@@ -59,8 +68,8 @@ private def wrongContext (Γ : List (Ty ι)) : Evidence ι → Evidence ι
 
 -- The empty overload imposes no body obligations, but cannot bypass scope.
 private def EmptyG : PositiveGraphs.NormalGraph (Fin 1) := fun _ => [.arrs [] []]
-private def openEvidence : Evidence (Fin 1) := .node ⟨[], .funE (.var 1), [0]⟩ .funE []
+private def openEvidence : Evidence (Fin 1) := .node ⟨[], .funE (.var 2), [0]⟩ .funE []
 #guard checkTree EmptyG openEvidence
-#guard !(check EmptyG (.funE (.var 1)) [0] openEvidence)
+#guard !(check EmptyG (.funE (.var 2)) [0] openEvidence)
 
 end Verification.ExperimentState.ProgramCertificateTests

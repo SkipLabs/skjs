@@ -5,7 +5,7 @@ namespace Verification.ExperimentState.BooleanConditionalTests
 open Lean ProgramTyping ProgramCertificates ControlFlow RequestJson PositiveGraphs
 
 private def types : List (List (PositiveNormalization.Clause (List Nat))) :=
-  [[.bool],[.nul],[.refs [(valueField, [0])] [] []],[.arrs [([[1]],[0])] []]]
+  [[.bool],[.nul],[.refs [(valueField, [0])] [] []],[.arrs [([4],[[1]],[0])] []],[.top],[.undef]]
 private def ok (r : Except String α) : Bool := match r with | .ok _ => true | .error _ => false
 private def roundtrip (r : Request) : Except String Unit := do
   let input ← Json.parse (toJson r).compress
@@ -133,7 +133,7 @@ private def nullProof : Evidence Nat :=
 -- A captured cell is read when the closure is called, after an alias write.
 private def captureProgram (q : Bool) : Program :=
   [⟨.alloc .tru,.bind 1⟩,
-   ⟨.funE (.ite (.read (.var 1)) .tru .fls),.bind 2⟩,
+   ⟨.funE (.ite (.read (.var 2)) .tru .fls),.bind 2⟩,
    ⟨.write (.var 1) (if q then .tru else .fls),.effect 3⟩,
    ⟨.app (.var 0) .nul,.ret⟩]
 private def captureRequest (q : Bool) : Request :=

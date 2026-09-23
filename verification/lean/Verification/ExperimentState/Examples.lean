@@ -29,7 +29,8 @@ theorem Rf_callable {n W t} (h : Rf n W t) : Callable t :=
 
 def hFn : Tm := .fn 0 .nul
 
-def kFn : Tm := .fn 0 (.app (.var 0) hFn)
+/-- Slot 0 is the receiver, slot 1 the argument. -/
+def kFn : Tm := .fn 0 (.app (.var 1) hFn)
 
 theorem Rf_adm : Adm Rf := fix_adm _ (arrowT_contractive nulT) (fun _ _ => arrowT_adm _ _)
 
@@ -46,6 +47,11 @@ theorem kFn_in_Rf (n : Nat) (W : WorldT n) : Rf n W kFn := by
   apply (Rf_unfold n W kFn).mpr
   apply fn_intro _ _ _ (by simp [Scoped, hFn])
   intro j hj U hx hu h hh a ha
+  -- The argument is a closed value, so binding the receiver after it leaves it.
+  have hs : Scoped 0 a := (Rf_callable ha).invocable.scoped
+  have ht : subst 0 Tm.undef (subst 1 a (.app (.var 1) hFn)) = .app a hFn := by
+    simp [subst, hFn, subst_above hs (Nat.zero_le 0)]
+  rw [ht]
   exact app_elim Rf_adm Rf_valOnly ((Rf_unfold j U a).mp ha) (hFn_in_Rf j U) hu hh
 
 /-! ## A closure over a mutable cell -/
@@ -87,9 +93,10 @@ Allocate a cell, change it through one reference, read it through a closure that
 captured another. -/
 
 
-def inner : Tm := .fn 0 (.read (.var 1))
+/-- Under `[this, x]` and then the enclosing frame `[this, r]`: `r` is slot 3. -/
+def inner : Tm := .fn 0 (.read (.var 3))
 
-def body : Tm := .app inner (.write (.var 0) .fls)
+def body : Tm := .app inner (.write (.var 1) .fls)
 
 def prog : Tm := .app (.fn 0 body) (.alloc .tru)
 

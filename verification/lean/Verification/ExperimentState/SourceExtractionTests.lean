@@ -255,8 +255,10 @@ theorem cell_assignment_trace : ControlFlow.Execution cellProgram 24 []
 
 #print axioms cell_assignment_trace
 
+/-- A signature indifferent to its receiver states `unknown` for it. -/
+private def unknownWire : Json := Json.mkObj [("top",toJson true),("atoms",toJson ([] : List Json))]
 private def functionWire : Json := Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj
-  [("a",toJson "function"),("params",toJson [wireTy ⟨false,[.null]⟩]),
+  [("a",toJson "function"),("this",unknownWire),("params",toJson [wireTy ⟨false,[.null]⟩]),
    ("result",wireTy ⟨false,[.bool]⟩),("construct",toJson "unknown"),("array",toJson "unknown")]])]
 private def captureFn : Fragment.Fn :=
   ⟨"capture",(0,1),[],wireTy ⟨false,[.bool]⟩,
@@ -285,7 +287,7 @@ private def captureProgram : ControlFlow.Program :=
    ⟨.nul,.bind 1⟩, ⟨.var 1,.bind 2⟩,
    ⟨.var 0,.bind ⟨3,some [3,4,5]⟩⟩, ⟨.write (.var 1) (.var 0),.effect 4⟩,
    ⟨.fls,.bind 5⟩, ⟨.var 0,.bind 6⟩, ⟨.var 0,.effect 7⟩, ⟨.var 1,.bind 8⟩,
-   ⟨.var 0,.effect 9⟩, ⟨.funE (.read (.var 1)),.bind 10⟩,
+   ⟨.var 0,.effect 9⟩, ⟨.funE (.read (.var 2)),.bind 10⟩,
    ⟨.var 0,.effect 11⟩, ⟨.alloc (.var 0),.bind ⟨12,some [0]⟩⟩,
    ⟨.tru,.bind 13⟩, ⟨.nul,.effect 14⟩]
 #guard captureRequest.program == captureProgram
@@ -324,7 +326,7 @@ private def branchCaptureClaims : Fragment.Claims :=
     envs := captureClaims.envs ++ [(40,H),(41,H),(45,H)]
     exprs := captureClaims.exprs ++ [((42,43),t),((46,47),b)] }
 private def branchCaptureProgram : ControlFlow.Program :=
-  captureProgram.set 11 ⟨.funE (.ite (.read (.var 1)) .tru .fls),.bind 10⟩
+  captureProgram.set 11 ⟨.funE (.ite (.read (.var 2)) .tru .fls),.bind 10⟩
 #guard is ((extractFn branchCaptureFn branchCaptureClaims).map (·.program)) branchCaptureProgram
 #guard ok (do
   let r ← extractFn branchCaptureFn branchCaptureClaims
@@ -369,10 +371,10 @@ private def joinedCaptureClaims : Fragment.Claims :=
     exprs := captureClaims.exprs ++ [((44,47),t),((44,45),cellWire),((46,47),t),
       ((51,53),wireTy ⟨false,[.bool]⟩),((51,52),cellWire)] }
 private def joinedCaptureProgram : ControlFlow.Program :=
-  let assignment := Tm.letE (.var 1) (.letE .tru (.letE (.write (.var 1) (.var 0)) (.var 1)))
+  let assignment := Tm.letE (.var 2) (.letE .tru (.letE (.write (.var 1) (.var 0)) (.var 1)))
   captureProgram.set 11
-    ⟨.funE (.letE (.ite (.read (.var 1)) .nul (.letE assignment .nul))
-      (.read (.var 2))),.bind 10⟩
+    ⟨.funE (.letE (.ite (.read (.var 2)) .nul (.letE assignment .nul))
+      (.read (.var 3))),.bind 10⟩
 #guard is ((extractFn joinedCaptureFn joinedCaptureClaims).map (·.program)) joinedCaptureProgram
 #guard ok (do
   let r ← extractFn joinedCaptureFn joinedCaptureClaims
@@ -425,10 +427,10 @@ private def earlyCaptureClaims (q : Bool) : Fragment.Claims :=
       [((42,43),t),((46,49),b),((46,47),cellWire),((48,49),b),
        ((53,55),wireTy ⟨false,[.bool]⟩),((53,54),cellWire)] }
 private def earlyCaptureProgram (q : Bool) : ControlFlow.Program :=
-  let assignment := Tm.letE (.var 1) (.letE .fls (.letE (.write (.var 1) (.var 0)) (.var 1)))
+  let assignment := Tm.letE (.var 2) (.letE .fls (.letE (.write (.var 1) (.var 0)) (.var 1)))
   (captureProgram.set 6 ⟨if q then .tru else .fls,.bind 5⟩).set 11
-    ⟨.funE (.ite (.read (.var 1)) .tru
-      (.letE (.letE assignment .nul) (.read (.var 2)))),.bind 10⟩
+    ⟨.funE (.ite (.read (.var 2)) .tru
+      (.letE (.letE assignment .nul) (.read (.var 3)))),.bind 10⟩
 #guard [true,false].all fun q =>
   is ((extractFn (earlyCaptureFn q) (earlyCaptureClaims q)).map (·.program)) (earlyCaptureProgram q)
 #guard [true,false].all fun q => ok (do
@@ -489,7 +491,7 @@ private def writerClaims : Fragment.Claims :=
 private def writerProgram : ControlFlow.Program :=
   [⟨.var 0,.ret⟩, ⟨.app (.var 1) (.var 0),.bind ⟨0,some [0,3,4]⟩⟩,
    ⟨.nul,.bind 1⟩, ⟨.var 0,.bind 2⟩, ⟨.var 0,.effect 3⟩,
-   ⟨.funE (.letE (.var 1) (.letE .fls (.letE (.write (.var 1) (.var 0)) (.var 1)))),.bind 4⟩,
+   ⟨.funE (.letE (.var 2) (.letE .fls (.letE (.write (.var 1) (.var 0)) (.var 1)))),.bind 4⟩,
    ⟨.var 0,.effect 5⟩, ⟨.alloc (.var 0),.bind ⟨6,some [0]⟩⟩,
    ⟨.tru,.bind 7⟩, ⟨.nul,.effect 8⟩]
 #guard is ((extractFn writerFn writerClaims).map (·.program)) writerProgram
@@ -560,9 +562,9 @@ private def localWriterClaims : Fragment.Claims :=
       [((32,33),b),((36,39),B),((36,37),cellWire),((38,39),B),
        ((41,43),B),((41,42),cellWire)] }
 private def localWriterProgram : ControlFlow.Program :=
-  let write : Tm := .letE (.var 2) (.letE (.var 1) (.letE (.write (.var 1) (.var 0)) (.var 1)))
+  let write : Tm := .letE (.var 3) (.letE (.var 1) (.letE (.write (.var 1) (.var 0)) (.var 1)))
   writerProgram.set 5
-    ⟨.funE (.letE .fls (.letE write (.read (.var 3)))),.bind 4⟩
+    ⟨.funE (.letE .fls (.letE write (.read (.var 4)))),.bind 4⟩
 #guard is ((extractFn localWriterFn localWriterClaims).map (·.program)) localWriterProgram
 
 /-- A saved local is used by the write and survives the anonymous effect slot. -/
@@ -618,8 +620,9 @@ private def lowered (j : Json) : Except String (Ty Nat) :=
   (Fragment.translate j).run' SourceTypes.initial
 #guard is (lowered (joined [wireTy ⟨false,[.null]⟩,cellWire])) [0,4]
 #guard is (lowered (joined [cellWire,wireTy ⟨false,[.null]⟩,cellWire])) [0,4]
-#guard is (lowered (joined [wireTy ⟨false,[.null]⟩,functionWire])) [0,4]
-#guard is (lowered (joined [cellWire,functionWire])) [4,5]
+-- A function type's receiver is interned before its signature.
+#guard is (lowered (joined [wireTy ⟨false,[.null]⟩,functionWire])) [0,5]
+#guard is (lowered (joined [cellWire,functionWire])) [4,6]
 #guard !ok (lowered (joined [cellWire,wireTy ⟨false,[.str]⟩]))
 -- `unknown` is semantic top: one interned label, past the four fixed ones.
 #guard is (lowered (Json.mkObj [("top",toJson true),("atoms",toJson ([] : List Json))])) [4]
@@ -675,7 +678,7 @@ private def cellOf (A : Claim.Ty) : Json := Json.mkObj [("top",toJson false),("a
    ("indexes",Json.mkObj [("string",toJson "absent"),("number",toJson "absent"),("symbol",toJson "absent")]),
    ("call",toJson "unknown"),("construct",toJson "unknown"),("array",toJson "unknown")]])]
 private def arrowOf (D R : Claim.Ty) : Json := Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj
-  [("a",toJson "function"),("params",toJson [wireTy D]),
+  [("a",toJson "function"),("this",unknownWire),("params",toJson [wireTy D]),
    ("result",wireTy R),("construct",toJson "unknown"),("array",toJson "unknown")]])]
 private def rowOf (j : Json) : Option (List (Clause (List Nat))) :=
   ((Fragment.translate j).run SourceTypes.initial).toOption.bind fun (A,T) => A.head?.bind (T[·]?)
@@ -686,9 +689,9 @@ private def rowOf (j : Json) : Option (List (Clause (List Nat))) :=
   == some [.refs [(valueField, [0])] [[(valueField,[1])],[(valueField,[1,2])]] []]
 private def trueToNull := arrowOf ⟨false,[.boolLit true]⟩ ⟨false,[.null]⟩
 private def falseToNull := arrowOf ⟨false,[.boolLit false]⟩ ⟨false,[.null]⟩
-#guard rowOf (conjoined trueToNull [falseToNull]) == some [.arrs [([[1]],[0]),([[2]],[0])] []]
-#guard rowOf (conjoined falseToNull [trueToNull]) == some [.arrs [([[2]],[0]),([[1]],[0])] []]
-#guard rowOf (conjoined trueToNull [trueToNull]) == some [.arrs [([[1]],[0])] []]
+#guard rowOf (conjoined trueToNull [falseToNull]) == some [.arrs [([4],[[1]],[0]),([4],[[2]],[0])] []]
+#guard rowOf (conjoined falseToNull [trueToNull]) == some [.arrs [([4],[[2]],[0]),([4],[[1]],[0])] []]
+#guard rowOf (conjoined trueToNull [trueToNull]) == some [.arrs [([4],[[1]],[0])] []]
 
 -- A lambda claimed at two signatures is proved once per signature; the call
 -- resolves to the first signature admitting its argument.
@@ -811,8 +814,8 @@ private def nullishAssignmentClaims : Fragment.Claims :=
 private def scheduledParameters : List (String × Json) :=
   ["first", "second", "before", "later", "after"].map (·, Json.null)
 private def scheduledDefaults : List (Nat × Fragment.Expr) :=
-  [(0, .lambda (1,2) [] [] [] false Json.null (.var (1,2) "second")),
-   (1, .lambda (3,4) [] [] [] false Json.null (.var (3,4) "later")),
+  [(0, .lambda (1,2) none [] [] [] false Json.null (.var (1,2) "second")),
+   (1, .lambda (3,4) none [] [] [] false Json.null (.var (3,4) "later")),
    (2, .write (5,6) "value" (.var (5,6) "cell") (.lit (5,6) (.vbool false))),
    (3, .read (7,8) "value" (.var (7,8) "cell")),
    (4, .write (9,10) "value" (.var (9,10) "cell") (.lit (9,10) (.vbool true)))]
@@ -824,6 +827,6 @@ private def scheduledDefaults : List (Nat × Fragment.Expr) :=
     .call (7,8) (.var (7,8) "first") [] [] else e)))
 #guard !ok (Fragment.parameterOrder scheduledParameters
   (scheduledDefaults.map fun (i,e) => (i, if i == 1 then
-    .lambda (3,4) [] [] [] false Json.null (.var (3,4) "first") else e)))
+    .lambda (3,4) none [] [] [] false Json.null (.var (3,4) "first") else e)))
 
 end Verification.ExperimentState.SourceExtractionTests

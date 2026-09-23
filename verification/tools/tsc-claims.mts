@@ -61,6 +61,7 @@ import type {
 } from "./source-claims.mts";
 import {
   numberOfBits,
+  type Arrow,
   type Fields,
   type Labels,
   type RestArrow,
@@ -137,6 +138,7 @@ function walkExpr(e: Expr, out: Sites): void {
   switch (e.k) {
     case "id":
     case "lit":
+    case "this":
       addExpr(out, e.pos, e.k);
       return;
     case "withValue":
@@ -225,8 +227,15 @@ function walkExpr(e: Expr, out: Sites): void {
       walkExpr(e.receiver, out);
       for (const arg of e.args) walkExpr(arg, out);
       return;
+    case "applyWithReceiver":
+      addExpr(out, e.pos, e.k);
+      walkExpr(e.callee, out);
+      walkExpr(e.receiver, out);
+      if (e.list) walkExpr(e.list, out);
+      return;
     case "apply":
-      addExpr(out, e.pos, "apply");
+    case "invoke":
+      addExpr(out, e.pos, e.k);
       walkExpr(e.callee, out);
       for (const arg of e.args) walkExpr(arg, out);
       return;
@@ -530,6 +539,8 @@ type ArrowRead =
    * reads the type the checker reports. */
   | {
       ok: true;
+      /** The declared `this` type; none where any receiver is accepted. */
+      receiver?: Type;
       domains: Type[];
       defaulted: boolean[];
       /** The contract of each actual after `domains`, for a `...rest: T[]`. */
@@ -543,8 +554,8 @@ const admitUndefined = (labels: number[]): number[] =>
   labels.includes(3) ? labels : [...labels, 3].sort((a, b) => a - b);
 
 /**
- * One signature with ordered required parameters, no
- * type parameters, no `this` parameter.
+ * One signature with ordered required parameters and no type parameters. A
+ * `this` parameter is the receiver a call must pass.
  */
 function tryArrow(type: Type, checker: Checker): ArrowRead {
   const sigs = checker.getSignaturesOfType(type, SignatureKind.Call);
@@ -556,8 +567,11 @@ function tryArrow(type: Type, checker: Checker): ArrowRead {
     return { ok: false, reason: "overloaded-arrow" };
   const sig = sigs[0];
   if (sig.typeParameters?.length) return { ok: false, reason: "generic-arrow" };
-  if (sig.thisParameter !== undefined)
-    return { ok: false, reason: "this-param" };
+  const thisParameter = sig.getThisParameter();
+  const receiver =
+    thisParameter === undefined
+      ? undefined
+      : must(checker.getTypeOfSymbol(thisParameter), "receiver-type");
   let parameterCount = sig.parameters.length;
   let tail: Type[] = [];
   let element: Type | undefined;
@@ -601,6 +615,7 @@ function tryArrow(type: Type, checker: Checker): ArrowRead {
       : [];
   return {
     ok: true,
+    ...(receiver ? { receiver } : {}),
     domains: sig.parameters
       .slice(0, parameterCount)
       .map((_, i) => must(checker.getParameterType(sig, i), "parameter-type"))
@@ -685,7 +700,7 @@ const refusals = (results: (RecordRead | ArrowRead)[]): string[] =>
 
 /** The fixed and the variadic signatures of one call contract. The variadic
 list is left out when empty, which is its one spelling of none. */
-type CallRow = { arrows: [number[][], number[]][]; variadic?: RestArrow[] };
+type CallRow = { arrows: Arrow[]; variadic?: RestArrow[] };
 
 /** An intersection of arrows, in declaration order, exact repeats dropped. */
 function tryArrowIntersection(
@@ -703,7 +718,7 @@ function tryArrowIntersection(
       throw new Refusal(reason, checker.typeToString(type));
     return null;
   }
-  const arrows: [number[][], number[]][] = [];
+  const arrows: Arrow[] = [];
   const variadic: RestArrow[] = [];
   for (const r of read) {
     const row = callRow(r, checker, types, fuel);
@@ -730,9 +745,13 @@ function callRow(
     return r.defaulted[i] ? admitUndefined(labels) : labels;
   });
   const result = translateType(r.result, checker, types, false, fuel - 1);
-  if (!r.rest) return { arrows: [[domains, result]] };
+  // A signature without a `this` parameter accepts any receiver.
+  const receiver = r.receiver
+    ? translateType(r.receiver, checker, types, true, fuel - 1)
+    : [internRow(types, ["top"])];
+  if (!r.rest) return { arrows: [[receiver, [domains, result]]] };
   const element = translateType(r.rest, checker, types, false, fuel - 1);
-  return { arrows: [], variadic: [[domains, [element, result]]] };
+  return { arrows: [], variadic: [[receiver, [domains, [element, result]]]] };
 }
 
 // Arrow operands can contain further arrows, with bounded recursion for
@@ -1366,7 +1385,8 @@ function declarationExprKind(node: Expression): string {
     return declarationExprKind(node.expression);
   if (ts.isPropertyAccessExpression(node)) return "read";
   if (ts.isObjectLiteralExpression(node)) return "alloc";
-  if (ts.isArrowFunction(node)) return "lambda";
+  if (ts.isArrowFunction(node) || ts.isFunctionExpression(node))
+    return "lambda";
   return "other";
 }
 
@@ -1456,7 +1476,8 @@ function tsExprKind(node: Expression): string {
     return "lit";
   if (ts.isPropertyAccessExpression(node)) return "read";
   if (ts.isObjectLiteralExpression(node)) return "alloc";
-  if (ts.isArrowFunction(node)) return "lambda";
+  if (ts.isArrowFunction(node) || ts.isFunctionExpression(node))
+    return "lambda";
   if (
     ts.isBinaryExpression(node) &&
     node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
@@ -1485,6 +1506,10 @@ function typeForExprSite(
   declCache: DeclCache | null,
   sf: SourceFile,
 ): number[] {
+  // The parser records a parenthesized expression at its outer span; its
+  // value, and so its type, is the inner expression's.
+  if (ts.isParenthesizedExpression(node))
+    return typeForExprSite(kind, node.expression, checker, types, declCache, sf);
   if (kind === "read") {
     return readLabels(
       asKind(node, ts.isPropertyAccessExpression, kind),
@@ -1514,6 +1539,14 @@ function typeForExprSite(
     const rhs = asKind(assignment, ts.isBinaryExpression, kind).right;
     return typeForExprSite(tsExprKind(rhs), rhs, checker, types, declCache, sf);
   }
+  // A method is a function expression written as a member: it has no
+  // contextual type of its own, and its type is its signature.
+  if (kind === "lambda" && ts.isMethodDeclaration(node))
+    return translateType(
+      must(checker.getTypeAtLocation(node), "expression-type"),
+      checker,
+      types,
+    );
   if (kind === "alloc" || kind === "lambda") {
     const ctx = checker.getContextualType(asKind(node, ts.isExpression, kind));
     if (ctx && !isUnionType(ctx)) {
@@ -1854,6 +1887,105 @@ function processGenericFunction(
   };
 }
 
+/**
+ * The quantified closures a function declares, as the claim language states
+ * them: a closure's binder is `{param}`, its type a `{scheme}` with its
+ * receiver, and a call of it names the instantiation it uses. TypeScript's
+ * `.call` forgets the binder, so an instantiation is read from what the call
+ * passes, the receiver and the actuals, at the positions that are a binder.
+ * The verifier checks the body once under the binders and each call against
+ * its own substitution; nothing here is taken on trust.
+ */
+interface ClosureSchemes {
+  claimOf(t: Type): ClaimType;
+  call(node: Node): { type: ClaimType; instantiate: { name: string; type: ClaimType }[] } | null;
+}
+
+function closureSchemes(fnNode: FunctionDeclaration, checker: Checker, types: Row[]): ClosureSchemes | null {
+  const binders = new Map<number, string>();
+  const visit = (n: Node): void => {
+    if ((ts.isFunctionExpression(n) || ts.isArrowFunction(n)) && n.typeParameters?.length)
+      for (const tp of n.typeParameters) {
+        const symbol = checker.getSymbolAtLocation(tp.name);
+        if (!symbol) throw new Refusal("generic-parameter-symbol", tp.name.text);
+        binders.set(symbol.id, tp.name.text);
+      }
+    n.forEachChild(visit);
+  };
+  if (fnNode.body) visit(fnNode.body);
+  if (!binders.size) return null;
+  const binderOf = (t: Type): string | undefined => {
+    if (!(t.flags & TypeFlags.TypeParameter)) return undefined;
+    const symbol = t.getSymbol();
+    return symbol ? binders.get(symbol.id) : undefined;
+  };
+  const top = (): number[] => [internRow(types, ["top"])];
+  const schemeOf = (t: Type): ClaimType | null => {
+    const sigs = checker.getSignaturesOfType(t, SignatureKind.Call);
+    if (sigs.length !== 1) return null;
+    const sig = sigs[0];
+    const tps = sig.getTypeParameters();
+    if (!tps.length || tps.some((tp) => !binderOf(tp))) return null;
+    const thisParameter = sig.getThisParameter();
+    return {
+      scheme: {
+        typeParams: tps.map((tp) => {
+          const bound = checker.getConstraintOfTypeParameter(tp);
+          return { name: binderOf(tp) as string, bound: bound ? claimOf(bound) : null };
+        }),
+        this: thisParameter
+          ? claimOf(must(checker.getTypeOfSymbol(thisParameter), "receiver-type"))
+          : top(),
+        params: sig.getParameters().map((_, i) =>
+          claimOf(must(checker.getParameterType(sig, i), "parameter-type"))),
+        rest: null,
+        result: claimOf(must(checker.getReturnTypeOfSignature(sig), "return-type")),
+      },
+    };
+  };
+  const claimOf = (t: Type): ClaimType => {
+    const name = binderOf(t);
+    if (name) return { param: name };
+    return schemeOf(t) ?? translateType(t, checker, types);
+  };
+  const call = (node: Node) => {
+    // `f.call(r, ...)`, `f.apply(r, [...])` or a plain `f(...)`.
+    if (!ts.isCallExpression(node)) return null;
+    let target: Expression = node.expression;
+    let receiver: Expression | undefined;
+    let actuals: readonly Expression[] = node.arguments;
+    if (ts.isPropertyAccessExpression(target) && target.name.text === "call") {
+      receiver = node.arguments[0];
+      actuals = node.arguments.slice(1);
+      target = target.expression;
+    }
+    const scheme = schemeOf(must(checker.getTypeAtLocation(target), "callee-type"));
+    if (!scheme || !("scheme" in scheme)) return null;
+    const { typeParams, this: self, params, result } = scheme.scheme;
+    const sigma = new Map<string, number[]>();
+    const bind = (formal: ClaimType, actual: Type) => {
+      if (!Array.isArray(formal) && "param" in formal && !sigma.has(formal.param))
+        sigma.set(formal.param, translateType(actual, checker, types));
+    };
+    // A plain call passes `undefined`, label 3.
+    if (receiver) bind(self, must(checker.getTypeAtLocation(receiver), "receiver-type"));
+    else if (!Array.isArray(self) && "param" in self) sigma.set(self.param, [3]);
+    params.forEach((formal, i) => {
+      const a = actuals[i];
+      if (a) bind(formal, must(checker.getTypeAtLocation(a), "argument-type"));
+    });
+    if (typeParams.some((tp) => !sigma.has(tp.name)))
+      throw new Refusal("uninferred-instantiation", checker.typeToString(must(checker.getTypeAtLocation(node), "call-type")));
+    const substitute = (c: ClaimType): ClaimType =>
+      !Array.isArray(c) && "param" in c ? (sigma.get(c.param) ?? c) : c;
+    return {
+      type: substitute(result),
+      instantiate: typeParams.map((tp) => ({ name: tp.name, type: sigma.get(tp.name) as number[] })),
+    };
+  };
+  return { claimOf, call };
+}
+
 function processFunction(
   fnJson: FunctionAst,
   fnNode: FunctionDeclaration,
@@ -1901,6 +2033,11 @@ function processFunction(
 
   const sites = functionSites(fnJson); // may throw; the caller catches
   const declCache: DeclCache = new Map(); // one function's memo
+  const schemes = closureSchemes(fnNode, checker, types);
+  // A site whose type is, or mentions, a quantified closure's binder is stated
+  // in the claim language; every other site as before.
+  const generic = (e: unknown) =>
+    e instanceof Refusal && (e.reason === "generic-arrow" || e.reason === "generic");
 
   const entries: FunctionClaims["entries"] = [];
   for (const start of Array.from(sites.entries).sort((a, b) => a - b)) {
@@ -1918,17 +2055,18 @@ function processFunction(
     const bindings: FunctionClaims["entries"][number]["bindings"] = [];
     for (const b of envAtEntry(stmtNode, start, checker, sf)) {
       try {
+        let type: ClaimType;
+        try {
+          type = bindingLabelsAtEntry(stmtNode, b, checker, sf, types, declCache);
+        } catch (e) {
+          if (!schemes || !generic(e)) throw e;
+          type = schemes.claimOf(
+            must(checker.getTypeOfSymbolAtLocation(b.sym, stmtNode), "binding-type"));
+        }
         bindings.push({
           name: b.name,
-          type: bindingLabelsAtEntry(
-            stmtNode,
-            b,
-            checker,
-            sf,
-            types,
-            declCache,
-          ),
-          current: entryFieldClaims(stmtNode, b, checker, types),
+          type,
+          current: Array.isArray(type) ? entryFieldClaims(stmtNode, b, checker, types) : null,
         });
       } catch (e) {
         omissions.push(
@@ -1955,11 +2093,19 @@ function processFunction(
       continue;
     }
     try {
-      expressions.push({
-        pos,
-        type: typeForExprSite(kind, node, checker, types, declCache, sf),
-        current: null,
-      });
+      const call = schemes ? schemes.call(node) : null;
+      if (call) {
+        expressions.push({ pos, type: call.type, current: null, instantiate: call.instantiate });
+        continue;
+      }
+      let type: ClaimType;
+      try {
+        type = typeForExprSite(kind, node, checker, types, declCache, sf);
+      } catch (e) {
+        if (!schemes || !generic(e)) throw e;
+        type = schemes.claimOf(must(checker.getTypeAtLocation(node), "expression-type"));
+      }
+      expressions.push({ pos, type, current: null });
     } catch (e) {
       omissions.push(omissionRecord(name, { kind: "expr", pos }, e));
     }

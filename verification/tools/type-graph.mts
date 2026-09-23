@@ -4,7 +4,9 @@
  * simultaneous requirements (including all arrows of an overload).
  */
 export type Labels = number[];
-export type Arrow = [domains: Labels[], result: Labels];
+/** A signature: the receiver a call may pass, then the parameters and the
+ * result. A signature indifferent to its receiver names an unknown row. */
+export type Arrow = [receiver: Labels, [domains: Labels[], result: Labels]];
 /** An object contract: one label list per named field, in the order the
  * producer wrote them. Fields a contract does not name are unconstrained. */
 export type Fields = [name: string, labels: Labels][];
@@ -45,7 +47,10 @@ export type Clause =
         variadic?: RestArrow[];
       };
     };
-export type RestArrow = [domains: Labels[], [element: Labels, result: Labels]];
+export type RestArrow = [
+  receiver: Labels,
+  [domains: Labels[], [element: Labels, result: Labels]],
+];
 export type Row = Clause[];
 export type TypeGraph = Row[];
 
@@ -125,7 +130,10 @@ export function decodeGraph(value: unknown): TypeGraph {
   const labels = (v: unknown) => decodeLabels(v, rows.length);
   const arrows = (v: unknown) =>
     array(v).forEach((a) => {
-      const pair = array(a);
+      const sig = array(a);
+      if (sig.length !== 2) throw Error("expected a receiver and a signature");
+      labels(sig[0]);
+      const pair = array(sig[1]);
       if (pair.length !== 2) throw Error("expected arrow pair");
       array(pair[0]).forEach(labels);
       labels(pair[1]);
@@ -136,7 +144,10 @@ export function decodeGraph(value: unknown): TypeGraph {
     if (!sigs.length)
       throw Error("an empty variadic list is written by omitting it");
     sigs.forEach((s) => {
-      const sig = array(s);
+      const outer = array(s);
+      if (outer.length !== 2) throw Error("expected a receiver and a signature");
+      labels(outer[0]);
+      const sig = array(outer[1]);
       if (sig.length !== 2) throw Error("expected a variadic signature");
       array(sig[0]).forEach(labels);
       const tail = array(sig[1]);
@@ -239,10 +250,13 @@ export const printGraph = (graph: TypeGraph): string =>
   JSON.stringify(decodeGraph(graph), null, 2);
 export const printLabels = (labels: Labels): string =>
   labels.length ? labels.map((l) => `#${l}`).join(" | ") : "never";
-const arrowText = ([domains, result]: Arrow) =>
-  `(${domains.map(printLabels).join(", ")}) => ${printLabels(result)}`;
-const restArrowText = ([domains, [element, result]]: RestArrow) =>
-  `(${[...domains.map(printLabels), `...(${printLabels(element)})[]`].join(", ")}) => ${printLabels(result)}`;
+/** The receiver is shown as a `this` parameter; the graph's own rows carry no
+ * name for "any receiver", so it is shown whatever it is. */
+const receiverText = (receiver: Labels) => `this: ${printLabels(receiver)}`;
+const arrowText = ([receiver, [domains, result]]: Arrow) =>
+  `(${[receiverText(receiver), ...domains.map(printLabels)].join(", ")}) => ${printLabels(result)}`;
+const restArrowText = ([receiver, [domains, [element, result]]]: RestArrow) =>
+  `(${[receiverText(receiver), ...domains.map(printLabels), `...(${printLabels(element)})[]`].join(", ")}) => ${printLabels(result)}`;
 const printTuple = (t: Tuple) =>
   `${t.readonly ? "readonly " : ""}[${[
     ...t.required.map(printLabels),

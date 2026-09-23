@@ -16,11 +16,11 @@ open ProgramTyping ProgramTypingTests ProgramCertificates PointClaims
 #guard !(checkEdge G [[0]] [[0]] [])
 #guard !(checkEdge G [[0]] [] [.subset])
 
-def writeEvidence : Evidence (Fin 6) :=
+def writeEvidence : Evidence (Fin 7) :=
   .node ⟨[[2]], .write (.var 0) .fls, [0]⟩ .write
     [.node ⟨[[2]], .var 0, [2]⟩ .var [], .node ⟨[[2]], .fls, [1]⟩ .fls []]
 
-def continuationEvidence : Evidence (Fin 6) :=
+def continuationEvidence : Evidence (Fin 7) :=
   .node ⟨[[0,1],[2]], .read (.var 1), [1]⟩ .read
     [.node ⟨[[0,1],[2]], .var 1, [2]⟩ .var []]
 

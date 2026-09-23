@@ -119,6 +119,10 @@ const ROLE: Record<string, { title: string; what: string }> = {
     title: "Closure entry",
     what: "The closure's entry context had to follow from what is in scope where it is written.",
   },
+  "method-receiver": {
+    title: "Method receiver",
+    what: "The receiver passed to this call, the object a method is read from or the first argument of `.call`, had to meet the receiver its signature requires.",
+  },
   "closure-result": {
     title: "Closure result",
     what: "The closure body had to establish the result its contract declares. The span may be the whole lambda rather than its body.",
@@ -165,15 +169,19 @@ function typeText(types: unknown, labels: unknown, depth = 3): string {
 }
 
 const unreachable = (value: never): never => { throw Error(`unhandled variant: ${JSON.stringify(value)}`); };
+// A receiver is shown as a `this` parameter, unless any receiver is accepted.
+const receiverText = (types: unknown, receiver: DirectType): string[] =>
+  receiver.kind === "top" ? [] : [`this: ${directTypeText(types,receiver)}`];
 function directTypeText(types: unknown, type: DirectType): string {
   switch (type.kind) {
     case "rigid": return type.name;
+    case "top": return "unknown";
     case "variadic":
-      return `(${[...type.params.map(p=>directTypeText(types,p)), `...Array<${directTypeText(types,type.element)}>`].join(", ")}) => ${directTypeText(types,type.result)}`;
+      return `(${[...receiverText(types,type.receiver), ...type.params.map(p=>directTypeText(types,p)), `...Array<${directTypeText(types,type.element)}>`].join(", ")}) => ${directTypeText(types,type.result)}`;
     case "array": return `Array<${directTypeText(types,type.element)}>`;
     case "ground": return typeText(types,type.labels);
     case "arrow":
-      return `(${type.params.map((p) => directTypeText(types,p)).join(", ")}) => ${directTypeText(types,type.result)}`;
+      return `(${[...receiverText(types,type.receiver), ...type.params.map((p) => directTypeText(types,p))].join(", ")}) => ${directTypeText(types,type.result)}`;
     default: return unreachable(type);
   }
 }

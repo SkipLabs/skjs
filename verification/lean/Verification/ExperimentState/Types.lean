@@ -284,6 +284,7 @@ structure Adm (T : Fam) : Prop where
   mono : ∀ (n : Nat) (W W' : WorldT n), WExt W W' → ∀ v, T n W v → T n W' v
 
 theorem nulT_adm : Adm nulT := ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+theorem undefT_adm : Adm undefT := ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
 
 theorem boolT_adm : Adm boolT := ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
 
@@ -588,6 +589,7 @@ be stored. -/
 def ValOnly (A : Fam) : Prop := ∀ (j : Nat) (W : WorldT j) (a : Val), A j W a → isVal a = true
 
 theorem nulT_valOnly : ValOnly nulT := by rintro _ _ _ rfl; rfl
+theorem undefT_valOnly : ValOnly undefT := by rintro _ _ _ rfl; rfl
 
 theorem boolT_valOnly : ValOnly boolT := by rintro _ _ _ (rfl | rfl) <;> rfl
 

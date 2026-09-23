@@ -34,10 +34,10 @@ let encode (proposal : Proposal.t) =
          variadic list is left out when empty, its one spelling of none. *)
       let fixed = List.filter (fun (a:Semantic.signature) -> a.variadic = None) shape.calls in
       let arrows = Array (List.map (fun (a:Semantic.signature) ->
-        Array [Array (List.map labels a.params);labels a.result]) fixed) in
+        Array [labels a.receiver;Array [Array (List.map labels a.params);labels a.result]]) fixed) in
       let variadic = List.filter_map (fun (a:Semantic.signature) ->
-        Option.map (fun element -> Array [Array (List.map labels a.params);
-          Array [labels element;labels a.result]]) a.variadic) shape.calls in
+        Option.map (fun element -> Array [labels a.receiver;Array [Array (List.map labels a.params);
+          Array [labels element;labels a.result]]]) a.variadic) shape.calls in
       let calls = ("arrows",arrows) :: (if variadic = [] then [] else ["variadic",Array variadic]) in
       let clause = match shape.elements with
         | Some sequence ->
@@ -69,7 +69,7 @@ let encode (proposal : Proposal.t) =
           List.exists (fun (f:Semantic.field) -> contains_rigid f.read
             || Option.fold ~none:false ~some:contains_rigid f.write) s.fields
           || List.exists (fun (a:Semantic.signature) ->
-              List.exists contains_rigid (a.result :: a.params @ Option.to_list a.variadic)
+              List.exists contains_rigid (a.receiver :: a.result :: a.params @ Option.to_list a.variadic)
               || List.exists (fun (q:Semantic.quantifier) ->
                   Option.fold ~none:false ~some:contains_rigid q.bound) a.quantified) s.calls
           || (match s.elements with None -> false | Some e ->
@@ -79,12 +79,14 @@ let encode (proposal : Proposal.t) =
   let rec claim_type = function
     | Rigid n -> Object ["param",String n.spelling]
     | Atoms [Shape {fields=[];calls=[signature];elements=None}]
-        when signature.quantified <> [] || List.exists contains_rigid (signature.result :: signature.params @ Option.to_list signature.variadic) ->
+        when signature.quantified <> [] || List.exists contains_rigid
+          (signature.receiver :: signature.result :: signature.params @ Option.to_list signature.variadic) ->
       let type_params = Array (List.map (fun (q:Semantic.quantifier) -> Object [
         "name",String q.identity.spelling;
         "bound",(match q.bound with None -> Null | Some t -> claim_type t)])
         signature.quantified) in
       Object ["scheme",Object ["typeParams",type_params;
+        "this",claim_type signature.receiver;
         "params",Array (List.map claim_type signature.params);
         "rest",(match signature.variadic with None -> Null | Some t -> claim_type t);
         "result",claim_type signature.result]]

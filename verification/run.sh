@@ -432,7 +432,10 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Local arrow receiver calls" node verification/tests/receiver-call.mts "$WORK/receiver_call.ast" "$WORK/receiver_call.claims" "$RECEIVER_CALL" "$VERIFIER"
   run_test "Initialized callable field" node verification/tests/function-field.mts "$WORK/callable_field.ast" "$WORK/callable_field.claims" "$CALLABLE_FIELD" "$VERIFIER"
   run_test "Callable shape guards" node verification/tests/callable-guards.mts "$WORK/callable_guards.ast" "$WORK/callable_guards.claims" "$CALLABLE_GUARDS" "$VERIFIER"
-  run_test "Function/object receiver boundary" node verification/tests/call-objects.mts
+  run_test "Function/object receivers" node verification/tests/call-objects.mts "$VERIFIER"
+  run_test "Receivers and methods" node verification/tests/methods.mts "$VERIFIER"
+  run_test "Apply argument lists" node verification/tests/apply.mts "$VERIFIER"
+  run_test "Generic receivers" node verification/tests/generic-receivers.mts "$VERIFIER"
   run_test "Call argument order" node verification/tests/callable-arity.mts "$WORK/callable_arity.ast" "$WORK/callable_arity.claims" "$CALLABLE_ARITY" "$VERIFIER"
   run_test "Callable thunks" node verification/tests/callable-thunks.mts "$WORK/callable_thunks.ast" "$WORK/callable_thunks.claims" "$CALLABLE_THUNKS" "$VERIFIER"
   run_test "Callable cells" node verification/tests/callable-cells.mts "$WORK/callable_cells.ast" "$WORK/callable_cells.claims" "$CALLABLE_CELLS" "$VERIFIER"

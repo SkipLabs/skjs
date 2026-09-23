@@ -19,6 +19,9 @@ import type {
   BinaryExpression,
   Expression,
   FunctionDeclaration,
+  FunctionExpression,
+  Identifier,
+  MethodDeclaration,
   Node,
   SourceFile,
   Statement,
@@ -176,8 +179,34 @@ class Gate {
   private readonly typeParamScopes: Set<string>[] = [];
   private readonly aliasNames = new Set<string>();
   private aliasApps = false;
+  /* Whether the code being read is strict, by a module or a "use strict"
+   * directive (ECMAScript's, not TypeScript's `strict` option). An ordinary
+   * function records it: its receiver rule is the strict one. */
+  strict = false;
+  /* Whether `this` has a binding here: inside an ordinary function expression,
+   * including an arrow nested in one, which captures it. */
+  private receiverBound = false;
   constructor(file: SourceFile) {
     this.file = file;
+  }
+
+  /** The leading `"use strict"` directives of a directive prologue: whether
+   * there is one, and how many statements the prologue's "use strict" members
+   * occupy, which are dropped since they do nothing else. Another directive
+   * stays an ordinary statement. */
+  useStrict(statements: readonly Statement[]): { strict: boolean; skip: Set<Statement> } {
+    const skip = new Set<Statement>();
+    for (const statement of statements) {
+      if (
+        !ts.isExpressionStatement(statement) ||
+        !ts.isStringLiteral(statement.expression)
+      )
+        break;
+      // The directive is the exact source text, without escapes.
+      const raw = statement.expression.getText(this.file);
+      if (raw === '"use strict"' || raw === "'use strict'") skip.add(statement);
+    }
+    return { strict: skip.size > 0, skip };
   }
 
   private hasTypeParam(name: string): boolean {
@@ -267,18 +296,34 @@ class Gate {
     if (ts.isFunctionTypeNode(node)) {
       if (node.typeParameters?.length)
         this.fail(node, "generic function types are outside the fragment");
-      for (const p of node.parameters) {
+      // A leading `this: T` is the receiver a call must pass. Without one the
+      // signature accepts any receiver.
+      const head = node.parameters[0];
+      const stated =
+        head && ts.isIdentifier(head.name) && head.name.text === "this";
+      if (
+        stated &&
+        (!head.type || head.questionToken || head.dotDotDotToken)
+      )
+        this.fail(head, "a receiver needs a required type annotation");
+      const receiver: ClaimType = stated
+        ? this.typeOf(head.type)
+        : { top: true, atoms: [] };
+      const parameters = stated
+        ? node.parameters.slice(1)
+        : [...node.parameters];
+      for (const p of parameters) {
         if (!ts.isIdentifier(p.name) || p.name.text === "this" || p.initializer)
           this.fail(p, "expected an ordinary parameter");
         if (
           p.dotDotDotToken &&
-          p !== node.parameters[node.parameters.length - 1]
+          p !== parameters[parameters.length - 1]
         )
           this.fail(p, "a rest parameter must be the last one");
         if (
           !p.questionToken &&
           !p.dotDotDotToken &&
-          node.parameters.indexOf(p) > firstOptional(node.parameters)
+          parameters.indexOf(p) > firstOptional(parameters)
         )
           this.fail(p, "a required parameter cannot follow an optional one");
       }
@@ -287,7 +332,7 @@ class Gate {
       // rest is any number of them: the signature says what each one is.
       const positions: ClaimType[] = [];
       let element: ClaimType | undefined;
-      for (const p of node.parameters) {
+      for (const p of parameters) {
         if (p.dotDotDotToken) {
           const type = this.typeOf(p.type);
           const tuple = tupleRestPositions(type);
@@ -302,6 +347,7 @@ class Gate {
       }
       acc.push({
         a: "function",
+        this: receiver,
         params: positions,
         ...(element ? { rest: element } : {}),
         result: this.typeOf(node.type),
@@ -590,6 +636,14 @@ class Gate {
       return { k: "id", pos: this.span(node), name: node.text };
     }
 
+    if (node.kind === ts.SyntaxKind.ThisKeyword) {
+      // Only an ordinary function expression, a method, or a declaration
+      // stating a `this` parameter binds a receiver.
+      if (!this.receiverBound)
+        this.fail(node, "`this` where no receiver is bound");
+      return { k: "this", pos: this.span(node) };
+    }
+
     if (node.kind === ts.SyntaxKind.NullKeyword)
       return { k: "lit", pos: this.span(node), lit: { a: "null" } };
     if (node.kind === ts.SyntaxKind.TrueKeyword)
@@ -637,13 +691,25 @@ class Gate {
       };
     }
 
-    if (ts.isArrowFunction(node)) return this.lambda(node);
+    if (ts.isArrowFunction(node) || ts.isFunctionExpression(node))
+      return this.lambda(node);
 
     if (ts.isObjectLiteralExpression(node)) {
       if (!node.properties.length)
         this.fail(node, "a record with no field has no location");
       const seen = new Set<string>();
       const fields = node.properties.map((f) => {
+        // A method is an ordinary function expression in a field: it has no
+        // `super` or construction here, which is all that tells them apart.
+        if (ts.isMethodDeclaration(f) && ts.isIdentifier(f.name)) {
+          const name = f.name.text;
+          if (seen.has(name))
+            this.fail(f, "duplicate field name in a record");
+          if (name === "__proto__")
+            this.fail(f, "prototype initializers are outside the fragment");
+          seen.add(name);
+          return { name, e: this.lambda(f) };
+        }
         if (!ts.isPropertyAssignment(f) || !ts.isIdentifier(f.name))
           this.fail(
             f,
@@ -797,6 +863,7 @@ class Gate {
             [
               "call",
               "bind",
+              "apply",
               "name",
               "length",
               "caller",
@@ -820,6 +887,34 @@ class Gate {
       }
       if (
         ts.isPropertyAccessExpression(node.expression) &&
+        node.expression.name.text === "apply"
+      ) {
+        // Function.prototype.apply reads its list as an array-like: its
+        // length, then each index in order. It never iterates the list.
+        if (
+          node.questionDotToken ||
+          node.expression.questionDotToken ||
+          node.typeArguments?.length ||
+          node.arguments.length === 0 ||
+          node.arguments.length > 2 ||
+          node.arguments.some((arg) => ts.isSpreadElement(arg)) ||
+          !this.localArrow(node.expression.expression)
+        )
+          this.fail(
+            node,
+            ".apply requires a known local function, an explicit receiver and at most one argument list",
+          );
+        const list = node.arguments[1];
+        return {
+          k: "applyWithReceiver",
+          pos: this.span(node),
+          callee: this.expr(node.expression.expression),
+          receiver: this.expr(node.arguments[0]),
+          list: list ? this.expr(list) : null,
+        };
+      }
+      if (
+        ts.isPropertyAccessExpression(node.expression) &&
         ["call", "bind"].includes(node.expression.name.text)
       ) {
         if (
@@ -832,7 +927,7 @@ class Gate {
         )
           this.fail(
             node,
-            `.${node.expression.name.text} requires a known local arrow, an explicit receiver and ordinary arguments`,
+            `.${node.expression.name.text} requires a known local function, an explicit receiver and ordinary arguments`,
           );
         return {
           k:
@@ -850,6 +945,29 @@ class Gate {
           node,
           "expected ordinary call arguments without type arguments",
         );
+      // A property reference, parenthesized or not, is a call target that
+      // keeps its object as the receiver (EvaluateCall). A copied method is a
+      // value, and takes the `apply` form below.
+      let target: Expression = node.expression;
+      while (ts.isParenthesizedExpression(target)) target = target.expression;
+      if (
+        ts.isPropertyAccessExpression(target) ||
+        ts.isElementAccessExpression(target)
+      ) {
+        const spreads: number[] = [];
+        const args = node.arguments.map((arg, i) => {
+          if (!ts.isSpreadElement(arg)) return this.expr(arg);
+          spreads.push(i);
+          return this.expr(arg.expression);
+        });
+        return {
+          k: "invoke",
+          pos: this.span(node),
+          callee: this.expr(node.expression),
+          args,
+          ...(spreads.length ? { spreads } : {}),
+        };
+      }
       // A spread writes the elements of one array in place of several
       // arguments, read where it is written: after every argument before it
       // and before every one after it. What it stands for — a tuple's
@@ -877,12 +995,35 @@ class Gate {
   }
 
   // A call signature alone does not establish the inherited .call intrinsic.
-  // Follow immutable lexical aliases to source-created arrows. Parameters and
-  // arbitrary call results may carry their own .call property, so are refused.
+  // Follow immutable lexical aliases to source-created functions, and to a
+  // function-valued member of a `const` object literal whose member no write
+  // in the file can replace. Parameters and arbitrary call results may carry
+  // their own .call property, so are refused.
   private localArrow(node: Expression, seen = new Set<number>()): boolean {
     if (ts.isParenthesizedExpression(node))
       return this.localArrow(node.expression, seen);
-    if (ts.isArrowFunction(node)) return true;
+    if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) return true;
+    if (
+      ts.isPropertyAccessExpression(node) &&
+      !node.questionDotToken &&
+      ts.isIdentifier(node.expression)
+    ) {
+      const member = node.name.text;
+      const literal = this.constInitializer(node.expression, seen);
+      if (!literal || !ts.isObjectLiteralExpression(literal)) return false;
+      if (this.memberMayBeWritten(member)) return false;
+      return literal.properties.some(
+        (p) =>
+          (ts.isMethodDeclaration(p) &&
+            ts.isIdentifier(p.name) &&
+            p.name.text === member) ||
+          (ts.isPropertyAssignment(p) &&
+            ts.isIdentifier(p.name) &&
+            p.name.text === member &&
+            (ts.isArrowFunction(p.initializer) ||
+              ts.isFunctionExpression(p.initializer))),
+      );
+    }
     if (
       ts.isCallExpression(node) &&
       ts.isPropertyAccessExpression(node.expression) &&
@@ -904,6 +1045,46 @@ class Gate {
     )
       return this.localArrow(node.expression.expression, seen);
     if (!ts.isIdentifier(node)) return false;
+    const init = this.constInitializer(node, seen);
+    return !!init && this.localArrow(init, seen);
+  }
+
+  /** Whether any assignment in the file may replace a member of this name: a
+   * write to it by name, or to a computed key that is not another name. */
+  private memberMayBeWritten(member: string): boolean {
+    let found = false;
+    const visit = (n: Node): void => {
+      if (found) return;
+      if (
+        ts.isBinaryExpression(n) &&
+        n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+        n.operatorToken.kind <= ts.SyntaxKind.LastAssignment
+      ) {
+        let target: Expression = n.left;
+        while (ts.isParenthesizedExpression(target)) target = target.expression;
+        if (ts.isPropertyAccessExpression(target) && target.name.text === member)
+          found = true;
+        if (
+          ts.isElementAccessExpression(target) &&
+          !(
+            ts.isStringLiteral(target.argumentExpression) &&
+            target.argumentExpression.text !== member
+          )
+        )
+          found = true;
+      }
+      n.forEachChild(visit);
+    };
+    visit(this.file);
+    return found;
+  }
+
+  /** The initializer of the `const` this identifier names, lexically, or
+   * none where it names a parameter, a mutable local or nothing here. */
+  private constInitializer(
+    node: Identifier,
+    seen: Set<number>,
+  ): Expression | undefined {
     // Held as a string: a narrowing of `node` does not reach into a closure.
     const name = node.text;
     for (let scope = node.parent; scope; scope = scope.parent) {
@@ -918,9 +1099,9 @@ class Gate {
               !decl.initializer ||
               seen.has(decl.getStart(this.file))
             )
-              return false;
+              return undefined;
             seen.add(decl.getStart(this.file));
-            return this.localArrow(decl.initializer, seen);
+            return decl.initializer;
           }
         }
       }
@@ -930,9 +1111,9 @@ class Gate {
           (p) => ts.isIdentifier(p.name) && p.name.text === name,
         )
       )
-        return false;
+        return undefined;
     }
-    return false;
+    return undefined;
   }
 
   /** A compound assignment or an increment: the target's parts are evaluated
@@ -1180,14 +1361,82 @@ class Gate {
   // inside a closure become one: the parser owns that translation because it
   // owns what the source means.
 
-  private lambda(node: ArrowFunction): Expr {
+  private lambda(
+    node: ArrowFunction | FunctionExpression | MethodDeclaration,
+  ): Expr {
     if (node.modifiers?.length)
       this.fail(node, "expected a synchronous closure without modifiers");
+    const ordinary = !ts.isArrowFunction(node);
+    if (!ts.isArrowFunction(node)) {
+      if (node.asteriskToken)
+        this.fail(node, "generator functions are outside the fragment");
+      // A named function expression binds its own name inside itself. A name
+      // the function never refers to binds nothing it reads; one it does refer
+      // to is a recursive binding, which the fragment has no frame for, as for
+      // a cyclic closure initialization.
+      if (ts.isFunctionExpression(node) && node.name) {
+        const own = node.name.text;
+        let uses = false;
+        const visit = (n: Node): void => {
+          if (uses) return;
+          if (ts.isPropertyAccessExpression(n)) {
+            visit(n.expression);
+            return;
+          }
+          if (ts.isIdentifier(n) && n.text === own) uses = true;
+          n.forEachChild(visit);
+        };
+        node.parameters.forEach(visit);
+        if (node.body) visit(node.body);
+        if (uses)
+          this.fail(
+            node,
+            "a function expression that refers to its own name is a recursive binding, outside the fragment",
+          );
+      }
+      if (ts.isMethodDeclaration(node) && node.postfixToken)
+        this.fail(node, "an optional or definite method is outside the fragment");
+    }
+    // An ordinary function's leading `this: T` states its receiver; without
+    // one, any receiver is accepted. An arrow cannot declare one.
+    const head = node.parameters[0];
+    const stated =
+      !!head && ts.isIdentifier(head.name) && head.name.text === "this";
+    if (stated && !ordinary)
+      this.fail(head, "an arrow cannot declare a receiver");
+    if (stated && (!head.type || head.questionToken || head.dotDotDotToken || head.initializer))
+      this.fail(head, "a receiver needs a required type annotation");
+    const parameters = stated ? node.parameters.slice(1) : [...node.parameters];
+    const body = node.body;
+    if (!body) this.fail(node, "a function must have a body");
+    // A directive prologue in the function's own body makes it strict. It
+    // is a syntax error beside parameters that are not simple.
+    const prologue =
+      ordinary && ts.isBlock(body)
+        ? this.useStrict(body.statements)
+        : { strict: false, skip: new Set<Statement>() };
+    if (
+      prologue.strict &&
+      parameters.some((p) => p.initializer || p.dotDotDotToken)
+    )
+      this.fail(node, '"use strict" beside non-simple parameters');
+    const outerStrict = this.strict;
+    const outerBound = this.receiverBound;
+    this.strict = outerStrict || prologue.strict;
+    if (ordinary) this.receiverBound = true;
     const typeParams = this.enterTypeParams(node.typeParameters);
     try {
+      const receiver = !ordinary
+        ? null
+        : {
+            type: stated
+              ? this.typeOf(head.type)
+              : ({ top: true, atoms: [] } as ClaimType),
+            strict: this.strict,
+          };
       // Each name is taken where its parameter has just been checked: a
       // narrowing does not survive into the second pass over the same list.
-      const names = node.parameters.map((p) => {
+      const names = parameters.map((p) => {
         if (!ts.isIdentifier(p.name) || p.name.text === "this")
           this.fail(p, "expected an ordinary closure parameter");
         if (p.questionToken && p.initializer)
@@ -1195,7 +1444,7 @@ class Gate {
         if (p.dotDotDotToken) {
           if (p.questionToken || p.initializer)
             this.fail(p, "a rest parameter is neither optional nor defaulted");
-          if (p !== node.parameters[node.parameters.length - 1])
+          if (p !== parameters[parameters.length - 1])
             this.fail(p, "a rest parameter must be the last one");
           const type = this.typeOf(p.type);
           if (!tupleRestPositions(type) && !arrayRestElement(type))
@@ -1205,7 +1454,7 @@ class Gate {
           !p.questionToken &&
           !p.initializer &&
           !p.dotDotDotToken &&
-          node.parameters.indexOf(p) > firstOptional(node.parameters)
+          parameters.indexOf(p) > firstOptional(parameters)
         )
           this.fail(p, "a required parameter cannot follow an optional one");
         if (p.name.text === "undefined")
@@ -1214,18 +1463,21 @@ class Gate {
       });
 
       const result = () => this.typeOf(node.type);
-      const body = ts.isBlock(node.body)
+      const lowered = ts.isBlock(body)
         ? this.closureBlock(
-            node.body,
-            node.body.statements.map((s) => this.stmt(s)),
+            body,
+            body.statements
+              .filter((s) => !prologue.skip.has(s))
+              .map((s) => this.stmt(s)),
             result,
           )
-        : this.expr(node.body);
+        : this.expr(body);
       return {
         k: "lambda",
         pos: this.span(node),
         typeParams,
-        params: node.parameters.map((p, i) => ({
+        receiver,
+        params: parameters.map((p, i) => ({
           name: names[i],
           // A defaulted parameter's type is what the body reads; the default
           // itself is the expression that replaces an omitted argument. A rest
@@ -1237,10 +1489,12 @@ class Gate {
           ...(p.dotDotDotToken ? { rest: true as const } : {}),
         })),
         result: this.typeOf(node.type),
-        body,
+        body: lowered,
       };
     } finally {
       this.leaveTypeParams();
+      this.strict = outerStrict;
+      this.receiverBound = outerBound;
     }
   }
 
@@ -1600,6 +1854,24 @@ class Gate {
         "modifiers (export/async/declare) are outside the fragment",
       );
     if (!node.body) this.fail(node, "a function must have a body");
+    const prologue = this.useStrict(node.body.statements);
+    if (
+      prologue.strict &&
+      node.parameters.some((p) => p.initializer || p.dotDotDotToken)
+    )
+      this.fail(node, '"use strict" beside non-simple parameters');
+    const outerStrict = this.strict;
+    this.strict = outerStrict || prologue.strict;
+    // A declaration is the entry point, not a callable of the fragment: a
+    // `this: T` parameter is one more input assumed at its annotation, like
+    // every other parameter, and the body's `this` is that parameter.
+    const head = node.parameters[0];
+    const receiverParam =
+      !!head && ts.isIdentifier(head.name) && head.name.text === "this";
+    if (receiverParam && (!head.type || head.questionToken || head.dotDotDotToken))
+      this.fail(head, "a receiver needs a required type annotation");
+    const outerBound = this.receiverBound;
+    this.receiverBound = receiverParam;
     const typeParams = this.enterTypeParams(node.typeParameters);
     try {
       const params = node.parameters.map((p) => {
@@ -1638,10 +1910,14 @@ class Gate {
         typeParams,
         params,
         retType: this.typeOf(node.type),
-        body: this.block(node.body),
+        body: node.body.statements
+          .filter((s) => !prologue.skip.has(s))
+          .map((s) => this.stmt(s)),
       };
     } finally {
       this.leaveTypeParams();
+      this.strict = outerStrict;
+      this.receiverBound = outerBound;
     }
   }
 }
@@ -1668,7 +1944,11 @@ export function parseFile(file: string, carriesContext = false): Ast {
   const gate = new Gate(source);
   const aliasNodes: TypeAliasDeclaration[] = [];
   const fnNodes: FunctionDeclaration[] = [];
+  // A "use strict" directive prologue makes the whole file strict.
+  const prologue = gate.useStrict(source.statements);
+  gate.strict = prologue.strict;
   for (const s of source.statements) {
+    if (prologue.skip.has(s)) continue;
     if (ts.isTypeAliasDeclaration(s)) aliasNodes.push(s);
     else if (ts.isFunctionDeclaration(s)) fnNodes.push(s);
     else if (carriesContext) continue;

@@ -17,6 +17,8 @@ export type { Labels, Row } from "./type-graph.mts";
  * lexically: its binders shadow enclosing binders only within this value. */
 export interface SchemeClaim {
   typeParams: { name: string; bound: ClaimType | null }[];
+  /** The receiver a call passes; an unknown row when any is accepted. */
+  this: ClaimType;
   params: ClaimType[];
   rest: ClaimType | null;
   result: ClaimType;

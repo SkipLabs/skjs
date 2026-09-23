@@ -14,6 +14,7 @@ import vm from "node:vm";
 import { spawnSync } from "node:child_process";
 import { stripTypes } from "../tools/strip-types.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
+import type { Arrow } from "../tools/type-graph.mts";
 import { fileOf, type SkjsClaims } from "../tools/skjs-claims.mts";
 
 const [
@@ -141,7 +142,7 @@ try {
       "a narrowed rest element",
       (c) => {
         for (const arrs of restRows(c))
-          for (const sig of arrs.variadic ?? []) sig[1][0] = [1];
+          for (const sig of arrs.variadic ?? []) sig[1][1][0] = [1];
       },
     ],
     [
@@ -150,9 +151,9 @@ try {
         for (const arrs of restRows(c)) {
           arrs.arrows.push(
             ...(arrs.variadic ?? []).map(
-              ([domains, [, result]]): [number[][], number[]] => [
-                domains,
-                result,
+              ([receiver, [domains, [, result]]]): Arrow => [
+                receiver,
+                [domains, result],
               ],
             ),
           );

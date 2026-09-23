@@ -19,8 +19,10 @@ variable {ι : Type}
 structure Scheme (ι : Type) where
   binders : List ι
   bounds : List (ι × List ι)
-  signatures : List (List (List ι) × List ι)
-  variadic : List (List (List ι) × List ι × List ι) := []
+  /-- `(receiver, parameters, result)`. -/
+  signatures : List (List ι × List (List ι) × List ι)
+  /-- `(receiver, fixed parameters, element, result)`. -/
+  variadic : List (List ι × List (List ι) × List ι × List ι) := []
 
 /-- Outer rigid meanings cannot change when a nested callable is instantiated.
 An executable scheme decoder must additionally check binder scope/well-formedness. -/
@@ -30,12 +32,13 @@ def Instance (G : NormalGraph ι) (P : ι → Bool) (outer : ι → Fam)
     ∀ i, i ∉ s.binders → η i = outer i
 
 def signatures (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam)
-    (s : Scheme ι) : List (List Fam × Fam) :=
-  s.signatures.map fun p => (p.1.map (meaningP G P η), meaningP G P η p.2)
+    (s : Scheme ι) : List (Fam × List Fam × Fam) :=
+  s.signatures.map fun p => (meaningP G P η p.1, p.2.1.map (meaningP G P η), meaningP G P η p.2.2)
 
 def restSignatures (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam)
-    (s : Scheme ι) : List (List Fam × Fam × Fam) :=
-  s.variadic.map fun p => (p.1.map (meaningP G P η), meaningP G P η p.2.1, meaningP G P η p.2.2)
+    (s : Scheme ι) : List (Fam × List Fam × Fam × Fam) :=
+  s.variadic.map fun p => (meaningP G P η p.1, p.2.1.map (meaningP G P η),
+    meaningP G P η p.2.2.1, meaningP G P η p.2.2.2)
 
 /-- Fixed and rest clauses use the same behavioral promise on the same value. -/
 def instanceT (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam) (s : Scheme ι) : Fam :=
@@ -95,15 +98,17 @@ theorem scheme_elim_safe {G : NormalGraph ι} {P outer s η n W h t}
 /-- An instantiated signature is used only after effectful operands have been
 checked. The existing call rule transfers both arguments and code through the
 same future worlds, so scheme elimination adds no call-specific effect shortcut. -/
-theorem scheme_call {G : NormalGraph ι} {P outer s η B}
+theorem scheme_call {G : NormalGraph ι} {P outer s η Rc B}
     (hη : Instance G P outer s η) (xs : List (Fam × Tm))
-    (hp : (xs.map Prod.fst, B) ∈ signatures G P η s)
+    (hp : (Rc, xs.map Prod.fst, B) ∈ signatures G P η s)
+    (hRc : Adm Rc) (hRcv : ValOnly Rc)
     (hA : ∀ p ∈ xs, Adm p.1) (hAv : ∀ p ∈ xs, ValOnly p.1)
-    {n W heap f} (hw : WorldAdm W) (hh : HeapOk n W heap)
+    {n W heap f r} (hw : WorldAdm W) (hh : HeapOk n W heap)
     (hf : Safe (schemeT G P outer s) n W heap f)
+    (hr : FutureSafe Rc n W r)
     (ha : ∀ p ∈ xs, FutureSafe p.1 n W p.2) :
-    Safe B n W heap (.call f (xs.map Prod.snd)) := by
-  apply call_safe xs hA hAv hw hh ?_ ha
+    Safe B n W heap (.invoke f r (xs.map Prod.snd)) := by
+  apply call_safe xs hRc hRcv hA hAv hw hh ?_ hr ha
   apply Safe_mono n _ W heap f (scheme_elim_safe hη hf)
   intro j hj U v hv
   exact callsT_select hv hp
@@ -114,7 +119,7 @@ theorem make_scheme_fields {G : NormalGraph ι} {P outer s}
     {As : List Fam} (hA : ∀ A ∈ As, Adm A)
     (arity n : Nat) (W : WorldT n) (h : Heap) (ns : List String) (vs : List Val) (b : Tm)
     (hnd : ns.Nodup) (hns : ns.length = vs.length) (hAs : As.length = vs.length)
-    (hvals : ∀ v ∈ vs, isVal v = true) (hb : Scoped arity b)
+    (hvals : ∀ v ∈ vs, isVal v = true) (hb : Scoped (arity + 1) b)
     (hfixed : s.variadic = [])
     (hf : ∀ η, Instance G P outer s η → InvocationSpec arity (signatures G P η s) n W b)
     (hw : WorldAdm W) (hh : HeapOk n W h) (hv : ∀ p ∈ As.zip vs, p.1 n W p.2) :
@@ -135,12 +140,12 @@ theorem make_scheme_fields {G : NormalGraph ι} {P outer s}
 unchanged. In particular, the premise cannot retype a captured location per call. -/
 theorem invocation_of_scheme_body {G : NormalGraph ι} {P outer s Γ ρ n W b arity}
     (he : ∀ η, Instance G P outer s η → EnvOkP G P η Γ ρ n W)
-    (hlen : ∀ p ∈ s.signatures, p.1.length = arity)
+    (hlen : ∀ p ∈ s.signatures, p.2.1.length = arity)
     (hb : ∀ η, Instance G P outer s η → ∀ p ∈ s.signatures, ∀ j U heap env,
-      EnvOkP G P η (p.1 ++ Γ) env j U → WorldAdm U → HeapOk j U heap →
-      Safe (meaningP G P η p.2) j U heap (instantiate 0 env b)) :
+      EnvOkP G P η (p.1 :: p.2.1 ++ Γ) env j U → WorldAdm U → HeapOk j U heap →
+      Safe (meaningP G P η p.2.2) j U heap (instantiate 0 env b)) :
     ∀ η, Instance G P outer s η →
-      InvocationSpec arity (signatures G P η s) n W (instantiate arity ρ b) := by
+      InvocationSpec arity (signatures G P η s) n W (instantiate (arity + 1) ρ b) := by
   intro η hη
   exact invocation_of_bodyP hη.1 (he η hη) hlen (hb η hη)
 
@@ -153,32 +158,32 @@ def identityScheme : Scheme Nat :=
 theorem identity_scheme_safe (outer : Nat → Fam) (n : Nat) (W : WorldT n)
     (heap : Heap) (hw : WorldAdm W) (hh : HeapOk n W heap) :
     Safe (schemeT TypeParams.idG TypeParams.idP outer identityScheme) n W heap
-      (.make (.closure 1 (.var 0)) .nul) := by
+      (.make (.closure 1 (.var 1)) .nul) := by
   have hbody : ∀ η, Instance TypeParams.idG TypeParams.idP outer identityScheme η →
       InvocationSpec 1 (signatures TypeParams.idG TypeParams.idP η identityScheme)
-        n W (.var 0) := by
+        n W (.var 1) := by
     intro η hη
     have henv : ∀ ζ, Instance TypeParams.idG TypeParams.idP outer identityScheme ζ →
         EnvOkP TypeParams.idG TypeParams.idP ζ [] (fun _ => .nul) n W := by
       intro ζ _
       exact ⟨fun _ => by simp [Scoped], fun i A hi => by cases hi⟩
-    have hlen : ∀ p ∈ identityScheme.signatures, p.1.length = 1 := by
+    have hlen : ∀ p ∈ identityScheme.signatures, p.2.1.length = 1 := by
       intro p hp
       have : p = TypeParams.idSig := List.mem_singleton.mp hp
       subst this
       rfl
     have hb : ∀ ζ, Instance TypeParams.idG TypeParams.idP outer identityScheme ζ →
         ∀ p ∈ identityScheme.signatures, ∀ j U localHeap env,
-          EnvOkP TypeParams.idG TypeParams.idP ζ (p.1 ++ []) env j U →
+          EnvOkP TypeParams.idG TypeParams.idP ζ (p.1 :: p.2.1 ++ []) env j U →
           WorldAdm U → HeapOk j U localHeap →
-          Safe (meaningP TypeParams.idG TypeParams.idP ζ p.2) j U localHeap
-            (instantiate 0 env (.var 0)) := by
+          Safe (meaningP TypeParams.idG TypeParams.idP ζ p.2.2) j U localHeap
+            (instantiate 0 env (.var 1)) := by
       intro ζ hζ p hp j U localHeap env he hu hh
       have : p = TypeParams.idSig := List.mem_singleton.mp hp
       subst this
       exact TypeParams.var_safeP hζ.1 rfl he hu hh
     have hi := invocation_of_scheme_body (s := identityScheme) (Γ := [])
-      (ρ := fun _ => .nul) (n := n) (W := W) (b := .var 0) (arity := 1)
+      (ρ := fun _ => .nul) (n := n) (W := W) (b := .var 1) (arity := 1)
       henv hlen hb η hη
     simpa [instantiate] using hi
   have both := make_scheme_fields (G := TypeParams.idG) (P := TypeParams.idP)
@@ -187,7 +192,7 @@ theorem identity_scheme_safe (outer : Nat → Fam) (n : Nat) (W : WorldT n)
       intro A hA
       have : A = nulT := List.mem_singleton.mp hA
       subst A
-      exact nulT_adm) 1 n W heap [valueField] [.nul] (.var 0)
+      exact nulT_adm) 1 n W heap [valueField] [.nul] (.var 1)
     (by decide) rfl rfl (by simp [isVal]) (by simp [Scoped]) rfl hbody hw hh
     (by
       intro p hp

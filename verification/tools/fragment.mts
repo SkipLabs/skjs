@@ -9,6 +9,9 @@ import type { Span } from "./span.mts";
 export type ArithOp = "add" | "sub" | "mul" | "div";
 export type Expr =
   | { k: "id"; pos: Span; name: string }
+  /* `this`: the receiver of the nearest enclosing ordinary function. An arrow
+     has no receiver of its own, so inside one this is a capture. */
+  | { k: "this"; pos: Span }
   | { k: "lit"; pos: Span; lit: Atom }
   | { k: "not" | "typeof"; pos: Span; e: Expr }
   /* `e as T`, `e satisfies T` or `e!`: the operand's value, unchanged. The
@@ -77,6 +80,22 @@ export type Expr =
   /* `spreads` are the indices of the arguments written with `...`: each
      stands for the elements of its operand, read where it is written. */
   | { k: "apply"; pos: Span; callee: Expr; args: Expr[]; spreads?: number[] }
+  /* A call through a property reference, `o.m(a)` or `o[k](a)`, parentheses
+     around the reference included: the object is saved, the method read from
+     it and saved, the arguments evaluated, and the saved method invoked with
+     the saved object as its receiver. `callee` is the `read` or `index`. */
+  | { k: "invoke"; pos: Span; callee: Expr; args: Expr[]; spreads?: number[] }
+  /* `f.apply(r, list)`: the target, the receiver and the list are evaluated
+     and saved, then the list's length and each indexed element are read in
+     order, then the target is invoked with the receiver and those actuals. A
+     missing, null or undefined list gives no actuals. */
+  | {
+      k: "applyWithReceiver";
+      pos: Span;
+      callee: Expr;
+      receiver: Expr;
+      list: Expr | null;
+    }
   | {
       k: "callWithReceiver" | "bindWithReceiver";
       pos: Span;
@@ -96,6 +115,12 @@ export type Expr =
          a tuple, whose required elements are positions of the signature, or a
          `T[]`, which collects any number of them. */
       params: { name: string; type: ClaimType; default?: Expr; rest?: true }[];
+      /* An arrow has none. An ordinary function expression binds the
+         receiver of each call: `type` is its `this` annotation, `unknown`
+         where it states none, and `strict` records that the code is strict
+         (a module or a "use strict" directive), which the receiver rule
+         assumes. */
+      receiver: { type: ClaimType; strict: boolean } | null;
       result: ClaimType;
       body: Expr;
     }

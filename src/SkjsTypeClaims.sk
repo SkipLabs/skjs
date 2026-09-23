@@ -719,9 +719,12 @@ fun claimFunctionBranchJson(
     };
     ret = claimTypeJsonBounded(f.retType, false, true, values, fuel, false);
     if (ret.reason != "") return Failure(ret.reason);
+    // Every signature states its receiver. Without a `this` parameter a
+    // signature takes any receiver: `unknown`.
     signature = jsonObj(
       Array[
         ("a", jsonStr("function")),
+        ("this", claimAtoms(Array[], true).json),
         ("params", jsonArr(args.toArray())),
         ("result", ret.json),
         (

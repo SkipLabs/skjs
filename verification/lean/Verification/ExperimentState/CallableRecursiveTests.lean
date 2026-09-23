@@ -12,16 +12,16 @@ open Lean PositiveNormalization PositiveGraphs ProgramTyping ControlFlow Certifi
 -- R = { bag: null | R; call: Boolean → Boolean }. A second label describes
 -- the same recursive contract independently, to exercise cyclic subtyping.
 private def types : List (List (Clause (List Nat))) :=
-  [[.nul],[.bool],[.callable [(valueField, [0,2])] [] [([[1]],[1])] []],
-   [.callable [(valueField, [0,3])] [] [([[1]],[1])] []],
-   [.callable [(valueField, [0,2,1])] [] [([[1]],[1])] []],
-   [.arrs [([[2]],[2])] []], [.arrs [([[1]],[0,2])] []]]
+  [[.nul],[.bool],[.callable [(valueField, [0,2])] [] [([7],[[1]],[1])] []],
+   [.callable [(valueField, [0,3])] [] [([7],[[1]],[1])] []],
+   [.callable [(valueField, [0,2,1])] [] [([7],[[1]],[1])] []],
+   [.arrs [([7],[[2]],[2])] []], [.arrs [([7],[[1]],[0,2])] []], [.top], [.undef]]
 private def G : NormalGraph Nat := fun i => types[i]?.getD []
 private def labels := List.range types.length
 private def pool := vocabulary G labels [] [[0,2],[0,3]]
 
 private def program : Program :=
-  [⟨.attach (.var 0) .nul,.bind 1⟩,
+  [⟨.attach (.var 1) .nul,.bind 1⟩,
    ⟨.write (.var 0) (.var 0),.effect 2⟩,
    ⟨.read (.var 0),.bind 3⟩,
    ⟨.ite (.test .isFun (.var 0)) (.app (.var 0) .fls) .tru,.ret⟩]
@@ -46,13 +46,13 @@ private def certificate : ControlFlow.Certificate Nat :=
 #guard !(expression G pool 10 [[0,2]] (.app (.var 0) .fls) [1]).isSome
 
 -- Recursive callable values can be higher-order arguments and results.
-#guard (expression G pool 10 [] (.funE (.var 0)) [5]).isSome
+#guard (expression G pool 10 [] (.funE (.var 1)) [5]).isSome
 #guard (expression G pool 10 [[5],[2]] (.app (.var 0) (.var 1)) [2]).isSome
 
 /-- Reading the cyclic bag returns the same callable; its descriptor still
 executes identity code. No recursive unfolding is performed by the machine. -/
 theorem returns_false : Execution program 14 [] (.at 0 (fun _ => .nul))
-    [.fn 0 (.var 0)] (.done .fls) := by
+    [.fn 0 (.var 1)] (.done .fls) := by
   repeat first
     | exact Execution.refl
     | apply Execution.next (.enter rfl)
@@ -69,8 +69,8 @@ theorem returns_false : Execution program 14 [] (.at 0 (fun _ => .nul))
 /-- The getter captures the callable before its bag contains a callable. Calling
 it after the self-write observes the updated heap and returns a callable value. -/
 private def capturedProgram : Program :=
-  [⟨.attach (.var 0) .nul,.bind 1⟩,
-   ⟨.funE (.read (.var 1)),.bind 2⟩,
+  [⟨.attach (.var 1) .nul,.bind 1⟩,
+   ⟨.funE (.read (.var 2)),.bind 2⟩,
    ⟨.write (.var 1) (.var 1),.effect 3⟩,
    ⟨.app (.var 0) .tru,.bind 4⟩,
    ⟨.ite (.test .isFun (.var 0)) (.app (.var 0) .fls) .tru,.ret⟩]
@@ -86,12 +86,12 @@ private def capturedRequest : Request := ⟨types,capturedProgram,capturedClaims
 -- The capture does not freeze the initial null bag. Treating the getter as
 -- always returning null must fail its ordinary closure-body obligation.
 private def nullGetterG : NormalGraph Nat := fun i =>
-  if i == 7 then [.arrs [([[1]],[0])] []] else G i
-#guard !(expression nullGetterG (vocabulary nullGetterG (List.range 8) [] []) 10
-  [[2]] (.funE (.read (.var 1))) [7]).isSome
+  if i == 9 then [.arrs [([7],[[1]],[0])] []] else G i
+#guard !(expression nullGetterG (vocabulary nullGetterG (List.range 10) [] []) 10
+  [[2]] (.funE (.read (.var 2))) [9]).isSome
 
 theorem captured_returns_false : Execution capturedProgram 18 [] (.at 0 (fun _ => .nul))
-    [.fn 0 (.var 0),.nul] (.done .fls) := by
+    [.fn 0 (.var 1),.nul] (.done .fls) := by
   repeat first
     | exact Execution.refl
     | apply Execution.next (.enter rfl)

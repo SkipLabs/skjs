@@ -11,7 +11,14 @@ export type Tag =
   | "isStr"
   | { numEq: { bits: string } }
   | { strEq: { value: string } };
-export type CallCode = "absent" | { closure: { arity: number; body: Term } };
+/** An object's invocation code: none, a closure, variadic code collecting
+ * further actuals, or `.bind`'s forwarding descriptor, which keeps the target,
+ * the receiver and the argument prefix it was given. */
+export type CallCode =
+  | "absent"
+  | { closure: { arity: number; body: Term } }
+  | { variadic: { fixed: number; body: Term } }
+  | { bound: { target: Term; receiver: Term; pre: Term[] } };
 export type Term =
   | "nul"
   | "undef"
@@ -22,7 +29,8 @@ export type Term =
   /** A string, as itself. */
   | { str: { value: string } }
   | { var: { i: number } }
-  | { call: { f: Term; args: Term[] } }
+  /** Invoke `f` with the receiver `r` and the actuals `args`. */
+  | { invoke: { f: Term; r: Term; args: Term[] } }
   | { letE: { a: Term; b: Term } }
   | { objAt: { fields: [string, number][]; call: CallCode } }
   | { makeAt: { call: CallCode; names: string[]; inits: Term[] } }
@@ -42,7 +50,11 @@ export type Term =
    * index is past the end. */
   | { setElem: { a: Term; i: Term; v: Term } }
   /** The length of a store, as a number. */
-  | { lenOf: { a: Term } };
+  | { lenOf: { a: Term } }
+  /** A store: the location of each element, in order, or none at a hole. */
+  | { arr: { elems: (number | null)[] } }
+  /** An actual standing for the elements of a store, read where it is written. */
+  | { spread: { a: Term } };
 /** Every tag, checked against `Tag`: adding one there and not here is a type
  * error rather than an "unknown tag" at run time. */
 const TAGS: Record<Extract<Tag, string>, true> = {
@@ -94,9 +106,22 @@ export function nat(v: unknown) {
 }
 function code(v: unknown) {
   if (v === "absent") return;
-  const c = fields(fields(v, ["closure"]).closure, ["arity", "body"]);
-  nat(c.arity);
-  decodeTerm(c.body);
+  const key = isRecord(v) ? Object.keys(v)[0] : undefined;
+  if (key === "closure") {
+    const c = fields(fields(v, ["closure"]).closure, ["arity", "body"]);
+    nat(c.arity);
+    decodeTerm(c.body);
+  } else if (key === "variadic") {
+    const c = fields(fields(v, ["variadic"]).variadic, ["fixed", "body"]);
+    nat(c.fixed);
+    decodeTerm(c.body);
+  } else if (key === "bound") {
+    const c = fields(fields(v, ["bound"]).bound, ["target", "receiver", "pre"]);
+    decodeTerm(c.target);
+    decodeTerm(c.receiver);
+    if (!Array.isArray(c.pre)) throw Error("invalid bound prefix");
+    c.pre.forEach(decodeTerm);
+  } else throw Error("unknown call code");
 }
 /** The terms that are all tag and no fields, which is how they are written. */
 const BARE: Record<Extract<Term, string>, true> = {
@@ -124,7 +149,7 @@ export function decodeTerm(value: unknown): Term {
     num: ["bits"],
     str: ["value"],
     var: ["i"],
-    call: ["f", "args"],
+    invoke: ["f", "r", "args"],
     letE: ["a", "b"],
     objAt: ["fields", "call"],
     makeAt: ["call", "names", "inits"],
@@ -137,6 +162,8 @@ export function decodeTerm(value: unknown): Term {
     elemAt: ["a", "i"],
     setElem: ["a", "i", "v"],
     lenOf: ["a"],
+    arr: ["elems"],
+    spread: ["a"],
   };
   const keys = shape[key];
   if (!keys) throw Error("unknown term constructor");
@@ -175,6 +202,9 @@ export function decodeTerm(value: unknown): Term {
     } else if (k === "op") {
       if (!["add", "sub", "mul", "div"].includes(v as string))
         throw Error("unknown arithmetic operator");
+    } else if (k === "elems") {
+      if (!Array.isArray(v)) throw Error("invalid store");
+      for (const l of v) if (l !== null) nat(l);
     } else if (k === "args" || k === "inits") {
       if (!Array.isArray(v)) throw Error("invalid arguments");
       v.forEach(decodeTerm);

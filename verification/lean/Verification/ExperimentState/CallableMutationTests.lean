@@ -8,14 +8,14 @@ open CertificateProducer ControlFlow RequestJson HeapExpressionRules
 
 private def types : List (List (Clause (List Nat))) :=
   [[.nul],[.bool],[.refs [(valueField, [1])] [] []],[.callable [(valueField, [1])] [] [] []],
-   [.boolLit false],[.arrs [([[0]],[0])] []]]
+   [.boolLit false],[.arrs [([6],[[0]],[0])] []],[.top],[.undef]]
 private def G : NormalGraph Nat := fun i => types[i]?.getD []
 private def labels := List.range types.length
 private def program (callable fresh : Bool) : Program :=
   [⟨.fls,.bind 1⟩,
    ⟨if callable then .attach (.var 0) (.var 0) else .alloc (.var 0),.bind 2⟩,
    ⟨.read (.var 0),.bind 3⟩,
-   ⟨.funE (.write (.var 2) .tru),.bind 4⟩,
+   ⟨.funE (.write (.var 3) .tru),.bind 4⟩,
    ⟨.app (.var 0) .nul,.effect 5⟩,
    ⟨if fresh then .read (.var 2) else .var 1,.ret⟩]
 private def claims (R : List Nat) : List (PointClaim Nat) :=

@@ -7,11 +7,12 @@ open PositiveNormalization PositiveGraphs PositiveRules ProgramTyping ControlFlo
 open CertificateProducer RequestJson ProgramCertificates
 
 private def types : List (List (Clause (List Nat))) :=
-  [[.nul],[.arrs [([[0]],[0])] []], [.refs [(valueField, [0,1])] [] []]]
+  [[.nul],[.arrs [([3],[[0]],[0])] []], [.refs [(valueField, [0,1])] [] []], [.undef]]
 private def G : NormalGraph Nat := fun i => types[i]?.getD []
 private def labels := List.range types.length
 private def dispatch : Tm := .ite (.test .isFun (.var 0)) (.app (.var 0) .nul) .nul
-private def body : Tm := .letE (.read (.var 1)) dispatch
+/-- The body reads the captured cell, past its parameter and receiver. -/
+private def body : Tm := .letE (.read (.var 2)) dispatch
 private def program : Program :=
   [⟨.alloc .nul,.bind 1⟩,
    ⟨.funE body,.bind 2⟩,
@@ -25,17 +26,18 @@ private def request : Request := ⟨types,program,claims,[0],0,[]⟩
 private def node (Γ : List (Ty Nat)) (t : Tm) (A : Ty Nat) (r : Rule Nat)
     (ps : List (Evidence Nat) := []) : Evidence Nat := .node ⟨Γ,t,A⟩ r ps
 private def readEvidence : Evidence Nat :=
-  node [[0],[2]] (.read (.var 1)) [0,1] .read [node [[0],[2]] (.var 1) [2] .var]
+  node [[3],[0],[2]] (.read (.var 2)) [0,1] .read [node [[3],[0],[2]] (.var 2) [2] .var]
 private def nullBranch : Evidence Nat :=
-  node [[0],[0],[2]] dispatch [0] .ifFalse [node [[0],[0],[2]] .nul [0] .nul]
+  node [[0],[3],[0],[2]] dispatch [0] .ifFalse [node [[0],[3],[0],[2]] .nul [0] .nul]
 private def callBranch : Evidence Nat :=
-  node [[1],[0],[2]] dispatch [0] .ifTrue
-    [node [[1],[0],[2]] (.app (.var 0) .nul) [0] .app
-      [node [[1],[0],[2]] (.var 0) [1] .var, node [[1],[0],[2]] .nul [0] .nul]]
+  node [[1],[3],[0],[2]] dispatch [0] .ifTrue
+    [node [[1],[3],[0],[2]] (.app (.var 0) .nul) [0] .app
+      [node [[1],[3],[0],[2]] (.var 0) [1] .var, node [[1],[3],[0],[2]] .undef [3] .undef,
+       node [[1],[3],[0],[2]] .nul [0] .nul]]
 private def closureEvidence : Evidence Nat :=
   node [[2]] (.funE body) [1] .funE
-    [node [[0],[2]] body [0] .letE
-      [readEvidence,node [[0,1],[0],[2]] dispatch [0] (.unionVar 0) [nullBranch,callBranch]]]
+    [node [[3],[0],[2]] body [0] .letE
+      [readEvidence,node [[0,1],[3],[0],[2]] dispatch [0] (.unionVar 0) [nullBranch,callBranch]]]
 private def certificate : ControlFlow.Certificate Nat :=
   [{expression := node [] (.alloc .nul) [2] .alloc
       [node [] .nul [0,1] (.sub .subset) [node [] .nul [0] .nul]], edges := [[.subset]]},
@@ -45,7 +47,8 @@ private def certificate : ControlFlow.Certificate Nat :=
        node [[1],[2]] (.var 0) [0,1] (.sub .subset) [node [[1],[2]] (.var 0) [1] .var]],
     edges := [[.subset,.subset]]},
    {expression := node [[1],[2]] (.app (.var 0) .nul) [0] .app
-      [node [[1],[2]] (.var 0) [1] .var,node [[1],[2]] .nul [0] .nul], edges := []}]
+      [node [[1],[2]] (.var 0) [1] .var,node [[1],[2]] .undef [3] .undef,
+       node [[1],[2]] .nul [0] .nul], edges := []}]
 
 theorem checked : checkClosed G [0] program certificate 0 = true := by decide +kernel
 #guard match (do
@@ -56,9 +59,9 @@ theorem checked : checkClosed G [0] program certificate 0 = true := by decide +k
 -- The nullable cell must be guarded on every invocation, and the recursive
 -- call's argument must satisfy its contract. Current contents are not captures.
 private def pool := vocabulary G labels claims []
-#guard !(expression G pool 10 [[2]] (.funE (.app (.read (.var 1)) .nul)) [1]).isSome
+#guard !(expression G pool 10 [[2]] (.funE (.app (.read (.var 2)) .nul)) [1]).isSome
 #guard !(expression G pool 10 [[2]]
-  (.funE (.letE (.read (.var 1))
+  (.funE (.letE (.read (.var 2))
     (.ite (.test .isFun (.var 0)) (.app (.var 0) .tru) .nul))) [1]).isSome
 
 private def cell : Tm := .obj 0 .absent

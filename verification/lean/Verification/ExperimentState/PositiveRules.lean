@@ -8,7 +8,8 @@ open PositiveNormalization PositiveGraphs ReferenceConjunctions Tower
 abbrev Table (ι : Type) := List (List ι × List ι)
 abbrev Rel (table : Table ι) (a b : List ι) : Prop := (a, b) ∈ table
 
-abbrev Ops (ι : Type) := List (List (List ι) × List ι)
+/-- Fixed signatures `(receiver, parameters, result)`. -/
+abbrev Ops (ι : Type) := List (List ι × List (List ι) × List ι)
 def expand (G : NormalGraph ι) (S : List ι) : List (Clause (List ι)) := S.flatMap G
 
 /-- Decompose one clause into an exactly equivalent finite union. `bool` is the
@@ -246,35 +247,44 @@ theorem rest_rest {G : NormalGraph ι} {R : List ι → List ι → Prop} {j : N
     simp only [List.map_cons, ArgsRest_cons] at h ⊢
     exact ⟨hr Q P hd.1 W a h.1, rest_rest hr hfe hd.2 hel h.2⟩
 
-/-- A variadic signature covers a fixed arrow when the arrow's first positions
-are within its fixed parameters, its further positions within its element
-contract, and its result within the arrow's. -/
-def RestFixed (R : List ι → List ι → Prop) (s : List (List ι) × List ι × List ι)
-    (As : List (List ι)) (d : List ι) : Prop :=
-  Domains R (As.take s.1.length) s.1 ∧ (∀ A ∈ As.drop s.1.length, R A s.2.1) ∧
-    (s.2.2 = [] ∨ R s.2.2 d)
+/-- A variadic signature `(receiver, fixed, element, result)` covers a fixed
+target `(Rt, As, d)` when the target's receiver is within its receiver, the
+target's first positions are within its fixed parameters, its further
+positions within its element contract, and its result within the target's. -/
+def RestFixed (R : List ι → List ι → Prop) (s : List ι × List (List ι) × List ι × List ι)
+    (Rt : List ι) (As : List (List ι)) (d : List ι) : Prop :=
+  R Rt s.1 ∧ Domains R (As.take s.2.1.length) s.2.1 ∧
+    (∀ A ∈ As.drop s.2.1.length, R A s.2.2.1) ∧ (s.2.2.2 = [] ∨ R s.2.2.2 d)
 
-/-- One variadic signature covers another: the target's fixed parameters are
-within the source's, then within its element contract; the target's element
-contract is within the source's; results are covariant. -/
-def RestCovers (R : List ι → List ι → Prop) (p q : List (List ι) × List ι × List ι) : Prop :=
-  Domains R (q.1.take p.1.length) p.1 ∧ (∀ A ∈ q.1.drop p.1.length, R A p.2.1) ∧
-    R q.2.1 p.2.1 ∧ R p.2.2 q.2.2
+/-- One variadic signature covers another: the target's receiver is within the
+source's; the target's fixed parameters are within the source's, then within
+its element contract; the target's element contract is within the source's;
+results are covariant. -/
+def RestCovers (R : List ι → List ι → Prop)
+    (p q : List ι × List (List ι) × List ι × List ι) : Prop :=
+  R q.1 p.1 ∧ Domains R (q.2.1.take p.2.1.length) p.2.1 ∧
+    (∀ A ∈ q.2.1.drop p.2.1.length, R A p.2.2.1) ∧ R q.2.2.1 p.2.2.1 ∧ R p.2.2.2 q.2.2.2
 
-/-- Declarative overload coverage for native argument-list signatures. A
-target arrow is covered by a fixed source arrow, by a variadic source
-signature, by splitting a union position, or by combining two coverings. -/
+/-- Declarative overload coverage for native signatures with receivers. A
+target `(Rt, As, d)` is covered by a fixed source signature, by a variadic
+one, by splitting a union at the receiver or at a parameter position, or by
+combining two coverings. The receiver is contravariant, like a parameter. -/
 inductive CallArrow (G : NormalGraph ι) (R : List ι → List ι → Prop)
-    (L : List (List (List ι) × List ι)) (S : List (List (List ι) × List ι × List ι)) :
-    List (List ι) → List ι → Prop where
-  | empty : [] ∈ As → CallArrow G R L S As d
-  | source : p ∈ L → Domains R As p.1 → (p.2 = [] ∨ R p.2 d) → CallArrow G R L S As d
-  | rest : s ∈ S → RestFixed R s As d → CallArrow G R L S As d
-  | union : CallArrow G R L S (pre ++ a :: suffix) d →
-      CallArrow G R L S (pre ++ b :: suffix) d →
-      CallArrow G R L S (pre ++ (a ++ b) :: suffix) d
-  | combine : CallArrow G R L S As b → CallArrow G R L S As b' →
-      (∀ i ∈ b, ∀ k ∈ b', compatible G i k = true → R [i] d) → CallArrow G R L S As d
+    (L : List (List ι × List (List ι) × List ι))
+    (S : List (List ι × List (List ι) × List ι × List ι)) :
+    List ι → List (List ι) → List ι → Prop where
+  | emptyRecv : CallArrow G R L S [] As d
+  | empty : [] ∈ As → CallArrow G R L S Rt As d
+  | source : p ∈ L → R Rt p.1 → Domains R As p.2.1 → (p.2.2 = [] ∨ R p.2.2 d) →
+      CallArrow G R L S Rt As d
+  | rest : s ∈ S → RestFixed R s Rt As d → CallArrow G R L S Rt As d
+  | union : CallArrow G R L S Rt (pre ++ a :: suffix) d →
+      CallArrow G R L S Rt (pre ++ b :: suffix) d →
+      CallArrow G R L S Rt (pre ++ (a ++ b) :: suffix) d
+  | recvUnion : CallArrow G R L S a As d → CallArrow G R L S b As d →
+      CallArrow G R L S (a ++ b) As d
+  | combine : CallArrow G R L S Rt As b → CallArrow G R L S Rt As b' →
+      (∀ i ∈ b, ∀ k ∈ b', compatible G i k = true → R [i] d) → CallArrow G R L S Rt As d
 
 /-- An arrow's source result within the target's, or empty. -/
 theorem arrow_result {G : NormalGraph ι} {R : List ι → List ι → Prop} {n : Nat} {r d : List ι}
@@ -285,32 +295,46 @@ theorem arrow_result {G : NormalGraph ι} {R : List ι → List ι → Prop} {n 
   · obtain ⟨i, hi, _⟩ := hu; simp [he] at hi
   · exact hr m hm _ _ he V u hu
 
-theorem CallArrow.sound {G : NormalGraph ι} {R L S As d} (hc : CallArrow G R L S As d) (n : Nat)
+theorem CallArrow.sound {G : NormalGraph ι} {R L S Rt As d}
+    (hc : CallArrow G R L S Rt As d) (n : Nat)
     (hr : ∀ j, j < n → ∀ a b, R a b → FamLeAt G a b j)
     (W : WorldT n) (v : Val)
-    (hv : callsT (L.map fun p => (p.1.map (meaning G), meaning G p.2)) n W v ∧
-      restsT (S.map fun s => (s.1.map (meaning G), meaning G s.2.1, meaning G s.2.2)) n W v) :
-    Promise (ArgsShort (As.map (meaning G))) (meaning G d) n W v := by
+    (hv : callsT (L.map fun p => (meaning G p.1, p.2.1.map (meaning G), meaning G p.2.2)) n W v ∧
+      restsT (S.map fun s => (meaning G s.1, s.2.1.map (meaning G), meaning G s.2.2.1,
+        meaning G s.2.2.2)) n W v) :
+    Promise (ArgsShort (As.map (meaning G))) (meaning G Rt) (meaning G d) n W v := by
   induction hc with
+  | emptyRecv =>
+    intro j hj U hx hu heap hh r hrv hrm
+    obtain ⟨i, hi, _⟩ := hrm
+    simp at hi
   | empty he =>
-    intro j hj U hx hu heap hh args hvals ha
+    intro j hj U hx hu heap hh r hrv hrm args hvals ha
     exact False.elim (short_empty he ha)
-  | source hm hd hres =>
+  | source hm hrecv hd hres =>
     exact (hv.1.2 _ (List.mem_map_of_mem hm)).weaken
+      (fun j hj U r hrm => hr j hj _ _ hrecv U r hrm)
       (fun j hj U args ha => Domains.short (hr j hj) hd ha) (arrow_result hr hres)
   | rest hs hrf =>
     exact (hv.2.2 _ (List.mem_map_of_mem hs)).weaken
-      (fun j hj U args ha => rest_short (hr j hj) (by simpa using hrf.1)
-        (by simpa using hrf.2.1) ha) (arrow_result hr hrf.2.2)
+      (fun j hj U r hrm => hr j hj _ _ hrf.1 U r hrm)
+      (fun j hj U args ha => rest_short (hr j hj) (by simpa using hrf.2.1)
+        (by simpa using hrf.2.2.1) ha) (arrow_result hr hrf.2.2.2)
   | union _ _ hl hh =>
-    intro j hj U hx hu heap hok args hvals ha
+    intro j hj U hx hu heap hok r hrv hrm args hvals ha
     rcases short_union _ _ _ _ ha with ha | ha
-    · exact hl j hj U hx hu heap hok args hvals ha
-    · exact hh j hj U hx hu heap hok args hvals ha
+    · exact hl j hj U hx hu heap hok r hrv hrm args hvals ha
+    · exact hh j hj U hx hu heap hok r hrv hrm args hvals ha
+  | recvUnion _ _ hl hh =>
+    intro j hj U hx hu heap hok r hrv hrm args hvals ha
+    obtain ⟨i, hi, hvi⟩ := hrm
+    rcases List.mem_append.mp hi with hi | hi
+    · exact hl j hj U hx hu heap hok r hrv ⟨i, hi, hvi⟩ args hvals ha
+    · exact hh j hj U hx hu heap hok r hrv ⟨i, hi, hvi⟩ args hvals ha
   | combine _ _ hg hl hh =>
-    intro j hj U hx hu heap hok args hvals ha
-    obtain ⟨r1, hi1, hs1⟩ := hl j hj U hx hu heap hok args hvals ha
-    obtain ⟨r2, hi2, hs2⟩ := hh j hj U hx hu heap hok args hvals ha
+    intro j hj U hx hu heap hok r hrv hrm args hvals ha
+    obtain ⟨r1, hi1, hs1⟩ := hl j hj U hx hu heap hok r hrv hrm args hvals ha
+    obtain ⟨r2, hi2, hs2⟩ := hh j hj U hx hu heap hok r hrv hrm args hvals ha
     cases CallArguments.invoke_deterministic hi1 hi2
     refine ⟨r1, hi1, safe_cross_upto j ?_ U U heap _ hok hok hs1 hs2⟩
     rintro r hb V V' heap h1 h2 u ⟨i, hi, hv1⟩ ⟨k, hk, hv2⟩
@@ -318,12 +342,15 @@ theorem CallArrow.sound {G : NormalGraph ι} {R L S As d} (hc : CallArrow G R L 
       ⟨i, by simp, hv1⟩
 
 theorem rest_covers_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
-    {p q : List (List ι) × List ι × List ι} (hc : RestCovers R p q) (n : Nat)
+    {p q : List ι × List (List ι) × List ι × List ι} (hc : RestCovers R p q) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j) (W : WorldT n) (v : Val)
-    (hv : Promise (ArgsRest (p.1.map (meaning G)) (meaning G p.2.1)) (meaning G p.2.2) n W v) :
-    Promise (ArgsRest (q.1.map (meaning G)) (meaning G q.2.1)) (meaning G q.2.2) n W v := by
-  obtain ⟨hd, hel, he, hres⟩ := hc
-  exact hv.weaken (fun j hj U args ha => rest_rest (hr j hj) he (by simpa using hd)
+    (hv : Promise (ArgsRest (p.2.1.map (meaning G)) (meaning G p.2.2.1)) (meaning G p.1)
+      (meaning G p.2.2.2) n W v) :
+    Promise (ArgsRest (q.2.1.map (meaning G)) (meaning G q.2.2.1)) (meaning G q.1)
+      (meaning G q.2.2.2) n W v := by
+  obtain ⟨hrecv, hd, hel, he, hres⟩ := hc
+  exact hv.weaken (fun j hj U r hrm => hr j hj _ _ hrecv U r hrm)
+    (fun j hj U args ha => rest_rest (hr j hj) he (by simpa using hd)
     (by simpa using hel) ha) (fun m hm U u hu => hr m hm _ _ hres U u hu)
 
 /-- One record conjunction covers another when every field any target operand
@@ -372,10 +399,10 @@ def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
   | .strLit a, .strLit b => a = b
   | .refs a bs vs, .refs c ds ws => CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws
   | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
-      (∀ p ∈ M, CallArrow G R L S p.1 p.2) ∧ ∀ t ∈ T, ∃ s ∈ S, RestCovers R s t
+      (∀ p ∈ M, CallArrow G R L S p.1 p.2.1 p.2.2) ∧ ∀ t ∈ T, ∃ s ∈ S, RestCovers R s t
   | .callable a bs L S, .callable c ds M T =>
       CoversFields R (a :: bs) (c :: ds) ∧
-      (∀ p ∈ M, CallArrow G R L S p.1 p.2) ∧ ∀ t ∈ T, ∃ s ∈ S, RestCovers R s t
+      (∀ p ∈ M, CallArrow G R L S p.1 p.2.1 p.2.2) ∧ ∀ t ∈ T, ∃ s ∈ S, RestCovers R s t
   | _, _ => False
 
 /-- Covering field by field is enough: the operands all constrain the same

@@ -49,6 +49,7 @@ and annotation_atom binders j =
       readonly=boolean (field "readonly" j) }
   | "function" ->
     let signature a = { quantified=[];
+      receiver=annotation binders (field "this" a);
       params=List.map (annotation binders) (items "params" a);
       variadic=Option.map (annotation binders) (List.assoc_opt "rest" (obj a));
       result=annotation binders (field "result" a) } in
@@ -96,11 +97,18 @@ and expr_node =
   (* A parameter's type is what the body reads. A defaulted one also admits
      `undefined` where the closure is called; the default replaces it. A rest
      parameter reads the tuple its arguments are collected into, and the
-     signature has one position per required element of that tuple. *)
-  | Lambda of quantifier list * (string * ty) list * (int * expr) list * bool * ty * expr
+     signature has one position per required element of that tuple. The
+     receiver is the `this` annotation of an ordinary function, none for an
+     arrow, whose `this` is the enclosing one. *)
+  | Lambda of ty option * quantifier list * (string * ty) list * (int * expr) list * bool * ty * expr
   (* The positions of the arguments written with `...`: each stands for the
      elements of its operand, read where it is written. *)
   | Call of expr * expr option * expr list * int list
+  (* A call through a property reference: the callee is the read of the
+     method, and the object it is read from is the receiver. *)
+  | Invoke of expr * expr list * int list
+  (* `f.apply(r, list)`: the list's elements, read by index, are the actuals. *)
+  | Apply of expr * expr * expr option
   | Conditional of expr * expr * expr | Coalesce of expr * expr
   | ArrayLiteral of expr list | Index of expr * expr | IndexWrite of expr * expr * expr
   | Bind of expr * expr * expr list
@@ -121,6 +129,7 @@ let rec expr binders j =
   let sub k = expr binders (field k j) in
   let node = match text "k" j with
   | "id" -> Id (text "name" j) | "lit" -> Literal (literal (field "lit" j))
+  | "this" -> Id "this"
   | "not" -> Not (sub "e")
   | "arith" -> let op = match text "op" j with
       | "add" -> Add | "sub" -> Sub | "mul" -> Mul | "div" -> Div
@@ -138,7 +147,14 @@ let rec expr binders j =
         (items "typeParams" j) in
       let parameters = items "params" j in
       let rest = List.exists (fun p -> List.mem_assoc "rest" (obj p)) parameters in
-      Lambda (quantified,
+      let receiver = match field "receiver" j with
+        | Null -> None
+        | r ->
+          (* The receiver rule is the strict one; sloppy code substitutes the
+             global object, which nothing here models. *)
+          if not (boolean (field "strict" r)) then unsupported "an ordinary function in sloppy code";
+          Some (annotation inner (field "type" r)) in
+      Lambda (receiver,quantified,
         List.map (fun p -> text "name" p,annotation inner (field "type" p)) parameters,
         List.filter_map (fun (i,p) -> match List.assoc_opt "default" (obj p) with
           | None -> None
@@ -152,6 +168,13 @@ let rec expr binders j =
       | None -> [] | Some s -> List.map (fun n -> int_of_string (match n with
           | Json.Number n -> n | _ -> Json.fail "a spread position is a number")) (list s) in
     Call (sub "callee",None,List.map (expr binders) (items "args" j),spreads)
+  | "invoke" ->
+    let spreads = match List.assoc_opt "spreads" (obj j) with
+      | None -> [] | Some s -> List.map (fun n -> int_of_string (match n with
+          | Json.Number n -> n | _ -> Json.fail "a spread position is a number")) (list s) in
+    Invoke (sub "callee",List.map (expr binders) (items "args" j),spreads)
+  | "applyWithReceiver" ->
+    Apply (sub "callee",sub "receiver",(match field "list" j with Null -> None | l -> Some (expr binders l)))
   | "callWithReceiver" ->
     Call (sub "callee",Some (sub "receiver"),List.map (expr binders) (items "args" j),[])
   | "coalesce" -> Coalesce (sub "left",sub "right")

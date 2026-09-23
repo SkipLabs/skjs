@@ -110,6 +110,7 @@ const claimedType = (t: unknown): boolean =>
               p.name.length > 0 &&
               (p.bound === null || claimedType(p.bound)),
           ) &&
+          claimedType(t.scheme.this) &&
           isList(t.scheme.params) &&
           t.scheme.params.every(claimedType) &&
           (t.scheme.rest === null || claimedType(t.scheme.rest)) &&

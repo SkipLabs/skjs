@@ -86,21 +86,23 @@ theorem EnvOk.prepend {G : NormalGraph ι} {Γ ρ n W As args}
     | nil => exact False.elim ha
     | cons a args => exact (ih ha.2).push ha.1
 
-/-- A body safe under every declared parameter environment establishes the
-native invocation contract. All overloads here have the descriptor's arity. -/
+/-- A body safe under every declared parameter and receiver environment
+establishes the native invocation contract. All signatures here have the
+descriptor's arity; the receiver precedes the parameters. -/
 theorem invocation_of_body {G : NormalGraph ι} {Γ ρ n W b arity}
-    {L : List (List (Ty ι) × Ty ι)} (he : EnvOk G Γ ρ n W)
-    (hlen : ∀ p ∈ L, p.1.length = arity)
-    (hb : ∀ p ∈ L, ∀ j U heap env, EnvOk G (p.1 ++ Γ) env j U →
-      WorldAdm U → HeapOk j U heap → Safe (meaning G p.2) j U heap (instantiate 0 env b)) :
-    InvocationSpec arity (L.map fun p => (p.1.map (meaning G), meaning G p.2))
-      n W (instantiate arity ρ b) := by
-  refine ⟨instantiate_scoped ρ he.1 b arity, ?_⟩
-  intro p hp j hj U hx hu heap hok args ha
+    {L : List (Ty ι × List (Ty ι) × Ty ι)} (he : EnvOk G Γ ρ n W)
+    (hlen : ∀ p ∈ L, p.2.1.length = arity)
+    (hb : ∀ p ∈ L, ∀ j U heap env, EnvOk G (p.1 :: p.2.1 ++ Γ) env j U →
+      WorldAdm U → HeapOk j U heap → Safe (meaning G p.2.2) j U heap (instantiate 0 env b)) :
+    InvocationSpec arity (L.map fun p => (meaning G p.1, p.2.1.map (meaning G), meaning G p.2.2))
+      n W (instantiate (arity + 1) ρ b) := by
+  refine ⟨instantiate_scoped ρ he.1 b (arity + 1), ?_⟩
+  intro p hp j hj U hx hu heap hok r hr args ha
   obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
   have hlength : args.length = arity := by
     simpa only [List.length_map, hlen q hq] using ArgsT_length ha
-  have henv := (he.transfer j (Nat.le_of_lt hj) U hx).prepend ha
+  have hall : ArgsT ((q.1 :: q.2.1).map (meaning G)) j U (r :: args) := ⟨hr, ha⟩
+  have henv := (he.transfer j (Nat.le_of_lt hj) U hx).prepend hall
   have hscoped : ∀ (As : List (Ty ι)) args, ArgsT (As.map (meaning G)) j U args →
       ∀ a ∈ args, Scoped 0 a := by
     intro As
@@ -115,11 +117,12 @@ theorem invocation_of_body {G : NormalGraph ι} {Γ ρ n W b arity}
         rcases List.mem_cons.mp hv with rfl | hv
         · exact (meaning_value ha.1).2
         · exact ih args ha.2 v hv
-  have hargs := hscoped q.1 args ha
+  have hargs := hscoped _ _ hall
   unfold CallArguments.bindParameters
   rw [← hlength, CallArguments.parameters_exact]
-  rw [show args.length = 0 + args.length from (Nat.zero_add _).symm, instantiate_args ρ he.1 hargs]
-  exact hb q hq j U heap _ henv hu hok
+  have hl : args.length + 1 = 0 + (r :: args).length := by simp
+  rw [hl, instantiate_args ρ he.1 hargs]
+  exact hb q hq j U heap _ (by simpa [List.append_assoc] using henv) hu hok
 
 /-- An equality established by a branch can refine one immutable slot. -/
 theorem EnvOk.refine {G : NormalGraph ι} {Γ ρ n W i A B}
@@ -197,53 +200,47 @@ theorem bind_list {B : Fam} (xs : List (Fam × Tm))
     apply hk k (Nat.le_trans hk' hj) V hworld hv' heap'' (v :: args) hok'
     exact ⟨(hA p (by simp)).mono k _ V hy v ((hA p (by simp)).down_le j k hk' U v ha), hargs⟩
 
-/-- Native call compatibility includes the callee and every effectful actual,
-then uses the invocation contract only after all operands have become values. -/
-theorem call_safe {B : Fam} (xs : List (Fam × Tm))
-    (hA : ∀ p ∈ xs, Adm p.1) (hAv : ∀ p ∈ xs, ValOnly p.1)
-    {n W heap f} (hw : WorldAdm W) (hh : HeapOk n W heap)
-    (hf : Safe (callsT [(xs.map Prod.fst, B)]) n W heap f)
-    (ha : ∀ p ∈ xs, FutureSafe p.1 n W p.2) :
-    Safe B n W heap (.call f (xs.map Prod.snd)) := by
-  apply bind (fun f => .call f (xs.map Prod.snd)) Step.callL n W heap f hw hh hf
-  intro j hj U hx hu heap' v hok hv hfun
-  apply bind_list xs hA (Tm.call v)
-    (fun hs => (CallArguments.Prepare.args hv hs).step) hu hok
-    (fun p hp => (ha p hp).transfer hj hx)
-  intro k hk V hy hv' heap'' args hok' hargs
-  have hf' := (callsT_adm _).mono k _ V hy v ((callsT_adm _).down_le j k hk U v hfun)
-  exact call_elim (by intro A h; obtain ⟨p,hp,rfl⟩ := List.mem_map.mp h; exact hA p hp)
-    (by intro A h; obtain ⟨p,hp,rfl⟩ := List.mem_map.mp h; exact hAv p hp)
-    hf' (List.mem_singleton_self _) hargs hv' hok'
+/-- A family holds of a saved value across two later worlds. -/
+theorem adm_transfer2 {A : Fam} (hA : Adm A) {j i k : Nat} {U : WorldT j} {X : WorldT i}
+    {V : WorldT k} {v : Val} (ha : A j U v) (hi : i ≤ j) (hy : WExt (trunc i hi U) X)
+    (hk : k ≤ i) (hz : WExt (trunc k hk X) V) : A k V v :=
+  hA.mono k _ V hz v (hA.down_le i k hk X v (hA.mono i _ X hy v (hA.down_le j i hi U v ha)))
 
 /-- A call that writes fewer actuals than its selected signature declares. The
-omitted positions are exactly the ones whose contract admits `undefined`, which
-is the value the machine binds there; nothing is added to the source term. -/
-theorem call_safe_short {B : Fam} (xs : List (Fam × Tm)) (Us : List Fam)
+callee runs first, then the receiver, then the actuals. The omitted positions
+are exactly the ones whose contract admits `undefined`, which is the value the
+machine binds there; nothing is added to the source term. -/
+theorem call_safe_short {Rc B : Fam} (xs : List (Fam × Tm)) (Us : List Fam)
+    (hRc : Adm Rc) (hRcv : ValOnly Rc)
     (hA : ∀ p ∈ xs, Adm p.1) (hAv : ∀ p ∈ xs, ValOnly p.1)
     (hUA : ∀ A ∈ Us, Adm A) (hUAv : ∀ A ∈ Us, ValOnly A)
-    {n W heap f} (hw : WorldAdm W) (hh : HeapOk n W heap)
-    (hf : Safe (callsT [(xs.map Prod.fst ++ Us, B)]) n W heap f)
+    {n W heap f r} (hw : WorldAdm W) (hh : HeapOk n W heap)
+    (hf : Safe (callsT [(Rc, xs.map Prod.fst ++ Us, B)]) n W heap f)
+    (hr : FutureSafe Rc n W r)
     (ha : ∀ p ∈ xs, FutureSafe p.1 n W p.2)
     (hu : ∀ A ∈ Us, FutureSafe A n W .undef) :
-    Safe B n W heap (.call f (xs.map Prod.snd)) := by
-  apply bind (fun f => .call f (xs.map Prod.snd)) Step.callL n W heap f hw hh hf
+    Safe B n W heap (.invoke f r (xs.map Prod.snd)) := by
+  apply bind (fun f => .invoke f r (xs.map Prod.snd)) Step.callL n W heap f hw hh hf
   intro j hj U hx hw' heap' v hok hv hfun
-  apply bind_list xs hA (Tm.call v)
-    (fun hs => (CallArguments.Prepare.args hv hs).step) hw' hok
-    (fun p hp => (ha p hp).transfer hj hx)
-  intro k hk V hy hv' heap'' args hok' hargs
+  apply bind (fun r => .invoke v r (xs.map Prod.snd)) (Step.callRecv hv) j U heap' r hw' hok
+    ((hr.transfer hj hx) j (Nat.le_refl _) U (by rw [trunc_id]; exact WExt_refl _) hw' heap' hok)
+  intro i hi X hy hX heap'' rv hok'' hrv hrm
+  apply bind_list xs hA (Tm.invoke v rv)
+    (fun hs => (CallArguments.Prepare.args hv hrv hs).step) hX hok''
+    (fun p hp => ((ha p hp).transfer hj hx).transfer hi hy)
+  intro k hk V hz hv' heap3 args hok3 hargs
   cases k with
   | zero => trivial
   | succ k =>
-    have hf' := (callsT_adm _).mono (k+1) _ V hy v ((callsT_adm _).down_le j (k+1) hk U v hfun)
+    have hf' := adm_transfer2 (callsT_adm _) hfun hi hy hk hz
+    have hr' := adm_transfer2 hRc hrm (Nat.le_refl i) (by rw [trunc_id]; exact WExt_refl _) hk hz
     have hundef : ∀ A ∈ Us, A (k+1) V .undef := by
       intro A hA'
       exact safe_value_mem rfl
-        (((hu A hA').transfer hj hx).transfer hk hy (k+1) (Nat.le_refl _) V
-          (by rw [trunc_id]; exact WExt_refl _) hv' heap'' hok')
-    refine call_elim_short (p := (xs.map Prod.fst ++ Us, B))
-      (pad := List.replicate Us.length .undef)
+        ((((hu A hA').transfer hj hx).transfer hi hy).transfer hk hz (k+1) (Nat.le_refl _) V
+          (by rw [trunc_id]; exact WExt_refl _) hv' heap3 hok3)
+    refine call_elim_short (p := (Rc, xs.map Prod.fst ++ Us, B))
+      (pad := List.replicate Us.length .undef) hRc
       (by
         intro A h
         rcases List.mem_append.mp h with h | h
@@ -254,9 +251,21 @@ theorem call_safe_short {B : Fam} (xs : List (Fam × Tm)) (Us : List Fam)
         rcases List.mem_append.mp h with h | h
         · obtain ⟨p, hp, rfl⟩ := List.mem_map.mp h; exact hAv p hp
         · exact hUAv A h)
-      (by intro a h; exact List.eq_of_mem_replicate h)
-      hf' (List.mem_singleton_self _)
-      (ArgsT_append hargs (ArgsT_undef hundef)) hv' hok'
+      (by intro a h; exact List.eq_of_mem_replicate h) hrv
+      hf' (List.mem_singleton_self _) hr'
+      (ArgsT_append hargs (ArgsT_undef hundef)) hv' hok3
+
+/-- Native call compatibility includes the callee, the receiver and every
+effectful actual, then uses the invocation contract only after all operands
+have become values. -/
+theorem call_safe {Rc B : Fam} (xs : List (Fam × Tm)) (hRc : Adm Rc) (hRcv : ValOnly Rc)
+    (hA : ∀ p ∈ xs, Adm p.1) (hAv : ∀ p ∈ xs, ValOnly p.1)
+    {n W heap f r} (hw : WorldAdm W) (hh : HeapOk n W heap)
+    (hf : Safe (callsT [(Rc, xs.map Prod.fst, B)]) n W heap f)
+    (hr : FutureSafe Rc n W r)
+    (ha : ∀ p ∈ xs, FutureSafe p.1 n W p.2) :
+    Safe B n W heap (.invoke f r (xs.map Prod.snd)) :=
+  call_safe_short xs [] hRc hRcv hA hAv (by simp) (by simp) hw hh (by simpa using hf) hr ha (by simp)
 
 /-- A shape-only test has a fixed answer. Numeric equality needs the
 singleton bits; the whole number family has no uniform answer. -/
@@ -328,14 +337,14 @@ store may have a hole. -/
 
 /-- The variadic signatures a callable type carries, fixed or callable object
 alike; none for any other type. -/
-def restSigs (G : NormalGraph ι) (F : Ty ι) : List (List (Ty ι) × Ty ι × Ty ι) :=
+def restSigs (G : NormalGraph ι) (F : Ty ι) : List (Ty ι × List (Ty ι) × Ty ι × Ty ι) :=
   match expand G F with
   | [.arrs _ S] | [.callable _ _ _ S] => S
   | _ => []
 
 theorem restsT_of_restSigs {G : NormalGraph ι} {F : Ty ι} {s} (hs : s ∈ restSigs G F) {n W v}
     (hv : meaning G F n W v) :
-    restsT [(s.1.map (meaning G), meaning G s.2.1, meaning G s.2.2)] n W v := by
+    restsT [(meaning G s.1, s.2.1.map (meaning G), meaning G s.2.2.1, meaning G s.2.2.2)] n W v := by
   unfold restSigs at hs
   split at hs
   · rename_i L S hF
@@ -345,6 +354,37 @@ theorem restsT_of_restSigs {G : NormalGraph ι} {F : Ty ι} {s} (hs : s ∈ rest
     have hv' := ((represents_sem hF n W v).mp hv).2
     exact restsT_select hv' (List.mem_map_of_mem hs)
   · cases hs
+
+/-- The fixed signatures a callable type carries, fixed or callable object
+alike; none for any other type. -/
+def callSigs (G : NormalGraph ι) (F : Ty ι) : List (Ty ι × List (Ty ι) × Ty ι) :=
+  match expand G F with
+  | [.arrs L _] | [.callable _ _ L _] => L
+  | _ => []
+
+theorem callsT_of_callSigs {G : NormalGraph ι} {F : Ty ι} {p} (hp : p ∈ callSigs G F) {n W v}
+    (hv : meaning G F n W v) :
+    callsT [(meaning G p.1, p.2.1.map (meaning G), meaning G p.2.2)] n W v := by
+  unfold callSigs at hp
+  split at hp
+  · rename_i L S hF
+    have hv' := ((represents_sem hF n W v).mp hv).1
+    exact callsT_select hv' (List.mem_map_of_mem hp)
+  · rename_i P Ps L S hF
+    have hv' := ((represents_sem hF n W v).mp hv).1.2
+    exact callsT_select hv' (List.mem_map_of_mem hp)
+  · cases hp
+
+/-- Saved slots, in order, at the contracts the environment gives them. -/
+theorem ArgsT_slots {G : NormalGraph ι} {Γ ρ n W} (he : EnvOk G Γ ρ n W) :
+    ∀ {slots : List Nat} {Ps : List (Ty ι)}, slots.map (Γ[·]?) = Ps.map some →
+      ArgsT (Ps.map (meaning G)) n W (slots.map ρ)
+  | [], [], _ => trivial
+  | i :: slots, P :: Ps, h => by
+    simp only [List.map_cons, List.cons.injEq] at h
+    exact ⟨he.2 _ _ h.1, ArgsT_slots he h.2⟩
+  | [], _ :: _, h => by simp at h
+  | _ :: _, [], h => by simp at h
 
 /-- The type of the array a variadic body receives: a record whose store field
 holds any number of elements at `E`. -/
@@ -486,32 +526,44 @@ theorem ArgStep_append {h h' : Heap} {args args' : List Tm} (rest : List Tm)
   | head hs => exact .head hs
   | tail hv _ ih => exact .tail hv ih
 
-/-- **A variadic call.** The callee, the fixed actuals, then the further parts
-run left to right; the call meets the signature's result. `Us` are trailing
-fixed positions the call omits, each admitting `undefined`; a call that omits
-one writes no further part. -/
-theorem rest_call_safe {Ps Us : List Fam} {E R : Fam}
+/-- **A variadic call.** The callee, the receiver, the fixed actuals, then
+the further parts run left to right; the call meets the signature's result.
+`Us` are trailing fixed positions the call omits, each admitting `undefined`;
+a call that omits one writes no further part. -/
+theorem rest_call_safe {Rc : Fam} {Ps Us : List Fam} {E R : Fam}
+    (hRc : Adm Rc) (hRcv : ValOnly Rc)
     (hA : ∀ A ∈ Ps, Adm A) (hAv : ∀ A ∈ Ps, ValOnly A) (hE : Adm E) (hEv : ValOnly E)
     (hUA : ∀ A ∈ Us, Adm A)
     (xs : List (Fam × Tm)) (hxs : xs.map Prod.fst = Ps) (parts : List (Option Fam × Tm))
     (hshort : Us = [] ∨ parts = [])
     (hS : ∀ p ∈ parts, ∀ S, p.1 = some S → Adm S ∧ RestCalls.Spreads S E)
-    {n W heap f} (hw : WorldAdm W) (hh : HeapOk n W heap)
-    (hf : Safe (restsT [(Ps ++ Us, E, R)]) n W heap f)
+    {n W heap f r} (hw : WorldAdm W) (hh : HeapOk n W heap)
+    (hf : Safe (restsT [(Rc, Ps ++ Us, E, R)]) n W heap f)
+    (hr : FutureSafe Rc n W r)
     (hx : ∀ p ∈ xs, FutureSafe p.1 n W p.2) (hp : ∀ p ∈ parts, FutureSafe (p.1.getD E) n W p.2)
     (hu : ∀ A ∈ Us, FutureSafe A n W .undef) :
-    Safe R n W heap (.call f (xs.map Prod.snd ++ parts.map RestCalls.partTerm)) := by
-  apply bind (fun f => .call f (xs.map Prod.snd ++ parts.map RestCalls.partTerm)) Step.callL
+    Safe R n W heap (.invoke f r (xs.map Prod.snd ++ parts.map RestCalls.partTerm)) := by
+  apply bind (fun f => .invoke f r (xs.map Prod.snd ++ parts.map RestCalls.partTerm)) Step.callL
     n W heap f hw hh hf
-  intro j hj U hxU hu' heap' v hok hv hfun
+  intro j0 hj0 U0 hx0 hu0 heap0 v hok0 hv hfun0
+  apply bind (fun r => .invoke v r (xs.map Prod.snd ++ parts.map RestCalls.partTerm))
+    (Step.callRecv hv) j0 U0 heap0 r hu0 hok0
+    ((hr.transfer hj0 hx0) j0 (Nat.le_refl _) U0 (by rw [trunc_id]; exact WExt_refl _) hu0 heap0 hok0)
+  intro j hj1 U hy1 hu' heap' rv hok hrv hrm
+  have hfun := adm_transfer2 (restsT_adm _) hfun0 hj1 hy1 (Nat.le_refl j)
+    (by rw [trunc_id]; exact WExt_refl _)
+  have hxU : WExt (trunc j (Nat.le_trans hj1 hj0) W) U := by
+    apply WExt_trans _ hy1
+    simpa only [trunc_trunc] using WExt_trunc hj1 hx0
+  have hj : j ≤ n := Nat.le_trans hj1 hj0
   apply bind_list xs (by intro p hm; exact hA p.1 (hxs ▸ List.mem_map_of_mem hm))
-    (fun args => .call v (args ++ parts.map RestCalls.partTerm))
-    (fun hs => (CallArguments.Prepare.args hv (ArgStep_append _ hs)).step) hu' hok
+    (fun args => .invoke v rv (args ++ parts.map RestCalls.partTerm))
+    (fun hs => (CallArguments.Prepare.args hv hrv (ArgStep_append _ hs)).step) hu' hok
     (fun p hm => (hx p hm).transfer hj hxU)
   intro k hk V hy hv' heap'' args hok' hargs
   rw [hxs] at hargs
   rcases hshort with rfl | rfl
-  · apply RestCalls.spread_parts_safe hE hEv hv parts k V heap'' args hS hv' hok'
+  · apply RestCalls.spread_parts_safe hE hEv hv hrv parts k V heap'' args hS hv' hok'
       (ArgsT_values hAv hargs) (fun p hm => ((hp p hm).transfer hj hxU).transfer hk hy)
     intro i hi X hz hX heap3 extra hh3 hext
     have hUX : WExt (trunc i (Nat.le_trans hi hk) U) X := by
@@ -519,8 +571,9 @@ theorem rest_call_safe {Ps Us : List Fam} {E R : Fam}
       simpa only [trunc_trunc] using WExt_trunc hi hy
     have hfX := (restsT_adm _).mono i _ X hUX v
       ((restsT_adm _).down_le j i (Nat.le_trans hi hk) U v hfun)
+    have hrX := hRc.mono i _ X hUX rv (hRc.down_le j i (Nat.le_trans hi hk) U rv hrm)
     simp only [List.append_nil] at hfX
-    exact RestCalls.call_elim_rest (s := (Ps, E, R)) (by simp) hA hAv hE hEv hfX
+    exact RestCalls.call_elim_rest (s := (Rc, Ps, E, R)) (by simp) hRc hA hAv hE hEv hrv hrX hfX
       (ArgsT_transfer hA hargs i hi X hz) hext hX hh3
   · -- Nothing past the omitted positions: the fixed ones admit this list.
     simp only [List.map_nil, List.append_nil]
@@ -532,6 +585,7 @@ theorem rest_call_safe {Ps Us : List Fam} {E R : Fam}
       have hhX : HeapOk k X heap'' := HeapOk_trunc k V heap'' hok'
       have hfV := (restsT_adm _).mono (k + 1) _ V hy v
         ((restsT_adm _).down_le j (k + 1) hk U v hfun)
+      have hrV := hRc.down k V rv (hRc.mono (k + 1) _ V hy rv (hRc.down_le j (k + 1) hk U rv hrm))
       have hargsX := ArgsT_transfer hA hargs k (Nat.le_succ k) X (WExt_refl _)
       have hundef : ∀ A ∈ Us, A k X .undef := by
         intro A hA'
@@ -543,8 +597,8 @@ theorem rest_call_safe {Ps Us : List Fam} {E R : Fam}
         ArgsShort_of_pad (pad := List.replicate Us.length .undef)
           (fun a hm => List.eq_of_mem_replicate hm)
           (ArgsT_append hargsX (ArgsT_undef hundef))
-      obtain ⟨body, hi, hsafe⟩ := hfV.2 (Ps ++ Us, E, R) (by simp) k (Nat.lt_succ_self k) X
-        (WExt_refl _) hX heap'' hhX args (ArgsT_values hAv hargsX) (Or.inl hshortX)
+      obtain ⟨body, hi, hsafe⟩ := hfV.2 (Rc, Ps ++ Us, E, R) (by simp) k (Nat.lt_succ_self k) X
+        (WExt_refl _) hX heap'' hhX rv hrv hrV args (ArgsT_values hAv hargsX) (Or.inl hshortX)
       exact Or.inr ⟨X, heap'', body, WExt_refl _, hX, hi.step heap'', hhX, hsafe⟩
 
 /-- **Copying a spread.** `[...s]` reads the store `s` evaluates to where it is
@@ -588,28 +642,32 @@ theorem copy_safe {S E : Fam} (hS : RestCalls.Spreads S E) (hE : Adm E) (hEv : V
       hl
     simpa using this
 
-/-- Variadic code built from a body checked with the rest array in slot 0 meets
-its code contract at any later world and budget. -/
+/-- Variadic code built from a body checked with the rest array in slot 0,
+then the receiver and the fixed parameters, meets its code contract at any
+later world and budget. -/
 theorem restSpec_of_premise {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env} {n : Nat}
-    {W : WorldT n} {k : Nat} {b : Tm} {s : List (Ty ι) × Ty ι × Ty ι} {A : Ty ι}
-    (he : EnvOk G Γ ρ n W) (hk : s.1.length = k) (harr : RestArray G A s.2.1)
-    (ih : ∀ j U heap env, EnvOk G (A :: s.1 ++ Γ) env j U → WorldAdm U → HeapOk j U heap →
-      Safe (meaning G s.2.2) j U heap (instantiate 0 env b))
+    {W : WorldT n} {k : Nat} {b : Tm} {s : Ty ι × List (Ty ι) × Ty ι × Ty ι} {A : Ty ι}
+    (he : EnvOk G Γ ρ n W) (hk : s.2.1.length = k) (harr : RestArray G A s.2.2.1)
+    (ih : ∀ j U heap env, EnvOk G (A :: s.1 :: s.2.1 ++ Γ) env j U → WorldAdm U →
+      HeapOk j U heap → Safe (meaning G s.2.2.2) j U heap (instantiate 0 env b))
     {j : Nat} (hj : j ≤ n) {U : WorldT j} (hx : WExt (trunc j hj W) U) :
-    RestCalls.RestSpec k (s.1.map (meaning G)) (meaning G s.2.1) (meaning G s.2.2) j U
-      (instantiate (k + 1) ρ b) := by
-  apply RestCalls.restSpec_of_body (instantiate_scoped ρ he.1 b (k + 1)) (by simpa using hk)
+    RestCalls.RestSpec k (meaning G s.1) (s.2.1.map (meaning G)) (meaning G s.2.2.1)
+      (meaning G s.2.2.2) j U (instantiate (k + 2) ρ b) := by
+  apply RestCalls.restSpec_of_body (instantiate_scoped ρ he.1 b (k + 2)) (by simpa using hk)
+    (meaning_adm G s.1)
     (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
     (meaning_adm G A) (fun j' U' heap extra hu' hh' hext => restArray_safe harr hu' hh' hext)
-  intro j' hj' U' hx' hu' heap hh' args a hargs harr' _
-  have hsc := ArgsT_scoped hargs
+  intro j' hj' U' hx' hu' heap hh' r hr args a hargs harr' _
+  have hall : ArgsT ((s.1 :: s.2.1).map (meaning G)) j' U' (r :: args) := ⟨hr, hargs⟩
+  have hsc := ArgsT_scoped hall
   have hl : args.length = k := by rw [ArgsT_length hargs]; simpa using hk
   have hbeta := instantiate_beta _ (prependArgs_scoped hsc he.1) a b 0
   rw [Nat.zero_add] at hbeta
-  rw [show k + 1 = 1 + args.length by omega, instantiate_args ρ he.1 hsc b 1, hbeta]
+  rw [show k + 2 = 1 + (r :: args).length by simp; omega, instantiate_args ρ he.1 hsc b 1, hbeta]
   have hWU : WExt (trunc j' (by omega) W) U' := WExt_trans
     (by simpa only [trunc_trunc] using WExt_trunc (Nat.le_of_lt hj') hx) hx'
-  exact ih j' U' heap _ (((he.transfer j' (by omega) U' hWU).prepend hargs).push harr') hu' hh'
+  have henv := ((he.transfer j' (by omega) U' hWU).prepend hall).push harr'
+  exact ih j' U' heap _ (by simpa [List.append_assoc] using henv) hu' hh'
 
 /-- The pair of a signature and its rest-array type, by index. -/
 theorem zip_getElem_mem {α β : Type} {L : List α} {As : List β} {i : Nat} (hi : i < L.length)
@@ -634,35 +692,45 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   | num : Represents G A .num → HasTy G Γ (.num b) A
   | strLit : Represents G A (.strLit s) → HasTy G Γ (.str s) A
   | str : Represents G A .str → HasTy G Γ (.str s) A
-  | funE : Represents G F (.arrs L []) → (∀ p ∈ L, p.1.length = arity) →
-      (∀ p ∈ L, HasTy G (p.1 ++ Γ) b p.2) → HasTy G Γ (.make (.closure arity b) .nul) F
+  /-- **A function.** Each signature `(receiver, parameters, result)` checks the
+  body with its receiver, then its parameters, before the captures. -/
+  | funE {Γ : List (Ty ι)} {F : Ty ι} {L : List (Ty ι × List (Ty ι) × Ty ι)} {arity : Nat}
+      {b : Tm} : Represents G F (.arrs L []) → (∀ p ∈ L, p.2.1.length = arity) →
+      (∀ p ∈ L, HasTy G (p.1 :: p.2.1 ++ Γ) b p.2.2) →
+      HasTy G Γ (.make (.closure arity b) .nul) F
   /-- A callable object: the same allocation as a record, with invocation code
   attached. Its bag is a record like any other, so its fields are named by the
   program rather than fixed here. -/
-  | makeCallable {parts : List (String × Ty ι × Tm)} :
+  | makeCallable {Γ : List (Ty ι)} {F : Ty ι} {L : List (Ty ι × List (Ty ι) × Ty ι)}
+      {arity : Nat} {b : Tm} {parts : List (String × Ty ι × Tm)} :
       Represents G F (.callable (parts.map fun p => (p.1, p.2.1)) [] L []) →
       (parts.map Prod.fst).Nodup →
       (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) →
-      (∀ p ∈ L, p.1.length = arity) →
-      (∀ p ∈ L, HasTy G (p.1 ++ Γ) b p.2) →
+      (∀ p ∈ L, p.2.1.length = arity) →
+      (∀ p ∈ L, HasTy G (p.1 :: p.2.1 ++ Γ) b p.2.2) →
       HasTy G Γ (.makeAt (.closure arity b) (parts.map Prod.fst)
         (parts.map fun p => p.2.2)) F
-  /-- A call writes the actuals it writes. `Us` are the trailing positions the
-  selected signature declares and this call omits; each admits `undefined`,
-  which is the value the machine binds there. `Us = []` is the exact-arity
-  call. -/
-  | callCallable {Us : List (Ty ι)} : HasTy G Γ f F → Represents G F (.callable P Ps L S) →
-      ((xs : List (Ty ι × Tm)).map Prod.fst ++ Us, B) ∈ L →
+  /-- A call writes the actuals it writes, and passes the receiver `r`, typed
+  at the selected signature's receiver. `Us` are the trailing positions the
+  signature declares and this call omits; each admits `undefined`, which is
+  the value the machine binds there. `Us = []` is the exact-arity call. -/
+  | callCallable {Γ : List (Ty ι)} {f r : Tm} {F Rt B : Ty ι} {P : List (String × Ty ι)}
+      {Ps : List (List (String × Ty ι))} {L : List (Ty ι × List (Ty ι) × Ty ι)}
+      {S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} :
+      HasTy G Γ f F → Represents G F (.callable P Ps L S) →
+      (Rt, xs.map Prod.fst ++ Us, B) ∈ L → HasTy G Γ r Rt →
       (∀ p ∈ xs, HasTy G Γ p.2 p.1) → (∀ A ∈ Us, HasTy G Γ .undef A) →
-      HasTy G Γ (.call f (xs.map Prod.snd)) B
+      HasTy G Γ (.invoke f r (xs.map Prod.snd)) B
   | readCallable : HasTy G Γ a F → Represents G F (.callable P Ps L S) → (f, A) ∈ P →
       HasTy G Γ (.readAt f a) A
   | writeCallable : HasTy G Γ a F → Represents G F (.callable P Ps L S) → (f, A) ∈ P →
       HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
-  | app {Us : List (Ty ι)} : HasTy G Γ f F → Represents G F (.arrs L S) →
-      ((xs : List (Ty ι × Tm)).map Prod.fst ++ Us, B) ∈ L →
+  | app {Γ : List (Ty ι)} {f r : Tm} {F Rt B : Ty ι} {L : List (Ty ι × List (Ty ι) × Ty ι)}
+      {S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} :
+      HasTy G Γ f F → Represents G F (.arrs L S) →
+      (Rt, xs.map Prod.fst ++ Us, B) ∈ L → HasTy G Γ r Rt →
       (∀ p ∈ xs, HasTy G Γ p.2 p.1) → (∀ A ∈ Us, HasTy G Γ .undef A) →
-      HasTy G Γ (.call f (xs.map Prod.snd)) B
+      HasTy G Γ (.invoke f r (xs.map Prod.snd)) B
   | letE : HasTy G Γ a A → HasTy G (A :: Γ) b B → HasTy G Γ (.letE a b) B
   /-- **Allocation.** One object, one fresh location per named field. The field
   names are distinct, which is what makes the object a map from them. -/
@@ -732,25 +800,25 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   must establish the same term and result, without changing other bindings. -/
   | unionVar : Γ[i]? = some C →
       (∀ a ∈ C, HasTy G (Γ.set i [a]) t A) → HasTy G Γ t A
-  /-- **A variadic function.** Each signature's body is checked with the
-fixed parameters and, in slot 0, an array whose type holds any number of
-elements at the signature's element type. -/
-  | funRest {Γ : List (Ty ι)} {F : Ty ι} {L : List (List (Ty ι) × Ty ι × Ty ι)}
+  /-- **A variadic function.** Each signature `(receiver, fixed, element,
+result)` checks the body with, in slot 0, an array whose type holds any number
+of elements at the element type, then the fixed parameters and the receiver. -/
+  | funRest {Γ : List (Ty ι)} {F : Ty ι} {L : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)}
       {As : List (Ty ι)} {n : Nat} {b : Tm} :
       Represents G F (.arrs [] L) → L.length = As.length →
-      (∀ p ∈ L.zip As, p.1.1.length = n ∧ RestArray G p.2 p.1.2.1) →
-      (∀ p ∈ L.zip As, HasTy G (p.2 :: p.1.1 ++ Γ) b p.1.2.2) →
+      (∀ p ∈ L.zip As, p.1.2.1.length = n ∧ RestArray G p.2 p.1.2.2.1) →
+      (∀ p ∈ L.zip As, HasTy G (p.2 :: p.1.1 :: p.1.2.1 ++ Γ) b p.1.2.2.2) →
       HasTy G Γ (.make (.variadic n b) .nul) F
   /-- **A variadic callable object.** The bag is allocated as a record's is,
   and the code is variadic: each signature's body is checked as `funRest`
   checks it. -/
   | makeCallableRest {Γ : List (Ty ι)} {F : Ty ι} {parts : List (String × Ty ι × Tm)}
-      {L : List (List (Ty ι) × Ty ι × Ty ι)} {As : List (Ty ι)} {n : Nat} {b : Tm} :
+      {L : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} {As : List (Ty ι)} {n : Nat} {b : Tm} :
       Represents G F (.callable (parts.map fun p => (p.1, p.2.1)) [] [] L) →
       (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) →
       L.length = As.length →
-      (∀ p ∈ L.zip As, p.1.1.length = n ∧ RestArray G p.2 p.1.2.1) →
-      (∀ p ∈ L.zip As, HasTy G (p.2 :: p.1.1 ++ Γ) b p.1.2.2) →
+      (∀ p ∈ L.zip As, p.1.2.1.length = n ∧ RestArray G p.2 p.1.2.2.1) →
+      (∀ p ∈ L.zip As, HasTy G (p.2 :: p.1.1 :: p.1.2.1 ++ Γ) b p.1.2.2.2) →
       HasTy G Γ (.makeAt (.variadic n b) (parts.map Prod.fst) (parts.map fun p => p.2.2)) F
   /-- **A copy of a spread.** `[...s]` allocates a fresh store holding the
   elements of the store `s` evaluates to, read where it is written. -/
@@ -762,14 +830,36 @@ elements at the signature's element type. -/
   `undefined`; each further part is an actual at its element type or a spread
   of a store whose elements are, and a call that omits a fixed position writes
   none. The signature may be a function's or a callable object's. -/
-  | callRest {Γ : List (Ty ι)} {f : Tm} {F : Ty ι}
+  | callRest {Γ : List (Ty ι)} {f r : Tm} {F Rt : Ty ι}
       {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} {E B : Ty ι} {parts : List (Bool × Ty ι × Tm)} :
-      HasTy G Γ f F → (xs.map Prod.fst ++ Us, E, B) ∈ restSigs G F →
+      HasTy G Γ f F → (Rt, xs.map Prod.fst ++ Us, E, B) ∈ restSigs G F → HasTy G Γ r Rt →
       (∀ p ∈ xs, HasTy G Γ p.2 p.1) → (∀ A ∈ Us, HasTy G Γ .undef A) → (Us = [] ∨ parts = []) →
       (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) →
       (∀ p ∈ parts, p.1 = false → p.2.1 = E) →
       (∀ p ∈ parts, p.1 = true → SpreadsInto G p.2.1 E) →
-      HasTy G Γ (.call f (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2))) B
+      HasTy G Γ (.invoke f r (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2))) B
+  /-- **A bound function.** `.bind` saved its target, receiver and prefix in
+  slots; allocation stores those values, as they are, in a forwarding
+  descriptor with no fields. The result takes the positions the target's
+  selected signature has after the prefix, with any receiver: the one it is
+  later called with is dropped for the saved one. -/
+  | bindE {Γ : List (Ty ι)} {F T Rt R Rc : Ty ι} {t r : Nat} {slots : List Nat}
+      {Ps Ds : List (Ty ι)} :
+      Γ[t]? = some T → (Rt, Ps ++ Ds, R) ∈ callSigs G T →
+      Γ[r]? = some Rt → slots.map (Γ[·]?) = Ps.map some →
+      Represents G F (.arrs [(Rc, Ds, R)] []) →
+      HasTy G Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
+  /-- **A bound variadic function.** As `bindE`, for a variadic signature of
+  the target: the prefix takes its first fixed positions, and past them the
+  element contract; the result is the positions left, then the element
+  contract, at any receiver. -/
+  | bindRestE {Γ : List (Ty ι)} {F T Rt E R Rc : Ty ι} {t r : Nat} {slots : List Nat}
+      {Ps Qs : List (Ty ι)} :
+      Γ[t]? = some T → (Rt, Ps, E, R) ∈ restSigs G T →
+      Γ[r]? = some Rt → slots.map (Γ[·]?) = Qs.map some →
+      Qs = Ps.take slots.length ++ List.replicate (slots.length - Ps.length) E →
+      Represents G F (.arrs [] [(Rc, Ps.drop slots.length, E, R)]) →
+      HasTy G Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
   | sub : HasTy G Γ t A → PositiveCertificates.check G A B cert = true → HasTy G Γ t B
 
 /-- Every derivation is safe in every admissible world and satisfying heap. -/
@@ -805,14 +895,14 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
   | @str _ _ s hr =>
     intro n W h ρ he hw hh
     exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr ⟨s, rfl⟩)
-  | @funE F L arity Γ b hr hlen hb ih =>
+  | @funE Γ F L arity b hr hlen hb ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, Nat.zero_add]
     have hcode := invocation_of_body he hlen (fun p hp => ih p hp)
     have hs := make_callable_rule nulT_adm arity n W h _ .nul hcode rfl hw hh rfl
     exact Safe_mono n (fun k _ U v hv => (represents_sem hr k U v).mpr
       ⟨hv.2, hv.2.1, by simp⟩) W h _ hs
-  | @makeCallable F L Γ arity b parts hr hnd hp hlen hb ih ihb =>
+  | @makeCallable Γ F L arity b parts hr hnd hp hlen hb ih ihb =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def, Nat.zero_add]
     have hcode := invocation_of_body he hlen (fun p hp => ihb p hp)
@@ -822,7 +912,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     rw [← hmap]
     apply bind_list (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2))
       (by intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; exact meaning_adm G r.2.1)
-      (fun args => .makeAt (.closure arity (instantiate arity ρ b)) (parts.map Prod.fst) args)
+      (fun args => .makeAt (.closure arity (instantiate (arity + 1) ρ b)) (parts.map Prod.fst) args)
       (fun hs => CallArguments.Step.makeArgs hs) hw hh
       (by
         intro q hq
@@ -834,8 +924,9 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
         = parts.map fun p => meaning G p.2.1 := by simp [List.map_map, Function.comp_def]
     rw [hAs] at hargs
     have hlenA := ArgsT_length hargs
-    have hc : InvocationSpec arity (L.map fun p => (p.1.map (meaning G),meaning G p.2))
-        j U (instantiate arity ρ b) :=
+    have hc : InvocationSpec arity
+        (L.map fun p => (meaning G p.1, p.2.1.map (meaning G), meaning G p.2.2))
+        j U (instantiate (arity + 1) ρ b) :=
       (codeCallsT_code_iff _ arity [] _ j U).mp ((codeCallsT_adm _).mono j _ U hx _
         ((codeCallsT_adm _).down_le n j hj W _ ((codeCallsT_code_iff _ arity [] _ n W).mpr hcode)))
     have hs := make_callable_fields_rule
@@ -855,11 +946,13 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
         simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
       rw [hfam]
       exact hv.1
-  | @callCallable Γ f F P Ps L S xs B Us hf hr hp ha hu ihf iha ihu =>
+  | @callCallable Γ f r F Rt B P Ps L S xs Us hf hr hp hrt ha hu ihf ihrt iha ihu =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
-    have hs := call_safe_short (B := meaning G B) (f := instantiate 0 ρ f)
+    have hs := call_safe_short (Rc := meaning G Rt) (B := meaning G B) (f := instantiate 0 ρ f)
+      (r := instantiate 0 ρ r)
       (xs.map fun p => (meaning G p.1,instantiate 0 ρ p.2)) (Us.map (meaning G))
+      (meaning_adm G Rt) (meaning_valOnly G Rt)
       (by intro p hp; obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp; exact meaning_adm G q.1)
       (by intro p hp; obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp; exact meaning_valOnly G q.1)
       (by intro A hA; obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
@@ -870,8 +963,10 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       intro k hk U v hv
       simpa only [List.map_map,Function.comp_def,List.map_append] using
         callsT_select (((represents_sem hr k U v).mp hv).1.2)
-          (List.mem_map.mpr ⟨(xs.map Prod.fst ++ Us,B), hp,
+          (List.mem_map.mpr ⟨(Rt, xs.map Prod.fst ++ Us,B), hp,
             by simp [List.map_append, List.map_map, Function.comp_def]⟩)
+    · intro j hj U hx hu' heap hok
+      exact ihrt j U heap ρ (he.transfer j hj U hx) hu' hok
     · intro p hp'
       obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp'
       intro j hj U hx hu' heap hok
@@ -898,11 +993,13 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     apply Safe_mono k (fun i _ X v hval => (represents_sem hn i X v).mpr hval)
     exact bag_write (meaning_adm G A) (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
       ((represents_sem hr k V av).mp ha'').1.1.1 hb' hbval hv hok'
-  | @app Γ f F L S xs B Us hf hr hp ha hu ihf iha ihu =>
+  | @app Γ f r F Rt B L S xs Us hf hr hp hrt ha hu ihf ihrt iha ihu =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
-    have hs := call_safe_short (B := meaning G B) (f := instantiate 0 ρ f)
+    have hs := call_safe_short (Rc := meaning G Rt) (B := meaning G B) (f := instantiate 0 ρ f)
+      (r := instantiate 0 ρ r)
       (xs.map fun p => (meaning G p.1,instantiate 0 ρ p.2)) (Us.map (meaning G))
+      (meaning_adm G Rt) (meaning_valOnly G Rt)
       (by intro p hp; obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp; exact meaning_adm G q.1)
       (by intro p hp; obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp; exact meaning_valOnly G q.1)
       (by intro A hA; obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
@@ -913,8 +1010,10 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       intro k hk U v hv
       simpa only [List.map_map,Function.comp_def,List.map_append] using
         callsT_select ((represents_sem hr k U v).mp hv).1
-          (List.mem_map.mpr ⟨(xs.map Prod.fst ++ Us,B), hp,
+          (List.mem_map.mpr ⟨(Rt, xs.map Prod.fst ++ Us,B), hp,
             by simp [List.map_append, List.map_map, Function.comp_def]⟩)
+    · intro j hj U hx hu' heap hok
+      exact ihrt j U heap ρ (he.transfer j hj U hx) hu' hok
     · intro p hp'
       obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp'
       intro j hj U hx hu' heap hok
@@ -1338,8 +1437,8 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     simp only [instantiate, instantiateArgs_eq_map, List.map_cons, List.map_nil, Nat.zero_add]
     apply make_rule nulT_adm n W h (.variadic k _) .nul rfl hw hh rfl
     intro j hj U hx _
-    have hinv : Invocable (.obj h.length (.variadic k (instantiate (k + 1) ρ b))) :=
-      ⟨_, _, rfl, by simp, by simpa [Scoped] using instantiate_scoped ρ he.1 b (k + 1)⟩
+    have hinv : Invocable (.obj h.length (.variadic k (instantiate (k + 2) ρ b))) :=
+      ⟨_, _, rfl, by simp, by simpa [Scoped] using instantiate_scoped ρ he.1 b (k + 2)⟩
     refine (represents_sem hr j U _).mpr ⟨⟨hinv, by simp⟩, hinv, ?_⟩
     intro s' hs'
     obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hs'
@@ -1360,7 +1459,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     rw [← hmap]
     apply bind_list (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2))
       (by intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; exact meaning_adm G r.2.1)
-      (fun args => .makeAt (.variadic k (instantiate (k + 1) ρ b)) (parts.map Prod.fst) args)
+      (fun args => .makeAt (.variadic k (instantiate (k + 2) ρ b)) (parts.map Prod.fst) args)
       (fun hs => CallArguments.Step.makeArgs hs) hw hh
       (by
         intro q hq
@@ -1381,8 +1480,8 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       hu hok (ArgsT_zip hargs)
     intro k' hk' V hy hrec
     have hinv : Invocable (.objAt (slots heap.length (parts.map Prod.fst))
-        (.variadic k (instantiate (k + 1) ρ b))) :=
-      ⟨_, _, rfl, by simp, by simpa [Scoped] using instantiate_scoped ρ he.1 b (k + 1)⟩
+        (.variadic k (instantiate (k + 2) ρ b))) :=
+      ⟨_, _, rfl, by simp, by simpa [Scoped] using instantiate_scoped ρ he.1 b (k + 2)⟩
     have hfam : ReferenceConjunctions.famsOf (meaning G) (parts.map fun p => (p.1, p.2.1))
         = (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2.1) := by
       simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
@@ -1406,21 +1505,25 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     apply Safe_mono n _ W h _ this
     intro k _ U v hv
     exact (represents_sem hr k U v).mpr ⟨by simpa [tupleFams] using hv, by simp⟩
-  | @callRest Γ f F xs Us E B parts hf hmem hx hu hshort hp hplain hspread ihf ihx ihu ihp =>
+  | @callRest Γ f r F Rt xs Us E B parts hf hmem hrt hx hu hshort hp hplain hspread
+      ihf ihrt ihx ihu ihp =>
     intro n W h ρ he hw hh
-    have hterm : instantiate 0 ρ (.call f (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2)))
-        = .call (instantiate 0 ρ f) ((xs.map fun p => (meaning G p.1, instantiate 0 ρ p.2)).map Prod.snd ++
-          (parts.map fun p => ((if p.1 then some (meaning G p.2.1) else none), instantiate 0 ρ p.2.2)).map
-            RestCalls.partTerm) := by
-      simp only [instantiate, instantiateArgs_eq_map, List.map_append, List.map_map, Function.comp_def,
-        instantiate_spreadTerm]
+    have hterm : instantiate 0 ρ (.invoke f r
+          (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2)))
+        = .invoke (instantiate 0 ρ f) (instantiate 0 ρ r)
+          ((xs.map fun p => (meaning G p.1, instantiate 0 ρ p.2)).map Prod.snd ++
+          (parts.map fun p => ((if p.1 then some (meaning G p.2.1) else none),
+            instantiate 0 ρ p.2.2)).map RestCalls.partTerm) := by
+      simp only [instantiate, instantiateArgs_eq_map, List.map_append, List.map_map,
+        Function.comp_def, instantiate_spreadTerm]
       congr 2
       apply List.map_congr_left
       intro p _
       rcases p with ⟨_ | _, A, t⟩ <;> rfl
     rw [hterm]
-    apply rest_call_safe (Ps := xs.map fun p => meaning G p.1) (Us := Us.map (meaning G))
-      (E := meaning G E) (R := meaning G B)
+    apply rest_call_safe (Rc := meaning G Rt) (Ps := xs.map fun p => meaning G p.1)
+      (Us := Us.map (meaning G)) (E := meaning G E) (R := meaning G B)
+      (meaning_adm G Rt) (meaning_valOnly G Rt)
       (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q.1)
       (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_valOnly G q.1)
       (meaning_adm G E) (meaning_valOnly G E)
@@ -1440,6 +1543,8 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
         have := restsT_of_restSigs hmem hv
         simpa [List.map_map, List.map_append, Function.comp_def] using this) W h _
         (ihf n W h ρ he hw hh))
+    · intro j hj U hxU hu heap hok
+      exact ihrt j U heap ρ (he.transfer j hj U hxU) hu hok
     · intro q hq j hj U hxU hu heap hok
       obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
       exact ihx p hp' j U heap ρ (he.transfer j hj U hxU) hu hok
@@ -1453,6 +1558,61 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     · intro A hA j hj U hxU hu' heap hok
       obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hA
       exact ihu q hq j U heap ρ (he.transfer j hj U hxU) hu' hok
+  | @bindE Γ F T Rt R Rc t r saved Ps Ds ht hsig hr hpre hF =>
+    intro n W h ρ he hw hh
+    simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def,
+      Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero]
+    cases n with
+    | zero => trivial
+    | succ m =>
+      have hcall := callsT_of_callSigs hsig (he.2 t T ht)
+      simp only [List.map_append, List.map_map, Function.comp_def] at hcall
+      have hpv := ArgsT_slots he hpre
+      have hbound := callsT_bound (Rc := meaning G Rc) (fs := [])
+        (meaning_adm G Rt) (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
+        (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
+        hcall (meaning_value (he.2 r Rt hr)).1 (he.1 r) (he.2 r Rt hr) hpv
+        (ArgsT_values (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_valOnly G q) hpv)
+        (by intro a ha; obtain ⟨q, _, rfl⟩ := List.mem_map.mp ha; exact he.1 q)
+      have hdown := (callsT_adm _).down m W _ hbound
+      refine Or.inr ⟨trunc m (Nat.le_succ m) W, h,
+        .objAt [] (.bound (ρ t) (ρ r) (saved.map ρ)), WExt_refl _, WorldAdm_trunc _ hw, ?_,
+        HeapOk_trunc m W h hh, value_safe _ _ _ _ _ rfl ?_⟩
+      · simpa [ExperimentState.slots] using (Step.makeFields (h := h) (ns := []) (vs := [])
+          (c := .bound (ρ t) (ρ r) (saved.map ρ)) (by simp) rfl)
+      · exact (represents_sem hF m _ _).mpr ⟨by simpa using hdown, hdown.1, by simp⟩
+  | @bindRestE Γ F T Rt E R Rc t r saved Ps Qs ht hsig hr hpre hQs hF =>
+    intro n W h ρ he hw hh
+    simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def,
+      Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero]
+    cases n with
+    | zero => trivial
+    | succ m =>
+      have hrest := restsT_of_restSigs hsig (he.2 t T ht)
+      have hpv := ArgsT_slots he hpre
+      subst hQs
+      have hlen : (saved.map ρ).length = saved.length := List.length_map _
+      have hpv' : ArgsT ((Ps.map (meaning G)).take (saved.map ρ).length ++
+          List.replicate ((saved.map ρ).length - (Ps.map (meaning G)).length) (meaning G E))
+          (m + 1) W (saved.map ρ) := by
+        simpa [List.map_take, List.map_replicate, hlen] using hpv
+      have hbound := restsT_bound (Rc := meaning G Rc) (fs := [])
+        (meaning_adm G Rt) (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
+        (meaning_adm G E) hrest (meaning_value (he.2 r Rt hr)).1 (he.1 r) (he.2 r Rt hr) hpv'
+        (ArgsT_values (by
+          intro A hA
+          rcases List.mem_append.mp hA with hA | hA
+          · obtain ⟨q, _, rfl⟩ := List.mem_map.mp (List.mem_of_mem_take hA); exact meaning_valOnly G q
+          · rw [List.eq_of_mem_replicate hA]; exact meaning_valOnly G E) hpv')
+        (by intro a ha; obtain ⟨q, _, rfl⟩ := List.mem_map.mp ha; exact he.1 q)
+      have hdown := (restsT_adm _).down m W _ hbound
+      refine Or.inr ⟨trunc m (Nat.le_succ m) W, h,
+        .objAt [] (.bound (ρ t) (ρ r) (saved.map ρ)), WExt_refl _, WorldAdm_trunc _ hw, ?_,
+        HeapOk_trunc m W h hh, value_safe _ _ _ _ _ rfl ?_⟩
+      · simpa [ExperimentState.slots] using (Step.makeFields (h := h) (ns := []) (vs := [])
+          (c := .bound (ρ t) (ρ r) (saved.map ρ)) (by simp) rfl)
+      · refine (represents_sem hF m _ _).mpr ⟨⟨hdown.1, by simp⟩, ?_⟩
+        simpa [List.map_drop, hlen] using hdown
   | sub ht hc ih =>
     intro n W h ρ he hw hh
     exact Safe_mono n (fun k _ V v hv => (PositiveCertificates.check_sound hc).sound k V v hv)
@@ -1461,11 +1621,11 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
 /-- Syntactically typed bodies establish exact-arity list signatures, including
 zero parameters, without encoding the function as nested unary closures. -/
 theorem HasTy.invocationSpec {G : NormalGraph ι} {Γ ρ n W b arity}
-    {L : List (List (Ty ι) × Ty ι)} (he : EnvOk G Γ ρ n W)
-    (hlen : ∀ p ∈ L, p.1.length = arity)
-    (hb : ∀ p ∈ L, HasTy G (p.1 ++ Γ) b p.2) :
-    InvocationSpec arity (L.map fun p => (p.1.map (meaning G), meaning G p.2))
-      n W (instantiate arity ρ b) :=
+    {L : List (Ty ι × List (Ty ι) × Ty ι)} (he : EnvOk G Γ ρ n W)
+    (hlen : ∀ p ∈ L, p.2.1.length = arity)
+    (hb : ∀ p ∈ L, HasTy G (p.1 :: p.2.1 ++ Γ) b p.2.2) :
+    InvocationSpec arity (L.map fun p => (meaning G p.1, p.2.1.map (meaning G), meaning G p.2.2))
+      n W (instantiate (arity + 1) ρ b) :=
   invocation_of_body he hlen (fun p hp => (hb p hp).sound)
 
 /-- The closed-program interface requires scope explicitly, so free source

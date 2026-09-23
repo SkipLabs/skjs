@@ -160,6 +160,10 @@ function bareAtomText(atom: unknown, state: PrintState): string {
     return (
       "(" +
       [
+        // A receiver-indifferent signature has no `this` to show.
+        ...(isObject(atom.this) && atom.this.top === true
+          ? []
+          : ["this: " + typeText(atom.this, state)]),
         ...atom.params.map((p: unknown) => typeText(p, state)),
         ...(atom.rest === undefined
           ? []
@@ -541,6 +545,17 @@ function parseType(text: string): ClaimType {
     };
     take("(");
     const params: ClaimType[] = [];
+    // `this: T` first states the receiver a call may pass; leaving it out
+    // leaves the receiver unconstrained.
+    let receiver: ClaimType = { top: true, atoms: [] };
+    if (peek() === "this" && tokens[i + 1] === ":") {
+      take("this");
+      take(":");
+      receiver = union();
+      if (peek() === ",") take(",");
+      else if (peek() !== ")")
+        throw new TypeSyntaxError("expected , or ) after the receiver");
+    }
     // `...Array<T>` last: any number of further actuals, each a `T`.
     let rest: ClaimType | undefined;
     while (peek() !== ")") {
@@ -575,6 +590,7 @@ function parseType(text: string): ClaimType {
     return {
       ...base,
       a: "function",
+      this: receiver,
       params,
       ...(rest === undefined ? {} : { rest }),
       result,
@@ -719,7 +735,7 @@ function outsideFragment(type: unknown): string | undefined {
     if (atom.a === "function") {
       const params: unknown[] = Array.isArray(atom.params) ? atom.params : [];
       const rest = atom.rest === undefined ? [] : [atom.rest];
-      for (const part of [...params, ...rest, atom.result]) {
+      for (const part of [atom.this, ...params, ...rest, atom.result]) {
         const found = outsideFragment(part);
         if (found) return found;
       }
@@ -1015,12 +1031,18 @@ function liftSignatures(
   variadic: unknown,
   depth: number,
 ): Record<string, unknown>[] {
-  const atom = (domain: unknown, result: unknown, element?: unknown) => {
+  const atom = (
+    receiver: unknown,
+    domain: unknown,
+    result: unknown,
+    element?: unknown,
+  ) => {
     const domains: unknown[] = Array.isArray(domain) ? domain : [];
     return {
       a: "function",
       construct: "unknown",
       array: "unknown",
+      this: liftType(types, receiver, depth - 1),
       params: domains.map((D) => liftType(types, D, depth - 1)),
       ...(element === undefined
         ? {}
@@ -1032,13 +1054,15 @@ function liftSignatures(
   const sigs: unknown[] = Array.isArray(variadic) ? variadic : [];
   return [
     ...arrows.map((arrow) => {
-      const [domain, result]: unknown[] = Array.isArray(arrow) ? arrow : [];
-      return atom(domain, result);
+      const [receiver, sig]: unknown[] = Array.isArray(arrow) ? arrow : [];
+      const [domain, result]: unknown[] = Array.isArray(sig) ? sig : [];
+      return atom(receiver, domain, result);
     }),
     ...sigs.map((sig) => {
-      const [domain, tail]: unknown[] = Array.isArray(sig) ? sig : [];
+      const [receiver, rest]: unknown[] = Array.isArray(sig) ? sig : [];
+      const [domain, tail]: unknown[] = Array.isArray(rest) ? rest : [];
       const [element, result]: unknown[] = Array.isArray(tail) ? tail : [];
-      return atom(domain, result, element);
+      return atom(receiver, domain, result, element);
     }),
   ];
 }
@@ -1251,6 +1275,7 @@ function lowerAtom(types: unknown, atom: unknown): number[] {
       );
     if (!Array.isArray(f.params))
       throw new TypeSyntaxError("a function needs a parameter list");
+    const Rt = lowerType(types, f.this);
     const Ds = f.params.map((D: unknown) => lowerType(types, D));
     const R = lowerType(types, f.result);
     return [
@@ -1260,10 +1285,10 @@ function lowerAtom(types: unknown, atom: unknown): number[] {
             first: bagFields.map((fd) => namedField(types, fd, "write")),
             rest: [],
             ...(f.rest === undefined
-              ? { arrows: [[Ds, R]] }
+              ? { arrows: [[Rt, [Ds, R]]] }
               : {
                   arrows: [],
-                  variadic: [[Ds, [lowerType(types, f.rest), R]]],
+                  variadic: [[Rt, [Ds, [lowerType(types, f.rest), R]]]],
                 }),
           },
         },
@@ -1273,6 +1298,7 @@ function lowerAtom(types: unknown, atom: unknown): number[] {
   if (atom.a === "function") {
     if (!Array.isArray(atom.params))
       throw new TypeSyntaxError("a function needs a parameter list");
+    const receiver = lowerType(types, atom.this);
     const domains = atom.params.map((domain: unknown) =>
       lowerType(types, domain),
     );
@@ -1284,8 +1310,11 @@ function lowerAtom(types: unknown, atom: unknown): number[] {
               arrows: [],
               variadic: [
                 [
-                  domains,
-                  [lowerType(types, atom.rest), lowerType(types, atom.result)],
+                  receiver,
+                  [
+                    domains,
+                    [lowerType(types, atom.rest), lowerType(types, atom.result)],
+                  ],
                 ],
               ],
             },
@@ -1294,7 +1323,11 @@ function lowerAtom(types: unknown, atom: unknown): number[] {
       ];
     return [
       intern(types, [
-        { arrs: { arrows: [[domains, lowerType(types, atom.result)]] } },
+        {
+          arrs: {
+            arrows: [[receiver, [domains, lowerType(types, atom.result)]]],
+          },
+        },
       ]),
     ];
   }
@@ -1402,6 +1435,9 @@ function fullAtomText(atom: unknown): string {
     text =
       "(" +
       [
+        ...(isObject(atom.this) && atom.this.top === true
+          ? []
+          : ["this: " + fullTypeText(atom.this)]),
         ...atom.params.map((p: unknown) => fullTypeText(p)),
         ...(atom.rest === undefined
           ? []

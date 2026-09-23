@@ -22,12 +22,12 @@ theorem inter_idemp (A : Fam) (n : Nat) (W : WorldT n) (v : Val) :
 
 /-- Overload intersection preserves one descriptor, even when signatures
 admit different actual counts. -/
-theorem calls_append (L M : List (List Fam × Fam)) (n : Nat) (W : WorldT n) (v : Val) :
+theorem calls_append (L M : List (Fam × List Fam × Fam)) (n : Nat) (W : WorldT n) (v : Val) :
     callsT (L ++ M) n W v ↔ interT (callsT L) (callsT M) n W v := by
   simp only [callsT, interT, List.mem_append, or_imp, forall_and]
   exact ⟨fun ⟨hc, hl, hm⟩ => ⟨⟨hc, hl⟩, hc, hm⟩, fun ⟨⟨hc, hl⟩, _, hm⟩ => ⟨hc, hl, hm⟩⟩
 
-theorem rests_append (S T : List (List Fam × Fam × Fam)) (n : Nat) (W : WorldT n) (v : Val) :
+theorem rests_append (S T : List (Fam × List Fam × Fam × Fam)) (n : Nat) (W : WorldT n) (v : Val) :
     restsT (S ++ T) n W v ↔ interT (restsT S) (restsT T) n W v := by
   simp only [restsT, interT, List.mem_append, or_imp, forall_and]
   exact ⟨fun ⟨hc, hl, hm⟩ => ⟨⟨hc, hl⟩, hc, hm⟩, fun ⟨⟨hc, hl⟩, _, hm⟩ => ⟨hc, hl, hm⟩⟩

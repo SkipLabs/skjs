@@ -10,14 +10,17 @@ namespace Verification.ExperimentState.CallableEffectTests
 open ProgramTyping ProgramCertificates PositiveGraphs PositiveRules HeapExpressionRules
 open ControlFlow CertificateProducer RequestJson
 
+/-- Labels 9 and 10 extend the shared table; label 7 there is unknown, every
+signature's receiver. -/
 private def types := CallableGraphTests.types ++
-  [[PositiveNormalization.Clause.boolLit false], [.callable [(valueField, [1])] [] [([[0]],[0])] []]]
+  [[PositiveNormalization.Clause.boolLit false], [.callable [(valueField, [1])] [] [([7],[[0]],[0])] []]]
 private def G : NormalGraph Nat := fun i => types[i]?.getD []
 private def labels := List.range types.length
-private def pool := vocabulary G labels [] [[1],[2],[5],[8]]
+private def pool := vocabulary G labels [] [[1],[2],[5],[10]]
 private def k : HeapKnowledge.Knowledge := ⟨[⟨1,[.fls],valueField⟩],[⟨0,[.tru],valueField⟩],[]⟩
+/-- The body writes the captured cell, past its parameter and receiver. -/
 private def creation : Sequent Nat :=
-  ⟨[[1],[5]],.attach (.write (.var 2) .tru) (.var 0),[8]⟩
+  ⟨[[1],[5]],.attach (.write (.var 3) .tru) (.var 0),[10]⟩
 private def proof (j : Sequent Nat) : Evidence Nat :=
   (expression G pool 8 j.context j.term j.type).getD (.node j .nul [])
 
@@ -34,8 +37,8 @@ private def proof (j : Sequent Nat) : Evidence Nat :=
 #guard allocationSlot (.attach .nul (.write (.var 1) .tru)) == none
 
 -- Empty overloads cannot hide out-of-scope captures behind allocation evidence.
-private def emptyG : NormalGraph Nat := fun i => if i == 9 then [.callable [(valueField, [1])] [] [] []] else G i
-private def escaped : Sequent Nat := ⟨[[1]],.attach (.var 2) (.var 0),[9]⟩
+private def emptyG : NormalGraph Nat := fun i => if i == 11 then [.callable [(valueField, [1])] [] [] []] else G i
+private def escaped : Sequent Nat := ⟨[[1]],.attach (.var 3) (.var 0),[11]⟩
 private def escapedProof : Evidence Nat := .node escaped .makeCallable
   [.node ⟨[[1]],.var 0,[1]⟩ .var []]
 #guard checkTree emptyG escapedProof
@@ -62,7 +65,7 @@ have Boolean contracts. A call invalidates cell facts, but keeps the immutable
 snapshot of the preceding read. -/
 private def program : Program :=
   [⟨.tru,.bind 1⟩,
-   ⟨.attach (.var 0) (.var 0),.bind 2⟩,
+   ⟨.attach (.var 1) (.var 0),.bind 2⟩,
    ⟨.read (.var 0),.bind 3⟩,
    ⟨.fls,.bind 4⟩,
    ⟨.write (.var 2) (.var 0),.effect 5⟩,
@@ -72,12 +75,12 @@ private def program : Program :=
 private def claims : List (PointClaim Nat) :=
   [⟨[],[1]⟩,⟨[[1]],[2]⟩,⟨[[2],[1]],[1]⟩,⟨[[1],[2],[1]],[1]⟩,
    ⟨[[1],[1],[2],[1]],[0]⟩,⟨[[1],[1],[2],[1]],[1]⟩,
-   ⟨[[1],[1],[1],[2],[1]],[0]⟩,⟨[[1],[1],[1],[2],[1]],[7]⟩]
-private def request : Request := ⟨types,program,claims,[7],0,[]⟩
+   ⟨[[1],[1],[1],[2],[1]],[0]⟩,⟨[[1],[1],[1],[2],[1]],[9]⟩]
+private def request : Request := ⟨types,program,claims,[9],0,[]⟩
 private def certificate : ControlFlow.Certificate Nat :=
-  match produce G labels 10 [7] program claims 0 with | .ok c => c | .error _ => []
+  match produce G labels 10 [9] program claims 0 with | .ok c => c | .error _ => []
 
-#guard checkClosed G [7] program certificate 0
+#guard checkClosed G [9] program certificate 0
 #guard match (do
     let response ← produceJson (Lean.toJson request) 10
     verifyJson (Lean.toJson request) response) with

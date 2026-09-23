@@ -53,7 +53,10 @@ mutual
 about the same objects. -/
 inductive Tm where
   | var (i : Nat)
-  | call (f : Tm) (args : List Tm)
+  /-- Invoke the callee `f` with the receiver `r` and the actuals `args`: the
+  callee first, then the receiver, then the actuals left to right. A receiver
+  is not an actual: it changes no arity, optional position or rest. -/
+  | invoke (f r : Tm) (args : List Tm)
   /-- Evaluate `a`, then substitute its value into `b`. Binding allocates no object. -/
   | letE (a b : Tm)
   | nul
@@ -107,14 +110,30 @@ inductive Tm where
 /-- Invocation code is not a runtime value. A plain object has no call code. -/
 inductive CallCode where
   | absent
+  /-- Code taking `arity` parameters. Its body is scoped under `arity + 1`
+  binders, the frame `[this, parameter_0, …, parameter_{arity-1}]` before the
+  captures: slot 0 is the receiver and slots `1 .. arity` the parameters. Code
+  that ignores its receiver, as an arrow's does, never reads slot 0. -/
   | closure (arity : Nat) (body : Tm)
   /-- Code that takes `fixed` parameters and collects every further actual into
-  one fresh array. Its body is scoped under `fixed + 1` binders: slot 0 is that
-  array and slots `1 .. fixed` are the parameters. Invocation binds what it is
-  given; the array is allocated by the ordinary steps of the term it yields. -/
+  one fresh array. Its body is scoped under `fixed + 2` binders: slot 0 is that
+  array, slot 1 the receiver and slots `2 .. fixed + 1` the parameters.
+  Invocation binds what it is given; the array is allocated by the ordinary
+  steps of the term it yields. -/
   | variadic (fixed : Nat) (body : Tm)
+  /-- A forwarding descriptor: what `.bind` creates. It keeps the target, the
+  receiver and the argument prefix it was given, each a value by the time the
+  object is allocated. Invoking it ignores the receiver of that call and
+  invokes the target with the saved receiver, the prefix, then the new actuals.
+  No field holds this state, so no write can reach it, and a second `.bind`
+  cannot replace the first receiver. -/
+  | bound (target receiver : Tm) (pre : List Tm)
   deriving Repr
 end
+
+/-- A call without a receiver supplies `undefined` for it: an abbreviation of
+`invoke`, not a second form of call. -/
+@[match_pattern] abbrev Tm.call (f : Tm) (args : List Tm) : Tm := .invoke f .undef args
 
 /-- Canonical bits for a source numeric literal type. Equal decimal spellings
 share a singleton; source type zero expands to both runtime bit patterns in
@@ -226,10 +245,11 @@ def tmDecEq (a b : Tm) : Decidable (a = b) := by
   cases a <;> cases b <;> try (solve | apply isFalse; intro h; cases h)
   case var.var a0 b0 =>
     exact decidable_of_iff (a0 = b0) (by simp only [Tm.var.injEq])
-  case call.call a0 a1 b0 b1 =>
+  case invoke.invoke a0 a1 a2 b0 b1 b2 =>
     haveI : Decidable (a0 = b0) := tmDecEq a0 b0
-    haveI : Decidable (a1 = b1) := argsDecEq a1 b1
-    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.call.injEq])
+    haveI : Decidable (a1 = b1) := tmDecEq a1 b1
+    haveI : Decidable (a2 = b2) := argsDecEq a2 b2
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2) (by simp only [Tm.invoke.injEq])
   case letE.letE a0 a1 b0 b1 =>
     haveI : Decidable (a0 = b0) := tmDecEq a0 b0
     haveI : Decidable (a1 = b1) := tmDecEq a1 b1
@@ -304,6 +324,11 @@ def callCodeDecEq (a b : CallCode) : Decidable (a = b) := by
   case variadic.variadic a0 a1 b0 b1 =>
     haveI : Decidable (a1 = b1) := tmDecEq a1 b1
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [CallCode.variadic.injEq])
+  case bound.bound a0 a1 a2 b0 b1 b2 =>
+    haveI : Decidable (a0 = b0) := tmDecEq a0 b0
+    haveI : Decidable (a1 = b1) := tmDecEq a1 b1
+    haveI : Decidable (a2 = b2) := argsDecEq a2 b2
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2) (by simp only [CallCode.bound.injEq])
 termination_by sizeOf a
 def argsDecEq (a b : List Tm) : Decidable (a = b) := by
   cases a <;> cases b <;> try (solve | apply isFalse; intro h; cases h)
@@ -390,7 +415,7 @@ theorem lookup_slots {ns : List String} (hnd : ns.Nodup) {base i : Nat}
 /-- Term induction exposing the body stored inside a call descriptor. -/
 @[elab_as_elim] theorem Tm.induct {P : Tm → Prop}
     (var : ∀ i, P (.var i))
-    (call : ∀ f args, P f → (∀ a ∈ args, P a) → P (.call f args))
+    (invoke : ∀ f r args, P f → P r → (∀ a ∈ args, P a) → P (.invoke f r args))
     (letE : ∀ a b, P a → P b → P (.letE a b))
     (nul : P .nul) (undef : P .undef) (tru : P .tru) (fls : P .fls)
     (num : ∀ v, P (.num v))
@@ -400,6 +425,9 @@ theorem lookup_slots {ns : List String} (hnd : ns.Nodup) {base i : Nat}
     (attach : ∀ n b ns args, P b → (∀ a ∈ args, P a) → P (.makeAt (.closure n b) ns args))
     (objVariadic : ∀ fs n b, P b → P (.objAt fs (.variadic n b)))
     (makeVariadic : ∀ n b ns args, P b → (∀ a ∈ args, P a) → P (.makeAt (.variadic n b) ns args))
+    (objBound : ∀ fs t r pre, P t → P r → (∀ a ∈ pre, P a) → P (.objAt fs (.bound t r pre)))
+    (makeBound : ∀ t r pre ns args, P t → P r → (∀ a ∈ pre, P a) → (∀ a ∈ args, P a) →
+      P (.makeAt (.bound t r pre) ns args))
     (alloc : ∀ ns args, (∀ a ∈ args, P a) → P (.makeAt .absent ns args))
     (read : ∀ f a, P a → P (.readAt f a))
     (write : ∀ f a b, P a → P b → P (.writeAt f a b))
@@ -414,10 +442,11 @@ theorem lookup_slots {ns : List String} (hnd : ns.Nodup) {base i : Nat}
     (spread : ∀ a, P a → P (.spread a)) (t : Tm) : P t := by
   apply Tm.rec (motive_1 := P)
     (motive_2 := fun c => match c with
-      | .absent => True | .closure _ b => P b | .variadic _ b => P b)
+      | .absent => True | .closure _ b => P b | .variadic _ b => P b
+      | .bound t r pre => P t ∧ P r ∧ ∀ a ∈ pre, P a)
     (motive_3 := fun args => ∀ a ∈ args, P a)
-    var call letE nul undef tru fls num str ?_ ?_ read write test ite arith arr arrLit elemAt setElem lenOf spread
-    True.intro (fun _ _ h => h) (fun _ _ h => h) (by simp) (by
+    var invoke letE nul undef tru fls num str ?_ ?_ read write test ite arith arr arrLit elemAt setElem lenOf spread
+    True.intro (fun _ _ h => h) (fun _ _ h => h) (fun _ _ _ ht hr hp => ⟨ht, hr, hp⟩) (by simp) (by
       intro a args ha ih v hv
       rcases List.mem_cons.mp hv with rfl | hv
       · exact ha
@@ -427,11 +456,13 @@ theorem lookup_slots {ns : List String} (hnd : ns.Nodup) {base i : Nat}
     | absent => exact objAbsent fs
     | closure n b => exact objClosure fs n b ih
     | variadic n b => exact objVariadic fs n b ih
+    | bound t r pre => exact objBound fs t r pre ih.1 ih.2.1 ih.2.2
   · intro c ns args ihc iha
     cases c with
     | absent => exact alloc ns args iha
     | closure n b => exact attach n b ns args ihc iha
     | variadic n b => exact makeVariadic n b ns args ihc iha
+    | bound t r pre => exact makeBound t r pre ns args ihc.1 ihc.2.1 ihc.2.2 iha
 
 
 
@@ -467,12 +498,13 @@ def tagHolds : Tag → Val → Bool
   | .isRef, .objAt _ .absent => true
   | .isFun, .objAt _ (.closure _ _) => true
   | .isFun, .objAt _ (.variadic _ _) => true
+  | .isFun, .objAt _ (.bound _ _ _) => true
   | _, _ => false
 
 mutual
 def subst (j : Nat) (a : Tm) : Tm → Tm
   | .var i => if i == j then a else if j < i then .var (i - 1) else .var i
-  | .call f args => .call (subst j a f) (substArgs j a args)
+  | .invoke f r args => .invoke (subst j a f) (subst j a r) (substArgs j a args)
   | .letE x b => .letE (subst j a x) (subst (j + 1) a b)
   | .nul => .nul
   | .undef => .undef
@@ -481,10 +513,13 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .num v => .num v
   | .str s => .str s
   | .objAt fs .absent => .objAt fs .absent
-  | .objAt fs (.closure n b) => .objAt fs (.closure n (subst (j + n) a b))
-  | .makeAt (.closure n b) ns xs => .makeAt (.closure n (subst (j + n) a b)) ns (substArgs j a xs)
-  | .objAt fs (.variadic n b) => .objAt fs (.variadic n (subst (j + n + 1) a b))
-  | .makeAt (.variadic n b) ns xs => .makeAt (.variadic n (subst (j + n + 1) a b)) ns (substArgs j a xs)
+  | .objAt fs (.closure n b) => .objAt fs (.closure n (subst (j + n + 1) a b))
+  | .makeAt (.closure n b) ns xs => .makeAt (.closure n (subst (j + n + 1) a b)) ns (substArgs j a xs)
+  | .objAt fs (.variadic n b) => .objAt fs (.variadic n (subst (j + n + 2) a b))
+  | .makeAt (.variadic n b) ns xs => .makeAt (.variadic n (subst (j + n + 2) a b)) ns (substArgs j a xs)
+  | .objAt fs (.bound t r pre) => .objAt fs (.bound (subst j a t) (subst j a r) (substArgs j a pre))
+  | .makeAt (.bound t r pre) ns xs =>
+      .makeAt (.bound (subst j a t) (subst j a r) (substArgs j a pre)) ns (substArgs j a xs)
   | .makeAt .absent ns xs => .makeAt .absent ns (substArgs j a xs)
   | .readAt f x => .readAt f (subst j a x)
   | .writeAt f x y => .writeAt f (subst j a x) (subst j a y)
@@ -531,9 +566,10 @@ def parameters : Nat → List Tm → List Tm
   | n+1, [] => .undef :: parameters n []
   | n+1, a::args => a :: parameters n args
 
-/-- Bind a prepared argument list without evaluating or allocating anything. -/
-def bindParameters (arity : Nat) (args : List Tm) (body : Tm) : Tm :=
-  bindArgs 0 (parameters arity args) body
+/-- Bind the receiver and a prepared argument list without evaluating or
+allocating anything: the receiver in slot 0, then the parameters. -/
+def bindParameters (arity : Nat) (args : List Tm) (recv : Tm) (body : Tm) : Tm :=
+  bindArgs 0 (recv :: parameters arity args) body
 
 /-- The field an array object keeps its store in: `SourceTypes.storeField`. -/
 def arrayStoreField : String := "[]"
@@ -542,11 +578,12 @@ def arrayStoreField : String := "[]"
 the same two allocations an array literal takes, performed by ordinary steps. -/
 def restArray (vs : List Tm) : Tm := .makeAt .absent [arrayStoreField] [.arrLit vs]
 
-/-- Variadic dispatch binds the fixed parameters as `parameters` does, and the
-actuals after them become the array the body finds in slot 0. Invocation itself
-still allocates nothing: the yielded term does, when it runs. -/
-def bindRest (fixed : Nat) (args : List Tm) (body : Tm) : Tm :=
-  .letE (restArray (args.drop fixed)) (bindArgs 1 (parameters fixed args) body)
+/-- Variadic dispatch binds the receiver and then the fixed parameters as
+`parameters` does, and the actuals after the fixed ones become the array the
+body finds in slot 0. Invocation itself still allocates nothing: the yielded
+term does, when it runs. -/
+def bindRest (fixed : Nat) (args : List Tm) (recv : Tm) (body : Tm) : Tm :=
+  .letE (restArray (args.drop fixed)) (bindArgs 1 (recv :: parameters fixed args) body)
 
 end CallArguments
 
@@ -556,24 +593,31 @@ abbrev Heap := List Val
 
 
 inductive Step : Heap → Tm → Heap → Tm → Prop where
-  | callL : Step h f h' f' → Step h (.call f args) h' (.call f' args)
-  | callArg : isVal f = true → args[i]? = some a →
+  | callL : Step h f h' f' → Step h (.invoke f r args) h' (.invoke f' r args)
+  /-- The receiver runs after the callee and before every actual. -/
+  | callRecv : isVal f = true → Step h r h' r' → Step h (.invoke f r args) h' (.invoke f r' args)
+  | callArg : isVal f = true → isVal r = true → args[i]? = some a →
       (∀ j, j < i → ∀ v, args[j]? = some v → isVal v = true) →
-      Step h a h' a' → Step h (.call f args) h' (.call f (args.set i a'))
+      Step h a h' a' → Step h (.invoke f r args) h' (.invoke f r (args.set i a'))
   | letC : Step h a h' a' → Step h (.letE a b) h' (.letE a' b)
   | letV : isVal a = true → Step h (.letE a b) h (subst 0 a b)
   /-- Invocation executes the object's stored code in one step. -/
-  | callV : (∀ a ∈ args, isVal a = true) →
-      Step h (.call (.objAt fs (.closure n b)) args) h (CallArguments.bindParameters n args b)
+  | callV : isVal r = true → (∀ a ∈ args, isVal a = true) →
+      Step h (.invoke (.objAt fs (.closure n b)) r args) h (CallArguments.bindParameters n args r b)
   /-- Variadic invocation likewise takes one step and changes no heap. -/
-  | callRest : (∀ a ∈ args, isVal a = true) →
-      Step h (.call (.objAt fs (.variadic n b)) args) h (CallArguments.bindRest n args b)
+  | callRest : isVal r = true → (∀ a ∈ args, isVal a = true) →
+      Step h (.invoke (.objAt fs (.variadic n b)) r args) h (CallArguments.bindRest n args r b)
+  /-- A bound function forwards in one step: the receiver of this call is
+  dropped, the saved one used, and the prefix goes before the actuals. -/
+  | callBound : isVal r = true → (∀ a ∈ args, isVal a = true) →
+      Step h (.invoke (.objAt fs (.bound t r₀ pre)) r args) h (.invoke t r₀ (pre ++ args))
   /-- A spread actual whose store is ready is replaced by the store's elements
   once every earlier actual is a value, so later actuals run after the read. -/
   | spreadC : Step h a h' a' → Step h (.spread a) h' (.spread a')
   | callSpread {args pre post : List Tm} {ls : List (Option Nat)} {vs : List Tm} :
-      isVal f = true → args = pre ++ .spread (.arr ls) :: post → (∀ v ∈ pre, isVal v = true) →
-      readElems h ls = some vs → Step h (.call f args) h (.call f (pre ++ vs ++ post))
+      isVal f = true → isVal r = true → args = pre ++ .spread (.arr ls) :: post →
+      (∀ v ∈ pre, isVal v = true) →
+      readElems h ls = some vs → Step h (.invoke f r args) h (.invoke f r (pre ++ vs ++ post))
   /-- Initializers are evaluated left to right, like actual arguments. -/
   | makeArg {c : CallCode} {ns : List String} {inits : List Tm} {i : Nat}
       {h h' : Heap} {a a' : Tm} : inits[i]? = some a →
@@ -666,7 +710,7 @@ theorem Step.appL (hs : Step h f h' f') : Step h (.app f a) h' (.app f' a) :=
 
 theorem Step.appR (hv : isVal f = true) (hs : Step h a h' a') :
     Step h (.app f a) h' (.app f a') :=
-  .callArg (i := 0) hv rfl (by intro j hj; omega) hs
+  .callArg (i := 0) hv rfl rfl (by intro j hj; omega) hs
 
 /-- Inversion for the source pipeline's singleton argument lists. -/
 theorem singleton_get {a b : Tm} {i : Nat} (h : [a][i]? = some b) : i = 0 ∧ b = a := by
@@ -677,8 +721,8 @@ theorem singleton_get {a b : Tm} {i : Nat} (h : [a][i]? = some b) : i = 0 ∧ b 
 
 /-- The existing unary beta rule is a specialization of list dispatch. -/
 theorem Step.beta {fs : List (String × Nat)} (ha : isVal a = true) :
-    Step h (.app (.objAt fs (.closure n b)) a) h (CallArguments.bindParameters n [a] b) :=
-  .callV (by simpa using ha)
+    Step h (.app (.objAt fs (.closure n b)) a) h (CallArguments.bindParameters n [a] .undef b) :=
+  .callV rfl (by simpa using ha)
 
 theorem value_no_step {v : Val} (hv : isVal v = true) {h h' t} : ¬ Step h v h' t := by
   intro hs
@@ -752,7 +796,7 @@ theorem obj_no_step {h fs c h' t} : ¬ Step h (.objAt fs c) h' t := by intro s; 
 `omegaTm` steps to itself forever. It is the inhabitant of last resort: safe at
 every budget, since safety asks for progress and not termination. -/
 
-def delta : Tm := .fn 0 (.app (.var 0) (.var 0))
+def delta : Tm := .fn 0 (.app (.var 1) (.var 1))
 def omegaTm : Tm := .app delta delta
 
 theorem omega_step (h : Heap) : Step h omegaTm h omegaTm := Step.beta rfl
@@ -773,10 +817,11 @@ theorem stuck_no_step {h h' t} : ¬ Step h (.app .nul .nul) h' t := by
   intro hs
   cases hs with
   | callL hs => exact nul_no_step hs
-  | callArg _ hg _ hs =>
+  | callRecv _ hs => exact value_no_step rfl hs
+  | callArg _ _ hg _ hs =>
     obtain ⟨rfl, rfl⟩ := singleton_get hg
     exact nul_no_step hs
-  | callSpread _ he _ _ => exact spread_not_values he (by simp [isVal])
+  | callSpread _ _ he _ _ => exact spread_not_values he (by simp [isVal])
 
 theorem closed_omega : Closed omegaTm := by
   intro k a
@@ -791,15 +836,27 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
   induction s1 generalizing h2 t2 with
   | callL s ih =>
     cases s2 with
-    | callL s' => exact (ih s').imp id (congrArg (Tm.call · _))
-    | callArg hv _ _ _ => exact False.elim (value_no_step hv s)
+    | callL s' => exact (ih s').imp id (congrArg (Tm.invoke · _ _))
+    | callRecv hv _ => exact False.elim (value_no_step hv s)
+    | callArg hv _ _ _ _ => exact False.elim (value_no_step hv s)
     | callV => exact False.elim (obj_no_step s)
     | callRest => exact False.elim (obj_no_step s)
-    | callSpread hv _ _ _ => exact False.elim (value_no_step hv s)
-  | @callArg f args i a h h1 a1 hv hg hb s ih =>
+    | callBound => exact False.elim (obj_no_step s)
+    | callSpread hv _ _ _ _ => exact False.elim (value_no_step hv s)
+  | callRecv hf s ih =>
+    cases s2 with
+    | callL s' => exact False.elim (value_no_step hf s')
+    | callRecv _ s' => exact (ih s').imp id (congrArg (Tm.invoke _ · _))
+    | callArg _ hr _ _ _ => exact False.elim (value_no_step hr s)
+    | callV hr _ => exact False.elim (value_no_step hr s)
+    | callRest hr _ => exact False.elim (value_no_step hr s)
+    | callBound hr _ => exact False.elim (value_no_step hr s)
+    | callSpread _ hr _ _ _ => exact False.elim (value_no_step hr s)
+  | @callArg f r args i a h h1 a1 hv hrv hg hb s ih =>
     cases s2 with
     | callL s' => exact False.elim (value_no_step hv s')
-    | @callArg _ _ j b _ _ b1 _ hg' hb' s' =>
+    | callRecv _ s' => exact False.elim (value_no_step hrv s')
+    | @callArg _ _ _ j b _ _ b1 _ _ hg' hb' s' =>
       have hij : i = j := by
         by_cases he : i = j
         · exact he
@@ -812,22 +869,25 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
       subst b
       obtain ⟨rfl, rfl⟩ := ih s'
       exact ⟨rfl, rfl⟩
-    | callV hvs => exact False.elim (value_no_step (hvs _ (List.mem_of_getElem? hg)) s)
-    | callRest hvs => exact False.elim (value_no_step (hvs _ (List.mem_of_getElem? hg)) s)
-    | callSpread _ he hpre _ => exact False.elim (spread_blocks_arg he hpre hg hb s)
+    | callV _ hvs => exact False.elim (value_no_step (hvs _ (List.mem_of_getElem? hg)) s)
+    | callRest _ hvs => exact False.elim (value_no_step (hvs _ (List.mem_of_getElem? hg)) s)
+    | callBound _ hvs => exact False.elim (value_no_step (hvs _ (List.mem_of_getElem? hg)) s)
+    | callSpread _ _ he hpre _ => exact False.elim (spread_blocks_arg he hpre hg hb s)
   | spreadC s ih =>
     cases s2 with
     | spreadC s' => exact (ih s').imp id (congrArg Tm.spread)
-  | callSpread hf he hpre hr =>
+  | callSpread hf hr he hpre hre =>
     cases s2 with
     | callL s' => exact False.elim (value_no_step hf s')
-    | callArg _ hg hb s' => exact False.elim (spread_blocks_arg he hpre hg hb s')
-    | callV hvs => exact False.elim (spread_not_values he hvs)
-    | callRest hvs => exact False.elim (spread_not_values he hvs)
-    | callSpread _ he' hpre' hr' =>
+    | callRecv _ s' => exact False.elim (value_no_step hr s')
+    | callArg _ _ hg hb s' => exact False.elim (spread_blocks_arg he hpre hg hb s')
+    | callV _ hvs => exact False.elim (spread_not_values he hvs)
+    | callRest _ hvs => exact False.elim (spread_not_values he hvs)
+    | callBound _ hvs => exact False.elim (spread_not_values he hvs)
+    | callSpread _ _ he' hpre' hre' =>
       obtain ⟨rfl, hx, rfl⟩ := split_unique (he.symm.trans he') hpre hpre' rfl rfl
       cases hx
-      cases Option.some.inj (hr.symm.trans hr')
+      cases Option.some.inj (hre.symm.trans hre')
       exact ⟨rfl, rfl⟩
   | letC hs ih =>
     cases s2 with
@@ -837,18 +897,27 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     cases s2 with
     | letC hs => exact absurd hs (value_no_step hv)
     | letV => exact ⟨rfl, rfl⟩
-  | callV hv =>
+  | callV hr hv =>
     cases s2 with
     | callL hs => exact absurd hs obj_no_step
-    | callArg _ hg _ hs => exact absurd hs (value_no_step (hv _ (List.mem_of_getElem? hg)))
+    | callRecv _ hs => exact absurd hs (value_no_step hr)
+    | callArg _ _ hg _ hs => exact absurd hs (value_no_step (hv _ (List.mem_of_getElem? hg)))
     | callV => exact ⟨rfl, rfl⟩
-    | callSpread _ he _ _ => exact False.elim (spread_not_values he hv)
-  | callRest hv =>
+    | callSpread _ _ he _ _ => exact False.elim (spread_not_values he hv)
+  | callRest hr hv =>
     cases s2 with
     | callL hs => exact absurd hs obj_no_step
-    | callArg _ hg _ hs => exact absurd hs (value_no_step (hv _ (List.mem_of_getElem? hg)))
+    | callRecv _ hs => exact absurd hs (value_no_step hr)
+    | callArg _ _ hg _ hs => exact absurd hs (value_no_step (hv _ (List.mem_of_getElem? hg)))
     | callRest => exact ⟨rfl, rfl⟩
-    | callSpread _ he _ _ => exact False.elim (spread_not_values he hv)
+    | callSpread _ _ he _ _ => exact False.elim (spread_not_values he hv)
+  | callBound hr hv =>
+    cases s2 with
+    | callL hs => exact absurd hs obj_no_step
+    | callRecv _ hs => exact absurd hs (value_no_step hr)
+    | callArg _ _ hg _ hs => exact absurd hs (value_no_step (hv _ (List.mem_of_getElem? hg)))
+    | callBound => exact ⟨rfl, rfl⟩
+    | callSpread _ _ he _ _ => exact False.elim (spread_not_values he hv)
   | @makeArg c ns inits i h h1 a a1 hg hb s ih =>
     cases s2 with
     | @makeArg _ _ _ j _ _ b b1 hg' hb' s' =>
@@ -1047,14 +1116,16 @@ theorem make_step_inv {c : CallCode} {v : Val} (hv : isVal v = true) {h h' t}
   | makeFields => exact ⟨rfl, rfl⟩
 
 theorem beta_inv {b a : Tm} {fs : List (String × Nat)} (ha : isVal a = true) {h h' t}
-    (hs : Step h (.app (.objAt fs (.closure 1 b)) a) h' t) : h' = h ∧ t = subst 0 a b := by
+    (hs : Step h (.app (.objAt fs (.closure 1 b)) a) h' t) :
+    h' = h ∧ t = subst 0 .undef (subst 1 a b) := by
   cases hs with
   | callL hs => cases hs
-  | callArg _ hg _ hs =>
+  | callRecv _ hs => cases hs
+  | callArg _ _ hg _ hs =>
     obtain ⟨rfl, rfl⟩ := singleton_get hg
     exact False.elim (value_no_step ha hs)
   | callV => exact ⟨rfl, rfl⟩
-  | callSpread _ he _ _ => exact False.elim (spread_not_values he (by simp [ha]))
+  | callSpread _ _ he _ _ => exact False.elim (spread_not_values he (by simp [ha]))
 
 /-- Binding a value spends one step and leaves the heap unchanged. -/
 theorem let_step_inv {b a : Tm} (ha : isVal a = true) {h h' t}

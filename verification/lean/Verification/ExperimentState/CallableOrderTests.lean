@@ -8,13 +8,14 @@ open CertificateProducer ControlFlow RequestJson HeapExpressionRules
 
 private def types : List (List (Clause (List Nat))) :=
   [[.nul],[.bool],[.refs [(valueField, [1])] [] []],[.callable [(valueField, [1])] [] [] []],
-   [.callable [(valueField, [1])] [] [([[0]],[1])] []]]
+   [.callable [(valueField, [1])] [] [([5],[[0]],[1])] []],[.top],[.undef]]
 private def G : NormalGraph Nat := fun i => types[i]?.getD []
 private def labels := List.range types.length
 -- The initializer writes true, allocates an intermediate object, and returns
--- false for the new function's bag. Its invocation body reads the captured bag.
+-- false for the new function's bag. Its invocation body reads the captured bag,
+-- past its parameter and receiver.
 private def initial : Tm := .letE (.write (.var 0) .tru) (.letE (.alloc .tru) .fls)
-private def callee : Tm := .attach (.read (.var 1)) initial
+private def callee : Tm := .attach (.read (.var 2)) initial
 private def argument : Tm := .letE (.write (.var 0) .fls) .nul
 private def program (callable : Bool) : Program :=
   [⟨if callable then .attach (.var 0) .fls else .alloc .fls,.bind 1⟩,
@@ -75,8 +76,9 @@ theorem initializer_blocks_argument {h h' t'} :
       | zero => simp at hg; subst a; exact stuck_no_step step
       | succ i => simp at hg
     | makeFields hv _ => have h := hv (.app .nul .nul) (by simp); simp [isVal] at h
-  | callArg hv _ _ _ => simp [isVal] at hv
-  | callSpread hv _ _ _ => simp [isVal] at hv
+  | callRecv hv _ => simp [isVal] at hv
+  | callArg hv _ _ _ _ => simp [isVal] at hv
+  | callSpread hv _ _ _ _ => simp [isVal] at hv
 
 /-- Even a discarded extra argument must finish: a stuck second actual blocks
 both a later argument write and the unary callee's mutating body. -/
@@ -87,19 +89,20 @@ theorem argument_blocks_body {h h' t'} :
   rcases CallArguments.call_step_iff.mp step with ⟨frame, hp, _⟩ | ⟨_, hi⟩
   · cases hp with
     | callee hs => exact obj_no_step hs
-    | args _ hs =>
+    | recv _ hs => exact value_no_step rfl hs
+    | args _ _ hs =>
       cases hs with
       | head hs => exact tru_no_step hs
       | tail _ hs =>
         cases hs with
         | head hs => exact stuck_no_step hs
         | tail hv _ => simp [isVal] at hv
-    | @splice _ _ _ pre post ls vs _ he _ _ =>
+    | @splice _ _ _ _ pre post ls vs _ _ he _ _ =>
       have hm : Tm.spread (.arr ls) ∈ pre ++ .spread (.arr ls) :: post := by simp
       rw [← he] at hm
       simp at hm
   · cases hi with
-    | closure hv => simp [CallArguments.Values, isVal] at hv
+    | closure _ hv => simp [CallArguments.Values, isVal] at hv
 
 #print axioms initializer_blocks_argument
 #print axioms argument_blocks_body

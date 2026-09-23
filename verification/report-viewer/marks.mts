@@ -142,6 +142,7 @@ const ROLE_TAG: Record<string, string> = {
   "binding-annotation": "binding annotation",
   "closure-entry": "closure entry",
   "closure-result": "closure result",
+  "method-receiver": "method receiver",
 };
 const roleTag = (role: string) => ROLE_TAG[role] || "";
 

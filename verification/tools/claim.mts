@@ -24,6 +24,9 @@ export interface RecordAtom {
 }
 export interface FunctionAtom {
   a: "function";
+  /* The receiver a call may pass: `unknown` for a signature indifferent to
+     it, the declared `this` type otherwise. Every signature states it. */
+  this: ClaimType;
   params: ClaimType[];
   /* The contract of each actual after `params`, when the signature takes any
      number of them: `(...rest: T[]) => R` has no params and rest `T`. */
@@ -139,7 +142,8 @@ function atom(v: unknown): void {
       break;
     }
     case "function":
-      keys(o, ["a", "params", "result", "construct", "array"], ["and", "rest"]);
+      keys(o, ["a", "this", "params", "result", "construct", "array"], ["and", "rest"]);
+      decodeClaimType(o.this);
       list(o.params).forEach(decodeClaimType);
       if (o.rest !== undefined) decodeClaimType(o.rest);
       decodeClaimType(o.result);

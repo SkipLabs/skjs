@@ -305,9 +305,10 @@ try {
     const index = ast.functions.findIndex((f) => f.name === "nestedCallableArgumentWrite");
     const variable = (i: number) => ({var: {i}});
     const letE = (a: unknown, b: unknown) => ({letE: {a, b}});
-    // Context: next, read, cell, seed. After saving cell, next moves to slot 1;
-    // the write consumes saved operands and the assignment returns saved next.
-    const expected = letE(variable(2), letE(variable(1),
+    // Context: the receiver, next, read, cell, seed. After saving cell, next
+    // moves to slot 2; the write consumes saved operands and the assignment
+    // returns saved next.
+    const expected = letE(variable(3), letE(variable(2),
       letE({writeAt: {field: "value", a: variable(1), b: variable(0)}}, variable(1))));
     const obligations = list(field(evidence, "obligations", index), "the obligations");
     const proof = obligations.findIndex((e) => {

@@ -9,7 +9,7 @@ open CertificateProducer ControlFlow RequestJson HeapExpressionRules
 -- [2,3] describes a Boolean bag without promising whether it is callable.
 private def types : List (List (Clause (List Nat))) :=
   [[.nul],[.bool],[.refs [(valueField, [1])] [] []],[.callable [(valueField, [1])] [] [] []],
-   [.callable [(valueField, [1])] [] [([[1]],[1])] []], [.boolLit false]]
+   [.callable [(valueField, [1])] [] [([6],[[1]],[1])] []], [.boolLit false], [.top]]
 private def G : NormalGraph Nat := fun i => types[i]?.getD []
 private def pool := vocabulary G (List.range types.length) [] [[2,3]]
 private def readClaim : Sequent Nat := ⟨[[2,3]],.read (.var 0),[1]⟩

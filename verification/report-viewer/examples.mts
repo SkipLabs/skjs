@@ -153,6 +153,22 @@ const callables = examples("verification/tests/callables", [
   ],
   ["receiver-call", "Check explicit .call receivers and forwarded arguments."],
   [
+    "methods",
+    "Pass a method's object as its receiver; keep a copied method's plain call apart.",
+  ],
+  [
+    "call-objects",
+    "Rebind an ordinary method with .call while an arrow keeps its lexical receiver.",
+  ],
+  [
+    "apply",
+    "Read an .apply list's length and indices after its receiver, in order.",
+  ],
+  [
+    "generic-receivers",
+    "Instantiate one quantified method at two receiver contracts.",
+  ],
+  [
     "optional-arguments",
     "Omit, write, or pass undefined for an optional trailing parameter.",
   ],
@@ -167,12 +183,6 @@ const callables = examples("verification/tests/callables", [
   [
     "default-arguments",
     "Replace an omitted argument with a default, including one reading an earlier parameter.",
-  ],
-]);
-const callableBoundaries = examples("verification/tests/callables", [
-  [
-    "call-objects",
-    "Exercise .call on callable objects at the source boundary.",
   ],
 ]);
 const generics = examples("verification/tests/stateful-source", [
@@ -228,7 +238,7 @@ const corpusGroups: ExampleGroup[] = [
   {
     label: "Callables",
     note: "call signatures, callable objects, arity",
-    files: [...callables, ...callableBoundaries],
+    files: callables,
   },
   {
     label: "Generics · rigid parameters and bounds",

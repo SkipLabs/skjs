@@ -80,21 +80,34 @@ $$
 \frac{}{\Gamma\vdash_G n:\mathsf{Number}}.
 $$
 
-Functions take ordered parameter lists. Write $\vec A$ for a signature's
-parameter types and $|\vec A|$ for its length. In the ordinary-closure creation
-rule below, every signature has the descriptor's arity, and its body is typed under all of that
-signature's parameters followed by the captured bindings:
+Functions take ordered parameter lists and a receiver. Write $\vec A$ for a
+signature's parameter types, $|\vec A|$ for its length and $R$ for its
+receiver: the `this` a call passes, which is not a parameter. In the
+ordinary-closure creation rule below, every signature has the descriptor's
+arity, and its body is typed under that signature's receiver, then all of its
+parameters, then the captured bindings. A call passes its receiver $r$ and types
+it at the selected signature's receiver:
 
 $$
-\frac{\forall(\vec A,B)\in L.\;|\vec A|=\mathit{arity}
-      \quad\forall(\vec A,B)\in L.\;\Gamma,\vec x{:}\vec A\vdash_G t:B}
-     {\Gamma\vdash_G \lambda\vec x.t:\bigwedge_{(\vec A,B)\in L}(\vec A\to B)}
+\frac{\forall(R,\vec A,B)\in L.\;|\vec A|=\mathit{arity}
+      \quad\forall(R,\vec A,B)\in L.\;\Gamma,\mathit{this}{:}R,\vec x{:}\vec A\vdash_G t:B}
+     {\Gamma\vdash_G \lambda\vec x.t:\bigwedge_{(R,\vec A,B)\in L}(R;\vec A\to B)}
 \qquad
-\frac{\Gamma\vdash_G f:\bigwedge_{(\vec C,D)\in L}(\vec C\to D)
-      \quad(\vec A\,\vec U,B)\in L\quad\forall i.\;\Gamma\vdash_G a_i:A_i
+\frac{\Gamma\vdash_G f:\bigwedge_{(Q,\vec C,D)\in L}(Q;\vec C\to D)
+      \quad(R,\vec A\,\vec U,B)\in L\quad\Gamma\vdash_G r:R\quad\forall i.\;\Gamma\vdash_G a_i:A_i
       \quad\forall U\in\vec U.\;\Gamma\vdash_G \mathsf{undefined}:U}
-     {\Gamma\vdash_G f(\vec a):B}
+     {\Gamma\vdash_G \mathsf{invoke}(f,r,\vec a):B}
 $$
+
+A plain call $f(\vec a)$ is $\mathsf{invoke}(f,\mathsf{undefined},\vec a)$. In
+de Bruijn form the receiver's slot precedes the parameters, $\mathit{this}$
+then $\vec x$, before the captures; an arrow's code has that slot too and
+never reads it, and a source `this` in an arrow resolves to an enclosing
+ordinary function's slot as a capture. The rule's receiver premise is
+contravariant under subsumption like each domain
+([`CallArrow`](POSITIVE-TYPES.md#representation-and-mathematical-rules)), so a
+function indifferent to its receiver, typed at $\top$, meets any receiver
+requirement, and one that reads its receiver cannot be widened to arbitrary ones.
 
 A call writes a prefix of the positions the selected signature declares:
 $|\vec a|=|\vec A|$, and $\vec U$ are the positions it omits. Omission is
@@ -153,7 +166,8 @@ store of any length at $E$ (`RestArray`), and $\operatorname{Spreads}_G(S,E)$
 when $S$ is a store contract every position of which is within $E$, with
 $\mathsf{undefined}$ in $E$ if the store may have a hole — at an optional
 position or among its rest (`SpreadsInto`). Creation checks the body once per
-variadic signature, with the rest array in slot 0 above the fixed parameters
+variadic signature, with the rest array in slot 0, the receiver in slot 1, then
+the fixed parameters
 (`funRest`; `makeCallableRest` adds a field bag as `makeCallable` does):
 
 $$
@@ -217,6 +231,28 @@ $$
 $$
 \frac{\Gamma\vdash_G a:A\quad\Gamma,x:A\vdash_G b:B}
      {\Gamma\vdash_G \mathsf{let}\ x=a\ \mathsf{in}\ b:B}
+$$
+
+A bound function (`bindE`) is allocated from saved slots: the target $f$, the
+receiver $r$ and the prefix $\vec p$, whose types the rule reads from the
+context. The target's selected signature starts with the prefix's types; the
+result takes the rest, at any receiver, since invoking it drops the receiver it
+is given (`CallCode.bound`, `callsT_bound`):
+
+$$
+\frac{\Gamma(f)=F\quad(R,\vec P\,\vec D,B)\in\operatorname{callSigs}_G(F)
+      \quad\Gamma(r)=R\quad\Gamma(\vec p)=\vec P}
+     {\Gamma\vdash_G\mathsf{bound}(f,r,\vec p):(Q;\vec D\to B)}
+$$
+
+A variadic target (`bindRestE`, `restsT_bound`) gives its first fixed positions
+to the prefix and, past them, its element contract $E$; the result keeps the
+positions left and $E$:
+
+$$
+\frac{\Gamma(f)=F\quad(R,\vec P,E,B)\in\operatorname{restSigs}_G(F)
+      \quad\Gamma(r)=R\quad\Gamma(\vec p)=\vec P_{<k}\,E^{\,k-|\vec P|}\quad k=|\vec p|}
+     {\Gamma\vdash_G\mathsf{bound}(f,r,\vec p):(Q;\vec P_{\ge k},\ldots E\to B)}
 $$
 
 Here $\lambda\vec x.t$ denotes source function creation, implemented as `funE t`: it
@@ -408,8 +444,8 @@ mixed shapes; that representation needs additional decomposition rules.
 its application law:
 
 $$
-\mathsf{invoke}(\mathsf{obj}(\ell,\mathsf{closure}(\operatorname{close}^{1}_{\rho}(b))),a)
-\longrightarrow \operatorname{close}_{a::\rho}(b).
+\mathsf{invoke}(\mathsf{obj}(\ell,\mathsf{closure}(1,\operatorname{close}^{2}_{\rho}(b))),r,[a])
+\longrightarrow \operatorname{close}_{r::a::\rho}(b).
 $$
 
 The formal statement is `instantiate_beta`; environment entries must be closed.
@@ -1612,6 +1648,23 @@ forget properties to obtain `arrs`. The producer and consumer support
 [CallableGraphTests.lean](lean/Verification/ExperimentState/CallableGraphTests.lean)
 runs an allocated overloaded object through aliasing, bag mutation, reading,
 and invocation using produced evidence and a JSON roundtrip.
+
+Receivers are implemented along the same lines. Every signature carries its
+receiver, and every call its receiver premise; an ordinary function expression
+or object-literal method binds the receiver of each call as `this`, and an
+arrow's `this` is a capture of the enclosing one. A method call saves the
+object, reads and saves the method, evaluates the actuals, then invokes the
+saved method with the saved object, so an actual that replaces the method
+field changes only later calls and one that writes a receiver field is seen by
+the body. The receiver each call passes is also a located `method-receiver`
+obligation. `.bind` allocates the forwarding descriptor `bound(f, r, p⃗)`
+(`bindE`), whose invocation ignores its own receiver: a second `.bind` or a
+`.call` on it cannot replace the first receiver, and a write to the receiver's
+field after binding is seen, since the descriptor saves the object, not its
+fields. A quantified ordinary function may name its binder as its receiver; its
+body is checked once under the binder and each call is an instance at the
+receiver it passes. The witnesses are `tests/callables/methods.ts`,
+`call-objects.ts`, `apply.ts` and `generic-receivers.ts`.
 [CallableRecursiveTests.lean](lean/Verification/ExperimentState/CallableRecursiveTests.lean)
 checks the recursive contract `R = callable(null | R; Boolean → Boolean)`:
 a function is written into its own bag, read back, narrowed, and invoked.
@@ -2093,9 +2146,9 @@ it does not preserve a snapshot of its contents or change its world contract.
 Nested closure construction and callback invocation have the rules:
 
 $$
-\frac{\Delta;\mathsf{value}(\bar A){+\!+}\Sigma\vdash p\leadsto b:B}
- {\Delta;\Sigma\vdash\mathsf{lambda}(\bar A,p)\leadsto
-   \mathsf{make}(\mathsf{closure}(|\bar A|,b),\mathsf{null}):\bar A\to B}
+\frac{\Delta;\mathsf{value}(R)::\mathsf{value}(\bar A){+\!+}\Sigma\vdash p\leadsto b:B}
+ {\Delta;\Sigma\vdash\mathsf{lambda}(R,\bar A,p)\leadsto
+   \mathsf{make}(\mathsf{closure}(|\bar A|,b),\mathsf{null}):R;\bar A\to B}
 $$
 
 $$
@@ -2174,7 +2227,7 @@ The same captured environment and world occur at every assignment.
 `rest_invocation_of_inputs` proves this step; `ClosureCertificate.check_safe`
 uses it for both generic declarations and local quantified closures.
 `restsT_of_restSpec` then supplies the common behavioral promise. Rest binding
-uses slot zero; fixed inputs and captures follow. Parameter defaults retain
+uses slot zero and the receiver slot one; fixed inputs and captures follow. Parameter defaults retain
 their universal initialization obligations.
 
 A direct call through a variadic callback uses a finite-arity consequence:

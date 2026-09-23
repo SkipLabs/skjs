@@ -33,11 +33,13 @@ inductive Typed (ps : List Parameter) : List Slot → Tm → Ty → Prop
   | defaultE {Γ : List Slot} {i : Nat} {B : Ty} {init : Tm}
       (hi : Γ[i]? = some (.argument B)) (hd : Typed ps Γ init B) :
       Typed ps Γ (.ite (.test .isUndef (.var i)) init (.var i)) B
-  | lambda {Γ : List Slot} {inputs : List Ty} {body : Tm} {B : Ty}
-      (h : Typed ps (inputs.map Slot.value ++ Γ) body B) :
-      Typed ps Γ (.make (.closure inputs.length body) .nul) (.arrow inputs B)
-  | call {Γ : List Slot} {fn : Tm} {args : List Tm} {inputs : List Ty} {result : Ty}
-      (hf : Typed ps Γ fn (.arrow inputs result)) (hlen : args.length = inputs.length)
+  | lambda {Γ : List Slot} {receiver : Ty} {inputs : List Ty} {body : Tm} {B : Ty}
+      (h : Typed ps (.value receiver :: (inputs.map Slot.value ++ Γ)) body B) :
+      Typed ps Γ (.make (.closure inputs.length body) .nul) (.arrow receiver inputs B)
+  /-- A plain call passes `undefined`, which the callee's receiver must admit. -/
+  | call {Γ : List Slot} {fn : Tm} {args : List Tm} {rc : Ty} {inputs : List Ty} {result : Ty}
+      (hf : Typed ps Γ fn (.arrow rc inputs result)) (hrecv : Sub ps (.ground [3]) rc)
+      (hlen : args.length = inputs.length)
       (hargs : ∀ i (ha : i < args.length) (hi : i < inputs.length), Typed ps Γ args[i] inputs[i]) :
       Typed ps Γ (.call fn args) result
 
@@ -171,8 +173,8 @@ theorem Typed_of_check {ps : List Parameter} :
               obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj hc)
               exact .defaultE hi (.sub (Typed_of_check init hd) (Sub_of_leUnder h))
             · contradiction
-  | .lambda inputs body, Γ, t, A, hc => by
-      cases hb : body.check ps (inputs.map Slot.value ++ Γ) with
+  | .lambda receiver inputs body, Γ, t, A, hc => by
+      cases hb : body.check ps (.value receiver :: (inputs.map Slot.value ++ Γ)) with
       | none => simp [Proof.check, hb] at hc
       | some pb =>
         obtain ⟨term, B⟩ := pb
@@ -185,21 +187,21 @@ theorem Typed_of_check {ps : List Parameter} :
       | some pf =>
         obtain ⟨fn, F⟩ := pf
         cases F with
-        | rigid _ | array _ | variadic _ _ _ => simp [Proof.check, hf] at hc
+        | rigid _ | array _ | variadic _ _ _ _ | top => simp [Proof.check, hf] at hc
         | ground _ => simp [Proof.check, hf] at hc
-        | arrow inputs result =>
+        | arrow rc inputs result =>
           cases hm : args.mapM (fun arg => arg.check ps Γ) with
           | none => simp [Proof.check, hf, hm] at hc
           | some actuals =>
-            by_cases hle : (Ty.arrow inputs result).leUnder ps
-                (.arrow (actuals.map Prod.snd) result) = true
+            by_cases hle : (Ty.arrow rc inputs result).leUnder ps
+                (.arrow (.ground [3]) (actuals.map Prod.snd) result) = true
             · simp [Proof.check, hf, hm, hle] at hc
               obtain ⟨rfl, rfl⟩ := hc
               obtain ⟨hlen, hidx⟩ := mapM_some_index hm
               have hsub := Sub_of_leUnder hle
               cases hsub with
-              | arrow hlen' hargs' _ =>
-                refine .call (Typed_of_check callee hf) (by simpa using hlen'.symm) ?_
+              | arrow hrecv hlen' hargs' _ =>
+                refine .call (Typed_of_check callee hf) hrecv (by simpa using hlen'.symm) ?_
                 intro i ha hi
                 have hi' : i < actuals.length := by simpa using ha
                 have hlt : i < args.length := by omega
@@ -238,10 +240,10 @@ theorem check_of_Typed {ps : List Parameter} (hw : WellFormed ps) {Γ : List Slo
     obtain ⟨p, hp⟩ := ih
     refine ⟨.defaultE i p, ?_⟩
     simp [Proof.check, hi, hp, leUnder_of_Sub hw (Sub.refl ps B)]
-  | @lambda Γ inputs body B _ ih =>
+  | @lambda Γ receiver inputs body B _ ih =>
     obtain ⟨pb, hpb⟩ := ih
-    exact ⟨.lambda inputs pb, by simp [Proof.check, hpb]⟩
-  | @call Γ fn args inputs result _ hlen _ ihf ihargs =>
+    exact ⟨.lambda receiver inputs pb, by simp [Proof.check, hpb]⟩
+  | @call Γ fn args rc inputs result _ hrecv hlen _ ihf ihargs =>
     obtain ⟨pf, hpf⟩ := ihf
     obtain ⟨pargs, hplen, hpargs⟩ := exists_list args.length (fun i p =>
         ∀ (ha : i < args.length) (hi : i < inputs.length), p.check ps Γ = some (args[i], inputs[i]))
@@ -257,7 +259,9 @@ theorem check_of_Typed {ps : List Parameter} (hw : WellFormed ps) {Γ : List Slo
     refine ⟨.call pf pargs, ?_⟩
     have hfst : (args.zip inputs).map Prod.fst = args := List.map_fst_zip (by omega)
     have hsnd : (args.zip inputs).map Prod.snd = inputs := List.map_snd_zip (by omega)
-    simp [Proof.check, hpf, hm, hfst, hsnd, leUnder_of_Sub hw (Sub.refl ps (.arrow inputs result))]
+    have hle : Ty.leUnder ps (.arrow rc inputs result) (.arrow (.ground [3]) inputs result) = true :=
+      leUnder_of_Sub hw (.arrow hrecv rfl (fun i _ _ => Sub.refl ps inputs[i]) (Sub.refl ps result))
+    simp [Proof.check, hpf, hm, hfst, hsnd, hle]
 
 theorem check_iff_Typed {ps : List Parameter} (hw : WellFormed ps) {Γ : List Slot} {t : Tm} {A : Ty} :
     (∃ p : Proof, p.check ps Γ = some (t, A)) ↔ Typed ps Γ t A :=

@@ -182,10 +182,12 @@ for (const params of [
 ]) {
   const tabled: Normalized = structuredClone(normalized);
   tabled.claims.types = [["nul"], [{boolLit: {value: true}}], [{boolLit: {value: false}}], ["undef"]];
-  const arrow = {top: false, atoms: [{a: "function", params,
+  const arrow = {top: false, atoms: [{a: "function", this: {top: true, atoms: []}, params,
     result: {top: false, atoms: [{a: "boolean"}]}, construct: "unknown", array: "unknown"}]};
   const changed = editClaim(tabled, fn, item, arrow);
-  assert.deepEqual(normalizedClaims(changed).types[4], [{arrs: {arrows: [[params.length ? [[1,2],[0]] : [],[1,2]]]}}]);
+  // The receiver is lowered first: the top row at 4, the signature at 5.
+  assert.deepEqual(normalizedClaims(changed).types[4], ["top"]);
+  assert.deepEqual(normalizedClaims(changed).types[5], [{arrs: {arrows: [[[4], [params.length ? [[1,2],[0]] : [],[1,2]]]]}}]);
   assert.deepEqual(editable(changed, fn, item), arrow);
 }
 

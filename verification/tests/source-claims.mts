@@ -80,7 +80,8 @@ try {
     // intersection as the source declares it.
     const fixture="verification/tests/skjs-incomplete/arrow-intersection.ts",text=fs.readFileSync(fixture,"utf8");
     const sf=path.join(tmp,"overload.ts"),sa=path.join(tmp,"overload.ast.json"),sc=path.join(tmp,"overload.claims.json"),se=path.join(tmp,"overload.evidence.json");
-    const types=[...primitives,[{arrs:{arrows:[[[[1]],[0]],[[[2]],[0]]]}}]];
+    // Row 5 is the unknown receiver the annotation states.
+    const types=[...primitives,[{arrs:{arrows:[[[5],[[[1]],[0]]],[[5],[[[2]],[0]]]]}}],["top"]];
     // Claims for the parsed program: the lambda and its binding at row 4, the
     // body at the given type, the call at null.
     const write=(source: string,bodyType: Labels)=>{
@@ -138,8 +139,9 @@ try {
     const a: Ast=JSON.parse(p.stdout),f=must(a.functions[0],"the parsed function");
     const expressions: ExpressionClaim[]=[],entries: EntryClaim[]=[];
     const scope: {name: string; type: Labels; current: null}[]=[];
-    // The table: the primitives, then the cell at 4 and the reader arrow at 5.
-    const types: Row[]=[...primitives,[{refs:{first:[["value",[1,2]]],rest:[], views: []}}],[{arrs:{arrows:[[[[0]],[1,2]]]}}]];
+    // The table: the primitives, then the cell at 4, the reader arrow at 5 and
+    // its unknown receiver at 6.
+    const types: Row[]=[...primitives,[{refs:{first:[["value",[1,2]]],rest:[], views: []}}],[{arrs:{arrows:[[[6],[[[0]],[1,2]]]]}}],["top"]];
     const labels: Record<string, Labels>={cell:[4],read:[5],x:[0]};
     const expr=(e: Expr): void =>{
       let type: Labels;

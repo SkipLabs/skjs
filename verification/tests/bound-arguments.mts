@@ -90,13 +90,13 @@ try {
       .expressions.find((e) => e.pos[0] === pos[0] && e.pos[1] === pos[1]),
     `a claim at ${pos.join(":")}`,
   );
-  const signature = (c: SourceClaims): Arrow => {
+  const signature = (c: SourceClaims): Arrow[1] => {
     const labels = at(c, bind.pos).type;
     if (!Array.isArray(labels)) throw Error("the bind result states no labels");
     const clause = must(must(c.types[must(labels[0], "a label")], "a row")[0], "a clause");
     if (typeof clause === "string" || !("arrs" in clause))
       throw Error("the bind result is not an arrow");
-    return must(clause.arrs.arrows[0], "an arrow");
+    return must(clause.arrs.arrows[0], "an arrow")[1];
   };
   for (const [name, edit] of rows<[string, (a: Ast, c: SourceClaims) => void]>([
     ["remaining arity", (a, c) => signature(c)[0].push([1, 2])],
@@ -122,7 +122,7 @@ try {
     const r = spawnSync(process.execPath, ["verification/tools/fragment-parse.mts", probe], {encoding: "utf8"});
     if (r.error || r.signal) throw r.error || Error(String(r.signal));
     assert.notEqual(r.status, 0);
-    assert.match(r.stderr, /\.bind requires a known local arrow/);
+    assert.match(r.stderr, /\.bind requires a known local function/);
   }
   console.log("  SKJS incompleteness: original claims rejected, tsc claims verified; saved prefix versus live capture, escaping thunk, remaining signature and intrinsic gate OK");
 } finally { fs.rmSync(work, {recursive: true, force: true}); }

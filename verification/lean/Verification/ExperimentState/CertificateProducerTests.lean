@@ -7,13 +7,13 @@ set_option maxRecDepth 10000
 namespace Verification.ExperimentState.CertificateProducerTests
 open ProgramTyping ProgramTypingTests ControlFlow CertificateProducer
 
-def labels : List (Fin 6) := [0,1,2,3,4,5]
+def labels : List (Fin 7) := [0,1,2,3,4,5,6]
 
-def loopClaims : List (PointClaim (Fin 6)) :=
+def loopClaims : List (PointClaim (Fin 7)) :=
   [⟨[],[2]⟩, ⟨[[2]],[3]⟩, ⟨[[3],[2]],[1]⟩,
    ⟨[[3],[2]],[0]⟩, ⟨[[3],[2]],[1]⟩]
 
-def diamondClaims : List (PointClaim (Fin 6)) :=
+def diamondClaims : List (PointClaim (Fin 7)) :=
   [⟨[],[1]⟩, ⟨[],[0]⟩, ⟨[],[1]⟩, ⟨[[0,1]],[0,1]⟩]
 
 def succeeds (r : Except Failure α) : Bool := match r with
@@ -33,20 +33,20 @@ def mapped : Program :=
    ⟨.write (.var 1) .fls, .effect ⟨4, some [0,2]⟩⟩,
    ⟨.app (.var 0) .nul, .ret⟩]
 
-def mappedClaims : List (PointClaim (Fin 6)) :=
+def mappedClaims : List (PointClaim (Fin 7)) :=
   [⟨[],[2]⟩, ⟨[[2],[2]],[0]⟩, ⟨[[2],[0],[2]],[3]⟩,
    ⟨[[3],[2],[2]],[0]⟩, ⟨[[3],[2]],[1]⟩]
 
 #guard succeeds (produce G labels 8 [1] mapped mappedClaims 0)
 
 /-- Shared generated evidence for executable tampering checks. -/
-def mappedCertificate : ControlFlow.Certificate (Fin 6) :=
+def mappedCertificate : ControlFlow.Certificate (Fin 7) :=
   match produce G labels 8 [1] mapped mappedClaims 0 with
   | .ok C => C
   | .error _ => []
 
 -- Structural subtype search must build a union-of-domains arrow certificate.
-#guard (subtype G [[],[0],[1],[0,1],[2],[3],[4],[5]] [3] [4]).isSome
+#guard (subtype G [[],[0],[1],[0,1],[2],[3],[4],[5],[6]] [3] [4]).isSome
 #guard !(subtype G [[],[0],[1],[0,1],[2],[3],[4],[5]] [2] [1]).isSome
 
 /-- Both branch targets independently select their input slots. -/
@@ -55,7 +55,7 @@ def mappedDiamond : Program :=
    ⟨.tru, .branch ⟨3, some [1,0]⟩ ⟨4, some [0,1]⟩⟩,
    ⟨.var 0, .bind ⟨5, some [0]⟩⟩,
    ⟨.var 0, .bind ⟨5, some [0]⟩⟩, ⟨.var 0, .ret⟩]
-def mappedDiamondClaims : List (PointClaim (Fin 6)) :=
+def mappedDiamondClaims : List (PointClaim (Fin 7)) :=
   [⟨[],[0]⟩, ⟨[[0]],[1]⟩, ⟨[[1],[0]],[1]⟩,
    ⟨[[0],[1]],[0]⟩, ⟨[[1],[0]],[1]⟩, ⟨[[0,1]],[0,1]⟩]
 #guard succeeds (produce G labels 8 [0,1] mappedDiamond mappedDiamondClaims 0)

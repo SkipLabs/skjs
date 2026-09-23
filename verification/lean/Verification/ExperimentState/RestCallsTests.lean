@@ -9,25 +9,29 @@ open ProgramTyping ProgramCertificates CertificateProducer PositiveNormalization
 3 its array, 4 `(a: number, ...r: (number | undefined)[]) => number`,
 5 the store of a `[number]` tuple, 6 a store of `number` of any length,
 7 `(a: number, ...r: number[]) => number`, 8 the array of 6, 9 the array of 5,
-10 `(a: number, b: number) => number`, 11 `(a?: number, ...r: number[]) => number`. -/
+10 `(a: number, b: number) => number`, 11 `(a?: number, ...r: number[]) => number`,
+12 unknown. Every signature takes any receiver. -/
 def G : PositiveGraphs.NormalGraph Nat
   | 0 => [.num]
   | 1 => [.undef]
   | 2 => [.list ⟨[], [], some [0,1], false⟩ []]
   | 3 => [.refs [(CallArguments.arrayStoreField, [2])] [] []]
-  | 4 => [.arrs [] [([[0]], [0,1], [0])]]
+  | 4 => [.arrs [] [([12], [[0]], [0,1], [0])]]
   | 5 => [.list ⟨[[0]], [], none, false⟩ []]
   | 6 => [.list ⟨[], [], some [0], false⟩ []]
-  | 7 => [.arrs [] [([[0]], [0], [0])]]
+  | 7 => [.arrs [] [([12], [[0]], [0], [0])]]
   | 8 => [.refs [(CallArguments.arrayStoreField, [6])] [] []]
   | 9 => [.refs [(CallArguments.arrayStoreField, [5])] [] []]
-  | 10 => [.arrs [([[0], [0]], [0])] []]
-  | 11 => [.arrs [] [([[0, 1]], [0], [0])]]
+  | 10 => [.arrs [([12], [[0], [0]], [0])] []]
+  | 11 => [.arrs [] [([12], [[0, 1]], [0], [0])]]
+  | 12 => [.top]
   | _ => []
 
-def pool : List (Ty Nat) := vocabulary G (List.range 12) [] [[0,1]]
+def pool : List (Ty Nat) := vocabulary G (List.range 13) [] [[0,1]]
 
-def restFn : Tm := .make (.variadic 1 (.var 1)) .nul
+/-- Slot 0 is the collected array, slot 1 the receiver, slot 2 the fixed
+parameter. -/
+def restFn : Tm := .make (.variadic 1 (.var 2)) .nul
 
 /-- Build an array of the given store type, then call with actuals `args`,
 where slot 0 is the array and slot 1 the function. -/
@@ -46,8 +50,10 @@ def accepted (t : Tm) (A : Ty Nat) : Bool :=
 
 -- Creation alone, at a signature whose rest collects `number | undefined`.
 #guard accepted restFn [4]
--- The body reads slot 1, the fixed parameter; slot 0 is the array.
+-- The body reads slot 2, the fixed parameter; slot 0 is the array.
 #guard !accepted (.make (.variadic 1 (.var 0)) .nul) [4]
+-- Slot 1 is the receiver, which may be any value: not a number.
+#guard !accepted (.make (.variadic 1 (.var 1)) .nul) [4]
 -- Fixed actual only, several plain actuals, and a spread among them.
 #guard accepted (.letE restFn (.call (.var 0) [.num 1])) [0]
 #guard accepted (.letE restFn (.call (.var 0) [.num 1, .num 2, .undef])) [0]
@@ -94,6 +100,8 @@ def spreadAt (i : Nat) : Tm := .spread (.readAt CallArguments.arrayStoreField (.
 private def restCallEvidence (flags : List Bool) (E : Ty Nat) : Evidence Nat :=
   .node ⟨[[4]], .call (.var 0) [.num 1, .num 2], [0]⟩ (.callRest 1 0 flags E)
     [.node ⟨[[4]], .var 0, [4]⟩ .var [],
+     .node ⟨[[4]], .undef, [12]⟩ (.sub (.core ⟨[([1], [12])], []⟩))
+       [.node ⟨[[4]], .undef, [1]⟩ .undef []],
      .node ⟨[[4]], .num 1, [0]⟩ .num [],
      .node ⟨[[4]], .num 2, [0,1]⟩ (.sub .subset) [.node ⟨[[4]], .num 2, [0]⟩ .num []]]
 #guard checkTree G (restCallEvidence [false] [0,1])

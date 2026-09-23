@@ -9,15 +9,18 @@ open CertificateProducer ControlFlow RequestJson
 -- The two alternatives have different invariant bags and result types. No
 -- auxiliary common arrow label is provided to proof search.
 private def types : List (List (Clause (List Nat))) :=
-  [[.bool],[.nul],[.callable [(valueField, [0])] [] [([[0]],[0])] []],
-   [.callable [(valueField, [1])] [] [([[0]],[1])] []], [.callable [(valueField, [1])] [] [([[1]],[1])] []],
-   [.arrs [] []], [.refs [(valueField, [0])] [] []], [.arrs [([[0]],[0])] []], [.arrs [([[0]],[1])] []] ]
+  [[.bool],[.nul],[.callable [(valueField, [0])] [] [([9],[[0]],[0])] []],
+   [.callable [(valueField, [1])] [] [([9],[[0]],[1])] []], [.callable [(valueField, [1])] [] [([9],[[1]],[1])] []],
+   [.arrs [] []], [.refs [(valueField, [0])] [] []], [.arrs [([9],[[0]],[0])] []], [.arrs [([9],[[0]],[1])] []],
+   [.top], [.undef] ]
 private def G : NormalGraph Nat := fun i => types[i]?.getD []
 private def pool := vocabulary G (List.range types.length) [] [[2,3],[0,1]]
 private def callClaim : Sequent Nat := ⟨[[2,3]],.app (.var 0) .tru,[0,1]⟩
 private def branchProof (F R : Ty Nat) : Evidence Nat :=
   let e := Evidence.node ⟨[F],callClaim.term,R⟩ .callCallable
-    [.node ⟨[F],.var 0,F⟩ .var [], .node ⟨[F],.tru,[0]⟩ .tru []]
+    [.node ⟨[F],.var 0,F⟩ .var [],
+     .node ⟨[F],.undef,[9]⟩ (.sub (.core ⟨[([10],[9])],[]⟩)) [.node ⟨[F],.undef,[10]⟩ .undef []],
+     .node ⟨[F],.tru,[0]⟩ .tru []]
   .node ⟨[F],callClaim.term,[0,1]⟩ (.sub .subset) [e]
 private def proof : Evidence Nat :=
   .node callClaim (.unionVar 0) [branchProof [2] [0],branchProof [3] [1]]
@@ -35,7 +38,7 @@ theorem checked : checkTree G proof = true := by decide +kernel
 #guard !(expression G pool 8 [[2,3]] (.app (.var 0) .tru) [0]).isSome
 
 private def program (nullResult : Bool) : Program :=
-  [⟨if nullResult then .attach .nul .nul else .attach (.var 0) .tru,.bind 1⟩,
+  [⟨if nullResult then .attach .nul .nul else .attach (.var 1) .tru,.bind 1⟩,
    ⟨.app (.var 0) .tru,.ret⟩]
 private def claims : List (PointClaim Nat) := [⟨[],[2,3]⟩,⟨callClaim.context,callClaim.type⟩]
 private def request (nullResult : Bool) : Request :=

@@ -15,8 +15,8 @@ example {D l b b'} (h : Names D (.fn l b)) (h' : Names D (.fn l b')) : b = b' :=
 
 /-- Scope at the enclosing binder is insufficient for an existing object.
 Its descriptor must already be closed, so substitution cannot change it. -/
-example : Scoped 1 (.fn 0 (.var 1)) := by simp [Scoped]
-example (D : Registry) : ¬ Names D (.fn 0 (.var 1)) := by simp [Names, Scoped]
+example : Scoped 1 (.fn 0 (.var 2)) := by simp [Scoped]
+example (D : Registry) : ¬ Names D (.fn 0 (.var 2)) := by simp [Names, Scoped]
 
 /-- An object hidden inside captured code is checked against the same registry. -/
 example : ¬ Names [.absent, .closure 1 (.fn 0 (.var 0))] (.fn 1 (.fn 0 (.var 0))) := by

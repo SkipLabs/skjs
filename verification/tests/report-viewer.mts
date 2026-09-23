@@ -497,6 +497,7 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
     cell(trueLit, boolean),
     of({
       a: "function",
+      this: { top: true, atoms: [] },
       params: [boolean],
       result: of({ a: "null" }),
       construct: "unknown",
@@ -555,7 +556,7 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   assert.equal(surface.parseType("{ value: boolean }").atoms[0].a, "record");
   const freshArrow = surface.readClaimValue("expression", "(boolean) => null", undefined);
   assert.deepEqual(freshArrow, of({a: "function", construct: "unknown", array: "unknown",
-    params: [boolean], result: of({a: "null"})}));
+    this: {top: true, atoms: []}, params: [boolean], result: of({a: "null"})}));
   assert.deepEqual(surface.parseType("(boolean) => null"), freshArrow);
   assert.deepEqual(surface.readClaimValue("expression", "(boolean) => null", {unsupported: true}), freshArrow);
   const factory = surface.parseType("() => (boolean) => null");
@@ -659,11 +660,13 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
     [{ boolLit: { value: true } }],
     [{ boolLit: { value: false } }],
     [{ refs: { first: [["value", [1, 2]]], rest: [], views: [] } }],
-    [{ arrs: { arrows: [[[[0]], [1, 2]]] } }],
+    [{ arrs: { arrows: [[[8], [[[0]], [1, 2]]]] } }],
     [{ mystery: 7 }],
     [{ refs: { first: [["value", [6]]], rest: [], views: [] } }],
   ];
   types.push([{ refs: { first: [["value", [7]]], rest: [], views: [] } }]);
+  // Row 8 is the unknown receiver of row 4's signature.
+  types.push(["top"]);
   // The table's rows 1 and 2 are the literals a source `boolean` lowers to, and
   // a reference row is printed as the record the source declared.
   assert.equal(ob.typeText(types, [1, 2]), "boolean");
@@ -694,8 +697,9 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
     current: null,
   });
   assert.deepEqual(surface.lower(table, [0, 3]), { type: [0, 3] });
-  assert.deepEqual(surface.lower(table, surface.parseType("unknown")),{type:[types.length + 1],current:null});
-  assert.equal(table.length, types.length + 2);
+  // `unknown` reuses the table's own top row, the receiver of row 4.
+  assert.deepEqual(surface.lower(table, surface.parseType("unknown")),{type:[8],current:null});
+  assert.equal(table.length, types.length + 1);
   assert.equal(ob.typeText(types, [5]), JSON.stringify({ mystery: 7 }));
   assert.equal(ob.typeText(types, [99]), "type 99");
   assert.match(ob.typeText(types, [6], 2), /…/);
@@ -1155,19 +1159,24 @@ assert.equal(must(failedAt(absentEnv), 'a located failure').site, "unclaimed");
 {
   const graph = decodeGraph([
     [{refs:{first: [["value", [0]]],rest: [[["value", [1]]]],views: []}}],
-    [{callable:{first: [["value", [0]]],rest: [[["value", [1]]]],arrows:[[[[0],[1]],[1]],[[],[]]]}}],
+    [{callable:{first: [["value", [0]]],rest: [[["value", [1]]]],arrows:[[[4],[[[0],[1]],[1]]],[[4],[[],[]]]]}}],
     [{arrs:{arrows:[]}}], ["bool"], ["undef"], ["nul"],
     [{boolLit:{value:false}}], [{boolLit:{value:true}}],
   ]);
   assert.deepEqual(parseGraph(printGraph(graph)),graph);
   const rows = graphDefinitions(graph);
   assert.equal(rows[0].definition,'ref{value: #0} & ref{value: #1}');
-  assert.match(rows[1].definition,/\(#0, #1\) => #1; \(\) => never/);
+  assert.match(rows[1].definition,/\(this: #4, #0, #1\) => #1; \(this: #4\) => never/);
   assert.equal(rows.length,graph.length);
   assert.equal(ob.typeText(graph,[6,7]),'boolean');
   for (const invalid of [[["new-clause"]],[[{refs:{first: [["value", [1]]],rest:[], views: []}}]],[[{boolLit:{value:true,extra:0}}]]])
     assert.throws(() => decodeGraph(invalid));
-  const term = decodeTerm({makeAt:{call:{closure:{arity:2,body:{call:{f:{var:{i:0}},args:["tru","nul"]}}}},names:["left","right"],inits:["undef","tru"]}});
+  const term = decodeTerm({makeAt:{call:{closure:{arity:2,body:{invoke:{f:{var:{i:0}},r:"undef",args:["tru","nul"]}}}},names:["left","right"],inits:["undef","tru"]}});
+  for (const code of [{variadic:{fixed:1,body:{var:{i:1}}}},{bound:{target:{var:{i:0}},receiver:"nul",pre:["tru"]}}])
+    assert.deepEqual(decodeTerm({makeAt:{call:code,names:[],inits:[]}}),{makeAt:{call:code,names:[],inits:[]}});
+  assert.deepEqual(decodeTerm({invoke:{f:{var:{i:0}},r:"undef",args:[{spread:{a:{arr:{elems:[0,null]}}}}]}}),
+    {invoke:{f:{var:{i:0}},r:"undef",args:[{spread:{a:{arr:{elems:[0,null]}}}}]}});
+  assert.throws(() => decodeTerm({call:{f:{var:{i:0}},args:[]}}));
   assert.deepEqual(parseTerm(printTerm(term)),term);
   assert.throws(() => decodeTerm({var:{i:-1}}));
   assert.throws(() => decodeTerm({read:{a:"nul",extra:0}}));

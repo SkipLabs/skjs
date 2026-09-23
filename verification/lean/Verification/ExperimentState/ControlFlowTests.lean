@@ -6,13 +6,14 @@ set_option maxHeartbeats 3200000
 namespace Verification.ExperimentState.ControlFlowTests
 open ProgramTyping ProgramTypingTests ProgramCertificates ControlFlow
 
-private def leaf (Γ : List (Ty (Fin 6))) (t : Tm) (A : Ty (Fin 6)) (r : Rule (Fin 6)) : Evidence (Fin 6) :=
+private def leaf (Γ : List (Ty (Fin 7))) (t : Tm) (A : Ty (Fin 7)) (r : Rule (Fin 7)) : Evidence (Fin 7) :=
   .node ⟨Γ,t,A⟩ r []
 
 def callCaptured : Tm := .app (.var 0) .nul
 
-def callEvidence : Evidence (Fin 6) := .node ⟨[[3],[2]],callCaptured,[1]⟩ .app
-  [leaf [[3],[2]] (.var 0) [3] .var, leaf [[3],[2]] .nul [0] .nul]
+/-- The callee, the `undefined` receiver at label 6, the actual. -/
+def callEvidence : Evidence (Fin 7) := .node ⟨[[3],[2]],callCaptured,[1]⟩ .app
+  [leaf [[3],[2]] (.var 0) [3] .var, leaf [[3],[2]] .undef [6] .undef, leaf [[3],[2]] .nul [0] .nul]
 
 /-- The same closure survives a write through the original reference. Node 2
 is reached after closure creation and again through the back edge from node 3. -/
@@ -23,7 +24,7 @@ def loop : Program :=
    ⟨.write (.var 1) .fls, .effect 2⟩,
    ⟨callCaptured, .ret⟩]
 
-def loopEvidence : ControlFlow.Certificate (Fin 6) :=
+def loopEvidence : ControlFlow.Certificate (Fin 7) :=
   [{expression := .node ⟨[], .alloc .tru, [2]⟩ .alloc [leaf [] .tru [1] .tru], edges :=  [[.subset]]},
    {expression := ProgramCertificateTests.dispatchEvidence, edges :=  [[.subset,.subset]]},
    {expression := callEvidence, edges :=  [[.subset,.subset],[.subset,.subset]]},
@@ -68,7 +69,7 @@ theorem loop_returns_false : Execution loop 27 [] (.at 0 (fun _ => .nul)) [.fls,
 -- Both predecessors justify the supplied union at the shared node 3.
 def diamond : Program :=
   [⟨.tru, .branch 1 2⟩, ⟨.nul, .bind 3⟩, ⟨.fls, .bind 3⟩, ⟨.var 0, .ret⟩]
-def diamondEvidence : ControlFlow.Certificate (Fin 6) :=
+def diamondEvidence : ControlFlow.Certificate (Fin 7) :=
   [{expression := leaf [] .tru [1] .tru, edges :=  [[],[]]},
    {expression := leaf [] .nul [0] .nul, edges :=  [[.subset]]},
    {expression := leaf [] .fls [1] .fls, edges :=  [[.subset]]},
@@ -92,7 +93,7 @@ def diamondEvidence : ControlFlow.Certificate (Fin 6) :=
 
 -- A genuinely nonterminating cycle is accepted without a return requirement.
 def forever : Program := [⟨.nul, .effect 0⟩]
-def foreverEvidence : ControlFlow.Certificate (Fin 6) := [{expression := leaf [] .nul [0] .nul, edges :=  [[]]}]
+def foreverEvidence : ControlFlow.Certificate (Fin 7) := [{expression := leaf [] .nul [0] .nul, edges :=  [[]]}]
 #guard checkClosed G [] forever foreverEvidence 0
 
 #print axioms loop_returns_false

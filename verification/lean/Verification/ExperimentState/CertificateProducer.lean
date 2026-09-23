@@ -40,26 +40,34 @@ theorem accepted_from_inputs [DecidableEq ι] {G : NormalGraph ι} {R P claims C
   simp only [accept, Bool.and_eq_true] at hc
   exact ControlFlow.accepted_inputs_safe hc.2 n W h ρ he hw hh
 
-/-- Small arrow search: source, domain union, and pairwise compatible codomain
-combination. The checker, not this search strategy, defines the rules. -/
+/-- Small arrow search: source, receiver and domain union, and pairwise
+compatible codomain combination. The checker, not this search strategy,
+defines the rules. -/
 def arrowSearch [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (L : Ops ι)
-    (S : List (List (Ty ι) × Ty ι × Ty ι))
-    (c : List (Ty ι)) (d : Ty ι) : Nat → Option (PositiveCertificates.ArrowCert ι)
+    (S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι))
+    (rt : Ty ι) (c : List (Ty ι)) (d : Ty ι) : Nat → Option (PositiveCertificates.ArrowCert ι)
   | 0 => none
   | fuel+1 => Id.run do
-    let basic := PositiveCertificates.ArrowCert.empty :: L.map (.source ·) ++ S.map (.rest ·)
-    if let some p := basic.find? (fun p => PositiveCertificates.checkArrow G table L S c d p) then
+    let basic := PositiveCertificates.ArrowCert.empty :: .emptyRecv ::
+      L.map (.source ·) ++ S.map (.rest ·)
+    if let some p := basic.find? (fun p => PositiveCertificates.checkArrow G table L S rt c d p) then
       return some p
+    if let a :: rest := rt then
+      if !rest.isEmpty then
+        if let some left := arrowSearch G table L S [a] c d fuel then
+          if let some right := arrowSearch G table L S rest c d fuel then
+            let p := PositiveCertificates.ArrowCert.recvUnion [a] rest left right
+            if PositiveCertificates.checkArrow G table L S rt c d p then return some p
     for i in List.range c.length do
       if let some (a :: rest) := c[i]? then
         if !rest.isEmpty then
-          if let some left := arrowSearch G table L S (c.set i [a]) d fuel then
-            if let some right := arrowSearch G table L S (c.set i rest) d fuel then
+          if let some left := arrowSearch G table L S rt (c.set i [a]) d fuel then
+            if let some right := arrowSearch G table L S rt (c.set i rest) d fuel then
               let p := PositiveCertificates.ArrowCert.union (c.take i) [a] rest (c.drop (i+1)) left right
-              if PositiveCertificates.checkArrow G table L S c d p then return some p
+              if PositiveCertificates.checkArrow G table L S rt c d p then return some p
     return (L.flatMap fun p => L.map fun q =>
-      PositiveCertificates.ArrowCert.combine p.2 q.2 (.source p) (.source q)).find?
-        (fun p => PositiveCertificates.checkArrow G table L S c d p)
+      PositiveCertificates.ArrowCert.combine p.2.2 q.2.2 (.source p) (.source q)).find?
+        (fun p => PositiveCertificates.checkArrow G table L S rt c d p)
 
 def arrowEvidence [DecidableEq ι] (G : NormalGraph ι) (table : Table ι)
     (pool : List (Ty ι)) : PositiveCertificates.Evidence ι :=
@@ -67,7 +75,8 @@ def arrowEvidence [DecidableEq ι] (G : NormalGraph ι) (table : Table ι)
   clauses.flatMap fun a => match a with
     | .arrs L S | .callable _ _ L S => clauses.flatMap fun b => match b with
       | .arrs M _ | .callable _ _ M _ => M.filterMap fun p =>
-          (arrowSearch G table L S p.1 p.2 (p.1.length+1)).map (fun proof => (L,(p,proof)))
+          (arrowSearch G table L S p.1 p.2.1 p.2.2 (p.2.1.length + p.1.length + 1)).map
+            (fun proof => (L,(p,proof)))
       | _ => []
     | _ => []
 
@@ -85,6 +94,9 @@ def prune [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) :
 def subtype [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
   if PositiveCertificates.check G A B .subset then some .subset else
+  -- Semantic top covers every clause: one row, no arrow evidence.
+  let toTop := PositiveCertificates.Proof.core ⟨[(A, B)], []⟩
+  if expand G B = [.top] && PositiveCertificates.check G A B toTop then some toTop else
     let types := (A :: B :: pool).eraseDups
     let initial := types.flatMap fun a => types.map (a, ·)
     let table := prune G types initial.length initial
@@ -146,14 +158,14 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
       return (A :: pool).findSome? fun F => do
         match expand G F with
         | [.arrs L []] =>
-          if !L.all (fun p => p.1.length == arity) then none else do
-          let ps ← L.mapM fun p => recur (p.1 ++ Γ) b p.2
+          if !L.all (fun p => p.2.1.length == arity) then none else do
+          let ps ← L.mapM fun p => recur (p.1 :: p.2.1 ++ Γ) b p.2.2
           coerce G pool (.node ⟨Γ,t,F⟩ .funE ps) A
         | [.callable P [] L []] =>
-          if !L.all (fun p => p.1.length == arity) then none else do
+          if !L.all (fun p => p.2.1.length == arity) then none else do
           let [(_, Pv)] := P | none
           let ea ← recur Γ .nul Pv
-          let ps ← L.mapM fun p => recur (p.1 ++ Γ) b p.2
+          let ps ← L.mapM fun p => recur (p.1 :: p.2.1 ++ Γ) b p.2.2
           coerce G pool (.node ⟨Γ,t,F⟩ .makeCallable (ea :: ps)) A
         | _ => none
     -- A variadic closure: one body premise per signature, the body's slot 0
@@ -161,29 +173,36 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     | .make (.variadic arity b) .nul =>
       return (A :: pool).findSome? fun F => do
         let [.arrs [] L] := expand G F | none
-        if !L.all (fun p => p.1.length == arity) then none else do
-        let arrays ← L.mapM fun p => pool.find? fun R => decide (RestArray G R p.2.1)
-        let ps ← (L.zip arrays).mapM fun (p, R) => recur (R :: p.1 ++ Γ) b p.2.2
+        if !L.all (fun p => p.2.1.length == arity) then none else do
+        let arrays ← L.mapM fun p => pool.find? fun R => decide (RestArray G R p.2.2.1)
+        let ps ← (L.zip arrays).mapM fun (p, R) => recur (R :: p.1 :: p.2.1 ++ Γ) b p.2.2.2
         coerce G pool (.node ⟨Γ,t,F⟩ (.funRest arrays) ps) A
     -- A variadic callable object: the bag's initializers, then one body per
     -- signature with its rest array in slot 0.
     | .makeAt (.variadic arity b) ns inits =>
       return (A :: pool).findSome? fun F => do
         let [.callable P [] [] L] := expand G F | none
-        if !L.all (fun p => p.1.length == arity) then none else do
+        if !L.all (fun p => p.2.1.length == arity) then none else do
         if P.map Prod.fst != ns || inits.length != ns.length then none else do
         let eas ← (inits.zip (P.map Prod.snd)).mapM fun (a,D) => recur Γ a D
-        let arrays ← L.mapM fun p => pool.find? fun R => decide (RestArray G R p.2.1)
-        let ps ← (L.zip arrays).mapM fun (p, R) => recur (R :: p.1 ++ Γ) b p.2.2
+        let arrays ← L.mapM fun p => pool.find? fun R => decide (RestArray G R p.2.2.1)
+        let ps ← (L.zip arrays).mapM fun (p, R) => recur (R :: p.1 :: p.2.1 ++ Γ) b p.2.2.2
         coerce G pool (.node ⟨Γ,t,F⟩ (.makeCallableRest arrays) (eas ++ ps)) A
     | .makeAt (.closure arity b) ns inits =>
       return (A :: pool).findSome? fun F => do
         let [.callable P [] L []] := expand G F | none
-        if !L.all (fun p => p.1.length == arity) then none else do
+        if !L.all (fun p => p.2.1.length == arity) then none else do
         if P.map Prod.fst != ns || inits.length != ns.length then none else do
         let eas ← (inits.zip (P.map Prod.snd)).mapM fun (a,D) => recur Γ a D
-        let ps ← L.mapM fun p => recur (p.1 ++ Γ) b p.2
+        let ps ← L.mapM fun p => recur (p.1 :: p.2.1 ++ Γ) b p.2.2
         coerce G pool (.node ⟨Γ,t,F⟩ .makeCallable (eas ++ ps)) A
+    -- `.bind`'s forwarding descriptor: a leaf whose checker reads the saved
+    -- slots from the context; the claimed type, or a pool type, is its result.
+    | .makeAt (.bound (.var _) (.var _) _) [] [] =>
+      return (A :: pool).findSome? fun F =>
+        if checkTree G (leaf F .bindE) then coerce G pool (leaf F .bindE) A
+        else if checkTree G (leaf F .bindRestE) then coerce G pool (leaf F .bindRestE) A
+        else none
     | .letE a b =>
       let exactTypes := suggestions.reverse.filterMap fun j =>
         if j.context == Γ && j.term == a then some j.type else none
@@ -195,12 +214,12 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         let ea ← recur Γ a B
         let eb ← recur (B :: Γ) b A
         return ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ .letE [ea,eb])
-    | .call f args =>
-      -- A variadic callee: the fixed actuals at the signature's parameters,
-      -- then each part at its element type, or a spread of a pool store type
-      -- whose elements are.
+    | .invoke f recv args =>
+      -- A variadic callee: the receiver at the signature's receiver, the fixed
+      -- actuals at its parameters, then each part at its element type, or a
+      -- spread of a pool store type whose elements are.
       let variadic := pool.findSome? fun F => do
-        (restSigs G F).findSome? fun (Ps, E, B) => do
+        (restSigs G F).findSome? fun (Rt, Ps, E, B) => do
           -- Fixed actuals first; a shorter call omits trailing fixed positions,
           -- each proving `undefined`, and writes no further part.
           let k := min args.length Ps.length
@@ -209,6 +228,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           if !omitted.isEmpty && !parts.isEmpty then none else do
           let _ ← subtype G pool B A
           let ef ← recur Γ f F
+          let er ← recur Γ recv Rt
           let eas ← (args.zip Ps).mapM fun (a,D) => recur Γ a D
           let eus ← omitted.mapM fun D => recur Γ .undef D
           let eps ← parts.mapM fun a => match a with
@@ -217,7 +237,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
             | a => recur Γ a E
           let flags := parts.map fun a => match a with | .spread _ => true | _ => false
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,B⟩
-            (.callRest k omitted.length flags E) (ef :: eas ++ eus ++ eps)
+            (.callRest k omitted.length flags E) (ef :: er :: eas ++ eus ++ eps)
           if checkTree G e then coerce G pool e A else none
       if let some e := variadic then return some e
       let direct := pool.findSome? fun F => do
@@ -229,13 +249,14 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           -- Require every operand before searching the premises. A signature
           -- with more positions than the call writes is usable when each
           -- remaining contract admits `undefined`, the value bound there.
-          if args.length > p.1.length then none else do
-            let omitted := p.1.drop args.length
-            let _ ← subtype G pool p.2 A
+          if args.length > p.2.1.length then none else do
+            let omitted := p.2.1.drop args.length
+            let _ ← subtype G pool p.2.2 A
             let ef ← recur Γ f F
-            let eas ← (args.zip p.1).mapM fun (a,D) => recur Γ a D
+            let er ← recur Γ recv p.1
+            let eas ← (args.zip p.2.1).mapM fun (a,D) => recur Γ a D
             let eus ← omitted.mapM fun D => recur Γ .undef D
-            coerce G pool (.node ⟨Γ,t,p.2⟩ r (ef :: eas ++ eus)) A
+            coerce G pool (.node ⟨Γ,t,p.2.2⟩ r (ef :: er :: eas ++ eus)) A
       if let some e := direct then return some e
       return splitReceiver f
     | .makeAt .absent ns inits =>
@@ -409,10 +430,11 @@ def vocabulary [DecidableEq ι] (G : NormalGraph ι) (labels : List ι)
     labels.flatMap (fun i => (G i).flatMap fun c => match c with
       | .refs A bs vs => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd
       | .list a bs => (a :: bs).flatMap fun t => t.required ++ t.optional ++ t.rest.toList
-      | .arrs L S => L.flatMap (fun p => p.1 ++ [p.2]) ++ S.flatMap (fun p => p.1 ++ [p.2.1, p.2.2])
+      | .arrs L S => L.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++
+          S.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2.1, p.2.2.2])
       | .callable A bs L S =>
-          A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ L.flatMap (fun p => p.1 ++ [p.2]) ++
-            S.flatMap (fun p => p.1 ++ [p.2.1, p.2.2])
+          A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ L.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++
+            S.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2.1, p.2.2.2])
       | _ => [])).eraseDups
 
 inductive Failure where
