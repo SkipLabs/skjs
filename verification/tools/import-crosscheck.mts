@@ -15,7 +15,7 @@ import type {
   SourceFile,
   TypeReferenceNode,
 } from "typescript/unstable/ast";
-import type { ImportDocument } from "./imported-types.mts";
+import type { ImportDocument, ResolvedImport, TypeDefinition } from "./imported-types.mts";
 import type { ModuleSource } from "./module-resolve.mts";
 import type { Span } from "./span.mts";
 
@@ -50,12 +50,15 @@ function referenceAt(
 
 function crossCheckProgram(
   client: SourceFile,
-  document: ImportDocument,
+  roots: readonly ResolvedImport[],
+  definitions: readonly TypeDefinition[],
+  requiredSourceIds: readonly string[],
+  aliasOnlyRoots: boolean,
   modules: readonly ModuleSource[],
   program: Program,
   checker: Checker,
 ): void {
-  const origin = document.roots[0]?.binding.span ?? [0, 0];
+  const origin = roots[0]?.binding.span ?? [0, 0];
   const moduleById = new Map(modules.map((module) => [module.id, module]));
   const actualByPath = new Map<string, SourceFile>();
   for (const file of program.getSourceFileNames()) {
@@ -75,6 +78,7 @@ function crossCheckProgram(
     at: Span,
     name: string,
     identifier: Identifier,
+    aliasOnly: boolean,
   ): void => {
     const symbol = checker.getSymbolAtLocation(identifier);
     if (!symbol)
@@ -96,10 +100,10 @@ function crossCheckProgram(
         `TypeScript found ${target.declarations.length} declarations for ${name}`,
       );
     const node = target.declarations[0].resolve();
-    if (!node || !ts.isTypeAliasDeclaration(node))
+    if (!node || (aliasOnly && !ts.isTypeAliasDeclaration(node)))
       throw new ImportMismatch(
         at,
-        `TypeScript target for ${name} is not one type alias`,
+        `TypeScript target for ${name} is not ${aliasOnly ? "one type alias" : "one declaration"}`,
       );
     const actual = node.getSourceFile();
     const expected = moduleById.get(id);
@@ -116,7 +120,7 @@ function crossCheckProgram(
       );
   };
 
-  for (const root of document.roots) {
+  for (const root of roots) {
     const binding = root.binding;
     const imported = client.statements
       .filter(ts.isImportDeclaration)
@@ -147,10 +151,11 @@ function crossCheckProgram(
       binding.span,
       binding.local,
       specifier.name,
+      aliasOnlyRoots,
     );
   }
 
-  for (const definition of document.definitions) {
+  for (const definition of definitions) {
     const id = definition.declaration.module;
     const source = sourceOf(id, origin);
     const declaration = source.statements.find(
@@ -177,13 +182,14 @@ function crossCheckProgram(
         origin,
         `${id}#${reference.name} [${key(reference.span)})`,
         node.typeName,
+        true,
       );
     }
   }
 
   // Compare every supplied module TypeScript loaded, including reexport
   // candidates it examined but which did not become graph equations. Every
-  // module recorded in the document must also have been loaded. One direct
+  // required route or equation source must also have been loaded. One direct
   // text comparison per module is enough; stored hashes carry no authority.
   const compared = new Set<string>();
   for (const module of modules) {
@@ -196,15 +202,18 @@ function crossCheckProgram(
         `TypeScript source bytes differ for ${module.id}`,
       );
   }
-  for (const recorded of document.sources)
-    if (!compared.has(recorded.module))
+  for (const id of requiredSourceIds)
+    if (!compared.has(id))
       throw new ImportMismatch(origin,
-        `TypeScript did not load ${recorded.module}`);
+        `TypeScript did not load ${id}`);
 }
 
-export function crossCheckImports(
+function crossCheckSource(
   client: SourceFile,
-  document: ImportDocument,
+  roots: readonly ResolvedImport[],
+  definitions: readonly TypeDefinition[],
+  requiredSourceIds: readonly string[],
+  aliasOnlyRoots: boolean,
   modules: readonly ModuleSource[],
   resolutionFile: string,
   tsconfigPath?: string,
@@ -220,33 +229,63 @@ export function crossCheckImports(
       : snapshot.getDefaultProjectForFile(resolutionFile);
     if (!project)
       throw new ImportMismatch(
-        document.roots[0]?.binding.span ?? [0, 0],
+        roots[0]?.binding.span ?? [0, 0],
         `TypeScript did not open ${resolutionFile}`,
       );
     if (!project.configFileName || !project.compilerOptions.strict)
       throw new ImportMismatch(
-        document.roots[0]?.binding.span ?? [0, 0],
+        roots[0]?.binding.span ?? [0, 0],
         `TypeScript did not load a strict tsconfig for ${resolutionFile}`,
       );
     const checkedClient = project.program.getSourceFile(resolutionFile);
     if (!checkedClient)
       throw new ImportMismatch(
-        document.roots[0]?.binding.span ?? [0, 0],
+        roots[0]?.binding.span ?? [0, 0],
         `TypeScript did not load ${resolutionFile}`,
       );
     crossCheckProgram(
       checkedClient,
-      document,
+      roots,
+      definitions,
+      requiredSourceIds,
+      aliasOnlyRoots,
       modules,
       project.program,
       project.checker,
     );
     if (checkedClient.getFullText() !== client.getFullText())
       throw new ImportMismatch(
-        document.roots[0]?.binding.span ?? [0, 0],
+        roots[0]?.binding.span ?? [0, 0],
         "TypeScript client source bytes differ",
       );
   } finally {
     api.close();
   }
+}
+
+export function crossCheckImports(
+  client: SourceFile,
+  document: ImportDocument,
+  modules: readonly ModuleSource[],
+  resolutionFile: string,
+  tsconfigPath?: string,
+): void {
+  crossCheckSource(client, document.roots, document.definitions,
+    document.sources.map(source => source.module), true, modules,
+    resolutionFile, tsconfigPath);
+}
+
+/** Check identities for declarations whose contracts the fragment cannot yet
+ * interpret. This is a provenance check, never a typing certificate. */
+export function crossCheckResolvedBindings(
+  client: SourceFile,
+  roots: readonly ResolvedImport[],
+  modules: readonly ModuleSource[],
+  resolutionFile: string,
+  tsconfigPath?: string,
+): void {
+  const required = roots.flatMap(root => [root.declaration.module,
+    ...root.route.map(step => step.module)]);
+  crossCheckSource(client, roots, [], required, false, modules,
+    resolutionFile, tsconfigPath);
 }

@@ -458,19 +458,32 @@ four type imports from `@skipruntime/core` (`EagerCollection`, `Mapper`,
 `Resource`, `Values`) and the runtime value import `runService` from
 `@skipruntime/server`. [`module-resolve.mts`](../tools/module-resolve.mts)
 follows package exports and the core reexport to source declarations, and the
-test pins the routes and all six class callables. This is resolution inventory,
-not acceptance of those contracts. The source gate currently admits **named
-type-only imports whose targets are type aliases**; these four runtime API
-types are interfaces, and `runService` is a value import. `Values` also depends
+test pins the routes and all six class callables. The configured TypeScript
+project now includes the unchanged `sum.ts`; a separate preflight test checks
+that TypeScript resolves all five bindings to those same interface or function
+declarations, with exactly one declaration and matching source bytes. Forged
+interface and function targets and altered API bytes are refused. This is
+resolution inventory, not acceptance of those contracts. The source gate
+currently admits **named type-only imports whose targets are type aliases**;
+these four runtime API types are interfaces, and `runService` is a value import.
+`Values` also depends
 on `Iterable` and `DepSafe`. The `Json` examples prove the type-alias slice,
 not the interface/value-import slice needed by `sum.ts`.
 
+The admitted contract work is larger than recognizing the declaration keyword:
+`Mapper` has four `Json`-bounded parameters and a method returning
+`Iterable<[K2, V2]>`; `Values<T>` extends `Iterable<T & DepSafe>` and supplies
+`getUnique` and `toArray`; `EagerCollection` extends `Managed` and supplies the
+generic `map`/`merge` calls used below; `Resource` connects a collections
+parameter to `instantiate`. The `runService` value import and its return type
+are a separate, effectful module contract. Each dependency must either be
+interpreted and certified or appear as an explicit external assumption.
+
 The next file-level steps are to model the top-level initializer and other
-declarations without dropping their effects, include `sum.ts` in a configured
-TypeScript project, and extend import closure and its independent TypeScript
-cross-check to interfaces and value declarations. Then represent the imported
-API contracts as explicit client assumptions; checking the runtime's
-implementations is the separate third milestone below. Class construction,
+declarations without dropping their effects, and extend the admitted import
+closure from alias definitions to interface and value contracts. Then
+represent the imported API contracts as explicit client assumptions; checking
+the runtime's implementations is the separate third milestone below. Class construction,
 parameter properties, `implements`, method receivers and prototype lookup must
 be certified before counting a mapper body. Later source statements include
 service creation, top-level `await` and asynchronous shutdown; they remain

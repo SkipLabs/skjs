@@ -8,7 +8,7 @@ import { openText, parseFile, definedClassCallables, close as closeParser } from
 import { moduleEdges } from "../tools/module-deps.mts";
 import { resolveNamedImports, resolveModuleImport } from "../tools/module-resolve.mts";
 import { loadImportUniverseFromProject } from "../tools/import-universe-project.mts";
-import { crossCheckImports } from "../tools/import-crosscheck.mts";
+import { crossCheckImports, crossCheckResolvedBindings } from "../tools/import-crosscheck.mts";
 import { collectImportDocument, collectTypeClosure } from "../tools/module-closure.mts";
 import type { ImportDocument } from "../tools/imported-types.mts";
 import { spawnSync } from "node:child_process";
@@ -86,6 +86,28 @@ for (const [file, expected] of [
     ["runService", "server/src/server.ts", "runService", "value",
       ["server/src/server.ts"]],
   ]);
+  crossCheckResolvedBindings(openText(source, readFileSync(source, "utf8")), resolved,
+    modules, source, importUniverse.tsconfigPath);
+  const wrongMapper = structuredClone(resolved);
+  wrongMapper[1].declaration = wrongMapper[0].declaration;
+  assert.throws(() => crossCheckResolvedBindings(openText(source, readFileSync(source, "utf8")),
+    wrongMapper, modules, source, importUniverse.tsconfigPath),
+    /import resolution differs for Mapper/);
+  const wrongService = structuredClone(resolved);
+  wrongService[4].declaration = { ...wrongService[4].declaration, span: [0, 0] };
+  assert.throws(() => crossCheckResolvedBindings(openText(source, readFileSync(source, "utf8")),
+    wrongService, modules, source, importUniverse.tsconfigPath),
+    /import resolution differs for runService/);
+  const alteredApiText = apiModule.source.getFullText().replace("export interface Mapper<",
+    "export interface Mappar<");
+  assert.notEqual(alteredApiText, apiModule.source.getFullText());
+  const alteredApiModules = modules.map(m => m.id === apiModule.id ? {
+    ...m, source: openText(m.source.fileName, alteredApiText),
+    sha256: createHash("sha256").update(alteredApiText).digest("hex"),
+  } : m);
+  assert.throws(() => crossCheckResolvedBindings(openText(source, readFileSync(source, "utf8")),
+    resolved, alteredApiModules, source, importUniverse.tsconfigPath),
+    /TypeScript source bytes differ for core\/src\/api.ts/);
   assert.throws(() => resolveNamedImports(openText(source, readFileSync(source, "utf8")),
     modules.filter(m => m.id !== "core/src/api.ts"), config), /module not supplied/);
   const duplicate = "export interface Mapper {}\n";
