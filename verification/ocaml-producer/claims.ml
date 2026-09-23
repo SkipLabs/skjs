@@ -68,6 +68,7 @@ let encode (proposal : Proposal.t) =
             if index.writable <> None then unsupported "mutable string index signature";
             Object ["dict",Object ["first",fields;"rest",Array [];"views",views;
               "indexes",Array [labels index.value]]]
+          | _,Some _,_ -> unsupported "callable with string index needs a combined clause"
           | _,None,[] -> Object ["refs",Object ["first",fields;"rest",Array [];"views",views]]
           | [],None,_ -> Object ["arrs",Object calls]
           | _,_,_ ->

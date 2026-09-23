@@ -49,7 +49,8 @@ export type TypeTerm =
   | { k: "tuple"; readonly: boolean; required: TypeTerm[];
       optional: TypeTerm[]; rest: TypeTerm | null; span: Span }
   | { k: "object"; fields: { name: string; optional: boolean; readonly: boolean; type: TypeTerm; span: Span }[];
-      stringIndex: { readonly: boolean; value: TypeTerm; span: Span } | null; span: Span }
+      stringIndex: { readonly: boolean; value: TypeTerm; span: Span } | null;
+      calls: Extract<TypeTerm, { k: "function" }>[]; span: Span }
   | { k: "function"; receiver: TypeTerm | null; params: TypeTerm[];
       rest: TypeTerm | null; result: TypeTerm; span: Span }
   /** The containing declaration is the implicit receiver of a method signature. */

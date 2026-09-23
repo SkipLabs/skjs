@@ -16,6 +16,18 @@ type function_claim = { source: fn; entries: entry list; expressions: expression
 type t = { program: program; functions: function_claim list }
 let unsupported s = Json.fail ("unsupported: " ^ s)
 let combine = List.fold_left union (Atoms [])
+(* A proposal heuristic for choosing an advertised arrow. It does not
+   establish subtyping: Lean checks the selected call and its arguments. *)
+let rec plausible_subtype actual expected =
+  if actual=expected then true else match actual,expected with
+  | Atoms _,Atoms [Top] -> true
+  | Atoms xs,Atoms ys -> List.for_all (fun x -> List.exists (fun y ->
+      x=y || match x,y with
+      | NumLit _,Num | StrLit _,Str -> true
+      | _ -> false) ys) xs
+  | Union parts,_ -> List.for_all (fun part -> plausible_subtype part expected) parts
+  | _,Union parts -> List.exists (plausible_subtype actual) parts
+  | Rigid _,_ | _,Rigid _ -> false
 let literal_type = function
   | LNull -> Atoms [Nul] | LUndefined -> Atoms [Undef]
   | LBool true -> Atoms [True] | LBool false -> Atoms [False]
@@ -29,6 +41,14 @@ let definition imports id args =
   | Some d when d.parameters=[] -> d.expression
   | Some _ -> unsupported "parameterized imported definition needs substitution"
   | None -> unsupported ("missing imported definition " ^ id)
+(* Inspect an imported callable's source equation for proposal purposes only.
+   The point claim remains the named type; Lean independently fills and checks
+   that graph row from the same declaration. *)
+let rec imported_head imports seen = function
+  | Atoms [Named (id,args)] ->
+    if List.mem id seen then unsupported "unguarded imported callable alias cycle";
+    imported_head imports (id::seen) (definition imports id args)
+  | t -> t
 let rec field_type imports seen t name = match t with
   | Atoms atoms -> combine (List.map (function
       | Shape {elements=Some _;_} when name="length" -> Atoms [Num]
@@ -229,7 +249,7 @@ let infer_function imports (f:Source.fn) =
         | Invoke (c,a,s) -> c,None,a,s
         | _ -> assert false in
       let target = callee in
-      let callee = expr env callee in
+      let callee = imported_head imports [] (expr env callee) in
       (* The receiver the call passes: the `.call` operand, the object a
          method is read from, or `undefined`. A scheme infers from it too. *)
       let receiver_type = match receiver, target.node with
@@ -311,7 +331,12 @@ let infer_function imports (f:Source.fn) =
         List.iteri (fun i e ->
           if spread && i = List.length args - 1 then
             (if named_spread then ignore (expr env e))
-          else ignore (expr ~expected:(List.nth signature.params i) env e)) args;
+          else let expected = match List.nth_opt signature.params i with
+            | Some t -> t
+            | None -> (match signature.variadic with
+              | Some t -> t
+              | None -> unsupported "call has too many arguments") in
+            ignore (expr ~expected env e)) args;
         signature.result
       | Atoms [Shape {calls=[signature];_}]
           when signature.quantified<>[] && callable signature ->
@@ -334,9 +359,10 @@ let infer_function imports (f:Source.fn) =
         let matching = List.filter (fun (s:Semantic.signature) ->
           let declared = List.filteri (fun i _ -> i < List.length actuals) s.params in
           let further = List.filteri (fun i _ -> i >= List.length s.params) actuals in
-          declared = List.filteri (fun i _ -> i < List.length s.params) actuals
+          List.for_all2 plausible_subtype
+            (List.filteri (fun i _ -> i < List.length s.params) actuals) declared
           && (match s.variadic with
-              | Some element -> List.for_all (fun t -> t = element) further
+              | Some element -> List.for_all (fun t -> plausible_subtype t element) further
               | None -> further = [])) usable in
         (match matching,usable with
          | s :: _,_ -> s.result
@@ -347,7 +373,7 @@ let infer_function imports (f:Source.fn) =
     | Apply (callee,receiver,list) ->
       (* The list is typed at its own contract; Lean reads each element's
          type from it and checks the call against the target's signature. *)
-      let callee = expr env callee in
+      let callee = imported_head imports [] (expr env callee) in
       ignore (expr env receiver);
       Option.iter (fun l -> ignore (expr env l)) list;
       (match callee with
@@ -360,7 +386,7 @@ let infer_function imports (f:Source.fn) =
           Atoms [Shape {b with calls=f.calls}]
         | _ -> unsupported "function field construction requires a callable and a record contract")
     | Bind (callee,receiver,args) ->
-      let callee=expr env callee in ignore (expr env receiver);
+      let callee=imported_head imports [] (expr env callee) in ignore (expr env receiver);
       (match callee with Atoms [Shape {calls=[signature];_}]
           when signature.quantified=[] && (signature.variadic<>None
             || List.length args<=List.length signature.params) ->

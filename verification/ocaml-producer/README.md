@@ -469,19 +469,24 @@ whose fields, string indexes, function-valued properties or method signatures
 fit the imported graph. An optional parameter contributes `T | undefined` at
 its position; an array rest parameter contributes its element contract to the
 existing variadic call clause. These are the same call clauses as local
-functions, with no new callable semantics or proof rule.
-Synthetic `Box`, recursive `Node`, callable-property `CallableBox` and
-method-bearing `WithMethod` interfaces,
-plus required, optional and rest tuple aliases (mutable or readonly), verify through the same Lean
-path. A detached method call fails its receiver
-obligation, while an incorrect callable result fails its return obligation.
+functions, with no new callable semantics or proof rule. Imported call
+signatures become the existing conjunction of fixed and variadic
+arrows. A callable interface may also have invariant writable fields, using
+the existing callable-object clause. Readonly fields or string indexes mixed
+with calls still refuse because that combined clause is not represented.
+Synthetic `Box`, recursive `Node`, callable-property `CallableBox`,
+method-bearing `WithMethod`, overloaded callable interfaces and callable
+objects with a field, plus required, optional and rest tuple aliases (mutable
+or readonly), verify through the same Lean path. A detached method call fails
+its receiver obligation, while an incorrect callable result fails its return
+obligation.
 The method graph promises safe invocation for every receiver satisfying the
 interface, which is stronger than TypeScript's structural method declaration.
 This is a relative client contract; imported runtime values cannot be granted
 it without an explicit assumption or a checked implementation.
-Inheritance, nested methods, optional method *presence*, generic methods, and declaration
-merging refuse. All four runtime API
-interfaces have unsupported members or dependencies, and `runService` is a
+Inheritance, nested methods, optional method *presence*, generic methods, and
+declaration merging refuse. All four runtime API interfaces have unsupported
+members or dependencies, and `runService` is a
 value import. The new interface slice therefore does not yet admit `sum.ts`.
 
 The admitted contract work is larger than recognizing the declaration keyword:

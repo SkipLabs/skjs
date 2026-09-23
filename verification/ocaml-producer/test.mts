@@ -290,6 +290,13 @@ for (const [file, expected] of [
     "export interface OptionalCallable { readonly invoke: (value?: number) => boolean; }\n" +
     "export interface WithMethod { read(): boolean; }\n" +
     "export interface RestMethod { accepts(...values: number[]): boolean; }\n" +
+    "export interface Overloaded { (value: boolean): number; (value: number): boolean; }\n" +
+    "export interface TaggedCallable { label: boolean; (value: boolean): number; }\n" +
+    "export interface VariadicCallable { (...values: number[]): boolean; }\n" +
+    "export type CallableAlias = { (value: number): boolean };\n" +
+    "export interface ReadonlyCallable { readonly label: boolean; (value: boolean): number; }\n" +
+    "export interface IndexedCallable { readonly [key: string]: boolean; (value: boolean): number; }\n" +
+    "export interface GenericCall { <T>(value: T): T; }\n" +
     "export type WithMethodAlias = WithMethod;\n" +
     "export type Pair = [boolean, number];\n" +
     "export type ReadonlyPair = readonly [boolean, number];\n" +
@@ -351,7 +358,7 @@ for (const [file, expected] of [
     ["fixture/barrel.ts", "fixture/a.ts"]);
   const boxClient = join(pairDir, "box-client.ts");
   writeFileSync(boxClient,
-    'import type { Box, FromGlobal, Node, CallableBox, OptionalCallable, WithMethod, WithMethodAlias, RestMethod, Pair, ReadonlyPair, OptionalPair, RestPair } from "@fixture/box";\n' +
+    'import type { Box, FromGlobal, Node, CallableBox, OptionalCallable, WithMethod, WithMethodAlias, RestMethod, Overloaded, TaggedCallable, VariadicCallable, CallableAlias, Pair, ReadonlyPair, OptionalPair, RestPair } from "@fixture/box";\n' +
     'export function readBox(box: Box): boolean { return box.flag; }\n' +
     'export function readGlobal(box: FromGlobal): boolean { return box.item.flag; }\n' +
     'export function nextNode(node: Node): Node | null { return node.next; }\n' +
@@ -360,6 +367,10 @@ for (const [file, expected] of [
     'export function callMethod(box: WithMethod): boolean { return box.read(); }\n' +
     'export function callMethodAlias(box: WithMethodAlias): boolean { return box.read(); }\n' +
     'export function callRestMethod(box: RestMethod): boolean { return box.accepts(1, 2); }\n' +
+    'export function callOverload(fn: Overloaded): number { return fn(true); }\n' +
+    'export function callTagged(fn: TaggedCallable): number { return fn(fn.label); }\n' +
+    'export function callVariadic(fn: VariadicCallable): boolean { return fn(1, 2); }\n' +
+    'export function callAlias(fn: CallableAlias): boolean { return fn(1); }\n' +
     'export function pairFirst(pair: Pair): boolean { return pair[0]; }\n' +
     'export function readonlyPairSecond(pair: ReadonlyPair): number { return pair[1]; }\n' +
     'export function optionalSecond(pair: OptionalPair): number | undefined { return pair[1]; }\n' +
@@ -373,7 +384,8 @@ for (const [file, expected] of [
   assert.equal(checkedBox.status, "verified", JSON.stringify(checkedBox));
   assert.deepEqual(checkedBox.functions,
     ["readBox", "readGlobal", "nextNode", "invokeBox", "omitOptional", "callMethod",
-      "callMethodAlias", "callRestMethod",
+      "callMethodAlias", "callRestMethod", "callOverload", "callTagged",
+      "callVariadic", "callAlias",
       "pairFirst", "readonlyPairSecond", "optionalSecond", "restHead", "restTail"]);
   const boxAst = parseFile(boxClient, false, boxUniverse);
   assert.equal(boxAst.imports.definitions.find(d => d.declaration.name === "GlobalBox")?.
@@ -452,6 +464,31 @@ for (const [file, expected] of [
   const rejectedRest = check(wrongRestClient, boxUniverse);
   assert.equal(rejectedRest.status, "unverified", JSON.stringify(rejectedRest));
   assert.equal(rejectedRest.phase, "search");
+  const wrongOverloadClient = join(pairDir, "wrong-overload-client.ts");
+  writeFileSync(wrongOverloadClient,
+    'import type { Overloaded } from "@fixture/box";\n' +
+    'export function wrongOverload(fn: Overloaded): boolean { return fn(true); }\n');
+  const rejectedOverload = check(wrongOverloadClient, boxUniverse);
+  assert.equal(rejectedOverload.status, "unverified", JSON.stringify(rejectedOverload));
+  assert.equal(rejectedOverload.phase, "search");
+  for (const [name, detail] of [
+    ["ReadonlyCallable", /imported callable object with index or readonly field/],
+    ["IndexedCallable", /imported callable object with index or readonly field/],
+  ] as const) {
+    const client = join(pairDir, `unsupported-${name}.ts`);
+    writeFileSync(client,
+      `import type { ${name} } from "@fixture/box";\n` +
+      `export function keep(value: ${name}): ${name} { return value; }\n`);
+    const result = check(client, boxUniverse);
+    assert.equal(result.status, "unverified", JSON.stringify(result));
+    assert.equal(result.phase, "search");
+    assert.match(result.detail, detail);
+  }
+  const genericCallRoot = resolveNamedImports(openText(boxClient,
+    'import type { GenericCall } from "@fixture/box";'), pair, boxConfig)[0];
+  assert(genericCallRoot);
+  assert.throws(() => collectTypeClosure(genericCallRoot, pair, boxConfig),
+    /generic or incomplete call signature in fixture\/box.ts#GenericCall/);
   const derivedRoot = resolveNamedImports(openText(boxClient,
     'import type { Derived } from "@fixture/box";'), pair, boxConfig)[0];
   assert(derivedRoot);

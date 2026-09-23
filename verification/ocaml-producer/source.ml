@@ -187,7 +187,10 @@ let rec imported_type owner j =
       | Null -> None
       | index -> let t = imported_type owner (field "value" index) in
         Some {value=t;writable=(if boolean (field "readonly" index) then None else Some t)} in
-    Atoms [Shape {fields;string_index;calls=[];elements=None}]
+    let calls = List.map (fun c -> match imported_type owner c with
+      | Atoms [Shape {fields=[];string_index=None;calls=[signature];elements=None}] -> signature
+      | _ -> unsupported "imported call signature") (items "calls" j) in
+    Atoms [Shape {fields;string_index;calls;elements=None}]
   | "reference" ->
     let args = List.map (imported_type owner) (items "args" j) in
     Atoms [Named (identity (field "target" (field "reference" j)), args)]

@@ -212,6 +212,7 @@ export function collectTypeClosure(
       allowMethods: boolean): TypeTerm => {
       const fields: Extract<TypeTerm, { k: "object" }>["fields"] = [];
       let stringIndex: Extract<TypeTerm, { k: "object" }>["stringIndex"] = null;
+      const calls: Extract<TypeTerm, { k: "function" }>[] = [];
       const names = new Set<string>();
       for (const member of members) {
         if (ts.isPropertySignatureDeclaration(member)) {
@@ -247,9 +248,24 @@ export function collectTypeClosure(
             throw Error(`unsupported index signature in ${identity.module}#${identity.name}`);
           stringIndex = { readonly: member.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true,
             value: parse(member.type), span: [member.getStart(source), member.end] };
+        } else if (ts.isCallSignatureDeclaration(member)) {
+          if (member.typeParameters?.length || !member.type)
+            throw Error(`generic or incomplete call signature in ${identity.module}#${identity.name}`);
+          const head = member.parameters[0];
+          const hasReceiver = !!head && ts.isIdentifier(head.name) && head.name.text === "this";
+          let receiver: TypeTerm | null = null;
+          if (hasReceiver) {
+            if (!head?.type || head.questionToken || head.dotDotDotToken || head.initializer)
+              throw Error(`unsupported call receiver in ${identity.module}#${identity.name}`);
+            receiver = parse(head.type);
+          }
+          const { params, rest } = parseParameters(hasReceiver ? member.parameters.slice(1) : member.parameters,
+            "call signature");
+          calls.push({ k: "function", receiver, params, rest, result: parse(member.type),
+            span: [member.getStart(source), member.end] });
         } else throw Error(`unsupported object member in ${identity.module}#${identity.name}`);
       }
-      return { k: "object", fields, stringIndex, span: pos };
+      return { k: "object", fields, stringIndex, calls, span: pos };
     };
     const parameters = parameterNodes.map(parameter => {
       if (parameter.defaultType)

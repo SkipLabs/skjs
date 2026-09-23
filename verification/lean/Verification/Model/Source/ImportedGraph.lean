@@ -106,6 +106,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       | some element => .arrs [] [(receiver, params.toList, element, result)]
     return [← use row]
   | "object" =>
+    CellClaims.fieldsExactly term ["k", "fields", "stringIndex", "calls", "span"]
     let fs ← (← arr term "fields").mapM fun f => do
       if ← bool f "optional" then throw "optional imported fields need presence semantics"
       let name ← str f "name"
@@ -122,8 +123,26 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       if readonly then none else some (name, value)
     let views := fs.toList.filterMap fun (name, value, readonly) =>
       if readonly then some (name, value) else none
-    let row ← if indexes.isEmpty then use (.refs writes [] views)
-      else use (.dict writes [] views indexes)
+    let mut fixed : List (List Nat × List (List Nat) × List Nat) := []
+    let mut variadic : List (List Nat × List (List Nat) × List Nat × List Nat) := []
+    for call in ← arr term "calls" do
+      CellClaims.fieldsExactly call ["k", "receiver", "params", "rest", "result", "span"]
+      if (← str call "k") != "function" then throw "imported call signature is not a function"
+      let recv ← field call "receiver"
+      let receiver ← if recv == .null then pure [← use .top] else lowerType ds owner recv
+      let params ← (← arr call "params").mapM (lowerType ds owner)
+      let rest ← field call "rest"
+      let result ← lowerType ds owner (← field call "result")
+      if rest == .null then fixed := fixed ++ [(receiver, params.toList, result)]
+      else variadic := variadic ++ [(receiver, params.toList,
+        ← lowerType ds owner rest, result)]
+    let row ← if fixed.isEmpty && variadic.isEmpty then
+        if indexes.isEmpty then use (.refs writes [] views)
+        else use (.dict writes [] views indexes)
+      else if !indexes.isEmpty || !views.isEmpty then
+        throw "imported callable object with index or readonly field needs a combined clause"
+      else if writes.isEmpty then use (.arrs fixed variadic)
+      else use (.callable writes [] fixed variadic)
     return [row]
   | _ => throw "imported source type constructor outside the graph fragment"
 
