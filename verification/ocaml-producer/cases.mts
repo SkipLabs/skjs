@@ -53,13 +53,13 @@ export const cases: Case[] = [
   { ...negative("invalid-recursive-json-alias-write",
     "A writable Json array view would corrupt a narrow aliased array",
     /binding-annotation/), project: "verification/ocaml-producer/upstream" },
-  gap(
+  { ...gap(
     "reactive-sum-prettier-ignore",
-    "Unmodified Skip Runtime sum example: imports precede its mapper and resource classes",
+    "Unmodified Skip Runtime sum example: top-level platform initialization precedes its mapper and resource classes",
     "unsupported",
     "source",
-    /imports need an explicit module universe/,
-  ),
+    /top-level statement outside the fragment \(FirstStatement\)/,
+  ), project: "verification/ocaml-producer/upstream" },
   negative("invalid-generic-rest-argument", "A variadic callback cannot receive Boolean at arbitrary T", /generic call argument.*true ≤ T/),
   positive("generic-rest", "Universal rest collection with independent Boolean and numeric calls"),
   negative("invalid-generic-rest", "Observed Boolean rest calls cannot establish a universal array result",

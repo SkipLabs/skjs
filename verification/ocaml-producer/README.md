@@ -351,9 +351,11 @@ The named gaps are:
 
 The motivating sources are preserved. No gap is counted as a verification,
 rewritten into an easier witness, or allowed to disappear behind another error.
-Overloads/intersections, recursive types, modules, classes/prototypes, exceptions,
-async behavior and general effects still need separate work; this is breadth
-across the current calculus's major mechanisms, not the full language.
+General recursive and interface types, value imports, classes/prototypes,
+exceptions, async behavior and general effects still need separate work.
+Callable overloads, imported recursive aliases and named type-only imports
+have narrower implemented slices; this is breadth across the current
+calculus's major mechanisms, not the full language.
 
 Decision completeness is stated and proved for the rigid fragment:
 `RigidJudgments.Sub` is inclusion under declared bounds, decided by
@@ -413,9 +415,10 @@ independent acceptance boundary, not add a permissive subtype checker here.
 
 ## After callable part 5: reactive-runtime integration
 
-Status: **baseline measured; all three milestones open**. The receiver work in
-the [callable roadmap](../tests/callables/README.md) is certified. Closing part
-5 did not close classes, construction, or the runtime's generic API.
+Status: **the recursive `Json` prerequisite has verified clients; all three
+framework milestones remain open**. The receiver work in the
+[callable roadmap](../tests/callables/README.md) is certified. Classes,
+construction and the runtime's generic API are not yet certified.
 The target is Skip's `skipruntime-ts` TypeScript API and implementation, not
 the native runtime written in Skip. The initial assessment inspected
 `skipruntime-ts/core/src/api.ts` and `skipruntime-ts/examples/sum.ts` in the
@@ -433,63 +436,46 @@ The baseline is pinned to upstream `skip` commit
 `cb030b5ac7beda28fd5f65e3292a485173d5faef`. The byte-for-byte
 [`sum.ts`](examples/reactive-sum-prettier-ignore.ts) and
 [`api.ts`](upstream/skipruntime-ts/core/src/api.ts) snapshots are checked by SHA-256 in
-`test.mts`. `cases.mts` records the real program as `unsupported` at the
-source gate: the first `ImportDeclaration` precedes every class. Thus **zero
-of the six class callables below are currently checked**; no producer proposal,
-Lean lowering, or certificate is reached. This is one file-level blocker, not
-six independent findings. It is still the honest first blocker for each row:
+`test.mts`. The executable case supplies the snapshot's import universe and
+records the actual first refusal: the top-level `platform` initializer at line
+10 is outside the source fragment. Thus **zero of the six class callables below
+are currently checked**; no producer proposal, Lean lowering, or certificate is
+reached. This is one file-level blocker, not six independent findings. The
+following rows name what each body will additionally need after the file-level
+gates are lifted:
 
-| `sum.ts` callable | First reached boundary | Next source feature once imports are represented |
+| `sum.ts` callable | First reached boundary | Later body requirement |
 | --- | --- | --- |
-| `AddIndex.constructor` | `ImportDeclaration` | parameter property and initialized instance storage |
-| `AddIndex.mapEntry` | `ImportDeclaration` | method receiver, external `Values.getUnique`, tuple result |
-| `Plus.mapEntry` | `ImportDeclaration` | external `Values.toArray`, array reduction callback |
-| `Minus.mapEntry` | `ImportDeclaration` | nullable accumulator, array sort/reduction |
-| `Add.instantiate` | `ImportDeclaration` | external collection method and generic constructor argument |
-| `Sub.instantiate` | `ImportDeclaration` | chained generic collection methods and constructor arguments |
+| `AddIndex.constructor` | top-level `platform` initializer | parameter property and initialized instance storage |
+| `AddIndex.mapEntry` | top-level `platform` initializer | method receiver, external `Values.getUnique`, tuple result |
+| `Plus.mapEntry` | top-level `platform` initializer | external `Values.toArray`, array reduction callback |
+| `Minus.mapEntry` | top-level `platform` initializer | nullable accumulator, array sort/reduction |
+| `Add.instantiate` | top-level `platform` initializer | external collection method and generic constructor argument |
+| `Sub.instantiate` | top-level `platform` initializer | chained generic collection methods and constructor arguments |
 
-The next implementation boundary is **module contracts**, followed by class
-construction. Keep imported API declarations distinct from implementations:
-client verification may assume a named external contract, while runtime
-verification must discharge that contract separately. A module import needs a
-resolved identity and the exact exported declaration it denotes; dropping the
-import while retaining a spelling would let the checker attach an arbitrary
-contract to a source name. The source file and imported API must remain
-separately fingerprinted in evidence. The present single-file `Ast` and
-`check.mts` snapshot do not yet provide this identity, so merely skipping
-imports in the gate would be an unsound shortcut.
+The module inventory in [`module-deps.mts`](../tools/module-deps.mts) identifies
+four type imports from `@skipruntime/core` (`EagerCollection`, `Mapper`,
+`Resource`, `Values`) and the runtime value import `runService` from
+`@skipruntime/server`. [`module-resolve.mts`](../tools/module-resolve.mts)
+follows package exports and the core reexport to source declarations, and the
+test pins the routes and all six class callables. This is resolution inventory,
+not acceptance of those contracts. The source gate currently admits **named
+type-only imports whose targets are type aliases**; these four runtime API
+types are interfaces, and `runService` is a value import. `Values` also depends
+on `Iterable` and `DepSafe`. The `Json` examples prove the type-alias slice,
+not the interface/value-import slice needed by `sum.ts`.
 
-The first module inventory is executable in
-[`module-deps.mts`](../tools/module-deps.mts) and checked against the pinned
-sources by `test.mts`. It records four erased type bindings from
-`@skipruntime/core` (`EagerCollection`, `Mapper`, `Resource`, `Values`) and one
-runtime value binding from `@skipruntime/server` (`runService`), with source
-spans. The core package's `exports["."]` points to `core/src/index.ts`, which
-reexports `core/src/api.ts`; the server package points to
-`server/src/server.ts`. Both paths are at the pinned upstream revision, so an
-imported `Mapper` contract must follow that reexport before it reaches the
-snapshot here. `api.ts` itself imports `Json` and `DepSafe` from generated
-`skiplang-json` declarations: resolving only the first edge would still leave
-those bounds unjustified. The inventory is not accepted evidence, and source
-files with imports are still refused. The next change must resolve the module
-graph, retain identities and bytes in the verifier request, and state which
-external contracts remain assumptions. Only then may the source gate accept
-imports.
-
-The first provenance step is now [`module-resolve.mts`](../tools/module-resolve.mts).
-The fixture pins the complete core entry point, its other star-exported
-`errors.ts`, the server entry point, and both package export maps at the same
-upstream revision. Given an explicit package map and those hashed files,
-resolution follows the star
-exports and identifies the declaration and source span: the four client types
-land in `core/src/api.ts`; `runService` lands in `server/src/server.ts`. A
-missing module, ambiguous export route, or unsupported import form is refused.
-The test's pinned hashes guard fixture changes, not checker soundness. This is
-not yet contract evidence: the API's `Json` and
-`DepSafe` bounds and the server implementation's imports remain unresolved.
-Those dependencies and their eventual evidence must enter the verifier request
-before the source gate admits imports. The test also enumerates the six class
-callables from the pinned syntax, so the coverage denominator cannot drift.
+The next file-level steps are to model the top-level initializer and other
+declarations without dropping their effects, include `sum.ts` in a configured
+TypeScript project, and extend import closure and its independent TypeScript
+cross-check to interfaces and value declarations. Then represent the imported
+API contracts as explicit client assumptions; checking the runtime's
+implementations is the separate third milestone below. Class construction,
+parameter properties, `implements`, method receivers and prototype lookup must
+be certified before counting a mapper body. Later source statements include
+service creation, top-level `await` and asynchronous shutdown; they remain
+outside the current fragment. Skipping any of these statements and then
+counting the whole file as verified would change the program under test.
 
 ### Cross-file recursive `Json` milestone
 
@@ -621,7 +607,20 @@ such a contract remain outside this slice. The graph's `dict` clause supports
 recursive index operands; the explicit-universe `Json` example above now
 exercises that path.
 
-Implementation checkpoints, in dependency order:
+Current progress against the `Json` prerequisite:
+
+| Checkpoint | Current result | Remaining boundary |
+| --- | --- | --- |
+| 1. Source closure | Canonical `Json`/`JsonObject` cycle, workspace link and a cross-file generic cycle collected. | Interface and value declarations are outside this collector. |
+| 2. Shared graph and gate | Imported alias equations reach the common Fragment and Lean request; TypeScript checks declaration identities and source bytes. | The configured project and source parser remain trusted; imports beyond named type aliases are refused. |
+| 3. Semantic interpretation | Recursive readonly array and dictionary clauses reach `CertifiedPlan` and `checkJson_safe`. | Broader interface, mutable dictionary and implementation contracts need their own certified paths. |
+| 4. Relative contracts and controls | Forged alias equations, targets, source bytes and evidence have negative controls. | External value-contract assumptions and their eventual discharge are not yet represented. |
+| 5. Actual-source acceptance | Imported `Json` clients, a bound-instantiation case and four negative controls run end to end. | Actual `Mapper` bounds and bodies are blocked by interface imports, classes and their dependencies. |
+
+The checkpoints below state the design obligations in dependency order; the
+table above records which parts have actually been implemented.
+
+Implementation checkpoints:
 
 1. **Canonical source closure.** Pin the tracked `skiplang-json` declaration
    bytes and the `prebuild.mjs` mapping at the upstream revision. Extend module
@@ -707,7 +706,7 @@ initialization, receiver, result and forged evidence.
 | `Iterable`, iteration and array/library methods | Explicit contracts and execution semantics, including callback effects and iterator behavior. |
 | Promises, exceptions and native/Wasm bindings | Further model extensions and explicit external assumptions for the implementation. |
 
-Track three milestones, all initially open:
+The three framework milestones remain open:
 
 1. **One actual mapper class.** Verify constructor initialization, method
    receiver use and callback results end to end. Include independent failures
