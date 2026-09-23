@@ -50,6 +50,9 @@ export const cases: Case[] = [
     project: "verification/ocaml-producer/upstream" },
   { ...negative("invalid-recursive-json-bound", "A function cannot instantiate T extends imported Json"),
     project: "verification/ocaml-producer/upstream" },
+  { ...negative("invalid-recursive-json-alias-write",
+    "A writable Json array view would corrupt a narrow aliased array",
+    /binding-annotation/), project: "verification/ocaml-producer/upstream" },
   gap(
     "reactive-sum-prettier-ignore",
     "Unmodified Skip Runtime sum example: imports precede its mapper and resource classes",

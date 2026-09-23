@@ -180,6 +180,15 @@ for (const [file, expected] of [
   assert.equal(checkedJson.status, "verified", JSON.stringify(checkedJson));
   assert.equal(checkedJson.phase, "check");
   assert.deepEqual(checkedJson.functions, ["nest", "lookup"]);
+  const upstreamConfig = must(importUniverse.tsconfigPath, "upstream tsconfig");
+  const typeScript = spawnSync(resolve(here, "../tools/node_modules/.bin/tsc"),
+    ["-p", upstreamConfig, "--pretty", "false", "--noEmit"], { encoding: "utf8" });
+  assert.ifError(typeScript.error);
+  const typeScriptOutput = typeScript.stdout + typeScript.stderr;
+  assert.match(typeScriptOutput, /invalid-recursive-json-bound\.ts/,
+    "TypeScript must have checked the imported-Json clients");
+  assert.doesNotMatch(typeScriptOutput, /invalid-recursive-json-alias-write\.ts/,
+    "TypeScript should accept the covariant array assignment that the model refuses");
   const cli = spawnSync(process.execPath, [join(here, "check.mts"), jsonPath,
     "--project", join(here, "upstream")], { encoding: "utf8", timeout: 30_000 });
   assert.ifError(cli.error);

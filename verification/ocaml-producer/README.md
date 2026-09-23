@@ -533,10 +533,13 @@ number, string, array and object values pass to a `Json` consumer. In
 kinds of values pass to a universally checked `<T extends Json>` closure.
 At each call OCaml proposes the imported `Json` bound as a widened
 instantiation of `T`; Lean checks the concrete argument and the bound. These
-calls do not establish separate precise inferred types for `T`. Three invalid
+calls do not establish separate precise inferred types for `T`. Four invalid
 clients using the same pinned universe reach search and fail: a non-JSON
 dictionary member, a missing-key read without `undefined`, and a function
-passed to `<T extends Json>`. OCaml reserves empty rows for imported declarations;
+passed to `<T extends Json>`, and a `boolean[]` assigned to a writable `Json[]`
+alias before a string write and Boolean read. TypeScript accepts the last
+program; the verifier refuses the alias assignment because a location's write
+contract cannot widen. OCaml reserves empty rows for imported declarations;
 Lean derives and fills their equations from the Fragment's source-type
 expressions. The suite refuses producer-filled rows and source-authored internal
 graph labels. The CLI accepts `--project` with a source checkout containing the
