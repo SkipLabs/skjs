@@ -467,14 +467,17 @@ mapper and resource bodies are upstream's. SKJS's stubs gained the two real
 APIs it uses, `Values.getUnique` and `process.on`
 ([`runtime-client-apis.ts`](../../tests/expect-error/runtime-client-apis.ts)).
 
-Its first refusal is the top-level `platform` initializer at line 17, so
-**zero of its callables are checked**; no producer proposal, Lean lowering or
-certificate is reached. Measured one construct at a time, the blockers behind
-it are:
+Its first refusal is the class declaration at line 20, so **zero of its
+callables are checked**; no producer proposal, Lean lowering or certificate is
+reached. Module constants and top-level statements are in the fragment (see
+[Modules and code units](../DESIGN.md#modules-and-code-units)); the
+`platform` initializer before that class is admitted syntax, though its
+`process.env` read still needs the `process` contract. Measured one construct
+at a time, the blockers behind it are:
 
 | Client part | First refusal when isolated | Later requirement |
 | --- | --- | --- |
-| whole file | top-level `platform` initializer | module-level code and value imports |
+| whole file | class declaration | classes; then value imports and the `process` global |
 | import graph | `InputDefinition` is a value import (a class) | classes as declarations and values |
 | `Plus`, `Minus`, `AddIndex`, `Add`, `Sub`, `Service` | class declaration | classes, `this`, parameter properties, field initializers, `new` |
 | `AddIndex.mapEntry` reading `Values` | `bigint` in `DepSafe` | `Values` contract, `getUnique` and its exception |
@@ -861,11 +864,13 @@ The target is the corrected client
 [`reactive-sum-sound.ts`](examples/reactive-sum-sound.ts). Required for the
 first milestone, in order of how much each gates:
 
-1. **Module-level code and value imports.** A top-level `const` whose
-   initializer reads the global `process.env`, top-level `await main()`, and
-   value imports (`InputDefinition`, `runService`) as explicit external
-   contracts. Every callable of the file stops here first, and the statements
-   may not be skipped.
+1. **Module-level code and value imports.** Done: module functions reachable
+   from one another at their signatures, module constants read by functions
+   at their annotations, top-level expression statements, and an
+   initialization unit with its order check. Remaining: value imports
+   (`InputDefinition`, `runService`) and globals (`process`) as explicit
+   external contracts, top-level `await`, module-level `let`, and the Lean
+   theorem composing the units into a module result.
 2. **Classes.** Class declarations as values and as declarations in the graph
    (`InputDefinition`, the branded `AbstractEagerCollection`); construction
    separate from invocation (`new`); parameter properties (`AddIndex`); field

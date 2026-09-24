@@ -371,7 +371,9 @@ captured outer parameter; assignment to the closure's own parameters remains
 outside this lowering.
 
 The identity scheme `id<T>(x: T): T { return x }` is also accepted, with
-each distinct type parameter exported as a `param` atom. Function AST objects always
+each distinct type parameter exported as a `param` atom. The file AST's `init`
+array is the module's top-level code in source order (constant bindings and
+expression statements), empty when there is none. Function AST objects always
 include `typeParams` (empty when the function is not generic). Each type
 parameter is `{ "name": "T", "bound": null }` or has a source type term as its
 bound: `boolean` for `T extends boolean`, a `binder` term naming an earlier

@@ -1653,6 +1653,9 @@ export function parseFile(file: string, carriesContext = false,
   const interfaceNodes: InterfaceDeclaration[] = [];
   const fnNodes: FunctionDeclaration[] = [];
   const importNodes: ImportDeclaration[] = [];
+  // Top-level code other than declarations: the module's initialization, run
+  // once, in order, after its function declarations are instantiated.
+  const initNodes: Statement[] = [];
   // A "use strict" directive prologue makes the whole file strict.
   const prologue = gate.useStrict(source.statements);
   gate.strict = prologue.strict;
@@ -1663,6 +1666,14 @@ export function parseFile(file: string, carriesContext = false,
     else if (ts.isFunctionDeclaration(s)) fnNodes.push(s);
     else if (ts.isImportDeclaration(s) && !carriesContext) importNodes.push(s);
     else if (carriesContext) continue;
+    else if (ts.isExpressionStatement(s)) initNodes.push(s);
+    else if (ts.isVariableStatement(s)) {
+      // A module constant is read by functions at its annotation. Module
+      // storage that functions could write is not yet in the fragment.
+      if (!(s.declarationList.flags & ts.NodeFlags.Const))
+        gate.fail(s, "a module-level `let` or `var` is outside the fragment");
+      initNodes.push(s);
+    }
     else
       gate.fail(
         s,
@@ -1728,12 +1739,14 @@ export function parseFile(file: string, carriesContext = false,
   // A function without a body is a declaration, not an example of one.
   const declared = carriesContext ? fnNodes.filter((s) => s.body) : fnNodes;
   const functions = declared.map((s) => gate.functionDecl(s));
-  if (functions.length === 0) gate.fail(null, "no functions in file");
+  const init = initNodes.map((s) => gate.stmt(s));
+  if (functions.length === 0 && init.length === 0) gate.fail(null, "no functions in file");
   return {
     file,
     sourceSha256: createHash("sha256").update(text).digest("hex"),
     declarations,
     functions,
+    init,
   };
 }
 

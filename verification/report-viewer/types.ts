@@ -40,6 +40,11 @@ export interface ExampleGroup {
 /** Which checker supplied the claims a report displays. */
 export type Producer = "skjs" | "tsc" | "ocaml" | "manual" | "edited candidate";
 
+/** How a code unit is named to a reader: a function by its name, the module's
+ * top-level code, which has none, as its initialization. */
+export const unitLabel = (unit: { name: string }): string =>
+  unit.name === "" ? "module initialization" : unit.name;
+
 /** What the verifier found for one function, over one producer's claims. */
 export type Status =
   /** A certificate was checked. */

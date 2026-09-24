@@ -172,7 +172,10 @@ and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: 
            rest: bool; result: ty; body: stmt list }
 type declaration = { id: string; parameters: rigid list;
   defaults: ty option list; bases: ty list; expression: ty }
-type program = { file: Json.t; digest: Json.t; declarations: declaration list; functions: fn list }
+(* `init` is the module's top-level code, run once after its function
+   declarations exist. *)
+type program = { file: Json.t; digest: Json.t; declarations: declaration list;
+                 functions: fn list; init: stmt list }
 
 let rec expr binders j =
   let sub k = expr binders (field k j) in
@@ -286,8 +289,10 @@ let decode ast =
         Some (d.id,(parameter,body))
       | _ -> None)
     | _ -> None) definitions in
+  let top={bindings=[];owner=None;positional=[];arity;symbolic} in
   { file=field "file" ast;digest=field "sourceSha256" ast;
     declarations=definitions;
+    init=List.map (stmt top) (items "init" ast);
     functions=List.mapi (fun scope f ->
       let parameters = items "typeParams" f in
       let initial={bindings=[];owner=None;positional=[];arity;symbolic} in

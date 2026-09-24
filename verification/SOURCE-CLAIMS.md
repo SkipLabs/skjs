@@ -189,6 +189,16 @@ document that does not have exactly this shape is rejected rather than read
 under some other reading. Every point carries an explicit `current` field.
 When the shape changes, regenerate the documents that carry it.
 
+A source with top-level code (module constants and expression statements)
+has one more code unit, its module initialization, whose claims are an
+`"init"` object beside `"functions"`: `{"entries": [...], "expressions":
+[...]}`, with optional `"arrows"`, exactly as a function states them. It is
+present exactly when the source has that code. The unit has no parameters and
+completes with `undefined`; its sites are the top-level statements. A function
+reads the module's functions and annotated constants at their source types,
+which no claim states. See [Modules and code
+units](DESIGN.md#modules-and-code-units).
+
 Function identity is its name and name span. Parameter names and order must match
 the source signature. Entry claims use statement start offsets, and expression
 claims use complete spans. Sites must occur in the named function's decoded

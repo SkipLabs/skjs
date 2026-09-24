@@ -560,9 +560,10 @@ def prepare (ast : Json) (candidate : SourceTypes.Table) :
     throw "duplicate declaration root name"
   let types ← fillRows ds candidate
   let (functions, types) ← (rewrite ds (← field ast "functions")).run types
+  let (init, types) ← (rewrite ds (← field ast "init")).run types
   let empty := Json.mkObj [("roots", toJson ([] : List Json)),
     ("definitions", toJson ([] : List Json))]
   let ast := ast.setObjVal! "declarations" empty
-  return (ast.setObjVal! "functions" functions, types)
+  return ((ast.setObjVal! "functions" functions).setObjVal! "init" init, types)
 
 end Verification.Model.DeclarationGraph

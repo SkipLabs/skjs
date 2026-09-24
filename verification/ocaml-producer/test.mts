@@ -650,6 +650,7 @@ let callback = "";
 let inference = "";
 let indexed = "";
 let moduleFunctions = "";
+let moduleInit = "";
 let verifiedFunctions = 0;
 for (const test of cases) {
   const result = check(join(here, "examples", `${test.file}.ts`),
@@ -688,6 +689,7 @@ for (const test of cases) {
   if (test.file === "generic-captured-store") captured = result.artifacts;
   if (test.file === "generic-callback") callback = result.artifacts;
   if (test.file === "module-functions") moduleFunctions = result.artifacts;
+  if (test.file === "module-init") moduleInit = result.artifacts;
   if (test.file === "generic-inference") inference = result.artifacts;
   if (test.file === "index-signature") indexed = result.artifacts;
 }
@@ -1004,6 +1006,22 @@ const capturedClaims: SourceClaims = JSON.parse(
   writeFileSync(file, JSON.stringify(claims));
   const refusal = invoke(file, join(moduleFunctions, "evidence.json"), moduleFunctions);
   process.stdout.write(`tampered module callee: refused (${refusal.trim().split("\n")[0]})\n`);
+}
+
+// The initialization unit's claims are checked like a function's: claiming
+// the constant's initializer at another type is refused.
+{
+  const claims: SourceClaims = JSON.parse(readFileSync(join(moduleInit, "claims.json"), "utf8"));
+  const source = readFileSync(join(moduleInit, "source.ts"), "utf8");
+  assert.ok(claims.init, "the initialization unit's claims");
+  const literal = source.indexOf("true;");
+  const site = claims.init.expressions.find((e) => e.pos[0] === literal);
+  assert.ok(site, "the initializer's claim");
+  site.type = [0];
+  const file = join(moduleInit, "forged-initializer.json");
+  writeFileSync(file, JSON.stringify(claims));
+  invoke(file, join(moduleInit, "evidence.json"), moduleInit);
+  process.stdout.write("tampered module initializer: refused\n");
 }
 
 // A substitution proposed through a callback is validated like any other:

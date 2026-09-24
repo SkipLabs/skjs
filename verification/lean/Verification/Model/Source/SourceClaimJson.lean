@@ -157,12 +157,35 @@ instance : ToJson Function where
     (match f.arrows with
      | none | some [] => []
      | some rows => [("arrows", toJson rows)]))
+/-- Claims for the module's initialization: the code unit that runs the
+file's top-level code. It has no parameters, and completes with `undefined`. -/
+structure InitClaims where
+  entries : List Entry
+  expressions : List Expression
+  arrows : Option (List ArrowClaims) := none
+  deriving FromJson
+instance : ToJson InitClaims where
+  toJson i := Json.mkObj ([("entries", toJson i.entries), ("expressions", toJson i.expressions)] ++
+    (match i.arrows with
+     | none | some [] => []
+     | some rows => [("arrows", toJson rows)]))
 structure Document where
   file : String
   sourceSha256 : String
   types : SourceTypes.Table
   functions : List Function
-  deriving ToJson, FromJson
+  /-- Present exactly when the source has module initialization code. -/
+  init : Option InitClaims := none
+  deriving FromJson
+
+/-- Absence asserts nothing: a source with no initialization code has no
+initialization claims, and no producer writes an empty one. -/
+instance : ToJson Document where
+  toJson d := Json.mkObj ([("file", toJson d.file), ("sourceSha256", toJson d.sourceSha256),
+    ("types", toJson d.types), ("functions", toJson d.functions)] ++
+    (match d.init with
+     | none => []
+     | some i => [("init", toJson i)]))
 
 
 def Function.normalized (f : Function) : SourceClaims.Function :=
@@ -618,6 +641,9 @@ def decode (j : Json) : Except String Document := do
     throw "invalid source claims: duplicate identity, span, binding or type labels"
   if (d.functions.map (fun f => (f.name,f.namePos))).eraseDups.length != d.functions.length then
     throw "duplicate function claims"
+  if let some i := d.init then
+    if !validInterior d.types i.entries i.expressions then
+      throw "invalid source claims: duplicate identity, span, binding or type labels"
   return d
 
 private abbrev Sites := List Nat × List Span × List Span
@@ -762,6 +788,34 @@ def FunctionPlan.certify : FunctionPlan → Except String CertifiedPlan
 def certifyPlans (plans : List FunctionPlan) : Except String (List CertifiedPlan) :=
   plans.mapM FunctionPlan.certify
 
+/-- A module constant holds no value until its declaration runs. Walking the
+top-level code in order, a step may reach a module function, directly or
+through the functions that one mentions, only when every module constant those
+functions mention already holds its value. Mentions over-approximate calls, so
+this refuses some safe orders and admits no unsafe one. -/
+private def checkInitializationOrder (T : SourceTypes.Table)
+    (fns : List (Fragment.Fn × List Fragment.TypeParam)) (init : List Fragment.Stmt) :
+    Except String Unit := do
+  let constants := init.flatMap fun
+    | .constants _ bs => bs.map (·.name)
+    | _ => []
+  let bodies := fns.map fun (g, _) => (g.name, g.body.flatMap stmtNames)
+  let isFunction (n : String) := bodies.any (·.1 == n)
+  let reach (start : List String) : List String := Id.run do
+    let mut seen := start.filter isFunction |>.eraseDups
+    for _ in List.range (bodies.length + 1) do
+      let next := seen.flatMap (fun g => (bodies.lookup g).getD []) |>.filter isFunction
+      seen := (seen ++ next).eraseDups
+    return seen
+  let mut ready : List String := []
+  for s in init do
+    let reached := reach (stmtNames s)
+    let read := reached.flatMap (fun g => (bodies.lookup g).getD []) |>.filter constants.contains
+    if let some c := read.find? (fun c => !ready.contains c) then
+      throw (sourceRefusal T s.pos .initializationOrder
+        s!"a module function this step reaches reads '{c}' before its declaration runs")
+    if let .constants _ bs := s then ready := ready ++ bs.map (·.name)
+
 /-- `only` selects one function of the file, named with its position: the
 others remain its module, reachable at their signatures, and need no claims. -/
 def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String × Span) := none) :
@@ -778,18 +832,49 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
   let fs := all.map Prod.fst
   if fs.isEmpty then throw "no source functions to verify"
   if (fs.map (fun f => (f.name,f.namePos))).eraseDups.length != fs.length then throw "duplicate source function identities"
+  let init ← Fragment.decodeInit ast
   -- A body reaches the file's other ordinary functions at their annotated
-  -- signatures; each of those is verified against the same signature here.
-  let module := all.filterMap fun (g, tps) => if tps.isEmpty then some g else none
+  -- signatures, and a function also reaches the module's constants at their
+  -- annotations; each of those is established by its own unit.
+  let moduleFunctions : List SourceExtraction.ModuleValue :=
+    all.filterMap fun (g, tps) => if tps.isEmpty then some (g.name, g.namePos, moduleArrow g) else none
+  let moduleConstants : List SourceExtraction.ModuleValue := init.flatMap fun
+    | .constants _ bs => bs.map fun b => (b.name, b.namePos, match b.annot with
+        | some ty => .ok ty
+        | none => .error s!"module constant '{b.name}' is read by a function, so it needs an annotation")
+    | _ => []
+  -- The initialization unit: the top-level code, as a body with no
+  -- parameters that completes with `undefined`.
+  let initUnit : List (Fragment.Fn × List Fragment.TypeParam × Function) ← match init, d.init with
+    | [], none => pure []
+    | [], some _ => throw "module initialization claims for a source without initialization code"
+    | _ :: _, none => throw "missing claims for the module initialization"
+    | first :: _, some c =>
+      let span := (first.pos.1, (init.getLast?.map (·.pos.2)).getD first.pos.2)
+      let undefinedType := Json.mkObj [("top", toJson false),
+        ("atoms", toJson [Json.mkObj [("a", toJson "undefined")]])]
+      pure [(⟨"", span, [], undefinedType, init⟩, [],
+        ⟨"", span, [], .labels [3], c.entries, c.expressions, c.arrows⟩)]
   let decoded := match only with
     | none => all
     | some (name, pos) => all.filter fun (f, _) => f.name == name && f.namePos == pos
-  if only.isSome && decoded.length != 1 then throw "the selected function is not in the source"
+  let initUnit := match only with
+    | none => initUnit
+    | some (name, pos) => initUnit.filter fun (f, _, _) => f.name == name && f.namePos == pos
+  if only.isSome && decoded.length + initUnit.length != 1 then
+    throw "the selected function is not in the source"
+  -- Initialization order is the initialization unit's own obligation.
+  if !initUnit.isEmpty then checkInitializationOrder d.types all init
   if decoded.length != d.functions.length then throw "function claim count mismatch"
-  decoded.mapM fun (f,tps) => do
-    let c ← match d.functions.find? (fun c => c.name == f.name && c.namePos == f.namePos) with
+  let units := decoded.map (fun (f, tps) => (f, tps, none)) ++
+    initUnit.map (fun (f, tps, c) => (f, tps, some c))
+  units.mapM fun (f,tps,initClaims) => do
+    let module := if initClaims.isSome then moduleFunctions else moduleFunctions ++ moduleConstants
+    let c ← match initClaims with
       | some c => pure c
-      | none => throw s!"missing claims for '{f.name}'"
+      | none => match d.functions.find? (fun c => c.name == f.name && c.namePos == f.namePos) with
+        | some c => pure c
+        | none => throw s!"missing claims for '{f.name}'"
     let sites := functionSites f
     if !c.entries.all (fun e => sites.1.contains e.start) ||
         !c.expressions.all (fun e => sites.2.contains e.pos) then

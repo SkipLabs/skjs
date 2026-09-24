@@ -93,4 +93,7 @@ export interface SourceClaims {
   sourceSha256: string;
   types: Row[];
   functions: FunctionClaims[];
+  /** The module initialization unit, present exactly when the source has
+   * top-level code: its entries and expressions, with no parameters. */
+  init?: Pick<FunctionClaims, "entries" | "expressions" | "arrows">;
 }

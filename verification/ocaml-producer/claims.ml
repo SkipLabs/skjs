@@ -173,6 +173,18 @@ let encode (proposal : Proposal.t) =
   let named (n,b) = point (binding_type b) ["name",String n]
 
   in
+  let interior (f : Proposal.function_claim) =
+    let expressions row = Array (List.map (fun (e : Proposal.expression) ->
+      Object (["pos",e.pos; "type",claim_type e.type_; "current",Null]
+        @ instantiate e.instantiation)) row) in
+    let entries es = Array (List.map (fun (e : Proposal.entry) ->
+      Object ["start",e.start;"bindings",Array (List.map named e.bindings)]) es) in
+    let arrows = if f.arrows = [] then [] else
+      ["arrows",Array (List.map (fun (pos,rows) ->
+        Object ["pos",pos;"rows",Array (List.map (fun (o : Proposal.overlay) ->
+          Object ["expressions",expressions o.row_expressions;
+                  "entries",entries o.row_entries]) rows)]) f.arrows)] in
+    ["entries",entries f.entries; "expressions",expressions f.expressions] @ arrows in
   let functions = List.map (fun (f : Proposal.function_claim) ->
     let source = f.source in
     let expressions row = Array (List.map (fun (e : Proposal.expression) ->
@@ -193,5 +205,10 @@ let encode (proposal : Proposal.t) =
       "entries",entries f.entries;
       "expressions",expressions f.expressions]
       @ arrows)) proposal.functions in
-  Object ["file",proposal.program.file; "sourceSha256",proposal.program.digest;
-    "types",Array !rows; "functions",Array functions]
+  (* The initialization unit's claims, stated only for a module that has
+     top-level code. *)
+  let init = match proposal.init with
+    | None -> []
+    | Some f -> ["init",Object (interior f)] in
+  Object (["file",proposal.program.file; "sourceSha256",proposal.program.digest;
+    "types",Array !rows; "functions",Array functions] @ init)

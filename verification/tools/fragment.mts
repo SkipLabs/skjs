@@ -217,5 +217,8 @@ export interface Ast {
   /** Resolved, fingerprinted source declarations. Lean refuses nonempty
    * closures until their graph interpretation joins the certified plan. */
   declarations: DeclarationDocument;
+  /* The module's top-level code in source order: constant bindings and
+     expression statements, run once after the function declarations exist. */
+  init: Stmt[];
   functions: FunctionAst[];
 }

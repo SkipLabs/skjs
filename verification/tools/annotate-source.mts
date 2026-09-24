@@ -419,8 +419,15 @@ function fromSourceClaims(
   const resultRigid=(A: import("./source-claims.mts").ClaimType)=>rigidOf(A,scope);
   const sf=parse(source,file),entries=new Map<number, number>();
   const walk=(n: ts.Node)=>{if(ts.isStatement(n))entries.set(n.getStart(sf),n.end);n.forEachChild(walk);};walk(sf);
+  // The module initialization is a unit like a function: no name, the span of
+  // the top-level code, no parameters, and `undefined` as its completion.
+  const initCode=sf.statements.filter(n=>ts.isExpressionStatement(n)||ts.isVariableStatement(n));
+  const first=initCode[0], last=initCode[initCode.length-1];
+  if(!!input.init!==!!first)throw Error("module initialization claims do not match the source");
+  const units=[...input.functions,...(input.init&&first&&last?[{name:"",namePos:[first.getStart(sf),last.end] as Span,
+    params:[],result:[3],entries:input.init.entries,expressions:input.init.expressions}]:[])];
   return {source:{file,sha256:input.sourceSha256},producer,
-    functions:input.functions.map(f=>{
+    functions:units.map(f=>{
       scope=scopeOf(scopes,f.namePos);
       return {name:f.name,namePos:f.namePos,
       ...(scope.length?{typeParams:scope}:{}),
@@ -509,19 +516,26 @@ function render(
     if(!Array.isArray(p)||p.length!==2||!p.every(Number.isSafeInteger)||p[0]<0||p[0]>=p[1]||p[1]>source.length)
       throw Error("invalid source span");
   };
+  // The module initialization unit has no declaration of its own: it is the
+  // file's top-level code, from its first statement to its last.
+  const initCode=sf.statements.filter(n=>ts.isExpressionStatement(n)||ts.isVariableStatement(n));
+  const initSpan=initCode.length ? [initCode[0]!.getStart(sf),initCode[initCode.length-1]!.end] : null;
   for(const [index,f] of report.functions.entries()) {
     checkSpan(f.namePos);
-    const key=f.namePos.join(":"), node=functions.get(key);
-    if(!node || node.name?.text!==f.name || seen.has(`fn:${key}`))throw Error("missing or duplicate function identity");
+    const key=f.namePos.join(":"), declared=functions.get(key);
+    const isInit=f.name==="" && !!initSpan && initSpan.join(":")===key;
+    if((!isInit && (!declared || declared.name?.text!==f.name)) || seen.has(`fn:${key}`))
+      throw Error("missing or duplicate function identity");
+    const start=isInit ? f.namePos[0] : declared!.getStart(sf), end=isInit ? f.namePos[1] : declared!.end;
     seen.add(`fn:${key}`);
     if(!Array.isArray(f.entries)||!Array.isArray(f.expressions))throw Error("invalid function claims");
-    add(node.getStart(sf),{kind:"function",id:idOf("function",index),name:f.name,producer:report.producer,
+    add(start,{kind:"function",id:idOf("function",index),name:f.name,producer:report.producer,
       collection:f.collection,collectionSource:f.collectionSource,
       ...(f.signature ? {signature:f.signature} : {}),
       ...(results ? {verification:results[index]} : {verification:{status:"not-run"}})});
     const at=(kind: string, q: { pos: number[] })=> {
       checkSpan(q.pos);
-      if(q.pos[0]<node.getStart(sf)||q.pos[1]>node.end||!starts.has(q.pos[0]) ||
+      if(q.pos[0]<start||q.pos[1]>end||!starts.has(q.pos[0]) ||
           (kind==="expression" && !spans.has(q.pos.join(":"))))throw Error(`cannot attach ${kind} claim at ${q.pos}`);
       const k=`${key}:${kind}:${q.pos[0]}:${kind==="expression" ? q.pos[1] : ""}`;
       if(seen.has(k))throw Error("duplicate claim attachment");seen.add(k);
@@ -720,7 +734,9 @@ function verifySkjs(
       // The whole tree goes to the verifier: the other functions are this
       // one's module, reached at their signatures. Only its claims are sent.
       const a=ast;
-      if(a.functions.filter(named).length!==1)throw Error("function identity mismatch during verification");
+      // The initialization unit is the tree's top-level code, not a function.
+      if(f.name==="" ? !a.init?.length : a.functions.filter(named).length!==1)
+        throw Error("function identity mismatch during verification");
       const only=["--function",f.name,String(f.namePos[0]),String(f.namePos[1])];
       const document=clone(claims);
       const c=isFileList(document) ? document.filter(g=>g.file===file) : document;
@@ -860,7 +876,9 @@ const isDeclaredName = (n: ts.Node) => {
 };
 const isExpressionNode = (n: ts.Node) => ts.isExpression(n) && !isDeclaredName(n);
 
-function missingClaimSites(node: ts.FunctionDeclaration, f: { entries: { pos: number[] }[]; expressions: { pos: number[] }[] }) {
+/** The claim sites a unit's claims leave out: a function's body under its
+ * parameters, or the module's top-level code, read in order under nothing. */
+function missingClaimSites(unit: ts.FunctionDeclaration | readonly ts.Statement[], f: { entries: { pos: number[] }[]; expressions: { pos: number[] }[] }) {
   const sites: { kind: string; pos: number[]; syntax: string; bindings?: unknown[] }[]=[];
   const walk=(n: ts.Node, scope: [string, ts.TypeNode|undefined][])=> {
     if(ts.isFunctionDeclaration(n)||ts.isTypeNode(n))return;
@@ -884,7 +902,13 @@ function missingClaimSites(node: ts.FunctionDeclaration, f: { entries: { pos: nu
     }
     n.forEachChild(c=>walk(c,scope));
   };
-  if(node.body) walk(node.body,identifiers(node.parameters));
+  if(Array.isArray(unit)) {
+    let inner: [string, ts.TypeNode|undefined][]=[];
+    for(const st of unit as readonly ts.Statement[]) { walk(st,inner); inner=inner.concat(declaredBy(st)); }
+  } else {
+    const node=unit as ts.FunctionDeclaration;
+    if(node.body) walk(node.body,identifiers(node.parameters));
+  }
   return sites.sort((a,b)=>a.pos[0]-b.pos[0]||a.pos[1]-b.pos[1]);
 }
 
@@ -968,7 +992,8 @@ export function main(args: string[]) {
   const diagnostics=options.diagnostics ? fs.readFileSync(options.diagnostics,"utf8") : null;
   if(diagnostics!==null)identity.diagnosticsSha256=hash(diagnostics);
   const annotated=render(source,report,results,{...identity,...(comparison?{claimChanges:comparison.changes}:{}),...(conversion?{conversionOmissions:conversion.omissions}:{})});
-  const functionNodes=parse(source,report.source.file).statements.filter(ts.isFunctionDeclaration);
+  const sourceFile=parse(source,report.source.file);
+  const functionNodes=sourceFile.statements.filter(ts.isFunctionDeclaration);
   const data={sourcePath:path.resolve(sourcePath),claimsPath:path.resolve(options.claims),
     ...(options.verify ? {verifierPath:path.resolve(options.verify)} : {}),
     ...identity,source:report.source,annotatedSha256:hash(annotated),producer:report.producer,
@@ -988,8 +1013,12 @@ export function main(args: string[]) {
     functions:report.functions.map((f,i)=>({id:`f${i}`,...f,
       // The declared result's annotation, where the source writes one: the reader
       // shows the claimed result there, and a return contract points at it.
-      ...((node: ts.FunctionDeclaration)=>({pos:[node.getStart(),node.end],resultPos:node.type ? [node.type.getStart(),node.type.end] : null,missingSites:missingClaimSites(node,f)}))(
-        declaring(functionNodes,f.namePos[0])),
+      // The initialization unit spans the module's top-level code and has no
+      // declared result.
+      ...(f.name==="" ? {pos:f.namePos,resultPos:null,
+          missingSites:missingClaimSites(sourceFile.statements.filter(n=>ts.isExpressionStatement(n)||ts.isVariableStatement(n)),f)} :
+        ((node: ts.FunctionDeclaration)=>({pos:[node.getStart(),node.end],resultPos:node.type ? [node.type.getStart(),node.type.end] : null,missingSites:missingClaimSites(node,f)}))(
+        declaring(functionNodes,f.namePos[0]))),
       entries:f.entries.map((e,j)=>({id:`f${i}e${j}`,...e})),
       expressions:f.expressions.map((e,j)=>({id:`f${i}x${j}`,...e}))})),
     results:results ? results.map((r,i)=>({function:`f${i}`,...r})) : results};

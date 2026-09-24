@@ -109,6 +109,8 @@ inductive SourceRole where
   | storageWrite
   /-- An argument to a callable known over rigid types, such as a callback. -/
   | callArgument
+  /-- A module initialization step that could read a constant before it holds a value. -/
+  | initializationOrder
   deriving BEq, Repr
 
 structure Located where
@@ -132,6 +134,7 @@ def SourceRole.wire : SourceRole → String
   | .schemeElimination => "scheme-elimination"
   | .storageWrite => "storage-write"
   | .callArgument => "call-argument"
+  | .initializationOrder => "initialization-order"
 
 partial def Ty.render (T : SourceTypes.Table) : Ty → String
   | .variadic rc ps e r =>

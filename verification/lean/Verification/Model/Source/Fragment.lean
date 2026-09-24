@@ -503,6 +503,11 @@ def decodeArrayElem (decodeExpr : Json → Except String Expr) (q : Json) :
   let dflt ← if d == .null then pure none else some <$> decodeExpr d
   return ⟨← (← jField q "index").getNat?, ← jStr (← jField q "name"), ← jSpan q "namePos", dflt⟩
 
+/-- A statement's own span. -/
+def Stmt.pos : Stmt → Span
+  | .ret p _ | .constants p _ | .mutables p _ | .pattern p _ _ | .arrayPattern p _ _
+  | .ite p _ _ _ | .loop p _ _ | .brk p | .cont p | .effect p _ => p
+
 /-- Singleton notation for small source-adapter fixtures. -/
 abbrev Stmt.cst (p : Span) (name : String) (annot : Option Json) (init : Expr) : Stmt :=
   .constants p [⟨name, p, annot, init⟩]
@@ -798,12 +803,16 @@ def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
     ← jField j "retType", ← (← jArr j "body").mapM decodeStmt⟩, typeParams)
 
 def decodeAstWithParams (j : Json) : Except String (List (Fn × List TypeParam)) := do
-  CellClaims.fieldsExactly j ["file", "sourceSha256", "declarations", "functions"]
+  CellClaims.fieldsExactly j ["file", "sourceSha256", "declarations", "init", "functions"]
   let document ← jField j "declarations"
   CellClaims.fieldsExactly document ["roots", "definitions"]
   if !(← jArr document "roots").isEmpty || !(← jArr document "definitions").isEmpty then
     throw "type declarations have no certified graph interpretation"
   (← jArr j "functions").mapM decodeFn
+
+/-- The module's top-level code, in source order. -/
+def decodeInit (j : Json) : Except String (List Stmt) := do
+  (← jArr j "init").mapM decodeStmt
 
 def decodeAst (j : Json) : Except String (List Fn) := do
   (← decodeAstWithParams j).mapM fun (f, tps) => do

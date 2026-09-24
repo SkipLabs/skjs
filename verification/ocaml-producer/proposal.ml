@@ -13,7 +13,7 @@ type expression = { pos: Json.t; type_: ty; instantiation: (string * ty) list op
 type overlay = { row_entries: entry list; row_expressions: expression list }
 type function_claim = { source: fn; entries: entry list; expressions: expression list;
                         arrows: (Json.t * overlay list) list }
-type t = { program: program; functions: function_claim list }
+type t = { program: program; functions: function_claim list; init: function_claim option }
 let unsupported s = Json.fail ("unsupported: " ^ s)
 let combine = List.fold_left union (Atoms [])
 (* A proposal heuristic for choosing an advertised arrow. It does not
@@ -513,5 +513,19 @@ let infer program =
     g.name,lazy (if g.quantified=[] then module_type g
       else unsupported ("generic module function " ^ g.name ^ " called from another function")))
     program.Source.functions in
-  {program;functions=List.map (infer_function program.Source.declarations module_functions)
+  (* A function reads a module constant at its annotation; the initialization
+     unit is what establishes it. *)
+  let module_constants = List.concat_map (fun (s:Source.stmt) -> match s.statement with
+    | Declare (false,bindings) -> List.map (fun (n,written,_) -> n,lazy (match written with
+        | Some t -> t
+        | None -> unsupported ("module constant " ^ n ^ " is read by a function, so it needs an annotation")))
+      bindings
+    | _ -> []) program.Source.init in
+  let infer_with = infer_function program.Source.declarations in
+  let init = match program.Source.init with
+    | [] -> None
+    | body -> Some (infer_with module_functions
+        {quantified=[];name="";name_pos=Json.Null;params=[];rest=false;
+         result=Atoms [Undef];body}) in
+  {program;init;functions=List.map (infer_with (module_functions @ module_constants))
     program.Source.functions}

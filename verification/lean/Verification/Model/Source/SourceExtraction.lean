@@ -349,7 +349,7 @@ private partial def assignsStmt (name : String) : Fragment.Stmt → Bool
 
 /-- Every name a statement's expressions mention, bound or not: a superset of
 the module functions its body can reach. -/
-private partial def stmtNames : Fragment.Stmt → List String
+partial def stmtNames : Fragment.Stmt → List String
   | .ret _ e | .effect _ e => e.freeNames
   | .constants _ bs | .mutables _ bs => bs.flatMap fun b => b.init.freeNames
   | .pattern _ props init => init.freeNames ++
@@ -363,7 +363,7 @@ private partial def stmtNames : Fragment.Stmt → List String
 /-- A module function's value as its callers see it: an ordinary function
 whose receiver is irrelevant, at exactly its annotated parameters and result.
 A rest parameter contributes its tuple's positions or its array's element. -/
-private def moduleArrow (g : Fragment.Fn) : Except String Json := do
+def moduleArrow (g : Fragment.Fn) : Except String Json := do
   let fixed := if g.params.getLast?.any (·.rest) then g.params.dropLast else g.params
   let (positions, rest) ← match g.params.getLast? with
     | some p =>
@@ -2712,16 +2712,21 @@ def SourceRequest.searchLabels (r : SourceRequest) : List Nat :=
     (known ++ known.flatMap (fun i => (r.types[i]?.getD []).flatMap
       (fun c => (RequestJson.clauseTypes c).flatten))).eraseDups) roots
 
+/-- A value of the module a code unit reaches: its name, its declaration's
+position, and its source type (a function's signature, a constant's
+annotation), or why it has none. -/
+abbrev ModuleValue := String × Span × Except String Json
+
 /-- The table is the one the claims were lowered into; annotations the claims
 did not mention grow it, and the request carries the result. -/
 def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceClaims.Function)
-    (module : List Fragment.Fn := []) : Except String SourceRequest := do
+    (module : List ModuleValue := []) : Except String SourceRequest := do
   if f.name != fc.name || f.namePos != fc.namePos then throw "function claim identity mismatch"
   let scope : List ScopeBinding := f.params.map (fun p => held ⟨p.name,none⟩)
   -- The module functions this body mentions, outermost: a parameter or local
   -- of the same name shadows one, as in JavaScript.
   let mentioned := f.body.flatMap stmtNames
-  let siblings := module.filter fun g => mentioned.contains g.name
+  let siblings := module.filter fun g => mentioned.contains g.1
   if f.name == "undefined" || (names scope).contains "undefined" then
     throw "shadowing undefined is outside the fragment"
   if !distinct (names scope) then throw "duplicate source parameter name"
@@ -2733,14 +2738,15 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
     -- caller writes: a rest parameter is one binding, and its tuple's required
     -- elements are the positions. The array itself is allocated at entry.
     let bindings ← f.params.mapM (fun (p : Fragment.Param) => lower (Fragment.translate p.ty))
-    let siblingTypes ← siblings.mapM fun g => do
-      let arrow ← match moduleArrow g with
-        | .ok arrow => pure arrow
-        | .error reason => throw (locatedRefusal (← table) g.namePos .bindingAnnotation reason)
-      lower (Fragment.translate arrow)
+    let siblingTypes ← siblings.mapM fun (value : ModuleValue) => do
+      let (_, pos, ty) := value
+      let ty ← match ty with
+        | Except.ok ty => pure ty
+        | Except.error reason => throw (locatedRefusal (← table) pos .bindingAnnotation reason)
+      lower (Fragment.translate ty)
     let siblingScope : List ScopeBinding :=
-      (siblings.zip siblingTypes).map fun (pair : Fragment.Fn × Ty Nat) =>
-        { source := ⟨pair.1.name, some pair.1.namePos⟩, fixed := some pair.2 }
+      (siblings.zip siblingTypes).map fun (pair : ModuleValue × Ty Nat) =>
+        { source := ⟨pair.1.1, some pair.1.2.1⟩, fixed := some pair.2 }
     if f.params.dropLast.any (fun (p : Fragment.Param) => p.rest) then
       throw "a rest parameter must be the last one"
     -- A mutable `T[]` rest is an ordinary input: the body is checked for every

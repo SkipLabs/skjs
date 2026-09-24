@@ -1,12 +1,13 @@
 <script lang="ts">
   /*
-   * The functions of the file, each with the two outcomes that matter: what the
+   * The code units of the file (its functions, and its module initialization
+   * when it has top-level code), each with the two outcomes that matter: what the
    * producer concluded, and what proof search found over the claims it made.
    * They are different questions, so neither stands for the other.
    */
   import { outcome } from "../../marks.mts";
   import type { ShownFunction } from "../../model.mts";
-  import type { CollectionRun } from "../../types.ts";
+  import { unitLabel, type CollectionRun } from "../../types.ts";
 
   let {
     functions,
@@ -24,7 +25,7 @@
   const shown = $derived(
     filter
       ? functions.filter((f) =>
-          f.name.toLowerCase().includes(filter.toLowerCase()),
+          unitLabel(f).toLowerCase().includes(filter.toLowerCase()),
         )
       : functions,
   );
@@ -64,7 +65,7 @@
           class:disagrees={verdict.disagrees}
           onclick={() => onselect(fn.id)}
         >
-          <span class="name">{fn.name}</span>
+          <span class="name">{unitLabel(fn)}</span>
           <span class="verdict">
             <span
               class="sym"

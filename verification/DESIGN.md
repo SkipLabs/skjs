@@ -1387,6 +1387,49 @@ applies to every measurement made with the producer: a `reject:` means _no
 derivation was found_, not _no derivation exists_, so a rejection is evidence
 about the rules only once the shape needed has been ruled out by hand.
 
+## Modules and code units
+
+A source file is a module, and the module is the unit of verification. A file
+used to be a list of functions, each a closed program over its parameters.
+That stops at the first sibling call, and module code and classes are not
+functions at all.
+
+**Structure.** JavaScript instantiates a module's function declarations
+before anything runs, then evaluates its other top-level code once, in order.
+The Fragment follows that: `functions` are the hoisted declarations, and
+`init` is the ordered top-level code (constant bindings and expression
+statements; class declarations later, since a class binding is initialized
+where it is written, not hoisted).
+
+**Code units.** Obligations stay per code unit, so a failure points at one
+place: each function, the module initialization, and later each constructor
+and method. A unit is checked against its signature in the module's scope: a
+module function at its annotated signature (a source-fixed slot no producer
+claims and no assignment reaches), a module constant at its annotation. Claims
+are per unit, keyed by source identity.
+
+**Initialization order.** A module constant has no value until its
+declaration runs. The initialization unit refuses a call, direct or through
+other module functions, that can read a constant not yet initialized. Module
+functions are therefore only ever run where every constant they read holds a
+value of its annotated type, which is what their units assume.
+
+**The module result.** A module verifies when every unit's certificate checks
+and the units compose: initialization is safe, and afterwards every module
+function is a value of its signature. Composition is a step-indexed argument
+over the mutually recursive function values; until it is a Lean theorem, a
+unit's result is relative to the signatures it reaches, and the report says
+so.
+
+**Selection.** The verifier checks the whole module, or one unit of it with
+`--function` (the module initialization will be a unit too). A tool never cuts
+the tree down: the rest of the module is the selected unit's scope.
+
+**Reader.** The viewer still shows one unit at a time. Its selector lists the
+module's units as an outline (module initialization, each function, each
+class's members), and a module line states whether the module as a whole is
+verified.
+
 ## Later feature gates
 
 Extend coverage in response to concrete programs or unjustified claims. Each
