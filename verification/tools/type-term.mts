@@ -115,13 +115,13 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
     return oneTerm(signatures(scope, node.parameters, node.type, node, span), span);
   }
   // `new (params) => R`: a construct signature per accepted argument list. It
-  // has no receiver and no parameter collected into an array.
+  // has no receiver; its rest, if any, is a function's.
   if (ts.isConstructorTypeNode(node)) {
     if (node.typeParameters?.length) scope.fail(node, "generic constructor types are outside the fragment");
     if (node.modifiers?.length) scope.fail(node, "an abstract constructor type is outside the fragment");
     const forms = signatures(scope, node.parameters, node.type, node, span).map((f): TypeTerm => {
-      if (f.receiver || f.rest) scope.fail(node, "a constructor type takes a fixed parameter list");
-      return { k: "constructor", params: f.params, result: f.result, span };
+      if (f.receiver) scope.fail(node, "a constructor type has no receiver");
+      return { k: "constructor", params: f.params, rest: f.rest, result: f.result, span };
     });
     const [only] = forms;
     return forms.length === 1 && only ? only : { k: "intersection", parts: forms, span };
@@ -238,6 +238,12 @@ export function signatures(scope: TermScope, parameters: readonly ts.ParameterDe
           if (!contract || !("positions" in contract)) return scope.fail(p, REST_CONTRACT);
           return contract.positions;
         });
+        continue;
+      }
+      // A rest typed by a type parameter is a pack parameter: the actuals
+      // past the fixed ones are, as one list, at it.
+      if (type.k === "binder") {
+        rest = { k: "pack", of: type, span: spanOf(scope, p) };
         continue;
       }
       // A tuple rest is a fixed number of further positions, which is how

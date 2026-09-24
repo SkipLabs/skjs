@@ -174,6 +174,16 @@ private def schemeRow (bs : List Nat) (sigs : List (List Nat × List (List Nat) 
   | none => (T.length, T ++ [r])
 
 mutual
+/-- A rest's type: a pack parameter's row, or the pack of any number of
+actuals at an element. -/
+private partial def lowerRest (ds : Array Definition) (owner : Nat)
+    (params : Array (List Nat)) (seen : Visit) (term : Json) : Lowering (List Nat) := do
+  if (term.getObjValAs? String "k").toOption == some "pack" then
+    CellClaims.fieldsExactly term ["k", "of", "span"]
+    return ← lowerType ds owner params seen (← field term "of")
+  let element ← lowerType ds owner params seen term
+  return [← use (.pack ⟨[], [], some element, false⟩ [])]
+
 private partial def lowerType (ds : Array Definition) (owner : Nat)
     (params : Array (List Nat)) (seen : Visit) (term : Json) : Lowering (List Nat) := do
   match ← str term "k" with
@@ -196,16 +206,23 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let bs ← arr term "binders"
     let sigTerms ← arr term "signatures"
     let opaqueMember : Lowering (List Nat) := do return [← use .top]
-    -- A variadic signature has no scheme form yet, and a bound naming the
-    -- method's own binders (an F-bound) is not what a scheme's bounds mean:
-    -- they are read outside the binders. Either keeps the member opaque.
+    -- A bound naming the method's own binders (an F-bound) is not what a
+    -- scheme's bounds mean: they are read outside the binders. It keeps the
+    -- member opaque.
     let names ← bs.toList.mapM fun b => do
       CellClaims.fieldsExactly b ["name", "bound", "default", "span"]
       str b "name"
-    let own (j : Json) : Bool := names.any fun n =>
-      (j.compress.splitOn s!"\"k\":\"binder\",\"name\":\"{n}\"").length > 1
+    let occurrences (j : Json) (key : String) : Nat := (j.compress.splitOn key).length - 1
+    let binderKey (n : String) := s!"\"k\":\"binder\",\"name\":\"{n}\""
+    let packKey (n : String) := s!"\"k\":\"pack\",\"of\":\{\"k\":\"binder\",\"name\":\"{n}\""
+    let own (j : Json) : Bool := names.any fun n => occurrences j (binderKey n) > 0
     if ← bs.anyM (fun b => do return own (← field b "bound")) then return ← opaqueMember
-    if ← sigTerms.anyM (fun f => do return (← field f "rest") != .null) then return ← opaqueMember
+    -- A pack parameter is a binder every occurrence of which is a rest's type;
+    -- one also used as a value's type keeps the member opaque.
+    let sigsJson := Json.arr sigTerms
+    let packs := names.filter fun n => occurrences sigsJson (packKey n) > 0
+    if packs.any (fun n => occurrences sigsJson (packKey n) != occurrences sigsJson (binderKey n)) then
+      return ← opaqueMember
     let taken := freeColours (← get) (params.toList.flatten ++ seen.binders.map (·.2))
     match (List.range colourBudget).find? (fun c => !taken.contains c) with
     | none => opaqueMember
@@ -213,11 +230,27 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       let spanKey := (← field term "span").compress
       let rows ← ((List.range names.length).zip names).mapM fun (k, n) =>
         paramRow s!"{n}#{k}@{spanKey}^{c}"
-      -- Bounds are read where the method is declared, outside its binders.
+      -- Bounds are read where the method is declared, outside its binders. A
+      -- pack parameter's bound is an array or a tuple of required positions,
+      -- read as the argument lists it admits.
       let bounded ← (bs.toList.zip rows).filterM fun (p : Json × Nat) => do
         return (← field p.1 "bound") != Json.null
-      let bounds ← bounded.mapM fun (p : Json × Nat) => do
-        return (p.2, ← lowerType ds owner params seen (← field p.1 "bound"))
+      let packBound (b : Json) : Lowering (Option (List Nat)) := do
+        match (b.getObjValAs? String "k").toOption with
+        | some "array" =>
+          let element ← lowerType ds owner params seen (← field b "element")
+          return some [← use (.pack ⟨[], [], some element, false⟩ [])]
+        | some "tuple" =>
+          if !(← arr b "optional").isEmpty || (← field b "rest") != .null then return none
+          let required ← (← arr b "required").mapM (lowerType ds owner params seen)
+          return some [← use (.pack ⟨required.toList, [], none, false⟩ [])]
+        | _ => return none
+      let bounds? ← bounded.mapM fun (p : Json × Nat) => do
+        let b ← field p.1 "bound"
+        if packs.contains (← str p.1 "name") then
+          return (← packBound b).map (p.2, ·)
+        return some (p.2, ← lowerType ds owner params seen b)
+      let some bounds := bounds?.mapM id | return ← opaqueMember
       let inner := { seen with binders := names.zip rows ++ seen.binders }
       -- A method whose signatures cannot be lowered, as one whose unfolding
       -- keeps growing (`Promise<T>`'s `catch<R>` returns `Promise<T | R>`),
@@ -226,10 +259,16 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
         CellClaims.fieldsExactly f ["k", "receiver", "params", "rest", "result", "span"]
         let recv ← lowerType ds owner params inner (← field f "receiver")
         let ps ← (← arr f "params").toList.mapM (lowerType ds owner params inner)
+        let restTerm ← field f "rest"
+        let rest ← if restTerm == .null then pure none else
+          some <$> lowerRest ds owner params inner restTerm
         let res ← lowerType ds owner params inner (← field f "result")
-        return (recv, ps, res))
+        return (recv, ps, rest, res))
       match lowered with
-      | .ok sigs => return [← schemeRow rows sigs bounds]
+      | .ok sigs =>
+        let fixed := sigs.filterMap fun (r, ps, rest, res) => if rest.isNone then some (r, ps, res) else none
+        let rests := sigs.filterMap fun (r, ps, rest, res) => rest.map fun P => (r, ps, P, res)
+        return [← schemeRow rows fixed bounds rests]
       | .error _ => opaqueMember
   | "binder" =>
     CellClaims.fieldsExactly term ["k", "name", "span"]
@@ -315,20 +354,21 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let domains ← (← arr term "params").mapM (lowerType ds owner params seen)
     let restTerm ← field term "rest"
     let rest ← if restTerm == .null then pure none else
-      some <$> lowerType ds owner params seen restTerm
+      some <$> lowerRest ds owner params seen restTerm
     let result ← lowerType ds owner params seen (← field term "result")
-    -- A rest's type is the pack of any number of actuals at its element.
-    let row : Clause (List Nat) ← match rest with
-      | none => pure (.arrs [(receiver, domains.toList, result)] [])
-      | some element => do
-        let pack ← use (.pack ⟨[], [], some element, false⟩ [])
-        pure (.arrs [] [(receiver, domains.toList, [pack], result)])
+    let row : Clause (List Nat) := match rest with
+      | none => .arrs [(receiver, domains.toList, result)] []
+      | some P => .arrs [] [(receiver, domains.toList, P, result)]
     return [← use row]
   | "constructor" =>
-    CellClaims.fieldsExactly term ["k", "params", "result", "span"]
-    let params ← (← arr term "params").mapM (lowerType ds owner params seen)
+    CellClaims.fieldsExactly term ["k", "params", "rest", "result", "span"]
+    let ps ← (← arr term "params").mapM (lowerType ds owner params seen)
+    let restTerm ← field term "rest"
     let result ← lowerType ds owner params seen (← field term "result")
-    return [← use (.ctors [(params.toList, result)])]
+    if restTerm == .null then return [← use (.ctors [(ps.toList, result)])]
+    let P ← lowerRest ds owner params seen restTerm
+    return [← use (.ctors [] [(ps.toList, P, result)])]
+  | "pack" => throw "a pack parameter outside a signature's rest"
   | "object" =>
     CellClaims.fieldsExactly term ["k", "fields", "stringIndex", "calls", "span"]
     -- An optional field constrains its key only where the object has it; a
@@ -366,9 +406,8 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       let result ← lowerType ds owner params seen (← field call "result")
       if rest == .null then fixed := fixed ++ [(receiver, domains.toList, result)]
       else
-        let element ← lowerType ds owner params seen rest
-        let pack ← use (.pack ⟨[], [], some element, false⟩ [])
-        variadic := variadic ++ [(receiver, domains.toList, [pack], result)]
+        variadic := variadic ++ [(receiver, domains.toList,
+          ← lowerRest ds owner params seen rest, result)]
     let row ← if fixed.isEmpty && variadic.isEmpty then
         if indexes.isEmpty then use (.refs writes [] views optional)
         else use (.dict writes [] views indexes optional)
@@ -555,6 +594,8 @@ private partial def rigidClaim (ds : Array Definition) (owner : Nat) (env : Arra
     let receiver ← if recv == .null then pure topClaim else rigidClaim ds owner env seen recv
     let params ← (← arr term "params").mapM (rigidClaim ds owner env seen)
     let restTerm ← field term "rest"
+    if (restTerm.getObjValAs? String "k").toOption == some "pack" then
+      throw "a pack parameter has no claim form"
     let rest ← if restTerm == .null then pure [] else
       pure [("rest", ← rigidClaim ds owner env seen restTerm)]
     let result ← rigidClaim ds owner env seen (← field term "result")
@@ -577,7 +618,8 @@ private partial def rigidClaim (ds : Array Definition) (owner : Nat) (env : Arra
       ("optional", toJson optional), ("rest", rest),
       ("readonly", toJson (← bool term "readonly"))]]
   | "constructor" =>
-    CellClaims.fieldsExactly term ["k", "params", "result", "span"]
+    CellClaims.fieldsExactly term ["k", "params", "rest", "result", "span"]
+    if (← field term "rest") != .null then throw "a construct signature with a rest has no claim form"
     let params ← (← arr term "params").mapM (rigidClaim ds owner env seen)
     return claimType [Json.mkObj [("a", toJson "constructor"), ("params", toJson params),
       ("result", ← rigidClaim ds owner env seen (← field term "result"))]]
@@ -694,12 +736,15 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
     let receiver ← if recv == .null then pure topClaim else recur recv
     let params ← (← arr term "params").mapM recur
     let restTerm ← field term "rest"
+    if (restTerm.getObjValAs? String "k").toOption == some "pack" then
+      throw "a pack parameter has no claim form"
     let rest ← if restTerm == .null then pure [] else pure [("rest", ← recur restTerm)]
     return claimType [Json.mkObj ([("a", toJson "function"), ("this", receiver),
       ("params", toJson params)] ++ rest ++ [("result", ← recur (← field term "result")),
       ("construct", toJson "unknown"), ("array", toJson "unknown")])]
   | "constructor" =>
-    CellClaims.fieldsExactly term ["k", "params", "result", "span"]
+    CellClaims.fieldsExactly term ["k", "params", "rest", "result", "span"]
+    if (← field term "rest") != .null then throw "a construct signature with a rest has no claim form"
     let params ← (← arr term "params").mapM recur
     return claimType [Json.mkObj [("a", toJson "constructor"), ("params", toJson params),
       ("result", ← recur (← field term "result"))]]

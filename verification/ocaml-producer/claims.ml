@@ -41,9 +41,23 @@ let encode (proposal : Proposal.t) =
     | StrLit value -> [intern (Array [Object ["strLit",Object ["value",String value]]])]
     | Top -> [intern (Array [String "top"])]
     | Ctors signatures ->
-      [intern (Array [Object ["ctors",Object ["signatures",Array (List.map (fun (s:Semantic.signature) ->
-        if s.quantified <> [] then unsupported "quantified construct signature claim encoding";
-        Array [Array (List.map labels s.params);labels s.result]) signatures)]]])]
+      List.iter (fun (s:Semantic.signature) ->
+        if s.quantified <> [] then unsupported "quantified construct signature claim encoding") signatures;
+      (* Variadic construct signatures carry their rest, an argument-list type;
+         the list is left out when empty, its one spelling of none. *)
+      let fixed = List.filter_map (fun (s:Semantic.signature) -> match s.rest_pack with
+        | None -> Some (Array [Array (List.map labels s.params);labels s.result])
+        | Some _ -> None) signatures in
+      let rests = List.filter_map (fun (s:Semantic.signature) -> Option.map (fun r ->
+        Array [Array (List.map labels s.params);Array [labels r;labels s.result]]) s.rest_pack) signatures in
+      [intern (Array [Object ["ctors",Object (("signatures",Array fixed) ::
+        (if rests = [] then [] else ["variadic",Array rests]))]])]
+    | Args sequence ->
+      [intern (Array [Object ["pack",Object ["first",Object [
+        "required",Array (List.map labels sequence.required);
+        "optional",Array (List.map labels sequence.optional_elements);
+        "rest",(match sequence.rest with None -> Null | Some t -> labels t);
+        "readonly",Bool false];"rest",Array []]]])]
     | Named (id,args) -> declaration_labels id args
     | Shape shape ->
       (* An optional field constrains its key only where the object has it,
@@ -62,17 +76,21 @@ let encode (proposal : Proposal.t) =
         if a.quantified <> [] then unsupported "quantified callable claim encoding") shape.calls;
       (* Fixed arrows and variadic signatures of one value share its clause; the
          variadic list is left out when empty, its one spelling of none. *)
-      let fixed = List.filter (fun (a:Semantic.signature) -> a.variadic = None) shape.calls in
+      let fixed = List.filter (fun (a:Semantic.signature) ->
+        a.variadic = None && a.rest_pack = None) shape.calls in
       let arrows = Array (List.map (fun (a:Semantic.signature) ->
         Array [labels a.receiver;Array [Array (List.map labels a.params);labels a.result]]) fixed) in
       let variadic = List.filter_map (fun (a:Semantic.signature) ->
-        Option.map (fun element ->
-          (* A rest's type is the pack of any number of actuals at its element. *)
-          let rest = intern (Array [Object ["pack",Object ["first",Object [
-            "required",Array [];"optional",Array [];"rest",labels element;"readonly",Bool false];
-            "rest",Array []]]]) in
-          Array [labels a.receiver;Array [Array (List.map labels a.params);
-          Array [Array [int rest];labels a.result]]]) a.variadic) shape.calls in
+        (* A rest's type is a pack: of any number of actuals at an element, or
+           the one a pack parameter's instance states. *)
+        let rest = match a.variadic,a.rest_pack with
+          | Some element,_ -> Some (Array [int (intern (Array [Object ["pack",Object ["first",Object [
+              "required",Array [];"optional",Array [];"rest",labels element;"readonly",Bool false];
+              "rest",Array []]]]))])
+          | None,Some r -> Some (labels r)
+          | None,None -> None in
+        Option.map (fun rest -> Array [labels a.receiver;Array [Array (List.map labels a.params);
+          Array [rest;labels a.result]]]) rest) shape.calls in
       let calls = ("arrows",arrows) :: (if variadic = [] then [] else ["variadic",Array variadic]) in
       let clause = match shape.elements with
         | Some sequence ->
@@ -137,7 +155,8 @@ let encode (proposal : Proposal.t) =
           || Option.fold ~none:false ~some:(fun (i:Semantic.index_signature) ->
               contains_symbolic i.value || Option.fold ~none:false ~some:contains_symbolic i.writable) s.string_index
           || List.exists (fun (a:Semantic.signature) ->
-              List.exists contains_symbolic (a.receiver :: a.result :: a.params @ Option.to_list a.variadic)
+              List.exists contains_symbolic (a.receiver :: a.result :: a.params @ Option.to_list a.variadic
+                @ Option.to_list a.rest_pack)
               || List.exists (fun (q:Semantic.quantifier) ->
                   Option.fold ~none:false ~some:contains_symbolic q.bound) a.quantified) s.calls
           || (match s.elements with None -> false | Some e ->
@@ -161,6 +180,7 @@ let encode (proposal : Proposal.t) =
     | Atoms [Shape {fields=[];string_index=None;calls=[signature];elements=None}]
         when signature.quantified <> [] || List.exists contains_symbolic
           (signature.receiver :: signature.result :: signature.params @ Option.to_list signature.variadic) ->
+      if signature.rest_pack <> None then unsupported "a pack parameter in a scheme claim";
       let type_params = Array (List.map (fun (q:Semantic.quantifier) -> Object [
         "name",String q.identity.spelling;
         "bound",(match q.bound with None -> Null | Some t -> claim_type t)])

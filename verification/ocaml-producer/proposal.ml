@@ -169,8 +169,10 @@ let rec branch env cond truth = match cond.node with
       (* A class is a function to `typeof`. *)
       | Ctors _ -> Some (shape="function")
       | Nul -> Some false
-      (* A declaration's shape is not known here: it stays on both arms. *)
-      | Top | Named _ -> None in
+      (* A declaration's shape is not known here: it stays on both arms. No
+         value is an argument pack. *)
+      | Top | Named _ -> None
+      | Args _ -> Some false in
     refine_value env name (function
       | Atoms xs when not (List.mem Top xs) ->
         Atoms (List.filter (fun a -> match has a with
@@ -286,7 +288,7 @@ let infer_function declarations module_functions (f:Source.fn) =
          receiver it reads. The class value's type is its construct signature. *)
       let inner = List.fold_left (fun env (n,t) -> extend env n (Value t)) env ps in
       ignore (expr ~expected:result inner body);
-      Atoms [Ctors [{quantified=[];receiver=Semantic.top;params=List.map snd ps;variadic=None;result}]]
+      Atoms [Ctors [{quantified=[];receiver=Semantic.top;params=List.map snd ps;variadic=None;rest_pack=None;result}]]
     | Ctor _ -> unsupported "a class value is a constructor lambda with plain parameters"
     | New (callee,args) ->
       (match declared_head declarations [] (expr env callee) with
@@ -406,6 +408,40 @@ let infer_function declarations module_functions (f:Source.fn) =
            else match List.nth_opt params i with
              | Some p -> ignore (expr ~expected:p env e)
              | None -> ignore (expr ~expected:element env e)) args;
+         result
+       | Atoms [Shape {calls=[signature];_}]
+           when signature.quantified<>[] && signature.rest_pack<>None ->
+         (* A rest typed by a pack parameter: the actuals past the fixed ones,
+            widened as TypeScript infers them, are its instance, a tuple; the
+            other binders are inferred from the fixed actuals. Lean checks the
+            instance against the bound, position by position. *)
+         if spreads <> [] then unsupported "a spread into a pack parameter";
+         let fixed = List.length signature.params in
+         if List.length args < fixed then
+           unsupported "a call omits a fixed parameter before a pack parameter";
+         let actuals = List.map (expr env) args in
+         let extras = List.filteri (fun i _ -> i >= fixed) actuals in
+         let pack = Atoms [Args {required=List.map Semantic.widen extras;
+           optional_elements=[];rest=None;readonly=false}] in
+         let solution = match signature.rest_pack with
+           | Some (Rigid p) when List.exists (fun (q:Semantic.quantifier) -> q.identity=p)
+               signature.quantified -> [p,pack]
+           | _ -> unsupported "a pack rest that is not the method's own parameter" in
+         let rest_quantified = List.filter (fun (q:Semantic.quantifier) ->
+           not (List.mem_assoc q.identity solution)) signature.quantified in
+         let partial = Inference.substitute_signature solution
+           {signature with quantified=rest_quantified} in
+         let substitution,result =
+           if rest_quantified = [] then solution,partial.result
+           else
+             let inferred = Inference.infer ~receiver:receiver_type
+               {partial with rest_pack=None}
+               (List.filteri (fun i _ -> i < fixed) actuals) in
+             solution @ inferred.substitution,inferred.result in
+         instance_of ~declared:callee target substitution;
+         if not (method_read target) then
+           instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
+             substitution) :: !instantiations;
          result
        | Atoms [Shape {calls=[signature];_}]
            when signature.quantified<>[] && signature.variadic<>None ->

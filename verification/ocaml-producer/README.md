@@ -1027,8 +1027,16 @@ current level, which keeps the fixed point contractive; the approximations are
 non-expansive in the assignment, which gives admissibility. An instance's
 types must lie within the bounds (inclusion or a core certificate per bound);
 `bounded-generic-method-value-import` and its negative exercise it.
-F-bounded binders, variadic signatures and methods whose unfolding keeps
-growing stay opaque members.
+Pack parameters, as `EagerCollection.map`'s `...params: Params`, are a rest
+typed by a binder: an argument-pack type in the calculus (`Tm.args`, the `pack`
+clause), the rest of a variadic scheme signature and of a variadic construct
+signature, instantiated at the tuple of a call's further actuals and bounded
+position by position (`pack-method-value-import`, whose class takes the one
+number the pack holds; its negatives refuse a string outside the bound and a
+constructor needing more actuals than the rest). A fixed construct or call
+signature meets a tuple rest only when the tuple's positions are stable
+(primitives, literals, `unknown`). F-bounded binders and methods whose
+unfolding keeps growing stay opaque members.
 
 `TypeSchemes.lean` is an older, separate scheme layer for local generic
 closures (with bounds and rest signatures, outside the graph). Scheme rows

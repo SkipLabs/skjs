@@ -72,3 +72,16 @@ export interface Flags {
   either<T extends boolean>(first: T, second: T): T;
 }
 export const flags: Flags = { either: (first, second) => first };
+// A generic method with a pack parameter, as `EagerCollection.map`: its rest
+// is typed by a binder that a construct type's rest shares, so a call passes
+// a class and the actuals its constructor takes.
+export class Box {
+  v: number;
+  constructor(v: number) {
+    this.v = v;
+  }
+}
+export interface Maker {
+  make<Params extends number[]>(cls: new (...params: Params) => Box, ...params: Params): Box;
+}
+export const maker: Maker = { make: (cls, ...params) => new cls(...params) };

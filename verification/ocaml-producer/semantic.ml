@@ -8,6 +8,9 @@ and atom = Nul | Undef | True | False | Num | Str | NumLit of int64 | StrLit of 
          (* A class value: construct signatures, which `new` meets and no call
             does. A signature's receiver is unused: `new` passes none. *)
          | Ctors of signature list
+         (* An argument list under a tuple contract: what a rest parameter's
+            type says of the actuals past the fixed ones. No value is one. *)
+         | Args of sequence
          | Shape of shape
          (* Declaration identity, with arguments retained for later generic
             instantiation. A recursive reference is never expanded into a
@@ -21,19 +24,21 @@ and index_signature = { value: ty; writable: ty option }
 and quantifier = { identity: rigid; bound: ty option }
 (* `receiver` is the `this` value a call may pass: `Top` for a signature
    indifferent to it. `variadic` is the contract of each actual after `params`,
-   for a signature that takes any number of them. *)
+   for a signature that takes any number of them; `rest_pack` the type of all
+   of them as one argument list, for a rest typed by a pack parameter or an
+   `Args` instance. At most one is set. *)
 and signature = { quantified: quantifier list; receiver: ty; params: ty list;
-                  variadic: ty option; result: ty }
+                  variadic: ty option; rest_pack: ty option; result: ty }
 and sequence = { required: ty list; optional_elements: ty list; rest: ty option; readonly: bool }
 and shape = { fields: field list; string_index: index_signature option; calls: signature list; elements: sequence option }
 let record fields = Atoms [Shape {fields;string_index=None;calls=[];elements=None}]
 let top = Atoms [Top]
 let arrow params result =
-  Atoms [Shape {fields=[];string_index=None;calls=[{quantified=[];receiver=top;params;variadic=None;result}];elements=None}]
+  Atoms [Shape {fields=[];string_index=None;calls=[{quantified=[];receiver=top;params;variadic=None;rest_pack=None;result}];elements=None}]
 let quantified_arrow ?(receiver=top) quantified params result =
-  Atoms [Shape {fields=[];string_index=None;calls=[{quantified;receiver;params;variadic=None;result}];elements=None}]
+  Atoms [Shape {fields=[];string_index=None;calls=[{quantified;receiver;params;variadic=None;rest_pack=None;result}];elements=None}]
 let variadic_arrow ?(quantified=[]) ?(receiver=top) params element result =
-  Atoms [Shape {fields=[];string_index=None;calls=[{quantified;receiver;params;variadic=Some element;result}];elements=None}]
+  Atoms [Shape {fields=[];string_index=None;calls=[{quantified;receiver;params;variadic=Some element;rest_pack=None;result}];elements=None}]
 let ground xs = Atoms (List.sort_uniq compare xs)
 let bool = ground [True;False]
 let union a b = match a,b with

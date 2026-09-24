@@ -27,6 +27,11 @@ let property_key = function
   | String name -> Name name
   | Object ["symbol",Number i] -> Key (int_of_string i)
   | _ -> fail "expected a property key"
+(* A rest term typed by a pack parameter, `{"k": "pack", "of": binder}`. *)
+let is_pack = function
+  | Object fields -> List.assoc_opt "k" fields = Some (String "pack")
+  | _ -> false
+
 let rec source_type ctx j =
   let recur = source_type ctx in
   match text "k" j with
@@ -68,8 +73,22 @@ let rec source_type ctx j =
         || List.exists (fun (_,v) -> mentions_own v) fields
       | Array items -> List.exists mentions_own items
       | _ -> false in
+    (* A pack parameter is a binder a rest is typed by: its bound, an array
+       or a tuple of required positions, is read as the argument lists it
+       admits. An element rest in a scheme keeps the member opaque. *)
+    let rec packs_in = function
+      | Object fields as t when is_pack t ->
+        (match field "of" t with
+         | Object of_ when List.assoc_opt "k" of_ = Some (String "binder") ->
+           (match List.assoc_opt "name" of_ with Some (String n) -> [n] | _ -> [])
+         | _ -> []) @ List.concat_map (fun (_,v) -> packs_in v) fields
+      | Object fields -> List.concat_map (fun (_,v) -> packs_in v) fields
+      | Array items -> List.concat_map packs_in items
+      | _ -> [] in
+    let packs = List.sort_uniq compare (List.concat_map packs_in signatures) in
     if List.exists (fun b -> mentions_own (field "bound" b)) binders
-       || List.exists (fun f -> field "rest" f <> Null) signatures then top
+       || List.exists (fun f -> match field "rest" f with
+            | Null -> false | t -> not (is_pack t)) signatures then top
     else begin
       let start = match list (field "span" j) with
         | Number n :: _ -> int_of_string n
@@ -78,8 +97,18 @@ let rec source_type ctx j =
       let identities = List.mapi (fun index b -> {scope;index;spelling=text "name" b}) binders in
       let inner = {ctx with bindings =
         List.map (fun (r:rigid) -> r.spelling,Rigid r) identities @ ctx.bindings} in
+      let pack_bound t = match text "k" t with
+        | "array" -> Atoms [Args {required=[];optional_elements=[];
+            rest=Some (source_type ctx (field "element" t));readonly=false}]
+        | "tuple" when items "optional" t = [] && field "rest" t = Null ->
+          Atoms [Args {required=List.map (source_type ctx) (items "required" t);
+            optional_elements=[];rest=None;readonly=false}]
+        | _ -> unsupported "a pack parameter's bound is an array or a tuple" in
       let quantified = List.map2 (fun identity b ->
-        {identity;bound=(match field "bound" b with Null -> None | t -> Some (source_type ctx t))})
+        {identity;bound=(match field "bound" b with
+          | Null -> None
+          | t when List.mem identity.spelling packs -> Some (pack_bound t)
+          | t -> Some (source_type ctx t))})
         identities binders in
       let calls = List.map (fun f -> match source_type inner f with
         | Atoms [Shape {fields=[];string_index=None;calls=[s];elements=None}] -> {s with quantified}
@@ -87,13 +116,23 @@ let rec source_type ctx j =
       Atoms [Shape {fields=[];string_index=None;calls;elements=None}]
     end
   | "constructor" ->
+    (* A construct signature's rest, if any, is one argument list: a pack
+       parameter, or any number at an element. *)
+    let rest_pack = match field "rest" j with
+      | Null -> None
+      | t when is_pack t -> Some (recur (field "of" t))
+      | t -> Some (Atoms [Args {required=[];optional_elements=[];rest=Some (recur t);readonly=false}]) in
     Atoms [Ctors [{quantified=[];receiver=top;params=List.map recur (items "params" j);
-      variadic=None;result=recur (field "result" j)}]]
+      variadic=None;rest_pack;result=recur (field "result" j)}]]
   | "function" ->
     let receiver = match field "receiver" j with Null -> top | source -> recur source in
+    let variadic,rest_pack = match field "rest" j with
+      | Null -> None,None
+      | t when is_pack t -> None,Some (recur (field "of" t))
+      | t -> Some (recur t),None in
     let signature = {quantified=[];receiver;
       params=List.map recur (items "params" j);
-      variadic=(match field "rest" j with Null -> None | t -> Some (recur t));
+      variadic;rest_pack;
       result=recur (field "result" j)} in
     Atoms [Shape {fields=[];string_index=None;calls=[signature];elements=None}]
   | "self" -> (match ctx.owner with

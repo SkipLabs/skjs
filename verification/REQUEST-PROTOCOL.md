@@ -79,7 +79,7 @@ Each type-graph node is a union of clauses:
 | Intersection of arrows `[receiver, [params, result]]`, with variadic signatures `[receiver, [params, [rest, result]]]` when there are any, `rest` an argument-list type (`pack`)  | `{"arrs":{"arrows":[[[5],[[[0]],[1]]],[[5],[[[1]],[0]]]]}}`                                 |
 | Array store: simultaneous tuple contracts, each with required, optional and rest positions; readonly contracts give element read capabilities                              | `{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],"readonly":false},"rest":[]}}` |
 | Callable with invariant bag requirements and overloads, fixed and variadic                                                                                                 | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[[[5],[[[0]],[1]]]]}}`             |
-| Class value: construct signatures `[params, result]`, which `new` meets; no call signature meets it; `"variadic": [[params, rest, result], ...]` when there are any      | `{"ctors":{"signatures":[[[[1,2]],[1,2]]]}}`             |
+| Class value: construct signatures `[params, result]`, which `new` meets; no call signature meets it; `"variadic": [[params, [rest, result]], ...]` when there are any      | `{"ctors":{"signatures":[[[[1,2]],[1,2]]]}}`             |
 | Argument list: simultaneous tuple contracts on the actuals a rest parameter receives, positions compared covariantly                                                  | `{"pack":{"first":{"required":[[4]],"optional":[],"rest":[0],"readonly":false},"rest":[]}}` |
 
 The arrow example contains two signatures, each with one argument and the
@@ -810,8 +810,8 @@ A class value is `{"k":"ctor","pos":span,"lambda":lambda}`: its constructor
 lambda (plain parameters, no receiver) as construct-only code. `new e(args)` is
 `{"k":"new","pos":span,"callee":e,"args":[...]}`, whatever `e` is; its type
 decides whether it has construct signatures. A constructor type `new (params)
-=> R` is the source type term `{"k":"constructor","params":[...],
-"result":R,"span":span}`, and the claim atom `{"a":"constructor","params":[...],
+=> R` is the source type term `{"k":"constructor","params":[...],"rest":E,
+"result":R,"span":span}`, `rest` null or a function term's, and the claim atom `{"a":"constructor","params":[...],
 "result":R}` (an `"and"` list of further signatures for a generic class's
 instances).
 
@@ -819,12 +819,17 @@ A declaration's generic method `m<U>(...): R` is a readonly member whose type
 is the source term `{"k":"scheme","binders":[{"name","bound","default","span"},
 ...],"signatures":[function terms],"span":span}`. Each signature's receiver is
 `{"k":"self"}`, and the method's own type parameters are `{"k":"binder","name"}`
-terms, which shadow the declaration's. Lean lowers it to a scheme row whose
+terms, which shadow the declaration's. A rest typed by one of them,
+`...params: P`, is the rest term `{"k":"pack","of":binder}`: a **pack
+parameter**, whose actuals past the fixed ones are, as one argument list, at
+`P`; every other rest term is its element. Lean lowers it to a scheme row whose
 binders are coloured parameter rows (see [DESIGN.md](DESIGN.md#modules-and-code-units),
 generic methods) and whose bounds are the binders' bounds, lowered where the
-method is declared; a bound naming the method's own binders (an F-bound), a
-variadic signature, or unfolding past the budget keeps the member an opaque
-`unknown` field. The OCaml producer
+method is declared, a pack parameter's array or tuple bound as the argument
+lists it admits; a bound naming the method's own binders (an F-bound), a pack
+parameter used as a value's type, or unfolding past the budget keeps the
+member an opaque `unknown` field. At a call the OCaml producer takes a pack
+parameter's instance to be the tuple of the actuals past the fixed ones. The OCaml producer
 reads it as a callable quantifying its binders; at a call it infers the
 instance from the receiver and the actuals, and claims the method's read at
 that instance's ground arrow, which Lean relates to the method's scheme row by

@@ -1511,9 +1511,13 @@ in what its signatures mention from outside, so no binder captures one of
 another scope; the instance tables of `Sub.inst` tell the scopes that share a
 binder row apart. A declaration is applied at most three times along one
 lowering path at different arguments. Past that, as for arguments that keep
-growing (`catch<R>` returns `Promise<T | R>`), and for an F-bounded binder or a
-variadic signature, the method stays an opaque member: sound, and what it was
-before. Two lowerings of one type that differ only in rows they reserve or
+growing (`catch<R>` returns `Promise<T | R>`), and for an F-bounded binder,
+the method stays an opaque member: sound, and what it was before. A rest typed
+by one of the method's binders makes it a pack parameter (`...params:
+Params`), which a construct type's rest may share (`new (...params: Params) =>
+M`): the scheme row's variadic signature has the binder for its rest, the
+binder's `Params extends E[]` bound is the element pack, and a call's
+instance is the tuple of its further actuals. Two lowerings of one type that differ only in rows they reserve or
 binder rows their schemes use are one type up to renaming (`Sub.table`), which
 is how a producer's claimed type is compared with the annotation's.
 

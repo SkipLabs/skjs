@@ -187,6 +187,8 @@ def matchRest [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap 
 def readsFrom [DecidableEq ι] (G : NormalGraph ι) : Nat → List ι → List ι
   | 0, S => S
   | fuel + 1, S =>
+    -- Compared without repeats: a repeated root must not pass for a new row.
+    let S := S.eraseDups
     let next := (S ++ S.flatMap (reads G)).eraseDups
     if next.length = S.length then S else readsFrom G fuel next
 

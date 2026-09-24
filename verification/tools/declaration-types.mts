@@ -49,8 +49,12 @@ export type TypeTerm =
   | { k: "function"; receiver: TypeTerm | null; params: TypeTerm[];
       rest: TypeTerm | null; result: TypeTerm; span: Span }
   /** `new (params) => result`: a construct signature, which a class meets and
-   * no plain function does. */
-  | { k: "constructor"; params: TypeTerm[]; result: TypeTerm; span: Span }
+   * no plain function does; `rest` as a function's, or null. */
+  | { k: "constructor"; params: TypeTerm[]; rest: TypeTerm | null; result: TypeTerm; span: Span }
+  /** A rest parameter typed by a type parameter, `...params: P`: the actuals
+   * past the fixed ones are, as one argument list, at `P`, a pack parameter.
+   * Only a signature's `rest` holds one; any other rest is its element. */
+  | { k: "pack"; of: TypeTerm; span: Span }
   /** A generic method, `m<U>(f: (x: T) => U): Box<U>`: its binders, which its
    * signatures name as `binder` terms by spelling, and its signatures, each
    * with the containing declaration as receiver. A bound or default is stated

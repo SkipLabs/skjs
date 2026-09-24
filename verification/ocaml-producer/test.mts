@@ -45,7 +45,9 @@ function referencesIn(term: TypeTerm): Reference[] {
       ...(term.rest ? referencesIn(term.rest) : []),
       ...referencesIn(term.result),
     ];
-    case "constructor": return [...term.params.flatMap(referencesIn), ...referencesIn(term.result)];
+    case "constructor": return [...term.params.flatMap(referencesIn),
+      ...(term.rest ? referencesIn(term.rest) : []), ...referencesIn(term.result)];
+    case "pack": return referencesIn(term.of);
     case "scheme": return [
       ...term.binders.flatMap(b => [...(b.bound ? referencesIn(b.bound) : []),
         ...(b.default ? referencesIn(b.default) : [])]),

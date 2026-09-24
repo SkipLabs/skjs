@@ -22,6 +22,10 @@ and substitute_atom solution = function
   | Shape shape -> Shape (substitute_shape solution shape)
   | Named (id,args) -> Named (id,List.map (substitute solution) args)
   | Ctors signatures -> Ctors (List.map (substitute_signature solution) signatures)
+  | Args sequence -> Args {sequence with
+      required=List.map (substitute solution) sequence.required;
+      optional_elements=List.map (substitute solution) sequence.optional_elements;
+      rest=Option.map (substitute solution) sequence.rest}
   | atom -> atom
 and substitute_shape solution shape = {
   fields=List.map (fun field -> {field with
@@ -47,6 +51,7 @@ and substitute_signature solution signature =
     receiver=substitute solution signature.receiver;
     params=List.map (substitute solution) signature.params;
     variadic=Option.map (substitute solution) signature.variadic;
+    rest_pack=Option.map (substitute solution) signature.rest_pack;
     result=substitute solution signature.result }
 
 (* These are proposal constraints, not semantic type nodes or acceptance facts.
@@ -62,7 +67,8 @@ let meet_atom a b =
   | Num,NumLit _ -> Some [b] | NumLit _,Num -> Some [a]
   | Str,StrLit _ -> Some [b] | StrLit _,Str -> Some [a]
   | Ctors a,Ctors b -> Some [Ctors (a @ b)]
-  | Shape _,_ | _,Shape _ | Named _,_ | _,Named _ | Ctors _,_ | _,Ctors _ -> None
+  | Shape _,_ | _,Shape _ | Named _,_ | _,Named _ | Ctors _,_ | _,Ctors _
+  | Args _,_ | _,Args _ -> None
   | Bigint,Bigint -> Some [Bigint] | Symbol,Symbol -> Some [Symbol]
   | (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | Symbol),
     (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | Symbol) -> Some []

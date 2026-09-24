@@ -42,8 +42,11 @@ export function claimOfTerm(term: TypeTerm): ClaimType {
         ...(term.rest ? { rest: claimOfTerm(term.rest) } : {}),
         result: claimOfTerm(term.result), construct: "unknown", array: "unknown" });
     case "constructor":
+      if (term.rest) throw new Error("a construct signature with a rest has no claim form");
       return one({ a: "constructor", params: term.params.map(claimOfTerm),
         result: claimOfTerm(term.result) });
+    case "pack":
+      throw new Error("a pack parameter has no claim form");
     case "object":
       return one({ a: "record",
         fields: term.fields.map(f => {

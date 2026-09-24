@@ -59,13 +59,13 @@ export type Clause =
    * when there are none. */
   | { arrs: { arrows: Arrow[]; variadic?: RestArrow[] } }
   /** Construct signatures `[parameters, result]`: what a class meets; and
-   * variadic ones `[parameters, rest, result]`, whose actuals past the
+   * variadic ones `[parameters, [rest, result]]`, whose actuals past the
    * parameters are, as one argument list, at the rest type; the field is left
    * out when there are none. */
   | {
       ctors: {
         signatures: [Labels[], Labels][];
-        variadic?: [Labels[], Labels, Labels][];
+        variadic?: [Labels[], [Labels, Labels]][];
       };
     }
   | {
@@ -262,12 +262,14 @@ export function decodeGraph(value: unknown): TypeGraph {
         if (!sigs.length)
           throw Error("an empty variadic list is written by omitting it");
         sigs.forEach((sig) => {
-          const triple = array(sig);
-          if (triple.length !== 3)
+          const pair = array(sig);
+          if (pair.length !== 2)
             throw Error("invalid variadic construct signature");
-          array(triple[0]).forEach(labels);
-          labels(triple[1]);
-          labels(triple[2]);
+          array(pair[0]).forEach(labels);
+          const tail = array(pair[1]);
+          if (tail.length !== 2) throw Error("expected a rest and a result");
+          labels(tail[0]);
+          labels(tail[1]);
         });
       }
     },
@@ -370,7 +372,7 @@ function clauseText(c: Clause): string {
         ([ps, r]) => `(${ps.map(printLabels).join(", ")}) => ${printLabels(r)}`,
       ),
       ...(c.ctors.variadic ?? []).map(
-        ([ps, rest, r]) =>
+        ([ps, [rest, r]]) =>
           `(${[...ps.map(printLabels), `...${printLabels(rest)}`].join(", ")}) => ${printLabels(r)}`,
       ),
     ].join("; ")}]`;

@@ -337,7 +337,7 @@ class Gate {
       const lambda: Expr = { k: "ctor", pos: this.span(node), lambda: { k: "lambda", pos: this.span(node),
         typeParams: [], receiver: null, params: params.map((p) => ({ name: p.name, type: p.type })),
         result: instance, body: { k: "alloc", pos: this.span(name), fields } } };
-      const type: TypeTerm = { k: "constructor", params: params.map((p) => p.type), result: instance,
+      const type: TypeTerm = { k: "constructor", params: params.map((p) => p.type), rest: null, result: instance,
         span: this.span(name) };
       return { k: "const", pos: this.span(node),
         bindings: [...methods, { name: name.text, namePos: this.span(name), annot: type, init: lambda }] };
