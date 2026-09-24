@@ -16,14 +16,15 @@ changes only as those steps run.
 namespace Verification.Model.RestCalls
 
 /-- What variadic code promises: for a receiver in `Rc` and fixed actuals in
-`Ps`, followed by any number of further actuals in `E`, the term invocation
-yields is safe at `R`. -/
+`Ps`, followed by further actuals that as one pack are in `E`, the term
+invocation yields is safe at `R`. -/
 def RestSpec (n : Nat) (Rc : Fam) (Ps : List Fam) (E R : Fam) (k : Nat) (W : WorldT k)
     (b : Tm) : Prop :=
   Scoped (n + 2) b ∧ Ps.length = n ∧
   ∀ (j : Nat) (hj : j < k) (W' : WorldT j),
     WExt (trunc j (Nat.le_of_lt hj) W) W' → WorldAdm W' → ∀ (h : Heap), HeapOk j W' h →
-      ∀ r, Rc j W' r → ∀ args extra, ArgsT Ps j W' args → (∀ e ∈ extra, E j W' e) →
+      ∀ r, Rc j W' r → ∀ args extra, ArgsT Ps j W' args → E j W' (.args extra) →
+        CallArguments.Values extra →
         Safe R j W' h (CallArguments.bindRest n (args ++ extra) r b)
 
 /-- Fixed actuals exactly as many as the parameters bind as themselves; the
@@ -37,15 +38,15 @@ theorem parameters_prefix (args extra : List Tm) :
 theorem RestSpec.down {n Rc Ps E R k W b} (h : RestSpec n Rc Ps E R (k + 1) W b) :
     RestSpec n Rc Ps E R k (trunc k (Nat.le_succ k) W) b := by
   refine ⟨h.1, h.2.1, ?_⟩
-  intro j hj U hx hu heap hh r hr args extra ha he
-  exact h.2.2 j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh r hr args extra ha he
+  intro j hj U hx hu heap hh r hr args extra ha he hv
+  exact h.2.2 j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh r hr args extra ha he hv
 
 theorem RestSpec.mono {n Rc Ps E R k W W' b} (hx : WExt W W')
     (h : RestSpec n Rc Ps E R k W b) : RestSpec n Rc Ps E R k W' b := by
   refine ⟨h.1, h.2.1, ?_⟩
-  intro j hj U hy hu heap hh r hr args extra ha he
+  intro j hj U hy hu heap hh r hr args extra ha he hv
   exact h.2.2 j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh r hr args
-    extra ha he
+    extra ha he hv
 
 /-- Binding fewer actuals than parameters pads the rest with `undefined`. -/
 theorem parameters_short : ∀ (n : Nat) (args : List Tm), args.length ≤ n →
@@ -67,10 +68,12 @@ theorem restsT_of_restSpec {n : Nat} {Rc : Fam} {Ps : List Fam} {E R : Fam} {k :
   intro s hsm j hj U hx hu heap hh r hrv hr args hvals ha
   cases List.mem_singleton.mp hsm
   refine ⟨_, .variadic hrv hvals, ?_⟩
-  rcases ha with ha | ⟨hm, ht, hx'⟩
-  · have hl : args.length ≤ Ps.length := ha.1
-    have hn : Ps.length = n := hs.2.1
-    have hsafe := hs.2.2 j hj U hx hu heap hh r hr _ [] (ArgsShort_pad ha) (by simp)
+  obtain ⟨hshort, hpack⟩ := ha
+  have hn : Ps.length = n := hs.2.1
+  by_cases hl : args.length ≤ Ps.length
+  · rw [List.take_of_length_le hl] at hshort
+    rw [List.drop_eq_nil_of_le hl] at hpack
+    have hsafe := hs.2.2 j hj U hx hu heap hh r hr _ [] (ArgsShort_pad hshort) hpack (fun a ha => by cases ha)
     simp only [List.append_nil] at hsafe
     unfold CallArguments.bindRest at hsafe ⊢
     have hlen : (args ++ List.replicate (Ps.length - args.length) Tm.undef).length = n := by
@@ -78,16 +81,22 @@ theorem restsT_of_restSpec {n : Nat} {Rc : Fam} {Ps : List Fam} {E R : Fam} {k :
     rw [List.drop_eq_nil_of_le (by omega), ← hlen, CallArguments.parameters_exact] at hsafe
     rw [List.drop_eq_nil_of_le (by omega), parameters_short n args (by omega), ← hn]
     exact hsafe
-  · have hsafe := hs.2.2 j hj U hx hu heap hh r hr _ _ ht hx'
+  · have htl : (args.take Ps.length).length = Ps.length := by simp; omega
+    have ht : ArgsT Ps j U (args.take Ps.length) := by
+      have := hshort.2.1
+      rwa [htl, List.take_length] at this
+    have hsafe := hs.2.2 j hj U hx hu heap hh r hr _ _ ht hpack
+      (fun a ha => hvals a (List.mem_of_mem_drop ha))
     rwa [List.take_append_drop] at hsafe
 
 /-- A ready variadic call consumes one step, then meets the result contract. -/
 theorem call_elim_rest {S : List (Fam × List Fam × Fam × Fam)} {s : Fam × List Fam × Fam × Fam}
     (hs : s ∈ S) (hR : Adm s.1) (hA : ∀ A ∈ s.2.1, Adm A) (hAv : ∀ A ∈ s.2.1, ValOnly A)
-    (hE : Adm s.2.2.1) (hEv : ValOnly s.2.2.1)
+    (hE : Adm s.2.2.1)
     {n : Nat} {W : WorldT n} {f r : Tm} {args extra : List Tm} {heap : Heap}
     (hrv : isVal r = true) (hr : s.1 n W r)
-    (hf : restsT S n W f) (ha : ArgsT s.2.1 n W args) (he : ∀ e ∈ extra, s.2.2.1 n W e)
+    (hf : restsT S n W f) (ha : ArgsT s.2.1 n W args) (he : s.2.2.1 n W (.args extra))
+    (hev : CallArguments.Values extra)
     (hw : WorldAdm W) (hh : HeapOk n W heap) :
     Safe s.2.2.2 n W heap (.invoke f r (args ++ extra)) := by
   cases n with
@@ -97,13 +106,13 @@ theorem call_elim_rest {S : List (Fam × List Fam × Fam × Fam)} {s : Fam × Li
     have hu : WorldAdm U := WorldAdm_trunc _ hw
     have hh' : HeapOk n U heap := HeapOk_trunc n W heap hh
     have ha' := ArgsT_transfer hA ha n (Nat.le_succ n) U (WExt_refl _)
-    have he' : ∀ e ∈ extra, s.2.2.1 n U e := fun e hm => hE.down n W e (he e hm)
+    have he' : s.2.2.1 n U (.args extra) := hE.down n W _ he
     have hr' : s.1 n U r := hR.down n W r hr
     have hvals : CallArguments.Values (args ++ extra) := by
       intro a hm
       rcases List.mem_append.mp hm with hm | hm
       · exact ArgsT_values hAv ha' a hm
-      · exact hEv n U a (he' a hm)
+      · exact hev a hm
     obtain ⟨body, hi, hsafe⟩ := hf.2 s hs n (Nat.lt_succ_self n) U (WExt_refl _) hu heap hh'
       r hrv hr' _ hvals (ArgsRest_of_exact_extra ha' he')
     exact Or.inr ⟨U, heap, body, WExt_refl _, hu, hi.step heap, hh', hsafe⟩
@@ -130,24 +139,25 @@ theorem ctx_bind {A B : Fam} (C : Tm → Tm)
 
 /-- **Creating a variadic value.** Code whose body is safe with any receiver
 in `Rc` (slot 1), any fixed actuals in `Ps` (from slot 2) and any array in `Arr` in slot 0 meets the
-variadic signature, provided collecting further actuals in `E` allocates such
-an array. -/
+variadic signature, provided collecting further actuals whose pack is in `E`
+allocates such an array. -/
 theorem restSpec_of_body {n : Nat} {Rc : Fam} {Ps : List Fam} {E Arr R : Fam} {k : Nat}
     {W : WorldT k} {b : Tm}
     (hscope : Scoped (n + 2) b) (hlen : Ps.length = n) (hRc : Adm Rc)
     (hP : ∀ A ∈ Ps, Adm A) (hArr : Adm Arr)
     (halloc : ∀ j (U : WorldT j) h extra, WorldAdm U → HeapOk j U h →
-      (∀ e ∈ extra, E j U e) → Safe Arr j U h (CallArguments.restArray extra))
+      E j U (.args extra) → CallArguments.Values extra →
+      Safe Arr j U h (CallArguments.restArray extra))
     (hbody : ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
       WorldAdm U → ∀ h, HeapOk j U h → ∀ r, Rc j U r → ∀ args a, ArgsT Ps j U args →
         Arr j U a → isVal a = true → Safe R j U h (subst 0 a (bindArgs 1 (r :: args) b))) :
     RestSpec n Rc Ps E R k W b := by
   refine ⟨hscope, hlen, ?_⟩
-  intro j hj U hx hu h hh r hr args extra ha he
+  intro j hj U hx hu h hh r hr args extra ha he hev
   have hl : args.length = n := (ArgsT_length ha).trans hlen
   unfold CallArguments.bindRest
   rw [List.drop_left' hl, ← hl, parameters_prefix]
-  apply ctx_bind (.letE · _) .letC j U h _ hu hh (halloc j U h extra hu hh he)
+  apply ctx_bind (.letE · _) .letC j U h _ hu hh (halloc j U h extra hu hh he hev)
   intro i hi V hy hv h' a hh' hval harr
   cases i with
   | zero => trivial
@@ -161,6 +171,69 @@ theorem restSpec_of_body {n : Nat} {Rc : Fam} {Ps : List Fam} {E Arr R : Fam} {k
     exact hbody p (by omega) _ hWV (WorldAdm_trunc _ hv) h' (HeapOk_trunc p V h' hh') r
       (hRc.mono p _ _ hUV r (hRc.down_le j p (by omega) U r hr)) args a
       (ArgsT_transfer hP ha p (by omega) _ hUV) (hArr.down p V a harr) hval
+
+/-- Within a contract's bounds every index has a position. -/
+theorem positionFam_isSome {T : TupleF} {i : Nat}
+    (h : i < T.required.length + T.optional.length ∨ T.rest.isSome = true) :
+    (positionFam T i).isSome = true := by
+  unfold positionFam
+  cases hr : T.required[i]? with
+  | some A => rfl
+  | none =>
+    cases ho : T.optional[i - T.required.length]? with
+    | some A => rfl
+    | none =>
+      rw [List.getElem?_eq_none_iff] at hr ho
+      simp only
+      rcases h with h | h
+      · omega
+      · rw [if_pos (by omega)]; exact h
+
+/-- **Allocating a pack.** Its values, as a fresh store, meet its tuple
+contract as a writable store. Each value is at its position's family below the
+budget, which is all the allocation step needs. -/
+theorem pack_alloc_safe {T : TupleF} (hT : ∀ i A, positionFam T i = some A → Adm A)
+    {n : Nat} {W : WorldT n} {h : Heap} {vs : List Tm}
+    (hw : WorldAdm W) (hh : HeapOk n W h) (hp : PackFits T n W vs)
+    (hvals : ∀ v ∈ vs, isVal v = true) :
+    Safe (listT { T with readonly := false }) n W h (.arrLit vs) := by
+  obtain ⟨hreq, hbound, hel⟩ := hp
+  have hsome : ∀ i, i < vs.length → ∃ A, positionFam T i = some A := by
+    intro i hi
+    apply Option.isSome_iff_exists.mp
+    apply positionFam_isSome
+    cases hr : T.rest with
+    | none => have := hbound hr; left; omega
+    | some _ => right; rfl
+  let As := (List.range vs.length).map fun i => (positionFam T i).getD (fun _ _ _ => False)
+  have hlen : As.length = vs.length := by simp [As]
+  have hAi : ∀ i (hi : i < As.length), positionFam T i = some (As[i]'hi) := by
+    intro i hi
+    obtain ⟨A, hA⟩ := hsome i (by simpa [hlen] using hi)
+    simp [As, hA]
+  have hres := arr_alloc_rule_below (Q := listT { T with readonly := false }) (As := As)
+    (by
+      intro A hA
+      obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hA
+      exact hT i _ (hAi i hi))
+    n W h vs hlen hvals hw hh
+    (by
+      intro p hp j hj
+      obtain ⟨i, hi, hpi⟩ := List.getElem_of_mem hp
+      rw [List.getElem_zip] at hpi
+      subst hpi
+      have hiv : i < vs.length := by simp at hi; omega
+      exact hel i _ _ (List.getElem?_eq_getElem hiv) (hAi i _) j hj _ (WExt_refl _))
+    (by
+      intro j hj U hx hl
+      have := listT_alloc (T := { T with readonly := false }) (As := As) (base := h.length)
+        (by simp only [hlen]; exact hreq) (by simp only [hlen]; exact hbound)
+        (fun i A hA => by
+          obtain ⟨hi, rfl⟩ := List.getElem?_eq_some_iff.mp hA
+          exact hAi i hi)
+        hl
+      rwa [hlen] at this)
+  exact hres
 
 /-! ## Spread actuals
 

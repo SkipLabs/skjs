@@ -425,12 +425,18 @@ theorem ArgsT_slots {G : NormalGraph ι} {Γ ρ n W} (he : EnvOk G Γ ρ n W) :
   | [], _ :: _, h => by simp at h
   | _ :: _, [], h => by simp at h
 
+/-- The store type a rest array holds for a rest type: the rest's one tuple
+contract, as a writable store, since the array is fresh. -/
+def RestStore (G : NormalGraph ι) (S P : Ty ι) : Prop :=
+  match expand G P with
+  | [.pack T []] => Represents G S (.list { T with readonly := false } [])
+  | _ => False
+
 /-- The type of the array a variadic body receives: a record whose store field
-holds any number of elements at `E`. -/
-def RestArray (G : NormalGraph ι) (A E : Ty ι) : Prop :=
+holds the actuals past the fixed ones under the rest's tuple contract. -/
+def RestArray (G : NormalGraph ι) (A P : Ty ι) : Prop :=
   match expand G A with
-  | [.refs [(f, S)] [] []] => f = CallArguments.arrayStoreField ∧
-      Represents G S (.list ⟨[], [], some E, false⟩ [])
+  | [.refs [(f, S)] [] []] => f = CallArguments.arrayStoreField ∧ RestStore G S P
   | _ => False
 
 /-- A store type whose elements a spread passes at `E`. -/
@@ -440,8 +446,11 @@ def SpreadsInto (G : NormalGraph ι) (S E : Ty ι) : Prop :=
       ((T.optional ≠ [] ∨ T.rest.isSome = true) → ∃ i ∈ E, Represents G [i] .undef)
   | _ => False
 
-instance [DecidableEq ι] (G : NormalGraph ι) (A E : Ty ι) : Decidable (RestArray G A E) := by
-  unfold RestArray; split <;> (try dsimp only [Represents]) <;> infer_instance
+instance [DecidableEq ι] (G : NormalGraph ι) (S P : Ty ι) : Decidable (RestStore G S P) := by
+  unfold RestStore; split <;> (try dsimp only [Represents]) <;> infer_instance
+
+instance [DecidableEq ι] (G : NormalGraph ι) (A P : Ty ι) : Decidable (RestArray G A P) := by
+  unfold RestArray; split <;> infer_instance
 
 instance [DecidableEq ι] (G : NormalGraph ι) (S E : Ty ι) : Decidable (SpreadsInto G S E) := by
   unfold SpreadsInto; split <;> (try dsimp only [Represents]) <;> infer_instance
@@ -452,6 +461,12 @@ def spreadTerm (p : Bool × Tm) : Tm := if p.1 then .spread p.2 else p.2
 theorem instantiate_spreadTerm (d : Nat) (ρ : Env) (p : Bool × Tm) :
     instantiate d ρ (spreadTerm p) = spreadTerm (p.1, instantiate d ρ p.2) := by
   rcases p with ⟨_ | _, t⟩ <;> simp [spreadTerm, instantiate]
+
+theorem positionTy_eq (T : Tuple (Ty ι)) (i : Nat) :
+    positionTy T i = PositiveNormalization.Tuple.position T i := by
+  rcases hr : T.required[i]? with _ | A <;>
+    rcases ho : T.optional[i - T.required.length]? with _ | B <;>
+    simp [positionTy, PositiveNormalization.Tuple.position, hr, ho]
 
 theorem positionTy_mem {T : Tuple (Ty ι)} {i : Nat} {A : Ty ι} (h : positionTy T i = some A) :
     A ∈ T.required ++ T.optional ++ T.rest.toList := by
@@ -507,57 +522,118 @@ theorem spreadsInto_sound {G : NormalGraph ι} {S E : Ty ι} (h : SpreadsInto G 
     exact hl n W heap v hh ((represents_sem hS n W v).mp hv).1
   · exact h.elim
 
-/-- **Allocating the rest array.** A store of the given actuals, then the
-object holding it, meets any rest-array type whose element type they meet. -/
-theorem restArray_safe {G : NormalGraph ι} {A E : Ty ι} (hr : RestArray G A E)
+/-- A prefix covering a signature's first fixed positions, then its element
+past them: its first positions are the signature's, the rest the element. -/
+theorem prefix_take_drop {α : Type} (Ps : List α) (k : Nat) (E : α) :
+    (Ps.take k ++ List.replicate (k - Ps.length) E).take Ps.length = Ps.take k ∧
+    (Ps.take k ++ List.replicate (k - Ps.length) E).drop Ps.length =
+      List.replicate (k - Ps.length) E := by
+  by_cases hk : k ≤ Ps.length
+  · have h0 : k - Ps.length = 0 := by omega
+    rw [h0, List.replicate_zero, List.append_nil]
+    refine ⟨List.take_of_length_le (by simp; omega), List.drop_eq_nil_of_le (by simp; omega)⟩
+  · rw [List.take_of_length_le (show Ps.length ≤ k by omega)]
+    simp
+
+/-- **Allocating the rest array.** A store of the actuals past the fixed ones,
+then the object holding it, meets a rest-array type when the actuals as one
+pack meet the rest type. -/
+theorem restArray_safe {G : NormalGraph ι} {A P : Ty ι} (hr : RestArray G A P)
     {n : Nat} {W : WorldT n} {h : Heap} {extra : List Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
-    (he : ∀ e ∈ extra, meaning G E n W e) :
+    (he : meaning G P n W (.args extra)) (hvals : CallArguments.Values extra) :
     Safe (meaning G A) n W h (CallArguments.restArray extra) := by
   unfold RestArray at hr
   split at hr
   · rename_i f S hA
     obtain ⟨rfl, hS⟩ := hr
-    apply bind_list [(meaning G S, .arrLit extra)] (by simp [meaning_adm])
-      (fun args => .makeAt .absent [CallArguments.arrayStoreField] args)
-      (fun hs => CallArguments.Step.makeArgs hs) hw hh
-    · intro p hp j hj U hx hu heap hok
-      simp only [List.mem_singleton] at hp
-      subst hp
-      have he' : ∀ e ∈ extra, meaning G E j U e := fun e hm =>
-        (meaning_adm G E).mono j _ U hx e ((meaning_adm G E).down_le n j hj W e (he e hm))
-      apply arr_alloc_rule (As := List.replicate extra.length (meaning G E))
-        (by intro A hA; rw [List.eq_of_mem_replicate hA]; exact meaning_adm G E)
-        j U heap extra (by simp) (fun v hv => (meaning_value (he' v hv)).1) hu hok
-        (by
-          intro p hp
-          have hp1 := List.eq_of_mem_replicate (List.of_mem_zip hp).1
-          rw [hp1]
-          exact he' p.2 (List.of_mem_zip hp).2)
-      intro k hk V hy hl
-      refine (represents_sem hS k V _).mpr ⟨?_, by simp⟩
-      have := listT_alloc (n := k) (W := V) (T := tupleFams (meaning G) ⟨[], [], some E, false⟩)
-        (As := List.replicate extra.length (meaning G E)) (base := heap.length)
-        (by simp [tupleFams]) (by simp [tupleFams])
-        (by
-          intro i A hA
-          have := (List.getElem?_eq_some_iff.mp hA)
-          simp only [List.getElem_replicate] at this
-          rw [← this.2, positionFam_tupleFams]
-          simp [positionTy])
-        hl
-      simpa using this
-    · intro j hj U hx hu heap args hok hargs
-      have hlen := ArgsT_length hargs
-      apply make_fields_rule (As := [meaning G S]) (by simp [meaning_adm]) j U heap .absent
-        [CallArguments.arrayStoreField] args (by simp) (by simpa using hlen.symm)
-        (by simpa using hlen.symm)
-        (ArgsT_values (by simp [meaning_valOnly]) hargs) hu hok (ArgsT_zip hargs)
-      intro k hk V hy hrec
-      refine (represents_sem hA k V _).mpr ⟨⟨?_, by simp⟩,
-        fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
-        by simpa [ReferenceConjunctions.famsOf] using optT_nil⟩
-      simpa [ReferenceConjunctions.famsOf] using hrec
+    unfold RestStore at hS
+    split at hS
+    · rename_i T hP
+      have hpack : ∀ j (hj : j ≤ n) (U : WorldT j), WExt (trunc j hj W) U →
+          PackFits (tupleFams (meaning G) T) j U extra := by
+        intro j hj U hx
+        have := (meaning_adm G P).mono j _ U hx _ ((meaning_adm G P).down_le n j hj W _ he)
+        obtain ⟨vs, hvs, -, hf⟩ := (represents_sem (show Represents G P (.pack T []) from hP) j U _).mp this
+        cases hvs
+        exact hf _ List.mem_cons_self
+      apply bind_list [(meaning G S, .arrLit extra)] (by simp [meaning_adm])
+        (fun args => .makeAt .absent [CallArguments.arrayStoreField] args)
+        (fun hs => CallArguments.Step.makeArgs hs) hw hh
+      · intro p hp j hj U hx hu heap hok
+        simp only [List.mem_singleton] at hp
+        subst hp
+        have := RestCalls.pack_alloc_safe (T := tupleFams (meaning G) T)
+          (by
+            intro i B hB
+            rw [PositiveNormalization.positionFam_tupleFams] at hB
+            obtain ⟨b, -, rfl⟩ := Option.map_eq_some_iff.mp hB
+            exact meaning_adm G b)
+          hu hok (hpack j hj U hx) hvals
+        apply Safe_mono j _ U heap _ this
+        intro k _ V v hv
+        exact (represents_sem hS k V v).mpr ⟨by simpa [tupleFams] using hv, by simp⟩
+      · intro j hj U hx hu heap args hok hargs
+        have hlen := ArgsT_length hargs
+        apply make_fields_rule (As := [meaning G S]) (by simp [meaning_adm]) j U heap .absent
+          [CallArguments.arrayStoreField] args (by simp) (by simpa using hlen.symm)
+          (by simpa using hlen.symm)
+          (ArgsT_values (by simp [meaning_valOnly]) hargs) hu hok (ArgsT_zip hargs)
+        intro k hk V hy hrec
+        refine (represents_sem hA k V _).mpr ⟨⟨?_, by simp⟩,
+          fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
+          by simpa [ReferenceConjunctions.famsOf] using optT_nil⟩
+        simpa [ReferenceConjunctions.famsOf] using hrec
+    · exact hS.elim
   · exact hr.elim
+
+/-- The parts a variadic call writes past its fixed actuals fit its rest. With
+a spread among them, the rest is an element rest, each plain part at its
+element and each spread spreading into it. Without one, the rest is a pack of
+one tuple contract, and the parts are at its positions, within its bounds. -/
+def RestParts (G : NormalGraph ι) (P : Ty ι) (parts : List (Bool × Ty ι)) : Prop :=
+  if parts.any (·.1) then
+    match restElem G P with
+    | some E => ∀ p ∈ parts, if p.1 then SpreadsInto G p.2 E else p.2 = E
+    | none => False
+  else
+    match expand G P with
+    | [.pack T []] => T.required.length ≤ parts.length ∧
+        (T.rest = none → parts.length ≤ T.required.length + T.optional.length) ∧
+        ∀ i ∈ List.range parts.length, positionTy T i = (parts[i]?).map (·.2)
+    | _ => False
+
+instance [DecidableEq ι] (G : NormalGraph ι) (P : Ty ι) (parts : List (Bool × Ty ι)) :
+    Decidable (RestParts G P parts) := by
+  unfold RestParts
+  split
+  · split <;> infer_instance
+  · split <;> infer_instance
+
+/-- Plain actuals at the positions of a rest's one tuple contract, within its
+bounds, form a pack of the rest. -/
+theorem restParts_pack {G : NormalGraph ι} {P : Ty ι} {T : Tuple (Ty ι)}
+    (hP : expand G P = [.pack T []]) {Qs : List (Ty ι)}
+    (hreq : T.required.length ≤ Qs.length)
+    (hbound : T.rest = none → Qs.length ≤ T.required.length + T.optional.length)
+    (hpos : ∀ i ∈ List.range Qs.length, positionTy T i = Qs[i]?)
+    {k : Nat} {W : WorldT k} {extra : List Tm} (ha : ArgsT (Qs.map (meaning G)) k W extra) :
+    meaning G P k W (.args extra) := by
+  have hlen : extra.length = Qs.length := by simpa using ArgsT_length ha
+  refine (represents_sem (show Represents G P (.pack T []) from hP) k W _).mpr
+    ⟨extra, rfl, ?_, fun T' hT' => ?_⟩
+  · simpa [Scoped, scopedArgs_iff] using ArgsT_scoped ha
+  · simp only [List.map_nil, List.mem_singleton] at hT'
+    subst hT'
+    refine ⟨by simpa [tupleFams, hlen] using hreq, by simpa [tupleFams, hlen] using hbound, ?_⟩
+    intro i u B hu hB j hj U hx
+    have hi : i < Qs.length := hlen ▸ (List.getElem?_eq_some_iff.mp hu).1
+    rw [PositiveNormalization.positionFam_tupleFams] at hB
+    obtain ⟨b, hb, rfl⟩ := Option.map_eq_some_iff.mp hB
+    have hq : Qs[i]? = some b := by
+      rw [← hpos i (List.mem_range.mpr hi), positionTy_eq]
+      exact hb
+    have hm := ArgsT_getElem? (A := meaning G b) ha (by simp [List.getElem?_map, hq]) hu
+    exact (meaning_adm G b).mono j _ U hx u ((meaning_adm G b).down_le k j (Nat.le_of_lt hj) W u hm)
 
 theorem ArgStep_append {h h' : Heap} {args args' : List Tm} (rest : List Tm)
     (s : CallArguments.ArgStep h args h' args') :
@@ -566,22 +642,20 @@ theorem ArgStep_append {h h' : Heap} {args args' : List Tm} (rest : List Tm)
   | head hs => exact .head hs
   | tail hv _ ih => exact .tail hv ih
 
-/-- **A variadic call.** The callee, the receiver, the fixed actuals, then
-the further parts run left to right; the call meets the signature's result.
-`Us` are trailing fixed positions the call omits, each admitting `undefined`;
-a call that omits one writes no further part. -/
-theorem rest_call_safe {Rc : Fam} {Ps Us : List Fam} {E R : Fam}
-    (hRc : Adm Rc) (hRcv : ValOnly Rc)
+/-- **A variadic call with a spread.** The callee, the receiver, the fixed
+actuals, then the further parts run left to right; the call meets the
+signature's result. Each further actual is at the element contract `E`, and
+actuals at `E` form a pack of the rest `P`. -/
+theorem rest_call_safe {Rc : Fam} {Ps : List Fam} {E P R : Fam}
+    (hRc : Adm Rc)
     (hA : ∀ A ∈ Ps, Adm A) (hAv : ∀ A ∈ Ps, ValOnly A) (hE : Adm E) (hEv : ValOnly E)
-    (hUA : ∀ A ∈ Us, Adm A)
+    (hP : Adm P) (hEP : ∀ k W xs, (∀ e ∈ xs, E k W e) → P k W (.args xs))
     (xs : List (Fam × Tm)) (hxs : xs.map Prod.fst = Ps) (parts : List (Option Fam × Tm))
-    (hshort : Us = [] ∨ parts = [])
     (hS : ∀ p ∈ parts, ∀ S, p.1 = some S → Adm S ∧ RestCalls.Spreads S E)
     {n W heap f r} (hw : WorldAdm W) (hh : HeapOk n W heap)
-    (hf : Safe (restsT [(Rc, Ps ++ Us, E, R)]) n W heap f)
+    (hf : Safe (restsT [(Rc, Ps, P, R)]) n W heap f)
     (hr : FutureSafe Rc n W r)
-    (hx : ∀ p ∈ xs, FutureSafe p.1 n W p.2) (hp : ∀ p ∈ parts, FutureSafe (p.1.getD E) n W p.2)
-    (hu : ∀ A ∈ Us, FutureSafe A n W .undef) :
+    (hx : ∀ p ∈ xs, FutureSafe p.1 n W p.2) (hp : ∀ p ∈ parts, FutureSafe (p.1.getD E) n W p.2) :
     Safe R n W heap (.invoke f r (xs.map Prod.snd ++ parts.map RestCalls.partTerm)) := by
   apply bind (fun f => .invoke f r (xs.map Prod.snd ++ parts.map RestCalls.partTerm)) Step.callL
     n W heap f hw hh hf
@@ -602,44 +676,87 @@ theorem rest_call_safe {Rc : Fam} {Ps Us : List Fam} {E R : Fam}
     (fun p hm => (hx p hm).transfer hj hxU)
   intro k hk V hy hv' heap'' args hok' hargs
   rw [hxs] at hargs
-  rcases hshort with rfl | rfl
-  · apply RestCalls.spread_parts_safe hE hEv hv hrv parts k V heap'' args hS hv' hok'
-      (ArgsT_values hAv hargs) (fun p hm => ((hp p hm).transfer hj hxU).transfer hk hy)
-    intro i hi X hz hX heap3 extra hh3 hext
-    have hUX : WExt (trunc i (Nat.le_trans hi hk) U) X := by
-      apply WExt_trans _ hz
-      simpa only [trunc_trunc] using WExt_trunc hi hy
-    have hfX := (restsT_adm _).mono i _ X hUX v
-      ((restsT_adm _).down_le j i (Nat.le_trans hi hk) U v hfun)
-    have hrX := hRc.mono i _ X hUX rv (hRc.down_le j i (Nat.le_trans hi hk) U rv hrm)
-    simp only [List.append_nil] at hfX
-    exact RestCalls.call_elim_rest (s := (Rc, Ps, E, R)) (by simp) hRc hA hAv hE hEv hrv hrX hfX
-      (ArgsT_transfer hA hargs i hi X hz) hext hX hh3
-  · -- Nothing past the omitted positions: the fixed ones admit this list.
-    simp only [List.map_nil, List.append_nil]
-    cases k with
-    | zero => trivial
-    | succ k =>
-      let X := trunc k (Nat.le_succ k) V
-      have hX : WorldAdm X := WorldAdm_trunc _ hv'
-      have hhX : HeapOk k X heap'' := HeapOk_trunc k V heap'' hok'
-      have hfV := (restsT_adm _).mono (k + 1) _ V hy v
-        ((restsT_adm _).down_le j (k + 1) hk U v hfun)
-      have hrV := hRc.down k V rv (hRc.mono (k + 1) _ V hy rv (hRc.down_le j (k + 1) hk U rv hrm))
-      have hargsX := ArgsT_transfer hA hargs k (Nat.le_succ k) X (WExt_refl _)
-      have hundef : ∀ A ∈ Us, A k X .undef := by
-        intro A hA'
-        have := safe_value_mem rfl
-          (((hu A hA').transfer hj hxU).transfer hk hy (k + 1) (Nat.le_refl _) V
-            (by rw [trunc_id]; exact WExt_refl _) hv' heap'' hok')
-        exact (hUA A hA').down k V _ this
-      have hshortX : ArgsShort (Ps ++ Us) k X args :=
-        ArgsShort_of_pad (pad := List.replicate Us.length .undef)
-          (fun a hm => List.eq_of_mem_replicate hm)
-          (ArgsT_append hargsX (ArgsT_undef hundef))
-      obtain ⟨body, hi, hsafe⟩ := hfV.2 (Rc, Ps ++ Us, E, R) (by simp) k (Nat.lt_succ_self k) X
-        (WExt_refl _) hX heap'' hhX rv hrv hrV args (ArgsT_values hAv hargsX) (Or.inl hshortX)
-      exact Or.inr ⟨X, heap'', body, WExt_refl _, hX, hi.step heap'', hhX, hsafe⟩
+  apply RestCalls.spread_parts_safe hE hEv hv hrv parts k V heap'' args hS hv' hok'
+    (ArgsT_values hAv hargs) (fun p hm => ((hp p hm).transfer hj hxU).transfer hk hy)
+  intro i hi X hz hX heap3 extra hh3 hext
+  have hUX : WExt (trunc i (Nat.le_trans hi hk) U) X := by
+    apply WExt_trans _ hz
+    simpa only [trunc_trunc] using WExt_trunc hi hy
+  have hfX := (restsT_adm _).mono i _ X hUX v
+    ((restsT_adm _).down_le j i (Nat.le_trans hi hk) U v hfun)
+  have hrX := hRc.mono i _ X hUX rv (hRc.down_le j i (Nat.le_trans hi hk) U rv hrm)
+  exact RestCalls.call_elim_rest (s := (Rc, Ps, P, R)) (by simp) hRc hA hAv hP hrv hrX hfX
+    (ArgsT_transfer hA hargs i hi X hz) (hEP i X extra hext) (fun e he => hEv i X e (hext e he))
+    hX hh3
+
+/-- **A variadic call writing no spread.** The callee, the receiver and every
+actual run left to right; the fixed ones meet the signature's parameters, less
+trailing ones `Us` the call omits, each admitting `undefined`, and the further
+ones, at `Qs`, form a pack of the rest `P`. A call that omits a fixed position
+writes no further actual. -/
+theorem pack_call_safe {Rc : Fam} {Ps Us Qs : List Fam} {P R : Fam}
+    (hRc : Adm Rc) (hA : ∀ A ∈ Ps ++ Qs, Adm A) (hAv : ∀ A ∈ Ps ++ Qs, ValOnly A)
+    (hUA : ∀ A ∈ Us, Adm A)
+    (hpack : ∀ k W extra, ArgsT Qs k W extra → P k W (.args extra))
+    (xs : List (Fam × Tm)) (hxs : xs.map Prod.fst = Ps ++ Qs) (hshort : Us = [] ∨ Qs = [])
+    {n W heap f r} (hw : WorldAdm W) (hh : HeapOk n W heap)
+    (hf : Safe (restsT [(Rc, Ps ++ Us, P, R)]) n W heap f)
+    (hr : FutureSafe Rc n W r) (hx : ∀ p ∈ xs, FutureSafe p.1 n W p.2)
+    (hu : ∀ A ∈ Us, FutureSafe A n W .undef) :
+    Safe R n W heap (.invoke f r (xs.map Prod.snd)) := by
+  apply bind (fun f => .invoke f r (xs.map Prod.snd)) Step.callL n W heap f hw hh hf
+  intro j0 hj0 U0 hx0 hu0 heap0 v hok0 hv hfun0
+  apply bind (fun r => .invoke v r (xs.map Prod.snd)) (Step.callRecv hv) j0 U0 heap0 r hu0 hok0
+    ((hr.transfer hj0 hx0) j0 (Nat.le_refl _) U0 (by rw [trunc_id]; exact WExt_refl _) hu0 heap0 hok0)
+  intro j hj1 U hy1 hu' heap' rv hok hrv hrm
+  have hfun := adm_transfer2 (restsT_adm _) hfun0 hj1 hy1 (Nat.le_refl j)
+    (by rw [trunc_id]; exact WExt_refl _)
+  have hxU : WExt (trunc j (Nat.le_trans hj1 hj0) W) U := by
+    apply WExt_trans _ hy1
+    simpa only [trunc_trunc] using WExt_trunc hj1 hx0
+  have hj : j ≤ n := Nat.le_trans hj1 hj0
+  apply bind_list xs (by intro p hm; exact hA p.1 (hxs ▸ List.mem_map_of_mem hm))
+    (fun args => .invoke v rv args)
+    (fun hs => (CallArguments.Prepare.args hv hrv hs).step) hu' hok
+    (fun p hm => (hx p hm).transfer hj hxU)
+  intro k hk V hy hv' heap'' args hok' hargs
+  rw [hxs] at hargs
+  cases k with
+  | zero => trivial
+  | succ k =>
+    let X := trunc k (Nat.le_succ k) V
+    have hX : WorldAdm X := WorldAdm_trunc _ hv'
+    have hhX : HeapOk k X heap'' := HeapOk_trunc k V heap'' hok'
+    have hfV := (restsT_adm _).mono (k + 1) _ V hy v
+      ((restsT_adm _).down_le j (k + 1) hk U v hfun)
+    have hrV := hRc.down k V rv (hRc.mono (k + 1) _ V hy rv (hRc.down_le j (k + 1) hk U rv hrm))
+    have hargsX := ArgsT_transfer hA hargs k (Nat.le_succ k) X (WExt_refl _)
+    have hsplit := ArgsT_take_drop Ps.length hargsX
+    simp only [List.take_left', List.drop_left', List.take_append_of_le_length (Nat.le_refl _),
+      List.take_length, List.drop_append_of_le_length (Nat.le_refl _), List.drop_length,
+      List.nil_append] at hsplit
+    have hacc : ArgsRest (Ps ++ Us) P k X args := by
+      rcases hshort with rfl | rfl
+      · have := ArgsRest_of_exact_extra (Ps := Ps) hsplit.1 (hpack k X _ hsplit.2)
+        simpa only [List.append_nil, List.take_append_drop] using this
+      · have hundef : ∀ A ∈ Us, A k X .undef := by
+          intro A hA'
+          have := safe_value_mem rfl
+            (((hu A hA').transfer hj hxU).transfer hk hy (k + 1) (Nat.le_refl _) V
+              (by rw [trunc_id]; exact WExt_refl _) hv' heap'' hok')
+          exact (hUA A hA').down k V _ this
+        simp only [List.append_nil] at hargsX
+        have hshortX : ArgsShort (Ps ++ Us) k X args :=
+          ArgsShort_of_pad (pad := List.replicate Us.length .undef)
+            (fun a hm => List.eq_of_mem_replicate hm)
+            (ArgsT_append hargsX (ArgsT_undef hundef))
+        have hl : args.length ≤ (Ps ++ Us).length := hshortX.1
+        refine ⟨by rwa [List.take_of_length_le hl], ?_⟩
+        rw [List.drop_eq_nil_of_le hl]
+        exact hpack k X [] trivial
+    obtain ⟨body, hi, hsafe⟩ := hfV.2 (Rc, Ps ++ Us, P, R) (by simp) k (Nat.lt_succ_self k) X
+      (WExt_refl _) hX heap'' hhX rv hrv hrV args (ArgsT_values hAv hargsX) hacc
+    exact Or.inr ⟨X, heap'', body, WExt_refl _, hX, hi.step heap'', hhX, hsafe⟩
 
 /-- **Copying a spread.** `[...s]` reads the store `s` evaluates to where it is
 written and allocates a fresh store of its elements, each at `E`. -/
@@ -901,16 +1018,17 @@ of elements at the element type, then the fixed parameters and the receiver. -/
       HasTy G Γ (.arrLit [.spread s]) T
   /-- **A variadic call.** The fixed actuals meet the selected signature's
   parameters, less trailing ones `Us` the call omits, each admitting
-  `undefined`; each further part is an actual at its element type or a spread
-  of a store whose elements are, and a call that omits a fixed position writes
-  none. The signature may be a function's or a callable object's. -/
+  `undefined`, and a call that omits a fixed position writes nothing further.
+  The further parts fit the rest (`RestParts`): with a spread, each part is at
+  the element rest's element or spreads into it; without one, the parts are
+  at the positions of the rest's tuple contract. The signature may be a
+  function's or a callable object's. -/
   | callRest {Γ : List (Ty ι)} {f r : Tm} {F Rt : Ty ι}
-      {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} {E B : Ty ι} {parts : List (Bool × Ty ι × Tm)} :
-      HasTy G Γ f F → (Rt, xs.map Prod.fst ++ Us, E, B) ∈ restSigs G F → HasTy G Γ r Rt →
+      {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} {P B : Ty ι} {parts : List (Bool × Ty ι × Tm)} :
+      HasTy G Γ f F → (Rt, xs.map Prod.fst ++ Us, P, B) ∈ restSigs G F → HasTy G Γ r Rt →
       (∀ p ∈ xs, HasTy G Γ p.2 p.1) → (∀ A ∈ Us, HasTy G Γ .undef A) → (Us = [] ∨ parts = []) →
       (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) →
-      (∀ p ∈ parts, p.1 = false → p.2.1 = E) →
-      (∀ p ∈ parts, p.1 = true → SpreadsInto G p.2.1 E) →
+      RestParts G P (parts.map fun p => (p.1, p.2.1)) →
       HasTy G Γ (.invoke f r (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2))) B
   /-- **A bound function.** `.bind` saved its target, receiver and prefix in
   slots; allocation stores those values, as they are, in a forwarding
@@ -924,14 +1042,14 @@ of elements at the element type, then the fixed parameters and the receiver. -/
       Represents G F (.arrs [(Rc, Ds, R)] []) →
       HasTy G Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
   /-- **A bound variadic function.** As `bindE`, for a variadic signature of
-  the target: the prefix takes its first fixed positions, and past them the
-  element contract; the result is the positions left, then the element
-  contract, at any receiver. -/
-  | bindRestE {Γ : List (Ty ι)} {F T Rt E R Rc : Ty ι} {t r : Nat} {slots : List Nat}
+  the target whose rest is an element rest: the prefix takes its first fixed
+  positions, and past them the element; the result is the positions left, then
+  the rest, at any receiver. -/
+  | bindRestE {Γ : List (Ty ι)} {F T Rt E El R Rc : Ty ι} {t r : Nat} {slots : List Nat}
       {Ps Qs : List (Ty ι)} :
-      Γ[t]? = some T → (Rt, Ps, E, R) ∈ restSigs G T →
+      Γ[t]? = some T → (Rt, Ps, E, R) ∈ restSigs G T → restElem G E = some El →
       Γ[r]? = some Rt → slots.map (Γ[·]?) = Qs.map some →
-      Qs = Ps.take slots.length ++ List.replicate (slots.length - Ps.length) E →
+      Qs = Ps.take slots.length ++ List.replicate (slots.length - Ps.length) El →
       Represents G F (.arrs [] [(Rc, Ps.drop slots.length, E, R)]) →
       HasTy G Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
   | sub : HasTy G Γ t A → PositiveCertificates.check G A B cert = true → HasTy G Γ t B
@@ -1689,59 +1807,123 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     apply Safe_mono n _ W h _ this
     intro k _ U v hv
     exact (represents_sem hr k U v).mpr ⟨by simpa [tupleFams] using hv, by simp⟩
-  | @callRest Γ f r F Rt xs Us E B parts hf hmem hrt hx hu hshort hp hplain hspread
+  | @callRest Γ f r F Rt xs Us P B parts hf hmem hrt hx hu hshort hp hparts
       ihf ihrt ihx ihu ihp =>
     intro n W h ρ he hw hh
-    have hterm : instantiate 0 ρ (.invoke f r
-          (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2)))
-        = .invoke (instantiate 0 ρ f) (instantiate 0 ρ r)
-          ((xs.map fun p => (meaning G p.1, instantiate 0 ρ p.2)).map Prod.snd ++
-          (parts.map fun p => ((if p.1 then some (meaning G p.2.1) else none),
-            instantiate 0 ρ p.2.2)).map RestCalls.partTerm) := by
-      simp only [instantiate, instantiateArgs_eq_map, List.map_append, List.map_map,
-        Function.comp_def, instantiate_spreadTerm]
-      congr 2
-      apply List.map_congr_left
-      intro p _
-      rcases p with ⟨_ | _, A, t⟩ <;> rfl
-    rw [hterm]
-    apply rest_call_safe (Rc := meaning G Rt) (Ps := xs.map fun p => meaning G p.1)
-      (Us := Us.map (meaning G)) (E := meaning G E) (R := meaning G B)
-      (meaning_adm G Rt) (meaning_valOnly G Rt)
-      (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q.1)
-      (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_valOnly G q.1)
-      (meaning_adm G E) (meaning_valOnly G E)
-      (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
-      _ (by simp [List.map_map, Function.comp_def]) _
-      (by rcases hshort with h | h <;> simp [h])
-      (by
-        intro q hq S hS
-        obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
-        rcases p with ⟨_ | _, A, t⟩
-        · simp at hS
-        · simp only [if_true, Option.some.injEq] at hS
-          subst hS
-          exact ⟨meaning_adm G A, spreadsInto_sound (hspread _ hp' rfl)⟩)
-      hw hh
-      (Safe_mono n (fun m _ U v hv => by
-        have := restsT_of_restSigs hmem hv
-        simpa [List.map_map, List.map_append, Function.comp_def] using this) W h _
-        (ihf n W h ρ he hw hh))
-    · intro j hj U hxU hu heap hok
-      exact ihrt j U heap ρ (he.transfer j hj U hxU) hu hok
-    · intro q hq j hj U hxU hu heap hok
-      obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
-      exact ihx p hp' j U heap ρ (he.transfer j hj U hxU) hu hok
-    · intro q hq j hj U hxU hu heap hok
-      obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
-      rcases p with ⟨_ | _, A, t⟩
-      · have hA : A = E := hplain _ hp' rfl
-        subst hA
-        exact ihp _ hp' j U heap ρ (he.transfer j hj U hxU) hu hok
-      · exact ihp _ hp' j U heap ρ (he.transfer j hj U hxU) hu hok
-    · intro A hA j hj U hxU hu' heap hok
-      obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hA
-      exact ihu q hq j U heap ρ (he.transfer j hj U hxU) hu' hok
+    have hfF : Safe (restsT [(meaning G Rt, (xs.map Prod.fst ++ Us).map (meaning G), meaning G P,
+        meaning G B)]) n W h (instantiate 0 ρ f) :=
+      Safe_mono n (fun m _ U v hv => restsT_of_restSigs hmem hv) W h _ (ihf n W h ρ he hw hh)
+    unfold RestParts at hparts
+    split at hparts
+    · -- A spread: the rest is an element rest.
+      rename_i hany
+      split at hparts
+      · rename_i E hel
+        have hUs : Us = [] := by
+          rcases hshort with h | h
+          · exact h
+          · subst h; simp at hany
+        subst hUs
+        have hterm : instantiate 0 ρ (.invoke f r
+              (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2)))
+            = .invoke (instantiate 0 ρ f) (instantiate 0 ρ r)
+              ((xs.map fun p => (meaning G p.1, instantiate 0 ρ p.2)).map Prod.snd ++
+              (parts.map fun p => ((if p.1 then some (meaning G p.2.1) else none),
+                instantiate 0 ρ p.2.2)).map RestCalls.partTerm) := by
+          simp only [instantiate, instantiateArgs_eq_map, List.map_append, List.map_map,
+            Function.comp_def, instantiate_spreadTerm]
+          congr 2
+          apply List.map_congr_left
+          intro p _
+          rcases p with ⟨_ | _, A, t⟩ <;> rfl
+        have hpart : ∀ p ∈ parts, if p.1 then SpreadsInto G p.2.1 E else p.2.1 = E :=
+          fun p hp' => hparts (p.1, p.2.1) (List.mem_map_of_mem hp')
+        rw [hterm]
+        apply rest_call_safe (Rc := meaning G Rt) (Ps := xs.map fun p => meaning G p.1)
+          (E := meaning G E) (P := meaning G P) (R := meaning G B)
+          (meaning_adm G Rt)
+          (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q.1)
+          (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_valOnly G q.1)
+          (meaning_adm G E) (meaning_valOnly G E) (meaning_adm G P)
+          (fun k W xs hxs => (restElem_sem hel k W _).mpr
+            (elemPack_of_all (meaning_adm G E) (fun u hu => (meaning_value (hxs u hu)).2) hxs))
+          _ (by simp [List.map_map, Function.comp_def]) _
+          (by
+            intro q hq S hS
+            obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
+            rcases p with ⟨_ | _, A, t⟩
+            · simp at hS
+            · simp only [if_true, Option.some.injEq] at hS
+              subst hS
+              have := hpart _ hp'
+              simp only [if_true] at this
+              exact ⟨meaning_adm G A, spreadsInto_sound this⟩)
+          hw hh (by simpa [List.map_map, Function.comp_def] using hfF)
+        · intro j hj U hxU hu heap hok
+          exact ihrt j U heap ρ (he.transfer j hj U hxU) hu hok
+        · intro q hq j hj U hxU hu heap hok
+          obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
+          exact ihx p hp' j U heap ρ (he.transfer j hj U hxU) hu hok
+        · intro q hq j hj U hxU hu heap hok
+          obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
+          rcases p with ⟨_ | _, A, t⟩
+          · have hA : A = E := by simpa using hpart _ hp'
+            subst hA
+            exact ihp _ hp' j U heap ρ (he.transfer j hj U hxU) hu hok
+          · exact ihp _ hp' j U heap ρ (he.transfer j hj U hxU) hu hok
+      · exact hparts.elim
+    · -- No spread: the parts are at the positions of the rest's tuple contract.
+      rename_i hany
+      split at hparts
+      · rename_i T hPT
+        obtain ⟨hreq, hbound, hpos⟩ := hparts
+        simp only [List.any_map, List.any_eq_true, not_exists, not_and, Function.comp_def,
+          Bool.not_eq_true] at hany
+        have hterm : instantiate 0 ρ (.invoke f r
+              (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2)))
+            = .invoke (instantiate 0 ρ f) (instantiate 0 ρ r)
+              ((xs.map (fun p => (meaning G p.1, instantiate 0 ρ p.2)) ++
+                parts.map (fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2))).map Prod.snd) := by
+          simp only [instantiate, instantiateArgs_eq_map, List.map_append, List.map_map,
+            Function.comp_def, instantiate_spreadTerm]
+          congr 2
+          apply List.map_congr_left
+          intro p hp'
+          simp [spreadTerm, hany p hp']
+        rw [hterm]
+        apply pack_call_safe (Rc := meaning G Rt) (Ps := xs.map fun p => meaning G p.1)
+          (Us := Us.map (meaning G)) (Qs := parts.map fun p => meaning G p.2.1)
+          (P := meaning G P) (R := meaning G B)
+          (meaning_adm G Rt)
+          (by
+            intro A hA
+            rcases List.mem_append.mp hA with hA | hA <;>
+              obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA <;> exact meaning_adm G _)
+          (by
+            intro A hA
+            rcases List.mem_append.mp hA with hA | hA <;>
+              obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA <;> exact meaning_valOnly G _)
+          (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
+          (fun k W extra ha => restParts_pack hPT (Qs := parts.map (·.2.1))
+            (by simpa using hreq) (by simpa using hbound)
+            (by
+              intro i hi
+              have := hpos i (by simpa using hi)
+              simpa [List.getElem?_map, Option.map_map, Function.comp_def] using this)
+            (by simpa [List.map_map, Function.comp_def] using ha))
+          _ (by simp [List.map_map, Function.comp_def])
+          (by rcases hshort with h | h <;> simp [h])
+          hw hh (by simpa [List.map_map, Function.comp_def] using hfF)
+        · intro j hj U hxU hu heap hok
+          exact ihrt j U heap ρ (he.transfer j hj U hxU) hu hok
+        · intro q hq j hj U hxU hu heap hok
+          rcases List.mem_append.mp hq with hq | hq <;> obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
+          · exact ihx p hp' j U heap ρ (he.transfer j hj U hxU) hu hok
+          · exact ihp p hp' j U heap ρ (he.transfer j hj U hxU) hu hok
+        · intro A hA j hj U hxU hu' heap hok
+          obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hA
+          exact ihu q hq j U heap ρ (he.transfer j hj U hxU) hu' hok
+      · exact hparts.elim
   | @bindE Γ F T Rt R Rc t r saved Ps Ds ht hsig hr hpre hF =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def,
@@ -1765,7 +1947,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       · simpa [Model.slots] using (Step.makeFields (h := h) (ns := []) (vs := [])
           (c := .bound (ρ t) (ρ r) (saved.map ρ)) (by simp) rfl)
       · exact (represents_sem hF m _ _).mpr ⟨by simpa using hdown, hdown.1, by simp⟩
-  | @bindRestE Γ F T Rt E R Rc t r saved Ps Qs ht hsig hr hpre hQs hF =>
+  | @bindRestE Γ F T Rt E El R Rc t r saved Ps Qs ht hsig hel hr hpre hQs hF =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def,
       Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero]
@@ -1776,19 +1958,32 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       have hpv := ArgsT_slots he hpre
       subst hQs
       have hlen : (saved.map ρ).length = saved.length := List.length_map _
-      have hpv' : ArgsT ((Ps.map (meaning G)).take (saved.map ρ).length ++
-          List.replicate ((saved.map ρ).length - (Ps.map (meaning G)).length) (meaning G E))
-          (m + 1) W (saved.map ρ) := by
-        simpa [List.map_take, List.map_replicate, hlen] using hpv
+      have hvals := ArgsT_values (by
+        intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_valOnly G q) hpv
+      have hsplit := ArgsT_take_drop Ps.length hpv
+      rw [← List.map_take, ← List.map_drop, (prefix_take_drop Ps saved.length El).1,
+        (prefix_take_drop Ps saved.length El).2, List.map_replicate] at hsplit
+      have hpv' : ArgsT ((Ps.map (meaning G)).take (saved.map ρ).length) (m + 1) W
+          ((saved.map ρ).take (Ps.map (meaning G)).length) := by
+        simpa [List.map_take, hlen] using hsplit.1
+      have hext : ∀ j (hj : j ≤ m + 1) (U : WorldT j), WExt (trunc j hj W) U →
+          ∀ ys, meaning G E j U (.args ys) →
+            meaning G E j U (.args ((saved.map ρ).drop (Ps.map (meaning G)).length ++ ys)) := by
+        intro j hj U hx ys hy
+        rw [restElem_sem hel] at hy ⊢
+        refine elemPack_append (fun u hu => ?_) (fun u hu i hi U' hx' => ?_) hy
+        · have hu' := List.mem_of_mem_drop hu
+          obtain ⟨q, -, rfl⟩ := List.mem_map.mp hu'
+          exact he.1 q
+        · have hu' := ArgsT_replicate_all hsplit.2 u (by simpa using hu)
+          have hWU : WExt (trunc i (by omega) W) U' :=
+            WExt_trans (by simpa only [trunc_trunc] using WExt_trunc (Nat.le_of_lt hi) hx) hx'
+          exact (meaning_adm G El).mono i _ U' hWU u
+            ((meaning_adm G El).down_le (m + 1) i (by omega) W u hu')
       have hbound := restsT_bound (Rc := meaning G Rc) (fs := [])
         (meaning_adm G Rt) (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
         (meaning_adm G E) hrest (meaning_value (he.2 r Rt hr)).1 (he.1 r) (he.2 r Rt hr) hpv'
-        (ArgsT_values (by
-          intro A hA
-          rcases List.mem_append.mp hA with hA | hA
-          · obtain ⟨q, _, rfl⟩ := List.mem_map.mp (List.mem_of_mem_take hA); exact meaning_valOnly G q
-          · rw [List.eq_of_mem_replicate hA]; exact meaning_valOnly G E) hpv')
-        (by intro a ha; obtain ⟨q, _, rfl⟩ := List.mem_map.mp ha; exact he.1 q)
+        hext hvals (by intro a ha; obtain ⟨q, _, rfl⟩ := List.mem_map.mp ha; exact he.1 q)
       have hdown := (restsT_adm _).down m W _ hbound
       refine Or.inr ⟨trunc m (Nat.le_succ m) W, h,
         .objAt [] (.bound (ρ t) (ρ r) (saved.map ρ)), WExt_refl _, WorldAdm_trunc _ hw, ?_,

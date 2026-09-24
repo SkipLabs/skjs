@@ -66,8 +66,13 @@ let encode (proposal : Proposal.t) =
       let arrows = Array (List.map (fun (a:Semantic.signature) ->
         Array [labels a.receiver;Array [Array (List.map labels a.params);labels a.result]]) fixed) in
       let variadic = List.filter_map (fun (a:Semantic.signature) ->
-        Option.map (fun element -> Array [labels a.receiver;Array [Array (List.map labels a.params);
-          Array [labels element;labels a.result]]]) a.variadic) shape.calls in
+        Option.map (fun element ->
+          (* A rest's type is the pack of any number of actuals at its element. *)
+          let rest = intern (Array [Object ["pack",Object ["first",Object [
+            "required",Array [];"optional",Array [];"rest",labels element;"readonly",Bool false];
+            "rest",Array []]]]) in
+          Array [labels a.receiver;Array [Array (List.map labels a.params);
+          Array [Array [int rest];labels a.result]]]) a.variadic) shape.calls in
       let calls = ("arrows",arrows) :: (if variadic = [] then [] else ["variadic",Array variadic]) in
       let clause = match shape.elements with
         | Some sequence ->

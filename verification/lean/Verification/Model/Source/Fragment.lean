@@ -88,7 +88,9 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
       -- says which receivers and actual lists a caller may write.
       let fixed := signatures.filterMap fun (Rc, Ds, E, R) =>
         if E.isNone then some (Rc, Ds, R) else none
-      let variadic := signatures.filterMap fun (Rc, Ds, E, R) => E.map fun E => (Rc, Ds, E, R)
+      -- A rest's type is the pack of any number of actuals at its element.
+      let variadic ← signatures.filterMapM fun (Rc, Ds, E, R) => E.mapM fun E => do
+        return (Rc, Ds, [← SourceTypes.use (.pack ⟨[], [], some E, false⟩ [])], R)
       return [← SourceTypes.use (.arrs fixed.eraseDups variadic.eraseDups)]
     else if (← jStr (← jField atom "a")) == "constructor" then
       -- A construct signature: what a class meets and no plain function does.

@@ -31,27 +31,35 @@ theorem checkDomains_iff [DecidableEq ι] {table} (As Bs : List (List ι)) :
   | nil => cases Bs <;> simp [checkDomains, Domains]
   | cons a As ih => cases Bs <;> simp [checkDomains, Domains, ih]
 
+instance {elem : List ι → Option (List ι)} {R : List ι → List ι → Prop} [DecidableRel R]
+    (As : List (List ι)) (E : List ι) : Decidable (ElemRest elem R As E) := by
+  unfold ElemRest; split <;> infer_instance
+
+instance [DecidableEq ι] {elem : List ι → Option (List ι)} {R : List ι → List ι → Prop}
+    [DecidableRel R] (As : List (List ι)) (E : List ι) : Decidable (IntoRest elem R As E) := by
+  unfold IntoRest; infer_instance
+
 /-- A variadic source signature covering a fixed arrow, decided. -/
-def checkRestFixed [DecidableEq ι] (table : Table ι)
+def checkRestFixed [DecidableEq ι] (G : NormalGraph ι) (table : Table ι)
     (s : List ι × List (List ι) × List ι × List ι)
     (Rt : List ι) (As : List (List ι)) (d : List ι) : Bool :=
   decide (Rel table Rt s.1) && checkDomains table (As.take s.2.1.length) s.2.1 &&
-    decide ((∀ A ∈ As.drop s.2.1.length, Rel table A s.2.2.1) ∧
+    decide (ElemRest (restElem G) (Rel table) (As.drop s.2.1.length) s.2.2.1 ∧
       (s.2.2.2 = [] ∨ Rel table s.2.2.2 d))
 
-theorem checkRestFixed_iff [DecidableEq ι] {table : Table ι} {s Rt As d} :
-    checkRestFixed table s Rt As d = true ↔ RestFixed (Rel table) s Rt As d := by
+theorem checkRestFixed_iff [DecidableEq ι] {G : NormalGraph ι} {table : Table ι} {s Rt As d} :
+    checkRestFixed G table s Rt As d = true ↔ RestFixed (restElem G) (Rel table) s Rt As d := by
   simp [checkRestFixed, RestFixed, checkDomains_iff, and_assoc]
 
 /-- One variadic signature covering another, decided. -/
-def checkRestCovers [DecidableEq ι] (table : Table ι)
+def checkRestCovers [DecidableEq ι] (G : NormalGraph ι) (table : Table ι)
     (p q : List ι × List (List ι) × List ι × List ι) : Bool :=
   decide (Rel table q.1 p.1) && checkDomains table (q.2.1.take p.2.1.length) p.2.1 &&
-    decide ((∀ A ∈ q.2.1.drop p.2.1.length, Rel table A p.2.2.1) ∧ Rel table q.2.2.1 p.2.2.1 ∧
-      Rel table p.2.2.2 q.2.2.2)
+    decide (IntoRest (restElem G) (Rel table) (q.2.1.drop p.2.1.length) p.2.2.1 ∧
+      Rel table q.2.2.1 p.2.2.1 ∧ Rel table p.2.2.2 q.2.2.2)
 
-theorem checkRestCovers_iff [DecidableEq ι] {table : Table ι} {p q} :
-    checkRestCovers table p q = true ↔ RestCovers (Rel table) p q := by
+theorem checkRestCovers_iff [DecidableEq ι] {G : NormalGraph ι} {table : Table ι} {p q} :
+    checkRestCovers G table p q = true ↔ RestCovers (restElem G) (Rel table) p q := by
   simp [checkRestCovers, RestCovers, checkDomains_iff, and_assoc]
 
 /-- One checker for ordered argument-list coverage; every union certificate
@@ -63,7 +71,7 @@ def checkArrow [DecidableEq ι] (G : NormalGraph ι) (table : Table ι)
   | .emptyRecv => decide (Rt = [])
   | .source p => decide (p ∈ L ∧ Rel table Rt p.1 ∧ (p.2.2 = [] ∨ Rel table p.2.2 d)) &&
       checkDomains table As p.2.1
-  | .rest s => decide (s ∈ S) && checkRestFixed table s Rt As d
+  | .rest s => decide (s ∈ S) && checkRestFixed G table s Rt As d
   | .union pre a b suffix left right => decide (As = pre ++ (a ++ b) :: suffix) &&
       checkArrow G table L S Rt (pre ++ a :: suffix) d left &&
       checkArrow G table L S Rt (pre ++ b :: suffix) d right
@@ -74,7 +82,7 @@ def checkArrow [DecidableEq ι] (G : NormalGraph ι) (table : Table ι)
       decide (∀ i ∈ b, ∀ k ∈ b', compatible G i k = true → Rel table [i] d)
 
 theorem checkArrow_sound [DecidableEq ι] {G : NormalGraph ι} {table L S Rt As d cert}
-    (h : checkArrow G table L S Rt As d cert = true) : CallArrow (compatible G) (Rel table) L S Rt As d := by
+    (h : checkArrow G table L S Rt As d cert = true) : CallArrow (compatible G) (restElem G) (Rel table) L S Rt As d := by
   induction cert generalizing Rt As d with
   | empty => exact .empty (of_decide_eq_true h)
   | emptyRecv =>
@@ -100,7 +108,7 @@ theorem checkArrow_sound [DecidableEq ι] {G : NormalGraph ι} {table L S Rt As 
     exact .combine (ih h.1.1) (ih' h.1.2) h.2
 
 theorem checkArrow_complete [DecidableEq ι] {G : NormalGraph ι} {table L S Rt As d}
-    (h : CallArrow (compatible G) (Rel table) L S Rt As d) :
+    (h : CallArrow (compatible G) (restElem G) (Rel table) L S Rt As d) :
     ∃ cert, checkArrow G table L S Rt As d cert = true := by
   induction h with
   | emptyRecv => exact ⟨.emptyRecv, by simp [checkArrow]⟩
@@ -172,10 +180,10 @@ def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs
         CoversViews (Rel table) (a :: bs) vs ws ∧ (∀ y ∈ iy, ∃ x ∈ ix, Rel table x y) ∧
         CoversOptional (Rel table) (a :: bs) os ps)
   | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T => decide
-      (ArrowsChecked G table proofs L S M ∧ ∀ t ∈ T, ∃ s ∈ S, checkRestCovers table s t = true)
+      (ArrowsChecked G table proofs L S M ∧ ∀ t ∈ T, ∃ s ∈ S, checkRestCovers G table s t = true)
   | .callable a bs L S, .callable c ds M T => decide
       (CoversFields (Rel table) (a :: bs) (c :: ds) ∧ ArrowsChecked G table proofs L S M ∧
-       ∀ t ∈ T, ∃ s ∈ S, checkRestCovers table s t = true)
+       ∀ t ∈ T, ∃ s ∈ S, checkRestCovers G table s t = true)
   | .ctors L, .ctors M => decide (∀ q ∈ M, ∃ p ∈ L, Domains (Rel table) q.1 p.1 ∧ Rel table p.2 q.2)
   | .pack a bs, .pack c ds => decide (∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversPack (Rel table) p q)
   | _, _ => false
@@ -240,7 +248,7 @@ theorem checkClause_mono [DecidableEq ι] {G : NormalGraph ι} {table a b es es'
 
 private theorem arrow_evidence_complete [DecidableEq ι] {G : NormalGraph ι} {table} {L M : Ops ι}
     {S : List (List ι × List (List ι) × List ι × List ι)}
-    (h : ∀ p ∈ M, CallArrow (compatible G) (Rel table) L S p.1 p.2.1 p.2.2) :
+    (h : ∀ p ∈ M, CallArrow (compatible G) (restElem G) (Rel table) L S p.1 p.2.1 p.2.2) :
     ∃ es : Evidence ι, ∀ p ∈ M, ∃ e ∈ es,
       e.1 = L ∧ e.2.1 = p ∧ checkArrow G table L S p.1 p.2.1 p.2.2 e.2.2 = true := by
   have hx : ∀ p ∈ M, ∃ es : Evidence ι, ∃ e ∈ es,

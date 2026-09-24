@@ -315,9 +315,12 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let rest ← if restTerm == .null then pure none else
       some <$> lowerType ds owner params seen restTerm
     let result ← lowerType ds owner params seen (← field term "result")
-    let row : Clause (List Nat) := match rest with
-      | none => .arrs [(receiver, domains.toList, result)] []
-      | some element => .arrs [] [(receiver, domains.toList, element, result)]
+    -- A rest's type is the pack of any number of actuals at its element.
+    let row : Clause (List Nat) ← match rest with
+      | none => pure (.arrs [(receiver, domains.toList, result)] [])
+      | some element => do
+        let pack ← use (.pack ⟨[], [], some element, false⟩ [])
+        pure (.arrs [] [(receiver, domains.toList, [pack], result)])
     return [← use row]
   | "constructor" =>
     CellClaims.fieldsExactly term ["k", "params", "result", "span"]
@@ -360,8 +363,10 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       let rest ← field call "rest"
       let result ← lowerType ds owner params seen (← field call "result")
       if rest == .null then fixed := fixed ++ [(receiver, domains.toList, result)]
-      else variadic := variadic ++ [(receiver, domains.toList,
-        ← lowerType ds owner params seen rest, result)]
+      else
+        let element ← lowerType ds owner params seen rest
+        let pack ← use (.pack ⟨[], [], some element, false⟩ [])
+        variadic := variadic ++ [(receiver, domains.toList, [pack], result)]
     let row ← if fixed.isEmpty && variadic.isEmpty then
         if indexes.isEmpty then use (.refs writes [] views optional)
         else use (.dict writes [] views indexes optional)

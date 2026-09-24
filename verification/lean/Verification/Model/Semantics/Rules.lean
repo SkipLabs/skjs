@@ -387,12 +387,13 @@ theorem make_dict_rule {Q A : Fam} (hA : Adm A)
 
 /-- **A literal allocates a store.** One fresh location per element, each
 under its family, and the store meets the claimed tuple contract by
-`listT_alloc`; the continuation sees it at the extended world. -/
-theorem arr_alloc_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
+`listT_alloc`; the continuation sees it at the extended world. The allocation
+is a step, so the elements need their families below the budget only. -/
+theorem arr_alloc_rule_below {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
     (n : Nat) (W : WorldT n) (h : Heap) (vs : List Val)
     (hAs : As.length = vs.length) (hvals : ∀ v ∈ vs, isVal v = true)
     (hadm : WorldAdm W) (hok : HeapOk n W h)
-    (hv : ∀ p ∈ As.zip vs, p.1 n W p.2)
+    (hv : ∀ p ∈ As.zip vs, ∀ (j : Nat) (hj : j < n), p.1 j (trunc j (Nat.le_of_lt hj) W) p.2)
     (result : ∀ j (hj : j < n) (U : WorldT j),
       WExt (trunc j (Nat.le_of_lt hj) W) U →
       (∀ (i : Nat) (hi : i < As.length), lookup U (h.length + i) = some (res (As[i]'hi))) →
@@ -414,7 +415,7 @@ theorem arr_alloc_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
       obtain ⟨⟨A, v⟩, hm, rfl⟩ := List.mem_map.mp hq
       show A j _ v
       rw [trunc_trunc]
-      exact (hA A (List.of_mem_zip hm).1).down_le (p + 1) j (by omega) W v (hv (A, v) hm)
+      exact hv (A, v) hm j (by omega)
     refine Or.inr ⟨appendWs (trunc p (Nat.le_succ p) W) (As.map (fun A => (res A : Ctr p))),
       h ++ vs, .arr (elemSlots h.length vs.length),
       WExt_appendWs _ _, WorldAdm_appendWs (WorldAdm_trunc _ hadm) hcadm,
@@ -433,6 +434,20 @@ theorem arr_alloc_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
       rw [← hlen] at this
       rw [this]
       simp [List.getElem?_map, List.getElem?_eq_getElem hi]
+
+theorem arr_alloc_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
+    (n : Nat) (W : WorldT n) (h : Heap) (vs : List Val)
+    (hAs : As.length = vs.length) (hvals : ∀ v ∈ vs, isVal v = true)
+    (hadm : WorldAdm W) (hok : HeapOk n W h)
+    (hv : ∀ p ∈ As.zip vs, p.1 n W p.2)
+    (result : ∀ j (hj : j < n) (U : WorldT j),
+      WExt (trunc j (Nat.le_of_lt hj) W) U →
+      (∀ (i : Nat) (hi : i < As.length), lookup U (h.length + i) = some (res (As[i]'hi))) →
+      Q j U (.arr (elemSlots h.length vs.length))) :
+    Safe Q n W h (.arrLit vs) :=
+  arr_alloc_rule_below hA n W h vs hAs hvals hadm hok
+    (fun p hp j hj => (hA p.1 (List.of_mem_zip hp).1).down_le n j (Nat.le_of_lt hj) W p.2 (hv p hp))
+    result
 
 /-- **An element read.** The index names a location; its contract implies
 the family, which is all the read observes. -/

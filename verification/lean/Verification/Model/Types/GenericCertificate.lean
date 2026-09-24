@@ -12,11 +12,6 @@ namespace Verification.Model.GenericCertificate
 open ProgramTyping PositiveGraphs PositiveRules Tower
 open DirectObligation
 
-/-- The semantic requirements on every interpretation of a rigid name. -/
-def ClosedAssign (eta : String -> Fam) : Prop :=
-  forall name, Adm (eta name) /\ ValOnly (eta name) /\
-    forall n W v, eta name n W v -> Scoped 0 v
-
 /-- Runtime slots distinguish immutable values from private mutable locations.
 `cell A` records the location's fixed contract, never its current contents. It
 is internal to certificates, not a second source type representation. -/
@@ -37,28 +32,6 @@ def EnvOk (G : NormalGraph Nat) (eta : String -> Fam)
     (Gamma : List Slot) (rho : Env) (n : Nat) (W : WorldT n) : Prop :=
   (forall i, Scoped 0 (rho i)) /\
     forall i (A : Slot), Gamma[i]? = some A -> A.denote G eta n W (rho i)
-
-theorem Ty.denote_adm {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta) :
-    forall A : Ty, Adm (A.denote G eta)
-  | .rigid name => (hC name).1
-  | .ground labels => meaning_adm G labels
-  | .top => ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
-  | .arrow _ _ _ => callsT_adm _
-  | .array _ => recT_adm _
-  | .variadic .. => restsT_adm _
-
-theorem Ty.denote_value {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta)
-    {A : Ty} {n W v} (h : A.denote G eta n W v) :
-    isVal v = true /\ Scoped 0 v := by
-  cases A with
-  | rigid name => exact ⟨(hC name).2.1 n W v h, (hC name).2.2 n W v h⟩
-  | ground labels => exact ProgramTyping.meaning_value h
-  | top => exact h
-  | variadic _ _ _ _ | arrow _ params result =>
-    exact ⟨h.1.val, h.1.scoped⟩
-  | array element =>
-    obtain ⟨fields, rfl, _⟩ := h
-    exact ⟨rfl, trivial⟩
 
 theorem Slot.denote_adm {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta) :
     ∀ A : Slot, Adm (A.denote G eta)
@@ -440,7 +413,7 @@ theorem Proof.check_safe {G : NormalGraph Nat} {parameters} {Gamma : List Slot}
       · simp only [Proof.check, hp, hle, if_true, Option.some.injEq, Prod.mk.injEq] at hc
         obtain ⟨rfl, rfl⟩ := hc
         intro n W heap rho he hw hh
-        exact Safe_mono n (fun k _ => Ty.leUnder_sound hs hle k) W heap _
+        exact Safe_mono n (fun k _ => Ty.leUnder_sound hC hs hle k) W heap _
           (Proof.check_safe (proof := body) hp hC hs hG n W heap rho he hw hh)
       · simp [Proof.check, hp, hle] at hc
   | letE init body =>
@@ -481,7 +454,7 @@ theorem Proof.check_safe {G : NormalGraph Nat} {parameters} {Gamma : List Slot}
             intro n W heap rho he hw hh
             apply default_safe hC hi _ he hw hh
             intro n W heap rho he hw hh
-            exact Safe_mono n (fun k _ => Ty.leUnder_sound hs hle k) W heap _
+            exact Safe_mono n (fun k _ => Ty.leUnder_sound hC hs hle k) W heap _
               (Proof.check_safe hp hC hs hG n W heap rho he hw hh)
           · contradiction
   | lambda receiver inputs body =>
@@ -533,7 +506,7 @@ theorem Proof.check_safe {G : NormalGraph Nat} {parameters} {Gamma : List Slot}
                 exact fun _ _ _ hv => (Ty.denote_value hC hv).1)
               hw hh
             apply (by simpa only [List.map_map, Function.comp_def] using call)
-            · have safe := Safe_mono n (fun j _ => Ty.leUnder_sound hs ht j)
+            · have safe := Safe_mono n (fun j _ => Ty.leUnder_sound hC hs ht j)
                 W heap _ (Proof.check_safe (proof := callee) hf hC hs hG n W heap rho he hw hh)
               simpa only [Ty.denote, Ty.denoteList_eq_map, List.map_map,
                 Function.comp_def] using safe
@@ -595,7 +568,7 @@ theorem Certificate.check_safe {G : NormalGraph Nat} (hG : Primitives G) {c : Ce
       refine ⟨term, ?_, ?_⟩
       · simp [Certificate.check, hp, hr]
       · intro eta hC hs n W heap rho he hw hh
-        exact Safe_mono n (fun k _ => Ty.leUnder_sound hs hr k) W heap _
+        exact Safe_mono n (fun k _ => Ty.leUnder_sound hC hs hr k) W heap _
           (c.proof.check_safe hp hC hs hG n W heap rho he hw hh)
     · have hf : result.leUnder c.parameters c.result = false := eq_false_of_ne_true hr
       change (if result.leUnder c.parameters c.result then some body else none) = some term at hc
@@ -610,7 +583,7 @@ invariant array storage. No instantiation is chosen by this rule. -/
 theorem array_collect_safe {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta)
     (E : Ty) {n : Nat} {W : WorldT n} {h : Heap} {extra : List Tm}
     (hw : WorldAdm W) (hh : HeapOk n W h)
-    (he : ∀ e ∈ extra, E.denote G eta n W e) :
+    (he : elemPack (E.denote G eta) n W (.args extra)) (hvals : CallArguments.Values extra) :
     Safe ((Ty.array E).denote G eta) n W h (CallArguments.restArray extra) := by
   let S := listT ⟨[], [], some (E.denote G eta), false⟩
   apply bind_list [(S, .arrLit extra)] (by simp [S, listT_adm])
@@ -619,24 +592,16 @@ theorem array_collect_safe {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta)
   · intro p hp j hj U hx hu heap hok
     simp only [List.mem_singleton] at hp
     subst p
-    have he' : ∀ e ∈ extra, E.denote G eta j U e := fun e hm =>
-      (Ty.denote_adm hC E).mono j _ U hx e
-        ((Ty.denote_adm hC E).down_le n j hj W e (he e hm))
-    apply arr_alloc_rule (As := List.replicate extra.length (E.denote G eta))
-      (by intro A hA; rw [List.eq_of_mem_replicate hA]; exact Ty.denote_adm hC E)
-      j U heap extra (by simp) (fun v hv => (Ty.denote_value hC (he' v hv)).1) hu hok
+    have he' := (elemPack_adm _).mono j _ U hx _ ((elemPack_adm _).down_le n j hj W _ he)
+    obtain ⟨vs, hvs, -, hf⟩ := he'
+    cases hvs
+    exact RestCalls.pack_alloc_safe (T := ⟨[], [], some (E.denote G eta), false⟩)
       (by
-        intro p hp
-        rw [List.eq_of_mem_replicate (List.of_mem_zip hp).1]
-        exact he' p.2 (List.of_mem_zip hp).2)
-    intro k hk V hy hl
-    have ht := listT_alloc (T := ⟨[], [], some (E.denote G eta), false⟩)
-      (As := List.replicate extra.length (E.denote G eta))
-      (by simp) (by simp) (by
         intro i A hA
-        obtain ⟨hi, rfl⟩ := List.getElem?_eq_some_iff.mp hA
-        simp [positionFam]) hl
-    simpa [S] using ht
+        rw [positionFam_elem] at hA
+        cases hA
+        exact Ty.denote_adm hC E)
+      hu hok (hf _ (List.mem_singleton_self _)) hvals
   · intro j hj U hx hu heap args hok hargs
     have hlen := ArgsT_length hargs
     apply make_fields_rule (As := [S]) (by simp [S, listT_adm]) j U heap .absent
@@ -665,7 +630,7 @@ theorem rest_invocation_of_inputs {G : NormalGraph Nat} {eta Gamma term n W rho}
       WorldAdm U → HeapOk j U heap →
       Safe (result.denote G eta) j U heap (instantiate 0 env term)) :
     RestCalls.RestSpec inputs.length (receiver.denote G eta) (inputs.map (Input.denote G eta))
-      (element.denote G eta) (result.denote G eta) n W
+      (elemPack (element.denote G eta)) (result.denote G eta) n W
       (instantiate (inputs.length + 2) rho term) := by
   apply RestCalls.restSpec_of_body (instantiate_scoped rho he.1 term (inputs.length + 2))
     (by simp) (Ty.denote_adm hC receiver) (by
@@ -673,7 +638,7 @@ theorem rest_invocation_of_inputs {G : NormalGraph Nat} {eta Gamma term n W rho}
       obtain ⟨p, _, rfl⟩ := List.mem_map.mp hA
       exact Slot.denote_adm hC p.slot)
     (Ty.denote_adm hC (.array element))
-    (fun _ _ _ _ hw hh hx => array_collect_safe hC element hw hh hx)
+    (fun _ _ _ _ hw hh hx hv => array_collect_safe hC element hw hh hx hv)
   intro j hj U hx hu heap hh r hr args a ha harr _
   have hall : ArgsT ((Input.value receiver :: inputs).map (Input.denote G eta)) j U
       (r :: args) := ⟨hr, ha⟩
@@ -737,7 +702,7 @@ def ClosureCertificate.Safe (G : NormalGraph Nat) (c : ClosureCertificate) : Pro
             n W (instantiate (c.inputs.length + 1) rho term)
         | some E => RestCalls.RestSpec c.inputs.length (c.receiver.denote G eta)
             (c.inputs.map (Input.denote G eta))
-            (E.denote G eta) (c.result.denote G eta) n W
+            (elemPack (E.denote G eta)) (c.result.denote G eta) n W
             (instantiate (c.inputs.length + 2) rho term)
 
 theorem ClosureCertificate.check_safe {G : NormalGraph Nat} (hG : Primitives G)

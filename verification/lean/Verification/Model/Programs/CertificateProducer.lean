@@ -400,10 +400,11 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         return ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ .letE [ea,eb])
     | .invoke f recv args =>
       -- A variadic callee: the receiver at the signature's receiver, the fixed
-      -- actuals at its parameters, then each part at its element type, or a
-      -- spread of a pool store type whose elements are.
+      -- actuals at its parameters, then the further parts: with a spread, each
+      -- at the element rest's element, or a spread of a pool store type whose
+      -- elements are; without one, each at its position in the rest's tuple.
       let variadic := pool.findSome? fun F => do
-        (restSigs G F).findSome? fun (Rt, Ps, E, B) => do
+        (restSigs G F).findSome? fun (Rt, Ps, P, B) => do
           -- Fixed actuals first; a shorter call omits trailing fixed positions,
           -- each proving `undefined`, and writes no further part.
           let k := min args.length Ps.length
@@ -415,13 +416,18 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           let er ← recur Γ recv Rt
           let eas ← (args.zip Ps).mapM fun (a,D) => recur Γ a D
           let eus ← omitted.mapM fun D => recur Γ .undef D
-          let eps ← parts.mapM fun a => match a with
-            | .spread s => pool.findSome? fun S =>
-                if decide (SpreadsInto G S E) then recur Γ s S else none
-            | a => recur Γ a E
           let flags := parts.map fun a => match a with | .spread _ => true | _ => false
+          let eps ← if flags.any id then do
+              let E ← restElem G P
+              parts.mapM fun a => match a with
+                | .spread s => pool.findSome? fun S =>
+                    if decide (SpreadsInto G S E) then recur Γ s S else none
+                | a => recur Γ a E
+            else do
+              let [.pack T []] := expand G P | none
+              parts.zipIdx.mapM fun (a, i) => do recur Γ a (← positionTy T i)
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,B⟩
-            (.callRest k omitted.length flags E) (ef :: er :: eas ++ eus ++ eps)
+            (.callRest k omitted.length flags P) (ef :: er :: eas ++ eus ++ eps)
           if checkTree G e then coerce G pool e A else none
       if let some e := variadic then return some e
       let direct := pool.findSome? fun F => do

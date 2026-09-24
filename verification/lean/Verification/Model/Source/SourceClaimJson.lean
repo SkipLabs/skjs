@@ -360,8 +360,11 @@ private partial def groundIn (T : SourceTypes.Table) :
       let (T, clause) ← match rest with
         | none => pure (T, PositiveNormalization.Clause.arrs [(rc, ps, r)] [])
         | some e => do
+          -- A rest's type is the pack of any number of actuals at its element.
           let (T, E) ← groundIn T e
-          pure (T, PositiveNormalization.Clause.arrs [] [(rc, ps, E, r)])
+          let pack := PositiveNormalization.Clause.pack ⟨[], [], some E, false⟩ []
+          let T := SourceTypes.intern T pack
+          pure (T, PositiveNormalization.Clause.arrs [] [(rc, ps, [SourceTypes.label T pack], r)])
       let T := SourceTypes.intern T clause
       pure (T, [SourceTypes.label T clause])
   | .param name => throw s!"still the rigid parameter '{name}'"
@@ -546,7 +549,9 @@ private def compile (T : SourceTypes.Table) (f : Fragment.Fn) (claims : Function
     | none => pure (T, acc ++ [(rc, ps, r)], rest)
     | some e => do
       let (T, E) ← (groundIn T (subst σ e)).mapError (refuse c.span)
-      pure (T, acc, rest ++ [(rc, ps, E, r)])) (T, [], [])
+      let pack := PositiveNormalization.Clause.pack ⟨[], [], some E, false⟩ []
+      let T := SourceTypes.intern T pack
+      pure (T, acc, rest ++ [(rc, ps, [SourceTypes.label T pack], r)])) (T, [], [])
   let clause : PositiveNormalization.Clause (List Nat) := .arrs arrows variadic
   let T := SourceTypes.intern T clause
   let arrow := SourceTypes.label T clause

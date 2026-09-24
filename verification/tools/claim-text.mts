@@ -961,6 +961,7 @@ const _handled = {
   arrs: 1,
   callable: 1,
   ctors: 1,
+  pack: 1,
   bigint: 1,
   symbol: 1,
 } satisfies Record<StringClause | ClauseKey, 1>;
@@ -1096,7 +1097,8 @@ function liftClause(types: unknown, clause: unknown, depth: number): unknown {
 }
 
 /** A clause's call signatures as function atoms: its fixed arrows, then its
-variadic ones, whose further actuals are at `rest`. */
+variadic ones, whose further actuals are at `rest`: an element rest's element,
+or the rest type itself when it is no element rest. */
 function liftSignatures(
   types: unknown,
   fixed: unknown,
@@ -1131,11 +1133,47 @@ function liftSignatures(
       return atom(receiver, domain, result);
     }),
     ...sigs.map((sig) => {
-      const [receiver, rest]: unknown[] = Array.isArray(sig) ? sig : [];
-      const [domain, tail]: unknown[] = Array.isArray(rest) ? rest : [];
-      const [element, result]: unknown[] = Array.isArray(tail) ? tail : [];
-      return atom(receiver, domain, result, element);
+      const [receiver, signature]: unknown[] = Array.isArray(sig) ? sig : [];
+      const [domain, tail]: unknown[] = Array.isArray(signature) ? signature : [];
+      const [rest, result]: unknown[] = Array.isArray(tail) ? tail : [];
+      return atom(receiver, domain, result, restElement(types, rest));
     }),
+  ];
+}
+
+/** The element of an element rest: a type whose one clause is the pack of
+any number of actuals at it. Any other rest type is shown as itself. */
+function restElement(types: unknown, rest: unknown): unknown {
+  if (!Array.isArray(rest) || rest.length !== 1) return rest;
+  const row = rowAt(types, rest[0]);
+  const clause = Array.isArray(row) && row.length === 1 ? row[0] : undefined;
+  const pack = isObject(clause) ? clause.pack : undefined;
+  if (!isObject(pack) || !Array.isArray(pack.rest) || pack.rest.length) return rest;
+  const t = pack.first;
+  if (
+    !isObject(t) ||
+    !Array.isArray(t.required) ||
+    t.required.length ||
+    !Array.isArray(t.optional) ||
+    t.optional.length ||
+    t.readonly !== false ||
+    t.rest === null
+  )
+    return rest;
+  return t.rest;
+}
+
+/** A rest `...xs: E[]` as a rest type: the pack of any number at `E`. */
+function restPack(types: unknown, element: number[]): number[] {
+  return [
+    intern(types, [
+      {
+        pack: {
+          first: { required: [], optional: [], rest: element, readonly: false },
+          rest: [],
+        },
+      },
+    ]),
   ];
 }
 
@@ -1380,7 +1418,7 @@ function lowerAtom(types: unknown, atom: unknown): number[] {
               ? { arrows: [[Rt, [Ds, R]]] }
               : {
                   arrows: [],
-                  variadic: [[Rt, [Ds, [lowerType(types, f.rest), R]]]],
+                  variadic: [[Rt, [Ds, [restPack(types, lowerType(types, f.rest)), R]]]],
                 }),
           },
         },
@@ -1406,7 +1444,7 @@ function lowerAtom(types: unknown, atom: unknown): number[] {
                   [
                     domains,
                     [
-                      lowerType(types, atom.rest),
+                      restPack(types, lowerType(types, atom.rest)),
                       lowerType(types, atom.result),
                     ],
                   ],

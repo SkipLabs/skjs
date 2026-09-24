@@ -47,9 +47,9 @@ inductive Rule (ι : Type) where
   | makeCallableRest (arrays : List (Ty ι))
   /-- A copy of a spread, at the element type its store holds. -/
   | arrCopy (elem : Ty ι)
-  /-- How many actuals are fixed, which later ones are spreads, and the element
-  type the rest collects at. -/
-  | callRest (fixed omitted : Nat) (spreads : List Bool) (elem : Ty ι)
+  /-- How many actuals are fixed, which later ones are spreads, and the rest
+  type the further ones fit. -/
+  | callRest (fixed omitted : Nat) (spreads : List Bool) (rest : Ty ι)
   /-- A bound function: its saved slots are read from the context. -/
   | bindE
   /-- A bound variadic function, likewise. -/
@@ -318,16 +318,15 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   -- fixed position the call omits, then one premise per further part: the
   -- actual itself, or the store a spread reads. A call that omits a position
   -- writes no part.
-  | .callRest k u flags E, .invoke f r args, jf :: jr :: jas =>
+  | .callRest k u flags P, .invoke f r args, jf :: jr :: jas =>
     jf.context = j.context ∧ jf.term = f ∧ jr.context = j.context ∧ jr.term = r ∧
     (∀ ja ∈ jas, ja.context = j.context) ∧
     jas.length = k + u + flags.length ∧ (u = 0 ∨ flags = []) ∧
     args = (jas.take k).map Sequent.term ++
       (flags.zip (jas.drop (k + u))).map (fun q => spreadTerm (q.1, q.2.term)) ∧
     (∀ ja ∈ (jas.drop k).take u, ja.term = .undef) ∧
-    (∀ q ∈ flags.zip (jas.drop (k + u)), q.1 = false → q.2.type = E) ∧
-    (∀ q ∈ flags.zip (jas.drop (k + u)), q.1 = true → SpreadsInto G q.2.type E) ∧
-    (jr.type, (jas.take (k + u)).map Sequent.type, E, j.type) ∈ restSigs G jf.type
+    RestParts G P ((flags.zip (jas.drop (k + u))).map fun q => (q.1, q.2.type)) ∧
+    (jr.type, (jas.take (k + u)).map Sequent.type, P, j.type) ∈ restSigs G jf.type
   -- `.bind`'s saved slots, with no premises: the target's selected signature
   -- starts with the prefix slots' contracts, and the result takes the rest at
   -- the one receiver it states, whatever that is.
@@ -338,17 +337,17 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
       saved.map (j.context[·]?) = (saved.filterMap (j.context[·]?)).map some ∧
       (Rt, saved.filterMap (j.context[·]?) ++ Ds, R) ∈ callSigs G T
     | _, _, _, _ => False
-  -- As `bindE`, for a variadic signature of the target: the prefix takes its
-  -- first fixed positions, and past them the element contract.
+  -- As `bindE`, for a variadic signature of the target with an element rest:
+  -- the prefix takes its first fixed positions, and past them the element.
   | .bindRestE, .makeAt (.bound (.var t) (.var r) pre) ns inits, [] =>
     ns = [] ∧ inits = [] ∧
     match varSlots pre, j.context[t]?, j.context[r]?, expand G j.type with
     | some saved, some T, some Rt, [.arrs [] [(_, Ds, E', R)]] =>
       saved.map (j.context[·]?) = (saved.filterMap (j.context[·]?)).map some ∧
       ∃ s ∈ restSigs G T, s.1 = Rt ∧ s.2.2.1 = E' ∧ s.2.2.2 = R ∧
-        Ds = s.2.1.drop saved.length ∧
+        Ds = s.2.1.drop saved.length ∧ ∃ El ∈ (restElem G E').toList,
         saved.filterMap (j.context[·]?) =
-          s.2.1.take saved.length ++ List.replicate (saved.length - s.2.1.length) E'
+          s.2.1.take saved.length ++ List.replicate (saved.length - s.2.1.length) El
     | _, _, _, _ => False
   -- A class value: a function's allocation with construct-only code.
   | .ctorE U, .makeAt (.closure arity b .construct) ns inits, ps =>
@@ -908,15 +907,15 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     have h := hp js (by simp)
     rw [hΓ, ht] at h
     exact .arrCopy h hsp hr
-  · rename_i k u flags E f r args jf jr jas
-    rcases hl with ⟨hΓf, htf, hΓr, htr, hctx, hlen, hshort, rfl, hundef, hplain, hspread, hL⟩
+  · rename_i k u flags P f r args jf jr jas
+    rcases hl with ⟨hΓf, htf, hΓr, htr, hctx, hlen, hshort, rfl, hundef, hparts, hL⟩
     have hf := hp jf (by simp)
     rw [hΓf, htf] at hf
     have hrt := hp jr (by simp)
     rw [hΓr, htr] at hrt
     have htake : jas.take (k + u) = jas.take k ++ (jas.drop k).take u := List.take_add ..
     have := HasTy.callRest (xs := (jas.take k).map fun ja => (ja.type, ja.term))
-      (Us := ((jas.drop k).take u).map Sequent.type) (E := E)
+      (Us := ((jas.drop k).take u).map Sequent.type) (P := P)
       (parts := (flags.zip (jas.drop (k + u))).map fun q => (q.1, q.2.type, q.2.term)) hf
       (by rw [htake] at hL; simpa [List.map_append, List.map_map, Function.comp_def] using hL) hrt
       (by
@@ -940,8 +939,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
         have h := hp q.2 (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hja))
         rw [hctx q.2 hja] at h
         exact h)
-      (by intro p hm; obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm; exact hplain q hq)
-      (by intro p hm; obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm; exact hspread q hq)
+      (by simpa [List.map_map, Function.comp_def] using hparts)
     simpa [List.map_map, Function.comp_def] using this
   · obtain ⟨rfl, rfl, hl⟩ := hl
     split at hl
@@ -953,11 +951,11 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
   · obtain ⟨rfl, rfl, hl⟩ := hl
     split at hl
     · rename_i hsaved hT hRt hF
-      obtain ⟨hmap, ⟨Rt', Ps, E', R'⟩, hmem, h1, h2, h3, h4, h5⟩ := hl
+      obtain ⟨hmap, ⟨Rt', Ps, E', R'⟩, hmem, h1, h2, h3, h4, El, hEl, h5⟩ := hl
       simp only at h1 h2 h3 h4 h5
       subst h1 h2 h3 h4
       rw [varSlots_eq hsaved]
-      exact HasTy.bindRestE hT hmem hRt hmap h5 hF
+      exact HasTy.bindRestE hT hmem (by simpa using hEl) hRt hmap h5 hF
     · contradiction
   · rename_i ps U arity b ns inits
     obtain ⟨rfl, rfl, hU, hl⟩ := hl
@@ -1416,9 +1414,9 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     apply node_complete (G := G) (j := ⟨Γ, .arrLit [.spread s], T⟩) (r := .arrCopy E)
       (js := [⟨Γ, s, S⟩]) ⟨rfl, rfl, hsp, hr⟩
     simpa using ih
-  | @callRest Γ f r F Rt xs Us E B parts hf hmem hrt hx hu hshort hp hplain hspread
+  | @callRest Γ f r F Rt xs Us P B parts hf hmem hrt hx hu hshort hp hparts
       ihf ihrt ihx ihu ihp =>
-    apply node_complete (r := .callRest xs.length Us.length (parts.map Prod.fst) E)
+    apply node_complete (r := .callRest xs.length Us.length (parts.map Prod.fst) P)
       (js := ⟨Γ,f,F⟩ :: ⟨Γ,r,Rt⟩ :: (xs.map (fun p => ⟨Γ,p.2,p.1⟩) ++ Us.map (fun A => ⟨Γ,.undef,A⟩) ++
         parts.map (fun p => ⟨Γ,p.2.2,p.2.1⟩)))
     · have hlenx : (xs.map (fun p => (⟨Γ,p.2,p.1⟩ : Sequent ι))).length = xs.length := by simp
@@ -1447,7 +1445,7 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
           xs.map (fun p => (⟨Γ,p.2,p.1⟩ : Sequent ι)) ++
             Us.map (fun A => (⟨Γ,.undef,A⟩ : Sequent ι)) := List.take_left' hlenxu
       refine ⟨rfl, rfl, rfl, rfl, ?_, by simp; omega, by rcases hshort with h | h <;> simp [h],
-        ?_, ?_, ?_, ?_, ?_⟩
+        ?_, ?_, ?_, ?_⟩
       · intro ja hj
         simp only [List.mem_append, List.mem_map] at hj
         rcases hj with (⟨p,_,rfl⟩ | ⟨A,_,rfl⟩) | ⟨p,_,rfl⟩ <;> rfl
@@ -1457,13 +1455,7 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
         intro ja hj
         obtain ⟨A,_,rfl⟩ := List.mem_map.mp hj; rfl
       · rw [hdku, hzip]
-        intro q hq
-        obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
-        exact hplain p hp'
-      · rw [hdku, hzip]
-        intro q hq
-        obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
-        exact hspread p hp'
+        simpa [List.map_map, Function.comp_def] using hparts
       · rw [htku]
         simpa [List.map_map, List.map_append, Function.comp_def] using hmem
     · intro j hj
@@ -1489,21 +1481,21 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       rw [filterMap_of_map hmap]
       exact ⟨hmap, hsig⟩
     · simp
-  | @bindRestE Γ F T Rt E R Rc t r saved Ps Qs ht hsig hr hmap hQs hF =>
+  | @bindRestE Γ F T Rt E El R Rc t r saved Ps Qs ht hsig hel hr hmap hQs hF =>
     apply node_complete (r := .bindRestE) (js := [])
     · refine ⟨rfl, rfl, ?_⟩
       show (match varSlots (saved.map Tm.var), Γ[t]?, Γ[r]?, expand G F with
         | some saved, some T, some Rt, [.arrs [] [(_, Ds, E', R)]] =>
           saved.map (Γ[·]?) = (saved.filterMap (Γ[·]?)).map some ∧
           ∃ s ∈ restSigs G T, s.1 = Rt ∧ s.2.2.1 = E' ∧ s.2.2.2 = R ∧
-            Ds = s.2.1.drop saved.length ∧
+            Ds = s.2.1.drop saved.length ∧ ∃ El ∈ (restElem G E').toList,
             saved.filterMap (Γ[·]?) =
-              s.2.1.take saved.length ++ List.replicate (saved.length - s.2.1.length) E'
+              s.2.1.take saved.length ++ List.replicate (saved.length - s.2.1.length) El
         | _, _, _, _ => False)
       rw [varSlots_map, ht, hr, show expand G F = [.arrs [] [(Rc, Ps.drop saved.length, E, R)]] from hF]
       simp only
       rw [filterMap_of_map hmap]
-      exact ⟨hmap, ⟨Rt, Ps, E, R⟩, hsig, rfl, rfl, rfl, rfl, hQs⟩
+      exact ⟨hmap, ⟨Rt, Ps, E, R⟩, hsig, rfl, rfl, rfl, rfl, El, by simp [hel], hQs⟩
     · simp
   | @sub Γ t A B cert ht hc ih =>
     apply node_complete (G := G) (j := ⟨Γ, t, B⟩) (r := .sub cert) (js := [⟨Γ,t,A⟩]) ⟨rfl,rfl,hc⟩

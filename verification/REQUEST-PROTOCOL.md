@@ -76,7 +76,7 @@ Each type-graph node is a union of clauses:
 | Invariant reference with optional additional contract requirements, and readonly views: fields read at a sound upper bound, with no write permission through this contract | `{"refs":{"first":[["value",[1]]],"rest":[],"views":[["seen",[1]]]}}`                       |
 | Optional fields: a key constrained only where the object has it, where its location holds exactly the contract; left out when there are none (also on `dict`) | `{"refs":{"first":[],"rest":[],"views":[],"optional":[["field",[4]]]}}`                       |
 | Plain object with named contracts and readonly string-index views; each index operand constrains every present own field | `{"dict":{"first":[],"rest":[],"views":[],"indexes":[[1,3]]}}` |
-| Intersection of arrows `[receiver, [params, result]]`, with variadic signatures `[receiver, [params, [element, result]]]` when there are any                                 | `{"arrs":{"arrows":[[[5],[[[0]],[1]]],[[5],[[[1]],[0]]]]}}`                                 |
+| Intersection of arrows `[receiver, [params, result]]`, with variadic signatures `[receiver, [params, [rest, result]]]` when there are any, `rest` an argument-list type (`pack`)  | `{"arrs":{"arrows":[[[5],[[[0]],[1]]],[[5],[[[1]],[0]]]]}}`                                 |
 | Array store: simultaneous tuple contracts, each with required, optional and rest positions; readonly contracts give element read capabilities                              | `{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],"readonly":false},"rest":[]}}` |
 | Callable with invariant bag requirements and overloads, fixed and variadic                                                                                                 | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[[[5],[[[0]],[1]]]]}}`             |
 | Class value: construct signatures `[params, result]`, which `new` meets; no call signature meets it                                                                    | `{"ctors":{"signatures":[[[[1,2]],[1,2]]]}}`             |
@@ -743,7 +743,7 @@ be any argument past the fixed ones, lowered to the calculus term
 spread followed by an argument that runs code is copied where it is written, the
 literal `{"arrLit": {"inits": [{"spread": ...}]}}`, and the call spreads the
 copy. Evidence names these calls `{"callRest": {"fixed": k, "omitted": u,
-"spreads": [flags], "elem": E}}`, copies `{"arrCopy": {"elem": E}}`, variadic
+"spreads": [flags], "rest": P}}`, with `P` the signature's rest type, copies `{"arrCopy": {"elem": E}}`, variadic
 creation `{"funRest": {"arrays": [A, ...]}}` and variadic callable objects
 `{"makeCallableRest": {"arrays": [A, ...]}}`, one rest-array type per
 signature; the request validation range-checks every type they carry.
@@ -790,9 +790,9 @@ immutable alias of one, the result of `.bind` on one, or a function member of a
 `invoke f r args`. `.bind` saves the target, the receiver and the prefix, then
 allocates a `bound` descriptor; each saved value is re-bound at the contract the
 selected signature gives it, which `bindE` reads; binding a variadic target,
-checked by `bindRestE`, takes its first fixed positions and, past them, its
-element contract, and leaves the positions not taken then the element
-contract. `.apply` is
+checked by `bindRestE`, needs an element rest: it takes its first fixed
+positions and, past them, the rest's element, and leaves the positions not
+taken then the rest. `.apply` is
 `{"k":"applyWithReceiver","pos":span,"callee":f,"receiver":r,"list":l}`, `list`
 `null` when absent: the target, the receiver and the list are saved; then, for
 a tuple of required positions, the list's length (`lenOf`) and each index

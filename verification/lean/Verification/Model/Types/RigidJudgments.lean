@@ -102,12 +102,13 @@ private theorem argsLe_of_index {G : NormalGraph Nat} {η : String → Fam} :
 is a semantic inclusion. The executable relation inherits this through
 `Sub_of_leUnder`; the judgment does not depend on the executable relation for it. -/
 theorem Sub.sound {G : NormalGraph Nat} {η : String → Fam} {ps : List Parameter}
-    (hs : Satisfies G η ps) {a b : Ty} (h : Sub ps a b) :
+    (hC : ClosedAssign η) (hs : Satisfies G η ps) {a b : Ty} (h : Sub ps a b) :
     FamLe (a.denote G η) (b.denote G η) := by
   induction h with
   | @variadic_fixed rc ps' e r extra =>
     simpa [Ty.denote, Ty.denoteList_eq_map] using DirectObligation.variadic_fixed (rc.denote G η)
-      (Ty.denoteList G η ps') (e.denote G η) (r.denote G η) extra
+      (Ty.denoteList G η ps') (e.denote G η) (r.denote G η) (Ty.denote_adm hC e)
+      (fun _ _ _ hv => (Ty.denote_value hC hv).2) extra
   | variadic_refl | array_refl | rigid_refl => exact fun _ _ _ hv => hv
   | bound p hp hn hu _ ih =>
     intro k W v hv

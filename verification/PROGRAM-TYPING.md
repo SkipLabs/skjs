@@ -135,17 +135,25 @@ rest parameter binds is allocated by the ordinary store and allocation rules.
 
 A function type is a promise about the actual lists a caller may write, not
 about the callee's code. A fixed signature $\vec A\to B$ admits the prefixes of
-$\vec A$ whose omitted positions admit `undefined`, and a variadic signature
-$\vec A,\ldots E\to B$ admits those and every list of all of $\vec A$ followed by
-any number of actuals in $E$:
+$\vec A$ whose omitted positions admit `undefined`. A variadic signature
+$\vec A,\ldots P\to B$ has a rest type $P$, an [argument pack](POSITIVE-TYPES.md#argument-packs):
+it admits the lists whose first actuals $\vec A$ admits, as a fixed signature
+does, and whose actuals past them are, as one pack, in $P$. An element rest
+`...xs: E[]` is the pack of any number of actuals in $E$,
+$\mathsf{Pack}([\,],[\,],E)$ (`elemPack`); a tuple rest `...xs: [A, B]` is the
+pack of exactly those positions:
 
 $$
 \operatorname{Adm}(\vec A)=\{\vec v\mid |\vec v|\le|\vec A|,\ \forall i<|\vec v|.\,v_i\in A_i,\ \forall |\vec v|\le i<|\vec A|.\,\mathsf{undefined}\in A_i\}
 $$
 
 $$
-\operatorname{Adm}(\vec A;E)=\operatorname{Adm}(\vec A)\cup\{\vec a\,\vec e\mid \vec a\in\vec A,\ \forall j.\,e_j\in E\}.
+\operatorname{Adm}(\vec A;P)=\{\vec v\mid \vec v_{<|\vec A|}\in\operatorname{Adm}(\vec A),\ \mathsf{args}(\vec v_{\ge|\vec A|})\in P\}
+\qquad(\texttt{ArgsRest}).
 $$
+
+A list shorter than $\vec A$ passes the empty pack, which an element rest
+admits and a tuple rest with required positions does not.
 
 A value meets a signature when every admitted list of values invokes it safely
 at $B$, at every later world and budget (`Safety.Promise`, `callsT`, `restsT`).
@@ -162,35 +170,53 @@ $$
 \qquad(\texttt{bindRest})
 $$
 
+A pack holds its actuals at their positions only below the current level. The
+allocation is a step, after which the budget is one lower, so that is all the
+fresh store's contracts need (`arr_alloc_rule_below`, `pack_alloc_safe`).
+
 So one value may meet fixed and variadic signatures at once, and a graph call
 clause carries both: `arrs L S`, `callable P Ps L S`. Write
-$\operatorname{Array}_G(R,E)$ when $R$ is an object whose store field holds a
-store of any length at $E$ (`RestArray`), and $\operatorname{Spreads}_G(S,E)$
-when $S$ is a store contract every position of which is within $E$, with
-$\mathsf{undefined}$ in $E$ if the store may have a hole — at an optional
-position or among its rest (`SpreadsInto`). Creation checks the body once per
-variadic signature, with the rest array in slot 0, the receiver in slot 1, then
-the fixed parameters
+$\operatorname{Array}_G(R,P)$ when $R$ is an object whose store field holds the
+store $P$'s one tuple contract describes, writable since the array is fresh
+(`RestArray`, `RestStore`), and $\operatorname{Spreads}_G(S,E)$ when $S$ is a
+store contract every position of which is within $E$, with $\mathsf{undefined}$
+in $E$ if the store may have a hole — at an optional position or among its rest
+(`SpreadsInto`). Creation checks the body once per variadic signature, with the
+rest array in slot 0, the receiver in slot 1, then the fixed parameters
 (`funRest`; `makeCallableRest` adds a field bag as `makeCallable` does):
 
 $$
-\frac{\forall(\vec A,E,B)\in S.\;|\vec A|=k\quad\operatorname{Array}_G(R_{\vec A,E,B},E)
-      \quad\Gamma,\vec x{:}\vec A,r{:}R_{\vec A,E,B}\vdash_G t:B}
-     {\Gamma\vdash_G \lambda\vec x,\ldots r.\,t:\textstyle\bigwedge_{(\vec A,E,B)\in S}(\vec A,\ldots E\to B)}
+\frac{\forall(\vec A,P,B)\in S.\;|\vec A|=k\quad\operatorname{Array}_G(R_{\vec A,P,B},P)
+      \quad\Gamma,\vec x{:}\vec A,r{:}R_{\vec A,P,B}\vdash_G t:B}
+     {\Gamma\vdash_G \lambda\vec x,\ldots r.\,t:\textstyle\bigwedge_{(\vec A,P,B)\in S}(\vec A,\ldots P\to B)}
 $$
 
 A call writes the fixed actuals, or a prefix whose omitted positions admit
-`undefined`, then any number of parts, each an actual in $E$ or a spread of a
-store whose elements are; a call that omits a fixed position writes no part
-(`callRest`):
+`undefined`, then parts that fit the rest; a call that omits a fixed position
+writes no part (`callRest`). With a spread among the parts, the rest is an
+element rest $\mathsf{Pack}([\,],[\,],E)$ ($\operatorname{elem}_G(P)=E$,
+`restElem`), and each part is an actual in $E$ or a spread of a store whose
+elements are. Without one, $P$ is one tuple contract $\tau$, and the parts are
+at its positions within its length bounds (`RestParts`):
 
 $$
-\frac{\begin{array}{c}\Gamma\vdash_G f:F\quad(\vec A\,\vec U,E,B)\in\operatorname{restSigs}_G(F)
+\frac{\begin{array}{c}\Gamma\vdash_G f:F\quad(\vec A\,\vec U,P,B)\in\operatorname{restSigs}_G(F)
       \quad\forall i.\;\Gamma\vdash_G a_i:A_i\quad\forall U\in\vec U.\;\Gamma\vdash_G\mathsf{undefined}:U\\
-      \vec U=\varepsilon\lor\vec p=\varepsilon\qquad
-      \forall p\in\vec p.\;\Gamma\vdash_G p:E\ \ \lor\ \ (p={\ldots}s\ \land\ \Gamma\vdash_G s:S\ \land\ \operatorname{Spreads}_G(S,E))\end{array}}
+      \vec U=\varepsilon\lor\vec p=\varepsilon\qquad\operatorname{Parts}_G(P,\vec p)\end{array}}
      {\Gamma\vdash_G f(\vec a,\vec p):B}
 $$
+
+$$
+\operatorname{Parts}_G(P,\vec p)\iff
+\begin{cases}
+\operatorname{elem}_G(P)=E\ \land\ \forall p\in\vec p.\;\Gamma\vdash_G p:E\ \lor\ (p={\ldots}s\land\Gamma\vdash_G s:S\land\operatorname{Spreads}_G(S,E)) & \text{a spread in }\vec p\\
+P=\mathsf{Pack}(\tau)\ \land\ |\tau.R|\le|\vec p|\ \land\ (\tau.E=\varnothing\Rightarrow|\vec p|\le|\tau.R|+|\tau.O|)\ \land\ \forall i.\;\Gamma\vdash_G p_i:\mathsf{pos}_\tau(i) & \text{otherwise}
+\end{cases}
+$$
+
+The first case is `rest_call_safe`: the actuals collected at $E$ form an
+element pack (`elemPack_of_all`). The second is `pack_call_safe`: the actuals
+at the positions form a pack of $\tau$ (`restParts_pack`).
 
 A spread is read by the call once every earlier actual is a value, the store's
 elements replacing it in order, `undefined` at a hole
@@ -216,19 +242,24 @@ existing element-read and array-literal rules preserve the tuple's exact
 contract, including density. This avoids weakening a dense Boolean tuple to
 an unbounded store that would require `undefined` when spread again.
 
-Covering compares admitted lists. A variadic source covers a fixed target whose
-first positions are within its fixed parameters and whose further positions are
-within its element contract (`RestFixed`, a `CallArrow` case), and a variadic
-target whose parameters are, and whose element contract is, within its own
-(`RestCovers`); results are covariant. A fixed source never covers a variadic
-target: it promises nothing past its positions.
+Covering compares admitted lists. A variadic source with an element rest
+covers a fixed target whose first positions are within its fixed parameters and
+whose further positions are within its element (`RestFixed`, a `CallArrow`
+case). A variadic source covers a variadic target whose parameters are within
+its own, the target's further fixed positions taken into the source's rest,
+which needs an element rest unless there are none (`IntoRest`), and whose rest
+is within its own as a pack (`RestCovers`); results are covariant. A fixed
+source never covers a variadic target: it promises nothing past its positions.
 
 $$
-\frac{k=|\vec P|\le|\vec A|\quad\forall i<k.\;A_i\le P_i\quad\forall k\le i<|\vec A|.\;A_i\le E\quad B\le D}
-     {(\vec P,\ldots E\to B)\le(\vec A\to D)}
-\qquad
-\frac{k=|\vec P|\le|\vec Q|\quad\forall i<k.\;Q_i\le P_i\quad\forall k\le i<|\vec Q|.\;Q_i\le E\quad E'\le E\quad B\le D}
-     {(\vec P,\ldots E\to B)\le(\vec Q,\ldots E'\to D)}
+\frac{k=|\vec P|\le|\vec A|\quad\forall i<k.\;A_i\le P_i\quad\operatorname{elem}_G(P')=E\quad\forall k\le i<|\vec A|.\;A_i\le E\quad B\le D}
+     {(\vec P,\ldots P'\to B)\le(\vec A\to D)}
+$$
+
+$$
+\frac{k=|\vec P|\le|\vec Q|\quad\forall i<k.\;Q_i\le P_i\quad
+      (k=|\vec Q|\ \lor\ \operatorname{elem}_G(P')=E\land\forall k\le i<|\vec Q|.\;Q_i\le E)\quad Q'\le P'\quad B\le D}
+     {(\vec P,\ldots P'\to B)\le(\vec Q,\ldots Q'\to D)}
 $$
 
 $$
@@ -248,14 +279,15 @@ $$
      {\Gamma\vdash_G\mathsf{bound}(f,r,\vec p):(Q;\vec D\to B)}
 $$
 
-A variadic target (`bindRestE`, `restsT_bound`) gives its first fixed positions
-to the prefix and, past them, its element contract $E$; the result keeps the
-positions left and $E$:
+A variadic target with an element rest (`bindRestE`, `restsT_bound`) gives
+its first fixed positions to the prefix and, past them, its element $E$; the
+result keeps the positions left and the rest $P$, which admits the prefix's
+values past the fixed positions in front of any list it admits:
 
 $$
-\frac{\Gamma(f)=F\quad(R,\vec P,E,B)\in\operatorname{restSigs}_G(F)
+\frac{\Gamma(f)=F\quad(R,\vec P,P',B)\in\operatorname{restSigs}_G(F)\quad\operatorname{elem}_G(P')=E
       \quad\Gamma(r)=R\quad\Gamma(\vec p)=\vec P_{<k}\,E^{\,k-|\vec P|}\quad k=|\vec p|}
-     {\Gamma\vdash_G\mathsf{bound}(f,r,\vec p):(Q;\vec P_{\ge k},\ldots E\to B)}
+     {\Gamma\vdash_G\mathsf{bound}(f,r,\vec p):(Q;\vec P_{\ge k},\ldots P'\to B)}
 $$
 
 Here $\lambda\vec x.t$ denotes source function creation, implemented as `funE t`: it

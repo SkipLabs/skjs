@@ -43,9 +43,9 @@ HasTy  (Programs/ProgramTyping.lean)
   funRest {Γ : List (Ty ι)} {F : Ty ι} {L : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} {As : List (Ty ι)} {n : Nat} {b : Tm} : Represents G F (.arrs [] L) → L.length = As.length → (∀ p ∈ L.zip As, p.1.2.1.length = n ∧ RestArray G p.2 p.1.2.2.1) → (∀ p ∈ L.zip As, HasTy G (p.2 :: p.1.1 :: p.1.2.1 ++ Γ) b p.1.2.2.2) → HasTy G Γ (.make (.variadic n b) .nul) F
   makeCallableRest {Γ : List (Ty ι)} {F : Ty ι} {parts : List (PropKey × Ty ι × Tm)} {L : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} {As : List (Ty ι)} {n : Nat} {b : Tm} : Represents G F (.callable (parts.map fun p => (p.1, p.2.1)) [] [] L) → (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → L.length = As.length → (∀ p ∈ L.zip As, p.1.2.1.length = n ∧ RestArray G p.2 p.1.2.2.1) → (∀ p ∈ L.zip As, HasTy G (p.2 :: p.1.1 :: p.1.2.1 ++ Γ) b p.1.2.2.2) → HasTy G Γ (.makeAt (.variadic n b) (parts.map Prod.fst) (parts.map fun p => p.2.2)) F
   arrCopy {Γ : List (Ty ι)} {s : Tm} {S T E : Ty ι} : HasTy G Γ s S → SpreadsInto G S E → Represents G T (.list ⟨[], [], some E, false⟩ []) → HasTy G Γ (.arrLit [.spread s]) T
-  callRest {Γ : List (Ty ι)} {f r : Tm} {F Rt : Ty ι} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} {E B : Ty ι} {parts : List (Bool × Ty ι × Tm)} : HasTy G Γ f F → (Rt, xs.map Prod.fst ++ Us, E, B) ∈ restSigs G F → HasTy G Γ r Rt → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → (∀ A ∈ Us, HasTy G Γ .undef A) → (Us = [] ∨ parts = []) → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → (∀ p ∈ parts, p.1 = false → p.2.1 = E) → (∀ p ∈ parts, p.1 = true → SpreadsInto G p.2.1 E) → HasTy G Γ (.invoke f r (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2))) B
+  callRest {Γ : List (Ty ι)} {f r : Tm} {F Rt : Ty ι} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} {P B : Ty ι} {parts : List (Bool × Ty ι × Tm)} : HasTy G Γ f F → (Rt, xs.map Prod.fst ++ Us, P, B) ∈ restSigs G F → HasTy G Γ r Rt → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → (∀ A ∈ Us, HasTy G Γ .undef A) → (Us = [] ∨ parts = []) → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → RestParts G P (parts.map fun p => (p.1, p.2.1)) → HasTy G Γ (.invoke f r (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2))) B
   bindE {Γ : List (Ty ι)} {F T Rt R Rc : Ty ι} {t r : Nat} {slots : List Nat} {Ps Ds : List (Ty ι)} : Γ[t]? = some T → (Rt, Ps ++ Ds, R) ∈ callSigs G T → Γ[r]? = some Rt → slots.map (Γ[·]?) = Ps.map some → Represents G F (.arrs [(Rc, Ds, R)] []) → HasTy G Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
-  bindRestE {Γ : List (Ty ι)} {F T Rt E R Rc : Ty ι} {t r : Nat} {slots : List Nat} {Ps Qs : List (Ty ι)} : Γ[t]? = some T → (Rt, Ps, E, R) ∈ restSigs G T → Γ[r]? = some Rt → slots.map (Γ[·]?) = Qs.map some → Qs = Ps.take slots.length ++ List.replicate (slots.length - Ps.length) E → Represents G F (.arrs [] [(Rc, Ps.drop slots.length, E, R)]) → HasTy G Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
+  bindRestE {Γ : List (Ty ι)} {F T Rt E El R Rc : Ty ι} {t r : Nat} {slots : List Nat} {Ps Qs : List (Ty ι)} : Γ[t]? = some T → (Rt, Ps, E, R) ∈ restSigs G T → restElem G E = some El → Γ[r]? = some Rt → slots.map (Γ[·]?) = Qs.map some → Qs = Ps.take slots.length ++ List.replicate (slots.length - Ps.length) El → Represents G F (.arrs [] [(Rc, Ps.drop slots.length, E, R)]) → HasTy G Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
   sub : HasTy G Γ t A → PositiveCertificates.check G A B cert = true → HasTy G Γ t B
 
 Rule  (Programs/ProgramCertificates.lean)
@@ -92,7 +92,7 @@ Rule  (Programs/ProgramCertificates.lean)
   funRest (arrays : List (Ty ι))
   makeCallableRest (arrays : List (Ty ι))
   arrCopy (elem : Ty ι)
-  callRest (fixed omitted : Nat) (spreads : List Bool) (elem : Ty ι)
+  callRest (fixed omitted : Nat) (spreads : List Bool) (rest : Ty ι)
   bindE
   bindRestE
   ctorE (undef : Ty ι)

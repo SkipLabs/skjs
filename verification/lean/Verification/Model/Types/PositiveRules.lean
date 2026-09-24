@@ -248,104 +248,165 @@ theorem short_union {G : NormalGraph ι} (a b : List ι) (suffix : List (List ι
     · exact Or.inl ⟨h.1, h'⟩
     · exact Or.inr ⟨h.1, h'⟩
 
-/-- A variadic signature admits, at one budget, every list a fixed one admits
-when its fixed parameters come first, pointwise wider, and the fixed one's
-further positions are within its element contract. -/
+/-- A type's meaning is a family of closed values. -/
+theorem meaning_valueFam (G : NormalGraph ι) (S : List ι) : ValueFam (meaning G S) :=
+  ⟨setSem_adm (normalDenote_adm G) S, fun _ _ _ ⟨_, _, h⟩ => normalDenote_value h⟩
+
+/-- The element of an element rest: a type whose one clause is the pack of any
+number of actuals at `E`, which is what a rest `...xs: E[]` says. -/
+def restElem (G : NormalGraph ι) (P : List ι) : Option (List ι) :=
+  match expand G P with
+  | [.pack ⟨[], [], some E, false⟩ []] => some E
+  | _ => none
+
+theorem restElem_sem {G : NormalGraph ι} {P E : List ι} (h : restElem G P = some E) (n W v) :
+    meaning G P n W v ↔ elemPack (meaning G E) n W v := by
+  have hx : expand G P = [.pack ⟨[], [], some E, false⟩ []] := by
+    unfold restElem at h
+    split at h <;> simp_all
+  have hp : G.plainTy P = true :=
+    plain_of_mem_expand (c := .pack ⟨[], [], some E, false⟩ []) (by simp [hx])
+  rw [expand_sem G P hp, hx]
+  simp [semList, setSem, sem, elemPack, tupleFams]
+
+/-- Fixed positions within an element rest's element: the rest is an element
+rest, and each position is within its element. -/
+def ElemRest (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
+    (As : List (List ι)) (E : List ι) : Prop :=
+  match elem E with
+  | some El => ∀ A ∈ As, R A El
+  | none => False
+
+/-- Fixed positions a variadic signature takes into its rest: none, or
+positions within its element rest's element. -/
+def IntoRest (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
+    (As : List (List ι)) (E : List ι) : Prop :=
+  As = [] ∨ ElemRest elem R As E
+
+/-- Actuals admitted by fixed positions, each within one family, are in it. -/
+theorem short_all_le {G : NormalGraph ι} {R : List ι → List ι → Prop} {j : Nat}
+    (hr : ∀ a b, R a b → FamLeAt G a b j) {W : WorldT j} {As : List (List ι)} {El : List ι}
+    (h : ∀ A ∈ As, R A El) {xs : List Tm} (hs : ArgsT ((As.map (meaning G)).take xs.length) j W xs) :
+    ∀ u ∈ xs, meaning G El j W u := by
+  refine ArgsT_all_le (fun A hA u hu => ?_) hs
+  rw [← List.map_take] at hA
+  obtain ⟨A0, hA0, rfl⟩ := List.mem_map.mp hA
+  exact hr A0 El (h A0 (List.mem_of_mem_take hA0)) W u hu
+
+/-- Actuals typed at a level are members below it, at every future world. -/
+theorem meaning_below {G : NormalGraph ι} {S : List ι} {k : Nat} {W : WorldT k} {u : Tm}
+    (h : meaning G S k W u) : ∀ (j : Nat) (hj : j < k) (U : WorldT j),
+      WExt (trunc j (Nat.le_of_lt hj) W) U → meaning G S j U u := fun j hj U hx =>
+  (meaning_valueFam G S).1.mono j _ U hx u
+    ((meaning_valueFam G S).1.down_le k j (Nat.le_of_lt hj) W u h)
+
+/-- A variadic signature with an element rest admits, at one budget, every
+list a fixed one admits when its fixed parameters come first, pointwise wider,
+and the fixed one's further positions are within the rest's element. -/
 theorem rest_short {G : NormalGraph ι} {R : List ι → List ι → Prop} {j : Nat}
-    (hr : ∀ a b, R a b → FamLeAt G a b j) {W : WorldT j} {E : List ι} :
+    (hr : ∀ a b, R a b → FamLeAt G a b j) {W : WorldT j} {E El : List ι}
+    (hel : restElem G E = some El) :
     ∀ {Ps As : List (List ι)} {args : List Tm}, Domains R (As.take Ps.length) Ps →
-      (∀ A ∈ As.drop Ps.length, R A E) →
+      (∀ A ∈ As.drop Ps.length, R A El) →
       ArgsShort (As.map (meaning G)) j W args →
       ArgsRest (Ps.map (meaning G)) (meaning G E) j W args
-  | [], As, args, _, hel, h => by
-    rw [List.map_nil, ArgsRest_nil_params]
-    obtain ⟨-, ht, -⟩ := h
-    refine ArgsT_all_le (E := meaning G E) (fun A hA u hu => ?_) ht
-    rw [← List.map_take] at hA
-    obtain ⟨A0, hA0, rfl⟩ := List.mem_map.mp hA
-    exact hr A0 E (hel A0 (by simpa using List.mem_of_mem_take hA0)) W u hu
+  | [], As, args, _, hd, h => by
+    rw [List.map_nil, ArgsRest_nil_params, restElem_sem hel]
+    have hall := short_all_le hr (by simpa using hd) h.2.1
+    exact elemPack_of_all (meaning_valueFam G El).1
+      (fun u hu => ((meaning_valueFam G El).2 _ _ _ (hall u hu)).2) hall
   | _ :: _, [], _, hd, _, _ => hd.elim
-  | P :: Ps, A :: As, [], hd, hel, h => by
-    simp only [List.length_cons, List.take_succ_cons, List.drop_succ_cons] at hd hel
+  | P :: Ps, A :: As, [], hd, hd', h => by
+    simp only [List.length_cons, List.take_succ_cons, List.drop_succ_cons] at hd hd'
     simp only [List.map_cons, ArgsShort_nil_args, ArgsRest_nil_args, List.mem_cons,
       forall_eq_or_imp] at h ⊢
-    have := rest_short hr (args := []) hd.2 hel (ArgsShort_nil_args.mpr h.2)
-    exact ⟨hr A P hd.1 W _ h.1, ArgsRest_nil_args.mp this⟩
-  | P :: Ps, A :: As, a :: args, hd, hel, h => by
-    simp only [List.length_cons, List.take_succ_cons, List.drop_succ_cons] at hd hel
+    have := rest_short hr hel (args := []) hd.2 hd' (ArgsShort_nil_args.mpr h.2)
+    rw [ArgsRest_nil_args] at this
+    exact ⟨⟨hr A P hd.1 W _ h.1, this.1⟩, this.2⟩
+  | P :: Ps, A :: As, a :: args, hd, hd', h => by
+    simp only [List.length_cons, List.take_succ_cons, List.drop_succ_cons] at hd hd'
     simp only [List.map_cons, ArgsShort_cons, ArgsRest_cons] at h ⊢
-    exact ⟨hr A P hd.1 W a h.1, rest_short hr hd.2 hel h.2⟩
+    exact ⟨hr A P hd.1 W a h.1, rest_short hr hel hd.2 hd' h.2⟩
 
 /-- A variadic signature admits, at one budget, every list a narrower variadic
-signature admits. -/
+signature admits: fixed positions pointwise wider, the narrower one's further
+fixed positions taken into its rest, and its rest within the rest. -/
 theorem rest_rest {G : NormalGraph ι} {R : List ι → List ι → Prop} {j : Nat}
     (hr : ∀ a b, R a b → FamLeAt G a b j) {W : WorldT j} {E F : List ι} (hfe : R F E) :
     ∀ {Ps Qs : List (List ι)} {args : List Tm}, Domains R (Qs.take Ps.length) Ps →
-      (∀ Q ∈ Qs.drop Ps.length, R Q E) →
+      IntoRest (restElem G) R (Qs.drop Ps.length) E →
       ArgsRest (Qs.map (meaning G)) (meaning G F) j W args →
       ArgsRest (Ps.map (meaning G)) (meaning G E) j W args
-  | [], Qs, args, _, hel, h => by
+  | [], Qs, args, _, hin, h => by
     rw [List.map_nil, ArgsRest_nil_params]
-    have hle : ∀ A ∈ Qs.map (meaning G), ∀ u, A j W u → meaning G E j W u := by
-      intro A hA u hu
-      obtain ⟨Q, hQ, rfl⟩ := List.mem_map.mp hA
-      exact hr Q E (hel Q (by simpa using hQ)) W u hu
-    rcases h with ⟨-, ht, -⟩ | ⟨-, ht, hx⟩
-    · exact ArgsT_all_le (E := meaning G E) (fun A hA u hu => hle A (List.mem_of_mem_take hA) u hu) ht
-    · intro e he
-      rw [← List.take_append_drop (Qs.map (meaning G)).length args] at he
-      rcases List.mem_append.mp he with he | he
-      · exact ArgsT_all_le hle ht e he
-      · exact hr F E hfe W e (hx e he)
+    simp only [ArgsRest, List.length_map] at h
+    obtain ⟨hs, hf⟩ := h
+    have hE := hr F E hfe W _ hf
+    simp only [List.length_nil, List.drop_zero] at hin
+    rcases hin with rfl | hin
+    · simpa using hE
+    · unfold ElemRest at hin
+      split at hin
+      · rename_i El hel
+        rw [restElem_sem hel] at hE ⊢
+        have hall := short_all_le hr hin hs.2.1
+        rw [← List.take_append_drop Qs.length args]
+        exact elemPack_append (fun u hu => ((meaning_valueFam G El).2 _ _ _ (hall u hu)).2)
+          (fun u hu => meaning_below (hall u hu)) hE
+      · exact hin.elim
   | _ :: _, [], _, hd, _, _ => hd.elim
-  | P :: Ps, Q :: Qs, [], hd, hel, h => by
-    simp only [List.length_cons, List.take_succ_cons, List.drop_succ_cons] at hd hel
+  | P :: Ps, Q :: Qs, [], hd, hin, h => by
+    simp only [List.length_cons, List.take_succ_cons, List.drop_succ_cons] at hd hin
     simp only [List.map_cons, ArgsRest_nil_args, List.mem_cons, forall_eq_or_imp] at h ⊢
-    have := rest_rest hr hfe (args := []) hd.2 hel (ArgsRest_nil_args.mpr h.2)
-    exact ⟨hr Q P hd.1 W _ h.1, ArgsRest_nil_args.mp this⟩
-  | P :: Ps, Q :: Qs, a :: args, hd, hel, h => by
-    simp only [List.length_cons, List.take_succ_cons, List.drop_succ_cons] at hd hel
+    have := rest_rest hr hfe (args := []) hd.2 hin (ArgsRest_nil_args.mpr ⟨h.1.2, h.2⟩)
+    rw [ArgsRest_nil_args] at this
+    exact ⟨⟨hr Q P hd.1 W _ h.1.1, this.1⟩, this.2⟩
+  | P :: Ps, Q :: Qs, a :: args, hd, hin, h => by
+    simp only [List.length_cons, List.take_succ_cons, List.drop_succ_cons] at hd hin
     simp only [List.map_cons, ArgsRest_cons] at h ⊢
-    exact ⟨hr Q P hd.1 W a h.1, rest_rest hr hfe hd.2 hel h.2⟩
+    exact ⟨hr Q P hd.1 W a h.1, rest_rest hr hfe hd.2 hin h.2⟩
 
-/-- A variadic signature `(receiver, fixed, element, result)` covers a fixed
+/-- A variadic signature `(receiver, fixed, rest, result)` covers a fixed
 target `(Rt, As, d)` when the target's receiver is within its receiver, the
-target's first positions are within its fixed parameters, its further
-positions within its element contract, and its result within the target's. -/
-def RestFixed (R : List ι → List ι → Prop) (s : List ι × List (List ι) × List ι × List ι)
+target's first positions are within its fixed parameters, its rest is an
+element rest with its further positions within the element, and its result
+within the target's. -/
+def RestFixed (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
+    (s : List ι × List (List ι) × List ι × List ι)
     (Rt : List ι) (As : List (List ι)) (d : List ι) : Prop :=
   R Rt s.1 ∧ Domains R (As.take s.2.1.length) s.2.1 ∧
-    (∀ A ∈ As.drop s.2.1.length, R A s.2.2.1) ∧ (s.2.2.2 = [] ∨ R s.2.2.2 d)
+    ElemRest elem R (As.drop s.2.1.length) s.2.2.1 ∧ (s.2.2.2 = [] ∨ R s.2.2.2 d)
 
 /-- One variadic signature covers another: the target's receiver is within the
-source's; the target's fixed parameters are within the source's, then within
-its element contract; the target's element contract is within the source's;
-results are covariant. -/
-def RestCovers (R : List ι → List ι → Prop)
+source's; the target's fixed parameters are within the source's, then taken
+into its rest; the target's rest is within the source's; results are
+covariant. -/
+def RestCovers (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
     (p q : List ι × List (List ι) × List ι × List ι) : Prop :=
   R q.1 p.1 ∧ Domains R (q.2.1.take p.2.1.length) p.2.1 ∧
-    (∀ A ∈ q.2.1.drop p.2.1.length, R A p.2.2.1) ∧ R q.2.2.1 p.2.2.1 ∧ R p.2.2.2 q.2.2.2
+    IntoRest elem R (q.2.1.drop p.2.1.length) p.2.2.1 ∧ R q.2.2.1 p.2.2.1 ∧ R p.2.2.2 q.2.2.2
 
 /-- Declarative overload coverage for native signatures with receivers. A
 target `(Rt, As, d)` is covered by a fixed source signature, by a variadic
 one, by splitting a union at the receiver or at a parameter position, or by
 combining two coverings. The receiver is contravariant, like a parameter. -/
-inductive CallArrow (compat : ι → ι → Bool) (R : List ι → List ι → Prop)
+inductive CallArrow (compat : ι → ι → Bool) (elem : List ι → Option (List ι))
+    (R : List ι → List ι → Prop)
     (L : List (List ι × List (List ι) × List ι))
     (S : List (List ι × List (List ι) × List ι × List ι)) :
     List ι → List (List ι) → List ι → Prop where
-  | emptyRecv : CallArrow compat R L S [] As d
-  | empty : [] ∈ As → CallArrow compat R L S Rt As d
+  | emptyRecv : CallArrow compat elem R L S [] As d
+  | empty : [] ∈ As → CallArrow compat elem R L S Rt As d
   | source : p ∈ L → R Rt p.1 → Domains R As p.2.1 → (p.2.2 = [] ∨ R p.2.2 d) →
-      CallArrow compat R L S Rt As d
-  | rest : s ∈ S → RestFixed R s Rt As d → CallArrow compat R L S Rt As d
-  | union : CallArrow compat R L S Rt (pre ++ a :: suffix) d →
-      CallArrow compat R L S Rt (pre ++ b :: suffix) d →
-      CallArrow compat R L S Rt (pre ++ (a ++ b) :: suffix) d
-  | recvUnion : CallArrow compat R L S a As d → CallArrow compat R L S b As d →
-      CallArrow compat R L S (a ++ b) As d
-  | combine : CallArrow compat R L S Rt As b → CallArrow compat R L S Rt As b' →
-      (∀ i ∈ b, ∀ k ∈ b', compat i k = true → R [i] d) → CallArrow compat R L S Rt As d
+      CallArrow compat elem R L S Rt As d
+  | rest : s ∈ S → RestFixed elem R s Rt As d → CallArrow compat elem R L S Rt As d
+  | union : CallArrow compat elem R L S Rt (pre ++ a :: suffix) d →
+      CallArrow compat elem R L S Rt (pre ++ b :: suffix) d →
+      CallArrow compat elem R L S Rt (pre ++ (a ++ b) :: suffix) d
+  | recvUnion : CallArrow compat elem R L S a As d → CallArrow compat elem R L S b As d →
+      CallArrow compat elem R L S (a ++ b) As d
+  | combine : CallArrow compat elem R L S Rt As b → CallArrow compat elem R L S Rt As b' →
+      (∀ i ∈ b, ∀ k ∈ b', compat i k = true → R [i] d) → CallArrow compat elem R L S Rt As d
 
 /-- An arrow's source result within the target's, or empty. -/
 theorem arrow_result {G : NormalGraph ι} {R : List ι → List ι → Prop} {n : Nat} {r d : List ι}
@@ -357,7 +418,7 @@ theorem arrow_result {G : NormalGraph ι} {R : List ι → List ι → Prop} {n 
   · exact hr m hm _ _ he V u hu
 
 theorem CallArrow.sound {G : NormalGraph ι} {R L S Rt As d}
-    (hc : CallArrow (compatible G) R L S Rt As d) (n : Nat)
+    (hc : CallArrow (compatible G) (restElem G) R L S Rt As d) (n : Nat)
     (hr : ∀ j, j < n → ∀ a b, R a b → FamLeAt G a b j)
     (W : WorldT n) (v : Val)
     (hv : callsT (L.map fun p => (meaning G p.1, p.2.1.map (meaning G), meaning G p.2.2)) n W v ∧
@@ -377,10 +438,15 @@ theorem CallArrow.sound {G : NormalGraph ι} {R L S Rt As d}
       (fun j hj U r hrm => hr j hj _ _ hrecv U r hrm)
       (fun j hj U args ha => Domains.short (hr j hj) hd ha) (arrow_result hr hres)
   | rest hs hrf =>
-    exact (hv.2.2 _ (List.mem_map_of_mem hs)).weaken
-      (fun j hj U r hrm => hr j hj _ _ hrf.1 U r hrm)
-      (fun j hj U args ha => rest_short (hr j hj) (by simpa using hrf.2.1)
-        (by simpa using hrf.2.2.1) ha) (arrow_result hr hrf.2.2.2)
+    obtain ⟨hrecv, hd, hel, hres⟩ := hrf
+    unfold ElemRest at hel
+    split at hel
+    · rename_i El hE
+      exact (hv.2.2 _ (List.mem_map_of_mem hs)).weaken
+        (fun j hj U r hrm => hr j hj _ _ hrecv U r hrm)
+        (fun j hj U args ha => rest_short (hr j hj) hE (by simpa using hd)
+          (by simpa using hel) ha) (arrow_result hr hres)
+    · exact hel.elim
   | union _ _ hl hh =>
     intro j hj U hx hu heap hok r hrv hrm args hvals ha
     rcases short_union _ _ _ _ ha with ha | ha
@@ -403,7 +469,7 @@ theorem CallArrow.sound {G : NormalGraph ι} {R L S Rt As d}
       ⟨i, by simp, hv1⟩
 
 theorem rest_covers_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
-    {p q : List ι × List (List ι) × List ι × List ι} (hc : RestCovers R p q) (n : Nat)
+    {p q : List ι × List (List ι) × List ι × List ι} (hc : RestCovers (restElem G) R p q) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j) (W : WorldT n) (v : Val)
     (hv : Promise (ArgsRest (p.2.1.map (meaning G)) (meaning G p.2.2.1)) (meaning G p.1)
       (meaning G p.2.2.2) n W v) :
@@ -499,10 +565,10 @@ def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
       CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws ∧
       (∀ y ∈ iy, ∃ x ∈ ix, R x y) ∧ CoversOptional R (a :: bs) os ps
   | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
-      (∀ p ∈ M, CallArrow (compatible G) R L S p.1 p.2.1 p.2.2) ∧ ∀ t ∈ T, ∃ s ∈ S, RestCovers R s t
+      (∀ p ∈ M, CallArrow (compatible G) (restElem G) R L S p.1 p.2.1 p.2.2) ∧ ∀ t ∈ T, ∃ s ∈ S, RestCovers (restElem G) R s t
   | .callable a bs L S, .callable c ds M T =>
       CoversFields R (a :: bs) (c :: ds) ∧
-      (∀ p ∈ M, CallArrow (compatible G) R L S p.1 p.2.1 p.2.2) ∧ ∀ t ∈ T, ∃ s ∈ S, RestCovers R s t
+      (∀ p ∈ M, CallArrow (compatible G) (restElem G) R L S p.1 p.2.1 p.2.2) ∧ ∀ t ∈ T, ∃ s ∈ S, RestCovers (restElem G) R s t
   -- A construct signature is covered by one taking as many parameters, each
   -- at least as wide, with a result at most as wide.
   | .ctors L, .ctors M => ∀ q ∈ M, ∃ p ∈ L, Domains R q.1 p.1 ∧ R p.2 q.2
@@ -890,10 +956,6 @@ depend on a moved binder to itself. Dependence is by free parameter rows,
 stated by a checked certificate (`FreeOk`): a row under a scheme binding a
 parameter does not depend on it, so a receiver `Promise<number>`, whose `then`
 mentions `then`'s own binders, is its own image. -/
-
-/-- A type's meaning is a family of closed values. -/
-theorem meaning_valueFam (G : NormalGraph ι) (S : List ι) : ValueFam (meaning G S) :=
-  ⟨setSem_adm (normalDenote_adm G) S, fun _ _ _ ⟨_, _, h⟩ => normalDenote_value h⟩
 
 /-- A clause reads its operands only: families agreeing on the rows of `D`
 give it one meaning, when its operands are within `D`. -/

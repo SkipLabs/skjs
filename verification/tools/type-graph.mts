@@ -51,9 +51,12 @@ export type Clause =
   /** A tuple contract on an array store: required positions, optional
    * positions, and the rest, or null when no further position may exist. */
   | { list: { first: Tuple; rest: Tuple[] } }
-  /** `variadic` signatures take any number of actuals past their fixed
-   * parameters, each at the element contract; the field is left out when
-   * there are none. */
+  /** An argument list under tuple contracts: what a rest parameter's type
+   * says of the actuals past the fixed ones. */
+  | { pack: { first: Tuple; rest: Tuple[] } }
+  /** `variadic` signatures take actuals past their fixed parameters that, as
+   * one argument list, are at the rest type, a `pack`; the field is left out
+   * when there are none. */
   | { arrs: { arrows: Arrow[]; variadic?: RestArrow[] } }
   /** Construct signatures `[parameters, result]`: what a class meets. */
   | { ctors: { signatures: [Labels[], Labels][] } }
@@ -67,7 +70,7 @@ export type Clause =
     };
 export type RestArrow = [
   receiver: Labels,
-  [domains: Labels[], [element: Labels, result: Labels]],
+  [domains: Labels[], [rest: Labels, result: Labels]],
 ];
 export type Row = Clause[];
 export type TypeGraph = Row[];
@@ -172,7 +175,7 @@ export function decodeGraph(value: unknown): TypeGraph {
       if (sig.length !== 2) throw Error("expected a variadic signature");
       array(sig[0]).forEach(labels);
       const tail = array(sig[1]);
-      if (tail.length !== 2) throw Error("expected an element and a result");
+      if (tail.length !== 2) throw Error("expected a rest and a result");
       labels(tail[0]);
       labels(tail[1]);
     });
@@ -251,6 +254,11 @@ export function decodeGraph(value: unknown): TypeGraph {
       tuple(r.first);
       array(r.rest).forEach(tuple);
     },
+    pack: (b) => {
+      const r = obj(b, ["first", "rest"]);
+      tuple(r.first);
+      array(r.rest).forEach(tuple);
+    },
     arrs: (b) => {
       const r = objOptional(b, ["arrows"], ["variadic"]);
       arrows(r.arrows);
@@ -293,8 +301,8 @@ export const printLabels = (labels: Labels): string =>
 const receiverText = (receiver: Labels) => `this: ${printLabels(receiver)}`;
 const arrowText = ([receiver, [domains, result]]: Arrow) =>
   `(${[receiverText(receiver), ...domains.map(printLabels)].join(", ")}) => ${printLabels(result)}`;
-const restArrowText = ([receiver, [domains, [element, result]]]: RestArrow) =>
-  `(${[receiverText(receiver), ...domains.map(printLabels), `...(${printLabels(element)})[]`].join(", ")}) => ${printLabels(result)}`;
+const restArrowText = ([receiver, [domains, [rest, result]]]: RestArrow) =>
+  `(${[receiverText(receiver), ...domains.map(printLabels), `...${printLabels(rest)}`].join(", ")}) => ${printLabels(result)}`;
 const printTuple = (t: Tuple) =>
   `${t.readonly ? "readonly " : ""}[${[
     ...t.required.map(printLabels),
@@ -314,6 +322,8 @@ function clauseText(c: Clause): string {
   if ("strLit" in c) return JSON.stringify(c.strLit.value);
   if ("list" in c)
     return [c.list.first, ...c.list.rest].map(printTuple).join(" & ");
+  if ("pack" in c)
+    return `args${[c.pack.first, ...c.pack.rest].map(printTuple).join(" & ")}`;
   if ("refs" in c)
     return [
       [c.refs.first, ...c.refs.rest].map(printFields).join(" & "),

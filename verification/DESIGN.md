@@ -1537,7 +1537,14 @@ the whole argument list is one thing. The calculus has that thing as a value,
 holds as values. Their membership is required below the current level only,
 which keeps the clause contractive without any assumption on its operands, and
 coverage is covariant position by position within the length bounds
-(`CoversPack`).
+(`CoversPack`). A variadic signature's rest is such a type: its fixed
+parameters admit the first actuals and the rest the remaining ones as one pack
+(`ArgsRest`), so `...xs: E[]` is the pack of any number at `E` (`elemPack`) and
+`...xs: [A, B]` the pack of exactly those positions, one mechanism for both. A
+pack speaks below the current level only, which is all the rest array's
+allocation needs, since it is a step. Every producer spells a rest as a pack
+row; a spread into a rest, a rest compared with fixed positions, and binding a
+variadic target still need an element rest (`restElem`).
 
 **Classes.** A class declares its instance type in the declaration graph,
 and its value is a statement of the module initialization, in order. The
@@ -1701,7 +1708,7 @@ meets a fixed signature whose positions it admits, one value may carry fixed and
 variadic signatures, and a call clause holds both. A spread among the actuals
 of a variadic call is a `spread` term, replaced by its store's elements once
 every earlier actual is a value — `undefined` at a hole, as iteration answers —
-so a spread of an array that may have holes needs an element type admitting
+so a spread of an array that may have holes needs a rest whose element admits
 `undefined`. A spread followed by an actual that runs code is copied where it
 is written, and the call spreads the copy.
 

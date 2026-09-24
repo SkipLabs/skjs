@@ -232,8 +232,10 @@ All the callable uses build on this equation:
 
 - A fixed signature uses `ArgsShort`: written actuals meet their corresponding
   domains, and each omitted trailing domain admits `undefined`. A rest
-  signature uses `ArgsRest`: it additionally admits arbitrarily many extra
-  values at its element contract. `callsT` and `restsT` conjoin `Promise` over
+  signature uses `ArgsRest`: its fixed domains admit the first actuals as a
+  fixed signature's do, and the actuals past them, as one argument pack, are
+  at its rest contract; an element rest admits any number at its element
+  (`elemPack`). `callsT` and `restsT` conjoin `Promise` over
   their respective signature lists.
 - Overloads conjoin promises on **one value**. The `arrs L S` clause combines
   fixed and variadic promises; either list may be empty. Thus compatible
@@ -303,7 +305,8 @@ function forwards to it, which forwards with the first saved receiver.
 $(R_t, \vec P \mathbin{+\!\!+} \vec D, R)$ with a saved receiver in $R_t$ and a
 saved prefix in $\vec P$ gives an object meeting $(R_c, \vec D, R)$ for any
 $R_c$, and `restsT_bound` the same for a variadic target, whose residual keeps
-its element contract. There is no forwarding wrapper closure: construction and
+its rest, when the rest admits the prefix's values past the fixed positions in
+front of any pack it admits, as an element rest does. There is no forwarding wrapper closure: construction and
 `new.target` are not modelled, and a bound function has no own fields.
 
 `.apply` is a source lowering onto these steps, not a new preparation: it saves

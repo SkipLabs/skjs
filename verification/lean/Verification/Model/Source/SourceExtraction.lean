@@ -20,6 +20,14 @@ open Fragment
 
 private def distinct [BEq α] (xs : List α) : Bool := xs.eraseDups.length == xs.length
 
+/-- The type of the `i`-th actual past a variadic signature's fixed ones: its
+position in the rest's one tuple contract. -/
+private def restPosition (G : PositiveGraphs.NormalGraph Nat) (P : List Nat) (i : Nat) :
+    Option (List Nat) :=
+  match PositiveRules.expand G P with
+  | [.pack T []] => ProgramTyping.positionTy T i
+  | _ => none
+
 /-- What a scope slot holds. A value slot holds the value itself. A cell slot
 holds the identity of a private cell this lowering allocated: `contract` is the
 stable storage type every assignment is checked against, and `reference` is the
@@ -1046,7 +1054,8 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let n := args.length
     let boundTypes := (plans.drop 2).map (·.type)
     -- A fixed signature of the target leaves a fixed signature; a variadic one
-    -- leaves the positions the prefix did not take, then its element contract.
+    -- with an element rest leaves the positions the prefix did not take, then
+    -- its rest, the prefix's positions past the fixed ones at the element.
     let (Rt, prefixTys, own, rule) ← match PositiveRules.expand G A with
       | [.arrs [(Rb,Ds,_)] []] => do
         let L ← match PositiveRules.expand G callee.type with
@@ -1060,8 +1069,10 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         let sigs := ProgramTyping.restSigs G callee.type
         let some (Rt, Ps, E, R) := (sigs.find? fun (Rt,_,_,_) => receiverPlan.type.all Rt.contains) <|> sigs.head?
           | throw "a variadic bound function needs a variadic target"
+        let some El := PositiveRules.restElem G E
+          | throw "a variadic bound function needs an element rest"
         let own ← lower (SourceTypes.use (.arrs [] [(Rb, Ps.drop n, E, R)]))
-        pure (Rt, Ps.take n ++ List.replicate (n - Ps.length) E, own, ProgramCertificates.Rule.bindRestE)
+        pure (Rt, Ps.take n ++ List.replicate (n - Ps.length) El, own, ProgramCertificates.Rule.bindRestE)
       | _ => throw "bound function claim requires one free signature"
     -- The descriptor stores the slots as they are, so each is re-bound at the
     -- contract the selected signature gives it: the receiver, then the prefix.
@@ -1161,7 +1172,8 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let call ← match PositiveRules.expand G M, ProgramTyping.restSigs G M with
       | _, sigs@(_ :: _) =>
         -- A variadic method: the fixed actuals at its parameters, trailing
-        -- ones omitted as `undefined`, every further actual at its element.
+        -- ones omitted as `undefined`, every further actual at its position
+        -- in the rest.
         if fixedFits then throw "a call both a fixed and a variadic signature take is outside the fragment"
         let some (Rt, Ps, E, R) := (sigs.find? fun (Rt,_,_,_) => r.type.all Rt.contains) <|> sigs.head?
           | throw "internal variadic signature"
@@ -1169,11 +1181,14 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         obligation o.span receiver.goal (some receiver) "method-receiver" dsH
         let k := min actuals.length Ps.length
         let extra := actuals.drop k
+        let positions ← extra.zipIdx.mapM fun (_, i) => match restPosition G E i with
+          | some D => pure D
+          | none => throw "an actual past the rest's positions"
         pure (DirectProof.node H term R
           (.callRest k (Ps.length - k) (extra.map fun _ => false) E)
           (DirectProof.var H 0 M :: receiver ::
             ((actuals.take k).zip Ps).map (fun (a,D) => DirectProof.cast H D a)
-            ++ omittedPremises H Ps k ++ extra.map (DirectProof.cast H E)))
+            ++ omittedPremises H Ps k ++ (extra.zip positions).map fun (a,D) => DirectProof.cast H D a))
       | [.arrs L _], [] | [.callable _ _ L _], [] =>
         let (Rt,Ds,R) ← selectSignature G L (actuals.map (·.type)) r.type
         let receiver := DirectProof.cast H Rt (DirectProof.var H (ri+1) r.type)
@@ -1194,7 +1209,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let callee ← closureExpr fc scope Γ f
     -- A variadic signature serves a call no fixed arrow takes by arity: its
     -- fixed parameters, trailing ones omitted as `undefined`, then every
-    -- further actual at its element type.
+    -- further actual at its position in the rest.
     let fixedFits := match PositiveRules.expand G callee.type with
       | [.arrs L _] | [.callable _ _ L _] => L.any fun p => args.length ≤ p.2.1.length
       | _ => false
@@ -1204,10 +1219,13 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr fc scope Γ a
       let k := min actuals.length Ps.length
       let extra := actuals.drop k
+      let positions ← extra.zipIdx.mapM fun (_, i) => match restPosition G E i with
+        | some D => pure D
+        | none => throw "an actual past the rest's positions"
       pure (DirectProof.node Γ (.call callee.term (actuals.map (·.term))) R
         (.callRest k (Ps.length - k) (extra.map fun _ => false) E)
         (callee :: plainReceiver Γ Rt :: ((actuals.take k).zip Ps).map (fun (a,D) => DirectProof.cast Γ D a)
-          ++ omittedPremises Γ Ps k ++ extra.map (DirectProof.cast Γ E)))
+          ++ omittedPremises Γ Ps k ++ (extra.zip positions).map fun (a,D) => DirectProof.cast Γ D a))
     | [.arrs L _], [] | [.callable _ _ L _], [] =>
       let rule := match PositiveRules.expand G callee.type with
         | [.callable ..] => ProgramCertificates.Rule.callCallable
@@ -1485,7 +1503,8 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         let E ← lower (Fragment.callableType elementJson)
         let restTy ← lower (Fragment.translate restJson)
         let R ← lower (Fragment.callableType ret)
-        let own ← lower (SourceTypes.use (.arrs [] [(Rsource, fixed, E, R)]))
+        let rest ← lower (SourceTypes.use (.pack ⟨[], [], some E, false⟩ []))
+        let own ← lower (SourceTypes.use (.arrs [] [(Rsource, fixed, [rest], R)]))
         modify fun st => {st with hints := own :: restTy ++ st.hints}
         let b ← compileRestBody fc Rsource fixed restTy R initialized
         return DirectProof.node Γ (.make (.variadic fixed.length b.term) .nul) [own]
@@ -1975,7 +1994,8 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
           else if Tp.required.isEmpty && Tp.optional.isEmpty &&
               (ProgramTyping.restSigs G B).any (fun (_, Ps, _, _) => Ps.isEmpty) then
             -- A hole among the list's positions is read as `undefined`.
-            if !(ProgramTyping.restSigs G B).any (fun (_, Ps, E, _) => Ps.isEmpty && E.contains 3) then
+            if !(ProgramTyping.restSigs G B).any (fun (_, Ps, E, _) =>
+                Ps.isEmpty && (PositiveRules.restElem G E).any (·.contains 3)) then
               throw (locatedRefusal (← table) e.span .bindingAnnotation
                 "an .apply list that may have holes passes `undefined`, which the rest's element type does not admit")
             pure ([], true)
@@ -2092,7 +2112,9 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
         if let [.list T []] := PositiveRules.expand G S then
           if T.optional.isEmpty && T.rest.isNone then
             return (i, S)
-      let some (_, _, E, _) := (ProgramTyping.restSigs G B).head? | throw "a spread needs a variadic callee"
+      let some (_, _, P, _) := (ProgramTyping.restSigs G B).head? | throw "a spread needs a variadic callee"
+      let some E := PositiveRules.restElem G P
+        | throw "a spread into a rest needs an element rest"
       if !E.contains 3 then
         throw (locatedRefusal (← table) e.span .bindingAnnotation
           "a spread copied before a later actual runs needs a rest element type that admits `undefined`")
@@ -2106,7 +2128,8 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     -- admit it cannot collect such a spread, whatever TypeScript says.
     if variadic then
       let G := SourceTypes.graph (← table)
-      let admitsUndefined := (ProgramTyping.restSigs G B).any fun (_, _, E, _) => E.contains 3
+      let admitsUndefined := (ProgramTyping.restSigs G B).any fun (_, _, E, _) =>
+        (PositiveRules.restElem G E).any (·.contains 3)
       for i in spreads do
         let some arrayTy := As₀[i]? | throw "a spread argument needs an operand"
         if let some S := storeOf G arrayTy then

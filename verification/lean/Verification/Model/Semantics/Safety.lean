@@ -233,6 +233,18 @@ def ArgsT : List Fam → (k : Nat) → WorldT k → List Tm → Prop
   | A :: As, k, W, a :: args => A k W a ∧ ArgsT As k W args
   | _, _, _, _ => False
 
+/-- An actual is at its position's contract. -/
+theorem ArgsT_getElem? : ∀ {As : List Fam} {k : Nat} {W : WorldT k} {args : List Tm} {i : Nat}
+    {A : Fam} {a : Tm}, ArgsT As k W args → As[i]? = some A → args[i]? = some a → A k W a
+  | [], _, _, _, _, _, _, _, hA, _ => by simp at hA
+  | _ :: _, _, _, [], _, _, _, h, _, _ => h.elim
+  | _ :: _, _, _, _ :: _, 0, _, _, h, hA, ha => by
+    simp only [List.getElem?_cons_zero, Option.some.injEq] at hA ha
+    subst hA; subst ha; exact h.1
+  | _ :: _, _, _, _ :: _, i + 1, _, _, h, hA, ha => by
+    simp only [List.getElem?_cons_succ] at hA ha
+    exact ArgsT_getElem? h.2 hA ha
+
 theorem ArgsT_singleton (A : Fam) (k : Nat) (W : WorldT k) (args : List Tm) :
     ArgsT [A] k W args ↔ ∃ a, args = [a] ∧ A k W a := by
   cases args with
@@ -655,13 +667,12 @@ def ArgsShort (Ps : List Fam) (j : Nat) (W : WorldT j) (args : List Tm) : Prop :
   args.length ≤ Ps.length ∧ ArgsT (Ps.take args.length) j W args ∧
     ∀ A ∈ Ps.drop args.length, A j W .undef
 
-/-- The actual lists a variadic signature admits: those its fixed parameters
-admit, or every fixed parameter followed by any number at the element
-contract. -/
+/-- The actual lists a variadic signature admits: its fixed parameters admit
+the first actuals, as a fixed signature's do, and the actuals past them, as
+one argument pack, are at the rest contract. An element rest `E[]` is the pack
+of any number at `E` (`elemPack`). -/
 def ArgsRest (Ps : List Fam) (E : Fam) (j : Nat) (W : WorldT j) (args : List Tm) : Prop :=
-  ArgsShort Ps j W args ∨
-    (Ps.length ≤ args.length ∧ ArgsT Ps j W (args.take Ps.length) ∧
-      ∀ e ∈ args.drop Ps.length, E j W e)
+  ArgsShort Ps j W (args.take Ps.length) ∧ E j W (.args (args.drop Ps.length))
 
 /-- A promise: every receiver value at `Rc` with every admitted list of values
 invokes the value, at every future world and satisfying heap below the budget,
@@ -846,6 +857,57 @@ theorem PackFits.congr {T T' : TupleF} {n W vs}
     | none => rw [(hpos i).1.mpr hB] at hA; cases hA
     | some B => exact ((hpos i).2 A B hA hB j hj U u).mpr (h i u B hu hB j hj U hx)
 
+/-- The pack an element rest `E[]` denotes: any number of actuals at `E`. -/
+def elemPack (E : Fam) : Fam := packT [⟨[], [], some E, false⟩]
+
+theorem positionFam_elem (E : Fam) (i : Nat) :
+    positionFam ⟨[], [], some E, false⟩ i = some E := by
+  simp [positionFam]
+
+theorem elemPack_iff {E : Fam} {k : Nat} {W : WorldT k} {vs : List Tm} :
+    elemPack E k W (.args vs) ↔ Scoped 0 (.args vs) ∧
+      ∀ u ∈ vs, ∀ (j : Nat) (hj : j < k) (U : WorldT j),
+        WExt (trunc j (Nat.le_of_lt hj) W) U → E j U u := by
+  constructor
+  · rintro ⟨ws, he, hs, hf⟩
+    cases he
+    obtain ⟨-, -, hp⟩ := hf _ (List.mem_singleton_self _)
+    refine ⟨hs, fun u hu j hj U hx => ?_⟩
+    obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hu
+    exact hp i _ E (List.getElem?_eq_getElem hi) (positionFam_elem E i) j hj U hx
+  · rintro ⟨hs, h⟩
+    refine ⟨vs, rfl, hs, fun T hT => ?_⟩
+    cases List.mem_singleton.mp hT
+    refine ⟨by simp, by simp, fun i u A hu hA j hj U hx => ?_⟩
+    rw [positionFam_elem] at hA
+    cases hA
+    exact h u (List.mem_of_getElem? hu) j hj U hx
+
+/-- Closed actuals at an admissible element contract form its pack. -/
+theorem elemPack_of_all {E : Fam} (hE : Adm E) {k : Nat} {W : WorldT k} {vs : List Tm}
+    (hs : ∀ u ∈ vs, Scoped 0 u) (h : ∀ u ∈ vs, E k W u) : elemPack E k W (.args vs) :=
+  elemPack_iff.mpr ⟨by simpa [Scoped, scopedArgs_iff] using hs, fun u hu j hj U hx =>
+    hE.mono j _ U hx u (hE.down_le k j (Nat.le_of_lt hj) W u (h u hu))⟩
+
+/-- Prepending closed actuals, each at the element contract below the budget,
+keeps an element pack. -/
+theorem elemPack_append {E : Fam} {k : Nat} {W : WorldT k} {xs ys : List Tm}
+    (hs : ∀ u ∈ xs, Scoped 0 u)
+    (hx : ∀ u ∈ xs, ∀ (j : Nat) (hj : j < k) (U : WorldT j),
+      WExt (trunc j (Nat.le_of_lt hj) W) U → E j U u)
+    (hy : elemPack E k W (.args ys)) : elemPack E k W (.args (xs ++ ys)) := by
+  obtain ⟨hsy, hey⟩ := elemPack_iff.mp hy
+  refine elemPack_iff.mpr ⟨?_, fun u hu => ?_⟩
+  · simp only [Scoped, scopedArgs_iff, List.mem_append] at hsy ⊢
+    rintro u (hu | hu)
+    · exact hs u hu
+    · exact hsy u hu
+  · rcases List.mem_append.mp hu with hu | hu
+    · exact hx u hu
+    · exact hey u hu
+
+theorem elemPack_adm (E : Fam) : Adm (elemPack E) := packT_adm _
+
 theorem callsT_adm (L : List (Fam × List Fam × Fam)) : Adm (callsT L) :=
   ⟨fun _ _ _ h => ⟨h.1, fun p hp => (h.2 p hp).down⟩,
    fun _ _ _ hx _ h => ⟨h.1, fun p hp => (h.2 p hp).mono hx⟩⟩
@@ -1003,9 +1065,8 @@ theorem ArgsRest_congr {n : Nat} {As Bs : List Fam} {E E' : Fam} (h : ArgsAgree 
     (he : Agree E E' n) {j : Nat} (hj : j < n) (W : WorldT j) (args : List Tm) :
     ArgsRest As E j W args ↔ ArgsRest Bs E' j W args := by
   unfold ArgsRest
-  rw [ArgsShort_congr h hj W args, ArgsAgree_length h, ArgsT_congr h hj W]
-  exact or_congr Iff.rfl (and_congr Iff.rfl (and_congr Iff.rfl
-    (forall_congr' fun e => forall_congr' fun _ => he j hj W e)))
+  rw [ArgsShort_congr h hj W _, ArgsAgree_length h]
+  exact and_congr Iff.rfl (he j hj W _)
 
 /-! ### Admitted lists, position by position -/
 
@@ -1024,46 +1085,24 @@ theorem ArgsShort_cons {P : Fam} {Ps : List Fam} {j W a args} :
   · rintro ⟨ha, hl, ht, hd⟩; exact ⟨by omega, ⟨ha, ht⟩, hd⟩
 
 theorem ArgsRest_nil_args {Ps : List Fam} {E : Fam} {j W} :
-    ArgsRest Ps E j W [] ↔ ∀ A ∈ Ps, A j W .undef := by
-  unfold ArgsRest
-  rw [ArgsShort_nil_args]
-  constructor
-  · rintro (h | ⟨hl, -, -⟩)
-    · exact h
-    · have : Ps = [] := List.eq_nil_of_length_eq_zero (by simpa using hl)
-      subst this; simp
-  · exact Or.inl
+    ArgsRest Ps E j W [] ↔ (∀ A ∈ Ps, A j W .undef) ∧ E j W (.args []) := by
+  simp only [ArgsRest, List.take_nil, List.drop_nil, ArgsShort_nil_args]
 
 theorem ArgsRest_nil_params {E : Fam} {j W} {args : List Tm} :
-    ArgsRest [] E j W args ↔ ∀ e ∈ args, E j W e := by
-  unfold ArgsRest
-  rw [ArgsShort_nil_params]
-  simp only [List.length_nil, Nat.zero_le, List.take_zero, List.drop_zero, true_and]
-  constructor
-  · rintro (rfl | ⟨-, h⟩)
-    · simp
-    · exact h
-  · intro h; exact Or.inr ⟨trivial, h⟩
+    ArgsRest [] E j W args ↔ E j W (.args args) := by
+  simp [ArgsRest, ArgsShort_nil_params]
 
 theorem ArgsRest_cons {P : Fam} {Ps : List Fam} {E : Fam} {j W a args} :
     ArgsRest (P :: Ps) E j W (a :: args) ↔ P j W a ∧ ArgsRest Ps E j W args := by
-  unfold ArgsRest
-  rw [ArgsShort_cons]
-  simp only [List.length_cons, List.take_succ_cons, List.drop_succ_cons, ArgsT]
-  constructor
-  · rintro (⟨ha, h⟩ | ⟨hl, ⟨ha, ht⟩, hx⟩)
-    · exact ⟨ha, Or.inl h⟩
-    · exact ⟨ha, Or.inr ⟨by omega, ht, hx⟩⟩
-  · rintro ⟨ha, h | ⟨hl, ht, hx⟩⟩
-    · exact Or.inl ⟨ha, h⟩
-    · exact Or.inr ⟨by omega, ⟨ha, ht⟩, hx⟩
+  simp only [ArgsRest, List.length_cons, List.take_succ_cons, List.drop_succ_cons, ArgsShort_cons,
+    and_assoc]
 
 theorem ArgsRest_of_exact_extra {Ps : List Fam} {E : Fam} {j W args extra}
-    (ha : ArgsT Ps j W args) (he : ∀ e ∈ extra, E j W e) : ArgsRest Ps E j W (args ++ extra) := by
+    (ha : ArgsT Ps j W args) (he : E j W (.args extra)) : ArgsRest Ps E j W (args ++ extra) := by
   have hl := ArgsT_length ha
-  right
-  refine ⟨by simp; omega, by rw [← hl, List.take_left]; exact ha, ?_⟩
-  rw [← hl, List.drop_left]; exact he
+  refine ⟨?_, ?_⟩
+  · rw [← hl, List.take_left]; exact ArgsShort_of_exact ha
+  · rw [← hl, List.drop_left]; exact he
 
 /-! ### Invocation -/
 
@@ -1248,68 +1287,58 @@ theorem ArgsT_replicate_all {E : Fam} {j W} : ∀ {m : Nat} {xs : List Tm},
     · exact h.1
     · exact ArgsT_replicate_all h.2 x hx
 
-/-- A saved prefix covering the first positions of a variadic signature, its
-positions past the fixed ones at the element contract, followed by a list the
-rest of the signature admits, is admitted by the whole signature. -/
+/-- A saved prefix covering the first positions of a variadic signature,
+followed by a list the rest of the signature admits, is admitted by the whole
+signature, when the rest contract admits the prefix's values past the fixed
+positions in front of any pack it admits. -/
 theorem ArgsRest_prefix {Ps : List Fam} {E : Fam} {j W pre args}
-    (hp : ArgsT (Ps.take pre.length ++ List.replicate (pre.length - Ps.length) E) j W pre)
+    (hp : ArgsT (Ps.take pre.length) j W (pre.take Ps.length))
+    (hext : ∀ ys, E j W (.args ys) → E j W (.args (pre.drop Ps.length ++ ys)))
     (ha : ArgsRest (Ps.drop pre.length) E j W args) : ArgsRest Ps E j W (pre ++ args) := by
   by_cases hk : pre.length ≤ Ps.length
-  · have hrep : pre.length - Ps.length = 0 := by omega
-    rw [hrep, List.replicate_zero, List.append_nil] at hp
-    rcases ha with ha | ⟨hl, hT, hE⟩
-    · left
-      have h := ArgsShort_prefix hp ha
+  · rw [List.take_of_length_le hk] at hp
+    obtain ⟨hs, he⟩ := ha
+    have hdl : (Ps.drop pre.length).length = Ps.length - pre.length := by simp
+    refine ⟨?_, ?_⟩
+    · have htk : (pre ++ args).take Ps.length = pre ++ args.take (Ps.drop pre.length).length := by
+        rw [List.take_append, List.take_of_length_le hk, hdl]
+      rw [htk]
+      have h := ArgsShort_prefix hp hs
       rwa [List.take_append_drop] at h
-    · right
-      have hdl : (Ps.drop pre.length).length = Ps.length - pre.length := by simp
-      refine ⟨by simp; omega, ?_, ?_⟩
-      · have htk : (pre ++ args).take Ps.length = pre ++ args.take (Ps.drop pre.length).length := by
-          rw [List.take_append, List.take_of_length_le (by omega), hdl]
-        rw [htk]
-        have h := ArgsT_append hp hT
-        rwa [List.take_append_drop] at h
-      · have hdr : (pre ++ args).drop Ps.length = args.drop (Ps.drop pre.length).length := by
-          rw [List.drop_append, List.drop_of_length_le (by omega), hdl]
-          simp
-        rw [hdr]; exact hE
+    · have hdr : (pre ++ args).drop Ps.length = args.drop (Ps.drop pre.length).length := by
+        rw [List.drop_append, List.drop_of_length_le hk, hdl]
+        simp
+      rw [hdr]; exact he
   · have hdrop : Ps.drop pre.length = [] := List.drop_eq_nil_of_le (by omega)
     rw [hdrop, ArgsRest_nil_params] at ha
-    rw [List.take_of_length_le (by omega)] at hp
-    have hsplit := ArgsT_take_drop Ps.length hp
-    rw [List.take_left' rfl, List.drop_left' rfl] at hsplit
-    obtain ⟨hfix, hext⟩ := hsplit
-    right
-    refine ⟨by simp; omega, ?_, ?_⟩
+    rw [List.take_of_length_le (show Ps.length ≤ pre.length by omega)] at hp
+    refine ⟨?_, ?_⟩
     · have : (pre ++ args).take Ps.length = pre.take Ps.length := by
         rw [List.take_append]; simp [show Ps.length - pre.length = 0 by omega]
-      rw [this]; exact hfix
-    · intro e he
-      have hd : (pre ++ args).drop Ps.length = pre.drop Ps.length ++ args := by
+      rw [this]; exact ArgsShort_of_exact hp
+    · have hd : (pre ++ args).drop Ps.length = pre.drop Ps.length ++ args := by
         rw [List.drop_append]; simp [show Ps.length - pre.length = 0 by omega]
-      rw [hd] at he
-      rcases List.mem_append.mp he with he | he
-      · exact ArgsT_replicate_all hext e he
-      · exact ha e he
+      rw [hd]; exact hext args ha
 
 /-- An admitted variadic list stays admitted as the budget drops and the world
 grows. -/
 theorem ArgsRest_transfer {Ps : List Fam} {E : Fam} (hA : ∀ A ∈ Ps, Adm A) (hE : Adm E)
     {n W args} (ha : ArgsRest Ps E n W args) (j : Nat) (hj : j ≤ n) (U : WorldT j)
-    (hx : WExt (trunc j hj W) U) : ArgsRest Ps E j U args := by
-  rcases ha with ha | ⟨hl, hT, hx'⟩
-  · exact Or.inl (ArgsShort_transfer hA ha j hj U hx)
-  · exact Or.inr ⟨hl, ArgsT_transfer hA hT j hj U hx,
-      fun e he => hE.mono j _ U hx e (hE.down_le n j hj W e (hx' e he))⟩
+    (hx : WExt (trunc j hj W) U) : ArgsRest Ps E j U args :=
+  ⟨ArgsShort_transfer hA ha.1 j hj U hx, hE.mono j _ U hx _ (hE.down_le n j hj W _ ha.2)⟩
 
 /-- **A bound variadic function meets the residual variadic signature**: the
-positions the prefix did not take, then the element contract, at any receiver. -/
+positions the prefix did not take, then the rest contract, at any receiver,
+when that contract admits the prefix's values past the fixed positions in front
+of any pack it admits, as an element rest does. -/
 theorem restsT_bound {Rt E R Rc : Fam} {Ps : List Fam} {k : Nat} {W : WorldT k}
     {fs : List (PropKey × Nat)} {tv rv : Val} {pvs : List Tm}
     (hRt : Adm Rt) (hPs : ∀ A ∈ Ps, Adm A) (hE : Adm E)
     (ht : restsT [(Rt, Ps, E, R)] k W tv) (hrv : isVal rv = true) (hsr : Scoped 0 rv)
     (hr : Rt k W rv)
-    (hpv : ArgsT (Ps.take pvs.length ++ List.replicate (pvs.length - Ps.length) E) k W pvs)
+    (hpv : ArgsT (Ps.take pvs.length) k W (pvs.take Ps.length))
+    (hext : ∀ j (hj : j ≤ k) (U : WorldT j), WExt (trunc j hj W) U →
+      ∀ ys, E j U (.args ys) → E j U (.args (pvs.drop Ps.length ++ ys)))
     (hvs : CallArguments.Values pvs) (hsp : ∀ a ∈ pvs, Scoped 0 a) :
     restsT [(Rc, Ps.drop pvs.length, E, R)] k W (.objAt fs (.bound tv rv pvs)) := by
   refine ⟨⟨fs, _, rfl, rfl, ?_⟩, ?_⟩
@@ -1329,12 +1358,8 @@ theorem restsT_bound {Rt E R Rc : Fam} {Ps : List Fam} {k : Nat} {W : WorldT k}
       have hu' := WorldAdm_trunc (Nat.le_succ i) hu
       have hh' := HeapOk_trunc i U heap hh
       have hr' := hRt.mono i _ _ hxU rv (hRt.down_le k i (Nat.le_of_lt hi) W rv hr)
-      have hQ : ∀ A ∈ Ps.take pvs.length ++ List.replicate (pvs.length - Ps.length) E, Adm A := by
-        intro A hA
-        rcases List.mem_append.mp hA with hA | hA
-        · exact hPs A (List.mem_of_mem_take hA)
-        · rw [List.eq_of_mem_replicate hA]; exact hE
-      have hpre := ArgsT_transfer hQ hpv i (Nat.le_of_lt hi) _ hxU
+      have hpre := ArgsT_transfer (fun A hA => hPs A (List.mem_of_mem_take hA)) hpv i
+        (Nat.le_of_lt hi) _ hxU
       have hrest := ArgsRest_transfer (fun A hA => hPs A (List.mem_of_mem_drop hA)) hE hacc i
         (Nat.le_succ i) _ (WExt_refl _)
       have hall : CallArguments.Values (pvs ++ args) := by
@@ -1343,7 +1368,7 @@ theorem restsT_bound {Rt E R Rc : Fam} {Ps : List Fam} {k : Nat} {W : WorldT k}
         · exact hvs a hm
         · exact hargs a hm
       obtain ⟨res, hinv, hsafe⟩ := ht.2 _ (List.mem_singleton_self _) i hi _ hxU hu' heap hh'
-        rv hrv hr' (pvs ++ args) hall (ArgsRest_prefix hpre hrest)
+        rv hrv hr' (pvs ++ args) hall (ArgsRest_prefix hpre (hext i (Nat.le_of_lt hi) _ hxU) hrest)
       exact Or.inr ⟨_, heap, res, WExt_refl _, hu', hinv.step heap, hh', hsafe⟩
 
 #print axioms callsT_bound

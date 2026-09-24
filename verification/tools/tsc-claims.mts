@@ -733,7 +733,7 @@ function tryArrowIntersection(
 }
 
 /** One signature as a call contract: a fixed arrow, or a variadic signature
-whose further actuals are at its element contract. */
+whose further actuals, as one argument list, are at its rest type. */
 function callRow(
   r: Extract<ArrowRead, { ok: true }>,
   checker: Checker,
@@ -751,7 +751,16 @@ function callRow(
     : [internRow(types, ["top"])];
   if (!r.rest) return { arrows: [[receiver, [domains, result]]] };
   const element = translateType(r.rest, checker, types, false, fuel - 1);
-  return { arrows: [], variadic: [[receiver, [domains, [element, result]]]] };
+  // A rest's type is the pack of any number of actuals at its element.
+  const rest = internRow(types, [
+    {
+      pack: {
+        first: { required: [], optional: [], rest: element, readonly: false },
+        rest: [],
+      },
+    },
+  ]);
+  return { arrows: [], variadic: [[receiver, [domains, [[rest], result]]]] };
 }
 
 // Arrow operands can contain further arrows, with bounded recursion for
