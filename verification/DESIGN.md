@@ -1840,29 +1840,36 @@ parameter/tuple equations, agreement law, and admissibility/closedness are
 proved. The constructor conversion control now uses an actual object-valued
 graph tuple row through this interpreter.
 
-The recursive graph's production environment still assigns **value families**,
-and its entry point still selects `legacyArguments`. It cannot yet select the
-mixed `graphArguments` interpreter: that requires changing the fixed-point
-assignment domain and the row-image proof together. Extracting a list contract
-by applying an assigned value family to `.args` would retain the encoding being
-retired. The shared signature and graph-argument interpreters do not yet migrate
-production quantified certificates.
+The shared recursive fixed point now accepts the mixed assignment domain.
+`ParameterInterpretation` keeps the parameter-value projection, argument
+interpretation and bound interpretation together with their admissibility and
+agreement laws. `mixedParameters` retains **both** components of a bound;
+checking only the value projection could make a pack bound vacuous. The same
+`qLayerWithArgs`/`qDenoteWithArgs` implementation and proofs handle the legacy
+and mixed cases. The recursion controls now use actual graph tuple rows and a
+pack parameter bounded by a tuple containing a recursive callable; the former
+synthetic argument interpreters have been removed.
 
-The remaining fixed point must be indexed by the mixed assignment, while its
-recursive outputs remain value meanings. Argument meanings are derived by
-`graphArguments` from those outputs at the same level; they must not be given
-an extra recursive unfolding of their own. Otherwise the migration would
-reintroduce the very delay that breaks the object/callback conversion. The
-row-image proof must accordingly establish value images and then argument
-images at each level, with the latter using the former's current-level result.
+The fixed point's recursive outputs remain value meanings. Argument meanings
+are derived by `graphArguments` from those outputs at the same level, without
+an extra unfolding. Admissibility is proved for arbitrary admissible
+approximations, not only the closed-value fixed point. This prevents the
+migration from reintroducing the delay that breaks object/callback conversion.
+
+The production entry point still selects `legacyParameters`: its environment,
+`table_row`, `inst_sound` and subtype certificates have not migrated together.
+The row-image proof must establish value images and then argument images at
+each level, with the latter using the former's current-level result. Remaining
+legacy pack-value denotations and the `.args` assignment adapter must then be
+retired. The mixed fixed-point theorem is not yet a change to CLI acceptance.
 
 The remaining graph assignment/substitution change must retain a pack's list
 contract and the coherent array interpretation used by collection and array
 bounds. Substitution certificates must preserve both interpretations; using a
 binder as a rest and using its collected array must not choose unrelated
 contracts. The shared quantifier now supports mixed value/pack substitutions;
-connecting that domain to the recursive graph and its row-image proofs remains
-an integration requirement.
+selecting that domain in production and establishing its row-image proofs
+remains an integration requirement.
 
 The OCaml producer now separates `ty` from `pack`, with tagged value/pack
 substitution arguments. `Args` is no longer an ordinary value-type atom. Its
@@ -1933,21 +1940,21 @@ The integration must change the following connected boundaries together:
    source verification exercises that complete path can the old pack meaning
    and fixed-to-pack stability guards be retired.
 
-The semantic refactors above have not completed any of these four connected
-boundaries. Parameter kinds are now retained in graph rows and checked by
-instantiation, but their semantic environments still need migration. In particular, the shared substitution theorem is preparation for
-certificate migration, not a migrated pack certificate.
+The semantic refactors above do not yet complete this production migration.
+Parameter kinds are retained in graph rows and checked by instantiation, and
+the shared fixed point supports mixed environments. The production selector
+and substitution certificates still need to migrate together; the shared
+substitution theorem alone is not a migrated pack certificate.
 
 The remaining integration boundary is explicit:
 
 | Step | Status | Completion condition |
 | --- | --- | --- |
 | Same-level core calls, constructors and universal rest bodies | Implemented | Existing operational safety proofs use list contracts. |
-| Recursive graphs with bounded value quantification | Proved in the production graph implementation | The fixed-point equation, admissibility and assignment agreement hold for argument interpreters derived from the value environment; independently quantified packs remain below. |
 | Producer value/pack substitution distinction | Implemented internally | Packs cannot be value-type atoms; cross-kind substitution is refused; the wire still uses legacy pack rows. |
 | Source binder roles | Implemented | Structural, scope-aware classification; value/pack bindings have distinct lowering paths; mixed uses remain opaque. |
 | Sorted assignment and universal quantification algebra | Proved and shared with production value schemes | Reassignment and bound restriction support mixed substitutions; a universal control shares its list contract across constructor/rest positions and its value contract across both results. |
-| Mixed signatures and graph argument interpretation | Proved in the shared implementation | Pack parameters read list assignments; tuple rows use current-level value meanings; mixed universal elimination uses the production signature interpreter. |
+| Mixed signatures and recursive graph interpretation | Proved in the shared implementation | Pack parameters read list assignments; tuple rows use current-level value meanings; the shared fixed point supports mixed bounds and recursive pack rows. Production certificates still use the legacy domain. |
 | Quantified pack substitution in the Lean graph | Pending | A pack argument is instantiated as a list contract, not by the old ordinary-value `meaning` of a pack row; bounds and both uses of the binder agree. |
 | Source/evidence migration and retirement | Pending | Decoders, producer export, substitution certificates and coverage select that interpretation; retire `packArgs`, the ordinary `pack` encoding and `StableTy` guards. |
 | Motivating source coverage | Pending | Object/callback dependencies verify end to end; wrong actuals remain rejected; report the original framework client's independent gaps separately. |

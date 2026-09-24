@@ -36,55 +36,51 @@ example (T : TupleF) (Bound : Fam)
     FamLe (listT T) (listT ⟨[], [], some Bound, true⟩) :=
   ⟨fun _ _ _ h => fits_bound hb h, array_bound hb⟩
 
-/-- Recursion through an argument type is guarded by the callable itself.
-Node 0 accepts itself as an argument; node 1 is its number result/receiver. -/
+/-- Recursion through a real graph pack row is guarded by the callable.
+Node 0 takes a list whose single element is itself; node 1 is the result. -/
 def recursive : PositiveGraphs.NormalGraph Nat := .ofRows fun
   | 0 => [.arrs [] [([1], [], [2], [1])]]
+  | 2 => [.pack ⟨[[0]], [], none, false⟩ []]
   | _ => [.num]
 
-def recursiveArgs (_ : Assignment Nat) (X : List Nat → Fam) (_ : List Nat) : ArgFam := ArgsT [X [0]]
+example (η : MixedAssignment Nat) (n W v) :
+    qDenoteWithArgs recursive (mixedParameters recursive) (η, 0) n W v ↔
+      qLayerWithArgs recursive (mixedParameters recursive)
+        (qDenoteWithArgs recursive (mixedParameters recursive))
+        (η, 0) n W v :=
+  qDenoteWithArgs_unfold _ _ _ n W v
 
-theorem recursiveArgs_nonexp : ArgumentNonExp recursiveArgs := by
-  intro η θ X Y n hη h S j hj W vs
-  exact ArgsT_congr (.cons (h [0]) .nil) hj W vs
+example (η : MixedAssignment Nat) : Adm
+    (qDenoteWithArgs recursive (mixedParameters recursive) (η, 0)) :=
+  qDenoteWithArgs_adm _ _ _
 
-example (n W v) :
-    qDenoteWithArgs recursive recursiveArgs (Assignment.empty, 0) n W v ↔
-      qLayerWithArgs recursive (qDenoteWithArgs recursive recursiveArgs) recursiveArgs
-        (Assignment.empty, 0) n W v :=
-  qDenoteWithArgs_unfold recursive recursiveArgs recursiveArgs_nonexp _ n W v
-
-example : Adm (qDenoteWithArgs recursive recursiveArgs (Assignment.empty, 0)) :=
-  qDenoteWithArgs_adm _ _ recursiveArgs_nonexp _
-
-/-- A bounded generic may take its binder at the same level inside a rest.
-The bound is itself recursive: it accepts the generic callable as an argument.
-This exercises quantified restriction and recursive negative positions together. -/
+/-- A pack parameter's bound is a tuple containing a recursive callable.
+This exercises quantified restriction and recursive negative positions together,
+using real rows for both the pack parameter and its bound. -/
 def quantified : NormalGraph Nat := {
-  rows := fun i => if i = 1 then [.arrs [([3], [[0]], [3])] []] else [.top]
-  parameterKinds := fun i => if i == 2 then some .value else none
+  rows := fun i => match i with
+    | 1 => [.pack ⟨[[4]], [], none, false⟩ []]
+    | 4 => [.arrs [([3], [[0]], [3])] []]
+    | _ => [.top]
+  parameterKinds := fun i => if i == 2 then some .arguments else none
   schemes := fun i => if i = 0 then some {
     binders := [2], bounds := [(2, [1])], signatures := [],
-    variadic := [([3], [], [2], [2])] } else none }
+    variadic := [([3], [], [2], [3])] } else none }
 
-def singleArgument : ArgumentInterpreter Nat := fun _ X S => ArgsT [X S]
+example (η : MixedAssignment Nat) :
+    Adm (qDenoteWithArgs quantified (mixedParameters quantified) (η, 0)) :=
+  qDenoteWithArgs_adm _ _ _
 
-theorem singleArgument_nonexp : ArgumentNonExp singleArgument := by
-  intro η θ X Y n hη h S j hj W vs
-  exact ArgsT_congr (.cons (h S) .nil) hj W vs
-
-example (η : Assignment Nat) :
-    Adm (qDenoteWithArgs quantified singleArgument (η, 0)) :=
-  qDenoteWithArgs_adm _ _ singleArgument_nonexp _
-
-/-- The fixed-point equation retains the universal quantifier and bounds;
-it is not a collection of separately checked observed instances. -/
-example (η : Assignment Nat) (n W v) :
-    qDenoteWithArgs quantified singleArgument (η, 0) n W v ↔
-      schemeSemWithArgs
-        (fun θ S => setSem (fun i => qDenoteWithArgs quantified singleArgument (θ, i)) S)
-        η ⟨[2], [], [(2, [1])], [([3], [], [2], [2])]⟩ singleArgument n W v := by
-  rw [qDenoteWithArgs_unfold _ _ singleArgument_nonexp]
+/-- The fixed-point equation retains universal quantification over mixed
+assignments and both components of the bound; no observed calls replace it. -/
+example (η : MixedAssignment Nat) (n W v) :
+    qDenoteWithArgs quantified (mixedParameters quantified) (η, 0) n W v ↔
+      schemeSemWithArgs (mixedParameters quantified)
+        (fun θ S => setSem (fun i => qDenoteWithArgs quantified
+          (mixedParameters quantified) (θ, i)) S)
+        η ⟨[2], [], [(2, [1])], [([3], [], [2], [3])]⟩
+        n W v := by
+  rw [qDenoteWithArgs_unfold _ _]
   rfl
 
 /-- A scheme has a value parameter and a list parameter in one substitution.

@@ -88,7 +88,7 @@ theorem param_row {G : NormalGraph ι} {η : Assignment ι} {i : ι} (hp : G.par
     (n : Nat) (W : WorldT n) (v : Val) :
     qDenote G (η, i) n W v ↔ η.1 i n W v := by
   rw [qDenote_unfold]
-  simp [qLayer, qLayerWithArgs, hp]
+  simp [qLayer, qLayerWithArgs, legacyParameters, hp]
 
 private theorem approx_bridge (G : NormalGraph ι) (hq : ∀ i, G.schemes i = none)
     (η : Assignment ι) :
@@ -105,7 +105,7 @@ private theorem approx_bridge (G : NormalGraph ι) (hq : ∀ i, G.schemes i = no
     cases hp : G.params i
     · simp [hq i, normalLayer, NormalGraph.clauses, NormalGraph.plain, hp, semList, sem]
       rfl
-    · simp
+    · simp [legacyParameters]
 
 /-- **Conservative.** Without scheme rows, the denotation at an assignment is
 the parametric semantics at that assignment. -/

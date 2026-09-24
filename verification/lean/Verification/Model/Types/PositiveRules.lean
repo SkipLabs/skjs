@@ -1808,7 +1808,7 @@ theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D 
                 funext m U u
                 apply propext
                 rw [singleton, qDenote_unfold]
-                simp [qLayer, qLayerWithArgs, hpars q hq]
+                simp [qLayer, qLayerWithArgs, legacyParameters, hpars q hq]
               · rw [enter_nmem κ hb, assign_nmem ηL s.binders As hb]
                 have hpi : p ∈ fv V i := by
                   rcases (hreads l hl).2 p hp with h1 | ⟨s', hs', h2⟩
@@ -1880,7 +1880,7 @@ theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D 
                 simp only [List.mem_append, List.mem_flatten]
                 exact .inl (.inr ⟨S, hS, hl⟩))
             · obtain ⟨hmap, _⟩ := mapM_some hrests
-              unfold instanceRestsWithArgs legacyArguments
+              unfold instanceRestsWithArgs legacyParameters legacyArguments
               rw [hmap]
               simp only [List.map_map]
               refine restsT_congr s.variadic _ _ (fun p hps => ?_) W v
@@ -1971,13 +1971,13 @@ theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D 
     subst hrow
     have hr := hrel i (hself hpar)
     rw [qDenote_unfold]
-    simp only [qLayer, qLayerWithArgs, hpar, if_true]
+    simp only [qLayer, qLayerWithArgs, legacyParameters, hpar, if_true]
     cases hk : κ.lookup i with
     | none =>
       rw [hk] at hr
       simp only [Option.getD_none]
       rw [singleton, qDenote_unfold]
-      simp only [qLayer, qLayerWithArgs, hpar, if_true]
+      simp only [qLayer, qLayerWithArgs, legacyParameters, hpar, if_true]
       rw [hr]
     | some U =>
       rw [hk] at hr
