@@ -51,17 +51,14 @@ export type TypeTerm =
   | { k: "reference"; reference: Reference; args: TypeTerm[]; span: Span };
 export type TypeDefinition = {
   declaration: DeclarationIdentity;
-  sha256: string;
   parameters: { name: string; span: Span; bound: TypeTerm | null;
     default: TypeTerm | null }[];
-  body: Span;
   /** Interface heritage remains a source edge; consumers derive its members. */
   bases: TypeTerm[];
   expression: TypeTerm;
-  references: Reference[];
 };
-/** Every declaration reachable from the roots, each once. `sha256` on a
- * definition records the bytes of its module; nothing checks it. */
+/** Every declaration reachable from the roots, each once. References live in
+ * the expression, parameter bounds/defaults and heritage edges, not in a second list. */
 export type DeclarationDocument = {
   roots: TypeRoot[];
   definitions: TypeDefinition[];

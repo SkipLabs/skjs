@@ -735,8 +735,10 @@ modeling choices; they do not replace proof.
   declaration, or on an import or export statement the resolution passes
   through, refuses the graph. This trusts TypeScript's
   resolution and assumes the project's `tsconfig.json` (its `paths`, links and
-  standard-library set) reflects the real build. The hash recorded on each
-  definition is provenance; the Lean theorem does not validate it.
+  standard-library set) reflects the real build. Declaration equations are
+  parsed from the checker's own source trees; there is no separate declaration
+  or module-mapping byte check. Fixture hashes in the tests detect changed
+  inputs, but are not premises of the Lean theorem.
 - Source and claim translation preserve intended control flow, lexical binding,
   annotations and type meaning. Scope association cannot be recovered merely
   by checking that two slots have compatible types.
@@ -796,7 +798,7 @@ arrays become rigid forms, and parameter-free parts lower to graph rows (see
 [DeclarationGraph.lean](lean/Verification/Model/Source/DeclarationGraph.lean)). This
 is one path for every declaration, local or imported; a record over a rigid
 binder stays outside the rigid checker. Generic declarations applied to ground
-arguments use the same graph meaning as other declarations. The import document retains each
+arguments use the same graph meaning as other declarations. The declaration document retains each
 parameter's source bound and trailing default. Application fills omitted
 arguments in declaration order, substitutes earlier arguments into later
 defaults and bounds, and checks each resulting inclusion with a

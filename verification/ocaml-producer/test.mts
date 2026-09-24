@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { parseFile, definedClassCallables, close as closeParser } from "../tools/fragment-parse.mts";
 import { collectDeclarations, importTargets, tsconfigOf } from "../tools/declaration-graph.mts";
-import type { DeclarationDocument } from "../tools/declaration-types.mts";
+import type { DeclarationDocument, Reference, TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import type { Ast } from "../tools/fragment.mts";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { check, verifier } from "./check.mts";
@@ -20,6 +20,47 @@ import { checkDefaults, checkSchemeDefaults, checkEarlyDefault } from "./default
 // port only when it is run directly.
 import { analyse } from "../report-viewer/serve.mts";
 const here = import.meta.dirname;
+/** Inspect the source equations used by Lean, rather than a second edge list. */
+function referencesIn(term: TypeTerm): Reference[] {
+  switch (term.k) {
+    case "atom":
+    case "literal":
+    case "self":
+    case "parameter":
+    case "binder": return [];
+    case "union":
+    case "intersection": return term.parts.flatMap(referencesIn);
+    case "array": return referencesIn(term.element);
+    case "tuple": return [...term.required, ...term.optional,
+      ...(term.rest ? [term.rest] : [])].flatMap(referencesIn);
+    case "object": return [
+      ...term.fields.flatMap(field => referencesIn(field.type)),
+      ...(term.stringIndex ? referencesIn(term.stringIndex.value) : []),
+      ...term.calls.flatMap(referencesIn),
+    ];
+    case "function": return [
+      ...(term.receiver ? referencesIn(term.receiver) : []),
+      ...term.params.flatMap(referencesIn),
+      ...(term.rest ? referencesIn(term.rest) : []),
+      ...referencesIn(term.result),
+    ];
+    case "reference": return [term.reference, ...term.args.flatMap(referencesIn)];
+    default: {
+      const exhaustive: never = term;
+      return exhaustive;
+    }
+  }
+}
+function referencesInDefinition(definition: TypeDefinition): Reference[] {
+  return [
+    ...definition.parameters.flatMap(parameter => [
+      ...(parameter.bound ? referencesIn(parameter.bound) : []),
+      ...(parameter.default ? referencesIn(parameter.default) : []),
+    ]),
+    ...referencesIn(definition.expression),
+    ...definition.bases.flatMap(referencesIn),
+  ];
+}
 {
   const source = join(mkdtempSync(join(tmpdir(), "skjs-reopen-")), "client.ts");
   writeFileSync(source, "function before(): boolean { return true; }\n");
@@ -141,13 +182,12 @@ for (const [file, expected] of [
   assert.deepEqual(checkedFragment.declarations, jsonAst.declarations);
   const jsonDefinitions = pinnedDeclarationDocument.definitions;
   assert.deepEqual(jsonDefinitions.map(d => [d.declaration.name,
-    d.references.map(r => r.target.name)]), [
+    referencesInDefinition(d).map(r => r.target.name)]), [
     ["Json", ["Json", "JsonObject"]],
     ["JsonObject", ["Json"]],
   ]);
   assert(jsonDefinitions.every(d =>
-    d.declaration.module === "skiplang/skjson/ts/binding/src/index.ts" &&
-    d.sha256 === jsonModuleSha));
+    d.declaration.module === "skiplang/skjson/ts/binding/src/index.ts"));
   const json = jsonDefinitions.find(d => d.declaration.name === "Json");
   const jsonObject = jsonDefinitions.find(d => d.declaration.name === "JsonObject");
   assert(json && jsonObject && json.expression.k === "union" &&
@@ -240,7 +280,7 @@ for (const [file, expected] of [
   };
   const pairDocument = graphOf("import type { A } from '@fixture/a';");
   assert.deepEqual(pairDocument.definitions.map(d => [d.declaration.name,
-    d.parameters.map(p => p.name), d.references.map(r => [r.target.name, r.arguments.length])]), [
+    d.parameters.map(p => p.name), referencesInDefinition(d).map(r => [r.target.name, r.arguments.length])]), [
     ["A", ["T"], [["B", 1]]],
     ["B", ["T"], [["A", 1]]],
   ]);
@@ -325,7 +365,7 @@ for (const [file, expected] of [
   const inheritedGraph = collectDeclarations(inheritedClient, { tsconfigPath: pairConfig });
   const derived = must(inheritedGraph.definitions.find(d => d.declaration.name === "Derived"),
     "Derived declaration");
-  assert.equal(must(derived.references[0], "Derived heritage reference").target.name, "Box");
+  assert.equal(must(referencesInDefinition(derived)[0], "Derived heritage reference").target.name, "Box");
   const importedIdentityClient = join(pairDir, "imported-identity-client.ts");
   writeFileSync(importedIdentityClient,
     'import type { ImportedId } from "@fixture/box";\n' +
@@ -550,7 +590,7 @@ for (const [file, expected] of [
     /type 'A' needs 1 type argument/);
   const boundDefinitions = graphOf("import type { Bound } from '@fixture/a';").definitions;
   assert.deepEqual(boundDefinitions.map(d =>
-    [d.declaration.name, d.references.map(r => r.target.name)]), [
+    [d.declaration.name, referencesInDefinition(d).map(r => r.target.name)]), [
     ["Bound", ["B"]], ["B", ["A"]], ["A", ["B"]],
   ]);
   const bound = boundDefinitions[0]?.parameters[0]?.bound;

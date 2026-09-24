@@ -4,7 +4,6 @@
  * resolve exactly as the compiler resolves them. This module turns each
  * declaration reached into a source equation, or refuses a form the fragment
  * cannot state; a refusal never drops a declaration. */
-import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { API, DiagnosticCategory, SymbolFlags, type Checker, type Program } from "typescript/unstable/sync";
@@ -33,8 +32,6 @@ export function tsconfigOf(path: string): string {
   const absolute = resolve(path);
   return absolute.endsWith(".json") ? absolute : join(absolute, "tsconfig.json");
 }
-
-const digest = (text: string): string => createHash("sha256").update(text).digest("hex");
 
 /** Open `file` in its configured TypeScript project, which must be strict:
  * `tsconfigPath` when given, otherwise the project that owns the file. The
@@ -261,7 +258,6 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     const parameterNames = parameterNodes.map(parameter => parameter.name.text);
     if (new Set(parameterNames).size !== parameterNames.length)
       throw Error(`duplicate binder in ${identity.module}#${identity.name}`);
-    const references: Reference[] = [];
     const reference = (identifier: Identifier, arguments_: readonly TypeNode[], pos: Span,
         read: (part: TypeNode) => TypeTerm): TypeTerm => {
       const targetNode = lookup(identifier, `${identity.module}#${identifier.text}`);
@@ -272,7 +268,6 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         throw Error(`type argument arity: ${target.module}#${target.name}`);
       const edge: Reference = { name: identifier.text, span: pos,
         arguments: arguments_.map(arg => [arg.getStart(source), arg.end]), target };
-      references.push(edge);
       queue.push(targetNode);
       return { k: "reference", reference: edge, args: arguments_.map(read), span: pos };
     };
@@ -315,10 +310,6 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
           });
         })
       : [];
-    definitions.push({ declaration: identity,
-      sha256: digest(source.getFullText()),
-      parameters, body: ts.isTypeAliasDeclaration(node)
-        ? [node.type.getStart(source), node.type.end]
-        : [node.getStart(source), node.end], bases, expression, references });
+    definitions.push({ declaration: identity, parameters, bases, expression });
   }
 }

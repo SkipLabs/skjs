@@ -602,7 +602,7 @@ TypeScript files, package manifests and workspace symlinks; the test and command
 above read the same checked-in source snapshot. All intermediate JSON is
 generated from that source tree. The viewer uses the same project mapping from
 the executable case inventory; a bare CLI invocation still needs `--project`.
-This is conditional verification relative to the trusted import document, not
+This is conditional verification relative to the trusted declaration document, not
 closure of the full milestone.
 
 An interface or alias declared in the client file now uses that same source
@@ -637,7 +637,7 @@ lose a proof or propose a false claim, but Lean derives the graph equation and
 checks every field obligation independently. This keeps candidate search from
 becoming a second implementation of the imported type's meaning.
 
-The import document contains the collected declaration equations. Resolution
+The declaration document contains the collected declaration equations. Resolution
 is TypeScript's, under the snapshot's dedicated
 [`upstream/tsconfig.json`](upstream/tsconfig.json), which includes the
 imported-`Json` clients and mirrors upstream's strict Node16 resolution;
@@ -649,8 +649,10 @@ explicit source `paths` mappings; the `skiplang-json` workspace link is real.
 The remaining trust assumption is that this project configuration agrees with
 the actual upstream build. The TypeScript checker and our source-type parser
 remain trusted: Lean interprets the collected equations but does not reparse
-TypeScript, reconstruct package exports or symlink routes, or check the hash
-recorded on each definition. That hash records provenance only.
+TypeScript or reconstruct package exports and symlink routes. TypeScript reads
+each declaration from its project, and the collector parses that same tree;
+only the client text is compared with the independent source parser's text.
+There is no independent byte check for declaration files or module mappings.
 The test's pinned hashes guard accidental fixture changes and are not a
 soundness argument. The result remains relative to the supplied source tree
 and this front end, rather than verification of arbitrary imports.
@@ -698,37 +700,34 @@ Current progress against the `Json` prerequisite:
 | Checkpoint | Current result | Remaining boundary |
 | --- | --- | --- |
 | 1. Source closure | Canonical `Json`/`JsonObject` cycle, workspace link, cross-file generic cycle, trailing type-parameter defaults, single field/index/callable-property/method interfaces, interface heritage edges, and configured global declaration sources collected. | Computed-symbol methods, declaration merging and value declarations remain outside this collector. |
-| 2. Shared graph and gate | Imported alias and supported interface equations, including a global declaration, reach the common Fragment and Lean request; TypeScript checks declaration identities and source bytes. | The configured project and source parser remain trusted; richer declarations are refused. |
+| 2. Shared graph and gate | Imported alias and supported interface equations, including a global declaration, reach the common Fragment and Lean request; TypeScript supplies declaration identities; the client-byte comparison checks the two parser inputs. | The configured project and source parser remain trusted; richer declarations are refused. |
 | 3. Semantic interpretation | Recursive readonly array, dictionary, fixed callable, interface method receiver, disjoint plain-object inheritance, and finite ground imported generic record, tuple and callable applications with bounds and defaults reach `CertifiedPlan` and `checkJson_safe`. | Recursive generic applications, overlapping or richer inherited contracts, mutable dictionary and implementation contracts need their own certified paths. |
 | 4. Relative contracts and controls | Forged alias equations, targets, source bytes and evidence have negative controls. | External value-contract assumptions and their eventual discharge are not yet represented. |
 | 5. Actual-source acceptance | Imported `Json` clients, a bound-instantiation case and four negative controls run end to end; synthetic cross-file generic applications with bounds, defaults and inheritance also verify. | Actual `Mapper` now first refuses an unsupported method signature in `Context`; library iterator semantics, richer generic interfaces, classes and their dependencies follow. |
 
-The checkpoints below state the design obligations in dependency order; the
-table above records which parts have actually been implemented.
+The checkpoints below spell out the current implementation and the remaining
+proof and trust obligations; the table above records the outcomes.
 
 Implementation checkpoints:
 
-1. **Canonical source closure.** Pin the tracked `skiplang-json` declaration
-   bytes and the `prebuild.mjs` mapping at the upstream revision. Extend module
-   resolution through local `export type { Json }`, relative imports and the
-   mapped workspace path. Starting from a requested imported declaration,
-   collect exactly its reachable type definitions across files, including
-   cycles, with module-qualified declaration identities, binders, source spans
-   and a fingerprint for every file and mapping used. Resolve each edge once;
-   report absent, ambiguous or unsupported edges at their source location.
-   This is still provenance, not type acceptance.
-2. **One shared graph format and source gate.** Represent that closure in the
-   existing Fragment/claim language, including parameterized references,
-   recursive nodes, readonly arrays and string index signatures. Update all
-   producers, decoders and printers together; do not add an OCaml-only shape or
-   a second accepted wire format. The trusted source parser must derive the
-   graph from the snapshotted declarations and distinguish type-only imports
-   from runtime values. The request and evidence must bind the client, every
-   declaration and the resulting graph to their bytes. Include the authority
-   for package exports and workspace links, not only their chosen destinations;
-   validate that authority independently or state it as an external assumption.
-   Keep imports refused until the independent checker consumes and validates
-   this information.
+1. **Canonical source closure.** The configured TypeScript checker resolves
+   each named import and each reference in a reachable declaration to one
+   alias or interface; the collector parses those declarations from the
+   checker's own source trees. Each declaration has a module-qualified
+   identity, binders, spans, an expression and heritage edges. References
+   occur in those expressions, bounds, defaults and edges, with no second
+   serialized edge inventory. The pinned fixture hashes guard changes to
+   test inputs; they do not validate the resolution or bind request bytes.
+2. **One shared graph format and source gate.** The existing Fragment
+   document carries those equations to Lean, which interprets them rather
+   than trusting the OCaml candidate graph. TypeScript's project configuration
+   and source parsing remain trusted. The client-byte comparison ensures the
+   source parser and TypeScript checker saw the same client text; both use
+   TypeScript's own trees for declarations. The configured package exports,
+   workspace links and `paths` entries are assumptions about the upstream
+   build, not independently certified mappings. Unsupported declarations are
+   refused at the source gate.
+
 3. **Semantic interpretation and proof.** Extend the existing guarded
    recursive-graph interpretation with the dictionary constructor and prove
    that the accepted graph equations denote admissible semantic types. Define
@@ -741,15 +740,16 @@ Implementation checkpoints:
    with their safety proofs. A successful graph check must enter the exhaustive
    `CertifiedPlan` path and the `SourceClaimJson.checkJson_safe` conclusion;
    an unconnected Lean lemma or OCaml proposal is not verification.
-4. **Relative contracts and controls.** Imported value contracts are explicit
-   assumptions for client safety until their implementations are checked; an
-   imported type definition is an interpreted graph, not an assertion that a
-   runtime value implements it. Make those assumptions visible in the report
-   and theorem boundary. Mutate a declaration, reexport, symlink mapping,
-   graph equation, binder argument, source hash and certificate independently;
-   both evidence production and checking must refuse the forged documents.
-   Include a cross-file mutually recursive fixture and an invalid unguarded
-   cycle, so this is general graph support rather than a special `Json` case.
+4. **Relative contracts and controls.** Forged source equations,
+   declaration identities, client bytes and evidence have rejection controls.
+   These controls exercise the existing request and proof boundary, not an
+   independent declaration-byte or module-mapping hash check. Imported value
+   contracts remain external assumptions until implementations are checked;
+   an imported type equation does not assert that a runtime value implements
+   it. Make those assumptions visible in the report and theorem boundary.
+   Cross-file recursive and invalid unguarded-cycle fixtures exercise the
+   graph interpretation.
+
 5. **Actual-source acceptance.** Add positive OCaml-producer cases that import
    the pinned `Json` through the real package path, build nested arrays and
    objects containing `null`, read them safely, and instantiate a bound such

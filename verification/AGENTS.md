@@ -179,8 +179,9 @@ an exporter change needs a place to show, one phenomenon per file.
   consumer is typed against that type, and every decoder requires the shape
   field by field and rejects an unknown field. So a document either has exactly
   the current shape or it is refused, and there is nothing for a tag to
-  disambiguate. Staleness against a source is what the `sha256` fields are for,
-  and they say it precisely rather than by a number.
+  disambiguate. A `sha256` field, where present and checked, can state source
+  staleness precisely; the declaration document carries no such hash and
+  instead relies on TypeScript's project and source trees.
 - A format is never frozen and never has two accepted shapes. Fix its shape in
   place, then regenerate the fixtures that carry it. Do not add a compatibility
   shim, a second decoder, or a field that records which shape a document is:

@@ -34,7 +34,7 @@ private structure Definition where
 
 private def definitions (document : Json) : Except String (Array Definition) := do
   (← arr document "definitions").mapM fun j => do
-    CellClaims.fieldsExactly j ["declaration", "sha256", "parameters", "body", "bases", "expression", "references"]
+    CellClaims.fieldsExactly j ["declaration", "parameters", "bases", "expression"]
     return ⟨← field j "declaration", ← arr j "parameters",
       ← arr j "bases", ← field j "expression"⟩
 
