@@ -64,7 +64,8 @@ spelling of none, so strict decoding, which re-encodes and compares, still
 refuses an explicit empty list, and a clause without them reads as it always
 has. -/
 private def omittedWhenEmpty : List (String × String) :=
-  [("arrs", "variadic"), ("callable", "variadic"), ("refs", "optional"), ("dict", "optional")]
+  [("arrs", "variadic"), ("callable", "variadic"), ("ctors", "variadic"), ("refs", "optional"),
+   ("dict", "optional")]
 
 private def withoutEmptyVariadic (j : Json) : Json :=
   omittedWhenEmpty.foldl (fun j (key, name) =>
@@ -209,7 +210,7 @@ def clauseTypes : Clause (Ty Nat) → List (Ty Nat)
   | .callable A bs L S =>
       A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ L.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++
         S.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2.1, p.2.2.2])
-  | .ctors L => L.flatMap fun p => p.1 ++ [p.2]
+  | .ctors L S => L.flatMap (fun p => p.1 ++ [p.2]) ++ S.flatMap fun p => p.1 ++ [p.2.1, p.2.2]
 
 def validClaim (bound : Nat) (c : PointClaim Nat) : Bool :=
   (c.type :: c.context).all (validTy bound)

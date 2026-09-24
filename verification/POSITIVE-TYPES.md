@@ -152,6 +152,11 @@ $$
 where $\mathsf{Constructible}(v)$ says $v$ is a closed object whose code is
 construct-only, and $\mathsf{new}\,v(\vec a)\to t$ is the one step that binds
 $\vec a$ and an `undefined` receiver into its body (`ctorsT`, `ConstructsTo`).
+A `Ctors` clause may also carry variadic construct signatures
+$(\vec A,\ldots P)\Rightarrow B$, whose actuals are $\vec A$'s exactly, then, as
+one [argument pack](#argument-packs), at the rest $P$ (`CtorRest`,
+`ctorRestsT`); its meaning is the conjunction of both lists, as a call clause's
+is.
 A `Ctors` clause has its own shape, so it meets no `arrs` or `callable` clause:
 no class is callable and no arrow constructible.
 
@@ -486,6 +491,31 @@ $$
 \qquad
 \frac{}{\Delta\vdash c\sqsubseteq c}\ \ c\in\{\mathsf{bigint},\mathsf{symbol}\}.
 $$
+
+A variadic construct signature is covered by one taking as many fixed
+parameters, each at least as wide, a rest at least as wide as a pack, and a
+result at most as wide; or by a fixed one, when its rest is one exact tuple
+$\mathsf{Pack}(\vec C)$, no optional position and no rest, of **stable**
+positions. A stable type's clauses are primitives, literals or top, whose
+members depend neither on the level nor on the world (`StableTy`,
+`stable_meaning`). A pack holds its actuals at their positions only below the
+current level, and a stable position does not notice that, so the actuals are
+at the fixed signature's parameters at the current level too
+(`pack_exact_args`):
+
+$$
+\frac{|\vec A|=|\vec C|\quad\forall i.\,\Delta(C_i,A_i)\quad\Delta(Q,P)\quad\Delta(B,D)}
+     {\Delta\vdash(\vec A,\ldots P)\Rightarrow B\ \sqsubseteq\ (\vec C,\ldots Q)\Rightarrow D}
+\qquad
+\frac{Q=\mathsf{Pack}(\vec E)\ \text{exact}\quad\forall E\in\vec E.\,\mathsf{stable}(E)
+      \quad|\vec A|=|\vec C\vec E|\quad\forall i.\,\Delta((\vec C\vec E)_i,A_i)\quad\Delta(B,D)}
+     {\Delta\vdash\vec A\Rightarrow B\ \sqsubseteq\ (\vec C,\ldots Q)\Rightarrow D}
+$$
+
+(`FixedCoversPack`). So a class taking a number meets
+`new (...params: [number]) => M` at a result it meets. A tuple of a record or a
+function is not stable, and a fixed signature is not shown to cover it: a
+known incompleteness of the guarded pack.
 
 A pack contract is covered by another that admits every list it admits. The
 target's required positions are no more than the source's; a target without a

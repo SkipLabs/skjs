@@ -53,7 +53,8 @@ def substClause [DecidableEq ι] (p : ι) (A : List ι) : Clause (List ι) → C
   | .arrs L S => .arrs (L.map fun q => (substTy p A q.1, q.2.1.map (substTy p A), substTy p A q.2.2))
       (S.map fun q => (substTy p A q.1, q.2.1.map (substTy p A), substTy p A q.2.2.1,
         substTy p A q.2.2.2))
-  | .ctors L => .ctors (L.map fun q => (q.1.map (substTy p A), substTy p A q.2))
+  | .ctors L S => .ctors (L.map fun q => (q.1.map (substTy p A), substTy p A q.2))
+      (S.map fun q => (q.1.map (substTy p A), substTy p A q.2.1, substTy p A q.2.2))
   | .callable a bs L S =>
       .callable (substFields p A a) (bs.map (substFields p A))
         (L.map fun q => (substTy p A q.1, q.2.1.map (substTy p A), substTy p A q.2.2))

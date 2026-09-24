@@ -1102,7 +1102,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       (by intro p hp; obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp; exact ih q hq)
     apply make_rule nulT_adm n W h _ .nul rfl hw hh rfl
     intro j hj V hx _
-    refine (represents_sem hr j V _).mpr (ctorsT_of_body ?_ ?_)
+    refine (represents_sem hr j V _).mpr ⟨ctorsT_of_body ?_ ?_, ctorRestsT_nil ?_⟩
     · simpa [Scoped, Nat.add_comm] using hcode.1
     · intro p hp i hi V' hx' hu' heap hok args ha
       obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
@@ -1111,6 +1111,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       exact hcode.2 _ (List.mem_map.mpr ⟨(U, q.1, q.2), List.mem_map.mpr ⟨q, hq, rfl⟩, rfl⟩)
         i (by omega) V' hWV hu' heap hok .undef ((represents_sem hu i V' _).mpr rfl) args
         (by simpa using ha)
+    · exact ⟨_, _, _, rfl, by simpa [Scoped, Nat.add_comm] using hcode.1⟩
   | @construct Γ f F B L xs hf hr hp hx ihf ihx =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
@@ -1123,7 +1124,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
       intro k hk U v hv
       simpa only [List.map_map, Function.comp_def] using
-        ctorsT_select ((represents_sem hr k U v).mp hv)
+        ctorsT_select ((represents_sem hr k U v).mp hv).1
           (List.mem_map.mpr ⟨(xs.map Prod.fst, B), hp, by simp [List.map_map, Function.comp_def]⟩)
     · intro p hp'
       obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp'

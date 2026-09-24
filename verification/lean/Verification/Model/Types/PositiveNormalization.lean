@@ -74,9 +74,11 @@ inductive Clause (α : Type) where
   | bigint
   | symbol
   /-- A class value meeting every construct signature `(parameters, result)`:
-  `new` with actuals at the parameters is safe at the result. Its code has
-  `[[Construct]]` only, so no callable clause meets it. -/
-  | ctors (signatures : List (List α × α))
+  `new` with actuals at the parameters is safe at the result; and every
+  variadic one `(parameters, rest, result)`, whose actuals past the parameters
+  are, as one pack, at the rest. Its code has `[[Construct]]` only, so no
+  callable clause meets it. -/
+  | ctors (signatures : List (List α × α)) (variadic : List (List α × α × α) := [])
   /-- An argument list under one or more tuple contracts: what a rest
   parameter's type says of the actuals after the fixed ones. Only a signature's
   rest meets one; no program value is one. -/
@@ -112,7 +114,8 @@ def sem (X : α → Fam) : Clause α → Fam
       interT (CallableConjunctions.objectsT (famsOf X a) (bs.map (famsOf X))
         (L.map fun p => (X p.1, p.2.1.map X, X p.2.2)))
         (restsT (S.map fun s => (X s.1, s.2.1.map X, X s.2.2.1, X s.2.2.2)))
-  | .ctors L => ctorsT (L.map fun p => (p.1.map X, X p.2))
+  | .ctors L S => interT (ctorsT (L.map fun p => (p.1.map X, X p.2)))
+      (ctorRestsT (S.map fun s => (s.1.map X, X s.2.1, X s.2.2)))
   | .pack a bs => packT (tupleFams X a :: bs.map (tupleFams X))
 
 def semList (X : α → Fam) (L : List (Clause α)) : Fam := setSem (sem X) L
@@ -152,7 +155,7 @@ def meet : Clause α → Clause α → List (Clause α)
   | .dict a bs vs ix os, .refs c ds ws ps => [.dict a (bs ++ c :: ds) (vs ++ ws) ix (os ++ ps)]
   | .dict a bs vs ix os, .dict c ds ws iy ps => [.dict a (bs ++ c :: ds) (vs ++ ws) (ix ++ iy) (os ++ ps)]
   | .arrs L S, .arrs M T => [.arrs (L ++ M) (S ++ T)]
-  | .ctors L, .ctors M => [.ctors (L ++ M)]
+  | .ctors L S, .ctors M T => [.ctors (L ++ M) (S ++ T)]
   | .pack a bs, .pack c ds => [.pack a (bs ++ c :: ds)]
   | .callable a bs L S, .callable c ds M T => [.callable a (bs ++ c :: ds) (L ++ M) (S ++ T)]
   | .callable a bs L S, .arrs M T => [.callable a bs (L ++ M) (S ++ T)]
@@ -212,7 +215,7 @@ theorem sem_value {X : α → Fam} {c : Clause α} {n W v}
   | strLit s => subst v; exact ⟨rfl, trivial⟩
   | bigint => obtain ⟨i, rfl⟩ := h; exact ⟨rfl, trivial⟩
   | symbol => obtain ⟨i, rfl⟩ := h; exact ⟨rfl, trivial⟩
-  | ctors L => obtain ⟨fs, a, b, rfl, hs⟩ := h.1; exact ⟨rfl, hs⟩
+  | ctors L S => obtain ⟨fs, a, b, rfl, hs⟩ := h.1.1; exact ⟨rfl, hs⟩
   | pack a bs => obtain ⟨vs, rfl, hs, -⟩ := h; exact ⟨rfl, hs⟩
 
 /-- A member's shape is its clause's, except under top, which has none. -/
@@ -241,7 +244,7 @@ theorem sem_shape {X : α → Fam} {c : Clause α} {n W v} (hc : c ≠ .top)
   | strLit s => cases h; rfl
   | bigint => obtain ⟨i, rfl⟩ := h; rfl
   | symbol => obtain ⟨i, rfl⟩ := h; rfl
-  | ctors L => obtain ⟨fs, a, b, rfl, -⟩ := h.1; rfl
+  | ctors L S => obtain ⟨fs, a, b, rfl, -⟩ := h.1.1; rfl
   | pack a bs => obtain ⟨vs, rfl, -⟩ := h; rfl
 
 theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (v : Val) :
@@ -353,7 +356,8 @@ theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (
       simp [meet, singleton_sem, sem, interT, symbolT]
     · -- ctors ∩ ctors: every construct signature of both
       simp only [meet, singleton_sem, sem, List.map_append, interT]
-      exact ctorsT_append _ _ n W v
+      rw [ctorsT_append, ctorRestsT_append]
+      exact ⟨fun ⟨⟨a, b⟩, c, d⟩ => ⟨⟨a, c⟩, b, d⟩, fun ⟨⟨a, c⟩, b, d⟩ => ⟨⟨a, b⟩, c, d⟩⟩
     · -- pack ∩ pack: every contract of both, on the one list
       rename_i a bs c ds
       simp only [meet, singleton_sem, sem, List.map_append, List.map_cons, interT]
@@ -413,7 +417,7 @@ theorem sem_adm (X : α → Fam) (c : Clause α) : Adm (sem X c) := by
         fun d hd => (dictViewT_adm _).mono n W U hx v (h.2.2.1 d hd), (optT_adm _).mono n W U hx v h.2.2.2⟩
   | arrs L S => exact interT_adm _ _ (callsT_adm _) (restsT_adm _)
   | callable a bs L S => exact interT_adm _ _ (CallableConjunctions.adm _ _ _) (restsT_adm _)
-  | ctors L => exact ctorsT_adm _
+  | ctors L S => exact interT_adm _ _ (ctorsT_adm _) (ctorRestsT_adm _)
   | pack a bs => exact packT_adm _
   | undef => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | top => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
@@ -529,12 +533,13 @@ theorem sem_congr (X Y : α → Fam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
       | cons a As ih => exact .cons (h a) ih
     exact and_congr (CallableConjunctions.congr_below X Y a bs L n h W v)
       (restsT_congr S _ _ (fun s _ => ⟨h s.1, hd s.2.1, h s.2.2.1, h s.2.2.2⟩) W v)
-  | ctors L =>
+  | ctors L S =>
     have hd : ∀ As : List α, ArgsAgree n (As.map X) (As.map Y) := by
       intro As; induction As with
       | nil => exact .nil
       | cons a As ih => exact .cons (h a) ih
-    exact ctorsT_congr L _ _ (fun p _ => ⟨hd p.1, h p.2⟩) W v
+    exact and_congr (ctorsT_congr L _ _ (fun p _ => ⟨hd p.1, h p.2⟩) W v)
+      (ctorRestsT_congr S _ _ (fun s _ => ⟨hd s.1, h s.2.1, h s.2.2⟩) W v)
   | pack a bs =>
     simp only [sem, packT]
     refine exists_congr fun vs => and_congr Iff.rfl (and_congr Iff.rfl ?_)
@@ -578,7 +583,8 @@ def Clause.map (f : α → β) : Clause α → Clause β
   | .callable a bs L S => .callable (mapFields f a) (bs.map (mapFields f))
       (L.map fun q => (f q.1, q.2.1.map f, f q.2.2))
       (S.map fun q => (f q.1, q.2.1.map f, f q.2.2.1, f q.2.2.2))
-  | .ctors L => .ctors (L.map fun q => (q.1.map f, f q.2))
+  | .ctors L S => .ctors (L.map fun q => (q.1.map f, f q.2))
+      (S.map fun q => (q.1.map f, f q.2.1, f q.2.2))
   | .pack a bs => .pack (a.map f) (bs.map (·.map f))
 
 /-- Every operand of a clause. -/
@@ -591,7 +597,7 @@ def Clause.operands : Clause α → List α
   | .callable a bs L S => (a ++ bs.flatten).map (·.2) ++
       L.flatMap (fun q => q.1 :: q.2.1 ++ [q.2.2]) ++
       S.flatMap (fun q => q.1 :: q.2.1 ++ [q.2.2.1, q.2.2.2])
-  | .ctors L => L.flatMap fun q => q.1 ++ [q.2]
+  | .ctors L S => L.flatMap (fun q => q.1 ++ [q.2]) ++ S.flatMap fun q => q.1 ++ [q.2.1, q.2.2]
   | .pack a bs => a.operands ++ bs.flatMap Tuple.operands
   | _ => []
 
@@ -692,13 +698,17 @@ theorem map_of_operands {c : Clause α} {f : α → α} (h : ∀ a ∈ c.operand
       have h4 := h q.2.2.2 (.inr ⟨q, hq, by simp⟩)
       have h2 := map_self (l := q.2.1) fun x hx => h x (.inr ⟨q, hq, by simp [hx]⟩)
       simp [h1, h2, h3, h4]
-  | ctors L =>
-    simp only [Clause.operands, List.mem_flatMap] at h
+  | ctors L S =>
+    simp only [Clause.operands, List.mem_append, List.mem_flatMap] at h
     simp only [Clause.map, Clause.ctors.injEq]
-    refine map_self fun q hq => ?_
-    have h2 := h q.2 ⟨q, hq, by simp⟩
-    have h1 := map_self (l := q.1) fun x hx => h x ⟨q, hq, by simp [hx]⟩
-    simp [h1, h2]
+    refine ⟨map_self fun q hq => ?_, map_self fun q hq => ?_⟩
+    · have h2 := h q.2 (.inl ⟨q, hq, by simp⟩)
+      have h1 := map_self (l := q.1) fun x hx => h x (.inl ⟨q, hq, by simp [hx]⟩)
+      simp [h1, h2]
+    · have h2 := h q.2.1 (.inr ⟨q, hq, by simp⟩)
+      have h3 := h q.2.2 (.inr ⟨q, hq, by simp⟩)
+      have h1 := map_self (l := q.1) fun x hx => h x (.inr ⟨q, hq, by simp [hx]⟩)
+      simp [h1, h2, h3]
   | pack a bs =>
     simp only [Clause.operands, List.mem_append, List.mem_flatMap] at h
     simp only [Clause.map, Clause.pack.injEq]

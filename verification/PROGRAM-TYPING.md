@@ -249,7 +249,12 @@ case). A variadic source covers a variadic target whose parameters are within
 its own, the target's further fixed positions taken into the source's rest,
 which needs an element rest unless there are none (`IntoRest`), and whose rest
 is within its own as a pack (`RestCovers`); results are covariant. A fixed
-source never covers a variadic target: it promises nothing past its positions.
+source never covers a variadic target with an element rest: it promises nothing past its positions. It covers
+one whose rest is one exact tuple of stable positions, its parameters within the
+source's first and the tuple's positions within the rest
+(`FixedCallsPack`, as `FixedCoversPack` for construct signatures in
+[POSITIVE-TYPES.md](POSITIVE-TYPES.md#keys-optional-fields-bigints-symbols-and-construct-signatures));
+at level zero the call exists and nothing past it is owed.
 
 $$
 \frac{k=|\vec P|\le|\vec A|\quad\forall i<k.\;A_i\le P_i\quad\operatorname{elem}_G(P')=E\quad\forall k\le i<|\vec A|.\;A_i\le E\quad B\le D}
@@ -260,6 +265,12 @@ $$
 \frac{k=|\vec P|\le|\vec Q|\quad\forall i<k.\;Q_i\le P_i\quad
       (k=|\vec Q|\ \lor\ \operatorname{elem}_G(P')=E\land\forall k\le i<|\vec Q|.\;Q_i\le E)\quad Q'\le P'\quad B\le D}
      {(\vec P,\ldots P'\to B)\le(\vec Q,\ldots Q'\to D)}
+$$
+
+$$
+\frac{Q'=\mathsf{Pack}(\vec E)\ \text{exact}\quad\forall E\in\vec E.\,\mathsf{stable}(E)\quad
+      |\vec P|=|\vec Q\vec E|\quad\forall i.\;(\vec Q\vec E)_i\le P_i\quad B\le D}
+     {(\vec P\to B)\le(\vec Q,\ldots Q'\to D)}
 $$
 
 $$

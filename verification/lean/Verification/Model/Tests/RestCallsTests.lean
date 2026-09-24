@@ -13,7 +13,8 @@ open ProgramTyping ProgramCertificates CertificateProducer PositiveNormalization
 12 unknown, 13 the rest `...(number | undefined)[]`, 14 the rest `...number[]`,
 15 the rest `...[number, number]`, 16 `(...r: [number, number]) => number`, 17 the
 store of a `[number, number]` tuple, 18 its array, 19 `(...r: [number, number])`
-returning its rest array, 20 `(...r: number[])` returning its rest array. Every
+returning its rest array, 20 `(...r: number[])` returning its rest array, 21 the
+rest `...[number]`, 22 `(a: number, ...r: [number]) => number`. Every
 signature takes any
 receiver; a signature's rest is an argument pack. -/
 def G : PositiveGraphs.NormalGraph Nat := .ofRows fun
@@ -38,9 +39,11 @@ def G : PositiveGraphs.NormalGraph Nat := .ofRows fun
   | 18 => [.refs [(CallArguments.arrayStoreField, [17])] [] []]
   | 19 => [.arrs [] [([12], [], [15], [18])]]
   | 20 => [.arrs [] [([12], [], [14], [18])]]
+  | 21 => [.pack ⟨[[0]], [], none, false⟩ []]
+  | 22 => [.arrs [] [([12], [[0]], [21], [0])]]
   | _ => []
 
-def pool : List (Ty Nat) := vocabulary G (List.range 21) [] [[0,1]]
+def pool : List (Ty Nat) := vocabulary G (List.range 23) [] [[0,1]]
 
 /-- Slot 0 is the collected array, slot 1 the receiver, slot 2 the fixed
 parameter. -/
@@ -98,9 +101,13 @@ def spreadAt (i : Nat) : Tm := .spread (.readAt CallArguments.arrayStoreField (.
 #guard (subtype G pool [7] [10]).isSome
 #guard searchIn [[10]] (.call (.var 0) [.num 1, .num 2])
 #guard (expression G pool 40 [] (.letE restFn (.call (.var 0) [.num 1, .num 2])) [0]).isSome
--- A fixed signature does not meet a variadic one: it promises nothing past
--- its own positions.
+-- A fixed signature does not meet a variadic one with an element rest: it
+-- promises nothing past its own positions. It meets one whose rest is exactly
+-- its further positions, when those are stable, as a number is.
 #guard !(subtype G pool [10] [7]).isSome
+#guard (subtype G pool [10] [16]).isSome
+#guard (subtype G pool [10] [22]).isSome
+#guard searchIn [[22]] (.call (.var 0) [.num 1, .num 2])
 -- An optional fixed parameter before the rest may be omitted: the call binds
 -- `undefined` there and collects nothing.
 #guard searchIn [[11]] (.call (.var 0) [])

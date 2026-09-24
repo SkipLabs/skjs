@@ -79,7 +79,7 @@ Each type-graph node is a union of clauses:
 | Intersection of arrows `[receiver, [params, result]]`, with variadic signatures `[receiver, [params, [rest, result]]]` when there are any, `rest` an argument-list type (`pack`)  | `{"arrs":{"arrows":[[[5],[[[0]],[1]]],[[5],[[[1]],[0]]]]}}`                                 |
 | Array store: simultaneous tuple contracts, each with required, optional and rest positions; readonly contracts give element read capabilities                              | `{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],"readonly":false},"rest":[]}}` |
 | Callable with invariant bag requirements and overloads, fixed and variadic                                                                                                 | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[[[5],[[[0]],[1]]]]}}`             |
-| Class value: construct signatures `[params, result]`, which `new` meets; no call signature meets it                                                                    | `{"ctors":{"signatures":[[[[1,2]],[1,2]]]}}`             |
+| Class value: construct signatures `[params, result]`, which `new` meets; no call signature meets it; `"variadic": [[params, rest, result], ...]` when there are any      | `{"ctors":{"signatures":[[[[1,2]],[1,2]]]}}`             |
 | Argument list: simultaneous tuple contracts on the actuals a rest parameter receives, positions compared covariantly                                                  | `{"pack":{"first":{"required":[[4]],"optional":[],"rest":[0],"readonly":false},"rest":[]}}` |
 
 The arrow example contains two signatures, each with one argument and the

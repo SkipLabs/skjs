@@ -165,6 +165,13 @@ instance Domains.decidable {R : List ι → List ι → Prop} [∀ a b, Decidabl
       | isFalse h' => isFalse fun hd => h' hd.2
     else isFalse fun hd => h hd.1
 
+theorem Domains.length_eq {R : List ι → List ι → Prop} :
+    ∀ {As Bs : List (List ι)}, Domains R As Bs → As.length = Bs.length
+  | [], [], _ => rfl
+  | _ :: _, _ :: _, h => congrArg Nat.succ (Domains.length_eq h.2)
+  | [], _ :: _, h => h.elim
+  | _ :: _, [], h => h.elim
+
 theorem Domains.sound {G : NormalGraph ι} {R As Bs n}
     (hd : Domains R As Bs) (hr : ∀ a b, R a b → FamLeAt G a b n)
     {W args} (ha : ArgsT (As.map (meaning G)) n W args) :
@@ -517,6 +524,132 @@ def CoversTuple (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Pro
   (∀ x ∈ p.optional.zip q.optional, R x.1 x.2 ∧ (q.readonly = false → R x.2 x.1)) ∧
   CoversRest R q.readonly p.rest q.rest ∧ (q.readonly = false → p.readonly = false)
 
+/-- A clause whose members depend neither on the level nor on the world: a
+primitive, a literal, or top. -/
+def stableClause : Clause α → Bool
+  | .nul | .bool | .boolLit _ | .num | .numLit _ | .undef | .top | .str | .strLit _
+  | .bigint | .symbol => true
+  | _ => false
+
+theorem stableClause_sem {X Y : α → Fam} {c : Clause α} (hc : stableClause c = true)
+    {n m : Nat} {W : WorldT n} {U : WorldT m} {v : Val} :
+    sem X c n W v ↔ sem Y c m U v := by
+  cases c <;> simp_all [stableClause, sem, nulT, boolT, numT, undefT, topT, strT, bigintT, symbolT]
+
+/-- A type of clause rows all stable. -/
+def StableTy (G : NormalGraph ι) (A : List ι) : Prop :=
+  G.plainTy A = true ∧ (expand G A).all stableClause = true
+
+instance (G : NormalGraph ι) (A : List ι) : Decidable (StableTy G A) := by
+  unfold StableTy; infer_instance
+
+/-- A stable type's members are its members at every level and world. -/
+theorem stable_meaning {G : NormalGraph ι} {A : List ι} (h : StableTy G A) {n m : Nat}
+    {W : WorldT n} {U : WorldT m} {v : Val} (hv : meaning G A n W v) : meaning G A m U v := by
+  obtain ⟨hp, hs⟩ := h
+  rw [expand_sem G A hp] at hv ⊢
+  obtain ⟨c, hc, hv⟩ := hv
+  exact ⟨c, hc, (stableClause_sem (List.all_eq_true.mp hs c hc)).mp hv⟩
+
+/-- An exact tuple of stable positions: its pack holds each actual at its
+position at the current level too, since a stable type does not notice the
+level. -/
+theorem pack_exact_args {G : NormalGraph ι} {τ : Tuple (List ι)} (hopt : τ.optional = [])
+    (hrest : τ.rest = none) (hstab : ∀ A ∈ τ.required, StableTy G A) {i : Nat}
+    {U : WorldT (i + 1)} {vs : List Tm} (hp : PackFits (tupleFams (meaning G) τ) (i + 1) U vs) :
+    ArgsT (τ.required.map (meaning G)) (i + 1) U vs := by
+  obtain ⟨hlen, hbound, hel⟩ := hp
+  have hlen' : τ.required.length = vs.length := by
+    have h1 : τ.required.length ≤ vs.length := by simpa [tupleFams] using hlen
+    have h2 := hbound (by simp [tupleFams, hrest])
+    simp [tupleFams, hopt] at h2
+    omega
+  refine ArgsT_of_getElem? (by simpa using hlen') fun idx A a hA ha => ?_
+  obtain ⟨A0, hA0, rfl⟩ := Option.map_eq_some_iff.mp (by simpa [List.getElem?_map] using hA)
+  have hpos : positionFam (tupleFams (meaning G) τ) idx = some (meaning G A0) := by
+    rw [positionFam_tupleFams]
+    simp [Tuple.position, hA0]
+  have hm := hel idx a (meaning G A0) ha hpos i (Nat.lt_succ_self i) _ (WExt_refl _)
+  exact stable_meaning (hstab A0 (List.mem_of_getElem? hA0)) hm
+
+/-- A fixed construct signature `(Ps, B)` covers a variadic one `(Qs, P, D)`
+whose rest is one exact tuple of stable positions: its fixed parameters, then
+the tuple's positions, are within the source's parameters, and the source's
+result is within the target's. A pack holds its actuals below the current
+level only, which a stable position does not notice. -/
+def FixedCoversPack (G : NormalGraph ι) (R : List ι → List ι → Prop)
+    (p : List (List ι) × List ι) (t : List (List ι) × List ι × List ι) : Prop :=
+  match expand G t.2.1 with
+  | [.pack τ []] => τ.optional = [] ∧ τ.rest = none ∧ (∀ A ∈ τ.required, StableTy G A) ∧
+      Domains R (t.1 ++ τ.required) p.1 ∧ R p.2 t.2.2
+  | _ => False
+
+/-- A fixed call signature `(Rc, Ps, B)` covers a variadic one `(Rt, Qs, P, D)`
+whose rest is one exact tuple of stable positions: the target's receiver is
+within the source's, its fixed parameters, then the tuple's positions, are
+within the source's parameters, and results are covariant. -/
+def FixedCallsPack (G : NormalGraph ι) (R : List ι → List ι → Prop)
+    (p : List ι × List (List ι) × List ι) (t : List ι × List (List ι) × List ι × List ι) : Prop :=
+  match expand G t.2.2.1 with
+  | [.pack τ []] => τ.optional = [] ∧ τ.rest = none ∧ (∀ A ∈ τ.required, StableTy G A) ∧
+      R t.1 p.1 ∧ Domains R (t.2.1 ++ τ.required) p.2.1 ∧ R p.2.2 t.2.2.2
+  | _ => False
+
+/-- A fixed signature meets a variadic one whose rest is an exact tuple of
+stable positions: at the current level the pack's actuals are at their
+positions, and at level zero there is nothing to prove past the call. -/
+theorem fixed_calls_pack_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
+    {p : List ι × List (List ι) × List ι} {t : List ι × List (List ι) × List ι × List ι}
+    (hc : FixedCallsPack G R p t) (n : Nat)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j) (W : WorldT n) (v : Val)
+    (hinv : Invocable v)
+    (hv : Promise (ArgsShort (p.2.1.map (meaning G))) (meaning G p.1) (meaning G p.2.2) n W v) :
+    Promise (ArgsRest (t.2.1.map (meaning G)) (meaning G t.2.2.1)) (meaning G t.1)
+      (meaning G t.2.2.2) n W v := by
+  unfold FixedCallsPack at hc
+  split at hc
+  · rename_i τ hP
+    obtain ⟨hopt, hrest, hstab, hrecv, hd, hres⟩ := hc
+    intro j hj U hx hu heap hh r hrv hrm args hvals ha
+    cases j with
+    | zero =>
+      obtain ⟨result, hi⟩ := Invocable.invoke hinv hrv hvals
+      exact ⟨result, hi, trivial⟩
+    | succ i =>
+      obtain ⟨hshort, hpack⟩ := ha
+      simp only [List.length_map] at hshort hpack
+      have hplain : G.plainTy t.2.2.1 = true :=
+        plain_of_mem_expand (c := .pack τ []) (by simp [hP])
+      obtain ⟨c, hcm, hcv⟩ := (expand_sem G _ hplain (i + 1) U _).mp hpack
+      rw [hP, List.mem_singleton] at hcm
+      subst hcm
+      obtain ⟨vs, hvs, -, hf⟩ := hcv
+      cases hvs
+      have htup := pack_exact_args hopt hrest hstab (hf _ List.mem_cons_self)
+      have hall : ArgsShort ((t.2.1 ++ τ.required).map (meaning G)) (i + 1) U args := by
+        by_cases hl : args.length ≤ t.2.1.length
+        · rw [List.drop_eq_nil_of_le hl] at htup
+          have hreq : τ.required = [] := List.eq_nil_of_length_eq_zero (by
+            have := ArgsT_length htup
+            simp at this
+            omega)
+          rw [hreq, List.append_nil]
+          rwa [List.take_of_length_le hl] at hshort
+        · have htl : (args.take t.2.1.length).length = t.2.1.length := by simp; omega
+          have hfix : ArgsT (t.2.1.map (meaning G)) (i + 1) U (args.take t.2.1.length) := by
+            have := hshort.2.1
+            rw [htl, show t.2.1.length = (t.2.1.map (meaning G)).length by simp,
+              List.take_length] at this
+            simpa using this
+          have := ArgsT_append hfix htup
+          rw [List.take_append_drop, ← List.map_append] at this
+          exact ArgsShort_of_exact this
+      obtain ⟨result, hi, hsafe⟩ := hv (i + 1) hj U hx hu heap hh r hrv
+        (hr (i + 1) hj _ _ hrecv U r hrm) args hvals (Domains.short (hr (i + 1) hj) hd hall)
+      exact ⟨result, hi, Safe_mono (i + 1) (fun m hm V u hu => hr m (by omega) _ _ hres V u hu)
+        U heap _ hsafe⟩
+  · exact hc.elim
+
 /-- A position covered by another: a present source position needs a target
 position whose operand it is within. -/
 def PositionCovers (R : List ι → List ι → Prop) : Option (List ι) → Option (List ι) → Prop
@@ -565,13 +698,20 @@ def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
       CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws ∧
       (∀ y ∈ iy, ∃ x ∈ ix, R x y) ∧ CoversOptional R (a :: bs) os ps
   | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
-      (∀ p ∈ M, CallArrow (compatible G) (restElem G) R L S p.1 p.2.1 p.2.2) ∧ ∀ t ∈ T, ∃ s ∈ S, RestCovers (restElem G) R s t
+      (∀ p ∈ M, CallArrow (compatible G) (restElem G) R L S p.1 p.2.1 p.2.2) ∧
+      ∀ t ∈ T, (∃ s ∈ S, RestCovers (restElem G) R s t) ∨ ∃ p ∈ L, FixedCallsPack G R p t
   | .callable a bs L S, .callable c ds M T =>
       CoversFields R (a :: bs) (c :: ds) ∧
-      (∀ p ∈ M, CallArrow (compatible G) (restElem G) R L S p.1 p.2.1 p.2.2) ∧ ∀ t ∈ T, ∃ s ∈ S, RestCovers (restElem G) R s t
+      (∀ p ∈ M, CallArrow (compatible G) (restElem G) R L S p.1 p.2.1 p.2.2) ∧
+      ∀ t ∈ T, (∃ s ∈ S, RestCovers (restElem G) R s t) ∨ ∃ p ∈ L, FixedCallsPack G R p t
   -- A construct signature is covered by one taking as many parameters, each
   -- at least as wide, with a result at most as wide.
-  | .ctors L, .ctors M => ∀ q ∈ M, ∃ p ∈ L, Domains R q.1 p.1 ∧ R p.2 q.2
+  | .ctors L S, .ctors M T => (∀ q ∈ M, ∃ p ∈ L, Domains R q.1 p.1 ∧ R p.2 q.2) ∧
+      -- A variadic one by one taking as many fixed parameters, each at least as
+      -- wide, a rest at least as wide and a result at most as wide; or by a
+      -- fixed one, when its rest is an exact tuple of stable positions.
+      ∀ t ∈ T, (∃ s ∈ S, Domains R t.1 s.1 ∧ R t.2.1 s.2.1 ∧ R s.2.2 t.2.2) ∨
+        ∃ p ∈ L, FixedCoversPack G R p t
   -- Every target contract has a source contract within it.
   | .pack a bs, .pack c ds => ∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversPack R p q
   | _, _ => False
@@ -835,15 +975,53 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
     · exact tgt c List.mem_cons_self
     · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hT
       exact tgt q (List.mem_cons_of_mem _ hq)
-  case ctors.ctors L M =>
-    intro hv
-    refine ⟨hv.1, fun q hq => ?_⟩
-    obtain ⟨q0, hq0, rfl⟩ := List.mem_map.mp hq
-    obtain ⟨p, hp, hd, hres⟩ := hc q0 hq0
-    intro j hj U hx hu heap hh args hvals ha
-    obtain ⟨result, hcon, hsafe⟩ := hv.2 _ (List.mem_map_of_mem hp) j hj U hx hu heap hh args hvals
-      (Domains.sound hd (fun a b hab => hr j hj a b hab) ha)
-    exact ⟨result, hcon, Safe_mono j (fun m hm V u hu => hr m (by omega) _ _ hres V u hu) U heap _ hsafe⟩
+  case ctors.ctors L S M T =>
+    rintro ⟨hv, hw⟩
+    refine ⟨⟨hv.1, fun q hq => ?_⟩, ⟨hv.1, fun t ht => ?_⟩⟩
+    · obtain ⟨q0, hq0, rfl⟩ := List.mem_map.mp hq
+      obtain ⟨p, hp, hd, hres⟩ := hc.1 q0 hq0
+      intro j hj U hx hu heap hh args hvals ha
+      obtain ⟨result, hcon, hsafe⟩ := hv.2 _ (List.mem_map_of_mem hp) j hj U hx hu heap hh args hvals
+        (Domains.sound hd (fun a b hab => hr j hj a b hab) ha)
+      exact ⟨result, hcon, Safe_mono j (fun m hm V u hu => hr m (by omega) _ _ hres V u hu) U heap _ hsafe⟩
+    · obtain ⟨t0, ht0, rfl⟩ := List.mem_map.mp ht
+      rcases hc.2 t0 ht0 with ⟨s, hs, hd, hrest, hres⟩ | ⟨p, hp, hfp⟩
+      · intro j hj U hx hu heap hh args hvals ha
+        obtain ⟨hlen, hfix, hpack⟩ := ha
+        have hl : t0.1.length = s.1.length := Domains.length_eq hd
+        simp only [List.length_map] at hlen hfix hpack
+        obtain ⟨result, hcon, hsafe⟩ := hw.2 _ (List.mem_map_of_mem hs) j hj U hx hu heap hh args
+          hvals ⟨by simpa [← hl] using hlen,
+            by simpa [← hl] using Domains.sound hd (fun a b hab => hr j hj a b hab) hfix,
+            by simpa [← hl] using hr j hj _ _ hrest U _ hpack⟩
+        exact ⟨result, hcon, Safe_mono j (fun m hm V u hu => hr m (by omega) _ _ hres V u hu) U heap _ hsafe⟩
+      · unfold FixedCoversPack at hfp
+        split at hfp
+        · rename_i τ hP
+          obtain ⟨hopt, hrest, hstab, hd, hres⟩ := hfp
+          intro j hj U hx hu heap hh args hvals ha
+          cases j with
+          | zero =>
+            obtain ⟨fs, arity, b, rfl, -⟩ := hv.1
+            exact ⟨_, ⟨fs, arity, b, rfl, rfl⟩, trivial⟩
+          | succ i =>
+            obtain ⟨hlen, hfix, hpack⟩ := ha
+            simp only [List.length_map] at hlen hfix hpack
+            have hplain : G.plainTy t0.2.1 = true :=
+              plain_of_mem_expand (c := .pack τ []) (by simp [hP])
+            obtain ⟨c, hcm, hcv⟩ := (expand_sem G _ hplain (i + 1) U _).mp hpack
+            rw [hP, List.mem_singleton] at hcm
+            subst hcm
+            obtain ⟨vs, hvs, -, hf⟩ := hcv
+            cases hvs
+            have htup := pack_exact_args hopt hrest hstab (hf _ List.mem_cons_self)
+            have hall := ArgsT_append hfix htup
+            rw [List.take_append_drop, ← List.map_append] at hall
+            obtain ⟨result, hcon, hsafe⟩ := hv.2 _ (List.mem_map_of_mem hp) (i + 1) hj U hx hu heap hh
+              args hvals (Domains.sound hd (fun a b hab => hr (i + 1) hj a b hab) hall)
+            exact ⟨result, hcon, Safe_mono (i + 1) (fun m hm V u hu => hr m (by omega) _ _ hres V u hu)
+              U heap _ hsafe⟩
+        · exact hfp.elim
   · exact id
   · exact id
   · rename_i a bs vs os c ds ws ps
@@ -867,8 +1045,9 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
     · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
       exact CallArrow.sound (hc.1 q hq) n hr W v hv
     · obtain ⟨t0, ht0, rfl⟩ := List.mem_map.mp ht
-      obtain ⟨s, hs, hst⟩ := hc.2 t0 ht0
-      exact rest_covers_sound hst n hr W v (hv.2.2 _ (List.mem_map_of_mem hs))
+      rcases hc.2 t0 ht0 with ⟨s, hs, hst⟩ | ⟨p, hp, hfp⟩
+      · exact rest_covers_sound hst n hr W v (hv.2.2 _ (List.mem_map_of_mem hs))
+      · exact fixed_calls_pack_sound hfp n hr W v hv.1.1 (hv.1.2 _ (List.mem_map_of_mem hp))
   · rename_i b
     cases b <;> intro hv <;> cases hv
     · exact Or.inr rfl
@@ -887,8 +1066,9 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
     · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
       exact CallArrow.sound (hc.1 q hq) n hr W v ⟨hv.1.2, hv.2⟩
     · obtain ⟨t0, ht0, rfl⟩ := List.mem_map.mp ht
-      obtain ⟨s, hs, hst⟩ := hc.2 t0 ht0
-      exact rest_covers_sound hst n hr W v (hv.2.2 _ (List.mem_map_of_mem hs))
+      rcases hc.2 t0 ht0 with ⟨s, hs, hst⟩ | ⟨p, hp, hfp⟩
+      · exact rest_covers_sound hst n hr W v (hv.2.2 _ (List.mem_map_of_mem hs))
+      · exact fixed_calls_pack_sound hfp n hr W v hv.1.2.1 (hv.1.2.2 _ (List.mem_map_of_mem hp))
   · rename_i a bs L S c ds M T
     intro hv
     refine ⟨⟨covers_bags_sound hc.1 n hr W v hv.1.1, hv.1.2.1, fun p hp => ?_⟩,
@@ -896,8 +1076,9 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
     · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
       exact CallArrow.sound (hc.2.1 q hq) n hr W v ⟨hv.1.2, hv.2⟩
     · obtain ⟨t0, ht0, rfl⟩ := List.mem_map.mp ht
-      obtain ⟨s, hs, hst⟩ := hc.2.2 t0 ht0
-      exact rest_covers_sound hst n hr W v (hv.2.2 _ (List.mem_map_of_mem hs))
+      rcases hc.2.2 t0 ht0 with ⟨s, hs, hst⟩ | ⟨p, hp, hfp⟩
+      · exact rest_covers_sound hst n hr W v (hv.2.2 _ (List.mem_map_of_mem hs))
+      · exact fixed_calls_pack_sound hfp n hr W v hv.1.2.1 (hv.1.2.2 _ (List.mem_map_of_mem hp))
   · -- str ≤ str
     exact id
   · -- strLit ≤ str: the singleton inhabits the family

@@ -245,6 +245,18 @@ theorem ArgsT_getElem? : ∀ {As : List Fam} {k : Nat} {W : WorldT k} {args : Li
     simp only [List.getElem?_cons_succ] at hA ha
     exact ArgsT_getElem? h.2 hA ha
 
+/-- Actuals at their positions' contracts, as many as the positions, are
+admitted position by position. -/
+theorem ArgsT_of_getElem? : ∀ {As : List Fam} {k : Nat} {W : WorldT k} {args : List Tm},
+    As.length = args.length →
+    (∀ (i : Nat) (A : Fam) (a : Tm), As[i]? = some A → args[i]? = some a → A k W a) →
+    ArgsT As k W args
+  | [], _, _, [], _, _ => trivial
+  | [], _, _, _ :: _, hl, _ => by simp at hl
+  | _ :: _, _, _, [], hl, _ => by simp at hl
+  | A :: As, _, _, a :: args, hl, h =>
+    ⟨h 0 A a rfl rfl, ArgsT_of_getElem? (by simpa using hl) fun i B b hB hb => h (i + 1) B b hB hb⟩
+
 theorem ArgsT_singleton (A : Fam) (k : Nat) (W : WorldT k) (args : List Tm) :
     ArgsT [A] k W args ↔ ∃ a, args = [a] ∧ A k W a := by
   cases args with
@@ -654,6 +666,19 @@ def Invocable (v : Val) : Prop :=
 theorem Invocable.val {v : Val} (h : Invocable v) : isVal v = true := by
   obtain ⟨fs, code, rfl, -, -⟩ := h; rfl
 
+/-- Code with `[[Call]]` has a call for every ready receiver and list. -/
+theorem Invocable.invoke {v r : Tm} {args : List Tm} (h : Invocable v) (hr : isVal r = true)
+    (ha : CallArguments.Values args) : ∃ result, CallArguments.Invoke ⟨v, r, args⟩ result := by
+  obtain ⟨fs, code, rfl, hc, -⟩ := h
+  cases code with
+  | absent => simp [CallCode.callable] at hc
+  | closure arity body kind =>
+    cases kind
+    · exact ⟨_, .closure hr ha⟩
+    · simp [CallCode.callable] at hc
+  | variadic fixed body => exact ⟨_, .variadic hr ha⟩
+  | bound target r₀ pre => exact ⟨_, .bound hr ha⟩
+
 theorem Invocable.scoped {v : Val} (h : Invocable v) : Scoped 0 v := by
   obtain ⟨fs, code, rfl, -, hs⟩ := h; exact hs
 
@@ -782,6 +807,38 @@ theorem ctorsT_of_body {L : List (List Fam × Fam)} {k : Nat} {W : WorldT k}
     ctorsT L k W (.objAt fs (.closure arity b .construct)) :=
   ⟨⟨fs, arity, b, rfl, hs⟩, fun p hp j hj U hx hu heap hh args _ ha =>
     ⟨_, ⟨fs, arity, b, rfl, rfl⟩, hb p hp j hj U hx hu heap hh args ha⟩⟩
+
+/-- The actual lists a variadic construct signature admits: its fixed
+parameters' actuals exactly, then, as one argument pack, the rest. -/
+def CtorRest (Ps : List Fam) (P : Fam) (j : Nat) (W : WorldT j) (args : List Tm) : Prop :=
+  Ps.length ≤ args.length ∧ ArgsT Ps j W (args.take Ps.length) ∧
+    P j W (.args (args.drop Ps.length))
+
+/-- **Variadic construct signatures** `(parameters, rest, result)`: as
+`ctorsT`, for the lists `CtorRest` admits. -/
+def ctorRestsT (S : List (List Fam × Fam × Fam)) : Fam := fun k W v =>
+  Constructible v ∧ ∀ s ∈ S, ∀ (j : Nat) (hj : j < k) (U : WorldT j),
+    WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U → ∀ (heap : Heap), HeapOk j U heap →
+      ∀ args, CallArguments.Values args → CtorRest s.1 s.2.1 j U args →
+        ∃ result, ConstructsTo v args result ∧ Safe s.2.2 j U heap result
+
+theorem ctorRestsT_adm (S : List (List Fam × Fam × Fam)) : Adm (ctorRestsT S) :=
+  ⟨fun _ _ _ h => ⟨h.1, fun p hp j hj U hx hu heap hh args hv ha =>
+      h.2 p hp j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh args hv ha⟩,
+   fun _ _ _ hx _ h => ⟨h.1, fun p hp j hj U hy hu heap hh args hv ha =>
+      h.2 p hp j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh args hv ha⟩⟩
+
+theorem ctorRestsT_append (S T : List (List Fam × Fam × Fam)) (k : Nat) (W : WorldT k) (v : Val) :
+    ctorRestsT (S ++ T) k W v ↔ ctorRestsT S k W v ∧ ctorRestsT T k W v := by
+  simp only [ctorRestsT, List.mem_append, or_imp, forall_and]
+  constructor
+  · rintro ⟨hc, hl, hm⟩; exact ⟨⟨hc, hl⟩, hc, hm⟩
+  · rintro ⟨⟨hc, hl⟩, -, hm⟩; exact ⟨hc, hl, hm⟩
+
+/-- A class value with no variadic construct signature meets the empty list of
+them. -/
+theorem ctorRestsT_nil {k W v} (h : Constructible v) : ctorRestsT [] k W v :=
+  ⟨h, fun _ hs => by cases hs⟩
 
 theorem ctorsT_select {L n W v p} (hf : ctorsT L n W v) (hp : p ∈ L) : ctorsT [p] n W v :=
   ⟨hf.1, fun q hq => by cases List.mem_singleton.mp hq; exact hf.2 p hp⟩
@@ -1178,6 +1235,31 @@ theorem ctorsT_congr {α : Type} (l : List α) (f g : α → List Fam × Fam) {n
   · obtain ⟨result, hc, hsafe⟩ := hs (g x) (List.mem_map_of_mem hm) j hj U hx hu heap hh args hv
       ((ArgsT_congr (h x hm).1 hj U args).mp ha)
     exact ⟨result, hc, (Safe_congr n (h x hm).2 j hj U heap _).mpr hsafe⟩
+
+theorem ctorRestsT_congr {α : Type} (l : List α) (f g : α → List Fam × Fam × Fam) {n : Nat}
+    (h : ∀ x ∈ l, ArgsAgree n (f x).1 (g x).1 ∧ Agree (f x).2.1 (g x).2.1 n ∧
+      Agree (f x).2.2 (g x).2.2 n)
+    (W : WorldT n) (v : Val) : ctorRestsT (l.map f) n W v ↔ ctorRestsT (l.map g) n W v := by
+  unfold ctorRestsT
+  refine and_congr Iff.rfl ⟨fun hs p hp => ?_, fun hs p hp => ?_⟩ <;>
+    obtain ⟨x, hm, rfl⟩ := List.mem_map.mp hp <;>
+    intro j hj U hx hu heap hh args hv ha
+  · have hl := ArgsAgree_length (h x hm).1
+    obtain ⟨result, hc, hsafe⟩ := hs (f x) (List.mem_map_of_mem hm) j hj U hx hu heap hh args hv
+      (by
+        obtain ⟨hlen, hfix, hpack⟩ := ha
+        refine ⟨by rw [hl]; exact hlen, ?_, ?_⟩
+        · rw [hl]; exact (ArgsT_congr (h x hm).1 hj U _).mpr hfix
+        · rw [hl]; exact ((h x hm).2.1 j hj U _).mpr hpack)
+    exact ⟨result, hc, (Safe_congr n (h x hm).2.2 j hj U heap _).mp hsafe⟩
+  · have hl := ArgsAgree_length (h x hm).1
+    obtain ⟨result, hc, hsafe⟩ := hs (g x) (List.mem_map_of_mem hm) j hj U hx hu heap hh args hv
+      (by
+        obtain ⟨hlen, hfix, hpack⟩ := ha
+        refine ⟨by rw [← hl]; exact hlen, ?_, ?_⟩
+        · rw [← hl]; exact (ArgsT_congr (h x hm).1 hj U _).mp hfix
+        · rw [← hl]; exact ((h x hm).2.1 j hj U _).mp hpack)
+    exact ⟨result, hc, (Safe_congr n (h x hm).2.2 j hj U heap _).mpr hsafe⟩
 
 theorem restsT_congr {α : Type} (l : List α) (f g : α → Fam × List Fam × Fam × Fam) {n : Nat}
     (h : ∀ x ∈ l, Agree (f x).1 (g x).1 n ∧ ArgsAgree n (f x).2.1 (g x).2.1 ∧

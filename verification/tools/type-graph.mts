@@ -58,8 +58,16 @@ export type Clause =
    * one argument list, are at the rest type, a `pack`; the field is left out
    * when there are none. */
   | { arrs: { arrows: Arrow[]; variadic?: RestArrow[] } }
-  /** Construct signatures `[parameters, result]`: what a class meets. */
-  | { ctors: { signatures: [Labels[], Labels][] } }
+  /** Construct signatures `[parameters, result]`: what a class meets; and
+   * variadic ones `[parameters, rest, result]`, whose actuals past the
+   * parameters are, as one argument list, at the rest type; the field is left
+   * out when there are none. */
+  | {
+      ctors: {
+        signatures: [Labels[], Labels][];
+        variadic?: [Labels[], Labels, Labels][];
+      };
+    }
   | {
       callable: {
         first: Fields;
@@ -242,12 +250,26 @@ export function decodeGraph(value: unknown): TypeGraph {
       if ("optional" in r) fields(r.optional);
     },
     ctors: (b) => {
-      array(obj(b, ["signatures"]).signatures).forEach((sig) => {
+      const r = objOptional(b, ["signatures"], ["variadic"]);
+      array(r.signatures).forEach((sig) => {
         const pair = array(sig);
         if (pair.length !== 2) throw Error("invalid construct signature");
         array(pair[0]).forEach(labels);
         labels(pair[1]);
       });
+      if ("variadic" in r) {
+        const sigs = array(r.variadic);
+        if (!sigs.length)
+          throw Error("an empty variadic list is written by omitting it");
+        sigs.forEach((sig) => {
+          const triple = array(sig);
+          if (triple.length !== 3)
+            throw Error("invalid variadic construct signature");
+          array(triple[0]).forEach(labels);
+          labels(triple[1]);
+          labels(triple[2]);
+        });
+      }
     },
     list: (b) => {
       const r = obj(b, ["first", "rest"]);
@@ -343,7 +365,15 @@ function clauseText(c: Clause): string {
     `calls[${[...arrows.map(arrowText), ...variadic.map(restArrowText)].join("; ")}]`;
   if ("arrs" in c) return calls(c.arrs.arrows, c.arrs.variadic);
   if ("ctors" in c)
-    return `new[${c.ctors.signatures.map(([ps, r]) => `(${ps.map(printLabels).join(", ")}) => ${printLabels(r)}`).join("; ")}]`;
+    return `new[${[
+      ...c.ctors.signatures.map(
+        ([ps, r]) => `(${ps.map(printLabels).join(", ")}) => ${printLabels(r)}`,
+      ),
+      ...(c.ctors.variadic ?? []).map(
+        ([ps, rest, r]) =>
+          `(${[...ps.map(printLabels), `...${printLabels(rest)}`].join(", ")}) => ${printLabels(r)}`,
+      ),
+    ].join("; ")}]`;
   if ("callable" in c)
     return `object[${[c.callable.first, ...c.callable.rest].map(printFields).join(" & ")}; ${calls(c.callable.arrows, c.callable.variadic)}]`;
   return assertNever(c);
