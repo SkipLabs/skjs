@@ -27,7 +27,8 @@ let rec source_type ctx j =
   | "atom" -> (match text "name" j with
     | "null" -> Atoms [Nul] | "undefined" -> Atoms [Undef]
     | "boolean" -> bool | "number" -> Atoms [Num]
-    | "string" -> Atoms [Str] | "unknown" | "void" -> top
+    | "string" -> Atoms [Str] | "bigint" -> Atoms [Bigint] | "symbol" -> Atoms [Symbol]
+    | "unknown" | "void" -> top
     | "never" -> Atoms [] | name -> unsupported ("atom " ^ name))
   | "literal" -> (match text "name" j with
     | "true" -> Atoms [True] | "false" -> Atoms [False]

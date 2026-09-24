@@ -19,6 +19,8 @@ private def toNatClause : PositiveNormalization.Clause (List (Fin 7)) → Positi
   | .numLit v => .numLit v
   | .str => .str
   | .strLit v => .strLit v
+  | .bigint => .bigint
+  | .symbol => .symbol
   | .refs a bs vs => .refs (a.map fun (f,A) => (f,A.map Fin.val)) (bs.map fun fs => fs.map fun (f,A) => (f,A.map Fin.val))
       (vs.map fun (f,A) => (f,A.map Fin.val))
   | .dict a bs vs ix => .dict (a.map fun (f,A) => (f,A.map Fin.val))

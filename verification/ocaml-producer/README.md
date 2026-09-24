@@ -530,8 +530,8 @@ client of the same project, each stops at its first refused declaration
 | --- | --- | --- |
 | `Mapper<K1, V1, K2, V2>` | `any` in the library's `Iterable` | `mapEntry` returns `Iterable<[K2, V2]>`, whose defaulted type parameters are `any` |
 | `Resource<C>` | none: collected | its `Context` parameter's generic methods are opaque members |
-| `EagerCollection<K, V>` | `bigint` in `DepSafe` | its methods' values are `V & DepSafe` |
-| `Values<T>` | `bigint` in `DepSafe` | `DepSafe` is `null \| boolean \| number \| bigint \| string \| symbol \| Managed`, and `Managed` has a computed `unique symbol` key |
+| `EagerCollection<K, V>` | `Managed`'s symbol-keyed field | it extends `Managed`, whose brand is `[sk_managed]: true` |
+| `Values<T>` | `any` in the library's `Iterable` | it extends `Iterable<T & DepSafe>`; `DepSafe`'s `bigint` and `symbol` are in the fragment, `Managed`'s symbol key is not |
 
 The admitted contract work is larger than recognizing the declaration keyword:
 `Mapper` has four `Json`-bounded parameters and a method returning
@@ -903,8 +903,9 @@ first milestone, in order of how much each gates:
      needs its instances at the call;
    - constructor types and generic tuple packs, `new (...params: Params) =>
      T` with `Params extends readonly DepSafe[]`;
-   - `bigint`, `symbol` and computed `unique symbol` keys (`DepSafe`,
-     `Managed`, the `Opaque` brands such as `int`);
+   - `bigint` and `symbol` (done: opaque values in the calculus and types
+     in the graph) and symbol-keyed properties (`Managed`, the `Opaque`
+     brands): property keys that are strings or symbols in the heap model;
    - types over rigid binders, such as `T & DepSafe`.
 5. **Library contracts.** `Iterable`/`Iterator` and arrays as iterables (every
    `mapEntry` returns an array literal as `Iterable`), and

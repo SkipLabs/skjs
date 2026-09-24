@@ -121,14 +121,15 @@ for (const [file, expected] of [
   writeFileSync(join(probe, "tsconfig.json"),
     JSON.stringify({ extends: upstreamConfig, include: ["*.ts"] }));
   // A generic method is an opaque member, so `Resource` and `Context`
-  // collect; `Mapper` stops at the library's `Iterable`, and the collections
-  // at `bigint` in `DepSafe`.
+  // collect; `Mapper` and `Values` stop at the library's `Iterable`, and
+  // `EagerCollection` at `Managed`'s symbol-keyed field.
   for (const [use, imports, refusal] of [
     ["Mapper<string, number, string, number>", "Mapper",
       /type outside the fragment \(AnyKeyword\) in \S*lib\.es2015\.iterable\.d\.ts#Iterable/],
-    ["Values<number>", "Values", /type outside the fragment \(BigIntKeyword\) in \S*index\.ts#DepSafe/],
+    ["Values<number>", "Values",
+      /type outside the fragment \(AnyKeyword\) in \S*lib\.es2015\.iterable\.d\.ts#Iterable/],
     ["EagerCollection<string, number>", "EagerCollection",
-      /type outside the fragment \(BigIntKeyword\) in \S*index\.ts#DepSafe/],
+      /unsupported property signature in \S*index\.ts#Managed/],
     ["Resource<SharedCollections>", "Resource, SharedCollections", null],
     ["Context", "Context", null],
   ] as const) {

@@ -112,6 +112,8 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     | "boolean" => return [1, 2]
     | "number" => return [← use .num]
     | "string" => return [← use .str]
+    | "bigint" => return [← use .bigint]
+    | "symbol" => return [← use .symbol]
     | "unknown" | "void" => return [← use .top]
     | "never" => return []
     | _ => throw "unsupported declaration primitive"
@@ -469,7 +471,7 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
     | "unknown" => return topClaim
     | "never" => return claimType []
     | name =>
-      if ["null", "undefined", "boolean", "number", "string", "void"].contains name then
+      if ["null", "undefined", "boolean", "number", "string", "void", "bigint", "symbol"].contains name then
         return claimType [Json.mkObj [("a", toJson name)]]
       throw s!"unsupported source atom {name}"
   | "literal" => return claimType [← literalAtom term]

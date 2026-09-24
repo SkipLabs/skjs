@@ -40,6 +40,7 @@ inductive Tag where
   | isNul | isBool | isRef | isFun | isUndef | isNullish | isNum | isStr
   | numEq (bits : UInt64)
   | strEq (value : String)
+  | isBigint | isSymbol
   deriving Repr, DecidableEq
 
 /-- Binary arithmetic on two numbers: the IEEE-754 double operation JavaScript
@@ -75,6 +76,12 @@ inductive Tm where
   /-- A string, carried as itself. Like a number it is opaque: bound, passed,
   stored, shape-tested and compared for equality, never computed with. -/
   | str (value : String)
+  /-- A bigint and a symbol, each carried as an identity. Nothing here computes
+  with them: they are bound, passed, stored and shape-tested. They enter only
+  through a caller or an external contract, so a type that admits them says
+  what such a value may be. -/
+  | bigint (id : Nat)
+  | sym (id : Nat)
   /-- An object identity: the locations its named fields stand for, fixed at
   allocation, with an optional immutable invocation descriptor. -/
   | objAt (fields : List (String × Nat)) (call : CallCode)
@@ -268,6 +275,10 @@ def tmDecEq (a b : Tm) : Decidable (a = b) := by
     exact decidable_of_iff (a0 = b0) (by simp only [Tm.num.injEq])
   case str.str a0 b0 =>
     exact decidable_of_iff (a0 = b0) (by simp only [Tm.str.injEq])
+  case bigint.bigint a0 b0 =>
+    exact decidable_of_iff (a0 = b0) (by simp only [Tm.bigint.injEq])
+  case sym.sym a0 b0 =>
+    exact decidable_of_iff (a0 = b0) (by simp only [Tm.sym.injEq])
   case objAt.objAt a0 a1 b0 b1 =>
     haveI : Decidable (a1 = b1) := callCodeDecEq a1 b1
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.objAt.injEq])
@@ -426,6 +437,7 @@ theorem lookup_slots {ns : List String} (hnd : ns.Nodup) {base i : Nat}
     (nul : P .nul) (undef : P .undef) (tru : P .tru) (fls : P .fls)
     (num : ∀ v, P (.num v))
     (str : ∀ s, P (.str s))
+    (bigint : ∀ i, P (.bigint i)) (sym : ∀ i, P (.sym i))
     (objAbsent : ∀ fs, P (.objAt fs .absent))
     (objClosure : ∀ fs n b, P b → P (.objAt fs (.closure n b)))
     (attach : ∀ n b ns args, P b → (∀ a ∈ args, P a) → P (.makeAt (.closure n b) ns args))
@@ -452,7 +464,7 @@ theorem lookup_slots {ns : List String} (hnd : ns.Nodup) {base i : Nat}
       | .absent => True | .closure _ b => P b | .variadic _ b => P b
       | .bound t r pre => P t ∧ P r ∧ ∀ a ∈ pre, P a)
     (motive_3 := fun args => ∀ a ∈ args, P a)
-    var invoke letE nul undef tru fls num str ?_ ?_ read index write test ite arith arr arrLit elemAt setElem lenOf spread
+    var invoke letE nul undef tru fls num str bigint sym ?_ ?_ read index write test ite arith arr arrLit elemAt setElem lenOf spread
     True.intro (fun _ _ h => h) (fun _ _ h => h) (fun _ _ _ ht hr hp => ⟨ht, hr, hp⟩) (by simp) (by
       intro a args ha ih v hv
       rcases List.mem_cons.mp hv with rfl | hv
@@ -479,7 +491,7 @@ abbrev Val := Tm
 
 
 def isVal : Tm → Bool
-  | .nul | .undef | .tru | .fls | .num _ | .str _ | .objAt .. | .arr _ => true
+  | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ | .objAt .. | .arr _ => true
   | _ => false
 
 /-- ECMAScript Number::equal on IEEE-754 bits: NaN never equals, and the
@@ -502,6 +514,8 @@ def tagHolds : Tag → Val → Bool
   | .numEq bits, .num value => numberEqual value bits
   | .isStr, .str _ => true
   | .strEq s, .str t => s == t
+  | .isBigint, .bigint _ => true
+  | .isSymbol, .sym _ => true
   | .isRef, .objAt _ .absent => true
   | .isFun, .objAt _ (.closure _ _) => true
   | .isFun, .objAt _ (.variadic _ _) => true
@@ -519,6 +533,8 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .fls => .fls
   | .num v => .num v
   | .str s => .str s
+  | .bigint i => .bigint i
+  | .sym i => .sym i
   | .objAt fs .absent => .objAt fs .absent
   | .objAt fs (.closure n b) => .objAt fs (.closure n (subst (j + n + 1) a b))
   | .makeAt (.closure n b) ns xs => .makeAt (.closure n (subst (j + n + 1) a b)) ns (substArgs j a xs)

@@ -31,7 +31,7 @@ export type Reference = {
 /** A source type before translation to the positive graph: a declaration's
  * equation or a function annotation, read by type-term.mts. */
 export type TypeTerm =
-  | { k: "atom"; name: "null" | "undefined" | "boolean" | "number" | "string" | "unknown" | "never" | "void"; span: Span }
+  | { k: "atom"; name: "null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "unknown" | "never" | "void"; span: Span }
   | { k: "literal"; name: "true" | "false" | "string" | "number"; text: string; span: Span }
   | { k: "union" | "intersection"; parts: TypeTerm[]; span: Span }
   | { k: "array"; readonly: boolean; element: TypeTerm; span: Span }

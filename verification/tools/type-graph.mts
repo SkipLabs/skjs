@@ -29,6 +29,9 @@ export type Clause =
   /** Strings, and one string, carried as itself. */
   | "str"
   | { strLit: { value: string } }
+  /** Every bigint, and every symbol: opaque values. */
+  | "bigint"
+  | "symbol"
   /** `views` are read capabilities: a field read at a sound upper bound on
    * its contents, with no write permission through this contract. */
   | { refs: { first: Fields; rest: Fields[]; views: Fields } }
@@ -79,6 +82,8 @@ export const STRING_CLAUSE_TEXT: Record<StringClause, string> = {
   num: "number",
   str: "string",
   top: "unknown",
+  bigint: "bigint",
+  symbol: "symbol",
 };
 
 /** The number a literal's bit pattern denotes. Readers show the number; the

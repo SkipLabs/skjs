@@ -249,7 +249,7 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
     | "function" => callableType single
     -- A number or string arm is interned, so `1` and `number` are separate
     -- labels and the singleton is below the family by the ordinary clause rules.
-    | "number" | "numberlit" | "string" | "stringlit" | "void" =>
+    | "number" | "numberlit" | "string" | "stringlit" | "void" | "bigint" | "symbol" =>
       SourceTypes.numberLabels (← CellClaims.primitive single)
     | _ => SourceTypes.translate (← CellClaims.primitive single)
   return (records ++ dictionaries ++ conjunctions ++ arms).flatten.mergeSort (· ≤ ·) |>.eraseDups

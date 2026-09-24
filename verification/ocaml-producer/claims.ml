@@ -28,6 +28,7 @@ let encode (proposal : Proposal.t) =
   and atom_labels = function
     | Nul -> [0] | True -> [1] | False -> [2] | Undef -> [3]
     | Num -> [intern (Array [String "num"])] | Str -> [intern (Array [String "str"])]
+    | Bigint -> [intern (Array [String "bigint"])] | Symbol -> [intern (Array [String "symbol"])]
     | NumLit bits -> [intern (Array [Object ["numLit",Object ["bits",String (Printf.sprintf "%Lu" bits)]]])]
     | StrLit value -> [intern (Array [Object ["strLit",Object ["value",String value]]])]
     | Top -> [intern (Array [String "top"])]

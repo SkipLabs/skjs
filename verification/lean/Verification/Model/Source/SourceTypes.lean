@@ -42,6 +42,8 @@ private def clauseName : Clause (List Nat) → String
   | .str => "string"
   | .strLit _ => "string literal"
   | .list .. => "array"
+  | .bigint => "bigint"
+  | .symbol => "symbol"
 
 def render (T : Table) (A : Ty Nat) : String :=
   match expand (graph T) A with
@@ -179,6 +181,8 @@ def numberLabels (t : Claim.Ty) : Lowering (Ty Nat) := do
         out := out ++ [← use (.numLit (9223372036854775808 : UInt64))]
     | .str => out := out ++ [← use .str]
     | .strLit s => out := out ++ [← use (.strLit s)]
+    | .bigint => out := out ++ [← use .bigint]
+    | .symbol => out := out ++ [← use .symbol]
     -- A void result forgets its guarantee: every value, like `unknown`.
     | .void => out := out ++ [← use .top]
     | _ => pure ()
@@ -186,7 +190,7 @@ def numberLabels (t : Claim.Ty) : Lowering (Ty Nat) := do
 
 /-- Numbers and strings are interned, as their singletons are unbounded. -/
 def isNumberAtom : Claim.Atom → Bool
-  | .num | .numLit _ | .str | .strLit _ | .void => true
+  | .num | .numLit _ | .str | .strLit _ | .void | .bigint | .symbol => true
   | _ => false
 
 /-- One arm of a union, translated where the table can grow: its numbers are

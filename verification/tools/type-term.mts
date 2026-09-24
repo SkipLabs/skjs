@@ -60,6 +60,8 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
     case ts.SyntaxKind.BooleanKeyword: return atom("boolean");
     case ts.SyntaxKind.NumberKeyword: return atom("number");
     case ts.SyntaxKind.StringKeyword: return atom("string");
+    case ts.SyntaxKind.BigIntKeyword: return atom("bigint");
+    case ts.SyntaxKind.SymbolKeyword: return atom("symbol");
     case ts.SyntaxKind.UnknownKeyword: return atom("unknown");
     case ts.SyntaxKind.NeverKeyword: return atom("never");
     case ts.SyntaxKind.VoidKeyword: return atom("void");

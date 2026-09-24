@@ -41,7 +41,7 @@ export interface FunctionAtom {
   and?: Atom[];
 }
 export type Atom =
-  | { a: "null" | "undefined" | "boolean" | "string" | "number" }
+  | { a: "null" | "undefined" | "boolean" | "string" | "number" | "bigint" | "symbol" }
   /* A `void` result: no usable guarantee about the value. */
   | { a: "void" }
   /* An array: a tuple contract on its store. `required` positions are
@@ -98,6 +98,8 @@ function atom(v: unknown): void {
     case "boolean":
     case "string":
     case "number":
+    case "bigint":
+    case "symbol":
     case "void":
       keys(o, ["a"]);
       break;

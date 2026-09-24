@@ -43,6 +43,8 @@ const PRIMITIVE: BareKind<Atom>[] = [
   "boolean",
   "string",
   "number",
+  "bigint",
+  "symbol",
   "undefined",
   "void",
 ];
@@ -948,6 +950,8 @@ const _handled = {
   dict: 1,
   arrs: 1,
   callable: 1,
+  bigint: 1,
+  symbol: 1,
 } satisfies Record<StringClause | ClauseKey, 1>;
 void _handled;
 
@@ -965,6 +969,8 @@ function liftClause(types: unknown, clause: unknown, depth: number): unknown {
   if (clause === "undef") return { a: "undefined" };
   if (clause === "num") return { a: "number" };
   if (clause === "str") return { a: "string" };
+  if (clause === "bigint") return { a: "bigint" };
+  if (clause === "symbol") return { a: "symbol" };
   if (clause === "top") return "unknown";
   // A clause states one kind, under its own key. The table above is what
   // says these are all of them; here the key is only read.
@@ -1218,6 +1224,8 @@ function lowerAtom(types: unknown, atom: unknown): number[] {
     );
   if (atom.a === "number") return [intern(types, ["num"])];
   if (atom.a === "string") return [intern(types, ["str"])];
+  if (atom.a === "bigint") return [intern(types, ["bigint"])];
+  if (atom.a === "symbol") return [intern(types, ["symbol"])];
   if (atom.a === "stringlit" && typeof atom.v === "string")
     return [intern(types, [{ strLit: { value: atom.v } }])];
   if (

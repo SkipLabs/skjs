@@ -1418,6 +1418,13 @@ ordinary ground application, and each bound must hold by the graph's certified
 subtyping. The slot holds the instances as one callable with several
 signatures. Each instance holds of the value, so their conjunction does.
 
+**Bigints and symbols.** The calculus has bigint and symbol values, each an
+opaque identity: bound, passed, stored and shape-tested, never computed with.
+The graph has their families, and `bigint` and `symbol` annotations lower to
+them. Symbol-keyed properties are separate work: the heap's property keys
+must be strings or symbols, so that no string-keyed access reaches a symbol
+key.
+
 **Imported values.** A value import joins the module's scope at the type its
 declaration states: a function's annotated signature, an annotated
 constant's annotation, or, for a class, its constructor, read only by `new`.

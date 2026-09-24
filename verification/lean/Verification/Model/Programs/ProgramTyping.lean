@@ -277,6 +277,8 @@ def tagShape (tag : Tag) (s : Nat) : Option Bool :=
   | .numEq _ => if s == 5 then none else some false
   | .isStr => some (s == 6)
   | .strEq _ => if s == 6 then none else some false
+  | .isBigint => some (s == 9)
+  | .isSymbol => some (s == 10)
 
 def tagClause (tag : Tag) (c : Clause α) : Option Bool :=
   match tag, c with
@@ -313,7 +315,7 @@ theorem tagClause_sound {S : α → Fam} {c tag q n W v}
     all_goals
       have hs := sem_shape (by simp) hv
       cases v <;> simp_all [ht,valueShape,tagHolds,shape]
-  | isNul | isBool | isRef | isFun | isUndef | isNullish | isNum | isStr =>
+  | isNul | isBool | isRef | isFun | isUndef | isNullish | isNum | isStr | isBigint | isSymbol =>
     by_cases hc : c = .top
     · subst hc; simp [ht, tagClause] at hq
     have htag : some (tagHolds tag v) = tagShape tag (valueShape v) := by

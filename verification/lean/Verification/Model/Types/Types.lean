@@ -137,6 +137,9 @@ def numT : Fam := fun _ _ v => ∃ b, v = .num b
 
 /-- Every string. As with numbers, the family is the union of its singletons. -/
 def strT : Fam := fun _ _ v => ∃ s, v = .str s
+/-- Bigints and symbols: opaque values, each one an identity. -/
+def bigintT : Fam := fun _ _ v => ∃ i, v = .bigint i
+def symbolT : Fam := fun _ _ v => ∃ i, v = .sym i
 
 /-! ### A rigid parameter under a reference -/
 
@@ -291,6 +294,8 @@ theorem boolT_adm : Adm boolT := ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
 theorem numT_adm : Adm numT := ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
 
 theorem strT_adm : Adm strT := ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+theorem bigintT_adm : Adm bigintT := ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+theorem symbolT_adm : Adm symbolT := ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
 
 theorem topF_adm : Adm topF := ⟨fun _ _ _ _ => trivial, fun _ _ _ _ _ _ => trivial⟩
 

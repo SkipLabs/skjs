@@ -3,6 +3,8 @@
 type ty = Atoms of atom list | Rigid of rigid | Union of ty list
 and rigid = { scope: int; index: int; spelling: string }
 and atom = Nul | Undef | True | False | Num | Str | NumLit of int64 | StrLit of string | Top
+         (* Opaque values: every bigint, every symbol. *)
+         | Bigint | Symbol
          | Shape of shape
          (* Declaration identity, with arguments retained for later generic
             instantiation. A recursive reference is never expanded into a

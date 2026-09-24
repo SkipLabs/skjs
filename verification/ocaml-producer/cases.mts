@@ -136,6 +136,8 @@ export const cases: Case[] = [
   positive("local-inheritance", "Local interface heritage uses the same declaration graph as imported types"),
   negative("invalid-local-inheritance", "A local inherited field cannot establish a wrong result type"),
   positive("top-void", "unknown / discarded callback result"),
+  positive("bigint-symbol", "bigint and symbol values at their types"),
+  negative("invalid-bigint", "a bigint is not a number"),
   positive("module-functions", "module functions called at their annotated signatures"),
   positive("module-recursion", "self and mutual recursion between hoisted declarations"),
   negative("invalid-module-call", "a module function's annotated result cannot establish another type"),

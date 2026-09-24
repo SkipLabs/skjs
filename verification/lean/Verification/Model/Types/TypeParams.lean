@@ -43,6 +43,8 @@ def substClause [DecidableEq ι] (p : ι) (A : List ι) : Clause (List ι) → C
   | .numLit v => .numLit v
   | .str => .str
   | .strLit v => .strLit v
+  | .bigint => .bigint
+  | .symbol => .symbol
   | .refs a bs vs => .refs (substFields p A a) (bs.map (substFields p A)) (substFields p A vs)
   | .dict a bs vs ds => .dict (substFields p A a) (bs.map (substFields p A))
       (substFields p A vs) (ds.map (substTy p A))

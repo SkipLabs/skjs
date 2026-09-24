@@ -37,6 +37,9 @@ inductive Atom where
   anything. Distinct from `top` (`unknown`) as a source type; both denote
   every value. -/
   | void
+  /-- Every bigint, and every symbol. -/
+  | bigint
+  | symbol
   deriving DecidableEq, Repr
 
 /-- A type: `unknown` (`top`), or the union of a finite list of atoms.
@@ -88,6 +91,8 @@ def decodeAtom (j : Json) : Except String Atom := do
   | "stringlit" => return .strLit (← jStr (← jField j "v"))
   | "booleanlit" => return .boolLit (← decodeBoolLiteral j)
   | "void" => return .void
+  | "bigint" => return .bigint
+  | "symbol" => return .symbol
   | other => .error s!"unknown type atom '{other}'"
 
 /-- The literal forms. An `Expr.lit` node denotes one value, so a "literal"

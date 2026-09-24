@@ -60,6 +60,9 @@ inductive Clause (α : Type) where
   /-- An array store under one or more tuple contracts. The array object
   holds the store in its store field; the contracts describe the store. -/
   | list (first : Tuple α) (rest : List (Tuple α))
+  /-- Bigints and symbols; appended last so every earlier case order holds. -/
+  | bigint
+  | symbol
   deriving Repr, DecidableEq
 
 /-- Every value. A closed value, as every member of every family is. -/
@@ -76,6 +79,8 @@ def sem (X : α → Fam) : Clause α → Fam
   | .numLit b => fun _ _ v => v = .num b
   | .str => strT
   | .strLit s => fun _ _ v => v = .str s
+  | .bigint => bigintT
+  | .symbol => symbolT
   | .refs a bs vs => fun n W v =>
       refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧ viewT (famsOf X vs) n W v
   | .dict a bs vs ds => fun n W v =>
@@ -118,6 +123,8 @@ def meet : Clause α → Clause α → List (Clause α)
   | .str, .str => [.str]
   | .str, .strLit s | .strLit s, .str => [.strLit s]
   | .strLit a, .strLit b => if a == b then [.strLit a] else []
+  | .bigint, .bigint => [.bigint]
+  | .symbol, .symbol => [.symbol]
   | .refs a bs vs, .refs c ds ws => [.refs a (bs ++ c :: ds) (vs ++ ws)]
   | .refs a bs vs, .dict c ds ws ix => [.dict a (bs ++ c :: ds) (vs ++ ws) ix]
   | .dict a bs vs ix, .refs c ds ws => [.dict a (bs ++ c :: ds) (vs ++ ws) ix]
@@ -146,7 +153,7 @@ private theorem nil_sem (X : α → Fam) (n W v) : ¬ semList X [] n W v := by
 def shape : Clause α → Nat
   | .nul => 0 | .bool | .boolLit _ => 1 | .refs .. | .dict .. => 2 | .arrs .. | .callable .. => 3
   | .undef => 4 | .num | .numLit _ => 5 | .str | .strLit _ => 6
-  | .top => 7 | .list .. => 8
+  | .top => 7 | .list .. => 8 | .bigint => 9 | .symbol => 10
 
 def valueShape : Val → Nat
   | .nul => 0 | .tru | .fls => 1 | .objAt _ .absent => 2 | .undef => 4
@@ -154,6 +161,8 @@ def valueShape : Val → Nat
   | .num _ => 5
   | .str _ => 6
   | .arr _ => 8
+  | .bigint _ => 9
+  | .sym _ => 10
   | _ => 7
 
 /-- Every member of a clause is a closed value; top says nothing more. -/
@@ -174,6 +183,8 @@ theorem sem_value {X : α → Fam} {c : Clause α} {n W v}
   | undef => subst v; exact ⟨rfl, trivial⟩
   | str => obtain ⟨s, rfl⟩ := h; exact ⟨rfl, trivial⟩
   | strLit s => subst v; exact ⟨rfl, trivial⟩
+  | bigint => obtain ⟨i, rfl⟩ := h; exact ⟨rfl, trivial⟩
+  | symbol => obtain ⟨i, rfl⟩ := h; exact ⟨rfl, trivial⟩
 
 /-- A member's shape is its clause's, except under top, which has none. -/
 theorem sem_shape {X : α → Fam} {c : Clause α} {n W v} (hc : c ≠ .top)
@@ -197,6 +208,8 @@ theorem sem_shape {X : α → Fam} {c : Clause α} {n W v} (hc : c ≠ .top)
     cases code <;> simp_all [valueShape, shape]
   | str => obtain ⟨s, rfl⟩ := h; rfl
   | strLit s => cases h; rfl
+  | bigint => obtain ⟨i, rfl⟩ := h; rfl
+  | symbol => obtain ⟨i, rfl⟩ := h; rfl
 
 theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (v : Val) :
     semList X (meet a b) n W v ↔ interT (sem X a) (sem X b) n W v := by
@@ -301,6 +314,10 @@ theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (
       simp only [meet, singleton_sem, sem, List.mem_append, List.mem_cons, or_imp, forall_and,
         forall_eq, interT]
       exact ⟨fun ⟨ha, hb, hc, hd⟩ => ⟨⟨ha, hb⟩, hc, hd⟩, fun ⟨⟨ha, hb⟩, hc, hd⟩ => ⟨ha, hb, hc, hd⟩⟩
+    · -- bigint ∩ bigint
+      simp [meet, singleton_sem, sem, interT, bigintT]
+    · -- symbol ∩ symbol
+      simp [meet, singleton_sem, sem, interT, symbolT]
   · have hm : meet a b = [] := by
       cases a <;> cases b <;> simp_all [shape, meet]
     rw [hm]
@@ -362,6 +379,8 @@ theorem sem_adm (X : α → Fam) (c : Clause α) : Adm (sem X c) := by
         fun b hb => (listT_adm _).mono n W U hx v (h.2 b hb)⟩⟩
   | str => exact strT_adm
   | strLit _ => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+  | bigint => exact bigintT_adm
+  | symbol => exact symbolT_adm
 
 /-- Position by position, a tuple contract's meaning depends on its labels'
 meanings only below the budget, as a record's does. -/
@@ -401,6 +420,8 @@ theorem sem_congr (X Y : α → Fam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
   | numLit _ => rfl
   | str => rfl
   | strLit _ => rfl
+  | bigint => rfl
+  | symbol => rfl
   | undef => rfl
   | top => rfl
   | list a bs =>
