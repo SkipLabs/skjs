@@ -27,7 +27,34 @@ instance : FromJson PropKey where
 
 deriving instance ToJson, FromJson for Tag
 deriving instance ToJson, FromJson for Arith
+deriving instance ToJson, FromJson for Invoke
 deriving instance ToJson, FromJson for Tm, CallCode
+
+/-- A closure's kind is left out of its JSON when it is `call`, the kind of
+every arrow and method: that is the one spelling of it, so strict decoding,
+which re-encodes and compares, refuses an explicit `"call"`, and a closure
+without it reads as it always has. Closures nest anywhere in a term, so the
+spelling applies at every depth. -/
+private partial def closureKinds (restore : Bool) : Json → Json
+  | .arr xs => .arr (xs.map (closureKinds restore))
+  | .obj kvs => Json.mkObj (kvs.toArray.toList.map fun (k, v) =>
+      let v := closureKinds restore v
+      if k != "closure" then (k, v) else
+      match v with
+      | .obj fields =>
+        if restore then
+          if fields.contains "kind" then (k, v) else (k, v.setObjVal! "kind" (toJson Invoke.call))
+        else if (v.getObjVal? "kind").toOption == some (toJson Invoke.call) then
+          (k, Json.mkObj (fields.toArray.toList.filter (·.1 != "kind")))
+        else (k, v)
+      | _ => (k, v))
+  | j => j
+
+private def derivedTmToJson : Tm → Json := toJson
+private def derivedTmFromJson : Json → Except String Tm := fromJson?
+
+instance (priority := high) : ToJson Tm := ⟨fun t => closureKinds false (derivedTmToJson t)⟩
+instance (priority := high) : FromJson Tm := ⟨fun j => derivedTmFromJson (closureKinds true j)⟩
 deriving instance ToJson, FromJson for PositiveNormalization.Tuple
 deriving instance ToJson, FromJson for Clause
 
@@ -117,6 +144,7 @@ def clauseTypes : Clause (Ty Nat) → List (Ty Nat)
   | .callable A bs L S =>
       A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ L.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++
         S.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2.1, p.2.2.2])
+  | .ctors L => L.flatMap fun p => p.1 ++ [p.2]
 
 def validClaim (bound : Nat) (c : PointClaim Nat) : Bool :=
   (c.type :: c.context).all (validTy bound)

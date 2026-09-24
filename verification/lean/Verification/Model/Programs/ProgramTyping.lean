@@ -206,6 +206,37 @@ theorem adm_transfer2 {A : Fam} (hA : Adm A) {j i k : Nat} {U : WorldT j} {X : W
     (hk : k ≤ i) (hz : WExt (trunc k hk X) V) : A k V v :=
   hA.mono k _ V hz v (hA.down_le i k hk X v (hA.mono i _ X hy v (hA.down_le j i hi U v ha)))
 
+/-- `new f(args)`: the constructor runs first, then the actuals left to right;
+the construct step then enters the class's body, which the constructor's
+signature makes safe one level down. -/
+theorem construct_safe {B : Fam} (xs : List (Fam × Tm))
+    (hA : ∀ p ∈ xs, Adm p.1) (hAv : ∀ p ∈ xs, ValOnly p.1)
+    {n W heap f} (hw : WorldAdm W) (hh : HeapOk n W heap)
+    (hf : Safe (ctorsT [(xs.map Prod.fst, B)]) n W heap f)
+    (ha : ∀ p ∈ xs, FutureSafe p.1 n W p.2) :
+    Safe B n W heap (.construct f (xs.map Prod.snd)) := by
+  apply bind (fun f => .construct f (xs.map Prod.snd)) Step.constructL n W heap f hw hh hf
+  intro j hj U hx hw' heap' v hok hv hctor
+  apply bind_list xs hA (Tm.construct v) (fun hs => CallArguments.Step.constructArgs hv hs) hw' hok
+    (fun p hp => (ha p hp).transfer hj hx)
+  intro k hk V hz hv' heap3 args hok3 hargs
+  cases k with
+  | zero => trivial
+  | succ k =>
+    have hc := adm_transfer2 (ctorsT_adm _) hctor (Nat.le_refl j)
+      (by rw [trunc_id]; exact WExt_refl _) hk hz
+    have hAm : ∀ A ∈ xs.map Prod.fst, Adm A := by
+      intro A hA'; obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hA'; exact hA p hp
+    have hAvm : ∀ A ∈ xs.map Prod.fst, ValOnly A := by
+      intro A hA'; obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hA'; exact hAv p hp
+    have hvals : CallArguments.Values args := ArgsT_values hAvm hargs
+    obtain ⟨result, ⟨fs, arity, b, rfl, rfl⟩, hsafe⟩ :=
+      hc.2 _ (List.mem_singleton_self _) k (Nat.lt_succ_self k) (trunc k (Nat.le_succ k) V)
+        (WExt_refl _) (WorldAdm_trunc _ hv') heap3 (HeapOk_trunc k V heap3 hok3) args hvals
+        (ArgsT_transfer hAm hargs k (Nat.le_succ k) _ (WExt_refl _))
+    exact Or.inr ⟨trunc k (Nat.le_succ k) V, heap3, _, WExt_refl _, WorldAdm_trunc _ hv',
+      .constructV hvals, HeapOk_trunc k V heap3 hok3, hsafe⟩
+
 /-- A call that writes fewer actuals than its selected signature declares. The
 callee runs first, then the receiver, then the actuals. The omitted positions
 are exactly the ones whose contract admits `undefined`, which is the value the
@@ -272,7 +303,8 @@ singleton bits; the whole number family has no uniform answer. -/
 def tagShape (tag : Tag) (s : Nat) : Option Bool :=
   match tag with
   | .isNul => some (s == 0) | .isBool => some (s == 1) | .isRef => some (s == 2)
-  | .isFun => some (s == 3) | .isUndef => some (s == 4)
+  -- A class value (shape 11) is a function to `typeof`, as a callable is.
+  | .isFun => some (s == 3 || s == 11) | .isUndef => some (s == 4)
   | .isNullish => some (s == 0 || s == 4) | .isNum => some (s == 5)
   | .numEq _ => if s == 5 then none else some false
   | .isStr => some (s == 6)
@@ -320,7 +352,7 @@ theorem tagClause_sound {S : α → Fam} {c tag q n W v}
     · subst hc; simp [ht, tagClause] at hq
     have htag : some (tagHolds tag v) = tagShape tag (valueShape v) := by
       rw [ht]
-      cases v <;> first | rfl | (rename_i fs code; cases code <;> rfl)
+      cases v <;> first | rfl | (rename_i fs code; cases code <;> first | rfl | (rename_i kind; cases kind <;> rfl))
     rw [sem_shape hc hv, ht] at htag
     exact Option.some.inj (htag.trans (by simpa only [ht,tagClause] using hq))
 
@@ -701,6 +733,19 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       {b : Tm} : Represents G F (.arrs L []) → (∀ p ∈ L, p.2.1.length = arity) →
       (∀ p ∈ L, HasTy G (p.1 :: p.2.1 ++ Γ) b p.2.2) →
       HasTy G Γ (.make (.closure arity b) .nul) F
+  /-- A class value: construct-only code, its body typed at each construct
+  signature with `undefined` for the receiver `new` passes. -/
+  | ctorE {Γ : List (Ty ι)} {F U : Ty ι} {L : List (List (Ty ι) × Ty ι)} {arity : Nat}
+      {b : Tm} :
+      Represents G F (.ctors L) → Represents G U .undef → (∀ p ∈ L, p.1.length = arity) →
+      (∀ p ∈ L, HasTy G (U :: p.1 ++ Γ) b p.2) →
+      HasTy G Γ (.make (.closure arity b .construct) .nul) F
+  /-- `new f(args)`: `f` at a construct signature, each actual at its parameter. -/
+  | construct {Γ : List (Ty ι)} {f : Tm} {F B : Ty ι} {L : List (List (Ty ι) × Ty ι)}
+      {xs : List (Ty ι × Tm)} :
+      HasTy G Γ f F → Represents G F (.ctors L) → (xs.map Prod.fst, B) ∈ L →
+      (∀ p ∈ xs, HasTy G Γ p.2 p.1) →
+      HasTy G Γ (.construct f (xs.map Prod.snd)) B
   /-- A callable object: the same allocation as a record, with invocation code
   attached. Its bag is a record like any other, so its fields are named by the
   program rather than fixed here. -/
@@ -926,6 +971,41 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     have hs := make_callable_rule nulT_adm arity n W h _ .nul hcode rfl hw hh rfl
     exact Safe_mono n (fun k _ U v hv => (represents_sem hr k U v).mpr
       ⟨hv.2, hv.2.1, by simp⟩) W h _ hs
+  | @ctorE Γ F U L arity b hr hu hlen hb ih =>
+    intro n W h ρ he hw hh
+    simp only [instantiate, Nat.zero_add]
+    have hcode := invocation_of_body (L := L.map fun p => (U, p.1, p.2)) he
+      (by intro p hp; obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp; exact hlen q hq)
+      (by intro p hp; obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp; exact ih q hq)
+    apply make_rule nulT_adm n W h _ .nul rfl hw hh rfl
+    intro j hj V hx _
+    refine (represents_sem hr j V _).mpr (ctorsT_of_body ?_ ?_)
+    · simpa [Scoped, Nat.add_comm] using hcode.1
+    · intro p hp i hi V' hx' hu' heap hok args ha
+      obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+      have hWV : WExt (trunc i (by omega) W) V' := WExt_trans
+        (by simpa only [trunc_trunc] using WExt_trunc (Nat.le_of_lt hi) hx) hx'
+      exact hcode.2 _ (List.mem_map.mpr ⟨(U, q.1, q.2), List.mem_map.mpr ⟨q, hq, rfl⟩, rfl⟩)
+        i (by omega) V' hWV hu' heap hok .undef ((represents_sem hu i V' _).mpr rfl) args
+        (by simpa using ha)
+  | @construct Γ f F B L xs hf hr hp hx ihf ihx =>
+    intro n W h ρ he hw hh
+    simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
+    have hs := construct_safe (B := meaning G B)
+      (xs.map fun p => (meaning G p.1, instantiate 0 ρ p.2))
+      (by intro p hp; obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp; exact meaning_adm G q.1)
+      (by intro p hp; obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp; exact meaning_valOnly G q.1)
+      hw hh (f := instantiate 0 ρ f) ?_ ?_
+    · simpa only [List.map_map, Function.comp_def] using hs
+    · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
+      intro k hk U v hv
+      simpa only [List.map_map, Function.comp_def] using
+        ctorsT_select ((represents_sem hr k U v).mp hv)
+          (List.mem_map.mpr ⟨(xs.map Prod.fst, B), hp, by simp [List.map_map, Function.comp_def]⟩)
+    · intro p hp'
+      obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp'
+      intro j hj U hx hu' heap hok
+      exact ihx q hq j U heap ρ (he.transfer j hj U hx) hu' hok
   | @makeCallable Γ F L arity b parts hr hnd hp hlen hb ih ihb =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def, Nat.zero_add]
@@ -1537,7 +1617,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     apply make_rule nulT_adm n W h (.variadic k _) .nul rfl hw hh rfl
     intro j hj U hx _
     have hinv : Invocable (.obj h.length (.variadic k (instantiate (k + 2) ρ b))) :=
-      ⟨_, _, rfl, by simp, by simpa [Scoped] using instantiate_scoped ρ he.1 b (k + 2)⟩
+      ⟨_, _, rfl, rfl, by simpa [Scoped] using instantiate_scoped ρ he.1 b (k + 2)⟩
     refine (represents_sem hr j U _).mpr ⟨⟨hinv, by simp⟩, hinv, ?_⟩
     intro s' hs'
     obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hs'
@@ -1580,7 +1660,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     intro k' hk' V hy hrec
     have hinv : Invocable (.objAt (slots heap.length (parts.map Prod.fst))
         (.variadic k (instantiate (k + 2) ρ b))) :=
-      ⟨_, _, rfl, by simp, by simpa [Scoped] using instantiate_scoped ρ he.1 b (k + 2)⟩
+      ⟨_, _, rfl, rfl, by simpa [Scoped] using instantiate_scoped ρ he.1 b (k + 2)⟩
     have hfam : ReferenceConjunctions.famsOf (meaning G) (parts.map fun p => (p.1, p.2.1))
         = (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2.1) := by
       simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']

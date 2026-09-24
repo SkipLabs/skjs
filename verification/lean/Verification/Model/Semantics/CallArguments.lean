@@ -289,6 +289,13 @@ theorem Step.makeArgs {c : CallCode} {ns : List PropKey} {h h' : Heap} {args arg
   obtain ⟨i, a, a', hg, hb, hstep, rfl⟩ := focus_iff.mp hs
   exact .makeArg hg hb hstep
 
+/-- The actuals of `new` reduce exactly as a call's do, once the constructor
+is a value. -/
+theorem Step.constructArgs {h h' : Heap} {f : Tm} {args args' : List Tm} (hf : isVal f = true)
+    (hs : ArgStep h args h' args') : Step h (.construct f args) h' (.construct f args') := by
+  obtain ⟨i, a, a', hg, hb, hstep, rfl⟩ := focus_iff.mp hs
+  exact .constructArg hf hg hb hstep
+
 /-- A store's initializers reduce exactly as actual arguments do. -/
 theorem Step.arrArgs {h h' : Heap} {args args' : List Tm}
     (hs : ArgStep h args h' args') : Step h (.arrLit args) h' (.arrLit args') := by
@@ -314,6 +321,8 @@ def dispatch : CallCode → Tm → List Tm → Option Tm
   | .closure arity body, r, args => some (bindParameters arity args r body)
   | .variadic fixed body, r, args => some (bindRest fixed args r body)
   | .bound target r₀ pre, _, args => some (.invoke target r₀ (pre ++ args))
+  -- A class constructor's plain call throws: nothing runs.
+  | .closure _ _ .construct, _, _ => none
   | .absent, _, _ => none
 
 theorem invoke_ready (hi : Invoke frame body) : frame.ready := by
@@ -345,7 +354,7 @@ theorem invoke_iff : Invoke frame result ↔
     cases hf
     cases code with
     | absent => cases hd
-    | closure arity body => cases hd; exact .closure hr hv
+    | closure arity body kind => cases kind <;> cases hd; exact .closure hr hv
     | variadic fixed body => cases hd; exact .variadic hr hv
     | bound target r₀ pre => cases hd; exact .bound hr hv
 

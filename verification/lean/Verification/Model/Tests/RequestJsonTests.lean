@@ -29,6 +29,7 @@ private def toNatClause : PositiveNormalization.Clause (List (Fin 7)) → Positi
       (os.map fun (f,A) => (f,A.map Fin.val))
   | .arrs L S => .arrs (L.map fun (c,a,b) => (c.map Fin.val,a.map (List.map Fin.val),b.map Fin.val))
       (S.map fun (c,a,e,r) => (c.map Fin.val,a.map (List.map Fin.val),e.map Fin.val,r.map Fin.val))
+  | .ctors L => .ctors (L.map fun (a,b) => (a.map (List.map Fin.val), b.map Fin.val))
   | .callable a bs L S => .callable (a.map fun (f,A) => (f,A.map Fin.val)) (bs.map fun fs => fs.map fun (f,A) => (f,A.map Fin.val))
       (L.map fun (c,a,b) => (c.map Fin.val,a.map (List.map Fin.val),b.map Fin.val))
       (S.map fun (c,a,e,r) => (c.map Fin.val,a.map (List.map Fin.val),e.map Fin.val,r.map Fin.val))

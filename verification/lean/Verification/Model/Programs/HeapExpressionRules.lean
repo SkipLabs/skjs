@@ -617,7 +617,7 @@ def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
   | .created e =>
     if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTree G e = true then
       match j.term with
-      | .make (.closure _ _) .nul => some (HeapKnowledge.shift k)
+      | .make (.closure _ _ .call) .nul => some (HeapKnowledge.shift k)
       | _ => none
     else none
   | .typedRead i B e =>

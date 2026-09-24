@@ -54,6 +54,10 @@ inductive Rule (ι : Type) where
   | bindE
   /-- A bound variadic function, likewise. -/
   | bindRestE
+  /-- A class value: the `undefined` type its bodies' receiver has. -/
+  | ctorE (undef : Ty ι)
+  /-- `new`: the constructor, then the actuals in order. -/
+  | construct
   | sub (proof : PositiveCertificates.Proof ι)
 
 inductive Evidence (ι : Type) where
@@ -69,6 +73,14 @@ abbrev funEPremises [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (A
   match expand G A with
   | [.arrs L []] => (∀ p ∈ L, p.2.1.length = arity) ∧
       ps = L.map (fun p => ⟨p.1 :: p.2.1 ++ Γ, b, p.2.2⟩)
+  | _ => False
+
+/-- The premises a class-value node owes: one checked body per construct
+signature, whose receiver is `undefined`. -/
+abbrev ctorEPremises [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (A U : Ty ι)
+    (arity : Nat) (b : Tm) (ps : List (Sequent ι)) : Prop :=
+  match expand G A with
+  | [.ctors L] => (∀ p ∈ L, p.1.length = arity) ∧ ps = L.map (fun p => ⟨U :: p.1 ++ Γ, b, p.2⟩)
   | _ => False
 
 /-- The slots a prefix of saved variables names, when every entry is one. -/
@@ -338,6 +350,16 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
         saved.filterMap (j.context[·]?) =
           s.2.1.take saved.length ++ List.replicate (saved.length - s.2.1.length) E'
     | _, _, _, _ => False
+  -- A class value: a function's allocation with construct-only code.
+  | .ctorE U, .makeAt (.closure arity b .construct) ns inits, ps =>
+    ns = [valueField] ∧ inits = [Tm.nul] ∧ Represents G U .undef ∧
+      ctorEPremises G j.context j.type U arity b ps
+  | .construct, .construct f args, jf :: jas =>
+    jf.context = j.context ∧ jf.term = f ∧ jas.map Sequent.term = args ∧
+    (∀ ja ∈ jas, ja.context = j.context) ∧
+    match expand G jf.type with
+    | [.ctors L] => (jas.map Sequent.type, j.type) ∈ L
+    | _ => False
   | .sub proof, _, [jt] =>
     jt.context = j.context ∧ jt.term = j.term ∧
     PositiveCertificates.check G jt.type j.type proof = true
@@ -347,7 +369,7 @@ instance [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (p
     Decidable (Local G j r ps) := by
   unfold Local
   split <;> try infer_instance
-  all_goals try dsimp [Represents, Answers, funEPremises]
+  all_goals try dsimp [Represents, Answers, funEPremises, ctorEPremises]
   all_goals first | infer_instance | (split <;> infer_instance)
 
 def checkTree [DecidableEq ι] (G : NormalGraph ι) : Evidence ι → Bool
@@ -362,8 +384,8 @@ mutual
 def checkScope (d : Nat) : Tm → Bool
   | .var i => decide (i < d)
   | .objAt _ .absent => true
-  | .objAt _ (.closure n b) => checkScope (d+n+1) b
-  | .makeAt (.closure n b) _ args => checkScope (d+n+1) b && checkScopes d args
+  | .objAt _ (.closure n b _) => checkScope (d+n+1) b
+  | .makeAt (.closure n b _) _ args => checkScope (d+n+1) b && checkScopes d args
   | .objAt _ (.variadic n b) => checkScope (d+n+2) b
   | .makeAt (.variadic n b) _ args => checkScope (d+n+2) b && checkScopes d args
   | .objAt _ (.bound t r pre) => checkScope d t && checkScope d r && checkScopes d pre
@@ -372,6 +394,7 @@ def checkScope (d : Nat) : Tm → Bool
   | .makeAt .absent _ args => checkScopes d args
   | .letE a b => checkScope d a && checkScope (d+1) b
   | .invoke f r args => checkScope d f && checkScope d r && checkScopes d args
+  | .construct f args => checkScope d f && checkScopes d args
   | .writeAt _ a b | .arith _ a b | .elemAt a b | .indexAt a b =>
       checkScope d a && checkScope d b
   | .readAt _ a | .test _ a | .lenOf a | .spread a => checkScope d a
@@ -935,6 +958,34 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
       rw [varSlots_eq hsaved]
       exact HasTy.bindRestE hT hmem hRt hmap h5 hF
     · contradiction
+  · rename_i ps U arity b ns inits
+    obtain ⟨rfl, rfl, hU, hl⟩ := hl
+    unfold ctorEPremises at hl
+    split at hl
+    · rename_i L hL
+      apply HasTy.ctorE hL hU hl.1
+      intro p hmem
+      apply hp ⟨U :: p.1 ++ Γ, b, p.2⟩
+      rw [hl.2]
+      exact List.mem_map.mpr ⟨p, hmem, rfl⟩
+    · contradiction
+  · rename_i f args jf jas
+    rcases hl with ⟨hΓf, htf, hterms, hctx, hL⟩
+    have hf := hp jf (by simp)
+    rw [hΓf, htf] at hf
+    split at hL
+    · rename_i L he
+      have hxs : ∀ p ∈ jas.map (fun ja => (ja.type, ja.term)), HasTy G Γ p.2 p.1 := by
+        intro p hp'
+        obtain ⟨ja, hja, rfl⟩ := List.mem_map.mp hp'
+        have h := hp ja (by simp [hja])
+        rw [hctx ja hja] at h
+        exact h
+      have hc := HasTy.construct (xs := jas.map fun ja => (ja.type, ja.term)) hf he
+        (by simpa [List.map_map, Function.comp_def] using hL) hxs
+      rw [← hterms]
+      simpa [List.map_map, Function.comp_def] using hc
+    · contradiction
   · rename_i proof t jt
     rcases hl with ⟨hΓ, ht, hc⟩
     have hj := hp jt (by simp)
@@ -1114,6 +1165,28 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       rcases hj with rfl | rfl
       · exact iha
       · exact ihb
+  | @ctorE Γ F U L arity b hr hu hlen hb ih =>
+    apply node_complete (r := .ctorE U) (js := L.map (fun p => ⟨U :: p.1 ++ Γ, b, p.2⟩))
+    · refine ⟨rfl, rfl, hu, ?_⟩
+      show ctorEPremises G Γ F U arity b _
+      simpa only [ctorEPremises, show expand G F = [.ctors L] from hr, and_true] using hlen
+    · intro j hj
+      obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
+      exact ih p hp
+  | @construct Γ f F B L xs hf hr hp hx ihf ihx =>
+    apply node_complete (r := .construct)
+      (js := ⟨Γ,f,F⟩ :: xs.map (fun p => ⟨Γ,p.2,p.1⟩))
+    · refine ⟨rfl, rfl, by simp [List.map_map, Function.comp_def], ?_, ?_⟩
+      · intro ja hj
+        obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
+        rfl
+      · simp only [show expand G F = [.ctors L] from hr]
+        simpa [List.map_map, Function.comp_def] using hp
+    · intro j hj
+      rcases List.mem_cons.mp hj with rfl | hj
+      · exact ihf
+      · obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
+        exact ihx p hp
   | @app Γ f r F Rt B L S xs Us hf hr hp hrt ha hu ihf ihrt iha ihu =>
     apply node_complete (r := .app)
       (js := ⟨Γ,f,F⟩ :: ⟨Γ,r,Rt⟩ :: (xs.map (fun p => ⟨Γ,p.2,p.1⟩) ++ Us.map (fun A => ⟨Γ,.undef,A⟩)))

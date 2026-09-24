@@ -75,6 +75,14 @@ inductive Arith where
   | add | sub | mul | div
   deriving Repr, DecidableEq, BEq
 
+/-- Which of JavaScript's internal methods a function's code provides: `call`
+code runs when the function is called (`[[Call]]`), and `construct` code only
+under `new` (`[[Construct]]`), as a class constructor's does, whose plain call
+throws. An arrow's or a method's code is `call`: `new` on it throws. -/
+inductive Invoke where
+  | call | construct
+  deriving Repr, DecidableEq
+
 mutual
 /-- Terms. Values are terms too, so worlds and the operational semantics speak
 about the same objects. -/
@@ -84,6 +92,10 @@ inductive Tm where
   callee first, then the receiver, then the actuals left to right. A receiver
   is not an actual: it changes no arity, optional position or rest. -/
   | invoke (f r : Tm) (args : List Tm)
+  /-- `new f(args)`: evaluate `f`, then the actuals left to right, then run
+  `f`'s `construct` code with them. There is no receiver: the code allocates
+  and returns the instance itself. -/
+  | construct (f : Tm) (args : List Tm)
   /-- Evaluate `a`, then substitute its value into `b`. Binding allocates no object. -/
   | letE (a b : Tm)
   | nul
@@ -149,7 +161,7 @@ inductive CallCode where
   binders, the frame `[this, parameter_0, …, parameter_{arity-1}]` before the
   captures: slot 0 is the receiver and slots `1 .. arity` the parameters. Code
   that ignores its receiver, as an arrow's does, never reads slot 0. -/
-  | closure (arity : Nat) (body : Tm)
+  | closure (arity : Nat) (body : Tm) (kind : Invoke := .call)
   /-- Code that takes `fixed` parameters and collects every further actual into
   one fresh array. Its body is scoped under `fixed + 2` binders: slot 0 is that
   array, slot 1 the receiver and slots `2 .. fixed + 1` the parameters.
@@ -165,6 +177,13 @@ inductive CallCode where
   | bound (target receiver : Tm) (pre : List Tm)
   deriving Repr
 end
+
+/-- Whether code has `[[Call]]`: all code but a class constructor's. A plain
+object has none. -/
+def CallCode.callable : CallCode → Bool
+  | .absent => false
+  | .closure _ _ .construct => false
+  | _ => true
 
 /-- A call without a receiver supplies `undefined` for it: an abbreviation of
 `invoke`, not a second form of call. -/
@@ -285,6 +304,10 @@ def tmDecEq (a b : Tm) : Decidable (a = b) := by
     haveI : Decidable (a1 = b1) := tmDecEq a1 b1
     haveI : Decidable (a2 = b2) := argsDecEq a2 b2
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2) (by simp only [Tm.invoke.injEq])
+  case construct.construct a0 a1 b0 b1 =>
+    haveI : Decidable (a0 = b0) := tmDecEq a0 b0
+    haveI : Decidable (a1 = b1) := argsDecEq a1 b1
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.construct.injEq])
   case letE.letE a0 a1 b0 b1 =>
     haveI : Decidable (a0 = b0) := tmDecEq a0 b0
     haveI : Decidable (a1 = b1) := tmDecEq a1 b1
@@ -361,9 +384,9 @@ def callCodeDecEq (a b : CallCode) : Decidable (a = b) := by
   cases a <;> cases b <;> try (solve | apply isFalse; intro h; cases h)
   case absent.absent =>
     exact isTrue rfl
-  case closure.closure a0 a1 b0 b1 =>
+  case closure.closure a0 a1 a2 b0 b1 b2 =>
     haveI : Decidable (a1 = b1) := tmDecEq a1 b1
-    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [CallCode.closure.injEq])
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2) (by simp only [CallCode.closure.injEq])
   case variadic.variadic a0 a1 b0 b1 =>
     haveI : Decidable (a1 = b1) := tmDecEq a1 b1
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [CallCode.variadic.injEq])
@@ -459,14 +482,15 @@ theorem lookup_slots {ns : List PropKey} (hnd : ns.Nodup) {base i : Nat}
 @[elab_as_elim] theorem Tm.induct {P : Tm → Prop}
     (var : ∀ i, P (.var i))
     (invoke : ∀ f r args, P f → P r → (∀ a ∈ args, P a) → P (.invoke f r args))
+    (construct : ∀ f args, P f → (∀ a ∈ args, P a) → P (.construct f args))
     (letE : ∀ a b, P a → P b → P (.letE a b))
     (nul : P .nul) (undef : P .undef) (tru : P .tru) (fls : P .fls)
     (num : ∀ v, P (.num v))
     (str : ∀ s, P (.str s))
     (bigint : ∀ i, P (.bigint i)) (sym : ∀ i, P (.sym i))
     (objAbsent : ∀ fs, P (.objAt fs .absent))
-    (objClosure : ∀ fs n b, P b → P (.objAt fs (.closure n b)))
-    (attach : ∀ n b ns args, P b → (∀ a ∈ args, P a) → P (.makeAt (.closure n b) ns args))
+    (objClosure : ∀ fs n b k, P b → P (.objAt fs (.closure n b k)))
+    (attach : ∀ n b k ns args, P b → (∀ a ∈ args, P a) → P (.makeAt (.closure n b k) ns args))
     (objVariadic : ∀ fs n b, P b → P (.objAt fs (.variadic n b)))
     (makeVariadic : ∀ n b ns args, P b → (∀ a ∈ args, P a) → P (.makeAt (.variadic n b) ns args))
     (objBound : ∀ fs t r pre, P t → P r → (∀ a ∈ pre, P a) → P (.objAt fs (.bound t r pre)))
@@ -487,11 +511,11 @@ theorem lookup_slots {ns : List PropKey} (hnd : ns.Nodup) {base i : Nat}
     (spread : ∀ a, P a → P (.spread a)) (t : Tm) : P t := by
   apply Tm.rec (motive_1 := P)
     (motive_2 := fun c => match c with
-      | .absent => True | .closure _ b => P b | .variadic _ b => P b
+      | .absent => True | .closure _ b _ => P b | .variadic _ b => P b
       | .bound t r pre => P t ∧ P r ∧ ∀ a ∈ pre, P a)
     (motive_3 := fun args => ∀ a ∈ args, P a)
-    var invoke letE nul undef tru fls num str bigint sym ?_ ?_ read index write test ite arith arr arrLit elemAt setElem lenOf spread
-    True.intro (fun _ _ h => h) (fun _ _ h => h) (fun _ _ _ ht hr hp => ⟨ht, hr, hp⟩) (by simp) (by
+    var invoke construct letE nul undef tru fls num str bigint sym ?_ ?_ read index write test ite arith arr arrLit elemAt setElem lenOf spread
+    True.intro (fun _ _ _ h => h) (fun _ _ h => h) (fun _ _ _ ht hr hp => ⟨ht, hr, hp⟩) (by simp) (by
       intro a args ha ih v hv
       rcases List.mem_cons.mp hv with rfl | hv
       · exact ha
@@ -499,13 +523,13 @@ theorem lookup_slots {ns : List PropKey} (hnd : ns.Nodup) {base i : Nat}
   · intro fs c ih
     cases c with
     | absent => exact objAbsent fs
-    | closure n b => exact objClosure fs n b ih
+    | closure n b k => exact objClosure fs n b k ih
     | variadic n b => exact objVariadic fs n b ih
     | bound t r pre => exact objBound fs t r pre ih.1 ih.2.1 ih.2.2
   · intro c ns args ihc iha
     cases c with
     | absent => exact alloc ns args iha
-    | closure n b => exact attach n b ns args ihc iha
+    | closure n b k => exact attach n b k ns args ihc iha
     | variadic n b => exact makeVariadic n b ns args ihc iha
     | bound t r pre => exact makeBound t r pre ns args ihc.1 ihc.2.1 ihc.2.2 iha
 
@@ -543,7 +567,7 @@ def tagHolds : Tag → Val → Bool
   | .isBigint, .bigint _ => true
   | .isSymbol, .sym _ => true
   | .isRef, .objAt _ .absent => true
-  | .isFun, .objAt _ (.closure _ _) => true
+  | .isFun, .objAt _ (.closure _ _ _) => true
   | .isFun, .objAt _ (.variadic _ _) => true
   | .isFun, .objAt _ (.bound _ _ _) => true
   | _, _ => false
@@ -552,6 +576,7 @@ mutual
 def subst (j : Nat) (a : Tm) : Tm → Tm
   | .var i => if i == j then a else if j < i then .var (i - 1) else .var i
   | .invoke f r args => .invoke (subst j a f) (subst j a r) (substArgs j a args)
+  | .construct f args => .construct (subst j a f) (substArgs j a args)
   | .letE x b => .letE (subst j a x) (subst (j + 1) a b)
   | .nul => .nul
   | .undef => .undef
@@ -562,8 +587,8 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .bigint i => .bigint i
   | .sym i => .sym i
   | .objAt fs .absent => .objAt fs .absent
-  | .objAt fs (.closure n b) => .objAt fs (.closure n (subst (j + n + 1) a b))
-  | .makeAt (.closure n b) ns xs => .makeAt (.closure n (subst (j + n + 1) a b)) ns (substArgs j a xs)
+  | .objAt fs (.closure n b k) => .objAt fs (.closure n (subst (j + n + 1) a b) k)
+  | .makeAt (.closure n b k) ns xs => .makeAt (.closure n (subst (j + n + 1) a b) k) ns (substArgs j a xs)
   | .objAt fs (.variadic n b) => .objAt fs (.variadic n (subst (j + n + 2) a b))
   | .makeAt (.variadic n b) ns xs => .makeAt (.variadic n (subst (j + n + 2) a b)) ns (substArgs j a xs)
   | .objAt fs (.bound t r pre) => .objAt fs (.bound (subst j a t) (subst j a r) (substArgs j a pre))
@@ -649,6 +674,17 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | callArg : isVal f = true → isVal r = true → args[i]? = some a →
       (∀ j, j < i → ∀ v, args[j]? = some v → isVal v = true) →
       Step h a h' a' → Step h (.invoke f r args) h' (.invoke f r (args.set i a'))
+  /-- `new` evaluates the constructor, then the actuals left to right, as a
+  call does, and runs only `construct` code: `new` on call-only code, and a
+  plain call of construct-only code, are stuck, as JavaScript throws. The code
+  receives `undefined` for its receiver. -/
+  | constructL : Step h f h' f' → Step h (.construct f args) h' (.construct f' args)
+  | constructArg : isVal f = true → args[i]? = some a →
+      (∀ j, j < i → ∀ v, args[j]? = some v → isVal v = true) →
+      Step h a h' a' → Step h (.construct f args) h' (.construct f (args.set i a'))
+  | constructV : (∀ a ∈ args, isVal a = true) →
+      Step h (.construct (.objAt fs (.closure n b .construct)) args) h
+        (CallArguments.bindParameters n args .undef b)
   | letC : Step h a h' a' → Step h (.letE a b) h' (.letE a' b)
   | letV : isVal a = true → Step h (.letE a b) h (subst 0 a b)
   /-- Invocation executes the object's stored code in one step. -/
@@ -895,6 +931,33 @@ two independent runs of the same program be compared. -/
 theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     h1 = h2 ∧ t1 = t2 := by
   induction s1 generalizing h2 t2 with
+  | constructL s ih =>
+    cases s2 with
+    | constructL s' => exact (ih s').imp id (congrArg (Tm.construct · _))
+    | constructArg hv _ _ _ => exact False.elim (value_no_step hv s)
+    | constructV => exact False.elim (obj_no_step s)
+  | @constructArg f args i a h h1 a1 hv hg hb s ih =>
+    cases s2 with
+    | constructL s' => exact False.elim (value_no_step hv s')
+    | @constructArg _ _ j b _ _ b1 _ hg' hb' s' =>
+      have hij : i = j := by
+        by_cases he : i = j
+        · exact he
+        · have hlt : i < j ∨ j < i := by omega
+          rcases hlt with hij | hji
+          · exact False.elim (value_no_step (hb' i hij a hg) s)
+          · exact False.elim (value_no_step (hb j hji b hg') s')
+      subst j
+      have hab : a = b := Option.some.inj (hg.symm.trans hg')
+      subst b
+      obtain ⟨rfl, rfl⟩ := ih s'
+      exact ⟨rfl, rfl⟩
+    | constructV hvs => exact False.elim (value_no_step (hvs a (List.mem_of_getElem? hg)) s)
+  | constructV hvs =>
+    cases s2 with
+    | constructL s' => exact False.elim (obj_no_step s')
+    | constructArg _ hg _ s' => exact False.elim (value_no_step (hvs _ (List.mem_of_getElem? hg)) s')
+    | constructV _ => exact ⟨rfl, rfl⟩
   | callL s ih =>
     cases s2 with
     | callL s' => exact (ih s').imp id (congrArg (Tm.invoke · _ _))

@@ -79,6 +79,7 @@ Each type-graph node is a union of clauses:
 | Intersection of arrows `[receiver, [params, result]]`, with variadic signatures `[receiver, [params, [element, result]]]` when there are any                                 | `{"arrs":{"arrows":[[[5],[[[0]],[1]]],[[5],[[[1]],[0]]]]}}`                                 |
 | Array store: simultaneous tuple contracts, each with required, optional and rest positions; readonly contracts give element read capabilities                              | `{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],"readonly":false},"rest":[]}}` |
 | Callable with invariant bag requirements and overloads, fixed and variadic                                                                                                 | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[[[5],[[[0]],[1]]]]}}`             |
+| Class value: construct signatures `[params, result]`, which `new` meets; no call signature meets it                                                                    | `{"ctors":{"signatures":[[[[1,2]],[1,2]]]}}`             |
 
 The arrow example contains two signatures, each with one argument and the
 receiver label 5. Every signature states its receiver: the value a call passes
@@ -139,6 +140,7 @@ The encoding follows mechanically from the
 | slot $i$                             | `{"var":{"i":0}}`                                     | `ret`        | `"ret"`                                       |
 | $\mathsf{let}(t,t)$                  | `{"letE":{"a":t,"b":t}}`                              | `bind`       | `{"bind":{"next":T}}`                         |
 | $\mathsf{invoke}(t,t,[t,\ldots])$   | `{"invoke":{"f":t,"r":t,"args":[t]}}`                 | `effect`     | `{"effect":{"next":T}}`                       |
+| $\mathsf{construct}(t,[t,\ldots])$ | `{"construct":{"f":t,"args":[t]}}`                    | | |
 | null, undefined, true, false         | `"nul"`, `"undef"`, `"tru"`, `"fls"`                  | `branch`     | `{"branch":{"yes":T,"no":T}}`                 |
 | object with named locations          | `{"objAt":{"fields":[["value",0]],"call":c}}`         | `branchBind` | `{"branchBind":{"yes":T,"no":T}}`             |
 | allocation with ordered initializers | `{"makeAt":{"call":c,"names":["value"],"inits":[t]}}` | `tagBind`    | `{"tagBind":{"test":"isNul","yes":T,"no":T}}` |
@@ -155,7 +157,9 @@ The encoding follows mechanically from the
 | store locations, a hole as `null`    | `{"arr":{"elems":[0,null]}}`                          |              |                                               |
 | spread actual                        | `{"spread":{"a":t}}`                                  |              |                                               |
 
-A descriptor `c` is `"absent"`, `{"closure":{"arity":2,"body":t}}`,
+A descriptor `c` is `"absent"`, `{"closure":{"arity":2,"body":t}}` (with
+`"kind":"construct"` for a class's construct-only code, which only `new` runs;
+call-only code, an arrow's or a method's, leaves the kind out),
 `{"variadic":{"fixed":2,"body":t}}` or
 `{"bound":{"target":t,"receiver":t,"pre":[t]}}`. Plain allocation uses the
 absent descriptor; function creation uses a code descriptor and ordered field
@@ -185,7 +189,7 @@ one subtype-evidence list per outgoing edge. A derivation node names the
 `read`, `readOptional`, `readDict`, `indexDict`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
 `unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `arith`, `test`,
 `arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, `funRest`, `makeCallableRest`,
-`callRest`, `arrCopy`, `bindE`, `bindRestE`, or `sub`.
+`callRest`, `arrCopy`, `bindE`, `bindRestE`, `ctorE`, `construct`, or `sub`.
 The array rules act on a store, the value an array object holds in its store
 field: `arrLit` allocates one location per element under the positions of a
 tuple contract; `elem` reads a required position named by a literal index at

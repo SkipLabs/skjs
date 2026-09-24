@@ -1458,6 +1458,18 @@ global declaration. Reading them needs the forms those files use:
   type is therefore compared by meaning: identical rows, or inclusion in
   both directions by certificates the proved checker accepts.
 
+**Constructors in the calculus.** A function's code says which of
+JavaScript's internal methods it has (`Invoke`: `call` or `construct`), and
+`new` is a term of its own (`construct`). So a class value, construct-only
+code, is a first-class value: a plain call of it is stuck, as JavaScript
+throws, and `new` on an arrow is stuck likewise. Its type is a construct
+signature (the `ctors` clause, `ctorsT`), which `ctorE` gives a class whose
+body is safe at each signature, and which `construct` consumes. The
+promise is about the body `new` enters, one level down, so a construct
+signature's variance is used only below the current level, as a call
+signature's is. `[[Call]]` (`CallCode.callable`) is what the call semantics
+require, so no class inhabits a call type and no arrow a construct type.
+
 **Classes.** A class declares its instance type in the declaration graph,
 and its value is a statement of the module initialization, in order. The
 parser lowers it to method closures allocated once, as its prototype's, and a

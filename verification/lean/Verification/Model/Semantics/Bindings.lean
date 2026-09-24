@@ -14,8 +14,8 @@ mutual
 def Scoped (d : Nat) : Tm → Prop
   | .var i => i < d
   | .objAt _ .absent => True
-  | .objAt _ (.closure n b) => Scoped (d + n + 1) b
-  | .makeAt (.closure n b) _ args => Scoped (d + n + 1) b ∧ ScopedArgs d args
+  | .objAt _ (.closure n b _) => Scoped (d + n + 1) b
+  | .makeAt (.closure n b _) _ args => Scoped (d + n + 1) b ∧ ScopedArgs d args
   | .objAt _ (.variadic n b) => Scoped (d + n + 2) b
   | .makeAt (.variadic n b) _ args => Scoped (d + n + 2) b ∧ ScopedArgs d args
   | .objAt _ (.bound t r pre) => Scoped d t ∧ Scoped d r ∧ ScopedArgs d pre
@@ -24,6 +24,7 @@ def Scoped (d : Nat) : Tm → Prop
   | .makeAt .absent _ args => ScopedArgs d args
   | .letE a b => Scoped d a ∧ Scoped (d + 1) b
   | .invoke f r args => Scoped d f ∧ Scoped d r ∧ ScopedArgs d args
+  | .construct f args => Scoped d f ∧ ScopedArgs d args
   | .readAt _ a | .test _ a => Scoped d a
   | .writeAt _ a b | .arith _ a b | .elemAt a b | .indexAt a b =>
       Scoped d a ∧ Scoped d b
@@ -49,11 +50,13 @@ theorem Scoped.mono {t : Tm} {d e : Nat} (h : Scoped d t) (hde : d ≤ e) :
     Scoped e t := by
   induction t using Tm.induct generalizing d e <;> simp only [Scoped, scopedArgs_iff] at *
   case var i => omega
-  case objClosure l n b ih => exact ih h (by omega)
+  case objClosure l n b k ih => exact ih h (by omega)
   case invoke f r args ihf ihr iha =>
     exact ⟨ihf h.1 hde, ihr h.2.1 hde, fun a ha => iha a ha (h.2.2 a ha) hde⟩
+  case construct f args ihf iha =>
+    exact ⟨ihf h.1 hde, fun a ha => iha a ha (h.2 a ha) hde⟩
   case letE a b iha ihb => exact ⟨iha h.1 hde, ihb h.2 (by omega)⟩
-  case attach n f ns args ihf ihargs =>
+  case attach n f k ns args ihf ihargs =>
     exact ⟨ihf h.1 (by omega), fun a ha => ihargs a ha (h.2 a ha) hde⟩
   case objVariadic l n b ih => exact ih h (by omega)
   case makeVariadic n f ns args ihf ihargs =>
@@ -81,13 +84,17 @@ theorem subst_above {t : Tm} {d j : Nat} (h : Scoped d t) (hj : d ≤ j) (a : Tm
     subst j a t = t := by
   induction t using Tm.induct generalizing d j <;> simp only [Scoped, scopedArgs_iff, subst, substArgs_eq_map] at *
   case var i => simp [show i ≠ j by omega, show ¬j < i by omega]
-  case objClosure l n b ih => rw [ih h (by omega)]
+  case objClosure l n b k ih => rw [ih h (by omega)]
   case invoke f r args ihf ihr iha =>
     rw [ihf h.1 hj, ihr h.2.1 hj]
     congr 1
     simpa using (List.map_congr_left (g := id) (fun a ha => iha a ha (h.2.2 a ha) hj))
+  case construct f args ihf iha =>
+    rw [ihf h.1 hj]
+    congr 1
+    simpa using (List.map_congr_left (g := id) (fun a ha => iha a ha (h.2 a ha) hj))
   case letE x b ihx ihb => rw [ihx h.1 hj, ihb h.2 (by omega)]
-  case attach n f ns args ihf ihargs =>
+  case attach n f k ns args ihf ihargs =>
     have hmap : args.map (subst j a) = args := by
       simpa using (List.map_congr_left (g := id) (fun x hx => ihargs x hx (h.2 x hx) hj))
     rw [ihf h.1 (by omega), hmap]
@@ -138,14 +145,19 @@ theorem subst_scoped {t a : Tm} {d j : Nat} (ht : Scoped (d + 1) t)
     · rename_i hn
       have hne : i ≠ j := by simpa using hn
       split <;> simp only [Scoped, scopedArgs_iff] <;> omega
-  case objClosure l n b ih => exact ih (by simpa [Nat.add_right_comm] using ht) (by omega)
+  case objClosure l n b k ih => exact ih (by simpa [Nat.add_right_comm] using ht) (by omega)
   case invoke f r args ihf ihr iha =>
     refine ⟨ihf ht.1 hj, ihr ht.2.1 hj, ?_⟩
     intro v hv
     obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hv
     exact iha a ha (ht.2.2 a ha) hj
+  case construct f args ihf iha =>
+    refine ⟨ihf ht.1 hj, ?_⟩
+    intro v hv
+    obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hv
+    exact iha a ha (ht.2 a ha) hj
   case letE x b ihx ihb => exact ⟨ihx ht.1 hj, ihb ht.2 (by omega)⟩
-  case attach n f ns args ihf ihargs =>
+  case attach n f k ns args ihf ihargs =>
     refine ⟨ihf (by simpa [Nat.add_right_comm] using ht.1) (by omega), ?_⟩
     intro v hv
     obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
@@ -204,10 +216,11 @@ def instantiate (d : Nat) (ρ : Env) : Tm → Tm
   | .var i => if i < d then .var i else ρ (i - d)
   | .letE a b => .letE (instantiate d ρ a) (instantiate (d + 1) ρ b)
   | .objAt fs .absent => .objAt fs .absent
-  | .objAt fs (.closure n b) => .objAt fs (.closure n (instantiate (d + n + 1) ρ b))
+  | .objAt fs (.closure n b k) => .objAt fs (.closure n (instantiate (d + n + 1) ρ b) k)
   | .invoke f r args => .invoke (instantiate d ρ f) (instantiate d ρ r) (instantiateArgs d ρ args)
-  | .makeAt (.closure n b) ns args =>
-      .makeAt (.closure n (instantiate (d + n + 1) ρ b)) ns (instantiateArgs d ρ args)
+  | .construct f args => .construct (instantiate d ρ f) (instantiateArgs d ρ args)
+  | .makeAt (.closure n b k) ns args =>
+      .makeAt (.closure n (instantiate (d + n + 1) ρ b) k) ns (instantiateArgs d ρ args)
   | .objAt fs (.variadic n b) => .objAt fs (.variadic n (instantiate (d + n + 2) ρ b))
   | .makeAt (.variadic n b) ns args =>
       .makeAt (.variadic n (instantiate (d + n + 2) ρ b)) ns (instantiateArgs d ρ args)
@@ -243,14 +256,19 @@ theorem instantiate_scoped (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (t : Tm) (d
     Scoped d (instantiate d ρ t) := by
   induction t using Tm.induct generalizing d <;> simp only [instantiate, instantiateArgs_eq_map, Scoped, scopedArgs_iff] at *
   case var i => split <;> first | assumption | exact (hρ _).mono (Nat.zero_le d)
-  case objClosure l n b ih => exact ih _
+  case objClosure l n b k ih => exact ih _
   case invoke f r args ihf ihr iha =>
     refine ⟨ihf _, ihr _, ?_⟩
     intro v hv
     obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hv
     exact iha a ha d
+  case construct f args ihf iha =>
+    refine ⟨ihf _, ?_⟩
+    intro v hv
+    obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hv
+    exact iha a ha d
   case letE a b iha ihb => exact ⟨iha _, ihb _⟩
-  case attach n f ns args ihf ihargs =>
+  case attach n f k ns args ihf ihargs =>
     refine ⟨ihf _, ?_⟩
     intro v hv
     obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
@@ -307,15 +325,21 @@ theorem instantiate_beta (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (a t : Tm) (d
         have heq : i - d = (i - (d + 1)) + 1 := by omega
         simp only [if_neg hi, if_neg h, heq, push]
         exact (hρ _).closed d a
-  case objClosure l n b ih => rw [show d + 1 + n + 1 = d + n + 1 + 1 by omega, ih]
+  case objClosure l n b k ih => rw [show d + 1 + n + 1 = d + n + 1 + 1 by omega, ih]
   case invoke f r args ihf ihr iha =>
     rw [ihf, ihr, List.map_map]
     congr 1
     apply List.map_congr_left
     intro a ha
     exact iha a ha d
+  case construct f args ihf iha =>
+    rw [ihf, List.map_map]
+    congr 1
+    apply List.map_congr_left
+    intro a ha
+    exact iha a ha d
   case letE a b iha ihb => rw [iha, ihb]
-  case attach n f ns args ihf ihargs =>
+  case attach n f k ns args ihf ihargs =>
     rw [show d + 1 + n + 1 = d + n + 1 + 1 by omega, ihf, List.map_map]
     congr 1
     apply List.map_congr_left
@@ -398,13 +422,17 @@ theorem instantiate_above {t : Tm} {d : Nat} (ht : Scoped d t) (ρ : Env) :
     instantiate d ρ t = t := by
   induction t using Tm.induct generalizing d <;> simp only [Scoped, scopedArgs_iff, instantiate, instantiateArgs_eq_map] at *
   case var i => simp [ht]
-  case objClosure l n b ih => rw [ih ht]
+  case objClosure l n b k ih => rw [ih ht]
   case invoke f r args ihf ihr iha =>
     rw [ihf ht.1, ihr ht.2.1]
     congr 1
     simpa using (List.map_congr_left (g := id) (fun a ha => iha a ha (ht.2.2 a ha)))
+  case construct f args ihf iha =>
+    rw [ihf ht.1]
+    congr 1
+    simpa using (List.map_congr_left (g := id) (fun a ha => iha a ha (ht.2 a ha)))
   case letE a b iha ihb => rw [iha ht.1, ihb ht.2]
-  case attach n f ns args ihf ihargs =>
+  case attach n f k ns args ihf ihargs =>
     have hmap : args.map (instantiate d ρ) = args := by
       simpa using (List.map_congr_left (g := id) (fun x hx => ihargs x hx (ht.2 x hx)))
     rw [ihf ht.1, hmap]

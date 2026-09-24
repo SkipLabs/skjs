@@ -637,7 +637,7 @@ at once. -/
 
 /-- Values with invocation code: closed objects whose descriptor is not absent. -/
 def Invocable (v : Val) : Prop :=
-  ∃ fs code, v = .objAt fs code ∧ code ≠ .absent ∧ Scoped 0 v
+  ∃ fs code, v = .objAt fs code ∧ code.callable = true ∧ Scoped 0 v
 
 theorem Invocable.val {v : Val} (h : Invocable v) : isVal v = true := by
   obtain ⟨fs, code, rfl, -, -⟩ := h; rfl
@@ -647,7 +647,7 @@ theorem Invocable.scoped {v : Val} (h : Invocable v) : Scoped 0 v := by
 
 theorem Callable.invocable {v : Val} (h : Callable v) : Invocable v := by
   obtain ⟨arity, b, fs, rfl, hs⟩ := h
-  exact ⟨fs, _, rfl, by simp, by simpa [Scoped, Nat.add_comm] using hs⟩
+  exact ⟨fs, _, rfl, rfl, by simpa [Scoped, Nat.add_comm] using hs⟩
 
 /-- The actual lists a fixed signature admits: a prefix of its positions, each
 written at its contract, every omitted position admitting `undefined`. -/
@@ -721,6 +721,66 @@ def callsT (L : List (Fam × List Fam × Fam)) : Fam := fun k W v =>
 element, result)`: the contract of each further actual is the element's. -/
 def restsT (S : List (Fam × List Fam × Fam × Fam)) : Fam := fun k W v =>
   Invocable v ∧ ∀ s ∈ S, Promise (ArgsRest s.2.1 s.2.2.1) s.1 s.2.2.2 k W v
+
+/-! ### Construct signatures -/
+
+/-- A class value: an object whose code is construct-only and closed. -/
+def Constructible (v : Val) : Prop :=
+  ∃ fs arity b, v = .objAt fs (.closure arity b .construct) ∧ Scoped 0 v
+
+/-- What `new v(args)` runs, in one step: a class value's body, with
+`undefined` for its receiver and the actuals for its parameters. -/
+def ConstructsTo (v : Val) (args : List Tm) (result : Tm) : Prop :=
+  ∃ fs arity b, v = .objAt fs (.closure arity b .construct) ∧
+    result = CallArguments.bindParameters arity args .undef b
+
+/-- **Construct signatures.** Values meeting every signature `(parameters,
+result)` under `new`: constructing the value, in any strictly future world,
+with values at the parameters, runs a body safe at the result. The code is
+construct-only, so a plain call cannot run it, and no code without
+`[[Construct]]` is one. As for call signatures, the promise is about the term
+after the step, which is what lets the signature's variance be used only
+below the current level. -/
+def ctorsT (L : List (List Fam × Fam)) : Fam := fun k W v =>
+  Constructible v ∧ ∀ p ∈ L, ∀ (j : Nat) (hj : j < k) (U : WorldT j),
+    WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U → ∀ (heap : Heap), HeapOk j U heap →
+      ∀ args, CallArguments.Values args → ArgsT p.1 j U args →
+        ∃ result, ConstructsTo v args result ∧ Safe p.2 j U heap result
+
+theorem ctorsT_adm (L : List (List Fam × Fam)) : Adm (ctorsT L) :=
+  ⟨fun _ _ _ h => ⟨h.1, fun p hp j hj U hx hu heap hh args hv ha =>
+      h.2 p hp j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh args hv ha⟩,
+   fun _ _ _ hx _ h => ⟨h.1, fun p hp j hj U hy hu heap hh args hv ha =>
+      h.2 p hp j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh args hv ha⟩⟩
+
+theorem ctorsT_valOnly (L : List (List Fam × Fam)) : ValOnly (ctorsT L) := by
+  intro _ _ _ h
+  obtain ⟨fs, arity, b, rfl, -⟩ := h.1
+  rfl
+
+/-- **A class value.** An object with construct-only code whose body, with
+`undefined` for its receiver, is safe at each signature's result for every
+admitted actual list meets the signatures. -/
+theorem ctorsT_of_body {L : List (List Fam × Fam)} {k : Nat} {W : WorldT k}
+    {fs : List (PropKey × Nat)} {arity : Nat} {b : Tm}
+    (hs : Scoped 0 (.objAt fs (.closure arity b .construct)))
+    (hb : ∀ p ∈ L, ∀ (j : Nat) (hj : j < k) (U : WorldT j),
+      WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U → ∀ (heap : Heap), HeapOk j U heap →
+        ∀ args, ArgsT p.1 j U args →
+          Safe p.2 j U heap (CallArguments.bindParameters arity args .undef b)) :
+    ctorsT L k W (.objAt fs (.closure arity b .construct)) :=
+  ⟨⟨fs, arity, b, rfl, hs⟩, fun p hp j hj U hx hu heap hh args _ ha =>
+    ⟨_, ⟨fs, arity, b, rfl, rfl⟩, hb p hp j hj U hx hu heap hh args ha⟩⟩
+
+theorem ctorsT_select {L n W v p} (hf : ctorsT L n W v) (hp : p ∈ L) : ctorsT [p] n W v :=
+  ⟨hf.1, fun q hq => by cases List.mem_singleton.mp hq; exact hf.2 p hp⟩
+
+theorem ctorsT_append (L M : List (List Fam × Fam)) (k : Nat) (W : WorldT k) (v : Val) :
+    ctorsT (L ++ M) k W v ↔ ctorsT L k W v ∧ ctorsT M k W v := by
+  simp only [ctorsT, List.mem_append, or_imp, forall_and]
+  constructor
+  · rintro ⟨hc, hl, hm⟩; exact ⟨⟨hc, hl⟩, hc, hm⟩
+  · rintro ⟨⟨hc, hl⟩, -, hm⟩; exact ⟨hc, hl, hm⟩
 
 theorem callsT_adm (L : List (Fam × List Fam × Fam)) : Adm (callsT L) :=
   ⟨fun _ _ _ h => ⟨h.1, fun p hp => (h.2 p hp).down⟩,
@@ -969,7 +1029,7 @@ theorem callsT_invoke_short {L k W v} (hf : callsT L k W v)
 list binds as the padded one does, since `parameters` pads with `undefined`. -/
 theorem callsT_of_invocationSpec {arity L k W b} (fs : List (PropKey × Nat))
     (hs : InvocationSpec arity L k W b) : callsT L k W (.objAt fs (.closure arity b)) := by
-  refine ⟨⟨fs, _, rfl, by simp, by simpa [Scoped, Nat.add_comm] using hs.1⟩, ?_⟩
+  refine ⟨⟨fs, _, rfl, rfl, by simpa [Scoped, Nat.add_comm] using hs.1⟩, ?_⟩
   intro p hp j hj U hx hu heap hh r hrv hr args hvals ha
   have hsafe := hs.2 p hp j hj U hx hu heap hh r hr _ (ArgsShort_pad ha)
   rw [CallArguments.bindParameters_pad arity args _ r b
@@ -1001,6 +1061,20 @@ theorem callsT_congr {α : Type} (l : List α) (f g : α → Fam × List Fam × 
   · obtain ⟨x, hm, rfl⟩ := List.mem_map.mp hp
     exact (Promise.congr (h x hm).1 (fun j hj U args => ArgsShort_congr (h x hm).2.1 hj U args)
       (h x hm).2.2).mpr (hs (g x) (List.mem_map_of_mem hm))
+
+theorem ctorsT_congr {α : Type} (l : List α) (f g : α → List Fam × Fam) {n : Nat}
+    (h : ∀ x ∈ l, ArgsAgree n (f x).1 (g x).1 ∧ Agree (f x).2 (g x).2 n)
+    (W : WorldT n) (v : Val) : ctorsT (l.map f) n W v ↔ ctorsT (l.map g) n W v := by
+  unfold ctorsT
+  refine and_congr Iff.rfl ⟨fun hs p hp => ?_, fun hs p hp => ?_⟩ <;>
+    obtain ⟨x, hm, rfl⟩ := List.mem_map.mp hp <;>
+    intro j hj U hx hu heap hh args hv ha
+  · obtain ⟨result, hc, hsafe⟩ := hs (f x) (List.mem_map_of_mem hm) j hj U hx hu heap hh args hv
+      ((ArgsT_congr (h x hm).1 hj U args).mpr ha)
+    exact ⟨result, hc, (Safe_congr n (h x hm).2 j hj U heap _).mp hsafe⟩
+  · obtain ⟨result, hc, hsafe⟩ := hs (g x) (List.mem_map_of_mem hm) j hj U hx hu heap hh args hv
+      ((ArgsT_congr (h x hm).1 hj U args).mp ha)
+    exact ⟨result, hc, (Safe_congr n (h x hm).2 j hj U heap _).mpr hsafe⟩
 
 theorem restsT_congr {α : Type} (l : List α) (f g : α → Fam × List Fam × Fam × Fam) {n : Nat}
     (h : ∀ x ∈ l, Agree (f x).1 (g x).1 n ∧ ArgsAgree n (f x).2.1 (g x).2.1 ∧
@@ -1071,7 +1145,7 @@ theorem callsT_bound {Rt R Rc : Fam} {Ps Ds : List Fam} {k : Nat} {W : WorldT k}
     (hr : Rt k W rv) (hpv : ArgsT Ps k W pvs) (hvs : CallArguments.Values pvs)
     (hsp : ∀ a ∈ pvs, Scoped 0 a) :
     callsT [(Rc, Ds, R)] k W (.objAt fs (.bound tv rv pvs)) := by
-  refine ⟨⟨fs, _, rfl, by simp, ?_⟩, ?_⟩
+  refine ⟨⟨fs, _, rfl, rfl, ?_⟩, ?_⟩
   · simp only [Scoped, scopedArgs_iff]
     exact ⟨ht.1.scoped, hsr, hsp⟩
   · intro p hp
@@ -1174,7 +1248,7 @@ theorem restsT_bound {Rt E R Rc : Fam} {Ps : List Fam} {k : Nat} {W : WorldT k}
     (hpv : ArgsT (Ps.take pvs.length ++ List.replicate (pvs.length - Ps.length) E) k W pvs)
     (hvs : CallArguments.Values pvs) (hsp : ∀ a ∈ pvs, Scoped 0 a) :
     restsT [(Rc, Ps.drop pvs.length, E, R)] k W (.objAt fs (.bound tv rv pvs)) := by
-  refine ⟨⟨fs, _, rfl, by simp, ?_⟩, ?_⟩
+  refine ⟨⟨fs, _, rfl, rfl, ?_⟩, ?_⟩
   · simp only [Scoped, scopedArgs_iff]
     exact ⟨ht.1.scoped, hsr, hsp⟩
   · intro p hp

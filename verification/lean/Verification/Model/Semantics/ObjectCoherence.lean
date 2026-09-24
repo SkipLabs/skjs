@@ -60,9 +60,9 @@ theorem mem_slots {base : Nat} {ns : List PropKey} {p : PropKey × Nat}
 mutual
 def Names (D : Registry) : Tm → Prop
   | .objAt fs .absent => ∀ l ∈ locs fs, D[l]? = some .absent
-  | .objAt fs (.closure n b) =>
-      (∀ l ∈ locs fs, D[l]? = some (.closure n b)) ∧ Scoped (n + 1) b ∧ Names D b
-  | .makeAt (.closure _ b) _ args => Names D b ∧ NamesArgs D args
+  | .objAt fs (.closure n b k) =>
+      (∀ l ∈ locs fs, D[l]? = some (.closure n b k)) ∧ Scoped (n + 1) b ∧ Names D b
+  | .makeAt (.closure _ b _) _ args => Names D b ∧ NamesArgs D args
   | .objAt fs (.variadic n b) =>
       (∀ l ∈ locs fs, D[l]? = some (.variadic n b)) ∧ Scoped (n + 2) b ∧ Names D b
   | .makeAt (.variadic _ b) _ args => Names D b ∧ NamesArgs D args
@@ -73,6 +73,7 @@ def Names (D : Registry) : Tm → Prop
       Names D t ∧ Names D r ∧ NamesArgs D pre ∧ NamesArgs D args
   | .makeAt .absent _ args => NamesArgs D args
   | .invoke f r args => Names D f ∧ Names D r ∧ NamesArgs D args
+  | .construct f args => Names D f ∧ NamesArgs D args
   | .letE a b | .writeAt _ a b | .arith _ a b | .elemAt a b
   | .indexAt a b => Names D a ∧ Names D b
   | .readAt _ a | .test _ a | .lenOf a | .spread a => Names D a
@@ -162,12 +163,13 @@ an unreachable branch or the body of an empty overload. -/
 mutual
 def sourceTerm : Tm → Bool
   | .objAt .. => false
-  | .makeAt (.closure _ b) _ args => sourceTerm b && sourceArgs args
+  | .makeAt (.closure _ b _) _ args => sourceTerm b && sourceArgs args
   | .makeAt (.variadic _ b) _ args => sourceTerm b && sourceArgs args
   | .makeAt (.bound t r pre) _ args =>
       sourceTerm t && sourceTerm r && sourceArgs pre && sourceArgs args
   | .makeAt .absent _ args => sourceArgs args
   | .invoke f r args => sourceTerm f && sourceTerm r && sourceArgs args
+  | .construct f args => sourceTerm f && sourceArgs args
   | .letE a b | .writeAt _ a b | .arith _ a b | .elemAt a b
   | .indexAt a b => sourceTerm a && sourceTerm b
   | .readAt _ a | .test _ a | .lenOf a | .spread a => sourceTerm a
@@ -226,6 +228,32 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
     ∀ D, HeapOk D h → TermOk D t →
       ∃ E, Extends D E ∧ HeapOk E h' ∧ TermOk E t' := by
   induction step with
+  | constructL step ih =>
+    intro D hh ht
+    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
+    obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.1,ht.2.1⟩
+    exact ⟨E,hx,hh',⟨hs,ht.1.2⟩,hn,fun v hv => (ht.2.2 v hv).mono hx⟩
+  | constructArg hv hg hb step ih =>
+    intro D hh ht
+    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
+    have hm := List.mem_of_getElem? hg
+    obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2 _ hm,ht.2.2 _ hm⟩
+    refine ⟨E,hx,hh',⟨ht.1.1,?_⟩,ht.2.1.mono hx,?_⟩
+    · intro v hv
+      rcases List.mem_or_eq_of_mem_set hv with hv | rfl
+      · exact ht.1.2 v hv
+      · exact hs
+    · intro v hv
+      rcases List.mem_or_eq_of_mem_set hv with hv | rfl
+      · exact (ht.2.2 v hv).mono hx
+      · exact hn
+  | constructV hv =>
+    intro D hh ht
+    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht
+    refine ⟨D,.refl D,hh,?_,?_⟩
+    · exact CallArguments.bound_body_closed (by simpa [Scoped, Nat.add_comm] using ht.1.1)
+        (by simp [Scoped]) ht.1.2
+    · exact ht.2.1.2.2.bindParameters (by simp [Names]) ht.2.2 _
   | callL step ih =>
     intro D hh ht
     simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢

@@ -20,19 +20,28 @@ theorem props_merge (A C : Fields) (Bs Ds : List Fields) (n W v) :
   · rintro ⟨⟨ha,hb⟩,hc,hd⟩; exact ⟨ha,hb,hc,hd⟩
 
 /-- A callability-neutral bag needs no new clause: plain bags and callable
-bags with no invocation promises cover exactly the scoped bag values, whatever
-code they carry. -/
+bags with no invocation promises cover exactly the scoped bag values whose code,
+if any, has `[[Call]]`. A class constructor's has only `[[Construct]]`, so a
+class value is neither. -/
 theorem neutral_iff (A : Fields) (Bs : List Fields) (n W v) :
     unionT (ReferenceConjunctions.refsT A Bs) (objectsT A Bs []) n W v ↔
-      propsT A Bs n W v ∧ Scoped 0 v := by
+      propsT A Bs n W v ∧ Scoped 0 v ∧ ∀ fs arity b, v ≠ .objAt fs (.closure arity b .construct) := by
   constructor
   · intro h
     rcases h with h | h
-    · refine ⟨⟨recT_bag h.1, fun B hb => recT_bag (h.2 B hb)⟩, ?_⟩
-      obtain ⟨flds,rfl,_⟩ := h.1
-      trivial
-    · exact ⟨h.1,h.2.1.scoped⟩
-  · rintro ⟨h,hs⟩
+    · refine ⟨⟨recT_bag h.1, fun B hb => recT_bag (h.2 B hb)⟩, ?_, ?_⟩
+      · obtain ⟨flds,rfl,_⟩ := h.1
+        trivial
+      · obtain ⟨flds,rfl,_⟩ := h.1
+        intro fs arity b he
+        cases he
+    · refine ⟨h.1,h.2.1.scoped, ?_⟩
+      obtain ⟨fs', code, he, hc, -⟩ := h.2.1
+      intro fs arity b hv
+      rw [hv] at he
+      cases he
+      simp [CallCode.callable] at hc
+  · rintro ⟨h,hs,hnc⟩
     obtain ⟨flds,code,rfl,_,hr⟩ := h.1
     cases code with
     | absent =>
@@ -42,15 +51,18 @@ theorem neutral_iff (A : Fields) (Bs : List Fields) (n W v) :
       obtain ⟨flds',code,he,_,hr⟩ := h.2 B hb
       cases he
       exact hr
-    | closure arity b =>
-      right
-      exact ⟨h,⟨flds,_,rfl,by simp,hs⟩,by simp⟩
+    | closure arity b kind =>
+      cases kind with
+      | call =>
+        right
+        exact ⟨h,⟨flds,_,rfl,rfl,hs⟩,by simp⟩
+      | construct => exact absurd rfl (hnc flds arity b)
     | variadic k b =>
       right
-      exact ⟨h,⟨flds,_,rfl,by simp,hs⟩,by simp⟩
+      exact ⟨h,⟨flds,_,rfl,rfl,hs⟩,by simp⟩
     | bound t r pre =>
       right
-      exact ⟨h,⟨flds,_,rfl,by simp,hs⟩,by simp⟩
+      exact ⟨h,⟨flds,_,rfl,rfl,hs⟩,by simp⟩
 
 theorem merge (A C : Fields) (Bs Ds : List Fields) (L M : List (Fam × List Fam × Fam)) (n W v) :
     objectsT A (Bs ++ C :: Ds) (L ++ M) n W v ↔

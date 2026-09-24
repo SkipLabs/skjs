@@ -172,6 +172,7 @@ def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs
   | .callable a bs L S, .callable c ds M T => decide
       (CoversFields (Rel table) (a :: bs) (c :: ds) ∧ ArrowsChecked G table proofs L S M ∧
        ∀ t ∈ T, ∃ s ∈ S, checkRestCovers table s t = true)
+  | .ctors L, .ctors M => decide (∀ q ∈ M, ∃ p ∈ L, Domains (Rel table) q.1 p.1 ∧ Rel table p.2 q.2)
   | _, _ => false
 
 
@@ -181,6 +182,7 @@ theorem checkClause_sound [DecidableEq ι] {G : NormalGraph ι} {table proofs a 
   cases a <;> cases b <;> simp only [checkClause, Bool.false_eq_true, Covers] at *
   all_goals try contradiction
   all_goals try trivial
+  case ctors.ctors => exact of_decide_eq_true h
   · exact of_decide_eq_true h
   · exact of_decide_eq_true h
   · have hh := of_decide_eq_true h
@@ -252,6 +254,7 @@ theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table a b}
   cases a <;> cases b <;> simp only [Covers] at h
   all_goals try contradiction
   all_goals try exact absurd rfl hb
+  case ctors.ctors => exact ⟨[], by simpa only [checkClause, decide_eq_true_eq] using h⟩
   · exact ⟨[], rfl⟩
   · exact ⟨[], rfl⟩
   · exact ⟨[], by simpa only [checkClause, decide_eq_true_eq] using h⟩

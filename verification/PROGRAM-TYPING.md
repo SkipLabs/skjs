@@ -262,6 +262,32 @@ Neither a function value nor a function-type graph label is needed. The
 producer and consumer use this constructor directly; lambda application no
 longer has a special binding-certificate route.
 
+A class value is construct-only code: JavaScript gives a function object
+`[[Call]]` and `[[Construct]]` separately, and a class has only the second,
+an arrow only the first. The calculus records which in the closure's code
+(`kind`), a plain call dispatches only call code, and `new f(args)` is its own
+term, which evaluates `f`, then the actuals, and runs only construct code, with
+`undefined` for the receiver. A construct signature
+$\mathsf{new}(A_1,\ldots,A_n)\Rightarrow B$ (the `ctors` clause) is met by a
+class whose body, for actuals at the parameters, is safe at $B$:
+
+$$
+\frac{L\equiv_G\mathsf{Ctors}(\ldots,(\vec A,B),\ldots)\quad
+      U\equiv_G\mathsf{Undefined}\quad
+      U,\vec x{:}\vec A,\Gamma\vdash_G b:B\ \text{for each signature}}
+     {\Gamma\vdash_G \mathsf{class}(\vec x).b : L}
+\qquad
+\frac{\Gamma\vdash_G f:L\quad L\equiv_G\mathsf{Ctors}(\ldots,(\vec A,B),\ldots)\quad
+      \Gamma\vdash_G a_i:A_i}
+     {\Gamma\vdash_G \mathsf{new}\ f(\vec a):B}
+$$
+
+These are `ctorE` and `construct`. No arrow meets a construct signature and no
+class a call signature, so `new` on an arrow and a plain call of a class are
+refused, as JavaScript throws. A construct signature is covered by one taking
+as many parameters, each at least as wide, with a result at most as wide:
+`new (params: Specific) => R` is a `new (params: never) => R`.
+
 An object is a finite map from field names to heap locations, fixed at
 allocation. Let $\varphi$ range over field maps $\overline{f{:}A}$ with distinct
 names, and write $\mathsf{Ref}(\varphi)$ for the record clause carrying those

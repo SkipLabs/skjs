@@ -104,6 +104,18 @@ def Domains (R : List ι → List ι → Prop) : List (List ι) → List (List �
   | a :: As, b :: Bs => R a b ∧ Domains R As Bs
   | _, _ => False
 
+instance Domains.decidable {R : List ι → List ι → Prop} [∀ a b, Decidable (R a b)] :
+    ∀ As Bs, Decidable (Domains R As Bs)
+  | [], [] => isTrue trivial
+  | [], _ :: _ => isFalse id
+  | _ :: _, [] => isFalse id
+  | a :: As, b :: Bs =>
+    if h : R a b then
+      match Domains.decidable As Bs with
+      | isTrue h' => isTrue ⟨h, h'⟩
+      | isFalse h' => isFalse fun hd => h' hd.2
+    else isFalse fun hd => h hd.1
+
 theorem Domains.sound {G : NormalGraph ι} {R As Bs n}
     (hd : Domains R As Bs) (hr : ∀ a b, R a b → FamLeAt G a b n)
     {W args} (ha : ArgsT (As.map (meaning G)) n W args) :
@@ -415,6 +427,9 @@ def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
   | .callable a bs L S, .callable c ds M T =>
       CoversFields R (a :: bs) (c :: ds) ∧
       (∀ p ∈ M, CallArrow G R L S p.1 p.2.1 p.2.2) ∧ ∀ t ∈ T, ∃ s ∈ S, RestCovers R s t
+  -- A construct signature is covered by one taking as many parameters, each
+  -- at least as wide, with a result at most as wide.
+  | .ctors L, .ctors M => ∀ q ∈ M, ∃ p ∈ L, Domains R q.1 p.1 ∧ R p.2 q.2
   | _, _ => False
 
 /-- Covering field by field is enough: the operands all constrain the same
@@ -616,6 +631,15 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
   cases a <;> cases b <;> simp only [Covers] at hc
   all_goals try contradiction
   all_goals try exact absurd rfl hb
+  case ctors.ctors L M =>
+    intro hv
+    refine ⟨hv.1, fun q hq => ?_⟩
+    obtain ⟨q0, hq0, rfl⟩ := List.mem_map.mp hq
+    obtain ⟨p, hp, hd, hres⟩ := hc q0 hq0
+    intro j hj U hx hu heap hh args hvals ha
+    obtain ⟨result, hcon, hsafe⟩ := hv.2 _ (List.mem_map_of_mem hp) j hj U hx hu heap hh args hvals
+      (Domains.sound hd (fun a b hab => hr j hj a b hab) ha)
+    exact ⟨result, hcon, Safe_mono j (fun m hm V u hu => hr m (by omega) _ _ hres V u hu) U heap _ hsafe⟩
   · exact id
   · exact id
   · rename_i a bs vs os c ds ws ps

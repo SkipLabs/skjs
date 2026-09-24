@@ -168,6 +168,26 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           let ps ← L.mapM fun p => recur (p.1 :: p.2.1 ++ Γ) b p.2.2
           coerce G pool (.node ⟨Γ,t,F⟩ .makeCallable (ea :: ps)) A
         | _ => none
+    -- A class value: one body per construct signature, its receiver slot at
+    -- a pool type that is exactly `undefined`, what `new` passes there.
+    | .make (.closure arity b .construct) .nul =>
+      return (A :: pool).findSome? fun F => do
+        let [.ctors L] := expand G F | none
+        if !L.all (fun p => p.1.length == arity) then none else do
+        let U ← pool.find? fun U => decide (expand G U = [.undef])
+        let ps ← L.mapM fun p => recur (U :: p.1 ++ Γ) b p.2
+        coerce G pool (.node ⟨Γ,t,F⟩ (.ctorE U) ps) A
+    -- `new f(args)`: a construct signature of the constructor's type taking as
+    -- many parameters as there are actuals.
+    | .construct f args =>
+      return pool.findSome? fun F => do
+        let [.ctors L] := expand G F | none
+        L.findSome? fun p => do
+          if args.length != p.1.length then none else do
+          let _ ← subtype G pool p.2 A
+          let ef ← recur Γ f F
+          let eas ← (args.zip p.1).mapM fun (a,D) => recur Γ a D
+          coerce G pool (.node ⟨Γ,t,p.2⟩ .construct (ef :: eas)) A
     -- A variadic closure: one body premise per signature, the body's slot 0
     -- at a pool type that is that signature's rest array.
     | .make (.variadic arity b) .nul =>

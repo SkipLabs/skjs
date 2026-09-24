@@ -63,7 +63,7 @@ longer one binds its fixed prefix and collects the rest. -/
 theorem restsT_of_restSpec {n : Nat} {Rc : Fam} {Ps : List Fam} {E R : Fam} {k : Nat}
     {W : WorldT k} {b : Tm} (fs : List (PropKey × Nat)) (hs : RestSpec n Rc Ps E R k W b) :
     restsT [(Rc, Ps, E, R)] k W (.objAt fs (.variadic n b)) := by
-  refine ⟨⟨fs, _, rfl, by simp, by simpa [Scoped, Nat.add_comm, Nat.add_left_comm] using hs.1⟩, ?_⟩
+  refine ⟨⟨fs, _, rfl, rfl, by simpa [Scoped, Nat.add_comm, Nat.add_left_comm] using hs.1⟩, ?_⟩
   intro s hsm j hj U hx hu heap hh r hrv hr args hvals ha
   cases List.mem_singleton.mp hsm
   refine ⟨_, .variadic hrv hvals, ?_⟩

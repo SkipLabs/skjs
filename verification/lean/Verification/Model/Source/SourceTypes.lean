@@ -44,6 +44,7 @@ private def clauseName : Clause (List Nat) → String
   | .list .. => "array"
   | .bigint => "bigint"
   | .symbol => "symbol"
+  | .ctors .. => "constructor"
 
 def render (T : Table) (A : Ty Nat) : String :=
   match expand (graph T) A with
