@@ -76,45 +76,78 @@ example (η : Assignment Nat) (n W v) :
   rw [qDenoteWithArgs_unfold _ _ singleArgument_nonexp]
   rfl
 
-/-- A genuinely list-valued binder, shared between a constructor operand and
-its trailing arguments. Unlike `singleArgument`, this never encodes the pack
-as a runtime value or quantifies over a value family. -/
-private def packScheme : SchemeRow Nat :=
-  { binders := [0], signatures := [], bounds := [(0, [1])] }
+/-- A scheme has a value parameter and a list parameter in one substitution.
+The same list contract appears in a constructor operand and trailing arguments;
+the same value contract is the constructor and call result. -/
+private def mixedScheme : SchemeRow Nat :=
+  { binders := [0,1], signatures := [], bounds := [(0, [2]), (1, [3])] }
 
-private noncomputable def packBody (η : ArgumentAssignment Nat)
-    (As : List ArgumentFamily) : Fam :=
-  let P := (assign η packScheme.binders As).1 0
-  restsT [(topT, [ArgumentContracts.constructor P numT], P, numT)]
+private def closedTop : ValueFamily :=
+  ⟨topT, ⟨⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩, fun _ _ _ h => h⟩⟩
 
-private noncomputable def quantifiedPack (η : ArgumentAssignment Nat) : Fam :=
-  boundedSem (k := .arguments) (fun _ _ => All topT) η packScheme (packBody η)
+private def closedArguments : ArgumentFamily :=
+  ⟨All topT, ⟨all_adm closedTop.2.1, fun _ _ _ h => h⟩⟩
 
-/-- The same restriction proof used by production value quantification works
-for packs in both positive and negative positions. -/
-example (η : ArgumentAssignment Nat) : Adm (quantifiedPack η) := by
+private def mixedBound (_ : MixedAssignment Nat) (S : List Nat) : MixedFamily :=
+  if S = [2] then .ofValue closedTop else .ofArguments closedArguments
+
+private noncomputable def mixedBody (η : MixedAssignment Nat)
+    (As : List MixedFamily) : Fam :=
+  let θ := assign η mixedScheme.binders As
+  let R : Fam := fun n W v => θ.1 0 n W (.inl v)
+  let P : ArgFam := fun n W vs => θ.1 1 n W (.inr vs)
+  restsT [(topT, [ArgumentContracts.constructor P R], P, R)]
+
+private noncomputable def quantifiedMixed (η : MixedAssignment Nat) : Fam :=
+  boundedSem (k := .mixed) (fun θ S => (mixedBound θ S).1)
+    η mixedScheme (mixedBody η)
+
+/-- Mixed quantification uses the production bound-restriction proof. -/
+example (η : MixedAssignment Nat) : Adm (quantifiedMixed η) := by
   apply boundedSem_adm
   · intro S
-    exact all_adm ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+    exact (mixedBound η S).2.1
   · intro As
     exact restsT_adm _
   · intro As Bs m h W v
     apply restsT_congr [()] (fun _ => _) (fun _ => _) _ W v
     intro _ _
-    refine ⟨fun _ _ _ _ => Iff.rfl, .cons ?_ .nil, h 0, fun _ _ _ _ => Iff.rfl⟩
+    refine ⟨fun _ _ _ _ => Iff.rfl, .cons ?_ .nil,
+      fun j hj U vs => h 1 j hj U (.inr vs),
+      fun j hj U u => h 0 j hj U (.inl u)⟩
     intro j hj U u
-    exact constructor_congr (fun i hi => h 0 i (by omega))
-      (fun _ _ _ _ => Iff.rfl) U u
+    exact constructor_congr (fun i hi V vs => h 1 i (by omega) V (.inr vs))
+      (fun i hi V v => h 0 i (by omega) V (.inl v)) U u
 
-/-- Universal elimination retains the *same* pack in the constructor and rest;
-its bound applies to each member at the current level. -/
-example (η : ArgumentAssignment Nat) (P : ArgumentFamily)
-    (n W f) (hf : quantifiedPack η n W f) :
-    restsT [(topT, [ArgumentContracts.constructor P.1 numT], P.1, numT)] n W f := by
-  have hi := PositiveRules.bounded_substitution_elim η (fun _ => P)
-    (fun _ _ => All topT) packScheme [[2]] (packBody η) rfl
-    (fun _ _ _ _ n W vs hp => P.2.2 n W vs hp) n W f hf
-  simpa [packBody, packScheme, assign_cons_head] using hi
+/-- One checked substitution supplies an arbitrary value type and an arbitrary
+argument-list contract. No monomorphization or synthetic runtime pack occurs. -/
+example (η : MixedAssignment Nat) (A : ValueFamily) (P : ArgumentFamily)
+    (n W f) (hf : quantifiedMixed η n W f) :
+    restsT [(topT, [ArgumentContracts.constructor P.1 A.1], P.1, A.1)] n W f := by
+  let F : List Nat → MixedFamily := fun S =>
+    if S = [4] then .ofValue A else .ofArguments P
+  have hb : ∀ b ∈ mixedScheme.bounds, ∀ U,
+      (mixedScheme.binders.zip [[4],[5]]).lookup b.1 = some U →
+      FamLe (F U).1 (mixedBound η b.2).1 := by
+    intro b hb U hu
+    simp only [mixedScheme, List.mem_cons, List.not_mem_nil, or_false] at hb
+    rcases hb with rfl | rfl
+    · have : U = [4] := by simpa [mixedScheme, List.lookup_cons] using hu.symm
+      subst U
+      intro n W x hx
+      cases x with
+      | inl v => exact A.2.2 n W v hx
+      | inr vs => exact hx.elim
+    · have : U = [5] := by simpa [mixedScheme, List.lookup_cons] using hu.symm
+      subst U
+      intro n W x hx
+      cases x with
+      | inl v => exact hx.elim
+      | inr vs => exact P.2.2 n W vs hx
+  have hi := PositiveRules.bounded_substitution_elim η F
+    (fun θ S => (mixedBound θ S).1) mixedScheme [[4],[5]] (mixedBody η) rfl hb n W f hf
+  simpa [mixedBody, mixedScheme, F, assign_cons_head, assign_cons_ne, MixedFamily.ofValue, MixedFamily.ofArguments]
+    using hi
 
 /-- A real callback value that returns the wrong result. -/
 def badCallback : Tm := .objAt [] (.closure 1 .tru)

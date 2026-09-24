@@ -35,13 +35,31 @@ abbrev ParameterKind.Closed : (k : ParameterKind) → k.Carrier → Prop
   | .value => fun (v : Val) => isVal v = true ∧ Scoped 0 v
   | .arguments => fun (vs : List Val) => ∀ v ∈ vs, isVal v = true ∧ Scoped 0 v
 
+/-- The assignment algebra depends on a carrier and its closedness predicate,
+not on every binder in a scheme having the same source-language kind. -/
+structure ParameterSpace where
+  Carrier : Type
+  Closed : Carrier → Prop
+
+abbrev ParameterSpace.value : ParameterSpace :=
+  ⟨ParameterKind.Carrier .value, ParameterKind.Closed .value⟩
+abbrev ParameterSpace.arguments : ParameterSpace :=
+  ⟨ParameterKind.Carrier .arguments, ParameterKind.Closed .arguments⟩
+
+/-- A semantic sum, not a calculus value constructor. It permits a single
+substitution to contain both ordinary types and whole argument-list types. -/
+abbrev ParameterSpace.mixed : ParameterSpace :=
+  ⟨Val ⊕ List Val, fun
+    | .inl v => ParameterKind.Closed .value v
+    | .inr vs => ParameterKind.Closed .arguments vs⟩
+
 /-- Both sorts obey the same approximation and world-extension laws. List
 membership is at the current level; changing sorts does not insert a guard. -/
-def ParameterValid (k : ParameterKind) (A : WorldFamily k.Carrier) : Prop :=
+def ParameterValid (k : ParameterSpace) (A : WorldFamily k.Carrier) : Prop :=
   Adm A ∧ ∀ n W v, A n W v → k.Closed v
 
-abbrev ParameterFamily (k : ParameterKind) := { A : WorldFamily k.Carrier // ParameterValid k A }
-abbrev ParameterAssignment (k : ParameterKind) (ι : Type) :=
+abbrev ParameterFamily (k : ParameterSpace) := { A : WorldFamily k.Carrier // ParameterValid k A }
+abbrev ParameterAssignment (k : ParameterSpace) (ι : Type) :=
   { η : ι → WorldFamily k.Carrier // ∀ i, ParameterValid k (η i) }
 
 /-- The production value environment is the value instance of the shared
@@ -51,8 +69,65 @@ abbrev ValueFamily := ParameterFamily .value
 abbrev Assignment (ι : Type) := ParameterAssignment .value ι
 abbrev ArgumentFamily := ParameterFamily .arguments
 abbrev ArgumentAssignment (ι : Type) := ParameterAssignment .arguments ι
+abbrev MixedFamily := ParameterFamily .mixed
+abbrev MixedAssignment (ι : Type) := ParameterAssignment .mixed ι
 
-def ParameterAssignment.empty (k : ParameterKind) : ParameterAssignment k ι :=
+/-- Project a value contract without interpreting a list as a runtime value. -/
+def MixedFamily.value (A : MixedFamily) : ValueFamily :=
+  ⟨fun n W v => A.1 n W (.inl v),
+    ⟨⟨fun n W v h => A.2.1.down n W (.inl v) h,
+      fun n W U hx v h => A.2.1.mono n W U hx (.inl v) h⟩,
+      fun n W v h => A.2.2 n W (.inl v) h⟩⟩
+
+/-- Project a current-level contract on an actual argument list. -/
+def MixedFamily.arguments (A : MixedFamily) : ArgumentFamily :=
+  ⟨fun n W vs => A.1 n W (.inr vs),
+    ⟨⟨fun n W vs h => A.2.1.down n W (.inr vs) h,
+      fun n W U hx vs h => A.2.1.mono n W U hx (.inr vs) h⟩,
+      fun n W vs h => A.2.2 n W (.inr vs) h⟩⟩
+
+/-- An ordinary substitution argument has no argument-list members. -/
+def MixedFamily.ofValue (A : ValueFamily) : MixedFamily :=
+  ⟨fun n W x => match x with | .inl v => A.1 n W v | .inr _ => False,
+    ⟨⟨fun n W x h => by cases x with
+          | inl v => exact A.2.1.down n W v h
+          | inr vs => exact h,
+        fun n W U hx x h => by cases x with
+          | inl v => exact A.2.1.mono n W U hx v h
+          | inr vs => exact h⟩,
+      fun n W x h => by cases x with
+        | inl v => exact A.2.2 n W v h
+        | inr vs => exact h.elim⟩⟩
+
+/-- A pack substitution argument has no runtime-value members. -/
+def MixedFamily.ofArguments (A : ArgumentFamily) : MixedFamily :=
+  ⟨fun n W x => match x with | .inl _ => False | .inr vs => A.1 n W vs,
+    ⟨⟨fun n W x h => by cases x with
+          | inl v => exact h
+          | inr vs => exact A.2.1.down n W vs h,
+        fun n W U hx x h => by cases x with
+          | inl v => exact h
+          | inr vs => exact A.2.1.mono n W U hx vs h⟩,
+      fun n W x h => by cases x with
+        | inl v => exact h.elim
+        | inr vs => exact A.2.2 n W vs h⟩⟩
+
+@[simp] theorem MixedFamily.value_ofValue (A : ValueFamily) : (ofValue A).value = A := rfl
+@[simp] theorem MixedFamily.arguments_ofArguments (A : ArgumentFamily) :
+    (ofArguments A).arguments = A := rfl
+
+/-- Inclusion at a mixed bound checks both projections; it cannot confuse
+value subtyping with argument-list subtyping. -/
+theorem MixedFamily.le_iff (A B : MixedFamily) : FamLe A.1 B.1 ↔
+    FamLe A.value.1 B.value.1 ∧ FamLe A.arguments.1 B.arguments.1 := by
+  constructor
+  · intro h
+    exact ⟨fun n W v => h n W (.inl v), fun n W vs => h n W (.inr vs)⟩
+  · rintro ⟨hv, ha⟩ n W (v | vs) h
+    · exact hv n W v h
+    · exact ha n W vs h
+
+def ParameterAssignment.empty (k : ParameterSpace) : ParameterAssignment k ι :=
   ⟨fun _ _ _ _ => False,
     fun _ => ⟨⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩, fun _ _ _ h => h.elim⟩⟩
 
@@ -177,7 +252,7 @@ def denote (G : Graph ι) : ι → Fam := Tower.denote (layer G)
 The fixed point is over `(assignment, label)`: a scheme row reads its
 signatures' rows at reassignments of its binders. -/
 
-variable {k : ParameterKind}
+variable {k : ParameterSpace}
 
 open Classical in
 /-- The assignment with each binder given the family at its position. -/

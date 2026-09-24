@@ -1801,18 +1801,28 @@ admissibility nor closedness merely to group arguments. Operational invocation
 still requires actual values, and allocation still preserves fixed location
 contracts. The source-to-safety theorem covers this migrated path.
 
-The assignment algebra now distinguishes **value families** from **argument-list
-families** through `ParameterKind`. Reassignment, shadowing, bound restriction
-and their proofs share one implementation indexed by that kind. `boundedSem`
-and `boundedSem_adm` likewise implement universal quantification for either
-kind; production value schemes use this shared proof. A semantic control
-quantifies over a genuine list contract `P` and instantiates a signature using
-that same `P` in both a constructor operand and its trailing actuals. This
-checks universal pack elimination, not a collection of observed calls.
+The assignment algebra distinguishes **value families** from **argument-list
+families** without requiring every binder in a scheme to have the same kind.
+`ParameterSpace` states the semantic carrier and closedness predicate;
+reassignment, shadowing, bound restriction and their proofs share one
+implementation over that space. `boundedSem` and `boundedSem_adm` use it too;
+production value schemes continue to use the shared proof.
+
+`MixedFamily` is a family over the tagged semantic sum `Val ⊕ List Val`.
+This is not a new calculus value or a runtime pack encoding. Its value and list
+projections each preserve admissibility and closedness. `ofValue` and
+`ofArguments` have no members in the opposite projection, and `le_iff` states
+that inclusion must hold in both projections. One substitution can therefore
+carry a value type and a list contract with their different bounds.
+
+The semantic control now quantifies over both `T` and `P`, in one substitution:
+`(new (...P) → T, ...P) → T`. It uses the same `P` for the constructor and the
+trailing actuals, and the same `T` for the constructor and call results. This
+checks universal mixed-kind elimination, not a collection of observed calls.
 The production certificate proof `inst_sound` now uses the sort-independent
 `bounded_substitution_elim`: the chosen interpretation determines both the
 assigned family and its checked upper bound. `assignment_substitution` also
-supplies its relation between source and substituted binders. The pack control
+supplies its relation between source and substituted binders. The mixed-kind control
 uses the same elimination theorem. The remaining value-specific part is the
 interpretation supplied by `inst_sound` and the graph-row image proof
 (`table_row`), not a second implementation of bound checking.
@@ -1828,9 +1838,9 @@ The remaining graph assignment/substitution change must retain a pack's list
 contract and the coherent array interpretation used by collection and array
 bounds. Substitution certificates must preserve both interpretations; using a
 binder as a rest and using its collected array must not choose unrelated
-contracts. Mixed value/pack quantification in one scheme also remains an
-integration requirement; the shared quantifier currently takes one parameter
-kind per invocation.
+contracts. The shared quantifier now supports mixed value/pack substitutions;
+connecting that domain to the recursive graph and its row-image proofs remains
+an integration requirement.
 
 The OCaml producer now separates `ty` from `pack`, with tagged value/pack
 substitution arguments. `Args` is no longer an ordinary value-type atom. Its
@@ -1914,7 +1924,7 @@ The remaining integration boundary is explicit:
 | Recursive graphs with bounded value quantification | Proved in the production graph implementation | The fixed-point equation, admissibility and assignment agreement hold for argument interpreters derived from the value environment; independently quantified packs remain below. |
 | Producer value/pack substitution distinction | Implemented internally | Packs cannot be value-type atoms; cross-kind substitution is refused; the wire still uses legacy pack rows. |
 | Source binder roles | Implemented | Structural, scope-aware classification; value/pack bindings have distinct lowering paths; mixed uses remain opaque. |
-| Sorted assignment and universal quantification algebra | Proved and shared with production value schemes | Reassignment and bound restriction work at either sort; a universal pack control shares its contract across constructor and rest positions. |
+| Sorted assignment and universal quantification algebra | Proved and shared with production value schemes | Reassignment and bound restriction support mixed substitutions; a universal control shares its list contract across constructor/rest positions and its value contract across both results. |
 | Quantified pack substitution in the Lean graph | Pending | A pack argument is instantiated as a list contract, not by the old ordinary-value `meaning` of a pack row; bounds and both uses of the binder agree. |
 | Source/evidence migration and retirement | Pending | Decoders, producer export, substitution certificates and coverage select that interpretation; retire `packArgs`, the ordinary `pack` encoding and `StableTy` guards. |
 | Motivating source coverage | Pending | Object/callback dependencies verify end to end; wrong actuals remain rejected; report the original framework client's independent gaps separately. |

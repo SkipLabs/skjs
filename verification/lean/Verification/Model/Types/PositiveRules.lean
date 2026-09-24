@@ -1984,7 +1984,7 @@ theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D 
       simp only [Option.getD_some]
       rw [hr]
 
-theorem assign_zip_map [DecidableEq ι] {k : ParameterKind} (η : ParameterAssignment k ι) (F : List ι → ParameterFamily k) :
+theorem assign_zip_map [DecidableEq ι] {k : ParameterSpace} (η : ParameterAssignment k ι) (F : List ι → ParameterFamily k) :
     ∀ {bs : List ι} {θs : List (List ι)} {b : ι} {U : List ι},
       (bs.zip θs).lookup b = some U → (assign η bs (θs.map F)).1 b = (F U).1
   | [], _, _, _, h => by simp at h
@@ -2005,7 +2005,7 @@ theorem assign_zip_map [DecidableEq ι] {k : ParameterKind} (η : ParameterAssig
 /-- Checked substitution meets every binder bound, independently of whether
 its arguments denote values or lists. The interpretation is supplied once and
 used for both assignment and the bound check. -/
-theorem bounded_substitution [DecidableEq ι] {k : ParameterKind}
+theorem bounded_substitution [DecidableEq ι] {k : ParameterSpace}
     (η : ParameterAssignment k ι) (F : List ι → ParameterFamily k)
     (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier)
     (s : SchemeRow ι) (θs : List (List ι))
@@ -2020,7 +2020,7 @@ theorem bounded_substitution [DecidableEq ι] {k : ParameterKind}
 
 /-- Eliminate a universal callable with one checked substitution. This is the
 shared semantic boundary for value and pack instantiation certificates. -/
-theorem bounded_substitution_elim [DecidableEq ι] {k : ParameterKind}
+theorem bounded_substitution_elim [DecidableEq ι] {k : ParameterSpace}
     (η : ParameterAssignment k ι) (F : List ι → ParameterFamily k)
     (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier)
     (s : SchemeRow ι) (θs : List (List ι))
@@ -2033,7 +2033,7 @@ theorem bounded_substitution_elim [DecidableEq ι] {k : ParameterKind}
   exact h.2 _ (by simp [hlen]) (bounded_substitution η F D s θs hlen hbnd n)
 
 /-- Substituting a complete binder list changes exactly its bound names. -/
-theorem assignment_substitution [DecidableEq ι] {k : ParameterKind}
+theorem assignment_substitution [DecidableEq ι] {k : ParameterSpace}
     (η : ParameterAssignment k ι) (F : List ι → ParameterFamily k)
     (bs : List ι) (θs : List (List ι)) (hlen : θs.length = bs.length) (b : ι) :
     (assign η bs (θs.map F)).1 b =

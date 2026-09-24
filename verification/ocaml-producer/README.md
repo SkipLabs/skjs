@@ -1109,9 +1109,10 @@ is the intended replacement for the current guarded pack rows and their
 primitive-only fixed-to-pack conversion. The general semantic equations are
 proved, including object and callback elements and recursive schemes with
 bounded value parameters. The shared assignment and bounded-quantification
-proofs now support either value or argument-list families; a semantic control
-instantiates a universally quantified pack shared by a constructor and trailing
-arguments. Graph integration is still pending: the production argument
+proofs now support mixed value and argument-list substitutions, using a tagged
+semantic sum rather than a runtime pack value. A semantic control instantiates
+both a value result type and a pack shared by a constructor and trailing
+arguments in one universal substitution. Graph integration is still pending: the production argument
 interpreter can only read a value environment, and its certificates still
 instantiate pack rows through that environment.
 The producer now distinguishes value and pack substitutions internally and uses
