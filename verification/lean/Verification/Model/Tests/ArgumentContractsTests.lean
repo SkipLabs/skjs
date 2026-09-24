@@ -47,30 +47,15 @@ private theorem imageChecked :
 example : PositiveRules.TableOk imageGraph [(0, imageContext, [3])]
     [0,1,2,3,4] imageFree = false := by decide
 
-/-- This control now uses mixed semantics throughout. The only nonempty
-value image is the parameter's; the generic table theorem derives the pack
-image from it at the current level, including at level zero. -/
+/-- Full table transport supplies the object tuple's image, with no externally
+assumed value-image proof and no loss of the current approximation level. -/
 example (η : MixedAssignment Nat) (n : Nat) (W : WorldT n) (vs : List Val) :
     mixedMeaning imageGraph
       (assign η [1] [⟨mixedMeaning imageGraph η [2], mixedMeaning_valid imageGraph η [2]⟩])
       [0] n W (.inr vs) ↔ mixedMeaning imageGraph η [3] n W (.inr vs) := by
-  apply PositiveRules.table_row_mixed_of_values imageChecked n ?_ _ η
-    (0, imageContext, [3]) (by decide) ?_ W (.inr vs)
-  · intro μ ν e he hrel U v
-    have he' : e = (0, imageContext, [3]) ∨ e = (1, imageContext, [2]) := by
-      simpa [imageTable] using he
-    rcases he' with rfl | rfl
-    · have left := mixedMeaning_pack_value imageGraph μ 0 _ _ rfl n U v
-      have right := mixedMeaning_pack_value imageGraph ν 3 _ _ rfl n U v
-      apply iff_of_false _ right
-      intro h
-      exact left ⟨0, by simp, h⟩
-    · have h := PositiveRules.mixed_parameter_image imageGraph imageContext μ ν 1 .value [2]
-        (by decide) (by decide) hrel
-      have hv := iff_of_eq (congrFun (congrFun (congrFun h n) U) (.inl v))
-      simpa [mixedMeaning, mixedParameters, setSem] using hv
-  · exact PositiveRules.mixed_assignment_substitution imageGraph η [1] [[2]]
-      (by decide) (by decide) _
+  exact PositiveRules.table_row_mixed imageChecked n _ η (0, imageContext, [3]) (by decide)
+    (PositiveRules.mixed_assignment_substitution imageGraph η [1] [[2]]
+      (by decide) (by decide) _) W (.inr vs)
 
 /-- One checked substitution supplies an object value type and a whole tuple
 of objects. Its selected relation uses the graph meaning for both binders. -/
@@ -85,6 +70,83 @@ its list meaning is separate, rather than a synthetic `.args` value. -/
 example (η : MixedAssignment Nat) (n : Nat) (W : WorldT n) (v : Val) :
     ¬ mixedMeaning imageGraph η [0] n W (.inl v) :=
   mixedMeaning_pack_value imageGraph η 0 _ _ rfl n W v
+
+/-- Instantiation returns a universally quantified callable. Its renamed
+value binder remains bounded, while a constructor in its result captures the
+outer argument-list binder. The actual pack contains an object. -/
+private def nestedImage : NormalGraph Nat := {
+  rows := fun i => match i with
+    | 6 => [.top]
+    | 8 => [.ctors [] [([], [1], [12])]]
+    | 11 => [.pack ⟨[[12]], [], none, false⟩ []]
+    | 12 => [.refs [(valueField, [3])] [] []]
+    | 13 => [.ctors [] [([], [11], [12])]]
+    | _ => [.nul]
+  schemes := fun i => match i with
+    | 0 => some { binders := [1], signatures := [], bounds := [(1,[11])], variadic := [([3], [], [1], [4])] }
+    | 4 => some { binders := [5], signatures := [([3], [[5]], [8])], bounds := [(5,[6])] }
+    | 9 => some { binders := [10], signatures := [([3], [[10]], [13])], bounds := [(10,[6])] }
+    | _ => none
+  parameterKinds := fun i => match i with
+    | 1 => some .arguments
+    | 5 | 10 => some .value
+    | _ => none }
+private def nestedImageFree : PositiveRules.FreeMap Nat :=
+  [(1,[1]), (4,[1]), (5,[5]), (8,[1]), (10,[10])]
+private def outerImageContext : PositiveRules.Ctx Nat := [(1,[11])]
+private def innerImageContext : PositiveRules.Ctx Nat := [(5,[10]), (1,[11])]
+private def nestedImageTable : PositiveRules.InstTable Nat :=
+  [(3,outerImageContext,[3]), (1,outerImageContext,[11]), (4,outerImageContext,[9]),
+   (6,outerImageContext,[6]), (3,innerImageContext,[3]), (5,innerImageContext,[10]),
+   (8,innerImageContext,[13]), (1,innerImageContext,[11]), (12,innerImageContext,[12])]
+private theorem nestedImageChecked :
+    PositiveRules.TableOk nestedImage nestedImageTable (List.range 14) nestedImageFree = true := by decide
+
+example (η : MixedAssignment Nat) :
+    FamLe (PositiveRules.mixedValues nestedImage η [0])
+      (semWithArgs (PositiveRules.mixedValues nestedImage η)
+        (graphArguments nestedImage η (PositiveRules.mixedValues nestedImage η))
+        (.arrs [] [([3], [], [11], [9])])) := by
+  refine PositiveRules.inst_mixed_sound η (i := 0)
+    (s := { binders := [1], signatures := [], bounds := [(1,[11])], variadic := [([3], [], [1], [4])] })
+    (θs := [[11]]) (tbl := nestedImageTable) (D := List.range 14) (V := nestedImageFree)
+    (by decide) (by decide) (by decide) ?_ (by decide) nestedImageChecked ?_ ?_
+  · intro b hb U hU
+    have hb' : b = (1,[11]) := by simpa using hb
+    subst b
+    have hU' : [11] = U := by simpa using hU
+    subst U
+    exact fun _ _ _ h => h
+  · intro q hq; cases hq
+  · intro q hq
+    have hq' : q = ([3], [], [11], [9]) := by simpa using hq
+    subst q
+    exact ⟨([3], [], [1], [4]), by simp, by decide⟩
+
+/-- A nested scheme cannot rename its value binder to a pack binder. -/
+example : PositiveRules.TableOk
+    { nestedImage with parameterKinds := fun i =>
+        if i = 10 then some .arguments else nestedImage.parameterKinds i }
+    nestedImageTable (List.range 14) nestedImageFree = false := by decide
+
+/-- Core edges preserve kind: value top cannot erase an argument-list bound.
+The semantic control explains why this refusal is required. -/
+private def packTop : NormalGraph Nat := .ofRows fun
+  | 0 => [.pack ⟨[], [], none, false⟩ []]
+  | _ => [.top]
+example : ¬ PositiveRules.Core packTop [0] [1] := by
+  rintro ⟨table, hm, hv⟩
+  have h := (hv ([0],[1]) hm).1
+  change false = true at h
+  contradiction
+example (η : MixedAssignment Nat) (n : Nat) (W : WorldT n) :
+    ¬ FamLe (mixedMeaning packTop η [0]) (mixedMeaning packTop η [1]) := by
+  intro h
+  apply mixedMeaning_noArguments packTop η [1] (by decide) n W []
+  apply h n W (.inr [])
+  simp [mixedMeaning, mixedParameters, graphArguments, packTop,
+    NormalGraph.ofRows, NormalGraph.clauses, NormalGraph.plain, NormalGraph.params,
+    clauseArguments, Fits, TupleFits, tupleFams]
 
 /-- A callback argument may itself have an arbitrary higher-order contract. -/
 example (A B R : Fam) : ctorsT [([arrowT A B], R)] =

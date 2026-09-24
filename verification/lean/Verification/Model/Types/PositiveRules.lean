@@ -1144,11 +1144,17 @@ def Opaque (G : NormalGraph ι) (S T : List ι) : Prop :=
 instance [DecidableEq ι] {G : NormalGraph ι} {S T : List ι} : Decidable (Opaque G S T) :=
   inferInstanceAs (Decidable (∀ i ∈ S, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T))
 
+/-- A subtype edge relates two value types or two argument-list types.
+The empty type is admissible at either sort; a runtime top is not a list top. -/
+def SameKind (G : NormalGraph ι) (S T : List ι) : Bool :=
+  (G.hasKind .value S && G.hasKind .value T) ||
+    (G.hasKind .arguments S && G.hasKind .arguments T)
+
 /-- Each split part of each source clause must be covered by some single target
 clause. A `bool` source is therefore discharged by the pair of Boolean singleton
 clauses, or by a single `bool` clause, or by any target containing both. -/
 def Valid (G : NormalGraph ι) (table : Table ι) : Prop :=
-  ∀ p ∈ table, Opaque G p.1 p.2 ∧
+  ∀ p ∈ table, SameKind G p.1 p.2 = true ∧ Opaque G p.1 p.2 ∧
     ∀ a ∈ sourceClauses G p.1, ∃ b ∈ clausesOf G p.2, Covers G (Rel table) a b
 
 def Core (G : NormalGraph ι) (S T : List ι) : Prop :=
@@ -1164,9 +1170,9 @@ theorem Core.sound {G : NormalGraph ι} {S T} (hc : Core G S T) :
       intro A B hab W v hv
       rcases meaning_cases hv with ⟨c, hcm, hv⟩ | ⟨i, hi, hp, hv⟩
       · obtain ⟨a, ha, hv⟩ := (splitClause_sem (meaning G) c n W v).mpr hv
-        obtain ⟨b, hb, hcover⟩ := (hc (A, B) hab).2 a (List.mem_flatMap.mpr ⟨c, hcm, ha⟩)
+        obtain ⟨b, hb, hcover⟩ := (hc (A, B) hab).2.2 a (List.mem_flatMap.mpr ⟨c, hcm, ha⟩)
         exact expand_sem_mpr ⟨b, hb, Covers.sound hcover n (fun j hj => ih j hj) W v hv⟩
-      · rcases ((hc (A, B) hab).1 i hi).resolve_left (by simp [hp]) with hB | htop
+      · rcases ((hc (A, B) hab).2.1 i hi).resolve_left (by simp [hp]) with hB | htop
         · exact ⟨i, hB, hv⟩
         · exact expand_sem_mpr ⟨.top, htop, normalDenote_value hv⟩
   exact fun n => hs n S T hm
@@ -2340,6 +2346,353 @@ theorem table_row_mixed_of_values [DecidableEq ι] {G : NormalGraph ι} {tbl : I
     simpa only [List.mem_singleton, exists_eq_left] using hv η θ e he hrel W v
   | inr vs => exact table_row_arguments hok n hv η θ e he hrel W vs
 
+/-- The value projection of the mixed row meaning. -/
+noncomputable def mixedValues (G : NormalGraph ι) (η : MixedAssignment ι) (S : List ι) : Fam :=
+  setSem (fun i => qDenoteWithArgs G (mixedParameters G) (η,i)) S
+
+private theorem mixedMeaning_union (G : NormalGraph ι) (η : MixedAssignment ι)
+    (S : List ι) (n : Nat) (W : WorldT n) (x : Val ⊕ List Val) :
+    mixedMeaning G η S n W x ↔ ∃ i ∈ S, mixedMeaning G η [i] n W x := by
+  cases x <;> simp [mixedMeaning, mixedParameters, graphArguments, setSem]
+
+private theorem tyImg_mixed_iff [DecidableEq ι] {G : NormalGraph ι}
+    {tbl : InstTable ι} {κ : Ctx ι} {S T : List ι} (h : tyImg tbl κ S = some T)
+    {η : MixedAssignment ι} {n : Nat} {W : WorldT n} {x : Val ⊕ List Val}
+    {P : ι → Prop}
+    (hr : ∀ i ∈ S, ∀ U, entryImg tbl κ i = some U →
+      (P i ↔ mixedMeaning G η U n W x)) :
+    (∃ i ∈ S, P i) ↔ mixedMeaning G η T n W x := by
+  rw [mixedMeaning_union]
+  exact tyImg_iff h (fun i hi U hU => (hr i hi U hU).trans (mixedMeaning_union G η U n W x))
+
+private theorem mixed_clauses_map [DecidableEq ι] (G : NormalGraph ι)
+    (tbl : InstTable ι) (κ : Ctx ι) (cs : List (Clause (List ι))) :
+    (mixedParameters G).clauses (cs.map (clauseImg tbl κ)) =
+      ((mixedParameters G).clauses cs).map (clauseImg tbl κ) := by
+  induction cs with
+  | nil => rfl
+  | cons c cs ih =>
+    dsimp only [mixedParameters] at ih ⊢
+    cases c <;> simp [clauseImg, Clause.map, ih]
+
+/-- **Instance tables.** Under its context, an entry's row means its image. -/
+theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D : List ι}
+    {V : FreeMap ι} (hok : TableOk G tbl D V = true) :
+    ∀ n, ∀ ηL ηR : MixedAssignment ι, ∀ e ∈ tbl, RelKWith G (mixedParameters G) e.2.1 (fv V e.1) ηL ηR →
+      ∀ (W : WorldT n) x, mixedMeaning G ηL [e.1] n W x ↔ mixedMeaning G ηR e.2.2 n W x := by
+  have checked := hok
+  simp only [TableOk, Bool.and_eq_true, List.all_eq_true] at hok
+  obtain ⟨⟨hF, hrowsD⟩, hents⟩ := hok
+  have inD : ∀ e ∈ tbl, e.1 ∈ D ∧ (∀ l ∈ e.2.2, l ∈ D) ∧
+      ∀ p U, e.2.1.lookup p = some U → ∀ l ∈ U, l ∈ D := by
+    intro e he
+    have h := fun l hl => by simpa using hrowsD l hl
+    refine ⟨h _ (List.mem_flatMap.mpr ⟨e, he, List.mem_cons_self⟩),
+      fun l hl => h _ (List.mem_flatMap.mpr ⟨e, he, List.mem_cons_of_mem _ (List.mem_append_left _ hl)⟩),
+      fun p U hU l hl => h _ (List.mem_flatMap.mpr ⟨e, he, List.mem_cons_of_mem _
+        (List.mem_append_right _ (List.mem_flatMap.mpr ⟨(p, U), mem_of_lookup hU, hl⟩))⟩)⟩
+  have singleton : ∀ (η : MixedAssignment ι) (j : ι) m (U : WorldT m) u,
+      mixedValues G η [j] m U u ↔ qDenoteWithArgs G (mixedParameters G) (η, j) m U u := fun η j m U u =>
+    ⟨fun ⟨_, hm, h⟩ => by cases List.mem_singleton.mp hm; exact h,
+     fun h => ⟨j, List.mem_singleton_self j, h⟩⟩
+  intro n
+  induction n using Nat.strongRecOn with
+  | ind n ih =>
+  apply table_row_mixed_of_values checked n
+  rintro ηL ηR ⟨i, κ, T⟩ he hrel W v
+  change qDenoteWithArgs G (mixedParameters G) (ηL,i) n W v ↔ mixedValues G ηR T n W v
+  have hrow := hents _ he
+  obtain ⟨hiD, _, hκD⟩ := inD _ he
+  have ⟨hself, hreads, hbounds⟩ := freeOk_row hF hiD
+  simp only at hrel hiD hκD
+  -- A type whose rows have entries under a context, related on their free
+  -- rows, means its image below the budget.
+  have hty : ∀ (ηL' ηR' : MixedAssignment ι) (κ' : Ctx ι) (S S' : List ι),
+      tyImg tbl κ' S = some S' →
+      (∀ l ∈ S, RelKWith G (mixedParameters G) κ' (fv V l) ηL' ηR') →
+      Agree (setSem (fun l => qDenoteWithArgs G (mixedParameters G) (ηL', l)) S) (mixedValues G ηR' S') n := by
+    intro ηL' ηR' κ' S S' hS hrl m hm U u
+    exact tyImg_iff hS fun l hl T hT => by
+      have h := ih m hm ηL' ηR' (l, κ', T) (entryImg_mem hT) (hrl l hl) U (.inl u)
+      simpa [mixedMeaning, mixedParameters, setSem] using h
+  have hmix : ∀ (ηL' ηR' : MixedAssignment ι) (κ' : Ctx ι) (S S' : List ι),
+      tyImg tbl κ' S = some S' →
+      (∀ l ∈ S, RelKWith G (mixedParameters G) κ' (fv V l) ηL' ηR') →
+      Agree (mixedMeaning G ηL' S) (mixedMeaning G ηR' S') n := by
+    intro ηL' ηR' κ' S S' hS hrl m hm U x
+    rw [mixedMeaning_union]
+    exact tyImg_mixed_iff hS fun l hl T hT =>
+      ih m hm ηL' ηR' (l, κ', T) (entryImg_mem hT) (hrl l hl) U x
+  have hpack : ∀ (ηL' ηR' : MixedAssignment ι) (κ' : Ctx ι) (S S' : List ι),
+      tyImg tbl κ' S = some S' →
+      (∀ l ∈ S, RelKWith G (mixedParameters G) κ' (fv V l) ηL' ηR') →
+      Agree (graphArguments G ηL' (mixedValues G ηL') S)
+        (graphArguments G ηR' (mixedValues G ηR') S') n := by
+    intro ηL' ηR' κ' S S' hS hrl m hm U vs
+    exact hmix ηL' ηR' κ' S S' hS hrl m hm U (.inr vs)
+  simp only [entryOk] at hrow
+  cases hpar : G.params i
+  · simp only [hpar, Bool.false_eq_true, if_false] at hrow
+    by_cases hrig : (T == [i] && (fv V i).all (fun p => (κ.lookup p).isNone)) = true
+    · -- its own image, with no free row in the context's domain
+      simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true,
+        Option.isNone_iff_eq_none] at hrig
+      obtain ⟨rfl, hfree⟩ := hrig
+      rw [singleton]
+      rw [agree_freeWith hF (mixedParameters G) (mixed_respectsFree hF) ηL ηR i hiD (fun p hp => by
+        have := hrel p hp; rw [hfree p hp] at this; exact this)]
+    · have hrigF : (T == [i] && (fv V i).all (fun p => (κ.lookup p).isNone)) = false := by
+        simpa using hrig
+      simp only [hrigF, Bool.false_eq_true, if_false] at hrow
+      cases hsch : G.schemes i with
+      | some s =>
+        cases hT : T with
+        | nil => simp [hsch, hT] at hrow
+        | cons j rest =>
+          cases rest with
+          | cons _ _ => simp [hsch, hT] at hrow
+          | nil =>
+            simp only [hsch, hT] at hrow
+            cases hs2 : G.schemes j with
+            | none => simp [hs2] at hrow
+            | some s2 =>
+            simp only [hs2, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, decide_eq_true_eq,
+              List.all_eq_true] at hrow
+            obtain ⟨⟨⟨⟨⟨⟨⟨⟨hjp, hnd⟩, hlen⟩, hpars⟩, hkinds⟩, hcap⟩, hsigs⟩, hbnds⟩, hrests⟩ := hrow
+            rw [singleton, qDenoteWithArgs_unfold, qDenoteWithArgs_unfold]
+            simp only [qLayerWithArgs, hpar, hjp, hsch, hs2, Bool.false_eq_true, if_false]
+            change boundedSem _ ηL s _ n W v ↔ boundedSem _ ηR s2 _ n W v
+            refine and_congr Iff.rfl ?_
+            rw [hlen]
+            refine forall_congr' fun As => forall_congr' fun hlA => imp_congr ?_ ?_
+            · -- Each bound maps to the target's: the same family on the binders,
+              -- and the bound types related at the outer assignments.
+              obtain ⟨hbmap, hbsome⟩ := mapM_some hbnds
+              unfold Bounded
+              rw [hbmap]
+              simp only [List.forall_mem_map]
+              refine forall_congr' fun b => forall_congr' fun hb => ?_
+              obtain ⟨⟨q, B'⟩, hbi⟩ := Option.isSome_iff_exists.mp (hbsome b hb)
+              simp only [hbi, Option.getD_some]
+              unfold boundImg at hbi
+              split at hbi
+              · rename_i q' hU
+                obtain ⟨B'', hB'', hqB⟩ := Option.map_eq_some_iff.mp hbi
+                cases hqB
+                obtain ⟨q'', hq'', he⟩ := enter_binder ηL ηR hnd hlA.symm (hlen.trans hlA.symm) hU
+                cases hq''
+                have hb1 : b.1 ∈ s.binders := (List.of_mem_zip (mem_of_lookup hU)).1
+                have hq2 : q ∈ s2.binders := by
+                  obtain ⟨x, hx, hxe⟩ := List.mem_map.mp (List.of_mem_zip (mem_of_lookup hU)).2
+                  cases hxe; exact hx
+                refine imp_congr (iff_of_true hb1 hq2) (forall_congr' fun j => forall_congr' fun hj =>
+                  forall_congr' fun U => forall_congr' fun u => imp_congr (by rw [he]) ?_)
+                have hbr : ∀ l ∈ b.2, l ∈ reads G i ∧ l ∈ boundReads G i := by
+                  intro l hl'
+                  refine ⟨?_, ?_⟩
+                  · simp only [reads, hsch]
+                    exact List.mem_append_left _
+                      (List.mem_append_right _ (List.mem_flatMap.mpr ⟨b, hb, hl'⟩))
+                  · simp only [boundReads, hsch]
+                    exact List.mem_flatMap.mpr ⟨b, hb, hl'⟩
+                exact hmix ηL ηR κ b.2 _ hB''
+                  (fun l hl p hp => hrel p (hbounds l (hbr l hl).2 p hp)) j hj U u
+              · simp at hbi
+            -- Inside, the relation holds on each signature row's free rows.
+            have hrel' : ∀ l ∈ reads G i, RelKWith G (mixedParameters G) (enter κ s.binders s2.binders) (fv V l)
+                (assign ηL s.binders As) (assign ηR s2.binders As) := by
+              intro l hl p hp
+              by_cases hb : p ∈ s.binders
+              · have hkindRel : ∀ p q, (s.binders.zip (s2.binders.map ([·]))).lookup p = some [q] →
+                    ∃ kind, G.parameterKinds p = some kind ∧ G.parameterKinds q = some kind := by
+                  intro p q hlookup
+                  have hmem : (p,q) ∈ s.binders.zip s2.binders := by
+                    have hmem := mem_of_lookup hlookup
+                    rw [List.zip_map_right] at hmem
+                    obtain ⟨⟨a,b⟩, hab, heq⟩ := List.mem_map.mp hmem
+                    cases heq
+                    exact hab
+                  have heq := hkinds (p,q) hmem
+                  have hqp := hpars q (List.of_mem_zip hmem).2
+                  obtain ⟨kind, hkind⟩ : ∃ kind, G.parameterKinds q = some kind := by
+                    simpa [NormalGraph.params, Option.isSome_iff_exists] using hqp
+                  exact ⟨kind, heq.trans hkind, hkind⟩
+                obtain ⟨q, hq, hk, he⟩ := mixed_enter_binder G κ ηL ηR hb hnd hlA.symm
+                  (hlen.trans hlA.symm) hkindRel
+                rw [hk]; exact he
+              · rw [enter_nmem κ hb, assign_nmem ηL s.binders As hb]
+                have hpi : p ∈ fv V i := by
+                  rcases (hreads l hl).2 p hp with h1 | ⟨s', hs', h2⟩
+                  · exact h1
+                  · rw [hsch] at hs'; cases hs'; exact absurd h2 hb
+                have hr := hrel p hpi
+                have hc := hcap p hpi
+                cases hk : κ.lookup p with
+                | none =>
+                  rw [hk] at hr hc
+                  have : p ∉ s2.binders := by simpa using hc
+                  rw [assign_nmem ηR s2.binders As this]; exact hr
+                | some U =>
+                  rw [hk] at hr
+                  simp only [hk, List.all_eq_true, Bool.not_eq_true', List.contains_iff_mem,
+                    decide_eq_false_iff_not] at hc
+                  rw [hr]
+                  exact (mixed_respectsFree hF).bound _
+                    (agree_freeWith hF (mixedParameters G) (mixed_respectsFree hF))
+                    ηR (assign ηR s2.binders As) U (hκD p U hk)
+                    (fun l hl q hq => by
+                      rw [assign_nmem ηR s2.binders As (by simpa using (hc l hl) q hq)])
+            simp only [instanceTWithArgs, interT]
+            refine and_congr ?_ ?_
+            · obtain ⟨hmap, _⟩ := mapM_some hsigs
+              unfold instanceSigs
+              rw [hmap]
+              simp only [List.map_map]
+              refine callsT_congr s.signatures _ _ (fun p hps => ?_) W v
+              have hin : ∀ l ∈ p.1 ++ p.2.1.flatten ++ p.2.2, l ∈ reads G i := fun l hl => by
+                simp only [reads, hsch]
+                exact List.mem_append_left _
+                  (List.mem_append_left _ (List.mem_flatMap.mpr ⟨p, hps, hl⟩))
+              obtain ⟨q, hq⟩ : ∃ q, sigImg tbl (enter κ s.binders s2.binders) p = some q := by
+                obtain ⟨_, hsome⟩ := mapM_some hsigs
+                exact Option.isSome_iff_exists.mp (hsome p hps)
+              obtain ⟨h1, h2, h3⟩ := sigImg_some hq
+              simp only [Function.comp, hq, Option.getD_some]
+              refine ⟨hty _ _ _ _ _ h1 fun l hl => hrel' l (hin l (by simp [hl])), ?_,
+                hty _ _ _ _ _ h3 fun l hl => hrel' l (hin l (by simp [hl]))⟩
+              have hargs : ∀ (Ss Ts : List (List ι)), Ss.mapM (tyImg tbl (enter κ s.binders s2.binders)) = some Ts →
+                  (∀ S ∈ Ss, ∀ l ∈ S, l ∈ reads G i) →
+                  ArgsAgree n (Ss.map (setSem fun l => qDenoteWithArgs G (mixedParameters G) (assign ηL s.binders As, l)))
+                    (Ts.map (mixedValues G (assign ηR s2.binders As))) := by
+                intro Ss
+                induction Ss with
+                | nil => intro Ts h _; simp at h; subst h; exact .nil
+                | cons S Ss ihs =>
+                  intro Ts h hSs
+                  cases hS : tyImg tbl (enter κ s.binders s2.binders) S with
+                  | none => simp [List.mapM_cons, hS] at h
+                  | some S' =>
+                    cases hr : Ss.mapM (tyImg tbl (enter κ s.binders s2.binders)) with
+                    | none => simp [List.mapM_cons, hS, hr] at h
+                    | some Ts' =>
+                      have : Ts = S' :: Ts' := by simp [List.mapM_cons, hS, hr] at h; exact h.symm
+                      subst this
+                      exact .cons (hty _ _ _ _ _ hS fun l hl => hrel' l (hSs S List.mem_cons_self l hl))
+                        (ihs Ts' hr fun T hT => hSs T (List.mem_cons_of_mem _ hT))
+              exact hargs _ _ h2 fun S hS l hl => hin l (by
+                simp only [List.mem_append, List.mem_flatten]
+                exact .inl (.inr ⟨S, hS, hl⟩))
+            · obtain ⟨hmap, _⟩ := mapM_some hrests
+              unfold instanceRestsWithArgs
+              dsimp only [mixedParameters]
+              rw [hmap]
+              simp only [List.map_map]
+              refine restsT_congr s.variadic _ _ (fun p hps => ?_) W v
+              have hin : ∀ l ∈ p.1 ++ p.2.1.flatten ++ p.2.2.1 ++ p.2.2.2, l ∈ reads G i :=
+                fun l hl => by
+                  simp only [reads, hsch]
+                  exact List.mem_append_right _ (List.mem_flatMap.mpr ⟨p, hps, hl⟩)
+              obtain ⟨q, hq⟩ : ∃ q, restImg tbl (enter κ s.binders s2.binders) p = some q := by
+                obtain ⟨_, hsome⟩ := mapM_some hrests
+                exact Option.isSome_iff_exists.mp (hsome p hps)
+              obtain ⟨h1, h2, h3, h4⟩ := restImg_some hq
+              simp only [Function.comp, hq, Option.getD_some]
+              refine ⟨hty _ _ _ _ _ h1 fun l hl => hrel' l (hin l (by simp [hl])), ?_,
+                hpack _ _ _ _ _ h3 fun l hl => hrel' l (hin l (by simp [hl])),
+                hty _ _ _ _ _ h4 fun l hl => hrel' l (hin l (by simp [hl]))⟩
+              have hargs : ∀ (Ss Ts : List (List ι)), Ss.mapM (tyImg tbl (enter κ s.binders s2.binders)) = some Ts →
+                  (∀ S ∈ Ss, ∀ l ∈ S, l ∈ reads G i) →
+                  ArgsAgree n (Ss.map (setSem fun l => qDenoteWithArgs G (mixedParameters G) (assign ηL s.binders As, l)))
+                    (Ts.map (mixedValues G (assign ηR s2.binders As))) := by
+                intro Ss
+                induction Ss with
+                | nil => intro Ts h _; simp at h; subst h; exact .nil
+                | cons S Ss ihs =>
+                  intro Ts h hSs
+                  cases hS : tyImg tbl (enter κ s.binders s2.binders) S with
+                  | none => simp [List.mapM_cons, hS] at h
+                  | some S' =>
+                    cases hr : Ss.mapM (tyImg tbl (enter κ s.binders s2.binders)) with
+                    | none => simp [List.mapM_cons, hS, hr] at h
+                    | some Ts' =>
+                      have : Ts = S' :: Ts' := by simp [List.mapM_cons, hS, hr] at h; exact h.symm
+                      subst this
+                      exact .cons (hty _ _ _ _ _ hS fun l hl => hrel' l (hSs S List.mem_cons_self l hl))
+                        (ihs Ts' hr fun T hT => hSs T (List.mem_cons_of_mem _ hT))
+              exact hargs _ _ h2 fun S hS l hl => hin l (by
+                simp only [List.mem_append, List.mem_flatten]
+                exact .inl (.inl (.inr ⟨S, hS, hl⟩)))
+      | none =>
+        cases hT : T with
+        | nil => simp [hsch, hT] at hrow
+        | cons j rest =>
+          cases rest with
+          | cons _ _ => simp [hsch, hT] at hrow
+          | nil =>
+            simp only [hsch, hT, Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at hrow
+            obtain ⟨⟨⟨hip, hjp⟩, hops⟩, hG⟩ := hrow
+            rw [singleton, qDenoteWithArgs_unfold, qDenoteWithArgs_unfold]
+            have hi := hip
+            have hj := hjp
+            simp only [NormalGraph.plain, Bool.and_eq_true, Bool.not_eq_true',
+              Option.isNone_iff_eq_none] at hi hj
+            simp only [qLayerWithArgs, hi.1, hj.1, hi.2, hj.2, Bool.false_eq_true, ite_false]
+            rw [hG, mixed_clauses_map]
+            simp only [setSem, List.mem_map]
+            have clause : ∀ c ∈ (mixedParameters G).clauses (G i),
+                semWithArgs (mixedValues G ηL) (graphArguments G ηL (mixedValues G ηL)) c n W v ↔
+                  semWithArgs (mixedValues G ηR) (graphArguments G ηR (mixedValues G ηR))
+                    (clauseImg tbl κ c) n W v := by
+              intro c hc
+              have hc := (mixedParameters G).clauses_sub _ _ hc
+              apply clauseImg_value tbl κ c _ _ _ _ n W v
+              · intro S hS
+                obtain ⟨S', hS'⟩ := Option.isSome_iff_exists.mp (by simpa using hops c hc S hS)
+                have hrelS : ∀ l ∈ S, RelKWith G (mixedParameters G) κ (fv V l) ηL ηR := by
+                  intro l hl p hp
+                  apply hrel p
+                  have hlr : l ∈ reads G i := by
+                    simp only [reads, hsch]
+                    exact List.mem_flatMap.mpr ⟨c, hc, List.mem_flatten.mpr ⟨S, hS, hl⟩⟩
+                  rcases (hreads l hlr).2 p hp with h1 | ⟨s', hs', _⟩
+                  · exact h1
+                  · rw [hsch] at hs'; cases hs'
+                exact ⟨S', hS', hty _ _ _ _ _ hS' hrelS, hpack _ _ _ _ _ hS' hrelS⟩
+              · intro m _ U u; simp [mixedValues, setSem]
+              · intro m _ U vs; simp [graphArguments]
+            constructor
+            · rintro ⟨c, hc, h⟩
+              exact ⟨_, ⟨c, hc, rfl⟩, (clause c hc).mp h⟩
+            · rintro ⟨_, ⟨c, hc, rfl⟩, h⟩
+              exact ⟨c, hc, (clause c hc).mpr h⟩
+  · -- A parameter uses only its declared component on either side.
+    simp only [hpar, ite_true, Bool.and_eq_true, beq_iff_eq] at hrow
+    obtain ⟨rfl, _⟩ := hrow
+    have hr := hrel i (hself hpar)
+    obtain ⟨kind, hk⟩ : ∃ kind, G.parameterKinds i = some kind := by
+      simpa [NormalGraph.params, Option.isSome_iff_exists] using hpar
+    have hsource : qDenoteWithArgs G (mixedParameters G) (ηL,i) n W v ↔
+        selectParameter (some kind) (ηL.1 i) n W (.inl v) := by
+      rw [qDenoteWithArgs_unfold]
+      simp [qLayerWithArgs, hpar, mixedParameters, selectParameter, hk]
+    rw [hsource]
+    cases hκ : κ.lookup i with
+    | none =>
+      rw [hκ] at hr
+      simp only [Option.getD_none]
+      have he := mixedMeaning_parameter G ηR i kind hk
+      change selectParameter (G.parameterKinds i) _ = selectParameter (G.parameterKinds i) _ at hr
+      rw [hk] at hr
+      rw [hr]
+      exact (iff_of_eq (congrFun (congrFun (congrFun he n) W) (.inl v))).symm
+    | some U =>
+      rw [hκ] at hr
+      simp only [Option.getD_some]
+      change selectParameter (G.parameterKinds i) _ = mixedMeaning G ηR U at hr
+      rw [hk] at hr
+      rw [hr]
+      rfl
+
 theorem assign_zip_map [DecidableEq ι] {k : ParameterSpace} (η : ParameterAssignment k ι) (F : List ι → ParameterFamily k) :
     ∀ {bs : List ι} {θs : List (List ι)} {b : ι} {U : List ι},
       (bs.zip θs).lookup b = some U → (assign η bs (θs.map F)).1 b = (F U).1
@@ -2507,6 +2860,169 @@ theorem inst_sound [DecidableEq ι] {G : NormalGraph ι} {T : List ι} {i : ι} 
     simp only [e1, e2, e3, e4] at hpr
     exact hpr
 
+/-- A member of a scheme row meets each checked instance of its signatures. -/
+theorem inst_mixed_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssignment ι) {i : ι} {s : SchemeRow ι}
+    {tbl : InstTable ι} {θs : List (List ι)} {D : List ι} {V : FreeMap ι} {L : Ops ι}
+    {M : List (List ι × List (List ι) × List ι × List ι)}
+    (hp : G.params i = false) (hq : G.schemes i = some s) (hlen : θs.length = s.binders.length)
+    (hbnd : ∀ b ∈ s.bounds, ∀ U, (s.binders.zip θs).lookup b.1 = some U →
+      FamLe (mixedMeaning G η U) (mixedMeaning G η b.2))
+    (hkinds : instKinds G s.binders θs = true)
+    (hok : TableOk G tbl D V = true)
+    (hL : ∀ q ∈ L, ∃ p ∈ s.signatures, sigImg tbl (s.binders.zip θs) p = some q)
+    (hM : ∀ q ∈ M, ∃ p ∈ s.variadic, restImg tbl (s.binders.zip θs) p = some q)
+    : FamLe (mixedValues G η [i])
+      (semWithArgs (mixedValues G η) (graphArguments G η (mixedValues G η)) (.arrs L M)) := by
+  intro n W v hv
+  obtain ⟨_, hm, hv⟩ := hv
+  cases List.mem_singleton.mp hm
+  have hs := (qDenoteWithArgs_unfold G (mixedParameters G) (η, i) n W v).mp hv
+  simp only [qLayerWithArgs, hp, hq, Bool.false_eq_true, if_false] at hs
+  have hinv := hs.1
+  let F : List ι → MixedFamily := fun U => ⟨mixedMeaning G η U, mixedMeaning_valid G η U⟩
+  let As : List MixedFamily := θs.map F
+  have hc := bounded_substitution_elim η F
+    (fun η' S => mixedMeaning G η' S) s θs
+    (fun As => instanceTWithArgs
+      (fun η' S => setSem (fun l => qDenoteWithArgs G (mixedParameters G) (η', l)) S) η s As (graphArguments G))
+    hlen hbnd n W v hs
+  change instanceTWithArgs
+    (fun η' S => setSem (fun l => qDenoteWithArgs G (mixedParameters G) (η', l)) S) η s As (graphArguments G) n W v at hc
+  -- The instance's assignment is related to the graph's by the binders' images.
+  have hrel : ∀ l, RelKWith G (mixedParameters G) (s.binders.zip θs) (fv V l)
+      (assign η s.binders As) η := fun l =>
+    mixed_assignment_substitution G η s.binders θs hlen hkinds (fv V l)
+  have himg : ∀ S S', tyImg tbl (s.binders.zip θs) S = some S' →
+      mixedMeaning G (assign η s.binders As) S = mixedMeaning G η S' := by
+    intro S S' hS
+    funext m W' x
+    apply propext
+    rw [mixedMeaning_union]
+    exact tyImg_mixed_iff hS fun l _ T hT =>
+      table_row_mixed hok m _ η (l, _, T) (entryImg_mem hT) (hrel l) W' x
+  have hfam : ∀ S S', tyImg tbl (s.binders.zip θs) S = some S' →
+      mixedValues G (assign η s.binders As) S = mixedValues G η S' := by
+    intro S S' hS
+    funext m W' v
+    exact congrFun (congrFun (congrFun (himg S S' hS) m) W') (.inl v)
+  have hpack : ∀ S S', tyImg tbl (s.binders.zip θs) S = some S' →
+      graphArguments G (assign η s.binders As) (mixedValues G (assign η s.binders As)) S =
+        graphArguments G η (mixedValues G η) S' := by
+    intro S S' hS
+    funext m W' vs
+    exact congrFun (congrFun (congrFun (himg S S' hS) m) W') (.inr vs)
+  have hargs : ∀ (Ss Ts : List (List ι)), Ss.mapM (tyImg tbl (s.binders.zip θs)) = some Ts →
+      Ss.map (mixedValues G (assign η s.binders As)) = Ts.map (mixedValues G η) := by
+    intro Ss
+    induction Ss with
+    | nil => intro Ts h; simp at h; subst h; rfl
+    | cons S Ss ihs =>
+      intro Ts h
+      cases hS : tyImg tbl (s.binders.zip θs) S with
+      | none => simp [List.mapM_cons, hS] at h
+      | some S' =>
+        cases hr : Ss.mapM (tyImg tbl (s.binders.zip θs)) with
+        | none => simp [List.mapM_cons, hS, hr] at h
+        | some Ts' =>
+          have : Ts = S' :: Ts' := by simp [List.mapM_cons, hS, hr] at h; exact h.symm
+          subst this
+          simp only [List.map_cons, hfam S S' hS, ihs Ts' hr]
+  refine ⟨⟨hinv, fun q' hq' => ?_⟩, ⟨hinv, fun r' hr' => ?_⟩⟩
+  · obtain ⟨q, hqL, rfl⟩ := List.mem_map.mp hq'
+    obtain ⟨p, hps, hsig⟩ := hL q hqL
+    have hpr := hc.1.2 _ (List.mem_map_of_mem hps)
+    obtain ⟨h1, h2, h3⟩ := sigImg_some hsig
+    have e1 := hfam _ _ h1
+    have e3 := hfam _ _ h3
+    have e2 := hargs _ _ h2
+    change Promise (ArgsShort (p.2.1.map (mixedValues G (assign η s.binders As))))
+      (mixedValues G (assign η s.binders As) p.1)
+      (mixedValues G (assign η s.binders As) p.2.2) n W v at hpr
+    simp only [e1, e2, e3] at hpr
+    exact hpr
+  · obtain ⟨q, hqM, rfl⟩ := List.mem_map.mp hr'
+    obtain ⟨p, hps, hsig⟩ := hM q hqM
+    have hpr := hc.2.2 _ (List.mem_map_of_mem hps)
+    obtain ⟨h1, h2, h3, h4⟩ := restImg_some hsig
+    have e1 := hfam _ _ h1
+    have e3 := hpack _ _ h3
+    have e4 := hfam _ _ h4
+    have e2 := hargs _ _ h2
+    change Promise (ArgsRest _ (graphArguments G (assign η s.binders As)
+      (mixedValues G (assign η s.binders As)) p.2.2.1)) _ _ n W v at hpr
+    change Promise (ArgsRest (p.2.1.map (mixedValues G (assign η s.binders As)))
+      (graphArguments G (assign η s.binders As) (mixedValues G (assign η s.binders As)) p.2.2.1))
+      (mixedValues G (assign η s.binders As) p.1) (mixedValues G (assign η s.binders As) p.2.2.2) n W v at hpr
+    simp only [e1, e2, e3, e4] at hpr
+    exact hpr
+
+/-- Sorted argument types contribute pack clauses only. -/
+private theorem argument_clause {G : NormalGraph ι} {S : List ι}
+    (hs : G.hasKind .arguments S = true) {c : Clause (List ι)} (hc : c ∈ clausesOf G S) :
+    ∃ a bs, c = .pack a bs := by
+  obtain ⟨i, hi, hc⟩ := List.mem_flatMap.mp hc
+  have hp := NormalGraph.plain_of_clauses hc
+  have hparts := hp
+  simp only [NormalGraph.plain, Bool.and_eq_true, Bool.not_eq_true',
+    Option.isNone_iff_eq_none] at hparts
+  have hkind : G.parameterKinds i = none := by simpa [NormalGraph.params] using hparts.1
+  have hk := List.all_eq_true.mp hs i hi
+  have hm : c ∈ G.rows i := by simpa [NormalGraph.clauses, hp] using hc
+  simp only [hkind, hparts.2] at hk
+  have hh := List.all_eq_true.mp hk c hm
+  cases c <;> simp_all
+
+/-- Core's list component follows from current-level value inclusion. This
+uses the executable kind condition, so value top cannot discharge a list edge. -/
+theorem core_arguments_of_values {G : NormalGraph ι} {table : Table ι}
+    (hc : Valid G table) (η : MixedAssignment ι) (n : Nat)
+    (hv : ∀ A B, Rel table A B → ∀ (W : WorldT n) v,
+      mixedValues G η A n W v → mixedValues G η B n W v) :
+    ∀ A B, Rel table A B → ∀ (W : WorldT n) vs,
+      mixedMeaning G η A n W (.inr vs) → mixedMeaning G η B n W (.inr vs) := by
+  intro A B hab W vs ha
+  have ⟨hsort, hopaque, hcover⟩ := hc (A,B) hab
+  simp only [SameKind, Bool.or_eq_true, Bool.and_eq_true] at hsort
+  rcases hsort with ⟨hav, _⟩ | ⟨_, hba⟩
+  · exact False.elim (mixedMeaning_noArguments G η A hav n W vs ha)
+  have noTop : .top ∉ clausesOf G B := by
+    intro h
+    obtain ⟨a, bs, he⟩ := argument_clause hba h
+    cases he
+  change graphArguments G η (mixedValues G η) A n W vs at ha
+  change graphArguments G η (mixedValues G η) B n W vs
+  obtain ⟨i, hi, ha⟩ := ha
+  by_cases hp : G.parameterKinds i = some .arguments
+  · have hn : G.plain i = false := by simp [NormalGraph.plain, NormalGraph.params, hp]
+    have hiB : i ∈ B := by
+      rcases hopaque i hi with h | h | h
+      · simp [hn] at h
+      · exact h
+      · exact False.elim (noTop h)
+    exact ⟨i, hiB, by simpa [hp] using ha⟩
+  · simp only [hp, ite_false] at ha
+    obtain ⟨c, hci, hca⟩ := ha
+    have hplain := NormalGraph.plain_of_clauses hci
+    cases c <;> try contradiction
+    case pack a bs =>
+      have hsrc : .pack a bs ∈ sourceClauses G A :=
+        List.mem_flatMap.mpr ⟨.pack a bs, List.mem_flatMap.mpr ⟨i, hi, hci⟩, by simp [splitClause]⟩
+      obtain ⟨b, hb, hcov⟩ := hcover _ hsrc
+      obtain ⟨d, ds, rfl⟩ := argument_clause hba hb
+      obtain ⟨j, hj, hbj⟩ := List.mem_flatMap.mp hb
+      have hjplain := NormalGraph.plain_of_clauses hbj
+      have hjkind : G.parameterKinds j ≠ some .arguments := by
+        intro h
+        simp [NormalGraph.plain, NormalGraph.params, h] at hjplain
+      refine ⟨j, hj, ?_⟩
+      simp only [hjkind, ite_false]
+      refine ⟨.pack d ds, hbj, ?_⟩
+      change ∀ q ∈ d :: ds, ArgumentContracts.Fits (tupleFams (mixedValues G η) q) n W vs
+      intro q hq
+      obtain ⟨p, hp, hpq⟩ := hcov q hq
+      exact covers_arguments hpq (mixedValues G η) (fun A v => A n W v)
+        (fun S T h v hv' => hv S T h W v hv') vs (hca p hp)
+
 /-- Structural rules compose completed proofs. They cannot bypass the guarded
 coverage obligation for any row of a recursive table. -/
 inductive Sub (G : NormalGraph ι) : List ι → List ι → Prop where
@@ -2609,6 +3125,9 @@ theorem Sub.congr {G : NormalGraph ι} {S S' T T' : List ι}
     exact .trans (.subset (fun i hi => (hs i).mp hi))
       (.trans h (.subset (fun i hi => (ht i).mpr hi)))
 
+#print axioms core_arguments_of_values
+#print axioms inst_mixed_sound
+#print axioms table_row_mixed
 #print axioms table_row_mixed_of_values
 #print axioms table_row_arguments
 #print axioms mixed_assignment_substitution

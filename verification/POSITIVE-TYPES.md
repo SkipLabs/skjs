@@ -446,7 +446,8 @@ rule above, and checks every target arrow from the source overload. Union
 coverage expands the clauses under the source labels, *splits* each of them, and
 matches every part by a covered clause under the target labels. A core judgment
 $G\vdash_c S\le T$ requires a finite table containing $(S,T)$ whose every entry
-passes this coverage rule. All cyclic premises occur under a reference or
+passes this coverage rule **and relates the same kind**: two value types or
+two argument-list types (`SameKind`). All cyclic premises occur under a reference or
 function constructor. Only clause rows have clauses; a parameter or scheme row
 of a source (see [Parameter and scheme rows](#parameter-and-scheme-rows)) must
 reappear in the target, or the target must admit every value (`Opaque`):
@@ -454,6 +455,7 @@ reappear in the target, or the target must admit every value (`Opaque`):
 $$
 \frac{(S,T)\in\Delta\qquad
       \forall(A,B)\in\Delta.\;
+      (\exists k.\;A:k\land B:k)\land
       \Bigl(\forall i\in A.\;\mathsf{plain}_G(i)\lor i\in B\lor\top\in\mathsf{cl}_G(B)\Bigr)
       \land\forall a\in\mathsf{split}(\mathsf{cl}_G(A)).\;\exists b\in\mathsf{cl}_G(B).\;
       \Delta\vdash a\sqsubseteq b}
@@ -461,7 +463,11 @@ $$
 $$
 
 where $\mathsf{cl}_G(A)$ is the list of clauses of $A$'s clause rows
-(`clausesOf`).
+(`clausesOf`). The kinds are defined in
+[the instance-table rules](#instances-of-a-scheme-row). Empty types have either
+kind. In particular, value top cannot discharge a pack edge, even though the
+legacy value encoding below still represents a pack with `Tm.args`. Search
+prunes cross-kind edges using the same predicate checked by the certificate.
 
 Record coverage reads the target's operands one by one. Writing $\Delta^{\pm}(A,B)$
 for $\Delta(A,B)\land\Delta(B,A)$ and $\Phi=\varphi_0\cdots\varphi_m$ for the
@@ -614,8 +620,8 @@ $\kappa$ being an entry, an entry is one of (`entryOk`):
 Parameter kinds are `value` and `arguments`. Write $S:k$ when every row of
 $S$ has kind $k$: pack clauses have argument kind, other clauses and schemes
 have value kind, and parameters retain their declared kind. The empty union
-has either kind; a union cannot mix the two. `substitutionKind` and `instKinds`
-check this at table images and scheme instances. The semantic assignment still
+has either kind; a union cannot mix the two. `SameKind` checks both ends of core subtype edges; `substitutionKind` and
+`instKinds` check table images and scheme instances. The semantic assignment still
 uses the legacy interpretation while the separate-list migration is pending.
 
 The table is checked (`TableOk`) when its rows lie in a domain $D$ with a
@@ -848,7 +854,8 @@ member (`scheme_intro`). Without scheme rows this is the parametric semantics
 Only clause rows have clauses. A type holding a parameter or scheme row has no
 expansion, so no rule that reads a clause (`Represents`, `Answers`, the atoms
 of heap knowledge) applies to it. In subtyping, such a row of the source must
-appear in the target, or the target must admit every value (`Opaque`).
+appear in the target, or, for a value-kind edge, the target must admit every
+value (`Opaque`, `SameKind`).
 
 Two subtyping rules read scheme rows. `Sub.inst` puts a scheme below an arrow
 type whose signatures are its own under an instance map, which sends each

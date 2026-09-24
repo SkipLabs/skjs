@@ -1126,11 +1126,20 @@ approximation proof for mixed assignments and nested scheme captures. The
 selected parameter and binder-renaming lemmas are proved, and the mixed
 interpretation now excludes runtime pack values. The existing kind check is
 connected to semantic sort separation and to a graph-derived mixed
-substitution. The argument half of table transport is now proved for every
-checked entry, using the value images at the same level; the object-substitution
-control now uses mixed semantics throughout. The remaining value half must
-connect those lemmas through nested schemes using both components at smaller
-levels, before migrating the production bound/subtype certificates.
+substitution. The full recursive mixed table-image theorem and mixed scheme
+instantiation are now proved, including nested bounds, renamed value binders
+and captured object-valued packs. Their control uses a checked graph table,
+not an assumed intermediate substitution result.
+
+Production migration remains open: core subtype certificates must prove both
+components when used for bounds, before the CLI environment and call/rest
+allocation rules can switch. The core certificate now requires same-kind subtype edges, rejecting a pack
+below value `top`; a semantic control proves that mixed inclusion false.
+Core's argument-list proof now follows from current-level value inclusion;
+its recursive value proof is still pending. The
+[design's remaining migration steps](../DESIGN.md#same-level-argument-contracts-migration-to-separate-list-contracts)
+track this boundary and removal of the legacy adapters and stability guards.
+The motivating source call remains unverified.
 The producer now distinguishes value and pack substitutions internally and uses
 one pack encoder for homogeneous and tuple rests. Its wire output still uses
 the existing pack rows, so this is not the verifier migration. The universal

@@ -1,6 +1,6 @@
 import Verification.Model.Source.RequestJson
 
-/-! Argument packs: the argument lists a tuple contract admits, as one value.
+/-! Argument packs: the argument lists a tuple contract admits.
 A pack contract covers another position by position and covariantly, within
 its length bounds; subtyping evidence is produced by search and accepted only
 by the checker. -/
@@ -49,7 +49,8 @@ def sub (A B : List Nat) : Bool :=
 #guard sub [4] [6]
 #guard sub [2] [6]
 #guard sub [5] [3]
-#guard sub [2] [7]
+-- Value top does not erase the distinct sort of an argument-list type.
+#guard !sub [2] [7]
 
 -- A rest admits lists of any length, so it is within no bounded tuple; a
 -- position outside the target's family, or a list longer than the target

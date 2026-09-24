@@ -1878,20 +1878,44 @@ recursive callable in the pack's outer bound. The existing `FreeOk` check
 rejects omitting the capture from the free-variable map.
 
 The production entry point still selects `legacyParameters`: its environment,
-`table_row`, `inst_sound` and subtype certificates have not migrated together.
-The remaining joint row-image induction must connect those plain-row lemmas
-with the selected-parameter and binder-renaming lemmas under nested scheme
-bounds, using the shared free-variable independence proof.
-The argument half is now proved for **every checked entry**, including
-parameters, unchanged rows, schemes and clause images. `table_row_arguments`
-uses value images at the current level; `table_row_mixed_of_values` combines
-them into both components. Neither theorem assumes the table contains only
-pack rows. The remaining value half must establish its images from both
-components at strictly smaller levels, especially through nested scheme
-bounds. These conditional theorems do not yet establish the whole recursive
-table result. The mixed interpretation
-already excludes pack-value denotations; the production legacy adapter and
-stability guards must be retired after that switch. The mixed fixed-point theorem is not yet a change to CLI acceptance.
+`inst_sound` and subtype certificates have not migrated together.
+The **full recursive mixed table-image theorem is now proved**:
+`table_row_mixed` establishes both components for every checked entry, under
+nested scheme bounds and kind-preserving binder renaming. Its induction first
+establishes value images from both components at smaller levels, then uses
+`table_row_arguments` to establish list images from the current-level value
+result. `inst_mixed_sound` uses that theorem to justify fixed and variadic
+signature instantiation with one mixed substitution. Its bound-inclusion
+premise is about `mixedMeaning`, not just the value projection.
+
+The semantic control now instantiates an object-valued pack captured by a
+returned generic callable. The returned callable renames its own bounded value
+binder; a constructor in its result retains the outer pack. The actual
+`TableOk` certificate and `inst_mixed_sound` discharge this control. Changing
+the renamed value binder to an argument binder is refused. The simpler object
+tuple control also uses `table_row_mixed`, without an assumed value-image
+premise.
+
+**Remaining production migration:**
+
+1. Prove core subtype coverage for the mixed interpretation, retaining list
+   inclusion when checking pack bounds. The existing `Core.sound` only proves
+   value inclusion. The executable core certificate now checks `SameKind` on
+   every edge: two value types or two argument-list types. Empty types work at
+   either sort. This prevents the former pack-to-`top` acceptance; a control
+   proves the corresponding mixed inclusion false (`top` admits values, not
+   argument lists). `core_arguments_of_values` now proves the argument-list
+   half from current-level value inclusion. The remaining value half must use
+   both components below the level for callable coverage.
+2. Connect those bound proofs to `inst_mixed_sound`, and migrate generalization,
+   the graph environment and the CLI's accepted source-plan safety path
+   together. Preserve the exact `checkJson_safe` contract.
+3. Switch call/rest allocation rules to same-level list contracts. Remove the
+   legacy pack-value adapter and primitive stability guards only after their
+   consumers use the replacement proofs. Re-run the motivating object-valued
+   generic pack call; it is still unverified under current production semantics.
+
+These new theorems are not yet a change to CLI acceptance.
 
 Parameter correspondence now compares the **selected kind**. `selectParameter`
 projects a mixed family; `mixedMeaning_parameter` identifies a parameter row
@@ -1913,15 +1937,15 @@ semantic components. These laws include unions, parameters and level zero.
 check to establish the selected context relation for graph-derived families.
 A control supplies an object and a tuple of objects in one checked substitution.
 These are semantic/certificate lemmas; production acceptance still selects the
-legacy interpretation until the full table and bound proofs migrate.
+legacy interpretation until the production bound and subtype proofs migrate.
 
 The remaining graph assignment/substitution change must retain a pack's list
 contract and the coherent array interpretation used by collection and array
 bounds. Substitution certificates must preserve both interpretations; using a
 binder as a rest and using its collected array must not choose unrelated
 contracts. The shared quantifier now supports mixed value/pack substitutions;
-selecting that domain in production and establishing its row-image proofs
-remains an integration requirement.
+its row-image proofs are now established, while selecting that domain in
+production remains an integration requirement.
 
 The OCaml producer now separates `ty` from `pack`, with tagged value/pack
 substitution arguments. `Args` is no longer an ordinary value-type atom. Its

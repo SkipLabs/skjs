@@ -87,7 +87,8 @@ def prune [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) :
   | 0, table => table
   | fuel+1, table =>
     let es := arrowEvidence G table pool
-    let next := table.filter fun p => decide (PositiveRules.Opaque G p.1 p.2) &&
+    let next := table.filter fun p => PositiveRules.SameKind G p.1 p.2 &&
+      decide (PositiveRules.Opaque G p.1 p.2) &&
       (sourceClauses G p.1).all fun a =>
       (clausesOf G p.2).any fun b => PositiveCertificates.checkClause G table es a b
     if next = table then table else prune G pool fuel next
@@ -95,7 +96,7 @@ def prune [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) :
 def subtypeBase [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
   if PositiveCertificates.check G A B .subset then some .subset else
-  -- Semantic top covers every clause: one row, no arrow evidence.
+  -- Value top covers value types: one row, no arrow evidence.
   let toTop := PositiveCertificates.Proof.core ⟨[(A, B)], []⟩
   if expand G B = [.top] && PositiveCertificates.check G A B toTop then some toTop else
     let types := (A :: B :: pool).eraseDups
