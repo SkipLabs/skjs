@@ -2781,8 +2781,16 @@ checker accepts: that identifies two rows reserved separately for the same
 recursive application, whose clauses differ only in which of them they name. -/
 private def sameMeaning (T : SourceTypes.Table) (A B : List Nat) : Bool :=
   SourceTypes.canonical T A == SourceTypes.canonical T B ||
+    -- Two lowerings of one declaration differ in the rows they reserve and the
+    -- binder rows their schemes use: a renaming table relates them cheaply.
     (let G := SourceTypes.graph T
-     let pool := CertificateProducer.vocabulary G (List.range T.length) [] [A, B]
+     let renamed (X Y : List Nat) := match CertificateProducer.tableProof G 64 X Y with
+       | some p => PositiveCertificates.check G X Y p
+       | none => false
+     renamed A B && renamed B A) ||
+    (let G := SourceTypes.graph T
+     let pool := CertificateProducer.vocabulary G
+       (CertificateProducer.readsFrom G CertificateProducer.closureFuel (A ++ B)) [] [A, B]
      let le (X Y : List Nat) := match CertificateProducer.subtype G pool X Y with
        | some proof => PositiveCertificates.check G X Y proof
        | none => false

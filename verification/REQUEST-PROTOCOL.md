@@ -105,8 +105,8 @@ singletons, which costs completeness and never soundness.
 A row is a **clause row**, spelled as the array of its clauses as above; a
 **scheme row** `{"scheme": {"binders": [p, ...], "signatures": [[receiver, [params], result], ...]}}`,
 a generic callable $\forall\vec p.\,\Sigma$ whose signatures are types that may
-mention its binders; or a **parameter row** `{"param": i}`, which names its own
-label $i$. Only a clause row has clauses. The graph of a table $T$
+mention its binders; or a **parameter row** `{"param": i, "name": n}`, which
+names its own label $i$ and, in `n`, the binder it stands for (no meaning). Only a clause row has clauses. The graph of a table $T$
 (`RequestJson.tableGraph`) is
 
 $$
@@ -814,9 +814,11 @@ A declaration's generic method `m<U>(...): R` is a readonly member whose type
 is the source term `{"k":"scheme","binders":[{"name","bound","default","span"},
 ...],"signatures":[function terms],"span":span}`. Each signature's receiver is
 `{"k":"self"}`, and the method's own type parameters are `{"k":"binder","name"}`
-terms, which shadow the declaration's. Both readers still take the member as
-an opaque `unknown` field: its scheme row comes with the producers' encoding of
-it (the quantified-types plan in [the producer's README](ocaml-producer/README.md)).
+terms, which shadow the declaration's. Lean lowers it to a scheme row whose
+binders are coloured parameter rows (see [DESIGN.md](DESIGN.md#modules-and-code-units),
+generic methods); a bounded binder, a variadic signature, or unfolding past
+the budget keeps the member an opaque `unknown` field. The OCaml producer
+still reads the member as opaque, until it infers generic method calls.
 
 A strict `typeof e === "<shape>"` or `!==` comparison, for `"number"`,
 `"string"`, `"boolean"`, `"undefined"`, `"function"`, `"bigint"` or

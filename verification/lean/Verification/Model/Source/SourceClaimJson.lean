@@ -634,7 +634,7 @@ def moduleInstances (T : SourceTypes.Table) (g : DeclarationGraph.Instantiable)
         let (required, grown) ← ((Fragment.translate upper).run T).mapError (refuse pos)
         T := grown
         let G := SourceTypes.graph T
-        let pool := (actual :: required :: (List.range T.length).map (fun m => [m])).eraseDups
+        let pool := CertificateProducer.reachablePool G actual required
         let proved := match CertificateProducer.subtype G pool actual required with
           | some proof => PositiveCertificates.check G actual required proof
           | none => false

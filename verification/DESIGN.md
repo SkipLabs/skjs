@@ -1493,6 +1493,30 @@ $$
 and $A\simeq_G C$ implies $\llbracket A\rrbracket_G=\llbracket C\rrbracket_G$ by
 `check_sound` in each direction, so the claim may replace the annotation.
 
+**Generic methods.** A declaration's generic method `m<U>(...)` lowers to a
+scheme row whose binders are parameter rows. Its signatures mention the
+declaration's applications at its own binders (`Promise<T>`'s `then<R1>`
+returns `Promise<R1>`, whose `then` binds another `R1`, ...), so binder rows are
+shared, by name, and the unfolding closes up. A method's binders take the
+least **colour** not free in the arguments of the application it belongs to:
+
+$$
+\mathsf{colour}(m, \vec A)=\min\{\,c<\mathit{budget}\;\mid\;c\notin\mathsf{colours}(\mathit{fv}(\vec A))\,\},
+$$
+
+and binder $k$ of $m$ at colour $c$ is one row, whoever lowers it.
+`Promise<R1ᵃ>`'s `then` then binds `R1ᵇ`, `Promise<R1ᵇ>`'s binds `R1ᵃ`, and the
+application memo finds `Promise<R1ᵃ>` again. A binder never takes a colour free
+in what its signatures mention from outside, so no binder captures one of
+another scope; the instance tables of `Sub.inst` tell the scopes that share a
+binder row apart. A declaration is applied at most three times along one
+lowering path at different arguments. Past that, as for arguments that keep
+growing (`catch<R>` returns `Promise<T | R>`), and for a bounded binder or a
+variadic signature, the method stays an opaque member: sound, and what it was
+before. Two lowerings of one type that differ only in rows they reserve or
+binder rows their schemes use are one type up to renaming (`Sub.table`), which
+is how a producer's claimed type is compared with the annotation's.
+
 **Constructors in the calculus.** A function's code says which of
 JavaScript's internal methods it has (`Invoke`: `call` or `construct`), and
 `new` is a term of its own (`construct`). So a class value, construct-only

@@ -103,7 +103,9 @@ row has clauses; the graph reads the other two as scheme and parameter rows. -/
 inductive Row where
   | clauses (union : List (Clause (List Nat)))
   | scheme (binders : List Nat) (signatures : List (List Nat × List (List Nat) × List Nat))
-  | param (label : Nat)
+  /-- `name` identifies the binder the row stands for (its spelling, where it
+  is declared, and its colour); it carries no meaning. -/
+  | param (label : Nat) (name : String)
   deriving DecidableEq, Repr, Inhabited
 
 instance : Coe (List (Clause (List Nat))) Row := ⟨.clauses⟩
@@ -119,12 +121,12 @@ def Row.union : Row → List (Clause (List Nat))
 
 /-- A clause row is spelled as its array of clauses, as every row was before
 scheme rows; a scheme row as `{"scheme": {"binders", "signatures"}}`, and a
-parameter row as `{"param": label}`. -/
+parameter row as `{"param": label, "name": name}`. -/
 instance : ToJson Row := ⟨fun
   | .clauses cs => toJson cs
   | .scheme bs sigs => Json.mkObj [("scheme",
       Json.mkObj [("binders", toJson bs), ("signatures", toJson sigs)])]
-  | .param l => Json.mkObj [("param", toJson l)]⟩
+  | .param l n => Json.mkObj [("param", toJson l), ("name", toJson n)]⟩
 
 instance : FromJson Row := ⟨fun j =>
   match j with
@@ -133,7 +135,7 @@ instance : FromJson Row := ⟨fun j =>
     | .ok b, .error _ => do
       return .scheme (← fromJson? (← b.getObjVal? "binders"))
         (← fromJson? (← b.getObjVal? "signatures"))
-    | .error _, .ok l => Row.param <$> fromJson? l
+    | .error _, .ok l => return .param (← fromJson? l) (← fromJson? (← j.getObjVal? "name"))
     | _, _ => .error "expected a clause array, a scheme row or a parameter row"⟩
 
 /-- The graph a table of rows denotes. -/
@@ -145,7 +147,7 @@ def tableGraph (T : List Row) : NormalGraph Nat where
     | some (.scheme bs sigs) => some ⟨bs, sigs⟩
     | _ => none
   params i := match T[i]? with
-    | some (.param _) => true
+    | some (.param _ _) => true
     | _ => false
 
 @[simp] theorem tableGraph_clauses_row {T : List Row} {i : Nat} {cs : List (Clause (List Nat))}
@@ -209,16 +211,16 @@ def validClaim (bound : Nat) (c : PointClaim Nat) : Bool :=
 def rowTypes : Row → List (Ty Nat)
   | .clauses cs => cs.flatMap clauseTypes
   | .scheme bs sigs => bs :: sigs.flatMap fun p => p.1 :: p.2.2 :: p.2.1
-  | .param _ => []
+  | .param _ _ => []
 
 /-- Every label a row names indexes the table; a parameter row names itself;
 and a scheme's binders are parameter rows. -/
 def validRows (T : List Row) : Bool :=
   (T.flatMap rowTypes).all (validTy T.length) &&
   (List.range T.length).all fun i => match T[i]? with
-    | some (.param l) => l == i
+    | some (.param l _) => l == i
     | some (.scheme bs _) => bs.all fun b => match T[b]? with
-      | some (.param _) => true
+      | some (.param _ _) => true
       | _ => false
     | _ => true
 

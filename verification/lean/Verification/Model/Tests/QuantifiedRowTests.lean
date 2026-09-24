@@ -135,7 +135,7 @@ def cert (A B : List Nat) : PositiveCertificates.Proof Nat := (instProof G 64 A 
 open RequestJson in
 def table : List Row :=
   (List.range types.length).map fun i =>
-    if i == 4 then .param 4 else if i == 18 then .param 18
+    if i == 4 then .param 4 "T" else if i == 18 then .param 18 "U"
     else if i == 5 then .scheme [4] [([3], [[4]], [4])]
     else if i == 10 then .scheme [4] [([3], [[4]], [9])]
     else if i == 17 then .scheme [18] [([3], [[18]], [18])]
@@ -149,7 +149,7 @@ def wire : NormalGraph Nat := RequestJson.tableGraph table
 #guard RequestJson.validRows table
 -- A parameter row names its own label, a scheme's binders are parameter rows,
 -- and a scheme's labels index the table.
-#guard !RequestJson.validRows (table.set 4 (.param 5))
+#guard !RequestJson.validRows (table.set 4 (.param 5 "T"))
 #guard !RequestJson.validRows (table.set 5 (.scheme [3] [([3], [[3]], [3])]))
 #guard !RequestJson.validRows (table.set 5 (.scheme [4] [([3], [[4]], [25])]))
 -- A clause row is spelled as before; the other kinds read back as themselves.

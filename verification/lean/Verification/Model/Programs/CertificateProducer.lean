@@ -197,6 +197,12 @@ def freeMapOf [DecidableEq ι] (G : NormalGraph ι) (D : List ι) : Nat → Free
 /-- How far to follow a graph's rows. -/
 def closureFuel : Nat := 4096
 
+/-- The types a proof of `A ≤ B` may relate: the two, and every row they
+reach. A certificate's table relates operands of their clauses, which these
+are, so a pool of the whole table adds nothing but search. -/
+def reachablePool [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) : List (Ty ι) :=
+  (A :: B :: (readsFrom G closureFuel (A ++ B)).map ([·])).eraseDups
+
 /-- A scheme row below an arrow type: find the binders' instances, then build
 the table under the context giving each binder its instance. -/
 def instProof [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (A B : Ty ι) :

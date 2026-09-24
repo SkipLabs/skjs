@@ -106,14 +106,70 @@ applications whose rows are reserved while their equations are lowered. -/
 private structure Visit where
   declarations : List Nat := []
   rows : List (Nat × Array (List Nat) × Nat) := []
+  /-- The binders of the generic methods being lowered, innermost first. -/
+  binders : List (String × Nat) := []
 
-private def Visit.enter (v : Visit) (i : Nat) : Visit := { v with declarations := i :: v.declarations }
+/-- Entering a declaration's equation: its terms see none of the enclosing
+methods' binders, as type parameters are lexically scoped. -/
+private def Visit.enter (v : Visit) (i : Nat) : Visit :=
+  { v with declarations := i :: v.declarations, binders := [] }
 private def Visit.contains (v : Visit) (i : Nat) : Bool := v.declarations.contains i
 private def Visit.reserve (v : Visit) (i : Nat) (values : Array (List Nat)) (row : Nat) : Visit :=
   { v with rows := (i, values, row) :: v.rows }
 /-- The row reserved for declaration `i` applied to exactly `values`. -/
 private def Visit.reserved (v : Visit) (i : Nat) (values : Array (List Nat)) : Option Nat :=
   (v.rows.find? fun (j, args, _) => j == i && args == values).map (·.2.2)
+
+/-! ### Generic methods
+
+A generic method's type is a scheme row whose binders are parameter rows. A
+generic declaration's methods mention its applications at their own binders
+(`Promise<T>`'s `then<R1>` returns `Promise<R1>`, whose `then` binds another
+`R1`, ...). Binder rows are shared, by name, so that unfolding closes up: a
+method's binders take the least **colour** not free in the arguments of the
+application it belongs to, and a binder row is keyed by the method, the
+binder's position and its colour. `Promise<R1ᵃ>`'s `then` then binds `R1ᵇ`,
+`Promise<R1ᵇ>`'s binds `R1ᵃ`, and the application memo finds `Promise<R1ᵃ>`
+again. The colours never capture: a binder never takes a colour free in what
+its signatures mention from outside. Past the colour budget, as for arguments
+that keep growing (`Pair<[T, U]>`), the method stays an opaque member. -/
+
+/-- How many colours generic methods' binders may take. -/
+private def colourBudget : Nat := 4
+
+/-- How many times one declaration may be applied along a lowering path at
+different arguments: a generic method's cycle of colours closes within it
+(`Promise<number>`, `Promise<R1ᵇ>`, `Promise<R1ᵃ>`, then the memo). -/
+private def applicationDepth : Nat := 3
+
+/-- A binder row's colour, from its name `…^c`. -/
+private def colourOf (name : String) : Option Nat :=
+  match name.splitOn "^" with
+  | [_, c] => c.toNat?
+  | _ => none
+
+/-- The colours of the binder rows free in `labels`. -/
+private def freeColours (T : SourceTypes.Table) (labels : List Nat) : List Nat :=
+  let G := SourceTypes.graph T
+  let D := CertificateProducer.readsFrom G CertificateProducer.closureFuel labels
+  let V := CertificateProducer.freeMapOf G D CertificateProducer.closureFuel []
+  (labels.flatMap (fv V)).filterMap fun p => match T[p]? with
+    | some (RequestJson.Row.param _ n) => colourOf n
+    | _ => none
+
+/-- The one row of the binder named `name`, shared by every lowering. -/
+private def paramRow (name : String) : Lowering Nat := modifyGet fun T =>
+  match T.findIdx? (fun r => match r with | RequestJson.Row.param _ n => n == name | _ => false) with
+  | some i => (i, T)
+  | none => (T.length, T ++ [.param T.length name])
+
+/-- A scheme row, interned. -/
+private def schemeRow (bs : List Nat) (sigs : List (List Nat × List (List Nat) × List Nat)) :
+    Lowering Nat := modifyGet fun T =>
+  let r := RequestJson.Row.scheme bs sigs
+  match T.idxOf? r with
+  | some i => (i, T)
+  | none => (T.length, T ++ [r])
 
 mutual
 private partial def lowerType (ds : Array Definition) (owner : Nat)
@@ -135,7 +191,41 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
   -- with the producers' encoding of it.
   | "scheme" =>
     CellClaims.fieldsExactly term ["k", "binders", "signatures", "span"]
-    return [← use .top]
+    let bs ← arr term "binders"
+    let sigTerms ← arr term "signatures"
+    let opaqueMember : Lowering (List Nat) := do return [← use .top]
+    -- A bounded binder is the next stage's; a variadic signature has no scheme
+    -- form yet. Either keeps the member opaque.
+    if ← bs.anyM (fun b => do
+        CellClaims.fieldsExactly b ["name", "bound", "default", "span"]
+        return (← field b "bound") != .null) then return ← opaqueMember
+    if ← sigTerms.anyM (fun f => do return (← field f "rest") != .null) then return ← opaqueMember
+    let taken := freeColours (← get) (params.toList.flatten ++ seen.binders.map (·.2))
+    match (List.range colourBudget).find? (fun c => !taken.contains c) with
+    | none => opaqueMember
+    | some c =>
+      let spanKey := (← field term "span").compress
+      let names ← bs.toList.mapM fun b => str b "name"
+      let rows ← ((List.range names.length).zip names).mapM fun (k, n) =>
+        paramRow s!"{n}#{k}@{spanKey}^{c}"
+      let inner := { seen with binders := names.zip rows ++ seen.binders }
+      -- A method whose signatures cannot be lowered, as one whose unfolding
+      -- keeps growing (`Promise<T>`'s `catch<R>` returns `Promise<T | R>`),
+      -- stays opaque; the attempt leaves no rows behind.
+      let lowered ← SourceTypes.attempt (sigTerms.toList.mapM fun f => do
+        CellClaims.fieldsExactly f ["k", "receiver", "params", "rest", "result", "span"]
+        let recv ← lowerType ds owner params inner (← field f "receiver")
+        let ps ← (← arr f "params").toList.mapM (lowerType ds owner params inner)
+        let res ← lowerType ds owner params inner (← field f "result")
+        return (recv, ps, res))
+      match lowered with
+      | .ok sigs => return [← schemeRow rows sigs]
+      | .error _ => opaqueMember
+  | "binder" =>
+    CellClaims.fieldsExactly term ["k", "name", "span"]
+    match seen.binders.lookup (← str term "name") with
+    | some row => return [row]
+    | none => throw "a type parameter outside its generic method"
   | "literal" =>
     Fragment.translate (Json.mkObj [("top", toJson false), ("atoms", toJson [← literalAtom term])])
   | "union" =>
@@ -180,9 +270,13 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let values ← args.mapM (lowerType ds owner params seen)
     let values ← lowerApplication ds i values seen
     -- A recursive application at the same arguments is the row reserved for
-    -- it; at other arguments it would unfold without end.
+    -- it. At other arguments it is lowered again, as a generic method's
+    -- application at its own binders is (`Promise<R1ᵃ>` inside
+    -- `Promise<number>`), and the colours close the cycle; arguments that keep
+    -- growing would unfold without end, which the depth bound refuses.
     if let some row := seen.reserved i values then return [row]
-    if seen.contains i then throw "recursive generic application needs memoized rows"
+    if (seen.declarations.filter (· == i)).length ≥ applicationDepth then
+      throw "recursive generic application needs memoized rows"
     groundApplication ds i values seen
   | "array" =>
     let element ← lowerType ds owner params seen (← field term "element")
@@ -291,7 +385,7 @@ private partial def lowerApplication (ds : Array Definition) (i : Nat)
       let upper ← lowerType ds i (values.toList.take index).toArray (seen.enter i) bound
       let table ← get
       let graph := SourceTypes.graph table
-      let pool := (actual :: upper :: (List.range table.length).map (fun n => [n])).eraseDups
+      let pool := CertificateProducer.reachablePool graph actual upper
       let name ← str p "name"
       let span ← field p "span"
       let refusal := s!"type argument does not establish its declared bound for {name} at {span.compress}: {SourceTypes.render table actual} ≤ {SourceTypes.render table upper}"
@@ -365,7 +459,7 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
   let mut table := candidate
   for i in [:ds.size] do
     if ds[i]!.parameters.isEmpty then
-      let (row, expanded) ← (lowerDefinitionRows ds i #[] ⟨[i], []⟩).run table
+      let (row, expanded) ← (lowerDefinitionRows ds i #[] ⟨[i], [], []⟩).run table
       table := expanded.set (rowIndex ds i) row
   -- Applications in row order: an argument names only earlier rows.
   for (row, declaration, args) in applications.mergeSort (fun x y => x.1 ≤ y.1) do
@@ -377,13 +471,13 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
       throw "an application's arguments name a later row"
     let i := declaration
     let fill : Lowering (List (Clause (List Nat))) := do
-      let values ← lowerApplication ds i args.toArray ⟨[], []⟩
+      let values ← lowerApplication ds i args.toArray ⟨[], [], []⟩
       if mentionsSelf ds[i]!.expression then
-        lowerDefinitionRows ds i (values.push [row]) ((Visit.enter ⟨[], []⟩ i).reserve i values row)
+        lowerDefinitionRows ds i (values.push [row]) ((Visit.enter ⟨[], [], []⟩ i).reserve i values row)
       else
         let labels ← if ds[i]!.bases.isEmpty then
-            lowerType ds i values (Visit.enter ⟨[], []⟩ i) ds[i]!.expression
-          else (← lowerDefinitionRows ds i values (Visit.enter ⟨[], []⟩ i)).mapM use
+            lowerType ds i values (Visit.enter ⟨[], [], []⟩ i) ds[i]!.expression
+          else (← lowerDefinitionRows ds i values (Visit.enter ⟨[], [], []⟩ i)).mapM use
         let T : SourceTypes.Table ← get
         labels.flatMapM fun l => match T[l]? with
           | some (RequestJson.Row.clauses cs) => pure cs
@@ -425,7 +519,7 @@ This is the one path for every declaration applied to a rigid argument. -/
 private partial def rigidClaim (ds : Array Definition) (owner : Nat) (env : Array Json)
     (seen : List Nat) (term : Json) : Lowering Json := do
   if !mentionsParameter term then
-    return graphClaim (← lowerType ds owner #[] ⟨seen, []⟩ term)
+    return graphClaim (← lowerType ds owner #[] ⟨seen, [], []⟩ term)
   match ← str term "k" with
   | "scheme" =>
     CellClaims.fieldsExactly term ["k", "binders", "signatures", "span"]

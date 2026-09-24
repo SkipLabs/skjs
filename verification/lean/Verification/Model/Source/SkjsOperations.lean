@@ -18,7 +18,7 @@ inductive Outcome where
 
 def inclusion (A B : Ty Nat) (T : Table) : Outcome :=
   let G := graph T
-  let pool := (A :: B :: (List.range T.length).map (fun i => [i])).eraseDups
+  let pool := CertificateProducer.reachablePool G A B
   match subtype G pool A B with
   | some p => if check G A B p then .checked else .unproved
   | none => .unproved
