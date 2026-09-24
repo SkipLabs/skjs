@@ -46,6 +46,11 @@ function referencesIn(term: TypeTerm): Reference[] {
       ...referencesIn(term.result),
     ];
     case "constructor": return [...term.params.flatMap(referencesIn), ...referencesIn(term.result)];
+    case "scheme": return [
+      ...term.binders.flatMap(b => [...(b.bound ? referencesIn(b.bound) : []),
+        ...(b.default ? referencesIn(b.default) : [])]),
+      ...term.signatures.flatMap(referencesIn),
+    ];
     case "reference": return [term.reference, ...term.args.flatMap(referencesIn)];
     default: {
       const exhaustive: never = term;

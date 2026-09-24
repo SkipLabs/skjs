@@ -131,6 +131,11 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     | "unknown" | "void" => return [← use .top]
     | "never" => return []
     | _ => throw "unsupported declaration primitive"
+  -- A generic method is still read as an opaque member: its scheme row comes
+  -- with the producers' encoding of it.
+  | "scheme" =>
+    CellClaims.fieldsExactly term ["k", "binders", "signatures", "span"]
+    return [← use .top]
   | "literal" =>
     Fragment.translate (Json.mkObj [("top", toJson false), ("atoms", toJson [← literalAtom term])])
   | "union" =>
@@ -395,6 +400,9 @@ private partial def rigidClaim (ds : Array Definition) (owner : Nat) (env : Arra
   if !mentionsParameter term then
     return graphClaim (← lowerType ds owner #[] ⟨seen, []⟩ term)
   match ← str term "k" with
+  | "scheme" =>
+    CellClaims.fieldsExactly term ["k", "binders", "signatures", "span"]
+    return topClaim
   | "parameter" =>
     CellClaims.fieldsExactly term ["k", "index", "span"]
     let i ← (← field term "index").getNat?
@@ -502,6 +510,9 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
   let recur := fun t => annotationClaim ds t bound
   sourceObject term
   match ← str term "k" with
+  | "scheme" =>
+    CellClaims.fieldsExactly term ["k", "binders", "signatures", "span"]
+    return topClaim
   | "atom" =>
     CellClaims.fieldsExactly term ["k", "name", "span"]
     match ← str term "name" with

@@ -333,12 +333,42 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
       scope.fail(at, "unsupported member in a record type");
     } else if (ts.isMethodSignatureDeclaration(member) && methods && member.typeParameters?.length &&
         !member.postfixToken && !member.modifiers?.length) {
-      // A generic method is read as an opaque readonly member: a program may
-      // read it, never call it, and any value is one. Calling it needs its
-      // instances, which are not yet derived for members.
+      // A generic method is a readonly member whose type is a scheme: its own
+      // type parameters are binders, named by spelling, which shadow the
+      // declaration's. One whose signature is outside the fragment stays an
+      // opaque member, which any value is: nothing is assumed of it.
       const name = named(member, "unsupported method signature");
-      fields.push({ name, optional: false, readonly: true,
-        type: { k: "atom", name: "unknown", span: memberSpan }, span: memberSpan });
+      const opaque: TypeTerm = { k: "atom", name: "unknown", span: memberSpan };
+      try {
+        if (!member.type) scope.fail(member, "unsupported method signature");
+        const own = member.typeParameters.map(p => p.name.text);
+        const inner: TermScope = {
+          ...scope,
+          named(node, span, read) {
+            if (ts.isIdentifier(node.typeName) && own.includes(node.typeName.text)) {
+              if (node.typeArguments?.length) scope.fail(node, "a type parameter takes no type arguments");
+              return { k: "binder", name: node.typeName.text, span };
+            }
+            return scope.named(node, span, read);
+          },
+        };
+        const binders = member.typeParameters.map(p => ({
+          name: p.name.text,
+          bound: p.constraint ? typeTerm(inner, p.constraint, p) : null,
+          default: p.defaultType ? typeTerm(inner, p.defaultType, p) : null,
+          span: spanOf(scope, p),
+        }));
+        const forms = signatures(inner, member.parameters, member.type, member, memberSpan);
+        if (forms.some(m => m.receiver)) scope.fail(member, "unsupported method signature");
+        fields.push({ name, optional: false, readonly: true,
+          type: { k: "scheme", binders,
+            signatures: forms.map(m => ({ ...m, receiver: { k: "self", span: memberSpan } })),
+            span: memberSpan }, span: memberSpan });
+      } catch (e) {
+        // `fail` throws a plain Error; anything else is a defect, not a form.
+        if (!(e instanceof Error) || e.constructor !== Error) throw e;
+        fields.push({ name, optional: false, readonly: true, type: opaque, span: memberSpan });
+      }
     } else if (ts.isMethodSignatureDeclaration(member)) {
       if (!methods || !member.type || member.typeParameters?.length || member.modifiers?.length)
         scope.fail(member, "unsupported method signature");

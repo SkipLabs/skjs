@@ -52,6 +52,8 @@ let rec source_type ctx j =
       optional_elements=List.map recur (items "optional" j);
       rest=(match field "rest" j with Null -> None | t -> Some (recur t));
       readonly=boolean (field "readonly" j)}
+  (* A generic method is still an opaque member until its scheme is encoded. *)
+  | "scheme" -> top
   | "constructor" ->
     Atoms [Ctors [{quantified=[];receiver=top;params=List.map recur (items "params" j);
       variadic=None;result=recur (field "result" j)}]]

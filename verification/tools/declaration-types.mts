@@ -51,11 +51,18 @@ export type TypeTerm =
   /** `new (params) => result`: a construct signature, which a class meets and
    * no plain function does. */
   | { k: "constructor"; params: TypeTerm[]; result: TypeTerm; span: Span }
+  /** A generic method, `m<U>(f: (x: T) => U): Box<U>`: its binders, which its
+   * signatures name as `binder` terms by spelling, and its signatures, each
+   * with the containing declaration as receiver. A bound or default is stated
+   * as written; which bounds are admitted is the reader's decision. */
+  | { k: "scheme"; binders: { name: string; bound: TypeTerm | null; default: TypeTerm | null;
+      span: Span }[]; signatures: Extract<TypeTerm, { k: "function" }>[]; span: Span }
   /** The containing declaration is the implicit receiver of a method signature. */
   | { k: "self"; span: Span }
   | { k: "parameter"; index: number; span: Span }
-  /** A type parameter of an enclosing function, by its spelling: annotations
-   * only. A declaration's own parameters are positional. */
+  /** A type parameter by its spelling: an enclosing function's, in an
+   * annotation, or a generic method's, in its scheme. A declaration's own
+   * parameters are positional. */
   | { k: "binder"; name: string; span: Span }
   | { k: "reference"; reference: Reference; args: TypeTerm[]; span: Span };
 export type TypeDefinition = {

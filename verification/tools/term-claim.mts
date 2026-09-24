@@ -60,6 +60,7 @@ export function claimOfTerm(term: TypeTerm): ClaimType {
       return one({ a: "alias", name: term.reference.name, args: term.args.map(claimOfTerm) });
     case "self":
     case "parameter":
+    case "scheme":
       throw Error(`declaration syntax '${term.k}' outside a declaration`);
   }
 }

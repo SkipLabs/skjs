@@ -810,6 +810,14 @@ decides whether it has construct signatures. A constructor type `new (params)
 "result":R}` (an `"and"` list of further signatures for a generic class's
 instances).
 
+A declaration's generic method `m<U>(...): R` is a readonly member whose type
+is the source term `{"k":"scheme","binders":[{"name","bound","default","span"},
+...],"signatures":[function terms],"span":span}`. Each signature's receiver is
+`{"k":"self"}`, and the method's own type parameters are `{"k":"binder","name"}`
+terms, which shadow the declaration's. Both readers still take the member as
+an opaque `unknown` field: its scheme row comes with the producers' encoding of
+it (the quantified-types plan in [the producer's README](ocaml-producer/README.md)).
+
 A strict `typeof e === "<shape>"` or `!==` comparison, for `"number"`,
 `"string"`, `"boolean"`, `"undefined"`, `"function"`, `"bigint"` or
 `"symbol"`, has source AST shape
