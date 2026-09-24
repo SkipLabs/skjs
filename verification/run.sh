@@ -163,7 +163,7 @@ typecheck() {
 
 if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Front-end types" typecheck
-  run_test "Wire drift" node verification/tests/wire-drift.mts
+  run_test "Wire field names (TS, Lean, OCaml)" node verification/tests/wire-field-names.mts
   run_test "OCaml producer" bash -c 'dune build --root verification/ocaml-producer && dune runtest --root verification/ocaml-producer && node verification/ocaml-producer/test.mts'
   run_test "Rule inventory" node verification/tests/rule-inventory.mts
   run_test "Source boundaries" node verification/tests/unsupported.mts "$VERIFIER"

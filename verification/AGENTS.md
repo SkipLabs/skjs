@@ -45,7 +45,7 @@ that covers what changed, and the wider tier once before committing:
 | OCaml producer (`ocaml-producer/*.ml`) | `dune build --root verification/ocaml-producer`, then `node verification/ocaml-producer/run-cases.mts <pattern>` (cases whose file names contain the pattern; about a second for a handful) | `node verification/ocaml-producer/test.mts` (all cases, pinned imports, tampering, reader: ~45 s); `dune runtest --root verification/ocaml-producer` if `unit.ml` changed |
 | One source file | `node verification/ocaml-producer/check.mts <file.ts> [--project dir]` | — |
 | Lean | `lake -d verification/lean build`, then `run-cases.mts` for the affected cases | `test.mts`, then `verification/run.sh --suite all` |
-| Parser, Fragment or SourceClaims wire, shared tools | `(cd verification/tools && npx tsc -p tsconfig.json)`, `node verification/tests/wire-drift.mts` (instant: TS, Lean and OCaml name the same fields), then `run-cases.mts` | `test.mts`, `verification/run.sh --suite all`, `node verification/examples.mts` |
+| Parser, Fragment or SourceClaims wire, shared tools | `(cd verification/tools && npx tsc -p tsconfig.json)`, `node verification/tests/wire-field-names.mts` (instant: TypeScript, Lean and OCaml use the same field names), then `run-cases.mts` | `test.mts`, `verification/run.sh --suite all`, `node verification/examples.mts` |
 | Viewer | `(cd verification/report-viewer/app && npm run check)` | `test.mts` (its reader section) |
 
 `run-cases.mts` with no pattern runs every case (~15 s) and is the first part

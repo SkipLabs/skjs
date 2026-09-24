@@ -1,10 +1,11 @@
-// The wire formats are written three times: as TypeScript types, as Lean
-// decoders and as the OCaml producer's reads and writes. Nothing compiles one
-// against another, so this compares the field names each mentions, by text,
-// and fails when they drift: a name a consumer reads that no TypeScript type
-// declares, or a declared name Lean never reads. It is a drift detector, not a
-// schema check; the suites still decide whether a document is understood.
-//   node verification/tests/wire-drift.mts
+// Each wire format (the Fragment tree, its declaration document, SourceClaims)
+// is written three times: as TypeScript types, as Lean decoders, and as the
+// OCaml producer's reads and writes. Nothing compiles one against another, so
+// this compares, by text, the field names each one uses, and fails when a
+// consumer reads a name no TypeScript type declares, or TypeScript declares a
+// name Lean never reads. It checks names only; the suites still decide whether
+// a document is understood.
+//   node verification/tests/wire-field-names.mts
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -46,7 +47,7 @@ const missing = (names: Set<string>, from: Set<string>, allowed: Record<string, 
 
 let checked = 0;
 const expectSubset = (what: string, names: Set<string>, from: Set<string>, allowed: Record<string, string>) => {
-  assert.deepEqual(missing(names, from, allowed), [], `${what}: drifted; update both sides, or record why here`);
+  assert.deepEqual(missing(names, from, allowed), [], `${what}: field names differ; update every side, or record why here`);
   // An exception that no longer applies is itself drift.
   for (const n of Object.keys(allowed)) assert(names.has(n) && !from.has(n), `${what}: stale exception '${n}'`);
   checked++;
@@ -84,4 +85,4 @@ const expectSubset = (what: string, names: Set<string>, from: Set<string>, allow
   });
 }
 
-process.stdout.write(`wire drift: ${checked} name sets agree\n`);
+process.stdout.write(`wire field names: ${checked} comparisons agree across TypeScript, Lean and OCaml\n`);
