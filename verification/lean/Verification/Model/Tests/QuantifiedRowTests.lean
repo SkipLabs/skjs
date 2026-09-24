@@ -29,10 +29,10 @@ def G : NormalGraph Nat where
   rows i := types[i]?.getD []
   params i := i == 4 || i == 18
   schemes i :=
-    if i == 5 then some ⟨[4], [([3], [[4]], [4])], []⟩
-    else if i == 10 then some ⟨[4], [([3], [[4]], [9])], []⟩
-    else if i == 17 then some ⟨[18], [([3], [[18]], [18])], []⟩
-    else if i == 20 then some ⟨[4], [([3], [[4]], [4])], [(4, [1, 2])]⟩
+    if i == 5 then some ⟨[4], [([3], [[4]], [4])], [], []⟩
+    else if i == 10 then some ⟨[4], [([3], [[4]], [9])], [], []⟩
+    else if i == 17 then some ⟨[18], [([3], [[18]], [18])], [], []⟩
+    else if i == 20 then some ⟨[4], [([3], [[4]], [4])], [(4, [1, 2])], []⟩
     else none
 
 def pool : List (List Nat) :=
@@ -152,10 +152,10 @@ open RequestJson in
 def table : List Row :=
   (List.range types.length).map fun i =>
     if i == 4 then .param 4 "T" else if i == 18 then .param 18 "U"
-    else if i == 5 then .scheme [4] [([3], [[4]], [4])] []
-    else if i == 10 then .scheme [4] [([3], [[4]], [9])] []
-    else if i == 17 then .scheme [18] [([3], [[18]], [18])] []
-    else if i == 20 then .scheme [4] [([3], [[4]], [4])] [(4, [1, 2])]
+    else if i == 5 then .scheme [4] [([3], [[4]], [4])] [] []
+    else if i == 10 then .scheme [4] [([3], [[4]], [9])] [] []
+    else if i == 17 then .scheme [18] [([3], [[18]], [18])] [] []
+    else if i == 20 then .scheme [4] [([3], [[4]], [4])] [(4, [1, 2])] []
     else .clauses (types[i]?.getD [])
 def wire : NormalGraph Nat := RequestJson.tableGraph table
 #guard (List.range types.length).all fun i =>
@@ -167,8 +167,8 @@ def wire : NormalGraph Nat := RequestJson.tableGraph table
 -- A parameter row names its own label, a scheme's binders are parameter rows,
 -- and a scheme's labels index the table.
 #guard !RequestJson.validRows (table.set 4 (.param 5 "T"))
-#guard !RequestJson.validRows (table.set 5 (.scheme [3] [([3], [[3]], [3])] []))
-#guard !RequestJson.validRows (table.set 5 (.scheme [4] [([3], [[4]], [25])] []))
+#guard !RequestJson.validRows (table.set 5 (.scheme [3] [([3], [[3]], [3])] [] []))
+#guard !RequestJson.validRows (table.set 5 (.scheme [4] [([3], [[4]], [25])] [] []))
 -- A clause row is spelled as before; the other kinds read back as themselves.
 #guard Lean.toJson (RequestJson.Row.clauses [.nul]) == Lean.toJson [Clause.nul (α := List Nat)]
 #guard (Lean.fromJson? (Lean.toJson table) : Except String (List RequestJson.Row)).toOption == some table
@@ -201,11 +201,11 @@ def H : NormalGraph Nat where
   rows i := types[i]?.getD []
   params i := i == 5 || i == 6
   schemes i :=
-    if i == 8 then some ⟨[5], [([7], [[9]], [10])], []⟩
-    else if i == 11 then some ⟨[6], [([10], [[12]], [13])], []⟩
-    else if i == 14 then some ⟨[5], [([13], [[15]], [10])], []⟩
-    else if i == 17 then some ⟨[5], [([16], [[18]], [10])], []⟩
-    else if i == 23 then some ⟨[6], [([22], [[24]], [13])], []⟩
+    if i == 8 then some ⟨[5], [([7], [[9]], [10])], [], []⟩
+    else if i == 11 then some ⟨[6], [([10], [[12]], [13])], [], []⟩
+    else if i == 14 then some ⟨[5], [([13], [[15]], [10])], [], []⟩
+    else if i == 17 then some ⟨[5], [([16], [[18]], [10])], [], []⟩
+    else if i == 23 then some ⟨[6], [([22], [[24]], [13])], [], []⟩
     else none
 def pool : List (List Nat) := (List.range types.length).map ([·])
 #guard match instProof H 64 [8] [19] with

@@ -403,7 +403,7 @@ def genOk [DecidableEq ι] (G : NormalGraph ι) (S T D : List ι) (V : FreeMap �
   match T with
   | [j] =>
     match G.schemes j with
-    | some s => !G.params j && expand G U == [.arrs s.signatures []] && FreeOk G D V &&
+    | some s => !G.params j && expand G U == [.arrs s.signatures s.variadic] && FreeOk G D V &&
         S.all (fun l => decide (l ∈ D ∧ ∀ p ∈ fv V l, p ∉ s.binders))
     | none => false
   | _ => false
@@ -481,13 +481,14 @@ def checkInst [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (tbl : InstT
     (θs : List (List ι)) (certs : List (Option (Certificate ι))) (D : List ι) (V : FreeMap ι) :
     Bool :=
   match S, expand G T with
-  | [i], [.arrs L []] =>
+  | [i], [.arrs L M] =>
     match G.schemes i with
     | some s => !G.params i && θs.length == s.binders.length &&
         certs.length == s.bounds.length &&
         (s.bounds.zip certs).all (fun bc => boundOk G s.binders θs bc.1 bc.2) &&
         TableOk G tbl D V &&
-        L.all fun q => s.signatures.any fun p => sigImg tbl (s.binders.zip θs) p == some q
+        (L.all fun q => s.signatures.any fun p => sigImg tbl (s.binders.zip θs) p == some q) &&
+        M.all fun q => s.variadic.any fun p => restImg tbl (s.binders.zip θs) p == some q
     | none => false
   | _, _ => false
 
@@ -495,13 +496,13 @@ theorem checkInst_sound [DecidableEq ι] {G : NormalGraph ι} {S T tbl θs certs
     (h : checkInst G S T tbl θs certs D V = true) : Sub G S T := by
   unfold checkInst at h
   split at h
-  · rename_i i L hT
+  · rename_i i L M hT
     split at h
     · rename_i s hs
       simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true, List.any_eq_true,
         beq_iff_eq] at h
-      obtain ⟨⟨⟨⟨⟨hp, hlen⟩, hcl⟩, hbs⟩, hok⟩, hL⟩ := h
-      refine .inst hp hs hlen (fun b hb => ?_) hok hL hT
+      obtain ⟨⟨⟨⟨⟨⟨hp, hlen⟩, hcl⟩, hbs⟩, hok⟩, hL⟩, hM⟩ := h
+      refine .inst hp hs hlen (fun b hb => ?_) hok hL hM hT
       obtain ⟨c, hc⟩ := exists_mem_zip hcl b hb
       exact boundOk_sound (hbs _ hc)
     · cases h
@@ -552,14 +553,14 @@ theorem check_complete [dec : DecidableEq ι] {G : NormalGraph ι} {S T}
     obtain ⟨left, hl⟩ := ih
     obtain ⟨right, hr⟩ := ih'
     exact ⟨.trans U left right, by simp [check, hl, hr]⟩
-  | @inst T inst i s tbl θs D V L hp hq hlen hbnd hok hL hT =>
+  | @inst T inst i s tbl θs D V L M hp hq hlen hbnd hok hL hM hT =>
     have he : inst = dec := Subsingleton.elim _ _
     subst he
     obtain ⟨certs, hcl, hcs⟩ := bound_certs s.bounds hbnd
     refine ⟨.inst tbl θs certs D V, ?_⟩
     simp only [check, checkInst, hT, hq, hp, hok, hlen, hcl, hcs, Bool.not_false, Bool.true_and,
       beq_self_eq_true, List.all_eq_true, List.any_eq_true, Bool.and_eq_true, beq_iff_eq]
-    exact fun q hq => hL q hq
+    exact ⟨fun q hq => hL q hq, fun q hq => hM q hq⟩
   | @table S T inst tbl D V hok hS =>
     have he : inst = dec := Subsingleton.elim _ _
     subst he

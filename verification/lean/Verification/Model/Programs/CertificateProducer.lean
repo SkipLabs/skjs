@@ -147,11 +147,15 @@ def matchRow [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap �
             match G.schemes j with
             | some s2 =>
               if s2.binders.length = s.binders.length ∧
-                  s2.signatures.length = s.signatures.length then
+                  s2.signatures.length = s.signatures.length ∧
+                  s2.variadic.length = s.variadic.length then
                 let κ' := enter κ s.binders s2.binders
-                (s.signatures.zip s2.signatures).foldlM (fun st pq =>
+                ((s.signatures.zip s2.signatures).foldlM (fun st pq =>
                   pairs st κ' (pq.1.1 :: pq.1.2.2 :: pq.1.2.1) (pq.2.1 :: pq.2.2.2 :: pq.2.2.1))
-                  (add st p [j])
+                  (add st p [j])).bind fun st =>
+                (s.variadic.zip s2.variadic).foldlM (fun st pq =>
+                  pairs st κ' (pq.1.1 :: pq.1.2.2.1 :: pq.1.2.2.2 :: pq.1.2.1)
+                    (pq.2.1 :: pq.2.2.2.1 :: pq.2.2.2.2 :: pq.2.2.1)) st
               else none
             | none => none
           | none, [j] =>
@@ -170,6 +174,13 @@ def matchSig [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap �
     Option (InstState ι) := do
   if p.2.1.length ≠ q.2.1.length then none
   (p.1 :: p.2.2 :: p.2.1).zip (q.1 :: q.2.2 :: q.2.1) |>.foldlM
+    (fun st xy => matchRow G bs V fuel st κ xy.1 xy.2) st
+
+def matchRest [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap ι) (fuel : Nat)
+    (st : InstState ι) (κ : Ctx ι) (p q : List ι × List (List ι) × List ι × List ι) :
+    Option (InstState ι) := do
+  if p.2.1.length ≠ q.2.1.length then none
+  (p.1 :: p.2.2.1 :: p.2.2.2 :: p.2.1).zip (q.1 :: q.2.2.1 :: q.2.2.2 :: q.2.1) |>.foldlM
     (fun st xy => matchRow G bs V fuel st κ xy.1 xy.2) st
 
 /-- The rows `S` reads, transitively. -/
@@ -208,19 +219,26 @@ the table under the context giving each binder its instance. -/
 def instProof [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (A B : Ty ι) :
     Option (PositiveCertificates.Proof ι) :=
   match A, expand G B with
-  | [i], [.arrs L []] =>
+  | [i], [.arrs L M] =>
     match G.schemes i with
     | some s => do
       let roots := s.signatures.flatMap (fun p => p.1 ++ p.2.1.flatten ++ p.2.2) ++
-        L.flatMap (fun q => q.1 ++ q.2.1.flatten ++ q.2.2)
+        s.variadic.flatMap (fun p => p.1 ++ p.2.1.flatten ++ p.2.2.1 ++ p.2.2.2) ++
+        L.flatMap (fun q => q.1 ++ q.2.1.flatten ++ q.2.2) ++
+        M.flatMap (fun q => q.1 ++ q.2.1.flatten ++ q.2.2.1 ++ q.2.2.2)
       let D := readsFrom G closureFuel roots
       let V := freeMapOf G D closureFuel []
-      let first ← L.foldlM (fun st q =>
-        s.signatures.findSome? fun p => matchSig G s.binders V fuel st [] p q) {}
+      -- Each target signature matched against one of the scheme's, fixed
+      -- against fixed and variadic against variadic.
+      let each (κ : Ctx ι) (st : InstState ι) : Option (InstState ι) := do
+        let st ← L.foldlM (fun st q =>
+          s.signatures.findSome? fun p => matchSig G s.binders V fuel st κ p q) st
+        M.foldlM (fun st q =>
+          s.variadic.findSome? fun p => matchRest G s.binders V fuel st κ p q) st
+      let first ← each [] {}
       let θs := s.binders.map fun b => (first.found.lookup b).getD [b]
       let κ₀ := s.binders.zip θs
-      let final ← L.foldlM (fun st q =>
-        s.signatures.findSome? fun p => matchSig G s.binders V fuel st κ₀ p q) {}
+      let final ← each κ₀ {}
       -- Each instance within its binder's bounds: inclusion, or a core table.
       let certs ← s.bounds.mapM fun b =>
         match κ₀.lookup b.1 with
@@ -252,7 +270,7 @@ def genProof [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) (fuel :
   | [j] =>
     match G.schemes j with
     | some s => do
-      let U ← pool.find? fun U => expand G U == [.arrs s.signatures []]
+      let U ← pool.find? fun U => expand G U == [.arrs s.signatures s.variadic]
       let p ← subtypeBase G pool A U <|> instProof G fuel A U
       let D := readsFrom G closureFuel A
       some (.gen D (freeMapOf G D closureFuel []) U p)

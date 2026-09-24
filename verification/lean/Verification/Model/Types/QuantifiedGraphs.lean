@@ -61,7 +61,7 @@ theorem scheme_elim {G : NormalGraph ι} {i : ι} {s : SchemeRow ι}
     {n : Nat} {W : WorldT n} {v : Val} (h : meaning G [i] n W v)
     (As : List ValueFamily) (hl : As.length = s.binders.length)
     (hb : Bounded (fun η => meaning (reassign G η)) G.env s As n) :
-    callsT (instanceSigs (fun η => meaning (reassign G η)) G.env s As) n W v := by
+    instanceT (fun η => meaning (reassign G η)) G.env s As n W v := by
   obtain ⟨_, hi, hv⟩ := h
   cases List.mem_singleton.mp hi
   exact ((scheme_row hp hq n W v).mp hv).2 As hl hb
@@ -73,7 +73,7 @@ theorem scheme_intro {G : NormalGraph ι} {i : ι} {s : SchemeRow ι}
     {n : Nat} {W : WorldT n} {v : Val} (hv : Invocable v)
     (h : ∀ As : List ValueFamily, As.length = s.binders.length →
       Bounded (fun η => meaning (reassign G η)) G.env s As n →
-      callsT (instanceSigs (fun η => meaning (reassign G η)) G.env s As) n W v) :
+      instanceT (fun η => meaning (reassign G η)) G.env s As n W v) :
     meaning G [i] n W v :=
   ⟨i, List.mem_singleton_self i, (scheme_row hp hq n W v).mpr ⟨hv, h⟩⟩
 

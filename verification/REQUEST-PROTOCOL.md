@@ -107,7 +107,10 @@ A row is a **clause row**, spelled as the array of its clauses as above; a
 **scheme row** `{"scheme": {"binders": [p, ...], "signatures": [[receiver, [params], result], ...]}}`,
 a generic callable $\forall\vec p.\,\Sigma$ whose signatures are types that may
 mention its binders, with `"bounds": [[p, type], ...]` when a binder is
-bounded (the bound is read outside the binders; left out when none); or a **parameter row** `{"param": i, "name": n}`, which
+bounded (the bound is read outside the binders; left out when none), and
+`"variadic": [[receiver, [params], [rest, result]], ...]` when it has variadic
+signatures, whose rest may be a binder, a pack parameter (left out when none);
+or a **parameter row** `{"param": i, "name": n}`, which
 names its own label $i$ and, in `n`, the binder it stands for (no meaning). Only a clause row has clauses. The graph of a table $T$
 (`RequestJson.tableGraph`) is
 

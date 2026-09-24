@@ -48,6 +48,9 @@ structure SchemeRow (ι : Type) where
   the type, read at the scheme's own assignment (a bound does not mention the
   scheme's binders). -/
   bounds : List (ι × List ι) := []
+  /-- Variadic signatures `(receiver, parameters, rest, result)`, the rest an
+  argument-list type; a binder may be one. -/
+  variadic : List (List ι × List (List ι) × List ι × List ι) := []
   deriving DecidableEq, Repr
 
 structure NormalGraph (ι : Type) where
@@ -285,6 +288,38 @@ noncomputable def instanceSigs (D : Assignment ι → List ι → Fam) (η : Ass
   let η' := assign η s.binders As
   s.signatures.map fun p => (D η' p.1, p.2.1.map (D η'), D η' p.2.2)
 
+/-- One instance's variadic signatures, their rows read at the reassignment. -/
+noncomputable def instanceRests (D : Assignment ι → List ι → Fam) (η : Assignment ι)
+    (s : SchemeRow ι) (As : List ValueFamily) : List (Fam × List Fam × Fam × Fam) :=
+  let η' := assign η s.binders As
+  s.variadic.map fun p => (D η' p.1, p.2.1.map (D η'), D η' p.2.2.1, D η' p.2.2.2)
+
+/-- One instance's contract: its fixed and its variadic signatures, as a call
+clause's are. -/
+noncomputable def instanceT (D : Assignment ι → List ι → Fam) (η : Assignment ι)
+    (s : SchemeRow ι) (As : List ValueFamily) : Fam :=
+  interT (callsT (instanceSigs D η s As)) (restsT (instanceRests D η s As))
+
+theorem instanceT_adm (D : Assignment ι → List ι → Fam) (η : Assignment ι) (s : SchemeRow ι)
+    (As : List ValueFamily) : Adm (instanceT D η s As) :=
+  interT_adm _ _ (callsT_adm _) (restsT_adm _)
+
+private theorem argsAgree_of {X Y : List ι → Fam} {m : Nat} (h : ∀ S, Agree (X S) (Y S) m) :
+    ∀ Ss : List (List ι), ArgsAgree m (Ss.map X) (Ss.map Y)
+  | [] => .nil
+  | S :: Ss => .cons (h S) (argsAgree_of h Ss)
+
+/-- Instances whose rows agree below `m` have contracts agreeing there. -/
+theorem instanceT_congr {D D' : Assignment ι → List ι → Fam} {η η' : Assignment ι}
+    {s : SchemeRow ι} {As As' : List ValueFamily} {m : Nat}
+    (h : ∀ S, Agree (D (assign η s.binders As) S) (D' (assign η' s.binders As') S) m)
+    (W : WorldT m) (v : Val) :
+    instanceT D η s As m W v ↔ instanceT D' η' s As' m W v := by
+  unfold instanceT instanceSigs instanceRests interT
+  exact and_congr
+    (callsT_congr s.signatures _ _ (fun p _ => ⟨h p.1, argsAgree_of h p.2.1, h p.2.2⟩) W v)
+    (restsT_congr s.variadic _ _ (fun p _ => ⟨h p.1, argsAgree_of h p.2.1, h p.2.2.1, h p.2.2.2⟩) W v)
+
 /-- An instance is bounded below `n`: each bounded binder's family lies below
 its bound at every level under `n`. Only levels below `n` are read, which keeps
 the fixed point contractive. -/
@@ -299,7 +334,7 @@ of them. -/
 noncomputable def schemeSem (D : Assignment ι → List ι → Fam) (η : Assignment ι)
     (s : SchemeRow ι) : Fam := fun n W v =>
   Invocable v ∧ ∀ As : List ValueFamily, As.length = s.binders.length →
-    Bounded D η s As n → callsT (instanceSigs D η s As) n W v
+    Bounded D η s As n → instanceT D η s As n W v
 
 /-- One step of the assignment-indexed denotation. -/
 noncomputable def qLayer (G : NormalGraph ι) (X : Assignment ι × ι → Fam) :
@@ -346,11 +381,7 @@ theorem qLayer_congr (G : NormalGraph ι) : LayerCongr (qLayer G) := by
           forall_congr' fun j => forall_congr' fun hj => forall_congr' fun U =>
           forall_congr' fun u => imp_congr Iff.rfl ?_
         exact setSem_congr n (fun l => h (_, l)) b.2 j hj U u
-      · unfold instanceSigs
-        exact callsT_congr s.signatures _ _ (fun p _ =>
-          ⟨setSem_congr n (fun l => h (_, l)) p.1,
-           argsAgree_map _ _ (fun l => h (_, l)) p.2.1,
-           setSem_congr n (fun l => h (_, l)) p.2.2⟩) W v
+      · exact instanceT_congr (fun S => setSem_congr n (fun l => h (_, l)) S) W v
 
 /-! ### Non-expansiveness in the assignment
 
@@ -468,12 +499,10 @@ theorem qLayer_inv (G : NormalGraph ι) (X : Assignment ι × ι → Fam) (hX : 
             · intro hu
               refine ⟨hu, fun hps B hB => ?_⟩
               exact hb (p, B) hB hps k hk U u hu
-          have hc := (callsT_adm _).down n W v (h.2 As' hl' hb')
-          unfold instanceSigs at hc ⊢
-          exact (callsT_congr s.signatures _ _ (fun q _ =>
-            ⟨sets _ _ n hagree q.1, args _ _ n hagree q.2.1, sets _ _ n hagree q.2.2⟩) _ v).mp hc
+          have hc := (instanceT_adm _ _ _ _).down n W v (h.2 As' hl' hb')
+          exact (instanceT_congr (fun S => sets _ _ n hagree S) _ v).mp hc
         · intro n W W' hx v h
-          exact ⟨h.1, fun As hl hb => (callsT_adm _).mono n W W' hx v (h.2 As hl hb)⟩
+          exact ⟨h.1, fun As hl hb => (instanceT_adm _ _ _ _).mono n W W' hx v (h.2 As hl hb)⟩
   · -- non-expansive
     intro k hk W v
     unfold qLayer
@@ -497,10 +526,7 @@ theorem qLayer_inv (G : NormalGraph ι) (X : Assignment ι × ι → Fam) (hX : 
             forall_congr' fun j => forall_congr' fun hj => forall_congr' fun U =>
             forall_congr' fun u => imp_congr (hre b.1 j (by omega) U u)
               (sets η η' m h b.2 j (by omega) U u)
-        · unfold instanceSigs
-          exact callsT_congr s.signatures _ _ (fun q _ =>
-            ⟨Agree.mono (sets _ _ m hre q.1) (by omega), argsAgree_mono (args _ _ m hre q.2.1) (by omega),
-             Agree.mono (sets _ _ m hre q.2.2) (by omega)⟩) W v
+        · exact instanceT_congr (fun S => Agree.mono (sets _ _ m hre S) (by omega)) W v
 
 /-- The denotation at every assignment. -/
 noncomputable def qDenote (G : NormalGraph ι) : Assignment ι × ι → Fam :=

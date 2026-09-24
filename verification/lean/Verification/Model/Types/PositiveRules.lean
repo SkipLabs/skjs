@@ -1160,7 +1160,8 @@ signatures' rows. -/
 def reads (G : NormalGraph ι) (i : ι) : List ι :=
   match G.schemes i with
   | some s => s.signatures.flatMap (fun p => p.1 ++ p.2.1.flatten ++ p.2.2) ++
-      s.bounds.flatMap (·.2)
+      s.bounds.flatMap (·.2) ++
+      s.variadic.flatMap (fun p => p.1 ++ p.2.1.flatten ++ p.2.2.1 ++ p.2.2.2)
   | none => (G i).flatMap fun c => c.operands.flatten
 
 /-- A scheme row's bound types: read at its own assignment, not under its
@@ -1230,7 +1231,7 @@ theorem agree_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Free
           intro b hb l hl'
           refine ⟨?_, ?_⟩
           · simp only [reads, hq]
-            exact List.mem_append_right _ (List.mem_flatMap.mpr ⟨b, hb, hl'⟩)
+            exact List.mem_append_left _ (List.mem_append_right _ (List.mem_flatMap.mpr ⟨b, hb, hl'⟩))
           · simp only [boundReads, hq]
             exact List.mem_flatMap.mpr ⟨b, hb, hl'⟩
         unfold Bounded
@@ -1270,15 +1271,23 @@ theorem agree_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Free
         | cons S Ss ihs =>
           exact .cons (hrow S (hSs S List.mem_cons_self))
             (ihs fun T hT => hSs T (List.mem_cons_of_mem _ hT))
-      unfold instanceSigs
-      exact callsT_congr s.signatures _ _ (fun p hps => by
+      unfold instanceT instanceSigs instanceRests interT
+      refine and_congr (callsT_congr s.signatures _ _ (fun p hps => by
         have hin : ∀ l ∈ p.1 ++ p.2.1.flatten ++ p.2.2, l ∈ reads G i := fun l hl => by
           simp only [reads, hq]
-          exact List.mem_append_left _ (List.mem_flatMap.mpr ⟨p, hps, hl⟩)
+          exact List.mem_append_left _ (List.mem_append_left _ (List.mem_flatMap.mpr ⟨p, hps, hl⟩))
         refine ⟨hrow _ fun l hl => hin l (by simp [hl]), hargs _ fun S hS l hl => hin l ?_,
           hrow _ fun l hl => hin l (by simp [hl])⟩
         simp only [List.mem_append, List.mem_flatten]
-        exact .inl (.inr ⟨S, hS, hl⟩)) W v
+        exact .inl (.inr ⟨S, hS, hl⟩)) W v) (restsT_congr s.variadic _ _ (fun p hps => by
+        have hin : ∀ l ∈ p.1 ++ p.2.1.flatten ++ p.2.2.1 ++ p.2.2.2, l ∈ reads G i :=
+          fun l hl => by
+            simp only [reads, hq]
+            exact List.mem_append_right _ (List.mem_flatMap.mpr ⟨p, hps, hl⟩)
+        refine ⟨hrow _ fun l hl => hin l (by simp [hl]), hargs _ fun S hS l hl => hin l ?_,
+          hrow _ fun l hl => hin l (by simp [hl]), hrow _ fun l hl => hin l (by simp [hl])⟩
+        simp only [List.mem_append, List.mem_flatten]
+        exact .inl (.inl (.inr ⟨S, hS, hl⟩))) W v)
     | none =>
       simp only [normalLayer, semList, setSem]
       have hag' : ∀ l ∈ reads G i, Agree (qDenote G (η, l)) (qDenote G (η', l)) n := by
@@ -1324,6 +1333,12 @@ def sigImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
     (p : List ι × List (List ι) × List ι) : Option (List ι × List (List ι) × List ι) := do
   return (← tyImg tbl κ p.1, ← p.2.1.mapM (tyImg tbl κ), ← tyImg tbl κ p.2.2)
 
+def restImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
+    (p : List ι × List (List ι) × List ι × List ι) :
+    Option (List ι × List (List ι) × List ι × List ι) := do
+  return (← tyImg tbl κ p.1, ← p.2.1.mapM (tyImg tbl κ), ← tyImg tbl κ p.2.2.1,
+    ← tyImg tbl κ p.2.2.2)
+
 /-- Entering a scheme mapped to another: its binders stand for the other's. -/
 def enter [DecidableEq ι] (κ : Ctx ι) (src tgt : List ι) : Ctx ι :=
   src.zip (tgt.map ([·])) ++ κ.filter fun e => !src.contains e.1
@@ -1362,7 +1377,8 @@ def entryOk [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (V : Free
             | some U => U.all fun l => (fv V l).all fun q => !s2.binders.contains q
             | none => !s2.binders.contains p) &&
           s.signatures.mapM (sigImg tbl (enter e.2.1 s.binders s2.binders)) == some s2.signatures &&
-          s.bounds.mapM (boundImg tbl e.2.1 s.binders s2.binders) == some s2.bounds
+          s.bounds.mapM (boundImg tbl e.2.1 s.binders s2.binders) == some s2.bounds &&
+          s.variadic.mapM (restImg tbl (enter e.2.1 s.binders s2.binders)) == some s2.variadic
       | none => false
     | none, [j] =>
       G.plain e.1 && G.plain j &&
@@ -1598,6 +1614,26 @@ theorem sigImg_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
         simp [h1, h2, h3] at h
         subst h; exact ⟨rfl, rfl, rfl⟩
 
+theorem restImg_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
+    {p q : List ι × List (List ι) × List ι × List ι} (h : restImg tbl κ p = some q) :
+    tyImg tbl κ p.1 = some q.1 ∧ p.2.1.mapM (tyImg tbl κ) = some q.2.1 ∧
+      tyImg tbl κ p.2.2.1 = some q.2.2.1 ∧ tyImg tbl κ p.2.2.2 = some q.2.2.2 := by
+  unfold restImg at h
+  cases h1 : tyImg tbl κ p.1 with
+  | none => simp [h1] at h
+  | some a =>
+    cases h2 : p.2.1.mapM (tyImg tbl κ) with
+    | none => simp [h1, h2] at h
+    | some b =>
+      cases h3 : tyImg tbl κ p.2.2.1 with
+      | none => simp [h1, h2, h3] at h
+      | some c =>
+        cases h4 : tyImg tbl κ p.2.2.2 with
+        | none => simp [h1, h2, h3, h4] at h
+        | some d =>
+          simp [h1, h2, h3, h4] at h
+          subst h; exact ⟨rfl, rfl, rfl, rfl⟩
+
 /-- **Instance tables.** Under its context, an entry's row means its image. -/
 theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D : List ι}
     {V : FreeMap ι} (hok : TableOk G tbl D V = true) :
@@ -1662,7 +1698,7 @@ theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D 
             | some s2 =>
             simp only [hs2, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, decide_eq_true_eq,
               List.all_eq_true] at hrow
-            obtain ⟨⟨⟨⟨⟨⟨hjp, hnd⟩, hlen⟩, hpars⟩, hcap⟩, hsigs⟩, hbnds⟩ := hrow
+            obtain ⟨⟨⟨⟨⟨⟨⟨hjp, hnd⟩, hlen⟩, hpars⟩, hcap⟩, hsigs⟩, hbnds⟩, hrests⟩ := hrow
             rw [singleton, qDenote_unfold, qDenote_unfold]
             simp only [qLayer, hpar, hjp, hsch, hs2, Bool.false_eq_true, if_false]
             refine and_congr Iff.rfl ?_
@@ -1694,7 +1730,8 @@ theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D 
                   intro l hl'
                   refine ⟨?_, ?_⟩
                   · simp only [reads, hsch]
-                    exact List.mem_append_right _ (List.mem_flatMap.mpr ⟨b, hb, hl'⟩)
+                    exact List.mem_append_left _
+                      (List.mem_append_right _ (List.mem_flatMap.mpr ⟨b, hb, hl'⟩))
                   · simp only [boundReads, hsch]
                     exact List.mem_flatMap.mpr ⟨b, hb, hl'⟩
                 exact tyImg_iff hB'' fun l hl T hT =>
@@ -1744,43 +1781,85 @@ theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D 
                       (fun q hq => ?_) W' u).mpr h⟩
                     have := (hc l' hl') q hq
                     rw [assign_nmem ηR s2.binders As (by simpa using this)]
-            obtain ⟨hmap, _⟩ := mapM_some hsigs
-            unfold instanceSigs
-            rw [hmap]
-            simp only [List.map_map]
-            refine callsT_congr s.signatures _ _ (fun p hps => ?_) W v
-            have hin : ∀ l ∈ p.1 ++ p.2.1.flatten ++ p.2.2, l ∈ reads G i := fun l hl => by
-              simp only [reads, hsch]
-              exact List.mem_append_left _ (List.mem_flatMap.mpr ⟨p, hps, hl⟩)
-            obtain ⟨q, hq⟩ : ∃ q, sigImg tbl (enter κ s.binders s2.binders) p = some q := by
-              obtain ⟨_, hsome⟩ := mapM_some hsigs
-              exact Option.isSome_iff_exists.mp (hsome p hps)
-            obtain ⟨h1, h2, h3⟩ := sigImg_some hq
-            simp only [Function.comp, hq, Option.getD_some]
-            refine ⟨hty _ _ _ _ _ h1 fun l hl => hrel' l (hin l (by simp [hl])), ?_,
-              hty _ _ _ _ _ h3 fun l hl => hrel' l (hin l (by simp [hl]))⟩
-            have hargs : ∀ (Ss Ts : List (List ι)), Ss.mapM (tyImg tbl (enter κ s.binders s2.binders)) = some Ts →
-                (∀ S ∈ Ss, ∀ l ∈ S, l ∈ reads G i) →
-                ArgsAgree n (Ss.map (setSem fun l => qDenote G (assign ηL s.binders As, l)))
-                  (Ts.map (qMeaning G (assign ηR s2.binders As))) := by
-              intro Ss
-              induction Ss with
-              | nil => intro Ts h _; simp at h; subst h; exact .nil
-              | cons S Ss ihs =>
-                intro Ts h hSs
-                cases hS : tyImg tbl (enter κ s.binders s2.binders) S with
-                | none => simp [List.mapM_cons, hS] at h
-                | some S' =>
-                  cases hr : Ss.mapM (tyImg tbl (enter κ s.binders s2.binders)) with
-                  | none => simp [List.mapM_cons, hS, hr] at h
-                  | some Ts' =>
-                    have : Ts = S' :: Ts' := by simp [List.mapM_cons, hS, hr] at h; exact h.symm
-                    subst this
-                    exact .cons (hty _ _ _ _ _ hS fun l hl => hrel' l (hSs S List.mem_cons_self l hl))
-                      (ihs Ts' hr fun T hT => hSs T (List.mem_cons_of_mem _ hT))
-            exact hargs _ _ h2 fun S hS l hl => hin l (by
-              simp only [List.mem_append, List.mem_flatten]
-              exact .inl (.inr ⟨S, hS, hl⟩))
+            unfold instanceT interT
+            refine and_congr ?_ ?_
+            · obtain ⟨hmap, _⟩ := mapM_some hsigs
+              unfold instanceSigs
+              rw [hmap]
+              simp only [List.map_map]
+              refine callsT_congr s.signatures _ _ (fun p hps => ?_) W v
+              have hin : ∀ l ∈ p.1 ++ p.2.1.flatten ++ p.2.2, l ∈ reads G i := fun l hl => by
+                simp only [reads, hsch]
+                exact List.mem_append_left _
+                  (List.mem_append_left _ (List.mem_flatMap.mpr ⟨p, hps, hl⟩))
+              obtain ⟨q, hq⟩ : ∃ q, sigImg tbl (enter κ s.binders s2.binders) p = some q := by
+                obtain ⟨_, hsome⟩ := mapM_some hsigs
+                exact Option.isSome_iff_exists.mp (hsome p hps)
+              obtain ⟨h1, h2, h3⟩ := sigImg_some hq
+              simp only [Function.comp, hq, Option.getD_some]
+              refine ⟨hty _ _ _ _ _ h1 fun l hl => hrel' l (hin l (by simp [hl])), ?_,
+                hty _ _ _ _ _ h3 fun l hl => hrel' l (hin l (by simp [hl]))⟩
+              have hargs : ∀ (Ss Ts : List (List ι)), Ss.mapM (tyImg tbl (enter κ s.binders s2.binders)) = some Ts →
+                  (∀ S ∈ Ss, ∀ l ∈ S, l ∈ reads G i) →
+                  ArgsAgree n (Ss.map (setSem fun l => qDenote G (assign ηL s.binders As, l)))
+                    (Ts.map (qMeaning G (assign ηR s2.binders As))) := by
+                intro Ss
+                induction Ss with
+                | nil => intro Ts h _; simp at h; subst h; exact .nil
+                | cons S Ss ihs =>
+                  intro Ts h hSs
+                  cases hS : tyImg tbl (enter κ s.binders s2.binders) S with
+                  | none => simp [List.mapM_cons, hS] at h
+                  | some S' =>
+                    cases hr : Ss.mapM (tyImg tbl (enter κ s.binders s2.binders)) with
+                    | none => simp [List.mapM_cons, hS, hr] at h
+                    | some Ts' =>
+                      have : Ts = S' :: Ts' := by simp [List.mapM_cons, hS, hr] at h; exact h.symm
+                      subst this
+                      exact .cons (hty _ _ _ _ _ hS fun l hl => hrel' l (hSs S List.mem_cons_self l hl))
+                        (ihs Ts' hr fun T hT => hSs T (List.mem_cons_of_mem _ hT))
+              exact hargs _ _ h2 fun S hS l hl => hin l (by
+                simp only [List.mem_append, List.mem_flatten]
+                exact .inl (.inr ⟨S, hS, hl⟩))
+            · obtain ⟨hmap, _⟩ := mapM_some hrests
+              unfold instanceRests
+              rw [hmap]
+              simp only [List.map_map]
+              refine restsT_congr s.variadic _ _ (fun p hps => ?_) W v
+              have hin : ∀ l ∈ p.1 ++ p.2.1.flatten ++ p.2.2.1 ++ p.2.2.2, l ∈ reads G i :=
+                fun l hl => by
+                  simp only [reads, hsch]
+                  exact List.mem_append_right _ (List.mem_flatMap.mpr ⟨p, hps, hl⟩)
+              obtain ⟨q, hq⟩ : ∃ q, restImg tbl (enter κ s.binders s2.binders) p = some q := by
+                obtain ⟨_, hsome⟩ := mapM_some hrests
+                exact Option.isSome_iff_exists.mp (hsome p hps)
+              obtain ⟨h1, h2, h3, h4⟩ := restImg_some hq
+              simp only [Function.comp, hq, Option.getD_some]
+              refine ⟨hty _ _ _ _ _ h1 fun l hl => hrel' l (hin l (by simp [hl])), ?_,
+                hty _ _ _ _ _ h3 fun l hl => hrel' l (hin l (by simp [hl])),
+                hty _ _ _ _ _ h4 fun l hl => hrel' l (hin l (by simp [hl]))⟩
+              have hargs : ∀ (Ss Ts : List (List ι)), Ss.mapM (tyImg tbl (enter κ s.binders s2.binders)) = some Ts →
+                  (∀ S ∈ Ss, ∀ l ∈ S, l ∈ reads G i) →
+                  ArgsAgree n (Ss.map (setSem fun l => qDenote G (assign ηL s.binders As, l)))
+                    (Ts.map (qMeaning G (assign ηR s2.binders As))) := by
+                intro Ss
+                induction Ss with
+                | nil => intro Ts h _; simp at h; subst h; exact .nil
+                | cons S Ss ihs =>
+                  intro Ts h hSs
+                  cases hS : tyImg tbl (enter κ s.binders s2.binders) S with
+                  | none => simp [List.mapM_cons, hS] at h
+                  | some S' =>
+                    cases hr : Ss.mapM (tyImg tbl (enter κ s.binders s2.binders)) with
+                    | none => simp [List.mapM_cons, hS, hr] at h
+                    | some Ts' =>
+                      have : Ts = S' :: Ts' := by simp [List.mapM_cons, hS, hr] at h; exact h.symm
+                      subst this
+                      exact .cons (hty _ _ _ _ _ hS fun l hl => hrel' l (hSs S List.mem_cons_self l hl))
+                        (ihs Ts' hr fun T hT => hSs T (List.mem_cons_of_mem _ hT))
+              exact hargs _ _ h2 fun S hS l hl => hin l (by
+                simp only [List.mem_append, List.mem_flatten]
+                exact .inl (.inl (.inr ⟨S, hS, hl⟩)))
       | none =>
         cases hT : T with
         | nil => simp [hsch, hT] at hrow
@@ -1867,12 +1946,14 @@ theorem assign_zip_map [DecidableEq ι] (η : Assignment ι) (F : List ι → Va
 /-- A member of a scheme row meets each checked instance of its signatures. -/
 theorem inst_sound [DecidableEq ι] {G : NormalGraph ι} {T : List ι} {i : ι} {s : SchemeRow ι}
     {tbl : InstTable ι} {θs : List (List ι)} {D : List ι} {V : FreeMap ι} {L : Ops ι}
+    {M : List (List ι × List (List ι) × List ι × List ι)}
     (hp : G.params i = false) (hq : G.schemes i = some s) (hlen : θs.length = s.binders.length)
     (hbnd : ∀ b ∈ s.bounds, ∀ U, (s.binders.zip θs).lookup b.1 = some U →
       FamLe (meaning G U) (meaning G b.2))
     (hok : TableOk G tbl D V = true)
     (hL : ∀ q ∈ L, ∃ p ∈ s.signatures, sigImg tbl (s.binders.zip θs) p = some q)
-    (hT : expand G T = [.arrs L []]) : FamLe (meaning G [i]) (meaning G T) := by
+    (hM : ∀ q ∈ M, ∃ p ∈ s.variadic, restImg tbl (s.binders.zip θs) p = some q)
+    (hT : expand G T = [.arrs L M]) : FamLe (meaning G [i]) (meaning G T) := by
   intro n W v hv
   obtain ⟨_, hm, hv⟩ := hv
   cases List.mem_singleton.mp hm
@@ -1885,14 +1966,7 @@ theorem inst_sound [DecidableEq ι] {G : NormalGraph ι} {T : List ι} {i : ι} 
     obtain ⟨θ, hθ⟩ := lookup_zip_isSome (ys := θs) hbin (by omega)
     rw [assign_zip_map G.env (fun U => ⟨meaning G U, meaning_valueFam G U⟩) hθ] at hu
     exact hbnd b hb θ hθ j U' u hu
-  have hc := (hall As (by simp [As, hlen]) hbounded).2
-  have hTp := plain_of_mem_expand (G := G) (S := T) (c := .arrs L []) (by simp [hT])
-  refine (expand_sem G T hTp n W v).mpr ⟨.arrs L [], by simp [hT], ?_⟩
-  refine ⟨⟨hinv, fun q' hq' => ?_⟩, ⟨hinv, by simp⟩⟩
-  obtain ⟨q, hqL, rfl⟩ := List.mem_map.mp hq'
-  obtain ⟨p, hps, hsig⟩ := hL q hqL
-  have hpr := hc _ (List.mem_map_of_mem hps)
-  obtain ⟨h1, h2, h3⟩ := sigImg_some hsig
+  have hc := hall As (by simp [As, hlen]) hbounded
   -- The instance's assignment is related to the graph's by the binders' images.
   have hrel : ∀ l, RelK G (s.binders.zip θs) (fv V l) (assign G.env s.binders As) G.env := by
     intro l b _
@@ -1925,11 +1999,28 @@ theorem inst_sound [DecidableEq ι] {G : NormalGraph ι} {T : List ι} {i : ι} 
           have : Ts = S' :: Ts' := by simp [List.mapM_cons, hS, hr] at h; exact h.symm
           subst this
           simp only [List.map_cons, hfam S S' hS, ihs Ts' hr]
-  have e1 := hfam _ _ h1
-  have e3 := hfam _ _ h3
-  have e2 := hargs _ _ h2
-  simp only [e1, e2, e3] at hpr
-  exact hpr
+  have hTp := plain_of_mem_expand (G := G) (S := T) (c := .arrs L M) (by simp [hT])
+  refine (expand_sem G T hTp n W v).mpr ⟨.arrs L M, by simp [hT], ?_⟩
+  refine ⟨⟨hinv, fun q' hq' => ?_⟩, ⟨hinv, fun r' hr' => ?_⟩⟩
+  · obtain ⟨q, hqL, rfl⟩ := List.mem_map.mp hq'
+    obtain ⟨p, hps, hsig⟩ := hL q hqL
+    have hpr := hc.1.2 _ (List.mem_map_of_mem hps)
+    obtain ⟨h1, h2, h3⟩ := sigImg_some hsig
+    have e1 := hfam _ _ h1
+    have e3 := hfam _ _ h3
+    have e2 := hargs _ _ h2
+    simp only [e1, e2, e3] at hpr
+    exact hpr
+  · obtain ⟨q, hqM, rfl⟩ := List.mem_map.mp hr'
+    obtain ⟨p, hps, hsig⟩ := hM q hqM
+    have hpr := hc.2.2 _ (List.mem_map_of_mem hps)
+    obtain ⟨h1, h2, h3, h4⟩ := restImg_some hsig
+    have e1 := hfam _ _ h1
+    have e3 := hfam _ _ h3
+    have e4 := hfam _ _ h4
+    have e2 := hargs _ _ h2
+    simp only [e1, e2, e3, e4] at hpr
+    exact hpr
 
 /-- Structural rules compose completed proofs. They cannot bypass the guarded
 coverage obligation for any row of a recursive table. -/
@@ -1940,13 +2031,14 @@ inductive Sub (G : NormalGraph ι) : List ι → List ι → Prop where
   /-- **Instantiation.** A scheme row is below an arrow type whose signatures
   are images of its own under one checked instance map. -/
   | inst [DecidableEq ι] {i : ι} {s : SchemeRow ι} {tbl : InstTable ι} {θs : List (List ι)}
-      {D : List ι} {V : FreeMap ι} {L : Ops ι} :
+      {D : List ι} {V : FreeMap ι} {L : Ops ι} {M : List (List ι × List (List ι) × List ι × List ι)} :
       G.params i = false → G.schemes i = some s → θs.length = s.binders.length →
       (∀ b ∈ s.bounds, ∀ U, (s.binders.zip θs).lookup b.1 = some U →
         Core G U b.2 ∨ ∀ l ∈ U, l ∈ b.2) →
       TableOk G tbl D V = true →
       (∀ q ∈ L, ∃ p ∈ s.signatures, sigImg tbl (s.binders.zip θs) p = some q) →
-      expand G T = [.arrs L []] → Sub G [i] T
+      (∀ q ∈ M, ∃ p ∈ s.variadic, restImg tbl (s.binders.zip θs) p = some q) →
+      expand G T = [.arrs L M] → Sub G [i] T
   /-- **Renaming.** A type is below one holding its rows' images under a checked
   instance table with the empty context: the same rows up to renaming the
   binders of the schemes they reach. -/
@@ -1958,7 +2050,7 @@ inductive Sub (G : NormalGraph ι) : List ι → List ι → Prop where
   its free parameter rows is a binder (`agree_free`). -/
   | gen [DecidableEq ι] {j : ι} {s : SchemeRow ι} {D U : List ι} {V : FreeMap ι} :
       G.params j = false → G.schemes j = some s →
-      expand G U = [.arrs s.signatures []] →
+      expand G U = [.arrs s.signatures s.variadic] →
       FreeOk G D V = true → (∀ l ∈ S, l ∈ D ∧ ∀ p ∈ fv V l, p ∉ s.binders) →
       Sub G S U → Sub G S [j]
 
@@ -1973,11 +2065,11 @@ theorem Sub.sound_at {G : NormalGraph ι} {S T} (h : Sub G S T) :
   | core h => exact fun η => Core.sound (G := reassign G η) h
   | subset h => exact fun _ => by rintro n W v ⟨i, hi, hv⟩; exact ⟨i, h i hi, hv⟩
   | trans _ _ ih ih' => exact fun η n W v hv => ih' η n W v (ih η n W v hv)
-  | inst hp hq hlen hbnd hok hL hT =>
+  | inst hp hq hlen hbnd hok hL hM hT =>
     exact fun η => inst_sound (G := reassign G η) hp hq hlen (fun b hb U hU => by
       rcases hbnd b hb U hU with hc | hsub
       · exact Core.sound (G := reassign G η) hc
-      · rintro n W v ⟨l, hl, hv⟩; exact ⟨l, hsub l hl, hv⟩) hok hL hT
+      · rintro n W v ⟨l, hl, hv⟩; exact ⟨l, hsub l hl, hv⟩) hok hL hM hT
   | table hok hS =>
     intro η n W v hv
     obtain ⟨l, hl, hv⟩ := hv
@@ -2001,17 +2093,18 @@ theorem Sub.sound_at {G : NormalGraph ι} {S T} (h : Sub G S T) :
       change qDenote G (assign η s.binders As, l) n W v
       refine (agree_free hF n η _ l (hS l hl).1 (fun p hp => ?_) W v).mp h
       exact (assign_nmem η s.binders As ((hS l hl).2 p hp)).symm
-    have hUp := plain_of_mem_expand (G := G) (S := U) (c := .arrs s.signatures []) (by simp [hU])
-    have hsig : ∀ As : List ValueFamily, callsT (instanceSigs
-        (fun η' S => setSem (fun l => qDenote G (η', l)) S) η s As) n W v := by
+    have hUp := plain_of_mem_expand (G := G) (S := U) (c := .arrs s.signatures s.variadic)
+      (by simp [hU])
+    have hsig : ∀ As : List ValueFamily, instanceT
+        (fun η' S => setSem (fun l => qDenote G (η', l)) S) η s As n W v := by
       intro As
       obtain ⟨c, hc, hcv⟩ := (expand_sem (reassign G (assign η s.binders As)) U hUp n W v).mp (hat As)
-      have : c = .arrs s.signatures [] := by
-        have : expand (reassign G (assign η s.binders As)) U = [.arrs s.signatures []] := hU
+      have : c = .arrs s.signatures s.variadic := by
+        have : expand (reassign G (assign η s.binders As)) U = [.arrs s.signatures s.variadic] := hU
         rw [this] at hc; simpa using hc
       subst this
-      exact hcv.1
-    exact ⟨(hsig []).1, fun As _ _ => hsig As⟩
+      exact hcv
+    exact ⟨(hsig []).1.1, fun As _ _ => hsig As⟩
 
 theorem Sub.sound {G : NormalGraph ι} {S T} (h : Sub G S T) :
     FamLe (meaning G S) (meaning G T) :=

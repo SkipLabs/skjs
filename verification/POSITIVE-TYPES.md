@@ -590,8 +590,8 @@ $\kappa$ being an entry, an entry is one of (`entryOk`):
 - $i$ a parameter row and $T=\kappa(i)$, or $T=\{i\}$ when $\kappa$ does not name $i$;
 - **rigid**: $T=\{i\}$ and no row of $V(i)$ is named by $\kappa$;
 - $i$ a clause row, $T=\{j\}$, $j$ a clause row, and $G(j)=G(i)[\kappa]$;
-- $i$ the scheme row $(\vec q;\Sigma';\beta')$, $T=\{j\}$, $j$ the scheme row
-  $(\vec r;\Sigma'[\kappa'];\beta'[\kappa])$, each bound moved to the target
+- $i$ the scheme row $(\vec q;\Sigma';\beta';\Sigma'_\ldots)$, $T=\{j\}$, $j$ the scheme row
+  $(\vec r;\Sigma'[\kappa'];\beta'[\kappa];\Sigma'_\ldots[\kappa'])$, each bound moved to the target
   binder at its binder's position and its type mapped under the outer
   $\kappa$, with $|\vec r|=|\vec q|$, $\vec r$ distinct
   parameter rows and $\kappa'=\kappa[\vec q\mapsto\vec r]$, provided no free
@@ -613,8 +613,9 @@ $$
       |\vec\theta|=|\vec p|\quad
       \forall(p,B)\in\beta.\;\theta_p\subseteq B\lor G\vdash_c\theta_p\le B\quad
       \text{a checked table}\quad
-      T\equiv_G\mathsf{arrs}(L)\quad
-      \forall\tau\in L.\;\exists\sigma\in\Sigma.\;\tau=\sigma[\kappa_0]}
+      T\equiv_G\mathsf{arrs}(L;M)\quad
+      \forall\tau\in L.\;\exists\sigma\in\Sigma.\;\tau=\sigma[\kappa_0]\quad
+      \forall\tau\in M.\;\exists\sigma\in\Sigma_\ldots.\;\tau=\sigma[\kappa_0]}
      {G\vdash\{i\}\le T}\ \textsc{inst}
 $$
 
@@ -633,8 +634,8 @@ A type below a scheme's signatures with the binders opaque is below the scheme,
 provided none of its free parameter rows is a binder:
 
 $$
-\frac{j\ \text{a scheme row}\ (\vec p;\Sigma)\quad
-      U\equiv_G\mathsf{arrs}(\Sigma)\quad
+\frac{j\ \text{a scheme row}\ (\vec p;\Sigma;\beta;\Sigma_\ldots)\quad
+      U\equiv_G\mathsf{arrs}(\Sigma;\Sigma_\ldots)\quad
       V\ \text{a free-variable certificate on}\ D\quad
       \forall l\in S.\;l\in D\land V(l)\cap\vec p=\emptyset\quad
       G\vdash S\le U}
@@ -800,14 +801,18 @@ $$
 \eta(i) & i\ \text{a parameter row},\\[2pt]
 \bigl\{\,v\;\bigm|\;\mathsf{Invocable}(v)\land\forall\vec X.\;
   \mathsf{Bounded}_n(\vec X)\Rightarrow
-  v\in\mathsf{Calls}\bigl(\{(\llbracket Q\rrbracket^{\eta'},\llbracket\vec C\rrbracket^{\eta'},\llbracket D\rrbracket^{\eta'})\mid(Q,\vec C,D)\in\Sigma\}\bigr),\
+  v\in\mathsf{Calls}\bigl(\{(\llbracket Q\rrbracket^{\eta'},\llbracket\vec C\rrbracket^{\eta'},\llbracket D\rrbracket^{\eta'})\mid(Q,\vec C,D)\in\Sigma\}\bigr)\\
+  \qquad\cap\ \mathsf{Rests}\bigl(\{(\llbracket Q\rrbracket^{\eta'},\llbracket\vec C\rrbracket^{\eta'},\llbracket P\rrbracket^{\eta'},\llbracket D\rrbracket^{\eta'})\mid(Q,\vec C,P,D)\in\Sigma_\ldots\}\bigr),\
   \eta'=\eta[\vec p\mapsto\vec X]\,\bigr\}
-  & i\ \text{a scheme row}\ (\vec p;\Sigma;\beta),\\[2pt]
+  & i\ \text{a scheme row}\ (\vec p;\Sigma;\beta;\Sigma_\ldots),\\[2pt]
 \textstyle\bigcup_{c\in G(i)}\llbracket c\rrbracket^\eta & i\ \text{a clause row},
 \end{cases}
 $$
 
-where $\vec X$ ranges over admissible families of closed values, one per binder,
+where $\Sigma_\ldots$ are the scheme's variadic signatures, whose rest $P$ may
+be a binder: a **pack parameter**, whose family is read at the argument pack
+past the fixed actuals, so it is instantiated at a pack type and bounded by one,
+position by position (`instanceT`, `instanceRests`). $\vec X$ ranges over admissible families of closed values, one per binder,
 and $\mathsf{Bounded}_n(\vec X)$ says each bounded binder's family lies below
 its bound at every level under $n$: $X_p\subseteq_{<n}\llbracket B\rrbracket^\eta$
 for each $(p,B)\in\beta$, the bound read at the scheme's own assignment $\eta$

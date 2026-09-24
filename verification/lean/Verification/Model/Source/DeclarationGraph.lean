@@ -165,8 +165,10 @@ private def paramRow (name : String) : Lowering Nat := modifyGet fun T =>
 
 /-- A scheme row, interned. -/
 private def schemeRow (bs : List Nat) (sigs : List (List Nat × List (List Nat) × List Nat))
-    (bounds : List (Nat × List Nat)) : Lowering Nat := modifyGet fun T =>
-  let r := RequestJson.Row.scheme bs sigs bounds
+    (bounds : List (Nat × List Nat))
+    (rests : List (List Nat × List (List Nat) × List Nat × List Nat) := []) :
+    Lowering Nat := modifyGet fun T =>
+  let r := RequestJson.Row.scheme bs sigs bounds rests
   match T.idxOf? r with
   | some i => (i, T)
   | none => (T.length, T ++ [r])

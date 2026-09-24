@@ -96,6 +96,51 @@ def sub (A B : List Nat) : Bool :=
   some types[9]!
 #guard !((toJson (types[8]!)).compress.contains "variadic")
 
+/-! A pack parameter: a scheme binder standing for a rest, instantiated at a
+tuple and bounded position by position. -/
+namespace Schemes
+
+/-- 0 number, 1 string, 2 unknown, 3 the binder `P`, 4 the rest `...number[]`,
+5 `<P extends number[]>(...args: P) => number`, 6 `[number]`, 7 its instance
+`(...args: [number]) => number`, 8 `[string]`, 9 `(...args: [string]) => number`. -/
+def rows : Nat → List (Clause (List Nat))
+  | 0 => [.num]
+  | 1 => [.str]
+  | 2 => [.top]
+  | 4 => [.pack ⟨[], [], some [0], false⟩ []]
+  | 6 => [.pack ⟨[[0]], [], none, false⟩ []]
+  | 7 => [.arrs [] [([2], [], [6], [0])]]
+  | 8 => [.pack ⟨[[1]], [], none, false⟩ []]
+  | 9 => [.arrs [] [([2], [], [8], [0])]]
+  | _ => []
+
+def H : NormalGraph Nat where
+  rows := rows
+  params i := i == 3
+  schemes i := if i == 5 then some ⟨[3], [], [(3, [4])], [([2], [], [3], [0])]⟩ else none
+
+def hpool : List (List Nat) := vocabulary H (List.range 10) [] []
+
+def hsub (A B : List Nat) : Bool :=
+  match subtype H hpool A B with
+  | some p => PositiveCertificates.check H A B p
+  | none => false
+
+-- The instance at `[number]` is within the bound, position by position; the
+-- one at `[string]` is not.
+#guard hsub [5] [7]
+#guard !hsub [5] [9]
+
+-- A scheme row with a variadic signature reads back as itself; one without
+-- leaves the field out.
+#guard (fromJson? (toJson (RequestJson.Row.scheme [3] [] [(3, [4])] [([2], [], [3], [0])]))
+  : Except String RequestJson.Row).toOption ==
+  some (RequestJson.Row.scheme [3] [] [(3, [4])] [([2], [], [3], [0])])
+#guard !((toJson (RequestJson.Row.scheme [3] [([2], [[3]], [3])] [] [])).compress.contains
+  "variadic")
+
+end Schemes
+
 -- No program makes a pack.
 #guard !ObjectCoherence.sourceTerm (.args [.num 1])
 
