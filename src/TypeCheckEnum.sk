@@ -484,11 +484,11 @@ extension base class TEnv {
   // any member is a full/untracked number, collapsing the numeric part to
   // `number`) and the string literal set, rather than going through the
   // general TType::union machinery.
-  fun enumUnionType(subst: mutable Subst, en: Enum): TType {
+  fun enumUnionType(tcenvb: mutable TCEnvBase, en: Enum): TType {
     pos = en.name.pos;
     numbers: ?SortedSet<String> = Some(SortedSet[]);
     strings = SortedSet<String>[];
-    for (m in this.enumMembers(subst, en)) {
+    for (m in this.enumMembers(tcenvb, en)) {
       static::enumMemberPrim(m) match {
       | TPrimValue(TNum(), Some(lits), _) ->
         numbers.each(nums -> {
@@ -523,7 +523,7 @@ extension base class TEnv {
     // Only a heterogeneous enum (numeric and string members) reaches the body
     // of this loop, joining the two parts with a single union.
     for (i in Range(1, stypes.size())) {
-      !result = TType::union(subst, this, result, TType::single(stypes[i]))
+      !result = TType::unionStructural(result, TType::single(stypes[i]))
     };
     result
   }
@@ -698,7 +698,7 @@ extension class TypeChecker {
         } else {
           m.initializer.each(e ->
             tcenvl.collectErrors(() -> {
-              subst = Subst::mcreate(tcenvl);
+              subst = Subst::createCheckingOwner(tcenvl);
               tcenv = TCEnv::mcreate(
                 subst,
                 CGNode::toplevel(m.name.pos.fileName),
@@ -711,7 +711,8 @@ extension class TypeChecker {
                 ety,
                 TType::single(TPrimValue::full(TNum(), e.pos)),
                 TSCode(18033),
-              )
+              );
+              tcenv.validateHiddenEscapes()
             })
           )
         }

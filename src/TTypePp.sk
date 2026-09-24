@@ -1023,7 +1023,7 @@ mutable class TypePp{
           // A substituted tvar renders as `'0 = T` (see TypePp::tvar),
           // which is not a single atom either.
           !tvar.constraints.isEmpty() ||
-            this.substValues.maybeGet(tvar.id).isSome()
+            this.substValues.maybeGet(tvar.identity()).isSome()
         | TArrayLit _
         | TSInst _ ->
           false
@@ -1085,7 +1085,7 @@ mutable class TypePp{
   }
 
   mutable fun tvar(level: Int, margin: Margin, tvar: TVar): void {
-    this.out(level, margin, `'${tvar.id}`);
+    this.out(level, margin, `'${tvar.identity()}`);
     if (!tvar.constraints.isEmpty()) {
       this.out(level, margin, " extends ");
       first = true;
@@ -1098,17 +1098,17 @@ mutable class TypePp{
         this.type(level, margin, c)
       }
     };
-    if (!this.expandingTVars.contains(tvar.id)) {
-      this.substValues.maybeGet(tvar.id) match {
+    if (!this.expandingTVars.contains(tvar.identity())) {
+      this.substValues.maybeGet(tvar.identity()) match {
       | Some(sv) ->
         boundTy = sv match {
         | SVOpen(ty) -> ty
         | SVClosed(ty) -> ty
         };
-        this.!expandingTVars = this.expandingTVars.set(tvar.id);
+        this.!expandingTVars = this.expandingTVars.set(tvar.identity());
         this.out(level, margin, " = ");
         this.type(level, margin, boundTy);
-        this.!expandingTVars = this.expandingTVars.remove(tvar.id)
+        this.!expandingTVars = this.expandingTVars.remove(tvar.identity())
       | None() -> void
       }
     }
@@ -1179,6 +1179,7 @@ fun prettyPrint(
   compact: Bool,
   f: mutable TypePp -> void,
 ): String {
+  !subst = subst.diagnosticComputation();
   pp = mutable TypePp{
     compact,
     verbose => tenv.verbose,
@@ -1199,7 +1200,7 @@ fun prettyPrintPastableType(
   tenv: TEnv,
 ): ?String {
   probe = mutable PpNames{};
-  !subst = subst.clone();
+  !subst = subst.diagnosticComputation();
   subst.!ppNames = Some(probe);
   rendered = prettyPrintType(compact, ty, subst, tenv);
   if (probe.hasUnwritable()) None() else Some(rendered)
@@ -1212,7 +1213,6 @@ fun prettyPrintType(
   tenv: TEnv,
   max_depth: Int = kDefaultMaxDepth,
 ): String {
-  !subst = subst.clone();
   prettyPrint(subst, tenv, compact, pp -> {
     pp.type(0, Margin{max_depth}, ty);
   })

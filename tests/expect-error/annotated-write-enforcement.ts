@@ -25,12 +25,11 @@ function annotatedWriteWithinDeclaredTypeNarrows(): void {
   const n: number = x;
 }
 
-// Without an annotation the inferred type evolves: the write is accepted and
-// `x` becomes a number. SKJS is deliberately more permissive than tsc here (tsc
-// pins `let x = "a"` to `string` and rejects the write); the narrowing keeps this
-// sound because reads see the written type.
+// An inferred concrete type is a write contract too, even without capture.
+// TypeScript also rejects replacing the string with a number.
 function inferredWriteEvolves(): void {
   let x = "a";
+  // @ts-expect-error Type is not assignable to the variable's type
   x = 5;
   const n: number = x;
 }

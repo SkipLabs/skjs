@@ -1,0 +1,243 @@
+module SKJS;
+
+// A conservative whole-function write and capture summary, including nested
+// closures.
+// Names deliberately over-approximate lexical identity: a write to a shadowing
+// binding may lose precision, but cannot make an outer capture appear stable.
+// Unknown targets/bodies disable the optimization rather than assume no writes.
+mutable class CaptureWrites{
+  mutable names: SortedSet<String> = SortedSet[],
+  mutable unknown: Bool = false,
+  mutable captures: SortedSet<String> = SortedSet[],
+  mutable unknownCaptures: Bool = false,
+  mutable depth: Int = 0,
+  trackReads: Bool = false,
+  reads: mutable Vector<Expr> = mutable Vector[],
+  mutable hasCallEffects: Bool = false,
+} {
+  readonly fun result(): ?SortedSet<String> {
+    if (this.unknown) None() else Some(this.names)
+  }
+
+  readonly fun capturedNames(): ?SortedSet<String> {
+    if (this.unknownCaptures) None() else Some(this.captures)
+  }
+
+  mutable fun target(e: Expr): void {
+    e.value match {
+    | Var(n) -> this.!names = this.names.set(n.value)
+    | EArray(elements) ->
+      this.!hasCallEffects = true;
+      // Preserve the existing unknown-target summary, but retain the binding
+      // names too for consumers distinguishing rebinding from property writes.
+      this.!unknown = true;
+      elements.each(element -> this.target(element))
+    | Spread(inner) -> this.target(inner)
+    | _ -> this.!unknown = true
+    }
+  }
+
+  mutable fun params(params: Array<Param>): void {
+    for (p in params) {
+      this.pattern(p.name);
+      p.default.each(e -> this.expr(e))
+    }
+  }
+
+  mutable fun pattern(p: Pattern): void {
+    // Binding names (including rest names) are declarations, not reads or
+    // assignments to existing bindings. Defaults are ordinary expressions;
+    // traverse them at the current closure depth before their nested pattern.
+    p.value match {
+    | PVar _ -> void
+    | PArray(elements, _) ->
+      this.!hasCallEffects = true;
+      elements.each(element ->
+        element.each(item -> {
+          item.i1.each(e -> this.expr(e));
+          this.pattern(item.i0)
+        })
+      )
+    | PObject{fields, rest => _} ->
+      for (field in fields) {
+        field.i2.each(e -> this.expr(e));
+        this.pattern(field.i1)
+      }
+    }
+  }
+
+  mutable fun body(body: ClosureBody): void {
+    body match {
+    | CBExpr(e) -> this.expr(e)
+    | CBBlock(stmts) -> this.stmts(stmts)
+    }
+  }
+
+  mutable fun stmts(stmts: Array<Stmt>): void {
+    for (s in stmts) {
+      this.stmt(s)
+    }
+  }
+
+  mutable fun stmt(s: Stmt): void {
+    s.value match {
+    | StmtEmpty()
+    | Break()
+    | Continue() ->
+      void
+    | StmtExpr(e)
+    | Throw(e) ->
+      this.expr(e)
+    | Return(_, e) -> e.each(e -> this.expr(e))
+    | If(e, yes, no) ->
+      this.expr(e);
+      this.stmts(yes);
+      no.each(ss -> this.stmts(ss))
+    | ForInOf(kind, init, e, body) ->
+      if (kind is ForOf()) this.!hasCallEffects = true;
+      init.value match {
+      | StmtExpr(target) -> this.target(target)
+      | Bind _ -> void
+      | _ -> this.!unknown = true
+      };
+      this.stmt(init);
+      this.expr(e);
+      this.stmts(body)
+    | For(init, cond, step, body) ->
+      this.stmt(init);
+      this.expr(cond);
+      this.expr(step);
+      this.stmts(body)
+    | While(e, body) ->
+      this.expr(e);
+      this.stmts(body)
+    | Bind(kind, bindings) ->
+      // A var initializer may assign a function-scoped binding repeatedly.
+      if (kind is BKVar()) {
+        this.!unknown = true
+      };
+      for (b in bindings) {
+        this.pattern(b.pat);
+        b.value.each(e -> this.expr(e))
+      }
+    | Switch(e, branches) ->
+      this.expr(e);
+      for (b in branches) {
+        b.case match {
+        | Case(caseExpr) -> this.expr(caseExpr)
+        | Default() -> void
+        };
+        this.stmts(b.block)
+      }
+    | Block(body) -> this.stmts(body)
+    | Try(body, catch_, finally_) ->
+      this.stmts(body);
+      catch_.each(c -> {
+        c.param.each(p -> this.pattern(p));
+        this.stmts(c.body)
+      });
+      finally_.each(ss -> this.stmts(ss))
+    }
+  }
+
+  mutable fun expr(e: Expr): void {
+    if (this.trackReads) {
+      e.value match {
+      | Var _
+      | Dot _
+      | Get _ ->
+        this.reads.push(e)
+      | _ -> void
+      }
+    };
+    e.value match {
+    | Number _
+    | BigInt _
+    | EString _
+    | Regexp _ ->
+      void
+    | Var(n) ->
+      if (this.depth > 0) {
+        this.!captures = this.captures.set(n.value)
+      }
+    | Spread(x) ->
+      this.!hasCallEffects = true;
+      this.expr(x)
+    | TypeOf(x)
+    | VoidOp(x)
+    | As(x, _)
+    | AsConst(x)
+    | Satisfies(x, _)
+    | Async(x) ->
+      this.expr(x)
+    | Await(x) ->
+      this.!hasCallEffects = true;
+      this.expr(x)
+    | Dot(_, x, _) -> this.expr(x)
+    | Get(x, y)
+    | In(x, y) ->
+      this.expr(x);
+      this.expr(y)
+    | InstanceOf(x, y) ->
+      // Membership can invoke an inherited/custom Symbol.hasInstance hook.
+      this.!hasCallEffects = true;
+      this.expr(x);
+      this.expr(y)
+    | New(x, _, args)
+    | Call(x, _, args) ->
+      this.!hasCallEffects = true;
+      // A callee lookup is not the observation a returned type guard tests.
+      // Capture/write summaries still traverse it; read-footprint scans use
+      // the arguments whose observed values can justify narrowing.
+      if (!this.trackReads) this.expr(x);
+      for (arg in args) {
+        this.expr(arg)
+      }
+    | Unop(_, x) -> this.expr(x)
+    | PostOp(op, x) ->
+      if (!(op is POExcl())) {
+        this.target(x)
+      };
+      this.expr(x)
+    | Binop(op, x, y) ->
+      if (op is BOAssignment() || op is BOOpAssignment _) {
+        this.target(x)
+      };
+      this.expr(x);
+      this.expr(y)
+    | Params(params) -> this.params(params)
+    | Object(fields) ->
+      for (f in fields) {
+        f match {
+        | FDNormal(_, x)
+        | FDSpread(x) ->
+          this.expr(x)
+        | FDComputed(x, y) ->
+          this.expr(x);
+          this.expr(y)
+        // Method bodies may live behind incremental references. Decline the
+        // optimization here; ordinary capture checking remains available.
+        | FDMethod _ ->
+          this.!unknown = true;
+          this.!unknownCaptures = true
+        }
+      }
+    | Closure(_, params, _, body) ->
+      this.!depth = this.depth + 1;
+      this.params(params);
+      this.body(body);
+      this.!depth = this.depth - 1
+    | EArray(xs)
+    | TemplateLiteral(_, xs) ->
+      for (x in xs) {
+        this.expr(x)
+      }
+    | EIf(x, y, z) ->
+      this.expr(x);
+      this.expr(y);
+      this.expr(z)
+    }
+  }
+}
+
+module end;

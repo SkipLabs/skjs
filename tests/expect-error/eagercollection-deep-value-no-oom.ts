@@ -1,5 +1,5 @@
 // Regression guard for the recursive-generic OOM fixes (#736 mapTParams,
-// #737 isSub TSInst fast path) that let the regenerated generated-examples
+// the now-retired #737 isSub TSInst fast path) that let the regenerated generated-examples
 // (notably voting-system) type-check without blowing up. Chaining `.map` over
 // an EagerCollection whose value type is a deeply-nested Json record exercises
 // the recursive-generic subtype check (EagerCollection's methods reference

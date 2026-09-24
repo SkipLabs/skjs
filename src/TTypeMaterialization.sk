@@ -1,0 +1,118 @@
+/***************************************************************************/
+/* Owner-local publication of normalized type data. */
+/***************************************************************************/
+
+module SKJS;
+
+base class TypeComputationPurpose {
+  children =
+  | TCPChecking()
+  | TCPTypeArgumentProbe()
+  // Representation guidance. Dispatches like a diagnostic -- detached, no
+  // committed read -- but the two differ in who may consume the answer: a
+  // diagnostic result may only be rendered, while a guidance result may
+  // select an inference proposal. Neither may authorize acceptance.
+  | TCPGuidance()
+  | TCPDiagnostic()
+}
+
+// Immutable output of mapped-key classification. A negative/abstract decision
+// is data too: subsequent field construction relies on the entire decision.
+value class MappedKeyShape(
+  valid: Bool,
+  isAbstract: Bool,
+  hasString: Bool,
+  hasNumber: Bool,
+  hasSymbol: Bool,
+  namedLiterals: Array<String>,
+  symbolLiterals: Array<String>,
+)
+
+extension base class TEnv {
+  // Checking receives only fixed-read operations. Detached probes/diagnostics
+  // have a separate callback: their computations cannot publish checking facts.
+  // This distinction is computation purpose, independent of candidate role.
+  fun materializeReadContext<T>(
+    tcenvb: mutable TCEnvBase,
+    pos: PosRange,
+    read: (mutable TypeReadContext) -> T,
+    detached: (mutable Subst, TEnv) -> T,
+  ): T {
+    tcenvb match {
+    | declaration @ TypeReadDeclaration _ ->
+      return declaration.readIn(this, read)
+    | _ -> void
+    };
+    subst = Subst::computationOwner(tcenvb);
+    subst.typeComputationPurpose() match {
+    | TCPTypeArgumentProbe()
+    | TCPGuidance()
+    | TCPDiagnostic() ->
+      detached(subst, this)
+    | TCPChecking() ->
+      subst.withCommittedReadDecision<T>(this, read) match {
+      | TRReady(value) -> value
+      | TRUnavailable() ->
+        invariant_violation(
+          "A mandatory type materialization cannot be unavailable",
+        )
+      | TRBlocked() ->
+        fatalError(
+          Array[
+            (
+              pos,
+              "A type projection or expansion could not be established without changing inference; add an explicit type annotation",
+            ),
+          ],
+          SKJSCode(9037),
+        )
+      }
+    }
+  }
+
+  // A subtype decision used to choose a lasting program fact must not be
+  // justified by solutions or seals in a discarded clone. Both true and false
+  // inspect dependencies; establish them in the checking owner before return.
+  fun materializeSubtypeDecision(
+    tcenvb: mutable TCEnvBase,
+    pos: PosRange,
+    source: TType,
+    target: TType,
+  ): Bool {
+    this.materializeReadContext<Bool>(
+      tcenvb,
+      pos,
+      context -> context.isSubtype(source, target),
+      (scratch, readEnv) ->
+        TType::isSub(scratch, readEnv, source, target) is STOk()
+      ,
+    )
+  }
+
+  // The single memoizing named-expansion path. All callers, including inference
+  // variable collection, share the same publication boundary. instantiate itself
+  // also gates uncached/direct callers. Fixed reads use the same declaration
+  // evaluator through TypeReadDeclaration, without a mutable-solver callback.
+  fun expandNamed(subst: mutable Subst, name: Name, targs: TArgs): TType {
+    identity = this.typeDefinitionIdentity(subst, name);
+    if (this.seenInstantiate.contains(identity)) {
+      // A recursion cut is local to this call chain, not a reusable expansion.
+      TType::inst(name, targs)
+    } else {
+      key = ExpansionKey(identity, targs);
+      subst.memoizedExpansion(key) match {
+      | Some(expanded) -> expanded
+      | None() ->
+        expanded = this.instantiate(subst, subst, name, targs);
+        if (expanded != TType::inst(name, targs)) {
+          // In scratch this remains local/provisional; in the live owner the
+          // outer observation has already established its inspected payloads.
+          subst.memoizeExpansion(key, expanded)
+        };
+        expanded
+      }
+    }
+  }
+}
+
+module end;

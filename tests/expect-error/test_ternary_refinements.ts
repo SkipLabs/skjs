@@ -43,3 +43,24 @@ function testTernaryWithADT(response: Response): string {
   // Test ADT refinement in ternary operators
   return response.kind === "success" ? response.data : response.message;
 }
+
+function branchWriteInvalidatesEarlierNarrowing(flag: boolean): number {
+  let state: number | null = 1;
+  state = 1;
+  const result = flag ? (state = null) : 0;
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
+  return state;
+}
+
+function bothBranchesInitialize(flag: boolean): number {
+  let state: number;
+  const result = flag ? (state = 1) : (state = 2);
+  return state;
+}
+
+function oneBranchDoesNotInitialize(flag: boolean): number {
+  let state: number;
+  const result = flag ? (state = 1) : 0;
+  // @ts-expect-error Variable 'state' is used before being assigned
+  return state;
+}

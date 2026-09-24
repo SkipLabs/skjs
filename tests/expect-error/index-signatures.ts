@@ -125,7 +125,16 @@ function assignBadObjectToStringIndex(): void {
 ///////////////////////////////////////////////////////////////////////////////
 
 function assignStringIndexToOptional(x: StringIndex): { a?: number } {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
+}
+
+function constructIndexedOwnField(source: { readonly [key: string]: number }): {
+  readonly value?: number;
+} {
+  const value = source.value;
+  if (value !== undefined) return { value };
+  return {};
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -712,4 +721,22 @@ function symGeneralWriteRejected(
 function symGeneralNoIndex(x: { [symA]: number }, s: symbol): void {
   // @skjs-expect-error Cannot index this type with a non-literal key: it has no index signature
   const v = x[s];
+}
+
+// Include both key kinds so the copy's open symbol index is not a separate error.
+type CopyEntries = { [key: string]: number; [key: symbol]: unknown };
+
+function reuseCopiedIndexContract(source: CopyEntries): number {
+  const template = { ...source };
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const alias: typeof template = source;
+  if ("value" in alias) return { ...alias }.value;
+  return 0;
+}
+
+function satisfyCopiedIndexContract(source: CopyEntries): number {
+  const template = { ...source };
+  const alias: typeof template = { ...source };
+  if ("value" in alias) return { ...alias }.value;
+  return 0;
 }

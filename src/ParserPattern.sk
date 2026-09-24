@@ -133,7 +133,8 @@ extension class Parser {
           )
         }
       };
-      PObject{fields => fields.toArray().sortedBy(x ~> x.i0.value), rest}
+      // Defaults and projected reads execute in source order.
+      PObject{fields => fields.toArray(), rest}
     | _ -> PVar(this.bindingName())
     }
   }

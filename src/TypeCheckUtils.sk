@@ -329,12 +329,12 @@ extension class TypeChecker {
     TType::var(tvar)
   }
 
-  fun makeBoundTVarForLiteralCommitment(
+  fun makeBoundTVarForContextualElement(
     tcenv: mutable TCEnv,
     ty: TType,
     origin: TVarOrigin,
   ): TType {
-    tvar = tcenv.subst.genForLiteralCommitment(ty.pos);
+    tvar = tcenv.subst.genForContextualElement(ty.pos);
     tcenv.subst.setOrigin(tvar, origin);
     tcenv.subst.grow(this, tvar, ty, Contravariant());
     TType::var(tvar)
@@ -359,9 +359,10 @@ extension class TypeChecker {
         TSCode(2364),
       )
     | Var _ -> void
-    | Get _ -> void
+    | Get(receiver, _) -> this.checkAssignmentReceiver(tcenvb, receiver)
     | EArray _ -> void
-    | Dot(NormalDot(), e1, _) -> this.checkLValue(tcenvb, e1)
+    | Dot(NormalDot(), receiver, _) ->
+      this.checkAssignmentReceiver(tcenvb, receiver)
     | _ ->
       tcenvb.error(
         Array[
@@ -372,6 +373,23 @@ extension class TypeChecker {
         ],
         TSCode(2364),
       )
+    }
+  }
+
+  // A receiver is a value, not another assignment target. Only the access
+  // chain matters here: an optional link cannot be an assignment reference.
+  // Calls and selections may otherwise produce perfectly writable objects.
+  private fun checkAssignmentReceiver(
+    tcenvb: mutable TCEnvBase,
+    e: Expr,
+  ): void {
+    e.value match {
+    | Dot(OptionalDot(), _, _) -> this.checkLValue(tcenvb, e)
+    | Dot(NormalDot(), receiver, _)
+    | Get(receiver, _)
+    | Call(receiver, _, _) ->
+      this.checkAssignmentReceiver(tcenvb, receiver)
+    | _ -> void
     }
   }
 }

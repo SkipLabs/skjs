@@ -1,7 +1,8 @@
 // Test partial support for the TypeScript `as` operator.
 //
-// SKJS accepts `e as T` only when the inferred type of `e` is a subtype of
-// `T` (a sound upcast). All other shapes — downcasts, sideways casts,
+// SKJS accepts `e as T` only when its stable source type is a subtype of
+// `T`: object aliases cannot rely on temporary field refinements. Other
+// shapes — downcasts, sideways casts,
 // boundary casts from `unknown`, branded nominal types — are flagged but
 // typechecking continues with the target type `T` so the user gets a single
 // clear error per unsound cast instead of cascading failures.
@@ -68,4 +69,19 @@ function testDoubleCastEscape(): void {
   // @skjs-expect-error This 'as' cast is unsound: the source type is not assignable to the target type
   const s: string = 1 as unknown as string;
   const len: number = s.length;
+}
+
+function castAliasContract(x: { value: number | null }): number {
+  if (x.value === null) return 0;
+  // @skjs-expect-error This 'as' cast is unsound: the source type is not assignable to the target type
+  const alias = x as { readonly value: number };
+  x.value = null;
+  return alias.value;
+}
+
+function castScalarSnapshot(x: { value: number | null }): number {
+  if (x.value === null) return 0;
+  const value = x.value as number;
+  x.value = null;
+  return value;
 }

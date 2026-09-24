@@ -131,3 +131,33 @@ function testFieldVsFieldNarrowsBoth(
     const b: 1 | 2 = o2.b;
   }
 }
+
+// Narrow an inferred read using a named singleton, just as with literal null.
+function inferredReadNamedNull(seed: number | null): number {
+  const box = { value: seed };
+  const x = box.value;
+  const absent: null = null;
+  if (x !== absent) return x;
+  return 0;
+}
+
+// Both operands need resolution: the singleton itself is an inferred read.
+function inferredReadSingleton(seed: 0 | 1, zeroSeed: 0): 1 {
+  const box = { value: seed, zero: zeroSeed };
+  const x = box.value;
+  const zero = box.zero;
+  if (x !== zero) return x;
+  return 1;
+}
+
+// Inequality with a nonsingleton cannot remove every value it may denote.
+function inferredReadNonSingleton(
+  seed: number | null,
+  other: number | null,
+): number {
+  const box = { value: seed };
+  const x = box.value;
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
+  if (x !== other) return x;
+  return 0;
+}

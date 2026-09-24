@@ -1,0 +1,1586 @@
+// Privileged fault injection belongs to the test binary only. Production
+// consumers receive TypeReadContext, never this raw transaction callback.
+module SKJS;
+
+extension class Subst {
+  mutable fun testObservedReads<T>(
+    read: (mutable Subst) -> ?T,
+  ): TypeReadResult<T> {
+    this.withCommittedTypeReads(read)
+  }
+
+  mutable fun testObservedDecision<T>(
+    decide: (mutable Subst) -> T,
+  ): TypeReadResult<T> {
+    this.withCommittedTypeReads(scratch -> Some(decide(scratch)))
+  }
+
+  // A declaration environment owns no candidates; that is the premise behind
+  // the refusal in the private stateful constructor.
+  static fun testCandidateOwner(tcenvb: mutable TCEnvBase): ?mutable Subst {
+    static::candidateOwner(tcenvb)
+  }
+
+  // Building a substitution from a state that is not this one's is what the
+  // private stateful constructor exists to guard; the test for that guard
+  // needs to be able to try it.
+  mutable fun testMcreateWithState(state: readonly SubstState): mutable Subst {
+    Subst::mcreateWithState(this, state)
+  }
+
+  // The normalization memos themselves, so a test can seed one, clear one, or
+  // compare two states entry by entry. Production consumers see only the
+  // memoize operations: what is remembered, and what this owner has qualified.
+  readonly fun testSeenSubtypes(): SortedSet<(TType, TType)> {
+    this.seenSub
+  }
+
+  mutable fun testSetSeenSubtypes(entries: SortedSet<(TType, TType)>): void {
+    this.!seenSub = entries
+  }
+
+  readonly fun testSeenIntersections(): SortedMap<(TType, TType), TType> {
+    this.seenInter
+  }
+
+  mutable fun testSetSeenIntersections(
+    entries: SortedMap<(TType, TType), TType>,
+  ): void {
+    this.!seenInter = entries
+  }
+
+  readonly fun testSeenUnions(): SortedMap<(TType, TType), TType> {
+    this.seenUnion
+  }
+
+  readonly fun testSeenExpansions(): SortedMap<ExpansionKey, TType> {
+    this.seenExpansion
+  }
+}
+
+extension base class SubstState {
+  readonly fun testStateSeenSubtypes(): SortedSet<(TType, TType)> {
+    this.seenSub
+  }
+
+  readonly fun testStateSeenIntersections(): SortedMap<(TType, TType), TType> {
+    this.seenInter
+  }
+
+  readonly fun testStateSeenUnions(): SortedMap<(TType, TType), TType> {
+    this.seenUnion
+  }
+
+  readonly fun testStateSeenExpansions(): SortedMap<ExpansionKey, TType> {
+    this.seenExpansion
+  }
+}
+
+module end;
+
+module SKJSTests;
+
+fun observationSubst(): mutable SKJS.Subst {
+  context = SKStore.Context::mcreate{};
+  results = SKJS.TCResultsAcc::mcreate{errorHandling => SKJS.EHDefault()};
+  base = mutable SKJS.TCEnvLight{context, results};
+  SKJS.Subst::createCheckingOwner(base)
+}
+
+fun observationNumber(): SKJS.TType {
+  SKJS.TType::single(SKJS.TPrimValue::number(SKJS.PosRange::none))
+}
+
+fun observationString(): SKJS.TType {
+  SKJS.TType::single(SKJS.TPrimValue::string(SKJS.PosRange::none))
+}
+
+// Fixture construction uses the same growth and sealing operations as the
+// checker. Tests cannot bypass mutation tracking by writing the store directly.
+fun observationBind(
+  subst: mutable SKJS.Subst,
+  tv: SKJS.TVar,
+  ty: SKJS.TType,
+  closed: Bool,
+): void {
+  // A fresh declaration environment avoids initializing the owner's SKStore
+  // twice when a fixture binds several variables. Candidate state stays in subst.
+  tenv = observationTypeEnv(observationSubst());
+  subst.grow(tenv, tv, ty, SKJS.Contravariant());
+  if (closed) {
+    _ = subst.get(tenv, tv, SKJS.Covariant())
+  }
+}
+
+@test
+fun testObservedBindingIsCommitted(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  tv = subst.gen(SKJS.PosRange::none);
+  num = observationNumber();
+  observationBind(subst, tv, num, false);
+  epoch = subst.typeOwnerEpoch();
+  result = subst.withCommittedReadContext(tenv, scratch -> scratch.peekRaw(tv));
+  SKTest.expectEq(true, result is SKJS.TRReady _);
+  SKTest.expectEq(true, subst.isClosed(tv));
+  SKTest.expectEq(Some(num), subst.peekRaw(tv));
+  SKTest.expectEq(epoch + 1, subst.typeOwnerEpoch());
+}
+
+@test
+fun testUnboundSubtypeTargetBlocksWithoutProposals(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  tv = subst.gen(SKJS.PosRange::none);
+  epoch = subst.typeOwnerEpoch();
+  knownAlternative = SKJS.TType::unionStructural(
+    observationNumber(),
+    SKJS.TType::var(tv),
+  );
+  covered = subst.proveSubtype(tenv, observationNumber(), knownAlternative);
+  // Prove the known branch without solving or interpreting the opaque one.
+  SKTest.expectEq(true, covered is SKJS.TRReady _);
+  result = subst.proveSubtype(tenv, observationNumber(), SKJS.TType::var(tv));
+  SKTest.expectEq(true, result is SKJS.TRBlocked _);
+  SKTest.expectEq(true, subst.isUnbound(tv));
+  SKTest.expectEq(epoch, subst.typeOwnerEpoch());
+}
+
+@test
+fun testUnavailableObservationDoesNotCommit(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  tv = subst.gen(SKJS.PosRange::none);
+  observationBind(subst, tv, observationNumber(), false);
+  epoch = subst.typeOwnerEpoch();
+  result = subst.withCommittedReadContext<SKJS.TType>(tenv, scratch -> {
+    _ = scratch.peekRaw(tv);
+    None()
+  });
+  SKTest.expectEq(true, result is SKJS.TRUnavailable _);
+  SKTest.expectEq(true, subst.isOpen(tv));
+  SKTest.expectEq(epoch, subst.typeOwnerEpoch());
+}
+
+@test
+fun testObservedClosedOuterStillCommitsInnerRead(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  outer = subst.gen(SKJS.PosRange::none);
+  inner = subst.gen(SKJS.PosRange::none);
+  observationBind(subst, outer, SKJS.TType::var(inner), true);
+  observationBind(subst, inner, observationNumber(), false);
+  result = subst.withCommittedReadDecision(tenv, context ->
+    context.expand(SKJS.TType::var(outer), Some(SKJS.Covariant()))
+  );
+  SKTest.expectEq(
+    true,
+    result match {
+    | SKJS.TRReady(ty) -> ty == observationNumber()
+    | _ -> false
+    },
+  );
+  SKTest.expectEq(true, subst.isClosed(inner));
+}
+
+@test
+fun testReadExpansionPreservesSymbolicAndOccurrenceTypes(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  tv = subst.gen(SKJS.PosRange::none);
+  constrained = SKJS.TType::var(tv.setConstraint(observationString()));
+  // Preserving a symbolic occurrence must neither read an unbound candidate
+  // nor erase its local constraint.
+  symbolic = subst.withCommittedReadDecision(tenv, context ->
+    context.expand(constrained, None())
+  );
+  SKTest.expectEq(
+    true,
+    symbolic match {
+    | SKJS.TRReady(ty) -> ty == constrained
+    | _ -> false
+    },
+  );
+  SKTest.expectEq(true, subst.isUnbound(tv));
+  blocked = subst.withCommittedReadDecision(tenv, context ->
+    context.expand(constrained, Some(SKJS.Covariant()))
+  );
+  SKTest.expectEq(true, blocked is SKJS.TRBlocked _);
+  SKTest.expectEq(true, subst.isUnbound(tv));
+  observationBind(subst, tv, observationNumber(), false);
+  // Both polarities inspect the same fixed binding and apply the occurrence
+  // constraint. The bottom occurrence must not overwrite that binding.
+  for (variance in Array[SKJS.Covariant(), SKJS.Contravariant()]) {
+    result = subst.withCommittedReadDecision(tenv, context ->
+      context.expand(constrained, Some(variance))
+    );
+    SKTest.expectEq(
+      true,
+      result match {
+      | SKJS.TRReady(ty) -> ty.isBottom()
+      | _ -> false
+      },
+    );
+    SKTest.expectEq(Some(observationNumber()), subst.peekRaw(tv));
+    SKTest.expectEq(true, subst.isClosed(tv))
+  }
+}
+
+@test
+fun testUninspectedSymbolicMemberRemainsOpen(): void {
+  subst = observationSubst();
+  outer = subst.gen(SKJS.PosRange::none);
+  member = subst.gen(SKJS.PosRange::none);
+  arrayTy = SKJS.TType::inst(
+    SKJS.Name(SKJS.PosRange::none, "Array"),
+    SKJS.TArgs(Array[SKJS.TType::var(member)]),
+  );
+  observationBind(subst, outer, arrayTy, false);
+  // No binding for member is needed to retain the symbolic Array<member>.
+  result = subst.testObservedReads(scratch -> scratch.peekRaw(outer));
+  SKTest.expectEq(true, result is SKJS.TRReady _);
+  SKTest.expectEq(true, subst.isClosed(outer));
+  SKTest.expectEq(true, subst.isUnbound(member));
+}
+
+@test
+fun testNestedDescendantContributesReadDependencies(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  observationBind(subst, tv, observationNumber(), false);
+  result = subst.testObservedReads(scratch -> {
+    child = scratch.observationDescendant();
+    child.peekRaw(tv)
+  });
+  SKTest.expectEq(true, result is SKJS.TRReady _);
+  SKTest.expectEq(true, subst.isClosed(tv));
+}
+
+@test
+fun testNestedNormalizationSubstKeepsSnapshot(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  observationBind(subst, tv, observationNumber(), false);
+  result = subst.testObservedReads(scratch -> {
+    // The omitted state must not replace the inherited candidate store by an
+    // empty one, as ordinary declaration-only normalization is allowed to do.
+    child = SKJS.Subst::mcreate(scratch);
+    child.peekRaw(tv)
+  });
+  SKTest.expectEq(true, result is SKJS.TRReady _);
+  SKTest.expectEq(true, subst.isClosed(tv));
+}
+
+@test
+fun testCaughtAllocationDoesNotAuthorizeObservation(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  observationBind(subst, tv, observationNumber(), false);
+  epoch = subst.typeOwnerEpoch();
+  result = subst.testObservedReads(scratch -> {
+    saved = scratch.save();
+    try {
+      _ = scratch.gen(SKJS.PosRange::none)
+    } catch {
+    | SKJS.SubstObservationBlocked() -> void
+    | exn -> throw exn
+    };
+    scratch.restore(saved);
+    // Even returning a concrete answer without a further read cannot erase
+    // the blocked latch by catching the exception and restoring the state.
+    Some(observationNumber())
+  });
+  SKTest.expectEq(true, result is SKJS.TRBlocked _);
+  SKTest.expectEq(true, subst.isOpen(tv));
+  SKTest.expectEq(epoch, subst.typeOwnerEpoch());
+}
+
+@test
+fun testFrozenTransferIsAtomic(): void {
+  subst = observationSubst();
+  field = subst.genForField(SKJS.PosRange::none);
+  candidate = subst.gen(SKJS.PosRange::none);
+  num = observationNumber();
+  observationBind(subst, field, num, false);
+  observationBind(subst, candidate, num, false);
+  subst.!freezeCandidates = true;
+  epoch = subst.typeOwnerEpoch();
+  result = subst.testObservedReads(scratch -> {
+    _ = scratch.peekRaw(field);
+    scratch.peekRaw(candidate)
+  });
+  SKTest.expectEq(true, result is SKJS.TRBlocked _);
+  // Pinning the field would be allowed, but must not happen when committing
+  // the complete read set would require sealing a frozen candidate.
+  SKTest.expectEq(true, subst.isOpen(field));
+  SKTest.expectEq(true, subst.isOpen(candidate));
+  SKTest.expectEq(epoch, subst.typeOwnerEpoch());
+}
+
+@test
+fun testFrozenAlreadyClosedReadSucceeds(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  observationBind(subst, tv, observationNumber(), true);
+  subst.!freezeCandidates = true;
+  epoch = subst.typeOwnerEpoch();
+  result = subst.testObservedReads(scratch -> scratch.peekRaw(tv));
+  SKTest.expectEq(true, result is SKJS.TRReady _);
+  SKTest.expectEq(epoch, subst.typeOwnerEpoch());
+}
+
+@test
+fun testOwnerRollbackInvalidatesInFlightRead(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  tv = subst.gen(SKJS.PosRange::none);
+  observationBind(subst, tv, observationNumber(), false);
+  saved = subst.save();
+  version = subst.inferenceVersion();
+  result = subst.withCommittedReadContext(tenv, scratch -> {
+    value = scratch.peekRaw(tv);
+    subst.restore(saved);
+    value
+  });
+  SKTest.expectEq(version, subst.inferenceVersion());
+  SKTest.expectEq(true, result is SKJS.TRBlocked _);
+  SKTest.expectEq(true, subst.isOpen(tv));
+}
+
+// The frame rejects a read payload from a different candidate interpretation.
+// Supply the mismatched data directly to the frame, not to the owner's store.
+@test
+fun testObservationRejectsMismatchedBindingPayload(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  observationBind(subst, tv, observationNumber(), false);
+  frame = SKJS.SubstReadObservation::mcreate(subst.snapshot());
+  caught = false;
+  try {
+    frame.record(tv, Some(SKJS.SVOpen(observationString())))
+  } catch {
+  | SKJS.SubstObservationBlocked() -> !caught = true
+  | exn -> throw exn
+  };
+  SKTest.expectEq(true, caught);
+  SKTest.expectEq(true, frame.isBlocked());
+  SKTest.expectEq(Some(observationNumber()), subst.peekRaw(tv));
+}
+
+@test
+fun testObservedScratchDoesNotInheritSuccessCaches(): void {
+  subst = observationSubst();
+  num = observationNumber();
+  str = observationString();
+  subst.testSetSeenSubtypes(SortedSet[(num, str)]);
+  subst.memoizeIntersection(num, str, num);
+  result = subst.testObservedReads<SKJS.TType>(scratch -> {
+    SKTest.expectEq(true, scratch.testSeenSubtypes().isEmpty());
+    SKTest.expectEq(true, scratch.testSeenIntersections().isEmpty());
+    scratch.testSetSeenSubtypes(SortedSet[(str, num)]);
+    Some(num)
+  });
+  SKTest.expectEq(true, result is SKJS.TRReady _);
+  SKTest.expectEq(SortedSet[(num, str)], subst.testSeenSubtypes());
+}
+
+@test
+fun testImmutableSnapshotDoesNotFollowLiveGrowth(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  num = observationNumber();
+  observationBind(subst, tv, num, false);
+  snapshot = subst.snapshot();
+  observationBind(subst, tv, observationString(), false);
+  SKTest.expectEq(Some(num), snapshot.peekRaw(tv));
+  SKTest.expectEq(true, subst.isOpen(tv));
+}
+
+class ObservationTestFailure() extends Exception
+
+@test
+fun testUnexpectedObservationExceptionPropagates(): void {
+  subst = observationSubst();
+  caught = false;
+  try {
+    _ = subst.testObservedReads<SKJS.TType>(_scratch -> {
+      throw ObservationTestFailure()
+    })
+  } catch {
+  | ObservationTestFailure() -> !caught = true
+  | exn -> throw exn
+  };
+  SKTest.expectEq(true, caught);
+}
+
+@test
+fun testNestedForeignCandidateStateIsRefused(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  observationBind(subst, tv, observationNumber(), false);
+  foreign = observationSubst();
+  other = foreign.gen(SKJS.PosRange::none);
+  observationBind(foreign, other, observationString(), false);
+  foreignState = foreign.save();
+  result = subst.testObservedReads(scratch -> {
+    child = scratch.testMcreateWithState(foreignState);
+    child.peekRaw(tv)
+  });
+  SKTest.expectEq(true, result is SKJS.TRBlocked _);
+  SKTest.expectEq(true, subst.isOpen(tv));
+}
+
+// A saved candidate store can agree with the observation while its cached
+// answers have never contributed to that observation's read frame. The caches
+// below are deliberately poisoned fixtures, not claimed valid subtype facts.
+@test
+fun testObservedRestoreCannotImportOwnerCaches(): void {
+  subst = observationSubst();
+  num = observationNumber();
+  str = observationString();
+  pos = SKJS.PosRange::none;
+  key = SKJS.ExpansionKey(
+    SKJS.TypeDefinitionIdentity(pos.fileName, "ObservedAlias", 0),
+    SKJS.TArgs(Array[]),
+  );
+  subst.testSetSeenSubtypes(SortedSet[(num, str)]);
+  subst.memoizeIntersection(num, str, num);
+  subst.memoizeUnion(num, str, num);
+  subst.memoizeExpansion(key, str);
+  saved = subst.save();
+  result = subst.testObservedReads<SKJS.TType>(scratch -> {
+    scratch.restore(saved);
+    SKTest.expectEq(true, scratch.testSeenSubtypes().isEmpty());
+    SKTest.expectEq(true, scratch.testSeenIntersections().isEmpty());
+    SKTest.expectEq(true, scratch.testSeenUnions().isEmpty());
+    SKTest.expectEq(true, scratch.testSeenExpansions().isEmpty());
+    Some(num)
+  });
+  SKTest.expectEq(true, result is SKJS.TRReady _);
+  // Scratch cleanup does not rewrite the live owner's inference caches.
+  SKTest.expectEq(saved.testStateSeenSubtypes(), subst.testSeenSubtypes());
+  SKTest.expectEq(
+    saved.testStateSeenIntersections(),
+    subst.testSeenIntersections(),
+  );
+  SKTest.expectEq(saved.testStateSeenUnions(), subst.testSeenUnions());
+  SKTest.expectEq(saved.testStateSeenExpansions(), subst.testSeenExpansions());
+}
+
+@test
+fun testObservedLocalRestoreKeepsInspectedDependencies(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  num = observationNumber();
+  str = observationString();
+  observationBind(subst, tv, num, false);
+  result = subst.testObservedReads(scratch -> {
+    observed = scratch.peekRaw(tv);
+    scratch.testSetSeenSubtypes(SortedSet[(num, str)]);
+    saved = scratch.save();
+    scratch.restore(saved);
+    SKTest.expectEq(true, scratch.testSeenSubtypes().isEmpty());
+    observed
+  });
+  SKTest.expectEq(true, result is SKJS.TRReady _);
+  SKTest.expectEq(true, subst.isClosed(tv));
+}
+
+@test
+fun testNestedObservedRestoreCannotImportOwnerCaches(): void {
+  subst = observationSubst();
+  num = observationNumber();
+  str = observationString();
+  subst.testSetSeenSubtypes(SortedSet[(num, str)]);
+  saved = subst.save();
+  result = subst.testObservedReads<SKJS.TType>(scratch -> {
+    nested = scratch.observationDescendant();
+    nested.restore(saved);
+    SKTest.expectEq(true, nested.testSeenSubtypes().isEmpty());
+    Some(num)
+  });
+  SKTest.expectEq(true, result is SKJS.TRReady _);
+}
+
+@test
+fun testOrdinaryRestoreStillRestoresInferenceCaches(): void {
+  subst = observationSubst();
+  num = observationNumber();
+  str = observationString();
+  subst.testSetSeenSubtypes(SortedSet[(num, str)]);
+  subst.memoizeIntersection(num, str, num);
+  saved = subst.save();
+  subst.testSetSeenSubtypes(SortedSet[]);
+  subst.testSetSeenIntersections(SortedMap[]);
+  subst.restore(saved);
+  SKTest.expectEq(saved.testStateSeenSubtypes(), subst.testSeenSubtypes());
+  SKTest.expectEq(
+    saved.testStateSeenIntersections(),
+    subst.testSeenIntersections(),
+  );
+}
+
+// Unlike an optional read, a negative decision is consumed by the caller.
+// Its read set must therefore be committed, even when the value is false.
+@test
+fun testFalseTypeDecisionCommitsItsReads(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  observationBind(subst, tv, observationNumber(), false);
+  epoch = subst.typeOwnerEpoch();
+  result = subst.testObservedDecision<Bool>(scratch ->
+    scratch.peekRaw(tv).fromSome().getSingleVar().isSome()
+  );
+  SKTest.expectEq(true, result is SKJS.TRReady(false));
+  SKTest.expectEq(true, subst.isClosed(tv));
+  SKTest.expectEq(epoch + 1, subst.typeOwnerEpoch());
+}
+
+// This is the shape of the function-subtyping tuple decision: no fixed tuple
+// was found, but that conclusion is not an unavailable optional observation.
+@test
+fun testAbsentTupleDecisionCommitsItsReads(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  tv = subst.gen(SKJS.PosRange::none);
+  observationBind(subst, tv, observationNumber(), false);
+  result = SKJS.VariadicTyping::resolveSubtypeRestTuple(
+    subst,
+    tenv,
+    Some(SKJS.TType::var(tv)),
+  );
+  SKTest.expectEq(None(), result);
+  SKTest.expectEq(true, subst.isClosed(tv));
+}
+
+@test
+fun testBlockedDecisionIsNotFalse(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  epoch = subst.typeOwnerEpoch();
+  result = subst.testObservedDecision<Bool>(scratch -> scratch.isClosed(tv));
+  SKTest.expectEq(true, result is SKJS.TRBlocked _);
+  SKTest.expectEq(true, subst.isUnbound(tv));
+  SKTest.expectEq(epoch, subst.typeOwnerEpoch());
+}
+
+// Catching a forbidden inference operation cannot produce a trusted negative
+// decision; the shared blocked latch survives the caught exception.
+@test
+fun testCaughtBlockDoesNotAuthorizeNegativeDecision(): void {
+  subst = observationSubst();
+  epoch = subst.typeOwnerEpoch();
+  result = subst.testObservedDecision<Bool>(scratch -> {
+    try {
+      _ = scratch.gen(SKJS.PosRange::none)
+    } catch {
+    | SKJS.SubstObservationBlocked() -> void
+    | exn -> throw exn
+    };
+    false
+  });
+  SKTest.expectEq(true, result is SKJS.TRBlocked _);
+  SKTest.expectEq(epoch, subst.typeOwnerEpoch());
+}
+
+// The layout can inspect an outer binding without inspecting its element.
+// Later positional checks must still be able to infer that symbolic element.
+@test
+fun testRestLayoutDecisionLeavesSymbolicElementOpen(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  file = SKJS.FPath::create(
+    SKJS.RootId::project,
+    "tests/expect-error/type-query-memo-stability.ts",
+  );
+  lexer = SKJS.Lexer::mcreate(file, "");
+  pos = SKJS.PosRange::create(lexer, SKJS.Pos(0), SKJS.Pos(0));
+  outer = subst.gen(SKJS.PosRange::none);
+  element = subst.gen(SKJS.PosRange::none);
+  arrayTy = SKJS.TType::inst(
+    SKJS.Name(pos, "Array"),
+    SKJS.TArgs(Array[SKJS.TType::var(element)]),
+  );
+  observationBind(subst, outer, arrayTy, false);
+  result = SKJS.VariadicTyping::resolveSubtypeRestTuple(
+    subst,
+    tenv,
+    Some(SKJS.TType::var(outer)),
+  );
+  SKTest.expectEq(None(), result);
+  SKTest.expectEq(true, subst.isClosed(outer));
+  SKTest.expectEq(true, subst.isUnbound(element));
+}
+
+// Rejecting the enclosing alternative abandons its layout decision too.
+// The normal rollback path must restore the pre-decision open binding.
+@test
+fun testRestLayoutCommitmentRollsBackWithAlternative(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  tv = subst.gen(SKJS.PosRange::none);
+  observationBind(subst, tv, observationNumber(), false);
+  saved = subst.save();
+  result = SKJS.VariadicTyping::resolveSubtypeRestTuple(
+    subst,
+    tenv,
+    Some(SKJS.TType::var(tv)),
+  );
+  SKTest.expectEq(None(), result);
+  SKTest.expectEq(true, subst.isClosed(tv));
+  subst.restore(saved);
+  SKTest.expectEq(true, subst.isOpen(tv));
+  SKTest.expectEq(saved.inferenceVersion(), subst.inferenceVersion());
+}
+
+// Alias/class constraint probes may solve throwaway variables while a surrounding
+// materialization is observing its real dependencies. Those speculative writes
+// must neither block the observation nor escape into the owner.
+@test
+fun testDetachedTypeArgumentProbeDoesNotBlockObservation(): void {
+  subst = observationSubst();
+  observed = subst.gen(SKJS.PosRange::none);
+  observationBind(subst, observed, observationNumber(), false);
+  ownerVersion = subst.inferenceVersion();
+  result = subst.testObservedReads<Bool>(scratch -> {
+    probe = scratch.compatibilityProbe();
+    // Both allocation and growth are confined to the detached probe.
+    speculative = probe.gen(SKJS.PosRange::none);
+    observationBind(probe, speculative, observationString(), false);
+    SKTest.expectEq(
+      true,
+      probe.typeComputationPurpose() is SKJS.TCPTypeArgumentProbe(),
+    );
+    _ = scratch.peekRaw(observed);
+    Some(true)
+  });
+  SKTest.expectEq(true, result is SKJS.TRReady(true));
+  SKTest.expectEq(true, subst.isClosed(observed));
+  // Only committing the observed binding mutates the owner; speculative probe
+  // allocation/growth lives on the detached probe.
+  SKTest.expectEq(ownerVersion + 1, subst.inferenceVersion());
+}
+
+@test
+fun testProbePurposeSurvivesAttemptsAndNormalization(): void {
+  subst = observationSubst();
+  originalVersion = subst.inferenceVersion();
+  probe = subst.compatibilityProbe();
+  attempt = probe.compatibilityProbe();
+  fresh = SKJS.Subst::mcreate(attempt);
+  SKTest.expectEq(
+    true,
+    fresh.typeComputationPurpose() is SKJS.TCPTypeArgumentProbe(),
+  );
+  _ = fresh.gen(SKJS.PosRange::none);
+  decision = probe.testObservedDecision<Bool>(scratch -> {
+    nested = SKJS.Subst::mcreate(scratch.observationDescendant());
+    nested.typeComputationPurpose() is SKJS.TCPTypeArgumentProbe()
+  });
+  SKTest.expectEq(true, decision is SKJS.TRReady(true));
+  SKTest.expectEq(originalVersion, subst.inferenceVersion());
+  SKTest.expectEq(true, subst.typeComputationPurpose() is SKJS.TCPChecking());
+}
+
+@test
+fun testProbeCannotInstallAnObservedPayload(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  num = observationNumber();
+  observationBind(subst, tv, num, false);
+  result = subst.testObservedReads(scratch -> {
+    observationBind(
+      scratch.compatibilityProbe(),
+      tv,
+      observationString(),
+      true,
+    );
+    scratch.peekRaw(tv)
+  });
+  SKTest.expectEq(true, result is SKJS.TRReady _);
+  SKTest.expectEq(Some(num), subst.peekRaw(tv));
+  SKTest.expectEq(true, subst.isClosed(tv));
+}
+
+@test
+fun testDiagnosticReadDoesNotContributeACommitment(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  observationBind(subst, tv, observationNumber(), false);
+  result = subst.testObservedReads<Bool>(scratch -> {
+    diagnostic = scratch.diagnosticComputation();
+    _ = diagnostic.peekRaw(tv);
+    _ = diagnostic.gen(SKJS.PosRange::none);
+    SKTest.expectEq(
+      true,
+      diagnostic.typeComputationPurpose() is SKJS.TCPDiagnostic(),
+    );
+    Some(true)
+  });
+  SKTest.expectEq(true, result is SKJS.TRReady(true));
+  SKTest.expectEq(true, subst.isOpen(tv));
+}
+
+@test
+fun testDetachedPurposeDoesNotChangeOnRestore(): void {
+  subst = observationSubst();
+  saved = subst.save();
+  diagnostic = subst.diagnosticComputation();
+  diagnostic.restore(saved);
+  SKTest.expectEq(
+    true,
+    diagnostic.typeComputationPurpose() is SKJS.TCPDiagnostic(),
+  );
+  child = SKJS.Subst::mcreate(diagnostic);
+  SKTest.expectEq(true, child.typeComputationPurpose() is SKJS.TCPDiagnostic());
+}
+
+// A probe proposal reports its outcome and nothing else. Whether it succeeds
+// or fails, the owner's candidates and version are untouched, so no consumer
+// can read a decision back out of the state the probe left behind.
+@test
+fun testProbeSubtypeProposalLeavesTheOwnerAlone(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  tv = subst.gen(SKJS.PosRange::none);
+  version = subst.inferenceVersion();
+  accepted = subst.probeSubtypeProposal(
+    tenv,
+    observationNumber(),
+    SKJS.TType::var(tv),
+  );
+  SKTest.expectEq(true, accepted is SKJS.SubtypeProposed());
+  // The proposal solved the candidate in the probe, not here.
+  SKTest.expectEq(true, subst.isUnbound(tv));
+  SKTest.expectEq(version, subst.inferenceVersion());
+  rejected = subst.probeSubtypeProposal(
+    tenv,
+    observationNumber(),
+    observationString(),
+  );
+  SKTest.expectEq(true, rejected is SKJS.SubtypeProposalRejected _);
+  SKTest.expectEq(version, subst.inferenceVersion());
+}
+
+// Frozen-query memo eligibility is based on the reads of this computation,
+// including reads in scratch descendants, not the outer variable's tag alone.
+@test
+fun testFrozenClosedReadsCanMemoize(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  // An earlier unsealed read must not poison all later queries.
+  _ = subst.peekRaw(tv);
+  observationBind(subst, tv, observationNumber(), true);
+  subst.!freezeCandidates = true;
+  stamp = subst.typeQueryReadStamp();
+  _ = subst.peekRaw(tv);
+  SKTest.expectEq(true, subst.canCacheTypeQuerySince(stamp));
+}
+
+@test
+fun testFrozenUnboundReadSurvivesRollback(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  subst.!freezeCandidates = true;
+  saved = subst.save();
+  stamp = subst.typeQueryReadStamp();
+  _ = subst.isUnbound(tv);
+  subst.restore(saved);
+  SKTest.expectEq(false, subst.canCacheTypeQuerySince(stamp));
+}
+
+@test
+fun testFrozenOpenReadInProbeCannotMemoize(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  observationBind(subst, tv, observationNumber(), false);
+  subst.!freezeCandidates = true;
+  stamp = subst.typeQueryReadStamp();
+  scratch = subst.compatibilityProbe();
+  saved = scratch.save();
+  _ = scratch.peekRaw(tv);
+  scratch.restore(saved);
+  SKTest.expectEq(false, subst.canCacheTypeQuerySince(stamp));
+}
+
+@test
+fun testFrozenClosedOuterDoesNotHideNormalizerRead(): void {
+  subst = observationSubst();
+  outer = subst.gen(SKJS.PosRange::none);
+  inner = subst.gen(SKJS.PosRange::none);
+  observationBind(subst, outer, SKJS.TType::var(inner), true);
+  observationBind(subst, inner, observationNumber(), false);
+  subst.!freezeCandidates = true;
+  stamp = subst.typeQueryReadStamp();
+  scratch = subst.testMcreateWithState(subst);
+  raw = scratch.peekRaw(outer);
+  SKTest.expectEq(true, subst.canCacheTypeQuerySince(stamp));
+  _ = raw.flatMap(ty -> ty.getSingleVar().flatMap(tv -> scratch.peekRaw(tv)));
+  SKTest.expectEq(false, subst.canCacheTypeQuerySince(stamp));
+}
+
+@test
+fun testFrozenObservedReadCannotMemoize(): void {
+  subst = observationSubst();
+  tv = subst.gen(SKJS.PosRange::none);
+  observationBind(subst, tv, observationNumber(), false);
+  subst.!freezeCandidates = true;
+  stamp = subst.typeQueryReadStamp();
+  result = subst.testObservedReads(scratch -> scratch.peekRaw(tv));
+  SKTest.expectEq(true, result is SKJS.TRBlocked _);
+  SKTest.expectEq(false, subst.canCacheTypeQuerySince(stamp));
+}
+
+// Exercise the real query wrapper with a controlled recursive context. This
+// exposes memo lifetime directly; it is not a source-program counterexample.
+fun observationTypeEnv(subst: mutable SKJS.Subst): SKJS.TEnv {
+  context = subst.context;
+  fs = SKJS.Fs::disk();
+  files =
+    SKJS.Files::create(
+      context,
+      fs,
+      ".",
+      Array["tests/expect-error/type-query-memo-stability.ts"],
+      Array["./import-stubs"],
+    ) |> expectFilesSuccess;
+  SKJS.writeConfig(
+    context,
+    SKJS.CheckerConfig{
+      errorHandling => SKJS.EHDefault(),
+      errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
+    },
+  );
+  SKJS.Checker::create{context, fs, files}.fromSuccess().checker
+}
+
+@test
+fun testRecursiveSubtypeMemoScope(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  number = observationNumber();
+  string = observationString();
+  assumed = tenv with {
+    seenSub => SortedSet[(subst.inferenceVersion(), number, string)],
+  };
+  conditional = subst.proposeSubtype(assumed, number, string);
+  SKTest.expectEq(true, conditional is SKJS.SubtypeProposed());
+  // A proposal can use the supplied recursive assumption. Acceptance cannot.
+  validated = SKJS.TType::isSub(subst, assumed, number, string);
+  SKTest.expectEq(false, validated is SKJS.STOk());
+  // The conditional result must not escape its recursive context.
+  outside = SKJS.TType::isSub(subst, tenv, number, string);
+  SKTest.expectEq(false, outside is SKJS.STOk());
+}
+
+@test
+fun testIndependentSubtypeInsideRecursiveContextCanMemoize(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  number = observationNumber();
+  string = observationString();
+  top = SKJS.TType::top(SKJS.PosRange::none);
+  assumed = tenv with {
+    seenSub => SortedSet[(subst.inferenceVersion(), number, string)],
+  };
+  result = SKJS.TType::isSub(subst, assumed, number, top);
+  SKTest.expectEq(true, result is SKJS.STOk());
+  SKTest.expectEq(true, subst.memoizedSubtype(number, top));
+}
+
+@test
+fun testRecursiveIntersectionMemoScope(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  number = observationNumber();
+  string = observationString();
+  assumed = tenv with {seenInter => SortedSet[(number, string)]};
+  deferredIntersection = SKJS.TType::inter(subst, assumed, number, string);
+  SKTest.expectEq(true, deferredIntersection.getSingleInter().isSome());
+  outside = SKJS.TType::inter(subst, tenv, number, string);
+  SKTest.expectEq(true, outside.isBottom());
+}
+
+@test
+fun testRecursiveQueryInProbeSurvivesRollback(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  number = observationNumber();
+  string = observationString();
+  assumed = tenv with {
+    seenSub => SortedSet[(subst.inferenceVersion(), number, string)],
+  };
+  stamp = subst.typeQueryReadStamp();
+  scratch = subst.compatibilityProbe();
+  saved = scratch.save();
+  _ = SKJS.TType::isSub(scratch, assumed, number, string);
+  scratch.restore(saved);
+  SKTest.expectEq(false, subst.canCacheTypeQuerySince(stamp));
+  // Only computations that consumed the conditional answer are excluded.
+  fresh = subst.typeQueryReadStamp();
+  SKTest.expectEq(true, subst.canCacheTypeQuerySince(fresh));
+}
+
+// Protocol test: a descendant cannot publish its ancestor's premise, while a
+// successful enclosing computation can discharge the premise it introduced.
+@test
+fun testCompletedRecursiveQueryDischargesOwnPremise(): void {
+  subst = observationSubst();
+  premise = SKJS.TQSubtype(
+    subst.inferenceVersion(),
+    observationNumber(),
+    observationString(),
+  );
+  independent = subst.withTypeQuery(() -> {
+    stamp = subst.typeQueryReadStamp();
+    subst.introduceTypeQueryAssumption(premise);
+    nested = subst.withTypeQuery(() -> {
+      childStamp = subst.typeQueryReadStamp();
+      subst.recordRecursiveTypeQuery(premise);
+      (subst.canCacheTypeQuerySince(childStamp), true)
+    });
+    SKTest.expectEq(false, nested);
+    (subst.canCacheTypeQuerySince(stamp), true)
+  });
+  SKTest.expectEq(true, independent);
+}
+
+@test
+fun testAbandonedRecursiveQueryDoesNotDischargePremise(): void {
+  subst = observationSubst();
+  premise = SKJS.TQSubtype(
+    subst.inferenceVersion(),
+    observationNumber(),
+    observationString(),
+  );
+  stamp = subst.typeQueryReadStamp();
+  caught = false;
+  try {
+    _ = subst.withTypeQuery<Bool>(() -> {
+      subst.introduceTypeQueryAssumption(premise);
+      subst.recordRecursiveTypeQuery(premise);
+      throw ObservationTestFailure()
+    })
+  } catch {
+  | ObservationTestFailure() -> !caught = true
+  | exn -> throw exn
+  };
+  SKTest.expectEq(true, caught);
+  SKTest.expectEq(false, subst.canCacheTypeQuerySince(stamp));
+  // A fresh computation still has no dependency on that abandoned attempt.
+  fresh = subst.typeQueryReadStamp();
+  SKTest.expectEq(true, subst.canCacheTypeQuerySince(fresh));
+}
+
+@test
+fun testQueryMutationInsideProbe(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  tv = subst.gen(SKJS.PosRange::none);
+  subst.grow(tenv, tv, observationNumber(), SKJS.Contravariant());
+  stamp = subst.typeMutationStamp();
+  scratch = subst.compatibilityProbe();
+  _ = scratch.get(tenv, tv, SKJS.Covariant());
+  SKTest.expectEq(true, scratch.isClosed(tv));
+  SKTest.expectEq(true, subst.isOpen(tv));
+  // The shared stamp sees the probe's commitment without changing the owner.
+  SKTest.expectEq(false, subst.typeMutationStamp() == stamp);
+}
+
+@test
+fun testQueryMutationUndoneByRollback(): void {
+  subst = observationSubst();
+  saved = subst.save();
+  stamp = subst.typeMutationStamp();
+  _ = subst.gen(SKJS.PosRange::none);
+  subst.restore(saved);
+  // Returning to the old version does not mean the query made no changes.
+  SKTest.expectEq(false, subst.typeMutationStamp() == stamp);
+}
+
+@test
+fun testQueryCacheOnlyRestore(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  saved = subst.save();
+  stamp = subst.typeMutationStamp();
+  _ = SKJS.TType::isSub(
+    subst,
+    tenv,
+    observationNumber(),
+    SKJS.TType::top(SKJS.PosRange::none),
+  );
+  SKTest.expectEq(false, subst.testSeenSubtypes().isEmpty());
+  subst.restore(saved);
+  SKTest.expectEq(true, subst.testSeenSubtypes().isEmpty());
+  SKTest.expectEq(true, subst.typeMutationStamp() == stamp);
+}
+
+fun substituteNumberConstraint(
+  subst: mutable SKJS.Subst,
+  tenv: SKJS.TEnv,
+  candidate: SKJS.TVar,
+): SKJS.TType {
+  pos = SKJS.PosRange::none;
+  parameter = SKJS.TParamWithConstraint(
+    "T",
+    SKJS.FPath::nil,
+    SKJS.Id::createSynthetic("substitution-test-T"),
+    Some(observationNumber()),
+  );
+  original = SKJS.TType::fromTParamWithConstraint(subst, tenv, pos, parameter);
+  original.mapTParams(subst, tenv, _ -> Some(SKJS.TType::var(candidate)))
+}
+
+@test
+fun testFrozenSubstitutionRetainsSatisfiedConstraint(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  tv = subst.gen(SKJS.PosRange::none);
+  subst.grow(tenv, tv, observationNumber(), SKJS.Contravariant());
+  subst.!freezeCandidates = true;
+  mapped = substituteNumberConstraint(subst, tenv, tv);
+  subst.!freezeCandidates = false;
+  SKTest.expectEq(true, subst.isOpen(tv));
+  subst.grow(tenv, tv, observationString(), SKJS.Contravariant());
+  // The retained intersection must still exclude strings after growth.
+  result = SKJS.TType::isSub(subst, tenv, mapped, observationNumber());
+  SKTest.expectEq(true, result is SKJS.STOk());
+}
+
+@test
+fun testFrozenSubstitutionRetainsDisjointConstraint(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  tv = subst.gen(SKJS.PosRange::none);
+  subst.grow(tenv, tv, observationString(), SKJS.Contravariant());
+  subst.!freezeCandidates = true;
+  mapped = substituteNumberConstraint(subst, tenv, tv);
+  subst.!freezeCandidates = false;
+  SKTest.expectEq(true, subst.isOpen(tv));
+  subst.grow(tenv, tv, observationNumber(), SKJS.Contravariant());
+  // A currently disjoint intersection must admit number after growth.
+  result = SKJS.TType::isSub(subst, tenv, observationNumber(), mapped);
+  SKTest.expectEq(true, result is SKJS.STOk());
+}
+
+@test
+fun testFrozenSubstitutionCanSimplifyClosedCandidate(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  tv = subst.gen(SKJS.PosRange::none);
+  subst.grow(tenv, tv, observationNumber(), SKJS.Covariant());
+  subst.!freezeCandidates = true;
+  mapped = substituteNumberConstraint(subst, tenv, tv);
+  subst.!freezeCandidates = false;
+  SKTest.expectEq(true, subst.isClosed(tv));
+  SKTest.expectEq(Some(tv), mapped.getSingleVar());
+}
+
+// Restoring a computation mode cannot discharge a provisional read.
+@test
+fun testFrozenReadDependencySurvivesModeExit(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  inner = subst.gen(SKJS.PosRange::none);
+  outer = subst.gen(SKJS.PosRange::none);
+  subst.grow(tenv, inner, observationNumber(), SKJS.Contravariant());
+  subst.grow(tenv, outer, SKJS.TType::var(inner), SKJS.Covariant());
+  stamp = subst.typeQueryReadStamp();
+  subst.!freezeCandidates = true;
+  result = subst.proposeSubtype(
+    tenv,
+    SKJS.TType::var(outer),
+    observationNumber(),
+  );
+  subst.!freezeCandidates = false;
+  SKTest.expectEq(true, result is SKJS.SubtypeProposed());
+  SKTest.expectEq(true, subst.isClosed(outer));
+  SKTest.expectEq(true, subst.isOpen(inner));
+  // Ending the frozen scope cannot establish the provisional answer.
+  SKTest.expectEq(false, subst.canCacheTypeQuerySince(stamp));
+  subst.grow(tenv, inner, observationString(), SKJS.Contravariant());
+  later = SKJS.TType::isSub(
+    subst,
+    tenv,
+    SKJS.TType::var(outer),
+    observationNumber(),
+  );
+  SKTest.expectEq(false, later is SKJS.STOk());
+}
+
+@test
+fun testFrozenProbeDependencySurvivesModeExitAndRestore(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  tv = subst.gen(SKJS.PosRange::none);
+  subst.grow(tenv, tv, observationNumber(), SKJS.Contravariant());
+  saved = subst.save();
+  stamp = subst.typeQueryReadStamp();
+  scratch = subst.compatibilityProbe();
+  scratch.!freezeCandidates = true;
+  _ = scratch.get(tenv, tv, SKJS.Covariant());
+  scratch.!freezeCandidates = false;
+  subst.restore(saved);
+  // Neither scratch disposal nor rollback establishes its provisional read.
+  SKTest.expectEq(false, subst.canCacheTypeQuerySince(stamp));
+  fresh = subst.typeQueryReadStamp();
+  _ = SKJS.TType::isSub(
+    subst,
+    tenv,
+    observationNumber(),
+    SKJS.TType::top(SKJS.PosRange::none),
+  );
+  SKTest.expectEq(true, subst.canCacheTypeQuerySince(fresh));
+}
+
+@test
+fun testObservedSubtypeDecisionDoesNotProposeGrowth(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  pos = SKJS.PosRange::none;
+  target = subst.gen(pos);
+  subst.grow(tenv, target, observationNumber(), SKJS.Contravariant());
+  undefined = SKJS.TType::single(SKJS.TPrimUnit(SKJS.TUndefined(), pos));
+  decision = subst.testObservedDecision<Bool>(scratch ->
+    SKJS.TType::isSub(
+      scratch,
+      tenv.forTypeReadObservation(),
+      undefined,
+      SKJS.TType::var(target),
+    ) is SKJS.STOk()
+  );
+  // A false result commits the numeric read without proposing undefined.
+  SKTest.expectEq(true, decision is SKJS.TRReady(false));
+  SKTest.expectEq(true, subst.isClosed(target));
+}
+
+// A callback may capture its handle, but it must not learn further candidate
+// shapes after publication or after an exception has abandoned the read set.
+@test
+fun testReadContextExpiresOnEveryExit(): void {
+  for (fail in Array[false, true]) {
+    subst = observationSubst();
+    tenv = observationTypeEnv(subst);
+    inspected = subst.gen(SKJS.PosRange::none);
+    later = subst.gen(SKJS.PosRange::none);
+    observationBind(subst, inspected, observationNumber(), false);
+    observationBind(subst, later, observationString(), false);
+    escaped = SKJS.SubstReadCell::mcreate();
+    copied = SKJS.SubstReadCell::mcreate();
+    failed = false;
+    try {
+      _ = subst.withCommittedReadContext<SKJS.TType>(tenv, context -> {
+        escaped.!value = Some(context);
+        copied.!value = Some(context with {});
+        result = context.peekRaw(inspected);
+        if (fail) {
+          throw ObservationTestFailure()
+        } else {
+          result
+        }
+      })
+    } catch {
+    | ObservationTestFailure() -> !failed = true
+    | exn -> throw exn
+    };
+    SKTest.expectEq(fail, failed);
+    SKTest.expectEq(!fail, subst.isClosed(inspected));
+    blocked = false;
+    try {
+      _ = escaped.value.fromSome().peekRaw(later)
+    } catch {
+    | InvariantViolation(_) -> !blocked = true
+    | exn -> throw exn
+    };
+    SKTest.expectEq(true, blocked);
+    SKTest.expectEq(true, subst.isOpen(later));
+    copyBlocked = false;
+    try {
+      _ = copied.value.fromSome().peekRaw(later)
+    } catch {
+    | InvariantViolation(_) -> !copyBlocked = true
+    | exn -> throw exn
+    };
+    SKTest.expectEq(true, copyBlocked);
+  }
+}
+
+@test
+fun testObservedLiteralRequiresCurrentSelection(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  file = SKJS.FPath::create(
+    SKJS.RootId::project,
+    "tests/expect-error/type-query-memo-stability.ts",
+  );
+  lexer = SKJS.Lexer::mcreate(file, "");
+  pos = SKJS.PosRange::create(lexer, SKJS.Pos(0), SKJS.Pos(0));
+  selector = SKJS.ArrayLiteralSelector::create(subst, pos);
+  literal = SKJS.TType::arrayLit(
+    selector,
+    Array[observationNumber()],
+    Array[None()],
+  );
+  saved = subst.save();
+  read = () ->
+    subst.withCommittedReadDecision(tenv, context ->
+      context.spreadTuple(literal)
+    );
+  SKTest.expectEq(true, read() is SKJS.TRBlocked _);
+  SKTest.expectEq(None(), selector.peek(subst, tenv));
+  selector.commit(
+    subst,
+    tenv,
+    SKJS.TType::tuple(pos, Array[observationNumber()], false),
+  );
+  result = read();
+  SKTest.expectEq(
+    true,
+    result match {
+    | SKJS.TRReady(Some(elements)) -> elements == Array[observationNumber()]
+    | _ -> false
+    },
+  );
+  subst.restore(saved);
+  // A successful read of the previous selection cannot survive rollback.
+  SKTest.expectEq(true, read() is SKJS.TRBlocked _);
+  SKTest.expectEq(None(), selector.peek(subst, tenv));
+}
+
+// Elimination publishes a lasting fact; keeping an alternative does not.
+@test
+fun testAlternativePruningCommitsOnlyElimination(): void {
+  check = (
+    bound: ?SKJS.TType,
+    optional: Bool,
+    frozenCandidates: Bool,
+    eliminate: Bool,
+  ) -> {
+    subst = observationSubst();
+    tenv = observationTypeEnv(subst);
+    pos = SKJS.PosRange::none;
+    candidate = subst.gen(pos);
+    bound.each(ty -> observationBind(subst, candidate, ty, false));
+    objectType = (ty: SKJS.TType, isOptional: Bool) -> {
+      field = constructionField(ty) with {isOptional};
+      fields = SKJS.TFields::createFromSorted{
+        fields => SortedMap[].set(field.name, field),
+      };
+      SKJS.TType::single(SKJS.TObject::createSingleBranch(fields, None(), pos))
+    };
+    current = objectType(SKJS.TType::var(candidate), optional);
+    contract = objectType(observationString(), false);
+    subst.!freezeCandidates = frozenCandidates;
+    result = current.withStableContents(subst, tenv, contract, true);
+    SKTest.expectEq(eliminate, result.isBottom());
+    if (!eliminate) {
+      SKTest.expectEq(contract, result)
+    };
+    SKTest.expectEq(eliminate, subst.isClosed(candidate));
+    SKTest.expectEq(bound, subst.peekRaw(candidate));
+  };
+  check(Some(observationNumber()), false, false, true);
+  check(Some(observationString()), false, false, false);
+  // Optional fields do not prove separation, even with an unknown payload.
+  check(None(), true, false, false);
+  // Neither an unresolved payload nor a frozen open candidate permits pruning.
+  check(None(), false, false, false);
+  check(Some(observationNumber()), false, true, false);
+}
+
+@test
+fun testIteratorProjectionTracksIntermediateShapes(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  file = SKJS.FPath::create(
+    SKJS.RootId::project,
+    "tests/expect-error/type-query-memo-stability.ts",
+  );
+  lexer = SKJS.Lexer::mcreate(file, "");
+  pos = SKJS.PosRange::create(lexer, SKJS.Pos(0), SKJS.Pos(0));
+  symbolId = tenv.getSymbolIteratorUniqueId(subst, pos).fromSome();
+  object = (name: String, ty: SKJS.TType, symbol: Bool) -> {
+    field = constructionField(ty) with {name => SKJS.FieldNameString(name)};
+    fields = SortedMap[].set(field.name, field);
+    shape = if (symbol) {
+      SKJS.TFields::createFromSorted{symbolFields => fields}
+    } else {
+      SKJS.TFields::createFromSorted{fields}
+    };
+    SKJS.TType::single(SKJS.TObject::createSingleBranch(shape, None(), pos))
+  };
+  callable = (result: SKJS.TType) ->
+    SKJS.TType::single(
+      SKJS.TObject::createCall(
+        SKJS.TFuns::singleFun(
+          SKJS.TFun(
+            Array[],
+            SKJS.NoThis(),
+            Array[],
+            Array[],
+            None(),
+            result,
+            SKJS.CGNodes(SortedSet[]),
+          ),
+          pos,
+        ),
+      ),
+    );
+  element = subst.gen(pos);
+  nextResult = subst.gen(pos);
+  nextMethod = subst.gen(pos);
+  iterator = subst.gen(pos);
+  method = subst.gen(pos);
+  observationBind(
+    subst,
+    nextMethod,
+    callable(SKJS.TType::var(nextResult)),
+    false,
+  );
+  observationBind(
+    subst,
+    iterator,
+    object("next", SKJS.TType::var(nextMethod), false),
+    false,
+  );
+  observationBind(subst, method, callable(SKJS.TType::var(iterator)), false);
+  source = object(symbolId, SKJS.TType::var(method), true);
+  read = () ->
+    subst.withCommittedReadContext(tenv, context ->
+      context.restElement(source, SKJS.Covariant())
+    );
+  // Partial traversal must not publish the reads before an unknown result shape.
+  SKTest.expectEq(true, read() is SKJS.TRBlocked _);
+  for (candidate in Array[method, iterator, nextMethod]) {
+    SKTest.expectEq(true, subst.isOpen(candidate))
+  };
+  observationBind(
+    subst,
+    nextResult,
+    object("value", SKJS.TType::var(element), false),
+    false,
+  );
+  SKTest.expectEq(
+    true,
+    read() match {
+    | SKJS.TRReady(ty) -> ty == SKJS.TType::var(element)
+    | _ -> false
+    },
+  );
+  for (candidate in Array[method, iterator, nextMethod, nextResult]) {
+    SKTest.expectEq(true, subst.isClosed(candidate))
+  };
+  // The element is returned symbolically; discovering the protocol did not read it.
+  SKTest.expectEq(true, subst.isUnbound(element));
+}
+
+@test
+fun testObservedCallbackSubtypeCommitsAtomically(): void {
+  subst = observationSubst();
+  tenv = observationTypeEnv(subst);
+  pos = SKJS.PosRange::none;
+  input = subst.gen(pos);
+  output = subst.gen(pos);
+  observationBind(subst, input, observationNumber(), false);
+  callback = (arg, result) ->
+    SKJS.TType::single(
+      SKJS.TObject::createCall(
+        SKJS.TFuns::singleFun(
+          SKJS.TFun(
+            Array[],
+            SKJS.NoThis(),
+            Array[arg],
+            Array[],
+            None(),
+            result,
+            SKJS.CGNodes(SortedSet[]),
+          ),
+          pos,
+        ),
+      ),
+    );
+  source = callback(observationNumber(), SKJS.TType::var(output));
+  target = callback(SKJS.TType::var(input), observationString());
+  check = () ->
+    subst.withCommittedReadDecision<Bool>(tenv, context ->
+      context.isSubtype(source, target)
+    );
+  // The contravariant input is read before the unresolved covariant output.
+  // A blocked comparison must not publish its earlier successful read.
+  SKTest.expectEq(true, check() is SKJS.TRBlocked());
+  SKTest.expectEq(false, subst.snapshot().isClosed(input));
+  observationBind(subst, output, observationString(), false);
+  check() match {
+  | SKJS.TRReady(value) -> SKTest.expectEq(true, value)
+  | _ -> SKTest.expectEq(true, false)
+  };
+  SKTest.expectEq(true, subst.snapshot().isClosed(input));
+  SKTest.expectEq(true, subst.snapshot().isClosed(output));
+}
+
+@test
+fun testMaterializationKeepsCheckingProbeAndDiagnosticPurposesSeparate(): void {
+  owner = observationSubst();
+  tenv = observationTypeEnv(owner);
+  pos = SKJS.PosRange::none;
+  checking = tenv.materializeReadContext<Bool>(
+    owner,
+    pos,
+    _context -> true,
+    (_scratch, _env) -> false,
+  );
+  SKTest.expectEq(true, checking);
+  probing = tenv.materializeReadContext<Bool>(
+    owner.compatibilityProbe(),
+    pos,
+    _context -> false,
+    (scratch, _) ->
+      !scratch.isObservingTypeReads() &&
+        scratch.typeComputationPurpose() is SKJS.TCPTypeArgumentProbe()
+    ,
+  );
+  SKTest.expectEq(true, probing);
+  diagnostic = owner.diagnosticComputation();
+  diagnosing = tenv.materializeReadContext<Bool>(
+    diagnostic,
+    pos,
+    _context -> false,
+    (scratch, _) ->
+      !scratch.isObservingTypeReads() &&
+        scratch.typeComputationPurpose() is SKJS.TCPDiagnostic()
+    ,
+  );
+  SKTest.expectEq(true, diagnosing);
+  SKTest.expectEq(true, owner.typeComputationPurpose() is SKJS.TCPChecking());
+}
+
+// Guidance answers a representation question off the live state: it reports
+// what the target contains without closing the candidate it looked through,
+// so a literal choice is still only a proposal when it is made.
+@test
+fun testGuidanceReadsWithoutClosingTheOwner(): void {
+  owner = observationSubst();
+  tenv = observationTypeEnv(owner);
+  tv = owner.gen(SKJS.PosRange::none);
+  owner.grow(tenv, tv, observationNumber(), SKJS.Contravariant());
+  version = owner.inferenceVersion();
+  stypes = owner.guidanceSTypes(tenv, SKJS.TType::var(tv), SKJS.Covariant());
+  SKTest.expectEq(true, stypes.isSome());
+  SKTest.expectEq(true, owner.isOpen(tv));
+  SKTest.expectEq(version, owner.inferenceVersion());
+}
+
+// Declaration normalization changes lexical environments while borrowing one
+// observation. An unresolved later projection must not commit an earlier one.
+@test
+fun testDeclarationNormalizationBorrowsFrameAndLifetime(): void {
+  owner = observationSubst();
+  tenv = observationTypeEnv(owner);
+  pos = SKJS.PosRange::none;
+  first = owner.gen(pos);
+  second = owner.gen(pos);
+  field = SKJS.TField::create{
+    pos,
+    name => "value",
+    type => observationNumber(),
+    isOptional => false,
+    isReadonly => None(),
+    access => SKJS.FAPublic(),
+  };
+  object = SKJS.TType::single(
+    SKJS.TObject::createSingleBranch(
+      SKJS.TFields::create{fields => mutable Map[field.name => field]},
+      None(),
+      pos,
+    ),
+  );
+  observationBind(owner, first, object, false);
+  scope = tenv with {
+    bindings => SortedMap[
+      "A" => SKJS.TType::var(first),
+      "B" => SKJS.TType::var(second),
+    ],
+  };
+  key = (name: String) ->
+    SKJS.Type(
+      pos,
+      SKJS.TAKeyOf(SKJS.Type(pos, SKJS.TAInst(SKJS.Name(pos, name), Array[]))),
+    );
+  syntax = SKJS.Type(pos, SKJS.TAUnion(key("A"), key("B")));
+  escaped = SKJS.SubstReadCell::mcreate();
+  query = () ->
+    owner.withCommittedReadDecision(tenv, context -> {
+      declaration = SKJS.TypeReadDeclaration::mcreate(
+        owner.context,
+        owner.results,
+        context,
+      );
+      escaped.!value = Some(declaration);
+      SKTest.expectEq(
+        true,
+        SKJS.Subst::testCandidateOwner(declaration).isNone(),
+      );
+      scope.normalize(declaration, syntax)
+    });
+  blocked = query();
+  SKTest.expectEq(true, blocked is SKJS.TRBlocked _);
+  SKTest.expectEq(true, owner.isOpen(first));
+  SKTest.expectEq(true, owner.isUnbound(second));
+  observationBind(owner, second, object, false);
+  result = query();
+  expected = SKJS.TType::single(
+    SKJS.TPrimValue::single(SKJS.TString(), "value", pos),
+  );
+  SKTest.expectEq(
+    true,
+    result match {
+    | SKJS.TRReady(type) -> type == expected
+    | _ -> false
+    },
+  );
+  SKTest.expectEq(true, owner.isClosed(first));
+  SKTest.expectEq(true, owner.isClosed(second));
+  expired = false;
+  try {
+    _ = scope.normalize(escaped.value.fromSome(), syntax)
+  } catch {
+  | InvariantViolation(_) -> !expired = true
+  | exn -> throw exn
+  };
+  SKTest.expectEq(true, expired);
+  denied = false;
+  try {
+    _ = SKJS.Subst::mcreate(escaped.value.fromSome())
+  } catch {
+  | InvariantViolation(_) -> !denied = true
+  | exn -> throw exn
+  };
+  SKTest.expectEq(true, denied);
+}
+
+// A symbolic normalization operation must not be an alternate accepting clone.
+@test
+fun testDetachedDeclarationCannotCopyCheckingOwner(): void {
+  owner = observationSubst();
+  tenv = observationTypeEnv(owner);
+  tv = owner.gen(SKJS.PosRange::none);
+  observationBind(owner, tv, observationNumber(), false);
+  version = owner.inferenceVersion();
+  blocked = false;
+  try {
+    _ = owner.instantiateDetachedDeclaration(
+      tenv,
+      SKJS.Name(SKJS.PosRange::none, "Array"),
+      SKJS.TArgs(Array[SKJS.TType::var(tv)]),
+    )
+  } catch {
+  | InvariantViolation(_) -> !blocked = true
+  | exn -> throw exn
+  };
+  SKTest.expectEq(true, blocked);
+  SKTest.expectEq(true, owner.isOpen(tv));
+  SKTest.expectEq(version, owner.inferenceVersion());
+}
+
+module end;

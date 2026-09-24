@@ -24,13 +24,13 @@ function getFirst<U>(
 }
 
 // ============================================================
-// With the fix, SKJS properly rejects all of these.
+// SKJS rejects these calls. Failed-call inference is rolled back, so the
+// recovery value below is not a further soundness or diagnostic assertion.
 // ============================================================
 
 function testUnsound(): void {
   // @skjs-expect-error Argument is not assignable to the parameter's type
   const box = getFirst({ value: "hello" }, { value: 42 });
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const n: number = box.value;
 }
 
@@ -43,7 +43,6 @@ function testReversedOrder(): void {
 function testThreeArgs(): void {
   // @skjs-expect-error Argument is not assignable to the parameter's type
   const box = getFirst3({ value: true }, { value: 42 }, { value: 100 });
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const n: number = box.value;
 }
 

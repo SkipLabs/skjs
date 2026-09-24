@@ -1,0 +1,75 @@
+module SKJS;
+
+class CallSubtypeObligation{
+  source: TType,
+  target: TType,
+  messages: Array<(PosRange, String)>,
+  code: ErrorCode,
+}
+
+// Inference retains obligations, never acceptance receipts. The original
+// symbolic operands survive every pass, including explicit/dependent bounds.
+mutable class CallSubtypePlan private {
+  private obligations: mutable Vector<CallSubtypeObligation> = mutable Vector[],
+  private mutable retained: SortedSet<(TType, TType)> = SortedSet[],
+  private mutable failed: Bool = false,
+} {
+  static fun mcreate(): mutable this {
+    mutable static{}
+  }
+
+  mutable fun propose(
+    tcenv: mutable TCEnv,
+    tenv: TEnv,
+    source: TType,
+    target: TType,
+    messages: Array<(PosRange, String)>,
+    code: ErrorCode,
+    argumentCheck: TypeArgumentCheck = ValidateTypeArguments(),
+  ): void {
+    pair = (source, target);
+    if (!this.retained.contains(pair)) {
+      this.!retained = this.retained.set(pair);
+      this.obligations.push(
+        CallSubtypeObligation{source, target, messages, code},
+      )
+    };
+    argumentCheck.proposeSubtype(tcenv.subst, tenv, source, target) match {
+    | SubtypeProposed() -> void
+    | SubtypeProposalRejected(err) ->
+      this.!failed = true;
+      tcenv.subtypingError(tcenv.subst, tenv, messages, err, code)
+    }
+  }
+
+  readonly fun hasFailed(): Bool {
+    this.failed
+  }
+
+  // The only acceptance path establishes the entire batch in one fixed
+  // snapshot. No callback can turn a proposal into a successful proof.
+  mutable fun validate(tcenv: mutable TCEnv, tenv: TEnv): Bool {
+    if (this.failed) {
+      false
+    } else {
+      operands = this.obligations.values()
+        .map(o -> (o.source, o.target))
+        .collect(Array);
+      tcenv.subst.proveSubtypes(tenv, operands) match {
+      | SubtypesProved() -> true
+      | SubtypesUnproved(index, why) ->
+        obligation = this.obligations[index];
+        tcenv.subtypingError(
+          tcenv.subst,
+          tenv,
+          obligation.messages,
+          STUnvalidatedType(why, obligation.source, obligation.target),
+          obligation.code,
+        );
+        false
+      }
+    }
+  }
+}
+
+module end;

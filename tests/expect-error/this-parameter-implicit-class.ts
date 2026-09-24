@@ -41,3 +41,59 @@ function derivedDetached(): void {
   // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
   g();
 }
+
+class OtherReceiver {
+  text: string = "ok";
+  m(x: number): void {
+    const length = this.text.length;
+  }
+}
+
+// Extracted methods must not borrow a different class's receiver contract.
+function retypedMethod(source: C, other: OtherReceiver): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const method: typeof source.m = other.m;
+  const carrier = { value: 1, m: method };
+  carrier.m(0);
+}
+
+// Reattachment without an annotation must also validate the actual carrier.
+function reattachedMethod(other: OtherReceiver): void {
+  const carrier = { value: 1, m: other.m };
+  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
+  carrier.m(0);
+}
+
+function compatibleReattachment(other: OtherReceiver): void {
+  const carrier = { text: "ok", m: other.m };
+  carrier.m(0);
+}
+
+// Declaration-level typeof must preserve extraction requirements too.
+type ExtractedCMethod = typeof c.m;
+function reattachmentThroughTypeof(other: C): void {
+  const method: ExtractedCMethod = other.m;
+  const carrier = { m: method };
+  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
+  carrier.m(0);
+}
+
+// Binding patterns read fields without going through expression property access.
+function destructuredReattachment(other: OtherReceiver): void {
+  const { m } = other;
+  const carrier = { m };
+  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
+  carrier.m(0);
+}
+
+function parameterReattachment({ m }: OtherReceiver): void {
+  const carrier = { m };
+  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
+  carrier.m(0);
+}
+
+function compatibleDestructuring(other: OtherReceiver): void {
+  const { m } = other;
+  const carrier = { text: "ok", m };
+  carrier.m(0);
+}

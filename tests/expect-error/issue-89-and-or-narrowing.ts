@@ -37,3 +37,26 @@ function testOrLeftEqNullNoPosRefinement(x: N | null, other: boolean): void {
     const a: number = x.a;
   }
 }
+
+function staleLeftFact(value: number | null): number {
+  if (value !== null && (value = null) === null) {
+    // @ts-expect-error Type of returned value is not assignable to the function's return type
+    return value;
+  }
+  return 0;
+}
+
+function comparisonWritesOperand(value: number | null): number {
+  if (value !== (value = null)) {
+    // @ts-expect-error Type of returned value is not assignable to the function's return type
+    return value;
+  }
+  return 0;
+}
+
+function unrelatedFact(value: number | null, other: number | null): number {
+  if (other !== null && (value = null) === null) {
+    return other;
+  }
+  return 0;
+}

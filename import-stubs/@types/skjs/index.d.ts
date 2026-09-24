@@ -627,4 +627,5 @@ declare const process: {
   cwd(): string;
   env: ProcessEnv;
   exit(status: number): never;
+  on(event: string, listener: () => unknown): void;
 };

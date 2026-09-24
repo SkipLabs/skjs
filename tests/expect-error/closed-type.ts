@@ -105,13 +105,14 @@ function testReadUnnamedSymbolKey(): void {
 }
 
 // ============================================================================
-// satisfies: Closed works as the expected type; the value keeps its precise
-// literal type.
+// satisfies: Closed works as the expected type and retains field inference
+// commitments from validation.
 // ============================================================================
 
 function testSatisfiesClosed(): void {
   const x = { a: 1 } satisfies Closed<{ readonly a: number }>;
-  // tsc (identity alias) widens x.a to number here; SKJS keeps the literal 1.
+  // Like tsc with an identity alias, the numeric target widens x.a.
+  // @ts-expect-error Type of value is not assignable to the variable's type annotation
   const one: 1 = x.a;
 }
 

@@ -67,3 +67,62 @@ function requiredToOptionalGrows(): void {
   const o: { a: { x: number; y?: string } } = { a: e };
   void o;
 }
+
+function storedObjectAlias(x: { f: number | null }): number {
+  if (x.f !== null) {
+    // A fresh outer slot does not stabilize its aliased contents.
+    const box = { value: x };
+    x.f = null;
+    // @ts-expect-error Type of returned value is not assignable to the function's return type
+    return box.value.f;
+  }
+  return 0;
+}
+
+function computedObjectAlias(x: { f: number | null }, key: "value"): number {
+  // Computed slots retain the conditional's stable contract.
+  const box = { [key]: x.f !== null ? x : { f: 0 } };
+  x.f = null;
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
+  return box.value.f;
+}
+
+// Scalar spreading copies values; mutating the source cannot change the copy.
+// TypeScript rejects this safe read because it does not narrow the spread field.
+function copiedObjectField(x: { f: number | null }): number {
+  if (x.f !== null) {
+    const box = { ...x };
+    x.f = null;
+    return box.f;
+  }
+  return 0;
+}
+
+function keyClearsRhs(x: number | null): number {
+  if (x === null) return 0;
+  const box = { slot: 0 };
+  const before: number = box.slot;
+  // @ts-expect-error Type is not assignable to the field's type
+  box[(x = null) === null ? "slot" : "slot"] = x;
+  return box.slot;
+}
+function keyInitializesRhs(): number {
+  let x: number | null = null;
+  const box = { slot: 0 };
+  const before: number = box.slot;
+  box[(x = 1) === 1 ? "slot" : "slot"] = x;
+  return box.slot;
+}
+
+function replacedReceiver(): number {
+  let box = {};
+  // @ts-expect-error Property 'slot' does not exist on this type
+  box.slot = (box = { value: 1 }).value;
+  return box.slot;
+}
+function retainedReceiver(seed: number | null): number | null {
+  let box = { slot: seed };
+  const original = box;
+  box.slot = (box = { slot: 1 }).slot === 1 ? null : null;
+  return original.slot;
+}
