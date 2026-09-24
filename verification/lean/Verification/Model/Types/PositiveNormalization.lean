@@ -118,6 +118,13 @@ def semWithArgs (X : α → Fam) (P : α → ArgFam) : Clause α → Fam
       (ctorRestsT (S.map fun s => (s.1.map X, P s.2.1, X s.2.2)))
   | .pack a bs => packT (tupleFams X a :: bs.map (tupleFams X))
 
+/-- The argument-list component of a clause. Grouping arguments spends no
+approximation step; only a surrounding runtime operation supplies a guard. -/
+def clauseArguments (X : α → Fam) : Clause α → ArgFam
+  | .pack a bs => fun n W vs => ∀ t ∈ a :: bs,
+      ArgumentContracts.Fits (tupleFams X t) n W vs
+  | _ => fun _ _ _ => False
+
 /-- The legacy graph interpretation; argument slots cross an explicit boundary. -/
 def sem (X : α → Fam) : Clause α → Fam := semWithArgs X (fun a => packArgs (X a))
 
@@ -474,6 +481,13 @@ theorem arguments_congr (X Y : α → Fam) (t : Tuple α) (n : Nat) {W : WorldT 
   subst hA; subst hB
   exact h _ v
 
+theorem clauseArguments_congr (X Y : α → Fam) (c : Clause α) (n : Nat) (W : WorldT n)
+    (h : ∀ a v, X a n W v ↔ Y a n W v) (vs : List Val) :
+    clauseArguments X c n W vs ↔ clauseArguments Y c n W vs := by
+  cases c <;> try exact Iff.rfl
+  rename_i a bs
+  exact forall_congr' fun t => forall_congr' fun _ => arguments_congr X Y t n h vs
+
 /-- An argument list's fit to a tuple contract depends on the labels' meanings
 only below the budget. -/
 theorem pack_congr_below (X Y : α → Fam) (t : Tuple α) (n : Nat)
@@ -627,16 +641,34 @@ def Clause.operands : Clause α → List α
 private theorem famsOf_fun (X : α → Fam) :
     famsOf X = fun fs => fs.map fun p => (p.1, X p.2) := rfl
 
-theorem sem_map (Y : β → Fam) (f : α → β) (c : Clause α) :
-    sem Y (c.map f) = sem (fun a => Y (f a)) c := by
-  have ht : ∀ t : Tuple α, tupleFams Y (t.map f) = tupleFams (fun a => Y (f a)) t := fun t => by
-    simp [tupleFams, Tuple.map, Function.comp_def]
+theorem tupleFams_map (Y : β → Fam) (f : α → β) (t : Tuple α) :
+    tupleFams Y (t.map f) = tupleFams (fun a => Y (f a)) t := by
+  simp [tupleFams, Tuple.map, Function.comp_def]
+
+/-- Operand substitution transports value and list operands independently.
+The legacy adapter is only one instance of this equation. -/
+theorem semWithArgs_map (Y : β → Fam) (P : β → ArgFam) (f : α → β) (c : Clause α) :
+    semWithArgs Y P (c.map f) = semWithArgs (fun a => Y (f a)) (fun a => P (f a)) c := by
   cases c
   case pack a bs =>
-    simp only [sem, semWithArgs, Clause.map, List.map_map, ht]
+    simp only [semWithArgs, Clause.map, List.map_map, tupleFams_map]
     congr 2
-    exact List.map_congr_left fun t _ => ht t
-  all_goals simp [sem, semWithArgs, Clause.map, mapFields, famsOf_fun, tupleFams, Tuple.map, Function.comp_def]
+    exact List.map_congr_left fun t _ => tupleFams_map Y f t
+  all_goals simp [semWithArgs, Clause.map, mapFields, famsOf_fun, tupleFams, Tuple.map, Function.comp_def]
+
+theorem sem_map (Y : β → Fam) (f : α → β) (c : Clause α) :
+    sem Y (c.map f) = sem (fun a => Y (f a)) c :=
+  semWithArgs_map Y (fun a => packArgs (Y a)) f c
+
+/-- The same syntactic operand substitution preserves the argument component,
+using current-level element membership rather than delayed pack membership. -/
+theorem clauseArguments_map (Y : β → Fam) (f : α → β) (c : Clause α) :
+    clauseArguments Y (c.map f) = clauseArguments (fun a => Y (f a)) c := by
+  cases c <;> try rfl
+  rename_i a bs
+  funext n W vs
+  apply propext
+  simp [clauseArguments, Clause.map, tupleFams_map]
 
 private theorem map_self {l : List α} {f : α → α} (h : ∀ a ∈ l, f a = a) : l.map f = l := by
   induction l with

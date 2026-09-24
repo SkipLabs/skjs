@@ -419,9 +419,7 @@ Tuple positions use the recursive value meanings at the current level. -/
 def graphArguments (G : NormalGraph ι) : ArgumentInterpreter ι .mixed :=
   fun η X S n W vs => ∃ i ∈ S,
     if G.parameterKinds i = some .arguments then η.1 i n W (.inr vs)
-    else ∃ c ∈ G i, match c with
-      | .pack a bs => ∀ t ∈ a :: bs, ArgumentContracts.Fits (tupleFams X t) n W vs
-      | _ => False
+    else ∃ c ∈ G i, clauseArguments X c n W vs
 
 /-- A pack parameter denotes its assigned list contract directly. -/
 theorem graphArguments_parameter (G : NormalGraph ι) (η : MixedAssignment ι)
@@ -445,7 +443,7 @@ theorem graphArguments_pack (G : NormalGraph ι) (η : MixedAssignment ι)
     simp [NormalGraph.plain, NormalGraph.params, hp] at hplain
   funext n W vs
   apply propext
-  simp [graphArguments, hp, h]
+  simp [graphArguments, clauseArguments, hp, h]
 
 theorem graphArguments_nonexp (G : NormalGraph ι) : ArgumentNonExp (graphArguments G) := by
   intro η θ X Y n hη hX S j hj W vs
@@ -454,10 +452,7 @@ theorem graphArguments_nonexp (G : NormalGraph ι) : ArgumentNonExp (graphArgume
   split
   · exact hη i j hj W (.inr vs)
   · apply exists_congr fun c => and_congr Iff.rfl ?_
-    cases c <;> try exact Iff.rfl
-    rename_i a bs
-    exact forall_congr' fun t => forall_congr' fun _ =>
-      arguments_congr X Y t j (fun a v => hX a j hj W v) vs
+    exact clauseArguments_congr X Y c j W (fun a v => hX a j hj W v) vs
 
 /-- Same-level argument interpretation preserves admissibility even for the
 unrestricted approximations used to construct the recursive fixed point. -/

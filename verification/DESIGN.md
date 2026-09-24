@@ -1856,10 +1856,23 @@ an extra unfolding. Admissibility is proved for arbitrary admissible
 approximations, not only the closed-value fixed point. This prevents the
 migration from reintroducing the delay that breaks object/callback conversion.
 
+Operand substitution now has a shared value/list proof boundary.
+`semWithArgs_map` transports both sorts of operands through the existing
+`clauseImg`; `clauseImg_value` is used by production `table_row`, replacing its
+bespoke operand-mapping proof. `clauseArguments` owns the tuple-list meaning
+used by `graphArguments`, and `clauseImg_arguments`/`graphArguments_image`
+prove its plain-row image from element equalities **at the same level**.
+A control checks an actual table substituting an object for a tuple element,
+uses production `table_row` at that level, and derives the tuple's list image.
+Removing the operand entry is refused. Binder correspondence under scheme
+renaming now also works over either assignment carrier.
+
 The production entry point still selects `legacyParameters`: its environment,
 `table_row`, `inst_sound` and subtype certificates have not migrated together.
-The row-image proof must establish value images and then argument images at
-each level, with the latter using the former's current-level result. Remaining
+The remaining joint row-image induction must connect those plain-row lemmas
+through parameter images, free-variable independence and nested scheme bounds.
+It must establish value images and then argument images at each level, with
+the latter using the former's current-level result. Remaining
 legacy pack-value denotations and the `.args` assignment adapter must then be
 retired. The mixed fixed-point theorem is not yet a change to CLI acceptance.
 

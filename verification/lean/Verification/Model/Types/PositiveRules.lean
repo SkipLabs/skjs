@@ -1394,6 +1394,68 @@ def clauseImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι) (c : Clause (L
     Clause (List ι) :=
   c.map fun S => (tyImg tbl κ S).getD []
 
+/-- A checked operand image transports a value clause. Both sorts of operands
+are required; a value equality alone cannot justify a rest-parameter image. -/
+theorem clauseImg_value [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
+    (c : Clause (List ι)) (X Y : List ι → Fam) (P Q : List ι → ArgFam)
+    (n : Nat) (W : WorldT n) (v : Val)
+    (himg : ∀ S ∈ c.operands, ∃ T, tyImg tbl κ S = some T ∧
+      Agree (X S) (Y T) n ∧ Agree (P S) (Q T) n)
+    (he : Agree (X []) (Y []) n) (hp : Agree (P []) (Q []) n) :
+    semWithArgs X P c n W v ↔ semWithArgs Y Q (clauseImg tbl κ c) n W v := by
+  let r : List ι → List ι := fun S => if S ∈ c.operands then S else []
+  have hcr : c.map r = c := map_of_operands fun S hS => by simp [r, hS]
+  unfold clauseImg
+  rw [semWithArgs_map, ← hcr, semWithArgs_map, semWithArgs_map]
+  have h : ∀ S, Agree (X (r S)) (Y ((tyImg tbl κ (r S)).getD [])) n ∧
+      Agree (P (r S)) (Q ((tyImg tbl κ (r S)).getD [])) n := by
+    intro S
+    by_cases hS : S ∈ c.operands
+    · obtain ⟨T, hT, hx, ha⟩ := himg S hS
+      simpa [r, hS, hT] using And.intro hx ha
+    · simpa [r, hS, tyImg] using And.intro he hp
+  exact semWithArgs_congr _ _ _ _ n (fun S => (h S).1) (fun S => (h S).2) c W v
+
+/-- The list component of the same checked clause image uses element equality
+at this level. Requiring only agreement below it would lose object evidence. -/
+theorem clauseImg_arguments [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
+    (c : Clause (List ι)) (X Y : List ι → Fam) (n : Nat) (W : WorldT n) (vs : List Val)
+    (himg : ∀ S ∈ c.operands, ∃ T, tyImg tbl κ S = some T ∧
+      ∀ v, X S n W v ↔ Y T n W v)
+    (he : ∀ v, X [] n W v ↔ Y [] n W v) :
+    clauseArguments X c n W vs ↔ clauseArguments Y (clauseImg tbl κ c) n W vs := by
+  let r : List ι → List ι := fun S => if S ∈ c.operands then S else []
+  have hcr : c.map r = c := map_of_operands fun S hS => by simp [r, hS]
+  unfold clauseImg
+  rw [clauseArguments_map, ← hcr, clauseArguments_map, clauseArguments_map]
+  apply clauseArguments_congr _ _ c n W (fun S v => ?_) vs
+  by_cases hS : S ∈ c.operands
+  · obtain ⟨T, hT, hx⟩ := himg S hS
+    simpa [r, hS, hT] using hx v
+  · simpa [r, hS, tyImg] using he v
+
+/-- A plain row and its checked clause image agree on argument lists, including
+unions and intersections of tuple shapes. The element images are supplied by
+the value-row proof at this level, not by a second recursive unfolding. -/
+theorem graphArguments_image [DecidableEq ι] (G : NormalGraph ι)
+    (tbl : InstTable ι) (κ : Ctx ι) (η θ : MixedAssignment ι)
+    (X Y : List ι → Fam) (i j : ι) (hi : G.plain i = true) (hj : G.plain j = true)
+    (hrows : G j = (G i).map (clauseImg tbl κ)) (n : Nat) (W : WorldT n) (vs : List Val)
+    (himg : ∀ c ∈ G i, ∀ S ∈ c.operands, ∃ T, tyImg tbl κ S = some T ∧
+      ∀ v, X S n W v ↔ Y T n W v)
+    (he : ∀ v, X [] n W v ↔ Y [] n W v) :
+    graphArguments G η X [i] n W vs ↔ graphArguments G θ Y [j] n W vs := by
+  have notArgs : ∀ l, G.plain l = true → G.parameterKinds l ≠ some .arguments := by
+    intro l hl hp
+    simp [NormalGraph.plain, NormalGraph.params, hp] at hl
+  simp only [graphArguments, List.mem_singleton, exists_eq_left,
+    if_neg (notArgs i hi), if_neg (notArgs j hj), hrows, List.mem_map]
+  constructor
+  · rintro ⟨c, hc, hv⟩
+    exact ⟨_, ⟨c, hc, rfl⟩, (clauseImg_arguments tbl κ c X Y n W vs (himg c hc) he).mp hv⟩
+  · rintro ⟨_, ⟨c, hc, rfl⟩, hv⟩
+    exact ⟨c, hc, (clauseImg_arguments tbl κ c X Y n W vs (himg c hc) he).mpr hv⟩
+
 /-- A bound's image: the target binder at the bound binder's position, and the
 bound type's image under the outer context (a bound is read at the scheme's
 own assignment, not under its binders). -/
@@ -1567,8 +1629,8 @@ theorem enter_nmem [DecidableEq ι] (κ : Ctx ι) {src tgt : List ι} {p : ι} (
 
 /-- A binder entered stands for the binder at its position, and both sides are
 given the same family there. -/
-theorem enter_binder [DecidableEq ι] (ηL ηR : Assignment ι) :
-    ∀ {src tgt : List ι} {As : List ValueFamily} {p : ι} {U : List ι},
+theorem enter_binder [DecidableEq ι] (ηL ηR : ParameterAssignment k ι) :
+    ∀ {src tgt : List ι} {As : List (ParameterFamily k)} {p : ι} {U : List ι},
       tgt.Nodup → src.length = As.length → tgt.length = As.length →
       (src.zip (tgt.map ([·]))).lookup p = some U →
       ∃ q, U = [q] ∧ (assign ηL src As).1 p = (assign ηR tgt As).1 q
@@ -1643,8 +1705,8 @@ theorem lookup_append_some [DecidableEq ι] {xs ys : List (ι × β)} {p : ι} {
 
 /-- A binder entered stands for a target binder, given the same family on both
 sides. -/
-theorem enter_rel [DecidableEq ι] (κ : Ctx ι) (ηL ηR : Assignment ι) {src tgt : List ι}
-    {As : List ValueFamily} {p : ι} (hp : p ∈ src) (hnd : tgt.Nodup)
+theorem enter_rel [DecidableEq ι] (κ : Ctx ι) (ηL ηR : ParameterAssignment k ι) {src tgt : List ι}
+    {As : List (ParameterFamily k)} {p : ι} (hp : p ∈ src) (hnd : tgt.Nodup)
     (h1 : src.length = As.length) (h2 : tgt.length = As.length) :
     ∃ q ∈ tgt, (enter κ src tgt).lookup p = some [q] ∧
       (assign ηL src As).1 p = (assign ηR tgt As).1 q := by
@@ -1939,27 +2001,19 @@ theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D 
                 sem (setSem fun l => qDenote G (ηL, l)) c n W v ↔
                   sem (qMeaning G ηR) (clauseImg tbl κ c) n W v := by
               intro c hc
-              let r : List ι → List ι := fun S => if S ∈ c.operands then S else []
-              have hcr : c.map r = c := map_of_operands fun S hS => by simp [r, hS]
-              unfold clauseImg
-              rw [sem_map, ← hcr, sem_map, sem_map]
-              apply sem_congr _ _ n (fun S => ?_) c W v
-              by_cases hS : S ∈ c.operands
-              · simp only [r, hS, if_true]
+              apply clauseImg_value tbl κ c _ _ _ _ n W v
+              · intro S hS
                 obtain ⟨S', hS'⟩ := Option.isSome_iff_exists.mp (by simpa using hops c hc S hS)
-                rw [hS', Option.getD_some]
-                exact hty ηL ηR κ S S' hS' fun l hl p hp => hrel p (by
+                have hx := hty ηL ηR κ S S' hS' fun l hl p hp => hrel p (by
                   have hlr : l ∈ reads G i := by
                     simp only [reads, hsch]
                     exact List.mem_flatMap.mpr ⟨c, hc, List.mem_flatten.mpr ⟨S, hS, hl⟩⟩
                   rcases (hreads l hlr).2 p hp with h1 | ⟨s', hs', _⟩
                   · exact h1
                   · rw [hsch] at hs'; cases hs')
-              · simp only [r, hS, if_false]
-                have : tyImg tbl κ [] = some [] := by simp [tyImg]
-                rw [this, Option.getD_some]
-                intro m _ U u
-                simp [setSem, qMeaning]
+                exact ⟨S', hS', hx, packArgs_congr hx⟩
+              · intro m _ U u; simp [setSem, qMeaning]
+              · intro m _ U vs; simp [packArgs, setSem, qMeaning]
             constructor
             · rintro ⟨c, hc, h⟩
               exact ⟨_, ⟨c, hc, rfl⟩, (clause c hc).mp h⟩
@@ -2228,6 +2282,7 @@ theorem Sub.congr {G : NormalGraph ι} {S S' T T' : List ι}
     exact .trans (.subset (fun i hi => (hs i).mp hi))
       (.trans h (.subset (fun i hi => (ht i).mpr hi)))
 
+#print axioms graphArguments_image
 #print axioms bounded_substitution_elim
 #print axioms covers_arguments_sound
 #print axioms covers_pack_sound

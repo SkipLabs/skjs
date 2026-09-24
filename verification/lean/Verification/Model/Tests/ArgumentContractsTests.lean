@@ -23,6 +23,57 @@ example (η : MixedAssignment Nat) :
   rw [shape]
   exact fixed_constructor_eq_rest _ _
 
+/-- An actual certificate substitutes an object type for a tuple element's
+value parameter. Its value-row proof feeds the argument-row proof at the same
+level, so object information is retained through the checked image. -/
+private def imageGraph : NormalGraph Nat := {
+  rows := fun i => match i with
+    | 0 => [.pack ⟨[[1]], [], none, false⟩ []]
+    | 2 => [.refs [(valueField, [4])] [] []]
+    | 3 => [.pack ⟨[[2]], [], none, false⟩ []]
+    | _ => [.nul]
+  parameterKinds := fun i => if i = 1 then some .value else none }
+
+private def imageContext : PositiveRules.Ctx Nat := [(1, [2])]
+private def imageTable : PositiveRules.InstTable Nat :=
+  [(0, imageContext, [3]), (1, imageContext, [2])]
+private def imageFree : PositiveRules.FreeMap Nat := [(0, [1]), (1, [1])]
+
+private theorem imageChecked :
+    PositiveRules.TableOk imageGraph imageTable [0,1,2,3,4] imageFree = true := by decide
+
+/-- An absent operand image is a refusal, never an implicit empty type. -/
+example : PositiveRules.TableOk imageGraph [(0, imageContext, [3])]
+    [0,1,2,3,4] imageFree = false := by decide
+
+private noncomputable def objectAssignment : Assignment Nat :=
+  assign Assignment.empty [1]
+    [⟨PositiveRules.meaning imageGraph [2], PositiveRules.meaning_valueFam imageGraph [2]⟩]
+
+example (μ ν : MixedAssignment Nat) (n : Nat) (W : WorldT n) (vs : List Val) :
+    graphArguments imageGraph μ (qMeaning imageGraph objectAssignment) [0] n W vs ↔
+      graphArguments imageGraph ν (qMeaning imageGraph Assignment.empty) [3] n W vs := by
+  apply PositiveRules.graphArguments_image imageGraph imageTable imageContext μ ν
+    _ _ 0 3 (by decide) (by decide) (by decide) n W vs
+  · intro c hc S hS
+    have hc' : c = .pack ⟨[[1]], [], none, false⟩ [] := by
+      simpa [imageGraph, NormalGraph.clauses, NormalGraph.plain, NormalGraph.params] using hc
+    subst c
+    have hS' : S = [1] := by simpa [Clause.operands, Tuple.operands] using hS
+    subst S
+    refine ⟨[2], by decide, fun v => ?_⟩
+    have hrel : PositiveRules.RelK imageGraph imageContext [1] objectAssignment Assignment.empty := by
+      intro p hp
+      have hp' : p = 1 := by simpa using hp
+      subst p
+      simp [imageContext, objectAssignment, assign_cons_head, PositiveRules.meaning,
+        qMeaning, imageGraph]
+      rfl
+    have hi := PositiveRules.table_row imageChecked n objectAssignment Assignment.empty
+      (1, imageContext, [2]) (by decide) hrel W v
+    simpa [qMeaning, setSem] using hi
+  · intro v; simp [qMeaning, setSem]
+
 /-- A callback argument may itself have an arbitrary higher-order contract. -/
 example (A B R : Fam) : ctorsT [([arrowT A B], R)] =
     ctorRestsT [([], Fits ⟨[arrowT A B], [], none, false⟩, R)] :=
