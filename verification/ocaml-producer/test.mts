@@ -112,9 +112,9 @@ for (const [file, expected] of [
   ]);
   // The runtime's value imports resolve, and `runService`'s `Promise` is read
   // from the standard library's merged declarations. The first refusal is
-  // `Iterator.next`'s destructured rest parameter, which `Iterable` reaches.
+  // `Iterator`'s optional methods `return?` and `throw?`, which `Iterable` reaches.
   assert.throws(() => collectDeclarations(source, { tsconfigPath: upstreamConfig }),
-    /expected an ordinary parameter in \S*lib\.es2015\.iterable\.d\.ts#Iterator/);
+    /unsupported method signature in \S*lib\.es2015\.iterable\.d\.ts#Iterator/);
   // Each runtime interface sum.ts imports, applied in a client of the same
   // project, and the first declaration the graph refuses on its way.
   const probe = mkdtempSync(join(tmpdir(), "skjs-runtime-api-"));
@@ -124,13 +124,13 @@ for (const [file, expected] of [
   // A generic method is an opaque member and a `unique symbol` key is a
   // field keyed by that symbol, so `Resource`, `Context` and
   // `EagerCollection` (through `Managed`'s `[sk_managed]`) collect; `Mapper`
-  // and `Values` reach the library's `Iterable`, and stop at `Iterator.next`'s
-  // destructured rest parameter.
+  // and `Values` reach the library's `Iterable`, and stop at `Iterator`'s optional
+  // methods.
   for (const [use, imports, refusal] of [
     ["Mapper<string, number, string, number>", "Mapper",
-      /expected an ordinary parameter in \S*lib\.es2015\.iterable\.d\.ts#Iterator/],
+      /unsupported method signature in \S*lib\.es2015\.iterable\.d\.ts#Iterator/],
     ["Values<number>", "Values",
-      /expected an ordinary parameter in \S*lib\.es2015\.iterable\.d\.ts#Iterator/],
+      /unsupported method signature in \S*lib\.es2015\.iterable\.d\.ts#Iterator/],
     ["EagerCollection<string, number>", "EagerCollection", null],
     ["Resource<SharedCollections>", "Resource, SharedCollections", null],
     ["Context", "Context", null],

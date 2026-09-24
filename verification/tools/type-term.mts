@@ -112,7 +112,7 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
   if (ts.isTypeLiteralNode(node)) return members(scope, node.members, node, span, false);
   if (ts.isFunctionTypeNode(node)) {
     if (node.typeParameters?.length) scope.fail(node, "generic function types are outside the fragment");
-    return signature(scope, node.parameters, node.type, node, span);
+    return oneTerm(signatures(scope, node.parameters, node.type, node, span), span);
   }
   if (ts.isTypeReferenceNode(node)) {
     if (node.typeName.kind !== ts.SyntaxKind.Identifier)
@@ -187,6 +187,19 @@ export function signature(scope: TermScope, parameters: readonly ts.ParameterDec
     // A declared function's defaulted parameter may be omitted: `undefined`
     // is what a short call binds there. Function types have no defaults.
     declared = false): FunctionTerm {
+  const [only, ...more] = signatures(scope, parameters, result, at, span, declared);
+  if (!only || more.length) return scope.fail(at, "a rest parameter over several tuples is several signatures");
+  return only;
+}
+
+/** A signature whose rest parameter is a union of tuples, `...[v]: [] | [T]`,
+ * accepts each tuple's positions: it is one signature per tuple, all
+ * returning its result, which a value meets by meeting every one. Such a
+ * rest parameter may destructure its tuple only where the signature has no
+ * body, so the pattern binds nothing the fragment reads. Any other signature
+ * is exactly one. */
+export function signatures(scope: TermScope, parameters: readonly ts.ParameterDeclaration[],
+    result: TypeNode | undefined, at: Node, span: Span, declared = false): FunctionTerm[] {
   const head = parameters[0];
   const stated = !!head && ts.isIdentifier(head.name) && head.name.text === "this";
   if (stated && (!head.type || head.questionToken || head.dotDotDotToken || head.initializer))
@@ -197,15 +210,28 @@ export function signature(scope: TermScope, parameters: readonly ts.ParameterDec
   const firstOptional = ordinary.findIndex(optional);
   const params: TypeTerm[] = [];
   let rest: TypeTerm | null = null;
+  let alternatives: TypeTerm[][] | null = null;
   for (const [index, p] of ordinary.entries()) {
-    if (!ts.isIdentifier(p.name) || p.name.text === "this" || (p.initializer && !declared))
+    const pattern = !declared && !!p.dotDotDotToken && ts.isArrayBindingPattern(p.name);
+    if (!(ts.isIdentifier(p.name) || pattern) || (ts.isIdentifier(p.name) && p.name.text === "this") ||
+        (p.initializer && !declared))
       scope.fail(p, "expected an ordinary parameter");
     if (p.dotDotDotToken) {
       if (index !== ordinary.length - 1) scope.fail(p, "a rest parameter must be the last one");
+      const type = typeTerm(scope, p.type, p);
+      // A union of tuples is one signature per tuple.
+      if (type.k === "union") {
+        alternatives = type.parts.map(part => {
+          const contract = restPositions(part);
+          if (!contract || !("positions" in contract)) return scope.fail(p, REST_CONTRACT);
+          return contract.positions;
+        });
+        continue;
+      }
       // A tuple rest is a fixed number of further positions, which is how
       // TypeScript itself reads it, so the signature carries them. An array
       // rest is any number of them: the signature says what each one is.
-      const contract = restPositions(typeTerm(scope, p.type, p));
+      const contract = restPositions(type);
       if (!contract) scope.fail(p, REST_CONTRACT);
       if ("positions" in contract) params.push(...contract.positions);
       else rest = contract.element;
@@ -216,7 +242,15 @@ export function signature(scope: TermScope, parameters: readonly ts.ParameterDec
       params.push(optional(p) ? optionalTerm(type, spanOf(scope, p)) : type);
     }
   }
-  return { k: "function", receiver, params, rest, result: typeTerm(scope, result, at), span };
+  const resultTerm = typeTerm(scope, result, at);
+  return (alternatives ?? [[]]).map(positions =>
+    ({ k: "function", receiver, params: [...params, ...positions], rest, result: resultTerm, span }));
+}
+
+/** Several signatures as one term: their intersection, which a value meets by
+ * meeting each. */
+function oneTerm(terms: FunctionTerm[], span: Span): TypeTerm {
+  return terms.length === 1 && terms[0] ? terms[0] : { k: "intersection", parts: terms, span };
 }
 
 /** A member's key: an identifier, a declaration's string literal, or a
@@ -297,14 +331,15 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
           member.typeParameters?.length || member.modifiers?.length)
         scope.fail(member, "unsupported method signature");
       const name = named(member, "unsupported method signature");
-      const method = signature(scope, member.parameters, member.type, member, memberSpan);
-      if (method.receiver) scope.fail(member, "unsupported method signature");
+      const forms = signatures(scope, member.parameters, member.type, member, memberSpan);
+      if (forms.some(m => m.receiver)) scope.fail(member, "unsupported method signature");
       fields.push({ name, optional: false, readonly: false,
-        type: { ...method, receiver: { k: "self", span: memberSpan } }, span: memberSpan });
+        type: oneTerm(forms.map(m => ({ ...m, receiver: { k: "self", span: memberSpan } })), memberSpan),
+        span: memberSpan });
     } else if (ts.isCallSignatureDeclaration(member)) {
       if (member.typeParameters?.length || !member.type)
         scope.fail(member, "generic or incomplete call signature");
-      calls.push(signature(scope, member.parameters, member.type, member, memberSpan));
+      calls.push(...signatures(scope, member.parameters, member.type, member, memberSpan));
     } else scope.fail(member, "unsupported object member");
   }
   return { k: "object", fields, stringIndex, calls, span };
