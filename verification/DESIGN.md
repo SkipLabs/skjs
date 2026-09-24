@@ -1408,6 +1408,13 @@ module function at its annotated signature (a source-fixed slot no producer
 claims and no assignment reaches), a module constant at its annotation. Claims
 are per unit, keyed by source identity.
 
+**Imported values.** A value import joins the module's scope at the type its
+declaration states: a function's annotated signature, an annotated
+constant's annotation, or, for a class, its constructor, read only by `new`.
+TypeScript resolves the declaration; nothing here checks the imported code.
+The declaration document lists these values, so a module's result is
+visibly relative to them.
+
 **Classes.** A class declares its instance type in the declaration graph,
 and its value is a statement of the module initialization, in order. The
 parser lowers it to method closures allocated once, as its prototype's, and a

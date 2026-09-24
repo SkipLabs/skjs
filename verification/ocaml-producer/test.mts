@@ -110,10 +110,10 @@ for (const [file, expected] of [
     ["InputDefinition", "skipruntime-ts/core/src/api.ts", "InputDefinition", "ClassDeclaration"],
     ["runService", "skipruntime-ts/server/src/server.ts", "runService", "FunctionDeclaration"],
   ]);
-  // A function is not a type declaration: the whole graph is refused at the
-  // runtime's value import (`InputDefinition` is a class, which declares a type).
+  // The runtime's first value import is a generic class, which the fragment
+  // does not yet construct.
   assert.throws(() => collectDeclarations(source, { tsconfigPath: upstreamConfig }),
-    /runService is not one type alias, interface or class/);
+    /a generic imported class is outside the fragment: InputDefinition/);
   // Each runtime interface sum.ts imports, applied in a client of the same
   // project, and the first declaration the graph refuses on its way.
   const probe = mkdtempSync(join(tmpdir(), "skjs-runtime-api-"));

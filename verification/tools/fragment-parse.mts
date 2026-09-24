@@ -1818,7 +1818,7 @@ export function parseFile(file: string, carriesContext = false,
   gate.strict = prologue.strict || importNodes.length > 0 ||
     interfaceNodes.some(node => node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword)) ||
     fnNodes.some(fn => fn.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword));
-  let declarations: Ast["declarations"] = { roots: [], definitions: [] };
+  let declarations: Ast["declarations"] = { roots: [], definitions: [], values: [] };
   const statable = (node: TypeAliasDeclaration): boolean => {
     const params = node.typeParameters;
     return !node.modifiers?.length && params?.length === 1 &&
@@ -1829,15 +1829,13 @@ export function parseFile(file: string, carriesContext = false,
   if (importNodes.length || localNodes.length) {
     const first = importNodes[0] ?? localNodes[0];
     if (!first) throw Error("missing declaration root");
+    // Named imports only. A type import joins the declaration graph; a value
+    // import is an assumption at the type its declaration states.
     for (const node of importNodes) {
       const clause = node.importClause;
-      // The unstable AST exposes this runtime field but omits it from the
-      // ImportClause interface. Narrow it before reading it.
-      const typeOnly = !!clause && "isTypeOnly" in clause && clause.isTypeOnly === true;
       if (!clause || clause.name || !clause.namedBindings ||
-          !ts.isNamedImports(clause.namedBindings) ||
-          !(typeOnly || clause.namedBindings.elements.every(e => e.isTypeOnly)))
-        gate.fail(node, "only named type-only imports are in the source fragment");
+          !ts.isNamedImports(clause.namedBindings))
+        gate.fail(node, "only named imports are in the source fragment");
     }
     // TypeScript resolves every name, in the project that owns the file or the
     // one named explicitly: the declaration graph is the compiler's.
@@ -1871,6 +1869,8 @@ export function parseFile(file: string, carriesContext = false,
   // A function without a body is a declaration, not an example of one.
   const declared = carriesContext ? fnNodes.filter((s) => s.body) : fnNodes;
   for (const node of classNodes) if (node.name) gate.registerClass(node.name.text);
+  // An imported class, like a local one, is read only by `new`.
+  for (const value of declarations.values) if (value.construct) gate.registerClass(value.binding.local);
   const functions = declared.map((s) => gate.functionDecl(s));
   const init = initNodes.map((s) => ts.isClassDeclaration(s) ? gate.classStmt(s) : gate.stmt(s));
   if (functions.length === 0 && init.length === 0) gate.fail(null, "no functions in file");

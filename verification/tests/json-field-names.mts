@@ -68,9 +68,7 @@ const expectSubset = (what: string, names: Set<string>, from: Set<string>, allow
   expectSubset("OCaml reads of the Fragment", ocamlReads("ocaml-producer/source.ml"), ts, {});
   expectSubset("Fragment fields Lean ignores", ts, leanNames, {
     arguments: "a reference's argument spans are provenance",
-    imported: "an import root's imported name is provenance",
     kind: "a root binding's kind is provenance",
-    specifier: "an import root's specifier is provenance",
     module: "a declaration identity is compared whole",
     v: "a literal atom's value is read by the claim decoder",
   });

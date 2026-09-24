@@ -59,7 +59,19 @@ export type TypeDefinition = {
 };
 /** Every declaration reachable from the roots, each once. References live in
  * the expression, parameter bounds/defaults and heritage edges, not in a second list. */
+/** A value the client imports: the declaration TypeScript resolves it to, and
+ * the type that declaration states. A function is its annotated signature, a
+ * constant its annotation, and a class its constructor, which only `new`
+ * calls. Nothing here checks the imported code: each is an assumption the
+ * client's result is relative to. */
+export type ValueRoot = {
+  binding: { local: string; imported: string; specifier: string; span: Span };
+  declaration: DeclarationIdentity;
+  construct: boolean;
+  type: TypeTerm;
+};
 export type DeclarationDocument = {
   roots: TypeRoot[];
   definitions: TypeDefinition[];
+  values: ValueRoot[];
 };

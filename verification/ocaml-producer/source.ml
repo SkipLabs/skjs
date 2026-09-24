@@ -174,8 +174,10 @@ type declaration = { id: string; parameters: rigid list;
   defaults: ty option list; bases: ty list; expression: ty }
 (* `init` is the module's top-level code, run once after its function
    declarations exist. *)
+(* `values` are the client's value imports, at the types their declarations
+   state: assumptions, not checked here. *)
 type program = { file: Json.t; digest: Json.t; declarations: declaration list;
-                 functions: fn list; init: stmt list }
+                 functions: fn list; init: stmt list; values: (string * ty) list }
 
 let rec expr binders j =
   let sub k = expr binders (field k j) in
@@ -293,6 +295,8 @@ let decode ast =
   { file=field "file" ast;digest=field "sourceSha256" ast;
     declarations=definitions;
     init=List.map (stmt top) (items "init" ast);
+    values=List.map (fun v -> text "local" (field "binding" v),source_type top (field "type" v))
+      (items "values" document);
     functions=List.mapi (fun scope f ->
       let parameters = items "typeParams" f in
       let initial={bindings=[];owner=None;positional=[];arity;symbolic} in

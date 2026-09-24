@@ -512,7 +512,8 @@ let infer program =
   let module_functions = List.map (fun (g:Source.fn) ->
     g.name,lazy (if g.quantified=[] then module_type g
       else unsupported ("generic module function " ^ g.name ^ " called from another function")))
-    program.Source.functions in
+    program.Source.functions
+    @ List.map (fun (name,t) -> name,lazy t) program.Source.values in
   (* A function reads a module constant at its annotation; the initialization
      unit is what establishes it. *)
   let module_constants = List.concat_map (fun (s:Source.stmt) -> match s.statement with

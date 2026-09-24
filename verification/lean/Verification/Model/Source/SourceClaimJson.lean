@@ -825,7 +825,7 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
   if (← jStr (← jField ast "sourceSha256")) != d.sourceSha256 then throw "source claim fingerprint mismatch"
   -- Every declaration application in the source becomes a graph row, or, over
   -- a rigid binder, the claim type of its expanded source equation.
-  let (ast, types) ← DeclarationGraph.prepare ast d.types
+  let (ast, types, imported) ← DeclarationGraph.prepare ast d.types
   let d := { d with types }
   if !validTable d.types then throw "declaration graph has an invalid type reference"
   let all ← Fragment.decodeAstWithParams ast
@@ -836,8 +836,10 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
   -- A body reaches the file's other ordinary functions at their annotated
   -- signatures, and a function also reaches the module's constants at their
   -- annotations; each of those is established by its own unit.
+  -- Imported values join them at the types their declarations state.
   let moduleFunctions : List SourceExtraction.ModuleValue :=
-    all.filterMap fun (g, tps) => if tps.isEmpty then some (g.name, g.namePos, moduleArrow g) else none
+    (all.filterMap fun (g, tps) => if tps.isEmpty then some (g.name, g.namePos, moduleArrow g) else none) ++
+    imported.map fun (name, span, ty) => (name, span, .ok ty)
   let moduleConstants : List SourceExtraction.ModuleValue := init.flatMap fun
     | .constants _ bs => bs.map fun b => (b.name, b.namePos, match b.annot with
         | some ty => .ok ty

@@ -82,7 +82,7 @@ def convert (ast claims : Json) (fileKey : String) : Except String Json := do
   -- Conversion is not an acceptance path, but it must share the source gate:
   -- raw source must not smuggle an internal graph label into its output.
   let aliases ← GenericAlias.decodeAliases ast
-  let (ast, _) ← DeclarationGraph.prepare ast SourceTypes.initial
+  let (ast, _, _) ← DeclarationGraph.prepare ast SourceTypes.initial
   let selected ← (← claims.getArr?).toList.filterM fun f => do
     return (← jStr (← jField f "file")) == fileKey
   if selected.length != 1 then throw "expected exactly one matching claim file"

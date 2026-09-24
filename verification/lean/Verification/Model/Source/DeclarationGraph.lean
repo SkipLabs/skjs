@@ -548,9 +548,9 @@ private partial def rewrite (ds : Array Definition) (j : Json) : Lowering Json :
 from source declarations. The AST copy contains internal graph atoms only after
 the original source tree has been checked for them. -/
 def prepare (ast : Json) (candidate : SourceTypes.Table) :
-    Except String (Json × SourceTypes.Table) := do
+    Except String (Json × SourceTypes.Table × List (String × Span × Json)) := do
   let document ← field ast "declarations"
-  CellClaims.fieldsExactly document ["roots", "definitions"]
+  CellClaims.fieldsExactly document ["roots", "definitions", "values"]
   let ds ← definitions document
   let roots ← (← arr document "roots").mapM fun root => do
     let name ← str (← field root "binding") "local"
@@ -561,9 +561,19 @@ def prepare (ast : Json) (candidate : SourceTypes.Table) :
   let types ← fillRows ds candidate
   let (functions, types) ← (rewrite ds (← field ast "functions")).run types
   let (init, types) ← (rewrite ds (← field ast "init")).run types
+  -- An imported value, at the type its declaration states: an assumption,
+  -- read in claim form like an annotation.
+  let (values, types) ← ((← arr document "values").toList.mapM fun v => (do
+    CellClaims.fieldsExactly v ["binding", "declaration", "construct", "type"]
+    let binding ← field v "binding"
+    CellClaims.fieldsExactly binding ["local", "imported", "specifier", "span"]
+    let name ← str binding "local"
+    let span ← fromJson? (α := Span) (← field binding "span")
+    let _ ← bool v "construct"
+    return (name, span, ← annotationClaim ds (← field v "type")) : Lowering (String × Span × Json))).run types
   let empty := Json.mkObj [("roots", toJson ([] : List Json)),
-    ("definitions", toJson ([] : List Json))]
+    ("definitions", toJson ([] : List Json)), ("values", toJson ([] : List Json))]
   let ast := ast.setObjVal! "declarations" empty
-  return ((ast.setObjVal! "functions" functions).setObjVal! "init" init, types)
+  return ((ast.setObjVal! "functions" functions).setObjVal! "init" init, types, values)
 
 end Verification.Model.DeclarationGraph

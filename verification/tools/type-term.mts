@@ -168,7 +168,7 @@ function intersection(scope: TermScope, node: ts.IntersectionTypeNode, span: Spa
 
 /** A signature's parameters: a leading `this: T` is the receiver a call must
  * pass, and without one the signature accepts any receiver. */
-function signature(scope: TermScope, parameters: readonly ts.ParameterDeclaration[],
+export function signature(scope: TermScope, parameters: readonly ts.ParameterDeclaration[],
     result: TypeNode | undefined, at: Node, span: Span): FunctionTerm {
   const head = parameters[0];
   const stated = !!head && ts.isIdentifier(head.name) && head.name.text === "this";

@@ -10,9 +10,9 @@ import { API, DiagnosticCategory, SymbolFlags, type Checker, type Program } from
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
-import { classInstance, members, typeTerm, type TermScope } from "./type-term.mts";
-import type { DeclarationIdentity, DeclarationDocument, Reference, TypeDefinition, TypeRoot, TypeTerm } from "./declaration-types.mts";
-export type { DeclarationIdentity, DeclarationDocument, Reference, TypeDefinition, TypeRoot, TypeTerm } from "./declaration-types.mts";
+import { classInstance, members, signature, typeTerm, type TermScope } from "./type-term.mts";
+import type { DeclarationIdentity, DeclarationDocument, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
+export type { DeclarationIdentity, DeclarationDocument, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
 
 type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration;
 const isTypeDeclaration = (node: Node): node is TypeDeclaration =>
@@ -118,7 +118,7 @@ function statementsOnPath(checker: Checker, identifier: Identifier):
 
 /** The client's named imports: each must name exactly one declaration. */
 function importBindings(client: SourceFile): { local: Identifier; imported: string;
-  specifier: string; span: Span }[] {
+  specifier: string; span: Span; typeOnly: boolean }[] {
   return client.statements.filter(ts.isImportDeclaration).flatMap(node => {
     const span: Span = [node.getStart(client), node.end];
     const clause = node.importClause;
@@ -126,8 +126,12 @@ function importBindings(client: SourceFile): { local: Identifier; imported: stri
         !ts.isStringLiteral(node.moduleSpecifier))
       throw new DeclarationError(span, "only named imports are resolved");
     const specifier = node.moduleSpecifier.text;
+    // The unstable AST exposes this runtime field but omits it from the
+    // ImportClause interface.
+    const clauseTypeOnly = "isTypeOnly" in clause && clause.isTypeOnly === true;
     return clause.namedBindings.elements.map(element => ({ local: element.name,
-      imported: element.propertyName?.text ?? element.name.text, specifier, span }));
+      imported: element.propertyName?.text ?? element.name.text, specifier, span,
+      typeOnly: clauseTypeOnly || element.isTypeOnly }));
   });
 }
 
@@ -171,26 +175,99 @@ export function collectDeclarations(file: string, options: {
       return { module: idOf(source), name: node.name?.text ?? "",
         span: [node.getStart(source), node.end] };
     };
-    const lookup = (identifier: Identifier, what: string): TypeDeclaration => {
+    // The one declaration TypeScript binds a name to, with no error on it or
+    // on the path to it.
+    const resolveDeclaration = (identifier: Identifier, what: string): Node => {
       const target = targetOf(checker, identifier);
       if (!target) throw Error(`unresolved type reference ${what}`);
       if (target.declarations.length !== 1)
         throw Error(`TypeScript found ${target.declarations.length} declarations for ${what}`);
       const node = target.declarations[0]?.resolve();
-      if (!node || !isTypeDeclaration(node) || !node.name)
-        throw Error(`${what} is not one type alias, interface or class`);
+      if (!node) throw Error(`unresolved type reference ${what}`);
       for (const statement of statementsOnPath(checker, identifier))
         clean(statement, `${idOf(statement.getSourceFile())} on the path to ${what}`);
+      return node;
+    };
+    const lookup = (identifier: Identifier, what: string): TypeDeclaration => {
+      const node = resolveDeclaration(identifier, what);
+      if (!isTypeDeclaration(node) || !node.name)
+        throw Error(`${what} is not one type alias, interface or class`);
       clean(node, `${idOf(node.getSourceFile())}#${node.name.text}`);
       return node;
     };
+    // The type an imported value's declaration states, and the declarations
+    // that type reaches, which join the graph.
+    const valueStarts: TypeDeclaration[] = [];
+    const valueScope = (node: Node, what: string): TermScope => {
+      const source = node.getSourceFile();
+      return {
+        source,
+        annotation: false,
+        fail: (_node, message) => { throw Error(`${message} in ${what}`); },
+        named: (part, pos, read) => {
+          const name = part.typeName as Identifier;
+          const targetNode = lookup(name, `${idOf(source)}#${name.text}`);
+          const parameters = targetNode.typeParameters ?? [];
+          const args = part.typeArguments ?? [];
+          if (args.length < parameters.filter(p => !p.defaultType).length || args.length > parameters.length)
+            throw Error(`type argument arity: ${identityOf(targetNode).module}#${name.text}`);
+          valueStarts.push(targetNode);
+          return { k: "reference", reference: { name: name.text, span: pos,
+            arguments: args.map(arg => [arg.getStart(source), arg.end] as Span), target: identityOf(targetNode) },
+            args: args.map(read), span: pos };
+        },
+      };
+    };
+    const valueOf = (node: Node, what: string): { declaration: DeclarationIdentity; construct: boolean; type: TypeTerm } => {
+      const source = node.getSourceFile();
+      const span: Span = [node.getStart(source), node.end];
+      if (ts.isFunctionDeclaration(node) && node.name) {
+        if (node.typeParameters?.length) throw Error(`a generic imported function is outside the fragment: ${what}`);
+        clean(node, `${idOf(source)}#${node.name.text}`);
+        return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false,
+          type: signature(valueScope(node, what), node.parameters, node.type, node, span) };
+      }
+      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+        const list = node.parent;
+        if (!ts.isVariableDeclarationList(list) || !(list.flags & ts.NodeFlags.Const) || !node.type)
+          throw Error(`an imported value must be an annotated constant, function or class: ${what}`);
+        clean(node, `${idOf(source)}#${node.name.text}`);
+        return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false,
+          type: typeTerm(valueScope(node, what), node.type, node) };
+      }
+      if (ts.isClassDeclaration(node) && node.name) {
+        if (node.typeParameters?.length) throw Error(`a generic imported class is outside the fragment: ${what}`);
+        clean(node, `${idOf(source)}#${node.name.text}`);
+        const scope = valueScope(node, what);
+        const constructor = node.members.find(ts.isConstructorDeclaration);
+        const params = (constructor?.parameters ?? []).map(p => {
+          if (!ts.isIdentifier(p.name) || p.questionToken || p.dotDotDotToken || p.initializer)
+            throw Error(`an imported class constructor needs plain required parameters: ${what}`);
+          return typeTerm(scope, p.type, p);
+        });
+        const identity = identityOf(node);
+        valueStarts.push(node);
+        const nameSpan: Span = [node.name.getStart(source), node.name.end];
+        return { declaration: identity, construct: true, type: { k: "function", receiver: null, params, rest: null,
+          result: { k: "reference", reference: { name: node.name.text, span: nameSpan, arguments: [], target: identity },
+            args: [], span: nameSpan }, span } };
+      }
+      throw Error(`${what} is not an annotated constant, function or class`);
+    };
     const roots: { root: TypeRoot; node: TypeDeclaration }[] = [];
+    const values: ValueRoot[] = [];
     for (const binding of importBindings(client)) {
       try {
-        const node = lookup(binding.local, binding.local.text);
-        roots.push({ node, root: { binding: { kind: "import", local: binding.local.text,
+        const node = resolveDeclaration(binding.local, binding.local.text);
+        // A class is a type and, imported as a value, a constructor too.
+        if (!binding.typeOnly && !(ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)))
+          values.push({ binding: { local: binding.local.text, imported: binding.imported,
+            specifier: binding.specifier, span: binding.span }, ...valueOf(node, binding.local.text) });
+        if (!isTypeDeclaration(node)) continue;
+        const declaration = lookup(binding.local, binding.local.text);
+        roots.push({ node: declaration, root: { binding: { kind: "import", local: binding.local.text,
           imported: binding.imported, specifier: binding.specifier, span: binding.span },
-        declaration: identityOf(node) } });
+        declaration: identityOf(declaration) } });
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
         throw new DeclarationError(binding.span, error instanceof Error ? error.message : String(error));
@@ -220,7 +297,15 @@ export function collectDeclarations(file: string, options: {
           error instanceof Error ? error.message : String(error));
       }
     }
-    return { roots: roots.map(r => r.root), definitions };
+    for (const [index, start] of valueStarts.entries()) {
+      try {
+        collect(start, seen, definitions, lookup, identityOf);
+      } catch (error) {
+        throw new DeclarationError(values[Math.min(index, values.length - 1)]?.binding.span ?? [0, 0],
+          error instanceof Error ? error.message : String(error));
+      }
+    }
+    return { roots: roots.map(r => r.root), definitions, values };
   });
 }
 
