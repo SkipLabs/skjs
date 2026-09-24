@@ -912,6 +912,23 @@ Required for the second milestone in addition:
    `runService` and `process.on` contracts, kept visible as out-of-scope
    effects until they are modeled.
 
+**Branded types (planned, not yet implemented).** TypeScript brands types two
+ways: a `private` or `protected` member makes a class nominal, and a field
+keyed by a `unique symbol` can be written only by code holding the symbol.
+The instance types here are structural and ignore visibility, so today a
+brand such as `AbstractEagerCollection`'s `__sk_collectionBrand` is just a
+field any object of the right shape has. That reading is sound, since types
+describe runtime values, but it is weaker than the brand intends. With
+classes in the fragment, brands can be real: a class's instances are exactly
+the objects its constructor allocates, so its instance type can carry a
+hidden brand field no source can spell and only that constructor sets. Then
+only constructed instances (and, with inheritance, subclass instances)
+inhabit the type. A class declared elsewhere whose constructor is not
+checked here gets its brand as an external contract. `unique symbol` brands
+(`Managed`, the `Opaque` types) follow once symbols are in the fragment
+(item 3). Brands matter for `SharedCollections`: its bound is meant to admit
+only runtime collections.
+
 Generic interface variance is not on this list: the type-safe API does not
 ask for `EagerCollection<K, V> ≤ EagerCollection<Json, Json>`, and the
 corrected client meets `SharedCollections` through `interface Collections
