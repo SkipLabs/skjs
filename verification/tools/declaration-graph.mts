@@ -8,13 +8,15 @@ import { realpathSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { API, DiagnosticCategory, SymbolFlags, type Checker, type Program } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
-import type { ExportDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
+import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
-import { members, typeTerm, type TermScope } from "./type-term.mts";
+import { classInstance, members, typeTerm, type TermScope } from "./type-term.mts";
 import type { DeclarationIdentity, DeclarationDocument, Reference, TypeDefinition, TypeRoot, TypeTerm } from "./declaration-types.mts";
 export type { DeclarationIdentity, DeclarationDocument, Reference, TypeDefinition, TypeRoot, TypeTerm } from "./declaration-types.mts";
 
-type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration;
+type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration;
+const isTypeDeclaration = (node: Node): node is TypeDeclaration =>
+  ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node) || ts.isClassDeclaration(node);
 
 /** A refusal located at a root of the client: an import declaration or one of
  * its own type declarations. */
@@ -164,7 +166,9 @@ export function collectDeclarations(file: string, options: {
     };
     const identityOf = (node: TypeDeclaration): DeclarationIdentity => {
       const source = node.getSourceFile();
-      return { module: idOf(source), name: node.name.text,
+      // An anonymous class is refused where it is reached, so every
+      // declaration here has a name.
+      return { module: idOf(source), name: node.name?.text ?? "",
         span: [node.getStart(source), node.end] };
     };
     const lookup = (identifier: Identifier, what: string): TypeDeclaration => {
@@ -173,8 +177,8 @@ export function collectDeclarations(file: string, options: {
       if (target.declarations.length !== 1)
         throw Error(`TypeScript found ${target.declarations.length} declarations for ${what}`);
       const node = target.declarations[0]?.resolve();
-      if (!node || !(ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)))
-        throw Error(`${what} is not one type alias or interface`);
+      if (!node || !isTypeDeclaration(node) || !node.name)
+        throw Error(`${what} is not one type alias, interface or class`);
       for (const statement of statementsOnPath(checker, identifier))
         clean(statement, `${idOf(statement.getSourceFile())} on the path to ${what}`);
       clean(node, `${idOf(node.getSourceFile())}#${node.name.text}`);
@@ -194,9 +198,9 @@ export function collectDeclarations(file: string, options: {
     }
     for (const span of options.locals ?? []) {
       const declaration = client.statements.find(statement =>
-        (ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement)) &&
+        isTypeDeclaration(statement) &&
         statement.getStart(client) === span[0] && statement.end === span[1]);
-      if (!declaration || !(ts.isTypeAliasDeclaration(declaration) || ts.isInterfaceDeclaration(declaration)))
+      if (!declaration || !isTypeDeclaration(declaration) || !declaration.name)
         throw new DeclarationError(span, "TypeScript local declaration missing");
       try {
         const node = lookup(declaration.name, declaration.name.text);
@@ -297,7 +301,13 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     });
     const expression = ts.isTypeAliasDeclaration(node)
       ? parse(node.type)
-      : members(scope, node.members, node, [node.getStart(source), node.end], true);
+      : ts.isClassDeclaration(node)
+        ? classInstance(scope, node, [node.getStart(source), node.end])
+        : members(scope, node.members, node, [node.getStart(source), node.end], true);
+    // A class's `implements` clauses are obligations on the class, not part of
+    // its instance type; inheriting from another class is not yet admitted.
+    if (ts.isClassDeclaration(node) && node.heritageClauses?.some(c => c.token === ts.SyntaxKind.ExtendsKeyword))
+      throw Error(`class inheritance in ${identity.module}#${identity.name} is outside the fragment`);
     const bases = ts.isInterfaceDeclaration(node)
       ? (node.heritageClauses ?? []).flatMap(clause => {
           if (clause.token !== ts.SyntaxKind.ExtendsKeyword)

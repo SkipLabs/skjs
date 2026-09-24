@@ -110,10 +110,10 @@ for (const [file, expected] of [
     ["InputDefinition", "skipruntime-ts/core/src/api.ts", "InputDefinition", "ClassDeclaration"],
     ["runService", "skipruntime-ts/server/src/server.ts", "runService", "FunctionDeclaration"],
   ]);
-  // A value is not a type declaration: the whole graph is refused, at its
-  // first value import.
+  // A function is not a type declaration: the whole graph is refused at the
+  // runtime's value import (`InputDefinition` is a class, which declares a type).
   assert.throws(() => collectDeclarations(source, { tsconfigPath: upstreamConfig }),
-    /InputDefinition is not one type alias or interface/);
+    /runService is not one type alias, interface or class/);
   // Each runtime interface sum.ts imports, applied in a client of the same
   // project, and the first declaration the graph refuses on its way.
   const probe = mkdtempSync(join(tmpdir(), "skjs-runtime-api-"));
@@ -127,7 +127,7 @@ for (const [file, expected] of [
     ["EagerCollection<string, number>", "EagerCollection",
       /unsupported method signature in \S*api\.ts#EagerCollection/],
     ["Resource<SharedCollections>", "Resource, SharedCollections",
-      /api\.ts#AbstractEagerCollection is not one type alias or interface/],
+      /unsupported method signature in \S*api\.ts#Context/],
   ] as const) {
     const client = join(probe, `${imports.split(",")[0]}.ts`);
     writeFileSync(client, `import type { ${imports} } from "@skipruntime/core";\nexport type Use = ${use};\n`);

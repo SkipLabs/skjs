@@ -874,12 +874,18 @@ first milestone, in order of how much each gates:
    (`InputDefinition`, `runService`) and globals (`process`) as explicit
    external contracts, top-level `await`, module-level `let`, and the Lean
    theorem composing the units into a module result.
-2. **Classes.** Class declarations as values and as declarations in the graph
-   (`InputDefinition`, the branded `AbstractEagerCollection`); construction
-   separate from invocation (`new`); parameter properties (`AddIndex`); field
-   initializers (`Service`); prototype methods using `this`; and `implements`
-   as a contract to check rather than a proof. Every mapper, resource and the
-   service are classes.
+2. **Classes.** Done for top-level classes without inheritance or generics:
+   a class declares its instance type in the declaration graph (fields at
+   their annotations, methods as readonly fields whose receiver is the
+   instance, parameter properties); its value is lowered in module
+   initialization to method closures allocated once, as its prototype's, and
+   a constructor that allocates the instance from the field initializers,
+   parameter properties and `this.f = e` assignments; `new C(args)` calls
+   it, and no other read of the class is admitted. Remaining: `implements` as
+   a checked obligation, inheritance (`extends`, needed by
+   `InputDefinition`), generic classes, general constructor bodies, statics,
+   and array operations inside methods (a closure limitation `AddIndex`
+   meets).
 3. **The runtime API's declaration forms.** `Mapper` reaches `Context` and
    `Values`; interpreting them needs:
    - generic interface methods, i.e. quantified method signatures (schemes

@@ -273,3 +273,64 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
   }
   return { k: "object", fields, stringIndex, calls, span };
 }
+
+/** A class declaration's instance type: its fields at their annotations and
+ * its methods as readonly fields whose receiver is the instance. An instance
+ * reaches a method through the prototype; within the fragment nothing tells a
+ * prototype member from an own one, and no write reaches either, so the
+ * readonly field is exact. Construction is the class value's concern. */
+export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span: Span): TypeTerm {
+  const fields: Extract<TypeTerm, { k: "object" }>["fields"] = [];
+  const names = new Set<string>();
+  const named = (member: ts.ClassElement & { name?: Node }): string => {
+    const name = member.name;
+    if (!name || !ts.isIdentifier(name)) return scope.fail(member, "a class member needs a plain name");
+    if (names.has(name.text)) scope.fail(member, "duplicate class member");
+    names.add(name.text);
+    return name.text;
+  };
+  const only = (member: ts.ClassElement, allowed: ts.SyntaxKind[]) => {
+    const modifiers = (member as { modifiers?: readonly Node[] }).modifiers;
+    if (modifiers?.some(m => !allowed.includes(m.kind)))
+      scope.fail(member, "a class member modifier outside the fragment");
+  };
+  for (const member of node.members) {
+    const memberSpan = spanOf(scope, member);
+    if (ts.isPropertyDeclaration(member)) {
+      only(member, [ts.SyntaxKind.ReadonlyKeyword]);
+      if (member.postfixToken)
+        scope.fail(member, "an optional or definitely-assigned class field is outside the fragment");
+      const name = named(member);
+      fields.push({ name, optional: false,
+        readonly: member.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true,
+        type: typeTerm(scope, member.type, member), span: memberSpan });
+    } else if (ts.isMethodDeclaration(member)) {
+      only(member, []);
+      if (member.postfixToken || member.asteriskToken || member.typeParameters?.length)
+        scope.fail(member, "an optional, generator or generic method is outside the fragment");
+      const name = named(member);
+      const method = signature(scope, member.parameters, member.type, member, memberSpan);
+      if (method.receiver) scope.fail(member, "a method receiver is its instance");
+      fields.push({ name, optional: false, readonly: true,
+        type: { ...method, receiver: { k: "self", span: memberSpan } }, span: memberSpan });
+    } else if (ts.isConstructorDeclaration(member)) {
+      // A parameter property is a field the constructor assigns from its
+      // parameter. Its visibility is TypeScript's alone; `readonly` is the
+      // field's.
+      for (const p of member.parameters) {
+        if (!p.modifiers?.length) continue;
+        if (!ts.isIdentifier(p.name) || p.questionToken || p.dotDotDotToken || p.initializer)
+          scope.fail(p, "a parameter property needs a plain required parameter");
+        const name = p.name.text;
+        if (names.has(name)) scope.fail(p, "duplicate class member");
+        names.add(name);
+        fields.push({ name, optional: false,
+          readonly: p.modifiers.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword),
+          type: typeTerm(scope, p.type, p), span: spanOf(scope, p) });
+      }
+    } else if (!ts.isSemicolonClassElement(member)) {
+      scope.fail(member, "a class member outside the fragment");
+    }
+  }
+  return { k: "object", fields, stringIndex: null, calls: [], span };
+}

@@ -351,6 +351,10 @@ function fromSkjs(
 
 // Labels index the document's own type table; the first four rows are the
 // primitives null, true, false and undefined.
+/** The module's initialization code, as the parser reads it: top-level
+ * expression statements, constants and class declarations. */
+const isInitStatement=(n: ts.Statement)=>ts.isExpressionStatement(n)||ts.isVariableStatement(n)||ts.isClassDeclaration(n);
+
 function fromSourceClaims(
   source: string,
   file: string,
@@ -421,7 +425,7 @@ function fromSourceClaims(
   const walk=(n: ts.Node)=>{if(ts.isStatement(n))entries.set(n.getStart(sf),n.end);n.forEachChild(walk);};walk(sf);
   // The module initialization is a unit like a function: no name, the span of
   // the top-level code, no parameters, and `undefined` as its completion.
-  const initCode=sf.statements.filter(n=>ts.isExpressionStatement(n)||ts.isVariableStatement(n));
+  const initCode=sf.statements.filter(isInitStatement);
   const first=initCode[0], last=initCode[initCode.length-1];
   if(!!input.init!==!!first)throw Error("module initialization claims do not match the source");
   const units=[...input.functions,...(input.init&&first&&last?[{name:"",namePos:[first.getStart(sf),last.end] as Span,
@@ -518,7 +522,7 @@ function render(
   };
   // The module initialization unit has no declaration of its own: it is the
   // file's top-level code, from its first statement to its last.
-  const initCode=sf.statements.filter(n=>ts.isExpressionStatement(n)||ts.isVariableStatement(n));
+  const initCode=sf.statements.filter(isInitStatement);
   const initSpan=initCode.length ? [initCode[0]!.getStart(sf),initCode[initCode.length-1]!.end] : null;
   for(const [index,f] of report.functions.entries()) {
     checkSpan(f.namePos);
@@ -1016,7 +1020,7 @@ export function main(args: string[]) {
       // The initialization unit spans the module's top-level code and has no
       // declared result.
       ...(f.name==="" ? {pos:f.namePos,resultPos:null,
-          missingSites:missingClaimSites(sourceFile.statements.filter(n=>ts.isExpressionStatement(n)||ts.isVariableStatement(n)),f)} :
+          missingSites:missingClaimSites(sourceFile.statements.filter(isInitStatement),f)} :
         ((node: ts.FunctionDeclaration)=>({pos:[node.getStart(),node.end],resultPos:node.type ? [node.type.getStart(),node.type.end] : null,missingSites:missingClaimSites(node,f)}))(
         declaring(functionNodes,f.namePos[0]))),
       entries:f.entries.map((e,j)=>({id:`f${i}e${j}`,...e})),

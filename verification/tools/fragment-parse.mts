@@ -16,6 +16,7 @@ import { API } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type {
   ArrowFunction,
+  ClassDeclaration,
   BinaryExpression,
   Expression,
   FunctionDeclaration,
@@ -250,6 +251,104 @@ class Gate {
       throw new Error("internal: no type-parameter scope to leave");
   }
 
+  /** The module's classes: each is read only as the target of `new`. */
+  private readonly classNames = new Set<string>();
+  registerClass(name: string): void {
+    this.classNames.add(name);
+  }
+
+  /** A class declaration, in module initialization order: one constant per
+   * method, holding a closure allocated once, whose receiver is the instance,
+   * as every instance shares its prototype's method; then the class, holding
+   * its constructor, which allocates an instance from the field initializers
+   * and those methods. Within the fragment an instance's own fields and its
+   * prototype's methods are indistinguishable, and the class is only read by
+   * `new`, which calls the constructor. */
+  classStmt(node: ClassDeclaration): Stmt {
+    const name = node.name;
+    if (!name) return this.fail(node, "an anonymous class is outside the fragment");
+    if (node.typeParameters?.length) this.fail(node, "a generic class is outside the fragment");
+    if (node.heritageClauses?.some((c) => c.token === ts.SyntaxKind.ExtendsKeyword))
+      this.fail(node, "class inheritance is outside the fragment");
+    if (node.modifiers?.some((m) => m.kind !== ts.SyntaxKind.ExportKeyword))
+      this.fail(node, "a class modifier outside the fragment");
+    const declared = this.declaredTypes.get(name.text);
+    if (!declared) return this.fail(node, "a class declaration has no instance type");
+    const instance: TypeTerm = { k: "reference", reference: { name: name.text, span: this.span(name),
+      arguments: [], target: declared.declaration }, args: [], span: this.span(name) };
+    const outerStrict = this.strict;
+    // A class body is strict code.
+    this.strict = true;
+    try {
+      const methods: BindingAst[] = [];
+      const fields: { name: string; e: Expr }[] = [];
+      const constructors = node.members.filter(ts.isConstructorDeclaration);
+      const constructor = constructors[0];
+      if (constructors.length > 1) this.fail(node, "a class has one constructor");
+      // Fields a constructor assigns: the uninitialized ones, each once, as
+      // `this.f = e` statements whose values do not read `this`. The instance
+      // is then complete before anything can observe it.
+      const uninitialized = new Set(node.members.filter(ts.isPropertyDeclaration)
+        .filter((m) => !m.initializer && ts.isIdentifier(m.name))
+        .map((m) => (m.name as Identifier).text));
+      const readsThis = (n: Node): boolean =>
+        n.kind === ts.SyntaxKind.ThisKeyword ||
+        (!ts.isFunctionExpression(n) && !ts.isFunctionDeclaration(n) && !!n.forEachChild((c) => readsThis(c) || undefined));
+      const params = constructor ? constructor.parameters.map((p) => {
+        if (!ts.isIdentifier(p.name) || p.questionToken || p.dotDotDotToken || p.initializer)
+          this.fail(p, "a constructor parameter must be plain and required");
+        if (p.name.text === "undefined") this.fail(p, "shadowing undefined is outside the fragment");
+        return { name: p.name.text, type: this.typeOf(p.type, p), pos: this.span(p.name),
+          property: !!p.modifiers?.length };
+      }) : [];
+      for (const member of node.members) {
+        if (ts.isSemicolonClassElement(member) || ts.isConstructorDeclaration(member)) continue;
+        if (ts.isPropertyDeclaration(member)) {
+          if (!ts.isIdentifier(member.name)) this.fail(member, "a class member needs a plain name");
+          if (member.initializer) {
+            if (readsThis(member.initializer)) this.fail(member, "a field initializer that reads `this` is outside the fragment");
+            fields.push({ name: member.name.text, e: this.expr(member.initializer) });
+          }
+        } else if (ts.isMethodDeclaration(member)) {
+          if (!ts.isIdentifier(member.name)) this.fail(member, "a class member needs a plain name");
+          methods.push({ name: `${name.text}.${member.name.text}`, namePos: this.span(member.name),
+            annot: null, init: this.lambda(member, instance) });
+          fields.push({ name: member.name.text,
+            e: { k: "id", pos: this.span(member.name), name: `${name.text}.${member.name.text}` } });
+        } else this.fail(member, "a class member outside the fragment");
+      }
+      // Parameter properties, then the constructor's assignments, in order:
+      // after the field initializers, as JavaScript runs them.
+      for (const p of params)
+        if (p.property) fields.push({ name: p.name, e: { k: "id", pos: p.pos, name: p.name } });
+      const assigned = new Set<string>();
+      for (const statement of constructor?.body?.statements ?? []) {
+        const e = ts.isExpressionStatement(statement) ? statement.expression : undefined;
+        const target = e && ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+          ts.isPropertyAccessExpression(e.left) && e.left.expression.kind === ts.SyntaxKind.ThisKeyword &&
+          ts.isIdentifier(e.left.name) ? e.left.name.text : undefined;
+        if (!e || !ts.isBinaryExpression(e) || target === undefined)
+          this.fail(statement, "a constructor statement other than `this.f = e` is outside the fragment");
+        if (!uninitialized.has(target) || assigned.has(target))
+          this.fail(statement, "a constructor assigns each uninitialized field once");
+        if (readsThis(e.right)) this.fail(statement, "a constructor assignment that reads `this` is outside the fragment");
+        assigned.add(target);
+        fields.push({ name: target, e: this.expr(e.right) });
+      }
+      for (const f of uninitialized)
+        if (!assigned.has(f)) this.fail(node, `field ${f} is never initialized`);
+      const lambda: Expr = { k: "lambda", pos: this.span(node), typeParams: [], receiver: null,
+        params: params.map((p) => ({ name: p.name, type: p.type })), result: instance,
+        body: { k: "alloc", pos: this.span(name), fields } };
+      const type: TypeTerm = { k: "function", receiver: null, params: params.map((p) => p.type), rest: null,
+        result: instance, span: this.span(name) };
+      return { k: "const", pos: this.span(node),
+        bindings: [...methods, { name: name.text, namePos: this.span(name), annot: type, init: lambda }] };
+    } finally {
+      this.strict = outerStrict;
+    }
+  }
+
   registerDeclaredType(name: string, required: number, total: number,
       declaration: DeclarationIdentity, node: Node): void {
     if (this.declaredTypes.has(name))
@@ -351,7 +450,29 @@ class Gate {
     if (ts.isIdentifier(node)) {
       if (node.text === "undefined")
         return { k: "lit", pos: this.span(node), lit: { a: "undefined" } };
+      // A class is only constructed: calling it without `new` throws, so no
+      // other read of it may reach a call.
+      if (this.classNames.has(node.text))
+        this.fail(node, "a class is read only as the target of `new`");
       return { k: "id", pos: this.span(node), name: node.text };
+    }
+
+    if (ts.isNewExpression(node)) {
+      const target = node.expression;
+      if (!ts.isIdentifier(target) || !this.classNames.has(target.text))
+        this.fail(node, "`new` applies to a class of this module");
+      if (node.typeArguments?.length)
+        this.fail(node, "type arguments to `new` are outside the fragment");
+      // The class value is its constructor: constructing is calling it.
+      return {
+        k: "apply",
+        pos: this.span(node),
+        callee: { k: "id", pos: this.span(target), name: target.text },
+        args: (node.arguments ?? []).map((arg) => {
+          if (ts.isSpreadElement(arg)) this.fail(arg, "a spread argument to `new` is outside the fragment");
+          return this.expr(arg);
+        }),
+      };
     }
 
     if (node.kind === ts.SyntaxKind.ThisKeyword) {
@@ -1088,6 +1209,7 @@ class Gate {
 
   private lambda(
     node: ArrowFunction | FunctionExpression | MethodDeclaration,
+    instance?: TypeTerm,
   ): Expr {
     if (node.modifiers?.length)
       this.fail(node, "expected a synchronous closure without modifiers");
@@ -1130,6 +1252,8 @@ class Gate {
     const head = node.parameters[0];
     const stated =
       !!head && ts.isIdentifier(head.name) && head.name.text === "this";
+    if (stated && instance)
+      this.fail(head, "a class method's receiver is its instance");
     if (stated && !ordinary)
       this.fail(head, "an arrow cannot declare a receiver");
     if (
@@ -1164,7 +1288,8 @@ class Gate {
       const receiver = !ordinary
         ? null
         : {
-            type: stated
+            // A class method's receiver is its instance.
+            type: instance ? instance : stated
               ? this.typeOf(head.type, head)
               : ({ k: "atom", name: "unknown", span: this.span(node) } as TypeTerm),
             strict: this.strict,
@@ -1651,6 +1776,7 @@ export function parseFile(file: string, carriesContext = false,
   const gate = new Gate(source);
   const aliasNodes: TypeAliasDeclaration[] = [];
   const interfaceNodes: InterfaceDeclaration[] = [];
+  const classNodes: ClassDeclaration[] = [];
   const fnNodes: FunctionDeclaration[] = [];
   const importNodes: ImportDeclaration[] = [];
   // Top-level code other than declarations: the module's initialization, run
@@ -1663,6 +1789,12 @@ export function parseFile(file: string, carriesContext = false,
     if (prologue.skip.has(s)) continue;
     if (ts.isTypeAliasDeclaration(s)) aliasNodes.push(s);
     else if (ts.isInterfaceDeclaration(s) && !carriesContext) interfaceNodes.push(s);
+    // A class declaration declares its instance type, and its value is part of
+    // the module's initialization, in order: classes are not hoisted.
+    else if (ts.isClassDeclaration(s) && !carriesContext) {
+      classNodes.push(s);
+      initNodes.push(s);
+    }
     else if (ts.isFunctionDeclaration(s)) fnNodes.push(s);
     else if (ts.isImportDeclaration(s) && !carriesContext) importNodes.push(s);
     else if (carriesContext) continue;
@@ -1692,8 +1824,8 @@ export function parseFile(file: string, carriesContext = false,
     return !node.modifiers?.length && params?.length === 1 &&
       !params[0].constraint && !params[0].defaultType;
   };
-  const localNodes: Array<TypeAliasDeclaration | InterfaceDeclaration> =
-    [...(carriesContext ? aliasNodes.filter(statable) : aliasNodes), ...interfaceNodes];
+  const localNodes: Array<TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration> =
+    [...(carriesContext ? aliasNodes.filter(statable) : aliasNodes), ...interfaceNodes, ...classNodes];
   if (importNodes.length || localNodes.length) {
     const first = importNodes[0] ?? localNodes[0];
     if (!first) throw Error("missing declaration root");
@@ -1738,8 +1870,9 @@ export function parseFile(file: string, carriesContext = false,
   // retained declaration now has one source equation, shared with imports.
   // A function without a body is a declaration, not an example of one.
   const declared = carriesContext ? fnNodes.filter((s) => s.body) : fnNodes;
+  for (const node of classNodes) if (node.name) gate.registerClass(node.name.text);
   const functions = declared.map((s) => gate.functionDecl(s));
-  const init = initNodes.map((s) => gate.stmt(s));
+  const init = initNodes.map((s) => ts.isClassDeclaration(s) ? gate.classStmt(s) : gate.stmt(s));
   if (functions.length === 0 && init.length === 0) gate.fail(null, "no functions in file");
   return {
     file,

@@ -1408,6 +1408,15 @@ module function at its annotated signature (a source-fixed slot no producer
 claims and no assignment reaches), a module constant at its annotation. Claims
 are per unit, keyed by source identity.
 
+**Classes.** A class declares its instance type in the declaration graph,
+and its value is a statement of the module initialization, in order. The
+parser lowers it to method closures allocated once, as its prototype's, and a
+constructor closure that allocates the instance; `new C(args)` calls that
+constructor, and the class is read no other way, since calling it without
+`new` throws. An instance's methods are readonly fields: within the fragment
+nothing distinguishes a prototype member from an own one, and no write reaches
+either.
+
 **Initialization order.** A module constant has no value until its
 declaration runs. The initialization unit refuses a call, direct or through
 other module functions, that can read a constant not yet initialized. Module
