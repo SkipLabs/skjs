@@ -149,7 +149,7 @@ where
   /-- A signature indifferent to its receiver shows none; `this: R` otherwise. -/
   receiverText (T : SourceTypes.Table) (rc : Ty) : List String :=
     match rc with
-    | .ground [l] => if T[l]? == some [.top] then [] else [s!"this: {rc.render T}"]
+    | .ground [l] => if T[l]? == some (.clauses [.top]) then [] else [s!"this: {rc.render T}"]
     | _ => [s!"this: {rc.render T}"]
 
 open PositiveRules PositiveGraphs

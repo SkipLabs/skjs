@@ -25,7 +25,7 @@ theorem share_typed {ι : Type} [DecidableEq ι] {G : PositiveGraphs.NormalGraph
 /-- The primitives, a Boolean cell, a null-to-Boolean arrow, a null-to-true
 arrow, and unknown: the receiver every arrow here takes. -/
 private def T : SourceTypes.Table :=
-  SourceTypes.initial ++ [[.refs [(valueField,[1,2])] [] []],[.arrs [([7],[[0]],[1,2])] []],
+  SourceTypes.initial ++ RequestJson.rows [[.refs [(valueField,[1,2])] [] []],[.arrs [([7],[[0]],[1,2])] []],
     [.arrs [([7],[[0]],[1])] []],[.top]]
 private def G := SourceTypes.graph T
 private def Γ : List (Ty Nat) := [[4],[1,2],[1,2]]
@@ -103,8 +103,8 @@ theorem shared_paths (a b : Bool) : Execution program
 
 -- A later refinement is passed as a checked argument, not retroactively added
 -- to the captured environment. Both surviving paths reach the same definition.
-private def refinedTypes := T ++ [[PositiveNormalization.Clause.arrs [([7],[[2]],[1,2])] []]]
-private def refinedGraph : PositiveGraphs.NormalGraph Nat := .ofRows fun i => refinedTypes[i]?.getD []
+private def refinedTypes := T ++ RequestJson.rows [[PositiveNormalization.Clause.arrs [([7],[[2]],[1,2])] []]]
+private def refinedGraph : PositiveGraphs.NormalGraph Nat := SourceTypes.graph refinedTypes
 private def outer : List (Ty Nat) := [[1,2],[1,2]]
 private def extraLabel := T.length
 private def inside : List (Ty Nat) := [extraLabel]::outer

@@ -91,11 +91,11 @@ def response : Json := match produceJson (toJson mappedRequest) 12 with
 #guard !(ok (verifyJson (toJson { mappedRequest with program := (mappedRequest.program.set 0 ⟨.alloc .tru, .bind ⟨1,some [0,99]⟩⟩) }) response))
 
 -- Reject dangling labels even in unused type definitions.
-#guard !(ok (decodeRequest (toJson { mappedRequest with types := (mappedRequest.types ++ [[PositiveNormalization.Clause.refs [(valueField, [99])] [] []]]) })))
+#guard !(ok (decodeRequest (toJson { mappedRequest with types := (mappedRequest.types ++ RequestJson.rows [[PositiveNormalization.Clause.refs [(valueField, [99])] [] []]]) })))
 #guard ok (decodeRequest (toJson { mappedRequest with types :=
-  mappedRequest.types ++ [[PositiveNormalization.Clause.dict [] [] [] [[1]]]] }))
+  mappedRequest.types ++ (RequestJson.rows [[PositiveNormalization.Clause.dict [] [] [] [[1]]]]) }))
 #guard !(ok (decodeRequest (toJson { mappedRequest with types :=
-  mappedRequest.types ++ [[PositiveNormalization.Clause.dict [] [] [] [[99]]]] })))
+  mappedRequest.types ++ (RequestJson.rows [[PositiveNormalization.Clause.dict [] [] [] [[99]]]]) })))
 #guard !(ok (decodeRequest (toJson { mappedRequest with result := [99] })))
 #guard !(ok (decodeRequest (toJson { mappedRequest with claims := [⟨[[99]],[1]⟩] })))
 #guard !(ok (produceJson (toJson mappedRequest) 0))
@@ -134,7 +134,7 @@ private def reverseFields : Json → Json
   (Json.mkObj [("x",toJson (0 : Nat)),("y",toJson (1 : Nat))]))
 
 -- External inputs are checked independently of the entry point claim.
-def inputRequest : Request := ⟨[[.bool]], [⟨.var 0,.ret⟩], [⟨[[0]],[0]⟩], [0],0,[[0]]⟩
+def inputRequest : Request := ⟨RequestJson.rows [[.bool]], [⟨.var 0,.ret⟩], [⟨[[0]],[0]⟩], [0],0,[[0]]⟩
 #guard ok (roundtrip inputRequest)
 #guard !ok (roundtrip { inputRequest with inputs := [] })
 #guard !ok (roundtrip { inputRequest with inputs := [[0],[0]] })
@@ -142,7 +142,7 @@ def inputRequest : Request := ⟨[[.bool]], [⟨.var 0,.ret⟩], [⟨[[0]],[0]�
 #guard !ok (decodeRequest (omitField (toJson inputRequest) "inputs"))
 -- The generalized theorem also covers stateful arguments, not just primitive
 -- source parameters. The input reference may belong to any satisfying heap.
-def referenceInput : Request := ⟨[[.bool],[.refs [(valueField, [0])] [] []]],
+def referenceInput : Request := ⟨RequestJson.rows [[.bool],[.refs [(valueField, [0])] [] []]],
   [⟨.read (.var 0),.ret⟩], [⟨[[1]],[0]⟩], [0],0,[[1]]⟩
 #guard ok (roundtrip referenceInput)
 #guard !ok (roundtrip { referenceInput with inputs := [[0]] })

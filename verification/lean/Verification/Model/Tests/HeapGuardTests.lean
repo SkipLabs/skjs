@@ -7,7 +7,7 @@ No current-content fact is assumed at the function's external entry. -/
 set_option maxRecDepth 65536
 namespace Verification.Model.HeapGuardTests
 open ProgramTyping ProgramCertificates ControlFlow HeapKnowledge HeapExpressionRules
-private def T : SourceTypes.Table := SourceTypes.initial ++ [[.refs [(valueField, [1,2])] [] []]]
+private def T : SourceTypes.Table := SourceTypes.initial ++ RequestJson.rows [[.refs [(valueField, [1,2])] [] []]]
 private def G := SourceTypes.graph T
 private def R : List HeapFacts.Atom := [.tru,.fls]
 private def empty : Knowledge := ⟨[],[],[]⟩

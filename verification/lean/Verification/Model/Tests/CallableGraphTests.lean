@@ -92,10 +92,10 @@ private def creationPlan : DirectProof.Plan :=
   | some e => ProgramCertificates.check G (.attach (.var 1) .tru) [2] e
 
 -- Labels in the new clause's bag and arrow operands remain range checked.
-#guard !validRequest {request with types := types ++ [[.callable [(valueField, [99])] [] signatures []]]}
-#guard !validRequest {request with types := types ++ [[.callable [(valueField, [1])] [[(valueField,[99])]] signatures []]]}
-#guard !validRequest {request with types := types ++ [[.callable [(valueField, [1])] [] [([7],[[1]],[99])] []]]}
-#guard !validRequest {request with types := types ++ [[.callable [(valueField, [1])] [] [([99],[[1]],[1])] []]]}
+#guard !validRequest {request with types := RequestJson.rows (types ++ [[.callable [(valueField, [99])] [] signatures []]])}
+#guard !validRequest {request with types := RequestJson.rows (types ++ [[.callable [(valueField, [1])] [[(valueField,[99])]] signatures []]])}
+#guard !validRequest {request with types := RequestJson.rows (types ++ [[.callable [(valueField, [1])] [] [([7],[[1]],[99])] []]])}
+#guard !validRequest {request with types := RequestJson.rows (types ++ [[.callable [(valueField, [1])] [] [([99],[[1]],[1])] []]])}
 
 -- Native certificates split the middle parameter while fixing both neighbors.
 -- These are certificate checks, not executions of extracted source programs.
@@ -159,7 +159,7 @@ private def zeroReq : Request := ⟨rows,[⟨.make (.closure 0 .nul) .nul,.ret�
   let r := toJson zeroReq
   verifyJson r (← produceJson r 8))
 #guard (subtype graph (List.range rows.length |>.map fun i => [i]) [9] [11]).isNone
-#guard !validRequest {req with types := rows ++ [[.arrs [([7],[[0],[99]],[1])] []]]}
+#guard !validRequest {req with types := RequestJson.rows (rows ++ [[.arrs [([7],[[0],[99]],[1])] []]])}
 -- Native invocation reaches the same producer/JSON consumer as unary calls.
 private def callReq : Request :=
   {req with
@@ -178,7 +178,7 @@ private def zeroCallReq : Request :=
 
 -- A callable's cell is updated by the first operand and read by the second.
 -- This exercises effectful operands through the callable-object application rule.
-private def cellRows := rows ++ [[.callable [(valueField, [1])] [] [([7],[[0],[1]],[1])] []]]
+private def cellRows := rows ++ RequestJson.rows [[.callable [(valueField, [1])] [] [([7],[[0],[1]],[1])] []]]
 private def cellCallReq : Request :=
   ⟨cellRows,
    [⟨.make (.closure 2 (.var 2)) .tru,.bind 1⟩,

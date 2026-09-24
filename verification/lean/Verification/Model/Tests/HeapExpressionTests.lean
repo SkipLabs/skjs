@@ -7,7 +7,7 @@ premises. Full source/CFG acceptance still requires checked edge integration. -/
 namespace Verification.Model.HeapExpressionTests
 open ProgramCertificates HeapExpressionRules HeapKnowledge
 
-private def T : SourceTypes.Table := SourceTypes.initial ++ [[.refs [(valueField, [1,2])] [] []]]
+private def T : SourceTypes.Table := SourceTypes.initial ++ RequestJson.rows [[.refs [(valueField, [1,2])] [] []]]
 private def G := SourceTypes.graph T
 private def boolTy : List Nat := [1,2]
 private def refBool : List Nat := [4]
@@ -103,7 +103,7 @@ private def invalidWrite : Evidence Nat := .node narrowWrite .write
 #guard !pureTerm (.alloc .tru)
 
 -- A creation preserves old facts even when its uncalled body would mutate a cell.
-private def CG := SourceTypes.graph (T ++ [[.arrs [] []]])
+private def CG := SourceTypes.graph (T ++ RequestJson.rows [[.arrs [] []]])
 private def creationClaim : Sequent Nat :=
   ⟨[refBool,boolTy,refBool,boolTy],.funE (.write (.var 1) .fls),[5]⟩
 private def creationProof : Evidence Nat := .node creationClaim .funE []

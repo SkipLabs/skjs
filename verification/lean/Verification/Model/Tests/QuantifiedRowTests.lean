@@ -114,4 +114,30 @@ def subtypes (A B : List Nat) : Bool := (subtype G pool A B).isSome
 #guard found [[10]] (.call (.var 0) [.tru]) [11]
 #guard !found [[10]] (.call (.var 0) [.tru]) [13]
 
+-- On the wire: a table of rows, where scheme and parameter rows are rows of
+-- their own kind. Its graph is the one above.
+open RequestJson in
+def table : List Row :=
+  (List.range types.length).map fun i =>
+    if i == 4 then .param 4 else if i == 18 then .param 18
+    else if i == 5 then .scheme [4] [([3], [[4]], [4])]
+    else if i == 10 then .scheme [4] [([3], [[4]], [9])]
+    else if i == 17 then .scheme [18] [([3], [[18]], [18])]
+    else .clauses (types[i]?.getD [])
+def wire : NormalGraph Nat := RequestJson.tableGraph table
+#guard (List.range 20).all fun i =>
+  wire.params i == G.params i && wire.plain i == G.plain i && wire i == G i &&
+  (wire.schemes i).isSome == (G.schemes i).isSome
+#guard (subtype wire pool [5] [7]).isSome && (subtype wire pool [10] [12]).isSome &&
+  (subtype wire pool [10] [14]).isNone && (subtype wire pool [5] [17]).isSome
+#guard RequestJson.validRows table
+-- A parameter row names its own label, a scheme's binders are parameter rows,
+-- and a scheme's labels index the table.
+#guard !RequestJson.validRows (table.set 4 (.param 5))
+#guard !RequestJson.validRows (table.set 5 (.scheme [3] [([3], [[3]], [3])]))
+#guard !RequestJson.validRows (table.set 5 (.scheme [4] [([3], [[4]], [25])]))
+-- A clause row is spelled as before; the other kinds read back as themselves.
+#guard Lean.toJson (RequestJson.Row.clauses [.nul]) == Lean.toJson [Clause.nul (α := List Nat)]
+#guard (Lean.fromJson? (Lean.toJson table) : Except String (List RequestJson.Row)).toOption == some table
+
 end Verification.Model.QuantifiedRowTests

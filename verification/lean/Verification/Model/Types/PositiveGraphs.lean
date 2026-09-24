@@ -44,6 +44,7 @@ signatures `(receiver, parameters, result)` each of its instances meets. -/
 structure SchemeRow (ι : Type) where
   binders : List ι
   signatures : List (List ι × List (List ι) × List ι)
+  deriving DecidableEq, Repr
 
 structure NormalGraph (ι : Type) where
   /-- A clause row's clauses. -/

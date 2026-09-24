@@ -51,7 +51,7 @@ All fields are explicit; object field order is immaterial.
 
 | Field     | Meaning                                                                                                                       |
 | --------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `types`   | A finite array of normalized type-graph nodes. Its array positions are type labels.                                           |
+| `types`   | A finite array of type-graph rows: clause rows, scheme rows and parameter rows. Its array positions are type labels.          |
 | `program` | A finite array of calculus nodes. Its positions are control-flow labels.                                                      |
 | `claims`  | One entry context and expression-result type per program node, in the same order.                                             |
 | `result`  | The required result type of the graph.                                                                                        |
@@ -101,6 +101,28 @@ than given a fixed row, since the singletons are unbounded. A literal's identity
 is the bit pattern of the double it denotes, so distinct spellings of one value
 are one clause; two spellings a codec failed to identify would be two
 singletons, which costs completeness and never soundness.
+
+A row is a **clause row**, spelled as the array of its clauses as above; a
+**scheme row** `{"scheme": {"binders": [p, ...], "signatures": [[receiver, [params], result], ...]}}`,
+a generic callable $\forall\vec p.\,\Sigma$ whose signatures are types that may
+mention its binders; or a **parameter row** `{"param": i}`, which names its own
+label $i$. Only a clause row has clauses. The graph of a table $T$
+(`RequestJson.tableGraph`) is
+
+$$
+G.\mathit{rows}(i)=\begin{cases}\vec c & T[i]=\vec c\\ [\,] & \text{otherwise}\end{cases}
+\qquad
+G.\mathit{schemes}(i)=(\vec p;\Sigma)\iff T[i]=\mathsf{scheme}(\vec p,\Sigma)
+\qquad
+G.\mathit{params}(i)\iff T[i]=\mathsf{param}(i),
+$$
+
+with the meaning given in [Parameter and scheme rows](POSITIVE-TYPES.md#parameter-and-scheme-rows).
+Validation (`validRows`) requires every label a row names to index `types`, a
+parameter row to name its own label, and a scheme's binders to be parameter
+rows. A parameter row is therefore never the same row as another, so two
+distinct binders are never identified by content. The subtype proofs `inst`
+and `gen` read these rows; on a table without scheme rows they are refused.
 
 Current-content assertions use a finite list of primitive predicates, including
 `num` for any numeric value and `numLit` for an exact bit pattern, `str` for

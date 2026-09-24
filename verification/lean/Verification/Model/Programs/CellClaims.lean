@@ -248,7 +248,7 @@ def conjunction (atom : Json) : Lowering Nat := do
 /-- The reference label denotes exactly the cell invariant, over any table
 holding its row, at every world and budget. -/
 theorem reference_exact {T : Table} {fs : List (PropKey × Ty Nat)}
-    (hm : [.refs fs [] []] ∈ T) (n W v) :
+    (hm : RequestJson.Row.clauses [.refs fs [] []] ∈ T) (n W v) :
     meaning (graph T) [label T (.refs fs [] [])] n W v ↔ interpretation T fs n W v := by
   rw [label_meaning hm]
   simp [PositiveNormalization.sem, ReferenceConjunctions.refsT, interpretation,
@@ -258,7 +258,7 @@ theorem reference_exact {T : Table} {fs : List (PropKey × Ty Nat)}
 /-- Interning a reference yields a table holding its row and its label there. -/
 theorem reference_run {fs : List (PropKey × Ty Nat)} {T T' : Table} {l}
     (h : (reference fs).run T = .ok (l, T')) :
-    [.refs fs [] []] ∈ T' ∧ l = label T' (.refs fs [] []) ∧ T <+: T' :=
+    RequestJson.Row.clauses [.refs fs [] []] ∈ T' ∧ l = label T' (.refs fs [] []) ∧ T <+: T' :=
   use_spec h
 
 #print axioms reference_exact

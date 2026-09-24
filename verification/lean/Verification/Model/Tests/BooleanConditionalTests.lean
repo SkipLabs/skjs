@@ -20,7 +20,7 @@ private def branch (c t e : Tm) : Request :=
 #guard !ok (roundtrip (branch (.var 0) .tru (.read .nul)))
 
 -- Boolean singleton unions are accepted; adding null to the input is not.
-#guard ok (roundtrip ⟨[[.boolLit true],[.boolLit false]],
+#guard ok (roundtrip ⟨RequestJson.rows [[.boolLit true],[.boolLit false]],
   [⟨.ite (.var 0) .tru .fls,.ret⟩],[⟨[[0,1]],[0,1]⟩],[0,1],0,[[0,1]]⟩)
 #guard !ok (roundtrip { branch (.var 0) .tru .fls with inputs := [[0,1]], claims := [⟨[[0,1]],[0]⟩] })
 
@@ -85,7 +85,7 @@ private def knownProof : Evidence Nat :=
 private def knownEffectProgram : Program :=
   [⟨.alloc .tru,.bind 1⟩,
    ⟨.ite (.letE (.write (.var 0) .fls) .tru) .fls (.read .nul),.ret⟩]
-#guard ok (roundtrip ⟨refinedTypes ++ [[.refs [(valueField, [0,1])] [] []]],knownEffectProgram,
+#guard ok (roundtrip ⟨refinedTypes ++ RequestJson.rows [[.refs [(valueField, [0,1])] [] []]],knownEffectProgram,
   [⟨[],[3]⟩,⟨[[3]],[1]⟩],[1],0,[]⟩)
 
 /-- Selecting a known arm must not erase the condition's write. -/
@@ -126,7 +126,7 @@ private def nullProof : Evidence Nat :=
 -- An empty union has no inhabitants; this is elimination from an impossible input.
 #guard checkTree NG (.node ⟨[[]],.read .nul,[1]⟩ (.unionVar 0) [])
 -- Packing different shapes into a single graph label is not split by this search.
-#guard !ok (roundtrip ⟨[[.nul,.boolLit true],[.boolLit true]],
+#guard !ok (roundtrip ⟨RequestJson.rows [[.nul,.boolLit true],[.boolLit true]],
   [⟨.ite (.test .isNul (.var 0)) .tru (.var 0),.ret⟩],
   [⟨[[0]],[1]⟩],[1],0,[[0]]⟩)
 

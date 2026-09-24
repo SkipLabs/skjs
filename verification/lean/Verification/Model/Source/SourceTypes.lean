@@ -9,18 +9,22 @@ label rather than a wrong one. Primitive unions translate exactly into the
 fixed first four labels. -/
 namespace Verification.Model.SourceTypes
 open ProgramTyping PositiveNormalization PositiveGraphs PositiveRules
+open RequestJson (Row)
 
-abbrev Table := List (List (Clause (List Nat)))
+/-- A table of rows in label order: clause rows, and the scheme and parameter
+rows generic methods need. -/
+abbrev Table := List RequestJson.Row
 
 /-- The field an array object holds its store in. No source name spells it. -/
 def storeField : PropKey := "[]"
 
 /-- Labels 0 to 3: null, true, false, undefined. -/
-def initial : Table := [[.nul],[.boolLit true],[.boolLit false],[.undef]]
+def initial : Table := [.clauses [.nul], .clauses [.boolLit true], .clauses [.boolLit false],
+  .clauses [.undef]]
 
 def isPrimitive (i : Nat) : Bool := i < initial.length
 
-def graph (T : Table) : NormalGraph Nat := .ofRows fun i => T[i]?.getD []
+def graph (T : Table) : NormalGraph Nat := RequestJson.tableGraph T
 
 /-- The one user-facing rendering boundary for graph types. Label numbers are
 implementation references into `Table`, so diagnostics must call this function
@@ -55,11 +59,11 @@ def render (T : Table) (A : Ty Nat) : String :=
 #guard render initial [1, 2] == "boolean"
 
 /-- A missing clause gets the table length, never a different contract. -/
-def label (T : Table) (c : Clause (List Nat)) : Nat := T.idxOf [c]
+def label (T : Table) (c : Clause (List Nat)) : Nat := T.idxOf (Row.clauses [c])
 
 /-- Give a clause a row if it lacks one. Appending keeps every existing label. -/
 def intern (T : Table) (c : Clause (List Nat)) : Table :=
-  if [c] ∈ T then T else T ++ [[c]]
+  if Row.clauses [c] ∈ T then T else T ++ [Row.clauses [c]]
 
 /-- Translation grows the table as it goes. -/
 abbrev Lowering := StateT Table (Except String)
@@ -79,8 +83,8 @@ def canonical (T : Table) (A : List Nat) : List Nat :=
 this does not make it an intersection or assert a producer equation. -/
 def useRow (row : List (Clause (List Nat))) : Lowering Nat :=
   modifyGet fun T =>
-    let T' := if row ∈ T then T else T ++ [row]
-    (T'.idxOf row, T')
+    let T' := if Row.clauses row ∈ T then T else T ++ [Row.clauses row]
+    (T'.idxOf (Row.clauses row), T')
 
 /-- Keep the table as it was when a translation fails, so a rejected candidate
 leaves no rows behind. -/
@@ -98,7 +102,7 @@ theorem attempt_run (m : Lowering α) (T : Table) :
   unfold attempt StateT.run
   split <;> simp_all
 
-theorem mem_intern (T : Table) (c : Clause (List Nat)) : [c] ∈ intern T c := by
+theorem mem_intern (T : Table) (c : Clause (List Nat)) : Row.clauses [c] ∈ intern T c := by
   unfold intern
   split
   · assumption
@@ -110,37 +114,59 @@ theorem intern_prefix (T : Table) (c : Clause (List Nat)) : T <+: intern T c := 
   · exact List.prefix_rfl
   · exact List.prefix_append _ _
 
-theorem mem_of_prefix {T T' : Table} {d : Clause (List Nat)} (h : T <+: T') (hd : [d] ∈ T) :
-    [d] ∈ T' := h.subset hd
+theorem mem_of_prefix {T T' : Table} {d : Clause (List Nat)} (h : T <+: T') (hd : Row.clauses [d] ∈ T) :
+    Row.clauses [d] ∈ T' := h.subset hd
 
 /-- Labels already in use keep their index in every later table. -/
-theorem label_of_prefix {T T' : Table} {d : Clause (List Nat)} (h : T <+: T') (hd : [d] ∈ T) :
+theorem label_of_prefix {T T' : Table} {d : Clause (List Nat)} (h : T <+: T') (hd : Row.clauses [d] ∈ T) :
     label T' d = label T d := by
   obtain ⟨l, rfl⟩ := h
   simp [label, List.idxOf_append, hd]
 
 theorem use_spec {c : Clause (List Nat)} {T T' : Table} {l : Nat}
-    (h : (use c).run T = .ok (l, T')) : [c] ∈ T' ∧ l = label T' c ∧ T <+: T' := by
+    (h : (use c).run T = .ok (l, T')) : Row.clauses [c] ∈ T' ∧ l = label T' c ∧ T <+: T' := by
   rw [use_run] at h
   cases h
   exact ⟨mem_intern T c, rfl, intern_prefix T c⟩
 
-theorem label_exact {T : Table} {c : Clause (List Nat)} (hc : [c] ∈ T) :
+theorem label_exact {T : Table} {c : Clause (List Nat)} (hc : Row.clauses [c] ∈ T) :
     expand (graph T) [label T c] = [c] := by
   have hi := List.idxOf_lt_length_iff.mpr hc
   have hx := List.getElem?_eq_some_iff.mpr ⟨hi,List.getElem_idxOf hi⟩
-  simp [expand,clausesOf,graph,label,hx]
+  have hp := RequestJson.tableGraph_clauses_row hx
+  simp [expand, clausesOf, graph, label, NormalGraph.plainTy, hp.1, hp.2]
 
 /-- A labelled clause means exactly that clause, read over the same table. -/
-theorem label_meaning {T : Table} {c : Clause (List Nat)} (hc : [c] ∈ T) (n W v) :
+theorem label_meaning {T : Table} {c : Clause (List Nat)} (hc : Row.clauses [c] ∈ T) (n W v) :
     meaning (graph T) [label T c] n W v ↔ sem (meaning (graph T)) c n W v := by
-  rw [expand_sem _ _ (by simp [graph]), label_exact hc]
+  have hp : (graph T).plainTy [label T c] = true := by
+    have h := label_exact hc
+    exact plain_of_mem_expand (c := c) (by simp [h])
+  rw [expand_sem _ _ hp, label_exact hc]
   simp [semList, Tower.setSem]
 
 theorem graph_initial {T : Table} (h : initial <+: T) {i : Nat} (hi : i < initial.length) :
-    graph T i = initial[i] := by
+    graph T i = initial[i].union := by
   obtain ⟨l, rfl⟩ := h
-  simp [graph, List.getElem?_append_left hi, List.getElem?_eq_getElem hi]
+  have hx : (initial ++ l)[i]? = some initial[i] := by
+    rw [List.getElem?_append_left hi, List.getElem?_eq_getElem hi]
+  have hr : ∀ j (hj : j < initial.length), ∃ cs, initial[j] = .clauses cs := by
+    intro j hj
+    match j, hj with
+    | 0, _ => exact ⟨_, rfl⟩ | 1, _ => exact ⟨_, rfl⟩
+    | 2, _ => exact ⟨_, rfl⟩ | 3, _ => exact ⟨_, rfl⟩
+  obtain ⟨cs, hcs⟩ := hr i hi
+  rw [hcs] at hx ⊢
+  exact (RequestJson.tableGraph_clauses_row hx).2
+
+theorem initial_plain {T : Table} (h : initial <+: T) {i : Nat} (hi : i < initial.length) :
+    (graph T).plain i = true := by
+  have hc := graph_initial h hi
+  match i, hi with
+  | 0, _ => exact NormalGraph.plain_of_clauses (c := .nul) (by rw [hc]; simp [initial, Row.union])
+  | 1, _ => exact NormalGraph.plain_of_clauses (c := .boolLit true) (by rw [hc]; simp [initial, Row.union])
+  | 2, _ => exact NormalGraph.plain_of_clauses (c := .boolLit false) (by rw [hc]; simp [initial, Row.union])
+  | 3, _ => exact NormalGraph.plain_of_clauses (c := .undef) (by rw [hc]; simp [initial, Row.union])
 
 def admits (t : Claim.Ty) (v : Claim.Val) : Bool := t.atoms.any (Claim.inhabits v)
 
@@ -218,7 +244,14 @@ theorem encode_meaning {T : Table} (h : initial <+: T) (t : Claim.Ty) (n W v) :
   have h1 : graph T 1 = [.boolLit true] := graph_initial h (by decide)
   have h2 : graph T 2 = [.boolLit false] := graph_initial h (by decide)
   have h3 : graph T 3 = [.undef] := graph_initial h (by decide)
-  have hp : (graph T).plainTy (encode t) = true := by simp [graph]
+  have hp : (graph T).plainTy (encode t) = true := by
+    simp only [NormalGraph.plainTy, List.all_eq_true]
+    intro i hi
+    have : i < initial.length := by
+      simp only [encode, List.mem_append] at hi
+      simp [initial]
+      rcases hi with ((hi | hi) | hi) | hi <;> split at hi <;> simp_all
+    exact initial_plain h this
   rw [expand_sem _ _ hp, expand_of_plain hp]
   cases hn : admits t .vnull <;> cases ht : admits t (.vbool true) <;>
     cases hf : admits t (.vbool false) <;> cases hu : admits t .vundef <;>
@@ -278,7 +311,7 @@ theorem translate_exact {T : Table} (hT : initial <+: T) {t : Claim.Ty} {A u v}
 /-- Exact arrow interpretation, including its contravariant receiver and
 domain, over any table holding the row: the one-domain call contract, whatever
 code meets it. -/
-theorem arrow_exact {T : Table} {Rc D R : Ty Nat} (hm : [.arrs [(Rc,[D],R)] []] ∈ T) (n W v) :
+theorem arrow_exact {T : Table} {Rc D R : Ty Nat} (hm : Row.clauses [.arrs [(Rc,[D],R)] []] ∈ T) (n W v) :
     meaning (graph T) [label T (.arrs [(Rc,[D],R)] [])] n W v ↔
       callsT [(meaning (graph T) Rc, [meaning (graph T) D], meaning (graph T) R)] n W v := by
   rw [label_meaning hm]

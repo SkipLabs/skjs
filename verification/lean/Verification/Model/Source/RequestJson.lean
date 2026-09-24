@@ -96,6 +96,62 @@ instance (priority := high) [ToJson α] : ToJson (Clause α) :=
   ⟨fun c => withoutEmptyVariadic (derivedClauseToJson c)⟩
 instance (priority := high) [FromJson α] : FromJson (Clause α) :=
   ⟨fun j => derivedClauseFromJson (withEmptyVariadic j)⟩
+/-- A row of a type table: a union of clauses, a scheme row (a generic
+callable: its binders and its signatures `(receiver, parameters, result)`), or
+a parameter row (a scheme's binder), which names its own label. Only a clause
+row has clauses; the graph reads the other two as scheme and parameter rows. -/
+inductive Row where
+  | clauses (union : List (Clause (List Nat)))
+  | scheme (binders : List Nat) (signatures : List (List Nat × List (List Nat) × List Nat))
+  | param (label : Nat)
+  deriving DecidableEq, Repr, Inhabited
+
+instance : Coe (List (Clause (List Nat))) Row := ⟨.clauses⟩
+instance : Coe (List (List (Clause (List Nat)))) (List Row) := ⟨List.map .clauses⟩
+
+/-- A table of clause rows. -/
+def rows (rs : List (List (Clause (List Nat)))) : List Row := rs.map .clauses
+
+/-- A row's clauses: none unless it is a clause row. -/
+def Row.union : Row → List (Clause (List Nat))
+  | .clauses cs => cs
+  | _ => []
+
+/-- A clause row is spelled as its array of clauses, as every row was before
+scheme rows; a scheme row as `{"scheme": {"binders", "signatures"}}`, and a
+parameter row as `{"param": label}`. -/
+instance : ToJson Row := ⟨fun
+  | .clauses cs => toJson cs
+  | .scheme bs sigs => Json.mkObj [("scheme",
+      Json.mkObj [("binders", toJson bs), ("signatures", toJson sigs)])]
+  | .param l => Json.mkObj [("param", toJson l)]⟩
+
+instance : FromJson Row := ⟨fun j =>
+  match j with
+  | .arr _ => Row.clauses <$> fromJson? j
+  | _ => match j.getObjVal? "scheme", j.getObjVal? "param" with
+    | .ok b, .error _ => do
+      return .scheme (← fromJson? (← b.getObjVal? "binders"))
+        (← fromJson? (← b.getObjVal? "signatures"))
+    | .error _, .ok l => Row.param <$> fromJson? l
+    | _, _ => .error "expected a clause array, a scheme row or a parameter row"⟩
+
+/-- The graph a table of rows denotes. -/
+def tableGraph (T : List Row) : NormalGraph Nat where
+  rows i := match T[i]? with
+    | some r => r.union
+    | none => []
+  schemes i := match T[i]? with
+    | some (.scheme bs sigs) => some ⟨bs, sigs⟩
+    | _ => none
+  params i := match T[i]? with
+    | some (.param _) => true
+    | _ => false
+
+@[simp] theorem tableGraph_clauses_row {T : List Row} {i : Nat} {cs : List (Clause (List Nat))}
+    (h : T[i]? = some (.clauses cs)) : (tableGraph T).plain i = true ∧ tableGraph T i = cs := by
+  simp [tableGraph, NormalGraph.plain, NormalGraph.clauses, h, Row.union]
+
 deriving instance ToJson, FromJson for Target
 deriving instance ToJson, FromJson for Continuation
 deriving instance ToJson, FromJson for Node
@@ -114,7 +170,7 @@ deriving instance ToJson, FromJson for NodeEvidence
 deriving instance ToJson, FromJson for PointClaim
 
 structure Request where
-  types : List (List (Clause (List Nat)))
+  types : List Row
   program : Program
   claims : List (PointClaim Nat)
   result : Ty Nat
@@ -127,7 +183,7 @@ structure Response where
   certificate : ControlFlow.Certificate Nat
   deriving ToJson, FromJson
 
-def graph (r : Request) : NormalGraph Nat := .ofRows fun i => r.types[i]?.getD []
+def graph (r : Request) : NormalGraph Nat := tableGraph r.types
 
 def validTy (bound : Nat) (A : Ty Nat) : Bool := A.all (fun i => i < bound)
 
@@ -149,10 +205,27 @@ def clauseTypes : Clause (Ty Nat) → List (Ty Nat)
 def validClaim (bound : Nat) (c : PointClaim Nat) : Bool :=
   (c.type :: c.context).all (validTy bound)
 
+/-- The labels a row names. -/
+def rowTypes : Row → List (Ty Nat)
+  | .clauses cs => cs.flatMap clauseTypes
+  | .scheme bs sigs => bs :: sigs.flatMap fun p => p.1 :: p.2.2 :: p.2.1
+  | .param _ => []
+
+/-- Every label a row names indexes the table; a parameter row names itself;
+and a scheme's binders are parameter rows. -/
+def validRows (T : List Row) : Bool :=
+  (T.flatMap rowTypes).all (validTy T.length) &&
+  (List.range T.length).all fun i => match T[i]? with
+    | some (.param l) => l == i
+    | some (.scheme bs _) => bs.all fun b => match T[b]? with
+      | some (.param _) => true
+      | _ => false
+    | _ => true
+
 /-- The total Lean graph's out-of-range default must not become an accidental
 meaning for an invalid serialized type reference. -/
 def validRequest (r : Request) : Bool :=
-  (r.types.flatMap id |>.flatMap clauseTypes).all (validTy r.types.length) &&
+  validRows r.types &&
   r.claims.all (validClaim r.types.length) && validTy r.types.length r.result &&
   r.inputs.all (validTy r.types.length)
 

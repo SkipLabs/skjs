@@ -14,7 +14,7 @@ private def record (T : Json) : Json := Json.mkObj
    ("call",toJson "unknown"),("construct",toJson "unknown"),("array",toJson "unknown")]
 private def union : Json := Json.mkObj [("top",toJson false),("atoms",toJson [record result,record null])]
 private def table : SourceTypes.Table := SourceTypes.initial ++
-  [[.refs [("value", [0,1,2])] [] []],[.refs [("value", [0])] [] []],[.arrs [([7],[[0]],[0,1,2])] []],
+  RequestJson.rows [[.refs [("value", [0,1,2])] [] []],[.refs [("value", [0])] [] []],[.arrs [([7],[[0]],[0,1,2])] []],
    [.top]]
 private def read : Fragment.Expr := .read (24,27) "value" (.var (24,25) "cell")
 private def write : Fragment.Expr := .write (12,20) "value" (.var (12,13) "cell") (.var (19,20) "unit")

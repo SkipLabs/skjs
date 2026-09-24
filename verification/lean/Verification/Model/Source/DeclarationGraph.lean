@@ -304,7 +304,7 @@ other is its equation's labels, so `Id<boolean>` is exactly `[1, 2]`. -/
 private partial def groundApplication (ds : Array Definition) (i : Nat)
     (values : Array (List Nat)) (seen : Visit) : Lowering (List Nat) := do
   if mentionsSelf ds[i]!.expression then
-    let row ← modifyGet fun T => (T.length, T ++ [[]])
+    let row ← modifyGet fun T => (T.length, T ++ RequestJson.rows [[]])
     let rows ← lowerDefinitionRows ds i (values.push [row]) ((seen.enter i).reserve i values row)
     modify fun T => T.set row rows
     return [row]
@@ -351,7 +351,7 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table) :
     Except String SourceTypes.Table := do
   if candidate.length < 4 + nullaryCount ds then throw "declaration graph rows are missing"
   for i in [:ds.size] do
-    if ds[i]!.parameters.isEmpty && candidate[rowIndex ds i]! != [] then
+    if ds[i]!.parameters.isEmpty && candidate[rowIndex ds i]! != RequestJson.Row.clauses [] then
       throw "producer supplied a declaration equation"
   let mut table := candidate
   for i in [:ds.size] do

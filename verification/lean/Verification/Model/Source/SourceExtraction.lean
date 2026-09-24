@@ -2767,7 +2767,7 @@ def SourceRequest.searchLabels (r : SourceRequest) : List Nat :=
   -- Readonly array coercions depend on the store's element unions two levels
   -- below the object. Close the vocabulary over the finite reachable graph.
   (List.range r.types.length).foldl (fun known _ =>
-    (known ++ known.flatMap (fun i => (r.types[i]?.getD []).flatMap
+    (known ++ known.flatMap (fun i => ((r.types[i]?.map RequestJson.Row.union).getD []).flatMap
       (fun c => (RequestJson.clauseTypes c).flatten))).eraseDups) roots
 
 /-- A value of the module a code unit reaches: its name, its declaration's

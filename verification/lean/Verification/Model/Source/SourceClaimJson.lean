@@ -222,7 +222,7 @@ private partial def ofClaim (T : SourceTypes.Table) (role : String) :
   | .union _ => throw s!"a union containing rigid types is outside {role}"
   -- A union holding `unknown` is `unknown`: the direct checker's top, as an
   -- annotation of it is.
-  | .labels A => pure (if A.any (fun l => T[l]? == some [.top]) then .top else .ground A)
+  | .labels A => pure (if A.any (fun l => T[l]? == some (.clauses [.top])) then .top else .ground A)
   | .scheme [] rc ps rest r => do
     let receiver ← ofClaim T role rc
     let params ← ps.mapM (ofClaim T role)
@@ -640,7 +640,7 @@ end Scheme
 
 /-- The table starts with the primitives and refers only to its own labels. -/
 private def validTable (T : SourceTypes.Table) : Bool :=
-  SourceTypes.initial.isPrefixOf T && (T.flatMap id |>.flatMap clauseTypes).all (validTy T.length)
+  SourceTypes.initial.isPrefixOf T && RequestJson.validRows T
 private partial def validType (T : SourceTypes.Table) : ClaimType → Bool
   | .union ts => !ts.isEmpty && ts.all (validType T)
   | .array e => validType T e
@@ -813,8 +813,8 @@ def FunctionPlan.requests : List FunctionPlan → List SourceRequest
 /-- The table's first four rows are the primitives. Every decoded table has
 them; a certificate's literal types name them. -/
 def primitiveRows (T : SourceTypes.Table) : Prop :=
-  T[0]? = some [.nul] ∧ T[1]? = some [.boolLit true] ∧
-    T[2]? = some [.boolLit false] ∧ T[3]? = some [.undef]
+  T[0]? = some (.clauses [.nul]) ∧ T[1]? = some (.clauses [.boolLit true]) ∧
+    T[2]? = some (.clauses [.boolLit false]) ∧ T[3]? = some (.clauses [.undef])
 
 instance (T : SourceTypes.Table) : Decidable (primitiveRows T) := by
   unfold primitiveRows; infer_instance

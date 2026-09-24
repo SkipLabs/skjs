@@ -681,7 +681,7 @@ private def arrowOf (D R : Claim.Ty) : Json := Json.mkObj [("top",toJson false),
   [("a",toJson "function"),("this",unknownWire),("params",toJson [wireTy D]),
    ("result",wireTy R),("construct",toJson "unknown"),("array",toJson "unknown")]])]
 private def rowOf (j : Json) : Option (List (Clause (List Nat))) :=
-  ((Fragment.translate j).run SourceTypes.initial).toOption.bind fun (A,T) => A.head?.bind (T[·]?)
+  ((Fragment.translate j).run SourceTypes.initial).toOption.bind fun (A,T) => A.head?.bind fun i => (T[i]?).map RequestJson.Row.union
 #guard rowOf (conjoined cellWire [cellWire,cellWire]) == some [.refs [("value", [1,2])] [] []]
 #guard rowOf (conjoined (cellOf ⟨false,[.boolLit true]⟩) [cellOf ⟨false,[.null]⟩,cellOf ⟨false,[.bool]⟩])
   == some [.refs [("value", [0])] [[("value",[1])],[("value",[1,2])]] []]
