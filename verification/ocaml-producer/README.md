@@ -468,7 +468,7 @@ currently admits named type-only imports of aliases and single interfaces
 whose fields, string indexes, function-valued properties or method signatures
 fit the imported graph. An optional parameter contributes `T | undefined` at
 its position; an array rest parameter contributes its element contract to the
-existing variadic call clause. These are the same call clauses as local
+existing variadic call clause, and a tuple rest its positions. These are the same call clauses as local
 functions, with no new callable semantics or proof rule. Imported call
 signatures become the existing conjunction of fixed and variadic
 arrows. A callable interface may also have invariant writable fields, using
@@ -484,10 +484,19 @@ The method graph promises safe invocation for every receiver satisfying the
 interface, which is stronger than TypeScript's structural method declaration.
 This is a relative client contract; imported runtime values cannot be granted
 it without an explicit assumption or a checked implementation.
-Inheritance, nested methods, optional method *presence*, generic methods, and
-declaration merging refuse. All four runtime API interfaces have unsupported
-members or dependencies, and `runService` is a
-value import. The new interface slice therefore does not yet admit `sum.ts`.
+Interface inheritance is interpreted (see below); nested methods, optional
+method *presence*, generic methods and declaration merging refuse. All four
+runtime API interfaces reach a refused declaration, and `runService` is a
+value import, so the interface slice does not yet admit `sum.ts`. Applied in a
+client of the same project, each stops at its first refused declaration
+(pinned in `test.mts`):
+
+| Interface | First refusal | Why |
+| --- | --- | --- |
+| `Mapper<K1, V1, K2, V2>` | a method signature of `Context` | `mapEntry`'s `context: Context` reaches `createLazyCollection`, a generic method taking `new (...params: Params) => LazyCompute<K, V>` |
+| `Resource<C>` | a method signature of `Context` | `instantiate`'s context parameter, as above |
+| `EagerCollection<K, V>` | a method signature of `EagerCollection` | generic methods such as `map<K2, V2, Params extends DepSafe[]>` taking a constructor contract |
+| `Values<T>` | `bigint` in `DepSafe` | `DepSafe` is `null \| boolean \| number \| bigint \| string \| symbol \| Managed`, and `Managed` has a computed `unique symbol` key |
 
 The admitted contract work is larger than recognizing the declaration keyword:
 `Mapper` has four `Json`-bounded parameters and a method returning
@@ -497,23 +506,23 @@ generic `map`/`merge` calls used below; `Resource` connects a collections
 parameter to `instantiate`. The `runService` value import and its return type
 are a separate, effectful module contract. Each dependency must either be
 interpreted and certified or appear as an explicit external assumption.
-Collecting the pinned `Mapper` declaration alone now reaches its method and
-resolves its `Iterable` result reference to the configured TypeScript project's
-`lib.es2015.iterable.d.ts` declaration. The collector now retains omitted
-trailing type arguments as source defaults and advances to `Values`, where it
-refuses interface inheritance. The library interface also contains a
-computed-symbol method and references to `Iterator`, so resolving its name is
-not interpreting it.
-The tuple shape in that result is now interpreted by the imported graph;
-finite ground applications of imported generics can use their source bounds and
-trailing defaults, while computed-symbol methods and the other API
-dependencies remain after that refusal. Named tuple position
-labels in imported declarations still refuse explicitly.
+Collecting the pinned `Mapper` declaration reaches its method and resolves its
+`Iterable` result reference to the configured TypeScript project's
+`lib.es2015.iterable.d.ts` declaration; omitted trailing type arguments are
+retained as source defaults. Its first refusal is now `Context`'s generic
+method, above. Behind it, `Values` extends `Iterable<T & DepSafe>`: the
+library interface has a computed-symbol method and references to `Iterator`,
+so resolving its name is not interpreting it, and `T & DepSafe` is an
+intersection over a binder. The tuple shape in `mapEntry`'s result is
+interpreted by the declaration graph; finite ground applications of generic
+declarations use their source bounds and trailing defaults. Named tuple
+position labels still refuse explicitly.
 
 The next file-level steps are to model the top-level initializer and other
 declarations without dropping their effects, and extend the admitted interface
-slice to generic methods, inheritance and bounded or recursive generic instantiation, together with value
-imports. Then represent the imported API contracts as explicit client assumptions; checking
+slice to generic methods, constructor contracts, `bigint`/`symbol` and
+computed-symbol keys, and bounded or recursive generic instantiation over
+binders, together with value imports. Then represent the imported API contracts as explicit client assumptions; checking
 the runtime's implementations is the separate third milestone below. Class construction,
 parameter properties, `implements`, method receivers and prototype lookup must
 be certified before counting a mapper body. Later source statements include
@@ -542,8 +551,8 @@ pinned `Json` cycle retains its readonly array, dictionary index, unions,
 `null`, and declaration-identified references; the generic cycle retains
 binder indices and applied arguments. Unsupported syntax is refused during
 collection rather than left inside an opaque span.
-Nested, optional and generic methods, inheritance, merging and other declaration
-kinds still refuse explicitly. The
+Nested, optional and generic methods, merging and other declaration kinds
+still refuse explicitly. The
 Fragment document has one required `declarations` slot: the roots and the
 deduplicated declaration equations. The source parser fills it for named
 type-only imports and for the file's own declarations. TypeScript's checker, in
@@ -699,7 +708,7 @@ Current progress against the `Json` prerequisite:
 
 | Checkpoint | Current result | Remaining boundary |
 | --- | --- | --- |
-| 1. Source closure | Canonical `Json`/`JsonObject` cycle, workspace link, cross-file generic cycle, trailing type-parameter defaults, single field/index/callable-property/method interfaces, interface heritage edges, and configured global declaration sources collected. | Computed-symbol methods, declaration merging and value declarations remain outside this collector. |
+| 1. Source closure | Canonical `Json`/`JsonObject` cycle, workspace link, cross-file generic cycle, trailing type-parameter defaults, single field/index/callable-property/method interfaces, interface heritage edges, and configured global declaration sources collected. | Computed-symbol keys and methods, `bigint` and `symbol`, declaration merging and value declarations remain outside this collector. |
 | 2. Shared graph and gate | Imported alias and supported interface equations, including a global declaration, reach the common Fragment and Lean request; TypeScript supplies declaration identities; the client-byte comparison checks the two parser inputs. | The configured project and source parser remain trusted; richer declarations are refused. |
 | 3. Semantic interpretation | Recursive readonly array, dictionary, fixed callable, interface method receiver, disjoint plain-object inheritance, and finite ground imported generic record, tuple and callable applications with bounds and defaults reach `CertifiedPlan` and `checkJson_safe`. | Recursive generic applications, overlapping or richer inherited contracts, mutable dictionary and implementation contracts need their own certified paths. |
 | 4. Relative contracts and controls | Forged alias equations, targets, source bytes and evidence have negative controls. | External value-contract assumptions and their eventual discharge are not yet represented. |
@@ -810,6 +819,60 @@ The three framework milestones remain open:
    boundaries. Discharge the contracts where implementation is modeled and
    enumerate the remaining external assumptions. Count checked implementations,
    not declarations, toward this milestone.
+
+### Fragment extensions still required
+
+Work proceeds extension first: each fragment extension is developed with its
+own witnesses, negative controls and tampering tests, following
+[Extending the producer](#extending-the-producer), and only then assessed,
+separately, for how far it moves `sum.ts` and the milestones above. An
+extension is not shaped around `sum.ts`, and progress toward the milestones is
+reported from measured first blockers, not from the extension landing.
+
+Required for the first milestone, in order:
+
+1. **Module-level code.** Top-level `const` initializers reading the global
+   `process`, value imports such as `runService` as explicit external
+   contracts, top-level `await`, async functions and expression statements.
+   Every `sum.ts` callable stops here first, and the statements may not be
+   skipped.
+2. **Classes.** Construction separate from invocation, parameter properties,
+   instance initialization, prototype methods using `this`, and `implements`
+   as a contract to check rather than a proof.
+3. **Generic interface methods.** Quantified method signatures; schemes exist
+   only for closures today. `Context` and `EagerCollection` stop here.
+4. **Constructor types and generic tuple packs.** `new (...params: Params) =>
+   T` with `Params extends DepSafe[]`.
+5. **Types over rigid binders.** Records, unions and intersections such as
+   `T & DepSafe` over an enclosing binder.
+6. **`bigint`, `symbol` and computed symbol keys.** `DepSafe` stops at
+   `bigint`; `Managed` has a `unique symbol` key; `Opaque` brands (`int`,
+   `Watermark`) depend on them.
+7. **Library contracts.** `Iterable`/`Iterator`, arrays as iterables, and
+   `Array.prototype.reduce` and `sort` with their callback effects and
+   mutation.
+8. **Optional field presence.** `getUnique(_default?: { ifMany?: T })`; the
+   open `optional-field.ts` row.
+9. **Exceptions.** `getUnique` may throw.
+
+Required for the second milestone in addition:
+
+10. **Generic interface variance.** `Resource<Collections>` requires
+    `Collections ≤ NamedCollections`, hence `EagerCollection<string, number>
+    ≤ EagerCollection<Json, Json>`. `K` and `V` occur in method parameters
+    (`getArray`, `slice`, `merge`), so TypeScript accepts this only by method
+    parameter bivariance, which sound subtyping refuses. This needs a design
+    decision before the milestone starts — for example a runtime-justified
+    variance stated as an explicit external assumption — not a weakened
+    subtype rule.
+11. **Generic calls taking classes.** `.map(Plus)` and `.map(AddIndex, 0)`
+    infer constructor and tuple-pack arguments, chained across methods.
+12. **The remaining file.** The `service` object, the `runService` contract,
+    promises and asynchronous shutdown, kept visible as out-of-scope effects
+    until they are modeled.
+
+The third milestone adds asynchronous behavior, exceptions and native/Wasm
+boundaries in the runtime implementation, outside the fragment work.
 
 Type safety alone does **not** establish reactive dependency correctness. The
 API's mapper-construction and `DepSafe` restrictions aim to keep dependencies

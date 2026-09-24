@@ -106,6 +106,25 @@ for (const [file, expected] of [
   // A value is not a type declaration: the whole graph is refused, at its import.
   assert.throws(() => collectDeclarations(source, { tsconfigPath: upstreamConfig }),
     /runService is not one type alias or interface/);
+  // Each runtime interface sum.ts imports, applied in a client of the same
+  // project, and the first declaration the graph refuses on its way.
+  const probe = mkdtempSync(join(tmpdir(), "skjs-runtime-api-"));
+  writeFileSync(join(probe, "package.json"), '{"type":"module"}');
+  writeFileSync(join(probe, "tsconfig.json"),
+    JSON.stringify({ extends: upstreamConfig, include: ["*.ts"] }));
+  for (const [use, imports, refusal] of [
+    ["Mapper<string, number, string, number>", "Mapper",
+      /unsupported method signature in \S*api\.ts#Context/],
+    ["Values<number>", "Values", /type outside the fragment \(BigIntKeyword\) in \S*index\.ts#DepSafe/],
+    ["EagerCollection<string, number>", "EagerCollection",
+      /unsupported method signature in \S*api\.ts#EagerCollection/],
+    ["Resource<NamedCollections>", "Resource, NamedCollections",
+      /unsupported method signature in \S*api\.ts#Context/],
+  ] as const) {
+    const client = join(probe, `${imports.split(",")[0]}.ts`);
+    writeFileSync(client, `import type { ${imports} } from "@skipruntime/core";\nexport type Use = ${use};\n`);
+    assert.throws(() => collectDeclarations(client, { tsconfigPath: join(probe, "tsconfig.json") }), refusal);
+  }
   // The upstream bytes the census row and these results are about.
   const upstreamSha = (path: string) =>
     createHash("sha256").update(readFileSync(resolve(here, "upstream", path))).digest("hex");
