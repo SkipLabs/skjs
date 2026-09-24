@@ -11,6 +11,7 @@ import type { Ast } from "../tools/fragment.mts";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { check, verifier } from "./check.mts";
 import { cases } from "./cases.mts";
+import { expectCase } from "./run-cases.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
 import { checkGenericRest } from "./generic-rest.mts";
@@ -653,23 +654,7 @@ let moduleFunctions = "";
 let moduleInit = "";
 let verifiedFunctions = 0;
 for (const test of cases) {
-  const result = check(join(here, "examples", `${test.file}.ts`),
-    test.project ? tsconfigOf(resolve(here, "../..", test.project)) : undefined);
-  assert.equal(
-    result.status,
-    test.status,
-    `${test.file}: ${JSON.stringify(result)}`,
-  );
-  assert.equal(result.phase, test.phase, `${test.file}: wrong boundary`);
-  if (test.diagnostic) {
-    assert.notEqual(result.status, "verified");
-    if (result.status !== "verified")
-      assert.match(
-        result.detail,
-        test.diagnostic,
-        `${test.file}: wrong failure`,
-      );
-  }
+  const result = expectCase(test);
   if (result.status === "verified")
     verifiedFunctions += result.functions.length;
   process.stdout.write(

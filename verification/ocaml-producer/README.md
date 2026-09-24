@@ -172,12 +172,15 @@ applies; this file records only what is specific to this producer.
    there, and no shortcut that accepts the positives also rejects it — plus a
    mutation showing that valid evidence cannot certify a forged claim or
    substitution.
-6. Run `dune build --root verification/ocaml-producer`,
-   `dune runtest --root verification/ocaml-producer`,
-   `lake -d verification/lean build` (all of it: fixtures construct shared
-   structures), and `node verification/ocaml-producer/test.mts`. Run the shared
-   TypeScript check and the viewer tests when their files change. SKJS suites
-   are unnecessary unless a `.sk` file changes.
+6. While iterating, run only the cases the change touches:
+   `node verification/ocaml-producer/run-cases.mts <pattern>` after
+   `dune build --root verification/ocaml-producer` (and
+   `lake -d verification/lean build` when Lean changed). Before committing,
+   run `node verification/ocaml-producer/test.mts`, plus
+   `dune runtest --root verification/ocaml-producer` for unit tests, and the
+   wider tiers in [AGENTS.md](../AGENTS.md#iterating-run-what-the-change-touches)
+   when Lean, the parser or a wire format changed. SKJS suites are
+   unnecessary unless a `.sk` file changes.
 7. Update the documents that own what changed, per
    [documentation ownership](../README.md#documentation-ownership) — wire
    fields in the protocol documents, the notation in the viewer language, the
