@@ -414,6 +414,33 @@ partial def Expr.freeNames : Expr → List String
   | .call _ f args _ | .invoke _ f args _ => f.freeNames ++ args.flatMap Expr.freeNames
   | .letBody _ n _ a b => a.freeNames ++ b.freeNames.filter (· != n)
 
+/-- Every direct call of a named function: the call's span, the callee read's
+span, and the name, as `freeNames` binds names. -/
+partial def Expr.callees : Expr → List (Span × Span × String)
+  | .var .. | .lit .. | .done .. => []
+  | .lambda _ _ _ ps ds _ _ b =>
+    ((ds.flatMap fun d => d.2.callees) ++ b.callees).filter
+      (fun c => !(ps.map Prod.fst).contains c.2.2)
+  | .shapeTest _ _ _ e | .not _ e | .cast _ _ e | .read _ _ e | .atEnv _ e => e.callees
+  | .alloc _ _ es | .arrayLit _ es => es.flatMap Expr.callees
+  | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
+  | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
+  | .elemAt _ a b | .arith _ _ a b | .logicalAssign _ _ a b
+  | .withValue _ a b _ _ | .seqBody _ a b => a.callees ++ b.callees
+  | .indexWrite _ _ a b c | .elemWrite _ a b c | .ifBody _ _ a b c =>
+    a.callees ++ b.callees ++ c.callees
+  | .update _ _ a b _ => a.callees ++ (b.map Expr.callees).getD []
+  | .assign _ _ _ e | .nullishAssign _ _ _ e => e.callees
+  | .arrayAssign _ targets rhs => rhs.callees ++ targets.flatMap
+      (fun q => (q.default_.map Expr.callees).getD [])
+  | .bindWithReceiver _ f r args | .callWithReceiver _ f r args =>
+    f.callees ++ r.callees ++ args.flatMap Expr.callees
+  | .applyWithReceiver _ f r list => f.callees ++ r.callees ++ (list.map Expr.callees).getD []
+  | .call p f args _ =>
+    (match f with | .var q n => [(p, q, n)] | _ => []) ++ f.callees ++ args.flatMap Expr.callees
+  | .invoke _ f args _ => f.callees ++ args.flatMap Expr.callees
+  | .letBody _ n _ a b => a.callees ++ b.callees.filter (·.2.2 != n)
+
 /-- Closure conversion for acyclic forward captures. Only a literal closure's
 allocation can move; every potentially effectful initializer keeps source order.
 No pending binding may be read or exposed by another executing initializer.
@@ -507,6 +534,18 @@ def decodeArrayElem (decodeExpr : Json → Except String Expr) (q : Json) :
 def Stmt.pos : Stmt → Span
   | .ret p _ | .constants p _ | .mutables p _ | .pattern p _ _ | .arrayPattern p _ _
   | .ite p _ _ _ | .loop p _ _ | .brk p | .cont p | .effect p _ => p
+
+/-- Every direct call of a named function in a statement. -/
+partial def Stmt.callees : Stmt → List (Span × Span × String)
+  | .ret _ e | .effect _ e => e.callees
+  | .constants _ bs | .mutables _ bs => bs.flatMap fun b => b.init.callees
+  | .pattern _ props init => init.callees ++
+    props.flatMap fun q => (q.default_.map Expr.callees).getD []
+  | .arrayPattern _ elems init => init.callees ++
+    elems.flatMap fun q => (q.default_.map Expr.callees).getD []
+  | .ite _ c t e => c.callees ++ t.flatMap Stmt.callees ++ (e.getD []).flatMap Stmt.callees
+  | .loop _ c b => c.callees ++ b.flatMap Stmt.callees
+  | .brk .. | .cont .. => []
 
 /-- Singleton notation for small source-adapter fixtures. -/
 abbrev Stmt.cst (p : Span) (name : String) (annot : Option Json) (init : Expr) : Stmt :=

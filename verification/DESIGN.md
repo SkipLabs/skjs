@@ -1408,6 +1408,14 @@ module function at its annotated signature (a source-fixed slot no producer
 claims and no assignment reaches), a module constant at its annotation. Claims
 are per unit, keyed by source identity.
 
+**Generic module functions.** A generic module function is certified for
+every admissible instantiation by its own unit. A unit that calls it gives its
+slot the instances its calls name: each call's type arguments are validated as
+a closure elimination's are (exactly its binders, ground, every substituted
+bound), and the slot holds those instances as one callable with several
+signatures. Each instance holds of the function's value, so their
+conjunction does.
+
 **Imported values.** A value import joins the module's scope at the type its
 declaration states: a function's annotated signature, an annotated
 constant's annotation, or, for a class, its constructor, read only by `new`.

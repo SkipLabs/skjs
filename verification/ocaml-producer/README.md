@@ -888,7 +888,11 @@ first milestone, in order of how much each gates:
    `InputDefinition`), generic classes, general constructor bodies, statics,
    and array operations inside methods (a closure limitation `AddIndex`
    meets).
-3. **The runtime API's declaration forms.** `Mapper` reaches `Context` and
+3. **Generic calls.** Done for generic module functions: a call validates
+   its instantiation and reaches that instance. Remaining: generic imported
+   functions and classes (`runService`, `InputDefinition<K, V>`), generic
+   methods (next item), and constructor or tuple-pack parameters.
+4. **The runtime API's declaration forms.** `Mapper` reaches `Context` and
    `Values`; interpreting them needs:
    - generic interface methods, i.e. quantified method signatures (schemes
      exist only for closures today);
@@ -897,20 +901,20 @@ first milestone, in order of how much each gates:
    - `bigint`, `symbol` and computed `unique symbol` keys (`DepSafe`,
      `Managed`, the `Opaque` brands such as `int`);
    - types over rigid binders, such as `T & DepSafe`.
-4. **Library contracts.** `Iterable`/`Iterator` and arrays as iterables (every
+5. **Library contracts.** `Iterable`/`Iterator` and arrays as iterables (every
    `mapEntry` returns an array literal as `Iterable`), and
    `Array.prototype.reduce` and `sort` with their callback effects and
    mutation.
-5. **Optional field presence.** `getUnique(_default?: { ifMany?: T })`; the
+6. **Optional field presence.** `getUnique(_default?: { ifMany?: T })`; the
    open `optional-field.ts` row.
-6. **Exceptions.** `getUnique` throws when a key has several values.
+7. **Exceptions.** `getUnique` throws when a key has several values.
 
 Required for the second milestone in addition:
 
-7. **Generic calls taking classes.** `.map(Plus)` and `.map(AddIndex, 0)`
+8. **Generic calls taking classes.** `.map(Plus)` and `.map(AddIndex, 0)`
    infer constructor and tuple-pack arguments, chained across `merge` and
    `map`.
-8. **Asynchronous startup.** `async`/`await`, the library `Promise`, and the
+9. **Asynchronous startup.** `async`/`await`, the library `Promise`, and the
    `runService` and `process.on` contracts, kept visible as out-of-scope
    effects until they are modeled.
 
@@ -928,7 +932,7 @@ only constructed instances (and, with inheritance, subclass instances)
 inhabit the type. A class declared elsewhere whose constructor is not
 checked here gets its brand as an external contract. `unique symbol` brands
 (`Managed`, the `Opaque` types) follow once symbols are in the fragment
-(item 3). Brands matter for `SharedCollections`: its bound is meant to admit
+(item 4). Brands matter for `SharedCollections`: its bound is meant to admit
 only runtime collections.
 
 Generic interface variance is not on this list: the type-safe API does not

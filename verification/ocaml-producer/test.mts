@@ -652,6 +652,7 @@ let inference = "";
 let indexed = "";
 let moduleFunctions = "";
 let moduleInit = "";
+let genericModule = "";
 let verifiedFunctions = 0;
 for (const test of cases) {
   const result = expectCase(test);
@@ -675,6 +676,7 @@ for (const test of cases) {
   if (test.file === "generic-callback") callback = result.artifacts;
   if (test.file === "module-functions") moduleFunctions = result.artifacts;
   if (test.file === "module-init") moduleInit = result.artifacts;
+  if (test.file === "generic-module-calls") genericModule = result.artifacts;
   if (test.file === "generic-inference") inference = result.artifacts;
   if (test.file === "index-signature") indexed = result.artifacts;
 }
@@ -1007,6 +1009,20 @@ const capturedClaims: SourceClaims = JSON.parse(
   writeFileSync(file, JSON.stringify(claims));
   invoke(file, join(moduleInit, "evidence.json"), moduleInit);
   process.stdout.write("tampered module initializer: refused\n");
+}
+
+// A call to a generic module function names its instance; naming another
+// changes the arrow its slot holds, which the evidence does not justify.
+{
+  const claims: SourceClaims = JSON.parse(readFileSync(join(genericModule, "claims.json"), "utf8"));
+  const fn = must(claims.functions.find((f) => f.name === "both"), "both");
+  const call = fn.expressions.find((e) => e.instantiate?.length);
+  assert.ok(call?.instantiate, "an instantiated call");
+  must(call.instantiate[0], "its type argument").type = [0];
+  const file = join(genericModule, "forged-instance.json");
+  writeFileSync(file, JSON.stringify(claims));
+  invoke(file, join(genericModule, "evidence.json"), genericModule);
+  process.stdout.write("tampered generic module instance: refused\n");
 }
 
 // A substitution proposed through a callback is validated like any other:

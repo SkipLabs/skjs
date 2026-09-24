@@ -577,6 +577,72 @@ private def compile (T : SourceTypes.Table) (f : Fragment.Fn) (claims : Function
     pure (T, acc ++ [({ exprs := overlay, initializedParams := some initialized } : SourceClaims.Overlay)])) init
   return (T, claims, [(c.span, overlays)])
 
+/-- A generic module function reached from a unit: the unit's calls name its
+instances, each validated as a closure's elimination is (exactly its binders,
+ground arguments, every substituted bound), and the slot holds those instances
+as one callable. The function itself is certified for every admissible
+instantiation by its own generic plan, so each instance, and so their
+conjunction, holds of its value. Returns the grown table, the slot's label,
+and the spans of the callee reads and of the calls. -/
+def moduleInstances (T : SourceTypes.Table) (g : Fragment.Fn) (tps : List Fragment.TypeParam)
+    (unit : List Fragment.Stmt) (claims : Function) :
+    Except DirectObligation.Failure (SourceTypes.Table × Nat × List Span × List Span) := do
+  let refuse (pos : Span) (reason : String) : DirectObligation.Failure :=
+    .refusal pos .schemeElimination reason
+  let calls := (unit.flatMap Fragment.Stmt.callees).filter (·.2.2 == g.name)
+  let names := tps.map (·.name)
+  let parameters ← (GenericSource.parametersOf T tps).mapError (refuse g.namePos)
+  let lowered : SourceTypes.Lowering
+      (List (String × Option ClaimType) × ClaimType × List ClaimType × Option ClaimType × ClaimType) := do
+    let binders ← parameters.mapM fun (q : DirectObligation.Parameter) => do
+      return (q.name, ← q.upper.mapM claimOfTy)
+    let params ← g.params.mapM fun p => claimOfType names p.ty
+    let (params, rest) ← match g.params.getLast? with
+      | some p =>
+        if !p.rest then pure (params, none)
+        else match params.reverse with
+          | .array e :: fixed => pure (fixed.reverse, some e)
+          | _ => throw "a generic module function's rest parameter needs a mutable array contract"
+      | none => pure (params, none)
+    return (binders, ← claimOfTy .top, params, rest, ← claimOfType names g.ret)
+  let ((binders, receiver, params, rest, result), T) ← (lowered.run T).mapError (refuse g.namePos)
+  let subs ← calls.mapM fun (pos, _, _) => do
+    let some inst := (claims.expressions.find? (·.pos == pos)).bind (·.instantiate)
+      | throw (refuse pos s!"a call to the generic function '{g.name}' needs its type arguments")
+    let given := inst.map (·.name)
+    if given.eraseDups.length != given.length then throw (refuse pos "duplicate type argument")
+    if given.length != names.length || given.any (!names.contains ·) then
+      throw (refuse pos s!"type arguments do not instantiate exactly the binders of '{g.name}'")
+    for i in inst do
+      let _ ← (groundOf s!"the type argument for '{i.name}'" i.type).mapError (refuse pos)
+    let σ := inst.map fun i => (i.name, i.type)
+    for (name, bound) in binders do
+      if let some upper := bound then
+        let some argument := σ.lookup name | throw (refuse pos s!"no type argument for '{name}'")
+        let actual ← (groundOf s!"the type argument for '{name}'" argument).mapError (refuse pos)
+        let required ← (groundOf s!"the bound of '{name}'" (subst σ upper)).mapError (refuse pos)
+        let actual := DirectObligation.Ty.ground actual
+        let required := DirectObligation.Ty.ground required
+        unless actual.le required do
+          throw (.obligation ⟨pos, .schemeElimination,
+            .subtyping parameters [] (.expression pos) actual required⟩)
+    pure σ
+  let σs := subs.foldl (fun acc σ => if acc.contains σ then acc else acc ++ [σ]) []
+  let (T, arrows, variadic) ← σs.foldlM (fun (T, acc, more) σ => do
+    let (T, rc) ← (groundIn T (subst σ receiver)).mapError (refuse g.namePos)
+    let (T, ps) ← params.foldlM (fun (T, ps) q => do
+      let (T, p) ← (groundIn T (subst σ q)).mapError (refuse g.namePos)
+      pure (T, ps ++ [p])) (T, [])
+    let (T, r) ← (groundIn T (subst σ result)).mapError (refuse g.namePos)
+    match rest with
+    | none => pure (T, acc ++ [(rc, ps, r)], more)
+    | some e => do
+      let (T, E) ← (groundIn T (subst σ e)).mapError (refuse g.namePos)
+      pure (T, acc, more ++ [(rc, ps, E, r)])) (T, [], [])
+  let clause : PositiveNormalization.Clause (List Nat) := .arrs arrows variadic
+  let T := SourceTypes.intern T clause
+  return (T, SourceTypes.label T clause, calls.map (·.2.1), calls.map (·.1))
+
 end Scheme
 
 
@@ -870,13 +936,31 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
   if decoded.length != d.functions.length then throw "function claim count mismatch"
   let units := decoded.map (fun (f, tps) => (f, tps, none)) ++
     initUnit.map (fun (f, tps, c) => (f, tps, some c))
+  let generics := all.filter fun (_, tps) => !tps.isEmpty
   units.mapM fun (f,tps,initClaims) => do
     let module := if initClaims.isSome then moduleFunctions else moduleFunctions ++ moduleConstants
-    let c ← match initClaims with
+    let mut c ← match initClaims with
       | some c => pure c
       | none => match d.functions.find? (fun c => c.name == f.name && c.namePos == f.namePos) with
         | some c => pure c
         | none => throw s!"missing claims for '{f.name}'"
+    -- A generic module function this unit calls: its slot holds the instances
+    -- the calls name, and those reads and calls are claimed at them.
+    let mut module := module
+    let mut d := d
+    if tps.isEmpty then
+      for (g, gtps) in generics do
+        if (f.body.flatMap Fragment.Stmt.callees).any (·.2.2 == g.name) then
+          match Scheme.moduleInstances d.types g gtps f.body c with
+          | .ok (T, label, reads, calls) =>
+            d := { d with types := T }
+            module := module ++ [(g.name, g.namePos, .ok (Json.mkObj [("top", toJson false),
+              ("atoms", toJson [Json.mkObj [("a", toJson "graph"), ("label", toJson label)]])]))]
+            c := { c with expressions := c.expressions.map fun e =>
+              if reads.contains e.pos then { e with type := .labels [label] }
+              else if calls.contains e.pos then { e with instantiate := none } else e }
+          | .error (.obligation failure) => throw (directFailure d.types failure)
+          | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)
     let sites := functionSites f
     if !c.entries.all (fun e => sites.1.contains e.start) ||
         !c.expressions.all (fun e => sites.2.contains e.pos) then
@@ -912,9 +996,9 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
         | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)
         | .ok result => pure result
       match Scheme.compile T f c with
-      | .ok (T, c, overlays) =>
+      | .ok (T, compiled, overlays) =>
         return .scheme f.name f.namePos
-          (← extractNormalizedFn T f { c.normalized with arrowClaims := overlays } module) T certificate
+          (← extractNormalizedFn T f { compiled.normalized with arrowClaims := overlays } module) T certificate
       | .error (.obligation failure) => throw (directFailure d.types failure)
       | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)
     return .graph f.name f.namePos (← extractNormalizedFn d.types f c.normalized module)

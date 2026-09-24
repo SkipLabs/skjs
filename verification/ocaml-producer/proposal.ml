@@ -173,10 +173,10 @@ let module_type (g:Source.fn) =
   match g.rest,List.rev tys with
   | true,last::before ->
     (match Semantic.tuple_positions last,Semantic.array_element last with
-     | Some positions,_ -> arrow (List.rev before @ positions) g.result
-     | None,Some element -> variadic_arrow (List.rev before) element g.result
+     | Some positions,_ -> quantified_arrow g.quantified (List.rev before @ positions) g.result
+     | None,Some element -> variadic_arrow ~quantified:g.quantified (List.rev before) element g.result
      | _ -> unsupported "rest parameter contract of a module function")
-  | _ -> arrow tys g.result
+  | _ -> quantified_arrow g.quantified tys g.result
 
 let infer_function declarations module_functions (f:Source.fn) =
   (* A name no parameter or local binds is one of the file's functions. *)
@@ -509,9 +509,7 @@ let infer_function declarations module_functions (f:Source.fn) =
   {source=f;entries=List.rev !entries;expressions=List.rev !expressions;
    arrows=List.rev !arrows}
 let infer program =
-  let module_functions = List.map (fun (g:Source.fn) ->
-    g.name,lazy (if g.quantified=[] then module_type g
-      else unsupported ("generic module function " ^ g.name ^ " called from another function")))
+  let module_functions = List.map (fun (g:Source.fn) -> g.name,lazy (module_type g))
     program.Source.functions
     @ List.map (fun (name,t) -> name,lazy t) program.Source.values in
   (* A function reads a module constant at its annotation; the initialization
