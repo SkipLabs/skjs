@@ -8,7 +8,7 @@ open CertificateProducer RequestJson ProgramCertificates
 
 private def types : List (List (Clause (List Nat))) :=
   [[.nul],[.arrs [([3],[[0]],[0])] []], [.refs [(valueField, [0,1])] [] []], [.undef]]
-private def G : NormalGraph Nat := fun i => types[i]?.getD []
+private def G : NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 private def labels := List.range types.length
 private def dispatch : Tm := .ite (.test .isFun (.var 0)) (.app (.var 0) .nul) .nul
 /-- The body reads the captured cell, past its parameter and receiver. -/

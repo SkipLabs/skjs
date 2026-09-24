@@ -4,7 +4,7 @@ namespace Verification.Model.ProgramTypingTests
 open PositiveNormalization PositiveGraphs PositiveRules PositiveCertificates ProgramTyping
 
 /-- Label 6 is `undefined`, the receiver every signature here is called with. -/
-def G : NormalGraph (Fin 7) := fun i => match i.val with
+def G : NormalGraph (Fin 7) := .ofRows fun i => match i.val with
   | 0 => [.nul]
   | 1 => [.bool]
   | 2 => [.refs [(valueField, [1])] [] []]
@@ -22,10 +22,10 @@ theorem dispatch_typed : HasTy G [[2]] dispatch [3] := by
   intro p hp
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
   rcases hp with rfl | rfl
-  · apply HasTy.ifTag (q := true) (by rfl) (by intro c hc; simp [expand, G] at hc; subst c; rfl)
+  · apply HasTy.ifTag (q := true) (by rfl) ⟨rfl, by intro c hc; simp [expand, clausesOf, G] at hc; subst c; rfl⟩
     · intro _; exact .read (.var rfl) (by rfl) (by simp)
     · intro h; cases h
-  · apply HasTy.ifTag (q := false) (by rfl) (by intro c hc; simp [expand, G] at hc; subst c; rfl)
+  · apply HasTy.ifTag (q := false) (by rfl) ⟨rfl, by intro c hc; simp [expand, clausesOf, G] at hc; subst c; rfl⟩
     · intro h; cases h
     · intro _; exact .nul (by rfl)
 

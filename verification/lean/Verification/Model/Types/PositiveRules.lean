@@ -10,7 +10,28 @@ abbrev Rel (table : Table ι) (a b : List ι) : Prop := (a, b) ∈ table
 
 /-- Fixed signatures `(receiver, parameters, result)`. -/
 abbrev Ops (ι : Type) := List (List ι × List (List ι) × List ι)
-def expand (G : NormalGraph ι) (S : List ι) : List (Clause (List ι)) := S.flatMap G
+/-- The clauses of a type's clause rows. -/
+def clausesOf (G : NormalGraph ι) (S : List ι) : List (Clause (List ι)) := S.flatMap G
+
+/-- A type's clauses, when every label is a clause row, and none otherwise. A
+rule reading a type's clauses reads them here, so a type with a parameter or
+scheme row has none to read: its members are not described by clauses. -/
+def expand (G : NormalGraph ι) (S : List ι) : List (Clause (List ι)) :=
+  if G.plainTy S then clausesOf G S else []
+
+theorem expand_of_plain {G : NormalGraph ι} {S : List ι} (h : G.plainTy S = true) :
+    expand G S = clausesOf G S := by simp [expand, h]
+
+/-- A type with a clause to read is of clause rows. -/
+theorem plain_of_mem_expand {G : NormalGraph ι} {S : List ι} {c}
+    (h : c ∈ expand G S) : G.plainTy S = true := by
+  unfold expand at h; split at h
+  · assumption
+  · simp at h
+
+theorem expand_sub {G : NormalGraph ι} {S : List ι} {c} (h : c ∈ expand G S) :
+    c ∈ clausesOf G S := by
+  rwa [expand_of_plain (plain_of_mem_expand h)] at h
 
 /-- Decompose one clause into an exactly equivalent finite union. `bool` is the
 only clause of this language whose inhabitants are a finite set, so it is the
@@ -25,7 +46,7 @@ source, rather than searching the target for a matching pair, keeps `Covers`
 clause-to-clause while letting one source clause be covered by several target
 clauses. -/
 def sourceClauses (G : NormalGraph ι) (S : List ι) : List (Clause (List ι)) :=
-  (expand G S).flatMap splitClause
+  (clausesOf G S).flatMap splitClause
 
 def meaning (G : NormalGraph ι) (S : List ι) : Fam := setSem (normalDenote G) S
 
@@ -39,29 +60,52 @@ def overlaps (a b : Clause α) : Bool :=
   isTop a || isTop b || shape a == shape b
 
 /-- A conservative compatibility check: two union labels can share a value
-only if some pair of their clauses has the same outer shape. -/
+only if some pair of their clauses has the same outer shape. A parameter or
+scheme row has no clauses to compare, so it may share a value with anything. -/
 def compatible (G : NormalGraph ι) (i k : ι) : Bool :=
-  (G i).any fun a => (G k).any fun b => overlaps a b
+  !G.plain i || !G.plain k || (G i).any fun a => (G k).any fun b => overlaps a b
 
-theorem normal_congr (G : NormalGraph ι) : LayerCongr (normalLayer G) := by
-  intro X Y n h i W v
-  constructor <;> rintro ⟨c, hc, hv⟩ <;> refine ⟨c, hc, ?_⟩
-  · exact (sem_congr _ _ n (fun a => setSem_congr n h a) c W v).mp hv
-  · exact (sem_congr _ _ n (fun a => setSem_congr n h a) c W v).mpr hv
+theorem normal_congr (G : NormalGraph ι) : LayerCongr (normalLayer G) := normalLayer_congr G
 
-theorem unfold_normal (G : NormalGraph ι) (i : ι) (n W v) :
+/-- A clause row means its clauses. -/
+theorem unfold_normal (G : NormalGraph ι) (i : ι) (hi : G.plain i = true) (n W v) :
     normalDenote G i n W v ↔ semList (meaning G) (G i) n W v :=
-  Tower.denote_unfold (normal_congr G) i n W v
+  unfold_plain hi n W v
 
-theorem expand_sem (G : NormalGraph ι) (S : List ι) (n W v) :
+/-- Every clause of a type's labels is within the type's meaning. -/
+theorem expand_sem_mpr {G : NormalGraph ι} {S : List ι} {n W v}
+    (h : semList (meaning G) (clausesOf G S) n W v) : meaning G S n W v := by
+  obtain ⟨c, hc, hv⟩ := h
+  obtain ⟨i, hi, hc⟩ := List.mem_flatMap.mp hc
+  have hp : G.plain i = true := by
+    cases hp : G.plain i
+    · simp [NormalGraph.clauses, hp] at hc
+    · rfl
+  exact ⟨i, hi, (unfold_normal G i hp n W v).mpr ⟨c, hc, hv⟩⟩
+
+/-- A member of a type is in one of its clauses, or in one of its parameter or
+scheme rows. -/
+theorem meaning_cases {G : NormalGraph ι} {S : List ι} {n W v} (h : meaning G S n W v) :
+    semList (meaning G) (clausesOf G S) n W v ∨
+      ∃ i ∈ S, G.plain i = false ∧ normalDenote G i n W v := by
+  obtain ⟨i, hi, hv⟩ := h
+  cases hp : G.plain i
+  · exact .inr ⟨i, hi, hp, hv⟩
+  · obtain ⟨c, hc, hv⟩ := (unfold_normal G i hp n W v).mp hv
+    exact .inl ⟨c, List.mem_flatMap.mpr ⟨i, hi, hc⟩, hv⟩
+
+/-- A type of clause rows means the union of its labels' clauses. -/
+theorem expand_sem (G : NormalGraph ι) (S : List ι) (hS : G.plainTy S = true) (n W v) :
     meaning G S n W v ↔ semList (meaning G) (expand G S) n W v := by
+  rw [expand_of_plain hS]
+  have hp : ∀ i ∈ S, G.plain i = true := List.all_eq_true.mp hS
   constructor
   · rintro ⟨i, hi, hv⟩
-    obtain ⟨c, hc, hv⟩ := (unfold_normal G i n W v).mp hv
+    obtain ⟨c, hc, hv⟩ := (unfold_normal G i (hp i hi) n W v).mp hv
     exact ⟨c, List.mem_flatMap.mpr ⟨i, hi, hc⟩, hv⟩
   · rintro ⟨c, hc, hv⟩
     obtain ⟨i, hi, hc⟩ := List.mem_flatMap.mp hc
-    exact ⟨i, hi, (unfold_normal G i n W v).mpr ⟨c, hc, hv⟩⟩
+    exact ⟨i, hi, (unfold_normal G i (hp i hi) n W v).mpr ⟨c, hc, hv⟩⟩
 
 /-- The split is meaning preserving, in the same style as `meet_sound` and
 `normalize_sound`: the union of the parts denotes exactly the original clause. -/
@@ -70,9 +114,9 @@ theorem splitClause_sem (X : α → Fam) (c : Clause α) (n W v) :
   cases c
   all_goals simp [splitClause, semList, setSem, sem, boolT]
 
-theorem source_sem (G : NormalGraph ι) (S : List ι) (n W v) :
+theorem source_sem (G : NormalGraph ι) (S : List ι) (hS : G.plainTy S = true) (n W v) :
     meaning G S n W v ↔ semList (meaning G) (sourceClauses G S) n W v := by
-  rw [expand_sem G S n W v]
+  rw [expand_sem G S hS n W v, expand_of_plain hS]
   constructor
   · rintro ⟨c, hc, hv⟩
     obtain ⟨d, hd, hvd⟩ := (splitClause_sem (meaning G) c n W v).mpr hv
@@ -84,9 +128,14 @@ theorem source_sem (G : NormalGraph ι) (S : List ι) (n W v) :
 theorem compatible_sound {G : NormalGraph ι} {i k : ι} {n W U v}
     (hi : normalDenote G i n W v) (hk : normalDenote G k n U v) :
     compatible G i k = true := by
-  obtain ⟨a, ha, hva⟩ := (unfold_normal G i n W v).mp hi
-  obtain ⟨b, hb, hvb⟩ := (unfold_normal G k n U v).mp hk
-  simp only [compatible, List.any_eq_true]
+  cases hpi : G.plain i
+  · simp [compatible, hpi]
+  cases hpk : G.plain k
+  · simp [compatible, hpk]
+  simp only [compatible, hpi, hpk, Bool.not_true, Bool.false_or]
+  obtain ⟨a, ha, hva⟩ := (unfold_normal G i hpi n W v).mp hi
+  obtain ⟨b, hb, hvb⟩ := (unfold_normal G k hpk n U v).mp hk
+  simp only [List.any_eq_true]
   refine ⟨a, ha, b, hb, ?_⟩
   by_cases hta : a = .top
   · subst hta; rfl
@@ -705,11 +754,20 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
     intro hv
     exact covers_lists_sound hc n hr W v hv
 
+/-- A parameter or scheme row of the source is in the target, or the target
+admits every value: the row has no clauses for a target clause to cover. -/
+def Opaque (G : NormalGraph ι) (S T : List ι) : Prop :=
+  ∀ i ∈ S, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T
+
+instance [DecidableEq ι] {G : NormalGraph ι} {S T : List ι} : Decidable (Opaque G S T) :=
+  inferInstanceAs (Decidable (∀ i ∈ S, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T))
+
 /-- Each split part of each source clause must be covered by some single target
 clause. A `bool` source is therefore discharged by the pair of Boolean singleton
 clauses, or by a single `bool` clause, or by any target containing both. -/
 def Valid (G : NormalGraph ι) (table : Table ι) : Prop :=
-  ∀ p ∈ table, ∀ a ∈ sourceClauses G p.1, ∃ b ∈ expand G p.2, Covers G (Rel table) a b
+  ∀ p ∈ table, Opaque G p.1 p.2 ∧
+    ∀ a ∈ sourceClauses G p.1, ∃ b ∈ clausesOf G p.2, Covers G (Rel table) a b
 
 def Core (G : NormalGraph ι) (S T : List ι) : Prop :=
   ∃ table, (S, T) ∈ table ∧ Valid G table
@@ -722,10 +780,13 @@ theorem Core.sound {G : NormalGraph ι} {S T} (hc : Core G S T) :
     induction n using Nat.strongRecOn with
     | ind n ih =>
       intro A B hab W v hv
-      obtain ⟨a, ha, hv⟩ := (source_sem G A n W v).mp hv
-      obtain ⟨b, hb, hcover⟩ := hc (A, B) hab a ha
-      exact (expand_sem G B n W v).mpr
-        ⟨b, hb, Covers.sound hcover n (fun j hj => ih j hj) W v hv⟩
+      rcases meaning_cases hv with ⟨c, hcm, hv⟩ | ⟨i, hi, hp, hv⟩
+      · obtain ⟨a, ha, hv⟩ := (splitClause_sem (meaning G) c n W v).mpr hv
+        obtain ⟨b, hb, hcover⟩ := (hc (A, B) hab).2 a (List.mem_flatMap.mpr ⟨c, hcm, ha⟩)
+        exact expand_sem_mpr ⟨b, hb, Covers.sound hcover n (fun j hj => ih j hj) W v hv⟩
+      · rcases ((hc (A, B) hab).1 i hi).resolve_left (by simp [hp]) with hB | htop
+        · exact ⟨i, hB, hv⟩
+        · exact expand_sem_mpr ⟨.top, htop, normalDenote_value hv⟩
   exact fun n => hs n S T hm
 
 /-- Structural rules compose completed proofs. They cannot bypass the guarded

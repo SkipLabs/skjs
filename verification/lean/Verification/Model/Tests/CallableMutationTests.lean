@@ -9,7 +9,7 @@ open CertificateProducer ControlFlow RequestJson HeapExpressionRules
 private def types : List (List (Clause (List Nat))) :=
   [[.nul],[.bool],[.refs [(valueField, [1])] [] []],[.callable [(valueField, [1])] [] [] []],
    [.boolLit false],[.arrs [([6],[[0]],[0])] []],[.top],[.undef]]
-private def G : NormalGraph Nat := fun i => types[i]?.getD []
+private def G : NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 private def labels := List.range types.length
 private def program (callable fresh : Bool) : Program :=
   [⟨.fls,.bind 1⟩,

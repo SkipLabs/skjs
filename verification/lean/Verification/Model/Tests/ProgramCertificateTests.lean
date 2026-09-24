@@ -67,7 +67,7 @@ private def wrongContext (Γ : List (Ty ι)) : Evidence ι → Evidence ι
 #guard !(checkTree G (.node ⟨[[0]], .var 0, [0]⟩ .var [varE [[0]] 0 [0]]))
 
 -- The empty overload imposes no body obligations, but cannot bypass scope.
-private def EmptyG : PositiveGraphs.NormalGraph (Fin 1) := fun _ => [.arrs [] []]
+private def EmptyG : PositiveGraphs.NormalGraph (Fin 1) := .ofRows fun _ => [.arrs [] []]
 private def openEvidence : Evidence (Fin 1) := .node ⟨[], .funE (.var 2), [0]⟩ .funE []
 #guard checkTree EmptyG openEvidence
 #guard !(check EmptyG (.funE (.var 2)) [0] openEvidence)

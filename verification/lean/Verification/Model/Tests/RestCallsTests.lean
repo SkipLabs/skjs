@@ -11,7 +11,7 @@ open ProgramTyping ProgramCertificates CertificateProducer PositiveNormalization
 7 `(a: number, ...r: number[]) => number`, 8 the array of 6, 9 the array of 5,
 10 `(a: number, b: number) => number`, 11 `(a?: number, ...r: number[]) => number`,
 12 unknown. Every signature takes any receiver. -/
-def G : PositiveGraphs.NormalGraph Nat
+def G : PositiveGraphs.NormalGraph Nat := .ofRows fun
   | 0 => [.num]
   | 1 => [.undef]
   | 2 => [.list ⟨[], [], some [0,1], false⟩ []]

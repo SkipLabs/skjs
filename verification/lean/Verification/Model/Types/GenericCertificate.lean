@@ -208,16 +208,20 @@ def Primitives (G : NormalGraph Nat) : Prop :=
 
 theorem Primitives.represents_nul {G : NormalGraph Nat} (hG : Primitives G) :
     Represents G [0] .nul := by
-  simp [Represents, PositiveRules.expand, hG.1]
+  have hp := NormalGraph.plain_of_clauses (show _ ∈ G _ by rw [hG.1]; exact List.mem_singleton_self _)
+  simp [Represents, PositiveRules.expand, PositiveRules.clausesOf, NormalGraph.plainTy, hp, hG.1]
 theorem Primitives.represents_tru {G : NormalGraph Nat} (hG : Primitives G) :
     Represents G [1] (.boolLit true) := by
-  simp [Represents, PositiveRules.expand, hG.2.1]
+  have hp := NormalGraph.plain_of_clauses (show _ ∈ G _ by rw [hG.2.1]; exact List.mem_singleton_self _)
+  simp [Represents, PositiveRules.expand, PositiveRules.clausesOf, NormalGraph.plainTy, hp, hG.2.1]
 theorem Primitives.represents_fls {G : NormalGraph Nat} (hG : Primitives G) :
     Represents G [2] (.boolLit false) := by
-  simp [Represents, PositiveRules.expand, hG.2.2.1]
+  have hp := NormalGraph.plain_of_clauses (show _ ∈ G _ by rw [hG.2.2.1]; exact List.mem_singleton_self _)
+  simp [Represents, PositiveRules.expand, PositiveRules.clausesOf, NormalGraph.plainTy, hp, hG.2.2.1]
 theorem Primitives.represents_undef {G : NormalGraph Nat} (hG : Primitives G) :
     Represents G [3] .undef := by
-  simp [Represents, PositiveRules.expand, hG.2.2.2]
+  have hp := NormalGraph.plain_of_clauses (show _ ∈ G _ by rw [hG.2.2.2]; exact List.mem_singleton_self _)
+  simp [Represents, PositiveRules.expand, PositiveRules.clausesOf, NormalGraph.plainTy, hp, hG.2.2.2]
 
 /-- Producer-independent proof terms for direct source typing. Widening and
 call compatibility use subtyping; their Boolean premises are covered by

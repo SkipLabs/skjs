@@ -296,8 +296,8 @@ structure Certificate (ι : Type) where
 
 set_option synthInstance.maxSize 1024 in
 def checkCore [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (cert : Certificate ι) : Bool :=
-  decide ((S, T) ∈ cert.table ∧ ∀ p ∈ cert.table,
-    ∀ a ∈ sourceClauses G p.1, ∃ b ∈ expand G p.2,
+  decide ((S, T) ∈ cert.table ∧ ∀ p ∈ cert.table, Opaque G p.1 p.2 ∧
+    ∀ a ∈ sourceClauses G p.1, ∃ b ∈ clausesOf G p.2,
       checkClause G cert.table cert.arrows a b = true)
 
 
@@ -305,29 +305,32 @@ theorem checkCore_sound [DecidableEq ι] {G : NormalGraph ι} {S T cert}
     (h : checkCore G S T cert = true) : Core G S T := by
   simp only [checkCore, decide_eq_true_eq] at h
   refine ⟨cert.table, h.1, ?_⟩
-  intro p hp a ha
-  obtain ⟨b, hb, hc⟩ := h.2 p hp a ha
+  intro p hp
+  refine ⟨(h.2 p hp).1, fun a ha => ?_⟩
+  obtain ⟨b, hb, hc⟩ := (h.2 p hp).2 a ha
   exact ⟨b, hb, checkClause_sound hc⟩
 
 theorem checkCore_complete [DecidableEq ι] {G : NormalGraph ι} {S T}
     (h : Core G S T) : ∃ cert, checkCore G S T cert = true := by
   obtain ⟨table, hm, hv⟩ := h
   have rows : ∀ p ∈ table, ∃ es : Evidence ι,
-      ∀ a ∈ sourceClauses G p.1, ∃ b ∈ expand G p.2,
+      ∀ a ∈ sourceClauses G p.1, ∃ b ∈ clausesOf G p.2,
         checkClause G table es a b = true := by
     intro p hp
     apply collect (sourceClauses G p.1)
-      (fun a es => ∃ b ∈ expand G p.2, checkClause G table es a b = true)
+      (fun a es => ∃ b ∈ clausesOf G p.2, checkClause G table es a b = true)
     · intro a es es' hm ⟨b, hb, hc⟩
       exact ⟨b, hb, checkClause_mono hm hc⟩
     · intro a ha
-      obtain ⟨b, hb, hc⟩ := hv p hp a ha
+      obtain ⟨b, hb, hc⟩ := (hv p hp).2 a ha
       obtain ⟨es, he⟩ := checkClause_complete hc
       exact ⟨es, b, hb, he⟩
   obtain ⟨es, he⟩ := collect table _ (fun p es es' hm h a ha => by
     obtain ⟨b, hb, hc⟩ := h a ha
     exact ⟨b, hb, checkClause_mono hm hc⟩) rows
-  exact ⟨⟨table, es⟩, by simpa only [checkCore, decide_eq_true_eq] using And.intro hm he⟩
+  exact ⟨⟨table, es⟩, by
+    simp only [checkCore, decide_eq_true_eq]
+    exact ⟨hm, fun p hp => ⟨(hv p hp).1, he p hp⟩⟩⟩
 
 inductive Proof (ι : Type) where
   | core (certificate : Certificate ι)

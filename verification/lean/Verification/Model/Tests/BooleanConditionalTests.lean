@@ -25,7 +25,7 @@ private def branch (c t e : Tm) : Request :=
 #guard !ok (roundtrip { branch (.var 0) .tru .fls with inputs := [[0,1]], claims := [⟨[[0,1]],[0]⟩] })
 
 -- The condition must be Boolean and both branch judgments must be present.
-private def G : NormalGraph Nat := fun i => (types[i]?).getD []
+private def G : NormalGraph Nat := .ofRows fun i => (types[i]?).getD []
 private def cond : Evidence Nat := .node ⟨[[0]],.var 0,[0]⟩ .var []
 private def yes : Evidence Nat := .node ⟨[[0]],.tru,[0]⟩ .tru []
 private def no : Evidence Nat := .node ⟨[[0]],.fls,[0]⟩ .fls []
@@ -45,7 +45,7 @@ private def recipe := DirectProof.node [[0]] (.ite (.var 0) .tru .fls) [0] .ifBo
 -- refined rule: the original Boolean input alone does not have type true.
 private def refinedTypes : List (List (PositiveNormalization.Clause (List Nat))) :=
   [[.boolLit true],[.boolLit false],[.nul]]
-private def RG : NormalGraph Nat := fun i => (refinedTypes[i]?).getD []
+private def RG : NormalGraph Nat := .ofRows fun i => (refinedTypes[i]?).getD []
 private def refinedYes : Evidence Nat := .node ⟨[[0]],.var 0,[0]⟩ .var []
 private def refinedNo : Evidence Nat := .node ⟨[[1]],.tru,[0]⟩ .truLit []
 private def refinedProof : Evidence Nat :=
@@ -106,7 +106,7 @@ theorem known_condition_effects_preserved : Execution knownEffectProgram 8 []
 -- A tag test can split an explicit null/Boolean union without a semantic join.
 private def nullTypes : List (List (PositiveNormalization.Clause (List Nat))) :=
   [[.nul],[.boolLit true],[.boolLit false]]
-private def NG : NormalGraph Nat := fun i => (nullTypes[i]?).getD []
+private def NG : NormalGraph Nat := .ofRows fun i => (nullTypes[i]?).getD []
 private def nullGuard : Tm := .ite (.test .isNul (.var 0)) .tru (.var 0)
 private def nullProof : Evidence Nat :=
   (CertificateProducer.expression NG [[0],[1],[2],[1,2],[0,1,2]] 10 [[0,1,2],[2]] nullGuard [1,2]).getD

@@ -66,7 +66,7 @@ def mappedDiamondClaims : List (PointClaim (Fin 7)) :=
 -- Ordinary nested lets and overload bodies also require no evidence hints.
 #guard succeeds (produce G labels 12 [0,1] [⟨program,.ret⟩] [⟨[],[0,1]⟩] 0)
 -- Recursive references: the generated cyclic table closes through invariance.
-def recursiveG : PositiveGraphs.NormalGraph (Fin 3) := fun i =>
+def recursiveG : PositiveGraphs.NormalGraph (Fin 3) := .ofRows fun i =>
   match i.val with | 0 => [.refs [(valueField, [0])] [] []] | 1 => [.refs [(valueField, [1])] [] []] | _ => [.bool]
 #guard (subtype recursiveG [[],[0],[1],[2]] [0] [1]).isSome
 #guard !(subtype recursiveG [[],[0],[1],[2]] [0] [2]).isSome

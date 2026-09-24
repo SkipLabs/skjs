@@ -169,7 +169,11 @@ theorem bagOperand_mem [DecidableEq α] {cs : List (PositiveNormalization.Clause
 theorem bagOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref B n W v}
     (hr : bagOperand (expand G Ref) = some B) (hv : meaning G Ref n W v) :
     bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v := by
-  obtain ⟨c,hm,hc⟩ := (expand_sem G Ref n W v).mp hv
+  have hp : G.plainTy Ref = true := by
+    cases he : expand G Ref with
+    | nil => rw [he] at hr; contradiction
+    | cons c _ => exact plain_of_mem_expand (c := c) (by simp [he])
+  obtain ⟨c,hm,hc⟩ := (expand_sem G Ref hp n W v).mp hv
   have hb := bagOperand_mem hr hm
   cases c <;> simp only [clauseBagOperand] at hb
   all_goals try contradiction

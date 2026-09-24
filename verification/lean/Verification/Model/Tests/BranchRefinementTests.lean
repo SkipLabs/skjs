@@ -15,7 +15,7 @@ private def G := SourceTypes.graph T
 #guard tagSlice G [0,1,2] .isBool true == [1,2]
 #guard tagSlice G [0] .isNul false == []
 -- Mixed labels are retained intact, rather than narrowed unsoundly by head shape.
-private def mixed : PositiveGraphs.NormalGraph Nat := fun _ => [.nul,.bool]
+private def mixed : PositiveGraphs.NormalGraph Nat := .ofRows fun _ => [.nul,.bool]
 #guard tagSlice mixed [0] .isNul true == [0]
 #guard tagSlice mixed [0] .isNul false == [0]
 
@@ -45,7 +45,7 @@ private def mixed : PositiveGraphs.NormalGraph Nat := fun _ => [.nul,.bool]
 #guard !checkObserved G [] [] 0 (.tag .isNul true) none []
 #guard checkObserved G [[0,1,2]] [] 0 (.tag .isNul true) none []
 -- Filtering's precision limit does not restrict the semantic obligation.
-private def mixedWithNull : PositiveGraphs.NormalGraph Nat
+private def mixedWithNull : PositiveGraphs.NormalGraph Nat := .ofRows fun
   | 0 => [.nul,.bool]
   | _ => [.nul]
 #guard !checkObservedSub mixedWithNull [0] [1] (.tag .isNul true) .subset
@@ -53,8 +53,8 @@ example : ObservedSub mixedWithNull [0] [1] (.tag .isNul true) := by
   intro n W v _ ho
   have hn : v = .nul := by cases v <;> simp_all [Observation.holds, tagHolds]
   subst v
-  apply (PositiveRules.expand_sem _ _ _ _ _).mpr
-  exact ⟨.nul, by simp [PositiveRules.expand, mixedWithNull], rfl⟩
+  apply PositiveRules.expand_sem_mpr
+  exact ⟨.nul, by simp [PositiveRules.clausesOf, mixedWithNull], rfl⟩
 
 -- Slot zero is justified by the branch observation. Slot one is not refined.
 #guard checkObserved G [[1,2],[1,2]] [[1],[1,2]] 0 (.boolean true)

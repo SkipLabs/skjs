@@ -34,7 +34,7 @@ These check syntax traversal; non-singleton source calls remain gated. -/
 
 /-- Empty overloads have no body typing premises. The graph consumer must still
 reject forged identities in their bodies, independently of that typing rule. -/
-private def G : PositiveGraphs.NormalGraph Nat := fun _ => [.arrs [] []]
+private def G : PositiveGraphs.NormalGraph Nat := .ofRows fun _ => [.arrs [] []]
 private def forged : Tm := .funE (.obj 0 .absent)
 private def forgedEvidence : Evidence Nat := .node ⟨[],forged,[0]⟩ .funE []
 private def forgedNode : Node := ⟨forged,.ret⟩

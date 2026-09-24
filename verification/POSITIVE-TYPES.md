@@ -495,6 +495,24 @@ layer's source connection is the identity scheme, `T extends boolean`, T-copy
 bodies, and the identity/cell aliases; it does not yet handle higher-rank
 polymorphism or parameter-changing recursion.
 
+### Parameter and scheme rows
+
+A graph's label is one of three kinds of row. A clause row means its clauses. A
+parameter row means what the graph's assignment `env` gives it, a family of
+closed values. A scheme row means one callable meeting its signatures at every
+reassignment of its binders, which are parameter rows. The denotation is one
+guarded fixed point over (assignment, label) (`qDenote`), and `meaning G` reads
+it at `G.env`. No check reads `env`, so every theorem proved for all graphs
+holds at every reassignment.
+
+Only clause rows have clauses. A type holding a parameter or scheme row has no
+expansion, so no rule that reads a clause (`Represents`, `Answers`, the atoms
+of heap knowledge) applies to it. In subtyping, such a row of the source must
+appear in the target, or the target must admit every value (`Opaque`). Scheme
+rows are the graph form of generic methods, stage 2 of the quantified-types
+plan in [the producer's README](ocaml-producer/README.md); the layer below
+predates them.
+
 ### Quantified scheme layer
 
 Quantified local callables form a second layer rather than a graph clause.

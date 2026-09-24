@@ -5,7 +5,7 @@ certificate rule. These examples need no function label in the type graph. -/
 namespace Verification.Model.LetTests
 open PositiveGraphs PositiveNormalization ProgramTyping ProgramCertificates CertificateProducer
 
-private def G : NormalGraph Nat := fun _ => [.bool]
+private def G : NormalGraph Nat := .ofRows fun _ => [.bool]
 private def term : Tm := .letE .tru (.var 0)
 private def evidence : Evidence Nat :=
   .node ⟨[],term,[0]⟩ .letE

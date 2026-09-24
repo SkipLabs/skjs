@@ -15,7 +15,7 @@ def types : List (List (Clause (List Nat))) :=
   [[.nul],[.bool],[.callable [(valueField, [1])] [] signatures []],[.arrs signatures []],
    [.callable [(valueField, [1])] [[(valueField,[1])]] signatures []],[.refs [(valueField, [1])] [] []],[.callable [(valueField, [0,1])] [] signatures []],
    [.top],[.undef]]
-def G : NormalGraph Nat := fun i => types[i]?.getD []
+def G : NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 def labels := List.range types.length
 
 def program : Program :=
@@ -136,7 +136,7 @@ namespace ArgumentGraphs
 private def rows : List (List (Clause (List Nat))) := types ++
   [[.arrs [([7],[[0],[0],[1]],[1]),([7],[[0],[1],[1]],[1])] []],
    [.arrs [([7],[[0],[0,1],[1]],[1])] []], [.arrs [([7],[],[0])] []]]
-private def graph : NormalGraph Nat := fun i => rows[i]?.getD []
+private def graph : NormalGraph Nat := .ofRows fun i => rows[i]?.getD []
 private def body := Tm.make (.closure 3 (.var 3)) .nul
 private def req : Request := ⟨rows,[⟨body,.bind 1⟩,⟨.var 0,.ret⟩],[⟨[],[9]⟩,⟨[[9]],[10]⟩],[10],0,[]⟩
 #guard ok (do

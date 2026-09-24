@@ -4,189 +4,113 @@ import Verification.Model.Types.TypeParams
 
 A generic method's type, such as `Promise<T>`'s
 `then<R1, R2>(onfulfilled?: (value: T) => R1 | PromiseLike<R1>, …) => …`, is a
-row of its own kind: its binders, which are parameter rows, and the signatures
-its instances meet. The rows its signatures reach (`PromiseLike<R1>`) mention
-the binders, so their meaning depends on what the binders are assigned.
+scheme row: its binders, which are parameter rows, and the signatures its
+instances meet. The rows its signatures reach (`PromiseLike<R1>`) mention the
+binders, so their meaning depends on what the binders are assigned.
 
-The denotation is therefore indexed by an assignment of the parameter rows as
-well as by the label: a parameter row means what the assignment gives it, a
-scheme row means a callable meeting its signatures at every admissible
-reassignment of its binders, each signature's rows read at that assignment, and
-any other row means its clauses. The fixed point is the one `Tower` builds for
-every positive graph, over the index `(assignment, label)`. Without scheme rows
-it is the parametric semantics `denoteP`, at each assignment.
+The denotation (`PositiveGraphs.qDenote`) is therefore indexed by an assignment
+as well as by a label, and a graph's `meaning` reads it at the graph's own
+assignment, `env`. This file states the rules the rows obey:
 
-The quantifier ranges over every admissible family. A bound on a binder is not
-part of this row: bounded binders are a separate step. -/
+* a parameter row means what the assignment gives it;
+* a clause row means its clauses, read at the same assignment;
+* **elimination**: a member of a scheme row meets each instance's signatures;
+* **introduction**: a callable meeting, at every instantiation, the signatures
+  read in the graph reassigned there is a member of the scheme row.
+
+Reassigning a graph is `{G with env := η}`. No check reads `env`, so a typing
+derivation over `G` is one over every reassignment, and every soundness theorem
+proved for all graphs holds at each of them. That is how a generic body, typed
+once with its binders opaque, discharges the introduction premise.
+
+Without scheme rows, the denotation is the parametric semantics `denoteP`. The
+quantifier ranges over every family of closed values. A bound on a binder is
+not part of this row: bounded binders are a separate step. -/
 namespace Verification.Model.QuantifiedGraphs
 open PositiveNormalization PositiveGraphs PositiveRules Tower TypeParams ProgramTyping
 
-variable {ι : Type} [DecidableEq ι]
+variable {ι : Type}
 
-/-- An assignment of admissible families to the parameter rows. -/
-abbrev Env (ι : Type) := { η : ι → Fam // ∀ i, Adm (η i) }
+/-- The graph whose parameter rows mean `η`. -/
+def reassign (G : NormalGraph ι) (η : Assignment ι) : NormalGraph ι := { G with env := η }
 
-/-- An admissible family, what a binder may be instantiated at. -/
-abbrev AdmFam := { A : Fam // Adm A }
+/-- The reassigned graph's meaning is the denotation at `η`: the fixed point
+does not read the assignment it is taken at. -/
+theorem meaning_reassign (G : NormalGraph ι) (η : Assignment ι) (S : List ι) :
+    meaning (reassign G η) S = qMeaning G η S := rfl
 
-/-- A quantified callable: its binders, which are parameter rows, and the
-signatures `(receiver, parameters, result)` each of its instances meets. -/
-structure SchemeRow (ι : Type) where
-  binders : List ι
-  signatures : List (List ι × List (List ι) × List ι)
-
-/-- The assignment with each binder given the family at its position. -/
-def assign (η : Env ι) (bs : List ι) (As : List AdmFam) : Env ι :=
-  ⟨fun i => match (bs.zip As).lookup i with
-      | some A => A.1
-      | none => η.1 i,
-   fun i => by
-      cases h : (bs.zip As).lookup i with
-      | some A => simpa [h] using A.2
-      | none => simpa [h] using η.2 i⟩
-
-/-- One instance's signatures, their rows read at the reassignment. -/
-def instanceSigs (D : Env ι → List ι → Fam) (η : Env ι) (s : SchemeRow ι) (As : List AdmFam) :
-    List (Fam × List Fam × Fam) :=
-  let η' := assign η s.binders As
-  s.signatures.map fun p => (D η' p.1, p.2.1.map (D η'), D η' p.2.2)
-
-/-- **A scheme row.** A callable meeting its signatures at every admissible
-instantiation of its binders: the same value, in the same world, at all of
-them. -/
-def schemeSem (D : Env ι → List ι → Fam) (η : Env ι) (s : SchemeRow ι) : Fam := fun n W v =>
-  Invocable v ∧ ∀ As : List AdmFam, As.length = s.binders.length →
-    callsT (instanceSigs D η s As) n W v
-
-/-- One step of the assignment-indexed denotation. -/
-def qLayer (G : NormalGraph ι) (P : ι → Bool) (Q : ι → Option (SchemeRow ι))
-    (X : Env ι × ι → Fam) : Env ι × ι → Fam := fun ηi =>
-  if P ηi.2 then ηi.1.1 ηi.2 else
-  match Q ηi.2 with
-  | some s => schemeSem (fun η' S => setSem (fun l => X (η', l)) S) ηi.1 s
-  | none => normalLayer G (fun l => X (ηi.1, l)) ηi.2
-
-private theorem argsAgree_map {n : Nat} (X Y : ι → Fam) (h : ∀ l, Agree (X l) (Y l) n) :
-    ∀ Ss : List (List ι), ArgsAgree n (Ss.map (setSem X)) (Ss.map (setSem Y))
-  | [] => .nil
-  | S :: Ss => .cons (setSem_congr n h S) (argsAgree_map X Y h Ss)
-
-theorem qLayer_congr (G : NormalGraph ι) (P : ι → Bool) (Q : ι → Option (SchemeRow ι)) :
-    LayerCongr (qLayer G P Q) := by
-  intro X Y n h ηi W v
-  obtain ⟨η, i⟩ := ηi
-  unfold qLayer
-  by_cases hp : P i = true
-  · simp [hp]
-  · simp only [hp]
-    cases hq : Q i with
-    | none => exact normal_congr G _ _ n (fun l => h (η, l)) i W v
-    | some s =>
-      simp only [schemeSem]
-      refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun _ => ?_)
-      unfold instanceSigs
-      exact callsT_congr s.signatures _ _ (fun p _ =>
-        ⟨setSem_congr n (fun l => h (_, l)) p.1,
-         argsAgree_map _ _ (fun l => h (_, l)) p.2.1,
-         setSem_congr n (fun l => h (_, l)) p.2.2⟩) W v
-
-theorem schemeSem_adm (D : Env ι → List ι → Fam) (η : Env ι) (s : SchemeRow ι) :
-    Adm (schemeSem D η s) := by
-  constructor
-  · intro n W v h
-    exact ⟨h.1, fun As hl => (callsT_adm _).down n W v (h.2 As hl)⟩
-  · intro n W W' hx v h
-    exact ⟨h.1, fun As hl => (callsT_adm _).mono n W W' hx v (h.2 As hl)⟩
-
-theorem qLayer_adm (G : NormalGraph ι) (P : ι → Bool) (Q : ι → Option (SchemeRow ι)) :
-    LayerAdm (qLayer G P Q) := by
-  intro X _ ηi
-  obtain ⟨η, i⟩ := ηi
-  unfold qLayer
-  by_cases hp : P i = true
-  · simpa [hp] using η.2 i
-  · simp only [hp]
-    cases hq : Q i with
-    | none => simpa [normalLayer, semList] using
-        setSem_adm (fun c => sem_adm (setSem fun l => X (η, l)) c) (G i)
-    | some s => exact schemeSem_adm _ _ s
-
-/-- The denotation at every assignment. -/
-def qDenote (G : NormalGraph ι) (P : ι → Bool) (Q : ι → Option (SchemeRow ι)) :
-    Env ι × ι → Fam :=
-  Tower.denote (qLayer G P Q)
-
-theorem qDenote_unfold (G : NormalGraph ι) (P : ι → Bool) (Q : ι → Option (SchemeRow ι))
-    (ηi : Env ι × ι) (n : Nat) (W : WorldT n) (v : Val) :
-    qDenote G P Q ηi n W v ↔ qLayer G P Q (qDenote G P Q) ηi n W v :=
-  Tower.denote_unfold (qLayer_congr G P Q) ηi n W v
-
-theorem qDenote_adm (G : NormalGraph ι) (P : ι → Bool) (Q : ι → Option (SchemeRow ι))
-    (ηi : Env ι × ι) : Adm (qDenote G P Q ηi) :=
-  Tower.denote_adm (qLayer_congr G P Q) (qLayer_adm G P Q) ηi
-
-/-- A label list's meaning at an assignment. -/
-def qMeaning (G : NormalGraph ι) (P : ι → Bool) (Q : ι → Option (SchemeRow ι))
-    (η : Env ι) (S : List ι) : Fam :=
-  setSem (fun l => qDenote G P Q (η, l)) S
+theorem meaning_env (G : NormalGraph ι) (S : List ι) : meaning G S = qMeaning G G.env S := rfl
 
 /-- A scheme row's meaning, unfolded. -/
-theorem scheme_row {G : NormalGraph ι} {P : ι → Bool} {Q : ι → Option (SchemeRow ι)}
-    {η : Env ι} {i : ι} {s : SchemeRow ι} (hp : P i = false) (hq : Q i = some s)
-    (n : Nat) (W : WorldT n) (v : Val) :
-    qDenote G P Q (η, i) n W v ↔ schemeSem (qMeaning G P Q) η s n W v := by
+theorem scheme_row {G : NormalGraph ι} {η : Assignment ι} {i : ι} {s : SchemeRow ι}
+    (hp : G.params i = false) (hq : G.schemes i = some s) (n : Nat) (W : WorldT n) (v : Val) :
+    qDenote G (η, i) n W v ↔ schemeSem (qMeaning G) η s n W v := by
   rw [qDenote_unfold]
   simp only [qLayer, hp, hq, Bool.false_eq_true, if_false]
   exact Iff.rfl
 
-/-- **Instantiation.** A member of a scheme row meets each of its instances. -/
-theorem scheme_elim {G : NormalGraph ι} {P : ι → Bool} {Q : ι → Option (SchemeRow ι)}
-    {η : Env ι} {i : ι} {s : SchemeRow ι} (hp : P i = false) (hq : Q i = some s)
-    {n : Nat} {W : WorldT n} {v : Val} (h : qDenote G P Q (η, i) n W v)
-    (As : List AdmFam) (hl : As.length = s.binders.length) :
-    callsT (instanceSigs (qMeaning G P Q) η s As) n W v :=
-  ((scheme_row hp hq n W v).mp h).2 As hl
+/-- **Instantiation.** A member of a scheme row meets each of its instances,
+each signature read in the graph reassigned at that instance. -/
+theorem scheme_elim {G : NormalGraph ι} {i : ι} {s : SchemeRow ι}
+    (hp : G.params i = false) (hq : G.schemes i = some s)
+    {n : Nat} {W : WorldT n} {v : Val} (h : meaning G [i] n W v)
+    (As : List ValueFamily) (hl : As.length = s.binders.length) :
+    callsT (instanceSigs (fun η => meaning (reassign G η)) G.env s As) n W v := by
+  obtain ⟨_, hi, hv⟩ := h
+  cases List.mem_singleton.mp hi
+  exact ((scheme_row hp hq n W v).mp hv).2 As hl
 
-/-- A row that is neither a parameter nor a scheme means its clauses, read at
-the same assignment. -/
-theorem clause_row {G : NormalGraph ι} {P : ι → Bool} {Q : ι → Option (SchemeRow ι)}
-    {η : Env ι} {i : ι} (hp : P i = false) (hq : Q i = none)
+/-- **Generalization.** A callable meeting every instance's signatures, each
+read in the graph reassigned there, is a member of the scheme row. -/
+theorem scheme_intro {G : NormalGraph ι} {i : ι} {s : SchemeRow ι}
+    (hp : G.params i = false) (hq : G.schemes i = some s)
+    {n : Nat} {W : WorldT n} {v : Val} (hv : Invocable v)
+    (h : ∀ As : List ValueFamily, As.length = s.binders.length →
+      callsT (instanceSigs (fun η => meaning (reassign G η)) G.env s As) n W v) :
+    meaning G [i] n W v :=
+  ⟨i, List.mem_singleton_self i, (scheme_row hp hq n W v).mpr ⟨hv, h⟩⟩
+
+/-- A clause row means its clauses, read at the same assignment. -/
+theorem clause_row {G : NormalGraph ι} {η : Assignment ι} {i : ι} (hi : G.plain i = true)
     (n : Nat) (W : WorldT n) (v : Val) :
-    qDenote G P Q (η, i) n W v ↔ semList (setSem fun l => qDenote G P Q (η, l)) (G i) n W v := by
-  rw [qDenote_unfold]
-  simp [qLayer, hp, hq, normalLayer]
+    qDenote G (η, i) n W v ↔ semList (qMeaning G η) (G i) n W v :=
+  unfold_plain (G := reassign G η) hi n W v
 
 /-- A parameter row means what the assignment gives it. -/
-theorem param_row {G : NormalGraph ι} {P : ι → Bool} {Q : ι → Option (SchemeRow ι)}
-    {η : Env ι} {i : ι} (hp : P i = true) (n : Nat) (W : WorldT n) (v : Val) :
-    qDenote G P Q (η, i) n W v ↔ η.1 i n W v := by
+theorem param_row {G : NormalGraph ι} {η : Assignment ι} {i : ι} (hp : G.params i = true)
+    (n : Nat) (W : WorldT n) (v : Val) :
+    qDenote G (η, i) n W v ↔ η.1 i n W v := by
   rw [qDenote_unfold]
   simp [qLayer, hp]
 
-private theorem approx_bridge (G : NormalGraph ι) (P : ι → Bool) (η : Env ι) :
-    ∀ k, (fun i => Tower.approx (qLayer G P (fun _ => none)) k (η, i)) =
-      Tower.approx (paramLayer G P η.1) k
+private theorem approx_bridge (G : NormalGraph ι) (hq : ∀ i, G.schemes i = none)
+    (η : Assignment ι) :
+    ∀ k, (fun i => Tower.approx (qLayer G) k (η, i)) =
+      Tower.approx (paramLayer G G.params η.1) k
   | 0 => rfl
   | k + 1 => by
     funext i
-    have ih := approx_bridge G P η k
-    show qLayer G P (fun _ => none) (Tower.approx (qLayer G P (fun _ => none)) k) (η, i) =
-      paramLayer G P η.1 (Tower.approx (paramLayer G P η.1) k) i
+    have ih := approx_bridge G hq η k
+    show qLayer G (Tower.approx (qLayer G) k) (η, i) =
+      paramLayer G G.params η.1 (Tower.approx (paramLayer G G.params η.1) k) i
     rw [← ih]
     unfold qLayer paramLayer
-    rfl
+    cases hp : G.params i
+    · simp [hq i, normalLayer, NormalGraph.clauses, NormalGraph.plain, hp]
+    · simp
 
 /-- **Conservative.** Without scheme rows, the denotation at an assignment is
 the parametric semantics at that assignment. -/
-theorem qDenote_no_schemes (G : NormalGraph ι) (P : ι → Bool) (η : Env ι) (i : ι) :
-    qDenote G P (fun _ => none) (η, i) = denoteP G P η.1 i := by
+theorem qDenote_no_schemes (G : NormalGraph ι) (hq : ∀ i, G.schemes i = none)
+    (η : Assignment ι) (i : ι) :
+    qDenote G (η, i) = denoteP G G.params η.1 i := by
   funext n
-  show Tower.approx (qLayer G P (fun _ => none)) (n + 1) (η, i) n =
-    Tower.approx (paramLayer G P η.1) (n + 1) i n
-  rw [← approx_bridge G P η (n + 1)]
+  show Tower.approx (qLayer G) (n + 1) (η, i) n =
+    Tower.approx (paramLayer G G.params η.1) (n + 1) i n
+  rw [← approx_bridge G hq η (n + 1)]
 
-#print axioms qDenote_adm
 #print axioms scheme_elim
+#print axioms scheme_intro
 #print axioms qDenote_no_schemes
 
 end Verification.Model.QuantifiedGraphs

@@ -242,7 +242,9 @@ def primitive : List (Clause (Ty ι)) → Option (List Atom)
   | .strLit s :: cs => (primitive cs).map ([.strLit s] ++ ·)
   | _ => none
 
-def atoms (G : NormalGraph ι) (A : Ty ι) := primitive (expand G A)
+/-- A type's members as atoms, when it is of clause rows. -/
+def atoms (G : NormalGraph ι) (A : Ty ι) : Option (List Atom) :=
+  if G.plainTy A then primitive (expand G A) else none
 
 theorem primitive_sem {G : NormalGraph ι} {cs R} (hc : primitive cs = some R) (n W v) :
     semList (meaning G) cs n W v ↔ ∃ a ∈ R, a.holds v := by
@@ -265,8 +267,11 @@ theorem primitive_sem {G : NormalGraph ι} {cs R} (hc : primitive cs = some R) (
 
 theorem atoms_sem {G : NormalGraph ι} {A R} (h : atoms G A = some R) (n W v) :
     meaning G A n W v ↔ ∃ a ∈ R, a.holds v := by
-  rw [expand_sem]
-  exact primitive_sem h n W v
+  unfold atoms at h
+  split at h
+  · rw [expand_sem G A (by assumption)]
+    exact primitive_sem h n W v
+  · cases h
 
 #print axioms atoms_sem
 #print axioms observeTag_holds

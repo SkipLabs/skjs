@@ -14,7 +14,7 @@ open ControlFlow CertificateProducer RequestJson
 signature's receiver. -/
 private def types := CallableGraphTests.types ++
   [[PositiveNormalization.Clause.boolLit false], [.callable [(valueField, [1])] [] [([7],[[0]],[0])] []]]
-private def G : NormalGraph Nat := fun i => types[i]?.getD []
+private def G : NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 private def labels := List.range types.length
 private def pool := vocabulary G labels [] [[1],[2],[5],[10]]
 private def k : HeapKnowledge.Knowledge := ⟨[⟨1,[.fls],valueField⟩],[⟨0,[.tru],valueField⟩],[]⟩
@@ -37,7 +37,7 @@ private def proof (j : Sequent Nat) : Evidence Nat :=
 #guard allocationSlot (.attach .nul (.write (.var 1) .tru)) == none
 
 -- Empty overloads cannot hide out-of-scope captures behind allocation evidence.
-private def emptyG : NormalGraph Nat := fun i => if i == 11 then [.callable [(valueField, [1])] [] [] []] else G i
+private def emptyG : NormalGraph Nat := .ofRows fun i => if i == 11 then [.callable [(valueField, [1])] [] [] []] else G i
 private def escaped : Sequent Nat := ⟨[[1]],.attach (.var 3) (.var 0),[11]⟩
 private def escapedProof : Evidence Nat := .node escaped .makeCallable
   [.node ⟨[[1]],.var 0,[1]⟩ .var []]

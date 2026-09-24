@@ -13,7 +13,7 @@ def types : List (List (Clause (List Nat))) :=
    [.ctors [([[1, 2]], [1, 2])]],
    [.arrs [([6], [[1, 2]], [1, 2])] []], [.top]]
 
-def G : NormalGraph Nat := fun i => types[i]?.getD []
+def G : NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 
 def pool : List (List Nat) := vocabulary G (List.range types.length) [] [[1, 2]]
 

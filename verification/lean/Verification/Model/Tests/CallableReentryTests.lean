@@ -9,7 +9,7 @@ open CertificateProducer RequestJson
 private def types : List (List (Clause (List Nat))) :=
   [[.nul],[.bool],[.refs [(valueField, [1])] [] []],[.callable [(valueField, [1])] [] [] []],
    [.arrs [([7],[[0]],[1])] []], [.arrs [([7],[[4]],[1])] []], [.boolLit false], [.top], [.undef]]
-private def G : NormalGraph Nat := fun i => types[i]?.getD []
+private def G : NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 private def labels := List.range types.length
 
 -- At entry: receiver, callback, captured bag. The two lets save a read, then a
@@ -41,7 +41,7 @@ private def request (callable fresh : Bool) : Request :=
 
 -- Neither an entry-time read nor the current heap becomes a permanent false
 -- result contract for the function; every invocation checks only the invariant.
-private def badG : NormalGraph Nat := fun i =>
+private def badG : NormalGraph Nat := .ofRows fun i =>
   if i == 9 then [.arrs [([7],[[4]],[6])] []] else G i
 private def pool := vocabulary badG (List.range 10) claims []
 #guard [false,true].all fun fresh =>

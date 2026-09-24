@@ -9,7 +9,7 @@ open CertificateProducer ControlFlow RequestJson HeapExpressionRules
 private def types : List (List (Clause (List Nat))) :=
   [[.nul],[.bool],[.refs [(valueField, [1])] [] []],[.callable [(valueField, [1])] [] [] []],
    [.callable [(valueField, [1])] [] [([5],[[0]],[1])] []],[.top],[.undef]]
-private def G : NormalGraph Nat := fun i => types[i]?.getD []
+private def G : NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 private def labels := List.range types.length
 -- The initializer writes true, allocates an intermediate object, and returns
 -- false for the new function's bag. Its invocation body reads the captured bag,

@@ -127,7 +127,7 @@ structure Response where
   certificate : ControlFlow.Certificate Nat
   deriving ToJson, FromJson
 
-def graph (r : Request) : NormalGraph Nat := fun i => r.types[i]?.getD []
+def graph (r : Request) : NormalGraph Nat := .ofRows fun i => r.types[i]?.getD []
 
 def validTy (bound : Nat) (A : Ty Nat) : Bool := A.all (fun i => i < bound)
 

@@ -87,8 +87,9 @@ def prune [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) :
   | 0, table => table
   | fuel+1, table =>
     let es := arrowEvidence G table pool
-    let next := table.filter fun p => (sourceClauses G p.1).all fun a =>
-      (expand G p.2).any fun b => PositiveCertificates.checkClause G table es a b
+    let next := table.filter fun p => decide (PositiveRules.Opaque G p.1 p.2) &&
+      (sourceClauses G p.1).all fun a =>
+      (clausesOf G p.2).any fun b => PositiveCertificates.checkClause G table es a b
     if next = table then table else prune G pool fuel next
 
 def subtype [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))

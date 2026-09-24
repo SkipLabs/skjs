@@ -20,7 +20,7 @@ def initial : Table := [[.nul],[.boolLit true],[.boolLit false],[.undef]]
 
 def isPrimitive (i : Nat) : Bool := i < initial.length
 
-def graph (T : Table) : NormalGraph Nat := fun i => T[i]?.getD []
+def graph (T : Table) : NormalGraph Nat := .ofRows fun i => T[i]?.getD []
 
 /-- The one user-facing rendering boundary for graph types. Label numbers are
 implementation references into `Table`, so diagnostics must call this function
@@ -129,12 +129,12 @@ theorem label_exact {T : Table} {c : Clause (List Nat)} (hc : [c] ∈ T) :
     expand (graph T) [label T c] = [c] := by
   have hi := List.idxOf_lt_length_iff.mpr hc
   have hx := List.getElem?_eq_some_iff.mpr ⟨hi,List.getElem_idxOf hi⟩
-  simp [expand,graph,label,hx]
+  simp [expand,clausesOf,graph,label,hx]
 
 /-- A labelled clause means exactly that clause, read over the same table. -/
 theorem label_meaning {T : Table} {c : Clause (List Nat)} (hc : [c] ∈ T) (n W v) :
     meaning (graph T) [label T c] n W v ↔ sem (meaning (graph T)) c n W v := by
-  rw [expand_sem, label_exact hc]
+  rw [expand_sem _ _ (by simp [graph]), label_exact hc]
   simp [semList, Tower.setSem]
 
 theorem graph_initial {T : Table} (h : initial <+: T) {i : Nat} (hi : i < initial.length) :
@@ -218,10 +218,11 @@ theorem encode_meaning {T : Table} (h : initial <+: T) (t : Claim.Ty) (n W v) :
   have h1 : graph T 1 = [.boolLit true] := graph_initial h (by decide)
   have h2 : graph T 2 = [.boolLit false] := graph_initial h (by decide)
   have h3 : graph T 3 = [.undef] := graph_initial h (by decide)
-  rw [expand_sem]
+  have hp : (graph T).plainTy (encode t) = true := by simp [graph]
+  rw [expand_sem _ _ hp, expand_of_plain hp]
   cases hn : admits t .vnull <;> cases ht : admits t (.vbool true) <;>
     cases hf : admits t (.vbool false) <;> cases hu : admits t .vundef <;>
-    simp [encode, hn, ht, hf, hu, expand, h0, h1, h2, h3, semList, Tower.setSem, sem, nulT, undefT]
+    simp [encode, hn, ht, hf, hu, clausesOf, h0, h1, h2, h3, semList, Tower.setSem, sem, nulT, undefT]
 
 /-- No atom of the primitive fragment admits a number, so a numeric value is
 outside every type that fragment can state. `value` decodes one because the

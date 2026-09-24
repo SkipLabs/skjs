@@ -13,42 +13,44 @@ def booleanMember [DecidableEq ι] (G : NormalGraph ι) (A : Ty ι) (q : Bool) :
     | _ => false
 
 def onlyBoolean (G : NormalGraph ι) (A : Ty ι) : Bool :=
-  (expand G A).all fun c => match c with
+  G.plainTy A && (expand G A).all fun c => match c with
     | .bool | .boolLit _ => true
     | _ => false
 
 theorem booleanMember_sound [DecidableEq ι] {G : NormalGraph ι} {A q}
     (h : booleanMember G A q = true) (n W) :
     meaning G A n W (if q then .tru else .fls) := by
-  rw [expand_sem]
   obtain ⟨c,hc,h⟩ := List.any_eq_true.mp h
-  refine ⟨c,hc,?_⟩
+  refine expand_sem_mpr ⟨c,expand_sub hc,?_⟩
   cases c <;> simp_all [sem, boolT]
 
 theorem onlyBoolean_sound {G : NormalGraph ι} {A n W v}
     (h : onlyBoolean G A = true) (hv : meaning G A n W v) :
     v = .tru ∨ v = .fls := by
-  rw [expand_sem] at hv
+  simp only [onlyBoolean, Bool.and_eq_true] at h
+  rw [expand_sem G A h.1] at hv
   obtain ⟨c,hc,hv⟩ := hv
-  have h := List.all_eq_true.mp h c hc
+  have h := List.all_eq_true.mp h.2 c hc
   cases c <;> simp_all [sem, boolT]
 
 /-- Drop only labels whose every clause contradicts the observed tag. A mixed
-label is retained intact: this does not assume that labels have uniform shapes. -/
+label is retained intact: this does not assume that labels have uniform shapes.
+A parameter or scheme row has no clauses to contradict it, and is retained. -/
 def tagSlice (G : NormalGraph ι) (A : Ty ι) (tag : Tag) (q : Bool) : Ty ι :=
-  A.filter fun a => !((expand G [a]).all fun c => (tagClause tag c) == some (!q))
+  A.filter fun a => !(G.plain a && (expand G [a]).all fun c => (tagClause tag c) == some (!q))
 
 theorem tagSlice_sound {G : NormalGraph ι} {A tag q n W v}
     (hv : meaning G A n W v) (hq : tagHolds tag v = q) :
     meaning G (tagSlice G A tag q) n W v := by
   obtain ⟨a, ha, hv⟩ := hv
   refine ⟨a, List.mem_filter.mpr ⟨ha, ?_⟩, hv⟩
-  cases h : (expand G [a]).all (fun c => (tagClause tag c) == some (!q)) with
+  cases h : (G.plain a && (expand G [a]).all fun c => (tagClause tag c) == some (!q)) with
   | false => rfl
   | true =>
+    simp only [Bool.and_eq_true] at h
     have hop : Answers G [a] tag (!q) := by
-      intro c hc
-      exact beq_iff_eq.mp (List.all_eq_true.mp h c hc)
+      refine ⟨by simp [NormalGraph.plainTy, h.1], fun c hc => ?_⟩
+      exact beq_iff_eq.mp (List.all_eq_true.mp h.2 c hc)
     have he := answers_sound hop (show meaning G [a] n W v from ⟨a, by simp, hv⟩)
     cases q <;> simp_all
 

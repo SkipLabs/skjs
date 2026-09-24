@@ -16,7 +16,7 @@ private def types : List (List (Clause (List Nat))) :=
    [.callable [(valueField, [0,3])] [] [([7],[[1]],[1])] []],
    [.callable [(valueField, [0,2,1])] [] [([7],[[1]],[1])] []],
    [.arrs [([7],[[2]],[2])] []], [.arrs [([7],[[1]],[0,2])] []], [.top], [.undef]]
-private def G : NormalGraph Nat := fun i => types[i]?.getD []
+private def G : NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 private def labels := List.range types.length
 private def pool := vocabulary G labels [] [[0,2],[0,3]]
 
@@ -85,7 +85,7 @@ private def capturedRequest : Request := ⟨types,capturedProgram,capturedClaims
 
 -- The capture does not freeze the initial null bag. Treating the getter as
 -- always returning null must fail its ordinary closure-body obligation.
-private def nullGetterG : NormalGraph Nat := fun i =>
+private def nullGetterG : NormalGraph Nat := .ofRows fun i =>
   if i == 9 then [.arrs [([7],[[1]],[0])] []] else G i
 #guard !(expression nullGetterG (vocabulary nullGetterG (List.range 10) [] []) 10
   [[2]] (.funE (.read (.var 2))) [9]).isSome

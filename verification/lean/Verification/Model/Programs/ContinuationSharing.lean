@@ -104,7 +104,7 @@ theorem shared_paths (a b : Bool) : Execution program
 -- A later refinement is passed as a checked argument, not retroactively added
 -- to the captured environment. Both surviving paths reach the same definition.
 private def refinedTypes := T ++ [[PositiveNormalization.Clause.arrs [([7],[[2]],[1,2])] []]]
-private def refinedGraph : PositiveGraphs.NormalGraph Nat := fun i => refinedTypes[i]?.getD []
+private def refinedGraph : PositiveGraphs.NormalGraph Nat := .ofRows fun i => refinedTypes[i]?.getD []
 private def outer : List (Ty Nat) := [[1,2],[1,2]]
 private def extraLabel := T.length
 private def inside : List (Ty Nat) := [extraLabel]::outer

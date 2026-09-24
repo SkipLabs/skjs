@@ -965,12 +965,30 @@ only runtime collections.
 of the graph: binders, which are parameter rows, and signatures whose rows may
 mention them (`Promise<T>`'s `then` reaches `PromiseLike<R1>`). The
 denotation is indexed by an assignment of the parameter rows as well as by the
-label, over the same guarded fixed point (`Types/QuantifiedGraphs.lean`): a
-scheme row means one callable meeting its signatures at every admissible
-reassignment of its binders. Stage 1 is proved: the denotation is well
-defined and admissible, a member meets each instance (`scheme_elim`), and
-without scheme rows it is exactly the parametric semantics
-(`qDenote_no_schemes`).
+label, over the same guarded fixed point (`qDenote` in
+`Types/PositiveGraphs.lean`): a scheme row means one callable meeting its
+signatures at every reassignment of its binders to a family of closed values.
+
+Stages 1 and 2 are done. A `NormalGraph` carries clause rows, scheme rows,
+parameter rows and the assignment `env`, and `meaning G` is the denotation at
+`G.env`. No check reads `env`, so a theorem proved for every graph holds at
+every reassignment `{G with env := η}` (`meaning_reassign`): a derivation that
+types a generic body once, with its binders opaque, is sound at each instance.
+This is what the introduction rule will use, so the soundness proofs are not
+redone for it. `Types/QuantifiedGraphs.lean` proves elimination
+(`scheme_elim`), the introduction principle (`scheme_intro`), and that
+without scheme rows the denotation is the parametric semantics
+(`qDenote_no_schemes`). Parameter and scheme rows are opaque to every check:
+they have no clauses (`expand` of a type holding one is empty, so
+`Represents` and `Answers` fail), a parameter is below itself, a union holding
+it, and `unknown` (`Opaque` in `Valid`), and test refinement keeps it
+(`Tests/QuantifiedRowTests.lean`). The graphs the pipeline builds have only
+clause rows, so every verified result is unchanged.
+
+`TypeSchemes.lean` is an older, separate scheme layer for local generic
+closures (with bounds and rest signatures, outside the graph). Scheme rows
+subsume it once they have bounds (stage 5) and rest signatures; that slice
+then moves onto them, so there is one mechanism.
 
 The one semantics serves three rules, each needed:
 - *elimination*, calling a generic method at an instance: every generic call
@@ -986,8 +1004,8 @@ The one semantics serves three rules, each needed:
 - *coverage* between two quantified types, for the last of those.
 
 So there is no instance-only version first: the rules are built once, over
-this semantics. Stages: (2) scheme rows in `meaning`, with the typing rules
-never reading a scheme label as a ground clause; (3) coverage and
+this semantics. Stages: (2, done) scheme rows in `meaning`, with the typing
+rules never reading a scheme label as a ground clause; (3) coverage and
 elimination, with certificates; (4) the pipeline; (5) bounded binders
 (`K2 extends Json`), which need the denotation to be non-expansive in the
 assignment; introduction when the runtime is a target.

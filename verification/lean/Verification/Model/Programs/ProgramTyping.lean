@@ -19,14 +19,18 @@ abbrev Ty (ι : Type) := List ι
 def Represents (G : NormalGraph ι) (A : Ty ι) (c : Clause (Ty ι)) : Prop :=
   expand G A = [c]
 
+/-- A type represented by a clause is of clause rows. -/
+theorem Represents.plain {G : NormalGraph ι} {A c} (hr : Represents G A c) :
+    G.plainTy A = true :=
+  plain_of_mem_expand (c := c) (by simp [show expand G A = [c] from hr])
+
 theorem represents_sem {G : NormalGraph ι} {A c} (hr : Represents G A c) (n W v) :
     meaning G A n W v ↔ sem (meaning G) c n W v := by
-  rw [expand_sem, hr]
+  rw [expand_sem G A hr.plain, show expand G A = [c] from hr]
   simp [semList, setSem]
 
 theorem meaning_adm (G : NormalGraph ι) (A : Ty ι) : Adm (meaning G A) :=
-  setSem_adm (fun i => Tower.denote_adm (normal_congr G)
-    (fun X _ i => setSem_adm (sem_adm (setSem X)) (G i)) i) A
+  setSem_adm (normalDenote_adm G) A
 
 /-- A union of label lists means either side. -/
 theorem meaning_append (G : NormalGraph ι) (A B : Ty ι) (n W v) :
@@ -50,8 +54,8 @@ theorem positionFam_tupleFams {X : Ty ι → Fam} (T : Tuple (Ty ι)) (i : Nat) 
 
 theorem meaning_value {G : NormalGraph ι} {A n W v} (h : meaning G A n W v) :
     isVal v = true ∧ Scoped 0 v := by
-  obtain ⟨c, _, hc⟩ := (expand_sem G A n W v).mp h
-  exact sem_value hc
+  obtain ⟨_, _, hv⟩ := h
+  exact normalDenote_value hv
 
 theorem meaning_valOnly (G : NormalGraph ι) (A : Ty ι) : ValOnly (meaning G A) :=
   fun _ _ _ h => (meaning_value h).1
@@ -320,9 +324,10 @@ def tagClause (tag : Tag) (c : Clause α) : Option Bool :=
   | _, _ => tagShape tag (shape c)
 
 /-- A finite syntactic check; unknown numeric answers cannot establish either
-branch. It neither executes a term nor queries semantic membership. -/
+branch. It neither executes a term nor queries semantic membership. `A` must be
+of clause rows: a parameter row's members could be anything. -/
 def Answers (G : NormalGraph ι) (A : Ty ι) (tag : Tag) (q : Bool) : Prop :=
-  ∀ c ∈ expand G A, tagClause tag c = some q
+  G.plainTy A = true ∧ ∀ c ∈ expand G A, tagClause tag c = some q
 
 theorem tagClause_sound {S : α → Fam} {c tag q n W v}
     (hq : tagClause tag c = some q) (hv : sem S c n W v) : tagHolds tag v = q := by
@@ -358,8 +363,8 @@ theorem tagClause_sound {S : α → Fam} {c tag q n W v}
 
 theorem answers_sound {G : NormalGraph ι} {A tag q n W v}
     (hq : Answers G A tag q) (hv : meaning G A n W v) : tagHolds tag v = q := by
-  obtain ⟨c, hc, hv⟩ := (expand_sem G A n W v).mp hv
-  exact tagClause_sound (hq c hc) hv
+  obtain ⟨c, hc, hv⟩ := (expand_sem G A hq.1 n W v).mp hv
+  exact tagClause_sound (hq.2 c hc) hv
 
 /-! ## Variadic functions
 
@@ -1487,8 +1492,8 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     | succ p =>
       apply Safe_mono (p+1) (fun m _ X v hv => ?_) U heap _ (test_value_safe k av hav p U heap hu hok)
       rcases hv with rfl | rfl
-      · exact (expand_sem G B m X _).mpr (by simp only [semList, setSem]; exact ⟨_, ht, rfl⟩)
-      · exact (expand_sem G B m X _).mpr (by simp only [semList, setSem]; exact ⟨_, hf, rfl⟩)
+      · exact expand_sem_mpr ⟨_, expand_sub ht, rfl⟩
+      · exact expand_sem_mpr ⟨_, expand_sub hf, rfl⟩
   | @arith Γ a A b B N op ha hqa hb hqb hn iha ihb =>
     intro n W h ρ he hw hh
     apply bind (fun a => .arith op a (instantiate 0 ρ b)) Step.arithC1 n W h _ hw hh

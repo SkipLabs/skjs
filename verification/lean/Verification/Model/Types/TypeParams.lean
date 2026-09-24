@@ -60,7 +60,7 @@ def substClause [DecidableEq ι] (p : ι) (A : List ι) : Clause (List ι) → C
           substTy p A q.2.2.2))
 
 def substGraph [DecidableEq ι] (p : ι) (A : List ι) (G : NormalGraph ι) : NormalGraph ι :=
-  fun i => (G i).map (substClause p A)
+  .ofRows fun i => (G i).map (substClause p A)
 
 def update [DecidableEq ι] (η : ι → Fam) (p : ι) (T : Fam) (i : ι) : Fam :=
   if i = p then T else η i
@@ -112,15 +112,16 @@ theorem no_params_layer (G : NormalGraph ι) (η X : ι → Fam) (i : ι) :
     paramLayer G (fun _ => false) η X i = normalLayer G X i := by
   simp [paramLayer, normalLayer]
 
-theorem no_params (G : NormalGraph ι) (η : ι → Fam) :
+theorem no_params (G : NormalGraph ι) (hG : G.Plain) (η : ι → Fam) :
     denoteP G (fun _ => false) η = normalDenote G := by
+  rw [normalDenote_plain G hG]
   apply congrArg Tower.denote
   funext X i
   exact no_params_layer G η X i
 
-theorem meaningP_ground (G : NormalGraph ι) (η : ι → Fam) (S : List ι) :
+theorem meaningP_ground (G : NormalGraph ι) (hG : G.Plain) (η : ι → Fam) (S : List ι) :
     meaningP G (fun _ => false) η S = meaning G S := by
-  simp [meaningP, meaning, no_params]
+  simp [meaningP, meaning, no_params G hG]
 
 theorem meaningP_adm (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam)
     (hη : ∀ i, P i = true → Adm (η i)) (S : List ι) : Adm (meaningP G P η S) :=
@@ -214,7 +215,7 @@ theorem identity_at_boolean (k : Nat) (W : WorldT k) :
   identity_arrow boolT_valOnly (fun _ _ _ h => by rcases h with rfl | rfl <;> simp [Scoped]) k W 0
 
 /-- `type Box<T> = Ref<T>` at label 5, with parameter `T` at label 4. -/
-def boxG : NormalGraph Nat
+def boxG : NormalGraph Nat := .ofRows fun
   | 5 => [.refs [(valueField, [4])] [] []]
   | _ => []
 
@@ -295,7 +296,7 @@ theorem EnvOkP.prepend {G : NormalGraph ι} {P η} {Γ ρ n W As args}
 
 theorem expand_semP {G : NormalGraph ι} {P η} {S : List ι}
     (hS : ∀ i ∈ S, P i = false) (n : Nat) (W : WorldT n) (v : Val) :
-    meaningP G P η S n W v ↔ semList (meaningP G P η) (expand G S) n W v := by
+    meaningP G P η S n W v ↔ semList (meaningP G P η) (clausesOf G S) n W v := by
   constructor
   · rintro ⟨i, hi, hv⟩
     obtain ⟨c, hc, hv⟩ := (unfold_nonparam (hS i hi) n W v).mp hv
@@ -308,14 +309,14 @@ theorem represents_semP {G : NormalGraph ι} {P η} {A c}
     (hr : Represents G A c) (hA : ∀ i ∈ A, P i = false)
     (n : Nat) (W : WorldT n) (v : Val) :
     meaningP G P η A n W v ↔ sem (meaningP G P η) c n W v := by
-  rw [expand_semP hA, hr]
+  rw [expand_semP hA, ← expand_of_plain hr.plain, show expand G A = [c] from hr]
   simp [semList, setSem]
 
 theorem answers_soundP {G : NormalGraph ι} {P η} {A tag q n W v}
     (hq : Answers G A tag q) (hA : ∀ i ∈ A, P i = false)
     (hv : meaningP G P η A n W v) : tagHolds tag v = q := by
   obtain ⟨c, hc, hv⟩ := (expand_semP hA n W v).mp hv
-  exact tagClause_sound (hq c hc) hv
+  exact tagClause_sound (hq.2 c (by rwa [expand_of_plain hq.1])) hv
 
 theorem EnvOkP.refine {G : NormalGraph ι} {P η} {Γ ρ n W i A B}
     (h : EnvOkP G P η Γ ρ n W) (hi : Γ[i]? = some A)
@@ -776,7 +777,7 @@ theorem writeCallable_safeP {G : NormalGraph ι} {P η} {Γ a b F Bag A f Ps L S
 /-- Generic identity: `function id<T>(x: T): T { return x }`. Label 0 is the
 scheme `T → T` for calls whose receiver is label 2, `undefined`; label 1 is the
 rigid parameter. -/
-def idG : NormalGraph Nat
+def idG : NormalGraph Nat := .ofRows fun
   | 0 => [.arrs [([2], [ [1] ], [1])] []]
   | 2 => [.undef]
   | _ => []
@@ -883,7 +884,7 @@ def isPrim : Clause α → Bool
   | _ => false
 
 def primitiveTy (G : NormalGraph ι) (P : ι → Bool) (S : List ι) : Prop :=
-  ∀ i ∈ S, P i = false ∧ ∀ c ∈ G i, isPrim c = true
+  ∀ i ∈ S, P i = false ∧ G.plain i = true ∧ ∀ c ∈ G i, isPrim c = true
 
 theorem prim_sem (X Y : α → Fam) {c : Clause α} (hc : isPrim c = true)
     (n : Nat) (W : WorldT n) (v : Val) : sem X c n W v ↔ sem Y c n W v := by
@@ -907,16 +908,16 @@ theorem primitive_meaningP {G : NormalGraph ι} {P η} {S : List ι}
   · rintro ⟨i, hi, hv⟩
     refine ⟨i, hi, ?_⟩
     have hP := (hS i hi).1
-    have hC := (hS i hi).2
+    have hC := (hS i hi).2.2
     have := (unfold_nonparam hP n W v).mp hv
-    have hnorm := (unfold_normal G i n W v).mpr
+    have hnorm := (unfold_normal G i (hS i hi).2.1 n W v).mpr
       ((prim_semList (meaningP G P η) (meaning G) hC n W v).mp this)
     exact hnorm
   · rintro ⟨i, hi, hv⟩
     refine ⟨i, hi, ?_⟩
     have hP := (hS i hi).1
-    have hC := (hS i hi).2
-    have := (unfold_normal G i n W v).mp hv
+    have hC := (hS i hi).2.2
+    have := (unfold_normal G i (hS i hi).2.1 n W v).mp hv
     exact (unfold_nonparam hP n W v).mpr
       ((prim_semList (meaningP G P η) (meaning G) hC n W v).mpr this)
 
@@ -996,7 +997,7 @@ theorem bind_generic {η : Nat → Fam} (hC : ClosedAssign idP η)
     he hw hh
 
 /-- `T extends boolean`: label 3 is `T`, labels 1 and 2 are `true` and `false`. -/
-def boundG : NormalGraph Nat
+def boundG : NormalGraph Nat := .ofRows fun
   | 1 => [.boolLit true]
   | 2 => [.boolLit false]
   | _ => []
@@ -1027,15 +1028,15 @@ theorem bound_prim_true : primitiveTy boundG boundP [1] := by
   intro i hi
   have : i = 1 := List.mem_singleton.mp hi
   subst this
-  exact ⟨rfl, fun c hc => by simp [boundG] at hc; subst c; rfl⟩
+  exact ⟨rfl, rfl, fun c hc => by simp [boundG] at hc; subst c; rfl⟩
 
 theorem bound_prim_bool : primitiveTy boundG boundP [1, 2] := by
   intro i hi
   rcases List.mem_cons.mp hi with rfl | hi
-  · exact ⟨rfl, fun c hc => by simp [boundG] at hc; subst c; rfl⟩
+  · exact ⟨rfl, rfl, fun c hc => by simp [boundG] at hc; subst c; rfl⟩
   · have : i = 2 := List.mem_singleton.mp hi
     subst this
-    exact ⟨rfl, fun c hc => by simp [boundG] at hc; subst c; rfl⟩
+    exact ⟨rfl, rfl, fun c hc => by simp [boundG] at hc; subst c; rfl⟩
 
 theorem falseT_satisfies :
     Satisfies boundG boundP (update (fun _ => nulT) 3 falseT) boundΔ := by
@@ -1049,7 +1050,7 @@ theorem falseT_satisfies :
   subst hv'
   refine (primitive_meaningP bound_prim_bool n W .fls).mpr ?_
   refine ⟨2, by simp, ?_⟩
-  rw [unfold_normal]
+  rw [unfold_normal _ _ rfl]
   simp [boundG, semList, setSem, sem]
 
 #print axioms param_denote

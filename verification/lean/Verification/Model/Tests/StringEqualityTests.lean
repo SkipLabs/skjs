@@ -12,7 +12,7 @@ open ProgramTyping PositiveNormalization PositiveGraphs PositiveRules BranchRefi
 #guard tagHolds .isStr (.str "") == true
 #guard tagHolds .isStr .undef == false
 
-private def G : NormalGraph Nat := fun i =>
+private def G : NormalGraph Nat := .ofRows fun i =>
   if i == 0 then [.strLit "a"] else if i == 1 then [.strLit "b"]
   else if i == 2 then [.str] else [.nul]
 #guard tagSlice G [0,1,3] (.strEq "a") true == [0]

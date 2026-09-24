@@ -13,7 +13,7 @@ private def types : List (List (Clause (List Nat))) :=
    [.callable [(valueField, [1])] [] [([9],[[0]],[1])] []], [.callable [(valueField, [1])] [] [([9],[[1]],[1])] []],
    [.arrs [] []], [.refs [(valueField, [0])] [] []], [.arrs [([9],[[0]],[0])] []], [.arrs [([9],[[0]],[1])] []],
    [.top], [.undef] ]
-private def G : NormalGraph Nat := fun i => types[i]?.getD []
+private def G : NormalGraph Nat := .ofRows fun i => types[i]?.getD []
 private def pool := vocabulary G (List.range types.length) [] [[2,3],[0,1]]
 private def callClaim : Sequent Nat := ⟨[[2,3]],.app (.var 0) .tru,[0,1]⟩
 private def branchProof (F R : Ty Nat) : Evidence Nat :=
