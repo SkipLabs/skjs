@@ -899,9 +899,10 @@ first milestone, in order of how much each gates:
 4. **The runtime API's declaration forms.** `Mapper` reaches `Context` and
    `Values`; interpreting them needs:
    - generic interface methods, i.e. quantified method signatures: read today
-     as opaque readonly members, which a program may read but not call, so
-     `Context` and `Resource` collect; calling one (`EagerCollection.map`)
-     needs its instances at the call;
+     as opaque readonly members, which a program may read but not call. They
+     are quantified types in the graph, one semantics for every use (below,
+     "Quantified types"); calling one (`EagerCollection.map`) is its
+     elimination;
    - constructor types (done: construct signatures in the calculus, class
      values first class, `new` on any value with a construct signature) and
      generic tuple packs, `new (...params: Params) => T` with `Params extends
@@ -959,6 +960,47 @@ checked here gets its brand as an external contract. `unique symbol` brands
 (`Managed`, the `Opaque` types) are symbol-keyed fields, which the fragment
 now reads (item 4). Brands matter for `SharedCollections`: its bound is meant to admit
 only runtime collections.
+
+**Quantified types (in progress).** A generic method's type is a scheme row
+of the graph: binders, which are parameter rows, and signatures whose rows may
+mention them (`Promise<T>`'s `then` reaches `PromiseLike<R1>`). The
+denotation is indexed by an assignment of the parameter rows as well as by the
+label, over the same guarded fixed point (`Types/QuantifiedGraphs.lean`): a
+scheme row means one callable meeting its signatures at every admissible
+reassignment of its binders. Stage 1 is proved: the denotation is well
+defined and admissible, a member meets each instance (`scheme_elim`), and
+without scheme rows it is exactly the parametric semantics
+(`qDenote_no_schemes`).
+
+The one semantics serves three rules, each needed:
+- *elimination*, calling a generic method at an instance: every generic call
+  `sum.ts` makes (`EagerCollection.map`, `Promise.then` under `await`,
+  `Array.reduce`) is one, on a value the library provides;
+- *introduction*, a body checked at rigid binders, as a local generic closure
+  already is (`TypeSchemes.scheme_intro`): no client `sum.ts` needs it, but
+  the runtime it calls implements every one of those methods
+  (`EagerCollectionImpl.map`, `ContextImpl.createLazyCollection`, in
+  `core/src/index.ts`), and TypeScript accepts it for classes and objects
+  implementing generic interface methods, custom thenables, and generic
+  functions passed where a generic function type is expected;
+- *coverage* between two quantified types, for the last of those.
+
+So there is no instance-only version first: the rules are built once, over
+this semantics. Stages: (2) scheme rows in `meaning`, with the typing rules
+never reading a scheme label as a ground clause; (3) coverage and
+elimination, with certificates; (4) the pipeline; (5) bounded binders
+(`K2 extends Json`), which need the denotation to be non-expansive in the
+assignment; introduction when the runtime is a target.
+
+Generic methods are necessary for `sum.ts`, not sufficient. Each of its
+generic calls also needs something else: `await` needs an operational
+meaning (the engine calls `then` and resumes from a job queue, which the
+calculus does not have: a faithful model or a trusted `await` step);
+`.map(Plus)` needs tuple-pack binders (`Params extends readonly DepSafe[]`,
+used as a rest parameter, so an instance fixes the arity) and bounded
+binders; the mappers' bodies return array literals as `Iterable` and call
+`reduce`/`sort`, which needs arrays as library objects, with `Array<T>`'s
+declared methods, where the calculus's arrays are stores with none.
 
 **Record values as `Json` (to do).**
 
