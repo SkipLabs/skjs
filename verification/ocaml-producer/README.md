@@ -988,11 +988,16 @@ clause rows, so every verified result is unchanged.
 Stage 3 is done: subtyping over scheme rows, with certificates
 (`PositiveRules`, `Proof.inst` and `Proof.gen`).
 - *Elimination* (`Sub.inst`): a scheme row is below an arrow type whose
-  signatures are instances of its own. The instance is named by an instance
-  map: each binder to the type it is instantiated at, and each clause row a
-  signature reads to the graph's substituted copy of it (`Box<T>` to
-  `Box<boolean>`), checked clause by clause. Read at the instance's
-  assignment, a mapped type means exactly its image (`inst_type`). A call
+  signatures are instances of its own. The instance is checked by a table of
+  entries (row, context, image): the context says what each binder in scope
+  stands for, an instance type or, under a scheme mapped to another, that
+  scheme's binder, and each row maps to the graph's substituted copy of it
+  (`Box<T>` to `Box<boolean>`), clause by clause, or to itself when it has no
+  free row the context names. Scheme rows map to scheme rows up to renaming
+  their binders, without capture. Under its context a row means its image
+  (`table_row`). This is capture-avoiding substitution up to renaming of bound
+  binders, which the colouring of generic methods (stage 4) needs: one binder
+  row serves several scopes. A call
   through a generic function is then the existing call rule after
   subsumption: `id(true)` is typed a Boolean, `wrap(true)` a `Box<boolean>`.
 - *Coverage* (`Sub.gen`): a type is below a scheme when it is below the

@@ -78,37 +78,41 @@ def subtypes (A B : List Nat) : Bool := (subtype G pool A B).isSome
 #guard subtypes [5] [7]
 #guard subtypes [5] [8]
 #guard subtypes [10] [12]
--- Hand-written certificates: a domain closed under reads, and its free
--- parameter rows (computed here, checked by `FreeOk`).
+-- Certificates as the producer builds them, and tampered copies.
 def dom (S : List Nat) : List Nat := readsFrom G 64 S
 def fm (D : List Nat) : PositiveRules.FreeMap Nat := freeMapOf G D 64 []
-def inst (θ : PositiveRules.InstMap Nat) (roots : List Nat) : PositiveCertificates.Proof Nat :=
-  .inst θ (dom roots) (fm (dom roots))
-#guard PositiveCertificates.check G [5] [7] (inst [(4, [1, 2])] [3, 4, 1, 2])
--- The map must be an instance: `T` at `null` does not give `(x: boolean) => boolean`,
--- and `Box<null>` is not `Box<T>` at `boolean`.
-#guard !PositiveCertificates.check G [5] [7] (inst [(4, [0])] [3, 4, 0])
-#guard !PositiveCertificates.check G [10] [12] (inst [(4, [1, 2]), (9, [13])] [3, 4, 9, 1, 2])
+def cert (A B : List Nat) : PositiveCertificates.Proof Nat := (instProof G 64 A B).getD .subset
+#guard PositiveCertificates.check G [5] [7] (cert [5] [7])
+-- The instances must be the ones the table uses: `T` at `null` does not give
+-- `(x: boolean) => boolean`.
+#guard match cert [5] [7] with
+  | .inst tbl _ D V => !PositiveCertificates.check G [5] [7] (.inst tbl [[0]] D V)
+  | _ => false
+-- An entry must map a row to its substituted copy: `Box<null>` is not `Box<T>`
+-- at `boolean`.
+#guard match cert [10] [12] with
+  | .inst tbl θs D V => PositiveCertificates.check G [10] [12] (.inst tbl θs D V) &&
+      !PositiveCertificates.check G [10] [12]
+        (.inst (tbl.map fun e => if e.1 == 9 then (9, e.2.1, [13]) else e) θs D V)
+  | _ => false
 #guard !subtypes [10] [14]
 #guard !subtypes [5] [15]
-#guard PositiveCertificates.check G [10] [12] (inst [(4, [1, 2]), (9, [11])] [3, 4, 9, 1, 2])
--- The domain must be closed under reads, and hold the instances.
-#guard !PositiveCertificates.check G [5] [7] (.inst [(4, [1, 2])] [4, 3] (fm [4, 3]))
-#guard !PositiveCertificates.check G [10] [12] (.inst [(4, [1, 2]), (9, [11])] [4, 3, 1, 2]
-  (fm [4, 3, 1, 2]))
--- The free-parameter certificate must be sound: omitting `T` from `Box<T>`'s is refused.
-#guard !PositiveCertificates.check G [10] [12]
-  (.inst [(4, [1, 2]), (9, [11])] (dom [3, 4, 9, 1, 2]) ((fm (dom [3, 4, 9, 1, 2])).map
-    fun p => if p.1 == 9 then (9, []) else p))
+-- The domain must hold the table's rows and be closed under reads, and the
+-- free-parameter certificate must be sound.
+#guard match cert [10] [12] with
+  | .inst tbl θs D V =>
+      !PositiveCertificates.check G [10] [12] (.inst tbl θs (D.filter (· != 9)) V) &&
+      !PositiveCertificates.check G [10] [12]
+        (.inst tbl θs D (V.map fun p => if p.1 == 9 then (9, []) else p))
+  | _ => false
 
 -- Generalization: `<T>(x: T) => T` is below `<U>(x: U) => U`, through the
 -- instance `T := U` with `U` opaque; `(x: boolean) => boolean` is not.
 #guard subtypes [5] [17]
 #guard !subtypes [7] [17]
-#guard PositiveCertificates.check G [5] [17]
-  (.gen (dom [5]) (fm (dom [5])) [19] (inst [(4, [18])] [3, 4, 18]))
+#guard PositiveCertificates.check G [5] [17] (.gen (dom [5]) (fm (dom [5])) [19] (cert [5] [19]))
 -- The domain must be closed under reads.
-#guard !PositiveCertificates.check G [5] [17] (.gen [5, 3] (fm [5, 3]) [19] (inst [(4, [18])] [3, 4, 18]))
+#guard !PositiveCertificates.check G [5] [17] (.gen [5, 3] (fm [5, 3]) [19] (cert [5] [19]))
 -- `(x: T) => T` at one `T` is not generic: its free parameter is the scheme's own binder.
 #guard !subtypes [16] [5]
 #guard !PositiveCertificates.check G [16] [5] (.gen (dom [16]) (fm (dom [16])) [16] .subset)
@@ -151,5 +155,45 @@ def wire : NormalGraph Nat := RequestJson.tableGraph table
 -- A clause row is spelled as before; the other kinds read back as themselves.
 #guard Lean.toJson (RequestJson.Row.clauses [.nul]) == Lean.toJson [Clause.nul (α := List Nat)]
 #guard (Lean.fromJson? (Lean.toJson table) : Except String (List RequestJson.Row)).toOption == some table
+
+-- A generic method of a generic type, with coloured binders:
+-- `Box<T> { readonly value: T; readonly map<U>(f: (x: T) => U): Box<U> }`.
+-- `Box<boolean>`'s `map` binds `Uᵃ` (5) and returns `Box<Uᵃ>` (10), whose
+-- `map` binds `Uᵇ` (6) and returns `Box<Uᵇ>` (13), whose `map` binds `Uᵃ`
+-- again and returns `Box<Uᵃ>`: a finite graph. `Box<null>` (16), as an
+-- annotation lowers it, binds `Uᵃ`. Calling `map` at `U := null` returns it:
+-- the table relates `Box<Uᵃ>` under `Uᵃ := null` to `Box<null>`, and `Box<Uᵃ>`'s
+-- inner `map`, binding `Uᵇ`, to `Box<null>`'s, binding `Uᵃ`.
+namespace Colours
+def types : List (List (Clause (List Nat))) :=
+  [[.nul], [.boolLit true], [.boolLit false], [.undef], [.top], [], [],
+   [.refs [] [] [(valueField, [1, 2]), ("map", [8])]], [],
+   [.arrs [([4], [[1, 2]], [5])] []],
+   [.refs [] [] [(valueField, [5]), ("map", [11])]], [],
+   [.arrs [([4], [[5]], [6])] []],
+   [.refs [] [] [(valueField, [6]), ("map", [14])]], [],
+   [.arrs [([4], [[6]], [5])] []],
+   [.refs [] [] [(valueField, [0]), ("map", [17])]], [],
+   [.arrs [([4], [[0]], [5])] []],
+   [.arrs [([7], [[20]], [16])] []],
+   [.arrs [([4], [[1, 2]], [0])] []],
+   [.arrs [([7], [[20]], [7])] []]]
+def H : NormalGraph Nat where
+  rows i := types[i]?.getD []
+  params i := i == 5 || i == 6
+  schemes i :=
+    if i == 8 then some ⟨[5], [([7], [[9]], [10])]⟩
+    else if i == 11 then some ⟨[6], [([10], [[12]], [13])]⟩
+    else if i == 14 then some ⟨[5], [([13], [[15]], [10])]⟩
+    else if i == 17 then some ⟨[5], [([16], [[18]], [10])]⟩
+    else none
+def pool : List (List Nat) := (List.range types.length).map ([·])
+#guard match instProof H 64 [8] [19] with
+  | some p => PositiveCertificates.check H [8] [19] p
+  | none => false
+-- `b.map(f)` for `f: (x: boolean) => null` is not a `Box<boolean>`.
+#guard (instProof H 64 [8] [21]).all fun p => !PositiveCertificates.check H [8] [21] p
+#guard (subtype H pool [8] [19]).isSome && (subtype H pool [8] [21]).isNone
+end Colours
 
 end Verification.Model.QuantifiedRowTests

@@ -493,34 +493,40 @@ where $\mathsf{binders}(i)$ is empty unless $i$ is a scheme row. A scheme's own
 binders are therefore not free in it. A row means the same at two assignments
 that agree on $V(i)$ (`agree_free`).
 
-An **instance map** $\theta$ sends labels to types; a label it does not name is
-its own image, and $\theta(A)$ is the union of the images of $A$'s labels. For
-the scheme's binders $\vec p$, let the **moved** binders $M$ be $\vec p$ and the
-binders of every scheme row in $D$. $\theta$ is an instance on $(D,V)$
-(`InstOk`) when $V$ is a free-variable certificate on $D$, each $\theta(p)$ for
-$p\in\vec p$ lies in $D$ with no free row in $M$, and every $i\in D$ is one of:
+An instance is checked by a finite **instance table** of entries
+$(i,\kappa,T)$: under the context $\kappa$, row $i$ means type $T$. A context
+maps the binders in scope to what they stand for: an instance type, or, under
+a scheme mapped to another, that scheme's binder. Binder rows are shared
+between scopes (a generic method of a generic type reuses a few coloured
+binder rows so that the graph stays finite), and the context tells the scopes
+apart. Writing $\kappa(A)$ for the image of a type, each row's image under
+$\kappa$ being an entry, an entry is one of (`entryOk`):
 
-- a binder $i\in\vec p$, a parameter row;
-- another parameter row, with $\theta(i)=\{i\}$;
-- **rigid**: $\theta(i)=\{i\}$ and $V(i)\cap M=\emptyset$;
-- a clause row with $\theta(i)=\{j\}$, $j$ a clause row and $G(j)=G(i)[\theta]$
-  (every operand of every clause mapped);
-- a scheme row $(\vec q;\Sigma')$ with $\theta(i)=\{j\}$, $j$ the scheme row
-  $(\vec q;\Sigma'[\theta])$ and $\vec q\cap\vec p=\emptyset$.
+- $i$ a parameter row and $T=\kappa(i)$, or $T=\{i\}$ when $\kappa$ does not name $i$;
+- **rigid**: $T=\{i\}$ and no row of $V(i)$ is named by $\kappa$;
+- $i$ a clause row, $T=\{j\}$, $j$ a clause row, and $G(j)=G(i)[\kappa]$;
+- $i$ the scheme row $(\vec q;\Sigma')$, $T=\{j\}$, $j$ the scheme row
+  $(\vec r;\Sigma'[\kappa'])$ with $|\vec r|=|\vec q|$, $\vec r$ distinct
+  parameter rows and $\kappa'=\kappa[\vec q\mapsto\vec r]$, provided no free
+  row of $i$ outside $\kappa$'s domain, and no row free in an image
+  $\kappa(p)$ for $p\in V(i)$, is in $\vec r$ (no capture).
 
-A receiver such as `Promise<number>`, whose `then` mentions `then`'s own
-binders only under them, is rigid. Read at the assignment giving each binder
-$p$ the meaning of $\theta(p)$, every $A\subseteq D$ means exactly $\theta(A)$
-(`inst_row`, `inst_type`, proved at every assignment that differs from the
-graph's only on $M$). Then, with
-$\sigma[\theta]=(\theta(Q),\theta(\vec C),\theta(D))$ for a signature
-$\sigma=(Q,\vec C,D)$:
+The table is checked (`TableOk`) when its rows lie in a domain $D$ with a
+free-variable certificate $V$ and every entry is one of these. Two assignments
+are related by $\kappa$ on a set of rows when each row $\kappa$ names means, on
+the left, its image's meaning on the right, and every other row means the same
+on both sides. Then, for every entry and every pair of assignments related by
+its context on its row's free rows, the row on the left means $T$ on the right
+(`table_row`). With $\kappa_0=\vec p\mapsto\vec\theta$ for the scheme's
+binders $\vec p$ and instance types $\vec\theta$, the instance assignment and
+the graph's are related by $\kappa_0$ by construction:
 
 $$
 \frac{i\ \text{a scheme row}\ (\vec p;\Sigma)\quad
-      \theta\ \text{an instance on}\ (D,V)\quad
+      |\vec\theta|=|\vec p|\quad
+      \text{a checked table}\quad
       T\equiv_G\mathsf{arrs}(L)\quad
-      \forall\tau\in L.\;\exists\sigma\in\Sigma.\;\sigma\subseteq D\land\tau=\sigma[\theta]}
+      \forall\tau\in L.\;\exists\sigma\in\Sigma.\;\tau=\sigma[\kappa_0]}
      {G\vdash\{i\}\le T}\ \textsc{inst}
 $$
 
@@ -556,8 +562,8 @@ A proof is one of five forms. `core` carries a `Certificate`: the finite
 candidate relation and its arrow evidence. `subset` is plain union inclusion of
 the source labels in the target's. `trans` names an intermediate type and holds
 a proof on each side. `inst` puts a scheme row below an instance of its
-signatures: it carries the instance map, its domain and the domain's
-free-variable certificate (`Sub.inst`). `gen` puts a type below a scheme row: it
+signatures: it carries the instance table, the instance types, the table's
+domain and its free-variable certificate (`Sub.inst`). `gen` puts a type below a scheme row: it
 carries a domain holding the type and its free-variable certificate, the type
 stating the scheme's signatures with its binders opaque, and a proof of the
 inclusion in that type (`Sub.gen`). All five are accepted, which is worth stating

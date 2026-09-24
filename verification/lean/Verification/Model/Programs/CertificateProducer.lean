@@ -105,54 +105,72 @@ def subtypeBase [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     if PositiveCertificates.check G A B p then some p else none
 
 
-/-- Propose an instance map sending the scheme-side type `S` to the graph's
-type `T`: a binder to `T`, a row to itself, a clause row to a clause row whose
-clauses match its own operand by operand, and a scheme row to a scheme row
-with the same binders whose signatures match its own. Untrusted: `checkInst`
-validates the map. -/
-def matchInst [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) :
-    Nat → InstMap ι → List ι → List ι → Option (InstMap ι)
-  | 0, _, _, _ => none
-  | fuel + 1, θ, S, T =>
-    let pairs (θ : InstMap ι) (xs ys : List (List ι)) : Option (InstMap ι) :=
+/-- The table built while matching, and the instances found for the
+instantiated binders. -/
+structure InstState (ι : Type) where
+  table : InstTable ι := []
+  found : Ctx ι := []
+
+/-- Match the scheme-side type `S` against the graph's type `T` under context
+`κ`, adding table entries: a parameter row to its context image, a top binder
+to `T` (recorded as its instance), a row free of the context to itself, a
+clause row to a clause row matched operand by operand, and a scheme row to a
+scheme row, its binders standing for the other's. Untrusted: `checkInst`
+validates the table. -/
+def matchRow [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap ι) :
+    Nat → InstState ι → Ctx ι → List ι → List ι → Option (InstState ι)
+  | 0, _, _, _, _ => none
+  | fuel + 1, st, κ, S, T =>
+    let add (st : InstState ι) (p : ι) (T : List ι) : InstState ι :=
+      { st with table := (p, κ, T) :: st.table }
+    let pairs (st : InstState ι) (κ : Ctx ι) (xs ys : List (List ι)) : Option (InstState ι) :=
       if xs.length = ys.length then
-        (xs.zip ys).foldlM (fun θ st => matchInst G bs fuel θ st.1 st.2) θ
+        (xs.zip ys).foldlM (fun st xy => matchRow G bs V fuel st κ xy.1 xy.2) st
       else none
     match S with
     | [p] =>
-      match θ.lookup p with
-      | some U => if U = T then some θ else none
+      match entryImg st.table κ p with
+      | some U => if U = T then some st else none
       | none =>
-        if p ∈ bs then some ((p, T) :: θ)
-        else if T = [p] then some ((p, T) :: θ)
-        else if G.params p then none
-        else match T, G.schemes p with
-          | [j], some s =>
+        if G.params p then
+          match κ.lookup p with
+          | some U => if U = T then some (add st p T) else none
+          | none =>
+            if bs.contains p then
+              match st.found.lookup p with
+              | some U => if U = T then some st else none
+              | none => some { st with found := (p, T) :: st.found }
+            else if T = [p] then some (add st p T) else none
+        else if T = [p] && (fv V p).all (fun q => (κ.lookup q).isNone) then some (add st p T)
+        else match G.schemes p, T with
+          | some s, [j] =>
             match G.schemes j with
-            | some s' =>
-              if s'.binders = s.binders ∧ s'.signatures.length = s.signatures.length then
-                (s.signatures.zip s'.signatures).foldlM (fun θ pq =>
-                  pairs θ (pq.1.1 :: pq.1.2.2 :: pq.1.2.1) (pq.2.1 :: pq.2.2.2 :: pq.2.2.1))
-                  ((p, [j]) :: θ)
+            | some s2 =>
+              if s2.binders.length = s.binders.length ∧
+                  s2.signatures.length = s.signatures.length then
+                let κ' := enter κ s.binders s2.binders
+                (s.signatures.zip s2.signatures).foldlM (fun st pq =>
+                  pairs st κ' (pq.1.1 :: pq.1.2.2 :: pq.1.2.1) (pq.2.1 :: pq.2.2.2 :: pq.2.2.1))
+                  (add st p [j])
               else none
             | none => none
-          | [j], none =>
+          | none, [j] =>
             if (G p).length = (G j).length then
-              ((G p).zip (G j)).foldlM (fun θ cd => pairs θ cd.1.operands cd.2.operands)
-                ((p, [j]) :: θ)
+              ((G p).zip (G j)).foldlM (fun st cd => pairs st κ cd.1.operands cd.2.operands)
+                (add st p [j])
             else none
           | _, _ => none
     | _ =>
       if S.length = T.length then
-        (S.zip T).foldlM (fun θ st => matchInst G bs fuel θ [st.1] [st.2]) θ
+        (S.zip T).foldlM (fun st xy => matchRow G bs V fuel st κ [xy.1] [xy.2]) st
       else none
 
-def matchSig [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (fuel : Nat) (θ : InstMap ι)
-    (p q : List ι × List (List ι) × List ι) : Option (InstMap ι) := do
-  let θ ← matchInst G bs fuel θ p.1 q.1
+def matchSig [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap ι) (fuel : Nat)
+    (st : InstState ι) (κ : Ctx ι) (p q : List ι × List (List ι) × List ι) :
+    Option (InstState ι) := do
   if p.2.1.length ≠ q.2.1.length then none
-  let θ ← (p.2.1.zip q.2.1).foldlM (fun θ st => matchInst G bs fuel θ st.1 st.2) θ
-  matchInst G bs fuel θ p.2.2 q.2.2
+  (p.1 :: p.2.2 :: p.2.1).zip (q.1 :: q.2.2 :: q.2.1) |>.foldlM
+    (fun st xy => matchRow G bs V fuel st κ xy.1 xy.2) st
 
 /-- The rows `S` reads, transitively. -/
 def readsFrom [DecidableEq ι] (G : NormalGraph ι) : Nat → List ι → List ι
@@ -179,19 +197,25 @@ def freeMapOf [DecidableEq ι] (G : NormalGraph ι) (D : List ι) : Nat → Free
 /-- How far to follow a graph's rows. -/
 def closureFuel : Nat := 4096
 
-/-- A scheme row below an arrow type: one instance map covering every target
-signature, on the rows its signatures and instances read. -/
+/-- A scheme row below an arrow type: find the binders' instances, then build
+the table under the context giving each binder its instance. -/
 def instProof [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (A B : Ty ι) :
     Option (PositiveCertificates.Proof ι) :=
   match A, expand G B with
   | [i], [.arrs L []] =>
     match G.schemes i with
     | some s => do
-      let θ ← L.foldlM (fun θ q => s.signatures.findSome? fun p => matchSig G s.binders fuel θ p q) []
       let roots := s.signatures.flatMap (fun p => p.1 ++ p.2.1.flatten ++ p.2.2) ++
-        s.binders.flatMap (img θ)
+        L.flatMap (fun q => q.1 ++ q.2.1.flatten ++ q.2.2)
       let D := readsFrom G closureFuel roots
-      some (.inst θ D (freeMapOf G D closureFuel []))
+      let V := freeMapOf G D closureFuel []
+      let first ← L.foldlM (fun st q =>
+        s.signatures.findSome? fun p => matchSig G s.binders V fuel st [] p q) {}
+      let θs := s.binders.map fun b => (first.found.lookup b).getD [b]
+      let κ₀ := s.binders.zip θs
+      let final ← L.foldlM (fun st q =>
+        s.signatures.findSome? fun p => matchSig G s.binders V fuel st κ₀ p q) {}
+      some (.inst final.table θs D V)
     | none => none
   | _, _ => none
 

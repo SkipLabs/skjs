@@ -337,8 +337,9 @@ inductive Proof (ι : Type) where
   | subset
   | trans (middle : List ι) (left right : Proof ι)
   /-- A scheme row below a checked instance of its signatures: the instance
-  map, its domain and the domain's free parameter rows. -/
-  | inst (map : InstMap ι) (domain : List ι) (free : FreeMap ι)
+  table, the types the binders are instantiated at, the table's domain and the
+  domain's free parameter rows. -/
+  | inst (table : InstTable ι) (instances : List (List ι)) (domain : List ι) (free : FreeMap ι)
   /-- A type below a scheme: a domain holding it, the domain's free parameter
   rows, none of them a binder of the type, the type stating the scheme's
   signatures with its binders opaque, and the proof of the inclusion in it. -/
@@ -371,18 +372,18 @@ theorem genOk_sound [DecidableEq ι] {G : NormalGraph ι} {S T D V U}
 
 /-- `S` is one scheme row, and `T` one arrow clause whose every signature is an
 image of one of the scheme's under `θ`. -/
-def checkInst [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (θ : InstMap ι)
-    (D : List ι) (V : FreeMap ι) : Bool :=
+def checkInst [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (tbl : InstTable ι)
+    (θs : List (List ι)) (D : List ι) (V : FreeMap ι) : Bool :=
   match S, expand G T with
   | [i], [.arrs L []] =>
     match G.schemes i with
-    | some s => !G.params i && InstOk G s.binders θ D V &&
-        L.all fun q => s.signatures.any fun p => SigIn D p && q == instSig θ p
+    | some s => !G.params i && θs.length == s.binders.length && TableOk G tbl D V &&
+        L.all fun q => s.signatures.any fun p => sigImg tbl (s.binders.zip θs) p == some q
     | none => false
   | _, _ => false
 
-theorem checkInst_sound [DecidableEq ι] {G : NormalGraph ι} {S T θ D V}
-    (h : checkInst G S T θ D V = true) : Sub G S T := by
+theorem checkInst_sound [DecidableEq ι] {G : NormalGraph ι} {S T tbl θs D V}
+    (h : checkInst G S T tbl θs D V = true) : Sub G S T := by
   unfold checkInst at h
   split at h
   · rename_i i L hT
@@ -390,9 +391,7 @@ theorem checkInst_sound [DecidableEq ι] {G : NormalGraph ι} {S T θ D V}
     · rename_i s hs
       simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true, List.any_eq_true,
         beq_iff_eq] at h
-      exact .inst h.1.1 hs h.1.2 (fun q hq => by
-        obtain ⟨p, hp, hin, he⟩ := h.2 q hq
-        exact ⟨p, hp, hin, he⟩) hT
+      exact .inst h.1.1.1 hs h.1.1.2 h.1.2 h.2 hT
     · cases h
   · cases h
 
@@ -400,7 +399,7 @@ def check [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) : Proof ι → B
   | .core cert => checkCore G S T cert
   | .subset => decide (∀ i ∈ S, i ∈ T)
   | .trans middle left right => check G S middle left && check G middle T right
-  | .inst θ D V => checkInst G S T θ D V
+  | .inst tbl θs D V => checkInst G S T tbl θs D V
   | .gen D V U p => genOk G S T D V U && check G S U p
 
 theorem check_sound [DecidableEq ι] {G : NormalGraph ι} {S T proof}
@@ -411,7 +410,7 @@ theorem check_sound [DecidableEq ι] {G : NormalGraph ι} {S T proof}
   | trans middle left right ih ih' =>
     simp only [check, Bool.and_eq_true] at h
     exact .trans (ih h.1) (ih' h.2)
-  | inst θ D V => exact checkInst_sound h
+  | inst tbl θs D V => exact checkInst_sound h
   | gen D V U p ih =>
     simp only [check, Bool.and_eq_true] at h
     exact genOk_sound h.1 (ih h.2)
@@ -428,12 +427,12 @@ theorem check_complete [dec : DecidableEq ι] {G : NormalGraph ι} {S T}
     obtain ⟨left, hl⟩ := ih
     obtain ⟨right, hr⟩ := ih'
     exact ⟨.trans U left right, by simp [check, hl, hr]⟩
-  | @inst T inst i s θ D V L hp hq hok hL hT =>
+  | @inst T inst i s tbl θs D V L hp hq hlen hok hL hT =>
     have he : inst = dec := Subsingleton.elim _ _
     subst he
-    refine ⟨.inst θ D V, ?_⟩
-    simp only [check, checkInst, hT, hq, hp, hok, Bool.not_false, Bool.true_and,
-      List.all_eq_true, List.any_eq_true, Bool.and_eq_true, beq_iff_eq]
+    refine ⟨.inst tbl θs D V, ?_⟩
+    simp only [check, checkInst, hT, hq, hp, hok, hlen, Bool.not_false, Bool.true_and,
+      beq_self_eq_true, List.all_eq_true, List.any_eq_true, Bool.and_eq_true, beq_iff_eq]
     exact fun q hq => hL q hq
   | @gen S inst j s D U V hp hq hU hF hS _ ih =>
     have he : inst = dec := Subsingleton.elim _ _

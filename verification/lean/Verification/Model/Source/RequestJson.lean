@@ -240,7 +240,8 @@ def arrowTypes : PositiveCertificates.ArrowCert Nat → List (Ty Nat)
 def proofTypes : PositiveCertificates.Proof Nat → List (Ty Nat)
   | .subset => []
   | .trans middle l r => middle :: (proofTypes l ++ proofTypes r)
-  | .inst θ D V => D :: θ.flatMap (fun p => [[p.1], p.2]) ++ V.flatMap (fun p => [[p.1], p.2])
+  | .inst tbl θs D V => D :: θs ++ V.flatMap (fun p => [[p.1], p.2]) ++
+      tbl.flatMap (fun e => [e.1] :: e.2.2 :: e.2.1.flatMap (fun p => [[p.1], p.2]))
   | .gen D V U p => D :: U :: V.flatMap (fun p => [[p.1], p.2]) ++ proofTypes p
   | .core c => c.table.flatMap (fun p => [p.1,p.2]) ++ c.arrows.flatMap (fun e =>
       e.1.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++ e.2.1.1 :: e.2.1.2.1 ++ [e.2.1.2.2] ++

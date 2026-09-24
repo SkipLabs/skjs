@@ -252,6 +252,19 @@ theorem assign_comm (η : Assignment ι) {bs cs : List ι} (As Bs : List ValueFa
       | some A => exact absurd (mem_of_lookup_zip hb) hp
     simp [hn]
 
+open Classical in
+theorem assign_cons_head (η : Assignment ι) (b : ι) (bs : List ι) (A : ValueFamily)
+    (As : List ValueFamily) : (assign η (b :: bs) (A :: As)).1 b = A.1 := by
+  simp [assign, List.lookup_cons]
+
+open Classical in
+theorem assign_cons_ne (η : Assignment ι) {b p : ι} (bs : List ι) (A : ValueFamily)
+    (As : List ValueFamily) (h : p ≠ b) :
+    (assign η (b :: bs) (A :: As)).1 p = (assign η bs As).1 p := by
+  have : ((b :: bs).zip (A :: As)).lookup p = (bs.zip As).lookup p := by
+    rw [List.zip_cons_cons, List.lookup_cons, beq_false_of_ne h]
+  simp only [assign, this]
+
 /-- Two assignments differing at most on `bs`. -/
 def AgreeOff (bs : List ι) (η η' : Assignment ι) : Prop := ∀ p, p ∉ bs → η.1 p = η'.1 p
 
