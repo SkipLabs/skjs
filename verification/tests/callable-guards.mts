@@ -33,10 +33,10 @@ try {
   }
   for (const [name, edit] of rows<[string, (f: FunctionAst) => void]>([
     ["opposite polarity cannot justify invocation", (f) => {
-      expr(guard(f).cond, "functionTest").equal = false;
+      expr(guard(f).cond, "typeofTest").equal = false;
     }],
     ["another same-typed input cannot justify refinement", (f) => {
-      expr(expr(guard(f).cond, "functionTest").e, "id").name = "other";
+      expr(expr(guard(f).cond, "typeofTest").e, "id").name = "other";
     }],
   ])) {
     const changed = structuredClone(ast);

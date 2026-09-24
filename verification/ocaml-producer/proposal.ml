@@ -158,6 +158,22 @@ let rec branch env cond truth = match cond.node with
   | Id name -> refine_value env name (function
       | Atoms xs as t when List.for_all (function True | False -> true | _ -> false) xs -> restrict (LBool truth) true t
       | t -> t)
+  | TypeofTest (shape,equal,{node=Id name;_}) ->
+    (* Keep the atoms of the tested shape on the arm where the test holds,
+       and the others where it fails. *)
+    let has = function
+      | Num | NumLit _ -> Some (shape="number") | Str | StrLit _ -> Some (shape="string")
+      | True | False -> Some (shape="boolean") | Undef -> Some (shape="undefined")
+      | Bigint -> Some (shape="bigint") | Symbol -> Some (shape="symbol")
+      | Shape s -> Some (shape="function" && s.calls<>[])
+      | Nul -> Some false
+      (* A declaration's shape is not known here: it stays on both arms. *)
+      | Top | Named _ -> None in
+    refine_value env name (function
+      | Atoms xs when not (List.mem Top xs) ->
+        Atoms (List.filter (fun a -> match has a with
+          | Some holds -> holds = (truth = equal) | None -> true) xs)
+      | t -> t)
   | Equality ((StrictEqual | StrictUnequal as op),{node=Id name;_},{node=Literal lit;_})
   | Equality ((StrictEqual | StrictUnequal as op),{node=Literal lit;_},{node=Id name;_}) ->
     refine_value env name (restrict lit (truth=(op=StrictEqual)))
@@ -208,6 +224,7 @@ let infer_function declarations module_functions (f:Source.fn) =
     | Id n -> resolve env n
     | Literal l -> literal_type l
     | Not e -> ignore (expr env e); bool
+    | TypeofTest (_,_,e) -> ignore (expr env e); bool
     | Arith (_,l,r) -> ignore (expr env l); ignore (expr env r); Atoms [Num]
     | Equality (_,l,r) -> ignore (expr env l); ignore (expr env r); bool
     | Alloc fs ->
@@ -503,6 +520,10 @@ let infer_function declarations module_functions (f:Source.fn) =
       | _ -> expressions := {pos=e.pos;type_=t;
           instantiation=List.assoc_opt e.pos !instantiations} :: !expressions); t
   in
+  let rec returns ss = match List.rev ss with
+    | {statement=Return _;_}::_ -> true
+    | {statement=If (_,a,b);_}::_ -> returns a && returns b
+    | _ -> false in
   let rec statements env ss = List.fold_left (fun env s ->
     entry env s.span;
     match s.statement with
@@ -517,7 +538,13 @@ let infer_function declarations module_functions (f:Source.fn) =
     | Return e -> ignore (expr ~expected:f.result env e); env
     | Effect e -> ignore (expr env e); env
     | If (c,a,b) -> ignore (expr env c);
-      ignore (statements (branch env c true) a); ignore (statements (branch env c false) b); env
+      ignore (statements (branch env c true) a); ignore (statements (branch env c false) b);
+      (* The rest of the block runs only where an arm that always returns was
+         not taken. *)
+      (match returns a,returns b with
+       | true,false -> branch env c false
+       | false,true -> branch env c true
+       | _ -> env)
     | While (c,body) -> ignore (expr env c);
       ignore (statements (branch env c true) body); env
     | Break | Continue -> env) env ss in

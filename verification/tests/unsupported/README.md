@@ -4,7 +4,8 @@ These are readable boundary cases, not verified successes. `unsupported.mts`
 requires rejection for a specific limitation, so an unrelated failure cannot
 silently replace the intended gate.
 
-- `typeof_narrow.ts`: `typeof` tests and general primitive narrowing.
+- `typeof_narrow.ts`: `typeof x === "object"`, which also holds for null; the
+  other `typeof` tests are in the fragment.
 - `mutable_binding.ts`: mutable local bindings.
 
 The string and call example that used to sit here is gone: strings are in the

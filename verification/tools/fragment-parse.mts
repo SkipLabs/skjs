@@ -50,6 +50,7 @@ import type {
   TypeParamAst,
   ArithOp,
   ArrayElemAst,
+  TypeofShape,
 } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { messageOf } from "./thrown.mts";
@@ -1174,22 +1175,22 @@ class Gate {
         ts.isParenthesizedExpression(e) ? unwrap(e.expression) : e;
       const left = unwrap(node.left),
         right = unwrap(node.right);
+      const shapes: readonly TypeofShape[] = ["number", "string", "boolean", "undefined", "function", "bigint", "symbol"];
+      const shapeOf = (e: Expression): TypeofShape | undefined =>
+        ts.isStringLiteral(e) ? shapes.find((s) => s === e.text) : undefined;
       const pair =
-        ts.isTypeOfExpression(left) &&
-        ts.isStringLiteral(right) &&
-        right.text === "function"
-          ? left
-          : ts.isTypeOfExpression(right) &&
-              ts.isStringLiteral(left) &&
-              left.text === "function"
-            ? right
+        ts.isTypeOfExpression(left) && shapeOf(right)
+          ? { operand: left, shape: shapeOf(right) }
+          : ts.isTypeOfExpression(right) && shapeOf(left)
+            ? { operand: right, shape: shapeOf(left) }
             : null;
-      if (pair)
+      if (pair?.shape)
         return {
-          k: "functionTest",
+          k: "typeofTest",
           pos: this.span(node),
+          shape: pair.shape,
           equal: op === "===",
-          e: this.expr(pair.expression),
+          e: this.expr(pair.operand.expression),
         };
     }
     return {

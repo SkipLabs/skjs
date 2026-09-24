@@ -150,7 +150,7 @@ function walkExpr(e: Expr, out: Sites): void {
       addExpr(out, e.pos, e.k);
       for (const f of e.fields) walkExpr(f.e, out);
       return;
-    case "functionTest":
+    case "typeofTest":
     case "not":
     case "read":
     case "cast":

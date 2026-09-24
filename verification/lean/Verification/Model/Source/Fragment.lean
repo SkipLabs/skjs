@@ -604,9 +604,15 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     | _, .lit _ .vundef => return .singletonTest p .isUndef (op == "===") true left right
     | .lit _ .vundef, _ => return .singletonTest p .isUndef (op == "===") false left right
     | _, _ => return .equality p (op == "===") left right
-  | "functionTest" => do
-    CellClaims.fieldsExactly j ["k","pos","equal","e"]
-    return .shapeTest p .isFun (← (← jField j "equal").getBool?) (← decodeExpr (← jField j "e"))
+  | "typeofTest" => do
+    CellClaims.fieldsExactly j ["k","pos","shape","equal","e"]
+    -- Each `typeof` result names one value shape.
+    let tag ← match ← jStr (← jField j "shape") with
+      | "number" => pure Tag.isNum | "string" => pure .isStr | "boolean" => pure .isBool
+      | "undefined" => pure .isUndef | "function" => pure .isFun
+      | "bigint" => pure .isBigint | "symbol" => pure .isSymbol
+      | other => throw s!"unsupported typeof test '{other}'"
+    return .shapeTest p tag (← (← jField j "equal").getBool?) (← decodeExpr (← jField j "e"))
   | "coalesce" => return .coalesce p (← decodeExpr (← jField j "left")) (← decodeExpr (← jField j "right"))
   | "not" => return .not p (← decodeExpr (← jField j "e"))
   | "cast" =>

@@ -9,6 +9,7 @@ import type { DeclarationDocument, TypeTerm } from "./declaration-types.mts";
 import type { Span } from "./span.mts";
 
 export type ArithOp = "add" | "sub" | "mul" | "div";
+export type TypeofShape = "number" | "string" | "boolean" | "undefined" | "function" | "bigint" | "symbol";
 export type Expr =
   | { k: "id"; pos: Span; name: string }
   /* `this`: the receiver of the nearest enclosing ordinary function. An arrow
@@ -78,7 +79,9 @@ export type Expr =
       functionType: TypeTerm;
       bagType: TypeTerm;
     }
-  | { k: "functionTest"; pos: Span; equal: boolean; e: Expr }
+  /* `typeof e === "…"` (or `!==`, operands in either order): a test of the
+     operand's shape. `"object"` is not one shape, since it includes null. */
+  | { k: "typeofTest"; pos: Span; shape: TypeofShape; equal: boolean; e: Expr }
   /* `spreads` are the indices of the arguments written with `...`: each
      stands for the elements of its operand, read where it is written. */
   | { k: "apply"; pos: Span; callee: Expr; args: Expr[]; spreads?: number[] }

@@ -139,6 +139,8 @@ type equality = StrictEqual | StrictUnequal | LooseEqual | LooseUnequal
 type expr = { pos: Json.t; node: expr_node }
 and expr_node =
   | Id of string | Literal of literal | Not of expr | Arith of arithmetic * expr * expr
+  (* `typeof e === "shape"` (equal) or `!==`: a test of the operand's shape. *)
+  | TypeofTest of string * bool * expr
   | Equality of equality * expr * expr | Alloc of (string * expr) list
   | Read of expr * string | Write of expr * string * expr
   | Assign of string * expr
@@ -187,6 +189,7 @@ let rec expr binders j =
   | "id" -> Id (text "name" j) | "lit" -> Literal (literal (field "lit" j))
   | "this" -> Id "this"
   | "not" -> Not (sub "e")
+  | "typeofTest" -> TypeofTest (text "shape" j,boolean (field "equal" j),sub "e")
   | "arith" -> let op = match text "op" j with
       | "add" -> Add | "sub" -> Sub | "mul" -> Mul | "div" -> Div
       | k -> unsupported ("arithmetic " ^ k) in Arith (op,sub "l",sub "r")

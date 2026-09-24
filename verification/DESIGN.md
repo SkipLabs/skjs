@@ -1652,18 +1652,25 @@ only the exit binding and returned-expression claim makes the program verifiable
 with the existing calculus rules. The regression uses the ordinary partial
 export without `--keep-going`, and independently checks the produced evidence.
 
-### Function-shape predicates
+### Shape predicates
 
 The trusted parser recognizes strict equality or inequality between `typeof e`
-and the literal `"function"`, in either operand order. It lowers that syntax to
-one Boolean shape test; neither a general string value nor a separate claim for
-the `typeof` intermediate is introduced. The operand and the complete predicate
-retain their source claims. The operand runs once through the existing tag-test
-plan and graph rules.
+and one of the literals `"number"`, `"string"`, `"boolean"`, `"undefined"`,
+`"function"`, `"bigint"` and `"symbol"`, in either operand order. It lowers that
+syntax to one Boolean shape test (`isNum`, `isStr`, `isBool`, `isUndef`,
+`isFun`, `isBigint`, `isSymbol`); neither a general string value nor a separate
+claim for the `typeof` intermediate is introduced. The operand and the complete
+predicate retain their source claims. The operand runs once through the
+existing tag-test plan and graph rules. `"object"` is not a shape test: it
+also holds for null, and a `typeof` result read as a string value is outside
+the fragment.
 
 Only a syntactic immutable variable may carry the guard's refinement into a
-branch. The existing `isFun` slice retains its callable signatures and removes
-other shapes; testing a call or mutable read does not refine another expression.
+branch. The tested slice keeps the atoms of that shape (for `isFun`, the
+callable signatures) and the failed test keeps the others; testing a call or
+mutable read does not refine another expression. The OCaml producer also
+refines the rest of a block after an `if` whose one arm always returns, by the
+test the other arm took.
 The TypeScript producer follows the same explicit guard edges for fixed binding
 contracts and immutable captures. [guards.ts](tests/callables/guards.ts) checks
 mixed unions, a returning negative guard captured by a thunk, and a call operand.

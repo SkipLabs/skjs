@@ -765,13 +765,16 @@ contract must admit `undefined`; TypeScript admits no other target for such a
 list. A missing, null or undefined list gives no actuals. The list is read as
 an array-like and never iterated.
 
-A strict `typeof e === "function"` or `!==` comparison has source AST shape
-`{"k":"functionTest","pos":[start,end],"equal":true,"e":operand}`.
+A strict `typeof e === "<shape>"` or `!==` comparison, for `"number"`,
+`"string"`, `"boolean"`, `"undefined"`, `"function"`, `"bigint"` or
+`"symbol"`, has source AST shape
+`{"k":"typeofTest","pos":[start,end],"shape":"function","equal":true,"e":operand}`.
 Reversed operands use the same shape. The trusted parser checks the `typeof`
 operator and literal; the adapter checks the operand and Boolean predicate
-claims and lowers through `isFun`. Only an immutable identifier operand can
-refine a binding. Other `typeof` comparisons and general string expressions
-remain outside the source fragment.
+claims and lowers through the shape's test (`isNum`, `isStr`, `isBool`,
+`isUndef`, `isFun`, `isBigint`, `isSymbol`). Only an immutable identifier
+operand can refine a binding. `typeof e === "object"` (which includes null)
+and general string expressions remain outside the source fragment.
 
 Source arrows require explicit parameter and result annotations. Bodies compose
 literals, variables, cell allocation, reads, assignments and calls, including

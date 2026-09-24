@@ -1,14 +1,11 @@
 /**
- * Future narrowing example using successive typeof tests over a union.
- * String/number types and these tests remain outside the current source
- * fragment.
+ * Future narrowing example using an "object" typeof test over a union.
+ * That test also holds for null, so it is no shape test; the `typeof` result
+ * as a string value remains outside the current source fragment.
  */
-function describe(x: string | number | null): string {
-  if (typeof x === "string") {
-    return x;
+function describe(x: { name: string } | number | null): string {
+  if (typeof x === "object") {
+    return "an object or null";
   }
-  if (typeof x === "number") {
-    return "a number";
-  }
-  return "null";
+  return "a number";
 }

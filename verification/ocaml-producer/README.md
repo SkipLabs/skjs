@@ -904,7 +904,8 @@ first milestone, in order of how much each gates:
    - constructor types and generic tuple packs, `new (...params: Params) =>
      T` with `Params extends readonly DepSafe[]`;
    - `bigint` and `symbol` (done: opaque values in the calculus and types
-     in the graph) and symbol-keyed properties (`Managed`, the `Opaque`
+     in the graph, and `typeof` tests for every shape but `"object"`) and
+     symbol-keyed properties (`Managed`, the `Opaque`
      brands): property keys that are strings or symbols in the heap model;
    - types over rigid binders, such as `T & DepSafe`.
 5. **Library contracts.** `Iterable`/`Iterator` and arrays as iterables (every
