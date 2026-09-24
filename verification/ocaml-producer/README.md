@@ -958,22 +958,61 @@ checked here gets its brand as an external contract. `unique symbol` brands
 now reads (item 4). Brands matter for `SharedCollections`: its bound is meant to admit
 only runtime collections.
 
-**Record values as `Json` (to do).** A record type is open: its value may
-carry keys the type does not name, of any type. So `{ readonly n: number }` is
-not a subtype of `Json`'s `{ readonly [k: string]: Json }`, readonly or not,
-since an unnamed key would be read at `Json`. SKJS keeps this rule and adds a
-closed-object type, `Closed<T>`, which skipper wraps around generated key and
-value types (`tests/expect-error/json-generated-service.ts`). No closedness is
-needed: `Serializable<T> = T & { readonly [k: string]: Json }` says exactly
-what the framework needs, that every present key holds `Json`, and was
-skipper's first approach (skipper#1217), dropped only for `tsc` inference at
-generic helpers such as `deepFreeze<T>` (skipper#1239). The model already
-lowers that intersection to one dictionary clause with named fields and an
-index (`meet`), and its subtyping to `Json` is ordinary dictionary coverage.
-What is missing is establishing it from a literal: `alloc` builds a record and
-`allocDict` a pure dictionary, and a literal at a record-and-index type needs
-one allocation rule proving both, as `recT_fresh_dict` does for fresh slots.
-`sum.ts` needs none of this: its keys and values are strings and numbers.
+**Record values as `Json` (to do).**
+
+*The problem.* A record type is open: its value may carry keys the type does
+not name, of any type. So `{ readonly n: number }` is not a subtype of
+`Json`'s object arm `{ readonly [k: string]: Json }`. Readonly does not help:
+the unsoundness is on reads, since an unnamed key would be read at `Json`
+(`Object.values`, serialization), not on writes. TypeScript accepts the
+subtyping and is unsound; SKJS refuses it (`skjs-rules.md` §28), and so does
+the model: `recT` is open and `dictViewT` constrains every present string key.
+A Skip client whose collection keys or values are records meets this at the
+framework's `K, V extends Json` bounds. `sum.ts` does not: its keys and values
+are strings and numbers.
+
+*What was done elsewhere.* Skipper generates such types from OpenAPI schemas.
+- skipper#1217 intersected each generated object type with
+  `{ readonly [key: string]: Json | null }`: sound, and a `Json` subtype.
+- skipper PR #1239 (open) replaced it with a comment tag re-expanded to the
+  intersection only for SKJS, because under `tsc` it broke `deepFreeze`.
+- skipper PR #1242 (open) proposes SKJS's closed-object type `Closed<T>`
+  (identity under `tsc`) instead. Neither is merged.
+
+*What actually breaks under `tsc`* (reproduced with `tsc` 6.0.3 against the
+pinned upstream):
+
+```ts
+type Todo = { readonly title: string; readonly done: boolean }
+          & { readonly [key: string]: Json | null };
+const b: Todo = deepFreeze({ title: "x", done: false });   // error
+```
+
+`deepFreeze<T>(value: T): T & DepSafe`, with `DepSafe = null | boolean |
+number | bigint | string | symbol | Managed`. `T` is inferred from the
+literal, and the result distributes over `DepSafe`; TypeScript keeps members
+such as `{ title; done } & string` (the branded-primitive idiom), whose
+apparent type is the `String` wrapper, which has no string index signature.
+Against the plain record the member is assignable; against the index part it
+is not. These all check: a fresh literal at `Todo`; `deepFreeze(t)` with `t`
+already a `Todo`; `deepFreeze<Todo>({ ... })`; the plain record type as
+`Json` under `tsc`. So the intersection is not the problem, `DepSafe`'s
+primitive arms at a literal's inferred type are. The workaround is local:
+freeze a value that already has the type, or pass the type argument, which an
+instruction to agents covers. The root-cause fix would be upstream
+(`deepFreeze`'s result `T & Managed` for an object `T`).
+
+*Plan.* No closed-object notion: `Serializable<T> = T & { readonly [k:
+string]: Json }` states exactly what the framework needs, every present key
+holding `Json`, and it is plain TypeScript. The model already lowers that
+intersection to one dictionary clause with named fields and an index (`meet`,
+`meet_sound`), and its subtyping to `Json` is dictionary coverage. Missing:
+establishing it from a literal. `alloc` builds a record and `allocDict` a pure
+dictionary; a literal at a record-and-index type needs one allocation rule
+proving both, as `recT_fresh_dict` does for fresh slots. Witnesses: a literal
+at `Serializable<T>`, passed as `Json`; a negative with a non-`Json` field;
+and the `deepFreeze` form above, with its explicit type argument, once
+`deepFreeze`'s declaration is in the fragment.
 
 Generic interface variance is not on this list: the type-safe API does not
 ask for `EagerCollection<K, V> ≤ EagerCollection<Json, Json>`, and the
