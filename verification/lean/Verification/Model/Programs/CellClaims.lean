@@ -251,7 +251,7 @@ theorem reference_exact {T : Table} {fs : List (PropKey × Ty Nat)}
     (hm : RequestJson.Row.clauses [.refs fs [] []] ∈ T) (n W v) :
     meaning (graph T) [label T (.refs fs [] [])] n W v ↔ interpretation T fs n W v := by
   rw [label_meaning hm]
-  simp [PositiveNormalization.sem, PositiveNormalization.semWithArgs, ReferenceConjunctions.refsT, interpretation,
+  simp [clauseSem, PositiveNormalization.semWithArgs, ReferenceConjunctions.refsT, interpretation,
     ReferenceConjunctions.famsOf, viewT]
   exact recT_optT_nil
 

@@ -27,7 +27,7 @@ private def jsonCycle : PositiveGraphs.Graph (Fin 2) := fun i =>
   if i.val = 0 then .union (.atom .bool) (.atom (.dict [] [] [] [[1]]))
   else .atom (.dict [] [] [] [[0]])
 
-example : Adm (PositiveGraphs.denote jsonCycle 0) := PositiveGraphs.admissible _ _
+example : Adm (normalDenote (normalizeGraph jsonCycle) 0) := normalDenote_adm _ _
 #guard checkCoreSource jsonCycle [1] [1]
   ⟨[([1], [1]), ([0], [0])], []⟩
 
@@ -120,9 +120,9 @@ def BoolG : PositiveGraphs.Graph (Fin 6) := fun i => match i.val with
 #guard !(checkCoreSource BoolG [4] [5] ⟨[([4], [5]), ([0], [1]), ([1], [0])], []⟩)
 
 theorem checked_boolean_split : FamLe
-    (Tower.setSem (PositiveGraphs.denote BoolG) [0])
-    (Tower.setSem (PositiveGraphs.denote BoolG) [1, 2]) :=
-  accepted_source (by decide : checkCoreSource BoolG [0] [1, 2]
+    (PositiveRules.meaning (normalizeGraph BoolG) [0])
+    (PositiveRules.meaning (normalizeGraph BoolG) [1, 2]) :=
+  accepted (by decide : checkCoreSource BoolG [0] [1, 2]
     ⟨[([0], [1, 2])], []⟩ = true)
 
 -- Explicit structural closure and malformed-evidence checks exercise the
@@ -143,9 +143,9 @@ example : PositiveRules.Sub (normalizeGraph G) [0, 0] [1, 0] :=
     (.trans [0] .subset .subset) = true)
 
 theorem checked_recursive_example : FamLe
-    (Tower.setSem (PositiveGraphs.denote G) [4])
-    (Tower.setSem (PositiveGraphs.denote G) [5]) :=
-  accepted_source (by decide : checkCoreSource G [4] [5]
+    (PositiveRules.meaning (normalizeGraph G) [4])
+    (PositiveRules.meaning (normalizeGraph G) [5]) :=
+  accepted (by decide : checkCoreSource G [4] [5]
     ⟨[([4], [5]), ([5], [4])], []⟩ = true)
 
 /-- Nested incompatible contracts have real overlap at an informative budget,

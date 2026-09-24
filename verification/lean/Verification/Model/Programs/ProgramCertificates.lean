@@ -399,7 +399,6 @@ def checkScope (d : Nat) : Tm → Bool
   | .readAt _ a | .test _ a | .lenOf a | .spread a => checkScope d a
   | .setElem a b c => checkScope d a && checkScope d b && checkScope d c
   | .arrLit args => checkScopes d args
-  | .args vs => checkScopes d vs
   | .ite c a b => checkScope d c && checkScope d a && checkScope d b
   | _ => true
 

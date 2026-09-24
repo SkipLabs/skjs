@@ -38,7 +38,7 @@ def signatures (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam)
 def restSignatures (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam)
     (s : Scheme ι) : List (Fam × List Fam × ArgFam × Fam) :=
   s.variadic.map fun p => (meaningP G P η p.1, p.2.1.map (meaningP G P η),
-    packArgs (meaningP G P η p.2.2.1), meaningP G P η p.2.2.2)
+    argsP G P η p.2.2.1, meaningP G P η p.2.2.2)
 
 /-- Fixed and rest clauses use the same behavioral promise on the same value. -/
 def instanceT (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam) (s : Scheme ι) : Fam :=

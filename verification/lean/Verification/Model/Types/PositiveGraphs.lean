@@ -6,8 +6,6 @@ labels name finite unions of clauses. Operands remain lists of labels. -/
 namespace Verification.Model.PositiveGraphs
 open PositiveNormalization Tower
 
-abbrev Graph (ι : Type) := ι → Formula (List ι)
-
 /-! ## Rows of a normal graph
 
 A label's row is one of three kinds. A clause row means a finite union of
@@ -158,9 +156,6 @@ theorem selectParameter_valid (kind : Option ParameterKind) {A : WorldFamily Par
   funext n W x
   cases x <;> simp [selectParameter]
 
-/-- The assignment of a graph without parameter rows: none is read. -/
-def Assignment.empty : Assignment ι := ParameterAssignment.empty .value
-
 /-- A quantified callable: its binders, which are parameter rows, and the
 signatures `(receiver, parameters, result)` each of its instances meets. -/
 structure SchemeRow (ι : Type) where
@@ -181,11 +176,10 @@ structure NormalGraph (ι : Type) where
   schemes : ι → Option (SchemeRow ι) := fun _ => none
   parameterKinds : ι → Option ParameterKind := fun _ => none
   /-- What the parameter rows mean. Semantic only. -/
-  env : Assignment ι := Assignment.empty
+  env : MixedAssignment ι := ParameterAssignment.empty .mixed
 
 /-- Whether a row is a parameter is derived from its kind, never maintained
-separately. The legacy denotation still uses the value assignment until the
-sorted certificate migration is complete. -/
+separately. -/
 def NormalGraph.params (G : NormalGraph ι) (i : ι) : Bool :=
   (G.parameterKinds i).isSome
 
@@ -240,39 +234,21 @@ theorem NormalGraph.ofRows_Plain (rows : ι → List (Clause (List ι))) :
     (NormalGraph.ofRows rows).plainTy S = true := by
   simp [NormalGraph.plainTy]
 
+/-- A graph of positive formulas, before normalization. -/
+abbrev Graph (ι : Type) := ι → Formula (List ι)
+
+/-- Normalize each body without unfolding cycles or allocating labels. -/
 def normalizeGraph (G : Graph ι) : NormalGraph ι := { rows := fun i => normalize (G i) }
 
-def layer (G : Graph ι) (X : ι → Fam) (i : ι) : Fam := eval (setSem X) (G i)
-def normalLayer (G : NormalGraph ι) (X : ι → Fam) (i : ι) : Fam := semList (setSem X) (G i)
+theorem normalizeGraph_plain (G : Graph ι) : (normalizeGraph G).Plain := fun _ => rfl
 
-theorem eval_congr (X Y : α → Fam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
-    (f : Formula α) (W : WorldT n) (v : Val) : eval X f n W v ↔ eval Y f n W v := by
-  induction f with
-  | bot => rfl
-  | atom c => exact sem_congr X Y n h c W v
-  | union a b ih ih' => exact or_congr ih ih'
-  | inter a b ih ih' => exact and_congr ih ih'
+/-- A graph without parameter rows reads argument lists from its clauses: a
+pack clause's tuple contracts, at the current level. -/
+def plainArguments (G : NormalGraph ι) (X : List ι → Fam) (S : List ι) : ArgFam :=
+  fun n W vs => ∃ i ∈ S, ∃ c ∈ G i, clauseArguments X c n W vs
 
-theorem eval_adm (X : α → Fam) (f : Formula α) : Adm (eval X f) := by
-  induction f with
-  | bot => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
-  | atom c => exact sem_adm X c
-  | union a b ih ih' => exact unionT_adm _ _ ih ih'
-  | inter a b ih ih' => exact interT_adm _ _ ih ih'
-
-theorem layer_congr (G : Graph ι) : LayerCongr (layer G) := by
-  intro X Y n h i W v
-  exact eval_congr _ _ n (fun a => setSem_congr n h a) (G i) W v
-
-theorem layer_adm (G : Graph ι) : LayerAdm (layer G) := fun X _ i => eval_adm (setSem X) (G i)
-
-/-- Equality of the entire guarded operators, not just an equation about one
-nonrecursive example. -/
-theorem normalized_layer (G : Graph ι) : normalLayer (normalizeGraph G) = layer G := by
-  funext X i n W v
-  exact propext (normalize_sound (setSem X) (G i) n W v)
-
-def denote (G : Graph ι) : ι → Fam := Tower.denote (layer G)
+def normalLayer (G : NormalGraph ι) (X : ι → Fam) (i : ι) : Fam :=
+  semList (setSem X) (plainArguments G (setSem X)) (G i)
 
 /-! ## The denotation, at every assignment
 
@@ -429,16 +405,11 @@ value denotation of a graph row. -/
 abbrev ArgumentInterpreter (ι : Type) (k : ParameterSpace := .value) :=
   ParameterAssignment k ι → (List ι → Fam) → List ι → ArgFam
 
-def legacyArguments : ArgumentInterpreter ι := fun _ D S => packArgs (D S)
-
 /-- Neither grouping arguments nor reading a pack assignment adds a guard.
 Agreement must be preserved in both the assignment and recursive meanings. -/
 def ArgumentNonExp {k : ParameterSpace} (P : ArgumentInterpreter ι k) : Prop :=
   ∀ η θ X Y n, (∀ p, Agree (η.1 p) (θ.1 p) n) →
     (∀ S, Agree (X S) (Y S) n) → ∀ S, Agree (P η X S) (P θ Y S) n
-
-theorem legacyArguments_nonexp : ArgumentNonExp (legacyArguments (ι := ι)) :=
-  fun _ _ _ _ _ _ h S => packArgs_congr (h S)
 
 /-- Interpret argument rows from their shapes and parameter assignments.
 Ordinary value rows and value parameters have no argument-list members.
@@ -559,11 +530,6 @@ theorem instanceTWithArgs_adm (D : ParameterAssignment k ι → List ι → Fam)
     Adm (instanceTWithArgs D η s As (P := P)) :=
   interT_adm _ _ (callsT_adm _) (restsT_adm _)
 
-/-- The legacy graph entry point delegates to the shared interpretation. -/
-noncomputable def instanceT (D : Assignment ι → List ι → Fam) (η : Assignment ι)
-    (s : SchemeRow ι) (As : List ValueFamily) : Fam :=
-  instanceTWithArgs D η s As legacyArguments
-
 private theorem argsAgree_of {X Y : List ι → Fam} {m : Nat} (h : ∀ S, Agree (X S) (Y S) m) :
     ∀ Ss : List (List ι), ArgsAgree m (Ss.map X) (Ss.map Y)
   | [] => .nil
@@ -602,9 +568,6 @@ noncomputable def boundedSem
 projects parameter values and derives bounds from those outputs at the same
 level. These laws are precisely what the shared guarded fixed point needs. -/
 structure ParameterInterpretation (ι : Type) (k : ParameterSpace) where
-  /-- Runtime-value projection of the shared clause rows. -/
-  clauses : List (Clause (List ι)) → List (Clause (List ι))
-  clauses_sub : ∀ cs c, c ∈ clauses cs → c ∈ cs
   parameter : ι → WorldFamily k.Carrier → WorldFamily k.Carrier
   arguments : ArgumentInterpreter ι k
   arguments_nonexp : ArgumentNonExp arguments
@@ -617,26 +580,9 @@ structure ParameterInterpretation (ι : Type) (k : ParameterSpace) where
   bound_congr : ∀ η θ X Y n, (∀ p, Agree (η.1 p) (θ.1 p) n) →
     (∀ S, Agree (X S) (Y S) n) → ∀ S, Agree (bound η X S) (bound θ Y S) n
 
-/-- The old value-only interpretation is an instance of the shared machinery. -/
-def legacyParameters : ParameterInterpretation ι .value where
-  clauses := id
-  clauses_sub := fun _ _ h => h
-  parameter := fun _ A => A
-  arguments := legacyArguments
-  arguments_nonexp := legacyArguments_nonexp
-  value := fun _ A => A
-  value_parameter := fun _ _ _ h => h
-  value_adm := fun _ _ h => h
-  value_congr := fun _ _ _ _ h => h
-  bound := fun _ X S => X S
-  bound_adm := fun _ _ h S => h S
-  bound_congr := fun _ _ _ _ _ _ h S => h S
-
 /-- Mixed bounds retain both components. Projecting only their value part would
 make a pack bound vacuous. Argument rows are derived, never unfolded again. -/
 def mixedParameters (G : NormalGraph ι) : ParameterInterpretation ι .mixed where
-  clauses := List.filter fun c => match c with | .pack _ _ => false | _ => true
-  clauses_sub := fun _ _ h => (List.mem_filter.mp h).1
   parameter := fun i A => selectParameter (G.parameterKinds i) A
   arguments := graphArguments G
   arguments_nonexp := graphArguments_nonexp G
@@ -677,9 +623,6 @@ noncomputable def schemeSemWithArgs (I : ParameterInterpretation ι k) (D : Para
     (s : SchemeRow ι) : Fam :=
   boundedSem (fun θ S => I.bound θ (D θ) S) η s (fun As => instanceTWithArgs D η s As I.arguments)
 
-noncomputable def schemeSem (D : Assignment ι → List ι → Fam) (η : Assignment ι)
-    (s : SchemeRow ι) : Fam := schemeSemWithArgs legacyParameters D η s
-
 /-- One step of the assignment-indexed denotation. -/
 noncomputable def qLayerWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι k) (X : ParameterAssignment k ι × ι → Fam) :
     ParameterAssignment k ι × ι → Fam := fun ηi =>
@@ -687,16 +630,21 @@ noncomputable def qLayerWithArgs (G : NormalGraph ι) (I : ParameterInterpretati
   match G.schemes ηi.2 with
   | some s => schemeSemWithArgs I (fun η' S => setSem (fun l => X (η', l)) S) ηi.1 s
   | none => setSem (semWithArgs (setSem fun l => X (ηi.1, l))
-      (I.arguments ηi.1 (setSem fun l => X (ηi.1, l)))) (I.clauses (G ηi.2))
+      (I.arguments ηi.1 (setSem fun l => X (ηi.1, l)))) (G ηi.2)
 
-noncomputable def qLayer (G : NormalGraph ι) (X : Assignment ι × ι → Fam) :
-    Assignment ι × ι → Fam := qLayerWithArgs G legacyParameters X
+theorem plainArguments_congr (G : NormalGraph ι) {X Y : List ι → Fam} {n : Nat}
+    (h : ∀ S, Agree (X S) (Y S) n) (S : List ι) :
+    Agree (plainArguments G X S) (plainArguments G Y S) n := by
+  intro j hj W vs
+  refine exists_congr fun i => and_congr Iff.rfl (exists_congr fun c => and_congr Iff.rfl ?_)
+  exact clauseArguments_congr X Y c j W (fun a v => h a j hj W v) vs
 
 theorem normalLayer_congr (G : NormalGraph ι) : LayerCongr (normalLayer G) := by
   intro X Y n h i W v
+  have hs := fun a => setSem_congr n h a
   constructor <;> rintro ⟨c, hc, hv⟩ <;> refine ⟨c, hc, ?_⟩
-  · exact (sem_congr _ _ n (fun a => setSem_congr n h a) c W v).mp hv
-  · exact (sem_congr _ _ n (fun a => setSem_congr n h a) c W v).mpr hv
+  · exact (semWithArgs_congr _ _ _ _ n hs (plainArguments_congr G hs) c W v).mp hv
+  · exact (semWithArgs_congr _ _ _ _ n hs (plainArguments_congr G hs) c W v).mpr hv
 
 theorem Agree.mono {A B : WorldFamily α} {n m : Nat} (h : Agree A B n) (hm : m ≤ n) : Agree A B m :=
   fun k hk W v => h k (by omega) W v
@@ -849,7 +797,7 @@ theorem qLayer_invWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι 
     · simpa [hp] using I.value_adm i (η.1 i) (η.2 i).1
     · simp only [hp]
       cases hq : G.schemes i with
-      | none => exact setSem_adm (fun c => semWithArgs_adm _ _ c) (I.clauses (G i))
+      | none => exact setSem_adm (fun c => semWithArgs_adm _ _ c) (G i)
       | some s =>
         exact boundedSem_adm _ η s _ (I.bound_adm η _ (hD η))
           (fun As => instanceTWithArgs_adm _ η s As I.arguments)
@@ -960,8 +908,7 @@ theorem mixedMeaning_parameter (G : NormalGraph ι) (η : MixedAssignment ι) (i
     change graphArguments G η _ [i] n W vs ↔ _
     cases kind <;> simp [graphArguments, hc, hi, selectParameter]
 
-/-- A plain pack row has list members only. No synthetic runtime pack value
-survives the mixed interpretation's value projection. -/
+/-- A plain pack row has list members only: no runtime value. -/
 theorem mixedMeaning_pack_value (G : NormalGraph ι) (η : MixedAssignment ι) (i : ι)
     (a : Tuple (List ι)) (bs : List (Tuple (List ι))) (hi : G i = [.pack a bs])
     (n : Nat) (W : WorldT n) (v : Val) : ¬ mixedMeaning G η [i] n W (.inl v) := by
@@ -971,7 +918,7 @@ theorem mixedMeaning_pack_value (G : NormalGraph ι) (η : MixedAssignment ι) (
   change ¬ (∃ j ∈ [i], qDenoteWithArgs G (mixedParameters G) (η, j) n W v)
   simp only [List.mem_singleton, exists_eq_left]
   rw [qDenoteWithArgs_unfold]
-  simp [qLayerWithArgs, hp.1, hp.2, hi, mixedParameters, setSem]
+  simp [qLayerWithArgs, hp.1, hp.2, hi, setSem, semWithArgs]
 
 /-- A sorted pack type cannot contribute runtime-value members, including
 unions of pack rows and pack parameters. -/
@@ -991,14 +938,12 @@ theorem mixedMeaning_noValues (G : NormalGraph ι) (η : MixedAssignment ι) (S 
     | some sch => simp [hp, hq] at hk
     | none =>
       simp only [NormalGraph.params, hp, Option.isSome_none, Bool.false_eq_true, ite_false, hq] at hv
-      obtain ⟨c, hc, _⟩ := hv
-      have hc' := (List.mem_filter.mp hc).1
+      obtain ⟨c, hc, hcv⟩ := hv
       have hplain : G.plain i = true := by simp [NormalGraph.plain, NormalGraph.params, hp, hq]
-      have hr : c ∈ G.rows i := by simpa [NormalGraph.clauses, hplain] using hc'
+      have hr : c ∈ G.rows i := by simpa [NormalGraph.clauses, hplain] using hc
       have ht := List.all_eq_true.mp (show (G.rows i).all
         (fun c => match c with | .pack .. => true | _ => false) = true by simpa [hp, hq, (show (ParameterKind.arguments == ParameterKind.value) = false from rfl)] using hk) c hr
-      have hn := (List.mem_filter.mp hc).2
-      cases c <;> simp_all
+      cases c <;> simp_all [semWithArgs]
 
 /-- A sorted value type cannot contribute argument-list members. -/
 theorem mixedMeaning_noArguments (G : NormalGraph ι) (η : MixedAssignment ι) (S : List ι)
@@ -1034,60 +979,50 @@ theorem mixedMeaning_selected (G : NormalGraph ι) (η : MixedAssignment ι) (S 
   · simp [selectParameter, mixedMeaning_noValues G η S hs]
   · simp [selectParameter]
 
-/-- The production interpretation remains the legacy argument adapter until
-sorted substitution and the certificate protocol migrate together. -/
-noncomputable def qDenote (G : NormalGraph ι) : Assignment ι × ι → Fam :=
-  qDenoteWithArgs G legacyParameters
-
-theorem qDenote_unfold (G : NormalGraph ι) (ηi : Assignment ι × ι)
-    (n : Nat) (W : WorldT n) (v : Val) :
-    qDenote G ηi n W v ↔ qLayer G (qDenote G) ηi n W v :=
-  qDenoteWithArgs_unfold G legacyParameters ηi n W v
-
-theorem qDenote_adm (G : NormalGraph ι) (ηi : Assignment ι × ι) : Adm (qDenote G ηi) :=
-  qDenoteWithArgs_adm G legacyParameters ηi
-
-/-- A label list's meaning at an assignment. -/
-noncomputable def qMeaning (G : NormalGraph ι) (η : Assignment ι) (S : List ι) : Fam :=
-  setSem (fun l => qDenote G (η, l)) S
-
-/-- A label's meaning, at the graph's own assignment. -/
-noncomputable def normalDenote (G : NormalGraph ι) (i : ι) : Fam := qDenote G (G.env, i)
+/-- A graph's meaning reads its parameter rows at its own assignment. -/
+noncomputable def normalDenote (G : NormalGraph ι) (i : ι) : Fam :=
+  qDenoteWithArgs G (mixedParameters G) (G.env, i)
 
 theorem normalDenote_adm (G : NormalGraph ι) (i : ι) : Adm (normalDenote G i) :=
-  qDenote_adm G _
+  qDenoteWithArgs_adm G (mixedParameters G) _
+
+/-- The argument lists a type admits: a pack parameter's assigned contract, or
+a pack clause's tuple contracts, at the current level. -/
+noncomputable def argMeaning (G : NormalGraph ι) (S : List ι) : ArgFam :=
+  graphArguments G G.env (setSem (normalDenote G)) S
 
 /-- A clause row means its clauses. -/
 theorem unfold_plain {G : NormalGraph ι} {i : ι} (hi : G.plain i = true) (n W v) :
-    normalDenote G i n W v ↔ semList (setSem (normalDenote G)) (G i) n W v := by
+    normalDenote G i n W v ↔ semList (setSem (normalDenote G)) (argMeaning G) (G i) n W v := by
   simp only [NormalGraph.plain, Bool.and_eq_true, Bool.not_eq_true',
     Option.isNone_iff_eq_none] at hi
   unfold normalDenote
-  rw [qDenote_unfold]
-  simp only [qLayer, qLayerWithArgs, hi.1, hi.2, Bool.false_eq_true, ite_false]
+  rw [qDenoteWithArgs_unfold]
+  simp only [qLayerWithArgs, hi.1, hi.2, Bool.false_eq_true, ite_false]
   rfl
 
 /-- Every label means closed values only, whatever its kind. -/
 theorem normalDenote_value {G : NormalGraph ι} {i : ι} {n W v}
-    (h : normalDenote G i n W v) : isVal v = true ∧ Scoped 0 v := by
-  unfold normalDenote at h
-  rw [qDenote_unfold] at h
-  unfold qLayer qLayerWithArgs at h
-  by_cases hp : G.params i = true
-  · simp only [hp, ite_true] at h
-    exact (G.env.2 i).2 n W v h
-  · simp only [hp] at h
-    cases hq : G.schemes i with
-    | some s =>
-      simp only [hq] at h
-      exact ⟨h.1.val, h.1.scoped⟩
-    | none =>
-      simp only [hq, normalLayer, semList] at h
-      obtain ⟨c, -, hc⟩ := h
-      exact sem_value hc
+    (h : normalDenote G i n W v) : isVal v = true ∧ Scoped 0 v :=
+  mixedDenote_value G G.env i h
 
-private theorem approx_plain (G : NormalGraph ι) (hG : G.Plain) (η : Assignment ι) :
-    ∀ k, (fun i => Tower.approx (qLayer G) k (η, i)) = Tower.approx (normalLayer G) k
+/-- Without parameter or scheme rows, a graph's argument lists are its
+clauses'. -/
+theorem graphArguments_plainGraph (G : NormalGraph ι) (hG : G.Plain) (η : MixedAssignment ι)
+    (X : List ι → Fam) : graphArguments G η X = plainArguments G X := by
+  funext S n W vs
+  apply propext
+  unfold graphArguments plainArguments
+  refine exists_congr fun i => and_congr Iff.rfl ?_
+  have hk : G.parameterKinds i ≠ some .arguments := by
+    intro h
+    have := hG i
+    simp [NormalGraph.plain, NormalGraph.params, h] at this
+  simp only [hk, ↓reduceIte]
+
+private theorem approx_plain (G : NormalGraph ι) (hG : G.Plain) (η : MixedAssignment ι) :
+    ∀ k, (fun i => Tower.approx (qLayerWithArgs G (mixedParameters G)) k (η, i)) =
+      Tower.approx (normalLayer G) k
   | 0 => rfl
   | k + 1 => by
     funext i
@@ -1095,42 +1030,23 @@ private theorem approx_plain (G : NormalGraph ι) (hG : G.Plain) (η : Assignmen
     have hi := hG i
     simp only [NormalGraph.plain, Bool.and_eq_true, Bool.not_eq_true',
       Option.isNone_iff_eq_none] at hi
-    show qLayer G (Tower.approx (qLayer G) k) (η, i) =
+    show qLayerWithArgs G (mixedParameters G)
+        (Tower.approx (qLayerWithArgs G (mixedParameters G)) k) (η, i) =
       normalLayer G (Tower.approx (normalLayer G) k) i
     rw [← ih]
-    simp only [qLayer, qLayerWithArgs, hi.1, hi.2, Bool.false_eq_true, ite_false]
-    rfl
+    simp only [qLayerWithArgs, hi.1, hi.2, Bool.false_eq_true, ite_false]
+    unfold normalLayer semList
+    rw [show (mixedParameters G).arguments = graphArguments G from rfl,
+      graphArguments_plainGraph G hG]
 
 /-- **Conservative.** A graph of clause rows means what its guarded fixed
 point over clauses means. -/
 theorem normalDenote_plain (G : NormalGraph ι) (hG : G.Plain) :
     normalDenote G = Tower.denote (normalLayer G) := by
   funext i n
-  show Tower.approx (qLayer G) (n + 1) (G.env, i) n = Tower.approx (normalLayer G) (n + 1) i n
+  show Tower.approx (qLayerWithArgs G (mixedParameters G)) (n + 1) (G.env, i) n =
+    Tower.approx (normalLayer G) (n + 1) i n
   rw [← approx_plain G hG G.env (n + 1)]
-
-theorem normalizeGraph_plain (G : Graph ι) : (normalizeGraph G).Plain := fun _ => rfl
-
-theorem normalize_recursive (G : Graph ι) : normalDenote (normalizeGraph G) = denote G := by
-  rw [normalDenote_plain _ (normalizeGraph_plain G)]
-  unfold denote
-  rw [normalized_layer]
-
-theorem unfolds (G : Graph ι) (i : ι) (n W v) :
-    denote G i n W v ↔ layer G (denote G) i n W v :=
-  Tower.denote_unfold (layer_congr G) i n W v
-
-theorem admissible (G : Graph ι) (i : ι) : Adm (denote G i) :=
-  Tower.denote_adm (layer_congr G) (layer_adm G) i
-
-/-- Any sound check on normalized denotations transports to the original graph.
-This is a normalization interface, not an assumption that the old subtype
-checker already accepts the new reference-conjunction representation. -/
-theorem transport_inclusion (G : Graph ι) (S T : List ι)
-    (h : FamLe (setSem (normalDenote (normalizeGraph G)) S)
-      (setSem (normalDenote (normalizeGraph G)) T)) :
-    FamLe (setSem (denote G) S) (setSem (denote G) T) := by
-  simpa only [normalize_recursive] using h
 
 #print axioms mixedMeaning_selected
 #print axioms mixedMeaning_valid
@@ -1141,6 +1057,5 @@ theorem transport_inclusion (G : Graph ι) (S T : List ι)
 #print axioms qDenoteWithArgs_unfold
 #print axioms qDenoteWithArgs_adm
 #print axioms qDenoteWithArgs_nonexp
-#print axioms normalize_recursive
-#print axioms admissible
+#print axioms normalDenote_plain
 end Verification.Model.PositiveGraphs

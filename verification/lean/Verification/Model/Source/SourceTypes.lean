@@ -139,7 +139,7 @@ theorem label_exact {T : Table} {c : Clause (List Nat)} (hc : Row.clauses [c] �
 
 /-- A labelled clause means exactly that clause, read over the same table. -/
 theorem label_meaning {T : Table} {c : Clause (List Nat)} (hc : Row.clauses [c] ∈ T) (n W v) :
-    meaning (graph T) [label T c] n W v ↔ sem (meaning (graph T)) c n W v := by
+    meaning (graph T) [label T c] n W v ↔ clauseSem (graph T) c n W v := by
   have hp : (graph T).plainTy [label T c] = true := by
     have h := label_exact hc
     exact plain_of_mem_expand (c := c) (by simp [h])
@@ -256,7 +256,7 @@ theorem encode_meaning {T : Table} (h : initial <+: T) (t : Claim.Ty) (n W v) :
   rw [expand_sem _ _ hp, expand_of_plain hp]
   cases hn : admits t .vnull <;> cases ht : admits t (.vbool true) <;>
     cases hf : admits t (.vbool false) <;> cases hu : admits t .vundef <;>
-    simp [encode, hn, ht, hf, hu, clausesOf, h0, h1, h2, h3, semList, Tower.setSem, sem, semWithArgs, nulT, undefT]
+    simp [encode, hn, ht, hf, hu, clausesOf, h0, h1, h2, h3, semList, Tower.setSem, semWithArgs, nulT, undefT]
 
 /-- No atom of the primitive fragment admits a number, so a numeric value is
 outside every type that fragment can state. `value` decodes one because the
@@ -316,7 +316,7 @@ theorem arrow_exact {T : Table} {Rc D R : Ty Nat} (hm : Row.clauses [.arrs [(Rc,
     meaning (graph T) [label T (.arrs [(Rc,[D],R)] [])] n W v ↔
       callsT [(meaning (graph T) Rc, [meaning (graph T) D], meaning (graph T) R)] n W v := by
   rw [label_meaning hm]
-  simp only [PositiveNormalization.sem, PositiveNormalization.semWithArgs, List.map_cons, List.map_nil]
+  simp only [clauseSem, PositiveNormalization.semWithArgs, List.map_cons, List.map_nil]
   exact ⟨fun h => h.1, fun h => ⟨h, h.1, by simp⟩⟩
 
 #print axioms arrow_exact

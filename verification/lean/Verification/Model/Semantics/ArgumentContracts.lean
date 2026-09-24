@@ -62,14 +62,6 @@ theorem fits_elem {E : Fam} {r : Bool} {n W vs} :
     cases hA
     exact h v (List.mem_of_getElem? hv)
 
-/-- Same-level arguments still suffice for the existing allocation proof.
-The loss of a level belongs to allocation, not to argument-list membership. -/
-theorem fits_below {T : TupleF} (hT : ∀ i A, positionFam T i = some A → Adm A)
-    {n W vs} (h : Fits T n W vs) : PackFits T n W vs :=
-  ⟨h.1, h.2.1, fun i v A hv hA j hj U hx =>
-    (hT i A hA).mono j _ U hx v
-      ((hT i A hA).down_le n j (Nat.le_of_lt hj) W v (h.2.2 i v A hv hA))⟩
-
 /-- Within a contract's bounds every index has a position. -/
 theorem positionFam_isSome {T : TupleF} {i : Nat}
     (h : i < T.required.length + T.optional.length ∨ T.rest.isSome = true) :

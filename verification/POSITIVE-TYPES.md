@@ -162,33 +162,33 @@ no class is callable and no arrow constructible.
 
 ### Argument packs
 
-An **argument pack** is an argument list as one value, $\mathsf{args}(\vec v)$
-(`Tm.args`). No program writes one and no step makes one: it is how the model
-states which argument lists a rest parameter's type admits. A `Pack` clause
-holds one or more tuple contracts $\tau_0,\ldots,\tau_m$, each with required
-positions $\vec R$, optional positions $\vec O$ and an optional rest $E$, and
+An **argument pack** type states which argument lists a rest parameter
+admits. An argument list is not a runtime value: a `Pack` clause has no value
+members, and its meaning is a family of lists (`clauseArguments`). It holds one
+or more tuple contracts $\tau_0,\ldots,\tau_m$, each with required positions
+$\vec R$, optional positions $\vec O$ and an optional rest $E$, and
 $\mathsf{pos}_\tau(i)$ is the operand the contract states for index $i$
 (`Tuple.position`): $R_i$, then $O_{i-|\vec R|}$, then $E$ past both, if any.
 A list fits a contract when its length is within the contract's bounds and each
-present value is, below the budget, a member at its position:
+present value is, at the current level, a member at its position:
 
 $$
 \begin{aligned}
-\llbracket\mathsf{Pack}(\tau_0\land\cdots\land\tau_m)\rrbracket_k(W,v)
-&\iff\exists\vec v.\;v=\mathsf{args}(\vec v)\land v\ \text{closed}\land
-   \textstyle\bigwedge_i\mathsf{fits}(X\tau_i)_k(W,\vec v),\\
+\llbracket\mathsf{Pack}(\tau_0\land\cdots\land\tau_m)\rrbracket^{\mathsf{args}}_k(W,\vec v)
+&\iff\textstyle\bigwedge_i\mathsf{fits}(X\tau_i)_k(W,\vec v),\\
 \mathsf{fits}(\tau)_k(W,\vec v)&\iff|\vec R|\le|\vec v|\ \land\
-   (E=\varnothing\Rightarrow|\vec v|\le|\vec R|+|\vec O|)\\
-&\qquad\land\ \forall i,\,\forall j<k,\,\forall U\sqsupseteq W|_j.\;
-   \mathsf{pos}_\tau(i)=A\Rightarrow v_i\in A_j(U)
+   (E=\varnothing\Rightarrow|\vec v|\le|\vec R|+|\vec O|)
+   \land\ \forall i.\;\mathsf{pos}_\tau(i)=A\Rightarrow v_i\in A_k(W)
 \end{aligned}
 $$
 
-(`packT`, `PackFits`). A pack holds its values directly, not at locations, so
-the membership is required only below the current level and at every future
-world: that is what keeps the clause contractive in its operands, as a store's
-contracts are through their locations, and admissible without assumptions on
-them. A `Pack` clause has its own shape, and meeting two concatenates their
+(`clauseArguments`, `ArgumentContracts.Fits`). Grouping evaluated arguments is
+not an execution step, so membership is at the level of the actuals; the call
+or constructor whose rest it is supplies the guard, and allocating the rest
+array consumes a level. A type's argument lists are its pack clauses' lists,
+or a pack parameter's assigned list family (`graphArguments`,
+[Parameter and scheme rows](#parameter-and-scheme-rows)).
+A `Pack` clause has its own shape, and meeting two concatenates their
 contracts.
 
 Conjunction extends as before: same-shape clauses concatenate their operands,
@@ -354,27 +354,17 @@ labels are allocated. A finite graph stays finite, although a body can grow
 exponentially through DNF distribution. There is no measured performance claim
 or growth-control optimization yet.
 
-`normalize_sound` proves preservation for every operand interpretation, budget,
-world and value. Consequently, `normalized_layer` proves equality of the whole
-guarded operators. `normalize_recursive` then establishes:
-
-$$
-\llbracket \operatorname{nf}(G)\rrbracket=\llbracket G\rrbracket.
-$$
-
-This is a general theorem for the explicit graph syntax, not just an example
-or an unrolling to a fixed depth. Arbitrarily nested positive types can be
-presented by naming their guarded operands in the graph.
+`normalize_sound` proves preservation for every value and argument-list
+interpretation of the operands, budget, world and value: the normal form means
+exactly the formula, clause by clause.
 
 Nothing in the current pipeline invokes the normalizer. Requests carry normal
 bodies, and the [request grammar](REQUEST-PROTOCOL.md#request-fields) has no
 conjunction above the clause level, so every graph reaching the consumer is
-normal by construction. What is proved here is the interface a producer would
-need if it did hold formula bodies: `checkSource` normalizes and checks, and
-`accepted_source` transports the conclusion back to the original graph's
-denotation, so a checked inclusion never has to be re-justified against the
-unnormalized form. A verified compiler from textual type syntax to a graph, which
-is what would first need that interface, has not been implemented here.
+normal by construction. A formula graph is checked through its normalization
+(`checkSource`), whose meaning is the checked one. A verified compiler from
+textual type syntax to a graph, which would first need a formula graph with a
+recursive denotation of its own, has not been implemented here.
 
 ## Reference rules and usability
 
@@ -466,7 +456,7 @@ where $\mathsf{cl}_G(A)$ is the list of clauses of $A$'s clause rows
 (`clausesOf`). The kinds are defined in
 [the instance-table rules](#instances-of-a-scheme-row). Empty types have either
 kind. In particular, value top cannot discharge a pack edge, even though the
-legacy value encoding below still represents a pack with `Tm.args`. Search
+value meaning of a pack type is empty. Search
 prunes cross-kind edges using the same predicate checked by the certificate.
 
 Record coverage reads the target's operands one by one. Writing $\Delta^{\pm}(A,B)$
@@ -498,11 +488,6 @@ $$
 \frac{}{\Delta\vdash c\sqsubseteq c}\ \ c\in\{\mathsf{bigint},\mathsf{symbol}\}.
 $$
 
-The following pack rules describe the **current production representation**.
-The [same-level argument-contract migration](DESIGN.md#same-level-argument-contracts-migration-to-separate-list-contracts)
-replaces its extra delay; its general equations have been proved, but the
-production graph and generic certificates have not yet migrated.
-
 Coverage is defined once in `CoversWith`. Declarative `Covers` supplies arrow
 derivations; `checkClause` supplies checked arrow evidence. The remaining
 conditions are shared, including pack bounds and variance.
@@ -510,27 +495,24 @@ conditions are shared, including pack bounds and variance.
 A variadic construct signature is covered by one taking as many fixed
 parameters, each at least as wide, a rest at least as wide as a pack, and a
 result at most as wide; or by a fixed one, when its rest is one exact tuple
-$\mathsf{Pack}(\vec C)$, no optional position and no rest, of **stable**
-positions. A stable type's clauses are primitives, literals or top, whose
-members depend neither on the level nor on the world (`StableTy`,
-`stable_meaning`). A pack holds its actuals at their positions only below the
-current level, and a stable position does not notice that, so the actuals are
-at the fixed signature's parameters at the current level too
-(`pack_exact_args`):
+$\mathsf{Pack}(\vec E)$, no optional position and no rest. An exact tuple
+holds its actuals at their positions at the current level, so they are at the
+fixed signature's parameters (`mixed_pack_exact`, `fits_exact`), whatever the
+positions' types:
 
 $$
 \frac{|\vec A|=|\vec C|\quad\forall i.\,\Delta(C_i,A_i)\quad\Delta(Q,P)\quad\Delta(B,D)}
      {\Delta\vdash(\vec A,\ldots P)\Rightarrow B\ \sqsubseteq\ (\vec C,\ldots Q)\Rightarrow D}
 \qquad
-\frac{Q=\mathsf{Pack}(\vec E)\ \text{exact}\quad\forall E\in\vec E.\,\mathsf{stable}(E)
+\frac{Q=\mathsf{Pack}(\vec E)\ \text{exact}
       \quad|\vec A|=|\vec C\vec E|\quad\forall i.\,\Delta((\vec C\vec E)_i,A_i)\quad\Delta(B,D)}
      {\Delta\vdash\vec A\Rightarrow B\ \sqsubseteq\ (\vec C,\ldots Q)\Rightarrow D}
 $$
 
-(`FixedCoversPack`). So a class taking a number meets
-`new (...params: [number]) => M` at a result it meets. A tuple of a record or a
-function is not stable, and a fixed signature is not shown to cover it: a
-known incompleteness of the guarded pack.
+(`FixedCoversPack`; `FixedCallsPack` for call signatures, with a receiver).
+So a class taking a number meets `new (...params: [number]) => M`, and one
+taking `{ readonly value: number }` meets
+`new (...params: [{ readonly value: number }]) => M`, at a result it meets.
 
 A pack contract is covered by another that admits every list it admits. The
 target's required positions are no more than the source's; a target without a
@@ -551,13 +533,10 @@ E'=\varnothing\Rightarrow E=\varnothing\land|\vec R|+|\vec O|\le|\vec R'|+|\vec 
      {\Delta\vdash\mathsf{Pack}\,\vec\tau\sqsubseteq\mathsf{Pack}\,\vec\tau'}
 $$
 
-(`CoversPack`, `covers_pack_sound`). So `[number, string]` is within
+(`CoversPack`, `covers_arguments_sound`). So `[number, string]` is within
 `(number | string)[]` and `[number]` within `[number, string?]`, while
 `number[]` is within no bounded tuple. The shape/covariance proof is
-`covers_arguments`, shared by the current delayed pack interpretation and
-`covers_arguments_sound` for same-level argument membership. No stability
-premise is needed for either coverage theorem; the old fixed-to-pack conversion
-still needs it because that conversion crosses approximation levels.
+`covers_arguments`, parameterized by the element membership.
 
 Splitting (`splitClause`) replaces a source $\mathsf{bool}$ clause with the pair
 $\mathsf{true},\mathsf{false}$ and leaves every other clause alone. It is
@@ -595,7 +574,7 @@ $$
 
 where $\mathsf{binders}(i)$ is empty unless $i$ is a scheme row. A scheme's own
 binders are therefore not free in it. A row means the same at two assignments
-that agree on $V(i)$ (`agree_free`).
+that agree on $V(i)$ (`agree_freeWith`, `mixed_respectsFree`).
 
 An instance is checked by a finite **instance table** of entries
 $(i,\kappa,T)$: under the context $\kappa$, row $i$ means type $T$. A context
@@ -621,8 +600,8 @@ Parameter kinds are `value` and `arguments`. Write $S:k$ when every row of
 $S$ has kind $k$: pack clauses have argument kind, other clauses and schemes
 have value kind, and parameters retain their declared kind. The empty union
 has either kind; a union cannot mix the two. `SameKind` checks both ends of core subtype edges; `substitutionKind` and
-`instKinds` check table images and scheme instances. The semantic assignment still
-uses the legacy interpretation while the separate-list migration is pending.
+`instKinds` check table images and scheme instances, and connect the kinds to
+the selected components of a mixed assignment (`mixed_assignment_substitution`).
 
 The table is checked (`TableOk`) when its rows lie in a domain $D$ with a
 free-variable certificate $V$ and every entry is one of these. Two assignments
@@ -630,7 +609,7 @@ are related by $\kappa$ on a set of rows when each row $\kappa$ names means, on
 the left, its image's meaning on the right, and every other row means the same
 on both sides. Then, for every entry and every pair of assignments related by
 its context on its row's free rows, the row on the left means $T$ on the right
-(`table_row`). With $\kappa_0=\vec p\mapsto\vec\theta$ for the scheme's
+in both components, values and argument lists (`table_row_mixed`). With $\kappa_0=\vec p\mapsto\vec\theta$ for the scheme's
 binders $\vec p$ and instance types $\vec\theta$, the instance assignment and
 the graph's are related by $\kappa_0$ by construction:
 
@@ -670,8 +649,9 @@ $$
 $$
 
 `Sub.inst` and `Sub.gen` are these rules. The second is sound because $S$ means
-the same at any two assignments that differ only on $\vec p$ (`agree_free`),
-and because every rule of `Sub` holds at every assignment (`Sub.sound_at`): the
+the same at any two assignments that differ only on $\vec p$ (`agree_freeWith`),
+and because every rule of `Sub` holds at every assignment, for both components
+(`Sub.mixed_sound`): the
 premise $G\vdash S\le U$, derived once, holds at each instantiation of $\vec p$.
 
 Reflexivity and invariance under reordering or duplicating union labels follow
@@ -711,16 +691,13 @@ G\vdash S\le T\quad\Longleftrightarrow\quad
 $$
 
 This is `derivable_iff_checked`, for the extended rules just specified. It is
-not completeness for every inclusion true in the model. `SourceSub` applies the
-same declarative judgment after normalization; `source_iff_checked` provides
-the corresponding certificate theorem for source graphs.
+not completeness for every inclusion true in the model.
 
-Separately, `Sub.sound` proves semantic inclusion. `checkSource` normalizes a
-positive graph and checks its proof; `accepted_source` composes checking,
-rule soundness and normalization preservation:
+Separately, `Sub.sound` proves semantic inclusion, and `Sub.args_sound` the
+inclusion of argument lists. `accepted` composes checking and rule soundness:
 
 $$
-\operatorname{checkSource}(G,S,T,p)=\mathsf{true}
+\operatorname{check}(G,S,T,p)=\mathsf{true}
 \Longrightarrow
 \forall n,W,v.\;
 \llbracket S\rrbracket_G(n,W,v)\Rightarrow
@@ -811,15 +788,17 @@ polymorphism or parameter-changing recursion.
 ### Parameter and scheme rows
 
 A graph's label is one of three kinds of row. A clause row means its clauses. A
-parameter row means what the graph's assignment `env` gives it, a family of
-closed values. A scheme row means one callable meeting its signatures at every
-reassignment of its binders, which are parameter rows. The denotation is one
-guarded fixed point over (assignment, label) (`qDenote`), and `meaning G` reads
-it at `G.env`. No check reads `env`, so every theorem proved for all graphs
+parameter row means what the graph's assignment `env` gives it: the
+component its kind selects of a family over $\mathsf{Val}\uplus\mathsf{List}\,\mathsf{Val}$,
+closed values for a value binder, closed lists for a pack binder. A scheme row
+means one callable meeting its signatures at every reassignment of its
+binders, which are parameter rows. The denotation is one guarded fixed point
+over (assignment, label) (`qDenoteWithArgs G (mixedParameters G)`), and
+`meaning G` and `argMeaning G` read it at `G.env`. No check reads `env`, so every theorem proved for all graphs
 holds at every reassignment.
 
-Formally, with $\eta$ an assignment of admissible families of closed values to
-labels and $\llbracket A\rrbracket^\eta=\bigcup_{i\in A}\llbracket i\rrbracket^\eta$,
+Formally, with $\eta$ an assignment of admissible mixed families to labels
+(writing $\eta(i)$ for its selected value component) and $\llbracket A\rrbracket^\eta=\bigcup_{i\in A}\llbracket i\rrbracket^\eta$,
 the denotation is the guarded fixed point of
 
 $$
@@ -837,19 +816,22 @@ $$
 $$
 
 where $\Sigma_\ldots$ are the scheme's variadic signatures, whose rest $P$ may
-be a binder: a **pack parameter**, whose family is read at the argument pack
-past the fixed actuals, so it is instantiated at a pack type and bounded by one,
-position by position (`instanceT`, `instanceRests`). $\vec X$ ranges over admissible families of closed values, one per binder,
+be a binder: a **pack parameter**, whose list family is read at the actuals
+past the fixed ones, so it is instantiated at a pack type and bounded by one,
+position by position (`instanceTWithArgs`, `instanceRestsWithArgs`; the rest
+reads $\llbracket P\rrbracket^{\eta',\mathsf{args}}$). $\vec X$ ranges over
+admissible mixed families, one per binder,
 and $\mathsf{Bounded}_n(\vec X)$ says each bounded binder's family lies below
 its bound at every level under $n$: $X_p\subseteq_{<n}\llbracket B\rrbracket^\eta$
 for each $(p,B)\in\beta$, the bound read at the scheme's own assignment $\eta$
-(`Bounded`, `qLayer`, `qDenote`). Reading the bound below $n$ only keeps the
+(`Bounded`, `qLayerWithArgs`, `qDenoteWithArgs`); a bound is inclusion of
+both components. Reading the bound below $n$ only keeps the
 fixed point contractive; the approximations are non-expansive in the
 assignment (`QInv`), which gives admissibility (`Tower.denote_adm_inv`), and $\llbracket A\rrbracket_G=\llbracket A\rrbracket^{G.\mathit{env}}$
 is `meaning`. A member of a scheme row meets each instance's signatures
 (`scheme_elim`), and a callable meeting them at every instantiation is a
 member (`scheme_intro`). Without scheme rows this is the parametric semantics
-`denoteP` (`qDenote_no_schemes`).
+`denoteP` at the value projection, when no binder is a pack (`qDenote_no_schemes`).
 
 Only clause rows have clauses. A type holding a parameter or scheme row has no
 expansion, so no rule that reads a clause (`Represents`, `Answers`, the atoms
@@ -864,7 +846,7 @@ its clauses with every operand mapped; read at the instance's assignment, a
 mapped type means exactly its image. `Sub.gen` puts a type below a scheme when
 it is below the scheme's signatures with the binders opaque and none of the
 rows it reads is a binder. Subtyping is sound at every assignment
-(`Sub.sound_at`): the judgments read a graph only through its rows. Scheme
+(`Sub.mixed_sound`): the judgments read a graph only through its rows. Scheme
 rows are the graph form of generic methods, stage 2 of the quantified-types
 plan in [the producer's README](ocaml-producer/README.md); the layer below
 predates them.

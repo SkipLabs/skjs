@@ -692,19 +692,9 @@ def ArgsShort (Ps : List Fam) (j : Nat) (W : WorldT j) (args : List Tm) : Prop :
   args.length ≤ Ps.length ∧ ArgsT (Ps.take args.length) j W args ∧
     ∀ A ∈ Ps.drop args.length, A j W .undef
 
-/-- Interpretation of an encoded pack row at the legacy graph boundary. -/
-def packArgs (P : Fam) : ArgFam := fun n W vs => P n W (.args vs)
-
-theorem packArgs_adm {P : Fam} (h : Adm P) : Adm (packArgs P) :=
-  ⟨fun n W vs hp => h.down n W _ hp, fun n W U hx vs hp => h.mono n W U hx _ hp⟩
-
-theorem packArgs_congr {P Q : Fam} {n : Nat} (h : Agree P Q n) :
-    Agree (packArgs P) (packArgs Q) n := fun j hj W vs => h j hj W (.args vs)
-
 /-- The actual lists a variadic signature admits: its fixed parameters admit
 the first actuals, as a fixed signature's do, and the actuals past them, as
-one argument pack, are at the rest contract. An element rest `E[]` is the pack
-of any number at `E` (`elemPack`). -/
+one argument list, are at the rest contract. -/
 def ArgsRest (Ps : List Fam) (E : ArgFam) (j : Nat) (W : WorldT j) (args : List Tm) : Prop :=
   ArgsShort Ps j W (args.take Ps.length) ∧ E j W (args.drop Ps.length)
 
@@ -862,9 +852,8 @@ theorem ctorsT_append (L M : List (List Fam × Fam)) (k : Nat) (W : WorldT k) (v
 
 /-! ### Argument packs -/
 
-/-- Tuple shape and position membership, independent of approximation policy.
-The same shape is used for direct argument contracts and the legacy delayed
-encoding; only the interpretation of an element differs. -/
+/-- Tuple shape and position membership, independent of approximation policy:
+the interpretation of an element is supplied. -/
 def TupleFits (member : Fam → Val → Prop) (T : TupleF) (vs : List Val) : Prop :=
   T.required.length ≤ vs.length ∧
     (T.rest = none → vs.length ≤ T.required.length + T.optional.length) ∧
@@ -875,49 +864,8 @@ theorem TupleFits.map {P Q : Fam → Val → Prop} {T : TupleF} {vs : List Val}
       ∀ v, P A v → Q A v) : TupleFits Q T vs :=
   ⟨h.1, h.2.1, fun i v A hv hA => hm i A hA v (h.2.2 i v A hv hA)⟩
 
-/-- **One tuple contract on an argument list.** At least the required
-positions are present, no more than the required and optional ones without a
-rest, and each present value is, at every lower level and future world, a
-member of the family its position has. Values are held directly rather than
-at locations, so the contract speaks only below the current level: that keeps
-a pack clause contractive in its operands, as a store's contracts are through
-their locations. -/
-def PackFits (T : TupleF) (k : Nat) (W : WorldT k) (vs : List Tm) : Prop :=
-  TupleFits (fun A u => ∀ (j : Nat) (hj : j < k) (U : WorldT j),
-    WExt (trunc j (Nat.le_of_lt hj) W) U → A j U u) T vs
-
-/-- **An argument pack under tuple contracts.** The closed argument lists
-every contract admits. No program makes one; a signature's rest speaks about
-the actuals after its fixed parameters as one. -/
-def packT (Ts : List TupleF) : Fam := fun k W v =>
-  ∃ vs : List Tm, v = .args vs ∧ Scoped 0 v ∧ ∀ T ∈ Ts, PackFits T k W vs
-
-theorem PackFits.down {T n W vs} (h : PackFits T (n + 1) W vs) :
-    PackFits T n (trunc n (Nat.le_succ n) W) vs :=
-  ⟨h.1, h.2.1, fun i u A hu hA j hj U hx =>
-    h.2.2 i u A hu hA j (by omega) U (by rwa [trunc_trunc] at hx)⟩
-
-theorem PackFits.mono {T n W W' vs} (hx : WExt W W') (h : PackFits T n W vs) :
-    PackFits T n W' vs :=
-  ⟨h.1, h.2.1, fun i u A hu hA j hj U hy =>
-    h.2.2 i u A hu hA j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy)⟩
-
-theorem packT_adm (Ts : List TupleF) : Adm (packT Ts) :=
-  ⟨fun _ _ _ ⟨vs, he, hs, hf⟩ => ⟨vs, he, hs, fun T hT => (hf T hT).down⟩,
-   fun _ _ _ hx _ ⟨vs, he, hs, hf⟩ => ⟨vs, he, hs, fun T hT => (hf T hT).mono hx⟩⟩
-
-theorem packT_append (Ts Us : List TupleF) (k : Nat) (W : WorldT k) (v : Val) :
-    packT (Ts ++ Us) k W v ↔ packT Ts k W v ∧ packT Us k W v := by
-  constructor
-  · rintro ⟨vs, he, hs, hf⟩
-    exact ⟨⟨vs, he, hs, fun T hT => hf T (List.mem_append_left _ hT)⟩,
-      ⟨vs, he, hs, fun T hT => hf T (List.mem_append_right _ hT)⟩⟩
-  · rintro ⟨⟨vs, rfl, hs, hf⟩, ⟨ws, he, -, hg⟩⟩
-    cases he
-    exact ⟨vs, rfl, hs, fun T hT => (List.mem_append.mp hT).elim (hf T) (hg T)⟩
-
 /-- Equal shapes with equivalent position predicates admit the same lists.
-The predicate determines whether membership is current-level or delayed. -/
+-/
 theorem TupleFits.congr {P Q : Fam → Val → Prop} {T T' : TupleF} {vs}
     (hreq : T.required.length = T'.required.length) (hopt : T.optional.length = T'.optional.length)
     (hrest : T.rest = none ↔ T'.rest = none)
@@ -935,70 +883,9 @@ theorem TupleFits.congr {P Q : Fam → Val → Prop} {T T' : TupleF} {vs}
     | none => rw [(hpos i).1.mpr hB] at hA; cases hA
     | some B => exact ((hpos i).2 A B hA hB u).mpr (h i u B hu hB)
 
-/-- The legacy delayed interpretation is an instance of tuple congruence. -/
-theorem PackFits.congr {T T' : TupleF} {n W vs}
-    (hreq : T.required.length = T'.required.length) (hopt : T.optional.length = T'.optional.length)
-    (hrest : T.rest = none ↔ T'.rest = none)
-    (hpos : ∀ i, (positionFam T i = none ↔ positionFam T' i = none) ∧
-      ∀ A B, positionFam T i = some A → positionFam T' i = some B → Agree A B n) :
-    PackFits T n W vs ↔ PackFits T' n W vs := by
-  apply TupleFits.congr hreq hopt hrest
-  intro i
-  refine ⟨(hpos i).1, fun A B hA hB v => ?_⟩
-  constructor <;> intro h j hj U hx
-  · exact ((hpos i).2 A B hA hB j hj U v).mp (h j hj U hx)
-  · exact ((hpos i).2 A B hA hB j hj U v).mpr (h j hj U hx)
-
-/-- The pack an element rest `E[]` denotes: any number of actuals at `E`. -/
-def elemPack (E : Fam) : Fam := packT [⟨[], [], some E, false⟩]
-
 theorem positionFam_elem (E : Fam) (i : Nat) :
     positionFam ⟨[], [], some E, false⟩ i = some E := by
   simp [positionFam]
-
-theorem elemPack_iff {E : Fam} {k : Nat} {W : WorldT k} {vs : List Tm} :
-    elemPack E k W (.args vs) ↔ Scoped 0 (.args vs) ∧
-      ∀ u ∈ vs, ∀ (j : Nat) (hj : j < k) (U : WorldT j),
-        WExt (trunc j (Nat.le_of_lt hj) W) U → E j U u := by
-  constructor
-  · rintro ⟨ws, he, hs, hf⟩
-    cases he
-    obtain ⟨-, -, hp⟩ := hf _ (List.mem_singleton_self _)
-    refine ⟨hs, fun u hu j hj U hx => ?_⟩
-    obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hu
-    exact hp i _ E (List.getElem?_eq_getElem hi) (positionFam_elem E i) j hj U hx
-  · rintro ⟨hs, h⟩
-    refine ⟨vs, rfl, hs, fun T hT => ?_⟩
-    cases List.mem_singleton.mp hT
-    refine ⟨by simp, by simp, fun i u A hu hA j hj U hx => ?_⟩
-    rw [positionFam_elem] at hA
-    cases hA
-    exact h u (List.mem_of_getElem? hu) j hj U hx
-
-/-- Closed actuals at an admissible element contract form its pack. -/
-theorem elemPack_of_all {E : Fam} (hE : Adm E) {k : Nat} {W : WorldT k} {vs : List Tm}
-    (hs : ∀ u ∈ vs, Scoped 0 u) (h : ∀ u ∈ vs, E k W u) : elemPack E k W (.args vs) :=
-  elemPack_iff.mpr ⟨by simpa [Scoped, scopedArgs_iff] using hs, fun u hu j hj U hx =>
-    hE.mono j _ U hx u (hE.down_le k j (Nat.le_of_lt hj) W u (h u hu))⟩
-
-/-- Prepending closed actuals, each at the element contract below the budget,
-keeps an element pack. -/
-theorem elemPack_append {E : Fam} {k : Nat} {W : WorldT k} {xs ys : List Tm}
-    (hs : ∀ u ∈ xs, Scoped 0 u)
-    (hx : ∀ u ∈ xs, ∀ (j : Nat) (hj : j < k) (U : WorldT j),
-      WExt (trunc j (Nat.le_of_lt hj) W) U → E j U u)
-    (hy : elemPack E k W (.args ys)) : elemPack E k W (.args (xs ++ ys)) := by
-  obtain ⟨hsy, hey⟩ := elemPack_iff.mp hy
-  refine elemPack_iff.mpr ⟨?_, fun u hu => ?_⟩
-  · simp only [Scoped, scopedArgs_iff, List.mem_append] at hsy ⊢
-    rintro u (hu | hu)
-    · exact hs u hu
-    · exact hsy u hu
-  · rcases List.mem_append.mp hu with hu | hu
-    · exact hx u hu
-    · exact hey u hu
-
-theorem elemPack_adm (E : Fam) : Adm (elemPack E) := packT_adm _
 
 theorem callsT_adm (L : List (Fam × List Fam × Fam)) : Adm (callsT L) :=
   ⟨fun _ _ _ h => ⟨h.1, fun p hp => (h.2 p hp).down⟩,

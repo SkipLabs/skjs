@@ -1536,21 +1536,20 @@ require, so no class inhabits a call type and no arrow a construct type.
 
 **Argument packs.** A rest parameter typed by a type parameter, as in
 `map<P extends DepSafe[]>(f: new (...params: P) => M, ...params: P)`, says
-the whole argument list is one thing. The calculus has that thing as a value,
-`Tm.args`, which no program writes and no step makes, and the `pack` clause
-(`packT`) is its type: tuple contracts on the list, whose positions a pack
-holds as values. Their membership is required below the current level only,
-which keeps the clause contractive without any assumption on its operands, and
-coverage is covariant position by position within the length bounds
-(`CoversPack`). In the current graph interpretation a variadic signature's rest uses this
-encoding through the explicit `packArgs` adapter. Its fixed parameters admit
-the first actuals and the rest the remaining list (`ArgsRest`), so `...xs: E[]`
-is represented by the pack of any number at `E` (`elemPack`) and
-`...xs: [A, B]` the pack of exactly those positions, one mechanism for both. A
-pack speaks below the current level only, which is all the rest array's
-allocation needs, since it is a step. Graph-producing paths still spell a rest as a pack
-row; a spread into a rest, a rest compared with fixed positions, and binding a
-variadic target still need an element rest (`restElem`).
+the whole argument list is one thing. That thing is not a runtime value: an
+argument list has its own contracts, over lists of values, and the `pack`
+clause is one of them: tuple contracts on the list, each position checked at
+the current level (`clauseArguments`, `ArgumentContracts.Fits`). A pack clause
+has no runtime-value members. Coverage is covariant position by position
+within the length bounds (`CoversPack`). A variadic signature's fixed
+parameters admit the first actuals and its rest the remaining list
+(`ArgsRest`), so `...xs: E[]` admits any list of values at `E` and
+`...xs: [A, B]` exactly those positions, one mechanism for both. Allocating the
+rest array is a step, so it consumes the approximation level the contract
+itself does not (`RestCalls.argument_alloc_safe`). A spread into a rest, a rest
+compared with fixed positions, and binding a variadic target read an element
+rest (`restElem`). [Same-level argument contracts](#same-level-argument-contracts)
+gives the semantics.
 
 **Classes.** A class declares its instance type in the declaration graph,
 and its value is a statement of the module initialization, in order. The
@@ -1729,337 +1728,126 @@ Direct generic declarations now consume the same invocation certificates as
 local schemes, including argument collection, and validate every operand claim.
 Tuple-pack and argument-sequence inference remain later extensions.
 
-### Same-level argument contracts: migration to separate list contracts
+### Same-level argument contracts
 
 [`ArgumentContracts.lean`](lean/Verification/Model/Semantics/ArgumentContracts.lean)
-separates contracts on argument lists from contracts on runtime values. Grouping
-already evaluated arguments is not an execution step:
+separates contracts on argument lists from contracts on runtime values.
+Grouping already evaluated arguments is not an execution step, so an argument
+list is checked at the level at which its actuals are:
 
 ```text
 Fits([A₁, …, Aₖ], n, W, [v₁, …, vₖ]) ⇔ ∀ i, Aᵢ(n, W, vᵢ)
+All(E, n, W, vs)                    ⇔ ∀ v ∈ vs, E(n, W, v)
 ```
 
-This matters for fixed-to-tuple-rest conversion. Production `packT` checks
-members at strictly smaller indices, while fixed parameters check at the
-current index. Primitive contracts can hide that difference; object and
-callback contracts cannot. The existing restriction must not simply be deleted.
-[`ArgumentContractsTests.lean`](lean/Verification/Model/Tests/ArgumentContractsTests.lean)
-proves the unrestricted old constructor conversion false: a callback returning
-`true` where `null` is required satisfies a shallow approximation, but fails at
-the index at which the fixed constructor requires it.
+This matters for fixed-to-tuple-rest conversion. Were the positions checked
+only below the current level, primitive contracts could hide the difference
+but object and callback contracts could not: a callback returning `true`
+where `null` is required meets a shallow approximation, but fails at the
+level at which a fixed constructor requires it. With same-level membership,
+exact tuples and fixed parameters admit the same lists for arbitrary families
+(`fits_exact`), and a fixed signature covers a variadic one whose rest is one
+exact tuple, whatever its positions (`FixedCallsPack`, `FixedCoversPack`).
+One tuple shape also supplies both argument membership and an array-storage
+interpretation: position-wise inclusion in an element bound proves the
+argument bound and the readonly array view (`array_bound`), without changing
+any location's write contract.
 
-The replacement has a separate argument-contract family over lists of values.
-Exact tuples and homogeneous lists have direct interpretations; an argument
-interpreter must preserve approximation agreement without introducing a required
-delay. The surrounding call or constructor contract supplies the guard for
-recursive definitions. There is no separate, unused argument-expression AST: the
-remaining quantified migration must use the production language.
-[`PositiveGraphs.lean`](lean/Verification/Model/Types/PositiveGraphs.lean)
-proves the assignment-indexed recursive graph's fixed-point equation,
-admissibility and agreement under changes to assignments. This includes bounded
-quantification and recursive negative positions. It uses the production clause
-language: `semWithArgs` takes separate value and argument interpretations, and
-`qLayerWithArgs` supplies the same reassigned value environment to both. The
-argument interpreter must preserve agreement at the same level; the fixed-point
-proof therefore permits same-level membership without requiring an extra delay.
-The bounded-quantification proof uses that law when
-restricting an instance to its bounds. The legacy interpretation delegates to
-this implementation; there is no separate prototype graph module.
-
-Proved consequences include exact equality of fixed and exact-tuple constructor
-contracts for arbitrary element types, safe invocation through the existing
-operational rule, and safe rest-array allocation through the existing allocation
-proof. Fixed calls cover the corresponding exact-tuple calls; equality is not
-claimed because fixed calls can admit omitted `undefined` arguments. One tuple
-shape also supplies both argument membership and an array-storage interpretation:
-position-wise inclusion in an element bound proves the argument bound and the
-readonly array view, without changing any location's write contract. This is
-the connection needed for a parameter such as `Params extends readonly DepSafe[]`;
-it does not identify an argument list with a heap array.
-
-**Migration status.** Core rest-call and rest-constructor signatures consume
-`ArgFam`, a predicate on lists, rather than `Fam`, a predicate on runtime
-values. Both use the same `WorldFamily`, `Adm` and `Agree` laws. Fixed,
-optional and variadic-call elimination use the common argument-contract call
-rule. Certificate checking and declarative coverage share `CoversWith`,
-instead of duplicating their clause matrix. Tuple shape and position membership
-also have one definition (`TupleFits`), with the element-membership predicate
-supplied separately. The existing pack checker and same-level tuple coverage
-now use one covariance proof, `covers_arguments`; the legacy delay is confined
-to its old caller. This does not remove the delay from quantified substitution.
-
-The universal generic-body checker and its closure certificates now interpret
-homogeneous rest arguments directly:
+**One interpretation.** A graph row means a family of runtime values, and a
+type also means a family of argument lists. Both come from one guarded fixed
+point over (assignment, label), `qDenoteWithArgs G (mixedParameters G)`. An
+assignment gives each binder a family over the tagged sum `Val ⊕ List Val`
+(`MixedAssignment`); this is a semantic sum, not a calculus value. A binder
+reads the component its kind selects (`selectParameter`). A pack clause
+contributes no runtime values. The list component is derived from the value
+component at the same level, never unfolded again:
 
 ```text
-All(E, n, W, vs) ⇔ ∀ v ∈ vs, E(n, W, v)
+mixedValues G η S    = ⋃_{i ∈ S} qDenoteWithArgs G (mixedParameters G) (η, i)
+graphArguments G η X S n W vs ⇔ ∃ i ∈ S.
+    (kind i = arguments ∧ η(i)(n, W, inr vs))
+  ∨ (∃ c ∈ G i. clauseArguments X c n W vs)
+mixedMeaning G η S (inl v)  ⇔ mixedValues G η S v
+mixedMeaning G η S (inr vs) ⇔ graphArguments G η (mixedValues G η) S vs
 ```
 
-Its rest-array collection proof allocates invariant storage from those
-same-level premises. Its variadic-to-fixed rule consequently needs neither
-admissibility nor closedness merely to group arguments. Operational invocation
-still requires actual values, and allocation still preserves fixed location
-contracts. The source-to-safety theorem covers this migrated path.
+A graph's `meaning` and `argMeaning` read this at its own assignment,
+`G.env`. The fixed point is admissible and non-expansive for arbitrary
+admissible approximations, and argument interpretation preserves agreement
+at the same level (`ArgumentNonExp`), so no extra delay is needed.
+`ParameterSpace` keeps the assignment algebra (reassignment, shadowing, bound
+restriction) independent of the carrier.
 
-The assignment algebra distinguishes **value families** from **argument-list
-families** without requiring every binder in a scheme to have the same kind.
-`ParameterSpace` states the semantic carrier and closedness predicate;
-reassignment, shadowing, bound restriction and their proofs share one
-implementation over that space. `boundedSem` and `boundedSem_adm` use it too;
-production value schemes continue to use the shared proof.
+**Subtyping proves both components.** The core certificate relates two value
+types or two argument-list types on every edge (`SameKind`); value `top` does
+not admit argument lists. Coverage is proved once over the mixed meaning at
+any assignment:
 
-`MixedFamily` is a family over the tagged semantic sum `Val ⊕ List Val`.
-This is not a new calculus value or a runtime pack encoding. Its value and list
-projections each preserve admissibility and closedness. `ofValue` and
-`ofArguments` have no members in the opposite projection, and `le_iff` states
-that inclusion must hold in both projections. One substitution can therefore
-carry a value type and a list contract with their different bounds.
+```text
+FamLeAt G η A B n    ⇔ ∀ W v. mixedValues G η A n W v ⇒ mixedValues G η B n W v
+ArgsLeBelow G η R n  ⇔ ∀ j < n. ∀ A B. R A B ⇒ mixedArgs G η A j ⊆ mixedArgs G η B j
 
-The semantic control now quantifies over both `T` and `P`, in one substitution:
-`(new (...P) → T, ...P) → T`. It uses the same `P` for the constructor and the
-trailing actuals, and the same `T` for the constructor and call results. This
-checks universal mixed-kind elimination, not a collection of observed calls.
-The production certificate proof `inst_sound` now uses the sort-independent
-`bounded_substitution_elim`: the chosen interpretation determines both the
-assigned family and its checked upper bound. `assignment_substitution` also
-supplies its relation between source and substituted binders. The mixed-kind control
-uses the same elimination theorem. The remaining value-specific part is the
-interpretation supplied by `inst_sound` and the graph-row image proof
-(`table_row`), not a second implementation of bound checking.
+Covers G R a b    ∀ j < n. R ⊆ FamLeAt G η · · j    ArgsLeBelow G η R n
+──────────────────────────────────────────────────────────────────────  Covers.sound
+                  mixedSem G η a n ⊆ mixedSem G η b n
 
-Signature interpretation now works over either the value or mixed assignment
-space. `ArgumentInterpreter` receives the assignment directly, alongside the
-recursive value meanings; its agreement law covers both inputs. The mixed
-control uses production `instanceTWithArgs` instead of a separately written
-signature body.
+Core G S T
+──────────────────────────────────────────────  Core.mixed_sound
+∀ η. FamLe (mixedMeaning G η S) (mixedMeaning G η T)
+```
 
-`graphArguments` supplies the same-level interpretation of the existing graph
-rows: an argument parameter reads its assigned list contract; a tuple-pack row
-checks its elements at the current level; value rows admit no lists. Its
-parameter/tuple equations, agreement law, and admissibility/closedness are
-proved. The constructor conversion control now uses an actual object-valued
-graph tuple row through this interpreter.
+The induction at level `n` first proves value inclusion from both components
+below `n`, then list inclusion at `n` from value inclusion at `n`
+(`core_arguments_of_values`). `Sub.mixed_sound` extends this to every
+structural rule: instantiation (`inst_mixed_sound`, with bounds checked on both
+components), renaming tables (`table_row_mixed`), and generalization, whose
+binders are independent of the type's free rows (`agree_freeWith`,
+`mixed_respectsFree`). `Sub.sound` and `Sub.args_sound` are its two
+projections at `G.env`.
 
-The shared recursive fixed point now accepts the mixed assignment domain.
-`ParameterInterpretation` keeps the parameter-value projection, argument
-interpretation and bound interpretation together with their admissibility and
-agreement laws. `mixedParameters` retains **both** components of a bound;
-checking only the value projection could make a pack bound vacuous. The same
-`qLayerWithArgs`/`qDenoteWithArgs` implementation and proofs handle the legacy
-and mixed cases. The recursion controls now use actual graph tuple rows and a
-pack parameter bounded by a tuple containing a recursive callable; the former
-synthetic argument interpreters have been removed.
+**Substitution.** A checked instance table maps rows to rows. Under its
+context an entry's row means its image in both components (`table_row_mixed`):
+the value image first, from both components below the level, then the list
+image at the level (`table_row_arguments`). The executable `instKinds` check
+connects the wire's kinds to the selected components
+(`mixed_assignment_substitution`); a scheme binder's bound is checked as
+inclusion of mixed meanings, so a pack bound constrains lists.
 
-The fixed point's recursive outputs remain value meanings. Argument meanings
-are derived by `graphArguments` from those outputs at the same level, without
-an extra unfolding. Admissibility is proved for arbitrary admissible
-approximations, not only the closed-value fixed point. This prevents the
-migration from reintroducing the delay that breaks object/callback conversion.
+**Programs.** Variadic calls and constructors consume `ArgFam`, a predicate on
+lists (`restsT`, `ctorRestsT`), from `argMeaning`. A rest array is allocated
+from same-level actuals (`restArray_safe`), and a variadic call's plain parts
+at the positions of an exact tuple form a list its rest admits
+(`restParts_pack`). The source-to-safety theorem `checkJson_safe` keeps its
+statement; `meaning` in it is the mixed value meaning.
 
-Operand substitution now has a shared value/list proof boundary.
-`semWithArgs_map` transports both sorts of operands through the existing
-`clauseImg`; `clauseImg_value` is used by production `table_row`, replacing its
-bespoke operand-mapping proof. `clauseArguments` owns the tuple-list meaning
-used by `graphArguments`, and `clauseImg_arguments`/`graphArguments_image`
-prove its plain-row image from element equalities **at the same level**.
-A control checks an actual table substituting an object for a tuple element,
-uses mixed semantics throughout, and derives the tuple's list image from the
-parameter's value image at that level.
-Removing the operand entry is refused. Binder correspondence under scheme
-renaming now also works over either assignment carrier.
+**Producer.** The OCaml producer separates `ty` from `pack`, with tagged
+value/pack substitution arguments; `Args` is not a value-type atom. Its
+traversals refuse cross-kind uses, preserve nested binders, and share element
+traversal between pack shapes and arrays. Both source readers classify binder
+roles structurally and scope-aware; the emitted parameter row keeps its kind,
+and the wire requires it. `NormalGraph.params` is derived from
+`parameterKinds`. Instantiation and substitution-table checks reject
+substitutions of the wrong sort, including mixed unions.
 
-Free-variable independence now uses one approximation invariant for both
-assignment domains. `RespectsFree` is a proved property of each interpreter,
-not a new certificate premise. `agree_freeWith` handles nested reassignments
-and bounds; production `agree_free` delegates to it. The old value-only
-step-index induction and its unused local-congruence lemma have been removed.
-A nested-scheme control captures a pack under an inner value binder, with a
-recursive callable in the pack's outer bound. The existing `FreeOk` check
-rejects omitting the capture from the free-variable map.
+**Controls.** `object-pack-method-value-import.ts` instantiates a pack
+parameter at a tuple of objects, which a class's constructor takes, and
+verifies; `invalid-object-pack-method-value-import.ts` rejects a wrong object
+field. `pack-method-value-import.ts` and its invalid variants cover the
+primitive case, arity and bounds. The semantic controls in
+`ArgumentContractsTests.lean` instantiate a value result and a pack shared by
+a constructor and trailing arguments in one substitution, and an object-valued
+pack captured by a returned generic callable.
 
-The production entry point still selects `legacyParameters`: its environment,
-`inst_sound` and subtype certificates have not migrated together.
-The **full recursive mixed table-image theorem is now proved**:
-`table_row_mixed` establishes both components for every checked entry, under
-nested scheme bounds and kind-preserving binder renaming. Its induction first
-establishes value images from both components at smaller levels, then uses
-`table_row_arguments` to establish list images from the current-level value
-result. `inst_mixed_sound` uses that theorem to justify fixed and variadic
-signature instantiation with one mixed substitution. Its bound-inclusion
-premise is about `mixedMeaning`, not just the value projection.
-
-The semantic control now instantiates an object-valued pack captured by a
-returned generic callable. The returned callable renames its own bounded value
-binder; a constructor in its result retains the outer pack. The actual
-`TableOk` certificate and `inst_mixed_sound` discharge this control. Changing
-the renamed value binder to an argument binder is refused. The simpler object
-tuple control also uses `table_row_mixed`, without an assumed value-image
-premise.
-
-**Remaining production migration:**
-
-1. **Done: core subtype coverage for the mixed interpretation.** The
-   executable core certificate checks `SameKind` on every edge: two value types
-   or two argument-list types. Empty types work at either sort. This prevents
-   the former pack-to-`top` acceptance; a control proves the corresponding
-   mixed inclusion false (`top` admits values, not argument lists).
-   `Core.mixed_sound` proves both components:
-
-   ```text
-   Core G S T  ⊢  ∀ η. FamLe (mixedMeaning G η S) (mixedMeaning G η T)
-   ```
-
-   The coverage proof is not duplicated. It is stated once over an
-   interpretation `σ : CoverSem G`, which consists of a value meaning for each row
-   (`σ.val = setSem σ.row`) and a list meaning for each type (`σ.args`). It also
-   records four facts: overlapping rows are `compatible`; an element rest
-   admits the lists of its element's values (`elem_of_all`, `elem_append`);
-   and an exact stable tuple holds its actuals at their positions (`exact`).
-
-   ```text
-   FamLeAt σ A B n    ⇔ ∀ W v. σ.val A n W v ⇒ σ.val B n W v
-   ArgsLeBelow σ R n  ⇔ ∀ j < n. ∀ A B. R A B ⇒ ∀ W vs. σ.args A j W vs ⇒ σ.args B j W vs
-
-   Covers G R a b    ∀ j < n. R ⊆ FamLeAt σ · · j    ArgsLeBelow σ R n
-   ────────────────────────────────────────────────────────────────────  Covers.sound
-         semWithArgs σ.val σ.args a n ⊆ semWithArgs σ.val σ.args b n
-   ```
-
-   `legacyCover` reads argument lists as delayed pack values, and `Core.sound`
-   is unchanged in statement. `mixedCover` reads them as same-level `Fits`
-   through `graphArguments`, so its `exact` fact does not use stability. The
-   mixed induction at level `n` first proves value inclusion from both
-   components below `n`. It then proves list inclusion at `n` from value
-   inclusion at `n` (`core_arguments_of_values`). Pack clauses are outside the
-   value projection, and a non-pack clause is covered only by a non-pack clause.
-   So a covered value lands in the target's value projection.
-2. Connect those bound proofs to `inst_mixed_sound`, and migrate generalization,
-   the graph environment and the CLI's accepted source-plan safety path
-   together. Preserve the exact `checkJson_safe` contract.
-3. Switch call/rest allocation rules to same-level list contracts. Remove the
-   legacy pack-value adapter and primitive stability guards only after their
-   consumers use the replacement proofs. Re-run the motivating object-valued
-   generic pack call; it is still unverified under current production semantics.
-
-These new theorems are not yet a change to CLI acceptance.
-
-Parameter correspondence now compares the **selected kind**. `selectParameter`
-projects a mixed family; `mixedMeaning_parameter` identifies a parameter row
-with that projection. `RelKWith` is the shared context relation, with production
-`RelK` its legacy instance. `mixed_enter_binder` proves correspondence under
-kind-preserving renaming without constraining unused components of arbitrary
-mixed instantiations. Free-variable independence also compares selected
-components: its nested-capture control permits different unused value
-components on a pack binder.
-
-The mixed interpretation now filters pack clauses out of the runtime-value
-projection of the same graph rows; `graphArguments` still reads their list
-component at the current level. No second graph is stored or checked for
-coherence. `mixedMeaning` combines the two derived components and is proved
-admissible and closed. `mixedMeaning_noValues`, `mixedMeaning_noArguments` and
-`mixedMeaning_selected` connect the existing `hasKind` check to disjoint
-semantic components. These laws include unions, parameters and level zero.
-`mixed_assignment_substitution` then uses the existing executable `instKinds`
-check to establish the selected context relation for graph-derived families.
-A control supplies an object and a tuple of objects in one checked substitution.
-These are semantic/certificate lemmas; production acceptance still selects the
-legacy interpretation until the production bound and subtype proofs migrate.
-
-The remaining graph assignment/substitution change must retain a pack's list
-contract and the coherent array interpretation used by collection and array
-bounds. Substitution certificates must preserve both interpretations; using a
+**Open.** A source binder used both as a pack and as an array value still
+leaves its method opaque, pending a coherent collected-array view: using a
 binder as a rest and using its collected array must not choose unrelated
-contracts. The shared quantifier now supports mixed value/pack substitutions;
-its row-image proofs are now established, while selecting that domain in
-production remains an integration requirement.
-
-The OCaml producer now separates `ty` from `pack`, with tagged value/pack
-substitution arguments. `Args` is no longer an ordinary value-type atom. Its
-substitution traversals refuse cross-kind uses, preserve nested binders, and
-share element traversal between pack shapes and arrays. Export has one pack
-encoder; it still emits the existing graph rows. This closes the producer's
-internal sort conflation, not the semantic assignment or certificate migration.
-
-Source binder classification is now structural and scope-aware in both readers.
-Lean no longer counts substrings in serialized JSON. Both lowering environments
-retain distinct value and pack bindings, so reading a pack through the value
-path (or a value through the pack path) is an explicit error. A nested scheme
-shadows its binders; its same-named value parameter does not change an outer
-pack's role. A source binder genuinely used both as a pack and as an array value
-still leaves its method opaque, pending the coherent collected-array view.
-The emitted parameter row now retains that kind, and `NormalGraph.params` is
-derived from `parameterKinds` rather than maintained separately. The wire
-requires the kind; it never defaults a missing kind to `value`. Instantiation and substitution-table
-checks reject value/pack substitutions of the wrong sort, including mixed
-unions; scheme renaming preserves each binder's kind. This preserves source classification through the graph boundary, but
-does not yet change the legacy semantic assignment or pack denotation.
-
-The production graph entry point, quantified pack instantiation and exported
-certificates still select `packArgs`. That is
-legacy behavior, not the intended final interpretation. Migrate those together:
-give a quantified pack one coherent shape with both argument and array
-interpretations, then update substitution, coverage/search, decoding and
-producer export. These changes do not yet establish that the framework source
-verifies. Validate the completed migration with object/callback tuple arguments
-and the original imported framework example, including a failing argument
-control. Preserve the existing source-to-safety theorem. Do not retain a
-primitive-only rule as the intended end state or weaken existing expected
-outcomes to close this work.
-
-An object-valued constructor probe also exposed a source-decoder restriction
-before reaching pack conversion. `Fragment.callableType` now decodes every
-callable operand position; the separate receiver decoder was removed. `object-callable-operands.ts` and
-`object-constructor-value-import.ts` verify nested objects across callbacks and
-constructors, plus an optional-field receiver;
-`invalid-object-callable-operands.ts` rejects supplying a readonly
-view to a writing callback. The generic object-pack call still fails its call
-obligation under the legacy interpretation; these controls do not close pack
-substitution. In the reproducer, the method takes
-`new (...args: Params) => ObjectBox` and `...args: Params`, with
-`Params extends { readonly value: number }[]`. The producer chooses the
-one-position pack for `{ value: 1 }`. Its object position is a `refs` clause,
-so `StableTy` is false at the fixed-constructor-to-pack conversion. The
-ordinary `new ObjectBox({ value: 1 })` control verifies. Do not widen away the
-object contract or remove that guard under the old interpretation.
-
-The integration must change the following connected boundaries together:
-
-1. `NormalGraph.env`, scheme binders and recursive denotation must carry both
-   value and argument-list assignments. Mixed schemes must retain both kinds;
-   introducing a second, independently maintained binder list is not a source
-   of truth. Argument rows interpret their elements at the current level, with
-   recursion guarded by the surrounding callable.
-2. `RelK`, `table_row` and `inst_sound` must establish substitution at each
-   operand's sort. Currently `RelK` relates only `qMeaning` value families, and
-   `inst_sound` chooses `meaning G U` for every substitution. The shared bound
-   theorem does not alter either fact.
-3. `boundOk`/`checkInst` and the corresponding declarative rules must check
-   inclusion of list contracts for pack bounds. A value-subtyping certificate
-   is not a list-subtyping certificate. Making pack rows empty as runtime-value
-   types while retaining these checks would make their old value inclusions
-   vacuous; that is not a sound migration.
-4. Decode, export and coverage search must use those sorted rules. Only after
-   source verification exercises that complete path can the old pack meaning
-   and fixed-to-pack stability guards be retired.
-
-The semantic refactors above do not yet complete this production migration.
-Parameter kinds are retained in graph rows and checked by instantiation, and
-the shared fixed point supports mixed environments. The production selector
-and substitution certificates still need to migrate together; the shared
-substitution theorem alone is not a migrated pack certificate.
-
-The remaining integration boundary is explicit:
-
-| Step | Status | Completion condition |
-| --- | --- | --- |
-| Same-level core calls, constructors and universal rest bodies | Implemented | Existing operational safety proofs use list contracts. |
-| Producer value/pack substitution distinction | Implemented internally | Packs cannot be value-type atoms; cross-kind substitution is refused; the wire still uses legacy pack rows. |
-| Source binder roles | Implemented | Structural, scope-aware classification; value/pack bindings have distinct lowering paths; mixed uses remain opaque. |
-| Sorted assignment and universal quantification algebra | Proved and shared with production value schemes | Reassignment and bound restriction support mixed substitutions; a universal control shares its list contract across constructor/rest positions and its value contract across both results. |
-| Mixed signatures and recursive graph interpretation | Proved in the shared implementation | Pack parameters read list assignments; tuple rows use current-level value meanings; the shared fixed point supports mixed bounds and recursive pack rows. Production certificates still use the legacy domain. |
-| Quantified pack substitution in the Lean graph | Pending | A pack argument is instantiated as a list contract, not by the old ordinary-value `meaning` of a pack row; bounds and both uses of the binder agree. |
-| Source/evidence migration and retirement | Pending | Decoders, producer export, substitution certificates and coverage select that interpretation; retire `packArgs`, the ordinary `pack` encoding and `StableTy` guards. |
-| Motivating source coverage | Pending | Object/callback dependencies verify end to end; wrong actuals remain rejected; report the original framework client's independent gaps separately. |
+contracts. The imported framework calls need `Params = []` for
+`Plus`/`Minus` and `[number]` for `AddIndex`, with
+`Params extends readonly DepSafe[]`; their other gaps are tracked with the
+framework client. The rigid generic-body semantics (`TypeParams`) treats a
+rigid parameter as a value parameter, admitting no argument list; production
+generic plans go through `GenericCertificate`, which reads homogeneous rests
+directly (`All`).
 
 ### Next object milestone
 

@@ -138,10 +138,10 @@ about the callee's code. A fixed signature $\vec A\to B$ admits the prefixes of
 $\vec A$ whose omitted positions admit `undefined`. A variadic signature
 $\vec A,\ldots P\to B$ has a rest type $P$, an [argument pack](POSITIVE-TYPES.md#argument-packs):
 it admits the lists whose first actuals $\vec A$ admits, as a fixed signature
-does, and whose actuals past them are, as one pack, in $P$. An element rest
-`...xs: E[]` is the pack of any number of actuals in $E$,
-$\mathsf{Pack}([\,],[\,],E)$ (`elemPack`); a tuple rest `...xs: [A, B]` is the
-pack of exactly those positions:
+does, and whose actuals past them are, as one list, in $P$'s argument lists,
+at the current level (`argMeaning`). An element rest `...xs: E[]` admits any
+number of actuals in $E$, $\mathsf{Pack}([\,],[\,],E)$ (`restElem_args`); a
+tuple rest `...xs: [A, B]` exactly those positions:
 
 $$
 \operatorname{Adm}(\vec A)=\{\vec v\mid |\vec v|\le|\vec A|,\ \forall i<|\vec v|.\,v_i\in A_i,\ \forall |\vec v|\le i<|\vec A|.\,\mathsf{undefined}\in A_i\}
@@ -214,9 +214,12 @@ P=\mathsf{Pack}(\tau)\ \land\ |\tau.R|\le|\vec p|\ \land\ (\tau.E=\varnothing\Ri
 \end{cases}
 $$
 
-The first case is `rest_call_safe`: the actuals collected at $E$ form an
-element pack (`elemPack_of_all`). The second is `pack_call_safe`: the actuals
-at the positions form a pack of $\tau$ (`restParts_pack`).
+The first case is `rest_call_safe`: the actuals collected at $E$ form a list
+the element rest admits (`restElem_args`). The second is `pack_call_safe`: the
+actuals at the positions form a list $\tau$ admits (`restParts_pack`). The
+rest array is allocated from those actuals at the current level; the
+allocation step consumes the level (`restArray_safe`,
+`RestCalls.argument_alloc_safe`).
 
 A spread is read by the call once every earlier actual is a value, the store's
 elements replacing it in order, `undefined` at a hole
@@ -250,7 +253,7 @@ its own, the target's further fixed positions taken into the source's rest,
 which needs an element rest unless there are none (`IntoRest`), and whose rest
 is within its own as a pack (`RestCovers`); results are covariant. A fixed
 source never covers a variadic target with an element rest: it promises nothing past its positions. It covers
-one whose rest is one exact tuple of stable positions, its parameters within the
+one whose rest is one exact tuple, of any positions, its parameters within the
 source's first and the tuple's positions within the rest
 (`FixedCallsPack`, as `FixedCoversPack` for construct signatures in
 [POSITIVE-TYPES.md](POSITIVE-TYPES.md#keys-optional-fields-bigints-symbols-and-construct-signatures));

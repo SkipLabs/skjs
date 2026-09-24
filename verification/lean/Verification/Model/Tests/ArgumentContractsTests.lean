@@ -8,7 +8,7 @@ namespace Verification.Model.ArgumentContractsTests
 open ArgumentContracts PositiveNormalization PositiveGraphs ModelBoundaries Tower
 
 /-- A real graph tuple row taking an object supports fixed-constructor
-conversion, without the old stability restriction on the element type. -/
+conversion, whatever the element type. -/
 example (η : MixedAssignment Nat) :
     ctorsT [([refT nulT], numT)] = ctorRestsT [([], graphArguments
       (.ofRows fun _ => [.pack ⟨[[1]], [], none, false⟩ []]) η
@@ -66,7 +66,7 @@ example (η : MixedAssignment Nat) (S : List Nat) :
   PositiveRules.mixed_assignment_substitution imageGraph η [1,5] [[2],[3]] (by decide) (by decide) S
 
 /-- A graph pack has no runtime-value inhabitants even at level zero;
-its list meaning is separate, rather than a synthetic `.args` value. -/
+its list meaning is separate from its value meaning. -/
 example (η : MixedAssignment Nat) (n : Nat) (W : WorldT n) (v : Val) :
     ¬ mixedMeaning imageGraph η [0] n W (.inl v) :=
   mixedMeaning_pack_value imageGraph η 0 _ _ rfl n W v
@@ -374,28 +374,6 @@ theorem callback_not_deep : ¬ arrowT nulT nulT 2 (ofList []) badCallback := by
   have := safe_value_mem (show isVal .tru = true from rfl) hs
   simp [nulT] at this
 
-/-- The old guarded pack admits the callback at level 2 because it checks the
-position only below 2; the same-level contract correctly distinguishes it. -/
-theorem old_pack_loses_information :
-    PackFits ⟨[arrowT nulT nulT], [], none, false⟩ 2 (ofList []) [badCallback] ∧
-    ¬ Fits ⟨[arrowT nulT nulT], [], none, false⟩ 2 (ofList []) [badCallback] := by
-  constructor
-  · refine ⟨by simp, by simp, ?_⟩
-    intro i v A hv hA j hj U hx
-    have hi : i = 0 := by
-      obtain ⟨hi, _⟩ := List.getElem?_eq_some_iff.mp hv
-      simp only [List.length_singleton] at hi
-      omega
-    subst i
-    simp only [List.getElem?_cons_zero, Option.some.injEq] at hv
-    subst v
-    simp only [positionFam, List.getElem?_cons_zero, Option.some.injEq] at hA
-    subst A
-    exact callback_shallow hj U
-  · intro h
-    have hargs := (fits_exact [arrowT nulT nulT] 2 (ofList []) [badCallback]).mp h
-    exact callback_not_deep hargs.1
-
 /-- A constructor returning its sole argument. This isolates the contract
 conversion from allocation and from any implementation-specific behavior. -/
 def identityConstructor : Tm := .objAt [] (.closure 1 (.var 1) .construct)
@@ -412,41 +390,9 @@ theorem identity_constructor (A : Fam)
     exact (subst_above (hA j U a harg) (Nat.le_refl 0) .undef).symm
   · exact value_safe A j U heap a (hv a (by simp)) harg
 
-/-- Removing stability from the old rule would be false in the old semantics,
-not merely difficult to prove. The new same-level interpretation is necessary. -/
-theorem old_constructor_conversion_false :
-    ¬ FamLe (ctorsT [([arrowT nulT nulT], arrowT nulT nulT)])
-      (ctorRestsT [([], packArgs (packT [⟨[arrowT nulT nulT], [], none, false⟩]), arrowT nulT nulT)]) := by
-  intro rule
-  have h := rule 3 (ofList []) identityConstructor (identity_constructor _ (fun _ _ _ h => h.1.scoped) _ _)
-  have hh : HeapOk 2 (ofList []) [] := by
-    refine ⟨by simp, ?_⟩
-    intro l c hc
-    simp [lookup] at hc
-  have hx : WExt (trunc 2 (by omega) (ofList ([] : List (Ctr 3)))) (ofList []) := by
-    rw [trunc_empty]
-    exact WExt_refl _
-  have hpack : packT [⟨[arrowT nulT nulT], [], none, false⟩] 2 (ofList []) (.args [badCallback]) := by
-    refine ⟨[badCallback], rfl, by trivial, ?_⟩
-    intro T hT
-    cases List.mem_singleton.mp hT
-    exact old_pack_loses_information.1
-  have ha : CtorRest [] (packArgs (packT [⟨[arrowT nulT nulT], [], none, false⟩])) 2
-      (ofList []) [badCallback] := by
-    exact ⟨by simp, trivial, hpack⟩
-  obtain ⟨result, hi, hs⟩ := h.2 _ (List.mem_singleton_self _) 2 (by omega) (ofList []) hx
-    (emptyWorld_adm 2) [] hh [badCallback] (by intro v hv; cases List.mem_singleton.mp hv; rfl) ha
-  obtain ⟨fs, arity, body, he, hr⟩ := hi
-  cases he
-  subst result
-  change Safe (arrowT nulT nulT) 2 (ofList []) [] badCallback at hs
-  exact callback_not_deep (safe_value_mem rfl hs)
-
 /-- Wrong argument types remain rejected. -/
 example (n W) : ¬ Fits ⟨[numT], [], none, false⟩ n W [.nul] := by
   rw [fits_exact]
   simp [ArgsT, numT]
 
-#print axioms old_pack_loses_information
-#print axioms old_constructor_conversion_false
 end Verification.Model.ArgumentContractsTests

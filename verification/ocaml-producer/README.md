@@ -984,9 +984,10 @@ only runtime collections.
 of the graph: binders, which are parameter rows, and signatures whose rows may
 mention them (`Promise<T>`'s `then` reaches `PromiseLike<R1>`). The
 denotation is indexed by an assignment of the parameter rows as well as by the
-label, over the same guarded fixed point (`qDenote` in
+label, over the same guarded fixed point (`qDenoteWithArgs` in
 `Types/PositiveGraphs.lean`): a scheme row means one callable meeting its
-signatures at every reassignment of its binders to a family of closed values.
+signatures at every reassignment of its binders, a value binder to a family of
+closed values and a pack binder to a family of closed argument lists.
 
 Stages 1 and 2 are done. A `NormalGraph` carries clause rows, scheme rows,
 parameter rows and the assignment `env`, and `meaning G` is the denotation at
@@ -1014,7 +1015,7 @@ Stage 3 is done: subtyping over scheme rows, with certificates
   (`Box<T>` to `Box<boolean>`), clause by clause, or to itself when it has no
   free row the context names. Scheme rows map to scheme rows up to renaming
   their binders, without capture. Under its context a row means its image
-  (`table_row`). This is capture-avoiding substitution up to renaming of bound
+  (`table_row_mixed`, for values and argument lists). This is capture-avoiding substitution up to renaming of bound
   binders, which the colouring of generic methods (stage 4) needs: one binder
   row serves several scopes. A call
   through a generic function is then the existing call rule after
@@ -1022,10 +1023,10 @@ Stage 3 is done: subtyping over scheme rows, with certificates
 - *Coverage* (`Sub.gen`): a type is below a scheme when it is below the
   scheme's signatures with the binders opaque and none of its free parameter
   rows is a binder (a checked free-variable certificate);
-  it then means the same at every instantiation (`agree_free`). So
+  it then means the same at every instantiation (`agree_freeWith`). So
   `<T>(x: T) => T` is below `<U>(x: U) => U`, and `(x: T) => T` at one `T` is
   not below `<T>(x: T) => T`.
-- Subtyping is proved at every assignment (`Sub.sound_at`). This is where "no
+- Subtyping is proved at every assignment, for both components (`Sub.mixed_sound`). This is where "no
   check reads `env`" became a theorem: the one judgment that was indexed by
   the graph beyond its rows, overload coverage, is now indexed by the graph's
   compatibility test.
@@ -1047,14 +1048,14 @@ non-expansive in the assignment, which gives admissibility. An instance's
 types must lie within the bounds (inclusion or a core certificate per bound);
 `bounded-generic-method-value-import` and its negative exercise it.
 Pack parameters, as `EagerCollection.map`'s `...params: Params`, are a rest
-typed by a binder: an argument-pack type in the calculus (`Tm.args`, the `pack`
-clause), the rest of a variadic scheme signature and of a variadic construct
-signature, instantiated at the tuple of a call's further actuals and bounded
-position by position (`pack-method-value-import`, whose class takes the one
-number the pack holds; its negatives refuse a string outside the bound and a
-constructor needing more actuals than the rest). A fixed construct or call
-signature meets a tuple rest only when the tuple's positions are stable
-(primitives, literals, `unknown`). F-bounded binders and methods whose
+typed by a binder: an argument-list type (the `pack` clause, a contract on
+lists of values), the rest of a variadic scheme signature and of a variadic
+construct signature, instantiated at the tuple of a call's further actuals and
+bounded position by position (`pack-method-value-import`, whose class takes the
+one number the pack holds; its negatives refuse a string outside the bound and
+a constructor needing more actuals than the rest;
+`object-pack-method-value-import` holds an object). A fixed construct or call
+signature meets a rest that is one exact tuple, whatever its positions. F-bounded binders and methods whose
 unfolding keeps growing stay opaque members. The runtime API's
 `V & DepSafe` is proposed as its parameter, which Lean lowers and checks
 whole; what stops `sum.ts`'s mappers now is their bodies, which return an array
@@ -1100,58 +1101,24 @@ nested object inputs/results and receivers through one recursive decoder.
 The separate receiver decoder was removed; optional fields keep the same
 meaning in each position.
 `object-callable-operands.ts` and `object-constructor-value-import.ts` verify;
-the readonly-to-writing-callback control is rejected. This fixes an earlier
-decoder barrier to object-valued pack calls, whose pack conversion remains
-pending below.
+the readonly-to-writing-callback control is rejected. This fixed an earlier
+decoder barrier to object-valued pack calls.
 
-**Argument-pack migration.** The [same-level contract design](../DESIGN.md#same-level-argument-contracts-migration-to-separate-list-contracts)
-is the intended replacement for the current guarded pack rows and their
-primitive-only fixed-to-pack conversion. The general semantic equations are
-proved, including object and callback elements and recursive schemes with
-bounded pack parameters. The shared assignment and bounded-quantification
-proofs now support mixed value and argument-list substitutions, using a tagged
-semantic sum rather than a runtime pack value. A semantic control instantiates
-both a value result type and a pack shared by a constructor and trailing
-arguments in one universal substitution. The shared signature interpreter now
-consumes mixed assignments, and
-`graphArguments` interprets tuple rows and pack parameters as same-level list
-contracts. The same recursive fixed-point implementation now supports mixed
-assignments and bounds, with real recursive pack-row controls. Production
-integration is still pending: the CLI's graph environment and substitution
-certificates still select the legacy value-only interpretation. The object-valued
-generic pack call therefore remains unverified. Plain argument-row images now
-follow from the checked table's current-level element images, including an
-object substitution control. Free-variable independence now uses the shared
-approximation proof for mixed assignments and nested scheme captures. The
-selected parameter and binder-renaming lemmas are proved, and the mixed
-interpretation now excludes runtime pack values. The existing kind check is
-connected to semantic sort separation and to a graph-derived mixed
-substitution. The full recursive mixed table-image theorem and mixed scheme
-instantiation are now proved, including nested bounds, renamed value binders
-and captured object-valued packs. Their control uses a checked graph table,
-not an assumed intermediate substitution result.
-
-Production migration remains open: core subtype certificates must prove both
-components when used for bounds, before the CLI environment and call/rest
-allocation rules can switch. The core certificate now requires same-kind subtype edges, rejecting a pack
-below value `top`; a semantic control proves that mixed inclusion false.
-Core's argument-list proof now follows from current-level value inclusion;
-its recursive value proof is still pending. The
-[design's remaining migration steps](../DESIGN.md#same-level-argument-contracts-migration-to-separate-list-contracts)
-track this boundary and removal of the legacy adapters and stability guards.
-The motivating source call remains unverified.
-The producer now distinguishes value and pack substitutions internally and uses
-one pack encoder for homogeneous and tuple rests. Its wire output still uses
-the existing pack rows, so this is not the verifier migration. The universal
-generic-body checker already uses same-level rest arguments; the graph's
-production instantiation and export still select the legacy adapter. The framework calls need `Params = []` for
-`Plus`/`Minus` and `[number]` for `AddIndex`. One checked substitution must
-establish the constructor's argument contract, the supplied actuals and
-`Params extends readonly DepSafe[]`. A binder used as an array value must keep
-its array interpretation too; an argument list is not an array. The broader API
-also permits object-valued `Managed` arguments, so the primitive-only conversion
-is not a closure criterion. Rerun the original client independently: this
-migration does not itself close its array-library and asynchronous-startup gaps.
+**Argument packs.** A rest parameter's type is a contract on argument lists,
+checked at the level of the actuals, not a runtime value
+([same-level argument contracts](../DESIGN.md#same-level-argument-contracts)).
+A pack parameter is instantiated at a pack type by one checked substitution,
+which may also carry value types, and its bound is checked on argument lists.
+A fixed constructor covers a rest that is one exact tuple of any positions, so
+`object-pack-method-value-import.ts`, a pack parameter instantiated at a tuple
+of objects, verifies, and `invalid-object-pack-method-value-import.ts`, with a
+wrong object field, is rejected. The producer distinguishes value and pack
+substitutions internally and uses one pack encoder for homogeneous and tuple
+rests. The framework calls need `Params = []` for `Plus`/`Minus` and
+`[number]` for `AddIndex`, with `Params extends readonly DepSafe[]`. A binder
+used as an array value must keep its array interpretation too; an argument
+list is not an array, and such a method stays opaque. Rerun the original client
+independently: its array-library and asynchronous-startup gaps are separate.
 
 **Record values as `Json` (to do).**
 

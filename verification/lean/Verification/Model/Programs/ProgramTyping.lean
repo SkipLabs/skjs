@@ -25,12 +25,15 @@ theorem Represents.plain {G : NormalGraph ι} {A c} (hr : Represents G A c) :
   plain_of_mem_expand (c := c) (by simp [show expand G A = [c] from hr])
 
 theorem represents_sem {G : NormalGraph ι} {A c} (hr : Represents G A c) (n W v) :
-    meaning G A n W v ↔ sem (meaning G) c n W v := by
+    meaning G A n W v ↔ clauseSem G c n W v := by
   rw [expand_sem G A hr.plain, show expand G A = [c] from hr]
   simp [semList, setSem]
 
 theorem meaning_adm (G : NormalGraph ι) (A : Ty ι) : Adm (meaning G A) :=
   setSem_adm (normalDenote_adm G) A
+
+theorem argMeaning_adm (G : NormalGraph ι) (P : Ty ι) : Adm (argMeaning G P) :=
+  graphArguments_adm G G.env _ (fun S => meaning_adm G S) P
 
 /-- A union of label lists means either side. -/
 theorem meaning_append (G : NormalGraph ι) (A B : Ty ι) (n W v) :
@@ -329,8 +332,8 @@ of clause rows: a parameter row's members could be anything. -/
 def Answers (G : NormalGraph ι) (A : Ty ι) (tag : Tag) (q : Bool) : Prop :=
   G.plainTy A = true ∧ ∀ c ∈ expand G A, tagClause tag c = some q
 
-theorem tagClause_sound {S : α → Fam} {c tag q n W v}
-    (hq : tagClause tag c = some q) (hv : sem S c n W v) : tagHolds tag v = q := by
+theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
+    (hq : tagClause tag c = some q) (hv : semWithArgs S P c n W v) : tagHolds tag v = q := by
   cases ht : tag with
   | numEq bits =>
     cases c <;> simp [ht, tagClause, tagShape, shape] at hq
@@ -340,7 +343,7 @@ theorem tagClause_sound {S : α → Fam} {c tag q n W v}
       subst v
       rfl
     all_goals
-      have hs := sem_shape (by simp) hv
+      have hs := semWithArgs_shape (by simp) hv
       cases v <;> simp_all [ht,valueShape,tagHolds,shape]
   | strEq s =>
     cases c <;> simp [ht, tagClause, tagShape, shape] at hq
@@ -350,7 +353,7 @@ theorem tagClause_sound {S : α → Fam} {c tag q n W v}
       subst v
       rfl
     all_goals
-      have hs := sem_shape (by simp) hv
+      have hs := semWithArgs_shape (by simp) hv
       cases v <;> simp_all [ht,valueShape,tagHolds,shape]
   | isNul | isBool | isRef | isFun | isUndef | isNullish | isNum | isStr | isBigint | isSymbol =>
     by_cases hc : c = .top
@@ -358,7 +361,7 @@ theorem tagClause_sound {S : α → Fam} {c tag q n W v}
     have htag : some (tagHolds tag v) = tagShape tag (valueShape v) := by
       rw [ht]
       cases v <;> first | rfl | (rename_i fs code; cases code <;> first | rfl | (rename_i kind; cases kind <;> rfl))
-    rw [sem_shape hc hv, ht] at htag
+    rw [semWithArgs_shape hc hv, ht] at htag
     exact Option.some.inj (htag.trans (by simpa only [ht,tagClause] using hq))
 
 theorem answers_sound {G : NormalGraph ι} {A tag q n W v}
@@ -383,7 +386,7 @@ def restSigs (G : NormalGraph ι) (F : Ty ι) : List (Ty ι × List (Ty ι) × T
 
 theorem restsT_of_restSigs {G : NormalGraph ι} {F : Ty ι} {s} (hs : s ∈ restSigs G F) {n W v}
     (hv : meaning G F n W v) :
-    restsT [(meaning G s.1, s.2.1.map (meaning G), packArgs (meaning G s.2.2.1), meaning G s.2.2.2)] n W v := by
+    restsT [(meaning G s.1, s.2.1.map (meaning G), argMeaning G s.2.2.1, meaning G s.2.2.2)] n W v := by
   unfold restSigs at hs
   split at hs
   · rename_i L S hF
@@ -540,7 +543,7 @@ then the object holding it, meets a rest-array type when the actuals as one
 pack meet the rest type. -/
 theorem restArray_safe {G : NormalGraph ι} {A P : Ty ι} (hr : RestArray G A P)
     {n : Nat} {W : WorldT n} {h : Heap} {extra : List Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
-    (he : meaning G P n W (.args extra)) (hvals : CallArguments.Values extra) :
+    (he : argMeaning G P n W extra) (hvals : CallArguments.Values extra) :
     Safe (meaning G A) n W h (CallArguments.restArray extra) := by
   unfold RestArray at hr
   split at hr
@@ -549,26 +552,21 @@ theorem restArray_safe {G : NormalGraph ι} {A P : Ty ι} (hr : RestArray G A P)
     unfold RestStore at hS
     split at hS
     · rename_i T hP
-      have hpack : ∀ j (hj : j ≤ n) (U : WorldT j), WExt (trunc j hj W) U →
-          PackFits (tupleFams (meaning G) T) j U extra := by
-        intro j hj U hx
-        have := (meaning_adm G P).mono j _ U hx _ ((meaning_adm G P).down_le n j hj W _ he)
-        obtain ⟨vs, hvs, -, hf⟩ := (represents_sem (show Represents G P (.pack T []) from hP) j U _).mp this
-        cases hvs
-        exact hf _ List.mem_cons_self
+      have hpos : ∀ i B, positionFam (tupleFams (meaning G) T) i = some B → Adm B := by
+        intro i B hB
+        rw [PositiveNormalization.positionFam_tupleFams] at hB
+        obtain ⟨b, -, rfl⟩ := Option.map_eq_some_iff.mp hB
+        exact meaning_adm G b
+      have hfits : ∀ j (hj : j ≤ n) (U : WorldT j), WExt (trunc j hj W) U →
+          ArgumentContracts.Fits (tupleFams (meaning G) T) j U extra := fun j hj U hx =>
+        (ArgumentContracts.fits_adm hpos).transfer ((mixed_pack_args hP).mp he) j hj U hx
       apply bind_list [(meaning G S, .arrLit extra)] (by simp [meaning_adm])
         (fun args => .makeAt .absent [CallArguments.arrayStoreField] args)
         (fun hs => CallArguments.Step.makeArgs hs) hw hh
       · intro p hp j hj U hx hu heap hok
         simp only [List.mem_singleton] at hp
         subst hp
-        have := RestCalls.pack_alloc_safe (T := tupleFams (meaning G) T)
-          (by
-            intro i B hB
-            rw [PositiveNormalization.positionFam_tupleFams] at hB
-            obtain ⟨b, -, rfl⟩ := Option.map_eq_some_iff.mp hB
-            exact meaning_adm G b)
-          hu hok (hpack j hj U hx) hvals
+        have := RestCalls.argument_alloc_safe hpos hu hok (hfits j hj U hx) hvals
         apply Safe_mono j _ U heap _ this
         intro k _ V v hv
         exact (represents_sem hS k V v).mpr ⟨by simpa [tupleFams] using hv, by simp⟩
@@ -617,23 +615,18 @@ theorem restParts_pack {G : NormalGraph ι} {P : Ty ι} {T : Tuple (Ty ι)}
     (hbound : T.rest = none → Qs.length ≤ T.required.length + T.optional.length)
     (hpos : ∀ i ∈ List.range Qs.length, positionTy T i = Qs[i]?)
     {k : Nat} {W : WorldT k} {extra : List Tm} (ha : ArgsT (Qs.map (meaning G)) k W extra) :
-    meaning G P k W (.args extra) := by
+    argMeaning G P k W extra := by
   have hlen : extra.length = Qs.length := by simpa using ArgsT_length ha
-  refine (represents_sem (show Represents G P (.pack T []) from hP) k W _).mpr
-    ⟨extra, rfl, ?_, fun T' hT' => ?_⟩
-  · simpa [Scoped, scopedArgs_iff] using ArgsT_scoped ha
-  · simp only [List.map_nil, List.mem_singleton] at hT'
-    subst hT'
-    refine ⟨by simpa [tupleFams, hlen] using hreq, by simpa [tupleFams, hlen] using hbound, ?_⟩
-    intro i u B hu hB j hj U hx
-    have hi : i < Qs.length := hlen ▸ (List.getElem?_eq_some_iff.mp hu).1
-    rw [PositiveNormalization.positionFam_tupleFams] at hB
-    obtain ⟨b, hb, rfl⟩ := Option.map_eq_some_iff.mp hB
-    have hq : Qs[i]? = some b := by
-      rw [← hpos i (List.mem_range.mpr hi), positionTy_eq]
-      exact hb
-    have hm := ArgsT_getElem? (A := meaning G b) ha (by simp [List.getElem?_map, hq]) hu
-    exact (meaning_adm G b).mono j _ U hx u ((meaning_adm G b).down_le k j (Nat.le_of_lt hj) W u hm)
+  refine (mixed_pack_args hP).mpr ⟨by simpa [tupleFams, hlen] using hreq,
+    by simpa [tupleFams, hlen] using hbound, ?_⟩
+  intro i u B hu hB
+  have hi : i < Qs.length := hlen ▸ (List.getElem?_eq_some_iff.mp hu).1
+  rw [PositiveNormalization.positionFam_tupleFams] at hB
+  obtain ⟨b, hb, rfl⟩ := Option.map_eq_some_iff.mp hB
+  have hq : Qs[i]? = some b := by
+    rw [← hpos i (List.mem_range.mpr hi), positionTy_eq]
+    exact hb
+  exact ArgsT_getElem? (A := meaning G b) ha (by simp [List.getElem?_map, hq]) hu
 
 theorem ArgStep_append {h h' : Heap} {args args' : List Tm} (rest : List Tm)
     (s : CallArguments.ArgStep h args h' args') :
@@ -808,7 +801,7 @@ theorem restSpec_of_premise {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env} 
     (ih : ∀ j U heap env, EnvOk G (A :: s.1 :: s.2.1 ++ Γ) env j U → WorldAdm U →
       HeapOk j U heap → Safe (meaning G s.2.2.2) j U heap (instantiate 0 env b))
     {j : Nat} (hj : j ≤ n) {U : WorldT j} (hx : WExt (trunc j hj W) U) :
-    RestCalls.RestSpec k (meaning G s.1) (s.2.1.map (meaning G)) (packArgs (meaning G s.2.2.1))
+    RestCalls.RestSpec k (meaning G s.1) (s.2.1.map (meaning G)) (argMeaning G s.2.2.1)
       (meaning G s.2.2.2) j U (instantiate (k + 2) ρ b) := by
   apply RestCalls.restSpec_of_body (instantiate_scoped ρ he.1 b (k + 2)) (by simpa using hk)
     (meaning_adm G s.1)
@@ -1671,7 +1664,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       n W h _ hw hh (ihc n W h ρ henv hw hh)
     intro j hj U hx hu heap v hok hv ha
     have hvalue := (represents_sem hq j U v).mp ha
-    cases q <;> simp only [sem, semWithArgs] at hvalue <;> subst v
+    cases q <;> simp only [clauseSem, semWithArgs] at hvalue <;> subst v
     · cases j with
       | zero => trivial
       | succ k =>
@@ -1696,13 +1689,13 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     | zero => trivial
     | succ k =>
       rcases shape with hv | hv
-      · have refined := henv.refine hi ((represents_sem hT (k+1) W (ρ i)).mpr (by simpa [hv, sem, semWithArgs, boolT]))
+      · have refined := henv.refine hi ((represents_sem hT (k+1) W (ρ i)).mpr (by simpa [hv, clauseSem, semWithArgs, boolT]))
         rw [hv]
         refine Or.inr ⟨trunc k (Nat.le_succ k) W,h,instantiate 0 ρ t,WExt_refl _,
           WorldAdm_trunc _ hw,.iteT,HeapOk_trunc k W h hh,?_⟩
         exact iht k _ h ρ (refined.transfer k (Nat.le_succ k) _ (WExt_refl _))
           (WorldAdm_trunc _ hw) (HeapOk_trunc k W h hh)
-      · have refined := henv.refine hi ((represents_sem hF (k+1) W (ρ i)).mpr (by simpa [hv, sem, semWithArgs, boolT]))
+      · have refined := henv.refine hi ((represents_sem hF (k+1) W (ρ i)).mpr (by simpa [hv, clauseSem, semWithArgs, boolT]))
         rw [hv]
         refine Or.inr ⟨trunc k (Nat.le_succ k) W,h,instantiate 0 ρ e,WExt_refl _,
           WorldAdm_trunc _ hw,.iteF,HeapOk_trunc k W h hh,?_⟩
@@ -1811,7 +1804,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
   | @callRest Γ f r F Rt xs Us P B parts hf hmem hrt hx hu hshort hp hparts
       ihf ihrt ihx ihu ihp =>
     intro n W h ρ he hw hh
-    have hfF : Safe (restsT [(meaning G Rt, (xs.map Prod.fst ++ Us).map (meaning G), packArgs (meaning G P),
+    have hfF : Safe (restsT [(meaning G Rt, (xs.map Prod.fst ++ Us).map (meaning G), argMeaning G P,
         meaning G B)]) n W h (instantiate 0 ρ f) :=
       Safe_mono n (fun m _ U v hv => restsT_of_restSigs hmem hv) W h _ (ihf n W h ρ he hw hh)
     unfold RestParts at hparts
@@ -1841,13 +1834,12 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
           fun p hp' => hparts (p.1, p.2.1) (List.mem_map_of_mem hp')
         rw [hterm]
         apply rest_call_safe (Rc := meaning G Rt) (Ps := xs.map fun p => meaning G p.1)
-          (E := meaning G E) (P := packArgs (meaning G P)) (R := meaning G B)
+          (E := meaning G E) (P := argMeaning G P) (R := meaning G B)
           (meaning_adm G Rt)
           (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q.1)
           (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_valOnly G q.1)
-          (meaning_adm G E) (meaning_valOnly G E) (packArgs_adm (meaning_adm G P))
-          (fun k W xs hxs => (restElem_sem hel k W _).mpr
-            (elemPack_of_all (meaning_adm G E) (fun u hu => (meaning_value (hxs u hu)).2) hxs))
+          (meaning_adm G E) (meaning_valOnly G E) (argMeaning_adm G P)
+          (fun k W xs hxs => (restElem_args hel).mpr hxs)
           _ (by simp [List.map_map, Function.comp_def]) _
           (by
             intro q hq S hS
@@ -1894,7 +1886,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
         rw [hterm]
         apply pack_call_safe (Rc := meaning G Rt) (Ps := xs.map fun p => meaning G p.1)
           (Us := Us.map (meaning G)) (Qs := parts.map fun p => meaning G p.2.1)
-          (P := packArgs (meaning G P)) (R := meaning G B)
+          (P := argMeaning G P) (R := meaning G B)
           (meaning_adm G Rt)
           (by
             intro A hA
@@ -1968,22 +1960,15 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
           ((saved.map ρ).take (Ps.map (meaning G)).length) := by
         simpa [List.map_take, hlen] using hsplit.1
       have hext : ∀ j (hj : j ≤ m + 1) (U : WorldT j), WExt (trunc j hj W) U →
-          ∀ ys, meaning G E j U (.args ys) →
-            meaning G E j U (.args ((saved.map ρ).drop (Ps.map (meaning G)).length ++ ys)) := by
+          ∀ ys, argMeaning G E j U ys →
+            argMeaning G E j U ((saved.map ρ).drop (Ps.map (meaning G)).length ++ ys) := by
         intro j hj U hx ys hy
-        rw [restElem_sem hel] at hy ⊢
-        refine elemPack_append (fun u hu => ?_) (fun u hu i hi U' hx' => ?_) hy
-        · have hu' := List.mem_of_mem_drop hu
-          obtain ⟨q, -, rfl⟩ := List.mem_map.mp hu'
-          exact he.1 q
-        · have hu' := ArgsT_replicate_all hsplit.2 u (by simpa using hu)
-          have hWU : WExt (trunc i (by omega) W) U' :=
-            WExt_trans (by simpa only [trunc_trunc] using WExt_trunc (Nat.le_of_lt hi) hx) hx'
-          exact (meaning_adm G El).mono i _ U' hWU u
-            ((meaning_adm G El).down_le (m + 1) i (by omega) W u hu')
+        refine mixed_restElem_append hel (fun u hu => ?_) hy
+        have hu' := ArgsT_replicate_all hsplit.2 u (by simpa using hu)
+        exact (meaning_adm G El).transfer hu' j hj U hx
       have hbound := restsT_bound (Rc := meaning G Rc) (fs := [])
         (meaning_adm G Rt) (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
-        (packArgs_adm (meaning_adm G E)) hrest (meaning_value (he.2 r Rt hr)).1 (he.1 r) (he.2 r Rt hr) hpv'
+        (argMeaning_adm G E) hrest (meaning_value (he.2 r Rt hr)).1 (he.1 r) (he.2 r Rt hr) hpv'
         hext hvals (by intro a ha; obtain ⟨q, _, rfl⟩ := List.mem_map.mp ha; exact he.1 q)
       have hdown := (restsT_adm _).down m W _ hbound
       refine Or.inr ⟨trunc m (Nat.le_succ m) W, h,

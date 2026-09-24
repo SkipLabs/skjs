@@ -96,3 +96,15 @@ export class ObjectBox {
     this.v = v;
   }
 }
+
+// A generic method whose pack parameter is a tuple of objects: the
+// constructor's contract and the trailing actuals share one argument list.
+export interface ObjectMaker {
+  make<Params extends { readonly value: number }[]>(
+    cls: new (...params: Params) => ObjectBox,
+    ...params: Params
+  ): ObjectBox;
+}
+export const objectMaker: ObjectMaker = {
+  make: (cls, ...params) => new cls(...params),
+};

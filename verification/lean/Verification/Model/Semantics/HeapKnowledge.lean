@@ -197,7 +197,7 @@ theorem observeTag_holds {k slot tag q ρ h} (hk : Holds k ρ h)
       refine ⟨ha,?_⟩
       simp only [bne_iff_ne]
       intro hbad
-      have hanswer := tagClause_sound (S := fun (_ : Ty Nat) => nulT)
+      have hanswer := tagClause_sound (S := fun (_ : Ty Nat) => nulT) (P := fun _ _ _ _ => False)
         (n := 0) (W := ofList []) hbad (Atom.sem.mpr hv)
       rw [hq] at hanswer
       cases q <;> contradiction
@@ -247,7 +247,7 @@ def atoms (G : NormalGraph ι) (A : Ty ι) : Option (List Atom) :=
   if G.plainTy A then primitive (expand G A) else none
 
 theorem primitive_sem {G : NormalGraph ι} {cs R} (hc : primitive cs = some R) (n W v) :
-    semList (meaning G) cs n W v ↔ ∃ a ∈ R, a.holds v := by
+    semList (meaning G) (argMeaning G) cs n W v ↔ ∃ a ∈ R, a.holds v := by
   induction cs generalizing R with
   | nil => simp [primitive] at hc; subst R; simp [semList,setSem]
   | cons c cs ih =>
@@ -262,7 +262,7 @@ theorem primitive_sem {G : NormalGraph ι} {cs R} (hc : primitive cs = some R) (
         have hi := ih hr
         simp only [semList,setSem,List.mem_cons,exists_eq_or_imp] at hi ⊢
         rw [hi]
-        simp [sem, semWithArgs,nulT,undefT,boolT,numT,strT,Atom.holds,apply_ite,or_assoc]
+        simp [semWithArgs,nulT,undefT,boolT,numT,strT,Atom.holds,apply_ite,or_assoc]
         all_goals try (split <;> simp_all [Atom.holds])
 
 theorem atoms_sem {G : NormalGraph ι} {A R} (h : atoms G A = some R) (n W v) :

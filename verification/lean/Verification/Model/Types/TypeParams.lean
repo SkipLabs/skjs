@@ -69,7 +69,7 @@ def update [DecidableEq ι] (η : ι → Fam) (p : ι) (T : Fam) (i : ι) : Fam 
 
 def paramLayer (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam)
     (X : ι → Fam) (i : ι) : Fam :=
-  if P i then η i else semList (setSem X) (G i)
+  if P i then η i else normalLayer G X i
 
 theorem param_congr (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam) :
     LayerCongr (paramLayer G P η) := by
@@ -85,14 +85,24 @@ theorem param_adm (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam)
   by_cases hp : P i = true
   · simpa [paramLayer, hp] using hη i hp
   · have hn : P i = false := eq_false_of_ne_true hp
-    simpa [paramLayer, hn, semList] using
-      setSem_adm (fun c => sem_adm (setSem X) c) (G i)
+    simpa [paramLayer, hn, normalLayer, semList] using
+      setSem_adm (fun c => semWithArgs_adm (setSem X) (plainArguments G (setSem X)) c) (G i)
 
 def denoteP (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam) : ι → Fam :=
   Tower.denote (paramLayer G P η)
 
 def meaningP (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam) (S : List ι) : Fam :=
   setSem (denoteP G P η) S
+
+/-- The argument lists of a type under a rigid assignment: its pack clauses'
+tuple contracts, at the current level. A rigid parameter is a value
+parameter; it admits no argument list. -/
+def argsP (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam) (S : List ι) : ArgFam :=
+  plainArguments G (meaningP G P η) S
+
+/-- A clause's members under a rigid assignment. -/
+abbrev semP (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam) : Clause (List ι) → Fam :=
+  semWithArgs (meaningP G P η) (argsP G P η)
 
 theorem unfold_param (G : NormalGraph ι) (P : ι → Bool) (η : ι → Fam)
     (i : ι) (n : Nat) (W : WorldT n) (v : Val) :
@@ -158,7 +168,7 @@ theorem instantiate_ref [DecidableEq ι] {G : NormalGraph ι} {P η} {p b : ι}
         ReferenceConjunctions.refsT [(valueField, meaningP G P (update η p T) [p])] [] n W v := by
     simp only [meaningP, setSem, List.mem_singleton, exists_eq_left]
     rw [unfold_param]
-    simp [paramLayer, hb, hG, semList, setSem, sem, semWithArgs, ReferenceConjunctions.famsOf, viewT]
+    simp [paramLayer, normalLayer, hb, hG, semList, setSem, semWithArgs, ReferenceConjunctions.famsOf, viewT]
     intro h
     obtain ⟨flds, rfl, -⟩ := h.1
     exact optT_nil
@@ -251,7 +261,7 @@ theorem EnvOkP.transfer {G : NormalGraph ι} {P η} {Γ ρ n W}
 
 theorem unfold_nonparam {G : NormalGraph ι} {P η} {i : ι}
     (hP : P i = false) (n : Nat) (W : WorldT n) (v : Val) :
-    denoteP G P η i n W v ↔ semList (meaningP G P η) (G i) n W v := by
+    denoteP G P η i n W v ↔ semList (meaningP G P η) (argsP G P η) (G i) n W v := by
   rw [unfold_param]
   simp [paramLayer, hP]
   rfl
@@ -265,7 +275,7 @@ theorem meaningP_value {G : NormalGraph ι} {P η} {A n W v}
     exact ⟨(hC i hp).2.1 n W v hv', (hC i hp).2.2 n W v hv'⟩
   · have hn : P i = false := eq_false_of_ne_true hp
     obtain ⟨c, _, hc⟩ := (unfold_nonparam hn n W v).mp hv
-    exact sem_value hc
+    exact semWithArgs_value hc
 
 theorem meaningP_valOnly {G : NormalGraph ι} {P η} (hC : ClosedAssign P η)
     (A : Ty ι) : ValOnly (meaningP G P η A) :=
@@ -298,7 +308,7 @@ theorem EnvOkP.prepend {G : NormalGraph ι} {P η} {Γ ρ n W As args}
 
 theorem expand_semP {G : NormalGraph ι} {P η} {S : List ι}
     (hS : ∀ i ∈ S, P i = false) (n : Nat) (W : WorldT n) (v : Val) :
-    meaningP G P η S n W v ↔ semList (meaningP G P η) (clausesOf G S) n W v := by
+    meaningP G P η S n W v ↔ semList (meaningP G P η) (argsP G P η) (clausesOf G S) n W v := by
   constructor
   · rintro ⟨i, hi, hv⟩
     obtain ⟨c, hc, hv⟩ := (unfold_nonparam (hS i hi) n W v).mp hv
@@ -310,7 +320,7 @@ theorem expand_semP {G : NormalGraph ι} {P η} {S : List ι}
 theorem represents_semP {G : NormalGraph ι} {P η} {A c}
     (hr : Represents G A c) (hA : ∀ i ∈ A, P i = false)
     (n : Nat) (W : WorldT n) (v : Val) :
-    meaningP G P η A n W v ↔ sem (meaningP G P η) c n W v := by
+    meaningP G P η A n W v ↔ semP G P η c n W v := by
   rw [expand_semP hA, ← expand_of_plain hr.plain, show expand G A = [c] from hr]
   simp [semList, setSem]
 
@@ -582,7 +592,7 @@ theorem ifKnown_safeP {G : NormalGraph ι} {P η} {Γ c C q t e A n W h ρ}
     n W h _ hw hh (ihc n W h ρ he hw hh)
   intro j hj U hx hu heap v hok hv ha
   have hvalue := (represents_semP hq hCP j U v).mp ha
-  cases q <;> simp only [sem, semWithArgs] at hvalue <;> subst v
+  cases q <;> simp only [semP, semWithArgs] at hvalue <;> subst v
   · cases j with
     | zero => trivial
     | succ k =>
@@ -618,14 +628,14 @@ theorem ifBoolVar_safeP {G : NormalGraph ι} {P η} {Γ i C T F t e A n W h ρ}
   | succ k =>
     rcases shape with hv | hv
     · have refined := he.refine hi ((represents_semP hT hTP (k + 1) W (ρ i)).mpr
-        (by simpa [hv, sem, semWithArgs] using rfl))
+        (by simpa [hv, semP, semWithArgs] using rfl))
       rw [hv]
       refine Or.inr ⟨trunc k (Nat.le_succ k) W, h, instantiate 0 ρ t, WExt_refl _,
         WorldAdm_trunc _ hw, .iteT, HeapOk_trunc k W h hh, ?_⟩
       exact iht k _ h ρ (refined.transfer hCl k (Nat.le_succ k) _ (WExt_refl _))
         (WorldAdm_trunc _ hw) (HeapOk_trunc k W h hh)
     · have refined := he.refine hi ((represents_semP hF hFP (k + 1) W (ρ i)).mpr
-        (by simpa [hv, sem, semWithArgs] using rfl))
+        (by simpa [hv, semP, semWithArgs] using rfl))
       rw [hv]
       refine Or.inr ⟨trunc k (Nat.le_succ k) W, h, instantiate 0 ρ e, WExt_refl _,
         WorldAdm_trunc _ hw, .iteF, HeapOk_trunc k W h hh, ?_⟩
@@ -888,19 +898,19 @@ def isPrim : Clause α → Bool
 def primitiveTy (G : NormalGraph ι) (P : ι → Bool) (S : List ι) : Prop :=
   ∀ i ∈ S, P i = false ∧ G.plain i = true ∧ ∀ c ∈ G i, isPrim c = true
 
-theorem prim_sem (X Y : α → Fam) {c : Clause α} (hc : isPrim c = true)
-    (n : Nat) (W : WorldT n) (v : Val) : sem X c n W v ↔ sem Y c n W v := by
+theorem prim_sem (X Y : α → Fam) (P Q : α → ArgFam) {c : Clause α} (hc : isPrim c = true)
+    (n : Nat) (W : WorldT n) (v : Val) : semWithArgs X P c n W v ↔ semWithArgs Y Q c n W v := by
   cases c <;> simp [isPrim] at hc ⊢ <;> rfl
 
-theorem prim_semList (X Y : α → Fam) {L : List (Clause α)}
+theorem prim_semList (X Y : α → Fam) (P Q : α → ArgFam) {L : List (Clause α)}
     (hL : ∀ c ∈ L, isPrim c = true) (n : Nat) (W : WorldT n) (v : Val) :
-    semList X L n W v ↔ semList Y L n W v := by
+    semList X P L n W v ↔ semList Y Q L n W v := by
   simp only [semList, setSem]
   constructor
   · rintro ⟨c, hc, hv⟩
-    exact ⟨c, hc, (prim_sem X Y (hL c hc) n W v).mp hv⟩
+    exact ⟨c, hc, (prim_sem X Y P Q (hL c hc) n W v).mp hv⟩
   · rintro ⟨c, hc, hv⟩
-    exact ⟨c, hc, (prim_sem X Y (hL c hc) n W v).mpr hv⟩
+    exact ⟨c, hc, (prim_sem X Y P Q (hL c hc) n W v).mpr hv⟩
 
 theorem primitive_meaningP {G : NormalGraph ι} {P η} {S : List ι}
     (hS : primitiveTy G P S) (n : Nat) (W : WorldT n) (v : Val) :
@@ -913,7 +923,7 @@ theorem primitive_meaningP {G : NormalGraph ι} {P η} {S : List ι}
     have hC := (hS i hi).2.2
     have := (unfold_nonparam hP n W v).mp hv
     have hnorm := (unfold_normal G i (hS i hi).2.1 n W v).mpr
-      ((prim_semList (meaningP G P η) (meaning G) hC n W v).mp this)
+      ((prim_semList (meaningP G P η) (meaning G) _ _ hC n W v).mp this)
     exact hnorm
   · rintro ⟨i, hi, hv⟩
     refine ⟨i, hi, ?_⟩
@@ -921,7 +931,7 @@ theorem primitive_meaningP {G : NormalGraph ι} {P η} {S : List ι}
     have hC := (hS i hi).2.2
     have := (unfold_normal G i (hS i hi).2.1 n W v).mp hv
     exact (unfold_nonparam hP n W v).mpr
-      ((prim_semList (meaningP G P η) (meaning G) hC n W v).mpr this)
+      ((prim_semList (meaningP G P η) (meaning G) _ _ hC n W v).mpr this)
 
 inductive SubP (G : NormalGraph ι) (P : ι → Bool) (Δ : List (ι × List ι)) :
     List ι → List ι → Prop where
@@ -1053,7 +1063,7 @@ theorem falseT_satisfies :
   refine (primitive_meaningP bound_prim_bool n W .fls).mpr ?_
   refine ⟨2, by simp, ?_⟩
   rw [unfold_normal _ _ rfl]
-  simp [boundG, semList, setSem, sem, semWithArgs]
+  simp [boundG, semList, setSem, semWithArgs]
 
 #print axioms param_denote
 #print axioms instantiate_param

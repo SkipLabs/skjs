@@ -34,8 +34,8 @@ def Atom.clause (a : Atom) : PositiveNormalization.Clause α :=
   | .fls => .boolLit false | .num => .num | .numLit b => .numLit b
   | .str => .str | .strLit s => .strLit s
 
-theorem Atom.sem {a : Atom} {S : α → Fam} {n W v} :
-    PositiveNormalization.sem S a.clause n W v ↔ a.holds v := by
+theorem Atom.sem {a : Atom} {S : α → Fam} {P : α → ArgFam} {n W v} :
+    PositiveNormalization.semWithArgs S P a.clause n W v ↔ a.holds v := by
   cases a <;> rfl
 
 def Atom.le (a b : Atom) : Bool :=

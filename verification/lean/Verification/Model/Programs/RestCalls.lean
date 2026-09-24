@@ -163,13 +163,13 @@ theorem restSpec_of_body {n : Nat} {Rc : Fam} {Ps : List Fam} {E : ArgFam} {Arr 
       (hRc.mono p _ _ hUV r (hRc.down_le j p (by omega) U r hr)) args a
       (ArgsT_transfer hP ha p (by omega) _ hUV) (hArr.down p V a harr) hval
 
-/-- **Allocating a pack.** Its values, as a fresh store, meet its tuple
-contract as a writable store. Each value is at its position's family below the
-budget, which is all the allocation step needs. -/
-theorem pack_alloc_safe {T : TupleF} (hT : ∀ i A, positionFam T i = some A → Adm A)
+/-- **Allocating a rest array.** Actuals meeting a tuple contract at the
+current level, as a fresh store, meet it as a writable store. The allocation
+step, rather than tuple membership, consumes an approximation level. -/
+theorem argument_alloc_safe {T : TupleF} (hT : ∀ i A, positionFam T i = some A → Adm A)
     {n : Nat} {W : WorldT n} {h : Heap} {vs : List Tm}
-    (hw : WorldAdm W) (hh : HeapOk n W h) (hp : PackFits T n W vs)
-    (hvals : ∀ v ∈ vs, isVal v = true) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (hp : ArgumentContracts.Fits T n W vs)
+    (hvals : CallArguments.Values vs) :
     Safe (listT { T with readonly := false }) n W h (.arrLit vs) := by
   obtain ⟨hreq, hbound, hel⟩ := hp
   have hsome : ∀ i, i < vs.length → ∃ A, positionFam T i = some A := by
@@ -197,7 +197,8 @@ theorem pack_alloc_safe {T : TupleF} (hT : ∀ i A, positionFam T i = some A →
       rw [List.getElem_zip] at hpi
       subst hpi
       have hiv : i < vs.length := by simp at hi; omega
-      exact hel i _ _ (List.getElem?_eq_getElem hiv) (hAi i _) j hj _ (WExt_refl _))
+      exact (hT i _ (hAi i _)).down_le n j (Nat.le_of_lt hj) W _
+        (hel i _ _ (List.getElem?_eq_getElem hiv) (hAi i _)))
     (by
       intro j hj U hx hl
       have := listT_alloc (T := { T with readonly := false }) (As := As) (base := h.length)
@@ -208,14 +209,6 @@ theorem pack_alloc_safe {T : TupleF} (hT : ∀ i A, positionFam T i = some A →
         hl
       rwa [hlen] at this)
   exact hres
-
-/-- Same-level argument membership suffices to allocate its rest array. The
-allocation step, rather than tuple membership, consumes an approximation level. -/
-theorem argument_alloc_safe {T : TupleF} (hT : ∀ i A, positionFam T i = some A → Adm A)
-    {n W h vs} (hw : WorldAdm W) (hh : HeapOk n W h) (hp : ArgumentContracts.Fits T n W vs)
-    (hv : CallArguments.Values vs) :
-    Safe (listT {T with readonly := false}) n W h (.arrLit vs) :=
-  pack_alloc_safe hT hw hh (ArgumentContracts.fits_below hT hp) hv
 
 
 /-! ## Spread actuals

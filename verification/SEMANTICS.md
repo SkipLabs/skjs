@@ -32,9 +32,9 @@ under `m + 1` binders: the receiver of the call in slot 0, then its parameters.
 A variadic body has its rest array in slot 0, the receiver in slot 1, then `m`
 parameters. `bound` is the forwarding descriptor `.bind` creates: the target, the
 receiver and the argument prefix it saved, values that no field holds and no
-write can reach. An argument pack $\mathsf{args}(\vec v)$ (`Tm.args`) is a value too, but no
-program contains one and no step makes one: the model uses it to say which
-argument lists a rest parameter's type admits ([argument packs](POSITIVE-TYPES.md#argument-packs)).
+write can reach. An argument list is not a value: which lists a rest
+parameter's type admits is a separate contract on lists of values
+([argument packs](POSITIVE-TYPES.md#argument-packs)).
 `make c a` evaluates its initializer `a`, then appends that value
 to the heap and returns `obj h.length c`, where `h.length` is the length
 before appending.
@@ -233,9 +233,9 @@ All the callable uses build on this equation:
 - A fixed signature uses `ArgsShort`: written actuals meet their corresponding
   domains, and each omitted trailing domain admits `undefined`. A rest
   signature uses `ArgsRest`: its fixed domains admit the first actuals as a
-  fixed signature's do, and the actuals past them, as one argument pack, are
-  at its rest contract; an element rest admits any number at its element
-  (`elemPack`). `callsT` and `restsT` conjoin `Promise` over
+  fixed signature's do, and the actuals past them, as one argument list, are
+  at its rest contract, a predicate on lists (`ArgFam`); an element rest
+  admits any number at its element. `callsT` and `restsT` conjoin `Promise` over
   their respective signature lists.
 - Overloads conjoin promises on **one value**. The `arrs L S` clause combines
   fixed and variadic promises; either list may be empty. Thus compatible

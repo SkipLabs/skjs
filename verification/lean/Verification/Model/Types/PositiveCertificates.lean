@@ -490,31 +490,24 @@ theorem derivable_iff_checked [DecidableEq ι] {G : NormalGraph ι} {S T} :
     Sub G S T ↔ ∃ proof, check G S T proof = true :=
   ⟨check_complete, fun ⟨_, h⟩ => check_sound h⟩
 
-def SourceSub (G : PositiveGraphs.Graph ι) (S T : List ι) : Prop :=
-  Sub (normalizeGraph G) S T
-
+/-- A formula graph is checked through its normalization. -/
 def checkSource [DecidableEq ι] (G : PositiveGraphs.Graph ι) (S T : List ι)
     (proof : Proof ι) : Bool := check (normalizeGraph G) S T proof
 
-theorem source_iff_checked [DecidableEq ι] {G : PositiveGraphs.Graph ι} {S T} :
-    SourceSub G S T ↔ ∃ proof, checkSource G S T proof = true := derivable_iff_checked
+theorem accepted [DecidableEq ι] {G : NormalGraph ι} {S T proof}
+    (h : check G S T proof = true) : FamLe (meaning G S) (meaning G T) :=
+  (check_sound h).sound
 
-theorem accepted_source [DecidableEq ι] {G : PositiveGraphs.Graph ι} {S T proof}
-    (h : checkSource G S T proof = true) :
-    FamLe (Tower.setSem (PositiveGraphs.denote G) S) (Tower.setSem (PositiveGraphs.denote G) T) :=
-  transport_inclusion G S T (check_sound h).sound
-
-theorem accepted_subsumption [DecidableEq ι] {G : PositiveGraphs.Graph ι} {S T proof}
-    (h : checkSource G S T proof = true) (n : Nat) (W : WorldT n) (heap : Heap) (t : Tm)
-    (hs : Safe (Tower.setSem (PositiveGraphs.denote G) S) n W heap t) :
-    Safe (Tower.setSem (PositiveGraphs.denote G) T) n W heap t := by
+theorem accepted_subsumption [DecidableEq ι] {G : NormalGraph ι} {S T proof}
+    (h : check G S T proof = true) (n : Nat) (W : WorldT n) (heap : Heap) (t : Tm)
+    (hs : Safe (meaning G S) n W heap t) : Safe (meaning G T) n W heap t := by
   apply Safe_mono n _ W heap t hs
   intro j _ U v hv
-  exact accepted_source h j U v hv
+  exact accepted h j U v hv
 
 #print axioms checkArrow_sound
 #print axioms checkArrow_complete
 #print axioms check_sound
 #print axioms check_complete
-#print axioms accepted_source
+#print axioms accepted
 end Verification.Model.PositiveCertificates

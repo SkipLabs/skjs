@@ -69,9 +69,9 @@ def sub (A B : List Nat) : Bool :=
 #guard sub [15] [17]
 #guard !sub [8] [10]
 #guard !sub [15] [9]
--- A record position is not stable: the pack holds it below the current level
--- only, so the fixed signature is not shown to cover the rest.
-#guard !sub [14] [13]
+-- A record position is covered too: an argument list holds its actuals at the
+-- current level, so a fixed signature covers an exact tuple of any positions.
+#guard sub [14] [13]
 -- Variadic construct signatures compare their rests as packs.
 #guard sub [18] [10]
 #guard !sub [10] [18]
@@ -83,9 +83,7 @@ def sub (A B : List Nat) : Bool :=
   [.pack ⟨[[0]], [], none, false⟩ [⟨[], [], some [0], false⟩]]
 #guard meet (Clause.pack (⟨[[0]], [], none, false⟩ : Tuple (List Nat)) []) .num = []
 
--- The pack value and the clause read back as themselves.
-#guard (fromJson? (toJson (Tm.args [.num 1, .str "a"])) : Except String Tm).toOption ==
-  some (Tm.args [.num 1, .str "a"])
+-- The pack clause reads back as itself.
 #guard (fromJson? (toJson (types[6]!)) : Except String (List (Clause (List Nat)))).toOption ==
   some types[6]!
 
@@ -142,7 +140,5 @@ def hsub (A B : List Nat) : Bool :=
 
 end Schemes
 
--- No program makes a pack.
-#guard !ObjectCoherence.sourceTerm (.args [.num 1])
 
 end Verification.Model.PackTests
