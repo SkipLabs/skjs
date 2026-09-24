@@ -3,13 +3,14 @@
  * A row and a label list both denote unions. Contracts within one clause are
  * simultaneous requirements (including all arrows of an overload).
  */
+import type { PropertyKey } from "./declaration-types.mts";
 export type Labels = number[];
 /** A signature: the receiver a call may pass, then the parameters and the
  * result. A signature indifferent to its receiver names an unknown row. */
 export type Arrow = [receiver: Labels, [domains: Labels[], result: Labels]];
 /** An object contract: one label list per named field, in the order the
  * producer wrote them. Fields a contract does not name are unconstrained. */
-export type Fields = [name: string, labels: Labels][];
+export type Fields = [name: PropertyKey, labels: Labels][];
 export type Tuple = {
   required: Labels[];
   optional: Labels[];
@@ -285,8 +286,11 @@ const printTuple = (t: Tuple) =>
     ...t.optional.map((l) => `${printLabels(l)}?`),
     ...(t.rest ? [`...${printLabels(t.rest)}[]`] : []),
   ].join(", ")}]`;
+/** A key as TypeScript writes it: a string plainly, a symbol by its index. */
+export const keyText = (name: PropertyKey): string =>
+  typeof name === "string" ? name : `[symbol ${name.symbol}]`;
 const printFields = (fs: Fields) =>
-  `ref{${fs.map(([name, ls]) => `${name}: ${printLabels(ls)}`).join(", ")}}`;
+  `ref{${fs.map(([name, ls]) => `${keyText(name)}: ${printLabels(ls)}`).join(", ")}}`;
 function clauseText(c: Clause): string {
   if (typeof c === "string") return STRING_CLAUSE_TEXT[c];
   if ("boolLit" in c) return String(c.boolLit.value);

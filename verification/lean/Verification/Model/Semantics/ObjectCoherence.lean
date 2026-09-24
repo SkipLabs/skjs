@@ -36,16 +36,16 @@ theorem registry_alloc {D : Registry} {c : CallCode} {k l : Nat}
 
 /-- The locations an object's fields stand for. Identity is these locations,
 so the registry constrains them and nothing else about the map. -/
-def locs (fs : List (String × Nat)) : List Nat := fs.map Prod.snd
+def locs (fs : List (PropKey × Nat)) : List Nat := fs.map Prod.snd
 
-theorem mem_locs {fs : List (String × Nat)} {l : Nat} :
+theorem mem_locs {fs : List (PropKey × Nat)} {l : Nat} :
     l ∈ locs fs ↔ ∃ f, (f, l) ∈ fs := by
   simp only [locs, List.mem_map]
   constructor
   · rintro ⟨p, hp, rfl⟩; exact ⟨p.1, by simpa using hp⟩
   · rintro ⟨f, hf⟩; exact ⟨(f, l), hf, rfl⟩
 
-theorem mem_slots {base : Nat} {ns : List String} {p : String × Nat}
+theorem mem_slots {base : Nat} {ns : List PropKey} {p : PropKey × Nat}
     (h : p ∈ slots base ns) : base ≤ p.2 ∧ p.2 < base + ns.length := by
   induction ns generalizing base with
   | nil => simp [slots] at h

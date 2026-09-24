@@ -261,7 +261,7 @@ structure PointType where
   type : Ty Nat
   /-- What the point's record currently holds, field by field, for the fields
   whose read and write contracts differ. A point naming no record has none. -/
-  current : Option (List (String × Ty Nat)) := none
+  current : Option (List (PropKey × Ty Nat)) := none
 
 def translatePoint (j : Json) : SourceTypes.Lowering PointType := do
   -- Preserve the existing exact union translation when it succeeds.
@@ -850,9 +850,9 @@ def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
 def decodeAstWithParams (j : Json) : Except String (List (Fn × List TypeParam)) := do
   CellClaims.fieldsExactly j ["file", "sourceSha256", "declarations", "init", "functions"]
   let document ← jField j "declarations"
-  CellClaims.fieldsExactly document ["roots", "definitions", "values"]
+  CellClaims.fieldsExactly document ["roots", "definitions", "values", "symbols"]
   if !(← jArr document "roots").isEmpty || !(← jArr document "definitions").isEmpty ||
-      !(← jArr document "values").isEmpty then
+      !(← jArr document "values").isEmpty || !(← jArr document "symbols").isEmpty then
     throw "type declarations have no certified graph interpretation"
   (← jArr j "functions").mapM decodeFn
 

@@ -35,7 +35,7 @@ theorem bagT_valOnly (P : Fields) : ValOnly (bagT P) := by
   rintro n W v ⟨l, code, hv, hval, hr⟩
   exact hval
 
-theorem bagT_contractive {ι : Type} (X Y : ι → Fam) (fs : List (String × ι)) (n : Nat)
+theorem bagT_contractive {ι : Type} (X Y : ι → Fam) (fs : List (PropKey × ι)) (n : Nat)
     (hag : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
     bagT (ReferenceConjunctions.famsOf X fs) n W v ↔
       bagT (ReferenceConjunctions.famsOf Y fs) n W v := by
@@ -67,7 +67,7 @@ theorem callableT_append (L M : List (Fam × Fam)) (P : Fields) (n W v) :
   · rintro ⟨⟨hp, hc, hs⟩, ⟨_, _, ht⟩⟩
     exact ⟨hp, hc, fun p hm => hm.elim (hs p) (ht p)⟩
 
-theorem bag_read {fs : Fields} {f : String} {P : Fam} (hP : ValOnly P)
+theorem bag_read {fs : Fields} {f : PropKey} {P : Fam} (hP : ValOnly P)
     (hm : (f, P) ∈ fs) {n W h v}
     (hv : bagT fs n W v) (hw : WorldAdm W) (hh : HeapOk n W h) :
     Safe P n W h (.readAt f v) := by
@@ -76,7 +76,7 @@ theorem bag_read {fs : Fields} {f : String} {P : Fam} (hP : ValOnly P)
   cases he
   exact read_rule (code := code) hP n W h l hw hh hf hl hc
 
-theorem bag_write {fs : Fields} {f : String} {P : Fam} (hP : Adm P)
+theorem bag_write {fs : Fields} {f : PropKey} {P : Fam} (hP : Adm P)
     (hm : (f, P) ∈ fs) {n W h v a}
     (hv : bagT fs n W v) (ha : P n W a) (hval : isVal a = true)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
@@ -103,7 +103,7 @@ extended world exactly as they do for one field; nothing here depends on the
 arity of the bag or on what its fields are called. -/
 theorem make_callable_fields_rule {P : List Fam} {L : List (Fam × List Fam × Fam)}
     (hA : ∀ A ∈ P, Adm A) (arity n : Nat) (W : WorldT n) (h : Heap)
-    (ns : List String) (vs : List Val) (b : Tm)
+    (ns : List PropKey) (vs : List Val) (b : Tm)
     (hnd : ns.Nodup) (hns : ns.length = vs.length) (hPs : P.length = vs.length)
     (hf : InvocationSpec arity L n W b) (hvals : ∀ v ∈ vs, isVal v = true)
     (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : ∀ p ∈ P.zip vs, p.1 n W p.2) :

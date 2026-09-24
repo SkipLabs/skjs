@@ -27,11 +27,37 @@ that is not a value and cannot step is **stuck**, and the safety predicate in
 namespace Verification
 namespace Model
 
+/-- A property key. JavaScript keys an object's properties by strings and by
+symbols, and the two spaces are disjoint: no string names a symbol-keyed
+property, so a string-keyed access, and a type that constrains every string
+key, never reaches one. A symbol key is the identity of a symbol value. -/
+inductive PropKey where
+  | str (name : String)
+  | sym (id : Nat)
+  deriving Repr, DecidableEq
+
+/-- Field names written in the model are string keys. -/
+instance : Coe String PropKey := ⟨PropKey.str⟩
+
+/-- For messages only: a symbol key is shown by its identity. -/
+instance : ToString PropKey where
+  toString
+    | .str name => name
+    | .sym id => s!"[symbol {id}]"
+
+/-- An order for sorting field maps: string keys by name, then symbol keys by
+identity. -/
+def PropKey.before : PropKey → PropKey → Bool
+  | .str a, .str b => a < b
+  | .str _, .sym _ => true
+  | .sym _, .str _ => false
+  | .sym a, .sym b => a < b
+
 /-- The field every single-cell object of the earlier development carries. A
 one-field object named this way is what `Tm.obj`, `Tm.read` and `Tm.write`
 abbreviate, so every rule and proof written before field names keeps its
 meaning. -/
-def valueField : String := "value"
+def valueField : PropKey := "value"
 
 /-- The shapes a value can have, and so the tests a program can make of one.
 Nullishness groups null and undefined for source coalescing; the other tests
@@ -84,15 +110,15 @@ inductive Tm where
   | sym (id : Nat)
   /-- An object identity: the locations its named fields stand for, fixed at
   allocation, with an optional immutable invocation descriptor. -/
-  | objAt (fields : List (String × Nat)) (call : CallCode)
+  | objAt (fields : List (PropKey × Nat)) (call : CallCode)
   /-- Allocate one object with immutable call code, one fresh location per
   named field, holding the values of `inits` in order. Only the initializers
   are evaluated; code binds its declared parameter count. -/
-  | makeAt (call : CallCode) (names : List String) (inits : List Tm)
-  | readAt (field : String) (a : Tm)
+  | makeAt (call : CallCode) (names : List PropKey) (inits : List Tm)
+  | readAt (field : PropKey) (a : Tm)
   /-- Evaluate the receiver, then a string key, then read the named property. -/
   | indexAt (a key : Tm)
-  | writeAt (field : String) (a b : Tm)
+  | writeAt (field : PropKey) (a b : Tm)
   | test (k : Tag) (a : Tm)
   | ite (c t e : Tm)
   /-- Arithmetic on the values of `a` and `b`, in that order, both numbers. -/
@@ -398,20 +424,20 @@ or `write` is speaking about that one field. -/
 @[match_pattern] abbrev Tm.fn (l : Nat) (b : Tm) : Tm := .obj l (.closure 1 b)
 
 /-- The locations a fresh allocation gives its fields, in declaration order. -/
-def slots (base : Nat) : List String → List (String × Nat)
+def slots (base : Nat) : List PropKey → List (PropKey × Nat)
   | [] => []
   | f :: fs => (f, base) :: slots (base + 1) fs
 
 @[simp] theorem slots_value (base : Nat) : slots base [valueField] = [(valueField, base)] := rfl
 
-@[simp] theorem slots_length (base : Nat) (ns : List String) :
+@[simp] theorem slots_length (base : Nat) (ns : List PropKey) :
     (slots base ns).length = ns.length := by
   induction ns generalizing base <;> simp_all [slots]
 
 /-- A field of a fresh object stands for the location its position was given.
 Distinct names are what makes the map a map: with a repeat, only the first
 occurrence is ever found. -/
-theorem lookup_slots {ns : List String} (hnd : ns.Nodup) {base i : Nat}
+theorem lookup_slots {ns : List PropKey} (hnd : ns.Nodup) {base i : Nat}
     (hi : i < ns.length) : (slots base ns).lookup ns[i] = some (base + i) := by
   induction ns generalizing base i with
   | nil => simp at hi
@@ -596,7 +622,7 @@ def bindParameters (arity : Nat) (args : List Tm) (recv : Tm) (body : Tm) : Tm :
   bindArgs 0 (recv :: parameters arity args) body
 
 /-- The field an array object keeps its store in: `SourceTypes.storeField`. -/
-def arrayStoreField : String := "[]"
+def arrayStoreField : PropKey := "[]"
 
 /-- A fresh array holding `vs`: a store, then the object holding it. These are
 the same two allocations an array literal takes, performed by ordinary steps. -/
@@ -643,33 +669,33 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
       (∀ v ∈ pre, isVal v = true) →
       readElems h ls = some vs → Step h (.invoke f r args) h (.invoke f r (pre ++ vs ++ post))
   /-- Initializers are evaluated left to right, like actual arguments. -/
-  | makeArg {c : CallCode} {ns : List String} {inits : List Tm} {i : Nat}
+  | makeArg {c : CallCode} {ns : List PropKey} {inits : List Tm} {i : Nat}
       {h h' : Heap} {a a' : Tm} : inits[i]? = some a →
       (∀ j, j < i → ∀ v, inits[j]? = some v → isVal v = true) →
       Step h a h' a' → Step h (.makeAt c ns inits) h' (.makeAt c ns (inits.set i a'))
   /-- Allocation takes one fresh location per named field, in order. -/
-  | makeFields {c : CallCode} {ns : List String} {vs : List Tm} {h : Heap} :
+  | makeFields {c : CallCode} {ns : List PropKey} {vs : List Tm} {h : Heap} :
       (∀ v ∈ vs, isVal v = true) → ns.length = vs.length →
       Step h (.makeAt c ns vs) (h ++ vs) (.objAt (slots h.length ns) c)
   | readC : Step h a h' a' → Step h (.readAt f a) h' (.readAt f a')
   /-- Reading and writing a field go to its location, whatever the object's code. -/
-  | readField {f : String} {fs : List (String × Nat)} {c : CallCode} {l : Nat}
+  | readField {f : PropKey} {fs : List (PropKey × Nat)} {c : CallCode} {l : Nat}
       {h : Heap} {v : Val} : fs.lookup f = some l → h[l]? = some v →
       Step h (.readAt f (.objAt fs c)) h v
   /-- JavaScript property lookup produces undefined when the name is absent. -/
-  | readMissing {f : String} {fs : List (String × Nat)} {c : CallCode} {h : Heap} :
+  | readMissing {f : PropKey} {fs : List (PropKey × Nat)} {c : CallCode} {h : Heap} :
       fs.lookup f = none → Step h (.readAt f (.objAt fs c)) h .undef
   | indexC1 : Step h a h' a' → Step h (.indexAt a key) h' (.indexAt a' key)
   | indexC2 : isVal a = true → Step h key h' key' →
       Step h (.indexAt a key) h' (.indexAt a key')
-  | indexField {f : String} {fs : List (String × Nat)} {c : CallCode} {l : Nat}
-      {h : Heap} {v : Val} : fs.lookup f = some l → h[l]? = some v →
+  | indexField {f : String} {fs : List (PropKey × Nat)} {c : CallCode} {l : Nat}
+      {h : Heap} {v : Val} : fs.lookup (.str f) = some l → h[l]? = some v →
       Step h (.indexAt (.objAt fs c) (.str f)) h v
-  | indexMissing {f : String} {fs : List (String × Nat)} {c : CallCode} {h : Heap} :
-      fs.lookup f = none → Step h (.indexAt (.objAt fs c) (.str f)) h .undef
+  | indexMissing {f : String} {fs : List (PropKey × Nat)} {c : CallCode} {h : Heap} :
+      fs.lookup (.str f) = none → Step h (.indexAt (.objAt fs c) (.str f)) h .undef
   | writeC1 : Step h a h' a' → Step h (.writeAt f a b) h' (.writeAt f a' b)
   | writeC2 : isVal a = true → Step h b h' b' → Step h (.writeAt f a b) h' (.writeAt f a b')
-  | writeField {f : String} {fs : List (String × Nat)} {c : CallCode} {l : Nat}
+  | writeField {f : PropKey} {fs : List (PropKey × Nat)} {c : CallCode} {l : Nat}
       {h : Heap} {v : Val} : isVal v = true → fs.lookup f = some l → l < h.length →
       Step h (.writeAt f (.objAt fs c) v) (h.set l v) .nul
   | testC : Step h a h' a' → Step h (.test k a) h' (.test k a')
@@ -722,7 +748,7 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
 Each is the single-field instance of the rule above it, and carries the name
 and the statement the development used before fields were named. -/
 
-@[simp] theorem lookup_value (l : Nat) : ([(valueField, l)] : List (String × Nat)).lookup valueField = some l := by
+@[simp] theorem lookup_value (l : Nat) : ([(valueField, l)] : List (PropKey × Nat)).lookup valueField = some l := by
   simp [List.lookup]
 
 theorem Step.makeC (hs : Step h a h' a') : Step h (.make c a) h' (.make c a') :=
@@ -755,7 +781,7 @@ theorem singleton_get {a b : Tm} {i : Nat} (h : [a][i]? = some b) : i = 0 ∧ b 
   exact ⟨rfl, (Option.some.inj h).symm⟩
 
 /-- The existing unary beta rule is a specialization of list dispatch. -/
-theorem Step.beta {fs : List (String × Nat)} (ha : isVal a = true) :
+theorem Step.beta {fs : List (PropKey × Nat)} (ha : isVal a = true) :
     Step h (.app (.objAt fs (.closure n b)) a) h (CallArguments.bindParameters n [a] .undef b) :=
   .callV rfl (by simpa using ha)
 
@@ -1183,7 +1209,7 @@ theorem make_step_inv {c : CallCode} {v : Val} (hv : isVal v = true) {h h' t}
     exact False.elim (value_no_step hv hs)
   | makeFields => exact ⟨rfl, rfl⟩
 
-theorem beta_inv {b a : Tm} {fs : List (String × Nat)} (ha : isVal a = true) {h h' t}
+theorem beta_inv {b a : Tm} {fs : List (PropKey × Nat)} (ha : isVal a = true) {h h' t}
     (hs : Step h (.app (.objAt fs (.closure 1 b)) a) h' t) :
     h' = h ∧ t = subst 0 .undef (subst 1 a b) := by
   cases hs with

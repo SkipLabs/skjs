@@ -89,7 +89,7 @@ private partial def ClaimType.ground : ClaimType → SourceClaims.Candidate
 /-- What a point currently holds, field by field: an object has one location
 per named field, so an assertion about its contents names the field it is
 about. A point that names no record carries none. -/
-abbrev CurrentFields := List (String × List Nat)
+abbrev CurrentFields := List (PropKey × List Nat)
 
 structure Binding where
   name : String

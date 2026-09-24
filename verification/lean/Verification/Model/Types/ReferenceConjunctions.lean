@@ -10,7 +10,7 @@ the composed record rather than the empty type. -/
 namespace Verification.Model.ReferenceConjunctions
 
 /-- What one operand says: a contract per named field. -/
-abbrev Fields := List (String × Fam)
+abbrev Fields := List (PropKey × Fam)
 
 def refsT (A : Fields) (Bs : List Fields) : Fam := fun n W v =>
   recT A n W v ∧ ∀ B ∈ Bs, recT B n W v
@@ -40,10 +40,10 @@ theorem adm (A : Fields) (Bs : List Fields) : Adm (refsT A Bs) := by
       fun B hb => (recT_adm B).mono n W U hx v (h.2 B hb)⟩
 
 /-- The families a label map denotes, field by field. -/
-def famsOf {ι : Type} (X : ι → Fam) (fs : List (String × ι)) : Fields :=
+def famsOf {ι : Type} (X : ι → Fam) (fs : List (PropKey × ι)) : Fields :=
   fs.map (fun p => (p.1, X p.2))
 
-theorem mem_famsOf {ι : Type} {X : ι → Fam} {fs : List (String × ι)} {f : String} {A : Fam} :
+theorem mem_famsOf {ι : Type} {X : ι → Fam} {fs : List (PropKey × ι)} {f : PropKey} {A : Fam} :
     (f, A) ∈ famsOf X fs ↔ ∃ i, (f, i) ∈ fs ∧ A = X i := by
   simp only [famsOf, List.mem_map]
   constructor
@@ -53,7 +53,7 @@ theorem mem_famsOf {ι : Type} {X : ι → Fam} {fs : List (String × ι)} {f : 
   · rintro ⟨i, hi, rfl⟩
     exact ⟨(f, i), hi, rfl⟩
 
-theorem recT_congr_below {ι : Type} (X Y : ι → Fam) (a : List (String × ι)) (n : Nat)
+theorem recT_congr_below {ι : Type} (X Y : ι → Fam) (a : List (PropKey × ι)) (n : Nat)
     (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
     recT (famsOf X a) n W v ↔ recT (famsOf Y a) n W v := by
   constructor <;> rintro ⟨flds, rfl, hfs⟩ <;> refine ⟨flds, rfl, ?_⟩ <;>
@@ -63,10 +63,10 @@ theorem recT_congr_below {ι : Type} (X Y : ι → Fam) (a : List (String × ι)
   · obtain ⟨l, c, hl, hw, hag⟩ := hfs f (Y i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
     exact ⟨l, c, hl, hw, fun j hj W' u => (hag j hj W' u).trans (h i j hj W' u).symm⟩
 
-theorem famsOf_append {ι : Type} (X : ι → Fam) (a b : List (String × ι)) :
+theorem famsOf_append {ι : Type} (X : ι → Fam) (a b : List (PropKey × ι)) :
     famsOf X (a ++ b) = famsOf X a ++ famsOf X b := List.map_append ..
 
-theorem view_congr_below {ι : Type} (X Y : ι → Fam) (a : List (String × ι)) (n : Nat)
+theorem view_congr_below {ι : Type} (X Y : ι → Fam) (a : List (PropKey × ι)) (n : Nat)
     (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
     viewT (famsOf X a) n W v ↔ viewT (famsOf Y a) n W v := by
   constructor <;> intro hv f T hm <;> obtain ⟨i, hi, rfl⟩ := mem_famsOf.mp hm
@@ -75,8 +75,8 @@ theorem view_congr_below {ι : Type} (X Y : ι → Fam) (a : List (String × ι)
   · obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ := hv f (Y i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
     exact ⟨flds, l, c, rfl, hf, hl, fun j hj W' u hu => (h i j hj W' u).mpr (hag j hj W' u hu)⟩
 
-theorem congr_below {ι : Type} (X Y : ι → Fam) (a : List (String × ι))
-    (bs : List (List (String × ι))) (n : Nat)
+theorem congr_below {ι : Type} (X Y : ι → Fam) (a : List (PropKey × ι))
+    (bs : List (List (PropKey × ι))) (n : Nat)
     (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
     refsT (famsOf X a) (bs.map (famsOf X)) n W v ↔
       refsT (famsOf Y a) (bs.map (famsOf Y)) n W v := by
@@ -93,7 +93,7 @@ theorem congr_below {ι : Type} (X Y : ι → Fam) (a : List (String × ι))
 operands agree at the budgets at which that contract can be observed. Two
 operands that name no field in common constrain different locations and are
 not compared at all. -/
-theorem operands_agree {A B : Fields} {Bs : List Fields} {n W v} {f : String} {P Q : Fam}
+theorem operands_agree {A B : Fields} {Bs : List Fields} {n W v} {f : PropKey} {P Q : Fam}
     (h : refsT A Bs n W v) (hb : B ∈ Bs) (hp : (f, P) ∈ A) (hq : (f, Q) ∈ B) :
     Agree P Q n := by
   obtain ⟨flds, l, c, rfl, hf, hl, ha⟩ := recT_at hp h.1
@@ -106,9 +106,9 @@ theorem operands_agree {A B : Fields} {Bs : List Fields} {n W v} {f : String} {P
 
 /-- Every operand constrains the same object, so a field any of them names is
 a field of that object, with the contract that operand gives it. -/
-theorem refsT_field {A : Fields} {Bs : List Fields} {n W v} {f : String} {P : Fam}
+theorem refsT_field {A : Fields} {Bs : List Fields} {n W v} {f : PropKey} {P : Fam}
     (h : refsT A Bs n W v) (hm : (f, P) ∈ A ∨ ∃ B ∈ Bs, (f, P) ∈ B) :
-    ∃ (flds : List (String × Nat)) (l : Nat) (c : Ctr n),
+    ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr n),
       v = .objAt flds .absent ∧ flds.lookup f = some l ∧ lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val), c j hj W' u ↔ P j W' u := by
   rcases hm with hm | ⟨B, hB, hm⟩
@@ -118,7 +118,7 @@ theorem refsT_field {A : Fields} {Bs : List Fields} {n W v} {f : String} {P : Fa
 /-- A read of a named field satisfies every operand constraining that field,
 at every available lower budget. -/
 theorem read_all {A : Fields} {Bs : List Fields} {n W heap}
-    {flds : List (String × Nat)} {f : String} {P : Fam} {l : Nat}
+    {flds : List (PropKey × Nat)} {f : PropKey} {P : Fam} {l : Nat}
     (hok : HeapOk n W heap) (hr : refsT A Bs n W (.objAt flds .absent))
     (hp : (f, P) ∈ A) (hf : flds.lookup f = some l) :
     ∃ v, heap[l]? = some v ∧ ∀ j (hj : j < n),
@@ -137,7 +137,7 @@ theorem read_all {A : Fields} {Bs : List Fields} {n W heap}
 suffices: every operand constraining it agrees with the same invariant below
 this budget. Aliased heap satisfaction survives, and no other field moves. -/
 theorem write_first {A : Fields} {Bs : List Fields} {n W heap}
-    {flds : List (String × Nat)} {f : String} {P : Fam} {l : Nat} {v : Val}
+    {flds : List (PropKey × Nat)} {f : PropKey} {P : Fam} {l : Nat} {v : Val}
     (hok : HeapOk n W heap) (hr : refsT A Bs n W (.objAt flds .absent))
     (hp : (f, P) ∈ A) (hf : flds.lookup f = some l)
     (hv : ∀ j (hj : j < n), P j (trunc j (Nat.le_of_lt hj) W) v) :

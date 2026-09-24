@@ -218,7 +218,7 @@ theorem arrowsT_singleton (A B : Fam) (k : Nat) (W : WorldT k) (v : Val) :
 
 /-- Membership in every conjunct is membership in the intersection. -/
 theorem arrowsT_of_all {L : List (Fam × Fam)} {k : Nat} {W : WorldT k} {v : Val} {b : Tm}
-    {fs : List (String × Nat)}
+    {fs : List (PropKey × Nat)}
     (hobj : v = .objAt fs (.closure 1 b)) (hclosed : Scoped 2 b) (h : ∀ p ∈ L, arrowT p.1 p.2 k W v) : arrowsT L k W v :=
   ⟨⟨1, b, fs, hobj, hclosed⟩, fun p hp j hj W' hx hu hp' hok a ha => (h p hp).2 j hj W' hx hu hp' hok a ha⟩
 
@@ -381,7 +381,7 @@ theorem InvocationSpec.invoke {arity L k W b} (hs : InvocationSpec arity L k W b
     (hx : WExt (trunc j (Nat.le_of_lt hj) W) U) (hu : WorldAdm U)
     {heap : Heap} (hh : HeapOk j U heap) {r : Tm} (hr : p.1 j U r)
     {args : List Tm} (ha : ArgsT p.2.1 j U args)
-    {fs : List (String × Nat)} {result : Tm}
+    {fs : List (PropKey × Nat)} {result : Tm}
     (hi : CallArguments.Invoke ⟨.objAt fs (.closure arity b), r, args⟩ result) :
     Safe p.2.2 j U heap result := by
   cases hi
@@ -393,7 +393,7 @@ def codeCallsT (L : List (Fam × List Fam × Fam)) : Fam := fun k W v =>
   ∃ arity b fs, v = .objAt fs (.closure arity b) ∧ InvocationSpec arity L k W b
 
 theorem codeCallsT_code_iff (L : List (Fam × List Fam × Fam)) (arity : Nat)
-    (fs : List (String × Nat)) (b : Tm) (n W) :
+    (fs : List (PropKey × Nat)) (b : Tm) (n W) :
     codeCallsT L n W (.objAt fs (.closure arity b)) ↔ InvocationSpec arity L n W b := by
   constructor
   · rintro ⟨arity', b', fs', he, hs⟩
@@ -535,7 +535,7 @@ theorem CodeSpec_iff (L : List (Fam × Fam)) (k : Nat) (W : WorldT k) (b : Tm) :
 /-- Unary arrow domains describe actual calls, independently of the code's
 parameter count. The descriptor controls padding and truncation. -/
 theorem arrowsT_invocation_iff (arity : Nat) (L : List (Fam × Fam))
-    (fs : List (String × Nat)) (b : Tm) (n W) :
+    (fs : List (PropKey × Nat)) (b : Tm) (n W) :
     arrowsT L n W (.objAt fs (.closure arity b)) ↔
       InvocationSpec arity (L.map fun p => (undefT, [p.1], p.2)) n W b := by
   rw [InvocationSpec_unary_iff]
@@ -572,7 +572,7 @@ theorem arrowsT_congr {α : Type} (l : List α) (f g : α → Fam × Fam) {n : N
   intro x hx
   exact ⟨fun _ _ _ _ => Iff.rfl, .cons (h x hx).1 .nil, (h x hx).2⟩
 
-theorem arrowsT_code_iff (L : List (Fam × Fam)) (fs : List (String × Nat)) (b : Tm) (n W) :
+theorem arrowsT_code_iff (L : List (Fam × Fam)) (fs : List (PropKey × Nat)) (b : Tm) (n W) :
     arrowsT L n W (.objAt fs (.closure 1 b)) ↔ CodeSpec L n W b :=
   arrowsT_invocation_iff 1 L fs b n W
 
@@ -967,7 +967,7 @@ theorem callsT_invoke_short {L k W v} (hf : callsT L k W v)
 
 /-- Closure code meeting its code contract meets the signatures: a shorter
 list binds as the padded one does, since `parameters` pads with `undefined`. -/
-theorem callsT_of_invocationSpec {arity L k W b} (fs : List (String × Nat))
+theorem callsT_of_invocationSpec {arity L k W b} (fs : List (PropKey × Nat))
     (hs : InvocationSpec arity L k W b) : callsT L k W (.objAt fs (.closure arity b)) := by
   refine ⟨⟨fs, _, rfl, by simp, by simpa [Scoped, Nat.add_comm] using hs.1⟩, ?_⟩
   intro p hp j hj U hx hu heap hh r hrv hr args hvals ha
@@ -1065,7 +1065,7 @@ theorem ArgsShort_transfer {Ps : List Fam} (hA : ∀ A ∈ Ps, Adm A) {n W args}
 `(Rt, Ps ++ Ds, R)`, the saved receiver is at `Rt` and the saved prefix at
 `Ps`; the object then meets `(Rc, Ds, R)` for any receiver contract `Rc`. -/
 theorem callsT_bound {Rt R Rc : Fam} {Ps Ds : List Fam} {k : Nat} {W : WorldT k}
-    {fs : List (String × Nat)} {tv rv : Val} {pvs : List Tm}
+    {fs : List (PropKey × Nat)} {tv rv : Val} {pvs : List Tm}
     (hRt : Adm Rt) (hPs : ∀ A ∈ Ps, Adm A) (hDs : ∀ A ∈ Ds, Adm A)
     (ht : callsT [(Rt, Ps ++ Ds, R)] k W tv) (hrv : isVal rv = true) (hsr : Scoped 0 rv)
     (hr : Rt k W rv) (hpv : ArgsT Ps k W pvs) (hvs : CallArguments.Values pvs)
@@ -1167,7 +1167,7 @@ theorem ArgsRest_transfer {Ps : List Fam} {E : Fam} (hA : ∀ A ∈ Ps, Adm A) (
 /-- **A bound variadic function meets the residual variadic signature**: the
 positions the prefix did not take, then the element contract, at any receiver. -/
 theorem restsT_bound {Rt E R Rc : Fam} {Ps : List Fam} {k : Nat} {W : WorldT k}
-    {fs : List (String × Nat)} {tv rv : Val} {pvs : List Tm}
+    {fs : List (PropKey × Nat)} {tv rv : Val} {pvs : List Tm}
     (hRt : Adm Rt) (hPs : ∀ A ∈ Ps, Adm A) (hE : Adm E)
     (ht : restsT [(Rt, Ps, E, R)] k W tv) (hrv : isVal rv = true) (hsr : Scoped 0 rv)
     (hr : Rt k W rv)

@@ -117,7 +117,7 @@ theorem scheme_call {G : NormalGraph ι} {P outer s η Rc B}
 world extension and storage contracts serve every subsequent instantiation. -/
 theorem make_scheme_fields {G : NormalGraph ι} {P outer s}
     {As : List Fam} (hA : ∀ A ∈ As, Adm A)
-    (arity n : Nat) (W : WorldT n) (h : Heap) (ns : List String) (vs : List Val) (b : Tm)
+    (arity n : Nat) (W : WorldT n) (h : Heap) (ns : List PropKey) (vs : List Val) (b : Tm)
     (hnd : ns.Nodup) (hns : ns.length = vs.length) (hAs : As.length = vs.length)
     (hvals : ∀ v ∈ vs, isVal v = true) (hb : Scoped (arity + 1) b)
     (hfixed : s.variadic = [])

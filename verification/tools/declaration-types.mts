@@ -13,6 +13,9 @@ export type DeclarationIdentity = {
   name: string;
   span: Span;
 };
+/** A property key: a string, or the symbol a `unique symbol` constant
+ * denotes, by its index in the document's `symbols`. */
+export type PropertyKey = string | { symbol: number };
 /** A name the client binds to a declaration: an imported name (the span is
  * the import declaration's) or one of the client's own declarations. */
 export type TypeRoot = {
@@ -37,7 +40,7 @@ export type TypeTerm =
   | { k: "array"; readonly: boolean; element: TypeTerm; span: Span }
   | { k: "tuple"; readonly: boolean; required: TypeTerm[];
       optional: TypeTerm[]; rest: TypeTerm | null; span: Span }
-  | { k: "object"; fields: { name: string; optional: boolean; readonly: boolean; type: TypeTerm; span: Span }[];
+  | { k: "object"; fields: { name: PropertyKey; optional: boolean; readonly: boolean; type: TypeTerm; span: Span }[];
       stringIndex: { readonly: boolean; value: TypeTerm; span: Span } | null;
       calls: Extract<TypeTerm, { k: "function" }>[]; span: Span }
   | { k: "function"; receiver: TypeTerm | null; params: TypeTerm[];
@@ -76,4 +79,7 @@ export type DeclarationDocument = {
   roots: TypeRoot[];
   definitions: TypeDefinition[];
   values: ValueRoot[];
+  /** The `unique symbol` constants the definitions use as property keys, each
+   * once: distinct declarations are distinct symbols, as TypeScript assumes. */
+  symbols: DeclarationIdentity[];
 };

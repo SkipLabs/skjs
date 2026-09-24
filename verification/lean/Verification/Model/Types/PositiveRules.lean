@@ -358,13 +358,13 @@ names is named by some source operand, with contracts that imply each other.
 Fields the target does not name are not compared: a record type is open, so
 covering never requires the source to forget a field. -/
 abbrev CoversFields (R : List ι → List ι → Prop)
-    (source target : List (List (String × List ι))) : Prop :=
+    (source target : List (List (PropKey × List ι))) : Prop :=
   ∀ b ∈ target, ∀ q ∈ b, ∃ p ∈ source.flatten, p.1 = q.1 ∧ R p.2 q.2 ∧ R q.2 p.2
 
 /-- A view field is covered by a source field of the same name whose contract
 implies it: an invariant field or a view, either way a sound upper bound. -/
 abbrev CoversViews (R : List ι → List ι → Prop)
-    (source : List (List (String × List ι))) (views target : List (String × List ι)) : Prop :=
+    (source : List (List (PropKey × List ι))) (views target : List (PropKey × List ι)) : Prop :=
   ∀ q ∈ target, ∃ p ∈ source.flatten ++ views, p.1 = q.1 ∧ R p.2 q.2
 
 /-- Two rest contracts agree: both absent, or both present and equivalent. -/
@@ -412,10 +412,10 @@ def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
 object, so a field the target names is found at the location the source already
 fixed, under a contract the two relations identify. -/
 theorem covers_recs {G : NormalGraph ι} {R : List ι → List ι → Prop}
-    {a c : List (String × List ι)} {bs ds : List (List (String × List ι))}
+    {a c : List (PropKey × List ι)} {bs ds : List (List (PropKey × List ι))}
     (hc : CoversFields R (a :: bs) (c :: ds)) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
-    (W : WorldT n) (flds : List (String × Nat))
+    (W : WorldT n) (flds : List (PropKey × Nat))
     (hsrc : ∀ x ∈ a :: bs, recT (famsOf (meaning G) x) n W (.objAt flds .absent)) :
     ∀ b ∈ c :: ds, recT (famsOf (meaning G) b) n W (.objAt flds .absent) := by
   intro b hb
@@ -433,7 +433,7 @@ theorem covers_recs {G : NormalGraph ι} {R : List ι → List ι → Prop}
     (hag j hj W' u).trans ⟨hr j hj pl y hpy W' u, hr j hj y pl hyp W' u⟩⟩
 
 theorem covers_fields_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
-    {a c : List (String × List ι)} {bs ds : List (List (String × List ι))}
+    {a c : List (PropKey × List ι)} {bs ds : List (List (PropKey × List ι))}
     (hc : CoversFields R (a :: bs) (c :: ds)) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
     (W : WorldT n) (v : Val)
@@ -454,8 +454,8 @@ theorem covers_fields_sound {G : NormalGraph ι} {R : List ι → List ι → Pr
 /-- A covered view field reads a location whose contract implies its family,
 whether the source states that location invariantly or as a view. -/
 theorem covers_views_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
-    {a : List (String × List ι)} {bs : List (List (String × List ι))}
-    {vs ws : List (String × List ι)}
+    {a : List (PropKey × List ι)} {bs : List (List (PropKey × List ι))}
+    {vs ws : List (PropKey × List ι)}
     (hc : CoversViews R (a :: bs) vs ws) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
     (W : WorldT n) (v : Val)
@@ -481,7 +481,7 @@ theorem covers_views_sound {G : NormalGraph ι} {R : List ι → List ι → Pro
 /-- The same argument for a callable object's property bag, which forgets the
 call slot but names the same locations. -/
 theorem covers_bags_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
-    {a c : List (String × List ι)} {bs ds : List (List (String × List ι))}
+    {a c : List (PropKey × List ι)} {bs ds : List (List (PropKey × List ι))}
     (hc : CoversFields R (a :: bs) (c :: ds)) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
     (W : WorldT n) (v : Val)

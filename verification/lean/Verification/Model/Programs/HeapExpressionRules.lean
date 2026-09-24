@@ -100,14 +100,14 @@ theorem result_holds {k R ρ h v} (hk : HeapKnowledge.Holds k (push v ρ) h)
 
 /-- An ordinary typed read preserves the heap and records which cell its result
 came from. This does not claim the cell had any particular contents beforehand. -/
-def readFrame (k : Knowledge) (i : Nat) (fld : String) : Knowledge :=
+def readFrame (k : Knowledge) (i : Nat) (fld : PropKey) : Knowledge :=
   let out := HeapKnowledge.shift k
   {out with links := (HeapLinks.aliases k.links i).map (fun j => ⟨j+1,0,false,fld,false,valueField⟩) ++ out.links}
 
 /-- Reading uses a current-cell fact; its result is also an immutable value fact.
 This latter fact is what permits a subsequent result-contract check to retain
 precision even when the producer supplied a wider expression type. -/
-def readOutput (k : Knowledge) (i : Nat) (fld : String) (R : List Atom) : Knowledge :=
+def readOutput (k : Knowledge) (i : Nat) (fld : PropKey) (R : List Atom) : Knowledge :=
   withResult (readFrame k i fld) R
 
 theorem read_sound {G : NormalGraph ι} {Γ k i fld R A ρ n W h}
@@ -133,14 +133,14 @@ theorem read_sound {G : NormalGraph ι} {Γ k i fld R A ρ n W h}
     · exact hout.2.2 link hm
 
 /-- A clause's first invariant bag operand, independent of callability. -/
-def clauseBagOperand : PositiveNormalization.Clause α → Option (List (String × α))
+def clauseBagOperand : PositiveNormalization.Clause α → Option (List (PropKey × α))
   | .refs B _ _ | .callable B _ _ _ => some B
   | _ => none
 
 /-- Every alternative must promise the same invariant. This includes a neutral
 plain/callable view, but excludes empty unions, non-bags, and mixed operands. -/
 def bagOperand [DecidableEq α] :
-    List (PositiveNormalization.Clause α) → Option (List (String × α))
+    List (PositiveNormalization.Clause α) → Option (List (PropKey × α))
   | [] => none
   | c :: cs => do
     let B ← clauseBagOperand c
@@ -231,7 +231,7 @@ theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k t A ρ n W h}
 
 /-- The named fields of every record-typed slot: the locations a fresh
 allocation is known to differ from, read off the context's contracts. -/
-def contractFields [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) : List (Nat × String) :=
+def contractFields [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) : List (Nat × PropKey) :=
   Γ.zipIdx.flatMap fun (A, s) => match bagOperand (expand G A) with
     | some B => B.map fun p => (s, p.1)
     | none => []
@@ -252,8 +252,8 @@ theorem contractFields_mem [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty 
 /-- Allocation retains facts about old cells and records the fresh object, one
 assertion per named field it was given. Its locations are fresh, so each of its
 fields is distinct from every contract field of every record-typed slot. -/
-def allocOutput (k : Knowledge) (Rs : List (String × List Atom))
-    (others : List (Nat × String) := []) : Knowledge :=
+def allocOutput (k : Knowledge) (Rs : List (PropKey × List Atom))
+    (others : List (Nat × PropKey) := []) : Knowledge :=
   ⟨(Rs.map fun p => (⟨0,p.2,p.1⟩ : Fact)) ++ HeapFacts.shift k.cells, HeapFacts.shift k.values,
     (Rs.flatMap fun p => others.map fun q =>
       (⟨0,q.1+1,false,p.1,true,q.2⟩ : HeapLinks.Link)) ++ (HeapKnowledge.shift k).links⟩
@@ -261,19 +261,19 @@ def allocOutput (k : Knowledge) (Rs : List (String × List Atom))
 /-- The slots a fresh allocation's initializers stand in, with the field each
 one fills. Nothing else can frame facts: every initializer must already be a
 value this state knows about. -/
-def allocationParts : List String → List Tm → Option (List (String × Nat))
+def allocationParts : List PropKey → List Tm → Option (List (PropKey × Nat))
   | [], [] => some []
   | f :: fs, .var i :: as => (allocationParts fs as).map ((f, i) :: ·)
   | _, _ => none
 
-def allocationSlots : Tm → Option (List (String × Nat))
+def allocationSlots : Tm → Option (List (PropKey × Nat))
   | .makeAt _ ns inits => allocationParts ns inits
   | _ => none
 
 /-- What each initializer slot is known to hold. An allocation frames facts only
 when every one of its fields has a known supported primitive predicate. -/
 def allocationFacts [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) :
-    List (String × Nat) → Option (List (String × Nat × List Atom))
+    List (PropKey × Nat) → Option (List (PropKey × Nat × List Atom))
   | [] => some []
   | (f, i) :: rest =>
     match valuesAt G Γ k i, allocationFacts G Γ k rest with
@@ -327,7 +327,7 @@ theorem allocationParts_eq : ∀ {ns inits parts}, allocationParts ns inits = so
         subst h1; subst h2
         simp
 
-theorem allocationSlots_eq {t : Tm} {parts : List (String × Nat)}
+theorem allocationSlots_eq {t : Tm} {parts : List (PropKey × Nat)}
     (h : allocationSlots t = some parts) :
     ∃ code, t = .makeAt code (parts.map Prod.fst) (parts.map fun p => .var p.2) := by
   unfold allocationSlots at h
@@ -338,7 +338,7 @@ theorem allocationSlots_eq {t : Tm} {parts : List (String × Nat)}
   · simp at h
 
 theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {code : CallCode}
-    {parts : List (String × Nat × List Atom)}
+    {parts : List (PropKey × Nat × List Atom)}
     (hnd : (parts.map Prod.fst).Nodup)
     (hv : ∀ p ∈ parts, valuesAt G Γ k p.2.1 = some p.2.2)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hh : HeapOk n W h)
@@ -415,7 +415,7 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
 /-- A write forgets old cell observations, except those about locations known
 to be distinct from the written one, establishes its new contents, and retains
 immutable values already read into slots. -/
-def writeOutput (k : Knowledge) (i : Nat) (fld : String) (R : List Atom) : Knowledge :=
+def writeOutput (k : Knowledge) (i : Nat) (fld : PropKey) (R : List Atom) : Knowledge :=
   ⟨(HeapLinks.aliases k.links i).map (fun j => ⟨j+1,R,fld⟩) ++
       (k.cells.filter fun f => (f.slot,f.field) ∈ HeapLinks.distinctFrom k.links i fld).map
         (fun f => {f with slot := f.slot + 1}),
@@ -568,7 +568,7 @@ inductive StepEvidence (ι : Type) where
   | ordinary (proof : ProgramCertificates.Evidence ι)
   | pure (proof : ProgramCertificates.Evidence ι)
   | created (proof : ProgramCertificates.Evidence ι)
-  | typedRead (slot : Nat) (element : List (String × Ty ι)) (proof : ProgramCertificates.Evidence ι)
+  | typedRead (slot : Nat) (element : List (PropKey × Ty ι)) (proof : ProgramCertificates.Evidence ι)
   | observedRead (slot : Nat) (contents : List Atom)
   | knownValue (slot : Nat) (contents : List Atom)
   /-- The fields, their slots and their contents are read off the term and the
@@ -585,11 +585,11 @@ def allocationSlot : Tm → Option Nat
 /-- The field an operation names, read off the term rather than supplied by the
 producer, so evidence cannot claim a fact about a field the program never
 touched. -/
-def readSlot : Tm → Option (String × Nat)
+def readSlot : Tm → Option (PropKey × Nat)
   | .readAt f (.var i) => some (f, i)
   | _ => none
 
-def writeSlots : Tm → Option (String × Nat × Nat)
+def writeSlots : Tm → Option (PropKey × Nat × Nat)
   | .writeAt f (.var i) (.var v) => some (f, i, v)
   | _ => none
 

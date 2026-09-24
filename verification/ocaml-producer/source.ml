@@ -21,6 +21,12 @@ let identity declaration =
    This is a candidate-only view: Lean independently derives the authoritative
    graph rows from the same terms. Named edges remain named here, including
    cycles; no recursive declaration is unfolded. *)
+(* A field name: a string key, or `{"symbol": i}` for the declaration
+   document's i-th symbol. *)
+let property_key = function
+  | String name -> Name name
+  | Object ["symbol",Number i] -> Key (int_of_string i)
+  | _ -> fail "expected a property key"
 let rec source_type ctx j =
   let recur = source_type ctx in
   match text "k" j with
@@ -62,7 +68,7 @@ let rec source_type ctx j =
   | "object" ->
     let fields = List.map (fun f ->
       let t = recur (field "type" f) in
-      {name=text "name" f;optional=boolean (field "optional" f);
+      {name=property_key (field "name" f);optional=boolean (field "optional" f);
        read=t;write=(if boolean (field "readonly" f) then None else Some t)})
       (items "fields" j) in
     let string_index = match field "stringIndex" j with
@@ -290,7 +296,7 @@ let decode ast =
       Some (d.id,(parameter,body))
     | [parameter],[None],[],(Atoms [Shape shape] as body) ->
       (match shape.fields,shape.string_index,shape.calls,shape.elements with
-      | [{name="value";optional=false;read=Rigid identity;
+      | [{name=Name "value";optional=false;read=Rigid identity;
           write=Some (Rigid written)}],None,[],None
           when identity=parameter && written=parameter ->
         Some (d.id,(parameter,body))

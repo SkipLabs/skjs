@@ -195,6 +195,32 @@ export function collectDeclarations(file: string, options: {
       clean(node, `${idOf(node.getSourceFile())}#${node.name.text}`);
       return node;
     };
+    // A computed key names a `unique symbol` constant. Each such declaration
+    // is listed once, and its position in the list is the symbol's identity.
+    const symbols: DeclarationIdentity[] = [];
+    const symbolIndex = new Map<string, number>();
+    const symbolOf = (identifier: Identifier): number => {
+      const what = `[${identifier.text}]`;
+      const node = resolveDeclaration(identifier, what);
+      const type = ts.isVariableDeclaration(node) ? node.type : undefined;
+      if (!ts.isVariableDeclaration(node) || !ts.isIdentifier(node.name) ||
+          !ts.isVariableDeclarationList(node.parent) || !(node.parent.flags & ts.NodeFlags.Const) ||
+          !type || !ts.isTypeOperatorNode(type) || type.operator !== ts.SyntaxKind.UniqueKeyword ||
+          type.type.kind !== ts.SyntaxKind.SymbolKeyword)
+        throw Error(`the computed key ${what} is not a unique symbol constant`);
+      const source = node.getSourceFile();
+      clean(node, `${idOf(source)}#${node.name.text}`);
+      const identity: DeclarationIdentity = { module: idOf(source), name: node.name.text,
+        span: [node.getStart(source), node.end] };
+      const key = `${identity.module}#${identity.span[0]}:${identity.span[1]}`;
+      let index = symbolIndex.get(key);
+      if (index === undefined) {
+        index = symbols.length;
+        symbols.push(identity);
+        symbolIndex.set(key, index);
+      }
+      return index;
+    };
     // The type an imported value's declaration states, and the declarations
     // that type reaches, which join the graph.
     const valueStarts: TypeDeclaration[] = [];
@@ -203,6 +229,7 @@ export function collectDeclarations(file: string, options: {
       return {
         source,
         annotation: false,
+        symbol: symbolOf,
         fail: (_node, message) => { throw Error(`${message} in ${what}`); },
         named: (part, pos, read) => {
           const name = part.typeName as Identifier;
@@ -314,7 +341,7 @@ export function collectDeclarations(file: string, options: {
     const definitions: TypeDefinition[] = [];
     for (const { root, node: start } of roots) {
       try {
-        collect(start, seen, definitions, lookup, identityOf);
+        collect(start, seen, definitions, lookup, identityOf, symbolOf);
       } catch (error) {
         throw new DeclarationError(root.binding.span,
           error instanceof Error ? error.message : String(error));
@@ -322,13 +349,13 @@ export function collectDeclarations(file: string, options: {
     }
     for (const [index, start] of valueStarts.entries()) {
       try {
-        collect(start, seen, definitions, lookup, identityOf);
+        collect(start, seen, definitions, lookup, identityOf, symbolOf);
       } catch (error) {
         throw new DeclarationError(values[Math.min(index, values.length - 1)]?.binding.span ?? [0, 0],
           error instanceof Error ? error.message : String(error));
       }
     }
-    return { roots: roots.map(r => r.root), definitions, values };
+    return { roots: roots.map(r => r.root), definitions, values, symbols };
   });
 }
 
@@ -356,7 +383,8 @@ export function importTargets(file: string, tsconfigPath?: string):
 /** Every declaration reachable from `start`, each once across roots. */
 function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDefinition[],
   lookup: (identifier: Identifier, what: string) => TypeDeclaration,
-  identityOf: (node: TypeDeclaration) => DeclarationIdentity): void {
+  identityOf: (node: TypeDeclaration) => DeclarationIdentity,
+  symbol: (identifier: Identifier) => number): void {
   const queue: TypeDeclaration[] = [start];
   for (let cursor = 0; cursor < queue.length; cursor++) {
     const node = queue[cursor];
@@ -386,6 +414,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     const scope: TermScope = {
       source,
       annotation: false,
+      symbol,
       fail: (_node, message) => { throw Error(`${message} in ${identity.module}#${identity.name}`); },
       named: (part, pos, read) => {
         const name = part.typeName as Identifier;

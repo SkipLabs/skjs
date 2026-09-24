@@ -530,8 +530,8 @@ client of the same project, each stops at its first refused declaration
 | --- | --- | --- |
 | `Mapper<K1, V1, K2, V2>` | `any` in the library's `Iterable` | `mapEntry` returns `Iterable<[K2, V2]>`, whose defaulted type parameters are `any` |
 | `Resource<C>` | none: collected | its `Context` parameter's generic methods are opaque members |
-| `EagerCollection<K, V>` | `Managed`'s symbol-keyed field | it extends `Managed`, whose brand is `[sk_managed]: true` |
-| `Values<T>` | `any` in the library's `Iterable` | it extends `Iterable<T & DepSafe>`; `DepSafe`'s `bigint` and `symbol` are in the fragment, `Managed`'s symbol key is not |
+| `EagerCollection<K, V>` | none: collected | it extends `Managed`, whose brand `[sk_managed]: true` is a symbol-keyed field; its generic methods are opaque members |
+| `Values<T>` | `any` in the library's `Iterable` | it extends `Iterable<T & DepSafe>`; `DepSafe`'s `bigint` and `symbol` and `Managed`'s symbol key are in the fragment |
 
 The admitted contract work is larger than recognizing the declaration keyword:
 `Mapper` has four `Json`-bounded parameters and a method returning
@@ -904,9 +904,13 @@ first milestone, in order of how much each gates:
    - constructor types and generic tuple packs, `new (...params: Params) =>
      T` with `Params extends readonly DepSafe[]`;
    - `bigint` and `symbol` (done: opaque values in the calculus and types
-     in the graph, and `typeof` tests for every shape but `"object"`) and
-     symbol-keyed properties (`Managed`, the `Opaque`
-     brands): property keys that are strings or symbols in the heap model;
+     in the graph, and `typeof` tests for every shape but `"object"`), and
+     symbol-keyed properties (done: the heap's keys are strings or symbols,
+     and a declaration's `[x]: T` member, with `x` a `unique symbol`
+     constant, is a field keyed by that symbol). Remaining for `Managed` and
+     the `Opaque` types: `typeof x` of a unique symbol as a singleton type
+     (the `internal.ts` tags), and a class field's definite-assignment `!`
+     (`Frozen`'s `[sk_managed]!: true`);
    - types over rigid binders, such as `T & DepSafe`.
 5. **Library contracts.** `Iterable`/`Iterator` and arrays as iterables (every
    `mapEntry` returns an array literal as `Iterable`), and
@@ -938,8 +942,8 @@ hidden brand field no source can spell and only that constructor sets. Then
 only constructed instances (and, with inheritance, subclass instances)
 inhabit the type. A class declared elsewhere whose constructor is not
 checked here gets its brand as an external contract. `unique symbol` brands
-(`Managed`, the `Opaque` types) follow once symbols are in the fragment
-(item 4). Brands matter for `SharedCollections`: its bound is meant to admit
+(`Managed`, the `Opaque` types) are symbol-keyed fields, which the fragment
+now reads (item 4). Brands matter for `SharedCollections`: its bound is meant to admit
 only runtime collections.
 
 Generic interface variance is not on this list: the type-safe API does not

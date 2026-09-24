@@ -43,11 +43,11 @@ under a field is interpreted rather than ignored.
 Fields the type does not name are unconstrained, so a record type is open, as
 TypeScript's structural types are; every field it does name keeps its exact
 contract, which is what makes that openness sound and each field invariant. -/
-abbrev Fields := List (String × Fam)
+abbrev Fields := List (PropKey × Fam)
 
 def recT (fs : Fields) : Fam := fun k W v =>
-  ∃ flds : List (String × Nat), v = .objAt flds .absent ∧
-    ∀ (f : String) (T : Fam), (f, T) ∈ fs →
+  ∃ flds : List (PropKey × Nat), v = .objAt flds .absent ∧
+    ∀ (f : PropKey) (T : Fam), (f, T) ∈ fs →
       ∃ (l : Nat) (c : Ctr k), flds.lookup f = some l ∧ lookup W l = some c ∧
         ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ T j W' u
 
@@ -56,8 +56,8 @@ rule and proof written before fields were named speaks about this one. -/
 def refT (T : Fam) : Fam := recT [(valueField, T)]
 
 /-- One named field, as the cell development states it. -/
-theorem recT_single {f : String} {A : Fam} {k} {W : WorldT k} {v} :
-    recT [(f, A)] k W v ↔ ∃ (flds : List (String × Nat)) (l : Nat) (c : Ctr k),
+theorem recT_single {f : PropKey} {A : Fam} {k} {W : WorldT k} {v} :
+    recT [(f, A)] k W v ↔ ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k),
       v = .objAt flds .absent ∧ flds.lookup f = some l ∧ lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ A j W' u := by
   constructor
@@ -90,7 +90,7 @@ theorem mem_zip_index {α β : Type} {as : List α} {bs : List β} {a : α} {b :
 
 /-- **The record a fresh allocation satisfies.** Each named field stands for the
 location its position was given, under the contract stated for it there. -/
-theorem recT_alloc {n : Nat} {W : WorldT n} {ns : List String} {As : List Fam} {base : Nat}
+theorem recT_alloc {n : Nat} {W : WorldT n} {ns : List PropKey} {As : List Fam} {base : Nat}
     (hnd : ns.Nodup) (hlen : ns.length = As.length)
     (hl : ∀ (i : Nat) (hi : i < ns.length),
       lookup W (base + i) = some (res (As[i]'(hlen ▸ hi)))) :
@@ -101,9 +101,9 @@ theorem recT_alloc {n : Nat} {W : WorldT n} {ns : List String} {As : List Fam} {
   exact ⟨base + i, res (As[i]'hj), lookup_slots hnd hi, hl i hi, fun _ _ _ _ => Iff.rfl⟩
 
 /-- What a record type says about one of its fields. -/
-theorem recT_at {fs : List (String × Fam)} {f : String} {A : Fam} (hm : (f, A) ∈ fs)
+theorem recT_at {fs : List (PropKey × Fam)} {f : PropKey} {A : Fam} (hm : (f, A) ∈ fs)
     {k} {W : WorldT k} {v} (h : recT fs k W v) :
-    ∃ (flds : List (String × Nat)) (l : Nat) (c : Ctr k),
+    ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k),
       v = .objAt flds .absent ∧ flds.lookup f = some l ∧ lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ A j W' u := by
   obtain ⟨flds, rfl, hfs⟩ := h
@@ -111,7 +111,7 @@ theorem recT_at {fs : List (String × Fam)} {f : String} {A : Fam} (hm : (f, A) 
   exact ⟨flds, l, c, rfl, hl, hw, hag⟩
 
 theorem refT_iff {A : Fam} {k} {W : WorldT k} {v} :
-    refT A k W v ↔ ∃ (flds : List (String × Nat)) (l : Nat) (c : Ctr k),
+    refT A k W v ↔ ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k),
       v = .objAt flds .absent ∧ flds.lookup valueField = some l ∧ lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ A j W' u :=
   recT_single
@@ -266,7 +266,7 @@ theorem R_eq_ref_ref :
 
 /-- Allocation cannot invalidate a reference claim: a future world keeps every
 contract it already had. -/
-theorem recT_mono (fs : List (String × Fam)) (k : Nat) (W W' : WorldT k) (h : WExt W W')
+theorem recT_mono (fs : List (PropKey × Fam)) (k : Nat) (W W' : WorldT k) (h : WExt W W')
     (v : Val) (hv : recT fs k W v) : recT fs k W' v := by
   obtain ⟨flds, rfl, hfs⟩ := hv
   refine ⟨flds, rfl, ?_⟩
@@ -301,7 +301,7 @@ theorem topF_adm : Adm topF := ⟨fun _ _ _ _ => trivial, fun _ _ _ _ _ _ => tri
 
 /-- A reference is admissible whatever its element type is: the level drop is
 absorbed by restricting the stored contract, and allocation only appends. -/
-theorem recT_adm (fs : List (String × Fam)) : Adm (recT fs) := by
+theorem recT_adm (fs : List (PropKey × Fam)) : Adm (recT fs) := by
   refine ⟨?_, fun n W W' hx v hv => recT_mono fs n W W' hx v hv⟩
   rintro n W v ⟨flds, rfl, hfs⟩
   refine ⟨flds, rfl, ?_⟩
@@ -318,8 +318,8 @@ contract implies the stated family, so a read observes that family; nothing
 here permits a write, and the backing invariant, which may be stronger, is
 never retyped. A readonly view of a mutable cell is such a capability. -/
 def viewT (fs : Fields) : Fam := fun k W v =>
-  ∀ (f : String) (T : Fam), (f, T) ∈ fs →
-    ∃ (flds : List (String × Nat)) (l : Nat) (c : Ctr k), v = .objAt flds .absent ∧
+  ∀ (f : PropKey) (T : Fam), (f, T) ∈ fs →
+    ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k), v = .objAt flds .absent ∧
       flds.lookup f = some l ∧ lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → T j W' u
 
@@ -329,8 +329,8 @@ An absent key has no location and is read as `undefined` by `Step.readMissing`.
 This is a read capability: the actual cell contract may be stricter than `A`.
 The plain-object restriction is the same one used by `recT` and `viewT`. -/
 def dictViewT (A : Fam) : Fam := fun k W v =>
-  ∃ flds : List (String × Nat), v = .objAt flds .absent ∧
-    ∀ (f : String) (l : Nat), flds.lookup f = some l →
+  ∃ flds : List (PropKey × Nat), v = .objAt flds .absent ∧
+    ∀ (f : String) (l : Nat), flds.lookup (.str f) = some l →
       ∃ c : Ctr k, lookup W l = some c ∧
         ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → A j W' u
 
@@ -349,15 +349,15 @@ theorem dictViewT_congr {A B : Fam} {k : Nat} (h : Agree A B k)
 /-- A dictionary view supplies a contract for a key only when that key is
 present. Looking up an arbitrary string cannot use this witness alone. -/
 theorem dictViewT_present {A : Fam} {k : Nat} {W : WorldT k}
-    {fs : List (String × Nat)} (hd : dictViewT A k W (.objAt fs .absent))
-    {f : String} {l : Nat} (hl : fs.lookup f = some l) :
+    {fs : List (PropKey × Nat)} (hd : dictViewT A k W (.objAt fs .absent))
+    {f : String} {l : Nat} (hl : fs.lookup (.str f) = some l) :
     ∃ c : Ctr k, lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → A j W' u := by
   obtain ⟨fs', heq, hf⟩ := hd
   cases heq
   exact hf f l hl
 
-private theorem lookup_pair_mem {fs : List (String × Nat)} {f : String} {l : Nat}
+private theorem lookup_pair_mem {fs : List (PropKey × Nat)} {f : PropKey} {l : Nat}
     (h : fs.lookup f = some l) : (f, l) ∈ fs := by
   induction fs with
   | nil => simp [List.lookup] at h
@@ -372,13 +372,13 @@ private theorem lookup_pair_mem {fs : List (String × Nat)} {f : String} {l : Na
       simp
     · exact List.mem_cons_of_mem _ (ih h)
 
-private theorem slots_names (base : Nat) (ns : List String) :
+private theorem slots_names (base : Nat) (ns : List PropKey) :
     (slots base ns).map Prod.fst = ns := by
   induction ns generalizing base with
   | nil => simp [slots]
   | cons name rest ih => simp [slots, ih]
 
-private theorem zip_replicate_fields (ns : List String) (A : Fam) :
+private theorem zip_replicate_fields (ns : List PropKey) (A : Fam) :
     ns.zip (List.replicate ns.length A) = ns.map (fun name => (name, A)) := by
   induction ns with
   | nil => simp
@@ -390,7 +390,7 @@ private theorem zip_replicate_fields (ns : List String) (A : Fam) :
 establishes a readonly dictionary view. The exact `slots` map matters:
 an open record with the same named fields may have additional fields. -/
 theorem recT_fresh_dict {A : Fam} {k : Nat} {W : WorldT k}
-    {base : Nat} {ns : List String}
+    {base : Nat} {ns : List PropKey}
     (h : recT (ns.zip (List.replicate ns.length A)) k W
       (.objAt (slots base ns) .absent)) :
     dictViewT A k W (.objAt (slots base ns) .absent) := by
@@ -398,11 +398,11 @@ theorem recT_fresh_dict {A : Fam} {k : Nat} {W : WorldT k}
   cases heq
   refine ⟨slots base ns, rfl, ?_⟩
   intro f l hl
-  have hp : (f, l) ∈ slots base ns := lookup_pair_mem hl
-  have hn : f ∈ ns := by
+  have hp : ((f : PropKey), l) ∈ slots base ns := lookup_pair_mem hl
+  have hn : (f : PropKey) ∈ ns := by
     rw [← slots_names base ns]
     exact List.mem_map_of_mem hp
-  have hm : (f, A) ∈ ns.zip (List.replicate ns.length A) := by
+  have hm : ((f : PropKey), A) ∈ ns.zip (List.replicate ns.length A) := by
     rw [zip_replicate_fields]
     exact List.mem_map_of_mem hn
   obtain ⟨l', c, hl', hw, hc⟩ := hf f A hm
@@ -422,9 +422,9 @@ theorem empty_bool_dict_missing {k : Nat} {W : WorldT k} {h : Heap} {f : String}
   · intro f' l hl; simp at hl
   · simp [boolT]
 
-theorem viewT_at {fs : Fields} {f : String} {A : Fam} (hm : (f, A) ∈ fs)
+theorem viewT_at {fs : Fields} {f : PropKey} {A : Fam} (hm : (f, A) ∈ fs)
     {k} {W : WorldT k} {v} (h : viewT fs k W v) :
-    ∃ (flds : List (String × Nat)) (l : Nat) (c : Ctr k),
+    ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k),
       v = .objAt flds .absent ∧ flds.lookup f = some l ∧ lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → A j W' u := h f A hm
 
@@ -713,7 +713,7 @@ theorem undefT_valOnly : ValOnly undefT := by rintro _ _ _ rfl; rfl
 
 theorem boolT_valOnly : ValOnly boolT := by rintro _ _ _ (rfl | rfl) <;> rfl
 
-theorem recT_valOnly (fs : List (String × Fam)) : ValOnly (recT fs) := by
+theorem recT_valOnly (fs : List (PropKey × Fam)) : ValOnly (recT fs) := by
   rintro _ _ _ ⟨flds, rfl, -⟩; rfl
 
 theorem refT_valOnly (A : Fam) : ValOnly (refT A) := recT_valOnly _

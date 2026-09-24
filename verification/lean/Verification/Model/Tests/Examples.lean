@@ -102,7 +102,7 @@ def prog : Tm := .app (.fn 0 body) (.alloc .tru)
 
 /-- Reading through the captured closure, at any level and admissible world in
 which the cell is a boolean reference. -/
-theorem closure_read {flds : List (String × Nat)} : ∀ (j : Nat) (W : WorldT j) (h : Heap),
+theorem closure_read {flds : List (PropKey × Nat)} : ∀ (j : Nat) (W : WorldT j) (h : Heap),
     refT boolT j W (.objAt flds .absent) → WorldAdm W → HeapOk j W h →
     ∀ v, isVal v = true → Safe boolT j W h (.app (.fn 0 (.read (.objAt flds .absent))) v) := by
   intro j W h hr hadm hok v hv

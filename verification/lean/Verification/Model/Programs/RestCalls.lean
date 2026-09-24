@@ -61,7 +61,7 @@ theorem parameters_short : ∀ (n : Nat) (args : List Tm), args.length ≤ n →
 fixed parameters admit binds as the padded one, collecting nothing, and a
 longer one binds its fixed prefix and collects the rest. -/
 theorem restsT_of_restSpec {n : Nat} {Rc : Fam} {Ps : List Fam} {E R : Fam} {k : Nat}
-    {W : WorldT k} {b : Tm} (fs : List (String × Nat)) (hs : RestSpec n Rc Ps E R k W b) :
+    {W : WorldT k} {b : Tm} (fs : List (PropKey × Nat)) (hs : RestSpec n Rc Ps E R k W b) :
     restsT [(Rc, Ps, E, R)] k W (.objAt fs (.variadic n b)) := by
   refine ⟨⟨fs, _, rfl, by simp, by simpa [Scoped, Nat.add_comm, Nat.add_left_comm] using hs.1⟩, ?_⟩
   intro s hsm j hj U hx hu heap hh r hrv hr args hvals ha

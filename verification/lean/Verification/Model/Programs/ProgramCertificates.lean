@@ -155,7 +155,7 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     (match expand G ja.type with
      | [.refs _ [] vs] => (f, j.type) ∈ vs
      | _ => False)
-  | .readDict A U, .readAt f a, [ja] =>
+  | .readDict A U, .readAt (.str _) a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧ Represents G U .undef ∧ j.type = A ++ U ∧
     (match expand G ja.type with
      | [.dict _ [] _ ix] => A ∈ ix

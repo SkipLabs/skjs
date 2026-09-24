@@ -462,7 +462,7 @@ private def obligation (pos : Span) (j : ProgramCertificates.Sequent Nat) (plan 
 calls. Require their declared storage contract to imply such an observation
 uniformly; this is a located proof obligation, never a discarded assertion. -/
 private def persistentObservation (d : Descriptor) (pos : Span) (A : Ty Nat)
-    (fld : String) (R : Ty Nat) : Compiler Unit := do
+    (fld : PropKey) (R : Ty Nat) : Compiler Unit := do
   -- The obligation below is an inclusion of types, so the observed type needs
   -- only to be one this table names. It does not need a supported primitive predicate:
   -- that is what a primitive assertion on an edge needs, and this is not one.
@@ -526,6 +526,12 @@ private def entryFacts (fc : SourceClaims.Function) (pos : Nat) (scope : List Sc
 /-- A dot cannot occur in a source binding identifier, so these names designate
 administrative read snapshots without colliding with source variables. -/
 private def snapshotName (name field : String) : String := name ++ "." ++ field
+/-- A snapshot is named by a string field. Source syntax reads only string
+keys, so a symbol key asserted for a snapshot is refused, not encoded: no
+string spelling of it is distinct from every string key. -/
+private def stringKey : PropKey → Except String String
+  | .str name => .ok name
+  | .sym _ => .error "a symbol-keyed field has no source snapshot"
 -- A saved local value is different from a field of the object it contains.
 -- This prefix cannot begin a source identifier or a name.field snapshot.
 private def localSnapshotName (name : String) : String := ".local:" ++ name
@@ -533,7 +539,7 @@ private def isSnapshot (name : String) : Bool := name.any (· == '.')
 
 private def observed (scope : List ScopeBinding) (Γ : List (Ty Nat))
     (snapshot : String) (d : Descriptor) (pos : Span) (A : Ty Nat)
-    (fld : String) (R : Ty Nat) : Compiler Unit := do
+    (fld : PropKey) (R : Ty Nat) : Compiler Unit := do
   if let some i := (names scope).idxOf? snapshot then
     let plan := DirectProof.var Γ i R
     obligation pos plan.goal (some plan) "heap-observation" scope
@@ -605,7 +611,7 @@ private def closureEnv (fc : SourceClaims.Function) (pos : Nat) (scope : List Sc
       for (fld, R) in asserted do
         let receiver := match b.storage with
           | .value => A | .cell contract _ => contract
-        observed scope Γ (snapshotName name fld) ⟨name,none⟩ (pos,pos+1) receiver fld R
+        observed scope Γ (snapshotName name (← stringKey fld)) ⟨name,none⟩ (pos,pos+1) receiver fld R
   (scope.zipIdx).mapM fun (b,i) => do
     let name := b.source.name
     let A := if name == "" || name == "this" || isSnapshot name then Γ[i]? else H[named.idxOf name]?
@@ -784,7 +790,7 @@ private def allocationChildren : DirectProof.Plan → Option (List DirectProof.P
 
 /-- Read a field from a cell plan under context `Γ`: one contract, a callable
 bag, or an explicit union of cell contracts each naming the field. -/
-private def readCell (G : PositiveGraphs.NormalGraph Nat) (Γ : List (Ty Nat)) (fld : String)
+private def readCell (G : PositiveGraphs.NormalGraph Nat) (Γ : List (Ty Nat)) (fld : PropKey)
     (a : DirectProof.Plan) : Compiler DirectProof.Plan := do
   match PositiveRules.expand G a.type with
   | [.refs fs [] vs] =>
@@ -817,7 +823,7 @@ private def readCell (G : PositiveGraphs.NormalGraph Nat) (Γ : List (Ty Nat)) (
 
 /-- The write node under context `H`, with the value in slot 0 and the
 receiver, claimed at `B`, in slot `ri`. -/
-private def writeCell (G : PositiveGraphs.NormalGraph Nat) (H : List (Ty Nat)) (fld : String)
+private def writeCell (G : PositiveGraphs.NormalGraph Nat) (H : List (Ty Nat)) (fld : PropKey)
     (B C : Ty Nat) (ri : Nat) : Compiler DirectProof.Plan := do
   let term := Tm.writeAt fld (.var ri) (.var 0)
   match PositiveRules.expand G B with
@@ -851,7 +857,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
   if let some asserted := fc.exprCurrent.lookup e.span then
     for (fld, R) in asserted do
       match e with
-      | .var _ name => observed scope Γ (snapshotName name fld) ⟨"",some e.span⟩ e.span A fld R
+      | .var _ name => observed scope Γ (snapshotName name (← stringKey fld)) ⟨"",some e.span⟩ e.span A fld R
       | _ => persistentObservation ⟨"",some e.span⟩ e.span A fld R
   let p ← match e with
   | .equality .. => throw "internal unresolved equality"
@@ -954,17 +960,17 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     match PositiveRules.expand G A with
     | [.refs B [] []] =>
       if B.length != ns.length then throw "allocation claim names different fields"
-      let B ← ns.mapM fun name => do
+      let B ← (ns.map PropKey.str).mapM fun name => do
         let some D := B.lookup name | throw "allocation claim names different fields"
         pure (name,D)
       let Ref ← lower (CellClaims.reference B)
       -- The calculus evaluates these initializers from left to right.
       let casts := (ps.zip (B.map Prod.snd)).map fun (p,D) => DirectProof.cast Γ D p
-      pure (DirectProof.node Γ (.makeAt .absent ns (ps.map (·.term))) [Ref] .alloc casts)
+      pure (DirectProof.node Γ (.makeAt .absent (ns.map .str) (ps.map (·.term))) [Ref] .alloc casts)
     | [.dict [] [] [] [E]] =>
       if ns.eraseDups.length != ns.length then throw "duplicate dictionary literal key"
       let casts := ps.map fun p => DirectProof.cast Γ E p
-      pure (DirectProof.node Γ (.makeAt .absent ns (ps.map (·.term))) A .allocDict casts)
+      pure (DirectProof.node Γ (.makeAt .absent (ns.map .str) (ps.map (·.term))) A .allocDict casts)
     | _ => throw "allocation claim must name a record or readonly dictionary contract"
   | .read _ fld a => do
     let receiver := a
@@ -1318,7 +1324,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         | throw "initializer requires a fresh object literal"
       let .alloc _ ns _ := initial | throw "initializer requires a fresh object literal"
       if values.length != P.length then throw "initializer literal does not match its annotation"
-      let P ← ns.mapM fun name => do
+      let P ← (ns.map PropKey.str).mapM fun name => do
         let some D := P.lookup name | throw s!"initializer field '{name}' is absent from its annotation"
         pure (name,D)
       let fp := DirectProof.cast Γ F f
@@ -1339,7 +1345,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     if values.length != P.length then throw "initializer literal does not match its annotation"
     -- Initializers stay in source order. An annotation may list the same fields
     -- in another order; pairing by position would silently rename their values.
-    let P ← ns.mapM fun name => do
+    let P ← (ns.map PropKey.str).mapM fun name => do
       let some D := P.lookup name | throw s!"initializer field '{name}' is absent from its annotation"
       pure (name,D)
     let fp := DirectProof.cast Γ F f
@@ -1855,7 +1861,7 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let temporaries := (operands.map fun a => held ⟨"",some a.span⟩).reverse
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+n))⟩
-    let make ← emitAt e.span (.makeAt .absent ns ((List.range n).map fun i => .var (n-1-i)))
+    let make ← emitAt e.span (.makeAt .absent (ns.map .str) ((List.range n).map fun i => .var (n-1-i)))
       (.bind drop) (As.reverse ++ Γ) A (scope := temporaries ++ scope)
     operands.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) =>
       compileExpr fc
@@ -2266,7 +2272,7 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     -- operation, the write back at the contract, and the old or new value.
     let G := SourceTypes.graph (← table)
     let N : Ty Nat := [← lower (SourceTypes.use .num)]
-    let fieldType := fun (B : Ty Nat) (fld : String) => do
+    let fieldType := fun (B : Ty Nat) (fld : PropKey) => do
       match PositiveRules.expand G B with
       | [.refs fs [] []] =>
         let some T := fs.lookup fld | throw s!"update of a field '{fld}' the contract does not name"
@@ -2316,7 +2322,7 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     -- test on that value, and the right side written only on the writing
     -- arm; the other arm's value is the one read.
     let G := SourceTypes.graph (← table)
-    let fieldType := fun (B : Ty Nat) (fld : String) => do
+    let fieldType := fun (B : Ty Nat) (fld : PropKey) => do
       match PositiveRules.expand G B with
       | [.refs fs [] []] =>
         let some T := fs.lookup fld | throw s!"update of a field '{fld}' the contract does not name"
@@ -2488,7 +2494,7 @@ private def stmtStart : Fragment.Stmt → Nat
 at slot `obj`: each binds its read at the contract's field type. `after`
 compiles what follows the statement. -/
 private def patternProps (fc : SourceClaims.Function) (pos : Span)
-    (fields : List (String × Ty Nat)) (after : List ScopeBinding → Compiler Target) :
+    (fields : List (PropKey × Ty Nat)) (after : List ScopeBinding → Compiler Target) :
     List ScopeBinding → List (Ty Nat) → Nat → List Fragment.PatternProp → Compiler Target
   | scope, Γ, obj, [] => do
     -- The statement is over: the object's anonymous slot, below the `obj`
@@ -2499,7 +2505,7 @@ private def patternProps (fc : SourceClaims.Function) (pos : Span)
   | scope, Γ, obj, q :: more => do
     if q.name == "undefined" then throw "shadowing undefined is outside the fragment"
     if (names scope).contains q.name then throw s!"duplicate or shadowing local declaration '{q.name}'"
-    let some R := fields.lookup q.field
+    let some R := fields.lookup (.str q.field)
       | throw s!"pattern reads a field '{q.field}' the contract does not name"
     let bound := held ⟨q.name,some pos⟩
     readWithDefault fc pos q.namePos (.readAt q.field (.var obj)) R q.default_ bound scope Γ

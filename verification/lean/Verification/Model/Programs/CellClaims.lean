@@ -26,9 +26,18 @@ def primitive (j : Json) : Except String Claim.Ty := do
   decodeTy j
 
 structure FieldClaim where
-  name : String
+  name : PropKey
   read : Claim.Ty
   write : Claim.Ty
+
+/-- A field name: a string key as its JSON string, a symbol key as
+`{"symbol": id}`. -/
+def _root_.Verification.Model.PropKey.decode (j : Json) : Except String PropKey :=
+  match j with
+  | .str name => .ok (.str name)
+  | j => do
+    fieldsExactly j ["symbol"]
+    return .sym (← (← jField j "symbol").getNat?)
 
 /-- The accepted record is interpreted as one required slot per named field.
 The schema cannot distinguish data properties from accessors; the source gate
@@ -38,7 +47,7 @@ by this bounded schema. Synthetic index markers describe exporter bookkeeping,
 not runtime permissions; their internal inference variables are not interpreted.
 Absence and unknown modes have the same interpretation
 within the plain-cell fragment; this is not full TypeScript object semantics. -/
-def decodeShapes (j : Json) : Except String (List (String × Json × Json)) := do
+def decodeShapes (j : Json) : Except String (List (PropKey × Json × Json)) := do
   fieldsExactly j ["top","atoms"]
   if ← (← jField j "top").getBool? then throw "top is not a cell contract"
   let atoms ← jArr j "atoms"
@@ -60,7 +69,7 @@ def decodeShapes (j : Json) : Except String (List (String × Json × Json)) := d
   if fields.isEmpty then throw "a record with no field has no location"
   let out ← fields.mapM fun field => do
     fieldsExactly field ["name","optional","read","write"]
-    let name ← jStr (← jField field "name")
+    let name ← PropKey.decode (← jField field "name")
     if ← (← jField field "optional").getBool? then
       throw "optional fields are not invariant cells"
     return (name, ← jField field "read", ← jField field "write")
@@ -69,7 +78,7 @@ def decodeShapes (j : Json) : Except String (List (String × Json × Json)) := d
   return out
 
 /-- The single-field case, for the places that accept exactly one cell. -/
-def decodeShape (j : Json) : Except String (String × Json × Json) := do
+def decodeShape (j : Json) : Except String (PropKey × Json × Json) := do
   match ← decodeShapes j with
   | [f] => return f
   | _ => throw "expected exactly one cell field"
@@ -107,7 +116,7 @@ theorem agreeContract_checked {read write : Claim.Ty} {A}
       · contradiction
 
 /-- A record's fields, each under the one contract its read and write agree on. -/
-def translateFields : List FieldClaim → Except String (List (String × Ty Nat))
+def translateFields : List FieldClaim → Except String (List (PropKey × Ty Nat))
   | [] => .ok []
   | c :: cs =>
     match agreeContract c.read c.write, translateFields cs with
@@ -115,7 +124,7 @@ def translateFields : List FieldClaim → Except String (List (String × Ty Nat)
     | .error e, _ => .error e
     | _, .error e => .error e
 
-def translate (j : Json) : Except String (List (String × Ty Nat)) := do
+def translate (j : Json) : Except String (List (PropKey × Ty Nat)) := do
   translateFields (← decode j)
 
 theorem translateFields_spec : ∀ {cs fs}, translateFields cs = .ok fs →
@@ -155,7 +164,7 @@ theorem translate_checked {j : Json} {fs} (h : translate j = .ok fs) :
 
 /-- The record a reference label stands for: each named field under the family
 its contract denotes. -/
-def interpretation (T : Table) (fs : List (String × Ty Nat)) : Fam :=
+def interpretation (T : Table) (fs : List (PropKey × Ty Nat)) : Fam :=
   recT (ReferenceConjunctions.famsOf (meaning (graph T)) fs)
 
 /-- The accepted invariant preserves both supplied primitive membership tests,
@@ -197,11 +206,11 @@ def conjuncts (atom : Json) : Except String (List Json) := do
     return plain :: others.toList
 
 /-- The label of a location under one record contract. -/
-def reference (fs : List (String × Ty Nat)) : Lowering Nat := use (.refs fs [] [])
+def reference (fs : List (PropKey × Ty Nat)) : Lowering Nat := use (.refs fs [] [])
 
 /-- The label of a location under one record contract with readonly views:
 the invariant fields and, separately, the fields read through a capability. -/
-def viewReference (fs vs : List (String × Ty Nat)) : Lowering Nat := use (.refs fs [] vs)
+def viewReference (fs vs : List (PropKey × Ty Nat)) : Lowering Nat := use (.refs fs [] vs)
 
 /-- The one-field spelling, for the places that still speak of a single cell. -/
 def cellReference (A : Ty Nat) : Lowering Nat := reference [(valueField, A)]
@@ -213,11 +222,11 @@ def before : List Nat → List Nat → Bool
   | a :: as, b :: bs => a < b || (a == b && before as bs)
 
 /-- Field maps compare by name first, then by the labels their contracts got. -/
-def beforeFields : List (String × Ty Nat) → List (String × Ty Nat) → Bool
+def beforeFields : List (PropKey × Ty Nat) → List (PropKey × Ty Nat) → Bool
   | [], _ => true
   | _ :: _, [] => false
   | a :: as, b :: bs =>
-    a.1 < b.1 || (a.1 == b.1 && (before a.2 b.2 || (a.2 == b.2 && beforeFields as bs)))
+    a.1.before b.1 || (a.1 == b.1 && (before a.2 b.2 || (a.2 == b.2 && beforeFields as bs)))
 
 /-- A location under every contract in the conjunction. Conjunction is
 commutative and idempotent, so the operands are sorted and deduplicated, and a
@@ -232,7 +241,7 @@ def conjunction (atom : Json) : Lowering Nat := do
 
 /-- The reference label denotes exactly the cell invariant, over any table
 holding its row, at every world and budget. -/
-theorem reference_exact {T : Table} {fs : List (String × Ty Nat)}
+theorem reference_exact {T : Table} {fs : List (PropKey × Ty Nat)}
     (hm : [.refs fs [] []] ∈ T) (n W v) :
     meaning (graph T) [label T (.refs fs [] [])] n W v ↔ interpretation T fs n W v := by
   rw [label_meaning hm]
@@ -240,7 +249,7 @@ theorem reference_exact {T : Table} {fs : List (String × Ty Nat)}
     ReferenceConjunctions.famsOf, viewT]
 
 /-- Interning a reference yields a table holding its row and its label there. -/
-theorem reference_run {fs : List (String × Ty Nat)} {T T' : Table} {l}
+theorem reference_run {fs : List (PropKey × Ty Nat)} {T T' : Table} {l}
     (h : (reference fs).run T = .ok (l, T')) :
     [.refs fs [] []] ∈ T' ∧ l = label T' (.refs fs [] []) ∧ T <+: T' :=
   use_spec h

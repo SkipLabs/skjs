@@ -1421,9 +1421,13 @@ signatures. Each instance holds of the value, so their conjunction does.
 **Bigints and symbols.** The calculus has bigint and symbol values, each an
 opaque identity: bound, passed, stored and shape-tested, never computed with.
 The graph has their families, and `bigint` and `symbol` annotations lower to
-them. Symbol-keyed properties are separate work: the heap's property keys
-must be strings or symbols, so that no string-keyed access reaches a symbol
-key.
+them. The heap's property keys are strings or symbols (`PropKey`), so a
+symbol-keyed field is its own key: no string-keyed access reaches it and a
+string index signature does not constrain it. A declaration's member `[x]: T`, where `x`
+resolves to a `const x: unique symbol`, is a field keyed by that symbol. The
+declaration document lists each such constant once, in `symbols`, and a key
+`{"symbol": i}` is the i-th: distinct declarations are distinct symbols, as
+TypeScript assumes, and that is part of the declarations' contract.
 
 **Imported values.** A value import joins the module's scope at the type its
 declaration states: a function's annotated signature, an annotated
@@ -1610,8 +1614,11 @@ Tuple-pack and argument-sequence inference remain later extensions.
 
 ### Next object milestone
 
-Multi-field objects are finite maps from field names to locations, fixed at
-allocation, each field invariant on its own: `make_fields_rule` allocates one
+Multi-field objects are finite maps from property keys to locations, fixed at
+allocation, each field invariant on its own. A key is a string or a symbol
+(`PropKey`), and the two spaces are disjoint, as in JavaScript: a string-keyed
+access never reaches a symbol-keyed field, and a string index signature
+constrains string keys only. `make_fields_rule` allocates one
 location per named field, `covers_recs` composes contracts field by field, and a
 current-content assertion names the field it is about. Required record fields
 store callbacks through the existing reference and arrow rules, and the source

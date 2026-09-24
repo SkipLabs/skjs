@@ -27,14 +27,14 @@ inductive Clause (α : Type) where
   from field names to labels and names only the fields it constrains, so
   operands naming different fields describe different locations of the same
   object rather than one location twice. -/
-  | refs (first : List (String × α)) (rest : List (List (String × α)))
-      (views : List (String × α))
+  | refs (first : List (PropKey × α)) (rest : List (List (PropKey × α)))
+      (views : List (PropKey × α))
   /-- A plain object with invariant named fields, readonly named views, and
   readonly string-index views. The index operands apply to every present own
   field, including named ones. A first record operand fixes the object shape;
   it may be empty for a pure dictionary. -/
-  | dict (first : List (String × α)) (rest : List (List (String × α)))
-      (views : List (String × α)) (indexes : List α)
+  | dict (first : List (PropKey × α)) (rest : List (List (PropKey × α)))
+      (views : List (PropKey × α)) (indexes : List α)
   /-- A callable value meeting every fixed signature, `(receiver, parameters,
   result)`, and every variadic one, `(receiver, fixed parameters, element,
   result)`: the receiver a call may pass, the contract of each actual, and
@@ -48,7 +48,7 @@ inductive Clause (α : Type) where
   | numLit (bits : UInt64)
   /-- The value a body produces by completing rather than returning. -/
   | undef
-  | callable (first : List (String × α)) (rest : List (List (String × α)))
+  | callable (first : List (PropKey × α)) (rest : List (List (PropKey × α)))
       (arrows : List (α × List α × α)) (variadic : List (α × List α × α × α))
   /-- Semantic top: every value. Membership grants no operation, so nothing
   reads, calls or tests through it without a narrowing fact. `unknown`

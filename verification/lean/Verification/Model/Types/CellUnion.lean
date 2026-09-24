@@ -10,7 +10,7 @@ open Lean ProgramTyping PositiveRules
 /-- One field's read and write capabilities. A record alternative states one
 of these per named field. -/
 structure FieldContract where
-  name : String
+  name : PropKey
   read : List Nat
   write : List Nat
   deriving DecidableEq
@@ -21,7 +21,7 @@ abbrev Contract := List FieldContract
 per field. The law below is independent of how those capabilities are
 implemented. Absorption additionally keeps the storage invariant fixed, as
 required by the point-assertion interpretation. -/
-def Satisfies (c : Contract) (Reads Writes : String → Nat → Prop) : Prop :=
+def Satisfies (c : Contract) (Reads Writes : PropKey → Nat → Prop) : Prop :=
   ∀ f ∈ c, (∀ a, Reads f.name a → a ∈ f.read) ∧ (∀ a, a ∈ f.write → Writes f.name a)
 
 def coversField (a b : FieldContract) : Bool :=
@@ -71,7 +71,7 @@ theorem select_spec {cs c} (hc : c ∈ cs) :
 
 def normalize (cs : List Contract) : List Contract := cs.map (select cs)
 
-def UnionSatisfies (cs : List Contract) (Reads Writes : String → Nat → Prop) : Prop :=
+def UnionSatisfies (cs : List Contract) (Reads Writes : PropKey → Nat → Prop) : Prop :=
   ∃ c ∈ cs, Satisfies c Reads Writes
 
 /-- Absorption preserves the whole union of read/write requirements in both

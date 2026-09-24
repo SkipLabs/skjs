@@ -140,14 +140,17 @@ function bareAtomText(atom: unknown, state: PrintState): string {
       "{ " +
       [
         ...atom.fields.map((field) => {
-          // A name the surface can write is written, anything else quoted. A
-          // nonstring name prints the same either way: the regexp coerced it
-          // before testing it, and the quoted form is that same text.
+          // A name the surface can write is written, anything else quoted,
+          // and a symbol key is shown by its index.
+          const key = field.name;
           const name =
-            (typeof field.name === "string" &&
-            /^[A-Za-z_$][\w$]*$/.test(field.name)
-              ? field.name
-              : JSON.stringify(field.name)) + (field.optional ? "?" : "");
+            (typeof key === "string"
+              ? /^[A-Za-z_$][\w$]*$/.test(key)
+                ? key
+                : JSON.stringify(key)
+              : isObject(key) && typeof key.symbol === "number"
+                ? `[symbol ${key.symbol}]`
+                : JSON.stringify(key)) + (field.optional ? "?" : "");
           const read = typeText(field.read, state);
           const write = typeText(field.write, state);
           // A read type that differs from the write type is an assertion about

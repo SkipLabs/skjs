@@ -10,6 +10,21 @@ namespace Verification.Model.RequestJson
 open Lean ProgramTyping PositiveNormalization PositiveGraphs PositiveRules
 open ProgramCertificates PointClaims ControlFlow CertificateProducer
 
+/-- A string key is its JSON string, so a document naming only string keys
+reads as it always has; a symbol key is `{"symbol": id}`. -/
+instance : ToJson PropKey where
+  toJson
+    | .str name => .str name
+    | .sym id => Json.mkObj [("symbol", toJson id)]
+
+instance : FromJson PropKey where
+  fromJson?
+    | .str name => .ok (.str name)
+    | j => do
+      let fields ← j.getObj?
+      if fields.size != 1 then throw "a symbol key has exactly the field 'symbol'"
+      return .sym (← (← j.getObjVal? "symbol").getNat?)
+
 deriving instance ToJson, FromJson for Tag
 deriving instance ToJson, FromJson for Arith
 deriving instance ToJson, FromJson for Tm, CallCode

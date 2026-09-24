@@ -15,9 +15,9 @@ structure Link where
   cell : Nat
   value : Nat
   alias : Bool := false
-  field : String := valueField
+  field : PropKey := valueField
   distinct : Bool := false
-  other : String := valueField
+  other : PropKey := valueField
   deriving DecidableEq, Repr
 
 abbrev Links := List Link
@@ -111,7 +111,7 @@ def aliases (ls : Links) (i : Nat) : List Nat := i ::
 
 /-- The fields of other slots known to sit at locations other than field `fld`
 of the object in slot `i`, in either orientation. -/
-def distinctFrom (ls : Links) (i : Nat) (fld : String) : List (Nat × String) :=
+def distinctFrom (ls : Links) (i : Nat) (fld : PropKey) : List (Nat × PropKey) :=
   ls.filterMap fun g =>
     if g.distinct then
       if g.cell == i && g.field == fld then some (g.value, g.other)

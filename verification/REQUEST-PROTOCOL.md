@@ -381,7 +381,13 @@ parameter, or a reference to a non-generic type declaration, translated to its
 graph node. Duplicate names, forward bounds and cycles are rejected. Local and
 imported declarations are source equations in `declarations`, and an
 annotation's `reference` term names the declaration TypeScript resolved; the
-file AST has no separate alias-definition field. In SKJS's claims,
+file AST has no separate alias-definition field. The document's `symbols`
+lists, once each, the `const x: unique symbol` declarations its members use as
+computed keys `[x]`. A field name, in a declaration's `object` term and in a
+claim's record fields, is a string key as a JSON string, or a symbol key
+`{"symbol": i}` naming the i-th of those declarations. A symbol key is never a
+string key: no string names it, and a string index signature does not
+constrain it. In SKJS's claims,
 `type Id<T> = T` and `type Box<T> = { value: T }` are the admitted
 substitution schemes, and a one-argument named instantiation is an `alias`
 atom `{ "a": "alias", "name": "Id", "args": [A] }`.

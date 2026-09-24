@@ -67,7 +67,7 @@ shape and ignores the field, which is why it defaults to the cell's. -/
 structure Fact where
   slot : Nat
   contents : List Atom
-  field : String := valueField
+  field : PropKey := valueField
   deriving DecidableEq, Repr
 
 abbrev Facts := List Fact

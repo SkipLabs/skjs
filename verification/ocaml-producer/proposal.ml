@@ -86,7 +86,7 @@ let rec declared_head declarations seen = function
 let rec field_type declarations seen t name = match t with
   | Atoms atoms -> combine (List.map (function
       | Shape {elements=Some _;_} when name="length" -> Atoms [Num]
-      | Shape shape -> (match List.find_opt (fun (f:Semantic.field) -> f.name=name) shape.fields with
+      | Shape shape -> (match List.find_opt (fun (f:Semantic.field) -> f.name=Name name) shape.fields with
           | Some f -> if f.optional then union f.read (Atoms [Undef]) else f.read
           | None -> (match shape.string_index with
             | Some index -> union index.value (Atoms [Undef])
@@ -233,13 +233,13 @@ let infer_function declarations module_functions (f:Source.fn) =
         | Some expected -> dictionary_hint declarations [] expected
         | None -> None in
       let fields = List.map (fun (name,e) ->
-        let hint = Option.bind contract (fun s -> List.find_opt (fun (f:Semantic.field) -> f.name=name) s.fields) in
+        let hint = Option.bind contract (fun s -> List.find_opt (fun (f:Semantic.field) -> f.name=Name name) s.fields) in
         let expected = match contract with
           | Some {string_index=Some index;_} -> Some index.value
           | _ -> Option.map (fun (f:Semantic.field) -> f.read) hint in
         let inferred=expr ?expected env e in
         let t=Option.value expected ~default:(widen inferred) in
-        {name;optional=false;read=t;write=Some t}) fs in
+        {name=Name name;optional=false;read=t;write=Some t}) fs in
       (match contract with
        | Some {fields=[];string_index=Some index;calls=[];elements=None}
            when index.writable=None ->

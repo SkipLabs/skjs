@@ -13,8 +13,8 @@ abbrev Candidate := Except String (Ty Nat)
 structure Overlay where
   exprs : List (Span × Candidate)
   envs : List (Nat × List (String × Candidate)) := []
-  entryCurrent : List (Nat × List (String × List (String × Ty Nat))) := []
-  exprCurrent : List (Span × List (String × Ty Nat)) := []
+  entryCurrent : List (Nat × List (String × List (PropKey × Ty Nat))) := []
+  exprCurrent : List (Span × List (PropKey × Ty Nat)) := []
 
   /-- Source annotations after a checked scheme substitution; not producer claims. -/
   initializedParams : Option (List (Ty Nat)) := none
@@ -29,8 +29,8 @@ structure Function where
   /-- Current contents at source entries/results, separate from persistent
   types. An object has one location per named field, so what it currently holds
   is stated field by field; a point that names no record carries none. -/
-  entryCurrent : List (Nat × List (String × List (String × Ty Nat))) := []
-  exprCurrent : List (Span × List (String × Ty Nat)) := []
+  entryCurrent : List (Nat × List (String × List (PropKey × Ty Nat))) := []
+  exprCurrent : List (Span × List (PropKey × Ty Nat)) := []
   /-- Per-arrow interior claims for one closure, keyed by its span and ordered
   with the arrows of its claimed callable type. Statement entries inside the
   body are stated per arrow as well: an entry environment replaces the context

@@ -170,7 +170,7 @@ theorem bind_value {T Q n} {W : WorldT (n+1)} {h b a}
 
 /-- Observations supply read precision without narrowing the location's world
 contract. Reading preserves the whole heap, so all current observations remain. -/
-theorem read_observed {n W h l v} {c : CallCode} {flds : List (String × Nat)} {f : String}
+theorem read_observed {n W h l v} {c : CallCode} {flds : List (PropKey × Nat)} {f : PropKey}
     (hw : WorldAdm W) (hh : HeapOk n W h) (hf : flds.lookup f = some l)
     (hv : isVal v = true) (ho : Observes h l v) :
     SafePost (exact v) (fun h' u => h' = h ∧ u = v) n W h (.readAt f (.objAt flds c)) := by
@@ -181,7 +181,7 @@ theorem read_observed {n W h l v} {c : CallCode} {flds : List (String × Nat)} {
       .readField hf ho,HeapOk_trunc p W h hh,?_⟩
     exact value hv rfl ⟨rfl,rfl⟩
 
-theorem read_contents {n W h l P} {c : CallCode} {flds : List (String × Nat)} {f : String}
+theorem read_contents {n W h l P} {c : CallCode} {flds : List (PropKey × Nat)} {f : PropKey}
     (hw : WorldAdm W) (hh : HeapOk n W h) (hf : flds.lookup f = some l)
     (hval : ∀ v, P v → isVal v = true) (ho : Contents h l P) :
     SafePost (fun _ _ v => P v) (fun h' u => h' = h ∧ Observes h' l u) n W h
@@ -195,7 +195,7 @@ theorem read_contents {n W h l P} {c : CallCode} {flds : List (String × Nat)} {
 /-- This rule has no premise asserting old contents. The write permission comes
 from the invariant reference, and the postcondition records the new contents. -/
 theorem write_observed {A : Fam} (ha : Adm A) {n W h l v}
-    {flds : List (String × Nat)} {f : String}
+    {flds : List (PropKey × Nat)} {f : PropKey}
     (hw : WorldAdm W) (hh : HeapOk n W h)
     (hr : recT [(f, A)] n W (.objAt flds .absent)) (hf : flds.lookup f = some l)
     (hv : isVal v = true) (ht : A n W v) :

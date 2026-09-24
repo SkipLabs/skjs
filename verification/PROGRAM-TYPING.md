@@ -292,8 +292,8 @@ conjunction of record contracts to such a view can be justified by subsumption;
 no direct multi-contract program rule is assumed, so a field supplied only by a
 second operand of an intersection needs such a view before these rules apply.
 
-A readonly string dictionary constrains every **present** field at its element
-contract $A$. A computed index first evaluates the receiver, then its key.
+A readonly string dictionary constrains every **present** string-keyed field at
+its element contract $A$; it says nothing of a symbol-keyed one. A computed index first evaluates the receiver, then its key.
 Because that key can be absent, the proved `indexDict` rule includes
 `undefined` in the result:
 
@@ -304,8 +304,8 @@ $$
      {\Gamma\vdash_G a[k]:A\cup U}
 $$
 
-The separate `readDict` rule covers a fixed field name with the same result
-contract. `allocDict` establishes a dictionary view for a fresh literal only
+The separate `readDict` rule covers a fixed string field name with the same
+result contract; a symbol key is never read through a dictionary. `allocDict` establishes a dictionary view for a fresh literal only
 after checking every initializer at $A$. None of these rules grants a write
 capability to a readonly dictionary.
 

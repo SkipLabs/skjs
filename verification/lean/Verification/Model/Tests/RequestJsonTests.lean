@@ -64,6 +64,13 @@ def roundtrip (r : Request) : Except String Unit := do
   let evidence ← Json.parse response.compress
   verifyJson request evidence
 
+-- A string key keeps its JSON string; a symbol key is `{"symbol": id}`, and
+-- the two never decode to each other.
+#guard toJson (PropKey.str "a") == Json.str "a"
+#guard toJson (PropKey.sym 3) == Json.mkObj [("symbol", toJson (3 : Nat))]
+#guard (fromJson? (toJson (PropKey.sym 3)) : Except String PropKey).toOption == some (.sym 3)
+#guard (fromJson? (Json.str "3") : Except String PropKey).toOption == some (.str "3")
+#guard !(ok (fromJson? (Json.mkObj [("symbol", toJson (3 : Nat)), ("x", Json.null)]) : Except String PropKey))
 #guard ok (roundtrip mappedRequest)
 #guard ok (roundtrip loopRequest)
 #guard ok (roundtrip diamondRequest)

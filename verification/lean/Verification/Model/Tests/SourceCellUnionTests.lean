@@ -14,13 +14,13 @@ private def record (T : Json) : Json := Json.mkObj
    ("call",toJson "unknown"),("construct",toJson "unknown"),("array",toJson "unknown")]
 private def union : Json := Json.mkObj [("top",toJson false),("atoms",toJson [record result,record null])]
 private def table : SourceTypes.Table := SourceTypes.initial ++
-  [[.refs [(valueField, [0,1,2])] [] []],[.refs [(valueField, [0])] [] []],[.arrs [([7],[[0]],[0,1,2])] []],
+  [[.refs [("value", [0,1,2])] [] []],[.refs [("value", [0])] [] []],[.arrs [([7],[[0]],[0,1,2])] []],
    [.top]]
-private def read : Fragment.Expr := .read (24,27) valueField (.var (24,25) "cell")
-private def write : Fragment.Expr := .write (12,20) valueField (.var (12,13) "cell") (.var (19,20) "unit")
+private def read : Fragment.Expr := .read (24,27) "value" (.var (24,25) "cell")
+private def write : Fragment.Expr := .write (12,20) "value" (.var (12,13) "cell") (.var (19,20) "unit")
 private def withBody (body : Fragment.Expr) : Fragment.Fn :=
   ⟨"cells",(0,1),[],result,
-   [.cst (2,3) "cell" (some union) (.alloc (4,7) [valueField] [(.lit (5,6) .vnull)]),
+   [.cst (2,3) "cell" (some union) (.alloc (4,7) ["value"] [(.lit (5,6) .vnull)]),
     .ret (8,30) (.app (9,30)
       (.lam (9,27) "unit" null result body)
       (.lit (29,30) .vnull))]⟩
@@ -56,7 +56,7 @@ private def ok (x : Except String α) : Bool := match x with | .ok _ => true | .
 -- An observation implied by every invariant survives capture, with a located
 -- obligation over the union of possible stored values.
 private def observed (R : Ty Nat) : SourceClaims.Function :=
-  {claims with exprCurrent := [((24,25),[(valueField,R)])]}
+  {claims with exprCurrent := [((24,25),[("value",R)])]}
 #guard [false,true].all fun mutate =>
   ok (check (source mutate) (observed [0,1,2]))
 #guard match extractNormalizedFn table (source false) (observed [0,1,2]) with
@@ -81,7 +81,7 @@ private def observed (R : Ty Nat) : SourceClaims.Function :=
 -- A Boolean write fits the first cell but not the null-only alternative.
 -- Extraction succeeds; its independently checked write obligation must fail.
 private def wrongWrite := withBody (.seqBody (12,27)
-  (.write (12,20) valueField (.var (12,13) "cell") (.lit (19,20) (.vbool true))) read)
+  (.write (12,20) "value" (.var (12,13) "cell") (.lit (19,20) (.vbool true))) read)
 private def wrongClaims : SourceClaims.Function := {claims with
   exprs := claims.exprs.map fun (pos,c) =>
     if pos == (12,20) || pos == (19,20) then (pos,.ok [1]) else (pos,c)}
@@ -118,7 +118,7 @@ private def entryClaims (nested : Bool) (R : Ty Nat) : SourceClaims.Function :=
       (if nested then [("inner",.ok [0])] else []) ++
       [("unit",.ok [0]),("cell",.ok [4,5])])]
     exprs := claims.exprs ++ [((14,28),.ok [0,1,2]),((15,28),.ok [6]),((21,22),.ok [0])]
-    entryCurrent := [(23,[("cell",[(valueField,R)])])]}
+    entryCurrent := [(23,[("cell",[("value",R)])])]}
 #guard [false,true].all fun mutate => [false,true].all fun nested =>
   ok (check (entrySource mutate nested) (entryClaims nested [0,1,2]))
 #guard [false,true].all fun mutate => [false,true].all fun nested =>

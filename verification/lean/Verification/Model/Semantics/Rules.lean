@@ -132,7 +132,7 @@ theorem Safe_bind_appR {A B : Fam} (f : Tm) (hfv : isVal f = true) :
 
 
 /-- **Read.** -/
-theorem read_rule {code : CallCode} {flds : List (String × Nat)} {f : String} {A : Fam}
+theorem read_rule {code : CallCode} {flds : List (PropKey × Nat)} {f : PropKey} {A : Fam}
     (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap) (l : Nat)
     (hadm : WorldAdm W) (hok : HeapOk n W h) (hf : flds.lookup f = some l)
     {c : Ctr n} (hl : lookup W l = some c)
@@ -151,7 +151,7 @@ theorem read_rule {code : CallCode} {flds : List (String × Nat)} {f : String} {
 
 /-- **Read through a view.** The location's contract implies the stated family,
 which is all a read observes. -/
-theorem read_view_rule {code : CallCode} {flds : List (String × Nat)} {f : String} {A : Fam}
+theorem read_view_rule {code : CallCode} {flds : List (PropKey × Nat)} {f : PropKey} {A : Fam}
     (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap) (l : Nat)
     (hadm : WorldAdm W) (hok : HeapOk n W h) (hf : flds.lookup f = some l)
     {c : Ctr n} (hl : lookup W l = some c)
@@ -170,12 +170,12 @@ theorem read_view_rule {code : CallCode} {flds : List (String × Nat)} {f : Stri
 
 /-- A string dictionary covers every present field, while a missing name
 reads `undefined`. A lookup cannot discard that alternative. -/
-theorem read_dict_rule {flds : List (String × Nat)} {f : String} {A : Fam}
+theorem read_dict_rule {flds : List (PropKey × Nat)} {f : String} {A : Fam}
     (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap)
     (hadm : WorldAdm W) (hok : HeapOk n W h)
     (hd : dictViewT A n W (.objAt flds .absent)) :
     Safe (unionT A undefT) n W h (.readAt f (.objAt flds .absent)) := by
-  cases hlook : flds.lookup f with
+  cases hlook : flds.lookup (.str f) with
   | some l =>
     obtain ⟨c, hc, hag⟩ := dictViewT_present hd hlook
     apply Safe_mono n (fun _ _ _ _ ha => Or.inl ha) W h _
@@ -192,12 +192,12 @@ theorem read_dict_rule {flds : List (String × Nat)} {f : String} {A : Fam}
 
 /-- The same dictionary guarantee when the property name was evaluated at
 runtime. The caller must separately prove that the key is a string. -/
-theorem index_dict_rule {flds : List (String × Nat)} {f : String} {A : Fam}
+theorem index_dict_rule {flds : List (PropKey × Nat)} {f : String} {A : Fam}
     (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap)
     (hadm : WorldAdm W) (hok : HeapOk n W h)
     (hd : dictViewT A n W (.objAt flds .absent)) :
     Safe (unionT A undefT) n W h (.indexAt (.objAt flds .absent) (.str f)) := by
-  cases hlook : flds.lookup f with
+  cases hlook : flds.lookup (.str f) with
   | some l =>
     obtain ⟨c, hc, hag⟩ := dictViewT_present hd hlook
     cases n with
@@ -223,7 +223,7 @@ theorem index_dict_rule {flds : List (String × Nat)} {f : String} {A : Fam}
 #print axioms index_dict_rule
 
 /-- **Write.** -/
-theorem write_rule {code : CallCode} {flds : List (String × Nat)} {f : String} {A : Fam}
+theorem write_rule {code : CallCode} {flds : List (PropKey × Nat)} {f : PropKey} {A : Fam}
     (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (l : Nat)
     (v : Tm) (hval : isVal v = true) (hadm : WorldAdm W) (hok : HeapOk n W h)
     (hf : flds.lookup f = some l)
@@ -288,7 +288,7 @@ location per field, so the world grows by one contract per field and the result
 sees the whole record. The single-cell rule above is the one-field case. -/
 theorem make_fields_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
     (n : Nat) (W : WorldT n) (h : Heap) (code : CallCode)
-    (ns : List String) (vs : List Val)
+    (ns : List PropKey) (vs : List Val)
     (hnd : ns.Nodup) (hns : ns.length = vs.length) (hAs : As.length = vs.length)
     (hvals : ∀ v ∈ vs, isVal v = true)
     (hadm : WorldAdm W) (hok : HeapOk n W h)
@@ -339,7 +339,7 @@ theorem make_fields_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
 every location it creates. The rule does not coerce an open record: its
 premises type *all* initializers at the index contract. -/
 theorem make_dict_rule {Q A : Fam} (hA : Adm A)
-    (n : Nat) (W : WorldT n) (h : Heap) (ns : List String) (vs : List Val)
+    (n : Nat) (W : WorldT n) (h : Heap) (ns : List PropKey) (vs : List Val)
     (hnd : ns.Nodup) (hlen : ns.length = vs.length)
     (hvals : ∀ v ∈ vs, isVal v = true)
     (hadm : WorldAdm W) (hok : HeapOk n W h)
@@ -529,7 +529,7 @@ theorem alloc_rule {A : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (v
 #print axioms make_rule
 #print axioms alloc_rule
 
-theorem refT_transfer {A : Fam} {k : Nat} {W : WorldT k} {flds : List (String × Nat)}
+theorem refT_transfer {A : Fam} {k : Nat} {W : WorldT k} {flds : List (PropKey × Nat)}
     (hr : refT A k W (.objAt flds .absent)) (j : Nat) (hj : j ≤ k) (W' : WorldT j)
     (hW : WExt (trunc j hj W) W') : refT A j W' (.objAt flds .absent) :=
   (refT_adm A).mono j _ _ hW _ ((refT_adm A).down_le k j hj W _ hr)

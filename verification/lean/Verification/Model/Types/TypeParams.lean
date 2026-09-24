@@ -26,7 +26,7 @@ def substTy [DecidableEq ι] (p : ι) (A : List ι) : List ι → List ι
 
 /-- Substitution reaches a record's fields one by one; the names are data. -/
 def substFields [DecidableEq ι] (p : ι) (A : List ι)
-    (fs : List (String × List ι)) : List (String × List ι) :=
+    (fs : List (PropKey × List ι)) : List (PropKey × List ι) :=
   fs.map fun q => (q.1, substTy p A q.2)
 
 def substTuple [DecidableEq ι] (p : ι) (A : List ι) (t : Tuple (List ι)) : Tuple (List ι) :=

@@ -53,10 +53,10 @@ private def checks (claims : Json) (fileKey : String) : Except String (List Stri
   log := log ++ [← expect "readonly is not a mutable invariant" (rejects readonlyCell)]
   log := log ++ [← expect "optional is not a required cell" (rejects optionalCell)]
   log := log ++ [← expect "non-value field exported"
-    ((CellClaims.translate (← param "otherField")).toOption == some [("other",[1,2])])]
+    ((CellClaims.translate (← param "otherField")).toOption == some [(("other" : PropKey),[1,2])])]
   let extra ← CellClaims.translate (← param "extraField")
   log := log ++ [← expect "every named field exported"
-    (extra.length == 2 && extra.lookup "value" == some [1,2] && extra.lookup "other" == some [0])]
+    (extra.length == 2 && extra.lookup ("value" : PropKey) == some [1,2] && extra.lookup ("other" : PropKey) == some [0])]
   for name in ["nestedCell","indexedCell","genericCell"] do
     let ty ← param name
     log := log ++ [← expect s!"{name} stays unsupported"
@@ -68,7 +68,7 @@ private def checks (claims : Json) (fileKey : String) : Except String (List Stri
   log := log ++ [← expect "equivalent primitive union accepted"
     (is (← fieldMap mutableCell (fun f => put f "read" bsplit)) [1,2])]
   log := log ++ [← expect "named field preserved"
-    ((CellClaims.translate (← fieldMap mutableCell (fun f => put f "name" (toJson "other")))).toOption == some [("other",[1,2])])]
+    ((CellClaims.translate (← fieldMap mutableCell (fun f => put f "name" (toJson "other")))).toOption == some [(("other" : PropKey),[1,2])])]
   log := log ++ [← expect "array contract rejected"
     (rejects (← atomMap mutableCell (fun a => put a "array" (toJson "present"))))]
   log := log ++ [← expect "callable contract rejected"

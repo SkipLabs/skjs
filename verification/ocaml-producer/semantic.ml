@@ -10,7 +10,10 @@ and atom = Nul | Undef | True | False | Num | Str | NumLit of int64 | StrLit of 
             instantiation. A recursive reference is never expanded into a
             finite approximation. *)
          | Named of string * ty list
-and field = { name: string; optional: bool; read: ty; write: ty option }
+(* A property key: a string, or the symbol the declaration document lists at
+   this index. The two spaces never meet. *)
+and key = Name of string | Key of int
+and field = { name: key; optional: bool; read: ty; write: ty option }
 and index_signature = { value: ty; writable: ty option }
 and quantifier = { identity: rigid; bound: ty option }
 (* `receiver` is the `this` value a call may pass: `Top` for a signature

@@ -3,9 +3,9 @@
  * where a name resolves, which the caller's scope decides, and which record
  * forms an annotation may state. */
 import * as ts from "typescript/unstable/ast";
-import type { Node, SourceFile, TypeElement, TypeNode, TypeReferenceNode } from "typescript/unstable/ast";
+import type { Identifier, Node, SourceFile, TypeElement, TypeNode, TypeReferenceNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
-import type { TypeTerm } from "./declaration-types.mts";
+import type { PropertyKey, TypeTerm } from "./declaration-types.mts";
 
 // Numeric literals in the fragment are plain decimals; every other spelling
 // (hex, binary, octal, separators, bigint) is outside it.
@@ -23,6 +23,9 @@ export type TermScope = {
    * required fields and at most one readonly string index. A declaration body
    * states what its equation says, and Lean decides what lowers. */
   annotation: boolean;
+  /** A computed key `[x]`: the index of the `unique symbol` constant `x`
+   * denotes. A scope without it reads no symbol key. */
+  symbol?(name: Identifier): number;
 };
 
 type FunctionTerm = Extract<TypeTerm, { k: "function" }>;
@@ -207,6 +210,17 @@ export function signature(scope: TermScope, parameters: readonly ts.ParameterDec
   return { k: "function", receiver, params, rest, result: typeTerm(scope, result, at), span };
 }
 
+/** A member's key: an identifier, a declaration's string literal, or a
+ * computed `[x]` whose `x` the scope resolves to a `unique symbol` constant.
+ * Anything else has no key here. */
+function propertyKey(scope: TermScope, name: Node | undefined): PropertyKey | null {
+  if (!name) return null;
+  if (ts.isIdentifier(name) || (!scope.annotation && ts.isStringLiteral(name))) return name.text;
+  if (ts.isComputedPropertyName(name) && ts.isIdentifier(name.expression) && scope.symbol)
+    return { symbol: scope.symbol(name.expression) };
+  return null;
+}
+
 /** A record, or an interface body when `methods` is set: its method
  * signatures read the containing declaration as their receiver. */
 export function members(scope: TermScope, list: readonly TypeElement[], at: Node, span: Span,
@@ -219,14 +233,12 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
     !modifiers?.some(m => m.kind !== ts.SyntaxKind.ReadonlyKeyword);
   const isReadonly = (modifiers: readonly Node[] | undefined) =>
     modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true;
-  const named = (member: TypeElement & { name?: Node }, message: string): string => {
-    const name = member.name;
-    if (!name || !(ts.isIdentifier(name) || (!scope.annotation && ts.isStringLiteral(name))))
-      return scope.fail(member, message);
-    const text = name.text;
+  const named = (member: TypeElement & { name?: Node }, message: string): PropertyKey => {
+    const key = propertyKey(scope, member.name) ?? scope.fail(member, message);
+    const text = typeof key === "string" ? key : `[symbol ${key.symbol}]`;
     if (names.has(text)) scope.fail(member, "duplicate field name in a record");
     names.add(text);
-    return text;
+    return key;
   };
   if (scope.annotation && !list.length) scope.fail(at, "a record with no field has no location");
   // An annotation's index signature is checked first, then its fields, and
@@ -296,12 +308,15 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
 export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span: Span): TypeTerm {
   const fields: Extract<TypeTerm, { k: "object" }>["fields"] = [];
   const names = new Set<string>();
-  const named = (member: ts.ClassElement & { name?: Node }): string => {
+  const named = (member: ts.ClassElement & { name?: Node }): PropertyKey => {
     const name = member.name;
-    if (!name || !ts.isIdentifier(name)) return scope.fail(member, "a class member needs a plain name");
-    if (names.has(name.text)) scope.fail(member, "duplicate class member");
-    names.add(name.text);
-    return name.text;
+    const key = name && (ts.isIdentifier(name) || ts.isComputedPropertyName(name))
+      ? propertyKey(scope, name) : null;
+    if (key === null) return scope.fail(member, "a class member needs a plain name");
+    const text = typeof key === "string" ? key : `[symbol ${key.symbol}]`;
+    if (names.has(text)) scope.fail(member, "duplicate class member");
+    names.add(text);
+    return key;
   };
   const only = (member: ts.ClassElement, allowed: ts.SyntaxKind[]) => {
     const modifiers = (member as { modifiers?: readonly Node[] }).modifiers;

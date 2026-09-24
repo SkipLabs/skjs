@@ -704,7 +704,7 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   attached. Its bag is a record like any other, so its fields are named by the
   program rather than fixed here. -/
   | makeCallable {Γ : List (Ty ι)} {F : Ty ι} {L : List (Ty ι × List (Ty ι) × Ty ι)}
-      {arity : Nat} {b : Tm} {parts : List (String × Ty ι × Tm)} :
+      {arity : Nat} {b : Tm} {parts : List (PropKey × Ty ι × Tm)} :
       Represents G F (.callable (parts.map fun p => (p.1, p.2.1)) [] L []) →
       (parts.map Prod.fst).Nodup →
       (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) →
@@ -716,8 +716,8 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   at the selected signature's receiver. `Us` are the trailing positions the
   signature declares and this call omits; each admits `undefined`, which is
   the value the machine binds there. `Us = []` is the exact-arity call. -/
-  | callCallable {Γ : List (Ty ι)} {f r : Tm} {F Rt B : Ty ι} {P : List (String × Ty ι)}
-      {Ps : List (List (String × Ty ι))} {L : List (Ty ι × List (Ty ι) × Ty ι)}
+  | callCallable {Γ : List (Ty ι)} {f r : Tm} {F Rt B : Ty ι} {P : List (PropKey × Ty ι)}
+      {Ps : List (List (PropKey × Ty ι))} {L : List (Ty ι × List (Ty ι) × Ty ι)}
       {S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} :
       HasTy G Γ f F → Represents G F (.callable P Ps L S) →
       (Rt, xs.map Prod.fst ++ Us, B) ∈ L → HasTy G Γ r Rt →
@@ -736,14 +736,14 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   | letE : HasTy G Γ a A → HasTy G (A :: Γ) b B → HasTy G Γ (.letE a b) B
   /-- **Allocation.** One object, one fresh location per named field. The field
   names are distinct, which is what makes the object a map from them. -/
-  | alloc {parts : List (String × Ty ι × Tm)} : (parts.map Prod.fst).Nodup →
+  | alloc {parts : List (PropKey × Ty ι × Tm)} : (parts.map Prod.fst).Nodup →
       (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) →
       Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) [] []) →
       HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
   /-- A fresh literal establishes a readonly index view when every value is
   checked at the index element contract. Its exact allocated fields are used;
   this is not an open-record subtyping rule. -/
-  | allocDict {parts : List (String × Tm)} : (parts.map Prod.fst).Nodup →
+  | allocDict {parts : List (PropKey × Tm)} : (parts.map Prod.fst).Nodup →
       (∀ p ∈ parts, HasTy G Γ p.2 Elem) →
       Represents G Dict (.dict [] [] [] [Elem]) →
       HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map Prod.snd)) Dict
@@ -752,10 +752,12 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   /-- A view field reads at its bound: a capability, never a write permission. -/
   | readView : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs) → (f, A) ∈ vs →
       HasTy G Γ (.readAt f a) A
-  /-- A dictionary read may miss even when every present value has type `A`. -/
-  | readDict : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix) →
+  /-- A dictionary read may miss even when every present value has type `A`.
+  A string index signature says nothing of a symbol-keyed field, so only a
+  string key is read through one. -/
+  | readDict {f : String} : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix) →
       A ∈ ix → Represents G U .undef →
-      HasTy G Γ (.readAt f a) (A ++ U)
+      HasTy G Γ (.readAt (.str f) a) (A ++ U)
   | indexDict : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix) →
       HasTy G Γ key K → Represents G K .str →
       A ∈ ix → Represents G U .undef →
@@ -829,7 +831,7 @@ of elements at the element type, then the fixed parameters and the receiver. -/
   /-- **A variadic callable object.** The bag is allocated as a record's is,
   and the code is variadic: each signature's body is checked as `funRest`
   checks it. -/
-  | makeCallableRest {Γ : List (Ty ι)} {F : Ty ι} {parts : List (String × Ty ι × Tm)}
+  | makeCallableRest {Γ : List (Ty ι)} {F : Ty ι} {parts : List (PropKey × Ty ι × Tm)}
       {L : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} {As : List (Ty ι)} {n : Nat} {b : Tm} :
       Represents G F (.callable (parts.map fun p => (p.1, p.2.1)) [] [] L) →
       (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) →
@@ -1142,7 +1144,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     exact read_view_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag
   | @readDict Γ a Ref fs vs ix A U f ha hr hm hUnd ih =>
     intro n W h ρ he hw hh
-    apply bind (Tm.readAt f) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply bind (Tm.readAt (.str f)) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj V hx hv heap v hok hval ha'
     have hd := ((represents_sem hr j V v).mp ha').2.2 A hm
     obtain ⟨flds, rfl, _⟩ := ((represents_sem hr j V v).mp ha').1.1

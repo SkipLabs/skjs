@@ -284,7 +284,7 @@ theorem omitted_unary_binding (r body : Tm) :
     bindParameters 1 [] r body = subst 0 r (subst 1 .undef body) := rfl
 
 /-- Initializers of an allocation reduce exactly as actual arguments do. -/
-theorem Step.makeArgs {c : CallCode} {ns : List String} {h h' : Heap} {args args' : List Tm}
+theorem Step.makeArgs {c : CallCode} {ns : List PropKey} {h h' : Heap} {args args' : List Tm}
     (hs : ArgStep h args h' args') : Step h (.makeAt c ns args) h' (.makeAt c ns args') := by
   obtain ⟨i, a, a', hg, hb, hstep, rfl⟩ := focus_iff.mp hs
   exact .makeArg hg hb hstep

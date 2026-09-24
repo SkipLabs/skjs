@@ -38,3 +38,18 @@ export class Tagged {
 export class Named extends Tagged {
   readonly name: string = "named";
 }
+// Two brands, keyed by distinct unique symbols: a value carries one brand's
+// key and not the other's.
+export const brand: unique symbol = Symbol("brand");
+export const other: unique symbol = Symbol("other");
+export type Branded = { [brand]: true; n: number };
+export type Marked = { [other]: true; n: number };
+export function wrap(n: number): Branded {
+  return { [brand]: true, n };
+}
+export function mark(n: number): Marked {
+  return { [other]: true, n };
+}
+export function unwrap(b: Branded): number {
+  return b.n;
+}

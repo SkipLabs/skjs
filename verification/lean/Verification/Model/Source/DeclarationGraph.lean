@@ -199,7 +199,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     CellClaims.fieldsExactly term ["k", "fields", "stringIndex", "calls", "span"]
     let fs ← (← arr term "fields").mapM fun f => do
       if ← bool f "optional" then throw "optional declaration fields need presence semantics"
-      let name ← str f "name"
+      let name ← PropKey.decode (← field f "name")
       let value ← lowerType ds owner params seen (← field f "type")
       return (name, value, ← bool f "readonly")
     let names := fs.toList.map (·.1)
@@ -593,7 +593,12 @@ the original source tree has been checked for them. -/
 def prepare (ast : Json) (candidate : SourceTypes.Table) :
     Except String (Json × SourceTypes.Table × List (String × Span × Json) × List Instantiable) := do
   let document ← field ast "declarations"
-  CellClaims.fieldsExactly document ["roots", "definitions", "values"]
+  CellClaims.fieldsExactly document ["roots", "definitions", "values", "symbols"]
+  -- A symbol key `{"symbol": i}` is the i-th listed `unique symbol` constant.
+  -- Distinct declarations are distinct symbols, so none is listed twice.
+  let symbols ← arr document "symbols"
+  if symbols.toList.eraseDups.length != symbols.size then
+    throw "a unique symbol declaration is listed twice"
   let ds ← definitions document
   let roots ← (← arr document "roots").mapM fun root => do
     let name ← str (← field root "binding") "local"
@@ -668,7 +673,8 @@ def prepare (ast : Json) (candidate : SourceTypes.Table) :
         return (c, bounds)
       generics := generics ++ [Instantiable.mk name span (binders.map Prod.fst) instantiate]
   let empty := Json.mkObj [("roots", toJson ([] : List Json)),
-    ("definitions", toJson ([] : List Json)), ("values", toJson ([] : List Json))]
+    ("definitions", toJson ([] : List Json)), ("values", toJson ([] : List Json)),
+    ("symbols", toJson ([] : List Json))]
   let ast := ast.setObjVal! "declarations" empty
   return ((ast.setObjVal! "functions" functions).setObjVal! "init" init, types, values, generics)
 

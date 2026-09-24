@@ -4,12 +4,14 @@
  * before it is accepted as text; unsupported producer shapes stay in the raw
  * JSON editor. Its surface text is in claim-text.mts.
  */
+import type { PropertyKey } from "./declaration-types.mts";
 export interface ClaimType {
   top: boolean;
   atoms: Atom[];
 }
 export interface Field {
-  name: string;
+  /** A string key, or `{ symbol: i }`: the declaration document's i-th symbol. */
+  name: PropertyKey;
   optional: boolean;
   read: ClaimType;
   write: ClaimType;

@@ -1819,7 +1819,7 @@ export function parseFile(file: string, carriesContext = false,
   gate.strict = prologue.strict || importNodes.length > 0 ||
     interfaceNodes.some(node => node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword)) ||
     fnNodes.some(fn => fn.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword));
-  let declarations: Ast["declarations"] = { roots: [], definitions: [], values: [] };
+  let declarations: Ast["declarations"] = { roots: [], definitions: [], values: [], symbols: [] };
   const statable = (node: TypeAliasDeclaration): boolean => {
     const params = node.typeParameters;
     return !node.modifiers?.length && params?.length === 1 &&

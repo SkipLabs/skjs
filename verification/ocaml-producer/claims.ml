@@ -3,6 +3,12 @@ open Semantic
 open Environment
 open Source
 open Proposal
+(* A property key as the claim wire spells it: the decoding of
+   `Source.property_key`. *)
+let key_json = function
+  | Name name -> String name
+  | Key i -> Object ["symbol",int i]
+
 let unsupported s = fail ("unsupported: " ^ s)
 let encode (proposal : Proposal.t) =
   (* The graph is just the existing SourceClaims wire format, interned structurally. *)
@@ -38,7 +44,7 @@ let encode (proposal : Proposal.t) =
       let fields writable fs = Array (List.map (fun (f:Semantic.field) ->
         if f.optional then unsupported "optional presence has no SourceClaims encoding yet";
         if writable && f.write <> Some f.read then unsupported "asymmetric read/write capability export";
-        Array [String f.name;labels f.read]) fs) in
+        Array [key_json f.name;labels f.read]) fs) in
       let fields,views = fields true writes,fields false reads in
       List.iter (fun (a:Semantic.signature) ->
         if a.quantified <> [] then unsupported "quantified callable claim encoding") shape.calls;

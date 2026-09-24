@@ -72,8 +72,8 @@ theorem adm (A : Fields) (Bs : List Fields) (L : List (Fam × List Fam × Fam)) 
   · intro n W U hx v h
     exact ⟨(bagT_adm A).mono n W U hx v h.1,fun B hb => (bagT_adm B).mono n W U hx v (h.2 B hb)⟩
 
-theorem congr_below {α : Type} (X Y : α → Fam) (a : List (String × α))
-    (bs : List (List (String × α))) (L : List (α × List α × α))
+theorem congr_below {α : Type} (X Y : α → Fam) (a : List (PropKey × α))
+    (bs : List (List (PropKey × α))) (L : List (α × List α × α))
     (n : Nat) (h : ∀ a, Agree (X a) (Y a) n) (W : WorldT n) (v : Val) :
     objectsT (ReferenceConjunctions.famsOf X a) (bs.map (ReferenceConjunctions.famsOf X))
         (L.map fun p => (X p.1, p.2.1.map X, X p.2.2)) n W v ↔
