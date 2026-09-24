@@ -219,6 +219,16 @@ def instProof [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (A B : Ty ι) :
     | none => none
   | _, _ => none
 
+/-- A type below another holding its rows' copies: each row matched, under
+the empty context, against a row of the other. -/
+def tableProof [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (A B : Ty ι) :
+    Option (PositiveCertificates.Proof ι) := do
+  let D := readsFrom G closureFuel (A ++ B)
+  let V := freeMapOf G D closureFuel []
+  let st ← A.foldlM (fun st l =>
+    B.findSome? fun j => matchRow G [] V fuel st [] [l] [j]) {}
+  some (.table st.table D V)
+
 /-- A type below a scheme row: a type of the pool stating the scheme's
 signatures, and a proof of the inclusion in it. -/
 def genProof [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) (fuel : Nat) (A B : Ty ι) :
@@ -241,7 +251,7 @@ def subtype [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
   let fuel := 64 + pool.length
   let ok p := PositiveCertificates.check G A B p
   (subtypeBase G pool A B) <|> ((instProof G fuel A B).filter ok) <|>
-    ((genProof G pool fuel A B).filter ok)
+    ((genProof G pool fuel A B).filter ok) <|> ((tableProof G fuel A B).filter ok)
 def coerce [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     (e : ProgramCertificates.Evidence ι) (A : Ty ι) : Option (ProgramCertificates.Evidence ι) := do
   if (claim e).type = A then return e

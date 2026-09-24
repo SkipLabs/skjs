@@ -243,6 +243,8 @@ def proofTypes : PositiveCertificates.Proof Nat → List (Ty Nat)
   | .inst tbl θs D V => D :: θs ++ V.flatMap (fun p => [[p.1], p.2]) ++
       tbl.flatMap (fun e => [e.1] :: e.2.2 :: e.2.1.flatMap (fun p => [[p.1], p.2]))
   | .gen D V U p => D :: U :: V.flatMap (fun p => [[p.1], p.2]) ++ proofTypes p
+  | .table tbl D V => D :: V.flatMap (fun p => [[p.1], p.2]) ++
+      tbl.flatMap (fun e => [e.1] :: e.2.2 :: e.2.1.flatMap (fun p => [[p.1], p.2]))
   | .core c => c.table.flatMap (fun p => [p.1,p.2]) ++ c.arrows.flatMap (fun e =>
       e.1.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++ e.2.1.1 :: e.2.1.2.1 ++ [e.2.1.2.2] ++
         arrowTypes e.2.2)

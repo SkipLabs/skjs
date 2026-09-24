@@ -104,6 +104,7 @@ Proof  (Types/PositiveCertificates.lean)
   subset
   trans (middle : List ι) (left right : Proof ι)
   inst (table : InstTable ι) (instances : List (List ι)) (domain : List ι) (free : FreeMap ι)
+  table (table : InstTable ι) (domain : List ι) (free : FreeMap ι)
   gen (domain : List ι) (free : FreeMap ι) (body : List ι) (proof : Proof ι)
 
 ArrowCert  (Types/PositiveCertificates.lean)

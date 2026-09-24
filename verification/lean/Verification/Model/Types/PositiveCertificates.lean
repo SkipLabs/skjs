@@ -340,6 +340,9 @@ inductive Proof (ι : Type) where
   table, the types the binders are instantiated at, the table's domain and the
   domain's free parameter rows. -/
   | inst (table : InstTable ι) (instances : List (List ι)) (domain : List ι) (free : FreeMap ι)
+  /-- A type below one holding its rows' images under an instance table with
+  the empty context: the table, its domain and its free-variable certificate. -/
+  | table (table : InstTable ι) (domain : List ι) (free : FreeMap ι)
   /-- A type below a scheme: a domain holding it, the domain's free parameter
   rows, none of them a binder of the type, the type stating the scheme's
   signatures with its binders opaque, and the proof of the inclusion in it. -/
@@ -401,6 +404,10 @@ def check [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) : Proof ι → B
   | .trans middle left right => check G S middle left && check G middle T right
   | .inst tbl θs D V => checkInst G S T tbl θs D V
   | .gen D V U p => genOk G S T D V U && check G S U p
+  | .table tbl D V => TableOk G tbl D V &&
+      S.all fun l => match entryImg tbl [] l with
+        | some U => U.all (· ∈ T)
+        | none => false
 
 theorem check_sound [DecidableEq ι] {G : NormalGraph ι} {S T proof}
     (h : check G S T proof = true) : Sub G S T := by
@@ -414,6 +421,15 @@ theorem check_sound [DecidableEq ι] {G : NormalGraph ι} {S T proof}
   | gen D V U p ih =>
     simp only [check, Bool.and_eq_true] at h
     exact genOk_sound h.1 (ih h.2)
+  | table tbl D V =>
+    simp only [check, Bool.and_eq_true, List.all_eq_true] at h
+    refine .table h.1 fun l hl => ?_
+    have hl' := h.2 l hl
+    cases hU : entryImg tbl [] l with
+    | none => simp [hU] at hl'
+    | some U =>
+      simp only [hU, List.all_eq_true, decide_eq_true_eq] at hl'
+      exact ⟨U, rfl, hl'⟩
 
 theorem check_complete [dec : DecidableEq ι] {G : NormalGraph ι} {S T}
     (h : Sub G S T) : ∃ proof, check G S T proof = true := by
@@ -434,6 +450,15 @@ theorem check_complete [dec : DecidableEq ι] {G : NormalGraph ι} {S T}
     simp only [check, checkInst, hT, hq, hp, hok, hlen, Bool.not_false, Bool.true_and,
       beq_self_eq_true, List.all_eq_true, List.any_eq_true, Bool.and_eq_true, beq_iff_eq]
     exact fun q hq => hL q hq
+  | @table S T inst tbl D V hok hS =>
+    have he : inst = dec := Subsingleton.elim _ _
+    subst he
+    refine ⟨.table tbl D V, ?_⟩
+    simp only [check, hok, Bool.true_and, List.all_eq_true]
+    intro l hl
+    obtain ⟨U, hU, hUT⟩ := hS l hl
+    simp only [hU, List.all_eq_true, decide_eq_true_eq]
+    exact hUT
   | @gen S inst j s D U V hp hq hU hF hS _ ih =>
     have he : inst = dec := Subsingleton.elim _ _
     subst he

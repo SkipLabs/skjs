@@ -177,7 +177,9 @@ def types : List (List (Clause (List Nat))) :=
    [.arrs [([4], [[0]], [5])] []],
    [.arrs [([7], [[20]], [16])] []],
    [.arrs [([4], [[1, 2]], [0])] []],
-   [.arrs [([7], [[20]], [7])] []]]
+   [.arrs [([7], [[20]], [7])] []],
+   [.refs [] [] [(valueField, [0]), ("map", [23])]], [],
+   [.arrs [([4], [[0]], [6])] []]]
 def H : NormalGraph Nat where
   rows i := types[i]?.getD []
   params i := i == 5 || i == 6
@@ -186,6 +188,7 @@ def H : NormalGraph Nat where
     else if i == 11 then some ⟨[6], [([10], [[12]], [13])]⟩
     else if i == 14 then some ⟨[5], [([13], [[15]], [10])]⟩
     else if i == 17 then some ⟨[5], [([16], [[18]], [10])]⟩
+    else if i == 23 then some ⟨[6], [([22], [[24]], [13])]⟩
     else none
 def pool : List (List Nat) := (List.range types.length).map ([·])
 #guard match instProof H 64 [8] [19] with
@@ -194,6 +197,14 @@ def pool : List (List Nat) := (List.range types.length).map ([·])
 -- `b.map(f)` for `f: (x: boolean) => null` is not a `Box<boolean>`.
 #guard (instProof H 64 [8] [21]).all fun p => !PositiveCertificates.check H [8] [21] p
 #guard (subtype H pool [8] [19]).isSome && (subtype H pool [8] [21]).isNone
+-- Two copies of `Box<null>`, whose `map` binds `Uᵃ` (16) or `Uᵇ` (22), are one
+-- type up to renaming, related by a table under the empty context; neither is
+-- a `Box<boolean>`.
+#guard match tableProof H 64 [22] [16], tableProof H 64 [16] [22] with
+  | some p, some q => PositiveCertificates.check H [22] [16] p && PositiveCertificates.check H [16] [22] q
+  | _, _ => false
+#guard (subtype H pool [22] [16]).isSome && (subtype H pool [16] [22]).isSome
+#guard (subtype H pool [22] [7]).isNone && (subtype H pool [7] [16]).isNone
 end Colours
 
 end Verification.Model.QuantifiedRowTests

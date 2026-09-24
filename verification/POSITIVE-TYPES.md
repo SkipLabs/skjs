@@ -530,6 +530,17 @@ $$
      {G\vdash\{i\}\le T}\ \textsc{inst}
 $$
 
+The same tables relate two lowerings of one type that differ only in which
+binder rows their schemes use, as a producer's copy of `Promise<number>` and
+the annotation's may. With the empty context, both assignments are the
+graph's, so each row means its image:
+
+$$
+\frac{\text{a checked table}\quad
+      \forall l\in S.\;(l,\emptyset,U_l)\ \text{its entry for}\ l\ \land\ U_l\subseteq T}
+     {G\vdash S\le T}\ \textsc{table}
+$$
+
 A type below a scheme's signatures with the binders opaque is below the scheme,
 provided none of its free parameter rows is a binder:
 
@@ -558,15 +569,17 @@ implied by the union-label congruence theorem.
 structural proof trees. Its checker uses no semantic oracle or unbounded proof
 search.
 
-A proof is one of five forms. `core` carries a `Certificate`: the finite
+A proof is one of six forms. `core` carries a `Certificate`: the finite
 candidate relation and its arrow evidence. `subset` is plain union inclusion of
 the source labels in the target's. `trans` names an intermediate type and holds
 a proof on each side. `inst` puts a scheme row below an instance of its
 signatures: it carries the instance table, the instance types, the table's
-domain and its free-variable certificate (`Sub.inst`). `gen` puts a type below a scheme row: it
+domain and its free-variable certificate (`Sub.inst`). `table` relates a type
+to one holding its rows' images under a table with the empty context: the
+table, its domain and its free-variable certificate (`Sub.table`). `gen` puts a type below a scheme row: it
 carries a domain holding the type and its free-variable certificate, the type
 stating the scheme's signatures with its binders opaque, and a proof of the
-inclusion in that type (`Sub.gen`). All five are accepted, which is worth stating
+inclusion in that type (`Sub.gen`). All six are accepted, which is worth stating
 separately from what the producer builds: `CertificateProducer` never emits
 `trans`, and
 [PROGRAM-TYPING.md](PROGRAM-TYPING.md#producing-evidence-from-supplied-claims)

@@ -1534,6 +1534,12 @@ inductive Sub (G : NormalGraph ι) : List ι → List ι → Prop where
       TableOk G tbl D V = true →
       (∀ q ∈ L, ∃ p ∈ s.signatures, sigImg tbl (s.binders.zip θs) p = some q) →
       expand G T = [.arrs L []] → Sub G [i] T
+  /-- **Renaming.** A type is below one holding its rows' images under a checked
+  instance table with the empty context: the same rows up to renaming the
+  binders of the schemes they reach. -/
+  | table [DecidableEq ι] {tbl : InstTable ι} {D : List ι} {V : FreeMap ι} :
+      TableOk G tbl D V = true →
+      (∀ l ∈ S, ∃ U, entryImg tbl [] l = some U ∧ ∀ x ∈ U, x ∈ T) → Sub G S T
   /-- **Generalization.** A type below a scheme's signatures, with its binders
   opaque, is below the scheme: it is so at every instantiation, since none of
   its free parameter rows is a binder (`agree_free`). -/
@@ -1555,6 +1561,14 @@ theorem Sub.sound_at {G : NormalGraph ι} {S T} (h : Sub G S T) :
   | subset h => exact fun _ => by rintro n W v ⟨i, hi, hv⟩; exact ⟨i, h i hi, hv⟩
   | trans _ _ ih ih' => exact fun η n W v hv => ih' η n W v (ih η n W v hv)
   | inst hp hq hlen hok hL hT => exact fun η => inst_sound (G := reassign G η) hp hq hlen hok hL hT
+  | table hok hS =>
+    intro η n W v hv
+    obtain ⟨l, hl, hv⟩ := hv
+    obtain ⟨U, hU, hUT⟩ := hS l hl
+    have hr := (table_row hok n η η (l, [], U) (entryImg_mem hU)
+      (fun p _ => by simp [RelK]) W v).mp hv
+    obtain ⟨x, hx, hxv⟩ := hr
+    exact ⟨x, hUT x hx, hxv⟩
   | @gen S _ j s D U V hp hq hU hF hS _ ih =>
     intro η n W v hv
     refine ⟨j, List.mem_singleton_self j, ?_⟩
