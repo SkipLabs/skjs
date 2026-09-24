@@ -199,6 +199,15 @@ reads the module's functions and annotated constants at their source types,
 which no claim states. See [Modules and code
 units](DESIGN.md#modules-and-code-units).
 
+A document whose types use a generic declaration's application has one more
+field, `"applications"`: `[{"row": r, "declaration": d, "args": [[...], ...]}]`,
+left out when there are none. Row `r` is an empty row the producer reserved;
+`d` is the declaration's position among the declaration document's
+`definitions`, and `args` its argument types, which name only earlier rows.
+Lean fills each such row from the declaration's source terms, in row order,
+exactly as it fills a nullary declaration's reserved row, so every declaration
+has one lowering, Lean's, whatever producer names it.
+
 Function identity is its name and name span. Parameter names and order must match
 the source signature. Entry claims use statement start offsets, and expression
 claims use complete spans. Sites must occur in the named function's decoded

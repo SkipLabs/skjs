@@ -96,4 +96,7 @@ export interface SourceClaims {
   /** The module initialization unit, present exactly when the source has
    * top-level code: its entries and expressions, with no parameters. */
   init?: Pick<FunctionClaims, "entries" | "expressions" | "arrows">;
+  /** Generic applications the producer reserved empty rows for, which Lean
+   * fills from the declarations: row, declaration position, argument rows. */
+  applications?: { row: number; declaration: number; args: number[][] }[];
 }

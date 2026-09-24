@@ -108,10 +108,10 @@ language. The boundaries are:
    them. There is no second, approximate subtype relation used for acceptance.
 5. `claims.ml` serializes those candidates into the existing producer-neutral
    SourceClaims protocol. It reserves empty rows for imported declarations
-   without parameters and proposes interned rows for finite ground generic
-   applications. Lean fills the reserved rows and reconstructs every generic
-   application from the source equations; OCaml cannot supply a competing
-   interpretation. Graph interning is local to one
+   without parameters and for generic applications, listing the applications
+   with their declaration and argument rows (`"applications"`). Lean fills the
+   reserved rows from the source equations: every declaration has one lowering,
+   and OCaml cannot supply a competing interpretation. Graph interning is local to one
    document. Graph labels are an export detail, not type-variable identities.
 6. `check.mts` freezes source bytes, runs the parser and OCaml producer, asks Lean
    to reconstruct obligations and produce evidence, then invokes the independent

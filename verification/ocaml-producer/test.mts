@@ -336,9 +336,11 @@ for (const [file, expected] of [
   const genericParam = genericAst.functions[0]?.params[0]?.type;
   assert(genericParam?.k === "reference" && genericParam.reference.name === "A" &&
     genericParam.args[0]?.k === "atom" && genericParam.args[0].name === "boolean");
+  // Declarations have one lowering, Lean's, which refuses mutually recursive
+  // applications as it refuses its other declaration gaps.
   const recursiveGeneric = check(genericClient, pairConfig);
-  assert.equal(recursiveGeneric.status, "unsupported", JSON.stringify(recursiveGeneric));
-  assert.equal(recursiveGeneric.phase, "proposal");
+  assert.equal(recursiveGeneric.status, "unverified", JSON.stringify(recursiveGeneric));
+  assert.equal(recursiveGeneric.phase, "search");
   assert.match(recursiveGeneric.detail,
     /recursive generic application needs memoized rows/);
   // A name imported through a barrel is the declaration the barrel reexports.

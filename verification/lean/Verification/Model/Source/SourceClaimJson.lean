@@ -169,6 +169,15 @@ instance : ToJson InitClaims where
     (match i.arrows with
      | none | some [] => []
      | some rows => [("arrows", toJson rows)]))
+/-- A generic declaration's application the producer reserved an empty row
+for: the row, the declaration's position among the definitions, and the
+argument types. Lean fills the row. -/
+structure Application where
+  row : Nat
+  declaration : Nat
+  args : List (List Nat)
+  deriving ToJson, FromJson, Repr
+
 structure Document where
   file : String
   sourceSha256 : String
@@ -176,6 +185,8 @@ structure Document where
   functions : List Function
   /-- Present exactly when the source has module initialization code. -/
   init : Option InitClaims := none
+  /-- Generic applications the producer reserved rows for; absent when none. -/
+  applications : Option (List Application) := none
   deriving FromJson
 
 /-- Absence asserts nothing: a source with no initialization code has no
@@ -185,7 +196,10 @@ instance : ToJson Document where
     ("types", toJson d.types), ("functions", toJson d.functions)] ++
     (match d.init with
      | none => []
-     | some i => [("init", toJson i)]))
+     | some i => [("init", toJson i)]) ++
+    (match d.applications with
+     | none | some [] => []
+     | some a => [("applications", toJson a)]))
 
 
 def Function.normalized (f : Function) : SourceClaims.Function :=
@@ -888,6 +902,7 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
   -- Every declaration application in the source becomes a graph row, or, over
   -- a rigid binder, the claim type of its expanded source equation.
   let (ast, types, imported, generics) ← DeclarationGraph.prepare ast d.types
+    ((d.applications.getD []).map fun a => (a.row, a.declaration, a.args))
   let d := { d with types }
   if !validTable d.types then throw "declaration graph has an invalid type reference"
   let all ← Fragment.decodeAstWithParams ast

@@ -20,7 +20,9 @@ let encode (proposal : Proposal.t) =
                   @ List.filter_map (fun (d:Source.declaration) ->
                     if d.parameters=[] then Some (Array []) else None) declarations)
   in
-  let active_imports = ref [] in
+  (* Applications reserved for Lean to fill: row, declaration position and
+     argument rows. *)
+  let reserved = ref [] in
   (* The row reserved for an application of a declaration whose equation has
      methods: their receiver is that application, so it needs its label
      before its equation is expanded, as Lean reserves it. *)
@@ -93,7 +95,7 @@ let encode (proposal : Proposal.t) =
             Object ["callable",Object (["first",fields;"rest",Array []] @ calls)] in
       [intern (Array [clause])]
   and declaration_labels id args =
-    let rec find i = function
+    let rec find i k = function
       | [] -> unsupported ("unknown declaration " ^ id)
       | (d:Source.declaration)::rest ->
         if d.id=id then
@@ -102,52 +104,19 @@ let encode (proposal : Proposal.t) =
             match List.assoc_opt (id,args) !applications with
             | Some label -> [label]
             | None ->
-            let rec mentions = function
-              | Atoms atoms -> List.exists (function
-                  | Named (other,_) -> other=id
-                  | Shape shape ->
-                    List.exists (fun (f:Semantic.field) -> mentions f.read) shape.fields ||
-                    List.exists (fun (c:Semantic.signature) -> mentions c.receiver) shape.calls
-                  | _ -> false) atoms
-              | Union ts -> List.exists mentions ts
-              | Rigid _ -> false in
-            if mentions d.expression then begin
+              (* One lowering of every declaration: the row is reserved here,
+                 after its arguments' rows, and Lean fills it from the
+                 declaration's source terms. *)
+              let arg_labels = List.map labels args in
               let label = List.length !rows in
-              rows := !rows @ [Array [String "reserved";String id]];
+              rows := !rows @ [Array []];
               applications := ((id,args),label) :: !applications;
-              (match Proposal.definition declarations id args with
-               | Atoms atoms ->
-                 let row = List.concat_map (fun l -> match List.nth_opt !rows l with
-                   | Some (Array clauses) -> clauses
-                   | _ -> fail "application references a missing graph row")
-                   (List.sort_uniq compare (List.concat_map atom_labels atoms)) in
-                 rows := List.mapi (fun j r -> if j=label then Array row else r) !rows
-               | _ -> unsupported "generic application needs a ground graph type");
+              reserved := !reserved @ [Object ["row",int label;"declaration",int k;
+                "args",Array arg_labels]];
               [label]
-            end else begin
-            if List.mem id !active_imports then
-              unsupported "recursive generic application needs memoized rows";
-            active_imports := id::!active_imports;
-            let result = try (match Proposal.definition declarations id args with
-              | Atoms atoms ->
-                let labels = List.sort_uniq compare (List.concat_map atom_labels atoms) in
-                (match labels with
-                | [] -> unsupported "generic application has no inhabited graph clause"
-                | [label] -> [label]
-                | labels ->
-                  let row = List.concat_map (fun label ->
-                    match List.nth_opt !rows label with
-                    | Some (Array clauses) -> clauses
-                    | _ -> fail "application references a missing graph row") labels in
-                  [intern (Array row)])
-              | _ -> unsupported "generic application needs a ground graph type")
-              with e -> active_imports := List.tl !active_imports; raise e in
-            active_imports := List.tl !active_imports;
-            result
-            end
           end else unsupported "type application has wrong arity"
-        else find (i + if d.parameters=[] then 1 else 0) rest in
-    find 0 declarations
+        else find (i + if d.parameters=[] then 1 else 0) (k + 1) rest in
+    find 0 0 declarations
   in
   (* A callable whose signature mentions a rigid parameter has no graph row:
      it is exported in the scheme form, with its own binders (possibly none),
@@ -260,4 +229,5 @@ let encode (proposal : Proposal.t) =
     | None -> []
     | Some f -> ["init",Object (interior f)] in
   Object (["file",proposal.program.file; "sourceSha256",proposal.program.digest;
-    "types",Array !rows; "functions",Array functions] @ init)
+    "types",Array !rows; "functions",Array functions] @ init @
+    (if !reserved = [] then [] else ["applications",Array !reserved]))

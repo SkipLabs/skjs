@@ -352,7 +352,11 @@ private partial def lowerDefinitionRows (ds : Array Definition) (i : Nat)
   return rows
 end
 
-private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table) :
+/-- Fill the producer's empty reserved rows: each nullary declaration's, and
+each generic application's `(row, declaration position, argument types)`, with
+Lean's own lowering, so there is one lowering of every declaration. -/
+private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
+    (applications : List (Nat × Nat × List (List Nat)) := []) :
     Except String SourceTypes.Table := do
   if candidate.length < 4 + nullaryCount ds then throw "declaration graph rows are missing"
   for i in [:ds.size] do
@@ -363,6 +367,29 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table) :
     if ds[i]!.parameters.isEmpty then
       let (row, expanded) ← (lowerDefinitionRows ds i #[] ⟨[i], []⟩).run table
       table := expanded.set (rowIndex ds i) row
+  -- Applications in row order: an argument names only earlier rows.
+  for (row, declaration, args) in applications.mergeSort (fun x y => x.1 ≤ y.1) do
+    if row < 4 + nullaryCount ds || row ≥ table.length || table[row]! != RequestJson.Row.clauses [] then
+      throw "an application's reserved row is not an empty producer row"
+    if declaration ≥ ds.size || ds[declaration]!.parameters.isEmpty then
+      throw "an application names no generic declaration"
+    if args.any (fun A => A.any (· ≥ row)) then
+      throw "an application's arguments name a later row"
+    let i := declaration
+    let fill : Lowering (List (Clause (List Nat))) := do
+      let values ← lowerApplication ds i args.toArray ⟨[], []⟩
+      if mentionsSelf ds[i]!.expression then
+        lowerDefinitionRows ds i (values.push [row]) ((Visit.enter ⟨[], []⟩ i).reserve i values row)
+      else
+        let labels ← if ds[i]!.bases.isEmpty then
+            lowerType ds i values (Visit.enter ⟨[], []⟩ i) ds[i]!.expression
+          else (← lowerDefinitionRows ds i values (Visit.enter ⟨[], []⟩ i)).mapM use
+        let T : SourceTypes.Table ← get
+        labels.flatMapM fun l => match T[l]? with
+          | some (RequestJson.Row.clauses cs) => pure cs
+          | _ => throw "an application lowers to a row without clauses"
+    let (filled, expanded) ← fill.run table
+    table := expanded.set row filled
   return table
 
 private def claimType (atoms : List Json) : Json :=
@@ -645,7 +672,8 @@ structure Instantiable where
 /-- Replace only the producer's empty reserved rows with equations derived
 from source declarations. The AST copy contains internal graph atoms only after
 the original source tree has been checked for them. -/
-def prepare (ast : Json) (candidate : SourceTypes.Table) :
+def prepare (ast : Json) (candidate : SourceTypes.Table)
+    (applications : List (Nat × Nat × List (List Nat)) := []) :
     Except String (Json × SourceTypes.Table × List (String × Span × Json) × List Instantiable) := do
   let document ← field ast "declarations"
   CellClaims.fieldsExactly document ["roots", "definitions", "values", "symbols"]
@@ -661,7 +689,7 @@ def prepare (ast : Json) (candidate : SourceTypes.Table) :
     return (name, i)
   if (roots.toList.map (·.1)).eraseDups.length != roots.size then
     throw "duplicate declaration root name"
-  let types ← fillRows ds candidate
+  let types ← fillRows ds candidate applications
   -- Generic module functions, read from their source terms before the tree is
   -- converted.
   let callable (params : List Json) (rest : Option Json) (result : Json) (bound : List (String × Json)) :
