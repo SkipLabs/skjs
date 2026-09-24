@@ -492,6 +492,15 @@ $$
 \frac{}{\Delta\vdash c\sqsubseteq c}\ \ c\in\{\mathsf{bigint},\mathsf{symbol}\}.
 $$
 
+The following pack rules describe the **current production representation**.
+The [same-level argument-contract migration](DESIGN.md#same-level-argument-contracts-migration-to-separate-list-contracts)
+replaces its extra delay; its general equations have been proved, but the
+production graph and generic certificates have not yet migrated.
+
+Coverage is defined once in `CoversWith`. Declarative `Covers` supplies arrow
+derivations; `checkClause` supplies checked arrow evidence. The remaining
+conditions are shared, including pack bounds and variance.
+
 A variadic construct signature is covered by one taking as many fixed
 parameters, each at least as wide, a rest at least as wide as a pack, and a
 result at most as wide; or by a fixed one, when its rest is one exact tuple
@@ -538,7 +547,11 @@ $$
 
 (`CoversPack`, `covers_pack_sound`). So `[number, string]` is within
 `(number | string)[]` and `[number]` within `[number, string?]`, while
-`number[]` is within no bounded tuple.
+`number[]` is within no bounded tuple. The shape/covariance proof is
+`covers_arguments`, shared by the current delayed pack interpretation and
+`covers_arguments_sound` for same-level argument membership. No stability
+premise is needed for either coverage theorem; the old fixed-to-pack conversion
+still needs it because that conversion crosses approximation levels.
 
 Splitting (`splitClause`) replaces a source $\mathsf{bool}$ clause with the pair
 $\mathsf{true},\mathsf{false}$ and leaves every other clause alone. It is

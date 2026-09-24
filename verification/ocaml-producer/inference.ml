@@ -2,31 +2,44 @@ open Semantic
 
 (* A substitution is proposal state for one call. Its domain is exactly the
    signature's quantified rigid identities; it is never embedded in [ty]. *)
-type substitution = (rigid * ty) list
+type substitution = (rigid * type_argument) list
 
 type instantiation = {
   substitution: substitution;
-  params: ty list;
   result: ty;
-  bounds: (ty * ty) list;
 }
 
 let unsupported s = Json.fail ("unsupported: " ^ s)
 
 let rec substitute solution = function
   | Rigid identity as original ->
-    Option.value (List.assoc_opt identity solution) ~default:original
+    (match List.assoc_opt identity solution with
+    | None -> original
+    | Some (ValueArgument t) -> t
+    | Some (PackArgument _) -> unsupported ("pack substitution used as a value type: " ^ identity.spelling))
   | Atoms atoms -> Atoms (List.map (substitute_atom solution) atoms)
   | Union types -> List.fold_left union (Atoms []) (List.map (substitute solution) types)
 and substitute_atom solution = function
   | Shape shape -> Shape (substitute_shape solution shape)
   | Named (id,args) -> Named (id,List.map (substitute solution) args)
   | Ctors signatures -> Ctors (List.map (substitute_signature solution) signatures)
-  | Args sequence -> Args {sequence with
-      required=List.map (substitute solution) sequence.required;
-      optional_elements=List.map (substitute solution) sequence.optional_elements;
-      rest=Option.map (substitute solution) sequence.rest}
-  | atom -> atom
+  | (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
+    | Bigint | Symbol) as atom -> atom
+and substitute_pack solution = function
+  | PackParameter identity as original ->
+    (match List.assoc_opt identity solution with
+    | None -> original
+    | Some (PackArgument p) -> p
+    | Some (ValueArgument _) -> unsupported ("value substitution used as an argument pack: " ^ identity.spelling))
+  | Pack sequence -> Pack (substitute_sequence solution sequence)
+and substitute_sequence solution sequence = {
+  sequence with
+  required=List.map (substitute solution) sequence.required;
+  optional_elements=List.map (substitute solution) sequence.optional_elements;
+  rest=Option.map (substitute solution) sequence.rest}
+and substitute_argument solution = function
+  | ValueArgument t -> ValueArgument (substitute solution t)
+  | PackArgument p -> PackArgument (substitute_pack solution p)
 and substitute_shape solution shape = {
   fields=List.map (fun field -> {field with
     read=substitute solution field.read;
@@ -35,23 +48,19 @@ and substitute_shape solution shape = {
     value=substitute solution index.value;
     writable=Option.map (substitute solution) index.writable}) shape.string_index;
   calls=List.map (substitute_signature solution) shape.calls;
-  elements=Option.map (fun sequence -> {
-    sequence with
-    required=List.map (substitute solution) sequence.required;
-    optional_elements=List.map (substitute solution) sequence.optional_elements;
-    rest=Option.map (substitute solution) sequence.rest}) shape.elements;
+  elements=Option.map (substitute_sequence solution) shape.elements;
 }
 and substitute_signature solution signature =
   (* A nested quantifier shadows only its own identities. Outer solutions still
      pass through the nested scheme's bounds and body. *)
   let local = List.map (fun q -> q.identity) signature.quantified in
   let solution = List.filter (fun (identity,_) -> not (List.mem identity local)) solution in
-  { quantified=List.map (fun q -> {q with bound=Option.map (substitute solution) q.bound})
+  { quantified=List.map (fun q -> {q with bound=Option.map (substitute_argument solution) q.bound})
       signature.quantified;
     receiver=substitute solution signature.receiver;
     params=List.map (substitute solution) signature.params;
     variadic=Option.map (substitute solution) signature.variadic;
-    rest_pack=Option.map (substitute solution) signature.rest_pack;
+    rest_pack=Option.map (substitute_pack solution) signature.rest_pack;
     result=substitute solution signature.result }
 
 (* These are proposal constraints, not semantic type nodes or acceptance facts.
@@ -67,8 +76,7 @@ let meet_atom a b =
   | Num,NumLit _ -> Some [b] | NumLit _,Num -> Some [a]
   | Str,StrLit _ -> Some [b] | StrLit _,Str -> Some [a]
   | Ctors a,Ctors b -> Some [Ctors (a @ b)]
-  | Shape _,_ | _,Shape _ | Named _,_ | _,Named _ | Ctors _,_ | _,Ctors _
-  | Args _,_ | _,Args _ -> None
+  | Shape _,_ | _,Shape _ | Named _,_ | _,Named _ | Ctors _,_ | _,Ctors _ -> None
   | Bigint,Bigint -> Some [Bigint] | Symbol,Symbol -> Some [Symbol]
   | (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | Symbol),
     (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | Symbol) -> Some []
@@ -93,6 +101,7 @@ let upper_candidate = function
 
 let infer ?receiver (signature:signature) actuals =
   if signature.quantified=[] then unsupported "generic inference requires a quantified signature";
+  if signature.rest_pack<>None then unsupported "pack inference requires an argument-list candidate";
   let domains = match signature.variadic with
     | None when List.length signature.params = List.length actuals -> signature.params
     | Some element when List.length signature.params <= List.length actuals ->
@@ -125,7 +134,9 @@ let infer ?receiver (signature:signature) actuals =
      signature's. *)
   Option.iter (fun r -> constrain r signature.receiver) receiver;
   List.iter (fun (q:quantifier) ->
-    Option.iter (constrain (Rigid q.identity)) q.bound) signature.quantified;
+    Option.iter (function
+      | ValueArgument t -> constrain (Rigid q.identity) t
+      | PackArgument _ -> unsupported "pack inference requires an argument-list candidate") q.bound) signature.quantified;
   let saturate () =
     let changed = ref true in
     while !changed do
@@ -160,11 +171,7 @@ let infer ?receiver (signature:signature) actuals =
         | Some _ as chosen -> chosen
         | None -> upper_candidate v.upper) in
     match candidate with
-    | Some t -> v.identity,t
+    | Some t -> v.identity,ValueArgument t
     | None -> unsupported ("cannot infer " ^ v.identity.spelling ^ " from call arguments or bounds")) variables in
-  let params = List.map (substitute substitution) signature.params in
   let result = substitute substitution signature.result in
-  let bounds = List.filter_map (fun (q:quantifier) -> Option.map (fun upper ->
-    (List.assoc q.identity substitution,substitute substitution upper)) q.bound)
-    signature.quantified in
-  {substitution;params;result;bounds}
+  {substitution;result}

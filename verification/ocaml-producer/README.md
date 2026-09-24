@@ -118,6 +118,25 @@ language. The boundaries are:
    evidence consumer. Every source function must be covered. Acceptance is
    printed only after that final check succeeds.
 
+Source binder roles are classified structurally, respecting nested scheme
+scopes, in both OCaml and Lean. Each source environment retains whether a name
+binds a value type or a pack; the wrong lookup path refuses it. A binder used
+in both roles remains an explicit unsupported combination until its collected
+array interpretation is implemented.
+
+Value types and argument-list contracts are distinct OCaml types: `ty` and
+`pack`. A rest pack is a `PackParameter` or a concrete tuple shape; it cannot
+occur as an atom of a value type. Substitutions explicitly carry a
+`ValueArgument` or `PackArgument`, and lookup refuses using either in the other
+position. Nested binders protect their identities in both projections. Ordinary
+inference proposes value arguments; the pack-call path supplies its list
+candidate before inferring the remaining value arguments. Neither path decides
+acceptance. Inference returns its substitution and proposed result; unused
+copies of instantiated parameters and bounds have been removed. Lean checks
+bounds from the declaration and the exported substitution. Array and pack
+element substitution share one sequence traversal, but an argument list is
+still distinct from its allocated array.
+
 Inference metavariables and existential witnesses are **not implemented**.
 When introduced, they must have separate identities and capabilities from rigid
 binders. They belong to proposal/search state; they cannot be substituted into
@@ -1075,6 +1094,38 @@ used as a rest parameter, so an instance fixes the arity) and bounded
 binders; the mappers' bodies return array literals as `Iterable` and call
 `reduce`/`sort`, which needs arrays as library objects, with `Array<T>`'s
 declared methods, where the calculus's arrays are stores with none.
+
+**Object-valued callable operands.** Functions and constructors now decode
+nested object inputs/results and receivers through one recursive decoder.
+The separate receiver decoder was removed; optional fields keep the same
+meaning in each position.
+`object-callable-operands.ts` and `object-constructor-value-import.ts` verify;
+the readonly-to-writing-callback control is rejected. This fixes an earlier
+decoder barrier to object-valued pack calls, whose pack conversion remains
+pending below.
+
+**Argument-pack migration.** The [same-level contract design](../DESIGN.md#same-level-argument-contracts-migration-to-separate-list-contracts)
+is the intended replacement for the current guarded pack rows and their
+primitive-only fixed-to-pack conversion. The general semantic equations are
+proved, including object and callback elements and recursive schemes with
+bounded value parameters. The shared assignment and bounded-quantification
+proofs now support either value or argument-list families; a semantic control
+instantiates a universally quantified pack shared by a constructor and trailing
+arguments. Graph integration is still pending: the production argument
+interpreter can only read a value environment, and its certificates still
+instantiate pack rows through that environment.
+The producer now distinguishes value and pack substitutions internally and uses
+one pack encoder for homogeneous and tuple rests. Its wire output still uses
+the existing pack rows, so this is not the verifier migration. The universal
+generic-body checker already uses same-level rest arguments; the graph's
+production instantiation and export still select the legacy adapter. The framework calls need `Params = []` for
+`Plus`/`Minus` and `[number]` for `AddIndex`. One checked substitution must
+establish the constructor's argument contract, the supplied actuals and
+`Params extends readonly DepSafe[]`. A binder used as an array value must keep
+its array interpretation too; an argument list is not an array. The broader API
+also permits object-valued `Managed` arguments, so the primitive-only conversion
+is not a closure criterion. Rerun the original client independently: this
+migration does not itself close its array-library and asynchronous-startup gaps.
 
 **Record values as `Json` (to do).**
 

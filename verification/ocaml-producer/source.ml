@@ -7,7 +7,7 @@ let items k j = list (field k j)
    enclosing binders by spelling; a declaration body reads its own parameters
    by position and its method receiver as the declaration. A reference names
    its declaration by identity. *)
-type type_context = { bindings: (string * ty) list;
+type type_context = { bindings: (string * type_argument) list;
                       owner: string option; positional: rigid list;
                       arity: (string * (int * int)) list;
                       symbolic: (string * (rigid * ty)) list }
@@ -31,6 +31,31 @@ let property_key = function
 let is_pack = function
   | Object fields -> List.assoc_opt "k" fields = Some (String "pack")
   | _ -> false
+
+(* Free uses by role, not occurrences in serialized JSON. Nested schemes
+   shadow their own names, including in their bounds and signatures. *)
+let rec binder_use name = function
+  | Object fields as term ->
+    let get key = List.assoc_opt key fields in
+    if get "k" = Some (String "binder") then get "name" = Some (String name),false
+    else if is_pack term then
+      (match get "of" with
+      | Some (Object operand) when List.assoc_opt "k" operand = Some (String "binder") ->
+        false,List.assoc_opt "name" operand = Some (String name)
+      | Some operand -> binder_use name operand
+      | None -> false,false)
+    else if get "k" = Some (String "scheme") &&
+      (match get "binders" with
+      | Some (Array binders) -> List.exists (function
+          | Object binder -> List.assoc_opt "name" binder = Some (String name)
+          | Null | Bool _ | Number _ | String _ | Array _ -> false) binders
+      | Some (Null | Bool _ | Number _ | String _ | Object _) | None -> false)
+    then false,false
+    else binder_uses name (List.map snd fields)
+  | Array terms -> binder_uses name terms
+  | Null | Bool _ | Number _ | String _ -> false,false
+and binder_uses name terms = List.fold_left (fun (values,packs) term ->
+  let value,pack=binder_use name term in values || value,packs || pack) (false,false) terms
 
 let rec source_type ctx j =
   let recur = source_type ctx in
@@ -57,36 +82,20 @@ let rec source_type ctx j =
       optional_elements=List.map recur (items "optional" j);
       rest=(match field "rest" j with Null -> None | t -> Some (recur t));
       readonly=boolean (field "readonly" j)}
-  (* A generic method: its signatures quantify its binders, scoped by where it
-     is declared. As Lean lowers it, a bounded binder or a variadic signature
-     keeps the member opaque. *)
+  (* A generic method: its signatures quantify lexically scoped binders.
+     Self-dependent bounds, mixed value/pack uses and unmodeled rests remain
+     opaque, consistently with Lean's declaration lowering. *)
   | "scheme" ->
     let binders = items "binders" j and signatures = items "signatures" j in
     let names = List.map (fun b -> text "name" b) binders in
     (* A bound naming the method's own binders, an F-bound, is not what a
        scheme's bounds mean: they are read where the method is declared. *)
-    let rec mentions_own = function
-      | Object fields ->
-        (List.assoc_opt "k" fields = Some (String "binder")
-         && (match List.assoc_opt "name" fields with
-             | Some (String n) -> List.mem n names | _ -> false))
-        || List.exists (fun (_,v) -> mentions_own v) fields
-      | Array items -> List.exists mentions_own items
-      | _ -> false in
-    (* A pack parameter is a binder a rest is typed by: its bound, an array
-       or a tuple of required positions, is read as the argument lists it
-       admits. An element rest in a scheme keeps the member opaque. *)
-    let rec packs_in = function
-      | Object fields as t when is_pack t ->
-        (match field "of" t with
-         | Object of_ when List.assoc_opt "k" of_ = Some (String "binder") ->
-           (match List.assoc_opt "name" of_ with Some (String n) -> [n] | _ -> [])
-         | _ -> []) @ List.concat_map (fun (_,v) -> packs_in v) fields
-      | Object fields -> List.concat_map (fun (_,v) -> packs_in v) fields
-      | Array items -> List.concat_map packs_in items
-      | _ -> [] in
-    let packs = List.sort_uniq compare (List.concat_map packs_in signatures) in
-    if List.exists (fun b -> mentions_own (field "bound" b)) binders
+    let mentions_own term = List.exists (fun name ->
+      let value,pack=binder_use name term in value || pack) names in
+    let uses=List.map (fun name -> name,binder_uses name signatures) names in
+    let packs=List.filter_map (fun (name,(_,pack)) -> if pack then Some name else None) uses in
+    if List.exists (fun (_, (value,pack)) -> value && pack) uses
+       || List.exists (fun b -> mentions_own (field "bound" b)) binders
        || List.exists (fun f -> match field "rest" f with
             | Null -> false | t -> not (is_pack t)) signatures then top
     else begin
@@ -96,19 +105,21 @@ let rec source_type ctx j =
       let scope = -1_000_000_000 - start in
       let identities = List.mapi (fun index b -> {scope;index;spelling=text "name" b}) binders in
       let inner = {ctx with bindings =
-        List.map (fun (r:rigid) -> r.spelling,Rigid r) identities @ ctx.bindings} in
+        List.map (fun (r:rigid) -> r.spelling,
+          if List.mem r.spelling packs then PackArgument (PackParameter r)
+          else ValueArgument (Rigid r)) identities @ ctx.bindings} in
       let pack_bound t = match text "k" t with
-        | "array" -> Atoms [Args {required=[];optional_elements=[];
-            rest=Some (source_type ctx (field "element" t));readonly=false}]
+        | "array" -> Pack {required=[];optional_elements=[];
+            rest=Some (source_type ctx (field "element" t));readonly=false}
         | "tuple" when items "optional" t = [] && field "rest" t = Null ->
-          Atoms [Args {required=List.map (source_type ctx) (items "required" t);
-            optional_elements=[];rest=None;readonly=false}]
+          Pack {required=List.map (source_type ctx) (items "required" t);
+            optional_elements=[];rest=None;readonly=false}
         | _ -> unsupported "a pack parameter's bound is an array or a tuple" in
       let quantified = List.map2 (fun identity b ->
         {identity;bound=(match field "bound" b with
           | Null -> None
-          | t when List.mem identity.spelling packs -> Some (pack_bound t)
-          | t -> Some (source_type ctx t))})
+          | t when List.mem identity.spelling packs -> Some (PackArgument (pack_bound t))
+          | t -> Some (ValueArgument (source_type ctx t)))})
         identities binders in
       let calls = List.map (fun f -> match source_type inner f with
         | Atoms [Shape {fields=[];string_index=None;calls=[s];elements=None}] -> {s with quantified}
@@ -120,15 +131,15 @@ let rec source_type ctx j =
        parameter, or any number at an element. *)
     let rest_pack = match field "rest" j with
       | Null -> None
-      | t when is_pack t -> Some (recur (field "of" t))
-      | t -> Some (Atoms [Args {required=[];optional_elements=[];rest=Some (recur t);readonly=false}]) in
+      | t when is_pack t -> Some (source_pack ctx (field "of" t))
+      | t -> Some (Pack {required=[];optional_elements=[];rest=Some (recur t);readonly=false}) in
     Atoms [Ctors [{quantified=[];receiver=top;params=List.map recur (items "params" j);
       variadic=None;rest_pack;result=recur (field "result" j)}]]
   | "function" ->
     let receiver = match field "receiver" j with Null -> top | source -> recur source in
     let variadic,rest_pack = match field "rest" j with
       | Null -> None,None
-      | t when is_pack t -> None,Some (recur (field "of" t))
+      | t when is_pack t -> None,Some (source_pack ctx (field "of" t))
       | t -> Some (recur t),None in
     let signature = {quantified=[];receiver;
       params=List.map recur (items "params" j);
@@ -166,7 +177,7 @@ let rec source_type ctx j =
     (* An annotation applies a one-parameter cell or identity declaration
        directly: its body is the argument, substituted. *)
     (match ctx.owner,args,List.assoc_opt id ctx.symbolic with
-    | None,[arg],Some (parameter,body) -> Inference.substitute [parameter,arg] body
+    | None,[arg],Some (parameter,body) -> Inference.substitute [parameter,ValueArgument arg] body
     | _ -> Atoms [Named (id,args)])
   | "parameter" ->
     let index = match field "index" j with
@@ -178,7 +189,9 @@ let rec source_type ctx j =
     | Some identity -> Rigid identity
     | None -> fail "declaration parameter index outside declaration")
   | "binder" -> (match List.assoc_opt (text "name" j) ctx.bindings with
-    | Some t -> t | None -> fail "unbound rigid parameter")
+    | Some (ValueArgument t) -> t
+    | Some (PackArgument _) -> unsupported "an argument pack used as a value type"
+    | None -> fail "unbound rigid parameter")
   | "intersection" ->
     (* Function operands are one overloaded callable. A type parameter's
        intersection with another type, `V & DepSafe`, is proposed as the
@@ -194,7 +207,15 @@ let rec source_type ctx j =
          | _ -> unsupported "intersection needs source graph conjunction") parts in
        Atoms [Shape {fields=[];string_index=None;calls;elements=None}])
   | k -> unsupported ("type term " ^ k)
+and source_pack ctx j =
+  if text "k" j <> "binder" then unsupported "a pack rest must name a type parameter";
+  match List.assoc_opt (text "name" j) ctx.bindings with
+  | Some (PackArgument p) -> p
+  | Some (ValueArgument _) -> unsupported "a value parameter used as an argument pack"
+  | None -> fail "unbound pack parameter"
+
 type literal = LNull | LUndefined | LBool of bool | LNumber of string | LString of string
+
 let literal j = match text "a" j with
   | "null" -> LNull | "undefined" -> LUndefined
   | "booleanlit" -> LBool (text "v" j = "true")
@@ -216,8 +237,9 @@ let quantify binders scope parameters =
       if List.exists (fun (q:quantifier) -> q.identity.spelling=spelling) accumulated
       then Json.fail "duplicate type parameter";
       let identity={scope;index;spelling} in
-      let quantified={identity;bound=optional_type binders (field "bound" p)} in
-      let binders={binders with bindings=(spelling,Rigid identity)::binders.bindings} in
+      let quantified={identity;bound=Option.map (fun t -> ValueArgument t)
+        (optional_type binders (field "bound" p))} in
+      let binders={binders with bindings=(spelling,ValueArgument (Rigid identity))::binders.bindings} in
       loop (index+1) binders (quantified::accumulated) rest in
   loop 0 binders [] parameters
 type arithmetic = Add | Sub | Mul | Div

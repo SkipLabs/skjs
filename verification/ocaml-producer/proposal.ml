@@ -4,9 +4,9 @@ open Source
 open Inference
 
 type entry = { start: Json.t; bindings: (string * binding) list }
-(* A call site's validated substitution travels with its claim. It is proposal
+(* A call site's proposed substitution travels with its claim. It is proposal
    output for Lean to re-check, never an acceptance fact. *)
-type expression = { pos: Json.t; type_: ty; instantiation: (string * ty) list option }
+type expression = { pos: Json.t; type_: ty; instantiation: (string * type_argument) list option }
 (* One closure advertising several signatures has one body and a separate
    obligation at each: the interior claims are collected once per signature,
    keyed by the closure's span and ordered with the signatures. *)
@@ -63,7 +63,7 @@ let definition declarations id args =
             | Some value -> value,[]
             | None -> unsupported "type application has missing required argument") in
         let value = Inference.substitute (List.rev previous) value in
-        complete ((parameter,value)::previous) supplied rest other
+        complete ((parameter,ValueArgument value)::previous) supplied rest other
       | _ -> unsupported "declaration parameter/default length mismatch" in
     let solution = complete [] args d.parameters d.defaults in
     let body = Inference.substitute solution d.expression in
@@ -171,8 +171,7 @@ let rec branch env cond truth = match cond.node with
       | Nul -> Some false
       (* A declaration's shape is not known here: it stays on both arms. No
          value is an argument pack. *)
-      | Top | Named _ -> None
-      | Args _ -> Some false in
+      | Top | Named _ -> None in
     refine_value env name (function
       | Atoms xs when not (List.mem Top xs) ->
         Atoms (List.filter (fun a -> match has a with
@@ -421,11 +420,11 @@ let infer_function declarations module_functions (f:Source.fn) =
            unsupported "a call omits a fixed parameter before a pack parameter";
          let actuals = List.map (expr env) args in
          let extras = List.filteri (fun i _ -> i >= fixed) actuals in
-         let pack = Atoms [Args {required=List.map Semantic.widen extras;
-           optional_elements=[];rest=None;readonly=false}] in
+         let pack = Pack {required=List.map Semantic.widen extras;
+           optional_elements=[];rest=None;readonly=false} in
          let solution = match signature.rest_pack with
-           | Some (Rigid p) when List.exists (fun (q:Semantic.quantifier) -> q.identity=p)
-               signature.quantified -> [p,pack]
+           | Some (PackParameter p) when List.exists (fun (q:Semantic.quantifier) -> q.identity=p)
+               signature.quantified -> [p,PackArgument pack]
            | _ -> unsupported "a pack rest that is not the method's own parameter" in
          let rest_quantified = List.filter (fun (q:Semantic.quantifier) ->
            not (List.mem_assoc q.identity solution)) signature.quantified in

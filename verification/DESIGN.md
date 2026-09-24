@@ -782,7 +782,7 @@ Full TypeScript formalization is not a prerequisite.
 
 [SourceExtraction.lean](lean/Verification/Model/Source/SourceExtraction.lean)
 connects independently parsed source and actual SKJS exports to the stateful
-consumer. It accepts primitive or bounded callable parameters, initialized `const` declarations,
+consumer. It accepts primitive, object and bounded callable parameters, initialized `const` declarations,
 nested boolean branches, block-bodied `while` loops and returns, with variables, null/undefined/boolean literals,
 plain `{ value: e }` allocation, `.value` reads and `.value = e` assignments,
 and the bounded local closures and calls described below. Every syntactic exit
@@ -939,8 +939,9 @@ type is interpreted as a function respecting its contract. The interpretation
 is the same trust boundary for both; it is not established by the annotation. Callable arguments can expose captured cells to an invocation; the
 semantic arrow guarantee must therefore hold across admissible future heaps,
 including callback effects. A producer claim that contradicts the annotation
-is refused before proof search. This does not admit record-valued parameters
-or establish contracts for unchecked JavaScript callers.
+is refused before proof search. Object-valued parameters, including nested
+objects in callable operands, use this same interpretation; this does not
+establish contracts for unchecked JavaScript callers.
 
 Object branches are exported faithfully as separate atoms in the existing union
 format. [CellUnion.lean](lean/Verification/Model/Types/CellUnion.lean) validates
@@ -1541,12 +1542,13 @@ the whole argument list is one thing. The calculus has that thing as a value,
 holds as values. Their membership is required below the current level only,
 which keeps the clause contractive without any assumption on its operands, and
 coverage is covariant position by position within the length bounds
-(`CoversPack`). A variadic signature's rest is such a type: its fixed
-parameters admit the first actuals and the rest the remaining ones as one pack
-(`ArgsRest`), so `...xs: E[]` is the pack of any number at `E` (`elemPack`) and
+(`CoversPack`). In the current graph interpretation a variadic signature's rest uses this
+encoding through the explicit `packArgs` adapter. Its fixed parameters admit
+the first actuals and the rest the remaining list (`ArgsRest`), so `...xs: E[]`
+is represented by the pack of any number at `E` (`elemPack`) and
 `...xs: [A, B]` the pack of exactly those positions, one mechanism for both. A
 pack speaks below the current level only, which is all the rest array's
-allocation needs, since it is a step. Every producer spells a rest as a pack
+allocation needs, since it is a step. Graph-producing paths still spell a rest as a pack
 row; a spread into a rest, a rest compared with fixed positions, and binding a
 variadic target still need an element rest (`restElem`).
 
@@ -1727,6 +1729,191 @@ Direct generic declarations now consume the same invocation certificates as
 local schemes, including argument collection, and validate every operand claim.
 Tuple-pack and argument-sequence inference remain later extensions.
 
+### Same-level argument contracts: migration to separate list contracts
+
+[`ArgumentContracts.lean`](lean/Verification/Model/Semantics/ArgumentContracts.lean)
+separates contracts on argument lists from contracts on runtime values. Grouping
+already evaluated arguments is not an execution step:
+
+```text
+Fits([A₁, …, Aₖ], n, W, [v₁, …, vₖ]) ⇔ ∀ i, Aᵢ(n, W, vᵢ)
+```
+
+This matters for fixed-to-tuple-rest conversion. Production `packT` checks
+members at strictly smaller indices, while fixed parameters check at the
+current index. Primitive contracts can hide that difference; object and
+callback contracts cannot. The existing restriction must not simply be deleted.
+[`ArgumentContractsTests.lean`](lean/Verification/Model/Tests/ArgumentContractsTests.lean)
+proves the unrestricted old constructor conversion false: a callback returning
+`true` where `null` is required satisfies a shallow approximation, but fails at
+the index at which the fixed constructor requires it.
+
+The replacement has a separate argument-contract family over lists of values.
+Exact tuples and homogeneous lists have direct interpretations; an argument
+interpreter must preserve approximation agreement without introducing a required
+delay. The surrounding call or constructor contract supplies the guard for
+recursive definitions. There is no separate, unused argument-expression AST: the
+remaining quantified migration must use the production language.
+[`PositiveGraphs.lean`](lean/Verification/Model/Types/PositiveGraphs.lean)
+proves the assignment-indexed recursive graph's fixed-point equation,
+admissibility and agreement under changes to assignments. This includes bounded
+quantification and recursive negative positions. It uses the production clause
+language: `semWithArgs` takes separate value and argument interpretations, and
+`qLayerWithArgs` supplies the same reassigned value environment to both. The
+argument interpreter must preserve agreement at the same level; the fixed-point
+proof therefore permits same-level membership without requiring an extra delay.
+The bounded-quantification proof uses that law when
+restricting an instance to its bounds. The legacy interpretation delegates to
+this implementation; there is no separate prototype graph module.
+
+Proved consequences include exact equality of fixed and exact-tuple constructor
+contracts for arbitrary element types, safe invocation through the existing
+operational rule, and safe rest-array allocation through the existing allocation
+proof. Fixed calls cover the corresponding exact-tuple calls; equality is not
+claimed because fixed calls can admit omitted `undefined` arguments. One tuple
+shape also supplies both argument membership and an array-storage interpretation:
+position-wise inclusion in an element bound proves the argument bound and the
+readonly array view, without changing any location's write contract. This is
+the connection needed for a parameter such as `Params extends readonly DepSafe[]`;
+it does not identify an argument list with a heap array.
+
+**Migration status.** Core rest-call and rest-constructor signatures consume
+`ArgFam`, a predicate on lists, rather than `Fam`, a predicate on runtime
+values. Both use the same `WorldFamily`, `Adm` and `Agree` laws. Fixed,
+optional and variadic-call elimination use the common argument-contract call
+rule. Certificate checking and declarative coverage share `CoversWith`,
+instead of duplicating their clause matrix. Tuple shape and position membership
+also have one definition (`TupleFits`), with the element-membership predicate
+supplied separately. The existing pack checker and same-level tuple coverage
+now use one covariance proof, `covers_arguments`; the legacy delay is confined
+to its old caller. This does not remove the delay from quantified substitution.
+
+The universal generic-body checker and its closure certificates now interpret
+homogeneous rest arguments directly:
+
+```text
+All(E, n, W, vs) ⇔ ∀ v ∈ vs, E(n, W, v)
+```
+
+Its rest-array collection proof allocates invariant storage from those
+same-level premises. Its variadic-to-fixed rule consequently needs neither
+admissibility nor closedness merely to group arguments. Operational invocation
+still requires actual values, and allocation still preserves fixed location
+contracts. The source-to-safety theorem covers this migrated path.
+
+The assignment algebra now distinguishes **value families** from **argument-list
+families** through `ParameterKind`. Reassignment, shadowing, bound restriction
+and their proofs share one implementation indexed by that kind. `boundedSem`
+and `boundedSem_adm` likewise implement universal quantification for either
+kind; production value schemes use this shared proof. A semantic control
+quantifies over a genuine list contract `P` and instantiates a signature using
+that same `P` in both a constructor operand and its trailing actuals. This
+checks universal pack elimination, not a collection of observed calls.
+The production certificate proof `inst_sound` now uses the sort-independent
+`bounded_substitution_elim`: the chosen interpretation determines both the
+assigned family and its checked upper bound. `assignment_substitution` also
+supplies its relation between source and substituted binders. The pack control
+uses the same elimination theorem. The remaining value-specific part is the
+interpretation supplied by `inst_sound` and the graph-row image proof
+(`table_row`), not a second implementation of bound checking.
+
+The recursive graph's production environment still assigns **value families**.
+Its argument interpreter receives only that environment. Selecting another
+`ArgumentInterpreter` is therefore not by itself enough to finish this
+migration; extracting a list contract by applying an assigned value family to
+`.args` would retain the encoding being retired. The shared sorted algebra and
+quantifier proof do not yet migrate graph rows or their certificates.
+
+The remaining graph assignment/substitution change must retain a pack's list
+contract and the coherent array interpretation used by collection and array
+bounds. Substitution certificates must preserve both interpretations; using a
+binder as a rest and using its collected array must not choose unrelated
+contracts. Mixed value/pack quantification in one scheme also remains an
+integration requirement; the shared quantifier currently takes one parameter
+kind per invocation.
+
+The OCaml producer now separates `ty` from `pack`, with tagged value/pack
+substitution arguments. `Args` is no longer an ordinary value-type atom. Its
+substitution traversals refuse cross-kind uses, preserve nested binders, and
+share element traversal between pack shapes and arrays. Export has one pack
+encoder; it still emits the existing graph rows. This closes the producer's
+internal sort conflation, not the semantic assignment or certificate migration.
+
+Source binder classification is now structural and scope-aware in both readers.
+Lean no longer counts substrings in serialized JSON. Both lowering environments
+retain distinct value and pack bindings, so reading a pack through the value
+path (or a value through the pack path) is an explicit error. A nested scheme
+shadows its binders; its same-named value parameter does not change an outer
+pack's role. A source binder genuinely used both as a pack and as an array value
+still leaves its method opaque, pending the coherent collected-array view.
+This does not add sorted assignments to the semantic graph: emitted parameter
+rows and instantiation certificates still have the legacy representation.
+
+The production graph entry point, quantified pack instantiation and exported
+certificates still select `packArgs`. That is
+legacy behavior, not the intended final interpretation. Migrate those together:
+give a quantified pack one coherent shape with both argument and array
+interpretations, then update substitution, coverage/search, decoding and
+producer export. These changes do not yet establish that the framework source
+verifies. Validate the completed migration with object/callback tuple arguments
+and the original imported framework example, including a failing argument
+control. Preserve the existing source-to-safety theorem. Do not retain a
+primitive-only rule as the intended end state or weaken existing expected
+outcomes to close this work.
+
+An object-valued constructor probe also exposed a source-decoder restriction
+before reaching pack conversion. `Fragment.callableType` now decodes every
+callable operand position; the separate receiver decoder was removed. `object-callable-operands.ts` and
+`object-constructor-value-import.ts` verify nested objects across callbacks and
+constructors, plus an optional-field receiver;
+`invalid-object-callable-operands.ts` rejects supplying a readonly
+view to a writing callback. The generic object-pack call still fails its call
+obligation under the legacy interpretation; these controls do not close pack
+substitution. In the reproducer, the method takes
+`new (...args: Params) => ObjectBox` and `...args: Params`, with
+`Params extends { readonly value: number }[]`. The producer chooses the
+one-position pack for `{ value: 1 }`. Its object position is a `refs` clause,
+so `StableTy` is false at the fixed-constructor-to-pack conversion. The
+ordinary `new ObjectBox({ value: 1 })` control verifies. Do not widen away the
+object contract or remove that guard under the old interpretation.
+
+The integration must change the following connected boundaries together:
+
+1. `NormalGraph.env`, scheme binders and recursive denotation must carry both
+   value and argument-list assignments. Mixed schemes must retain both kinds;
+   introducing a second, independently maintained binder list is not a source
+   of truth. Argument rows interpret their elements at the current level, with
+   recursion guarded by the surrounding callable.
+2. `RelK`, `table_row` and `inst_sound` must establish substitution at each
+   operand's sort. Currently `RelK` relates only `qMeaning` value families, and
+   `inst_sound` chooses `meaning G U` for every substitution. The shared bound
+   theorem does not alter either fact.
+3. `boundOk`/`checkInst` and the corresponding declarative rules must check
+   inclusion of list contracts for pack bounds. A value-subtyping certificate
+   is not a list-subtyping certificate. Making pack rows empty as runtime-value
+   types while retaining these checks would make their old value inclusions
+   vacuous; that is not a sound migration.
+4. Decode, export and coverage search must use those sorted rules. Only after
+   source verification exercises that complete path can the old pack meaning
+   and fixed-to-pack stability guards be retired.
+
+The semantic refactors above have not completed any of these four connected
+boundaries. In particular, the shared substitution theorem is preparation for
+certificate migration, not a migrated pack certificate.
+
+The remaining integration boundary is explicit:
+
+| Step | Status | Completion condition |
+| --- | --- | --- |
+| Same-level core calls, constructors and universal rest bodies | Implemented | Existing operational safety proofs use list contracts. |
+| Recursive graphs with bounded value quantification | Proved in the production graph implementation | The fixed-point equation, admissibility and assignment agreement hold for argument interpreters derived from the value environment; independently quantified packs remain below. |
+| Producer value/pack substitution distinction | Implemented internally | Packs cannot be value-type atoms; cross-kind substitution is refused; the wire still uses legacy pack rows. |
+| Source binder roles | Implemented | Structural, scope-aware classification; value/pack bindings have distinct lowering paths; mixed uses remain opaque. |
+| Sorted assignment and universal quantification algebra | Proved and shared with production value schemes | Reassignment and bound restriction work at either sort; a universal pack control shares its contract across constructor and rest positions. |
+| Quantified pack substitution in the Lean graph | Pending | A pack argument is instantiated as a list contract, not by the old ordinary-value `meaning` of a pack row; bounds and both uses of the binder agree. |
+| Source/evidence migration and retirement | Pending | Decoders, producer export, substitution certificates and coverage select that interpretation; retire `packArgs`, the ordinary `pack` encoding and `StableTy` guards. |
+| Motivating source coverage | Pending | Object/callback dependencies verify end to end; wrong actuals remain rejected; report the original framework client's independent gaps separately. |
+
 ### Next object milestone
 
 Multi-field objects are finite maps from property keys to locations, fixed at
@@ -1867,16 +2054,19 @@ refinements and closure loops remain outside this slice.
 `Fragment.translate` now decodes each union atom through its existing primitive,
 cell or function decoder, then canonicalizes the combined labels. It rejects the
 entire type if any arm fails. This needs no new graph label or semantic rule:
-label lists already denote unions. Required cell fields and arrow arguments and
-results admit primitive/callable unions through `Fragment.callableType`;
-nested records remain outside this fragment.
+label lists already denote unions. Required fields, function and constructor
+arguments and results recursively admit object, callable, array and primitive
+contracts through `Fragment.callableType`. Plain records use the same decoder
+as receiver contracts: mutable fields keep fixed read/write contracts and
+readonly fields grant views. This removes the former difference between an
+object used as a receiver and the same object used as an ordinary argument.
+Optional and indexed fields retain their explicit restrictions.
 
 Locally allocated nullable cells and optional checked-closure results exercise
-the extension. External cell parameters remain rejected: annotations alone
-cannot exclude accessors. Arrow parameters are assumed at their annotation. A
-regression checks that adding null to a cell parameter does not evade this
-boundary. The
-null-guard examples include local annotation checks and functions that return
+the extension. External object and callable parameters are assumptions under
+the semantic contracts described above; their annotations do not themselves
+prove that arbitrary JavaScript callers obey those contracts. The null-guard
+examples include local annotation checks and functions that return
 null on one path and a locally created cell or closure on another.
 
 Source ternary expressions now share the closure conditional proof construction.

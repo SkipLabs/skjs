@@ -49,15 +49,9 @@ let encode (proposal : Proposal.t) =
         | None -> Some (Array [Array (List.map labels s.params);labels s.result])
         | Some _ -> None) signatures in
       let rests = List.filter_map (fun (s:Semantic.signature) -> Option.map (fun r ->
-        Array [Array (List.map labels s.params);Array [labels r;labels s.result]]) s.rest_pack) signatures in
+        Array [Array (List.map labels s.params);Array [pack_labels r;labels s.result]]) s.rest_pack) signatures in
       [intern (Array [Object ["ctors",Object (("signatures",Array fixed) ::
         (if rests = [] then [] else ["variadic",Array rests]))]])]
-    | Args sequence ->
-      [intern (Array [Object ["pack",Object ["first",Object [
-        "required",Array (List.map labels sequence.required);
-        "optional",Array (List.map labels sequence.optional_elements);
-        "rest",(match sequence.rest with None -> Null | Some t -> labels t);
-        "readonly",Bool false];"rest",Array []]]])]
     | Named (id,args) -> declaration_labels id args
     | Shape shape ->
       (* An optional field constrains its key only where the object has it,
@@ -84,10 +78,10 @@ let encode (proposal : Proposal.t) =
         (* A rest's type is a pack: of any number of actuals at an element, or
            the one a pack parameter's instance states. *)
         let rest = match a.variadic,a.rest_pack with
-          | Some element,_ -> Some (Array [int (intern (Array [Object ["pack",Object ["first",Object [
-              "required",Array [];"optional",Array [];"rest",labels element;"readonly",Bool false];
-              "rest",Array []]]]))])
-          | None,Some r -> Some (labels r)
+          | Some element,None -> Some (pack_labels (Pack {
+              required=[];optional_elements=[];rest=Some element;readonly=false}))
+          | Some _,Some _ -> unsupported "signature has both element and pack rests"
+          | None,Some r -> Some (pack_labels r)
           | None,None -> None in
         Option.map (fun rest -> Array [labels a.receiver;Array [Array (List.map labels a.params);
           Array [rest;labels a.result]]]) rest) shape.calls in
@@ -117,6 +111,13 @@ let encode (proposal : Proposal.t) =
             if reads <> [] then unsupported "callable with readonly fields";
             Object ["callable",Object (["first",fields;"rest",Array []] @ calls)] in
       [intern (Array [clause])]
+  and pack_labels = function
+    | PackParameter _ -> unsupported "rigid pack nested in a graph type"
+    | Pack sequence -> Array [int (intern (Array [Object ["pack",Object ["first",Object [
+        "required",Array (List.map labels sequence.required);
+        "optional",Array (List.map labels sequence.optional_elements);
+        "rest",(match sequence.rest with None -> Null | Some t -> labels t);
+        "readonly",Bool false];"rest",Array []]]]))]
   and declaration_labels id args =
     let rec find i k = function
       | [] -> unsupported ("unknown declaration " ^ id)
@@ -154,14 +155,24 @@ let encode (proposal : Proposal.t) =
             || Option.fold ~none:false ~some:contains_symbolic f.write) s.fields
           || Option.fold ~none:false ~some:(fun (i:Semantic.index_signature) ->
               contains_symbolic i.value || Option.fold ~none:false ~some:contains_symbolic i.writable) s.string_index
-          || List.exists (fun (a:Semantic.signature) ->
-              List.exists contains_symbolic (a.receiver :: a.result :: a.params @ Option.to_list a.variadic
-                @ Option.to_list a.rest_pack)
-              || List.exists (fun (q:Semantic.quantifier) ->
-                  Option.fold ~none:false ~some:contains_symbolic q.bound) a.quantified) s.calls
-          || (match s.elements with None -> false | Some e ->
-              List.exists contains_symbolic (e.required @ e.optional_elements @ Option.to_list e.rest))
-        | _ -> false) atoms
+          || List.exists signature_contains_symbolic s.calls
+          || Option.fold ~none:false ~some:sequence_contains_symbolic s.elements
+        | Ctors signatures -> List.exists signature_contains_symbolic signatures
+        | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
+        | Bigint | Symbol -> false) atoms
+  and pack_contains_symbolic = function
+    | PackParameter _ -> true
+    | Pack s -> sequence_contains_symbolic s
+  and sequence_contains_symbolic s = List.exists contains_symbolic
+      (s.required @ s.optional_elements @ Option.to_list s.rest)
+  and signature_contains_symbolic (s:Semantic.signature) =
+    List.exists contains_symbolic (s.receiver :: s.result :: s.params @ Option.to_list s.variadic)
+    || Option.fold ~none:false ~some:pack_contains_symbolic s.rest_pack
+    || List.exists (fun (q:Semantic.quantifier) ->
+        Option.fold ~none:false ~some:argument_contains_symbolic q.bound) s.quantified
+  and argument_contains_symbolic = function
+    | ValueArgument t -> contains_symbolic t
+    | PackArgument p -> pack_contains_symbolic p
   in
   (* A declaration applied to a rigid argument has no graph row of its own:
      its definition, with the argument substituted, is the claim, exactly as
@@ -183,7 +194,8 @@ let encode (proposal : Proposal.t) =
       if signature.rest_pack <> None then unsupported "a pack parameter in a scheme claim";
       let type_params = Array (List.map (fun (q:Semantic.quantifier) -> Object [
         "name",String q.identity.spelling;
-        "bound",(match q.bound with None -> Null | Some t -> claim_type t)])
+        "bound",(match q.bound with None -> Null | Some (ValueArgument t) -> claim_type t
+          | Some (PackArgument _) -> unsupported "a pack bound in a scheme claim")])
         signature.quantified) in
       Object ["scheme",Object ["typeParams",type_params;
         "this",claim_type signature.receiver;
@@ -209,7 +221,8 @@ let encode (proposal : Proposal.t) =
   let instantiate = function
     | None -> []
     | Some subst -> ["instantiate",Array (List.map (fun (name,t) ->
-        Object ["name",String name; "type",claim_type t]) subst)]
+        Object ["name",String name; "type",(match t with ValueArgument t -> claim_type t
+          | PackArgument p -> pack_labels p)]) subst)]
   in
   let point t extra = Object (extra @ ["type",claim_type t; "current",Null])
   in

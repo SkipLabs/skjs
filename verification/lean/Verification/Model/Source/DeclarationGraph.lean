@@ -101,13 +101,53 @@ private def inheritRows (own base : List (Clause (List Nat))) : Except String (L
     if rows.isEmpty then throw "inherited interface contracts have no representable intersection"
     return rows
 
+/-- Uses of one free method binder. A nested scheme with the same binder
+shadows it; a pack occurrence is the direct operand of a pack rest. -/
+structure BinderUse where
+  value : Bool := false
+  pack : Bool := false
+  deriving BEq, Repr, Inhabited
+
+private def BinderUse.merge (a b : BinderUse) : BinderUse :=
+  ⟨a.value || b.value, a.pack || b.pack⟩
+
+partial def binderUse (name : String) : Json → BinderUse
+  | .obj fields =>
+    let fields := fields.toList
+    if fields.lookup "k" == some (.str "binder") then
+      ⟨fields.lookup "name" == some (.str name), false⟩
+    else if fields.lookup "k" == some (.str "pack") then
+      match fields.lookup "of" with
+      | some (.obj operand) =>
+        if operand.toList.lookup "k" == some (.str "binder") then
+          ⟨false, operand.toList.lookup "name" == some (.str name)⟩
+        else binderUse name (.obj operand)
+      | some other => binderUse name other
+      | none => {}
+    else if fields.lookup "k" == some (.str "scheme") &&
+        (match fields.lookup "binders" with
+          | some (.arr bs) => bs.any fun b => (b.getObjValAs? String "name").toOption == some name
+          | _ => false) then {}
+    else fields.foldl (fun acc field => acc.merge (binderUse name field.2)) {}
+  | .arr terms => terms.foldl (fun acc term => acc.merge (binderUse name term)) {}
+  | .null | .bool _ | .num _ | .str _ => {}
+
+/-- The source role stays with a binder until its rows are emitted. A value
+occurrence cannot accidentally retrieve the row of an argument-list binder. -/
+private inductive BinderBinding where
+  | value (row : Nat)
+  | pack (row : Nat)
+
+private def BinderBinding.row : BinderBinding → Nat
+  | .value row | .pack row => row
+
 /-- The declarations being lowered, innermost first, and the ground
 applications whose rows are reserved while their equations are lowered. -/
 private structure Visit where
   declarations : List Nat := []
   rows : List (Nat × Array (List Nat) × Nat) := []
   /-- The binders of the generic methods being lowered, innermost first. -/
-  binders : List (String × Nat) := []
+  binders : List (String × BinderBinding) := []
 
 /-- Entering a declaration's equation: its terms see none of the enclosing
 methods' binders, as type parameters are lexically scoped. -/
@@ -180,7 +220,13 @@ private partial def lowerRest (ds : Array Definition) (owner : Nat)
     (params : Array (List Nat)) (seen : Visit) (term : Json) : Lowering (List Nat) := do
   if (term.getObjValAs? String "k").toOption == some "pack" then
     CellClaims.fieldsExactly term ["k", "of", "span"]
-    return ← lowerType ds owner params seen (← field term "of")
+    let operand ← field term "of"
+    CellClaims.fieldsExactly operand ["k", "name", "span"]
+    if (← str operand "k") != "binder" then throw "a pack rest must name a type parameter"
+    match seen.binders.lookup (← str operand "name") with
+    | some (.pack row) => return [row]
+    | some (.value _) => throw "a value parameter used as an argument pack"
+    | none => throw "a pack parameter outside its generic method"
   let element ← lowerType ds owner params seen term
   return [← use (.pack ⟨[], [], some element, false⟩ [])]
 
@@ -199,8 +245,8 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     | "unknown" | "void" => return [← use .top]
     | "never" => return []
     | _ => throw "unsupported declaration primitive"
-  -- A generic method is still read as an opaque member: its scheme row comes
-  -- with the producers' encoding of it.
+  -- A generic method's scheme comes from its source terms. Unsupported
+  -- binder roles or bounds remain opaque instead of accepting producer rows.
   | "scheme" =>
     CellClaims.fieldsExactly term ["k", "binders", "signatures", "span"]
     let bs ← arr term "binders"
@@ -212,18 +258,16 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let names ← bs.toList.mapM fun b => do
       CellClaims.fieldsExactly b ["name", "bound", "default", "span"]
       str b "name"
-    let occurrences (j : Json) (key : String) : Nat := (j.compress.splitOn key).length - 1
-    let binderKey (n : String) := s!"\"k\":\"binder\",\"name\":\"{n}\""
-    let packKey (n : String) := s!"\"k\":\"pack\",\"of\":\{\"k\":\"binder\",\"name\":\"{n}\""
-    let own (j : Json) : Bool := names.any fun n => occurrences j (binderKey n) > 0
+    let own (j : Json) : Bool := names.any fun n =>
+      let use := binderUse n j
+      use.value || use.pack
     if ← bs.anyM (fun b => do return own (← field b "bound")) then return ← opaqueMember
-    -- A pack parameter is a binder every occurrence of which is a rest's type;
-    -- one also used as a value's type keeps the member opaque.
-    let sigsJson := Json.arr sigTerms
-    let packs := names.filter fun n => occurrences sigsJson (packKey n) > 0
-    if packs.any (fun n => occurrences sigsJson (packKey n) != occurrences sigsJson (binderKey n)) then
-      return ← opaqueMember
-    let taken := freeColours (← get) (params.toList.flatten ++ seen.binders.map (·.2))
+    -- Until a pack's collected-array view is implemented, a binder used in
+    -- both roles remains opaque. Classification respects nested scopes.
+    let uses := names.map fun n => (n, binderUse n (.arr sigTerms))
+    if uses.any (fun (_, use) => use.pack && use.value) then return ← opaqueMember
+    let packs := (uses.filter fun (_, use) => use.pack).map Prod.fst
+    let taken := freeColours (← get) (params.toList.flatten ++ seen.binders.map (fun p => p.2.row))
     match (List.range colourBudget).find? (fun c => !taken.contains c) with
     | none => opaqueMember
     | some c =>
@@ -251,7 +295,9 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
           return (← packBound b).map (p.2, ·)
         return some (p.2, ← lowerType ds owner params seen b)
       let some bounds := bounds?.mapM id | return ← opaqueMember
-      let inner := { seen with binders := names.zip rows ++ seen.binders }
+      let bindings := (names.zip rows).map fun (name, row) =>
+        (name, if packs.contains name then BinderBinding.pack row else .value row)
+      let inner := { seen with binders := bindings ++ seen.binders }
       -- A method whose signatures cannot be lowered, as one whose unfolding
       -- keeps growing (`Promise<T>`'s `catch<R>` returns `Promise<T | R>`),
       -- stays opaque; the attempt leaves no rows behind.
@@ -273,7 +319,8 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
   | "binder" =>
     CellClaims.fieldsExactly term ["k", "name", "span"]
     match seen.binders.lookup (← str term "name") with
-    | some row => return [row]
+    | some (.value row) => return [row]
+    | some (.pack _) => throw "an argument pack used as a value type"
     | none => throw "a type parameter outside its generic method"
   | "literal" =>
     Fragment.translate (Json.mkObj [("top", toJson false), ("atoms", toJson [← literalAtom term])])
