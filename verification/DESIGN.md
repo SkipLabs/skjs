@@ -1418,6 +1418,28 @@ ordinary ground application, and each bound must hold by the graph's certified
 subtyping. The slot holds the instances as one callable with several
 signatures. Each instance holds of the value, so their conjunction does.
 
+As rules over the unit's context, with $\llbracket T\rrbracket$ the graph type a
+declared term lowers to and $T[\vec p:=\vec U]$ the term with its binders fixed
+to ground types:
+
+$$
+\frac{x\ \text{imported, declared at}\ T\ \text{with no binders}}
+     {\Gamma(x)=\llbracket T\rrbracket}\ \textsc{import}
+\qquad
+\frac{\begin{array}{c}
+x\ \text{declared at}\ \forall\vec p\le\vec B.\,T\quad
+\text{(certified by its own unit, or imported)}\\
+\forall k.\;\vec U_k\ \text{ground},\ |\vec U_k|=|\vec p|,\quad
+\forall i.\;G\vdash\llbracket U_{k,i}\rrbracket\le\llbracket B_i[\vec p:=\vec U_k]\rrbracket
+\end{array}}
+{\Gamma(x)=\bigwedge_k\llbracket T[\vec p:=\vec U_k]\rrbracket}\ \textsc{instances}
+$$
+
+where $\vec U_1,\ldots,\vec U_m$ are the type arguments the unit's calls of $x$
+name and the conjunction is one callable carrying every instance's signatures
+(`Scheme.moduleInstances`). The first rule is an assumption the result is
+relative to; the second is sound because each instance holds of the value.
+
 **Bigints and symbols.** The calculus has bigint and symbol values, each an
 opaque identity: bound, passed, stored and shape-tested, never computed with.
 The graph has their families, and `bigint` and `symbol` annotations lower to
@@ -1458,6 +1480,18 @@ global declaration. Reading them needs the forms those files use:
   rows differ only in which of them they name. A claimed parameter or result
   type is therefore compared by meaning: identical rows, or inclusion in
   both directions by certificates the proved checker accepts.
+
+The comparison of a claimed type $C$ with the annotation's $A$ (`sameMeaning`) is
+
+$$
+\frac{\operatorname{canon}_G(A)=\operatorname{canon}_G(C)}{A\simeq_G C}
+\qquad
+\frac{\operatorname{check}(G,A,C,p)=\mathsf{true}\quad\operatorname{check}(G,C,A,p')=\mathsf{true}}
+     {A\simeq_G C},
+$$
+
+and $A\simeq_G C$ implies $\llbracket A\rrbracket_G=\llbracket C\rrbracket_G$ by
+`check_sound` in each direction, so the claim may replace the annotation.
 
 **Constructors in the calculus.** A function's code says which of
 JavaScript's internal methods it has (`Invoke`: `call` or `construct`), and

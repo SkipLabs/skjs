@@ -102,6 +102,72 @@ Translation of the imported recursive `Json` declaration is a separate source
 closure step. The `allocDict` rule proves a fresh literal's dictionary view
 from every initializer at the index element type.
 
+### Keys, optional fields, bigints, symbols and construct signatures
+
+A record operand maps **property keys** to types. A key is a string or a
+symbol, and the two spaces are disjoint:
+
+$$
+\kappa ::= \mathsf{str}(s)\mid\mathsf{sym}(n),\qquad
+\varphi ::= \overline{\kappa{:}A}.
+$$
+
+A `refs` or `dict` clause carries, besides its invariant operands $\varphi_0,
+\ldots,\varphi_m$ and readonly views $\psi$, a list $\omega$ of **optional**
+fields, and `dict` its index operands $\overline{D}$. Writing $\ell$ for the
+object $\mathsf{obj}(\mathit{flds},\mathsf{absent})$ and $X$ for the meaning
+of an operand,
+
+$$
+\begin{aligned}
+\llbracket\mathsf{Ref}(\varphi_0\land\cdots\land\varphi_m;\psi;\omega)\rrbracket_n(W,v)
+&\iff \textstyle\bigwedge_i\mathsf{rec}(X\varphi_i)_n(W,v)\land
+      \mathsf{view}(X\psi)_n(W,v)\land\mathsf{opt}(X\omega)_n(W,v),\\
+\mathsf{opt}(\overline{\kappa{:}T})_n(W,v)
+&\iff v=\ell\ \land\ \forall(\kappa{:}T),\,\forall l.\;
+      \mathit{flds}(\kappa)=l\Rightarrow
+      \exists c.\;W(l)=c\land\forall j<n.\;c_j\equiv T_j,
+\end{aligned}
+$$
+
+and a `dict` clause adds $\forall D\in\overline{D}.\;\mathsf{dictView}(XD)$, which
+ranges over the object's **string** keys only (`optT`, `dictViewT`). An optional
+field constrains its key only where the object has it, and there its location
+holds exactly the contract; so a read gives $T$ or $\mathsf{undefined}$, and no
+rule writes it, since an object's keys are fixed at allocation.
+
+Two further primitive clauses and one callable clause:
+
+$$
+\begin{aligned}
+\llbracket\mathsf{bigint}\rrbracket_n(W,v)&\iff\exists i.\;v=\mathsf{bigint}(i),\qquad
+\llbracket\mathsf{symbol}\rrbracket_n(W,v)\iff\exists i.\;v=\mathsf{sym}(i),\\
+\llbracket\mathsf{Ctors}\,\overline{(\vec A,B)}\rrbracket_k(W,v)
+&\iff\mathsf{Constructible}(v)\ \land\ \forall(\vec A,B).\;\forall j<k,\;
+   U\sqsupseteq W|_j,\ \mathit{heap}\models_j U,\ \vec a\in X\vec A.\\
+&\qquad\exists t.\;\mathsf{new}\,v(\vec a)\to t\ \land\ t\in\mathsf{Safe}_j(XB)(U,\mathit{heap}),
+\end{aligned}
+$$
+
+where $\mathsf{Constructible}(v)$ says $v$ is a closed object whose code is
+construct-only, and $\mathsf{new}\,v(\vec a)\to t$ is the one step that binds
+$\vec a$ and an `undefined` receiver into its body (`ctorsT`, `ConstructsTo`).
+A `Ctors` clause has its own shape, so it meets no `arrs` or `callable` clause:
+no class is callable and no arrow constructible.
+
+Conjunction extends as before: same-shape clauses concatenate their operands,
+
+$$
+\begin{aligned}
+\mathsf{Ref}(\vec\varphi;\psi;\omega)\land\mathsf{Ref}(\vec\varphi';\psi';\omega')
+ &=\mathsf{Ref}(\vec\varphi\,\vec\varphi';\psi\psi';\omega\omega'),\\
+\mathsf{Ctors}\,L\land\mathsf{Ctors}\,M&=\mathsf{Ctors}\,(L\,M),\qquad
+c\land c=c\ \ (c\in\{\mathsf{bigint},\mathsf{symbol}\}),
+\end{aligned}
+$$
+
+and `bigint`, `symbol` and `Ctors` meet every other shape as $\bot$.
+
 A callable intersection concatenates both lists of requirements. Intersecting
 it with `arrs` adds call obligations while retaining its bag invariants.
 Subtyping between callable clauses requires the same bidirectional operand
@@ -344,7 +410,50 @@ coverage expands the clauses under the source labels, *splits* each of them, and
 matches every part by a covered clause under the target labels. A core judgment
 $G\vdash_c S\le T$ requires a finite table containing $(S,T)$ whose every entry
 passes this coverage rule. All cyclic premises occur under a reference or
-function constructor.
+function constructor. Only clause rows have clauses; a parameter or scheme row
+of a source (see [Parameter and scheme rows](#parameter-and-scheme-rows)) must
+reappear in the target, or the target must admit every value (`Opaque`):
+
+$$
+\frac{(S,T)\in\Delta\qquad
+      \forall(A,B)\in\Delta.\;
+      \Bigl(\forall i\in A.\;\mathsf{plain}_G(i)\lor i\in B\lor\top\in\mathsf{cl}_G(B)\Bigr)
+      \land\forall a\in\mathsf{split}(\mathsf{cl}_G(A)).\;\exists b\in\mathsf{cl}_G(B).\;
+      \Delta\vdash a\sqsubseteq b}
+     {G\vdash_c S\le T}
+$$
+
+where $\mathsf{cl}_G(A)$ is the list of clauses of $A$'s clause rows
+(`clausesOf`).
+
+Record coverage reads the target's operands one by one. Writing $\Delta^{\pm}(A,B)$
+for $\Delta(A,B)\land\Delta(B,A)$ and $\Phi=\varphi_0\cdots\varphi_m$ for the
+source's invariant operands,
+
+$$
+\frac{\begin{array}{c}
+\forall j,\,(\kappa{:}B)\in\varphi'_j.\;\exists(\kappa{:}A)\in\Phi.\;\Delta^{\pm}(A,B)\\
+\forall(\kappa{:}B)\in\psi'.\;\exists(\kappa{:}A)\in\Phi\,\psi.\;\Delta(A,B)\qquad
+\forall(\kappa{:}B)\in\omega'.\;\exists(\kappa{:}A)\in\Phi\,\omega.\;\Delta^{\pm}(A,B)
+\end{array}}
+{\Delta\vdash\mathsf{Ref}(\Phi;\psi;\omega)\sqsubseteq\mathsf{Ref}(\varphi'_0\cdots\varphi'_k;\psi';\omega')}
+$$
+
+(`CoversFields`, `CoversViews`, `CoversOptional`), and a `dict` target also
+needs every index operand covered by a source index operand at a subtype. An
+optional target field is met by a required or optional source field of the same
+key; a required target field only by a required one, since neither a view nor
+an optional field says the key is present. A construct signature is covered by
+one taking as many parameters, each at least as wide, with a result at most as
+wide:
+
+$$
+\frac{\forall(\vec C,D)\in M.\;\exists(\vec A,B)\in L.\;
+      |\vec A|=|\vec C|\land\forall i.\,\Delta(C_i,A_i)\land\Delta(B,D)}
+     {\Delta\vdash\mathsf{Ctors}\,L\sqsubseteq\mathsf{Ctors}\,M}
+\qquad
+\frac{}{\Delta\vdash c\sqsubseteq c}\ \ c\in\{\mathsf{bigint},\mathsf{symbol}\}.
+$$
 
 Splitting (`splitClause`) replaces a source $\mathsf{bool}$ clause with the pair
 $\mathsf{true},\mathsf{false}$ and leaves every other clause alone. It is
@@ -368,6 +477,51 @@ $$
 \qquad
 \frac{G\vdash S\le U\quad G\vdash U\le T}{G\vdash S\le T}.
 $$
+
+Two more rules read scheme rows ([Parameter and scheme rows](#parameter-and-scheme-rows)).
+An **instance map** $\theta$ sends labels to types; a label it does not name is
+its own image, and $\theta(A)$ is the union of the images of $A$'s labels. For a
+scheme row with binders $\vec p$, $\theta$ is an instance on a domain $D$
+(`InstOk`) when every $i\in D$ satisfies:
+
+- if $i\in\vec p$, then $i$ is a parameter row;
+- otherwise, if $i$ is a parameter row, then $\theta(i)=\{i\}$;
+- otherwise, $i$ is a clause row, $\theta(i)=\{j\}$ for a clause row $j$ with
+  $G(j)=G(i)[\theta]$ (every operand of every clause mapped), and every operand
+  of $G(i)$ lies in $D$.
+
+A scheme row has no instance map of its own kind: a scheme row in $D$ fails the
+check. Read at the assignment giving each binder $p$ the meaning of $\theta(p)$,
+every $A\subseteq D$ means exactly $\theta(A)$ (`inst_type`). Then, with
+$\sigma[\theta]=(\theta(Q),\theta(\vec C),\theta(D))$ for a signature
+$\sigma=(Q,\vec C,D)$:
+
+$$
+\frac{i\ \text{a scheme row}\ (\vec p;\Sigma)\quad
+      \theta\ \text{an instance on}\ D\quad
+      T\equiv_G\mathsf{arrs}(L)\quad
+      \forall\tau\in L.\;\exists\sigma\in\Sigma.\;\sigma\subseteq D\land\tau=\sigma[\theta]}
+     {G\vdash\{i\}\le T}\ \textsc{inst}
+$$
+
+A type below a scheme's signatures with the binders opaque is below the scheme,
+provided it reads none of the binders. Let $\mathsf{reads}_G(i)$ be the labels
+$i$ reads: a clause row's operands, a scheme row's signature types. $D$ is
+closed when $\mathsf{reads}_G(i)\subseteq D$ for every $i\in D$ (`closedReads`):
+
+$$
+\frac{j\ \text{a scheme row}\ (\vec p;\Sigma)\quad
+      U\equiv_G\mathsf{arrs}(\Sigma)\quad
+      D\ \text{closed}\quad D\cap\vec p=\emptyset\quad S\subseteq D\quad
+      G\vdash S\le U}
+     {G\vdash S\le\{j\}}\ \textsc{gen}
+$$
+
+`Sub.inst` and `Sub.gen` are these rules. The second is sound because a closed
+$D$ avoiding $\vec p$ means the same at any two assignments that differ only on
+$\vec p$ (`independent`), and because every rule of `Sub` holds at every
+assignment (`Sub.sound_at`): the premise $G\vdash S\le U$, derived once, holds
+at each instantiation of $\vec p$.
 
 Reflexivity and invariance under reordering or duplicating union labels follow
 (`Sub.refl`, `Sub.congr`). Transitivity composes completed proofs, not unchecked
@@ -509,6 +663,29 @@ reassignment of its binders, which are parameter rows. The denotation is one
 guarded fixed point over (assignment, label) (`qDenote`), and `meaning G` reads
 it at `G.env`. No check reads `env`, so every theorem proved for all graphs
 holds at every reassignment.
+
+Formally, with $\eta$ an assignment of admissible families of closed values to
+labels and $\llbracket A\rrbracket^\eta=\bigcup_{i\in A}\llbracket i\rrbracket^\eta$,
+the denotation is the guarded fixed point of
+
+$$
+\llbracket i\rrbracket^\eta=
+\begin{cases}
+\eta(i) & i\ \text{a parameter row},\\[2pt]
+\bigl\{\,v\;\bigm|\;\mathsf{Invocable}(v)\land\forall\vec X.\;
+  v\in\mathsf{Calls}\bigl(\{(\llbracket Q\rrbracket^{\eta'},\llbracket\vec C\rrbracket^{\eta'},\llbracket D\rrbracket^{\eta'})\mid(Q,\vec C,D)\in\Sigma\}\bigr),\
+  \eta'=\eta[\vec p\mapsto\vec X]\,\bigr\}
+  & i\ \text{a scheme row}\ (\vec p;\Sigma),\\[2pt]
+\textstyle\bigcup_{c\in G(i)}\llbracket c\rrbracket^\eta & i\ \text{a clause row},
+\end{cases}
+$$
+
+where $\vec X$ ranges over admissible families of closed values, one per binder
+(`qLayer`, `qDenote`), and $\llbracket A\rrbracket_G=\llbracket A\rrbracket^{G.\mathit{env}}$
+is `meaning`. A member of a scheme row meets each instance's signatures
+(`scheme_elim`), and a callable meeting them at every instantiation is a
+member (`scheme_intro`). Without scheme rows this is the parametric semantics
+`denoteP` (`qDenote_no_schemes`).
 
 Only clause rows have clauses. A type holding a parameter or scheme row has no
 expansion, so no rule that reads a clause (`Represents`, `Answers`, the atoms

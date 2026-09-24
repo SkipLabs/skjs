@@ -40,6 +40,40 @@ before appending.
 All three use the same constructor and the same allocation step, `Step.makeV`.
 The closure body is not evaluated during creation. There is no bare lambda value.
 
+Since that kernel, the values also include numbers, strings,
+$\mathsf{bigint}(i)$ and $\mathsf{sym}(i)$ (a symbol is its identity: distinct
+declarations are distinct symbols); an object's fields are keyed by property
+keys $\kappa::=\mathsf{str}(s)\mid\mathsf{sym}(i)$; and the tests include
+$\mathsf{isNum}$, $\mathsf{isStr}$, $\mathsf{isBigint}$, $\mathsf{isSymbol}$ and
+the singleton equalities. A closure descriptor records which invocation its code
+admits, $\mathsf{closure}(m,t,\mathit{kind})$ with
+$\mathit{kind}\in\{\mathsf{call},\mathsf{construct}\}$: JavaScript gives a
+function object `[[Call]]` and `[[Construct]]` separately, an arrow has only
+the first and a class only the second. A plain call dispatches only call code
+(`dispatch` refuses construct code), and $\mathsf{new}\,f(\vec a)$ is its own
+term, which evaluates the callee, then the actuals left to right, and runs only
+construct code, with `undefined` for the receiver:
+
+$$
+\frac{h,f\to h',f'}{h,\mathsf{new}\,f(\vec a)\to h',\mathsf{new}\,f'(\vec a)}
+\qquad
+\frac{f\ \text{a value}\quad a_1,\ldots,a_{i-1}\ \text{values}\quad h,a_i\to h',a_i'}
+     {h,\mathsf{new}\,f(\vec a)\to h',\mathsf{new}\,f(\vec a[i:=a_i'])}
+$$
+
+$$
+\frac{\vec a\ \text{values}}
+     {h,\mathsf{new}\,\mathsf{obj}(\mathit{fs},\mathsf{closure}(m,b,\mathsf{construct}))(\vec a)
+      \to h,\mathsf{bind}_m(\vec a,\mathsf{undefined},b)}
+$$
+
+(`constructL`, `constructArg`, `constructV`), where $\mathsf{bind}_m$ is the
+same parameter binding a call uses, missing actuals `undefined`. The step
+relation stays deterministic (`Step_det`). What a construct signature promises
+is in [the clause's meaning](POSITIVE-TYPES.md#keys-optional-fields-bigints-symbols-and-construct-signatures):
+the construct step's result is safe at the signature's result, one level below
+the budget, as a call's body is.
+
 `make_rule` proves heap and world extension once, with a result obligation for
 the fresh object's descriptor. `alloc_rule` and `attach_rule` specialize that
 proof to plain reference and callable contracts.

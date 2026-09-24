@@ -43,8 +43,11 @@ later rests on this layer and none of it changes these rules.
 ### Judgments and constructor views
 
 Fix a normalized positive graph $G$. A type $A$ is a finite list of graph labels,
-interpreted as their union. Write $A\equiv_G\gamma$ when expanding those labels
-yields exactly the singleton clause $[\gamma]$. This is a finite syntactic equality, not a
+interpreted as their union. Write $A\equiv_G\gamma$ when every label of $A$ is a
+[clause row](POSITIVE-TYPES.md#parameter-and-scheme-rows) and expanding those
+labels yields exactly the singleton clause $[\gamma]$ (`Represents`). A type
+holding a parameter or scheme row has no expansion, so no constructor view of
+it exists. This is a finite syntactic equality, not a
 semantic-equivalence oracle. Below, writing a constructor as a type abbreviates
 such a view of its graph labels.
 
@@ -334,7 +337,28 @@ The separate `readDict` rule covers a fixed string field name with the same
 result contract; a symbol key is never read through a dictionary. The `readOptional` rule reads an optional
 field of a record at its contract or `undefined`: where the object has the
 key, its location holds exactly that contract (`optT`), and where it does
-not, the read is `undefined`. A write to an optional field is not typed, since
+not, the read is `undefined`. With $\mathsf{Ref}(\varphi;\psi;\omega)$ a record's
+invariant fields, readonly views and optional fields, and $\kappa$ a
+[property key](POSITIVE-TYPES.md#keys-optional-fields-bigints-symbols-and-construct-signatures):
+
+$$
+\frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Ref}(\varphi;\psi;\omega)\quad(\kappa{:}A)\in\psi}
+     {\Gamma\vdash_G a.\kappa:A}
+\qquad
+\frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Ref}(\varphi;\psi;\omega)\quad(\kappa{:}A)\in\omega
+      \quad U\equiv_G\mathsf{Undefined}}
+     {\Gamma\vdash_G a.\kappa:A\cup U}
+$$
+
+$$
+\frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Dict}(\varphi;\psi;\overline{D};\omega)\quad A\in\overline{D}
+      \quad U\equiv_G\mathsf{Undefined}}
+     {\Gamma\vdash_G a.\mathsf{str}(s):A\cup U}
+$$
+
+These are `readView`, `readOptional` and `readDict`. The `read` and `write`
+rules above take $(\kappa{:}A)\in\varphi$ from the invariant fields alone,
+whatever the views and optional fields. A write to an optional field is not typed, since
 the object's keys are fixed at allocation. `allocDict` establishes a dictionary view for a fresh literal only
 after checking every initializer at $A$. None of these rules grants a write
 capability to a readonly dictionary.
@@ -399,7 +423,20 @@ holding both literals, so `ifBool` can branch on it; a settled answer still
 uses `ifTag`.
 
 For branching, $\operatorname{Answers}_G(A,k,q)$ checks that every expanded
-clause of $A$ gives the same known Boolean answer $q$ to test $k$. Shape
+clause of $A$ gives the same known Boolean answer $q$ to test $k$, and that
+$A$ is of clause rows, since a parameter row's members could be anything:
+
+$$
+\operatorname{Answers}_G(A,k,q)\iff
+\forall i\in A.\;\mathsf{plain}_G(i)\ \land\
+\forall\gamma\in\operatorname{expand}_G(A).\;\operatorname{tag}(k,\gamma)=q.
+$$
+
+A shape test's answer on a clause is read off its shape: $\mathsf{isBigint}$
+and $\mathsf{isSymbol}$ answer true exactly on the $\mathsf{bigint}$ and
+$\mathsf{symbol}$ clauses, and $\mathsf{isFun}$ answers true on an arrow, a
+callable and a construct-signature clause alike, since `typeof` reports a
+class as a function. Shape
 tests have an answer determined by the clause's shape; numeric singleton
 equality also examines its bits. A broad number clause has no fixed answer
 to that equality, so it establishes neither outcome:
