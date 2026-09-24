@@ -1647,11 +1647,21 @@ store callbacks through the existing reference and arrow rules, and the source
 tests distinguish a saved callback from a replacement and tie recursive
 invocation through a cell.
 
-Optional fields are the open one: an absent field must be distinguished from a
-present field holding `undefined`, on reads and at initialization. That means
-defining presence separately from value type, then choosing the presence tests
-and the mutation policy. A milestone is reached through producer claims and
-independent consumption, not through a model fixture alone.
+**Optional fields.** An optional field is one more list on a record clause,
+`optional`, with one meaning (`optT`): where the object has the key, its
+location holds exactly the stated contract, as a required mutable field's
+does; where it does not, nothing is claimed, and a read is `undefined`. So
+presence is separate from the value's type: an absent key and a present key
+holding `undefined` are different objects, both of which the type admits when
+`undefined` is in the contract. `readOptional` reads the field at its contract
+or `undefined`. No rule writes it, since an object's keys are fixed at
+allocation and the model has no key addition. An optional field is covered by
+a source field of the same key, required or optional, with an equivalent
+contract; a record that does not name the key does not cover it, since it may
+hold the key at any type (SKJS agrees; TypeScript does not check this). An
+optional method, `return?(...)`, is an optional field. A readonly optional
+field would need the view form of presence and is refused; an `in` test and
+presence narrowing are not yet in the fragment.
 
 The callable forms still to be taken, and their order, are the
 [callable surface](tests/callables/README.md#the-callable-surface). Each should

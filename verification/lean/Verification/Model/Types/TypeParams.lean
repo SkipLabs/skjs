@@ -45,9 +45,10 @@ def substClause [DecidableEq ι] (p : ι) (A : List ι) : Clause (List ι) → C
   | .strLit v => .strLit v
   | .bigint => .bigint
   | .symbol => .symbol
-  | .refs a bs vs => .refs (substFields p A a) (bs.map (substFields p A)) (substFields p A vs)
-  | .dict a bs vs ds => .dict (substFields p A a) (bs.map (substFields p A))
-      (substFields p A vs) (ds.map (substTy p A))
+  | .refs a bs vs os => .refs (substFields p A a) (bs.map (substFields p A)) (substFields p A vs)
+      (substFields p A os)
+  | .dict a bs vs ds os => .dict (substFields p A a) (bs.map (substFields p A))
+      (substFields p A vs) (ds.map (substTy p A)) (substFields p A os)
   | .arrs L S => .arrs (L.map fun q => (substTy p A q.1, q.2.1.map (substTy p A), substTy p A q.2.2))
       (S.map fun q => (substTy p A q.1, q.2.1.map (substTy p A), substTy p A q.2.2.1,
         substTy p A q.2.2.2))
@@ -154,6 +155,9 @@ theorem instantiate_ref [DecidableEq ι] {G : NormalGraph ι} {P η} {p b : ι}
     simp only [meaningP, setSem, List.mem_singleton, exists_eq_left]
     rw [unfold_param]
     simp [paramLayer, hb, hG, semList, setSem, sem, ReferenceConjunctions.famsOf, viewT]
+    intro h
+    obtain ⟨flds, rfl, -⟩ := h.1
+    exact optT_nil
   have href :
       ReferenceConjunctions.refsT [(valueField, meaningP G P (update η p T) [p])] [] n W v ↔
         refT (meaningP G P (update η p T) [p]) n W v :=
@@ -437,7 +441,8 @@ theorem alloc_safeP {G : NormalGraph ι} {P η} {Γ a A Ref f n W h ρ}
     (fun hs => CallArguments.Step.makeArgs (.head hs)) n W h _ hw hh (ih n W h ρ he hw hh)
   intro j hj U hx hu heap v hok hv ha'
   apply Safe_mono j (fun k _ V w hw => (represents_semP hr hRef k V w).mpr
-    ⟨⟨hw, by simp⟩, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm⟩)
+    ⟨⟨hw, by simp⟩, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
+      by obtain ⟨flds, rfl, -⟩ := hw; simpa [ReferenceConjunctions.famsOf] using optT_nil⟩)
   refine make_fields_rule (As := [meaningP G P η A])
     (by intro X hX; simp only [List.mem_singleton] at hX; subst hX
         exact meaningP_adm G P η (fun i hi => (hC i hi).1) A)

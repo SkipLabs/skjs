@@ -110,11 +110,11 @@ for (const [file, expected] of [
     ["InputDefinition", "skipruntime-ts/core/src/api.ts", "InputDefinition", "ClassDeclaration"],
     ["runService", "skipruntime-ts/server/src/server.ts", "runService", "FunctionDeclaration"],
   ]);
-  // The runtime's value imports resolve, and `runService`'s `Promise` is read
-  // from the standard library's merged declarations. The first refusal is
-  // `Iterator`'s optional methods `return?` and `throw?`, which `Iterable` reaches.
+  // The runtime's value imports resolve, and `runService`'s `Promise` and the
+  // `Iterable` the mappers return are read from the standard library. The
+  // first refusal is `ResourceClass`'s constructor type.
   assert.throws(() => collectDeclarations(source, { tsconfigPath: upstreamConfig }),
-    /unsupported method signature in \S*lib\.es2015\.iterable\.d\.ts#Iterator/);
+    /type outside the fragment \(ConstructorType\) in \S*api\.ts#ResourceClass/);
   // Each runtime interface sum.ts imports, applied in a client of the same
   // project, and the first declaration the graph refuses on its way.
   const probe = mkdtempSync(join(tmpdir(), "skjs-runtime-api-"));
@@ -123,14 +123,11 @@ for (const [file, expected] of [
     JSON.stringify({ extends: upstreamConfig, include: ["*.ts"] }));
   // A generic method is an opaque member and a `unique symbol` key is a
   // field keyed by that symbol, so `Resource`, `Context` and
-  // `EagerCollection` (through `Managed`'s `[sk_managed]`) collect; `Mapper`
-  // and `Values` reach the library's `Iterable`, and stop at `Iterator`'s optional
-  // methods.
+  // `EagerCollection` (through `Managed`'s `[sk_managed]`) collect, and so do
+  // `Mapper` and `Values`, through the library's `Iterable` and `Iterator`.
   for (const [use, imports, refusal] of [
-    ["Mapper<string, number, string, number>", "Mapper",
-      /unsupported method signature in \S*lib\.es2015\.iterable\.d\.ts#Iterator/],
-    ["Values<number>", "Values",
-      /unsupported method signature in \S*lib\.es2015\.iterable\.d\.ts#Iterator/],
+    ["Mapper<string, number, string, number>", "Mapper", null],
+    ["Values<number>", "Values", null],
     ["EagerCollection<string, number>", "EagerCollection", null],
     ["Resource<SharedCollections>", "Resource, SharedCollections", null],
     ["Context", "Context", null],

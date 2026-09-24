@@ -40,11 +40,17 @@ let encode (proposal : Proposal.t) =
     | Top -> [intern (Array [String "top"])]
     | Named (id,args) -> declaration_labels id args
     | Shape shape ->
-      let writes,reads = List.partition (fun (f:Semantic.field) -> f.write <> None) shape.fields in
+      (* An optional field constrains its key only where the object has it,
+         under one invariant contract; a readonly one has no encoding. *)
+      let optional,present = List.partition (fun (f:Semantic.field) -> f.optional) shape.fields in
+      let writes,reads = List.partition (fun (f:Semantic.field) -> f.write <> None) present in
       let fields writable fs = Array (List.map (fun (f:Semantic.field) ->
-        if f.optional then unsupported "optional presence has no SourceClaims encoding yet";
         if writable && f.write <> Some f.read then unsupported "asymmetric read/write capability export";
         Array [key_json f.name;labels f.read]) fs) in
+      if List.exists (fun (f:Semantic.field) -> f.write = None) optional then
+        unsupported "a readonly optional field needs a view presence form";
+      let optional_list = match optional with
+        | [] -> [] | fs -> ["optional",fields true fs] in
       let fields,views = fields true writes,fields false reads in
       List.iter (fun (a:Semantic.signature) ->
         if a.quantified <> [] then unsupported "quantified callable claim encoding") shape.calls;
@@ -72,12 +78,13 @@ let encode (proposal : Proposal.t) =
         | None -> match shape.fields,shape.string_index,shape.calls with
           | _,Some index,[] ->
             if index.writable <> None then unsupported "mutable string index signature";
-            Object ["dict",Object ["first",fields;"rest",Array [];"views",views;
-              "indexes",Array [labels index.value]]]
+            Object ["dict",Object (["first",fields;"rest",Array [];"views",views;
+              "indexes",Array [labels index.value]] @ optional_list)]
           | _,Some _,_ -> unsupported "callable with string index needs a combined clause"
-          | _,None,[] -> Object ["refs",Object ["first",fields;"rest",Array [];"views",views]]
+          | _,None,[] -> Object ["refs",Object (["first",fields;"rest",Array [];"views",views] @ optional_list)]
           | [],None,_ -> Object ["arrs",Object calls]
           | _,_,_ ->
+            if optional <> [] then unsupported "callable with optional fields";
             if reads <> [] then unsupported "callable with readonly fields";
             Object ["callable",Object (["first",fields;"rest",Array []] @ calls)] in
       [intern (Array [clause])]

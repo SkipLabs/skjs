@@ -61,6 +61,12 @@ def arrayElement (j : Json) : Option Json := do
   let rest ← (atom.getObjVal? "rest").toOption
   if rest == .null then none else some rest
 
+/-- Whether a record claim names an optional field. -/
+private def hasOptional (atom : Json) : Bool :=
+  match atom.getObjVal? "fields" with
+  | .ok (.arr fs) => fs.any fun f => (f.getObjVal? "optional").toOption == some (.bool true)
+  | _ => false
+
 mutual
 /-- Callable operands may recursively contain callables, arrays and primitives.
 Every union and overload arm is checked; record operands remain excluded. -/
@@ -131,6 +137,8 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
       let views := fields.filterMap fun (name, A, writable) =>
         if writable then none else some (name, A)
       return [← SourceTypes.use (.dict invariant [] views [element])]
+    else if (← jStr (← jField atom "a")) == "record" && hasOptional atom then
+      return [← optionalRecord atom]
     else
       let single := Json.mkObj [("top",toJson false),("atoms",toJson [atom])]
       -- The callable table grows as this walks it, so a numeric parameter or
@@ -174,6 +182,23 @@ partial def arrayType (atom : Json) : SourceTypes.Lowering Nat := do
   if (← jStr (← jField atom "a")) == "store" then pure store
   else if readonly then SourceTypes.use (.refs [] [] [(SourceTypes.storeField, [store])])
   else SourceTypes.use (.refs [(SourceTypes.storeField, [store])] [] [])
+
+/-- A record with optional fields: each field, required or optional, under
+the one contract its read and write agree on. An optional field constrains its
+key only where the object has it. Absorption does not apply to these records. -/
+partial def optionalRecord (atom : Json) : SourceTypes.Lowering Nat := do
+  let fields ← CellClaims.decodeFields
+    (Json.mkObj [("top",toJson false),("atoms",toJson [atom])])
+  let lowered ← fields.mapM fun (name, read, write, optional) => do
+    let r ← callableType read
+    let w ← callableType write
+    if r != w then
+      throw (if optional then "a readonly optional field needs a view presence form"
+        else "cell read and write types do not describe the same invariant")
+    return (name, r, optional)
+  let required := lowered.filterMap fun (n, t, o) => if o then none else some (n, t)
+  let optional := lowered.filterMap fun (n, t, o) => if o then some (n, t) else none
+  SourceTypes.use (.refs required [] [] optional)
 end
 
 /-- Required record fields admit primitives and callables, but not nested
@@ -232,6 +257,8 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
       (fun a => (a.getObjVal? "and").toOption.isSome)
   let (indexed, plain) := plain.partition
     (fun a => (a.getObjVal? "indexSignature").toOption.isSome)
+  let (withOptional, plain) := plain.partition hasOptional
+  let optionals ← withOptional.mapM fun a => do return [← optionalRecord a]
   let records ← CellUnion.lower (← plain.mapM cellContract)
   let dictionaries ← indexed.mapM fun atom =>
     callableType (Json.mkObj [("top", toJson false), ("atoms", toJson [atom])])
@@ -252,7 +279,7 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
     | "number" | "numberlit" | "string" | "stringlit" | "void" | "bigint" | "symbol" =>
       SourceTypes.numberLabels (← CellClaims.primitive single)
     | _ => SourceTypes.translate (← CellClaims.primitive single)
-  return (records ++ dictionaries ++ conjunctions ++ arms).flatten.mergeSort (· ≤ ·) |>.eraseDups
+  return (records ++ optionals ++ dictionaries ++ conjunctions ++ arms).flatten.mergeSort (· ≤ ·) |>.eraseDups
 
 /-- A point assertion separates the persistent reference type from a current
 contents predicate. It is never accepted by erasing `current`. Ordinary function

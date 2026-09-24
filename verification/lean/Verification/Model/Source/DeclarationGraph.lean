@@ -214,11 +214,17 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     return [← use row]
   | "object" =>
     CellClaims.fieldsExactly term ["k", "fields", "stringIndex", "calls", "span"]
-    let fs ← (← arr term "fields").mapM fun f => do
-      if ← bool f "optional" then throw "optional declaration fields need presence semantics"
+    -- An optional field constrains its key only where the object has it; a
+    -- readonly one would need a view form of presence, which is not stated.
+    let all ← (← arr term "fields").mapM fun f => do
       let name ← PropKey.decode (← field f "name")
       let value ← lowerType ds owner params seen (← field f "type")
-      return (name, value, ← bool f "readonly")
+      let optional ← bool f "optional"
+      if optional && (← bool f "readonly") then
+        throw "a readonly optional field needs a view presence form"
+      return (name, value, ← bool f "readonly", optional)
+    let fs := all.filterMap fun (n, v, r, o) => if o then none else some (n, v, r)
+    let optional := all.toList.filterMap fun (n, v, _, o) => if o then some (n, v) else none
     let names := fs.toList.map (·.1)
     if names.eraseDups.length != names.length then throw "duplicate declaration field"
     let index ← field term "stringIndex"
@@ -245,8 +251,10 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       else variadic := variadic ++ [(receiver, domains.toList,
         ← lowerType ds owner params seen rest, result)]
     let row ← if fixed.isEmpty && variadic.isEmpty then
-        if indexes.isEmpty then use (.refs writes [] views)
-        else use (.dict writes [] views indexes)
+        if indexes.isEmpty then use (.refs writes [] views optional)
+        else use (.dict writes [] views indexes optional)
+      else if !optional.isEmpty then
+        throw "a callable object with an optional field needs a combined clause"
       else if !indexes.isEmpty || !views.isEmpty then
         throw "callable object with index or readonly field needs a combined clause"
       else if writes.isEmpty then use (.arrs fixed variadic)
@@ -424,10 +432,12 @@ private partial def rigidClaim (ds : Array Definition) (owner : Nat) (env : Arra
     if (← field term "stringIndex") != .null || !(← arr term "calls").isEmpty then
       throw "a declaration with call or index signatures applied to a type parameter is outside the fragment"
     let fields ← (← arr term "fields").mapM fun f => do
-      if ← bool f "optional" then throw "optional declaration fields need presence semantics"
+      let optional ← bool f "optional"
+      if optional && (← bool f "readonly") then
+        throw "a readonly optional field needs a view presence form"
       let value ← rigidClaim ds owner env seen (← field f "type")
       let write := if ← bool f "readonly" then claimType [] else value
-      return Json.mkObj [("name", ← field f "name"), ("optional", toJson false),
+      return Json.mkObj [("name", ← field f "name"), ("optional", toJson optional),
         ("read", value), ("write", write)]
     return claimType [Json.mkObj [("a", toJson "record"), ("fields", toJson fields),
       ("indexes", Json.mkObj [("string", toJson "absent"), ("number", toJson "absent"),
@@ -537,10 +547,12 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
       throw "a call signature in a source annotation is outside the fragment"
     let fields ← (← arr term "fields").mapM fun f => do
       CellClaims.fieldsExactly f ["name", "optional", "readonly", "type", "span"]
-      if ← bool f "optional" then throw "an optional field needs presence semantics"
+      let optional ← bool f "optional"
+      if optional && (← bool f "readonly") then
+        throw "a readonly optional field needs a view presence form"
       let value ← recur (← field f "type")
       let write := if ← bool f "readonly" then claimType [] else value
-      return Json.mkObj [("name", ← field f "name"), ("optional", toJson false),
+      return Json.mkObj [("name", ← field f "name"), ("optional", toJson optional),
         ("read", value), ("write", write)]
     let index ← field term "stringIndex"
     if fields.isEmpty && index == .null then throw "a record with no field has no location"

@@ -305,7 +305,11 @@ $$
 $$
 
 The separate `readDict` rule covers a fixed string field name with the same
-result contract; a symbol key is never read through a dictionary. `allocDict` establishes a dictionary view for a fresh literal only
+result contract; a symbol key is never read through a dictionary. The `readOptional` rule reads an optional
+field of a record at its contract or `undefined`: where the object has the
+key, its location holds exactly that contract (`optT`), and where it does
+not, the read is `undefined`. A write to an optional field is not typed, since
+the object's keys are fixed at allocation. `allocDict` establishes a dictionary view for a fresh literal only
 after checking every initializer at $A$. None of these rules grants a write
 capability to a readonly dictionary.
 

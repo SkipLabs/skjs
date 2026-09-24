@@ -21,11 +21,12 @@ private def toNatClause : PositiveNormalization.Clause (List (Fin 7)) → Positi
   | .strLit v => .strLit v
   | .bigint => .bigint
   | .symbol => .symbol
-  | .refs a bs vs => .refs (a.map fun (f,A) => (f,A.map Fin.val)) (bs.map fun fs => fs.map fun (f,A) => (f,A.map Fin.val))
-      (vs.map fun (f,A) => (f,A.map Fin.val))
-  | .dict a bs vs ix => .dict (a.map fun (f,A) => (f,A.map Fin.val))
+  | .refs a bs vs os => .refs (a.map fun (f,A) => (f,A.map Fin.val)) (bs.map fun fs => fs.map fun (f,A) => (f,A.map Fin.val))
+      (vs.map fun (f,A) => (f,A.map Fin.val)) (os.map fun (f,A) => (f,A.map Fin.val))
+  | .dict a bs vs ix os => .dict (a.map fun (f,A) => (f,A.map Fin.val))
       (bs.map fun fs => fs.map fun (f,A) => (f,A.map Fin.val))
       (vs.map fun (f,A) => (f,A.map Fin.val)) (ix.map (List.map Fin.val))
+      (os.map fun (f,A) => (f,A.map Fin.val))
   | .arrs L S => .arrs (L.map fun (c,a,b) => (c.map Fin.val,a.map (List.map Fin.val),b.map Fin.val))
       (S.map fun (c,a,e,r) => (c.map Fin.val,a.map (List.map Fin.val),e.map Fin.val,r.map Fin.val))
   | .callable a bs L S => .callable (a.map fun (f,A) => (f,A.map Fin.val)) (bs.map fun fs => fs.map fun (f,A) => (f,A.map Fin.val))

@@ -34,8 +34,10 @@ export type Clause =
   | "bigint"
   | "symbol"
   /** `views` are read capabilities: a field read at a sound upper bound on
-   * its contents, with no write permission through this contract. */
-  | { refs: { first: Fields; rest: Fields[]; views: Fields } }
+   * its contents, with no write permission through this contract. `optional`
+   * fields constrain their key only where the object has it; the field is
+   * left out when there are none. */
+  | { refs: { first: Fields; rest: Fields[]; views: Fields; optional?: Fields } }
   /** Readonly string index views apply to every present own field. */
   | {
       dict: {
@@ -43,6 +45,7 @@ export type Clause =
         rest: Fields[];
         views: Fields;
         indexes: Labels[];
+        optional?: Fields;
       };
     }
   /** A tuple contract on an array store: required positions, optional
@@ -303,6 +306,7 @@ function clauseText(c: Clause): string {
     return [
       [c.refs.first, ...c.refs.rest].map(printFields).join(" & "),
       ...(c.refs.views.length ? [`readonly ${printFields(c.refs.views)}`] : []),
+      ...(c.refs.optional?.length ? [`optional ${printFields(c.refs.optional)}`] : []),
     ].join(" & ");
   if ("dict" in c)
     return [
@@ -311,6 +315,7 @@ function clauseText(c: Clause): string {
       ...c.dict.indexes.map(
         (index) => `readonly {[key: string]: ${printLabels(index)}}`,
       ),
+      ...(c.dict.optional?.length ? [`optional ${printFields(c.dict.optional)}`] : []),
     ].join(" & ");
   const calls = (arrows: Arrow[], variadic: RestArrow[] = []) =>
     `calls[${[...arrows.map(arrowText), ...variadic.map(restArrowText)].join("; ")}]`;

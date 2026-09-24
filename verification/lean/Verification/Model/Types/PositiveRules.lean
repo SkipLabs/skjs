@@ -367,6 +367,14 @@ abbrev CoversViews (R : List ι → List ι → Prop)
     (source : List (List (PropKey × List ι))) (views target : List (PropKey × List ι)) : Prop :=
   ∀ q ∈ target, ∃ p ∈ source.flatten ++ views, p.1 = q.1 ∧ R p.2 q.2
 
+/-- An optional field is covered by a source field of the same key, required
+or optional, whose contract is equivalent to it: where the object has the key,
+its location has that contract. Neither a view nor an optional source field
+covers a required target field, since neither says the key is present. -/
+abbrev CoversOptional (R : List ι → List ι → Prop)
+    (source : List (List (PropKey × List ι))) (optional target : List (PropKey × List ι)) : Prop :=
+  ∀ q ∈ target, ∃ p ∈ source.flatten ++ optional, p.1 = q.1 ∧ R p.2 q.2 ∧ R q.2 p.2
+
 /-- Two rest contracts agree: both absent, or both present and equivalent. -/
 def CoversRest (R : List ι → List ι → Prop) (readonly : Bool) : Option (List ι) → Option (List ι) → Prop
   | none, none => True
@@ -397,10 +405,11 @@ def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
   | .str, .str => True
   | .strLit _, .str => True
   | .strLit a, .strLit b => a = b
-  | .refs a bs vs, .refs c ds ws => CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws
-  | .dict a bs vs ix, .dict c ds ws iy =>
+  | .refs a bs vs os, .refs c ds ws ps => CoversFields R (a :: bs) (c :: ds) ∧
+      CoversViews R (a :: bs) vs ws ∧ CoversOptional R (a :: bs) os ps
+  | .dict a bs vs ix os, .dict c ds ws iy ps =>
       CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws ∧
-      ∀ y ∈ iy, ∃ x ∈ ix, R x y
+      (∀ y ∈ iy, ∃ x ∈ ix, R x y) ∧ CoversOptional R (a :: bs) os ps
   | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
       (∀ p ∈ M, CallArrow G R L S p.1 p.2.1 p.2.2) ∧ ∀ t ∈ T, ∃ s ∈ S, RestCovers R s t
   | .callable a bs L S, .callable c ds M T =>
@@ -477,6 +486,43 @@ theorem covers_views_sound {G : NormalGraph ι} {R : List ι → List ι → Pro
     exact ⟨flds, l, c0, he, hf, hl, fun j hj W' u hu => hr j hj pl y hpy W' u ((hag j hj W' u).mp hu)⟩
   · obtain ⟨flds, l, c0, he, hf, hl, hag⟩ := viewT_at (mem_famsOf.mpr ⟨pl, hp, rfl⟩) hv.2
     exact ⟨flds, l, c0, he, hf, hl, fun j hj W' u hu => hr j hj pl y hpy W' u (hag j hj W' u hu)⟩
+
+/-- A covered optional field: where the key is present, the location is the
+one a source field of that key names, whose contract both relations identify
+with the target's. -/
+theorem covers_optional_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
+    {a : List (PropKey × List ι)} {bs : List (List (PropKey × List ι))}
+    {os ps : List (PropKey × List ι)}
+    (hc : CoversOptional R (a :: bs) os ps) (n : Nat)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
+    (W : WorldT n) (v : Val)
+    (hv : refsT (famsOf (meaning G) a) (bs.map (famsOf (meaning G))) n W v ∧
+      optT (famsOf (meaning G) os) n W v) :
+    optT (famsOf (meaning G) ps) n W v := by
+  obtain ⟨flds, he, -⟩ := hv.1.1
+  subst he
+  refine ⟨flds, rfl, ?_⟩
+  intro f T hm l hl
+  obtain ⟨y, hy, rfl⟩ := mem_famsOf.mp hm
+  obtain ⟨⟨pf, pl⟩, hp, hpf, hpy, hyp⟩ := hc (f, y) hy
+  simp only at hpf
+  subst hpf
+  have both : ∀ (c0 : Ctr n), (∀ j (hj : j < n) (W' : WorldT j) u, c0 j hj W' u ↔ meaning G pl j W' u) →
+      ∀ j (hj : j < n) (W' : WorldT j) u, c0 j hj W' u ↔ meaning G y j W' u :=
+    fun c0 hag j hj W' u => (hag j hj W' u).trans ⟨hr j hj pl y hpy W' u, hr j hj y pl hyp W' u⟩
+  rcases List.mem_append.mp hp with hp | hp
+  · obtain ⟨L, hL, hpL⟩ := List.mem_flatten.mp hp
+    have hsrc : recT (famsOf (meaning G) L) n W (.objAt flds .absent) := by
+      rcases List.mem_cons.mp hL with rfl | hL
+      · exact hv.1.1
+      · exact hv.1.2 _ (List.mem_map_of_mem hL)
+    obtain ⟨flds', l', c0, he', hf, hw, hag⟩ := recT_at (mem_famsOf.mpr ⟨pl, hpL, rfl⟩) hsrc
+    cases he'
+    rw [hl] at hf
+    cases hf
+    exact ⟨c0, hw, both c0 hag⟩
+  · obtain ⟨c0, hw, hag⟩ := optT_present (mem_famsOf.mpr ⟨pl, hp, rfl⟩) hv.2 hl
+    exact ⟨c0, hw, both c0 hag⟩
 
 /-- The same argument for a callable object's property bag, which forgets the
 call slot but names the same locations. -/
@@ -572,16 +618,18 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
   all_goals try exact absurd rfl hb
   · exact id
   · exact id
-  · rename_i a bs vs c ds ws
+  · rename_i a bs vs os c ds ws ps
     intro hv
-    exact ⟨covers_fields_sound hc.1 n hr W v hv.1, covers_views_sound hc.2 n hr W v hv⟩
-  · rename_i a bs vs ix c ds ws iy
+    exact ⟨covers_fields_sound hc.1 n hr W v hv.1, covers_views_sound hc.2.1 n hr W v ⟨hv.1, hv.2.1⟩,
+      covers_optional_sound hc.2.2 n hr W v ⟨hv.1, hv.2.2⟩⟩
+  · rename_i a bs vs ix os c ds ws iy ps
     intro hv
     refine ⟨covers_fields_sound hc.1 n hr W v hv.1,
-      covers_views_sound hc.2.1 n hr W v ⟨hv.1, hv.2.1⟩, ?_⟩
+      covers_views_sound hc.2.1 n hr W v ⟨hv.1, hv.2.1⟩, ?_,
+      covers_optional_sound hc.2.2.2 n hr W v ⟨hv.1, hv.2.2.2⟩⟩
     intro y hy
-    obtain ⟨x, hx, hxy⟩ := hc.2.2 y hy
-    obtain ⟨flds, he, hfs⟩ := hv.2.2 x hx
+    obtain ⟨x, hx, hxy⟩ := hc.2.2.1 y hy
+    obtain ⟨flds, he, hfs⟩ := hv.2.2.1 x hx
     refine ⟨flds, he, ?_⟩
     intro f l hl
     obtain ⟨c, hw, hag⟩ := hfs f l hl

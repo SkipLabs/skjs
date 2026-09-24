@@ -160,11 +160,13 @@ def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs
   | .str, .str => true
   | .strLit _, .str => true
   | .strLit a, .strLit b => decide (a = b)
-  | .refs a bs vs, .refs c ds ws =>
-      decide (CoversFields (Rel table) (a :: bs) (c :: ds) ∧ CoversViews (Rel table) (a :: bs) vs ws)
-  | .dict a bs vs ix, .dict c ds ws iy =>
+  | .refs a bs vs os, .refs c ds ws ps =>
+      decide (CoversFields (Rel table) (a :: bs) (c :: ds) ∧ CoversViews (Rel table) (a :: bs) vs ws ∧
+        CoversOptional (Rel table) (a :: bs) os ps)
+  | .dict a bs vs ix os, .dict c ds ws iy ps =>
       decide (CoversFields (Rel table) (a :: bs) (c :: ds) ∧
-        CoversViews (Rel table) (a :: bs) vs ws ∧ ∀ y ∈ iy, ∃ x ∈ ix, Rel table x y)
+        CoversViews (Rel table) (a :: bs) vs ws ∧ (∀ y ∈ iy, ∃ x ∈ ix, Rel table x y) ∧
+        CoversOptional (Rel table) (a :: bs) os ps)
   | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T => decide
       (ArrowsChecked G table proofs L S M ∧ ∀ t ∈ T, ∃ s ∈ S, checkRestCovers table s t = true)
   | .callable a bs L S, .callable c ds M T => decide

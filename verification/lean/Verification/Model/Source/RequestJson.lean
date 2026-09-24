@@ -31,18 +31,23 @@ deriving instance ToJson, FromJson for Tm, CallCode
 deriving instance ToJson, FromJson for PositiveNormalization.Tuple
 deriving instance ToJson, FromJson for Clause
 
-/-- A call clause's variadic signatures are left out of its JSON when there are
-none: that is the one spelling of none, so strict decoding, which re-encodes
-and compares, still refuses an explicit empty list. -/
+/-- The clause fields that are left out of JSON when empty: a call clause's
+variadic signatures and a record's optional fields. Absence is the one
+spelling of none, so strict decoding, which re-encodes and compares, still
+refuses an explicit empty list, and a clause without them reads as it always
+has. -/
+private def omittedWhenEmpty : List (String × String) :=
+  [("arrs", "variadic"), ("callable", "variadic"), ("refs", "optional"), ("dict", "optional")]
+
 private def withoutEmptyVariadic (j : Json) : Json :=
-  ["arrs", "callable"].foldl (fun j key =>
+  omittedWhenEmpty.foldl (fun j (key, name) =>
     match j.getObjVal? key with
     | .ok body@(.obj _) =>
-      match body.getObjVal? "variadic" with
+      match body.getObjVal? name with
       | .ok (.arr xs) =>
         if xs.isEmpty then
           let fields := match body.getObj? with
-            | .ok kvs => kvs.toArray.toList.filter (·.1 != "variadic")
+            | .ok kvs => kvs.toArray.toList.filter (·.1 != name)
             | .error _ => []
           j.setObjVal! key (Json.mkObj fields)
         else j
@@ -50,11 +55,11 @@ private def withoutEmptyVariadic (j : Json) : Json :=
     | _ => j) j
 
 private def withEmptyVariadic (j : Json) : Json :=
-  ["arrs", "callable"].foldl (fun j key =>
+  omittedWhenEmpty.foldl (fun j (key, name) =>
     match j.getObjVal? key with
     | .ok body@(.obj _) =>
-      if (body.getObjVal? "variadic").toOption.isSome then j
-      else j.setObjVal! key (body.setObjVal! "variadic" (.arr #[]))
+      if (body.getObjVal? name).toOption.isSome then j
+      else j.setObjVal! key (body.setObjVal! name (.arr #[]))
     | _ => j) j
 
 private def derivedClauseToJson [ToJson α] : Clause α → Json := toJson
@@ -103,8 +108,10 @@ def clauseTypes : Clause (Ty Nat) → List (Ty Nat)
   | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .str | .strLit _ | .bigint | .symbol
   | .top => []
   | .list a bs => (a :: bs).flatMap fun t => t.required ++ t.optional ++ t.rest.toList
-  | .refs A bs vs => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd
-  | .dict A bs vs ds => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd ++ ds
+  | .refs A bs vs os => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd ++
+      os.map Prod.snd
+  | .dict A bs vs ds os => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd ++ ds ++
+      os.map Prod.snd
   | .arrs L S => L.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++
       S.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2.1, p.2.2.2])
   | .callable A bs L S =>

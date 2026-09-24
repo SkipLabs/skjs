@@ -75,6 +75,16 @@ theorem view_congr_below {ι : Type} (X Y : ι → Fam) (a : List (PropKey × ι
   · obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ := hv f (Y i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
     exact ⟨flds, l, c, rfl, hf, hl, fun j hj W' u hu => (h i j hj W' u).mpr (hag j hj W' u hu)⟩
 
+theorem opt_congr_below {ι : Type} (X Y : ι → Fam) (a : List (PropKey × ι)) (n : Nat)
+    (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
+    optT (famsOf X a) n W v ↔ optT (famsOf Y a) n W v := by
+  constructor <;> rintro ⟨flds, rfl, hv⟩ <;> refine ⟨flds, rfl, ?_⟩ <;>
+    intro f T hm l hl <;> obtain ⟨i, hi, rfl⟩ := mem_famsOf.mp hm
+  · obtain ⟨c, hc, hag⟩ := hv f (X i) (mem_famsOf.mpr ⟨i, hi, rfl⟩) l hl
+    exact ⟨c, hc, fun j hj W' u => (hag j hj W' u).trans (h i j hj W' u)⟩
+  · obtain ⟨c, hc, hag⟩ := hv f (Y i) (mem_famsOf.mpr ⟨i, hi, rfl⟩) l hl
+    exact ⟨c, hc, fun j hj W' u => (hag j hj W' u).trans (h i j hj W' u).symm⟩
+
 theorem congr_below {ι : Type} (X Y : ι → Fam) (a : List (PropKey × ι))
     (bs : List (List (PropKey × ι))) (n : Nat)
     (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :

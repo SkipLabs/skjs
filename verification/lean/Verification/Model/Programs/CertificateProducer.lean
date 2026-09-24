@@ -286,10 +286,13 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
             coerce G pool (.node ⟨Γ,t,B⟩ (.indexDict E U) [ea, ek]) A
     | .readAt f a =>
       let direct := pool.findSome? fun R => do
-        -- An invariant field reads at its contract; a view field at its bound.
+        -- An invariant field reads at its contract; a view field at its bound;
+        -- an optional field at its contract or `undefined`.
         let (B,r) ← match expand G R with
-          | [.refs fs [] vs] =>
-            (fs.lookup f).map (·,Rule.read) <|> (vs.lookup f).map (·,Rule.readView)
+          | [.refs fs [] vs os] =>
+            (fs.lookup f).map (·,Rule.read) <|> (vs.lookup f).map (·,Rule.readView) <|>
+              (os.lookup f).bind fun E => pool.findSome? fun U =>
+                if expand G U == [.undef] then some (E ++ U, Rule.readOptional E U) else none
           | [.callable fs _ _ _] => (fs.lookup f).map (·,Rule.readCallable)
           | [.dict _ [] _ (B :: _)] =>
             pool.findSome? fun U =>
@@ -303,7 +306,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     | .writeAt f a b =>
       let direct := pool.findSome? fun R => do
         let (fs,r) ← match expand G R with
-          | [.refs fs [] _] => some (fs,Rule.write)
+          | [.refs fs [] _ _] => some (fs,Rule.write)
           | [.callable fs _ _ _] => some (fs,Rule.writeCallable)
           | _ => none
         let B ← fs.lookup f

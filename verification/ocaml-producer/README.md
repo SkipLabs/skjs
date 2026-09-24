@@ -470,10 +470,10 @@ mapper and resource bodies are upstream's. SKJS's stubs gained the two real
 APIs it uses, `Values.getUnique` and `process.on`
 ([`runtime-client-apis.ts`](../../tests/expect-error/runtime-client-apis.ts)).
 
-Its first refusal is in the standard library: `Iterable`, which the runtime
-API's `Mapper` and `Values` reach, reaches `Iterator`, whose `next` takes a
-destructured rest parameter `...[value]: [] | [TNext]`. So **zero of its
-callables are checked**; no producer proposal, Lean lowering or certificate is
+Its first refusal is `ResourceClass`, a constructor type `new (...params:
+Params) => Resource` over a tuple pack. The runtime API's interfaces and the
+standard library's `Promise`, `Iterable` and `Iterator` they reach are all
+read. So **zero of its callables are checked** yet; no producer proposal, Lean lowering or certificate is
 reached. Module constants and top-level statements are in the fragment (see
 [Modules and code units](../DESIGN.md#modules-and-code-units)); the
 `platform` initializer before that class is admitted syntax, though its
@@ -482,7 +482,7 @@ at a time, the blockers behind it are:
 
 | Client part | First refusal when isolated | Later requirement |
 | --- | --- | --- |
-| whole file | `Iterator.next`'s destructured rest parameter | the rest of `Iterable`/`Iterator` (optional methods); then the `process` global |
+| whole file | `ResourceClass`'s constructor type | constructor types and tuple packs; then the `process` global |
 | import graph | `InputDefinition` is a value import (a class) | classes as declarations and values |
 | `Plus`, `Minus`, `AddIndex`, `Add`, `Sub`, `Service` | class declaration | classes, `this`, parameter properties, field initializers, `new` |
 | `AddIndex.mapEntry` reading `Values` | `bigint` in `DepSafe` | `Values` contract, `getUnique` and its exception |
@@ -529,10 +529,10 @@ client of the same project, each stops at its first refused declaration
 
 | Interface | First refusal | Why |
 | --- | --- | --- |
-| `Mapper<K1, V1, K2, V2>` | `Iterator.next`'s destructured rest parameter | `mapEntry` returns `Iterable<[K2, V2]>`, which reaches `Iterator` |
+| `Mapper<K1, V1, K2, V2>` | none: collected | `mapEntry` returns `Iterable<[K2, V2]>`, read from the standard library |
 | `Resource<C>` | none: collected | its `Context` parameter's generic methods are opaque members |
 | `EagerCollection<K, V>` | none: collected | it extends `Managed`, whose brand `[sk_managed]: true` is a symbol-keyed field; its generic methods are opaque members |
-| `Values<T>` | `Iterator.next`'s destructured rest parameter | it extends `Iterable<T & DepSafe>`; `DepSafe`'s `bigint` and `symbol` and `Managed`'s symbol key are in the fragment |
+| `Values<T>` | none: collected | it extends `Iterable<T & DepSafe>`, read from the standard library |
 
 The admitted contract work is larger than recognizing the declaration keyword:
 `Mapper` has four `Json`-bounded parameters and a method returning
@@ -921,12 +921,15 @@ first milestone, in order of how much each gates:
    declaration's `any` is `unknown`; a recursive generic application at the
    same arguments is its reserved row. `Promise<T>` is read this way (its
    generic `then`/`catch` are opaque, so its argument is not yet visible).
-   Remaining: `Iterator` (a destructured rest parameter, optional methods),
-   arrays as iterables (every `mapEntry` returns an array literal as
+   `Iterable`/`Iterator` are read too: `next(...[value]: [] | [TNext])` is
+   one signature per tuple, and `return?`/`throw?` are optional fields.
+   Remaining: arrays as iterables (every `mapEntry` returns an array literal as
    `Iterable`), and `Array.prototype.reduce` and `sort` with their callback
    effects and mutation.
-6. **Optional field presence.** `getUnique(_default?: { ifMany?: T })`; the
-   open `optional-field.ts` row.
+6. **Optional field presence** (done for mutable optional fields: see
+   DESIGN.md's object milestone; `optional-field.ts` verifies). Remaining: a
+   readonly optional field, `in` tests and presence narrowing.
+   `getUnique(_default?: { ifMany?: T })` needs only the done part.
 7. **Exceptions.** `getUnique` throws when a key has several values.
 
 Required for the second milestone in addition:
@@ -954,6 +957,23 @@ checked here gets its brand as an external contract. `unique symbol` brands
 (`Managed`, the `Opaque` types) are symbol-keyed fields, which the fragment
 now reads (item 4). Brands matter for `SharedCollections`: its bound is meant to admit
 only runtime collections.
+
+**Record values as `Json` (to do).** A record type is open: its value may
+carry keys the type does not name, of any type. So `{ readonly n: number }` is
+not a subtype of `Json`'s `{ readonly [k: string]: Json }`, readonly or not,
+since an unnamed key would be read at `Json`. SKJS keeps this rule and adds a
+closed-object type, `Closed<T>`, which skipper wraps around generated key and
+value types (`tests/expect-error/json-generated-service.ts`). No closedness is
+needed: `Serializable<T> = T & { readonly [k: string]: Json }` says exactly
+what the framework needs, that every present key holds `Json`, and was
+skipper's first approach (skipper#1217), dropped only for `tsc` inference at
+generic helpers such as `deepFreeze<T>` (skipper#1239). The model already
+lowers that intersection to one dictionary clause with named fields and an
+index (`meet`), and its subtyping to `Json` is ordinary dictionary coverage.
+What is missing is establishing it from a literal: `alloc` builds a record and
+`allocDict` a pure dictionary, and a literal at a record-and-index type needs
+one allocation rule proving both, as `recT_fresh_dict` does for fresh slots.
+`sum.ts` needs none of this: its keys and values are strings and numbers.
 
 Generic interface variance is not on this list: the type-safe API does not
 ask for `EagerCollection<K, V> ≤ EagerCollection<Json, Json>`, and the

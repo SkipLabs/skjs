@@ -19,11 +19,12 @@ HasTy  (Programs/ProgramTyping.lean)
   letE : HasTy G Γ a A → HasTy G (A :: Γ) b B → HasTy G Γ (.letE a b) B
   alloc {parts : List (PropKey × Ty ι × Tm)} : (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) [] []) → HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
   allocDict {parts : List (PropKey × Tm)} : (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2 Elem) → Represents G Dict (.dict [] [] [] [Elem]) → HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map Prod.snd)) Dict
-  read : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs) → (f, A) ∈ fs → HasTy G Γ (.readAt f a) A
-  readView : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs) → (f, A) ∈ vs → HasTy G Γ (.readAt f a) A
-  readDict {f : String} : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix) → A ∈ ix → Represents G U .undef → HasTy G Γ (.readAt (.str f) a) (A ++ U)
-  indexDict : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix) → HasTy G Γ key K → Represents G K .str → A ∈ ix → Represents G U .undef → HasTy G Γ (.indexAt a key) (A ++ U)
-  write : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs) → (f, A) ∈ fs → HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
+  read : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os) → (f, A) ∈ fs → HasTy G Γ (.readAt f a) A
+  readView : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os) → (f, A) ∈ vs → HasTy G Γ (.readAt f a) A
+  readOptional : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os) → (f, A) ∈ os → Represents G U .undef → HasTy G Γ (.readAt f a) (A ++ U)
+  readDict {f : String} : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix os) → A ∈ ix → Represents G U .undef → HasTy G Γ (.readAt (.str f) a) (A ++ U)
+  indexDict : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix os) → HasTy G Γ key K → Represents G K .str → A ∈ ix → Represents G U .undef → HasTy G Γ (.indexAt a key) (A ++ U)
+  write : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os) → (f, A) ∈ fs → HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
   arith : HasTy G Γ a A → Answers G A .isNum true → HasTy G Γ b B → Answers G B .isNum true → Represents G N .num → HasTy G Γ (.arith op a b) N
   arrLit {Γ : List (Ty ι)} {L : Ty ι} {T : Tuple (Ty ι)} {xs : List (Ty ι × Tm)} : Represents G L (.list T []) → T.required.length ≤ xs.length → (T.rest = none → xs.length ≤ T.required.length + T.optional.length) → (∀ p ∈ xs.zipIdx, positionTy T p.2 = some p.1.1) → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → HasTy G Γ (.arrLit (xs.map Prod.snd)) L
   elem {Γ : List (Ty ι)} {a i : Tm} {L I A : Ty ι} {T : Tuple (Ty ι)} {b : UInt64} {k : Nat} : HasTy G Γ a L → Represents G L (.list T []) → HasTy G Γ i I → Represents G I (.numLit b) → indexOfBits b = some k → T.required[k]? = some A → HasTy G Γ (.elemAt a i) A
@@ -69,6 +70,7 @@ Rule  (Programs/ProgramCertificates.lean)
   test
   readDict (element undef : Ty ι)
   indexDict (element undef : Ty ι)
+  readOptional (element undef : Ty ι)
   arrLit
   elem
   setElem

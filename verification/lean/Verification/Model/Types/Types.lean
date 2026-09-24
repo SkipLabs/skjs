@@ -334,6 +334,52 @@ def dictViewT (A : Fam) : Fam := fun k W v =>
       ∃ c : Ctr k, lookup W l = some c ∧
         ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → A j W' u
 
+/-- **Optional fields.** Each named key, when the object has it, stands for a
+location under exactly the stated contract, as a required field's does; an
+absent key is not constrained, and `Step.readMissing` reads it as `undefined`.
+Presence is fixed: an object's map of locations is fixed at allocation, so
+whether a key is present never changes. The plain-object restriction is the
+one `recT` uses. -/
+def optT (fs : Fields) : Fam := fun k W v =>
+  ∃ flds : List (PropKey × Nat), v = .objAt flds .absent ∧
+    ∀ (f : PropKey) (T : Fam), (f, T) ∈ fs → ∀ l, flds.lookup f = some l →
+      ∃ c : Ctr k, lookup W l = some c ∧
+        ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ T j W' u
+
+/-- No optional field constrains a plain object. -/
+theorem optT_nil {k} {W : WorldT k} {flds : List (PropKey × Nat)} :
+    optT [] k W (.objAt flds .absent) :=
+  ⟨flds, rfl, fun _ _ hm => by simp at hm⟩
+
+/-- A record's object is plain, so no optional field constrains it. -/
+theorem recT_optT_nil {fs : Fields} {k} {W : WorldT k} {v : Val} (h : recT fs k W v) :
+    optT [] k W v := by
+  obtain ⟨flds, rfl, -⟩ := h
+  exact optT_nil
+
+/-- What optional fields say of one present key. -/
+theorem optT_present {fs : Fields} {f : PropKey} {T : Fam} (hm : (f, T) ∈ fs)
+    {k} {W : WorldT k} {flds : List (PropKey × Nat)} (h : optT fs k W (.objAt flds .absent))
+    {l : Nat} (hl : flds.lookup f = some l) :
+    ∃ c : Ctr k, lookup W l = some c ∧
+      ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ T j W' u := by
+  obtain ⟨flds', heq, hf⟩ := h
+  cases heq
+  exact hf f T hm l hl
+
+theorem optT_append (A B : Fields) (k : Nat) (W : WorldT k) (v : Val) :
+    optT (A ++ B) k W v ↔ optT A k W v ∧ optT B k W v := by
+  constructor
+  · rintro ⟨flds, rfl, h⟩
+    exact ⟨⟨flds, rfl, fun f T hm => h f T (List.mem_append_left _ hm)⟩,
+      ⟨flds, rfl, fun f T hm => h f T (List.mem_append_right _ hm)⟩⟩
+  · rintro ⟨⟨flds, rfl, ha⟩, ⟨flds', he, hb⟩⟩
+    cases he
+    refine ⟨flds, rfl, fun f T hm => ?_⟩
+    rcases List.mem_append.mp hm with hm | hm
+    · exact ha f T hm
+    · exact hb f T hm
+
 /-- A dictionary's read guarantee is guarded by the world level, including
 when its element type is a recursive graph label. -/
 theorem dictViewT_congr {A B : Fam} {k : Nat} (h : Agree A B k)
@@ -652,6 +698,22 @@ theorem viewT_adm (fs : Fields) : Adm (viewT fs) := by
   · intro n W W' hx v h f T hm
     obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ := h f T hm
     exact ⟨flds, l, c, rfl, hf, WExt_lookup hx hl, hag⟩
+
+theorem optT_adm (fs : Fields) : Adm (optT fs) := by
+  refine ⟨?_, ?_⟩
+  · intro n W v h
+    obtain ⟨flds, rfl, hf⟩ := h
+    refine ⟨flds, rfl, ?_⟩
+    intro f T hm l hl
+    obtain ⟨c, hc, hag⟩ := hf f T hm l hl
+    exact ⟨_, lookup_trunc (Nat.le_succ n) W l c hc,
+      fun j hj W' u => hag j (by omega) W' u⟩
+  · intro n W W' hx v h
+    obtain ⟨flds, rfl, hf⟩ := h
+    refine ⟨flds, rfl, ?_⟩
+    intro f T hm l hl
+    obtain ⟨c, hc, hag⟩ := hf f T hm l hl
+    exact ⟨c, WExt_lookup hx hc, hag⟩
 
 theorem dictViewT_adm (A : Fam) : Adm (dictViewT A) := by
   refine ⟨?_, ?_⟩

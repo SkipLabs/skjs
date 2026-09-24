@@ -266,7 +266,6 @@ try {
       "function f(): undefined { const undefined: boolean = true; return undefined; }",
       "function f(): undefined { const g = (undefined: boolean): undefined => undefined; return g(true); }",
       "function f(): void { return; }",
-      "function f(x: { value?: boolean }): boolean { return true; }",
       "function f(): boolean { return; }",
     ]) {
       const input = path.join(tmp, "boundary.ts");

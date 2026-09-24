@@ -47,7 +47,7 @@ by this bounded schema. Synthetic index markers describe exporter bookkeeping,
 not runtime permissions; their internal inference variables are not interpreted.
 Absence and unknown modes have the same interpretation
 within the plain-cell fragment; this is not full TypeScript object semantics. -/
-def decodeShapes (j : Json) : Except String (List (PropKey × Json × Json)) := do
+def decodeFields (j : Json) : Except String (List (PropKey × Json × Json × Bool)) := do
   fieldsExactly j ["top","atoms"]
   if ← (← jField j "top").getBool? then throw "top is not a cell contract"
   let atoms ← jArr j "atoms"
@@ -70,12 +70,18 @@ def decodeShapes (j : Json) : Except String (List (PropKey × Json × Json)) := 
   let out ← fields.mapM fun field => do
     fieldsExactly field ["name","optional","read","write"]
     let name ← PropKey.decode (← jField field "name")
-    if ← (← jField field "optional").getBool? then
-      throw "optional fields are not invariant cells"
-    return (name, ← jField field "read", ← jField field "write")
+    return (name, ← jField field "read", ← jField field "write",
+      ← (← jField field "optional").getBool?)
   let names := out.map Prod.fst
   if names.eraseDups.length != names.length then throw "duplicate field name in a record"
   return out
+
+/-- A record's required fields: an optional one is refused where only
+required cells are read. -/
+def decodeShapes (j : Json) : Except String (List (PropKey × Json × Json)) := do
+  (← decodeFields j).mapM fun (name, read, write, optional) => do
+    if optional then throw "optional fields are not invariant cells"
+    return (name, read, write)
 
 /-- The single-field case, for the places that accept exactly one cell. -/
 def decodeShape (j : Json) : Except String (PropKey × Json × Json) := do
@@ -247,6 +253,7 @@ theorem reference_exact {T : Table} {fs : List (PropKey × Ty Nat)}
   rw [label_meaning hm]
   simp [PositiveNormalization.sem, ReferenceConjunctions.refsT, interpretation,
     ReferenceConjunctions.famsOf, viewT]
+  exact recT_optT_nil
 
 /-- Interning a reference yields a table holding its row and its label there. -/
 theorem reference_run {fs : List (PropKey × Ty Nat)} {T T' : Table} {l}

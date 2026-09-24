@@ -517,7 +517,8 @@ theorem restArray_safe {G : NormalGraph ι} {A E : Ty ι} (hr : RestArray G A E)
         (ArgsT_values (by simp [meaning_valOnly]) hargs) hu hok (ArgsT_zip hargs)
       intro k hk V hy hrec
       refine (represents_sem hA k V _).mpr ⟨⟨?_, by simp⟩,
-        fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm⟩
+        fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
+        by simpa [ReferenceConjunctions.famsOf] using optT_nil⟩
       simpa [ReferenceConjunctions.famsOf] using hrec
   · exact hr.elim
 
@@ -747,22 +748,26 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       (∀ p ∈ parts, HasTy G Γ p.2 Elem) →
       Represents G Dict (.dict [] [] [] [Elem]) →
       HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map Prod.snd)) Dict
-  | read : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs) → (f, A) ∈ fs →
+  | read : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os) → (f, A) ∈ fs →
       HasTy G Γ (.readAt f a) A
   /-- A view field reads at its bound: a capability, never a write permission. -/
-  | readView : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs) → (f, A) ∈ vs →
+  | readView : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os) → (f, A) ∈ vs →
       HasTy G Γ (.readAt f a) A
+  /-- An optional field reads at its contract or, where the object lacks the
+  key, as `undefined`. -/
+  | readOptional : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os) → (f, A) ∈ os →
+      Represents G U .undef → HasTy G Γ (.readAt f a) (A ++ U)
   /-- A dictionary read may miss even when every present value has type `A`.
   A string index signature says nothing of a symbol-keyed field, so only a
   string key is read through one. -/
-  | readDict {f : String} : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix) →
+  | readDict {f : String} : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix os) →
       A ∈ ix → Represents G U .undef →
       HasTy G Γ (.readAt (.str f) a) (A ++ U)
-  | indexDict : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix) →
+  | indexDict : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix os) →
       HasTy G Γ key K → Represents G K .str →
       A ∈ ix → Represents G U .undef →
       HasTy G Γ (.indexAt a key) (A ++ U)
-  | write : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs) → (f, A) ∈ fs →
+  | write : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os) → (f, A) ∈ fs →
       HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
   /-- Arithmetic needs two operands the number test answers for, and yields
   the number family: no singleton, since the result's bits are not typed. -/
@@ -1084,7 +1089,8 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
         hargs)
       hu hok (ArgsT_zip hargs)
     intro k hk V hy hrec
-    refine (represents_sem hr k V _).mpr ⟨⟨?_, by simp⟩, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm⟩
+    refine (represents_sem hr k V _).mpr ⟨⟨?_, by simp⟩, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
+      by simpa [ReferenceConjunctions.famsOf] using optT_nil⟩
     have hfam : ReferenceConjunctions.famsOf (meaning G) (parts.map fun p => (p.1, p.2.1))
         = (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2.1) := by
       simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
@@ -1121,37 +1127,48 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     intro k hk V hy hd
     apply (represents_sem hr k V _).mpr
     refine ⟨⟨⟨slots heap.length (parts.map Prod.fst), rfl, ?_⟩, by simp⟩,
-      by simp [viewT, ReferenceConjunctions.famsOf], ?_⟩
+      by simp [viewT, ReferenceConjunctions.famsOf], ?_,
+      by simpa [ReferenceConjunctions.famsOf] using optT_nil⟩
     · intro f T hm
       simp [ReferenceConjunctions.famsOf] at hm
     · intro A hA
       simp only [List.mem_singleton] at hA
       cases hA
       exact hd
-  | @read Γ a Ref fs vs f A ha hr hm ih =>
+  | @read Γ a Ref fs vs os f A ha hr hm ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
     obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ :=
       recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) ((represents_sem hr j U v).mp ha').1.1
     exact read_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag
-  | @readView Γ a Ref fs vs f A ha hr hm ih =>
+  | @readView Γ a Ref fs vs os f A ha hr hm ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
     obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ :=
-      viewT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) ((represents_sem hr j U v).mp ha').2
+      viewT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) ((represents_sem hr j U v).mp ha').2.1
     exact read_view_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag
-  | @readDict Γ a Ref fs vs ix A U f ha hr hm hUnd ih =>
+  | @readOptional Γ a Ref fs vs os f A U ha hr hm hUnd ih =>
+    intro n W h ρ he hw hh
+    apply bind (Tm.readAt f) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
+    intro j hj V hx hv heap v hok hval ha'
+    have hs := (represents_sem hr j V v).mp ha'
+    obtain ⟨flds, rfl, _⟩ := hs.1.1
+    apply Safe_mono j (fun k _ X u hu => (meaning_append G A U k X u).mpr
+      (hu.elim Or.inl (fun h => Or.inr ((represents_sem hUnd k X u).mpr h)))) V heap _
+      (read_optional_rule (meaning_valOnly G A) j V heap hv hok
+        (fun l hl => optT_present (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) hs.2.2 hl))
+  | @readDict Γ a Ref fs vs ix os A U f ha hr hm hUnd ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt (.str f)) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj V hx hv heap v hok hval ha'
-    have hd := ((represents_sem hr j V v).mp ha').2.2 A hm
+    have hd := ((represents_sem hr j V v).mp ha').2.2.1 A hm
     obtain ⟨flds, rfl, _⟩ := ((represents_sem hr j V v).mp ha').1.1
     apply Safe_mono j (fun k _ X u hu => (meaning_append G A U k X u).mpr
       (hu.elim Or.inl (fun h => Or.inr ((represents_sem hUnd k X u).mpr h)))) V heap _
       (read_dict_rule (meaning_valOnly G A) j V heap hv hok hd)
-  | @indexDict Γ a Ref fs vs ix key K A U ha hr hk hStr hm hUnd iha ihk =>
+  | @indexDict Γ a Ref fs vs ix os key K A U ha hr hk hStr hm hUnd iha ihk =>
     intro n W h ρ he hw hh
     apply bind (fun v => .indexAt v (instantiate 0 ρ key)) Step.indexC1 n W h _ hw hh
       (iha n W h ρ he hw hh)
@@ -1162,7 +1179,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     have ha'' := (meaning_adm G Ref).mono k _ X hy av
       ((meaning_adm G Ref).down_le j k hk V av ha')
     obtain ⟨s, rfl⟩ := (represents_sem hStr k X kv).mp hk'
-    have hd := ((represents_sem hr k X av).mp ha'').2.2 A hm
+    have hd := ((represents_sem hr k X av).mp ha'').2.2.1 A hm
     obtain ⟨flds, rfl, _⟩ := ((represents_sem hr k X av).mp ha'').1.1
     apply Safe_mono k (fun i _ Y u hu => (meaning_append G A U i Y u).mpr
       (hu.elim Or.inl (fun h => Or.inr ((represents_sem hUnd i Y u).mpr h)))) X heap' _
@@ -1409,7 +1426,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       cases bv <;> simp [tagHolds] at hnb; exact ⟨_, rfl⟩
     exact arith_value_safe op x y k V heap' hv hok'
       (fun m U => (represents_sem hn m U _).mpr ⟨_, rfl⟩)
-  | @write Γ a Ref fs vs f A b N ha hr hm hb hn iha ihb =>
+  | @write Γ a Ref fs vs os f A b N ha hr hm hb hn iha ihb =>
     intro n W h ρ he hw hh
     apply bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 n W h _ hw hh
       (iha n W h ρ he hw hh)

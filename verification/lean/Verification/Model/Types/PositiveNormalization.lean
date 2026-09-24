@@ -26,15 +26,16 @@ inductive Clause (α : Type) where
   /-- A location under one or more record contracts. An operand is a finite map
   from field names to labels and names only the fields it constrains, so
   operands naming different fields describe different locations of the same
-  object rather than one location twice. -/
+  object rather than one location twice. Optional fields constrain a key
+  only where the object has it (`optT`). -/
   | refs (first : List (PropKey × α)) (rest : List (List (PropKey × α)))
-      (views : List (PropKey × α))
+      (views : List (PropKey × α)) (optional : List (PropKey × α) := [])
   /-- A plain object with invariant named fields, readonly named views, and
   readonly string-index views. The index operands apply to every present own
   field, including named ones. A first record operand fixes the object shape;
   it may be empty for a pure dictionary. -/
   | dict (first : List (PropKey × α)) (rest : List (List (PropKey × α)))
-      (views : List (PropKey × α)) (indexes : List α)
+      (views : List (PropKey × α)) (indexes : List α) (optional : List (PropKey × α) := [])
   /-- A callable value meeting every fixed signature, `(receiver, parameters,
   result)`, and every variadic one, `(receiver, fixed parameters, element,
   result)`: the receiver a call may pass, the contract of each actual, and
@@ -81,11 +82,13 @@ def sem (X : α → Fam) : Clause α → Fam
   | .strLit s => fun _ _ v => v = .str s
   | .bigint => bigintT
   | .symbol => symbolT
-  | .refs a bs vs => fun n W v =>
-      refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧ viewT (famsOf X vs) n W v
-  | .dict a bs vs ds => fun n W v =>
+  | .refs a bs vs os => fun n W v =>
+      refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧ viewT (famsOf X vs) n W v ∧
+        optT (famsOf X os) n W v
+  | .dict a bs vs ds os => fun n W v =>
       refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧
-      viewT (famsOf X vs) n W v ∧ ∀ d ∈ ds, dictViewT (X d) n W v
+      viewT (famsOf X vs) n W v ∧ (∀ d ∈ ds, dictViewT (X d) n W v) ∧
+        optT (famsOf X os) n W v
   | .arrs L S => interT (callsT (L.map fun p => (X p.1, p.2.1.map X, X p.2.2)))
       (restsT (S.map fun s => (X s.1, s.2.1.map X, X s.2.2.1, X s.2.2.2)))
   | .callable a bs L S =>
@@ -125,10 +128,10 @@ def meet : Clause α → Clause α → List (Clause α)
   | .strLit a, .strLit b => if a == b then [.strLit a] else []
   | .bigint, .bigint => [.bigint]
   | .symbol, .symbol => [.symbol]
-  | .refs a bs vs, .refs c ds ws => [.refs a (bs ++ c :: ds) (vs ++ ws)]
-  | .refs a bs vs, .dict c ds ws ix => [.dict a (bs ++ c :: ds) (vs ++ ws) ix]
-  | .dict a bs vs ix, .refs c ds ws => [.dict a (bs ++ c :: ds) (vs ++ ws) ix]
-  | .dict a bs vs ix, .dict c ds ws iy => [.dict a (bs ++ c :: ds) (vs ++ ws) (ix ++ iy)]
+  | .refs a bs vs os, .refs c ds ws ps => [.refs a (bs ++ c :: ds) (vs ++ ws) (os ++ ps)]
+  | .refs a bs vs os, .dict c ds ws ix ps => [.dict a (bs ++ c :: ds) (vs ++ ws) ix (os ++ ps)]
+  | .dict a bs vs ix os, .refs c ds ws ps => [.dict a (bs ++ c :: ds) (vs ++ ws) ix (os ++ ps)]
+  | .dict a bs vs ix os, .dict c ds ws iy ps => [.dict a (bs ++ c :: ds) (vs ++ ws) (ix ++ iy) (os ++ ps)]
   | .arrs L S, .arrs M T => [.arrs (L ++ M) (S ++ T)]
   | .callable a bs L S, .callable c ds M T => [.callable a (bs ++ c :: ds) (L ++ M) (S ++ T)]
   | .callable a bs L S, .arrs M T => [.callable a bs (L ++ M) (S ++ T)]
@@ -232,24 +235,24 @@ theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (
       cases b <;> simp [meet, singleton_sem, sem, interT, boolT]
       all_goals intro hv; subst v; simp
     · simp only [meet, singleton_sem, sem, List.map_append, List.map_cons]
-      rw [merge _ _ _ _ n W v, famsOf_append, viewT_append]
-      simp only [interT]
-      exact ⟨fun h => ⟨⟨h.1.1, h.2.1⟩, ⟨h.1.2, h.2.2⟩⟩, fun h => ⟨⟨h.1.1, h.2.1⟩, ⟨h.1.2, h.2.2⟩⟩⟩
+      rw [merge _ _ _ _ n W v]
+      simp only [famsOf_append, viewT_append, optT_append, interT]
+      simp only [and_assoc, and_left_comm, and_comm]
     · -- refs ∩ dictionary
       simp only [meet, singleton_sem, sem, List.map_append, List.map_cons]
-      rw [merge _ _ _ _ n W v, famsOf_append, viewT_append]
-      simp only [interT]
+      rw [merge _ _ _ _ n W v]
+      simp only [famsOf_append, viewT_append, optT_append, interT]
       simp only [and_assoc, and_left_comm, and_comm]
     · -- dictionary ∩ refs
       simp only [meet, singleton_sem, sem, List.map_append, List.map_cons]
-      rw [merge _ _ _ _ n W v, famsOf_append, viewT_append]
-      simp only [interT]
+      rw [merge _ _ _ _ n W v]
+      simp only [famsOf_append, viewT_append, optT_append, interT]
       simp only [and_assoc, and_left_comm, and_comm]
     · -- dictionary ∩ dictionary
       simp only [meet, singleton_sem, sem, List.map_append, List.map_cons,
         List.mem_append, or_imp, forall_and]
-      rw [merge _ _ _ _ n W v, famsOf_append, viewT_append]
-      simp only [interT]
+      rw [merge _ _ _ _ n W v]
+      simp only [famsOf_append, viewT_append, optT_append, interT]
       simp only [and_assoc, and_left_comm, and_comm]
     · -- arrs ∩ arrs
       simp only [meet, singleton_sem, sem, List.map_append]
@@ -359,16 +362,18 @@ theorem sem_adm (X : α → Fam) (c : Clause α) : Adm (sem X c) := by
   | boolLit b => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | num => exact numT_adm
   | numLit b => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
-  | refs a bs vs => exact ⟨fun n W v h => ⟨(adm _ _).down n W v h.1, (viewT_adm _).down n W v h.2⟩,
-      fun n W U hx v h => ⟨(adm _ _).mono n W U hx v h.1, (viewT_adm _).mono n W U hx v h.2⟩⟩
-  | dict a bs vs ds =>
+  | refs a bs vs os => exact ⟨fun n W v h => ⟨(adm _ _).down n W v h.1, (viewT_adm _).down n W v h.2.1,
+        (optT_adm _).down n W v h.2.2⟩,
+      fun n W U hx v h => ⟨(adm _ _).mono n W U hx v h.1, (viewT_adm _).mono n W U hx v h.2.1,
+        (optT_adm _).mono n W U hx v h.2.2⟩⟩
+  | dict a bs vs ds os =>
     refine ⟨?_, ?_⟩
     · intro n W v h
       exact ⟨(adm _ _).down n W v h.1, (viewT_adm _).down n W v h.2.1,
-        fun d hd => (dictViewT_adm _).down n W v (h.2.2 d hd)⟩
+        fun d hd => (dictViewT_adm _).down n W v (h.2.2.1 d hd), (optT_adm _).down n W v h.2.2.2⟩
     · intro n W U hx v h
       exact ⟨(adm _ _).mono n W U hx v h.1, (viewT_adm _).mono n W U hx v h.2.1,
-        fun d hd => (dictViewT_adm _).mono n W U hx v (h.2.2 d hd)⟩
+        fun d hd => (dictViewT_adm _).mono n W U hx v (h.2.2.1 d hd), (optT_adm _).mono n W U hx v h.2.2.2⟩
   | arrs L S => exact interT_adm _ _ (callsT_adm _) (restsT_adm _)
   | callable a bs L S => exact interT_adm _ _ (CallableConjunctions.adm _ _ _) (restsT_adm _)
   | undef => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
@@ -426,11 +431,14 @@ theorem sem_congr (X Y : α → Fam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
   | top => rfl
   | list a bs =>
     exact and_congr (list_congr_below X Y a n h W v) (forall_congr' fun b => forall_congr' fun _ => list_congr_below X Y b n h W v)
-  | refs a bs vs => exact and_congr (congr_below X Y a bs n h W v) (view_congr_below X Y vs n h W v)
-  | dict a bs vs ds =>
+  | refs a bs vs os =>
+    exact and_congr (congr_below X Y a bs n h W v)
+      (and_congr (view_congr_below X Y vs n h W v) (opt_congr_below X Y os n h W v))
+  | dict a bs vs ds os =>
     exact and_congr (congr_below X Y a bs n h W v)
       (and_congr (view_congr_below X Y vs n h W v)
-        (forall_congr' fun d => forall_congr' fun _ => dictViewT_congr (h d) W v))
+        (and_congr (forall_congr' fun d => forall_congr' fun _ => dictViewT_congr (h d) W v)
+          (opt_congr_below X Y os n h W v)))
   | arrs L S =>
     have hd : ∀ As : List α, ArgsAgree n (As.map X) (As.map Y) := by
       intro As; induction As with

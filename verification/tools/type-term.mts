@@ -298,10 +298,11 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
     if (ts.isPropertySignatureDeclaration(member)) {
       // A `readonly` member is a read capability: its write contract is
       // `never`, and nothing else about the field changes. A member's `?` is
-      // its postfix token.
+      // its postfix token: the field constrains its key only where the object
+      // has it.
       const optional = member.postfixToken?.kind === ts.SyntaxKind.QuestionToken;
       const message = scope.annotation ? "expected a required mutable field" : "unsupported property signature";
-      if (!readonlyOnly(member.modifiers) || (scope.annotation && member.postfixToken) || !member.type)
+      if (!readonlyOnly(member.modifiers) || !member.type)
         scope.fail(member, message);
       const name = named(member, message);
       fields.push({ name, optional, readonly: isReadonly(member.modifiers),
@@ -327,13 +328,13 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
       fields.push({ name, optional: false, readonly: true,
         type: { k: "atom", name: "unknown", span: memberSpan }, span: memberSpan });
     } else if (ts.isMethodSignatureDeclaration(member)) {
-      if (!methods || !member.type || member.postfixToken?.kind === ts.SyntaxKind.QuestionToken ||
-          member.typeParameters?.length || member.modifiers?.length)
+      if (!methods || !member.type || member.typeParameters?.length || member.modifiers?.length)
         scope.fail(member, "unsupported method signature");
       const name = named(member, "unsupported method signature");
       const forms = signatures(scope, member.parameters, member.type, member, memberSpan);
       if (forms.some(m => m.receiver)) scope.fail(member, "unsupported method signature");
-      fields.push({ name, optional: false, readonly: false,
+      // An optional method, `return?(...)`, is an optional field.
+      fields.push({ name, optional: member.postfixToken?.kind === ts.SyntaxKind.QuestionToken, readonly: false,
         type: oneTerm(forms.map(m => ({ ...m, receiver: { k: "self", span: memberSpan } })), memberSpan),
         span: memberSpan });
     } else if (ts.isCallSignatureDeclaration(member)) {
