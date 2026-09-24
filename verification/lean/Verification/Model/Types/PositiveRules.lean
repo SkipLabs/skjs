@@ -330,22 +330,22 @@ def RestCovers (R : List ι → List ι → Prop)
 target `(Rt, As, d)` is covered by a fixed source signature, by a variadic
 one, by splitting a union at the receiver or at a parameter position, or by
 combining two coverings. The receiver is contravariant, like a parameter. -/
-inductive CallArrow (G : NormalGraph ι) (R : List ι → List ι → Prop)
+inductive CallArrow (compat : ι → ι → Bool) (R : List ι → List ι → Prop)
     (L : List (List ι × List (List ι) × List ι))
     (S : List (List ι × List (List ι) × List ι × List ι)) :
     List ι → List (List ι) → List ι → Prop where
-  | emptyRecv : CallArrow G R L S [] As d
-  | empty : [] ∈ As → CallArrow G R L S Rt As d
+  | emptyRecv : CallArrow compat R L S [] As d
+  | empty : [] ∈ As → CallArrow compat R L S Rt As d
   | source : p ∈ L → R Rt p.1 → Domains R As p.2.1 → (p.2.2 = [] ∨ R p.2.2 d) →
-      CallArrow G R L S Rt As d
-  | rest : s ∈ S → RestFixed R s Rt As d → CallArrow G R L S Rt As d
-  | union : CallArrow G R L S Rt (pre ++ a :: suffix) d →
-      CallArrow G R L S Rt (pre ++ b :: suffix) d →
-      CallArrow G R L S Rt (pre ++ (a ++ b) :: suffix) d
-  | recvUnion : CallArrow G R L S a As d → CallArrow G R L S b As d →
-      CallArrow G R L S (a ++ b) As d
-  | combine : CallArrow G R L S Rt As b → CallArrow G R L S Rt As b' →
-      (∀ i ∈ b, ∀ k ∈ b', compatible G i k = true → R [i] d) → CallArrow G R L S Rt As d
+      CallArrow compat R L S Rt As d
+  | rest : s ∈ S → RestFixed R s Rt As d → CallArrow compat R L S Rt As d
+  | union : CallArrow compat R L S Rt (pre ++ a :: suffix) d →
+      CallArrow compat R L S Rt (pre ++ b :: suffix) d →
+      CallArrow compat R L S Rt (pre ++ (a ++ b) :: suffix) d
+  | recvUnion : CallArrow compat R L S a As d → CallArrow compat R L S b As d →
+      CallArrow compat R L S (a ++ b) As d
+  | combine : CallArrow compat R L S Rt As b → CallArrow compat R L S Rt As b' →
+      (∀ i ∈ b, ∀ k ∈ b', compat i k = true → R [i] d) → CallArrow compat R L S Rt As d
 
 /-- An arrow's source result within the target's, or empty. -/
 theorem arrow_result {G : NormalGraph ι} {R : List ι → List ι → Prop} {n : Nat} {r d : List ι}
@@ -357,7 +357,7 @@ theorem arrow_result {G : NormalGraph ι} {R : List ι → List ι → Prop} {n 
   · exact hr m hm _ _ he V u hu
 
 theorem CallArrow.sound {G : NormalGraph ι} {R L S Rt As d}
-    (hc : CallArrow G R L S Rt As d) (n : Nat)
+    (hc : CallArrow (compatible G) R L S Rt As d) (n : Nat)
     (hr : ∀ j, j < n → ∀ a b, R a b → FamLeAt G a b j)
     (W : WorldT n) (v : Val)
     (hv : callsT (L.map fun p => (meaning G p.1, p.2.1.map (meaning G), meaning G p.2.2)) n W v ∧
@@ -472,10 +472,10 @@ def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
       CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws ∧
       (∀ y ∈ iy, ∃ x ∈ ix, R x y) ∧ CoversOptional R (a :: bs) os ps
   | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
-      (∀ p ∈ M, CallArrow G R L S p.1 p.2.1 p.2.2) ∧ ∀ t ∈ T, ∃ s ∈ S, RestCovers R s t
+      (∀ p ∈ M, CallArrow (compatible G) R L S p.1 p.2.1 p.2.2) ∧ ∀ t ∈ T, ∃ s ∈ S, RestCovers R s t
   | .callable a bs L S, .callable c ds M T =>
       CoversFields R (a :: bs) (c :: ds) ∧
-      (∀ p ∈ M, CallArrow G R L S p.1 p.2.1 p.2.2) ∧ ∀ t ∈ T, ∃ s ∈ S, RestCovers R s t
+      (∀ p ∈ M, CallArrow (compatible G) R L S p.1 p.2.1 p.2.2) ∧ ∀ t ∈ T, ∃ s ∈ S, RestCovers R s t
   -- A construct signature is covered by one taking as many parameters, each
   -- at least as wide, with a result at most as wide.
   | .ctors L, .ctors M => ∀ q ∈ M, ∃ p ∈ L, Domains R q.1 p.1 ∧ R p.2 q.2
@@ -789,19 +789,346 @@ theorem Core.sound {G : NormalGraph ι} {S T} (hc : Core G S T) :
         · exact expand_sem_mpr ⟨.top, htop, normalDenote_value hv⟩
   exact fun n => hs n S T hm
 
+/-! ## Instances of a scheme row
+
+An instance of a scheme row is named by an instance map `θ`, sending each row a
+signature reaches to a type of the graph: a binder to the type it is
+instantiated at, a clause row to a clause row whose clauses are its own with
+every operand mapped (the substituted copy the graph already holds, such as
+`PromiseLike<boolean>` for `PromiseLike<R1>`), and any other parameter to
+itself. The check is syntactic and finite over a domain `D` closed under
+operands (`InstOk`); `inst_type` is its meaning: read at the assignment giving
+each binder its image's meaning, a type within `D` means exactly its image. -/
+
+/-- A type's meaning is a family of closed values. -/
+theorem meaning_valueFam (G : NormalGraph ι) (S : List ι) : ValueFam (meaning G S) :=
+  ⟨setSem_adm (normalDenote_adm G) S, fun _ _ _ ⟨_, _, h⟩ => normalDenote_value h⟩
+
+abbrev InstMap (ι : Type) := List (ι × List ι)
+
+/-- A row's image; a row the map does not name is its own. -/
+def img [DecidableEq ι] (θ : InstMap ι) (i : ι) : List ι := (θ.lookup i).getD [i]
+
+def imgTy [DecidableEq ι] (θ : InstMap ι) (S : List ι) : List ι := S.flatMap (img θ)
+
+/-- A signature's image. -/
+def instSig [DecidableEq ι] (θ : InstMap ι) (p : List ι × List (List ι) × List ι) :
+    List ι × List (List ι) × List ι :=
+  (imgTy θ p.1, p.2.1.map (imgTy θ), imgTy θ p.2.2)
+
+/-- Every row of a signature is in `D`. -/
+def SigIn [DecidableEq ι] (D : List ι) (p : List ι × List (List ι) × List ι) : Bool :=
+  (p.1 :: p.2.2 :: p.2.1).all fun S => S.all (· ∈ D)
+
+/-- The assignment giving each binder its image's meaning. -/
+noncomputable def instEnv [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (θ : InstMap ι) :
+    Assignment ι :=
+  assign G.env bs (bs.map fun p => ⟨meaning G (img θ p), meaning_valueFam G _⟩)
+
+/-- One row of an instance map: a binder is a parameter row, any other
+parameter is its own image, and a clause row's image is one clause row holding
+its clauses renamed, with every operand in the domain. -/
+def rowInst [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (θ : InstMap ι) (D : List ι)
+    (i : ι) : Bool :=
+  if i ∈ bs then G.params i
+  else if G.params i then img θ i == [i]
+  else if G.plain i then
+    match img θ i with
+    | [j] => G.plain j && G j == (G i).map (Clause.map (imgTy θ)) &&
+        (G i).all fun c => c.operands.all fun S => S.all (· ∈ D)
+    | _ => false
+  else false
+
+def InstOk [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (θ : InstMap ι) (D : List ι) : Bool :=
+  D.all (rowInst G bs θ D)
+
+theorem inst_row [DecidableEq ι] {G : NormalGraph ι} {bs θ D}
+    (hok : InstOk G bs θ D = true) :
+    ∀ n, ∀ i ∈ D, ∀ (W : WorldT n) v,
+      qDenote G (instEnv G bs θ, i) n W v ↔ meaning G (img θ i) n W v := by
+  intro n
+  induction n using Nat.strongRecOn with
+  | ind n ih =>
+  intro i hi W v
+  have hrow := List.all_eq_true.mp hok i hi
+  simp only [rowInst] at hrow
+  by_cases hb : i ∈ bs
+  · simp only [hb, if_true] at hrow
+    rw [qDenote_unfold]
+    simp only [qLayer, hrow, if_true]
+    rw [instEnv, assign_map_mem _ _ _ hb]
+  · simp only [hb, if_false] at hrow
+    cases hpar : G.params i
+    · simp only [hpar, Bool.false_eq_true, if_false] at hrow
+      have hp' : G.params i = false := hpar
+      cases hpl : G.plain i
+      · simp [hpl] at hrow
+      simp only [hpl, if_true] at hrow
+      split at hrow
+      · rename_i j hj
+        simp only [Bool.and_eq_true, beq_iff_eq] at hrow
+        obtain ⟨⟨hjp, hG⟩, hops⟩ := hrow
+        rw [hj]
+        have hl : qDenote G (instEnv G bs θ, i) n W v ↔
+            semList (setSem fun l => qDenote G (instEnv G bs θ, l)) (G i) n W v :=
+          unfold_plain (G := { G with env := instEnv G bs θ }) hpl n W v
+        have hr : meaning G [j] n W v ↔ semList (meaning G) (G j) n W v := by
+          constructor
+          · rintro ⟨_, hm, h⟩
+            cases List.mem_singleton.mp hm
+            exact (unfold_plain hjp n W v).mp h
+          · intro h
+            exact ⟨j, List.mem_singleton_self j, (unfold_plain hjp n W v).mpr h⟩
+        have clause_inst : ∀ c ∈ G i,
+            sem (setSem fun l => qDenote G (instEnv G bs θ, l)) c n W v ↔
+              sem (meaning G) (c.map (imgTy θ)) n W v := by
+          intro c hc
+          have hD : ∀ S ∈ c.operands, ∀ l ∈ S, l ∈ D := by
+            intro S hS l hl
+            have := List.all_eq_true.mp (List.all_eq_true.mp (List.all_eq_true.mp hops c hc) S hS) l hl
+            simpa using this
+          let r : List ι → List ι := fun S => S.filter fun l => decide (l ∈ D)
+          have hcr : c.map r = c := map_of_operands fun S hS =>
+            List.filter_eq_self.mpr fun l hl => by simpa using hD S hS l hl
+          rw [sem_map, ← hcr, sem_map, sem_map]
+          apply sem_congr _ _ n (fun S => ?_) c W v
+          intro m hm U u
+          have hin : ∀ l ∈ r S, l ∈ D := fun l hl => by
+            simpa using (List.mem_filter.mp hl).2
+          constructor
+          · rintro ⟨l, hl, h⟩
+            obtain ⟨l', hl', h'⟩ := (ih m hm l (hin l hl) U u).mp h
+            exact ⟨l', List.mem_flatMap.mpr ⟨l, hl, hl'⟩, h'⟩
+          · rintro ⟨l', hl', h'⟩
+            obtain ⟨l, hl, hl'⟩ := List.mem_flatMap.mp hl'
+            exact ⟨l, hl, (ih m hm l (hin l hl) U u).mpr ⟨l', hl', h'⟩⟩
+        rw [hl, hr, hG]
+        simp only [semList, setSem, List.mem_map]
+        constructor
+        · rintro ⟨c, hc, h⟩
+          exact ⟨_, ⟨c, hc, rfl⟩, (clause_inst c hc).mp h⟩
+        · rintro ⟨_, ⟨c, hc, rfl⟩, h⟩
+          exact ⟨c, hc, (clause_inst c hc).mpr h⟩
+      · simp at hrow
+    · have hp : G.params i = true := hpar
+      simp only [hp, if_true, beq_iff_eq] at hrow
+      rw [hrow, qDenote_unfold]
+      simp only [qLayer, hp, if_true]
+      rw [instEnv, assign_map_nmem _ _ _ hb]
+      constructor
+      · intro h
+        refine ⟨i, List.mem_singleton_self i, ?_⟩
+        show qDenote G (G.env, i) n W v
+        rw [qDenote_unfold]; simpa [qLayer, hp] using h
+      · rintro ⟨_, hm, h⟩
+        cases List.mem_singleton.mp hm
+        change qDenote G (G.env, i) n W v at h
+        rw [qDenote_unfold] at h; simpa [qLayer, hp] using h
+
+/-- **Instances.** Read at the instance's assignment, a type within the domain
+means exactly its image. -/
+theorem inst_type [DecidableEq ι] {G : NormalGraph ι} {bs θ D}
+    (hok : InstOk G bs θ D = true) {S : List ι} (hS : ∀ l ∈ S, l ∈ D) :
+    setSem (fun l => qDenote G (instEnv G bs θ, l)) S = meaning G (imgTy θ S) := by
+  funext n W v
+  apply propext
+  constructor
+  · rintro ⟨l, hl, h⟩
+    obtain ⟨l', hl', h'⟩ := (inst_row hok n l (hS l hl) W v).mp h
+    exact ⟨l', List.mem_flatMap.mpr ⟨l, hl, hl'⟩, h'⟩
+  · rintro ⟨l', hl', h'⟩
+    obtain ⟨l, hl, hl'⟩ := List.mem_flatMap.mp hl'
+    exact ⟨l, hl, (inst_row hok n l (hS l hl) W v).mpr ⟨l', hl', h'⟩⟩
+
+/-- A clause reads its operands only: families agreeing on the rows of `D`
+give it one meaning, when its operands are within `D`. -/
+theorem sem_congr_on [DecidableEq ι] {D : List ι} {c : Clause (List ι)}
+    (hops : ∀ S ∈ c.operands, ∀ l ∈ S, l ∈ D) (X Y : ι → Fam) (n : Nat)
+    (h : ∀ l ∈ D, Agree (X l) (Y l) n) (W : WorldT n) (v : Val) :
+    sem (setSem X) c n W v ↔ sem (setSem Y) c n W v := by
+  let r : List ι → List ι := fun S => S.filter fun l => decide (l ∈ D)
+  have hcr : c.map r = c := map_of_operands fun S hS =>
+    List.filter_eq_self.mpr fun l hl => by simpa using hops S hS l hl
+  rw [← hcr, sem_map, sem_map]
+  apply sem_congr _ _ n (fun S => ?_) c W v
+  intro m hm U u
+  have hin : ∀ l ∈ r S, l ∈ D := fun l hl => by simpa using (List.mem_filter.mp hl).2
+  constructor
+  · rintro ⟨l, hl, hx⟩; exact ⟨l, hl, (h l (hin l hl) m hm U u).mp hx⟩
+  · rintro ⟨l, hl, hy⟩; exact ⟨l, hl, (h l (hin l hl) m hm U u).mpr hy⟩
+
+/-- The rows a row reads: a clause row its operands, a scheme row its
+signatures' rows. -/
+def reads (G : NormalGraph ι) (i : ι) : List ι :=
+  match G.schemes i with
+  | some s => s.signatures.flatMap fun p => p.1 ++ p.2.1.flatten ++ p.2.2
+  | none => (G i).flatMap fun c => c.operands.flatten
+
+/-- `D` holds every row its rows read. -/
+def closedReads [DecidableEq ι] (G : NormalGraph ι) (D : List ι) : Bool :=
+  D.all fun i => (reads G i).all (· ∈ D)
+
+/-- **Independence.** Rows closed under what they read, none of them in `bs`,
+mean the same at two assignments differing only on `bs`. -/
+theorem independent [DecidableEq ι] {G : NormalGraph ι} {D bs : List ι}
+    (hD : closedReads G D = true) (hbs : ∀ l ∈ D, l ∉ bs) :
+    ∀ n, ∀ η η' : Assignment ι, AgreeOff bs η η' → ∀ i ∈ D, ∀ (W : WorldT n) v,
+      qDenote G (η, i) n W v ↔ qDenote G (η', i) n W v := by
+  intro n
+  induction n using Nat.strongRecOn with
+  | ind n ih =>
+  intro η η' hη i hi W v
+  have hr : ∀ l ∈ reads G i, l ∈ D := by
+    have := List.all_eq_true.mp hD i hi
+    simpa using this
+  rw [qDenote_unfold, qDenote_unfold]
+  unfold qLayer
+  cases hp : G.params i
+  · simp only [Bool.false_eq_true, if_false]
+    cases hq : G.schemes i with
+    | some s =>
+      simp only [reads, hq] at hr
+      refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun _ => ?_)
+      have hag := agreeOff_assign hη s.binders As
+      have hrow : ∀ S, (∀ l ∈ S, l ∈ D) → Agree
+          (setSem (fun l => qDenote G (assign η s.binders As, l)) S)
+          (setSem (fun l => qDenote G (assign η' s.binders As, l)) S) n := by
+        intro S hS m hm U u
+        constructor
+        · rintro ⟨l, hl, h⟩; exact ⟨l, hl, (ih m hm _ _ hag l (hS l hl) U u).mp h⟩
+        · rintro ⟨l, hl, h⟩; exact ⟨l, hl, (ih m hm _ _ hag l (hS l hl) U u).mpr h⟩
+      have hargs : ∀ Ss : List (List ι), (∀ S ∈ Ss, ∀ l ∈ S, l ∈ D) → ArgsAgree n
+          (Ss.map (setSem fun l => qDenote G (assign η s.binders As, l)))
+          (Ss.map (setSem fun l => qDenote G (assign η' s.binders As, l))) := by
+        intro Ss hSs
+        induction Ss with
+        | nil => exact .nil
+        | cons S Ss ihs =>
+          exact .cons (hrow S (hSs S (List.mem_cons_self))) (ihs fun T hT => hSs T (List.mem_cons_of_mem _ hT))
+      unfold instanceSigs
+      exact callsT_congr s.signatures _ _ (fun p hp => by
+        have hin : ∀ l ∈ p.1 ++ p.2.1.flatten ++ p.2.2, l ∈ D := fun l hl =>
+          hr l (List.mem_flatMap.mpr ⟨p, hp, hl⟩)
+        refine ⟨hrow _ fun l hl => hin l (by simp [hl]), hargs _ fun S hS l hl => hin l ?_,
+          hrow _ fun l hl => hin l (by simp [hl])⟩
+        simp only [List.mem_append, List.mem_flatten]
+        exact .inl (.inr ⟨S, hS, hl⟩)) W v
+    | none =>
+      simp only [reads, hq] at hr
+      simp only [normalLayer, semList, setSem]
+      constructor
+      · rintro ⟨c, hc, h⟩
+        refine ⟨c, hc, (sem_congr_on (D := D) (fun S hS l hl => hr l ?_) _ _ n
+          (fun l hl m hm U u => ih m hm η η' hη l hl U u) W v).mp h⟩
+        exact List.mem_flatMap.mpr ⟨c, hc, List.mem_flatten.mpr ⟨S, hS, hl⟩⟩
+      · rintro ⟨c, hc, h⟩
+        refine ⟨c, hc, (sem_congr_on (D := D) (fun S hS l hl => hr l ?_) _ _ n
+          (fun l hl m hm U u => ih m hm η η' hη l hl U u) W v).mpr h⟩
+        exact List.mem_flatMap.mpr ⟨c, hc, List.mem_flatten.mpr ⟨S, hS, hl⟩⟩
+  · simp only [if_true]
+    rw [hη i (hbs i hi)]
+
+theorem sigIn_mem [DecidableEq ι] {D : List ι} {p : List ι × List (List ι) × List ι}
+    (h : SigIn D p = true) :
+    (∀ l ∈ p.1, l ∈ D) ∧ (∀ l ∈ p.2.2, l ∈ D) ∧ ∀ S ∈ p.2.1, ∀ l ∈ S, l ∈ D := by
+  simp only [SigIn, List.all_cons, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at h
+  exact ⟨h.1, h.2.1, h.2.2⟩
+
+/-- A member of a scheme row meets each checked instance of its signatures. -/
+theorem inst_sound [DecidableEq ι] {G : NormalGraph ι} {T : List ι} {i : ι} {s : SchemeRow ι}
+    {θ : InstMap ι} {D : List ι} {L : Ops ι}
+    (hp : G.params i = false) (hq : G.schemes i = some s) (hok : InstOk G s.binders θ D = true)
+    (hL : ∀ q ∈ L, ∃ p ∈ s.signatures, SigIn D p = true ∧ q = instSig θ p)
+    (hT : expand G T = [.arrs L []]) : FamLe (meaning G [i]) (meaning G T) := by
+  intro n W v hv
+  obtain ⟨_, hm, hv⟩ := hv
+  cases List.mem_singleton.mp hm
+  have hs := (qDenote_unfold G (G.env, i) n W v).mp hv
+  simp only [qLayer, hp, hq, Bool.false_eq_true, if_false] at hs
+  obtain ⟨hinv, hall⟩ := hs
+  have hc := (hall (s.binders.map fun p => ⟨meaning G (img θ p), meaning_valueFam G _⟩)
+    (by simp)).2
+  have hTp := plain_of_mem_expand (G := G) (S := T) (c := .arrs L []) (by simp [hT])
+  refine (expand_sem G T hTp n W v).mpr ⟨.arrs L [], by simp [hT], ?_⟩
+  refine ⟨⟨hinv, fun q' hq' => ?_⟩, ⟨hinv, by simp⟩⟩
+  obtain ⟨q, hqL, rfl⟩ := List.mem_map.mp hq'
+  obtain ⟨p, hps, hin, rfl⟩ := hL q hqL
+  have hpr := hc _ (List.mem_map_of_mem (f := fun p =>
+    (setSem (fun l => qDenote G (instEnv G s.binders θ, l)) p.1,
+     p.2.1.map (setSem fun l => qDenote G (instEnv G s.binders θ, l)),
+     setSem (fun l => qDenote G (instEnv G s.binders θ, l)) p.2.2)) hps)
+  obtain ⟨h1, h3, h2⟩ := sigIn_mem hin
+  have hargs : p.2.1.map (setSem fun l => qDenote G (instEnv G s.binders θ, l)) =
+      (p.2.1.map (imgTy θ)).map (meaning G) := by
+    rw [List.map_map]
+    exact List.map_congr_left fun S hS => inst_type hok (h2 S hS)
+  simp only [instSig]
+  rw [inst_type hok h1, inst_type hok h3, hargs] at hpr
+  exact hpr
+
 /-- Structural rules compose completed proofs. They cannot bypass the guarded
 coverage obligation for any row of a recursive table. -/
 inductive Sub (G : NormalGraph ι) : List ι → List ι → Prop where
   | core : Core G S T → Sub G S T
   | subset : (∀ i ∈ S, i ∈ T) → Sub G S T
   | trans : Sub G S U → Sub G U T → Sub G S T
+  /-- **Instantiation.** A scheme row is below an arrow type whose signatures
+  are images of its own under one checked instance map. -/
+  | inst [DecidableEq ι] {i : ι} {s : SchemeRow ι} {θ : InstMap ι} {D : List ι} {L : Ops ι} :
+      G.params i = false → G.schemes i = some s → InstOk G s.binders θ D = true →
+      (∀ q ∈ L, ∃ p ∈ s.signatures, SigIn D p = true ∧ q = instSig θ p) →
+      expand G T = [.arrs L []] → Sub G [i] T
+  /-- **Generalization.** A type below a scheme's signatures, with its binders
+  opaque, is below the scheme: it is so at every instantiation, since it does
+  not read the binders (`independent`). -/
+  | gen [DecidableEq ι] {j : ι} {s : SchemeRow ι} {D U : List ι} :
+      G.params j = false → G.schemes j = some s →
+      expand G U = [.arrs s.signatures []] →
+      closedReads G D = true → (∀ l ∈ D, l ∉ s.binders) → (∀ l ∈ S, l ∈ D) →
+      Sub G S U → Sub G S [j]
+
+/-- The graph whose parameter rows mean `η`. No check reads the assignment, so
+every derivation over `G` is one over each reassignment. -/
+def reassign (G : NormalGraph ι) (η : Assignment ι) : NormalGraph ι := { G with env := η }
+
+/-- Subtyping holds at every assignment: the derivation reads no assignment. -/
+theorem Sub.sound_at {G : NormalGraph ι} {S T} (h : Sub G S T) :
+    ∀ η, FamLe (meaning (reassign G η) S) (meaning (reassign G η) T) := by
+  induction h with
+  | core h => exact fun η => Core.sound (G := reassign G η) h
+  | subset h => exact fun _ => by rintro n W v ⟨i, hi, hv⟩; exact ⟨i, h i hi, hv⟩
+  | trans _ _ ih ih' => exact fun η n W v hv => ih' η n W v (ih η n W v hv)
+  | inst hp hq hok hL hT => exact fun η => inst_sound (G := reassign G η) hp hq hok hL hT
+  | @gen S _ j s D U hp hq hU hD hbs hS _ ih =>
+    intro η n W v hv
+    refine ⟨j, List.mem_singleton_self j, ?_⟩
+    change qDenote G (η, j) n W v
+    rw [qDenote_unfold]
+    simp only [qLayer, hp, hq, Bool.false_eq_true, if_false]
+    have hat : ∀ As : List ValueFamily,
+        meaning (reassign G (assign η s.binders As)) U n W v := by
+      intro As
+      apply ih (assign η s.binders As) n W v
+      obtain ⟨l, hl, h⟩ := hv
+      refine ⟨l, hl, ?_⟩
+      change qDenote G (assign η s.binders As, l) n W v
+      refine (independent hD hbs n η _ (fun p hp => ?_) l (hS l hl) W v).mp h
+      exact (assign_nmem η s.binders As hp).symm
+    have hUp := plain_of_mem_expand (G := G) (S := U) (c := .arrs s.signatures []) (by simp [hU])
+    have hsig : ∀ As : List ValueFamily, callsT (instanceSigs
+        (fun η' S => setSem (fun l => qDenote G (η', l)) S) η s As) n W v := by
+      intro As
+      obtain ⟨c, hc, hcv⟩ := (expand_sem (reassign G (assign η s.binders As)) U hUp n W v).mp (hat As)
+      have : c = .arrs s.signatures [] := by
+        have : expand (reassign G (assign η s.binders As)) U = [.arrs s.signatures []] := hU
+        rw [this] at hc; simpa using hc
+      subst this
+      exact hcv.1
+    exact ⟨(hsig []).1, fun As _ => hsig As⟩
 
 theorem Sub.sound {G : NormalGraph ι} {S T} (h : Sub G S T) :
-    FamLe (meaning G S) (meaning G T) := by
-  induction h with
-  | core h => exact h.sound
-  | subset h => rintro n W v ⟨i, hi, hv⟩; exact ⟨i, h i hi, hv⟩
-  | trans _ _ ih ih' => exact fun n W v hv => ih' n W v (ih n W v hv)
+    FamLe (meaning G S) (meaning G T) :=
+  h.sound_at G.env
 
 theorem Sub.refl (G : NormalGraph ι) (S : List ι) : Sub G S S := .subset (fun _ h => h)
 

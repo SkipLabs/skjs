@@ -475,5 +475,154 @@ theorem sem_congr (X Y : α → Fam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
       | cons a As ih => exact .cons (h a) ih
     exact ctorsT_congr L _ _ (fun p _ => ⟨hd p.1, h p.2⟩) W v
 
+/-! ## Renaming operands
+
+`Clause.map` renames every operand; the meaning of a renamed clause is the
+clause read through the renaming (`sem_map`). A renaming fixing every operand
+changes nothing (`map_of_operands`). -/
+
+def Tuple.map (f : α → β) (t : Tuple α) : Tuple β :=
+  ⟨t.required.map f, t.optional.map f, t.rest.map f, t.readonly⟩
+
+def Tuple.operands (t : Tuple α) : List α := t.required ++ t.optional ++ t.rest.toList
+
+def mapFields (f : α → β) (fs : List (PropKey × α)) : List (PropKey × β) :=
+  fs.map fun q => (q.1, f q.2)
+
+def Clause.map (f : α → β) : Clause α → Clause β
+  | .top => .top
+  | .nul => .nul
+  | .undef => .undef
+  | .bool => .bool
+  | .boolLit b => .boolLit b
+  | .num => .num
+  | .numLit v => .numLit v
+  | .str => .str
+  | .strLit v => .strLit v
+  | .bigint => .bigint
+  | .symbol => .symbol
+  | .list a bs => .list (a.map f) (bs.map (·.map f))
+  | .refs a bs vs os => .refs (mapFields f a) (bs.map (mapFields f)) (mapFields f vs) (mapFields f os)
+  | .dict a bs vs ds os => .dict (mapFields f a) (bs.map (mapFields f)) (mapFields f vs)
+      (ds.map f) (mapFields f os)
+  | .arrs L S => .arrs (L.map fun q => (f q.1, q.2.1.map f, f q.2.2))
+      (S.map fun q => (f q.1, q.2.1.map f, f q.2.2.1, f q.2.2.2))
+  | .callable a bs L S => .callable (mapFields f a) (bs.map (mapFields f))
+      (L.map fun q => (f q.1, q.2.1.map f, f q.2.2))
+      (S.map fun q => (f q.1, q.2.1.map f, f q.2.2.1, f q.2.2.2))
+  | .ctors L => .ctors (L.map fun q => (q.1.map f, f q.2))
+
+/-- Every operand of a clause. -/
+def Clause.operands : Clause α → List α
+  | .list a bs => a.operands ++ bs.flatMap Tuple.operands
+  | .refs a bs vs os => (a ++ bs.flatten ++ vs ++ os).map (·.2)
+  | .dict a bs vs ds os => (a ++ bs.flatten ++ vs ++ os).map (·.2) ++ ds
+  | .arrs L S => L.flatMap (fun q => q.1 :: q.2.1 ++ [q.2.2]) ++
+      S.flatMap (fun q => q.1 :: q.2.1 ++ [q.2.2.1, q.2.2.2])
+  | .callable a bs L S => (a ++ bs.flatten).map (·.2) ++
+      L.flatMap (fun q => q.1 :: q.2.1 ++ [q.2.2]) ++
+      S.flatMap (fun q => q.1 :: q.2.1 ++ [q.2.2.1, q.2.2.2])
+  | .ctors L => L.flatMap fun q => q.1 ++ [q.2]
+  | _ => []
+
+private theorem famsOf_fun (X : α → Fam) :
+    famsOf X = fun fs => fs.map fun p => (p.1, X p.2) := rfl
+
+theorem sem_map (Y : β → Fam) (f : α → β) (c : Clause α) :
+    sem Y (c.map f) = sem (fun a => Y (f a)) c := by
+  cases c <;> simp [sem, Clause.map, mapFields, famsOf_fun, tupleFams, Tuple.map, Function.comp_def]
+
+private theorem map_self {l : List α} {f : α → α} (h : ∀ a ∈ l, f a = a) : l.map f = l := by
+  induction l with
+  | nil => rfl
+  | cons a l ih =>
+    simp only [List.mem_cons, forall_eq_or_imp] at h
+    simp [h.1, ih h.2]
+
+private theorem mapFields_self {fs : List (PropKey × α)} {f : α → α}
+    (h : ∀ a ∈ fs.map (·.2), f a = a) : mapFields f fs = fs :=
+  map_self fun q hq => by
+    have := h q.2 (List.mem_map_of_mem hq)
+    simp [this]
+
+private theorem tuple_self {t : Tuple α} {f : α → α} (h : ∀ a ∈ t.operands, f a = a) :
+    t.map f = t := by
+  obtain ⟨r, o, e, b⟩ := t
+  simp only [Tuple.operands, List.mem_append] at h
+  have h1 := map_self (l := r) fun a ha => h a (.inl (.inl ha))
+  have h2 := map_self (l := o) fun a ha => h a (.inl (.inr ha))
+  have h3 : e.map f = e := by cases e <;> simp_all
+  simp [Tuple.map, h1, h2, h3]
+
+/-- A renaming fixing every operand fixes the clause. -/
+theorem map_of_operands {c : Clause α} {f : α → α} (h : ∀ a ∈ c.operands, f a = a) :
+    c.map f = c := by
+  cases c with
+  | list a bs =>
+    simp only [Clause.operands, List.mem_append, List.mem_flatMap] at h
+    simp only [Clause.map, Clause.list.injEq]
+    exact ⟨tuple_self fun x hx => h x (.inl hx),
+      map_self fun t ht => tuple_self fun x hx => h x (.inr ⟨t, ht, hx⟩)⟩
+  | refs a bs vs os =>
+    simp only [Clause.operands, List.map_append, List.mem_append] at h
+    simp only [Clause.map, Clause.refs.injEq]
+    refine ⟨mapFields_self fun x hx => h x (.inl (.inl (.inl hx))),
+      map_self fun fs hfs => mapFields_self fun x hx => h x (.inl (.inl (.inr ?_))),
+      mapFields_self fun x hx => h x (.inl (.inr hx)),
+      mapFields_self fun x hx => h x (.inr hx)⟩
+    simp only [List.mem_map, List.mem_flatten] at hx ⊢
+    obtain ⟨q, hq, rfl⟩ := hx
+    exact ⟨q, ⟨fs, hfs, hq⟩, rfl⟩
+  | dict a bs vs ds os =>
+    simp only [Clause.operands, List.map_append, List.mem_append] at h
+    simp only [Clause.map, Clause.dict.injEq]
+    refine ⟨mapFields_self fun x hx => h x (.inl (.inl (.inl (.inl hx)))),
+      map_self fun fs hfs => mapFields_self fun x hx => h x (.inl (.inl (.inl (.inr ?_)))),
+      mapFields_self fun x hx => h x (.inl (.inl (.inr hx))),
+      map_self fun x hx => h x (.inr hx),
+      mapFields_self fun x hx => h x (.inl (.inr hx))⟩
+    simp only [List.mem_map, List.mem_flatten] at hx ⊢
+    obtain ⟨q, hq, rfl⟩ := hx
+    exact ⟨q, ⟨fs, hfs, hq⟩, rfl⟩
+  | arrs L S =>
+    simp only [Clause.operands, List.mem_append, List.mem_flatMap] at h
+    simp only [Clause.map, Clause.arrs.injEq]
+    refine ⟨map_self fun q hq => ?_, map_self fun q hq => ?_⟩
+    · have h1 := h q.1 (.inl ⟨q, hq, by simp⟩)
+      have h3 := h q.2.2 (.inl ⟨q, hq, by simp⟩)
+      have h2 := map_self (l := q.2.1) fun x hx => h x (.inl ⟨q, hq, by simp [hx]⟩)
+      simp [h1, h2, h3]
+    · have h1 := h q.1 (.inr ⟨q, hq, by simp⟩)
+      have h3 := h q.2.2.1 (.inr ⟨q, hq, by simp⟩)
+      have h4 := h q.2.2.2 (.inr ⟨q, hq, by simp⟩)
+      have h2 := map_self (l := q.2.1) fun x hx => h x (.inr ⟨q, hq, by simp [hx]⟩)
+      simp [h1, h2, h3, h4]
+  | callable a bs L S =>
+    simp only [Clause.operands, List.map_append, List.mem_append, List.mem_flatMap] at h
+    simp only [Clause.map, Clause.callable.injEq]
+    refine ⟨mapFields_self fun x hx => h x (.inl (.inl (.inl hx))),
+      map_self fun fs hfs => mapFields_self fun x hx => h x (.inl (.inl (.inr ?_))),
+      map_self fun q hq => ?_, map_self fun q hq => ?_⟩
+    · simp only [List.mem_map, List.mem_flatten] at hx ⊢
+      obtain ⟨q, hq, rfl⟩ := hx
+      exact ⟨q, ⟨fs, hfs, hq⟩, rfl⟩
+    · have h1 := h q.1 (.inl (.inr ⟨q, hq, by simp⟩))
+      have h3 := h q.2.2 (.inl (.inr ⟨q, hq, by simp⟩))
+      have h2 := map_self (l := q.2.1) fun x hx => h x (.inl (.inr ⟨q, hq, by simp [hx]⟩))
+      simp [h1, h2, h3]
+    · have h1 := h q.1 (.inr ⟨q, hq, by simp⟩)
+      have h3 := h q.2.2.1 (.inr ⟨q, hq, by simp⟩)
+      have h4 := h q.2.2.2 (.inr ⟨q, hq, by simp⟩)
+      have h2 := map_self (l := q.2.1) fun x hx => h x (.inr ⟨q, hq, by simp [hx]⟩)
+      simp [h1, h2, h3, h4]
+  | ctors L =>
+    simp only [Clause.operands, List.mem_flatMap] at h
+    simp only [Clause.map, Clause.ctors.injEq]
+    refine map_self fun q hq => ?_
+    have h2 := h q.2 ⟨q, hq, by simp⟩
+    have h1 := map_self (l := q.1) fun x hx => h x ⟨q, hq, by simp [hx]⟩
+    simp [h1, h2]
+  | _ => rfl
+
 #print axioms normalize_sound
 end Verification.Model.PositiveNormalization

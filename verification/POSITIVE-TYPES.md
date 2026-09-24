@@ -380,11 +380,16 @@ implied by the union-label congruence theorem.
 structural proof trees. Its checker uses no semantic oracle or unbounded proof
 search.
 
-A proof is one of three forms. `core` carries a `Certificate`: the finite
+A proof is one of five forms. `core` carries a `Certificate`: the finite
 candidate relation and its arrow evidence. `subset` is plain union inclusion of
 the source labels in the target's. `trans` names an intermediate type and holds
-a proof on each side. All three are accepted, which is worth stating separately
-from what the producer builds: `CertificateProducer` never emits `trans`, and
+a proof on each side. `inst` puts a scheme row below an instance of its
+signatures: it carries the instance map and its domain (`Sub.inst`). `gen` puts
+a type below a scheme row: it carries the rows the type reads, the type stating
+the scheme's signatures with its binders opaque, and a proof of the inclusion
+in that type (`Sub.gen`). All five are accepted, which is worth stating
+separately from what the producer builds: `CertificateProducer` never emits
+`trans`, and
 [PROGRAM-TYPING.md](PROGRAM-TYPING.md#producing-evidence-from-supplied-claims)
 records that its search does not enumerate transitivity derivations. That is a
 restriction on search, not on the accepted language — a certificate written by
@@ -508,7 +513,16 @@ holds at every reassignment.
 Only clause rows have clauses. A type holding a parameter or scheme row has no
 expansion, so no rule that reads a clause (`Represents`, `Answers`, the atoms
 of heap knowledge) applies to it. In subtyping, such a row of the source must
-appear in the target, or the target must admit every value (`Opaque`). Scheme
+appear in the target, or the target must admit every value (`Opaque`).
+
+Two subtyping rules read scheme rows. `Sub.inst` puts a scheme below an arrow
+type whose signatures are its own under an instance map, which sends each
+binder to a type and each clause row a signature reads to a clause row holding
+its clauses with every operand mapped; read at the instance's assignment, a
+mapped type means exactly its image. `Sub.gen` puts a type below a scheme when
+it is below the scheme's signatures with the binders opaque and none of the
+rows it reads is a binder. Subtyping is sound at every assignment
+(`Sub.sound_at`): the judgments read a graph only through its rows. Scheme
 rows are the graph form of generic methods, stage 2 of the quantified-types
 plan in [the producer's README](ocaml-producer/README.md); the layer below
 predates them.

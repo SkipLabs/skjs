@@ -92,7 +92,7 @@ def prune [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) :
       (clausesOf G p.2).any fun b => PositiveCertificates.checkClause G table es a b
     if next = table then table else prune G pool fuel next
 
-def subtype [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
+def subtypeBase [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
   if PositiveCertificates.check G A B .subset then some .subset else
   -- Semantic top covers every clause: one row, no arrow evidence.
@@ -104,6 +104,85 @@ def subtype [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     let p := PositiveCertificates.Proof.core ⟨table, arrowEvidence G table types⟩
     if PositiveCertificates.check G A B p then some p else none
 
+
+/-- Propose an instance map sending the scheme-side type `S` to the graph's
+type `T`: a binder to `T`, a clause row to a clause row whose clauses match
+its own operand by operand. Untrusted: `checkInst` validates the map. -/
+def matchInst [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) :
+    Nat → InstMap ι → List ι → List ι → Option (InstMap ι)
+  | 0, _, _, _ => none
+  | fuel + 1, θ, S, T =>
+    match S with
+    | [p] =>
+      match θ.lookup p with
+      | some U => if U = T then some θ else none
+      | none =>
+        if p ∈ bs then some ((p, T) :: θ)
+        else if G.params p then (if T = [p] then some ((p, T) :: θ) else none)
+        else match T with
+          | [j] =>
+            if (G p).length = (G j).length then
+              ((G p).zip (G j)).foldlM (fun θ cd =>
+                if cd.1.operands.length = cd.2.operands.length then
+                  (cd.1.operands.zip cd.2.operands).foldlM
+                    (fun θ st => matchInst G bs fuel θ st.1 st.2) θ
+                else none) ((p, [j]) :: θ)
+            else none
+          | _ => none
+    | _ =>
+      if S.length = T.length then
+        (S.zip T).foldlM (fun θ st => matchInst G bs fuel θ [st.1] [st.2]) θ
+      else none
+
+def matchSig [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (fuel : Nat) (θ : InstMap ι)
+    (p q : List ι × List (List ι) × List ι) : Option (InstMap ι) := do
+  let θ ← matchInst G bs fuel θ p.1 q.1
+  if p.2.1.length ≠ q.2.1.length then none
+  let θ ← (p.2.1.zip q.2.1).foldlM (fun θ st => matchInst G bs fuel θ st.1 st.2) θ
+  matchInst G bs fuel θ p.2.2 q.2.2
+
+/-- A scheme row below an arrow type: one instance map covering every target
+signature. -/
+def instProof [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (A B : Ty ι) :
+    Option (PositiveCertificates.Proof ι) :=
+  match A, expand G B with
+  | [i], [.arrs L []] =>
+    match G.schemes i with
+    | some s => do
+      let θ ← L.foldlM (fun θ q => s.signatures.findSome? fun p => matchSig G s.binders fuel θ p q) []
+      some (.inst θ (θ.map (·.1)))
+    | none => none
+  | _, _ => none
+
+/-- The rows `S` reads, transitively. -/
+def readsFrom [DecidableEq ι] (G : NormalGraph ι) : Nat → List ι → List ι
+  | 0, S => S
+  | fuel + 1, S =>
+    let next := (S ++ S.flatMap (reads G)).eraseDups
+    if next.length = S.length then S else readsFrom G fuel next
+
+/-- A type below a scheme row: a type of the pool stating the scheme's
+signatures, and a proof of the inclusion in it. -/
+def genProof [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) (fuel : Nat) (A B : Ty ι) :
+    Option (PositiveCertificates.Proof ι) :=
+  match B with
+  | [j] =>
+    match G.schemes j with
+    | some s => do
+      let U ← pool.find? fun U => expand G U == [.arrs s.signatures []]
+      let p ← subtypeBase G pool A U <|> instProof G fuel A U
+      some (.gen (readsFrom G fuel A) U p)
+    | none => none
+  | _ => none
+
+/-- A proof of `A ≤ B`: structural, by instantiating a scheme row, or by
+generalizing to one. Every proposal is checked. -/
+def subtype [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
+    (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
+  let fuel := 64 + pool.length
+  let ok p := PositiveCertificates.check G A B p
+  (subtypeBase G pool A B) <|> ((instProof G fuel A B).filter ok) <|>
+    ((genProof G pool fuel A B).filter ok)
 def coerce [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     (e : ProgramCertificates.Evidence ι) (A : Ty ι) : Option (ProgramCertificates.Evidence ι) := do
   if (claim e).type = A then return e

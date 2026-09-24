@@ -74,7 +74,7 @@ def checkArrow [DecidableEq ι] (G : NormalGraph ι) (table : Table ι)
       decide (∀ i ∈ b, ∀ k ∈ b', compatible G i k = true → Rel table [i] d)
 
 theorem checkArrow_sound [DecidableEq ι] {G : NormalGraph ι} {table L S Rt As d cert}
-    (h : checkArrow G table L S Rt As d cert = true) : CallArrow G (Rel table) L S Rt As d := by
+    (h : checkArrow G table L S Rt As d cert = true) : CallArrow (compatible G) (Rel table) L S Rt As d := by
   induction cert generalizing Rt As d with
   | empty => exact .empty (of_decide_eq_true h)
   | emptyRecv =>
@@ -100,7 +100,7 @@ theorem checkArrow_sound [DecidableEq ι] {G : NormalGraph ι} {table L S Rt As 
     exact .combine (ih h.1.1) (ih' h.1.2) h.2
 
 theorem checkArrow_complete [DecidableEq ι] {G : NormalGraph ι} {table L S Rt As d}
-    (h : CallArrow G (Rel table) L S Rt As d) :
+    (h : CallArrow (compatible G) (Rel table) L S Rt As d) :
     ∃ cert, checkArrow G table L S Rt As d cert = true := by
   induction h with
   | emptyRecv => exact ⟨.emptyRecv, by simp [checkArrow]⟩
@@ -234,7 +234,7 @@ theorem checkClause_mono [DecidableEq ι] {G : NormalGraph ι} {table a b es es'
 
 private theorem arrow_evidence_complete [DecidableEq ι] {G : NormalGraph ι} {table} {L M : Ops ι}
     {S : List (List ι × List (List ι) × List ι × List ι)}
-    (h : ∀ p ∈ M, CallArrow G (Rel table) L S p.1 p.2.1 p.2.2) :
+    (h : ∀ p ∈ M, CallArrow (compatible G) (Rel table) L S p.1 p.2.1 p.2.2) :
     ∃ es : Evidence ι, ∀ p ∈ M, ∃ e ∈ es,
       e.1 = L ∧ e.2.1 = p ∧ checkArrow G table L S p.1 p.2.1 p.2.2 e.2.2 = true := by
   have hx : ∀ p ∈ M, ∃ es : Evidence ι, ∃ e ∈ es,
@@ -336,12 +336,71 @@ inductive Proof (ι : Type) where
   | core (certificate : Certificate ι)
   | subset
   | trans (middle : List ι) (left right : Proof ι)
+  /-- A scheme row below a checked instance of its signatures: the instance
+  map and its domain. -/
+  | inst (map : InstMap ι) (domain : List ι)
+  /-- A type below a scheme: the rows it reads, which avoid the binders, the
+  type stating the scheme's signatures with its binders opaque, and the proof
+  of the inclusion in that type. -/
+  | gen (domain : List ι) (body : List ι) (proof : Proof ι)
   deriving Repr
+
+/-- The syntactic conditions of `Sub.gen`, other than its subproof. -/
+def genOk [DecidableEq ι] (G : NormalGraph ι) (S T D U : List ι) : Bool :=
+  match T with
+  | [j] =>
+    match G.schemes j with
+    | some s => !G.params j && expand G U == [.arrs s.signatures []] && closedReads G D &&
+        D.all (fun l => decide (l ∉ s.binders)) && S.all (· ∈ D)
+    | none => false
+  | _ => false
+
+theorem genOk_sound [DecidableEq ι] {G : NormalGraph ι} {S T D U}
+    (h : genOk G S T D U = true) (hs : Sub G S U) : Sub G S T := by
+  unfold genOk at h
+  split at h
+  · rename_i j
+    split at h
+    · rename_i s hq
+      simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, List.all_eq_true,
+        decide_eq_true_eq] at h
+      exact .gen h.1.1.1.1 hq h.1.1.1.2 h.1.1.2 h.1.2 h.2 hs
+    · cases h
+  · cases h
+
+/-- `S` is one scheme row, and `T` one arrow clause whose every signature is an
+image of one of the scheme's under `θ`. -/
+def checkInst [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (θ : InstMap ι)
+    (D : List ι) : Bool :=
+  match S, expand G T with
+  | [i], [.arrs L []] =>
+    match G.schemes i with
+    | some s => !G.params i && InstOk G s.binders θ D &&
+        L.all fun q => s.signatures.any fun p => SigIn D p && q == instSig θ p
+    | none => false
+  | _, _ => false
+
+theorem checkInst_sound [DecidableEq ι] {G : NormalGraph ι} {S T θ D}
+    (h : checkInst G S T θ D = true) : Sub G S T := by
+  unfold checkInst at h
+  split at h
+  · rename_i i L hT
+    split at h
+    · rename_i s hs
+      simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true, List.any_eq_true,
+        beq_iff_eq] at h
+      exact .inst h.1.1 hs h.1.2 (fun q hq => by
+        obtain ⟨p, hp, hin, he⟩ := h.2 q hq
+        exact ⟨p, hp, hin, he⟩) hT
+    · cases h
+  · cases h
 
 def check [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) : Proof ι → Bool
   | .core cert => checkCore G S T cert
   | .subset => decide (∀ i ∈ S, i ∈ T)
   | .trans middle left right => check G S middle left && check G middle T right
+  | .inst θ D => checkInst G S T θ D
+  | .gen D U p => genOk G S T D U && check G S U p
 
 theorem check_sound [DecidableEq ι] {G : NormalGraph ι} {S T proof}
     (h : check G S T proof = true) : Sub G S T := by
@@ -351,8 +410,12 @@ theorem check_sound [DecidableEq ι] {G : NormalGraph ι} {S T proof}
   | trans middle left right ih ih' =>
     simp only [check, Bool.and_eq_true] at h
     exact .trans (ih h.1) (ih' h.2)
+  | inst θ D => exact checkInst_sound h
+  | gen D U p ih =>
+    simp only [check, Bool.and_eq_true] at h
+    exact genOk_sound h.1 (ih h.2)
 
-theorem check_complete [DecidableEq ι] {G : NormalGraph ι} {S T}
+theorem check_complete [dec : DecidableEq ι] {G : NormalGraph ι} {S T}
     (h : Sub G S T) : ∃ proof, check G S T proof = true := by
   induction h with
   | core h =>
@@ -364,6 +427,21 @@ theorem check_complete [DecidableEq ι] {G : NormalGraph ι} {S T}
     obtain ⟨left, hl⟩ := ih
     obtain ⟨right, hr⟩ := ih'
     exact ⟨.trans U left right, by simp [check, hl, hr]⟩
+  | @inst T inst i s θ D L hp hq hok hL hT =>
+    have he : inst = dec := Subsingleton.elim _ _
+    subst he
+    refine ⟨.inst θ D, ?_⟩
+    simp only [check, checkInst, hT, hq, hp, hok, Bool.not_false, Bool.true_and,
+      List.all_eq_true, List.any_eq_true, Bool.and_eq_true, beq_iff_eq]
+    exact fun q hq => hL q hq
+  | @gen S inst j s D U hp hq hU hD hbs hS _ ih =>
+    have he : inst = dec := Subsingleton.elim _ _
+    subst he
+    obtain ⟨p, hpc⟩ := ih
+    refine ⟨.gen D U p, ?_⟩
+    simp only [check, genOk, hq, hp, hU, hD, hpc, Bool.not_false, Bool.true_and, Bool.and_true,
+      beq_self_eq_true, List.all_eq_true, decide_eq_true_eq, Bool.and_eq_true]
+    exact ⟨hbs, hS⟩
 
 /-- Certificate completeness for the independent declarative rules. No claim
 of completeness with respect to arbitrary semantic inclusion is made. -/

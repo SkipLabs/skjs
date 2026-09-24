@@ -18,10 +18,17 @@ assignment, `env`. This file states the rules the rows obey:
 * **introduction**: a callable meeting, at every instantiation, the signatures
   read in the graph reassigned there is a member of the scheme row.
 
-Reassigning a graph is `{G with env := η}`. No check reads `env`, so a typing
-derivation over `G` is one over every reassignment, and every soundness theorem
-proved for all graphs holds at each of them. That is how a generic body, typed
-once with its binders opaque, discharges the introduction premise.
+Reassigning a graph is `reassign G η`, `{G with env := η}`. No check reads
+`env`: the syntactic judgments read a graph only through its rows, so a
+derivation over `G` is one over every reassignment. `Sub.sound_at` states it
+for subtyping; a generic body, typed once with its binders opaque, discharges
+the introduction premise the same way.
+
+The subtyping rules over scheme rows are in `PositiveRules`: `Sub.inst`
+(elimination: a scheme below a checked instance of its signatures, named by an
+instance map, `inst_type`) and `Sub.gen` (generalization: a type reading none
+of a scheme's binders, below its signatures with the binders opaque, is below
+the scheme, `independent`).
 
 Without scheme rows, the denotation is the parametric semantics `denoteP`. The
 quantifier ranges over every family of closed values. A bound on a binder is
@@ -30,9 +37,6 @@ namespace Verification.Model.QuantifiedGraphs
 open PositiveNormalization PositiveGraphs PositiveRules Tower TypeParams ProgramTyping
 
 variable {ι : Type}
-
-/-- The graph whose parameter rows mean `η`. -/
-def reassign (G : NormalGraph ι) (η : Assignment ι) : NormalGraph ι := { G with env := η }
 
 /-- The reassigned graph's meaning is the denotation at `η`: the fixed point
 does not read the assignment it is taken at. -/

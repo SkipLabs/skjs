@@ -11,16 +11,30 @@ open ProgramTyping ProgramCertificates CertificateProducer PositiveNormalization
 
 /-- 0 null, 1 true, 2 false, 3 undefined, 4 the parameter `T`, 5 the scheme
 `<T>(x: T) => T` called on `undefined`, 6 unknown. Rows 4 and 5 hold a clause
-that is never read. -/
+that is never read. 7 `(x: boolean) => boolean`, 8 `(x: null) => null`,
+9 `Box<T>`, 10 `<T>(x: T) => Box<T>`, 11 `Box<boolean>`,
+12 `(x: boolean) => Box<boolean>`, 13 `Box<null>`, 14 `(x: boolean) => Box<null>`,
+15 `(x: null) => boolean`, 16 `(x: T) => T` with `T` opaque, 17 the scheme
+`<U>(x: U) => U`, 18 its parameter `U`, 19 `(x: U) => U` with `U` opaque. -/
 def types : List (List (Clause (List Nat))) :=
-  [[.nul], [.boolLit true], [.boolLit false], [.undef], [.nul], [.nul], [.top]]
+  [[.nul], [.boolLit true], [.boolLit false], [.undef], [.nul], [.nul], [.top],
+   [.arrs [([3], [[1, 2]], [1, 2])] []], [.arrs [([3], [[0]], [0])] []],
+   [.refs [(valueField, [4])] [] []], [], [.refs [(valueField, [1, 2])] [] []],
+   [.arrs [([3], [[1, 2]], [11])] []], [.refs [(valueField, [0])] [] []],
+   [.arrs [([3], [[1, 2]], [13])] []], [.arrs [([3], [[0]], [1, 2])] []],
+   [.arrs [([3], [[4]], [4])] []], [], [], [.arrs [([3], [[18]], [18])] []]]
 
 def G : NormalGraph Nat where
   rows i := types[i]?.getD []
-  params i := i == 4
-  schemes i := if i == 5 then some ⟨[4], [([3], [[4]], [4])]⟩ else none
+  params i := i == 4 || i == 18
+  schemes i :=
+    if i == 5 then some ⟨[4], [([3], [[4]], [4])]⟩
+    else if i == 10 then some ⟨[4], [([3], [[4]], [9])]⟩
+    else if i == 17 then some ⟨[18], [([3], [[18]], [18])]⟩
+    else none
 
-def pool : List (List Nat) := vocabulary G (List.range types.length) [] [[4], [0, 4]]
+def pool : List (List Nat) :=
+  vocabulary G (List.range types.length) [] [[4], [0, 4]] ++ (List.range types.length).map ([·])
 
 def found (Γ : List (List Nat)) (t : Tm) (A : List Nat) : Bool :=
   match expression G pool 12 Γ t A with
@@ -58,5 +72,46 @@ def subtypes (A B : List Nat) : Bool := (subtype G pool A B).isSome
 
 -- No value is typed at a scheme row before its introduction rule.
 #guard !found [] (.make (.closure 1 (.var 1)) .nul) [5]
+
+-- Instantiation: a scheme row is below each instance of its signatures, the
+-- instance named by a checked map.
+#guard subtypes [5] [7]
+#guard subtypes [5] [8]
+#guard subtypes [10] [12]
+#guard PositiveCertificates.check G [5] [7] (.inst [(4, [1, 2])] [4, 3])
+-- The map must be an instance: `T` at `null` does not give `(x: boolean) => boolean`,
+-- and `Box<null>` is not `Box<T>` at `boolean`.
+#guard !PositiveCertificates.check G [5] [7] (.inst [(4, [0])] [4, 3])
+#guard !PositiveCertificates.check G [10] [12] (.inst [(4, [1, 2]), (9, [13])] [4, 9, 3])
+#guard !subtypes [10] [14]
+#guard !subtypes [5] [15]
+#guard PositiveCertificates.check G [10] [12] (.inst [(4, [1, 2]), (9, [11])] [4, 9, 3])
+-- The domain must hold every row a signature reads.
+#guard !PositiveCertificates.check G [5] [7] (.inst [(4, [1, 2])] [4])
+#guard !PositiveCertificates.check G [10] [12] (.inst [(4, [1, 2]), (9, [11])] [4, 3])
+
+-- Generalization: `<T>(x: T) => T` is below `<U>(x: U) => U`, through the
+-- instance `T := U` with `U` opaque; `(x: boolean) => boolean` is not.
+#guard subtypes [5] [17]
+#guard !subtypes [7] [17]
+#guard PositiveCertificates.check G [5] [17] (.gen [5, 3, 4] [19] (.inst [(4, [18])] [4, 3]))
+-- The rows read must avoid the binders, and be all the rows read.
+#guard !PositiveCertificates.check G [5] [17]
+  (.gen [5, 3, 4, 18] [19] (.inst [(4, [18])] [4, 3]))
+#guard !PositiveCertificates.check G [5] [17] (.gen [5, 3] [19] (.inst [(4, [18])] [4, 3]))
+-- `(x: T) => T` at one `T` is not generic: it reads the scheme's own binder.
+#guard !subtypes [16] [5]
+#guard !PositiveCertificates.check G [16] [5] (.gen [16, 3, 4] [16] .subset)
+
+-- A value of the scheme is typed at an instance by subsumption.
+#guard found [[5]] (.var 0) [7]
+#guard found [[10]] (.var 0) [12]
+#guard !found [[10]] (.var 0) [14]
+-- Calling a generic function: `id(true)` is a Boolean, not `null`;
+-- `wrap(true)` is a `Box<boolean>`, not a `Box<null>`.
+#guard found [[5]] (.call (.var 0) [.tru]) [1, 2]
+#guard !found [[5]] (.call (.var 0) [.tru]) [0]
+#guard found [[10]] (.call (.var 0) [.tru]) [11]
+#guard !found [[10]] (.call (.var 0) [.tru]) [13]
 
 end Verification.Model.QuantifiedRowTests

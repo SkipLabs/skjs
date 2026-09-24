@@ -144,6 +144,62 @@ noncomputable def assign (η : Assignment ι) (bs : List ι) (As : List ValueFam
       | some A => simpa [h] using A.2
       | none => simpa [h] using η.2 i⟩
 
+open Classical in
+/-- A binder is given the family at its position. -/
+theorem assign_map_mem (η : Assignment ι) (bs : List ι) (F : ι → ValueFamily) {i : ι}
+    (h : i ∈ bs) : (assign η bs (bs.map F)).1 i = (F i).1 := by
+  have hl : (bs.zip (bs.map F)).lookup i = some (F i) := by
+    induction bs with
+    | nil => cases h
+    | cons b bs ih =>
+      simp only [List.map_cons, List.zip_cons_cons, List.lookup_cons]
+      by_cases hb : i = b
+      · subst hb; simp
+      · have hi : i ∈ bs := (List.mem_cons.mp h).resolve_left hb
+        rw [beq_false_of_ne hb]; simp [ih hi]
+  simp [assign, hl]
+
+open Classical in
+/-- Any other row keeps its family. -/
+theorem assign_map_nmem (η : Assignment ι) (bs : List ι) (F : ι → ValueFamily) {i : ι}
+    (h : i ∉ bs) : (assign η bs (bs.map F)).1 i = η.1 i := by
+  have hl : (bs.zip (bs.map F)).lookup i = none := by
+    induction bs with
+    | nil => rfl
+    | cons b bs ih =>
+      simp only [List.map_cons, List.zip_cons_cons, List.lookup_cons]
+      have hb : i ≠ b := fun e => h (e ▸ List.mem_cons_self)
+      have hi : i ∉ bs := fun hi => h (List.mem_cons_of_mem _ hi)
+      rw [beq_false_of_ne hb]; simp [ih hi]
+  simp [assign, hl]
+
+open Classical in
+/-- A row that is no binder keeps its family, whatever the binders are given. -/
+theorem assign_nmem (η : Assignment ι) (bs : List ι) (As : List ValueFamily) {i : ι}
+    (h : i ∉ bs) : (assign η bs As).1 i = η.1 i := by
+  have hl : (bs.zip As).lookup i = none := by
+    induction bs generalizing As with
+    | nil => rfl
+    | cons b bs ih =>
+      cases As with
+      | nil => rfl
+      | cons A As =>
+        simp only [List.zip_cons_cons, List.lookup_cons]
+        have hb : i ≠ b := fun e => h (e ▸ List.mem_cons_self)
+        rw [beq_false_of_ne hb]
+        exact ih As fun hi => h (List.mem_cons_of_mem _ hi)
+  simp [assign, hl]
+
+/-- Two assignments differing at most on `bs`. -/
+def AgreeOff (bs : List ι) (η η' : Assignment ι) : Prop := ∀ p, p ∉ bs → η.1 p = η'.1 p
+
+open Classical in
+theorem agreeOff_assign {bs : List ι} {η η' : Assignment ι} (h : AgreeOff bs η η')
+    (cs : List ι) (As : List ValueFamily) : AgreeOff bs (assign η cs As) (assign η' cs As) := by
+  intro p hp
+  simp only [assign]
+  split <;> simp [h p hp]
+
 /-- One instance's signatures, their rows read at the reassignment. -/
 noncomputable def instanceSigs (D : Assignment ι → List ι → Fam) (η : Assignment ι)
     (s : SchemeRow ι) (As : List ValueFamily) : List (Fam × List Fam × Fam) :=

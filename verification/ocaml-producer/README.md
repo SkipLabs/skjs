@@ -985,6 +985,29 @@ it, and `unknown` (`Opaque` in `Valid`), and test refinement keeps it
 (`Tests/QuantifiedRowTests.lean`). The graphs the pipeline builds have only
 clause rows, so every verified result is unchanged.
 
+Stage 3 is done: subtyping over scheme rows, with certificates
+(`PositiveRules`, `Proof.inst` and `Proof.gen`).
+- *Elimination* (`Sub.inst`): a scheme row is below an arrow type whose
+  signatures are instances of its own. The instance is named by an instance
+  map: each binder to the type it is instantiated at, and each clause row a
+  signature reads to the graph's substituted copy of it (`Box<T>` to
+  `Box<boolean>`), checked clause by clause. Read at the instance's
+  assignment, a mapped type means exactly its image (`inst_type`). A call
+  through a generic function is then the existing call rule after
+  subsumption: `id(true)` is typed a Boolean, `wrap(true)` a `Box<boolean>`.
+- *Coverage* (`Sub.gen`): a type is below a scheme when it is below the
+  scheme's signatures with the binders opaque and reads none of the binders;
+  it then means the same at every instantiation (`independent`). So
+  `<T>(x: T) => T` is below `<U>(x: U) => U`, and `(x: T) => T` at one `T` is
+  not below `<T>(x: T) => T`.
+- Subtyping is proved at every assignment (`Sub.sound_at`). This is where "no
+  check reads `env`" became a theorem: the one judgment that was indexed by
+  the graph beyond its rows, overload coverage, is now indexed by the graph's
+  compatibility test.
+- The Lean producer proposes instance maps by matching a signature against
+  the target (`matchInst`), and generalizations from a type of the pool that
+  states the scheme's signatures. Tests: `Tests/QuantifiedRowTests.lean`.
+
 `TypeSchemes.lean` is an older, separate scheme layer for local generic
 closures (with bounds and rest signatures, outside the graph). Scheme rows
 subsume it once they have bounds (stage 5) and rest signatures; that slice
@@ -1005,8 +1028,8 @@ The one semantics serves three rules, each needed:
 
 So there is no instance-only version first: the rules are built once, over
 this semantics. Stages: (2, done) scheme rows in `meaning`, with the typing
-rules never reading a scheme label as a ground clause; (3) coverage and
-elimination, with certificates; (4) the pipeline; (5) bounded binders
+rules never reading a scheme label as a ground clause; (3, done) coverage
+and elimination, with certificates; (4) the pipeline; (5) bounded binders
 (`K2 extends Json`), which need the denotation to be non-expansive in the
 assignment; introduction when the runtime is a target.
 
