@@ -53,3 +53,16 @@ export function mark(n: number): Marked {
 export function unwrap(b: Branded): number {
   return b.n;
 }
+// Generic methods: `pick` returns one of its arguments, at the type a call
+// instantiates; a `Cell`'s `with` makes a cell of another type.
+export interface Chooser {
+  pick<T>(first: T, second: T): T;
+}
+export const chooser: Chooser = { pick: (first, second) => first };
+export interface Cell<T> {
+  readonly value: T;
+  with<U>(value: U): Cell<U>;
+}
+export function cell<T>(value: T): Cell<T> {
+  return { value, with: (next) => cell(next) };
+}

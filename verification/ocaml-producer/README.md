@@ -1014,6 +1014,17 @@ Stage 3 is done: subtyping over scheme rows, with certificates
   the target (`matchInst`), and generalizations from a type of the pool that
   states the scheme's signatures. Tests: `Tests/QuantifiedRowTests.lean`.
 
+Stage 4 is done for unbounded generic methods. The TypeScript reader reads a
+generic method as a scheme term. Lean lowers it to a scheme row with coloured
+binder rows, and OCaml reserves each generic application's row for Lean to
+fill, so every declaration has one lowering. At a method call OCaml infers the
+instance and claims the method's read at the instance's ground arrow; Lean
+proves the scheme below it by an instance table (`generic-method-value-import`:
+`chooser.pick(flag, !flag)` is a Boolean, `c.with(s).value` a string; the
+negative's instance returns a Boolean where a number is declared). Bounded
+binders (`K2 extends Json`), variadic signatures and methods whose unfolding
+keeps growing stay opaque members.
+
 `TypeSchemes.lean` is an older, separate scheme layer for local generic
 closures (with bounds and rest signatures, outside the graph). Scheme rows
 subsume it once they have bounds (stage 5) and rest signatures; that slice
@@ -1035,7 +1046,7 @@ The one semantics serves three rules, each needed:
 So there is no instance-only version first: the rules are built once, over
 this semantics. Stages: (2, done) scheme rows in `meaning`, with the typing
 rules never reading a scheme label as a ground clause; (3, done) coverage
-and elimination, with certificates; (4) the pipeline; (5) bounded binders
+and elimination, with certificates; (4, done) the pipeline; (5) bounded binders
 (`K2 extends Json`), which need the denotation to be non-expansive in the
 assignment; introduction when the runtime is a target.
 

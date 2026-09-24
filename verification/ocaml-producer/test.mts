@@ -561,15 +561,21 @@ for (const [file, expected] of [
     ["GenericCall", /generic or incomplete call signature in box.ts#GenericCall/],
   ] as const)
     assert.throws(() => graphOf(`import type { ${name} } from "@fixture/box";`), refusal);
-  // A generic method is an opaque member: the interface collects, and a call
-  // through it is not established.
+  // A generic method is a scheme: a call through it is established at the
+  // instance it names, and at no other.
   assert.ok(graphOf('import type { GenericMethod } from "@fixture/box";').definitions.length > 0);
   const genericMethodClient = join(pairDir, "generic-method-client.ts");
   writeFileSync(genericMethodClient,
     'import type { GenericMethod } from "@fixture/box";\n' +
     "export function call(m: GenericMethod): boolean { return m.read(true); }\n");
   const genericMethodCall = check(genericMethodClient, pairConfig);
-  assert.notEqual(genericMethodCall.status, "verified", JSON.stringify(genericMethodCall));
+  assert.equal(genericMethodCall.status, "verified", JSON.stringify(genericMethodCall));
+  writeFileSync(genericMethodClient,
+    'import type { GenericMethod } from "@fixture/box";\n' +
+    "export function call(m: GenericMethod): number { return m.read(true); }\n");
+  const wrongInstance = check(genericMethodClient, pairConfig);
+  assert.equal(wrongInstance.status, "unverified", JSON.stringify(wrongInstance));
+  assert.equal(wrongInstance.phase, "search");
   const optionalMethodClient = join(pairDir, "optional-method-client.ts");
   writeFileSync(optionalMethodClient,
     'import type { OptionalMethod } from "@fixture/box";\n' +

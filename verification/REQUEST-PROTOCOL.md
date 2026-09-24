@@ -818,7 +818,11 @@ terms, which shadow the declaration's. Lean lowers it to a scheme row whose
 binders are coloured parameter rows (see [DESIGN.md](DESIGN.md#modules-and-code-units),
 generic methods); a bounded binder, a variadic signature, or unfolding past
 the budget keeps the member an opaque `unknown` field. The OCaml producer
-still reads the member as opaque, until it infers generic method calls.
+reads it as a callable quantifying its binders; at a call it infers the
+instance from the receiver and the actuals, and claims the method's read at
+that instance's ground arrow, which Lean relates to the method's scheme row by
+`Sub.inst`. A method call carries no `instantiate` list: its instance is its
+callee's claim.
 
 A strict `typeof e === "<shape>"` or `!==` comparison, for `"number"`,
 `"string"`, `"boolean"`, `"undefined"`, `"function"`, `"bigint"` or

@@ -207,8 +207,17 @@ let infer_function declarations module_functions (f:Source.fn) =
   (* A read of a generic module value that a call instantiates is claimed at
      that instance: Lean gives the value's slot the instances its calls name. *)
   let instances = ref [] in
-  let instance_of (callee:expr) substitution =
+  let instance_of ?declared (callee:expr) substitution =
     match callee.node with
+    (* A generic method read from its object is claimed at the instance the
+       call names: Lean puts the method's scheme below it. *)
+    | Read _ | Index _ ->
+      (match declared with
+       | Some (Atoms [Shape ({calls=[signature];_} as shape)]) ->
+         let instance = Inference.substitute substitution
+           (Atoms [Shape {shape with calls=[{signature with quantified=[]}]}]) in
+         instances := (callee.pos,instance) :: !instances
+       | _ -> ())
     | Id n when not (List.mem_assoc n env0) && List.mem_assoc n module_functions ->
       (match Lazy.force (List.assoc n module_functions) with
        | Atoms [Shape ({calls=[signature];_} as shape)] ->
@@ -221,6 +230,9 @@ let infer_function declarations module_functions (f:Source.fn) =
          instances := (callee.pos,instance) :: !instances
        | _ -> ())
     | _ -> () in
+  (* A method's instance is its read's claim, not the call's. *)
+  let method_read (callee:expr) = match callee.node with
+    | Read _ | Index _ -> true | _ -> false in
   let arrows = ref [] in
   let entry env span = match Json.list span with
     | start::_ -> entries := {start;bindings=env} :: !entries
@@ -409,7 +421,8 @@ let infer_function declarations module_functions (f:Source.fn) =
          let missing = max 0 (List.length signature.params - List.length actuals) in
          let inferred = Inference.infer ~receiver:receiver_type signature
            (actuals @ List.init missing (fun _ -> Atoms [Undef])) in
-         instance_of target inferred.substitution;
+         instance_of ~declared:callee target inferred.substitution;
+         if not (method_read target) then
          instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
            inferred.substitution) :: !instantiations;
          inferred.result
@@ -465,7 +478,8 @@ let infer_function declarations module_functions (f:Source.fn) =
         let actuals=List.map (expr env) args @
           List.init (max 0 (List.length signature.params - List.length args)) (fun _ -> Atoms [Undef]) in
         let inferred=Inference.infer ~receiver:receiver_type signature actuals in
-        instance_of target inferred.substitution;
+        instance_of ~declared:callee target inferred.substitution;
+        if not (method_read target) then
         instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
           inferred.substitution) :: !instantiations;
         inferred.result

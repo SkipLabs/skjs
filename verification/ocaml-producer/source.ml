@@ -52,8 +52,27 @@ let rec source_type ctx j =
       optional_elements=List.map recur (items "optional" j);
       rest=(match field "rest" j with Null -> None | t -> Some (recur t));
       readonly=boolean (field "readonly" j)}
-  (* A generic method is still an opaque member until its scheme is encoded. *)
-  | "scheme" -> top
+  (* A generic method: its signatures quantify its binders, scoped by where it
+     is declared. As Lean lowers it, a bounded binder or a variadic signature
+     keeps the member opaque. *)
+  | "scheme" ->
+    let binders = items "binders" j and signatures = items "signatures" j in
+    if List.exists (fun b -> field "bound" b <> Null) binders
+       || List.exists (fun f -> field "rest" f <> Null) signatures then top
+    else begin
+      let start = match list (field "span" j) with
+        | Number n :: _ -> int_of_string n
+        | _ -> fail "empty source span" in
+      let scope = -1_000_000_000 - start in
+      let identities = List.mapi (fun index b -> {scope;index;spelling=text "name" b}) binders in
+      let inner = {ctx with bindings =
+        List.map (fun (r:rigid) -> r.spelling,Rigid r) identities @ ctx.bindings} in
+      let quantified = List.map (fun identity -> {identity;bound=None}) identities in
+      let calls = List.map (fun f -> match source_type inner f with
+        | Atoms [Shape {fields=[];string_index=None;calls=[s];elements=None}] -> {s with quantified}
+        | _ -> unsupported "generic method signature") signatures in
+      Atoms [Shape {fields=[];string_index=None;calls;elements=None}]
+    end
   | "constructor" ->
     Atoms [Ctors [{quantified=[];receiver=top;params=List.map recur (items "params" j);
       variadic=None;result=recur (field "result" j)}]]
