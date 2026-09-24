@@ -10,7 +10,7 @@ open Lean ProgramTyping PositiveRules SourceTypes
 def fieldsExactly (j : Json) (keys : List String) : Except String Unit := do
   let fields ← j.getObj?
   if fields.toList.length != keys.length || !(fields.toList.all (fun p => keys.contains p.1)) then
-    throw "unexpected fields in the cell record claim"
+    throw s!"unexpected fields: expected {keys}, got {fields.toList.map Prod.fst}"
 
 private def plainMode (j : Json) (name : String) : Except String Unit := do
   let mode ← jStr (← jField j name)

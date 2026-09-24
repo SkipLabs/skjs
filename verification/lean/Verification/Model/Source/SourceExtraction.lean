@@ -1426,7 +1426,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       | some annot =>
         if GenericSource.mentionsParam annot || !typeParams.isEmpty then
           pure [← lower (SourceTypes.use .top)]
-        else lower (Fragment.receiverType annot)
+        else lower (Fragment.callableType annot)
       | none => pure [← lower (SourceTypes.use .top)]
     if !distinct paramNames || paramNames.any (fun name => name == "" || name == "undefined" || (names scope).contains name) then
       throw "shadowing or duplicate closure parameter is outside the fragment"

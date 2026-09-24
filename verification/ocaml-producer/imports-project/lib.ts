@@ -82,6 +82,17 @@ export class Box {
   }
 }
 export interface Maker {
-  make<Params extends number[]>(cls: new (...params: Params) => Box, ...params: Params): Box;
+  make<Params extends number[]>(
+    cls: new (...params: Params) => Box,
+    ...params: Params
+  ): Box;
 }
 export const maker: Maker = { make: (cls, ...params) => new cls(...params) };
+
+// Constructor operands use the same nested object contracts as function operands.
+export class ObjectBox {
+  v: { readonly value: number };
+  constructor(v: { readonly value: number }) {
+    this.v = v;
+  }
+}

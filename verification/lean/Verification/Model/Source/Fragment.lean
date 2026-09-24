@@ -68,8 +68,8 @@ private def hasOptional (atom : Json) : Bool :=
   | _ => false
 
 mutual
-/-- Callable operands may recursively contain callables, arrays and primitives.
-Every union and overload arm is checked; record operands remain excluded. -/
+/-- Callable operands recursively use the same value contracts as receivers
+and record fields. Every union and overload arm is checked. -/
 partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
   CellClaims.fieldsExactly j ["top","atoms"]
   if ← (← jField j "top").getBool? then return [← SourceTypes.use .top]
@@ -82,7 +82,7 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
     else if (← jStr (← jField atom "a")) == "function" then
       let signatures ← (← CellClaims.conjuncts atom).mapM fun a => do
         let (recv, args, result, rest) ← callableShape a
-        return (← receiverType recv, ← args.mapM callableType, ← rest.mapM callableType,
+        return (← callableType recv, ← args.mapM callableType, ← rest.mapM callableType,
           ← callableType result)
       -- Fixed and variadic signatures of one value sit in one clause: each
       -- says which receivers and actual lists a caller may write.
@@ -148,33 +148,22 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
       return [← SourceTypes.use (.dict invariant [] views [element])]
     else if (← jStr (← jField atom "a")) == "record" && hasOptional atom then
       return [← optionalRecord atom]
-    else
-      let single := Json.mkObj [("top",toJson false),("atoms",toJson [atom])]
-      -- The callable table grows as this walks it, so a numeric parameter or
-      -- result is interned rather than refused for being outside the four
-      -- fixed labels.
-      SourceTypes.translateArm (← CellClaims.primitive single)
-  return arms.flatten.mergeSort (· ≤ ·) |>.eraseDups
-
-/-- A receiver contract: what a callable operand may be, or an object whose
-fields hold such contracts, invariantly or, where the read and write sides
-differ, as a view. -/
-partial def receiverType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
-  CellClaims.fieldsExactly j ["top","atoms"]
-  if ← (← jField j "top").getBool? then return [← SourceTypes.use .top]
-  let arms ← (← jArr j "atoms").mapM fun atom => do
-    if (← jStr (← jField atom "a")) == "record" then
+    else if (← jStr (← jField atom "a")) == "record" then
       if (atom.getObjVal? "and").toOption.isSome then
-        throw "a receiver contract is one record, not a conjunction"
+        throw "a callable operand contract is one record, not a conjunction"
       let fields ← CellClaims.decodeShapes
-        (Json.mkObj [("top",toJson false),("atoms",toJson [atom])])
+        (Json.mkObj [("top", toJson false), ("atoms", toJson [atom])])
       let lowered ← fields.mapM fun (name, read, write) => do
         return (name, ← callableType read, ← callableType write)
       let invariant := lowered.filterMap fun (n, r, w) => if r == w then some (n, w) else none
       let views := lowered.filterMap fun (n, r, w) => if r == w then none else some (n, r)
       return [← SourceTypes.use (.refs invariant [] views)]
     else
-      callableType (Json.mkObj [("top",toJson false),("atoms",toJson [atom])])
+      let single := Json.mkObj [("top",toJson false),("atoms",toJson [atom])]
+      -- The callable table grows as this walks it, so a numeric parameter or
+      -- result is interned rather than refused for being outside the four
+      -- fixed labels.
+      SourceTypes.translateArm (← CellClaims.primitive single)
   return arms.flatten.mergeSort (· ≤ ·) |>.eraseDups
 
 /-- An array type: a tuple contract on a store, held by an object in its store
@@ -210,9 +199,8 @@ partial def optionalRecord (atom : Json) : SourceTypes.Lowering Nat := do
   SourceTypes.use (.refs required [] [] optional)
 end
 
-/-- Required record fields admit primitives and callables, but not nested
-records. Decode both capabilities through the same table before checking
-invariance, field by field. -/
+/-- Required record fields recursively admit value contracts. Decode both
+capabilities through the same table before checking invariance, field by field. -/
 private def cellContract (atom : Json) : SourceTypes.Lowering CellUnion.Contract := do
   let fields ← CellClaims.decodeShapes
     (Json.mkObj [("top",toJson false),("atoms",toJson [atom])])
@@ -234,7 +222,7 @@ private def callableObject (atom : Json) : SourceTypes.Lowering Nat := do
   CellClaims.fieldsExactly atom ["a","function","bag"]
   let fn ← jField atom "function"
   let (recv,args,result,rest) ← callableShape fn
-  let Rc ← receiverType recv
+  let Rc ← callableType recv
   let Ds ← args.mapM callableType
   let E ← rest.mapM callableType
   let R ← callableType result
@@ -248,8 +236,7 @@ private def callableObject (atom : Json) : SourceTypes.Lowering Nat := do
 /-- Validate every union arm. Record alternatives may absorb a redundant
 read/write contract into an existing invariant alternative (CellUnion.normalize_exact).
 Other unsupported arms reject the whole type; no projection is allowed.
-Record fields admit bounded primitive/callable contracts.
-Arrow operands additionally admit callable contracts. -/
+Record fields and arrow operands use the same recursive contract decoder. -/
 def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
   if j == Json.mkObj [("unsupported", toJson true)] then
     throw "type claim unavailable from producer"
