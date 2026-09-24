@@ -226,6 +226,8 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
   | .singletonTest p t eq tl l r => return .singletonTest p t eq tl (← comparisonsExpr fc l) (← comparisonsExpr fc r)
   | .not p e => return .not p (← comparisonsExpr fc e)
   | .cast p annot e => return .cast p annot (← comparisonsExpr fc e)
+  | .ctor p lam => return .ctor p (← comparisonsExpr fc lam)
+  | .construct p f args => return .construct p (← comparisonsExpr fc f) (← args.mapM (comparisonsExpr fc))
   | .alloc p ns es => return .alloc p ns (← es.mapM (comparisonsExpr fc))
   | .read p f e => return .read p f (← comparisonsExpr fc e)
   | .write p f l r => return .write p f (← comparisonsExpr fc l) (← comparisonsExpr fc r)
@@ -331,6 +333,8 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .call _ f args _ | .invoke _ f args _ => assignsExpr name f || args.any (assignsExpr name)
   | .callWithReceiver _ f r args | .bindWithReceiver _ f r args =>
     assignsExpr name f || assignsExpr name r || args.any (assignsExpr name)
+  | .ctor _ lam => assignsExpr name lam
+  | .construct _ f args => assignsExpr name f || args.any (assignsExpr name)
   | .applyWithReceiver _ f r list =>
     assignsExpr name f || assignsExpr name r || (list.map (assignsExpr name)).getD false
   | .ifBody _ _ c t e => assignsExpr name c || assignsExpr name t || assignsExpr name e
@@ -555,7 +559,7 @@ private def readOnly : Fragment.Expr → Bool
   | .seqBody _ a b | .letBody _ _ _ a b | .index _ _ a b | .arith _ _ a b | .elemAt _ a b => readOnly a && readOnly b
   | .ifBody _ _ c t e => readOnly c && readOnly t && readOnly e
   | .alloc .. | .write .. | .indexWrite .. | .update .. | .logicalAssign .. | .assign .. | .arrayLit .. | .elemWrite .. | .arrayAssign .. | .nullishAssign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
-  | .callWithReceiver .. | .applyWithReceiver .. | .call .. | .invoke .. => false
+  | .callWithReceiver .. | .applyWithReceiver .. | .call .. | .invoke .. | .ctor .. | .construct .. => false
 
 /-- The other operand of a singleton comparison, when saving the tested read
 before it changes nothing: a literal, a name, or one field read. Each is
@@ -1357,6 +1361,39 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     pure (DirectProof.node Γ
       (.makeAt (.closure arity body) (P.map Prod.fst) (values.map (·.term))) [C] .makeCallable
       (casts ++ bodies))
+  | .ctor pos lam => do
+    -- A class value: its constructor's body once per construct signature, with
+    -- `undefined` in the receiver slot `new` passes, then the parameters.
+    let .lambda _ none [] params [] false ret body := lam
+      | throw "a class value is a constructor lambda with plain parameters"
+    let paramNames := params.map Prod.fst
+    if !distinct paramNames || paramNames.any (fun name => name == "" || name == "undefined" || (names scope).contains name) then
+      throw "shadowing or duplicate constructor parameter is outside the fragment"
+    let [.ctors L] := PositiveRules.expand G A | throw "a class value's claim must name construct signatures"
+    let Ds ← params.mapM fun p => lower (Fragment.callableType p.2)
+    let R ← lower (Fragment.callableType ret)
+    if L.isEmpty || !L.all (fun (Di,_) => Di.length == Ds.length && (Di.zip Ds).all (fun (D,B) => D.all B.contains)) then
+      throw "construct signature claim is outside the source annotation"
+    let inner := held ⟨"", some pos⟩ :: (params.map fun (name,_) => held ⟨name, some pos⟩) ++ scope
+    let b ← closureExpr fc inner ([3] :: Ds ++ Γ) body
+    let annotation := DirectProof.cast ([3] :: Ds ++ Γ) R b
+    obligation pos annotation.goal (some annotation) "closure-result" inner
+    let bodies ← L.mapM fun (Di, Ri) => do
+      if (Di, Ri) == (Ds, R) then pure annotation else do
+        let plan ← closureExpr fc inner ([3] :: Di ++ Γ) body
+        if plan.term != b.term then
+          throw "a class body lowers differently under one of its construct signatures"
+        pure (DirectProof.cast ([3] :: Di ++ Γ) Ri plan)
+    pure (DirectProof.node Γ (.make (.closure Ds.length b.term .construct) .nul) A (.ctorE [3]) bodies)
+  | .construct _ f args => do
+    let callee ← closureExpr fc scope Γ f
+    let [.ctors L] := PositiveRules.expand G callee.type
+      | throw "`new` needs a value with construct signatures"
+    let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr fc scope Γ a
+    let some (Ds, R) := L.find? (·.1.length == actuals.length)
+      | throw "no construct signature takes this many arguments"
+    pure (DirectProof.node Γ (.construct callee.term (actuals.map (·.term))) R .construct
+      (callee :: (actuals.zip Ds).map fun (a,D) => DirectProof.cast Γ D a))
   | .lambda pos receiverAnnot typeParams params defaults rest ret body => do
     let paramNames := params.map Prod.fst
     -- An ordinary function names its receiver slot `this`: its body and any
@@ -1877,9 +1914,24 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let yes ← compileExpr fc scope (conditionContext G scope Γ cond true) thn next
     let no ← compileExpr fc scope (conditionContext G scope Γ cond false) els next
     compileCondition fc scope Γ cond yes no
-  | .bindWithReceiver .. | .withValue .. | .lambda .. | .coalesce .. | .logical .. =>
+  | .bindWithReceiver .. | .withValue .. | .lambda .. | .ctor .. | .coalesce .. | .logical .. =>
     let t ← closureExpr fc scope Γ e
     emitAt e.span t.term (.bind next) Γ A (scope := scope)
+  | .construct _ callee args =>
+    -- `new`: the callee, then each actual, saved in order; then the construct
+    -- step on the saved slots, as an allocation does with its initializers.
+    let operands := callee :: args
+    let As ← operands.mapM (exprType fc)
+    let n := As.length
+    let temporaries := (operands.map fun a => held ⟨"",some a.span⟩).reverse
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else i+n))⟩
+    let construct ← emitAt e.span (.construct (.var (n-1)) ((List.range (n-1)).map fun i => .var (n-2-i)))
+      (.bind drop) (As.reverse ++ Γ) A (scope := temporaries ++ scope)
+    operands.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) =>
+      compileExpr fc
+        ((operands.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++ scope)
+        ((As.take i).reverse ++ Γ) arg next) construct
   | .shapeTest _ tag equal operand =>
     let B ← exprType fc operand
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map

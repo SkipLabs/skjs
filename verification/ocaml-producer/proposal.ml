@@ -166,6 +166,8 @@ let rec branch env cond truth = match cond.node with
       | True | False -> Some (shape="boolean") | Undef -> Some (shape="undefined")
       | Bigint -> Some (shape="bigint") | Symbol -> Some (shape="symbol")
       | Shape s -> Some (shape="function" && s.calls<>[])
+      (* A class is a function to `typeof`. *)
+      | Ctors _ -> Some (shape="function")
       | Nul -> Some false
       (* A declaration's shape is not known here: it stays on both arms. *)
       | Top | Named _ -> None in
@@ -212,6 +214,10 @@ let infer_function declarations module_functions (f:Source.fn) =
        | Atoms [Shape ({calls=[signature];_} as shape)] ->
          let instance = Inference.substitute substitution
            (Atoms [Shape {shape with calls=[{signature with quantified=[]}]}]) in
+         instances := (callee.pos,instance) :: !instances
+       | Atoms [Ctors [signature]] ->
+         let instance = Inference.substitute substitution
+           (Atoms [Ctors [{signature with quantified=[]}]]) in
          instances := (callee.pos,instance) :: !instances
        | _ -> ())
     | _ -> () in
@@ -263,6 +269,33 @@ let infer_function declarations module_functions (f:Source.fn) =
       (match lookup env n with
       | Storage contract -> expr ~expected:contract env rhs
       | Value _ -> unsupported "assignment to immutable binding")
+    | Ctor {node=Lambda (None,[],ps,[],false,result,body);_} ->
+      (* The constructor's body under its parameters; `new` passes it no
+         receiver it reads. The class value's type is its construct signature. *)
+      let inner = List.fold_left (fun env (n,t) -> extend env n (Value t)) env ps in
+      ignore (expr ~expected:result inner body);
+      Atoms [Ctors [{quantified=[];receiver=Semantic.top;params=List.map snd ps;variadic=None;result}]]
+    | Ctor _ -> unsupported "a class value is a constructor lambda with plain parameters"
+    | New (callee,args) ->
+      (match declared_head declarations [] (expr env callee) with
+       | Atoms [Ctors [signature]] when signature.quantified <> [] ->
+         (* A generic class: its instance is inferred from the actuals, as a
+            generic call's is. *)
+         if List.length signature.params <> List.length args then
+           unsupported "no construct signature takes this many arguments";
+         let inferred = Inference.infer ~receiver:Semantic.top signature (List.map (expr env) args) in
+         instance_of callee inferred.substitution;
+         instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
+           inferred.substitution) :: !instantiations;
+         inferred.result
+       | Atoms [Ctors signatures] ->
+         (match List.find_opt (fun (s:Semantic.signature) ->
+             s.quantified = [] && List.length s.params = List.length args) signatures with
+          | Some s ->
+            List.iter2 (fun p a -> ignore (expr ~expected:p env a)) s.params args;
+            s.result
+          | None -> unsupported "no construct signature takes this many arguments")
+       | _ -> unsupported "`new` needs a value with construct signatures")
     | Lambda (receiver,quantified,ps,defaults,rest,result,body) ->
       (* An ordinary function binds its own `this`, replacing an enclosing
          one; an arrow keeps the enclosing binding, as a capture. *)

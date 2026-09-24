@@ -172,6 +172,13 @@ function bareAtomText(atom: unknown, state: PrintState): string {
     return (
       "(" + atomText(atom.function, state) + ") & " + atomText(atom.bag, state)
     );
+  if (atom.a === "constructor" && Array.isArray(atom.params))
+    return (
+      "new (" +
+      atom.params.map((p, i) => "arg" + i + ": " + typeText(p, state)).join(", ") +
+      ") => " +
+      typeText(atom.result, state)
+    );
   if (atom.a === "function" && Array.isArray(atom.params))
     return (
       "(" +
@@ -953,6 +960,7 @@ const _handled = {
   dict: 1,
   arrs: 1,
   callable: 1,
+  ctors: 1,
   bigint: 1,
   symbol: 1,
 } satisfies Record<StringClause | ClauseKey, 1>;

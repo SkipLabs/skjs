@@ -41,6 +41,9 @@ export function claimOfTerm(term: TypeTerm): ClaimType {
         params: term.params.map(claimOfTerm),
         ...(term.rest ? { rest: claimOfTerm(term.rest) } : {}),
         result: claimOfTerm(term.result), construct: "unknown", array: "unknown" });
+    case "constructor":
+      return one({ a: "constructor", params: term.params.map(claimOfTerm),
+        result: claimOfTerm(term.result) });
     case "object":
       return one({ a: "record",
         fields: term.fields.map(f => {

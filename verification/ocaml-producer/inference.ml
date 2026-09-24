@@ -21,6 +21,7 @@ let rec substitute solution = function
 and substitute_atom solution = function
   | Shape shape -> Shape (substitute_shape solution shape)
   | Named (id,args) -> Named (id,List.map (substitute solution) args)
+  | Ctors signatures -> Ctors (List.map (substitute_signature solution) signatures)
   | atom -> atom
 and substitute_shape solution shape = {
   fields=List.map (fun field -> {field with
@@ -60,7 +61,8 @@ let meet_atom a b =
   | Top,x | x,Top -> Some [x]
   | Num,NumLit _ -> Some [b] | NumLit _,Num -> Some [a]
   | Str,StrLit _ -> Some [b] | StrLit _,Str -> Some [a]
-  | Shape _,_ | _,Shape _ | Named _,_ | _,Named _ -> None
+  | Ctors a,Ctors b -> Some [Ctors (a @ b)]
+  | Shape _,_ | _,Shape _ | Named _,_ | _,Named _ | Ctors _,_ | _,Ctors _ -> None
   | Bigint,Bigint -> Some [Bigint] | Symbol,Symbol -> Some [Symbol]
   | (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | Symbol),
     (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | Symbol) -> Some []

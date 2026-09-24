@@ -779,6 +779,15 @@ contract must admit `undefined`; TypeScript admits no other target for such a
 list. A missing, null or undefined list gives no actuals. The list is read as
 an array-like and never iterated.
 
+A class value is `{"k":"ctor","pos":span,"lambda":lambda}`: its constructor
+lambda (plain parameters, no receiver) as construct-only code. `new e(args)` is
+`{"k":"new","pos":span,"callee":e,"args":[...]}`, whatever `e` is; its type
+decides whether it has construct signatures. A constructor type `new (params)
+=> R` is the source type term `{"k":"constructor","params":[...],
+"result":R,"span":span}`, and the claim atom `{"a":"constructor","params":[...],
+"result":R}` (an `"and"` list of further signatures for a generic class's
+instances).
+
 A strict `typeof e === "<shape>"` or `!==` comparison, for `"number"`,
 `"string"`, `"boolean"`, `"undefined"`, `"function"`, `"bigint"` or
 `"symbol"`, has source AST shape

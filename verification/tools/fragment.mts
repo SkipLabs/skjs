@@ -85,6 +85,12 @@ export type Expr =
   /* `spreads` are the indices of the arguments written with `...`: each
      stands for the elements of its operand, read where it is written. */
   | { k: "apply"; pos: Span; callee: Expr; args: Expr[]; spreads?: number[] }
+  /* `new callee(args)`: the callee, then the arguments left to right, then
+     the callee's construct-only code runs. A plain function cannot be one. */
+  | { k: "new"; pos: Span; callee: Expr; args: Expr[] }
+  /* A class value: its constructor lambda as construct-only code, which only
+     `new` runs. */
+  | { k: "ctor"; pos: Span; lambda: Expr }
   /* A call through a property reference, `o.m(a)` or `o[k](a)`, parentheses
      around the reference included: the object is saved, the method read from
      it and saved, the arguments evaluated, and the saved method invoked with

@@ -1431,7 +1431,8 @@ TypeScript assumes, and that is part of the declarations' contract.
 
 **Imported values.** A value import joins the module's scope at the type its
 declaration states: a function's annotated signature, an annotated
-constant's annotation, or, for a class, its constructor, read only by `new`.
+constant's annotation, or, for a class, its construct signature, which `new`
+meets.
 TypeScript resolves the declaration; nothing here checks the imported code.
 The declaration document lists these values, so a module's result is
 visibly relative to them.
@@ -1472,9 +1473,10 @@ require, so no class inhabits a call type and no arrow a construct type.
 
 **Classes.** A class declares its instance type in the declaration graph,
 and its value is a statement of the module initialization, in order. The
-parser lowers it to method closures allocated once, as its prototype's, and a
-constructor closure that allocates the instance; `new C(args)` calls that
-constructor, and the class is read no other way, since calling it without
+parser lowers it to method closures allocated once, as its prototype's, and
+its constructor, which allocates the instance, as construct-only code (`ctor`).
+A class is a value like any other, at its construct signature: `new C(args)`
+(`new`) runs that code, and a plain call cannot, since calling a class without
 `new` throws. An instance's methods are readonly fields: within the fragment
 nothing distinguishes a prototype member from an own one, and no write reaches
 either.

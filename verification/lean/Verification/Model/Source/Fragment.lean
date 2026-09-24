@@ -90,6 +90,13 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
         if E.isNone then some (Rc, Ds, R) else none
       let variadic := signatures.filterMap fun (Rc, Ds, E, R) => E.map fun E => (Rc, Ds, E, R)
       return [← SourceTypes.use (.arrs fixed.eraseDups variadic.eraseDups)]
+    else if (← jStr (← jField atom "a")) == "constructor" then
+      -- A construct signature: what a class meets and no plain function does.
+      -- A generic class's instances form one conjunction: each is a signature.
+      let signatures ← (← CellClaims.conjuncts atom).mapM fun a => do
+        CellClaims.fieldsExactly a ["a", "params", "result"]
+        return (← (← jArr a "params").mapM callableType, ← callableType (← jField a "result"))
+      return [← SourceTypes.use (.ctors signatures)]
     else if ["array", "store"].contains (← jStr (← jField atom "a")) then
       return [← arrayType atom]
     else if (← jStr (← jField atom "a")) == "record" &&
@@ -272,6 +279,7 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
       if label >= (← get).length then throw "graph label is absent"
       return [label]
     | "callable" => return [← callableObject atom]
+    | "constructor" => callableType single
     | "array" | "store" => return [← arrayType atom]
     | "function" => callableType single
     -- A number or string arm is interned, so `1` and `number` are separate
@@ -389,6 +397,10 @@ inductive Expr where
   | lambda (pos : Span) (receiver : Option Json) (typeParams : List TypeParam)
       (params : List (String × Json)) (defaults : List (Nat × Expr)) (rest : Bool)
       (result : Json) (body : Expr)
+  /-- A class value: its constructor `lambda` as construct-only code. -/
+  | ctor (pos : Span) (lam : Expr)
+  /-- `new callee(args)`: the callee, then the actuals, then its construct code. -/
+  | construct (pos : Span) (callee : Expr) (args : List Expr)
   | bindWithReceiver (pos : Span) (callee receiver : Expr) (args : List Expr)
   | callWithReceiver (pos : Span) (callee receiver : Expr) (args : List Expr)
   /-- `f.apply(r, list)`: the target, the receiver and the list are saved,
@@ -423,7 +435,8 @@ partial def Expr.freeNames : Expr → List String
     -- An ordinary function binds its own `this`; an arrow captures it.
     ((ds.flatMap fun d => d.2.freeNames) ++ b.freeNames).filter
       (fun n => !(ps.map Prod.fst).contains n && (receiver.isNone || n != "this"))
-  | .shapeTest _ _ _ e | .not _ e | .cast _ _ e | .read _ _ e | .atEnv _ e => e.freeNames
+  | .shapeTest _ _ _ e | .not _ e | .cast _ _ e | .read _ _ e | .atEnv _ e | .ctor _ e => e.freeNames
+  | .construct _ f args => f.freeNames ++ args.flatMap Expr.freeNames
   | .alloc _ _ es | .arrayLit _ es => es.flatMap Expr.freeNames
   | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
@@ -448,7 +461,9 @@ partial def Expr.callees : Expr → List (Span × Span × String)
   | .lambda _ _ _ ps ds _ _ b =>
     ((ds.flatMap fun d => d.2.callees) ++ b.callees).filter
       (fun c => !(ps.map Prod.fst).contains c.2.2)
-  | .shapeTest _ _ _ e | .not _ e | .cast _ _ e | .read _ _ e | .atEnv _ e => e.callees
+  | .shapeTest _ _ _ e | .not _ e | .cast _ _ e | .read _ _ e | .atEnv _ e | .ctor _ e => e.callees
+  | .construct p f args =>
+    (match f with | .var q n => [(p, q, n)] | _ => []) ++ f.callees ++ args.flatMap Expr.callees
   | .alloc _ _ es | .arrayLit _ es => es.flatMap Expr.callees
   | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
@@ -510,7 +525,7 @@ def Expr.span : Expr → Span
   | .ifBody p _ _ _ _ | .done p | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
   | .arrayLit p _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .cast p _ _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ _ _ _ _ | .call p _ _ _ | .invoke p _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .cast p _ _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ _ _ _ _ | .call p _ _ _ | .invoke p _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ | .construct p _ _ => p
 
 /-- One declarator of a `const` or `let`. -/
 structure Binding where
@@ -698,6 +713,15 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     CellClaims.fieldsExactly j ["k","pos","fn","initial","functionType","bagType"]
     return .withValue p (← decodeExpr (← jField j "fn")) (← decodeExpr (← jField j "initial"))
       (← jField j "functionType") (← jField j "bagType")
+  | "ctor" => do
+    CellClaims.fieldsExactly j ["k","pos","lambda"]
+    let lam ← decodeExpr (← jField j "lambda")
+    let .lambda _ none [] _ [] false _ _ := lam
+      | throw "a class value is a constructor lambda with plain parameters"
+    return .ctor p lam
+  | "new" => do
+    CellClaims.fieldsExactly j ["k","pos","callee","args"]
+    return .construct p (← decodeExpr (← jField j "callee")) (← (← jArr j "args").mapM decodeExpr)
   | "lambda" => do
     -- Two proof fixtures embed parser snapshots from before quantified lambdas.
     -- Live producers always write `typeParams`; absence in those snapshots is

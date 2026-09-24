@@ -38,6 +38,10 @@ let encode (proposal : Proposal.t) =
     | NumLit bits -> [intern (Array [Object ["numLit",Object ["bits",String (Printf.sprintf "%Lu" bits)]]])]
     | StrLit value -> [intern (Array [Object ["strLit",Object ["value",String value]]])]
     | Top -> [intern (Array [String "top"])]
+    | Ctors signatures ->
+      [intern (Array [Object ["ctors",Object ["signatures",Array (List.map (fun (s:Semantic.signature) ->
+        if s.quantified <> [] then unsupported "quantified construct signature claim encoding";
+        Array [Array (List.map labels s.params);labels s.result]) signatures)]]])]
     | Named (id,args) -> declaration_labels id args
     | Shape shape ->
       (* An optional field constrains its key only where the object has it,

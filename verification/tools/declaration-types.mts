@@ -48,6 +48,9 @@ export type TypeTerm =
       calls: Extract<TypeTerm, { k: "function" }>[]; span: Span }
   | { k: "function"; receiver: TypeTerm | null; params: TypeTerm[];
       rest: TypeTerm | null; result: TypeTerm; span: Span }
+  /** `new (params) => result`: a construct signature, which a class meets and
+   * no plain function does. */
+  | { k: "constructor"; params: TypeTerm[]; result: TypeTerm; span: Span }
   /** The containing declaration is the implicit receiver of a method signature. */
   | { k: "self"; span: Span }
   | { k: "parameter"; index: number; span: Span }

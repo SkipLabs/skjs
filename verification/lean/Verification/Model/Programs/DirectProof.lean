@@ -60,6 +60,13 @@ def renderAt (G : NormalGraph Nat) (pool : List (Ty Nat)) :
         let es ← (L.zip bs).attach.mapM fun q =>
           renderAt G pool depth (q.val.1.1 :: q.val.1.2.1 ++ Γ) q.val.2
         pure (.node ⟨Γ,j.term,j.type⟩ .funE es)
+    | .ctorE U, .make (.closure arity _ .construct) .nul, bs =>
+      -- One body per construct signature, with `undefined` in the receiver slot.
+      let [.ctors L] := expand G j.type | none
+      if L.length != bs.length || !L.all (fun p => p.1.length == arity) then none else do
+        let es ← (L.zip bs).attach.mapM fun q =>
+          renderAt G pool depth (U :: q.val.1.1 ++ Γ) q.val.2
+        pure (.node ⟨Γ,j.term,j.type⟩ (.ctorE U) es)
     | .funRest As, .make (.variadic arity _) .nul, bs =>
       -- One body plan per signature, with that signature's rest array in slot 0.
       let [.arrs [] L] := expand G j.type | none

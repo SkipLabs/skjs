@@ -52,6 +52,9 @@ let rec source_type ctx j =
       optional_elements=List.map recur (items "optional" j);
       rest=(match field "rest" j with Null -> None | t -> Some (recur t));
       readonly=boolean (field "readonly" j)}
+  | "constructor" ->
+    Atoms [Ctors [{quantified=[];receiver=top;params=List.map recur (items "params" j);
+      variadic=None;result=recur (field "result" j)}]]
   | "function" ->
     let receiver = match field "receiver" j with Null -> top | source -> recur source in
     let signature = {quantified=[];receiver;
@@ -165,6 +168,10 @@ and expr_node =
   | Invoke of expr * expr list * int list
   (* `f.apply(r, list)`: the list's elements, read by index, are the actuals. *)
   | Apply of expr * expr * expr option
+  (* A class value: its constructor lambda as construct-only code. *)
+  | Ctor of expr
+  (* `new callee(args)`. *)
+  | New of expr * expr list
   | Conditional of expr * expr * expr | Coalesce of expr * expr
   | ArrayLiteral of expr list | Index of expr * expr | IndexWrite of expr * expr * expr
   | Bind of expr * expr * expr list
@@ -228,6 +235,8 @@ let rec expr binders j =
         rest,
         source_type inner (field "result" j),
         expr inner (field "body" j))
+  | "ctor" -> Ctor (sub "lambda")
+  | "new" -> New (sub "callee",List.map (expr binders) (items "args" j))
   | "apply" ->
     let spreads = match List.assoc_opt "spreads" (obj j) with
       | None -> [] | Some s -> List.map (fun n -> int_of_string (match n with
@@ -314,6 +323,7 @@ let decode ast =
        | t,[] -> t
        | Atoms [Shape ({calls=[call];_} as shape)],_ ->
          Atoms [Shape {shape with calls=[{call with quantified}]}]
+       | Atoms [Ctors [signature]],_ -> Atoms [Ctors [{signature with quantified}]]
        | _ -> unsupported "a generic imported value must be one callable"))
       (items "values" document);
     functions=List.mapi (fun scope f ->

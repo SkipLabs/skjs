@@ -55,6 +55,8 @@ export type Clause =
    * parameters, each at the element contract; the field is left out when
    * there are none. */
   | { arrs: { arrows: Arrow[]; variadic?: RestArrow[] } }
+  /** Construct signatures `[parameters, result]`: what a class meets. */
+  | { ctors: { signatures: [Labels[], Labels][] } }
   | {
       callable: {
         first: Fields;
@@ -222,17 +224,27 @@ export function decodeGraph(value: unknown): TypeGraph {
         throw Error("invalid string literal");
     },
     refs: (b) => {
-      const r = obj(b, ["first", "rest", "views"]);
+      const r = objOptional(b, ["first", "rest", "views"], ["optional"]);
       fields(r.first);
       array(r.rest).forEach(fields);
       fields(r.views);
+      if ("optional" in r) fields(r.optional);
     },
     dict: (b) => {
-      const r = obj(b, ["first", "rest", "views", "indexes"]);
+      const r = objOptional(b, ["first", "rest", "views", "indexes"], ["optional"]);
       fields(r.first);
       array(r.rest).forEach(fields);
       fields(r.views);
       array(r.indexes).forEach(labels);
+      if ("optional" in r) fields(r.optional);
+    },
+    ctors: (b) => {
+      array(obj(b, ["signatures"]).signatures).forEach((sig) => {
+        const pair = array(sig);
+        if (pair.length !== 2) throw Error("invalid construct signature");
+        array(pair[0]).forEach(labels);
+        labels(pair[1]);
+      });
     },
     list: (b) => {
       const r = obj(b, ["first", "rest"]);
@@ -320,6 +332,8 @@ function clauseText(c: Clause): string {
   const calls = (arrows: Arrow[], variadic: RestArrow[] = []) =>
     `calls[${[...arrows.map(arrowText), ...variadic.map(restArrowText)].join("; ")}]`;
   if ("arrs" in c) return calls(c.arrs.arrows, c.arrs.variadic);
+  if ("ctors" in c)
+    return `new[${c.ctors.signatures.map(([ps, r]) => `(${ps.map(printLabels).join(", ")}) => ${printLabels(r)}`).join("; ")}]`;
   if ("callable" in c)
     return `object[${[c.callable.first, ...c.callable.rest].map(printFields).join(" & ")}; ${calls(c.callable.arrows, c.callable.variadic)}]`;
   return assertNever(c);

@@ -252,19 +252,13 @@ class Gate {
       throw new Error("internal: no type-parameter scope to leave");
   }
 
-  /** The module's classes: each is read only as the target of `new`. */
-  private readonly classNames = new Set<string>();
-  registerClass(name: string): void {
-    this.classNames.add(name);
-  }
-
   /** A class declaration, in module initialization order: one constant per
    * method, holding a closure allocated once, whose receiver is the instance,
    * as every instance shares its prototype's method; then the class, holding
    * its constructor, which allocates an instance from the field initializers
    * and those methods. Within the fragment an instance's own fields and its
-   * prototype's methods are indistinguishable, and the class is only read by
-   * `new`, which calls the constructor. */
+   * prototype's methods are indistinguishable. The class value is that
+   * constructor as construct-only code: `new` runs it, a plain call cannot. */
   classStmt(node: ClassDeclaration): Stmt {
     const name = node.name;
     if (!name) return this.fail(node, "an anonymous class is outside the fragment");
@@ -338,11 +332,13 @@ class Gate {
       }
       for (const f of uninitialized)
         if (!assigned.has(f)) this.fail(node, `field ${f} is never initialized`);
-      const lambda: Expr = { k: "lambda", pos: this.span(node), typeParams: [], receiver: null,
-        params: params.map((p) => ({ name: p.name, type: p.type })), result: instance,
-        body: { k: "alloc", pos: this.span(name), fields } };
-      const type: TypeTerm = { k: "function", receiver: null, params: params.map((p) => p.type), rest: null,
-        result: instance, span: this.span(name) };
+      // The class value is its constructor as construct-only code, which only
+      // `new` runs.
+      const lambda: Expr = { k: "ctor", pos: this.span(node), lambda: { k: "lambda", pos: this.span(node),
+        typeParams: [], receiver: null, params: params.map((p) => ({ name: p.name, type: p.type })),
+        result: instance, body: { k: "alloc", pos: this.span(name), fields } } };
+      const type: TypeTerm = { k: "constructor", params: params.map((p) => p.type), result: instance,
+        span: this.span(name) };
       return { k: "const", pos: this.span(node),
         bindings: [...methods, { name: name.text, namePos: this.span(name), annot: type, init: lambda }] };
     } finally {
@@ -451,24 +447,19 @@ class Gate {
     if (ts.isIdentifier(node)) {
       if (node.text === "undefined")
         return { k: "lit", pos: this.span(node), lit: { a: "undefined" } };
-      // A class is only constructed: calling it without `new` throws, so no
-      // other read of it may reach a call.
-      if (this.classNames.has(node.text))
-        this.fail(node, "a class is read only as the target of `new`");
+      // A class is a value like any other: its construct-only code is what a
+      // plain call cannot run, which its type records.
       return { k: "id", pos: this.span(node), name: node.text };
     }
 
     if (ts.isNewExpression(node)) {
-      const target = node.expression;
-      if (!ts.isIdentifier(target) || !this.classNames.has(target.text))
-        this.fail(node, "`new` applies to a class of this module");
       // Explicit type arguments only constrain TypeScript: the instantiation a
-      // producer claims is validated like any other.
-      // The class value is its constructor: constructing is calling it.
+      // producer claims is validated like any other. The callee is any value;
+      // its type decides whether it has construct-only code.
       return {
-        k: "apply",
+        k: "new",
         pos: this.span(node),
-        callee: { k: "id", pos: this.span(target), name: target.text },
+        callee: this.expr(node.expression),
         args: (node.arguments ?? []).map((arg) => {
           if (ts.isSpreadElement(arg)) this.fail(arg, "a spread argument to `new` is outside the fragment");
           return this.expr(arg);
@@ -1889,9 +1880,6 @@ export function parseFile(file: string, carriesContext = false,
   // retained declaration now has one source equation, shared with imports.
   // A function without a body is a declaration, not an example of one.
   const declared = carriesContext ? fnNodes.filter((s) => s.body) : fnNodes;
-  for (const node of classNodes) if (node.name) gate.registerClass(node.name.text);
-  // An imported class, like a local one, is read only by `new`.
-  for (const value of declarations.values) if (value.construct) gate.registerClass(value.binding.local);
   const functions = declared.map((s) => gate.functionDecl(s));
   const init = initNodes.map((s) => ts.isClassDeclaration(s) ? gate.classStmt(s) : gate.stmt(s));
   if (functions.length === 0 && init.length === 0) gate.fail(null, "no functions in file");

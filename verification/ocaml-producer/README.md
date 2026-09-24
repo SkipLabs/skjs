@@ -470,10 +470,10 @@ mapper and resource bodies are upstream's. SKJS's stubs gained the two real
 APIs it uses, `Values.getUnique` and `process.on`
 ([`runtime-client-apis.ts`](../../tests/expect-error/runtime-client-apis.ts)).
 
-Its first refusal is `ResourceClass`, a constructor type `new (...params:
-Params) => Resource` over a tuple pack. The runtime API's interfaces and the
-standard library's `Promise`, `Iterable` and `Iterator` they reach are all
-read. So **zero of its callables are checked** yet; no producer proposal, Lean lowering or certificate is
+Its whole declaration graph is read: the runtime API, the standard
+library's `Promise`, `Iterable` and `Iterator`, and `ResourceClass` as a
+construct signature. Its first refusal is `async function main`. So **zero of
+its callables are checked** yet; no producer proposal, Lean lowering or certificate is
 reached. Module constants and top-level statements are in the fragment (see
 [Modules and code units](../DESIGN.md#modules-and-code-units)); the
 `platform` initializer before that class is admitted syntax, though its
@@ -482,7 +482,7 @@ at a time, the blockers behind it are:
 
 | Client part | First refusal when isolated | Later requirement |
 | --- | --- | --- |
-| whole file | `ResourceClass`'s constructor type | constructor types and tuple packs; then the `process` global |
+| whole file | `async function main` | `async`/`await`; then the `process` global |
 | import graph | `InputDefinition` is a value import (a class) | classes as declarations and values |
 | `Plus`, `Minus`, `AddIndex`, `Add`, `Sub`, `Service` | class declaration | classes, `this`, parameter properties, field initializers, `new` |
 | `AddIndex.mapEntry` reading `Values` | `bigint` in `DepSafe` | `Values` contract, `getUnique` and its exception |
@@ -902,8 +902,10 @@ first milestone, in order of how much each gates:
      as opaque readonly members, which a program may read but not call, so
      `Context` and `Resource` collect; calling one (`EagerCollection.map`)
      needs its instances at the call;
-   - constructor types and generic tuple packs, `new (...params: Params) =>
-     T` with `Params extends readonly DepSafe[]`;
+   - constructor types (done: construct signatures in the calculus, class
+     values first class, `new` on any value with a construct signature) and
+     generic tuple packs, `new (...params: Params) => T` with `Params extends
+     readonly DepSafe[]` (remaining);
    - `bigint` and `symbol` (done: opaque values in the calculus and types
      in the graph, and `typeof` tests for every shape but `"object"`), and
      symbol-keyed properties (done: the heap's keys are strings or symbols,

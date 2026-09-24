@@ -339,8 +339,8 @@ export function collectDeclarations(file: string, options: {
         const identity = identityOf(node);
         valueStarts.push(node);
         const nameSpan: Span = [node.name.getStart(source), node.name.end];
-        return { declaration: identity, construct: true, typeParams, type: { k: "function", receiver: null, params,
-          rest: null, result: { k: "reference", reference: { name: node.name.text, span: nameSpan,
+        return { declaration: identity, construct: true, typeParams, type: { k: "constructor", params,
+          result: { k: "reference", reference: { name: node.name.text, span: nameSpan,
             arguments: names.map(() => nameSpan), target: identity },
             args: names.map(name => ({ k: "binder", name, span: nameSpan })), span: nameSpan }, span } };
       }

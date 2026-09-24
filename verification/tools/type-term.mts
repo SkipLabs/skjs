@@ -114,6 +114,18 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
     if (node.typeParameters?.length) scope.fail(node, "generic function types are outside the fragment");
     return oneTerm(signatures(scope, node.parameters, node.type, node, span), span);
   }
+  // `new (params) => R`: a construct signature per accepted argument list. It
+  // has no receiver and no parameter collected into an array.
+  if (ts.isConstructorTypeNode(node)) {
+    if (node.typeParameters?.length) scope.fail(node, "generic constructor types are outside the fragment");
+    if (node.modifiers?.length) scope.fail(node, "an abstract constructor type is outside the fragment");
+    const forms = signatures(scope, node.parameters, node.type, node, span).map((f): TypeTerm => {
+      if (f.receiver || f.rest) scope.fail(node, "a constructor type takes a fixed parameter list");
+      return { k: "constructor", params: f.params, result: f.result, span };
+    });
+    const [only] = forms;
+    return forms.length === 1 && only ? only : { k: "intersection", parts: forms, span };
+  }
   if (ts.isTypeReferenceNode(node)) {
     if (node.typeName.kind !== ts.SyntaxKind.Identifier)
       return scope.fail(node, "type reference outside the fragment");

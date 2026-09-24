@@ -45,6 +45,7 @@ function referencesIn(term: TypeTerm): Reference[] {
       ...(term.rest ? referencesIn(term.rest) : []),
       ...referencesIn(term.result),
     ];
+    case "constructor": return [...term.params.flatMap(referencesIn), ...referencesIn(term.result)];
     case "reference": return [term.reference, ...term.args.flatMap(referencesIn)];
     default: {
       const exhaustive: never = term;
@@ -110,11 +111,10 @@ for (const [file, expected] of [
     ["InputDefinition", "skipruntime-ts/core/src/api.ts", "InputDefinition", "ClassDeclaration"],
     ["runService", "skipruntime-ts/server/src/server.ts", "runService", "FunctionDeclaration"],
   ]);
-  // The runtime's value imports resolve, and `runService`'s `Promise` and the
-  // `Iterable` the mappers return are read from the standard library. The
-  // first refusal is `ResourceClass`'s constructor type.
-  assert.throws(() => collectDeclarations(source, { tsconfigPath: upstreamConfig }),
-    /type outside the fragment \(ConstructorType\) in \S*api\.ts#ResourceClass/);
+  // The runtime's value imports resolve, and the whole declaration graph is
+  // read: `runService`'s `Promise` and the `Iterable` the mappers return from
+  // the standard library, and `ResourceClass` as a construct signature.
+  assert.ok(collectDeclarations(source, { tsconfigPath: upstreamConfig }).definitions.length > 0);
   // Each runtime interface sum.ts imports, applied in a client of the same
   // project, and the first declaration the graph refuses on its way.
   const probe = mkdtempSync(join(tmpdir(), "skjs-runtime-api-"));

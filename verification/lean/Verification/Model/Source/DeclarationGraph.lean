@@ -212,6 +212,11 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       | none => .arrs [(receiver, domains.toList, result)] []
       | some element => .arrs [] [(receiver, domains.toList, element, result)]
     return [← use row]
+  | "constructor" =>
+    CellClaims.fieldsExactly term ["k", "params", "result", "span"]
+    let params ← (← arr term "params").mapM (lowerType ds owner params seen)
+    let result ← lowerType ds owner params seen (← field term "result")
+    return [← use (.ctors [(params.toList, result)])]
   | "object" =>
     CellClaims.fieldsExactly term ["k", "fields", "stringIndex", "calls", "span"]
     -- An optional field constrains its key only where the object has it; a
@@ -427,6 +432,11 @@ private partial def rigidClaim (ds : Array Definition) (owner : Nat) (env : Arra
     return claimType [Json.mkObj [("a", toJson "array"), ("required", toJson required),
       ("optional", toJson optional), ("rest", rest),
       ("readonly", toJson (← bool term "readonly"))]]
+  | "constructor" =>
+    CellClaims.fieldsExactly term ["k", "params", "result", "span"]
+    let params ← (← arr term "params").mapM (rigidClaim ds owner env seen)
+    return claimType [Json.mkObj [("a", toJson "constructor"), ("params", toJson params),
+      ("result", ← rigidClaim ds owner env seen (← field term "result"))]]
   | "object" =>
     CellClaims.fieldsExactly term ["k", "fields", "stringIndex", "calls", "span"]
     if (← field term "stringIndex") != .null || !(← arr term "calls").isEmpty then
@@ -541,6 +551,11 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
     return claimType [Json.mkObj ([("a", toJson "function"), ("this", receiver),
       ("params", toJson params)] ++ rest ++ [("result", ← recur (← field term "result")),
       ("construct", toJson "unknown"), ("array", toJson "unknown")])]
+  | "constructor" =>
+    CellClaims.fieldsExactly term ["k", "params", "result", "span"]
+    let params ← (← arr term "params").mapM recur
+    return claimType [Json.mkObj [("a", toJson "constructor"), ("params", toJson params),
+      ("result", ← recur (← field term "result"))]]
   | "object" =>
     CellClaims.fieldsExactly term ["k", "fields", "stringIndex", "calls", "span"]
     if !(← arr term "calls").isEmpty then

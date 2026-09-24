@@ -5,6 +5,9 @@ and rigid = { scope: int; index: int; spelling: string }
 and atom = Nul | Undef | True | False | Num | Str | NumLit of int64 | StrLit of string | Top
          (* Opaque values: every bigint, every symbol. *)
          | Bigint | Symbol
+         (* A class value: construct signatures, which `new` meets and no call
+            does. A signature's receiver is unused: `new` passes none. *)
+         | Ctors of signature list
          | Shape of shape
          (* Declaration identity, with arguments retained for later generic
             instantiation. A recursive reference is never expanded into a

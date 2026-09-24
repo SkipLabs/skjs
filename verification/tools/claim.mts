@@ -44,6 +44,8 @@ export interface FunctionAtom {
 }
 export type Atom =
   | { a: "null" | "undefined" | "boolean" | "string" | "number" | "bigint" | "symbol" }
+  /* A construct signature, `new (params) => result`: what a class meets. */
+  | { a: "constructor"; params: ClaimType[]; result: ClaimType }
   /* A `void` result: no usable guarantee about the value. */
   | { a: "void" }
   /* An array: a tuple contract on its store. `required` positions are

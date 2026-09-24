@@ -732,6 +732,10 @@ private partial def exprSites : Fragment.Expr → Sites
   | .bindWithReceiver p f receiver args | .callWithReceiver p f receiver args => args.foldl (fun acc a => joinSites acc (exprSites a))
       (joinSites ([],[p],[]) (joinSites (exprSites f) (exprSites receiver)))
   | .call p f args _ | .invoke p f args _ => args.foldl (fun acc a => joinSites acc (exprSites a)) (joinSites ([],[p],[]) (exprSites f))
+  -- A class value is one expression; its constructor's body has its own sites.
+  | .ctor p (.lambda _ _ _ _ _ _ _ e) => joinSites ([],[p],[]) (exprSites e)
+  | .ctor p _ => ([],[p],[])
+  | .construct p f args => args.foldl (fun acc a => joinSites acc (exprSites a)) (joinSites ([],[p],[]) (exprSites f))
   | .applyWithReceiver p f receiver list =>
     joinSites ([],[p],[]) (joinSites (exprSites f) (joinSites (exprSites receiver)
       ((list.map exprSites).getD ([],[],[]))))
