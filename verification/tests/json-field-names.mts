@@ -1,11 +1,12 @@
-// Each wire format (the Fragment tree, its declaration document, SourceClaims)
-// is written three times: as TypeScript types, as Lean decoders, and as the
-// OCaml producer's reads and writes. Nothing compiles one against another, so
+// The parser, the OCaml producer and the Lean verifier exchange JSON documents:
+// the Fragment tree with its declaration document, and SourceClaims. Each
+// document's fields are written three times: as TypeScript types, as Lean
+// decoders, and as the OCaml producer's reads and writes. Nothing compiles one against another, so
 // this compares, by text, the field names each one uses, and fails when a
 // consumer reads a name no TypeScript type declares, or TypeScript declares a
 // name Lean never reads. It checks names only; the suites still decide whether
 // a document is understood.
-//   node verification/tests/wire-field-names.mts
+//   node verification/tests/json-field-names.mts
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -85,4 +86,4 @@ const expectSubset = (what: string, names: Set<string>, from: Set<string>, allow
   });
 }
 
-process.stdout.write(`wire field names: ${checked} comparisons agree across TypeScript, Lean and OCaml\n`);
+process.stdout.write(`JSON field names: ${checked} comparisons agree across TypeScript, Lean and OCaml\n`);
