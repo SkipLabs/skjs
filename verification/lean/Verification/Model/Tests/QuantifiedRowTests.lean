@@ -78,30 +78,42 @@ def subtypes (A B : List Nat) : Bool := (subtype G pool A B).isSome
 #guard subtypes [5] [7]
 #guard subtypes [5] [8]
 #guard subtypes [10] [12]
-#guard PositiveCertificates.check G [5] [7] (.inst [(4, [1, 2])] [4, 3])
+-- Hand-written certificates: a domain closed under reads, and its free
+-- parameter rows (computed here, checked by `FreeOk`).
+def dom (S : List Nat) : List Nat := readsFrom G 64 S
+def fm (D : List Nat) : PositiveRules.FreeMap Nat := freeMapOf G D 64 []
+def inst (θ : PositiveRules.InstMap Nat) (roots : List Nat) : PositiveCertificates.Proof Nat :=
+  .inst θ (dom roots) (fm (dom roots))
+#guard PositiveCertificates.check G [5] [7] (inst [(4, [1, 2])] [3, 4, 1, 2])
 -- The map must be an instance: `T` at `null` does not give `(x: boolean) => boolean`,
 -- and `Box<null>` is not `Box<T>` at `boolean`.
-#guard !PositiveCertificates.check G [5] [7] (.inst [(4, [0])] [4, 3])
-#guard !PositiveCertificates.check G [10] [12] (.inst [(4, [1, 2]), (9, [13])] [4, 9, 3])
+#guard !PositiveCertificates.check G [5] [7] (inst [(4, [0])] [3, 4, 0])
+#guard !PositiveCertificates.check G [10] [12] (inst [(4, [1, 2]), (9, [13])] [3, 4, 9, 1, 2])
 #guard !subtypes [10] [14]
 #guard !subtypes [5] [15]
-#guard PositiveCertificates.check G [10] [12] (.inst [(4, [1, 2]), (9, [11])] [4, 9, 3])
--- The domain must hold every row a signature reads.
-#guard !PositiveCertificates.check G [5] [7] (.inst [(4, [1, 2])] [4])
-#guard !PositiveCertificates.check G [10] [12] (.inst [(4, [1, 2]), (9, [11])] [4, 3])
+#guard PositiveCertificates.check G [10] [12] (inst [(4, [1, 2]), (9, [11])] [3, 4, 9, 1, 2])
+-- The domain must be closed under reads, and hold the instances.
+#guard !PositiveCertificates.check G [5] [7] (.inst [(4, [1, 2])] [4, 3] (fm [4, 3]))
+#guard !PositiveCertificates.check G [10] [12] (.inst [(4, [1, 2]), (9, [11])] [4, 3, 1, 2]
+  (fm [4, 3, 1, 2]))
+-- The free-parameter certificate must be sound: omitting `T` from `Box<T>`'s is refused.
+#guard !PositiveCertificates.check G [10] [12]
+  (.inst [(4, [1, 2]), (9, [11])] (dom [3, 4, 9, 1, 2]) ((fm (dom [3, 4, 9, 1, 2])).map
+    fun p => if p.1 == 9 then (9, []) else p))
 
 -- Generalization: `<T>(x: T) => T` is below `<U>(x: U) => U`, through the
 -- instance `T := U` with `U` opaque; `(x: boolean) => boolean` is not.
 #guard subtypes [5] [17]
 #guard !subtypes [7] [17]
-#guard PositiveCertificates.check G [5] [17] (.gen [5, 3, 4] [19] (.inst [(4, [18])] [4, 3]))
--- The rows read must avoid the binders, and be all the rows read.
-#guard !PositiveCertificates.check G [5] [17]
-  (.gen [5, 3, 4, 18] [19] (.inst [(4, [18])] [4, 3]))
-#guard !PositiveCertificates.check G [5] [17] (.gen [5, 3] [19] (.inst [(4, [18])] [4, 3]))
--- `(x: T) => T` at one `T` is not generic: it reads the scheme's own binder.
+#guard PositiveCertificates.check G [5] [17]
+  (.gen (dom [5]) (fm (dom [5])) [19] (inst [(4, [18])] [3, 4, 18]))
+-- The domain must be closed under reads.
+#guard !PositiveCertificates.check G [5] [17] (.gen [5, 3] (fm [5, 3]) [19] (inst [(4, [18])] [3, 4, 18]))
+-- `(x: T) => T` at one `T` is not generic: its free parameter is the scheme's own binder.
 #guard !subtypes [16] [5]
-#guard !PositiveCertificates.check G [16] [5] (.gen [16, 3, 4] [16] .subset)
+#guard !PositiveCertificates.check G [16] [5] (.gen (dom [16]) (fm (dom [16])) [16] .subset)
+-- A scheme's own binder is not free in it: `<T>(x: T) => T` reads `T` only under its binder.
+#guard fv (fm (dom [5])) 5 == [] && fv (fm (dom [16])) 16 == [4]
 
 -- A value of the scheme is typed at an instance by subsumption.
 #guard found [[5]] (.var 0) [7]

@@ -191,6 +191,67 @@ theorem assign_nmem (η : Assignment ι) (bs : List ι) (As : List ValueFamily) 
         exact ih As fun hi => h (List.mem_cons_of_mem _ hi)
   simp [assign, hl]
 
+open Classical in
+private theorem lookup_zip_some {bs : List ι} {As : List ValueFamily} {p : ι}
+    (h : p ∈ bs) (hl : As.length = bs.length) : ∃ A, (bs.zip As).lookup p = some A := by
+  induction bs generalizing As with
+  | nil => cases h
+  | cons b bs ih =>
+    cases As with
+    | nil => simp at hl
+    | cons A As =>
+      simp only [List.zip_cons_cons, List.lookup_cons]
+      by_cases hb : p = b
+      · subst hb; simp
+      · rw [beq_false_of_ne hb]
+        exact ih ((List.mem_cons.mp h).resolve_left hb) (by simpa using hl)
+
+open Classical in
+private theorem mem_of_lookup_zip {bs : List ι} {As : List ValueFamily} {p : ι} {A}
+    (h : (bs.zip As).lookup p = some A) : p ∈ bs := by
+  induction bs generalizing As with
+  | nil => simp at h
+  | cons b bs ih =>
+    cases As with
+    | nil => simp at h
+    | cons A' As =>
+      simp only [List.zip_cons_cons, List.lookup_cons] at h
+      by_cases hb : p = b
+      · exact hb ▸ List.mem_cons_self
+      · rw [beq_false_of_ne hb] at h
+        exact List.mem_cons_of_mem _ (ih h)
+
+open Classical in
+/-- A binder is given the same family whatever the rest of the assignment. -/
+theorem assign_mem_eq (η η' : Assignment ι) (bs : List ι) (As : List ValueFamily) {p : ι}
+    (h : p ∈ bs) (hl : As.length = bs.length) :
+    (assign η bs As).1 p = (assign η' bs As).1 p := by
+  obtain ⟨A, hA⟩ := lookup_zip_some h hl
+  simp [assign, hA]
+
+open Classical in
+/-- Reassigning disjoint binders commutes. -/
+theorem assign_comm (η : Assignment ι) {bs cs : List ι} (As Bs : List ValueFamily)
+    (hd : ∀ p ∈ bs, p ∉ cs) :
+    assign (assign η bs As) cs Bs = assign (assign η cs Bs) bs As := by
+  apply Subtype.ext
+  funext p
+  show (match (cs.zip Bs).lookup p with
+      | some B => B.1
+      | none => match (bs.zip As).lookup p with | some A => A.1 | none => η.1 p) =
+    (match (bs.zip As).lookup p with
+      | some A => A.1
+      | none => match (cs.zip Bs).lookup p with | some B => B.1 | none => η.1 p)
+  cases hc : (cs.zip Bs).lookup p with
+  | none => simp
+  | some B =>
+    have hp : p ∉ bs := fun hb => hd p hb (mem_of_lookup_zip hc)
+    have hn : (bs.zip As).lookup p = none := by
+      cases hb : (bs.zip As).lookup p with
+      | none => rfl
+      | some A => exact absurd (mem_of_lookup_zip hb) hp
+    simp [hn]
+
 /-- Two assignments differing at most on `bs`. -/
 def AgreeOff (bs : List ι) (η η' : Assignment ι) : Prop := ∀ p, p ∉ bs → η.1 p = η'.1 p
 

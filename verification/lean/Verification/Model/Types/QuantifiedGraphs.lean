@@ -28,7 +28,7 @@ The subtyping rules over scheme rows are in `PositiveRules`: `Sub.inst`
 (elimination: a scheme below a checked instance of its signatures, named by an
 instance map, `inst_type`) and `Sub.gen` (generalization: a type reading none
 of a scheme's binders, below its signatures with the binders opaque, is below
-the scheme, `independent`).
+the scheme, `agree_free`).
 
 Without scheme rows, the denotation is the parametric semantics `denoteP`. The
 quantifier ranges over every family of closed values. A bound on a binder is

@@ -479,49 +479,67 @@ $$
 $$
 
 Two more rules read scheme rows ([Parameter and scheme rows](#parameter-and-scheme-rows)).
+Both rules turn on which **parameter rows a row depends on**. A free-variable
+certificate $V$ on a domain $D$ (`FreeOk`) assigns each $i\in D$ a set $V(i)$
+of parameter rows, with $D$ closed under what its rows read (a clause row its
+operands, a scheme row its signature types), such that
+
+$$
+i\ \text{a parameter row}\Rightarrow i\in V(i),\qquad
+l\in\mathsf{reads}_G(i)\Rightarrow V(l)\subseteq V(i)\cup\mathsf{binders}(i),
+$$
+
+where $\mathsf{binders}(i)$ is empty unless $i$ is a scheme row. A scheme's own
+binders are therefore not free in it. A row means the same at two assignments
+that agree on $V(i)$ (`agree_free`).
+
 An **instance map** $\theta$ sends labels to types; a label it does not name is
-its own image, and $\theta(A)$ is the union of the images of $A$'s labels. For a
-scheme row with binders $\vec p$, $\theta$ is an instance on a domain $D$
-(`InstOk`) when every $i\in D$ satisfies:
+its own image, and $\theta(A)$ is the union of the images of $A$'s labels. For
+the scheme's binders $\vec p$, let the **moved** binders $M$ be $\vec p$ and the
+binders of every scheme row in $D$. $\theta$ is an instance on $(D,V)$
+(`InstOk`) when $V$ is a free-variable certificate on $D$, each $\theta(p)$ for
+$p\in\vec p$ lies in $D$ with no free row in $M$, and every $i\in D$ is one of:
 
-- if $i\in\vec p$, then $i$ is a parameter row;
-- otherwise, if $i$ is a parameter row, then $\theta(i)=\{i\}$;
-- otherwise, $i$ is a clause row, $\theta(i)=\{j\}$ for a clause row $j$ with
-  $G(j)=G(i)[\theta]$ (every operand of every clause mapped), and every operand
-  of $G(i)$ lies in $D$.
+- a binder $i\in\vec p$, a parameter row;
+- another parameter row, with $\theta(i)=\{i\}$;
+- **rigid**: $\theta(i)=\{i\}$ and $V(i)\cap M=\emptyset$;
+- a clause row with $\theta(i)=\{j\}$, $j$ a clause row and $G(j)=G(i)[\theta]$
+  (every operand of every clause mapped);
+- a scheme row $(\vec q;\Sigma')$ with $\theta(i)=\{j\}$, $j$ the scheme row
+  $(\vec q;\Sigma'[\theta])$ and $\vec q\cap\vec p=\emptyset$.
 
-A scheme row has no instance map of its own kind: a scheme row in $D$ fails the
-check. Read at the assignment giving each binder $p$ the meaning of $\theta(p)$,
-every $A\subseteq D$ means exactly $\theta(A)$ (`inst_type`). Then, with
+A receiver such as `Promise<number>`, whose `then` mentions `then`'s own
+binders only under them, is rigid. Read at the assignment giving each binder
+$p$ the meaning of $\theta(p)$, every $A\subseteq D$ means exactly $\theta(A)$
+(`inst_row`, `inst_type`, proved at every assignment that differs from the
+graph's only on $M$). Then, with
 $\sigma[\theta]=(\theta(Q),\theta(\vec C),\theta(D))$ for a signature
 $\sigma=(Q,\vec C,D)$:
 
 $$
 \frac{i\ \text{a scheme row}\ (\vec p;\Sigma)\quad
-      \theta\ \text{an instance on}\ D\quad
+      \theta\ \text{an instance on}\ (D,V)\quad
       T\equiv_G\mathsf{arrs}(L)\quad
       \forall\tau\in L.\;\exists\sigma\in\Sigma.\;\sigma\subseteq D\land\tau=\sigma[\theta]}
      {G\vdash\{i\}\le T}\ \textsc{inst}
 $$
 
 A type below a scheme's signatures with the binders opaque is below the scheme,
-provided it reads none of the binders. Let $\mathsf{reads}_G(i)$ be the labels
-$i$ reads: a clause row's operands, a scheme row's signature types. $D$ is
-closed when $\mathsf{reads}_G(i)\subseteq D$ for every $i\in D$ (`closedReads`):
+provided none of its free parameter rows is a binder:
 
 $$
 \frac{j\ \text{a scheme row}\ (\vec p;\Sigma)\quad
       U\equiv_G\mathsf{arrs}(\Sigma)\quad
-      D\ \text{closed}\quad D\cap\vec p=\emptyset\quad S\subseteq D\quad
+      V\ \text{a free-variable certificate on}\ D\quad
+      \forall l\in S.\;l\in D\land V(l)\cap\vec p=\emptyset\quad
       G\vdash S\le U}
      {G\vdash S\le\{j\}}\ \textsc{gen}
 $$
 
-`Sub.inst` and `Sub.gen` are these rules. The second is sound because a closed
-$D$ avoiding $\vec p$ means the same at any two assignments that differ only on
-$\vec p$ (`independent`), and because every rule of `Sub` holds at every
-assignment (`Sub.sound_at`): the premise $G\vdash S\le U$, derived once, holds
-at each instantiation of $\vec p$.
+`Sub.inst` and `Sub.gen` are these rules. The second is sound because $S$ means
+the same at any two assignments that differ only on $\vec p$ (`agree_free`),
+and because every rule of `Sub` holds at every assignment (`Sub.sound_at`): the
+premise $G\vdash S\le U$, derived once, holds at each instantiation of $\vec p$.
 
 Reflexivity and invariance under reordering or duplicating union labels follow
 (`Sub.refl`, `Sub.congr`). Transitivity composes completed proofs, not unchecked
@@ -538,10 +556,11 @@ A proof is one of five forms. `core` carries a `Certificate`: the finite
 candidate relation and its arrow evidence. `subset` is plain union inclusion of
 the source labels in the target's. `trans` names an intermediate type and holds
 a proof on each side. `inst` puts a scheme row below an instance of its
-signatures: it carries the instance map and its domain (`Sub.inst`). `gen` puts
-a type below a scheme row: it carries the rows the type reads, the type stating
-the scheme's signatures with its binders opaque, and a proof of the inclusion
-in that type (`Sub.gen`). All five are accepted, which is worth stating
+signatures: it carries the instance map, its domain and the domain's
+free-variable certificate (`Sub.inst`). `gen` puts a type below a scheme row: it
+carries a domain holding the type and its free-variable certificate, the type
+stating the scheme's signatures with its binders opaque, and a proof of the
+inclusion in that type (`Sub.gen`). All five are accepted, which is worth stating
 separately from what the producer builds: `CertificateProducer` never emits
 `trans`, and
 [PROGRAM-TYPING.md](PROGRAM-TYPING.md#producing-evidence-from-supplied-claims)

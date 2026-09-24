@@ -996,8 +996,9 @@ Stage 3 is done: subtyping over scheme rows, with certificates
   through a generic function is then the existing call rule after
   subsumption: `id(true)` is typed a Boolean, `wrap(true)` a `Box<boolean>`.
 - *Coverage* (`Sub.gen`): a type is below a scheme when it is below the
-  scheme's signatures with the binders opaque and reads none of the binders;
-  it then means the same at every instantiation (`independent`). So
+  scheme's signatures with the binders opaque and none of its free parameter
+  rows is a binder (a checked free-variable certificate);
+  it then means the same at every instantiation (`agree_free`). So
   `<T>(x: T) => T` is below `<U>(x: U) => U`, and `(x: T) => T` at one `T` is
   not below `<T>(x: T) => T`.
 - Subtyping is proved at every assignment (`Sub.sound_at`). This is where "no
