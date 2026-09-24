@@ -134,6 +134,50 @@ example (η : MixedAssignment Nat) (n W v) :
   rw [qDenoteWithArgs_unfold _ _]
   rfl
 
+/-- A closed outer scheme returns an inner scheme which captures its pack.
+The pack's bound itself mentions the outer scheme recursively. Only the inner
+scheme depends on the captured pack; neither depends on the inner value binder. -/
+private def nestedPacks : NormalGraph Nat := {
+  rows := fun i => match i with
+    | 1 => [.pack ⟨[[6]], [], none, false⟩ []]
+    | 6 => [.arrs [([3], [[0]], [3])] []]
+    | _ => [.top]
+  parameterKinds := fun i => if i = 2 then some .arguments else
+    if i = 5 then some .value else none
+  schemes := fun i => if i = 0 then some {
+    binders := [2], bounds := [(2, [1])], signatures := [],
+    variadic := [([3], [], [2], [4])] } else if i = 4 then some {
+    binders := [5], signatures := [], variadic := [([3], [], [2], [5])] } else none }
+
+private def nestedFree : PositiveRules.FreeMap Nat := [(2, [2]), (4, [2]), (5, [5])]
+
+private theorem nestedFreeChecked :
+    PositiveRules.FreeOk nestedPacks [0,1,2,3,4,5,6] nestedFree = true := by decide
+
+/-- Forgetting the captured pack is rejected by the existing certificate check. -/
+example : PositiveRules.FreeOk nestedPacks [0,1,2,3,4,5,6]
+    [(2, [2]), (5, [5])] = false := by decide
+
+example (η θ : MixedAssignment Nat) :
+    qDenoteWithArgs nestedPacks (mixedParameters nestedPacks) (η, 0) =
+      qDenoteWithArgs nestedPacks (mixedParameters nestedPacks) (θ, 0) := by
+  apply PositiveRules.agree_freeWith nestedFreeChecked (mixedParameters nestedPacks)
+    (PositiveRules.mixed_respectsFree nestedFreeChecked) η θ 0 (by decide)
+  intro p hp
+  change p ∈ ([] : List Nat) at hp
+  cases hp
+
+example (η θ : MixedAssignment Nat) (h : η.1 2 = θ.1 2) :
+    qDenoteWithArgs nestedPacks (mixedParameters nestedPacks) (η, 4) =
+      qDenoteWithArgs nestedPacks (mixedParameters nestedPacks) (θ, 4) := by
+  apply PositiveRules.agree_freeWith nestedFreeChecked (mixedParameters nestedPacks)
+    (PositiveRules.mixed_respectsFree nestedFreeChecked) η θ 4 (by decide)
+  intro p hp
+  change p ∈ [2] at hp
+  have hp' : p = 2 := by simpa using hp
+  subst p
+  exact h
+
 /-- A scheme has a value parameter and a list parameter in one substitution.
 The same list contract appears in a constructor operand and trailing arguments;
 the same value contract is the constructor and call result. -/

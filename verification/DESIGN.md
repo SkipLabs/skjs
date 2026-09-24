@@ -1867,14 +1867,35 @@ uses production `table_row` at that level, and derives the tuple's list image.
 Removing the operand entry is refused. Binder correspondence under scheme
 renaming now also works over either assignment carrier.
 
+Free-variable independence now uses one approximation invariant for both
+assignment domains. `RespectsFree` is a proved property of each interpreter,
+not a new certificate premise. `agree_freeWith` handles nested reassignments
+and bounds; production `agree_free` delegates to it. The old value-only
+step-index induction and its unused local-congruence lemma have been removed.
+A nested-scheme control captures a pack under an inner value binder, with a
+recursive callable in the pack's outer bound. The existing `FreeOk` check
+rejects omitting the capture from the free-variable map.
+
 The production entry point still selects `legacyParameters`: its environment,
 `table_row`, `inst_sound` and subtype certificates have not migrated together.
 The remaining joint row-image induction must connect those plain-row lemmas
-through parameter images, free-variable independence and nested scheme bounds.
+through kind-selected parameter images and nested scheme bounds, using the
+shared free-variable independence proof.
 It must establish value images and then argument images at each level, with
 the latter using the former's current-level result. Remaining
 legacy pack-value denotations and the `.args` assignment adapter must then be
 retired. The mixed fixed-point theorem is not yet a change to CLI acceptance.
+
+The parameter-image relation must compare the **selected kind**. A mixed
+assignment can have both components, but a value binder reads only its value
+component and a pack binder reads only its list component. On entering a
+nested scheme, the same arbitrary mixed family is assigned to both renamed
+binders; demanding that this entire family equal a kind-restricted row image
+would incorrectly constrain its unused component. Compare the selected
+components (or prove normalization to kind-selected assignments) instead.
+Likewise, the mixed runtime-value interpretation must stop assigning legacy
+`.args` values to pack clauses before using kind-disjoint bound images. Merely
+replacing `Assignment` with `MixedAssignment` in `RelK` is not sufficient.
 
 The remaining graph assignment/substitution change must retain a pack's list
 contract and the coherent array interpretation used by collection and array
