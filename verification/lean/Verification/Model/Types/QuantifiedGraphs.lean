@@ -50,7 +50,7 @@ theorem scheme_row {G : NormalGraph ι} {η : Assignment ι} {i : ι} {s : Schem
     (hp : G.params i = false) (hq : G.schemes i = some s) (n : Nat) (W : WorldT n) (v : Val) :
     qDenote G (η, i) n W v ↔ schemeSem (qMeaning G) η s n W v := by
   rw [qDenote_unfold]
-  simp only [qLayer, hp, hq, Bool.false_eq_true, if_false]
+  simp only [qLayer, qLayerWithArgs, hp, hq, Bool.false_eq_true, if_false]
   exact Iff.rfl
 
 /-- **Instantiation.** A member of a scheme row meets each of its instances
@@ -88,7 +88,7 @@ theorem param_row {G : NormalGraph ι} {η : Assignment ι} {i : ι} (hp : G.par
     (n : Nat) (W : WorldT n) (v : Val) :
     qDenote G (η, i) n W v ↔ η.1 i n W v := by
   rw [qDenote_unfold]
-  simp [qLayer, hp]
+  simp [qLayer, qLayerWithArgs, hp]
 
 private theorem approx_bridge (G : NormalGraph ι) (hq : ∀ i, G.schemes i = none)
     (η : Assignment ι) :
@@ -101,9 +101,10 @@ private theorem approx_bridge (G : NormalGraph ι) (hq : ∀ i, G.schemes i = no
     show qLayer G (Tower.approx (qLayer G) k) (η, i) =
       paramLayer G G.params η.1 (Tower.approx (paramLayer G G.params η.1) k) i
     rw [← ih]
-    unfold qLayer paramLayer
+    unfold qLayer qLayerWithArgs paramLayer
     cases hp : G.params i
-    · simp [hq i, normalLayer, NormalGraph.clauses, NormalGraph.plain, hp]
+    · simp [hq i, normalLayer, NormalGraph.clauses, NormalGraph.plain, hp, semList, sem]
+      rfl
     · simp
 
 /-- **Conservative.** Without scheme rows, the denotation at an assignment is

@@ -22,7 +22,7 @@ def Covers [DecidableEq ι] (G : NormalGraph ι) (Γ Δ : List (Ty ι)) : Prop :
 theorem checkEdge_sound [DecidableEq ι] {G : NormalGraph ι} {Γ Δ ps}
     (hc : checkEdge G Γ Δ ps = true) : Covers G Γ Δ := by
   induction Δ generalizing Γ ps with
-  | nil => simp [Covers]
+  | nil => simp [Covers, CoversWith]
   | cons B Δ ih =>
     cases Γ with
     | nil => cases ps <;> simp [checkEdge] at hc

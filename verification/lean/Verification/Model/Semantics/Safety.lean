@@ -692,12 +692,21 @@ def ArgsShort (Ps : List Fam) (j : Nat) (W : WorldT j) (args : List Tm) : Prop :
   args.length ≤ Ps.length ∧ ArgsT (Ps.take args.length) j W args ∧
     ∀ A ∈ Ps.drop args.length, A j W .undef
 
+/-- Interpretation of an encoded pack row at the legacy graph boundary. -/
+def packArgs (P : Fam) : ArgFam := fun n W vs => P n W (.args vs)
+
+theorem packArgs_adm {P : Fam} (h : Adm P) : Adm (packArgs P) :=
+  ⟨fun n W vs hp => h.down n W _ hp, fun n W U hx vs hp => h.mono n W U hx _ hp⟩
+
+theorem packArgs_congr {P Q : Fam} {n : Nat} (h : Agree P Q n) :
+    Agree (packArgs P) (packArgs Q) n := fun j hj W vs => h j hj W (.args vs)
+
 /-- The actual lists a variadic signature admits: its fixed parameters admit
 the first actuals, as a fixed signature's do, and the actuals past them, as
 one argument pack, are at the rest contract. An element rest `E[]` is the pack
 of any number at `E` (`elemPack`). -/
-def ArgsRest (Ps : List Fam) (E : Fam) (j : Nat) (W : WorldT j) (args : List Tm) : Prop :=
-  ArgsShort Ps j W (args.take Ps.length) ∧ E j W (.args (args.drop Ps.length))
+def ArgsRest (Ps : List Fam) (E : ArgFam) (j : Nat) (W : WorldT j) (args : List Tm) : Prop :=
+  ArgsShort Ps j W (args.take Ps.length) ∧ E j W (args.drop Ps.length)
 
 /-- A promise: every receiver value at `Rc` with every admitted list of values
 invokes the value, at every future world and satisfying heap below the budget,
@@ -755,7 +764,7 @@ def callsT (L : List (Fam × List Fam × Fam)) : Fam := fun k W v =>
 
 /-- Values meeting every variadic signature `(receiver, fixed parameters,
 element, result)`: the contract of each further actual is the element's. -/
-def restsT (S : List (Fam × List Fam × Fam × Fam)) : Fam := fun k W v =>
+def restsT (S : List (Fam × List Fam × ArgFam × Fam)) : Fam := fun k W v =>
   Invocable v ∧ ∀ s ∈ S, Promise (ArgsRest s.2.1 s.2.2.1) s.1 s.2.2.2 k W v
 
 /-! ### Construct signatures -/
@@ -770,6 +779,13 @@ def ConstructsTo (v : Val) (args : List Tm) (result : Tm) : Prop :=
   ∃ fs arity b, v = .objAt fs (.closure arity b .construct) ∧
     result = CallArguments.bindParameters arity args .undef b
 
+/-- The common constructor promise, independent of argument-list syntax. -/
+def ConstructPromise (P : ArgFam) (R : Fam) (k : Nat) (W : WorldT k) (v : Val) : Prop :=
+  ∀ (j : Nat) (hj : j < k) (U : WorldT j),
+    WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U → ∀ (heap : Heap), HeapOk j U heap →
+      ∀ args, CallArguments.Values args → P j U args →
+        ∃ result, ConstructsTo v args result ∧ Safe R j U heap result
+
 /-- **Construct signatures.** Values meeting every signature `(parameters,
 result)` under `new`: constructing the value, in any strictly future world,
 with values at the parameters, runs a body safe at the result. The code is
@@ -778,10 +794,7 @@ construct-only, so a plain call cannot run it, and no code without
 after the step, which is what lets the signature's variance be used only
 below the current level. -/
 def ctorsT (L : List (List Fam × Fam)) : Fam := fun k W v =>
-  Constructible v ∧ ∀ p ∈ L, ∀ (j : Nat) (hj : j < k) (U : WorldT j),
-    WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U → ∀ (heap : Heap), HeapOk j U heap →
-      ∀ args, CallArguments.Values args → ArgsT p.1 j U args →
-        ∃ result, ConstructsTo v args result ∧ Safe p.2 j U heap result
+  Constructible v ∧ ∀ p ∈ L, ConstructPromise (ArgsT p.1) p.2 k W v
 
 theorem ctorsT_adm (L : List (List Fam × Fam)) : Adm (ctorsT L) :=
   ⟨fun _ _ _ h => ⟨h.1, fun p hp j hj U hx hu heap hh args hv ha =>
@@ -810,25 +823,22 @@ theorem ctorsT_of_body {L : List (List Fam × Fam)} {k : Nat} {W : WorldT k}
 
 /-- The actual lists a variadic construct signature admits: its fixed
 parameters' actuals exactly, then, as one argument pack, the rest. -/
-def CtorRest (Ps : List Fam) (P : Fam) (j : Nat) (W : WorldT j) (args : List Tm) : Prop :=
+def CtorRest (Ps : List Fam) (P : ArgFam) (j : Nat) (W : WorldT j) (args : List Tm) : Prop :=
   Ps.length ≤ args.length ∧ ArgsT Ps j W (args.take Ps.length) ∧
-    P j W (.args (args.drop Ps.length))
+    P j W (args.drop Ps.length)
 
 /-- **Variadic construct signatures** `(parameters, rest, result)`: as
 `ctorsT`, for the lists `CtorRest` admits. -/
-def ctorRestsT (S : List (List Fam × Fam × Fam)) : Fam := fun k W v =>
-  Constructible v ∧ ∀ s ∈ S, ∀ (j : Nat) (hj : j < k) (U : WorldT j),
-    WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U → ∀ (heap : Heap), HeapOk j U heap →
-      ∀ args, CallArguments.Values args → CtorRest s.1 s.2.1 j U args →
-        ∃ result, ConstructsTo v args result ∧ Safe s.2.2 j U heap result
+def ctorRestsT (S : List (List Fam × ArgFam × Fam)) : Fam := fun k W v =>
+  Constructible v ∧ ∀ s ∈ S, ConstructPromise (CtorRest s.1 s.2.1) s.2.2 k W v
 
-theorem ctorRestsT_adm (S : List (List Fam × Fam × Fam)) : Adm (ctorRestsT S) :=
+theorem ctorRestsT_adm (S : List (List Fam × ArgFam × Fam)) : Adm (ctorRestsT S) :=
   ⟨fun _ _ _ h => ⟨h.1, fun p hp j hj U hx hu heap hh args hv ha =>
       h.2 p hp j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh args hv ha⟩,
    fun _ _ _ hx _ h => ⟨h.1, fun p hp j hj U hy hu heap hh args hv ha =>
       h.2 p hp j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh args hv ha⟩⟩
 
-theorem ctorRestsT_append (S T : List (List Fam × Fam × Fam)) (k : Nat) (W : WorldT k) (v : Val) :
+theorem ctorRestsT_append (S T : List (List Fam × ArgFam × Fam)) (k : Nat) (W : WorldT k) (v : Val) :
     ctorRestsT (S ++ T) k W v ↔ ctorRestsT S k W v ∧ ctorRestsT T k W v := by
   simp only [ctorRestsT, List.mem_append, or_imp, forall_and]
   constructor
@@ -852,6 +862,19 @@ theorem ctorsT_append (L M : List (List Fam × Fam)) (k : Nat) (W : WorldT k) (v
 
 /-! ### Argument packs -/
 
+/-- Tuple shape and position membership, independent of approximation policy.
+The same shape is used for direct argument contracts and the legacy delayed
+encoding; only the interpretation of an element differs. -/
+def TupleFits (member : Fam → Val → Prop) (T : TupleF) (vs : List Val) : Prop :=
+  T.required.length ≤ vs.length ∧
+    (T.rest = none → vs.length ≤ T.required.length + T.optional.length) ∧
+    ∀ i v A, vs[i]? = some v → positionFam T i = some A → member A v
+
+theorem TupleFits.map {P Q : Fam → Val → Prop} {T : TupleF} {vs : List Val}
+    (h : TupleFits P T vs) (hm : ∀ i A, positionFam T i = some A →
+      ∀ v, P A v → Q A v) : TupleFits Q T vs :=
+  ⟨h.1, h.2.1, fun i v A hv hA => hm i A hA v (h.2.2 i v A hv hA)⟩
+
 /-- **One tuple contract on an argument list.** At least the required
 positions are present, no more than the required and optional ones without a
 rest, and each present value is, at every lower level and future world, a
@@ -860,10 +883,8 @@ at locations, so the contract speaks only below the current level: that keeps
 a pack clause contractive in its operands, as a store's contracts are through
 their locations. -/
 def PackFits (T : TupleF) (k : Nat) (W : WorldT k) (vs : List Tm) : Prop :=
-  T.required.length ≤ vs.length ∧
-    (T.rest = none → vs.length ≤ T.required.length + T.optional.length) ∧
-    ∀ (i : Nat) (u : Tm) (A : Fam), vs[i]? = some u → positionFam T i = some A →
-      ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U → A j U u
+  TupleFits (fun A u => ∀ (j : Nat) (hj : j < k) (U : WorldT j),
+    WExt (trunc j (Nat.le_of_lt hj) W) U → A j U u) T vs
 
 /-- **An argument pack under tuple contracts.** The closed argument lists
 every contract admits. No program makes one; a signature's rest speaks about
@@ -903,7 +924,7 @@ theorem PackFits.congr {T T' : TupleF} {n W vs}
     (hpos : ∀ i, (positionFam T i = none ↔ positionFam T' i = none) ∧
       ∀ A B, positionFam T i = some A → positionFam T' i = some B → Agree A B n) :
     PackFits T n W vs ↔ PackFits T' n W vs := by
-  unfold PackFits
+  unfold PackFits TupleFits
   rw [hreq, hopt, hrest]
   refine and_congr Iff.rfl (and_congr Iff.rfl ⟨fun h i u B hu hB j hj U hx => ?_,
     fun h i u A hu hA j hj U hx => ?_⟩)
@@ -969,7 +990,7 @@ theorem callsT_adm (L : List (Fam × List Fam × Fam)) : Adm (callsT L) :=
   ⟨fun _ _ _ h => ⟨h.1, fun p hp => (h.2 p hp).down⟩,
    fun _ _ _ hx _ h => ⟨h.1, fun p hp => (h.2 p hp).mono hx⟩⟩
 
-theorem restsT_adm (S : List (Fam × List Fam × Fam × Fam)) : Adm (restsT S) :=
+theorem restsT_adm (S : List (Fam × List Fam × ArgFam × Fam)) : Adm (restsT S) :=
   ⟨fun _ _ _ h => ⟨h.1, fun p hp => (h.2 p hp).down⟩,
    fun _ _ _ hx _ h => ⟨h.1, fun p hp => (h.2 p hp).mono hx⟩⟩
 
@@ -1118,7 +1139,7 @@ theorem ArgsShort_congr {n : Nat} {As Bs : List Fam} (h : ArgsAgree n As Bs) {j 
   unfold ArgsShort
   rw [hlen, ArgsT_congr htk hj W args, ArgsAgree_all hdr hj]
 
-theorem ArgsRest_congr {n : Nat} {As Bs : List Fam} {E E' : Fam} (h : ArgsAgree n As Bs)
+theorem ArgsRest_congr {n : Nat} {As Bs : List Fam} {E E' : ArgFam} (h : ArgsAgree n As Bs)
     (he : Agree E E' n) {j : Nat} (hj : j < n) (W : WorldT j) (args : List Tm) :
     ArgsRest As E j W args ↔ ArgsRest Bs E' j W args := by
   unfold ArgsRest
@@ -1141,49 +1162,27 @@ theorem ArgsShort_cons {P : Fam} {Ps : List Fam} {j W a args} :
   · rintro ⟨hl, ⟨ha, ht⟩, hd⟩; exact ⟨ha, by omega, ht, hd⟩
   · rintro ⟨ha, hl, ht, hd⟩; exact ⟨by omega, ⟨ha, ht⟩, hd⟩
 
-theorem ArgsRest_nil_args {Ps : List Fam} {E : Fam} {j W} :
-    ArgsRest Ps E j W [] ↔ (∀ A ∈ Ps, A j W .undef) ∧ E j W (.args []) := by
+theorem ArgsRest_nil_args {Ps : List Fam} {E : ArgFam} {j W} :
+    ArgsRest Ps E j W [] ↔ (∀ A ∈ Ps, A j W .undef) ∧ E j W [] := by
   simp only [ArgsRest, List.take_nil, List.drop_nil, ArgsShort_nil_args]
 
-theorem ArgsRest_nil_params {E : Fam} {j W} {args : List Tm} :
-    ArgsRest [] E j W args ↔ E j W (.args args) := by
+theorem ArgsRest_nil_params {E : ArgFam} {j W} {args : List Tm} :
+    ArgsRest [] E j W args ↔ E j W args := by
   simp [ArgsRest, ArgsShort_nil_params]
 
-theorem ArgsRest_cons {P : Fam} {Ps : List Fam} {E : Fam} {j W a args} :
+theorem ArgsRest_cons {P : Fam} {Ps : List Fam} {E : ArgFam} {j W a args} :
     ArgsRest (P :: Ps) E j W (a :: args) ↔ P j W a ∧ ArgsRest Ps E j W args := by
   simp only [ArgsRest, List.length_cons, List.take_succ_cons, List.drop_succ_cons, ArgsShort_cons,
     and_assoc]
 
-theorem ArgsRest_of_exact_extra {Ps : List Fam} {E : Fam} {j W args extra}
-    (ha : ArgsT Ps j W args) (he : E j W (.args extra)) : ArgsRest Ps E j W (args ++ extra) := by
+theorem ArgsRest_of_exact_extra {Ps : List Fam} {E : ArgFam} {j W args extra}
+    (ha : ArgsT Ps j W args) (he : E j W extra) : ArgsRest Ps E j W (args ++ extra) := by
   have hl := ArgsT_length ha
   refine ⟨?_, ?_⟩
   · rw [← hl, List.take_left]; exact ArgsShort_of_exact ha
   · rw [← hl, List.drop_left]; exact he
 
 /-! ### Invocation -/
-
-/-- A typed callable value dispatches to a safe body at the next budget. -/
-theorem callsT_invoke {L k W v} (hf : callsT L k W v)
-    {p : Fam × List Fam × Fam} (hp : p ∈ L) {j : Nat} (hj : j < k) {U : WorldT j}
-    (hx : WExt (trunc j (Nat.le_of_lt hj) W) U) (hu : WorldAdm U)
-    {heap : Heap} (hh : HeapOk j U heap) {r : Tm} (hrv : isVal r = true) (hr : p.1 j U r)
-    {args : List Tm} (hA : ∀ A ∈ p.2.1, ValOnly A) (ha : ArgsT p.2.1 j U args) :
-    ∃ result, CallArguments.Invoke ⟨v, r, args⟩ result ∧ Safe p.2.2 j U heap result :=
-  hf.2 p hp j hj U hx hu heap hh r hrv hr args (ArgsT_values hA ha) (ArgsShort_of_exact ha)
-
-/-- A call may omit trailing actuals whose positions admit `undefined`. The
-signature says so; how the callee binds the shorter list is its own business. -/
-theorem callsT_invoke_short {L k W v} (hf : callsT L k W v)
-    {p : Fam × List Fam × Fam} (hp : p ∈ L) {j : Nat} (hj : j < k) {U : WorldT j}
-    (hx : WExt (trunc j (Nat.le_of_lt hj) W) U) (hu : WorldAdm U)
-    {heap : Heap} (hh : HeapOk j U heap) {r : Tm} (hrv : isVal r = true) (hr : p.1 j U r)
-    {args pad : List Tm} (hpad : ∀ a ∈ pad, a = .undef)
-    (hA : ∀ A ∈ p.2.1, ValOnly A) (ha : ArgsT p.2.1 j U (args ++ pad)) :
-    ∃ result, CallArguments.Invoke ⟨v, r, args⟩ result ∧ Safe p.2.2 j U heap result := by
-  have hvals := ArgsT_values hA ha
-  exact hf.2 p hp j hj U hx hu heap hh r hrv hr args
-    (fun a hm => hvals a (List.mem_append_left pad hm)) (ArgsShort_of_pad hpad ha)
 
 /-- Closure code meeting its code contract meets the signatures: a shorter
 list binds as the padded one does, since `parameters` pads with `undefined`. -/
@@ -1236,7 +1235,7 @@ theorem ctorsT_congr {α : Type} (l : List α) (f g : α → List Fam × Fam) {n
       ((ArgsT_congr (h x hm).1 hj U args).mp ha)
     exact ⟨result, hc, (Safe_congr n (h x hm).2 j hj U heap _).mpr hsafe⟩
 
-theorem ctorRestsT_congr {α : Type} (l : List α) (f g : α → List Fam × Fam × Fam) {n : Nat}
+theorem ctorRestsT_congr {α : Type} (l : List α) (f g : α → List Fam × ArgFam × Fam) {n : Nat}
     (h : ∀ x ∈ l, ArgsAgree n (f x).1 (g x).1 ∧ Agree (f x).2.1 (g x).2.1 n ∧
       Agree (f x).2.2 (g x).2.2 n)
     (W : WorldT n) (v : Val) : ctorRestsT (l.map f) n W v ↔ ctorRestsT (l.map g) n W v := by
@@ -1261,7 +1260,7 @@ theorem ctorRestsT_congr {α : Type} (l : List α) (f g : α → List Fam × Fam
         · rw [← hl]; exact ((h x hm).2.1 j hj U _).mp hpack)
     exact ⟨result, hc, (Safe_congr n (h x hm).2.2 j hj U heap _).mpr hsafe⟩
 
-theorem restsT_congr {α : Type} (l : List α) (f g : α → Fam × List Fam × Fam × Fam) {n : Nat}
+theorem restsT_congr {α : Type} (l : List α) (f g : α → Fam × List Fam × ArgFam × Fam) {n : Nat}
     (h : ∀ x ∈ l, Agree (f x).1 (g x).1 n ∧ ArgsAgree n (f x).2.1 (g x).2.1 ∧
       Agree (f x).2.2.1 (g x).2.2.1 n ∧ Agree (f x).2.2.2 (g x).2.2.2 n)
     (W : WorldT n) (v : Val) : restsT (l.map f) n W v ↔ restsT (l.map g) n W v := by
@@ -1373,9 +1372,9 @@ theorem ArgsT_replicate_all {E : Fam} {j W} : ∀ {m : Nat} {xs : List Tm},
 followed by a list the rest of the signature admits, is admitted by the whole
 signature, when the rest contract admits the prefix's values past the fixed
 positions in front of any pack it admits. -/
-theorem ArgsRest_prefix {Ps : List Fam} {E : Fam} {j W pre args}
+theorem ArgsRest_prefix {Ps : List Fam} {E : ArgFam} {j W pre args}
     (hp : ArgsT (Ps.take pre.length) j W (pre.take Ps.length))
-    (hext : ∀ ys, E j W (.args ys) → E j W (.args (pre.drop Ps.length ++ ys)))
+    (hext : ∀ ys, E j W ys → E j W (pre.drop Ps.length ++ ys))
     (ha : ArgsRest (Ps.drop pre.length) E j W args) : ArgsRest Ps E j W (pre ++ args) := by
   by_cases hk : pre.length ≤ Ps.length
   · rw [List.take_of_length_le hk] at hp
@@ -1404,7 +1403,7 @@ theorem ArgsRest_prefix {Ps : List Fam} {E : Fam} {j W pre args}
 
 /-- An admitted variadic list stays admitted as the budget drops and the world
 grows. -/
-theorem ArgsRest_transfer {Ps : List Fam} {E : Fam} (hA : ∀ A ∈ Ps, Adm A) (hE : Adm E)
+theorem ArgsRest_transfer {Ps : List Fam} {E : ArgFam} (hA : ∀ A ∈ Ps, Adm A) (hE : Adm E)
     {n W args} (ha : ArgsRest Ps E n W args) (j : Nat) (hj : j ≤ n) (U : WorldT j)
     (hx : WExt (trunc j hj W) U) : ArgsRest Ps E j U args :=
   ⟨ArgsShort_transfer hA ha.1 j hj U hx, hE.mono j _ U hx _ (hE.down_le n j hj W _ ha.2)⟩
@@ -1413,14 +1412,14 @@ theorem ArgsRest_transfer {Ps : List Fam} {E : Fam} (hA : ∀ A ∈ Ps, Adm A) (
 positions the prefix did not take, then the rest contract, at any receiver,
 when that contract admits the prefix's values past the fixed positions in front
 of any pack it admits, as an element rest does. -/
-theorem restsT_bound {Rt E R Rc : Fam} {Ps : List Fam} {k : Nat} {W : WorldT k}
+theorem restsT_bound {Rt R Rc : Fam} {E : ArgFam} {Ps : List Fam} {k : Nat} {W : WorldT k}
     {fs : List (PropKey × Nat)} {tv rv : Val} {pvs : List Tm}
     (hRt : Adm Rt) (hPs : ∀ A ∈ Ps, Adm A) (hE : Adm E)
     (ht : restsT [(Rt, Ps, E, R)] k W tv) (hrv : isVal rv = true) (hsr : Scoped 0 rv)
     (hr : Rt k W rv)
     (hpv : ArgsT (Ps.take pvs.length) k W (pvs.take Ps.length))
     (hext : ∀ j (hj : j ≤ k) (U : WorldT j), WExt (trunc j hj W) U →
-      ∀ ys, E j U (.args ys) → E j U (.args (pvs.drop Ps.length ++ ys)))
+      ∀ ys, E j U ys → E j U (pvs.drop Ps.length ++ ys))
     (hvs : CallArguments.Values pvs) (hsp : ∀ a ∈ pvs, Scoped 0 a) :
     restsT [(Rc, Ps.drop pvs.length, E, R)] k W (.objAt fs (.bound tv rv pvs)) := by
   refine ⟨⟨fs, _, rfl, rfl, ?_⟩, ?_⟩

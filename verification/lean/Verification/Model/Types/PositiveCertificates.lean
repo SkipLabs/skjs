@@ -51,17 +51,6 @@ theorem checkRestFixed_iff [DecidableEq ι] {G : NormalGraph ι} {table : Table 
     checkRestFixed G table s Rt As d = true ↔ RestFixed (restElem G) (Rel table) s Rt As d := by
   simp [checkRestFixed, RestFixed, checkDomains_iff, and_assoc]
 
-/-- One variadic signature covering another, decided. -/
-def checkRestCovers [DecidableEq ι] (G : NormalGraph ι) (table : Table ι)
-    (p q : List ι × List (List ι) × List ι × List ι) : Bool :=
-  decide (Rel table q.1 p.1) && checkDomains table (q.2.1.take p.2.1.length) p.2.1 &&
-    decide (IntoRest (restElem G) (Rel table) (q.2.1.drop p.2.1.length) p.2.2.1 ∧
-      Rel table q.2.2.1 p.2.2.1 ∧ Rel table p.2.2.2 q.2.2.2)
-
-theorem checkRestCovers_iff [DecidableEq ι] {G : NormalGraph ι} {table : Table ι} {p q} :
-    checkRestCovers G table p q = true ↔ RestCovers (restElem G) (Rel table) p q := by
-  simp [checkRestCovers, RestCovers, checkDomains_iff, and_assoc]
-
 /-- One checker for ordered argument-list coverage; every union certificate
 identifies the unchanged positions as well as the position being split. -/
 def checkArrow [DecidableEq ι] (G : NormalGraph ι) (table : Table ι)
@@ -167,77 +156,36 @@ abbrev ArrowsChecked [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (p
     checkArrow G table L S p.1 p.2.1 p.2.2 e.2.2 = true
 
 set_option synthInstance.maxSize 1024 in
-def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs : Evidence ι) :
-    Clause (List ι) → Clause (List ι) → Bool
-  | _, .top => true
-  | .list a bs, .list c ds => decide (∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversTuple (Rel table) p q)
-  | .nul, .nul => true
-  | .undef, .undef => true
-  | .bool, .bool => true
-  | .boolLit _, .bool => true
-  | .boolLit a, .boolLit b => decide (a = b)
-  | .num, .num => true
-  | .numLit _, .num => true
-  | .numLit a, .numLit b => decide (a = b)
-  | .str, .str => true
-  | .strLit _, .str => true
-  | .strLit a, .strLit b => decide (a = b)
-  | .refs a bs vs os, .refs c ds ws ps =>
-      decide (CoversFields (Rel table) (a :: bs) (c :: ds) ∧ CoversViews (Rel table) (a :: bs) vs ws ∧
-        CoversOptional (Rel table) (a :: bs) os ps)
-  | .dict a bs vs ix os, .dict c ds ws iy ps =>
-      decide (CoversFields (Rel table) (a :: bs) (c :: ds) ∧
-        CoversViews (Rel table) (a :: bs) vs ws ∧ (∀ y ∈ iy, ∃ x ∈ ix, Rel table x y) ∧
-        CoversOptional (Rel table) (a :: bs) os ps)
-  | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T => decide
-      (ArrowsChecked G table proofs L S M ∧ ∀ t ∈ T,
-        (∃ s ∈ S, checkRestCovers G table s t = true) ∨ ∃ p ∈ L, FixedCallsPack G (Rel table) p t)
-  | .callable a bs L S, .callable c ds M T => decide
-      (CoversFields (Rel table) (a :: bs) (c :: ds) ∧ ArrowsChecked G table proofs L S M ∧
-       ∀ t ∈ T, (∃ s ∈ S, checkRestCovers G table s t = true) ∨
-         ∃ p ∈ L, FixedCallsPack G (Rel table) p t)
-  | .ctors L S, .ctors M T => decide ((∀ q ∈ M, ∃ p ∈ L, Domains (Rel table) q.1 p.1 ∧ Rel table p.2 q.2) ∧
-      ∀ t ∈ T, (∃ s ∈ S, Domains (Rel table) t.1 s.1 ∧ Rel table t.2.1 s.2.1 ∧ Rel table s.2.2 t.2.2) ∨
-        ∃ p ∈ L, FixedCoversPack G (Rel table) p t)
-  | .pack a bs, .pack c ds => decide (∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversPack (Rel table) p q)
-  | _, _ => false
+instance [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs : Evidence ι) :
+    ∀ L S M, Decidable (ArrowsChecked G table proofs L S M) := by
+  intro L S M
+  unfold ArrowsChecked
+  infer_instance
 
+instance {R : List ι → List ι → Prop} [DecidableRel R]
+    {elem : List ι → Option (List ι)} [DecidableEq ι] (p q) :
+    Decidable (RestCovers elem R p q) := by
+  unfold RestCovers; infer_instance
 
 set_option synthInstance.maxSize 1024 in
+instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
+    {arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop}
+    [∀ L S M, Decidable (arrows L S M)] (a b) : Decidable (CoversWith G R arrows a b) := by
+  cases a <;> cases b <;> unfold CoversWith <;> infer_instance
+
+set_option synthInstance.maxSize 1024 in
+/-- The executable checker is the shared coverage rule interpreted with checked
+arrow evidence. Adding a coverage condition changes the checker automatically. -/
+def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs : Evidence ι)
+    (a b : Clause (List ι)) : Bool :=
+  decide (CoversWith G (Rel table) (ArrowsChecked G table proofs) a b)
+
 theorem checkClause_sound [DecidableEq ι] {G : NormalGraph ι} {table proofs a b}
     (h : checkClause G table proofs a b = true) : Covers G (Rel table) a b := by
-  cases a <;> cases b <;> simp only [checkClause, Bool.false_eq_true, Covers] at *
-  all_goals try contradiction
-  all_goals try trivial
-  case ctors.ctors => exact of_decide_eq_true h
-  case pack.pack => exact of_decide_eq_true h
-  · exact of_decide_eq_true h
-  · exact of_decide_eq_true h
-  · have hh := of_decide_eq_true h
-    exact ⟨fun p hp => by obtain ⟨e, _, _, _, he⟩ := hh.1 p hp; exact checkArrow_sound he,
-      fun t ht => by
-        rcases hh.2 t ht with ⟨s, hs, hc⟩ | hp
-        · exact .inl ⟨s, hs, checkRestCovers_iff.mp hc⟩
-        · exact .inr hp⟩
-  · exact of_decide_eq_true h
-  · -- numLit ≤ numLit
-    exact of_decide_eq_true h
-  · have hh := of_decide_eq_true h
-    exact ⟨fun p hp => by obtain ⟨e, _, _, _, he⟩ := hh.1 p hp; exact checkArrow_sound he,
-      fun t ht => by
-        rcases hh.2 t ht with ⟨s, hs, hc⟩ | hp
-        · exact .inl ⟨s, hs, checkRestCovers_iff.mp hc⟩
-        · exact .inr hp⟩
-  · have hh := of_decide_eq_true h
-    exact ⟨hh.1,
-      fun p hp => by obtain ⟨e, _, _, _, he⟩ := hh.2.1 p hp; exact checkArrow_sound he,
-      fun t ht => by
-        rcases hh.2.2 t ht with ⟨s, hs, hc⟩ | hp
-        · exact .inl ⟨s, hs, checkRestCovers_iff.mp hc⟩
-        · exact .inr hp⟩
-  · -- strLit ≤ strLit
-    exact of_decide_eq_true h
-  · exact of_decide_eq_true h
+  apply CoversWith.mono (h := of_decide_eq_true h)
+  intro L S M hs p hp
+  obtain ⟨e, _, _, _, he⟩ := hs p hp
+  exact checkArrow_sound he
 
 /-- Finite evidence collection is proof-only; the checker itself makes no
 classical choices. Monotonicity allows witnesses to share one evidence list. -/
@@ -255,19 +203,15 @@ private theorem collect {α β : Type} (xs : List α) (P : α → List β → Pr
     · subst a; exact mono x es _ (fun e he => List.mem_append_left rest he) he
     · exact mono a rest _ (fun e he => List.mem_append_right es he) (hr a hm)
 
-set_option synthInstance.maxSize 1024 in
 theorem checkClause_mono [DecidableEq ι] {G : NormalGraph ι} {table a b es es'}
     (hm : ∀ e ∈ es, e ∈ es') (h : checkClause G table es a b = true) :
     checkClause G table es' a b = true := by
-  cases a <;> cases b <;> simp only [checkClause, Bool.false_eq_true, decide_eq_true_eq] at *
-  all_goals try contradiction
-  all_goals try trivial
-  all_goals first
-    | exact h
-    | (refine ⟨fun p hp => ?_, h.2⟩; obtain ⟨e,he,hL,hP,hc⟩ := h.1 p hp;
-       exact ⟨e,hm e he,hL,hP,hc⟩)
-    | (refine ⟨h.1, fun p hp => ?_, h.2.2⟩; obtain ⟨e,he,hL,hP,hc⟩ := h.2.1 p hp;
-       exact ⟨e,hm e he,hL,hP,hc⟩)
+  have h := of_decide_eq_true h
+  apply decide_eq_true
+  apply CoversWith.mono (h := h)
+  intro L S M hs p hp
+  obtain ⟨e, he, hL, hP, hc⟩ := hs p hp
+  exact ⟨e, hm e he, hL, hP, hc⟩
 
 private theorem arrow_evidence_complete [DecidableEq ι] {G : NormalGraph ι} {table} {L M : Ops ι}
     {S : List (List ι × List (List ι) × List ι × List ι)}
@@ -286,55 +230,15 @@ private theorem arrow_evidence_complete [DecidableEq ι] {G : NormalGraph ι} {t
 set_option synthInstance.maxSize 1024 in
 theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table a b}
     (h : Covers G (Rel table) a b) : ∃ es, checkClause G table es a b = true := by
-  by_cases hb : b = .top
-  · subst hb; exact ⟨[], by cases a <;> rfl⟩
-  cases a <;> cases b <;> simp only [Covers] at h
+  simp only [checkClause, decide_eq_true_eq]
+  cases a <;> cases b <;> simp only [Covers, CoversWith] at *
   all_goals try contradiction
-  all_goals try exact absurd rfl hb
-  case ctors.ctors => exact ⟨[], by simpa only [checkClause, decide_eq_true_eq] using h⟩
-  case pack.pack => exact ⟨[], by simpa only [checkClause, decide_eq_true_eq] using h⟩
-  · exact ⟨[], rfl⟩
-  · exact ⟨[], rfl⟩
-  · exact ⟨[], by simpa only [checkClause, decide_eq_true_eq] using h⟩
-  · exact ⟨[], by simpa only [checkClause, decide_eq_true_eq] using h⟩
-  · obtain ⟨es,he⟩ := arrow_evidence_complete h.1
-    refine ⟨es, ?_⟩
-    simp only [checkClause, decide_eq_true_eq]
-    exact ⟨he, fun t ht => by
-      rcases h.2 t ht with ⟨s, hs, hc⟩ | hp
-      · exact .inl ⟨s, hs, checkRestCovers_iff.mpr hc⟩
-      · exact .inr hp⟩
-  · exact ⟨[], rfl⟩
-  · exact ⟨[], by simpa [checkClause] using h⟩
-  · -- num ≤ num
-    exact ⟨[], rfl⟩
-  · -- numLit ≤ num
-    exact ⟨[], rfl⟩
-  · -- numLit ≤ numLit
-    exact ⟨[], by simpa [checkClause] using h⟩
-  · exact ⟨[], rfl⟩
-  · obtain ⟨es,he⟩ := arrow_evidence_complete h.1
-    refine ⟨es, ?_⟩
-    simp only [checkClause, decide_eq_true_eq]
-    exact ⟨he, fun t ht => by
-      rcases h.2 t ht with ⟨s, hs, hc⟩ | hp
-      · exact .inl ⟨s, hs, checkRestCovers_iff.mpr hc⟩
-      · exact .inr hp⟩
-  · obtain ⟨es,he⟩ := arrow_evidence_complete h.2.1
-    refine ⟨es, ?_⟩
-    simp only [checkClause, decide_eq_true_eq]
-    exact ⟨h.1, he,
-      fun t ht => by
-        rcases h.2.2 t ht with ⟨s, hs, hc⟩ | hp
-        · exact .inl ⟨s, hs, checkRestCovers_iff.mpr hc⟩
-        · exact .inr hp⟩
-  · -- str ≤ str
-    exact ⟨[], rfl⟩
-  · -- strLit ≤ str
-    exact ⟨[], rfl⟩
-  · -- strLit ≤ strLit
-    exact ⟨[], by simpa [checkClause] using h⟩
-  · exact ⟨[], by simpa only [checkClause, decide_eq_true_eq] using h⟩
+  all_goals first
+    | exact ⟨[], h⟩
+    | (obtain ⟨es, he⟩ := arrow_evidence_complete h.1
+       exact ⟨es, he, h.2⟩)
+    | (obtain ⟨es, he⟩ := arrow_evidence_complete h.2.1
+       exact ⟨es, h.1, he, h.2.2⟩)
 
 structure Certificate (ι : Type) where
   table : Table ι

@@ -256,7 +256,7 @@ theorem encode_meaning {T : Table} (h : initial <+: T) (t : Claim.Ty) (n W v) :
   rw [expand_sem _ _ hp, expand_of_plain hp]
   cases hn : admits t .vnull <;> cases ht : admits t (.vbool true) <;>
     cases hf : admits t (.vbool false) <;> cases hu : admits t .vundef <;>
-    simp [encode, hn, ht, hf, hu, clausesOf, h0, h1, h2, h3, semList, Tower.setSem, sem, nulT, undefT]
+    simp [encode, hn, ht, hf, hu, clausesOf, h0, h1, h2, h3, semList, Tower.setSem, sem, semWithArgs, nulT, undefT]
 
 /-- No atom of the primitive fragment admits a number, so a numeric value is
 outside every type that fragment can state. `value` decodes one because the
@@ -316,7 +316,7 @@ theorem arrow_exact {T : Table} {Rc D R : Ty Nat} (hm : Row.clauses [.arrs [(Rc,
     meaning (graph T) [label T (.arrs [(Rc,[D],R)] [])] n W v ↔
       callsT [(meaning (graph T) Rc, [meaning (graph T) D], meaning (graph T) R)] n W v := by
   rw [label_meaning hm]
-  simp only [PositiveNormalization.sem, List.map_cons, List.map_nil]
+  simp only [PositiveNormalization.sem, PositiveNormalization.semWithArgs, List.map_cons, List.map_nil]
   exact ⟨fun h => h.1, fun h => ⟨h, h.1, by simp⟩⟩
 
 #print axioms arrow_exact

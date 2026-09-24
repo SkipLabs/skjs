@@ -22,7 +22,7 @@ theorem booleanMember_sound [DecidableEq ι] {G : NormalGraph ι} {A q}
     meaning G A n W (if q then .tru else .fls) := by
   obtain ⟨c,hc,h⟩ := List.any_eq_true.mp h
   refine expand_sem_mpr ⟨c,expand_sub hc,?_⟩
-  cases c <;> simp_all [sem, boolT]
+  cases c <;> simp_all [sem, semWithArgs, boolT]
 
 theorem onlyBoolean_sound {G : NormalGraph ι} {A n W v}
     (h : onlyBoolean G A = true) (hv : meaning G A n W v) :
@@ -31,7 +31,7 @@ theorem onlyBoolean_sound {G : NormalGraph ι} {A n W v}
   rw [expand_sem G A h.1] at hv
   obtain ⟨c,hc,hv⟩ := hv
   have h := List.all_eq_true.mp h.2 c hc
-  cases c <;> simp_all [sem, boolT]
+  cases c <;> simp_all [sem, semWithArgs, boolT]
 
 /-- Drop only labels whose every clause contradicts the observed tag. A mixed
 label is retained intact: this does not assume that labels have uniform shapes.

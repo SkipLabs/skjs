@@ -159,7 +159,7 @@ mutual
   assignment. Callables use the calculus's ordered-argument semantics. -/
   def Ty.denote (G : NormalGraph Nat) (η : String → Fam) : Ty → Fam
     | .variadic rc ps e r =>
-        restsT [(rc.denote G η, Ty.denoteList G η ps, elemPack (e.denote G η), r.denote G η)]
+        restsT [(rc.denote G η, Ty.denoteList G η ps, ArgumentContracts.All (e.denote G η), r.denote G η)]
     | .array element => recT [(CallArguments.arrayStoreField,
         listT ⟨[], [], some (Ty.denote G η element), false⟩)]
     | .rigid name => η name
@@ -274,38 +274,36 @@ private theorem short_replicate {E : Fam} {n j W args}
       · exact h.1
       · exact ih h.2 v hv
 
-private theorem short_rest {Ps : List Fam} {E : Fam} (hE : Adm E)
-    (hEs : ∀ k W v, E k W v → Scoped 0 v) {n j W args}
-    (h : ArgsShort (Ps ++ List.replicate n E) j W args) : ArgsRest Ps (elemPack E) j W args := by
+private theorem short_rest {Ps : List Fam} {E : Fam} {n j W args}
+    (h : ArgsShort (Ps ++ List.replicate n E) j W args) : ArgsRest Ps (ArgumentContracts.All E) j W args := by
   induction Ps generalizing args with
   | nil =>
     have hall := short_replicate h
-    exact ArgsRest_nil_params.mpr (elemPack_of_all hE (fun u hu => hEs _ _ _ (hall u hu)) hall)
+    exact ArgsRest_nil_params.mpr hall
   | cons P Ps ih =>
     cases args with
     | nil =>
       apply ArgsRest_nil_args.mpr
       have hu := ArgsShort_nil_args.mp h
       exact ⟨fun A hm => hu A (List.mem_append_left _ hm),
-        elemPack_of_all hE (by simp) (by simp)⟩
+        by simp [ArgumentContracts.All]⟩
     | cons a args =>
       rw [List.cons_append, ArgsShort_cons] at h
       exact ArgsRest_cons.mpr ⟨h.1, ih h.2⟩
 
-theorem variadic_fixed (Rc : Fam) (Ps : List Fam) (E R : Fam) (hE : Adm E)
-    (hEs : ∀ k W v, E k W v → Scoped 0 v) (extra : Nat) :
-    FamLe (restsT [(Rc, Ps, elemPack E, R)])
+theorem variadic_fixed (Rc : Fam) (Ps : List Fam) (E R : Fam) (extra : Nat) :
+    FamLe (restsT [(Rc, Ps, ArgumentContracts.All E, R)])
       (callsT [(Rc, Ps ++ List.replicate extra E, R)]) := by
   intro n W v hv
   refine ⟨hv.1, ?_⟩
   intro p hp
   have hp := List.mem_singleton.mp hp
   subst p
-  apply (hv.2 (Rc, Ps, elemPack E, R) (by simp)).weaken
+  apply (hv.2 (Rc, Ps, ArgumentContracts.All E, R) (by simp)).weaken
   · intro j hj U r hr
     exact hr
   · intro j hj U args ha
-    exact short_rest hE hEs ha
+    exact short_rest ha
   · intro j hj U a ha
     exact ha
 
@@ -450,8 +448,7 @@ theorem Ty.leUnderFuel_sound {G : NormalGraph Nat} {η parameters fuel a b}
             List.replicate (qs.length - ps.length) (e.denote G η) := by
           exact (congrArg (Ty.denoteList G η) hq).trans (by simp [Ty.denoteList_eq_map])
         rw [heq]
-        exact variadic_fixed _ _ _ _ (Ty.denote_adm hC e)
-          (fun _ _ _ hv => (Ty.denote_value hC hv).2) _
+        exact variadic_fixed _ _ _ _ _
       | variadic rd qs f t =>
         have heq : Ty.variadic rc ps e r = .variadic rd qs f t := by simpa [Ty.leUnderFuel] using h
         rw [heq]

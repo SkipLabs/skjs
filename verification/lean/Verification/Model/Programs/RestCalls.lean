@@ -18,12 +18,12 @@ namespace Verification.Model.RestCalls
 /-- What variadic code promises: for a receiver in `Rc` and fixed actuals in
 `Ps`, followed by further actuals that as one pack are in `E`, the term
 invocation yields is safe at `R`. -/
-def RestSpec (n : Nat) (Rc : Fam) (Ps : List Fam) (E R : Fam) (k : Nat) (W : WorldT k)
+def RestSpec (n : Nat) (Rc : Fam) (Ps : List Fam) (E : ArgFam) (R : Fam) (k : Nat) (W : WorldT k)
     (b : Tm) : Prop :=
   Scoped (n + 2) b ∧ Ps.length = n ∧
   ∀ (j : Nat) (hj : j < k) (W' : WorldT j),
     WExt (trunc j (Nat.le_of_lt hj) W) W' → WorldAdm W' → ∀ (h : Heap), HeapOk j W' h →
-      ∀ r, Rc j W' r → ∀ args extra, ArgsT Ps j W' args → E j W' (.args extra) →
+      ∀ r, Rc j W' r → ∀ args extra, ArgsT Ps j W' args → E j W' extra →
         CallArguments.Values extra →
         Safe R j W' h (CallArguments.bindRest n (args ++ extra) r b)
 
@@ -61,7 +61,7 @@ theorem parameters_short : ∀ (n : Nat) (args : List Tm), args.length ≤ n →
 /-- Variadic code meeting its code contract meets the signature: a list its
 fixed parameters admit binds as the padded one, collecting nothing, and a
 longer one binds its fixed prefix and collects the rest. -/
-theorem restsT_of_restSpec {n : Nat} {Rc : Fam} {Ps : List Fam} {E R : Fam} {k : Nat}
+theorem restsT_of_restSpec {n : Nat} {Rc : Fam} {Ps : List Fam} {E : ArgFam} {R : Fam} {k : Nat}
     {W : WorldT k} {b : Tm} (fs : List (PropKey × Nat)) (hs : RestSpec n Rc Ps E R k W b) :
     restsT [(Rc, Ps, E, R)] k W (.objAt fs (.variadic n b)) := by
   refine ⟨⟨fs, _, rfl, rfl, by simpa [Scoped, Nat.add_comm, Nat.add_left_comm] using hs.1⟩, ?_⟩
@@ -90,32 +90,23 @@ theorem restsT_of_restSpec {n : Nat} {Rc : Fam} {Ps : List Fam} {E R : Fam} {k :
     rwa [List.take_append_drop] at hsafe
 
 /-- A ready variadic call consumes one step, then meets the result contract. -/
-theorem call_elim_rest {S : List (Fam × List Fam × Fam × Fam)} {s : Fam × List Fam × Fam × Fam}
+theorem call_elim_rest {S : List (Fam × List Fam × ArgFam × Fam)} {s : Fam × List Fam × ArgFam × Fam}
     (hs : s ∈ S) (hR : Adm s.1) (hA : ∀ A ∈ s.2.1, Adm A) (hAv : ∀ A ∈ s.2.1, ValOnly A)
     (hE : Adm s.2.2.1)
     {n : Nat} {W : WorldT n} {f r : Tm} {args extra : List Tm} {heap : Heap}
     (hrv : isVal r = true) (hr : s.1 n W r)
-    (hf : restsT S n W f) (ha : ArgsT s.2.1 n W args) (he : s.2.2.1 n W (.args extra))
+    (hf : restsT S n W f) (ha : ArgsT s.2.1 n W args) (he : s.2.2.1 n W extra)
     (hev : CallArguments.Values extra)
     (hw : WorldAdm W) (hh : HeapOk n W heap) :
     Safe s.2.2.2 n W heap (.invoke f r (args ++ extra)) := by
-  cases n with
-  | zero => trivial
-  | succ n =>
-    let U := trunc n (Nat.le_succ n) W
-    have hu : WorldAdm U := WorldAdm_trunc _ hw
-    have hh' : HeapOk n U heap := HeapOk_trunc n W heap hh
-    have ha' := ArgsT_transfer hA ha n (Nat.le_succ n) U (WExt_refl _)
-    have he' : s.2.2.1 n U (.args extra) := hE.down n W _ he
-    have hr' : s.1 n U r := hR.down n W r hr
-    have hvals : CallArguments.Values (args ++ extra) := by
-      intro a hm
-      rcases List.mem_append.mp hm with hm | hm
-      · exact ArgsT_values hAv ha' a hm
-      · exact hev a hm
-    obtain ⟨body, hi, hsafe⟩ := hf.2 s hs n (Nat.lt_succ_self n) U (WExt_refl _) hu heap hh'
-      r hrv hr' _ hvals (ArgsRest_of_exact_extra ha' he')
-    exact Or.inr ⟨U, heap, body, WExt_refl _, hu, hi.step heap, hh', hsafe⟩
+  apply ArgumentContracts.call_safe
+    (P := ArgsRest s.2.1 s.2.2.1)
+    (Adm.of_transfer (fun ha j hj U hx => ArgsRest_transfer hA hE ha j hj U hx)) hR
+    ⟨hf.1, hf.2 s hs⟩ hr hrv ?_ (ArgsRest_of_exact_extra ha he) hw hh
+  intro a hm
+  rcases List.mem_append.mp hm with hm | hm
+  · exact ArgsT_values hAv ha a hm
+  · exact hev a hm
 
 /-- Run a subterm in an evaluation context, then continue with its value. -/
 theorem ctx_bind {A B : Fam} (C : Tm → Tm)
@@ -141,12 +132,12 @@ theorem ctx_bind {A B : Fam} (C : Tm → Tm)
 in `Rc` (slot 1), any fixed actuals in `Ps` (from slot 2) and any array in `Arr` in slot 0 meets the
 variadic signature, provided collecting further actuals whose pack is in `E`
 allocates such an array. -/
-theorem restSpec_of_body {n : Nat} {Rc : Fam} {Ps : List Fam} {E Arr R : Fam} {k : Nat}
+theorem restSpec_of_body {n : Nat} {Rc : Fam} {Ps : List Fam} {E : ArgFam} {Arr R : Fam} {k : Nat}
     {W : WorldT k} {b : Tm}
     (hscope : Scoped (n + 2) b) (hlen : Ps.length = n) (hRc : Adm Rc)
     (hP : ∀ A ∈ Ps, Adm A) (hArr : Adm Arr)
     (halloc : ∀ j (U : WorldT j) h extra, WorldAdm U → HeapOk j U h →
-      E j U (.args extra) → CallArguments.Values extra →
+      E j U extra → CallArguments.Values extra →
       Safe Arr j U h (CallArguments.restArray extra))
     (hbody : ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
       WorldAdm U → ∀ h, HeapOk j U h → ∀ r, Rc j U r → ∀ args a, ArgsT Ps j U args →
@@ -172,23 +163,6 @@ theorem restSpec_of_body {n : Nat} {Rc : Fam} {Ps : List Fam} {E Arr R : Fam} {k
       (hRc.mono p _ _ hUV r (hRc.down_le j p (by omega) U r hr)) args a
       (ArgsT_transfer hP ha p (by omega) _ hUV) (hArr.down p V a harr) hval
 
-/-- Within a contract's bounds every index has a position. -/
-theorem positionFam_isSome {T : TupleF} {i : Nat}
-    (h : i < T.required.length + T.optional.length ∨ T.rest.isSome = true) :
-    (positionFam T i).isSome = true := by
-  unfold positionFam
-  cases hr : T.required[i]? with
-  | some A => rfl
-  | none =>
-    cases ho : T.optional[i - T.required.length]? with
-    | some A => rfl
-    | none =>
-      rw [List.getElem?_eq_none_iff] at hr ho
-      simp only
-      rcases h with h | h
-      · omega
-      · rw [if_pos (by omega)]; exact h
-
 /-- **Allocating a pack.** Its values, as a fresh store, meet its tuple
 contract as a writable store. Each value is at its position's family below the
 budget, which is all the allocation step needs. -/
@@ -201,7 +175,7 @@ theorem pack_alloc_safe {T : TupleF} (hT : ∀ i A, positionFam T i = some A →
   have hsome : ∀ i, i < vs.length → ∃ A, positionFam T i = some A := by
     intro i hi
     apply Option.isSome_iff_exists.mp
-    apply positionFam_isSome
+    apply ArgumentContracts.positionFam_isSome
     cases hr : T.rest with
     | none => have := hbound hr; left; omega
     | some _ => right; rfl
@@ -234,6 +208,15 @@ theorem pack_alloc_safe {T : TupleF} (hT : ∀ i A, positionFam T i = some A →
         hl
       rwa [hlen] at this)
   exact hres
+
+/-- Same-level argument membership suffices to allocate its rest array. The
+allocation step, rather than tuple membership, consumes an approximation level. -/
+theorem argument_alloc_safe {T : TupleF} (hT : ∀ i A, positionFam T i = some A → Adm A)
+    {n W h vs} (hw : WorldAdm W) (hh : HeapOk n W h) (hp : ArgumentContracts.Fits T n W vs)
+    (hv : CallArguments.Values vs) :
+    Safe (listT {T with readonly := false}) n W h (.arrLit vs) :=
+  pack_alloc_safe hT hw hh (ArgumentContracts.fits_below hT hp) hv
+
 
 /-! ## Spread actuals
 
@@ -421,6 +404,7 @@ theorem spread_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) {f r : Tm}
       simpa using hrest
 
 #print axioms restsT_of_restSpec
+#print axioms argument_alloc_safe
 #print axioms call_elim_rest
 #print axioms restSpec_of_body
 #print axioms listT_spreads

@@ -21,23 +21,43 @@ semantics. A theorem proved for every graph therefore holds at every
 assignment, which is what typing a generic body once, for all of its
 instances, needs. -/
 
-/-- A family a parameter row may mean: admissible, and of closed values only, as
-every type's meaning is. -/
-def ValueFam (A : Fam) : Prop := Adm A ∧ ∀ n W v, A n W v → isVal v = true ∧ Scoped 0 v
+/-- Semantic binders distinguish a runtime value from an argument list. -/
+inductive ParameterKind where
+  | value
+  | arguments
+  deriving DecidableEq, Repr
 
-/-- An assignment of families to the parameter rows. -/
-abbrev Assignment (ι : Type) := { η : ι → Fam // ∀ i, ValueFam (η i) }
+abbrev ParameterKind.Carrier : ParameterKind → Type
+  | .value => Val
+  | .arguments => List Val
 
-/-- What a binder may be instantiated at. -/
-abbrev ValueFamily := { A : Fam // ValueFam A }
+abbrev ParameterKind.Closed : (k : ParameterKind) → k.Carrier → Prop
+  | .value => fun (v : Val) => isVal v = true ∧ Scoped 0 v
+  | .arguments => fun (vs : List Val) => ∀ v ∈ vs, isVal v = true ∧ Scoped 0 v
 
-def emptyFam : Fam := fun _ _ _ => False
+/-- Both sorts obey the same approximation and world-extension laws. List
+membership is at the current level; changing sorts does not insert a guard. -/
+def ParameterValid (k : ParameterKind) (A : WorldFamily k.Carrier) : Prop :=
+  Adm A ∧ ∀ n W v, A n W v → k.Closed v
 
-theorem emptyFam_value : ValueFam emptyFam :=
-  ⟨⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩, fun _ _ _ h => h.elim⟩
+abbrev ParameterFamily (k : ParameterKind) := { A : WorldFamily k.Carrier // ParameterValid k A }
+abbrev ParameterAssignment (k : ParameterKind) (ι : Type) :=
+  { η : ι → WorldFamily k.Carrier // ∀ i, ParameterValid k (η i) }
+
+/-- The production value environment is the value instance of the shared
+assignment algebra, rather than a separate implementation. -/
+abbrev ValueFam (A : Fam) : Prop := ParameterValid .value A
+abbrev ValueFamily := ParameterFamily .value
+abbrev Assignment (ι : Type) := ParameterAssignment .value ι
+abbrev ArgumentFamily := ParameterFamily .arguments
+abbrev ArgumentAssignment (ι : Type) := ParameterAssignment .arguments ι
+
+def ParameterAssignment.empty (k : ParameterKind) : ParameterAssignment k ι :=
+  ⟨fun _ _ _ _ => False,
+    fun _ => ⟨⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩, fun _ _ _ h => h.elim⟩⟩
 
 /-- The assignment of a graph without parameter rows: none is read. -/
-def Assignment.empty : Assignment ι := ⟨fun _ => emptyFam, fun _ => emptyFam_value⟩
+def Assignment.empty : Assignment ι := ParameterAssignment.empty .value
 
 /-- A quantified callable: its binders, which are parameter rows, and the
 signatures `(receiver, parameters, result)` each of its instances meets. -/
@@ -140,10 +160,12 @@ def denote (G : Graph ι) : ι → Fam := Tower.denote (layer G)
 The fixed point is over `(assignment, label)`: a scheme row reads its
 signatures' rows at reassignments of its binders. -/
 
+variable {k : ParameterKind}
+
 open Classical in
 /-- The assignment with each binder given the family at its position. -/
-noncomputable def assign (η : Assignment ι) (bs : List ι) (As : List ValueFamily) :
-    Assignment ι :=
+noncomputable def assign (η : ParameterAssignment k ι) (bs : List ι) (As : List (ParameterFamily k)) :
+    ParameterAssignment k ι :=
   ⟨fun i => match (bs.zip As).lookup i with
       | some A => A.1
       | none => η.1 i,
@@ -154,7 +176,7 @@ noncomputable def assign (η : Assignment ι) (bs : List ι) (As : List ValueFam
 
 open Classical in
 /-- A binder is given the family at its position. -/
-theorem assign_map_mem (η : Assignment ι) (bs : List ι) (F : ι → ValueFamily) {i : ι}
+theorem assign_map_mem (η : ParameterAssignment k ι) (bs : List ι) (F : ι → ParameterFamily k) {i : ι}
     (h : i ∈ bs) : (assign η bs (bs.map F)).1 i = (F i).1 := by
   have hl : (bs.zip (bs.map F)).lookup i = some (F i) := by
     induction bs with
@@ -169,7 +191,7 @@ theorem assign_map_mem (η : Assignment ι) (bs : List ι) (F : ι → ValueFami
 
 open Classical in
 /-- Any other row keeps its family. -/
-theorem assign_map_nmem (η : Assignment ι) (bs : List ι) (F : ι → ValueFamily) {i : ι}
+theorem assign_map_nmem (η : ParameterAssignment k ι) (bs : List ι) (F : ι → ParameterFamily k) {i : ι}
     (h : i ∉ bs) : (assign η bs (bs.map F)).1 i = η.1 i := by
   have hl : (bs.zip (bs.map F)).lookup i = none := by
     induction bs with
@@ -183,7 +205,7 @@ theorem assign_map_nmem (η : Assignment ι) (bs : List ι) (F : ι → ValueFam
 
 open Classical in
 /-- A row that is no binder keeps its family, whatever the binders are given. -/
-theorem assign_nmem (η : Assignment ι) (bs : List ι) (As : List ValueFamily) {i : ι}
+theorem assign_nmem (η : ParameterAssignment k ι) (bs : List ι) (As : List (ParameterFamily k)) {i : ι}
     (h : i ∉ bs) : (assign η bs As).1 i = η.1 i := by
   have hl : (bs.zip As).lookup i = none := by
     induction bs generalizing As with
@@ -199,7 +221,7 @@ theorem assign_nmem (η : Assignment ι) (bs : List ι) (As : List ValueFamily) 
   simp [assign, hl]
 
 open Classical in
-private theorem lookup_zip_some {bs : List ι} {As : List ValueFamily} {p : ι}
+private theorem lookup_zip_some {bs : List ι} {As : List (ParameterFamily k)} {p : ι}
     (h : p ∈ bs) (hl : As.length = bs.length) : ∃ A, (bs.zip As).lookup p = some A := by
   induction bs generalizing As with
   | nil => cases h
@@ -214,7 +236,7 @@ private theorem lookup_zip_some {bs : List ι} {As : List ValueFamily} {p : ι}
         exact ih ((List.mem_cons.mp h).resolve_left hb) (by simpa using hl)
 
 open Classical in
-private theorem mem_of_lookup_zip {bs : List ι} {As : List ValueFamily} {p : ι} {A}
+private theorem mem_of_lookup_zip {bs : List ι} {As : List (ParameterFamily k)} {p : ι} {A}
     (h : (bs.zip As).lookup p = some A) : p ∈ bs := by
   induction bs generalizing As with
   | nil => simp at h
@@ -230,7 +252,7 @@ private theorem mem_of_lookup_zip {bs : List ι} {As : List ValueFamily} {p : ι
 
 open Classical in
 /-- A binder is given the same family whatever the rest of the assignment. -/
-theorem assign_mem_eq (η η' : Assignment ι) (bs : List ι) (As : List ValueFamily) {p : ι}
+theorem assign_mem_eq (η η' : ParameterAssignment k ι) (bs : List ι) (As : List (ParameterFamily k)) {p : ι}
     (h : p ∈ bs) (hl : As.length = bs.length) :
     (assign η bs As).1 p = (assign η' bs As).1 p := by
   obtain ⟨A, hA⟩ := lookup_zip_some h hl
@@ -238,7 +260,7 @@ theorem assign_mem_eq (η η' : Assignment ι) (bs : List ι) (As : List ValueFa
 
 open Classical in
 /-- Reassigning disjoint binders commutes. -/
-theorem assign_comm (η : Assignment ι) {bs cs : List ι} (As Bs : List ValueFamily)
+theorem assign_comm (η : ParameterAssignment k ι) {bs cs : List ι} (As Bs : List (ParameterFamily k))
     (hd : ∀ p ∈ bs, p ∉ cs) :
     assign (assign η bs As) cs Bs = assign (assign η cs Bs) bs As := by
   apply Subtype.ext
@@ -260,27 +282,40 @@ theorem assign_comm (η : Assignment ι) {bs cs : List ι} (As Bs : List ValueFa
     simp [hn]
 
 open Classical in
-theorem assign_cons_head (η : Assignment ι) (b : ι) (bs : List ι) (A : ValueFamily)
-    (As : List ValueFamily) : (assign η (b :: bs) (A :: As)).1 b = A.1 := by
+theorem assign_cons_head (η : ParameterAssignment k ι) (b : ι) (bs : List ι) (A : ParameterFamily k)
+    (As : List (ParameterFamily k)) : (assign η (b :: bs) (A :: As)).1 b = A.1 := by
   simp [assign, List.lookup_cons]
 
 open Classical in
-theorem assign_cons_ne (η : Assignment ι) {b p : ι} (bs : List ι) (A : ValueFamily)
-    (As : List ValueFamily) (h : p ≠ b) :
+theorem assign_cons_ne (η : ParameterAssignment k ι) {b p : ι} (bs : List ι) (A : ParameterFamily k)
+    (As : List (ParameterFamily k)) (h : p ≠ b) :
     (assign η (b :: bs) (A :: As)).1 p = (assign η bs As).1 p := by
   have : ((b :: bs).zip (A :: As)).lookup p = (bs.zip As).lookup p := by
     rw [List.zip_cons_cons, List.lookup_cons, beq_false_of_ne h]
   simp only [assign, this]
 
 /-- Two assignments differing at most on `bs`. -/
-def AgreeOff (bs : List ι) (η η' : Assignment ι) : Prop := ∀ p, p ∉ bs → η.1 p = η'.1 p
+def AgreeOff (bs : List ι) (η η' : ParameterAssignment k ι) : Prop := ∀ p, p ∉ bs → η.1 p = η'.1 p
 
 open Classical in
-theorem agreeOff_assign {bs : List ι} {η η' : Assignment ι} (h : AgreeOff bs η η')
-    (cs : List ι) (As : List ValueFamily) : AgreeOff bs (assign η cs As) (assign η' cs As) := by
+theorem agreeOff_assign {bs : List ι} {η η' : ParameterAssignment k ι} (h : AgreeOff bs η η')
+    (cs : List ι) (As : List (ParameterFamily k)) : AgreeOff bs (assign η cs As) (assign η' cs As) := by
   intro p hp
   simp only [assign]
   split <;> simp [h p hp]
+
+/-- Argument interpretation at one assignment. The caller supplies the same
+value interpretation used for the signature's receiver, inputs and result. -/
+abbrev ArgumentInterpreter (ι : Type) := (List ι → Fam) → List ι → ArgFam
+
+def legacyArguments : ArgumentInterpreter ι := fun D S => packArgs (D S)
+
+/-- Reading arguments adds no approximation guard of its own. -/
+def ArgumentNonExp (P : ArgumentInterpreter ι) : Prop :=
+  ∀ X Y n, (∀ S, Agree (X S) (Y S) n) → ∀ S, Agree (P X S) (P Y S) n
+
+theorem legacyArguments_nonexp : ArgumentNonExp (legacyArguments (ι := ι)) :=
+  fun _ _ _ h S => packArgs_congr (h S)
 
 /-- One instance's signatures, their rows read at the reassignment. -/
 noncomputable def instanceSigs (D : Assignment ι → List ι → Fam) (η : Assignment ι)
@@ -289,20 +324,28 @@ noncomputable def instanceSigs (D : Assignment ι → List ι → Fam) (η : Ass
   s.signatures.map fun p => (D η' p.1, p.2.1.map (D η'), D η' p.2.2)
 
 /-- One instance's variadic signatures, their rows read at the reassignment. -/
-noncomputable def instanceRests (D : Assignment ι → List ι → Fam) (η : Assignment ι)
-    (s : SchemeRow ι) (As : List ValueFamily) : List (Fam × List Fam × Fam × Fam) :=
+noncomputable def instanceRestsWithArgs (D : Assignment ι → List ι → Fam) (η : Assignment ι)
+    (s : SchemeRow ι) (As : List ValueFamily)
+    (P : ArgumentInterpreter ι) : List (Fam × List Fam × ArgFam × Fam) :=
   let η' := assign η s.binders As
-  s.variadic.map fun p => (D η' p.1, p.2.1.map (D η'), D η' p.2.2.1, D η' p.2.2.2)
+  s.variadic.map fun p => (D η' p.1, p.2.1.map (D η'), P (D η') p.2.2.1, D η' p.2.2.2)
 
 /-- One instance's contract: its fixed and its variadic signatures, as a call
 clause's are. -/
+noncomputable def instanceTWithArgs (D : Assignment ι → List ι → Fam) (η : Assignment ι)
+    (s : SchemeRow ι) (As : List ValueFamily)
+    (P : ArgumentInterpreter ι) : Fam :=
+  interT (callsT (instanceSigs D η s As)) (restsT (instanceRestsWithArgs D η s As (P := P)))
+
+theorem instanceTWithArgs_adm (D : Assignment ι → List ι → Fam) (η : Assignment ι) (s : SchemeRow ι)
+    (As : List ValueFamily) (P : ArgumentInterpreter ι) :
+    Adm (instanceTWithArgs D η s As (P := P)) :=
+  interT_adm _ _ (callsT_adm _) (restsT_adm _)
+
+/-- The legacy graph entry point delegates to the shared interpretation. -/
 noncomputable def instanceT (D : Assignment ι → List ι → Fam) (η : Assignment ι)
     (s : SchemeRow ι) (As : List ValueFamily) : Fam :=
-  interT (callsT (instanceSigs D η s As)) (restsT (instanceRests D η s As))
-
-theorem instanceT_adm (D : Assignment ι → List ι → Fam) (η : Assignment ι) (s : SchemeRow ι)
-    (As : List ValueFamily) : Adm (instanceT D η s As) :=
-  interT_adm _ _ (callsT_adm _) (restsT_adm _)
+  instanceTWithArgs D η s As legacyArguments
 
 private theorem argsAgree_of {X Y : List ι → Fam} {m : Nat} (h : ∀ S, Agree (X S) (Y S) m) :
     ∀ Ss : List (List ι), ArgsAgree m (Ss.map X) (Ss.map Y)
@@ -310,39 +353,55 @@ private theorem argsAgree_of {X Y : List ι → Fam} {m : Nat} (h : ∀ S, Agree
   | S :: Ss => .cons (h S) (argsAgree_of h Ss)
 
 /-- Instances whose rows agree below `m` have contracts agreeing there. -/
-theorem instanceT_congr {D D' : Assignment ι → List ι → Fam} {η η' : Assignment ι}
+theorem instanceT_congrWithArgs (P : ArgumentInterpreter ι) (hP : ArgumentNonExp P) {D D' : Assignment ι → List ι → Fam} {η η' : Assignment ι}
     {s : SchemeRow ι} {As As' : List ValueFamily} {m : Nat}
     (h : ∀ S, Agree (D (assign η s.binders As) S) (D' (assign η' s.binders As') S) m)
     (W : WorldT m) (v : Val) :
-    instanceT D η s As m W v ↔ instanceT D' η' s As' m W v := by
-  unfold instanceT instanceSigs instanceRests interT
+    instanceTWithArgs D η s As (P := P) m W v ↔ instanceTWithArgs D' η' s As' (P := P) m W v := by
+  unfold instanceTWithArgs instanceSigs instanceRestsWithArgs interT
   exact and_congr
     (callsT_congr s.signatures _ _ (fun p _ => ⟨h p.1, argsAgree_of h p.2.1, h p.2.2⟩) W v)
-    (restsT_congr s.variadic _ _ (fun p _ => ⟨h p.1, argsAgree_of h p.2.1, h p.2.2.1, h p.2.2.2⟩) W v)
+    (restsT_congr s.variadic _ _ (fun p _ => ⟨h p.1, argsAgree_of h p.2.1, hP _ _ m h p.2.2.1, h p.2.2.2⟩) W v)
 
 /-- An instance is bounded below `n`: each bounded binder's family lies below
 its bound at every level under `n`. Only levels below `n` are read, which keeps
 the fixed point contractive. -/
-def Bounded (D : Assignment ι → List ι → Fam) (η : Assignment ι) (s : SchemeRow ι)
-    (As : List ValueFamily) (n : Nat) : Prop :=
+def Bounded (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier) (η : ParameterAssignment k ι) (s : SchemeRow ι)
+    (As : List (ParameterFamily k)) (n : Nat) : Prop :=
   ∀ b ∈ s.bounds, b.1 ∈ s.binders → ∀ j, j < n → ∀ (U : WorldT j) u,
     (assign η s.binders As).1 b.1 j U u → D η b.2 j U u
+
+/-- Universal quantification has one implementation for both semantic sorts.
+The body still denotes a runtime callable; its parameters may denote lists. -/
+noncomputable def boundedSem
+    (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier)
+    (η : ParameterAssignment k ι) (s : SchemeRow ι)
+    (body : List (ParameterFamily k) → Fam) : Fam := fun n W v =>
+  Invocable v ∧ ∀ As, As.length = s.binders.length →
+    Bounded D η s As n → body As n W v
 
 /-- **A scheme row.** A callable meeting its signatures at every instantiation
 of its binders within their bounds: the same value, in the same world, at all
 of them. -/
+noncomputable def schemeSemWithArgs (D : Assignment ι → List ι → Fam) (η : Assignment ι)
+    (s : SchemeRow ι) (P : ArgumentInterpreter ι) : Fam :=
+  boundedSem D η s (fun As => instanceTWithArgs D η s As P)
+
 noncomputable def schemeSem (D : Assignment ι → List ι → Fam) (η : Assignment ι)
-    (s : SchemeRow ι) : Fam := fun n W v =>
-  Invocable v ∧ ∀ As : List ValueFamily, As.length = s.binders.length →
-    Bounded D η s As n → instanceT D η s As n W v
+    (s : SchemeRow ι) : Fam := schemeSemWithArgs D η s legacyArguments
 
 /-- One step of the assignment-indexed denotation. -/
-noncomputable def qLayer (G : NormalGraph ι) (X : Assignment ι × ι → Fam) :
+noncomputable def qLayerWithArgs (G : NormalGraph ι) (X : Assignment ι × ι → Fam)
+    (P : ArgumentInterpreter ι) :
     Assignment ι × ι → Fam := fun ηi =>
   if G.params ηi.2 then ηi.1.1 ηi.2 else
   match G.schemes ηi.2 with
-  | some s => schemeSem (fun η' S => setSem (fun l => X (η', l)) S) ηi.1 s
-  | none => normalLayer G (fun l => X (ηi.1, l)) ηi.2
+  | some s => schemeSemWithArgs (fun η' S => setSem (fun l => X (η', l)) S) ηi.1 s (P := P)
+  | none => setSem (semWithArgs (setSem fun l => X (ηi.1, l))
+      (P (setSem fun l => X (ηi.1, l)))) (G ηi.2)
+
+noncomputable def qLayer (G : NormalGraph ι) (X : Assignment ι × ι → Fam) :
+    Assignment ι × ι → Fam := qLayerWithArgs G X legacyArguments
 
 theorem normalLayer_congr (G : NormalGraph ι) : LayerCongr (normalLayer G) := by
   intro X Y n h i W v
@@ -364,15 +423,20 @@ theorem argsAgree_mono {As Bs : List Fam} {n m : Nat} (h : ArgsAgree n As Bs) (h
   | nil => exact .nil
   | cons hA _ ih => exact .cons (Agree.mono hA hm) ih
 
-theorem qLayer_congr (G : NormalGraph ι) : LayerCongr (qLayer G) := by
+theorem qLayer_congrWithArgs (G : NormalGraph ι) (P : ArgumentInterpreter ι)
+    (hP : ArgumentNonExp P) : LayerCongr (fun X => qLayerWithArgs G X (P := P)) := by
   intro X Y n h ηi W v
   obtain ⟨η, i⟩ := ηi
-  unfold qLayer
+  unfold qLayerWithArgs
   by_cases hp : G.params i = true
   · simp [hp]
   · simp only [hp]
     cases hq : G.schemes i with
-    | none => exact normalLayer_congr G _ _ n (fun l => h (η, l)) i W v
+    | none =>
+      have hS := fun S => setSem_congr n (fun l => h (η, l)) S
+      constructor <;> rintro ⟨c, hc, hv⟩ <;> refine ⟨c, hc, ?_⟩
+      · exact (semWithArgs_congr _ _ _ _ n hS (hP _ _ n hS) c W v).mp hv
+      · exact (semWithArgs_congr _ _ _ _ n hS (hP _ _ n hS) c W v).mpr hv
     | some s =>
       refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun _ => ?_)
       refine imp_congr ?_ ?_
@@ -381,7 +445,7 @@ theorem qLayer_congr (G : NormalGraph ι) : LayerCongr (qLayer G) := by
           forall_congr' fun j => forall_congr' fun hj => forall_congr' fun U =>
           forall_congr' fun u => imp_congr Iff.rfl ?_
         exact setSem_congr n (fun l => h (_, l)) b.2 j hj U u
-      · exact instanceT_congr (fun S => setSem_congr n (fun l => h (_, l)) S) W v
+      · exact instanceT_congrWithArgs P hP (fun S => setSem_congr n (fun l => h (_, l)) S) W v
 
 /-! ### Non-expansiveness in the assignment
 
@@ -400,9 +464,9 @@ def QInv (X : Assignment ι × ι → Fam) : Prop := (∀ ηi, Adm (X ηi)) ∧ 
 
 open Classical in
 /-- An instance with each binder's family cut down to its bounds. -/
-noncomputable def restrictArgs (D : Assignment ι → List ι → Fam) (η : Assignment ι)
+noncomputable def restrictArgs (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier) (η : ParameterAssignment k ι)
     (bounds : List (ι × List ι)) (hD : ∀ S, Adm (D η S)) :
-    List ι → List ValueFamily → List ValueFamily
+    List ι → List (ParameterFamily k) → List (ParameterFamily k)
   | b :: bs, A :: As =>
     ⟨fun n W v => A.1 n W v ∧ ∀ B, (b, B) ∈ bounds → D η B n W v,
      ⟨⟨fun n W v h => ⟨A.2.1.down n W v h.1, fun B hB => (hD B).down n W v (h.2 B hB)⟩,
@@ -411,9 +475,9 @@ noncomputable def restrictArgs (D : Assignment ι → List ι → Fam) (η : Ass
       fun n W v h => A.2.2 n W v h.1⟩⟩ :: restrictArgs D η bounds hD bs As
   | _, _ => []
 
-theorem restrictArgs_length (D : Assignment ι → List ι → Fam) (η : Assignment ι)
+theorem restrictArgs_length (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier) (η : ParameterAssignment k ι)
     (bounds : List (ι × List ι)) (hD : ∀ S, Adm (D η S)) :
-    ∀ (bs : List ι) (As : List ValueFamily), As.length = bs.length →
+    ∀ (bs : List ι) (As : List (ParameterFamily k)), As.length = bs.length →
       (restrictArgs D η bounds hD bs As).length = bs.length
   | [], _, _ => by simp [restrictArgs]
   | _ :: _, [], h => by simp at h
@@ -422,9 +486,9 @@ theorem restrictArgs_length (D : Assignment ι → List ι → Fam) (η : Assign
     rw [restrictArgs_length D η bounds hD bs As (by simpa using h)]
 
 /-- A restricted binder's family is its family within its bounds. -/
-theorem assign_restrict (D : Assignment ι → List ι → Fam) (η' η : Assignment ι)
+theorem assign_restrict (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier) (η' η : ParameterAssignment k ι)
     (bounds : List (ι × List ι)) (hD : ∀ S, Adm (D η S)) :
-    ∀ (bs : List ι) (As : List ValueFamily) (p : ι) (n : Nat) (W : WorldT n) (v : Val),
+    ∀ (bs : List ι) (As : List (ParameterFamily k)) (p : ι) (n : Nat) (W : WorldT n) (v : k.Carrier),
       As.length = bs.length →
       ((assign η' bs (restrictArgs D η bounds hD bs As)).1 p n W v ↔
         (assign η' bs As).1 p n W v ∧ (p ∈ bs → ∀ B, (p, B) ∈ bounds → D η B n W v))
@@ -441,8 +505,40 @@ theorem assign_restrict (D : Assignment ι → List ι → Fam) (η' η : Assign
         assign_restrict D η' η bounds hD bs As p n W v (by simpa using h)]
       simp [hb]
 
-theorem qLayer_inv (G : NormalGraph ι) (X : Assignment ι × ι → Fam) (hX : QInv X) :
-    QInv (qLayer G X) := by
+/-- Restricting each instance to its bounds makes universal quantification
+admissible. The argument applies equally to value and list contracts; it does
+not add an approximation delay to list membership. -/
+theorem boundedSem_adm
+    (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier)
+    (η : ParameterAssignment k ι) (s : SchemeRow ι)
+    (body : List (ParameterFamily k) → Fam)
+    (hD : ∀ S, Adm (D η S)) (hbody : ∀ As, Adm (body As))
+    (hcongr : ∀ As Bs m,
+      (∀ p, Agree ((assign η s.binders As).1 p) ((assign η s.binders Bs).1 p) m) →
+      ∀ W v, body As m W v ↔ body Bs m W v) :
+    Adm (boundedSem D η s body) := by
+  constructor
+  · intro n W v h
+    refine ⟨h.1, fun As hl hb => ?_⟩
+    let As' := restrictArgs D η s.bounds hD s.binders As
+    have hl' : As'.length = s.binders.length := restrictArgs_length _ _ _ _ _ _ hl
+    have hb' : Bounded D η s As' (n + 1) := by
+      intro b hbm hbin j _ U u hu
+      exact ((assign_restrict _ η η _ hD _ _ _ _ _ _ hl).mp hu).2 hbin b.2 hbm
+    have hagree : ∀ p, Agree ((assign η s.binders As').1 p) ((assign η s.binders As).1 p) n := by
+      intro p j hj U u
+      rw [assign_restrict _ η η _ hD _ _ _ _ _ _ hl]
+      constructor
+      · exact fun h => h.1
+      · intro hu
+        exact ⟨hu, fun hps B hB => hb (p, B) hB hps j hj U u hu⟩
+    exact (hcongr As' As n hagree _ v).mp ((hbody As').down n W v (h.2 As' hl' hb'))
+  · intro n W W' hx v h
+    exact ⟨h.1, fun As hl hb => (hbody As).mono n W W' hx v (h.2 As hl hb)⟩
+
+theorem qLayer_invWithArgs (G : NormalGraph ι) (P : ArgumentInterpreter ι)
+    (hP : ArgumentNonExp P) (X : Assignment ι × ι → Fam) (hX : QInv X) :
+    QInv (qLayerWithArgs G X (P := P)) := by
   obtain ⟨hadm, hne⟩ := hX
   have hD : ∀ (η : Assignment ι) S, Adm (setSem (fun l => X (η, l)) S) :=
     fun η S => setSem_adm (fun l => hadm (η, l)) S
@@ -462,61 +558,41 @@ theorem qLayer_inv (G : NormalGraph ι) (X : Assignment ι × ι → Fam) (hX : 
       (∀ p, Agree (η.1 p) (η'.1 p) m) →
       ∀ p, Agree ((assign η bs As).1 p) ((assign η' bs As).1 p) m := by
     intro η η' bs As m h p
-    open Classical in
-    show Agree (match (bs.zip As).lookup p with | some A => A.1 | none => η.1 p)
-      (match (bs.zip As).lookup p with | some A => A.1 | none => η'.1 p) m
+    classical
+    simp only [assign]
     split
-    · exact fun k _ W v => Iff.rfl
+    · exact fun j _ W v => Iff.rfl
     · exact h p
   refine ⟨fun ηi => ?_, fun η η' i m h => ?_⟩
   · -- admissible
     obtain ⟨η, i⟩ := ηi
-    unfold qLayer
+    unfold qLayerWithArgs
     by_cases hp : G.params i = true
     · simpa [hp] using (η.2 i).1
     · simp only [hp]
       cases hq : G.schemes i with
-      | none => simpa [normalLayer, semList] using
-          setSem_adm (fun c => sem_adm (setSem fun l => X (η, l)) c) (G i)
+      | none => exact setSem_adm (fun c => semWithArgs_adm _ _ c) (G i)
       | some s =>
-        constructor
-        · intro n W v h
-          refine ⟨h.1, fun As hl hb => ?_⟩
-          -- The instance cut down to its bounds is bounded everywhere, and
-          -- agrees with `As` below `m`.
-          let As' := restrictArgs (fun η' S => setSem (fun l => X (η', l)) S) η s.bounds
-            (hD η) s.binders As
-          have hl' : As'.length = s.binders.length :=
-            restrictArgs_length _ _ _ _ _ _ hl
-          have hb' : Bounded (fun η' S => setSem (fun l => X (η', l)) S) η s As' (n + 1) := by
-            intro b hbm hbin j _ U u hu
-            exact ((assign_restrict _ η η _ (hD η) _ _ _ _ _ _ hl).mp hu).2 hbin b.2 hbm
-          have hagree : ∀ p, Agree ((assign η s.binders As').1 p) ((assign η s.binders As).1 p) n := by
-            intro p k hk U u
-            rw [assign_restrict _ η η _ (hD η) _ _ _ _ _ _ hl]
-            constructor
-            · exact fun h => h.1
-            · intro hu
-              refine ⟨hu, fun hps B hB => ?_⟩
-              exact hb (p, B) hB hps k hk U u hu
-          have hc := (instanceT_adm _ _ _ _).down n W v (h.2 As' hl' hb')
-          exact (instanceT_congr (fun S => sets _ _ n hagree S) _ v).mp hc
-        · intro n W W' hx v h
-          exact ⟨h.1, fun As hl hb => (instanceT_adm _ _ _ _).mono n W W' hx v (h.2 As hl hb)⟩
+        exact boundedSem_adm _ η s _ (hD η)
+          (fun As => instanceTWithArgs_adm _ η s As P)
+          (fun As Bs m h W v => instanceT_congrWithArgs P hP (fun S => sets _ _ m h S) W v)
   · -- non-expansive
     intro k hk W v
-    unfold qLayer
+    unfold qLayerWithArgs
     by_cases hp : G.params i = true
     · simp only [hp, if_true]; exact h i k hk W v
     · simp only [hp]
       cases hq : G.schemes i with
       | none =>
-        simp only [normalLayer, semList, setSem]
         constructor
         · rintro ⟨c, hc, hv⟩
-          exact ⟨c, hc, (sem_congr _ _ k (fun a => Agree.mono (sets η η' m h a) (by omega)) c W v).mp hv⟩
+          exact ⟨c, hc, (semWithArgs_congr _ _ _ _ k
+            (fun a => Agree.mono (sets η η' m h a) (by omega))
+            (hP _ _ k (fun a => Agree.mono (sets η η' m h a) (by omega))) c W v).mp hv⟩
         · rintro ⟨c, hc, hv⟩
-          exact ⟨c, hc, (sem_congr _ _ k (fun a => Agree.mono (sets η η' m h a) (by omega)) c W v).mpr hv⟩
+          exact ⟨c, hc, (semWithArgs_congr _ _ _ _ k
+            (fun a => Agree.mono (sets η η' m h a) (by omega))
+            (hP _ _ k (fun a => Agree.mono (sets η η' m h a) (by omega))) c W v).mpr hv⟩
       | some s =>
         refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun _ => ?_)
         have hre := reassign η η' s.binders As m h
@@ -526,20 +602,45 @@ theorem qLayer_inv (G : NormalGraph ι) (X : Assignment ι × ι → Fam) (hX : 
             forall_congr' fun j => forall_congr' fun hj => forall_congr' fun U =>
             forall_congr' fun u => imp_congr (hre b.1 j (by omega) U u)
               (sets η η' m h b.2 j (by omega) U u)
-        · exact instanceT_congr (fun S => Agree.mono (sets _ _ m hre S) (by omega)) W v
+        · exact instanceT_congrWithArgs P hP (fun S => Agree.mono (sets _ _ m hre S) (by omega)) W v
 
-/-- The denotation at every assignment. -/
+/-- One assignment-indexed fixed point for both value and argument
+interpretations. The latter's agreement law supplies no extra delay. -/
+noncomputable def qDenoteWithArgs (G : NormalGraph ι) (P : ArgumentInterpreter ι) :
+    Assignment ι × ι → Fam := Tower.denote (fun X => qLayerWithArgs G X P)
+
+theorem qDenoteWithArgs_unfold (G : NormalGraph ι) (P : ArgumentInterpreter ι)
+    (hP : ArgumentNonExp P) (ηi : Assignment ι × ι) (n : Nat) (W : WorldT n) (v : Val) :
+    qDenoteWithArgs G P ηi n W v ↔ qLayerWithArgs G (qDenoteWithArgs G P) P ηi n W v :=
+  Tower.denote_unfold (qLayer_congrWithArgs G P hP) ηi n W v
+
+theorem qDenoteWithArgs_adm (G : NormalGraph ι) (P : ArgumentInterpreter ι)
+    (hP : ArgumentNonExp P) (ηi : Assignment ι × ι) : Adm (qDenoteWithArgs G P ηi) :=
+  Tower.denote_adm_inv (qLayer_congrWithArgs G P hP) QInv
+    ⟨fun _ => topF_adm, fun _ _ _ _ _ _ _ _ _ => Iff.rfl⟩
+    (qLayer_invWithArgs G P hP) (fun _ h => h.1) ηi
+
+/-- Changing an assignment only above a level cannot change a recursive
+signature below it, including the signature's rest contract. -/
+theorem qDenoteWithArgs_nonexp (G : NormalGraph ι) (P : ArgumentInterpreter ι)
+    (hP : ArgumentNonExp P) : NonExp (qDenoteWithArgs G P) := by
+  intro η η' i m h k hk W v
+  exact (Tower.approx_inv QInv
+    ⟨fun _ => topF_adm, fun _ _ _ _ _ _ _ _ _ => Iff.rfl⟩
+    (qLayer_invWithArgs G P hP) (k + 1)).2 η η' i m h k hk W v
+
+/-- The production interpretation remains the legacy argument adapter until
+sorted substitution and the certificate protocol migrate together. -/
 noncomputable def qDenote (G : NormalGraph ι) : Assignment ι × ι → Fam :=
-  Tower.denote (qLayer G)
+  qDenoteWithArgs G legacyArguments
 
 theorem qDenote_unfold (G : NormalGraph ι) (ηi : Assignment ι × ι)
     (n : Nat) (W : WorldT n) (v : Val) :
     qDenote G ηi n W v ↔ qLayer G (qDenote G) ηi n W v :=
-  Tower.denote_unfold (qLayer_congr G) ηi n W v
+  qDenoteWithArgs_unfold G legacyArguments legacyArguments_nonexp ηi n W v
 
 theorem qDenote_adm (G : NormalGraph ι) (ηi : Assignment ι × ι) : Adm (qDenote G ηi) :=
-  Tower.denote_adm_inv (qLayer_congr G) QInv
-    ⟨fun _ => topF_adm, fun _ _ _ _ _ _ _ _ _ => Iff.rfl⟩ (qLayer_inv G) (fun _ h => h.1) ηi
+  qDenoteWithArgs_adm G legacyArguments legacyArguments_nonexp ηi
 
 /-- A label list's meaning at an assignment. -/
 noncomputable def qMeaning (G : NormalGraph ι) (η : Assignment ι) (S : List ι) : Fam :=
@@ -558,14 +659,15 @@ theorem unfold_plain {G : NormalGraph ι} {i : ι} (hi : G.plain i = true) (n W 
     Option.isNone_iff_eq_none] at hi
   unfold normalDenote
   rw [qDenote_unfold]
-  simp [qLayer, hi.1, hi.2, normalLayer, NormalGraph.clauses, NormalGraph.plain]
+  simp only [qLayer, qLayerWithArgs, hi.1, hi.2, Bool.false_eq_true, ite_false]
+  rfl
 
 /-- Every label means closed values only, whatever its kind. -/
 theorem normalDenote_value {G : NormalGraph ι} {i : ι} {n W v}
     (h : normalDenote G i n W v) : isVal v = true ∧ Scoped 0 v := by
   unfold normalDenote at h
   rw [qDenote_unfold] at h
-  unfold qLayer at h
+  unfold qLayer qLayerWithArgs at h
   by_cases hp : G.params i = true
   · simp only [hp, ite_true] at h
     exact (G.env.2 i).2 n W v h
@@ -591,7 +693,8 @@ private theorem approx_plain (G : NormalGraph ι) (hG : G.Plain) (η : Assignmen
     show qLayer G (Tower.approx (qLayer G) k) (η, i) =
       normalLayer G (Tower.approx (normalLayer G) k) i
     rw [← ih]
-    simp [qLayer, hi.1, hi.2]
+    simp only [qLayer, qLayerWithArgs, hi.1, hi.2, Bool.false_eq_true, ite_false]
+    rfl
 
 /-- **Conservative.** A graph of clause rows means what its guarded fixed
 point over clauses means. -/
@@ -624,6 +727,10 @@ theorem transport_inclusion (G : Graph ι) (S T : List ι)
     FamLe (setSem (denote G) S) (setSem (denote G) T) := by
   simpa only [normalize_recursive] using h
 
+#print axioms boundedSem_adm
+#print axioms qDenoteWithArgs_unfold
+#print axioms qDenoteWithArgs_adm
+#print axioms qDenoteWithArgs_nonexp
 #print axioms normalize_recursive
 #print axioms admissible
 end Verification.Model.PositiveGraphs

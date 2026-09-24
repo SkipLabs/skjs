@@ -112,7 +112,7 @@ theorem expand_sem (G : NormalGraph ι) (S : List ι) (hS : G.plainTy S = true) 
 theorem splitClause_sem (X : α → Fam) (c : Clause α) (n W v) :
     semList X (splitClause c) n W v ↔ sem X c n W v := by
   cases c
-  all_goals simp [splitClause, semList, setSem, sem, boolT]
+  all_goals simp [splitClause, semList, setSem, sem, semWithArgs, boolT]
 
 theorem source_sem (G : NormalGraph ι) (S : List ι) (hS : G.plainTy S = true) (n W v) :
     meaning G S n W v ↔ semList (meaning G) (sourceClauses G S) n W v := by
@@ -274,7 +274,7 @@ theorem restElem_sem {G : NormalGraph ι} {P E : List ι} (h : restElem G P = so
   have hp : G.plainTy P = true :=
     plain_of_mem_expand (c := .pack ⟨[], [], some E, false⟩ []) (by simp [hx])
   rw [expand_sem G P hp, hx]
-  simp [semList, setSem, sem, elemPack, tupleFams]
+  simp [semList, setSem, sem, semWithArgs, elemPack, tupleFams]
 
 /-- Fixed positions within an element rest's element: the rest is an element
 rest, and each position is within its element. -/
@@ -316,9 +316,9 @@ theorem rest_short {G : NormalGraph ι} {R : List ι → List ι → Prop} {j : 
     ∀ {Ps As : List (List ι)} {args : List Tm}, Domains R (As.take Ps.length) Ps →
       (∀ A ∈ As.drop Ps.length, R A El) →
       ArgsShort (As.map (meaning G)) j W args →
-      ArgsRest (Ps.map (meaning G)) (meaning G E) j W args
+      ArgsRest (Ps.map (meaning G)) (packArgs (meaning G E)) j W args
   | [], As, args, _, hd, h => by
-    rw [List.map_nil, ArgsRest_nil_params, restElem_sem hel]
+    rw [List.map_nil, ArgsRest_nil_params, packArgs, restElem_sem hel]
     have hall := short_all_le hr (by simpa using hd) h.2.1
     exact elemPack_of_all (meaning_valueFam G El).1
       (fun u hu => ((meaning_valueFam G El).2 _ _ _ (hall u hu)).2) hall
@@ -342,8 +342,8 @@ theorem rest_rest {G : NormalGraph ι} {R : List ι → List ι → Prop} {j : N
     (hr : ∀ a b, R a b → FamLeAt G a b j) {W : WorldT j} {E F : List ι} (hfe : R F E) :
     ∀ {Ps Qs : List (List ι)} {args : List Tm}, Domains R (Qs.take Ps.length) Ps →
       IntoRest (restElem G) R (Qs.drop Ps.length) E →
-      ArgsRest (Qs.map (meaning G)) (meaning G F) j W args →
-      ArgsRest (Ps.map (meaning G)) (meaning G E) j W args
+      ArgsRest (Qs.map (meaning G)) (packArgs (meaning G F)) j W args →
+      ArgsRest (Ps.map (meaning G)) (packArgs (meaning G E)) j W args
   | [], Qs, args, _, hin, h => by
     rw [List.map_nil, ArgsRest_nil_params]
     simp only [ArgsRest, List.length_map] at h
@@ -351,10 +351,11 @@ theorem rest_rest {G : NormalGraph ι} {R : List ι → List ι → Prop} {j : N
     have hE := hr F E hfe W _ hf
     simp only [List.length_nil, List.drop_zero] at hin
     rcases hin with rfl | hin
-    · simpa using hE
+    · simpa [packArgs] using hE
     · unfold ElemRest at hin
       split at hin
       · rename_i El hel
+        simp only [packArgs]
         rw [restElem_sem hel] at hE ⊢
         have hall := short_all_le hr hin hs.2.1
         rw [← List.take_append_drop Qs.length args]
@@ -429,7 +430,7 @@ theorem CallArrow.sound {G : NormalGraph ι} {R L S Rt As d}
     (hr : ∀ j, j < n → ∀ a b, R a b → FamLeAt G a b j)
     (W : WorldT n) (v : Val)
     (hv : callsT (L.map fun p => (meaning G p.1, p.2.1.map (meaning G), meaning G p.2.2)) n W v ∧
-      restsT (S.map fun s => (meaning G s.1, s.2.1.map (meaning G), meaning G s.2.2.1,
+      restsT (S.map fun s => (meaning G s.1, s.2.1.map (meaning G), packArgs (meaning G s.2.2.1),
         meaning G s.2.2.2)) n W v) :
     Promise (ArgsShort (As.map (meaning G))) (meaning G Rt) (meaning G d) n W v := by
   induction hc with
@@ -478,9 +479,9 @@ theorem CallArrow.sound {G : NormalGraph ι} {R L S Rt As d}
 theorem rest_covers_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
     {p q : List ι × List (List ι) × List ι × List ι} (hc : RestCovers (restElem G) R p q) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j) (W : WorldT n) (v : Val)
-    (hv : Promise (ArgsRest (p.2.1.map (meaning G)) (meaning G p.2.2.1)) (meaning G p.1)
+    (hv : Promise (ArgsRest (p.2.1.map (meaning G)) (packArgs (meaning G p.2.2.1))) (meaning G p.1)
       (meaning G p.2.2.2) n W v) :
-    Promise (ArgsRest (q.2.1.map (meaning G)) (meaning G q.2.2.1)) (meaning G q.1)
+    Promise (ArgsRest (q.2.1.map (meaning G)) (packArgs (meaning G q.2.2.1))) (meaning G q.1)
       (meaning G q.2.2.2) n W v := by
   obtain ⟨hrecv, hd, hel, he, hres⟩ := hc
   exact hv.weaken (fun j hj U r hrm => hr j hj _ _ hrecv U r hrm)
@@ -534,7 +535,7 @@ def stableClause : Clause α → Bool
 theorem stableClause_sem {X Y : α → Fam} {c : Clause α} (hc : stableClause c = true)
     {n m : Nat} {W : WorldT n} {U : WorldT m} {v : Val} :
     sem X c n W v ↔ sem Y c m U v := by
-  cases c <;> simp_all [stableClause, sem, nulT, boolT, numT, undefT, topT, strT, bigintT, symbolT]
+  cases c <;> simp_all [stableClause, sem, semWithArgs, nulT, boolT, numT, undefT, topT, strT, bigintT, symbolT]
 
 /-- A type of clause rows all stable. -/
 def StableTy (G : NormalGraph ι) (A : List ι) : Prop :=
@@ -604,7 +605,7 @@ theorem fixed_calls_pack_sound {G : NormalGraph ι} {R : List ι → List ι →
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j) (W : WorldT n) (v : Val)
     (hinv : Invocable v)
     (hv : Promise (ArgsShort (p.2.1.map (meaning G))) (meaning G p.1) (meaning G p.2.2) n W v) :
-    Promise (ArgsRest (t.2.1.map (meaning G)) (meaning G t.2.2.1)) (meaning G t.1)
+    Promise (ArgsRest (t.2.1.map (meaning G)) (packArgs (meaning G t.2.2.1))) (meaning G t.1)
       (meaning G t.2.2.2) n W v := by
   unfold FixedCallsPack at hc
   split at hc
@@ -677,7 +678,11 @@ def CoversPack (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Prop
       (q.required.length + q.optional.length) + 1),
     PositionCovers R (p.position i) (q.position i)
 
-def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
+/-- Coverage has one definition for both derivations and certificate checking.
+Only fixed-arrow coverage needs evidence; the remaining conditions are finite
+checks over the supplied subtype relation. -/
+def CoversWith (G : NormalGraph ι) (R : List ι → List ι → Prop)
+    (arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop) :
     Clause (List ι) → Clause (List ι) → Prop
   | _, .top => True
   | .list a bs, .list c ds => ∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversTuple R p q
@@ -698,11 +703,11 @@ def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
       CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws ∧
       (∀ y ∈ iy, ∃ x ∈ ix, R x y) ∧ CoversOptional R (a :: bs) os ps
   | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
-      (∀ p ∈ M, CallArrow (compatible G) (restElem G) R L S p.1 p.2.1 p.2.2) ∧
+      arrows L S M ∧
       ∀ t ∈ T, (∃ s ∈ S, RestCovers (restElem G) R s t) ∨ ∃ p ∈ L, FixedCallsPack G R p t
   | .callable a bs L S, .callable c ds M T =>
       CoversFields R (a :: bs) (c :: ds) ∧
-      (∀ p ∈ M, CallArrow (compatible G) (restElem G) R L S p.1 p.2.1 p.2.2) ∧
+      arrows L S M ∧
       ∀ t ∈ T, (∃ s ∈ S, RestCovers (restElem G) R s t) ∨ ∃ p ∈ L, FixedCallsPack G R p t
   -- A construct signature is covered by one taking as many parameters, each
   -- at least as wide, with a result at most as wide.
@@ -715,6 +720,22 @@ def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
   -- Every target contract has a source contract within it.
   | .pack a bs, .pack c ds => ∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversPack R p q
   | _, _ => False
+
+/-- Declarative coverage supplies derivations for the fixed-arrow obligations. -/
+abbrev Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :=
+  CoversWith G R (fun L S M => ∀ p ∈ M,
+    CallArrow (compatible G) (restElem G) R L S p.1 p.2.1 p.2.2)
+
+/-- Replacing the arrow interpreter preserves all the shared coverage conditions. -/
+theorem CoversWith.mono {G : NormalGraph ι} {R : List ι → List ι → Prop}
+    {arrows arrows' : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop}
+    (ha : ∀ L S M, arrows L S M → arrows' L S M) {a b}
+    (h : CoversWith G R arrows a b) : CoversWith G R arrows' a b := by
+  cases a <;> cases b <;> simp only [CoversWith] at *
+  all_goals first
+    | exact h
+    | exact ⟨ha _ _ _ h.1, h.2⟩
+    | exact ⟨h.1, ha _ _ _ h.2.1, h.2.2⟩
 
 /-- Covering field by field is enough: the operands all constrain the same
 object, so a field the target names is found at the location the source already
@@ -907,12 +928,14 @@ theorem covers_lists_sound {G : NormalGraph ι} {R : List ι → List ι → Pro
     exact covers_tuple_sound hpq n hr W v hpv
   exact ⟨each c (by simp), fun b hb => each b (List.mem_cons_of_mem c hb)⟩
 
-/-- A covered pack contract holds of the same argument list. -/
-theorem covers_pack_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
-    {p q : Tuple (List ι)} (hc : CoversPack R p q) (n : Nat)
-    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
-    (W : WorldT n) (vs : List Tm) (hv : PackFits (tupleFams (meaning G) p) n W vs) :
-    PackFits (tupleFams (meaning G) q) n W vs := by
+/-- Coverage depends on tuple shape and covariant element membership, not on
+whether that membership is read now or below a step-index guard. -/
+theorem covers_arguments {R : List ι → List ι → Prop}
+    {p q : Tuple (List ι)} (hc : CoversPack R p q)
+    (X : List ι → Fam) (member : Fam → Val → Prop)
+    (hr : ∀ S T, R S T → ∀ v, member (X S) v → member (X T) v)
+    (vs : List Val) (hv : TupleFits member (tupleFams X p) vs) :
+    TupleFits member (tupleFams X q) vs := by
   obtain ⟨hreq, hrest, hpos⟩ := hc
   obtain ⟨hlen, hbound, hel⟩ := hv
   have hlen' : p.required.length ≤ vs.length := by simpa [tupleFams] using hlen
@@ -925,7 +948,7 @@ theorem covers_pack_sound {G : NormalGraph ι} {R : List ι → List ι → Prop
     obtain ⟨hp, hle⟩ := hrest hn
     have := hbound' hp
     omega
-  · intro i u B hu hB j hj U hx
+  · intro i u B hu hB
     rw [positionFam_tupleFams] at hB
     obtain ⟨b, hb, rfl⟩ := Option.map_eq_some_iff.mp hB
     have hi : i < vs.length := (List.getElem?_eq_some_iff.mp hu).1
@@ -948,15 +971,38 @@ theorem covers_pack_sound {G : NormalGraph ι} {R : List ι → List ι → Prop
             rw [Tuple.position_beyond (by omega), Tuple.position_beyond (by omega)]
           rwa [e1, e2]
       rw [ha, hb] at hcov
-      exact hr j hj a b hcov U u
-        (hel i u (meaning G a) hu (by rw [positionFam_tupleFams, ha]; rfl) j hj U hx)
+      exact hr a b hcov u
+        (hel i u (X a) hu (by rw [positionFam_tupleFams, ha]; rfl))
+
+/-- Same-level tuple coverage, including objects and callbacks. The element
+premise is at exactly the level at which the actual arguments are checked. -/
+theorem covers_arguments_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
+    {p q : Tuple (List ι)} (hc : CoversPack R p q) (n : Nat)
+    (hr : ∀ S T, R S T → FamLeAt G S T n)
+    (W : WorldT n) (vs : List Val)
+    (hv : ArgumentContracts.Fits (tupleFams (meaning G) p) n W vs) :
+    ArgumentContracts.Fits (tupleFams (meaning G) q) n W vs :=
+  covers_arguments hc (meaning G) (fun A v => A n W v)
+    (fun S T h v => hr S T h W v) vs hv
+
+/-- The legacy encoding uses the same coverage proof with delayed membership.
+Keep the delay here until quantified substitution and its consumers migrate. -/
+theorem covers_pack_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
+    {p q : Tuple (List ι)} (hc : CoversPack R p q) (n : Nat)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
+    (W : WorldT n) (vs : List Tm) (hv : PackFits (tupleFams (meaning G) p) n W vs) :
+    PackFits (tupleFams (meaning G) q) n W vs :=
+  covers_arguments hc (meaning G)
+    (fun A u => ∀ j (hj : j < n) (U : WorldT j),
+      WExt (trunc j (Nat.le_of_lt hj) W) U → A j U u)
+    (fun S T h v hv j hj U hx => hr j hj S T h U v (hv j hj U hx)) vs hv
 
 theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
     (W : WorldT n) (v : Val) : sem (meaning G) a n W v → sem (meaning G) b n W v := by
   by_cases hb : b = .top
   · subst hb; exact fun hv => sem_value hv
-  cases a <;> cases b <;> simp only [Covers] at hc
+  cases a <;> cases b <;> simp only [Covers, CoversWith] at hc
   all_goals try contradiction
   all_goals try exact absurd rfl hb
   case pack.pack a bs c ds =>
@@ -993,7 +1039,7 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
         obtain ⟨result, hcon, hsafe⟩ := hw.2 _ (List.mem_map_of_mem hs) j hj U hx hu heap hh args
           hvals ⟨by simpa [← hl] using hlen,
             by simpa [← hl] using Domains.sound hd (fun a b hab => hr j hj a b hab) hfix,
-            by simpa [← hl] using hr j hj _ _ hrest U _ hpack⟩
+            by simpa [packArgs, ← hl] using hr j hj _ _ hrest U _ hpack⟩
         exact ⟨result, hcon, Safe_mono j (fun m hm V u hu => hr m (by omega) _ _ hres V u hu) U heap _ hsafe⟩
       · unfold FixedCoversPack at hfp
         split at hfp
@@ -1220,7 +1266,7 @@ theorem agree_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Free
   intro η η' i hi hag W v
   have ⟨hself, hreads, hbounds⟩ := freeOk_row hF hi
   rw [qDenote_unfold, qDenote_unfold]
-  unfold qLayer
+  unfold qLayer qLayerWithArgs
   cases hp : G.params i
   · simp only [Bool.false_eq_true, if_false]
     cases hq : G.schemes i with
@@ -1271,7 +1317,7 @@ theorem agree_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Free
         | cons S Ss ihs =>
           exact .cons (hrow S (hSs S List.mem_cons_self))
             (ihs fun T hT => hSs T (List.mem_cons_of_mem _ hT))
-      unfold instanceT instanceSigs instanceRests interT
+      simp only [instanceTWithArgs, instanceSigs, instanceRestsWithArgs, legacyArguments, interT]
       refine and_congr (callsT_congr s.signatures _ _ (fun p hps => by
         have hin : ∀ l ∈ p.1 ++ p.2.1.flatten ++ p.2.2, l ∈ reads G i := fun l hl => by
           simp only [reads, hq]
@@ -1285,7 +1331,7 @@ theorem agree_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Free
             simp only [reads, hq]
             exact List.mem_append_right _ (List.mem_flatMap.mpr ⟨p, hps, hl⟩)
         refine ⟨hrow _ fun l hl => hin l (by simp [hl]), hargs _ fun S hS l hl => hin l ?_,
-          hrow _ fun l hl => hin l (by simp [hl]), hrow _ fun l hl => hin l (by simp [hl])⟩
+          packArgs_congr (hrow _ fun l hl => hin l (by simp [hl])), hrow _ fun l hl => hin l (by simp [hl])⟩
         simp only [List.mem_append, List.mem_flatten]
         exact .inl (.inl (.inr ⟨S, hS, hl⟩))) W v)
     | none =>
@@ -1700,7 +1746,7 @@ theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D 
               List.all_eq_true] at hrow
             obtain ⟨⟨⟨⟨⟨⟨⟨hjp, hnd⟩, hlen⟩, hpars⟩, hcap⟩, hsigs⟩, hbnds⟩, hrests⟩ := hrow
             rw [singleton, qDenote_unfold, qDenote_unfold]
-            simp only [qLayer, hpar, hjp, hsch, hs2, Bool.false_eq_true, if_false]
+            simp only [qLayer, qLayerWithArgs, hpar, hjp, hsch, hs2, Bool.false_eq_true, if_false]
             refine and_congr Iff.rfl ?_
             rw [hlen]
             refine forall_congr' fun As => forall_congr' fun hlA => imp_congr ?_ ?_
@@ -1750,7 +1796,7 @@ theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D 
                 funext m U u
                 apply propext
                 rw [singleton, qDenote_unfold]
-                simp [qLayer, hpars q hq]
+                simp [qLayer, qLayerWithArgs, hpars q hq]
               · rw [enter_nmem κ hb, assign_nmem ηL s.binders As hb]
                 have hpi : p ∈ fv V i := by
                   rcases (hreads l hl).2 p hp with h1 | ⟨s', hs', h2⟩
@@ -1781,7 +1827,7 @@ theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D 
                       (fun q hq => ?_) W' u).mpr h⟩
                     have := (hc l' hl') q hq
                     rw [assign_nmem ηR s2.binders As (by simpa using this)]
-            unfold instanceT interT
+            simp only [instanceTWithArgs, interT]
             refine and_congr ?_ ?_
             · obtain ⟨hmap, _⟩ := mapM_some hsigs
               unfold instanceSigs
@@ -1822,7 +1868,7 @@ theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D 
                 simp only [List.mem_append, List.mem_flatten]
                 exact .inl (.inr ⟨S, hS, hl⟩))
             · obtain ⟨hmap, _⟩ := mapM_some hrests
-              unfold instanceRests
+              unfold instanceRestsWithArgs legacyArguments
               rw [hmap]
               simp only [List.map_map]
               refine restsT_congr s.variadic _ _ (fun p hps => ?_) W v
@@ -1836,7 +1882,7 @@ theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D 
               obtain ⟨h1, h2, h3, h4⟩ := restImg_some hq
               simp only [Function.comp, hq, Option.getD_some]
               refine ⟨hty _ _ _ _ _ h1 fun l hl => hrel' l (hin l (by simp [hl])), ?_,
-                hty _ _ _ _ _ h3 fun l hl => hrel' l (hin l (by simp [hl])),
+                packArgs_congr (hty _ _ _ _ _ h3 fun l hl => hrel' l (hin l (by simp [hl]))),
                 hty _ _ _ _ _ h4 fun l hl => hrel' l (hin l (by simp [hl]))⟩
               have hargs : ∀ (Ss Ts : List (List ι)), Ss.mapM (tyImg tbl (enter κ s.binders s2.binders)) = some Ts →
                   (∀ S ∈ Ss, ∀ l ∈ S, l ∈ reads G i) →
@@ -1912,20 +1958,20 @@ theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D 
     subst hrow
     have hr := hrel i (hself hpar)
     rw [qDenote_unfold]
-    simp only [qLayer, hpar, if_true]
+    simp only [qLayer, qLayerWithArgs, hpar, if_true]
     cases hk : κ.lookup i with
     | none =>
       rw [hk] at hr
       simp only [Option.getD_none]
       rw [singleton, qDenote_unfold]
-      simp only [qLayer, hpar, if_true]
+      simp only [qLayer, qLayerWithArgs, hpar, if_true]
       rw [hr]
     | some U =>
       rw [hk] at hr
       simp only [Option.getD_some]
       rw [hr]
 
-theorem assign_zip_map [DecidableEq ι] (η : Assignment ι) (F : List ι → ValueFamily) :
+theorem assign_zip_map [DecidableEq ι] {k : ParameterKind} (η : ParameterAssignment k ι) (F : List ι → ParameterFamily k) :
     ∀ {bs : List ι} {θs : List (List ι)} {b : ι} {U : List ι},
       (bs.zip θs).lookup b = some U → (assign η bs (θs.map F)).1 b = (F U).1
   | [], _, _, _, h => by simp at h
@@ -1943,6 +1989,53 @@ theorem assign_zip_map [DecidableEq ι] (η : Assignment ι) (F : List ι → Va
       rw [assign_cons_ne η bs (F θ) (θs.map F) hb]
       exact assign_zip_map η F h
 
+/-- Checked substitution meets every binder bound, independently of whether
+its arguments denote values or lists. The interpretation is supplied once and
+used for both assignment and the bound check. -/
+theorem bounded_substitution [DecidableEq ι] {k : ParameterKind}
+    (η : ParameterAssignment k ι) (F : List ι → ParameterFamily k)
+    (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier)
+    (s : SchemeRow ι) (θs : List (List ι))
+    (hlen : θs.length = s.binders.length)
+    (hbnd : ∀ b ∈ s.bounds, ∀ U, (s.binders.zip θs).lookup b.1 = some U →
+      FamLe (F U).1 (D η b.2)) (n : Nat) :
+    Bounded D η s (θs.map F) n := by
+  intro b hb hbin j _ W u hu
+  obtain ⟨θ, hθ⟩ := lookup_zip_isSome (ys := θs) hbin (by omega)
+  rw [assign_zip_map η F hθ] at hu
+  exact hbnd b hb θ hθ j W u hu
+
+/-- Eliminate a universal callable with one checked substitution. This is the
+shared semantic boundary for value and pack instantiation certificates. -/
+theorem bounded_substitution_elim [DecidableEq ι] {k : ParameterKind}
+    (η : ParameterAssignment k ι) (F : List ι → ParameterFamily k)
+    (D : ParameterAssignment k ι → List ι → WorldFamily k.Carrier)
+    (s : SchemeRow ι) (θs : List (List ι))
+    (body : List (ParameterFamily k) → Fam)
+    (hlen : θs.length = s.binders.length)
+    (hbnd : ∀ b ∈ s.bounds, ∀ U, (s.binders.zip θs).lookup b.1 = some U →
+      FamLe (F U).1 (D η b.2)) :
+    FamLe (boundedSem D η s body) (body (θs.map F)) := by
+  intro n W v h
+  exact h.2 _ (by simp [hlen]) (bounded_substitution η F D s θs hlen hbnd n)
+
+/-- Substituting a complete binder list changes exactly its bound names. -/
+theorem assignment_substitution [DecidableEq ι] {k : ParameterKind}
+    (η : ParameterAssignment k ι) (F : List ι → ParameterFamily k)
+    (bs : List ι) (θs : List (List ι)) (hlen : θs.length = bs.length) (b : ι) :
+    (assign η bs (θs.map F)).1 b =
+      match (bs.zip θs).lookup b with
+      | some U => (F U).1
+      | none => η.1 b := by
+  cases hk : (bs.zip θs).lookup b with
+  | none =>
+    apply assign_nmem
+    intro hb
+    obtain ⟨U, hU⟩ := lookup_zip_isSome (ys := θs) hb (by omega)
+    rw [hU] at hk
+    cases hk
+  | some U => exact assign_zip_map η F hk
+
 /-- A member of a scheme row meets each checked instance of its signatures. -/
 theorem inst_sound [DecidableEq ι] {G : NormalGraph ι} {T : List ι} {i : ι} {s : SchemeRow ι}
     {tbl : InstTable ι} {θs : List (List ι)} {D : List ι} {V : FreeMap ι} {L : Ops ι}
@@ -1958,25 +2051,22 @@ theorem inst_sound [DecidableEq ι] {G : NormalGraph ι} {T : List ι} {i : ι} 
   obtain ⟨_, hm, hv⟩ := hv
   cases List.mem_singleton.mp hm
   have hs := (qDenote_unfold G (G.env, i) n W v).mp hv
-  simp only [qLayer, hp, hq, Bool.false_eq_true, if_false] at hs
-  obtain ⟨hinv, hall⟩ := hs
-  let As : List ValueFamily := θs.map fun U => ⟨meaning G U, meaning_valueFam G U⟩
-  have hbounded : Bounded (fun η' S => setSem (fun l => qDenote G (η', l)) S) G.env s As n := by
-    intro b hb hbin j _ U' u hu
-    obtain ⟨θ, hθ⟩ := lookup_zip_isSome (ys := θs) hbin (by omega)
-    rw [assign_zip_map G.env (fun U => ⟨meaning G U, meaning_valueFam G U⟩) hθ] at hu
-    exact hbnd b hb θ hθ j U' u hu
-  have hc := hall As (by simp [As, hlen]) hbounded
+  simp only [qLayer, qLayerWithArgs, hp, hq, Bool.false_eq_true, if_false] at hs
+  have hinv := hs.1
+  let F : List ι → ValueFamily := fun U => ⟨meaning G U, meaning_valueFam G U⟩
+  let As : List ValueFamily := θs.map F
+  have hc := bounded_substitution_elim G.env F
+    (fun η' S => setSem (fun l => qDenote G (η', l)) S) s θs
+    (fun As => instanceTWithArgs
+      (fun η' S => setSem (fun l => qDenote G (η', l)) S) G.env s As legacyArguments)
+    hlen hbnd n W v hs
+  change instanceTWithArgs
+    (fun η' S => setSem (fun l => qDenote G (η', l)) S) G.env s As legacyArguments n W v at hc
   -- The instance's assignment is related to the graph's by the binders' images.
   have hrel : ∀ l, RelK G (s.binders.zip θs) (fv V l) (assign G.env s.binders As) G.env := by
     intro l b _
-    cases hk : (s.binders.zip θs).lookup b with
-    | none =>
-      have hb : b ∉ s.binders := fun hb => by
-        obtain ⟨U, hU⟩ := lookup_zip_isSome (ys := θs) hb (by omega)
-        rw [hU] at hk; cases hk
-      exact assign_nmem _ _ _ hb
-    | some U => exact assign_zip_map G.env (fun U => ⟨meaning G U, meaning_valueFam G U⟩) hk
+    have h := assignment_substitution G.env F s.binders θs hlen b
+    cases hk : (s.binders.zip θs).lookup b <;> rw [hk] at h <;> exact h
   have hfam : ∀ S S', tyImg tbl (s.binders.zip θs) S = some S' →
       setSem (fun l => qDenote G (assign G.env s.binders As, l)) S = meaning G S' := by
     intro S S' hS
@@ -2019,6 +2109,7 @@ theorem inst_sound [DecidableEq ι] {G : NormalGraph ι} {T : List ι} {i : ι} 
     have e3 := hfam _ _ h3
     have e4 := hfam _ _ h4
     have e2 := hargs _ _ h2
+    dsimp only [legacyArguments] at hpr
     simp only [e1, e2, e3, e4] at hpr
     exact hpr
 
@@ -2083,7 +2174,7 @@ theorem Sub.sound_at {G : NormalGraph ι} {S T} (h : Sub G S T) :
     refine ⟨j, List.mem_singleton_self j, ?_⟩
     change qDenote G (η, j) n W v
     rw [qDenote_unfold]
-    simp only [qLayer, hp, hq, Bool.false_eq_true, if_false]
+    simp only [qLayer, qLayerWithArgs, hp, hq, Bool.false_eq_true, if_false]
     have hat : ∀ As : List ValueFamily,
         meaning (reassign G (assign η s.binders As)) U n W v := by
       intro As
@@ -2123,6 +2214,9 @@ theorem Sub.congr {G : NormalGraph ι} {S S' T T' : List ι}
     exact .trans (.subset (fun i hi => (hs i).mp hi))
       (.trans h (.subset (fun i hi => (ht i).mpr hi)))
 
+#print axioms bounded_substitution_elim
+#print axioms covers_arguments_sound
+#print axioms covers_pack_sound
 #print axioms Domains.sound
 #print axioms CallArrow.sound
 #print axioms Sub.sound

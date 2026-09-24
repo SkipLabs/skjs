@@ -158,7 +158,7 @@ theorem instantiate_ref [DecidableEq ι] {G : NormalGraph ι} {P η} {p b : ι}
         ReferenceConjunctions.refsT [(valueField, meaningP G P (update η p T) [p])] [] n W v := by
     simp only [meaningP, setSem, List.mem_singleton, exists_eq_left]
     rw [unfold_param]
-    simp [paramLayer, hb, hG, semList, setSem, sem, ReferenceConjunctions.famsOf, viewT]
+    simp [paramLayer, hb, hG, semList, setSem, sem, semWithArgs, ReferenceConjunctions.famsOf, viewT]
     intro h
     obtain ⟨flds, rfl, -⟩ := h.1
     exact optT_nil
@@ -582,7 +582,7 @@ theorem ifKnown_safeP {G : NormalGraph ι} {P η} {Γ c C q t e A n W h ρ}
     n W h _ hw hh (ihc n W h ρ he hw hh)
   intro j hj U hx hu heap v hok hv ha
   have hvalue := (represents_semP hq hCP j U v).mp ha
-  cases q <;> simp only [sem] at hvalue <;> subst v
+  cases q <;> simp only [sem, semWithArgs] at hvalue <;> subst v
   · cases j with
     | zero => trivial
     | succ k =>
@@ -618,14 +618,14 @@ theorem ifBoolVar_safeP {G : NormalGraph ι} {P η} {Γ i C T F t e A n W h ρ}
   | succ k =>
     rcases shape with hv | hv
     · have refined := he.refine hi ((represents_semP hT hTP (k + 1) W (ρ i)).mpr
-        (by simpa [hv, sem] using rfl))
+        (by simpa [hv, sem, semWithArgs] using rfl))
       rw [hv]
       refine Or.inr ⟨trunc k (Nat.le_succ k) W, h, instantiate 0 ρ t, WExt_refl _,
         WorldAdm_trunc _ hw, .iteT, HeapOk_trunc k W h hh, ?_⟩
       exact iht k _ h ρ (refined.transfer hCl k (Nat.le_succ k) _ (WExt_refl _))
         (WorldAdm_trunc _ hw) (HeapOk_trunc k W h hh)
     · have refined := he.refine hi ((represents_semP hF hFP (k + 1) W (ρ i)).mpr
-        (by simpa [hv, sem] using rfl))
+        (by simpa [hv, sem, semWithArgs] using rfl))
       rw [hv]
       refine Or.inr ⟨trunc k (Nat.le_succ k) W, h, instantiate 0 ρ e, WExt_refl _,
         WorldAdm_trunc _ hw, .iteF, HeapOk_trunc k W h hh, ?_⟩
@@ -1053,7 +1053,7 @@ theorem falseT_satisfies :
   refine (primitive_meaningP bound_prim_bool n W .fls).mpr ?_
   refine ⟨2, by simp, ?_⟩
   rw [unfold_normal _ _ rfl]
-  simp [boundG, semList, setSem, sem]
+  simp [boundG, semList, setSem, sem, semWithArgs]
 
 #print axioms param_denote
 #print axioms instantiate_param

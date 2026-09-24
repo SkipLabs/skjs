@@ -262,7 +262,7 @@ theorem primitive_sem {G : NormalGraph ι} {cs R} (hc : primitive cs = some R) (
         have hi := ih hr
         simp only [semList,setSem,List.mem_cons,exists_eq_or_imp] at hi ⊢
         rw [hi]
-        simp [sem,nulT,undefT,boolT,numT,strT,Atom.holds,apply_ite,or_assoc]
+        simp [sem, semWithArgs,nulT,undefT,boolT,numT,strT,Atom.holds,apply_ite,or_assoc]
         all_goals try (split <;> simp_all [Atom.holds])
 
 theorem atoms_sem {G : NormalGraph ι} {A R} (h : atoms G A = some R) (n W v) :

@@ -88,7 +88,7 @@ inductive Clause (α : Type) where
 /-- Every value. A closed value, as every member of every family is. -/
 def topT : Fam := fun _ _ v => isVal v = true ∧ Scoped 0 v
 
-def sem (X : α → Fam) : Clause α → Fam
+def semWithArgs (X : α → Fam) (P : α → ArgFam) : Clause α → Fam
   | .top => topT
   | .list a bs => fun n W v => listT (tupleFams X a) n W v ∧ ∀ b ∈ bs, listT (tupleFams X b) n W v
   | .nul => nulT
@@ -109,14 +109,17 @@ def sem (X : α → Fam) : Clause α → Fam
       viewT (famsOf X vs) n W v ∧ (∀ d ∈ ds, dictViewT (X d) n W v) ∧
         optT (famsOf X os) n W v
   | .arrs L S => interT (callsT (L.map fun p => (X p.1, p.2.1.map X, X p.2.2)))
-      (restsT (S.map fun s => (X s.1, s.2.1.map X, X s.2.2.1, X s.2.2.2)))
+      (restsT (S.map fun s => (X s.1, s.2.1.map X, P s.2.2.1, X s.2.2.2)))
   | .callable a bs L S =>
       interT (CallableConjunctions.objectsT (famsOf X a) (bs.map (famsOf X))
         (L.map fun p => (X p.1, p.2.1.map X, X p.2.2)))
-        (restsT (S.map fun s => (X s.1, s.2.1.map X, X s.2.2.1, X s.2.2.2)))
+        (restsT (S.map fun s => (X s.1, s.2.1.map X, P s.2.2.1, X s.2.2.2)))
   | .ctors L S => interT (ctorsT (L.map fun p => (p.1.map X, X p.2)))
-      (ctorRestsT (S.map fun s => (s.1.map X, X s.2.1, X s.2.2)))
+      (ctorRestsT (S.map fun s => (s.1.map X, P s.2.1, X s.2.2)))
   | .pack a bs => packT (tupleFams X a :: bs.map (tupleFams X))
+
+/-- The legacy graph interpretation; argument slots cross an explicit boundary. -/
+def sem (X : α → Fam) : Clause α → Fam := semWithArgs X (fun a => packArgs (X a))
 
 def semList (X : α → Fam) (L : List (Clause α)) : Fam := setSem (sem X) L
 
@@ -251,7 +254,7 @@ theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (
     semList X (meet a b) n W v ↔ interT (sem X a) (sem X b) n W v := by
   by_cases ha : a = .top
   · subst ha
-    simp only [meet, singleton_sem, sem, interT]
+    simp only [meet, singleton_sem, sem, semWithArgs, interT]
     exact ⟨fun h => ⟨sem_value h, h⟩, fun h => h.2⟩
   by_cases hb : b = .top
   · subst hb
@@ -262,105 +265,105 @@ theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (
   by_cases hs : shape a = shape b
   · cases a <;> cases b <;> simp only [shape] at hs
     all_goals try contradiction
-    · simp [meet, singleton_sem, sem, interT]
-    · simp [meet, singleton_sem, sem, interT]
+    · simp [meet, singleton_sem, sem, semWithArgs, interT]
+    · simp [meet, singleton_sem, sem, semWithArgs, interT]
     · rename_i b
-      cases b <;> simp [meet, singleton_sem, sem, interT, boolT]
+      cases b <;> simp [meet, singleton_sem, sem, semWithArgs, interT, boolT]
       all_goals intro hv; subst v; simp
-    · simp only [meet, singleton_sem, sem, List.map_append, List.map_cons]
+    · simp only [meet, singleton_sem, sem, semWithArgs, List.map_append, List.map_cons]
       rw [merge _ _ _ _ n W v]
       simp only [famsOf_append, viewT_append, optT_append, interT]
       simp only [and_assoc, and_left_comm, and_comm]
     · -- refs ∩ dictionary
-      simp only [meet, singleton_sem, sem, List.map_append, List.map_cons]
+      simp only [meet, singleton_sem, sem, semWithArgs, List.map_append, List.map_cons]
       rw [merge _ _ _ _ n W v]
       simp only [famsOf_append, viewT_append, optT_append, interT]
       simp only [and_assoc, and_left_comm, and_comm]
     · -- dictionary ∩ refs
-      simp only [meet, singleton_sem, sem, List.map_append, List.map_cons]
+      simp only [meet, singleton_sem, sem, semWithArgs, List.map_append, List.map_cons]
       rw [merge _ _ _ _ n W v]
       simp only [famsOf_append, viewT_append, optT_append, interT]
       simp only [and_assoc, and_left_comm, and_comm]
     · -- dictionary ∩ dictionary
-      simp only [meet, singleton_sem, sem, List.map_append, List.map_cons,
+      simp only [meet, singleton_sem, sem, semWithArgs, List.map_append, List.map_cons,
         List.mem_append, or_imp, forall_and]
       rw [merge _ _ _ _ n W v]
       simp only [famsOf_append, viewT_append, optT_append, interT]
       simp only [and_assoc, and_left_comm, and_comm]
     · -- arrs ∩ arrs
-      simp only [meet, singleton_sem, sem, List.map_append]
+      simp only [meet, singleton_sem, sem, semWithArgs, List.map_append]
       rw [interT, TypeAlgebra.calls_append, TypeAlgebra.rests_append]
       simp only [interT]
       exact ⟨fun ⟨⟨a, b⟩, c, d⟩ => ⟨⟨a, c⟩, b, d⟩, fun ⟨⟨a, c⟩, b, d⟩ => ⟨⟨a, b⟩, c, d⟩⟩
     · -- arrs ∩ callable
-      simp only [meet, singleton_sem, sem, List.map_append]
+      simp only [meet, singleton_sem, sem, semWithArgs, List.map_append]
       rw [interT, CallableConjunctions.calls_merge, TypeAlgebra.rests_append]
       simp only [interT]
       exact ⟨fun ⟨⟨o, c⟩, t, r⟩ => ⟨⟨c, r⟩, o, t⟩, fun ⟨⟨c, r⟩, o, t⟩ => ⟨⟨o, c⟩, t, r⟩⟩
     · rename_i b
-      cases b <;> simp [meet, singleton_sem, sem, interT, boolT]
+      cases b <;> simp [meet, singleton_sem, sem, semWithArgs, interT, boolT]
       all_goals intro hv; subst v; simp
     · rename_i b c
-      cases b <;> cases c <;> simp [meet, sem, interT, semList, setSem]
+      cases b <;> cases c <;> simp [meet, sem, semWithArgs, interT, semList, setSem]
       all_goals intro hv; subst v; simp
     · -- num ∩ num
-      simp [meet, singleton_sem, sem, interT, numT]
+      simp [meet, singleton_sem, sem, semWithArgs, interT, numT]
     · -- num ∩ numLit: the singleton already implies the family
       rename_i b
-      simp [meet, singleton_sem, sem, interT, numT]
+      simp [meet, singleton_sem, sem, semWithArgs, interT, numT]
       intro hv; subst v; exact ⟨b, rfl⟩
     · -- numLit ∩ num
       rename_i b
-      simp [meet, singleton_sem, sem, interT, numT]
+      simp [meet, singleton_sem, sem, semWithArgs, interT, numT]
       intro hv; subst v; exact ⟨b, rfl⟩
     · -- numLit ∩ numLit: equal spellings are equal numbers
       rename_i a b
       by_cases hab : a = b
-      · subst hab; simp [meet, singleton_sem, sem, interT]
-      · simp [meet, semList, setSem, sem, interT, hab]
+      · subst hab; simp [meet, singleton_sem, sem, semWithArgs, interT]
+      · simp [meet, semList, setSem, sem, semWithArgs, interT, hab]
         intro hv; subst hv; simp [hab]
-    · simp [meet, singleton_sem, sem, interT]
+    · simp [meet, singleton_sem, sem, semWithArgs, interT]
     · -- callable ∩ arrs
-      simp only [meet, singleton_sem, sem, List.map_append]
+      simp only [meet, singleton_sem, sem, semWithArgs, List.map_append]
       rw [interT, CallableConjunctions.calls_merge, TypeAlgebra.rests_append]
       simp only [interT]
       exact ⟨fun ⟨⟨o, c⟩, r, t⟩ => ⟨⟨o, r⟩, c, t⟩, fun ⟨⟨o, r⟩, c, t⟩ => ⟨⟨o, c⟩, r, t⟩⟩
     · -- callable ∩ callable
-      simp only [meet, singleton_sem, sem, List.map_append, List.map_cons]
+      simp only [meet, singleton_sem, sem, semWithArgs, List.map_append, List.map_cons]
       rw [interT, CallableConjunctions.merge, TypeAlgebra.rests_append]
       simp only [interT]
       exact ⟨fun ⟨⟨o, p⟩, r, t⟩ => ⟨⟨o, r⟩, p, t⟩, fun ⟨⟨o, r⟩, p, t⟩ => ⟨⟨o, p⟩, r, t⟩⟩
     · -- str ∩ str
-      simp [meet, singleton_sem, sem, interT, strT]
+      simp [meet, singleton_sem, sem, semWithArgs, interT, strT]
     · -- str ∩ strLit
       rename_i s
-      simp [meet, singleton_sem, sem, interT, strT]
+      simp [meet, singleton_sem, sem, semWithArgs, interT, strT]
       intro hv; subst v; exact ⟨s, rfl⟩
     · -- strLit ∩ str
       rename_i s
-      simp [meet, singleton_sem, sem, interT, strT]
+      simp [meet, singleton_sem, sem, semWithArgs, interT, strT]
       intro hv; subst v; exact ⟨s, rfl⟩
     · -- strLit ∩ strLit
       rename_i a b
       by_cases hab : a = b
-      · subst hab; simp [meet, singleton_sem, sem, interT]
-      · simp [meet, semList, setSem, sem, interT, hab]
+      · subst hab; simp [meet, singleton_sem, sem, semWithArgs, interT]
+      · simp [meet, semList, setSem, sem, semWithArgs, interT, hab]
         intro hv; subst hv; simp [hab]
     · -- list ∩ list: every contract of both, on the one store
-      simp only [meet, singleton_sem, sem, List.mem_append, List.mem_cons, or_imp, forall_and,
+      simp only [meet, singleton_sem, sem, semWithArgs, List.mem_append, List.mem_cons, or_imp, forall_and,
         forall_eq, interT]
       exact ⟨fun ⟨ha, hb, hc, hd⟩ => ⟨⟨ha, hb⟩, hc, hd⟩, fun ⟨⟨ha, hb⟩, hc, hd⟩ => ⟨ha, hb, hc, hd⟩⟩
     · -- bigint ∩ bigint
-      simp [meet, singleton_sem, sem, interT, bigintT]
+      simp [meet, singleton_sem, sem, semWithArgs, interT, bigintT]
     · -- symbol ∩ symbol
-      simp [meet, singleton_sem, sem, interT, symbolT]
+      simp [meet, singleton_sem, sem, semWithArgs, interT, symbolT]
     · -- ctors ∩ ctors: every construct signature of both
-      simp only [meet, singleton_sem, sem, List.map_append, interT]
+      simp only [meet, singleton_sem, sem, semWithArgs, List.map_append, interT]
       rw [ctorsT_append, ctorRestsT_append]
       exact ⟨fun ⟨⟨a, b⟩, c, d⟩ => ⟨⟨a, c⟩, b, d⟩, fun ⟨⟨a, c⟩, b, d⟩ => ⟨⟨a, b⟩, c, d⟩⟩
     · -- pack ∩ pack: every contract of both, on the one list
       rename_i a bs c ds
-      simp only [meet, singleton_sem, sem, List.map_append, List.map_cons, interT]
+      simp only [meet, singleton_sem, sem, semWithArgs, List.map_append, List.map_cons, interT]
       exact packT_append (tupleFams X a :: bs.map (tupleFams X)) _ n W v
   · have hm : meet a b = [] := by
       cases a <;> cases b <;> simp_all [shape, meet]
@@ -396,7 +399,7 @@ theorem normalize_sound (X : α → Fam) (f : Formula α) (n W v) :
 
 /-- All constructors remain admissible, without assumptions on the operand
 families. Invariant comparison and arrow guards supply the required stability. -/
-theorem sem_adm (X : α → Fam) (c : Clause α) : Adm (sem X c) := by
+theorem semWithArgs_adm (X : α → Fam) (P : α → ArgFam) (c : Clause α) : Adm (semWithArgs X P c) := by
   cases c with
   | nul => exact nulT_adm
   | bool => exact boolT_adm
@@ -429,6 +432,9 @@ theorem sem_adm (X : α → Fam) (c : Clause α) : Adm (sem X c) := by
   | strLit _ => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | bigint => exact bigintT_adm
   | symbol => exact symbolT_adm
+
+theorem sem_adm (X : α → Fam) (c : Clause α) : Adm (sem X c) :=
+  semWithArgs_adm X (fun a => packArgs (X a)) c
 
 theorem positionFam_tupleFams (X : α → Fam) (t : Tuple α) (i : Nat) :
     positionFam (tupleFams X t) i = (t.position i).map X := by
@@ -495,8 +501,8 @@ theorem list_congr_below (X Y : α → Fam) (t : Tuple α) (n : Nat)
     obtain ⟨E, c, ⟨e, he, rfl⟩, hw, hag⟩ := hrest i l hi hl
     exact ⟨X e, c, ⟨e, he, rfl⟩, hw, fun j hj W' u => (hag j hj W' u).congr (h e j hj W' u).symm⟩
 
-theorem sem_congr (X Y : α → Fam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
-    (c : Clause α) (W : WorldT n) (v : Val) : sem X c n W v ↔ sem Y c n W v := by
+theorem semWithArgs_congr (X Y : α → Fam) (P Q : α → ArgFam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
+    (hP : ∀ a, Agree (P a) (Q a) n) (c : Clause α) (W : WorldT n) (v : Val) : semWithArgs X P c n W v ↔ semWithArgs Y Q c n W v := by
   cases c with
   | nul => rfl
   | bool => rfl
@@ -525,28 +531,32 @@ theorem sem_congr (X Y : α → Fam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
       | nil => exact .nil
       | cons a As ih => exact .cons (h a) ih
     exact and_congr (callsT_congr L _ _ (fun p _ => ⟨h p.1, hd p.2.1, h p.2.2⟩) W v)
-      (restsT_congr S _ _ (fun s _ => ⟨h s.1, hd s.2.1, h s.2.2.1, h s.2.2.2⟩) W v)
+      (restsT_congr S _ _ (fun s _ => ⟨h s.1, hd s.2.1, hP s.2.2.1, h s.2.2.2⟩) W v)
   | callable a bs L S =>
     have hd : ∀ As : List α, ArgsAgree n (As.map X) (As.map Y) := by
       intro As; induction As with
       | nil => exact .nil
       | cons a As ih => exact .cons (h a) ih
     exact and_congr (CallableConjunctions.congr_below X Y a bs L n h W v)
-      (restsT_congr S _ _ (fun s _ => ⟨h s.1, hd s.2.1, h s.2.2.1, h s.2.2.2⟩) W v)
+      (restsT_congr S _ _ (fun s _ => ⟨h s.1, hd s.2.1, hP s.2.2.1, h s.2.2.2⟩) W v)
   | ctors L S =>
     have hd : ∀ As : List α, ArgsAgree n (As.map X) (As.map Y) := by
       intro As; induction As with
       | nil => exact .nil
       | cons a As ih => exact .cons (h a) ih
     exact and_congr (ctorsT_congr L _ _ (fun p _ => ⟨hd p.1, h p.2⟩) W v)
-      (ctorRestsT_congr S _ _ (fun s _ => ⟨hd s.1, h s.2.1, h s.2.2⟩) W v)
+      (ctorRestsT_congr S _ _ (fun s _ => ⟨hd s.1, hP s.2.1, h s.2.2⟩) W v)
   | pack a bs =>
-    simp only [sem, packT]
+    simp only [semWithArgs, packT]
     refine exists_congr fun vs => and_congr Iff.rfl (and_congr Iff.rfl ?_)
     simp only [List.mem_cons, List.mem_map, forall_eq_or_imp, forall_exists_index, and_imp,
       forall_apply_eq_imp_iff₂]
     exact and_congr (pack_congr_below X Y a n h W vs)
       (forall_congr' fun b => forall_congr' fun _ => pack_congr_below X Y b n h W vs)
+
+theorem sem_congr (X Y : α → Fam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
+    (c : Clause α) (W : WorldT n) (v : Val) : sem X c n W v ↔ sem Y c n W v :=
+  semWithArgs_congr X Y _ _ n h (fun a => packArgs_congr (h a)) c W v
 
 /-! ## Renaming operands
 
@@ -610,10 +620,10 @@ theorem sem_map (Y : β → Fam) (f : α → β) (c : Clause α) :
     simp [tupleFams, Tuple.map, Function.comp_def]
   cases c
   case pack a bs =>
-    simp only [sem, Clause.map, List.map_map, ht]
+    simp only [sem, semWithArgs, Clause.map, List.map_map, ht]
     congr 2
     exact List.map_congr_left fun t _ => ht t
-  all_goals simp [sem, Clause.map, mapFields, famsOf_fun, tupleFams, Tuple.map, Function.comp_def]
+  all_goals simp [sem, semWithArgs, Clause.map, mapFields, famsOf_fun, tupleFams, Tuple.map, Function.comp_def]
 
 private theorem map_self {l : List α} {f : α → α} (h : ∀ a ∈ l, f a = a) : l.map f = l := by
   induction l with

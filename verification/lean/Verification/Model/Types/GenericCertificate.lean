@@ -583,7 +583,7 @@ invariant array storage. No instantiation is chosen by this rule. -/
 theorem array_collect_safe {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta)
     (E : Ty) {n : Nat} {W : WorldT n} {h : Heap} {extra : List Tm}
     (hw : WorldAdm W) (hh : HeapOk n W h)
-    (he : elemPack (E.denote G eta) n W (.args extra)) (hvals : CallArguments.Values extra) :
+    (he : ArgumentContracts.All (E.denote G eta) n W extra) (hvals : CallArguments.Values extra) :
     Safe ((Ty.array E).denote G eta) n W h (CallArguments.restArray extra) := by
   let S := listT ⟨[], [], some (E.denote G eta), false⟩
   apply bind_list [(S, .arrLit extra)] (by simp [S, listT_adm])
@@ -592,16 +592,18 @@ theorem array_collect_safe {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta)
   · intro p hp j hj U hx hu heap hok
     simp only [List.mem_singleton] at hp
     subst p
-    have he' := (elemPack_adm _).mono j _ U hx _ ((elemPack_adm _).down_le n j hj W _ he)
-    obtain ⟨vs, hvs, -, hf⟩ := he'
-    cases hvs
-    exact RestCalls.pack_alloc_safe (T := ⟨[], [], some (E.denote G eta), false⟩)
+    have he' := (ArgumentContracts.all_adm (Ty.denote_adm hC E)).transfer he j hj U hx
+    exact RestCalls.argument_alloc_safe (T := ⟨[], [], some (E.denote G eta), false⟩)
       (by
         intro i A hA
         rw [positionFam_elem] at hA
         cases hA
         exact Ty.denote_adm hC E)
-      hu hok (hf _ (List.mem_singleton_self _)) hvals
+      hu hok ⟨by simp, by simp, by
+        intro i v A hv hA
+        rw [positionFam_elem] at hA
+        cases hA
+        exact he' v (List.mem_of_getElem? hv)⟩ hvals
   · intro j hj U hx hu heap args hok hargs
     have hlen := ArgsT_length hargs
     apply make_fields_rule (As := [S]) (by simp [S, listT_adm]) j U heap .absent
@@ -630,7 +632,7 @@ theorem rest_invocation_of_inputs {G : NormalGraph Nat} {eta Gamma term n W rho}
       WorldAdm U → HeapOk j U heap →
       Safe (result.denote G eta) j U heap (instantiate 0 env term)) :
     RestCalls.RestSpec inputs.length (receiver.denote G eta) (inputs.map (Input.denote G eta))
-      (elemPack (element.denote G eta)) (result.denote G eta) n W
+      (ArgumentContracts.All (element.denote G eta)) (result.denote G eta) n W
       (instantiate (inputs.length + 2) rho term) := by
   apply RestCalls.restSpec_of_body (instantiate_scoped rho he.1 term (inputs.length + 2))
     (by simp) (Ty.denote_adm hC receiver) (by
@@ -702,7 +704,7 @@ def ClosureCertificate.Safe (G : NormalGraph Nat) (c : ClosureCertificate) : Pro
             n W (instantiate (c.inputs.length + 1) rho term)
         | some E => RestCalls.RestSpec c.inputs.length (c.receiver.denote G eta)
             (c.inputs.map (Input.denote G eta))
-            (elemPack (E.denote G eta)) (c.result.denote G eta) n W
+            (ArgumentContracts.All (E.denote G eta)) (c.result.denote G eta) n W
             (instantiate (c.inputs.length + 2) rho term)
 
 theorem ClosureCertificate.check_safe {G : NormalGraph Nat} (hG : Primitives G)

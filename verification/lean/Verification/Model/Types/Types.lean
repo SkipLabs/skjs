@@ -27,7 +27,10 @@ two spellings of one recursion are the same type.
 namespace Verification
 namespace Model
 
-abbrev Fam := (k : Nat) → WorldT k → Val → Prop
+/-- World-indexed predicates, shared by value and argument-list contracts. -/
+abbrev WorldFamily (α : Type) := (k : Nat) → WorldT k → α → Prop
+abbrev Fam := WorldFamily Val
+abbrev ArgFam := WorldFamily (List Val)
 
 /-- Every semantic type restricts to a contract at any level. The contract can
 observe only strictly lower levels; higher-level information is unavailable. -/
@@ -158,9 +161,9 @@ theorem ref_param_universal :
 def topF : Fam := fun _ _ _ => True
 
 /-- Inclusion of families, at every budget and world. -/
-def FamLe (A B : Fam) : Prop := ∀ (n : Nat) (W : WorldT n) (v : Val), A n W v → B n W v
+def FamLe {α : Type} (A B : WorldFamily α) : Prop := ∀ (n : Nat) (W : WorldT n) (v : α), A n W v → B n W v
 
-def Agree (T U : Fam) (n : Nat) : Prop := ∀ m, m < n → ∀ W v, T m W v ↔ U m W v
+def Agree {α : Type} (T U : WorldFamily α) (n : Nat) : Prop := ∀ m, m < n → ∀ W v, T m W v ↔ U m W v
 
 def Contractive (F : Fam → Fam) : Prop :=
   ∀ n T U, Agree T U n → ∀ W v, F T n W v ↔ F U n W v
@@ -281,8 +284,8 @@ theorem refT_mono (T : Fam) (k : Nat) (W W' : WorldT k) (h : WExt W W') (v : Val
 /-! ## Admissibility -/
 
 
-structure Adm (T : Fam) : Prop where
-  down : ∀ (n : Nat) (W : WorldT (n + 1)) (v : Val),
+structure Adm {α : Type} (T : WorldFamily α) : Prop where
+  down : ∀ (n : Nat) (W : WorldT (n + 1)) (v : α),
     T (n + 1) W v → T n (trunc n (Nat.le_succ n) W) v
   mono : ∀ (n : Nat) (W W' : WorldT n), WExt W W' → ∀ v, T n W v → T n W' v
 
@@ -747,8 +750,8 @@ theorem fix_adm (F : Fam → Fam) (hC : Contractive F) (hF : ∀ T, Adm T → Ad
 
 theorem R_adm : Adm R := fix_adm refT refT_contractive (fun T _ => refT_adm T)
 
-theorem Adm.down_le {A : Fam} (hA : Adm A) :
-    ∀ (n i : Nat) (h : i ≤ n) (W : WorldT n) (v : Val), A n W v → A i (trunc i h W) v := by
+theorem Adm.down_le {α : Type} {A : WorldFamily α} (hA : Adm A) :
+    ∀ (n i : Nat) (h : i ≤ n) (W : WorldT n) (v : α), A n W v → A i (trunc i h W) v := by
   intro n
   induction n with
   | zero =>
@@ -765,6 +768,18 @@ theorem Adm.down_le {A : Fam} (hA : Adm A) :
 
 /-! ## Types whose members are values -/
 
+
+/-- One admissibility operation for both values and argument lists. -/
+theorem Adm.transfer {α : Type} {A : WorldFamily α} (hA : Adm A)
+    {n W v} (h : A n W v) (j : Nat) (hj : j ≤ n) (U : WorldT j)
+    (hx : WExt (trunc j hj W) U) : A j U v :=
+  hA.mono j _ U hx v (hA.down_le n j hj W v h)
+
+theorem Adm.of_transfer {α : Type} {A : WorldFamily α}
+    (h : ∀ {n W v}, A n W v → ∀ j (hj : j ≤ n) U,
+      WExt (trunc j hj W) U → A j U v) : Adm A :=
+  ⟨fun n W v hv => h hv n (Nat.le_succ n) _ (WExt_refl _),
+   fun n W U hx v hv => h hv n (Nat.le_refl n) U (by simpa only [trunc_id] using hx)⟩
 
 /-- A type whose members are values. Needed wherever a term must beta-reduce or
 be stored. -/

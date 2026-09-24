@@ -1,4 +1,4 @@
-import Verification.Model.Semantics.Safety
+import Verification.Model.Semantics.ArgumentContracts
 /-!
 # Compatibility rules
 
@@ -36,17 +36,10 @@ theorem call_elim {L : List (Fam × List Fam × Fam)} {p : Fam × List Fam × Fa
     (hrv : isVal r = true) (hf : callsT L n W f) (hp : p ∈ L) (hr : p.1 n W r)
     (ha : ArgsT p.2.1 n W args)
     (hw : WorldAdm W) (hh : HeapOk n W heap) : Safe p.2.2 n W heap (.invoke f r args) := by
-  cases n with
-  | zero => trivial
-  | succ n =>
-    let U := trunc n (Nat.le_succ n) W
-    have hu : WorldAdm U := WorldAdm_trunc _ hw
-    have hh' : HeapOk n U heap := HeapOk_trunc n W heap hh
-    have ha' := ArgsT_transfer hA ha n (Nat.le_succ n) U (WExt_refl _)
-    have hr' : p.1 n U r := hR.down n W r hr
-    obtain ⟨body, hi, hs⟩ := callsT_invoke hf hp (Nat.lt_succ_self n)
-      (WExt_refl _) hu hh' hrv hr' hAv ha'
-    exact Or.inr ⟨U, heap, body, WExt_refl _, hu, hi.step heap, hh', hs⟩
+  exact ArgumentContracts.call_safe
+    (P := ArgsShort p.2.1)
+    (Adm.of_transfer (fun ha j hj U hx => ArgsShort_transfer hA ha j hj U hx)) hR
+    ⟨hf.1, hf.2 p hp⟩ hr hrv (ArgsT_values hAv ha) (ArgsShort_of_exact ha) hw hh
 
 /-- A ready call that omits trailing actuals. Every omitted position's contract
 admits `undefined`, which is the value the machine binds there, so the selected
@@ -57,17 +50,12 @@ theorem call_elim_short {L : List (Fam × List Fam × Fam)} {p : Fam × List Fam
     (hpad : ∀ a ∈ pad, a = .undef) (hrv : isVal r = true)
     (hf : callsT L n W f) (hp : p ∈ L) (hr : p.1 n W r) (ha : ArgsT p.2.1 n W (args ++ pad))
     (hw : WorldAdm W) (hh : HeapOk n W heap) : Safe p.2.2 n W heap (.invoke f r args) := by
-  cases n with
-  | zero => trivial
-  | succ n =>
-    let U := trunc n (Nat.le_succ n) W
-    have hu : WorldAdm U := WorldAdm_trunc _ hw
-    have hh' : HeapOk n U heap := HeapOk_trunc n W heap hh
-    have ha' := ArgsT_transfer hA ha n (Nat.le_succ n) U (WExt_refl _)
-    have hr' : p.1 n U r := hR.down n W r hr
-    obtain ⟨body, hi, hs⟩ := callsT_invoke_short hf hp (Nat.lt_succ_self n)
-      (WExt_refl _) hu hh' hrv hr' hpad hAv ha'
-    exact Or.inr ⟨U, heap, body, WExt_refl _, hu, hi.step heap, hh', hs⟩
+  exact ArgumentContracts.call_safe
+    (P := ArgsShort p.2.1)
+    (Adm.of_transfer (fun ha j hj U hx => ArgsShort_transfer hA ha j hj U hx)) hR
+    ⟨hf.1, hf.2 p hp⟩ hr hrv
+    (fun a hm => ArgsT_values hAv ha a (List.mem_append_left pad hm))
+    (ArgsShort_of_pad hpad ha) hw hh
 
 /-- Same-budget application compatibility, the rule needed for the fundamental
  theorem under semantic environments. Both values are available at the current
