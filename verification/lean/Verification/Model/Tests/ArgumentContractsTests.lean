@@ -7,10 +7,21 @@ callable graph, the shared array bound, and the old extra-delay counterexample. 
 namespace Verification.Model.ArgumentContractsTests
 open ArgumentContracts PositiveNormalization PositiveGraphs ModelBoundaries Tower
 
-/-- A constructor may take an object, even when its contract reads the world. -/
-example : ctorsT [([refT nulT], numT)] =
-    ctorRestsT [([], Fits ⟨[refT nulT], [], none, false⟩, numT)] :=
-  fixed_constructor_eq_rest _ _
+/-- A real graph tuple row taking an object supports fixed-constructor
+conversion, without the old stability restriction on the element type. -/
+example (η : MixedAssignment Nat) :
+    ctorsT [([refT nulT], numT)] = ctorRestsT [([], graphArguments
+      (.ofRows fun _ => [.pack ⟨[[1]], [], none, false⟩ []]) η
+      (fun _ => refT nulT) [0], numT)] := by
+  rw [graphArguments_pack _ _ _ _ _ _ rfl]
+  have shape : (fun n W vs => ∀ t ∈ [Tuple.mk [[1]] [] none false],
+      Fits (tupleFams (fun _ => refT nulT) t) n W vs) =
+      Fits ⟨[refT nulT], [], none, false⟩ := by
+    funext n W vs
+    apply propext
+    simp [tupleFams]
+  rw [shape]
+  exact fixed_constructor_eq_rest _ _
 
 /-- A callback argument may itself have an arbitrary higher-order contract. -/
 example (A B R : Fam) : ctorsT [([arrowT A B], R)] =
@@ -31,10 +42,10 @@ def recursive : PositiveGraphs.NormalGraph Nat := .ofRows fun
   | 0 => [.arrs [] [([1], [], [2], [1])]]
   | _ => [.num]
 
-def recursiveArgs (X : List Nat → Fam) (_ : List Nat) : ArgFam := ArgsT [X [0]]
+def recursiveArgs (_ : Assignment Nat) (X : List Nat → Fam) (_ : List Nat) : ArgFam := ArgsT [X [0]]
 
 theorem recursiveArgs_nonexp : ArgumentNonExp recursiveArgs := by
-  intro X Y n h S j hj W vs
+  intro η θ X Y n hη h S j hj W vs
   exact ArgsT_congr (.cons (h [0]) .nil) hj W vs
 
 example (n W v) :
@@ -56,10 +67,10 @@ def quantified : NormalGraph Nat := {
     binders := [2], bounds := [(2, [1])], signatures := [],
     variadic := [([3], [], [2], [2])] } else none }
 
-def singleArgument : ArgumentInterpreter Nat := fun X S => ArgsT [X S]
+def singleArgument : ArgumentInterpreter Nat := fun _ X S => ArgsT [X S]
 
 theorem singleArgument_nonexp : ArgumentNonExp singleArgument := by
-  intro X Y n h S j hj W vs
+  intro η θ X Y n hη h S j hj W vs
   exact ArgsT_congr (.cons (h S) .nil) hj W vs
 
 example (η : Assignment Nat) :
@@ -80,7 +91,8 @@ example (η : Assignment Nat) (n W v) :
 The same list contract appears in a constructor operand and trailing arguments;
 the same value contract is the constructor and call result. -/
 private def mixedScheme : SchemeRow Nat :=
-  { binders := [0,1], signatures := [], bounds := [(0, [2]), (1, [3])] }
+  { binders := [0,1], signatures := [], bounds := [(0, [2]), (1, [3])],
+    variadic := [([3], [[2]], [1], [0])] }
 
 private def closedTop : ValueFamily :=
   ⟨topT, ⟨⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩, fun _ _ _ h => h⟩⟩
@@ -91,12 +103,32 @@ private def closedArguments : ArgumentFamily :=
 private def mixedBound (_ : MixedAssignment Nat) (S : List Nat) : MixedFamily :=
   if S = [2] then .ofValue closedTop else .ofArguments closedArguments
 
+private def mixedGraph : NormalGraph Nat := {
+  rows := fun _ => [],
+  parameterKinds := fun i => if i = 0 then some .value else
+    if i = 1 then some .arguments else none }
+
+private def mixedValue (η : MixedAssignment Nat) (S : List Nat) : Fam :=
+  let R : Fam := fun n W v => η.1 0 n W (.inl v)
+  let P : ArgFam := fun n W vs => η.1 1 n W (.inr vs)
+  if S = [2] then ArgumentContracts.constructor P R else
+    if S = [0] then R else topT
+
+private theorem mixedValue_nonexp (η θ : MixedAssignment Nat) (n : Nat)
+    (h : ∀ p, Model.Agree (η.1 p) (θ.1 p) n) (S : List Nat) :
+    Model.Agree (mixedValue η S) (mixedValue θ S) n := by
+  intro j hj W v
+  unfold mixedValue
+  split
+  · exact constructor_congr (fun i hi U vs => h 1 i (by omega) U (.inr vs))
+      (fun i hi U u => h 0 i (by omega) U (.inl u)) W v
+  · split
+    · exact h 0 j hj W (.inl v)
+    · exact Iff.rfl
+
 private noncomputable def mixedBody (η : MixedAssignment Nat)
     (As : List MixedFamily) : Fam :=
-  let θ := assign η mixedScheme.binders As
-  let R : Fam := fun n W v => θ.1 0 n W (.inl v)
-  let P : ArgFam := fun n W vs => θ.1 1 n W (.inr vs)
-  restsT [(topT, [ArgumentContracts.constructor P R], P, R)]
+  instanceTWithArgs mixedValue η mixedScheme As (graphArguments mixedGraph)
 
 private noncomputable def quantifiedMixed (η : MixedAssignment Nat) : Fam :=
   boundedSem (k := .mixed) (fun θ S => (mixedBound θ S).1)
@@ -108,16 +140,10 @@ example (η : MixedAssignment Nat) : Adm (quantifiedMixed η) := by
   · intro S
     exact (mixedBound η S).2.1
   · intro As
-    exact restsT_adm _
+    exact instanceTWithArgs_adm _ _ _ _ _
   · intro As Bs m h W v
-    apply restsT_congr [()] (fun _ => _) (fun _ => _) _ W v
-    intro _ _
-    refine ⟨fun _ _ _ _ => Iff.rfl, .cons ?_ .nil,
-      fun j hj U vs => h 1 j hj U (.inr vs),
-      fun j hj U u => h 0 j hj U (.inl u)⟩
-    intro j hj U u
-    exact constructor_congr (fun i hi V vs => h 1 i (by omega) V (.inr vs))
-      (fun i hi V v => h 0 i (by omega) V (.inl v)) U u
+    exact instanceT_congrWithArgs _ (graphArguments_nonexp mixedGraph) h
+      (mixedValue_nonexp _ _ m h) W v
 
 /-- One checked substitution supplies an arbitrary value type and an arbitrary
 argument-list contract. No monomorphization or synthetic runtime pack occurs. -/
@@ -146,8 +172,11 @@ example (η : MixedAssignment Nat) (A : ValueFamily) (P : ArgumentFamily)
       | inr vs => exact P.2.2 n W vs hx
   have hi := PositiveRules.bounded_substitution_elim η F
     (fun θ S => (mixedBound θ S).1) mixedScheme [[4],[5]] (mixedBody η) rfl hb n W f hf
-  simpa [mixedBody, mixedScheme, F, assign_cons_head, assign_cons_ne, MixedFamily.ofValue, MixedFamily.ofArguments]
-    using hi
+  have rest := hi.2
+  simp only [instanceRestsWithArgs, mixedScheme, List.map_cons, List.map_nil] at rest
+  rw [graphArguments_parameter _ _ _ _ (by simp [mixedGraph])] at rest
+  simpa [mixedValue, F, assign_cons_head, assign_cons_ne,
+    MixedFamily.ofValue, MixedFamily.ofArguments] using rest
 
 /-- A real callback value that returns the wrong result. -/
 def badCallback : Tm := .objAt [] (.closure 1 .tru)

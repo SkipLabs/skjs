@@ -396,41 +396,131 @@ theorem agreeOff_assign {bs : List ι} {η η' : ParameterAssignment k ι} (h : 
   simp only [assign]
   split <;> simp [h p hp]
 
-/-- Argument interpretation at one assignment. The caller supplies the same
-value interpretation used for the signature's receiver, inputs and result. -/
-abbrev ArgumentInterpreter (ι : Type) := (List ι → Fam) → List ι → ArgFam
+/-- Argument contracts may read the current assignment directly, as well as
+recursive value meanings. This keeps a pack parameter independent of the
+value denotation of a graph row. -/
+abbrev ArgumentInterpreter (ι : Type) (k : ParameterSpace := .value) :=
+  ParameterAssignment k ι → (List ι → Fam) → List ι → ArgFam
 
-def legacyArguments : ArgumentInterpreter ι := fun D S => packArgs (D S)
+def legacyArguments : ArgumentInterpreter ι := fun _ D S => packArgs (D S)
 
-/-- Reading arguments adds no approximation guard of its own. -/
-def ArgumentNonExp (P : ArgumentInterpreter ι) : Prop :=
-  ∀ X Y n, (∀ S, Agree (X S) (Y S) n) → ∀ S, Agree (P X S) (P Y S) n
+/-- Neither grouping arguments nor reading a pack assignment adds a guard.
+Agreement must be preserved in both the assignment and recursive meanings. -/
+def ArgumentNonExp {k : ParameterSpace} (P : ArgumentInterpreter ι k) : Prop :=
+  ∀ η θ X Y n, (∀ p, Agree (η.1 p) (θ.1 p) n) →
+    (∀ S, Agree (X S) (Y S) n) → ∀ S, Agree (P η X S) (P θ Y S) n
 
 theorem legacyArguments_nonexp : ArgumentNonExp (legacyArguments (ι := ι)) :=
-  fun _ _ _ h S => packArgs_congr (h S)
+  fun _ _ _ _ _ _ h S => packArgs_congr (h S)
+
+/-- Interpret argument rows from their shapes and parameter assignments.
+Ordinary value rows and value parameters have no argument-list members.
+Tuple positions use the recursive value meanings at the current level. -/
+def graphArguments (G : NormalGraph ι) : ArgumentInterpreter ι .mixed :=
+  fun η X S n W vs => ∃ i ∈ S,
+    if G.parameterKinds i = some .arguments then η.1 i n W (.inr vs)
+    else ∃ c ∈ G i, match c with
+      | .pack a bs => ∀ t ∈ a :: bs, ArgumentContracts.Fits (tupleFams X t) n W vs
+      | _ => False
+
+/-- A pack parameter denotes its assigned list contract directly. -/
+theorem graphArguments_parameter (G : NormalGraph ι) (η : MixedAssignment ι)
+    (X : List ι → Fam) (i : ι) (h : G.parameterKinds i = some .arguments) :
+    graphArguments G η X [i] = fun n W vs => η.1 i n W (.inr vs) := by
+  funext n W vs
+  apply propext
+  simp [graphArguments, h]
+
+/-- A tuple row denotes its shapes at the current level, with no encoded
+value and no extra approximation delay. -/
+theorem graphArguments_pack (G : NormalGraph ι) (η : MixedAssignment ι)
+    (X : List ι → Fam) (i : ι) (a : Tuple (List ι)) (bs : List (Tuple (List ι)))
+    (h : G i = [.pack a bs]) :
+    graphArguments G η X [i] = fun n W vs =>
+      ∀ t ∈ a :: bs, ArgumentContracts.Fits (tupleFams X t) n W vs := by
+  have hp : G.parameterKinds i ≠ some .arguments := by
+    intro hp
+    have hplain := NormalGraph.plain_of_clauses (G := G) (i := i)
+      (show Clause.pack a bs ∈ G i by rw [h]; simp)
+    simp [NormalGraph.plain, NormalGraph.params, hp] at hplain
+  funext n W vs
+  apply propext
+  simp [graphArguments, hp, h]
+
+theorem graphArguments_nonexp (G : NormalGraph ι) : ArgumentNonExp (graphArguments G) := by
+  intro η θ X Y n hη hX S j hj W vs
+  unfold graphArguments
+  apply exists_congr fun i => and_congr Iff.rfl ?_
+  split
+  · exact hη i j hj W (.inr vs)
+  · apply exists_congr fun c => and_congr Iff.rfl ?_
+    cases c <;> try exact Iff.rfl
+    rename_i a bs
+    exact forall_congr' fun t => forall_congr' fun _ =>
+      arguments_congr X Y t j (fun a v => hX a j hj W v) vs
+
+/-- Argument rows produce admissible contracts on closed lists, so they may
+serve as genuine pack substitutions rather than as ordinary value types. -/
+theorem graphArguments_valid (G : NormalGraph ι) (η : MixedAssignment ι)
+    (X : List ι → Fam) (hX : ∀ S, ValueFam (X S)) (S : List ι) :
+    ParameterValid .arguments (graphArguments G η X S) := by
+  have position : ∀ t i A, positionFam (tupleFams X t) i = some A → ValueFam A := by
+    intro t i A h
+    rw [positionFam_tupleFams] at h
+    cases hp : t.position i <;> simp [hp] at h
+    subst h
+    exact hX _
+  constructor
+  · apply Adm.of_transfer
+    intro n W vs h j hj U hx
+    obtain ⟨i, hi, h⟩ := h
+    refine ⟨i, hi, ?_⟩
+    by_cases hp : G.parameterKinds i = some .arguments
+    · simp only [hp, ite_true] at h ⊢
+      exact (η.2 i).1.transfer h j hj U hx
+    · simp only [hp, Bool.false_eq_true, ite_false] at h ⊢
+      obtain ⟨c, hc, h⟩ := h
+      refine ⟨c, hc, ?_⟩
+      cases c <;> try exact h.elim
+      rename_i a bs
+      intro t ht
+      exact (ArgumentContracts.fits_adm (fun i A hA => (position t i A hA).1)).transfer
+        (h t ht) j hj U hx
+  · intro n W vs h
+    obtain ⟨i, hi, h⟩ := h
+    by_cases hp : G.parameterKinds i = some .arguments
+    · simp only [hp, ite_true] at h
+      exact (η.2 i).2 n W (.inr vs) h
+    · simp only [hp, Bool.false_eq_true, ite_false] at h
+      obtain ⟨c, hc, h⟩ := h
+      cases c <;> try exact h.elim
+      rename_i a bs
+      exact ArgumentContracts.fits_bound
+        (fun i A hA n W v hv => (position a i A hA).2 n W v hv)
+        (h a List.mem_cons_self)
 
 /-- One instance's signatures, their rows read at the reassignment. -/
-noncomputable def instanceSigs (D : Assignment ι → List ι → Fam) (η : Assignment ι)
-    (s : SchemeRow ι) (As : List ValueFamily) : List (Fam × List Fam × Fam) :=
+noncomputable def instanceSigs (D : ParameterAssignment k ι → List ι → Fam) (η : ParameterAssignment k ι)
+    (s : SchemeRow ι) (As : List (ParameterFamily k)) : List (Fam × List Fam × Fam) :=
   let η' := assign η s.binders As
   s.signatures.map fun p => (D η' p.1, p.2.1.map (D η'), D η' p.2.2)
 
 /-- One instance's variadic signatures, their rows read at the reassignment. -/
-noncomputable def instanceRestsWithArgs (D : Assignment ι → List ι → Fam) (η : Assignment ι)
-    (s : SchemeRow ι) (As : List ValueFamily)
-    (P : ArgumentInterpreter ι) : List (Fam × List Fam × ArgFam × Fam) :=
+noncomputable def instanceRestsWithArgs (D : ParameterAssignment k ι → List ι → Fam) (η : ParameterAssignment k ι)
+    (s : SchemeRow ι) (As : List (ParameterFamily k))
+    (P : ArgumentInterpreter ι k) : List (Fam × List Fam × ArgFam × Fam) :=
   let η' := assign η s.binders As
-  s.variadic.map fun p => (D η' p.1, p.2.1.map (D η'), P (D η') p.2.2.1, D η' p.2.2.2)
+  s.variadic.map fun p => (D η' p.1, p.2.1.map (D η'), P η' (D η') p.2.2.1, D η' p.2.2.2)
 
 /-- One instance's contract: its fixed and its variadic signatures, as a call
 clause's are. -/
-noncomputable def instanceTWithArgs (D : Assignment ι → List ι → Fam) (η : Assignment ι)
-    (s : SchemeRow ι) (As : List ValueFamily)
-    (P : ArgumentInterpreter ι) : Fam :=
+noncomputable def instanceTWithArgs (D : ParameterAssignment k ι → List ι → Fam) (η : ParameterAssignment k ι)
+    (s : SchemeRow ι) (As : List (ParameterFamily k))
+    (P : ArgumentInterpreter ι k) : Fam :=
   interT (callsT (instanceSigs D η s As)) (restsT (instanceRestsWithArgs D η s As (P := P)))
 
-theorem instanceTWithArgs_adm (D : Assignment ι → List ι → Fam) (η : Assignment ι) (s : SchemeRow ι)
-    (As : List ValueFamily) (P : ArgumentInterpreter ι) :
+theorem instanceTWithArgs_adm (D : ParameterAssignment k ι → List ι → Fam) (η : ParameterAssignment k ι) (s : SchemeRow ι)
+    (As : List (ParameterFamily k)) (P : ArgumentInterpreter ι k) :
     Adm (instanceTWithArgs D η s As (P := P)) :=
   interT_adm _ _ (callsT_adm _) (restsT_adm _)
 
@@ -445,15 +535,16 @@ private theorem argsAgree_of {X Y : List ι → Fam} {m : Nat} (h : ∀ S, Agree
   | S :: Ss => .cons (h S) (argsAgree_of h Ss)
 
 /-- Instances whose rows agree below `m` have contracts agreeing there. -/
-theorem instanceT_congrWithArgs (P : ArgumentInterpreter ι) (hP : ArgumentNonExp P) {D D' : Assignment ι → List ι → Fam} {η η' : Assignment ι}
-    {s : SchemeRow ι} {As As' : List ValueFamily} {m : Nat}
+theorem instanceT_congrWithArgs (P : ArgumentInterpreter ι k) (hP : ArgumentNonExp P) {D D' : ParameterAssignment k ι → List ι → Fam} {η η' : ParameterAssignment k ι}
+    {s : SchemeRow ι} {As As' : List (ParameterFamily k)} {m : Nat}
+    (hη : ∀ p, Agree ((assign η s.binders As).1 p) ((assign η' s.binders As').1 p) m)
     (h : ∀ S, Agree (D (assign η s.binders As) S) (D' (assign η' s.binders As') S) m)
     (W : WorldT m) (v : Val) :
     instanceTWithArgs D η s As (P := P) m W v ↔ instanceTWithArgs D' η' s As' (P := P) m W v := by
   unfold instanceTWithArgs instanceSigs instanceRestsWithArgs interT
   exact and_congr
     (callsT_congr s.signatures _ _ (fun p _ => ⟨h p.1, argsAgree_of h p.2.1, h p.2.2⟩) W v)
-    (restsT_congr s.variadic _ _ (fun p _ => ⟨h p.1, argsAgree_of h p.2.1, hP _ _ m h p.2.2.1, h p.2.2.2⟩) W v)
+    (restsT_congr s.variadic _ _ (fun p _ => ⟨h p.1, argsAgree_of h p.2.1, hP _ _ _ _ m hη h p.2.2.1, h p.2.2.2⟩) W v)
 
 /-- An instance is bounded below `n`: each bounded binder's family lies below
 its bound at every level under `n`. Only levels below `n` are read, which keeps
@@ -490,7 +581,7 @@ noncomputable def qLayerWithArgs (G : NormalGraph ι) (X : Assignment ι × ι �
   match G.schemes ηi.2 with
   | some s => schemeSemWithArgs (fun η' S => setSem (fun l => X (η', l)) S) ηi.1 s (P := P)
   | none => setSem (semWithArgs (setSem fun l => X (ηi.1, l))
-      (P (setSem fun l => X (ηi.1, l)))) (G ηi.2)
+      (P ηi.1 (setSem fun l => X (ηi.1, l)))) (G ηi.2)
 
 noncomputable def qLayer (G : NormalGraph ι) (X : Assignment ι × ι → Fam) :
     Assignment ι × ι → Fam := qLayerWithArgs G X legacyArguments
@@ -501,12 +592,7 @@ theorem normalLayer_congr (G : NormalGraph ι) : LayerCongr (normalLayer G) := b
   · exact (sem_congr _ _ n (fun a => setSem_congr n h a) c W v).mp hv
   · exact (sem_congr _ _ n (fun a => setSem_congr n h a) c W v).mpr hv
 
-private theorem argsAgree_map {n : Nat} (X Y : ι → Fam) (h : ∀ l, Agree (X l) (Y l) n) :
-    ∀ Ss : List (List ι), ArgsAgree n (Ss.map (setSem X)) (Ss.map (setSem Y))
-  | [] => .nil
-  | S :: Ss => .cons (setSem_congr n h S) (argsAgree_map X Y h Ss)
-
-theorem Agree.mono {A B : Fam} {n m : Nat} (h : Agree A B n) (hm : m ≤ n) : Agree A B m :=
+theorem Agree.mono {A B : WorldFamily α} {n m : Nat} (h : Agree A B n) (hm : m ≤ n) : Agree A B m :=
   fun k hk W v => h k (by omega) W v
 
 theorem argsAgree_mono {As Bs : List Fam} {n m : Nat} (h : ArgsAgree n As Bs) (hm : m ≤ n) :
@@ -527,8 +613,8 @@ theorem qLayer_congrWithArgs (G : NormalGraph ι) (P : ArgumentInterpreter ι)
     | none =>
       have hS := fun S => setSem_congr n (fun l => h (η, l)) S
       constructor <;> rintro ⟨c, hc, hv⟩ <;> refine ⟨c, hc, ?_⟩
-      · exact (semWithArgs_congr _ _ _ _ n hS (hP _ _ n hS) c W v).mp hv
-      · exact (semWithArgs_congr _ _ _ _ n hS (hP _ _ n hS) c W v).mpr hv
+      · exact (semWithArgs_congr _ _ _ _ n hS (hP η η _ _ n (fun _ _ _ _ _ => Iff.rfl) hS) c W v).mp hv
+      · exact (semWithArgs_congr _ _ _ _ n hS (hP η η _ _ n (fun _ _ _ _ _ => Iff.rfl) hS) c W v).mpr hv
     | some s =>
       refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun _ => ?_)
       refine imp_congr ?_ ?_
@@ -537,7 +623,7 @@ theorem qLayer_congrWithArgs (G : NormalGraph ι) (P : ArgumentInterpreter ι)
           forall_congr' fun j => forall_congr' fun hj => forall_congr' fun U =>
           forall_congr' fun u => imp_congr Iff.rfl ?_
         exact setSem_congr n (fun l => h (_, l)) b.2 j hj U u
-      · exact instanceT_congrWithArgs P hP (fun S => setSem_congr n (fun l => h (_, l)) S) W v
+      · exact instanceT_congrWithArgs P hP (fun _ _ _ _ _ => Iff.rfl) (fun S => setSem_congr n (fun l => h (_, l)) S) W v
 
 /-! ### Non-expansiveness in the assignment
 
@@ -638,13 +724,6 @@ theorem qLayer_invWithArgs (G : NormalGraph ι) (P : ArgumentInterpreter ι)
   have sets : ∀ (η η' : Assignment ι) m, (∀ p, Agree (η.1 p) (η'.1 p) m) → ∀ S,
       Agree (setSem (fun l => X (η, l)) S) (setSem (fun l => X (η', l)) S) m :=
     fun η η' m h S => setSem_congr m (fun l => hne η η' l m h) S
-  have args : ∀ (η η' : Assignment ι) m, (∀ p, Agree (η.1 p) (η'.1 p) m) →
-      ∀ Ss : List (List ι), ArgsAgree m (Ss.map (setSem fun l => X (η, l)))
-        (Ss.map (setSem fun l => X (η', l))) := by
-    intro η η' m h Ss
-    induction Ss with
-    | nil => exact .nil
-    | cons S Ss ih => exact .cons (sets η η' m h S) ih
   -- Reassigning the same binders keeps agreement.
   have reassign : ∀ (η η' : Assignment ι) (bs : List ι) (As : List ValueFamily) m,
       (∀ p, Agree (η.1 p) (η'.1 p) m) →
@@ -667,7 +746,7 @@ theorem qLayer_invWithArgs (G : NormalGraph ι) (P : ArgumentInterpreter ι)
       | some s =>
         exact boundedSem_adm _ η s _ (hD η)
           (fun As => instanceTWithArgs_adm _ η s As P)
-          (fun As Bs m h W v => instanceT_congrWithArgs P hP (fun S => sets _ _ m h S) W v)
+          (fun As Bs m h W v => instanceT_congrWithArgs P hP h (fun S => sets _ _ m h S) W v)
   · -- non-expansive
     intro k hk W v
     unfold qLayerWithArgs
@@ -680,11 +759,11 @@ theorem qLayer_invWithArgs (G : NormalGraph ι) (P : ArgumentInterpreter ι)
         · rintro ⟨c, hc, hv⟩
           exact ⟨c, hc, (semWithArgs_congr _ _ _ _ k
             (fun a => Agree.mono (sets η η' m h a) (by omega))
-            (hP _ _ k (fun a => Agree.mono (sets η η' m h a) (by omega))) c W v).mp hv⟩
+            (hP η η' _ _ k (fun p => Agree.mono (h p) (by omega)) (fun a => Agree.mono (sets η η' m h a) (by omega))) c W v).mp hv⟩
         · rintro ⟨c, hc, hv⟩
           exact ⟨c, hc, (semWithArgs_congr _ _ _ _ k
             (fun a => Agree.mono (sets η η' m h a) (by omega))
-            (hP _ _ k (fun a => Agree.mono (sets η η' m h a) (by omega))) c W v).mpr hv⟩
+            (hP η η' _ _ k (fun p => Agree.mono (h p) (by omega)) (fun a => Agree.mono (sets η η' m h a) (by omega))) c W v).mpr hv⟩
       | some s =>
         refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun _ => ?_)
         have hre := reassign η η' s.binders As m h
@@ -694,7 +773,7 @@ theorem qLayer_invWithArgs (G : NormalGraph ι) (P : ArgumentInterpreter ι)
             forall_congr' fun j => forall_congr' fun hj => forall_congr' fun U =>
             forall_congr' fun u => imp_congr (hre b.1 j (by omega) U u)
               (sets η η' m h b.2 j (by omega) U u)
-        · exact instanceT_congrWithArgs P hP (fun S => Agree.mono (sets _ _ m hre S) (by omega)) W v
+        · exact instanceT_congrWithArgs P hP (fun p => Agree.mono (hre p) (by omega)) (fun S => Agree.mono (sets _ _ m hre S) (by omega)) W v
 
 /-- One assignment-indexed fixed point for both value and argument
 interpretations. The latter's agreement law supplies no extra delay. -/
@@ -819,6 +898,7 @@ theorem transport_inclusion (G : Graph ι) (S T : List ι)
     FamLe (setSem (denote G) S) (setSem (denote G) T) := by
   simpa only [normalize_recursive] using h
 
+#print axioms graphArguments_valid
 #print axioms boundedSem_adm
 #print axioms qDenoteWithArgs_unfold
 #print axioms qDenoteWithArgs_adm

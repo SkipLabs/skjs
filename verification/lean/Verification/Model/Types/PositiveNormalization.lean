@@ -461,6 +461,19 @@ theorem Tuple.position_none {t : Tuple α} {i : Nat} (h : t.position i = none) :
   simp only [hi, if_true] at h
   exact ⟨hi, h⟩
 
+/-- Current-level tuple membership preserves current-level agreement. -/
+theorem arguments_congr (X Y : α → Fam) (t : Tuple α) (n : Nat) {W : WorldT n}
+    (h : ∀ a v, X a n W v ↔ Y a n W v) (vs : List Val) :
+    ArgumentContracts.Fits (tupleFams X t) n W vs ↔
+      ArgumentContracts.Fits (tupleFams Y t) n W vs := by
+  apply TupleFits.congr (by simp [tupleFams]) (by simp [tupleFams]) (by simp [tupleFams])
+  intro i
+  simp only [positionFam_tupleFams]
+  refine ⟨by simp, fun A B hA hB v => ?_⟩
+  cases hp : t.position i <;> simp [hp] at hA hB
+  subst hA; subst hB
+  exact h _ v
+
 /-- An argument list's fit to a tuple contract depends on the labels' meanings
 only below the budget. -/
 theorem pack_congr_below (X Y : α → Fam) (t : Tuple α) (n : Nat)

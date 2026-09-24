@@ -1827,12 +1827,34 @@ uses the same elimination theorem. The remaining value-specific part is the
 interpretation supplied by `inst_sound` and the graph-row image proof
 (`table_row`), not a second implementation of bound checking.
 
-The recursive graph's production environment still assigns **value families**.
-Its argument interpreter receives only that environment. Selecting another
-`ArgumentInterpreter` is therefore not by itself enough to finish this
-migration; extracting a list contract by applying an assigned value family to
-`.args` would retain the encoding being retired. The shared sorted algebra and
-quantifier proof do not yet migrate graph rows or their certificates.
+Signature interpretation now works over either the value or mixed assignment
+space. `ArgumentInterpreter` receives the assignment directly, alongside the
+recursive value meanings; its agreement law covers both inputs. The mixed
+control uses production `instanceTWithArgs` instead of a separately written
+signature body.
+
+`graphArguments` supplies the same-level interpretation of the existing graph
+rows: an argument parameter reads its assigned list contract; a tuple-pack row
+checks its elements at the current level; value rows admit no lists. Its
+parameter/tuple equations, agreement law, and admissibility/closedness are
+proved. The constructor conversion control now uses an actual object-valued
+graph tuple row through this interpreter.
+
+The recursive graph's production environment still assigns **value families**,
+and its entry point still selects `legacyArguments`. It cannot yet select the
+mixed `graphArguments` interpreter: that requires changing the fixed-point
+assignment domain and the row-image proof together. Extracting a list contract
+by applying an assigned value family to `.args` would retain the encoding being
+retired. The shared signature and graph-argument interpreters do not yet migrate
+production quantified certificates.
+
+The remaining fixed point must be indexed by the mixed assignment, while its
+recursive outputs remain value meanings. Argument meanings are derived by
+`graphArguments` from those outputs at the same level; they must not be given
+an extra recursive unfolding of their own. Otherwise the migration would
+reintroduce the very delay that breaks the object/callback conversion. The
+row-image proof must accordingly establish value images and then argument
+images at each level, with the latter using the former's current-level result.
 
 The remaining graph assignment/substitution change must retain a pack's list
 contract and the coherent array interpretation used by collection and array
@@ -1925,6 +1947,7 @@ The remaining integration boundary is explicit:
 | Producer value/pack substitution distinction | Implemented internally | Packs cannot be value-type atoms; cross-kind substitution is refused; the wire still uses legacy pack rows. |
 | Source binder roles | Implemented | Structural, scope-aware classification; value/pack bindings have distinct lowering paths; mixed uses remain opaque. |
 | Sorted assignment and universal quantification algebra | Proved and shared with production value schemes | Reassignment and bound restriction support mixed substitutions; a universal control shares its list contract across constructor/rest positions and its value contract across both results. |
+| Mixed signatures and graph argument interpretation | Proved in the shared implementation | Pack parameters read list assignments; tuple rows use current-level value meanings; mixed universal elimination uses the production signature interpreter. |
 | Quantified pack substitution in the Lean graph | Pending | A pack argument is instantiated as a list contract, not by the old ordinary-value `meaning` of a pack row; bounds and both uses of the binder agree. |
 | Source/evidence migration and retirement | Pending | Decoders, producer export, substitution certificates and coverage select that interpretation; retire `packArgs`, the ordinary `pack` encoding and `StableTy` guards. |
 | Motivating source coverage | Pending | Object/callback dependencies verify end to end; wrong actuals remain rejected; report the original framework client's independent gaps separately. |

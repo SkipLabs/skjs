@@ -1112,9 +1112,12 @@ bounded value parameters. The shared assignment and bounded-quantification
 proofs now support mixed value and argument-list substitutions, using a tagged
 semantic sum rather than a runtime pack value. A semantic control instantiates
 both a value result type and a pack shared by a constructor and trailing
-arguments in one universal substitution. Graph integration is still pending: the production argument
-interpreter can only read a value environment, and its certificates still
-instantiate pack rows through that environment.
+arguments in one universal substitution. The shared signature interpreter now
+consumes mixed assignments, and
+`graphArguments` interprets tuple rows and pack parameters as same-level list
+contracts. Production integration is still pending: the recursive graph's
+fixed point uses a value-only assignment domain, and its certificates still
+instantiate pack rows through the legacy environment.
 The producer now distinguishes value and pack substitutions internally and uses
 one pack encoder for homogeneous and tuple rests. Its wire output still uses
 the existing pack rows, so this is not the verifier migration. The universal

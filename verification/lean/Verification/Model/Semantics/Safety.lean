@@ -916,24 +916,38 @@ theorem packT_append (Ts Us : List TupleF) (k : Nat) (W : WorldT k) (v : Val) :
     cases he
     exact ⟨vs, rfl, hs, fun T hT => (List.mem_append.mp hT).elim (hf T) (hg T)⟩
 
-/-- Contracts whose lengths match and whose positions agree below the budget
-admit the same lists. -/
+/-- Equal shapes with equivalent position predicates admit the same lists.
+The predicate determines whether membership is current-level or delayed. -/
+theorem TupleFits.congr {P Q : Fam → Val → Prop} {T T' : TupleF} {vs}
+    (hreq : T.required.length = T'.required.length) (hopt : T.optional.length = T'.optional.length)
+    (hrest : T.rest = none ↔ T'.rest = none)
+    (hpos : ∀ i, (positionFam T i = none ↔ positionFam T' i = none) ∧
+      ∀ A B, positionFam T i = some A → positionFam T' i = some B → ∀ v, P A v ↔ Q B v) :
+    TupleFits P T vs ↔ TupleFits Q T' vs := by
+  unfold TupleFits
+  rw [hreq, hopt, hrest]
+  refine and_congr Iff.rfl (and_congr Iff.rfl ⟨fun h i u B hu hB => ?_,
+    fun h i u A hu hA => ?_⟩)
+  · cases hA : positionFam T i with
+    | none => rw [(hpos i).1.mp hA] at hB; cases hB
+    | some A => exact ((hpos i).2 A B hA hB u).mp (h i u A hu hA)
+  · cases hB : positionFam T' i with
+    | none => rw [(hpos i).1.mpr hB] at hA; cases hA
+    | some B => exact ((hpos i).2 A B hA hB u).mpr (h i u B hu hB)
+
+/-- The legacy delayed interpretation is an instance of tuple congruence. -/
 theorem PackFits.congr {T T' : TupleF} {n W vs}
     (hreq : T.required.length = T'.required.length) (hopt : T.optional.length = T'.optional.length)
     (hrest : T.rest = none ↔ T'.rest = none)
     (hpos : ∀ i, (positionFam T i = none ↔ positionFam T' i = none) ∧
       ∀ A B, positionFam T i = some A → positionFam T' i = some B → Agree A B n) :
     PackFits T n W vs ↔ PackFits T' n W vs := by
-  unfold PackFits TupleFits
-  rw [hreq, hopt, hrest]
-  refine and_congr Iff.rfl (and_congr Iff.rfl ⟨fun h i u B hu hB j hj U hx => ?_,
-    fun h i u A hu hA j hj U hx => ?_⟩)
-  · cases hA : positionFam T i with
-    | none => rw [(hpos i).1.mp hA] at hB; cases hB
-    | some A => exact ((hpos i).2 A B hA hB j hj U u).mp (h i u A hu hA j hj U hx)
-  · cases hB : positionFam T' i with
-    | none => rw [(hpos i).1.mpr hB] at hA; cases hA
-    | some B => exact ((hpos i).2 A B hA hB j hj U u).mpr (h i u B hu hB j hj U hx)
+  apply TupleFits.congr hreq hopt hrest
+  intro i
+  refine ⟨(hpos i).1, fun A B hA hB v => ?_⟩
+  constructor <;> intro h j hj U hx
+  · exact ((hpos i).2 A B hA hB j hj U v).mp (h j hj U hx)
+  · exact ((hpos i).2 A B hA hB j hj U v).mpr (h j hj U hx)
 
 /-- The pack an element rest `E[]` denotes: any number of actuals at `E`. -/
 def elemPack (E : Fam) : Fam := packT [⟨[], [], some E, false⟩]
