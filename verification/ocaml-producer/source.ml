@@ -180,12 +180,19 @@ let rec source_type ctx j =
   | "binder" -> (match List.assoc_opt (text "name" j) ctx.bindings with
     | Some t -> t | None -> fail "unbound rigid parameter")
   | "intersection" ->
-    (* Function operands are one overloaded callable; other operands need the
-       source graph's conjunction, which the proposal does not model. *)
-    let calls = List.concat_map (fun part -> match recur part with
-      | Atoms [Shape {fields=[];string_index=None;calls;elements=None}] when calls <> [] -> calls
-      | _ -> unsupported "intersection needs source graph conjunction") (items "parts" j) in
-    Atoms [Shape {fields=[];string_index=None;calls;elements=None}]
+    (* Function operands are one overloaded callable. A type parameter's
+       intersection with another type, `V & DepSafe`, is proposed as the
+       parameter: its instances are what the declarations call it at, and Lean
+       lowers and checks the whole intersection. Other operands need the source
+       graph's conjunction, which the proposal does not model. *)
+    let parts = List.map recur (items "parts" j) in
+    (match List.find_opt (function Rigid _ -> true | _ -> false) parts with
+     | Some rigid -> rigid
+     | None ->
+       let calls = List.concat_map (function
+         | Atoms [Shape {fields=[];string_index=None;calls;elements=None}] when calls <> [] -> calls
+         | _ -> unsupported "intersection needs source graph conjunction") parts in
+       Atoms [Shape {fields=[];string_index=None;calls;elements=None}])
   | k -> unsupported ("type term " ^ k)
 type literal = LNull | LUndefined | LBool of bool | LNumber of string | LString of string
 let literal j = match text "a" j with

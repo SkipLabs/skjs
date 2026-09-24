@@ -1036,7 +1036,10 @@ number the pack holds; its negatives refuse a string outside the bound and a
 constructor needing more actuals than the rest). A fixed construct or call
 signature meets a tuple rest only when the tuple's positions are stable
 (primitives, literals, `unknown`). F-bounded binders and methods whose
-unfolding keeps growing stay opaque members.
+unfolding keeps growing stay opaque members. The runtime API's
+`V & DepSafe` is proposed as its parameter, which Lean lowers and checks
+whole; what stops `sum.ts`'s mappers now is their bodies, which return an array
+as an `Iterable`: arrays as library objects.
 
 `TypeSchemes.lean` is an older, separate scheme layer for local generic
 closures (with bounds and rest signatures, outside the graph). Scheme rows
