@@ -1849,6 +1849,100 @@ rigid parameter as a value parameter, admitting no argument list; production
 generic plans go through `GenericCertificate`, which reads homogeneous rests
 directly (`All`).
 
+### Method members are host-relative
+
+**Principle (D0).** A method member's contract is relative to its host:
+reading `m` from `o` and invoking it **with receiver `o`** and admitted
+actuals behaves as typed. It promises nothing for any other receiver. This is
+self-application, as in Abadi and Cardelli's object calculus. Method-call
+syntax already lowers to exactly this shape: read the member from the saved
+object, then invoke it with that object as receiver.
+
+Formally, with `M = (f, L, S)` a member named `f` with fixed signatures
+`L = [(Ps, R)]` and variadic signatures `S = [(Ps, P, R)]`, none of which
+carries a receiver:
+
+```text
+methodT(M)(k, W, v) ⇔ every value u a read of f on v yields satisfies, below k,
+    callsT [({v}, Ps, R) | (Ps, R) ∈ L](u) ∧ restsT [({v}, Ps, P, R) | (Ps, P, R) ∈ S](u)
+```
+
+The receiver family is the singleton `{v}`: the host, fixed when the member is
+read. Arguments may mutate the host before the invoke, but every field keeps
+its location contract, so the pair (value read, host) keeps its contract under
+world extension. An own member is read from the object's location, so its
+location contract implies the host-relative family. A library member (the
+array prototype) is read from an ambient, immutable library object.
+
+**Forced consequences.** Each of these follows from D0 and soundness; none is
+a choice.
+
+- *A method is not a function-typed property.* `m(): R` is host-relative;
+  `f: () => R` is a function valid for any receiver. The property covers the
+  method, never the reverse:
+  ```ts
+  class C { x = 1; m() { return this.x; } }
+  const p: { m: () => number } = new C();   // refused (TypeScript accepts)
+  const g = p.m; g();                        // TypeError at run time
+  ```
+- *Extraction gets nothing from the member contract.* `const f = o.m`,
+  `xs.forEach(o.m)` and `p.then(this.handle)` call the method on another
+  receiver. The supported forms are `o.m.bind(o)`, whose bound descriptor
+  makes the member valid for any receiver, and class-field arrows
+  (`handle = () => { … }`), which capture `this` lexically.
+- *Method parameters are contravariant.* TypeScript's method bivariance is
+  refused:
+  ```ts
+  interface Handler<T> { handle(x: T): void }
+  const h: Handler<Dog> = { handle(d) { d.bark(); } };
+  const ha: Handler<Animal> = h;   // refused (TypeScript accepts)
+  ha.handle({});                    // TypeError at run time
+  ```
+- *Interfaces with method members are covariant in results.* The receiver no
+  longer occurs contravariantly, so `Iterable<Dog> ≤ Iterable<Animal>` and a
+  class instance below an interface it structurally meets are derivable.
+- *Arrays meet `Iterable<T>` semantically.* The prototype's `values()`,
+  invoked on its host array, reads that array's store, whose read view gives
+  `T`. On another receiver the claim is false: `{ length: 1, 0: "x" }` yields
+  `"x"`.
+- *Class method bodies are checked for every receiver in the instance type.*
+  That implies the host-relative member, so inherited methods need nothing
+  more.
+- *Objects passed to library code carry a library obligation.* Our guarantee
+  covers the library invoking a member on its host. Each trusted library entry
+  states that it does: GetIterator for `for…of` and spread, `JSON.stringify`
+  calling `toJSON`, the Skip runtime calling `mapEntry`.
+
+**Decisions.**
+
+- *Method members are read-only views.* A write to a method member is refused,
+  so interface method signatures and class methods are views, and a view's
+  variance is covariant. This refuses the bind-in-constructor idiom
+  (`this.onClick = this.onClick.bind(this)`), monkey patching and prototype
+  mixins; the class-field arrow replaces the first.
+  *Possible extension:* writable method members with host-indexed location
+  contracts. The location's contract would depend on its owning object, which
+  needs an ownership invariant (each location belongs to one object) in the
+  heap semantics.
+- *Extraction stays refused.* A library member is receiver-independent only
+  where its trusted specification says so; no member is assumed to be.
+- *Mutable arrays are invariant.* `Dog[]` is not an `Animal[]`; the accepted
+  language asks for `readonly Animal[]` where only reads happen. This follows
+  from the store semantics and is not relaxed by inference.
+- *An explicit `this` parameter* in a member (`m(this: Window)`) is
+  receiver-quantified over its declared type, which implies the host-relative
+  member.
+- *Only a member named by a known key is a member call.* `o[k]()` with a
+  dynamic `k` determines no member, so no member contract applies.
+
+**Representation.** The object clauses (`refs`, `dict`, `callable`) gain a
+method component: members with receiver-free signatures, whose operands are
+rows as in `arrs`. Conjunction concatenates methods. A target method is
+covered by a source method of the same name (parameters contravariant, results
+covariant), or by a source function-valued property whose signatures admit
+every receiver. A method call `o.m(args)` is typed by the member read from `o`
+and invoked with `o`.
+
 ### Next object milestone
 
 Multi-field objects are finite maps from property keys to locations, fixed at
