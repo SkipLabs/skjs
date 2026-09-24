@@ -32,7 +32,8 @@ private def imageGraph : NormalGraph Nat := {
     | 2 => [.refs [(valueField, [4])] [] []]
     | 3 => [.pack ⟨[[2]], [], none, false⟩ []]
     | _ => [.nul]
-  parameterKinds := fun i => if i = 1 then some .value else none }
+  parameterKinds := fun i => if i = 1 then some .value else
+    if i = 5 then some .arguments else none }
 
 private def imageContext : PositiveRules.Ctx Nat := [(1, [2])]
 private def imageTable : PositiveRules.InstTable Nat :=
@@ -73,6 +74,20 @@ example (μ ν : MixedAssignment Nat) (n : Nat) (W : WorldT n) (vs : List Val) :
       (1, imageContext, [2]) (by decide) hrel W v
     simpa [qMeaning, setSem] using hi
   · intro v; simp [qMeaning, setSem]
+
+/-- One checked substitution supplies an object value type and a whole tuple
+of objects. Its selected relation uses the graph meaning for both binders. -/
+example (η : MixedAssignment Nat) (S : List Nat) :
+    PositiveRules.RelKWith imageGraph (mixedParameters imageGraph) [(1, [2]), (5, [3])] S
+      (assign η [1,5] ([ [2], [3] ].map fun U =>
+        ⟨mixedMeaning imageGraph η U, mixedMeaning_valid imageGraph η U⟩)) η :=
+  PositiveRules.mixed_assignment_substitution imageGraph η [1,5] [[2],[3]] (by decide) (by decide) S
+
+/-- A graph pack has no runtime-value inhabitants even at level zero;
+its list meaning is separate, rather than a synthetic `.args` value. -/
+example (η : MixedAssignment Nat) (n : Nat) (W : WorldT n) (v : Val) :
+    ¬ mixedMeaning imageGraph η [0] n W (.inl v) :=
+  mixedMeaning_pack_value imageGraph η 0 _ _ rfl n W v
 
 /-- A callback argument may itself have an arbitrary higher-order contract. -/
 example (A B R : Fam) : ctorsT [([arrowT A B], R)] =
@@ -167,7 +182,8 @@ example (η θ : MixedAssignment Nat) :
   change p ∈ ([] : List Nat) at hp
   cases hp
 
-example (η θ : MixedAssignment Nat) (h : η.1 2 = θ.1 2) :
+example (η θ : MixedAssignment Nat)
+    (h : ∀ n W vs, η.1 2 n W (.inr vs) ↔ θ.1 2 n W (.inr vs)) :
     qDenoteWithArgs nestedPacks (mixedParameters nestedPacks) (η, 4) =
       qDenoteWithArgs nestedPacks (mixedParameters nestedPacks) (θ, 4) := by
   apply PositiveRules.agree_freeWith nestedFreeChecked (mixedParameters nestedPacks)
@@ -176,7 +192,12 @@ example (η θ : MixedAssignment Nat) (h : η.1 2 = θ.1 2) :
   change p ∈ [2] at hp
   have hp' : p = 2 := by simpa using hp
   subst p
-  exact h
+  change selectParameter (some .arguments) (η.1 2) = selectParameter (some .arguments) (θ.1 2)
+  funext n W x
+  apply propext
+  cases x with
+  | inl v => simp [selectParameter]
+  | inr vs => simpa [selectParameter] using h n W vs
 
 /-- A scheme has a value parameter and a list parameter in one substitution.
 The same list contract appears in a constructor operand and trailing arguments;

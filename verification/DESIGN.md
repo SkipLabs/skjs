@@ -1879,23 +1879,34 @@ rejects omitting the capture from the free-variable map.
 The production entry point still selects `legacyParameters`: its environment,
 `table_row`, `inst_sound` and subtype certificates have not migrated together.
 The remaining joint row-image induction must connect those plain-row lemmas
-through kind-selected parameter images and nested scheme bounds, using the
-shared free-variable independence proof.
+with the selected-parameter and binder-renaming lemmas under nested scheme
+bounds, using the shared free-variable independence proof.
 It must establish value images and then argument images at each level, with
-the latter using the former's current-level result. Remaining
-legacy pack-value denotations and the `.args` assignment adapter must then be
-retired. The mixed fixed-point theorem is not yet a change to CLI acceptance.
+the latter using the former's current-level result. The mixed interpretation
+already excludes pack-value denotations; the production legacy adapter and
+stability guards must be retired after that switch. The mixed fixed-point theorem is not yet a change to CLI acceptance.
 
-The parameter-image relation must compare the **selected kind**. A mixed
-assignment can have both components, but a value binder reads only its value
-component and a pack binder reads only its list component. On entering a
-nested scheme, the same arbitrary mixed family is assigned to both renamed
-binders; demanding that this entire family equal a kind-restricted row image
-would incorrectly constrain its unused component. Compare the selected
-components (or prove normalization to kind-selected assignments) instead.
-Likewise, the mixed runtime-value interpretation must stop assigning legacy
-`.args` values to pack clauses before using kind-disjoint bound images. Merely
-replacing `Assignment` with `MixedAssignment` in `RelK` is not sufficient.
+Parameter correspondence now compares the **selected kind**. `selectParameter`
+projects a mixed family; `mixedMeaning_parameter` identifies a parameter row
+with that projection. `RelKWith` is the shared context relation, with production
+`RelK` its legacy instance. `mixed_enter_binder` proves correspondence under
+kind-preserving renaming without constraining unused components of arbitrary
+mixed instantiations. Free-variable independence also compares selected
+components: its nested-capture control permits different unused value
+components on a pack binder.
+
+The mixed interpretation now filters pack clauses out of the runtime-value
+projection of the same graph rows; `graphArguments` still reads their list
+component at the current level. No second graph is stored or checked for
+coherence. `mixedMeaning` combines the two derived components and is proved
+admissible and closed. `mixedMeaning_noValues`, `mixedMeaning_noArguments` and
+`mixedMeaning_selected` connect the existing `hasKind` check to disjoint
+semantic components. These laws include unions, parameters and level zero.
+`mixed_assignment_substitution` then uses the existing executable `instKinds`
+check to establish the selected context relation for graph-derived families.
+A control supplies an object and a tuple of objects in one checked substitution.
+These are semantic/certificate lemmas; production acceptance still selects the
+legacy interpretation until the full table and bound proofs migrate.
 
 The remaining graph assignment/substitution change must retain a pack's list
 contract and the coherent array interpretation used by collection and array

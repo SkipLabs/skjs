@@ -1123,9 +1123,12 @@ generic pack call therefore remains unverified. Plain argument-row images now
 follow from the checked table's current-level element images, including an
 object substitution control. Free-variable independence now uses the shared
 approximation proof for mixed assignments and nested scheme captures. The
-remaining joint induction needs kind-selected parameter images and nested
-scheme substitution before migrating the bound/subtype certificates; whole
-mixed-family equality would constrain an unused component incorrectly.
+selected parameter and binder-renaming lemmas are proved, and the mixed
+interpretation now excludes runtime pack values. The existing kind check is
+connected to semantic sort separation and to a graph-derived mixed
+substitution. The remaining joint table-image induction must connect those
+lemmas through nested schemes before migrating the production bound/subtype
+certificates.
 The producer now distinguishes value and pack substitutions internally and uses
 one pack encoder for homogeneous and tuple rests. Its wire output still uses
 the existing pack rows, so this is not the verifier migration. The universal

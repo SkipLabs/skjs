@@ -27,6 +27,9 @@ inductive ParameterKind where
   | arguments
   deriving DecidableEq, BEq, Repr, Inhabited
 
+deriving instance ReflBEq for ParameterKind
+deriving instance LawfulBEq for ParameterKind
+
 abbrev ParameterKind.Carrier : ParameterKind → Type
   | .value => Val
   | .arguments => List Val
@@ -130,6 +133,30 @@ theorem MixedFamily.le_iff (A B : MixedFamily) : FamLe A.1 B.1 ↔
 def ParameterAssignment.empty (k : ParameterSpace) : ParameterAssignment k ι :=
   ⟨fun _ _ _ _ => False,
     fun _ => ⟨⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩, fun _ _ _ h => h.elim⟩⟩
+
+/-- A binder observes only the component selected by its declared kind.
+The other component of a mixed semantic family cannot constrain its meaning. -/
+def selectParameter (kind : Option ParameterKind) (A : WorldFamily ParameterSpace.mixed.Carrier) :
+    WorldFamily ParameterSpace.mixed.Carrier := fun n W x => match x with
+  | .inl v => kind = some .value ∧ A n W (.inl v)
+  | .inr vs => kind = some .arguments ∧ A n W (.inr vs)
+
+theorem selectParameter_valid (kind : Option ParameterKind) {A : WorldFamily ParameterSpace.mixed.Carrier}
+    (h : ParameterValid .mixed A) : ParameterValid .mixed (selectParameter kind A) := by
+  constructor
+  · constructor
+    · intro n W x hx
+      cases x <;> exact ⟨hx.1, h.1.down _ _ _ hx.2⟩
+    · intro n W U hw x hx
+      cases x <;> exact ⟨hx.1, h.1.mono _ _ _ hw _ hx.2⟩
+  · intro n W x hx
+    cases x <;> exact h.2 _ _ _ hx.2
+
+@[simp] theorem selectParameter_idempotent (kind : Option ParameterKind)
+    (A : WorldFamily ParameterSpace.mixed.Carrier) :
+    selectParameter kind (selectParameter kind A) = selectParameter kind A := by
+  funext n W x
+  cases x <;> simp [selectParameter]
 
 /-- The assignment of a graph without parameter rows: none is read. -/
 def Assignment.empty : Assignment ι := ParameterAssignment.empty .value
@@ -575,9 +602,14 @@ noncomputable def boundedSem
 projects parameter values and derives bounds from those outputs at the same
 level. These laws are precisely what the shared guarded fixed point needs. -/
 structure ParameterInterpretation (ι : Type) (k : ParameterSpace) where
+  /-- Runtime-value projection of the shared clause rows. -/
+  clauses : List (Clause (List ι)) → List (Clause (List ι))
+  clauses_sub : ∀ cs c, c ∈ clauses cs → c ∈ cs
+  parameter : ι → WorldFamily k.Carrier → WorldFamily k.Carrier
   arguments : ArgumentInterpreter ι k
   arguments_nonexp : ArgumentNonExp arguments
   value : ι → WorldFamily k.Carrier → Fam
+  value_parameter : ∀ i A B, parameter i A = parameter i B → value i A = value i B
   value_adm : ∀ i A, Adm A → Adm (value i A)
   value_congr : ∀ i A B n, Agree A B n → Agree (value i A) (value i B) n
   bound : ParameterAssignment k ι → (List ι → Fam) → List ι → WorldFamily k.Carrier
@@ -587,9 +619,13 @@ structure ParameterInterpretation (ι : Type) (k : ParameterSpace) where
 
 /-- The old value-only interpretation is an instance of the shared machinery. -/
 def legacyParameters : ParameterInterpretation ι .value where
+  clauses := id
+  clauses_sub := fun _ _ h => h
+  parameter := fun _ A => A
   arguments := legacyArguments
   arguments_nonexp := legacyArguments_nonexp
   value := fun _ A => A
+  value_parameter := fun _ _ _ h => h
   value_adm := fun _ _ h => h
   value_congr := fun _ _ _ _ h => h
   bound := fun _ X S => X S
@@ -599,9 +635,16 @@ def legacyParameters : ParameterInterpretation ι .value where
 /-- Mixed bounds retain both components. Projecting only their value part would
 make a pack bound vacuous. Argument rows are derived, never unfolded again. -/
 def mixedParameters (G : NormalGraph ι) : ParameterInterpretation ι .mixed where
+  clauses := List.filter fun c => match c with | .pack _ _ => false | _ => true
+  clauses_sub := fun _ _ h => (List.mem_filter.mp h).1
+  parameter := fun i A => selectParameter (G.parameterKinds i) A
   arguments := graphArguments G
   arguments_nonexp := graphArguments_nonexp G
   value := fun i A n W v => G.parameterKinds i = some .value ∧ A n W (.inl v)
+  value_parameter := by
+    intro i A B h
+    funext n W v
+    exact congrFun (congrFun (congrFun h n) W) (.inl v)
   value_adm := fun _ A h =>
     ⟨fun n W v hv => ⟨hv.1, h.down n W (.inl v) hv.2⟩,
      fun n W U hx v hv => ⟨hv.1, h.mono n W U hx (.inl v) hv.2⟩⟩
@@ -644,7 +687,7 @@ noncomputable def qLayerWithArgs (G : NormalGraph ι) (I : ParameterInterpretati
   match G.schemes ηi.2 with
   | some s => schemeSemWithArgs I (fun η' S => setSem (fun l => X (η', l)) S) ηi.1 s
   | none => setSem (semWithArgs (setSem fun l => X (ηi.1, l))
-      (I.arguments ηi.1 (setSem fun l => X (ηi.1, l)))) (G ηi.2)
+      (I.arguments ηi.1 (setSem fun l => X (ηi.1, l)))) (I.clauses (G ηi.2))
 
 noncomputable def qLayer (G : NormalGraph ι) (X : Assignment ι × ι → Fam) :
     Assignment ι × ι → Fam := qLayerWithArgs G legacyParameters X
@@ -806,7 +849,7 @@ theorem qLayer_invWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι 
     · simpa [hp] using I.value_adm i (η.1 i) (η.2 i).1
     · simp only [hp]
       cases hq : G.schemes i with
-      | none => exact setSem_adm (fun c => semWithArgs_adm _ _ c) (G i)
+      | none => exact setSem_adm (fun c => semWithArgs_adm _ _ c) (I.clauses (G i))
       | some s =>
         exact boundedSem_adm _ η s _ (I.bound_adm η _ (hD η))
           (fun As => instanceTWithArgs_adm _ η s As I.arguments)
@@ -863,6 +906,133 @@ theorem qDenoteWithArgs_nonexp (G : NormalGraph ι) (I : ParameterInterpretation
   exact (Tower.approx_inv QInv
     ⟨fun _ => topF_adm, fun _ _ _ _ _ _ _ _ _ => Iff.rfl⟩
     (qLayer_invWithArgs G I) (k + 1)).2 η η' i m h k hk W v
+
+/-- Both semantic components of a type, derived from one recursive value
+interpretation. Argument rows are evaluated at that same level. -/
+noncomputable def mixedMeaning (G : NormalGraph ι) (η : MixedAssignment ι) (S : List ι) :
+    WorldFamily ParameterSpace.mixed.Carrier :=
+  (mixedParameters G).bound η
+    (setSem fun i => qDenoteWithArgs G (mixedParameters G) (η, i)) S
+
+/-- The shared fixed point still produces only closed runtime values. -/
+theorem mixedDenote_value (G : NormalGraph ι) (η : MixedAssignment ι) (i : ι) {n W v}
+    (h : qDenoteWithArgs G (mixedParameters G) (η, i) n W v) :
+    isVal v = true ∧ Scoped 0 v := by
+  rw [qDenoteWithArgs_unfold] at h
+  unfold qLayerWithArgs at h
+  split at h
+  · exact (η.2 i).2 n W (.inl v) h.2
+  · cases hs : G.schemes i with
+    | some s => simp only [hs] at h; exact ⟨h.1.val, h.1.scoped⟩
+    | none =>
+      simp only [hs] at h
+      obtain ⟨c, _, hc⟩ := h
+      exact semWithArgs_value hc
+
+theorem mixedMeaning_valid (G : NormalGraph ι) (η : MixedAssignment ι) (S : List ι) :
+    ParameterValid .mixed (mixedMeaning G η S) := by
+  let X := fun S => setSem (fun i => qDenoteWithArgs G (mixedParameters G) (η, i)) S
+  have hX : ∀ S, ValueFam (X S) := fun S =>
+    ⟨setSem_adm (fun i => qDenoteWithArgs_adm G (mixedParameters G) (η, i)) S,
+     fun _ _ _ ⟨i, _, hi⟩ => mixedDenote_value G η i hi⟩
+  refine ⟨(mixedParameters G).bound_adm η X (fun S => (hX S).1) S, ?_⟩
+  intro n W x h
+  cases x with
+  | inl v => exact (hX S).2 n W v h
+  | inr vs => exact (graphArguments_valid G η X hX S).2 n W vs h
+
+/-- A parameter's two-component row meaning is exactly its selected component,
+not the whole (potentially mixed) family assigned to that binder. -/
+theorem mixedMeaning_parameter (G : NormalGraph ι) (η : MixedAssignment ι) (i : ι)
+    (kind : ParameterKind) (hi : G.parameterKinds i = some kind) :
+    mixedMeaning G η [i] = selectParameter (some kind) (η.1 i) := by
+  have hp : G.params i = true := by simp [NormalGraph.params, hi]
+  have hc : G i = [] := by simp [NormalGraph.clauses, NormalGraph.plain, hp]
+  funext n W x
+  apply propext
+  cases x with
+  | inl v =>
+    change (∃ j ∈ [i], qDenoteWithArgs G (mixedParameters G) (η, j) n W v) ↔ _
+    simp only [List.mem_singleton, exists_eq_left]
+    rw [qDenoteWithArgs_unfold]
+    simp [qLayerWithArgs, hp, mixedParameters, selectParameter, hi]
+  | inr vs =>
+    change graphArguments G η _ [i] n W vs ↔ _
+    cases kind <;> simp [graphArguments, hc, hi, selectParameter]
+
+/-- A plain pack row has list members only. No synthetic runtime pack value
+survives the mixed interpretation's value projection. -/
+theorem mixedMeaning_pack_value (G : NormalGraph ι) (η : MixedAssignment ι) (i : ι)
+    (a : Tuple (List ι)) (bs : List (Tuple (List ι))) (hi : G i = [.pack a bs])
+    (n : Nat) (W : WorldT n) (v : Val) : ¬ mixedMeaning G η [i] n W (.inl v) := by
+  have hp := NormalGraph.plain_of_clauses (G := G) (i := i)
+    (show Clause.pack a bs ∈ G i by rw [hi]; simp)
+  simp only [NormalGraph.plain, Bool.and_eq_true, Bool.not_eq_true', Option.isNone_iff_eq_none] at hp
+  change ¬ (∃ j ∈ [i], qDenoteWithArgs G (mixedParameters G) (η, j) n W v)
+  simp only [List.mem_singleton, exists_eq_left]
+  rw [qDenoteWithArgs_unfold]
+  simp [qLayerWithArgs, hp.1, hp.2, hi, mixedParameters, setSem]
+
+/-- A sorted pack type cannot contribute runtime-value members, including
+unions of pack rows and pack parameters. -/
+theorem mixedMeaning_noValues (G : NormalGraph ι) (η : MixedAssignment ι) (S : List ι)
+    (hs : G.hasKind .arguments S = true) (n : Nat) (W : WorldT n) (v : Val) :
+    ¬ mixedMeaning G η S n W (.inl v) := by
+  rintro ⟨i, hi, hv⟩
+  have hk := List.all_eq_true.mp hs i hi
+  rw [qDenoteWithArgs_unfold] at hv
+  unfold qLayerWithArgs at hv
+  cases hp : G.parameterKinds i with
+  | some k =>
+    cases k <;> simp [hp] at hk
+    simp [NormalGraph.params, hp, mixedParameters] at hv
+  | none =>
+    cases hq : G.schemes i with
+    | some sch => simp [hp, hq] at hk
+    | none =>
+      simp only [NormalGraph.params, hp, Option.isSome_none, Bool.false_eq_true, ite_false, hq] at hv
+      obtain ⟨c, hc, _⟩ := hv
+      have hc' := (List.mem_filter.mp hc).1
+      have hplain : G.plain i = true := by simp [NormalGraph.plain, NormalGraph.params, hp, hq]
+      have hr : c ∈ G.rows i := by simpa [NormalGraph.clauses, hplain] using hc'
+      have ht := List.all_eq_true.mp (show (G.rows i).all
+        (fun c => match c with | .pack .. => true | _ => false) = true by simpa [hp, hq, (show (ParameterKind.arguments == ParameterKind.value) = false from rfl)] using hk) c hr
+      have hn := (List.mem_filter.mp hc).2
+      cases c <;> simp_all
+
+/-- A sorted value type cannot contribute argument-list members. -/
+theorem mixedMeaning_noArguments (G : NormalGraph ι) (η : MixedAssignment ι) (S : List ι)
+    (hs : G.hasKind .value S = true) (n : Nat) (W : WorldT n) (vs : List Val) :
+    ¬ mixedMeaning G η S n W (.inr vs) := by
+  rintro ⟨i, hi, hv⟩
+  have hk := List.all_eq_true.mp hs i hi
+  by_cases hp : G.parameterKinds i = some .arguments
+  · simp [hp] at hk
+  · simp only [hp, ite_false] at hv
+    obtain ⟨c, hc, hv⟩ := hv
+    have hplain := NormalGraph.plain_of_clauses hc
+    have hparts := hplain
+    simp only [NormalGraph.plain, Bool.and_eq_true, Bool.not_eq_true', Option.isNone_iff_eq_none] at hparts
+    have hn : G.parameterKinds i = none := by
+      simpa [NormalGraph.params] using hparts.1
+    have hr : c ∈ G.rows i := by simpa [NormalGraph.clauses, hplain] using hc
+    have ht := List.all_eq_true.mp (show (G.rows i).all
+      (fun c => match c with | .pack .. => false | _ => true) = true by
+        simpa [hn, hparts.2, (show (ParameterKind.value == ParameterKind.arguments) = false from rfl)] using hk) c hr
+    cases c <;> simp_all [clauseArguments]
+
+/-- The existing sort check guarantees that a type image equals its selected
+component. This connects the wire's kind check to semantic correspondence. -/
+theorem mixedMeaning_selected (G : NormalGraph ι) (η : MixedAssignment ι) (S : List ι)
+    (kind : ParameterKind) (hs : G.hasKind kind S = true) :
+    selectParameter (some kind) (mixedMeaning G η S) = mixedMeaning G η S := by
+  funext n W x
+  apply propext
+  cases kind <;> cases x
+  · simp [selectParameter]
+  · simp [selectParameter, mixedMeaning_noArguments G η S hs]
+  · simp [selectParameter, mixedMeaning_noValues G η S hs]
+  · simp [selectParameter]
 
 /-- The production interpretation remains the legacy argument adapter until
 sorted substitution and the certificate protocol migrate together. -/
@@ -962,6 +1132,10 @@ theorem transport_inclusion (G : Graph ι) (S T : List ι)
     FamLe (setSem (denote G) S) (setSem (denote G) T) := by
   simpa only [normalize_recursive] using h
 
+#print axioms mixedMeaning_selected
+#print axioms mixedMeaning_valid
+#print axioms mixedMeaning_parameter
+#print axioms mixedMeaning_pack_value
 #print axioms graphArguments_valid
 #print axioms boundedSem_adm
 #print axioms qDenoteWithArgs_unfold

@@ -1269,14 +1269,15 @@ theorem freeOk_row [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Free
 
 /-- Free-variable independence is an invariant of the approximations, not an
 extra delay on argument-list membership. -/
-def FreeIndependent [DecidableEq ι] (D : List ι) (V : FreeMap ι)
+def FreeIndependent [DecidableEq ι] (D : List ι) (V : FreeMap ι) (I : ParameterInterpretation ι k)
     (X : ParameterAssignment k ι × ι → Fam) : Prop :=
-  ∀ η θ i, i ∈ D → (∀ p ∈ fv V i, η.1 p = θ.1 p) → X (η, i) = X (θ, i)
+  ∀ η θ i, i ∈ D → (∀ p ∈ fv V i, I.parameter p (η.1 p) = I.parameter p (θ.1 p)) → X (η, i) = X (θ, i)
 
 private theorem independent_set [DecidableEq ι] {D : List ι} {V : FreeMap ι}
-    {X : ParameterAssignment k ι × ι → Fam} (hX : FreeIndependent D V X)
+    {I : ParameterInterpretation ι k}
+    {X : ParameterAssignment k ι × ι → Fam} (hX : FreeIndependent D V I X)
     (η θ : ParameterAssignment k ι) (S : List ι) (hS : ∀ i ∈ S, i ∈ D)
-    (h : ∀ i ∈ S, ∀ p ∈ fv V i, η.1 p = θ.1 p) :
+    (h : ∀ i ∈ S, ∀ p ∈ fv V i, I.parameter p (η.1 p) = I.parameter p (θ.1 p)) :
     setSem (fun i => X (η, i)) S = setSem (fun i => X (θ, i)) S := by
   funext n W v
   apply propext
@@ -1288,12 +1289,12 @@ private theorem independent_set [DecidableEq ι] {D : List ι} {V : FreeMap ι}
 This is proved for each interpretation; it is not a certificate assumption. -/
 structure RespectsFree [DecidableEq ι] (D : List ι) (V : FreeMap ι)
     (I : ParameterInterpretation ι k) : Prop where
-  arguments : ∀ X, FreeIndependent D V X → ∀ η θ S,
-    (∀ i ∈ S, i ∈ D) → (∀ i ∈ S, ∀ p ∈ fv V i, η.1 p = θ.1 p) →
+  arguments : ∀ X, FreeIndependent D V I X → ∀ η θ S,
+    (∀ i ∈ S, i ∈ D) → (∀ i ∈ S, ∀ p ∈ fv V i, I.parameter p (η.1 p) = I.parameter p (θ.1 p)) →
     I.arguments η (setSem fun i => X (η, i)) S =
       I.arguments θ (setSem fun i => X (θ, i)) S
-  bound : ∀ X, FreeIndependent D V X → ∀ η θ S,
-    (∀ i ∈ S, i ∈ D) → (∀ i ∈ S, ∀ p ∈ fv V i, η.1 p = θ.1 p) →
+  bound : ∀ X, FreeIndependent D V I X → ∀ η θ S,
+    (∀ i ∈ S, i ∈ D) → (∀ i ∈ S, ∀ p ∈ fv V i, I.parameter p (η.1 p) = I.parameter p (θ.1 p)) →
     I.bound η (setSem fun i => X (η, i)) S =
       I.bound θ (setSem fun i => X (θ, i)) S
 
@@ -1309,8 +1310,8 @@ theorem legacy_respectsFree [DecidableEq ι] (D : List ι) (V : FreeMap ι) :
 Tuple elements use the approximation's independence at the current level. -/
 theorem graphArguments_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
     (hF : FreeOk G D V = true) (X : MixedAssignment ι × ι → Fam)
-    (hX : FreeIndependent D V X) (η θ : MixedAssignment ι) (S : List ι)
-    (hS : ∀ i ∈ S, i ∈ D) (h : ∀ i ∈ S, ∀ p ∈ fv V i, η.1 p = θ.1 p) :
+    (hX : FreeIndependent D V (mixedParameters G) X) (η θ : MixedAssignment ι) (S : List ι)
+    (hS : ∀ i ∈ S, i ∈ D) (h : ∀ i ∈ S, ∀ p ∈ fv V i, (mixedParameters G).parameter p (η.1 p) = (mixedParameters G).parameter p (θ.1 p)) :
     graphArguments G η (setSem fun i => X (η, i)) S =
       graphArguments G θ (setSem fun i => X (θ, i)) S := by
   funext n W vs
@@ -1319,7 +1320,9 @@ theorem graphArguments_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} 
   have ⟨hself, hreads, _⟩ := freeOk_row hF (hS i hi)
   by_cases hp : G.parameterKinds i = some .arguments
   · simp only [hp, ite_true]
-    rw [h i hi i (hself (by simp [NormalGraph.params, hp]))]
+    have he := congrFun (congrFun (congrFun
+      (h i hi i (hself (by simp [NormalGraph.params, hp]))) n) W) (.inr vs)
+    simpa [mixedParameters, selectParameter, hp] using iff_of_eq he
   · simp only [hp, ite_false]
     apply exists_congr fun c => and_congr_right fun hc => ?_
     have hplain := NormalGraph.plain_of_clauses hc
@@ -1349,8 +1352,8 @@ theorem mixed_respectsFree [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {
 
 theorem qLayer_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
     (hF : FreeOk G D V = true) (I : ParameterInterpretation ι k) (hI : RespectsFree D V I)
-    (X : ParameterAssignment k ι × ι → Fam) (hX : FreeIndependent D V X) :
-    FreeIndependent D V (qLayerWithArgs G I X) := by
+    (X : ParameterAssignment k ι × ι → Fam) (hX : FreeIndependent D V I X) :
+    FreeIndependent D V I (qLayerWithArgs G I X) := by
   intro η η' i hi hag
   funext n W v
   apply propext
@@ -1380,10 +1383,10 @@ theorem qLayer_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Fre
         dsimp only
         rw [hb]
       have hin : ∀ l ∈ reads G i, ∀ p ∈ fv V l,
-          (assign η s.binders As).1 p = (assign η' s.binders As).1 p := by
+          I.parameter p ((assign η s.binders As).1 p) = I.parameter p ((assign η' s.binders As).1 p) := by
         intro l hlS p hpv
         by_cases hb : p ∈ s.binders
-        · exact assign_mem_eq η η' s.binders As hb hl
+        · rw [assign_mem_eq η η' s.binders As hb hl]
         · rw [assign_nmem η s.binders As hb, assign_nmem η' s.binders As hb]
           rcases (hreads l hlS).2 p hpv with h1 | ⟨s', hs', h2⟩
           · exact hag p h1
@@ -1430,7 +1433,7 @@ theorem qLayer_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Fre
         exact .inl (.inl (.inr ⟨S, hS, hl⟩))) W v)
     | none =>
       simp only [normalLayer, semList, setSem]
-      have hag : ∀ l ∈ reads G i, ∀ p ∈ fv V l, η.1 p = η'.1 p := by
+      have hag : ∀ l ∈ reads G i, ∀ p ∈ fv V l, I.parameter p (η.1 p) = I.parameter p (η'.1 p) := by
         intro l hl p hpv
         rcases (hreads l hl).2 p hpv with h1 | ⟨s', hs', _⟩
         · exact hag p h1
@@ -1446,8 +1449,9 @@ theorem qLayer_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Fre
         rw [hI.arguments X hX η η' S (fun l hl => (hreads l (hS l hl)).1)
           (fun l hl => hag l (hS l hl))]
         exact fun _ _ _ _ => Iff.rfl
-      have hops : ∀ c ∈ G i, ∀ S ∈ c.operands, ∀ l ∈ S, l ∈ reads G i := by
+      have hops : ∀ c ∈ I.clauses (G i), ∀ S ∈ c.operands, ∀ l ∈ S, l ∈ reads G i := by
         intro c hc S hS l hl
+        have hc := I.clauses_sub (G i) c hc
         simp only [reads, hq]
         exact List.mem_flatMap.mpr ⟨c, hc, List.mem_flatten.mpr ⟨S, hS, hl⟩⟩
       constructor
@@ -1456,18 +1460,18 @@ theorem qLayer_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Fre
       · rintro ⟨c, hc, h⟩
         exact ⟨c, hc, (semWithArgs_congr_on (hops c hc) _ _ _ _ n hag' hpack W v).mpr h⟩
   · simp only [if_true]
-    rw [hag i (hself hp)]
+    rw [I.value_parameter i _ _ (hag i (hself hp))]
 
 
 /-- Independence for the shared recursive interpretation, including mixed pack
 parameters and bounds. It follows from one approximation invariant. -/
 theorem agree_freeWith [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
     (hF : FreeOk G D V = true) (I : ParameterInterpretation ι k) (hI : RespectsFree D V I) :
-    FreeIndependent D V (qDenoteWithArgs G I) := by
+    FreeIndependent D V I (qDenoteWithArgs G I) := by
   intro η θ i hi h
   funext n W v
   exact congrFun (congrFun (congrFun
-    (Tower.approx_inv (FreeIndependent D V)
+    (Tower.approx_inv (FreeIndependent D V I)
       (fun _ _ _ _ _ => rfl) (qLayer_free hF I hI) (n + 1) η θ i hi h) n) W) v
 
 /-- The production value case uses the shared independence proof. -/
@@ -1642,14 +1646,33 @@ def TableOk [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (D : List
     (V : FreeMap ι) : Bool :=
   FreeOk G D V && (tableRows tbl).all (D.contains ·) && tbl.all (entryOk G tbl V)
 
-/-- Two assignments related by a context on a set of rows: a row the context
-names means, on the left, its image's meaning on the right; any other row
-means the same on both sides. -/
-def RelK [DecidableEq ι] (G : NormalGraph ι) (κ : Ctx ι) (S : List ι) (ηL ηR : Assignment ι) :
-    Prop :=
+/-- A context relates the component a binder actually observes to its image.
+The two-component image retains list bounds; the selected parameter side does
+not constrain an unused component of a mixed assignment. -/
+def RelKWith [DecidableEq ι] (G : NormalGraph ι) (I : ParameterInterpretation ι k)
+    (κ : Ctx ι) (S : List ι) (ηL ηR : ParameterAssignment k ι) : Prop :=
   ∀ p ∈ S, match κ.lookup p with
-    | some U => ηL.1 p = qMeaning G ηR U
-    | none => ηL.1 p = ηR.1 p
+    | some U => I.parameter p (ηL.1 p) =
+        I.bound ηR (setSem fun i => qDenoteWithArgs G I (ηR, i)) U
+    | none => I.parameter p (ηL.1 p) = I.parameter p (ηR.1 p)
+
+/-- Production value certificates use the same correspondence relation. -/
+abbrev RelK [DecidableEq ι] (G : NormalGraph ι) (κ : Ctx ι) (S : List ι)
+    (ηL ηR : Assignment ι) : Prop := RelKWith G legacyParameters κ S ηL ηR
+
+/-- A mapped pack or value parameter obeys its table relation at both semantic
+components. This does not reinterpret a list as a runtime value. -/
+theorem mixed_parameter_image [DecidableEq ι] (G : NormalGraph ι) (κ : Ctx ι)
+    (η θ : MixedAssignment ι) (p : ι) (kind : ParameterKind) (U : List ι)
+    (hp : G.parameterKinds p = some kind) (hU : κ.lookup p = some U)
+    (h : RelKWith G (mixedParameters G) κ [p] η θ) :
+    mixedMeaning G η [p] = mixedMeaning G θ U := by
+  rw [mixedMeaning_parameter G η p kind hp]
+  have he := h p (by simp)
+  rw [hU] at he
+  change selectParameter (G.parameterKinds p) (η.1 p) = mixedMeaning G θ U at he
+  rw [hp] at he
+  exact he
 
 theorem entryImg_mem [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι} {l : ι} {T : List ι}
     (h : entryImg tbl κ l = some T) : (l, κ, T) ∈ tbl := by
@@ -1842,6 +1865,30 @@ theorem enter_rel [DecidableEq ι] (κ : Ctx ι) (ηL ηR : ParameterAssignment 
     obtain ⟨x, hx, hxe⟩ := List.mem_map.mp (List.of_mem_zip (mem_of_lookup hU)).2
     cases hxe; exact hx
   exact ⟨q, hq, by unfold enter; exact lookup_append_some hU, he⟩
+
+/-- Renaming a bound parameter assigns the same family to both binders, but
+the correspondence compares only their common kind. Arbitrary unused
+components remain unrestricted, including under nested universal schemes. -/
+theorem mixed_enter_binder [DecidableEq ι] (G : NormalGraph ι) (κ : Ctx ι)
+    (η θ : MixedAssignment ι) {src tgt : List ι} {As : List MixedFamily} {p : ι}
+    (hp : p ∈ src) (hnd : tgt.Nodup) (hs : src.length = As.length) (ht : tgt.length = As.length)
+    (hk : ∀ p q, (src.zip (tgt.map ([·]))).lookup p = some [q] →
+      ∃ kind, G.parameterKinds p = some kind ∧ G.parameterKinds q = some kind) :
+    ∃ q ∈ tgt, (enter κ src tgt).lookup p = some [q] ∧
+      (mixedParameters G).parameter p ((assign η src As).1 p) =
+        mixedMeaning G (assign θ tgt As) [q] := by
+  obtain ⟨U, hU⟩ := lookup_zip_isSome (ys := tgt.map ([·])) hp (by simp [hs, ht])
+  obtain ⟨q, rfl, he⟩ := enter_binder η θ hnd hs ht hU
+  obtain ⟨kind, hpk, hqk⟩ := hk p q hU
+  have hq : q ∈ tgt := by
+    obtain ⟨x, hx, hxe⟩ := List.mem_map.mp (List.of_mem_zip (mem_of_lookup hU)).2
+    cases hxe; exact hx
+  refine ⟨q, hq, ?_, ?_⟩
+  · unfold enter
+    exact lookup_append_some hU
+  · rw [mixedMeaning_parameter G _ q kind hqk]
+    change selectParameter (G.parameterKinds p) _ = _
+    rw [hpk, he]
 
 theorem sigImg_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
     {p q : List ι × List (List ι) × List ι} (h : sigImg tbl κ p = some q) :
@@ -2150,6 +2197,7 @@ theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D 
     obtain ⟨hrow, _⟩ := hrow
     subst hrow
     have hr := hrel i (hself hpar)
+    dsimp only [legacyParameters] at hr
     rw [qDenote_unfold]
     simp only [qLayer, qLayerWithArgs, legacyParameters, hpar, if_true]
     cases hk : κ.lookup i with
@@ -2163,6 +2211,7 @@ theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D 
       rw [hk] at hr
       simp only [Option.getD_some]
       rw [hr]
+      rfl
 
 theorem assign_zip_map [DecidableEq ι] {k : ParameterSpace} (η : ParameterAssignment k ι) (F : List ι → ParameterFamily k) :
     ∀ {bs : List ι} {θs : List (List ι)} {b : ι} {U : List ι},
@@ -2228,6 +2277,31 @@ theorem assignment_substitution [DecidableEq ι] {k : ParameterSpace}
     rw [hU] at hk
     cases hk
   | some U => exact assign_zip_map η F hk
+
+/-- The existing executable kind check makes a mixed substitution satisfy the
+selected table relation. Both assigned families come from the graph's single
+two-component meaning; no pack contract is reconstructed from a value type. -/
+theorem mixed_assignment_substitution [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι)
+    (bs : List ι) (θs : List (List ι)) (hlen : θs.length = bs.length)
+    (hk : instKinds G bs θs = true) (S : List ι) :
+    RelKWith G (mixedParameters G) (bs.zip θs) S
+      (assign η bs (θs.map fun U => ⟨mixedMeaning G η U, mixedMeaning_valid G η U⟩)) η := by
+  intro b _
+  have he := assignment_substitution η
+    (fun U => ⟨mixedMeaning G η U, mixedMeaning_valid G η U⟩) bs θs hlen b
+  cases hU : (bs.zip θs).lookup b with
+  | none =>
+    rw [hU] at he
+    dsimp only
+    rw [he]
+  | some U =>
+    have hkind := List.all_eq_true.mp hk (b, U) (mem_of_lookup hU)
+    cases hp : G.parameterKinds b with
+    | none => simp [substitutionKind, hp] at hkind
+    | some kind =>
+      change selectParameter (G.parameterKinds b) _ = mixedMeaning G η U
+      rw [hp, he, hU]
+      exact mixedMeaning_selected G η U kind (by simpa [substitutionKind, hp] using hkind)
 
 /-- A member of a scheme row meets each checked instance of its signatures. -/
 theorem inst_sound [DecidableEq ι] {G : NormalGraph ι} {T : List ι} {i : ι} {s : SchemeRow ι}
@@ -2360,7 +2434,7 @@ theorem Sub.sound_at {G : NormalGraph ι} {S T} (h : Sub G S T) :
     obtain ⟨l, hl, hv⟩ := hv
     obtain ⟨U, hU, hUT⟩ := hS l hl
     have hr := (table_row hok n η η (l, [], U) (entryImg_mem hU)
-      (fun p _ => by simp [RelK]) W v).mp hv
+      (fun p _ => by simp [RelK, RelKWith]) W v).mp hv
     obtain ⟨x, hx, hxv⟩ := hr
     exact ⟨x, hUT x hx, hxv⟩
   | @gen S _ j s D U V hp hq hU hF hS _ ih =>
@@ -2408,6 +2482,9 @@ theorem Sub.congr {G : NormalGraph ι} {S S' T T' : List ι}
     exact .trans (.subset (fun i hi => (hs i).mp hi))
       (.trans h (.subset (fun i hi => (ht i).mpr hi)))
 
+#print axioms mixed_assignment_substitution
+#print axioms mixed_parameter_image
+#print axioms mixed_enter_binder
 #print axioms agree_freeWith
 #print axioms mixed_respectsFree
 #print axioms graphArguments_image

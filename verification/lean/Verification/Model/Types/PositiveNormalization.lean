@@ -206,8 +206,8 @@ def valueShape : Val → Nat
   | _ => 7
 
 /-- Every member of a clause is a closed value; top says nothing more. -/
-theorem sem_value {X : α → Fam} {c : Clause α} {n W v}
-    (h : sem X c n W v) : isVal v = true ∧ Scoped 0 v := by
+theorem semWithArgs_value {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
+    (h : semWithArgs X P c n W v) : isVal v = true ∧ Scoped 0 v := by
   cases c with
   | top => exact h
   | list a bs => obtain ⟨ls, rfl, _⟩ := h.1; exact ⟨rfl, trivial⟩
@@ -227,6 +227,9 @@ theorem sem_value {X : α → Fam} {c : Clause α} {n W v}
   | symbol => obtain ⟨i, rfl⟩ := h; exact ⟨rfl, trivial⟩
   | ctors L S => obtain ⟨fs, a, b, rfl, hs⟩ := h.1.1; exact ⟨rfl, hs⟩
   | pack a bs => obtain ⟨vs, rfl, hs, -⟩ := h; exact ⟨rfl, hs⟩
+
+theorem sem_value {X : α → Fam} {c : Clause α} {n W v}
+    (h : sem X c n W v) : isVal v = true ∧ Scoped 0 v := semWithArgs_value h
 
 /-- A member's shape is its clause's, except under top, which has none. -/
 theorem sem_shape {X : α → Fam} {c : Clause α} {n W v} (hc : c ≠ .top)
