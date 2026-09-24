@@ -81,7 +81,7 @@ let recursiveJson = "";
 // The framework fixture is the upstream source, including its imports and
 // classes. A simplified replacement must not quietly inherit its census row.
 for (const [file, expected] of [
-  ["examples/reactive-sum-prettier-ignore.ts", "f6463ff031d46252cc2a1442c022ea3d709758233e91607eec9673595ea9e271"],
+  ["examples/reactive-sum-prettier-ignore.ts", "8c10ace97b50d5a3521626fe569fcfe87034a48424f84f2d2aeb970eba161efe"],
 ] as const) {
   assert.equal(createHash("sha256").update(readFileSync(join(here, file))).digest("hex"), expected,
     `${file}: update the upstream provenance and census before replacing this fixture`);
@@ -92,6 +92,11 @@ for (const [file, expected] of [
     "AddIndex.constructor", "AddIndex.mapEntry", "Plus.mapEntry",
     "Minus.mapEntry", "Add.instantiate", "Sub.instantiate",
   ]);
+  // The corrected client keeps those callables and adds the service class.
+  assert.deepEqual(definedClassCallables(resolve(here, "examples/reactive-sum-sound.ts")).map(c => c.name), [
+    "AddIndex.constructor", "AddIndex.mapEntry", "Plus.mapEntry",
+    "Minus.mapEntry", "Add.instantiate", "Sub.instantiate", "Service.createGraph",
+  ]);
   const upstreamConfig = tsconfigOf(resolve(here, "upstream"));
   // TypeScript resolves the framework's imports: interfaces through the core
   // package's reexports, and a value from the server package. This is
@@ -101,11 +106,13 @@ for (const [file, expected] of [
     ["Mapper", "skipruntime-ts/core/src/api.ts", "Mapper", "InterfaceDeclaration"],
     ["Resource", "skipruntime-ts/core/src/api.ts", "Resource", "InterfaceDeclaration"],
     ["Values", "skipruntime-ts/core/src/api.ts", "Values", "InterfaceDeclaration"],
+    ["InputDefinition", "skipruntime-ts/core/src/api.ts", "InputDefinition", "ClassDeclaration"],
     ["runService", "skipruntime-ts/server/src/server.ts", "runService", "FunctionDeclaration"],
   ]);
-  // A value is not a type declaration: the whole graph is refused, at its import.
+  // A value is not a type declaration: the whole graph is refused, at its
+  // first value import.
   assert.throws(() => collectDeclarations(source, { tsconfigPath: upstreamConfig }),
-    /runService is not one type alias or interface/);
+    /InputDefinition is not one type alias or interface/);
   // Each runtime interface sum.ts imports, applied in a client of the same
   // project, and the first declaration the graph refuses on its way.
   const probe = mkdtempSync(join(tmpdir(), "skjs-runtime-api-"));
@@ -118,8 +125,8 @@ for (const [file, expected] of [
     ["Values<number>", "Values", /type outside the fragment \(BigIntKeyword\) in \S*index\.ts#DepSafe/],
     ["EagerCollection<string, number>", "EagerCollection",
       /unsupported method signature in \S*api\.ts#EagerCollection/],
-    ["Resource<NamedCollections>", "Resource, NamedCollections",
-      /unsupported method signature in \S*api\.ts#Context/],
+    ["Resource<SharedCollections>", "Resource, SharedCollections",
+      /api\.ts#AbstractEagerCollection is not one type alias or interface/],
   ] as const) {
     const client = join(probe, `${imports.split(",")[0]}.ts`);
     writeFileSync(client, `import type { ${imports} } from "@skipruntime/core";\nexport type Use = ${use};\n`);
@@ -129,10 +136,10 @@ for (const [file, expected] of [
   const upstreamSha = (path: string) =>
     createHash("sha256").update(readFileSync(resolve(here, "upstream", path))).digest("hex");
   assert.equal(upstreamSha("skipruntime-ts/core/src/api.ts"),
-    "3bfa83b7c2328f4adda5f0bb54569a46c0d776d93184fdb5eb0e789f4b190909");
+    "1e51e0c9cc1447605d9d718d8c094c4f70a0cf5ca065804b775a2d4c76e0e6a6");
   const jsonModuleSha = upstreamSha("skiplang/skjson/ts/binding/src/index.ts");
   assert.equal(jsonModuleSha,
-    "f1a66edb8c1ee719f867c7202a6edf1bb90bac60dab84914a06ae22ba4ef5ffc");
+    "3cdd38bb4b6d394133ee922bccb6eff50839740b204c259edb17c19060bf9021");
   // Json reaches the client through the core package's `paths` entry, its
   // reexports and the workspace symlink; TypeScript follows all three.
   const jsonPath = resolve(here, "examples/recursive-json.ts");

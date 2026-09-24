@@ -60,6 +60,13 @@ export const cases: Case[] = [
     "source",
     /top-level statement outside the fragment \(FirstStatement\)/,
   ), project: "verification/ocaml-producer/upstream" },
+  { ...gap(
+    "reactive-sum-sound",
+    "The sum example corrected as a sound client of the type-safe runtime API: top-level platform initialization precedes its classes",
+    "unsupported",
+    "source",
+    /top-level statement outside the fragment \(FirstStatement\)/,
+  ), project: "verification/ocaml-producer/upstream" },
   negative("invalid-generic-rest-argument", "A variadic callback cannot receive Boolean at arbitrary T", /generic call argument.*true ≤ T/),
   positive("generic-rest", "Universal rest collection with independent Boolean and numeric calls"),
   negative("invalid-generic-rest", "Observed Boolean rest calls cannot establish a universal array result",

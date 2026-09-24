@@ -426,43 +426,70 @@ the native runtime written in Skip. The initial assessment inspected
 `skipruntime-ts/core/src/api.ts` and `skipruntime-ts/examples/sum.ts` in the
 sibling `skip` checkout; it is not a coverage census.
 
-Use the real `sum.ts` mapper/resource shapes as the first integration target.
-Preserve its classes, signatures and library interactions: do not rewrite it
-into today's fragment and call that runtime coverage. At the start of this
-work, record the upstream revision and retain the selected sources as fixtures,
-with provenance and expected outcomes in `cases.mts`. Measure each function's
-first blocker through parsing, proposal, lowering, evidence production and
-independent checking. Report verified, rejected and unsupported separately.
+The integration target is `sum.ts` as a sound client of the runtime's
+type-safe API. Preserve its classes, signatures and library interactions: do
+not rewrite it into today's fragment and call that runtime coverage. Retain
+the selected sources as fixtures, with provenance and expected outcomes in
+`cases.mts`. Measure each function's first blocker through parsing, proposal,
+lowering, evidence production and independent checking. Report verified,
+rejected and unsupported separately.
 
 The baseline is pinned to upstream `skip` commit
-`cb030b5ac7beda28fd5f65e3292a485173d5faef`. The byte-for-byte
+`5c902f17431d963c1b6e07fc1d15da054ba30e70`, whose `api.ts` is the type-safe
+collection API: `EagerCollection<K, V>` extends the type-erased, branded
+`AbstractEagerCollection`, and `Resource<Collections extends
+SharedCollections>` bounds collection records by that base. That is how the
+API avoids the variance problem: `EagerCollection<K, V>` uses `K` and `V` in
+parameter positions, so it is not a subtype of `EagerCollection<Json, Json>`
+under sound subtyping, and nothing requires it to be. SKJS's
+[`@skipruntime/core` stubs](../../import-stubs/@skipruntime/core/index.d.ts)
+describe the same API. The byte-for-byte upstream
 [`sum.ts`](examples/reactive-sum-prettier-ignore.ts) and
-[`api.ts`](upstream/skipruntime-ts/core/src/api.ts) snapshots are checked by SHA-256 in
-`test.mts`. The executable case names the snapshot's TypeScript project and
-records the actual first refusal: the top-level `platform` initializer at line
-10 is outside the source fragment. Thus **zero of the six class callables below
-are currently checked**; no producer proposal, Lean lowering, or certificate is
-reached. This is one file-level blocker, not six independent findings. The
-following rows name what each body will additionally need after the file-level
-gates are lifted:
+[`api.ts`](upstream/skipruntime-ts/core/src/api.ts) snapshots are checked by
+SHA-256 in `test.mts`.
 
-| `sum.ts` callable | First reached boundary | Later body requirement |
+The upstream `sum.ts` is not a sound client of that API, and SKJS rejects it:
+loose `==`, a statement starting with `[`, and a plain object type
+`Collections` passed as `Resource<Collections>` — a named-field type is not an
+index-signature type, so it does not meet `SharedCollections` (TypeScript
+accepts it only by its unsound implicit index rule). It stays as provenance,
+with its first parser refusal recorded. The target is
+[`reactive-sum-sound.ts`](examples/reactive-sum-sound.ts), the same program
+corrected as a client, which SKJS accepts with no errors and TypeScript accepts
+against the pinned API (the fixture project has no Node types for `process`).
+It changes only what soundness or SKJS requires: `===`; `interface Collections
+extends NamedEagerCollections`; parameter annotations in `Plus` and an
+explicit `reduce<number | null>` in `Minus`; the service as a `Service` class
+with `inputs`, `resources`, `externalServices` and `createGraph`, the form
+Skipper generates, since SKJS refuses object-typed top-level constants; and
+startup, shutdown and signal registration inside `async function main()`. The
+mapper and resource bodies are upstream's. SKJS's stubs gained the two real
+APIs it uses, `Values.getUnique` and `process.on`
+([`runtime-client-apis.ts`](../../tests/expect-error/runtime-client-apis.ts)).
+
+Its first refusal is the top-level `platform` initializer at line 17, so
+**zero of its callables are checked**; no producer proposal, Lean lowering or
+certificate is reached. Measured one construct at a time, the blockers behind
+it are:
+
+| Client part | First refusal when isolated | Later requirement |
 | --- | --- | --- |
-| `AddIndex.constructor` | top-level `platform` initializer | parameter property and initialized instance storage |
-| `AddIndex.mapEntry` | top-level `platform` initializer | method receiver, external `Values.getUnique`, tuple result |
-| `Plus.mapEntry` | top-level `platform` initializer | external `Values.toArray`, array reduction callback |
-| `Minus.mapEntry` | top-level `platform` initializer | nullable accumulator, array sort/reduction |
-| `Add.instantiate` | top-level `platform` initializer | external collection method and generic constructor argument |
-| `Sub.instantiate` | top-level `platform` initializer | chained generic collection methods and constructor arguments |
+| whole file | top-level `platform` initializer | module-level code and value imports |
+| import graph | `InputDefinition` is a value import (a class) | classes as declarations and values |
+| `Plus`, `Minus`, `AddIndex`, `Add`, `Sub`, `Service` | class declaration | classes, `this`, parameter properties, field initializers, `new` |
+| `AddIndex.mapEntry` reading `Values` | `bigint` in `DepSafe` | `Values` contract, `getUnique` and its exception |
+| `Plus`/`Minus` bodies | library array methods | `reduce`, `sort` and `Iterable` contracts |
+| `main` | value imports | `async`/`await`, `Promise`, `runService` contract |
+| signal registration | `Promise` is not a declaration root | library `Promise`; `process` global contract |
 
-The configured TypeScript project includes the unchanged `sum.ts`. TypeScript
-resolves its four type imports from `@skipruntime/core` (`EagerCollection`,
-`Mapper`, `Resource`, `Values`) to interfaces in `core/src/api.ts`, and the
-runtime value import `runService` from `@skipruntime/server` to a function in
-`server/src/server.ts` (`importTargets` in
-[`declaration-graph.mts`](../tools/declaration-graph.mts)); the test pins those
-targets and all six class callables. The value import makes the whole
-declaration graph refuse. This is resolution inventory, not acceptance of
+The configured TypeScript project includes both files. TypeScript resolves
+upstream `sum.ts`'s type imports from `@skipruntime/core` (`EagerCollection`,
+`Mapper`, `Resource`, `Values`) to interfaces in `core/src/api.ts`, its value
+import `InputDefinition` to a class there, and `runService` from
+`@skipruntime/server` to a function in `server/src/server.ts` (`importTargets`
+in [`declaration-graph.mts`](../tools/declaration-graph.mts)); the test pins
+those targets and all six class callables. The first value import makes the
+whole declaration graph refuse. This is resolution inventory, not acceptance of
 those contracts. The source gate
 currently admits named type-only imports of aliases and single interfaces
 whose fields, string indexes, function-valued properties or method signatures
@@ -486,15 +513,16 @@ This is a relative client contract; imported runtime values cannot be granted
 it without an explicit assumption or a checked implementation.
 Interface inheritance is interpreted (see below); nested methods, optional
 method *presence*, generic methods and declaration merging refuse. All four
-runtime API interfaces reach a refused declaration, and `runService` is a
-value import, so the interface slice does not yet admit `sum.ts`. Applied in a
+runtime API interfaces reach a refused declaration, and `InputDefinition` and
+`runService` are value imports, so the interface slice does not yet admit
+`sum.ts`. Applied in a
 client of the same project, each stops at its first refused declaration
 (pinned in `test.mts`):
 
 | Interface | First refusal | Why |
 | --- | --- | --- |
 | `Mapper<K1, V1, K2, V2>` | a method signature of `Context` | `mapEntry`'s `context: Context` reaches `createLazyCollection`, a generic method taking `new (...params: Params) => LazyCompute<K, V>` |
-| `Resource<C>` | a method signature of `Context` | `instantiate`'s context parameter, as above |
+| `Resource<C>` | `AbstractEagerCollection` is a class | `SharedCollections` bounds records by the branded base class |
 | `EagerCollection<K, V>` | a method signature of `EagerCollection` | generic methods such as `map<K2, V2, Params extends DepSafe[]>` taking a constructor contract |
 | `Values<T>` | `bigint` in `DepSafe` | `DepSafe` is `null \| boolean \| number \| bigint \| string \| symbol \| Managed`, and `Managed` has a computed `unique symbol` key |
 
@@ -671,7 +699,7 @@ and this front end, rather than verification of arbitrary imports.
 `skipruntime-ts/core/skiplang-json` a symlink to the tracked
 `skiplang/skjson/ts/binding/src` directory. The canonical declaration is
 `skiplang/skjson/ts/binding/src/index.ts`, not a generated copy under `core`.
-At commit `cb030b5ac7beda28fd5f65e3292a485173d5faef`, it says:
+At commit `5c902f17431d963c1b6e07fc1d15da054ba30e70`, it says:
 
 ```ts
 type Json = boolean | number | string | readonly (Json | null)[] | JsonObject;
@@ -829,47 +857,51 @@ separately, for how far it moves `sum.ts` and the milestones above. An
 extension is not shaped around `sum.ts`, and progress toward the milestones is
 reported from measured first blockers, not from the extension landing.
 
-Required for the first milestone, in order:
+The target is the corrected client
+[`reactive-sum-sound.ts`](examples/reactive-sum-sound.ts). Required for the
+first milestone, in order of how much each gates:
 
-1. **Module-level code.** Top-level `const` initializers reading the global
-   `process`, value imports such as `runService` as explicit external
-   contracts, top-level `await`, async functions and expression statements.
-   Every `sum.ts` callable stops here first, and the statements may not be
-   skipped.
-2. **Classes.** Construction separate from invocation, parameter properties,
-   instance initialization, prototype methods using `this`, and `implements`
-   as a contract to check rather than a proof.
-3. **Generic interface methods.** Quantified method signatures; schemes exist
-   only for closures today. `Context` and `EagerCollection` stop here.
-4. **Constructor types and generic tuple packs.** `new (...params: Params) =>
-   T` with `Params extends DepSafe[]`.
-5. **Types over rigid binders.** Records, unions and intersections such as
-   `T & DepSafe` over an enclosing binder.
-6. **`bigint`, `symbol` and computed symbol keys.** `DepSafe` stops at
-   `bigint`; `Managed` has a `unique symbol` key; `Opaque` brands (`int`,
-   `Watermark`) depend on them.
-7. **Library contracts.** `Iterable`/`Iterator`, arrays as iterables, and
+1. **Module-level code and value imports.** A top-level `const` whose
+   initializer reads the global `process.env`, top-level `await main()`, and
+   value imports (`InputDefinition`, `runService`) as explicit external
+   contracts. Every callable of the file stops here first, and the statements
+   may not be skipped.
+2. **Classes.** Class declarations as values and as declarations in the graph
+   (`InputDefinition`, the branded `AbstractEagerCollection`); construction
+   separate from invocation (`new`); parameter properties (`AddIndex`); field
+   initializers (`Service`); prototype methods using `this`; and `implements`
+   as a contract to check rather than a proof. Every mapper, resource and the
+   service are classes.
+3. **The runtime API's declaration forms.** `Mapper` reaches `Context` and
+   `Values`; interpreting them needs:
+   - generic interface methods, i.e. quantified method signatures (schemes
+     exist only for closures today);
+   - constructor types and generic tuple packs, `new (...params: Params) =>
+     T` with `Params extends readonly DepSafe[]`;
+   - `bigint`, `symbol` and computed `unique symbol` keys (`DepSafe`,
+     `Managed`, the `Opaque` brands such as `int`);
+   - types over rigid binders, such as `T & DepSafe`.
+4. **Library contracts.** `Iterable`/`Iterator` and arrays as iterables (every
+   `mapEntry` returns an array literal as `Iterable`), and
    `Array.prototype.reduce` and `sort` with their callback effects and
    mutation.
-8. **Optional field presence.** `getUnique(_default?: { ifMany?: T })`; the
+5. **Optional field presence.** `getUnique(_default?: { ifMany?: T })`; the
    open `optional-field.ts` row.
-9. **Exceptions.** `getUnique` may throw.
+6. **Exceptions.** `getUnique` throws when a key has several values.
 
 Required for the second milestone in addition:
 
-10. **Generic interface variance.** `Resource<Collections>` requires
-    `Collections ≤ NamedCollections`, hence `EagerCollection<string, number>
-    ≤ EagerCollection<Json, Json>`. `K` and `V` occur in method parameters
-    (`getArray`, `slice`, `merge`), so TypeScript accepts this only by method
-    parameter bivariance, which sound subtyping refuses. This needs a design
-    decision before the milestone starts — for example a runtime-justified
-    variance stated as an explicit external assumption — not a weakened
-    subtype rule.
-11. **Generic calls taking classes.** `.map(Plus)` and `.map(AddIndex, 0)`
-    infer constructor and tuple-pack arguments, chained across methods.
-12. **The remaining file.** The `service` object, the `runService` contract,
-    promises and asynchronous shutdown, kept visible as out-of-scope effects
-    until they are modeled.
+7. **Generic calls taking classes.** `.map(Plus)` and `.map(AddIndex, 0)`
+   infer constructor and tuple-pack arguments, chained across `merge` and
+   `map`.
+8. **Asynchronous startup.** `async`/`await`, the library `Promise`, and the
+   `runService` and `process.on` contracts, kept visible as out-of-scope
+   effects until they are modeled.
+
+Generic interface variance is not on this list: the type-safe API does not
+ask for `EagerCollection<K, V> ≤ EagerCollection<Json, Json>`, and the
+corrected client meets `SharedCollections` through `interface Collections
+extends NamedEagerCollections`.
 
 The third milestone adds asynchronous behavior, exceptions and native/Wasm
 boundaries in the runtime implementation, outside the fragment work.
