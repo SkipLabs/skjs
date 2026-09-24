@@ -114,6 +114,12 @@ theorem splitClause_sem (X : α → Fam) (c : Clause α) (n W v) :
   cases c
   all_goals simp [splitClause, semList, setSem, sem, semWithArgs, boolT]
 
+/-- The split preserves meaning under any argument interpretation. -/
+theorem splitClause_semWithArgs (X : α → Fam) (P : α → ArgFam) (c : Clause α) (n W v) :
+    setSem (semWithArgs X P) (splitClause c) n W v ↔ semWithArgs X P c n W v := by
+  cases c
+  all_goals simp [splitClause, setSem, semWithArgs, boolT]
+
 theorem source_sem (G : NormalGraph ι) (S : List ι) (hS : G.plainTy S = true) (n W v) :
     meaning G S n W v ↔ semList (meaning G) (sourceClauses G S) n W v := by
   rw [expand_sem G S hS n W v, expand_of_plain hS]
@@ -125,6 +131,22 @@ theorem source_sem (G : NormalGraph ι) (S : List ι) (hS : G.plainTy S = true) 
     obtain ⟨c, hc, hd⟩ := List.mem_flatMap.mp hd
     exact ⟨c, hc, (splitClause_sem (meaning G) c n W v).mp ⟨d, hd, hv⟩⟩
 
+/-- Rows sharing a value through one clause each are compatible, whatever the
+clauses' operands mean. -/
+theorem compatible_of_clauses {G : NormalGraph ι} {i k : ι} {a b : Clause (List ι)}
+    {X Y : List ι → Fam} {P Q : List ι → ArgFam} {n m W U v}
+    (ha : a ∈ G i) (hb : b ∈ G k) (hva : semWithArgs X P a n W v)
+    (hvb : semWithArgs Y Q b m U v) : compatible G i k = true := by
+  simp only [compatible, NormalGraph.plain_of_clauses ha, NormalGraph.plain_of_clauses hb,
+    Bool.not_true, Bool.false_or, List.any_eq_true]
+  refine ⟨a, ha, b, hb, ?_⟩
+  by_cases hta : a = .top
+  · subst hta; rfl
+  by_cases htb : b = .top
+  · subst htb; simp [overlaps, isTop]
+  have hs := (semWithArgs_shape hta hva).symm.trans (semWithArgs_shape htb hvb)
+  simp [overlaps, hs]
+
 theorem compatible_sound {G : NormalGraph ι} {i k : ι} {n W U v}
     (hi : normalDenote G i n W v) (hk : normalDenote G k n U v) :
     compatible G i k = true := by
@@ -132,20 +154,72 @@ theorem compatible_sound {G : NormalGraph ι} {i k : ι} {n W U v}
   · simp [compatible, hpi]
   cases hpk : G.plain k
   · simp [compatible, hpk]
-  simp only [compatible, hpi, hpk, Bool.not_true, Bool.false_or]
   obtain ⟨a, ha, hva⟩ := (unfold_normal G i hpi n W v).mp hi
   obtain ⟨b, hb, hvb⟩ := (unfold_normal G k hpk n U v).mp hk
-  simp only [List.any_eq_true]
-  refine ⟨a, ha, b, hb, ?_⟩
-  by_cases hta : a = .top
-  · subst hta; rfl
-  by_cases htb : b = .top
-  · subst htb; simp [overlaps, isTop]
-  have hs := (sem_shape hta hva).symm.trans (sem_shape htb hvb)
-  simp [overlaps, hs]
+  exact compatible_of_clauses ha hb hva hvb
 
-def FamLeAt (G : NormalGraph ι) (a b : List ι) (n : Nat) : Prop :=
-  ∀ (W : WorldT n) (v : Val), meaning G a n W v → meaning G b n W v
+/-- The element of an element rest: a type whose one clause is the pack of any
+number of actuals at `E`, which is what a rest `...xs: E[]` says. -/
+def restElem (G : NormalGraph ι) (P : List ι) : Option (List ι) :=
+  match expand G P with
+  | [.pack ⟨[], [], some E, false⟩ []] => some E
+  | _ => none
+
+
+/-- A clause whose members depend neither on the level nor on the world: a
+primitive, a literal, or top. -/
+def stableClause : Clause α → Bool
+  | .nul | .bool | .boolLit _ | .num | .numLit _ | .undef | .top | .str | .strLit _
+  | .bigint | .symbol => true
+  | _ => false
+
+theorem stableClause_sem {X Y : α → Fam} {c : Clause α} (hc : stableClause c = true)
+    {n m : Nat} {W : WorldT n} {U : WorldT m} {v : Val} :
+    sem X c n W v ↔ sem Y c m U v := by
+  cases c <;> simp_all [stableClause, sem, semWithArgs, nulT, boolT, numT, undefT, topT, strT, bigintT, symbolT]
+
+/-- A type of clause rows all stable. -/
+def StableTy (G : NormalGraph ι) (A : List ι) : Prop :=
+  G.plainTy A = true ∧ (expand G A).all stableClause = true
+
+instance (G : NormalGraph ι) (A : List ι) : Decidable (StableTy G A) := by
+  unfold StableTy; infer_instance
+
+
+/-- A value and argument-list interpretation of a graph's types, with the
+facts coverage reads about element rests, overlapping rows and exact packs.
+The legacy pack encoding and the mixed interpretation are two instances, so
+one coverage proof serves both. -/
+structure CoverSem (G : NormalGraph ι) where
+  /-- The value members of a row. -/
+  row : ι → Fam
+  /-- The argument lists of a type. -/
+  args : List ι → ArgFam
+  /-- Rows sharing a value have overlapping clauses. -/
+  compat : ∀ {i k n W U v}, row i n W v → row k n U v → compatible G i k = true
+  /-- An element rest admits every list of its element's values. -/
+  elem_of_all : ∀ {E El n W xs}, restElem G E = some El →
+    (∀ u ∈ xs, setSem row El n W u) → args E n W xs
+  /-- An element rest admits a list of its element's values before a list it
+  admits. -/
+  elem_append : ∀ {E El n W xs ys}, restElem G E = some El →
+    (∀ u ∈ xs, setSem row El n W u) → args E n W ys → args E n W (xs ++ ys)
+  /-- An exact tuple of stable positions holds each actual at its position. -/
+  exact : ∀ {Q τ i W vs}, expand G Q = [.pack τ []] → τ.optional = [] → τ.rest = none →
+    (∀ A ∈ τ.required, StableTy G A) → args Q (i + 1) W vs →
+    ArgsT (τ.required.map (setSem row)) (i + 1) W vs
+
+/-- The value meaning of a type. -/
+abbrev CoverSem.val {G : NormalGraph ι} (σ : CoverSem G) : List ι → Fam := setSem σ.row
+
+def FamLeAt {G : NormalGraph ι} (σ : CoverSem G) (a b : List ι) (n : Nat) : Prop :=
+  ∀ (W : WorldT n) (v : Val), σ.val a n W v → σ.val b n W v
+
+/-- Argument lists within, below a level, along a relation. -/
+def ArgsLeBelow {G : NormalGraph ι} (σ : CoverSem G) (R : List ι → List ι → Prop) (n : Nat) :
+    Prop :=
+  ∀ j, j < n → ∀ S T, R S T → ∀ (W : WorldT j) vs, σ.args S j W vs → σ.args T j W vs
+
 
 /-- Pointwise domain inclusion requires the same number of actual arguments. -/
 def Domains (R : List ι → List ι → Prop) : List (List ι) → List (List ι) → Prop
@@ -172,10 +246,10 @@ theorem Domains.length_eq {R : List ι → List ι → Prop} :
   | [], _ :: _, h => h.elim
   | _ :: _, [], h => h.elim
 
-theorem Domains.sound {G : NormalGraph ι} {R As Bs n}
-    (hd : Domains R As Bs) (hr : ∀ a b, R a b → FamLeAt G a b n)
-    {W args} (ha : ArgsT (As.map (meaning G)) n W args) :
-    ArgsT (Bs.map (meaning G)) n W args := by
+theorem Domains.sound {G : NormalGraph ι} {σ : CoverSem G} {R As Bs n}
+    (hd : Domains R As Bs) (hr : ∀ a b, R a b → FamLeAt σ a b n)
+    {W args} (ha : ArgsT (As.map (σ.val)) n W args) :
+    ArgsT (Bs.map (σ.val)) n W args := by
   induction As generalizing Bs args with
   | nil => cases Bs <;> simp_all [Domains]
   | cons A As ih =>
@@ -188,10 +262,10 @@ theorem Domains.sound {G : NormalGraph ι} {R As Bs n}
 
 /-- Domains pointwise below others at one budget admit, there, every list
 the others admit. -/
-theorem Domains.short {G : NormalGraph ι} {R : List ι → List ι → Prop} {j : Nat}
-    (hr : ∀ a b, R a b → FamLeAt G a b j) {W : WorldT j} :
+theorem Domains.short {G : NormalGraph ι} {σ : CoverSem G} {R : List ι → List ι → Prop} {j : Nat}
+    (hr : ∀ a b, R a b → FamLeAt σ a b j) {W : WorldT j} :
     ∀ {As Bs : List (List ι)} {args : List Tm}, Domains R As Bs →
-      ArgsShort (As.map (meaning G)) j W args → ArgsShort (Bs.map (meaning G)) j W args
+      ArgsShort (As.map (σ.val)) j W args → ArgsShort (Bs.map (σ.val)) j W args
   | [], [], _, _, h => h
   | [], _ :: _, _, hd, _ | _ :: _, [], _, hd, _ => hd.elim
   | A :: As, B :: Bs, [], hd, h => by
@@ -204,13 +278,13 @@ theorem Domains.short {G : NormalGraph ι} {R : List ι → List ι → Prop} {j
 
 /-- An empty position admits no list: no value is written there, and
 `undefined` is not in it either. -/
-theorem short_empty {G : NormalGraph ι} {j : Nat} {W : WorldT j} :
+theorem short_empty {G : NormalGraph ι} {σ : CoverSem G} {j : Nat} {W : WorldT j} :
     ∀ {As : List (List ι)} {args : List Tm}, [] ∈ As →
-      ¬ ArgsShort (As.map (meaning G)) j W args
+      ¬ ArgsShort (As.map (σ.val)) j W args
   | [], _, he => by simp at he
   | A :: As, args, he => by
     intro h
-    have hnone : ∀ u, ¬ meaning G [] j W u := by
+    have hnone : ∀ u, ¬ σ.val [] j W u := by
       intro u ⟨i, hi, _⟩; simp at hi
     cases args with
     | nil =>
@@ -225,11 +299,11 @@ theorem short_empty {G : NormalGraph ι} {j : Nat} {W : WorldT j} :
       · exact short_empty he h.2
 
 /-- A union at any position splits the admitted lists without reordering. -/
-theorem short_union {G : NormalGraph ι} (a b : List ι) (suffix : List (List ι)) {j : Nat}
+theorem short_union {G : NormalGraph ι} {σ : CoverSem G} (a b : List ι) (suffix : List (List ι)) {j : Nat}
     {W : WorldT j} : ∀ (pre : List (List ι)) {args : List Tm},
-      ArgsShort ((pre ++ (a ++ b) :: suffix).map (meaning G)) j W args →
-      ArgsShort ((pre ++ a :: suffix).map (meaning G)) j W args ∨
-        ArgsShort ((pre ++ b :: suffix).map (meaning G)) j W args
+      ArgsShort ((pre ++ (a ++ b) :: suffix).map (σ.val)) j W args →
+      ArgsShort ((pre ++ a :: suffix).map (σ.val)) j W args ∨
+        ArgsShort ((pre ++ b :: suffix).map (σ.val)) j W args
   | [], [], h => by
     simp only [List.nil_append, List.map_cons, ArgsShort_nil_args, List.mem_cons,
       forall_eq_or_imp] at h ⊢
@@ -255,27 +329,6 @@ theorem short_union {G : NormalGraph ι} (a b : List ι) (suffix : List (List ι
     · exact Or.inl ⟨h.1, h'⟩
     · exact Or.inr ⟨h.1, h'⟩
 
-/-- A type's meaning is a family of closed values. -/
-theorem meaning_valueFam (G : NormalGraph ι) (S : List ι) : ValueFam (meaning G S) :=
-  ⟨setSem_adm (normalDenote_adm G) S, fun _ _ _ ⟨_, _, h⟩ => normalDenote_value h⟩
-
-/-- The element of an element rest: a type whose one clause is the pack of any
-number of actuals at `E`, which is what a rest `...xs: E[]` says. -/
-def restElem (G : NormalGraph ι) (P : List ι) : Option (List ι) :=
-  match expand G P with
-  | [.pack ⟨[], [], some E, false⟩ []] => some E
-  | _ => none
-
-theorem restElem_sem {G : NormalGraph ι} {P E : List ι} (h : restElem G P = some E) (n W v) :
-    meaning G P n W v ↔ elemPack (meaning G E) n W v := by
-  have hx : expand G P = [.pack ⟨[], [], some E, false⟩ []] := by
-    unfold restElem at h
-    split at h <;> simp_all
-  have hp : G.plainTy P = true :=
-    plain_of_mem_expand (c := .pack ⟨[], [], some E, false⟩ []) (by simp [hx])
-  rw [expand_sem G P hp, hx]
-  simp [semList, setSem, sem, semWithArgs, elemPack, tupleFams]
-
 /-- Fixed positions within an element rest's element: the rest is an element
 rest, and each position is within its element. -/
 def ElemRest (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
@@ -291,37 +344,28 @@ def IntoRest (elem : List ι → Option (List ι)) (R : List ι → List ι → 
   As = [] ∨ ElemRest elem R As E
 
 /-- Actuals admitted by fixed positions, each within one family, are in it. -/
-theorem short_all_le {G : NormalGraph ι} {R : List ι → List ι → Prop} {j : Nat}
-    (hr : ∀ a b, R a b → FamLeAt G a b j) {W : WorldT j} {As : List (List ι)} {El : List ι}
-    (h : ∀ A ∈ As, R A El) {xs : List Tm} (hs : ArgsT ((As.map (meaning G)).take xs.length) j W xs) :
-    ∀ u ∈ xs, meaning G El j W u := by
+theorem short_all_le {G : NormalGraph ι} {σ : CoverSem G} {R : List ι → List ι → Prop} {j : Nat}
+    (hr : ∀ a b, R a b → FamLeAt σ a b j) {W : WorldT j} {As : List (List ι)} {El : List ι}
+    (h : ∀ A ∈ As, R A El) {xs : List Tm} (hs : ArgsT ((As.map (σ.val)).take xs.length) j W xs) :
+    ∀ u ∈ xs, σ.val El j W u := by
   refine ArgsT_all_le (fun A hA u hu => ?_) hs
   rw [← List.map_take] at hA
   obtain ⟨A0, hA0, rfl⟩ := List.mem_map.mp hA
   exact hr A0 El (h A0 (List.mem_of_mem_take hA0)) W u hu
 
-/-- Actuals typed at a level are members below it, at every future world. -/
-theorem meaning_below {G : NormalGraph ι} {S : List ι} {k : Nat} {W : WorldT k} {u : Tm}
-    (h : meaning G S k W u) : ∀ (j : Nat) (hj : j < k) (U : WorldT j),
-      WExt (trunc j (Nat.le_of_lt hj) W) U → meaning G S j U u := fun j hj U hx =>
-  (meaning_valueFam G S).1.mono j _ U hx u
-    ((meaning_valueFam G S).1.down_le k j (Nat.le_of_lt hj) W u h)
-
 /-- A variadic signature with an element rest admits, at one budget, every
 list a fixed one admits when its fixed parameters come first, pointwise wider,
 and the fixed one's further positions are within the rest's element. -/
-theorem rest_short {G : NormalGraph ι} {R : List ι → List ι → Prop} {j : Nat}
-    (hr : ∀ a b, R a b → FamLeAt G a b j) {W : WorldT j} {E El : List ι}
+theorem rest_short {G : NormalGraph ι} {σ : CoverSem G} {R : List ι → List ι → Prop} {j : Nat}
+    (hr : ∀ a b, R a b → FamLeAt σ a b j) {W : WorldT j} {E El : List ι}
     (hel : restElem G E = some El) :
     ∀ {Ps As : List (List ι)} {args : List Tm}, Domains R (As.take Ps.length) Ps →
       (∀ A ∈ As.drop Ps.length, R A El) →
-      ArgsShort (As.map (meaning G)) j W args →
-      ArgsRest (Ps.map (meaning G)) (packArgs (meaning G E)) j W args
+      ArgsShort (As.map (σ.val)) j W args →
+      ArgsRest (Ps.map (σ.val)) (σ.args E) j W args
   | [], As, args, _, hd, h => by
-    rw [List.map_nil, ArgsRest_nil_params, packArgs, restElem_sem hel]
-    have hall := short_all_le hr (by simpa using hd) h.2.1
-    exact elemPack_of_all (meaning_valueFam G El).1
-      (fun u hu => ((meaning_valueFam G El).2 _ _ _ (hall u hu)).2) hall
+    rw [List.map_nil, ArgsRest_nil_params]
+    exact σ.elem_of_all hel (short_all_le hr (by simpa using hd) h.2.1)
   | _ :: _, [], _, hd, _, _ => hd.elim
   | P :: Ps, A :: As, [], hd, hd', h => by
     simp only [List.length_cons, List.take_succ_cons, List.drop_succ_cons] at hd hd'
@@ -338,29 +382,26 @@ theorem rest_short {G : NormalGraph ι} {R : List ι → List ι → Prop} {j : 
 /-- A variadic signature admits, at one budget, every list a narrower variadic
 signature admits: fixed positions pointwise wider, the narrower one's further
 fixed positions taken into its rest, and its rest within the rest. -/
-theorem rest_rest {G : NormalGraph ι} {R : List ι → List ι → Prop} {j : Nat}
-    (hr : ∀ a b, R a b → FamLeAt G a b j) {W : WorldT j} {E F : List ι} (hfe : R F E) :
+theorem rest_rest {G : NormalGraph ι} {σ : CoverSem G} {R : List ι → List ι → Prop} {j : Nat}
+    (hr : ∀ a b, R a b → FamLeAt σ a b j) {W : WorldT j} {E F : List ι}
+    (hfe : ∀ (W : WorldT j) vs, σ.args F j W vs → σ.args E j W vs) :
     ∀ {Ps Qs : List (List ι)} {args : List Tm}, Domains R (Qs.take Ps.length) Ps →
       IntoRest (restElem G) R (Qs.drop Ps.length) E →
-      ArgsRest (Qs.map (meaning G)) (packArgs (meaning G F)) j W args →
-      ArgsRest (Ps.map (meaning G)) (packArgs (meaning G E)) j W args
+      ArgsRest (Qs.map (σ.val)) (σ.args F) j W args →
+      ArgsRest (Ps.map (σ.val)) (σ.args E) j W args
   | [], Qs, args, _, hin, h => by
     rw [List.map_nil, ArgsRest_nil_params]
     simp only [ArgsRest, List.length_map] at h
     obtain ⟨hs, hf⟩ := h
-    have hE := hr F E hfe W _ hf
+    have hE := hfe W _ hf
     simp only [List.length_nil, List.drop_zero] at hin
     rcases hin with rfl | hin
-    · simpa [packArgs] using hE
+    · simpa using hE
     · unfold ElemRest at hin
       split at hin
       · rename_i El hel
-        simp only [packArgs]
-        rw [restElem_sem hel] at hE ⊢
-        have hall := short_all_le hr hin hs.2.1
         rw [← List.take_append_drop Qs.length args]
-        exact elemPack_append (fun u hu => ((meaning_valueFam G El).2 _ _ _ (hall u hu)).2)
-          (fun u hu => meaning_below (hall u hu)) hE
+        exact σ.elem_append hel (short_all_le hr hin hs.2.1) hE
       · exact hin.elim
   | _ :: _, [], _, hd, _, _ => hd.elim
   | P :: Ps, Q :: Qs, [], hd, hin, h => by
@@ -417,22 +458,22 @@ inductive CallArrow (compat : ι → ι → Bool) (elem : List ι → Option (Li
       (∀ i ∈ b, ∀ k ∈ b', compat i k = true → R [i] d) → CallArrow compat elem R L S Rt As d
 
 /-- An arrow's source result within the target's, or empty. -/
-theorem arrow_result {G : NormalGraph ι} {R : List ι → List ι → Prop} {n : Nat} {r d : List ι}
-    (hr : ∀ j, j < n → ∀ a b, R a b → FamLeAt G a b j) (hc : r = [] ∨ R r d) :
-    ∀ m, m < n → ∀ (V : WorldT m) u, meaning G r m V u → meaning G d m V u := by
+theorem arrow_result {G : NormalGraph ι} {σ : CoverSem G} {R : List ι → List ι → Prop} {n : Nat} {r d : List ι}
+    (hr : ∀ j, j < n → ∀ a b, R a b → FamLeAt σ a b j) (hc : r = [] ∨ R r d) :
+    ∀ m, m < n → ∀ (V : WorldT m) u, σ.val r m V u → σ.val d m V u := by
   intro m hm V u hu
   rcases hc with he | he
   · obtain ⟨i, hi, _⟩ := hu; simp [he] at hi
   · exact hr m hm _ _ he V u hu
 
-theorem CallArrow.sound {G : NormalGraph ι} {R L S Rt As d}
+theorem CallArrow.sound {G : NormalGraph ι} {σ : CoverSem G} {R L S Rt As d}
     (hc : CallArrow (compatible G) (restElem G) R L S Rt As d) (n : Nat)
-    (hr : ∀ j, j < n → ∀ a b, R a b → FamLeAt G a b j)
+    (hr : ∀ j, j < n → ∀ a b, R a b → FamLeAt σ a b j)
     (W : WorldT n) (v : Val)
-    (hv : callsT (L.map fun p => (meaning G p.1, p.2.1.map (meaning G), meaning G p.2.2)) n W v ∧
-      restsT (S.map fun s => (meaning G s.1, s.2.1.map (meaning G), packArgs (meaning G s.2.2.1),
-        meaning G s.2.2.2)) n W v) :
-    Promise (ArgsShort (As.map (meaning G))) (meaning G Rt) (meaning G d) n W v := by
+    (hv : callsT (L.map fun p => (σ.val p.1, p.2.1.map (σ.val), σ.val p.2.2)) n W v ∧
+      restsT (S.map fun s => (σ.val s.1, s.2.1.map (σ.val), σ.args s.2.2.1,
+        σ.val s.2.2.2)) n W v) :
+    Promise (ArgsShort (As.map (σ.val))) (σ.val Rt) (σ.val d) n W v := by
   induction hc with
   | emptyRecv =>
     intro j hj U hx hu heap hh r hrv hrm
@@ -473,19 +514,20 @@ theorem CallArrow.sound {G : NormalGraph ι} {R L S Rt As d}
     cases CallArguments.invoke_deterministic hi1 hi2
     refine ⟨r1, hi1, safe_cross_upto j ?_ U U heap _ hok hok hs1 hs2⟩
     rintro r hb V V' heap h1 h2 u ⟨i, hi, hv1⟩ ⟨k, hk, hv2⟩
-    exact hr r (by omega) _ _ (hg i hi k hk (compatible_sound hv1 hv2)) V u
+    exact hr r (by omega) _ _ (hg i hi k hk (σ.compat hv1 hv2)) V u
       ⟨i, by simp, hv1⟩
 
-theorem rest_covers_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
+theorem rest_covers_sound {G : NormalGraph ι} {σ : CoverSem G} {R : List ι → List ι → Prop}
     {p q : List ι × List (List ι) × List ι × List ι} (hc : RestCovers (restElem G) R p q) (n : Nat)
-    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j) (W : WorldT n) (v : Val)
-    (hv : Promise (ArgsRest (p.2.1.map (meaning G)) (packArgs (meaning G p.2.2.1))) (meaning G p.1)
-      (meaning G p.2.2.2) n W v) :
-    Promise (ArgsRest (q.2.1.map (meaning G)) (packArgs (meaning G q.2.2.1))) (meaning G q.1)
-      (meaning G q.2.2.2) n W v := by
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt σ S T j) (hpa : ArgsLeBelow σ R n)
+    (W : WorldT n) (v : Val)
+    (hv : Promise (ArgsRest (p.2.1.map (σ.val)) (σ.args p.2.2.1)) (σ.val p.1)
+      (σ.val p.2.2.2) n W v) :
+    Promise (ArgsRest (q.2.1.map (σ.val)) (σ.args q.2.2.1)) (σ.val q.1)
+      (σ.val q.2.2.2) n W v := by
   obtain ⟨hrecv, hd, hel, he, hres⟩ := hc
   exact hv.weaken (fun j hj U r hrm => hr j hj _ _ hrecv U r hrm)
-    (fun j hj U args ha => rest_rest (hr j hj) he (by simpa using hd)
+    (fun j hj U args ha => rest_rest (hr j hj) (hpa j hj _ _ he) (by simpa using hd)
     (by simpa using hel) ha) (fun m hm U u hu => hr m hm _ _ hres U u hu)
 
 /-- One record conjunction covers another when every field any target operand
@@ -525,54 +567,6 @@ def CoversTuple (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Pro
   (∀ x ∈ p.optional.zip q.optional, R x.1 x.2 ∧ (q.readonly = false → R x.2 x.1)) ∧
   CoversRest R q.readonly p.rest q.rest ∧ (q.readonly = false → p.readonly = false)
 
-/-- A clause whose members depend neither on the level nor on the world: a
-primitive, a literal, or top. -/
-def stableClause : Clause α → Bool
-  | .nul | .bool | .boolLit _ | .num | .numLit _ | .undef | .top | .str | .strLit _
-  | .bigint | .symbol => true
-  | _ => false
-
-theorem stableClause_sem {X Y : α → Fam} {c : Clause α} (hc : stableClause c = true)
-    {n m : Nat} {W : WorldT n} {U : WorldT m} {v : Val} :
-    sem X c n W v ↔ sem Y c m U v := by
-  cases c <;> simp_all [stableClause, sem, semWithArgs, nulT, boolT, numT, undefT, topT, strT, bigintT, symbolT]
-
-/-- A type of clause rows all stable. -/
-def StableTy (G : NormalGraph ι) (A : List ι) : Prop :=
-  G.plainTy A = true ∧ (expand G A).all stableClause = true
-
-instance (G : NormalGraph ι) (A : List ι) : Decidable (StableTy G A) := by
-  unfold StableTy; infer_instance
-
-/-- A stable type's members are its members at every level and world. -/
-theorem stable_meaning {G : NormalGraph ι} {A : List ι} (h : StableTy G A) {n m : Nat}
-    {W : WorldT n} {U : WorldT m} {v : Val} (hv : meaning G A n W v) : meaning G A m U v := by
-  obtain ⟨hp, hs⟩ := h
-  rw [expand_sem G A hp] at hv ⊢
-  obtain ⟨c, hc, hv⟩ := hv
-  exact ⟨c, hc, (stableClause_sem (List.all_eq_true.mp hs c hc)).mp hv⟩
-
-/-- An exact tuple of stable positions: its pack holds each actual at its
-position at the current level too, since a stable type does not notice the
-level. -/
-theorem pack_exact_args {G : NormalGraph ι} {τ : Tuple (List ι)} (hopt : τ.optional = [])
-    (hrest : τ.rest = none) (hstab : ∀ A ∈ τ.required, StableTy G A) {i : Nat}
-    {U : WorldT (i + 1)} {vs : List Tm} (hp : PackFits (tupleFams (meaning G) τ) (i + 1) U vs) :
-    ArgsT (τ.required.map (meaning G)) (i + 1) U vs := by
-  obtain ⟨hlen, hbound, hel⟩ := hp
-  have hlen' : τ.required.length = vs.length := by
-    have h1 : τ.required.length ≤ vs.length := by simpa [tupleFams] using hlen
-    have h2 := hbound (by simp [tupleFams, hrest])
-    simp [tupleFams, hopt] at h2
-    omega
-  refine ArgsT_of_getElem? (by simpa using hlen') fun idx A a hA ha => ?_
-  obtain ⟨A0, hA0, rfl⟩ := Option.map_eq_some_iff.mp (by simpa [List.getElem?_map] using hA)
-  have hpos : positionFam (tupleFams (meaning G) τ) idx = some (meaning G A0) := by
-    rw [positionFam_tupleFams]
-    simp [Tuple.position, hA0]
-  have hm := hel idx a (meaning G A0) ha hpos i (Nat.lt_succ_self i) _ (WExt_refl _)
-  exact stable_meaning (hstab A0 (List.mem_of_getElem? hA0)) hm
-
 /-- A fixed construct signature `(Ps, B)` covers a variadic one `(Qs, P, D)`
 whose rest is one exact tuple of stable positions: its fixed parameters, then
 the tuple's positions, are within the source's parameters, and the source's
@@ -599,14 +593,14 @@ def FixedCallsPack (G : NormalGraph ι) (R : List ι → List ι → Prop)
 /-- A fixed signature meets a variadic one whose rest is an exact tuple of
 stable positions: at the current level the pack's actuals are at their
 positions, and at level zero there is nothing to prove past the call. -/
-theorem fixed_calls_pack_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
+theorem fixed_calls_pack_sound {G : NormalGraph ι} {σ : CoverSem G} {R : List ι → List ι → Prop}
     {p : List ι × List (List ι) × List ι} {t : List ι × List (List ι) × List ι × List ι}
     (hc : FixedCallsPack G R p t) (n : Nat)
-    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j) (W : WorldT n) (v : Val)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt σ S T j) (W : WorldT n) (v : Val)
     (hinv : Invocable v)
-    (hv : Promise (ArgsShort (p.2.1.map (meaning G))) (meaning G p.1) (meaning G p.2.2) n W v) :
-    Promise (ArgsRest (t.2.1.map (meaning G)) (packArgs (meaning G t.2.2.1))) (meaning G t.1)
-      (meaning G t.2.2.2) n W v := by
+    (hv : Promise (ArgsShort (p.2.1.map (σ.val))) (σ.val p.1) (σ.val p.2.2) n W v) :
+    Promise (ArgsRest (t.2.1.map (σ.val)) (σ.args t.2.2.1)) (σ.val t.1)
+      (σ.val t.2.2.2) n W v := by
   unfold FixedCallsPack at hc
   split at hc
   · rename_i τ hP
@@ -619,15 +613,8 @@ theorem fixed_calls_pack_sound {G : NormalGraph ι} {R : List ι → List ι →
     | succ i =>
       obtain ⟨hshort, hpack⟩ := ha
       simp only [List.length_map] at hshort hpack
-      have hplain : G.plainTy t.2.2.1 = true :=
-        plain_of_mem_expand (c := .pack τ []) (by simp [hP])
-      obtain ⟨c, hcm, hcv⟩ := (expand_sem G _ hplain (i + 1) U _).mp hpack
-      rw [hP, List.mem_singleton] at hcm
-      subst hcm
-      obtain ⟨vs, hvs, -, hf⟩ := hcv
-      cases hvs
-      have htup := pack_exact_args hopt hrest hstab (hf _ List.mem_cons_self)
-      have hall : ArgsShort ((t.2.1 ++ τ.required).map (meaning G)) (i + 1) U args := by
+      have htup := σ.exact hP hopt hrest hstab hpack
+      have hall : ArgsShort ((t.2.1 ++ τ.required).map (σ.val)) (i + 1) U args := by
         by_cases hl : args.length ≤ t.2.1.length
         · rw [List.drop_eq_nil_of_le hl] at htup
           have hreq : τ.required = [] := List.eq_nil_of_length_eq_zero (by
@@ -637,9 +624,9 @@ theorem fixed_calls_pack_sound {G : NormalGraph ι} {R : List ι → List ι →
           rw [hreq, List.append_nil]
           rwa [List.take_of_length_le hl] at hshort
         · have htl : (args.take t.2.1.length).length = t.2.1.length := by simp; omega
-          have hfix : ArgsT (t.2.1.map (meaning G)) (i + 1) U (args.take t.2.1.length) := by
+          have hfix : ArgsT (t.2.1.map (σ.val)) (i + 1) U (args.take t.2.1.length) := by
             have := hshort.2.1
-            rw [htl, show t.2.1.length = (t.2.1.map (meaning G)).length by simp,
+            rw [htl, show t.2.1.length = (t.2.1.map (σ.val)).length by simp,
               List.take_length] at this
             simpa using this
           have := ArgsT_append hfix htup
@@ -740,13 +727,13 @@ theorem CoversWith.mono {G : NormalGraph ι} {R : List ι → List ι → Prop}
 /-- Covering field by field is enough: the operands all constrain the same
 object, so a field the target names is found at the location the source already
 fixed, under a contract the two relations identify. -/
-theorem covers_recs {G : NormalGraph ι} {R : List ι → List ι → Prop}
+theorem covers_recs {G : NormalGraph ι} {σ : CoverSem G} {R : List ι → List ι → Prop}
     {a c : List (PropKey × List ι)} {bs ds : List (List (PropKey × List ι))}
     (hc : CoversFields R (a :: bs) (c :: ds)) (n : Nat)
-    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt σ S T j)
     (W : WorldT n) (flds : List (PropKey × Nat))
-    (hsrc : ∀ x ∈ a :: bs, recT (famsOf (meaning G) x) n W (.objAt flds .absent)) :
-    ∀ b ∈ c :: ds, recT (famsOf (meaning G) b) n W (.objAt flds .absent) := by
+    (hsrc : ∀ x ∈ a :: bs, recT (famsOf (σ.val) x) n W (.objAt flds .absent)) :
+    ∀ b ∈ c :: ds, recT (famsOf (σ.val) b) n W (.objAt flds .absent) := by
   intro b hb
   refine ⟨flds, rfl, ?_⟩
   intro f T hm
@@ -761,16 +748,16 @@ theorem covers_recs {G : NormalGraph ι} {R : List ι → List ι → Prop}
   exact ⟨l, c0, hf, hl, fun j hj W' u =>
     (hag j hj W' u).trans ⟨hr j hj pl y hpy W' u, hr j hj y pl hyp W' u⟩⟩
 
-theorem covers_fields_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
+theorem covers_fields_sound {G : NormalGraph ι} {σ : CoverSem G} {R : List ι → List ι → Prop}
     {a c : List (PropKey × List ι)} {bs ds : List (List (PropKey × List ι))}
     (hc : CoversFields R (a :: bs) (c :: ds)) (n : Nat)
-    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt σ S T j)
     (W : WorldT n) (v : Val)
-    (hv : refsT (famsOf (meaning G) a) (bs.map (famsOf (meaning G))) n W v) :
-    refsT (famsOf (meaning G) c) (ds.map (famsOf (meaning G))) n W v := by
+    (hv : refsT (famsOf (σ.val) a) (bs.map (famsOf (σ.val))) n W v) :
+    refsT (famsOf (σ.val) c) (ds.map (famsOf (σ.val))) n W v := by
   obtain ⟨flds, he, -⟩ := hv.1
   subst he
-  have hsrc : ∀ x ∈ a :: bs, recT (famsOf (meaning G) x) n W (.objAt flds .absent) := by
+  have hsrc : ∀ x ∈ a :: bs, recT (famsOf (σ.val) x) n W (.objAt flds .absent) := by
     intro x hx
     rcases List.mem_cons.mp hx with rfl | hx
     · exact hv.1
@@ -782,15 +769,15 @@ theorem covers_fields_sound {G : NormalGraph ι} {R : List ι → List ι → Pr
 
 /-- A covered view field reads a location whose contract implies its family,
 whether the source states that location invariantly or as a view. -/
-theorem covers_views_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
+theorem covers_views_sound {G : NormalGraph ι} {σ : CoverSem G} {R : List ι → List ι → Prop}
     {a : List (PropKey × List ι)} {bs : List (List (PropKey × List ι))}
     {vs ws : List (PropKey × List ι)}
     (hc : CoversViews R (a :: bs) vs ws) (n : Nat)
-    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt σ S T j)
     (W : WorldT n) (v : Val)
-    (hv : refsT (famsOf (meaning G) a) (bs.map (famsOf (meaning G))) n W v ∧
-      viewT (famsOf (meaning G) vs) n W v) :
-    viewT (famsOf (meaning G) ws) n W v := by
+    (hv : refsT (famsOf (σ.val) a) (bs.map (famsOf (σ.val))) n W v ∧
+      viewT (famsOf (σ.val) vs) n W v) :
+    viewT (famsOf (σ.val) ws) n W v := by
   intro f T hm
   obtain ⟨y, hy, rfl⟩ := mem_famsOf.mp hm
   obtain ⟨⟨pf, pl⟩, hp, hpf, hpy⟩ := hc (f, y) hy
@@ -798,7 +785,7 @@ theorem covers_views_sound {G : NormalGraph ι} {R : List ι → List ι → Pro
   subst hpf
   rcases List.mem_append.mp hp with hp | hp
   · obtain ⟨L, hL, hpL⟩ := List.mem_flatten.mp hp
-    have hsrc : recT (famsOf (meaning G) L) n W v := by
+    have hsrc : recT (famsOf (σ.val) L) n W v := by
       rcases List.mem_cons.mp hL with rfl | hL
       · exact hv.1.1
       · exact hv.1.2 _ (List.mem_map_of_mem hL)
@@ -810,15 +797,15 @@ theorem covers_views_sound {G : NormalGraph ι} {R : List ι → List ι → Pro
 /-- A covered optional field: where the key is present, the location is the
 one a source field of that key names, whose contract both relations identify
 with the target's. -/
-theorem covers_optional_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
+theorem covers_optional_sound {G : NormalGraph ι} {σ : CoverSem G} {R : List ι → List ι → Prop}
     {a : List (PropKey × List ι)} {bs : List (List (PropKey × List ι))}
     {os ps : List (PropKey × List ι)}
     (hc : CoversOptional R (a :: bs) os ps) (n : Nat)
-    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt σ S T j)
     (W : WorldT n) (v : Val)
-    (hv : refsT (famsOf (meaning G) a) (bs.map (famsOf (meaning G))) n W v ∧
-      optT (famsOf (meaning G) os) n W v) :
-    optT (famsOf (meaning G) ps) n W v := by
+    (hv : refsT (famsOf (σ.val) a) (bs.map (famsOf (σ.val))) n W v ∧
+      optT (famsOf (σ.val) os) n W v) :
+    optT (famsOf (σ.val) ps) n W v := by
   obtain ⟨flds, he, -⟩ := hv.1.1
   subst he
   refine ⟨flds, rfl, ?_⟩
@@ -827,12 +814,12 @@ theorem covers_optional_sound {G : NormalGraph ι} {R : List ι → List ι → 
   obtain ⟨⟨pf, pl⟩, hp, hpf, hpy, hyp⟩ := hc (f, y) hy
   simp only at hpf
   subst hpf
-  have both : ∀ (c0 : Ctr n), (∀ j (hj : j < n) (W' : WorldT j) u, c0 j hj W' u ↔ meaning G pl j W' u) →
-      ∀ j (hj : j < n) (W' : WorldT j) u, c0 j hj W' u ↔ meaning G y j W' u :=
+  have both : ∀ (c0 : Ctr n), (∀ j (hj : j < n) (W' : WorldT j) u, c0 j hj W' u ↔ σ.val pl j W' u) →
+      ∀ j (hj : j < n) (W' : WorldT j) u, c0 j hj W' u ↔ σ.val y j W' u :=
     fun c0 hag j hj W' u => (hag j hj W' u).trans ⟨hr j hj pl y hpy W' u, hr j hj y pl hyp W' u⟩
   rcases List.mem_append.mp hp with hp | hp
   · obtain ⟨L, hL, hpL⟩ := List.mem_flatten.mp hp
-    have hsrc : recT (famsOf (meaning G) L) n W (.objAt flds .absent) := by
+    have hsrc : recT (famsOf (σ.val) L) n W (.objAt flds .absent) := by
       rcases List.mem_cons.mp hL with rfl | hL
       · exact hv.1.1
       · exact hv.1.2 _ (List.mem_map_of_mem hL)
@@ -846,18 +833,18 @@ theorem covers_optional_sound {G : NormalGraph ι} {R : List ι → List ι → 
 
 /-- The same argument for a callable object's property bag, which forgets the
 call slot but names the same locations. -/
-theorem covers_bags_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
+theorem covers_bags_sound {G : NormalGraph ι} {σ : CoverSem G} {R : List ι → List ι → Prop}
     {a c : List (PropKey × List ι)} {bs ds : List (List (PropKey × List ι))}
     (hc : CoversFields R (a :: bs) (c :: ds)) (n : Nat)
-    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt σ S T j)
     (W : WorldT n) (v : Val)
-    (hv : CallableConjunctions.propsT (famsOf (meaning G) a)
-      (bs.map (famsOf (meaning G))) n W v) :
-    CallableConjunctions.propsT (famsOf (meaning G) c)
-      (ds.map (famsOf (meaning G))) n W v := by
+    (hv : CallableConjunctions.propsT (famsOf (σ.val) a)
+      (bs.map (famsOf (σ.val))) n W v) :
+    CallableConjunctions.propsT (famsOf (σ.val) c)
+      (ds.map (famsOf (σ.val))) n W v := by
   obtain ⟨flds, code, he, hval, hbag⟩ := hv.1
   subst he
-  have hsrc : ∀ x ∈ a :: bs, recT (famsOf (meaning G) x) n W (.objAt flds .absent) := by
+  have hsrc : ∀ x ∈ a :: bs, recT (famsOf (σ.val) x) n W (.objAt flds .absent) := by
     intro x hx
     rcases List.mem_cons.mp hx with rfl | hx
     · exact hbag
@@ -871,11 +858,11 @@ theorem covers_bags_sound {G : NormalGraph ι} {R : List ι → List ι → Prop
 
 /-- A covered tuple contract holds of the same store: every position's location
 carries a contract both families identify. -/
-theorem covers_tuple_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
+theorem covers_tuple_sound {G : NormalGraph ι} {σ : CoverSem G} {R : List ι → List ι → Prop}
     {p q : Tuple (List ι)} (hc : CoversTuple R p q) (n : Nat)
-    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
-    (W : WorldT n) (v : Val) (hv : listT (tupleFams (meaning G) p) n W v) :
-    listT (tupleFams (meaning G) q) n W v := by
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt σ S T j)
+    (W : WorldT n) (v : Val) (hv : listT (tupleFams (σ.val) p) n W v) :
+    listT (tupleFams (σ.val) q) n W v := by
   obtain ⟨hreqLen, hoptLen, hreqR, hoptR, hrestR, hmode⟩ := hc
   obtain ⟨ls, rfl, hlen, hbound, hreq, hopt, hrest⟩ := hv
   simp only [listT, tupleFams, List.length_map, List.getElem?_map, Option.map_eq_none_iff,
@@ -890,7 +877,7 @@ theorem covers_tuple_sound {G : NormalGraph ι} {R : List ι → List ι → Pro
     have hi : i < q.required.length := (List.getElem?_eq_some_iff.mp hy).1
     obtain ⟨x, hx⟩ : ∃ x, p.required[i]? = some x :=
       List.getElem?_eq_some_iff.mpr ⟨by omega, rfl⟩ |> fun h => ⟨_, h⟩
-    obtain ⟨l, c, hl, hw, hag⟩ := hreq i (meaning G x) ⟨x, hx, rfl⟩
+    obtain ⟨l, c, hl, hw, hag⟩ := hreq i (σ.val x) ⟨x, hx, rfl⟩
     have hxy := hreqR (x, y) (List.getElem?_zip_eq_some.mpr ⟨hx, hy⟩ |> List.mem_of_getElem?)
     exact ⟨l, c, hl, hw, fun j hj W' u =>
       (hag j hj W' u).weaken hmode (hr j hj _ _ hxy.1 W' u) (fun hro => hr j hj _ _ (hxy.2 hro) W' u)⟩
@@ -898,7 +885,7 @@ theorem covers_tuple_sound {G : NormalGraph ι} {R : List ι → List ι → Pro
     have hi : i < q.optional.length := (List.getElem?_eq_some_iff.mp hy).1
     obtain ⟨x, hx⟩ : ∃ x, p.optional[i]? = some x :=
       List.getElem?_eq_some_iff.mpr ⟨by omega, rfl⟩ |> fun h => ⟨_, h⟩
-    obtain ⟨c, hw, hag⟩ := hopt i (meaning G x) l ⟨x, hx, rfl⟩ (hreqLen ▸ hl)
+    obtain ⟨c, hw, hag⟩ := hopt i (σ.val x) l ⟨x, hx, rfl⟩ (hreqLen ▸ hl)
     have hxy := hoptR (x, y) (List.getElem?_zip_eq_some.mpr ⟨hx, hy⟩ |> List.mem_of_getElem?)
     exact ⟨c, hw, fun j hj W' u =>
       (hag j hj W' u).weaken hmode (hr j hj _ _ hxy.1 W' u) (fun hro => hr j hj _ _ (hxy.2 hro) W' u)⟩
@@ -908,20 +895,20 @@ theorem covers_tuple_sound {G : NormalGraph ι} {R : List ι → List ι → Pro
     | none => simp [he, hq, CoversRest] at hrestR
     | some y =>
       have hx : R e y ∧ (q.readonly = false → R y e) := by simpa [he, hq, CoversRest] using hrestR
-      exact ⟨meaning G y, c, ⟨y, rfl, rfl⟩, hw,
+      exact ⟨σ.val y, c, ⟨y, rfl, rfl⟩, hw,
         fun j hj W' u => (hag j hj W' u).weaken hmode (hr j hj _ _ hx.1 W' u) (fun hro => hr j hj _ _ (hx.2 hro) W' u)⟩
 
-theorem covers_lists_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
+theorem covers_lists_sound {G : NormalGraph ι} {σ : CoverSem G} {R : List ι → List ι → Prop}
     {a c : Tuple (List ι)} {bs ds : List (Tuple (List ι))}
     (hc : ∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversTuple R p q) (n : Nat)
-    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt σ S T j)
     (W : WorldT n) (v : Val)
-    (hv : listT (tupleFams (meaning G) a) n W v ∧ ∀ b ∈ bs, listT (tupleFams (meaning G) b) n W v) :
-    listT (tupleFams (meaning G) c) n W v ∧ ∀ b ∈ ds, listT (tupleFams (meaning G) b) n W v := by
-  have each : ∀ q ∈ c :: ds, listT (tupleFams (meaning G) q) n W v := by
+    (hv : listT (tupleFams (σ.val) a) n W v ∧ ∀ b ∈ bs, listT (tupleFams (σ.val) b) n W v) :
+    listT (tupleFams (σ.val) c) n W v ∧ ∀ b ∈ ds, listT (tupleFams (σ.val) b) n W v := by
+  have each : ∀ q ∈ c :: ds, listT (tupleFams (σ.val) q) n W v := by
     intro q hq
     obtain ⟨p, hp, hpq⟩ := hc q hq
-    have hpv : listT (tupleFams (meaning G) p) n W v := by
+    have hpv : listT (tupleFams (σ.val) p) n W v := by
       rcases List.mem_cons.mp hp with rfl | hp
       · exact hv.1
       · exact hv.2 p hp
@@ -976,43 +963,44 @@ theorem covers_arguments {R : List ι → List ι → Prop}
 
 /-- Same-level tuple coverage, including objects and callbacks. The element
 premise is at exactly the level at which the actual arguments are checked. -/
-theorem covers_arguments_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
+theorem covers_arguments_sound {G : NormalGraph ι} {σ : CoverSem G} {R : List ι → List ι → Prop}
     {p q : Tuple (List ι)} (hc : CoversPack R p q) (n : Nat)
-    (hr : ∀ S T, R S T → FamLeAt G S T n)
+    (hr : ∀ S T, R S T → FamLeAt σ S T n)
     (W : WorldT n) (vs : List Val)
-    (hv : ArgumentContracts.Fits (tupleFams (meaning G) p) n W vs) :
-    ArgumentContracts.Fits (tupleFams (meaning G) q) n W vs :=
-  covers_arguments hc (meaning G) (fun A v => A n W v)
+    (hv : ArgumentContracts.Fits (tupleFams (σ.val) p) n W vs) :
+    ArgumentContracts.Fits (tupleFams (σ.val) q) n W vs :=
+  covers_arguments hc (σ.val) (fun A v => A n W v)
     (fun S T h v => hr S T h W v) vs hv
 
 /-- The legacy encoding uses the same coverage proof with delayed membership.
 Keep the delay here until quantified substitution and its consumers migrate. -/
-theorem covers_pack_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
+theorem covers_pack_sound {G : NormalGraph ι} {σ : CoverSem G} {R : List ι → List ι → Prop}
     {p q : Tuple (List ι)} (hc : CoversPack R p q) (n : Nat)
-    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
-    (W : WorldT n) (vs : List Tm) (hv : PackFits (tupleFams (meaning G) p) n W vs) :
-    PackFits (tupleFams (meaning G) q) n W vs :=
-  covers_arguments hc (meaning G)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt σ S T j)
+    (W : WorldT n) (vs : List Tm) (hv : PackFits (tupleFams (σ.val) p) n W vs) :
+    PackFits (tupleFams (σ.val) q) n W vs :=
+  covers_arguments hc (σ.val)
     (fun A u => ∀ j (hj : j < n) (U : WorldT j),
       WExt (trunc j (Nat.le_of_lt hj) W) U → A j U u)
     (fun S T h v hv j hj U hx => hr j hj S T h U v (hv j hj U hx)) vs hv
 
-theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat)
-    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
-    (W : WorldT n) (v : Val) : sem (meaning G) a n W v → sem (meaning G) b n W v := by
+theorem Covers.sound {G : NormalGraph ι} {σ : CoverSem G} {R a b} (hc : Covers G R a b) (n : Nat)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt σ S T j) (hpa : ArgsLeBelow σ R n)
+    (W : WorldT n) (v : Val) :
+    semWithArgs σ.val σ.args a n W v → semWithArgs σ.val σ.args b n W v := by
   by_cases hb : b = .top
-  · subst hb; exact fun hv => sem_value hv
+  · subst hb; exact fun hv => semWithArgs_value hv
   cases a <;> cases b <;> simp only [Covers, CoversWith] at hc
   all_goals try contradiction
   all_goals try exact absurd rfl hb
   case pack.pack a bs c ds =>
     rintro ⟨vs, rfl, hs, hf⟩
-    have src : ∀ p ∈ a :: bs, PackFits (tupleFams (meaning G) p) n W vs := by
+    have src : ∀ p ∈ a :: bs, PackFits (tupleFams (σ.val) p) n W vs := by
       intro p hp
       rcases List.mem_cons.mp hp with rfl | hp
       · exact hf _ List.mem_cons_self
       · exact hf _ (List.mem_cons_of_mem _ (List.mem_map_of_mem hp))
-    have tgt : ∀ q ∈ c :: ds, PackFits (tupleFams (meaning G) q) n W vs := by
+    have tgt : ∀ q ∈ c :: ds, PackFits (tupleFams (σ.val) q) n W vs := by
       intro q hq
       obtain ⟨p, hp, hpq⟩ := hc q hq
       exact covers_pack_sound hpq n hr W vs (src p hp)
@@ -1039,7 +1027,7 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
         obtain ⟨result, hcon, hsafe⟩ := hw.2 _ (List.mem_map_of_mem hs) j hj U hx hu heap hh args
           hvals ⟨by simpa [← hl] using hlen,
             by simpa [← hl] using Domains.sound hd (fun a b hab => hr j hj a b hab) hfix,
-            by simpa [packArgs, ← hl] using hr j hj _ _ hrest U _ hpack⟩
+            by simpa [← hl] using hpa j hj _ _ hrest U _ hpack⟩
         exact ⟨result, hcon, Safe_mono j (fun m hm V u hu => hr m (by omega) _ _ hres V u hu) U heap _ hsafe⟩
       · unfold FixedCoversPack at hfp
         split at hfp
@@ -1053,14 +1041,7 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
           | succ i =>
             obtain ⟨hlen, hfix, hpack⟩ := ha
             simp only [List.length_map] at hlen hfix hpack
-            have hplain : G.plainTy t0.2.1 = true :=
-              plain_of_mem_expand (c := .pack τ []) (by simp [hP])
-            obtain ⟨c, hcm, hcv⟩ := (expand_sem G _ hplain (i + 1) U _).mp hpack
-            rw [hP, List.mem_singleton] at hcm
-            subst hcm
-            obtain ⟨vs, hvs, -, hf⟩ := hcv
-            cases hvs
-            have htup := pack_exact_args hopt hrest hstab (hf _ List.mem_cons_self)
+            have htup := σ.exact hP hopt hrest hstab hpack
             have hall := ArgsT_append hfix htup
             rw [List.take_append_drop, ← List.map_append] at hall
             obtain ⟨result, hcon, hsafe⟩ := hv.2 _ (List.mem_map_of_mem hp) (i + 1) hj U hx hu heap hh
@@ -1092,7 +1073,7 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
       exact CallArrow.sound (hc.1 q hq) n hr W v hv
     · obtain ⟨t0, ht0, rfl⟩ := List.mem_map.mp ht
       rcases hc.2 t0 ht0 with ⟨s, hs, hst⟩ | ⟨p, hp, hfp⟩
-      · exact rest_covers_sound hst n hr W v (hv.2.2 _ (List.mem_map_of_mem hs))
+      · exact rest_covers_sound hst n hr hpa W v (hv.2.2 _ (List.mem_map_of_mem hs))
       · exact fixed_calls_pack_sound hfp n hr W v hv.1.1 (hv.1.2 _ (List.mem_map_of_mem hp))
   · rename_i b
     cases b <;> intro hv <;> cases hv
@@ -1113,7 +1094,7 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
       exact CallArrow.sound (hc.1 q hq) n hr W v ⟨hv.1.2, hv.2⟩
     · obtain ⟨t0, ht0, rfl⟩ := List.mem_map.mp ht
       rcases hc.2 t0 ht0 with ⟨s, hs, hst⟩ | ⟨p, hp, hfp⟩
-      · exact rest_covers_sound hst n hr W v (hv.2.2 _ (List.mem_map_of_mem hs))
+      · exact rest_covers_sound hst n hr hpa W v (hv.2.2 _ (List.mem_map_of_mem hs))
       · exact fixed_calls_pack_sound hfp n hr W v hv.1.2.1 (hv.1.2.2 _ (List.mem_map_of_mem hp))
   · rename_i a bs L S c ds M T
     intro hv
@@ -1123,7 +1104,7 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
       exact CallArrow.sound (hc.2.1 q hq) n hr W v ⟨hv.1.2, hv.2⟩
     · obtain ⟨t0, ht0, rfl⟩ := List.mem_map.mp ht
       rcases hc.2.2 t0 ht0 with ⟨s, hs, hst⟩ | ⟨p, hp, hfp⟩
-      · exact rest_covers_sound hst n hr W v (hv.2.2 _ (List.mem_map_of_mem hs))
+      · exact rest_covers_sound hst n hr hpa W v (hv.2.2 _ (List.mem_map_of_mem hs))
       · exact fixed_calls_pack_sound hfp n hr W v hv.1.2.1 (hv.1.2.2 _ (List.mem_map_of_mem hp))
   · -- str ≤ str
     exact id
@@ -1135,6 +1116,84 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
   · rename_i a bs c ds
     intro hv
     exact covers_lists_sound hc n hr W v hv
+
+/-- A type's meaning is a family of closed values. -/
+theorem meaning_valueFam (G : NormalGraph ι) (S : List ι) : ValueFam (meaning G S) :=
+  ⟨setSem_adm (normalDenote_adm G) S, fun _ _ _ ⟨_, _, h⟩ => normalDenote_value h⟩
+
+theorem restElem_sem {G : NormalGraph ι} {P E : List ι} (h : restElem G P = some E) (n W v) :
+    meaning G P n W v ↔ elemPack (meaning G E) n W v := by
+  have hx : expand G P = [.pack ⟨[], [], some E, false⟩ []] := by
+    unfold restElem at h
+    split at h <;> simp_all
+  have hp : G.plainTy P = true :=
+    plain_of_mem_expand (c := .pack ⟨[], [], some E, false⟩ []) (by simp [hx])
+  rw [expand_sem G P hp, hx]
+  simp [semList, setSem, sem, semWithArgs, elemPack, tupleFams]
+
+/-- Actuals typed at a level are members below it, at every future world. -/
+theorem meaning_below {G : NormalGraph ι} {S : List ι} {k : Nat} {W : WorldT k} {u : Tm}
+    (h : meaning G S k W u) : ∀ (j : Nat) (hj : j < k) (U : WorldT j),
+      WExt (trunc j (Nat.le_of_lt hj) W) U → meaning G S j U u := fun j hj U hx =>
+  (meaning_valueFam G S).1.mono j _ U hx u
+    ((meaning_valueFam G S).1.down_le k j (Nat.le_of_lt hj) W u h)
+
+/-- A stable type's members are its members at every level and world. -/
+theorem stable_meaning {G : NormalGraph ι} {A : List ι} (h : StableTy G A) {n m : Nat}
+    {W : WorldT n} {U : WorldT m} {v : Val} (hv : meaning G A n W v) : meaning G A m U v := by
+  obtain ⟨hp, hs⟩ := h
+  rw [expand_sem G A hp] at hv ⊢
+  obtain ⟨c, hc, hv⟩ := hv
+  exact ⟨c, hc, (stableClause_sem (List.all_eq_true.mp hs c hc)).mp hv⟩
+
+/-- An exact tuple of stable positions: its pack holds each actual at its
+position at the current level too, since a stable type does not notice the
+level. -/
+theorem pack_exact_args {G : NormalGraph ι} {τ : Tuple (List ι)} (hopt : τ.optional = [])
+    (hrest : τ.rest = none) (hstab : ∀ A ∈ τ.required, StableTy G A) {i : Nat}
+    {U : WorldT (i + 1)} {vs : List Tm} (hp : PackFits (tupleFams (meaning G) τ) (i + 1) U vs) :
+    ArgsT (τ.required.map (meaning G)) (i + 1) U vs := by
+  obtain ⟨hlen, hbound, hel⟩ := hp
+  have hlen' : τ.required.length = vs.length := by
+    have h1 : τ.required.length ≤ vs.length := by simpa [tupleFams] using hlen
+    have h2 := hbound (by simp [tupleFams, hrest])
+    simp [tupleFams, hopt] at h2
+    omega
+  refine ArgsT_of_getElem? (by simpa using hlen') fun idx A a hA ha => ?_
+  obtain ⟨A0, hA0, rfl⟩ := Option.map_eq_some_iff.mp (by simpa [List.getElem?_map] using hA)
+  have hpos : positionFam (tupleFams (meaning G) τ) idx = some (meaning G A0) := by
+    rw [positionFam_tupleFams]
+    simp [Tuple.position, hA0]
+  have hm := hel idx a (meaning G A0) ha hpos i (Nat.lt_succ_self i) _ (WExt_refl _)
+  exact stable_meaning (hstab A0 (List.mem_of_getElem? hA0)) hm
+
+/-- The legacy interpretation: an argument list is a pack value of the value
+meaning, whose actuals are held below the current level. -/
+noncomputable def legacyCover (G : NormalGraph ι) : CoverSem G where
+  row := normalDenote G
+  args S := packArgs (meaning G S)
+  compat := compatible_sound
+  elem_of_all := by
+    intro E El n W xs hel hall
+    simp only [packArgs]
+    rw [restElem_sem hel]
+    exact elemPack_of_all (meaning_valueFam G El).1
+      (fun u hu => ((meaning_valueFam G El).2 _ _ _ (hall u hu)).2) hall
+  elem_append := by
+    intro E El n W xs ys hel hall hE
+    simp only [packArgs] at hE ⊢
+    rw [restElem_sem hel] at hE ⊢
+    exact elemPack_append (fun u hu => ((meaning_valueFam G El).2 _ _ _ (hall u hu)).2)
+      (fun u hu => meaning_below (hall u hu)) hE
+  exact := by
+    intro Q τ i W vs hP hopt hrest hstab hpack
+    have hplain : G.plainTy Q = true := plain_of_mem_expand (c := .pack τ []) (by simp [hP])
+    obtain ⟨c, hcm, hcv⟩ := (expand_sem G _ hplain (i + 1) W _).mp hpack
+    rw [hP, List.mem_singleton] at hcm
+    subst hcm
+    obtain ⟨vs', hvs, -, hf⟩ := hcv
+    cases hvs
+    exact pack_exact_args hopt hrest hstab (hf _ List.mem_cons_self)
 
 /-- A parameter or scheme row of the source is in the target, or the target
 admits every value: the row has no clauses for a target clause to cover. -/
@@ -1163,7 +1222,7 @@ def Core (G : NormalGraph ι) (S T : List ι) : Prop :=
 theorem Core.sound {G : NormalGraph ι} {S T} (hc : Core G S T) :
     FamLe (meaning G S) (meaning G T) := by
   obtain ⟨table, hm, hc⟩ := hc
-  have hs : ∀ n a b, Rel table a b → FamLeAt G a b n := by
+  have hs : ∀ n a b, Rel table a b → FamLeAt (legacyCover G) a b n := by
     intro n
     induction n using Nat.strongRecOn with
     | ind n ih =>
@@ -1171,7 +1230,8 @@ theorem Core.sound {G : NormalGraph ι} {S T} (hc : Core G S T) :
       rcases meaning_cases hv with ⟨c, hcm, hv⟩ | ⟨i, hi, hp, hv⟩
       · obtain ⟨a, ha, hv⟩ := (splitClause_sem (meaning G) c n W v).mpr hv
         obtain ⟨b, hb, hcover⟩ := (hc (A, B) hab).2.2 a (List.mem_flatMap.mpr ⟨c, hcm, ha⟩)
-        exact expand_sem_mpr ⟨b, hb, Covers.sound hcover n (fun j hj => ih j hj) W v hv⟩
+        exact expand_sem_mpr ⟨b, hb, Covers.sound hcover n (fun j hj => ih j hj)
+          (fun j hj S T h W vs hv => ih j hj S T h W (.args vs) hv) W v hv⟩
       · rcases ((hc (A, B) hab).2.1 i hi).resolve_left (by simp [hp]) with hB | htop
         · exact ⟨i, hB, hv⟩
         · exact expand_sem_mpr ⟨.top, htop, normalDenote_value hv⟩
@@ -3023,6 +3083,147 @@ theorem core_arguments_of_values {G : NormalGraph ι} {table : Table ι}
       exact covers_arguments hpq (mixedValues G η) (fun A v => A n W v)
         (fun S T h v hv' => hv S T h W v hv') vs (hca p hp)
 
+/-! ## Core soundness for the mixed interpretation
+
+The coverage proof is shared: the mixed interpretation is a `CoverSem`
+instance whose argument lists are same-level tuple contracts. -/
+
+/-- A clause row means, as values, its clauses other than packs. -/
+theorem mixed_unfold_plain {G : NormalGraph ι} (η : MixedAssignment ι) {i : ι}
+    (hi : G.plain i = true) (n W v) :
+    qDenoteWithArgs G (mixedParameters G) (η, i) n W v ↔
+      setSem (semWithArgs (mixedValues G η) (graphArguments G η (mixedValues G η)))
+        ((mixedParameters G).clauses (G i)) n W v := by
+  simp only [NormalGraph.plain, Bool.and_eq_true, Bool.not_eq_true',
+    Option.isNone_iff_eq_none] at hi
+  rw [qDenoteWithArgs_unfold]
+  simp only [qLayerWithArgs, hi.1, hi.2, Bool.false_eq_true, ite_false]
+  rfl
+
+private theorem mixed_clauses_mem {G : NormalGraph ι} {cs : List (Clause (List ι))}
+    {c : Clause (List ι)} (hc : c ∈ cs) (hp : ∀ a bs, c ≠ .pack a bs) :
+    c ∈ (mixedParameters G).clauses cs :=
+  List.mem_filter.mpr ⟨hc, by cases c <;> simp_all⟩
+
+private theorem mixed_clauses_pack {G : NormalGraph ι} {cs : List (Clause (List ι))}
+    {c : Clause (List ι)} (hc : c ∈ (mixedParameters G).clauses cs) : ∀ a bs, c ≠ .pack a bs := by
+  have := (List.mem_filter.mp hc).2
+  rintro a bs rfl
+  simp at this
+
+/-- The argument lists of a type of clause rows are those of its clauses. -/
+theorem graphArguments_plain {G : NormalGraph ι} {η : MixedAssignment ι} {X : List ι → Fam}
+    {S : List ι} (hS : G.plainTy S = true) {n W vs} :
+    graphArguments G η X S n W vs ↔ ∃ c ∈ clausesOf G S, clauseArguments X c n W vs := by
+  have hk : ∀ i ∈ S, G.parameterKinds i ≠ some .arguments := fun i hi h => by
+    have := List.all_eq_true.mp hS i hi
+    simp [NormalGraph.plain, NormalGraph.params, h] at this
+  constructor
+  · rintro ⟨i, hi, h⟩
+    simp only [hk i hi, ↓reduceIte] at h
+    obtain ⟨c, hc, h⟩ := h
+    exact ⟨c, List.mem_flatMap.mpr ⟨i, hi, hc⟩, h⟩
+  · rintro ⟨c, hc, h⟩
+    obtain ⟨i, hi, hc⟩ := List.mem_flatMap.mp hc
+    exact ⟨i, hi, by simp only [hk i hi, ↓reduceIte]; exact ⟨c, hc, h⟩⟩
+
+/-- A type whose one clause is a pack admits the lists its tuple fits, at the
+current level. -/
+theorem mixed_pack_args {G : NormalGraph ι} {η : MixedAssignment ι} {X : List ι → Fam}
+    {Q : List ι} {τ : Tuple (List ι)} (hP : expand G Q = [.pack τ []]) {n W vs} :
+    graphArguments G η X Q n W vs ↔ ArgumentContracts.Fits (tupleFams X τ) n W vs := by
+  have hplain : G.plainTy Q = true := plain_of_mem_expand (c := .pack τ []) (by simp [hP])
+  rw [graphArguments_plain hplain, ← expand_of_plain hplain, hP]
+  simp [clauseArguments]
+
+/-- An element rest admits the lists of its element's values. -/
+theorem mixed_restElem {G : NormalGraph ι} {η : MixedAssignment ι} {X : List ι → Fam}
+    {E El : List ι} (hel : restElem G E = some El) {n W vs} :
+    graphArguments G η X E n W vs ↔ ∀ v ∈ vs, X El n W v := by
+  have hx : expand G E = [.pack ⟨[], [], some El, false⟩ []] := by
+    unfold restElem at hel
+    split at hel <;> simp_all
+  rw [mixed_pack_args hx]
+  simp only [tupleFams, List.map_nil, Option.map]
+  exact ArgumentContracts.fits_elem
+
+/-- The mixed interpretation at an assignment: values from the shared fixed
+point, argument lists from same-level tuple contracts. -/
+noncomputable def mixedCover (G : NormalGraph ι) (η : MixedAssignment ι) : CoverSem G where
+  row i := qDenoteWithArgs G (mixedParameters G) (η, i)
+  args := graphArguments G η (mixedValues G η)
+  compat := by
+    intro i k n W U v hi hk
+    cases hpi : G.plain i
+    · simp [compatible, hpi]
+    cases hpk : G.plain k
+    · simp [compatible, hpk]
+    obtain ⟨a, ha, hva⟩ := (mixed_unfold_plain η hpi n W v).mp hi
+    obtain ⟨b, hb, hvb⟩ := (mixed_unfold_plain η hpk n U v).mp hk
+    exact compatible_of_clauses ((mixedParameters G).clauses_sub _ _ ha)
+      ((mixedParameters G).clauses_sub _ _ hb) hva hvb
+  elem_of_all := by
+    intro E El n W xs hel hall
+    exact (mixed_restElem hel).mpr hall
+  elem_append := by
+    intro E El n W xs ys hel hall hys
+    refine (mixed_restElem hel).mpr fun u hu => ?_
+    rcases List.mem_append.mp hu with hu | hu
+    · exact hall u hu
+    · exact (mixed_restElem hel).mp hys u hu
+  exact := by
+    intro Q τ i W vs hP hopt hrest _ hargs
+    have hf := (mixed_pack_args hP).mp hargs
+    obtain ⟨req, opt, rest, r⟩ := τ
+    simp only at hopt hrest
+    subst hopt hrest
+    exact (ArgumentContracts.fits_exact _ _ _ _).mp hf
+
+/-- **Core, mixed.** A checked table relates both components of the mixed
+meaning, at every assignment: value members through the shared coverage proof,
+argument lists through same-level tuple coverage. -/
+theorem Core.mixed_sound {G : NormalGraph ι} {S T} (hc : Core G S T) (η : MixedAssignment ι) :
+    FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
+  obtain ⟨table, hm, hc⟩ := hc
+  have hs : ∀ n, (∀ a b, Rel table a b → FamLeAt (mixedCover G η) a b n) ∧
+      ∀ a b, Rel table a b → ∀ (W : WorldT n) vs,
+        mixedMeaning G η a n W (.inr vs) → mixedMeaning G η b n W (.inr vs) := by
+    intro n
+    induction n using Nat.strongRecOn with
+    | ind n ih =>
+      have hv : ∀ a b, Rel table a b → FamLeAt (mixedCover G η) a b n := by
+        intro A B hab W v hv
+        obtain ⟨i, hi, hv⟩ := hv
+        cases hpi : G.plain i with
+        | true =>
+          obtain ⟨c, hcm, hv⟩ := (mixed_unfold_plain η hpi n W v).mp hv
+          have hcnp := mixed_clauses_pack hcm
+          have hcG := (mixedParameters G).clauses_sub _ _ hcm
+          obtain ⟨a, ha, hv⟩ := (splitClause_semWithArgs _ _ c n W v).mpr hv
+          obtain ⟨b, hb, hcover⟩ := (hc (A, B) hab).2.2 a
+            (List.mem_flatMap.mpr ⟨c, List.mem_flatMap.mpr ⟨i, hi, hcG⟩, ha⟩)
+          have hbv := Covers.sound (σ := mixedCover G η) hcover n (fun j hj => (ih j hj).1)
+            (fun j hj S T h W vs hvs => (ih j hj).2 S T h W vs hvs) W v hv
+          have hbnp : ∀ d ds, b ≠ .pack d ds := by
+            rintro d ds rfl
+            cases a <;> simp only [Covers, CoversWith] at hcover
+            cases c <;> simp [splitClause] at ha
+            all_goals exact hcnp _ _ rfl
+          obtain ⟨k, hk, hbk⟩ := List.mem_flatMap.mp hb
+          exact ⟨k, hk, (mixed_unfold_plain η (NormalGraph.plain_of_clauses hbk) n W v).mpr
+            ⟨b, mixed_clauses_mem hbk hbnp, hbv⟩⟩
+        | false =>
+          rcases ((hc (A, B) hab).2.1 i hi).resolve_left (by simp [hpi]) with hB | htop
+          · exact ⟨i, hB, hv⟩
+          · obtain ⟨k, hk, htk⟩ := List.mem_flatMap.mp htop
+            exact ⟨k, hk, (mixed_unfold_plain η (NormalGraph.plain_of_clauses htk) n W v).mpr
+              ⟨.top, mixed_clauses_mem htk (by simp), mixedDenote_value G η i hv⟩⟩
+      exact ⟨hv, core_arguments_of_values hc η n (fun A B h W v hv' => hv A B h W v hv')⟩
+  intro n W x hx
+  cases x with
+  | inl v => exact (hs n).1 S T hm W v hx
+  | inr vs => exact (hs n).2 S T hm W vs hx
+
 /-- Structural rules compose completed proofs. They cannot bypass the guarded
 coverage obligation for any row of a recursive table. -/
 inductive Sub (G : NormalGraph ι) : List ι → List ι → Prop where
@@ -3141,5 +3342,6 @@ theorem Sub.congr {G : NormalGraph ι} {S S' T T' : List ι}
 #print axioms covers_pack_sound
 #print axioms Domains.sound
 #print axioms CallArrow.sound
+#print axioms Core.mixed_sound
 #print axioms Sub.sound
 end Verification.Model.PositiveRules

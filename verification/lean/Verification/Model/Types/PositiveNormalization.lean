@@ -232,8 +232,8 @@ theorem sem_value {X : α → Fam} {c : Clause α} {n W v}
     (h : sem X c n W v) : isVal v = true ∧ Scoped 0 v := semWithArgs_value h
 
 /-- A member's shape is its clause's, except under top, which has none. -/
-theorem sem_shape {X : α → Fam} {c : Clause α} {n W v} (hc : c ≠ .top)
-    (h : sem X c n W v) : valueShape v = shape c := by
+theorem semWithArgs_shape {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
+    (hc : c ≠ .top) (h : semWithArgs X P c n W v) : valueShape v = shape c := by
   cases c with
   | top => exact absurd rfl hc
   | list a bs => obtain ⟨ls, rfl, _⟩ := h.1; rfl
@@ -259,6 +259,9 @@ theorem sem_shape {X : α → Fam} {c : Clause α} {n W v} (hc : c ≠ .top)
   | symbol => obtain ⟨i, rfl⟩ := h; rfl
   | ctors L S => obtain ⟨fs, a, b, rfl, -⟩ := h.1.1; rfl
   | pack a bs => obtain ⟨vs, rfl, -⟩ := h; rfl
+
+theorem sem_shape {X : α → Fam} {c : Clause α} {n W v} (hc : c ≠ .top)
+    (h : sem X c n W v) : valueShape v = shape c := semWithArgs_shape hc h
 
 theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (v : Val) :
     semList X (meet a b) n W v ↔ interT (sem X a) (sem X b) n W v := by

@@ -1898,15 +1898,41 @@ premise.
 
 **Remaining production migration:**
 
-1. Prove core subtype coverage for the mixed interpretation, retaining list
-   inclusion when checking pack bounds. The existing `Core.sound` only proves
-   value inclusion. The executable core certificate now checks `SameKind` on
-   every edge: two value types or two argument-list types. Empty types work at
-   either sort. This prevents the former pack-to-`top` acceptance; a control
-   proves the corresponding mixed inclusion false (`top` admits values, not
-   argument lists). `core_arguments_of_values` now proves the argument-list
-   half from current-level value inclusion. The remaining value half must use
-   both components below the level for callable coverage.
+1. **Done: core subtype coverage for the mixed interpretation.** The
+   executable core certificate checks `SameKind` on every edge: two value types
+   or two argument-list types. Empty types work at either sort. This prevents
+   the former pack-to-`top` acceptance; a control proves the corresponding
+   mixed inclusion false (`top` admits values, not argument lists).
+   `Core.mixed_sound` proves both components:
+
+   ```text
+   Core G S T  ⊢  ∀ η. FamLe (mixedMeaning G η S) (mixedMeaning G η T)
+   ```
+
+   The coverage proof is not duplicated. It is stated once over an
+   interpretation `σ : CoverSem G`, which consists of a value meaning for each row
+   (`σ.val = setSem σ.row`) and a list meaning for each type (`σ.args`). It also
+   records four facts: overlapping rows are `compatible`; an element rest
+   admits the lists of its element's values (`elem_of_all`, `elem_append`);
+   and an exact stable tuple holds its actuals at their positions (`exact`).
+
+   ```text
+   FamLeAt σ A B n    ⇔ ∀ W v. σ.val A n W v ⇒ σ.val B n W v
+   ArgsLeBelow σ R n  ⇔ ∀ j < n. ∀ A B. R A B ⇒ ∀ W vs. σ.args A j W vs ⇒ σ.args B j W vs
+
+   Covers G R a b    ∀ j < n. R ⊆ FamLeAt σ · · j    ArgsLeBelow σ R n
+   ────────────────────────────────────────────────────────────────────  Covers.sound
+         semWithArgs σ.val σ.args a n ⊆ semWithArgs σ.val σ.args b n
+   ```
+
+   `legacyCover` reads argument lists as delayed pack values, and `Core.sound`
+   is unchanged in statement. `mixedCover` reads them as same-level `Fits`
+   through `graphArguments`, so its `exact` fact does not use stability. The
+   mixed induction at level `n` first proves value inclusion from both
+   components below `n`. It then proves list inclusion at `n` from value
+   inclusion at `n` (`core_arguments_of_values`). Pack clauses are outside the
+   value projection, and a non-pack clause is covered only by a non-pack clause.
+   So a covered value lands in the target's value projection.
 2. Connect those bound proofs to `inst_mixed_sound`, and migrate generalization,
    the graph environment and the CLI's accepted source-plan safety path
    together. Preserve the exact `checkJson_safe` contract.

@@ -25,9 +25,10 @@ theorem fits_adm {T : TupleF}
     h.map (fun i A hA v hv => (hT i A hA).transfer hv j hj U hx))
 
 /-- Exact tuples and fixed parameters have identical membership, for arbitrary
-families: objects, callbacks and recursive types need no stability premise. -/
-theorem fits_exact (As : List Fam) (n W vs) :
-    Fits ⟨As, [], none, false⟩ n W vs ↔ ArgsT As n W vs := by
+families: objects, callbacks and recursive types need no stability premise.
+Readonly positions admit the same lists: a list holds values, not locations. -/
+theorem fits_exact {r : Bool} (As : List Fam) (n W vs) :
+    Fits ⟨As, [], none, r⟩ n W vs ↔ ArgsT As n W vs := by
   constructor
   · rintro ⟨hl, hb, hp⟩
     dsimp at hl hb
@@ -45,6 +46,21 @@ theorem fits_exact (As : List Fam) (n W vs) :
     have he : As[i]? = some A := by
       simpa [positionFam, List.getElem?_eq_getElem hi] using hA
     exact ArgsT_getElem? ha he hv
+
+/-- An element rest admits exactly the lists of its element's values at this
+level. -/
+theorem fits_elem {E : Fam} {r : Bool} {n W vs} :
+    Fits ⟨[], [], some E, r⟩ n W vs ↔ ∀ v ∈ vs, E n W v := by
+  constructor
+  · rintro ⟨-, -, hp⟩ v hv
+    obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hv
+    exact hp i _ E (List.getElem?_eq_getElem hi) (by simp [positionFam])
+  · intro h
+    refine ⟨by simp, by simp, fun i v A hv hA => ?_⟩
+    simp only [positionFam, List.getElem?_nil, List.length_nil, Nat.sub_zero,
+      Nat.add_zero, Nat.zero_le, if_true, Option.some.injEq] at hA
+    cases hA
+    exact h v (List.mem_of_getElem? hv)
 
 /-- Same-level arguments still suffice for the existing allocation proof.
 The loss of a level belongs to allocation, not to argument-list membership. -/
@@ -207,6 +223,7 @@ theorem constructor_congr {P Q : Family} {R S : Fam} {n : Nat}
 #print axioms array_bound
 #print axioms fits_adm
 #print axioms fits_exact
+#print axioms fits_elem
 #print axioms call_safe
 #print axioms fixed_call_covers_tuple
 #print axioms fixed_constructor_eq_rest
