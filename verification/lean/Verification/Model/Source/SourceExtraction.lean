@@ -40,9 +40,12 @@ decides lowering lives here and is projected away before anything is emitted. -/
 private structure ScopeBinding where
   source : Descriptor
   storage : Storage := .value
+  /-- A module function's slot: its type is its own source signature, never a
+  producer claim, and it is a value slot, so no assignment can reach it. -/
+  fixed : Option (Ty Nat) := none
   deriving Repr
 
-private def held (d : Descriptor) : ScopeBinding := ⟨d, .value⟩
+private def held (d : Descriptor) : ScopeBinding := { source := d }
 
 /-- Explanatory projection: what a reader is shown, with the storage dropped. -/
 private def sources (scope : List ScopeBinding) : List Descriptor := scope.map (·.source)
@@ -114,6 +117,7 @@ private def envCore (bound : Nat) (fc : SourceClaims.Function) (pos : Nat) (scop
     -- The slot holds the cell's identity. What the producer says `x` is now
     -- describes the contents, and is an observation, not this slot's type.
     let name := b.source.name
+    if let some A := b.fixed then return A
     let some t := vars.lookup name | throw s!"missing claimed binding '{name}' at {pos}"
     let A ← (SourceClaims.resolve bound t).mapError fun msg =>
       if msg == "type claim unavailable from producer" then
@@ -342,6 +346,36 @@ private partial def assignsStmt (name : String) : Fragment.Stmt → Bool
     (e.getD []).any (assignsStmt name)
   | .loop _ c b => assignsExpr name c || b.any (assignsStmt name)
   | .brk .. | .cont .. => false
+
+/-- Every name a statement's expressions mention, bound or not: a superset of
+the module functions its body can reach. -/
+private partial def stmtNames : Fragment.Stmt → List String
+  | .ret _ e | .effect _ e => e.freeNames
+  | .constants _ bs | .mutables _ bs => bs.flatMap fun b => b.init.freeNames
+  | .pattern _ props init => init.freeNames ++
+    props.flatMap fun q => (q.default_.map Fragment.Expr.freeNames).getD []
+  | .arrayPattern _ elems init => init.freeNames ++
+    elems.flatMap fun q => (q.default_.map Fragment.Expr.freeNames).getD []
+  | .ite _ c t e => c.freeNames ++ t.flatMap stmtNames ++ (e.getD []).flatMap stmtNames
+  | .loop _ c b => c.freeNames ++ b.flatMap stmtNames
+  | .brk .. | .cont .. => []
+
+/-- A module function's value as its callers see it: an ordinary function
+whose receiver is irrelevant, at exactly its annotated parameters and result.
+A rest parameter contributes its tuple's positions or its array's element. -/
+private def moduleArrow (g : Fragment.Fn) : Except String Json := do
+  let fixed := if g.params.getLast?.any (·.rest) then g.params.dropLast else g.params
+  let (positions, rest) ← match g.params.getLast? with
+    | some p =>
+      if !p.rest then pure (fixed.map (·.ty), [])
+      else match Fragment.arrayElement p.ty with
+        | some e => pure (fixed.map (·.ty), [("rest", e)])
+        | none => pure (fixed.map (·.ty) ++ (← Fragment.tupleRequired p.ty), [])
+    | none => pure ([], [])
+  let top := Json.mkObj [("top", toJson true), ("atoms", toJson ([] : List Json))]
+  return Json.mkObj [("top", toJson false), ("atoms", toJson [Json.mkObj
+    ([("a", toJson "function"), ("this", top), ("params", toJson positions)] ++ rest ++
+      [("result", g.ret), ("construct", toJson "unknown"), ("array", toJson "unknown")])])]
 
 /-- A terminal branch uses the enclosing source result annotation, not a
 fabricated expression claim at the if statement's span. -/
@@ -2540,7 +2574,7 @@ private def mutables (fc : SourceClaims.Function) (pos : Span) (next : Option Na
     let reference ← lower (do return [← CellClaims.reference [(valueField, contract)]])
     -- The slot holds the identity of a cell only this lowering allocated.
     -- Storage is decided here, by the declaration, and nowhere else.
-    let binding : ScopeBinding := ⟨⟨b.name,some pos⟩, .cell contract reference⟩
+    let binding : ScopeBinding := { source := ⟨b.name,some pos⟩, storage := .cell contract reference }
     let continued ← mutables fc pos next after (binding::scope) (reference::Γ) more
     let drop := ⟨continued.label, some ((continued.mapping.getD (List.range (Γ.length+1))).map
       (fun j => if j == 0 then 0 else j+1))⟩
@@ -2680,10 +2714,14 @@ def SourceRequest.searchLabels (r : SourceRequest) : List Nat :=
 
 /-- The table is the one the claims were lowered into; annotations the claims
 did not mention grow it, and the request carries the result. -/
-def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceClaims.Function) :
-    Except String SourceRequest := do
+def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceClaims.Function)
+    (module : List Fragment.Fn := []) : Except String SourceRequest := do
   if f.name != fc.name || f.namePos != fc.namePos then throw "function claim identity mismatch"
   let scope : List ScopeBinding := f.params.map (fun p => held ⟨p.name,none⟩)
+  -- The module functions this body mentions, outermost: a parameter or local
+  -- of the same name shadows one, as in JavaScript.
+  let mentioned := f.body.flatMap stmtNames
+  let siblings := module.filter fun g => mentioned.contains g.name
   if f.name == "undefined" || (names scope).contains "undefined" then
     throw "shadowing undefined is outside the fragment"
   if !distinct (names scope) then throw "duplicate source parameter name"
@@ -2695,6 +2733,14 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
     -- caller writes: a rest parameter is one binding, and its tuple's required
     -- elements are the positions. The array itself is allocated at entry.
     let bindings ← f.params.mapM (fun (p : Fragment.Param) => lower (Fragment.translate p.ty))
+    let siblingTypes ← siblings.mapM fun g => do
+      let arrow ← match moduleArrow g with
+        | .ok arrow => pure arrow
+        | .error reason => throw (locatedRefusal (← table) g.namePos .bindingAnnotation reason)
+      lower (Fragment.translate arrow)
+    let siblingScope : List ScopeBinding :=
+      (siblings.zip siblingTypes).map fun (pair : Fragment.Fn × Ty Nat) =>
+        { source := ⟨pair.1.name, some pair.1.namePos⟩, fixed := some pair.2 }
     if f.params.dropLast.any (fun (p : Fragment.Param) => p.rest) then
       throw "a rest parameter must be the last one"
     -- A mutable `T[]` rest is an ordinary input: the body is checked for every
@@ -2712,7 +2758,7 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
         else pure []
       | none => pure []
     let hasRest := tupleRest
-    let inputs := (if hasRest then bindings.dropLast else bindings) ++ restElements
+    let inputs := (if hasRest then bindings.dropLast else bindings) ++ restElements ++ siblingTypes
     -- A parameter's annotation is the assumption its caller makes, and the
     -- soundness theorem (`RequestJson.verify_safe`) takes it as given for
     -- every environment, world and heap meeting it. Each annotation is
@@ -2737,29 +2783,32 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
       throw (locatedRefusal (← table) f.namePos .returnContract
         "claimed return type differs from the source annotation")
     let stmts ← f.body.mapM (comparisonsStmt fc)
-    let bodyScope : List ScopeBinding ← (scope.zip bindings).mapM fun (pair : ScopeBinding × Ty Nat) => do
+    let paramScope : List ScopeBinding ← (scope.zip bindings).mapM fun (pair : ScopeBinding × Ty Nat) => do
       let (b,contract) := pair
       if stmts.any (assignsStmt b.source.name) then
         let reference ← lower (do return [← CellClaims.reference [(valueField, contract)]])
         pure { b with storage := .cell contract reference }
       else pure b
+    let bodyScope := paramScope ++ siblingScope
+    let slotTypes := bindings ++ siblingTypes
+    let fullScope := scope ++ siblingScope
     let mut first ← body (traversalBudget stmts) fc R bodyScope stmts none none
     -- Each assigned parameter gets one fresh private cell at function entry.
     -- Replace its slot in place; the caller still supplies the original value
     -- and the function's public input contract does not mention these cells.
     for (b,i) in bodyScope.zipIdx.reverse do
       if let .cell _ reference := b.storage then
-        if hasRest && i == bodyScope.length - 1 then
+        if hasRest && i == scope.length - 1 then
           throw "an assigned rest parameter is outside the fragment"
-        let Γ := (bodyScope.zip bindings).zipIdx.map fun (entry : (ScopeBinding × Ty Nat) × Nat) =>
+        let Γ := (bodyScope.zip slotTypes).zipIdx.map fun (entry : (ScopeBinding × Ty Nat) × Nat) =>
           let ((binding,A),j) := entry
           if j < i then match binding.storage with
             | .cell _ ref => ref | .value => A
           else A
-        let mapping := (List.range scope.length).map fun j => if j == i then 0 else j+1
+        let mapping := (List.range fullScope.length).map fun j => if j == i then 0 else j+1
         first ← emitAt f.namePos (.makeAt .absent [valueField] [.var i])
           (.bind ⟨first.label,some mapping⟩) Γ reference "parameter-allocation"
-          (scope := scope)
+          (scope := fullScope)
     -- A rest parameter's array is allocated once, on entry, before the body
     -- runs: the store holding the surplus arguments, then the object that
     -- holds the store. The body's environment binds the array where its name
@@ -2770,9 +2819,11 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
         | throw "a rest parameter needs an array contract"
       let fixed := bindings.length - 1
       let anonymous := held ⟨"",some f.namePos⟩
-      let restScope := scope.dropLast ++ restElements.map fun _ => anonymous
-      let bodyMapping := (List.range bindings.length).map fun j =>
-        if j == fixed then 0 else j + 2
+      let restScope := scope.dropLast ++ restElements.map (fun _ => anonymous) ++ siblingScope
+      -- Body slots before the array read the caller's positions; the module
+      -- functions after it follow the collected positions.
+      let bodyMapping := (List.range slotTypes.length).map fun j =>
+        if j == fixed then 0 else if j < fixed then j + 2 else j + 1 + restElements.length
       let object ← emitAt f.namePos (.makeAt .absent [SourceTypes.storeField] [.var 0])
         (.bind ⟨first.label, some bodyMapping⟩) (S :: inputs) restTy "rest-allocation"
         (scope := anonymous :: restScope)

@@ -762,7 +762,10 @@ def FunctionPlan.certify : FunctionPlan → Except String CertifiedPlan
 def certifyPlans (plans : List FunctionPlan) : Except String (List CertifiedPlan) :=
   plans.mapM FunctionPlan.certify
 
-def extractPlans (ast claims : Json) (fileKey : String) : Except String (List FunctionPlan) := do
+/-- `only` selects one function of the file, named with its position: the
+others remain its module, reachable at their signatures, and need no claims. -/
+def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String × Span) := none) :
+    Except String (List FunctionPlan) := do
   let d ← decode claims
   if d.file != fileKey || (← jStr (← jField ast "file")) != fileKey then throw "source claim file identity mismatch"
   if (← jStr (← jField ast "sourceSha256")) != d.sourceSha256 then throw "source claim fingerprint mismatch"
@@ -771,11 +774,18 @@ def extractPlans (ast claims : Json) (fileKey : String) : Except String (List Fu
   let (ast, types) ← DeclarationGraph.prepare ast d.types
   let d := { d with types }
   if !validTable d.types then throw "declaration graph has an invalid type reference"
-  let decoded ← Fragment.decodeAstWithParams ast
-  let fs := decoded.map Prod.fst
+  let all ← Fragment.decodeAstWithParams ast
+  let fs := all.map Prod.fst
   if fs.isEmpty then throw "no source functions to verify"
   if (fs.map (fun f => (f.name,f.namePos))).eraseDups.length != fs.length then throw "duplicate source function identities"
-  if fs.length != d.functions.length then throw "function claim count mismatch"
+  -- A body reaches the file's other ordinary functions at their annotated
+  -- signatures; each of those is verified against the same signature here.
+  let module := all.filterMap fun (g, tps) => if tps.isEmpty then some g else none
+  let decoded := match only with
+    | none => all
+    | some (name, pos) => all.filter fun (f, _) => f.name == name && f.namePos == pos
+  if only.isSome && decoded.length != 1 then throw "the selected function is not in the source"
+  if decoded.length != d.functions.length then throw "function claim count mismatch"
   decoded.mapM fun (f,tps) => do
     let c ← match d.functions.find? (fun c => c.name == f.name && c.namePos == f.namePos) with
       | some c => pure c
@@ -817,25 +827,27 @@ def extractPlans (ast claims : Json) (fileKey : String) : Except String (List Fu
       match Scheme.compile T f c with
       | .ok (T, c, overlays) =>
         return .scheme f.name f.namePos
-          (← extractNormalizedFn T f { c.normalized with arrowClaims := overlays }) T certificate
+          (← extractNormalizedFn T f { c.normalized with arrowClaims := overlays } module) T certificate
       | .error (.obligation failure) => throw (directFailure d.types failure)
       | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)
-    return .graph f.name f.namePos (← extractNormalizedFn d.types f c.normalized)
+    return .graph f.name f.namePos (← extractNormalizedFn d.types f c.normalized module)
 
 /-- Graph-only projection for proof fixtures that inspect extracted programs. -/
 def extractGraphRequests (ast claims : Json) (fileKey : String) : Except String (List SourceRequest) := do
   return FunctionPlan.requests (← extractPlans ast claims fileKey)
 
-def checkJson (ast claims : Json) (fileKey : String) (evidence : Json) : Except String Unit := do
-  let plans ← extractPlans ast claims fileKey
+def checkJson (ast claims : Json) (fileKey : String) (evidence : Json)
+    (only : Option (String × Span) := none) : Except String Unit := do
+  let plans ← extractPlans ast claims fileKey only
   let certified ← certifyPlans plans
   let rs := CertifiedPlan.requests certified
   let b : Bundle ← decodeStrict evidence
   if checkRequests rs b then return ()
   throw "source evidence does not justify the extracted program and exact claims"
 
-def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat) : Except String Json := do
-  let plans ← extractPlans ast claims fileKey
+def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat)
+    (only : Option (String × Span) := none) : Except String Json := do
+  let plans ← extractPlans ast claims fileKey only
   let rs := FunctionPlan.requests plans
   let es ← rs.mapM fun r => ExpressionClaims.produce (RequestJson.graph r.toRequest)
     r.searchLabels r.types.length fuel r.obligations
@@ -854,8 +866,9 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat) : Except Str
 requests prove the enclosing execution safe; direct generic and scheme plans
 add their universal semantic guarantees, independently of observed calls. -/
 theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
-    (h : checkJson ast claims fileKey evidence = .ok ()) :
-    ∃ plans certified b, extractPlans ast claims fileKey = .ok plans ∧
+    {only : Option (String × Span)}
+    (h : checkJson ast claims fileKey evidence only = .ok ()) :
+    ∃ plans certified b, extractPlans ast claims fileKey only = .ok plans ∧
       certifyPlans plans = .ok certified ∧
       decodeStrict evidence = .ok b ∧
       checkRequests (CertifiedPlan.requests certified) b = true ∧
@@ -866,7 +879,7 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
             n W heap (.at r.start ρ)) ∧
       ∀ plan ∈ certified, plan.UniversalSafety := by
   unfold checkJson at h
-  cases he : extractPlans ast claims fileKey with
+  cases he : extractPlans ast claims fileKey only with
   | error e =>
     rw [he] at h
     contradiction

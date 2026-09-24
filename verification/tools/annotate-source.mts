@@ -717,8 +717,11 @@ function verifySkjs(
     }
     const results=report.functions.map((f): FunctionResult=> {
       const named=(g: { name: string; namePos: Span })=>g.name===f.name && JSON.stringify(g.namePos)===JSON.stringify(f.namePos);
-      const a=clone(ast);a.functions=a.functions.filter(named);
-      if(a.functions.length!==1)throw Error("function identity mismatch during verification");
+      // The whole tree goes to the verifier: the other functions are this
+      // one's module, reached at their signatures. Only its claims are sent.
+      const a=ast;
+      if(a.functions.filter(named).length!==1)throw Error("function identity mismatch during verification");
+      const only=["--function",f.name,String(f.namePos[0]),String(f.namePos[1])];
       const document=clone(claims);
       const c=isFileList(document) ? document.filter(g=>g.file===file) : document;
       let refusals: Unavailable[]=[];
@@ -731,7 +734,7 @@ function verifySkjs(
       } else c.functions=c.functions.filter(named);
       const ap=path.join(temp,"ast.json"), cp=path.join(temp,"claims.json"), ep=path.join(temp,"evidence.json");
       fs.writeFileSync(ap,JSON.stringify(a));fs.writeFileSync(cp,JSON.stringify(c));
-      const produced=run(verifier,[normalized?"--produce-source-claims":"--produce-stateful-source",ap,cp,file,ep,String(depth)]);
+      const produced=run(verifier,[normalized?"--produce-source-claims":"--produce-stateful-source",ap,cp,file,ep,String(depth),...only]);
       if(produced.status!==0) {
         const rawDetail=(produced.stderr||produced.stdout).trim();
         const diagnostic=readDiagnostic(rawDetail);
@@ -788,7 +791,7 @@ function verifySkjs(
         return {status:"not-established",detail,...((sourceRefusal || unavailableType || nonInvariant) ? {stage:"source-extraction"} : {}),location,
           ...(obligation ? {obligation, obligationView: presentObligation(obligation, source)} : {})};
       }
-      const checked=run(verifier,[normalized?"--check-source-claims":"--check-stateful-source",ap,cp,file,ep]);
+      const checked=run(verifier,[normalized?"--check-source-claims":"--check-stateful-source",ap,cp,file,ep,...only]);
       if(checked.status!==0) {
         // Evidence production may expose proved graph consequences while final
         // acceptance still refuses a source-plan variant whose semantic

@@ -649,6 +649,7 @@ let captured = "";
 let callback = "";
 let inference = "";
 let indexed = "";
+let moduleFunctions = "";
 let verifiedFunctions = 0;
 for (const test of cases) {
   const result = check(join(here, "examples", `${test.file}.ts`),
@@ -686,6 +687,7 @@ for (const test of cases) {
   if (test.file === "generic-returned") returned = result.artifacts;
   if (test.file === "generic-captured-store") captured = result.artifacts;
   if (test.file === "generic-callback") callback = result.artifacts;
+  if (test.file === "module-functions") moduleFunctions = result.artifacts;
   if (test.file === "generic-inference") inference = result.artifacts;
   if (test.file === "index-signature") indexed = result.artifacts;
 }
@@ -986,6 +988,24 @@ const capturedClaims: SourceClaims = JSON.parse(
   process.stdout.write("tampered captured cell contract: refused\n");
 }
 
+// A module function is reached at its own annotated signature, which Lean
+// reads from the source; a producer cannot retype the callee.
+{
+  const claims: SourceClaims = JSON.parse(readFileSync(join(moduleFunctions, "claims.json"), "utf8"));
+  const source = readFileSync(join(moduleFunctions, "source.ts"), "utf8");
+  const fn = must(claims.functions.find((f) => f.name === "twice"), "twice");
+  const callee = source.indexOf("id(id(x))");
+  const site = fn.expressions.find((e) => e.pos[0] === callee && e.pos[1] === callee + 2);
+  assert.ok(site, "the outer callee's claim");
+  const argument = fn.expressions.find((e) => e.pos[0] === source.indexOf("x))", callee));
+  assert.ok(argument, "the argument's claim");
+  site.type = argument.type;
+  const file = join(moduleFunctions, "forged-callee.json");
+  writeFileSync(file, JSON.stringify(claims));
+  const refusal = invoke(file, join(moduleFunctions, "evidence.json"), moduleFunctions);
+  process.stdout.write(`tampered module callee: refused (${refusal.trim().split("\n")[0]})\n`);
+}
+
 // A substitution proposed through a callback is validated like any other:
 // naming `number` for the call whose value is `flag` yields a genuine instance
 // of the scheme whose value parameter the argument then fails to meet.
@@ -1150,11 +1170,14 @@ const directControls = new Set([
 let testedDirectProtocol = false;
 for (const control of cases.filter((c) => c.kind === "negative")) {
   const shown = await analyse(repositoryPath(control.file), "ocaml");
-  const results = shown.manifest.results ?? [];
+  // A control may hold correct functions beside the failing one: those it
+  // calls are verified, and only the failing one is shown not established.
+  const all = shown.manifest.results ?? [];
+  const results = all.filter((r) => r.status !== "verified");
   assert.deepEqual(
     results.map((r) => r.status),
     ["not-established"],
-    `${control.file}: reader must show it as not established`,
+    `${control.file}: reader must show exactly one function not established`,
   );
   assert.notEqual(
     results[0]?.location,

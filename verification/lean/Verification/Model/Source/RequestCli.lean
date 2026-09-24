@@ -49,7 +49,8 @@ def inspectSourceClaims (claimsPath fileKey digest : String) : IO UInt32 := do
   | .error e => IO.eprintln s!"reject: {e}"; return 1
 
 def sourceFiles (astPath claimsPath fileKey evidencePath : String)
-    (fuel : Option Nat) (normalized : Bool := false) : IO UInt32 := do
+    (fuel : Option Nat) (normalized : Bool := false)
+    (only : Option (String × Span) := none) : IO UInt32 := do
   if fuel.isSome && (evidencePath == astPath || evidencePath == claimsPath) then
     IO.eprintln "reject: evidence output must differ from the input files"
     return 1
@@ -64,13 +65,13 @@ def sourceFiles (astPath claimsPath fileKey evidencePath : String)
   | none =>
     let evidence ← readJson evidencePath
     let checked := do
-      SourceClaimJson.checkJson (← ast) (← claims) fileKey (← evidence)
+      SourceClaimJson.checkJson (← ast) (← claims) fileKey (← evidence) only
     match checked with
     | .ok () => IO.println s!"accept: stateful source {fileKey}"; return 0
     | .error e => IO.eprintln s!"reject: {e}"; return 1
   | some depth =>
     let produced := do
-      SourceClaimJson.produceJson (← ast) (← claims) fileKey depth
+      SourceClaimJson.produceJson (← ast) (← claims) fileKey depth only
     match produced with
     | .error e => IO.eprintln s!"reject: {e}"; return 1
     | .ok evidence =>

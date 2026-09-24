@@ -165,7 +165,25 @@ let rec branch env cond truth = match cond.node with
 
 (* Expected types guide fresh construction only. They are never a shortcut
    claiming that an arbitrary expression already satisfies an annotation. *)
-let infer_function declarations (f:Source.fn) =
+(* A module function as its callers see it: an ordinary function at exactly its
+   annotated parameters and result. A rest parameter contributes its tuple's
+   positions or its array's element. Generic ones are not reachable yet. *)
+let module_type (g:Source.fn) =
+  let tys = List.map snd g.params in
+  match g.rest,List.rev tys with
+  | true,last::before ->
+    (match Semantic.tuple_positions last,Semantic.array_element last with
+     | Some positions,_ -> arrow (List.rev before @ positions) g.result
+     | None,Some element -> variadic_arrow (List.rev before) element g.result
+     | _ -> unsupported "rest parameter contract of a module function")
+  | _ -> arrow tys g.result
+
+let infer_function declarations module_functions (f:Source.fn) =
+  (* A name no parameter or local binds is one of the file's functions. *)
+  let resolve env n = match List.assoc_opt n env with
+    | Some b -> binding_type b
+    | None -> (match List.assoc_opt n module_functions with
+      | Some g -> Lazy.force g | None -> Json.fail ("unbound name " ^ n)) in
   let entries = ref [] and expressions = ref [] and instantiations = ref [] in
   let arrows = ref [] in
   let entry env span = match Json.list span with
@@ -173,7 +191,7 @@ let infer_function declarations (f:Source.fn) =
     | [] -> Json.fail "empty source span" in
   let rec expr ?expected env e =
     let t = match e.node with
-    | Id n -> binding_type (lookup env n)
+    | Id n -> resolve env n
     | Literal l -> literal_type l
     | Not e -> ignore (expr env e); bool
     | Arith (_,l,r) -> ignore (expr env l); ignore (expr env r); Atoms [Num]
@@ -208,7 +226,10 @@ let infer_function declarations (f:Source.fn) =
     | Index (e,key) -> let receiver=expr env e in let key=expr env key in index_type declarations [] receiver key
     | IndexWrite (receiver,key,rhs) -> ignore (expr env receiver); ignore (expr env key); expr env rhs
     | Write (receiver,_,rhs) -> ignore (expr env receiver); expr env rhs
-    | Assign (n,rhs) -> (match lookup env n with
+    | Assign (n,rhs) ->
+      if not (List.mem_assoc n env) && List.mem_assoc n module_functions then
+        unsupported ("assignment to module function " ^ n);
+      (match lookup env n with
       | Storage contract -> expr ~expected:contract env rhs
       | Value _ -> unsupported "assignment to immutable binding")
     | Lambda (receiver,quantified,ps,defaults,rest,result,body) ->
@@ -340,7 +361,7 @@ let infer_function declarations (f:Source.fn) =
          name is read from the environment and anything else is typed once,
          here, and not again below. *)
       let spread_type = lazy (match List.rev args with
-        | { node = Id name; _ } :: _ -> binding_type (lookup env name)
+        | { node = Id name; _ } :: _ -> resolve env name
         | last :: _ -> expr env last
         | [] -> unsupported "a spread argument needs an operand") in
       let named_spread = match List.rev args with
@@ -487,4 +508,10 @@ let infer_function declarations (f:Source.fn) =
   ignore (statements (List.map (fun (n,t) -> n,Value t) f.params) f.body);
   {source=f;entries=List.rev !entries;expressions=List.rev !expressions;
    arrows=List.rev !arrows}
-let infer program = {program;functions=List.map (infer_function program.Source.declarations) program.Source.functions}
+let infer program =
+  let module_functions = List.map (fun (g:Source.fn) ->
+    g.name,lazy (if g.quantified=[] then module_type g
+      else unsupported ("generic module function " ^ g.name ^ " called from another function")))
+    program.Source.functions in
+  {program;functions=List.map (infer_function program.Source.declarations module_functions)
+    program.Source.functions}

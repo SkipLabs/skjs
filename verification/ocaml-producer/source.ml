@@ -169,7 +169,7 @@ and stmt_node =
   | Return of expr | Effect of expr | If of expr * stmt list * stmt list
   | While of expr * stmt list | Break | Continue
 and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: (string * ty) list;
-           result: ty; body: stmt list }
+           rest: bool; result: ty; body: stmt list }
 type declaration = { id: string; parameters: rigid list;
   defaults: ty option list; bases: ty list; expression: ty }
 type program = { file: Json.t; digest: Json.t; declarations: declaration list; functions: fn list }
@@ -294,4 +294,5 @@ let decode ast =
       let binders,quantified = quantify initial scope parameters in
       {quantified;name=text "name" f; name_pos=field "namePos" f;
       params=List.map (fun p -> text "name" p,source_type binders (field "type" p)) (items "params" f);
+      rest=List.exists (fun p -> List.mem_assoc "rest" (obj p)) (items "params" f);
       result=source_type binders (field "retType" f);body=List.map (stmt binders) (items "body" f)}) (items "functions" ast) }

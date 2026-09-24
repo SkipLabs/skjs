@@ -136,6 +136,10 @@ export const cases: Case[] = [
   positive("local-inheritance", "Local interface heritage uses the same declaration graph as imported types"),
   negative("invalid-local-inheritance", "A local inherited field cannot establish a wrong result type"),
   positive("top-void", "unknown / discarded callback result"),
+  positive("module-functions", "module functions called at their annotated signatures"),
+  positive("module-recursion", "self and mutual recursion between hoisted declarations"),
+  negative("invalid-module-call", "a module function's annotated result cannot establish another type"),
+  negative("invalid-module-callee", "a caller correct at a signature does not verify a wrong callee"),
   positive("function-fields", "one object with fields and calls"),
   positive(
     "optional-parameters",
@@ -311,6 +315,20 @@ export const cases: Case[] = [
     "unsupported",
     "source",
     /required mutable field/,
+  ),
+  gap(
+    "module-function-assignment",
+    "reassigning a module function",
+    "unsupported",
+    "proposal",
+    /assignment to module function id/,
+  ),
+  gap(
+    "generic-module-call",
+    "a generic module function called from another",
+    "unsupported",
+    "proposal",
+    /generic module function same called from another function/,
   ),
   gap("bare-return", "bare return", "unsupported", "source", /bare `return`/),
   gap(
