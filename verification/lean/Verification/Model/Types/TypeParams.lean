@@ -35,6 +35,7 @@ def substTuple [DecidableEq ι] (p : ι) (A : List ι) (t : Tuple (List ι)) : T
 def substClause [DecidableEq ι] (p : ι) (A : List ι) : Clause (List ι) → Clause (List ι)
   | .top => .top
   | .list a bs => .list (substTuple p A a) (bs.map (substTuple p A))
+  | .pack a bs => .pack (substTuple p A a) (bs.map (substTuple p A))
   | .nul => .nul
   | .undef => .undef
   | .bool => .bool

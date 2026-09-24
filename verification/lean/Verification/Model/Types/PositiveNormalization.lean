@@ -17,6 +17,15 @@ structure Tuple (α : Type) where
   readonly : Bool
   deriving DecidableEq, Repr
 
+/-- The operand a tuple contract states for an index, as `positionFam` states
+its family. -/
+def Tuple.position (t : Tuple α) (i : Nat) : Option α :=
+  match t.required[i]? with
+  | some a => some a
+  | none => match t.optional[i - t.required.length]? with
+    | some a => some a
+    | none => if t.required.length + t.optional.length ≤ i then t.rest else none
+
 /-- The families a tuple contract denotes, position by position. -/
 def tupleFams {α : Type} (X : α → Fam) (t : Tuple α) : TupleF :=
   ⟨t.required.map X, t.optional.map X, t.rest.map X, t.readonly⟩
@@ -68,6 +77,10 @@ inductive Clause (α : Type) where
   `new` with actuals at the parameters is safe at the result. Its code has
   `[[Construct]]` only, so no callable clause meets it. -/
   | ctors (signatures : List (List α × α))
+  /-- An argument list under one or more tuple contracts: what a rest
+  parameter's type says of the actuals after the fixed ones. Only a signature's
+  rest meets one; no program value is one. -/
+  | pack (first : Tuple α) (rest : List (Tuple α))
   deriving Repr, DecidableEq
 
 /-- Every value. A closed value, as every member of every family is. -/
@@ -100,6 +113,7 @@ def sem (X : α → Fam) : Clause α → Fam
         (L.map fun p => (X p.1, p.2.1.map X, X p.2.2)))
         (restsT (S.map fun s => (X s.1, s.2.1.map X, X s.2.2.1, X s.2.2.2)))
   | .ctors L => ctorsT (L.map fun p => (p.1.map X, X p.2))
+  | .pack a bs => packT (tupleFams X a :: bs.map (tupleFams X))
 
 def semList (X : α → Fam) (L : List (Clause α)) : Fam := setSem (sem X) L
 
@@ -139,6 +153,7 @@ def meet : Clause α → Clause α → List (Clause α)
   | .dict a bs vs ix os, .dict c ds ws iy ps => [.dict a (bs ++ c :: ds) (vs ++ ws) (ix ++ iy) (os ++ ps)]
   | .arrs L S, .arrs M T => [.arrs (L ++ M) (S ++ T)]
   | .ctors L, .ctors M => [.ctors (L ++ M)]
+  | .pack a bs, .pack c ds => [.pack a (bs ++ c :: ds)]
   | .callable a bs L S, .callable c ds M T => [.callable a (bs ++ c :: ds) (L ++ M) (S ++ T)]
   | .callable a bs L S, .arrs M T => [.callable a bs (L ++ M) (S ++ T)]
   | .arrs L S, .callable a bs M T => [.callable a bs (M ++ L) (T ++ S)]
@@ -163,6 +178,7 @@ def shape : Clause α → Nat
   | .nul => 0 | .bool | .boolLit _ => 1 | .refs .. | .dict .. => 2 | .arrs .. | .callable .. => 3
   | .undef => 4 | .num | .numLit _ => 5 | .str | .strLit _ => 6
   | .top => 7 | .list .. => 8 | .bigint => 9 | .symbol => 10 | .ctors .. => 11
+  | .pack .. => 12
 
 def valueShape : Val → Nat
   | .nul => 0 | .tru | .fls => 1 | .objAt _ .absent => 2 | .undef => 4
@@ -173,6 +189,7 @@ def valueShape : Val → Nat
   | .arr _ => 8
   | .bigint _ => 9
   | .sym _ => 10
+  | .args _ => 12
   | _ => 7
 
 /-- Every member of a clause is a closed value; top says nothing more. -/
@@ -196,6 +213,7 @@ theorem sem_value {X : α → Fam} {c : Clause α} {n W v}
   | bigint => obtain ⟨i, rfl⟩ := h; exact ⟨rfl, trivial⟩
   | symbol => obtain ⟨i, rfl⟩ := h; exact ⟨rfl, trivial⟩
   | ctors L => obtain ⟨fs, a, b, rfl, hs⟩ := h.1; exact ⟨rfl, hs⟩
+  | pack a bs => obtain ⟨vs, rfl, hs, -⟩ := h; exact ⟨rfl, hs⟩
 
 /-- A member's shape is its clause's, except under top, which has none. -/
 theorem sem_shape {X : α → Fam} {c : Clause α} {n W v} (hc : c ≠ .top)
@@ -224,6 +242,7 @@ theorem sem_shape {X : α → Fam} {c : Clause α} {n W v} (hc : c ≠ .top)
   | bigint => obtain ⟨i, rfl⟩ := h; rfl
   | symbol => obtain ⟨i, rfl⟩ := h; rfl
   | ctors L => obtain ⟨fs, a, b, rfl, -⟩ := h.1; rfl
+  | pack a bs => obtain ⟨vs, rfl, -⟩ := h; rfl
 
 theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (v : Val) :
     semList X (meet a b) n W v ↔ interT (sem X a) (sem X b) n W v := by
@@ -335,6 +354,10 @@ theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (
     · -- ctors ∩ ctors: every construct signature of both
       simp only [meet, singleton_sem, sem, List.map_append, interT]
       exact ctorsT_append _ _ n W v
+    · -- pack ∩ pack: every contract of both, on the one list
+      rename_i a bs c ds
+      simp only [meet, singleton_sem, sem, List.map_append, List.map_cons, interT]
+      exact packT_append (tupleFams X a :: bs.map (tupleFams X)) _ n W v
   · have hm : meet a b = [] := by
       cases a <;> cases b <;> simp_all [shape, meet]
     rw [hm]
@@ -391,6 +414,7 @@ theorem sem_adm (X : α → Fam) (c : Clause α) : Adm (sem X c) := by
   | arrs L S => exact interT_adm _ _ (callsT_adm _) (restsT_adm _)
   | callable a bs L S => exact interT_adm _ _ (CallableConjunctions.adm _ _ _) (restsT_adm _)
   | ctors L => exact ctorsT_adm _
+  | pack a bs => exact packT_adm _
   | undef => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | top => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | list a bs => exact ⟨fun n W v h => ⟨(listT_adm _).down n W v h.1,
@@ -401,6 +425,43 @@ theorem sem_adm (X : α → Fam) (c : Clause α) : Adm (sem X c) := by
   | strLit _ => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | bigint => exact bigintT_adm
   | symbol => exact symbolT_adm
+
+theorem positionFam_tupleFams (X : α → Fam) (t : Tuple α) (i : Nat) :
+    positionFam (tupleFams X t) i = (t.position i).map X := by
+  simp only [positionFam, Tuple.position, tupleFams, List.getElem?_map, List.length_map]
+  cases t.required[i]? <;> simp
+  cases t.optional[i - t.required.length]? <;> simp
+  split <;> simp
+
+/-- Past the required and optional positions, every index has the rest. -/
+theorem Tuple.position_beyond {t : Tuple α} {i : Nat}
+    (h : t.required.length + t.optional.length ≤ i) : t.position i = t.rest := by
+  simp only [Tuple.position, List.getElem?_eq_none (show t.required.length ≤ i by omega),
+    List.getElem?_eq_none (show t.optional.length ≤ i - t.required.length by omega), h, if_true]
+
+/-- An index without a position is past the fixed positions of a contract
+without a rest. -/
+theorem Tuple.position_none {t : Tuple α} {i : Nat} (h : t.position i = none) :
+    t.required.length + t.optional.length ≤ i ∧ t.rest = none := by
+  simp only [Tuple.position] at h
+  cases hr : t.required[i]? <;> simp only [hr, reduceCtorEq] at h
+  cases ho : t.optional[i - t.required.length]? <;> simp only [ho, reduceCtorEq] at h
+  rw [List.getElem?_eq_none_iff] at hr ho
+  have hi : t.required.length + t.optional.length ≤ i := by omega
+  simp only [hi, if_true] at h
+  exact ⟨hi, h⟩
+
+/-- An argument list's fit to a tuple contract depends on the labels' meanings
+only below the budget. -/
+theorem pack_congr_below (X Y : α → Fam) (t : Tuple α) (n : Nat)
+    (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (vs : List Tm) :
+    PackFits (tupleFams X t) n W vs ↔ PackFits (tupleFams Y t) n W vs := by
+  refine PackFits.congr (by simp [tupleFams]) (by simp [tupleFams]) (by simp [tupleFams])
+    fun i => ?_
+  simp only [positionFam_tupleFams]
+  refine ⟨by simp, fun A B hA hB => ?_⟩
+  cases hp : t.position i <;> simp [hp] at hA hB
+  subst hA; subst hB; exact h _
 
 /-- Position by position, a tuple contract's meaning depends on its labels'
 meanings only below the budget, as a record's does. -/
@@ -474,6 +535,13 @@ theorem sem_congr (X Y : α → Fam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
       | nil => exact .nil
       | cons a As ih => exact .cons (h a) ih
     exact ctorsT_congr L _ _ (fun p _ => ⟨hd p.1, h p.2⟩) W v
+  | pack a bs =>
+    simp only [sem, packT]
+    refine exists_congr fun vs => and_congr Iff.rfl (and_congr Iff.rfl ?_)
+    simp only [List.mem_cons, List.mem_map, forall_eq_or_imp, forall_exists_index, and_imp,
+      forall_apply_eq_imp_iff₂]
+    exact and_congr (pack_congr_below X Y a n h W vs)
+      (forall_congr' fun b => forall_congr' fun _ => pack_congr_below X Y b n h W vs)
 
 /-! ## Renaming operands
 
@@ -511,6 +579,7 @@ def Clause.map (f : α → β) : Clause α → Clause β
       (L.map fun q => (f q.1, q.2.1.map f, f q.2.2))
       (S.map fun q => (f q.1, q.2.1.map f, f q.2.2.1, f q.2.2.2))
   | .ctors L => .ctors (L.map fun q => (q.1.map f, f q.2))
+  | .pack a bs => .pack (a.map f) (bs.map (·.map f))
 
 /-- Every operand of a clause. -/
 def Clause.operands : Clause α → List α
@@ -523,6 +592,7 @@ def Clause.operands : Clause α → List α
       L.flatMap (fun q => q.1 :: q.2.1 ++ [q.2.2]) ++
       S.flatMap (fun q => q.1 :: q.2.1 ++ [q.2.2.1, q.2.2.2])
   | .ctors L => L.flatMap fun q => q.1 ++ [q.2]
+  | .pack a bs => a.operands ++ bs.flatMap Tuple.operands
   | _ => []
 
 private theorem famsOf_fun (X : α → Fam) :
@@ -530,7 +600,14 @@ private theorem famsOf_fun (X : α → Fam) :
 
 theorem sem_map (Y : β → Fam) (f : α → β) (c : Clause α) :
     sem Y (c.map f) = sem (fun a => Y (f a)) c := by
-  cases c <;> simp [sem, Clause.map, mapFields, famsOf_fun, tupleFams, Tuple.map, Function.comp_def]
+  have ht : ∀ t : Tuple α, tupleFams Y (t.map f) = tupleFams (fun a => Y (f a)) t := fun t => by
+    simp [tupleFams, Tuple.map, Function.comp_def]
+  cases c
+  case pack a bs =>
+    simp only [sem, Clause.map, List.map_map, ht]
+    congr 2
+    exact List.map_congr_left fun t _ => ht t
+  all_goals simp [sem, Clause.map, mapFields, famsOf_fun, tupleFams, Tuple.map, Function.comp_def]
 
 private theorem map_self {l : List α} {f : α → α} (h : ∀ a ∈ l, f a = a) : l.map f = l := by
   induction l with
@@ -622,6 +699,11 @@ theorem map_of_operands {c : Clause α} {f : α → α} (h : ∀ a ∈ c.operand
     have h2 := h q.2 ⟨q, hq, by simp⟩
     have h1 := map_self (l := q.1) fun x hx => h x ⟨q, hq, by simp [hx]⟩
     simp [h1, h2]
+  | pack a bs =>
+    simp only [Clause.operands, List.mem_append, List.mem_flatMap] at h
+    simp only [Clause.map, Clause.pack.injEq]
+    exact ⟨tuple_self fun x hx => h x (.inl hx),
+      map_self fun t ht => tuple_self fun x hx => h x (.inr ⟨t, ht, hx⟩)⟩
   | _ => rfl
 
 #print axioms normalize_sound

@@ -32,6 +32,7 @@ def Scoped (d : Nat) : Tm → Prop
   | .arrLit args => ScopedArgs d args
   | .lenOf a => Scoped d a
   | .spread a => Scoped d a
+  | .args vs => ScopedArgs d vs
   | _ => True
 
 def ScopedArgs (d : Nat) : List Tm → Prop
@@ -71,6 +72,7 @@ theorem Scoped.mono {t : Tm} {d e : Nat} (h : Scoped d t) (hde : d ≤ e) :
   case ite c a b ihc iha ihb => exact ⟨ihc h.1 hde, iha h.2.1 hde, ihb h.2.2 hde⟩
   case alloc ns args ihargs => exact fun a ha => ihargs a ha (h a ha) hde
   case arrLit args ihargs => exact fun a ha => ihargs a ha (h a ha) hde
+  case args args ihargs => exact fun a ha => ihargs a ha (h a ha) hde
   case elemAt a b iha ihb => exact ⟨iha h.1 hde, ihb h.2 hde⟩
   case index a b iha ihb => exact ⟨iha h.1 hde, ihb h.2 hde⟩
   case setElem a b c iha ihb ihc => exact ⟨iha h.1 hde, ihb h.2.1 hde, ihc h.2.2 hde⟩
@@ -121,6 +123,10 @@ theorem subst_above {t : Tm} {d j : Nat} (h : Scoped d t) (hj : d ≤ j) (a : Tm
       simpa using (List.map_congr_left (g := id) (fun x hx => ihargs x hx (h x hx) hj))
     rw [hmap]
   case arrLit args ihargs =>
+    have hmap : args.map (subst j a) = args := by
+      simpa using (List.map_congr_left (g := id) (fun x hx => ihargs x hx (h x hx) hj))
+    rw [hmap]
+  case args args ihargs =>
     have hmap : args.map (subst j a) = args := by
       simpa using (List.map_congr_left (g := id) (fun x hx => ihargs x hx (h x hx) hj))
     rw [hmap]
@@ -195,6 +201,10 @@ theorem subst_scoped {t a : Tm} {d j : Nat} (ht : Scoped (d + 1) t)
     intro v hv
     obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
     exact ihargs x hx (ht x hx) hj
+  case args args ihargs =>
+    intro v hv
+    obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
+    exact ihargs x hx (ht x hx) hj
   case elemAt b c ihb ihc => exact ⟨ihb ht.1 hj, ihc ht.2 hj⟩
   case index b c ihb ihc => exact ⟨ihb ht.1 hj, ihc ht.2 hj⟩
   case setElem b c e ihb ihc ihe => exact ⟨ihb ht.1 hj, ihc ht.2.1 hj, ihe ht.2.2 hj⟩
@@ -241,6 +251,7 @@ def instantiate (d : Nat) (ρ : Env) : Tm → Tm
   | .setElem a b c => .setElem (instantiate d ρ a) (instantiate d ρ b) (instantiate d ρ c)
   | .lenOf a => .lenOf (instantiate d ρ a)
   | .spread a => .spread (instantiate d ρ a)
+  | .args vs => .args (instantiateArgs d ρ vs)
   | t => t
 
 def instantiateArgs (d : Nat) (ρ : Env) : List Tm → List Tm
@@ -300,6 +311,10 @@ theorem instantiate_scoped (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (t : Tm) (d
     obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
     exact ihargs x hx d
   case arrLit args ihargs =>
+    intro v hv
+    obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
+    exact ihargs x hx d
+  case args args ihargs =>
     intro v hv
     obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hv
     exact ihargs x hx d
@@ -375,6 +390,12 @@ theorem instantiate_beta (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (a t : Tm) (d
     intro x hx
     exact ihargs x hx d
   case arrLit args ihargs =>
+    rw [List.map_map]
+    congr 1
+    apply List.map_congr_left
+    intro x hx
+    exact ihargs x hx d
+  case args args ihargs =>
     rw [List.map_map]
     congr 1
     apply List.map_congr_left
@@ -459,6 +480,10 @@ theorem instantiate_above {t : Tm} {d : Nat} (ht : Scoped d t) (ρ : Env) :
       simpa using (List.map_congr_left (g := id) (fun x hx => ihargs x hx (ht x hx)))
     rw [hmap]
   case arrLit args ihargs =>
+    have hmap : args.map (instantiate d ρ) = args := by
+      simpa using (List.map_congr_left (g := id) (fun x hx => ihargs x hx (ht x hx)))
+    rw [hmap]
+  case args args ihargs =>
     have hmap : args.map (instantiate d ρ) = args := by
       simpa using (List.map_congr_left (g := id) (fun x hx => ihargs x hx (ht x hx)))
     rw [hmap]

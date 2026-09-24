@@ -152,6 +152,10 @@ inductive Tm where
   read in order when every earlier actual is a value. Only an argument list
   gives it meaning: anywhere else it is stuck. -/
   | spread (a : Tm)
+  /-- An argument list as one value: what a rest contract speaks about. No
+  program and no step makes one; the model states with it which argument lists
+  a signature admits. -/
+  | args (vs : List Tm)
   deriving Repr
 
 /-- Invocation code is not a runtime value. A plain object has no call code. -/
@@ -378,6 +382,9 @@ def tmDecEq (a b : Tm) : Decidable (a = b) := by
   case spread.spread a0 b0 =>
     haveI : Decidable (a0 = b0) := tmDecEq a0 b0
     exact decidable_of_iff (a0 = b0) (by simp only [Tm.spread.injEq])
+  case args.args a0 b0 =>
+    haveI : Decidable (a0 = b0) := argsDecEq a0 b0
+    exact decidable_of_iff (a0 = b0) (by simp only [Tm.args.injEq])
 termination_by sizeOf a
 
 def callCodeDecEq (a b : CallCode) : Decidable (a = b) := by
@@ -508,13 +515,14 @@ theorem lookup_slots {ns : List PropKey} (hnd : ns.Nodup) {base i : Nat}
     (elemAt : ∀ a i, P a → P i → P (.elemAt a i))
     (setElem : ∀ a i v, P a → P i → P v → P (.setElem a i v))
     (lenOf : ∀ a, P a → P (.lenOf a))
-    (spread : ∀ a, P a → P (.spread a)) (t : Tm) : P t := by
+    (spread : ∀ a, P a → P (.spread a))
+    (args : ∀ vs, (∀ a ∈ vs, P a) → P (.args vs)) (t : Tm) : P t := by
   apply Tm.rec (motive_1 := P)
     (motive_2 := fun c => match c with
       | .absent => True | .closure _ b _ => P b | .variadic _ b => P b
       | .bound t r pre => P t ∧ P r ∧ ∀ a ∈ pre, P a)
     (motive_3 := fun args => ∀ a ∈ args, P a)
-    var invoke construct letE nul undef tru fls num str bigint sym ?_ ?_ read index write test ite arith arr arrLit elemAt setElem lenOf spread
+    var invoke construct letE nul undef tru fls num str bigint sym ?_ ?_ read index write test ite arith arr arrLit elemAt setElem lenOf spread args
     True.intro (fun _ _ _ h => h) (fun _ _ h => h) (fun _ _ _ ht hr hp => ⟨ht, hr, hp⟩) (by simp) (by
       intro a args ha ih v hv
       rcases List.mem_cons.mp hv with rfl | hv
@@ -541,7 +549,8 @@ abbrev Val := Tm
 
 
 def isVal : Tm → Bool
-  | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ | .objAt .. | .arr _ => true
+  | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ | .objAt .. | .arr _
+  | .args _ => true
   | _ => false
 
 /-- ECMAScript Number::equal on IEEE-754 bits: NaN never equals, and the
@@ -607,6 +616,7 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .setElem x y z => .setElem (subst j a x) (subst j a y) (subst j a z)
   | .lenOf x => .lenOf (subst j a x)
   | .spread x => .spread (subst j a x)
+  | .args xs => .args (substArgs j a xs)
 
 termination_by structural t => t
 

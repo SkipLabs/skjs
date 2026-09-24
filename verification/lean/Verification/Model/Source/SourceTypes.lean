@@ -46,6 +46,7 @@ private def clauseName : Clause (List Nat) → String
   | .str => "string"
   | .strLit _ => "string literal"
   | .list .. => "array"
+  | .pack .. => "argument list"
   | .bigint => "bigint"
   | .symbol => "symbol"
   | .ctors .. => "constructor"

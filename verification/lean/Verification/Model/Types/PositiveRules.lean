@@ -451,6 +451,33 @@ def CoversTuple (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Pro
   (∀ x ∈ p.optional.zip q.optional, R x.1 x.2 ∧ (q.readonly = false → R x.2 x.1)) ∧
   CoversRest R q.readonly p.rest q.rest ∧ (q.readonly = false → p.readonly = false)
 
+/-- A position covered by another: a present source position needs a target
+position whose operand it is within. -/
+def PositionCovers (R : List ι → List ι → Prop) : Option (List ι) → Option (List ι) → Prop
+  | some a, some b => R a b
+  | some _, none => False
+  | none, _ => True
+
+instance PositionCovers.decidable {R : List ι → List ι → Prop} [∀ a b, Decidable (R a b)] :
+    ∀ x y, Decidable (PositionCovers R x y)
+  | some a, some b => inferInstanceAs (Decidable (R a b))
+  | some _, none => isFalse id
+  | none, _ => isTrue trivial
+
+/-- One pack contract within another: every argument list the source admits,
+the target admits. The source requires at least as many positions; a target
+without a rest bounds the source's length; and each position's operand is
+within the target's, covariantly, since a pack holds values rather than
+locations. Past both contracts' fixed positions every index has the rests, so
+checking the positions up to that bound checks all. -/
+def CoversPack (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Prop :=
+  q.required.length ≤ p.required.length ∧
+  (q.rest = none → p.rest = none ∧
+    p.required.length + p.optional.length ≤ q.required.length + q.optional.length) ∧
+  ∀ i ∈ List.range (max (p.required.length + p.optional.length)
+      (q.required.length + q.optional.length) + 1),
+    PositionCovers R (p.position i) (q.position i)
+
 def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
     Clause (List ι) → Clause (List ι) → Prop
   | _, .top => True
@@ -479,6 +506,8 @@ def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
   -- A construct signature is covered by one taking as many parameters, each
   -- at least as wide, with a result at most as wide.
   | .ctors L, .ctors M => ∀ q ∈ M, ∃ p ∈ L, Domains R q.1 p.1 ∧ R p.2 q.2
+  -- Every target contract has a source contract within it.
+  | .pack a bs, .pack c ds => ∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversPack R p q
   | _, _ => False
 
 /-- Covering field by field is enough: the operands all constrain the same
@@ -672,6 +701,50 @@ theorem covers_lists_sound {G : NormalGraph ι} {R : List ι → List ι → Pro
     exact covers_tuple_sound hpq n hr W v hpv
   exact ⟨each c (by simp), fun b hb => each b (List.mem_cons_of_mem c hb)⟩
 
+/-- A covered pack contract holds of the same argument list. -/
+theorem covers_pack_sound {G : NormalGraph ι} {R : List ι → List ι → Prop}
+    {p q : Tuple (List ι)} (hc : CoversPack R p q) (n : Nat)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
+    (W : WorldT n) (vs : List Tm) (hv : PackFits (tupleFams (meaning G) p) n W vs) :
+    PackFits (tupleFams (meaning G) q) n W vs := by
+  obtain ⟨hreq, hrest, hpos⟩ := hc
+  obtain ⟨hlen, hbound, hel⟩ := hv
+  have hlen' : p.required.length ≤ vs.length := by simpa [tupleFams] using hlen
+  have hbound' : p.rest = none → vs.length ≤ p.required.length + p.optional.length := by
+    simpa [tupleFams] using hbound
+  refine ⟨?_, ?_, ?_⟩
+  · simp only [tupleFams, List.length_map]; omega
+  · simp only [tupleFams, List.length_map, Option.map_eq_none_iff]
+    intro hn
+    obtain ⟨hp, hle⟩ := hrest hn
+    have := hbound' hp
+    omega
+  · intro i u B hu hB j hj U hx
+    rw [positionFam_tupleFams] at hB
+    obtain ⟨b, hb, rfl⟩ := Option.map_eq_some_iff.mp hB
+    have hi : i < vs.length := (List.getElem?_eq_some_iff.mp hu).1
+    cases ha : p.position i with
+    | none =>
+      obtain ⟨h1, h2⟩ := Tuple.position_none ha
+      have := hbound' h2
+      omega
+    | some a =>
+      have hcov : PositionCovers R (p.position i) (q.position i) := by
+        by_cases hiN : i ≤ max (p.required.length + p.optional.length)
+            (q.required.length + q.optional.length)
+        · exact hpos i (List.mem_range.mpr (by omega))
+        · have h := hpos _ (List.mem_range.mpr (Nat.lt_succ_self _))
+          have e1 : p.position i = p.position (max (p.required.length + p.optional.length)
+              (q.required.length + q.optional.length)) := by
+            rw [Tuple.position_beyond (by omega), Tuple.position_beyond (by omega)]
+          have e2 : q.position i = q.position (max (p.required.length + p.optional.length)
+              (q.required.length + q.optional.length)) := by
+            rw [Tuple.position_beyond (by omega), Tuple.position_beyond (by omega)]
+          rwa [e1, e2]
+      rw [ha, hb] at hcov
+      exact hr j hj a b hcov U u
+        (hel i u (meaning G a) hu (by rw [positionFam_tupleFams, ha]; rfl) j hj U hx)
+
 theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G S T j)
     (W : WorldT n) (v : Val) : sem (meaning G) a n W v → sem (meaning G) b n W v := by
@@ -680,6 +753,22 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
   cases a <;> cases b <;> simp only [Covers] at hc
   all_goals try contradiction
   all_goals try exact absurd rfl hb
+  case pack.pack a bs c ds =>
+    rintro ⟨vs, rfl, hs, hf⟩
+    have src : ∀ p ∈ a :: bs, PackFits (tupleFams (meaning G) p) n W vs := by
+      intro p hp
+      rcases List.mem_cons.mp hp with rfl | hp
+      · exact hf _ List.mem_cons_self
+      · exact hf _ (List.mem_cons_of_mem _ (List.mem_map_of_mem hp))
+    have tgt : ∀ q ∈ c :: ds, PackFits (tupleFams (meaning G) q) n W vs := by
+      intro q hq
+      obtain ⟨p, hp, hpq⟩ := hc q hq
+      exact covers_pack_sound hpq n hr W vs (src p hp)
+    refine ⟨vs, rfl, hs, fun T hT => ?_⟩
+    rcases List.mem_cons.mp hT with rfl | hT
+    · exact tgt c List.mem_cons_self
+    · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hT
+      exact tgt q (List.mem_cons_of_mem _ hq)
   case ctors.ctors L M =>
     intro hv
     refine ⟨hv.1, fun q hq => ?_⟩

@@ -782,6 +782,70 @@ theorem ctorsT_append (L M : List (List Fam × Fam)) (k : Nat) (W : WorldT k) (v
   · rintro ⟨hc, hl, hm⟩; exact ⟨⟨hc, hl⟩, hc, hm⟩
   · rintro ⟨⟨hc, hl⟩, -, hm⟩; exact ⟨hc, hl, hm⟩
 
+/-! ### Argument packs -/
+
+/-- **One tuple contract on an argument list.** At least the required
+positions are present, no more than the required and optional ones without a
+rest, and each present value is, at every lower level and future world, a
+member of the family its position has. Values are held directly rather than
+at locations, so the contract speaks only below the current level: that keeps
+a pack clause contractive in its operands, as a store's contracts are through
+their locations. -/
+def PackFits (T : TupleF) (k : Nat) (W : WorldT k) (vs : List Tm) : Prop :=
+  T.required.length ≤ vs.length ∧
+    (T.rest = none → vs.length ≤ T.required.length + T.optional.length) ∧
+    ∀ (i : Nat) (u : Tm) (A : Fam), vs[i]? = some u → positionFam T i = some A →
+      ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U → A j U u
+
+/-- **An argument pack under tuple contracts.** The closed argument lists
+every contract admits. No program makes one; a signature's rest speaks about
+the actuals after its fixed parameters as one. -/
+def packT (Ts : List TupleF) : Fam := fun k W v =>
+  ∃ vs : List Tm, v = .args vs ∧ Scoped 0 v ∧ ∀ T ∈ Ts, PackFits T k W vs
+
+theorem PackFits.down {T n W vs} (h : PackFits T (n + 1) W vs) :
+    PackFits T n (trunc n (Nat.le_succ n) W) vs :=
+  ⟨h.1, h.2.1, fun i u A hu hA j hj U hx =>
+    h.2.2 i u A hu hA j (by omega) U (by rwa [trunc_trunc] at hx)⟩
+
+theorem PackFits.mono {T n W W' vs} (hx : WExt W W') (h : PackFits T n W vs) :
+    PackFits T n W' vs :=
+  ⟨h.1, h.2.1, fun i u A hu hA j hj U hy =>
+    h.2.2 i u A hu hA j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy)⟩
+
+theorem packT_adm (Ts : List TupleF) : Adm (packT Ts) :=
+  ⟨fun _ _ _ ⟨vs, he, hs, hf⟩ => ⟨vs, he, hs, fun T hT => (hf T hT).down⟩,
+   fun _ _ _ hx _ ⟨vs, he, hs, hf⟩ => ⟨vs, he, hs, fun T hT => (hf T hT).mono hx⟩⟩
+
+theorem packT_append (Ts Us : List TupleF) (k : Nat) (W : WorldT k) (v : Val) :
+    packT (Ts ++ Us) k W v ↔ packT Ts k W v ∧ packT Us k W v := by
+  constructor
+  · rintro ⟨vs, he, hs, hf⟩
+    exact ⟨⟨vs, he, hs, fun T hT => hf T (List.mem_append_left _ hT)⟩,
+      ⟨vs, he, hs, fun T hT => hf T (List.mem_append_right _ hT)⟩⟩
+  · rintro ⟨⟨vs, rfl, hs, hf⟩, ⟨ws, he, -, hg⟩⟩
+    cases he
+    exact ⟨vs, rfl, hs, fun T hT => (List.mem_append.mp hT).elim (hf T) (hg T)⟩
+
+/-- Contracts whose lengths match and whose positions agree below the budget
+admit the same lists. -/
+theorem PackFits.congr {T T' : TupleF} {n W vs}
+    (hreq : T.required.length = T'.required.length) (hopt : T.optional.length = T'.optional.length)
+    (hrest : T.rest = none ↔ T'.rest = none)
+    (hpos : ∀ i, (positionFam T i = none ↔ positionFam T' i = none) ∧
+      ∀ A B, positionFam T i = some A → positionFam T' i = some B → Agree A B n) :
+    PackFits T n W vs ↔ PackFits T' n W vs := by
+  unfold PackFits
+  rw [hreq, hopt, hrest]
+  refine and_congr Iff.rfl (and_congr Iff.rfl ⟨fun h i u B hu hB j hj U hx => ?_,
+    fun h i u A hu hA j hj U hx => ?_⟩)
+  · cases hA : positionFam T i with
+    | none => rw [(hpos i).1.mp hA] at hB; cases hB
+    | some A => exact ((hpos i).2 A B hA hB j hj U u).mp (h i u A hu hA j hj U hx)
+  · cases hB : positionFam T' i with
+    | none => rw [(hpos i).1.mpr hB] at hA; cases hA
+    | some B => exact ((hpos i).2 A B hA hB j hj U u).mpr (h i u B hu hB j hj U hx)
+
 theorem callsT_adm (L : List (Fam × List Fam × Fam)) : Adm (callsT L) :=
   ⟨fun _ _ _ h => ⟨h.1, fun p hp => (h.2 p hp).down⟩,
    fun _ _ _ hx _ h => ⟨h.1, fun p hp => (h.2 p hp).mono hx⟩⟩

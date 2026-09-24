@@ -155,6 +155,37 @@ $\vec a$ and an `undefined` receiver into its body (`ctorsT`, `ConstructsTo`).
 A `Ctors` clause has its own shape, so it meets no `arrs` or `callable` clause:
 no class is callable and no arrow constructible.
 
+### Argument packs
+
+An **argument pack** is an argument list as one value, $\mathsf{args}(\vec v)$
+(`Tm.args`). No program writes one and no step makes one: it is how the model
+states which argument lists a rest parameter's type admits. A `Pack` clause
+holds one or more tuple contracts $\tau_0,\ldots,\tau_m$, each with required
+positions $\vec R$, optional positions $\vec O$ and an optional rest $E$, and
+$\mathsf{pos}_\tau(i)$ is the operand the contract states for index $i$
+(`Tuple.position`): $R_i$, then $O_{i-|\vec R|}$, then $E$ past both, if any.
+A list fits a contract when its length is within the contract's bounds and each
+present value is, below the budget, a member at its position:
+
+$$
+\begin{aligned}
+\llbracket\mathsf{Pack}(\tau_0\land\cdots\land\tau_m)\rrbracket_k(W,v)
+&\iff\exists\vec v.\;v=\mathsf{args}(\vec v)\land v\ \text{closed}\land
+   \textstyle\bigwedge_i\mathsf{fits}(X\tau_i)_k(W,\vec v),\\
+\mathsf{fits}(\tau)_k(W,\vec v)&\iff|\vec R|\le|\vec v|\ \land\
+   (E=\varnothing\Rightarrow|\vec v|\le|\vec R|+|\vec O|)\\
+&\qquad\land\ \forall i,\,\forall j<k,\,\forall U\sqsupseteq W|_j.\;
+   \mathsf{pos}_\tau(i)=A\Rightarrow v_i\in A_j(U)
+\end{aligned}
+$$
+
+(`packT`, `PackFits`). A pack holds its values directly, not at locations, so
+the membership is required only below the current level and at every future
+world: that is what keeps the clause contractive in its operands, as a store's
+contracts are through their locations, and admissible without assumptions on
+them. A `Pack` clause has its own shape, and meeting two concatenates their
+contracts.
+
 Conjunction extends as before: same-shape clauses concatenate their operands,
 
 $$
@@ -162,11 +193,12 @@ $$
 \mathsf{Ref}(\vec\varphi;\psi;\omega)\land\mathsf{Ref}(\vec\varphi';\psi';\omega')
  &=\mathsf{Ref}(\vec\varphi\,\vec\varphi';\psi\psi';\omega\omega'),\\
 \mathsf{Ctors}\,L\land\mathsf{Ctors}\,M&=\mathsf{Ctors}\,(L\,M),\qquad
-c\land c=c\ \ (c\in\{\mathsf{bigint},\mathsf{symbol}\}),
+\mathsf{Pack}\,\vec\tau\land\mathsf{Pack}\,\vec\tau'=\mathsf{Pack}\,(\vec\tau\,\vec\tau'),\\
+&\qquad c\land c=c\ \ (c\in\{\mathsf{bigint},\mathsf{symbol}\}),
 \end{aligned}
 $$
 
-and `bigint`, `symbol` and `Ctors` meet every other shape as $\bot$.
+and `bigint`, `symbol`, `Ctors` and `Pack` meet every other shape as $\bot$.
 
 A callable intersection concatenates both lists of requirements. Intersecting
 it with `arrs` adds call obligations while retaining its bag invariants.
@@ -454,6 +486,29 @@ $$
 \qquad
 \frac{}{\Delta\vdash c\sqsubseteq c}\ \ c\in\{\mathsf{bigint},\mathsf{symbol}\}.
 $$
+
+A pack contract is covered by another that admits every list it admits. The
+target's required positions are no more than the source's; a target without a
+rest bounds the source's length; and each position's operand is within the
+target's, covariantly, since a pack holds values rather than locations. Past
+both contracts' fixed positions every index has the rests, so the positions up
+to $N=\max(|\vec R|+|\vec O|,\,|\vec R'|+|\vec O'|)$ decide all:
+
+$$
+\frac{\begin{array}{c}
+|\vec R'|\le|\vec R|\qquad
+E'=\varnothing\Rightarrow E=\varnothing\land|\vec R|+|\vec O|\le|\vec R'|+|\vec O'|\\
+\forall i\le N.\;\mathsf{pos}_\tau(i)=A\Rightarrow\exists B.\;\mathsf{pos}_{\tau'}(i)=B\land\Delta(A,B)
+\end{array}}
+{\Delta\vdash\tau\sqsubseteq_{\mathsf{pack}}\tau'}
+\qquad
+\frac{\forall\tau'\in\vec\tau'.\;\exists\tau\in\vec\tau.\;\Delta\vdash\tau\sqsubseteq_{\mathsf{pack}}\tau'}
+     {\Delta\vdash\mathsf{Pack}\,\vec\tau\sqsubseteq\mathsf{Pack}\,\vec\tau'}
+$$
+
+(`CoversPack`, `covers_pack_sound`). So `[number, string]` is within
+`(number | string)[]` and `[number]` within `[number, string?]`, while
+`number[]` is within no bounded tuple.
 
 Splitting (`splitClause`) replaces a source $\mathsf{bool}$ clause with the pair
 $\mathsf{true},\mathsf{false}$ and leaves every other clause alone. It is

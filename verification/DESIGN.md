@@ -1529,6 +1529,16 @@ signature's variance is used only below the current level, as a call
 signature's is. `[[Call]]` (`CallCode.callable`) is what the call semantics
 require, so no class inhabits a call type and no arrow a construct type.
 
+**Argument packs.** A rest parameter typed by a type parameter, as in
+`map<P extends DepSafe[]>(f: new (...params: P) => M, ...params: P)`, says
+the whole argument list is one thing. The calculus has that thing as a value,
+`Tm.args`, which no program writes and no step makes, and the `pack` clause
+(`packT`) is its type: tuple contracts on the list, whose positions a pack
+holds as values. Their membership is required below the current level only,
+which keeps the clause contractive without any assumption on its operands, and
+coverage is covariant position by position within the length bounds
+(`CoversPack`).
+
 **Classes.** A class declares its instance type in the declaration graph,
 and its value is a statement of the module initialization, in order. The
 parser lowers it to method closures allocated once, as its prototype's, and

@@ -80,6 +80,7 @@ Each type-graph node is a union of clauses:
 | Array store: simultaneous tuple contracts, each with required, optional and rest positions; readonly contracts give element read capabilities                              | `{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],"readonly":false},"rest":[]}}` |
 | Callable with invariant bag requirements and overloads, fixed and variadic                                                                                                 | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[[[5],[[[0]],[1]]]]}}`             |
 | Class value: construct signatures `[params, result]`, which `new` meets; no call signature meets it                                                                    | `{"ctors":{"signatures":[[[[1,2]],[1,2]]]}}`             |
+| Argument list: simultaneous tuple contracts on the actuals a rest parameter receives, positions compared covariantly                                                  | `{"pack":{"first":{"required":[[4]],"optional":[],"rest":[0],"readonly":false},"rest":[]}}` |
 
 The arrow example contains two signatures, each with one argument and the
 receiver label 5. Every signature states its receiver: the value a call passes

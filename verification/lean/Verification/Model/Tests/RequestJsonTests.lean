@@ -4,35 +4,8 @@ import Verification.Model.Tests.CertificateProducerTests
 namespace Verification.Model.RequestJsonTests
 open Lean ProgramTyping ControlFlow CertificateProducer RequestJson
 
-private def toNatClause : PositiveNormalization.Clause (List (Fin 7)) → PositiveNormalization.Clause (List Nat)
-  | .top => .top
-  | .list a bs =>
-    let tuple := fun (t : PositiveNormalization.Tuple (List (Fin 7))) =>
-      (⟨t.required.map (List.map Fin.val), t.optional.map (List.map Fin.val), t.rest.map (List.map Fin.val), t.readonly⟩ :
-        PositiveNormalization.Tuple (List Nat))
-    .list (tuple a) (bs.map tuple)
-  | .nul => .nul
-  | .undef => .undef
-  | .bool => .bool
-  | .boolLit b => .boolLit b
-  | .num => .num
-  | .numLit v => .numLit v
-  | .str => .str
-  | .strLit v => .strLit v
-  | .bigint => .bigint
-  | .symbol => .symbol
-  | .refs a bs vs os => .refs (a.map fun (f,A) => (f,A.map Fin.val)) (bs.map fun fs => fs.map fun (f,A) => (f,A.map Fin.val))
-      (vs.map fun (f,A) => (f,A.map Fin.val)) (os.map fun (f,A) => (f,A.map Fin.val))
-  | .dict a bs vs ix os => .dict (a.map fun (f,A) => (f,A.map Fin.val))
-      (bs.map fun fs => fs.map fun (f,A) => (f,A.map Fin.val))
-      (vs.map fun (f,A) => (f,A.map Fin.val)) (ix.map (List.map Fin.val))
-      (os.map fun (f,A) => (f,A.map Fin.val))
-  | .arrs L S => .arrs (L.map fun (c,a,b) => (c.map Fin.val,a.map (List.map Fin.val),b.map Fin.val))
-      (S.map fun (c,a,e,r) => (c.map Fin.val,a.map (List.map Fin.val),e.map Fin.val,r.map Fin.val))
-  | .ctors L => .ctors (L.map fun (a,b) => (a.map (List.map Fin.val), b.map Fin.val))
-  | .callable a bs L S => .callable (a.map fun (f,A) => (f,A.map Fin.val)) (bs.map fun fs => fs.map fun (f,A) => (f,A.map Fin.val))
-      (L.map fun (c,a,b) => (c.map Fin.val,a.map (List.map Fin.val),b.map Fin.val))
-      (S.map fun (c,a,e,r) => (c.map Fin.val,a.map (List.map Fin.val),e.map Fin.val,r.map Fin.val))
+private def toNatClause : PositiveNormalization.Clause (List (Fin 7)) → PositiveNormalization.Clause (List Nat) :=
+  PositiveNormalization.Clause.map (List.map Fin.val)
 
 def types : List (List (PositiveNormalization.Clause (List Nat))) :=
   (List.finRange 7).map (fun i => (ProgramTypingTests.G i).map toNatClause)

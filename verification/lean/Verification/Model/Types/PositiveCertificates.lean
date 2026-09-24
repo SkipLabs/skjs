@@ -138,6 +138,10 @@ instance {R : List ι → List ι → Prop} [DecidableRel R] (p q : Tuple (List 
     Decidable (CoversTuple R p q) := by
   unfold CoversTuple; infer_instance
 
+instance {R : List ι → List ι → Prop} [DecidableRel R] (p q : Tuple (List ι)) :
+    Decidable (CoversPack R p q) := by
+  unfold CoversPack; infer_instance
+
 /-- Every target arrow has checked evidence from the source's signatures. -/
 abbrev ArrowsChecked [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs : Evidence ι)
     (L : Ops ι) (S : List (List ι × List (List ι) × List ι × List ι)) (M : Ops ι) : Prop :=
@@ -173,6 +177,7 @@ def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs
       (CoversFields (Rel table) (a :: bs) (c :: ds) ∧ ArrowsChecked G table proofs L S M ∧
        ∀ t ∈ T, ∃ s ∈ S, checkRestCovers table s t = true)
   | .ctors L, .ctors M => decide (∀ q ∈ M, ∃ p ∈ L, Domains (Rel table) q.1 p.1 ∧ Rel table p.2 q.2)
+  | .pack a bs, .pack c ds => decide (∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversPack (Rel table) p q)
   | _, _ => false
 
 
@@ -183,6 +188,7 @@ theorem checkClause_sound [DecidableEq ι] {G : NormalGraph ι} {table proofs a 
   all_goals try contradiction
   all_goals try trivial
   case ctors.ctors => exact of_decide_eq_true h
+  case pack.pack => exact of_decide_eq_true h
   · exact of_decide_eq_true h
   · exact of_decide_eq_true h
   · have hh := of_decide_eq_true h
@@ -255,6 +261,7 @@ theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table a b}
   all_goals try contradiction
   all_goals try exact absurd rfl hb
   case ctors.ctors => exact ⟨[], by simpa only [checkClause, decide_eq_true_eq] using h⟩
+  case pack.pack => exact ⟨[], by simpa only [checkClause, decide_eq_true_eq] using h⟩
   · exact ⟨[], rfl⟩
   · exact ⟨[], rfl⟩
   · exact ⟨[], by simpa only [checkClause, decide_eq_true_eq] using h⟩

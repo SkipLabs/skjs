@@ -32,7 +32,10 @@ under `m + 1` binders: the receiver of the call in slot 0, then its parameters.
 A variadic body has its rest array in slot 0, the receiver in slot 1, then `m`
 parameters. `bound` is the forwarding descriptor `.bind` creates: the target, the
 receiver and the argument prefix it saved, values that no field holds and no
-write can reach. `make c a` evaluates its initializer `a`, then appends that value
+write can reach. An argument pack $\mathsf{args}(\vec v)$ (`Tm.args`) is a value too, but no
+program contains one and no step makes one: the model uses it to say which
+argument lists a rest parameter's type admits ([argument packs](POSITIVE-TYPES.md#argument-packs)).
+`make c a` evaluates its initializer `a`, then appends that value
 to the heap and returns `obj h.length c`, where `h.length` is the length
 before appending.
 `alloc a` abbreviates `make absent a`; `attach b a` abbreviates

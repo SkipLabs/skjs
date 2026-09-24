@@ -79,6 +79,7 @@ def Names (D : Registry) : Tm → Prop
   | .readAt _ a | .test _ a | .lenOf a | .spread a => Names D a
   | .setElem a b c => Names D a ∧ Names D b ∧ Names D c
   | .arrLit args => NamesArgs D args
+  | .args vs => NamesArgs D vs
   | .arr ls => ∀ l ∈ ls.filterMap id, D[l]? = some .absent
   | .ite c a b => Names D c ∧ Names D a ∧ Names D b
   | _ => True
@@ -176,6 +177,7 @@ def sourceTerm : Tm → Bool
   | .setElem a b c => sourceTerm a && sourceTerm b && sourceTerm c
   | .arrLit args => sourceArgs args
   | .arr .. => false
+  | .args _ => false
   | .ite c a b => sourceTerm c && sourceTerm a && sourceTerm b
   | _ => true
 
