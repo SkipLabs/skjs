@@ -77,6 +77,14 @@ private partial def hasRigidParameter : Json → Bool
   | .arr values => values.any hasRigidParameter
   | _ => false
 
+/-- Whether a declaration's equation has methods, whose receiver is the
+declaration itself. -/
+private partial def mentionsSelf : Json → Bool
+  | .obj fields => fields.toList.lookup "k" == some (.str "self") ||
+      fields.toList.any (fun p => mentionsSelf p.2)
+  | .arr values => values.any mentionsSelf
+  | _ => false
+
 /-- For disjoint plain record fields, a source heritage intersection has the
 same contract as one record operand with those fields. Canonicalizing that
 case also gives the proposal and the source one graph row. Other combinations
@@ -136,9 +144,12 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     -- Method syntax binds its receiver to the declaration being lowered. A
     -- direct alias expansion changes that owner before reaching this arm.
     if owner >= ds.size then throw "method has no containing declaration"
-    if !ds[owner]!.parameters.isEmpty then
-      throw "generic method receiver needs an application row"
-    return [rowIndex ds owner]
+    if ds[owner]!.parameters.isEmpty then return [rowIndex ds owner]
+    -- A generic declaration's application reserves its own row, passed after
+    -- its arguments.
+    match params[ds[owner]!.parameters.size]? with
+    | some row => return row
+    | none => throw "generic method receiver needs an application row"
   | "reference" =>
     let i ← referenceIndex ds term
     let args ← arr term "args"
@@ -148,10 +159,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     if seen.contains i then throw "recursive generic application needs memoized rows"
     let values ← args.mapM (lowerType ds owner params seen)
     let values ← lowerApplication ds i values seen
-    if ds[i]!.bases.isEmpty then
-      lowerType ds i values (i :: seen) ds[i]!.expression
-    else
-      (← lowerDefinitionRows ds i values (i :: seen)).mapM use
+    groundApplication ds i values seen
   | "array" =>
     let element ← lowerType ds owner params seen (← field term "element")
     let readonly ← bool term "readonly"
@@ -257,6 +265,22 @@ private partial def lowerApplication (ds : Array Definition) (i : Nat)
       | none => throw refusal
   return values
 
+/-- A ground application of a generic declaration. One whose equation has
+methods reserves its own row first, since the methods' receiver is that
+application, and fills it with the equation lowered at those arguments. Any
+other is its equation's labels, so `Id<boolean>` is exactly `[1, 2]`. -/
+private partial def groundApplication (ds : Array Definition) (i : Nat)
+    (values : Array (List Nat)) (seen : List Nat) : Lowering (List Nat) := do
+  if mentionsSelf ds[i]!.expression then
+    let row ← modifyGet fun T => (T.length, T ++ [[]])
+    let rows ← lowerDefinitionRows ds i (values.push [row]) (i :: seen)
+    modify fun T => T.set row rows
+    return [row]
+  if ds[i]!.bases.isEmpty then
+    lowerType ds i values (i :: seen) ds[i]!.expression
+  else
+    (← lowerDefinitionRows ds i values (i :: seen)).mapM use
+
 private partial def lowerHead (ds : Array Definition) (owner : Nat)
     (params : Array (List Nat)) (seen : List Nat)
     (term : Json) : Lowering (List (Clause (List Nat))) := do
@@ -271,6 +295,10 @@ private partial def lowerHead (ds : Array Definition) (owner : Nat)
     let args ← arr term "args"
     let values ← args.mapM (lowerType ds owner params seen)
     let values ← lowerApplication ds i values seen
+    if mentionsSelf ds[i]!.expression then
+      let labels ← groundApplication ds i values seen
+      let table ← get
+      return labels.flatMap (SourceTypes.graph table)
     lowerDefinitionRows ds i values (i :: seen)
   | _ =>
     let labels ← lowerType ds owner params seen term
@@ -524,9 +552,7 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
       return graphClaim [rowIndex ds index]
     let values ← args.mapM Fragment.translate
     let values ← lowerApplication ds index values []
-    let labels ← if ds[index]!.bases.isEmpty then
-        lowerType ds index values [index] ds[index]!.expression
-      else (← lowerDefinitionRows ds index values [index]).mapM use
+    let labels ← groundApplication ds index values []
     if labels.isEmpty then throw "generic application has no inhabited graph clause"
     return graphClaim labels
   | k => throw s!"declaration syntax '{k}' in a source annotation"

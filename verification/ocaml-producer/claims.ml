@@ -15,6 +15,10 @@ let encode (proposal : Proposal.t) =
                     if d.parameters=[] then Some (Array []) else None) declarations)
   in
   let active_imports = ref [] in
+  (* The row reserved for an application of a declaration whose equation has
+     methods: their receiver is that application, so it needs its label
+     before its equation is expanded, as Lean reserves it. *)
+  let applications = ref [] in
   let intern row =
     let rec find n = function [] -> rows := !rows @ [row]; n
       | r::rs -> if r=row then n else find (n+1) rs in find 0 !rows
@@ -77,6 +81,32 @@ let encode (proposal : Proposal.t) =
         if d.id=id then
           if d.parameters=[] && args=[] then [i+4]
           else if List.length args <= List.length d.parameters then begin
+            match List.assoc_opt (id,args) !applications with
+            | Some label -> [label]
+            | None ->
+            let rec mentions = function
+              | Atoms atoms -> List.exists (function
+                  | Named (other,_) -> other=id
+                  | Shape shape ->
+                    List.exists (fun (f:Semantic.field) -> mentions f.read) shape.fields ||
+                    List.exists (fun (c:Semantic.signature) -> mentions c.receiver) shape.calls
+                  | _ -> false) atoms
+              | Union ts -> List.exists mentions ts
+              | Rigid _ -> false in
+            if mentions d.expression then begin
+              let label = List.length !rows in
+              rows := !rows @ [Array [String "reserved";String id]];
+              applications := ((id,args),label) :: !applications;
+              (match Proposal.definition declarations id args with
+               | Atoms atoms ->
+                 let row = List.concat_map (fun l -> match List.nth_opt !rows l with
+                   | Some (Array clauses) -> clauses
+                   | _ -> fail "application references a missing graph row")
+                   (List.sort_uniq compare (List.concat_map atom_labels atoms)) in
+                 rows := List.mapi (fun j r -> if j=label then Array row else r) !rows
+               | _ -> unsupported "generic application needs a ground graph type");
+              [label]
+            end else begin
             if List.mem id !active_imports then
               unsupported "recursive generic application needs memoized rows";
             active_imports := id::!active_imports;
@@ -96,6 +126,7 @@ let encode (proposal : Proposal.t) =
               with e -> active_imports := List.tl !active_imports; raise e in
             active_imports := List.tl !active_imports;
             result
+            end
           end else unsupported "type application has wrong arity"
         else find (i + if d.parameters=[] then 1 else 0) rest in
     find 0 declarations

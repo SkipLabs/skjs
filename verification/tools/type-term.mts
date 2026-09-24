@@ -260,6 +260,14 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
         value: typeTerm(scope, member.type, member), span: memberSpan };
     } else if (scope.annotation) {
       scope.fail(at, "unsupported member in a record type");
+    } else if (ts.isMethodSignatureDeclaration(member) && methods && member.typeParameters?.length &&
+        !member.postfixToken && !member.modifiers?.length) {
+      // A generic method is read as an opaque readonly member: a program may
+      // read it, never call it, and any value is one. Calling it needs its
+      // instances, which are not yet derived for members.
+      const name = named(member, "unsupported method signature");
+      fields.push({ name, optional: false, readonly: true,
+        type: { k: "atom", name: "unknown", span: memberSpan }, span: memberSpan });
     } else if (ts.isMethodSignatureDeclaration(member)) {
       if (!methods || !member.type || member.postfixToken?.kind === ts.SyntaxKind.QuestionToken ||
           member.typeParameters?.length || member.modifiers?.length)

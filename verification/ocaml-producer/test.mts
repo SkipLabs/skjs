@@ -120,18 +120,23 @@ for (const [file, expected] of [
   writeFileSync(join(probe, "package.json"), '{"type":"module"}');
   writeFileSync(join(probe, "tsconfig.json"),
     JSON.stringify({ extends: upstreamConfig, include: ["*.ts"] }));
+  // A generic method is an opaque member, so `Resource` and `Context`
+  // collect; `Mapper` stops at the library's `Iterable`, and the collections
+  // at `bigint` in `DepSafe`.
   for (const [use, imports, refusal] of [
     ["Mapper<string, number, string, number>", "Mapper",
-      /unsupported method signature in \S*api\.ts#Context/],
+      /type outside the fragment \(AnyKeyword\) in \S*lib\.es2015\.iterable\.d\.ts#Iterable/],
     ["Values<number>", "Values", /type outside the fragment \(BigIntKeyword\) in \S*index\.ts#DepSafe/],
     ["EagerCollection<string, number>", "EagerCollection",
-      /unsupported method signature in \S*api\.ts#EagerCollection/],
-    ["Resource<SharedCollections>", "Resource, SharedCollections",
-      /unsupported method signature in \S*api\.ts#Context/],
+      /type outside the fragment \(BigIntKeyword\) in \S*index\.ts#DepSafe/],
+    ["Resource<SharedCollections>", "Resource, SharedCollections", null],
+    ["Context", "Context", null],
   ] as const) {
     const client = join(probe, `${imports.split(",")[0]}.ts`);
     writeFileSync(client, `import type { ${imports} } from "@skipruntime/core";\nexport type Use = ${use};\n`);
-    assert.throws(() => collectDeclarations(client, { tsconfigPath: join(probe, "tsconfig.json") }), refusal);
+    const collect = () => collectDeclarations(client, { tsconfigPath: join(probe, "tsconfig.json") });
+    if (refusal) assert.throws(collect, refusal);
+    else assert.ok(collect().definitions.length > 0);
   }
   // The upstream bytes the census row and these results are about.
   const upstreamSha = (path: string) =>
@@ -545,10 +550,18 @@ for (const [file, expected] of [
   for (const [name, refusal] of [
     ["NamedPair", /named tuple members are outside the fragment in box.ts#NamedPair/],
     ["NestedMethod", /unsupported method signature in box.ts#NestedMethod/],
-    ["GenericMethod", /unsupported method signature in box.ts#GenericMethod/],
     ["GenericCall", /generic or incomplete call signature in box.ts#GenericCall/],
   ] as const)
     assert.throws(() => graphOf(`import type { ${name} } from "@fixture/box";`), refusal);
+  // A generic method is an opaque member: the interface collects, and a call
+  // through it is not established.
+  assert.ok(graphOf('import type { GenericMethod } from "@fixture/box";').definitions.length > 0);
+  const genericMethodClient = join(pairDir, "generic-method-client.ts");
+  writeFileSync(genericMethodClient,
+    'import type { GenericMethod } from "@fixture/box";\n' +
+    "export function call(m: GenericMethod): boolean { return m.read(true); }\n");
+  const genericMethodCall = check(genericMethodClient, pairConfig);
+  assert.notEqual(genericMethodCall.status, "verified", JSON.stringify(genericMethodCall));
   const optionalMethodClient = join(pairDir, "optional-method-client.ts");
   writeFileSync(optionalMethodClient,
     'import type { OptionalMethod } from "@fixture/box";\n' +

@@ -528,9 +528,9 @@ client of the same project, each stops at its first refused declaration
 
 | Interface | First refusal | Why |
 | --- | --- | --- |
-| `Mapper<K1, V1, K2, V2>` | a method signature of `Context` | `mapEntry`'s `context: Context` reaches `createLazyCollection`, a generic method taking `new (...params: Params) => LazyCompute<K, V>` |
-| `Resource<C>` | `AbstractEagerCollection` is a class | `SharedCollections` bounds records by the branded base class |
-| `EagerCollection<K, V>` | a method signature of `EagerCollection` | generic methods such as `map<K2, V2, Params extends DepSafe[]>` taking a constructor contract |
+| `Mapper<K1, V1, K2, V2>` | `any` in the library's `Iterable` | `mapEntry` returns `Iterable<[K2, V2]>`, whose defaulted type parameters are `any` |
+| `Resource<C>` | none: collected | its `Context` parameter's generic methods are opaque members |
+| `EagerCollection<K, V>` | `bigint` in `DepSafe` | its methods' values are `V & DepSafe` |
 | `Values<T>` | `bigint` in `DepSafe` | `DepSafe` is `null \| boolean \| number \| bigint \| string \| symbol \| Managed`, and `Managed` has a computed `unique symbol` key |
 
 The admitted contract work is larger than recognizing the declaration keyword:
@@ -891,14 +891,16 @@ first milestone, in order of how much each gates:
    meets).
 3. **Generic calls.** Done for generic module functions and generic imported
    functions and classes (`InputDefinition<K, V>`): a call validates its
-   instantiation and reaches that instance, and a class's `extends` is a base
-   of its instance type. Remaining: methods of generic classes (a generic
-   application's method rows), generic methods (next item), and constructor
-   or tuple-pack parameters.
+   instantiation and reaches that instance; a class's `extends` is a base of
+   its instance type; and each ground application of a generic declaration
+   with methods has its own row, its methods' receiver. Remaining: generic
+   methods (next item) and constructor or tuple-pack parameters.
 4. **The runtime API's declaration forms.** `Mapper` reaches `Context` and
    `Values`; interpreting them needs:
-   - generic interface methods, i.e. quantified method signatures (schemes
-     exist only for closures today);
+   - generic interface methods, i.e. quantified method signatures: read today
+     as opaque readonly members, which a program may read but not call, so
+     `Context` and `Resource` collect; calling one (`EagerCollection.map`)
+     needs its instances at the call;
    - constructor types and generic tuple packs, `new (...params: Params) =>
      T` with `Params extends readonly DepSafe[]`;
    - `bigint`, `symbol` and computed `unique symbol` keys (`DepSafe`,

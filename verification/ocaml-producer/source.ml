@@ -55,8 +55,9 @@ let rec source_type ctx j =
   | "self" -> (match ctx.owner with
     | None -> fail "a method receiver outside a declaration"
     | Some owner ->
-      if ctx.positional<>[] then unsupported "generic method receiver needs an application row";
-      Atoms [Named (owner,[])])
+      (* A generic declaration's receiver is its application to its own
+         parameters, which instantiation makes the instance. *)
+      Atoms [Named (owner,List.map (fun r -> Rigid r) ctx.positional)])
   | "object" ->
     let fields = List.map (fun f ->
       let t = recur (field "type" f) in
