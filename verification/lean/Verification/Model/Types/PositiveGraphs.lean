@@ -25,7 +25,7 @@ instances, needs. -/
 inductive ParameterKind where
   | value
   | arguments
-  deriving DecidableEq, Repr
+  deriving DecidableEq, BEq, Repr, Inhabited
 
 abbrev ParameterKind.Carrier : ParameterKind → Type
   | .value => Val
@@ -77,9 +77,15 @@ structure NormalGraph (ι : Type) where
   /-- A clause row's clauses. -/
   rows : ι → List (Clause (List ι))
   schemes : ι → Option (SchemeRow ι) := fun _ => none
-  params : ι → Bool := fun _ => false
+  parameterKinds : ι → Option ParameterKind := fun _ => none
   /-- What the parameter rows mean. Semantic only. -/
   env : Assignment ι := Assignment.empty
+
+/-- Whether a row is a parameter is derived from its kind, never maintained
+separately. The legacy denotation still uses the value assignment until the
+sorted certificate migration is complete. -/
+def NormalGraph.params (G : NormalGraph ι) (i : ι) : Bool :=
+  (G.parameterKinds i).isSome
 
 /-- A clause row: neither a parameter nor a scheme. -/
 def NormalGraph.plain (G : NormalGraph ι) (i : ι) : Bool := !G.params i && (G.schemes i).isNone
@@ -90,6 +96,17 @@ def NormalGraph.clauses (G : NormalGraph ι) (i : ι) : List (Clause (List ι)) 
   if G.plain i then G.rows i else []
 
 instance : CoeFun (NormalGraph ι) (fun _ => ι → List (Clause (List ι))) := ⟨NormalGraph.clauses⟩
+
+/-- The sort of a type reference comes from its parameter or clause rows.
+The empty union is bottom at either sort; a union cannot mix value and pack
+rows. This checks only the outer sort, not recursive operand well-formedness. -/
+def NormalGraph.hasKind (G : NormalGraph ι) (kind : ParameterKind) (S : List ι) : Bool :=
+  S.all fun i => match G.parameterKinds i with
+    | some k => k == kind
+    | none => if (G.schemes i).isSome then kind == .value else
+      (G.rows i).all fun c => match c with
+        | .pack .. => kind == .arguments
+        | _ => kind == .value
 
 /-- A label with clauses is a clause row. -/
 theorem NormalGraph.plain_of_clauses {G : NormalGraph ι} {i : ι} {c}

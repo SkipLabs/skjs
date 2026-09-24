@@ -194,14 +194,14 @@ private def freeColours (T : SourceTypes.Table) (labels : List Nat) : List Nat :
   let D := CertificateProducer.readsFrom G CertificateProducer.closureFuel labels
   let V := CertificateProducer.freeMapOf G D CertificateProducer.closureFuel []
   (labels.flatMap (fv V)).filterMap fun p => match T[p]? with
-    | some (RequestJson.Row.param _ n) => colourOf n
+    | some (RequestJson.Row.param _ n _) => colourOf n
     | _ => none
 
 /-- The one row of the binder named `name`, shared by every lowering. -/
-private def paramRow (name : String) : Lowering Nat := modifyGet fun T =>
-  match T.findIdx? (fun r => match r with | RequestJson.Row.param _ n => n == name | _ => false) with
+private def paramRow (name : String) (kind : PositiveGraphs.ParameterKind) : Lowering Nat := modifyGet fun T =>
+  match T.findIdx? (fun r => match r with | RequestJson.Row.param _ n k => n == name && k == kind | _ => false) with
   | some i => (i, T)
-  | none => (T.length, T ++ [.param T.length name])
+  | none => (T.length, T ++ [.param T.length name kind])
 
 /-- A scheme row, interned. -/
 private def schemeRow (bs : List Nat) (sigs : List (List Nat × List (List Nat) × List Nat))
@@ -273,7 +273,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     | some c =>
       let spanKey := (← field term "span").compress
       let rows ← ((List.range names.length).zip names).mapM fun (k, n) =>
-        paramRow s!"{n}#{k}@{spanKey}^{c}"
+        paramRow s!"{n}#{k}@{spanKey}^{c}" (if packs.contains n then .arguments else .value)
       -- Bounds are read where the method is declared, outside its binders. A
       -- pack parameter's bound is an array or a tuple of required positions,
       -- read as the argument lists it admits.

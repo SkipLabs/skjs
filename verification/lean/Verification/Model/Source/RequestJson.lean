@@ -97,6 +97,16 @@ instance (priority := high) [ToJson α] : ToJson (Clause α) :=
   ⟨fun c => withoutEmptyVariadic (derivedClauseToJson c)⟩
 instance (priority := high) [FromJson α] : FromJson (Clause α) :=
   ⟨fun j => derivedClauseFromJson (withEmptyVariadic j)⟩
+instance : ToJson ParameterKind := ⟨fun
+  | .value => .str "value"
+  | .arguments => .str "arguments"⟩
+
+instance : FromJson ParameterKind := ⟨fun j => do
+  match ← j.getStr? with
+  | "value" => return .value
+  | "arguments" => return .arguments
+  | _ => throw "expected parameter kind value or arguments"⟩
+
 /-- A row of a type table: a union of clauses, a scheme row (a generic
 callable: its binders and its signatures `(receiver, parameters, result)`), or
 a parameter row (a scheme's binder), which names its own label. Only a clause
@@ -108,7 +118,7 @@ inductive Row where
       (variadic : List (List Nat × List (List Nat) × List Nat × List Nat))
   /-- `name` identifies the binder the row stands for (its spelling, where it
   is declared, and its colour); it carries no meaning. -/
-  | param (label : Nat) (name : String)
+  | param (label : Nat) (name : String) (kind : ParameterKind)
   deriving DecidableEq, Repr, Inhabited
 
 instance : Coe (List (Clause (List Nat))) Row := ⟨.clauses⟩
@@ -126,14 +136,14 @@ def Row.union : Row → List (Clause (List Nat))
 scheme rows; a scheme row as
 `{"scheme": {"binders", "signatures", "bounds", "variadic"}}`, its bounds and
 its variadic signatures left out when there are none, and a parameter row as
-`{"param": label, "name": name}`. -/
+`{"param": label, "name": name, "kind": "value" | "arguments"}`. -/
 instance : ToJson Row := ⟨fun
   | .clauses cs => toJson cs
   | .scheme bs sigs bounds rests => Json.mkObj [("scheme",
       Json.mkObj ([("binders", toJson bs), ("signatures", toJson sigs)] ++
         (if bounds.isEmpty then [] else [("bounds", toJson bounds)]) ++
         (if rests.isEmpty then [] else [("variadic", toJson rests)])))]
-  | .param l n => Json.mkObj [("param", toJson l), ("name", toJson n)]⟩
+  | .param l n k => Json.mkObj [("param", toJson l), ("name", toJson n), ("kind", toJson k)]⟩
 
 instance : FromJson Row := ⟨fun j =>
   match j with
@@ -148,7 +158,9 @@ instance : FromJson Row := ⟨fun j =>
         (← match b.getObjVal? "variadic" with
           | .ok v => fromJson? v
           | .error _ => pure [])
-    | .error _, .ok l => return .param (← fromJson? l) (← fromJson? (← j.getObjVal? "name"))
+    | .error _, .ok l => do
+      return .param (← fromJson? l) (← fromJson? (← j.getObjVal? "name"))
+        (← fromJson? (← j.getObjVal? "kind"))
     | _, _ => .error "expected a clause array, a scheme row or a parameter row"⟩
 
 /-- The graph a table of rows denotes. -/
@@ -159,13 +171,13 @@ def tableGraph (T : List Row) : NormalGraph Nat where
   schemes i := match T[i]? with
     | some (.scheme bs sigs bounds rests) => some ⟨bs, sigs, bounds, rests⟩
     | _ => none
-  params i := match T[i]? with
-    | some (.param _ _) => true
-    | _ => false
+  parameterKinds i := match T[i]? with
+    | some (.param _ _ k) => some k
+    | _ => none
 
 @[simp] theorem tableGraph_clauses_row {T : List Row} {i : Nat} {cs : List (Clause (List Nat))}
     (h : T[i]? = some (.clauses cs)) : (tableGraph T).plain i = true ∧ tableGraph T i = cs := by
-  simp [tableGraph, NormalGraph.plain, NormalGraph.clauses, h, Row.union]
+  simp [tableGraph, NormalGraph.params, NormalGraph.plain, NormalGraph.clauses, h, Row.union]
 
 deriving instance ToJson, FromJson for Target
 deriving instance ToJson, FromJson for Continuation
@@ -227,16 +239,16 @@ def rowTypes : Row → List (Ty Nat)
   | .scheme bs sigs bounds rests => bs :: (sigs.flatMap fun p => p.1 :: p.2.2 :: p.2.1) ++
       bounds.map (fun b => b.1 :: b.2) ++
       rests.flatMap fun p => p.1 :: p.2.2.1 :: p.2.2.2 :: p.2.1
-  | .param _ _ => []
+  | .param _ _ _ => []
 
 /-- Every label a row names indexes the table; a parameter row names itself;
 and a scheme's binders are parameter rows. -/
 def validRows (T : List Row) : Bool :=
   (T.flatMap rowTypes).all (validTy T.length) &&
   (List.range T.length).all fun i => match T[i]? with
-    | some (.param l _) => l == i
+    | some (.param l _ _) => l == i
     | some (.scheme bs _ _ _) => bs.all fun b => match T[b]? with
-      | some (.param _ _) => true
+      | some (.param _ _ _) => true
       | _ => false
     | _ => true
 

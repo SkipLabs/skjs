@@ -27,7 +27,7 @@ def types : List (List (Clause (List Nat))) :=
 
 def G : NormalGraph Nat where
   rows i := types[i]?.getD []
-  params i := i == 4 || i == 18
+  parameterKinds i := if i == 4 || i == 18 then some .value else none
   schemes i :=
     if i == 5 then some ⟨[4], [([3], [[4]], [4])], [], []⟩
     else if i == 10 then some ⟨[4], [([3], [[4]], [9])], [], []⟩
@@ -151,7 +151,7 @@ def cert (A B : List Nat) : PositiveCertificates.Proof Nat := (instProof G 64 A 
 open RequestJson in
 def table : List Row :=
   (List.range types.length).map fun i =>
-    if i == 4 then .param 4 "T" else if i == 18 then .param 18 "U"
+    if i == 4 then .param 4 "T" .value else if i == 18 then .param 18 "U" .value
     else if i == 5 then .scheme [4] [([3], [[4]], [4])] [] []
     else if i == 10 then .scheme [4] [([3], [[4]], [9])] [] []
     else if i == 17 then .scheme [18] [([3], [[18]], [18])] [] []
@@ -166,9 +166,25 @@ def wire : NormalGraph Nat := RequestJson.tableGraph table
 #guard RequestJson.validRows table
 -- A parameter row names its own label, a scheme's binders are parameter rows,
 -- and a scheme's labels index the table.
-#guard !RequestJson.validRows (table.set 4 (.param 5 "T"))
+#guard !RequestJson.validRows (table.set 4 (.param 5 "T" .value))
 #guard !RequestJson.validRows (table.set 5 (.scheme [3] [([3], [[3]], [3])] [] []))
 #guard !RequestJson.validRows (table.set 5 (.scheme [4] [([3], [[4]], [25])] [] []))
+-- A pack binder and a value binder cannot exchange their instantiation types.
+private def sortedKinds : NormalGraph Nat := RequestJson.tableGraph [
+  .param 0 "P" .arguments, .param 1 "T" .value,
+  .clauses [.pack ⟨[[3]], [], none, false⟩ []], .clauses [.num]]
+#guard PositiveRules.instKinds sortedKinds [0,1] [[2],[3]]
+#guard !PositiveRules.instKinds sortedKinds [0] [[3]]
+#guard !PositiveRules.instKinds sortedKinds [1] [[2]]
+#guard !PositiveRules.instKinds sortedKinds [0] [[2,3]]
+-- A table certificate must not bypass the same check.
+#guard PositiveRules.entryOk sortedKinds [] [] (0, [(0,[2])], [2])
+#guard !PositiveRules.entryOk sortedKinds [] [] (0, [(0,[3])], [3])
+-- The wire must state a kind; there is no implicit legacy/value default.
+#guard (Lean.fromJson? (Lean.Json.mkObj [("param", Lean.toJson (0 : Nat)),
+  ("name", Lean.toJson "P")]) : Except String RequestJson.Row).toOption.isNone
+#guard (Lean.fromJson? (Lean.toJson (RequestJson.Row.param 0 "P" .arguments)) :
+  Except String RequestJson.Row).toOption == some (.param 0 "P" .arguments)
 -- A clause row is spelled as before; the other kinds read back as themselves.
 #guard Lean.toJson (RequestJson.Row.clauses [.nul]) == Lean.toJson [Clause.nul (α := List Nat)]
 #guard (Lean.fromJson? (Lean.toJson table) : Except String (List RequestJson.Row)).toOption == some table
@@ -199,7 +215,7 @@ def types : List (List (Clause (List Nat))) :=
    [.arrs [([4], [[0]], [6])] []]]
 def H : NormalGraph Nat where
   rows i := types[i]?.getD []
-  params i := i == 5 || i == 6
+  parameterKinds i := if i == 5 || i == 6 then some .value else none
   schemes i :=
     if i == 8 then some ⟨[5], [([7], [[9]], [10])], [], []⟩
     else if i == 11 then some ⟨[6], [([10], [[12]], [13])], [], []⟩

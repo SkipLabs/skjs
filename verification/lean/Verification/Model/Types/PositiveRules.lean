@@ -1403,6 +1403,16 @@ def boundImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι) (src tgt : List
   | some [q] => (tyImg tbl κ b.2).map (q, ·)
   | _ => none
 
+/-- The image of a parameter must have its declared sort. -/
+def substitutionKind (G : NormalGraph ι) (b : ι) (U : List ι) : Bool :=
+  match G.parameterKinds b with
+  | some k => G.hasKind k U
+  | none => false
+
+/-- One kind check is shared by instantiation and table substitution. -/
+def instKinds (G : NormalGraph ι) (bs : List ι) (θs : List (List ι)) : Bool :=
+  (bs.zip θs).all fun (b, U) => substitutionKind G b U
+
 /-- One entry. A parameter row's image is what the context gives it, or itself.
 A row with no free row in the context's domain may be its own image. A clause
 row's image is a clause row holding its clauses mapped. A scheme row's image is
@@ -1411,7 +1421,8 @@ are its own mapped with its binders standing for them, provided no free row of
 the source, nor any row of a free row's image, is one of those binders. -/
 def entryOk [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (V : FreeMap ι)
     (e : ι × Ctx ι × List ι) : Bool :=
-  if G.params e.1 then e.2.2 == (e.2.1.lookup e.1).getD [e.1]
+  if G.params e.1 then
+    e.2.2 == (e.2.1.lookup e.1).getD [e.1] && substitutionKind G e.1 e.2.2
   else if e.2.2 == [e.1] && (fv V e.1).all (fun p => (e.2.1.lookup p).isNone) then true
   else match G.schemes e.1, e.2.2 with
     | some s, [j] =>
@@ -1419,6 +1430,7 @@ def entryOk [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (V : Free
       | some s2 =>
         !G.params j && decide s2.binders.Nodup && s2.binders.length == s.binders.length &&
           s2.binders.all G.params &&
+          (s.binders.zip s2.binders).all (fun (a,b) => G.parameterKinds a == G.parameterKinds b) &&
           (fv V e.1).all (fun p => match e.2.1.lookup p with
             | some U => U.all fun l => (fv V l).all fun q => !s2.binders.contains q
             | none => !s2.binders.contains p) &&
@@ -1744,7 +1756,7 @@ theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D 
             | some s2 =>
             simp only [hs2, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, decide_eq_true_eq,
               List.all_eq_true] at hrow
-            obtain ⟨⟨⟨⟨⟨⟨⟨hjp, hnd⟩, hlen⟩, hpars⟩, hcap⟩, hsigs⟩, hbnds⟩, hrests⟩ := hrow
+            obtain ⟨⟨⟨⟨⟨⟨⟨⟨hjp, hnd⟩, hlen⟩, hpars⟩, _⟩, hcap⟩, hsigs⟩, hbnds⟩, hrests⟩ := hrow
             rw [singleton, qDenote_unfold, qDenote_unfold]
             simp only [qLayer, qLayerWithArgs, hpar, hjp, hsch, hs2, Bool.false_eq_true, if_false]
             refine and_congr Iff.rfl ?_
@@ -1954,7 +1966,8 @@ theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D 
             · rintro ⟨_, ⟨c, hc, rfl⟩, h⟩
               exact ⟨c, hc, (clause c hc).mpr h⟩
   · -- a parameter row
-    simp only [hpar, if_true, beq_iff_eq] at hrow
+    simp only [hpar, if_true, Bool.and_eq_true, beq_iff_eq] at hrow
+    obtain ⟨hrow, _⟩ := hrow
     subst hrow
     have hr := hrel i (hself hpar)
     rw [qDenote_unfold]
@@ -2124,6 +2137,7 @@ inductive Sub (G : NormalGraph ι) : List ι → List ι → Prop where
   | inst [DecidableEq ι] {i : ι} {s : SchemeRow ι} {tbl : InstTable ι} {θs : List (List ι)}
       {D : List ι} {V : FreeMap ι} {L : Ops ι} {M : List (List ι × List (List ι) × List ι × List ι)} :
       G.params i = false → G.schemes i = some s → θs.length = s.binders.length →
+      instKinds G s.binders θs = true →
       (∀ b ∈ s.bounds, ∀ U, (s.binders.zip θs).lookup b.1 = some U →
         Core G U b.2 ∨ ∀ l ∈ U, l ∈ b.2) →
       TableOk G tbl D V = true →
@@ -2156,7 +2170,7 @@ theorem Sub.sound_at {G : NormalGraph ι} {S T} (h : Sub G S T) :
   | core h => exact fun η => Core.sound (G := reassign G η) h
   | subset h => exact fun _ => by rintro n W v ⟨i, hi, hv⟩; exact ⟨i, h i hi, hv⟩
   | trans _ _ ih ih' => exact fun η n W v hv => ih' η n W v (ih η n W v hv)
-  | inst hp hq hlen hbnd hok hL hM hT =>
+  | inst hp hq hlen _ hbnd hok hL hM hT =>
     exact fun η => inst_sound (G := reassign G η) hp hq hlen (fun b hb U hU => by
       rcases hbnd b hb U hU with hc | hsub
       · exact Core.sound (G := reassign G η) hc

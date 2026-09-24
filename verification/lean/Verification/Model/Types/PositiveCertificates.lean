@@ -388,6 +388,7 @@ def checkInst [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (tbl : InstT
   | [i], [.arrs L M] =>
     match G.schemes i with
     | some s => !G.params i && θs.length == s.binders.length &&
+        instKinds G s.binders θs &&
         certs.length == s.bounds.length &&
         (s.bounds.zip certs).all (fun bc => boundOk G s.binders θs bc.1 bc.2) &&
         TableOk G tbl D V &&
@@ -405,8 +406,8 @@ theorem checkInst_sound [DecidableEq ι] {G : NormalGraph ι} {S T tbl θs certs
     · rename_i s hs
       simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true, List.any_eq_true,
         beq_iff_eq] at h
-      obtain ⟨⟨⟨⟨⟨⟨hp, hlen⟩, hcl⟩, hbs⟩, hok⟩, hL⟩, hM⟩ := h
-      refine .inst hp hs hlen (fun b hb => ?_) hok hL hM hT
+      obtain ⟨⟨⟨⟨⟨⟨⟨hp, hlen⟩, hkinds⟩, hcl⟩, hbs⟩, hok⟩, hL⟩, hM⟩ := h
+      refine .inst hp hs hlen hkinds (fun b hb => ?_) hok hL hM hT
       obtain ⟨c, hc⟩ := exists_mem_zip hcl b hb
       exact boundOk_sound (hbs _ hc)
     · cases h
@@ -457,12 +458,12 @@ theorem check_complete [dec : DecidableEq ι] {G : NormalGraph ι} {S T}
     obtain ⟨left, hl⟩ := ih
     obtain ⟨right, hr⟩ := ih'
     exact ⟨.trans U left right, by simp [check, hl, hr]⟩
-  | @inst T inst i s tbl θs D V L M hp hq hlen hbnd hok hL hM hT =>
+  | @inst T inst i s tbl θs D V L M hp hq hlen hkinds hbnd hok hL hM hT =>
     have he : inst = dec := Subsingleton.elim _ _
     subst he
     obtain ⟨certs, hcl, hcs⟩ := bound_certs s.bounds hbnd
     refine ⟨.inst tbl θs certs D V, ?_⟩
-    simp only [check, checkInst, hT, hq, hp, hok, hlen, hcl, hcs, Bool.not_false, Bool.true_and,
+    simp only [check, checkInst, hT, hq, hp, hok, hlen, hkinds, hcl, hcs, Bool.not_false, Bool.true_and,
       beq_self_eq_true, List.all_eq_true, List.any_eq_true, Bool.and_eq_true, beq_iff_eq]
     exact ⟨fun q hq => hL q hq, fun q hq => hM q hq⟩
   | @table S T inst tbl D V hok hS =>

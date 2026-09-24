@@ -51,7 +51,7 @@ The bound is itself recursive: it accepts the generic callable as an argument.
 This exercises quantified restriction and recursive negative positions together. -/
 def quantified : NormalGraph Nat := {
   rows := fun i => if i = 1 then [.arrs [([3], [[0]], [3])] []] else [.top]
-  params := fun i => i == 2
+  parameterKinds := fun i => if i == 2 then some .value else none
   schemes := fun i => if i = 0 then some {
     binders := [2], bounds := [(2, [1])], signatures := [],
     variadic := [([3], [], [2], [2])] } else none }

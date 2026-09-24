@@ -600,16 +600,23 @@ binder rows so that the graph stays finite), and the context tells the scopes
 apart. Writing $\kappa(A)$ for the image of a type, each row's image under
 $\kappa$ being an entry, an entry is one of (`entryOk`):
 
-- $i$ a parameter row and $T=\kappa(i)$, or $T=\{i\}$ when $\kappa$ does not name $i$;
+- $i$ a parameter row and $T=\kappa(i)$, or $T=\{i\}$ when $\kappa$ does not name $i$, with $T$ of the declared kind of $i$;
 - **rigid**: $T=\{i\}$ and no row of $V(i)$ is named by $\kappa$;
 - $i$ a clause row, $T=\{j\}$, $j$ a clause row, and $G(j)=G(i)[\kappa]$;
 - $i$ the scheme row $(\vec q;\Sigma';\beta';\Sigma'_\ldots)$, $T=\{j\}$, $j$ the scheme row
   $(\vec r;\Sigma'[\kappa'];\beta'[\kappa];\Sigma'_\ldots[\kappa'])$, each bound moved to the target
   binder at its binder's position and its type mapped under the outer
   $\kappa$, with $|\vec r|=|\vec q|$, $\vec r$ distinct
-  parameter rows and $\kappa'=\kappa[\vec q\mapsto\vec r]$, provided no free
+  parameter rows of pairwise matching kinds and $\kappa'=\kappa[\vec q\mapsto\vec r]$, provided no free
   row of $i$ outside $\kappa$'s domain, and no row free in an image
   $\kappa(p)$ for $p\in V(i)$, is in $\vec r$ (no capture).
+
+Parameter kinds are `value` and `arguments`. Write $S:k$ when every row of
+$S$ has kind $k$: pack clauses have argument kind, other clauses and schemes
+have value kind, and parameters retain their declared kind. The empty union
+has either kind; a union cannot mix the two. `substitutionKind` and `instKinds`
+check this at table images and scheme instances. The semantic assignment still
+uses the legacy interpretation while the separate-list migration is pending.
 
 The table is checked (`TableOk`) when its rows lie in a domain $D$ with a
 free-variable certificate $V$ and every entry is one of these. Two assignments
@@ -624,6 +631,7 @@ the graph's are related by $\kappa_0$ by construction:
 $$
 \frac{i\ \text{a scheme row}\ (\vec p;\Sigma;\beta)\quad
       |\vec\theta|=|\vec p|\quad
+      \forall(p,\theta)\in\operatorname{zip}(\vec p,\vec\theta).\;\theta:\mathsf{kind}(p)\quad
       \forall(p,B)\in\beta.\;\theta_p\subseteq B\lor G\vdash_c\theta_p\le B\quad
       \text{a checked table}\quad
       T\equiv_G\mathsf{arrs}(L;M)\quad

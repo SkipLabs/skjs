@@ -1846,8 +1846,12 @@ path (or a value through the pack path) is an explicit error. A nested scheme
 shadows its binders; its same-named value parameter does not change an outer
 pack's role. A source binder genuinely used both as a pack and as an array value
 still leaves its method opaque, pending the coherent collected-array view.
-This does not add sorted assignments to the semantic graph: emitted parameter
-rows and instantiation certificates still have the legacy representation.
+The emitted parameter row now retains that kind, and `NormalGraph.params` is
+derived from `parameterKinds` rather than maintained separately. The wire
+requires the kind; it never defaults a missing kind to `value`. Instantiation and substitution-table
+checks reject value/pack substitutions of the wrong sort, including mixed
+unions; scheme renaming preserves each binder's kind. This preserves source classification through the graph boundary, but
+does not yet change the legacy semantic assignment or pack denotation.
 
 The production graph entry point, quantified pack instantiation and exported
 certificates still select `packArgs`. That is
@@ -1898,7 +1902,8 @@ The integration must change the following connected boundaries together:
    and fixed-to-pack stability guards be retired.
 
 The semantic refactors above have not completed any of these four connected
-boundaries. In particular, the shared substitution theorem is preparation for
+boundaries. Parameter kinds are now retained in graph rows and checked by
+instantiation, but their semantic environments still need migration. In particular, the shared substitution theorem is preparation for
 certificate migration, not a migrated pack certificate.
 
 The remaining integration boundary is explicit:

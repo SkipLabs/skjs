@@ -116,7 +116,7 @@ def rows : Nat → List (Clause (List Nat))
 
 def H : NormalGraph Nat where
   rows := rows
-  params i := i == 3
+  parameterKinds i := if i == 3 then some .arguments else none
   schemes i := if i == 5 then some ⟨[3], [], [(3, [4])], [([2], [], [3], [0])]⟩ else none
 
 def hpool : List (List Nat) := vocabulary H (List.range 10) [] []
