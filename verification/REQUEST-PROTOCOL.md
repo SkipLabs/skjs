@@ -105,7 +105,8 @@ singletons, which costs completeness and never soundness.
 A row is a **clause row**, spelled as the array of its clauses as above; a
 **scheme row** `{"scheme": {"binders": [p, ...], "signatures": [[receiver, [params], result], ...]}}`,
 a generic callable $\forall\vec p.\,\Sigma$ whose signatures are types that may
-mention its binders; or a **parameter row** `{"param": i, "name": n}`, which
+mention its binders, with `"bounds": [[p, type], ...]` when a binder is
+bounded (the bound is read outside the binders; left out when none); or a **parameter row** `{"param": i, "name": n}`, which
 names its own label $i$ and, in `n`, the binder it stands for (no meaning). Only a clause row has clauses. The graph of a table $T$
 (`RequestJson.tableGraph`) is
 
@@ -816,8 +817,10 @@ is the source term `{"k":"scheme","binders":[{"name","bound","default","span"},
 `{"k":"self"}`, and the method's own type parameters are `{"k":"binder","name"}`
 terms, which shadow the declaration's. Lean lowers it to a scheme row whose
 binders are coloured parameter rows (see [DESIGN.md](DESIGN.md#modules-and-code-units),
-generic methods); a bounded binder, a variadic signature, or unfolding past
-the budget keeps the member an opaque `unknown` field. The OCaml producer
+generic methods) and whose bounds are the binders' bounds, lowered where the
+method is declared; a bound naming the method's own binders (an F-bound), a
+variadic signature, or unfolding past the budget keeps the member an opaque
+`unknown` field. The OCaml producer
 reads it as a callable quantifying its binders; at a call it infers the
 instance from the receiver and the actuals, and claims the method's read at
 that instance's ground arrow, which Lean relates to the method's scheme row by

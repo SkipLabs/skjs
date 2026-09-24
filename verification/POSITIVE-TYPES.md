@@ -505,8 +505,10 @@ $\kappa$ being an entry, an entry is one of (`entryOk`):
 - $i$ a parameter row and $T=\kappa(i)$, or $T=\{i\}$ when $\kappa$ does not name $i$;
 - **rigid**: $T=\{i\}$ and no row of $V(i)$ is named by $\kappa$;
 - $i$ a clause row, $T=\{j\}$, $j$ a clause row, and $G(j)=G(i)[\kappa]$;
-- $i$ the scheme row $(\vec q;\Sigma')$, $T=\{j\}$, $j$ the scheme row
-  $(\vec r;\Sigma'[\kappa'])$ with $|\vec r|=|\vec q|$, $\vec r$ distinct
+- $i$ the scheme row $(\vec q;\Sigma';\beta')$, $T=\{j\}$, $j$ the scheme row
+  $(\vec r;\Sigma'[\kappa'];\beta'[\kappa])$, each bound moved to the target
+  binder at its binder's position and its type mapped under the outer
+  $\kappa$, with $|\vec r|=|\vec q|$, $\vec r$ distinct
   parameter rows and $\kappa'=\kappa[\vec q\mapsto\vec r]$, provided no free
   row of $i$ outside $\kappa$'s domain, and no row free in an image
   $\kappa(p)$ for $p\in V(i)$, is in $\vec r$ (no capture).
@@ -522,8 +524,9 @@ binders $\vec p$ and instance types $\vec\theta$, the instance assignment and
 the graph's are related by $\kappa_0$ by construction:
 
 $$
-\frac{i\ \text{a scheme row}\ (\vec p;\Sigma)\quad
+\frac{i\ \text{a scheme row}\ (\vec p;\Sigma;\beta)\quad
       |\vec\theta|=|\vec p|\quad
+      \forall(p,B)\in\beta.\;\theta_p\subseteq B\lor G\vdash_c\theta_p\le B\quad
       \text{a checked table}\quad
       T\equiv_G\mathsf{arrs}(L)\quad
       \forall\tau\in L.\;\exists\sigma\in\Sigma.\;\tau=\sigma[\kappa_0]}
@@ -711,15 +714,21 @@ $$
 \begin{cases}
 \eta(i) & i\ \text{a parameter row},\\[2pt]
 \bigl\{\,v\;\bigm|\;\mathsf{Invocable}(v)\land\forall\vec X.\;
+  \mathsf{Bounded}_n(\vec X)\Rightarrow
   v\in\mathsf{Calls}\bigl(\{(\llbracket Q\rrbracket^{\eta'},\llbracket\vec C\rrbracket^{\eta'},\llbracket D\rrbracket^{\eta'})\mid(Q,\vec C,D)\in\Sigma\}\bigr),\
   \eta'=\eta[\vec p\mapsto\vec X]\,\bigr\}
-  & i\ \text{a scheme row}\ (\vec p;\Sigma),\\[2pt]
+  & i\ \text{a scheme row}\ (\vec p;\Sigma;\beta),\\[2pt]
 \textstyle\bigcup_{c\in G(i)}\llbracket c\rrbracket^\eta & i\ \text{a clause row},
 \end{cases}
 $$
 
-where $\vec X$ ranges over admissible families of closed values, one per binder
-(`qLayer`, `qDenote`), and $\llbracket A\rrbracket_G=\llbracket A\rrbracket^{G.\mathit{env}}$
+where $\vec X$ ranges over admissible families of closed values, one per binder,
+and $\mathsf{Bounded}_n(\vec X)$ says each bounded binder's family lies below
+its bound at every level under $n$: $X_p\subseteq_{<n}\llbracket B\rrbracket^\eta$
+for each $(p,B)\in\beta$, the bound read at the scheme's own assignment $\eta$
+(`Bounded`, `qLayer`, `qDenote`). Reading the bound below $n$ only keeps the
+fixed point contractive; the approximations are non-expansive in the
+assignment (`QInv`), which gives admissibility (`Tower.denote_adm_inv`), and $\llbracket A\rrbracket_G=\llbracket A\rrbracket^{G.\mathit{env}}$
 is `meaning`. A member of a scheme row meets each instance's signatures
 (`scheme_elim`), and a callable meeting them at every instantiation is a
 member (`scheme_intro`). Without scheme rows this is the parametric semantics

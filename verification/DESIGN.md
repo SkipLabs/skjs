@@ -1511,7 +1511,7 @@ in what its signatures mention from outside, so no binder captures one of
 another scope; the instance tables of `Sub.inst` tell the scopes that share a
 binder row apart. A declaration is applied at most three times along one
 lowering path at different arguments. Past that, as for arguments that keep
-growing (`catch<R>` returns `Promise<T | R>`), and for a bounded binder or a
+growing (`catch<R>` returns `Promise<T | R>`), and for an F-bounded binder or a
 variadic signature, the method stays an opaque member: sound, and what it was
 before. Two lowerings of one type that differ only in rows they reserve or
 binder rows their schemes use are one type up to renaming (`Sub.table`), which

@@ -22,15 +22,17 @@ def types : List (List (Clause (List Nat))) :=
    [.refs [(valueField, [4])] [] []], [], [.refs [(valueField, [1, 2])] [] []],
    [.arrs [([3], [[1, 2]], [11])] []], [.refs [(valueField, [0])] [] []],
    [.arrs [([3], [[1, 2]], [13])] []], [.arrs [([3], [[0]], [1, 2])] []],
-   [.arrs [([3], [[4]], [4])] []], [], [], [.arrs [([3], [[18]], [18])] []]]
+   [.arrs [([3], [[4]], [4])] []], [], [], [.arrs [([3], [[18]], [18])] []],
+   [], [.arrs [([3], [[1]], [1])] []]]
 
 def G : NormalGraph Nat where
   rows i := types[i]?.getD []
   params i := i == 4 || i == 18
   schemes i :=
-    if i == 5 then some ⟨[4], [([3], [[4]], [4])]⟩
-    else if i == 10 then some ⟨[4], [([3], [[4]], [9])]⟩
-    else if i == 17 then some ⟨[18], [([3], [[18]], [18])]⟩
+    if i == 5 then some ⟨[4], [([3], [[4]], [4])], []⟩
+    else if i == 10 then some ⟨[4], [([3], [[4]], [9])], []⟩
+    else if i == 17 then some ⟨[18], [([3], [[18]], [18])], []⟩
+    else if i == 20 then some ⟨[4], [([3], [[4]], [4])], [(4, [1, 2])]⟩
     else none
 
 def pool : List (List Nat) :=
@@ -86,24 +88,24 @@ def cert (A B : List Nat) : PositiveCertificates.Proof Nat := (instProof G 64 A 
 -- The instances must be the ones the table uses: `T` at `null` does not give
 -- `(x: boolean) => boolean`.
 #guard match cert [5] [7] with
-  | .inst tbl _ D V => !PositiveCertificates.check G [5] [7] (.inst tbl [[0]] D V)
+  | .inst tbl _ certs D V => !PositiveCertificates.check G [5] [7] (.inst tbl [[0]] certs D V)
   | _ => false
 -- An entry must map a row to its substituted copy: `Box<null>` is not `Box<T>`
 -- at `boolean`.
 #guard match cert [10] [12] with
-  | .inst tbl θs D V => PositiveCertificates.check G [10] [12] (.inst tbl θs D V) &&
+  | .inst tbl θs certs D V => PositiveCertificates.check G [10] [12] (.inst tbl θs certs D V) &&
       !PositiveCertificates.check G [10] [12]
-        (.inst (tbl.map fun e => if e.1 == 9 then (9, e.2.1, [13]) else e) θs D V)
+        (.inst (tbl.map fun e => if e.1 == 9 then (9, e.2.1, [13]) else e) θs certs D V)
   | _ => false
 #guard !subtypes [10] [14]
 #guard !subtypes [5] [15]
 -- The domain must hold the table's rows and be closed under reads, and the
 -- free-parameter certificate must be sound.
 #guard match cert [10] [12] with
-  | .inst tbl θs D V =>
-      !PositiveCertificates.check G [10] [12] (.inst tbl θs (D.filter (· != 9)) V) &&
+  | .inst tbl θs certs D V =>
+      !PositiveCertificates.check G [10] [12] (.inst tbl θs certs (D.filter (· != 9)) V) &&
       !PositiveCertificates.check G [10] [12]
-        (.inst tbl θs D (V.map fun p => if p.1 == 9 then (9, []) else p))
+        (.inst tbl θs certs D (V.map fun p => if p.1 == 9 then (9, []) else p))
   | _ => false
 
 -- Generalization: `<T>(x: T) => T` is below `<U>(x: U) => U`, through the
@@ -118,6 +120,20 @@ def cert (A B : List Nat) : PositiveCertificates.Proof Nat := (instProof G 64 A 
 #guard !PositiveCertificates.check G [16] [5] (.gen (dom [16]) (fm (dom [16])) [16] .subset)
 -- A scheme's own binder is not free in it: `<T>(x: T) => T` reads `T` only under its binder.
 #guard fv (fm (dom [5])) 5 == [] && fv (fm (dom [16])) 16 == [4]
+
+-- Bounds: `<T extends boolean>(x: T) => T` (20) is below `(x: true) => true`
+-- (21), its instance at `true` within the bound, and not below
+-- `(x: null) => null` (8), whose instance is outside it. The unbounded scheme
+-- is below the bounded one; the bounded one is not below the unbounded one.
+#guard subtypes [20] [21]
+#guard !subtypes [20] [8]
+#guard subtypes [5] [21] && subtypes [5] [8]
+#guard subtypes [5] [20]
+#guard !subtypes [20] [5]
+-- The bound must hold of the instance the table uses.
+#guard match cert [20] [21] with
+  | .inst tbl _ certs D V => !PositiveCertificates.check G [20] [21] (.inst tbl [[0]] certs D V)
+  | _ => false
 
 -- A value of the scheme is typed at an instance by subsumption.
 #guard found [[5]] (.var 0) [7]
@@ -136,12 +152,13 @@ open RequestJson in
 def table : List Row :=
   (List.range types.length).map fun i =>
     if i == 4 then .param 4 "T" else if i == 18 then .param 18 "U"
-    else if i == 5 then .scheme [4] [([3], [[4]], [4])]
-    else if i == 10 then .scheme [4] [([3], [[4]], [9])]
-    else if i == 17 then .scheme [18] [([3], [[18]], [18])]
+    else if i == 5 then .scheme [4] [([3], [[4]], [4])] []
+    else if i == 10 then .scheme [4] [([3], [[4]], [9])] []
+    else if i == 17 then .scheme [18] [([3], [[18]], [18])] []
+    else if i == 20 then .scheme [4] [([3], [[4]], [4])] [(4, [1, 2])]
     else .clauses (types[i]?.getD [])
 def wire : NormalGraph Nat := RequestJson.tableGraph table
-#guard (List.range 20).all fun i =>
+#guard (List.range types.length).all fun i =>
   wire.params i == G.params i && wire.plain i == G.plain i && wire i == G i &&
   (wire.schemes i).isSome == (G.schemes i).isSome
 #guard (subtype wire pool [5] [7]).isSome && (subtype wire pool [10] [12]).isSome &&
@@ -150,8 +167,8 @@ def wire : NormalGraph Nat := RequestJson.tableGraph table
 -- A parameter row names its own label, a scheme's binders are parameter rows,
 -- and a scheme's labels index the table.
 #guard !RequestJson.validRows (table.set 4 (.param 5 "T"))
-#guard !RequestJson.validRows (table.set 5 (.scheme [3] [([3], [[3]], [3])]))
-#guard !RequestJson.validRows (table.set 5 (.scheme [4] [([3], [[4]], [25])]))
+#guard !RequestJson.validRows (table.set 5 (.scheme [3] [([3], [[3]], [3])] []))
+#guard !RequestJson.validRows (table.set 5 (.scheme [4] [([3], [[4]], [25])] []))
 -- A clause row is spelled as before; the other kinds read back as themselves.
 #guard Lean.toJson (RequestJson.Row.clauses [.nul]) == Lean.toJson [Clause.nul (α := List Nat)]
 #guard (Lean.fromJson? (Lean.toJson table) : Except String (List RequestJson.Row)).toOption == some table
@@ -184,11 +201,11 @@ def H : NormalGraph Nat where
   rows i := types[i]?.getD []
   params i := i == 5 || i == 6
   schemes i :=
-    if i == 8 then some ⟨[5], [([7], [[9]], [10])]⟩
-    else if i == 11 then some ⟨[6], [([10], [[12]], [13])]⟩
-    else if i == 14 then some ⟨[5], [([13], [[15]], [10])]⟩
-    else if i == 17 then some ⟨[5], [([16], [[18]], [10])]⟩
-    else if i == 23 then some ⟨[6], [([22], [[24]], [13])]⟩
+    if i == 8 then some ⟨[5], [([7], [[9]], [10])], []⟩
+    else if i == 11 then some ⟨[6], [([10], [[12]], [13])], []⟩
+    else if i == 14 then some ⟨[5], [([13], [[15]], [10])], []⟩
+    else if i == 17 then some ⟨[5], [([16], [[18]], [10])], []⟩
+    else if i == 23 then some ⟨[6], [([22], [[24]], [13])], []⟩
     else none
 def pool : List (List Nat) := (List.range types.length).map ([·])
 #guard match instProof H 64 [8] [19] with

@@ -164,9 +164,9 @@ private def paramRow (name : String) : Lowering Nat := modifyGet fun T =>
   | none => (T.length, T ++ [.param T.length name])
 
 /-- A scheme row, interned. -/
-private def schemeRow (bs : List Nat) (sigs : List (List Nat × List (List Nat) × List Nat)) :
-    Lowering Nat := modifyGet fun T =>
-  let r := RequestJson.Row.scheme bs sigs
+private def schemeRow (bs : List Nat) (sigs : List (List Nat × List (List Nat) × List Nat))
+    (bounds : List (Nat × List Nat)) : Lowering Nat := modifyGet fun T =>
+  let r := RequestJson.Row.scheme bs sigs bounds
   match T.idxOf? r with
   | some i => (i, T)
   | none => (T.length, T ++ [r])
@@ -194,20 +194,28 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let bs ← arr term "binders"
     let sigTerms ← arr term "signatures"
     let opaqueMember : Lowering (List Nat) := do return [← use .top]
-    -- A bounded binder is the next stage's; a variadic signature has no scheme
-    -- form yet. Either keeps the member opaque.
-    if ← bs.anyM (fun b => do
-        CellClaims.fieldsExactly b ["name", "bound", "default", "span"]
-        return (← field b "bound") != .null) then return ← opaqueMember
+    -- A variadic signature has no scheme form yet, and a bound naming the
+    -- method's own binders (an F-bound) is not what a scheme's bounds mean:
+    -- they are read outside the binders. Either keeps the member opaque.
+    let names ← bs.toList.mapM fun b => do
+      CellClaims.fieldsExactly b ["name", "bound", "default", "span"]
+      str b "name"
+    let own (j : Json) : Bool := names.any fun n =>
+      (j.compress.splitOn s!"\"k\":\"binder\",\"name\":\"{n}\"").length > 1
+    if ← bs.anyM (fun b => do return own (← field b "bound")) then return ← opaqueMember
     if ← sigTerms.anyM (fun f => do return (← field f "rest") != .null) then return ← opaqueMember
     let taken := freeColours (← get) (params.toList.flatten ++ seen.binders.map (·.2))
     match (List.range colourBudget).find? (fun c => !taken.contains c) with
     | none => opaqueMember
     | some c =>
       let spanKey := (← field term "span").compress
-      let names ← bs.toList.mapM fun b => str b "name"
       let rows ← ((List.range names.length).zip names).mapM fun (k, n) =>
         paramRow s!"{n}#{k}@{spanKey}^{c}"
+      -- Bounds are read where the method is declared, outside its binders.
+      let bounded ← (bs.toList.zip rows).filterM fun (p : Json × Nat) => do
+        return (← field p.1 "bound") != Json.null
+      let bounds ← bounded.mapM fun (p : Json × Nat) => do
+        return (p.2, ← lowerType ds owner params seen (← field p.1 "bound"))
       let inner := { seen with binders := names.zip rows ++ seen.binders }
       -- A method whose signatures cannot be lowered, as one whose unfolding
       -- keeps growing (`Promise<T>`'s `catch<R>` returns `Promise<T | R>`),
@@ -219,7 +227,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
         let res ← lowerType ds owner params inner (← field f "result")
         return (recv, ps, res))
       match lowered with
-      | .ok sigs => return [← schemeRow rows sigs]
+      | .ok sigs => return [← schemeRow rows sigs bounds]
       | .error _ => opaqueMember
   | "binder" =>
     CellClaims.fieldsExactly term ["k", "name", "span"]

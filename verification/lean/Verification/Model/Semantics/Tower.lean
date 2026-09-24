@@ -81,6 +81,26 @@ theorem denote_adm {ι : Type} {F : (ι → Fam) → ι → Fam} (hF : LayerCong
   · intro n W W' hx v hv
     exact (approx_adm hA (n + 1) i).mono n W W' hx v hv
 
+/-- Every approximation keeps an invariant the first holds and each step
+preserves. -/
+theorem approx_inv {ι : Type} {F : (ι → Fam) → ι → Fam} (Inv : (ι → Fam) → Prop)
+    (h0 : Inv fun _ => topF) (hs : ∀ X, Inv X → Inv (F X)) : ∀ k, Inv (approx F k)
+  | 0 => h0
+  | k + 1 => hs _ (approx_inv Inv h0 hs k)
+
+/-- **Admissibility from an invariant.** A step need only preserve
+admissibility among the families an invariant describes, when the invariant
+holds of every approximation. -/
+theorem denote_adm_inv {ι : Type} {F : (ι → Fam) → ι → Fam} (hF : LayerCongr F)
+    (Inv : (ι → Fam) → Prop) (h0 : Inv fun _ => topF) (hs : ∀ X, Inv X → Inv (F X))
+    (hadm : ∀ X, Inv X → ∀ i, Adm (X i)) (i : ι) : Adm (denote F i) := by
+  constructor
+  · intro n W v hv
+    have h1 := (hadm _ (approx_inv Inv h0 hs (n + 2)) i).down n W v hv
+    exact (approx_stable hF n (n + 2) (n + 1) (by omega) (by omega) i _ v).mp h1
+  · intro n W W' hx v hv
+    exact (hadm _ (approx_inv Inv h0 hs (n + 1)) i).mono n W W' hx v hv
+
 end Tower
 end Model
 end Verification

@@ -57,7 +57,18 @@ let rec source_type ctx j =
      keeps the member opaque. *)
   | "scheme" ->
     let binders = items "binders" j and signatures = items "signatures" j in
-    if List.exists (fun b -> field "bound" b <> Null) binders
+    let names = List.map (fun b -> text "name" b) binders in
+    (* A bound naming the method's own binders, an F-bound, is not what a
+       scheme's bounds mean: they are read where the method is declared. *)
+    let rec mentions_own = function
+      | Object fields ->
+        (List.assoc_opt "k" fields = Some (String "binder")
+         && (match List.assoc_opt "name" fields with
+             | Some (String n) -> List.mem n names | _ -> false))
+        || List.exists (fun (_,v) -> mentions_own v) fields
+      | Array items -> List.exists mentions_own items
+      | _ -> false in
+    if List.exists (fun b -> mentions_own (field "bound" b)) binders
        || List.exists (fun f -> field "rest" f <> Null) signatures then top
     else begin
       let start = match list (field "span" j) with
@@ -67,7 +78,9 @@ let rec source_type ctx j =
       let identities = List.mapi (fun index b -> {scope;index;spelling=text "name" b}) binders in
       let inner = {ctx with bindings =
         List.map (fun (r:rigid) -> r.spelling,Rigid r) identities @ ctx.bindings} in
-      let quantified = List.map (fun identity -> {identity;bound=None}) identities in
+      let quantified = List.map2 (fun identity b ->
+        {identity;bound=(match field "bound" b with Null -> None | t -> Some (source_type ctx t))})
+        identities binders in
       let calls = List.map (fun f -> match source_type inner f with
         | Atoms [Shape {fields=[];string_index=None;calls=[s];elements=None}] -> {s with quantified}
         | _ -> unsupported "generic method signature") signatures in

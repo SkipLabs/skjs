@@ -827,8 +827,16 @@ theorem sem_congr_on [DecidableEq ι] {D : List ι} {c : Clause (List ι)}
 signatures' rows. -/
 def reads (G : NormalGraph ι) (i : ι) : List ι :=
   match G.schemes i with
-  | some s => s.signatures.flatMap fun p => p.1 ++ p.2.1.flatten ++ p.2.2
+  | some s => s.signatures.flatMap (fun p => p.1 ++ p.2.1.flatten ++ p.2.2) ++
+      s.bounds.flatMap (·.2)
   | none => (G i).flatMap fun c => c.operands.flatten
+
+/-- A scheme row's bound types: read at its own assignment, not under its
+binders. -/
+def boundReads (G : NormalGraph ι) (i : ι) : List ι :=
+  match G.schemes i with
+  | some s => s.bounds.flatMap (·.2)
+  | none => []
 
 /-! ### Free parameter rows -/
 
@@ -844,19 +852,22 @@ binders. -/
 def FreeOk [DecidableEq ι] (G : NormalGraph ι) (D : List ι) (V : FreeMap ι) : Bool :=
   D.all fun i =>
     (!G.params i || (fv V i).contains i) &&
-    (reads G i).all fun l => D.contains l &&
+    (reads G i).all (fun l => D.contains l &&
       (fv V l).all fun p => (fv V i).contains p ||
-        (match G.schemes i with | some s => s.binders.contains p | none => false)
+        (match G.schemes i with | some s => s.binders.contains p | none => false)) &&
+    (boundReads G i).all fun l => (fv V l).all fun p => (fv V i).contains p
 
 theorem freeOk_row [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
     (hF : FreeOk G D V = true) {i : ι} (hi : i ∈ D) :
-    (G.params i = true → i ∈ fv V i) ∧ ∀ l ∈ reads G i, l ∈ D ∧ ∀ p ∈ fv V l,
-      p ∈ fv V i ∨ (∃ s, G.schemes i = some s ∧ p ∈ s.binders) := by
+    (G.params i = true → i ∈ fv V i) ∧ (∀ l ∈ reads G i, l ∈ D ∧ ∀ p ∈ fv V l,
+      p ∈ fv V i ∨ (∃ s, G.schemes i = some s ∧ p ∈ s.binders)) ∧
+    ∀ l ∈ boundReads G i, ∀ p ∈ fv V l, p ∈ fv V i := by
   have h := List.all_eq_true.mp hF i hi
   simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', List.all_eq_true,
     List.contains_iff_mem] at h
-  refine ⟨fun hp => by simpa [hp] using h.1, fun l hl => ⟨by simpa using (h.2 l hl).1, fun p hp => ?_⟩⟩
-  have := (h.2 l hl).2 p hp
+  refine ⟨fun hp => by simpa [hp] using h.1.1, fun l hl => ⟨by simpa using (h.1.2 l hl).1, fun p hp => ?_⟩,
+    fun l hl p hp => by simpa using h.2 l hl p hp⟩
+  have := (h.1.2 l hl).2 p hp
   rcases this with h1 | h2
   · exact .inl (by simpa using h1)
   · right
@@ -874,14 +885,32 @@ theorem agree_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Free
   induction n using Nat.strongRecOn with
   | ind n ih =>
   intro η η' i hi hag W v
-  have ⟨hself, hreads⟩ := freeOk_row hF hi
+  have ⟨hself, hreads, hbounds⟩ := freeOk_row hF hi
   rw [qDenote_unfold, qDenote_unfold]
   unfold qLayer
   cases hp : G.params i
   · simp only [Bool.false_eq_true, if_false]
     cases hq : G.schemes i with
     | some s =>
-      refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun hl => ?_)
+      refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun hl => imp_congr ?_ ?_)
+      · -- The bounds are read at the scheme's own assignment.
+        have hbr : ∀ b ∈ s.bounds, ∀ l ∈ b.2, l ∈ reads G i ∧ l ∈ boundReads G i := by
+          intro b hb l hl'
+          refine ⟨?_, ?_⟩
+          · simp only [reads, hq]
+            exact List.mem_append_right _ (List.mem_flatMap.mpr ⟨b, hb, hl'⟩)
+          · simp only [boundReads, hq]
+            exact List.mem_flatMap.mpr ⟨b, hb, hl'⟩
+        unfold Bounded
+        refine forall_congr' fun b => forall_congr' fun hbm => forall_congr' fun hbin =>
+          forall_congr' fun j => forall_congr' fun hj => forall_congr' fun U =>
+          forall_congr' fun u => ?_
+        rw [assign_mem_eq η η' s.binders As hbin hl]
+        refine imp_congr Iff.rfl ⟨fun ⟨l, hl', h⟩ => ⟨l, hl', ?_⟩, fun ⟨l, hl', h⟩ => ⟨l, hl', ?_⟩⟩
+        · exact (ih j hj η η' l (hreads l (hbr b hbm l hl').1).1
+            (fun p hp => hag p (hbounds l (hbr b hbm l hl').2 p hp)) U u).mp h
+        · exact (ih j hj η η' l (hreads l (hbr b hbm l hl').1).1
+            (fun p hp => hag p (hbounds l (hbr b hbm l hl').2 p hp)) U u).mpr h
       have hrow : ∀ S, (∀ l ∈ S, l ∈ reads G i) → Agree
           (setSem (fun l => qDenote G (assign η s.binders As, l)) S)
           (setSem (fun l => qDenote G (assign η' s.binders As, l)) S) n := by
@@ -913,7 +942,7 @@ theorem agree_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Free
       exact callsT_congr s.signatures _ _ (fun p hps => by
         have hin : ∀ l ∈ p.1 ++ p.2.1.flatten ++ p.2.2, l ∈ reads G i := fun l hl => by
           simp only [reads, hq]
-          exact List.mem_flatMap.mpr ⟨p, hps, hl⟩
+          exact List.mem_append_left _ (List.mem_flatMap.mpr ⟨p, hps, hl⟩)
         refine ⟨hrow _ fun l hl => hin l (by simp [hl]), hargs _ fun S hS l hl => hin l ?_,
           hrow _ fun l hl => hin l (by simp [hl])⟩
         simp only [List.mem_append, List.mem_flatten]
@@ -972,6 +1001,15 @@ def clauseImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι) (c : Clause (L
     Clause (List ι) :=
   c.map fun S => (tyImg tbl κ S).getD []
 
+/-- A bound's image: the target binder at the bound binder's position, and the
+bound type's image under the outer context (a bound is read at the scheme's
+own assignment, not under its binders). -/
+def boundImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι) (src tgt : List ι)
+    (b : ι × List ι) : Option (ι × List ι) :=
+  match (src.zip (tgt.map ([·]))).lookup b.1 with
+  | some [q] => (tyImg tbl κ b.2).map (q, ·)
+  | _ => none
+
 /-- One entry. A parameter row's image is what the context gives it, or itself.
 A row with no free row in the context's domain may be its own image. A clause
 row's image is a clause row holding its clauses mapped. A scheme row's image is
@@ -991,7 +1029,8 @@ def entryOk [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (V : Free
           (fv V e.1).all (fun p => match e.2.1.lookup p with
             | some U => U.all fun l => (fv V l).all fun q => !s2.binders.contains q
             | none => !s2.binders.contains p) &&
-          s.signatures.mapM (sigImg tbl (enter e.2.1 s.binders s2.binders)) == some s2.signatures
+          s.signatures.mapM (sigImg tbl (enter e.2.1 s.binders s2.binders)) == some s2.signatures &&
+          s.bounds.mapM (boundImg tbl e.2.1 s.binders s2.binders) == some s2.bounds
       | none => false
     | none, [j] =>
       G.plain e.1 && G.plain j &&
@@ -1252,7 +1291,7 @@ theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D 
   rintro ηL ηR ⟨i, κ, T⟩ he hrel W v
   have hrow := hents _ he
   obtain ⟨hiD, _, hκD⟩ := inD _ he
-  have ⟨hself, hreads⟩ := freeOk_row hF hiD
+  have ⟨hself, hreads, hbounds⟩ := freeOk_row hF hiD
   simp only at hrel hiD hκD
   -- A type whose rows have entries under a context, related on their free
   -- rows, means its image below the budget.
@@ -1291,12 +1330,45 @@ theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D 
             | some s2 =>
             simp only [hs2, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, decide_eq_true_eq,
               List.all_eq_true] at hrow
-            obtain ⟨⟨⟨⟨⟨hjp, hnd⟩, hlen⟩, hpars⟩, hcap⟩, hsigs⟩ := hrow
+            obtain ⟨⟨⟨⟨⟨⟨hjp, hnd⟩, hlen⟩, hpars⟩, hcap⟩, hsigs⟩, hbnds⟩ := hrow
             rw [singleton, qDenote_unfold, qDenote_unfold]
             simp only [qLayer, hpar, hjp, hsch, hs2, Bool.false_eq_true, if_false]
             refine and_congr Iff.rfl ?_
             rw [hlen]
-            refine forall_congr' fun As => forall_congr' fun hlA => ?_
+            refine forall_congr' fun As => forall_congr' fun hlA => imp_congr ?_ ?_
+            · -- Each bound maps to the target's: the same family on the binders,
+              -- and the bound types related at the outer assignments.
+              obtain ⟨hbmap, hbsome⟩ := mapM_some hbnds
+              unfold Bounded
+              rw [hbmap]
+              simp only [List.forall_mem_map]
+              refine forall_congr' fun b => forall_congr' fun hb => ?_
+              obtain ⟨⟨q, B'⟩, hbi⟩ := Option.isSome_iff_exists.mp (hbsome b hb)
+              simp only [hbi, Option.getD_some]
+              unfold boundImg at hbi
+              split at hbi
+              · rename_i q' hU
+                obtain ⟨B'', hB'', hqB⟩ := Option.map_eq_some_iff.mp hbi
+                cases hqB
+                obtain ⟨q'', hq'', he⟩ := enter_binder ηL ηR hnd hlA.symm (hlen.trans hlA.symm) hU
+                cases hq''
+                have hb1 : b.1 ∈ s.binders := (List.of_mem_zip (mem_of_lookup hU)).1
+                have hq2 : q ∈ s2.binders := by
+                  obtain ⟨x, hx, hxe⟩ := List.mem_map.mp (List.of_mem_zip (mem_of_lookup hU)).2
+                  cases hxe; exact hx
+                refine imp_congr (iff_of_true hb1 hq2) (forall_congr' fun j => forall_congr' fun hj =>
+                  forall_congr' fun U => forall_congr' fun u => imp_congr (by rw [he]) ?_)
+                have hbr : ∀ l ∈ b.2, l ∈ reads G i ∧ l ∈ boundReads G i := by
+                  intro l hl'
+                  refine ⟨?_, ?_⟩
+                  · simp only [reads, hsch]
+                    exact List.mem_append_right _ (List.mem_flatMap.mpr ⟨b, hb, hl'⟩)
+                  · simp only [boundReads, hsch]
+                    exact List.mem_flatMap.mpr ⟨b, hb, hl'⟩
+                exact tyImg_iff hB'' fun l hl T hT =>
+                  ih j hj ηL ηR (l, κ, T) (entryImg_mem hT)
+                    (fun p hp => hrel p (hbounds l (hbr l hl).2 p hp)) U u
+              · simp at hbi
             -- Inside, the relation holds on each signature row's free rows.
             have hrel' : ∀ l ∈ reads G i, RelK G (enter κ s.binders s2.binders) (fv V l)
                 (assign ηL s.binders As) (assign ηR s2.binders As) := by
@@ -1347,7 +1419,7 @@ theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D 
             refine callsT_congr s.signatures _ _ (fun p hps => ?_) W v
             have hin : ∀ l ∈ p.1 ++ p.2.1.flatten ++ p.2.2, l ∈ reads G i := fun l hl => by
               simp only [reads, hsch]
-              exact List.mem_flatMap.mpr ⟨p, hps, hl⟩
+              exact List.mem_append_left _ (List.mem_flatMap.mpr ⟨p, hps, hl⟩)
             obtain ⟨q, hq⟩ : ∃ q, sigImg tbl (enter κ s.binders s2.binders) p = some q := by
               obtain ⟨_, hsome⟩ := mapM_some hsigs
               exact Option.isSome_iff_exists.mp (hsome p hps)
@@ -1464,6 +1536,8 @@ theorem assign_zip_map [DecidableEq ι] (η : Assignment ι) (F : List ι → Va
 theorem inst_sound [DecidableEq ι] {G : NormalGraph ι} {T : List ι} {i : ι} {s : SchemeRow ι}
     {tbl : InstTable ι} {θs : List (List ι)} {D : List ι} {V : FreeMap ι} {L : Ops ι}
     (hp : G.params i = false) (hq : G.schemes i = some s) (hlen : θs.length = s.binders.length)
+    (hbnd : ∀ b ∈ s.bounds, ∀ U, (s.binders.zip θs).lookup b.1 = some U →
+      FamLe (meaning G U) (meaning G b.2))
     (hok : TableOk G tbl D V = true)
     (hL : ∀ q ∈ L, ∃ p ∈ s.signatures, sigImg tbl (s.binders.zip θs) p = some q)
     (hT : expand G T = [.arrs L []]) : FamLe (meaning G [i]) (meaning G T) := by
@@ -1474,7 +1548,12 @@ theorem inst_sound [DecidableEq ι] {G : NormalGraph ι} {T : List ι} {i : ι} 
   simp only [qLayer, hp, hq, Bool.false_eq_true, if_false] at hs
   obtain ⟨hinv, hall⟩ := hs
   let As : List ValueFamily := θs.map fun U => ⟨meaning G U, meaning_valueFam G U⟩
-  have hc := (hall As (by simp [As, hlen])).2
+  have hbounded : Bounded (fun η' S => setSem (fun l => qDenote G (η', l)) S) G.env s As n := by
+    intro b hb hbin j _ U' u hu
+    obtain ⟨θ, hθ⟩ := lookup_zip_isSome (ys := θs) hbin (by omega)
+    rw [assign_zip_map G.env (fun U => ⟨meaning G U, meaning_valueFam G U⟩) hθ] at hu
+    exact hbnd b hb θ hθ j U' u hu
+  have hc := (hall As (by simp [As, hlen]) hbounded).2
   have hTp := plain_of_mem_expand (G := G) (S := T) (c := .arrs L []) (by simp [hT])
   refine (expand_sem G T hTp n W v).mpr ⟨.arrs L [], by simp [hT], ?_⟩
   refine ⟨⟨hinv, fun q' hq' => ?_⟩, ⟨hinv, by simp⟩⟩
@@ -1531,6 +1610,8 @@ inductive Sub (G : NormalGraph ι) : List ι → List ι → Prop where
   | inst [DecidableEq ι] {i : ι} {s : SchemeRow ι} {tbl : InstTable ι} {θs : List (List ι)}
       {D : List ι} {V : FreeMap ι} {L : Ops ι} :
       G.params i = false → G.schemes i = some s → θs.length = s.binders.length →
+      (∀ b ∈ s.bounds, ∀ U, (s.binders.zip θs).lookup b.1 = some U →
+        Core G U b.2 ∨ ∀ l ∈ U, l ∈ b.2) →
       TableOk G tbl D V = true →
       (∀ q ∈ L, ∃ p ∈ s.signatures, sigImg tbl (s.binders.zip θs) p = some q) →
       expand G T = [.arrs L []] → Sub G [i] T
@@ -1560,7 +1641,11 @@ theorem Sub.sound_at {G : NormalGraph ι} {S T} (h : Sub G S T) :
   | core h => exact fun η => Core.sound (G := reassign G η) h
   | subset h => exact fun _ => by rintro n W v ⟨i, hi, hv⟩; exact ⟨i, h i hi, hv⟩
   | trans _ _ ih ih' => exact fun η n W v hv => ih' η n W v (ih η n W v hv)
-  | inst hp hq hlen hok hL hT => exact fun η => inst_sound (G := reassign G η) hp hq hlen hok hL hT
+  | inst hp hq hlen hbnd hok hL hT =>
+    exact fun η => inst_sound (G := reassign G η) hp hq hlen (fun b hb U hU => by
+      rcases hbnd b hb U hU with hc | hsub
+      · exact Core.sound (G := reassign G η) hc
+      · rintro n W v ⟨l, hl, hv⟩; exact ⟨l, hsub l hl, hv⟩) hok hL hT
   | table hok hS =>
     intro η n W v hv
     obtain ⟨l, hl, hv⟩ := hv
@@ -1594,7 +1679,7 @@ theorem Sub.sound_at {G : NormalGraph ι} {S T} (h : Sub G S T) :
         rw [this] at hc; simpa using hc
       subst this
       exact hcv.1
-    exact ⟨(hsig []).1, fun As _ => hsig As⟩
+    exact ⟨(hsig []).1, fun As _ _ => hsig As⟩
 
 theorem Sub.sound {G : NormalGraph ι} {S T} (h : Sub G S T) :
     FamLe (meaning G S) (meaning G T) :=

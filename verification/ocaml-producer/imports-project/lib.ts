@@ -66,3 +66,9 @@ export interface Cell<T> {
 export function cell<T>(value: T): Cell<T> {
   return { value, with: (next) => cell(next) };
 }
+// A generic method with a bounded binder: `either` returns one of two
+// Booleans, at the Boolean type a call instantiates.
+export interface Flags {
+  either<T extends boolean>(first: T, second: T): T;
+}
+export const flags: Flags = { either: (first, second) => first };

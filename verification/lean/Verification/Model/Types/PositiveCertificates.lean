@@ -339,7 +339,8 @@ inductive Proof (ι : Type) where
   /-- A scheme row below a checked instance of its signatures: the instance
   table, the types the binders are instantiated at, the table's domain and the
   domain's free parameter rows. -/
-  | inst (table : InstTable ι) (instances : List (List ι)) (domain : List ι) (free : FreeMap ι)
+  | inst (table : InstTable ι) (instances : List (List ι)) (bounds : List (Option (Certificate ι)))
+      (domain : List ι) (free : FreeMap ι)
   /-- A type below one holding its rows' images under an instance table with
   the empty context: the table, its domain and its free-variable certificate. -/
   | table (table : InstTable ι) (domain : List ι) (free : FreeMap ι)
@@ -373,20 +374,78 @@ theorem genOk_sound [DecidableEq ι] {G : NormalGraph ι} {S T D V U}
     · cases h
   · cases h
 
+/-- An instance type within one bound: plain inclusion (no certificate) or a
+core certificate. A bound whose binder has no instance is vacuous. -/
+def boundOk [DecidableEq ι] (G : NormalGraph ι) (binders : List ι) (θs : List (List ι))
+    (b : ι × List ι) (c : Option (Certificate ι)) : Bool :=
+  match (binders.zip θs).lookup b.1 with
+  | none => true
+  | some U => match c with
+    | none => decide (∀ l ∈ U, l ∈ b.2)
+    | some cert => checkCore G U b.2 cert
+
+theorem boundOk_sound [DecidableEq ι] {G : NormalGraph ι} {binders θs b c}
+    (h : boundOk G binders θs b c = true) :
+    ∀ U, (binders.zip θs).lookup b.1 = some U → Core G U b.2 ∨ ∀ l ∈ U, l ∈ b.2 := by
+  intro U hU
+  unfold boundOk at h
+  rw [hU] at h
+  cases c with
+  | none => exact .inr (by simpa using h)
+  | some cert => exact .inl (checkCore_sound h)
+
+theorem exists_mem_zip {xs : List α} {ys : List β} (hl : ys.length = xs.length) :
+    ∀ x ∈ xs, ∃ y, (x, y) ∈ xs.zip ys := by
+  induction xs generalizing ys with
+  | nil => intro x hx; cases hx
+  | cons a xs ih =>
+    cases ys with
+    | nil => simp at hl
+    | cons b ys =>
+      intro x hx
+      rcases List.mem_cons.mp hx with rfl | hx
+      · exact ⟨b, by simp⟩
+      · obtain ⟨y, hy⟩ := ih (by simpa using hl) x hx
+        exact ⟨y, by simp [hy]⟩
+
+theorem bound_certs [DecidableEq ι] {G : NormalGraph ι} {binders : List ι} {θs : List (List ι)} :
+    ∀ bs : List (ι × List ι), (∀ b ∈ bs, ∀ U, (binders.zip θs).lookup b.1 = some U →
+      Core G U b.2 ∨ ∀ l ∈ U, l ∈ b.2) →
+    ∃ certs : List (Option (Certificate ι)), certs.length = bs.length ∧
+      (bs.zip certs).all (fun bc => boundOk G binders θs bc.1 bc.2) = true
+  | [], _ => ⟨[], rfl, rfl⟩
+  | b :: bs, h => by
+    obtain ⟨certs, hl, hall⟩ := bound_certs bs fun b' hb' => h b' (List.mem_cons_of_mem _ hb')
+    have : ∃ c, boundOk G binders θs b c = true := by
+      cases hk : (binders.zip θs).lookup b.1 with
+      | none => exact ⟨none, by simp [boundOk, hk]⟩
+      | some U =>
+        rcases h b List.mem_cons_self U hk with hc | hsub
+        · obtain ⟨cert, hcert⟩ := checkCore_complete hc
+          exact ⟨some cert, by simp [boundOk, hk, hcert]⟩
+        · exact ⟨none, by simpa [boundOk, hk] using hsub⟩
+    obtain ⟨c, hc⟩ := this
+    exact ⟨c :: certs, by simp [hl], by simp [hc, hall]⟩
+
 /-- `S` is one scheme row, and `T` one arrow clause whose every signature is an
-image of one of the scheme's under `θ`. -/
+image of one of the scheme's under the instance table, each instance within
+its binder's bounds. -/
 def checkInst [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (tbl : InstTable ι)
-    (θs : List (List ι)) (D : List ι) (V : FreeMap ι) : Bool :=
+    (θs : List (List ι)) (certs : List (Option (Certificate ι))) (D : List ι) (V : FreeMap ι) :
+    Bool :=
   match S, expand G T with
   | [i], [.arrs L []] =>
     match G.schemes i with
-    | some s => !G.params i && θs.length == s.binders.length && TableOk G tbl D V &&
+    | some s => !G.params i && θs.length == s.binders.length &&
+        certs.length == s.bounds.length &&
+        (s.bounds.zip certs).all (fun bc => boundOk G s.binders θs bc.1 bc.2) &&
+        TableOk G tbl D V &&
         L.all fun q => s.signatures.any fun p => sigImg tbl (s.binders.zip θs) p == some q
     | none => false
   | _, _ => false
 
-theorem checkInst_sound [DecidableEq ι] {G : NormalGraph ι} {S T tbl θs D V}
-    (h : checkInst G S T tbl θs D V = true) : Sub G S T := by
+theorem checkInst_sound [DecidableEq ι] {G : NormalGraph ι} {S T tbl θs certs D V}
+    (h : checkInst G S T tbl θs certs D V = true) : Sub G S T := by
   unfold checkInst at h
   split at h
   · rename_i i L hT
@@ -394,7 +453,10 @@ theorem checkInst_sound [DecidableEq ι] {G : NormalGraph ι} {S T tbl θs D V}
     · rename_i s hs
       simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true, List.any_eq_true,
         beq_iff_eq] at h
-      exact .inst h.1.1.1 hs h.1.1.2 h.1.2 h.2 hT
+      obtain ⟨⟨⟨⟨⟨hp, hlen⟩, hcl⟩, hbs⟩, hok⟩, hL⟩ := h
+      refine .inst hp hs hlen (fun b hb => ?_) hok hL hT
+      obtain ⟨c, hc⟩ := exists_mem_zip hcl b hb
+      exact boundOk_sound (hbs _ hc)
     · cases h
   · cases h
 
@@ -402,7 +464,7 @@ def check [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) : Proof ι → B
   | .core cert => checkCore G S T cert
   | .subset => decide (∀ i ∈ S, i ∈ T)
   | .trans middle left right => check G S middle left && check G middle T right
-  | .inst tbl θs D V => checkInst G S T tbl θs D V
+  | .inst tbl θs certs D V => checkInst G S T tbl θs certs D V
   | .gen D V U p => genOk G S T D V U && check G S U p
   | .table tbl D V => TableOk G tbl D V &&
       S.all fun l => match entryImg tbl [] l with
@@ -417,7 +479,7 @@ theorem check_sound [DecidableEq ι] {G : NormalGraph ι} {S T proof}
   | trans middle left right ih ih' =>
     simp only [check, Bool.and_eq_true] at h
     exact .trans (ih h.1) (ih' h.2)
-  | inst tbl θs D V => exact checkInst_sound h
+  | inst tbl θs certs D V => exact checkInst_sound h
   | gen D V U p ih =>
     simp only [check, Bool.and_eq_true] at h
     exact genOk_sound h.1 (ih h.2)
@@ -443,11 +505,12 @@ theorem check_complete [dec : DecidableEq ι] {G : NormalGraph ι} {S T}
     obtain ⟨left, hl⟩ := ih
     obtain ⟨right, hr⟩ := ih'
     exact ⟨.trans U left right, by simp [check, hl, hr]⟩
-  | @inst T inst i s tbl θs D V L hp hq hlen hok hL hT =>
+  | @inst T inst i s tbl θs D V L hp hq hlen hbnd hok hL hT =>
     have he : inst = dec := Subsingleton.elim _ _
     subst he
-    refine ⟨.inst tbl θs D V, ?_⟩
-    simp only [check, checkInst, hT, hq, hp, hok, hlen, Bool.not_false, Bool.true_and,
+    obtain ⟨certs, hcl, hcs⟩ := bound_certs s.bounds hbnd
+    refine ⟨.inst tbl θs certs D V, ?_⟩
+    simp only [check, checkInst, hT, hq, hp, hok, hlen, hcl, hcs, Bool.not_false, Bool.true_and,
       beq_self_eq_true, List.all_eq_true, List.any_eq_true, Bool.and_eq_true, beq_iff_eq]
     exact fun q hq => hL q hq
   | @table S T inst tbl D V hok hS =>

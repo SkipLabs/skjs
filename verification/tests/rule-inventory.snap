@@ -103,7 +103,7 @@ Proof  (Types/PositiveCertificates.lean)
   core (certificate : Certificate ι)
   subset
   trans (middle : List ι) (left right : Proof ι)
-  inst (table : InstTable ι) (instances : List (List ι)) (domain : List ι) (free : FreeMap ι)
+  inst (table : InstTable ι) (instances : List (List ι)) (bounds : List (Option (Certificate ι))) (domain : List ι) (free : FreeMap ι)
   table (table : InstTable ι) (domain : List ι) (free : FreeMap ι)
   gen (domain : List ι) (free : FreeMap ι) (body : List ι) (proof : Proof ι)
 

@@ -1021,9 +1021,14 @@ fill, so every declaration has one lowering. At a method call OCaml infers the
 instance and claims the method's read at the instance's ground arrow; Lean
 proves the scheme below it by an instance table (`generic-method-value-import`:
 `chooser.pick(flag, !flag)` is a Boolean, `c.with(s).value` a string; the
-negative's instance returns a Boolean where a number is declared). Bounded
-binders (`K2 extends Json`), variadic signatures and methods whose unfolding
-keeps growing stay opaque members.
+negative's instance returns a Boolean where a number is declared). Stage 5 adds bounded binders (`K2 extends Json`): a scheme quantifies over the
+instances within its bounds, read where the method is declared and below the
+current level, which keeps the fixed point contractive; the approximations are
+non-expansive in the assignment, which gives admissibility. An instance's
+types must lie within the bounds (inclusion or a core certificate per bound);
+`bounded-generic-method-value-import` and its negative exercise it.
+F-bounded binders, variadic signatures and methods whose unfolding keeps
+growing stay opaque members.
 
 `TypeSchemes.lean` is an older, separate scheme layer for local generic
 closures (with bounds and rest signatures, outside the graph). Scheme rows
@@ -1046,7 +1051,7 @@ The one semantics serves three rules, each needed:
 So there is no instance-only version first: the rules are built once, over
 this semantics. Stages: (2, done) scheme rows in `meaning`, with the typing
 rules never reading a scheme label as a ground clause; (3, done) coverage
-and elimination, with certificates; (4, done) the pipeline; (5) bounded binders
+and elimination, with certificates; (4, done) the pipeline; (5, done) bounded binders
 (`K2 extends Json`), which need the denotation to be non-expansive in the
 assignment; introduction when the runtime is a target.
 

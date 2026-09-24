@@ -103,6 +103,7 @@ row has clauses; the graph reads the other two as scheme and parameter rows. -/
 inductive Row where
   | clauses (union : List (Clause (List Nat)))
   | scheme (binders : List Nat) (signatures : List (List Nat × List (List Nat) × List Nat))
+      (bounds : List (Nat × List Nat))
   /-- `name` identifies the binder the row stands for (its spelling, where it
   is declared, and its colour); it carries no meaning. -/
   | param (label : Nat) (name : String)
@@ -120,12 +121,14 @@ def Row.union : Row → List (Clause (List Nat))
   | _ => []
 
 /-- A clause row is spelled as its array of clauses, as every row was before
-scheme rows; a scheme row as `{"scheme": {"binders", "signatures"}}`, and a
-parameter row as `{"param": label, "name": name}`. -/
+scheme rows; a scheme row as `{"scheme": {"binders", "signatures", "bounds"}}`,
+its bounds left out when there are none, and a parameter row as
+`{"param": label, "name": name}`. -/
 instance : ToJson Row := ⟨fun
   | .clauses cs => toJson cs
-  | .scheme bs sigs => Json.mkObj [("scheme",
-      Json.mkObj [("binders", toJson bs), ("signatures", toJson sigs)])]
+  | .scheme bs sigs bounds => Json.mkObj [("scheme",
+      Json.mkObj ([("binders", toJson bs), ("signatures", toJson sigs)] ++
+        (if bounds.isEmpty then [] else [("bounds", toJson bounds)])))]
   | .param l n => Json.mkObj [("param", toJson l), ("name", toJson n)]⟩
 
 instance : FromJson Row := ⟨fun j =>
@@ -135,6 +138,9 @@ instance : FromJson Row := ⟨fun j =>
     | .ok b, .error _ => do
       return .scheme (← fromJson? (← b.getObjVal? "binders"))
         (← fromJson? (← b.getObjVal? "signatures"))
+        (← match b.getObjVal? "bounds" with
+          | .ok v => fromJson? v
+          | .error _ => pure [])
     | .error _, .ok l => return .param (← fromJson? l) (← fromJson? (← j.getObjVal? "name"))
     | _, _ => .error "expected a clause array, a scheme row or a parameter row"⟩
 
@@ -144,7 +150,7 @@ def tableGraph (T : List Row) : NormalGraph Nat where
     | some r => r.union
     | none => []
   schemes i := match T[i]? with
-    | some (.scheme bs sigs) => some ⟨bs, sigs⟩
+    | some (.scheme bs sigs bounds) => some ⟨bs, sigs, bounds⟩
     | _ => none
   params i := match T[i]? with
     | some (.param _ _) => true
@@ -210,7 +216,8 @@ def validClaim (bound : Nat) (c : PointClaim Nat) : Bool :=
 /-- The labels a row names. -/
 def rowTypes : Row → List (Ty Nat)
   | .clauses cs => cs.flatMap clauseTypes
-  | .scheme bs sigs => bs :: sigs.flatMap fun p => p.1 :: p.2.2 :: p.2.1
+  | .scheme bs sigs bounds => bs :: (sigs.flatMap fun p => p.1 :: p.2.2 :: p.2.1) ++
+      bounds.map (fun b => b.1 :: b.2)
   | .param _ _ => []
 
 /-- Every label a row names indexes the table; a parameter row names itself;
@@ -219,7 +226,7 @@ def validRows (T : List Row) : Bool :=
   (T.flatMap rowTypes).all (validTy T.length) &&
   (List.range T.length).all fun i => match T[i]? with
     | some (.param l _) => l == i
-    | some (.scheme bs _) => bs.all fun b => match T[b]? with
+    | some (.scheme bs _ _) => bs.all fun b => match T[b]? with
       | some (.param _ _) => true
       | _ => false
     | _ => true
@@ -239,17 +246,23 @@ def arrowTypes : PositiveCertificates.ArrowCert Nat → List (Ty Nat)
   | .recvUnion a b l r => a :: b :: (arrowTypes l ++ arrowTypes r)
   | .combine a b l r => a :: b :: (arrowTypes l ++ arrowTypes r)
 
+def certificateTypes (c : PositiveCertificates.Certificate Nat) : List (Ty Nat) :=
+  c.table.flatMap (fun p => [p.1,p.2]) ++ c.arrows.flatMap (fun e =>
+    e.1.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++ e.2.1.1 :: e.2.1.2.1 ++ [e.2.1.2.2] ++
+      arrowTypes e.2.2)
+
 def proofTypes : PositiveCertificates.Proof Nat → List (Ty Nat)
   | .subset => []
   | .trans middle l r => middle :: (proofTypes l ++ proofTypes r)
-  | .inst tbl θs D V => D :: θs ++ V.flatMap (fun p => [[p.1], p.2]) ++
+  | .inst tbl θs certs D V => D :: θs ++ V.flatMap (fun p => [[p.1], p.2]) ++
+      certs.flatMap (fun c => match c with
+        | some cert => certificateTypes cert
+        | none => []) ++
       tbl.flatMap (fun e => [e.1] :: e.2.2 :: e.2.1.flatMap (fun p => [[p.1], p.2]))
   | .gen D V U p => D :: U :: V.flatMap (fun p => [[p.1], p.2]) ++ proofTypes p
   | .table tbl D V => D :: V.flatMap (fun p => [[p.1], p.2]) ++
       tbl.flatMap (fun e => [e.1] :: e.2.2 :: e.2.1.flatMap (fun p => [[p.1], p.2]))
-  | .core c => c.table.flatMap (fun p => [p.1,p.2]) ++ c.arrows.flatMap (fun e =>
-      e.1.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++ e.2.1.1 :: e.2.1.2.1 ++ [e.2.1.2.2] ++
-        arrowTypes e.2.2)
+  | .core c => certificateTypes c
 
 def validEvidence (bound : Nat) : ProgramCertificates.Evidence Nat → Bool
   | .node j r ps =>

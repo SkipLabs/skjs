@@ -44,6 +44,10 @@ signatures `(receiver, parameters, result)` each of its instances meets. -/
 structure SchemeRow (ι : Type) where
   binders : List ι
   signatures : List (List ι × List (List ι) × List ι)
+  /-- Upper bounds `(binder, type)`: an instance gives the binder a family below
+  the type, read at the scheme's own assignment (a bound does not mention the
+  scheme's binders). -/
+  bounds : List (ι × List ι) := []
   deriving DecidableEq, Repr
 
 structure NormalGraph (ι : Type) where
@@ -281,12 +285,21 @@ noncomputable def instanceSigs (D : Assignment ι → List ι → Fam) (η : Ass
   let η' := assign η s.binders As
   s.signatures.map fun p => (D η' p.1, p.2.1.map (D η'), D η' p.2.2)
 
+/-- An instance is bounded below `n`: each bounded binder's family lies below
+its bound at every level under `n`. Only levels below `n` are read, which keeps
+the fixed point contractive. -/
+def Bounded (D : Assignment ι → List ι → Fam) (η : Assignment ι) (s : SchemeRow ι)
+    (As : List ValueFamily) (n : Nat) : Prop :=
+  ∀ b ∈ s.bounds, b.1 ∈ s.binders → ∀ j, j < n → ∀ (U : WorldT j) u,
+    (assign η s.binders As).1 b.1 j U u → D η b.2 j U u
+
 /-- **A scheme row.** A callable meeting its signatures at every instantiation
-of its binders: the same value, in the same world, at all of them. -/
+of its binders within their bounds: the same value, in the same world, at all
+of them. -/
 noncomputable def schemeSem (D : Assignment ι → List ι → Fam) (η : Assignment ι)
     (s : SchemeRow ι) : Fam := fun n W v =>
   Invocable v ∧ ∀ As : List ValueFamily, As.length = s.binders.length →
-    callsT (instanceSigs D η s As) n W v
+    Bounded D η s As n → callsT (instanceSigs D η s As) n W v
 
 /-- One step of the assignment-indexed denotation. -/
 noncomputable def qLayer (G : NormalGraph ι) (X : Assignment ι × ι → Fam) :
@@ -307,6 +320,15 @@ private theorem argsAgree_map {n : Nat} (X Y : ι → Fam) (h : ∀ l, Agree (X 
   | [] => .nil
   | S :: Ss => .cons (setSem_congr n h S) (argsAgree_map X Y h Ss)
 
+theorem Agree.mono {A B : Fam} {n m : Nat} (h : Agree A B n) (hm : m ≤ n) : Agree A B m :=
+  fun k hk W v => h k (by omega) W v
+
+theorem argsAgree_mono {As Bs : List Fam} {n m : Nat} (h : ArgsAgree n As Bs) (hm : m ≤ n) :
+    ArgsAgree m As Bs := by
+  induction h with
+  | nil => exact .nil
+  | cons hA _ ih => exact .cons (Agree.mono hA hm) ih
+
 theorem qLayer_congr (G : NormalGraph ι) : LayerCongr (qLayer G) := by
   intro X Y n h ηi W v
   obtain ⟨η, i⟩ := ηi
@@ -318,31 +340,167 @@ theorem qLayer_congr (G : NormalGraph ι) : LayerCongr (qLayer G) := by
     | none => exact normalLayer_congr G _ _ n (fun l => h (η, l)) i W v
     | some s =>
       refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun _ => ?_)
-      unfold instanceSigs
-      exact callsT_congr s.signatures _ _ (fun p _ =>
-        ⟨setSem_congr n (fun l => h (_, l)) p.1,
-         argsAgree_map _ _ (fun l => h (_, l)) p.2.1,
-         setSem_congr n (fun l => h (_, l)) p.2.2⟩) W v
+      refine imp_congr ?_ ?_
+      · unfold Bounded
+        refine forall_congr' fun b => forall_congr' fun _ => forall_congr' fun _ =>
+          forall_congr' fun j => forall_congr' fun hj => forall_congr' fun U =>
+          forall_congr' fun u => imp_congr Iff.rfl ?_
+        exact setSem_congr n (fun l => h (_, l)) b.2 j hj U u
+      · unfold instanceSigs
+        exact callsT_congr s.signatures _ _ (fun p _ =>
+          ⟨setSem_congr n (fun l => h (_, l)) p.1,
+           argsAgree_map _ _ (fun l => h (_, l)) p.2.1,
+           setSem_congr n (fun l => h (_, l)) p.2.2⟩) W v
 
-theorem schemeSem_adm (D : Assignment ι → List ι → Fam) (η : Assignment ι) (s : SchemeRow ι) :
-    Adm (schemeSem D η s) := by
-  constructor
-  · intro n W v h
-    exact ⟨h.1, fun As hl => (callsT_adm _).down n W v (h.2 As hl)⟩
-  · intro n W W' hx v h
-    exact ⟨h.1, fun As hl => (callsT_adm _).mono n W W' hx v (h.2 As hl)⟩
+/-! ### Non-expansiveness in the assignment
 
-theorem qLayer_adm (G : NormalGraph ι) : LayerAdm (qLayer G) := by
-  intro X _ ηi
-  obtain ⟨η, i⟩ := ηi
-  unfold qLayer
-  by_cases hp : G.params i = true
-  · simpa [hp] using (η.2 i).1
-  · simp only [hp]
-    cases hq : G.schemes i with
-    | none => simpa [normalLayer, semList] using
-        setSem_adm (fun c => sem_adm (setSem fun l => X (η, l)) c) (G i)
-    | some s => exact schemeSem_adm _ _ s
+A bounded scheme's admissibility needs more than each step's: an instance
+bounded only below a level is replaced by one bounded everywhere, which agrees
+with it below that level, so the families read at the two instances must agree
+below it too. Every approximation of the fixed point has that property. -/
+
+/-- Assignments agreeing below `m` give families agreeing below `m`. -/
+def NonExp (X : Assignment ι × ι → Fam) : Prop :=
+  ∀ (η η' : Assignment ι) (i : ι) (m : Nat), (∀ p, Agree (η.1 p) (η'.1 p) m) →
+    Agree (X (η, i)) (X (η', i)) m
+
+/-- The invariant of the approximations: admissible and non-expansive. -/
+def QInv (X : Assignment ι × ι → Fam) : Prop := (∀ ηi, Adm (X ηi)) ∧ NonExp X
+
+open Classical in
+/-- An instance with each binder's family cut down to its bounds. -/
+noncomputable def restrictArgs (D : Assignment ι → List ι → Fam) (η : Assignment ι)
+    (bounds : List (ι × List ι)) (hD : ∀ S, Adm (D η S)) :
+    List ι → List ValueFamily → List ValueFamily
+  | b :: bs, A :: As =>
+    ⟨fun n W v => A.1 n W v ∧ ∀ B, (b, B) ∈ bounds → D η B n W v,
+     ⟨⟨fun n W v h => ⟨A.2.1.down n W v h.1, fun B hB => (hD B).down n W v (h.2 B hB)⟩,
+       fun n W W' hx v h => ⟨A.2.1.mono n W W' hx v h.1,
+         fun B hB => (hD B).mono n W W' hx v (h.2 B hB)⟩⟩,
+      fun n W v h => A.2.2 n W v h.1⟩⟩ :: restrictArgs D η bounds hD bs As
+  | _, _ => []
+
+theorem restrictArgs_length (D : Assignment ι → List ι → Fam) (η : Assignment ι)
+    (bounds : List (ι × List ι)) (hD : ∀ S, Adm (D η S)) :
+    ∀ (bs : List ι) (As : List ValueFamily), As.length = bs.length →
+      (restrictArgs D η bounds hD bs As).length = bs.length
+  | [], _, _ => by simp [restrictArgs]
+  | _ :: _, [], h => by simp at h
+  | b :: bs, A :: As, h => by
+    simp only [restrictArgs, List.length_cons]
+    rw [restrictArgs_length D η bounds hD bs As (by simpa using h)]
+
+/-- A restricted binder's family is its family within its bounds. -/
+theorem assign_restrict (D : Assignment ι → List ι → Fam) (η' η : Assignment ι)
+    (bounds : List (ι × List ι)) (hD : ∀ S, Adm (D η S)) :
+    ∀ (bs : List ι) (As : List ValueFamily) (p : ι) (n : Nat) (W : WorldT n) (v : Val),
+      As.length = bs.length →
+      ((assign η' bs (restrictArgs D η bounds hD bs As)).1 p n W v ↔
+        (assign η' bs As).1 p n W v ∧ (p ∈ bs → ∀ B, (p, B) ∈ bounds → D η B n W v))
+  | [], As, p, n, W, v, _ => by simp [restrictArgs, assign]
+  | _ :: _, [], _, _, _, _, h => by simp at h
+  | b :: bs, A :: As, p, n, W, v, h => by
+    by_cases hb : p = b
+    · subst hb
+      simp only [restrictArgs]
+      rw [assign_cons_head, assign_cons_head]
+      simp
+    · simp only [restrictArgs]
+      rw [assign_cons_ne _ _ _ _ hb, assign_cons_ne _ _ _ _ hb,
+        assign_restrict D η' η bounds hD bs As p n W v (by simpa using h)]
+      simp [hb]
+
+theorem qLayer_inv (G : NormalGraph ι) (X : Assignment ι × ι → Fam) (hX : QInv X) :
+    QInv (qLayer G X) := by
+  obtain ⟨hadm, hne⟩ := hX
+  have hD : ∀ (η : Assignment ι) S, Adm (setSem (fun l => X (η, l)) S) :=
+    fun η S => setSem_adm (fun l => hadm (η, l)) S
+  -- Families read at assignments agreeing below `m` agree below `m`.
+  have sets : ∀ (η η' : Assignment ι) m, (∀ p, Agree (η.1 p) (η'.1 p) m) → ∀ S,
+      Agree (setSem (fun l => X (η, l)) S) (setSem (fun l => X (η', l)) S) m :=
+    fun η η' m h S => setSem_congr m (fun l => hne η η' l m h) S
+  have args : ∀ (η η' : Assignment ι) m, (∀ p, Agree (η.1 p) (η'.1 p) m) →
+      ∀ Ss : List (List ι), ArgsAgree m (Ss.map (setSem fun l => X (η, l)))
+        (Ss.map (setSem fun l => X (η', l))) := by
+    intro η η' m h Ss
+    induction Ss with
+    | nil => exact .nil
+    | cons S Ss ih => exact .cons (sets η η' m h S) ih
+  -- Reassigning the same binders keeps agreement.
+  have reassign : ∀ (η η' : Assignment ι) (bs : List ι) (As : List ValueFamily) m,
+      (∀ p, Agree (η.1 p) (η'.1 p) m) →
+      ∀ p, Agree ((assign η bs As).1 p) ((assign η' bs As).1 p) m := by
+    intro η η' bs As m h p
+    open Classical in
+    show Agree (match (bs.zip As).lookup p with | some A => A.1 | none => η.1 p)
+      (match (bs.zip As).lookup p with | some A => A.1 | none => η'.1 p) m
+    split
+    · exact fun k _ W v => Iff.rfl
+    · exact h p
+  refine ⟨fun ηi => ?_, fun η η' i m h => ?_⟩
+  · -- admissible
+    obtain ⟨η, i⟩ := ηi
+    unfold qLayer
+    by_cases hp : G.params i = true
+    · simpa [hp] using (η.2 i).1
+    · simp only [hp]
+      cases hq : G.schemes i with
+      | none => simpa [normalLayer, semList] using
+          setSem_adm (fun c => sem_adm (setSem fun l => X (η, l)) c) (G i)
+      | some s =>
+        constructor
+        · intro n W v h
+          refine ⟨h.1, fun As hl hb => ?_⟩
+          -- The instance cut down to its bounds is bounded everywhere, and
+          -- agrees with `As` below `m`.
+          let As' := restrictArgs (fun η' S => setSem (fun l => X (η', l)) S) η s.bounds
+            (hD η) s.binders As
+          have hl' : As'.length = s.binders.length :=
+            restrictArgs_length _ _ _ _ _ _ hl
+          have hb' : Bounded (fun η' S => setSem (fun l => X (η', l)) S) η s As' (n + 1) := by
+            intro b hbm hbin j _ U u hu
+            exact ((assign_restrict _ η η _ (hD η) _ _ _ _ _ _ hl).mp hu).2 hbin b.2 hbm
+          have hagree : ∀ p, Agree ((assign η s.binders As').1 p) ((assign η s.binders As).1 p) n := by
+            intro p k hk U u
+            rw [assign_restrict _ η η _ (hD η) _ _ _ _ _ _ hl]
+            constructor
+            · exact fun h => h.1
+            · intro hu
+              refine ⟨hu, fun hps B hB => ?_⟩
+              exact hb (p, B) hB hps k hk U u hu
+          have hc := (callsT_adm _).down n W v (h.2 As' hl' hb')
+          unfold instanceSigs at hc ⊢
+          exact (callsT_congr s.signatures _ _ (fun q _ =>
+            ⟨sets _ _ n hagree q.1, args _ _ n hagree q.2.1, sets _ _ n hagree q.2.2⟩) _ v).mp hc
+        · intro n W W' hx v h
+          exact ⟨h.1, fun As hl hb => (callsT_adm _).mono n W W' hx v (h.2 As hl hb)⟩
+  · -- non-expansive
+    intro k hk W v
+    unfold qLayer
+    by_cases hp : G.params i = true
+    · simp only [hp, if_true]; exact h i k hk W v
+    · simp only [hp]
+      cases hq : G.schemes i with
+      | none =>
+        simp only [normalLayer, semList, setSem]
+        constructor
+        · rintro ⟨c, hc, hv⟩
+          exact ⟨c, hc, (sem_congr _ _ k (fun a => Agree.mono (sets η η' m h a) (by omega)) c W v).mp hv⟩
+        · rintro ⟨c, hc, hv⟩
+          exact ⟨c, hc, (sem_congr _ _ k (fun a => Agree.mono (sets η η' m h a) (by omega)) c W v).mpr hv⟩
+      | some s =>
+        refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun _ => ?_)
+        have hre := reassign η η' s.binders As m h
+        refine imp_congr ?_ ?_
+        · unfold Bounded
+          refine forall_congr' fun b => forall_congr' fun _ => forall_congr' fun _ =>
+            forall_congr' fun j => forall_congr' fun hj => forall_congr' fun U =>
+            forall_congr' fun u => imp_congr (hre b.1 j (by omega) U u)
+              (sets η η' m h b.2 j (by omega) U u)
+        · unfold instanceSigs
+          exact callsT_congr s.signatures _ _ (fun q _ =>
+            ⟨Agree.mono (sets _ _ m hre q.1) (by omega), argsAgree_mono (args _ _ m hre q.2.1) (by omega),
+             Agree.mono (sets _ _ m hre q.2.2) (by omega)⟩) W v
 
 /-- The denotation at every assignment. -/
 noncomputable def qDenote (G : NormalGraph ι) : Assignment ι × ι → Fam :=
@@ -354,7 +512,8 @@ theorem qDenote_unfold (G : NormalGraph ι) (ηi : Assignment ι × ι)
   Tower.denote_unfold (qLayer_congr G) ηi n W v
 
 theorem qDenote_adm (G : NormalGraph ι) (ηi : Assignment ι × ι) : Adm (qDenote G ηi) :=
-  Tower.denote_adm (qLayer_congr G) (qLayer_adm G) ηi
+  Tower.denote_adm_inv (qLayer_congr G) QInv
+    ⟨fun _ => topF_adm, fun _ _ _ _ _ _ _ _ _ => Iff.rfl⟩ (qLayer_inv G) (fun _ h => h.1) ηi
 
 /-- A label list's meaning at an assignment. -/
 noncomputable def qMeaning (G : NormalGraph ι) (η : Assignment ι) (S : List ι) : Fam :=

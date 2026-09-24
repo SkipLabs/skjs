@@ -53,16 +53,18 @@ theorem scheme_row {G : NormalGraph ι} {η : Assignment ι} {i : ι} {s : Schem
   simp only [qLayer, hp, hq, Bool.false_eq_true, if_false]
   exact Iff.rfl
 
-/-- **Instantiation.** A member of a scheme row meets each of its instances,
-each signature read in the graph reassigned at that instance. -/
+/-- **Instantiation.** A member of a scheme row meets each of its instances
+within its bounds, each signature read in the graph reassigned at that
+instance. -/
 theorem scheme_elim {G : NormalGraph ι} {i : ι} {s : SchemeRow ι}
     (hp : G.params i = false) (hq : G.schemes i = some s)
     {n : Nat} {W : WorldT n} {v : Val} (h : meaning G [i] n W v)
-    (As : List ValueFamily) (hl : As.length = s.binders.length) :
+    (As : List ValueFamily) (hl : As.length = s.binders.length)
+    (hb : Bounded (fun η => meaning (reassign G η)) G.env s As n) :
     callsT (instanceSigs (fun η => meaning (reassign G η)) G.env s As) n W v := by
   obtain ⟨_, hi, hv⟩ := h
   cases List.mem_singleton.mp hi
-  exact ((scheme_row hp hq n W v).mp hv).2 As hl
+  exact ((scheme_row hp hq n W v).mp hv).2 As hl hb
 
 /-- **Generalization.** A callable meeting every instance's signatures, each
 read in the graph reassigned there, is a member of the scheme row. -/
@@ -70,6 +72,7 @@ theorem scheme_intro {G : NormalGraph ι} {i : ι} {s : SchemeRow ι}
     (hp : G.params i = false) (hq : G.schemes i = some s)
     {n : Nat} {W : WorldT n} {v : Val} (hv : Invocable v)
     (h : ∀ As : List ValueFamily, As.length = s.binders.length →
+      Bounded (fun η => meaning (reassign G η)) G.env s As n →
       callsT (instanceSigs (fun η => meaning (reassign G η)) G.env s As) n W v) :
     meaning G [i] n W v :=
   ⟨i, List.mem_singleton_self i, (scheme_row hp hq n W v).mpr ⟨hv, h⟩⟩

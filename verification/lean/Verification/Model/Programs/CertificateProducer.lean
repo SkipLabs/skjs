@@ -221,7 +221,16 @@ def instProof [DecidableEq ι] (G : NormalGraph ι) (fuel : Nat) (A B : Ty ι) :
       let κ₀ := s.binders.zip θs
       let final ← L.foldlM (fun st q =>
         s.signatures.findSome? fun p => matchSig G s.binders V fuel st κ₀ p q) {}
-      some (.inst final.table θs D V)
+      -- Each instance within its binder's bounds: inclusion, or a core table.
+      let certs ← s.bounds.mapM fun b =>
+        match κ₀.lookup b.1 with
+        | none => some none
+        | some U =>
+          if U.all (· ∈ b.2) then some none
+          else match subtypeBase G (reachablePool G U b.2) U b.2 with
+            | some (.core cert) => some (some cert)
+            | _ => none
+      some (.inst final.table θs certs D V)
     | none => none
   | _, _ => none
 
