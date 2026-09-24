@@ -430,8 +430,9 @@ private def sourceObject (j : Json) : Except String Unit := do
 are the ones declaration bodies use; a reference resolves to the declaration
 TypeScript named, by identity. A ground application is its graph labels, and
 one over an enclosing function's binder is its expanded equation. -/
-private partial def annotationClaim (ds : Array Definition) (term : Json) : Lowering Json := do
-  let recur := annotationClaim ds
+private partial def annotationClaim (ds : Array Definition) (term : Json)
+    (bound : List (String × Json) := []) : Lowering Json := do
+  let recur := fun t => annotationClaim ds t bound
   sourceObject term
   match ← str term "k" with
   | "atom" =>
@@ -507,7 +508,10 @@ private partial def annotationClaim (ds : Array Definition) (term : Json) : Lowe
       [("call", toJson "unknown"), ("construct", toJson "unknown"), ("array", toJson "unknown")])]
   | "binder" =>
     CellClaims.fieldsExactly term ["k", "name", "span"]
-    return claimType [Json.mkObj [("a", toJson "param"), ("name", ← field term "name")]]
+    -- A binder an instantiation fixes is its ground argument.
+    match bound.lookup (← str term "name") with
+    | some ground => return ground
+    | none => return claimType [Json.mkObj [("a", toJson "param"), ("name", ← field term "name")]]
   | "reference" =>
     let index ← referenceIndex ds term
     let args ← (← arr term "args").mapM recur
@@ -544,11 +548,22 @@ private partial def rewrite (ds : Array Definition) (j : Json) : Lowering Json :
     return Json.mkObj pairs.toList
   | _ => return j
 
+/-- A generic module value: a generic module function, or a generic imported
+value. `instantiate` gives, for ground arguments in claim form, the callable
+at those arguments and each binder's bound at them, converted from the source
+terms with the binders fixed, so a declaration applied to a binder is an
+ordinary ground application. -/
+structure Instantiable where
+  name : String
+  pos : Span
+  binders : List String
+  instantiate : List (String × Json) → SourceTypes.Lowering (Json × List (String × Option Json))
+
 /-- Replace only the producer's empty reserved rows with equations derived
 from source declarations. The AST copy contains internal graph atoms only after
 the original source tree has been checked for them. -/
 def prepare (ast : Json) (candidate : SourceTypes.Table) :
-    Except String (Json × SourceTypes.Table × List (String × Span × Json)) := do
+    Except String (Json × SourceTypes.Table × List (String × Span × Json) × List Instantiable) := do
   let document ← field ast "declarations"
   CellClaims.fieldsExactly document ["roots", "definitions", "values"]
   let ds ← definitions document
@@ -559,21 +574,74 @@ def prepare (ast : Json) (candidate : SourceTypes.Table) :
   if (roots.toList.map (·.1)).eraseDups.length != roots.size then
     throw "duplicate declaration root name"
   let types ← fillRows ds candidate
+  -- Generic module functions, read from their source terms before the tree is
+  -- converted.
+  let callable (params : List Json) (rest : Option Json) (result : Json) (bound : List (String × Json)) :
+      Lowering Json := do
+    let top := Json.mkObj [("top", toJson true), ("atoms", toJson ([] : List Json))]
+    return claimType [Json.mkObj ([("a", toJson "function"), ("this", top),
+      ("params", toJson (← params.mapM (annotationClaim ds · bound)))] ++
+      (← match rest with
+        | some e => do pure [("rest", ← annotationClaim ds e bound)]
+        | none => pure []) ++
+      [("result", ← annotationClaim ds result bound),
+       ("construct", toJson "unknown"), ("array", toJson "unknown")])]
+  let genericFunctions ← (← arr ast "functions").toList.filterMapM fun f => do
+    let tps ← arr f "typeParams"
+    if tps.isEmpty then return none
+    let params ← arr f "params"
+    let (fixed, rest) ← match params.toList.getLast? with
+      | some p =>
+        if (p.getObjVal? "rest").isOk then
+          let ty ← field p "type"
+          if (← str ty "k") != "array" || (← bool ty "readonly") then
+            throw "a generic module function's rest parameter needs a mutable array contract"
+          pure (params.toList.dropLast.map (fun q => (q.getObjVal? "type").toOption.getD .null), some (← field ty "element"))
+        else pure (params.toList.map (fun q => (q.getObjVal? "type").toOption.getD .null), none)
+      | none => pure ([], none)
+    let result ← field f "retType"
+    let binders ← tps.toList.mapM fun p => do return (← str p "name", ← field p "bound")
+    let name ← str f "name"
+    let pos ← fromJson? (α := Span) (← field f "namePos")
+    let instantiate (σ : List (String × Json)) : Lowering (Json × List (String × Option Json)) := do
+      let c ← callable fixed rest result σ
+      let bounds ← binders.mapM fun (n, b) => do
+        return (n, ← if b == .null then pure none else some <$> annotationClaim ds b σ)
+      return (c, bounds)
+    return some (Instantiable.mk name pos (binders.map Prod.fst) instantiate)
   let (functions, types) ← (rewrite ds (← field ast "functions")).run types
   let (init, types) ← (rewrite ds (← field ast "init")).run types
   -- An imported value, at the type its declaration states: an assumption,
-  -- read in claim form like an annotation.
-  let (values, types) ← ((← arr document "values").toList.mapM fun v => (do
-    CellClaims.fieldsExactly v ["binding", "declaration", "construct", "type"]
+  -- read in claim form like an annotation. A generic one is instantiated at
+  -- each call instead.
+  let mut values : List (String × Span × Json) := []
+  let mut generics := genericFunctions
+  let mut types := types
+  for v in ← arr document "values" do
+    CellClaims.fieldsExactly v ["binding", "declaration", "construct", "typeParams", "type"]
     let binding ← field v "binding"
     CellClaims.fieldsExactly binding ["local", "imported", "specifier", "span"]
     let name ← str binding "local"
     let span ← fromJson? (α := Span) (← field binding "span")
     let _ ← bool v "construct"
-    return (name, span, ← annotationClaim ds (← field v "type")) : Lowering (String × Span × Json))).run types
+    let ty ← field v "type"
+    let binders ← (← arr v "typeParams").toList.mapM fun p => do
+      CellClaims.fieldsExactly p ["name", "bound"]
+      return (← str p "name", ← field p "bound")
+    if binders.isEmpty then
+      let (claim, grown) ← (annotationClaim ds ty).run types
+      types := grown
+      values := values ++ [(name, span, claim)]
+    else
+      let instantiate (σ : List (String × Json)) : Lowering (Json × List (String × Option Json)) := do
+        let c ← annotationClaim ds ty σ
+        let bounds ← binders.mapM fun (n, b) => do
+          return (n, ← if b == .null then pure none else some <$> annotationClaim ds b σ)
+        return (c, bounds)
+      generics := generics ++ [Instantiable.mk name span (binders.map Prod.fst) instantiate]
   let empty := Json.mkObj [("roots", toJson ([] : List Json)),
     ("definitions", toJson ([] : List Json)), ("values", toJson ([] : List Json))]
   let ast := ast.setObjVal! "declarations" empty
-  return ((ast.setObjVal! "functions" functions).setObjVal! "init" init, types, values)
+  return ((ast.setObjVal! "functions" functions).setObjVal! "init" init, types, values, generics)
 
 end Verification.Model.DeclarationGraph

@@ -169,18 +169,22 @@ function intersection(scope: TermScope, node: ts.IntersectionTypeNode, span: Spa
 /** A signature's parameters: a leading `this: T` is the receiver a call must
  * pass, and without one the signature accepts any receiver. */
 export function signature(scope: TermScope, parameters: readonly ts.ParameterDeclaration[],
-    result: TypeNode | undefined, at: Node, span: Span): FunctionTerm {
+    result: TypeNode | undefined, at: Node, span: Span,
+    // A declared function's defaulted parameter may be omitted: `undefined`
+    // is what a short call binds there. Function types have no defaults.
+    declared = false): FunctionTerm {
   const head = parameters[0];
   const stated = !!head && ts.isIdentifier(head.name) && head.name.text === "this";
   if (stated && (!head.type || head.questionToken || head.dotDotDotToken || head.initializer))
     scope.fail(head, "a receiver needs a required type annotation");
   const receiver = stated ? typeTerm(scope, head.type, head) : null;
   const ordinary = stated ? parameters.slice(1) : [...parameters];
-  const firstOptional = ordinary.findIndex(p => !!p.questionToken);
+  const optional = (p: ts.ParameterDeclaration) => !!p.questionToken || (declared && !!p.initializer);
+  const firstOptional = ordinary.findIndex(optional);
   const params: TypeTerm[] = [];
   let rest: TypeTerm | null = null;
   for (const [index, p] of ordinary.entries()) {
-    if (!ts.isIdentifier(p.name) || p.name.text === "this" || p.initializer)
+    if (!ts.isIdentifier(p.name) || p.name.text === "this" || (p.initializer && !declared))
       scope.fail(p, "expected an ordinary parameter");
     if (p.dotDotDotToken) {
       if (index !== ordinary.length - 1) scope.fail(p, "a rest parameter must be the last one");
@@ -192,10 +196,10 @@ export function signature(scope: TermScope, parameters: readonly ts.ParameterDec
       if ("positions" in contract) params.push(...contract.positions);
       else rest = contract.element;
     } else {
-      if (!p.questionToken && firstOptional >= 0 && index > firstOptional)
+      if (!optional(p) && firstOptional >= 0 && index > firstOptional)
         scope.fail(p, "a required parameter cannot follow an optional one");
       const type = typeTerm(scope, p.type, p);
-      params.push(p.questionToken ? optionalTerm(type, spanOf(scope, p)) : type);
+      params.push(optional(p) ? optionalTerm(type, spanOf(scope, p)) : type);
     }
   }
   return { k: "function", receiver, params, rest, result: typeTerm(scope, result, at), span };

@@ -1408,13 +1408,15 @@ module function at its annotated signature (a source-fixed slot no producer
 claims and no assignment reaches), a module constant at its annotation. Claims
 are per unit, keyed by source identity.
 
-**Generic module functions.** A generic module function is certified for
-every admissible instantiation by its own unit. A unit that calls it gives its
-slot the instances its calls name: each call's type arguments are validated as
-a closure elimination's are (exactly its binders, ground, every substituted
-bound), and the slot holds those instances as one callable with several
-signatures. Each instance holds of the function's value, so their
-conjunction does.
+**Generic module values.** A generic module function is certified for every
+admissible instantiation by its own unit; a generic imported value is assumed
+at its declared type. A unit that calls one gives its slot the instances its
+calls name. Each call's type arguments must be ground and name exactly its
+binders; the signature and bounds are then read from the source terms with the
+binders fixed to those arguments, so a declaration applied to a binder is an
+ordinary ground application, and each bound must hold by the graph's certified
+subtyping. The slot holds the instances as one callable with several
+signatures. Each instance holds of the value, so their conjunction does.
 
 **Imported values.** A value import joins the module's scope at the type its
 declaration states: a function's annotated signature, an annotated

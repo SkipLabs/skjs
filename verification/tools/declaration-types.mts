@@ -68,6 +68,8 @@ export type ValueRoot = {
   binding: { local: string; imported: string; specifier: string; span: Span };
   declaration: DeclarationIdentity;
   construct: boolean;
+  /** A generic declaration's binders, which `type` names as `binder` terms. */
+  typeParams: { name: string; bound: TypeTerm | null }[];
   type: TypeTerm;
 };
 export type DeclarationDocument = {

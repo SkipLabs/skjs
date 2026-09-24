@@ -10,7 +10,7 @@ import { API, DiagnosticCategory, SymbolFlags, type Checker, type Program } from
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
-import { classInstance, members, signature, typeTerm, type TermScope } from "./type-term.mts";
+import { classInstance, members, optionalTerm, signature, typeTerm, type TermScope } from "./type-term.mts";
 import type { DeclarationIdentity, DeclarationDocument, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
 export type { DeclarationIdentity, DeclarationDocument, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
 
@@ -198,7 +198,7 @@ export function collectDeclarations(file: string, options: {
     // The type an imported value's declaration states, and the declarations
     // that type reaches, which join the graph.
     const valueStarts: TypeDeclaration[] = [];
-    const valueScope = (node: Node, what: string): TermScope => {
+    const valueScope = (node: Node, what: string, binders: string[] = []): TermScope => {
       const source = node.getSourceFile();
       return {
         source,
@@ -206,6 +206,10 @@ export function collectDeclarations(file: string, options: {
         fail: (_node, message) => { throw Error(`${message} in ${what}`); },
         named: (part, pos, read) => {
           const name = part.typeName as Identifier;
+          if (binders.includes(name.text)) {
+            if (part.typeArguments?.length) throw Error(`type parameter applied as constructor: ${name.text}`);
+            return { k: "binder", name: name.text, span: pos };
+          }
           const targetNode = lookup(name, `${idOf(source)}#${name.text}`);
           const parameters = targetNode.typeParameters ?? [];
           const args = part.typeArguments ?? [];
@@ -218,14 +222,29 @@ export function collectDeclarations(file: string, options: {
         },
       };
     };
-    const valueOf = (node: Node, what: string): { declaration: DeclarationIdentity; construct: boolean; type: TypeTerm } => {
+    // A generic declaration's binders, each bounded by what it extends; the
+    // bound may name earlier binders.
+    const bindersOf = (parameters: readonly ts.TypeParameterDeclaration[] | undefined, node: Node, what: string) => {
+      const names: string[] = [];
+      const typeParams = (parameters ?? []).map(p => {
+        if (p.defaultType) throw Error(`a type parameter default of an imported value is outside the fragment: ${what}`);
+        const bound = p.constraint ? typeTerm(valueScope(node, what, [...names]), p.constraint, p) : null;
+        names.push(p.name.text);
+        return { name: p.name.text, bound };
+      });
+      return { names, typeParams };
+    };
+    const valueOf = (node: Node, what: string): Omit<ValueRoot, "binding"> => {
       const source = node.getSourceFile();
       const span: Span = [node.getStart(source), node.end];
       if (ts.isFunctionDeclaration(node) && node.name) {
-        if (node.typeParameters?.length) throw Error(`a generic imported function is outside the fragment: ${what}`);
-        clean(node, `${idOf(source)}#${node.name.text}`);
-        return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false,
-          type: signature(valueScope(node, what), node.parameters, node.type, node, span) };
+        // Only the signature is the contract; the body is what is assumed,
+        // so an error inside it is not the graph's.
+        for (const part of [...(node.typeParameters ?? []), ...node.parameters, ...(node.type ? [node.type] : [])])
+          clean(part, `${idOf(source)}#${node.name.text}`);
+        const { names, typeParams } = bindersOf(node.typeParameters, node, what);
+        return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false, typeParams,
+          type: signature(valueScope(node, what, names), node.parameters, node.type, node, span, true) };
       }
       if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
         const list = node.parent;
@@ -233,24 +252,28 @@ export function collectDeclarations(file: string, options: {
           throw Error(`an imported value must be an annotated constant, function or class: ${what}`);
         clean(node, `${idOf(source)}#${node.name.text}`);
         return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false,
-          type: typeTerm(valueScope(node, what), node.type, node) };
+          typeParams: [], type: typeTerm(valueScope(node, what), node.type, node) };
       }
       if (ts.isClassDeclaration(node) && node.name) {
-        if (node.typeParameters?.length) throw Error(`a generic imported class is outside the fragment: ${what}`);
         clean(node, `${idOf(source)}#${node.name.text}`);
-        const scope = valueScope(node, what);
+        const { names, typeParams } = bindersOf(node.typeParameters, node, what);
+        const scope = valueScope(node, what, names);
         const constructor = node.members.find(ts.isConstructorDeclaration);
+        // A defaulted parameter may be omitted: `undefined` is what a short
+        // call binds there, and the default replaces it.
         const params = (constructor?.parameters ?? []).map(p => {
-          if (!ts.isIdentifier(p.name) || p.questionToken || p.dotDotDotToken || p.initializer)
-            throw Error(`an imported class constructor needs plain required parameters: ${what}`);
-          return typeTerm(scope, p.type, p);
+          if (!ts.isIdentifier(p.name) || p.dotDotDotToken)
+            throw Error(`an imported class constructor needs plain parameters: ${what}`);
+          const type = typeTerm(scope, p.type, p);
+          return p.questionToken || p.initializer ? optionalTerm(type, [p.getStart(source), p.end]) : type;
         });
         const identity = identityOf(node);
         valueStarts.push(node);
         const nameSpan: Span = [node.name.getStart(source), node.name.end];
-        return { declaration: identity, construct: true, type: { k: "function", receiver: null, params, rest: null,
-          result: { k: "reference", reference: { name: node.name.text, span: nameSpan, arguments: [], target: identity },
-            args: [], span: nameSpan }, span } };
+        return { declaration: identity, construct: true, typeParams, type: { k: "function", receiver: null, params,
+          rest: null, result: { k: "reference", reference: { name: node.name.text, span: nameSpan,
+            arguments: names.map(() => nameSpan), target: identity },
+            args: names.map(name => ({ k: "binder", name, span: nameSpan })), span: nameSpan }, span } };
       }
       throw Error(`${what} is not an annotated constant, function or class`);
     };
@@ -390,11 +413,11 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         ? classInstance(scope, node, [node.getStart(source), node.end])
         : members(scope, node.members, node, [node.getStart(source), node.end], true);
     // A class's `implements` clauses are obligations on the class, not part of
-    // its instance type; inheriting from another class is not yet admitted.
-    if (ts.isClassDeclaration(node) && node.heritageClauses?.some(c => c.token === ts.SyntaxKind.ExtendsKeyword))
-      throw Error(`class inheritance in ${identity.module}#${identity.name} is outside the fragment`);
-    const bases = ts.isInterfaceDeclaration(node)
-      ? (node.heritageClauses ?? []).flatMap(clause => {
+    // its instance type; the class it extends is a base of that type, as an
+    // interface's are.
+    const bases = ts.isInterfaceDeclaration(node) || ts.isClassDeclaration(node)
+      ? (node.heritageClauses ?? []).filter(clause =>
+          !(ts.isClassDeclaration(node) && clause.token === ts.SyntaxKind.ImplementsKeyword)).flatMap(clause => {
           if (clause.token !== ts.SyntaxKind.ExtendsKeyword)
             throw Error(`unsupported heritage in ${identity.module}#${identity.name}`);
           return clause.types.map(base => {

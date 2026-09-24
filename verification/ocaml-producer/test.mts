@@ -110,10 +110,10 @@ for (const [file, expected] of [
     ["InputDefinition", "skipruntime-ts/core/src/api.ts", "InputDefinition", "ClassDeclaration"],
     ["runService", "skipruntime-ts/server/src/server.ts", "runService", "FunctionDeclaration"],
   ]);
-  // The runtime's first value import is a generic class, which the fragment
-  // does not yet construct.
+  // The runtime's value imports resolve; `runService` returns the library's
+  // `Promise`, whose declarations merge across the standard library's files.
   assert.throws(() => collectDeclarations(source, { tsconfigPath: upstreamConfig }),
-    /a generic imported class is outside the fragment: InputDefinition/);
+    /TypeScript found \d+ declarations for \S*#Promise/);
   // Each runtime interface sum.ts imports, applied in a client of the same
   // project, and the first declaration the graph refuses on its way.
   const probe = mkdtempSync(join(tmpdir(), "skjs-runtime-api-"));

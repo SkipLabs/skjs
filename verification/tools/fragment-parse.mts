@@ -461,8 +461,8 @@ class Gate {
       const target = node.expression;
       if (!ts.isIdentifier(target) || !this.classNames.has(target.text))
         this.fail(node, "`new` applies to a class of this module");
-      if (node.typeArguments?.length)
-        this.fail(node, "type arguments to `new` are outside the fragment");
+      // Explicit type arguments only constrain TypeScript: the instantiation a
+      // producer claims is validated like any other.
       // The class value is its constructor: constructing is calling it.
       return {
         k: "apply",

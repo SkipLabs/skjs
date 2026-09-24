@@ -179,12 +179,26 @@ let module_type (g:Source.fn) =
   | _ -> quantified_arrow g.quantified tys g.result
 
 let infer_function declarations module_functions (f:Source.fn) =
+  let env0 = List.map (fun (n,t) -> n,Value t) f.params in
   (* A name no parameter or local binds is one of the file's functions. *)
   let resolve env n = match List.assoc_opt n env with
     | Some b -> binding_type b
     | None -> (match List.assoc_opt n module_functions with
       | Some g -> Lazy.force g | None -> Json.fail ("unbound name " ^ n)) in
   let entries = ref [] and expressions = ref [] and instantiations = ref [] in
+  (* A read of a generic module value that a call instantiates is claimed at
+     that instance: Lean gives the value's slot the instances its calls name. *)
+  let instances = ref [] in
+  let instance_of (callee:expr) substitution =
+    match callee.node with
+    | Id n when not (List.mem_assoc n env0) && List.mem_assoc n module_functions ->
+      (match Lazy.force (List.assoc n module_functions) with
+       | Atoms [Shape ({calls=[signature];_} as shape)] ->
+         let instance = Inference.substitute substitution
+           (Atoms [Shape {shape with calls=[{signature with quantified=[]}]}]) in
+         instances := (callee.pos,instance) :: !instances
+       | _ -> ())
+    | _ -> () in
   let arrows = ref [] in
   let entry env span = match Json.list span with
     | start::_ -> entries := {start;bindings=env} :: !entries
@@ -345,6 +359,7 @@ let infer_function declarations module_functions (f:Source.fn) =
          let missing = max 0 (List.length signature.params - List.length actuals) in
          let inferred = Inference.infer ~receiver:receiver_type signature
            (actuals @ List.init missing (fun _ -> Atoms [Undef])) in
+         instance_of target inferred.substitution;
          instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
            inferred.substitution) :: !instantiations;
          inferred.result
@@ -400,6 +415,7 @@ let infer_function declarations module_functions (f:Source.fn) =
         let actuals=List.map (expr env) args @
           List.init (max 0 (List.length signature.params - List.length args)) (fun _ -> Atoms [Undef]) in
         let inferred=Inference.infer ~receiver:receiver_type signature actuals in
+        instance_of target inferred.substitution;
         instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
           inferred.substitution) :: !instantiations;
         inferred.result
@@ -505,9 +521,11 @@ let infer_function declarations module_functions (f:Source.fn) =
     | While (c,body) -> ignore (expr env c);
       ignore (statements (branch env c true) body); env
     | Break | Continue -> env) env ss in
-  ignore (statements (List.map (fun (n,t) -> n,Value t) f.params) f.body);
-  {source=f;entries=List.rev !entries;expressions=List.rev !expressions;
-   arrows=List.rev !arrows}
+  ignore (statements env0 f.body);
+  let expressions = List.map (fun (x:expression) -> match List.assoc_opt x.pos !instances with
+    | Some instance -> {x with type_=instance}
+    | None -> x) (List.rev !expressions) in
+  {source=f;entries=List.rev !entries;expressions;arrows=List.rev !arrows}
 let infer program =
   let module_functions = List.map (fun (g:Source.fn) -> g.name,lazy (module_type g))
     program.Source.functions

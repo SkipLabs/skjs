@@ -295,7 +295,15 @@ let decode ast =
   { file=field "file" ast;digest=field "sourceSha256" ast;
     declarations=definitions;
     init=List.map (stmt top) (items "init" ast);
-    values=List.map (fun v -> text "local" (field "binding" v),source_type top (field "type" v))
+    values=List.mapi (fun index v ->
+      (* A generic value's binders quantify its one signature. *)
+      let binders,quantified = quantify top (-1000-index) (items "typeParams" v) in
+      text "local" (field "binding" v),
+      (match source_type binders (field "type" v),quantified with
+       | t,[] -> t
+       | Atoms [Shape ({calls=[call];_} as shape)],_ ->
+         Atoms [Shape {shape with calls=[{call with quantified}]}]
+       | _ -> unsupported "a generic imported value must be one callable"))
       (items "values" document);
     functions=List.mapi (fun scope f ->
       let parameters = items "typeParams" f in

@@ -470,8 +470,9 @@ mapper and resource bodies are upstream's. SKJS's stubs gained the two real
 APIs it uses, `Values.getUnique` and `process.on`
 ([`runtime-client-apis.ts`](../../tests/expect-error/runtime-client-apis.ts)).
 
-Its first refusal is the generic class `InputDefinition` it imports, so
-**zero of its callables are checked**; no producer proposal, Lean lowering or certificate is
+Its first refusal is `runService`'s result type, the library's `Promise`,
+whose declarations merge across the standard library's files, so **zero of
+its callables are checked**; no producer proposal, Lean lowering or certificate is
 reached. Module constants and top-level statements are in the fragment (see
 [Modules and code units](../DESIGN.md#modules-and-code-units)); the
 `platform` initializer before that class is admitted syntax, though its
@@ -480,7 +481,7 @@ at a time, the blockers behind it are:
 
 | Client part | First refusal when isolated | Later requirement |
 | --- | --- | --- |
-| whole file | generic imported class `InputDefinition` | generic value imports; then the `process` global |
+| whole file | `Promise`, in `runService`'s result | library contracts (`Promise`); then the `process` global |
 | import graph | `InputDefinition` is a value import (a class) | classes as declarations and values |
 | `Plus`, `Minus`, `AddIndex`, `Add`, `Sub`, `Service` | class declaration | classes, `this`, parameter properties, field initializers, `new` |
 | `AddIndex.mapEntry` reading `Values` | `bigint` in `DepSafe` | `Values` contract, `getUnique` and its exception |
@@ -888,10 +889,12 @@ first milestone, in order of how much each gates:
    `InputDefinition`), generic classes, general constructor bodies, statics,
    and array operations inside methods (a closure limitation `AddIndex`
    meets).
-3. **Generic calls.** Done for generic module functions: a call validates
-   its instantiation and reaches that instance. Remaining: generic imported
-   functions and classes (`runService`, `InputDefinition<K, V>`), generic
-   methods (next item), and constructor or tuple-pack parameters.
+3. **Generic calls.** Done for generic module functions and generic imported
+   functions and classes (`InputDefinition<K, V>`): a call validates its
+   instantiation and reaches that instance, and a class's `extends` is a base
+   of its instance type. Remaining: methods of generic classes (a generic
+   application's method rows), generic methods (next item), and constructor
+   or tuple-pack parameters.
 4. **The runtime API's declaration forms.** `Mapper` reaches `Context` and
    `Values`; interpreting them needs:
    - generic interface methods, i.e. quantified method signatures (schemes

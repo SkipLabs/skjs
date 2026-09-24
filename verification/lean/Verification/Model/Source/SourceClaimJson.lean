@@ -577,71 +577,63 @@ private def compile (T : SourceTypes.Table) (f : Fragment.Fn) (claims : Function
     pure (T, acc ++ [({ exprs := overlay, initializedParams := some initialized } : SourceClaims.Overlay)])) init
   return (T, claims, [(c.span, overlays)])
 
-/-- A generic module function reached from a unit: the unit's calls name its
-instances, each validated as a closure's elimination is (exactly its binders,
-ground arguments, every substituted bound), and the slot holds those instances
-as one callable. The function itself is certified for every admissible
-instantiation by its own generic plan, so each instance, and so their
-conjunction, holds of its value. Returns the grown table, the slot's label,
+/-- A generic module value reached from a unit (a generic module function,
+or a generic imported one): the unit's calls name its instances. Each call's
+type arguments must be ground and name exactly its binders, and every bound,
+at those arguments, must hold by the graph's certified subtyping. Each instance
+is the signature at those arguments, a ground callable; the slot holds them
+all as one callable with several signatures. A generic module function is
+certified for every admissible instantiation by its own unit, and an imported
+one is assumed at its declared type, so each instance, and their conjunction,
+holds of the value. Returns the grown table, the slot's type in claim form,
 and the spans of the callee reads and of the calls. -/
-def moduleInstances (T : SourceTypes.Table) (g : Fragment.Fn) (tps : List Fragment.TypeParam)
+def moduleInstances (T : SourceTypes.Table) (g : DeclarationGraph.Instantiable)
     (unit : List Fragment.Stmt) (claims : Function) :
-    Except DirectObligation.Failure (SourceTypes.Table × Nat × List Span × List Span) := do
+    Except DirectObligation.Failure (SourceTypes.Table × Json × List Span × List Span) := do
   let refuse (pos : Span) (reason : String) : DirectObligation.Failure :=
     .refusal pos .schemeElimination reason
   let calls := (unit.flatMap Fragment.Stmt.callees).filter (·.2.2 == g.name)
-  let names := tps.map (·.name)
-  let parameters ← (GenericSource.parametersOf T tps).mapError (refuse g.namePos)
-  let lowered : SourceTypes.Lowering
-      (List (String × Option ClaimType) × ClaimType × List ClaimType × Option ClaimType × ClaimType) := do
-    let binders ← parameters.mapM fun (q : DirectObligation.Parameter) => do
-      return (q.name, ← q.upper.mapM claimOfTy)
-    let params ← g.params.mapM fun p => claimOfType names p.ty
-    let (params, rest) ← match g.params.getLast? with
-      | some p =>
-        if !p.rest then pure (params, none)
-        else match params.reverse with
-          | .array e :: fixed => pure (fixed.reverse, some e)
-          | _ => throw "a generic module function's rest parameter needs a mutable array contract"
-      | none => pure (params, none)
-    return (binders, ← claimOfTy .top, params, rest, ← claimOfType names g.ret)
-  let ((binders, receiver, params, rest, result), T) ← (lowered.run T).mapError (refuse g.namePos)
-  let subs ← calls.mapM fun (pos, _, _) => do
+  let graph (A : List Nat) : Json := Json.mkObj [("top", toJson false),
+    ("atoms", toJson (A.map fun l => Json.mkObj [("a", toJson "graph"), ("label", toJson l)]))]
+  let sites ← calls.mapM fun (pos, _, _) => do
     let some inst := (claims.expressions.find? (·.pos == pos)).bind (·.instantiate)
       | throw (refuse pos s!"a call to the generic function '{g.name}' needs its type arguments")
     let given := inst.map (·.name)
     if given.eraseDups.length != given.length then throw (refuse pos "duplicate type argument")
-    if given.length != names.length || given.any (!names.contains ·) then
+    if given.length != g.binders.length || given.any (!g.binders.contains ·) then
       throw (refuse pos s!"type arguments do not instantiate exactly the binders of '{g.name}'")
-    for i in inst do
-      let _ ← (groundOf s!"the type argument for '{i.name}'" i.type).mapError (refuse pos)
-    let σ := inst.map fun i => (i.name, i.type)
-    for (name, bound) in binders do
+    let σ ← inst.mapM fun i => do
+      let A ← (groundOf s!"the type argument for '{i.name}'" i.type).mapError (refuse pos)
+      pure (i.name, A)
+    pure (pos, σ)
+  let mut T := T
+  let mut seen : List (List (String × List Nat)) := []
+  let mut instances : List Json := []
+  for (pos, σ) in sites do
+    if seen.contains σ then continue
+    seen := seen ++ [σ]
+    let ((callable, bounds), grown) ← ((g.instantiate (σ.map fun (n, A) => (n, graph A))).run T).mapError (refuse pos)
+    T := grown
+    for (n, bound) in bounds do
       if let some upper := bound then
-        let some argument := σ.lookup name | throw (refuse pos s!"no type argument for '{name}'")
-        let actual ← (groundOf s!"the type argument for '{name}'" argument).mapError (refuse pos)
-        let required ← (groundOf s!"the bound of '{name}'" (subst σ upper)).mapError (refuse pos)
-        let actual := DirectObligation.Ty.ground actual
-        let required := DirectObligation.Ty.ground required
-        unless actual.le required do
+        let some actual := σ.lookup n | throw (refuse pos s!"no type argument for '{n}'")
+        let (required, grown) ← ((Fragment.translate upper).run T).mapError (refuse pos)
+        T := grown
+        let G := SourceTypes.graph T
+        let pool := (actual :: required :: (List.range T.length).map (fun m => [m])).eraseDups
+        let proved := match CertificateProducer.subtype G pool actual required with
+          | some proof => PositiveCertificates.check G actual required proof
+          | none => false
+        unless proved do
           throw (.obligation ⟨pos, .schemeElimination,
-            .subtyping parameters [] (.expression pos) actual required⟩)
-    pure σ
-  let σs := subs.foldl (fun acc σ => if acc.contains σ then acc else acc ++ [σ]) []
-  let (T, arrows, variadic) ← σs.foldlM (fun (T, acc, more) σ => do
-    let (T, rc) ← (groundIn T (subst σ receiver)).mapError (refuse g.namePos)
-    let (T, ps) ← params.foldlM (fun (T, ps) q => do
-      let (T, p) ← (groundIn T (subst σ q)).mapError (refuse g.namePos)
-      pure (T, ps ++ [p])) (T, [])
-    let (T, r) ← (groundIn T (subst σ result)).mapError (refuse g.namePos)
-    match rest with
-    | none => pure (T, acc ++ [(rc, ps, r)], more)
-    | some e => do
-      let (T, E) ← (groundIn T (subst σ e)).mapError (refuse g.namePos)
-      pure (T, acc, more ++ [(rc, ps, E, r)])) (T, [], [])
-  let clause : PositiveNormalization.Clause (List Nat) := .arrs arrows variadic
-  let T := SourceTypes.intern T clause
-  return (T, SourceTypes.label T clause, calls.map (·.2.1), calls.map (·.1))
+            .subtyping [] [] (.expression pos) (.ground actual) (.ground required)⟩)
+    let some atom := (callable.getObjVal? "atoms").toOption.bind (fun a => (a.getArr?.toOption.bind (·[0]?)))
+      | throw (refuse pos s!"'{g.name}' is not one callable")
+    instances := instances ++ [atom]
+  let some first := instances.head? | throw (refuse g.pos s!"'{g.name}' has no call to instantiate")
+  let callable := if instances.length == 1 then first else first.setObjVal! "and" (toJson instances.tail)
+  return (T, Json.mkObj [("top", toJson false), ("atoms", toJson [callable])],
+    calls.map (·.2.1), calls.map (·.1))
 
 end Scheme
 
@@ -891,7 +883,7 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
   if (← jStr (← jField ast "sourceSha256")) != d.sourceSha256 then throw "source claim fingerprint mismatch"
   -- Every declaration application in the source becomes a graph row, or, over
   -- a rigid binder, the claim type of its expanded source equation.
-  let (ast, types, imported) ← DeclarationGraph.prepare ast d.types
+  let (ast, types, imported, generics) ← DeclarationGraph.prepare ast d.types
   let d := { d with types }
   if !validTable d.types then throw "declaration graph has an invalid type reference"
   let all ← Fragment.decodeAstWithParams ast
@@ -936,7 +928,6 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
   if decoded.length != d.functions.length then throw "function claim count mismatch"
   let units := decoded.map (fun (f, tps) => (f, tps, none)) ++
     initUnit.map (fun (f, tps, c) => (f, tps, some c))
-  let generics := all.filter fun (_, tps) => !tps.isEmpty
   units.mapM fun (f,tps,initClaims) => do
     let module := if initClaims.isSome then moduleFunctions else moduleFunctions ++ moduleConstants
     let mut c ← match initClaims with
@@ -949,15 +940,20 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
     let mut module := module
     let mut d := d
     if tps.isEmpty then
-      for (g, gtps) in generics do
+      for g in generics do
         if (f.body.flatMap Fragment.Stmt.callees).any (·.2.2 == g.name) then
-          match Scheme.moduleInstances d.types g gtps f.body c with
-          | .ok (T, label, reads, calls) =>
+          match Scheme.moduleInstances d.types g f.body c with
+          | .ok (T, slot, reads, calls) =>
             d := { d with types := T }
-            module := module ++ [(g.name, g.namePos, .ok (Json.mkObj [("top", toJson false),
-              ("atoms", toJson [Json.mkObj [("a", toJson "graph"), ("label", toJson label)]])]))]
+            -- The callee reads are claimed at the slot's type, which the
+            -- source fixes; the producer's reading of them is not needed.
+            let (A, T) ← match (Fragment.translate slot).run d.types with
+              | .ok r => pure r
+              | .error reason => throw (sourceRefusal d.types g.pos .schemeElimination reason)
+            d := { d with types := T }
+            module := module ++ [(g.name, g.pos, .ok slot)]
             c := { c with expressions := c.expressions.map fun e =>
-              if reads.contains e.pos then { e with type := .labels [label] }
+              if reads.contains e.pos then { e with type := .labels A }
               else if calls.contains e.pos then { e with instantiate := none } else e }
           | .error (.obligation failure) => throw (directFailure d.types failure)
           | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)

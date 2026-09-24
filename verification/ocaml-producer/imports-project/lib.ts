@@ -17,3 +17,24 @@ export class Counter {
 export function generic<T>(x: T): T {
   return x;
 }
+export class Holder<T> {
+  value: T;
+  constructor(value: T) {
+    this.value = value;
+  }
+}
+export class Keeper<T> {
+  value: T;
+  constructor(value: T) {
+    this.value = value;
+  }
+  get(): T {
+    return this.value;
+  }
+}
+export class Tagged {
+  readonly tag: number = 1;
+}
+export class Named extends Tagged {
+  readonly name: string = "named";
+}
