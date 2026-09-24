@@ -1863,7 +1863,8 @@ bespoke operand-mapping proof. `clauseArguments` owns the tuple-list meaning
 used by `graphArguments`, and `clauseImg_arguments`/`graphArguments_image`
 prove its plain-row image from element equalities **at the same level**.
 A control checks an actual table substituting an object for a tuple element,
-uses production `table_row` at that level, and derives the tuple's list image.
+uses mixed semantics throughout, and derives the tuple's list image from the
+parameter's value image at that level.
 Removing the operand entry is refused. Binder correspondence under scheme
 renaming now also works over either assignment carrier.
 
@@ -1881,8 +1882,14 @@ The production entry point still selects `legacyParameters`: its environment,
 The remaining joint row-image induction must connect those plain-row lemmas
 with the selected-parameter and binder-renaming lemmas under nested scheme
 bounds, using the shared free-variable independence proof.
-It must establish value images and then argument images at each level, with
-the latter using the former's current-level result. The mixed interpretation
+The argument half is now proved for **every checked entry**, including
+parameters, unchanged rows, schemes and clause images. `table_row_arguments`
+uses value images at the current level; `table_row_mixed_of_values` combines
+them into both components. Neither theorem assumes the table contains only
+pack rows. The remaining value half must establish its images from both
+components at strictly smaller levels, especially through nested scheme
+bounds. These conditional theorems do not yet establish the whole recursive
+table result. The mixed interpretation
 already excludes pack-value denotations; the production legacy adapter and
 stability guards must be retired after that switch. The mixed fixed-point theorem is not yet a change to CLI acceptance.
 

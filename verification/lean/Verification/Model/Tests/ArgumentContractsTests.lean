@@ -47,33 +47,30 @@ private theorem imageChecked :
 example : PositiveRules.TableOk imageGraph [(0, imageContext, [3])]
     [0,1,2,3,4] imageFree = false := by decide
 
-private noncomputable def objectAssignment : Assignment Nat :=
-  assign Assignment.empty [1]
-    [⟨PositiveRules.meaning imageGraph [2], PositiveRules.meaning_valueFam imageGraph [2]⟩]
-
-example (μ ν : MixedAssignment Nat) (n : Nat) (W : WorldT n) (vs : List Val) :
-    graphArguments imageGraph μ (qMeaning imageGraph objectAssignment) [0] n W vs ↔
-      graphArguments imageGraph ν (qMeaning imageGraph Assignment.empty) [3] n W vs := by
-  apply PositiveRules.graphArguments_image imageGraph imageTable imageContext μ ν
-    _ _ 0 3 (by decide) (by decide) (by decide) n W vs
-  · intro c hc S hS
-    have hc' : c = .pack ⟨[[1]], [], none, false⟩ [] := by
-      simpa [imageGraph, NormalGraph.clauses, NormalGraph.plain, NormalGraph.params] using hc
-    subst c
-    have hS' : S = [1] := by simpa [Clause.operands, Tuple.operands] using hS
-    subst S
-    refine ⟨[2], by decide, fun v => ?_⟩
-    have hrel : PositiveRules.RelK imageGraph imageContext [1] objectAssignment Assignment.empty := by
-      intro p hp
-      have hp' : p = 1 := by simpa using hp
-      subst p
-      simp [imageContext, objectAssignment, assign_cons_head, PositiveRules.meaning,
-        qMeaning, imageGraph]
-      rfl
-    have hi := PositiveRules.table_row imageChecked n objectAssignment Assignment.empty
-      (1, imageContext, [2]) (by decide) hrel W v
-    simpa [qMeaning, setSem] using hi
-  · intro v; simp [qMeaning, setSem]
+/-- This control now uses mixed semantics throughout. The only nonempty
+value image is the parameter's; the generic table theorem derives the pack
+image from it at the current level, including at level zero. -/
+example (η : MixedAssignment Nat) (n : Nat) (W : WorldT n) (vs : List Val) :
+    mixedMeaning imageGraph
+      (assign η [1] [⟨mixedMeaning imageGraph η [2], mixedMeaning_valid imageGraph η [2]⟩])
+      [0] n W (.inr vs) ↔ mixedMeaning imageGraph η [3] n W (.inr vs) := by
+  apply PositiveRules.table_row_mixed_of_values imageChecked n ?_ _ η
+    (0, imageContext, [3]) (by decide) ?_ W (.inr vs)
+  · intro μ ν e he hrel U v
+    have he' : e = (0, imageContext, [3]) ∨ e = (1, imageContext, [2]) := by
+      simpa [imageTable] using he
+    rcases he' with rfl | rfl
+    · have left := mixedMeaning_pack_value imageGraph μ 0 _ _ rfl n U v
+      have right := mixedMeaning_pack_value imageGraph ν 3 _ _ rfl n U v
+      apply iff_of_false _ right
+      intro h
+      exact left ⟨0, by simp, h⟩
+    · have h := PositiveRules.mixed_parameter_image imageGraph imageContext μ ν 1 .value [2]
+        (by decide) (by decide) hrel
+      have hv := iff_of_eq (congrFun (congrFun (congrFun h n) U) (.inl v))
+      simpa [mixedMeaning, mixedParameters, setSem] using hv
+  · exact PositiveRules.mixed_assignment_substitution imageGraph η [1] [[2]]
+      (by decide) (by decide) _
 
 /-- One checked substitution supplies an object value type and a whole tuple
 of objects. Its selected relation uses the graph meaning for both binders. -/

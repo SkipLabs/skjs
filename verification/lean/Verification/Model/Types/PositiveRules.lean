@@ -2213,6 +2213,133 @@ theorem table_row [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {D 
       rw [hr]
       rfl
 
+/-- The argument half of table transport uses the value half at exactly the
+same level. It covers every checked entry, including parameters, unchanged
+rows and schemes; it does not assume the table contains only tuple rows. -/
+theorem table_row_arguments [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι}
+    {D : List ι} {V : FreeMap ι} (hok : TableOk G tbl D V = true) (n : Nat)
+    (hv : ∀ η θ : MixedAssignment ι, ∀ e ∈ tbl,
+      RelKWith G (mixedParameters G) e.2.1 (fv V e.1) η θ →
+      ∀ (W : WorldT n) v, qDenoteWithArgs G (mixedParameters G) (η, e.1) n W v ↔
+        mixedMeaning G θ e.2.2 n W (.inl v)) :
+    ∀ η θ : MixedAssignment ι, ∀ e ∈ tbl,
+      RelKWith G (mixedParameters G) e.2.1 (fv V e.1) η θ →
+      ∀ (W : WorldT n) vs, mixedMeaning G η [e.1] n W (.inr vs) ↔
+        mixedMeaning G θ e.2.2 n W (.inr vs) := by
+  simp only [TableOk, Bool.and_eq_true, List.all_eq_true] at hok
+  obtain ⟨⟨hF, hrows⟩, hents⟩ := hok
+  rintro η θ ⟨i, κ, T⟩ he hrel W vs
+  have hiD : i ∈ D := by
+    have := hrows i (List.mem_flatMap.mpr ⟨(i, κ, T), he, List.mem_cons_self⟩)
+    simpa using this
+  have ⟨hself, hreads, _⟩ := freeOk_row hF hiD
+  have hrow := hents _ he
+  simp only [entryOk] at hrow
+  cases hp : G.params i
+  · simp only [hp, Bool.false_eq_true, if_false] at hrow
+    by_cases hrig : (T == [i] && (fv V i).all (fun p => (κ.lookup p).isNone)) = true
+    · simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true,
+        Option.isNone_iff_eq_none] at hrig
+      obtain ⟨rfl, hfree⟩ := hrig
+      have h := graphArguments_free hF _
+        (agree_freeWith hF (mixedParameters G) (mixed_respectsFree hF)) η θ [i]
+        (fun l hl => by cases List.mem_singleton.mp hl; exact hiD)
+        (fun l hl p hp' => by
+          cases List.mem_singleton.mp hl
+          have hr := hrel p hp'
+          rw [hfree p hp'] at hr
+          exact hr)
+      exact iff_of_eq (congrFun (congrFun (congrFun h n) W) vs)
+    · have hrigF : (T == [i] && (fv V i).all (fun p => (κ.lookup p).isNone)) = false := by
+        simpa using hrig
+      simp only [hrigF, Bool.false_eq_true, if_false] at hrow
+      cases hs : G.schemes i with
+      | some s =>
+        cases T with
+        | nil => simp [hs] at hrow
+        | cons j rest =>
+          cases rest with
+          | cons _ _ => simp [hs] at hrow
+          | nil =>
+            cases ht : G.schemes j with
+            | none => simp [hs, ht] at hrow
+            | some t =>
+              have hj : G.params j = false := by
+                simp only [hs, ht, Bool.and_eq_true, Bool.not_eq_true'] at hrow
+                exact hrow.1.1.1.1.1.1.1.1
+              have noArgs : ∀ (σ : MixedAssignment ι) l,
+                  G.params l = false → G.schemes l ≠ none →
+                  ¬ mixedMeaning G σ [l] n W (.inr vs) := by
+                intro σ l hl hsch
+                have hk : G.parameterKinds l = none := by simpa [NormalGraph.params] using hl
+                simp [mixedMeaning, mixedParameters, graphArguments, hk,
+                  NormalGraph.clauses, NormalGraph.plain, hsch]
+              -- A scheme contributes values only, regardless of its binders.
+              exact iff_of_false (noArgs η i hp (by simp [hs]))
+                (noArgs θ j hj (by simp [ht]))
+      | none =>
+        cases T with
+        | nil => simp [hs] at hrow
+        | cons j rest =>
+          cases rest with
+          | cons _ _ => simp [hs] at hrow
+          | nil =>
+            simp only [hs, Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at hrow
+            obtain ⟨⟨⟨hip, hjp⟩, hops⟩, hG⟩ := hrow
+            apply graphArguments_image G tbl κ η θ _ _ i j hip hjp hG n W vs
+            · intro c hc S hS
+              obtain ⟨U, hU⟩ := Option.isSome_iff_exists.mp (hops c hc S hS)
+              refine ⟨U, hU, fun v => tyImg_iff hU fun l hl T hT => ?_⟩
+              apply hv η θ (l, κ, T) (entryImg_mem hT) _ W v
+              intro p hp'
+              have hlr : l ∈ reads G i := by
+                simp only [reads, hs]
+                exact List.mem_flatMap.mpr ⟨c, hc, List.mem_flatten.mpr ⟨S, hS, hl⟩⟩
+              rcases (hreads l hlr).2 p hp' with h | ⟨s', hs', _⟩
+              · exact hrel p h
+              · rw [hs] at hs'; cases hs'
+            · intro v; simp [setSem]
+  · simp only [hp, if_true, Bool.and_eq_true, beq_iff_eq] at hrow
+    obtain ⟨rfl, _⟩ := hrow
+    have hr := hrel i (hself hp)
+    obtain ⟨kind, hk⟩ : ∃ kind, G.parameterKinds i = some kind := by
+      simpa [NormalGraph.params, Option.isSome_iff_exists] using hp
+    rw [mixedMeaning_parameter G η i kind hk]
+    cases hκ : κ.lookup i with
+    | none =>
+      rw [hκ] at hr
+      simp only [Option.getD_none]
+      rw [mixedMeaning_parameter G θ i kind hk]
+      change selectParameter (G.parameterKinds i) _ = selectParameter (G.parameterKinds i) _ at hr
+      rw [hk] at hr
+      rw [hr]
+    | some U =>
+      rw [hκ] at hr
+      simp only [Option.getD_some]
+      change selectParameter (G.parameterKinds i) _ = mixedMeaning G θ U at hr
+      rw [hk] at hr
+      rw [hr]
+
+/-- Closing one level of a mixed table proof needs only its value images:
+the argument images follow at that same level. In the recursive proof the
+value step may use both components at strictly smaller levels. -/
+theorem table_row_mixed_of_values [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι}
+    {D : List ι} {V : FreeMap ι} (hok : TableOk G tbl D V = true) (n : Nat)
+    (hv : ∀ η θ : MixedAssignment ι, ∀ e ∈ tbl,
+      RelKWith G (mixedParameters G) e.2.1 (fv V e.1) η θ →
+      ∀ (W : WorldT n) v, qDenoteWithArgs G (mixedParameters G) (η, e.1) n W v ↔
+        mixedMeaning G θ e.2.2 n W (.inl v)) :
+    ∀ η θ : MixedAssignment ι, ∀ e ∈ tbl,
+      RelKWith G (mixedParameters G) e.2.1 (fv V e.1) η θ →
+      ∀ (W : WorldT n) x, mixedMeaning G η [e.1] n W x ↔
+        mixedMeaning G θ e.2.2 n W x := by
+  intro η θ e he hrel W x
+  cases x with
+  | inl v =>
+    change (∃ i ∈ [e.1], qDenoteWithArgs G (mixedParameters G) (η, i) n W v) ↔ _
+    simpa only [List.mem_singleton, exists_eq_left] using hv η θ e he hrel W v
+  | inr vs => exact table_row_arguments hok n hv η θ e he hrel W vs
+
 theorem assign_zip_map [DecidableEq ι] {k : ParameterSpace} (η : ParameterAssignment k ι) (F : List ι → ParameterFamily k) :
     ∀ {bs : List ι} {θs : List (List ι)} {b : ι} {U : List ι},
       (bs.zip θs).lookup b = some U → (assign η bs (θs.map F)).1 b = (F U).1
@@ -2482,6 +2609,8 @@ theorem Sub.congr {G : NormalGraph ι} {S S' T T' : List ι}
     exact .trans (.subset (fun i hi => (hs i).mp hi))
       (.trans h (.subset (fun i hi => (ht i).mpr hi)))
 
+#print axioms table_row_mixed_of_values
+#print axioms table_row_arguments
 #print axioms mixed_assignment_substitution
 #print axioms mixed_parameter_image
 #print axioms mixed_enter_binder

@@ -1126,9 +1126,11 @@ approximation proof for mixed assignments and nested scheme captures. The
 selected parameter and binder-renaming lemmas are proved, and the mixed
 interpretation now excludes runtime pack values. The existing kind check is
 connected to semantic sort separation and to a graph-derived mixed
-substitution. The remaining joint table-image induction must connect those
-lemmas through nested schemes before migrating the production bound/subtype
-certificates.
+substitution. The argument half of table transport is now proved for every
+checked entry, using the value images at the same level; the object-substitution
+control now uses mixed semantics throughout. The remaining value half must
+connect those lemmas through nested schemes using both components at smaller
+levels, before migrating the production bound/subtype certificates.
 The producer now distinguishes value and pack substitutions internally and uses
 one pack encoder for homogeneous and tuple rests. Its wire output still uses
 the existing pack rows, so this is not the verifier migration. The universal
