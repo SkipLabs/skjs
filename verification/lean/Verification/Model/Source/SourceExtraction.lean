@@ -2723,6 +2723,19 @@ position, and its source type (a function's signature, a constant's
 annotation), or why it has none. -/
 abbrev ModuleValue := String × Span × Except String Json
 
+/-- Whether two label lists denote the same type. Rows with identical clauses
+do. Otherwise each is proved to include the other, by certificates the proved
+checker accepts: that identifies two rows reserved separately for the same
+recursive application, whose clauses differ only in which of them they name. -/
+private def sameMeaning (T : SourceTypes.Table) (A B : List Nat) : Bool :=
+  SourceTypes.canonical T A == SourceTypes.canonical T B ||
+    (let G := SourceTypes.graph T
+     let pool := CertificateProducer.vocabulary G (List.range T.length) [] [A, B]
+     let le (X Y : List Nat) := match CertificateProducer.subtype G pool X Y with
+       | some proof => PositiveCertificates.check G X Y proof
+       | none => false
+     le A B && le B A)
+
 /-- The table is the one the claims were lowered into; annotations the claims
 did not mention grow it, and the request carries the result. -/
 def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceClaims.Function)
@@ -2787,11 +2800,11 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
       if p.name != name then throw "parameter claim name or order mismatch"
       let B ← SourceClaims.resolve (← table).length claimed
       let T ← table
-      if SourceTypes.canonical T A != SourceTypes.canonical T B then
+      if !sameMeaning T A B then
         throw s!"claimed parameter type differs from the source annotation for '{name}'"
     let R ← lower (Fragment.translate f.ret)
     let claimedR ← SourceClaims.resolve (← table).length fc.ret
-    if SourceTypes.canonical (← table) R != SourceTypes.canonical (← table) claimedR then
+    if !sameMeaning (← table) R claimedR then
       throw (locatedRefusal (← table) f.namePos .returnContract
         "claimed return type differs from the source annotation")
     let stmts ← f.body.mapM (comparisonsStmt fc)

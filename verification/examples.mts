@@ -74,10 +74,11 @@ function run(command: string, args: string[]) {
 // cannot parse are left out: a parse failure is not type incompleteness.
 // tsc's column carries no policy; its gaps on the same files are noted beside.
 const ocamlWitnessGaps: Record<string, string[]> = {
-  // Both: the fresh literal is claimed with the singleton `ready: true` where
-  // the location contract is `boolean`, and the parameter's record fields are
-  // exported in another order than the annotation writes them.
-  "objects.ts": ["aliasWrite", "objectParameter"],
+  // The fresh literal is claimed with the singleton `ready: true` where the
+  // location contract is `boolean`. (`objectParameter`'s record fields are
+  // exported in another order than the annotation writes them; a claimed
+  // parameter type is compared by meaning, so that verifies.)
+  "objects.ts": ["aliasWrite"],
   // `choose.bind(null, seed)`: no claim is exported for the bound call.
   "blocks-bind.ts": ["partialApplication"],
   // No statement environment is exported at the return of a discarded result.

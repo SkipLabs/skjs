@@ -1436,6 +1436,28 @@ TypeScript resolves the declaration; nothing here checks the imported code.
 The declaration document lists these values, so a module's result is
 visibly relative to them.
 
+**The standard library.** Library contracts are TypeScript's own
+declarations, read like any library's: a type name the module neither imports
+nor declares, such as `Promise`, is a root when TypeScript binds it to a
+global declaration. Reading them needs the forms those files use:
+
+- An interface declared several times is one interface with every
+  declaration's members, identified by the first, as TypeScript merges it.
+  The parts must agree on their type parameters and name no member twice.
+- A well-known symbol key such as `[Symbol.iterator]` is a symbol key: the
+  `readonly iterator: unique symbol` property of `SymbolConstructor` is its
+  identity.
+- A declaration's `any` is `unknown`. What the library returns at it is
+  assumed to be anything, and what it accepts at it may be anything.
+  TypeScript's `any` also converts to every type, and nothing here inherits
+  that; the checked module's own annotations may not write `any`.
+- A generic application inside its own declaration at the same arguments,
+  such as `finally(): Promise<T>` in `Promise<T>`, is the row reserved for it.
+  A producer may reserve its own row for the same application, and the two
+  rows differ only in which of them they name. A claimed parameter or result
+  type is therefore compared by meaning: identical rows, or inclusion in
+  both directions by certificates the proved checker accepts.
+
 **Classes.** A class declares its instance type in the declaration graph,
 and its value is a statement of the module initialization, in order. The
 parser lowers it to method closures allocated once, as its prototype's, and a

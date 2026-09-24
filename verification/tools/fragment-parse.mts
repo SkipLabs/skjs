@@ -1827,8 +1827,27 @@ export function parseFile(file: string, carriesContext = false,
   };
   const localNodes: Array<TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration> =
     [...(carriesContext ? aliasNodes.filter(statable) : aliasNodes), ...interfaceNodes, ...classNodes];
-  if (importNodes.length || localNodes.length) {
-    const first = importNodes[0] ?? localNodes[0];
+  // A type name the file neither imports nor declares may be a global, such
+  // as the standard library's `Promise`: TypeScript decides, and a global
+  // declaration joins the graph as a root. Each name's first reference
+  // stands for it.
+  const rooted = new Set<string>([
+    ...importNodes.flatMap(node => {
+      const bindings = node.importClause?.namedBindings;
+      return bindings && ts.isNamedImports(bindings) ? bindings.elements.map(e => e.name.text) : [];
+    }),
+    ...[...aliasNodes, ...interfaceNodes, ...classNodes].flatMap(node => node.name ? [node.name.text] : []),
+  ]);
+  const globalNodes: Identifier[] = [];
+  const findGlobals = (node: Node): void => {
+    if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) &&
+        !rooted.has(node.typeName.text) && !globalNodes.some(g => g.text === (node.typeName as Identifier).text))
+      globalNodes.push(node.typeName);
+    node.forEachChild(findGlobals);
+  };
+  if (!carriesContext) findGlobals(source);
+  if (importNodes.length || localNodes.length || globalNodes.length) {
+    const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0];
     if (!first) throw Error("missing declaration root");
     // Named imports only. A type import joins the declaration graph; a value
     // import is an assumption at the type its declaration states.
@@ -1842,10 +1861,11 @@ export function parseFile(file: string, carriesContext = false,
     // one named explicitly: the declaration graph is the compiler's.
     try {
       declarations = collectDeclarations(resolutionFile, { tsconfigPath, client: source,
-        locals: localNodes.map(node => gate.span(node)) });
+        locals: localNodes.map(node => gate.span(node)),
+        globals: globalNodes.map(node => gate.span(node)) });
     } catch (error) {
       const at = error instanceof DeclarationError
-        ? [...importNodes, ...localNodes].find(node =>
+        ? [...importNodes, ...localNodes, ...globalNodes].find(node =>
             node.getStart(source) === error.at[0]) ?? first
         : first;
       gate.fail(at, messageOf(error));
@@ -1858,7 +1878,7 @@ export function parseFile(file: string, carriesContext = false,
         d.declaration.span[1] === identity.span[1]);
       if (!definition)
         return gate.fail(first, `type definition missing: ${identity.module}#${identity.name}`);
-      const node = [...importNodes, ...localNodes].find(n =>
+      const node = [...importNodes, ...localNodes, ...globalNodes].find(n =>
         n.getStart(source) === root.binding.span[0]) ?? first;
       gate.registerDeclaredType(root.binding.local,
         definition.parameters.filter(p => p.default === null).length,

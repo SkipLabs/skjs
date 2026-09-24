@@ -101,9 +101,23 @@ private def inheritRows (own base : List (Clause (List Nat))) : Except String (L
     if rows.isEmpty then throw "inherited interface contracts have no representable intersection"
     return rows
 
+/-- The declarations being lowered, innermost first, and the ground
+applications whose rows are reserved while their equations are lowered. -/
+private structure Visit where
+  declarations : List Nat := []
+  rows : List (Nat × Array (List Nat) × Nat) := []
+
+private def Visit.enter (v : Visit) (i : Nat) : Visit := { v with declarations := i :: v.declarations }
+private def Visit.contains (v : Visit) (i : Nat) : Bool := v.declarations.contains i
+private def Visit.reserve (v : Visit) (i : Nat) (values : Array (List Nat)) (row : Nat) : Visit :=
+  { v with rows := (i, values, row) :: v.rows }
+/-- The row reserved for declaration `i` applied to exactly `values`. -/
+private def Visit.reserved (v : Visit) (i : Nat) (values : Array (List Nat)) : Option Nat :=
+  (v.rows.find? fun (j, args, _) => j == i && args == values).map (·.2.2)
+
 mutual
 private partial def lowerType (ds : Array Definition) (owner : Nat)
-    (params : Array (List Nat)) (seen : List Nat) (term : Json) : Lowering (List Nat) := do
+    (params : Array (List Nat)) (seen : Visit) (term : Json) : Lowering (List Nat) := do
   match ← str term "k" with
   | "atom" =>
     match ← str term "name" with
@@ -158,9 +172,12 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     if ds[i]!.parameters.isEmpty then
       if !args.isEmpty then throw "reference has too many type arguments"
       else return [rowIndex ds i]
-    if seen.contains i then throw "recursive generic application needs memoized rows"
     let values ← args.mapM (lowerType ds owner params seen)
     let values ← lowerApplication ds i values seen
+    -- A recursive application at the same arguments is the row reserved for
+    -- it; at other arguments it would unfold without end.
+    if let some row := seen.reserved i values then return [row]
+    if seen.contains i then throw "recursive generic application needs memoized rows"
     groundApplication ds i values seen
   | "array" =>
     let element ← lowerType ds owner params seen (← field term "element")
@@ -238,7 +255,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
   | _ => throw "source type constructor outside the graph fragment"
 
 private partial def lowerApplication (ds : Array Definition) (i : Nat)
-    (supplied : Array (List Nat)) (seen : List Nat) : Lowering (Array (List Nat)) := do
+    (supplied : Array (List Nat)) (seen : Visit) : Lowering (Array (List Nat)) := do
   let d := ds[i]!
   if supplied.size > d.parameters.size then throw "reference has too many type arguments"
   let mut values := supplied
@@ -246,14 +263,14 @@ private partial def lowerApplication (ds : Array Definition) (i : Nat)
     CellClaims.fieldsExactly p ["name", "span", "bound", "default"]
     let default ← field p "default"
     if default == .null then throw "type application has missing required argument"
-    values := values.push (← lowerType ds i values (i :: seen) default)
+    values := values.push (← lowerType ds i values (seen.enter i) default)
   for index in [:d.parameters.size] do
     let p := d.parameters[index]!
     CellClaims.fieldsExactly p ["name", "span", "bound", "default"]
     let bound ← field p "bound"
     if bound != .null then
       let actual := values[index]!
-      let upper ← lowerType ds i (values.toList.take index).toArray (i :: seen) bound
+      let upper ← lowerType ds i (values.toList.take index).toArray (seen.enter i) bound
       let table ← get
       let graph := SourceTypes.graph table
       let pool := (actual :: upper :: (List.range table.length).map (fun n => [n])).eraseDups
@@ -272,19 +289,19 @@ methods reserves its own row first, since the methods' receiver is that
 application, and fills it with the equation lowered at those arguments. Any
 other is its equation's labels, so `Id<boolean>` is exactly `[1, 2]`. -/
 private partial def groundApplication (ds : Array Definition) (i : Nat)
-    (values : Array (List Nat)) (seen : List Nat) : Lowering (List Nat) := do
+    (values : Array (List Nat)) (seen : Visit) : Lowering (List Nat) := do
   if mentionsSelf ds[i]!.expression then
     let row ← modifyGet fun T => (T.length, T ++ [[]])
-    let rows ← lowerDefinitionRows ds i (values.push [row]) (i :: seen)
+    let rows ← lowerDefinitionRows ds i (values.push [row]) ((seen.enter i).reserve i values row)
     modify fun T => T.set row rows
     return [row]
   if ds[i]!.bases.isEmpty then
-    lowerType ds i values (i :: seen) ds[i]!.expression
+    lowerType ds i values (seen.enter i) ds[i]!.expression
   else
-    (← lowerDefinitionRows ds i values (i :: seen)).mapM use
+    (← lowerDefinitionRows ds i values (seen.enter i)).mapM use
 
 private partial def lowerHead (ds : Array Definition) (owner : Nat)
-    (params : Array (List Nat)) (seen : List Nat)
+    (params : Array (List Nat)) (seen : Visit)
     (term : Json) : Lowering (List (Clause (List Nat))) := do
   match ← str term "k" with
   | "union" =>
@@ -301,14 +318,14 @@ private partial def lowerHead (ds : Array Definition) (owner : Nat)
       let labels ← groundApplication ds i values seen
       let table ← get
       return labels.flatMap (SourceTypes.graph table)
-    lowerDefinitionRows ds i values (i :: seen)
+    lowerDefinitionRows ds i values (seen.enter i)
   | _ =>
     let labels ← lowerType ds owner params seen term
     let table ← get
     return labels.flatMap (SourceTypes.graph table)
 
 private partial def lowerDefinitionRows (ds : Array Definition) (i : Nat)
-    (params : Array (List Nat)) (seen : List Nat) :
+    (params : Array (List Nat)) (seen : Visit) :
     Lowering (List (Clause (List Nat))) := do
   let mut rows ← lowerHead ds i params seen ds[i]!.expression
   for base in ds[i]!.bases do
@@ -326,7 +343,7 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table) :
   let mut table := candidate
   for i in [:ds.size] do
     if ds[i]!.parameters.isEmpty then
-      let (row, expanded) ← (lowerDefinitionRows ds i #[] [i]).run table
+      let (row, expanded) ← (lowerDefinitionRows ds i #[] ⟨[i], []⟩).run table
       table := expanded.set (rowIndex ds i) row
   return table
 
@@ -363,7 +380,7 @@ This is the one path for every declaration applied to a rigid argument. -/
 private partial def rigidClaim (ds : Array Definition) (owner : Nat) (env : Array Json)
     (seen : List Nat) (term : Json) : Lowering Json := do
   if !mentionsParameter term then
-    return graphClaim (← lowerType ds owner #[] seen term)
+    return graphClaim (← lowerType ds owner #[] ⟨seen, []⟩ term)
   match ← str term "k" with
   | "parameter" =>
     CellClaims.fieldsExactly term ["k", "index", "span"]
@@ -553,8 +570,8 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
       if !args.isEmpty then throw "type application has wrong arity"
       return graphClaim [rowIndex ds index]
     let values ← args.mapM Fragment.translate
-    let values ← lowerApplication ds index values []
-    let labels ← groundApplication ds index values []
+    let values ← lowerApplication ds index values {}
+    let labels ← groundApplication ds index values {}
     if labels.isEmpty then throw "generic application has no inhabited graph clause"
     return graphClaim labels
   | k => throw s!"declaration syntax '{k}' in a source annotation"

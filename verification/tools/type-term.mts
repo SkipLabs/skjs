@@ -23,9 +23,10 @@ export type TermScope = {
    * required fields and at most one readonly string index. A declaration body
    * states what its equation says, and Lean decides what lowers. */
   annotation: boolean;
-  /** A computed key `[x]`: the index of the `unique symbol` constant `x`
-   * denotes. A scope without it reads no symbol key. */
-  symbol?(name: Identifier): number;
+  /** A computed key `[x]` or `[o.x]`: the index of the `unique symbol`
+   * constant or readonly property it denotes. A scope without it reads no
+   * symbol key. */
+  symbol?(name: Identifier | ts.PropertyAccessExpression): number;
 };
 
 type FunctionTerm = Extract<TypeTerm, { k: "function" }>;
@@ -66,6 +67,14 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
     case ts.SyntaxKind.BigIntKeyword: return atom("bigint");
     case ts.SyntaxKind.SymbolKeyword: return atom("symbol");
     case ts.SyntaxKind.UnknownKeyword: return atom("unknown");
+    // A declaration's `any` constrains nothing, and `unknown` says exactly
+    // that: what the library returns at it is assumed to be anything, and what
+    // it accepts at it may be anything. TypeScript's `any` also converts to
+    // every type; nothing here inherits that. An annotation of the checked
+    // source states its own types, and `any` stays outside them.
+    case ts.SyntaxKind.AnyKeyword:
+      if (!scope.annotation) return atom("unknown");
+      break;
     case ts.SyntaxKind.NeverKeyword: return atom("never");
     case ts.SyntaxKind.VoidKeyword: return atom("void");
   }
@@ -216,7 +225,8 @@ export function signature(scope: TermScope, parameters: readonly ts.ParameterDec
 function propertyKey(scope: TermScope, name: Node | undefined): PropertyKey | null {
   if (!name) return null;
   if (ts.isIdentifier(name) || (!scope.annotation && ts.isStringLiteral(name))) return name.text;
-  if (ts.isComputedPropertyName(name) && ts.isIdentifier(name.expression) && scope.symbol)
+  if (ts.isComputedPropertyName(name) && scope.symbol &&
+      (ts.isIdentifier(name.expression) || ts.isPropertyAccessExpression(name.expression)))
     return { symbol: scope.symbol(name.expression) };
   return null;
 }

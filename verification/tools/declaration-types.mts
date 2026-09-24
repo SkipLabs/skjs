@@ -17,11 +17,14 @@ export type DeclarationIdentity = {
  * denotes, by its index in the document's `symbols`. */
 export type PropertyKey = string | { symbol: number };
 /** A name the client binds to a declaration: an imported name (the span is
- * the import declaration's) or one of the client's own declarations. */
+ * the import declaration's), one of the client's own declarations, or a
+ * global the client names without importing it, such as the standard
+ * library's `Promise` (the span is its first reference). */
 export type TypeRoot = {
   binding:
     | { kind: "import"; local: string; imported: string; specifier: string; span: Span }
-    | { kind: "local"; local: string; span: Span };
+    | { kind: "local"; local: string; span: Span }
+    | { kind: "global"; local: string; span: Span };
   declaration: DeclarationIdentity;
 };
 /** A reference inside a declaration, with the declaration TypeScript resolves it to. */

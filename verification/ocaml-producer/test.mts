@@ -110,10 +110,11 @@ for (const [file, expected] of [
     ["InputDefinition", "skipruntime-ts/core/src/api.ts", "InputDefinition", "ClassDeclaration"],
     ["runService", "skipruntime-ts/server/src/server.ts", "runService", "FunctionDeclaration"],
   ]);
-  // The runtime's value imports resolve; `runService` returns the library's
-  // `Promise`, whose declarations merge across the standard library's files.
+  // The runtime's value imports resolve, and `runService`'s `Promise` is read
+  // from the standard library's merged declarations. The first refusal is
+  // `Iterator.next`'s destructured rest parameter, which `Iterable` reaches.
   assert.throws(() => collectDeclarations(source, { tsconfigPath: upstreamConfig }),
-    /TypeScript found \d+ declarations for \S*#Promise/);
+    /expected an ordinary parameter in \S*lib\.es2015\.iterable\.d\.ts#Iterator/);
   // Each runtime interface sum.ts imports, applied in a client of the same
   // project, and the first declaration the graph refuses on its way.
   const probe = mkdtempSync(join(tmpdir(), "skjs-runtime-api-"));
@@ -123,12 +124,13 @@ for (const [file, expected] of [
   // A generic method is an opaque member and a `unique symbol` key is a
   // field keyed by that symbol, so `Resource`, `Context` and
   // `EagerCollection` (through `Managed`'s `[sk_managed]`) collect; `Mapper`
-  // and `Values` stop at the library's `Iterable`.
+  // and `Values` reach the library's `Iterable`, and stop at `Iterator.next`'s
+  // destructured rest parameter.
   for (const [use, imports, refusal] of [
     ["Mapper<string, number, string, number>", "Mapper",
-      /type outside the fragment \(AnyKeyword\) in \S*lib\.es2015\.iterable\.d\.ts#Iterable/],
+      /expected an ordinary parameter in \S*lib\.es2015\.iterable\.d\.ts#Iterator/],
     ["Values<number>", "Values",
-      /type outside the fragment \(AnyKeyword\) in \S*lib\.es2015\.iterable\.d\.ts#Iterable/],
+      /expected an ordinary parameter in \S*lib\.es2015\.iterable\.d\.ts#Iterator/],
     ["EagerCollection<string, number>", "EagerCollection", null],
     ["Resource<SharedCollections>", "Resource, SharedCollections", null],
     ["Context", "Context", null],
@@ -164,7 +166,8 @@ for (const [file, expected] of [
   const exported = join(mkdtempSync(join(tmpdir(), "skjs-export-")), "client.ts");
   writeFileSync(exported, "export function own(this: undefined): undefined { return this; }\n");
   assert.equal(parseFile(exported).functions[0]?.body[0]?.k, "return");
-  writeFileSync(exported, "export async function own(): Promise<boolean> { return true; }\n");
+  // No type name here reaches a declaration, so the modifier is the refusal.
+  writeFileSync(exported, "export async function own(): undefined { return undefined; }\n");
   assert.throws(() => parseFile(exported),
     /only the export modifier is admitted on a source function/);
   const jsonAst = parseFile(jsonPath, false, upstreamConfig);
@@ -644,10 +647,16 @@ for (const [file, expected] of [
     "export type Conditional<T> = T extends boolean ? number : string;");
   assert.throws(() => graphOf("import type { Conditional } from './conditional.js';"),
     /type outside the fragment \(ConditionalType\) in conditional.ts#Conditional/);
-  // A second global declaration merges with the first: no single equation.
+  // A second global declaration merges with the first, as TypeScript merges
+  // it: one equation with both declarations' members, identified by the first.
   writeFileSync(join(pairDir, "other-global.d.ts"), "interface GlobalBox { readonly other: number; }\n");
-  assert.throws(() => parseFile(boxClient, false, pairConfig),
-    /TypeScript found 2 declarations for box.ts#GlobalBox/);
+  const mergedBox = parseFile(boxClient, false, pairConfig).declarations.definitions
+    .find(d => d.declaration.name === "GlobalBox")?.expression;
+  assert(mergedBox?.k === "object");
+  assert.deepEqual(mergedBox.fields.map(f => f.name), ["flag", "other"]);
+  // Merged declarations must agree on their type parameters.
+  writeFileSync(join(pairDir, "other-global.d.ts"), "interface GlobalBox<T> { readonly other: T; }\n");
+  assert.throws(() => parseFile(boxClient, false, pairConfig), /TypeScript reports an error|different type parameters/);
   closeParser();
 }
 function must<T>(value: T | null | undefined, message: string): T {

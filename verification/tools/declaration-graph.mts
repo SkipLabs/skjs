@@ -11,7 +11,7 @@ import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
 import { classInstance, members, optionalTerm, signature, typeTerm, type TermScope } from "./type-term.mts";
-import type { DeclarationIdentity, DeclarationDocument, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
+import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
 export type { DeclarationIdentity, DeclarationDocument, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
 
 type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration;
@@ -116,6 +116,16 @@ function statementsOnPath(checker: Checker, identifier: Identifier):
   return out;
 }
 
+/** The identifier at exactly `span`, in TypeScript's tree of the client. */
+function identifierAt(file: SourceFile, span: Span): Identifier | null {
+  const visit = (node: Node): Identifier | null => {
+    if (node.end < span[1] || node.pos > span[0]) return null;
+    if (ts.isIdentifier(node) && node.getStart(file) === span[0] && node.end === span[1]) return node;
+    return node.forEachChild(visit) ?? null;
+  };
+  return visit(file);
+}
+
 /** The client's named imports: each must name exactly one declaration. */
 function importBindings(client: SourceFile): { local: Identifier; imported: string;
   specifier: string; span: Span; typeOnly: boolean }[] {
@@ -145,6 +155,10 @@ export function collectDeclarations(file: string, options: {
   tsconfigPath?: string;
   client?: SourceFile;
   locals?: readonly Span[];
+  /** The client's type-reference names that are neither imported nor its own
+   * declarations: each that TypeScript binds to a global declaration becomes
+   * a root. A type parameter is not one. */
+  globals?: readonly Span[];
 } = {}): DeclarationDocument {
   const clientFile = resolve(file);
   return withProject(clientFile, options.tsconfigPath, (checker, client, root, program) => {
@@ -177,34 +191,62 @@ export function collectDeclarations(file: string, options: {
     };
     // The one declaration TypeScript binds a name to, with no error on it or
     // on the path to it.
-    const resolveDeclaration = (identifier: Identifier, what: string): Node => {
+    const resolveDeclarations = (identifier: Identifier, what: string): Node[] => {
       const target = targetOf(checker, identifier);
       if (!target) throw Error(`unresolved type reference ${what}`);
-      if (target.declarations.length !== 1)
-        throw Error(`TypeScript found ${target.declarations.length} declarations for ${what}`);
-      const node = target.declarations[0]?.resolve();
-      if (!node) throw Error(`unresolved type reference ${what}`);
+      const nodes = target.declarations.map(d => d.resolve());
+      if (nodes.some(node => !node)) throw Error(`unresolved type reference ${what}`);
       for (const statement of statementsOnPath(checker, identifier))
         clean(statement, `${idOf(statement.getSourceFile())} on the path to ${what}`);
-      return node;
+      return nodes as Node[];
     };
+    const resolveDeclaration = (identifier: Identifier, what: string): Node => {
+      const nodes = resolveDeclarations(identifier, what);
+      if (nodes.length !== 1)
+        throw Error(`TypeScript found ${nodes.length} declarations for ${what}`);
+      return nodes[0] as Node;
+    };
+    // An interface declared several times is one interface with every
+    // declaration's members, as TypeScript merges it; the first declaration is
+    // its identity. A same-named value declaration is the name's other
+    // meaning, which a type reference does not denote.
+    const partners = new Map<TypeDeclaration, TypeDeclaration[]>();
     const lookup = (identifier: Identifier, what: string): TypeDeclaration => {
-      const node = resolveDeclaration(identifier, what);
-      if (!isTypeDeclaration(node) || !node.name)
-        throw Error(`${what} is not one type alias, interface or class`);
-      clean(node, `${idOf(node.getSourceFile())}#${node.name.text}`);
+      const nodes = resolveDeclarations(identifier, what);
+      const types = nodes.filter(isTypeDeclaration);
+      const [node] = types;
+      if (!node || nodes.some(n => !isTypeDeclaration(n) && !ts.isVariableDeclaration(n)) ||
+          (types.length > 1 && !types.every(ts.isInterfaceDeclaration)))
+        throw Error(types.length > 1 || nodes.length > 1
+          ? `TypeScript found ${nodes.length} declarations for ${what}`
+          : `${what} is not one type alias, interface or class`);
+      const names = (n: TypeDeclaration) => (n.typeParameters ?? []).map(p => p.name.text).join(",");
+      for (const part of types) {
+        if (!part.name) throw Error(`${what} is not one type alias, interface or class`);
+        if (names(part) !== names(node))
+          throw Error(`the merged declarations of ${what} have different type parameters`);
+        clean(part, `${idOf(part.getSourceFile())}#${part.name.text}`);
+      }
+      partners.set(node, types);
       return node;
     };
     // A computed key names a `unique symbol` constant. Each such declaration
     // is listed once, and its position in the list is the symbol's identity.
     const symbols: DeclarationIdentity[] = [];
     const symbolIndex = new Map<string, number>();
-    const symbolOf = (identifier: Identifier): number => {
-      const what = `[${identifier.text}]`;
-      const node = resolveDeclaration(identifier, what);
-      const type = ts.isVariableDeclaration(node) ? node.type : undefined;
-      if (!ts.isVariableDeclaration(node) || !ts.isIdentifier(node.name) ||
-          !ts.isVariableDeclarationList(node.parent) || !(node.parent.flags & ts.NodeFlags.Const) ||
+    // A well-known symbol such as `Symbol.iterator` is a readonly property
+    // declared `unique symbol`, and that property is its identity.
+    const symbolOf = (written: Identifier | ts.PropertyAccessExpression): number => {
+      const name = ts.isIdentifier(written) ? written : written.name;
+      if (!ts.isIdentifier(name)) throw Error("a computed key names a symbol");
+      const what = `[${ts.isIdentifier(written) ? written.text : `${written.expression.getText()}.${name.text}`}]`;
+      const node = resolveDeclaration(name, what);
+      const type = ts.isVariableDeclaration(node) || ts.isPropertySignatureDeclaration(node) ? node.type : undefined;
+      const constant = ts.isVariableDeclaration(node) && ts.isVariableDeclarationList(node.parent) &&
+        !!(node.parent.flags & ts.NodeFlags.Const);
+      const property = ts.isPropertySignatureDeclaration(node) && !node.postfixToken &&
+        node.modifiers?.length === 1 && node.modifiers[0]?.kind === ts.SyntaxKind.ReadonlyKeyword;
+      if (!(constant || property) || !node.name || !ts.isIdentifier(node.name) ||
           !type || !ts.isTypeOperatorNode(type) || type.operator !== ts.SyntaxKind.UniqueKeyword ||
           type.type.kind !== ts.SyntaxKind.SymbolKeyword)
         throw Error(`the computed key ${what} is not a unique symbol constant`);
@@ -331,7 +373,24 @@ export function collectDeclarations(file: string, options: {
         throw new DeclarationError(span, "TypeScript local declaration missing");
       try {
         const node = lookup(declaration.name, declaration.name.text);
+        // A merged interface's later declarations are the same root.
+        if (roots.some(r => r.node === node)) continue;
         roots.push({ node, root: { binding: { kind: "local", local: declaration.name.text, span },
+          declaration: identityOf(node) } });
+      } catch (error) {
+        throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+      }
+    }
+    for (const span of options.globals ?? []) {
+      const identifier = identifierAt(client, span);
+      if (!identifier) throw new DeclarationError(span, "TypeScript global reference missing");
+      if (roots.some(r => r.root.binding.local === identifier.text)) continue;
+      const declaration = targetOf(checker, identifier)?.declarations[0]?.resolve();
+      if (!declaration || ts.isTypeParameterDeclaration(declaration) ||
+          declaration.getSourceFile().fileName === client.fileName) continue;
+      try {
+        const node = lookup(identifier, identifier.text);
+        roots.push({ node, root: { binding: { kind: "global", local: identifier.text, span },
           declaration: identityOf(node) } });
       } catch (error) {
         throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
@@ -341,7 +400,7 @@ export function collectDeclarations(file: string, options: {
     const definitions: TypeDefinition[] = [];
     for (const { root, node: start } of roots) {
       try {
-        collect(start, seen, definitions, lookup, identityOf, symbolOf);
+        collect(start, seen, definitions, lookup, identityOf, symbolOf, partners);
       } catch (error) {
         throw new DeclarationError(root.binding.span,
           error instanceof Error ? error.message : String(error));
@@ -349,7 +408,7 @@ export function collectDeclarations(file: string, options: {
     }
     for (const [index, start] of valueStarts.entries()) {
       try {
-        collect(start, seen, definitions, lookup, identityOf, symbolOf);
+        collect(start, seen, definitions, lookup, identityOf, symbolOf, partners);
       } catch (error) {
         throw new DeclarationError(values[Math.min(index, values.length - 1)]?.binding.span ?? [0, 0],
           error instanceof Error ? error.message : String(error));
@@ -380,11 +439,39 @@ export function importTargets(file: string, tsconfigPath?: string):
   });
 }
 
+/** A merged interface's body: every part's fields, calls and at most one
+ * string index, with no field named twice. The first part's span stands for
+ * the whole. */
+function mergeMembers(parts: TypeTerm[], fail: (at: Node, message: string) => never, at: Node): TypeTerm {
+  const [first, ...rest] = parts;
+  if (!first || first.k !== "object") return fail(at, "an interface body is a record");
+  if (!rest.length) return first;
+  const fields = [...first.fields];
+  let stringIndex = first.stringIndex;
+  const calls = [...first.calls];
+  const key = (name: PropertyKey) => typeof name === "string" ? name : `[symbol ${name.symbol}]`;
+  for (const part of rest) {
+    if (part.k !== "object") return fail(at, "an interface body is a record");
+    for (const field of part.fields) {
+      if (fields.some(f => key(f.name) === key(field.name)))
+        fail(at, "a merged interface declares a member twice");
+      fields.push(field);
+    }
+    if (part.stringIndex) {
+      if (stringIndex) fail(at, "a merged interface declares two string index signatures");
+      stringIndex = part.stringIndex;
+    }
+    calls.push(...part.calls);
+  }
+  return { ...first, fields, stringIndex, calls };
+}
+
 /** Every declaration reachable from `start`, each once across roots. */
 function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDefinition[],
   lookup: (identifier: Identifier, what: string) => TypeDeclaration,
   identityOf: (node: TypeDeclaration) => DeclarationIdentity,
-  symbol: (identifier: Identifier) => number): void {
+  symbol: (identifier: Identifier) => number,
+  partners: ReadonlyMap<TypeDeclaration, readonly TypeDeclaration[]>): void {
   const queue: TypeDeclaration[] = [start];
   for (let cursor = 0; cursor < queue.length; cursor++) {
     const node = queue[cursor];
@@ -398,7 +485,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     const parameterNames = parameterNodes.map(parameter => parameter.name.text);
     if (new Set(parameterNames).size !== parameterNames.length)
       throw Error(`duplicate binder in ${identity.module}#${identity.name}`);
-    const reference = (identifier: Identifier, arguments_: readonly TypeNode[], pos: Span,
+    const reference = (source: SourceFile, identifier: Identifier, arguments_: readonly TypeNode[], pos: Span,
         read: (part: TypeNode) => TypeTerm): TypeTerm => {
       const targetNode = lookup(identifier, `${identity.module}#${identifier.text}`);
       const target = identityOf(targetNode);
@@ -411,7 +498,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       queue.push(targetNode);
       return { k: "reference", reference: edge, args: arguments_.map(read), span: pos };
     };
-    const scope: TermScope = {
+    // Each declaration part is read in its own file, which its spans index.
+    const scopeOf = (source: SourceFile): TermScope => ({
       source,
       annotation: false,
       symbol,
@@ -419,12 +507,13 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       named: (part, pos, read) => {
         const name = part.typeName as Identifier;
         const index = parameterNames.indexOf(name.text);
-        if (index < 0) return reference(name, part.typeArguments ?? [], pos, read);
+        if (index < 0) return reference(source, name, part.typeArguments ?? [], pos, read);
         if (part.typeArguments?.length)
           throw Error(`type parameter applied as constructor: ${name.text}`);
         return { k: "parameter", index, span: pos };
       },
-    };
+    });
+    const scope = scopeOf(source);
     const parse = (part: TypeNode): TypeTerm => typeTerm(scope, part);
     let sawDefault = false;
     const parameters = parameterNodes.map(parameter => {
@@ -436,27 +525,35 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         bound: parameter.constraint ? parse(parameter.constraint) : null,
         default: parameter.defaultType ? parse(parameter.defaultType) : null };
     });
+    const parts = partners.get(node) ?? [node];
     const expression = ts.isTypeAliasDeclaration(node)
       ? parse(node.type)
       : ts.isClassDeclaration(node)
         ? classInstance(scope, node, [node.getStart(source), node.end])
-        : members(scope, node.members, node, [node.getStart(source), node.end], true);
+        : mergeMembers(parts.map(part => {
+            const file = part.getSourceFile();
+            return members(scopeOf(file), (part as ts.InterfaceDeclaration).members, part,
+              [part.getStart(file), part.end], true);
+          }), (at, message) => scope.fail(at, message), node);
     // A class's `implements` clauses are obligations on the class, not part of
     // its instance type; the class it extends is a base of that type, as an
     // interface's are.
-    const bases = ts.isInterfaceDeclaration(node) || ts.isClassDeclaration(node)
-      ? (node.heritageClauses ?? []).filter(clause =>
-          !(ts.isClassDeclaration(node) && clause.token === ts.SyntaxKind.ImplementsKeyword)).flatMap(clause => {
+    const bases = parts.flatMap(part => {
+      if (!ts.isInterfaceDeclaration(part) && !ts.isClassDeclaration(part)) return [];
+      const file = part.getSourceFile();
+      const read = (t: TypeNode): TypeTerm => typeTerm(scopeOf(file), t);
+      return (part.heritageClauses ?? []).filter(clause =>
+          !(ts.isClassDeclaration(part) && clause.token === ts.SyntaxKind.ImplementsKeyword)).flatMap(clause => {
           if (clause.token !== ts.SyntaxKind.ExtendsKeyword)
             throw Error(`unsupported heritage in ${identity.module}#${identity.name}`);
           return clause.types.map(base => {
             if (!ts.isIdentifier(base.expression))
               throw Error(`qualified heritage in ${identity.module}#${identity.name}`);
-            return reference(base.expression, base.typeArguments ?? [],
-              [base.getStart(source), base.end], parse);
+            return reference(file, base.expression, base.typeArguments ?? [],
+              [base.getStart(file), base.end], read);
           });
-        })
-      : [];
+        });
+    });
     definitions.push({ declaration: identity, parameters, bases, expression });
   }
 }

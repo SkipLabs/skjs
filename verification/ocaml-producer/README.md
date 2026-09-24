@@ -470,9 +470,10 @@ mapper and resource bodies are upstream's. SKJS's stubs gained the two real
 APIs it uses, `Values.getUnique` and `process.on`
 ([`runtime-client-apis.ts`](../../tests/expect-error/runtime-client-apis.ts)).
 
-Its first refusal is `runService`'s result type, the library's `Promise`,
-whose declarations merge across the standard library's files, so **zero of
-its callables are checked**; no producer proposal, Lean lowering or certificate is
+Its first refusal is in the standard library: `Iterable`, which the runtime
+API's `Mapper` and `Values` reach, reaches `Iterator`, whose `next` takes a
+destructured rest parameter `...[value]: [] | [TNext]`. So **zero of its
+callables are checked**; no producer proposal, Lean lowering or certificate is
 reached. Module constants and top-level statements are in the fragment (see
 [Modules and code units](../DESIGN.md#modules-and-code-units)); the
 `platform` initializer before that class is admitted syntax, though its
@@ -481,13 +482,13 @@ at a time, the blockers behind it are:
 
 | Client part | First refusal when isolated | Later requirement |
 | --- | --- | --- |
-| whole file | `Promise`, in `runService`'s result | library contracts (`Promise`); then the `process` global |
+| whole file | `Iterator.next`'s destructured rest parameter | the rest of `Iterable`/`Iterator` (optional methods); then the `process` global |
 | import graph | `InputDefinition` is a value import (a class) | classes as declarations and values |
 | `Plus`, `Minus`, `AddIndex`, `Add`, `Sub`, `Service` | class declaration | classes, `this`, parameter properties, field initializers, `new` |
 | `AddIndex.mapEntry` reading `Values` | `bigint` in `DepSafe` | `Values` contract, `getUnique` and its exception |
 | `Plus`/`Minus` bodies | library array methods | `reduce`, `sort` and `Iterable` contracts |
 | `main` | value imports | `async`/`await`, `Promise`, `runService` contract |
-| signal registration | `Promise` is not a declaration root | library `Promise`; `process` global contract |
+| signal registration | `process` global | `process` global contract (`Promise` is read from the standard library) |
 
 The configured TypeScript project includes both files. TypeScript resolves
 upstream `sum.ts`'s type imports from `@skipruntime/core` (`EagerCollection`,
@@ -528,10 +529,10 @@ client of the same project, each stops at its first refused declaration
 
 | Interface | First refusal | Why |
 | --- | --- | --- |
-| `Mapper<K1, V1, K2, V2>` | `any` in the library's `Iterable` | `mapEntry` returns `Iterable<[K2, V2]>`, whose defaulted type parameters are `any` |
+| `Mapper<K1, V1, K2, V2>` | `Iterator.next`'s destructured rest parameter | `mapEntry` returns `Iterable<[K2, V2]>`, which reaches `Iterator` |
 | `Resource<C>` | none: collected | its `Context` parameter's generic methods are opaque members |
 | `EagerCollection<K, V>` | none: collected | it extends `Managed`, whose brand `[sk_managed]: true` is a symbol-keyed field; its generic methods are opaque members |
-| `Values<T>` | `any` in the library's `Iterable` | it extends `Iterable<T & DepSafe>`; `DepSafe`'s `bigint` and `symbol` and `Managed`'s symbol key are in the fragment |
+| `Values<T>` | `Iterator.next`'s destructured rest parameter | it extends `Iterable<T & DepSafe>`; `DepSafe`'s `bigint` and `symbol` and `Managed`'s symbol key are in the fragment |
 
 The admitted contract work is larger than recognizing the declaration keyword:
 `Mapper` has four `Json`-bounded parameters and a method returning
@@ -912,10 +913,18 @@ first milestone, in order of how much each gates:
      (the `internal.ts` tags), and a class field's definite-assignment `!`
      (`Frozen`'s `[sk_managed]!: true`);
    - types over rigid binders, such as `T & DepSafe`.
-5. **Library contracts.** `Iterable`/`Iterator` and arrays as iterables (every
-   `mapEntry` returns an array literal as `Iterable`), and
-   `Array.prototype.reduce` and `sort` with their callback effects and
-   mutation.
+5. **Library contracts**, read from TypeScript's own standard library
+   declarations (`lib.*.d.ts`) through the same declaration graph as any
+   library, not written by hand. Done: global type names are declaration
+   roots; an interface declared several times is merged, as TypeScript
+   merges it; well-known symbol keys (`[Symbol.iterator]`) are symbol keys; a
+   declaration's `any` is `unknown`; a recursive generic application at the
+   same arguments is its reserved row. `Promise<T>` is read this way (its
+   generic `then`/`catch` are opaque, so its argument is not yet visible).
+   Remaining: `Iterator` (a destructured rest parameter, optional methods),
+   arrays as iterables (every `mapEntry` returns an array literal as
+   `Iterable`), and `Array.prototype.reduce` and `sort` with their callback
+   effects and mutation.
 6. **Optional field presence.** `getUnique(_default?: { ifMany?: T })`; the
    open `optional-field.ts` row.
 7. **Exceptions.** `getUnique` throws when a key has several values.

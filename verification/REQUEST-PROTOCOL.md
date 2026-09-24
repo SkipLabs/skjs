@@ -381,7 +381,10 @@ parameter, or a reference to a non-generic type declaration, translated to its
 graph node. Duplicate names, forward bounds and cycles are rejected. Local and
 imported declarations are source equations in `declarations`, and an
 annotation's `reference` term names the declaration TypeScript resolved; the
-file AST has no separate alias-definition field. The document's `symbols`
+file AST has no separate alias-definition field. A root's `binding` is an import, a
+local declaration, or `{"kind": "global", "local": name, "span": ...}`, a
+global the file names without importing (the span is its first reference).
+The document's `symbols`
 lists, once each, the `const x: unique symbol` declarations its members use as
 computed keys `[x]`. A field name, in a declaration's `object` term and in a
 claim's record fields, is a string key as a JSON string, or a symbol key
