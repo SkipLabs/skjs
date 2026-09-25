@@ -843,4 +843,7 @@ export const cases: Case[] = [
   positive("literal-union-discrimination", "a fresh object or array literal expected at a union of records or tuples is built at the one arm its keys, length and literal members select"),
   negative("invalid-literal-union-tuple", "`[0, 0]` selects no arm of `[number, string] | [boolean, number]`", /source expression obligation at \[207,213\)/),
   negative("invalid-literal-union-record", "a literal whose keys match no arm is not built at one", /source expression obligation at \[283,312\)/),
+  positive("closure-contextual-result", "a closure literal without a result annotation, expected at one signature, is claimed at its result where the body fits it: a literal result, an async body's promise"),
+  negative("invalid-closure-contextual-result", "a body returning \"world\" is not claimed at the contextual \"hello\"", /source expression obligation at \[201,222\)/),
+  negative("invalid-closure-contextual-async", "an async body resolving a number is not a `Promise<string>`", /source expression obligation at \[128,149\)/),
 ];

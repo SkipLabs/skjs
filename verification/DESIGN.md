@@ -196,7 +196,15 @@ a check, so the trusted surface is unchanged. The Fragment says which: its
 out still needs the annotation where a path takes its result type from the
 source: a block returning from a branch (refused by the parser), a closure
 collecting a rest array, a quantified one and one inside a generic body
-(refused by Lean).
+(refused by Lean). Which result the producer claims is a proposal: the body's
+type widened, as TypeScript infers it, or, for a literal expected at one
+signature taking at least its parameters, that signature's result (its
+contextual return type) where the body's type fits it. So `() => "hello"` at
+`{ fn: () => "hello" }` keeps its literal result, which widening would lose
+and invariance of the mutable field would then refuse, and `async () =>
+"hello"` at `() => Promise<string>` is claimed at the promise the context
+names (`closure-contextual-result.ts`). Lean checks the body at the claimed
+result either way (`invalid-closure-contextual-result.ts`).
 
 The annotation may be omitted. The candidate contract is then the producer's
 claim at the next statement entry in the same lexical block. That entry belongs

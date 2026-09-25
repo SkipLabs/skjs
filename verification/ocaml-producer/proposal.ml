@@ -953,14 +953,33 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
             unsupported ("parameter default may only read initialized earlier parameters and captures: " ^ message))
           (List.assoc_opt i defaults);
         extend env n (Value t)) env (List.mapi (fun i p -> i,p) ps) in
-      let body_type = expr ?expected:written inner body in
+      (* A closure literal without a result annotation expected at one
+         signature taking at least its parameters has that signature's result
+         as its contextual return type, as in TypeScript. *)
+      let contextual = match written,expected with
+        | None,Some t when quantified = [] ->
+          (match (try declared_head declarations [] t with Json.Error _ -> t) with
+           | Atoms [Shape {calls=[s];fields=[];string_index=None;elements=None}]
+             when s.quantified=[] && s.rest_pack=None && s.variadic=None
+                  && List.length s.params >= List.length ps -> Some s.result
+           | _ -> None)
+        | _ -> None in
+      let body_type = expr ?expected:(if written <> None then written else contextual) inner body in
       (* Without a result annotation the result is the body's, widened as
-         TypeScript widens an inferred return type. It is a claim: Lean checks
-         the body against it. *)
-      let result = match written with
-        | Some result -> result
-        | None when quantified <> [] -> unsupported "a quantified closure needs its result annotation"
-        | None -> widen body_type in
+         TypeScript widens an inferred return type, or the contextual return
+         type where the body's fits it: a literal result the context asks for
+         (`() => "hello"` at `() => "hello"`) is kept, and an async body's
+         promise is the one the context names. It is a claim: Lean checks the
+         body against it. *)
+      let rec fits a b = plausible_subtype a b || match a,b with
+        | Atoms [Named (i,xs)],Atoms [Named (j,ys)] ->
+          i=j && List.length xs = List.length ys && List.for_all2 fits xs ys
+        | _ -> false in
+      let result = match written,contextual with
+        | Some result,_ -> result
+        | None,_ when quantified <> [] -> unsupported "a quantified closure needs its result annotation"
+        | None,Some r when fits body_type r -> r
+        | None,_ -> widen body_type in
       let params = List.mapi (fun i (_,t) ->
         if List.mem_assoc i defaults then union t (Atoms [Undef]) else t) ps in
       (* A tuple rest is one binding and several positions: the signature
