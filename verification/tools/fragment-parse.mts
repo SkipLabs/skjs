@@ -55,6 +55,7 @@ import type {
 import type { Span } from "./span.mts";
 import { messageOf } from "./thrown.mts";
 import { collectDeclarations, DeclarationError, tsconfigOf } from "./declaration-graph.mts";
+import { asyncCompleteName, asyncReturnName, awaitName } from "./intrinsics.mts";
 
 /** A question-mark parameter requires an optional suffix. A default may
  * precede a required parameter: callers supply undefined in that position. */
@@ -174,6 +175,9 @@ class Gate {
   // Mode of the ordinary function that bound `this`, or no binding. A strict
   // arrow captures its creator's already-converted receiver; it cannot rebind it.
   private receiverMode: "strict" | "sloppy" | null = null;
+  /* Whether the function whose body is being read is async: its returns
+     settle the promise its call returned (`intrinsics.mts`). */
+  private asyncBody = false;
   constructor(file: SourceFile) {
     this.file = file;
     this.scope = this.termScope();
@@ -365,6 +369,37 @@ class Gate {
     return [node.getStart(this.file), node.end];
   }
 
+  /* ------------------------------------------------------ async, await -- */
+  // `async` and `await` are trusted steps, written as calls of intrinsics
+  // (`intrinsics.mts`): the call is at `pos`, the intrinsic read at `at`.
+
+  private intrinsic(name: string, pos: Span, at: Span, args: Expr[]): Expr {
+    return { k: "apply", pos, callee: { k: "id", pos: at, name }, args };
+  }
+
+  /** `await e`: `%Await%(e)`, the intrinsic read at the keyword. Every span
+   * an intrinsic call or read is given is a node or a token of the source. */
+  private awaitExpr(node: ts.AwaitExpression): Expr {
+    const start = node.getStart(this.file);
+    return this.intrinsic(awaitName, this.span(node), [start, start + "await".length],
+      [this.expr(node.expression)]);
+  }
+
+  /** An async body completes with `return %AsyncComplete%()`: the call spans
+   * the block, the intrinsic and the statement its closing brace. Nothing is
+   * added to a body that returns on every path. */
+  private asyncCompletion(block: ts.Block, statements: Stmt[]): Stmt[] {
+    const returns = (xs: Stmt[]): boolean => {
+      const last = xs.at(-1);
+      return last?.k === "return" ||
+        (last?.k === "if" && last.else_ !== null && returns(last.then) && returns(last.else_));
+    };
+    if (returns(statements)) return statements;
+    const brace: Span = [block.end - 1, block.end];
+    return [...statements, { k: "return", pos: brace,
+      e: this.intrinsic(asyncCompleteName, this.span(block), brace, []) }];
+  }
+
   text(node: Node): string {
     return this.file.text.slice(node.getStart(this.file), node.end);
   }
@@ -443,6 +478,8 @@ class Gate {
         then: this.expr(node.whenTrue),
         else_: this.expr(node.whenFalse),
       };
+
+    if (ts.isAwaitExpression(node)) return this.awaitExpr(node);
 
     if (ts.isIdentifier(node)) {
       if (node.text === "undefined")
@@ -544,6 +581,16 @@ class Gate {
             this.fail(f, "prototype initializers are outside the fragment");
           seen.add(name);
           return { name, e: this.lambda(f) };
+        }
+        // `{ x }` is `{ x: x }`: the name is read where it is written.
+        if (ts.isShorthandPropertyAssignment(f) && !f.objectAssignmentInitializer &&
+            ts.isIdentifier(f.name)) {
+          const name = f.name.text;
+          if (seen.has(name)) this.fail(f, "duplicate field name in a record");
+          if (name === "__proto__")
+            this.fail(f, "a `__proto__` field is outside the fragment");
+          seen.add(name);
+          return { name, e: this.expr(f.name) };
         }
         if (!ts.isPropertyAssignment(f) || !ts.isIdentifier(f.name))
           this.fail(
@@ -1206,8 +1253,10 @@ class Gate {
     node: ArrowFunction | FunctionExpression | MethodDeclaration,
     instance?: TypeTerm,
   ): Expr {
-    if (node.modifiers?.length)
-      this.fail(node, "expected a synchronous closure without modifiers");
+    const isAsync = node.modifiers?.length === 1 &&
+      node.modifiers[0]?.kind === ts.SyntaxKind.AsyncKeyword;
+    if (node.modifiers?.length && !isAsync)
+      this.fail(node, "expected a closure without modifiers other than `async`");
     const ordinary = !ts.isArrowFunction(node);
     if (!ts.isArrowFunction(node)) {
       if (node.asteriskToken)
@@ -1274,12 +1323,14 @@ class Gate {
       this.fail(node, '"use strict" beside non-simple parameters');
     const outerStrict = this.strict;
     const outerReceiverMode = this.receiverMode;
+    const outerAsync = this.asyncBody;
     this.strict = outerStrict || prologue.strict;
     if (ordinary) {
       this.receiverMode = this.strict ? "strict" : "sloppy";
     }
     const typeParams = this.enterTypeParams(node.typeParameters);
     try {
+      this.asyncBody = isAsync;
       const receiver = !ordinary
         ? null
         : {
@@ -1323,15 +1374,21 @@ class Gate {
         node.type || instance ? this.typeOf(node.type, node) : null;
       const result = (): TypeTerm => declaredResult ??
         this.fail(node, "a closure returning from a branch needs a result annotation");
+      // An async arrow's expression body is its return: `%AsyncReturn%(e)`,
+      // the call at `=>`, the intrinsic read at `async`.
+      const statements = (block: ts.Block): Stmt[] => {
+        const stmts = block.statements
+          .filter((s) => !prologue.skip.has(s))
+          .map((s) => this.stmt(s));
+        return isAsync ? this.asyncCompletion(block, stmts) : stmts;
+      };
+      const arrow = ts.isArrowFunction(node) ? this.span(node.equalsGreaterThanToken) : null;
+      const keyword = node.modifiers?.[0];
       const lowered = ts.isBlock(body)
-        ? this.closureBlock(
-            body,
-            body.statements
-              .filter((s) => !prologue.skip.has(s))
-              .map((s) => this.stmt(s)),
-            result,
-          )
-        : this.expr(body);
+        ? this.closureBlock(body, statements(body), result)
+        : isAsync && arrow && keyword
+          ? this.intrinsic(asyncReturnName, arrow, this.span(keyword), [this.expr(body)])
+          : this.expr(body);
       return {
         k: "lambda",
         pos: this.span(node),
@@ -1355,6 +1412,7 @@ class Gate {
       this.leaveTypeParams();
       this.strict = outerStrict;
       this.receiverMode = outerReceiverMode;
+      this.asyncBody = outerAsync;
     }
   }
 
@@ -1575,10 +1633,16 @@ class Gate {
     if (ts.isReturnStatement(node)) {
       if (!node.expression)
         this.fail(node, "a bare `return` is outside the fragment");
+      const e = this.expr(node.expression);
+      // In an async body, `return e` is `return %AsyncReturn%(e)`, the call
+      // spanning the statement, the intrinsic read at the keyword.
+      const start = node.getStart(this.file);
       return {
         k: "return",
         pos: this.span(node),
-        e: this.expr(node.expression),
+        e: this.asyncBody
+          ? this.intrinsic(asyncReturnName, this.span(node), [start, start + "return".length], [e])
+          : e,
       };
     }
 
@@ -1676,11 +1740,15 @@ class Gate {
     if (!node.name) this.fail(node, "anonymous function");
     if (node.name.text === "undefined")
       this.fail(node, "shadowing undefined is outside the fragment");
-    if (node.modifiers?.some(modifier => modifier.kind !== ts.SyntaxKind.ExportKeyword))
+    if (node.modifiers?.some(modifier => modifier.kind !== ts.SyntaxKind.ExportKeyword &&
+        modifier.kind !== ts.SyntaxKind.AsyncKeyword))
       this.fail(
         node,
-        "only the export modifier is admitted on a source function",
+        "only the export and async modifiers are admitted on a source function",
       );
+    if (node.asteriskToken)
+      this.fail(node, "generator functions are outside the fragment");
+    const isAsync = !!node.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword);
     if (!node.body) this.fail(node, "a function must have a body");
     const prologue = this.useStrict(node.body.statements);
     if (
@@ -1702,6 +1770,7 @@ class Gate {
     )
       this.fail(head, "a receiver needs a required type annotation");
     const outerReceiverMode = this.receiverMode;
+    const outerAsync = this.asyncBody;
     this.receiverMode = receiverParam
       ? this.strict
         ? "strict"
@@ -1709,6 +1778,7 @@ class Gate {
       : null;
     const typeParams = this.enterTypeParams(node.typeParameters);
     try {
+      this.asyncBody = isAsync;
       const params = node.parameters.map((p) => {
         if (p.name.kind !== ts.SyntaxKind.Identifier)
           this.fail(p, "destructuring parameter");
@@ -1737,20 +1807,22 @@ class Gate {
           ...(p.dotDotDotToken ? { rest: true as const } : {}),
         };
       });
+      const body = node.body.statements
+        .filter((s) => !prologue.skip.has(s))
+        .map((s) => this.stmt(s));
       return {
         name: node.name.text,
         namePos: this.span(node.name),
         typeParams,
         params,
         retType: this.typeOf(node.type),
-        body: node.body.statements
-          .filter((s) => !prologue.skip.has(s))
-          .map((s) => this.stmt(s)),
+        body: isAsync ? this.asyncCompletion(node.body, body) : body,
       };
     } finally {
       this.leaveTypeParams();
       this.strict = outerStrict;
       this.receiverMode = outerReceiverMode;
+      this.asyncBody = outerAsync;
     }
   }
 }
@@ -1860,8 +1932,21 @@ export function parseFile(file: string, carriesContext = false,
     node.forEachChild(findArray);
   };
   findArray(source);
-  if (importNodes.length || localNodes.length || globalNodes.length || firstArray) {
-    const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? firstArray;
+  // `async` and `await` are written with intrinsics over `Promise`, which then
+  // join the declarations; the first such construct stands for them.
+  let firstAsync: Node | undefined;
+  const findAsync = (node: Node): void => {
+    if (firstAsync) return;
+    if (ts.isAwaitExpression(node) || (ts.isFunctionLikeDeclaration(node) &&
+        !!node.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword))) {
+      firstAsync = node;
+      return;
+    }
+    node.forEachChild(findAsync);
+  };
+  if (!carriesContext) findAsync(source);
+  if (importNodes.length || localNodes.length || globalNodes.length || firstArray || firstAsync) {
+    const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? firstArray ?? firstAsync;
     if (!first) throw Error("missing declaration root");
     // Named imports only. A type import joins the declaration graph; a value
     // import is an assumption at the type its declaration states.
@@ -1877,10 +1962,12 @@ export function parseFile(file: string, carriesContext = false,
       declarations = collectDeclarations(resolutionFile, { tsconfigPath, client: source,
         locals: localNodes.map(node => gate.span(node)),
         globals: globalNodes.map(node => gate.span(node)),
-        ...(firstArray ? { arrays: gate.span(firstArray) } : {}) });
+        ...(firstArray ? { arrays: gate.span(firstArray) } : {}),
+        ...(firstAsync ? { intrinsics: gate.span(firstAsync) } : {}) });
     } catch (error) {
       const at = error instanceof DeclarationError
-        ? [...importNodes, ...localNodes, ...globalNodes, ...(firstArray ? [firstArray] : [])].find(node =>
+        ? [...importNodes, ...localNodes, ...globalNodes, ...(firstArray ? [firstArray] : []),
+            ...(firstAsync ? [firstAsync] : [])].find(node =>
             node.getStart(source) === error.at[0]) ?? first
         : first;
       gate.fail(at, messageOf(error));

@@ -622,12 +622,14 @@ all as one callable with several signatures. A generic module function is
 certified for every admissible instantiation by its own unit, and an imported
 one is assumed at its declared type, so each instance, and their conjunction,
 holds of the value. Returns the grown table, the slot's type in claim form,
-and the spans of the callee reads and of the calls. -/
+and the spans of the callee reads and of the calls. A failure carries the table
+its labels index: translating a bound may grow it. -/
 def moduleInstances (T : SourceTypes.Table) (g : DeclarationGraph.Instantiable)
     (unit : List Fragment.Stmt) (claims : Function) :
-    Except DirectObligation.Failure (SourceTypes.Table × Json × List Span × List Span) := do
-  let refuse (pos : Span) (reason : String) : DirectObligation.Failure :=
-    .refusal pos .schemeElimination reason
+    Except (DirectObligation.Failure × SourceTypes.Table)
+      (SourceTypes.Table × Json × List Span × List Span) := do
+  let refuse (pos : Span) (reason : String) : DirectObligation.Failure × SourceTypes.Table :=
+    (.refusal pos .schemeElimination reason, T)
   let calls := (unit.flatMap Fragment.Stmt.callees).filter (·.2.2 == g.name)
   let graph (A : List Nat) : Json := Json.mkObj [("top", toJson false),
     ("atoms", toJson (A.map fun l => Json.mkObj [("a", toJson "graph"), ("label", toJson l)]))]
@@ -662,7 +664,7 @@ def moduleInstances (T : SourceTypes.Table) (g : DeclarationGraph.Instantiable)
           | none => false
         unless proved do
           throw (.obligation ⟨pos, .schemeElimination,
-            .subtyping [] [] (.expression pos) (.ground actual) (.ground required)⟩)
+            .subtyping [] [] (.expression pos) (.ground actual) (.ground required)⟩, T)
     let some atom := (callable.getObjVal? "atoms").toOption.bind (fun a => (a.getArr?.toOption.bind (·[0]?)))
       | throw (refuse pos s!"'{g.name}' is not one callable")
     instances := instances ++ [atom]
@@ -1007,8 +1009,8 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
             c := { c with expressions := c.expressions.map fun e =>
               if reads.contains e.pos then { e with type := .labels A }
               else if calls.contains e.pos then { e with instantiate := none } else e }
-          | .error (.obligation failure) => throw (directFailure d.types failure)
-          | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)
+          | .error (.obligation failure, T) => throw (directFailure T failure)
+          | .error (.refusal pos role reason, _) => throw (sourceRefusal d.types pos role reason)
     let sites := functionSites f
     if !c.entries.all (fun e => sites.1.contains e.start) ||
         !c.expressions.all (fun e => sites.2.contains e.pos) then

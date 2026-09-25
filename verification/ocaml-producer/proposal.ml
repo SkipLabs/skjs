@@ -461,7 +461,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       (* Explicit type arguments fix the callee's leading binders; the others
          are inferred from the receiver and the actuals. Lean checks that the
          claimed instance agrees with them. *)
-      let infer_explicit ~receiver (signature:Semantic.signature) actuals =
+      let infer_explicit ~receiver ?expected (signature:Semantic.signature) actuals =
         if List.length type_args > List.length signature.quantified then
           unsupported "more explicit type arguments than the callee has binders";
         let fixed = List.mapi (fun i t ->
@@ -471,7 +471,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
              signature.quantified} in
         if partial.quantified = [] then fixed,partial.result
         else
-          let inferred = Inference.infer ~expand:(expand_named declarations) ~receiver partial actuals in
+          let inferred = Inference.infer ~expand:(expand_named declarations) ~receiver ?expected partial actuals in
           fixed @ inferred.substitution,inferred.result in
       let no_type_arguments () = if type_args <> [] then
         unsupported "explicit type arguments on a callee without binders" in
@@ -620,7 +620,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
            claim is inserted into the source's argument list. *)
         let actuals=List.map (expr env) args @
           List.init (max 0 (List.length signature.params - List.length args)) (fun _ -> Atoms [Undef]) in
-        let substitution,result = infer_explicit ~receiver:receiver_type signature actuals in
+        let substitution,result = infer_explicit ~receiver:receiver_type ?expected signature actuals in
         instance_of ~declared:callee target substitution;
         (* A function literal taking fewer parameters than it is offered is
            claimed at the offered signature: the extra actuals are discarded

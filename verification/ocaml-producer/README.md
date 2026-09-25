@@ -95,6 +95,9 @@ language. The boundaries are:
    publishes acceptance. For a call to a quantified callable, `inference.ml`
    accumulates directional lower/upper constraints through callable shapes,
    reversing direction at each callback parameter and preserving it at results.
+   Two applications of one declaration relate their arguments both ways, and
+   where the call's value is expected at a type its result is constrained by
+   it, as TypeScript infers from the return position.
    Declared dependent bounds propagate lower constraints forward and upper
    constraints backward to a fixed point. Constraints also pass through
    construct signatures (parameters reversed, the instance preserved), between
@@ -105,7 +108,8 @@ language. The boundaries are:
    the class's instance. A variable whose lower and upper bounds share a type,
    as an invariant position makes them, is that type; otherwise a declared
    graph bound is preferred. Candidate types join lower bounds;
-   upper-only candidates intersect primitive bounds when representable. Every
+   upper-only candidates intersect primitive bounds when representable; a
+   binder with no candidate is `unknown`, as in TypeScript. Every
    argument and substituted bound is still validated by Lean. It conservatively joins branches and infers local
    values, object shapes, callback results and calls from explicit signatures.
    A closure without a result annotation is proposed at its body's widened

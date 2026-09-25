@@ -12,6 +12,7 @@ import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration
 import type { Span } from "./span.mts";
 import { classInstance, members, optionalTerm, signature, typeTerm, type TermScope } from "./type-term.mts";
 import { arrayPrototype, overlay, type OverlayEntry } from "./array-prototype.mts";
+import { asyncIntrinsics, intrinsicModule } from "./intrinsics.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
 export type { DeclarationIdentity, DeclarationDocument, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
 
@@ -165,6 +166,9 @@ export function collectDeclarations(file: string, options: {
   arrays?: Span;
   /** The overlay `Array.prototype` is read through; tests vary it. */
   arrayOverlay?: readonly OverlayEntry[];
+  /** The client uses `async` or `await`: the intrinsics that stand for them
+   * (`intrinsics.mts`) join its values, located at the first such construct. */
+  intrinsics?: Span;
 } = {}): DeclarationDocument {
   const clientFile = resolve(file);
   return withProject(clientFile, options.tsconfigPath, (checker, client, root, program) => {
@@ -418,6 +422,32 @@ export function collectDeclarations(file: string, options: {
         }, options.arrayOverlay ?? overlay);
       } catch (error) {
         throw new DeclarationError(options.arrays, error instanceof Error ? error.message : String(error));
+      }
+    }
+    // `async` and `await`, as the intrinsics the parser writes them with
+    // (`intrinsics.mts`): trusted steps at signatures over the standard
+    // library's `Promise`, listed as values like an import's.
+    if (options.intrinsics) {
+      const at = options.intrinsics;
+      try {
+        const symbol = checker.resolveName("Promise", SymbolFlags.Interface, client, false);
+        const parts = (symbol?.declarations ?? []).map(d => d.resolve())
+          .filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
+        const [promise] = parts;
+        if (!promise) throw Error("the standard library declares no Promise");
+        for (const part of parts) clean(part, `${idOf(part.getSourceFile())}#Promise`);
+        partners.set(promise, parts);
+        valueStarts.push(promise);
+        const target = identityOf(promise);
+        for (const intrinsic of asyncIntrinsics(argument => ({ k: "reference",
+          reference: { name: "Promise", span: [0, 0], arguments: [[0, 0]], target },
+          args: [argument], span: [0, 0] })))
+          values.push({ binding: { local: intrinsic.name, imported: intrinsic.name,
+            specifier: intrinsicModule, span: at },
+            declaration: { module: intrinsicModule, name: intrinsic.name, span: [0, 0] },
+            construct: false, typeParams: intrinsic.typeParams, type: intrinsic.type });
+      } catch (error) {
+        throw new DeclarationError(at, error instanceof Error ? error.message : String(error));
       }
     }
     const seen = new Set<string>();

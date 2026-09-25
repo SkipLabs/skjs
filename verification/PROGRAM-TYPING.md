@@ -3395,6 +3395,12 @@ at entry. Subsumption establishes neither allocation nor freshness.
 Their application uses Call. Their introduction needs additional computation
 judgments, not additional callable-object representations.
 
+What is implemented is weaker and trusted: `await` and an async body's returns
+are calls of intrinsic values at declared signatures, and **Await**,
+**Async-Return** and **Async-Complete** are instances of Call
+([DESIGN.md, Async functions and await](DESIGN.md#async-functions-and-await)).
+The judgments below remain the target that would discharge that trust.
+
 An asynchronous entry judgment
 
 $$

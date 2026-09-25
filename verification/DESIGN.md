@@ -767,6 +767,16 @@ modeling choices; they do not replace proof.
   that allocates arrays has an input slot `[[Array.prototype]]` at `ArrayProto`,
   and the safety theorem holds for every environment meeting its inputs, as
   for an imported value's declared type.
+- `async` and `await` are trusted steps
+  ([Async functions and await](#async-functions-and-await)): awaiting a
+  `Promise<T>` yields a `T`, other jobs running meanwhile as during any call;
+  an async function's promise settles to the primitive its body returns, or
+  to `undefined` when the body completes. Nothing models the job queue, a
+  rejection or a promise that never settles. The assumption enters every
+  result as a premise: a unit that awaits or returns from an async body has
+  input slots `%Await%`, `%AsyncReturn%` and `%AsyncComplete%` at their
+  declared signatures, and the safety theorem holds for every environment
+  meeting them, as for an imported value's declared type.
 - Lean's kernel, compilation infrastructure and the executed checker are correct.
 
 For the stateful in-memory interface, `accept` checks the exact requested entry
@@ -2243,6 +2253,81 @@ with the read rule. (4) Literals and rest arrays allocated with the prototype;
 `ArrayProto` as a trusted import. (5) Coverage through the prototype.
 (6) Dense arrays. (7) Arrays as `Iterable<T>`: members found through the
 prototype, instance rows in coverage, `[Symbol.iterator]` in the overlay.
+
+### Async functions and await
+
+**Decision.** `await` is a trusted step: `await e` yields the value the
+promise `e` settles to, at its type argument, with no model of the job queue.
+An async function's call returns a promise of what its body returns. Both are
+stated as values the program calls, so no calculus rule, typing rule or proof
+changes: the calculus has calls, and a call's callee is an assumption at its
+declared type, as an imported value's is.
+
+**Elaboration.** The parser writes each form as a call of an *intrinsic*, a
+value named `%…%`, which no source identifier can spell and so none can
+shadow (`intrinsics.mts`):
+
+$$
+\begin{aligned}
+\llbracket\mathsf{await}\ e\rrbracket&=\mathtt{\%Await\%}(\llbracket e\rrbracket)\\
+\llbracket\mathsf{return}\ e\rrbracket_{\mathsf{async}}&=\mathsf{return}\ \mathtt{\%AsyncReturn\%}(\llbracket e\rrbracket)\\
+\llbracket\text{completion}\rrbracket_{\mathsf{async}}&=\mathsf{return}\ \mathtt{\%AsyncComplete\%}()
+\end{aligned}
+$$
+
+in an async function, arrow or function expression's own body (a nested
+closure's returns are its own); an async arrow's expression body is its
+return, and a body that can complete gets the completing return after its last
+statement. The declaration reader lists the intrinsics among the module's
+values, at signatures over the standard library's `Promise`:
+
+$$
+\begin{aligned}
+\mathtt{\%Await\%}&:\forall T.\ (\mathit{promise}:\mathsf{Promise}\langle T\rangle)\Rightarrow T\\
+\mathtt{\%AsyncReturn\%}&:\forall T\le P.\ (\mathit{value}:T)\Rightarrow\mathsf{Promise}\langle T\rangle
+\qquad P=\mathsf{null}\mid\mathsf{undefined}\mid\mathsf{boolean}\mid\mathsf{number}\mid\mathsf{string}\mid\mathsf{bigint}\mid\mathsf{symbol}\\
+\mathtt{\%AsyncComplete\%}&:()\Rightarrow\mathsf{Promise}\langle\mathsf{void}\rangle
+\end{aligned}
+$$
+
+A generic intrinsic is instantiated at each call by the INSTANCES rule of
+[Modules and code units](#modules-and-code-units), so the rules below are
+derived, not added: with $R$ the async function's result annotation,
+
+$$
+\frac{\Gamma\vdash e:\mathsf{Promise}\langle A\rangle}{\Gamma\vdash\mathsf{await}\ e:A}\ \textsc{await}
+\qquad
+\frac{\Gamma\vdash e:A\quad A\le P\quad \mathsf{Promise}\langle A\rangle\le R}{\Gamma\vdash_R\mathsf{return}\ e}\ \textsc{async-return}
+\qquad
+\frac{\mathsf{Promise}\langle\mathsf{void}\rangle\le R}{\Gamma\vdash_R\text{completion}}\ \textsc{async-complete}
+$$
+
+**Why the result is a primitive.** JavaScript resolves a promise with a
+thenable, any object whose `then` is callable, by calling that `then` and
+adopting what it passes on, not by settling to the object. Record types are
+open, so no object type rules a `then` out, and TypeScript's own
+`Promise<{ a: number }>` can settle to a string. The bound $P$ admits only
+values that are never thenables. `Promise<void>` is `Promise<unknown>` here
+(`void` is top), so a void async function may only complete: returning a value
+from it is refused, where `%AsyncComplete%` settles to `undefined`, which top
+admits. An awaited operand must be a `Promise`, since `await` calls a
+thenable's `then` too.
+
+**Interleaving.** Other jobs run while a function is suspended, and the body
+after its first `await` runs after its caller has continued. The model runs the
+body to its end before the call returns. Every point where other code can
+intervene is an `await`, a call of an unknown function, so the facts a body or
+its caller keeps across it are what they keep across any call: storage
+contracts, which every job preserves, not observations of mutable cells.
+Module initialization is no different: a module function a statement names
+must read only constants already initialized, whatever runs during that
+statement (`checkInitializationOrder`), so a callback a later `await` lets run
+was checked when it was passed.
+
+**Refused.** `await` of an operand not typed as `Promise`, an async function
+returning an object, a void async function returning a value, a promise
+returned for adoption (`return p` in an async function), async class methods,
+async generators and `for await`.
 
 ### Next object milestone
 

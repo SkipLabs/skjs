@@ -101,7 +101,7 @@ let upper_candidate = function
 
 (* [expand] gives a declaration's equation, to compare a class instance with
    the interface application a signature names (`new () => Mapper<K, V, K2, V2>`). *)
-let infer ?receiver ?(expand = fun _ -> None) (signature:signature) actuals =
+let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) actuals =
   if signature.quantified=[] then unsupported "generic inference requires a quantified signature";
   if signature.rest_pack<>None then unsupported "pack inference requires an argument-list candidate";
   let domains = match signature.variadic with
@@ -173,6 +173,9 @@ let infer ?receiver ?(expand = fun _ -> None) (signature:signature) actuals =
   (* The receiver is an input like the actuals: the one passed must fit the
      signature's. *)
   Option.iter (fun r -> constrain r signature.receiver) receiver;
+  (* Where the call's value is expected at a type, its result must fit it, as
+     TypeScript infers from the return position too. *)
+  Option.iter (fun t -> constrain signature.result t) expected;
   List.iter (fun (q:quantifier) ->
     Option.iter (function
       | ValueArgument t -> constrain (Rigid q.identity) t
@@ -192,6 +195,7 @@ let infer ?receiver ?(expand = fun _ -> None) (signature:signature) actuals =
   (* A literal joined with its primitive is the primitive: `0 | number` is
      `number`, the type a callback annotated with `number` states. *)
   let absorb = function
+    | Atoms atoms when List.mem Top atoms -> Atoms [Top]
     | Atoms atoms ->
       Atoms (List.filter (function
         | NumLit _ -> not (List.mem Num atoms)
@@ -220,8 +224,7 @@ let infer ?receiver ?(expand = fun _ -> None) (signature:signature) actuals =
       | _,(Some _ as chosen) -> chosen
       | (Some _ as chosen),None -> chosen
       | None,None -> upper_candidate v.upper in
-    match candidate with
-    | Some t -> v.identity,ValueArgument t
-    | None -> unsupported ("cannot infer " ^ v.identity.spelling ^ " from call arguments or bounds")) variables in
+    (* With no candidate at all, TypeScript infers `unknown`. *)
+    v.identity,ValueArgument (Option.value candidate ~default:top)) variables in
   let result = substitute substitution signature.result in
   {substitution;result}

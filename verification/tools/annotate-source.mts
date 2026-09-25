@@ -511,6 +511,12 @@ function render(
     n.forEachChild(walk);
   }
   walk(sf);
+  // A claim may also sit at a token: the parser writes `await` and an async
+  // body's returns as intrinsic calls read at their keywords (`intrinsics.mts`).
+  const tokenScanner=createScanner(true,undefined,source);
+  for(let k=tokenScanner.scan();k!==ts.SyntaxKind.EndOfFile;k=tokenScanner.scan()) {
+    starts.add(tokenScanner.getTokenStart());spans.add(`${tokenScanner.getTokenStart()}:${tokenScanner.getTokenEnd()}`);
+  }
   const insertions=new Map<number, string>(), seen=new Set<string>();
   function add(pos: number, data: Annotation){insertions.set(pos,(insertions.get(pos)||"")+comment(data));}
   // Ids are positional and deterministic, so the manifest and the annotations

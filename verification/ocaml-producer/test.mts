@@ -181,9 +181,9 @@ for (const [file, expected] of [
   writeFileSync(exported, "export function own(this: undefined): undefined { return this; }\n");
   assert.equal(parseFile(exported).functions[0]?.body[0]?.k, "return");
   // No type name here reaches a declaration, so the modifier is the refusal.
-  writeFileSync(exported, "export async function own(): undefined { return undefined; }\n");
+  writeFileSync(exported, "export default function own(): undefined { return undefined; }\n");
   assert.throws(() => parseFile(exported),
-    /only the export modifier is admitted on a source function/);
+    /only the export and async modifiers are admitted on a source function/);
   const jsonAst = parseFile(jsonPath, false, upstreamConfig);
   assert.deepEqual(jsonAst.functions.map(f => f.name), ["nest", "lookup"]);
   // The parser reads one file and TypeScript resolves another path: their

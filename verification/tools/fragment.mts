@@ -26,7 +26,8 @@ export type Expr =
       annot: TypeTerm | null;
       e: Expr;
     }
-  /* An object literal: one named field per initializer, in source order. */
+  /* An object literal: one named field per initializer, in source order. A
+     shorthand `{ x }` is `{ x: x }`. */
   | { k: "alloc"; pos: Span; fields: { name: string; e: Expr }[] }
   | { k: "read"; pos: Span; field: string; e: Expr }
   /* `e[key]`: evaluate the receiver, then the key. A string singleton names
@@ -83,7 +84,9 @@ export type Expr =
      operand's shape. `"object"` is not one shape, since it includes null. */
   | { k: "typeofTest"; pos: Span; shape: TypeofShape; equal: boolean; e: Expr }
   /* `spreads` are the indices of the arguments written with `...`: each
-     stands for the elements of its operand, read where it is written. */
+     stands for the elements of its operand, read where it is written. `await
+     e` and an async body's returns are written as calls of intrinsics
+     (`intrinsics.mts`), whose names no source identifier spells. */
   | { k: "apply"; pos: Span; callee: Expr; args: Expr[]; spreads?: number[] }
   /* `new callee(args)`: the callee, then the arguments left to right, then
      the callee's construct-only code runs. A plain function cannot be one. */
