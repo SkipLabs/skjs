@@ -159,7 +159,8 @@ required positions $\vec R$, optional positions $\vec O$, an optional rest
 $E$, and a readonly flag. An array meets a contract when its length is within
 the contract's bounds and each present element's location has a contract that
 agrees with the position's type, or, for a readonly contract, implies it.
-Every contract of the clause constrains the same array.
+Every contract of the clause constrains the same array. An array meeting a
+contract is **dense**: no element below its length is a hole.
 
 Lean: `listT`, `SlotContract` (`Types/Types.lean`).
 
@@ -630,11 +631,16 @@ i\ \text{a scheme row}\ (\vec p;\Sigma;\beta;\Sigma_\ldots)\quad
 \forall(p,B)\in\beta.\;\theta_p\subseteq B\lor G\vdash_c\theta_p\le B\\
 \text{a checked table}\quad
 T\equiv_G\mathsf{arrs}(L;M)\quad
-\forall\tau\in L.\;\exists\sigma\in\Sigma.\;\tau=\sigma[\kappa_0]\quad
-\forall\tau\in M.\;\exists\sigma\in\Sigma_\ldots.\;\tau=\sigma[\kappa_0]
+\forall\tau\in L.\;\exists\sigma\in\Sigma.\;\tau\doteq\sigma[\kappa_0]\quad
+\forall\tau\in M.\;\exists\sigma\in\Sigma_\ldots.\;\tau\doteq\sigma[\kappa_0]
 \end{array}}
      {G\vdash\{i\}\le T}\ \textsc{inst}
 $$
+
+Here $\tau\doteq\sigma'$ when the two have the same arity and each type of
+$\tau$ has the same members as the corresponding type of $\sigma'$: a type
+means the union of its labels, so their order does not matter
+(`sameLabels`, `sigMatch`, `restMatch`).
 
 The same tables relate two lowerings of one type that differ only in which
 binder rows their schemes use, as a producer's copy of `Promise<number>` and

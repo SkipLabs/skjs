@@ -255,7 +255,10 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     ja.context = j.context ∧ ja.term = a ∧ ji.context = j.context ∧ ji.term = i ∧
     jv.context = j.context ∧ jv.term = v ∧ j.type = ja.type ∧
     (match expand G ja.type, expand G ji.type with
-     | [.list T []], [.numLit b] => namedAt T b = some jv.type ∧ T.readonly = false
+     | [.list T []], [.numLit b] =>
+       -- At most the required length: in bounds or appending, never a hole.
+       namedAt T b = some jv.type ∧ (indexOfBits b).getD 0 ≤ T.required.length ∧
+         T.readonly = false
      | _, _ => False)
   | .len, .lenOf a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧ Represents G j.type .num ∧
@@ -743,10 +746,11 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     rw [hty]
     split at hr
     · rename_i T b hT hI
-      obtain ⟨hr, hro⟩ := hr
+      obtain ⟨hr, hkle, hro⟩ := hr
       simp only [namedAt, Option.bind_eq_some_iff] at hr
       obtain ⟨k, hk, hA⟩ := hr
-      exact .setElem ha hT hi hI hk hA hro hv
+      rw [hk] at hkle
+      exact .setElem ha hT hi hI hk hA hkle hro hv
     · contradiction
   · rename_i a ja
     rcases hl with ⟨hΓ, hta, hn, hr⟩
@@ -1397,11 +1401,11 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     rcases hj with rfl | rfl
     · exact iha
     · exact ihi
-  | @setElem Γ a i v L I A T b k ha hr hi hI hk hA hro hv iha ihi ihv =>
+  | @setElem Γ a i v L I A T b k ha hr hi hI hk hA hkle hro hv iha ihi ihv =>
     apply node_complete (G := G) (j := ⟨Γ, .setElem a i v, L⟩) (r := .setElem)
       (js := [⟨Γ,a,L⟩, ⟨Γ,i,I⟩, ⟨Γ,v,A⟩])
       ⟨rfl,rfl,rfl,rfl,rfl,rfl,rfl,by simp only [show expand G L = [.list T []] from hr,
-        show expand G I = [.numLit b] from hI]; simp [namedAt, hk, hA, hro]⟩
+        show expand G I = [.numLit b] from hI]; simp [namedAt, hk, hA, hro, hkle]⟩
     intro j hj
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
     rcases hj with rfl | rfl | rfl

@@ -82,8 +82,8 @@ def accepted (t : Tm) (A : Ty Nat) : Bool :=
 #guard !accepted (.letE restFn (.call (.var 0) [.num 1, .nul])) [0]
 
 /-- Against `...r: number[]`, in a context holding such a function and an
-array: a spread of a store that may have a hole would pass `undefined`, so it
-is refused; plain actuals and a spread of a dense tuple are not. -/
+array: plain actuals and spreads are accepted, since every store is dense and
+a spread passes only its elements. -/
 def searchIn (Γ : List (Ty Nat)) (t : Tm) : Bool :=
   match expression G pool 40 Γ t [0] with
   | some e => checkTree G e && claim e == ⟨Γ, t, [0]⟩
@@ -92,7 +92,7 @@ def searchIn (Γ : List (Ty Nat)) (t : Tm) : Bool :=
 def spreadAt (i : Nat) : Tm := .spread (.readAt CallArguments.arrayStoreField (.var i))
 
 #guard searchIn [[7],[8]] (.call (.var 0) [.num 1, .num 2])
-#guard !searchIn [[7],[8]] (.call (.var 0) [.num 1, spreadAt 1])
+#guard searchIn [[7],[8]] (.call (.var 0) [.num 1, spreadAt 1])
 #guard searchIn [[7],[9]] (.call (.var 0) [.num 1, spreadAt 1])
 #guard searchIn [[4],[8]] (.call (.var 0) [.num 1, spreadAt 1])
 

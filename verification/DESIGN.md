@@ -1731,9 +1731,9 @@ own contract is proved once, where the value is created. So a variadic value
 meets a fixed signature whose positions it admits, one value may carry fixed and
 variadic signatures, and a call clause holds both. A spread among the actuals
 of a variadic call is a `spread` term, replaced by its store's elements once
-every earlier actual is a value — `undefined` at a hole, as iteration answers —
-so a spread of an array that may have holes needs a rest whose element admits
-`undefined`. A spread followed by an actual that runs code is copied where it
+every earlier actual is a value — `undefined` at a hole, as iteration answers.
+Typed arrays are dense (below), so a spread of `T[]` into a `T[]` rest needs
+nothing more. A spread followed by an actual that runs code is copied where it
 is written, and the call spreads the copy.
 
 The common [behavioral equation](SEMANTICS.md#one-meaning-for-callable-contracts)
@@ -2085,10 +2085,27 @@ against; a test compares it with the signature TypeScript reads, so a changed
 library fails the check and is re-reviewed rather than silently trusted. The
 overlay is the whole trusted surface for arrays.
 
+**Dense arrays.** An array type promises no holes: every index below the
+length holds an element (`listT`). JavaScript allows holes (`xs[5] = v` on an
+empty array), and so does TypeScript, which types such a write like any other.
+Here an element write is typed only at an index proven no greater than the
+required length, in bounds or appending, so accepted programs never create a
+hole. The cost is that `xs[i] = v` at an index not proven in range is refused;
+`push` appends. In return iteration, spreads and `.apply` never produce an
+`undefined` the element type lacks, `find` and `findIndex` can be trusted at
+their declared types, and `T[]` spreads into a `T[]` rest.
+
+**Instances up to members.** A type is a set of labels, so an instance matches
+a scheme signature when each of its types has the same members as the
+signature's image, in any order: `find`'s declared `T | undefined` at
+`T = boolean` is `true | false | undefined` however the producer orders it
+(`sameLabels`, `sigMatch`, `restMatch`).
+
 **Increments.** (1) Rest store binding. (2) The reserved key, the
 delegation steps and the guards. (3) The own-key bound and the prototype view,
 with the read rule. (4) Literals and rest arrays allocated with the prototype;
 `ArrayProto` as a trusted import. (5) Coverage through the prototype.
+(6) Dense arrays.
 
 ### Next object milestone
 

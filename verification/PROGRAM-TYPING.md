@@ -188,9 +188,9 @@ So one value may meet fixed and variadic signatures at once, and a graph call
 clause carries both: `arrs L S`, `callable P Ps L S`. Write
 $\operatorname{Store}_G(Q,P)$ when $Q$ is the store $P$'s one tuple contract
 describes, writable since the store is fresh (`RestStore`), and $\operatorname{Spreads}_G(S,E)$ when $S$ is a
-store contract every position of which is within $E$, with $\mathsf{undefined}$
-in $E$ if the store may have a hole — at an optional position or among its rest
-(`SpreadsInto`). Creation checks the body once per variadic signature, with the
+store contract every position of which is within $E$ (`SpreadsInto`); a typed
+store has no hole, so a spread yields no $\mathsf{undefined}$ its positions do
+not hold. Creation checks the body once per variadic signature, with the
 rest store in slot 0, the receiver in slot 1, then the fixed parameters
 (`funRest`; `makeCallableRest` adds a field bag as `makeCallable` does). The
 body's first step wraps the store into the array the rest parameter names, an
@@ -499,8 +499,10 @@ the store is a value the object replaces when the array grows. A `list` clause
 is one or more tuple contracts on a store: required positions, each a
 location under its family; optional positions, a hole or such a location; and a
 rest family under which any further location must be, without which there is
-none. A hole and a present `undefined` differ, as do an index in bounds and an
-arbitrary one, and a mutable and a readonly array. A readonly store carries
+none. A store a tuple contract describes has no hole: an optional position is
+absent only past the length (`listT`, *dense*), so iteration and spreads never
+answer an `undefined` the positions do not hold. An index in bounds and an
+arbitrary one differ, as do a mutable and a readonly array. A readonly store carries
 element read capabilities: each location invariant implies the element type.
 Writable stores require equality and are invariant; `setElem` requires a
 writable store. The outer store field is also a view for a readonly array. `arrLit` allocates a store under the claimed tuple; `elem` reads a
@@ -508,8 +510,19 @@ required position named by a literal index, `elemOpt` an optional or rest
 position, adding `undefined`, and `elemAny` any numeric index into a
 homogeneous array, adding `undefined`; `setElem` writes a named position into
 its location, or a fresh one the new store records, keeping the contract for
-every alias; `len` reads the length. Writes at an index no contract names, and
-reads by a non-literal index into a tuple, have no rule.
+every alias; `len` reads the length. A write is typed only at an index no
+greater than the required length, so it lands in bounds or appends and never
+leaves a hole:
+
+$$
+\frac{\Gamma\vdash_G a:L\quad L\equiv_G\mathsf{list}(\tau)\quad
+      \Gamma\vdash_G i:\mathsf{numLit}(k)\quad \tau(k)=A\quad
+      k\le|\vec R_\tau|\quad \tau\ \text{writable}\quad \Gamma\vdash_G v:A}
+     {\Gamma\vdash_G a[i]=v:L}\ \textsc{setElem}
+$$
+
+Writes at a greater index, or at one no contract names, and reads by a
+non-literal index into a tuple, have no rule; a program appends with `push`.
 
 Arithmetic has one rule, `arith`: two operands whose types answer the number
 test, combined by the double operation into a type representing the number

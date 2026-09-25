@@ -532,10 +532,10 @@ meanings only below the budget, as a record's does. -/
 theorem list_congr_below (X Y : α → Fam) (t : Tuple α) (n : Nat)
     (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
     listT (tupleFams X t) n W v ↔ listT (tupleFams Y t) n W v := by
-  constructor <;> rintro ⟨ls, rfl, hlen, hbound, hreq, hopt, hrest⟩ <;>
+  constructor <;> rintro ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩ <;>
     simp only [listT, tupleFams, List.length_map, List.getElem?_map, Option.map_eq_none_iff,
       Option.map_eq_some_iff] at hlen hbound hreq hopt hrest ⊢ <;>
-    refine ⟨ls, rfl, hlen, hbound, ?_, ?_, ?_⟩
+    refine ⟨ls, rfl, hd, hlen, hbound, ?_, ?_, ?_⟩
   · rintro i A ⟨a, ha, rfl⟩
     obtain ⟨l, c, hl, hw, hag⟩ := hreq i (X a) ⟨a, ha, rfl⟩
     exact ⟨l, c, hl, hw, fun j hj W' u => (hag j hj W' u).congr (h a j hj W' u)⟩

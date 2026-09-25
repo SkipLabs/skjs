@@ -813,9 +813,9 @@ taken then the rest. `.apply` is
 a tuple of required positions, the list's length (`lenOf`) and each index
 (`elemAt`) are read in order before `invoke f r [elements]`. A list of unknown
 length goes, after its length is read, to a target signature taking only a rest
-parameter, as its store's positions, `undefined` at a hole, so that element
-contract must admit `undefined`; TypeScript admits no other target for such a
-list. A missing, null or undefined list gives no actuals. The list is read as
+parameter, as its store's positions; a typed store has no hole, so no
+`undefined` arrives that the positions do not hold. TypeScript admits no other
+target for such a list. A missing, null or undefined list gives no actuals. The list is read as
 an array-like and never iterated.
 
 A class value is `{"k":"ctor","pos":span,"lambda":lambda}`: its constructor

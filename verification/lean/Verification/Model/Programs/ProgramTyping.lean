@@ -477,8 +477,7 @@ def RestStore (G : NormalGraph ι) (S P : Ty ι) : Prop :=
 /-- A store type whose elements a spread passes at `E`. -/
 def SpreadsInto (G : NormalGraph ι) (S E : Ty ι) : Prop :=
   match expand G S with
-  | [.list T []] => (∀ A ∈ T.required ++ T.optional ++ T.rest.toList, ∀ i ∈ A, i ∈ E) ∧
-      ((T.optional ≠ [] ∨ T.rest.isSome = true) → ∃ i ∈ E, Represents G [i] .undef)
+  | [.list T []] => ∀ A ∈ T.required ++ T.optional ++ T.rest.toList, ∀ i ∈ A, i ∈ E
   | _ => False
 
 instance [DecidableEq ι] (G : NormalGraph ι) (S P : Ty ι) : Decidable (RestStore G S P) := by
@@ -536,20 +535,13 @@ theorem spreadsInto_sound {G : NormalGraph ι} {S E : Ty ι} (h : SpreadsInto G 
   unfold SpreadsInto at h
   split at h
   · rename_i T hS
-    obtain ⟨hsub, hhole⟩ := h
     have hl := RestCalls.listT_spreads (T := tupleFams (meaning G) T) (E := meaning G E)
       (by
         intro i A hA
         rw [positionFam_tupleFams] at hA
         obtain ⟨A', hA', rfl⟩ := Option.map_eq_some_iff.mp hA
         rintro n W v ⟨k, hk, hv⟩
-        exact ⟨k, hsub A' (positionTy_mem hA') k hk, hv⟩)
-      (by
-        intro ho j U
-        have ho' : T.optional ≠ [] ∨ T.rest.isSome = true := by
-          simpa [tupleFams] using ho
-        obtain ⟨i, hi, hr⟩ := hhole ho'
-        exact undef_of_label hi hr j U)
+        exact ⟨k, h A' (positionTy_mem hA') k hk, hv⟩)
     intro n W heap v hh hv
     exact hl n W heap v hh ((represents_sem hS n W v).mp hv).1
   · exact h.elim
@@ -979,11 +971,13 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       HasTy G Γ a L → Represents G L (.list ⟨[], [], some E, false⟩ []) → HasTy G Γ i I →
       Answers G I .isNum true → Represents G U .undef → HasTy G Γ (.elemAt a i) (E ++ U)
   /-- A write at a literal index into a position the contract names keeps the
-  contract: into the element's location, or a fresh one the store records. -/
+  contract: into the element's location, or a fresh one the store records.
+  The index is at most the required length, so the write is in bounds or
+  appends at the end: it never leaves a hole, and the store stays dense. -/
   | setElem {Γ : List (Ty ι)} {a i v : Tm} {L I A : Ty ι} {T : Tuple (Ty ι)} {b : UInt64} {k : Nat} :
       HasTy G Γ a L → Represents G L (.list T []) → HasTy G Γ i I → Represents G I (.numLit b) →
-      indexOfBits b = some k → positionTy T k = some A → T.readonly = false → HasTy G Γ v A →
-      HasTy G Γ (.setElem a i v) L
+      indexOfBits b = some k → positionTy T k = some A → k ≤ T.required.length →
+      T.readonly = false → HasTy G Γ v A → HasTy G Γ (.setElem a i v) L
   | len {Γ : List (Ty ι)} {a : Tm} {L N : Ty ι} {T : Tuple (Ty ι)} :
       HasTy G Γ a L → Represents G L (.list T []) → Represents G N .num → HasTy G Γ (.lenOf a) N
   /-- A tag test whose answer the operand's type does not settle is still a
@@ -1493,7 +1487,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       (ihi j U heap ρ (he.transfer j hj U hx) hu hok)
     intro m hm V hy hv heap' iv hok' hival hi'
     have ha'' := (meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U av ha')
-    obtain ⟨ls, rfl, -, -, hreq, -, -⟩ := ((represents_sem hr m V av).mp ha'').1
+    obtain ⟨ls, rfl, -, -, -, hreq, -, -⟩ := ((represents_sem hr m V av).mp ha'').1
     simp only [tupleFams, List.length_map, List.getElem?_map] at hreq
     have hb : iv = .num b := (represents_sem hI m V iv).mp hi'
     subst hb
@@ -1508,7 +1502,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       (ihi j U' heap ρ (he.transfer j hj U' hx) hu hok)
     intro m hm V hy hv heap' iv hok' hival hi'
     have ha'' := (meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U' av ha')
-    obtain ⟨ls, rfl, -, -, -, hopt, hrest⟩ := ((represents_sem hr m V av).mp ha'').1
+    obtain ⟨ls, rfl, -, -, -, -, hopt, hrest⟩ := ((represents_sem hr m V av).mp ha'').1
     simp only [tupleFams, List.length_map, List.getElem?_map] at hopt hrest
     have hb : iv = .num b := (represents_sem hI m V iv).mp hi'
     subst hb
@@ -1555,7 +1549,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       (ihi j U' heap ρ (he.transfer j hj U' hx) hu hok)
     intro m hm V hy hv heap' iv hok' hival hi'
     have ha'' := (meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U' av ha')
-    obtain ⟨ls, rfl, -, -, -, -, hrest⟩ := ((represents_sem hr m V av).mp ha'').1
+    obtain ⟨ls, rfl, -, -, -, -, -, hrest⟩ := ((represents_sem hr m V av).mp ha'').1
     have hnum := answers_sound hq hi'
     obtain ⟨b, rfl⟩ : ∃ b, iv = .num b := by
       cases iv <;> simp [tagHolds] at hnum; exact ⟨_, rfl⟩
@@ -1580,7 +1574,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       subst hE
       apply Safe_mono m (fun m' _ U'' u hu => (meaning_append G E U m' U'' u).mpr (Or.inl hu))
       exact elem_read_rule (meaning_valOnly G E) m V heap' l hv hok' hloc hw' (fun j hj U u => (hag j hj U u).1)
-  | @setElem Γ a i v L I A T b k ha hr hi hI hk hA hro hv iha ihi ihv =>
+  | @setElem Γ a i v L I A T b k ha hr hi hI hk hA hkle hro hv iha ihi ihv =>
     intro n W h ρ he hw hh
     apply bind (fun a => .setElem a (instantiate 0 ρ i) (instantiate 0 ρ v)) Step.setC1 n W h _ hw hh
       (iha n W h ρ he hw hh)
@@ -1594,8 +1588,8 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     have hav' := (meaning_adm G L).mono p _ X hz av ((meaning_adm G L).down_le m p hp V av
       ((meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U av ha')))
     have hlist := ((represents_sem hr p X av).mp hav').1
-    obtain ⟨ls, rfl, -, -, hreq, hopt, hrest⟩ := hlist
-    simp only [tupleFams, List.length_map, List.getElem?_map] at hreq hopt hrest
+    obtain ⟨ls, rfl, -, hlen, -, hreq, hopt, hrest⟩ := hlist
+    simp only [tupleFams, List.length_map, List.getElem?_map] at hreq hopt hrest hlen
     have rwContract : ∀ P Q : Prop, SlotContract T.readonly P Q ↔ (P ↔ Q) := by
       intro P Q; simp [SlotContract, hro, iff_def]
     simp only [rwContract] at hreq hopt hrest
@@ -1651,6 +1645,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       apply listT_grow hold
       · rw [positionFam_tupleFams, hA]; rfl
       · simp only [elemLoc, hk, Option.bind_some] at hloc; exact hloc
+      · omega
       · exact hm'
   | @len Γ a L N T ha hr hn ih =>
     intro n W h ρ he hw hh

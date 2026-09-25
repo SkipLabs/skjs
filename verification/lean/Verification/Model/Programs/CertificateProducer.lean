@@ -166,9 +166,19 @@ def matchRow [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap �
             else none
           | _, _ => none
     | _ =>
-      if S.length = T.length then
-        (S.zip T).foldlM (fun st xy => matchRow G bs V fuel st κ [xy.1] [xy.2]) st
-      else none
+      let positional := if S.length = T.length then
+          (S.zip T).foldlM (fun st xy => matchRow G bs V fuel st κ [xy.1] [xy.2]) st
+        else none
+      -- A union is a set of labels: its fixed labels match themselves in `T`,
+      -- and its one other label takes the rest (`undefined | T` against
+      -- `boolean | undefined`).
+      let fixed := S.filter fun p => T.contains p && !G.params p &&
+        (fv V p).all (fun q => (κ.lookup q).isNone)
+      let bySet := match S.filter (!fixed.contains ·) with
+        | [p] => matchRow G bs V fuel (fixed.foldl (fun st q => add st q [q]) st) κ [p]
+            (T.filter (!fixed.contains ·))
+        | _ => none
+      positional.orElse fun _ => bySet
 
 def matchSig [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap ι) (fuel : Nat)
     (st : InstState ι) (κ : Ctx ι) (p q : List ι × List (List ι) × List ι) :

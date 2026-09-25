@@ -77,7 +77,9 @@ export const cases: Case[] = [
   negative("invalid-array-reduce-result", "reduce returns its accumulator's type, not a narrower one"),
   positive("array-methods", "map, forEach and sort read through the prototype, sort on a mutable array"),
   negative("invalid-array-sort-readonly", "sort mutates its receiver, so a readonly array is refused"),
-  positive("array-library", "filter, every, slice, join, includes, at, push and pop at TypeScript's declared types"),
+  positive("array-library", "filter, every, slice, join, includes, at, find, push and pop at TypeScript's declared types"),
+  positive("array-dense-write", "an element write into a required position or at the required length keeps the array dense"),
+  negative("invalid-array-hole", "a write past an index the array is known to reach would leave a hole"),
   positive("object-callable-operands", "Nested objects and optional receivers share one callable contract decoder"),
   negative("invalid-object-callable-operands", "A readonly object cannot supply a callback's write capability"),
   { ...positive("object-constructor-value-import", "An imported constructor takes an object and returns a nested object field"),
@@ -250,8 +252,7 @@ export const cases: Case[] = [
   negative("invalid-rest-actual", "an actual outside a rest's element type"),
   negative(
     "spread-holes",
-    "TypeScript accepts a sparse Boolean array spread that puts undefined into a Boolean rest",
-    /a spread of an array that may have holes passes `undefined`/,
+    "TypeScript accepts a write that leaves a hole, which a later spread would pass as undefined; the write is refused",
   ),
   positive(
     "overloads",

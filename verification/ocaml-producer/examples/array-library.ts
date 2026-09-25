@@ -24,3 +24,7 @@ function grow(xs: number[], n: number): number | undefined {
   xs.push(n, n);
   return xs.pop();
 }
+
+function firstHeld(xs: readonly boolean[]): boolean | undefined {
+  return xs.find((x: boolean): boolean => x);
+}

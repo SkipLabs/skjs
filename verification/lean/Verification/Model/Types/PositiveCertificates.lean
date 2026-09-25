@@ -402,8 +402,8 @@ def checkInst [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (tbl : InstT
         certs.length == s.bounds.length &&
         (s.bounds.zip certs).all (fun bc => boundOk G s.binders θs bc.1 bc.2) &&
         TableOk G tbl D V &&
-        (L.all fun q => s.signatures.any fun p => sigImg tbl (s.binders.zip θs) p == some q) &&
-        M.all fun q => s.variadic.any fun p => restImg tbl (s.binders.zip θs) p == some q
+        (L.all fun q => s.signatures.any fun p => sigMatch tbl (s.binders.zip θs) p q) &&
+        M.all fun q => s.variadic.any fun p => restMatch tbl (s.binders.zip θs) p q
     | none => false
   | _, _ => false
 

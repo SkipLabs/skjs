@@ -1095,10 +1095,10 @@ theorem covers_tuple_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : L
     (W : WorldT n) (v : Val) (hv : listT (tupleFams (mixedValues G η) p) n W v) :
     listT (tupleFams (mixedValues G η) q) n W v := by
   obtain ⟨hreqLen, hoptLen, hreqR, hoptR, hrestR, hmode⟩ := hc
-  obtain ⟨ls, rfl, hlen, hbound, hreq, hopt, hrest⟩ := hv
+  obtain ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩ := hv
   simp only [listT, tupleFams, List.length_map, List.getElem?_map, Option.map_eq_none_iff,
     Option.map_eq_some_iff] at hlen hbound hreq hopt hrest ⊢
-  refine ⟨ls, rfl, hreqLen ▸ hlen, ?_, ?_, ?_, ?_⟩
+  refine ⟨ls, rfl, hd, hreqLen ▸ hlen, ?_, ?_, ?_, ?_⟩
   · intro hn
     have hpn : p.rest = none := by
       cases hp : p.rest <;> cases hq : q.rest <;> simp_all [CoversRest]
@@ -1802,6 +1802,29 @@ def restImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
   return (← tyImg tbl κ p.1, ← p.2.1.mapM (tyImg tbl κ), ← tyImg tbl κ p.2.2.1,
     ← tyImg tbl κ p.2.2.2)
 
+/-- Two label lists with the same members. A type is the union of its labels,
+so their order and repetition carry no meaning. -/
+def sameLabels [DecidableEq ι] (a b : List ι) : Bool := a.all (· ∈ b) && b.all (· ∈ a)
+
+/-- Two lists of types, position by position with the same members. -/
+def sameLabelLists [DecidableEq ι] (as bs : List (List ι)) : Bool :=
+  as.length == bs.length && (as.zip bs).all fun ab => sameLabels ab.1 ab.2
+
+/-- A signature is a scheme signature's image, up to the members of each type. -/
+def sigMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
+    (p q : List ι × List (List ι) × List ι) : Bool :=
+  match sigImg tbl κ p with
+  | some q' => sameLabels q'.1 q.1 && sameLabelLists q'.2.1 q.2.1 && sameLabels q'.2.2 q.2.2
+  | none => false
+
+/-- A variadic signature is a scheme one's image, up to the members of each type. -/
+def restMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
+    (p q : List ι × List (List ι) × List ι × List ι) : Bool :=
+  match restImg tbl κ p with
+  | some q' => sameLabels q'.1 q.1 && sameLabelLists q'.2.1 q.2.1 &&
+      sameLabels q'.2.2.1 q.2.2.1 && sameLabels q'.2.2.2 q.2.2.2
+  | none => false
+
 /-- Entering a scheme mapped to another: its binders stand for the other's. -/
 def enter [DecidableEq ι] (κ : Ctx ι) (src tgt : List ι) : Ctx ι :=
   src.zip (tgt.map ([·])) ++ κ.filter fun e => !src.contains e.1
@@ -2172,6 +2195,60 @@ theorem mixed_enter_binder [DecidableEq ι] (G : NormalGraph ι) (κ : Ctx ι)
   · rw [mixedMeaning_parameter G _ q kind hqk]
     change selectParameter (G.parameterKinds p) _ = _
     rw [hpk, he]
+
+theorem sameLabels_exists [DecidableEq ι] {a b : List ι} (h : sameLabels a b = true)
+    (P : ι → Prop) : (∃ i ∈ a, P i) ↔ (∃ i ∈ b, P i) := by
+  simp only [sameLabels, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at h
+  constructor
+  · rintro ⟨i, hi, hp⟩; exact ⟨i, h.1 i hi, hp⟩
+  · rintro ⟨i, hi, hp⟩; exact ⟨i, h.2 i hi, hp⟩
+
+theorem sameLabels_values [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι}
+    {a b : List ι} (h : sameLabels a b = true) : mixedValues G η a = mixedValues G η b := by
+  funext n W v
+  exact propext (sameLabels_exists h _)
+
+theorem sameLabels_arguments [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι}
+    {X : List ι → Fam} {a b : List ι} (h : sameLabels a b = true) :
+    graphArguments G η X a = graphArguments G η X b := by
+  funext n W vs
+  exact propext (sameLabels_exists h _)
+
+theorem sameLabelLists_values [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignment ι} :
+    ∀ {as bs : List (List ι)}, sameLabelLists as bs = true →
+      as.map (mixedValues G η) = bs.map (mixedValues G η)
+  | [], [], _ => rfl
+  | [], _ :: _, h => by simp [sameLabelLists] at h
+  | _ :: _, [], h => by simp [sameLabelLists] at h
+  | a :: as, b :: bs, h => by
+    simp only [sameLabelLists, List.length_cons, List.zip_cons_cons, List.all_cons,
+      Bool.and_eq_true, beq_iff_eq, Nat.add_right_cancel_iff] at h
+    have ht : sameLabelLists as bs = true := by
+      simp only [sameLabelLists, Bool.and_eq_true, beq_iff_eq]; exact ⟨h.1, h.2.2⟩
+    simp only [List.map_cons, sameLabels_values h.2.1, sameLabelLists_values ht]
+
+theorem sigMatch_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
+    {p q : List ι × List (List ι) × List ι} (h : sigMatch tbl κ p q = true) :
+    ∃ q', sigImg tbl κ p = some q' ∧ sameLabels q'.1 q.1 = true ∧
+      sameLabelLists q'.2.1 q.2.1 = true ∧ sameLabels q'.2.2 q.2.2 = true := by
+  unfold sigMatch at h
+  split at h
+  · rename_i q' hq
+    simp only [Bool.and_eq_true] at h
+    exact ⟨q', hq, h.1.1, h.1.2, h.2⟩
+  · cases h
+
+theorem restMatch_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
+    {p q : List ι × List (List ι) × List ι × List ι} (h : restMatch tbl κ p q = true) :
+    ∃ q', restImg tbl κ p = some q' ∧ sameLabels q'.1 q.1 = true ∧
+      sameLabelLists q'.2.1 q.2.1 = true ∧ sameLabels q'.2.2.1 q.2.2.1 = true ∧
+      sameLabels q'.2.2.2 q.2.2.2 = true := by
+  unfold restMatch at h
+  split at h
+  · rename_i q' hq
+    simp only [Bool.and_eq_true] at h
+    exact ⟨q', hq, h.1.1.1, h.1.1.2, h.1.2, h.2⟩
+  · cases h
 
 theorem sigImg_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
     {p q : List ι × List (List ι) × List ι} (h : sigImg tbl κ p = some q) :
@@ -2768,8 +2845,8 @@ theorem inst_mixed_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssign
       FamLe (mixedMeaning G η U) (mixedMeaning G η b.2))
     (hkinds : instKinds G s.binders θs = true)
     (hok : TableOk G tbl D V = true)
-    (hL : ∀ q ∈ L, ∃ p ∈ s.signatures, sigImg tbl (s.binders.zip θs) p = some q)
-    (hM : ∀ q ∈ M, ∃ p ∈ s.variadic, restImg tbl (s.binders.zip θs) p = some q)
+    (hL : ∀ q ∈ L, ∃ p ∈ s.signatures, sigMatch tbl (s.binders.zip θs) p q = true)
+    (hM : ∀ q ∈ M, ∃ p ∈ s.variadic, restMatch tbl (s.binders.zip θs) p q = true)
     : FamLe (mixedValues G η [i])
       (semWithArgs (mixedValues G η) (graphArguments G η (mixedValues G η)) (.arrs L M)) := by
   intro n W v hv
@@ -2830,10 +2907,11 @@ theorem inst_mixed_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssign
   · obtain ⟨q, hqL, rfl⟩ := List.mem_map.mp hq'
     obtain ⟨p, hps, hsig⟩ := hL q hqL
     have hpr := hc.1.2 _ (List.mem_map_of_mem hps)
-    obtain ⟨h1, h2, h3⟩ := sigImg_some hsig
-    have e1 := hfam _ _ h1
-    have e3 := hfam _ _ h3
-    have e2 := hargs _ _ h2
+    obtain ⟨q', hq', s1, s2, s3⟩ := sigMatch_some hsig
+    obtain ⟨h1, h2, h3⟩ := sigImg_some hq'
+    have e1 := (hfam _ _ h1).trans (sameLabels_values s1)
+    have e3 := (hfam _ _ h3).trans (sameLabels_values s3)
+    have e2 := (hargs _ _ h2).trans (sameLabelLists_values s2)
     change Promise (ArgsShort (p.2.1.map (mixedValues G (assign η s.binders As))))
       (mixedValues G (assign η s.binders As) p.1)
       (mixedValues G (assign η s.binders As) p.2.2) n W v at hpr
@@ -2842,11 +2920,12 @@ theorem inst_mixed_sound [DecidableEq ι] {G : NormalGraph ι} (η : MixedAssign
   · obtain ⟨q, hqM, rfl⟩ := List.mem_map.mp hr'
     obtain ⟨p, hps, hsig⟩ := hM q hqM
     have hpr := hc.2.2 _ (List.mem_map_of_mem hps)
-    obtain ⟨h1, h2, h3, h4⟩ := restImg_some hsig
-    have e1 := hfam _ _ h1
-    have e3 := hpack _ _ h3
-    have e4 := hfam _ _ h4
-    have e2 := hargs _ _ h2
+    obtain ⟨q', hq', s1, s2, s3, s4⟩ := restMatch_some hsig
+    obtain ⟨h1, h2, h3, h4⟩ := restImg_some hq'
+    have e1 := (hfam _ _ h1).trans (sameLabels_values s1)
+    have e3 := (hpack _ _ h3).trans (sameLabels_arguments s3)
+    have e4 := (hfam _ _ h4).trans (sameLabels_values s4)
+    have e2 := (hargs _ _ h2).trans (sameLabelLists_values s2)
     change Promise (ArgsRest _ (graphArguments G (assign η s.binders As)
       (mixedValues G (assign η s.binders As)) p.2.2.1)) _ _ n W v at hpr
     change Promise (ArgsRest (p.2.1.map (mixedValues G (assign η s.binders As)))
@@ -2870,8 +2949,8 @@ inductive Sub (G : NormalGraph ι) : List ι → List ι → Prop where
       (∀ b ∈ s.bounds, ∀ U, (s.binders.zip θs).lookup b.1 = some U →
         Core G U b.2 ∨ ∀ l ∈ U, l ∈ b.2) →
       TableOk G tbl D V = true →
-      (∀ q ∈ L, ∃ p ∈ s.signatures, sigImg tbl (s.binders.zip θs) p = some q) →
-      (∀ q ∈ M, ∃ p ∈ s.variadic, restImg tbl (s.binders.zip θs) p = some q) →
+      (∀ q ∈ L, ∃ p ∈ s.signatures, sigMatch tbl (s.binders.zip θs) p q = true) →
+      (∀ q ∈ M, ∃ p ∈ s.variadic, restMatch tbl (s.binders.zip θs) p q = true) →
       expand G T = [.arrs L M] → Sub G [i] T
   /-- **Renaming.** A type is below one holding its rows' images under a checked
   instance table with the empty context: the same rows up to renaming the

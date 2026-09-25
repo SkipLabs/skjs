@@ -257,10 +257,9 @@ theorem readElems_ok {E : Fam} {n : Nat} {W : WorldT n} {h : Heap} (hh : HeapOk 
 `E`, and `E` admits `undefined` if the store may have a hole: at an optional
 position or among the rest. -/
 theorem listT_spreads {T : TupleF} {E : Fam}
-    (hpos : ∀ i A, positionFam T i = some A → FamLe A E)
-    (hhole : (T.optional ≠ [] ∨ T.rest.isSome) → ∀ j (U : WorldT j), E j U .undef) :
+    (hpos : ∀ i A, positionFam T i = some A → FamLe A E) :
     Spreads (listT T) E := by
-  rintro n W h v hh ⟨ls, rfl, hlen, hbound, hreq, hopt, hrest⟩
+  rintro n W h v hh ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩
   have hsome : ∀ l, some l ∈ ls → ∃ c : Ctr n, lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → E j U u := by
     intro l hm
@@ -282,20 +281,8 @@ theorem listT_spreads {T : TupleF} {E : Fam}
         simp [positionFam, List.getElem?_eq_none (show T.required.length ≤ i by omega),
           List.getElem?_eq_none (show T.optional.length ≤ i - T.required.length by omega),
           show T.required.length + T.optional.length ≤ i by omega, hA]
-  have hnone : none ∈ ls → ∀ j (U : WorldT j), E j U .undef := by
-    intro hm
-    apply hhole
-    obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hm
-    by_cases h1 : i < T.required.length
-    · obtain ⟨A, hA⟩ : ∃ A, T.required[i]? = some A := ⟨_, List.getElem?_eq_getElem h1⟩
-      obtain ⟨l', c, hl', -⟩ := hreq i A hA
-      rw [hi] at hl'; cases hl'
-    · have hlt := (List.getElem?_eq_some_iff.mp hi).1
-      by_cases ho : T.optional = []
-      · cases hrs : T.rest with
-        | none => have := hbound hrs; simp [ho] at this; omega
-        | some _ => exact Or.inr rfl
-      · exact Or.inl ho
+  -- A store is dense: it has no hole to read as `undefined`.
+  have hnone : none ∈ ls → ∀ j (U : WorldT j), E j U .undef := fun hm => absurd hm hd
   obtain ⟨vs, hr, he⟩ := readElems_ok hh ls hsome hnone
   exact ⟨ls, vs, rfl, hr, he⟩
 

@@ -2039,11 +2039,6 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
           if Tp.optional.isEmpty && Tp.rest.isNone then pure (Tp.required, false)
           else if Tp.required.isEmpty && Tp.optional.isEmpty &&
               (ProgramTyping.restSigs G B).any (fun (_, Ps, _, _) => Ps.isEmpty) then
-            -- A hole among the list's positions is read as `undefined`.
-            if !(ProgramTyping.restSigs G B).any (fun (_, Ps, E, _) =>
-                Ps.isEmpty && (PositiveRules.restElem G E).any (·.contains 3)) then
-              throw (locatedRefusal (← table) e.span .bindingAnnotation
-                "an .apply list that may have holes passes `undefined`, which the rest's element type does not admit")
             pure ([], true)
           else throw (locatedRefusal (← table) e.span .bindingAnnotation
             ".apply with a list of unknown length needs a target taking only a rest parameter")
@@ -2175,20 +2170,6 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
       pure (i, [C])
     let As := As₀.zipIdx.map fun (A, i) =>
       (copyTypes.lookup i).getD A
-    -- A store that may have a hole, at an optional position or among its
-    -- rest, spreads `undefined` there; a rest whose element type does not
-    -- admit it cannot collect such a spread, whatever TypeScript says.
-    if variadic then
-      let G := SourceTypes.graph (← table)
-      let admitsUndefined := (ProgramTyping.restSigs G B).any fun (_, _, E, _) =>
-        (PositiveRules.restElem G E).any (·.contains 3)
-      for i in spreads do
-        let some arrayTy := As₀[i]? | throw "a spread argument needs an operand"
-        if let some S := storeOf G arrayTy then
-          if let [.list T []] := PositiveRules.expand G S then
-            if (!T.optional.isEmpty || T.rest.isSome) && !admitsUndefined then
-              throw (locatedRefusal (← table) e.span .bindingAnnotation
-                "a spread of an array that may have holes passes `undefined`, which the rest's element type does not admit")
     let n := As.length
     -- A spread stands for the required positions of its operand's tuple
     -- contract. Those elements are read here, after every other argument has

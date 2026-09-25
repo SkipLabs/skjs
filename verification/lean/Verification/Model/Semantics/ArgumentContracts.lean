@@ -99,8 +99,8 @@ theorem array_bound {T : TupleF} {E : Fam}
     (hb : ∀ i A, positionFam T i = some A → FamLe A E) :
     FamLe (listT T) (listT ⟨[], [], some E, true⟩) := by
   intro n W v h
-  obtain ⟨ls, rfl, hlen, hbound, hreq, hopt, hrest⟩ := h
-  refine ⟨ls, rfl, by simp, by simp, by simp, by simp, ?_⟩
+  obtain ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩ := h
+  refine ⟨ls, rfl, hd, by simp, by simp, by simp, by simp, ?_⟩
   intro i l _ hl
   have finish : ∀ A c, lookup W l = some c →
       positionFam T i = some A →

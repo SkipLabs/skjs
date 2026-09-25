@@ -47,8 +47,8 @@ export const overlay: readonly OverlayEntry[] = [
     signature: "reduce<U>(callbackfn: (previousValue: U, currentValue: T, currentIndex: number, array: readonly T[]) => U, initialValue: U): U;" },
   { name: "reduceRight", from: "ReadonlyArray",
     signature: "reduceRight<U>(callbackfn: (previousValue: U, currentValue: T, currentIndex: number, array: readonly T[]) => U, initialValue: U): U;" },
-  // `every`, `some` and `filter` skip holes, so the predicate sees only
-  // elements; the predicate-typed overloads are not listed.
+  // Arrays are dense, so a callback sees only elements. The predicate-typed
+  // overloads (`value is S`) are not listed.
   { name: "every", from: "ReadonlyArray",
     signature: "every(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): boolean;",
     drop: ["thisArg"] },
@@ -58,7 +58,6 @@ export const overlay: readonly OverlayEntry[] = [
   { name: "filter", from: "ReadonlyArray",
     signature: "filter(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): T[];",
     drop: ["thisArg"] },
-  // A copy keeps the holes the source has, which `T[]` admits.
   { name: "slice", from: "ReadonlyArray", signature: "slice(start?: number, end?: number): T[];" },
   { name: "join", from: "ReadonlyArray", signature: "join(separator?: string): string;" },
   { name: "indexOf", from: "ReadonlyArray",
@@ -68,6 +67,12 @@ export const overlay: readonly OverlayEntry[] = [
   { name: "includes", from: "ReadonlyArray",
     signature: "includes(searchElement: T, fromIndex?: number): boolean;" },
   { name: "at", from: "ReadonlyArray", signature: "at(index: number): T | undefined;" },
+  { name: "find", from: "ReadonlyArray",
+    signature: "find(predicate: (value: T, index: number, obj: readonly T[]) => unknown, thisArg?: any): T | undefined;",
+    drop: ["thisArg"] },
+  { name: "findIndex", from: "ReadonlyArray",
+    signature: "findIndex(predicate: (value: T, index: number, obj: readonly T[]) => unknown, thisArg?: any): number;",
+    drop: ["thisArg"] },
   // Mutators take a mutable array.
   { name: "sort", from: "Array",
     signature: "sort(compareFn?: (a: T, b: T) => number): this;", resultIsReceiver: true },
@@ -76,10 +81,8 @@ export const overlay: readonly OverlayEntry[] = [
   { name: "shift", from: "Array", signature: "shift(): T | undefined;" },
   { name: "unshift", from: "Array", signature: "unshift(...items: T[]): number;" },
   { name: "reverse", from: "Array", signature: "reverse(): T[];" },
-  // Not listed: `find` and `findIndex` pass a hole to their predicate as
-  // `undefined`, where the declaration states an element; `concat` names
-  // `ConcatArray`, and `values`, `keys` and `entries` name `ArrayIterator`,
-  // which the overlay does not read yet.
+  // Not listed: `concat` names `ConcatArray`, and `values`, `keys` and
+  // `entries` name `ArrayIterator`, which the overlay does not read yet.
 ];
 
 /** The synthetic declaration the array types' prototype view names. */
