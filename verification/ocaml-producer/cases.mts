@@ -273,6 +273,8 @@ export const cases: Case[] = [
   positive("array-isarray", "`Array.isArray` is the calculus's array test: arrays and tuples on the arm where it holds, records and primitives where it fails, negated, a mutable array kept mutable, a fresh literal never an array"),
   negative("invalid-isarray-record", "an open record may be an array carrying its keys: it stays on the arm where `Array.isArray` holds, where TypeScript drops it"),
   negative("invalid-isarray-else", "where `Array.isArray` fails the value is no tuple"),
+  positive("library-object-keys", "`Object.keys` of any object is a `string[]`; `Object.values` and `Object.entries` read values of which nothing is known"),
+  negative("invalid-object-values", "an interface may own further keys: `Object.values` of one is no `number[]`, though TypeScript's `any[]` lets it be claimed so"),
   gap("library-global-unreviewed", "`JSON.stringify` is not in the reviewed overlay: it returns `undefined` and throws where it is declared to return a string", "unsupported", "source",
     /JSON\.stringify is not in the reviewed overlay of library globals/),
   gap("library-global-call-and-method", "a global both called and read through a method is a callable object with methods, which has no graph clause", "unverified", "search",

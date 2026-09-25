@@ -72,6 +72,20 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // (`Tag.isArray`): true of exactly the objects that own an array store,
   // JavaScript's Array exotic objects. The declared guard, `arg is any[]`,
   // is not read: Lean narrows by the clauses of the tested value's type.
+  // A fresh array of the object's own enumerable string keys: true of every
+  // object, whatever its type says of its keys, and it runs no client code
+  // (no getter is called). ES5 declares it at `object`, ES2015 at `{}`.
+  { global: "Object", member: "keys", signature: "keys(o: object): string[];" },
+  { global: "Object", member: "keys", signature: "keys(o: {}): string[];" },
+  // The values of those keys, and the key-value pairs: nothing is known of
+  // them, `any` read as `unknown`, and each pair is a fresh array. Reading a
+  // value runs an accessor's getter: the fragment writes none, and a host
+  // object's is assumed to return. The
+  // generic overloads, `values<T>(o: { [s: string]: T } | ArrayLike<T>)`,
+  // which TypeScript selects for a record type whose keys it does not bound,
+  // are not listed.
+  { global: "Object", member: "values", signature: "values(o: {}): any[];" },
+  { global: "Object", member: "entries", signature: "entries(o: {}): [string, any][];" },
   { global: "Array", member: "isArray", signature: "isArray(arg: any): arg is any[];", test: "isArray" },
   { global: "String", signature: "(value?: any): string;",
     admit: { parameter: "value", safe: ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"],

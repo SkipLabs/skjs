@@ -966,7 +966,11 @@ modeling choices; they do not replace proof.
   `BigInt` converts a bigint, a Boolean, an integer and each string literal
   the reader converted when it read the call; `Symbol`, `Symbol.for` and
   `Symbol.keyFor` return what they declare; `String` converts a primitive;
-  `console.log` returns `undefined` without running client code. Nothing
+  `console.log` returns `undefined` without running client code; `Object.keys`,
+  `Object.values` and `Object.entries` return fresh arrays of own enumerable
+  string keys, values and pairs. `Object.keys` calls no getter; the other two
+  read each value, which runs a getter of an accessor property: the fragment
+  writes none, and a host object's is assumed to return. Nothing
   checks the native code; the selection enters every result as a premise, the
   global's input slot, as for an imported value's declared type.
   `Array.isArray` is no premise but the calculus's test $\mathsf{isArray}$:
@@ -3285,6 +3289,8 @@ weaker signature, which is what is actually true.
 | `String` | `(value?: any): string` | `value` at the primitives, `symbol` included: converting an object runs its `toString` or `valueOf`, which may throw or return an object, and then `String` throws |
 | `console.log` | `log(...data: any[]): void` (the DOM library's) | as declared, `any` as `unknown`: output, which the model does not observe; the host formats its arguments without running code the fragment can write |
 | `Array.isArray` | `isArray(arg: any): arg is any[]` | the test $\mathsf{isArray}$, below; the declared guard is not read |
+| `Object.keys` | `keys(o: object): string[]` (ES5), `keys(o: {}): string[]` (ES2015) | as declared: a fresh array of the own enumerable string keys, true of every object; no getter runs |
+| `Object.values`, `Object.entries` | `values(o: {}): any[]`, `entries(o: {}): [string, any][]` | as declared, `any` as `unknown`: nothing is known of an open record's other keys' values (`invalid-object-values.ts`) |
 
 **Tests.** An entry may read a member as a test of the calculus instead of a
 value (`test`): its calls are lowered to the test, and the member joins no
@@ -3328,9 +3334,12 @@ never a wrong verdict.
 
 **Refused, by decision.** `JSON.stringify` returns `undefined` for
 `undefined` and functions and throws on bigints and cycles; `JSON.parse`
-throws on text that is not JSON; `Object.keys` and
-`Object.values` enumerate own keys, which open record types do not bound;
-`Promise.resolve` adopts thenables. None is listed. A construct signature
+throws on text that is not JSON; the generic
+`values<T>(o: { [s: string]: T } | ArrayLike<T>): T[]` and its `entries`
+twin, which TypeScript selects for a record type written as a literal,
+promise `T` of keys the record type does not bound (their dictionary
+parameter is sound, but a reader of generic global methods and of a
+parameter restated without `ArrayLike` is not built); `Promise.resolve` adopts thenables. None is listed. A construct signature
 (`new Array<T>()`, `new Set(xs)`, `new Error(m)`) is not read yet: the
 selection has calls and members, not constructs.
 
