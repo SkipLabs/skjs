@@ -701,7 +701,8 @@ let callback = "";
     assert(field.readonly && field.type.k === "scheme" && field.type.binders[0]?.name === "T");
     const receiver = field.type.signatures[0]?.receiver;
     assert(receiver?.k === "array" && receiver.element.k === "binder");
-    assert.equal(receiver.readonly, field.name !== "sort", `${String(field.name)} receiver`);
+    const entry = arrayOverlay.find(e => e.name === field.name);
+    assert.equal(receiver.readonly, entry?.from === "ReadonlyArray", `${String(field.name)} receiver`);
   }
   const changed = arrayOverlay.map(e => e.name === "reduce"
     ? { ...e, signature: e.signature.replace("initialValue: U", "initialValue?: U") } : e);
@@ -711,6 +712,11 @@ let callback = "";
     signature: "reduce(callbackfn: (previousValue: T, currentValue: T, currentIndex: number, array: readonly T[]) => T): T;" }];
   assert.doesNotThrow(() => collectDeclarations(arrays, { arrays: [0, 0], arrayOverlay: unsound }),
     "the overlay, not the reader, decides which overloads are trusted");
+  // A member the project's library does not declare is absent, not refused.
+  const absent = collectDeclarations(arrays, { arrays: [0, 0], arrayOverlay: [
+    { name: "notDeclared", from: "ReadonlyArray", signature: "notDeclared(): T;" }] });
+  const absentProto = absent.definitions.find(d => d.declaration.module === "skjs/array-prototype");
+  assert(absentProto?.expression.k === "object" && absentProto.expression.fields.length === 0);
   process.stdout.write("array prototype: overlay members read from TypeScript's declarations\n");
 }
 let inference = "";

@@ -45,8 +45,41 @@ export const overlay: readonly OverlayEntry[] = [
   // throws where the declaration promises a `T`.
   { name: "reduce", from: "ReadonlyArray",
     signature: "reduce<U>(callbackfn: (previousValue: U, currentValue: T, currentIndex: number, array: readonly T[]) => U, initialValue: U): U;" },
+  { name: "reduceRight", from: "ReadonlyArray",
+    signature: "reduceRight<U>(callbackfn: (previousValue: U, currentValue: T, currentIndex: number, array: readonly T[]) => U, initialValue: U): U;" },
+  // `every`, `some` and `filter` skip holes, so the predicate sees only
+  // elements; the predicate-typed overloads are not listed.
+  { name: "every", from: "ReadonlyArray",
+    signature: "every(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): boolean;",
+    drop: ["thisArg"] },
+  { name: "some", from: "ReadonlyArray",
+    signature: "some(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): boolean;",
+    drop: ["thisArg"] },
+  { name: "filter", from: "ReadonlyArray",
+    signature: "filter(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): T[];",
+    drop: ["thisArg"] },
+  // A copy keeps the holes the source has, which `T[]` admits.
+  { name: "slice", from: "ReadonlyArray", signature: "slice(start?: number, end?: number): T[];" },
+  { name: "join", from: "ReadonlyArray", signature: "join(separator?: string): string;" },
+  { name: "indexOf", from: "ReadonlyArray",
+    signature: "indexOf(searchElement: T, fromIndex?: number): number;" },
+  { name: "lastIndexOf", from: "ReadonlyArray",
+    signature: "lastIndexOf(searchElement: T, fromIndex?: number): number;" },
+  { name: "includes", from: "ReadonlyArray",
+    signature: "includes(searchElement: T, fromIndex?: number): boolean;" },
+  { name: "at", from: "ReadonlyArray", signature: "at(index: number): T | undefined;" },
+  // Mutators take a mutable array.
   { name: "sort", from: "Array",
     signature: "sort(compareFn?: (a: T, b: T) => number): this;", resultIsReceiver: true },
+  { name: "push", from: "Array", signature: "push(...items: T[]): number;" },
+  { name: "pop", from: "Array", signature: "pop(): T | undefined;" },
+  { name: "shift", from: "Array", signature: "shift(): T | undefined;" },
+  { name: "unshift", from: "Array", signature: "unshift(...items: T[]): number;" },
+  { name: "reverse", from: "Array", signature: "reverse(): T[];" },
+  // Not listed: `find` and `findIndex` pass a hole to their predicate as
+  // `undefined`, where the declaration states an element; `concat` names
+  // `ConcatArray`, and `values`, `keys` and `entries` name `ArrayIterator`,
+  // which the overlay does not read yet.
 ];
 
 /** The synthetic declaration the array types' prototype view names. */
@@ -66,12 +99,16 @@ export function arrayPrototype(checker: Checker, at: Node,
     return parts;
   };
   const libraries = { ReadonlyArray: declared("ReadonlyArray"), Array: declared("Array") };
-  const fields = entries.map(entry => {
-    const found = libraries[entry.from].flatMap(part => part.members
+  const fields = entries.flatMap(entry => {
+    const named = libraries[entry.from].flatMap(part => part.members
       .filter(ts.isMethodSignatureDeclaration)
-      .filter(m => ts.isIdentifier(m.name) && m.name.text === entry.name &&
-        m.getText(part.getSourceFile()).trim() === entry.signature)
+      .filter(m => ts.isIdentifier(m.name) && m.name.text === entry.name)
       .map(m => ({ member: m, source: part.getSourceFile() })));
+    // A member the project's standard library does not declare, as `at`
+    // before ES2022, is not part of its `Array.prototype`.
+    if (!named.length) return [];
+    const found = named.filter(({ member, source }) =>
+      member.getText(source).trim() === entry.signature);
     const [only, ...more] = found;
     if (!only || more.length)
       throw Error(`${entry.from}.${entry.name} is not declared as reviewed: ${entry.signature}`);
@@ -101,7 +138,7 @@ export function arrayPrototype(checker: Checker, at: Node,
     const type: TypeTerm = { k: "scheme",
       binders: binders.map(name => ({ name, bound: null, default: null, span })),
       signatures: forms.map(f => ({ ...f, receiver })), span };
-    return { name: entry.name, optional: false, readonly: true, type, span };
+    return [{ name: entry.name, optional: false, readonly: true, type, span }];
   });
   return { declaration: arrayProtoIdentity, parameters: [], bases: [],
     expression: { k: "object", fields, stringIndex: null, calls: [], span: [0, 0] } };

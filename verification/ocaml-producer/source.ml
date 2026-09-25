@@ -83,8 +83,9 @@ let rec source_type ctx j =
       rest=(match field "rest" j with Null -> None | t -> Some (recur t));
       readonly=boolean (field "readonly" j)}
   (* A generic method: its signatures quantify lexically scoped binders.
-     Self-dependent bounds, mixed value/pack uses and unmodeled rests remain
-     opaque, consistently with Lean's declaration lowering. *)
+     Self-dependent bounds and mixed value/pack uses remain opaque,
+     consistently with Lean's declaration lowering; a rest is a pack
+     parameter or any number of actuals at an element, as Lean reads it. *)
   | "scheme" ->
     let binders = items "binders" j and signatures = items "signatures" j in
     let names = List.map (fun b -> text "name" b) binders in
@@ -95,9 +96,7 @@ let rec source_type ctx j =
     let uses=List.map (fun name -> name,binder_uses name signatures) names in
     let packs=List.filter_map (fun (name,(_,pack)) -> if pack then Some name else None) uses in
     if List.exists (fun (_, (value,pack)) -> value && pack) uses
-       || List.exists (fun b -> mentions_own (field "bound" b)) binders
-       || List.exists (fun f -> match field "rest" f with
-            | Null -> false | t -> not (is_pack t)) signatures then top
+       || List.exists (fun b -> mentions_own (field "bound" b)) binders then top
     else begin
       let start = match list (field "span" j) with
         | Number n :: _ -> int_of_string n
