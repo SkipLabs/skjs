@@ -115,6 +115,31 @@ private def lower (m : SourceTypes.Lowering α) : Compiler α := do
   set { s with types := T }
   return a
 
+/-- Whether a claimed type is within a source annotation's: its rows among the
+annotation's, up to rows with identical clauses, or else its inclusion proved
+by a certificate the proved checker accepts. The proof is what identifies two
+rows reserved separately for the same recursive application, whose clauses
+differ only in which of them they name, as a producer's `Values<number>` and
+the one a method annotation lowers to. -/
+private def within (T : SourceTypes.Table) (C A : List Nat) : Bool :=
+  (SourceTypes.canonical T C).all (SourceTypes.canonical T A).contains ||
+    -- Two lowerings of one declaration differ in the rows they reserve and the
+    -- binder rows their schemes use: a renaming table relates them cheaply.
+    (let G := SourceTypes.graph T
+     match CertificateProducer.tableProof G 64 C A with
+       | some p => PositiveCertificates.check G C A p
+       | none => false) ||
+    (let G := SourceTypes.graph T
+     let pool := CertificateProducer.vocabulary G
+       (CertificateProducer.readsFrom G CertificateProducer.closureFuel (C ++ A)) [] [C, A]
+     match CertificateProducer.subtype G pool C A with
+       | some proof => PositiveCertificates.check G C A proof
+       | none => false)
+
+/-- Whether two label lists denote the same type: each within the other. -/
+private def sameMeaning (T : SourceTypes.Table) (A B : List Nat) : Bool :=
+  within T A B && within T B A
+
 private def envCore (bound : Nat) (fc : SourceClaims.Function) (pos : Nat) (scope : List ScopeBinding) :
     Except String (List (Ty Nat)) := do
   let vars ← match fc.envs.lookup pos with
@@ -1468,7 +1493,8 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let [.ctors L] := PositiveRules.expand G A | throw "a class value's claim must name construct signatures"
     let Ds ← params.mapM fun p => lower (Fragment.callableType p.2)
     let R ← lower (Fragment.callableType ret)
-    if L.isEmpty || !L.all (fun (Di,_) => Di.length == Ds.length && (Di.zip Ds).all (fun (D,B) => D.all B.contains)) then
+    let T ← table
+    if L.isEmpty || !L.all (fun (Di,_) => Di.length == Ds.length && (Di.zip Ds).all (fun (D,B) => within T D B)) then
       throw "construct signature claim is outside the source annotation"
     let inner := held ⟨"", some pos⟩ :: (params.map fun (name,_) => held ⟨name, some pos⟩) ++ scope
     let b ← closureExpr fc inner ([3] :: Ds ++ Γ) body
@@ -1731,8 +1757,9 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         if defaulted.contains i then ((D ++ [3]).mergeSort (· ≤ ·)).eraseDups else D
       -- A claim may offer more parameters than the closure takes: calls
       -- discard the actuals past them. The ones it takes are the source's.
+      let T ← table
       if L.isEmpty || !L.all (fun (_,Di,_) => Ds.length ≤ Di.length &&
-          ((Di.take Ds.length).zip Ds).all (fun (D,A) => D.all A.contains)) then
+          ((Di.take Ds.length).zip Ds).all (fun (D,A) => within T D A)) then
         throw "closure signature claim is outside the source annotation"
       -- An ordinary function may be claimed at fewer receivers than it
       -- states, never at more: its body reads the one it is given.
@@ -2880,27 +2907,6 @@ def SourceRequest.searchLabels (r : SourceRequest) : List Nat :=
 position, and its source type (a function's signature, a constant's
 annotation), or why it has none. -/
 abbrev ModuleValue := String × Span × Except String Json
-
-/-- Whether two label lists denote the same type. Rows with identical clauses
-do. Otherwise each is proved to include the other, by certificates the proved
-checker accepts: that identifies two rows reserved separately for the same
-recursive application, whose clauses differ only in which of them they name. -/
-private def sameMeaning (T : SourceTypes.Table) (A B : List Nat) : Bool :=
-  SourceTypes.canonical T A == SourceTypes.canonical T B ||
-    -- Two lowerings of one declaration differ in the rows they reserve and the
-    -- binder rows their schemes use: a renaming table relates them cheaply.
-    (let G := SourceTypes.graph T
-     let renamed (X Y : List Nat) := match CertificateProducer.tableProof G 64 X Y with
-       | some p => PositiveCertificates.check G X Y p
-       | none => false
-     renamed A B && renamed B A) ||
-    (let G := SourceTypes.graph T
-     let pool := CertificateProducer.vocabulary G
-       (CertificateProducer.readsFrom G CertificateProducer.closureFuel (A ++ B)) [] [A, B]
-     let le (X Y : List Nat) := match CertificateProducer.subtype G pool X Y with
-       | some proof => PositiveCertificates.check G X Y proof
-       | none => false
-     le A B && le B A)
 
 /-- The table is the one the claims were lowered into; annotations the claims
 did not mention grow it, and the request carries the result. -/

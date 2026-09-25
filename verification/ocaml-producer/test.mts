@@ -733,6 +733,8 @@ let indexed = "";
 let moduleFunctions = "";
 let moduleInit = "";
 let genericModule = "";
+let sumMapper = "";
+let sumConstructor = "";
 let verifiedFunctions = 0;
 const outcomes = await pooled(cases, runCase);
 for (const [i, test] of cases.entries()) {
@@ -762,6 +764,8 @@ for (const [i, test] of cases.entries()) {
   if (test.file === "generic-module-calls") genericModule = result.artifacts;
   if (test.file === "generic-inference") inference = result.artifacts;
   if (test.file === "index-signature") indexed = result.artifacts;
+  if (test.file === "sum-mapper-signature") sumMapper = result.artifacts;
+  if (test.file === "sum-constructor-field") sumConstructor = result.artifacts;
 }
 process.stdout.write(
   `${verifiedFunctions} functions verified; ${cases.filter((c) => c.kind === "negative").length} negative controls; ${cases.filter((c) => c.kind === "gap").length} named gaps\n`,
@@ -912,6 +916,27 @@ process.stdout.write("tampered evidence: refused\n");
   assert.match(invoke(forged, join(indexed, "evidence.json"), indexed),
     /claimed parameter type differs from the source annotation/);
   process.stdout.write("tampered mixed dictionary view: refused\n");
+}
+
+// A method or constructor claim is compared with its annotation by meaning, so
+// another row for Values<number> is admitted; a domain wider than the
+// annotation, here one that also admits undefined, is still refused.
+for (const [artifacts, arity, refusal] of [
+  [sumMapper, 2, /closure signature claim is outside the source annotation/],
+  [sumConstructor, 1, /construct signature claim is outside the source annotation/],
+] as const) {
+  const claims: SourceClaims = JSON.parse(readFileSync(join(artifacts, "claims.json"), "utf8"));
+  // mapEntry's arrow, or AddIndex's construct signature: its last parameter.
+  const domains = claims.types.flatMap((row) => row.flatMap((clause) =>
+    typeof clause !== "object" ? [] :
+    "arrs" in clause ? clause.arrs.arrows.map(([, [params]]) => params) :
+    "ctors" in clause ? clause.ctors.signatures.map(([params]) => params) : []));
+  const params = must(domains.find((ps) => ps.length === arity), "the claimed signature");
+  must(params.at(-1), "a claimed parameter").unshift(3);
+  const forged = join(artifacts, "forged-wider-domain.json");
+  writeFileSync(forged, JSON.stringify(claims));
+  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), refusal);
+  process.stdout.write(`a signature claim wider than its annotation (arity ${arity}): refused\n`);
 }
 
 // A graph certificate for the checked Boolean instance cannot validate a

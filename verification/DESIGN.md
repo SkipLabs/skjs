@@ -1499,19 +1499,38 @@ global declaration. Reading them needs the forms those files use:
   A producer may reserve its own row for the same application, and the two
   rows differ only in which of them they name. A claimed parameter or result
   type is therefore compared by meaning: identical rows, or inclusion in
-  both directions by certificates the proved checker accepts.
+  both directions by certificates the proved checker accepts. Lowering one
+  annotation twice gives such copies too: `Values<number>` in a method's
+  annotation, in its class's declared instance type and in the producer's
+  claim are three rows whose clauses name different reserved rows for the
+  `Iterator` its `[Symbol.iterator]` returns.
 
-The comparison of a claimed type $C$ with the annotation's $A$ (`sameMeaning`) is
+A claimed type $C$ is within the annotation's $A$ (`within`) when
 
 $$
-\frac{\operatorname{canon}_G(A)=\operatorname{canon}_G(C)}{A\simeq_G C}
+\frac{\operatorname{canon}_G(C)\subseteq\operatorname{canon}_G(A)}{C\sqsubseteq_G A}
 \qquad
-\frac{\operatorname{check}(G,A,C,p)=\mathsf{true}\quad\operatorname{check}(G,C,A,p')=\mathsf{true}}
-     {A\simeq_G C},
+\frac{\operatorname{check}(G,C,A,p)=\mathsf{true}}{C\sqsubseteq_G A},
 $$
 
-and $A\simeq_G C$ implies $\llbracket A\rrbracket_G=\llbracket C\rrbracket_G$ by
-`check_sound` in each direction, so the claim may replace the annotation.
+and $C\sqsubseteq_G A$ implies $\llbracket C\rrbracket_G\subseteq\llbracket A\rrbracket_G$
+(by `check_sound` for the second rule; the first compares rows with identical
+clauses, which denote the same type). A top-level function's claimed
+parameter and result types are the annotation's (`sameMeaning`):
+
+$$
+\frac{C\sqsubseteq_G A\quad A\sqsubseteq_G C}{A\simeq_G C},
+$$
+
+and $A\simeq_G C$ implies $\llbracket A\rrbracket_G=\llbracket C\rrbracket_G$, so
+the claim may replace the annotation. A closure's claimed signatures, a
+method's among them, and a class's claimed construct signatures need only be
+within the source's: each claimed parameter $D_j\sqsubseteq_G A_j$ for the
+annotation's $A_j$ (for a closure, at the positions it takes). The body is
+checked at each claimed signature's own types, so this comparison is not what
+makes the claim sound; it keeps a producer from advertising a signature the
+source does not state. Comparing by meaning rather than by label is what lets
+a claim name the producer's own row for a declared application.
 
 **Generic methods.** A declaration's generic method `m<U>(...)` lowers to a
 scheme row whose binders are parameter rows. Its signatures mention the
