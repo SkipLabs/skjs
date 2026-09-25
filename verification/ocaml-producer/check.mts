@@ -1,10 +1,10 @@
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, resolve, join } from "node:path";
 import { createHash } from "node:crypto";
 import { parseFile } from "../tools/fragment-parse.mts";
-import { tsconfigOf } from "../tools/declaration-graph.mts";
+import { tsconfigOf, type SeenDiagnostic } from "../tools/declaration-graph.mts";
 
 const here = import.meta.dirname;
 const repo = resolve(here, "../..");
@@ -25,6 +25,8 @@ export type Outcome =
       detail: string;
       phase: Phase;
     };
+/** The fuel proof search is given. */
+export const searchDepth = 12;
 /** Wall-clock limit on each external step (the parser, the producer, the
  * search, the check). A step that exceeds it is killed and the case is an
  * error naming the step and the limit, never a verdict. */
@@ -76,17 +78,26 @@ export function check(source: string, tsconfigPath?: string): Outcome {
     // file in that project; the parser requires both to have the same bytes.
     // The producer and verifier still decide whether they can interpret the
     // declarations reached.
+    // The TypeScript errors the parser's gate read are kept beside its log,
+    // accepted or not: they are where a refusal over one of them points.
+    const diagnostics = join(artifacts, "typescript-diagnostics.json");
     const parsed = tsconfigPath
       ? (() => {
+          const seen: SeenDiagnostic[] = [];
           try {
-            return { code: 0, out: JSON.stringify(parseFile(snapshot, false, tsconfigPath, resolve(source))), detail: "" };
+            return { code: 0, out: JSON.stringify(parseFile(snapshot, false, tsconfigPath, resolve(source),
+              (d) => seen.push(d))), detail: "" };
           } catch (error) {
             return { code: 1, out: "", detail: error instanceof Error ? error.message : String(error) };
+          } finally {
+            writeFileSync(diagnostics, JSON.stringify(seen, null, 1) + "\n");
           }
         })()
       : run(process.execPath, [
           resolve(repo, "verification/tools/fragment-parse.mts"),
           snapshot,
+          "--typescript-diagnostics",
+          diagnostics,
         ]);
     writeFileSync(join(artifacts, "parse.log"), parsed.detail);
     if (parsed.code !== 0)
@@ -141,7 +152,7 @@ export function check(source: string, tsconfigPath?: string): Outcome {
       claims,
       snapshot,
       evidence,
-      "12",
+      String(searchDepth),
     ]);
     writeFileSync(join(artifacts, "search.log"), produced.detail);
     if (produced.code !== 0)
@@ -171,6 +182,21 @@ export function check(source: string, tsconfigPath?: string): Outcome {
       detail: e instanceof Error ? e.message : String(e),
     };
   }
+}
+/** The same run in a process of its own, exactly as the command line below
+ * runs it, for a caller that must stay responsive or runs several at once.
+ * `project` is what `--project` takes. */
+export function checkApart(source: string, project?: string): Promise<Outcome> {
+  const args = [import.meta.filename, source, ...(project ? ["--project", project] : [])];
+  return new Promise((done, fail) =>
+    execFile(process.execPath, args, { cwd: repo, maxBuffer: 16 * 1024 * 1024 }, (_error, stdout, stderr) => {
+      // A source that is not verified exits 1 and still prints its outcome.
+      try {
+        done(JSON.parse(stdout) as Outcome);
+      } catch {
+        fail(new Error(`no outcome: ${stderr.trim()}`));
+      }
+    }));
 }
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   const args = process.argv.slice(2);

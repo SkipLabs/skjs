@@ -299,8 +299,22 @@ export type Candidate =
       claims: SourceClaims;
     };
 
+/** What a pipeline run decided (`ocaml-producer/check.mts`), as the page shows
+ * it: the outcome and the phase that reached it, with the functions a verified
+ * run covers or the reason one stopped. It is the pipeline's verdict, never the
+ * reader's. */
+export type PipelineOutcome =
+  | { status: "verified"; phase: string; functions: string[] }
+  | {
+      status: "unsupported" | "unverified" | "error";
+      phase: string;
+      detail: string;
+    };
+
 /** What the server hands the page. */
 export interface Bundle {
+  /** The pipeline's outcome, where the report is one pipeline run. */
+  outcome?: PipelineOutcome;
   source: string;
   manifest: Manifest;
   annotated?: string;

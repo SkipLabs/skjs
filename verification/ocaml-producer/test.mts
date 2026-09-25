@@ -1308,14 +1308,11 @@ for (const site of ["initializer", "binding"] as const) {
 }
 
 /*
- * The reader collects this producer too. It runs the same two steps `check`
- * runs — the shared parser, then `producer.exe` over the Fragment — and hands
- * what came out to the same verifier, so what it displays is this producer's
- * own document adjudicated the same way. What is checked here is that
- * correspondence: the claims the reader carries are the ones the producer
- * wrote, the verdicts are the verifier's, and a source this producer does not
- * implement is refused in its own words rather than collected as an empty
- * report.
+ * The reader collects this producer too, by running `check` itself and
+ * building its page from that run's outcome and artifacts. What is checked
+ * here is that correspondence: the claims the reader carries are the ones the
+ * producer wrote, the verdicts are the verifier's, and a source the pipeline
+ * refuses is shown under that outcome, in its own words.
  */
 const repositoryPath = (file: string) =>
   `verification/ocaml-producer/examples/${file}.ts`;
@@ -1453,10 +1450,28 @@ process.stdout.write(
 );
 
 // What this producer does not implement is refused where it is refused, in the
-// words that boundary uses. It does not become a report with nothing in it.
-for (const [file, says] of [
-  ["unsupported", /OCaml producer proposed no claims: unsupported:/],
+// words that boundary uses: the reader shows the source under the pipeline's
+// own outcome, and nothing claimed.
+for (const [file, phase, says] of [
+  ["unsupported", "proposal", /^unsupported:/],
 ] as const) {
-  await assert.rejects(analyse(repositoryPath(file), "ocaml"), says);
+  const shown = await analyse(repositoryPath(file), "ocaml");
+  const outcome = shown.outcome;
+  assert(outcome && outcome.status === "unsupported");
+  assert.equal(outcome.phase, phase);
+  assert.match(outcome.detail, says);
+  assert.deepEqual(shown.manifest.functions, []);
   process.stdout.write(`reader collection: ${file} refused by name\n`);
+}
+// A source TypeScript reports errors in is refused at the parser's gate. The
+// reader shows that outcome, and TypeScript's own errors where it placed them,
+// from the same run: the gate names only the declaration holding one.
+{
+  const file = "verification/ocaml-producer/evidence/service-binding/crashing-service-sound-binding.ts";
+  const shown = await analyse(file, "ocaml");
+  assert.equal(shown.outcome?.status, "unsupported");
+  assert.equal(shown.outcome?.phase, "source");
+  assert.match(shown.manifest.diagnostics ?? "",
+    new RegExp(`^File "${file}", line 31, character 32-38:\nTypeScript: Property 'input2' does not exist`));
+  process.stdout.write("reader collection: TypeScript's errors shown at their spans\n");
 }

@@ -52,22 +52,25 @@ Its successful exit is never a type-checking verdict.
 ## Reading its claims
 
 `make viewer` offers this producer beside SKJS and `tsc`: select **OCaml
-claims**, and the reader runs the same two steps `check.mts` runs — the shared
-parser, then `producer.exe` over the Fragment — and hands what came out to the
-same verifier. What it then shows is this producer's own document, claim by
-claim at the spans it is about, with the verifier's verdict beside each
-function; its examples above are in the picker, negative controls and named
-gaps included. The reader displays outcomes and never reaches one, so an
-outcome there means what it means here: `✗` is no derivation found, never a
-disproof. A source this producer does not implement is refused where it is
-refused — the parser's gate, or its own `unsupported:` — rather than displayed
-as a report with nothing in it. The reader runs the executable `dune build`
-leaves in `_build/`; it does not build it.
+claims**, and the reader runs `check.mts` on the file — the same run as the
+command line, in a process of its own — and builds its page from that run's
+outcome and artifacts: the Fragment, this producer's own claims, and the
+evidence the verifier checked. What it shows is that document, claim by claim
+at the spans it is about, the run's outcome, and the verdict beside each
+function; where the run did not verify, each function is checked alone over the
+same Fragment and claims to say where it stopped. Its examples above are in the
+picker, negative controls and named gaps included. The reader displays outcomes
+and never reaches one, so an outcome there means what it means here: `✗` is no
+derivation found, never a disproof. A source the run refuses before proposing
+a claim — the parser's gate, or this producer's own `unsupported:` — is shown
+whole under that outcome, with the TypeScript errors the gate read
+(`typescript-diagnostics.json` among the artifacts) at their spans. The reader
+runs the executable `dune build` leaves in `_build/`; it does not build it.
 
 `node verification/ocaml-producer/test.mts` checks that correspondence: that
 the claims the reader carries are the ones this producer wrote, that its
-verdicts are the verifier's, and that a source outside the fragment is refused
-by name.
+verdicts are the verifier's, and that a source the run refuses is shown under
+that outcome, in its words.
 
 ## Architecture, including the parts not implemented yet
 

@@ -171,6 +171,31 @@ must(invalidFunction.missingSites[0], "a missing site").pos = [0, 1];
 assert.throws(() => fromBundle(invalidMissing), /outside function/);
 invalidFunction.namePos = [0, 1];
 assert.throws(() => fromBundle(invalidMissing), /identity/);
+// A source the pipeline refused before proposing a claim is shown whole,
+// under the pipeline's outcome, with TypeScript's errors drawn in it.
+{
+  const refused: Bundle = {
+    source,
+    outcome: { status: "unsupported", phase: "source", detail: "gate: refused" },
+    manifest: {
+      source: { file: "f.ts", sha256: hash(source) },
+      producer: "ocaml",
+      functions: [],
+      results: null,
+      diagnostics: 'File "f.ts", line 1, character 1-2:\nTypeScript: nope\n',
+    },
+  };
+  const shown = fromBundle(refused);
+  assert.equal(shown.outcome?.status, "unsupported");
+  const whole = must(shown.functions[0], "the whole source");
+  assert.deepEqual([shown.functions.length, whole.pos, whole.status, whole.detail],
+    [1, [0, source.length], "unsupported", "gate: refused"]);
+  const drawn = marks.sourceMarks(shown, whole, { producerErrors: true }).items;
+  assert.deepEqual(drawn.map((m) => [m.kind, m.line, m.col, m.label]),
+    [["error", 0, 0, "TypeScript: nope"]]);
+  // A report no pipeline made adds nothing.
+  assert.equal(fromBundle({ ...refused, outcome: undefined }).functions.length, 0);
+}
 const annotated = render(source, manifest);
 assert.equal(parseReport(annotated).source, source);
 assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, claim.type);

@@ -151,7 +151,7 @@ function proofMark(f: Judged): [string, string] {
   if (f.status === "unsupported")
     return [
       "?",
-      "the source fragment gate rejected this file, so nothing was checked",
+      "this source is outside the fragment, so nothing was checked",
     ];
   if (f.failure?.kind === "unavailable-type-claim")
     return [

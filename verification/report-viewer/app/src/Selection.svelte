@@ -92,6 +92,9 @@
     {#if candidate}
       <FunctionContract {fn} {busy} onsubmit={oncontract} />
     {/if}
+  {:else if !picked && !fn.sites.length && fn.detail}
+    <!-- Nothing here is claimed, and the unit says why. -->
+    <p class="empty">{fn.detail}</p>
   {:else if !picked}
     <p class="empty">
       Select a claim in the source to see its span, its type and the producer's

@@ -17,10 +17,15 @@ The producer selector chooses whose claims are read — **SKJS claims**,
 sites and the same verifier adjudicates any of them, so switching re-reads the
 open file through another one. Each implements its own fragment of the
 language, and one that does not implement the open file says so in its own
-words rather than showing a report with nothing in it: the OCaml producer needs
-`dune build --root verification/ocaml-producer` to have been run, and refuses a
-source it does not cover at the boundary that refuses it — the shared parser's
-gate, or its own proposal.
+words rather than showing a report with nothing in it. The OCaml claims are
+one run of the pipeline, `ocaml-producer/check.mts` — the run its suites judge,
+so any file it runs opens here, with no setup of its own — and the page is
+built from that run's artifacts. Its outcome is the line under the bar. A
+source it refuses before any claim is proposed — at the shared parser's gate,
+or at the producer's proposal — is shown whole under that outcome, and with
+**producer diagnostics** ticked, the TypeScript errors the gate read are drawn
+under the spans TypeScript gives them. It needs
+`dune build --root verification/ocaml-producer` to have been run.
 
 Opening the reader without a file in the link shows the **catalogue** — every
 source it offers, laid out to be read — and **browse sources** returns to it.
@@ -195,8 +200,10 @@ end and exercised by `tests/report-viewer.mts` without a browser:
   `annotated-source.mts` checks it over every claim in a real export.
 - `serve.mts` — runs the producer and the report writer, and writes drafts. A
   producer is one collector here — SKJS in its container, `tsc-claims.mts`, or
-  the shared parser feeding `producer.exe` — each ending at the same
-  `annotate-source.mts --format source-claims --verify`, and a producer the
+  a `check.mts` run — each ending at the same
+  `annotate-source.mts --format source-claims --verify` (for a `check.mts`
+  run, over its Fragment and, where it verified, its evidence, with
+  `--fragment` and `--evidence`), and a producer the
   address bar names but this list does not is read as the default rather than
   as something to run. It
   binds to loopback, runs one collection at a time, applies a 120-second

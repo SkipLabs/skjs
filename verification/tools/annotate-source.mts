@@ -30,6 +30,7 @@ import type { ConversionManifest } from "./export-source-claims.mts";
 import { messageOf } from "./thrown.mts";
 import { rigidOf, rigidScopes, scopeOf } from "./rigid.mts";
 import type { RigidParameter, RigidScopes } from "./rigid.mts";
+import type { Ast } from "./fragment.mts";
 type FunctionResult = Result extends infer R
   ? R extends Result
     ? Omit<R, "function">
@@ -698,6 +699,12 @@ function verifySkjs(
   depth: number,
   normalized = false,
   tsconfigPath?: string,
+  // A pipeline run this report is built from: the Fragment it parsed, read
+  // instead of parsing again, and — where it verified the whole file — the
+  // evidence it checked. Its whole-file attempt is not repeated: verified, the
+  // functions are verified by that evidence; not, each function is checked
+  // alone over the same Fragment and claims, to say where it stopped.
+  pipeline?: { fragment: Ast; evidence?: string },
 ) {
   const temp=fs.mkdtempSync(path.join(os.tmpdir(),"annotated-source-"));
   try {
@@ -708,7 +715,7 @@ function verifySkjs(
     const identity={verifierSha256:hash(fs.readFileSync(verifier))};
     let ast;
     try {
-      ast=fragmentParse.parseFile(sourcePath,false,tsconfigPath);
+      ast=pipeline ? structuredClone(pipeline.fragment) : fragmentParse.parseFile(sourcePath,false,tsconfigPath);
     } catch(error) {
       const detail=messageOf(error);
       if(!detail.startsWith("gate:"))throw Error(`source parser failed: ${detail}`);
@@ -720,7 +727,9 @@ function verifySkjs(
     // nothing to attribute, and one produce/check covers every function in the
     // file. That is the same evidence, from the same two commands, at two
     // processes instead of two per function.
-    const whole=(()=>{
+    const whole=pipeline?.evidence ? ((certificateSha256: string)=>
+      report.functions.map((): FunctionResult=>({status:"verified",scope:"modeled function and required claims",certificateSha256})))(
+      hash(fs.readFileSync(pipeline.evidence))) : pipeline ? null : (()=>{
       const document=clone(claims);
       const c=isFileList(document) ? document.filter(g=>g.file===file) : document;
       if(isFileList(c)) {
@@ -932,10 +941,10 @@ export function main(args: string[]) {
   const options: {
     format:string, depth:string|number, claims?:string, out?:string, verify?:string,
     producer?:string, "file-key"?:string, diagnostics?:string, baseline?:string,
-    conversion?:string, stdout?:string, project?:string,
+    conversion?:string, stdout?:string, project?:string, fragment?:string, evidence?:string,
   } = {format:"skjs",depth:10};
   if(!sourcePath)throw Error("usage: annotate-source.mts source.ts --claims claims.json [--out annotated.ts] [--verify verifier] [--format report --producer name]");
-  const allowed=new Set(["claims","out","verify","format","producer","file-key","depth","diagnostics","baseline","conversion","stdout","project"]);
+  const allowed=new Set(["claims","out","verify","format","producer","file-key","depth","diagnostics","baseline","conversion","stdout","project","fragment","evidence"]);
   // The switch names a field of the record above; nothing else can be written.
   const isOption=(k: string): k is keyof typeof options => allowed.has(k);
   while(args.length) {
@@ -948,6 +957,7 @@ export function main(args: string[]) {
   if(!options.claims || !["skjs","report","source-claims"].includes(options.format))throw Error("expected --claims and a supported format");
   if(!/^\d+$/.test(String(options.depth))||!Number.isSafeInteger(Number(options.depth)))throw Error("invalid proof depth");
   if(options.format==="report"&&options.verify)throw Error("verification of generic report inputs needs a producer adapter; stored statuses are never trusted");
+  if(options.evidence&&!(options.fragment&&options.verify))throw Error("--evidence is a pipeline's, and needs its --fragment and --verify");
   const output=options.out || sourcePath.replace(/\.ts$/,"")+".annotated.ts", manifest=output+".json";
   if([sourcePath,options.claims,options.verify].filter((p): p is string=>!!p).some(p=>path.resolve(p)===path.resolve(output)))throw Error("output must differ from inputs");
   // Nothing is written in stdout mode, so an existing report there is not a conflict.
@@ -973,8 +983,10 @@ export function main(args: string[]) {
   // claims, so it is read from the Fragment here, once, and printed into the
   // report. A source the parser refuses declares no parameters to read: the
   // report is still a report, so this is not the place to fail over it.
+  // A pipeline's Fragment, where the report is built from one, is that parse.
+  const fragment: Ast|undefined=options.fragment ? JSON.parse(fs.readFileSync(options.fragment,"utf8")) : undefined;
   let scopes: RigidScopes=new Map();
-  try {scopes=rigidScopes(fragmentParse.parseFile(sourcePath,false,tsconfigPath));}
+  try {scopes=rigidScopes(fragment ?? fragmentParse.parseFile(sourcePath,false,tsconfigPath));}
   catch {scopes=new Map();}
   let report: ReportInput=options.format==="skjs" ? fromSkjs(source,file,input,options.producer) : options.format==="source-claims" ? fromSourceClaims(source,file,input,options.producer,scopes) : input;
   let conversion: ConversionManifest|null=null,conversionBytes=null;
@@ -998,7 +1010,8 @@ export function main(args: string[]) {
     identity.baselineSha256=hash(baselineBytes);
   }
   if(options.verify) {
-    const verified=verifySkjs(sourcePath,source,input,file,report,path.resolve(options.verify),Number(options.depth),options.format==="source-claims",tsconfigPath);
+    const verified=verifySkjs(sourcePath,source,input,file,report,path.resolve(options.verify),Number(options.depth),options.format==="source-claims",tsconfigPath,
+      fragment ? {fragment,...(options.evidence ? {evidence:options.evidence} : {})} : undefined);
     results=verified.results;identity={...identity,...verified.identity};
   }
   const diagnostics=options.diagnostics ? fs.readFileSync(options.diagnostics,"utf8") : null;

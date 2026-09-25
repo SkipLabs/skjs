@@ -30,6 +30,18 @@ export class DeclarationError extends Error {
   }
 }
 
+/** A TypeScript error as the gate read it: the file TypeScript names, whether
+ * that is the client, and the span, as offsets and as 0-based line and
+ * character. The text is TypeScript's own. */
+export interface SeenDiagnostic {
+  file: string;
+  client: boolean;
+  pos: Span;
+  start: { line: number; character: number };
+  end: { line: number; character: number };
+  text: string;
+}
+
 /** The configured project named on a command line: a tsconfig file, or the
  * directory holding one. */
 export function tsconfigOf(path: string): string {
@@ -184,6 +196,10 @@ export function collectDeclarations(file: string, options: {
    * reported to `symbolKey` with its index. */
   symbolKeys?: readonly Span[];
   symbolKey?: (span: Span, symbol: number) => void;
+  /** Told each TypeScript error the gate reads while deciding whether a
+   * declaration is clean, whether or not it refuses the source: every error
+   * TypeScript reports in each file it examines, each once. */
+  seen?: (diagnostic: SeenDiagnostic) => void;
 } = {}): DeclarationDocument {
   const clientFile = resolve(file);
   return withProject(clientFile, options.tsconfigPath, (checker, client, root, program) => {
@@ -202,6 +218,10 @@ export function collectDeclarations(file: string, options: {
           ...program.getSemanticDiagnostics(file.fileName)]
           .filter(d => d.category === DiagnosticCategory.Error);
         errors.set(file.fileName, found);
+        for (const d of found)
+          options.seen?.({ file: file.fileName, client: file === client, pos: [d.pos, d.end],
+            start: file.getLineAndCharacterOfPosition(d.pos),
+            end: file.getLineAndCharacterOfPosition(d.end), text: d.text });
       }
       const start = node.getStart(file);
       const error = found.find(d => d.pos < node.end && d.end > start);

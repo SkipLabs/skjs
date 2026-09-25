@@ -35,7 +35,7 @@ import type {
   TypeNode,
 } from "typescript/unstable/ast";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { Atom } from "./claim.mts";
 import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
@@ -54,7 +54,7 @@ import type {
 } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { messageOf } from "./thrown.mts";
-import { collectDeclarations, DeclarationError, tsconfigOf } from "./declaration-graph.mts";
+import { collectDeclarations, DeclarationError, tsconfigOf, type SeenDiagnostic } from "./declaration-graph.mts";
 import { asyncCompleteName, asyncReturnName, awaitName } from "./intrinsics.mts";
 
 /** A question-mark parameter requires an optional suffix. A default may
@@ -1887,7 +1887,8 @@ class Gate {
  * function that depends on one fails on that claim, in its own words.
  */
 export function parseFile(file: string, carriesContext = false,
-  tsconfigPath?: string, resolutionFile = file): Ast {
+  tsconfigPath?: string, resolutionFile = file,
+  seen?: (diagnostic: SeenDiagnostic) => void): Ast {
   const absolute = resolve(file);
   const text = readFileSync(absolute, "utf8");
   const source = openFile(absolute, text);
@@ -2065,7 +2066,8 @@ export function parseFile(file: string, carriesContext = false,
         ...(firstArray ? { arrays: gate.span(firstArray) } : {}),
         ...(firstAsync ? { intrinsics: gate.span(firstAsync) } : {}),
         symbolKeys: keyNodes.map(node => gate.span(node)),
-        symbolKey: ([start, end], symbol) => gate.symbolKeys.set(`${start}:${end}`, symbol) });
+        symbolKey: ([start, end], symbol) => gate.symbolKeys.set(`${start}:${end}`, symbol),
+        ...(seen ? { seen } : {}) });
     } catch (error) {
       const at = error instanceof DeclarationError
         ? [...importNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...(firstArray ? [firstArray] : []),
@@ -2171,17 +2173,29 @@ export function typeOf(node: TypeNode): TypeTerm {
 // annotation encoding must have exactly one implementation: a second one would
 // be a second opinion about what a source type means.
 if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
-  const args = process.argv.slice(2);
-  if (!(args.length === 1 || (args.length === 3 && args[1] === "--project"))) {
-    process.stderr.write("usage: fragment-parse.mts <file.ts> [--project tsconfig-or-directory]\n");
+  const [file, ...rest] = process.argv.slice(2);
+  const options = new Map<string, string>();
+  while (rest.length >= 2 && ["--project", "--typescript-diagnostics"].includes(rest[0]) &&
+      !options.has(rest[0]))
+    options.set(rest.shift()!, rest.shift()!);
+  if (!file || rest.length) {
+    process.stderr.write("usage: fragment-parse.mts <file.ts> [--project tsconfig-or-directory]" +
+      " [--typescript-diagnostics out.json]\n");
     process.exit(2);
   }
+  // The TypeScript errors the gate read, written whether or not it accepts
+  // the source: a refusal over one of them is located by them.
+  const seen: SeenDiagnostic[] = [];
+  const project = options.get("--project");
   try {
-    process.stdout.write(JSON.stringify(parseFile(args[0], false,
-      args[2] ? tsconfigOf(args[2]) : undefined), null, 1));
+    process.stdout.write(JSON.stringify(parseFile(file, false,
+      project ? tsconfigOf(project) : undefined, file, (d) => seen.push(d)), null, 1));
     close();
   } catch (error) {
     process.stderr.write(messageOf(error) + "\n");
     process.exitCode = 1;
+  } finally {
+    const out = options.get("--typescript-diagnostics");
+    if (out) writeFileSync(out, JSON.stringify(seen, null, 1) + "\n");
   }
 }

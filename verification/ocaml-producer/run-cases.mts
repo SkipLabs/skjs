@@ -5,10 +5,9 @@
 // runs first; the rest of `test.mts` (pinned imports, tampering controls, the
 // reader) is not run here.
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
 import { availableParallelism } from "node:os";
 import { join, resolve } from "node:path";
-import type { Outcome } from "./check.mts";
+import { checkApart, type Outcome } from "./check.mts";
 import { cases, type Case } from "./cases.mts";
 
 const here = import.meta.dirname;
@@ -16,17 +15,9 @@ const here = import.meta.dirname;
 /** Run one case's pipeline in its own process, as `check.mts` does from the
  * command line, so that several cases run at once. */
 export function runCase(test: Case): Promise<Outcome> {
-  const args = [join(here, "check.mts"), join(here, "examples", `${test.file}.ts`)];
-  if (test.project) args.push("--project", resolve(here, "../..", test.project));
-  return new Promise((done, fail) =>
-    execFile(process.execPath, args, { maxBuffer: 16 * 1024 * 1024 }, (_error, stdout, stderr) => {
-      // A case that is not verified exits 1 and still prints its outcome.
-      try {
-        done(JSON.parse(stdout) as Outcome);
-      } catch {
-        fail(new Error(`${test.file}: no outcome: ${stderr.trim()}`));
-      }
-    }));
+  return checkApart(join(here, "examples", `${test.file}.ts`),
+    test.project ? resolve(here, "../..", test.project) : undefined)
+    .catch((error: unknown) => { throw new Error(`${test.file}: ${error instanceof Error ? error.message : String(error)}`); });
 }
 
 /** Map over `items` with at most `width` in flight, keeping their order. */

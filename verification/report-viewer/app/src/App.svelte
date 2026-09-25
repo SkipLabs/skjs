@@ -209,6 +209,21 @@
     {/if}
   </header>
 
+  {#if reader.report?.outcome && !reader.browsing}
+    <!-- What the pipeline decided about this file, in its own words: the
+         reader shows it and never reaches one of its own. -->
+    {@const outcome = reader.report.outcome}
+    <p class="outcome" role="status">
+      <strong>Pipeline: {outcome.status}</strong>
+      at {outcome.phase}
+      {#if outcome.status === "verified"}
+        · {outcome.functions.join(", ")}
+      {:else}
+        · {outcome.detail}
+      {/if}
+    </p>
+  {/if}
+
   {#if reader.showProducerErrors && !reader.browsing}
     <section class="producer-diagnostics" aria-label="Producer diagnostics">
       <strong>Producer diagnostics</strong>
@@ -281,6 +296,14 @@
 </div>
 
 <style>
+  .outcome {
+    margin: 0;
+    padding: 6px 16px;
+    border-bottom: 1px solid var(--rule);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    flex-shrink: 0;
+  }
   .producer-diagnostics {
     padding: 10px 16px;
     border-bottom: 1px solid var(--rule);

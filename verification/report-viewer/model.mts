@@ -5,6 +5,7 @@ import type {
   CollectionRun,
   Manifest,
   MissingSite,
+  PipelineOutcome,
   Producer,
 } from "./types.ts";
 import type {
@@ -160,6 +161,8 @@ export interface Report {
   functions: ShownFunction[];
   diagnostics?: string;
   missingFunctions?: { name: string; namePos: Span }[];
+  /** The pipeline's own outcome, where the report is one pipeline run. */
+  outcome?: PipelineOutcome | null;
 }
 
 /** A report built from a bundle: everything `Report` says, and the provenance
@@ -637,6 +640,19 @@ function fromBundle(bundle: Bundle): ShownReport {
         unattached.map((g) => ({ kind: "unclaimed", pos: span(g.pos), reason: "", detail: g.status })),
       ),
     });
+  // A run the pipeline stopped before any claim was proposed has no function
+  // to show: the source is shown whole, under the pipeline's outcome, and what
+  // TypeScript said is placed where it said it.
+  const outcome = bundle.outcome ?? null;
+  if (outcome && outcome.status !== "verified" && !functions.length)
+    functions.push({
+      id: "source",
+      name: "whole source",
+      pos: [0, source.length],
+      status: outcome.status === "unsupported" ? "unsupported" : "not-run",
+      detail: outcome.detail,
+      sites: [],
+    });
   return {
     source,
     functions,
@@ -653,6 +669,7 @@ function fromBundle(bundle: Bundle): ShownReport {
       ),
     },
     manifest: m,
+    outcome,
   };
 }
 

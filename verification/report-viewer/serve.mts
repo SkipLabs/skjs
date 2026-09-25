@@ -9,9 +9,11 @@ import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
-import type { Bundle, Candidate } from "./types.ts";
+import type { Bundle, Candidate, PipelineOutcome } from "./types.ts";
 import { fieldOf, messageOf, outputOf } from "../tools/thrown.mts";
 import { cases } from "../ocaml-producer/cases.mts";
+import { checkApart, searchDepth } from "../ocaml-producer/check.mts";
+import type { SeenDiagnostic } from "../tools/declaration-graph.mts";
 
 /** What the page posts: the candidate to check or keep, and — for a draft —
  * what to do with it. Discarding one names the source alone, and everything
@@ -227,24 +229,43 @@ async function tscAnalyse(
 
 /*
  * The third producer: an independent OCaml implementation of claim inference.
- * It reads the same Fragment the shared parser writes and emits the same
- * SourceClaims document the SKJS export is converted into, so the same verifier
- * adjudicates it and nothing here is a second opinion about what a claim means.
- * `ocaml-producer/README.md` records what it implements; a source outside that
- * is refused by name rather than collected as a report with nothing in it.
+ * What the reader shows for it is one run of the pipeline, `check.mts`, the
+ * same run its own suites judge: its outcome, and the page built from what that
+ * run left in its artifacts — the source snapshot, the Fragment the shared
+ * parser wrote, the claims the producer proposed, the evidence the verifier
+ * checked, and the TypeScript errors the parser's gate read. Nothing is parsed
+ * or proposed again here, so a file the pipeline runs is a file the reader
+ * shows, and what it shows as the outcome is the pipeline's.
  */
-const OCAML = "verification/ocaml-producer/_build/default/producer.exe";
 
 /**
- * What a child wrote before failing, as the reason to show. The shared parser
- * and the OCaml producer both name their own limits on stderr — `gate: …` and
- * `unsupported: …` — and those are statements about the source, so they are
- * reported in their own words rather than as a stack trace.
+ * The TypeScript errors a run's gate read in the checked source, in the one
+ * diagnostics text the page places under the spans it names (`--diagnostics`),
+ * named by the source's own path: the run read a snapshot of it. The run also
+ * keeps what it read in the files the source imports, which are not this
+ * page's; a refusal over one of those names it in the outcome.
  */
-const refusal = (thrown: unknown, what: string) =>
-  new Error(
-    `${what}: ${(outputOf(thrown, "stderr") || messageOf(thrown)).trim()}`,
+async function typescriptDiagnostics(artifacts: string, relative: string) {
+  const seen: SeenDiagnostic[] = JSON.parse(
+    await fs
+      .readFile(path.join(artifacts, "typescript-diagnostics.json"), "utf8")
+      .catch(() => "[]"),
   );
+  return seen
+    .filter((d) => d.client)
+    .map((d) => {
+      // The page places a diagnostic on its first line, with 1-based columns
+      // and an exclusive end.
+      const to =
+        d.end.line === d.start.line ? d.end.character : d.start.character + 1;
+      return (
+        `File "${relative}", line ${d.start.line + 1}, ` +
+        `character ${d.start.character + 1}-${to + 1}:\n` +
+        `TypeScript: ${d.text}\n`
+      );
+    })
+    .join("");
+}
 
 async function ocamlAnalyse(
   relative: string,
@@ -253,87 +274,117 @@ async function ocamlAnalyse(
   options: RunOptions,
 ): Promise<Bundle> {
   const startedAt = Date.now();
+  // A fixture that names its project is run in it, as its case is.
+  const project = cases.find(
+    (c) => relative === `verification/ocaml-producer/examples/${c.file}.ts`,
+  )?.project;
+  const outcome = await checkApart(
+    path.join(REPO, relative),
+    project && path.join(REPO, project),
+  );
   try {
-    const producer = path.join(REPO, OCAML);
-    const fixture = cases.find(
-      (c) => relative === `verification/ocaml-producer/examples/${c.file}.ts`,
+    const at = (name: string) => path.join(outcome.artifacts, name);
+    // The page shows the bytes the pipeline checked, and they are the file's.
+    const snapshot = await fs.readFile(at("source.ts"), "utf8");
+    if (
+      snapshot !== source ||
+      source !== (await fs.readFile(await repositoryPath(relative), "utf8"))
+    )
+      throw new Error("Source changed during collection; run again");
+    const digest = crypto.createHash("sha256").update(source).digest("hex");
+    const diagnostics = await typescriptDiagnostics(outcome.artifacts, relative);
+    const shown: PipelineOutcome =
+      outcome.status === "verified"
+        ? { status: outcome.status, phase: outcome.phase, functions: outcome.functions }
+        : { status: outcome.status, phase: outcome.phase, detail: outcome.detail };
+    const collection = (verified: boolean) => ({
+      producer: "ocaml",
+      producerRun: true,
+      command:
+        "check.mts " + relative + (project ? " --project " + project : ""),
+      ranAt: new Date(startedAt).toISOString(),
+      durationMs: Date.now() - startedAt,
+      verified,
+    });
+    const proposed = await fs
+      .readFile(at("claims.json"), "utf8")
+      .catch(() => null);
+    // Refused before any claim was proposed: the source, under that outcome,
+    // with what TypeScript said where it said it.
+    if (proposed === null)
+      return {
+        source,
+        manifest: {
+          source: { file: relative, sha256: digest },
+          producer: "ocaml",
+          functions: [],
+          gaps: [],
+          results: null,
+          missingFunctions: [],
+          diagnostics,
+        },
+        collection: collection(false),
+        outcome: shown,
+      };
+    // The run named its snapshot; the page names the file it is a snapshot
+    // of, which the digests above say it is.
+    const claims = { ...JSON.parse(proposed), file: relative };
+    const claimsPath = path.join(tmp, "claims.json");
+    await fs.writeFile(claimsPath, JSON.stringify(claims));
+    const fragmentPath = path.join(tmp, "fragment.json");
+    await fs.writeFile(
+      fragmentPath,
+      JSON.stringify({
+        ...JSON.parse(await fs.readFile(at("fragment.json"), "utf8")),
+        file: relative,
+      }),
     );
-    // Its build is not this server's to run: an absent executable says which
-    // command builds it, rather than failing as a missing file somewhere.
-    if (!(await fs.access(producer).then(() => true, () => false)))
-      throw new Error(
-        `${OCAML} is not built. Build it with: ` +
-          "dune build --root verification/ocaml-producer",
-      );
-    // The producer consumes the Fragment, never the source text: the shared
-    // parser stays the one front end, and its refusals are the fragment's.
-    let parsed;
-    try {
-      const parseArgs = ["verification/tools/fragment-parse.mts", relative];
-      if (fixture?.project) parseArgs.push("--project", fixture.project);
-      parsed = await execFile(process.execPath, parseArgs, options);
-    } catch (thrown) {
-      throw refusal(thrown, "The shared parser refused this source");
-    }
-    const fragment = path.join(tmp, "fragment.json");
-    await fs.writeFile(fragment, parsed.stdout);
-    let proposed;
-    try {
-      proposed = await execFile(producer, [fragment], options);
-    } catch (thrown) {
-      throw refusal(thrown, "The OCaml producer proposed no claims");
-    }
-    const claims = path.join(tmp, "claims.json");
-    await fs.writeFile(claims, proposed.stdout);
     const args = [
       "verification/tools/annotate-source.mts",
       relative,
       "--claims",
-      claims,
+      claimsPath,
+      "--fragment",
+      fragmentPath,
       "--producer",
       "ocaml",
       "--format",
       "source-claims",
+      "--depth",
+      String(searchDepth),
       "--stdout",
       "json",
     ];
-    if (fixture?.project) args.push("--project", fixture.project);
-    // Whatever either step said while still succeeding, under the spans it
-    // names — the same place the SKJS producer's own errors are shown.
-    const said = ((parsed.stderr ?? "") + (proposed.stderr ?? "")).trim();
-    if (said) {
-      const diagnostics = path.join(tmp, "diagnostics.txt");
-      await fs.writeFile(diagnostics, said + "\n");
-      args.push("--diagnostics", diagnostics);
+    if (diagnostics) {
+      const written = path.join(tmp, "diagnostics.txt");
+      await fs.writeFile(written, diagnostics);
+      args.push("--diagnostics", written);
     }
+    // Verified, the functions are verified by the evidence the run checked;
+    // otherwise each is checked alone over the same Fragment and claims, to
+    // say where the run's search stopped.
     const verify = await hasVerifier();
     if (verify) args.push("--verify", VERIFIER);
+    if (verify && outcome.status === "verified")
+      args.push("--evidence", at("evidence.json"));
     const result = await execFile(process.execPath, args, options);
     const bundle = JSON.parse(String(result.stdout));
-    if (source !== (await fs.readFile(await repositoryPath(relative), "utf8")))
-      throw new Error("Source changed during collection; run again");
-    const digest = crypto.createHash("sha256").update(source).digest("hex");
     if (bundle.manifest.source.sha256 !== digest)
       throw new Error("Report source identity mismatch");
     return {
       source,
       ...bundle,
-      collection: {
-        producer: "ocaml",
-        producerRun: true,
-        command: OCAML + " (fragment of " + relative + ")",
-        ranAt: new Date(startedAt).toISOString(),
-        durationMs: Date.now() - startedAt,
-        verified: Boolean(verify),
-      },
+      collection: collection(Boolean(verify)),
+      outcome: shown,
       candidate: {
         format: "source-claims",
         file: relative,
         sourceSha256: digest,
-        claims: JSON.parse(await fs.readFile(claims, "utf8")),
+        claims,
       },
     };
   } finally {
+    await fs.rm(outcome.artifacts, { recursive: true, force: true });
     await fs.rm(tmp, { recursive: true, force: true });
   }
 }
