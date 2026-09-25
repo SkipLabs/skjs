@@ -1569,6 +1569,22 @@ makes the claim sound; it keeps a producer from advertising a signature the
 source does not state. Comparing by meaning rather than by label is what lets
 a claim name the producer's own row for a declared application.
 
+**One row per reserved application.** Lean fills each row a producer reserved
+for a generic application $D\langle\vec U\rangle$ (`"applications"`) with its
+own lowering of $D$'s equation at $\vec U$, and afterwards that row is the
+application wherever a source annotation, an imported value's declared type or
+a generic value's instance names it at the same arguments:
+
+$$
+\frac{\rho(D,\vec U)=r}{\llbracket D\langle\vec U\rangle\rrbracket=[r]}\ \textsc{reserved},
+$$
+
+with $\rho$ the reserved rows (`fillRows`, then `Visit.reserved` in
+`annotationClaim`). Both are Lean's lowering of one equation at one argument
+list, so they denote the same type. Lowering the application again would add
+another copy of the equation, a thousand rows for `Promise`, which every
+comparison above would then relate by certificate.
+
 **Generic methods.** A declaration's generic method `m<U>(...)` lowers to a
 scheme row whose binders are parameter rows. Its signatures mention the
 declaration's applications at its own binders (`Promise<T>`'s `then<R1>`

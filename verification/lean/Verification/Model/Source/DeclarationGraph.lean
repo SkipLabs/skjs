@@ -603,11 +603,14 @@ end
 
 /-- Fill the producer's empty reserved rows: each nullary declaration's, and
 each generic application's `(row, declaration position, argument types)`, with
-Lean's own lowering, so there is one lowering of every declaration. -/
+Lean's own lowering, so there is one lowering of every declaration. The filled
+applications are returned as reserved rows: a source annotation, or an
+instance, naming the same application at the same arguments is that row, not
+another copy of its equation. -/
 private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
     (applications : List (Nat × Nat × List (List Nat)) := [])
     (arrays : List (Nat × Nat × Bool) := []) :
-    Except String SourceTypes.Table := do
+    Except String (SourceTypes.Table × Visit) := do
   if candidate.length < 4 + nullaryCount ds then throw "declaration graph rows are missing"
   for i in [:ds.size] do
     if ds[i]!.parameters.isEmpty && candidate[rowIndex ds i]! != RequestJson.Row.clauses [] then
@@ -624,6 +627,7 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
     if store ≥ table.length then throw "an array's store names no row"
     table := table.set row (.clauses [SourceTypes.arrayClause store readonly])
   -- Applications in row order: an argument names only earlier rows.
+  let mut known : Visit := {}
   for (row, declaration, args) in applications.mergeSort (fun x y => x.1 ≤ y.1) do
     if row < 4 + nullaryCount ds || row ≥ table.length || table[row]! != RequestJson.Row.clauses [] then
       throw "an application's reserved row is not an empty producer row"
@@ -632,21 +636,23 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
     if args.any (fun A => A.any (· ≥ row)) then
       throw "an application's arguments name a later row"
     let i := declaration
-    let fill : Lowering (List (Clause (List Nat))) := do
+    let fill : Lowering (List (Clause (List Nat)) × Array (List Nat)) := do
       let values ← lowerApplication ds i args.toArray ⟨[], [], []⟩
       if mentionsSelf ds[i]!.expression then
-        lowerDefinitionRows ds i (values.push [row]) ((Visit.enter ⟨[], [], []⟩ i).reserve i values row)
+        return (← lowerDefinitionRows ds i (values.push [row])
+          ((Visit.enter ⟨[], [], []⟩ i).reserve i values row), values)
       else
         let labels ← if ds[i]!.bases.isEmpty then
             lowerType ds i values (Visit.enter ⟨[], [], []⟩ i) ds[i]!.expression
           else (← lowerDefinitionRows ds i values (Visit.enter ⟨[], [], []⟩ i)).mapM use
         let T : SourceTypes.Table ← get
-        labels.flatMapM fun l => match T[l]? with
+        return (← labels.flatMapM fun l => match T[l]? with
           | some (RequestJson.Row.clauses cs) => pure cs
-          | _ => throw "an application lowers to a row without clauses"
-    let (filled, expanded) ← fill.run table
+          | _ => throw "an application lowers to a row without clauses", values)
+    let ((filled, values), expanded) ← fill.run table
     table := expanded.set row filled
-  return table
+    known := known.reserve i values row
+  return (table, known)
 
 private def claimType (atoms : List Json) : Json :=
   Json.mkObj [("top", toJson false), ("atoms", toJson atoms)]
@@ -791,9 +797,9 @@ private def sourceObject (j : Json) : Except String Unit := do
 are the ones declaration bodies use; a reference resolves to the declaration
 TypeScript named, by identity. A ground application is its graph labels, and
 one over an enclosing function's binder is its expanded equation. -/
-private partial def annotationClaim (ds : Array Definition) (term : Json)
+private partial def annotationClaim (ds : Array Definition) (known : Visit) (term : Json)
     (bound : List (String × Json) := []) : Lowering Json := do
-  let recur := fun t => annotationClaim ds t bound
+  let recur := fun t => annotationClaim ds known t bound
   sourceObject term
   match ← str term "k" with
   | "scheme" =>
@@ -897,8 +903,11 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
       if !args.isEmpty then throw "type application has wrong arity"
       return graphClaim [rowIndex ds index]
     let values ← args.mapM Fragment.translate
-    let values ← lowerApplication ds index values {}
-    let labels ← groundApplication ds index values {}
+    let values ← lowerApplication ds index values known
+    -- An application a producer reserved a row for is that row, which Lean
+    -- filled from the same equation at the same arguments.
+    if let some row := known.reserved index values then return graphClaim [row]
+    let labels ← groundApplication ds index values known
     if labels.isEmpty then throw "generic application has no inhabited graph clause"
     return graphClaim labels
   | k => throw s!"declaration syntax '{k}' in a source annotation"
@@ -908,19 +917,19 @@ private def annotationFields : List String :=
   ["annot", "functionType", "bagType", "type", "result", "bound", "retType"]
 
 /-- Every annotation of the function tree in claim form. -/
-private partial def rewrite (ds : Array Definition) (j : Json) : Lowering Json := do
+private partial def rewrite (ds : Array Definition) (known : Visit) (j : Json) : Lowering Json := do
   match j with
-  | .arr values => return .arr (← values.mapM (rewrite ds))
+  | .arr values => return .arr (← values.mapM (rewrite ds known))
   | .obj fields =>
     sourceObject j
     let pairs ← fields.toArray.mapM fun (name, value) => do
       if annotationFields.contains name && value != .null then
-        return (name, ← annotationClaim ds value)
+        return (name, ← annotationClaim ds known value)
       -- A method call's explicit type arguments: a list of annotations.
       if name == "typeArgs" then
         let .arr values := value | throw "type arguments are a list"
-        return (name, .arr (← values.mapM (annotationClaim ds)))
-      return (name, ← rewrite ds value)
+        return (name, .arr (← values.mapM (annotationClaim ds known)))
+      return (name, ← rewrite ds known value)
     return Json.mkObj pairs.toList
   | _ => return j
 
@@ -962,18 +971,18 @@ def prepare (ast : Json) (candidate : SourceTypes.Table)
     return (name, i)
   if (roots.toList.map (·.1)).eraseDups.length != roots.size then
     throw "duplicate declaration root name"
-  let types ← fillRows ds candidate applications arrays
+  let (types, known) ← fillRows ds candidate applications arrays
   -- Generic module functions, read from their source terms before the tree is
   -- converted.
   let callable (params : List Json) (rest : Option Json) (result : Json) (bound : List (String × Json)) :
       Lowering Json := do
     let top := Json.mkObj [("top", toJson true), ("atoms", toJson ([] : List Json))]
     return claimType [Json.mkObj ([("a", toJson "function"), ("this", top),
-      ("params", toJson (← params.mapM (annotationClaim ds · bound)))] ++
+      ("params", toJson (← params.mapM (annotationClaim ds known · bound)))] ++
       (← match rest with
-        | some e => do pure [("rest", ← annotationClaim ds e bound)]
+        | some e => do pure [("rest", ← annotationClaim ds known e bound)]
         | none => pure []) ++
-      [("result", ← annotationClaim ds result bound),
+      [("result", ← annotationClaim ds known result bound),
        ("construct", toJson "unknown"), ("array", toJson "unknown")])]
   let genericFunctions ← (← arr ast "functions").toList.filterMapM fun f => do
     let tps ← arr f "typeParams"
@@ -995,11 +1004,11 @@ def prepare (ast : Json) (candidate : SourceTypes.Table)
     let instantiate (σ : List (String × Json)) : Lowering (Json × List (String × Option Json)) := do
       let c ← callable fixed rest result σ
       let bounds ← binders.mapM fun (n, b) => do
-        return (n, ← if b == .null then pure none else some <$> annotationClaim ds b σ)
+        return (n, ← if b == .null then pure none else some <$> annotationClaim ds known b σ)
       return (c, bounds)
     return some (Instantiable.mk name pos (binders.map Prod.fst) instantiate)
-  let (functions, types) ← (rewrite ds (← field ast "functions")).run types
-  let (init, types) ← (rewrite ds (← field ast "init")).run types
+  let (functions, types) ← (rewrite ds known (← field ast "functions")).run types
+  let (init, types) ← (rewrite ds known (← field ast "init")).run types
   -- An imported value, at the type its declaration states: an assumption,
   -- read in claim form like an annotation. A generic one is instantiated at
   -- each call instead.
@@ -1018,14 +1027,14 @@ def prepare (ast : Json) (candidate : SourceTypes.Table)
       CellClaims.fieldsExactly p ["name", "bound"]
       return (← str p "name", ← field p "bound")
     if binders.isEmpty then
-      let (claim, grown) ← (annotationClaim ds ty).run types
+      let (claim, grown) ← (annotationClaim ds known ty).run types
       types := grown
       values := values ++ [(name, span, claim)]
     else
       let instantiate (σ : List (String × Json)) : Lowering (Json × List (String × Option Json)) := do
-        let c ← annotationClaim ds ty σ
+        let c ← annotationClaim ds known ty σ
         let bounds ← binders.mapM fun (n, b) => do
-          return (n, ← if b == .null then pure none else some <$> annotationClaim ds b σ)
+          return (n, ← if b == .null then pure none else some <$> annotationClaim ds known b σ)
         return (c, bounds)
       generics := generics ++ [Instantiable.mk name span (binders.map Prod.fst) instantiate]
   let empty := Json.mkObj [("roots", toJson ([] : List Json)),
