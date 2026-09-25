@@ -659,7 +659,12 @@ $\kappa(A)$ for the image of a type, each entry is one of:
   $p\in V(i)$, is in $\vec r$ (no capture).
 
 The table is checked when its rows lie in a domain with a free-variable
-certificate and every entry is one of these. Then, for every entry and every
+certificate and every entry is one of these. The producer (`matchRow`, not
+trusted) builds a scheme entry's table by matching the bounds $\beta'$ under
+$\kappa$, where they are read, and the signatures under $\kappa'$, so a generic
+method whose result is its own interface at a bounded binder, such as
+`map<V2, P extends readonly number[]>(m: new (...p: P) => Mapper<V, V2>, ...p: P): Box<V2>`,
+has one (`class-value-generic-method`). Then, for every entry and every
 pair of assignments related by its context on its row's free rows, the row on
 the left means $T$ on the right, in both components. With
 $\kappa_0=\vec p\mapsto\vec\theta$ for a scheme's binders and instance types,

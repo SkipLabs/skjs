@@ -183,6 +183,8 @@ export const cases: Case[] = [
   positive("index-inheritance", "An interface extending an index signature: named members read, the index for other keys"),
   negative("invalid-index-inheritance", "A record lacking the inherited index is not the derived interface"),
   negative("invalid-index-inheritance-read", "Only named members are known present under an inherited index"),
+  positive("class-value-generic-method", "A class value passed to a generic pack method returning its own interface at the inferred binder"),
+  negative("invalid-class-value-generic-method", "A mapper class of the wrong input type is not the method's construct signature"),
   positive("top-void", "unknown / discarded callback result"),
   positive("typeof-tests", "typeof comparisons test and refine by shape"),
   negative("invalid-typeof-test", "a typeof test refines only its own arm"),

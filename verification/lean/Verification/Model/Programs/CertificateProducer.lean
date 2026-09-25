@@ -160,11 +160,15 @@ def matchRow [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap �
             | some s2 =>
               if s2.binders.length = s.binders.length ∧
                   s2.signatures.length = s.signatures.length ∧
-                  s2.variadic.length = s.variadic.length then
+                  s2.variadic.length = s.variadic.length ∧
+                  s2.bounds.length = s.bounds.length then
                 let κ' := enter κ s.binders s2.binders
+                -- Bounds are read outside the binders, so under `κ`.
+                ((s.bounds.zip s2.bounds).foldlM (fun st pq =>
+                  matchRow G bs V fuel st κ pq.1.2 pq.2.2) (add st p [j])).bind fun st =>
                 ((s.signatures.zip s2.signatures).foldlM (fun st pq =>
                   pairs st κ' (pq.1.1 :: pq.1.2.2 :: pq.1.2.1) (pq.2.1 :: pq.2.2.2 :: pq.2.2.1))
-                  (add st p [j])).bind fun st =>
+                  st).bind fun st =>
                 (s.variadic.zip s2.variadic).foldlM (fun st pq =>
                   pairs st κ' (pq.1.1 :: pq.1.2.2.1 :: pq.1.2.2.2 :: pq.1.2.1)
                     (pq.2.1 :: pq.2.2.2.1 :: pq.2.2.2.2 :: pq.2.2.1)) st

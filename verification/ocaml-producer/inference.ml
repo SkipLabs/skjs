@@ -99,7 +99,9 @@ let upper_candidate = function
       (Some first) rest in
     Some (Option.value intersection ~default:first)
 
-let infer ?receiver (signature:signature) actuals =
+(* [expand] gives a declaration's equation, to compare a class instance with
+   the interface application a signature names (`new () => Mapper<K, V, K2, V2>`). *)
+let infer ?receiver ?(expand = fun _ -> None) (signature:signature) actuals =
   if signature.quantified=[] then unsupported "generic inference requires a quantified signature";
   if signature.rest_pack<>None then unsupported "pack inference requires an argument-list candidate";
   let domains = match signature.variadic with
@@ -115,11 +117,34 @@ let infer ?receiver (signature:signature) actuals =
   let add xs t = List.sort_uniq compare (t::xs) in
   (* constrain left right records left <= right. Callback parameters reverse
      the direction; callback results preserve it, at every nesting depth. *)
-  let rec constrain left right = match local left,local right with
+  let rec constrain ?(depth=0) left right =
+    let constrain = constrain ~depth:(depth+1) in
+    match local left,local right with
     | Some x,Some y -> edges := (x,y)::!edges
     | None,Some y -> y.lower <- add y.lower left
     | Some x,None -> x.upper <- add x.upper right
+    | None,None when depth > 8 -> ()
     | None,None -> (match left,right with
+      (* One declaration's applications: their arguments, both ways, as no
+         variance is known here. *)
+      | Atoms [Named (a,xs)],Atoms [Named (b,ys)] when a=b && List.length xs=List.length ys ->
+      List.iter2 (fun x y -> constrain x y; constrain y x) xs ys
+      | Atoms [Named _],_ | _,Atoms [Named _] ->
+      let open_ t = match t with Atoms [Named _] -> expand t | _ -> Some t in
+      (match open_ left,open_ right with
+       | Some l,Some r when l<>left || r<>right -> constrain l r
+       | _ -> ())
+      (* A construct signature: parameters contravariant, instance covariant. *)
+      | Atoms [Ctors [a]],Atoms [Ctors [e]] when a.quantified=[] && e.quantified=[] ->
+      List.iteri (fun i p -> match List.nth_opt e.params i with
+        | Some q -> constrain q p | None -> ()) a.params;
+      constrain a.result e.result
+      (* Records: each field the expected one names, at the actual's. *)
+      | Atoms [Shape ({calls=[];elements=None;_} as a)],
+      Atoms [Shape ({calls=[];elements=None;_} as e)] when e.fields<>[] ->
+      List.iter (fun (f:field) -> match List.find_opt (fun (g:field) -> g.name=f.name) a.fields with
+        | Some g -> constrain g.read f.read
+        | None -> ()) e.fields
       | Atoms [Shape {calls=(_::_ as calls);fields=[];string_index=None;elements=None}],
       Atoms [Shape {calls=[e];fields=[];string_index=None;elements=None}]
         when e.quantified=[] && List.exists (fun (a:signature) -> a.quantified=[]
@@ -144,7 +169,7 @@ let infer ?receiver (signature:signature) actuals =
       (match l.rest,r.rest with Some x,Some y -> pair x y | _ -> ())
       | _ -> ()) (* Unsupported structure contributes no guessed constraints;
                     Lean still checks the entire substituted signature. *) in
-  List.iter2 constrain actuals domains;
+  List.iter2 (fun actual domain -> constrain actual domain) actuals domains;
   (* The receiver is an input like the actuals: the one passed must fit the
      signature's. *)
   Option.iter (fun r -> constrain r signature.receiver) receiver;
@@ -183,17 +208,18 @@ let infer ?receiver (signature:signature) actuals =
      even with cycles. Prefer joined lower bounds; upper-only candidates use a
      representable meet. Contradictions remain Lean obligations, not refusals. *)
   let substitution = List.map (fun v ->
-    (* A graph bound is a legal (possibly less precise) instantiation for
-       every value below it. Choosing it is only a proposal: Lean checks both
-       the concrete argument against the instantiated parameter and the
-       substitution against every bound. *)
+    (* A variable below and above one type, as an invariant position makes
+       it, is that type. Otherwise a graph bound is a legal (possibly less
+       precise) instantiation for every value below it. Choosing it is only a
+       proposal: Lean checks both the concrete argument against the
+       instantiated parameter and the substitution against every bound. *)
     let declared_upper = List.find_opt (function
       | Atoms [Named (_,[])] -> true | _ -> false) v.upper in
-    let candidate = match declared_upper with
-      | Some _ as chosen -> chosen
-      | None -> (match join v.lower with
-        | Some _ as chosen -> chosen
-        | None -> upper_candidate v.upper) in
+    let candidate = match join v.lower,declared_upper with
+      | Some t,_ when List.mem t v.upper -> Some t
+      | _,(Some _ as chosen) -> chosen
+      | (Some _ as chosen),None -> chosen
+      | None,None -> upper_candidate v.upper in
     match candidate with
     | Some t -> v.identity,ValueArgument t
     | None -> unsupported ("cannot infer " ^ v.identity.spelling ^ " from call arguments or bounds")) variables in

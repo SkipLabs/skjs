@@ -80,6 +80,11 @@ let definition declarations id args =
       body d.bases
   | None -> unsupported ("missing declaration " ^ id) in
   instantiate [] id args
+(* A declaration's equation, for inference to look inside an application. *)
+let expand_named declarations = function
+  | Atoms [Named (id,args)] ->
+    (try Some (definition declarations id args) with Json.Error _ -> None)
+  | _ -> None
 (* Inspect a declared callable's source equation for proposal purposes only.
    The point claim remains the named type; Lean independently fills and checks
    that graph row from the same declaration. *)
@@ -354,7 +359,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
             generic call's is. *)
          if List.length signature.params <> List.length args then
            unsupported "no construct signature takes this many arguments";
-         let inferred = Inference.infer ~receiver:Semantic.top signature (List.map (expr env) args) in
+         let inferred = Inference.infer ~expand:(expand_named declarations) ~receiver:Semantic.top signature (List.map (expr env) args) in
          instance_of callee inferred.substitution;
          instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
            inferred.substitution) :: !instantiations;
@@ -466,7 +471,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
              signature.quantified} in
         if partial.quantified = [] then fixed,partial.result
         else
-          let inferred = Inference.infer ~receiver partial actuals in
+          let inferred = Inference.infer ~expand:(expand_named declarations) ~receiver partial actuals in
           fixed @ inferred.substitution,inferred.result in
       let no_type_arguments () = if type_args <> [] then
         unsupported "explicit type arguments on a callee without binders" in
@@ -525,7 +530,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          let substitution,result =
            if rest_quantified = [] then solution,partial.result
            else
-             let inferred = Inference.infer ~receiver:receiver_type
+             let inferred = Inference.infer ~expand:(expand_named declarations) ~receiver:receiver_type
                {partial with rest_pack=None}
                (List.filteri (fun i _ -> i < fixed) actuals) in
              solution @ inferred.substitution,inferred.result in
