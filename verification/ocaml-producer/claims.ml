@@ -71,11 +71,13 @@ let encode (proposal : Proposal.t) =
         (if rests = [] then [] else ["variadic",Array rests]))]])]
     | Named (id,args) -> declaration_labels id args
     | Exact fs ->
-      (* Invariant fields, and one own-key bound listing exactly their keys. *)
+      (* Invariant fields, and one own-key bound: its own keys are among
+         exactly theirs. *)
       [intern (Array [Object ["refs",Object ["first",Array (List.map (fun (f:Semantic.field) ->
           if f.optional || f.write <> Some f.read then unsupported "an exact record's fields are invariant";
           Array [key_json f.name;labels f.read]) fs);"rest",Array [];"views",Array [];
-        "bounds",Array [Array (List.map (fun (f:Semantic.field) -> key_json f.name) fs)]]]])]
+        "bounds",Array [Object ["among",Bool true;
+          "keys",Array (List.map (fun (f:Semantic.field) -> key_json f.name) fs)]]]]])]
     | Shape shape ->
       (* An optional field constrains its key only where the object has it:
          a writable one under one invariant contract, a readonly one as a

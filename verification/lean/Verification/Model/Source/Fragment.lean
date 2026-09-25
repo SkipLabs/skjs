@@ -181,7 +181,7 @@ partial def arrayType (atom : Json) : SourceTypes.Lowering Nat := do
   let readonly ← (← jField atom "readonly").getBool?
   let store ← SourceTypes.use (.list ⟨required, optional, rest, readonly⟩ [])
   if (← jStr (← jField atom "a")) == "store" then pure store
-  else SourceTypes.use (SourceTypes.arrayClause store readonly)
+  else SourceTypes.use (SourceTypes.arrayOf (← get) store readonly)
 
 /-- A record with optional fields. A field whose read and write agree is
 writable under that one contract; any other is readonly, read at its read

@@ -191,7 +191,7 @@ keys bounded to them, the type `alloc` gives before it is read as an array. -/
 private def arrayObject (S : Ty Nat) : Compiler (Ty Nat) := do
   let label ← lower (SourceTypes.use (.refs [(SourceTypes.storeField, S),
     (SourceTypes.protoField, [SourceTypes.arrayProtoLabel])] [] [] [] []
-    [[SourceTypes.storeField, SourceTypes.protoField]]))
+    [⟨true, [SourceTypes.storeField, SourceTypes.protoField]⟩]))
   modify fun s => {s with hints := label :: s.hints}
   return [label]
 
@@ -853,13 +853,13 @@ def memberHead (G : PositiveGraphs.NormalGraph Nat) (O : Ty Nat) (fld : PropKey)
   | _, _ => .readAt fld obj
 
 /-- The row a field read gives before any claim replaces it: the object's own
-field or view, or, for a key outside its own-key bound, its prototype's, as
+field or view, or, for a key an own-key bound does not admit, its prototype's, as
 `readCell` and the top level's search read it. -/
 private def fieldRow (G : PositiveGraphs.NormalGraph Nat) (O : Ty Nat) (fld : PropKey) :
     Option (Ty Nat) :=
   match PositiveRules.expand G O with
   | [.refs fs [] vs _ _ ks] => fs.lookup fld <|> vs.lookup fld <|> do
-      if !ks.any (fun K => !K.contains fld) then none
+      if !ks.any (fun K => !K.admits fld) then none
       let P ← (fs ++ vs).lookup SourceTypes.protoField
       let [.refs gs [] ws _ _ _] := PositiveRules.expand G P | none
       (gs ++ ws).lookup fld
@@ -904,14 +904,14 @@ private def readCell (G : PositiveGraphs.NormalGraph Nat) (Γ : List (Ty Nat)) (
   match PositiveRules.expand G a.type with
   | [.refs fs [] vs [] _ ks] =>
     -- An invariant field reads at its contract; a readonly view at its bound;
-    -- a key outside a bound of the object at its prototype's field or view
+    -- a key a bound of the object does not admit at its prototype's field or view
     -- (`readProto`), as at the top level.
     match fs.lookup fld, vs.lookup fld with
     | some B, _ => pure (DirectProof.node Γ (.readAt fld a.term) B .read [a])
     | none, some B => pure (DirectProof.node Γ (.readAt fld a.term) B .readView [a])
     | none, none =>
       let inherited : Option (Ty Nat × Ty Nat) := do
-        if !ks.any (fun K => !K.contains fld) then none
+        if !ks.any (fun K => !K.admits fld) then none
         let P ← (fs ++ vs).lookup SourceTypes.protoField
         let [.refs gs [] ws _ _ _] := PositiveRules.expand G P | none
         let B ← (gs ++ ws).lookup fld
@@ -1081,14 +1081,14 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     if es.length != ns.length then throw "allocation initializer count mismatch"
     let ps ← es.mapM fun a => closureExpr fc scope Γ a
     -- A record naming exactly the literal's keys; a key bound, if claimed,
-    -- lists every one of them, as the fresh object's own keys are exactly
+    -- admits every one of them, as the fresh object's own keys are exactly
     -- those. Such a bound is what lets the literal meet a dictionary or an
     -- optional field it leaves out (`CoversKeys`, `CoversOptional`).
     let [.refs B [] [] [] [] ks] := PositiveRules.expand G A
       | throw "allocation claim must name a record contract"
     if B.length != ns.length then throw "allocation claim names different fields"
-    if !ks.all (fun K => ns.all (fun n => K.contains (.str n))) then
-      throw "an allocation's key bound must list every key it allocates"
+    if !ks.all (fun K => ns.all (fun n => K.admits (.str n))) then
+      throw "an allocation's key bound must admit every key it allocates"
     let B ← (ns.map PropKey.str).mapM fun name => do
       let some D := B.lookup name | throw "allocation claim names different fields"
       pure (name,D)

@@ -75,7 +75,7 @@ Each type-graph node is a union of clauses:
 | Boolean singleton                                                                                                                                                          | `{"boolLit":{"value":true}}` (or `false`)                                                   |
 | Invariant reference with optional additional contract requirements, and readonly views: fields read at a sound upper bound, with no write permission through this contract | `{"refs":{"first":[["value",[1]]],"rest":[],"views":[["seen",[1]]]}}`                       |
 | Optional fields: a key constrained only where the object has it, where its location holds exactly the contract; left out when there are none (also on `dict`) | `{"refs":{"first":[],"rest":[],"views":[],"optional":[["field",[4]]]}}`                       |
-| Own-key bounds: each list bounds the object's own keys, so a key outside one is not the object's own and a read of it continues at the prototype; left out when there are none (also on `dict`) | `{"refs":{"first":[["[]",[2]]],"rest":[],"views":[["[[proto]]",[5]]],"bounds":[["[]","[[proto]]"]]}}` |
+| Own-key bounds: each says the object's own keys are `among` its `keys`, or, with `among` false, none of them; a key one does not admit is not the object's own and a read of it continues at the prototype; left out when there are none (also on `dict`) | `{"refs":{"first":[["[]",[2]]],"rest":[],"views":[["[[proto]]",[5]]],"bounds":[{"among":false,"keys":["map"]}]}}` |
 | Plain object with named contracts and readonly string-index views; each index operand constrains every present own field | `{"dict":{"first":[],"rest":[],"views":[],"indexes":[[1,3]]}}` |
 | Writable string-index contracts, a mutable index signature's: every present own field holds exactly the operand; each is also listed in `indexes`; left out when there are none | `{"dict":{"first":[],"rest":[],"views":[],"indexes":[[1,3]],"cells":[[1,3]]}}` |
 | Intersection of arrows `[receiver, [params, result]]`, with variadic signatures `[receiver, [params, [rest, result]]]` when there are any, `rest` an argument-list type (`pack`)  | `{"arrs":{"arrows":[[[5],[[[0]],[1]]],[[5],[[[1]],[0]]]]}}`                                 |
@@ -233,8 +233,8 @@ its contract, `elemOpt` an optional or rest position at its contract or
 element contract or `undefined`; `setElem` writes a named position, into its
 location or a fresh one the store records; `len` reads the length as a number.
 `readView` reads a field named among a record's or a dictionary's views, at
-the bound the view states, as `read` reads either's invariant fields; no rule writes through a view. `readProto` reads a key outside one of
-a record's own-key bounds from the prototype the record holds under the
+the bound the view states, as `read` reads either's invariant fields; no rule writes through a view. `readProto` reads a key one of
+a record's own-key bounds does not admit from the prototype the record holds under the
 reserved key `[[proto]]`, at the prototype's field or view for the key; it
 names the prototype's type, `{"readProto": {"proto": P}}`.
 `arith` combines two operands the number test answers for into the number

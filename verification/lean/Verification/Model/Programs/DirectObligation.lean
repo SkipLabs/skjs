@@ -161,10 +161,10 @@ mutual
     | .variadic rc ps e r =>
         restsT [(rc.denote G η, Ty.denoteList G η ps, ArgumentContracts.All (e.denote G η), r.denote G η)]
     -- The one array shape, over a writable store of the element and
-    -- `ArrayProto`'s meaning in the graph.
+    -- `ArrayProto`'s meaning in the graph, owning none of its keys.
     | .array element => PositiveNormalization.semWithArgs id (fun _ _ _ _ => False)
         (PositiveNormalization.arrayClauseOf (listT ⟨[], [], some (Ty.denote G η element), false⟩)
-          (meaning G [SourceTypes.arrayProtoLabel]) false)
+          (meaning G [SourceTypes.arrayProtoLabel]) (SourceTypes.arrayProtoKeys G) false)
     | .rigid name => η name
     | .top => PositiveNormalization.topT
     | .ground labels => meaning G labels

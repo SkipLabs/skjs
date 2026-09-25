@@ -678,7 +678,7 @@ it (implicit index signatures, width subtyping into optional fields) is
 refused.
 
 **One mechanism.** `alloc` already types a literal at a record whose own-key
-bound lists exactly its names (`ownKeysT_slots`). Two coverage rules read the
+bound, $\mathsf{among}$, lists exactly its names (`ownKeysT_slots`). Two coverage rules read the
 bound: an optional field, when the bound excludes its key and the prototype
 key (`CoversOptional`), and index contracts, when the prototype key is not in it
 and every key of it is a field or view within each index view and a field
@@ -1912,24 +1912,18 @@ DepSafe (`sum-map-array.ts`), and at `V2 := [number, number]`, sum.ts's
 What the meet of a tuple with DepSafe is follows the model, not TypeScript's
 guess about inhabitation: primitives meet no array, and `Managed`, a record
 with a symbol key, meets the array shape as one object: the store, the
-prototype view, the own-key bound and `Managed`'s key. While the array shape
-bounds its own keys to its store and prototype, that object is empty in the model — no array of the model
-holds `Managed`'s key, although Skip's runtime tags frozen arrays with it —
-and a declaration promising `[number, number] & DepSafe` promises what no
-model value is. Arrays are to carry other own keys (an exclusion of keys
-shadowing a prototype member replacing the exact bound, separate work), and
-then the meet is inhabited; the meet row does not depend on which. No
-rule decides emptiness, so nothing is derived from it: such a
-value is used exactly as either side gives (`sum-values-tuple.ts`: its
-elements, `sort` and `reduce` through the prototype, and `Managed`), and not
-as a number, which DepSafe admits but the tuple does not
-(`invalid-sum-values-tuple.ts`). `toArray()`'s writable array of the meet is
-not a writable array of tuples (`invalid-sum-values-array.ts`), though
-TypeScript's covariant arrays accept it. Until arrays carry other own keys,
-what these cases check of an array's meet with DepSafe, sum.ts's `Minus`
-among them, holds vacuously in the model. A record's meet with
-DepSafe is not empty, since an object type names only the keys it constrains
-(`sum-values-record.ts`).
+prototype view, the own-key bound and `Managed`'s key. An array owns no key
+its prototype provides and may own others
+([Arrays may carry other own keys](#arrays-may-carry-other-own-keys)), so that
+object is inhabited, as Skip's runtime makes it by tagging frozen arrays; the
+meet row does not depend on the array bound. Such a value is used exactly as
+either side gives (`sum-values-tuple.ts`: its elements, `sort` and `reduce`
+through the prototype, and `Managed`), and not as a number, which DepSafe
+admits but the tuple does not (`invalid-sum-values-tuple.ts`). `toArray()`'s
+writable array of the meet is not a writable array of tuples
+(`invalid-sum-values-array.ts`), though TypeScript's covariant arrays accept
+it. A record's meet with DepSafe is not empty either, since an object type
+names only the keys it constrains (`sum-values-record.ts`).
 
 With it, sum.ts's `.map(AddIndex, 0)` is typed (`sum-add-index.ts`), and so is
 `map` to Serializable records (`sum-serializable-map.ts`). Every class of
@@ -2515,20 +2509,23 @@ never spells the store or prototype keys, the bound or `ArrayProto`'s row.
 
 **Types.** Two additions make a delegated read typable:
 
-- *An own-key bound.* A record clause may bound its object's own keys:
-  $\mathsf{keys}(v)\subseteq K$. Record types are open, so without a bound
-  `xs.map` could find an own `map` and never reach the prototype. An array
-  type bounds its own keys to the store and the prototype, which is true of
-  every array the model allocates, since keys are fixed at allocation. Meet
-  intersects bounds, and a bounded target needs a bounded source within it.
+- *An own-key bound.* A record clause may bound its object's own keys: among
+  $K$, $\mathsf{keys}(v)\subseteq K$, or outside $N$,
+  $\mathsf{keys}(v)\cap N=\varnothing$ (`KeyBound`). Record types are open, so
+  without a bound `xs.map` could find an own `map` and never reach the
+  prototype. An array type owns none of `ArrayProto`'s keys
+  ([Arrays may carry other own keys](#arrays-may-carry-other-own-keys)); a
+  fresh literal's own keys are among its names. Keys are fixed at allocation,
+  so a bound holds in every world. Meet collects bounds, and a target's
+  bounds must follow from the source's (`CoversBounds`).
 - *A prototype view.* An array type holds the prototype as a readonly view at
   `ArrayProto`: `T[]` is
-  $\mathsf{Ref}(\{\mathsf{store}{:}S\};\{\mathsf{proto}{:}\mathsf{ArrayProto}\};K)$
-  with $K=\{\mathsf{store},\mathsf{proto}\}$, and `readonly T[]` holds the store
+  $\mathsf{Ref}(\{\mathsf{store}{:}S\};\{\mathsf{proto}{:}\mathsf{ArrayProto}\};\mathsf{outside}\,N)$
+  with $N$ the keys `ArrayProto` provides, and `readonly T[]` holds the store
   as a view too.
 
 $$
-\frac{\Gamma\vdash e:\mathsf{Ref}(\ldots;K)\quad k\notin K\quad
+\frac{\Gamma\vdash e:\mathsf{Ref}(\ldots;\beta)\quad \beta\nvDash k\quad
       (\mathsf{proto}{:}P)\ \text{a field or view}\quad
       (k{:}A)\ \text{a field or view of}\ P}
      {\Gamma\vdash\mathsf{readAt}\;k\;e:A}\ \textsc{readProto}
@@ -2635,6 +2632,68 @@ with the read rule. (4) Literals and rest arrays allocated with the prototype;
 `ArrayProto` as a trusted import. (5) Coverage through the prototype.
 (6) Dense arrays. (7) Arrays as `Iterable<T>`: members found through the
 prototype, instance rows in coverage, `[Symbol.iterator]` in the overlay.
+(8) Arrays may carry other own keys.
+
+### Arrays may carry other own keys
+
+**Decision.** An array type says what prototype reads need and no more: the
+array owns none of the keys `ArrayProto` provides. It may own others. Skip's
+runtime marks the arrays it manages with a hidden own key
+(`tagSkManaged` defines `sk_managed` on arrays read from its heap and on those
+`deepFreeze` freezes), typed `T & Managed` with
+`Managed = { [sk_managed]: true }`; an exact bound, own keys the store and the
+prototype only, made every such type empty in the model, so a program reading
+`Values<[number, number]>` was verified vacuously. Types express what is
+actually true.
+
+**One mechanism.** An own-key bound is either form of one statement about
+which keys the object may own (`KeyBound`: $\mathsf{among}\,K$ or
+$\mathsf{outside}\,N$, `KeyBound.admits`): a fresh literal's keys are among
+its names, an array's are outside $N$, `ArrayProto`'s keys
+(`SourceTypes.arrayProtoKeys`, the reserved keys aside, so the store and the
+prototype are admitted). Everything that read a bound reads it through
+`admits`: a read through the prototype needs the key not admitted
+(`readProto`, `CoversByProto`); an optional field lacking its key needs its
+key and the prototype key not admitted (`CoversOptional`); index contracts
+need an $\mathsf{among}$ bound without the prototype key (`CoversKeys`), which
+no array has; a target's bounds must follow from the source's
+(`CoversBounds`), so a fresh array object, among its store and prototype, is
+an array, outside $N$.
+
+**Where $N$ comes from.** $N$ is the keys `ArrayProto`'s row names. Arrays in
+its own members' signatures are lowered while that row is, so the declaration
+graph reads $N$ from `ArrayProto`'s declaration, its fields' keys, and
+`prepare` checks the filled row names the same; every later array reads it
+from the row. A symbol key, `[Symbol.iterator]`, is the document's own index,
+so $N$ is per document, not a constant.
+
+**Intersections.** With arrays open, an array meets records: an array with
+their members too. The meet is the existing `refs` meet, one object with both
+contracts. The source gate admits one array or tuple operand with record and
+alias operands in an annotation, and `DeclarationGraph` lowers it by its
+ground meet (`meetRow`); the OCaml producer proposes it as a `Meet`, whose
+reserved row Lean fills. A meet in which one operand owns a key another's bound
+excludes is empty, and normalization drops it (`Clause.consistent`): an array
+with an own `map` has no member, so `number[] & { map: number }` lowers to no
+clause and is refused (`array-shadow-refused.ts`), not verified vacuously.
+`[number, number] & Marked` with `Marked = { readonly [marker]: true }` is
+kept and inhabited (`array-marked.ts`): its elements read as the tuple's, its
+prototype members as any array's, and it is both a tuple and a `Marked`
+(`array-marked-value-import.ts`); a plain tuple is not a marked one
+(`invalid-array-marked-plain-value-import.ts`), nor is the marker `false`
+(`invalid-array-marked-key-value-import.ts`). With the exact bound, the
+meet-emptiness check refuses all of these as it refuses the shadowing one.
+
+**Trust.** That an array owns no key its prototype provides is assumed of
+every array a program receives, as TypeScript assumes it in resolving
+`xs.map` to `Array.prototype.map`. An array the program allocates satisfies
+it: its own keys are its store and its prototype.
+
+**Ambient symbols.** A client may declare the symbol it keys by,
+`declare const marker: unique symbol`: the gate admits exactly that ambient
+form, which runs nothing and names the symbol computed keys in types read.
+Reading `xs[marker]` as a value needs a symbol-keyed read, which the
+fragment does not yet have.
 
 ### Async functions and await
 
@@ -2760,7 +2819,7 @@ with $T$ the call's instance. Arrays are dense (`listT`), so the iterator
 yields a `T` at every index below the length.
 
 **Trust.** JavaScript's loop calls `xs[Symbol.iterator]()`, which reaches
-`Array.prototype`'s, since an array's own keys are its store and prototype,
+`Array.prototype`'s, since an array owns none of the prototype's keys,
 and steps it. Leaving early calls the iterator's `return` when it has one,
 and the array iterator has none, so an early exit runs nothing. `%Iterate%`
 states that behavior; see [What remains assumed](#what-remains-assumed).

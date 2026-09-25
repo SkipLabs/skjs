@@ -58,6 +58,7 @@ instance (priority := high) : FromJson Tm := ⟨fun j => derivedTmFromJson (clos
 deriving instance ToJson, FromJson for PositiveNormalization.Tuple
 deriving instance ToJson, FromJson for MethodMembers.Sig
 deriving instance ToJson, FromJson for OptionalField
+deriving instance ToJson, FromJson for KeyBound
 deriving instance ToJson, FromJson for Clause
 
 /-- The clause fields that are left out of JSON when empty: a call clause's

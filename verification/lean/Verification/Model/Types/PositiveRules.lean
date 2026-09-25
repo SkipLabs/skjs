@@ -604,6 +604,9 @@ abbrev CoversViews (R : List ι → List ι → Prop)
     (source : List (List (PropKey × List ι))) (views target : List (PropKey × List ι)) : Prop :=
   ∀ q ∈ target, ∃ p ∈ source.flatten ++ views, p.1 = q.1 ∧ R p.2 q.2
 
+/-- A key some bound excludes: no object under the bounds owns it. -/
+abbrev Excludes (bounds : List KeyBound) (k : PropKey) : Prop := ∃ K ∈ bounds, K.admits k = false
+
 /-- The source slots that can cover an optional field: invariant fields,
 views, which are readonly, and optional fields with their own flag. -/
 def optionalSources (source : List (List (PropKey × List ι))) (views : List (PropKey × List ι))
@@ -614,19 +617,19 @@ def optionalSources (source : List (List (PropKey × List ι))) (views : List (P
 invariant field, a view or an optional field. Its type is within the target's;
 a writable target also needs an equivalent type and a writable slot, so no
 location is retyped. Where the object lacks the key, only an optional source
-field allows it, and that field says the object has no prototype. A key bound
-of the source excluding both the key and the prototype key covers it too: the
-object lacks the key and has no prototype, so every read of it is
+field allows it, and that field says the object has no prototype. Key
+bounds of the source excluding both the key and the prototype key cover it
+too: the object lacks the key and has no prototype, so every read of it is
 `undefined`. Neither a view nor an optional source field covers a required
 target field, since neither says the key is present. -/
 abbrev CoversOptional (R : List ι → List ι → Prop)
     (source : List (List (PropKey × List ι))) (views : List (PropKey × List ι))
-    (optional : List (OptionalField (List ι))) (bounds : List (List PropKey))
+    (optional : List (OptionalField (List ι))) (bounds : List KeyBound)
     (target : List (OptionalField (List ι))) : Prop :=
   ∀ q ∈ target, (∃ p ∈ optionalSources source views optional, p.key = q.key ∧
     (q.readonly = false → p.readonly = false) ∧ R p.type q.type ∧
     (q.readonly = false → R q.type p.type)) ∨
-    ∃ K ∈ bounds, q.key ∉ K ∧ CallArguments.protoField ∉ K
+    Excludes bounds q.key ∧ Excludes bounds CallArguments.protoField
 
 /-- A method signature covers another of the same key: each fixed target
 signature is covered by a fixed source one taking as many parameters, each at
@@ -666,22 +669,22 @@ def viewOf (G : NormalGraph ι) (P : List ι) (k : PropKey) : Option (List ι) :
   | _ => none
 
 /-- A method signature is covered through the source's prototype: a key bound
-of the source excludes the key, so the object lacks it, and the prototype's
+of the source excludes the key (`Excludes`), so the object lacks it, and the prototype's
 field or view of that key is a known row, below arrows covering the signature
 with the object as receiver, as `CoversByFunction`. The known row is
 typically a generic prototype member and its instance at the array's element
 type: `Array.prototype[Symbol.iterator]` at `number`. -/
 def CoversByProto (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
-    (self : List ι) (fields : List (PropKey × List ι)) (bounds : List (List PropKey))
+    (self : List ι) (fields : List (PropKey × List ι)) (bounds : List KeyBound)
     (q : MethodMembers.Sig (List ι)) : Prop :=
-  (∃ K ∈ bounds, q.key ∉ K) ∧ ∃ f ∈ fields, f.1 = CallArguments.protoField ∧
+  Excludes bounds q.key ∧ ∃ f ∈ fields, f.1 = CallArguments.protoField ∧
     ∃ k ∈ known, viewOf G f.2 q.key = some k.1 ∧ CoversArrows G R self k.2.1 k.2.2 q
 
 /-- Every target method is covered by a source method of the same key, by a
 function the source holds under that key whose receiver the source's own type
 is within, or by such a function its prototype holds. -/
 abbrev CoversMethods (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : Known ι)
-    (self : List ι) (fields : List (PropKey × List ι)) (bounds : List (List PropKey))
+    (self : List ι) (fields : List (PropKey × List ι)) (bounds : List KeyBound)
     (source target : List (MethodMembers.Sig (List ι))) : Prop :=
   ∀ q ∈ target, (∃ p ∈ source, p.key = q.key ∧ CoversSig (restElem G) R p q) ∨
     (∃ f ∈ fields, f.1 = q.key ∧ CoversByFunction G R self f.2 q) ∨
@@ -692,25 +695,69 @@ among `K`, which lists no prototype key, so the object has no prototype; each
 key of `K` is a source field or view whose contract implies every target index
 view, and a source field whose contract agrees with every writable index. No
 other key exists, so a fresh literal, whose own keys are exactly its fields,
-is a dictionary of what its fields fit. -/
+is a dictionary of what its fields fit. A bound excluding keys says nothing of
+the others, so it meets no index. -/
 abbrev CoversKeys (R : List ι → List ι → Prop) (fields views : List (PropKey × List ι))
-    (bounds : List (List PropKey)) (ix cx : List (List ι)) : Prop :=
-  ∃ K ∈ bounds, CallArguments.protoField ∉ K ∧ ∀ k ∈ K,
+    (bounds : List KeyBound) (ix cx : List (List ι)) : Prop :=
+  ∃ K ∈ bounds, K.among = true ∧ CallArguments.protoField ∉ K.keys ∧ ∀ k ∈ K.keys,
     (∀ y ∈ ix, ∃ p ∈ fields ++ views, p.1 = k ∧ R p.2 y) ∧
     ∀ y ∈ cx, ∃ p ∈ fields, p.1 = k ∧ R p.2 y ∧ R y p.2
 
-/-- Every target key bound has a source bound within it: the object's own
-keys are among the source's, hence among the target's. -/
-abbrev CoversBounds (source target : List (List PropKey)) : Prop :=
-  ∀ K' ∈ target, ∃ K ∈ source, ∀ k ∈ K, k ∈ K'
+/-- A target key bound follows from the source's bounds: every key they let
+the object own, it admits. A target excluding keys needs each excluded by some
+source bound; a target listing keys needs a source bound listing keys, each of
+which the target lists or some source bound excludes. -/
+def CoversBound (source : List KeyBound) (target : KeyBound) : Prop :=
+  if target.among then
+    ∃ K ∈ source, K.among = true ∧ ∀ k ∈ K.keys, k ∈ target.keys ∨ Excludes source k
+  else ∀ k ∈ target.keys, Excludes source k
 
-theorem covers_bounds_sound {source target : List (List PropKey)} (hc : CoversBounds source target)
-    {n : Nat} {W : WorldT n} {v : Val} (hv : ∀ K ∈ source, ownKeysT K n W v) :
+instance CoversBound.decidable (source : List KeyBound) (target : KeyBound) :
+    Decidable (CoversBound source target) := by
+  unfold CoversBound; infer_instance
+
+/-- Every target key bound follows from the source's. -/
+abbrev CoversBounds (source target : List KeyBound) : Prop :=
+  ∀ K ∈ target, CoversBound source K
+
+/-- A record's member is an object. -/
+theorem recT_obj {fs : Fields} {n : Nat} {W : WorldT n} {v : Val} (h : recT fs n W v) :
+    ∃ flds : List (PropKey × Nat), v = .objAt flds .absent := by
+  obtain ⟨flds, he, -⟩ := h
+  exact ⟨flds, he⟩
+
+theorem covers_bounds_sound {source target : List KeyBound} (hc : CoversBounds source target)
+    {n : Nat} {W : WorldT n} {v : Val} (hobj : ∃ flds : List (PropKey × Nat), v = .objAt flds .absent)
+    (hv : ∀ K ∈ source, ownKeysT K n W v) :
     ∀ K ∈ target, ownKeysT K n W v := by
-  intro K' hK'
-  obtain ⟨K, hK, hsub⟩ := hc K' hK'
-  obtain ⟨flds, he, hk⟩ := hv K hK
-  exact ⟨flds, he, fun p hp => hsub _ (hk p hp)⟩
+  obtain ⟨flds, rfl⟩ := hobj
+  -- A key some source bound excludes is not the object's own.
+  have excluded : ∀ {k}, Excludes source k → ∀ p ∈ flds, p.1 ≠ k := by
+    rintro k ⟨K, hK, hk⟩ p hp rfl
+    obtain ⟨flds', he, hall⟩ := hv K hK
+    cases he
+    have := hall p hp
+    simp_all
+  intro T hT
+  have hc := hc T hT
+  unfold CoversBound at hc
+  refine ⟨flds, rfl, fun p hp => ?_⟩
+  split at hc
+  · rename_i hamong
+    obtain ⟨K, hK, hKa, hsub⟩ := hc
+    obtain ⟨flds', he, hk⟩ := hv K hK
+    cases he
+    have hp' := hk p hp
+    simp only [KeyBound.admits, hKa, beq_true, List.contains_iff_mem] at hp'
+    rcases hsub p.1 hp' with h | h
+    · simp [KeyBound.admits, hamong, h]
+    · exact absurd rfl (excluded h p hp)
+  · rename_i hamong
+    simp only [Bool.not_eq_true] at hamong
+    simp only [KeyBound.admits, hamong]
+    cases hm : T.keys.contains p.1
+    · rfl
+    · exact absurd rfl (excluded (hc p.1 (by simpa using hm)) p hp)
 
 /-- Two rest contracts agree: both absent, or both present and equivalent. -/
 def CoversRest (R : List ι → List ι → Prop) (readonly : Bool) : Option (List ι) → Option (List ι) → Prop
@@ -991,7 +1038,7 @@ optional, so the object has no prototype. -/
 theorem covers_optional_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
     {a : List (PropKey × List ι)} {bs : List (List (PropKey × List ι))}
     {vs : List (PropKey × List ι)} {os ps : List (OptionalField (List ι))}
-    {ks : List (List PropKey)}
+    {ks : List KeyBound}
     (hc : CoversOptional R (a :: bs) vs os ks ps) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j)
     (W : WorldT n) (v : Val)
@@ -1036,11 +1083,11 @@ theorem covers_optional_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
       exact ⟨fun hl => optT_no_proto hm hv.2.2 hl, fun l hl => optT_present hm hv.2.2 hl⟩
   refine ⟨flds, rfl, fun o hm hl => ?_, fun o hm l hl => ?_⟩
   · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
-    rcases hc q hq with ⟨p, hp, hk, -, -, -⟩ | ⟨K, hK, -, hpK⟩
+    rcases hc q hq with ⟨p, hp, hk, -, -, -⟩ | ⟨-, K, hK, hpK⟩
     · exact (slot p hp).1 (by rw [hk]; exact hl)
     · exact ownKeysT_lookup (hks K hK) hpK
   · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
-    rcases hc q hq with ⟨p, hp, hk, hmode, hpq, hqp⟩ | ⟨K, hK, hqK, -⟩
+    rcases hc q hq with ⟨p, hp, hk, hmode, hpq, hqp⟩ | ⟨⟨K, hK, hqK⟩, -⟩
     · obtain ⟨c, hw, hag⟩ := (slot p hp).2 l (by rw [hk]; exact hl)
       exact ⟨c, hw, fun j hj W' u => (hag j hj W' u).weaken hmode (hr j hj _ _ hpq W' u)
         (fun hq' => hr j hj _ _ (hqp hq') W' u)⟩
@@ -1177,37 +1224,35 @@ theorem fields_agree {G : NormalGraph ι} {η : MixedAssignment ι} {a : List (P
   exact recT_at (mem_famsOf.mpr ⟨f.2, hfL, rfl⟩) hrec
 
 /-- A present own key of an object whose own keys a bound lists is in it. -/
-private theorem ownKeysT_mem {K : List PropKey} {k : Nat} {W : WorldT k}
+private theorem ownKeysT_mem {K : KeyBound} (ha : K.among = true) {k : Nat} {W : WorldT k}
     {flds : List (PropKey × Nat)} (h : ownKeysT K k W (.objAt flds .absent))
-    {f : PropKey} {l : Nat} (hl : flds.lookup f = some l) : f ∈ K := by
-  if hf : f ∈ K then exact hf else
-    rw [ownKeysT_lookup h hf] at hl
-    cases hl
+    {f : PropKey} {l : Nat} (hl : flds.lookup f = some l) : f ∈ K.keys := by
+  simpa [KeyBound.admits, ha] using ownKeysT_admits h hl
 
 /-- **Index contracts through an own-key bound.** No prototype key is among
 the object's own keys, and every present string key is a source member whose
 location's contract implies, or for a writable index agrees with, the index. -/
 theorem covers_keys_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
     {a : List (PropKey × List ι)} {bs : List (List (PropKey × List ι))} {vs : List (PropKey × List ι)}
-    {ks : List (List PropKey)} {iy cy : List (List ι)}
+    {ks : List KeyBound} {iy cy : List (List ι)}
     (hc : CoversKeys R (a :: bs).flatten vs ks iy cy) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (W : WorldT n) (v : Val)
     (hrefs : refsT (famsOf (mixedValues G η) a) (bs.map (famsOf (mixedValues G η))) n W v)
     (hw : viewT (famsOf (mixedValues G η) vs) n W v) (hb : ∀ K ∈ ks, ownKeysT K n W v) :
     (∀ y ∈ iy, dictViewT (mixedValues G η y) n W v) ∧
       ∀ y ∈ cy, dictCellT (mixedValues G η y) n W v := by
-  obtain ⟨K, hK, hproto, hkeys⟩ := hc
+  obtain ⟨K, hK, ha, hproto, hkeys⟩ := hc
   obtain ⟨flds, rfl, -⟩ := hb K hK
   have hown := hb K hK
-  have hnp := ownKeysT_lookup hown hproto
+  have hnp := ownKeysT_lookup (f := CallArguments.protoField) hown (by simp [KeyBound.admits, ha, hproto])
   refine ⟨fun y hy => ⟨flds, rfl, hnp, fun f l hl => ?_⟩, fun y hy => ⟨flds, rfl, hnp, fun f l hl => ?_⟩⟩
-  · obtain ⟨p, hp, hpk, hpy⟩ := (hkeys _ (ownKeysT_mem hown hl)).1 y hy
+  · obtain ⟨p, hp, hpk, hpy⟩ := (hkeys _ (ownKeysT_mem ha hown hl)).1 y hy
     obtain ⟨flds', l', c, he, hl', hc, hag⟩ := fields_at hrefs hw p hp
     cases he
     rw [hpk, hl] at hl'
     cases hl'
     exact ⟨c, hc, fun j hj W' u hu => hr j hj _ _ hpy W' u (hag j hj W' u hu)⟩
-  · obtain ⟨p, hp, hpk, hpy, hyp⟩ := (hkeys _ (ownKeysT_mem hown hl)).2 y hy
+  · obtain ⟨p, hp, hpk, hpy, hyp⟩ := (hkeys _ (ownKeysT_mem ha hown hl)).2 y hy
     obtain ⟨flds', l', c, he, hl', hc, hag⟩ := fields_agree hrefs p hp
     cases he
     rw [hpk, hl] at hl'
@@ -1242,7 +1287,7 @@ same host; or from a field or view holding a function whose receiver the host
 is in, below the level, in every extending world; or, when the object lacks
 the key, from such a function its prototype holds. -/
 theorem covers_methods_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
-    {known : Known ι} {self : List ι} {fields : List (PropKey × List ι)} {bounds : List (List PropKey)}
+    {known : Known ι} {self : List ι} {fields : List (PropKey × List ι)} {bounds : List KeyBound}
     {ms ns : List (MethodMembers.Sig (List ι))} (hc : CoversMethods G R known self fields bounds ms ns)
     (hknown : ∀ k ∈ known, FamLe (mixedValues G η k.1) (mixedSem G η (.arrs k.2.1 k.2.2)))
     (n : Nat)
@@ -1544,14 +1589,14 @@ theorem Covers.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R known sel
       covers_optional_sound hc.2.2.2.1 n hr W v ⟨hv.1, hv.2.1, hv.2.2.1⟩ hv.2.2.2.2,
       covers_methods_sound hc.2.2.2.2.1 hknown n hr hpa W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2
         hv.2.2.2.1,
-      covers_bounds_sound hc.2.2.2.2.2 hv.2.2.2.2⟩
+      covers_bounds_sound hc.2.2.2.2.2 (recT_obj hv.1.1) hv.2.2.2.2⟩
   case dict.refs a bs vs ix os ms ks cx c ds ws ps ns ls =>
     intro hv
     exact ⟨covers_fields_sound hc.1 n hr W v hv.1, covers_views_sound hc.2.1 n hr W v ⟨hv.1, hv.2.1⟩,
       covers_optional_sound hc.2.2.1 n hr W v ⟨hv.1, hv.2.1, hv.2.2.2.1⟩ hv.2.2.2.2.2,
       covers_methods_sound hc.2.2.2.1 hknown n hr hpa W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2.2
         hv.2.2.2.2.1,
-      covers_bounds_sound hc.2.2.2.2 hv.2.2.2.2.2⟩
+      covers_bounds_sound hc.2.2.2.2 (recT_obj hv.1.1) hv.2.2.2.2.2⟩
   case ctors.ctors L S M T =>
     rintro ⟨hv, hw⟩
     refine ⟨⟨hv.1, fun q hq => ?_⟩, ⟨hv.1, fun t ht => ?_⟩⟩
@@ -1604,7 +1649,7 @@ theorem Covers.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R known sel
       covers_optional_sound hc.2.2.1 n hr W v ⟨hv.1, hv.2.1, hv.2.2.1⟩ hv.2.2.2.2,
       covers_methods_sound hc.2.2.2.1 hknown n hr hpa W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2
         hv.2.2.2.1,
-      covers_bounds_sound hc.2.2.2.2 hv.2.2.2.2⟩
+      covers_bounds_sound hc.2.2.2.2 (recT_obj hv.1.1) hv.2.2.2.2⟩
   · rename_i a bs vs ix os ms ks cx c ds ws iy ps ns ls cy
     intro hv
     refine ⟨covers_fields_sound hc.1 n hr W v hv.1,
@@ -1614,7 +1659,7 @@ theorem Covers.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R known sel
 
       covers_methods_sound hc.2.2.2.2.1 hknown n hr hpa W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2.2
         hv.2.2.2.2.1,
-      covers_bounds_sound hc.2.2.2.2.2 hv.2.2.2.2.2⟩
+      covers_bounds_sound hc.2.2.2.2.2 (recT_obj hv.1.1) hv.2.2.2.2.2⟩
     · intro y hy
       obtain ⟨x, hx, hxy⟩ := hc.2.2.1.1 y hy
       obtain ⟨flds, he, hp, hfs⟩ := hv.2.2.1.1 x hx

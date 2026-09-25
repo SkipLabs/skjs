@@ -212,7 +212,7 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     | [.refs fs [] [] [] [] ks] =>
       ns.Nodup ∧ ns.length = ps.length ∧ ps.map Sequent.term = inits ∧
       (∀ p ∈ ps, p.context = j.context) ∧ fs = ns.zip (ps.map Sequent.type) ∧
-      (∀ K ∈ ks, ∀ n ∈ ns, n ∈ K)
+      (∀ K ∈ ks, ∀ n ∈ ns, K.admits n = true)
     | _ => False
   | .read, .readAt f a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧
@@ -224,13 +224,13 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     (match expand G ja.type with
      | [c] => (f, j.type) ∈ ((namedMembers c).map Prod.snd).getD []
      | _ => False)
-  -- A key outside a bound of the object is read from its prototype `P`, which
+  -- A key a bound of the object does not admit is read from its prototype `P`, which
   -- the object holds under the reserved key; `P`'s field or view gives the type.
   | .readProto P, .readAt f a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧
     (match expand G ja.type with
      | [.refs fs [] vs _ _ ks] =>
-       (∃ K ∈ ks, f ∉ K) ∧ (CallArguments.protoField, P) ∈ fs ++ vs ∧
+       (∃ K ∈ ks, K.admits f = false) ∧ (CallArguments.protoField, P) ∈ fs ++ vs ∧
        ProtoMember G P f j.type
      | _ => False)
   | .readOptional A U, .readAt f a, [ja] =>

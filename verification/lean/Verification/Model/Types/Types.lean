@@ -404,20 +404,32 @@ def optT (fs : List (OptionalField Fam)) : Fam := fun k W v =>
         ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val),
           SlotContract o.readonly (c j hj W' u) (o.type j W' u)
 
-/-- **An own-key bound.** The object's own keys are among `K`. Record types
-are open, so only a bound says a key is absent, and so that a read of it
-continues at the prototype. Keys are fixed at allocation, so the bound holds
-in every world. -/
-def ownKeysT (K : List PropKey) : Fam := fun _ _ v =>
-  ∃ flds : List (PropKey × Nat), v = .objAt flds .absent ∧ ∀ p ∈ flds, p.1 ∈ K
+/-- **An own-key bound**: a finite statement about which keys an object may
+own. With `among`, its own keys are among `keys`, as a fresh literal's are
+exactly its fields'; without, none of its own keys is among `keys`, as no
+array owns a key its prototype provides. Record types are open, so only a
+bound says a key is absent, and so that a read of it continues at the
+prototype. -/
+structure KeyBound where
+  among : Bool
+  keys : List PropKey
+  deriving Repr, DecidableEq
 
-theorem ownKeysT_adm (K : List PropKey) : Adm (ownKeysT K) :=
+/-- Whether a bound lets the object own a key. -/
+def KeyBound.admits (b : KeyBound) (f : PropKey) : Bool := b.keys.contains f == b.among
+
+/-- The object's own keys are the ones the bound admits. Keys are fixed at
+allocation, so the bound holds in every world. -/
+def ownKeysT (b : KeyBound) : Fam := fun _ _ v =>
+  ∃ flds : List (PropKey × Nat), v = .objAt flds .absent ∧ ∀ p ∈ flds, b.admits p.1 = true
+
+theorem ownKeysT_adm (b : KeyBound) : Adm (ownKeysT b) :=
   ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
 
-/-- A key outside the bound is not the object's own. -/
-theorem ownKeysT_lookup {K : List PropKey} {k : Nat} {W : WorldT k}
-    {flds : List (PropKey × Nat)} (h : ownKeysT K k W (.objAt flds .absent))
-    {f : PropKey} (hf : f ∉ K) : flds.lookup f = none := by
+/-- A key the bound does not admit is not the object's own. -/
+theorem ownKeysT_lookup {b : KeyBound} {k : Nat} {W : WorldT k}
+    {flds : List (PropKey × Nat)} (h : ownKeysT b k W (.objAt flds .absent))
+    {f : PropKey} (hf : b.admits f = false) : flds.lookup f = none := by
   obtain ⟨flds', he, hk⟩ := h
   cases he
   cases hl : flds.lookup f with
@@ -433,8 +445,18 @@ theorem ownKeysT_lookup {K : List PropKey} {k : Nat} {W : WorldT k}
       · rename_i he
         have : f = g := by simpa using he
         subst this
-        exact hf (hk _ List.mem_cons_self)
+        have := hk _ List.mem_cons_self
+        simp_all
       · exact ih (fun q hq => hk q (List.mem_cons_of_mem _ hq)) hl
+
+/-- A present own key is one the bound admits. -/
+theorem ownKeysT_admits {b : KeyBound} {k : Nat} {W : WorldT k}
+    {flds : List (PropKey × Nat)} (h : ownKeysT b k W (.objAt flds .absent))
+    {f : PropKey} {l : Nat} (hl : flds.lookup f = some l) : b.admits f = true := by
+  cases hb : b.admits f
+  · rw [ownKeysT_lookup h hb] at hl
+    cases hl
+  · rfl
 
 /-- No optional field constrains a plain object. -/
 theorem optT_nil {k} {W : WorldT k} {flds : List (PropKey × Nat)} :
@@ -537,8 +559,9 @@ private theorem slots_names (base : Nat) (ns : List PropKey) :
   | cons name rest ih => simp [slots, ih]
 
 /-- A fresh object's own keys are exactly the names it allocated. -/
-theorem ownKeysT_slots {K : List PropKey} {k : Nat} {W : WorldT k} {base : Nat}
-    {ns : List PropKey} (h : ∀ n ∈ ns, n ∈ K) : ownKeysT K k W (.objAt (slots base ns) .absent) := by
+theorem ownKeysT_slots {K : KeyBound} {k : Nat} {W : WorldT k} {base : Nat}
+    {ns : List PropKey} (h : ∀ n ∈ ns, K.admits n = true) :
+    ownKeysT K k W (.objAt (slots base ns) .absent) := by
   refine ⟨slots base ns, rfl, fun p hp => h _ ?_⟩
   have := List.mem_map_of_mem (f := Prod.fst) hp
   rwa [slots_names] at this

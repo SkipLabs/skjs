@@ -2,9 +2,8 @@
 // `getUnique()` give `[number, number] & DepSafe`, the meet of the tuple with
 // DepSafe's alternatives, which is below each side: its elements are read as
 // the tuple's, the array is sorted and reduced, and the value is Managed.
-// The meet is one object, the array shape with Managed's symbol key,
-// which is empty while an array's own keys are bounded to its store and
-// prototype (DESIGN.md, "Binders met with ground types").
+// The meet is one object, the array shape with Managed's symbol key, which
+// an array may own (DESIGN.md, "Arrays may carry other own keys").
 import type { Managed, Mapper, Values } from "@skipruntime/core";
 class Minus implements Mapper<string, [number, number], string, number> {
   mapEntry(

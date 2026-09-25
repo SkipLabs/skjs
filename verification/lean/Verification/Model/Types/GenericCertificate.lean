@@ -647,7 +647,16 @@ theorem array_wrap_safe {G : NormalGraph Nat} {eta} (E : Ty) {n : Nat} {W : Worl
     exact ⟨flds, l, c, he, hl, hc, fun j hj U u hu => (hag j hj U u).mp hu⟩
   · simp only [List.mem_singleton] at hK
     subst hK
-    exact ownKeysT_slots fun n hn => hn
+    -- The object owns its store and its prototype, which no prototype key is.
+    refine ownKeysT_slots fun n hn => ?_
+    have hr : SourceTypes.reservedKey n = true := by
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hn
+      rcases hn with rfl | rfl <;>
+        simp [SourceTypes.reservedKey, SourceTypes.storeField, SourceTypes.protoField]
+    have hn' : n ∉ SourceTypes.arrayProtoKeys G := fun h => by
+      have := SourceTypes.arrayProtoKeys_reserved h
+      simp_all
+    simp [KeyBound.admits, hn']
 
 /-- The universal body premise becomes a variadic code contract: invocation
 allocates the rest store in slot zero, the body's first step wraps it into an

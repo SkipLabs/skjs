@@ -213,7 +213,8 @@ Array types are reserved the same way, in `"arrays"`:
 `r` is an empty row the producer reserved and `s` the row of the store's tuple
 contract, which the producer states. Lean fills the row with the one array
 shape (`PositiveNormalization.arrayClauseOf`): the store, `Array.prototype` as
-a view at `ArrayProto`, and the own-key bound. No producer spells that shape.
+a view at `ArrayProto`, and the own-key bound excluding `ArrayProto`'s keys.
+No producer spells that shape.
 
 Intersections are reserved the same way, in `"meets"`:
 `[{"row": r, "parts": [[...], ...]}]`, left out when there are none. Row `r`

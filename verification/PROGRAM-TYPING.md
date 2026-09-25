@@ -396,12 +396,14 @@ names, and write $\mathsf{Ref}(\varphi)$ for the record clause carrying those
 invariants. `alloc` allocates one fresh location per named field, and the names
 being distinct is what makes the result a map from them. The object's own keys
 are exactly those names, so its type may also bound them: each own-key bound
-$K$ the type states must hold every name. An array is allocated this way, its
-store and prototype as the two fields, then read as an array by subsumption:
+$b$ the type states must admit every name
+([POSITIVE-TYPES.md](POSITIVE-TYPES.md#records)). An array is allocated this
+way, its store and prototype as the two fields, own keys among those two, then
+read as an array, owning none of `ArrayProto`'s keys, by subsumption:
 
 $$
 \frac{\overline{f}\ \text{distinct}\qquad\forall i.\;\Gamma\vdash_G a_i:A_i
-      \qquad\forall K\in\beta.\;\overline{f}\subseteq K}
+      \qquad\forall b\in\beta.\;\forall f\in\overline{f}.\;b\vDash f}
      {\Gamma\vdash_G\{\overline{f=a}\}:\mathsf{Ref}(\overline{f{:}A};\beta)}
 $$
 
@@ -469,12 +471,14 @@ $$
      {\Gamma\vdash_G a.\mathsf{str}(s):A\cup U}
 $$
 
-A key outside one of the record's own-key bounds $K$ is not the object's own,
-so its read continues at the prototype, which the record holds under the
-reserved key at $P$ (`readProto`):
+A key one of the record's own-key bounds $b$ does not admit is not the
+object's own, so its read continues at the prototype, which the record holds
+under the reserved key at $P$ (`readProto`). For an array, $b$ excludes
+`ArrayProto`'s keys, so every prototype member is read this way, whatever
+further keys the array owns:
 
 $$
-\frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Ref}(\varphi;\psi;\omega;K)\quad\kappa\notin K\quad
+\frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Ref}(\varphi;\psi;\omega;\beta)\quad b\in\beta\quad b\nvDash\kappa\quad
       (\mathsf{proto}{:}P)\in\varphi\,\psi\quad P\equiv_G\mathsf{Ref}(\varphi';\psi';\ldots)\quad
       (\kappa{:}A)\in\varphi'\,\psi'}
      {\Gamma\vdash_G a.\kappa:A}

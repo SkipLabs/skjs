@@ -185,9 +185,15 @@ function intersection(scope: TermScope, node: ts.IntersectionTypeNode, span: Spa
     };
     const shapes = parts.map((part, i) => shape(part, operands[i] ?? node));
     const head = shapes[0];
-    if (shapes.some(s => s !== head)) scope.fail(node, "intersection operands must have the same shape");
-    if (head !== "record" && head !== "function")
-      scope.fail(node, `intersection of ${head} types is outside the fragment`);
+    // An array may carry further own keys, so one array operand meets
+    // records: an array that also has the records' members, met in Lean.
+    const markedArray = shapes.filter(s => s === "array").length === 1 &&
+      shapes.every(s => s === "array" || s === "record" || s === "alias");
+    if (!markedArray) {
+      if (shapes.some(s => s !== head)) scope.fail(node, "intersection operands must have the same shape");
+      if (head !== "record" && head !== "function")
+        scope.fail(node, `intersection of ${head} types is outside the fragment`);
+    }
   }
   return { k: "intersection", parts, span };
 }

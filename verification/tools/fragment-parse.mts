@@ -1902,6 +1902,17 @@ export function parseFile(file: string, carriesContext = false,
     else if (ts.isImportDeclaration(s) && !carriesContext) importNodes.push(s);
     else if (carriesContext) continue;
     else if (ts.isExpressionStatement(s)) initNodes.push(s);
+    // `declare const k: unique symbol` runs nothing: it names a symbol, whose
+    // declaration is the identity computed keys in types read (the
+    // declaration graph's `symbols`). Nothing binds it, so a read of it as a
+    // value is refused where it is read.
+    else if (ts.isVariableStatement(s) && s.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword)) {
+      for (const d of s.declarationList.declarations)
+        if (!(s.declarationList.flags & ts.NodeFlags.Const) || d.initializer || !d.type ||
+            !ts.isTypeOperatorNode(d.type) || d.type.operator !== ts.SyntaxKind.UniqueKeyword ||
+            d.type.type.kind !== ts.SyntaxKind.SymbolKeyword)
+          gate.fail(d, "an ambient declaration other than `declare const k: unique symbol` is outside the fragment");
+    }
     else if (ts.isVariableStatement(s)) {
       // A module constant is read by functions at its annotation. Module
       // storage that functions could write is not yet in the fragment.

@@ -125,7 +125,7 @@ language. The boundaries are:
    its method's closure that longer signature, and the class value that
    construct signature, the same way. A fresh object literal whose contract
    has an index or an optional field is claimed at its exact record (`Exact`:
-   its fields and an own-key bound listing exactly their keys), which is how
+   its fields and an own-key bound: own keys among exactly theirs), which is how
    it meets a dictionary or leaves an optional field out. Explicit type
    arguments fix a call's leading binders before the rest are inferred.
    Expected types guide fresh object/array construction, while the actual
@@ -1246,7 +1246,8 @@ completed.
   So a fresh literal expected at `Serializable<Todo>` sees the index and is
   claimed at its exact record, which meets the index by its keys
   (`CoversKeys`). Outside a declaration, record operands of an intersection
-  merge the same way. A `Meet` never leaves a declaration's expansion.
+  merge the same way; any other ground operands, such as an array with a
+  record's members, are kept as a `Meet` whose reserved row Lean fills.
 
 *Witnesses.* `sum-serializable` (a literal at `Serializable<{ … }>`, passed as
 `Json`, read at its named fields, and passed as the plain record);

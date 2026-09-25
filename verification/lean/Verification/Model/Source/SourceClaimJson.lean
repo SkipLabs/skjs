@@ -375,7 +375,7 @@ private partial def groundIn (T : SourceTypes.Table) :
       let (T, E) ← groundIn T e
       let store := PositiveNormalization.Clause.list ⟨[], [], some E, false⟩ []
       let T := SourceTypes.intern T store
-      let array := SourceTypes.arrayClause (SourceTypes.label T store) false
+      let array := SourceTypes.arrayOf T (SourceTypes.label T store) false
       let T := SourceTypes.intern T array
       pure (T, [SourceTypes.label T array])
   | .scheme [] rc ps rest r => do

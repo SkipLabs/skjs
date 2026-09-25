@@ -988,12 +988,12 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   | letE : HasTy G Γ a A → HasTy G (A :: Γ) b B → HasTy G Γ (.letE a b) B
   /-- **Allocation.** One object, one fresh location per named field. The field
   names are distinct, which is what makes the object a map from them. Its own
-  keys are exactly those names, so any bound holding them holds of it. -/
-  | alloc {parts : List (PropKey × Ty ι × Tm)} {ks : List (List PropKey)} :
+  keys are exactly those names, so any bound admitting them holds of it. -/
+  | alloc {parts : List (PropKey × Ty ι × Tm)} {ks : List KeyBound} :
       (parts.map Prod.fst).Nodup →
       (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) →
       Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks) →
-      (∀ K ∈ ks, ∀ p ∈ parts, p.1 ∈ K) →
+      (∀ K ∈ ks, ∀ p ∈ parts, K.admits p.1 = true) →
       HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
   /-- A named field, of a record or of a dictionary, reads at its contract. -/
   | read : HasTy G Γ a Ref → Represents G Ref c → namedMembers c = some (fs, vs) →
@@ -1001,22 +1001,22 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   /-- A view field reads at its bound: a capability, never a write permission. -/
   | readView : HasTy G Γ a Ref → Represents G Ref c → namedMembers c = some (fs, vs) →
       (f, A) ∈ vs → HasTy G Γ (.readAt f a) A
-  /-- **A read through the prototype.** A key outside one of the object's key
-  bounds is not its own, so the read continues at the prototype, which the
+  /-- **A read through the prototype.** A key one of the object's key bounds
+  does not admit is not its own, so the read continues at the prototype, which the
   object holds under the reserved key at `P`; the prototype's field or view
   for the key gives the type. -/
   | readProto {a : Tm} {Ref P : Ty ι} {fs vs : List (PropKey × Ty ι)} {os : List (OptionalField (Ty ι))}
-      {ms : List (MethodMembers.Sig (Ty ι))} {ks : List (List PropKey)} {K : List PropKey}
+      {ms : List (MethodMembers.Sig (Ty ι))} {ks : List KeyBound} {K : KeyBound}
       {gs ws : List (PropKey × Ty ι)} {os' : List (OptionalField (Ty ι))}
       {ms' : List (MethodMembers.Sig (Ty ι))}
-      {ks' : List (List PropKey)} {f : PropKey} {A : Ty ι} :
-      HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → K ∈ ks → f ∉ K →
+      {ks' : List KeyBound} {f : PropKey} {A : Ty ι} :
+      HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → K ∈ ks → K.admits f = false →
       (CallArguments.protoField, P) ∈ fs ++ vs → Represents G P (.refs gs [] ws os' ms' ks') →
       (f, A) ∈ gs ++ ws → HasTy G Γ (.readAt f a) A
   /-- An optional field, writable or readonly, reads at its type or, where the
   object lacks the key, as `undefined`. -/
   | readOptional {a : Tm} {Ref : Ty ι} {fs vs : List (PropKey × Ty ι)} {os : List (OptionalField (Ty ι))}
-      {ms : List (MethodMembers.Sig (Ty ι))} {ks : List (List PropKey)} {f : PropKey} {r : Bool}
+      {ms : List (MethodMembers.Sig (Ty ι))} {ks : List KeyBound} {f : PropKey} {r : Bool}
       {A U : Ty ι} :
       HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → ⟨f, r, A⟩ ∈ os →
       Represents G U .undef → HasTy G Γ (.readAt f a) (A ++ U)

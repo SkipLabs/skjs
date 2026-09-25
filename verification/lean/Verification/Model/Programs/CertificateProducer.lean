@@ -617,7 +617,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         if inits.length != ns.length then none else do
         match expand G R with
         | [.refs B [] [] [] [] ks] =>
-          if B.map Prod.fst != ns || !ks.all (fun K => ns.all (K.contains ·)) then none else do
+          if B.map Prod.fst != ns || !ks.all (fun K => ns.all K.admits) then none else do
           let ps ← (inits.zip (B.map Prod.snd)).mapM fun (a,D) => recur Γ a D
           coerce G pool (.node ⟨Γ,t,R⟩ .alloc ps) A
         | _ => none
@@ -636,14 +636,14 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     | .readAt f a =>
       let direct := pool.findSome? fun R => do
         -- An invariant field reads at its contract; a view field at its bound;
-        -- an optional field, writable or readonly, at its type or `undefined`; a key outside a
-        -- bound at the prototype's field or view.
+        -- an optional field, writable or readonly, at its type or `undefined`; a key a
+        -- bound does not admit at the prototype's field or view.
         let (B,r) ← match expand G R with
           | [.refs fs [] vs os _ ks] =>
             (fs.lookup f).map (·,Rule.read) <|> (vs.lookup f).map (·,Rule.readView) <|>
               (((os.find? (·.key == f)).map (·.type)).bind fun E => pool.findSome? fun U =>
                 if expand G U == [.undef] then some (E ++ U, Rule.readOptional E U) else none) <|>
-              (if ks.any (fun K => !K.contains f) then
+              (if ks.any (fun K => !K.admits f) then
                 ((fs ++ vs).lookup CallArguments.protoField).bind fun P =>
                   match expand G P with
                   | [.refs gs [] ws _ _ _] => ((gs ++ ws).lookup f).map (·, Rule.readProto P)

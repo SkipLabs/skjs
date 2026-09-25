@@ -16,6 +16,9 @@ export type Fields = [name: PropertyKey, labels: Labels][];
 export type OptionalField = { key: PropertyKey; readonly: boolean; type: Labels };
 /** A host-relative method member: its key, its fixed signatures
  * `[params, result]` and its variadic ones `[params, [rest, result]]`. */
+/** An own-key bound: the object's own keys are among `keys` (`among`), or
+ * none of them is (an array owns no key its prototype provides). */
+export type KeyBound = { among: boolean; keys: PropertyKey[] };
 export type MethodSig = {
   key: PropertyKey;
   calls: [params: Labels[], result: Labels][];
@@ -47,10 +50,10 @@ export type Clause =
    * its contents, with no write permission through this contract. `optional`
    * fields constrain their key only where the object has it, as a view there
    * when readonly; `methods` are
-   * host-relative members; each of `bounds` lists keys the object's own keys
-   * are among. Each is left out when there are none. */
+   * host-relative members; each of `bounds` says which keys the object may
+   * own. Each is left out when there are none. */
   | { refs: { first: Fields; rest: Fields[]; views: Fields; optional?: OptionalField[];
-      methods?: MethodSig[]; bounds?: string[][] } }
+      methods?: MethodSig[]; bounds?: KeyBound[] } }
   /** Readonly string index views apply to every present own field; each of
    * `cells`, a mutable index signature's, is also one every present own field
    * holds exactly. Left out when there are none. */
@@ -62,7 +65,7 @@ export type Clause =
         indexes: Labels[];
         optional?: OptionalField[];
         methods?: MethodSig[];
-        bounds?: string[][];
+        bounds?: KeyBound[];
         cells?: Labels[];
       };
     }
@@ -271,10 +274,11 @@ export function decodeGraph(value: unknown): TypeGraph {
       });
     });
   const bounds = (v: unknown) =>
-    array(v).forEach((b) =>
-      array(b).forEach((k) => {
-        if (typeof k !== "string") throw Error("expected a key in a bound");
-      }));
+    array(v).forEach((b) => {
+      const r = obj(b, ["among", "keys"]);
+      if (typeof r.among !== "boolean") throw Error("invalid key bound");
+      array(r.keys).forEach((k) => key(k, "a key in a bound"));
+    });
   const tuple = (v: unknown) => {
     const t = obj(v, ["required", "optional", "rest", "readonly"]);
     if (typeof t.readonly !== "boolean")
@@ -442,6 +446,8 @@ const printTuple = (t: Tuple) =>
     ...t.optional.map((l) => `${printLabels(l)}?`),
     ...(t.rest ? [`...${printLabels(t.rest)}[]`] : []),
   ].join(", ")}]`;
+const boundText = (b: KeyBound) =>
+  `own keys ${b.among ? "among" : "outside"} ${b.keys.map(keyText).join(" | ")}`;
 /** A key as TypeScript writes it: a string plainly, a symbol by its index. */
 export const keyText = (name: PropertyKey): string =>
   typeof name === "string" ? name : `[symbol ${name.symbol}]`;
@@ -465,7 +471,7 @@ function clauseText(c: Clause): string {
       ...(c.refs.views.length ? [`readonly ${printFields(c.refs.views)}`] : []),
       ...(c.refs.optional?.length ? [`optional ${printOptional(c.refs.optional)}`] : []),
       ...(c.refs.methods?.length ? [`methods ${c.refs.methods.map((m) => keyText(m.key)).join(", ")}`] : []),
-      ...(c.refs.bounds ?? []).map((b) => `own keys ${b.map((k) => JSON.stringify(k)).join(" | ")}`),
+      ...(c.refs.bounds ?? []).map(boundText),
     ].join(" & ");
   if ("dict" in c)
     return [
@@ -478,7 +484,7 @@ function clauseText(c: Clause): string {
       ...(c.dict.optional?.length ? [`optional ${printOptional(c.dict.optional)}`] : []),
 
       ...(c.dict.methods?.length ? [`methods ${c.dict.methods.map((m) => keyText(m.key)).join(", ")}`] : []),
-      ...(c.dict.bounds ?? []).map((b) => `own keys ${b.map((k) => JSON.stringify(k)).join(" | ")}`),
+      ...(c.dict.bounds ?? []).map(boundText),
     ].join(" & ");
   const calls = (arrows: Arrow[], variadic: RestArrow[] = []) =>
     `calls[${[...arrows.map(arrowText), ...variadic.map(restArrowText)].join("; ")}]`;

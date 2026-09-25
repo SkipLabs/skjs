@@ -142,7 +142,7 @@ key and then reads the selected field (or `undefined` if it is absent). The
 proved `indexDict` rule checks the key at `string`. Both reads carry
 `undefined` in their result. This path reaches the same certified
 source acceptance theorem as other expressions. A fresh literal is a
-dictionary through its exact own keys: `alloc` bounds them by the literal's
+dictionary through its exact own keys: `alloc` bounds them among the literal's
 names (`ownKeysT_slots`), and a record so bounded, with no prototype key among
 them, meets an index view whose contract every field's is within, and a
 writable index equivalent to every field's (`covers_keys_sound`); an existing

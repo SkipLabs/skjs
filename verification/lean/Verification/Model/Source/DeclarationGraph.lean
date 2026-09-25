@@ -52,6 +52,21 @@ private def rowIndex (ds : Array Definition) (i : Nat) : Nat :=
 private def nullaryCount (ds : Array Definition) : Nat :=
   (ds.toList.filter fun d => d.parameters.isEmpty).length
 
+/-- `ArrayProto`'s identity: the synthetic declaration array types' prototype
+view names. -/
+private def arrayProtoIdentity : Json :=
+  Json.mkObj [("module", "skjs/array-prototype"), ("name", "ArrayProto"), ("span", toJson [0, 0])]
+
+/-- The keys `ArrayProto`'s declaration names, spelled as its row's are
+(`SourceTypes.arrayProtoKeys`): an array owns none of them. Read from the
+declaration, since arrays are lowered before, and while, its row is;
+`prepare` checks the row names the same keys. -/
+private def arrayProtoKeys (ds : Array Definition) : Except String (List PropKey) := do
+  let some d := ds[0]? | return []
+  if d.identity != arrayProtoIdentity then return []
+  let names ← (← arr d.expression "fields").mapM fun f => do PropKey.decode (← field f "name")
+  return SourceTypes.arrayProtoKeys.prototypeKeys names.toList
+
 private def referenceIndex (ds : Array Definition) (term : Json) : Except String Nat := do
   CellClaims.fieldsExactly term ["k", "reference", "args", "span"]
   let reference ← field term "reference"
@@ -530,7 +545,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let element ← lowerType ds owner params seen (← field term "element")
     let readonly ← bool term "readonly"
     let store ← use (.list ⟨[], [], some element, readonly⟩ [])
-    return [← use (SourceTypes.arrayClause store readonly)]
+    return [← use (SourceTypes.arrayClause (← arrayProtoKeys ds) store readonly)]
   | "tuple" =>
     CellClaims.fieldsExactly term ["k", "readonly", "required", "optional", "rest", "span"]
     let required ← (← arr term "required").mapM (lowerType ds owner params seen)
@@ -540,7 +555,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       some <$> lowerType ds owner params seen restTerm
     let readonly ← bool term "readonly"
     let store ← use (.list ⟨required.toList, optional.toList, rest, readonly⟩ [])
-    return [← use (SourceTypes.arrayClause store readonly)]
+    return [← use (SourceTypes.arrayClause (← arrayProtoKeys ds) store readonly)]
   | "function" =>
     CellClaims.fieldsExactly term ["k", "receiver", "params", "rest", "result", "span"]
     let recv ← field term "receiver"
@@ -790,7 +805,7 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
     if !reserved row || applications.any (·.1 == row) || table[row]! != RequestJson.Row.clauses [] then
       throw "an array's reserved row is not an empty producer row"
     if store ≥ table.length then throw "an array's store names no row"
-    table := table.set row (.clauses [SourceTypes.arrayClause store readonly])
+    table := table.set row (.clauses [SourceTypes.arrayClause (← arrayProtoKeys ds) store readonly])
   -- A reserved application at all its arguments is that row from the start,
   -- for the declarations' equations too, and so is a reserved intersection.
   let mut memo : Memo := { floor := 4 + nullaryCount ds, meets := meets.map fun (r, ps) => (ps, r) }
@@ -1005,9 +1020,17 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
     if parts.any isTopClaim then return topClaim
     return claimType (parts.toList.flatMap claimAtoms).eraseDups
   | "intersection" =>
-    -- Conjunction exists only inside a record or function atom.
     CellClaims.fieldsExactly term ["k", "parts", "span"]
-    let parts ← (← arr term "parts").mapM recur
+    -- An array with further members: an array may carry own keys its
+    -- prototype does not provide, so an array operand meets record operands
+    -- as one object (`meetRow`), which only a graph row spells.
+    let terms ← arr term "parts"
+    if terms.any fun t => ["array", "tuple"].contains ((t.getObjValAs? String "k").toOption.getD "") then
+      if !groundTerm term then
+        throw "an array's intersection over a type parameter is outside the fragment"
+      return graphClaim (← lowerType ds ds.size #[] {} term)
+    -- Otherwise conjunction exists only inside a record or function atom.
+    let parts ← terms.mapM recur
     let atoms ← parts.toList.mapM fun part => do
       match isTopClaim part, claimAtoms part with
       | false, [atom] => pure atom
@@ -1151,9 +1174,7 @@ def prepare (ast : Json) (candidate : SourceTypes.Table)
   let ds ← definitions document
   -- `ArrayProto`, when the source has arrays, is the first definition, so its
   -- row is `SourceTypes.arrayProtoLabel`, the one array types name.
-  let arrayProto := Json.mkObj [("module", "skjs/array-prototype"), ("name", "ArrayProto"),
-    ("span", toJson [0, 0])]
-  if let some i := (List.range ds.size).find? (fun i => ds[i]!.identity == arrayProto) then
+  if let some i := (List.range ds.size).find? (fun i => ds[i]!.identity == arrayProtoIdentity) then
     if i != 0 || !ds[i]!.parameters.isEmpty then throw "ArrayProto must be the first declaration"
   let roots ← (← arr document "roots").mapM fun root => do
     let name ← str (← field root "binding") "local"
@@ -1162,6 +1183,11 @@ def prepare (ast : Json) (candidate : SourceTypes.Table)
   if (roots.toList.map (·.1)).eraseDups.length != roots.size then
     throw "duplicate declaration root name"
   let (types, memo) ← fillRows ds candidate applications arrays meets
+  -- Every array lowered from here on reads the keys it excludes from
+  -- `ArrayProto`'s row, so the row must name the ones its declaration does.
+  if ds[0]?.any (·.identity == arrayProtoIdentity) &&
+      SourceTypes.arrayProtoKeys (SourceTypes.graph types) != (← arrayProtoKeys ds) then
+    throw "ArrayProto's row names other keys than its declaration"
   -- Generic module functions, read from their source terms before the tree is
   -- converted.
   let callable (params : List Json) (rest : Option Json) (result : Json) (bound : List (String × Json)) :

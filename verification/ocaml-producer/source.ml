@@ -198,8 +198,9 @@ let rec source_type ctx j =
        lowers and checks the whole intersection. In a declaration's equation,
        a parameter of the declaration or a named operand is read once it is
        known, at the application (`Meet`); elsewhere, record operands are the
-       one object they describe. Other operands need the source graph's
-       conjunction, which the proposal does not model. *)
+       one object they describe, and any other ground operands, such as an
+       array with a record's members, are kept as `Meet`, whose row Lean
+       fills with its own meet. *)
     let parts = List.map recur (items "parts" j) in
     let callable = function
       | Atoms [Shape {fields=[];string_index=None;calls;elements=None}] when calls <> [] -> Some calls
@@ -216,7 +217,7 @@ let rec source_type ctx j =
        (match List.fold_left (fun acc part -> Option.bind acc (fun a -> meet_objects a part))
                 (Some first) rest with
         | Some merged -> merged
-        | None -> unsupported "intersection needs source graph conjunction")
+        | None -> Meet (first,rest))
      | None,[] -> fail "empty intersection")
   | k -> unsupported ("type term " ^ k)
 and source_pack ctx j =

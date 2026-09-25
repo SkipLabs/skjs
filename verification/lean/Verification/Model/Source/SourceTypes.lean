@@ -35,10 +35,11 @@ fixed ones (`DeclarationGraph.prepare` checks this). -/
 def arrayProtoLabel : Nat := 4
 
 /-- An array type: its store at `store`, invariant or, for a readonly array, a
-view; the prototype as a view at `ArrayProto`; and its own keys bounded to
-those two, so a read of any other key continues at the prototype. -/
-def arrayClause (store : Nat) (readonly : Bool) : Clause (List Nat) :=
-  PositiveNormalization.arrayClauseOf [store] [arrayProtoLabel] readonly
+view; the prototype as a view at `ArrayProto`; and none of `excluded`, the keys
+`ArrayProto` provides (`arrayProtoKeys`), among its own keys, so a read of one
+of them continues at the prototype. -/
+def arrayClause (excluded : List PropKey) (store : Nat) (readonly : Bool) : Clause (List Nat) :=
+  PositiveNormalization.arrayClauseOf [store] [arrayProtoLabel] excluded readonly
 
 /-- Labels 0 to 3: null, true, false, undefined. -/
 def initial : Table := [.clauses [.nul], .clauses [.boolLit true], .clauses [.boolLit false],
@@ -47,6 +48,39 @@ def initial : Table := [.clauses [.nul], .clauses [.boolLit true], .clauses [.bo
 def isPrimitive (i : Nat) : Bool := i < initial.length
 
 def graph (T : Table) : NormalGraph Nat := RequestJson.tableGraph T
+
+/-- The keys `Array.prototype` provides: those `ArrayProto`'s row names, its
+fields, views, optional fields and methods, the reserved keys aside. An array
+owns none of them, so reading one continues at the prototype; any other own
+key an array may have. -/
+def arrayProtoKeys (G : NormalGraph Nat) : List PropKey :=
+  match expand G [arrayProtoLabel] with
+  | [.refs a bs vs os ms _] =>
+    prototypeKeys (((a :: bs).flatten ++ vs).map (·.1) ++ os.map (·.key) ++ ms.map (·.key))
+  | _ => []
+where
+  /-- One spelling of a set of prototype keys: sorted, each once, the
+  reserved keys aside. -/
+  prototypeKeys (ks : List PropKey) : List PropKey :=
+    ((ks.filter fun k => !reservedKey k).eraseDups).mergeSort PropKey.before
+
+/-- No reserved key is a prototype key: every array owns its store and its
+prototype. -/
+theorem prototypeKeys_reserved {ks : List PropKey} {k : PropKey}
+    (h : k ∈ arrayProtoKeys.prototypeKeys ks) : reservedKey k = false := by
+  have := List.mem_filter.mp ((List.mem_eraseDups).mp ((List.mem_mergeSort).mp h))
+  simpa using this.2
+
+theorem arrayProtoKeys_reserved {G : NormalGraph Nat} {k : PropKey} (h : k ∈ arrayProtoKeys G) :
+    reservedKey k = false := by
+  unfold arrayProtoKeys at h
+  split at h
+  · exact prototypeKeys_reserved h
+  · simp at h
+
+/-- The array type over `store` in the table's own graph. -/
+def arrayOf (T : Table) (store : Nat) (readonly : Bool) : Clause (List Nat) :=
+  arrayClause (arrayProtoKeys (graph T)) store readonly
 
 /-- The one user-facing rendering boundary for graph types. Label numbers are
 implementation references into `Table`, so diagnostics must call this function

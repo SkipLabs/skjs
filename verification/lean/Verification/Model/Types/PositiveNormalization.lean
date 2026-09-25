@@ -38,11 +38,11 @@ inductive Clause (α : Type) where
   operands naming different fields describe different locations of the same
   object rather than one location twice. Optional fields constrain a key
   only where the object has it (`optT`). Methods are host-relative members
-  (`methodT`): read from the object and invoked on it. Each key bound lists
-  keys the object's own keys are among (`ownKeysT`). -/
+  (`methodT`): read from the object and invoked on it. Each key bound says
+  which keys the object may own (`ownKeysT`). -/
   | refs (first : List (PropKey × α)) (rest : List (List (PropKey × α)))
       (views : List (PropKey × α)) (optional : List (OptionalField α) := [])
-      (methods : List (MethodMembers.Sig α) := []) (bounds : List (List PropKey) := [])
+      (methods : List (MethodMembers.Sig α) := []) (bounds : List KeyBound := [])
   /-- A plain object with invariant named fields, readonly named views,
   readonly string-index views (`dictViewT`) and writable string-index
   contracts (`dictCellT`). The index operands apply to every present own
@@ -51,7 +51,7 @@ inductive Clause (α : Type) where
   shape; it may be empty for a pure dictionary. -/
   | dict (first : List (PropKey × α)) (rest : List (List (PropKey × α)))
       (views : List (PropKey × α)) (indexes : List α) (optional : List (OptionalField α) := [])
-      (methods : List (MethodMembers.Sig α) := []) (bounds : List (List PropKey) := [])
+      (methods : List (MethodMembers.Sig α) := []) (bounds : List KeyBound := [])
       (cells : List α := [])
   /-- A callable value meeting every fixed signature, `(receiver, parameters,
   result)`, and every variadic one, `(receiver, fixed parameters, element,
@@ -191,16 +191,36 @@ def meet : Clause α → Clause α → List (Clause α)
 
 /-- **The array shape**, the one definition every layer reads arrays from: an
 object holding its store under the store key, invariantly or, readonly, as a
-view; holding `Array.prototype` as a view under the prototype key; and whose
-own keys are those two, so any other key is read from the prototype. -/
-def arrayClauseOf (store proto : α) (readonly : Bool) : Clause α :=
+view; holding `Array.prototype` as a view under the prototype key; and owning
+none of `excluded`, the keys the prototype provides, so a read of one of them
+continues at the prototype. Any other own key it may have: an array may carry
+further keys, such as a runtime's hidden marker. -/
+def arrayClauseOf (store proto : α) (excluded : List PropKey) (readonly : Bool) : Clause α :=
   .refs (if readonly then [] else [(CallArguments.arrayStoreField, store)]) []
     ((if readonly then [(CallArguments.arrayStoreField, store)] else []) ++
       [(CallArguments.protoField, proto)])
-    [] [] [[CallArguments.arrayStoreField, CallArguments.protoField]]
+    [] [] [⟨false, excluded⟩]
 
+/-- The keys an object clause says its object owns: its fields' and views'. -/
+def Clause.presentKeys : Clause α → List PropKey
+  | .refs a bs vs .. | .dict a bs vs .. => ((a :: bs).flatten ++ vs).map (·.1)
+  | _ => []
+
+/-- An object clause's key bounds. -/
+def Clause.keyBounds : Clause α → List KeyBound
+  | .refs _ _ _ _ _ ks | .dict _ _ _ _ _ _ ks _ => ks
+  | _ => []
+
+/-- A clause whose bounds admit every key it says the object owns. Any other
+has no member: a meet in which one operand owns a key another's bound
+excludes, such as an array with an own `map`, is empty. -/
+def Clause.consistent (c : Clause α) : Bool :=
+  c.presentKeys.all fun k => c.keyBounds.all (·.admits k)
+
+/-- The meet of two clause lists: each pair's meet, without clauses a bound
+contradicts. -/
 def meetLists (A B : List (Clause α)) : List (Clause α) :=
-  A.flatMap fun a => B.flatMap fun b => meet a b
+  A.flatMap fun a => B.flatMap fun b => (meet a b).filter Clause.consistent
 
 def normalize : Formula α → List (Clause α)
   | .bot => []
@@ -421,17 +441,54 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
     · rintro ⟨hva, hvb⟩
       exact False.elim (hs ((semWithArgs_shape ha hva).symm.trans (semWithArgs_shape hb hvb)))
 
+/-- Every key a member's clause says it owns, each bound admits: a clause
+with a member is consistent. -/
+theorem semWithArgs_consistent {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
+    (h : semWithArgs X P c n W v) : c.consistent = true := by
+  -- What an object clause says: its fields and views are at locations of its
+  -- one object, whose own keys each bound admits.
+  have present : ∀ (a : List (PropKey × α)) (bs : List (List (PropKey × α)))
+      (vs : List (PropKey × α)) (ks : List KeyBound),
+      ReferenceConjunctions.refsT (famsOf X a) (bs.map (famsOf X)) n W v →
+      viewT (famsOf X vs) n W v → (∀ K ∈ ks, ownKeysT K n W v) →
+      (((a :: bs).flatten ++ vs).map (·.1)).all (fun k => ks.all (·.admits k)) = true := by
+    intro a bs vs ks hr hw hk
+    simp only [List.all_eq_true, List.mem_map]
+    rintro k ⟨p, hp, rfl⟩ K hK
+    have hat : ∃ (flds : List (PropKey × Nat)) (l : Nat), v = .objAt flds .absent ∧
+        flds.lookup p.1 = some l := by
+      rcases List.mem_append.mp hp with hp | hp
+      · obtain ⟨L, hL, hpL⟩ := List.mem_flatten.mp hp
+        have hrec : recT (famsOf X L) n W v := by
+          rcases List.mem_cons.mp hL with rfl | hL
+          · exact hr.1
+          · exact hr.2 _ (List.mem_map_of_mem hL)
+        obtain ⟨flds, l, -, he, hl, -⟩ := recT_at (mem_famsOf.mpr ⟨p.2, hpL, rfl⟩) hrec
+        exact ⟨flds, l, he, hl⟩
+      · obtain ⟨flds, l, -, he, hl, -⟩ := viewT_at (mem_famsOf.mpr ⟨p.2, hp, rfl⟩) hw
+        exact ⟨flds, l, he, hl⟩
+    obtain ⟨flds, l, rfl, hl⟩ := hat
+    exact ownKeysT_admits (hk K hK) hl
+  cases c with
+  | refs a bs vs os ms ks => exact present a bs vs ks h.1 h.2.1 h.2.2.2.2
+  | dict a bs vs ds os ms ks cs => exact present a bs vs ks h.1 h.2.1 h.2.2.2.2.2
+  | _ => simp [Clause.consistent, Clause.presentKeys]
+
 theorem meetLists_sound (X : α → Fam) (P : α → ArgFam) (A B : List (Clause α)) (n W v) :
     semList X P (meetLists A B) n W v ↔ interT (semList X P A) (semList X P B) n W v := by
   constructor
   · rintro ⟨c, hc, hv⟩
     obtain ⟨a, ha, b, hb, hm⟩ : ∃ a ∈ A, ∃ b ∈ B, c ∈ meet a b := by
-      simpa [meetLists, List.mem_flatMap] using hc
+      simp only [meetLists, List.mem_flatMap, List.mem_filter] at hc
+      obtain ⟨a, ha, b, hb, hm, -⟩ := hc
+      exact ⟨a, ha, b, hb, hm⟩
     have hh := (meet_sound X P a b n W v).mp ⟨c, hm, hv⟩
     exact ⟨⟨a, ha, hh.1⟩, ⟨b, hb, hh.2⟩⟩
   · rintro ⟨⟨a, ha, hva⟩, ⟨b, hb, hvb⟩⟩
     obtain ⟨c, hc, hv⟩ := (meet_sound X P a b n W v).mpr ⟨hva, hvb⟩
-    exact ⟨c, by simp [meetLists, List.mem_flatMap]; exact ⟨a, ha, b, hb, hc⟩, hv⟩
+    refine ⟨c, ?_, hv⟩
+    simp only [meetLists, List.mem_flatMap, List.mem_filter]
+    exact ⟨a, ha, b, hb, hc, semWithArgs_consistent hv⟩
 
 theorem normalize_sound (X : α → Fam) (P : α → ArgFam) (f : Formula α) (n W v) :
     semList X P (normalize f) n W v ↔ eval X P f n W v := by

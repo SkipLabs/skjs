@@ -108,3 +108,20 @@ export interface ObjectMaker {
 export const objectMaker: ObjectMaker = {
   make: (cls, ...params) => new cls(...params),
 };
+
+// A marked array, as Skip's runtime marks the arrays it manages
+// (`tagSkManaged`): an own key under a unique symbol, which the array's
+// prototype does not provide.
+export const managed: unique symbol = Symbol("managed");
+export type Managed = { readonly [managed]: true };
+export type Unmarked = { readonly [managed]: false };
+export function managedPair(): [number, number] & Managed {
+  return Object.defineProperty([1, 2], managed, { value: true }) as [
+    number,
+    number,
+  ] &
+    Managed;
+}
+export function isManaged(m: Managed): true {
+  return m[managed];
+}

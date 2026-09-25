@@ -96,8 +96,8 @@ $$
 \llbracket\mathsf{Ref}(\vec\varphi;\psi;\omega;\mu;\beta)\rrbracket_n(W,v)
 &\iff \textstyle\bigwedge_i\mathsf{rec}(\varphi_i)\land
       \mathsf{view}(\psi)\land\mathsf{opt}(\omega)\land\mathsf{meth}(\mu)\land
-      \bigwedge_{K\in\beta}\mathsf{own}(K),\\
-\mathsf{own}(K)_n(W,v)&\iff v=\ell\land\forall\kappa\in\mathrm{dom}(\mathit{flds}).\;\kappa\in K,\\
+      \bigwedge_{b\in\beta}\mathsf{own}(b),\\
+\mathsf{own}(b)_n(W,v)&\iff v=\ell\land\forall\kappa\in\mathrm{dom}(\mathit{flds}).\;b\vDash\kappa,\\
 \mathsf{rec}(\overline{\kappa{:}T})_n(W,v)
 &\iff v=\ell\land\forall(\kappa{:}T).\;\exists l,c.\;
       \mathit{flds}(\kappa)=l\land W(l)=c\land c_j\equiv T_j,\\
@@ -156,9 +156,19 @@ $$
 
 - **Own-key bounds** say which keys the object may have. Records are open, so
   only a bound says a key is absent, and so that a read of it continues at
-  the prototype. An array bounds its own keys to its store and its prototype,
-  which it holds as a readonly view under the reserved key. Keys are fixed at
-  allocation, so a bound holds in every world.
+  the prototype. A bound $b$ is $\mathsf{among}\,K$, own keys among $K$, or
+  $\mathsf{outside}\,N$, no own key in $N$; it **admits** a key accordingly,
+  $\mathsf{among}\,K\vDash\kappa\iff\kappa\in K$ and
+  $\mathsf{outside}\,N\vDash\kappa\iff\kappa\notin N$ (`KeyBound.admits`), and
+  $\beta$ **excludes** $\kappa$, $\beta\nvDash\kappa$, when some $b\in\beta$
+  does not admit it (`Excludes`). A fresh literal's own keys are among its
+  fields'. An array owns no key its prototype provides,
+  $\mathsf{outside}\,N$ with $N$ `ArrayProto`'s keys: whatever else it owns,
+  a read of one of those continues at the prototype, which it holds as a
+  readonly view under the reserved key. An array may own further keys, as
+  Skip's runtime marks the arrays it manages with a hidden symbol key
+  ([DESIGN.md](DESIGN.md#the-array-prototype)). Keys are fixed at allocation,
+  so a bound holds in every world.
 
 A `dict` clause adds readonly **index contracts** $\overline{D}$: the object
 has no prototype, and every present field under a string key, named or not,
@@ -183,7 +193,7 @@ holding a mutable dictionary add keys at $C$ is a trust assumption
 ([DESIGN.md](DESIGN.md#writable-string-index-signatures)). Index contracts are guarded through the world, so a
 recursive graph can contain `JsonObject = { readonly [key: string]: Json | null }`.
 
-Lean: `refsT`, `viewT`, `OptionalField`, `optT`, `SlotContract`, `dictViewT`, `dictCellT`, `ownKeysT` (`Types/Types.lean`), `methodT`,
+Lean: `refsT`, `viewT`, `OptionalField`, `optT`, `SlotContract`, `dictViewT`, `dictCellT`, `KeyBound`, `ownKeysT` (`Types/Types.lean`), `methodT`,
 `memberT`, `holdsAt`, `onHost` (`Types/MethodMembers.lean`). The heap facts behind invariant
 operands (`adm`, `congr_below`, `operands_agree`, `read_all`, `write_first`,
 `cyclic_inhabited`) are in `Types/ReferenceConjunctions.lean`: a read meets
@@ -394,7 +404,25 @@ level zero, though none above; a nested analogue has a member at level one in
 a satisfying cyclic heap. Both are checked examples, so rewriting such clauses
 to $\bot$ would be unsound.
 
-Lean: `meet`, `meetLists`, `normalize`, `normalize_sound`
+A clause whose bounds exclude a key it says the object owns has no member at
+any level: the key is at a location of the object, and no key of the object
+is excluded. Such a clause is dropped from a meet (`Clause.consistent`,
+`semWithArgs_consistent`):
+
+$$
+\mathsf{consistent}(\mathsf{Ref}(\vec\varphi;\psi;\omega;\mu;\beta))\iff
+\forall\kappa\in\mathrm{dom}(\vec\varphi\,\psi).\;\forall b\in\beta.\;b\vDash\kappa,
+\qquad
+\operatorname{nf}(P\land Q)=\textstyle\bigvee\{\,e\in c\land d\;\mid\;\mathsf{consistent}(e)\,\},
+$$
+
+and likewise for `dict`. So an array with an own `map`, `number[] & { map:
+number }`, whose bound excludes the key its record operand names, normalizes
+to $\bot$, and an intersection lowering to $\bot$ is refused rather than
+verified vacuously; an array with a key no prototype member has, such as
+`[number, number] & Managed`, is kept.
+
+Lean: `meet`, `Clause.consistent`, `meetLists`, `normalize`, `normalize_sound`
 (`Types/PositiveNormalization.lean`).
 
 ### Recursive normalization
@@ -439,7 +467,7 @@ $$
 \forall(\kappa{:}B)\in\psi'.\;\exists(\kappa{:}A)\in\Phi\,\psi.\;\Delta(A,B)\\
 \forall(\kappa{:}^{r'}B)\in\omega'.\;\mathsf{opt}_\Delta(\Phi;\psi;\omega;\beta)(\kappa{:}^{r'}B)\qquad
 \Delta;S\vdash(\Phi\,\psi;\mu)\sqsubseteq_{\mathsf{meth}}\mu'\qquad
-\forall K'\in\beta'.\;\exists K\in\beta.\;K\subseteq K'
+\forall b'\in\beta'.\;\beta\vdash b'
 \end{array}}
 {\Delta;S\vdash\mathsf{Ref}(\Phi;\psi;\omega;\mu;\beta)\sqsubseteq\mathsf{Ref}(\varphi'_0\cdots\varphi'_k;\psi';\omega';\mu';\beta')}
 $$
@@ -449,7 +477,7 @@ field whose type is within it. An optional field is met by a **slot** of the
 source of the same key, an invariant field (mode $\mathsf{w}$), a view (mode
 $\mathsf{ro}$) or an optional field (its own mode), whose type is within the
 target's; a writable target also needs a writable slot of an equivalent type,
-so no location is retyped. Or it is met by an own-key bound excluding both its
+so no location is retyped. Or it is met by own-key bounds excluding both its
 key and the prototype key: the object lacks the key and has no prototype, so a
 read is `undefined`. With $\mathsf{slots}(\Phi;\psi;\omega)$ the source's
 fields at $\mathsf{w}$, views at $\mathsf{ro}$ and optional fields,
@@ -458,7 +486,7 @@ $$
 \mathsf{opt}_\Delta(\Phi;\psi;\omega;\beta)(\kappa{:}^{r'}B)\iff
 \bigl(\exists(\kappa{:}^{r}A)\in\mathsf{slots}(\Phi;\psi;\omega).\;
   (r'=\mathsf{w}\Rightarrow r=\mathsf{w}\land\Delta(B,A))\land\Delta(A,B)\bigr)\lor
-\exists K\in\beta.\;\kappa\notin K\land\mathsf{proto}\notin K.
+\beta\nvDash\kappa\land\beta\nvDash\mathsf{proto}.
 $$
 
 Where the object lacks the key, only an optional slot or a bound allows it, and
@@ -466,7 +494,21 @@ each says the object has no prototype. A required field is never met by a view
 or an optional field, since neither says the key is present. Fields the target
 does not name are not compared: records are open, so a record that does not
 name an optional field's key may hold it at any type and does not cover it.
-A bounded target needs a source bound within it (`CoversBounds`). A `dict` target also needs each readonly index contract within some source one, and each writable index contract equivalent to a writable source one, so a mutable dictionary is invariant and a readonly one is never mutable:
+A bounded target's bounds follow from the source's (`CoversBound`,
+`CoversBounds`): every key the source's bounds let the object own, each target
+bound admits. An $\mathsf{outside}$ target needs each of its keys excluded; an
+$\mathsf{among}$ target needs a source $\mathsf{among}$ bound each of whose
+keys the target lists or the source excludes:
+
+$$
+\beta\vdash\mathsf{outside}\,N'\iff\forall\kappa\in N'.\;\beta\nvDash\kappa,\qquad
+\beta\vdash\mathsf{among}\,K'\iff\exists\,\mathsf{among}\,K\in\beta.\;
+  \forall\kappa\in K.\;\kappa\in K'\lor\beta\nvDash\kappa.
+$$
+
+So a fresh array object, own keys among its store and prototype, is an array,
+own keys outside `ArrayProto`'s; and an array type is covered by another with
+the same exclusion. A `dict` target also needs each readonly index contract within some source one, and each writable index contract equivalent to a writable source one, so a mutable dictionary is invariant and a readonly one is never mutable:
 
 $$
 \frac{\Delta;S\vdash\mathsf{Ref}(\Phi;\psi;\omega;\mu;\beta)\sqsubseteq\mathsf{Ref}(\varphi';\psi';\omega';\mu';\beta')\quad
@@ -488,7 +530,7 @@ $$
 $$
 
 A record covers a `dict` through an own-key bound (`CoversKeys`): its own keys
-are among some $K\in\beta$, which lists no prototype key, so the object has no
+are among some $\mathsf{among}\,K\in\beta$, where $K$ lists no prototype key, so the object has no
 prototype; and every key of $K$ is a source field or view within each target
 index view, and an invariant field equivalent to each writable index. No other
 key exists, so this is what a fresh literal, whose own keys are exactly its
@@ -498,7 +540,7 @@ record's:
 $$
 \frac{\begin{array}{c}
 \Delta;S\vdash\mathsf{Ref}(\Phi;\psi;\omega;\mu;\beta)\sqsubseteq\mathsf{Ref}(\varphi';\psi';\omega';\mu';\beta')\qquad
-K\in\beta\qquad\mathsf{proto}\notin K\\
+\mathsf{among}\,K\in\beta\qquad\mathsf{proto}\notin K\\
 \forall\kappa\in K.\;\bigl(\forall D'\in\overline{D'}.\;\exists(\kappa{:}A)\in\Phi\,\psi.\;\Delta(A,D')\bigr)\land
 \bigl(\forall C'\in\overline{C'}.\;\exists(\kappa{:}A)\in\Phi.\;\Delta^{\pm}(A,C')\bigr)
 \end{array}}
@@ -506,8 +548,9 @@ K\in\beta\qquad\mathsf{proto}\notin K\\
       \mathsf{Dict}(\varphi';\psi';\overline{D'};\overline{C'};\omega';\mu';\beta')}
 $$
 
-A record without a bound, or whose bound admits a key it does not name, may
-hold further keys at any type, and covers no index.
+A record without such a bound, or whose bound admits a key it does not
+name, may hold further keys at any type, and covers no index; so does an
+array, whose bound only excludes keys.
 
 **Methods.** A target method $m$ is covered by a source method of the same
 key, by a function the source holds under that key whose receiver the source
@@ -529,7 +572,7 @@ $$
 
 $$
 \frac{\begin{array}{c}
-K\in\beta\quad m.\mathsf{key}\notin K\quad(\mathsf{proto}{:}P)\in\Phi\,\psi\quad
+\beta\nvDash m.\mathsf{key}\quad(\mathsf{proto}{:}P)\in\Phi\,\psi\quad
       (m.\mathsf{key}{:}F)\ \text{a field or view of}\ P\quad(F,L,M)\in\kappa\\
       \forall(\vec Q\to D)\in m.\;\exists(Q_0;\vec P)\to B\in L.\;
       \Delta(S,Q_0)\land\Delta(\vec Q,\vec P)\land\Delta(B,D)
@@ -595,7 +638,7 @@ $$
 So `[number, string]` is within `(number | string)[]` and `[number]` within
 `[number, string?]`, while `number[]` is within no bounded tuple.
 
-Lean: `CoversFields`, `CoversViews`, `optionalSources`, `CoversOptional`, `CoversKeys`, `covers_keys_sound`, `CoversMethods`, `CoversBounds`,
+Lean: `CoversFields`, `CoversViews`, `optionalSources`, `Excludes`, `CoversOptional`, `CoversKeys`, `covers_keys_sound`, `CoversMethods`, `CoversBound`, `CoversBounds`,
 `CoversSig`, `CoversByFunction`, `CoversShape`, `CoversTuple`, `CoversPack`,
 `covers_readonly_sound`, `covers_tuple_sound`, `covers_arguments_sound`.
 
@@ -826,12 +869,10 @@ Neither a meet row nor its image has argument lists (its image is of value
 kind). So `V & DepSafe` at `V := [number, number]` is the tuple's meet with
 each of DepSafe's alternatives: the primitives meet no array, and `Managed`,
 a record, meets the array shape as one object holding its key too. That
-object is kept, as incompatible contracts are
-([Conjunction and normalization](#conjunction-and-normalization)). While the
-array shape bounds its own keys to its store and prototype, no array of the
-model holds `Managed`'s symbol key and the meet is empty in the model; no rule
-decides that, so a value of it is used only as either side gives, and
-the meet row's rule does not depend on the array bound.
+object is inhabited: an array owns no key its prototype provides, and may own
+`Managed`'s symbol key, which is none of them
+([Conjunction and normalization](#conjunction-and-normalization)). The meet
+row's rule does not depend on the array bound.
 
 Entering a scheme keeps only what its free rows read, and nothing inside it
 reads more (a signature's free rows are $i$'s or its binders), so the entry's
