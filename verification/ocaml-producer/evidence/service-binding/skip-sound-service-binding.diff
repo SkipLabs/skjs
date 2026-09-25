@@ -1,0 +1,149 @@
+--- a/skipruntime-ts/core/src/api.ts
++++ b/skipruntime-ts/core/src/api.ts
+@@ -583,7 +583,17 @@
+ 
+ /**
+  * Association of names to type-erased input definitions.
++ */
++/**
++ * What `createGraph` receives: each input collection, obtained through the
++ * definition that declared it, at that definition's key and value types.
+  */
++export interface InputCollections {
++  get<K extends Json, V extends Json>(
++    definition: InputDefinition<K, V>,
++  ): EagerCollection<K, V>;
++}
++
+ export type NamedInputDefinitions = {
+   readonly [name: string]: AbstractInputDefinition;
+ };
+@@ -635,7 +645,6 @@
+  */
+ export interface SkipService<
+   InputDefs extends NamedInputDefinitions,
+-  Inputs extends NamedEagerCollections,
+   ResourceInputs extends SharedCollections,
+ > {
+   /**
+@@ -650,7 +659,7 @@
+ 
+   /** Reactive resources which constitute the public interface of this reactive service. */
+   readonly resources: {
+-    readonly [name: string]: ResourceClass<ResourceInputs, never>;
++    readonly [name: string]: ResourceClass<ResourceInputs, Json>;
+   };
+ 
+   /**
+@@ -660,7 +669,7 @@
+    * @param context - Skip Runtime internal state.
+    * @returns Reactive collections accessible to the resources.
+    */
+-  createGraph(inputCollections: Inputs, context: Context): ResourceInputs;
++  createGraph(inputs: InputCollections, context: Context): ResourceInputs;
+ }
+ 
+ /**
+@@ -669,6 +678,5 @@
+  */
+ export type AnySkipService = SkipService<
+   NamedInputDefinitions,
+-  NamedEagerCollections,
+   SharedCollections
+ >;
+--- a/skipruntime-ts/server/src/server.ts
++++ b/skipruntime-ts/server/src/server.ts
+@@ -4,7 +4,11 @@
+  * @packageDocumentation
+  */
+ 
+-import type { AnySkipService } from "@skipruntime/core";
++import type {
++  NamedInputDefinitions,
++  SharedCollections,
++  SkipService,
++} from "@skipruntime/core";
+ import {
+   registerControlServiceRoutes,
+   registerStreamingServiceRoutes,
+@@ -102,8 +106,11 @@
+  * @param options.no_cors - Disable CORS for the streaming endpoint.
+  * @returns Object to manage the running server.
+  */
+-export async function runService(
+-  service: AnySkipService,
++export async function runService<
++  InputDefs extends NamedInputDefinitions,
++  ResourceInputs extends SharedCollections,
++>(
++  service: SkipService<InputDefs, ResourceInputs>,
+   options: {
+     streaming_port: number;
+     control_port: number;
+--- a/skipruntime-ts/core/src/index.ts
++++ b/skipruntime-ts/core/src/index.ts
+@@ -35,6 +35,7 @@
+   type Reducer,
+   type Resource,
+   type AnySkipService,
++  type InputCollections,
+   type Watermark,
+   type ExternalService,
+   InputDefinition,
+@@ -142,7 +143,17 @@
+     inputCollections: NamedEagerCollections,
+     context: Context,
+   ): SharedCollections {
+-    return this.service.createGraph(inputCollections, context);
++    const inputs: InputCollections = {
++      get: <K extends Json, V extends Json>(
++        definition: InputDefinition<K, V>,
++      ): EagerCollection<K, V> => {
++        for (const [name, def] of Object.entries(this.service.inputs))
++          if (def === definition)
++            return inputCollections[name] as EagerCollection<K, V>;
++        throw new Error("createGraph asked for an input this service does not define.");
++      },
++    };
++    return this.service.createGraph(inputs, context);
+   }
+ 
+   subscribe(
+--- a/verification/ocaml-producer/examples/reactive-sum-sound.ts
++++ b/verification/ocaml-producer/examples/reactive-sum-sound.ts
+@@ -2,6 +2,8 @@
+   Context,
+   EagerCollection,
+   ExternalService,
++  InputCollections,
++  Json,
+   Mapper,
+   NamedEagerCollections,
+   NamedInputDefinitions,
+@@ -73,18 +75,18 @@
+   readonly input2: InputDefinition<string, number>;
+ }
+ 
+-class Service implements SkipService<Inputs, Collections, Collections> {
+-  readonly inputs: Inputs = {
+-    input1: new InputDefinition<string, number>(),
+-    input2: new InputDefinition<string, number>(),
+-  };
++const input1 = new InputDefinition<string, number>();
++const input2 = new InputDefinition<string, number>();
++
++class Service implements SkipService<Inputs, Collections> {
++  readonly inputs: Inputs = { input1, input2 };
+   readonly resources: {
+-    readonly [name: string]: ResourceClass<Collections, never>;
++    readonly [name: string]: ResourceClass<Collections, Json>;
+   } = { add: Add, sub: Sub };
+   externalServices: { [name: string]: ExternalService } = {};
+ 
+-  createGraph(inputs: Collections, _context: Context): Collections {
+-    return inputs;
++  createGraph(inputs: InputCollections, _context: Context): Collections {
++    return { input1: inputs.get(input1), input2: inputs.get(input2) };
+   }
+ }
+ 
