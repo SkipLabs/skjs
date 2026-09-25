@@ -27,7 +27,9 @@ let rec plausible_subtype actual expected =
       | _ -> false) ys) xs
   | Union parts,_ -> List.for_all (fun part -> plausible_subtype part expected) parts
   | _,Union parts -> List.exists (plausible_subtype actual) parts
-  | (Rigid _ | Meet _),_ | _,(Rigid _ | Meet _) -> false
+  (* A value of an intersection is a value of each operand. *)
+  | Meet (t,ts),_ -> List.exists (fun part -> plausible_subtype part expected) (t::ts)
+  | Rigid _,_ | _,(Rigid _ | Meet _) -> false
 let literal_type = function
   | LNull -> Atoms [Nul] | LUndefined -> Atoms [Undef]
   | LBool true -> Atoms [True] | LBool false -> Atoms [False]
@@ -68,7 +70,9 @@ let definition declarations id args =
     let solution = complete [] args d.parameters d.defaults in
     (* An intersection of the equation, its arguments substituted, is the one
        object its operands describe where they are records, a declared one
-       read through its equation (`Serializable<Todo>`); otherwise it is its
+       read through its equation (`Serializable<Todo>`); otherwise, with ground
+       operands, it stays their intersection, a row Lean fills with their meet
+       (`[number, number] & DepSafe`), and over a type parameter it is its
        principal operand, the argument, as a type parameter's intersection is
        proposed. *)
     let meet t ts =
@@ -79,7 +83,7 @@ let definition declarations id args =
       match List.fold_left (fun acc part -> Option.bind acc (fun a -> meet_objects a (expand part)))
               (Some (expand t)) ts with
       | Some merged -> merged
-      | None -> t in
+      | None -> if List.exists Semantic.mentions_rigid (t::ts) then t else Meet (t,ts) in
     let body = Inference.substitute ~meet solution d.expression in
     List.fold_left (fun own base ->
       match Inference.substitute ~meet solution base with
@@ -102,6 +106,11 @@ let rec declared_head declarations seen = function
     if List.mem id seen then unsupported "unguarded callable alias cycle";
     declared_head declarations (id::seen) (definition declarations id args)
   | t -> t
+(* The first operand of an intersection a read succeeds on. *)
+let first_part read parts =
+  match List.find_map (fun t -> try Some (read t) with Json.Error _ -> None) parts with
+  | Some t -> t
+  | None -> unsupported "read on an intersection none of whose operands has it"
 (* `ArrayProto`, the declaration of `Array.prototype`'s members, by identity. *)
 let array_prototype = "skjs/array-prototype#0:0"
 let rec field_type declarations seen t name = match t with
@@ -123,7 +132,10 @@ let rec field_type declarations seen t name = match t with
         field_type declarations (id::seen) (definition declarations id args) name
       | _ -> unsupported "field read on non-object") atoms)
   | Union ts -> combine (List.map (fun t -> field_type declarations seen t name) ts)
-  | Rigid _ | Meet _ -> unsupported "field read on rigid parameter"
+  (* A value of an intersection is one of each operand: read as the first
+     operand that has the field, a hint Lean checks. *)
+  | Meet (t,ts) -> first_part (fun t -> field_type declarations seen t name) (t::ts)
+  | Rigid _ -> unsupported "field read on rigid parameter"
 (* What a fresh array literal expected at an iterable type holds, found as
    TypeScript finds it: the expected type's member under the key
    `Array.prototype` iterates by (its one symbol key, `[Symbol.iterator]`),
@@ -186,7 +198,8 @@ let rec index_type declarations seen receiver key = match receiver with
         index_type declarations (id::seen) (definition declarations id args) key
       | _ -> unsupported "indexed read on non-object") atoms)
   | Union ts -> combine (List.map (fun t -> index_type declarations seen t key) ts)
-  | Rigid _ | Meet _ -> unsupported "indexed read on rigid parameter"
+  | Meet (t,ts) -> first_part (fun t -> index_type declarations seen t key) (t::ts)
+  | Rigid _ -> unsupported "indexed read on rigid parameter"
 
 (* A fresh literal is built at the one object contract its expected type
    names: a record or dictionary shape, possibly behind a declaration (a class

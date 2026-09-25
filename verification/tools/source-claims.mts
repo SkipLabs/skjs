@@ -102,4 +102,7 @@ export interface SourceClaims {
   /** Array types the producer reserved empty rows for, which Lean fills with
    * the array shape over the store row; absent when none. */
   arrays?: { row: number; store: number; readonly: boolean }[];
+  /** Intersections the producer reserved empty rows for, which Lean fills
+   * with the meet of the operand rows; absent when none. */
+  meets?: { row: number; parts: number[][] }[];
 }

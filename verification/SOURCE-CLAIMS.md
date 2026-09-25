@@ -215,6 +215,16 @@ contract, which the producer states. Lean fills the row with the one array
 shape (`PositiveNormalization.arrayClauseOf`): the store, `Array.prototype` as
 a view at `ArrayProto`, and the own-key bound. No producer spells that shape.
 
+Intersections are reserved the same way, in `"meets"`:
+`[{"row": r, "parts": [[...], ...]}]`, left out when there are none. Row `r`
+is an empty row the producer reserved and `parts` its operands' types, which
+name only earlier rows. Lean fills the row with their meet as the source's own
+`A & B` lowers (`DeclarationGraph.meetRow`), in row order with the
+applications: `values.getUnique()` at `Values<[number, number]>` is
+`[number, number] & DepSafe`, a row no producer spells. An operand holding a
+type parameter is refused there; the producer proposes such an intersection
+as its parameter, which Lean's reading of the declaration decides.
+
 Function identity is its name and name span. Parameter names and order must match
 the source signature. Entry claims use statement start offsets, and expression
 claims use complete spans. Sites must occur in the named function's decoded

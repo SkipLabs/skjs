@@ -71,12 +71,14 @@ private structure Memo where
   its row when first lowered; a producer's reserved row is its application's
   from the start. -/
   applications : List Given := []
-  /-- The value binder rows of generic methods: `(row, declared bound, meets)`,
-  the declared bound when it is ground, and the ground operands the method's
-  signatures intersect the binder with. Both are facts of the binder row: its
-  name fixes the method and position, and ground terms lower alike wherever
-  they are lowered. -/
-  binders : List (Nat × List Nat × List (List Nat)) := []
+  /-- The value binder rows of generic methods with a ground declared bound,
+  and that bound: a fact of the binder row, as its name fixes the method and
+  position, and ground terms lower alike wherever they are lowered. -/
+  binders : List (Nat × List Nat) := []
+  /-- The producer's reserved intersections: operand types and row. A ground
+  intersection of the same operands is that row, filled when first met, so the
+  producer's name for it and every lowering's are one row. -/
+  meets : List (List (List Nat) × Nat) := []
   /-- The rows below it are the primitives' and the nullary declarations'. -/
   floor : Nat := 4
 
@@ -207,46 +209,6 @@ partial def binderUse (name : String) : Json → BinderUse
   | .arr terms => terms.foldl (fun acc term => acc.merge (binderUse name term)) {}
   | .null | .bool _ | .num _ | .str _ => {}
 
-/-- An occurrence of a type parameter: a generic method's binder, by name, or a
-declaration's parameter, by position. -/
-private inductive Occurrence where
-  | binder (name : String)
-  | parameter (index : Nat)
-
-private def Occurrence.is : Occurrence → Json → Bool
-  | .binder n, t => (t.getObjValAs? String "k").toOption == some "binder" &&
-      (t.getObjValAs? String "name").toOption == some n
-  | .parameter i, t => (t.getObjValAs? String "k").toOption == some "parameter" &&
-      (t.getObjValAs? Nat "index").toOption == some i
-
-/-- The ground operands an occurrence is intersected with (`V & DepSafe`): in
-`term`, and in the equation and bases of each declaration it is an argument
-of, each declaration position visited once. -/
-private partial def meetsOf (ds : Array Definition) (o : Occurrence) (term : Json) :
-    StateM (List (Nat × Nat)) (List Json) := do
-  match term with
-  | .arr ts => return (← ts.toList.mapM (meetsOf ds o)).flatten
-  | .obj fields =>
-    let kind := (term.getObjValAs? String "k").toOption
-    -- A nested scheme binding the same name shadows a method's binder.
-    if let .binder n := o then
-      if kind == some "scheme" && ((term.getObjValAs? (Array Json) "binders").toOption.getD #[]).any
-          (fun b => (b.getObjValAs? String "name").toOption == some n) then return []
-    let mut own : List Json := []
-    if kind == some "intersection" then
-      let parts := (term.getObjValAs? (Array Json) "parts").toOption.getD #[]
-      if parts.any o.is then own := parts.toList.filter fun p => !o.is p && groundTerm p
-    if kind == some "reference" then
-      let target := ((term.getObjVal? "reference").bind (·.getObjVal? "target")).toOption
-      if let some i := target.bind fun t => (findDefinition ds t).toOption then
-        let args := (term.getObjValAs? (Array Json) "args").toOption.getD #[]
-        for (arg, j) in args.toList.zipIdx do
-          if o.is arg && !(← get).contains (i, j) then
-            modify ((i, j) :: ·)
-            own := own ++ (← meetsOf ds (.parameter j) (.arr (ds[i]!.bases.push ds[i]!.expression)))
-    return own ++ (← fields.toList.mapM fun p => meetsOf ds o p.2).flatten
-  | _ => return []
-
 /-- The source role stays with a binder until its rows are emitted. A value
 occurrence cannot accidentally retrieve the row of an argument-list binder. -/
 private inductive BinderBinding where
@@ -318,6 +280,7 @@ private def reach (m : Memo) (T : SourceTypes.Table) (floor limit : Nat) (A : Li
         | some (.scheme _ sigs bounds rests) =>
           sigs.flatMap (fun (r, ps, res) => r ++ ps.flatten ++ res) ++ bounds.flatMap (·.2) ++
             rests.flatMap (fun (r, ps, p, res) => r ++ ps.flatten ++ p ++ res)
+        | some (.meet p cs) => p :: cs.flatMap fun c => c.operands.flatten
         | _ => []
   let rec go : Nat → List Nat → List Nat → List Nat
     | 0, seen, _ => seen
@@ -358,15 +321,55 @@ private def schemeRow (bs : List Nat) (sigs : List (List Nat × List (List Nat) 
   | some i => (i, T)
   | none => (T.length, T ++ [r])
 
-/-- The positive meet of operands' clauses: record operands on one object,
-function operands as one overloaded callable. -/
+/-- The positive meet of ground operands' clauses, folded from the right:
+record operands on one object, function operands as one overloaded callable.
+An operand with a row that is not a clause row has no clauses to meet, so it
+is refused rather than dropped. -/
+private def groundMeet (parts : List (List Nat)) : Lowering (List (Clause (List Nat))) := do
+  let table ← getThe SourceTypes.Table
+  let graph := SourceTypes.graph table
+  if !parts.all (graph.plainTy ·) then
+    throw "an intersection operand holding a type parameter is outside the graph fragment"
+  let rows := parts.map (·.flatMap graph)
+  let some last := rows.getLast? | throw "empty declaration intersection"
+  let meet := rows.dropLast.foldr PositiveNormalization.meetLists last
+  if meet.isEmpty then throw "declaration intersection has no representable clause"
+  return meet
+
+/-- An intersection's row. A value binder among the operands, an operand
+alone, with ground others, is a meet row: the binder within the meet of the
+others (`V & DepSafe`), whose instance at `V := T` is the meet of `T` with them
+(`meetOk`), which is what lowering `T & DepSafe` itself gives when the binder
+is the first operand. Any other intersection is the meet of its operands'
+clauses. -/
 private def meetRow (parts : List (List Nat)) : Lowering (List Nat) := do
   let table ← getThe SourceTypes.Table
-  let rows := parts.map (·.flatMap (SourceTypes.graph table))
-  let some first := rows.head? | throw "empty declaration intersection"
-  let meet := rows.drop 1 |>.foldl PositiveNormalization.meetLists first
-  if meet.isEmpty then throw "declaration intersection has no representable clause"
-  return [← useRow meet]
+  let graph := SourceTypes.graph table
+  let binders : List Nat := parts.filterMap fun A => match A with
+    | [x] => if graph.parameterKinds x == some .value then some x else none
+    | _ => none
+  match binders.eraseDups with
+  | [] =>
+    let m ← get
+    let reserved := m.meets.find? fun (ps, _) => ps.length == parts.length &&
+      (ps.zip parts).all fun (a, b) => sameKey (m.key table a) (m.key table b)
+    match reserved with
+    | some (_, row) =>
+      if table[row]? == some (.clauses []) then
+        let cs ← groundMeet parts
+        modifyThe SourceTypes.Table (·.set row (.clauses cs))
+      return [row]
+    | none => return [← useRow (← groundMeet parts)]
+  | [x] =>
+    let others := parts.filter (· != [x])
+    if others.isEmpty then return [x]
+    let cs ← groundMeet others
+    modifyGetThe SourceTypes.Table fun T =>
+      let r := RequestJson.Row.meet x cs
+      match T.idxOf? r with
+      | some i => ([i], T)
+      | none => ([T.length], T ++ [r])
+  | _ => throw "an intersection of two type parameters is outside the graph fragment"
 
 mutual
 /-- A rest's type: a pack parameter's row, or the pack of any number of
@@ -432,11 +435,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
         paramRow s!"{n}#{k}@{spanKey}^{c}" (if packs.contains n then .arguments else .value)
       -- Bounds are read where the method is declared, outside its binders. A
       -- pack parameter's bound is an array or a tuple of required positions,
-      -- read as the argument lists it admits. A value binder the signatures
-      -- intersect with ground operands, directly or in a declaration it is an
-      -- argument of (`V & DepSafe` in `EagerCollection<K2, V2>`), is bounded
-      -- by them too: the method's instances stay below them, and the binder's
-      -- intersection with them is the binder.
+      -- read as the argument lists it admits.
       let packBound (b : Json) : Lowering (Option (List Nat)) := do
         match (b.getObjValAs? String "k").toOption with
         | some "array" =>
@@ -452,16 +451,11 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
         if packs.contains n then
           if bound == .null then return none
           return some ((← packBound bound).map (row, ·))
-        let declared ← if bound == .null then pure [] else lowerType ds owner params seen bound
-        let meets := ((meetsOf ds (.binder n) (.arr sigTerms)).run' []).run
-        let meets ← (meets.mapM (lowerType ds owner params seen)).map (·.eraseDups)
-        let parts := (if bound == .null then [] else [declared]) ++ meets
-        if parts.isEmpty then return none
-        let ground := bound != .null && groundTerm bound
-        if ground || !meets.isEmpty then
-          let entry := (row, if ground then declared else [], meets)
-          modify fun m => { m with binders := entry :: m.binders.filter (·.1 != row) }
-        return some (some (row, ← if let [one] := parts then pure one else meetRow parts)))
+        if bound == .null then return none
+        let declared ← lowerType ds owner params seen bound
+        if groundTerm bound then
+          modify fun m => { m with binders := (row, declared) :: m.binders.filter (·.1 != row) }
+        return some (some (row, declared)))
       let .ok bounds? := bounds? | return ← opaqueMember
       let some bounds := bounds?.mapM id | return ← opaqueMember
       let bindings := (names.zip rows).map fun (name, row) =>
@@ -499,14 +493,6 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     return arms.toList.flatten.eraseDups.mergeSort (· ≤ ·)
   | "intersection" =>
     let parts := (← (← arr term "parts").mapM (lowerType ds owner params seen)).toList
-    -- A binder whose scheme bound has every other operand among its
-    -- conjuncts is below each of them, so the intersection is the binder.
-    let binders := (← get).binders
-    let within := parts.findSome? fun p => match p with
-      | [x] => (binders.find? (·.1 == x)).bind fun (_, _, meets) =>
-          if parts.all (fun q => q == [x] || meets.contains q) then some x else none
-      | _ => none
-    if let some x := within then return [x]
     meetRow parts
   | "parameter" =>
     CellClaims.fieldsExactly term ["k", "index", "span"]
@@ -679,12 +665,17 @@ private partial def lowerApplication (ds : Array Definition) (i : Nat)
     if bound != .null then
       -- A binder of a generic method stands for an instance within its own
       -- ground declared bound, so it establishes a parameter's bound through
-      -- that one (`K2 extends Json` in `Mapper<K, V, K2, V2>`).
+      -- that one (`K2 extends Json` in `Mapper<K, V, K2, V2>`), and so does its
+      -- meet with ground types, which is below it.
       let binders := (← get).binders
+      let T ← getThe SourceTypes.Table
       let actual := values[index]!.flatMap fun l =>
-        match binders.find? (·.1 == l) with
-        | some (_, declared@(_ :: _), _) => declared
-        | _ => [l]
+        let p := match T[l]? with
+          | some (RequestJson.Row.meet p _) => p
+          | _ => l
+        match binders.lookup p with
+        | some declared => declared
+        | none => [l]
       let upper ← lowerType ds i (values.toList.take index).toArray (seen.enter i) bound
       let table ← getThe SourceTypes.Table
       let graph := SourceTypes.graph table
@@ -763,10 +754,15 @@ Lean's own lowering, so there is one lowering of every declaration. A reserved
 row is its application's from the start (`Memo.applications`): every lowering
 naming the application at the same arguments, a declaration's, a source
 annotation's or an instance's, is that row, not another copy of its
-equation. -/
+equation. An intersection's reserved row `(row, operand types)` is likewise
+the intersection's from the start (`Memo.meets`): the meet of its operands, as
+the source's own `A & B` lowers (`meetRow`), filled where an equation first
+meets it, or else in row order with the applications, so the rows it names
+are filled first. -/
 private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
     (applications : List (Nat × Nat × List (List Nat)) := [])
-    (arrays : List (Nat × Nat × Bool) := []) :
+    (arrays : List (Nat × Nat × Bool) := [])
+    (meets : List (Nat × List (List Nat)) := []) :
     Except String (SourceTypes.Table × Memo) := do
   if candidate.length < 4 + nullaryCount ds then throw "declaration graph rows are missing"
   for i in [:ds.size] do
@@ -781,7 +777,12 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
       throw "an application names no generic declaration"
     if args.any (fun A => A.any (· ≥ row)) then
       throw "an application's arguments name a later row"
-  if (applications.map (·.1)).eraseDups.length != applications.length then
+  for (row, parts) in meets do
+    if !reserved row || applications.any (·.1 == row) || arrays.any (·.1 == row) then
+      throw "an intersection's reserved row is not an empty producer row"
+    if parts.isEmpty || parts.any (fun A => A.any (· ≥ row)) then
+      throw "an intersection's operands name a later row"
+  if (applications.map (·.1) ++ meets.map (·.1)).eraseDups.length != applications.length + meets.length then
     throw "a row is reserved for two applications"
   let mut table := candidate
   -- An array row is the array shape over the store row the producer stated.
@@ -791,8 +792,8 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
     if store ≥ table.length then throw "an array's store names no row"
     table := table.set row (.clauses [SourceTypes.arrayClause store readonly])
   -- A reserved application at all its arguments is that row from the start,
-  -- for the declarations' equations too.
-  let mut memo : Memo := { floor := 4 + nullaryCount ds }
+  -- for the declarations' equations too, and so is a reserved intersection.
+  let mut memo : Memo := { floor := 4 + nullaryCount ds, meets := meets.map fun (r, ps) => (ps, r) }
   for (row, i, args) in applications do
     if args.length == ds[i]!.parameters.size && (memo.row table i args.toArray).isNone then
       memo := memo.give table i args.toArray row
@@ -803,8 +804,18 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
       table := expanded.set (rowIndex ds i) row
   -- Arguments are compared by the rows they name once those are filled.
   memo := memo.rekey table
-  -- Applications in row order: an argument names only earlier rows.
-  for (row, i, args) in applications do
+  -- Applications and intersections in row order: an argument or an operand
+  -- names only earlier rows.
+  let order := (applications.map (·.1) ++ meets.map (·.1)).mergeSort (· ≤ ·)
+  for row in order do
+    if let some (_, parts) := meets.find? (·.1 == row) then
+      -- Filled here unless an equation met it first.
+      let ((filled, grown), expanded) ← ((meetRow parts).run memo).run table
+      if filled != [row] then throw "an intersection's reserved row names a type parameter"
+      memo := grown
+      table := expanded
+      continue
+    let some (_, i, args) := applications.find? (·.1 == row) | throw "reserved row without a task"
     let fill : Lowering (List (Clause (List Nat))) := do
       let values ← lowerApplication ds i args.toArray {}
       let T ← getThe SourceTypes.Table
@@ -1127,7 +1138,8 @@ from source declarations. The AST copy contains internal graph atoms only after
 the original source tree has been checked for them. -/
 def prepare (ast : Json) (candidate : SourceTypes.Table)
     (applications : List (Nat × Nat × List (List Nat)) := [])
-    (arrays : List (Nat × Nat × Bool) := []) :
+    (arrays : List (Nat × Nat × Bool) := [])
+    (meets : List (Nat × List (List Nat)) := []) :
     Except String (Json × SourceTypes.Table × List (String × Span × Json) × List Instantiable) := do
   let document ← field ast "declarations"
   CellClaims.fieldsExactly document ["roots", "definitions", "values", "symbols"]
@@ -1149,7 +1161,7 @@ def prepare (ast : Json) (candidate : SourceTypes.Table)
     return (name, i)
   if (roots.toList.map (·.1)).eraseDups.length != roots.size then
     throw "duplicate declaration root name"
-  let (types, memo) ← fillRows ds candidate applications arrays
+  let (types, memo) ← fillRows ds candidate applications arrays meets
   -- Generic module functions, read from their source terms before the tree is
   -- converted.
   let callable (params : List Json) (rest : Option Json) (result : Json) (bound : List (String × Json)) :

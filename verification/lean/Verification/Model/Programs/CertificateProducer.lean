@@ -140,7 +140,8 @@ structure InstState (ι : Type) where
 /-- Match the scheme-side type `S` against the graph's type `T` under context
 `κ`, adding table entries: a parameter row to its context image, a top binder
 to `T` (recorded as its instance), a row free of the context to itself, a
-clause row to a clause row matched operand by operand, and a scheme row to a
+clause row to a clause row matched operand by operand, a meet row to the meet
+row or clause row its binder's image makes it, and a scheme row to a
 scheme row, its binders standing for the other's. Untrusted: `checkInst`
 validates the table. -/
 def matchRow [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap ι) :
@@ -189,10 +190,27 @@ def matchRow [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap �
               else none
             | none => none
           | none, [j] =>
-            if (G p).length = (G j).length then
-              ((G p).zip (G j)).foldlM (fun st cd => pairs st κ cd.1.operands cd.2.operands)
-                (add st p [j])
-            else none
+            match G.meets p with
+            | some (q, cs) =>
+              -- A meet row: its binder's image decides its own. Before the
+              -- binder's instance is found, nothing is matched.
+              let ops := cs.flatMap Clause.operands
+              let fixed (st : InstState ι) : Option (InstState ι) :=
+                ops.foldlM (fun st S => matchRow G bs V fuel st κ S S) st
+              let image := (κ.lookup q).orElse fun _ => if bs.contains q then none else some [q]
+              match image, G.meets j with
+              | none, _ => some st
+              | some U, some (r, ds) =>
+                if U = [r] ∧ ds.length = cs.length then
+                  (cs.zip ds).foldlM (fun st cd => pairs st κ cd.1.operands cd.2.operands)
+                    (add st p [j])
+                else none
+              | some _, none => fixed (add st p [j])
+            | none =>
+              if (G p).length = (G j).length then
+                ((G p).zip (G j)).foldlM (fun st cd => pairs st κ cd.1.operands cd.2.operands)
+                  (add st p [j])
+              else none
           | _, _ => none
     | _ =>
       let positional := if S.length = T.length then
@@ -247,7 +265,8 @@ def freeMapOf [DecidableEq ι] (G : NormalGraph ι) (D : List ι) : Nat → Free
       let bound := match G.schemes i with
         | some s => s.binders
         | none => []
-      ((if G.params i then [i] else []) ++ fv V i ++
+      ((if G.params i then [i] else []) ++
+        (match G.meets i with | some (q, _) => [q] | none => []) ++ fv V i ++
         (reads G i).flatMap fun l => (fv V l).filter (fun p => !bound.contains p)).eraseDups
     let V' := D.map fun i => (i, step i)
     if D.all (fun i => (fv V' i).length == (fv V i).length) then V' else freeMapOf G D fuel V'

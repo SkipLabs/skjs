@@ -1852,29 +1852,80 @@ $$
      {p\ \text{establishes}\ B}\ \textsc{binder-bound}
 $$
 
-**Binders met with ground types.** A value binder the method's signatures
-intersect with ground operands, directly or through a declaration's parameter
-it is an argument of (`V & DepSafe` in `EagerCollection<K, V>`, reached from
-`map`'s result `EagerCollection<K2, V2>`), has them as conjuncts of its scheme
-bound, $\beta(p)=B_p\wedge\bigwedge M_p$ (`meetsOf`), and the intersection of
-$p$ with operands among its conjuncts is $p$:
+A meet row of $p$ (below) is below $p$, so it establishes what $p$ does.
+
+**Binders met with ground types.** An intersection of a value binder with
+ground types, `V & DepSafe` in `EagerCollection<K, V>` at `map`'s binder `V2`,
+is a **meet row** $p\sqcap\vec c$ (`RequestJson.Row.meet`): the values of $p$
+within the clauses $\vec c$ of the ground operands' meet. Lowering an
+intersection $A_1\mathbin{\&}\cdots\mathbin{\&}A_n$ (`meetRow`):
 
 $$
-\frac{\vec D\subseteq M_p}{\llbracket p\mathbin{\&}\vec D\rrbracket=\llbracket p\rrbracket}\ \textsc{binder-meet}
+\frac{A_k=[p],\ p\ \text{a value binder}\qquad
+      \forall i\ne k.\ A_i\ \text{of clause rows}}
+     {\llbracket A_1\mathbin{\&}\cdots\mathbin{\&}A_n\rrbracket=
+      [\,p\sqcap\mathsf{meet}(A_{i\ne k})\,]}\ \textsc{binder-meet}
+\qquad
+\frac{\forall i.\ A_i\ \text{of clause rows}}
+     {\llbracket A_1\mathbin{\&}\cdots\mathbin{\&}A_n\rrbracket=
+      [\,\mathsf{meet}(A_1,\ldots,A_n)\,]}\ \textsc{meet}
 $$
 
-The rule is exact where it is read: $p$ is in scope only within its scheme,
-whose instances lie within $\beta(p)$, so below every $D\in M_p$. The graph has
-no intersection of a parameter row with a type; bounding the binder is the
-sound way to keep such a method rather than make it opaque. It is a
-strengthening TypeScript does not make: `map` is not instantiated at a value
-type outside `DepSafe`, such as a plain JSON array, which TypeScript accepts
-(`invalid-sum-map-object.ts`, a refusal of a safe program). sum.ts's
-`AddIndex` maps to `[number, number]`, not `DepSafe` either, so the full
-example stops at `.map(AddIndex, 0)`. Its exact reading needs the meet of a
-binder with a ground type in the graph: a scheme binder defined as
-$p\sqcap D$, instantiated at the meet of $p$'s instance with $D$ and checked
-so at `Sub.inst`, which neither a parameter row nor a clause can state today.
+where $\mathsf{meet}$ is `meetLists` of the operands' clauses folded from the
+right, $\mathsf{meetLists}(G(A_1),\mathsf{meetLists}(G(A_2),\ldots))$, and
+any other intersection (two binders, a scheme, a union holding a binder) is
+refused rather than an operand without clauses being dropped. At an instance
+$p:=U$ a meet row means the meet of $U$ with its clauses, which an instance
+table checks as $\mathsf{meetLists}(G(U),\vec c)$ in either order
+([instances of a scheme row](POSITIVE-TYPES.md#instances-of-a-scheme-row),
+`meetOk`): for the binder first, as the runtime's declarations write it
+(`T & DepSafe`), that is exactly what lowering the intersection at `T := U`
+gives, so the image is the row the ground application already has. The meet
+row is the one mechanism for every place a binder is intersected: a
+declaration's parameter substituted by the binder and the binder's own
+occurrences alike.
+
+This replaces a stopgap that gave such a binder the ground operands as
+conjuncts of its scheme bound and read $p\mathbin{\&}\vec D$ as $p$. That was
+sound but not TypeScript's reading: `map` could not be instantiated at a value
+type outside `DepSafe`. Now it can, as TypeScript allows: at
+`V2 := readonly number[]` its result's values are the array's meet with
+DepSafe (`sum-map-array.ts`), and at `V2 := [number, number]`, sum.ts's
+`AddIndex`, `.map(AddIndex, 0)` is typed.
+
+What the meet of a tuple with DepSafe is follows the model, not TypeScript's
+guess about inhabitation: primitives meet no array, and `Managed`, a record
+with a symbol key, meets the array shape as one object: the store, the
+prototype view, the own-key bound and `Managed`'s key. While the array shape
+bounds its own keys to its store and prototype, that object is empty in the model — no array of the model
+holds `Managed`'s key, although Skip's runtime tags frozen arrays with it —
+and a declaration promising `[number, number] & DepSafe` promises what no
+model value is. Arrays are to carry other own keys (an exclusion of keys
+shadowing a prototype member replacing the exact bound, separate work), and
+then the meet is inhabited; the meet row does not depend on which. No
+rule decides emptiness, so nothing is derived from it: such a
+value is used exactly as either side gives (`sum-values-tuple.ts`: its
+elements, `sort` and `reduce` through the prototype, and `Managed`), and not
+as a number, which DepSafe admits but the tuple does not
+(`invalid-sum-values-tuple.ts`). `toArray()`'s writable array of the meet is
+not a writable array of tuples (`invalid-sum-values-array.ts`), though
+TypeScript's covariant arrays accept it. Until arrays carry other own keys,
+what these cases check of an array's meet with DepSafe, sum.ts's `Minus`
+among them, holds vacuously in the model. A record's meet with
+DepSafe is not empty, since an object type names only the keys it constrains
+(`sum-values-record.ts`).
+
+With it, sum.ts's `.map(AddIndex, 0)` is typed (`sum-add-index.ts`), and so is
+`map` to Serializable records (`sum-serializable-map.ts`). The whole
+`reactive-sum-sound.ts` module's search takes about 40 s, past the check's
+30 s budget, and then stops at `runService(new Service(), …)`: the service
+class is not shown to be an `AnySkipService`, which holds of its own too
+(`make(): AnySkipService` over `sum-service.ts`'s `Service` is refused, as it
+was before meet rows).
+
+A producer names an intersection it meets without computing it: its reserved
+row, in the claims' `"meets"`, is filled by Lean with `meetRow` of the
+operands ([SOURCE-CLAIMS.md](SOURCE-CLAIMS.md)).
 
 **Explicit type arguments.** A method call may state its instance,
 `o.m<A₁,…,Aₖ>(…)`. The arguments are an annotation, so a requirement: the

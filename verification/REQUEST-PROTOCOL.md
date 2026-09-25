@@ -112,8 +112,10 @@ mention its binders, with `"bounds": [[p, type], ...]` when a binder is
 bounded (the bound is read outside the binders; left out when none), and
 `"variadic": [[receiver, [params], [rest, result]], ...]` when it has variadic
 signatures, whose rest may be a binder, a pack parameter (left out when none);
-or a **parameter row** `{"param": i, "name": n, "kind": "value" | "arguments"}`, which
-names its own label $i$ and, in `n`, the binder it stands for (the name has no meaning). Its kind is mandatory and is preserved by instantiation and binder renaming. Only a clause row has clauses. The graph of a table $T$
+a **parameter row** `{"param": i, "name": n, "kind": "value" | "arguments"}`, which
+names its own label $i$ and, in `n`, the binder it stands for (the name has no meaning). Its kind is mandatory and is preserved by instantiation and binder renaming;
+or a **meet row** `{"meet": p, "clauses": [...]}`, the value parameter row $p$
+within the clauses (`V & DepSafe`). Only a clause row has clauses. The graph of a table $T$
 (`RequestJson.tableGraph`) is
 
 $$
@@ -123,13 +125,15 @@ G.\mathit{schemes}(i)=(\vec p;\Sigma)\iff T[i]=\mathsf{scheme}(\vec p,\Sigma)
 \qquad
 G.\mathit{parameterKinds}(i)=\mathsf{some}(k)\iff T[i]=\mathsf{param}(i,n,k),
 \qquad
-G.\mathit{params}(i)\iff G.\mathit{parameterKinds}(i)\ne\mathsf{none}.
+G.\mathit{params}(i)\iff G.\mathit{parameterKinds}(i)\ne\mathsf{none},
+\qquad
+G.\mathit{meets}(i)=(p;\vec c)\iff T[i]=\mathsf{meet}(p,\vec c).
 $$
 
 with the meaning given in [Parameter and scheme rows](POSITIVE-TYPES.md#parameter-and-scheme-rows).
 Validation (`validRows`) requires every label a row names to index `types`, a
-parameter row to name its own label and explicitly state its kind, and a scheme's binders to be parameter
-rows. A parameter row is therefore never the same row as another, so two
+parameter row to name its own label and explicitly state its kind, a scheme's binders to be parameter
+rows, and a meet row's parameter to be a value parameter row. A parameter row is therefore never the same row as another, so two
 distinct binders are never identified by content. The subtype proofs `inst`
 and `gen` read these rows; on a table without scheme rows they are refused.
 

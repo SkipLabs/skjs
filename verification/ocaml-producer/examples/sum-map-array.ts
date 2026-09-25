@@ -1,7 +1,7 @@
-// A mapper producing plain JSON arrays. TypeScript accepts it; here `map`'s
-// V2 is bounded by the DepSafe that EagerCollection intersects its values
-// with, and an array not managed by the runtime is not DepSafe, so the call is
-// refused, a safe program among them.
+// A mapper producing plain JSON arrays. EagerCollection intersects its values
+// with DepSafe (`V & DepSafe`); `map` is instantiated at `V2 := readonly
+// number[]`, which is not DepSafe, and its result's values are the meet of the
+// array with DepSafe's alternatives, as TypeScript reads them.
 import type {
   Context,
   EagerCollection,

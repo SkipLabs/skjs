@@ -8,11 +8,12 @@ open PositiveNormalization Tower
 
 /-! ## Rows of a normal graph
 
-A label's row is one of three kinds. A clause row means a finite union of
+A label's row is one of four kinds. A clause row means a finite union of
 clauses. A parameter row is a binder of some scheme and means what the graph's
 assignment gives it. A scheme row is a generic callable, such as `Promise<T>`'s
 `then<R1, R2>`: a value meeting its signatures at every instantiation of its
-binders.
+binders. A meet row is a value parameter row intersected with clauses, such as
+`V & DepSafe`: what the assignment gives the parameter, within the clauses.
 
 The assignment is part of the graph. No check reads it; it enters only the
 semantics. A theorem proved for every graph therefore holds at every
@@ -175,6 +176,9 @@ structure NormalGraph (ι : Type) where
   rows : ι → List (Clause (List ι))
   schemes : ι → Option (SchemeRow ι) := fun _ => none
   parameterKinds : ι → Option ParameterKind := fun _ => none
+  /-- A meet row's value parameter row and the clauses it is intersected with
+  (`V & DepSafe`). -/
+  meets : ι → Option (ι × List (Clause (List ι))) := fun _ => none
   /-- What the parameter rows mean. Semantic only. -/
   env : MixedAssignment ι := ParameterAssignment.empty .mixed
 
@@ -183,11 +187,17 @@ separately. -/
 def NormalGraph.params (G : NormalGraph ι) (i : ι) : Bool :=
   (G.parameterKinds i).isSome
 
-/-- A clause row: neither a parameter nor a scheme. -/
-def NormalGraph.plain (G : NormalGraph ι) (i : ι) : Bool := !G.params i && (G.schemes i).isNone
+/-- A clause row: neither a parameter, a scheme nor a meet. -/
+def NormalGraph.plain (G : NormalGraph ι) (i : ι) : Bool :=
+  !G.params i && (G.schemes i).isNone && (G.meets i).isNone
 
-/-- A label's clauses. A parameter or scheme row has none: whatever `rows`
-holds there is never read. -/
+/-- A clause row's three conditions. -/
+theorem NormalGraph.plain_iff {G : NormalGraph ι} {i : ι} :
+    G.plain i = true ↔ G.params i = false ∧ G.schemes i = none ∧ G.meets i = none := by
+  simp [NormalGraph.plain, and_assoc]
+
+/-- A label's clauses. A parameter, scheme or meet row has none: whatever
+`rows` holds there is never read. -/
 def NormalGraph.clauses (G : NormalGraph ι) (i : ι) : List (Clause (List ι)) :=
   if G.plain i then G.rows i else []
 
@@ -199,7 +209,7 @@ rows. This checks only the outer sort, not recursive operand well-formedness. -/
 def NormalGraph.hasKind (G : NormalGraph ι) (kind : ParameterKind) (S : List ι) : Bool :=
   S.all fun i => match G.parameterKinds i with
     | some k => k == kind
-    | none => if (G.schemes i).isSome then kind == .value else
+    | none => if (G.schemes i).isSome || (G.meets i).isSome then kind == .value else
       (G.rows i).all fun c => match c with
         | .pack .. => kind == .arguments
         | _ => kind == .value
@@ -629,8 +639,14 @@ noncomputable def qLayerWithArgs (G : NormalGraph ι) (I : ParameterInterpretati
   if G.params ηi.2 then I.value ηi.2 (ηi.1.1 ηi.2) else
   match G.schemes ηi.2 with
   | some s => schemeSemWithArgs I (fun η' S => setSem (fun l => X (η', l)) S) ηi.1 s
-  | none => setSem (semWithArgs (setSem fun l => X (ηi.1, l))
-      (I.arguments ηi.1 (setSem fun l => X (ηi.1, l)))) (G ηi.2)
+  | none =>
+    match G.meets ηi.2 with
+    -- A meet row: the parameter's values within the clauses.
+    | some (p, cs) => fun n W v => I.value p (ηi.1.1 p) n W v ∧
+        setSem (semWithArgs (setSem fun l => X (ηi.1, l))
+          (I.arguments ηi.1 (setSem fun l => X (ηi.1, l)))) cs n W v
+    | none => setSem (semWithArgs (setSem fun l => X (ηi.1, l))
+        (I.arguments ηi.1 (setSem fun l => X (ηi.1, l)))) (G ηi.2)
 
 theorem plainArguments_congr (G : NormalGraph ι) {X Y : List ι → Fam} {n : Nat}
     (h : ∀ S, Agree (X S) (Y S) n) (S : List ι) :
@@ -666,9 +682,16 @@ theorem qLayer_congrWithArgs (G : NormalGraph ι) (I : ParameterInterpretation �
     cases hq : G.schemes i with
     | none =>
       have hS := fun S => setSem_congr n (fun l => h (η, l)) S
-      constructor <;> rintro ⟨c, hc, hv⟩ <;> refine ⟨c, hc, ?_⟩
-      · exact (semWithArgs_congr _ _ _ _ n hS (I.arguments_nonexp η η _ _ n (fun _ _ _ _ _ => Iff.rfl) hS) c W v).mp hv
-      · exact (semWithArgs_congr _ _ _ _ n hS (I.arguments_nonexp η η _ _ n (fun _ _ _ _ _ => Iff.rfl) hS) c W v).mpr hv
+      have cl : ∀ cs : List (Clause (List ι)),
+          setSem (semWithArgs (setSem fun l => X (η, l)) (I.arguments η (setSem fun l => X (η, l)))) cs n W v ↔
+            setSem (semWithArgs (setSem fun l => Y (η, l)) (I.arguments η (setSem fun l => Y (η, l)))) cs n W v := by
+        intro cs
+        constructor <;> rintro ⟨c, hc, hv⟩ <;> refine ⟨c, hc, ?_⟩
+        · exact (semWithArgs_congr _ _ _ _ n hS (I.arguments_nonexp η η _ _ n (fun _ _ _ _ _ => Iff.rfl) hS) c W v).mp hv
+        · exact (semWithArgs_congr _ _ _ _ n hS (I.arguments_nonexp η η _ _ n (fun _ _ _ _ _ => Iff.rfl) hS) c W v).mpr hv
+      cases hm : G.meets i with
+      | none => exact cl _
+      | some pc => exact and_congr Iff.rfl (cl pc.2)
     | some s =>
       refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun _ => ?_)
       refine imp_congr ?_ ?_
@@ -797,7 +820,12 @@ theorem qLayer_invWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι 
     · simpa [hp] using I.value_adm i (η.1 i) (η.2 i).1
     · simp only [hp]
       cases hq : G.schemes i with
-      | none => exact setSem_adm (fun c => semWithArgs_adm _ _ c) (G i)
+      | none =>
+        cases hm : G.meets i with
+        | none => exact setSem_adm (fun c => semWithArgs_adm _ _ c) (G i)
+        | some pc =>
+          exact interT_adm _ _ (I.value_adm pc.1 _ (η.2 pc.1).1)
+            (setSem_adm (fun c => semWithArgs_adm _ _ c) pc.2)
       | some s =>
         exact boundedSem_adm _ η s _ (I.bound_adm η _ (hD η))
           (fun As => instanceTWithArgs_adm _ η s As I.arguments)
@@ -810,15 +838,22 @@ theorem qLayer_invWithArgs (G : NormalGraph ι) (I : ParameterInterpretation ι 
     · simp only [hp]
       cases hq : G.schemes i with
       | none =>
-        constructor
-        · rintro ⟨c, hc, hv⟩
-          exact ⟨c, hc, (semWithArgs_congr _ _ _ _ k
-            (fun a => Agree.mono (sets η η' m h a) (by omega))
-            (I.arguments_nonexp η η' _ _ k (fun p => Agree.mono (h p) (by omega)) (fun a => Agree.mono (sets η η' m h a) (by omega))) c W v).mp hv⟩
-        · rintro ⟨c, hc, hv⟩
-          exact ⟨c, hc, (semWithArgs_congr _ _ _ _ k
-            (fun a => Agree.mono (sets η η' m h a) (by omega))
-            (I.arguments_nonexp η η' _ _ k (fun p => Agree.mono (h p) (by omega)) (fun a => Agree.mono (sets η η' m h a) (by omega))) c W v).mpr hv⟩
+        have cl : ∀ cs : List (Clause (List ι)),
+            setSem (semWithArgs (setSem fun l => X (η, l)) (I.arguments η (setSem fun l => X (η, l)))) cs k W v ↔
+              setSem (semWithArgs (setSem fun l => X (η', l)) (I.arguments η' (setSem fun l => X (η', l)))) cs k W v := by
+          intro cs
+          constructor
+          · rintro ⟨c, hc, hv⟩
+            exact ⟨c, hc, (semWithArgs_congr _ _ _ _ k
+              (fun a => Agree.mono (sets η η' m h a) (by omega))
+              (I.arguments_nonexp η η' _ _ k (fun p => Agree.mono (h p) (by omega)) (fun a => Agree.mono (sets η η' m h a) (by omega))) c W v).mp hv⟩
+          · rintro ⟨c, hc, hv⟩
+            exact ⟨c, hc, (semWithArgs_congr _ _ _ _ k
+              (fun a => Agree.mono (sets η η' m h a) (by omega))
+              (I.arguments_nonexp η η' _ _ k (fun p => Agree.mono (h p) (by omega)) (fun a => Agree.mono (sets η η' m h a) (by omega))) c W v).mpr hv⟩
+        cases hm : G.meets i with
+        | none => exact cl _
+        | some pc => exact and_congr (I.value_congr pc.1 _ _ m (h pc.1) k hk W v) (cl pc.2)
       | some s =>
         refine and_congr Iff.rfl (forall_congr' fun As => forall_congr' fun _ => ?_)
         have hre := reassign η η' s.binders As m h
@@ -874,8 +909,15 @@ theorem mixedDenote_value (G : NormalGraph ι) (η : MixedAssignment ι) (i : ι
     | some s => simp only [hs] at h; exact ⟨h.1.val, h.1.scoped⟩
     | none =>
       simp only [hs] at h
-      obtain ⟨c, _, hc⟩ := h
-      exact semWithArgs_value hc
+      cases hm : G.meets i with
+      | none =>
+        simp only [hm] at h
+        obtain ⟨c, _, hc⟩ := h
+        exact semWithArgs_value hc
+      | some pc =>
+        simp only [hm] at h
+        obtain ⟨c, _, hc⟩ := h.2
+        exact semWithArgs_value hc
 
 theorem mixedMeaning_valid (G : NormalGraph ι) (η : MixedAssignment ι) (S : List ι) :
     ParameterValid .mixed (mixedMeaning G η S) := by
@@ -914,11 +956,11 @@ theorem mixedMeaning_pack_value (G : NormalGraph ι) (η : MixedAssignment ι) (
     (n : Nat) (W : WorldT n) (v : Val) : ¬ mixedMeaning G η [i] n W (.inl v) := by
   have hp := NormalGraph.plain_of_clauses (G := G) (i := i)
     (show Clause.pack a bs ∈ G i by rw [hi]; simp)
-  simp only [NormalGraph.plain, Bool.and_eq_true, Bool.not_eq_true', Option.isNone_iff_eq_none] at hp
+  rw [NormalGraph.plain_iff] at hp
   change ¬ (∃ j ∈ [i], qDenoteWithArgs G (mixedParameters G) (η, j) n W v)
   simp only [List.mem_singleton, exists_eq_left]
   rw [qDenoteWithArgs_unfold]
-  simp [qLayerWithArgs, hp.1, hp.2, hi, setSem, semWithArgs]
+  simp [qLayerWithArgs, hp.1, hp.2.1, hp.2.2, hi, setSem, semWithArgs]
 
 /-- A sorted pack type cannot contribute runtime-value members, including
 unions of pack rows and pack parameters. -/
@@ -937,12 +979,15 @@ theorem mixedMeaning_noValues (G : NormalGraph ι) (η : MixedAssignment ι) (S 
     cases hq : G.schemes i with
     | some sch => simp [hp, hq] at hk
     | none =>
-      simp only [NormalGraph.params, hp, Option.isSome_none, Bool.false_eq_true, ite_false, hq] at hv
+      cases hm : G.meets i with
+      | some pc => simp [hp, hq, hm] at hk
+      | none =>
+      simp only [NormalGraph.params, hp, Option.isSome_none, Bool.false_eq_true, ite_false, hq, hm] at hv
       obtain ⟨c, hc, hcv⟩ := hv
-      have hplain : G.plain i = true := by simp [NormalGraph.plain, NormalGraph.params, hp, hq]
+      have hplain : G.plain i = true := by simp [NormalGraph.plain, NormalGraph.params, hp, hq, hm]
       have hr : c ∈ G.rows i := by simpa [NormalGraph.clauses, hplain] using hc
       have ht := List.all_eq_true.mp (show (G.rows i).all
-        (fun c => match c with | .pack .. => true | _ => false) = true by simpa [hp, hq, (show (ParameterKind.arguments == ParameterKind.value) = false from rfl)] using hk) c hr
+        (fun c => match c with | .pack .. => true | _ => false) = true by simpa [hp, hq, hm, (show (ParameterKind.arguments == ParameterKind.value) = false from rfl)] using hk) c hr
       cases c <;> simp_all [semWithArgs]
 
 /-- A sorted value type cannot contribute argument-list members. -/
@@ -956,14 +1001,13 @@ theorem mixedMeaning_noArguments (G : NormalGraph ι) (η : MixedAssignment ι) 
   · simp only [hp, ite_false] at hv
     obtain ⟨c, hc, hv⟩ := hv
     have hplain := NormalGraph.plain_of_clauses hc
-    have hparts := hplain
-    simp only [NormalGraph.plain, Bool.and_eq_true, Bool.not_eq_true', Option.isNone_iff_eq_none] at hparts
+    have hparts := NormalGraph.plain_iff.mp hplain
     have hn : G.parameterKinds i = none := by
       simpa [NormalGraph.params] using hparts.1
     have hr : c ∈ G.rows i := by simpa [NormalGraph.clauses, hplain] using hc
     have ht := List.all_eq_true.mp (show (G.rows i).all
       (fun c => match c with | .pack .. => false | _ => true) = true by
-        simpa [hn, hparts.2, (show (ParameterKind.value == ParameterKind.arguments) = false from rfl)] using hk) c hr
+        simpa [hn, hparts.2.1, hparts.2.2, (show (ParameterKind.value == ParameterKind.arguments) = false from rfl)] using hk) c hr
     cases c <;> simp_all [clauseArguments]
 
 /-- The existing sort check guarantees that a type image equals its selected

@@ -137,11 +137,15 @@ language. The boundaries are:
 5. `claims.ml` serializes those candidates into the existing producer-neutral
    SourceClaims protocol. It reserves empty rows for imported declarations
    without parameters and for generic applications, listing the applications
-   with their declaration and argument rows (`"applications"`), and for array
-   types, listing each with its store row (`"arrays"`). Lean fills the
-   reserved rows from the source equations and the one array shape: every
-   declaration and array has one lowering, and OCaml cannot supply a competing
-   interpretation. Graph interning is local to one
+   with their declaration and argument rows (`"applications"`), for array
+   types, listing each with its store row (`"arrays"`), and for
+   intersections, which the producer keeps as their operands (`Meet`),
+   listing each with its operands' rows (`"meets"`). Lean fills the
+   reserved rows from the source equations, the one array shape and its own
+   lowering of an intersection: every declaration, array and intersection
+   has one lowering, and OCaml cannot supply a competing interpretation. A
+   read of an intersection is proposed at the first operand that has the
+   member, which Lean checks. Graph interning is local to one
    document. Graph labels are an export detail, not type-variable identities.
 6. `check.mts` freezes source bytes, runs the parser and OCaml producer, asks Lean
    to reconstruct obligations and produce evidence, then invokes the independent
@@ -969,7 +973,13 @@ first milestone, in order of how much each gates:
      the `Opaque` types: `typeof x` of a unique symbol as a singleton type
      (the `internal.ts` tags), and a class field's definite-assignment `!`
      (`Frozen`'s `[sk_managed]!: true`);
-   - types over rigid binders, such as `T & DepSafe`.
+   - types over rigid binders, such as `T & DepSafe`: done for a generic
+     method's value binder, a meet row whose instance is the meet of the
+     binder's instance with the ground operands
+     ([DESIGN.md](../DESIGN.md#modules-and-code-units), "Binders met with
+     ground types"), which the producer proposes as `Meet` operands and
+     Lean fills (`"meets"`); a generic function's own binder still lowers
+     through the rigid claim reader, which refuses it.
 5. **Library contracts**, read from TypeScript's own standard library
    declarations (`lib.*.d.ts`) through the same declaration graph as any
    library, not written by hand. Done: global type names are declaration
@@ -1261,11 +1271,11 @@ reader's controls; and `test.mts`'s `record-meet` parity pair, which now
 verifies, local and imported alike, with a wrong read refused.
 
 *Left.*
-- `sum-serializable-map`: `c.map(ToTodo)` stops at `map`'s read, since `V2` is
-  still bounded by the `DepSafe` its values are intersected with (the stopgap
-  `invalid-sum-map-object` describes). The exact meet of a type parameter
-  with a ground type replaces it; with it, `V2 = Serializable<Todo>` is
-  within `Json`, and `V2 & DepSafe` is that dictionary meeting `Managed`.
+- `sum-serializable-map` now verifies: the exact meet of a type parameter
+  with a ground type (a meet row, [DESIGN.md](../DESIGN.md#modules-and-code-units),
+  "Binders met with ground types") replaced the stopgap bound, so
+  `V2 = Serializable<Todo>` is within `Json`, and `V2 & DepSafe` is that
+  dictionary meeting `Managed`, which is not empty.
 - `sum-serializable-freeze`: `deepFreeze`'s declaration is read (it is a
   generic value import), but `deepFreeze<Todo>(…)` needs explicit type
   arguments on a plain call, which the parser admits on method calls only.

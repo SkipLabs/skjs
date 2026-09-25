@@ -1,7 +1,7 @@
 // A mapper producing Serializable records, passed to EagerCollection.map.
-// map's V2 is bounded here by the DepSafe that EagerCollection intersects its
-// values with, and an unmanaged object is not DepSafe: the call waits for the
-// exact meet of a type parameter with a ground type.
+// map is instantiated at `V2 := Serializable<Todo>`, which is not DepSafe; its
+// result's `V2 & DepSafe` is the record's meet with DepSafe, a meet row's
+// instance.
 import type {
   Context,
   EagerCollection,

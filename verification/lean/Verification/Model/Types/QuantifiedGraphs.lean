@@ -103,13 +103,14 @@ def valueAssignment (G : NormalGraph ι) (η : MixedAssignment ι) : ι → Fam 
   fun p n W v => G.parameterKinds p = some .value ∧ η.1 p n W (.inl v)
 
 private theorem approx_bridge (G : NormalGraph ι) (hq : ∀ i, G.schemes i = none)
+    (hm : ∀ i, G.meets i = none)
     (ha : ∀ i, G.parameterKinds i ≠ some .arguments) (η : MixedAssignment ι) :
     ∀ k, (fun i => Tower.approx (qLayerWithArgs G (mixedParameters G)) k (η, i)) =
       Tower.approx (paramLayer G G.params (valueAssignment G η)) k
   | 0 => rfl
   | k + 1 => by
     funext i
-    have ih := approx_bridge G hq ha η k
+    have ih := approx_bridge G hq hm ha η k
     show qLayerWithArgs G (mixedParameters G)
         (Tower.approx (qLayerWithArgs G (mixedParameters G)) k) (η, i) =
       paramLayer G G.params (valueAssignment G η)
@@ -124,20 +125,22 @@ private theorem approx_bridge (G : NormalGraph ι) (hq : ∀ i, G.schemes i = no
       simp only [ha l, ↓reduceIte]
     unfold qLayerWithArgs paramLayer
     cases hp : G.params i
-    · simp only [hq i, Bool.false_eq_true, ite_false, normalLayer, semList]
+    · simp only [hq i, hm i, Bool.false_eq_true, ite_false, normalLayer, semList]
       rw [show (mixedParameters G).arguments = graphArguments G from rfl, hargs]
     · simp [mixedParameters]
       rfl
 
-/-- **Conservative.** Without scheme rows or pack binders, the denotation at an
-assignment is the parametric semantics at its value projection. -/
+/-- **Conservative.** Without scheme rows, meet rows or pack binders, the
+denotation at an assignment is the parametric semantics at its value
+projection. -/
 theorem qDenote_no_schemes (G : NormalGraph ι) (hq : ∀ i, G.schemes i = none)
+    (hm : ∀ i, G.meets i = none)
     (ha : ∀ i, G.parameterKinds i ≠ some .arguments) (η : MixedAssignment ι) (i : ι) :
     qDenote G (η, i) = denoteP G G.params (valueAssignment G η) i := by
   funext n
   show Tower.approx (qLayerWithArgs G (mixedParameters G)) (n + 1) (η, i) n =
     Tower.approx (paramLayer G G.params (valueAssignment G η)) (n + 1) i n
-  rw [← approx_bridge G hq ha η (n + 1)]
+  rw [← approx_bridge G hq hm ha η (n + 1)]
 
 #print axioms scheme_elim
 #print axioms scheme_intro

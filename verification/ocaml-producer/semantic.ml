@@ -52,6 +52,29 @@ let record fields = Atoms [Shape {fields;string_index=None;calls=[];elements=Non
    which must be disjoint, and the one string index either states. `None`
    where they are not both plain objects so combined: a hint only, as Lean's
    meet gives the intersection its meaning. *)
+(* Whether a type mentions a type parameter. *)
+let rec mentions_rigid = function
+  | Rigid _ -> true
+  | Union ts -> List.exists mentions_rigid ts
+  | Meet (t,ts) -> List.exists mentions_rigid (t::ts)
+  | Atoms atoms -> List.exists (function
+      | Named (_,args) -> List.exists mentions_rigid args
+      | Shape s ->
+        List.exists (fun (f:field) -> mentions_rigid f.read
+          || Option.fold ~none:false ~some:mentions_rigid f.write) s.fields
+        || Option.fold ~none:false ~some:(fun (i:index_signature) -> mentions_rigid i.value
+          || Option.fold ~none:false ~some:mentions_rigid i.writable) s.string_index
+        || List.exists signature_mentions_rigid s.calls
+        || Option.fold ~none:false ~some:sequence_mentions_rigid s.elements
+      | Exact fs -> List.exists (fun (f:field) -> mentions_rigid f.read) fs
+      | Ctors signatures -> List.exists signature_mentions_rigid signatures
+      | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
+      | Bigint | Symbol -> false) atoms
+and sequence_mentions_rigid s = List.exists mentions_rigid
+    (s.required @ s.optional_elements @ Option.to_list s.rest)
+and signature_mentions_rigid (s:signature) =
+  s.quantified <> [] || s.rest_pack <> None ||
+  List.exists mentions_rigid (s.receiver :: s.result :: s.params @ Option.to_list s.variadic)
 let meet_objects a b = match a,b with
   | Atoms [Shape x],Atoms [Shape y]
     when x.calls=[] && y.calls=[] && x.elements=None && y.elements=None &&

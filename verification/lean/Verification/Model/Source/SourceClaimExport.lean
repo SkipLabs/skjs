@@ -112,7 +112,7 @@ def convert (ast claims : Json) (fileKey : String) : Except String Json := do
     types := grown
     omissions := omissions ++ omitted
     functions := functions ++ [converted]
-  let d : Document := ⟨fileKey,← jStr (← jField ast "sourceSha256"),types,functions,none,none,none⟩
+  let d : Document := ⟨fileKey,← jStr (← jField ast "sourceSha256"),types,functions,none,none,none,none⟩
   -- Enforce the destination schema, without requiring the claims to be complete.
   let _ ← SourceClaimJson.decode (toJson d)
   return Json.mkObj [("claims",toJson d),("omissions",toJson omissions)]
@@ -130,7 +130,7 @@ def inspect (claims : Json) (fileKey digest : String) : Except String Json := do
     functions := functions ++ [f]
     issues := issues ++ notes
     types := grown
-  let d : Document := ⟨fileKey,digest,types,functions,none,none,none⟩
+  let d : Document := ⟨fileKey,digest,types,functions,none,none,none,none⟩
   let _ ← SourceClaimJson.decode (toJson d)
   return Json.mkObj [("claims",toJson d),("omissions",toJson issues)]
 

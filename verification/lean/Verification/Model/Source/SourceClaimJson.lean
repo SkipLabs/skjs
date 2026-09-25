@@ -187,6 +187,14 @@ structure ArrayRow where
   readonly : Bool
   deriving ToJson, FromJson, Repr
 
+/-- An intersection the producer reserved an empty row for: the row and its
+operands' types. Lean fills the row with their meet (`DeclarationGraph.meetRow`),
+so no producer spells it. -/
+structure MeetRow where
+  row : Nat
+  parts : List (List Nat)
+  deriving ToJson, FromJson, Repr
+
 structure Document where
   file : String
   sourceSha256 : String
@@ -198,6 +206,8 @@ structure Document where
   applications : Option (List Application) := none
   /-- Array types the producer reserved rows for; absent when none. -/
   arrays : Option (List ArrayRow) := none
+  /-- Intersections the producer reserved rows for; absent when none. -/
+  meets : Option (List MeetRow) := none
   deriving FromJson
 
 /-- Absence asserts nothing: a source with no initialization code has no
@@ -213,7 +223,10 @@ instance : ToJson Document where
      | some a => [("applications", toJson a)]) ++
     (match d.arrays with
      | none | some [] => []
-     | some a => [("arrays", toJson a)]))
+     | some a => [("arrays", toJson a)]) ++
+    (match d.meets with
+     | none | some [] => []
+     | some a => [("meets", toJson a)]))
 
 
 def Function.normalized (f : Function) : SourceClaims.Function :=
@@ -939,6 +952,7 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
   let (ast, types, imported, generics) ← DeclarationGraph.prepare ast d.types
     ((d.applications.getD []).map fun a => (a.row, a.declaration, a.args))
     ((d.arrays.getD []).map fun a => (a.row, a.store, a.readonly))
+    ((d.meets.getD []).map fun m => (m.row, m.parts))
   let d := { d with types }
   if !validTable d.types then throw "declaration graph has an invalid type reference"
   let all ← Fragment.decodeAstWithParams ast

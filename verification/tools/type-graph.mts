@@ -101,13 +101,15 @@ export type RestArrow = [
 /** A producer's row: a union of clauses. */
 export type Row = Clause[];
 /** A verifier graph's row also may be a parameter, a binder a scheme
- * quantifies or a graph's assignment gives a family, or a scheme, one
- * callable meeting its signatures at every instance of its binders
+ * quantifies or a graph's assignment gives a family, a scheme, one
+ * callable meeting its signatures at every instance of its binders, or a
+ * meet, a value parameter within clauses (`V & DepSafe`)
  * (`POSITIVE-TYPES.md`, "Parameter and scheme rows"). */
 export type ParamRow = { kind: "value" | "arguments"; name: string; param: number };
 export type SchemeRow = { scheme: { binders: number[]; signatures: Arrow[];
   bounds?: [binder: number, bound: Labels][]; variadic?: RestArrow[] } };
-export type GraphRow = Row | ParamRow | SchemeRow;
+export type MeetRow = { meet: number; clauses: Row };
+export type GraphRow = Row | ParamRow | SchemeRow | MeetRow;
 export type TypeGraph = GraphRow[];
 
 /** The clause kinds, split so that every consumer can be made to cover them.
@@ -374,7 +376,25 @@ export function decodeGraph(value: unknown): TypeGraph {
     },
   };
 
+  const clauses = (row: unknown) =>
+    array(row).forEach((c) => {
+      if (typeof c === "string") {
+        if (!(c in STRING_CLAUSE_TEXT)) throw Error("unknown graph clause");
+        return;
+      }
+      if (!isRecord(c)) throw Error("unknown graph clause");
+      const key = Object.keys(c)[0];
+      const validate = check[key];
+      if (!validate) throw Error("unknown graph clause");
+      validate(obj(c, [key])[key]);
+    });
   rows.forEach((row, index) => {
+    if (isRecord(row) && "meet" in row) {
+      const r = obj(row, ["clauses", "meet"]);
+      labels([r.meet]);
+      clauses(r.clauses);
+      return;
+    }
     if (isRecord(row) && "param" in row) {
       const r = obj(row, ["kind", "name", "param"]);
       if ((r.kind !== "value" && r.kind !== "arguments") || typeof r.name !== "string" ||
@@ -397,17 +417,7 @@ export function decodeGraph(value: unknown): TypeGraph {
       if ("variadic" in r) variadic(r.variadic);
       return;
     }
-    array(row).forEach((c) => {
-      if (typeof c === "string") {
-        if (!(c in STRING_CLAUSE_TEXT)) throw Error("unknown graph clause");
-        return;
-      }
-      if (!isRecord(c)) throw Error("unknown graph clause");
-      const key = Object.keys(c)[0];
-      const validate = check[key];
-      if (!validate) throw Error("unknown graph clause");
-      validate(obj(c, [key])[key]);
-    });
+    clauses(row);
   });
   // Checked field by field above: this is where that becomes a type.
   return value as TypeGraph;
@@ -499,6 +509,8 @@ export const graphDefinitions = (graph: TypeGraph): GraphDefinition[] =>
   }));
 export function rowText(row: GraphRow): string {
   if ("param" in row) return `binder ${row.name}`;
+  if ("meet" in row)
+    return `#${row.meet} & (${row.clauses.length ? row.clauses.map(clauseText).join(" | ") : "never"})`;
   if ("scheme" in row)
     return `∀ ${row.scheme.binders.map((b) => `#${b}`).join(", ")}. calls[${[
       ...row.scheme.signatures.map(arrowText),

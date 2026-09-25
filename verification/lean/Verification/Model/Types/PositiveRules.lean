@@ -1728,13 +1728,12 @@ private theorem argument_clause {G : NormalGraph ι} {S : List ι}
     ∃ a bs, c = .pack a bs := by
   obtain ⟨i, hi, hc⟩ := List.mem_flatMap.mp hc
   have hp := NormalGraph.plain_of_clauses hc
-  have hparts := hp
-  simp only [NormalGraph.plain, Bool.and_eq_true, Bool.not_eq_true',
-    Option.isNone_iff_eq_none] at hparts
+  have hparts := NormalGraph.plain_iff.mp hp
   have hkind : G.parameterKinds i = none := by simpa [NormalGraph.params] using hparts.1
   have hk := List.all_eq_true.mp hs i hi
   have hm : c ∈ G.rows i := by simpa [NormalGraph.clauses, hp] using hc
-  simp only [hkind, hparts.2] at hk
+  simp only [hkind, hparts.2.1, hparts.2.2, Option.isSome_none, Bool.or_false,
+    Bool.false_eq_true, ite_false] at hk
   have hh := List.all_eq_true.mp hk c hm
   cases c <;> simp_all
 
@@ -1882,14 +1881,18 @@ theorem clauseArguments_congr_on [DecidableEq ι] {D : List ι} {c : Clause (Lis
   exact exists_congr fun l => and_congr_right fun hl =>
     h l (by simpa using (List.mem_filter.mp hl).2) W v
 
+/-- A meet row's clauses: what its parameter is intersected with. -/
+def meetClauses (G : NormalGraph ι) (i : ι) : List (Clause (List ι)) :=
+  ((G.meets i).map (·.2)).getD []
+
 /-- The rows a row reads: a clause row its operands, a scheme row its
-signatures' rows. -/
+signatures' rows, a meet row its clauses' operands. -/
 def reads (G : NormalGraph ι) (i : ι) : List ι :=
   match G.schemes i with
   | some s => s.signatures.flatMap (fun p => p.1 ++ p.2.1.flatten ++ p.2.2) ++
       s.bounds.flatMap (·.2) ++
       s.variadic.flatMap (fun p => p.1 ++ p.2.1.flatten ++ p.2.2.1 ++ p.2.2.2)
-  | none => (G i).flatMap fun c => c.operands.flatten
+  | none => (G i ++ meetClauses G i).flatMap fun c => c.operands.flatten
 
 /-- A scheme row's bound types: read at its own assignment, not under its
 binders. -/
@@ -1912,6 +1915,8 @@ binders. -/
 def FreeOk [DecidableEq ι] (G : NormalGraph ι) (D : List ι) (V : FreeMap ι) : Bool :=
   D.all fun i =>
     (!G.params i || (fv V i).contains i) &&
+    -- A meet row depends on its parameter.
+    (match G.meets i with | some (p, _) => (fv V i).contains p | none => true) &&
     (reads G i).all (fun l => D.contains l &&
       (fv V l).all fun p => (fv V i).contains p ||
         (match G.schemes i with | some s => s.binders.contains p | none => false)) &&
@@ -1925,7 +1930,7 @@ theorem freeOk_row [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Free
   have h := List.all_eq_true.mp hF i hi
   simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', List.all_eq_true,
     List.contains_iff_mem] at h
-  refine ⟨fun hp => by simpa [hp] using h.1.1, fun l hl => ⟨by simpa using (h.1.2 l hl).1, fun p hp => ?_⟩,
+  refine ⟨fun hp => by simpa [hp] using h.1.1.1, fun l hl => ⟨by simpa using (h.1.2 l hl).1, fun p hp => ?_⟩,
     fun l hl p hp => by simpa using h.2 l hl p hp⟩
   have := (h.1.2 l hl).2 p hp
   rcases this with h1 | h2
@@ -1934,6 +1939,14 @@ theorem freeOk_row [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Free
     cases hs : G.schemes i with
     | none => simp [hs] at h2
     | some s => exact ⟨s, rfl, by simpa [hs] using h2⟩
+
+/-- A meet row's parameter is free in it. -/
+theorem freeOk_meet [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : FreeMap ι}
+    (hF : FreeOk G D V = true) {i : ι} (hi : i ∈ D) {p : ι} {cs : List (Clause (List ι))}
+    (hm : G.meets i = some (p, cs)) : p ∈ fv V i := by
+  have h := List.all_eq_true.mp hF i hi
+  simp only [Bool.and_eq_true, hm, List.contains_iff_mem, decide_eq_true_eq] at h
+  exact h.1.1.2
 
 /-- Free-variable independence is an invariant of the approximations, not an
 extra delay on argument-list membership. -/
@@ -1986,13 +1999,11 @@ theorem graphArguments_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} 
   · simp only [hp, ite_false]
     apply exists_congr fun c => and_congr_right fun hc => ?_
     have hplain := NormalGraph.plain_of_clauses hc
-    have hq : G.schemes i = none := by
-      simp only [NormalGraph.plain, Bool.and_eq_true, Option.isNone_iff_eq_none] at hplain
-      exact hplain.2
+    have hq : G.schemes i = none := (NormalGraph.plain_iff.mp hplain).2.1
     apply clauseArguments_congr_on (D := reads G i) (fun T hT l hl => ?_) _ _ n
       (fun l hl U v => ?_) W vs
     · simp only [reads, hq]
-      exact List.mem_flatMap.mpr ⟨c, hc, List.mem_flatten.mpr ⟨T, hT, hl⟩⟩
+      exact List.mem_flatMap.mpr ⟨c, List.mem_append_left _ hc, List.mem_flatten.mpr ⟨T, hT, hl⟩⟩
     · rw [hX η θ l (hreads l hl).1 (fun p hp => ?_)]
       rcases (hreads l hl).2 p hp with hp | ⟨s, hs, _⟩
       · exact h i hi p hp
@@ -2092,7 +2103,8 @@ theorem qLayer_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Fre
         simp only [List.mem_append, List.mem_flatten]
         exact .inl (.inl (.inr ⟨S, hS, hl⟩))) W v)
     | none =>
-      simp only [normalLayer, semList, setSem]
+      simp only [semList, setSem]
+      have hagi := hag
       have hag : ∀ l ∈ reads G i, ∀ p ∈ fv V l, I.parameter p (η.1 p) = I.parameter p (η'.1 p) := by
         intro l hl p hpv
         rcases (hreads l hl).2 p hpv with h1 | ⟨s', hs', _⟩
@@ -2109,15 +2121,26 @@ theorem qLayer_free [DecidableEq ι] {G : NormalGraph ι} {D : List ι} {V : Fre
         rw [hI.arguments X hX η η' S (fun l hl => (hreads l (hS l hl)).1)
           (fun l hl => hag l (hS l hl))]
         exact fun _ _ _ _ => Iff.rfl
-      have hops : ∀ c ∈ G i, ∀ S ∈ c.operands, ∀ l ∈ S, l ∈ reads G i := by
+      have hops : ∀ c ∈ G i ++ meetClauses G i, ∀ S ∈ c.operands, ∀ l ∈ S, l ∈ reads G i := by
         intro c hc S hS l hl
         simp only [reads, hq]
         exact List.mem_flatMap.mpr ⟨c, hc, List.mem_flatten.mpr ⟨S, hS, hl⟩⟩
-      constructor
-      · rintro ⟨c, hc, h⟩
-        exact ⟨c, hc, (semWithArgs_congr_on (hops c hc) _ _ _ _ n hag' hpack W v).mp h⟩
-      · rintro ⟨c, hc, h⟩
-        exact ⟨c, hc, (semWithArgs_congr_on (hops c hc) _ _ _ _ n hag' hpack W v).mpr h⟩
+      have cl : ∀ cs, (∀ c ∈ cs, c ∈ G i ++ meetClauses G i) →
+          (setSem (semWithArgs (setSem fun l => X (η, l)) (I.arguments η (setSem fun l => X (η, l)))) cs n W v ↔
+            setSem (semWithArgs (setSem fun l => X (η', l)) (I.arguments η' (setSem fun l => X (η', l)))) cs n W v) := by
+        intro cs hcs
+        constructor
+        · rintro ⟨c, hc, h⟩
+          exact ⟨c, hc, (semWithArgs_congr_on (hops c (hcs c hc)) _ _ _ _ n hag' hpack W v).mp h⟩
+        · rintro ⟨c, hc, h⟩
+          exact ⟨c, hc, (semWithArgs_congr_on (hops c (hcs c hc)) _ _ _ _ n hag' hpack W v).mpr h⟩
+      cases hm : G.meets i with
+      | none => exact cl _ fun c hc => List.mem_append_left _ hc
+      | some pc =>
+        -- A meet row: its parameter, which is free in it, and its clauses.
+        have hpv := freeOk_meet hF hi (p := pc.1) (cs := pc.2) (by rw [hm])
+        refine and_congr ?_ (cl pc.2 fun c hc => List.mem_append_right _ (by simp [meetClauses, hm, hc]))
+        rw [I.value_parameter pc.1 _ _ (hagi pc.1 hpv)]
   · simp only [if_true]
     rw [I.value_parameter i _ _ (hag i (hself hp))]
 
@@ -2375,9 +2398,31 @@ def fixedBy [DecidableEq ι] (G : NormalGraph ι) (κ : Ctx ι) (V : FreeMap ι)
     | none => true
     | some U => U == [p] && G.params p
 
+/-- A meet row `p ⊓ cs`'s image under `κ`, row `j`: with `p` a value
+parameter, either a meet row of the parameter `κ` gives `p` (or `p` itself)
+with `cs` mapped, or, when `κ` gives `p` a type of clause rows `U`, a value
+clause row holding the meet of `U`'s clauses with `cs` mapped, in either
+order. -/
+def meetOk [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (κ : Ctx ι)
+    (p : ι) (cs : List (Clause (List ι))) (j : ι) : Bool :=
+  G.parameterKinds p == some .value &&
+    cs.all (fun c => c.operands.all fun S => (tyImg tbl κ S).isSome) &&
+    match G.meets j with
+    | some (q, ds) =>
+      !G.params j && (G.schemes j).isNone && G.parameterKinds q == some .value &&
+        (κ.lookup p).getD [p] == [q] && sameClauses ds (cs.map (clauseImg tbl κ))
+    | none =>
+      match κ.lookup p with
+      | some U =>
+        G.plain j && G.plainTy U && G.hasKind .value [j] &&
+          (sameClauses (G j) (meetLists (clausesOf G U) (cs.map (clauseImg tbl κ))) ||
+            sameClauses (G j) (meetLists (cs.map (clauseImg tbl κ)) (clausesOf G U)))
+      | none => false
+
 /-- One entry. A parameter row's image is what the context gives it, or itself.
 A row the context fixes may be its own image. A clause
-row's image is a clause row holding its clauses mapped. A scheme row's image is
+row's image is a clause row holding its clauses mapped. A meet row's is
+`meetOk`'s. A scheme row's image is
 a scheme row with as many binders, distinct parameter rows, whose signatures
 are its own mapped with its binders standing for them, provided no free row of
 the source, nor any row of a free row's image, is one of those binders. -/
@@ -2401,9 +2446,12 @@ def entryOk [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (V : Free
           s.variadic.mapM (restImg tbl (enter V e.1 e.2.1 s.binders s2.binders)) == some s2.variadic
       | none => false
     | none, [j] =>
-      G.plain e.1 && G.plain j &&
-        (G e.1).all (fun c => c.operands.all fun S => (tyImg tbl e.2.1 S).isSome) &&
-        sameClauses (G j) ((G e.1).map (clauseImg tbl e.2.1))
+      match G.meets e.1 with
+      | some (p, cs) => meetOk G tbl e.2.1 p cs j
+      | none =>
+        G.plain e.1 && G.plain j &&
+          (G e.1).all (fun c => c.operands.all fun S => (tyImg tbl e.2.1 S).isSome) &&
+          sameClauses (G j) ((G e.1).map (clauseImg tbl e.2.1))
     | _, _ => false
 
 /-- The rows a table mentions. -/
@@ -2789,6 +2837,119 @@ theorem fixedBy_rel [DecidableEq ι] {G : NormalGraph ι} {κ : Ctx ι} {V : Fre
     change selectParameter (G.parameterKinds p) (ηL.1 p) = selectParameter (G.parameterKinds p) (ηR.1 p)
     rw [hkind]; rw [hkind] at hr; exact hr
 
+/-- A meet row, as a parameter row, has no argument lists. -/
+theorem meet_noArguments {G : NormalGraph ι} {σ : MixedAssignment ι} {l : ι}
+    {pc : ι × List (Clause (List ι))} (hl : G.params l = false) (hm : G.meets l = some pc)
+    {n : Nat} {W : WorldT n} {vs : List Val} : ¬ mixedMeaning G σ [l] n W (.inr vs) := by
+  have hk : G.parameterKinds l = none := by simpa [NormalGraph.params] using hl
+  simp [mixedMeaning, mixedParameters, graphArguments, hk, NormalGraph.clauses,
+    NormalGraph.plain, hm]
+
+/-- A meet row's image has no argument lists either. -/
+theorem meetOk_noArguments [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι}
+    {κ : Ctx ι} {p : ι} {cs : List (Clause (List ι))} {j : ι} (hok : meetOk G tbl κ p cs j = true)
+    (σ : MixedAssignment ι) {n : Nat} (W : WorldT n) (vs : List Val) :
+    ¬ mixedMeaning G σ [j] n W (.inr vs) := by
+  unfold meetOk at hok
+  cases hmj : G.meets j with
+  | some qd =>
+    simp only [hmj, Bool.and_eq_true, Bool.not_eq_true'] at hok
+    exact meet_noArguments hok.2.1.1.1.1 hmj
+  | none =>
+    simp only [hmj] at hok
+    cases hU : κ.lookup p with
+    | none => simp [hU] at hok
+    | some U =>
+      simp only [hU, Bool.and_eq_true] at hok
+      exact mixedMeaning_noArguments G σ [j] hok.2.1.2 n W vs
+
+/-- **A meet row means its image.** Under a context relating the meet row's
+parameter, and with its clauses' images, `p ⊓ cs` means the meet row of the
+parameter's image, or, when the context gives `p` a type of clause rows `U`,
+the clause row holding the meet of `U`'s clauses with the clauses' images:
+the value is in `U` and in the clauses, which `meetLists_sound` makes one
+clause list. -/
+theorem meet_row_value [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι} {κ : Ctx ι}
+    {i j p : ι} {cs : List (Clause (List ι))} {ηL ηR : MixedAssignment ι} {n : Nat}
+    {W : WorldT n} {v : Val}
+    (hpar : G.params i = false) (hsch : G.schemes i = none) (hm : G.meets i = some (p, cs))
+    (hok : meetOk G tbl κ p cs j = true)
+    (hrel : RelKWith G (mixedParameters G) κ [p] ηL ηR)
+    (hcl : ∀ c ∈ cs, mixedSem G ηL c n W v ↔ mixedSem G ηR (clauseImg tbl κ c) n W v) :
+    qDenoteWithArgs G (mixedParameters G) (ηL, i) n W v ↔ mixedValues G ηR [j] n W v := by
+  have hr := hrel p (List.mem_singleton_self p)
+  unfold meetOk at hok
+  simp only [Bool.and_eq_true, beq_iff_eq] at hok
+  obtain ⟨⟨hpk, _⟩, hok⟩ := hok
+  have hsel : ∀ A : WorldFamily ParameterSpace.mixed.Carrier,
+      (mixedParameters G).parameter p A n W (.inl v) ↔ A n W (.inl v) := by
+    intro A; simp [mixedParameters, selectParameter, hpk]
+  -- The meet row: the parameter's values within the clauses' images.
+  have hL : qDenoteWithArgs G (mixedParameters G) (ηL, i) n W v ↔
+      ηL.1 p n W (.inl v) ∧ setSem (mixedSem G ηR) (cs.map (clauseImg tbl κ)) n W v := by
+    rw [qDenoteWithArgs_unfold]
+    simp only [qLayerWithArgs, hpar, hsch, hm, Bool.false_eq_true, ite_false]
+    refine and_congr (by simp [mixedParameters, hpk]) ⟨?_, ?_⟩
+    · rintro ⟨c, hc, h⟩
+      exact ⟨_, List.mem_map_of_mem hc, (hcl c hc).mp h⟩
+    · rintro ⟨_, hc', h⟩
+      obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hc'
+      exact ⟨c, hc, (hcl c hc).mpr h⟩
+  have hsingle : mixedValues G ηR [j] n W v ↔ qDenoteWithArgs G (mixedParameters G) (ηR, j) n W v :=
+    ⟨fun ⟨_, hm, h⟩ => by cases List.mem_singleton.mp hm; exact h,
+     fun h => ⟨j, List.mem_singleton_self j, h⟩⟩
+  have members : ∀ {Cs Ds : List (Clause (List ι))}, sameClauses Cs Ds = true →
+      (setSem (mixedSem G ηR) Cs n W v ↔ setSem (mixedSem G ηR) Ds n W v) := fun h =>
+    sameClauses_iff h (fun d => mixedSem G ηR d n W v) (fun c f hf hn => by
+      simp only [semWithArgs_members (fun S T h => sameLabels_values h)
+        (fun S T h => sameLabels_arguments h) hf hn])
+  rw [hL, hsingle]
+  cases hmj : G.meets j with
+  | some qd =>
+    -- A meet row of the parameter's image.
+    obtain ⟨q, ds⟩ := qd
+    simp only [hmj, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, Option.isNone_iff_eq_none] at hok
+    obtain ⟨⟨⟨⟨hjp, hjs⟩, hqk⟩, hq⟩, hds⟩ := hok
+    rw [qDenoteWithArgs_unfold]
+    simp only [qLayerWithArgs, hjp, hjs, hmj, Bool.false_eq_true, ite_false]
+    refine and_congr ?_ (members hds).symm
+    have hqv : (mixedParameters G).value q (ηR.1 q) n W v ↔ ηR.1 q n W (.inl v) := by
+      simp [mixedParameters, hqk]
+    rw [hqv, ← hsel (ηL.1 p)]
+    cases hU : κ.lookup p with
+    | none =>
+      rw [hU] at hr
+      simp only [hU, Option.getD_none, List.cons.injEq, and_true] at hq
+      subst hq
+      rw [hr, hsel]
+    | some U =>
+      rw [hU] at hr
+      simp only [hU, Option.getD_some] at hq
+      subst hq
+      rw [hr]
+      change mixedMeaning G ηR [q] n W (.inl v) ↔ _
+      rw [mixedMeaning_parameter G ηR q .value hqk]
+      simp [selectParameter]
+  | none =>
+    -- A clause row holding the meet of the parameter's image with the clauses.
+    simp only [hmj] at hok
+    cases hU : κ.lookup p with
+    | none => simp [hU] at hok
+    | some U =>
+      simp only [hU, Bool.and_eq_true, Bool.or_eq_true] at hok
+      obtain ⟨⟨⟨hjplain, hUplain⟩, _⟩, horder⟩ := hok
+      rw [hU] at hr
+      have hp : ηL.1 p n W (.inl v) ↔ mixedValues G ηR U n W v := by
+        rw [← hsel (ηL.1 p), hr]; rfl
+      have hUc : mixedValues G ηR U n W v ↔ setSem (mixedSem G ηR) (clausesOf G U) n W v := by
+        rw [mixed_expand ηR hUplain n W v, expand_of_plain hUplain]
+      rw [mixed_unfold_plain ηR hjplain n W v, hp, hUc]
+      rcases horder with h | h
+      · rw [members h]
+        exact (meetLists_sound (mixedValues G ηR) (mixedArgs G ηR) _ _ n W v).symm
+      · rw [members h, and_comm]
+        exact (meetLists_sound (mixedValues G ηR) (mixedArgs G ηR) _ _ n W v).symm
+
 /-- The argument half of table transport uses the value half at exactly the
 same level. It covers every checked entry, including parameters, unchanged
 rows and schemes; it does not assume the table contains only tuple rows. -/
@@ -2857,7 +3018,12 @@ theorem table_row_arguments [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTab
           cases rest with
           | cons _ _ => simp [hs] at hrow
           | nil =>
-            simp only [hs, Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at hrow
+            cases hm : G.meets i with
+            | some pc =>
+              simp only [hs, hm] at hrow
+              exact iff_of_false (meet_noArguments hp hm) (meetOk_noArguments hrow θ W vs)
+            | none =>
+            simp only [hs, hm, Bool.and_eq_true, List.all_eq_true] at hrow
             obtain ⟨⟨⟨hip, hjp⟩, hops⟩, hG⟩ := hrow
             apply graphArguments_image G tbl κ η θ _ _ i j hip hjp hG
               (fun S T h => sameLabels_values h) n W vs
@@ -2868,7 +3034,7 @@ theorem table_row_arguments [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTab
               intro p hp'
               have hlr : l ∈ reads G i := by
                 simp only [reads, hs]
-                exact List.mem_flatMap.mpr ⟨c, hc, List.mem_flatten.mpr ⟨S, hS, hl⟩⟩
+                exact List.mem_flatMap.mpr ⟨c, List.mem_append_left _ hc, List.mem_flatten.mpr ⟨S, hS, hl⟩⟩
               rcases (hreads l hlr).2 p hp' with h | ⟨s', hs', _⟩
               · exact hrel p h
               · rw [hs] at hs'; cases hs'
@@ -3177,7 +3343,38 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
           cases rest with
           | cons _ _ => simp [hsch, hT] at hrow
           | nil =>
-            simp only [hsch, hT, Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at hrow
+            cases hm : G.meets i with
+            | some pc =>
+              -- A meet row: its parameter's image within its clauses' images.
+              obtain ⟨p, cs⟩ := pc
+              simp only [hsch, hT, hm] at hrow
+              have hops := hrow
+              unfold meetOk at hops
+              simp only [Bool.and_eq_true, List.all_eq_true] at hops
+              have hops := hops.1.2
+              apply meet_row_value hpar hsch hm hrow
+                (fun q hq => by
+                  cases List.mem_singleton.mp hq
+                  exact hrel p (freeOk_meet hF hiD hm))
+              intro c hc
+              apply clauseImg_value tbl κ c _ _ _ _ n W v
+              · intro S hS
+                obtain ⟨S', hS'⟩ := Option.isSome_iff_exists.mp (hops c hc S hS)
+                have hrelS : ∀ l ∈ S, RelKWith G (mixedParameters G) κ (fv V l) ηL ηR := by
+                  intro l hl q hq
+                  apply hrel q
+                  have hlr : l ∈ reads G i := by
+                    simp only [reads, hsch]
+                    exact List.mem_flatMap.mpr ⟨c, List.mem_append_right _ (by simp [meetClauses, hm, hc]),
+                      List.mem_flatten.mpr ⟨S, hS, hl⟩⟩
+                  rcases (hreads l hlr).2 q hq with h1 | ⟨s', hs', _⟩
+                  · exact h1
+                  · rw [hsch] at hs'; cases hs'
+                exact ⟨S', hS', hty _ _ _ _ _ hS' hrelS, hpack _ _ _ _ _ hS' hrelS⟩
+              · intro m _ U u; simp [mixedValues, setSem]
+              · intro m _ U vs; simp [graphArguments]
+            | none =>
+            simp only [hsch, hT, hm, Bool.and_eq_true, List.all_eq_true] at hrow
             obtain ⟨⟨⟨hip, hjp⟩, hops⟩, hG⟩ := hrow
             rw [singleton, qDenoteWithArgs_unfold, qDenoteWithArgs_unfold]
             have hi := hip
@@ -3206,7 +3403,7 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
                   apply hrel p
                   have hlr : l ∈ reads G i := by
                     simp only [reads, hsch]
-                    exact List.mem_flatMap.mpr ⟨c, hc, List.mem_flatten.mpr ⟨S, hS, hl⟩⟩
+                    exact List.mem_flatMap.mpr ⟨c, List.mem_append_left _ hc, List.mem_flatten.mpr ⟨S, hS, hl⟩⟩
                   rcases (hreads l hlr).2 p hp with h1 | ⟨s', hs', _⟩
                   · exact h1
                   · rw [hsch] at hs'; cases hs'

@@ -30,11 +30,25 @@ let encode (proposal : Proposal.t) =
   (* Array types, each an empty row Lean fills with the array shape over the
      store row: the producer states the store's contract, never the shape. *)
   let arrays = ref [] in
+  (* Intersections of ground types, each an empty row Lean fills with the meet
+     of its operands: the producer names the operands, never the meet. *)
+  let meets = ref [] in
   let intern row =
     let rec find n = function [] -> rows := !rows @ [row]; n
       | r::rs -> if r=row then n else find (n+1) rs in find 0 !rows
   in
-  let rec labels = function Rigid _ | Union _ | Meet _ -> unsupported "rigid type nested in a graph type"
+  let rec labels = function
+    | Rigid _ | Union _ -> unsupported "rigid type nested in a graph type"
+    | Meet (t,ts) as m ->
+      if Semantic.mentions_rigid m then unsupported "rigid type nested in a graph type";
+      let parts = Array (List.map labels (t::ts)) in
+      (match List.assoc_opt parts !meets with
+       | Some label -> Array [int label]
+       | None ->
+         let label = List.length !rows in
+         rows := !rows @ [Array []];
+         meets := !meets @ [(parts,label)];
+         Array [int label])
     | Atoms atoms -> Array (List.map int (List.sort_uniq compare (List.concat_map atom_labels atoms)))
   and atom_labels = function
     | Nul -> [0] | True -> [1] | False -> [2] | Undef -> [3]
@@ -171,7 +185,8 @@ let encode (proposal : Proposal.t) =
      it is exported in the scheme form, with its own binders (possibly none),
      so a returned closure can retain an outer binder in its result. *)
   let rec contains_symbolic = function
-    | Rigid _ | Meet _ -> true
+    | Rigid _ -> true
+    | Meet (t,ts) -> List.exists contains_symbolic (t::ts)
     | Union ts -> List.exists contains_symbolic ts
     | Atoms atoms -> List.exists (function
         | Named (_,args) -> List.exists contains_symbolic args
@@ -240,6 +255,7 @@ let encode (proposal : Proposal.t) =
       let rigid, ground = List.partition contains_symbolic ts in
       Object ["union", Array (List.map claim_type (rigid @ ground))]
     | (Atoms _ | Union _) as t -> labels t
+    | Meet _ as t when not (contains_symbolic t) -> labels t
     | Meet _ -> unsupported "a type parameter's intersection in a claim"
   in
   (* The substitution is exported so Lean re-checks the elimination it names,
@@ -297,4 +313,6 @@ let encode (proposal : Proposal.t) =
     "types",Array !rows; "functions",Array functions] @ init @
     (if !reserved = [] then [] else ["applications",Array !reserved]) @
     (if !arrays = [] then [] else ["arrays",Array (List.map (fun ((store,readonly),row) ->
-      Object ["row",int row;"store",int store;"readonly",Bool readonly]) !arrays)]))
+      Object ["row",int row;"store",int store;"readonly",Bool readonly]) !arrays)]) @
+    (if !meets = [] then [] else ["meets",Array (List.map (fun (parts,row) ->
+      Object ["row",int row;"parts",parts]) !meets)]))

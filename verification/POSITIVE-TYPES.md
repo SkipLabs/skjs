@@ -266,7 +266,7 @@ Lean: `clauseArguments`, `Tuple.position`, `ArgumentContracts.Fits`,
 
 ## Parameter and scheme rows
 
-A label is one of three kinds of **row**:
+A label is one of four kinds of **row**:
 
 - a **clause row** means the union of its clauses;
 - a **parameter row** means what the graph's assignment `env` gives it. The
@@ -274,7 +274,13 @@ A label is one of three kinds of **row**:
   selects the component: values for a value binder, lists for a pack binder;
 - a **scheme row** $(\vec p;\Sigma;\beta;\Sigma_\ldots)$ means one function
   meeting its signatures at every reassignment of its binders $\vec p$, which
-  are parameter rows, within their bounds $\beta$.
+  are parameter rows, within their bounds $\beta$;
+- a **meet row** $p\sqcap\vec c$ means the values the assignment gives the
+  value parameter row $p$ that are also in the clauses $\vec c$: the
+  intersection of a type parameter with ground types, `V & DepSafe`.
+  [Instances](#instances-of-a-scheme-row) give it its meaning at each
+  instance, and [DESIGN.md](DESIGN.md#binders-met-with-ground-types) says how
+  it is lowered.
 
 With $\eta$ an assignment and
 $\llbracket A\rrbracket^\eta=\bigcup_{i\in A}\llbracket i\rrbracket^\eta$, the
@@ -289,6 +295,7 @@ $$
   v\in\mathsf{Calls}(\Sigma^{\eta'})\cap\mathsf{Rests}(\Sigma_\ldots^{\eta'}),\
   \eta'=\eta[\vec p\mapsto\vec X]\,\bigr\}
   & i\ \text{a scheme row},\\[2pt]
+\eta(p)\cap\textstyle\bigcup_{c\in\vec c}\llbracket c\rrbracket^\eta & i\ \text{the meet row}\ p\sqcap\vec c,\\[2pt]
 \textstyle\bigcup_{c\in G(i)}\llbracket c\rrbracket^\eta & i\ \text{a clause row},
 \end{cases}
 $$
@@ -298,7 +305,10 @@ ranges over admissible mixed families, one per binder, and
 $\mathsf{Bounded}_n(\vec X)$ says each bounded binder's family is below its
 bound, in both components, at every level under $n$, the bound read at the
 scheme's own $\eta$. A variadic signature's rest may be a binder: a **pack
-parameter**, instantiated at a pack type and bounded by one.
+parameter**, instantiated at a pack type and bounded by one. A meet row reads
+its parameter as a parameter row does and its clauses' operands under their
+guards as a clause row does, so it keeps the fixed point contractive; a pack
+parameter's value component is empty, so a meet row names a value one.
 
 Reading bounds below $n$ keeps the fixed point contractive; the
 approximations are non-expansive in the assignment (`QInv`), which gives
@@ -308,15 +318,17 @@ $\llbracket A\rrbracket_G=\llbracket A\rrbracket^{G.\mathit{env}}$ for values
 reads `env`, so every theorem proved for all graphs holds at every
 reassignment. A member of a scheme row meets each instance's signatures
 (`scheme_elim`), and a function meeting them at every instantiation is a
-member (`scheme_intro`). Without scheme rows and pack binders this is the
-parametric semantics `denoteP` (`qDenote_no_schemes`).
+member (`scheme_intro`). Without scheme rows, meet rows and pack binders this
+is the parametric semantics `denoteP` (`qDenote_no_schemes`).
 
-Only clause rows have clauses. A type holding a parameter or scheme row has no
-expansion, so no rule that reads a clause (`Represents`, `Answers`, the atoms
-of heap knowledge) applies to it.
+Only clause rows have clauses. A type holding a parameter, scheme or meet row
+has no expansion, so no rule that reads a clause (`Represents`, `Answers`, the
+atoms of heap knowledge) applies to it. A meet row is below its parameter and
+below its clauses, but no rule reads it as either: instance tables relate it
+to other types, and at an instance it is a clause row.
 
 Lean: `qDenoteWithArgs G (mixedParameters G)`, `Bounded`, `instanceTWithArgs`,
-`instanceRestsWithArgs` (`Types/PositiveGraphs.lean`,
+`instanceRestsWithArgs`, `NormalGraph.meets`, `NormalGraph.plain_iff` (`Types/PositiveGraphs.lean`,
 `Types/QuantifiedGraphs.lean`); `mixedValues`, `mixedArgs`, `meaning`,
 `argMeaning` (`Types/PositiveRules.lean`).
 
@@ -745,10 +757,12 @@ unchecked back-references in a table.
 Three more rules read scheme rows. They turn on which **parameter rows a row
 depends on**. A free-variable certificate $V$ on a domain $D$ assigns each
 $i\in D$ a set $V(i)$ of parameter rows, with $D$ closed under what its rows
-read (a clause row its operands, a scheme row its signature types), such that
+read (a clause row its operands, a scheme row its signature types, a meet row
+its clauses' operands), such that
 
 $$
 i\ \text{a parameter row}\Rightarrow i\in V(i),\qquad
+i=p\sqcap\vec c\Rightarrow p\in V(i),\qquad
 l\in\mathsf{reads}_G(i)\Rightarrow V(l)\subseteq V(i)\cup\mathsf{binders}(i),
 $$
 
@@ -756,7 +770,7 @@ where $\mathsf{binders}(i)$ is empty unless $i$ is a scheme row, so a scheme's
 own binders are not free in it. A row means the same at two assignments that
 agree on $V(i)$.
 
-Lean: `FreeOk`, `agree_freeWith`, `mixed_respectsFree`.
+Lean: `FreeOk`, `freeOk_meet`, `meetClauses`, `agree_freeWith`, `mixed_respectsFree`.
 
 #### Instances of a scheme row
 
@@ -776,6 +790,15 @@ $\kappa(A)$ for the image of a type, each entry is one of:
   scheme matched against itself its binders stand for themselves; `fixedBy`);
 - $i$ a clause row, $T=\{j\}$, $j$ a clause row, and $G(j)\doteq G(i)[\kappa]$:
   the same clauses, each operand with the same members as its image;
+- $i$ the meet row $p\sqcap\vec c$ of a value parameter row $p$, every operand
+  of $\vec c$ with an image, and $T=\{j\}$ with either $j$ the meet row
+  $q\sqcap\vec d$ of a value parameter row $q$, $\kappa(p)=\{q\}$ (or $q=p$
+  when $\kappa$ does not name $p$) and $\vec d\doteq\vec c[\kappa]$; or $j$ a
+  clause row of value kind, $\kappa(p)=U$ a type of clause rows, and
+  $G(j)\doteq\mathsf{meetLists}(G(U),\vec c[\kappa])$ or
+  $G(j)\doteq\mathsf{meetLists}(\vec c[\kappa],G(U))$ (`meetOk`): the meet of
+  the parameter's image with the clauses' images, which is what lowering
+  `T & DepSafe` at `T := U` gives;
 - $i$ the scheme row $(\vec q;\Sigma';\beta';\Sigma'_\ldots)$, $T=\{j\}$, $j$
   the scheme row $(\vec r;\Sigma'[\kappa'];\beta'[\kappa];\Sigma'_\ldots[\kappa'])$
   with $|\vec r|=|\vec q|$, $\vec r$ distinct parameter rows of matching kinds
@@ -784,6 +807,31 @@ $\kappa(A)$ for the image of a type, each entry is one of:
   (`enter`), provided no free row of $i$ outside $\kappa$'s domain, and no
   row free in an image $\kappa(p)$ for $p\in V(i)$, is in $\vec r$ (no
   capture).
+
+A meet row's entry is sound because at assignments related by $\kappa$ its
+parameter's values are $\kappa(p)$'s, its clauses mean their images', and the
+meet of two clause lists means the intersection of their meanings
+(`meetLists_sound`), in either order:
+
+$$
+\frac{\eta_L(p)=\llbracket U\rrbracket^{\eta_R}\qquad
+      \llbracket\vec c\rrbracket^{\eta_L}=\llbracket\vec c[\kappa]\rrbracket^{\eta_R}\qquad
+      G(j)\doteq\mathsf{meetLists}(G(U),\vec c[\kappa])}
+     {\llbracket p\sqcap\vec c\rrbracket^{\eta_L}
+      =\llbracket U\rrbracket^{\eta_R}\cap\llbracket\vec c[\kappa]\rrbracket^{\eta_R}
+      =\llbracket j\rrbracket^{\eta_R}}\ \textsc{meet-image}
+$$
+
+Neither a meet row nor its image has argument lists (its image is of value
+kind). So `V & DepSafe` at `V := [number, number]` is the tuple's meet with
+each of DepSafe's alternatives: the primitives meet no array, and `Managed`,
+a record, meets the array shape as one object holding its key too. That
+object is kept, as incompatible contracts are
+([Conjunction and normalization](#conjunction-and-normalization)). While the
+array shape bounds its own keys to its store and prototype, no array of the
+model holds `Managed`'s symbol key and the meet is empty in the model; no rule
+decides that, so a value of it is used only as either side gives, and
+the meet row's rule does not depend on the array bound.
 
 Entering a scheme keeps only what its free rows read, and nothing inside it
 reads more (a signature's free rows are $i$'s or its binders), so the entry's
@@ -853,8 +901,9 @@ $$
 only on $\vec p$, and every rule of `Sub` holds at every assignment: the
 premise $G\vdash S\le U$, derived once, holds at each instantiation.
 
-Lean: `entryOk`, `TableOk`, `instKinds`, `substitutionKind`, `InstArrs`, `Inst`,
-`mixed_assignment_substitution`, `table_row_mixed`, `Sub.inst`, `Sub.table`,
+Lean: `entryOk`, `meetOk`, `TableOk`, `instKinds`, `substitutionKind`, `InstArrs`, `Inst`,
+`mixed_assignment_substitution`, `meet_row_value`, `meet_noArguments`,
+`meetOk_noArguments`, `table_row_mixed`, `Sub.inst`, `Sub.table`,
 `Sub.gen`, `Sub.mixed_sound`, `Sub.sound`, `Sub.args_sound`.
 
 ## Certificates
