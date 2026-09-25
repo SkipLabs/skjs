@@ -834,6 +834,23 @@ keys (`generic-contextual-literal.ts`); a record held in a variable does not
 (`invalid-generic-contextual-literal.ts`). An actual at a parameter that
 mentions one is typed on its own and informs inference, as before.
 
+**A union contract is discriminated first.** Where the contract is a union of
+several records (or several arrays), no one arm is the literal's contract, and
+widening its members gives a record no arm admits: `{ kind: "a", n: 1 }` at
+`{ kind: "a"; n: number } | { kind: "b"; s: string }` widened is
+`{ kind: string; n: number }`, and a mutable field's contract is invariant.
+The producer selects, as TypeScript discriminates a contextual union by an
+object literal's properties, the arms that admit the literal: every key it
+writes is a field of the arm (or the arm has an index), every required field
+of the arm is written, and every member written as a primitive literal is
+admitted by the arm's field. For an array literal, an arm's length bounds and
+positions admit it alike. Where exactly one arm remains, the literal is built
+at it; otherwise it is built as before. This is a construction hint and adds
+no trust: the allocation names the record the members are checked against,
+and the literal's use is the ordinary subsumption into the union
+(`literal-union-discrimination.ts`; a literal no arm admits,
+`invalid-literal-union-record.ts`, `invalid-literal-union-tuple.ts`).
+
 **Tables relate included labels.** Relating a record to an interface compares
 each field's contract with itself; a core table needed a row for each such
 pair and for everything it reaches, so the search built one over the whole

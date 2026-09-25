@@ -840,4 +840,7 @@ export const cases: Case[] = [
   negative("invalid-symbol-index-read", "an absent symbol key reads `undefined`, though TypeScript types the read at the index"),
   gap("intersection-binder-refused", "an intersection with a type parameter is known only at an instance", "unsupported", "source",
     /an intersection with a type parameter/),
+  positive("literal-union-discrimination", "a fresh object or array literal expected at a union of records or tuples is built at the one arm its keys, length and literal members select"),
+  negative("invalid-literal-union-tuple", "`[0, 0]` selects no arm of `[number, string] | [boolean, number]`", /source expression obligation at \[207,213\)/),
+  negative("invalid-literal-union-record", "a literal whose keys match no arm is not built at one", /source expression obligation at \[283,312\)/),
 ];

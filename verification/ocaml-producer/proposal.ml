@@ -302,6 +302,49 @@ let rec object_hint declarations seen = function
     | [shape] -> Some shape | _ -> None)
   | Rigid _ | Meet _ -> None
 
+(* Where the expected type is a union of several records or several arrays,
+   a fresh literal is built at the one arm its own keys (or length) and its
+   literal-valued members select, as TypeScript discriminates a contextual
+   union by a literal's properties: `{ kind: "a", n: 1 }` at
+   `{ kind: "a"; n: number } | { kind: "b"; s: string }` is built at the
+   first arm, so its `kind` holds the literal type the arm fixes rather than
+   the widened `string` no arm admits. A construction hint only, as
+   [object_hint] is: Lean checks every member against the arm, and no other
+   arm is ever assumed. *)
+let literal_admitted declarations (e:expr) t = match e.node with
+  | Literal l -> plausible_subtype (literal_type l) (declared_head declarations [] t)
+  | _ -> true
+let rec record_arms declarations seen = function
+  | Atoms atoms -> List.concat_map (function
+      | Shape ({elements=None;calls=[];_} as shape) -> [shape]
+      | Named (id,args) when not (List.mem id seen) ->
+        record_arms declarations (id::seen) (definition declarations id args)
+      | _ -> []) atoms
+  | Union parts -> List.concat_map (record_arms declarations seen) parts
+  | Rigid _ | Meet _ -> []
+let discriminated_record declarations expected (members:(string * expr) list) =
+  let admits (s:shape) =
+    List.for_all (fun (name,e) ->
+      match List.find_opt (fun (f:field) -> f.name = Name name && not f.host) s.fields with
+      | Some f -> literal_admitted declarations e f.read
+      | None -> s.string_index <> None) members
+    && List.for_all (fun (f:field) -> f.optional || f.host
+      || (match f.name with Name n -> List.mem_assoc n members | Key _ -> false)) s.fields in
+  match List.filter admits (record_arms declarations [] expected) with
+  | [shape] -> Some shape
+  | _ -> None
+let discriminated_array declarations (arms:sequence list) (elements:expr list) =
+  let n = List.length elements in
+  let admits (s:sequence) =
+    let fixed = s.required @ s.optional_elements in
+    n >= List.length s.required && (s.rest <> None || n <= List.length fixed)
+    && List.for_all Fun.id (List.mapi (fun i e -> match List.nth_opt fixed i with
+      | Some t -> literal_admitted declarations e t
+      | None -> Option.fold ~none:false ~some:(literal_admitted declarations e) s.rest) elements) in
+  match List.filter admits arms with
+  | [s] -> Some s
+  | _ -> None
+
 (* The numeric family of an operand: bigint where every atom is one. *)
 let numeric_family declarations t =
   match declared_head declarations [] t with
@@ -766,7 +809,9 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       actual
     | Equality (_,l,r) -> ignore (expr env l); ignore (expr env r); bool
     | Alloc fs ->
-      let contract = Option.bind expected (object_hint declarations []) in
+      let contract = match Option.bind expected (object_hint declarations []) with
+        | Some shape -> Some shape
+        | None -> Option.bind expected (fun t -> discriminated_record declarations t fs) in
       let fields = List.map (fun (name,e) ->
         let hint = Option.bind contract (fun s -> List.find_opt (fun (f:Semantic.field) -> f.name=Name name) s.fields) in
         (* A key the contract names is built at its member's type; any other
@@ -805,6 +850,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         | _ -> [] in
       let contract = match expected,arrays with
         | _,[s] -> Some s
+        | _,_::_::_ when discriminated_array declarations arrays es <> None ->
+          discriminated_array declarations arrays es
         | Some expected,_ ->
           Option.map (fun t -> {required=[];optional_elements=[];rest=Some t;readonly=true})
             (iterated_hint declarations expected)
