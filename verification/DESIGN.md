@@ -969,6 +969,12 @@ modeling choices; they do not replace proof.
   `console.log` returns `undefined` without running client code. Nothing
   checks the native code; the selection enters every result as a premise, the
   global's input slot, as for an imported value's declared type.
+- In the SKJS test environment ([Global values](#modules-and-code-units),
+  "The SKJS test environment"), SKJS's import stubs describe the modules a
+  test imports, and `skjs-environment.d.ts` the host's `process`,
+  `__SKJS_show` and `__SKJS_show_expanded`, as SKJS's builtins stub declares
+  them. These are premises of a coverage result only; `check.mts` on its own
+  uses the project it is given.
 - A value whose trusted declaration types it `Function`, an imported one or a
   library member's, has call or construct code
   ([Library types](#library-types)). TypeScript also admits an object that
@@ -1715,6 +1721,28 @@ without one, at the initialization unit's claim for its initializer, which
 that unit checks where it binds the constant. Claims
 are per unit, keyed by source identity.
 
+**A module with no function.** A module whose only code is its
+initialization, constants, classes and top-level statements, is a program
+like any other: verifying it is checking its initialization unit, the one
+unit it has. With $F$ the module's functions, $I$ its initialization code and
+$\Gamma_M$ the module's scope,
+
+$$
+\frac{\forall f\in F.\;\Gamma_M\vdash f\quad
+      (I\neq[\,]\Rightarrow\Gamma_M\vdash I:\mathsf{undefined})\quad
+      F\neq\emptyset\lor I\neq[\,]}
+     {\vdash M}\ \textsc{module}
+$$
+
+where $\Gamma_M\vdash I:\mathsf{undefined}$ is the initialization unit's
+check, a body with no parameters that completes with `undefined`, with its
+initialization order (below). A module with neither runs nothing and states no
+claim; it is refused (the parser's gate refuses it first, "no functions in
+file"), so an acceptance always checked some code. A class's methods are
+closures its initialization allocates, so a class-only module's methods are
+checked in that unit. Before this, a module needed a function, and a
+module of constants or classes was refused whatever its code.
+
 **Generic module values.** A generic module function is certified for every
 admissible instantiation by its own unit; a generic imported value is assumed
 at its declared type. A unit that calls one gives its slot the instances its
@@ -2026,6 +2054,55 @@ in one module, `Symbol()` beside `Symbol.for(k)`, is a callable object with
 methods, which the graph has no clause for; Lean refuses it. A global the
 standard library declares is read through a reviewed overlay
 ([Library globals](#library-globals)).
+
+**The SKJS test environment.** SKJS checks its own tests (the corpus
+[SKJS-COVERAGE.md](ocaml-producer/SKJS-COVERAGE.md) measures) with
+`--import-stubs import-stubs`: a bare import specifier resolves in that
+directory, and its builtins stub, `import-stubs/@types/skjs/index.d.ts`, is
+the global environment in place of TypeScript's library. The pipeline gives a
+test the same environment through a project,
+[`ocaml-producer/skjs-environment`](ocaml-producer/skjs-environment/tsconfig.json),
+which the coverage run extends once per derived file:
+
+- `paths` sends every bare specifier to `import-stubs/*`, so an import from
+  `"@skipruntime/core"` or `"for-tests"` is the stub's declaration, read as
+  any import is (**Imported values**, above).
+- The builtins stub cannot be loaded beside TypeScript's library, which it
+  replaces (it redeclares `Iterable`, `ReadonlyArray`, `Function`), so the
+  library stays, and `skjs-environment.d.ts` restates the stub's globals the
+  library lacks, each a global variable annotated with an interface, read by
+  **Global values** at the members and calls a module selects: `process` at
+  SKJS's stub type for it, and `__SKJS_show`, `__SKJS_show_expanded`; and
+  its two type aliases the library lacks, `StringRecord<V>` as the stub
+  states it and `Closed<T>` (below).
+- `__SKJS_show(e, "T")` is SKJS's test assertion that it infers `T` for `e`,
+  a statement about SKJS's inference rather than about the program. As a
+  value it is a host function taking any value and an optional string and
+  returning `undefined`: an ordinary call, so it may have effects, and a
+  narrowing a call ends ends there too (SKJS exempts it; the pipeline does
+  not need to). What it asserts is not read.
+- `Closed<T>` is SKJS's closed object type, every key `T` does not name
+  absent, a meaning SKJS's checker gives the reserved `SKJS_Closed`. It is
+  read as `T`, the identity SKJS states as its reading for tsc. That promises
+  less than SKJS's meaning and is true of every closed value, so a program is
+  never admitted on a key's absence: `Closed<{ x: number }>` is not a
+  `{ [k: string]: number }` (`invalid-skjs-environment.ts`), though SKJS
+  accepts it.
+
+As rules, with $\mathsf{stub}(s)$ the stub module a bare specifier $s$
+resolves to and $E$ the environment file's declarations,
+
+$$
+\frac{x\ \text{imported from}\ s\ \text{bare}\qquad
+      x\ \text{declared at}\ T\ \text{in}\ \mathsf{stub}(s)}
+     {\Gamma(x)=\llbracket T\rrbracket}\ \textsc{stub}
+\qquad
+\frac{\mathtt{declare\ const}\ x{:}\,I\in E}
+     {x\ \text{is a global variable annotated}\ I}\ \textsc{env}
+$$
+
+where $\textsc{env}$ feeds $\textsc{global}$. Both are assumptions the result
+is relative to ([What remains assumed](#what-remains-assumed)).
 
 **Generic methods.** A declaration's generic method `m<U>(...)` lowers to a
 scheme row whose binders are parameter rows. Its signatures mention the

@@ -17,6 +17,10 @@ export type Outcome =
       status: "verified";
       artifacts: string;
       functions: string[];
+      /** The source spans of the module initialization's top-level
+       * statements, which Lean checked as one unit; empty when the module
+       * has no initialization code. */
+      initialization: [number, number][];
       phase: "check";
     }
   | {
@@ -130,6 +134,14 @@ export function check(source: string, tsconfigPath?: string): Outcome {
         throw Error("invalid function identity");
       return f.name;
     });
+    if (!("init" in parsedData) || !Array.isArray(parsedData.init))
+      throw Error("parser omitted the module initialization");
+    const initialization = parsedData.init.map((s: unknown): [number, number] => {
+      if (!s || typeof s !== "object" || !("pos" in s) || !Array.isArray(s.pos) ||
+          s.pos.length !== 2 || !s.pos.every((n: unknown) => typeof n === "number"))
+        throw Error("invalid initialization statement position");
+      return [s.pos[0], s.pos[1]];
+    });
     phase = "proposal";
     const proposed = run(join(here, "_build/default/producer.exe"), [ast]);
     writeFileSync(join(artifacts, "proposal.log"), proposed.detail);
@@ -173,7 +185,7 @@ export function check(source: string, tsconfigPath?: string): Outcome {
     writeFileSync(join(artifacts, "check.log"), checked.detail);
     if (checked.code !== 0)
       return { status: "unverified", artifacts, phase, detail: checked.detail };
-    return { status: "verified", artifacts, phase, functions };
+    return { status: "verified", artifacts, phase, functions, initialization };
   } catch (e) {
     return {
       status: "error",

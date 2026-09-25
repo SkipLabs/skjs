@@ -39,6 +39,10 @@
  * decide (`skjs: "not-run"`). Every derived file is regenerated under `--out`
  * (default: a directory in the system's temporary directory).
  *
+ * Each derived file is checked in SKJS's test environment (see `environment`
+ * below). A verified run counts for a unit only when it checked the unit's
+ * own code (`checkedCode`).
+ *
  * Outcome per unit: `verified`, or the first blocker — `source` (the parser's
  * gate), `proposal` (the producer's `unsupported:`), `search`/`check` (Lean
  * found no derivation), or `error` (timeout, crash). The blocker is located:
@@ -202,6 +206,8 @@ type Unit = {
   derived?: string;
   /** Derived line ranges of the unit itself, for locating the blocker. */
   selfLines?: [number, number];
+  /** Derived character span of the unit itself, for attributing a verdict. */
+  selfSpan?: [number, number];
 };
 
 const hasModifier = (n: ts.Node, kind: ts.SyntaxKind) =>
@@ -329,13 +335,17 @@ function unitsOf(src: Source): { units: Unit[]; stmts: Stmt[]; isModule: boolean
 function derive(unit: Unit, stmts: Stmt[], isModule: boolean): string {
   let text = "";
   let line = 1;
+  let offset = 0;
   const chunks: string[] = [];
   for (const i of unit.closure) {
     const t = stmts[i].text;
-    if (i === unit.self)
+    if (i === unit.self) {
       unit.selfLines = [line, line + t.split("\n").length - 1];
+      unit.selfSpan = [offset, offset + t.length];
+    }
     chunks.push(t);
     line += t.split("\n").length + 1;
+    offset += t.length + 2;
   }
   // `isModule` is not restored: an `export {}` is itself outside the
   // fragment. A script's names can meet the global library's; the gate reads
@@ -344,6 +354,21 @@ function derive(unit: Unit, stmts: Stmt[], isModule: boolean): string {
   text = chunks.join("\n\n") + "\n";
   return text;
 }
+
+/* ---------------------------------------------------------- environment -- */
+/* SKJS checks every test with `--import-stubs import-stubs`: a bare import
+ * specifier resolves in that directory, and its builtins stub declares the
+ * host's globals. The pipeline runs each derived file in a project of its own
+ * that extends `skjs-environment/tsconfig.json`, which gives it the same
+ * environment: `paths` sends a bare specifier to the stubs, and
+ * `skjs-environment.d.ts` restates the builtins the ECMAScript library lacks
+ * (`__SKJS_show`, `process`, `Closed<T>`). */
+const environmentDir = path.join(here, "skjs-environment");
+const projectOf = (derived: string) => derived.replace(/\.ts$/, ".tsconfig.json");
+const environment = (derived: string) => ({
+  extends: path.join(environmentDir, "tsconfig.json"),
+  files: [derived, path.join(environmentDir, "skjs-environment.d.ts")],
+});
 
 /* ----------------------------------------------------------------- SKJS -- */
 /** SKJS's own verdict on every derived file, from one container invocation.
@@ -393,6 +418,8 @@ function reason(text: string): string {
     .replace(/\s*\((line \d+,? col(umn)? \d+)\)/g, "")
     // A declaration of the checked source is named by its snapshot's path.
     .replace(/ in \/\S*\/source\.ts#\S*/g, " in a declaration of the source")
+    // A stub is named by its path from the derived file's project.
+    .replace(/(\.\.\/)+\S*?\/import-stubs\//g, "import-stubs/")
     .replace(/\bat \[\d+,\d+\)/g, "at _")
     .replace(/: Verification\.Model\.\S*.*$/, "")
     .replace(/\b(missing field|unbound name|unresolved type reference|declarations for|module constant) [\w$]+/g, "$1 _")
@@ -427,14 +454,14 @@ function locate(detail: string, u: Unit): { where: Row["where"]; at?: string } {
 
 /** A blocker's first line, without the snapshot's temporary path. */
 function brief(detail: string): string {
-  return (detail.split("\n")[0] ?? "").replace(/\/\S*\/ocaml-producer-\w+\/source\.ts/g, "source.ts").slice(0, 300);
+  return (detail.split("\n")[0] ?? "").replace(/\/\S*\/ocaml-producer-\w+\/source\.ts/g, "source.ts")
+    .replace(/(\.\.\/)+\S*?\/import-stubs\//g, "import-stubs/").slice(0, 300);
 }
 
 /* Feature groups: [group, pattern over the phase-prefixed reason]. First match
  * wins; order is specificity, not value. Unmatched reasons are grouped under
  * their own text, so a new refusal shows up rather than hiding in "other". */
 const GROUPS: [string, RegExp][] = [
-  ["top-level only: no function to verify", /no source functions to verify/],
   ["bigint", /BigInt|non-decimal numeric literal type/],
   ["enums", /EnumDeclaration/],
   ["ambient declarations (declare let/var, overloaded generic functions)", /`declare let` or `declare var`|overloaded generic function|an ambient constant needs/],
@@ -476,7 +503,17 @@ function groupOf(key: string): string {
 }
 
 /* ------------------------------------------------------------------ run -- */
-type Row = Omit<Unit, "closure" | "derived" | "self" | "selfNames" | "selfLines"> & {
+/** A verified run speaks for a unit only when it checked the unit's own code:
+ * a function unit is one of the functions it verified, any other unit
+ * (a class, a variable statement, top-level code) holds a statement of the
+ * module initialization it checked. */
+function checkedCode(o: Extract<Outcome, { status: "verified" }>, u: Unit): boolean {
+  if (u.kind === "function") return o.functions.some((f) => u.selfNames.includes(f));
+  const [a, b] = u.selfSpan ?? [0, -1];
+  return o.initialization.some(([s, e]) => a <= s && e <= b);
+}
+
+type Row = Omit<Unit, "closure" | "derived" | "self" | "selfNames" | "selfLines" | "selfSpan"> & {
   closureSize: number;
   skjs?: "accepted" | "rejected" | "not-run";
   status?: Outcome["status"];
@@ -503,6 +540,7 @@ async function main() {
         const slug = `${src.file.replace(/^tests\//, "").replace(/\.ts$/, "").replace(/[^A-Za-z0-9_-]+/g, "_")}__${u.name.replace(/[^A-Za-z0-9_-]+/g, "_")}`;
         const derived = path.join(outDir, `${slug}.ts`);
         fs.writeFileSync(derived, derive(u, stmts, isModule));
+        fs.writeFileSync(projectOf(derived), JSON.stringify(environment(derived), null, 1) + "\n");
         u.derived = derived;
         units.push(u);
       }
@@ -521,7 +559,7 @@ async function main() {
   let done = 0;
   const attempt = async (u: Unit) => {
     const t0 = Date.now();
-    const o = await checkApart(u.derived!);
+    const o = await checkApart(u.derived!, projectOf(u.derived!));
     if (!flag("--keep")) fs.rmSync(o.artifacts, { recursive: true, force: true });
     return { o, ms: Date.now() - t0 };
   };
@@ -537,7 +575,7 @@ async function main() {
       [outcomes[i]] = await pooled([candidates[i]], attempt, 1);
 
   const rows: Row[] = units.map((u) => {
-    const { closure, derived, self, selfNames, selfLines, ...rest } = u;
+    const { closure, derived, self, selfNames, selfLines, selfSpan, ...rest } = u;
     return { ...rest, closureSize: closure.length };
   });
   const byId = new Map(rows.map((r) => [r.id, r]));
@@ -551,7 +589,13 @@ async function main() {
     } else {
       const o = settled.value.o;
       row.status = o.status; row.phase = o.phase;
-      if (o.status !== "verified") full = o.detail;
+      // In its project a derived file is named by its own path: name it as
+      // `check.mts` names a lone file's snapshot, so a refusal reads the same.
+      if (o.status !== "verified") full = o.detail.replaceAll(u.derived!, "/ocaml-producer-unit/source.ts");
+      else if (!checkedCode(o, u)) {
+        row.status = "unverified";
+        full = "attribution: the verified run checked none of this unit's own code";
+      }
     }
     if (row.status !== "verified") {
       row.key = `${row.phase}: ${reason(full)}`;

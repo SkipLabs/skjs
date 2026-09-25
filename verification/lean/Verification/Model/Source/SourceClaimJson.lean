@@ -959,9 +959,11 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
   if !validTable d.types then throw "declaration graph has an invalid type reference"
   let all ← Fragment.decodeAstWithParams ast
   let fs := all.map Prod.fst
-  if fs.isEmpty then throw "no source functions to verify"
   if (fs.map (fun f => (f.name,f.namePos))).eraseDups.length != fs.length then throw "duplicate source function identities"
   let init ← Fragment.decodeInit ast
+  -- A module whose only code is its initialization is checked through that
+  -- unit alone; a module with neither runs nothing and states no claim.
+  if fs.isEmpty && init.isEmpty then throw "no source code to verify: no function and no module initialization"
   -- A body reaches the file's other ordinary functions at their annotated
   -- signatures, and a function also reaches the module's constants at their
   -- annotations; each of those is established by its own unit.

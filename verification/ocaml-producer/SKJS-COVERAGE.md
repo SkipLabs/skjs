@@ -4,8 +4,8 @@ How much of what SKJS accepts in its own test suite the pipeline
 (`check.mts`: parser → OCaml producer → Lean search and check) verifies, what
 stops the rest, and where the two disagree because SKJS is wrong.
 
-**911 of 2,676 SKJS-accepted units verify (34.0%); 860 of 2,026 accepted
-functions (42.4%).** 96 of the 377 files with an accepted unit verify entirely.
+**1,361 of 2,676 SKJS-accepted units verify (50.9%); 880 of 2,026 accepted
+functions (43.4%).** 136 of the 377 files with an accepted unit verify entirely.
 Three families of SKJS-accepted functions that the pipeline reaches and refuses
 are real SKJS unsoundnesses, each with a runtime witness that SKJS accepts and
 node crashes on ([below](#suspected-skjs-unsoundnesses)).
@@ -30,14 +30,14 @@ is not part of `verification/run.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,885 | 2,458 | 760 | 1,863 | 731 |
-| `tests/callgraph` | no error allowed | 25 | 59 | 59 | 44 | 51 | 40 |
-| `tests/constprop` | no error allowed | 14 | 66 | 66 | 53 | 49 | 42 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,885 | 2,458 | 1,186 | 1,863 | 751 |
+| `tests/callgraph` | no error allowed | 25 | 59 | 59 | 48 | 51 | 40 |
+| `tests/constprop` | no error allowed | 14 | 66 | 66 | 56 | 49 | 42 |
 | `tests/deadcode` | no error allowed | 7 | 27 | 27 | 17 | 16 | 10 |
-| `tests/cfg` | no error allowed | 7 | 22 | 22 | 13 | 21 | 13 |
-| `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 22 | 23 | 22 |
-| `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 11 | 10 | 2 | 3 | 2 |
-| **total** | | **480** | **4,114** | **2,676** | **911** | **2,026** | **860** |
+| `tests/cfg` | no error allowed | 7 | 22 | 22 | 14 | 21 | 13 |
+| `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 33 | 23 | 22 |
+| `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 11 | 10 | 7 | 3 | 2 |
+| **total** | | **480** | **4,114** | **2,676** | **1,361** | **2,026** | **880** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -61,8 +61,21 @@ marker-accepted units. It rejects 2: two `*-prettier-ignore.ts` files whose
 expected *parse* errors the markers attribute to the wrong statement. They are
 not counted. The remaining 2,676 are the accepted corpus.
 
+**Environment.** SKJS checks a test in the environment its stubs give
+(`--import-stubs import-stubs`); the pipeline gives each derived file the
+same one, a project of its own extending
+[`skjs-environment/tsconfig.json`](skjs-environment/tsconfig.json): a bare
+import specifier resolves in `import-stubs`, and
+[`skjs-environment.d.ts`](skjs-environment/skjs-environment.d.ts) restates the
+builtins stub's globals TypeScript's library lacks (`__SKJS_show`, `process`,
+`StringRecord<V>`, and `Closed<T>` read as `T`). These declarations are
+assumptions of the result, as an import's are
+([DESIGN.md](../DESIGN.md#modules-and-code-units), "The SKJS test
+environment").
+
 **Pipeline.** Each derived file goes through `checkApart` (exactly
-`node check.mts <file>`), 10 at a time, with `check.mts`'s 30 s step timeout.
+`node check.mts <file> --project <its project>`), 10 at a time, with
+`check.mts`'s 30 s step timeout.
 A unit whose run ends in an infrastructure error (a step timeout, the
 TypeScript service's "context canceled" under load — seen once) is run again
 alone; no timeout remained. Outcome rows: `verified`, or the first blocker with its phase
@@ -71,13 +84,21 @@ Lean found no derivation or refused a source form, `error`), its normalized
 reason, its feature group, and where it lies: in the unit's own statement
 (`self`), in a statement its closure brought (`dependency`), or `unknown`.
 
+**Attribution.** A verified run counts for a unit only when it checked the
+unit's own code: a function unit is among the functions `check.mts` reports
+verified, and any other unit (a class, a variable statement, top-level code)
+contains a statement of the module initialization it reports checked
+(`initialization`, the spans of the initialization unit Lean checked). A
+verified run that checked neither would be the row `unverified`,
+"attribution: the verified run checked none of this unit's own code"; none
+is.
+
 | Phase of first blocker | Units |
 | --- | ---: |
-| verified | 911 |
-| source (gate) | 811 |
-| proposal (producer) | 171 |
-| search (Lean) | 778 (453 of them: "no source functions to verify") |
-| error (producer: unbound `__SKJS_show`, `process`) | 5 |
+| verified | 1,361 |
+| source (gate) | 786 |
+| proposal (producer) | 173 |
+| search (Lean) | 356 |
 
 **Caveats on the method.**
 
@@ -90,14 +111,9 @@ reason, its feature group, and where it lies: in the unit's own statement
   outside the fragment). Three "Duplicate identifier" TypeScript diagnostics
   (DOM `Event`, `Response`) are artifacts of that, in the "names the reader
   cannot resolve" group.
-- Class and constant units whose closure holds no function are refused with
-  "no source functions to verify" (130 units, 71 files). This is a pipeline
-  policy (module initialization is verified only alongside a function), not a
-  language gap; decide whether init-only files should verify.
-- Imports from the SKJS runtime stubs (`Json`, `EagerCollection`, `Context`,
-  `Mapper`, …) are unresolved because the run passes no `--project`; SKJS's
-  `Closed<T>` stub type is the "unknown type alias". 38 units; an environment
-  gap, not a language gap.
+- A derived file is written beside the others, not beside its source, so a
+  relative import of a sibling test file (`symbols.ts` importing
+  `./symbols-export.js`) does not resolve: 1 unit.
 - `where` is `unknown` for 33 producer refusals, which name no location.
 
 ## Groups, by value
@@ -150,8 +166,8 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 31 | Other forms (type assertions `<T>e`, empty statement, shadowing, body forms) | 12 | 9 | 0 | 9 | S | P L |
 | 32 | bigint (literals, `BigInt`, bigint literal types) | 232 | 100 | 132 | 12 | L | P L |
 | 33 | Enums | 56 | 0 | 56 | 4 | L | P D L |
-| — | Policy: no function to verify (class/constant-only units) | 130 | 127 | 0 | 71 | S | L |
-| — | Environment: SKJS stub imports and `Closed<T>` | 38 (+18 related) | | | 21 | S | run setup |
+| — | ~~Policy: no function to verify~~ done (task Q): a module with no function is checked through its initialization | 0 (was 453) | | | | | |
+| — | ~~Environment: SKJS stub imports, `__SKJS_show`, `process`, `Closed<T>`, `StringRecord`~~ done (task Q) | 1 (was 38 + 18 related + 5) | | | | | |
 
 The unit counts of bigint and enums come from a few files full of top-level
 constants; by files they are the least valuable groups.
@@ -415,13 +431,42 @@ dropped), examples, what the extension needs.
     numeric literal type` (1). A new primitive in the calculus.
 33. **Enums.** `top-level statement outside the fragment (EnumDeclaration)` (56).
 
+34. **Module initialization and the SKJS environment (task Q).** *Done.* A
+    module whose only code is its initialization, constants, classes and
+    top-level statements, was refused, "no source functions to verify" (453
+    units, 88 files, most of them bigint and literal constants and classes).
+    It is now a program like any other: Lean checks its initialization unit,
+    the one unit it has, and refuses a module with neither function nor
+    initialization (DESIGN.md, "A module with no function"). 430 of the 453
+    verify; the other 23 stop at their real blockers: equality against a
+    bigint or string operand (15, group 15), bigint division (2: it throws
+    on a zero divisor) and `BigInt` of a computed string (3: it throws on a
+    non-numeric one, and the overlay admits only literals), `+42` claimed at `42` (1, the unary `+`
+    result is `number`), and two classes with an optional field never
+    assigned (`class C { px?: number }`: the producer claims the instance with
+    the field present; incompleteness). Each derived file also runs in SKJS's
+    test environment now (Method, "Environment"): the stub imports resolve
+    (`Json`, `Mapper`, `InputDefinition`, `functionFromStubs`), and
+    `__SKJS_show`, `process`, `StringRecord<V>` and `Closed<T>` are declared;
+    of the 45 units these stopped, 20 verify, the unbound-name errors are
+    gone, and the rest stop at their next blocker: `EagerCollection`'s rest
+    parameter over a generic (6), generic classes (3), `in` (3), one each of
+    explicit call type arguments, a rigid type in a graph type, an object
+    spread, a field read on a non-object, the relative import above, and
+    search failures that are
+    incompleteness: `Closed<T>` read as `T` into `Json` or an index signature
+    (6, SKJS relies on the absent keys), a fresh literal instantiating
+    `T extends Json` (1), `new InputDefinition<string, number>([])` (1). None
+    of the new search refusals is an SKJS unsoundness.
+
 **Dependencies.** 1 → 13 → 24 (`throw new Error`); 4 → 13; 2 → 23; 15 → 16, 6's case narrowing, 17; 19 + 21 → 20;
 7 → 32 (negative bigint).
 
 ## Suspected SKJS unsoundnesses
 
 Divergences: SKJS-accepted units the pipeline parses and proposes, and Lean
-then refuses (337 units in `search`). 130 are the "no function" policy, 29
+then refuses (337 units in `search` before task Q, when 130 of them were the
+since-lifted "no function" policy; 356 after it, see 34). 29
 "unions with rigid types", 28 "equality with string literals" and the other
 source-form refusals Lean states explicitly; those are fragment boundaries. The
 rest were read obligation by obligation (group 18 above): all are pipeline
@@ -576,7 +621,7 @@ split by function.
 | N. Generics | Constraint forms, explicit type arguments on calls, unions with rigid types in claims, rigid types in graph types, `as const`; then generic classes | 175 / 50 | `fragment-parse.mts`, `inference.ml`, `GenericSource.lean`, `TypeParams.lean` | M for generic classes | M |
 | O. Type forms | Index-signature forms, numeric field names, negative-literal types, `{}`, `object`, method signatures, `keyof`, indexed access, mapped types, intersections | 168 / 41 | `fragment-parse.mts` (types), `declaration-types.mts`, `Types/*` | — | N |
 | P. Search narrowing and async | Flow narrowing after assignment and refinement snapshots, `Promise`/async results and `await`, contextual literals into unions, function values into intersections | ~80 / 30 | `CertificateProducer.lean`, `ProgramTyping.lean`, `proposal.ml` | I | I, J |
-| Q. Run setup | Map SKJS import stubs through `--project`; decide the init-only-module policy ("no function to verify") | 38 + 130 / 21 + 71 | `skjs-coverage.mts` (and the verifier if the policy changes) | — | — |
+| Q. Module initialization and run setup (done) | A module with no function checked through its initialization unit; verdicts attributed only to units whose own code was checked; SKJS's test environment (stub imports through a per-unit `--project`, `__SKJS_show`, `process`, `StringRecord`, `Closed<T>` as `T`) | 450 / 98 verified (911 → 1,361 units, 860 → 880 functions, 96 → 136 whole files, none lost) | `SourceClaimJson.lean`, `check.mts`, `skjs-coverage.mts`, `skjs-environment/` | — | — |
 | R. Leftovers | Object-literal methods/accessors/spread, optional chaining, `.call`/spread calls/`Object.assign`, bigint, enums | 33 + 8 + 12 + 232 + 56 | various | D (bigint), O (enums) | — |
 
 Suggested order: A, B, D in parallel (disjoint files except D's gate
