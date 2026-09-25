@@ -943,6 +943,19 @@ class Gate {
         lit: { a: "numberlit", v: "-" + node.operand.text },
       };
     }
+    // `+1` is the number `1`: unary plus returns a number operand unchanged,
+    // and TypeScript types it as the literal, as it does `-1`.
+    if (
+      ts.isPrefixUnaryExpression(node) &&
+      node.operator === ts.SyntaxKind.PlusToken &&
+      ts.isNumericLiteral(node.operand) &&
+      DECIMAL.test(node.operand.text)
+    )
+      return {
+        k: "lit",
+        pos: this.span(node),
+        lit: { a: "numberlit", v: node.operand.text },
+      };
 
     if (ts.isNumericLiteral(node)) {
       if (!DECIMAL.test(node.text))

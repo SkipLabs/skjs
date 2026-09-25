@@ -5083,6 +5083,11 @@ JavaScript does:
   the operand's claimed family, which the operand's own obligation
   establishes, so no second mechanism types them. `^` itself is in the
   calculus for `~`; the gate does not admit the binary bitwise operators.
+  A sign written on a decimal numeric literal is part of the literal, as
+  TypeScript types it: the parser reads `-1` and `+1` as the numbers -1 and
+  1 (unary `+` returns a number operand unchanged), so `[+1]` is an
+  `Array<1>` (`unary-plus-literal.ts`); on any other operand the sign is the
+  operator above.
 - **`%` is the exact remainder.** On two numbers it is `Number::remainder`,
   which never rounds: the result `n - d * trunc(n / d)` is always a double, so
   `remBits` computes it on the integers both operands are multiples of and
