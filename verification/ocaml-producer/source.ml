@@ -277,6 +277,9 @@ type logical = Nullish | OrElse | AndAlso
 type expr = { pos: Json.t; node: expr_node }
 and expr_node =
   | Id of string | Literal of literal | Not of expr | Arith of arithmetic * expr * expr
+  (* `a && b` (true) or `a || b` (false): the left operand's value, or the
+     right's where the left is truthy (`&&`) or falsy (`||`). *)
+  | Logical of bool * expr * expr
   | Unary of unary * expr
   (* `typeof e === "shape"` (equal) or `!==`: a test of the operand's shape. *)
   | TypeofTest of string * bool * expr
@@ -355,7 +358,7 @@ let children e = match e.node with
   | Assign (_,e) | NullishAssign (_,_,e) -> [e]
   | Update (_,t,r,_) -> t :: Option.to_list r
   | LogicalAssign (_,a,b) | Comma (a,b) -> [a;b]
-  | Arith (_,a,b) | Equality (_,a,b) | Write (a,_,b) | Coalesce (a,b) | Index (a,b)
+  | Arith (_,a,b) | Equality (_,a,b) | Write (a,_,b) | Coalesce (a,b) | Index (a,b) | Logical (_,a,b)
   | WithFields (a,b,_,_) | SequenceBody (a,b) | LetBody (_,_,a,b) -> [a;b]
   | Conditional (a,b,c) | IndexWrite (a,b,c) | IfBody (_,a,b,c) -> [a;b;c]
   | Alloc fs -> List.map snd fs
@@ -400,6 +403,8 @@ let rec expr binders j =
       | k -> unsupported ("logical assignment " ^ k)),sub "target",sub "rhs")
   | "nullishAssign" -> NullishAssign (text "name" j,field "namePos" j,sub "rhs")
   | "comma" -> Comma (sub "left",sub "right")
+  | "bin" when text "op" j = "&&" || text "op" j = "||" ->
+    Logical (text "op" j = "&&",sub "l",sub "r")
   | "bin" -> let op = match text "op" j with
       | "===" -> StrictEqual | "!==" -> StrictUnequal
       | "==" -> LooseEqual | "!=" -> LooseUnequal

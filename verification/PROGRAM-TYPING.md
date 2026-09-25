@@ -691,7 +691,12 @@ A shape test's answer on a clause is read off its shape: $\mathsf{isBigint}$
 and $\mathsf{isSymbol}$ answer true exactly on the $\mathsf{bigint}$ and
 $\mathsf{symbol}$ clauses, and $\mathsf{isFun}$ answers true on an arrow, a
 callable and a construct-signature clause alike, since `typeof` reports a
-class as a function. Shape
+class as a function. $\mathsf{truthy}$ answers false on the $\mathsf{null}$
+and $\mathsf{undefined}$ clauses and true on every object, function, class,
+symbol and store clause; on a Boolean, number, string or bigint singleton it
+answers the singleton's `ToBoolean`, and on the broad $\mathsf{bool}$,
+$\mathsf{num}$, $\mathsf{str}$ and $\mathsf{bigint}$ clauses it has no fixed
+answer. Shape
 tests have an answer determined by the clause's shape; numeric singleton
 equality also examines its bits. A broad number clause has no fixed answer
 to that equality, so it establishes neither outcome:
@@ -1818,6 +1823,43 @@ trusted proof-search step.
 Null coalescing is likewise a derived form: a let saves the left value, and
 `unionVar` with known nullish-tag conditionals selects the fallback or saved value.
 No truthiness rule is involved; false remains a result of the left operand.
+
+Logical AND and OR return an operand, as in JavaScript: the left one where its
+truthiness decides, the right one elsewhere. For a left operand that is not a
+Boolean they are the same derived form on the truthiness test:
+
+$$
+a\mathbin{\&\&}b\;\equiv\;\mathsf{let}\ x=a\ \mathsf{in}\ \mathsf{if}\ \mathsf{truthy}(x)\ \mathsf{then}\ b\ \mathsf{else}\ x,
+\qquad
+a\mathbin{\Vert}b\;\equiv\;\mathsf{let}\ x=a\ \mathsf{in}\ \mathsf{if}\ \mathsf{truthy}(x)\ \mathsf{then}\ x\ \mathsf{else}\ b,
+$$
+
+split by `unionVar` on $x$ (`selectPlan`, which `??` and default parameters
+share): a label whose truthiness is settled selects its arm by `ifTag`, and
+one that is not (a number, a string) takes both arms by `ifBool` on the test.
+Writing $T_q(A)$ for the labels of $A$ that may answer $q$ (`tagSlice`):
+
+$$
+\frac{\Gamma\vdash a:A\quad T_{\mathsf{true}}(A)::\Gamma\vdash b:B}
+     {\Gamma\vdash a\mathbin{\&\&}b:T_{\mathsf{false}}(A)\cup B}
+\qquad
+\frac{\Gamma\vdash a:A\quad T_{\mathsf{false}}(A)::\Gamma\vdash b:B}
+     {\Gamma\vdash a\mathbin{\Vert}b:T_{\mathsf{true}}(A)\cup B}
+$$
+
+The right operand is checked where the saved left operand holds the slice
+that reaches it; a named immutable left operand moves to that slot, as for
+`??`, so `o && o.a` reads a field of the truthy `o`. The falsy slice is
+exactly what `ToBoolean` leaves: of `number`, all of `number`, since `0`, `-0`
+and NaN are falsy (TypeScript's `0` there omits NaN). `!a` of a value that is
+not a Boolean is $\mathsf{if}\ \mathsf{truthy}(a)\ \mathsf{then}\ \mathsf{false}\ \mathsf{else}\ \mathsf{true}$,
+by the same split. A condition that is not a Boolean is its truthiness: a
+statement guard dispatches with `tagBind` on $\mathsf{truthy}$, refining a
+tested immutable variable to $T_q$ of its type on each edge, and a closure
+branch uses the split above. A disjunctive outcome (a false `&&`, a true
+`||`) joins at its target, whose entry claim each incoming edge establishes
+under its own refinement.
+
 For Boolean left operands, logical AND and OR use the derived forms:
 
 $$

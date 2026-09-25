@@ -61,12 +61,15 @@ def valueField : PropKey := "value"
 
 /-- The shapes a value can have, and so the tests a program can make of one.
 Nullishness groups null and undefined for source coalescing; the other tests
-distinguish individual runtime shapes. -/
+distinguish individual runtime shapes. `truthy` is JavaScript's `ToBoolean`:
+false exactly for `false`, the two zeros, NaN, `""`, `0n`, `null` and
+`undefined`. -/
 inductive Tag where
   | isNul | isBool | isRef | isFun | isUndef | isNullish | isNum | isStr
   | numEq (bits : UInt64)
   | strEq (value : String)
   | isBigint | isSymbol
+  | truthy
   deriving Repr, DecidableEq
 
 /-- The binary operators on primitive operands, JavaScript's own (`binop`
@@ -803,6 +806,10 @@ def numberEqual (a b : UInt64) : Bool :=
   !nan a && !nan b &&
     (a == b || ((a &&& 0x7fffffffffffffff) == 0 && (b &&& 0x7fffffffffffffff) == 0))
 
+/-- `ToBoolean` of a number: false for the two zeros and NaN, which is the one
+double not equal to itself. -/
+def numberTruthy (b : UInt64) : Bool := !numberEqual b 0 && numberEqual b b
+
 /-- Tests are total on values. Numeric equality also inspects the bits. -/
 def tagHolds : Tag → Val → Bool
   | .isNul, .nul => true
@@ -820,6 +827,13 @@ def tagHolds : Tag → Val → Bool
   | .isFun, .objAt _ (.closure _ _ _) => true
   | .isFun, .objAt _ (.variadic _ _) => true
   | .isFun, .objAt _ (.bound _ _ _) => true
+  | .truthy, .tru => true
+  | .truthy, .num b => numberTruthy b
+  | .truthy, .str s => s != ""
+  | .truthy, .bigint i => i != 0
+  | .truthy, .sym _ => true
+  | .truthy, .objAt _ _ => true
+  | .truthy, .arr _ => true
   | _, _ => false
 
 mutual

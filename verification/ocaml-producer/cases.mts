@@ -628,6 +628,10 @@ export const cases: Case[] = [
   negative("invalid-class-array-method", "a method's array result keeps its element types"),
   positive("module-constant-unannotated", "a function reads an unannotated module constant at its initializer's claimed type, a literal kept"),
   negative("invalid-module-constant", "an unannotated module constant `2` is not `0 | 1`"),
+  positive("logical-operands", "`&&`/`||` return an operand, the right one checked where the left's truthiness reaches it; truthiness guards and `!` on values that are not Booleans; singleton truthiness (`0`, `\"\"`, `0n`) settled, a number's or string's taken both ways; a false `&&` joins what either operand established"),
+  negative("invalid-logical-falsy-object", "`o && o.a` is `undefined` where `o` is"),
+  negative("invalid-logical-falsy-number", "`n && s` is `n` where `n` is 0, -0 or NaN, which TypeScript types as `0`"),
+  negative("invalid-truthiness-string", "a falsy `string` is still a `string`: no singleton is invented for it"),
   gap("bare-return", "bare return", "unsupported", "source", /bare `return`/),
   gap(
     "empty-closure",

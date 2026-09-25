@@ -741,6 +741,18 @@ private def tagConditionVariable (scope : List ScopeBinding) : Fragment.Expr →
     | _ => none
   | _ => none
 
+/-- The tag a condition tests on an immutable variable: its own shape or
+singleton test, or, for a variable that is not a Boolean, its truthiness
+(`ToBoolean`), which is how JavaScript reads any other value as a condition. -/
+private def conditionTag (G : PositiveGraphs.NormalGraph Nat) (scope : List ScopeBinding)
+    (Γ : List (Ty Nat)) : Fragment.Expr → Option (Nat × Tag × Bool)
+  | .not _ e => (conditionTag G scope Γ e).map fun (i, tag, equal) => (i, tag, !equal)
+  | .var _ name => do
+    let i ← valueSlot scope name
+    let A ← Γ[i]?
+    if BranchRefinement.onlyBoolean G A then none else some (i, .truthy, true)
+  | e => tagConditionVariable scope e
+
 private def tagTestTerm (tag : Tag) (equal : Bool) (slot : Nat) : Tm :=
   .ite (.test tag (.var slot)) (if equal then .tru else .fls) (if equal then .fls else .tru)
 
@@ -762,26 +774,34 @@ private def tagTestPlan (G : PositiveGraphs.NormalGraph Nat) (tag : Tag) (Γ : L
       [DirectProof.cast H A (DirectProof.node H value B rule)])
   pure (DirectProof.node Γ term A (.unionVar slot) children)
 
+/-- `ite (test tag x) yes no` on the value in `slot`, split by its labels: a
+label the tag answers selects its arm, and a mixed label (a number's
+truthiness, or an unknown one) needs a real Boolean branch, where both arms
+must establish `B`. `??`, a default parameter and `&&`/`||` are this shape, on
+the nullish, `undefined` and truthiness tags. -/
+private def selectPlan (G : PositiveGraphs.NormalGraph Nat) (Γ : List (Ty Nat))
+    (slot : Nat) (B : Ty Nat) (tag : Tag) (yes no : DirectProof.Plan) :
+    Except String DirectProof.Plan := do
+  let some C := Γ[slot]? | throw "internal selection slot mismatch"
+  let term := Tm.ite (.test tag (.var slot)) yes.term no.term
+  let children := C.map fun label =>
+    let L := Γ.set slot [label]
+    let q := decide (Answers G [label] tag true)
+    if q || decide (Answers G [label] tag false) then
+      DirectProof.node L term B (if q then .ifTrue else .ifFalse)
+        [DirectProof.cast L B (if q then yes else no)]
+    else
+      let test := DirectProof.node L (.test tag (.var slot)) [1,2] .test
+        [DirectProof.var L slot [label]]
+      DirectProof.node L term B .ifBool [test, DirectProof.cast L B yes, DirectProof.cast L B no]
+  pure (DirectProof.node Γ term B (.unionVar slot) children)
+
 /-- A defaulted parameter's slot holds its declared type or `undefined`: the
 value a call that omits the position binds there. This is the replacement the
 body sees, and it is the same shape as `??`, on the `undefined` tag alone. -/
 private def defaultValuePlan (G : PositiveGraphs.NormalGraph Nat) (Γ : List (Ty Nat))
-    (slot : Nat) (B : Ty Nat) (d : DirectProof.Plan) : Except String DirectProof.Plan := do
-  let some C := Γ[slot]? | throw "internal default-parameter slot mismatch"
-  let term := Tm.ite (.test .isUndef (.var slot)) d.term (.var slot)
-  let children := C.map fun label =>
-    let L := Γ.set slot [label]
-    let q := decide (Answers G [label] .isUndef true)
-    let selected := if q then DirectProof.cast L B d else DirectProof.var L slot B
-    if q || decide (Answers G [label] .isUndef false) then
-      DirectProof.node L term B (if q then .ifTrue else .ifFalse) [selected]
-    else
-      -- A mixed label (notably unknown) needs a real Boolean branch. Both
-      -- alternatives must establish B; no tag answer is assumed for it.
-      let test := DirectProof.node L (.test .isUndef (.var slot)) [1,2] .test
-        [DirectProof.var L slot [label]]
-      DirectProof.node L term B .ifBool [test, DirectProof.cast L B d, DirectProof.var L slot B]
-  pure (DirectProof.node Γ term B (.unionVar slot) children)
+    (slot : Nat) (B : Ty Nat) (d : DirectProof.Plan) : Except String DirectProof.Plan :=
+  selectPlan G Γ slot B .isUndef d (DirectProof.var Γ slot B)
 
 /-- Shared conditional proof construction for statement branches, ternaries and
 short-circuit operators. Branch builders retain their own source claims; a
@@ -791,24 +811,22 @@ private def conditionalPlan (scope : List ScopeBinding) (H : List (Ty Nat)) (A :
     (yesBranch noBranch : List ScopeBinding → List (Ty Nat) → Compiler DirectProof.Plan) :
     Compiler DirectProof.Plan := do
   let G := SourceTypes.graph (← table)
-  if let some (i, tag, equal) := tagConditionVariable scope cond then
-    let some C := H[i]? | throw "internal closure tag-guard slot mismatch"
+  -- A tested variable's slot, past the saved condition; or, for a condition
+  -- that is not a Boolean, the saved value itself, tested for truthiness.
+  let tagged : Option (Nat × Tag × Bool) := match conditionTag G scope H cond with
+    | some (i, tag, equal) => some (i+1, tag, equal)
+    | none => if BranchRefinement.onlyBoolean G c.type then none else some (0, .truthy, true)
+  if let some (tested, tag, equal) := tagged then
     -- Preserve the evaluated predicate and its claims in an anonymous slot.
     let K := c.type :: H
-    let tested := i+1
+    let some C := K[tested]? | throw "internal closure tag-guard slot mismatch"
     let T := K.set tested (BranchRefinement.tagSlice G C tag true)
     let F := K.set tested (BranchRefinement.tagSlice G C tag false)
     let t ← yesBranch (held ⟨"",some cond.span⟩ :: scope) (if equal then T else F)
     let e ← noBranch (held ⟨"",some cond.span⟩ :: scope) (if equal then F else T)
     let yes := if equal then t else e
     let no := if equal then e else t
-    let term := Tm.ite (.test tag (.var tested)) yes.term no.term
-    let children := C.map fun label =>
-      let L := K.set tested [label]
-      let q := decide (Answers G [label] tag true)
-      DirectProof.node L term A (if q then .ifTrue else .ifFalse)
-        [DirectProof.cast L A (if q then yes else no)]
-    pure (DirectProof.letE H c (DirectProof.node K term A (.unionVar tested) children))
+    pure (DirectProof.letE H c (← selectPlan G K tested A tag yes no))
   else
     match conditionVariable scope cond with
     | some (i, reversed) =>
@@ -824,6 +842,19 @@ private def conditionalPlan (scope : List ScopeBinding) (H : List (Ty Nat)) (A :
       let t ← yesBranch scope H
       let e ← noBranch scope H
       pure (DirectProof.ifE G H A c t e)
+
+/-- The scope an operand saved in a fresh slot 0 extends. A named immutable
+operand is identical to the saved value: its name moves to that slot, so what
+follows sees the refinement a test of the saved value establishes. No mutable
+read is given an alias. -/
+private def savedOperandScope (scope : List ScopeBinding) (operand : Fragment.Expr) :
+    List ScopeBinding :=
+  match operand with
+  | .var _ name =>
+    if (valueSlot scope name).isSome then held ⟨name,some operand.span⟩ ::
+      scope.map (fun b => if b.source.name == name then held ⟨"",some operand.span⟩ else b)
+    else held ⟨"",some operand.span⟩ :: scope
+  | _ => held ⟨"",some operand.span⟩ :: scope
 
 /-- Label 3 is `undefined`: see `SourceTypes.initial`. A position a call may
 omit is one whose declared contract admits that value, because `undefined` is
@@ -1086,36 +1117,41 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     pure (DirectProof.letE Γ left (DirectProof.letE (left.type::Γ) right result))
   | .logical _ andOp left right => do
     let l ← closureExpr fc scope Γ left
-    let constant := fun (_ : List ScopeBinding) H => pure
-      (if andOp then DirectProof.node H .fls [2] .flsLit
-       else DirectProof.node H .tru [1] .truLit)
-    let rhs := fun ds types => closureExpr fc ds types right
-    conditionalPlan scope Γ A left l
-      (if andOp then rhs else constant) (if andOp then constant else rhs)
+    if BranchRefinement.onlyBoolean G l.type then
+      -- A Boolean's falsy value is `false` and its truthy one `true`, so the
+      -- short-circuit arm is that constant, and the operator is a condition.
+      let constant := fun (_ : List ScopeBinding) H => pure
+        (if andOp then DirectProof.node H .fls [2] .flsLit
+         else DirectProof.node H .tru [1] .truLit)
+      let rhs := fun ds types => closureExpr fc ds types right
+      conditionalPlan scope Γ A left l
+        (if andOp then rhs else constant) (if andOp then constant else rhs)
+    else
+      -- `a && b` is `let x = a in (x ? b : x)`, and `a || b` is
+      -- `let x = a in (x ? x : b)`, on `x`'s truthiness: the right operand
+      -- runs where the left is truthy (`&&`) or falsy (`||`), and sees it so.
+      let K := l.type :: Γ
+      let H := (BranchRefinement.tagSlice G l.type .truthy andOp) :: Γ
+      let r ← closureExpr fc (savedOperandScope scope left) H right
+      let own := DirectProof.var K 0 A
+      pure (DirectProof.letE Γ l
+        (← selectPlan G K 0 A .truthy (if andOp then r else own) (if andOp then own else r)))
   | .coalesce _ left right => do
     let l ← closureExpr fc scope Γ left
     let K := l.type :: Γ
     let H := (BranchRefinement.tagSlice G l.type .isNullish true) :: Γ
-    -- A named immutable left operand is identical to the saved value. Move its
-    -- name to that slot for the fallback; no mutable read is given an alias.
-    let rightScope := match left with
-      | .var _ name =>
-        if (valueSlot scope name).isSome then held ⟨name,some left.span⟩ ::
-          scope.map (fun b => if b.source.name == name then held ⟨"",some left.span⟩ else b)
-        else held ⟨"",some left.span⟩ :: scope
-      | _ => held ⟨"",some left.span⟩ :: scope
-    let r ← closureExpr fc rightScope H right
-    let term := Tm.ite (.test .isNullish (.var 0)) r.term (.var 0)
-    let children := l.type.map fun label =>
-      let L := [label] :: Γ
-      let q := decide (Answers G [label] .isNullish true)
-      let selected := if q then DirectProof.cast L A r else DirectProof.var L 0 A
-      DirectProof.node L term A (if q then .ifTrue else .ifFalse) [selected]
-    pure (DirectProof.letE Γ l (DirectProof.node K term A (.unionVar 0) children))
+    let r ← closureExpr fc (savedOperandScope scope left) H right
+    pure (DirectProof.letE Γ l (← selectPlan G K 0 A .isNullish r (DirectProof.var K 0 A)))
   | .not _ a => do
     let a ← closureExpr fc scope Γ a
-    pure (DirectProof.ifE G Γ A a
-      (DirectProof.node Γ .fls [2] .flsLit) (DirectProof.node Γ .tru [1] .truLit))
+    if BranchRefinement.onlyBoolean G a.type then
+      pure (DirectProof.ifE G Γ A a
+        (DirectProof.node Γ .fls [2] .flsLit) (DirectProof.node Γ .tru [1] .truLit))
+    else
+      -- `!x` of a value that is not a Boolean negates its truthiness.
+      let K := a.type :: Γ
+      pure (DirectProof.letE Γ a (← selectPlan G K 0 A .truthy
+        (DirectProof.node K .fls [2] .flsLit) (DirectProof.node K .tru [1] .truLit)))
   | .cast _ annot a => do
     -- The value is the operand's; the claim at the cast follows from the
     -- operand's, and an annotation is one more type the operand must meet.
@@ -1984,7 +2020,8 @@ condition is in slot zero. Only a syntactically identified immutable variable
 may be replaced by the recovered Boolean witness. -/
 private def emitBranch (scope : List ScopeBinding) (Γ : List (Ty Nat)) (cond : Fragment.Expr)
     (A : Ty Nat) (yes no : Target) : Compiler Target := do
-  if let some (i, tag, equal) := tagConditionVariable scope cond then
+  let G := SourceTypes.graph (← table)
+  if let some (i, tag, equal) := conditionTag G scope Γ cond then
     let some C := Γ[i]? | throw "internal tag-guard slot mismatch"
     let adapt := fun t =>
       let mapped := branchMapping scope.length (some i) t
@@ -2005,7 +2042,10 @@ private def emitBranch (scope : List ScopeBinding) (Γ : List (Ty Nat)) (cond : 
       (fun i => if i == 0 then 0 else i+1))⟩
   -- Negation is handled by swapping successors in compileCondition, so this
   -- dispatch always observes the saved operand itself, retaining its read link.
-  emitAt cond.span (.var 0) (.branchBind (adapt yes) (adapt no)) (A::Γ) A
+  -- A value that is not a Boolean is a condition by its truthiness.
+  let transfer := if BranchRefinement.onlyBoolean G A then Continuation.branchBind (adapt yes) (adapt no)
+    else .tagBind .truthy (adapt yes) (adapt no)
+  emitAt cond.span (.var 0) transfer (A::Γ) A
     (scope := held ⟨"",some cond.span⟩ :: scope)
 
 /-- Facts justified on the path to a short-circuit operand. Only immutable
@@ -2021,7 +2061,7 @@ private def conditionContext (G : PositiveGraphs.NormalGraph Nat) (scope : List 
       conditionContext G scope (conditionContext G scope Γ left answer) right answer
     else Γ
   | _ =>
-    if let some (i, tag, equal) := tagConditionVariable scope cond then
+    if let some (i, tag, equal) := conditionTag G scope Γ cond then
       Γ.set i (BranchRefinement.tagSlice G (Γ[i]?.getD []) tag (answer == equal))
     else if let some i := testedSlot scope Γ cond then
       Γ.set i (if answer then [1] else [2])
@@ -2150,7 +2190,10 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let B ← exprType fc a
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+1))⟩
-    let node ← emitAt e.span (.ite (.var 0) .fls .tru) (.bind drop) (B::Γ) A
+    -- A value that is not a Boolean is negated by its truthiness.
+    let tested := if BranchRefinement.onlyBoolean (SourceTypes.graph (← table)) B then Tm.var 0
+      else .test .truthy (.var 0)
+    let node ← emitAt e.span (.ite tested .fls .tru) (.bind drop) (B::Γ) A
       (scope := held ⟨"",some a.span⟩ :: scope)
     compileExpr fc scope Γ a node
   | .cast _ annot a =>

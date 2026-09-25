@@ -49,8 +49,16 @@ double), strings, bigints $\mathsf{bigint}(i)$ with $i\in\mathbb Z$ (a bigint is
 its integer, as a number is its double) and symbols $\mathsf{sym}(i)$ (a symbol
 is its identity: distinct declarations are distinct symbols); an object's fields are keyed by property
 keys $\kappa::=\mathsf{str}(s)\mid\mathsf{sym}(i)$; and the tests include
-$\mathsf{isNum}$, $\mathsf{isStr}$, $\mathsf{isBigint}$, $\mathsf{isSymbol}$ and
-the singleton equalities. A closure descriptor records which invocation its code
+$\mathsf{isNum}$, $\mathsf{isStr}$, $\mathsf{isBigint}$, $\mathsf{isSymbol}$,
+the singleton equalities and $\mathsf{truthy}$, JavaScript's `ToBoolean`:
+
+$$
+\mathsf{truthy}(v)=\mathsf{false}\iff v\in\{\mathsf{null},\mathsf{undefined},\mathsf{false},
+\mathsf{num}(\pm0),\mathsf{num}(\mathrm{NaN}),\mathsf{str}(\texttt{""}),\mathsf{bigint}(0)\}
+$$
+
+(`numberTruthy`: a number is falsy where it equals zero or is not equal to
+itself); every object, function, class, symbol and store is truthy. A closure descriptor records which invocation its code
 admits, $\mathsf{closure}(m,t,\mathit{kind})$ with
 $\mathit{kind}\in\{\mathsf{call},\mathsf{construct}\}$: JavaScript gives a
 function object `[[Call]]` and `[[Construct]]` separately, an arrow has only

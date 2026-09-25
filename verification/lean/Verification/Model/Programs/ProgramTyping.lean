@@ -358,12 +358,20 @@ def tagShape (tag : Tag) (s : Nat) : Option Bool :=
   | .strEq _ => if s == 6 then none else some false
   | .isBigint => some (s == 9)
   | .isSymbol => some (s == 10)
+  -- Null and undefined are falsy; every object, function, class, symbol and
+  -- store is truthy; a Boolean, number, string or bigint needs its singleton.
+  | .truthy => if s == 0 || s == 4 then some false
+      else if s == 1 || s == 5 || s == 6 || s == 9 || s == 12 then none else some true
 
 def tagClause (tag : Tag) (c : Clause α) : Option Bool :=
   match tag, c with
   | _, .top => none
   | .numEq bits, .numLit value => some (numberEqual value bits)
   | .strEq s, .strLit t => some (s == t)
+  | .truthy, .boolLit b => some b
+  | .truthy, .numLit value => some (numberTruthy value)
+  | .truthy, .strLit t => some (t != "")
+  | .truthy, .bigintLit i => some (i != 0)
   | _, _ => tagShape tag (shape c)
 
 /-- A finite syntactic check; unknown numeric answers cannot establish either
@@ -371,6 +379,19 @@ branch. It neither executes a term nor queries semantic membership. `A` must be
 of clause rows: a parameter row's members could be anything. -/
 def Answers (G : NormalGraph ι) (A : Ty ι) (tag : Tag) (q : Bool) : Prop :=
   G.plainTy A = true ∧ ∀ c ∈ expand G A, tagClause tag c = some q
+
+/-- A value's shape settles its truthiness except for the primitive families
+whose singletons differ. -/
+theorem truthy_of_shape {v : Val} :
+    (valueShape v = 0 ∨ valueShape v = 4 → tagHolds .truthy v = false) ∧
+    (valueShape v = 2 ∨ valueShape v = 3 ∨ valueShape v = 8 ∨ valueShape v = 10 ∨
+      valueShape v = 11 → tagHolds .truthy v = true) := by
+  cases v with
+  | objAt fs code =>
+    cases code with
+    | closure _ _ kind => cases kind <;> simp [valueShape, tagHolds]
+    | _ => simp [valueShape, tagHolds]
+  | _ => simp [valueShape, tagHolds]
 
 theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
     (hq : tagClause tag c = some q) (hv : semWithArgs S P c n W v) : tagHolds tag v = q := by
@@ -395,6 +416,19 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
     all_goals
       have hs := semWithArgs_shape (by simp) hv
       cases v <;> simp_all [ht,valueShape,tagHolds,shape]
+  | truthy =>
+    cases c <;> simp [ht, tagClause, tagShape, shape] at hq
+    all_goals subst q
+    case boolLit b => cases b <;> cases hv <;> rfl
+    case numLit value => change v = .num value at hv; subst v; rfl
+    case strLit t => change v = .str t at hv; subst v; simp [tagHolds]
+    case bigintLit i => change v = .bigint i at hv; subst v; simp [tagHolds]
+    all_goals
+      have hs := semWithArgs_shape (by simp) hv
+      simp only [shape] at hs
+      first
+        | exact truthy_of_shape.1 (by omega)
+        | exact truthy_of_shape.2 (by omega)
   | isNul | isBool | isRef | isFun | isUndef | isNullish | isNum | isStr | isBigint | isSymbol =>
     by_cases hc : c = .top
     · subst hc; simp [ht, tagClause] at hq

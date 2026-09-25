@@ -257,9 +257,19 @@ let restrict literal equal t = match t with
   | Rigid _ | Union _ | Meet _ -> t
 let rec branch env cond truth = match cond.node with
   | Not e -> branch env e (not truth)
-  | Id name -> refine_value env name (function
-      | Atoms xs as t when List.for_all (function True | False -> true | _ -> false) xs -> restrict (LBool truth) true t
-      | t -> t)
+  (* A name as a condition is tested for truthiness; a Boolean's slice is
+     its literal. *)
+  | Id name -> refine_value env name (truthy_slice truth)
+  (* A true `&&` (a false `||`) established both operands so; the other
+     answer came from either operand, the right one after the left answered
+     the first way, and holds what either established. *)
+  | Logical (conjunction,a,b) when truth = conjunction -> branch (branch env a truth) b truth
+  | Logical (_,a,b) ->
+    let either = branch env a truth and later = branch (branch env a (not truth)) b truth in
+    List.map2 (fun (n,x) (_,y) -> n,match x,y with
+      | Value l,Value r -> Value (union l r)
+      | Storage (contract,l),Storage (_,r) -> holding contract (union l r)
+      | _ -> x) either later
   | TypeofTest (shape,equal,{node=Id name;_}) ->
     (* Keep the atoms of the tested shape on the arm where the test holds,
        and the others where it fails. *)
@@ -931,6 +941,11 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let right = expr ?expected (branch env c false) b in union left right
     | Coalesce (a,b) -> let left=expr env a in let right=expr ?expected env b in
       union (without_nullish left) right
+    (* The left operand's value where it decides, the right's elsewhere; the
+       right operand runs where the left answered the other way. *)
+    | Logical (conjunction,a,b) -> let left=expr env a in
+      let right=expr ?expected (branch env a conjunction) b in
+      union (truthy_slice (not conjunction) left) right
     | Cast (kind,annot,e) -> let actual=expr ?expected:annot env e in
       (match kind,annot with
         | "nonNull",None -> without_nullish actual

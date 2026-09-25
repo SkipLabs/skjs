@@ -137,6 +137,22 @@ let rec without_nullish = function
   | Atoms xs -> ground (List.filter (function Nul | Undef -> false | _ -> true) xs)
   | Rigid _ as t -> t | Union ts -> List.fold_left union (Atoms []) (List.map without_nullish ts)
   | Meet (t,ts) -> Meet (without_nullish t,ts)
+(* JavaScript's `ToBoolean` of every value of an atom, where the atom settles
+it: null, undefined, `false`, the two zeros, NaN, `""` and `0n` are falsy,
+every object, function, class and symbol truthy. *)
+let truthiness = function
+  | Nul | Undef | False -> Some false
+  | True | Symbol | Shape _ | Exact _ | Ctors _ -> Some true
+  | NumLit bits -> let x = Int64.float_of_bits bits in Some (not (x = 0. || Float.is_nan x))
+  | StrLit s -> Some (s <> "")
+  | BigintLit i -> Some (i <> "0")
+  | Num | Str | Bigint | Top | Named _ -> None
+(* The part of a type a truthiness test answering [truth] leaves: the atoms
+   that may answer so. *)
+let rec truthy_slice truth = function
+  | Atoms xs -> ground (List.filter (fun a -> truthiness a <> Some (not truth)) xs)
+  | Rigid _ | Meet _ as t -> t
+  | Union ts -> List.fold_left union (Atoms []) (List.map (truthy_slice truth) ts)
 let number_literal spelling = Atoms [NumLit (Int64.bits_of_float (float_of_string spelling))]
 (* The literal *type* `0` (or `-0`) admits both runtime zeros: TypeScript
    gives `-0` the type `0`, and strict equality equates them. A literal value
