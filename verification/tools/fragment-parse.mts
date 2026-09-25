@@ -1909,6 +1909,12 @@ export function parseFile(file: string, carriesContext = false,
   // Top-level code other than declarations: the module's initialization, run
   // once, in order, after its function declarations are instantiated.
   const initNodes: Statement[] = [];
+  // The names ambient declarations bind, `declare function f`: values the
+  // declaration graph reads at their declared types.
+  const ambientNames: Identifier[] = [];
+  const ambient = (s: FunctionDeclaration | ClassDeclaration | VariableStatement): boolean =>
+    !!s.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword);
+  const topStatement = (n: Node): Node => n.parent && !ts.isSourceFile(n.parent) ? topStatement(n.parent) : n;
   // A "use strict" directive prologue makes the whole file strict.
   const prologue = gate.useStrict(source.statements);
   gate.strict = prologue.strict;
@@ -1920,22 +1926,38 @@ export function parseFile(file: string, carriesContext = false,
     // the module's initialization, in order: classes are not hoisted.
     else if (ts.isClassDeclaration(s) && !carriesContext) {
       classNodes.push(s);
-      initNodes.push(s);
+      // A `declare class` states its instance type and its constructor's
+      // signature; nothing defines it here, so it runs nothing.
+      if (ambient(s)) ambientNames.push(...(s.name ? [s.name] : []));
+      else initNodes.push(s);
+    }
+    // `declare function f(...): T;`, once per overload: the value is assumed
+    // at its declared signatures, like an import's. It runs nothing.
+    else if (ts.isFunctionDeclaration(s) && ambient(s) && !carriesContext) {
+      if (s.name && !ambientNames.some(n => n.text === s.name?.text)) ambientNames.push(s.name);
     }
     else if (ts.isFunctionDeclaration(s)) fnNodes.push(s);
     else if (ts.isImportDeclaration(s) && !carriesContext) importNodes.push(s);
     else if (carriesContext) continue;
     else if (ts.isExpressionStatement(s)) initNodes.push(s);
-    // `declare const k: unique symbol` runs nothing: it names a symbol, whose
-    // declaration is the identity computed keys in types read (the
-    // declaration graph's `symbols`). Nothing binds it, so a read of it as a
-    // value is refused where it is read.
-    else if (ts.isVariableStatement(s) && s.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword)) {
-      for (const d of s.declarationList.declarations)
-        if (!(s.declarationList.flags & ts.NodeFlags.Const) || d.initializer || !d.type ||
-            !ts.isTypeOperatorNode(d.type) || d.type.operator !== ts.SyntaxKind.UniqueKeyword ||
-            d.type.type.kind !== ts.SyntaxKind.SymbolKeyword)
-          gate.fail(d, "an ambient declaration other than `declare const k: unique symbol` is outside the fragment");
+    // `declare const x: T` runs nothing: the value is assumed at its
+    // annotation, like an imported constant's. `declare const k: unique
+    // symbol` names a symbol instead, whose declaration is the identity
+    // computed keys in types read (the declaration graph's `symbols`); it
+    // binds no value, so a read of it as a value is refused where it is read.
+    // `declare let` and `declare var` are module storage that outside code
+    // may write, which the fragment does not have (as for a module `let`).
+    else if (ts.isVariableStatement(s) && ambient(s)) {
+      if (!(s.declarationList.flags & ts.NodeFlags.Const))
+        gate.fail(s, "a `declare let` or `declare var` is module storage outside the fragment");
+      for (const d of s.declarationList.declarations) {
+        const type = d.type;
+        if (d.initializer || !type || !ts.isIdentifier(d.name))
+          return gate.fail(d, "an ambient constant needs a name and an annotation, and no initializer");
+        if (!(ts.isTypeOperatorNode(type) && type.operator === ts.SyntaxKind.UniqueKeyword &&
+            type.type.kind === ts.SyntaxKind.SymbolKeyword))
+          ambientNames.push(d.name);
+      }
     }
     else if (ts.isVariableStatement(s)) {
       // A module constant is read by functions at its annotation. Module
@@ -2055,9 +2077,9 @@ export function parseFile(file: string, carriesContext = false,
   };
   if (!carriesContext) findKeys(source);
   if (importNodes.length || localNodes.length || globalNodes.length || globalValueNodes.length ||
-      firstArray || firstAsync || keyNodes.length) {
+      firstArray || firstAsync || keyNodes.length || ambientNames.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
-      firstAsync ?? keyNodes[0];
+      firstAsync ?? keyNodes[0] ?? ambientNames[0];
     if (!first) throw Error("missing declaration root");
     // Named imports only. A type import joins the declaration graph; a value
     // import is an assumption at the type its declaration states.
@@ -2074,6 +2096,7 @@ export function parseFile(file: string, carriesContext = false,
         locals: localNodes.map(node => gate.span(node)),
         globals: globalNodes.map(node => gate.span(node)),
         globalValues: globalValueNodes.map(node => gate.span(node)),
+        ambient: ambientNames.map(node => gate.span(node)),
         ...(firstArray ? { arrays: gate.span(firstArray) } : {}),
         ...(firstAsync ? { intrinsics: gate.span(firstAsync) } : {}),
         symbolKeys: keyNodes.map(node => gate.span(node)),
@@ -2086,7 +2109,7 @@ export function parseFile(file: string, carriesContext = false,
     } catch (error) {
       const at = error instanceof DeclarationError
         ? [...importNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...(firstArray ? [firstArray] : []),
-            ...(firstAsync ? [firstAsync] : []), ...keyNodes].find(node =>
+            ...(firstAsync ? [firstAsync] : []), ...keyNodes, ...ambientNames.map(topStatement)].find(node =>
             node.getStart(source) === error.at[0]) ?? first
         : first;
       gate.fail(at, messageOf(error));

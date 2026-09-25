@@ -895,6 +895,14 @@ modeling choices; they do not replace proof.
   that allocates arrays has an input slot `[[Array.prototype]]` at `ArrayProto`,
   and the safety theorem holds for every environment meeting its inputs, as
   for an imported value's declared type.
+- An ambient declaration the module writes, `declare function f(...): R`,
+  `declare const x: T` or `declare class C`, holds of the value the running
+  environment supplies under that name (**Ambient declarations** in
+  [Modules and code units](#modules-and-code-units)): nothing in the module
+  defines it and nothing checks the code that does. It enters every result as
+  a premise, as an imported value's declared type does, and the declaration
+  document lists it with the specifier `ambient`. A function declared with
+  overloads, ambient or imported, is assumed to meet every overload.
 - A value whose trusted declaration types it `Function`, an imported one or a
   library member's, has call or construct code
   ([Library types](#library-types)). TypeScript also admits an object that
@@ -1683,8 +1691,8 @@ A program reads such a field as `e[k]`, where TypeScript binds `k` to a
 that symbol, so the parser writes the read as the named read of its key, a
 `read` whose field is `{"symbol": i}`, and the declaration document lists the
 constant. Any other element key is an index, as before. The constant may be
-imported, or declared by the client, `declare const k: unique symbol`, the
-one ambient form the gate admits: it runs nothing. A symbol-keyed write is
+imported, or declared by the client, `declare const k: unique symbol`: it
+runs nothing, and names a symbol rather than binding a value. A symbol-keyed write is
 not in the fragment.
 
 **Imported values.** A value import joins the module's scope at the type its
@@ -1694,6 +1702,61 @@ meets.
 TypeScript resolves the declaration; nothing here checks the imported code.
 The declaration document lists these values, so a module's result is
 visibly relative to them.
+
+**Overloads.** A function declared with overloads, $S_1,\ldots,S_n$ with
+$n>1$, is callable at exactly those signatures: an implementation's own
+signature, when the declaration has one, is not callable from outside, and
+TypeScript relates it to the overloads only loosely. The value meets every
+overload, so its type is their conjunction, one callable carrying each
+signature, as a global's selected method is (**Global values**, below):
+
+$$
+\frac{x\ \text{declared with overloads}\ S_1,\ldots,S_n\ (n>1),\ \text{none generic}}
+     {\Gamma(x)=\bigwedge_i\llbracket S_i\rrbracket}\ \textsc{overloads}
+$$
+
+Lean checks each call against the conjunction, so a call is typed by any
+overload whose parameters admit its actuals; TypeScript's choice of the first
+such overload is not needed, since each holds of the value. A generic
+overload is refused: a declared value's binders quantify one signature.
+
+**Ambient declarations.** A statement the module writes with `declare` states
+a value's type and defines nothing: the environment the module runs in
+supplies the value. It runs nothing, so it is neither a unit nor part of the
+module's initialization, and the value is in scope everywhere, as an import
+is. It joins the module's scope exactly as an import does, read from its own
+declaration (the `ambient` roots of `collectDeclarations`,
+[`declaration-graph.mts`](tools/declaration-graph.mts)), and the declaration
+document lists it with the specifier `ambient`:
+
+- `declare function f(...): R`, at its signature, or its overloads' conjunction;
+- `declare const x: T`, at its annotation; `declare const k: unique symbol`
+  names a symbol instead and binds no value;
+- `declare class C`, at its construct signature, which `new` meets, while
+  `C` as a type is its declared instance type, as for a local class.
+
+A name that is also an interface or type alias, `interface P` beside
+`declare const P`, denotes the value in a value position and the other
+declaration in a type position. With $D$ the declarations TypeScript binds
+$x$ to:
+
+$$
+\frac{x\ \text{bound by ambient declarations}\ D\ \text{of the module}}
+     {\Gamma(x)=\llbracket\mathsf{type}(D)\rrbracket}\ \textsc{ambient}
+$$
+
+where $\mathsf{type}(D)$ is what `import` and `overloads` read from an
+imported declaration, and a generic function's binders are instantiated per
+call by `instances`. The rule is an assumption the result is relative to
+([What remains assumed](#what-remains-assumed)).
+
+`declare let` and `declare var` are refused where they are declared. Such a
+binding is module storage that code outside the module may write at any
+time, during a call the module makes included, so a read after a call may
+see a value other than one a test established. The fragment has no module
+storage (a module-level `let` is refused for the same reason), and reading
+the binding as an immutable assumption would let a refinement survive a call
+that invalidates it.
 
 **The standard library.** Library contracts are TypeScript's own
 declarations, read like any library's: a type name the module neither imports

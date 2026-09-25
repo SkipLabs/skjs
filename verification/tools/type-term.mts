@@ -357,7 +357,7 @@ export function signatures(scope: TermScope, parameters: readonly ts.ParameterDe
 
 /** Several signatures as one term: their intersection, which a value meets by
  * meeting each. */
-function oneTerm(terms: FunctionTerm[], span: Span): TypeTerm {
+export function oneTerm(terms: FunctionTerm[], span: Span): TypeTerm {
   return terms.length === 1 && terms[0] ? terms[0] : { k: "intersection", parts: terms, span };
 }
 

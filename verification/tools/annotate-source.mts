@@ -354,9 +354,9 @@ function fromSkjs(
 // primitives null, true, false and undefined.
 /** The module's initialization code, as the parser reads it: top-level
  * expression statements, constants and class declarations. An ambient
- * `declare const` runs nothing. */
+ * `declare const` or `declare class` runs nothing. */
 const isInitStatement=(n: ts.Statement)=>ts.isExpressionStatement(n)||
-  (ts.isVariableStatement(n)&&!n.modifiers?.some(m=>m.kind===ts.SyntaxKind.DeclareKeyword))||ts.isClassDeclaration(n);
+  ((ts.isVariableStatement(n)||ts.isClassDeclaration(n))&&!n.modifiers?.some(m=>m.kind===ts.SyntaxKind.DeclareKeyword));
 
 function fromSourceClaims(
   source: string,

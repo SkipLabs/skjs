@@ -125,3 +125,11 @@ export function managedPair(): [number, number] & Managed {
 export function isManaged(m: Managed): true {
   return m[managed];
 }
+
+// A function with overloads: callers see the two overloads, not the
+// implementation's signature.
+export function either(x: number): number;
+export function either(x: string): string;
+export function either(x: number | string): number | string {
+  return x;
+}

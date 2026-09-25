@@ -10,7 +10,7 @@ import { API, DiagnosticCategory, SymbolFlags, type Checker, type Program } from
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
-import { classInstance, expandMapped, mapped, members, optionalTerm, signature, signatures, substitute, typeTerm,
+import { classInstance, expandMapped, mapped, members, oneTerm, optionalTerm, signature, signatures, substitute, typeTerm,
   type Mapped, type TermScope } from "./type-term.mts";
 import { arrayPrototype, overlay, type OverlayEntry } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule } from "./intrinsics.mts";
@@ -221,6 +221,10 @@ export function collectDeclarations(file: string, options: {
    * `process`, joins its values, read at the members those references
    * select (`selectGlobal`). The first reference locates it. */
   globalValues?: readonly Span[];
+  /** The names the client's ambient declarations bind, `declare function f`,
+   * `declare const x: T`, `declare class C`, one span per name (overloads
+   * once): each joins its values at the type its declarations state. */
+  ambient?: readonly Span[];
   /** The client's element keys that are identifiers, `e[k]`: each that
    * TypeScript binds to a `unique symbol` constant joins the symbols and is
    * reported to `symbolKey` with its index. */
@@ -430,9 +434,37 @@ export function collectDeclarations(file: string, options: {
       });
       return { names, typeParams };
     };
-    const valueOf = (node: Node, what: string): Omit<ValueRoot, "binding"> => {
+    // The value TypeScript binds a name to, from every declaration it has.
+    // A function declared with overloads is callable at exactly its
+    // overloads, the declarations without a body (an implementation's own
+    // signature is not callable from outside): the value meets each, so its
+    // type is their intersection. A generic function has one signature. An
+    // interface or type alias of the same name is the name's other meaning,
+    // which a value reference does not denote.
+    const valueOf = (declared: readonly Node[], what: string): Omit<ValueRoot, "binding"> => {
+      const nodes = declared.filter(n => !ts.isInterfaceDeclaration(n) && !ts.isTypeAliasDeclaration(n));
+      const [node] = nodes;
+      if (!node) throw Error(`unresolved value ${what}`);
       const source = node.getSourceFile();
       const span: Span = [node.getStart(source), node.end];
+      if (nodes.length > 1) {
+        const overloads = nodes.filter((n): n is ts.FunctionDeclaration => ts.isFunctionDeclaration(n) && !n.body);
+        if (!overloads.length || !nodes.every(ts.isFunctionDeclaration) || nodes.length - overloads.length > 1)
+          throw Error(`TypeScript found ${nodes.length} declarations for ${what}`);
+        if (overloads.length > 1) {
+          if (overloads.some(o => o.typeParameters?.length))
+            throw Error(`an overloaded generic function is outside the fragment: ${what}`);
+          const forms = overloads.flatMap(o => {
+            const at: Span = [o.getStart(source), o.end];
+            for (const part of [...o.parameters, ...(o.type ? [o.type] : [])])
+              clean(part, `${idOf(source)}#${o.name?.text ?? what}`);
+            return signatures(valueScope(o, what), o.parameters, o.type, o, at, true);
+          });
+          return { declaration: { module: idOf(source), name: overloads[0]?.name?.text ?? what, span },
+            construct: false, typeParams: [], type: oneTerm(forms, span) };
+        }
+        return valueOf(overloads, what);
+      }
       if (ts.isFunctionDeclaration(node) && node.name) {
         // Only the signature is the contract; the body is what is assumed,
         // so an error inside it is not the graph's.
@@ -445,7 +477,7 @@ export function collectDeclarations(file: string, options: {
       if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
         const list = node.parent;
         if (!ts.isVariableDeclarationList(list) || !(list.flags & ts.NodeFlags.Const) || !node.type)
-          throw Error(`an imported value must be an annotated constant, function or class: ${what}`);
+          throw Error(`a declared value must be an annotated constant, function or class: ${what}`);
         clean(node, `${idOf(source)}#${node.name.text}`);
         return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false,
           typeParams: [], type: typeTerm(valueScope(node, what), node.type, node) };
@@ -477,11 +509,16 @@ export function collectDeclarations(file: string, options: {
     const values: ValueRoot[] = [];
     for (const binding of importBindings(client)) {
       try {
-        const node = resolveDeclaration(binding.local, binding.local.text);
+        // A function with overloads is its several declarations; any other
+        // name must have one.
+        const nodes = resolveDeclarations(binding.local, binding.local.text);
+        const [node] = nodes;
+        if (!node || (nodes.length > 1 && !nodes.every(ts.isFunctionDeclaration)))
+          throw Error(`TypeScript found ${nodes.length} declarations for ${binding.local.text}`);
         // A class is a type and, imported as a value, a constructor too.
         if (!binding.typeOnly && !(ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)))
           values.push({ binding: { local: binding.local.text, imported: binding.imported,
-            specifier: binding.specifier, span: binding.span }, ...valueOf(node, binding.local.text) });
+            specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.local.text) });
         if (!isTypeDeclaration(node)) continue;
         const declaration = lookup(binding.local, binding.local.text);
         roots.push({ node: declaration, root: { binding: { kind: "import", local: binding.local.text,
@@ -490,6 +527,21 @@ export function collectDeclarations(file: string, options: {
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
         throw new DeclarationError(binding.span, error instanceof Error ? error.message : String(error));
+      }
+    }
+    // The client's ambient declarations (DESIGN.md, "Ambient declarations"):
+    // each name joins the values like an import of the client's own
+    // declaration, at the type it states. Nothing runs them.
+    for (const span of options.ambient ?? []) {
+      const identifier = identifierAt(client, span);
+      if (!identifier) throw new DeclarationError(span, "TypeScript ambient declaration missing");
+      const statement = client.statements.find(s => s.pos <= identifier.pos && identifier.end <= s.end);
+      const at: Span = statement ? [statement.getStart(client), statement.end] : span;
+      try {
+        values.push({ binding: { local: identifier.text, imported: identifier.text, specifier: ambientSpecifier,
+          span: at }, ...valueOf(resolveDeclarations(identifier, identifier.text), identifier.text) });
+      } catch (error) {
+        throw new DeclarationError(at, error instanceof Error ? error.message : String(error));
       }
     }
     for (const span of options.locals ?? []) {
@@ -649,6 +701,9 @@ export function collectDeclarations(file: string, options: {
 
 /** The specifier of a global value's binding: no import names it. */
 export const globalSpecifier = "global";
+/** The specifier of an ambient declaration's binding, `declare function f`:
+ * the client states the value's type and nothing defines it. */
+export const ambientSpecifier = "ambient";
 
 type SelectionContext = {
   lookup: (identifier: Identifier, what: string) => TypeDeclaration;

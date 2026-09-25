@@ -437,7 +437,7 @@ const GROUPS: [string, RegExp][] = [
   ["top-level only: no function to verify", /no source functions to verify/],
   ["bigint", /BigInt|non-decimal numeric literal type/],
   ["enums", /EnumDeclaration/],
-  ["ambient declarations (declare function/const/class/namespace)", /only the export and async modifiers|an ambient declaration other than/],
+  ["ambient declarations (declare let/var, overloaded generic functions)", /`declare let` or `declare var`|overloaded generic function|an ambient constant needs/],
   ["switch statements", /SwitchStatement/],
   ["template literals (expressions and types)", /Template(Expression|LiteralType)|FirstTemplateToken/],
   ["library globals as values (Array, Symbol, Error, Promise, Set, Map, Date, JSON, …)", /the global \w+ is not an annotated variable|unbound name/],

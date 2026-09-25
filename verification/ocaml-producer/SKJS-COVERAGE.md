@@ -4,9 +4,9 @@ How much of what SKJS accepts in its own test suite the pipeline
 (`check.mts`: parser → OCaml producer → Lean search and check) verifies, what
 stops the rest, and where the two disagree because SKJS is wrong.
 
-**599 of 2,676 SKJS-accepted units verify (22.4%); 578 of 2,026 accepted
-functions (28.5%).** 45 of the 377 files with an accepted unit verify entirely.
-Two families of SKJS-accepted functions that the pipeline reaches and refuses
+**621 of 2,676 SKJS-accepted units verify (23.2%); 600 of 2,026 accepted
+functions (29.6%).** 46 of the 377 files with an accepted unit verify entirely.
+Three families of SKJS-accepted functions that the pipeline reaches and refuses
 are real SKJS unsoundnesses, each with a runtime witness that SKJS accepts and
 node crashes on ([below](#suspected-skjs-unsoundnesses)).
 
@@ -30,14 +30,14 @@ is not part of `verification/run.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,885 | 2,458 | 497 | 1,863 | 487 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,885 | 2,458 | 519 | 1,863 | 509 |
 | `tests/callgraph` | no error allowed | 25 | 59 | 59 | 38 | 51 | 37 |
 | `tests/constprop` | no error allowed | 14 | 66 | 66 | 37 | 49 | 30 |
 | `tests/deadcode` | no error allowed | 7 | 27 | 27 | 9 | 16 | 6 |
 | `tests/cfg` | no error allowed | 7 | 22 | 22 | 7 | 21 | 7 |
 | `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 9 | 23 | 9 |
 | `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 11 | 10 | 2 | 3 | 2 |
-| **total** | | **480** | **4,114** | **2,676** | **599** | **2,026** | **578** |
+| **total** | | **480** | **4,114** | **2,676** | **621** | **2,026** | **600** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -73,10 +73,10 @@ reason, its feature group, and where it lies: in the unit's own statement
 
 | Phase of first blocker | Units |
 | --- | ---: |
-| verified | 599 |
-| source (gate) | 1,480 |
-| proposal (producer) | 248 |
-| search (Lean) | 346 (130 of them: "no source functions to verify") |
+| verified | 621 |
+| source (gate) | 1,432 |
+| proposal (producer) | 255 |
+| search (Lean) | 365 (130 of them: "no source functions to verify") |
 | error (producer: unbound `__SKJS_show`, `process`) | 3 |
 
 **Caveats on the method.**
@@ -120,7 +120,7 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 1 | ~~`Array<T>` / `ReadonlyArray<T>` read from `lib.es5.d.ts`~~ done (task B) | 0 | | | | | |
 | 2 | Relational operators `< <= > >=`, `**` | 53 | 37 | 16 | 21 | S | P L |
 | 3 | Producer claim differs from annotation (literal-union parameters, cells) — done | 0 (was 17) | | | | S | O L |
-| 4 | Ambient declarations (`declare function/const/class`) | 89 | 0 | 89 | 34 | M | P D L |
+| 4 | Ambient declarations (`declare function/const/class`) — done (task C) | 0 (was 94) | | | | M | P D |
 | 5 | Control-flow forms (`else if`, non-block branches, bare `return`, block closures that fall off the end, dead code) | 72 | 62 | 9 | 21 | M | P L |
 | 6 | `switch` | 44 | 42 | 2 | 14 | M | P L |
 | 7 | Unary `-`/`+`/`~` | 39 | 21 | 18 | 7 | S | P L |
@@ -197,14 +197,31 @@ dropped), examples, what the extension needs.
    literal unions (15), 2 at truthiness of a number
    (`conditions.ts#acceptLiteralUnion`, `#acceptOctalZero`), 1 at narrowing a
    field by `x === o.v` (`local-vs-local-refinement.ts#testVarVsLocalFieldNarrowsField`, 18).
-4. **Ambient declarations.** `source: only the export and async modifiers are
-   admitted on a source function` (48: `declare function`), `an ambient
-   declaration other than 'declare const k: unique symbol' is outside the
-   fragment` (41). Always a dependency: test files declare helpers
-   (`declare function takeFieldT<T>(x: { a: T }): T;`). Needs: ambient values
-   as typed assumptions of the module environment (the declaration reader
-   already reads imported declarations; reuse it for local ones). Unblocks
-   13 (lib globals are ambient `var`s) and exposes each unit's next blocker.
+4. **Ambient declarations — done (task C).** Were `source: only the export
+   and async modifiers are admitted on a source function` (53: `declare
+   function`) and `an ambient declaration other than 'declare const k: unique
+   symbol' is outside the fragment` (41), always as a dependency. A `declare
+   function`, `declare const` or `declare class` now joins the module's
+   values like an import, read from its own declaration by the declaration
+   reader (specifier `ambient`); overloads, ambient or imported, are the
+   conjunction of their signatures; `declare let`/`var` is refused as module
+   storage ([DESIGN.md](../DESIGN.md#modules-and-code-units), "Ambient
+   declarations"). Of the 94 units, 22 in 12 files verify; the other 72 stop
+   at their next blocker: 9 at a generic call whose binder the producer
+   instantiates at `number[]` where the bound is a tuple
+   (`tuple-constraint-literal.ts`, `exact<K extends [0, 1]>(x: K)` called with
+   `[0, 1]`: TypeScript infers `K = [0, 1]`), 8 at explicit type arguments on
+   a function call, 5 at other failed searches (producer inference of a
+   binder from a later use, `tvar-widening-ordinary-check.ts#testNestedCandidate`;
+   string `+`), and the rest at gate forms of other groups (object types with
+   construct signatures or methods, `typeof` types, rest-parameter contracts,
+   `.call`/`.apply`/`.bind`, `instanceof`). One new search refusal is an SKJS
+   unsoundness (`testEscapedInferredLiteralStaysClosed`,
+   [below](#confirmed-an-inferred-literal-type-through-a-generic-declaration-is-closed-testsexpect-errorobj-literal-indexeststestescapedinferredliteralstaysclosed));
+   the others are sound instantiations the producer does not propose, or
+   forms Lean does not yet derive. Four `declare class`
+   units that the gate refused as generic classes also moved on (2 to
+   search, 2 to the producer).
 5. **Control-flow forms.** `closure block must return on both terminal arms`
    (31; mostly void block closures `() => { x = 1; }` and void methods),
    ``else if` and non-block branches are outside the fragment`` (29), `a bare
@@ -347,7 +364,8 @@ then refuses (337 units in `search`). 130 are the "no function" policy, 29
 "unions with rigid types", 28 "equality with string literals" and the other
 source-form refusals Lean states explicitly; those are fragment boundaries. The
 rest were read obligation by obligation (group 18 above): all are pipeline
-incompleteness except two families.
+incompleteness except two families. Reading ambient declarations (task C)
+reached a third.
 
 ### Confirmed: aliased views of an empty object literal (`tests/expect-error/obj-literal-indexes.ts`)
 
@@ -433,6 +451,34 @@ Either the narrowing or the assignment of `Object.assign`'s callable result to
 `C` is wrong; SKJS does reject a callable with a call signature at `C`
 directly (`{ (): number; a: number }`: "Unexpected call signature").
 
+### Confirmed: an inferred literal type through a generic declaration is closed (`tests/expect-error/obj-literal-indexes.ts#testEscapedInferredLiteralStaysClosed`)
+
+Reached once ambient declarations were read (task C). SKJS reads the result
+of `idObj({ x: 1 })`, with `declare function idObj<T>(x: T): T`, as the closed
+literal `{ x: 1 }` and accepts it at `{ [k: string]: number }`. The
+declaration promises only a `T`, `{ x: number }`, which may carry further
+keys; the pipeline refuses the assignment in search. The test's own comment
+marks it `TODO(#678): main accepts this`. Witness: SKJS reports no error for
+
+```ts
+declare function idObj<T>(x: T): T;
+export function escaped(): string {
+  const r = idObj({ x: 1 });
+  const v: { [k: string]: number } = r;
+  const n = v["y"];
+  return n === undefined ? "none" : n.toFixed(1);   // TypeError: n.toFixed is not a function
+}
+```
+
+and `node` throws at the marked line when `idObj` is this implementation,
+which `tsc --strict` accepts at the declaration:
+
+```ts
+export function idObj<T>(x: T): T {
+  return x !== null && typeof x === "object" ? Object.assign(x, { y: "s" }) : x;
+}
+```
+
 ### Undetermined
 
 None of the other search refusals looked like SKJS errors on reading their
@@ -455,7 +501,7 @@ split by function.
 | --- | --- | --- | --- | --- | --- |
 | A. Producer claim fix (done) | Literal type `0` as both zeros in the producer; readonly record intersections lowered as views | 17 / 6 reached, 5 / 4 verified | `semantic.ml`, `source.ml`, `Fragment.lean` | — | — |
 | B. `Array<T>` and lib interfaces | `Array<T>`/`ReadonlyArray<T>` to array types; overloaded lib methods; `Function`, `Record<K,V>` | 78 / 19 | `declaration-graph.mts`, `declaration-types.mts`, `DeclarationGraph.lean` | — | C, K |
-| C. Ambient declarations | `declare function` (with overloads), `declare const/let/class` as typed module assumptions | 89 / 34 (as dependency) | `fragment-parse.mts`, `fragment.mts`, `declaration-graph.mts`, `Source/Fragment.lean`, `SourceExtraction.lean` | — | B, K |
+| C. Ambient declarations (done) | `declare function` (with overloads), `declare const/class` as typed module assumptions; `declare let`/`var` refused as module storage | 94 / 35 reached, 22 / 12 verified | `fragment-parse.mts`, `fragment.mts`, `declaration-graph.mts`, `Source/Fragment.lean`, `SourceExtraction.lean` | — | B, K |
 | D. Numeric operators | `< <= > >=` (number, string), unary `-`/`+`/`~`, `**`, `**=` | 74 / 25 | `fragment-parse.mts`, `Fragment.lean`, `Calculus.lean`, `proposal.ml` | — | E, F (gate and expression lowering) |
 | E. Small expression forms | `void e`; string `+` then template literal expressions; compound and update assignments | ~100 / 30 | `fragment-parse.mts`, `SourceExtraction.lean`, `CertificateProducer.lean`, `proposal.ml` | — | D, F |
 | F. Statement forms | `else if`/non-block branches, bare `return`, void block closures, dead code after `return`, `switch` (without literal narrowing), `for(;;)`, `for-in`, `try`/`catch`/`finally` | ~150 / 40 | `fragment-parse.mts`, `control-flow.mts`, `SourceExtraction.lean`, `ProgramTyping.lean` | D (for `<` in loops) | D, E, H |
