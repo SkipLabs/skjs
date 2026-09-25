@@ -144,7 +144,13 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
           | _ -> false) ->
         let binder,ground = List.partition (fun p -> local p <> None) parts in
         let covered = List.concat_map (function Atoms xs -> xs | _ -> []) ground in
-        let rest = match left with
+        (* The actual through its declarations, `Maybe<string>` as
+           `string | null`, so its atoms can be told apart. *)
+        let rec opened depth t = if depth = 0 then t else match t with
+          | Atoms [Named _] -> (match expand t with Some e -> opened (depth-1) e | None -> t)
+          | Union ts -> List.fold_left union (Atoms []) (List.map (opened (depth-1)) ts)
+          | t -> t in
+        let rest = match opened 4 left with
           | Atoms xs -> Atoms (List.filter (fun x -> not (List.mem x covered)) xs)
           | t -> t in
         if rest <> Atoms [] then constrain rest (List.hd binder)

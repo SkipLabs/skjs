@@ -14,6 +14,13 @@ export function direct(): string {
   return ok + viaAlias;
 }
 
+// The alias on the argument's side: its atoms are its declaration's.
+declare const sm: Maybe<string>;
+export function aliasArgument(): string {
+  const s = unwrapInline(sm);
+  return s;
+}
+
 export function constructed(): string {
   return unbox(CtorSN);
 }
