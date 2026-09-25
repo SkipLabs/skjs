@@ -848,6 +848,8 @@ export const cases: Case[] = [
   negative("invalid-closure-contextual-async", "an async body resolving a number is not a `Promise<string>`", /source expression obligation at \[128,149\)/),
   positive("closure-offer-flows", "a closure is offered a signature binding more parameters wherever it flows: an annotated binding, a return, and a literal at its annotation"),
   negative("invalid-closure-offer-flows", "a closure reading its optional second parameter is offered no longer signature, and its annotated binding is only the annotation", /source expression obligation at \[470,471\)/),
+  positive("nullable-binder-inference", "a binder in a union with ground atoms, `A | null`, is inferred from what the actual holds beside them, inline, through an alias, and as a construct signature's instance"),
+  negative("invalid-nullable-binder-inference", "`A := number` from `number | null` gives a number, not a string", /source expression obligation at \[205,221\)/),
   gap("object-growth-refused", "a write adding a key to a record allocated without it: an object's keys are fixed at its allocation",
     "unsupported", "proposal", /a write adds the property 'x' to an object allocated without it/),
   gap("optional-write-refused", "a write to a writable optional field may add its key",

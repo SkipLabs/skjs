@@ -136,6 +136,18 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
     | Some x,None -> x.upper <- add x.upper right
     | None,None when depth > 8 -> ()
     | None,None -> (match left,right with
+      (* A union of one binder and ground atoms, `A | null`: what the actual
+         holds beside those atoms is the binder's, as TypeScript infers
+         `A := string` from `string | null`. *)
+      | _,Union parts when (match List.partition (fun p -> local p <> None) parts with
+          | [_],ground -> List.for_all (function Atoms _ -> true | _ -> false) ground
+          | _ -> false) ->
+        let binder,ground = List.partition (fun p -> local p <> None) parts in
+        let covered = List.concat_map (function Atoms xs -> xs | _ -> []) ground in
+        let rest = match left with
+          | Atoms xs -> Atoms (List.filter (fun x -> not (List.mem x covered)) xs)
+          | t -> t in
+        if rest <> Atoms [] then constrain rest (List.hd binder)
       (* One declaration's applications: their arguments, both ways, as no
          variance is known here. *)
       | Atoms [Named (a,xs)],Atoms [Named (b,ys)] when a=b && List.length xs=List.length ys ->

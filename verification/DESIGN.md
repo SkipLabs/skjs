@@ -859,6 +859,15 @@ and the literal's use is the ordinary subsumption into the union
 (`literal-union-discrimination.ts`; a literal no arm admits,
 `invalid-literal-union-record.ts`, `invalid-literal-union-tuple.ts`).
 
+**Inference through a union with a binder.** The producer's call inference
+(`Inference.infer`) gives a binder in a union with ground atoms, `A | null`
+(inline, through an alias `Maybe<A>`, or as a construct signature's
+instance), the atoms the actual holds beside those, as TypeScript infers `A
+:= string` from `string | null`; it proposed `unknown` before. The instance is
+a proposal: Lean checks the actual against the substituted parameter and the
+result where it is used (`nullable-binder-inference.ts`,
+`invalid-nullable-binder-inference.ts`).
+
 **Tables relate included labels.** Relating a record to an interface compares
 each field's contract with itself; a core table needed a row for each such
 pair and for everything it reaches, so the search built one over the whole
