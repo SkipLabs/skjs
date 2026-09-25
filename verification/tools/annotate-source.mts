@@ -425,7 +425,16 @@ function fromSourceClaims(
   // parameters are read from the same claim the result text is printed from.
   const resultRigid=(A: import("./source-claims.mts").ClaimType)=>rigidOf(A,scope);
   const sf=parse(source,file),entries=new Map<number, number>();
-  const walk=(n: ts.Node)=>{if(ts.isStatement(n))entries.set(n.getStart(sf),n.end);n.forEachChild(walk);};walk(sf);
+  // An entry is at a statement, or at the closing brace of a function body:
+  // the point where the body completes, which an async body's completion
+  // (a `Promise<void>` settled with no value) is claimed at.
+  const walk=(n: ts.Node)=>{
+    if(ts.isStatement(n))entries.set(n.getStart(sf),n.end);
+    const p=n.parent;
+    if(ts.isBlock(n)&&p&&(ts.isFunctionDeclaration(p)||ts.isFunctionExpression(p)||ts.isArrowFunction(p)||
+        ts.isMethodDeclaration(p)||ts.isConstructorDeclaration(p)||ts.isGetAccessorDeclaration(p)||
+        ts.isSetAccessorDeclaration(p)))entries.set(n.end-1,n.end);
+    n.forEachChild(walk);};walk(sf);
   // The module initialization is a unit like a function: no name, the span of
   // the top-level code, no parameters, and `undefined` as its completion.
   const initCode=sf.statements.filter(isInitStatement);

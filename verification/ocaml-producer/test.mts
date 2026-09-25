@@ -1358,6 +1358,17 @@ process.stdout.write(
   `reader collection: ${collected.manifest.functions.length} functions, producer's own claims verified\n`,
 );
 
+// An async body's completion, a Promise<void> settled with no value, is
+// claimed at the body's closing brace: the reader attaches it there.
+{
+  const shown = await analyse(repositoryPath("async-await"), "ocaml");
+  assert.equal(shown.collection?.verified, true);
+  const braces = shown.manifest.functions.flatMap((f) => f.entries)
+    .filter((e) => shown.source.slice(e.pos[0], e.pos[1]) === "}");
+  assert(braces.length > 0, "an async completion entry at a closing brace");
+  process.stdout.write(`reader collection: ${braces.length} async completion entries at closing braces\n`);
+}
+
 const collectedGeneric = await analyse(
   repositoryPath("generic-closure"),
   "ocaml",
