@@ -1600,7 +1600,45 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     Hashtbl.reset exits;
     List.iter (fun (k,v) -> Hashtbl.add exits k v) saved_exits;
     result in
-  let rec statements env ss = List.fold_left (fun env s ->
+  (* The statements following each statement of a block, by its span. *)
+  let following = Hashtbl.create 64 in
+  let rec mentions n (e:expr) =
+    (match e.node with Id m -> m = n | _ -> false) || List.exists (mentions n) (Source.children e) in
+  let rec stmt_mentions n (s:stmt) = match s.statement with
+    | Declare (_,bs) -> List.exists (fun (_,_,e) -> mentions n e) bs
+    | Destructure (p,d,e) -> List.exists (mentions n) (e :: Option.to_list d @ pattern_defaults p)
+    | Return e | Effect e | Throw e -> mentions n e
+    | If (c,a,b) -> mentions n c || List.exists (stmt_mentions n) (a @ b)
+    | While (c,b,u) -> mentions n c || List.exists (stmt_mentions n) (b @ u)
+    | Block (_,b) -> List.exists (stmt_mentions n) b
+    | ForOf (_,_,e,b) -> mentions n e || List.exists (stmt_mentions n) b
+    | Try (b,h,f) -> List.exists (stmt_mentions n)
+      (b @ (match h with Some (_,h) -> h | None -> []) @ Option.value f ~default:[])
+    | Break _ | Continue -> false in
+  (* The first use of an unannotated constant's fresh array, in the
+     statements after its declaration: where it is the whole value expected
+     at a type (an annotated constant's initializer, a returned value, an
+     argument of a call to a function of one plain signature), that type;
+     any other first use, none. `None` where it is not used. *)
+  let first_use env n rest =
+    let rec sink expected (e:expr) = match e.node with
+      | Id m when m = n -> Some expected
+      | Call ({node=Id g;_},None,args,[],[]) when g <> n ->
+        let params = match (try declared_head declarations [] (resolve env g) with Json.Error _ -> Atoms []) with
+          | Atoms [Shape {calls=[s];_}] when s.quantified=[] && s.variadic=None && s.rest_pack=None -> s.params
+          | _ -> [] in
+        List.find_map Fun.id (List.mapi (fun i a -> sink (List.nth_opt params i) a) args)
+      | _ -> List.find_map (sink None) (Source.children e) in
+    let at (s:stmt) = match s.statement with
+      | Declare (_,bs) -> List.find_map (fun (_,written,e) -> sink written e) bs
+      | Return e -> sink (Some f.result) e
+      | Effect e -> sink None e
+      | _ -> if stmt_mentions n s then Some None else None in
+    Option.join (List.find_map at rest) in
+  let rec statements env ss =
+    let rec record = function [] -> () | s :: rest -> Hashtbl.replace following s.span rest; record rest in
+    record ss;
+    List.fold_left (fun env s ->
     let env = match s.statement with
       | While (c,body,update) -> loop_fix env c body update
       | ForOf _ -> forget env
@@ -1609,7 +1647,21 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     (match s.statement with Block _ -> () | _ -> entry env s.span);
     match s.statement with
     | Declare (mutable_,bs) -> List.fold_left (fun env (n,written,init) ->
-      let initial = expr ?expected:written env init in
+      (* An unannotated constant's fresh array is built at the array type its
+         first use expects it at, where that use is one (SKJS commits such a
+         literal there; TypeScript widens it at the declaration, and refuses
+         the use when that differs). A proposal: Lean checks the elements
+         against it and every use against the binding. *)
+      let committed = match mutable_,written,init.node with
+        | false,None,ArrayLiteral (_::_) ->
+          (match first_use env n (Option.value (Hashtbl.find_opt following s.span) ~default:[]) with
+           | Some t -> (match (try declared_head declarations [] t with Json.Error _ -> t) with
+             | Atoms atoms when atoms <> [] && List.for_all (function
+                 | Shape {elements=Some _;_} -> true | _ -> false) atoms -> Some t
+             | _ -> None)
+           | None -> None)
+        | _ -> None in
+      let initial = expr ?expected:(if committed <> None then committed else written) env init in
       if not mutable_ then named_closure n written init;
       let binding = match mutable_,written with
         (* TypeScript's declared type for an unannotated `let`: its

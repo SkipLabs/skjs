@@ -876,6 +876,22 @@ binder rather than the bound: `check<Y extends boolean | string>` at
 `"hello"` is `"hello"`, where the bound was proposed before
 (`generic-bound-literals.ts`, `invalid-generic-bound-literal.ts`).
 
+**An unannotated constant's fresh array is built at its first use.** SKJS
+leaves `const values = [1, 2]` uncommitted until a use fixes it
+(`const pair: [number, number] = values`, `takesLiteralTuple(values)` at
+`[1, 2]`, `const view: Mixed[] = arr` and then `arr[0] = { x: 42 }`), where
+TypeScript widens it at the declaration and refuses those uses. The
+allocation's contract is the producer's to propose, and the one the first
+use expects is as true of the fresh array as TypeScript's: the producer finds
+the first use in the statements after the declaration and, where it is the
+whole value expected at an array type (an annotated constant's initializer, a
+returned value, an argument of a call to a function of one plain signature),
+builds the literal there; any other first use (`values[0]`, `values.push`)
+leaves it as TypeScript types it. Lean checks the elements against that
+contract and every use against the binding (`array-first-use.ts`;
+`invalid-array-first-use.ts`, committed to `number[]` and then used as a
+pair).
+
 **Tables relate included labels.** Relating a record to an interface compares
 each field's contract with itself; a core table needed a row for each such
 pair and for everything it reaches, so the search built one over the whole
