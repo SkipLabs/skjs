@@ -128,35 +128,38 @@ theorem invocation_of_inputs {G : NormalGraph Nat} {eta Gamma term n W rho}
     InvocationSpec inputs.length
       [(receiver.denote G eta, inputs.map (Input.denote G eta), result.denote G eta)]
       n W (instantiate (inputs.length + 1) rho term) := by
-  refine ⟨instantiate_scoped rho he.1 term (inputs.length + 1), ?_⟩
-  intro p hp j hj U hx hu heap hh r hr args ha
-  have hp' : p = (receiver.denote G eta, inputs.map (Input.denote G eta), result.denote G eta) :=
-    List.mem_singleton.mp hp
-  subst p
-  have hlength : args.length = inputs.length := by
-    simpa only [List.length_map] using ArgsT_length ha
-  have hall : ArgsT ((Input.value receiver :: inputs).map (Input.denote G eta)) j U
-      (r :: args) := ⟨hr, ha⟩
-  have he' := (he.transfer hC j (Nat.le_of_lt hj) U hx).prependInputs hC hall
-  have hscoped : ∀ (As : List Input) args, ArgsT (As.map (Input.denote G eta)) j U args →
-      ∀ a ∈ args, Scoped 0 a := by
+  have hscoped : ∀ (As : List Input) j (U : WorldT j) args,
+      ArgsT (As.map (Input.denote G eta)) j U args → ∀ a ∈ args, Scoped 0 a := by
     intro As
     induction As with
-    | nil => intro args ha; cases args <;> simp_all [ArgsT]
+    | nil => intro j U args ha; cases args <;> simp_all [ArgsT]
     | cons A As ih =>
-      intro args ha
+      intro j U args ha
       cases args with
       | nil => exact False.elim ha
       | cons a args =>
         intro v hv
         rcases List.mem_cons.mp hv with rfl | hv
         · exact (Input.denote_value hC ha.1).2
-        · exact ih args ha.2 v hv
-  unfold CallArguments.bindParameters
-  rw [← hlength, CallArguments.parameters_exact]
-  have hl : args.length + 1 = 0 + (r :: args).length := by simp
-  rw [hl, instantiate_args rho he.1 (hscoped _ _ hall)]
-  exact safe j U heap _ (by simpa [List.append_assoc, Input.slot] using he') hu hh
+        · exact ih j U args ha.2 v hv
+  -- Exact arity: the code takes every input.
+  have htake : (inputs.map (Input.denote G eta)).take inputs.length = inputs.map (Input.denote G eta) :=
+    List.take_of_length_le (by simp)
+  apply invocationSpec_of_instantiated he.1
+  · intro p hp
+    cases List.mem_singleton.mp hp
+    simp
+  · intro p hp j U r args hr ha
+    cases List.mem_singleton.mp hp
+    rw [htake] at ha
+    exact hscoped (Input.value receiver :: inputs) j U (r :: args) ⟨hr, ha⟩
+  · intro p hp j hj U hx hu heap hh r args hr ha
+    cases List.mem_singleton.mp hp
+    rw [htake] at ha
+    have hall : ArgsT ((Input.value receiver :: inputs).map (Input.denote G eta)) j U
+        (r :: args) := ⟨hr, ha⟩
+    have he' := (he.transfer hC j (Nat.le_of_lt hj) U hx).prependInputs hC hall
+    exact safe j U heap _ (by simpa [List.append_assoc, Input.slot] using he') hu hh
 
 theorem invocation_of_body {G : NormalGraph Nat} {eta Gamma term n W rho}
     {receiver : Ty} {inputs : List Ty} {result : Ty}

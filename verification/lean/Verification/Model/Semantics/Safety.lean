@@ -1096,6 +1096,36 @@ theorem ArgsRest_of_exact_extra {Ps : List Fam} {E : ArgFam} {j W args extra}
 
 /-! ### Invocation -/
 
+/-- **Code meets signatures from its body.** The one place a body's safety
+becomes a code contract. A signature may offer more parameters than the code
+takes: binding reads the first `arity` actuals and discards the rest, as
+JavaScript does, so the body is checked with the receiver and those actuals
+substituted, whatever follows them. This holds of the code, not of any value
+at a shorter signature: variadic code collects extra actuals and a bound
+function forwards them. -/
+theorem invocationSpec_of_instantiated {arity : Nat} {L : List (Fam × List Fam × Fam)}
+    {n : Nat} {W : WorldT n} {ρ : Env} {b : Tm} (hρ : ∀ i, Scoped 0 (ρ i))
+    (hlen : ∀ p ∈ L, arity ≤ p.2.1.length)
+    (hval : ∀ p ∈ L, ∀ j (U : WorldT j) r args, p.1 j U r → ArgsT (p.2.1.take arity) j U args →
+      ∀ a ∈ r :: args, Scoped 0 a)
+    (hb : ∀ p ∈ L, ∀ (j : Nat) (hj : j < n) (U : WorldT j),
+      WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U → ∀ (heap : Heap), HeapOk j U heap →
+        ∀ r args, p.1 j U r → ArgsT (p.2.1.take arity) j U args →
+          Safe p.2.2 j U heap (instantiate 0 (prependArgs (r :: args) ρ) b)) :
+    InvocationSpec arity L n W (instantiate (arity + 1) ρ b) := by
+  refine ⟨instantiate_scoped ρ hρ b (arity + 1), ?_⟩
+  intro p hp j hj U hx hu heap hok r hr args ha
+  have ht := (ArgsT_take_drop arity ha).1
+  have hlength : (args.take arity).length = arity := by
+    rw [ArgsT_length ht, List.length_take, Nat.min_eq_left (hlen p hp)]
+  have hexact := CallArguments.parameters_exact (args.take arity)
+  rw [hlength] at hexact
+  rw [← CallArguments.bindParameters_take]
+  unfold CallArguments.bindParameters
+  rw [hexact, show arity + 1 = 0 + (r :: args.take arity).length by simp [hlength],
+    instantiate_args ρ hρ (hval p hp j U r _ hr ht)]
+  exact hb p hp j hj U hx hu heap hok r _ hr ht
+
 /-- Closure code meeting its code contract meets the signatures: a shorter
 list binds as the padded one does, since `parameters` pads with `undefined`. -/
 theorem callsT_of_invocationSpec {arity L k W b} (fs : List (PropKey × Nat))
@@ -1104,23 +1134,6 @@ theorem callsT_of_invocationSpec {arity L k W b} (fs : List (PropKey × Nat))
   intro p hp j hj U hx hu heap hh r hrv hr args hvals ha
   have hsafe := hs.2 p hp j hj U hx hu heap hh r hr _ (ArgsShort_pad ha)
   rw [CallArguments.bindParameters_pad arity args _ r b
-    (fun a hm => List.eq_of_mem_replicate hm)] at hsafe
-  exact ⟨_, .closure hrv hvals, hsafe⟩
-
-/-- **Code offered more actuals than it takes.** Closure code of arity `n`
-meeting the first `n` parameters of each signature meets the signatures:
-binding discards the actuals past the parameters, as JavaScript does. This
-holds of the code, not of every value at an `n`-parameter signature. -/
-theorem callsT_of_invocationSpec_wide {arity : Nat} {L : List (Fam × List Fam × Fam)} {k W b}
-    (fs : List (PropKey × Nat)) (hlen : ∀ p ∈ L, arity ≤ p.2.1.length)
-    (hs : InvocationSpec arity (L.map fun p => (p.1, p.2.1.take arity, p.2.2)) k W b) :
-    callsT L k W (.objAt fs (.closure arity b)) := by
-  refine ⟨⟨fs, _, rfl, rfl, by simpa [Scoped, Nat.add_comm] using hs.1⟩, ?_⟩
-  intro p hp j hj U hx hu heap hh r hrv hr args hvals ha
-  have hpad := ArgsShort_pad ha
-  have htake := (ArgsT_take_drop arity hpad).1
-  have hsafe := hs.2 _ (List.mem_map_of_mem hp) j hj U hx hu heap hh r hr _ htake
-  rw [CallArguments.bindParameters_take, CallArguments.bindParameters_pad arity args _ r b
     (fun a hm => List.eq_of_mem_replicate hm)] at hsafe
   exact ⟨_, .closure hrv hvals, hsafe⟩
 

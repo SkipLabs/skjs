@@ -70,21 +70,26 @@ inductive Evidence (ι : Type) where
 def claim : Evidence ι → Sequent ι
   | .node j _ _ => j
 
-/-- The premises a function-creation node owes: one checked body per declared
-signature, in the order the checker expects. -/
+/-- The body premises code of `arity` owes its signatures `(receiver,
+parameters, result)`: each offers at least `arity` parameters, and one body is
+checked per signature in `bodyFrame`. Every code-creating node owes these. -/
+abbrev BodyPremises (arity : Nat) (b : Tm) (Γ : List (Ty ι))
+    (L : List (Ty ι × List (Ty ι) × Ty ι)) (ps : List (Sequent ι)) : Prop :=
+  (∀ p ∈ L, arity ≤ p.2.1.length) ∧ ps = L.map (fun p => ⟨bodyFrame arity p Γ, b, p.2.2⟩)
+
+/-- The premises a function-creation node owes. -/
 abbrev funEPremises [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (A : Ty ι)
     (arity : Nat) (b : Tm) (ps : List (Sequent ι)) : Prop :=
   match expand G A with
-  | [.arrs L []] => (∀ p ∈ L, arity ≤ p.2.1.length) ∧
-      ps = L.map (fun p => ⟨p.1 :: p.2.1.take arity ++ Γ, b, p.2.2⟩)
+  | [.arrs L []] => BodyPremises arity b Γ L ps
   | _ => False
 
-/-- The premises a class-value node owes: one checked body per construct
-signature, whose receiver is `undefined`. -/
+/-- The premises a class-value node owes: its construct signatures, whose
+receiver is `undefined`. -/
 abbrev ctorEPremises [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (A U : Ty ι)
     (arity : Nat) (b : Tm) (ps : List (Sequent ι)) : Prop :=
   match expand G A with
-  | [.ctors L] => (∀ p ∈ L, p.1.length = arity) ∧ ps = L.map (fun p => ⟨U :: p.1 ++ Γ, b, p.2⟩)
+  | [.ctors L] => BodyPremises arity b Γ (L.map fun p => (U, p.1, p.2)) ps
   | _ => False
 
 /-- The slots a prefix of saved variables names, when every entry is one. -/
@@ -289,8 +294,7 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
       (ps.take ns.length).map Sequent.term = inits ∧
       (∀ p ∈ ps.take ns.length, p.context = j.context) ∧
       P = ns.zip ((ps.take ns.length).map Sequent.type) ∧
-      (∀ p ∈ L, p.2.1.length = arity) ∧
-      ps.drop ns.length = L.map (fun p => ⟨p.1 :: p.2.1 ++ j.context,b,p.2.2⟩)
+      BodyPremises arity b j.context L (ps.drop ns.length)
     | _ => False
   | .callCallable, .invoke f r args, jf :: jr :: jas =>
     jf.context = j.context ∧ jf.term = f ∧ jr.context = j.context ∧ jr.term = r ∧
@@ -834,8 +838,8 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
         harity
         (by
           intro q hq
-          apply hp ⟨q.1 :: q.2.1 ++ Γ, b, q.2.2⟩
-          have : (⟨q.1 :: q.2.1 ++ Γ, b, q.2.2⟩ : Sequent ι) ∈ ps.drop ns.length := by
+          apply hp ⟨bodyFrame arity q Γ, b, q.2.2⟩
+          have : (⟨bodyFrame arity q Γ, b, q.2.2⟩ : Sequent ι) ∈ ps.drop ns.length := by
             rw [hbodies]
             exact List.mem_map.mpr ⟨q, hq, rfl⟩
           exact List.mem_of_mem_drop this)
@@ -1018,11 +1022,11 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     unfold ctorEPremises at hl
     split at hl
     · rename_i L hL
-      apply HasTy.ctorE hL hU hl.1
+      apply HasTy.ctorE hL hU (fun p hp => hl.1 _ (List.mem_map_of_mem hp))
       intro p hmem
-      apply hp ⟨U :: p.1 ++ Γ, b, p.2⟩
+      apply hp ⟨U :: p.1.take arity ++ Γ, b, p.2⟩
       rw [hl.2]
-      exact List.mem_map.mpr ⟨p, hmem, rfl⟩
+      exact List.mem_map.mpr ⟨(U, p.1, p.2), List.mem_map_of_mem hmem, rfl⟩
     · contradiction
   · rename_i f args jf jas
     rcases hl with ⟨hΓf, htf, hterms, hctx, hL⟩
@@ -1111,10 +1115,11 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
   | strLit hr => exact node_complete (r := .strLit) (js := []) hr (by simp)
   | str hr => exact node_complete (r := .str) (js := []) hr (by simp)
   | @funE Γ F L arity b hr hlen hb ih =>
-    apply node_complete (r := .funE) (js := L.map (fun p => ⟨p.1 :: p.2.1.take arity ++ Γ, b, p.2.2⟩))
+    apply node_complete (r := .funE) (js := L.map (fun p => ⟨bodyFrame arity p Γ, b, p.2.2⟩))
     · refine ⟨rfl, rfl, ?_⟩
       show funEPremises G Γ F arity b _
-      simpa only [funEPremises, show expand G F = [.arrs L []] from hr, and_true] using hlen
+      simp only [funEPremises, show expand G F = [.arrs L []] from hr]
+      exact ⟨hlen, rfl⟩
     · intro j hj
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
       exact ih p hp
@@ -1122,7 +1127,7 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     apply node_complete (r := .makeCallable)
       (j := ⟨Γ, .makeAt (.closure arity b) (parts.map Prod.fst) (parts.map fun p => p.2.2), F⟩)
       (js := (parts.map fun p => ⟨Γ, p.2.2, p.2.1⟩) ++
-        L.map (fun p => ⟨p.1 :: p.2.1 ++ Γ,b,p.2.2⟩))
+        L.map (fun p => ⟨bodyFrame arity p Γ,b,p.2.2⟩))
     · simp only [Local,
         show expand G F = [.callable (parts.map fun p => (p.1, p.2.1)) [] L []] from hr]
       have hlenp : (parts.map fun p => (⟨Γ, p.2.2, p.2.1⟩ : Sequent ι)).length
@@ -1221,10 +1226,13 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       · exact iha
       · exact ihb
   | @ctorE Γ F U L arity b hr hu hlen hb ih =>
-    apply node_complete (r := .ctorE U) (js := L.map (fun p => ⟨U :: p.1 ++ Γ, b, p.2⟩))
+    apply node_complete (r := .ctorE U) (js := L.map (fun p => ⟨U :: p.1.take arity ++ Γ, b, p.2⟩))
     · refine ⟨rfl, rfl, hu, ?_⟩
       show ctorEPremises G Γ F U arity b _
-      simpa only [ctorEPremises, show expand G F = [.ctors L] from hr, and_true] using hlen
+      simp only [ctorEPremises, show expand G F = [.ctors L] from hr]
+      refine ⟨fun q hq => ?_, by simp [List.map_map, Function.comp_def, bodyFrame]⟩
+      obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
+      exact hlen p hp
     · intro j hj
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
       exact ih p hp

@@ -90,7 +90,12 @@ ordinary-closure creation rule below, every signature offers at least the
 descriptor's arity, and its body is typed under that signature's receiver,
 then its first $\mathit{arity}$ parameters, then the captured bindings. A
 signature may offer more: the call binds the first $\mathit{arity}$ actuals
-and discards the rest, as JavaScript does (`callsT_of_invocationSpec_wide`).
+and discards the rest, as JavaScript does. One lemma,
+`invocationSpec_of_instantiated`, turns a checked body into the code's
+contract for every code-creating rule (functions, callable objects, classes,
+and the parametric and generic layers), and the rules, certificates and search
+share one context (`bodyFrame`) and one check (`offersArity`). Variadic code
+keeps exact fixed parameters: its extra actuals go to the rest, not away.
 This holds of the code, not of any value at a shorter signature: a variadic
 function collects extra actuals and a bound one forwards them, so no subtyping
 rule widens an arrow's parameters. A call passes its receiver $r$ and types
@@ -1571,8 +1576,8 @@ Result combination uses the same compatibility check and shared-execution
 argument as unary overloads. Graph signatures now use domain lists directly,
 and `checkArrow` checks `CallArrow` derivations with soundness and completeness
 proofs. Search splits unions at any parameter position. Function-creation rules
-check every signature's arity against the descriptor and type the body under
-all parameter bindings followed by captures. Application evidence and source
+check that every signature offers at least the descriptor's arity and type the
+body under the parameters the code takes, followed by captures. Application evidence and source
 lowering still expose unary calls; accepted source programs have not widened.
 
 The final `accept` check binds the evidence to **all the requested point claims**
@@ -1804,12 +1809,12 @@ The implemented semantic slice is in
 writable cell independently of its call slot; `callableT L P` combines both
 contracts on the same value. `CodeSpec` checks invocation bodies separately
 from object membership. `EnvOk.prepend` extends environments with ordered
-parameter lists, and `HasTy.invocationSpec` derives an exact-arity native call
-contract from body derivations under those parameters and captured bindings.
-All signatures in this ordinary-closure creation rule have the descriptor's
-arity; optional calls and variadic creation use the rules in
-[Expressions](#expressions). Creation evidence checks descriptor arity and uses
-this general environment construction directly. Source functions and shared continuations now lower
+parameter lists, and `HasTy.invocationSpec` derives a native call
+contract from body derivations under the parameters the code takes and the
+captured bindings. The signatures of this ordinary-closure creation rule offer
+at least the descriptor's arity; optional calls and variadic creation use the
+rules in [Expressions](#expressions). Creation evidence checks the arity with
+`offersArity` and uses this general environment construction directly. Source functions and shared continuations now lower
 to `funE`, and the certificate producer and consumer use its allocating typing
 rule. A checked creation effect preserves existing heap knowledge without
 executing the body. Allocation, application, bag reads and writes,

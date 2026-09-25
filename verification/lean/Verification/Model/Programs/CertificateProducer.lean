@@ -343,14 +343,14 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
       return (A :: pool).findSome? fun F => do
         match expand G F with
         | [.arrs L []] =>
-          if !L.all (fun p => arity ≤ p.2.1.length) then none else do
-          let ps ← L.mapM fun p => recur (p.1 :: p.2.1.take arity ++ Γ) b p.2.2
+          if !offersArity arity L then none else do
+          let ps ← L.mapM fun p => recur (bodyFrame arity p Γ) b p.2.2
           coerce G pool (.node ⟨Γ,t,F⟩ .funE ps) A
         | [.callable P [] L []] =>
-          if !L.all (fun p => p.2.1.length == arity) then none else do
+          if !offersArity arity L then none else do
           let [(_, Pv)] := P | none
           let ea ← recur Γ .nul Pv
-          let ps ← L.mapM fun p => recur (p.1 :: p.2.1 ++ Γ) b p.2.2
+          let ps ← L.mapM fun p => recur (bodyFrame arity p Γ) b p.2.2
           coerce G pool (.node ⟨Γ,t,F⟩ .makeCallable (ea :: ps)) A
         | _ => none
     -- A class value: one body per construct signature, its receiver slot at
@@ -358,9 +358,10 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     | .make (.closure arity b .construct) .nul =>
       return (A :: pool).findSome? fun F => do
         let [.ctors L] := expand G F | none
-        if !L.all (fun p => p.1.length == arity) then none else do
         let U ← pool.find? fun U => decide (expand G U = [.undef])
-        let ps ← L.mapM fun p => recur (U :: p.1 ++ Γ) b p.2
+        let L := L.map fun p => (U, p.1, p.2)
+        if !offersArity arity L then none else do
+        let ps ← L.mapM fun p => recur (bodyFrame arity p Γ) b p.2.2
         coerce G pool (.node ⟨Γ,t,F⟩ (.ctorE U) ps) A
     -- `new f(args)`: a construct signature of the constructor's type taking as
     -- many parameters as there are actuals.

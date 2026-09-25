@@ -93,43 +93,54 @@ theorem EnvOk.prepend {G : NormalGraph ι} {Γ ρ n W As args}
     | nil => exact False.elim ha
     | cons a args => exact (ih ha.2).push ha.1
 
+/-- The context a closure body is checked in at one signature: the
+receiver, then the parameters the code takes, then the captures. -/
+abbrev bodyFrame (arity : Nat) (p : Ty ι × List (Ty ι) × Ty ι) (Γ : List (Ty ι)) : List (Ty ι) :=
+  p.1 :: p.2.1.take arity ++ Γ
+
+/-- Each signature offers at least the code's arity: the check every
+code-creating rule, certificate and search makes. -/
+def offersArity (arity : Nat) (L : List (Ty ι × List (Ty ι) × Ty ι)) : Bool :=
+  L.all fun p => arity ≤ p.2.1.length
+
 /-- A body safe under every declared parameter and receiver environment
-establishes the native invocation contract. All signatures here have the
-descriptor's arity; the receiver precedes the parameters. -/
+establishes the native invocation contract, through
+`invocationSpec_of_instantiated`: each signature offers at least the code's
+arity, and the body sees the parameters the code takes. -/
 theorem invocation_of_body {G : NormalGraph ι} {Γ ρ n W b arity}
     {L : List (Ty ι × List (Ty ι) × Ty ι)} (he : EnvOk G Γ ρ n W)
-    (hlen : ∀ p ∈ L, p.2.1.length = arity)
-    (hb : ∀ p ∈ L, ∀ j U heap env, EnvOk G (p.1 :: p.2.1 ++ Γ) env j U →
+    (hlen : ∀ p ∈ L, arity ≤ p.2.1.length)
+    (hb : ∀ p ∈ L, ∀ j U heap env, EnvOk G (bodyFrame arity p Γ) env j U →
       WorldAdm U → HeapOk j U heap → Safe (meaning G p.2.2) j U heap (instantiate 0 env b)) :
     InvocationSpec arity (L.map fun p => (meaning G p.1, p.2.1.map (meaning G), meaning G p.2.2))
       n W (instantiate (arity + 1) ρ b) := by
-  refine ⟨instantiate_scoped ρ he.1 b (arity + 1), ?_⟩
-  intro p hp j hj U hx hu heap hok r hr args ha
-  obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
-  have hlength : args.length = arity := by
-    simpa only [List.length_map, hlen q hq] using ArgsT_length ha
-  have hall : ArgsT ((q.1 :: q.2.1).map (meaning G)) j U (r :: args) := ⟨hr, ha⟩
-  have henv := (he.transfer j (Nat.le_of_lt hj) U hx).prepend hall
-  have hscoped : ∀ (As : List (Ty ι)) args, ArgsT (As.map (meaning G)) j U args →
+  have hscoped : ∀ (As : List (Ty ι)) j U args, ArgsT (As.map (meaning G)) j U args →
       ∀ a ∈ args, Scoped 0 a := by
     intro As
     induction As with
-    | nil => intro args ha; cases args <;> simp_all [ArgsT]
+    | nil => intro j U args ha; cases args <;> simp_all [ArgsT]
     | cons A As ih =>
-      intro args ha
+      intro j U args ha
       cases args with
       | nil => exact False.elim ha
       | cons a args =>
         intro v hv
         rcases List.mem_cons.mp hv with rfl | hv
         · exact (meaning_value ha.1).2
-        · exact ih args ha.2 v hv
-  have hargs := hscoped _ _ hall
-  unfold CallArguments.bindParameters
-  rw [← hlength, CallArguments.parameters_exact]
-  have hl : args.length + 1 = 0 + (r :: args).length := by simp
-  rw [hl, instantiate_args ρ he.1 hargs]
-  exact hb q hq j U heap _ (by simpa [List.append_assoc] using henv) hu hok
+        · exact ih j U args ha.2 v hv
+  apply invocationSpec_of_instantiated he.1
+  · intro p hp
+    obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+    simpa using hlen q hq
+  · intro p hp j U r args hr ha
+    obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+    exact hscoped (q.1 :: q.2.1.take arity) j U (r :: args) ⟨hr, by simpa [List.map_take] using ha⟩
+  · intro p hp j hj U hx hu heap hok r args hr ha
+    obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+    have hall : ArgsT ((q.1 :: q.2.1.take arity).map (meaning G)) j U (r :: args) :=
+      ⟨hr, by simpa [List.map_take] using ha⟩
+    have henv := (he.transfer j (Nat.le_of_lt hj) U hx).prepend hall
+    exact hb q hq j U heap _ (by simpa [bodyFrame, List.append_assoc] using henv) hu hok
 
 /-- An equality established by a branch can refine one immutable slot. -/
 theorem EnvOk.refine {G : NormalGraph ι} {Γ ρ n W i A B}
@@ -841,14 +852,14 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   discards them. -/
   | funE {Γ : List (Ty ι)} {F : Ty ι} {L : List (Ty ι × List (Ty ι) × Ty ι)} {arity : Nat}
       {b : Tm} : Represents G F (.arrs L []) → (∀ p ∈ L, arity ≤ p.2.1.length) →
-      (∀ p ∈ L, HasTy G (p.1 :: p.2.1.take arity ++ Γ) b p.2.2) →
+      (∀ p ∈ L, HasTy G (bodyFrame arity p Γ) b p.2.2) →
       HasTy G Γ (.make (.closure arity b) .nul) F
   /-- A class value: construct-only code, its body typed at each construct
   signature with `undefined` for the receiver `new` passes. -/
   | ctorE {Γ : List (Ty ι)} {F U : Ty ι} {L : List (List (Ty ι) × Ty ι)} {arity : Nat}
       {b : Tm} :
-      Represents G F (.ctors L) → Represents G U .undef → (∀ p ∈ L, p.1.length = arity) →
-      (∀ p ∈ L, HasTy G (U :: p.1 ++ Γ) b p.2) →
+      Represents G F (.ctors L) → Represents G U .undef → (∀ p ∈ L, arity ≤ p.1.length) →
+      (∀ p ∈ L, HasTy G (U :: p.1.take arity ++ Γ) b p.2) →
       HasTy G Γ (.make (.closure arity b .construct) .nul) F
   /-- `new f(args)`: `f` at a construct signature, each actual at its parameter. -/
   | construct {Γ : List (Ty ι)} {f : Tm} {F B : Ty ι} {L : List (List (Ty ι) × Ty ι)}
@@ -864,8 +875,8 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       Represents G F (.callable (parts.map fun p => (p.1, p.2.1)) [] L []) →
       (parts.map Prod.fst).Nodup →
       (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) →
-      (∀ p ∈ L, p.2.1.length = arity) →
-      (∀ p ∈ L, HasTy G (p.1 :: p.2.1 ++ Γ) b p.2.2) →
+      (∀ p ∈ L, arity ≤ p.2.1.length) →
+      (∀ p ∈ L, HasTy G (bodyFrame arity p Γ) b p.2.2) →
       HasTy G Γ (.makeAt (.closure arity b) (parts.map Prod.fst)
         (parts.map fun p => p.2.2)) F
   /-- A call writes the actuals it writes, and passes the receiver `r`, typed
@@ -1106,22 +1117,8 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
   | @funE Γ F L arity b hr hlen hb ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, Nat.zero_add]
-    have hcode := invocation_of_body (arity := arity) (L := L.map fun p => (p.1, p.2.1.take arity, p.2.2)) he
-      (by
-        intro p hp
-        obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
-        simp [Nat.min_eq_left (hlen q hq)])
-      (by
-        intro p hp
-        obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
-        exact ih q hq)
-    have hs := make_callable_rule_wide nulT_adm arity n W h _ .nul
-      (L := L.map fun p => (meaning G p.1, p.2.1.map (meaning G), meaning G p.2.2))
-      (by
-        intro p hp
-        obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
-        simpa using hlen q hq)
-      (by simpa [List.map_map, Function.comp_def, List.map_take] using hcode) rfl hw hh rfl
+    have hcode := invocation_of_body he hlen (fun p hp => ih p hp)
+    have hs := make_callable_rule nulT_adm arity n W h _ .nul hcode rfl hw hh rfl
     exact Safe_mono n (fun k _ U v hv => (represents_sem hr k U v).mpr
       ⟨hv.2, hv.2.1, by simp⟩) W h _ hs
   | @ctorE Γ F U L arity b hr hu hlen hb ih =>
@@ -2114,12 +2111,13 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     exact Safe_mono n (fun k _ V v hv => (PositiveCertificates.check_sound hc).sound k V v hv)
       W h _ (ih n W h ρ he hw hh)
 
-/-- Syntactically typed bodies establish exact-arity list signatures, including
-zero parameters, without encoding the function as nested unary closures. -/
+/-- Syntactically typed bodies establish list signatures offering at least
+the code's arity, including zero parameters, without encoding the function as
+nested unary closures. -/
 theorem HasTy.invocationSpec {G : NormalGraph ι} {Γ ρ n W b arity}
     {L : List (Ty ι × List (Ty ι) × Ty ι)} (he : EnvOk G Γ ρ n W)
-    (hlen : ∀ p ∈ L, p.2.1.length = arity)
-    (hb : ∀ p ∈ L, HasTy G (p.1 :: p.2.1 ++ Γ) b p.2.2) :
+    (hlen : ∀ p ∈ L, arity ≤ p.2.1.length)
+    (hb : ∀ p ∈ L, HasTy G (bodyFrame arity p Γ) b p.2.2) :
     InvocationSpec arity (L.map fun p => (meaning G p.1, p.2.1.map (meaning G), meaning G p.2.2))
       n W (instantiate (arity + 1) ρ b) :=
   invocation_of_body he hlen (fun p hp => (hb p hp).sound)

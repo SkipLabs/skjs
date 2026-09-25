@@ -98,21 +98,6 @@ theorem make_callable_rule {P : Fam} {L : List (Fam × List Fam × Fam)} (hA : A
     (Nat.le_of_lt hj) W _ (callsT_of_invocationSpec [(valueField, h.length)] hf))
   exact ⟨⟨_, .closure arity b, rfl, rfl, hr⟩, hf'⟩
 
-/-- Closure code of arity `arity` whose body meets the first `arity`
-parameters of each signature meets the signatures: extra actuals are
-discarded at binding (`callsT_of_invocationSpec_wide`). -/
-theorem make_callable_rule_wide {P : Fam} {L : List (Fam × List Fam × Fam)} (hA : Adm P)
-    (arity n : Nat) (W : WorldT n) (h : Heap) (b v : Tm)
-    (hlen : ∀ p ∈ L, arity ≤ p.2.1.length)
-    (hf : InvocationSpec arity (L.map fun p => (p.1, p.2.1.take arity, p.2.2)) n W b)
-    (hval : isVal v = true) (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : P n W v) :
-    Safe (interT (bagT [(valueField, P)]) (callsT L)) n W h (.make (.closure arity b) v) := by
-  apply make_rule hA n W h (.closure arity b) v hval hadm hok hv
-  intro j hj U hx hr
-  have hf' := (callsT_adm L).mono j _ U hx _ ((callsT_adm L).down_le n j
-    (Nat.le_of_lt hj) W _ (callsT_of_invocationSpec_wide [(valueField, h.length)] hlen hf))
-  exact ⟨⟨_, .closure arity b, rfl, rfl, hr⟩, hf'⟩
-
 /-- The same, for a bag with any named fields. The call contracts survive the
 extended world exactly as they do for one field; nothing here depends on the
 arity of the bag or on what its fields are called. -/

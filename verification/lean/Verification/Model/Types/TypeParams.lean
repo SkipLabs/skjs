@@ -361,33 +361,41 @@ theorem invocation_of_bodyP {G : NormalGraph ι} {P η} {Γ ρ n W b arity}
     InvocationSpec arity
       (L.map fun p => (meaningP G P η p.1, p.2.1.map (meaningP G P η), meaningP G P η p.2.2))
       n W (instantiate (arity + 1) ρ b) := by
-  refine ⟨instantiate_scoped ρ he.1 b (arity + 1), ?_⟩
-  intro p hp j hj U hx hu heap hok r hr args ha
-  obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
-  have hlength : args.length = arity := by
-    simpa only [List.length_map, hlen q hq] using ArgsT_length ha
-  have hall : ArgsT ((q.1 :: q.2.1).map (meaningP G P η)) j U (r :: args) := ⟨hr, ha⟩
-  have henv := (he.transfer hC j (Nat.le_of_lt hj) U hx).prepend hC hall
-  have hscoped : ∀ (As : List (Ty ι)) args, ArgsT (As.map (meaningP G P η)) j U args →
+  have hscoped : ∀ (As : List (Ty ι)) j U args, ArgsT (As.map (meaningP G P η)) j U args →
       ∀ a ∈ args, Scoped 0 a := by
     intro As
     induction As with
-    | nil => intro args ha; cases args <;> simp_all [ArgsT]
+    | nil => intro j U args ha; cases args <;> simp_all [ArgsT]
     | cons A As ih =>
-      intro args ha
+      intro j U args ha
       cases args with
       | nil => exact False.elim ha
       | cons a args =>
         intro v hv
         rcases List.mem_cons.mp hv with rfl | hv
         · exact (meaningP_value hC ha.1).2
-        · exact ih args ha.2 v hv
-  have hargs := hscoped _ _ hall
-  unfold CallArguments.bindParameters
-  rw [← hlength, CallArguments.parameters_exact]
-  have hl : args.length + 1 = 0 + (r :: args).length := by simp
-  rw [hl, instantiate_args ρ he.1 hargs]
-  exact hb q hq j U heap _ (by simpa [List.append_assoc] using henv) hu hok
+        · exact ih j U args ha.2 v hv
+  -- Exact arity: the parameters the code takes are all of them.
+  have htake : ∀ q ∈ L, q.2.1.take arity = q.2.1 := fun q hq =>
+    List.take_of_length_le (Nat.le_of_eq (hlen q hq))
+  apply invocationSpec_of_instantiated he.1
+  · intro p hp
+    obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+    show arity ≤ (q.2.1.map (meaningP G P η)).length
+    rw [List.length_map, hlen q hq]
+    exact Nat.le_refl _
+  · intro p hp j U r args hr ha
+    obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+    change ArgsT ((q.2.1.map (meaningP G P η)).take arity) j U args at ha
+    rw [← List.map_take, htake q hq] at ha
+    exact hscoped (q.1 :: q.2.1) j U (r :: args) ⟨hr, ha⟩
+  · intro p hp j hj U hx hu heap hok r args hr ha
+    obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+    change ArgsT ((q.2.1.map (meaningP G P η)).take arity) j U args at ha
+    rw [← List.map_take, htake q hq] at ha
+    have hall : ArgsT ((q.1 :: q.2.1).map (meaningP G P η)) j U (r :: args) := ⟨hr, ha⟩
+    have henv := (he.transfer hC j (Nat.le_of_lt hj) U hx).prepend hC hall
+    exact hb q hq j U heap _ (by simpa [List.append_assoc] using henv) hu hok
 
 theorem funE_safeP {G : NormalGraph ι} {P η} {Γ F L arity b n W h ρ}
     (hC : ClosedAssign P η) (hr : Represents G F (.arrs L []))
