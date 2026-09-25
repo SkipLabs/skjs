@@ -1,0 +1,22 @@
+{
+  // The pinned upstream snapshot (../upstream) with a sound service binding.
+  // Only the three files the binding changes are here: core's api.ts and
+  // index.ts, and server's server.ts. Every other file, both package
+  // manifests and the core package's workspace links are the snapshot's own,
+  // reached through symlinks; Node's declarations and every compiler option
+  // come from the snapshot's configuration, extended unchanged but for the
+  // package entries, which point at the patched files.
+  "extends": "../upstream/tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@skipruntime/core": ["./skipruntime-ts/core/src/index.ts"],
+      "@skipruntime/server": ["./skipruntime-ts/server/src/server.ts"]
+    }
+  },
+  "include": [
+    "../examples/sum-sound-binding*.ts",
+    "../examples/invalid-sum-sound-binding*.ts"
+  ],
+  // Not the snapshot's, which leaves exactly these clients out.
+  "exclude": []
+}

@@ -28,7 +28,7 @@ def produceFile (requestPath evidencePath : String) (fuel : Nat) : IO UInt32 := 
   | .error e => IO.eprintln s!"reject: {e}"; return 1
   | .ok evidence =>
     try
-      IO.FS.writeFile evidencePath (evidence.pretty ++ "\n")
+      IO.FS.writeFile evidencePath (evidence.compress ++ "\n")
       IO.println s!"checked evidence written: {evidencePath}"
       return 0
     catch e => IO.eprintln s!"reject: cannot write {evidencePath}: {e}"; return 1
@@ -76,7 +76,7 @@ def sourceFiles (astPath claimsPath fileKey evidencePath : String)
     | .error e => IO.eprintln s!"reject: {e}"; return 1
     | .ok evidence =>
       try
-        IO.FS.writeFile evidencePath (evidence.pretty ++ "\n")
+        IO.FS.writeFile evidencePath (evidence.compress ++ "\n")
         IO.println s!"checked source evidence written: {evidencePath}"
         return 0
       catch e => IO.eprintln s!"reject: cannot write {evidencePath}: {e}"; return 1

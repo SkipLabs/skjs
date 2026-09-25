@@ -312,12 +312,17 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
        && List.for_all2 plausible_subtype
             (List.filteri (fun i _ -> i < arity) offered.params) own
     then Some (fun () -> requests := (pos,offered) :: !requests) else None in
-  (* A class value expected at a construct signature whose instance has a
-     method taking more parameters than the class's own: the method's closure
-     is claimed at those parameters too, with its own receiver, the instance,
-     and the class value at a construct signature giving the expected
-     instance. Calls through the member discard the extra actuals; Lean checks
-     the method's body at each signature and the constructor's at each. *)
+  (* A class value expected at a construct signature: it is claimed there too,
+     beside its own, when that signature's instance has a method taking more
+     parameters than the class's own, or when the signature passes more
+     actuals than the constructor binds (a resource class constructed with
+     the request's parameters it ignores). The method's closure is then
+     claimed at the longer parameters too, with its own receiver, the
+     instance; the class value, at the signature's parameters where they are
+     longer and its own otherwise, giving the expected instance. `new` and
+     calls through the member discard the extra actuals; Lean checks the
+     constructor's body at each construct signature (its first parameters)
+     and the method's at each signature. *)
   let offer_class (pos,params,instance,methods) expected =
     match declared_head declarations [] expected with
     | Atoms [Ctors signatures] ->
@@ -331,9 +336,12 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
             | Some state -> state (); true
             | None -> false)
           | None -> false) methods in
-        if widened <> [] then
-          requests := (pos,{quantified=[];receiver=top;params;variadic=None;rest_pack=None;
-                            result=s.result}) :: !requests)
+        let arity = List.length params in
+        let longer = s.variadic=None && s.rest_pack=None && List.length s.params > arity
+          && List.for_all2 plausible_subtype (List.filteri (fun i _ -> i < arity) s.params) params in
+        if widened <> [] || longer then
+          requests := (pos,{quantified=[];receiver=top;params=if longer then s.params else params;
+                            variadic=None;rest_pack=None;result=s.result}) :: !requests)
         (List.filter (fun (s:Semantic.signature) -> s.quantified=[]) signatures)
     | _ -> () in
   (* A name no parameter or local binds is one of the file's functions. *)
@@ -772,8 +780,14 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       | Atoms [Shape {calls=[signature];_}]
           when signature.quantified<>[] && callable signature ->
         (* Omission contributes undefined to inference, but no expression or
-           claim is inserted into the source's argument list. *)
-        let actuals=List.map (expr env) args @
+           claim is inserted into the source's argument list. An actual at a
+           parameter mentioning no type parameter is built at it, as at a
+           call without binders: TypeScript types it contextually, and a
+           fresh literal leaving out an optional field is claimed at its
+           exact keys there. *)
+        let actuals=List.mapi (fun i arg -> match param_at signature i with
+          | Some p when not (Semantic.mentions_rigid p) -> expr ~expected:p env arg
+          | _ -> expr env arg) args @
           List.init (max 0 (List.length signature.params - List.length args)) (fun _ -> Atoms [Undef]) in
         let substitution,result = infer_explicit ~receiver:receiver_type ?expected signature actuals in
         instance_of ~declared:callee target substitution;

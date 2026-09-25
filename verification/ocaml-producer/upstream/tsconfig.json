@@ -38,5 +38,10 @@
     "../examples/reactive-sum-sound.ts",
     "../examples/sum-*.ts",
     "../examples/invalid-sum-*.ts"
+  ],
+  // Clients of the sound service binding belong to ../upstream-sound.
+  "exclude": [
+    "../examples/sum-sound-binding*.ts",
+    "../examples/invalid-sum-sound-binding*.ts"
   ]
 }

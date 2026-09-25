@@ -561,11 +561,17 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         let eb ← recur (B :: Γ) b A
         return ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ .letE [ea,eb])
     | .invoke f recv args =>
+      -- A callee read from a slot is tried first at the slot's own type, a
+      -- fixed signature before any variadic one of the pool: coercing it to
+      -- each of those first, where its own type is fixed, fails at the cost
+      -- of a table over the pool each time. Order only; every premise is
+      -- still proved.
+      let own := match f with | .var i => (Γ[i]?).toList | _ => []
       -- A variadic callee: the receiver at the signature's receiver, the fixed
       -- actuals at its parameters, then the further parts: with a spread, each
       -- at the element rest's element, or a spread of a pool store type whose
       -- elements are; without one, each at its position in the rest's tuple.
-      let variadic := pool.findSome? fun F => do
+      let variadic := fun (candidates : List (Ty ι)) => candidates.findSome? fun F => do
         (restSigs G F).findSome? fun (Rt, Ps, P, B) => do
           -- Fixed actuals first; a shorter call omits trailing fixed positions,
           -- each proving `undefined`, and writes no further part.
@@ -591,8 +597,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,B⟩
             (.callRest k omitted.length flags P) (ef :: er :: eas ++ eus ++ eps)
           if checkTree G e then coerce G pool e A else none
-      if let some e := variadic then return some e
-      let direct := pool.findSome? fun F => do
+      let direct := fun (candidates : List (Ty ι)) => candidates.findSome? fun F => do
         let (L,r) ← match expand G F with
           | [.arrs L _] => some (L,Rule.app)
           | [.callable _ _ L _] => some (L,Rule.callCallable)
@@ -609,7 +614,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
             let eas ← (args.zip p.2.1).mapM fun (a,D) => recur Γ a D
             let eus ← omitted.mapM fun D => recur Γ .undef D
             coerce G pool (.node ⟨Γ,t,p.2.2⟩ r (ef :: er :: eas ++ eus)) A
-      if let some e := direct then return some e
+      if let some e := variadic own <|> direct own <|> variadic pool <|> direct pool then return some e
       return splitReceiver f
     | .makeAt .absent ns inits =>
       return (A :: pool).findSome? fun R => do

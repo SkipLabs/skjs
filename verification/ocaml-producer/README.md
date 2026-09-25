@@ -26,7 +26,10 @@ node verification/ocaml-producer/test.mts
 
 The `--project` argument reads TypeScript files, package exports, workspace
 symlinks, and a `tsconfig.json` that includes the client. The checked-in
-`upstream` directory is a small source-tree snapshot with that project setup.
+`upstream` directory is a small source-tree snapshot with that project setup;
+`upstream-sound` is the same snapshot with a sound service binding, holding
+only the files that binding changes
+([reactive-runtime integration](#after-callable-part-5-reactive-runtime-integration)).
 A full Skip checkout needs an equivalent client project before its imports can
 pass the new TypeScript resolution check.
 
@@ -126,11 +129,13 @@ language. The boundaries are:
    would offer to. A class value expected at a construct signature whose
    instance has a method taking more parameters than the class's own offers
    its method's closure that longer signature, and the class value that
-   construct signature, the same way. A fresh object literal whose contract
+   construct signature, the same way; so does one whose construct signature
+   passes more actuals than the constructor binds. A fresh object literal whose contract
    has an index or an optional field is claimed at its exact record (`Exact`:
    its fields and an own-key bound: own keys among exactly theirs), which is how
    it meets a dictionary or leaves an optional field out. Explicit type
-   arguments fix a call's leading binders before the rest are inferred.
+   arguments fix a call's leading binders before the rest are inferred; an
+   actual at a parameter mentioning none of them is built at that parameter.
    Expected types guide fresh object/array construction, while the actual
    initializer claims remain separate obligations. Immutable branch refinements
    cannot refine a mutable binding's storage contract. Loops use the incoming
@@ -539,6 +544,43 @@ through bivariant method parameters. What would make the call safe is the
 runtime's link from a service's `inputs` to the collections `createGraph`
 receives, which no trusted contract states yet
 ([The service boundary](../DESIGN.md#modules-and-code-units)).
+
+**Under a sound service binding, sum.ts verifies.**
+[`upstream-sound`](upstream-sound/tsconfig.json) is the pinned snapshot with
+that link stated: a second project that holds only the three files the
+binding changes and reuses every other file of `upstream` through symlinks
+and an `extends` of its configuration (the package entries point at the
+patched files; `npm ci --prefix verification/ocaml-producer/upstream` still
+installs Node's declarations for both). In
+[`api.ts`](upstream-sound/skipruntime-ts/core/src/api.ts), `createGraph`
+receives `InputCollections`, whose `get<K, V>(definition: InputDefinition<K,
+V>): EagerCollection<K, V>` hands out each input collection through the
+definition that declared it, so `SkipService` loses its free `Inputs`
+parameter; resources are `ResourceClass<ResourceInputs, Json>`, since the
+runtime constructs them with the request's parameters (`never` stated
+nothing true). [`server.ts`](upstream-sound/skipruntime-ts/server/src/server.ts)
+makes `runService` generic over the concrete service,
+`SkipService<InputDefs, ResourceInputs>`, which needs no method bivariance,
+and the runtime's `createGraph` in
+[`index.ts`](upstream-sound/skipruntime-ts/core/src/index.ts) builds `get` from
+the service's own definitions, throwing for any other (a trust note:
+[What remains assumed](../DESIGN.md#what-remains-assumed)). Under `tsc` the
+patched tree reports the same errors as the snapshot and no new one.
+[`sum-sound-binding.ts`](examples/sum-sound-binding.ts) is
+`reactive-sum-sound.ts` as a client of it, changed only where the binding
+changed: `SkipService<Inputs, Collections>`, `ResourceClass<Collections,
+Json>`, and `createGraph(inputs: InputCollections, …)` returning
+`{ input1: inputs.get(this.inputs.input1), … }`. The whole module verifies:
+every class (`AddIndex`, `Plus`, `Minus`, `Add`, `Sub`, `Service`), the module's
+initialization and `main`, including `runService(new Service(), …)`, where
+`InputDefs` and `ResourceInputs` are inferred from the service as `Inputs` and
+`Collections`. Two refusals TypeScript does not make:
+`invalid-sum-sound-binding-resource.ts` (a resource needing a collection
+`createGraph` does not return; TypeScript's bivariant method parameters admit
+it) and `invalid-sum-sound-binding-constructor.ts` (a resource class whose
+constructor needs more than `Json`). A service reading an input it does not
+declare, `this.inputs.input3`, does not type-check. Alone, the case takes
+about 17 s, 13 s of it in the search.
 
 The configured TypeScript project includes both files. TypeScript resolves
 upstream `sum.ts`'s type imports from `@skipruntime/core` (`EagerCollection`,
@@ -1181,8 +1223,14 @@ type-checks and crashes. The binding is declared in the file, so every tool
 reads the same one. Its negative, `invalid-framework-binding-sound.ts`, is
 a service taking more than the framework passes, which TypeScript accepts by
 method bivariance. The matching change to Skip's API (`InputCollections`,
-`runService` generic over the concrete service, `ResourceClass<R, Json>`) type-checks under `tsc` against the pinned
-runtime; sum.ts on it still stops at the generic `runService` call.
+`runService` generic over the concrete service, `ResourceClass<R, Json>`) is
+checked in as [`upstream-sound`](upstream-sound/tsconfig.json), and sum.ts on
+it verifies end to end (`sum-sound-binding.ts`, above). It needed two proposal
+changes and no new rule: a class whose constructor takes fewer parameters
+than the construct signature it meets is claimed there
+(`class-constructor-offer.ts`; extraction had required equal lengths), and a
+fresh literal at a generic call's parameter free of the callee's binders is
+built at that parameter (`generic-contextual-literal.ts`).
 
 **Record values as `Json` (done for ground instances).**
 

@@ -1546,14 +1546,19 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let [.ctors L] := PositiveRules.expand G A | throw "a class value's claim must name construct signatures"
     let Ds ← params.mapM fun p => lower (Fragment.callableType p.2)
     let R ← lower (Fragment.callableType ret)
+    -- A claim may offer more parameters than the constructor takes: `new`
+    -- discards the actuals past them (`ctorE` types the body at the first
+    -- `arity`). The ones it takes are the source's.
     let T ← table
-    if L.isEmpty || !L.all (fun (Di,_) => Di.length == Ds.length && (Di.zip Ds).all (fun (D,B) => within T D B)) then
+    if L.isEmpty || !L.all (fun (Di,_) => Ds.length ≤ Di.length &&
+        ((Di.take Ds.length).zip Ds).all (fun (D,B) => within T D B)) then
       throw "construct signature claim is outside the source annotation"
     let inner := held ⟨"", some pos⟩ :: (params.map fun (name,_) => held ⟨name, some pos⟩) ++ scope
     let b ← closureExpr fc inner ([3] :: Ds ++ Γ) body
     let annotation := DirectProof.cast ([3] :: Ds ++ Γ) R b
     obligation pos annotation.goal (some annotation) "closure-result" inner
     let bodies ← L.mapM fun (Di, Ri) => do
+      let Di := Di.take Ds.length
       if (Di, Ri) == (Ds, R) then pure annotation else do
         let plan ← closureExpr fc inner ([3] :: Di ++ Γ) body
         if plan.term != b.term then

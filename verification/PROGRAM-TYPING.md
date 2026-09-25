@@ -365,12 +365,17 @@ an arrow only the first. The calculus records which in the closure's code
 term, which evaluates `f`, then the actuals, and runs only construct code, with
 `undefined` for the receiver. A construct signature
 $\mathsf{new}(A_1,\ldots,A_n)\Rightarrow B$ (the `ctors` clause) is met by a
-class whose body, for actuals at the parameters, is safe at $B$:
+class whose body, for actuals at the parameters, is safe at $B$. As for a
+function, a signature may offer more parameters than the constructor binds:
+the construct step binds its first $\mathit{arity}$ actuals and discards the
+rest, so the body is typed at the signature's first $\mathit{arity}$
+parameters:
 
 $$
 \frac{L\equiv_G\mathsf{Ctors}(\ldots,(\vec A,B),\ldots)\quad
       U\equiv_G\mathsf{Undefined}\quad
-      U,\vec x{:}\vec A,\Gamma\vdash_G b:B\ \text{for each signature}}
+      \mathit{arity}\le|\vec A|\quad
+      U,\vec x{:}\vec A_{<\mathit{arity}},\Gamma\vdash_G b:B\ \text{for each signature}}
      {\Gamma\vdash_G \mathsf{class}(\vec x).b : L}
 \qquad
 \frac{\Gamma\vdash_G f:L\quad L\equiv_G\mathsf{Ctors}(\ldots,(\vec A\,\vec U,B),\ldots)\quad
@@ -1862,6 +1867,31 @@ $$
 
 with $F$ the method's claimed type. Nothing here is a new rule: the premises
 are the creation rule, `alloc` and subsumption under each construct signature.
+
+The constructor is offered the same way. Where the class value is expected at
+$\mathsf{new}(\vec P\,\vec V)\Rightarrow I$ while its constructor binds
+$\vec x{:}\vec D$ with $|\vec x|=|\vec P|$, the class value is claimed at
+$\mathsf{new}(\vec P\,\vec V)\Rightarrow I$ beside
+$\mathsf{new}(\vec D)\Rightarrow C$ (a resource class constructed with the
+request's parameters it ignores: `{ add: Add }` at
+`ResourceClass<Collections, Json>`, `new (params: Json) => Resource<Collections>`).
+`ctorE` types the body at the first $|\vec x|$ parameters, $\vec P$, and the
+source requires each within the constructor's annotation, as for a closure:
+
+$$
+\frac{\forall(\vec A,B)\in L.\;|\vec x|\le|\vec A|\;\land\;
+        \bigl(\forall j\le|\vec x|.\;A_j\sqsubseteq_G D_j\bigr)\;\land\;
+        U,\vec x{:}\vec A_{<|\vec x|},\Gamma\vdash_G b:B
+      \qquad U,\vec x{:}\vec D,\Gamma\vdash_G b:C}
+     {\Gamma\vdash_G \mathsf{class}(\vec x{:}\vec D)\{b\}:\bigwedge L}
+$$
+
+with $C$ the class's instance type, its own signature
+$\mathsf{new}(\vec D)\Rightarrow C$ among $L$. A constructor needing more than
+the offered parameters meets no such signature, and the value holding it is
+refused: a class whose constructor calls its parameter's `toString` is not a
+`new (params: Json) => Resource<C>`, as a Json object may own that key at any
+Json (`invalid-sum-sound-binding-constructor.ts`).
 
 ### Universal parameter initialization
 

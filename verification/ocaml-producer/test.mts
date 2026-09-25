@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
@@ -151,6 +151,21 @@ for (const [file, expected] of [
     createHash("sha256").update(readFileSync(resolve(here, "upstream", path))).digest("hex");
   assert.equal(upstreamSha("skipruntime-ts/core/src/api.ts"),
     "1e51e0c9cc1447605d9d718d8c094c4f70a0cf5ca065804b775a2d4c76e0e6a6");
+  // The runtime with a sound service binding holds only the three files the
+  // binding changes, pinned here; every other file is the snapshot's own.
+  const soundSha = (path: string) =>
+    createHash("sha256").update(readFileSync(resolve(here, "upstream-sound", path))).digest("hex");
+  assert.deepEqual(["skipruntime-ts/core/src/api.ts", "skipruntime-ts/core/src/index.ts",
+    "skipruntime-ts/server/src/server.ts"].map(soundSha), [
+    "890fb3f5e7e9603d8440f252bc02f069a7fb2e1ced43a2ae4bf8f1e2dd4d5080",
+    "c1a9a5e080a8dbe0866f1cb33420132b7baef07158b5800610b93c97abb21368",
+    "26cd1719e86d0c8195e41648cd20b74505bcb412d7d624341b3ef4d89f176108",
+  ]);
+  for (const shared of ["skipruntime-ts/core/src/errors.ts", "skipruntime-ts/core/skiplang-json",
+    "skipruntime-ts/core/skiplang-std", "skipruntime-ts/core/package.json",
+    "skipruntime-ts/server/package.json"])
+    assert.equal(realpathSync(resolve(here, "upstream-sound", shared)),
+      realpathSync(resolve(here, "upstream", shared)), `upstream-sound/${shared} is the snapshot's`);
   const jsonModuleSha = upstreamSha("skiplang/skjson/ts/binding/src/index.ts");
   assert.equal(jsonModuleSha,
     "3cdd38bb4b6d394133ee922bccb6eff50839740b204c259edb17c19060bf9021");

@@ -694,7 +694,14 @@ has an index or an optional field; elsewhere at the open record as before, so
 no other claim changes. The literal's use is then an ordinary subsumption,
 checked where the literal flows, and a literal claimed at a dictionary is no
 longer accepted: a claim names the record allocation gives. Each key the
-contract names is built at its member's type, any other at the index.
+contract names is built at its member's type, any other at the index. At a
+generic call, an actual whose parameter mentions none of the callee's type
+parameters has that parameter as its contract, as at a call without them
+(TypeScript types it contextually too): the options literal passed to the
+generic `runService` of the sound binding leaves out `no_cors` by its exact
+keys (`generic-contextual-literal.ts`); a record held in a variable does not
+(`invalid-generic-contextual-literal.ts`). An actual at a parameter that
+mentions one is typed on its own and informs inference, as before.
 
 **Tables relate included labels.** Relating a record to an interface compares
 each field's contract with itself; a core table needed a row for each such
@@ -738,6 +745,17 @@ an iterable. Two orderings of the untrusted search, no rule:
 
 The search now takes about 6 s of CPU on the module; the other `sum` cases
 are unchanged or faster.
+
+On `sum-sound-binding`, the whole module under the sound binding, the search
+first took about 23 s, measured per program node and per inclusion: 7 s in
+`await main()`, whose callee, `%Await%` at a fixed signature, was first
+coerced to every variadic signature of the pool (`merge`, `slices`), each
+failing only after a table over the pool; and 7 s after the last node, in
+re-checking the evidence and printing 32 MB of it with `Json.pretty`. Two
+changes, no rule: a callee read from a slot is tried at the slot's own type
+first, variadic then fixed, before the pool's types, in the same order as
+before; and the evidence is written with `Json.compress` (9.5 MB). The
+search takes about 13 s; the check, about 4 s.
 
 Each external step of a case (parser, producer, search, check) keeps a
 wall-clock limit (`stepTimeoutMs` in `check.mts`); a step that exceeds it is
@@ -894,6 +912,19 @@ modeling choices; they do not replace proof.
 - Code outside a unit adds keys to a dictionary it holds at a mutable index
   signature only at that signature's contract; the calculus has no step that
   adds a key ([Writable string index signatures](#writable-string-index-signatures)).
+- The runtime with a sound service binding
+  ([`upstream-sound`](ocaml-producer/upstream-sound/tsconfig.json)) meets its
+  declarations, like any imported value's: `runService` passes `createGraph`
+  an `InputCollections` whose `get(definition)` returns the input collection
+  the runtime built from that definition, at its key and value types (the
+  runtime's `as EagerCollection<K, V>`), and throws for a definition the
+  service does not declare. A client can write that call, with a definition
+  it constructs itself (`inputs.get(new InputDefinition<string, number>())`):
+  it type-checks and throws, which is a stop, not a value at a wrong type.
+  Reading an undeclared input of the service, `this.inputs.input3`, does not
+  type-check. It also constructs each resource class with the request's
+  parameters, a `Json`, and calls `instantiate` with what `createGraph`
+  returned, as `ResourceClass<ResourceInputs, Json>` states.
 - Lean's kernel, compilation infrastructure and the executed checker are correct.
 
 For the stateful in-memory interface, `accept` checks the exact requested entry
@@ -1965,12 +1996,36 @@ it links neither `C` to `I`, so a service whose `inputs` is `{}` and whose
 `createGraph` reads `c.input1` would be accepted and fail at run time. A
 sound trusted contract relates the inputs' keys and `InputDefinition<K, V>`
 types to `createGraph`'s parameter, a type-level map (`{ [k in keyof I]: … }`)
-the calculus does not state. Until one is decided, `runService(new Service())`
-over sum.ts's `Service` stays refused, the next blocker of
+the calculus does not state. Under today's binding, `runService(new
+Service())` over sum.ts's `Service` stays refused, the blocker of
 `reactive-sum-sound.ts`. The trusted `ResourceClass<R, never>` is related:
 the runtime constructs a resource with the request's `Json` parameters, while
 `never` promises it never does; a class whose constructor needs more than
 `Json` would be admitted.
+
+**A sound binding needs no type-level map.** The link can be stated
+instead by the value that carries it: `createGraph` receives an
+`InputCollections` whose `get<K, V>(definition: InputDefinition<K, V>):
+EagerCollection<K, V>` returns the collection the runtime built from that
+definition, so a collection's types are its definition's, and a service can
+ask only with a definition it holds. `SkipService<InputDefs, ResourceInputs>`
+then has no free collections parameter; `runService` is generic over the
+concrete service, whose `createGraph` result and resources' `instantiate`
+parameter are the one `ResourceInputs`, compared without bivariance; and
+resources are `ResourceClass<ResourceInputs, Json>`, what the runtime does.
+That runtime is checked in beside the snapshot
+([`upstream-sound`](ocaml-producer/upstream-sound/tsconfig.json)), with
+sum.ts as its client (`sum-sound-binding.ts`), which verifies whole: the
+call's `InputDefs` and `ResourceInputs` are inferred from the service's
+fields and `createGraph` as `Inputs` and `Collections`, its bounds checked
+(`Inputs` ≤ `NamedInputDefinitions`, `Collections` ≤ `SharedCollections`),
+and the service's instance meets `SkipService<Inputs, Collections>`
+member by member. The resource bivariance TypeScript still admits under it
+(a resource needing a collection `createGraph` does not return) and a
+constructor needing more than `Json` are refused
+(`invalid-sum-sound-binding-resource.ts`,
+`invalid-sum-sound-binding-constructor.ts`). What the runtime does with
+`get` is trusted ([What remains assumed](#what-remains-assumed)).
 
 A producer names an intersection it meets without computing it: its reserved
 row, in the claims' `"meets"`, is filled by Lean with `meetRow` of the
@@ -2443,7 +2498,17 @@ a choice.
   it allocates holds the method as a field whose signatures cover the
   interface's member (`CoversByFunction`). This is the offer mechanism a named
   closure passed where more parameters are offered uses, reached from a class
-  value instead of a call; there is no arrow-widening subtyping. A narrower
+  value instead of a call; there is no arrow-widening subtyping. The
+  constructor is offered alike: a class value expected at a construct
+  signature passing more actuals than its constructor binds is claimed there
+  too, beside its own, and `ctorE` checks the body at the signature's first
+  parameters, as the creation rule does a closure's (`new` discards the rest).
+  So sum.ts's resource classes, which take no parameters, are
+  `new (params: Json) => Resource<Collections>`, the construct signature the
+  runtime uses (`class-constructor-offer.ts`, `sum-sound-binding.ts`); source
+  extraction required each claimed construct signature to have exactly the
+  constructor's parameters, and now requires its first ones to be within them,
+  as for a closure. A narrower
   parameter is still refused (`invalid-class-fewer-parameters.ts`), as
   TypeScript's bivariant method parameters admit it. At a generic call the
   expected construct signature is known only at the call's instance
