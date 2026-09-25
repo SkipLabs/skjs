@@ -73,7 +73,7 @@ $$
 (`constructL`, `constructArg`, `constructV`), where $\mathsf{bind}_m$ is the
 same parameter binding a call uses, missing actuals `undefined`. The step
 relation stays deterministic (`Step_det`). What a construct signature promises
-is in [the clause's meaning](POSITIVE-TYPES.md#keys-optional-fields-bigints-symbols-and-construct-signatures):
+is in [the clause's meaning](POSITIVE-TYPES.md#functions-and-classes):
 the construct step's result is safe at the signature's result, one level below
 the budget, as a call's body is.
 

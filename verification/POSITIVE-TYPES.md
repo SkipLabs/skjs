@@ -1,108 +1,73 @@
-# Positive types: reference constraints and checked normalization
+# Positive types
 
-This specifies the maintained type representation, state-assertion grammar and
-subtype rules. [State assertions](#state-assertion-grammar) extend point claims;
-they are separate from ordinary types and their normalization. Lean
-proves positive normalization preserves recursive type semantics, the declarative
-rules are sound, and the certificate checker is sound and complete for those
-rules. A first closed null/undefined/boolean fragment is connected to this consumer. Its foundation and integration boundary are in [SEMANTICS.md](SEMANTICS.md).
+This document specifies the types the verifier uses: how a type graph is
+written, what each type means, how conjunctions are normalized, which
+subtyping rules hold, and how a subtyping certificate is checked. Lean proves
+three things about them:
 
-## Representation and mathematical rules
+1. normalization preserves meaning;
+2. every subtyping rule is sound;
+3. the certificate checker accepts exactly the derivable inclusions.
 
-A label names a whole type, never a fragment of one. Operands appearing inside a
-body are themselves types, so the syntax has two levels. A **type** is a union of
-graph labels:
+The indexed model that gives the types their meaning is in
+[SEMANTICS.md](SEMANTICS.md). How programs are typed with them is in
+[PROGRAM-TYPING.md](PROGRAM-TYPING.md). [State assertions](#state-assertion-grammar),
+which combine types with facts about the current heap, are a separate layer at
+the end.
+
+**Notation.** A meaning is a family $X_n(W,v)$: at level $n$ and world $W$,
+value $v$ is a member. A lower level is a weaker observation; "below the
+level" means at every $j<n$. Throughout, $\Delta$ is a finite table of subtype
+obligations, and $\Delta(A,B)$ says the pair $(A,B)$ is in it. Each section
+ends with a "Lean:" line naming the definitions and theorems behind it.
+
+## Types and clauses
+
+A graph maps **labels** to bodies. A label names a whole type, never part of
+one, and every operand inside a body is itself a type. So the syntax has two
+levels. A **type** is a finite union of labels:
 
 $$A ::= \bot\mid i\mid A\lor A.$$
 
-A **clause** constrains one value shape. A value is null, undefined, a boolean, a location
-or a function object with closed invocation code, and each clause pins exactly one of those:
+A **clause** constrains one value shape. A body is a positive formula over
+clauses, and a **normal body** is a union of clauses:
 
 $$
-\begin{aligned}
-c &::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{bool}\mid\mathsf{true}\mid\mathsf{false}\mid r\mid f\mid o,\\
-r &::= \mathsf{Ref}\,A\mid r\land\mathsf{Ref}\,A,\\
-f &::= \mathsf{fun}\mid f\land(A\to A),\\
-o &::= \mathsf{Callable}(A;[A_1,\ldots,A_m];[(B_1,C_1),\ldots,(B_k,C_k)]).
-\end{aligned}
+P ::= \bot\mid c\mid P\lor P\mid P\land P,
+\qquad
+N ::= \bot\mid c\mid N\lor N.
 $$
+
+The clauses, with what each denotes:
 
 | Clause | Denotes |
 | --- | --- |
-| $\mathsf{null}$ | the value null |
-| $\mathsf{undefined}$ | exactly undefined, at every budget; disjoint from null |
-| $\mathsf{bool}$ | true or false |
-| $\mathsf{true}$, $\mathsf{false}$ | exactly that value, at every budget |
-| $\mathsf{Ref}\,A$ | a location whose stored invariant agrees with $A$ |
-| $r\land\mathsf{Ref}\,A$ | the same location, also agreeing with $A$ |
-| $\mathsf{fun}$ | a function object with closed invocation code, carrying no call obligation |
-| $f\land(A\to B)$ | also: applied to any argument in $A$, it is safe at $B$ |
+| `top` | every closed value; membership grants no operation |
+| `nul`, `undef` | exactly null; exactly undefined |
+| `bool`, `boolLit b` | true or false; exactly $b$ |
+| `num`, `numLit x` | any number; exactly the number with bit pattern $x$ |
+| `str`, `strLit s` | any string; exactly $s$ |
+| `bigint`, `symbol` | any bigint; any symbol (opaque identities) |
+| `refs` | a plain object under record contracts, readonly views, optional fields and methods ([Records](#records)) |
+| `dict` | a `refs` object whose present string keys also meet readonly index contracts |
+| `list` | an array under one or more tuple contracts ([Arrays](#arrays)) |
+| `arrs` | a function meeting fixed and variadic call signatures ([Functions and classes](#functions-and-classes)) |
+| `callable` | a function that is also an object with record contracts |
+| `ctors` | a class meeting construct signatures |
+| `pack` | no value: a family of argument lists ([Argument packs](#argument-packs)) |
 
-$\mathsf{fun}$ is the empty arrow intersection. It is a terminal because an
-intersection of zero arrows cannot be derived from a rule producing arrows, and
-it is a real type: every function object with closed invocation code inhabits it. A single arrow $A\to B$
-abbreviates $\mathsf{fun}\land(A\to B)$, since arrow membership already requires
-closed invocation code.
+The **shape** of a clause is the kind of value it admits: null, boolean,
+plain object (`refs`, `dict`), function (`arrs`, `callable`), undefined,
+number, string, array, bigint, symbol, class or argument list. A value has
+exactly one shape, and `top` has none.
 
-For the maintained argument-list graph, `arrs L S` carries fixed signatures
-`L` and variadic signatures `S` on the same function shape. Both instantiate
-the [common behavioral call promise](SEMANTICS.md#one-meaning-for-callable-contracts);
-they do not select disjoint code kinds. The empty function contract has both
-lists empty. Callable fields add invariant property requirements to that same
-value, and overload normalization conjoins its call promises.
+Singletons sit below their primitive: $\mathsf{boolLit}\,b\le\mathsf{bool}$,
+$\mathsf{numLit}\,x\le\mathsf{num}$, $\mathsf{strLit}\,s\le\mathsf{str}$.
 
-References are asymmetric to arrows here: $r$ always carries a first operand, so
-there is no bare "any location" clause. A cell's operand is the invariant that
-makes it readable and writable at all; the nearest expressible thing is
-$\mathsf{Ref}\,\bot$, which is a constraint rather than an absence.
+Lean: `Clause`, `semWithArgs`, `shape`, `valueShape`
+(`Types/PositiveNormalization.lean`).
 
-Every conjunct of an $r$ constrains the **same location and its one stored
-invariant**. They are not several separately allocated cells, and they are not
-replaced by a single invariant over the intersection of their operands. A plain
-reference is a single $\mathsf{Ref}\,A$.
-
-The two Boolean singletons relate to $\mathsf{bool}$ by
-
-$$
-\mathsf{true},\mathsf{false}\leq\mathsf{bool},\qquad
-\mathsf{true}\land\mathsf{bool}=\mathsf{true},\qquad
-\mathsf{true}\land\mathsf{false}=\bot,
-$$
-
-and symmetrically for $\mathsf{false}$.
-
-A graph body is a finite positive formula over clauses:
-
-$$P ::= \bot\mid c\mid P\lor P\mid P\land P.$$
-
-In the Lean development and the [request encoding](REQUEST-PROTOCOL.md#request-fields)
-these clauses include `nul`, `undef`, `bool`, `boolLit`, `refs`, `dict`, `arrs`, and `callable`, where a reference
-conjunction is a first operand plus the rest, and an arrow intersection is a
-possibly-empty list of domain/result pairs. A `callable` clause carries a first
-bag invariant, a list of further bag invariants, and its domain/result pairs.
-All constraints apply to one object. Its shape is function, as for `arrs`;
-`refs` still means a plain object. There is no callability-neutral bag clause yet.
-
-The `dict` clause extends a plain object with readonly string-index contracts.
-Its index operands constrain **every present own field**, including named
-fields, through a read capability; they grant no write permission. The object
-may have no fields, so an arbitrary indexed read has type `A | undefined`,
-even when its index contract is `A`. Normalization retains all index operands
-when dictionaries intersect each other or a named-field record. A checked
-dictionary-to-dictionary inclusion covers every target index operand with a
-source operand at a subtype, while retaining the named-field obligations.
-Index operands are guarded through the world, so a recursive graph can contain
-`JsonObject = { readonly [key: string]: Json | null }` without finite unfolding.
-Inline readonly string-index annotations now translate to `dict` for the OCaml
-producer, with a named indexed read checked by the graph's `readDict` rule and
-a computed string-key read checked by `indexDict`.
-Required named fields can accompany the index as invariants or readonly views;
-the checked source annotation retains both obligations in one clause.
-Translation of the imported recursive `Json` declaration is a separate source
-closure step. The `allocDict` rule proves a fresh literal's dictionary view
-from every initializer at the index element type.
-
-### Keys, optional fields, bigints, symbols and construct signatures
+### Records
 
 A record operand maps **property keys** to types. A key is a string or a
 symbol, and the two spaces are disjoint:
@@ -112,113 +77,204 @@ $$
 \varphi ::= \overline{\kappa{:}A}.
 $$
 
-A `refs` or `dict` clause carries, besides its invariant operands $\varphi_0,
-\ldots,\varphi_m$ and readonly views $\psi$, a list $\omega$ of **optional**
-fields, and `dict` its index operands $\overline{D}$. Writing $\ell$ for the
-object $\mathsf{obj}(\mathit{flds},\mathsf{absent})$ and $X$ for the meaning
-of an operand,
+A `refs` clause
+$\mathsf{Ref}(\varphi_0\land\cdots\land\varphi_m;\,\psi;\,\omega;\,\mu)$ carries
+invariant operands $\varphi_i$, readonly views $\psi$, optional fields
+$\omega$ and methods $\mu$. Write $\ell$ for the object
+$\mathsf{obj}(\mathit{flds},\mathsf{absent})$ and $c_j\equiv T_j$ for "the
+location's contract and $T$ agree below the level". Then
 
 $$
 \begin{aligned}
-\llbracket\mathsf{Ref}(\varphi_0\land\cdots\land\varphi_m;\psi;\omega)\rrbracket_n(W,v)
-&\iff \textstyle\bigwedge_i\mathsf{rec}(X\varphi_i)_n(W,v)\land
-      \mathsf{view}(X\psi)_n(W,v)\land\mathsf{opt}(X\omega)_n(W,v),\\
+\llbracket\mathsf{Ref}(\vec\varphi;\psi;\omega;\mu)\rrbracket_n(W,v)
+&\iff \textstyle\bigwedge_i\mathsf{rec}(\varphi_i)\land
+      \mathsf{view}(\psi)\land\mathsf{opt}(\omega)\land\mathsf{meth}(\mu),\\
+\mathsf{rec}(\overline{\kappa{:}T})_n(W,v)
+&\iff v=\ell\land\forall(\kappa{:}T).\;\exists l,c.\;
+      \mathit{flds}(\kappa)=l\land W(l)=c\land c_j\equiv T_j,\\
+\mathsf{view}(\overline{\kappa{:}T})_n(W,v)
+&\iff v=\ell\land\forall(\kappa{:}T).\;\exists l,c.\;
+      \mathit{flds}(\kappa)=l\land W(l)=c\land c_j\subseteq T_j,\\
 \mathsf{opt}(\overline{\kappa{:}T})_n(W,v)
-&\iff v=\ell\ \land\ \forall(\kappa{:}T),\,\forall l.\;
-      \mathit{flds}(\kappa)=l\Rightarrow
-      \exists c.\;W(l)=c\land\forall j<n.\;c_j\equiv T_j,
+&\iff v=\ell\land\forall(\kappa{:}T),l.\;
+      \mathit{flds}(\kappa)=l\Rightarrow\exists c.\;W(l)=c\land c_j\equiv T_j.
 \end{aligned}
 $$
 
-and a `dict` clause adds $\forall D\in\overline{D}.\;\mathsf{dictView}(XD)$, which
-ranges over the object's **string** keys only (`optT`, `dictViewT`). An optional
-field constrains its key only where the object has it, and there its location
-holds exactly the contract; so a read gives $T$ or $\mathsf{undefined}$, and no
-rule writes it, since an object's keys are fixed at allocation.
+- **Invariant fields.** Every operand constrains the **same object**. Operands
+  naming one key constrain one location, whose single stored contract agrees
+  with each of them. They are not several cells, and they are not replaced by
+  one contract at the intersection of their types. A plain reference cell is
+  $\mathsf{Ref}\,\{\mathsf{value}{:}A\}$.
+- **Views** only read: the location's contract implies the view's type, so a
+  view grants no write.
+- **Optional fields** constrain a key only where the object has it. A read
+  gives $T$ or undefined. No rule writes one, since an object's keys are fixed
+  at allocation.
+- **Methods** are host-relative members: read from the object and invoked on
+  it, they behave as typed
+  ([DESIGN.md](DESIGN.md#method-members-are-host-relative)). A member $m$ has
+  fixed signatures $(\vec P\to B)$ and variadic ones $(\vec P,\ldots Q)\to B$,
+  none with a receiver. With $\mathsf{on}_v(m)$ the member's signatures, each
+  with $v$ as the one receiver it admits,
 
-Two further primitive clauses and one callable clause:
+  $$
+  \mathsf{meth}(\mu)_n(W,v)\iff\forall m\in\mu.\;\exists l,c.\;
+    v=\ell\land\mathit{flds}(m.\mathsf{key})=l\land W(l)=c\land
+    \forall j<n,\ U\sqsupseteq W|_j,\ u.\;c_j(U,u)\Rightarrow u\in\mathsf{on}_v(m)_j(U).
+  $$
+
+  The implication is claimed only in worlds extending the current one: in an
+  unrelated world the object's locations need not hold their contracts, and no
+  method reading them could be safe.
+
+A `dict` clause adds readonly **index contracts** $\overline{D}$: every
+present field under a string key, named or not, has a contract implying each
+$D$. The object may lack a key, so an arbitrary indexed read has type
+$D\mid\mathsf{undefined}$. Index contracts are guarded through the world, so a
+recursive graph can contain `JsonObject = { readonly [key: string]: Json | null }`.
+
+Lean: `refsT`, `viewT`, `optT`, `dictViewT` (`Types/Types.lean`), `methodT`,
+`onHost` (`Types/MethodMembers.lean`). The heap facts behind invariant
+operands (`adm`, `congr_below`, `operands_agree`, `read_all`, `write_first`,
+`cyclic_inhabited`) are in `Types/ReferenceConjunctions.lean`: a read meets
+every operand, and writing a value at the first operand preserves every
+alias's contract.
+
+### Arrays
+
+An array is a value $\mathsf{arr}(\vec l)$ over a list of element locations.
+A `list` clause holds one or more **tuple contracts** $\tau$, each with
+required positions $\vec R$, optional positions $\vec O$, an optional rest
+$E$, and a readonly flag. An array meets a contract when its length is within
+the contract's bounds and each present element's location has a contract that
+agrees with the position's type, or, for a readonly contract, implies it.
+Every contract of the clause constrains the same array.
+
+Lean: `listT`, `SlotContract` (`Types/Types.lean`).
+
+### Functions and classes
+
+A call signature is $(Q;\vec P)\to B$: a receiver $Q$, parameters $\vec P$ and
+result $B$. It describes the calls a caller may write: invoked with a receiver
+in $Q$ and actuals in $\vec P$ at every future world and satisfying heap below
+the level, the function is safe at $B$. A call may pass fewer actuals when
+the missing parameters admit undefined. A signature indifferent to its receiver has receiver `top`. A
+variadic signature $(Q;\vec P,\ldots P')\to B$ takes the actuals past $\vec P$
+as one [argument pack](#argument-packs) at $P'$.
+
+- `arrs L S` is a function meeting every fixed signature in $L$ and every
+  variadic one in $S$. With both lists empty it is any function with closed
+  invocation code.
+- `callable φ⃗ L S` is additionally a plain object under the invariant record
+  operands $\vec\varphi$. It has no views, optional fields or methods.
+- `ctors L S` is a class, whose code is construct-only. A construct signature
+  $\vec A\Rightarrow B$ says that `new` with actuals in $\vec A$ steps to a
+  term safe at $B$ one level below; a variadic one takes a pack as its rest.
 
 $$
-\begin{aligned}
-\llbracket\mathsf{bigint}\rrbracket_n(W,v)&\iff\exists i.\;v=\mathsf{bigint}(i),\qquad
-\llbracket\mathsf{symbol}\rrbracket_n(W,v)\iff\exists i.\;v=\mathsf{sym}(i),\\
 \llbracket\mathsf{Ctors}\,\overline{(\vec A,B)}\rrbracket_k(W,v)
-&\iff\mathsf{Constructible}(v)\ \land\ \forall(\vec A,B).\;\forall j<k,\;
-   U\sqsupseteq W|_j,\ \mathit{heap}\models_j U,\ \vec a\in X\vec A.\\
-&\qquad\exists t.\;\mathsf{new}\,v(\vec a)\to t\ \land\ t\in\mathsf{Safe}_j(XB)(U,\mathit{heap}),
-\end{aligned}
+\iff\mathsf{Constructible}(v)\land\forall(\vec A,B),\,j<k,\,
+   U\sqsupseteq W|_j,\,\mathit{heap}\models_j U,\,\vec a\in\vec A.\;
+\exists t.\;\mathsf{new}\,v(\vec a)\to t\land t\in\mathsf{Safe}_j(B)(U,\mathit{heap}).
 $$
 
-where $\mathsf{Constructible}(v)$ says $v$ is a closed object whose code is
-construct-only, and $\mathsf{new}\,v(\vec a)\to t$ is the one step that binds
-$\vec a$ and an `undefined` receiver into its body (`ctorsT`, `ConstructsTo`).
-A `Ctors` clause may also carry variadic construct signatures
-$(\vec A,\ldots P)\Rightarrow B$, whose actuals are $\vec A$'s exactly, then, as
-one [argument pack](#argument-packs), at the rest $P$ (`CtorRest`,
-`ctorRestsT`); its meaning is the conjunction of both lists, as a call clause's
-is.
-A `Ctors` clause has its own shape, so it meets no `arrs` or `callable` clause:
-no class is callable and no arrow constructible.
+No class is callable and no function is constructible, so `ctors` meets
+neither `arrs` nor `callable`.
+
+Lean: `callsT`, `restsT` (`Semantics/Safety.lean`), `objectsT`
+(`Types/CallableConjunctions.lean`), `ctorsT`, `ctorRestsT`, `ConstructsTo`.
 
 ### Argument packs
 
 An **argument pack** type states which argument lists a rest parameter
-admits. An argument list is not a runtime value: a `Pack` clause has no value
-members, and its meaning is a family of lists (`clauseArguments`). It holds one
-or more tuple contracts $\tau_0,\ldots,\tau_m$, each with required positions
-$\vec R$, optional positions $\vec O$ and an optional rest $E$, and
-$\mathsf{pos}_\tau(i)$ is the operand the contract states for index $i$
-(`Tuple.position`): $R_i$, then $O_{i-|\vec R|}$, then $E$ past both, if any.
-A list fits a contract when its length is within the contract's bounds and each
-present value is, at the current level, a member at its position:
+admits. An argument list is not a runtime value: a `pack` clause has no value
+members, and its meaning is a family of lists. It holds tuple contracts
+$\tau_0,\ldots,\tau_m$ as `list` does, and $\mathsf{pos}_\tau(i)$ is the type
+the contract states for index $i$: $R_i$, then $O_{i-|\vec R|}$, then $E$ past
+both, if any. A list fits a contract when its length is within the bounds and
+each value is, **at the current level**, a member at its position:
 
 $$
 \begin{aligned}
 \llbracket\mathsf{Pack}(\tau_0\land\cdots\land\tau_m)\rrbracket^{\mathsf{args}}_k(W,\vec v)
-&\iff\textstyle\bigwedge_i\mathsf{fits}(X\tau_i)_k(W,\vec v),\\
+&\iff\textstyle\bigwedge_i\mathsf{fits}(\tau_i)_k(W,\vec v),\\
 \mathsf{fits}(\tau)_k(W,\vec v)&\iff|\vec R|\le|\vec v|\ \land\
    (E=\varnothing\Rightarrow|\vec v|\le|\vec R|+|\vec O|)
-   \land\ \forall i.\;\mathsf{pos}_\tau(i)=A\Rightarrow v_i\in A_k(W)
+   \land\ \forall i.\;\mathsf{pos}_\tau(i)=A\Rightarrow v_i\in A_k(W).
 \end{aligned}
 $$
 
-(`clauseArguments`, `ArgumentContracts.Fits`). Grouping evaluated arguments is
-not an execution step, so membership is at the level of the actuals; the call
-or constructor whose rest it is supplies the guard, and allocating the rest
-array consumes a level. A type's argument lists are its pack clauses' lists,
-or a pack parameter's assigned list family (`graphArguments`,
-[Parameter and scheme rows](#parameter-and-scheme-rows)).
-A `Pack` clause has its own shape, and meeting two concatenates their
-contracts.
+Grouping evaluated arguments is not an execution step, so membership is at the
+level of the actuals. The call or constructor whose rest it is supplies the
+guard, and allocating the rest array consumes a level. A type's argument lists
+are those of its pack clauses, or a pack parameter's assigned list family
+([Parameter and scheme rows](#parameter-and-scheme-rows)).
 
-Conjunction extends as before: same-shape clauses concatenate their operands,
+Lean: `clauseArguments`, `Tuple.position`, `ArgumentContracts.Fits`,
+`graphArguments`.
+
+## Parameter and scheme rows
+
+A label is one of three kinds of **row**:
+
+- a **clause row** means the union of its clauses;
+- a **parameter row** means what the graph's assignment `env` gives it. The
+  assignment is a mixed family over values and argument lists; a row's kind
+  selects the component: values for a value binder, lists for a pack binder;
+- a **scheme row** $(\vec p;\Sigma;\beta;\Sigma_\ldots)$ means one function
+  meeting its signatures at every reassignment of its binders $\vec p$, which
+  are parameter rows, within their bounds $\beta$.
+
+With $\eta$ an assignment and
+$\llbracket A\rrbracket^\eta=\bigcup_{i\in A}\llbracket i\rrbracket^\eta$, the
+denotation is the guarded fixed point of
 
 $$
-\begin{aligned}
-\mathsf{Ref}(\vec\varphi;\psi;\omega)\land\mathsf{Ref}(\vec\varphi';\psi';\omega')
- &=\mathsf{Ref}(\vec\varphi\,\vec\varphi';\psi\psi';\omega\omega'),\\
-\mathsf{Ctors}\,L\land\mathsf{Ctors}\,M&=\mathsf{Ctors}\,(L\,M),\qquad
-\mathsf{Pack}\,\vec\tau\land\mathsf{Pack}\,\vec\tau'=\mathsf{Pack}\,(\vec\tau\,\vec\tau'),\\
-&\qquad c\land c=c\ \ (c\in\{\mathsf{bigint},\mathsf{symbol}\}),
-\end{aligned}
+\llbracket i\rrbracket^\eta=
+\begin{cases}
+\eta(i) & i\ \text{a parameter row},\\[2pt]
+\bigl\{\,v\;\bigm|\;\mathsf{Invocable}(v)\land\forall\vec X.\;
+  \mathsf{Bounded}_n(\vec X)\Rightarrow
+  v\in\mathsf{Calls}(\Sigma^{\eta'})\cap\mathsf{Rests}(\Sigma_\ldots^{\eta'}),\
+  \eta'=\eta[\vec p\mapsto\vec X]\,\bigr\}
+  & i\ \text{a scheme row},\\[2pt]
+\textstyle\bigcup_{c\in G(i)}\llbracket c\rrbracket^\eta & i\ \text{a clause row},
+\end{cases}
 $$
 
-and `bigint`, `symbol`, `Ctors` and `Pack` meet every other shape as $\bot$.
+where $\Sigma^{\eta'}$ reads each signature's types at $\eta'$. $\vec X$
+ranges over admissible mixed families, one per binder, and
+$\mathsf{Bounded}_n(\vec X)$ says each bounded binder's family is below its
+bound, in both components, at every level under $n$, the bound read at the
+scheme's own $\eta$. A variadic signature's rest may be a binder: a **pack
+parameter**, instantiated at a pack type and bounded by one.
 
-A callable intersection concatenates both lists of requirements. Intersecting
-it with `arrs` adds call obligations while retaining its bag invariants.
-Subtyping between callable clauses requires the same bidirectional operand
-coverage as references, together with arrow coverage. A callable can forget
-its bag requirements to become `arrs`; the reverse requires evidence of those
-requirements and has no unconditional rule.
+Reading bounds below $n$ keeps the fixed point contractive; the
+approximations are non-expansive in the assignment (`QInv`), which gives
+admissibility. The type meanings are read at the graph's assignment:
+$\llbracket A\rrbracket_G=\llbracket A\rrbracket^{G.\mathit{env}}$ for values
+(`meaning`) and its list component for argument lists (`argMeaning`). No check
+reads `env`, so every theorem proved for all graphs holds at every
+reassignment. A member of a scheme row meets each instance's signatures
+(`scheme_elim`), and a function meeting them at every instantiation is a
+member (`scheme_intro`). Without scheme rows and pack binders this is the
+parametric semantics `denoteP` (`qDenote_no_schemes`).
 
-A **normal body** is a union of clauses, with no conjunction above the clause
-level:
+Only clause rows have clauses. A type holding a parameter or scheme row has no
+expansion, so no rule that reads a clause (`Represents`, `Answers`, the atoms
+of heap knowledge) applies to it.
 
-$$N ::= \bot\mid c\mid N\lor N.$$
+Lean: `qDenoteWithArgs G (mixedParameters G)`, `Bounded`, `instanceTWithArgs`,
+`instanceRestsWithArgs` (`Types/PositiveGraphs.lean`,
+`Types/QuantifiedGraphs.lean`); `mixedValues`, `mixedArgs`, `meaning`,
+`argMeaning` (`Types/PositiveRules.lean`).
 
-Normalization rewrites a body into that form. It is disjunctive normal form,
-pushing $\land$ down through $\lor$ until every conjunction joins two clauses:
+## Conjunction and normalization
+
+Normalization rewrites a body into a normal body. It is disjunctive normal
+form: it pushes $\land$ down through $\lor$ until every conjunction joins two
+clauses,
 
 $$
 \begin{aligned}
@@ -230,312 +286,135 @@ $$
 \end{aligned}
 $$
 
-So the whole procedure reduces to one question: what is the conjunction of two
-clauses? That turns on shapes.
+So everything reduces to the conjunction of two clauses:
 
-Clauses of **different shapes** meet as $\bot$. A value is null, undefined, a boolean, a
-location or a lambda, never two, so nothing satisfies both.
-
-Clauses of the **same structured shape** need no computation: by the grammar
-above, $r\land r'$ is again a reference conjunction and $f\land f'$ again an
-arrow intersection. The operator is the answer, and the two merge lemmas say
-exactly that their meaning is the intersection.
-
-The **primitives** follow their small lattice: $c\land c=c$,
-$\mathsf{bool}\land\mathsf{true}=\mathsf{true}$,
-$\mathsf{bool}\land\mathsf{false}=\mathsf{false}$, and
-$\mathsf{true}\land\mathsf{false}=\bot$.
-
-Nothing is distributed through a reference operand or an arrow result. By the
-grammar this is structural rather than a choice: an operand is a type, already
-normal, so there is no formula down there to normalize. That is also why
-guardedness survives untouched.
-
-For example:
-
-$$
-\mathsf{Ref}\,A\land(\mathsf{Ref}\,B\lor\mathsf{null})
-\quad\longmapsto\quad\mathsf{Ref}\,A\land\mathsf{Ref}\,B.
-$$
-
-The normalizer retains incompatible reference constraints. In this indexed
-model, $\mathsf{Ref}\,\mathsf{null}\land\mathsf{Ref}\,\mathsf{bool}$ has a zero-budget witness but has no members at any
-positive budget. A nested analogue has a witness at budget one in a satisfying
-cyclic heap. These are checked examples, so replacing all such clauses by
-bottom would be an incorrect normalization.
-
-## State-assertion grammar
-
-Point claims can combine ordinary types with facts about the current execution
-state. The following notation describes the finite assertion layer; it does not
-add constructors to the ordinary type grammar above. Let $x$ and $y$ name environment
-slots, $A$ and $B$ be ordinary types, and $R$ be a finite disjunction of primitive predicates:
+- `top` is the unit: $\mathsf{top}\land c=c$.
+- Clauses of **different shapes** meet as $\bot$: no value has two shapes.
+- **Primitives** follow their lattice: $c\land c=c$, a singleton meets its
+  primitive as the singleton, and two different singletons meet as $\bot$.
+- **Structured clauses of one shape concatenate their operands.** No
+  computation is needed, since the result is again a clause:
 
 $$
 \begin{aligned}
-a &::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}\mid\mathsf{Number}\mid\mathsf{numLit}(b),\\
-R &::= \{a_1,\ldots,a_k\}\quad(k\geq 0),\\
-J &::= \top\mid x:A\mid x=R\mid x=y\mid x\mapsto R\mid x\mapsto y\mid J\land J.
+\mathsf{Ref}(\vec\varphi;\psi;\omega;\mu)\land\mathsf{Ref}(\vec\varphi';\psi';\omega';\mu')
+ &=\mathsf{Ref}(\vec\varphi\,\vec\varphi';\psi\psi';\omega\omega';\mu\mu'),\\
+\mathsf{arrs}(L;S)\land\mathsf{arrs}(M;T)&=\mathsf{arrs}(LM;ST),\qquad
+\mathsf{Ctors}\,L\land\mathsf{Ctors}\,M=\mathsf{Ctors}\,(LM),\\
+\mathsf{List}\,\vec\tau\land\mathsf{List}\,\vec\tau'&=\mathsf{List}\,(\vec\tau\,\vec\tau'),\qquad
+\mathsf{Pack}\,\vec\tau\land\mathsf{Pack}\,\vec\tau'=\mathsf{Pack}\,(\vec\tau\,\vec\tau').
 \end{aligned}
 $$
 
-| Assertion | What it states |
-| --- | --- |
-| $x:A$ | The value of $x$ belongs to the ordinary type $A$, interpreted against the current world and budget. |
-| $x=R$ | $x$ satisfies one of the predicates in $R$. A statement about the environment, so no heap change can falsify it. |
-| $x=y$ | $x$ and $y$ hold the same value, including the same location when they hold references. Again untouched by heap changes. |
-| $x\mapsto R$ | The cell $x$ names currently holds a value satisfying $R$. It does not specify or change that location's storage invariant. |
-| $x\mapsto y$ | The cell $x$ names currently holds the value of $y$. A write or a call can falsify this. |
-| $\top$, $J_1\land J_2$ | No requirement, or both requirements. Conjunction does not assert ownership or disjoint locations. |
+  `refs` with `dict` gives a `dict` holding both; two `dict` clauses also
+  concatenate their index contracts. `callable` with `callable` concatenates
+  record operands and signatures; `callable` with `arrs` adds the signatures
+  and keeps the record operands.
 
-The two relations each take a primitive predicate disjunction or a variable on the right, which is
-the whole grammar: $=$ speaks only about the environment, $\mapsto$ about the
-heap as well. That division is what decides survival, and
-[Program typing](PROGRAM-TYPING.md#the-reference-operations) states the rules
-over it. Despite the notation there is no separating conjunction and no
-ownership: these facts are duplicable, and $\mapsto$ carries no claim that the
-cell is unaliased or that the heap holds nothing else.
-
-An empty predicate list is an impossible content/value predicate, not an absent
-assertion. There is no general assertion disjunction, negation or quantifier in
-this finite grammar. The union within $R$ permits alternatives for one value;
-it does not express arbitrary correlated alternatives between slots. The explicit
-read and equality atoms express only the relationships listed above. `Number` means any numeric value; `numLit(b)` means exactly that bit pattern.
-Singleton predicates imply `Number`, not conversely. Predicates on nested
-references remain outside this vocabulary.
-
-The notation requested for source claims is an abbreviation:
+Nothing is distributed through an operand or a result. This is structural, not
+a choice: an operand is a type, already normal, so there is no formula below
+to normalize. That is also why guardedness survives untouched. For example,
 
 $$
-x:\{\mathsf{value}:B=R\}
-\quad\equiv\quad
-x:\mathsf{ref}(B)\ \land\ x\mapsto R.
+\mathsf{Ref}\,A\land(\mathsf{Ref}\,B\lor\mathsf{nul})
+\quad\longmapsto\quad\mathsf{Ref}\,A\land\mathsf{Ref}\,B.
 $$
 
-Here $\mathsf{ref}(B)$ abbreviates the ordinary clause $\mathsf{Ref}\,B$, with no
-additional reference conjuncts. In displayed source
-claims, the right side of `=` uses type-like spelling for the finite predicate:
-`true` denotes $\{\mathsf{true}\}$ and `boolean` denotes
-$\{\mathsf{true},\mathsf{false}\}$. Thus `{ value: boolean = true }` combines
-`ref(boolean)` with a current-cell fact. It is neither `ref(true)` nor an
-ordinary type operand that can be inserted into arrows or recursive type bodies.
-Forgetting the cell assertion leaves `ref(boolean)` and loses information.
+Incompatible invariant contracts are kept, not replaced by $\bot$.
+$\mathsf{Ref}\,\mathsf{nul}\land\mathsf{Ref}\,\mathsf{bool}$ has a member at
+level zero, though none above; a nested analogue has a member at level one in
+a satisfying cyclic heap. Both are checked examples, so rewriting such clauses
+to $\bot$ would be unsound.
 
-The implementation stores these conjunctions as an ordinary context $\Gamma$
-plus `HeapKnowledge.Knowledge`: cell facts $\Delta$, immutable-value facts $V$,
-and a list of read/equality links. `HeapLinks.Holds` interprets the latter, with
-an `alias` flag distinguishing timeless slot equality from a current read.
-The grammar is mathematical notation for those components, not a new JSON or
-TypeScript parser. `cell` corresponds to `HeapFacts.Holds`; `val` corresponds to
-`HeapKnowledge.ValueHolds`. A source expression assertion uses its evaluated
-result in place of $x$.
+Lean: `meet`, `meetLists`, `normalize`, `normalize_sound`
+(`Types/PositiveNormalization.lean`).
 
-[Semantics](SEMANTICS.md#current-content-assertions-and-postconditions) defines
-heap observations and their relationship to the world and satisfying heap.
-[Program typing](PROGRAM-TYPING.md#checked-expression-postconditions) owns the
-checked rules and fact transfer. [Source claims](SOURCE-CLAIMS.md#current-content-assertions)
-owns the wire encoding and its restrictions. Expression checking, graph-edge
-entailment and source consumption of supplied observations are all implemented;
-the producer generates checked heap facts from supported operations.
+### Recursive normalization
 
-## Recursive normalization
+A formula graph is normalized label by label, $\operatorname{nf}(G)(i)=\operatorname{nf}(G(i))$.
+Labels occur only inside operands, so recursion stays guarded, nothing is
+unfolded and no label is allocated. A finite graph stays finite, although DNF
+can grow a body exponentially; no growth control is implemented.
+`normalize_sound` proves the normal form means exactly the formula, for every
+value and argument-list interpretation of the operands, level, world and
+value.
 
-A source graph maps each label to a formula $P$; its normal form maps the same
-label to a normal body $N$, one label at a time:
+Nothing in the current pipeline invokes the normalizer. The
+[request grammar](REQUEST-PROTOCOL.md#request-fields) has no conjunction above
+the clause level, so every graph reaching the consumer is normal by
+construction. A formula graph is checked through its normalization
+(`checkSource`).
 
-$$
-\operatorname{nf}(G)(i)=\operatorname{nf}(G(i)).
-$$
+## Subtyping
 
-References to other labels occur only inside reference or arrow operands.
-Thus recursion remains guarded even when the graph body contains unions and
-intersections. No recursion is unfolded during normalization, and no new
-labels are allocated. A finite graph stays finite, although a body can grow
-exponentially through DNF distribution. There is no measured performance claim
-or growth-control optimization yet.
+Subtyping is proved in three layers: **clause coverage** relates one source
+clause to one target clause under a table $\Delta$; a **core** judgment checks
+a whole table at once, which handles recursion; the **structural** rules add
+union inclusion, transitivity and the scheme rules.
 
-`normalize_sound` proves preservation for every value and argument-list
-interpretation of the operands, budget, world and value: the normal form means
-exactly the formula, clause by clause.
+### Clause coverage
 
-Nothing in the current pipeline invokes the normalizer. Requests carry normal
-bodies, and the [request grammar](REQUEST-PROTOCOL.md#request-fields) has no
-conjunction above the clause level, so every graph reaching the consumer is
-normal by construction. A formula graph is checked through its normalization
-(`checkSource`), whose meaning is the checked one. A verified compiler from
-textual type syntax to a graph, which would first need a formula graph with a
-recursive denotation of its own, has not been implemented here.
+$\Delta;S\vdash c\sqsubseteq d$ says clause $c$ of source type $S$ is covered
+by target clause $d$. Every clause is covered by `top`; identical primitives,
+and a singleton by its primitive, are covered trivially; different shapes are
+never covered. `refs` covers only `refs`, and `dict` only `dict`. Write
+$\Delta^{\pm}(A,B)$ for $\Delta(A,B)\land\Delta(B,A)$.
 
-## Reference rules and usability
-
-For a table of recursive obligations $\Delta$, the new reference-clause
-coverage rule is:
-
-$$
-\frac{\forall j.\;\exists i.\;\Delta(A_i,C_j)\land\Delta(C_j,A_i)}
- {\Delta\vdash\textstyle\bigwedge_i\mathsf{Ref}\,A_i
-   \le\bigwedge_j\mathsf{Ref}\,C_j}.
-$$
-
-It justifies every target constraint by an equivalent source constraint. It
-supports conjunction elimination and retention of multiple constraints without
-solving arbitrary semantic emptiness. It is a sufficient rule; more consequences
-might be provable with additional sound rules.
-
-The semantic probe also establishes:
-
-- `adm`: admissibility of reference conjunctions for arbitrary operand families.
-- `congr_below`: guarded dependence on those operand families.
-- `operands_agree`: all operands agree below the current observation budget,
-  because each agrees with the same stored contract.
-- `read_all`: a read yields a value meeting every operand at the available lower
-  budgets, assuming the heap satisfies the world.
-- `write_first`: writing a value meeting the first operand at those budgets
-  preserves heap satisfaction, including aliases. The invariant agreements
-  explain why a separate write obligation for every operand is unnecessary.
-- `cyclic_inhabited`: repeated constraints on a recursive reference have a real
-  inhabitant in a satisfying cyclic heap.
-
-These are semantic heap rules. They do not themselves constitute a new full
-program typing system.
-
-## Declarative arrow and structural rules
-
-Write $\Delta(A,B)$ for membership of the pair $(A,B)$ in a finite table of
-recursive subtype obligations. The judgment $\Delta;L\vdash C\Rightarrow D$
-(`PositiveRules.Arrow`) derives an arrow from a source overload $L$:
-
-$$
-\frac{}{\Delta;L\vdash\bot\Rightarrow D}
-\qquad
-\frac{(A,B)\in L\quad\Delta(C,A)\quad(B=\bot\lor\Delta(B,D))}
-     {\Delta;L\vdash C\Rightarrow D}.
-$$
-
-Union-domain composition and guarded result combination are:
-
-$$
-\frac{\Delta;L\vdash C\Rightarrow D\quad\Delta;L\vdash C'\Rightarrow D}
-     {\Delta;L\vdash C\lor C'\Rightarrow D}
-$$
-
-$$
-\frac{\Delta;L\vdash C\Rightarrow B\quad\Delta;L\vdash C\Rightarrow B'\quad
-      \forall i\in B,k\in B'.\;\mathsf{compatible}_G(i,k)\Rightarrow\Delta(\{i\},D)}
-     {\Delta;L\vdash C\Rightarrow D}.
-$$
-
-`compatible` checks whether some clause under label $i$ has the same outer
-shape as some clause under label $k$. A type label can denote multiple shapes.
-The condition is sufficient, not an exact decision of joint inhabitation.
-Repeated combination can use arbitrarily many source conjuncts. Singleton
-splitting is derivable by finite union composition (`Arrow.split`).
-
-Clause coverage (`Covers`) matches identical atomic shapes, uses the reference
-rule above, and checks every target arrow from the source overload. Union
-coverage expands the clauses under the source labels, *splits* each of them, and
-matches every part by a covered clause under the target labels. A core judgment
-$G\vdash_c S\le T$ requires a finite table containing $(S,T)$ whose every entry
-passes this coverage rule **and relates the same kind**: two value types or
-two argument-list types (`SameKind`). All cyclic premises occur under a reference or
-function constructor. Only clause rows have clauses; a parameter or scheme row
-of a source (see [Parameter and scheme rows](#parameter-and-scheme-rows)) must
-reappear in the target, or the target must admit every value (`Opaque`):
-
-$$
-\frac{(S,T)\in\Delta\qquad
-      \forall(A,B)\in\Delta.\;
-      (\exists k.\;A:k\land B:k)\land
-      \Bigl(\forall i\in A.\;\mathsf{plain}_G(i)\lor i\in B\lor\top\in\mathsf{cl}_G(B)\Bigr)
-      \land\forall a\in\mathsf{split}(\mathsf{cl}_G(A)).\;\exists b\in\mathsf{cl}_G(B).\;
-      \Delta\vdash a\sqsubseteq b}
-     {G\vdash_c S\le T}
-$$
-
-where $\mathsf{cl}_G(A)$ is the list of clauses of $A$'s clause rows
-(`clausesOf`). The kinds are defined in
-[the instance-table rules](#instances-of-a-scheme-row). Empty types have either
-kind. In particular, value top cannot discharge a pack edge, even though the
-value meaning of a pack type is empty. Search
-prunes cross-kind edges using the same predicate checked by the certificate.
-
-Record coverage reads the target's operands one by one. Writing $\Delta^{\pm}(A,B)$
-for $\Delta(A,B)\land\Delta(B,A)$ and $\Phi=\varphi_0\cdots\varphi_m$ for the
-source's invariant operands,
+**Records.** With $\Phi=\varphi_0\cdots\varphi_m$ the source's invariant
+operands, each target component is found in the source:
 
 $$
 \frac{\begin{array}{c}
-\forall j,\,(\kappa{:}B)\in\varphi'_j.\;\exists(\kappa{:}A)\in\Phi.\;\Delta^{\pm}(A,B)\\
-\forall(\kappa{:}B)\in\psi'.\;\exists(\kappa{:}A)\in\Phi\,\psi.\;\Delta(A,B)\qquad
-\forall(\kappa{:}B)\in\omega'.\;\exists(\kappa{:}A)\in\Phi\,\omega.\;\Delta^{\pm}(A,B)
+\forall j,\,(\kappa{:}B)\in\varphi'_j.\;\exists(\kappa{:}A)\in\Phi.\;\Delta^{\pm}(A,B)\qquad
+\forall(\kappa{:}B)\in\psi'.\;\exists(\kappa{:}A)\in\Phi\,\psi.\;\Delta(A,B)\\
+\forall(\kappa{:}B)\in\omega'.\;\exists(\kappa{:}A)\in\Phi\,\omega.\;\Delta^{\pm}(A,B)\qquad
+\Delta;S\vdash(\Phi\,\psi;\mu)\sqsubseteq_{\mathsf{meth}}\mu'
 \end{array}}
-{\Delta\vdash\mathsf{Ref}(\Phi;\psi;\omega)\sqsubseteq\mathsf{Ref}(\varphi'_0\cdots\varphi'_k;\psi';\omega')}
+{\Delta;S\vdash\mathsf{Ref}(\Phi;\psi;\omega;\mu)\sqsubseteq\mathsf{Ref}(\varphi'_0\cdots\varphi'_k;\psi';\omega';\mu')}
 $$
 
-(`CoversFields`, `CoversViews`, `CoversOptional`). Methods are
-host-relative members ([DESIGN.md](DESIGN.md#method-members-are-host-relative)):
-a target method $m:(\vec Q\to D)$ is covered by a source method of the same
-key, or by a function $F$ the source holds under that key whose receiver the
-source type $S$ is within,
+An invariant field needs an equivalent invariant field. A view is met by any
+field whose type is within it. An optional field is met by a required or
+optional field of the same key with an equivalent type; a required field is
+never met by a view or an optional field, since neither says the key is
+present. Fields the target does not name are not compared: records are open.
+A `dict` target also needs each index contract within some source index
+contract.
+
+**Methods.** A target method $m$ is covered by a source method of the same
+key, or by a function the source holds under that key whose receiver the
+source type $S$ is within:
 
 $$
 \frac{m'\in\mu\quad m'.\mathsf{key}=m.\mathsf{key}\quad
-      \forall(\vec Q,D)\in m.\;\exists(\vec P,B)\in m'.\;\Delta(\vec Q,\vec P)\land\Delta(B,D)}
-     {\Delta;S\vdash\mu\sqsubseteq_{\mathsf{meth}}m}
-\qquad
+      \forall(\vec Q\to D)\in m.\;\exists(\vec P\to B)\in m'.\;\Delta(\vec Q,\vec P)\land\Delta(B,D)}
+     {\Delta;S\vdash(\Phi\,\psi;\mu)\sqsubseteq_{\mathsf{meth}}m}
+$$
+
+$$
 \frac{(m.\mathsf{key}{:}F)\in\Phi\,\psi\quad F\equiv\mathsf{arrs}(L;\ldots)\quad
-      \forall(\vec Q,D)\in m.\;\exists(Rt,\vec P,B)\in L.\;\Delta(S,Rt)\land\Delta(\vec Q,\vec P)\land\Delta(B,D)}
-     {\Delta;S\vdash\Phi\,\psi\sqsubseteq_{\mathsf{meth}}m}
+      \forall(\vec Q\to D)\in m.\;\exists(Q_0;\vec P)\to B\in L.\;
+      \Delta(S,Q_0)\land\Delta(\vec Q,\vec P)\land\Delta(B,D)}
+     {\Delta;S\vdash(\Phi\,\psi;\mu)\sqsubseteq_{\mathsf{meth}}m}
 $$
 
-(`CoversSig`, `CoversByFunction`), variadic signatures likewise. A `dict` target also
-needs every index operand covered by a source index operand at a subtype. An
-optional target field is met by a required or optional source field of the same
-key; a required target field only by a required one, since neither a view nor
-an optional field says the key is present. A construct signature is covered by
-one taking as many parameters, each at least as wide, with a result at most as
-wide:
+Here $\Delta(\vec Q,\vec P)$ pairs the lists position by position and needs
+equal lengths (`Domains`). Receivers of two members are not compared: both
+are the host. Variadic member signatures are covered likewise, the target's
+extra fixed parameters taken into the source's rest.
 
-$$
-\frac{\forall(\vec C,D)\in M.\;\exists(\vec A,B)\in L.\;
-      |\vec A|=|\vec C|\land\forall i.\,\Delta(C_i,A_i)\land\Delta(B,D)}
-     {\Delta\vdash\mathsf{Ctors}\,L\sqsubseteq\mathsf{Ctors}\,M}
-\qquad
-\frac{}{\Delta\vdash c\sqsubseteq c}\ \ c\in\{\mathsf{bigint},\mathsf{symbol}\}.
-$$
+**Arrays and packs.** A `list` target contract is covered by a source
+contract with as many required and optional positions, each position within
+the target's, and equivalent to it when the target is writable; a writable
+target needs a writable source, so no location is retyped. Mutable arrays are
+therefore invariant.
 
-Coverage is defined once in `CoversWith`. Declarative `Covers` supplies arrow
-derivations; `checkClause` supplies checked arrow evidence. The remaining
-conditions are shared, including pack bounds and variance.
-
-A variadic construct signature is covered by one taking as many fixed
-parameters, each at least as wide, a rest at least as wide as a pack, and a
-result at most as wide; or by a fixed one, when its rest is one exact tuple
-$\mathsf{Pack}(\vec E)$, no optional position and no rest. An exact tuple
-holds its actuals at their positions at the current level, so they are at the
-fixed signature's parameters (`mixed_pack_exact`, `fits_exact`), whatever the
-positions' types:
-
-$$
-\frac{|\vec A|=|\vec C|\quad\forall i.\,\Delta(C_i,A_i)\quad\Delta(Q,P)\quad\Delta(B,D)}
-     {\Delta\vdash(\vec A,\ldots P)\Rightarrow B\ \sqsubseteq\ (\vec C,\ldots Q)\Rightarrow D}
-\qquad
-\frac{Q=\mathsf{Pack}(\vec E)\ \text{exact}
-      \quad|\vec A|=|\vec C\vec E|\quad\forall i.\,\Delta((\vec C\vec E)_i,A_i)\quad\Delta(B,D)}
-     {\Delta\vdash\vec A\Rightarrow B\ \sqsubseteq\ (\vec C,\ldots Q)\Rightarrow D}
-$$
-
-(`FixedCoversPack`; `FixedCallsPack` for call signatures, with a receiver).
-So a class taking a number meets `new (...params: [number]) => M`, and one
-taking `{ readonly value: number }` meets
-`new (...params: [{ readonly value: number }]) => M`, at a result it meets.
-
-A pack contract is covered by another that admits every list it admits. The
-target's required positions are no more than the source's; a target without a
-rest bounds the source's length; and each position's operand is within the
-target's, covariantly, since a pack holds values rather than locations. Past
-both contracts' fixed positions every index has the rests, so the positions up
-to $N=\max(|\vec R|+|\vec O|,\,|\vec R'|+|\vec O'|)$ decide all:
+A pack contract $\tau$ is covered by $\tau'$ when $\tau'$ admits every list
+$\tau$ admits: the target requires no more positions; a target without a rest bounds the source's length;
+and each source position's type is within the target's, covariantly, since a
+pack holds values, not locations. Past both contracts' fixed positions every
+index reads the rests, so the positions up to
+$N=\max(|\vec R|+|\vec O|,\,|\vec R'|+|\vec O'|)$ decide all:
 
 $$
 \frac{\begin{array}{c}
@@ -549,25 +428,131 @@ E'=\varnothing\Rightarrow E=\varnothing\land|\vec R|+|\vec O|\le|\vec R'|+|\vec 
      {\Delta\vdash\mathsf{Pack}\,\vec\tau\sqsubseteq\mathsf{Pack}\,\vec\tau'}
 $$
 
-(`CoversPack`, `covers_arguments_sound`). So `[number, string]` is within
-`(number | string)[]` and `[number]` within `[number, string?]`, while
-`number[]` is within no bounded tuple. The shape/covariance proof is
-`covers_arguments`, parameterized by the element membership.
+So `[number, string]` is within `(number | string)[]` and `[number]` within
+`[number, string?]`, while `number[]` is within no bounded tuple.
 
-Splitting (`splitClause`) replaces a source $\mathsf{bool}$ clause with the pair
-$\mathsf{true},\mathsf{false}$ and leaves every other clause alone. It is
-meaning preserving — `splitClause_sem` proves the union of the parts denotes
-exactly the original clause, and `source_sem` lifts that to a label set — so it
-adds no power beyond the model. It is what lets a single source clause be
-discharged by *several* target clauses while `Covers` itself stays
-clause-to-clause: $\mathsf{bool}\le\mathsf{true}\mid\mathsf{false}$ is derivable
-because each singleton covers one part, and $\mathsf{bool}\le\mathsf{bool}$ still
-is because a $\mathsf{bool}$ target covers both. $\mathsf{bool}\le\mathsf{true}$
-remains underivable. $\mathsf{bool}$ is the only clause of this language with a
-finite set of inhabitants that is not already a singleton, so it is the only one
-that splits.
+Lean: `CoversFields`, `CoversViews`, `CoversOptional`, `CoversMethods`,
+`CoversSig`, `CoversByFunction`, `CoversTuple`, `CoversPack`,
+`covers_arguments_sound`.
 
-The final judgment `Sub` adds:
+### Function and class coverage
+
+`arrs` is covered by `arrs`, and `callable` by `arrs` (forgetting its record
+operands) or by `callable` (covering the operands as invariant fields). The
+reverse, from `arrs` to `callable`, needs evidence of the record operands and
+has no rule.
+
+Each target fixed signature $(Q;\vec C)\to D$ must be **derived** from the
+source's signatures $L$ and variadic signatures $S$ by the judgment
+$\Delta;L,S\vdash(Q;\vec C)\Rightarrow D$:
+
+$$
+\frac{(Q_0;\vec A)\to B\in L\quad\Delta(Q,Q_0)\quad\Delta(\vec C,\vec A)\quad
+      (B=\bot\lor\Delta(B,D))}
+     {\Delta;L,S\vdash(Q;\vec C)\Rightarrow D}\ \textsc{source}
+\qquad
+\frac{s\in S\ \text{takes}\ (Q;\vec C)\ \text{into its rest, result within}\ D}
+     {\Delta;L,S\vdash(Q;\vec C)\Rightarrow D}\ \textsc{rest}
+$$
+
+$$
+\frac{}{\Delta;L,S\vdash(\bot;\vec C)\Rightarrow D}\ \textsc{emptyRecv}
+\qquad
+\frac{\bot\in\vec C}{\Delta;L,S\vdash(Q;\vec C)\Rightarrow D}\ \textsc{empty}
+$$
+
+$$
+\frac{\Delta;L,S\vdash(Q;\vec C\,A\,\vec C')\Rightarrow D\quad
+      \Delta;L,S\vdash(Q;\vec C\,A'\,\vec C')\Rightarrow D}
+     {\Delta;L,S\vdash(Q;\vec C\,(A\lor A')\,\vec C')\Rightarrow D}\ \textsc{union}
+\qquad
+\frac{\Delta;L,S\vdash(Q;\vec C)\Rightarrow D\quad\Delta;L,S\vdash(Q';\vec C)\Rightarrow D}
+     {\Delta;L,S\vdash(Q\lor Q';\vec C)\Rightarrow D}\ \textsc{recvUnion}
+$$
+
+$$
+\frac{\Delta;L,S\vdash(Q;\vec C)\Rightarrow B\quad\Delta;L,S\vdash(Q;\vec C)\Rightarrow B'\quad
+      \forall i\in B,k\in B'.\;\mathsf{compatible}_G(i,k)\Rightarrow\Delta(\{i\},D)}
+     {\Delta;L,S\vdash(Q;\vec C)\Rightarrow D}\ \textsc{combine}
+$$
+
+`union` splits one parameter's union, `recvUnion` the receiver's. `combine`
+uses two source signatures at once: the call's result meets both results, so
+it is in some label $i$ of $B$ and some label $k$ of $B'$ that can share a
+value. $\mathsf{compatible}_G(i,k)$ holds when some clause of $i$ and some
+clause of $k$ have the same shape, or either has `top` or is not a clause
+row. It is sufficient, not an exact test of joint inhabitation, and repeated
+combination can use any number of source signatures.
+
+Each target variadic signature is covered by a source variadic signature with
+a receiver at least as wide, fixed parameters at least as wide (the target's
+extra ones taken into the source's rest), a rest at least as wide and a result
+at most as wide; or by a fixed source signature when the target's rest is one
+**exact tuple** $\mathsf{Pack}(\vec E)$, with no optional position and no
+rest. An exact tuple holds its actuals at their positions at the current
+level, so they are at the fixed signature's parameters whatever the
+positions' types:
+
+$$
+\frac{Q'=\mathsf{Pack}(\vec E)\ \text{exact}\quad\Delta(Q,Q_0)\quad
+      \Delta(\vec C\vec E,\vec A)\quad\Delta(B,D)}
+     {\Delta\vdash(Q_0;\vec A)\to B\ \sqsubseteq\ (Q;\vec C,\ldots Q')\to D}
+$$
+
+**Classes.** A construct signature $\vec C\Rightarrow D$ is covered by a
+source one $\vec A\Rightarrow B$ with $\Delta(\vec C,\vec A)$ and
+$\Delta(B,D)$. A variadic one is covered by a variadic source one with as many fixed
+parameters, each at least as wide, a rest at least as wide and a result at most as
+wide, or, when its rest is an exact tuple, by a fixed one as above. So a class
+taking a number meets `new (...params: [number]) => M`.
+
+Lean: `CallArrow`, `CallArrow.sound`, `Domains`, `RestFixed`, `RestCovers`,
+`FixedCallsPack`, `FixedCoversPack`, `mixed_pack_exact`, `fits_exact`,
+`compatible`.
+
+### Core tables
+
+A core judgment $G\vdash_c S\le T$ needs a finite table $\Delta$ containing
+$(S,T)$ in which every entry $(A,B)$ satisfies three conditions:
+
+1. **Same kind.** $A$ and $B$ are both value types or both argument-list
+   types. A pack clause has argument kind, every other clause and every scheme
+   has value kind, a parameter keeps its declared kind, and the empty type has
+   either. So value `top` cannot discharge a pack edge, even though a pack's
+   value meaning is empty.
+2. **Opaque rows.** Every parameter or scheme row of $A$ appears in $B$, or
+   $B$ holds `top`.
+3. **Coverage.** Every split part of every clause of $A$ is covered by some
+   clause of $B$, with $A$ as the source type.
+
+$$
+\frac{(S,T)\in\Delta\qquad
+      \forall(A,B)\in\Delta.\;
+      \mathsf{SameKind}(A,B)\land\mathsf{Opaque}(A,B)
+      \land\forall a\in\mathsf{split}(\mathsf{cl}_G(A)).\;\exists b\in\mathsf{cl}_G(B).\;
+      \Delta;A\vdash a\sqsubseteq b}
+     {G\vdash_c S\le T}
+$$
+
+Here $\mathsf{cl}_G(A)$ lists the clauses of $A$'s clause rows.
+**Splitting** replaces a `bool` clause by `boolLit true` and `boolLit false`
+and leaves every other clause alone. It preserves meaning, so it adds no power
+beyond the model; it lets one source clause be discharged by several target
+clauses while coverage stays clause to clause. So
+$\mathsf{bool}\le\mathsf{true}\lor\mathsf{false}$ and
+$\mathsf{bool}\le\mathsf{bool}$ are derivable, and
+$\mathsf{bool}\le\mathsf{true}$ is not.
+
+Every cyclic premise occurs under an operand, so the table is sound by
+induction on the level; the induction also supplies the source-type premise a
+method covered by a function needs.
+
+Lean: `Core`, `Valid`, `SameKind`, `Opaque`, `splitClause`,
+`splitClause_sem`, `source_sem`, `Core.mixed_sound`.
+
+### Structural rules
+
+`Sub` closes the core judgment under union inclusion and transitivity:
 
 $$
 \frac{G\vdash_c S\le T}{G\vdash S\le T}
@@ -577,74 +562,72 @@ $$
 \frac{G\vdash S\le U\quad G\vdash U\le T}{G\vdash S\le T}.
 $$
 
-Two more rules read scheme rows ([Parameter and scheme rows](#parameter-and-scheme-rows)).
-Both rules turn on which **parameter rows a row depends on**. A free-variable
-certificate $V$ on a domain $D$ (`FreeOk`) assigns each $i\in D$ a set $V(i)$
-of parameter rows, with $D$ closed under what its rows read (a clause row its
-operands, a scheme row its signature types), such that
+Reflexivity and invariance under reordering or duplicating union labels
+follow (`Sub.refl`, `Sub.congr`). Transitivity composes completed proofs, not
+unchecked back-references in a table.
+
+Three more rules read scheme rows. They turn on which **parameter rows a row
+depends on**. A free-variable certificate $V$ on a domain $D$ assigns each
+$i\in D$ a set $V(i)$ of parameter rows, with $D$ closed under what its rows
+read (a clause row its operands, a scheme row its signature types), such that
 
 $$
 i\ \text{a parameter row}\Rightarrow i\in V(i),\qquad
 l\in\mathsf{reads}_G(i)\Rightarrow V(l)\subseteq V(i)\cup\mathsf{binders}(i),
 $$
 
-where $\mathsf{binders}(i)$ is empty unless $i$ is a scheme row. A scheme's own
-binders are therefore not free in it. A row means the same at two assignments
-that agree on $V(i)$ (`agree_freeWith`, `mixed_respectsFree`).
+where $\mathsf{binders}(i)$ is empty unless $i$ is a scheme row, so a scheme's
+own binders are not free in it. A row means the same at two assignments that
+agree on $V(i)$.
+
+Lean: `FreeOk`, `agree_freeWith`, `mixed_respectsFree`.
+
+#### Instances of a scheme row
 
 An instance is checked by a finite **instance table** of entries
 $(i,\kappa,T)$: under the context $\kappa$, row $i$ means type $T$. A context
 maps the binders in scope to what they stand for: an instance type, or, under
 a scheme mapped to another, that scheme's binder. Binder rows are shared
-between scopes (a generic method of a generic type reuses a few coloured
-binder rows so that the graph stays finite), and the context tells the scopes
-apart. Writing $\kappa(A)$ for the image of a type, each row's image under
-$\kappa$ being an entry, an entry is one of (`entryOk`):
+between scopes (a generic method of a generic type reuses a few binder rows so
+that the graph stays finite), and the context tells the scopes apart. Writing
+$\kappa(A)$ for the image of a type, each entry is one of:
 
-- $i$ a parameter row and $T=\kappa(i)$, or $T=\{i\}$ when $\kappa$ does not name $i$, with $T$ of the declared kind of $i$;
-- **rigid**: $T=\{i\}$ and no row of $V(i)$ is named by $\kappa$;
+- $i$ a parameter row and $T=\kappa(i)$, or $T=\{i\}$ when $\kappa$ does not
+  name $i$, with $T$ of $i$'s declared kind;
+- **rigid**: $T=\{i\}$ and $\kappa$ names no row of $V(i)$;
 - $i$ a clause row, $T=\{j\}$, $j$ a clause row, and $G(j)=G(i)[\kappa]$;
-- $i$ the scheme row $(\vec q;\Sigma';\beta';\Sigma'_\ldots)$, $T=\{j\}$, $j$ the scheme row
-  $(\vec r;\Sigma'[\kappa'];\beta'[\kappa];\Sigma'_\ldots[\kappa'])$, each bound moved to the target
-  binder at its binder's position and its type mapped under the outer
-  $\kappa$, with $|\vec r|=|\vec q|$, $\vec r$ distinct
-  parameter rows of pairwise matching kinds and $\kappa'=\kappa[\vec q\mapsto\vec r]$, provided no free
-  row of $i$ outside $\kappa$'s domain, and no row free in an image
-  $\kappa(p)$ for $p\in V(i)$, is in $\vec r$ (no capture).
+- $i$ the scheme row $(\vec q;\Sigma';\beta';\Sigma'_\ldots)$, $T=\{j\}$, $j$
+  the scheme row $(\vec r;\Sigma'[\kappa'];\beta'[\kappa];\Sigma'_\ldots[\kappa'])$
+  with $|\vec r|=|\vec q|$, $\vec r$ distinct parameter rows of matching kinds
+  and $\kappa'=\kappa[\vec q\mapsto\vec r]$, provided no free row of $i$
+  outside $\kappa$'s domain, and no row free in an image $\kappa(p)$ for
+  $p\in V(i)$, is in $\vec r$ (no capture).
 
-Parameter kinds are `value` and `arguments`. Write $S:k$ when every row of
-$S$ has kind $k$: pack clauses have argument kind, other clauses and schemes
-have value kind, and parameters retain their declared kind. The empty union
-has either kind; a union cannot mix the two. `SameKind` checks both ends of core subtype edges; `substitutionKind` and
-`instKinds` check table images and scheme instances, and connect the kinds to
-the selected components of a mixed assignment (`mixed_assignment_substitution`).
-
-The table is checked (`TableOk`) when its rows lie in a domain $D$ with a
-free-variable certificate $V$ and every entry is one of these. Two assignments
-are related by $\kappa$ on a set of rows when each row $\kappa$ names means, on
-the left, its image's meaning on the right, and every other row means the same
-on both sides. Then, for every entry and every pair of assignments related by
-its context on its row's free rows, the row on the left means $T$ on the right
-in both components, values and argument lists (`table_row_mixed`). With $\kappa_0=\vec p\mapsto\vec\theta$ for the scheme's
-binders $\vec p$ and instance types $\vec\theta$, the instance assignment and
-the graph's are related by $\kappa_0$ by construction:
+The table is checked when its rows lie in a domain with a free-variable
+certificate and every entry is one of these. Then, for every entry and every
+pair of assignments related by its context on its row's free rows, the row on
+the left means $T$ on the right, in both components. With
+$\kappa_0=\vec p\mapsto\vec\theta$ for a scheme's binders and instance types,
+the instance assignment and the graph's are related by $\kappa_0$ by
+construction:
 
 $$
-\frac{i\ \text{a scheme row}\ (\vec p;\Sigma;\beta)\quad
-      |\vec\theta|=|\vec p|\quad
-      \forall(p,\theta)\in\operatorname{zip}(\vec p,\vec\theta).\;\theta:\mathsf{kind}(p)\quad
-      \forall(p,B)\in\beta.\;\theta_p\subseteq B\lor G\vdash_c\theta_p\le B\quad
-      \text{a checked table}\quad
-      T\equiv_G\mathsf{arrs}(L;M)\quad
-      \forall\tau\in L.\;\exists\sigma\in\Sigma.\;\tau=\sigma[\kappa_0]\quad
-      \forall\tau\in M.\;\exists\sigma\in\Sigma_\ldots.\;\tau=\sigma[\kappa_0]}
+\frac{\begin{array}{c}
+i\ \text{a scheme row}\ (\vec p;\Sigma;\beta;\Sigma_\ldots)\quad
+|\vec\theta|=|\vec p|\quad
+\forall p.\;\theta_p:\mathsf{kind}(p)\quad
+\forall(p,B)\in\beta.\;\theta_p\subseteq B\lor G\vdash_c\theta_p\le B\\
+\text{a checked table}\quad
+T\equiv_G\mathsf{arrs}(L;M)\quad
+\forall\tau\in L.\;\exists\sigma\in\Sigma.\;\tau=\sigma[\kappa_0]\quad
+\forall\tau\in M.\;\exists\sigma\in\Sigma_\ldots.\;\tau=\sigma[\kappa_0]
+\end{array}}
      {G\vdash\{i\}\le T}\ \textsc{inst}
 $$
 
 The same tables relate two lowerings of one type that differ only in which
 binder rows their schemes use, as a producer's copy of `Promise<number>` and
-the annotation's may. With the empty context, both assignments are the
-graph's, so each row means its image:
+the annotation's may. With the empty context each row means its image:
 
 $$
 \frac{\text{a checked table}\quad
@@ -652,97 +635,150 @@ $$
      {G\vdash S\le T}\ \textsc{table}
 $$
 
-A type below a scheme's signatures with the binders opaque is below the scheme,
-provided none of its free parameter rows is a binder:
+A type below a scheme's signatures with the binders opaque is below the
+scheme, provided none of its free parameter rows is a binder:
 
 $$
 \frac{j\ \text{a scheme row}\ (\vec p;\Sigma;\beta;\Sigma_\ldots)\quad
       U\equiv_G\mathsf{arrs}(\Sigma;\Sigma_\ldots)\quad
-      V\ \text{a free-variable certificate on}\ D\quad
       \forall l\in S.\;l\in D\land V(l)\cap\vec p=\emptyset\quad
       G\vdash S\le U}
      {G\vdash S\le\{j\}}\ \textsc{gen}
 $$
 
-`Sub.inst` and `Sub.gen` are these rules. The second is sound because $S$ means
-the same at any two assignments that differ only on $\vec p$ (`agree_freeWith`),
-and because every rule of `Sub` holds at every assignment, for both components
-(`Sub.mixed_sound`): the
-premise $G\vdash S\le U$, derived once, holds at each instantiation of $\vec p$.
+`gen` is sound because $S$ means the same at any two assignments that differ
+only on $\vec p$, and every rule of `Sub` holds at every assignment: the
+premise $G\vdash S\le U$, derived once, holds at each instantiation.
 
-Reflexivity and invariance under reordering or duplicating union labels follow
-(`Sub.refl`, `Sub.congr`). Transitivity composes completed proofs, not unchecked
-back-references in a table. No general constructor-normalization theorem is
-implied by the union-label congruence theorem.
+Lean: `entryOk`, `TableOk`, `instKinds`, `substitutionKind`,
+`mixed_assignment_substitution`, `table_row_mixed`, `Sub.inst`, `Sub.table`,
+`Sub.gen`, `Sub.mixed_sound`, `Sub.sound`, `Sub.args_sound`.
 
-## Certificate guarantees
+## Certificates
 
-`PositiveCertificates.lean` checks finite tables, arrow evidence, and explicit
-structural proof trees. Its checker uses no semantic oracle or unbounded proof
-search.
+A certificate is an explicit proof tree, checked without a semantic oracle or
+unbounded search. It has six forms, one per `Sub` rule:
 
-A proof is one of six forms. `core` carries a `Certificate`: the finite
-candidate relation and its arrow evidence. `subset` is plain union inclusion of
-the source labels in the target's. `trans` names an intermediate type and holds
-a proof on each side. `inst` puts a scheme row below an instance of its
-signatures: it carries the instance table, the instance types, the table's
-domain and its free-variable certificate (`Sub.inst`). `table` relates a type
-to one holding its rows' images under a table with the empty context: the
-table, its domain and its free-variable certificate (`Sub.table`). `gen` puts a type below a scheme row: it
-carries a domain holding the type and its free-variable certificate, the type
-stating the scheme's signatures with its binders opaque, and a proof of the
-inclusion in that type (`Sub.gen`). All six are accepted, which is worth stating
-separately from what the producer builds: `CertificateProducer` never emits
-`trans`, and
-[PROGRAM-TYPING.md](PROGRAM-TYPING.md#producing-evidence-from-supplied-claims)
-records that its search does not enumerate transitivity derivations. That is a
-restriction on search, not on the accepted language — a certificate written by
-hand or by another producer may use `trans`, and the consumer checks it.
+| Form | Carries |
+| --- | --- |
+| `core` | the finite table and, for each fixed signature to derive, its derivation |
+| `subset` | nothing: union inclusion is decided |
+| `trans` | an intermediate type and a proof on each side |
+| `inst` | the instance table, the instance types, the table's domain and free-variable certificate |
+| `table` | the table, its domain and free-variable certificate |
+| `gen` | a domain holding the type, its free-variable certificate, the type stating the scheme's signatures, and a proof of inclusion in it |
 
-`check_sound` and `check_complete` prove:
+All six are accepted. `CertificateProducer` never emits `trans`: that
+restricts search, not the accepted language, and a certificate written by
+another producer may use it.
+
+The checker is sound and complete for the rules:
 
 $$
 G\vdash S\le T\quad\Longleftrightarrow\quad
 \exists p.\;\operatorname{check}(G,S,T,p)=\mathsf{true}.
 $$
 
-This is `derivable_iff_checked`, for the extended rules just specified. It is
-not completeness for every inclusion true in the model.
-
-Separately, `Sub.sound` proves semantic inclusion, and `Sub.args_sound` the
-inclusion of argument lists. `accepted` composes checking and rule soundness:
+This is not completeness for every inclusion true in the model. Composed with
+rule soundness, a checked certificate is a semantic inclusion:
 
 $$
 \operatorname{check}(G,S,T,p)=\mathsf{true}
 \Longrightarrow
 \forall n,W,v.\;
 \llbracket S\rrbracket_G(n,W,v)\Rightarrow
-\llbracket T\rrbracket_G(n,W,v).
+\llbracket T\rrbracket_G(n,W,v),
 $$
 
-`accepted_subsumption` transports an existing computation-safety judgment from
-$S$ to $T$. It does not establish the initial judgment or a whole-program typing
-theorem by itself. [PROGRAM-TYPING.md](PROGRAM-TYPING.md) now supplies the
-separate typing theorem and incorporates checked subsumption. The operational
-language and trust boundary are documented in
-[SEMANTICS.md](SEMANTICS.md).
+and likewise for argument lists. `accepted_subsumption` transports a
+computation-safety judgment from $S$ to $T$; the typing theorem that uses it
+is in [PROGRAM-TYPING.md](PROGRAM-TYPING.md).
 
-## Rigid inclusion
+Lean: `checkClause`, `checkCore`, `check_sound`, `check_complete`,
+`derivable_iff_checked`, `accepted`, `accepted_subsumption`
+(`Types/PositiveCertificates.lean`).
+
+## State-assertion grammar
+
+Point claims can combine ordinary types with facts about the current execution
+state. The following notation describes the finite assertion layer; it does
+not add constructors to the type grammar. Let $x$ and $y$ name environment
+slots, $A$ be a type, and $R$ a finite disjunction of primitive predicates:
+
+$$
+\begin{aligned}
+a &::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}\mid\mathsf{Number}\mid\mathsf{numLit}(b),\\
+R &::= \{a_1,\ldots,a_k\}\quad(k\geq 0),\\
+J &::= \top\mid x:A\mid x=R\mid x=y\mid x\mapsto R\mid x\mapsto y\mid J\land J.
+\end{aligned}
+$$
+
+| Assertion | What it states |
+| --- | --- |
+| $x:A$ | The value of $x$ belongs to $A$ at the current world and level. |
+| $x=R$ | $x$ satisfies one of the predicates in $R$. A statement about the environment, so no heap change can falsify it. |
+| $x=y$ | $x$ and $y$ hold the same value, the same location when they hold references. Again untouched by heap changes. |
+| $x\mapsto R$ | The cell $x$ names currently holds a value satisfying $R$. It does not change that location's contract. |
+| $x\mapsto y$ | The cell $x$ names currently holds the value of $y$. A write or a call can falsify this. |
+| $\top$, $J_1\land J_2$ | No requirement, or both. Conjunction asserts no ownership or disjointness. |
+
+$=$ speaks only about the environment, $\mapsto$ about the heap as well; that
+division decides which facts survive a step, and
+[Program typing](PROGRAM-TYPING.md#the-reference-operations) states the rules
+over it. Despite the notation there is no separating conjunction and no
+ownership: the facts are duplicable, and $\mapsto$ does not claim the cell is
+unaliased.
+
+An empty predicate list is an impossible predicate, not an absent assertion.
+There is no assertion disjunction, negation or quantifier: the union within
+$R$ gives alternatives for one value, not correlated alternatives between
+slots. `Number` means any number and `numLit(b)` exactly that bit pattern;
+singletons imply `Number`, not conversely. Predicates on nested references are
+outside this vocabulary.
+
+The notation used in source claims is an abbreviation:
+
+$$
+x:\{\mathsf{value}:B=R\}
+\quad\equiv\quad
+x:\mathsf{ref}(B)\ \land\ x\mapsto R,
+$$
+
+where $\mathsf{ref}(B)$ is the plain cell $\mathsf{Ref}\,\{\mathsf{value}{:}B\}$.
+On the right of `=`, `true` denotes $\{\mathsf{true}\}$ and `boolean` denotes
+$\{\mathsf{true},\mathsf{false}\}$. So `{ value: boolean = true }` combines
+`ref(boolean)` with a current-cell fact. It is neither `ref(true)` nor a type
+that can appear inside operands; forgetting the cell fact leaves
+`ref(boolean)`.
+
+The implementation stores these conjunctions as a context $\Gamma$ plus
+`HeapKnowledge.Knowledge`: cell facts (`HeapFacts.Holds`), immutable-value
+facts (`HeapKnowledge.ValueHolds`) and read/equality links (`HeapLinks.Holds`,
+whose `alias` flag distinguishes timeless slot equality from a current read).
+A source expression assertion uses its evaluated result in place of $x$.
+[Semantics](SEMANTICS.md#current-content-assertions-and-postconditions)
+defines heap observations,
+[Program typing](PROGRAM-TYPING.md#checked-expression-postconditions) the
+checked rules and fact transfer, and
+[Source claims](SOURCE-CLAIMS.md#current-content-assertions) the wire
+encoding.
+
+## Related layers
+
+### Rigid inclusion
 
 Direct types are a rigid name, ground graph labels, or a callable over direct
-types. Inclusion under declared bounds, `RigidJudgments.Sub ps a b`, is stated
-by four rules and no algorithm: a rigid name is below itself; it is below
-whatever its declared bound is below; ground label lists are compared by
-inclusion; and a callable is below another when the other's parameters are
-each below its own and its result is below the other's. There is no
-transitivity rule; the chain rule carries it. `Sub.refl` holds for every type.
+types. Inclusion under declared bounds, `RigidJudgments.Sub ps a b`, has four
+rules: a rigid name is below itself; it is below whatever its declared bound
+is below; ground label lists are compared by inclusion; and a callable is
+below another when the other's parameters are each below its own and its
+result is below the other's. The chain rule carries transitivity.
+`Sub.refl` holds for every type, and `Sub.sound` proves the judgment
+semantically sound on its own.
 
-`Sub.sound` proves the judgment semantically sound on its own: under any
-assignment satisfying the declared bounds, a derivable inclusion is an
-inclusion of families. It does not go through the executable relation.
-
-`Ty.leUnder` is the executable relation, a fuelled walk. `leUnder_iff_Sub`
-proves, for well-formed parameter lists,
+`Ty.leUnder` is the executable relation, a fuelled walk. For well-formed
+parameter lists (distinct names, every rigid bound naming an earlier
+parameter, every bound ground or rigid), `leUnder_iff_Sub` proves
 
 $$
 \mathsf{leUnder}(\bar P, a, b) = \mathsf{true}
@@ -750,203 +786,92 @@ $$
 \bar P \vdash a \le b .
 $$
 
-Well-formed means the names are distinct, every rigid bound names an earlier
-parameter, and every bound is ground or rigid; `SourceJudgments.parametersOf_wellFormed`
-proves every list the source checker builds is. The left-to-right direction,
-`Sub_of_leUnder`, needs no hypothesis.
-
-Separately, the work exposed insufficient fuel outside the theorem's
-well-formed-bound restriction. The old fuel charged for
-the structure of the two sides and one step per parameter, and a parameter
-bounded by a deep callable is declaratively below that callable while the
-walk into the bound needs as many steps as the callable is deep.
+`SourceJudgments.parametersOf_wellFormed` proves every list the source checker
+builds is well formed, and `Sub_of_leUnder` needs no hypothesis. A parameter
+bounded by a deep callable once exposed insufficient fuel:
 `RigidJudgments.counterexample_derivable` is the derivation, and two kernel
-guards record that the old fuel rejects it and the repaired fuel, which also
-pays for each parameter's bound, accepts it. Callable bounds are excluded by
-`WellFormed`, so this regression does not establish completeness for callable
-bounds in general.
+guards record that the repaired fuel, which also pays for each parameter's
+bound, accepts it.
 
-### Planned completeness extension: callable upper bounds
+#### Planned completeness extension: callable upper bounds
 
-The restriction matches the current source bound parser and simplifies the
-proof; it is not a design restriction on the eventual language or evidence
-that completeness with callable bounds is false. Both `Sub.sound` and
-`Ty.leUnder_sound` already cover callable bounds. What remains unproved is
-that the executable relation accepts every derivable inclusion with such
-bounds; repairing the one fuel counterexample does not settle that question.
+Well-formedness excludes callable bounds. This matches the current source
+bound parser and simplifies the proof; it is not a design restriction or
+evidence that completeness fails. `Sub.sound` and `Ty.leUnder_sound` already
+cover callable bounds; what is unproved is that the walk accepts every
+derivable inclusion with them.
 
-First extend well-formedness to acyclic callable bounds whose rigid references,
-including references inside parameter and result types, name earlier binders.
-Prove a sufficient fuel bound or replace the walk with an algorithm whose
-termination measure accounts for entering bounds and reversing comparisons
-at callable parameters. Then extend `leUnder_iff_Sub` and the source bound
-parser, preserving the existing semantic soundness connection. This is
-expected to be achievable without changing the declarative rules, but that
-expectation is not a theorem. Recursive bounds are a separate extension and
-must not be admitted merely by removing the current restriction or increasing
-fuel again.
-
-## Scope and next decisions
-
-The representational blocker for positive intersections of references is
-removed. This graph syntax can retain general finite positive formulas at
-program-type nodes and under guarded recursive reference/arrow operands. The
-clause grammar does not add negation, difference, primitive types other
-than null/undefined/boolean, object records, or a surface `extends` language.
-First-order rigid parameters are a layer over graph labels, not a new clause:
-a parameter is a label whose meaning is an assignment `η`, and substituting a
-type argument is interpreting the original syntax under `η[T ↦ ⟦A⟧]`. See
-[TypeParams.lean](lean/Verification/Model/Types/TypeParams.lean). That
-layer's source connection is the identity scheme, `T extends boolean`, T-copy
-bodies, and the identity/cell aliases; it does not yet handle higher-rank
-polymorphism or parameter-changing recursion.
-
-### Parameter and scheme rows
-
-A graph's label is one of three kinds of row. A clause row means its clauses. A
-parameter row means what the graph's assignment `env` gives it: the
-component its kind selects of a family over $\mathsf{Val}\uplus\mathsf{List}\,\mathsf{Val}$,
-closed values for a value binder, closed lists for a pack binder. A scheme row
-means one callable meeting its signatures at every reassignment of its
-binders, which are parameter rows. The denotation is one guarded fixed point
-over (assignment, label) (`qDenoteWithArgs G (mixedParameters G)`), and
-`meaning G` and `argMeaning G` read it at `G.env`. No check reads `env`, so every theorem proved for all graphs
-holds at every reassignment.
-
-Formally, with $\eta$ an assignment of admissible mixed families to labels
-(writing $\eta(i)$ for its selected value component) and $\llbracket A\rrbracket^\eta=\bigcup_{i\in A}\llbracket i\rrbracket^\eta$,
-the denotation is the guarded fixed point of
-
-$$
-\llbracket i\rrbracket^\eta=
-\begin{cases}
-\eta(i) & i\ \text{a parameter row},\\[2pt]
-\bigl\{\,v\;\bigm|\;\mathsf{Invocable}(v)\land\forall\vec X.\;
-  \mathsf{Bounded}_n(\vec X)\Rightarrow
-  v\in\mathsf{Calls}\bigl(\{(\llbracket Q\rrbracket^{\eta'},\llbracket\vec C\rrbracket^{\eta'},\llbracket D\rrbracket^{\eta'})\mid(Q,\vec C,D)\in\Sigma\}\bigr)\\
-  \qquad\cap\ \mathsf{Rests}\bigl(\{(\llbracket Q\rrbracket^{\eta'},\llbracket\vec C\rrbracket^{\eta'},\llbracket P\rrbracket^{\eta'},\llbracket D\rrbracket^{\eta'})\mid(Q,\vec C,P,D)\in\Sigma_\ldots\}\bigr),\
-  \eta'=\eta[\vec p\mapsto\vec X]\,\bigr\}
-  & i\ \text{a scheme row}\ (\vec p;\Sigma;\beta;\Sigma_\ldots),\\[2pt]
-\textstyle\bigcup_{c\in G(i)}\llbracket c\rrbracket^\eta & i\ \text{a clause row},
-\end{cases}
-$$
-
-where $\Sigma_\ldots$ are the scheme's variadic signatures, whose rest $P$ may
-be a binder: a **pack parameter**, whose list family is read at the actuals
-past the fixed ones, so it is instantiated at a pack type and bounded by one,
-position by position (`instanceTWithArgs`, `instanceRestsWithArgs`; the rest
-reads $\llbracket P\rrbracket^{\eta',\mathsf{args}}$). $\vec X$ ranges over
-admissible mixed families, one per binder,
-and $\mathsf{Bounded}_n(\vec X)$ says each bounded binder's family lies below
-its bound at every level under $n$: $X_p\subseteq_{<n}\llbracket B\rrbracket^\eta$
-for each $(p,B)\in\beta$, the bound read at the scheme's own assignment $\eta$
-(`Bounded`, `qLayerWithArgs`, `qDenoteWithArgs`); a bound is inclusion of
-both components. Reading the bound below $n$ only keeps the
-fixed point contractive; the approximations are non-expansive in the
-assignment (`QInv`), which gives admissibility (`Tower.denote_adm_inv`), and $\llbracket A\rrbracket_G=\llbracket A\rrbracket^{G.\mathit{env}}$
-is `meaning`. A member of a scheme row meets each instance's signatures
-(`scheme_elim`), and a callable meeting them at every instantiation is a
-member (`scheme_intro`). Without scheme rows this is the parametric semantics
-`denoteP` at the value projection, when no binder is a pack (`qDenote_no_schemes`).
-
-Only clause rows have clauses. A type holding a parameter or scheme row has no
-expansion, so no rule that reads a clause (`Represents`, `Answers`, the atoms
-of heap knowledge) applies to it. In subtyping, such a row of the source must
-appear in the target, or, for a value-kind edge, the target must admit every
-value (`Opaque`, `SameKind`).
-
-Two subtyping rules read scheme rows. `Sub.inst` puts a scheme below an arrow
-type whose signatures are its own under an instance map, which sends each
-binder to a type and each clause row a signature reads to a clause row holding
-its clauses with every operand mapped; read at the instance's assignment, a
-mapped type means exactly its image. `Sub.gen` puts a type below a scheme when
-it is below the scheme's signatures with the binders opaque and none of the
-rows it reads is a binder. Subtyping is sound at every assignment
-(`Sub.mixed_sound`): the judgments read a graph only through its rows. Scheme
-rows are the graph form of generic methods, stage 2 of the quantified-types
-plan in [the producer's README](ocaml-producer/README.md); the layer below
-predates them.
+The plan: extend well-formedness to acyclic callable bounds whose rigid
+references, including those inside parameter and result types, name earlier
+binders; prove a sufficient fuel bound, or replace the walk with an algorithm
+whose termination measure accounts for entering bounds and reversing at
+callable parameters; then extend `leUnder_iff_Sub` and the bound parser. This
+is expected to need no change to the declarative rules, but that is not a
+theorem. Recursive bounds are a separate extension and must not be admitted by
+removing the restriction or adding fuel.
 
 ### Quantified scheme layer
 
-Quantified local callables form a second layer rather than a graph clause.
-`TypeSchemes.schemeT` denotes one callable satisfying its signatures for every
-admissible assignment while retaining the same captured world and field
-contracts. The current source slice checks one local closure under
-rigid binders and their bounds, then compiles each checked ground elimination
-to fixed or variadic graph signatures. Thus the finite positive graph remains the ground evidence language;
-the universal scheme is neither erased to one observed arrow nor encoded as a
-recursive graph row.
-
-For a scheme $S$, outer assignment $\eta_0$, and assignment $\eta$, define
+Quantified local callables also form a layer outside the graph.
+`TypeSchemes.schemeT` denotes one callable meeting its signatures at every
+admissible assignment, while keeping the same captured world and field
+contracts. The source slice checks one local closure under rigid binders and
+their bounds, then compiles each checked ground elimination to fixed or
+variadic graph signatures. For a scheme $S$, outer assignment $\eta_0$ and
+assignment $\eta$,
 
 $$
 \begin{aligned}
 \mathsf{Instance}_{G,P}(\eta_0,S,\eta)
 \;\overset{\mathrm{def}}{\Longleftrightarrow}\;&
 \mathsf{ClosedAssign}_P(\eta)
-\;\land\;
-\mathsf{Satisfies}_{G,P}(\eta,S.\mathsf{bounds})\\
-&\land\;
-\forall i\notin S.\mathsf{binders}.\;\eta(i)=\eta_0(i).
-\end{aligned}
-$$
-
-Writing $\mathsf{Sig}_{G,P,\eta}(S)$ and $\mathsf{RestSig}_{G,P,\eta}(S)$
-for its fixed and variadic signatures interpreted under $\eta$, its denotation is exactly
-
-$$
-\begin{aligned}
+\land\mathsf{Satisfies}_{G,P}(\eta,S.\mathsf{bounds})
+\land\forall i\notin S.\mathsf{binders}.\;\eta(i)=\eta_0(i),\\
 \llbracket S\rrbracket^{\mathsf{scheme}}_{G,P,\eta_0}(n,W,v)
 \;\overset{\mathrm{def}}{\Longleftrightarrow}\;&
-\mathsf{Invocable}(v)\\
-&\land\;\forall\eta.\;
+\mathsf{Invocable}(v)\land\forall\eta.\;
 \mathsf{Instance}_{G,P}(\eta_0,S,\eta)
 \Rightarrow
-(\mathsf{Calls}(\mathsf{Sig}_{G,P,\eta}(S),n,W,v)
-\land\mathsf{Rests}(\mathsf{RestSig}_{G,P,\eta}(S),n,W,v)).
+\mathsf{Calls}(\mathsf{Sig}_\eta(S))\land\mathsf{Rests}(\mathsf{RestSig}_\eta(S)).
 \end{aligned}
 $$
 
-The quantifier is inside membership of one $v$ at one $n,W$. It therefore
-cannot be witnessed by allocating or checking a different closure for each
-observed call. The last conjunct of `Instance` keeps every non-binder meaning,
-including types used by the captured environment, fixed across instantiations.
+The quantifier is inside membership of one $v$ at one $n,W$, so it cannot be
+witnessed by a different closure per call. The last conjunct of `Instance`
+keeps every non-binder meaning, including those the captured environment uses,
+fixed across instantiations. Scheme rows are the graph form of the same idea
+for generic methods ([Parameter and scheme rows](#parameter-and-scheme-rows)).
 
-The program-typing theorem now incorporates these certificates, including an
-overload domain-splitting example. Executable program evidence checking and
-local supplied-environment edge obligations are now proved as well. The next
-integration work is source extraction and faithful claim translation. A bounded
-producer constructs checked evidence from supplied point annotations, and the
-[serialized consumer](REQUEST-PROTOCOL.md) checks serialized calculus requests.
-The graph consumer covers every actual node and outgoing edge and proves global
-safety, including cycles and explicit slot maps. Producer success is checked;
-producer completeness is not claimed. A textual type-to-graph compiler still needs its own correctness
-account.
-Do not resume semantic completeness research as a prerequisite: normalization
-preservation and subtype soundness already give the guarantees needed here.
+Lean: `TypeSchemes.lean`, `TypeParams.lean`, `Source/GenericSource.lean`,
+`Source/GenericAlias.lean`.
 
-Implementation files:
+## Limits
 
-- `lean/Verification/Model/Types/ReferenceConjunctions.lean`
-- `lean/Verification/Model/Types/PositiveNormalization.lean`
-- `lean/Verification/Model/Types/PositiveGraphs.lean`
-- `lean/Verification/Model/Types/PositiveRules.lean`
-- `lean/Verification/Model/Types/PositiveCertificates.lean`
-- `lean/Verification/Model/Tests/PositiveNormalizationTests.lean`
-- `lean/Verification/Model/Types/TypeParams.lean`
-- `lean/Verification/Model/Source/GenericSource.lean`
-- `lean/Verification/Model/Source/GenericAlias.lean`
+- The clause language has no negation or difference, and no surface `extends`
+  language.
+- Subtyping is sound and the checker complete for the rules; the rules are not
+  complete for the model. For example, incompatible invariant contracts are
+  never recognized as empty.
+- `compatible` is a shape test, not a test of joint inhabitation.
+- Rigid inclusion is complete only for well-formed bounds, which exclude
+  callable bounds.
+- Normalization has no growth control, and no verified compiler from textual
+  type syntax to graphs exists.
+- Generic methods are still receiver-quantified signatures, not host-relative
+  scheme members.
 
-Tests cover distribution, cross-shape elimination, retained incompatible
-contracts, nested constraints, cyclic normalization/checking, domain splitting,
-three-conjunct combination, and rejection of invented constraints or false
-bottom claims. The program-typing tests additionally cover application, binding,
-stateful overloaded dispatch and checked subsumption.
+## Lean files and validation
 
-Validation: `lake build` checks the complete Lean library and executable,
-including positive and negative certificate tests and the program-typing
-development. The maintained
-files contain no `sorry` or custom axioms. `check_sound` uses `propext`;
-`check_complete` uses `propext` and `Quot.sound`; semantic soundness also uses
-standard `Classical.choice`.
+- `Types/ReferenceConjunctions.lean`, `Types/MethodMembers.lean`
+- `Types/PositiveNormalization.lean`, `Types/PositiveGraphs.lean`,
+  `Types/QuantifiedGraphs.lean`
+- `Types/PositiveRules.lean`, `Types/PositiveCertificates.lean`
+- `Tests/PositiveNormalizationTests.lean`
+
+All under `lean/Verification/Model/`. Tests cover distribution, cross-shape
+elimination, retained incompatible contracts, nested constraints, cyclic
+normalization and checking, domain splitting, three-signature combination, and
+rejection of invented constraints and false bottom claims. `lake -d
+verification/lean build` checks the whole library; it contains no `sorry` or
+custom axioms. `check_sound` uses `propext`; `check_complete` uses `propext`
+and `Quot.sound`; semantic soundness also uses `Classical.choice`.

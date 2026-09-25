@@ -20,7 +20,7 @@ rule statements, side conditions, soundness scope and evidence construction;
 | $a$, $a'$                | terms, where a rule admits an arbitrary one rather than a variable                                    |
 | $x$, $y$, $z$            | variables, which are terms                                                                            |
 | $c$                      | a term in condition position                                                                          |
-| $\gamma$                 | a [clause](POSITIVE-TYPES.md#representation-and-mathematical-rules)                                   |
+| $\gamma$                 | a [clause](POSITIVE-TYPES.md#types-and-clauses)                                                       |
 | $r$                      | the binding a rule gives its result                                                                   |
 | $k$                      | one of the tests in [the operational language](SEMANTICS.md#operational-language)                     |
 | $A$, $B$, $C$            | types, each a finite list of graph labels read as their union                                         |
@@ -108,7 +108,7 @@ then $\vec x$, before the captures; an arrow's code has that slot too and
 never reads it, and a source `this` in an arrow resolves to an enclosing
 ordinary function's slot as a capture. The rule's receiver premise is
 contravariant under subsumption like each domain
-([`CallArrow`](POSITIVE-TYPES.md#representation-and-mathematical-rules)), so a
+([`CallArrow`](POSITIVE-TYPES.md#function-and-class-coverage)), so a
 function indifferent to its receiver, typed at $\top$, meets any receiver
 requirement, and one that reads its receiver cannot be widened to arbitrary ones.
 
@@ -256,7 +256,7 @@ source never covers a variadic target with an element rest: it promises nothing 
 one whose rest is one exact tuple, of any positions, its parameters within the
 source's first and the tuple's positions within the rest
 (`FixedCallsPack`, as `FixedCoversPack` for construct signatures in
-[POSITIVE-TYPES.md](POSITIVE-TYPES.md#keys-optional-fields-bigints-symbols-and-construct-signatures));
+[POSITIVE-TYPES.md](POSITIVE-TYPES.md#function-and-class-coverage));
 at level zero the call exists and nothing past it is owed.
 
 $$
@@ -405,7 +405,7 @@ field of a record at its contract or `undefined`: where the object has the
 key, its location holds exactly that contract (`optT`), and where it does
 not, the read is `undefined`. With $\mathsf{Ref}(\varphi;\psi;\omega)$ a record's
 invariant fields, readonly views and optional fields, and $\kappa$ a
-[property key](POSITIVE-TYPES.md#keys-optional-fields-bigints-symbols-and-construct-signatures):
+[property key](POSITIVE-TYPES.md#records):
 
 $$
 \frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Ref}(\varphi;\psi;\omega)\quad(\kappa{:}A)\in\psi}

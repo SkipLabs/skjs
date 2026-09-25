@@ -15,7 +15,7 @@ program rules.
 
 The base language everything else is defined over is small, and stated in two
 places. [Terms and values](SEMANTICS.md#operational-language) are the programs
-the indexed model interprets directly; [formulas and clauses](POSITIVE-TYPES.md#representation-and-mathematical-rules)
+the indexed model interprets directly; [formulas and clauses](POSITIVE-TYPES.md#types-and-clauses)
 are the types a graph label can name. [Control-flow graphs](PROGRAM-TYPING.md#checked-control-flow-graphs)
 and [state assertions](POSITIVE-TYPES.md#state-assertion-grammar) are layered on
 those two rather than alternatives to them.
