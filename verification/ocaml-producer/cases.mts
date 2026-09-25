@@ -280,6 +280,7 @@ export const cases: Case[] = [
   negative("invalid-error-no-message", "`new Error()` owns no `message`: the overlay states a string message"),
   gap("array-length-refused", "`new Array(n)` makes holes, which the dense array model forbids: the overlay reads `new Array` without arguments only", "unsupported", "source",
     /new Array\(…\) is read with at most 0 argument\(s\)/),
+  positive("library-well-known-symbols", "`Symbol.iterator` and the other well-known symbols read at `symbol`"),
   positive("library-promise-statics", "`Promise.resolve` of a primitive and without a value, and `Promise.all` of promises, as the intrinsics stating the same steps; awaited in an async function"),
   negative("invalid-promise-resolve-object", "`Promise.resolve` adopts a thenable, and a record may be one: only a primitive is admitted",
     /does not satisfy the closure's bound/),

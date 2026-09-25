@@ -48,7 +48,8 @@ export type GlobalEntry = {
   intrinsic?: string;
   /** The signature read instead of the declared one: its own binders, its
    * parameters, which a call may not exceed, and its result. What the host
-   * does at these arguments, stated as a type. */
+   * does at these arguments, stated as a type. For a property, its type is
+   * the result. */
   stated?: { binders: string[]; params: TypeTerm[]; result: TypeTerm };
 };
 
@@ -83,6 +84,12 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   { global: "Symbol", signature: "(description?: string | number): symbol;" },
   { global: "Symbol", member: "for", signature: "for(key: string): symbol;" },
   { global: "Symbol", member: "keyFor", signature: "keyFor(sym: symbol): string | undefined;" },
+  // The well-known symbols, each a symbol: stated at `symbol`, since the
+  // reader has no `unique symbol` type of a library property. Which symbol
+  // each is, a key the library's types use, is not read.
+  ...["iterator", "asyncIterator", "hasInstance", "toPrimitive", "toStringTag"].map(
+    (member): GlobalEntry => ({ global: "Symbol", member, signature: `readonly ${member}: unique symbol;`,
+      stated: { binders: [], params: [], result: atom("symbol") } })),
   // `String(v)` converts a primitive, a symbol included, without running
   // client code; an object's conversion calls its `toString` or `valueOf`,
   // which may throw or return an object, and then `String` throws.

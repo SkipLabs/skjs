@@ -3291,6 +3291,7 @@ weaker signature, which is what is actually true.
 | `BigInt` | `(value: bigint \| boolean \| number \| string): bigint` | `value` at `bigint \| boolean`, and each integer number literal and each string literal `BigInt` converts: `BigInt(42)`, `BigInt(-42)`, `BigInt("0xFF")`; not `BigInt(1.5)`, `BigInt("x")`, nor a `number` or `string` operand |
 | `Symbol` | `(description?: string \| number): symbol` | as declared: a fresh symbol, whose description converts without running code |
 | `Symbol.for`, `Symbol.keyFor` | `for(key: string): symbol`, `keyFor(sym: symbol): string \| undefined` | as declared |
+| `Symbol.iterator`, `Symbol.asyncIterator`, `Symbol.hasInstance`, `Symbol.toPrimitive`, `Symbol.toStringTag` | `readonly iterator: unique symbol` and the like | stated as `symbol`: which symbol each is, a key the library's own types use, is not read |
 | `String` | `(value?: any): string` | `value` at the primitives, `symbol` included: converting an object runs its `toString` or `valueOf`, which may throw or return an object, and then `String` throws |
 | `console.log` | `log(...data: any[]): void` (the DOM library's) | as declared, `any` as `unknown`: output, which the model does not observe; the host formats its arguments without running code the fragment can write |
 | `Array.isArray` | `isArray(arg: any): arg is any[]` | the test $\mathsf{isArray}$, below; the declared guard is not read |
@@ -3304,7 +3305,8 @@ weaker signature, which is what is actually true.
 **Stated signatures and constructs.** Where the declaration states less
 than the host does (`any`) or more (a parameter at which the host
 misbehaves), an entry states the signature the host meets (`stated`): its
-binders, its parameters, which a call may not exceed, and its result. It is
+binders, its parameters, which a call may not exceed, and its result; for a
+property, its type is the result, as for the well-known symbols. It is
 read for construct signatures: a global the module only constructs is, as a
 class value is, its selected construct signatures, each read as its entry
 states it, or as declared outside the standard library. With $s$ selected

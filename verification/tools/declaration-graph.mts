@@ -1017,11 +1017,12 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
         type: selected.length === 1 && only ? only : { k: "intersection", parts: selected, span } });
     } else if (nodes.length === 1 && property && ts.isPropertySignatureDeclaration(property) && property.type &&
         !property.modifiers?.some(m => m.kind !== ts.SyntaxKind.ReadonlyKeyword)) {
-      reviewed(key, property, what);
+      const entry = reviewed(key, property, what);
       context.clean(property, where(property, key));
       fields.push({ name: key, optional: property.postfixToken?.kind === ts.SyntaxKind.QuestionToken,
         readonly: property.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true,
-        type: typeTerm(scopeOf(property, what), property.type, property), span: spanOf(property) });
+        type: entry?.stated ? entry.stated.result : typeTerm(scopeOf(property, what), property.type, property),
+        span: spanOf(property) });
     } else throw Error(`${what} is not one property signature or method signatures`);
   }
   // The call signatures the client's calls of the global resolve to, each
