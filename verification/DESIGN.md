@@ -923,6 +923,10 @@ modeling choices; they do not replace proof.
   parsed from the checker's own source trees; there is no separate declaration
   or module-mapping byte check. Fixture hashes in the tests detect changed
   inputs, but are not premises of the Lean theorem.
+- An enum member's value is the one TypeScript's checker computes
+  (`getConstantValue`), which is the value its emit writes; a `const enum`
+  read is the one TypeScript binds to the member and replaces by it
+  ([Enums](#enums)).
 - Source and claim translation preserve intended control flow, lexical binding,
   annotations and type meaning. Scope association cannot be recovered merely
   by checking that two slots have compatible types.
@@ -1518,6 +1522,12 @@ A source ternary branches in the graph like an `if` statement, so an effect in
 its condition or an arm is a node with its own knowledge. Element access reads
 or writes the field the key's claimed string singleton names, after the
 receiver and before any right side, and the key keeps its own obligation.
+On a receiver claimed only at records (no array store, no primitive), a
+number singleton key names the field its `ToString` spells, since
+`ToPropertyKey` converts it so: `o[0]` reads `o["0"]` and `o[2.5]` reads
+`o["2.5"]`, and the two zeros spell `0` (`keyField`, with `numberToString`,
+JavaScript's `Number::toString`). A key of several singletons names several
+fields and is refused.
 Writes establish new contents for recorded aliases, keep facts about cells a
 distinct-location link separates from the written one, and discard other heap
 facts; two parameters carry no such link, so a write through one forgets what
@@ -4098,6 +4108,57 @@ numeric operators, not a second mechanism: `binop` concatenates, and
   `b`'s. `void e` is `e, undefined`, the `undefined` a literal at the keyword.
   No calculus term or rule is added: the lowering binds `a` in an unread
   slot.
+
+### Enums
+
+An enum is what TypeScript's emit makes of it, and its types say exactly
+that. With $m_1,\ldots,m_n$ its members and $v_i$ the value TypeScript
+computes for $m_i$ (`getConstantValue`: a literal, an auto-increment, a
+folded constant expression or an earlier member):
+
+- **`enum E { … }` is a module constant.** The emit creates an object and,
+  in member order, sets each member's property to its value and, for a
+  numeric value, the property its `ToString` spells to the member's name (the
+  reverse mapping; a later member with the same value overwrites it). The
+  parser writes the statement `const E: typeof E = {…}`, the allocation of
+  exactly those properties in JavaScript's key order, each at its literal,
+  where the declaration is: initialization order is a constant's
+  ([Modules and code units](#modules-and-code-units)), and every field is
+  readonly, so no verified code writes it.
+
+  $$
+  \frac{\forall i.\ v_i\ \text{computed by TypeScript, finite if a number}\quad
+        \text{no reverse key names a member}}
+       {\texttt{enum E}\{\vec m\}\ \leadsto\ \texttt{const E}:\mathcal O(E)=\{\overline{m_i:v_i},\ \overline{\mathrm{str}(v_j):\text{"}m_j\text{"}}^{\,v_j\in\mathbb R}\}}
+  $$
+
+  with $\mathcal O(E)$ the object type of those fields, each readonly at its
+  value's literal type. That value is the one the emit writes: TypeScript
+  folds a constant member into its literal in the emitted code, so trusting
+  its value is trusting the front end, as reading any source is.
+- **The types are the value sets.** The type `E` is
+  $\bigcup_i\{v_i\}$, the union of its members' literal types (`never` for
+  none), `E.A` the literal type of `A`'s value, and `typeof E` is
+  $\mathcal O(E)$. So two enums with the same values are the same type, as
+  SKJS has them (TypeScript's nominal enums are a checker convention, not a
+  runtime fact), and TypeScript's rule that any number is a numeric enum,
+  kept for bit flags, is not followed: it is unsound for the value set
+  (`invalid-enum-number`).
+- **`const enum` runs nothing.** TypeScript writes a member's value in place
+  of each read `CE.A` and `CE["A"]`, and emits no object; the parser does the
+  same where TypeScript binds the read to the member (`constEnumReads`), and
+  the declaration is no statement. `declare const enum` is the same.
+- **Refused, with the reason.** A member TypeScript computes no value for
+  (`A = "abc".length`, a call): its reverse mapping is keyed by its value at
+  run time, which an allocation with fixed keys cannot name, and its type
+  would be every number (`enum-computed-refused`). A NaN or infinite value,
+  which has no literal type. A reverse key that is also a member's name. An
+  ambient `declare enum`, whose object the environment supplies and whose
+  declaration need not state every value. An enum TypeScript reports an
+  error in. An enum without members allocates an object with no field,
+  outside the fragment. A type `E` inside another declaration's body (the
+  declaration reader does not read enums) and `keyof typeof E` (`keyof` is
+  a type form outside the fragment).
 
 ### Optional chaining
 

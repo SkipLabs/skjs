@@ -242,6 +242,12 @@ class Gate {
   /** Calls the reviewed overlay reads as a call of an intrinsic,
    * `Promise.resolve(v)`, by span: the intrinsic's name. */
   readonly globalIntrinsics = new Map<string, string>();
+  /** The file's enums by name (DESIGN.md, "Enums"), each member's value as
+   * TypeScript computes it, once the declaration graph has been read. */
+  readonly enums = new Map<string, EnumInfo>();
+  /** Reads of a `const enum` member TypeScript writes as the member's value,
+   * by span: that value. */
+  readonly constEnumReads = new Map<string, string | number>();
   // Mode of the ordinary function that bound `this`, or no binding. A strict
   // arrow captures its creator's already-converted receiver; it cannot rebind it.
   private receiverMode: "strict" | "sloppy" | null = null;
@@ -317,6 +323,98 @@ class Gate {
    * and those methods. Within the fragment an instance's own fields and its
    * prototype's methods are indistinguishable. The class value is that
    * constructor as construct-only code: `new` runs it, a plain call cannot. */
+  /** An enum's members, in order, with the values the declaration graph
+   * reported. A member TypeScript computes no value for is refused: its
+   * reverse mapping is keyed by its value at run time, which no lowering can
+   * name, and a type would have to include every number. */
+  enumMembers(name: string): EnumMember[] {
+    const info = this.enums.get(name);
+    if (!info) return this.fail(null, `enum ${name} missing`);
+    return info.members.map((m) => {
+      const value = m.value;
+      if (value === undefined)
+        return this.fail(m.node, "a computed enum member is outside the fragment: its reverse mapping is keyed by its value at run time");
+      if (typeof value === "number" && !Number.isFinite(value))
+        return this.fail(m.node, "an enum member that is NaN or infinite has no literal type");
+      return { ...m, value };
+    });
+  }
+
+  /** The type an enum's value has: its object, each member a readonly field
+   * at its literal, and, for a numeric member, the reverse mapping from the
+   * value's property key to the member's name, the last member with that
+   * value winning (`enumEntries`). */
+  enumObjectTerm(name: string, span: Span): TypeTerm {
+    return {
+      k: "object",
+      fields: this.enumEntries(name).map((e) => ({ name: e.key, optional: false, readonly: true,
+        type: literalTerm(e.value, span), span })),
+      stringIndex: null,
+      calls: [],
+      span,
+    };
+  }
+
+  /** The type `E`: the union of its members' literal types; `never` for an
+   * enum without members. */
+  enumTerm(name: string, span: Span): TypeTerm {
+    const parts = this.enumMembers(name).map((m) => literalTerm(m.value, span));
+    return parts.length ? { k: "union", parts, span } : { k: "atom", name: "never", span };
+  }
+
+  /** The own properties of an enum's object, in JavaScript's order: array
+   * index keys ascending, then the others in the order they were created.
+   * TypeScript's emit creates each member's property, then, for a numeric
+   * member, the property named by its value's `ToString`; a later member
+   * with the same value writes that property again, which keeps its place.
+   * Each entry's value has a claim site of its own: a member's at its
+   * initializer, or at its name where it has none, and a reverse entry's
+   * from the member to the end of the declaration. */
+  enumEntries(name: string): { key: string; value: string | number; pos: Span }[] {
+    const entries = new Map<string, { key: string; value: string | number; pos: Span }>();
+    const members = this.enumMembers(name);
+    const end = this.enums.get(name)?.end ?? 0;
+    const names = new Set(members.map((m) => m.name));
+    for (const m of members) {
+      entries.set(m.name, { key: m.name, value: m.value, pos: m.init ?? m.nameSpan });
+      if (typeof m.value !== "number") continue;
+      const key = String(m.value);
+      if (names.has(key))
+        this.fail(m.node, "an enum member's reverse mapping would replace a member of the same name");
+      entries.set(key, { key, value: m.name, pos: [m.span[0], end] });
+    }
+    const index = (k: string) => /^(0|[1-9][0-9]*)$/.test(k) && Number(k) < 4294967295;
+    const all = [...entries.values()];
+    return [
+      ...all.filter((e) => index(e.key)).sort((a, b) => Number(a.key) - Number(b.key)),
+      ...all.filter((e) => !index(e.key)),
+    ];
+  }
+
+  /** `enum E { … }` is the module constant `E`, bound to a fresh object whose
+   * properties TypeScript's emit creates (`enumEntries`), each at a literal,
+   * at the object type `enumObjectTerm`: the constant a function reading `E`
+   * sees, never written, since every field is readonly. */
+  enumStmt(node: ts.EnumDeclaration): Stmt {
+    const name = node.name.text;
+    const entries = this.enumEntries(name);
+    const at: Span = [node.name.getStart(this.file), node.end];
+    return {
+      k: "const",
+      pos: this.span(node),
+      bindings: [{
+        name,
+        namePos: this.span(node.name),
+        annot: this.enumObjectTerm(name, this.span(node.name)),
+        init: {
+          k: "alloc",
+          pos: at,
+          fields: entries.map((e) => ({ name: e.key, e: literalExpr(e.value, e.pos) })),
+        },
+      }],
+    };
+  }
+
   classStmt(node: ClassDeclaration): Stmt {
     const name = node.name;
     if (!name) return this.fail(node, "an anonymous class is outside the fragment");
@@ -573,8 +671,25 @@ class Gate {
       source: this.file,
       annotation: true,
       fail: (node, message) => this.fail(node, message),
+      enumerated: (node, span) => {
+        // `E.A`, a member's literal type, and `typeof E`, the enum's object.
+        if (ts.isTypeQueryNode(node) && ts.isIdentifier(node.exprName) && this.enums.has(node.exprName.text) &&
+            !node.typeArguments?.length)
+          return this.enumObjectTerm(node.exprName.text, span);
+        if (ts.isTypeReferenceNode(node) && ts.isQualifiedName(node.typeName) &&
+            ts.isIdentifier(node.typeName.left) && this.enums.has(node.typeName.left.text)) {
+          const member = node.typeName.right.text;
+          const found = this.enumMembers(node.typeName.left.text).find((m) => m.name === member);
+          if (found) return literalTerm(found.value, span);
+        }
+        return null;
+      },
       named: (node, span, read) => {
         const name = (node.typeName as Identifier).text;
+        if (this.enums.has(name) && !this.hasTypeParam(name)) {
+          if (node.typeArguments?.length) this.fail(node, "an enum type takes no type arguments");
+          return this.enumTerm(name, span);
+        }
         const library = this.libraryTypes.get(name);
         if (library !== undefined && !this.hasTypeParam(name))
           return libraryTerm(library, (node.typeArguments ?? []).map(read), span,
@@ -635,6 +750,13 @@ class Gate {
       // parenthesis. Unwrap, and widen the span to match, so the two agree
       // on the key. Nested parentheses widen again at each level.
       return { ...this.expr(node.expression), pos: this.span(node) };
+
+    // A `const enum` member's read is its value, which TypeScript writes in
+    // its place.
+    if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+      const inlined = this.constEnumReads.get(this.span(node).join(":"));
+      if (inlined !== undefined) return literalExpr(inlined, this.span(node));
+    }
 
     // A link of an optional chain: the chain up to it is one `optional`.
     if (
@@ -2607,6 +2729,32 @@ class Gate {
   }
 }
 
+/** A member of one of the file's enums: its name, its declaration's spans,
+ * and its value as TypeScript computes it. */
+type EnumMember = { name: string; node: Node; span: Span; nameSpan: Span; init: Span | null;
+  value: string | number };
+type EnumInfo = { end: number; members: (Omit<EnumMember, "value"> & { value: string | number | undefined })[] };
+
+/** A number's spelling as a literal: its `Number::toString`, which reads back
+ * as the same double, and `-0` for negative zero, which that spells `0`. */
+function numberText(value: number): string {
+  return Object.is(value, -0) ? "-0" : String(value);
+}
+
+/** The literal type of an enum member's value. */
+function literalTerm(value: string | number, span: Span): TypeTerm {
+  return typeof value === "string"
+    ? { k: "literal", name: "string", text: value, span }
+    : { k: "literal", name: "number", text: numberText(value), span };
+}
+
+/** An enum member's value as a literal expression. */
+function literalExpr(value: string | number, pos: Span): Expr {
+  return typeof value === "string"
+    ? { k: "lit", pos, lit: { a: "stringlit", v: value } }
+    : { k: "lit", pos, lit: { a: "numberlit", v: numberText(value) } };
+}
+
 /* ------------------------------------------------------------- parsing -- */
 
 /**
@@ -2634,6 +2782,7 @@ export function parseFile(file: string, carriesContext = false,
   const classNodes: ClassDeclaration[] = [];
   const fnNodes: FunctionDeclaration[] = [];
   const importNodes: ImportDeclaration[] = [];
+  const enumNodes: ts.EnumDeclaration[] = [];
   // Top-level code other than declarations: the module's initialization, run
   // once, in order, after its function declarations are instantiated.
   const initNodes: Statement[] = [];
@@ -2666,6 +2815,22 @@ export function parseFile(file: string, carriesContext = false,
     }
     else if (ts.isFunctionDeclaration(s)) fnNodes.push(s);
     else if (ts.isImportDeclaration(s) && !carriesContext) importNodes.push(s);
+    // An enum is a module constant bound to its object where it is written;
+    // a `const enum` runs nothing, its reads being its members' values. An
+    // ambient enum's object is the environment's, and its declaration need
+    // not state every member's value.
+    else if (ts.isEnumDeclaration(s) && !carriesContext) {
+      const declared = s.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword);
+      const inlined = s.modifiers?.some(m => m.kind === ts.SyntaxKind.ConstKeyword);
+      if (declared && !inlined) gate.fail(s, "an ambient enum is outside the fragment");
+      enumNodes.push(s);
+      gate.enums.set(s.name.text, { end: s.end, members: s.members.map(m => ({
+        name: ts.isIdentifier(m.name) || ts.isStringLiteral(m.name) ? m.name.text
+          : gate.fail(m, "an enum member needs a plain name"),
+        node: m, span: gate.span(m), nameSpan: gate.span(m.name),
+        init: m.initializer ? gate.span(m.initializer) : null, value: undefined })) });
+      if (!inlined) initNodes.push(s);
+    }
     else if (carriesContext) continue;
     else if (ts.isExpressionStatement(s)) initNodes.push(s);
     // `declare const x: T` runs nothing: the value is assumed at its
@@ -2723,7 +2888,7 @@ export function parseFile(file: string, carriesContext = false,
       const bindings = node.importClause?.namedBindings;
       return bindings && ts.isNamedImports(bindings) ? bindings.elements.map(e => e.name.text) : [];
     }),
-    ...[...aliasNodes, ...interfaceNodes, ...classNodes].flatMap(node => node.name ? [node.name.text] : []),
+    ...[...aliasNodes, ...interfaceNodes, ...classNodes, ...enumNodes].flatMap(node => node.name ? [node.name.text] : []),
   ]);
   const globalNodes: Identifier[] = [];
   const findGlobals = (node: Node): void => {
@@ -2747,7 +2912,7 @@ export function parseFile(file: string, carriesContext = false,
     const name = (node as Node & { name?: Node }).name;
     if ((ts.isParameterDeclaration(node) || ts.isVariableDeclaration(node) || ts.isFunctionDeclaration(node) ||
          ts.isFunctionExpression(node) || ts.isClassDeclaration(node) || ts.isClassExpression(node) ||
-         ts.isBindingElement(node)) && name && ts.isIdentifier(name))
+         ts.isBindingElement(node) || ts.isEnumDeclaration(node)) && name && ts.isIdentifier(name))
       bound.add(name.text);
     node.forEachChild(findBound);
   };
@@ -2829,11 +2994,23 @@ export function parseFile(file: string, carriesContext = false,
     node.forEachChild(findStatics);
   };
   if (!carriesContext && withStatics.size) findStatics(source);
+  // A read `X.y` or `X["y"]` of a `const enum` is its member's value:
+  // TypeScript decides which reads are.
+  const inlined = new Set(enumNodes.filter(e => e.modifiers?.some(m => m.kind === ts.SyntaxKind.ConstKeyword))
+    .map(e => e.name.text));
+  const constEnumNodes: Node[] = [];
+  const findConstEnumReads = (node: Node): void => {
+    if ((ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) &&
+        ts.isIdentifier(node.expression) && inlined.has(node.expression.text))
+      constEnumNodes.push(node);
+    node.forEachChild(findConstEnumReads);
+  };
+  if (inlined.size) findConstEnumReads(source);
   if (importNodes.length || localNodes.length || globalNodes.length || globalValueNodes.length ||
       firstArray || firstAsync || keyNodes.length || ambientNames.length || staticNodes.length ||
-      receiverNodes.length) {
+      receiverNodes.length || enumNodes.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
-      firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? receiverNodes[0];
+      firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? receiverNodes[0] ?? enumNodes[0];
     if (!first) throw Error("missing declaration root");
     // Named imports only. A type import joins the declaration graph; a value
     // import is an assumption at the type its declaration states.
@@ -2860,6 +3037,13 @@ export function parseFile(file: string, carriesContext = false,
         memberReceivers: receiverNodes.map(node => gate.span(node)),
         globalTest: ([start, end]) => gate.globalTests.add(`${start}:${end}`),
         globalIntrinsic: ([start, end], name) => gate.globalIntrinsics.set(`${start}:${end}`, name),
+        enums: enumNodes.map(node => gate.span(node)),
+        enumMember: ([start, end], value) => {
+          for (const info of gate.enums.values())
+            for (const m of info.members) if (m.span[0] === start && m.span[1] === end) m.value = value;
+        },
+        constEnumReads: constEnumNodes.map(node => gate.span(node)),
+        constEnumRead: ([start, end], value) => gate.constEnumReads.set(`${start}:${end}`, value),
         library: ([start, end], library) => {
           const node = globalNodes.find(n => n.getStart(source) === start && n.end === end);
           if (node) gate.libraryTypes.set(node.text, library);
@@ -2869,7 +3053,7 @@ export function parseFile(file: string, carriesContext = false,
       const at = error instanceof DeclarationError
         ? [...importNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...(firstArray ? [firstArray] : []),
             ...(firstAsync ? [firstAsync] : []), ...keyNodes, ...ambientNames.map(topStatement), ...staticNodes,
-            ...receiverNodes].find(node =>
+            ...receiverNodes, ...enumNodes, ...constEnumNodes].find(node =>
             node.getStart(source) === error.at[0]) ?? first
         : first;
       gate.fail(at, messageOf(error));
@@ -2894,7 +3078,10 @@ export function parseFile(file: string, carriesContext = false,
   // A function without a body is a declaration, not an example of one.
   const declared = carriesContext ? fnNodes.filter((s) => s.body) : fnNodes;
   const functions = declared.map((s) => gate.functionDecl(s));
-  const init = initNodes.map((s) => ts.isClassDeclaration(s) ? gate.classStmt(s) : gate.stmt(s));
+  // Every enum's members must have values, whether or not it runs.
+  for (const e of enumNodes) gate.enumMembers(e.name.text);
+  const init = initNodes.map((s) => ts.isClassDeclaration(s) ? gate.classStmt(s)
+    : ts.isEnumDeclaration(s) ? gate.enumStmt(s) : gate.stmt(s));
   if (functions.length === 0 && init.length === 0) gate.fail(null, "no functions in file");
   return {
     file,

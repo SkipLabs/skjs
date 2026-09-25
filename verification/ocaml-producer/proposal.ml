@@ -185,6 +185,18 @@ let iterated_hint declarations expected =
       | _ -> member (Name "value") r) (parts [] results) with
   | [] -> None
   | values -> Some (combine values)
+(* The property key a number spells (`ToString`), for integers below 1e21
+   and decimals `%g` writes as JavaScript does; none otherwise. *)
+let number_key bits =
+  let n = Int64.float_of_bits bits in
+  if Float.is_integer n && Float.abs n < 1e21 then Some (Printf.sprintf "%.0f" (Float.abs n) |> fun s ->
+    if n < 0. then "-" ^ s else s)
+  else if Float.is_finite n then
+    let rec shortest p = if p > 17 then None else
+      let s = Printf.sprintf "%.*g" p n in
+      if float_of_string s = n then (if String.contains s 'e' then None else Some s) else shortest (p+1) in
+    shortest 1
+  else None
 let rec index_type declarations seen receiver key = match receiver with
   | Atoms atoms -> combine (List.map (function
       | Shape {elements=Some sequence;_} ->
@@ -201,6 +213,11 @@ let rec index_type declarations seen receiver key = match receiver with
           | _ -> combine (Atoms [Undef] :: sequence.required @ sequence.optional_elements @ Option.to_list sequence.rest))
       | Shape shape -> (match key with
           | Atoms [StrLit name] -> field_type declarations seen (Atoms [Shape shape]) (Name name)
+          (* A number names the property its `ToString` spells. *)
+          | Atoms (NumLit bits :: rest) when List.for_all (fun a -> a = NumLit bits
+              || (match a with NumLit b -> Int64.float_of_bits b = Int64.float_of_bits bits | _ -> false)) rest
+              && Option.is_some (number_key bits) ->
+            field_type declarations seen (Atoms [Shape shape]) (Name (Option.get (number_key bits)))
           | Atoms [Str] -> (match shape.string_index with
               | Some index -> union index.value (Atoms [Undef])
               | None -> unsupported "dynamic string index requires a dictionary")

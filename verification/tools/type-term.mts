@@ -35,6 +35,10 @@ export type TermScope = {
    * constant or readonly property it denotes. A scope without it reads no
    * symbol key. */
   symbol?(name: Identifier | ts.PropertyAccessExpression): number;
+  /** `E.A` and `typeof E` for one of the file's enums: the member's literal
+   * type and the enum's object type (DESIGN.md, "Enums"); null for any other
+   * such node. A scope without it reads neither. */
+  enumerated?(node: TypeNode, span: Span): TypeTerm | null;
 };
 
 type FunctionTerm = Extract<TypeTerm, { k: "function" }>;
@@ -143,6 +147,10 @@ export function typeTerm(scope: TermScope, node: TypeNode | undefined, at: Node 
     });
     const [only] = forms;
     return forms.length === 1 && only ? only : { k: "intersection", parts: forms, span };
+  }
+  if ((ts.isTypeReferenceNode(node) && node.typeName.kind !== ts.SyntaxKind.Identifier) || ts.isTypeQueryNode(node)) {
+    const enumerated = scope.enumerated?.(node, span);
+    if (enumerated) return enumerated;
   }
   if (ts.isTypeReferenceNode(node)) {
     if (node.typeName.kind !== ts.SyntaxKind.Identifier)

@@ -265,6 +265,18 @@ export function collectDeclarations(file: string, options: {
    * with the class's name. */
   staticReads?: readonly Span[];
   staticMember?: (span: Span, cls: string) => void;
+  /** The client's top-level enum declarations: each must be one TypeScript
+   * accepts, and each member, by its span, is reported to `enumMember` with
+   * the value TypeScript computes for it, which is the value its emit writes
+   * (DESIGN.md, "Enums"), or undefined where it computes none. */
+  enums?: readonly Span[];
+  enumMember?: (span: Span, value: string | number | undefined) => void;
+  /** The client's reads `X.y` and `X["y"]` with `X` an identifier: each that
+   * TypeScript binds to a member of a `const enum` the client declares is
+   * reported to `constEnumRead` with the member's value, which TypeScript
+   * writes in place of the read. */
+  constEnumReads?: readonly Span[];
+  constEnumRead?: (span: Span, value: string | number) => void;
   /** The receivers of the client's member reads, `e.k` and `e[k]`: each
    * that TypeScript types as a string, number, bigint or boolean, or a union
    * holding one, reads that primitive's members through its wrapper's
@@ -774,6 +786,30 @@ export function collectDeclarations(file: string, options: {
           (ts.isPropertyDeclaration(member) || ts.isMethodDeclaration(member)) &&
           member.modifiers?.some(m => m.kind === ts.SyntaxKind.StaticKeyword))
         options.staticMember?.(span, owner.name.text);
+    }
+    for (const span of options.enums ?? []) {
+      const statement = client.statements.find(s => s.getStart(client) === span[0] && s.end === span[1]);
+      if (!statement || !ts.isEnumDeclaration(statement))
+        throw new DeclarationError(span, "TypeScript enum declaration missing");
+      try {
+        clean(statement, `enum ${statement.name.text}`);
+      } catch (error) {
+        throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+      }
+      for (const member of statement.members)
+        options.enumMember?.([member.getStart(client), member.end], checker.getConstantValue(member));
+    }
+    for (const span of options.constEnumReads ?? []) {
+      const access = expressionAt(client, span);
+      if (!access || !(ts.isPropertyAccessExpression(access) || ts.isElementAccessExpression(access)) ||
+          !ts.isIdentifier(access.expression))
+        throw new DeclarationError(span, "TypeScript enum member read missing");
+      const owners = targetOf(checker, access.expression)?.declarations.map(d => d.resolve()) ?? [];
+      const [owner] = owners;
+      const value = checker.getConstantValue(access);
+      if (owners.length === 1 && owner && ts.isEnumDeclaration(owner) && owner.parent === client &&
+          owner.modifiers?.some(m => m.kind === ts.SyntaxKind.ConstKeyword) && value !== undefined)
+        options.constEnumRead?.(span, value);
     }
     const seen = new Set<string>();
     const definitions: TypeDefinition[] = [];

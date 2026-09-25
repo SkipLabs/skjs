@@ -288,7 +288,9 @@ private def unaryOperation (p : Span) (op : Fragment.UnaryOp) (B : Ty Nat) :
 
 /-- What a computed key names, by its claimed type: a field for a string
 singleton, a dictionary lookup for a broad string, or an element of the
-array's store for a number. The key stays in
+array's store for a number. On a receiver that is only records, a number
+singleton names the field its `ToString` spells (`ToPropertyKey`), as `o[0]`
+reads `o["0"]`; both zeros spell `0`. The key stays in
 the program, evaluated after the receiver and before any right side, and its
 expression obligation must establish that claim. -/
 private inductive KeyKind where
@@ -297,14 +299,23 @@ private inductive KeyKind where
   | element
 
 private def keyField (fc : SourceClaims.Function) (key : Fragment.Expr)
-    (string : Bool := false) : Compiler KeyKind := do
+    (string : Bool := false) (record : Bool := false) : Compiler KeyKind := do
   let K ← exprType fc key
   let G := SourceTypes.graph (← table)
-  match PositiveRules.expand G K with
-  | [.strLit s] =>
+  let spelled := fun (s : String) =>
     if SourceTypes.reservedKey s then throw s!"'{s}' is internal to the model, not a source property"
-    else pure (.field s)
+    else pure (KeyKind.field s)
+  match PositiveRules.expand G K with
+  | [.strLit s] => spelled s
   | [.str] => pure .dynamic
+  | .numLit b :: cs =>
+    if record && cs.all (fun c => match c with
+        | .numLit b' => numberToString b' == numberToString b | _ => false) then
+      spelled (numberToString b)
+    else
+      if string && decide (Answers G K .isNum true) then return .element
+      let _ ← arrayIndex G K
+      pure .element
   | _ =>
     -- A string's index properties are its code units: any number names one
     -- or none (`elemStr`); an array's needs one proved index.
@@ -355,8 +366,14 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
   | .index p _ e key =>
     let key ← comparisonsExpr fc key
     let e ← comparisonsExpr fc e
-    let string := decide (Answers (SourceTypes.graph (← table)) (← exprType fc e) .isStr true)
-    match ← keyField fc key string with
+    let G := SourceTypes.graph (← table)
+    let R ← exprType fc e
+    let string := decide (Answers G R .isStr true)
+    -- Only records: no array store, no primitive, nothing else.
+    let cs := PositiveRules.expand G R
+    let record := !cs.isEmpty && (storeOf G R).isNone && cs.all fun
+      | .refs .. => true | _ => false
+    match ← keyField fc key string record with
     | .field s => return .index p (some s) e key
     | .dynamic => return .index p none e key
     | .element => return .elemAt p e key
