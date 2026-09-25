@@ -1,21 +1,55 @@
 // Fast iteration: check only the inventory cases whose file names match, each
 // against its expected outcome, phase and diagnostic.
 //   node verification/ocaml-producer/run-cases.mts module- generic-rest
-// With no pattern, every case. This is the loop `test.mts` runs first; the
-// rest of `test.mts` (pinned imports, tampering controls, the reader) is not
-// run here.
+// With no pattern, every case, several at once. This is the loop `test.mts`
+// runs first; the rest of `test.mts` (pinned imports, tampering controls, the
+// reader) is not run here.
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { availableParallelism } from "node:os";
 import { join, resolve } from "node:path";
-import { check, type Outcome } from "./check.mts";
+import type { Outcome } from "./check.mts";
 import { cases, type Case } from "./cases.mts";
-import { tsconfigOf } from "../tools/declaration-graph.mts";
 
 const here = import.meta.dirname;
 
-/** Run one case and require its expected outcome. */
-export function expectCase(test: Case): Outcome {
-  const result = check(join(here, "examples", `${test.file}.ts`),
-    test.project ? tsconfigOf(resolve(here, "../..", test.project)) : undefined);
+/** Run one case's pipeline in its own process, as `check.mts` does from the
+ * command line, so that several cases run at once. */
+export function runCase(test: Case): Promise<Outcome> {
+  const args = [join(here, "check.mts"), join(here, "examples", `${test.file}.ts`)];
+  if (test.project) args.push("--project", resolve(here, "../..", test.project));
+  return new Promise((done, fail) =>
+    execFile(process.execPath, args, { maxBuffer: 16 * 1024 * 1024 }, (_error, stdout, stderr) => {
+      // A case that is not verified exits 1 and still prints its outcome.
+      try {
+        done(JSON.parse(stdout) as Outcome);
+      } catch {
+        fail(new Error(`${test.file}: no outcome: ${stderr.trim()}`));
+      }
+    }));
+}
+
+/** Map over `items` with at most `width` in flight, keeping their order. */
+export async function pooled<T, R>(items: readonly T[], work: (item: T) => Promise<R>,
+    width = availableParallelism()): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      try {
+        results[i] = { status: "fulfilled", value: await work(items[i]) };
+      } catch (reason) {
+        results[i] = { status: "rejected", reason };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(width, items.length) }, worker));
+  return results;
+}
+
+/** Require a case's expected outcome. */
+export function expectOutcome(test: Case, result: Outcome): Outcome {
   assert.equal(result.status, test.status, `${test.file}: ${JSON.stringify(result)}`);
   assert.equal(result.phase, test.phase, `${test.file}: wrong boundary`);
   if (test.diagnostic) {
@@ -34,9 +68,12 @@ if (import.meta.filename === resolve(process.argv[1] ?? "")) {
     process.exit(2);
   }
   let failed = 0;
-  for (const test of selected) {
+  const outcomes = await pooled(selected, runCase);
+  for (const [i, test] of selected.entries()) {
     try {
-      const result = expectCase(test);
+      const settled = outcomes[i];
+      if (settled.status === "rejected") throw settled.reason;
+      const result = expectOutcome(test, settled.value);
       process.stdout.write(`${test.file}: ${result.status} (${result.phase}, ${test.kind})\n`);
     } catch (error) {
       failed++;

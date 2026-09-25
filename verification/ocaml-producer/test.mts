@@ -11,7 +11,7 @@ import type { Ast } from "../tools/fragment.mts";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { check, verifier } from "./check.mts";
 import { cases } from "./cases.mts";
-import { expectCase } from "./run-cases.mts";
+import { expectOutcome, pooled, runCase } from "./run-cases.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
 import { checkGenericRest } from "./generic-rest.mts";
@@ -689,8 +689,11 @@ let moduleFunctions = "";
 let moduleInit = "";
 let genericModule = "";
 let verifiedFunctions = 0;
-for (const test of cases) {
-  const result = expectCase(test);
+const outcomes = await pooled(cases, runCase);
+for (const [i, test] of cases.entries()) {
+  const settled = outcomes[i];
+  if (settled.status === "rejected") throw settled.reason;
+  const result = expectOutcome(test, settled.value);
   if (result.status === "verified")
     verifiedFunctions += result.functions.length;
   process.stdout.write(
@@ -1222,8 +1225,12 @@ const directControls = new Set([
   "invalid-rigid-default",
 ]);
 let testedDirectProtocol = false;
-for (const control of cases.filter((c) => c.kind === "negative")) {
-  const shown = await analyse(repositoryPath(control.file), "ocaml");
+const controls = cases.filter((c) => c.kind === "negative");
+const shownControls = await pooled(controls, (c) => analyse(repositoryPath(c.file), "ocaml"));
+for (const [i, control] of controls.entries()) {
+  const settled = shownControls[i];
+  if (settled.status === "rejected") throw settled.reason;
+  const shown = settled.value;
   // A control may hold correct functions beside the failing one: those it
   // calls are verified, and only the failing one is shown not established.
   const all = shown.manifest.results ?? [];
