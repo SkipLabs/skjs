@@ -343,6 +343,8 @@ export const cases: Case[] = [
   negative("invalid-generic-graph-concrete", "a body reading its binder as `boolean`: the parameter row is below no ground type"),
   positive("generic-recursive-list", "a recursive generic alias applied to a binder, and to itself, is its application row at the binder's parameter row"),
   negative("invalid-generic-recursive-list", "a number is no `T`: a `List<T>` cannot hold one"),
+  positive("generic-graph-bounds", "a binder with a ground bound is the meet of its parameter row and the bound: reads through it at the bound"),
+  negative("invalid-generic-graph-bound", "a value within the bound is not a `T`"),
   negative("invalid-generic-union-bound", "a binder bounded by a union is below the union, not one member",
     /cannot establish T ≤ string under \[T ≤ string \| number\]/),
   positive("explicit-type-arguments", "explicit type arguments on plain calls state each call's instance: module, declared and local generic callees, dependent bounds"),

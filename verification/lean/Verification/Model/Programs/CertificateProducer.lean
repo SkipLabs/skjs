@@ -89,7 +89,7 @@ def prune [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) (known : P
     let es := arrowEvidence G table pool
     let next := table.filter fun p => PositiveRules.SameKind G p.1 p.2 &&
       decide (PositiveRules.Opaque G p.1 p.2) &&
-      (sourceClauses G p.1).all fun a =>
+      (sourceClauses G p.1 ++ PositiveRules.meetSources G p.1 p.2).all fun a =>
       (clausesOf G p.2).any fun b => PositiveCertificates.checkClause G table known es p.1 a b
     if next = table then table else prune G pool known fuel next
 
@@ -103,7 +103,7 @@ was, and a pair failing it is refused before any table is built. Untrusted:
 def rowFeasible [DecidableEq ι] (G : NormalGraph ι) (known : PositiveRules.Known ι)
     (A B : Ty ι) : Bool :=
   PositiveRules.SameKind G A B && decide (PositiveRules.Opaque G A B) &&
-    (sourceClauses G A).all fun a => (clausesOf G B).any fun b =>
+    (sourceClauses G A ++ PositiveRules.meetSources G A B).all fun a => (clausesOf G B).any fun b =>
       decide (CoversWith G (fun _ _ => True) known (fun _ _ _ => True) A a b)
 
 /-- Known rows with the instances proving them. -/

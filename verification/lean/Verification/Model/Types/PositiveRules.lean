@@ -1751,13 +1751,41 @@ theorem meaning_below {G : NormalGraph ι} {S : List ι} {k : Nat} {W : WorldT k
   (meaning_valueFam G S).1.mono j _ U hx u
     ((meaning_valueFam G S).1.down_le k j (Nat.le_of_lt hj) W u h)
 
+/-- A meet row, `p ⊓ cs`: neither a parameter nor a scheme row, with a meet. -/
+def _root_.Verification.Model.PositiveGraphs.NormalGraph.meetRow (G : NormalGraph ι) (i : ι) : Bool :=
+  !G.params i && (G.schemes i).isNone && (G.meets i).isSome
+
+/-- A member of a meet row is in one of its clauses. -/
+theorem meet_clause_of {G : NormalGraph ι} {η : MixedAssignment ι} {i : ι}
+    (h : G.meetRow i = true) {n W v}
+    (hv : qDenoteWithArgs G (mixedParameters G) (η, i) n W v) :
+    ∃ c ∈ ((G.meets i).map (·.2)).getD [], mixedSem G η c n W v := by
+  simp only [NormalGraph.meetRow, Bool.and_eq_true, Bool.not_eq_true',
+    Option.isNone_iff_eq_none] at h
+  obtain ⟨⟨hp, hs⟩, hm⟩ := h
+  obtain ⟨pc, hm⟩ := Option.isSome_iff_exists.mp hm
+  rw [qDenoteWithArgs_unfold] at hv
+  simp only [qLayerWithArgs, hp, hs, hm, Bool.false_eq_true, ite_false] at hv
+  obtain ⟨c, hc, hcv⟩ := hv.2
+  exact ⟨c, by simp [hm, hc], hcv⟩
+
 /-- A parameter or scheme row of the source is in the target, or the target
-admits every value: the row has no clauses for a target clause to cover. -/
+admits every value: the row has no clauses for a target clause to cover. A
+meet row not in the target is covered through its clauses (`meetSources`). -/
 def Opaque (G : NormalGraph ι) (S T : List ι) : Prop :=
-  ∀ i ∈ S, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T
+  ∀ i ∈ S, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T ∨ G.meetRow i = true
 
 instance [DecidableEq ι] {G : NormalGraph ι} {S T : List ι} : Decidable (Opaque G S T) :=
-  inferInstanceAs (Decidable (∀ i ∈ S, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T))
+  inferInstanceAs (Decidable (∀ i ∈ S, G.plain i = true ∨ i ∈ T ∨ .top ∈ clausesOf G T ∨
+    G.meetRow i = true))
+
+/-- The clauses of the source's meet rows the target does not name, split as
+source clauses are: a member of a meet row `p ⊓ cs` is in one of `cs`, so the
+row is below a target covering each of them. A bounded binder read as its
+meet with its bound is below the bound this way. -/
+def meetSources [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) : List (Clause (List ι)) :=
+  ((S.filter fun i => G.meetRow i && decide (i ∉ T)).flatMap
+    fun i => ((G.meets i).map (·.2)).getD []).flatMap splitClause
 
 /-- A subtype edge relates two value types or two argument-list types.
 The empty type is admissible at either sort; a runtime top is not a list top. -/
@@ -1769,12 +1797,13 @@ def SameKind (G : NormalGraph ι) (S T : List ι) : Bool :=
 clause. A `bool` source is therefore discharged by the pair of Boolean singleton
 clauses, or by a single `bool` clause, or by any target containing both.
 Coverage may also use the `known` rows, proved elsewhere. -/
-def Valid (G : NormalGraph ι) (known : Known ι) (table : Table ι) : Prop :=
+def Valid [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (table : Table ι) : Prop :=
   ∀ p ∈ table, SameKind G p.1 p.2 = true ∧ Opaque G p.1 p.2 ∧
-    ∀ a ∈ sourceClauses G p.1, ∃ b ∈ clausesOf G p.2, Covers G (Rel table) known p.1 a b
+    ∀ a ∈ sourceClauses G p.1 ++ meetSources G p.1 p.2, ∃ b ∈ clausesOf G p.2,
+      Covers G (Rel table) known p.1 a b
 
 /-- A checked table holding `S ≤ T`, whose coverage may use the `known` rows. -/
-def Core (G : NormalGraph ι) (known : Known ι) (S T : List ι) : Prop :=
+def Core [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (S T : List ι) : Prop :=
   ∃ table, (S, T) ∈ table ∧ Valid G known table
 
 /-- Sorted argument types contribute pack clauses only. -/
@@ -1805,7 +1834,7 @@ private theorem mixed_subset {G : NormalGraph ι} {η : MixedAssignment ι} {S T
 
 /-- Core's list component follows from current-level value inclusion. This
 uses the executable kind condition, so value top cannot discharge a list edge. -/
-theorem core_arguments_of_values {G : NormalGraph ι} {known : Known ι} {table : Table ι}
+theorem core_arguments_of_values [DecidableEq ι] {G : NormalGraph ι} {known : Known ι} {table : Table ι}
     (hc : Valid G known table) (η : MixedAssignment ι) (n : Nat)
     (hv : ∀ A B, Rel table A B → ∀ (W : WorldT n) v,
       mixedValues G η A n W v → mixedValues G η B n W v) :
@@ -1828,10 +1857,11 @@ theorem core_arguments_of_values {G : NormalGraph ι} {known : Known ι} {table 
   by_cases hp : G.parameterKinds i = some .arguments
   · have hn : G.plain i = false := by simp [NormalGraph.plain, NormalGraph.params, hp]
     have hiB : i ∈ B := by
-      rcases hopaque i hi with h | h | h
+      rcases hopaque i hi with h | h | h | h
       · simp [hn] at h
       · exact h
       · exact False.elim (noTop h)
+      · simp [NormalGraph.meetRow, NormalGraph.params, hp] at h
     exact ⟨i, hiB, by simpa [hp] using ha⟩
   · simp only [hp, ite_false] at ha
     obtain ⟨c, hci, hca⟩ := ha
@@ -1840,7 +1870,7 @@ theorem core_arguments_of_values {G : NormalGraph ι} {known : Known ι} {table 
     case pack a bs =>
       have hsrc : .pack a bs ∈ sourceClauses G A :=
         List.mem_flatMap.mpr ⟨.pack a bs, List.mem_flatMap.mpr ⟨i, hi, hci⟩, by simp [splitClause]⟩
-      obtain ⟨b, hb, hcov⟩ := hcover _ hsrc
+      obtain ⟨b, hb, hcov⟩ := hcover _ (List.mem_append_left _ hsrc)
       obtain ⟨d, ds, rfl⟩ := argument_clause hba hb
       obtain ⟨j, hj, hbj⟩ := List.mem_flatMap.mp hb
       have hjplain := NormalGraph.plain_of_clauses hbj
@@ -1860,7 +1890,7 @@ theorem core_arguments_of_values {G : NormalGraph ι} {known : Known ι} {table 
 assignment where its known rows do: value members through coverage, argument
 lists through same-level tuple coverage. The induction on the level proves
 values from both components below it, then lists at it from values at it. -/
-theorem Core.mixed_sound {G : NormalGraph ι} {known : Known ι} {S T} (hc : Core G known S T)
+theorem Core.mixed_sound [DecidableEq ι] {G : NormalGraph ι} {known : Known ι} {S T} (hc : Core G known S T)
     (η : MixedAssignment ι)
     (hk : ∀ k ∈ known, FamLe (mixedValues G η k.1) (mixedSem G η (.arrs k.2.1 k.2.2))) :
     FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
@@ -1881,12 +1911,22 @@ theorem Core.mixed_sound {G : NormalGraph ι} {known : Known ι} {S T} (hc : Cor
             hv j (Nat.le_of_lt hj) U hU
         rcases mixed_cases hv with ⟨c, hcm, hv⟩ | ⟨i, hi, hp, hv⟩
         · obtain ⟨a, ha, hv⟩ := (splitClause_sem _ _ c n W v).mpr hv
-          obtain ⟨b, hb, hcover⟩ := (hc (A, B) hab).2.2 a (List.mem_flatMap.mpr ⟨c, hcm, ha⟩)
+          obtain ⟨b, hb, hcover⟩ :=
+            (hc (A, B) hab).2.2 a (List.mem_append_left _ (List.mem_flatMap.mpr ⟨c, hcm, ha⟩))
           exact mixed_expand_mpr ⟨b, hb, Covers.sound hcover hk n (fun j hj => (ih j hj).1)
             (fun j hj S T h W vs hvs => (ih j hj).2 S T h W vs hvs) W v hself hv⟩
-        · rcases ((hc (A, B) hab).2.1 i hi).resolve_left (by simp [hp]) with hB | htop
+        · rcases ((hc (A, B) hab).2.1 i hi).resolve_left (by simp [hp]) with hB | htop | hmeet
           · exact ⟨i, hB, hv⟩
           · exact mixed_expand_mpr ⟨.top, htop, mixedDenote_value G η i hv⟩
+          · by_cases hB : i ∈ B
+            · exact ⟨i, hB, hv⟩
+            · obtain ⟨c, hcm, hv⟩ := meet_clause_of hmeet hv
+              obtain ⟨a, ha, hv⟩ := (splitClause_sem _ _ c n W v).mpr hv
+              have hmem : a ∈ meetSources G A B := List.mem_flatMap.mpr ⟨c,
+                List.mem_flatMap.mpr ⟨i, List.mem_filter.mpr ⟨hi, by simp [hmeet, hB]⟩, hcm⟩, ha⟩
+              obtain ⟨b, hb, hcover⟩ := (hc (A, B) hab).2.2 a (List.mem_append_right _ hmem)
+              exact mixed_expand_mpr ⟨b, hb, Covers.sound hcover hk n (fun j hj => (ih j hj).1)
+                (fun j hj S T h W vs hvs => (ih j hj).2 S T h W vs hvs) W v hself hv⟩
       exact ⟨hv, core_arguments_of_values hc η n (fun A B h W v hv' => hv A B h W v hv')⟩
   intro n W x hx
   cases x with

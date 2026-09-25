@@ -127,6 +127,11 @@ let primitive_prototype = function
   | Bigint | BigintLit _ -> Some "skjs/bigint-prototype#0:0"
   | True | False -> Some "skjs/boolean-prototype#0:0"
   | _ -> None
+(* The ground bounds of the binders of the function being proposed: a
+   bounded binder's value is read at its bound (TypeScript's apparent type),
+   and Lean reads the binder as the meet of its row and the bound. *)
+let rigid_bounds : (Semantic.rigid * ty) list ref = ref []
+let rigid_bound r = List.assoc_opt r !rigid_bounds
 let rec field_type declarations seen t name = match t with
   | Atoms atoms -> combine (List.map (function
       | Shape {elements=Some _;_} when name=Name "length" -> Atoms [Num]
@@ -154,7 +159,9 @@ let rec field_type declarations seen t name = match t with
   (* A value of an intersection is one of each operand: read as the first
      operand that has the field, a hint Lean checks. *)
   | Meet (t,ts) -> first_part (fun t -> field_type declarations seen t name) (t::ts)
-  | Rigid _ -> unsupported "field read on rigid parameter"
+  | Rigid r -> (match rigid_bound r with
+    | Some b -> field_type declarations seen b name
+    | None -> unsupported "field read on rigid parameter")
 (* What a fresh array literal expected at an iterable type holds, found as
    TypeScript finds it: the expected type's member under the key
    `Array.prototype` iterates by (its one symbol key, `[Symbol.iterator]`),
@@ -249,7 +256,9 @@ let rec index_type declarations seen receiver key = match receiver with
       | _ -> unsupported "indexed read on non-object") atoms)
   | Union ts -> combine (List.map (fun t -> index_type declarations seen t key) ts)
   | Meet (t,ts) -> first_part (fun t -> index_type declarations seen t key) (t::ts)
-  | Rigid _ -> unsupported "indexed read on rigid parameter"
+  | Rigid r -> (match rigid_bound r with
+    | Some b -> index_type declarations seen b key
+    | None -> unsupported "indexed read on rigid parameter")
 
 (* A fresh literal is built at the one object contract its expected type
    names: a record or dictionary shape, possibly behind a declaration (a class
@@ -1528,7 +1537,10 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
 (* A named closure's claim is fixed where it is created, before the calls that
    offer it more parameters are reached: a first pass finds those offers, and
    the second states them at the creation. *)
-let infer_function declarations module_functions f =
+let infer_function declarations module_functions (f:Source.fn) =
+  rigid_bounds := List.filter_map (fun (q:Semantic.quantifier) -> match q.bound with
+    | Some (ValueArgument b) when not (Semantic.mentions_rigid b) -> Some (q.identity,b)
+    | _ -> None) f.quantified;
   let claim,requests = infer_pass [] declarations module_functions f in
   if requests = [] then claim else
   let offered = List.map (fun pos -> pos,List.filter_map (fun (p,s) ->

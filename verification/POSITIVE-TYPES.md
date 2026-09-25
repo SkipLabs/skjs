@@ -371,8 +371,9 @@ is the parametric semantics `denoteP` (`qDenote_no_schemes`).
 Only clause rows have clauses. A type holding a parameter, scheme or meet row
 has no expansion, so no rule that reads a clause (`Represents`, `Answers`, the
 atoms of heap knowledge) applies to it. A meet row is below its parameter and
-below its clauses, but no rule reads it as either: instance tables relate it
-to other types, and at an instance it is a clause row.
+below its clauses; a core table reads it through its clauses
+([Core tables](#core-tables)), and instance tables relate it to other types, at
+an instance of which it is a clause row.
 
 Lean: `qDenoteWithArgs G (mixedParameters G)`, `Bounded`, `instanceTWithArgs`,
 `instanceRestsWithArgs`, `NormalGraph.meets`, `NormalGraph.plain_iff` (`Types/PositiveGraphs.lean`,
@@ -773,20 +774,29 @@ $(S,T)$ in which every entry $(A,B)$ satisfies three conditions:
    either. So value `top` cannot discharge a pack edge, even though a pack's
    value meaning is empty.
 2. **Opaque rows.** Every parameter or scheme row of $A$ appears in $B$, or
-   $B$ holds `top`.
+   $B$ holds `top`; a meet row of $A$ may instead be covered through its
+   clauses.
 3. **Coverage.** Every split part of every clause of $A$ is covered by some
-   clause of $B$, with $A$ as the source type.
+   clause of $B$, with $A$ as the source type; so is every split part of the
+   clauses of each meet row of $A$ that $B$ does not name.
 
 $$
 \frac{(S,T)\in\Delta\qquad
       \forall(A,B)\in\Delta.\;
       \mathsf{SameKind}(A,B)\land\mathsf{Opaque}(A,B)
-      \land\forall a\in\mathsf{split}(\mathsf{cl}_G(A)).\;\exists b\in\mathsf{cl}_G(B).\;
+      \land\forall a\in\mathsf{split}(\mathsf{cl}_G(A)\mathbin{+\!\!+}\mathsf{mcl}_G(A,B)).\;\exists b\in\mathsf{cl}_G(B).\;
       \Delta;\kappa;A\vdash a\sqsubseteq b}
      {G;\kappa\vdash_c S\le T}
 $$
 
-Here $\mathsf{cl}_G(A)$ lists the clauses of $A$'s clause rows.
+Here $\mathsf{cl}_G(A)$ lists the clauses of $A$'s clause rows, and
+$\mathsf{mcl}_G(A,B)$ the clauses $\vec c$ of each meet row $p\sqcap\vec c$ of
+$A$ not in $B$ (`meetSources`). A member of $p\sqcap\vec c$ is in one of
+$\vec c$, so covering them puts it in $B$: a meet row is below its clauses
+(`meet_clause_of`). This is how a bounded binder, read as the meet of its
+parameter row and its bound, is below the bound: `T extends { length: number }`
+is $p_T\sqcap\{\mathit{length}:\mathsf{number}\}$, and
+$p_T\sqcap\{\mathit{length}:\mathsf{number}\}\le\{\mathit{length}:\mathsf{number}\}$.
 **Splitting** replaces a `bool` clause by `boolLit true` and `boolLit false`
 and leaves every other clause alone. It preserves meaning, so it adds no power
 beyond the model; it lets one source clause be discharged by several target
@@ -808,7 +818,7 @@ for everything those contracts reach.
 `Core.mixed_sound` holds wherever the known rows do: each $(F,L,M)\in\kappa$
 with $F$'s values within $\mathsf{arrs}(L;M)$ at every level.
 
-Lean: `Core`, `Valid`, `Known`, `SameKind`, `Opaque`, `splitClause`,
+Lean: `Core`, `Valid`, `Known`, `SameKind`, `Opaque`, `meetSources`, `meet_clause_of`, `splitClause`,
 `splitClause_sem`, `source_sem`, `CoversByProto`, `viewOf`, `covers_arrows_sound`,
 `Core.mixed_sound`.
 

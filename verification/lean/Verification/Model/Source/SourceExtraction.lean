@@ -3983,9 +3983,14 @@ def SourceRequest.searchLabels (r : SourceRequest) : List Nat :=
   Id.run do
     let mut known := roots
     for _ in List.range r.types.length do
+      -- A meet row's clauses name a type the table may hold as a row of its
+      -- own, a bounded binder's bound: a read through the binder is at it.
       let next := (known ++ known.flatMap (fun i =>
         ((r.types[i]?.map RequestJson.Row.union).getD []).flatMap
-          (fun c => (RequestJson.clauseTypes c).flatten))).eraseDups
+          (fun c => (RequestJson.clauseTypes c).flatten) ++
+        (match (r.types[i]? : Option RequestJson.Row) with
+          | some (.meet _ cs) => (r.types.idxOf? (RequestJson.Row.clauses cs)).toList
+          | _ => []))).eraseDups
       if next.length == known.length then break
       known := next
     return known

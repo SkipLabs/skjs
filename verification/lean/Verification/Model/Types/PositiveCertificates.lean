@@ -273,7 +273,7 @@ set_option synthInstance.maxSize 1024 in
 def checkCore [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (S T : List ι)
     (cert : Certificate ι) : Bool :=
   decide ((S, T) ∈ cert.table ∧ ∀ p ∈ cert.table, SameKind G p.1 p.2 = true ∧ Opaque G p.1 p.2 ∧
-    ∀ a ∈ sourceClauses G p.1, ∃ b ∈ clausesOf G p.2,
+    ∀ a ∈ sourceClauses G p.1 ++ meetSources G p.1 p.2, ∃ b ∈ clausesOf G p.2,
       checkClause G cert.table known cert.arrows p.1 a b = true)
 
 
@@ -290,10 +290,10 @@ theorem checkCore_complete [DecidableEq ι] {G : NormalGraph ι} {known S T}
     (h : Core G known S T) : ∃ cert, checkCore G known S T cert = true := by
   obtain ⟨table, hm, hv⟩ := h
   have rows : ∀ p ∈ table, ∃ es : Evidence ι,
-      ∀ a ∈ sourceClauses G p.1, ∃ b ∈ clausesOf G p.2,
+      ∀ a ∈ sourceClauses G p.1 ++ meetSources G p.1 p.2, ∃ b ∈ clausesOf G p.2,
         checkClause G table known es p.1 a b = true := by
     intro p hp
-    apply collect (sourceClauses G p.1)
+    apply collect (sourceClauses G p.1 ++ meetSources G p.1 p.2)
       (fun a es => ∃ b ∈ clausesOf G p.2, checkClause G table known es p.1 a b = true)
     · intro a es es' hm ⟨b, hb, hc⟩
       exact ⟨b, hb, checkClause_mono hm hc⟩

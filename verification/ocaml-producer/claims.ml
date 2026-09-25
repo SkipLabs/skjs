@@ -51,9 +51,25 @@ let encode (proposal : Proposal.t) =
       parameters := (r.spelling,label) :: !parameters;
       label
   in
+  (* A binder's ground bound, from the signature that declares it: such a
+     binder is the meet of its row and the bound, which Lean fills. *)
+  let bounds = List.concat_map (fun (f : Proposal.function_claim) ->
+    List.filter_map (fun (q:Semantic.quantifier) -> match q.bound with
+      | Some (ValueArgument b) when not (Semantic.mentions_rigid b) -> Some (q.identity,b)
+      | _ -> None) f.source.quantified) proposal.functions in
   let rec labels t = Array (List.map int (label_list t))
   and label_list = function
-    | Rigid r -> [parameter_label r]
+    | Rigid r -> (match List.assoc_opt r bounds with
+      | None -> [parameter_label r]
+      | Some b ->
+        let parts = Array [Array [int (parameter_label r)]; labels b] in
+        (match List.assoc_opt parts !meets with
+         | Some label -> [label]
+         | None ->
+           let label = List.length !rows in
+           rows := !rows @ [Array []];
+           meets := !meets @ [(parts,label)];
+           [label]))
     | Union ts -> List.sort_uniq compare (List.concat_map label_list ts)
     | Meet (t,ts) as m ->
       if Semantic.mentions_rigid m then unsupported "rigid type nested in a graph type";

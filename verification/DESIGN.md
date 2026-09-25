@@ -617,18 +617,29 @@ any other. A call of a generic module function at a binder names the instance
 at the binder's row, which that function's own certificate, at every
 assignment, covers.
 
-**Bounds.** A bounded binder is read as its parameter row alone. The body is
-then certified at every assignment, including those outside the bound: a
-stronger statement than TypeScript's, still true, and a body that uses the
-bound (`x.length` for `T extends { length: number }`) finds no derivation.
-Reading a bounded binder as the meet of its row and its bound, and letting the
-subtyping rules read a meet row's clauses, is the next step.
+**Bounds.** A binder bounded by a ground type of clause rows is read as the
+meet of its parameter row and its bound, `T extends { length: number }` as
+$p_T\sqcap\{\mathit{length}:\mathsf{number}\}$, whose values are the
+assignment's values of $p_T$ within the bound. The body is certified at every
+assignment; at one within the bound, which is every instantiation TypeScript
+admits, the meet is the binder itself, so no admissibility premise is needed.
+A core table covers a meet row through its clauses
+([POSITIVE-TYPES](POSITIVE-TYPES.md#core-tables)), which is how `x.length`
+reads through the bound, and nothing is below the meet but itself and its
+subtypes, so `{ length: 1 }` is not a `T`. The producer reserves the meet row
+through the intersection wire (`meets`, operands the binder's row and the
+bound), and Lean fills it, and reads the unit's binder as it, from the same
+operands. A bound over another binder (`U extends T`) leaves the parameter
+row alone: the body is certified at every assignment, stronger than
+TypeScript's statement and still true, and a body using that bound finds no
+derivation.
 
 **The direct checker.** A generic unit goes to the direct rigid checker
 (`GenericSource`) first, for the variable-copy bodies and dependent bounds it
 states located obligations for; a failed obligation stands. A body outside its
 forms, a refusal, goes to the graph checker. The direct checker is kept only
-because it still covers bounded binders; once meets carry bounds it is
+because it still covers dependent bounds (`U extends T`) and located
+obligations for variable-copy bodies; once the graph path reads those it is
 retired. Its types have no parameter rows: a claim or annotation over a
 binder's row (`SourceTypes.reachesParameter`) is refused there, so the unit
 goes to the graph checker rather than having the row read as a ground type. Nested generic closures (a closure with binders of its own inside a

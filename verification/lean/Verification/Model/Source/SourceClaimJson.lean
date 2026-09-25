@@ -1024,12 +1024,33 @@ private def checkInitializationOrder (T : SourceTypes.Table)
         s!"a module function this step reaches reads '{c}' before its declaration runs")
     if let .constants _ bs := s then ready := ready ++ bs.map (·.name)
 
-/-- The parameter row that stands for each of a generic unit's binders
-(`SourceTypes.binderRow`). -/
+/-- A prepared ground bound's graph labels. -/
+private def boundLabels (j : Json) : Option (List Nat) := do
+  if (j.getObjVal? "top").toOption != some (toJson false) then none
+  let atoms ← ((j.getObjVal? "atoms").toOption).bind (·.getArr?.toOption)
+  atoms.toList.mapM fun a => do
+    if (a.getObjValAs? String "a").toOption != some "graph" then none
+    (a.getObjValAs? Nat "label").toOption
+
+/-- The row that stands for each of a generic unit's binders: its parameter
+row (`SourceTypes.binderRow`), met with its bound when the bound is a ground
+type of clause rows, `T extends { length: number }` read as `T ⊓ { length:
+number }`. Every assignment of the parameter row is an instance: one within
+the bound is the binder itself, and the body is certified at all of them. A
+bound over another binder leaves the parameter row alone. -/
 private def binderRows (T : SourceTypes.Table) (tps : List Fragment.TypeParam) :
     Except String (SourceTypes.Table × List (String × Nat)) := do
   let (rows, T) ← (tps.mapM fun (tp : Fragment.TypeParam) => do
-    return (tp.name, ← SourceTypes.binderRow tp.name)).run T
+    let p ← SourceTypes.binderRow tp.name
+    let G := SourceTypes.graph (← get)
+    match tp.bound.bind boundLabels with
+    | some B =>
+      if B.isEmpty || !G.plainTy B then return (tp.name, p)
+      let r := RequestJson.Row.meet p (B.flatMap G)
+      modifyGet fun (T : SourceTypes.Table) => match T.idxOf? r with
+        | some i => ((tp.name, i), T)
+        | none => ((tp.name, T.length), T ++ [r])
+    | none => return (tp.name, p)).run T
   return (T, rows)
 
 private def annotationAtRows := SourceTypes.annotationAtRows

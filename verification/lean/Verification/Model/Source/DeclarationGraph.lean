@@ -404,6 +404,14 @@ private def meetRow (parts : List (List Nat)) : Lowering (List Nat) := do
     let others := parts.filter (· != [x])
     if others.isEmpty then return [x]
     let cs ← groundMeet others
+    -- A producer's reserved row for this intersection, a generic unit's
+    -- bounded binder among them, is that meet row.
+    let m ← get
+    let reserved := m.meets.find? fun (ps, _) => ps == parts
+    if let some (_, row) := reserved then
+      if table[row]? == some (.clauses []) then
+        modifyThe SourceTypes.Table (·.set row (.meet x cs))
+        return [row]
     modifyGetThe SourceTypes.Table fun T =>
       let r := RequestJson.Row.meet x cs
       match T.idxOf? r with
