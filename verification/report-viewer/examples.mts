@@ -334,7 +334,8 @@ const corpusGroups: ExampleGroup[] = [
     label: "Unsupported examples · expected limitations",
     note: "outside the fragment on purpose; listing one never implies it verifies",
     files: examples("verification/tests/unsupported", [
-      ["typeof_narrow", "Narrow a union through a typeof \"object\" test."],
+      ["instanceof_narrow", "Narrow a union through an instanceof test of a constructor."],
+      ["in_inherited", "Test for a key every object inherits from Object.prototype."],
       ["mutable_binding", "Declare a mutable local without an initializer."],
     ]),
   },

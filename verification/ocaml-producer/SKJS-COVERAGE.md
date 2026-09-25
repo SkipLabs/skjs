@@ -149,7 +149,7 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 14 | ~~Reads on primitives and unions, value-level `&&`/`||`~~ done (task L); left: dynamic string index writes, numeric keys on string indexes | 4 (was 48 + 20) | | | | M | O L |
 | 15 | ~~Equality against string/boolean literal singletons~~ done (task I); left: two objects without a field (no identity in the model) | 6 (was 46) | 6 | 0 | 2 | M | L |
 | 16 | ~~Discriminated-union narrowing~~ done (task I); left: a `let` holding a union object | 3 (was 28) | 3 | 0 | 1 | M | O L |
-| 17 | `in` / `instanceof` / `typeof` (expression and type query) | 88 | 81 | 5 | 16 | L | P O L |
+| 17 | `in` / `instanceof` / `typeof` — `typeof` as a value and `"object"`, `in` with literal and literal-union keys done (task J); left: `instanceof` (no class identity in the model), `typeof` in types (task O), numeric and `string` `in` keys | 65 (was 127, marker corpus; 31 of them `typeof` in types) | 58 | 7 | 20 | L | P O L |
 | 18 | Search: no derivation found (mostly flow narrowing; see below) | 104 | 101 | 3 | 44 | L | L O |
 | 19 | Classes: member modifiers, optional/definite fields, parameter properties, inheritance, constructor statements, receivers | 104 | 65 | 39 | 31 | L | P O L |
 | 20 | Generic classes (records over a binder, below) | 47 | | | 21 | L | P O L |
@@ -439,10 +439,19 @@ dropped), examples, what the extension needs.
     `array-isarray-refinement.ts#testArrayMethodsAfterRefinement` and
     `#testEarlyReturnWithLength` are a read of `length` after `Array.isArray`
     on a union, the overlay's narrowing.)
-17. **`in`/`instanceof`/`typeof`.** `binary operator outside the fragment
-    (in)` (25), `(instanceof)` (18), `proposal: expression typeof` (24),
-    `type outside the fragment (TypeQuery)` (21, `typeof x` in types; done,
-    task O, 22). Guards and their narrowing.
+17. **`in`/`instanceof`/`typeof`.** Task J took `typeof` as a value (a
+    chain of tag tests, claimed `string`) and `typeof x === "object"` (the tag
+    `typeofObject`: null or an object without call code), and `key in o` as
+    the tag `hasKey`, an own-key test, with a literal key or a union of string
+    literals, refused with reasons where JavaScript's answer differs: a key a
+    realm prototype holds, an array index, a `string` key, a primitive or class
+    operand ([DESIGN](../DESIGN.md#guards)). Left, by reason: `instanceof` other
+    than `instanceof Array` (25: the model gives an object no identity of the
+    constructor that made it; 12 of them also generic classes), a class with a
+    static `[Symbol.hasInstance]` (4: a computed static member), `typeof` in
+    types (31, done, task O), numeric `in` keys (3), `string` keys (2). Outside the
+    group, presence narrowing after `in` on an optional field or a dictionary
+    (4, search) and `x[s]` after `s in x` with a union key (3, producer).
 18. **Search found no derivation** — the pipeline reaches Lean and fails to
     prove an obligation (`source expression obligation … evidence search
     failed` 88, `closure expression claim` 9, `incoming edge obligation` 4).
@@ -825,7 +834,7 @@ split by function.
 | G. Mutable bindings | Storage contract from a widened initializer, parameters as cells, `let x: T;` with definite assignment, module constants | 52 / 22 | `proposal.ml`, `environment.ml`, `ProgramTyping.lean` | — | I |
 | H. Destructuring and parameters (done) | Object/array patterns (nested, holes, defaults, a tuple's rest) on `const`, in closure bodies and as parameters of functions and closures; function defaults; array assignment with a rest; readonly and alias rest parameters; refused with reasons: array rests of unknown length (slices), object rests, `let` patterns | 111 / 28 reached, 96 left the group; 82 units verified (911 → 993 units, 860 → 942 functions, 96 → 101 whole files, none lost, marker corpus) | `fragment-parse.mts`, `fragment.mts`, `type-term.mts`, `tsc-claims.mts`, `annotate-source.mts`, `Fragment.lean`, `SourceExtraction.lean`, `SourceClaimJson.lean`, `source.ml`, `proposal.ml`, `semantic.ml` | — | F |
 | I. Literal equality and tag narrowing (done) | Singleton tags of every primitive kind; strict equality as the `arith` operator (primitives, objects with a field); two unions of singletons dispatched as their tags; discriminated unions by a field slice on the branch edge; field contents after a guard; `switch` case narrowing (break joins, field discriminants re-read, exhaustive switches unreachable at their end); `== null`; impossible edges | 1578 → 1699 units (+121, none lost), 1070 → 1176 functions, 157 → 171 whole files (marker corpus, on top of tasks H, N, Q, the overlay and throws) | `Calculus.lean`, `ProgramTyping.lean`, `BranchRefinement.lean`, `ControlFlow.lean`, `HeapExpressionRules.lean`, `CertificateProducer.lean`, `SourceExtraction.lean`, `Fragment.lean`, `fragment-parse.mts`, `proposal.ml`, `environment.ml`, `claims.ml`, `source.ml` | F for `switch` | G, J |
-| J. Guards | `typeof`, `in`, `instanceof`, `Array.isArray`; `typeof` in type position | 88 / 16 | `fragment-parse.mts`, `proposal.ml`, Lean narrowing rules | I, K (`Array`) | I |
+| J. Guards (done) | `typeof` as a value and `typeof x === "object"` (tag `typeofObject`); `key in o` as the own-key tag `hasKey` (literal keys, unions of string literals), `isArray` its store-key case; refused with reasons: keys the realm's prototypes hold, array indices, `string` keys, primitive and class operands, source keys naming the model's reserved keys (a soundness hole in `isArray` closed); `tagTestPlan` branches on an unsettled arm; decided and documented, not lowered: `instanceof` of a constructor (no class identity in the model), static `[Symbol.hasInstance]`, user-defined guards; presence narrowing left | 1,791 → 1,842 units (+51, none lost), 1,261 → 1,310 functions, 180 → 182 whole files (marker corpus) | `Calculus.lean`, `ProgramTyping.lean`, `Fragment.lean`, `SourceExtraction.lean`, `SourceClaimJson.lean`, `calculus.mts`, `fragment.mts`, `fragment-parse.mts`, `tsc-claims.mts`, `source.ml`, `proposal.ml` | I, K (`Array`) | I, M (class allocation for `instanceof`) |
 | K. Library globals (done, first part) | Global values read at the call signatures a module calls (`BigInt(v)`, `Symbol()`, `String(v)`) as well as members; a standard library global only through a reviewed overlay (`library-globals.mts`) that states a parameter at what the host accepts without throwing | all 102 `BigInt` units and the `Symbol()`/`String()` calls pass the reader; 6 units / 2 files newly verified (703 → 709 units, 61 → 62 whole files); `Array.isArray`, `new X(…)`, well-known symbols, `Promise`/`JSON`/`Object` statics left | `declaration-graph.mts`, `library-globals.mts` | B, C | B, C |
 | L. Primitive and union reads (done) | Truthiness as a tag test, value-level `&&`/`||`, `!`; string `length` and code units; primitive members through their wrapper prototypes' contracts (the overlay generalized); not done: method calls on primitive unions, dynamic string index writes (objects cannot grow) | 68 / 30 reached, 61 / 7 (files fully) verified | `Calculus.lean`, `ProgramTyping.lean`, `ProgramCertificates.lean`, `CertificateProducer.lean`, `SourceExtraction.lean`, `array-prototype.mts`, `declaration-graph.mts`, `fragment-parse.mts`, `proposal.ml` | B (string lib) | I |
 | M. Class members | Modifiers, optional/definite fields, parameter properties, constructor statements, receivers; then inheritance | 104 / 31 | `fragment-parse.mts` (classes), `proposal.ml`, class model in Lean | — | N |

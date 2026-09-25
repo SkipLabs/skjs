@@ -274,8 +274,9 @@ private def unaryOperation (p : Span) (op : Fragment.UnaryOp) (B : Ty Nat) :
   let bigint ← if !cs.isEmpty && cs.all ProgramTyping.numberClause then pure false
     else if !cs.isEmpty && cs.all ProgramTyping.bigintClause then pure true
     else throw (located ++ "a unary numeric operator needs an operand of one numeric family, number or bigint")
-  let (arith, factor) := match op with
-    | .neg => (Arith.mul, -1) | .plus => (.mul, 1) | .bitNot => (.xor, -1)
+  let (arith, factor) ← match op with
+    | .neg => pure (Arith.mul, -1) | .plus => pure (.mul, 1) | .bitNot => pure (.xor, -1)
+    | .typeof => throw "internal extraction error: typeof is not a numeric operator"
   if bigint then
     if op == .plus then throw (located ++ "unary + on a bigint throws a TypeError")
     let label ← lower (SourceTypes.use (.bigintLit factor))
@@ -285,6 +286,62 @@ private def unaryOperation (p : Span) (op : Fragment.UnaryOp) (B : Ty Nat) :
   let label ← lower (SourceTypes.use (.numLit b))
   modify fun s => {s with hints := label :: s.hints}
   return (arith, .num b, [label], .numLit)
+
+/-- The operand of `key in o`, whose test (`Tag.hasKey`) asks whether the
+object owns the key. JavaScript throws on a primitive, where the test would
+answer `false`, so the operand must be of object clauses. A class value is
+refused: its static members are bound apart (`static C.x`), so it lacks keys
+JavaScript's has. On the other objects of the fragment own keys are
+JavaScript's, and the key names nothing a prototype holds
+(`Fragment.inKeyRefusal`). -/
+private def inOperand (p : Span) (tag : Tag) (B : Ty Nat) : Compiler Unit := do
+  let .hasKey _ := tag | return
+  let G := SourceTypes.graph (← table)
+  let cs := PositiveRules.expand G B
+  let located := s!"unsupported source expression at [{p.1},{p.2}): "
+  if cs.any (fun | .ctors .. => true | _ => false) then
+    throw (located ++ "`in` on a class value: its static members are bound apart from it")
+  unless G.plainTy B && !cs.isEmpty && cs.all (fun
+      | .refs .. | .dict .. | .arrs .. | .callable .. => true
+      | _ => false) do
+    throw (located ++ "`in` needs an object operand: it throws on a primitive")
+
+/-- The keys `key in o` may test, from the key's claim: a union of string
+singletons, each a key `in` answers as JavaScript does (`inKeyRefusal`). -/
+private def inKeyList (p : Span) (K : Ty Nat) : Compiler (List String) := do
+  let G := SourceTypes.graph (← table)
+  let located := s!"unsupported source expression at [{p.1},{p.2}): "
+  let keys := (PositiveRules.expand G K).filterMap fun
+    | .strLit s => some s
+    | _ => none
+  unless G.plainTy K && !keys.isEmpty && keys.length == (PositiveRules.expand G K).length do
+    throw (located ++ "`in` with a key that is not a union of string literals")
+  let keys := keys.eraseDups
+  for k in keys do
+    if let some reason := Fragment.inKeyRefusal k then
+      throw (located ++ s!"`in` with the key '{k}': {reason}")
+  return keys
+
+/-- `key in o` with the key in `keySlot` and the object in `slot`: the key's
+singletons, tested in turn, each selecting its own key's test; the last
+needs no test, since the key is one of them. -/
+def inKeysTerm (keys : List String) (keySlot slot : Nat) : Tm :=
+  match keys.reverse with
+  | [] => .fls
+  | last :: earlier => earlier.reverse.foldr (fun k rest =>
+      .ite (.test (.strEq k) (.var keySlot)) (has k) rest) (has last)
+where has (k : String) : Tm := .ite (.test (.hasKey (.str k)) (.var slot)) .tru .fls
+
+/-- `typeof v`, in the order the lowering tests it: each tag holds of exactly
+the values `typeof` names by its string, and a value none of them holds of is
+an object with call code, which `typeof` names `"function"`. -/
+def typeofAnswers : List (Tag × String) :=
+  [(.isUndef, "undefined"), (.typeofObject, "object"), (.isBool, "boolean"), (.isNum, "number"),
+   (.isStr, "string"), (.isBigint, "bigint"), (.isSymbol, "symbol")]
+
+/-- `typeof` of the value in `slot`: one tag test per answer, in order. -/
+def typeofTerm (slot : Nat) : Tm :=
+  typeofAnswers.foldr (fun (tag, s) rest => .ite (.test tag (.var slot)) (.str s) rest) (.str "function")
 
 /-- What a computed key names, by its claimed type: a field for a string
 singleton, a dictionary lookup for a broad string, or an element of the
@@ -414,6 +471,7 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
     return .elemWrite p (← comparisonsExpr fc r) (← comparisonsExpr fc key) (← comparisonsExpr fc rhs)
   | .arith p op l r => return .arith p op (← comparisonsExpr fc l) (← comparisonsExpr fc r)
   | .comma p l r => return .comma p (← comparisonsExpr fc l) (← comparisonsExpr fc r)
+  | .inKeys p k o => return .inKeys p (← comparisonsExpr fc k) (← comparisonsExpr fc o)
   | .logicalAssign p op target rhs =>
     return .logicalAssign p op (← comparisonsExpr fc target) (← comparisonsExpr fc rhs)
   | .update p op target rhs post =>
@@ -488,7 +546,7 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .seqBody _ a b | .letBody _ _ _ a b => assignsExpr name a || assignsExpr name b
   | .destructBody _ t a b => assignsExpr name a || t.defaults.any (assignsExpr name) || assignsExpr name b
   | .indexWrite _ _ a b c | .elemWrite _ a b c => assignsExpr name a || assignsExpr name b || assignsExpr name c
-  | .arith _ _ a b | .elemAt _ a b | .comma _ a b => assignsExpr name a || assignsExpr name b
+  | .arith _ _ a b | .elemAt _ a b | .comma _ a b | .inKeys _ a b => assignsExpr name a || assignsExpr name b
   | .arrayLit _ es => es.any (assignsExpr name)
   | .arrayAssign _ targets rest rhs => targets.any (fun q => q.name == name ||
       (q.default_.map (assignsExpr name)).getD false) || rest.any (·.2.name == name) ||
@@ -775,7 +833,7 @@ private partial def readOnly : Fragment.Expr → Bool
   | .throwBody .. => false
   | .equality _ _ a b | .singletonTest _ _ _ _ a b | .logical _ _ a b | .coalesce _ a b
   | .optional _ _ a b | .seqBody _ a b | .letBody _ _ _ a b | .index _ _ a b | .arith _ _ a b | .elemAt _ a b
-  | .comma _ a b => readOnly a && readOnly b
+  | .comma _ a b | .inKeys _ a b => readOnly a && readOnly b
   | .ifBody _ _ c t e => readOnly c && readOnly t && readOnly e
   | .destructBody _ t a b => readOnly a && t.defaults.all readOnly && readOnly b
   | .alloc .. | .write .. | .indexWrite .. | .update .. | .logicalAssign .. | .assign .. | .arrayLit .. | .elemWrite .. | .arrayAssign .. | .nullishAssign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
@@ -890,7 +948,17 @@ private def tagTestPlan (G : PositiveGraphs.NormalGraph Nat) (tag : Tag) (Γ : L
     let B := if q == equal then [1] else [2]
     let rule := if q == equal then ProgramCertificates.Rule.truLit else .flsLit
     if !q && !(decide (Answers G [a] tag false)) then
-      throw "numeric comparison requires a union of known singleton outcomes"
+      -- A broad numeric arm is a documented proof boundary for equality. Any
+      -- other arm whose answer its type leaves open (an open record for a key,
+      -- an unknown shape) is a real Boolean: the test's own value.
+      if let .numEq _ := tag then
+        throw "numeric comparison requires a union of known singleton outcomes"
+      let test := DirectProof.node H (.test tag (.var slot)) [1,2] .test [DirectProof.var H slot [a]]
+      let yes := DirectProof.cast H A (DirectProof.node H (if equal then .tru else .fls) (if equal then [1] else [2])
+        (if equal then .truLit else .flsLit))
+      let no := DirectProof.cast H A (DirectProof.node H (if equal then .fls else .tru) (if equal then [2] else [1])
+        (if equal then .flsLit else .truLit))
+      return DirectProof.node H term A .ifBool [test, yes, no]
     pure (DirectProof.node H term A (if q then .ifTrue else .ifFalse)
       [DirectProof.cast H A (DirectProof.node H value B rule)])
   pure (DirectProof.node Γ term A (.unionVar slot) children)
@@ -1315,8 +1383,9 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
           ProgramCertificates.Rule.strLit)
       | _ => throw "unsupported closure literal"
     pure (DirectProof.node Γ t B r)
-  | .shapeTest _ tag equal e => do
+  | .shapeTest p tag equal e => do
     let operand ← closureExpr fc scope Γ e
+    inOperand p tag operand.type
     let result ← tagTestPlan G tag (operand.type::Γ) 0 equal A
     pure (DirectProof.letE Γ operand result)
   | .singletonTest _ tag equal testLeft left right => do
@@ -1456,6 +1525,18 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let N ← operatorResult op a.type b.type
     pure (DirectProof.letE Γ a
       (DirectProof.node H (.arith op (.var 0) b.term) N .arith [DirectProof.var H 0 a.type, b]))
+  | .unary _ .typeof a => do
+    -- `typeof a`: the operand once, then one selection per answer
+    -- (`typeofTerm`), each arm the answer's string.
+    let p ← closureExpr fc scope Γ a
+    let K := p.type :: Γ
+    let answer := fun (s : String) => do
+      let B := [← lower (SourceTypes.use (.strLit s))]
+      pure (DirectProof.node K (.str s) B .strLit)
+    let chain ← typeofAnswers.foldrM (fun (tag, s) rest => do
+      selectPlan G K 0 A tag (DirectProof.cast K A (← answer s)) rest)
+      (DirectProof.cast K A (← answer "function"))
+    pure (DirectProof.letE Γ p chain)
   | .unary pos op a => do
     let p ← closureExpr fc scope Γ a
     let (arith, c, C, rule) ← unaryOperation pos op p.type
@@ -1464,6 +1545,19 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     pure (DirectProof.letE Γ p
       (DirectProof.node H (.arith arith (.var 0) c) N .arith
         [DirectProof.var H 0 p.type, DirectProof.node H c C rule]))
+  | .inKeys p key o => do
+    -- The key, then the object, then one selection per singleton of the key.
+    let k ← closureExpr fc scope Γ key
+    let r ← closureExpr fc (held ⟨"",some key.span⟩ :: scope) (k.type::Γ) o
+    inOperand p (.hasKey (.str "")) r.type
+    let keys ← inKeyList p k.type
+    let H := r.type::k.type::Γ
+    let test := fun (s : String) => tagTestPlan G (.hasKey (.str s)) H 0 true A
+    let chain ← match keys.reverse with
+      | [] => throw "internal: an `in` key without singletons"
+      | last :: earlier => do
+        earlier.reverse.foldrM (fun s rest => do selectPlan G H 1 A (.strEq s) (← test s) rest) (← test last)
+    pure (DirectProof.letE Γ k (DirectProof.letE (k.type::Γ) r chain))
   | .comma _ l r => do
     -- The left operand is bound and never read; the claim at the comma
     -- follows from the right operand's.
@@ -2624,8 +2718,9 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
       compileExpr fc
         ((operands.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++ scope)
         ((As.take i).reverse ++ Γ) arg next) construct
-  | .shapeTest _ tag equal operand =>
+  | .shapeTest p tag equal operand =>
     let B ← exprType fc operand
+    inOperand p tag B
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+1))⟩
     let test ← emitAt e.span (tagTestTerm tag equal 0) (.bind drop) (B::Γ) A
@@ -3022,6 +3117,18 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let node ← emitAt e.span (.arith op (.var 1) (.var 0)) (.bind drop) (C::B::Γ) A (scope := temporaries)
     let right ← compileExpr fc (held ⟨"",some l.span⟩ :: scope) (B::Γ) r node
     compileExpr fc scope Γ l right
+  | .inKeys p key o =>
+    -- The key, then the object, then the test of the key's singleton.
+    let B ← exprType fc key
+    let C ← exprType fc o
+    inOperand p (.hasKey (.str "")) C
+    let keys ← inKeyList p B
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else i+2))⟩
+    let temporaries := held ⟨"",some o.span⟩::held ⟨"",some key.span⟩ :: scope
+    let node ← emitAt e.span (inKeysTerm keys 1 0) (.bind drop) (C::B::Γ) A (scope := temporaries)
+    let right ← compileExpr fc (held ⟨"",some key.span⟩ :: scope) (B::Γ) o node
+    compileExpr fc scope Γ key right
   | .comma _ l r =>
     -- The left operand, held and never read, then the right one, whose value
     -- the comma's claim is proved from.
@@ -3033,6 +3140,14 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let node ← emitAt e.span (.var 0) (.bind drop) (C::B::Γ) A "comma" (scope := temporaries)
     let right ← compileExpr fc (held ⟨"",some l.span⟩ :: scope) (B::Γ) r node
     compileExpr fc scope Γ l right
+  | .unary _ .typeof a =>
+    -- The operand, then its `typeof`, one tag test per answer.
+    let B ← exprType fc a
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else i+1))⟩
+    let node ← emitAt e.span (typeofTerm 0) (.bind drop) (B::Γ) A
+      (scope := held ⟨"",some a.span⟩ :: scope)
+    compileExpr fc scope Γ a node
   | .unary pos op a =>
     -- The operand, then the constant of its family, then the operator.
     let B ← exprType fc a

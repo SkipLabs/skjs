@@ -1013,7 +1013,7 @@ first milestone, in order of how much each gates:
    - `bigint` and `symbol` (done: values in the calculus and types in the
      graph, a bigint its integer with literal singletons, its arithmetic and
      comparisons through the one operator rule, and `typeof` tests for every
-     shape but `"object"`), and
+     shape, `"object"` included, and `typeof` as a value), and
      symbol-keyed properties (done: the heap's keys are strings or symbols,
      and a declaration's `[x]: T` member, with `x` a `unique symbol`
      constant, is a field keyed by that symbol). Remaining for `Managed` and
@@ -1043,8 +1043,9 @@ first milestone, in order of how much each gates:
 6. **Optional field presence** (done for mutable and readonly optional
    fields: see DESIGN.md's object milestone; `optional-field.ts` and
    `optional-view.ts` verify; a fresh literal leaving out an optional field,
-   by its exact keys, `optional-literal.ts`). Remaining: `in` tests and
-   presence narrowing.
+   by its exact keys, `optional-literal.ts`); `in` tests (DESIGN.md's
+   [Guards](../DESIGN.md#guards), `in-test.ts`). Remaining: presence
+   narrowing.
 
    `getUnique(_default?: { ifMany?: T })` needs only the done part.
 7. **Exceptions** (done: a throw is an outcome, `throw` and

@@ -351,6 +351,10 @@ let typeof_slice shape holds = function
         if s.elements<>None then Some true else if s.calls<>[] then Some false else None
       | Top | Named _ when shape="array" -> None
       | _ when shape="array" -> Some false
+      (* `"object"`: null, or an object without call code. *)
+      | Nul when shape="object" -> Some true
+      | Shape s when shape="object" -> Some (s.calls=[])
+      | Exact _ when shape="object" -> Some true
       | Num | NumLit _ -> Some (shape="number") | Str | StrLit _ -> Some (shape="string")
       | True | False -> Some (shape="boolean") | Undef -> Some (shape="undefined")
       | Bigint | BigintLit _ -> Some (shape="bigint") | Symbol -> Some (shape="symbol")
@@ -371,6 +375,23 @@ let typeof_slice shape holds = function
      | "string" -> Atoms [Str] | "number" -> Atoms [Num] | "bigint" -> Atoms [Bigint]
      | "symbol" -> Atoms [Symbol] | "undefined" -> Atoms [Undef] | "boolean" -> bool
      | _ -> Atoms [Top])
+  | t -> t
+(* Keep the atoms that may own the key where `key in o` held, and those that
+   may lack it where it failed: a record's required field is owned, a fresh
+   literal's keys are exactly its fields', and a primitive owns none. *)
+let key_slice key holds = function
+  | Atoms xs when not (List.mem Top xs) ->
+    let field_of fields = List.find_opt (fun (f:Semantic.field) -> f.name = Name key) fields in
+    let has = function
+      | Shape s -> (match field_of s.fields with
+        | Some f when not f.optional -> Some true | _ -> None)
+      | Exact fields -> (match field_of fields with
+        | Some f -> if f.optional then None else Some true | None -> Some false)
+      | Ctors _ | Callable | Named _ | Top -> None
+      | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _
+      | Bigint | Symbol | BigintLit _ -> Some false in
+    Atoms (List.filter (fun a -> match has a with
+      | Some result -> result = holds | None -> true) xs)
   | t -> t
 (* Whether a field's contents can be asserted of an object of this type: a
    plain record that has the field, not optionally. *)
@@ -414,6 +435,7 @@ let rec branch_with declarations env cond truth =
       | _ -> Some (n,x)) either
   | TypeofTest (shape,equal,{node=Id name;_}) ->
     refine_value env name (typeof_slice shape (truth = equal))
+  | HasKey ({node=Literal (LString key);_},{node=Id name;_}) -> refine_value env name (key_slice key truth)
   | TypeofTest (shape,equal,{node=Read ({node=Id name;_},Name field);_}) ->
     refine_field env name field (typeof_slice shape (truth = equal))
   (* `x == null` holds of null and undefined alike. *)
@@ -636,6 +658,9 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Literal l -> literal_type l
     | Not e -> ignore (expr env e); bool
     | TypeofTest (_,_,e) -> ignore (expr env e); bool
+    (* A string literal key is part of the test, not a claim site. *)
+    | HasKey ({node=Literal (LString _);_},e) -> ignore (expr env e); bool
+    | HasKey (k,e) -> ignore (expr env k); ignore (expr env e); bool
     (* A comparison is a Boolean; `+` with a string operand is a string;
        other arithmetic is of its operands' numeric family, bigint where the
        left one is all bigints, else number. *)
@@ -665,6 +690,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         | Storage (contract,_) -> contract
         | Value _ -> unsupported "assignment to immutable binding" in
       union (without_nullish current) (expr ~expected:contract env rhs)
+    (* `typeof e` names one of eight shapes: a string. *)
+    | Unary (Typeof,e) -> ignore (expr env e); Atoms [Str]
     | Unary (_,e) -> numeric_family declarations (expr env e)
     (* The right side is built at the tuple of the targets' contracts, as
        TypeScript types it from the targets; each target takes its

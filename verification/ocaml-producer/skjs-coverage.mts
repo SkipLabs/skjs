@@ -470,7 +470,7 @@ const GROUPS: [string, RegExp][] = [
   ["library globals as values (Array, Symbol, Error, Promise, Set, Map, Date, JSON, …)", /the global \w+ is not an annotated variable|unbound name|reviewed overlay of library globals|is read only through its members|construct signatures are not read|a callable object with methods needs a combined clause/],
   ["relational operators (< <= > >=) and **", /binary operator outside the fragment \((<|<=|>|>=|\*\*|\*\*=)\)/],
   ["unary operators (- + ~ on numbers)", /unary operator outside the fragment/],
-  ["in / instanceof / typeof tests", /\((in|instanceof)\)|expression typeof|TypeQuery/],
+  ["in / instanceof / typeof tests", /\((in|instanceof)\)|expression typeof|TypeQuery|`in` (with|needs|on)|`instanceof`/],
   ["mutable bindings: evolving let (null, undefined, []), let with neither initializer nor annotation, closure parameter assignment", /has no storage contract|a `let` needs an initializer|module constant _ has no claimed initializer|assignment to immutable binding/],
   ["control-flow forms (else-if, bare return, early return in closures, dead code)", /closure block must return|`else if` and non-block|a bare `return`|statements after (an unconditional )?return|closure returning from a branch/],
   ["loops (for, for-in, for-of forms)", /(ForStatement|ForInStatement)\)|for\.\.\.of/],

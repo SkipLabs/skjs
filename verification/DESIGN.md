@@ -950,6 +950,11 @@ modeling choices; they do not replace proof.
   that allocates arrays has an input slot `[[Array.prototype]]` at `ArrayProto`,
   and the safety theorem holds for every environment meeting its inputs, as
   for an imported value's declared type.
+- `Object.prototype`, `Array.prototype` and `Function.prototype` hold no own
+  string key but those `inKeyRefusal` lists (node's
+  `Object.getOwnPropertyNames` of each): `key in o` for any other key is the
+  model's own-key test ([Guards](#guards)). A realm that adds a key to one of
+  them would answer `true` where the model answers `false`.
 - `String.prototype`, `Number.prototype`, `BigInt.prototype` and
   `Boolean.prototype` meet `StringProto`, `NumberProto`, `BigIntProto` and
   `BooleanProto`, each read from TypeScript's `String`, `Number`, `BigInt`
@@ -4407,8 +4412,9 @@ or `undefined`. No rule writes it, since an object's keys are fixed at
 allocation and the model has no key addition. A record that does not name the
 key does not cover an optional field, since it may hold the key at any type
 (SKJS agrees; TypeScript does not check this). An optional method,
-`return?(...)`, is an optional field. An `in` test and presence narrowing are
-not yet in the fragment.
+`return?(...)`, is an optional field. An `in` test is in the fragment
+([Guards](#guards)); presence narrowing, an optional field read as present
+after a passed test, is not yet.
 
 **Readonly optional fields.** `readonly k?: T` is a view that may be absent
 (`SkipService.externalServices`). It is not a second mechanism: an optional
@@ -4467,14 +4473,15 @@ export without `--keep-going`, and independently checks the produced evidence.
 
 The trusted parser recognizes strict equality or inequality between `typeof e`
 and one of the literals `"number"`, `"string"`, `"boolean"`, `"undefined"`,
-`"function"`, `"bigint"` and `"symbol"`, in either operand order. It lowers that
-syntax to one Boolean shape test (`isNum`, `isStr`, `isBool`, `isUndef`,
-`isFun`, `isBigint`, `isSymbol`); neither a general string value nor a separate
-claim for the `typeof` intermediate is introduced. The operand and the complete
+`"function"`, `"bigint"`, `"symbol"` and `"object"`, in either operand order. It
+lowers that syntax to one Boolean shape test (`isNum`, `isStr`, `isBool`,
+`isUndef`, `isFun`, `isBigint`, `isSymbol`, `typeofObject`); no separate claim
+for the `typeof` intermediate is introduced. The operand and the complete
 predicate retain their source claims. The operand runs once through the
-existing tag-test plan and graph rules. `"object"` is not a shape test: it
-also holds for null, and a `typeof` result read as a string value is outside
-the fragment.
+existing tag-test plan and graph rules. `"object"` is one more tag,
+`typeofObject`, which holds of null and of an object without call code, since
+`typeof` names every callable object, a class included, `"function"`
+([Guards](#guards)).
 
 Only a syntactic immutable variable may carry the guard's refinement into a
 branch. The tested slice keeps the atoms of that shape (for `isFun`, the
@@ -4486,6 +4493,132 @@ The TypeScript producer follows the same explicit guard edges for fixed binding
 contracts and immutable captures. [guards.ts](tests/callables/guards.ts) checks
 mixed unions, a returning negative guard captured by a thunk, and a call operand.
 Forged polarity, variable identity and stronger result guarantees are rejected.
+
+### Guards
+
+**Principle.** A guard is a test JavaScript defines exactly: it is followed
+where the model answers it as JavaScript does, as one more tag test (`Tag`,
+`tagHolds`), so it narrows by the one mechanism of tag observations
+(`tagSlice`, `tagClause_sound`), and it is refused, with the reason, where the
+model would answer otherwise. A thrown `TypeError` is an allowed outcome, but
+a test the model answers where JavaScript throws is not: a `catch` would then
+run where the model says nothing throws.
+
+**`typeof`.** `typeof v` is one of eight strings, each a set of values the
+tags already name, plus `typeofObject` for `"object"`: null, or an object
+without call code. Every callable object, a class value included, is
+`"function"` (`isFun`): the model's `[[Call]]` and `[[Construct]]` codes are
+what JavaScript's `typeof` reads. A record, dictionary or array type holds
+only objects without call code, so `typeof x === "object"` keeps exactly those
+arms and `null`, and its failure keeps the primitives and callables
+(`typeof.ts`: tuples, arrays, class instances, promises). TypeScript agrees,
+except that it lets a primitive meet a record type (`{ length: number }` is
+met by a string), which the model's record types do not admit.
+
+$$
+\frac{\Gamma(x)=A\quad\Gamma[x:T_{\mathsf{typeofObject}}(A)]\vdash_R S_1\quad\Gamma[x:T_{\lnot\mathsf{typeofObject}}(A)]\vdash_R S_2}
+     {\Gamma\vdash_R\ \mathsf{if}\ (\texttt{typeof}\ x\equiv\texttt{"object"})\ S_1\ \mathsf{else}\ S_2}\ \textsc{if-typeof-object}
+$$
+
+`typeof e` read as a value is the string of the first answer whose tag holds,
+in the order undefined, object, boolean, number, string, bigint, symbol, and
+`"function"` for a value none holds of ([derived form](PROGRAM-TYPING.md#derived-source-forms));
+its claim is `string`. `typeof x === typeof y`, or `typeof x` compared with a
+name, is then the strict-equality operator on two strings, which narrows
+nothing. A `switch (typeof x)` compares a temporary and narrows nothing either.
+
+**`in`.** `key in o` evaluates the key, then the object, and asks whether the
+object has the key, its own or one its prototype chain holds; it throws a
+`TypeError` on a primitive. The model's test (`hasKey`) asks whether the
+object owns the key. The two agree on the objects of the fragment for a key
+none of their prototypes holds and whose own keys the model keeps as
+JavaScript does:
+
+- *Plain objects and class instances.* A record literal's prototype is
+  `Object.prototype`; a class instance's is its class's, whose methods the
+  model allocates as own fields of the instance and whose other key,
+  `constructor`, is `Object.prototype`'s name too. So a key that is not one of
+  `Object.prototype`'s names is owned in the model exactly where JavaScript
+  finds it.
+- *Arrays.* An array owns `length` and its indices, which the model keeps in
+  the store, and inherits `Array.prototype`'s names: those are refused. Its
+  other own keys are the model's ([Arrays may carry other own keys](#arrays-may-carry-other-own-keys)).
+- *Functions.* A function owns `length`, `name` and, for an ordinary one,
+  `prototype`, and inherits `Function.prototype`'s `apply`, `bind`, `call`,
+  `arguments` and `caller`: refused. A class value is refused as an operand:
+  its static members are bound apart from it (`static C.x`), so it lacks
+  keys JavaScript's has.
+- *Values from a declaration or the library* (a `Promise`, a `Set`, an
+  imported object) are what their type says, as for every other operation.
+  An open type admits a value owning any further key, so the test's answer
+  on them is not fixed, and either answer is some value of the type.
+
+The refused names are `Object.prototype`'s, `Array.prototype`'s and
+`Function.prototype`'s own string keys, as node lists them
+(`Object.getOwnPropertyNames`), array indices, and the two keys the model
+reserves (`[]`, `[[proto]]`): `inKeyRefusal`, a trusted list, since a realm
+whose prototypes hold another string key would answer `true` where the model
+answers `false` ([What remains assumed](#what-remains-assumed)). The operand
+must be of object types (`inOperand`): a union with a primitive arm, or
+`unknown`, is refused, as TypeScript refuses it (TS2361), and `unknown` after
+`typeof x === "object" && x !== null` stays refused since no type here names
+every object. A key is a string literal or a name whose type is a union of
+string literals, dispatched on its singletons (`inKeysTerm`); a key of type
+`string` may be any of the refused names and is refused, and a numeric key
+names an array element, which the model keeps in the store.
+
+$$
+\frac{\Gamma(x)=A\quad A\ \text{objects, no class value}\quad \kappa\notin\mathcal R\quad
+      \Gamma[x:T_{\mathsf{hasKey}(\kappa)}(A)]\vdash_R S_1\quad\Gamma[x:T_{\lnot\mathsf{hasKey}(\kappa)}(A)]\vdash_R S_2}
+     {\Gamma\vdash_R\ \mathsf{if}\ (\texttt{"}\kappa\texttt{"}\ \mathtt{in}\ x)\ S_1\ \mathsf{else}\ S_2}\ \textsc{if-in}
+$$
+
+Narrowing is by keys the types state (`keyAnswer`): a failed test drops an
+arm that owns the key (a required field or view, a method), and a passed one
+drops an arm whose key bound excludes it (a fresh literal) and every
+primitive. A passed test keeps an open record that does not name the key:
+it may own it at any type. TypeScript narrows `{ a: number } | { b: string }`
+to its first arm there, which is unsound: `{ b: "", a: "x" }` is a
+`{ b: string }` (`invalid-in-open.ts`; SKJS refuses the read too).
+*Presence narrowing* is not yet taken: after `"f" in x` with `x: { f?: number }`
+the field is present, so it holds a `number`, but the refinement filters labels
+and makes no new clause; reading the optional field as required needs a
+clause-level promotion (an optional key the object owns is a required field
+of the same contract, `optT` against `recT`), which is future work
+(`refineLiteralInRecordOpt`, `inNarrowsToBareT`, 4 units). `Closed<T>` is read
+as `T` by the environment, so its absent keys prove nothing.
+
+**`instanceof`.** `x instanceof C` looks for `C.prototype` along `x`'s
+prototype chain, unless `C` has a `[Symbol.hasInstance]`, which it then calls.
+The model gives an instance no identity of its class: a class's methods are
+own fields of the instance and there is no `[[proto]]`, so no test of the
+model tells an instance of `C` from another object of its shape, and the
+operator is not lowered. The sound lowering is known and is left for the
+class work: `C`'s constructor allocates a key of its own, which no source key
+can spell, and `x instanceof C` is `hasKey` of it, the same test as `in`;
+with inheritance, a subclass's allocation carries every ancestor's key. It
+would narrow only as keys do: a passed test drops primitives and fresh
+literals, never another class's arm, since a class type is structural and
+any object of its shape meets it. TypeScript's narrowing to `C` on a passed
+test would need "owning `C`'s key implies `C`'s type", which is not a fact
+about a value of `unknown` in the model, whose meaning admits every object:
+it would be a world invariant over every object allocated. `instanceof Array`
+is `Array.isArray` ([Library globals](#library-globals)). A class declaring
+a static `[Symbol.hasInstance]` makes `instanceof` a call of that method with
+`x`, its result read by `ToBoolean`, and no narrowing: that is how it would be
+admitted, once a computed static method is.
+
+**User-defined guards.** A predicate `x is T` promises two things TypeScript
+never checks: a `true` result means `x` is a `T` (the passed branch narrows to
+`T`), and, for the failed branch to narrow to the rest of `x`'s type, every
+`T` gives `true`. Both are facts about the function's result relative to its
+argument, which no function type here states. A body with a predicate
+return type is refused, as SKJS refuses it (`type-predicate-requires-no-body.ts`);
+a declared one reads as a function returning a Boolean, and SKJS does not
+narrow through it either (`gap-type-predicate-narrowing.ts`). No accepted unit
+of the corpus narrows through a guard. The sound form is a contract on the
+result checked against the body, as an assertion function's `asserts x is T`
+would be a contract on returning at all; both are future work.
 
 ### String concatenation, templates and `void`
 

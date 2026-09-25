@@ -14,7 +14,8 @@ import { spawnSync } from "node:child_process";
 const verifier = process.argv[2];
 const dir = "verification/tests/unsupported";
 const cases = {
-  "typeof_narrow.ts": "expression outside the stateful fragment",
+  "in_inherited.ts": "every object inherits it from Object.prototype",
+  "instanceof_narrow.ts": "the model gives an object no identity of the constructor that made it",
   "mutable_binding.ts": "a `let` needs an initializer",
 };
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "source-boundaries-"));

@@ -191,6 +191,11 @@ function walkExpr(e: Expr, out: Sites): void {
       walkExpr(e.receiver, out);
       walkExpr(e.rhs, out);
       return;
+    case "inTest":
+      addExpr(out, e.pos, "inTest");
+      walkExpr(e.key, out);
+      walkExpr(e.e, out);
+      return;
     case "arith":
       addExpr(out, e.pos, "arith");
       walkExpr(e.l, out);

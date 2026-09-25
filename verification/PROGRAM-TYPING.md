@@ -744,22 +744,48 @@ and $\mathsf{undefined}$ clauses and true on every object, function, class,
 symbol and store clause; on a Boolean, number, string or bigint singleton it
 answers the singleton's `ToBoolean`, and on the broad $\mathsf{bool}$,
 $\mathsf{num}$, $\mathsf{str}$ and $\mathsf{bigint}$ clauses it has no fixed
-answer. $\mathsf{isArray}$, `Array.isArray`, answers on an
-object clause by its keys (`arrayAnswer`): true where the clause says its
-object owns the store key $\sigma$, as every array type's does; false where a
-key bound excludes $\sigma$, as a fresh literal's does; and nothing on an open
-record, which an array carrying other keys may meet. Every other clause but
-$\mathsf{top}$ answers false:
+answer. $\mathsf{typeofObject}$, `typeof` answering `"object"`, answers true
+on the $\mathsf{null}$ clause and on a plain-object clause (a record, a
+dictionary, an array) and false on every other clause but $\mathsf{top}$: an
+arrow, callable or construct-signature clause is a function to `typeof`. The
+key test $\mathsf{hasKey}(\kappa)$, `in`, answers on a record or dictionary
+clause by its keys (`keyAnswer`): true where the clause says its object owns
+$\kappa$; false where a key bound excludes $\kappa$, as a fresh literal's does;
+and nothing on an open record, which may own any other key. It has no answer
+on the other object clauses (an arrow, a callable, a class value) and answers
+false on a primitive one, which owns no key. $\mathsf{isArray}$,
+`Array.isArray`, is the same answer for the store key $\sigma$ on a record or
+dictionary clause (`arrayAnswer`), true where the clause says its object owns
+$\sigma$, as every array type's does, and false on every other clause but
+$\mathsf{top}$:
 
 $$
+\operatorname{keys}(\kappa,\gamma)=
+\begin{cases}
+\mathsf{true} & \kappa\in\operatorname{present}(\gamma)\\
+\mathsf{false} & \kappa\notin\operatorname{present}(\gamma),\ \exists K\in\operatorname{bounds}(\gamma).\ \neg K\ \text{admits}\ \kappa\\
+\text{none} & \text{otherwise}
+\end{cases}
+\qquad
 \operatorname{tag}(\mathsf{isArray},\gamma)=
 \begin{cases}
-\mathsf{true} & \sigma\in\operatorname{present}(\gamma)\\
-\mathsf{false} & \sigma\notin\operatorname{present}(\gamma),\ \exists K\in\operatorname{bounds}(\gamma).\ \neg K\ \text{admits}\ \sigma\\
-\text{none} & \text{otherwise, for an object clause}\\
-\mathsf{false} & \gamma\ \text{not an object clause},\ \gamma\neq\mathsf{top}
+\operatorname{keys}(\sigma,\gamma) & \gamma\ \text{a record or dictionary clause}\\
+\mathsf{false} & \text{otherwise},\ \gamma\neq\mathsf{top}
 \end{cases}
 $$
+
+$$
+\operatorname{tag}(\mathsf{hasKey}(\kappa),\gamma)=
+\begin{cases}
+\operatorname{keys}(\kappa,\gamma) & \gamma\ \text{a record or dictionary clause}\\
+\text{none} & \gamma\ \text{an arrow, callable or construct-signature clause}\\
+\mathsf{false} & \text{otherwise},\ \gamma\neq\mathsf{top}
+\end{cases}
+$$
+
+`keyAnswer_sound` gives each answer from the clause's meaning: a present key
+is owned (`semWithArgs_owns`), and a bound's excluded key is not
+(`ownKeysT_lookup`).
 
 Other shape
 tests have an answer determined by the clause's shape; numeric singleton
@@ -2022,6 +2048,44 @@ method but call it with `o`, which the chain does not save apart from the
 tested value, and is refused. On a `null` or `undefined` literal receiver the
 chain is `r, undefined`: the literal is the receiver's whole value, and the
 body never runs.
+
+`typeof e` as a value is the string naming the shape of $e$'s value, one tag
+test per answer in turn, the operand evaluated once (`typeofTerm`); a value no
+test holds of has call code, which `typeof` names `"function"`:
+
+$$
+\mathsf{typeof}\ e\;\equiv\;\mathsf{let}\ x=e\ \mathsf{in}\
+\mathsf{if}\ \mathsf{isUndef}(x)\ \mathsf{then}\ \texttt{"undefined"}\ \mathsf{else}\
+\mathsf{if}\ \mathsf{typeofObject}(x)\ \mathsf{then}\ \texttt{"object"}\ \mathsf{else}\ \cdots\
+\mathsf{if}\ \mathsf{isSymbol}(x)\ \mathsf{then}\ \texttt{"symbol"}\ \mathsf{else}\ \texttt{"function"}
+$$
+
+in the order undefined, object, boolean, number, string, bigint, symbol. It
+splits $x$ by `unionVar` as `??` does (`selectPlan`), so a label whose shape
+is settled reaches one answer; its claim is `string`. A comparison of `typeof e`
+with a shape's literal stays the one tag test ([shape predicates](DESIGN.md#shape-predicates)).
+
+`key in o` evaluates the key, then the object, then asks whether the object
+has the key. A string literal key is the tag test $\mathsf{hasKey}(\kappa)$ of
+the object, which refines a tested immutable variable as every tag test does.
+A key whose claim is a union of string singletons $\kappa_1\mid\cdots\mid\kappa_n$
+dispatches on them, the last needing no test since the key is one of them
+(`inKeysTerm`):
+
+$$
+k\ \mathtt{in}\ o\;\equiv\;\mathsf{let}\ y=k\ \mathsf{in}\ \mathsf{let}\ x=o\ \mathsf{in}\mathsf{if}\ \mathsf{strEq}(\kappa_1)(y)\ \mathsf{then}\ \mathsf{hasKey}(\kappa_1)(x)\ \mathsf{else}\ \cdots\mathsf{hasKey}(\kappa_n)(x)
+$$
+
+$$
+\frac{\Gamma\vdash o:A\quad \forall\gamma\in\operatorname{expand}_G(A).\ \gamma\ \text{a record, dictionary, arrow or callable clause}
+      \quad \kappa_i\notin\mathcal R}
+     {\Gamma\vdash k\ \mathtt{in}\ o:\mathsf{boolean}}
+$$
+
+where $\mathcal R$ is the keys the model does not answer as JavaScript does
+(`inKeyRefusal`, [DESIGN](DESIGN.md#guards)). The operand's clauses are
+objects because `in` throws on a primitive, where the test would answer
+`false`, and not a class value, whose static members are bound apart.
 
 Logical AND and OR return an operand, as in JavaScript: the left one where its
 truthiness decides, the right one elsewhere. For a left operand that is not a

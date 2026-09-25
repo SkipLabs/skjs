@@ -300,8 +300,8 @@ let quantify binders scope parameters =
 (* A binary operator on primitive operands: arithmetic, or a comparison. *)
 type arithmetic = Add | Sub | Mul | Div | Pow | Rem | Lt | Le | Gt | Ge
 let relational = function Lt | Le | Gt | Ge -> true | Add | Sub | Mul | Div | Pow | Rem -> false
-(* `-e`, `+e` and `~e`. *)
-type unary = Neg | Plus | BitNot
+(* `-e`, `+e` and `~e`; and `typeof e`, the string naming the operand's shape. *)
+type unary = Neg | Plus | BitNot | Typeof
 type equality = StrictEqual | StrictUnequal | LooseEqual | LooseUnequal
 (* `??=`, `||=` and `&&=`. *)
 type logical = Nullish | OrElse | AndAlso
@@ -317,6 +317,8 @@ and expr_node =
   | Unary of unary * expr
   (* `typeof e === "shape"` (equal) or `!==`: a test of the operand's shape. *)
   | TypeofTest of string * bool * expr
+  (* `key in e`: the key, then whether the operand has it. *)
+  | HasKey of expr * expr
   | Equality of equality * expr * expr | Alloc of (string * expr) list
   (* A named read: a string key, or the symbol key of `e[k]` with `k` a
      `unique symbol` constant. *)
@@ -440,7 +442,7 @@ let children e = match e.node with
   | ThrowBody e -> [e]
   | Assign (_,e) | NullishAssign (_,_,e) -> [e]
   | Update (_,t,r,_) -> t :: Option.to_list r
-  | LogicalAssign (_,a,b) | Comma (a,b) -> [a;b]
+  | LogicalAssign (_,a,b) | Comma (a,b) | HasKey (a,b) -> [a;b]
   | ArrayAssign (targets,_,rhs) -> rhs :: List.filter_map (fun (_,_,d) -> d) targets
   | Arith (_,a,b) | Equality (_,a,b) | Write (a,_,b) | Coalesce (a,b) | Optional (a,b) | Index (a,b) | Logical (_,a,b)
   | WithFields (a,b,_,_) | SequenceBody (a,b) | LetBody (_,_,a,b) -> [a;b]
@@ -486,11 +488,12 @@ let rec expr binders j =
   | "this" -> Id "this"
   | "not" -> Not (sub "e")
   | "unary" -> Unary ((match text "op" j with
-      | "neg" -> Neg | "plus" -> Plus | "bitNot" -> BitNot
+      | "neg" -> Neg | "plus" -> Plus | "bitNot" -> BitNot | "typeof" -> Typeof
       | k -> unsupported ("unary operator " ^ k)),sub "e")
   | "typeofTest" -> TypeofTest (text "shape" j,boolean (field "equal" j),sub "e")
   (* `Array.isArray(e)`: a test of the operand's shape, the array one. *)
   | "arrayTest" -> TypeofTest ("array",true,sub "e")
+  | "inTest" -> HasKey (sub "key",sub "e")
   | "arith" -> Arith (arithmetic (text "op" j),sub "l",sub "r")
   | "update" -> Update (arithmetic (text "op" j),sub "target",
       (match field "rhs" j with Null -> None | r -> Some (expr binders r)),boolean (field "post" j))

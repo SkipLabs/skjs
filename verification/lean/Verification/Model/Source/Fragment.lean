@@ -321,9 +321,49 @@ def translatePoint (j : Json) : SourceTypes.Lowering PointType := do
     if current.isEmpty then throw original
     return ⟨[← CellClaims.reference write],some current⟩
 
-/-- A unary numeric operator: `-e`, `+e` and `~e`. -/
+/-- Whether the model reserves a key for itself: an array's store and an
+object's prototype live under keys no source property may name. A literal
+owning one would be an array to `Array.isArray` and to `in`, and a read of it
+would read the store. -/
+def reservedSourceKey (s : String) : Bool :=
+  PropKey.str s == CallArguments.arrayStoreField || PropKey.str s == CallArguments.protoField
+
+/-- A key the source spells: any but a reserved one. -/
+def sourceKey (s : String) : Except String String :=
+  if reservedSourceKey s then throw s!"'{s}' is internal to the model, not a source property"
+  else pure s
+
+/-- `key in o` looks the key up along `o`'s prototype chain; the model's test
+(`Tag.hasKey`) asks whether the object owns it. The two agree for a key none
+of the realm's prototypes an object of the fragment inherits from holds, and
+that no own key of the realm's making the model leaves out names: an array's
+`length` and indices, a function's `length`, `name` and `prototype`. The
+names are node's (`Object.getOwnPropertyNames` of `Object.prototype`,
+`Array.prototype` and `Function.prototype`), a trusted list: a realm whose
+prototypes hold another string key would answer `true` where the model
+answers `false`. A key the model reserves for itself is refused too. -/
+def inKeyRefusal (key : String) : Option String :=
+  let objectKeys := ["constructor", "__defineGetter__", "__defineSetter__", "hasOwnProperty",
+    "__lookupGetter__", "__lookupSetter__", "isPrototypeOf", "propertyIsEnumerable", "toString",
+    "valueOf", "__proto__", "toLocaleString"]
+  let arrayKeys := ["length", "at", "concat", "copyWithin", "fill", "find", "findIndex", "findLast",
+    "findLastIndex", "lastIndexOf", "pop", "push", "reverse", "shift", "unshift", "slice", "sort",
+    "splice", "includes", "indexOf", "join", "keys", "entries", "values", "forEach", "filter", "flat",
+    "flatMap", "map", "every", "some", "reduce", "reduceRight", "toReversed", "toSorted",
+    "toSpliced", "with"]
+  let functionKeys := ["name", "prototype", "apply", "bind", "call", "arguments", "caller"]
+  if reservedSourceKey key then some "the model reserves this key"
+  else if objectKeys.contains key then some "every object inherits it from Object.prototype"
+  else if arrayKeys.contains key then some "an array owns it or inherits it from Array.prototype"
+  else if functionKeys.contains key then some "a function owns it or inherits it from Function.prototype"
+  else if !key.isEmpty && key.all Char.isDigit && (key == "0" || key.front != '0') then
+    some "an array index names an element, which the model keeps in the array's store"
+  else none
+
+/-- A unary numeric operator: `-e`, `+e` and `~e`; and `typeof e`, the string
+naming the operand's shape. -/
 inductive UnaryOp where
-  | neg | plus | bitNot
+  | neg | plus | bitNot | typeof
   deriving Repr, DecidableEq
 
 /-- The test a logical assignment makes on the target's current value. -/
@@ -435,6 +475,10 @@ inductive Expr where
   template literal is the concatenation of its parts, in order, starting from
   its first string. -/
   | arith (pos : Span) (op : Arith) (l r : Expr)
+  /-- `key in e` with a key that is not a string literal: the key, then the
+  operand, then the test of the key the key's claim names, one of a union of
+  string singletons (`hasKey`). A string literal key is a `shapeTest`. -/
+  | inKeys (pos : Span) (key e : Expr)
   /-- `left, right`: the left operand for its effects, its value discarded,
   then the right operand's value. `void e` is `e, undefined`. -/
   | comma (pos : Span) (left right : Expr)
@@ -526,7 +570,7 @@ partial def Expr.freeNames : Expr → List String
   | .alloc _ _ es | .arrayLit _ es => es.flatMap Expr.freeNames
   | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
-  | .elemAt _ a b | .arith _ _ a b | .logicalAssign _ _ a b | .comma _ a b
+  | .elemAt _ a b | .arith _ _ a b | .logicalAssign _ _ a b | .comma _ a b | .inKeys _ a b
   | .withValue _ a b _ _ | .seqBody _ a b => a.freeNames ++ b.freeNames
   | .indexWrite _ _ a b c | .elemWrite _ a b c | .ifBody _ _ a b c =>
     a.freeNames ++ b.freeNames ++ c.freeNames
@@ -558,7 +602,7 @@ partial def Expr.callees : Expr → List (Span × Span × String × List Json)
   | .alloc _ _ es | .arrayLit _ es => es.flatMap Expr.callees
   | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
-  | .elemAt _ a b | .arith _ _ a b | .logicalAssign _ _ a b | .comma _ a b
+  | .elemAt _ a b | .arith _ _ a b | .logicalAssign _ _ a b | .comma _ a b | .inKeys _ a b
   | .withValue _ a b _ _ | .seqBody _ a b => a.callees ++ b.callees
   | .indexWrite _ _ a b c | .elemWrite _ a b c | .ifBody _ _ a b c =>
     a.callees ++ b.callees ++ c.callees
@@ -618,7 +662,7 @@ def Expr.span : Expr → Span
   | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body | .destructBody _ _ _ body => body.span
   | .ifBody p _ _ _ _ | .done p | .throwBody p _ | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
-  | .comma p _ _ | .optional p _ _ _ => p
+  | .comma p _ _ | .inKeys p _ _ | .optional p _ _ _ => p
   | .arrayLit p _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ _ => p
   | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ | .construct p _ _ _ => p
 
@@ -770,7 +814,7 @@ partial def decodePattern (decodeExpr : Json → Except String Expr) (j : Json) 
     let props ← (← jArr j "props").mapM fun q => do
       CellClaims.fieldsExactly q ["field","target","default_"]
       let (t, d) ← target q
-      return (← jStr (← jField q "field"), t, d)
+      return (← sourceKey (← jStr (← jField q "field")), t, d)
     if props.isEmpty then throw "an empty pattern binds nothing"
     return .object (← jSpan j "pos") props
   | "array" =>
@@ -858,8 +902,17 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       | "number" => pure Tag.isNum | "string" => pure .isStr | "boolean" => pure .isBool
       | "undefined" => pure .isUndef | "function" => pure .isFun
       | "bigint" => pure .isBigint | "symbol" => pure .isSymbol
+      | "object" => pure .typeofObject
       | other => throw s!"unsupported typeof test '{other}'"
     return .shapeTest p tag (← (← jField j "equal").getBool?) (← decodeExpr (← jField j "e"))
+  | "inTest" => do
+    CellClaims.fieldsExactly j ["k","pos","key","e"]
+    match ← decodeExpr (← jField j "key") with
+    | .lit _ (.vstr key) =>
+      if let some reason := inKeyRefusal key then
+        throw s!"unsupported source expression at [{p.1},{p.2}): `in` with the key '{key}': {reason}"
+      return .shapeTest p (.hasKey (.str key)) true (← decodeExpr (← jField j "e"))
+    | key => return .inKeys p key (← decodeExpr (← jField j "e"))
   | "arrayTest" => do
     -- `Array.isArray(e)`, which the parser writes only for the standard
     -- library's `Array` through its reviewed overlay entry.
@@ -877,6 +930,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     CellClaims.fieldsExactly j ["k","pos","op","e"]
     let op ← match ← jStr (← jField j "op") with
       | "neg" => pure UnaryOp.neg | "plus" => pure .plus | "bitNot" => pure .bitNot
+      | "typeof" => pure .typeof
       | other => throw s!"unknown unary operator '{other}'"
     return .unary p op (← decodeExpr (← jField j "e"))
   | "cast" =>
@@ -892,9 +946,12 @@ partial def decodeExpr (j : Json) : Except String Expr := do
   | "alloc" =>
     let fields ← jArr j "fields"
     let parts ← fields.mapM fun f => do
-      return (← jStr (← jField f "name"), ← decodeExpr (← jField f "e"))
+      return (← sourceKey (← jStr (← jField f "name")), ← decodeExpr (← jField f "e"))
     return .alloc p (parts.map Prod.fst) (parts.map Prod.snd)
-  | "read" => return .read p (← PropKey.decode (← jField j "field")) (← decodeExpr (← jField j "e"))
+  | "read" => do
+    let field ← PropKey.decode (← jField j "field")
+    if let .str s := field then discard <| sourceKey s
+    return .read p field (← decodeExpr (← jField j "e"))
   | "arith" => do
     CellClaims.fieldsExactly j ["k","pos","op","l","r"]
     return .arith p (← decodeArith (← jField j "op")) (← decodeExpr (← jField j "l")) (← decodeExpr (← jField j "r"))
@@ -1045,7 +1102,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     | _ => throw "a method call's target is a property reference"
     return .invoke p callee args spreads typeArgs
   | "write" =>
-    return .write p (← jStr (← jField j "field")) (← decodeExpr (← jField j "receiver"))
+    return .write p (← sourceKey (← jStr (← jField j "field"))) (← decodeExpr (← jField j "receiver"))
       (← decodeExpr (← jField j "rhs"))
   | "logicalAssign" => do
     CellClaims.fieldsExactly j ["k","pos","op","target","rhs"]

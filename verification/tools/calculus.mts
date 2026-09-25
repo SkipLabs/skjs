@@ -13,6 +13,10 @@ export type Tag =
   | "isSymbol"
   | "truthy"
   | "isArray"
+  /** `typeof v === "object"`: null, or an object without call code. */
+  | "typeofObject"
+  /** `key in v`: an object owning the key, a string or a symbol's identity. */
+  | { hasKey: { key: string | { symbol: number } } }
   | { numEq: { bits: string } }
   | { strEq: { value: string } }
   | { boolEq: { value: boolean } }
@@ -85,6 +89,7 @@ const TAGS: Record<Extract<Tag, string>, true> = {
   isSymbol: true,
   truthy: true,
   isArray: true,
+  typeofObject: true,
 };
 const tags: readonly unknown[] = Object.keys(TAGS);
 /** Whether a decoded value is a tag, so the table above stays the one place a
@@ -100,6 +105,14 @@ export function isTag(v: unknown): v is Tag {
     return (
       Object.keys(v.boolEq).length === 1 && typeof v.boolEq.value === "boolean"
     );
+  if (isRecord(v.hasKey)) {
+    const key = v.hasKey.key;
+    return (
+      Object.keys(v.hasKey).length === 1 &&
+      (typeof key === "string" ||
+        (isRecord(key) && Object.keys(key).length === 1 && typeof key.symbol === "number"))
+    );
+  }
   if (isRecord(v.bigintEq))
     return (
       Object.keys(v.bigintEq).length === 1 && typeof v.bigintEq.value === "number"

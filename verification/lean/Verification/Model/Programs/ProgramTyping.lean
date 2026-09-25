@@ -371,14 +371,24 @@ def tagShape (tag : Tag) (s : Nat) : Option Bool :=
       else if s == 1 || s == 5 || s == 6 || s == 9 || s == 12 then none else some true
   -- Only a plain object may be an array: its clause decides (`arrayAnswer`).
   | .isArray => if s == 2 then none else some false
+  -- `typeof` answers "object" for null and a plain object, array included.
+  | .typeofObject => some (s == 0 || s == 2)
+  -- An object's clause decides its keys (`keyAnswer`); a primitive owns none.
+  | .hasKey _ => if s == 2 || s == 3 || s == 11 then none else some false
 
-/-- `Array.isArray` on an object clause. A clause saying its object owns the
-store key is of arrays; one whose bound excludes the key is of other objects;
-an open record may be either, since an array may carry other keys. -/
-def arrayAnswer (c : Clause α) : Option Bool :=
-  if c.presentKeys.contains CallArguments.arrayStoreField then some true
-  else if c.keyBounds.any (fun K => !K.admits CallArguments.arrayStoreField) then some false
+/-- Whether an object clause's members own the key `k`: a clause stating the
+key present says they do; one whose own-key bound excludes it says they do
+not; an open record may do either. -/
+def keyAnswer (k : PropKey) (c : Clause α) : Option Bool :=
+  if c.presentKeys.contains k then some true
+  else if c.keyBounds.any (fun K => !K.admits k) then some false
   else none
+
+/-- `Array.isArray` on an object clause: whether it owns the store key. A
+clause saying its object owns the store key is of arrays; one whose bound
+excludes the key is of other objects; an open record may be either, since an
+array may carry other keys. -/
+def arrayAnswer (c : Clause α) : Option Bool := keyAnswer CallArguments.arrayStoreField c
 
 def tagClause (tag : Tag) (c : Clause α) : Option Bool :=
   match tag, c with
@@ -392,28 +402,36 @@ def tagClause (tag : Tag) (c : Clause α) : Option Bool :=
   | .truthy, .strLit t => some (t != "")
   | .truthy, .bigintLit i => some (i != 0)
   | .isArray, .refs .. | .isArray, .dict .. => arrayAnswer c
+  | .hasKey k, .refs .. | .hasKey k, .dict .. => keyAnswer k c
   | _, _ => tagShape tag (shape c)
 
-/-- An object clause's `Array.isArray` answer is its members'. -/
-theorem arrayAnswer_sound {S : α → Fam} {P : α → ArgFam} {c : Clause α} {q n W v}
-    (hq : arrayAnswer c = some q) (hv : semWithArgs S P c n W v) : tagHolds .isArray v = q := by
-  unfold arrayAnswer at hq
-  by_cases hp : c.presentKeys.contains CallArguments.arrayStoreField = true
+/-- An object clause's answer for a key is its members': each is a plain
+object, owning the key exactly as the answer says. -/
+theorem keyAnswer_sound {S : α → Fam} {P : α → ArgFam} {c : Clause α} {k : PropKey} {q n W v}
+    (hq : keyAnswer k c = some q) (hv : semWithArgs S P c n W v) :
+    ∃ flds, v = .objAt flds .absent ∧ (flds.lookup k).isSome = q := by
+  unfold keyAnswer at hq
+  by_cases hp : c.presentKeys.contains k = true
   · simp only [hp, ↓reduceIte, Option.some.injEq] at hq
     subst q
     obtain ⟨flds, l, rfl, hl⟩ := semWithArgs_owns hv (List.contains_iff_mem.mp hp)
-    change flds.lookup arrayStoreKey = some l at hl
-    simp [tagHolds, hl]
+    exact ⟨flds, rfl, by simp [hl]⟩
   · simp only [hp, Bool.false_eq_true, ↓reduceIte] at hq
-    by_cases hb : c.keyBounds.any (fun K => !K.admits CallArguments.arrayStoreField) = true
+    by_cases hb : c.keyBounds.any (fun K => !K.admits k) = true
     · simp only [hb, ↓reduceIte, Option.some.injEq] at hq
       subst q
       obtain ⟨K, hK, hadm⟩ := List.any_eq_true.mp hb
       obtain ⟨flds, rfl, hk⟩ := semWithArgs_bounded hv hK
-      have hl : flds.lookup arrayStoreKey = none :=
-        ownKeysT_lookup (b := K) (k := n) (W := W) ⟨flds, rfl, hk⟩ (f := arrayStoreKey) (by simpa [CallArguments.arrayStoreField] using hadm)
-      simp [tagHolds, hl]
+      have hl : flds.lookup k = none :=
+        ownKeysT_lookup (b := K) (k := n) (W := W) ⟨flds, rfl, hk⟩ (f := k) (by simpa using hadm)
+      exact ⟨flds, rfl, by simp [hl]⟩
     · simp [hb] at hq
+
+/-- An object clause's `Array.isArray` answer is its members'. -/
+theorem arrayAnswer_sound {S : α → Fam} {P : α → ArgFam} {c : Clause α} {q n W v}
+    (hq : arrayAnswer c = some q) (hv : semWithArgs S P c n W v) : tagHolds .isArray v = q := by
+  obtain ⟨flds, rfl, h⟩ := keyAnswer_sound hq hv
+  simpa [tagHolds, CallArguments.arrayStoreField] using h
 
 /-- A finite syntactic check; unknown numeric answers cannot establish either
 branch. It neither executes a term nor queries semantic membership. `A` must be
@@ -504,7 +522,32 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
       subst q
       cases v <;> simp_all [valueShape, tagHolds, shape]
       all_goals try (rename_i code; cases code <;> simp_all [valueShape])
-  | isNul | isBool | isRef | isFun | isUndef | isNullish | isNum | isStr | isBigint | isSymbol =>
+  | hasKey k =>
+    by_cases hc : c = .top
+    · subst hc; simp [ht, tagClause] at hq
+    subst ht
+    cases c
+    case top => exact absurd rfl hc
+    case refs =>
+      obtain ⟨flds, rfl, h⟩ := keyAnswer_sound (by simpa [tagClause] using hq) hv
+      simpa [tagHolds] using h
+    case dict =>
+      obtain ⟨flds, rfl, h⟩ := keyAnswer_sound (by simpa [tagClause] using hq) hv
+      simpa [tagHolds] using h
+    -- Another object clause's answer is unknown; a primitive owns no key.
+    all_goals
+      have hs := semWithArgs_shape (by simp) hv
+      simp [tagClause, tagShape, shape] at hq
+    all_goals
+      subst q
+      cases v with
+      | objAt fs code =>
+        cases code with
+        | closure _ _ kind => cases kind <;> simp_all [valueShape, shape]
+        | _ => simp_all [valueShape, shape]
+      | _ => simp_all [valueShape, tagHolds, shape]
+  | isNul | isBool | isRef | isFun | isUndef | isNullish | isNum | isStr | isBigint | isSymbol
+  | typeofObject =>
     by_cases hc : c = .top
     · subst hc; simp [ht, tagClause] at hq
     have htag : some (tagHolds tag v) = tagShape tag (valueShape v) := by

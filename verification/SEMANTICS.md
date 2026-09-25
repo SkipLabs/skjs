@@ -50,7 +50,7 @@ its integer, as a number is its double) and symbols $\mathsf{sym}(i)$ (a symbol
 is its identity: distinct declarations are distinct symbols); an object's fields are keyed by property
 keys $\kappa::=\mathsf{str}(s)\mid\mathsf{sym}(i)$; and the tests include
 $\mathsf{isNum}$, $\mathsf{isStr}$, $\mathsf{isBigint}$, $\mathsf{isSymbol}$,
-$\mathsf{isArray}$, the singleton equalities of every primitive kind that carries a value
+$\mathsf{isArray}$, $\mathsf{typeofObject}$, $\mathsf{hasKey}(\kappa)$, the singleton equalities of every primitive kind that carries a value
 ($\mathsf{numEq}(b)$ by `Number::equal`, $\mathsf{strEq}(s)$, $\mathsf{boolEq}(q)$,
 $\mathsf{bigintEq}(i)$, each false on every other kind) and $\mathsf{truthy}$, JavaScript's `ToBoolean`:
 
@@ -65,7 +65,15 @@ plain object owning the array store key $\sigma$, which no source property
 names, so it holds of exactly the arrays, as `Array.isArray` does of
 JavaScript's Array exotic objects:
 $\mathsf{isArray}(\mathsf{obj}(\mathit{fs},\mathsf{absent}))\iff\sigma\in\operatorname{dom}\mathit{fs}$,
-and false of every other value. A closure descriptor records which invocation its code
+and false of every other value. $\mathsf{typeofObject}$ holds of
+$\mathsf{null}$ and of an object without call code, which is where `typeof`
+answers `"object"`: $\mathsf{typeofObject}(v)\iff v=\mathsf{null}\lor v=\mathsf{obj}(\mathit{fs},\mathsf{absent})$.
+$\mathsf{hasKey}(\kappa)$ holds of an object owning the key $\kappa$, whatever
+its code, $\mathsf{hasKey}(\kappa)(\mathsf{obj}(\mathit{fs},c))\iff\kappa\in\operatorname{dom}\mathit{fs}$,
+and of no other value: keys are fixed at allocation, so its answer never
+changes. It is `in` for the keys and objects the lowering admits
+([DESIGN](DESIGN.md#guards)); JavaScript's `in` also looks along the prototype
+chain and throws on a primitive. A closure descriptor records which invocation its code
 admits, $\mathsf{closure}(m,t,\mathit{kind})$ with
 $\mathit{kind}\in\{\mathsf{call},\mathsf{construct}\}$: JavaScript gives a
 function object `[[Call]]` and `[[Construct]]` separately, an arrow has only

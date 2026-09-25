@@ -84,6 +84,13 @@ inductive Tag where
   primitive kinds that carry a value. -/
   | boolEq (value : Bool)
   | bigintEq (value : Int)
+  /-- `typeof v === "object"`: `null`, or an object without call code. An
+  object with call code, a class included, is `"function"` (`isFun`). -/
+  | typeofObject
+  /-- `key in v`: an object owning the key. Keys are fixed at allocation, so
+  the answer never changes; which source keys and operands this answers as
+  JavaScript does is the lowering's business (`inKeyRefusal`). -/
+  | hasKey (key : PropKey)
   deriving Repr, DecidableEq
 
 /-- The binary operators on primitive operands, JavaScript's own (`binop`
@@ -1023,6 +1030,9 @@ def tagHolds : Tag → Val → Bool
   | .truthy, .objAt _ _ => true
   | .truthy, .arr _ => true
   | .isArray, .objAt fs .absent => (fs.lookup arrayStoreKey).isSome
+  | .typeofObject, .nul => true
+  | .typeofObject, .objAt _ .absent => true
+  | .hasKey k, .objAt fs _ => (fs.lookup k).isSome
   | _, _ => false
 
 mutual

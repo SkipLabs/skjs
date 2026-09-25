@@ -230,10 +230,11 @@ for (const params of [
     start: env.pos[0],
     binding: "seed",
   });
-  const outsideFile = "verification/tests/unsupported/typeof_narrow.ts";
+  const outsideFile = "verification/tests/unsupported/in_inherited.ts";
   const outsideSource = fs.readFileSync(outsideFile, "utf8");
   const nameStart = outsideSource.indexOf("describe");
-  const conditionStart = outsideSource.indexOf("typeof x");
+  const condition = '"toString" in x';
+  const conditionStart = outsideSource.indexOf(condition);
   const outsideReport = await candidateReport(
     {
       format: "source-claims",
@@ -257,7 +258,7 @@ for (const params of [
             entries: [],
             expressions: [
               {
-                pos: [conditionStart, conditionStart + 8],
+                pos: [conditionStart, conditionStart + condition.length],
                 type: [1, 2],
                 current: null,
               },
@@ -270,7 +271,7 @@ for (const params of [
   );
   assert.deepEqual(where(results(outsideReport)[0]), {
     kind: "source-limitation",
-    pos: [conditionStart, conditionStart + 8],
+    pos: [conditionStart, conditionStart + condition.length],
   });
   // Repair missing information in a sound program without collecting again.
   const incomplete: Exported = structuredClone(original);

@@ -16,16 +16,17 @@ export type ArithOp = "add" | "sub" | "mul" | "div" | "pow" | "rem";
 /** Every binary operator on primitive operands: arithmetic, and the
  * relational comparisons `<`, `<=`, `>`, `>=`. */
 export type BinaryOp = ArithOp | "lt" | "le" | "gt" | "ge";
-/** `-e`, `+e` and `~e`. */
-export type UnaryOp = "neg" | "plus" | "bitNot";
-export type TypeofShape = "number" | "string" | "boolean" | "undefined" | "function" | "bigint" | "symbol";
+/** `-e`, `+e` and `~e`, and `typeof e` as a value, the string naming the
+ * operand's shape. */
+export type UnaryOp = "neg" | "plus" | "bitNot" | "typeof";
+export type TypeofShape = "number" | "string" | "boolean" | "undefined" | "function" | "bigint" | "symbol" | "object";
 export type Expr =
   | { k: "id"; pos: Span; name: string }
   /* `this`: the receiver of the nearest enclosing ordinary function. An arrow
      has no receiver of its own, so inside one this is a capture. */
   | { k: "this"; pos: Span }
   | { k: "lit"; pos: Span; lit: Atom }
-  | { k: "not" | "typeof"; pos: Span; e: Expr }
+  | { k: "not"; pos: Span; e: Expr }
   /* `e as T`, `e satisfies T`, `e!` or `e as const`: the operand's value,
      unchanged. The annotation, when there is one, is what the operand must
      meet; `as const` has none, its claim being the operand's literal types. */
@@ -60,7 +61,7 @@ export type Expr =
      operation, as JavaScript performs it on two numbers, two bigints or, for
      a comparison, two strings or a number and a bigint. */
   | { k: "arith"; pos: Span; op: BinaryOp; l: Expr; r: Expr }
-  /* A unary numeric operator on the operand's value. */
+  /* A unary numeric operator on the operand's value, or `typeof`. */
   | { k: "unary"; pos: Span; op: UnaryOp; e: Expr }
   /* `target op= rhs`, `target++` and the like: the target's parts are
      evaluated once, its current value read, the right side (1 for an
@@ -108,11 +109,15 @@ export type Expr =
       bagType: TypeTerm;
     }
   /* `typeof e === "…"` (or `!==`, operands in either order): a test of the
-     operand's shape. `"object"` is not one shape, since it includes null. */
+     operand's shape. `"object"` holds of null and of an object without call
+     code; a callable object, a class included, is `"function"`. */
   | { k: "typeofTest"; pos: Span; shape: TypeofShape; equal: boolean; e: Expr }
   /* `Array.isArray(e)`, the standard library's through its reviewed overlay
      entry: a test of whether the operand is an array. */
   | { k: "arrayTest"; pos: Span; e: Expr }
+  /* `key in e`: the key, then the operand, then whether the operand has the
+     key, its own or an inherited one. */
+  | { k: "inTest"; pos: Span; key: Expr; e: Expr }
   /* `spreads` are the indices of the arguments written with `...`: each
      stands for the elements of its operand, read where it is written. `await
      e` and an async body's returns are written as calls of intrinsics

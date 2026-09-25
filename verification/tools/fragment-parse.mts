@@ -1000,9 +1000,12 @@ class Gate {
       };
     }
 
+    // `typeof e` as a value: the string naming the operand's shape. A
+    // comparison of it with a shape's literal is a test (`typeofTest`).
     if (ts.isTypeOfExpression(node))
       return {
-        k: "typeof",
+        k: "unary",
+        op: "typeof",
         pos: this.span(node),
         e: this.expr(node.expression),
       };
@@ -1596,6 +1599,29 @@ class Gate {
     return acc;
   }
 
+  /** Whether an `instanceof` right operand names a class of this file that
+   * declares or inherits, from a class of this file, a static
+   * `[Symbol.hasInstance]`. Syntactic: it only chooses a refusal's reason. */
+  private hasInstanceClass(right: Expression): boolean {
+    const classes = new Map<string, ClassDeclaration>();
+    for (const s of this.file.statements)
+      if (ts.isClassDeclaration(s) && s.name) classes.set(s.name.text, s);
+    const seen = new Set<string>();
+    let name = ts.isIdentifier(right) ? right.text : undefined;
+    while (name && !seen.has(name)) {
+      seen.add(name);
+      const c = classes.get(name);
+      if (!c) return false;
+      if (c.members.some((m) => ts.isMethodDeclaration(m) && m.name && ts.isComputedPropertyName(m.name) &&
+          m.modifiers?.some((k) => k.kind === ts.SyntaxKind.StaticKeyword) &&
+          m.name.expression.getText(this.file) === "Symbol.hasInstance"))
+        return true;
+      const base = c.heritageClauses?.find((h) => h.token === ts.SyntaxKind.ExtendsKeyword)?.types[0]?.expression;
+      name = base && ts.isIdentifier(base) ? base.text : undefined;
+    }
+    return false;
+  }
+
   private binary(node: BinaryExpression): Expr {
     if (node.operatorToken.kind === ts.SyntaxKind.CommaToken)
       return { k: "comma", pos: this.span(node), left: this.expr(node.left), right: this.expr(node.right) };
@@ -1604,6 +1630,24 @@ class Gate {
     if (node.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword &&
         this.globalTests.has(this.span(node).join(":")))
       return { k: "arrayTest", pos: this.span(node), e: this.expr(node.left) };
+    // Any other `instanceof` looks for a constructor's prototype along the
+    // operand's prototype chain, or calls the constructor's static
+    // `[Symbol.hasInstance]`: the model gives an object no identity of the
+    // constructor that made it (DESIGN.md, "Guards").
+    if (node.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword)
+      this.fail(node, this.hasInstanceClass(node.right)
+        ? "`instanceof` of a class with a static `[Symbol.hasInstance]` calls that method, a computed static member, outside the fragment"
+        : "`instanceof` other than `instanceof Array`: the model gives an object no identity of the constructor that made it");
+    // `key in o`: whether `o` has the key, its own or an inherited one.
+    // Which keys and operands the model answers as JavaScript does is Lean's
+    // to decide (`inKeyRefusal`, `inOperand`, `inKeyList`).
+    if (node.operatorToken.kind === ts.SyntaxKind.InKeyword) {
+      let key: Expression = node.left;
+      while (ts.isParenthesizedExpression(key)) key = key.expression;
+      if (ts.isNumericLiteral(key))
+        this.fail(node.left, "`in` with a numeric key tests an array element, which the model keeps in the array's store, not as a key");
+      return { k: "inTest", pos: this.span(node), key: this.expr(node.left), e: this.expr(node.right) };
+    }
     switch (node.operatorToken.kind) {
       case ts.SyntaxKind.PlusEqualsToken:
       case ts.SyntaxKind.MinusEqualsToken:
@@ -1811,7 +1855,7 @@ class Gate {
         ts.isParenthesizedExpression(e) ? unwrap(e.expression) : e;
       const left = unwrap(node.left),
         right = unwrap(node.right);
-      const shapes: readonly TypeofShape[] = ["number", "string", "boolean", "undefined", "function", "bigint", "symbol"];
+      const shapes: readonly TypeofShape[] = ["number", "string", "boolean", "undefined", "function", "bigint", "symbol", "object"];
       const shapeOf = (e: Expression): TypeofShape | undefined =>
         ts.isStringLiteral(e) ? shapes.find((s) => s === e.text) : undefined;
       const pair =
