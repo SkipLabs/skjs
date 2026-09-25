@@ -853,7 +853,7 @@ writes is a field of the arm (or the arm has an index), every required field
 of the arm is written, and every member written as a primitive literal is
 admitted by the arm's field. For an array literal, an arm's length bounds and
 positions admit it alike. Where exactly one arm remains, the literal is built
-at it; otherwise it is built as before. This is a construction hint and adds
+at it; otherwise its members are built as with no contract. This is a construction hint and adds
 no trust: the allocation names the record the members are checked against,
 and the literal's use is the ordinary subsumption into the union
 (`literal-union-discrimination.ts`; a literal no arm admits,
@@ -863,7 +863,7 @@ and the literal's use is the ordinary subsumption into the union
 (`Inference.infer`) gives a binder in a union with ground atoms, `A | null`
 (inline, through an alias `Maybe<A>`, or as a construct signature's
 instance), the atoms the actual holds beside those, as TypeScript infers `A
-:= string` from `string | null`; it proposed `unknown` before. The instance is
+:= string` from `string | null`. The instance is
 a proposal: Lean checks the actual against the substituted parameter and the
 result where it is used (`nullable-binder-inference.ts`,
 `invalid-nullable-binder-inference.ts`). A tuple at an array of any length
@@ -880,7 +880,7 @@ and does not meet it). And primitives below a declared bound instantiate the
 binder rather than the bound, and so does an array of primitives below a
 bound with an array arm (`S extends number[] | string` at `[1, 2, 3]` is
 `number[]`): `check<Y extends boolean | string>` at
-`"hello"` is `"hello"`, where the bound was proposed before
+`"hello"` is `"hello"`
 (`generic-bound-literals.ts`, `invalid-generic-bound-literal.ts`).
 
 **An unannotated constant's fresh array is built at its first use.** SKJS
@@ -1841,7 +1841,7 @@ holds there is found, not assumed: the producer runs the body (discarding what
 the run claims) from a candidate head, starting at the entry, and joins what
 the update leaves for the head with the entry, until the head is stable (a few
 rounds; otherwise, and wherever the condition or the body may write a cell
-unseen, each assigned cell is claimed at its contract, as before). The update
+unseen, each assigned cell is claimed at its contract). The update
 runs from the join of the body's end and its `continue`s, and the loop is left
 from its head or by a `break`, with the join of those. So `y = b; y = a` in a
 body leaves `y` holding `"a"` at the head (`loop-head-contents.ts`). Lean checks
@@ -1870,9 +1870,9 @@ locals introduced inside the loop or branch; it does not assume destination
 claims or retain an obsolete mutable-field refinement. It finds each binding the
 destination keeps by its descriptor (name and span), and by name only where no
 descriptor matches: a parameter may hide a module constant of its name, and
-finding the constant by name gave it the parameter's slot, which a test had
-just narrowed (`shadowed-module-constant.ts`). The map is a proposal the edge
-check validates either way; this makes the right one.
+the constant keeps its own slot while a test narrows the parameter's
+(`shadowed-module-constant.ts`). The map is a proposal the edge check
+validates.
 
 Already-known immutable Boolean singleton facts are preserved when forming a
 branch map, rather than overwritten with an opposite-branch witness. This avoids
