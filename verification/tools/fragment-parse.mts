@@ -237,7 +237,7 @@ class Gate {
    * class `C`, by span: the class. */
   staticReads = new Map<string, string>();
   /** Calls the reviewed overlay of library globals reads as a test of the
-   * calculus, `Array.isArray(e)`, by span. */
+   * calculus, `Array.isArray(e)`, and `e instanceof Array`, by span. */
   readonly globalTests = new Set<string>();
   /** Calls the reviewed overlay reads as a call of an intrinsic,
    * `Promise.resolve(v)`, by span: the intrinsic's name. */
@@ -806,6 +806,14 @@ class Gate {
     }
 
     if (ts.isNewExpression(node)) {
+      // `new Promise(e)`, which the overlay reads as a call of the intrinsic
+      // stating the same step, read at the constructor's name. Its type
+      // arguments, if written, are TypeScript's: the intrinsic's instance is
+      // the producer's to propose and Lean's to check.
+      const intrinsic = this.globalIntrinsics.get(this.span(node).join(":"));
+      if (intrinsic)
+        return this.intrinsic(intrinsic, this.span(node), this.span(node.expression),
+          (node.arguments ?? []).map(a => this.expr(a)));
       // Explicit type arguments name the instantiation the producer proposes;
       // Lean validates that instantiation like any other. The callee is any
       // value; its type decides whether it has construct-only code.
@@ -1562,6 +1570,11 @@ class Gate {
   private binary(node: BinaryExpression): Expr {
     if (node.operatorToken.kind === ts.SyntaxKind.CommaToken)
       return { k: "comma", pos: this.span(node), left: this.expr(node.left), right: this.expr(node.right) };
+    // `e instanceof Array`, which the declaration graph found to name the
+    // standard library's global: the same test as `Array.isArray(e)`.
+    if (node.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword &&
+        this.globalTests.has(this.span(node).join(":")))
+      return { k: "arrayTest", pos: this.span(node), e: this.expr(node.left) };
     switch (node.operatorToken.kind) {
       case ts.SyntaxKind.PlusEqualsToken:
       case ts.SyntaxKind.MinusEqualsToken:

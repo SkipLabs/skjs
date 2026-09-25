@@ -12,10 +12,10 @@ import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration
 import type { Span } from "./span.mts";
 import { classInstance, expandMapped, mapped, members, oneTerm, optionalTerm, signature, signatures, substitute, typeTerm,
   type Mapped, type TermScope } from "./type-term.mts";
-import { arrayPrototype, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
+import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
   type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule } from "./intrinsics.mts";
-import { globalEntry, globalsOverlay, type GlobalEntry } from "./library-globals.mts";
+import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
 export type { DeclarationIdentity, DeclarationDocument, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
 
@@ -68,6 +68,7 @@ export function libraryTerm(library: LibraryType, args: readonly TypeTerm[], spa
   return expandMapped({ ...t, key: substitute(t.key, args), value: substitute(t.value, args) }, span, fail);
 }
 
+type FunctionTerm = Extract<TypeTerm, { k: "function" }>;
 const isLibraryModule = (module: string): boolean => module.startsWith("typescript/lib/");
 
 /** The configured project named on a command line: a tsconfig file, or the
@@ -637,6 +638,28 @@ export function collectDeclarations(file: string, options: {
     // The prototypes' contracts, `Array.prototype`'s and the primitive
     // wrappers', read before the graph is collected so that the library
     // interfaces they name join it.
+    // A standard library interface by name, as the overlays name one: its
+    // merged declarations, each clean, the first its identity.
+    const libraryInterface = (name: string): TypeDeclaration => {
+      const symbol = checker.resolveName(name, SymbolFlags.Interface, client, false);
+      const parts = (symbol?.declarations ?? []).map(d => d.resolve())
+        .filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
+      const [first] = parts;
+      if (!first || !parts.every(part => isLibraryModule(idOf(part.getSourceFile()))))
+        throw Error(`the standard library declares no ${name}`);
+      for (const part of parts) clean(part, `${idOf(part.getSourceFile())}#${name}`);
+      partners.set(first, parts);
+      return first;
+    };
+    // A reference to one, at `args`, from a statement of the overlay of
+    // library globals: the interface joins the graph.
+    const libraryReference = (name: string, args: TypeTerm[]): TypeTerm => {
+      const node = libraryInterface(name);
+      valueStarts.push(node);
+      const target = identityOf(node);
+      return { k: "reference", reference: { name, span: [0, 0], arguments: args.map(() => [0, 0] as Span), target },
+        args, span: [0, 0] };
+    };
     const overlayLibrary: OverlayLibrary = {
       symbol: symbolOf,
       reference: (node, args, span) => {
@@ -738,6 +761,11 @@ export function collectDeclarations(file: string, options: {
           intrinsic: (span, name) => {
             listIntrinsics(span);
             options.globalIntrinsic?.(span, name);
+          },
+          library: libraryReference,
+          define: definition => {
+            const key = (d: TypeDefinition) => `${d.declaration.module}#${d.declaration.name}`;
+            if (!selections.some(d => key(d) === key(definition))) selections.push(definition);
           } });
         if (!selection) continue;
         const binding = { local: first.text, imported: first.text, specifier: globalSpecifier, span: at };
@@ -815,7 +843,8 @@ export function collectDeclarations(file: string, options: {
     const definitions: TypeDefinition[] = [];
     for (const { root, node: start } of roots) {
       try {
-        collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, partners, library, equation });
+        collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, partners, library, equation,
+          libraryInterface });
       } catch (error) {
         throw new DeclarationError(root.binding.span,
           error instanceof Error ? error.message : String(error));
@@ -823,7 +852,8 @@ export function collectDeclarations(file: string, options: {
     }
     for (const [index, start] of valueStarts.entries()) {
       try {
-        collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, partners, library, equation });
+        collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, partners, library, equation,
+          libraryInterface });
       } catch (error) {
         throw new DeclarationError(values[Math.min(index, values.length - 1)]?.binding.span ?? [0, 0],
           error instanceof Error ? error.message : String(error));
@@ -857,6 +887,12 @@ type SelectionContext = {
   test: (span: Span, test: NonNullable<GlobalEntry["test"]>) => void;
   /** Told each call the overlay reads as a call of an intrinsic. */
   intrinsic: (span: Span, name: string) => void;
+  /** Given each declaration a read entry's statement names that no library
+   * declares (`GlobalEntry.definitions`). */
+  define: (definition: TypeDefinition) => void;
+  /** A standard library interface applied to `args`, for a statement that
+   * names one (`new Set<T>()` gives a `Set<T>`). */
+  library: (name: string, args: TypeTerm[]) => TypeTerm;
 };
 
 /**
@@ -912,12 +948,15 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   // A standard library global is read through the reviewed overlay: a
   // signature it does not list, with exactly the text reviewed, is refused.
   const library = variables.every(v => isLibraryModule(context.identityOf(v.getSourceFile())));
-  const reviewed = (member: string | undefined, node: Node, what: string): GlobalEntry | undefined => {
+  const reviewed = (member: string | undefined, node: Node, what: string):
+      (Omit<GlobalEntry, "stated"> & { stated?: Stated }) | undefined => {
     if (!library) return undefined;
     const text = node.getText(node.getSourceFile()).trim();
     const entry = globalEntry(context.overlay, name, member, text);
     if (!entry) throw Error(`${what} is not in the reviewed overlay of library globals: ${text}`);
-    return entry;
+    for (const definition of entry.definitions ?? []) context.define(definition);
+    const stated = entry.stated;
+    return { ...entry, stated: typeof stated === "function" ? stated(context.library) : stated };
   };
   // The interface the variable is annotated with, a plain or qualified name.
   const annotation = declaration.type;
@@ -983,6 +1022,14 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       calls.push(parent);
     else if (ts.isNewExpression(parent) && parent.expression === use)
       constructs.push(parent);
+    else if (ts.isBinaryExpression(parent) && parent.right === use &&
+        parent.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword) {
+      // `e instanceof X`, read only where the overlay states it as a test of
+      // the calculus, against the variable's declaration as reviewed.
+      const entry = reviewed(undefined, declaration, `${name} as the right operand of instanceof`);
+      if (!entry?.test) throw Error(`${name} is not read as an instanceof test`);
+      context.test(spanOf(parent), entry.test);
+    }
     else throw Error(`${name} is read only through its members, each by name, called or constructed`);
   }
   const fields: Extract<TypeTerm, { k: "object" }>["fields"] = [];
@@ -1016,14 +1063,32 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
         }
         // A call of an intrinsic stating the same step: each call is
         // reported, with its arguments as written, and the member joins no
-        // value. Explicit type arguments are the intrinsic's to infer.
+        // value. Explicit type arguments are TypeScript's instance of the
+        // declaration; the intrinsic's is proposed and checked on its own.
         if (entry?.intrinsic) {
           for (const call of calls) {
-            if (call.arguments.some(ts.isSpreadElement) || call.typeArguments?.length)
-              throw Error(`${what} is read as an intrinsic, called without spreads or type arguments`);
+            if (call.arguments.some(ts.isSpreadElement))
+              throw Error(`${what} is read as an intrinsic, called without spreads`);
             context.intrinsic(spanOf(call), entry.intrinsic);
           }
           return [];
+        }
+        // A signature the overlay states instead of the declared one: its
+        // parameters bound the arguments, as for a construct.
+        if (entry?.stated) {
+          const stated = entry.stated;
+          for (const call of calls)
+            if (call.arguments.length > stated.params.length || call.arguments.some(ts.isSpreadElement))
+              throw Error(`${what} is read with at most ${stated.params.length} argument(s)`);
+          const at = spanOf(overload);
+          const form: FunctionTerm = { k: "function", receiver: { k: "self", span: at }, params: stated.params,
+            rest: null, result: stated.result, span: at };
+          // A generic statement is a scheme over its binders, as a generic
+          // interface method is.
+          return [stated.binders.length
+            ? { k: "scheme", binders: stated.binders.map(name => ({ name, bound: null, default: null, span: at })),
+                signatures: [form], span: at } satisfies TypeTerm
+            : form];
         }
         return forms(overload, key, what, entry).map(form => {
           if (form.receiver) throw Error(`the method ${what} states its receiver`);
@@ -1033,7 +1098,10 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       if (!selected.length) continue;
       const [only] = selected;
       const span = spanOf(accesses[0] ?? first);
-      fields.push({ name: key, optional: false, readonly: false, span,
+      // A generic member is a readonly scheme, and overloads none.
+      const scheme = selected.some(form => form.k === "scheme");
+      if (scheme && selected.length > 1) throw Error(`${what} selects a generic statement beside other overloads`);
+      fields.push({ name: key, optional: false, readonly: scheme, span,
         type: selected.length === 1 && only ? only : { k: "intersection", parts: selected, span } });
     } else if (nodes.length === 1 && property && ts.isPropertySignatureDeclaration(property) && property.type &&
         !property.modifiers?.some(m => m.kind !== ts.SyntaxKind.ReadonlyKeyword)) {
@@ -1077,6 +1145,16 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   const constructForms = [...built].flatMap(([signature, expressions]) => {
     const entry = reviewed(undefined, signature, whatNew);
     const span = spanOf(signature);
+    // A construct of an intrinsic stating the same step, `new Promise(e)`:
+    // each is reported, with its arguments as written, and joins no value.
+    if (entry?.intrinsic) {
+      for (const expression of expressions) {
+        if (expression.arguments?.some(ts.isSpreadElement))
+          throw Error(`${whatNew} is read as an intrinsic, constructed without spreads`);
+        context.intrinsic(spanOf(expression), entry.intrinsic);
+      }
+      return [];
+    }
     if (entry?.stated) {
       const stated = entry.stated;
       for (const expression of expressions)
@@ -1167,15 +1245,83 @@ function mergeMembers(parts: TypeTerm[], fail: (at: Node, message: string) => ne
   return { ...first, fields, stringIndex, calls };
 }
 
+/** A standard library interface through its overlay entries
+ * (`interfaceOverlay`): each listed member, read from the one declaration
+ * among the merged parts whose text is the reviewed one, a method as a
+ * host-relative member and a property as declared. A member the project's
+ * library does not declare is left out. */
+function overlaidInterface(node: InterfaceDeclaration, parts: readonly InterfaceDeclaration[],
+    entries: readonly OverlayEntry[], scopeOf: (source: SourceFile) => TermScope,
+    identityOf: (node: TypeDeclaration) => DeclarationIdentity,
+    symbol: (written: Identifier | ts.PropertyAccessExpression) => number,
+    library: (name: string, span: Span) => (args: TypeTerm[]) => TypeTerm): TypeTerm {
+  const where = `${identityOf(node).module}#${node.name.text}`;
+  const keyText = (member: ts.MethodSignatureDeclaration | ts.PropertySignatureDeclaration,
+      source: SourceFile): string =>
+    ts.isIdentifier(member.name) ? member.name.text : member.name.getText(source);
+  const fields: Extract<TypeTerm, { k: "object" }>["fields"] = [];
+  for (const entry of entries) {
+    const named = parts.flatMap(part => {
+      const source = part.getSourceFile();
+      return part.members
+        .filter((m): m is ts.MethodSignatureDeclaration | ts.PropertySignatureDeclaration =>
+          (ts.isMethodSignatureDeclaration(m) || ts.isPropertySignatureDeclaration(m)) &&
+          keyText(m, source) === entry.name)
+        .map(member => ({ member, source }));
+    });
+    if (!named.length) continue;
+    const found = named.filter(({ member, source }) => member.getText(source).trim() === entry.signature);
+    const [only, ...more] = found;
+    if (!only || more.length) throw Error(`${where}.${entry.name} is not declared as reviewed: ${entry.signature}`);
+    const { member, source } = only;
+    const scope = scopeOf(source);
+    const span: Span = [member.getStart(source), member.end];
+    const name = member.name;
+    const key: PropertyKey = ts.isComputedPropertyName(name) &&
+        (ts.isPropertyAccessExpression(name.expression) || ts.isIdentifier(name.expression))
+      ? { symbol: symbol(name.expression) } : entry.name;
+    if (ts.isPropertySignatureDeclaration(member)) {
+      if (!member.type || member.postfixToken ||
+          member.modifiers?.some(m => m.kind !== ts.SyntaxKind.ReadonlyKeyword))
+        throw Error(`${where}.${entry.name} is not a plain property`);
+      fields.push({ name: key, optional: false, readonly: !!member.modifiers?.length,
+        type: typeTerm(scope, member.type, member), span });
+      continue;
+    }
+    if (!ts.isMethodSignatureDeclaration(member) || member.typeParameters?.length || member.postfixToken)
+      throw Error(`${where}.${entry.name} is not a plain method`);
+    const nameOf = (p: ts.ParameterDeclaration) => ts.isIdentifier(p.name) ? p.name.text : "";
+    const parameters = member.parameters.filter(p => !entry.drop?.includes(nameOf(p)));
+    // The weaker result: `Iterator` at the declared result's one argument.
+    let given: TypeTerm | undefined;
+    if (entry.resultAs) {
+      const declared = member.type;
+      const [argument, ...others] = declared && ts.isTypeReferenceNode(declared) ? declared.typeArguments ?? [] : [];
+      if (!argument || others.length) throw Error(`${where}.${entry.name} has no element type to state`);
+      given = library(entry.resultAs, span)([typeTerm(scope, argument, member)]);
+    } else if (entry.resultIsReceiver) {
+      if (member.type?.kind !== ts.SyntaxKind.ThisType) throw Error(`${where}.${entry.name} does not return this`);
+      given = { k: "self", span };
+    }
+    const forms = signatures(scope, parameters, member.type, member, span, false, given);
+    if (forms.some(f => f.receiver)) throw Error(`${where}.${entry.name} states its receiver`);
+    fields.push({ name: key, optional: false, readonly: false, span,
+      type: oneTerm(forms.map(f => ({ ...f, receiver: { k: "self", span } })), span) });
+  }
+  return { k: "object", fields, stringIndex: null, calls: [], span: identityOf(node).span };
+}
+
 /** Every declaration reachable from `start`, each once across roots. */
 function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDefinition[], context: {
   lookup: (identifier: Identifier, what: string) => TypeDeclaration;
   identityOf: (node: TypeDeclaration) => DeclarationIdentity;
-  symbol: (identifier: Identifier) => number;
+  symbol: (written: Identifier | ts.PropertyAccessExpression) => number;
   partners: ReadonlyMap<TypeDeclaration, readonly TypeDeclaration[]>;
   library: (identifier: Identifier, what: string) => LibraryType | null;
   /** A declaration's equation where it is not its declared body. */
   equation: (node: TypeDeclaration) => TypeTerm | null;
+  /** The standard library interface of this name, such as `Iterator`. */
+  libraryInterface: (name: string) => TypeDeclaration;
 }): void {
   const { lookup, identityOf, symbol, partners, library, equation } = context;
   const queue: TypeDeclaration[] = [start];
@@ -1245,6 +1391,22 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         default: parameter.defaultType ? parse(parameter.defaultType) : null };
     });
     const parts = partners.get(node) ?? [node];
+    // A standard library interface read through the overlay: only its listed
+    // members, and no base.
+    const overlaid = ts.isInterfaceDeclaration(node) && Object.hasOwn(interfaceOverlay, node.name.text) &&
+        parts.every(part => isLibraryModule(identityOf(part).module))
+      ? interfaceOverlay[node.name.text] : undefined;
+    if (overlaid && ts.isInterfaceDeclaration(node)) {
+      definitions.push({ declaration: identity, parameters, bases: [],
+        expression: overlaidInterface(node, parts.filter(ts.isInterfaceDeclaration), overlaid, scopeOf,
+          identityOf, symbol, (name, span) => {
+          const target = context.libraryInterface(name);
+          queue.push(target);
+          return (args: TypeTerm[]): TypeTerm => ({ k: "reference", args, span,
+            reference: { name, span, arguments: args.map(() => span), target: identityOf(target) } });
+        }) });
+      continue;
+    }
     const expression = ts.isTypeAliasDeclaration(node)
       ? parse(node.type)
       : ts.isClassDeclaration(node)

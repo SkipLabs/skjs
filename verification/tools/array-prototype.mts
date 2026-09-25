@@ -48,7 +48,20 @@ export type OverlayEntry = {
   /** The result stated as this standard library interface at `T`, which the
    * declared result implies: a weaker contract than the declaration's. */
   resultAs?: "Iterator";
+  /** The signature read instead of the declared one, its parameters a part
+   * of the declared ones on which the host runs no client code: a string
+   * where the declaration admits a `RegExp` or an object with a
+   * `[Symbol.split]` (`"a,b".split(",")`). The receiver is the prototype's. */
+  stated?: { params: TypeTerm[]; result: TypeTerm };
 };
+
+const at: [number, number] = [0, 0];
+const atomOf = (name: "string" | "number" | "undefined"): TypeTerm => ({ k: "atom", name, span: at });
+const optionalNumber: TypeTerm = { k: "union", parts: [atomOf("number"), atomOf("undefined")], span: at };
+/** `locales`, as the host reads it without running client code: a tag, or a
+ * readonly array of tags read by index; a malformed tag is a `RangeError`. */
+const locales: TypeTerm = { k: "union", span: at, parts: [atomOf("string"),
+  { k: "array", readonly: true, element: atomOf("string"), span: at }, atomOf("undefined")] };
 
 export const overlay: readonly OverlayEntry[] = [
   { name: "forEach", from: "ReadonlyArray",
@@ -109,13 +122,15 @@ export const overlay: readonly OverlayEntry[] = [
 
 /** The members of the primitive wrappers' prototypes. Each is an own property
  * of that prototype (so `String.prototype.toLocaleString`, which is
- * `Object.prototype`'s, is not listed). Not listed: members that throw on
- * arguments their declaration admits and no narrowing states simply
- * (`repeat`, `normalize(form?: string)`), members that name `RegExp` or a
- * callback typed with `any` (`replace`, `match`, `search`, `split`), and
- * members taking locales (their `RangeError`s), whose `locales` and `options`
- * are dropped where the member is kept. A string owns `length` and its
- * indices, which are not the prototype's. */
+ * `Object.prototype`'s, is not listed). A member that throws on some
+ * arguments (`repeat(-1)`) is read as declared; one whose declaration admits
+ * a `RegExp` is stated at the strings (`split`, `replace`); members only a
+ * `RegExp` or an `any` callback serves (`match`, `search`, `replace` with a
+ * replacer) are not listed. `locales` is stated at a string or a readonly
+ * array of strings, read by index; `options`, an `Intl` interface whose
+ * values the host converts, running an object's own `toString`, is dropped,
+ * so a call must omit it. A string owns `length` and its indices, which are
+ * not the prototype's. */
 export const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEntry[]>> = {
   string: [
     { name: "toString", from: "String", signature: "toString(): string;" },
@@ -136,7 +151,25 @@ export const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEn
     { name: "startsWith", from: "String",
       signature: "startsWith(searchString: string, position?: number): boolean;" },
     { name: "endsWith", from: "String", signature: "endsWith(searchString: string, endPosition?: number): boolean;" },
-    { name: "normalize", from: "String", signature: "normalize(form: \"NFC\" | \"NFD\" | \"NFKC\" | \"NFKD\"): string;" },
+    // Any other form is a `RangeError`, an outcome: the overload taking any
+    // string, or none, is read.
+    { name: "normalize", from: "String", signature: "normalize(form?: string): string;" },
+    // A negative or infinite count is a `RangeError`.
+    { name: "repeat", from: "String", signature: "repeat(count: number): string;" },
+    // With a string pattern, the host reads no `[Symbol.split]` or
+    // `[Symbol.replace]` of the client's (a string primitive's lookup ends at
+    // `String.prototype`, which has none), and `$` patterns in a string
+    // replacement are string operations. A `RegExp`, and a replacer
+    // callback, are not stated. `split` gives a fresh array of strings;
+    // `replaceAll` of a non-global `RegExp` would throw.
+    { name: "split", from: "String", signature: "split(separator: string | RegExp, limit?: number): string[];",
+      stated: { params: [atomOf("string"), optionalNumber],
+        result: { k: "array", readonly: false, element: atomOf("string"), span: at } } },
+    { name: "replace", from: "String", signature: "replace(searchValue: string | RegExp, replaceValue: string): string;",
+      stated: { params: [atomOf("string"), atomOf("string")], result: atomOf("string") } },
+    { name: "replaceAll", from: "String",
+      signature: "replaceAll(searchValue: string | RegExp, replaceValue: string): string;",
+      stated: { params: [atomOf("string"), atomOf("string")], result: atomOf("string") } },
     { name: "codePointAt", from: "String", signature: "codePointAt(pos: number): number | undefined;" },
     { name: "trimStart", from: "String", signature: "trimStart(): string;" },
     { name: "trimEnd", from: "String", signature: "trimEnd(): string;" },
@@ -152,19 +185,77 @@ export const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEn
     { name: "toPrecision", from: "Number", signature: "toPrecision(precision?: number): string;" },
     { name: "toLocaleString", from: "Number",
       signature: "toLocaleString(locales?: string | string[], options?: Intl.NumberFormatOptions): string;",
-      drop: ["locales", "options"] },
+      stated: { params: [locales], result: atomOf("string") } },
   ],
   bigint: [
     { name: "toString", from: "BigInt", signature: "toString(radix?: number): string;" },
     { name: "valueOf", from: "BigInt", signature: "valueOf(): bigint;" },
     { name: "toLocaleString", from: "BigInt",
       signature: "toLocaleString(locales?: Intl.LocalesArgument, options?: BigIntToLocaleStringOptions): string;",
-      drop: ["locales", "options"] },
+      stated: { params: [locales], result: atomOf("string") } },
   ],
   boolean: [
     { name: "valueOf", from: "Boolean", signature: "valueOf(): boolean;" },
     // TypeScript reads it from `Object`; `Boolean.prototype` owns it.
     { name: "toString", from: "Object", signature: "toString(): string;" },
+  ],
+};
+
+/** Standard library interfaces read through the overlay rather than as
+ * declared (DESIGN.md, "Library collections and dates"): a reference to
+ * `Set<T>`, `Map<K, V>` or `Date` is the interface with only the members
+ * listed, each a host-relative method on the object it is read from (its
+ * prototype's, at run time), a property a readonly view. Every other member,
+ * overload and base is left out, which gives a supertype of the declared
+ * interface. A `this` result is the receiver (`resultIsReceiver`), the
+ * interface at its own parameters, which the library's declared methods do
+ * return. `thisArg` is dropped, as for arrays.
+ *
+ * The host's collections hold their elements in internal slots the model
+ * does not see; a method's contract is what it returns. `Set<T>` and
+ * `Map<K, V>` are invariant in their parameters, since `add` and `set` take
+ * them and `has`, `get` and `forEach` give them. Not listed: `keys`,
+ * `values` and `entries`, whose `SetIterator` and `MapIterator` are read by
+ * no rule yet, and `[Symbol.toStringTag]`. Of `Date`, the getters,
+ * `setTime`, `valueOf`, `toString` and `toISOString` (a `RangeError` for an
+ * invalid date, an outcome); `[Symbol.toPrimitive]`, whose overloads take
+ * hints, is not listed, nor the members taking locales. */
+export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>> = {
+  Set: [
+    { name: "add", from: "Set", signature: "add(value: T): this;", resultIsReceiver: true },
+    { name: "clear", from: "Set", signature: "clear(): void;" },
+    { name: "delete", from: "Set", signature: "delete(value: T): boolean;" },
+    { name: "forEach", from: "Set",
+      signature: "forEach(callbackfn: (value: T, value2: T, set: Set<T>) => void, thisArg?: any): void;",
+      drop: ["thisArg"] },
+    { name: "has", from: "Set", signature: "has(value: T): boolean;" },
+    { name: "size", from: "Set", signature: "readonly size: number;" },
+    // As for arrays: `SetIterator<T>` is an `Iterator<T>`.
+    { name: "[Symbol.iterator]", from: "Set", signature: "[Symbol.iterator](): SetIterator<T>;",
+      resultAs: "Iterator" },
+  ],
+  Map: [
+    { name: "clear", from: "Map", signature: "clear(): void;" },
+    { name: "delete", from: "Map", signature: "delete(key: K): boolean;" },
+    { name: "forEach", from: "Map",
+      signature: "forEach(callbackfn: (value: V, key: K, map: Map<K, V>) => void, thisArg?: any): void;",
+      drop: ["thisArg"] },
+    // TypeScript's own `V | undefined`: a key the map lacks reads nothing.
+    { name: "get", from: "Map", signature: "get(key: K): V | undefined;" },
+    { name: "has", from: "Map", signature: "has(key: K): boolean;" },
+    { name: "set", from: "Map", signature: "set(key: K, value: V): this;", resultIsReceiver: true },
+    { name: "size", from: "Map", signature: "readonly size: number;" },
+    { name: "[Symbol.iterator]", from: "Map", signature: "[Symbol.iterator](): MapIterator<[K, V]>;",
+      resultAs: "Iterator" },
+  ],
+  Date: [
+    ...["valueOf", "getTime", "getFullYear", "getUTCFullYear", "getMonth", "getUTCMonth", "getDate",
+      "getUTCDate", "getDay", "getUTCDay", "getHours", "getUTCHours", "getMinutes", "getUTCMinutes",
+      "getSeconds", "getUTCSeconds", "getMilliseconds", "getUTCMilliseconds", "getTimezoneOffset"]
+      .map((name): OverlayEntry => ({ name, from: "Date", signature: `${name}(): number;` })),
+    { name: "setTime", from: "Date", signature: "setTime(time: number): number;" },
+    ...["toString", "toISOString"]
+      .map((name): OverlayEntry => ({ name, from: "Date", signature: `${name}(): string;` })),
   ],
 };
 
@@ -283,8 +374,10 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
     const stated = entry.resultAs
       ? library.reference(interfaceOf(entry.resultAs), [{ k: "binder", name: "T", span }], span)
       : entry.resultIsReceiver ? receiver : undefined;
-    const forms = signatures(scope, parameters,
-      entry.resultAs ? undefined : member.type, member, span, false, stated);
+    const forms = entry.stated
+      ? [{ k: "function", receiver: null, params: entry.stated.params, rest: null, result: entry.stated.result,
+          span } satisfies Extract<TypeTerm, { k: "function" }>]
+      : signatures(scope, parameters, entry.resultAs ? undefined : member.type, member, span, false, stated);
     if (forms.length !== 1 || forms.some(f => f.receiver))
       throw Error(`${entry.from}.${entry.name} is not one signature`);
     const type: TypeTerm = binders.length

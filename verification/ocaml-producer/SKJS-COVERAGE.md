@@ -145,7 +145,7 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 10 | Mutable bindings: unannotated `let`, `let x: T;`, parameter assignment, unannotated module constants read by functions | 52 | 42 | 0 | 22 | M | O L |
 | 11 | Compound / update assignment (`x++`, `+=`, `||=`, `??=`) — done (task E); array destructuring assignment done (task H) | 5 | 5 | 0 | 4 | S | O L |
 | 12 | ~~Destructuring, rest/default parameters~~ done (task H); left: slices, object rests, `let` patterns, generic alias rests | 15 (was 111) | 10 | 5 | 9 | M | P O L |
-| 13 | Library globals as values — calls and the reviewed overlay done (task K); left: `Array.isArray` (23), `new X(…)` (`Error` 23, `Array`, `Set`, `Map`, `Date`, `Promise`), well-known symbols (8), `Promise`/`JSON`/`Object` statics | 86 | | | 25 | M | D L |
+| 13 | Library globals as values — calls and the reviewed overlay done (tasks K, K2): `Array.isArray` and `instanceof Array`, `new Error`/`Array`/`Set`/`Map`/`Date`/`Promise`, `Promise`/`JSON`/`Object` statics, `Set`/`Map`/`Date` members; left: loops and spreads over a `Set` or `Map`, narrowing `unknown` to an array | 0 as first blocker (was 86) | | | | M | D L |
 | 14 | ~~Reads on primitives and unions, value-level `&&`/`||`~~ done (task L); left: dynamic string index writes, numeric keys on string indexes | 4 (was 48 + 20) | | | | M | O L |
 | 15 | ~~Equality against string/boolean literal singletons~~ done (task I); left: two objects without a field (no identity in the model) | 6 (was 46) | 6 | 0 | 2 | M | L |
 | 16 | ~~Discriminated-union narrowing~~ done (task I); left: a `let` holding a union object | 3 (was 28) | 3 | 0 | 1 | M | O L |
@@ -354,6 +354,28 @@ dropped), examples, what the extension needs.
     and unlisted statics: `Promise.resolve`/`reject`/`all` (generic;
     `resolve` adopts thenables), `JSON.stringify` (returns `undefined`,
     throws on bigints), `Object.keys`.
+
+    *Task K2 (second part, done): `Promise.reject` and `new Promise(e)` as
+    the intrinsics `%PromiseReject%` and `%NewPromise%` (`resolve` bounded
+    at the primitives, as `%AsyncReturn%` is); `JSON.parse` stated at
+    `unknown` (no reviver) and `JSON.stringify` at `JsonValue`, primitives
+    and dictionaries of them, which own nothing the host calls (arrays and
+    open records may own a callable `toJSON`); `Set<T>`, `Map<K, V>` and
+    `Date` read through an interface overlay (`interfaceOverlay`, listed
+    members as host-relative methods, `this` results as the receiver) with
+    stated constructors of arrays; `Date.now`; `x instanceof Array` as the
+    `isArray` test; the generic `Object.values`/`entries` at a dictionary;
+    `repeat`, `normalize(form?)`, `split`/`replace`/`replaceAll` of string
+    patterns and `toLocaleString(locales)`. 1,420 → 1,425 units, 917 → 922
+    functions, 141 → 142 whole files, none lost: `promise-value.ts` 2,
+    `date-constructor-string.ts#test`, `typedArrayIdentity`,
+    `testTernaryWithInstanceOf`. The units they reached and still refuse
+    are incompleteness: loops and spreads over a `Set` or `Map`
+    (`symbols.ts`, 4; `%Iterate%` is stated for arrays), `m.keys()`
+    (`MapIterator` not read), `instanceof Array` narrowing `unknown` (4; the
+    documented `isArray` limit), `Object.values` of `Closed<T>` (read as
+    `T`, an open record), and `new Date("2020-01", 1)`, which TypeScript
+    rejects. None is an SKJS unsoundness.*
 
 14. **Reads on primitives and unions; value-level `&&`/`||`.** *Done (task
     L): truthiness is a tag test (`ToBoolean`), so a condition that is not a
@@ -775,6 +797,7 @@ split by function.
 | O. Type forms | Index-signature forms, numeric field names, negative-literal types, `{}`, `object`, method signatures, `keyof`, indexed access, mapped types, intersections | 168 / 41 | `fragment-parse.mts` (types), `declaration-types.mts`, `Types/*` | — | N |
 | P. Search narrowing and async | Flow narrowing after assignment and refinement snapshots, `Promise`/async results and `await`, contextual literals into unions, function values into intersections | ~80 / 30 | `CertificateProducer.lean`, `ProgramTyping.lean`, `proposal.ml` | I | I, J |
 | Q. Module initialization and run setup (done) | A module with no function checked through its initialization unit; verdicts attributed only to units whose own code was checked; SKJS's test environment (stub imports through a per-unit `--project`, `__SKJS_show`, `process`, `StringRecord`, `Closed<T>` as `T`) | 450 / 98 verified (911 → 1,361 units, 860 → 880 functions, 96 → 136 whole files, none lost) | `SourceClaimJson.lean`, `check.mts`, `skjs-coverage.mts`, `skjs-environment/` | — | — |
+| K2. Library globals, second part (done) | `JSON.parse`/`stringify`, `Promise.reject`, `new Promise`, `Set`/`Map`/`Date` contracts and constructors, `Date.now`, `instanceof Array`, generic `Object.values`/`entries` at dictionaries, throwing string members and string-pattern `split`/`replace` | 5 units / 1 file newly verified (1,420 → 1,425 units, 917 → 922 functions, 141 → 142 whole files, none lost); the corpus reaches these globals in 16 units | `library-globals.mts`, `array-prototype.mts`, `intrinsics.mts`, `declaration-graph.mts`, `fragment-parse.mts`, `source.ml`, `proposal.ml`, `DeclarationGraph.lean` | K, S | K |
 | S. Throws (done) | A throw is an outcome: `throw`, `try`/`catch`/`finally` (handler edges, the `finally` compiled on each way out, returns included), `typeof` narrowing `unknown`; bigint division and exponent, `BigInt` of any number or string, and primitive radix/digit arguments read as declared | 59 units newly verified over the committed run (1,361 → 1,420, 880 → 917 functions, 136 → 141 whole files, none lost), of which about 38 in exception or bigint units and the rest from overlay work the committed run predated | `Calculus.lean`, `Safety.lean`, `ControlFlow.lean`, `ProgramTyping.lean`, `SourceExtraction.lean`, `fragment-parse.mts`, `library-globals.mts`, `array-prototype.mts`, `proposal.ml` | — | — |
 | R. Remaining source forms (done) | Enums (runtime, `const`, types, reverse mappings, number keys on records); object literals (numeric keys, literal spreads, construct-signature type literals; value spreads and accessors refused with reasons); optional chaining as one derived form; `.call`/`.apply`/`.bind` on module functions and `this` parameters as receivers; `%` exact on numbers and bigints | 80 / 19 verified, measured on 414fc86a before task S (1,361 → 1,441 units, 880 → 956 functions, 136 → 142 whole files, none lost) | `fragment-parse.mts`, `type-term.mts`, `declaration-graph.mts`, `annotate-source.mts`, `Fragment.lean`, `SourceExtraction.lean`, `Calculus.lean`, `ProgramTyping.lean`, `source.ml`, `proposal.ml` | D (bigint) | I (enum narrowing) |
 

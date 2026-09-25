@@ -1,5 +1,5 @@
-// `JSON.stringify` returns `undefined` for `undefined` and throws on a bigint,
-// though declared to return a string: it is not in the reviewed overlay.
-function encode(n: number): string {
-  return JSON.stringify(n);
+// `Math.random` is not in the reviewed overlay of library globals: a global
+// the standard library declares is read only through an entry that states it.
+function roll(): number {
+  return Math.random();
 }

@@ -22,10 +22,15 @@
  *
  * A global declared outside the standard library, such as Node's `process`,
  * is read as its declaration states, member by member (`selectGlobal`). */
-import type { TypeTerm } from "./declaration-types.mts";
-import { asyncCompleteName, asyncReturnName, promiseAllName } from "./intrinsics.mts";
+import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
+import { asyncCompleteName, asyncReturnName, newPromiseName, promiseAllName, promiseRejectName } from "./intrinsics.mts";
 
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
+
+/** A signature the overlay states: its binders, its parameters, its result. */
+export type Stated = { binders: string[]; params: TypeTerm[]; result: TypeTerm };
+/** A standard library interface applied to arguments, such as `Set<T>`. */
+export type LibraryReference = (name: string, args: TypeTerm[]) => TypeTerm;
 
 export type GlobalEntry = {
   /** The global variable, `declare var BigInt: BigIntConstructor`. */
@@ -39,7 +44,9 @@ export type GlobalEntry = {
   admit?: { parameter: string; safe: AtomName[] };
   /** The call is a test of the calculus, not a call of the member: the
    * parser writes `Array.isArray(e)` as the test `isArray` of `e`, whose
-   * narrowing Lean proves, and the member joins no value. */
+   * narrowing Lean proves, and the member joins no value. An entry without a
+   * member, whose signature is the variable's declaration, reads
+   * `e instanceof X` as the test. */
   test?: "isArray";
   /** The call is a call of this intrinsic (`intrinsics.mts`), which states
    * the same step: the parser writes `Promise.resolve(v)` as
@@ -49,12 +56,41 @@ export type GlobalEntry = {
    * parameters, which a call may not exceed, and its result. What the host
    * does at these arguments, stated as a type. For a property, its type is
    * the result. */
-  stated?: { binders: string[]; params: TypeTerm[]; result: TypeTerm };
+  stated?: Stated | ((library: LibraryReference) => Stated);
+  /** Declarations the stated signature names that no library declares, such
+   * as `JsonValue`: they join the document when the entry is read. */
+  definitions?: TypeDefinition[];
 };
 
 const at: [number, number] = [0, 0];
 const binder = (name: string): TypeTerm => ({ k: "binder", name, span: at });
 const atom = (name: AtomName): TypeTerm => ({ k: "atom", name, span: at });
+const optional = (type: TypeTerm): TypeTerm => ({ k: "union", parts: [type, atom("undefined")], span: at });
+const readonlyArray = (element: TypeTerm): TypeTerm => ({ k: "array", readonly: true, element, span: at });
+const array = (element: TypeTerm): TypeTerm => ({ k: "array", readonly: false, element, span: at });
+const dictionary = (value: TypeTerm): TypeTerm =>
+  ({ k: "object", fields: [], stringIndex: { readonly: true, value, span: at }, calls: [], span: at });
+
+/** The values `JSON.stringify` serializes to a string with no code of the
+ * client's run and no `undefined` returned: `null`, a Boolean, a number, a
+ * string, or a dictionary of such values,
+ *
+ *     type JsonValue = null | boolean | number | string | { readonly [k: string]: JsonValue };
+ *
+ * A dictionary owns no `[[proto]]` and every string key it owns holds a
+ * `JsonValue` (`dictViewT`), so no key it owns is callable and it inherits
+ * only what `Object.prototype` holds: `toJSON` is never called, and no
+ * getter runs. Arrays are left out: an array may own keys its type does not
+ * state (DESIGN.md, "Arrays may carry other own keys"), a callable `toJSON`
+ * among them, which `stringify` would call, and whose result may be
+ * `undefined`. A cycle throws, an outcome; a bigint would throw too, and is
+ * left out as a value the host never serializes. */
+const jsonValueIdentity: DeclarationIdentity = { module: "skjs/json", name: "JsonValue", span: at };
+const jsonValue: TypeTerm = { k: "reference", args: [], span: at,
+  reference: { name: jsonValueIdentity.name, span: at, arguments: [], target: jsonValueIdentity } };
+const jsonValueDefinition: TypeDefinition = { declaration: jsonValueIdentity, parameters: [], bases: [],
+  expression: { k: "union", span: at, parts: [atom("null"), atom("boolean"), atom("number"), atom("string"),
+    dictionary(jsonValue)] } };
 
 
 
@@ -92,16 +128,36 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // The values of those keys, and the key-value pairs: nothing is known of
   // them, `any` read as `unknown`, and each pair is a fresh array. Reading a
   // value runs an accessor's getter: the fragment writes none, and a host
-  // object's is assumed to return. The generic overloads,
-  // `values<T>(o: { [s: string]: T } | ArrayLike<T>)`, which TypeScript
-  // selects for a record type whose keys it does not bound, are not listed.
+  // object's is assumed to return.
   { global: "Object", member: "values", signature: "values(o: {}): any[];" },
   { global: "Object", member: "entries", signature: "entries(o: {}): [string, any][];" },
+  // The generic overloads, which TypeScript selects for a record type whose
+  // keys it does not bound, promise a `T` of every key's value. That is
+  // true of a dictionary, whose every own string key holds a `T`
+  // (`dictViewT`), and the parameter is stated at one: an open record may
+  // own further keys of other types (`invalid-object-values-record.ts`),
+  // and `ArrayLike<T>` is not read. Each pair is a fresh array.
+  { global: "Object", member: "values", signature: "values<T>(o: { [s: string]: T; } | ArrayLike<T>): T[];",
+    stated: { binders: ["T"], params: [dictionary(binder("T"))], result: array(binder("T")) } },
+  { global: "Object", member: "entries",
+    signature: "entries<T>(o: { [s: string]: T; } | ArrayLike<T>): [string, T][];",
+    stated: { binders: ["T"], params: [dictionary(binder("T"))],
+      result: array({ k: "tuple", readonly: false, required: [atom("string"), binder("T")], optional: [],
+        rest: null, span: at }) } },
   // A test of the array's identity, which the calculus makes itself
   // (`Tag.isArray`): true of exactly the objects that own an array store,
   // JavaScript's Array exotic objects. The declared guard, `arg is any[]`,
   // is not read: Lean narrows by the clauses of the tested value's type.
   { global: "Array", member: "isArray", signature: "isArray(arg: any): arg is any[];", test: "isArray" },
+  // `e instanceof Array`, entered by the variable's declaration: the same
+  // test. `Array` owns no `[Symbol.hasInstance]`, and `Function.prototype`'s
+  // cannot be replaced, so the operator walks `e`'s prototype chain for
+  // `Array.prototype`. That finds it exactly for the arrays, under two
+  // assumptions of the host: every array is of the program's realm, and no
+  // object inherits from `Array.prototype` but an array (the fragment makes
+  // none: `class extends Array` and `Object.create` are refused, and it
+  // cannot name `Array.prototype`).
+  { global: "Array", signature: "Array: ArrayConstructor", test: "isArray" },
   // `new Array()` and `new Array<T>()` are a fresh empty array, which is a
   // `T[]` at every `T`: the non-generic declaration's `any[]` states less
   // than that. An argument is refused: a single number is a length, and the
@@ -132,6 +188,63 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   { global: "Promise", member: "all",
     signature: "all<T extends readonly unknown[] | []>(values: T): Promise<{ -readonly [P in keyof T]: Awaited<T[P]>; }>;",
     intrinsic: promiseAllName },
+  // `new Set<T>(xs)` is a fresh set of the array's elements, `new Set<T>()`
+  // an empty one, at every `T`. An array's iterator is the host's, which
+  // runs no client code; any other iterable's is the client's, so the
+  // parameter is stated at an array (`Set<T>`: `array-prototype.mts`).
+  ...["new <T = any>(values?: readonly T[] | null): Set<T>;", "new <T>(iterable?: Iterable<T> | null): Set<T>;"]
+    .map((signature): GlobalEntry => ({ global: "Set", signature,
+      stated: library => ({ binders: ["T"], params: [optional(readonlyArray(binder("T")))],
+        result: library("Set", [binder("T")]) }) })),
+  // `new Map<K, V>(es)` is a fresh map of the array's pairs, each read at
+  // its indices 0 and 1, and `new Map()` an empty one, at every `K` and `V`.
+  ...["new (): Map<any, any>;", "new <K, V>(entries?: readonly (readonly [K, V])[] | null): Map<K, V>;",
+    "new <K, V>(iterable?: Iterable<readonly [K, V]> | null): Map<K, V>;"]
+    .map((signature): GlobalEntry => ({ global: "Map", signature,
+      stated: library => ({ binders: ["K", "V"],
+        params: [optional(readonlyArray({ k: "tuple", readonly: true, required: [binder("K"), binder("V")],
+          optional: [], rest: null, span: at }))],
+        result: library("Map", [binder("K"), binder("V")]) }) })),
+  // `new Date()` is now; `new Date(v)` converts a number or a string without
+  // client code, but a `Date` argument, which any object meeting the
+  // interface is, is converted by its own `valueOf` or `toString`: it is
+  // stated at the primitives. With several numbers, each is a component.
+  // An invalid date is a `Date` all the same, whose getters give `NaN`.
+  { global: "Date", signature: "new (): Date;" },
+  ...["new (value: number | string): Date;", "new (value: number | string | Date): Date;"]
+    .map((signature): GlobalEntry => ({ global: "Date", signature,
+      stated: library => ({ binders: [], params: [{ k: "union", parts: [atom("number"), atom("string")], span: at }],
+        result: library("Date", []) }) })),
+  { global: "Date",
+    signature: "new (year: number, monthIndex: number, date?: number, hours?: number, minutes?: number, seconds?: number, ms?: number): Date;" },
+  // The current time, a number.
+  { global: "Date", member: "now", signature: "now(): number;" },
+  // `JSON.parse(text)` is a fresh value built from the text, or a
+  // SyntaxError: nothing is stated of it, `any` read as `unknown`. A
+  // reviver is client code the host would call on every member, and whose
+  // results replace them: the call is read with the text only.
+  { global: "JSON", member: "parse",
+    signature: "parse(text: string, reviver?: (this: any, key: string, value: any) => any): any;",
+    stated: { binders: [], params: [atom("string")], result: atom("unknown") } },
+  // `JSON.stringify(v)` returns `undefined` for `undefined`, a symbol or a
+  // function, calls a `toJSON` it finds, and throws on a bigint or a cycle;
+  // at a `JsonValue` it does none of the first two and returns a string. A
+  // replacer is client code: the call is read with the value only.
+  { global: "JSON", member: "stringify",
+    signature: "stringify(value: any, replacer?: (this: any, key: string, value: any) => any, space?: string | number): string;",
+    stated: { binders: [], params: [jsonValue], result: atom("string") }, definitions: [jsonValueDefinition] },
+  // `%PromiseReject%`: a promise rejected with the reason, whose await
+  // throws it, an outcome; it settles to no value, so it is a promise of
+  // every type. The declared `any` is read as `unknown`: nothing runs on it.
+  { global: "Promise", member: "reject", signature: "reject<T = never>(reason?: any): Promise<T>;",
+    intrinsic: promiseRejectName },
+  // `%NewPromise%`: the executor is called at once with the promise's
+  // resolving functions, and a throw out of it rejects the promise. The
+  // declared `resolve` adopts a thenable (`T | PromiseLike<T>`); stated, it
+  // takes a primitive, `%AsyncReturn%`'s bound, on which it settles.
+  { global: "Promise",
+    signature: "new <T>(executor: (resolve: (value: T | PromiseLike<T>) => void, reject: (reason?: any) => void) => void): Promise<T>;",
+    intrinsic: newPromiseName },
 ];
 
 /** The entry for `global`'s `member` (absent: its call) declared as `text`. */

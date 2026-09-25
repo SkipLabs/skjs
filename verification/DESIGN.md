@@ -955,7 +955,15 @@ modeling choices; they do not replace proof.
   contract, a premise as `[[Array.prototype]]` is. The realm's
   `String.prototype` and `Object.prototype` own no numeric key, so a
   string's index that is not an array index reads `undefined`
-  ([Primitive members](#primitive-members)).
+  ([Primitive members](#primitive-members)). `String.prototype` owns no
+  `[Symbol.split]` or `[Symbol.replace]`, so `split` and `replace` of a
+  string pattern run no client code.
+- `Set.prototype`, `Map.prototype` and `Date.prototype` hold the natives the
+  interface overlay lists ([Library collections and dates](#library-collections-and-dates)):
+  a value the host constructs as a `Set`, `Map` or `Date`, invoked through
+  a listed member, behaves as its reviewed signature states. A unit using
+  them reads them through its values' declared types and the stated
+  constructors, premises as a global's selection is.
 - An ambient declaration the module writes, `declare function f(...): R`,
   `declare const x: T` or `declare class C`, holds of the value the running
   environment supplies under that name (**Ambient declarations** in
@@ -980,12 +988,19 @@ modeling choices; they do not replace proof.
   checks the native code; the selection enters every result as a premise, the
   global's input slot, as for an imported value's declared type.
   `new Array()` returns a fresh empty array and `new Error(m)`, with a string
-  `m`, an object owning `message` at it, as their stated signatures say.
+  `m`, an object owning `message` at it, as their stated signatures say;
+  `new Set(xs)`, `new Map(es)` and `new Date(…)` a fresh set, map or date;
+  `JSON.parse` a value or a `SyntaxError`; `JSON.stringify` of a
+  `JsonValue` a string, calling nothing, since `Object.prototype` has no
+  `toJSON`; the generic `Object.values` and `Object.entries` of a
+  dictionary its values at their index type.
   `Array.isArray` is no premise but the calculus's test $\mathsf{isArray}$:
   what is assumed is that the global `Array`'s `isArray` is the native one,
   and that the objects owning the array store key are JavaScript's arrays,
   which holds of every object the model allocates and is assumed of every
-  object a program receives.
+  object a program receives. `e instanceof Array` is the same test, which
+  assumes further that every array a program receives is of its realm and
+  that no object but an array inherits from `Array.prototype`.
 - In the SKJS test environment ([Global values](#modules-and-code-units),
   "The SKJS test environment"), SKJS's import stubs describe the modules a
   test imports, and `skjs-environment.d.ts` the host's `process`,
@@ -1011,7 +1026,10 @@ modeling choices; they do not replace proof.
   meeting them, as for an imported value's declared type. `Promise.resolve`
   meets the last two, and `Promise.all` meets `%PromiseAll%`: an array of
   promises gives a promise settling to the array of their values
-  ([Library globals](#library-globals)).
+  ([Library globals](#library-globals)). `Promise.reject` meets
+  `%PromiseReject%`, a promise that rejects, and `new Promise` meets
+  `%NewPromise%`: it calls the executor at once with functions that settle
+  the promise to the primitive given, or reject it.
 - A `for...of` loop over an array steps the array's iterator
   ([Loops over arrays](#loops-over-arrays)): `%Iterate%` at its declared
   signature is an input slot of every unit with such a loop, yielding each
@@ -3102,8 +3120,12 @@ and soundness needs, one entry per member:
   no more than that.
 - *Dropped overloads.* An overload whose declared result the library does not
   deliver is removed. `reduce(cb): T` only throws on an empty array, which is
-  an outcome ([Throws](#throws)), so it could now be kept; only
-  `reduce(cb, init)` is listed so far.
+  an outcome ([Throws](#throws)), so soundness would admit it; it is still not
+  listed, for a reason of the reader alone: it would be a second signature of
+  a generic member beside `reduce<U>(cb, init: U): U`, and a member is one
+  scheme with one signature here (the producer instantiates one quantified
+  signature, and a scheme's signatures share its binders, of which
+  `reduce(cb)` uses none of its own).
 
 Each entry records the text of the TypeScript signature it was reviewed
 against; a test compares it with the signature TypeScript reads, so a changed
@@ -3231,11 +3253,36 @@ it from `Object`). A member that throws on some argument its declaration
 admits is read as declared, since a throw is an outcome
 ([Throws](#throws)): `toString(radix)` of a number or bigint throws outside 2
 to 36, `toFixed` and `toExponential` outside 0 to 100 digits, `toPrecision`
-outside 1 to 100 (`primitive-radix`). `locales` and `options` of
-`toLocaleString` are dropped, so a call must omit them. Members that name
-`RegExp` or an `any` callback (`replace`, `match`, `search`, `split`) are
-not listed, nor, yet, `repeat` and `normalize(form?: string)`, which only
-throw on some arguments and could now be. The
+outside 1 to 100 (`primitive-radix`), `repeat` of a negative or infinite
+count and `normalize(form?: string)` of a form that is none of the four
+(`primitive-string-members`).
+
+An entry may *state* its signature instead of reading the declared one, as
+a library global's may ([Library globals](#library-globals)): parameters
+that are a part of the declared ones on which the host runs no client code,
+and the result the host returns. With $\omega$ the entry of member $m$ of the
+prototype of primitive $p$:
+
+$$
+\frac{\omega\in\Omega_p\quad \omega.\mathit{text}=\mathsf{text}(m)\quad
+      \omega.\mathit{stated}=(\vec P)\Rightarrow R}
+     {\llbracket m\rrbracket_\omega=(\mathsf{this}:p,\ \vec P)\Rightarrow R}\ \textsc{proto-stated}
+$$
+
+`split(separator: string | RegExp, limit?: number): string[]`,
+`replace(searchValue: string | RegExp, replaceValue: string)` and
+`replaceAll` are stated at a string pattern: the host looks up the
+pattern's `[Symbol.split]` or `[Symbol.replace]`, which for a string
+primitive ends at `String.prototype`, owning none, and `$` patterns in a
+string replacement are string operations; `split` gives a fresh `string[]`.
+`toLocaleString`'s `locales` is stated at
+$\mathsf{string}\mid\mathsf{readonly}\ \mathsf{string}[\,]\mid\mathsf{undefined}$:
+the host reads an array of tags by `length` and index, each a string, and a
+malformed tag is a `RangeError`. Its `options`, an `Intl` interface whose
+values the host converts with `ToString` and `ToNumber`, which run an
+object's own methods, is not stated, so a call must omit it. Not listed:
+`match`, `search`, and `replace` with a replacer, which only a `RegExp` or
+an `any` callback serves. The
 parser asks TypeScript which receivers of member reads are primitives, and
 each primitive so read brings its contract into the declaration document and
 its realm prototype into the module's values, at the name
@@ -3246,8 +3293,7 @@ its realm prototype into the module's values, at the name
 
 **Open.** A method call on a union of primitives (`(x: string | number).toString()`)
 reads a union of members whose receivers differ; the call rule needs one
-callee contract its receiver meets, so such a call is refused. `split`, whose
-result is an array, needs `ArrayProto` beside `StringProto`.
+callee contract its receiver meets, so such a call is refused.
 
 ### Library types
 
@@ -3399,6 +3445,16 @@ weaker signature, which is what is actually true.
 | `new Error` | `new (message?: string): Error` (ES5), `new (message?: string, options?: ErrorOptions): Error` (ES2022) | stated as $\mathsf{new}(\mathit{message}:\mathsf{string})\Rightarrow\{\mathsf{readonly}\ \mathit{message}:\mathsf{string}\}$: the message is own; `name`, and a message not given, are `Error.prototype`'s, which the model does not hold, so an `Error`, a record owning both, is not claimed (`invalid-error-name.ts`, `invalid-error-no-message.ts`) |
 | `Promise.resolve` | `resolve<T>(value: T): Promise<Awaited<T>>`, `resolve(): Promise<void>` | the intrinsics `%AsyncReturn%` and `%AsyncComplete%`, below: a promise settled to a primitive, or to `undefined` |
 | `Promise.all` | `all<T extends readonly unknown[] \| []>(values: T): Promise<{ -readonly [P in keyof T]: Awaited<T[P]>; }>` | the intrinsic `%PromiseAll%`, below: an array of promises gives a promise of the array of their values |
+| `Promise.reject` | `reject<T = never>(reason?: any): Promise<T>` | the intrinsic `%PromiseReject%`, below: a promise of every type, whose await throws the reason |
+| `new Promise` | `new <T>(executor: (resolve: (value: T \| PromiseLike<T>) => void, reject: (reason?: any) => void) => void): Promise<T>` | the intrinsic `%NewPromise%`, below: `resolve` stated at a primitive, which it settles to without adopting |
+| `x instanceof Array` | `Array: ArrayConstructor` (the variable's declaration) | the test $\mathsf{isArray}$, as `Array.isArray` is, below |
+| `Object.values`, `Object.entries` (generic) | `values<T>(o: { [s: string]: T; } \| ArrayLike<T>): T[]`, `entries<T>(o: { [s: string]: T; } \| ArrayLike<T>): [string, T][]` | stated as $\forall T.\ (o:\{\mathsf{readonly}\ [k:\mathsf{string}]:T\})\Rightarrow T[\,]$ and $\ldots\Rightarrow[\mathsf{string},T][\,]$: a dictionary's every own string key holds a `T` (`dictViewT`); an open record may own others (`invalid-object-values-record.ts`); `ArrayLike<T>` is not read |
+| `JSON.parse` | `parse(text: string, reviver?: …): any` | stated as $(\mathit{text}:\mathsf{string})\Rightarrow\mathsf{unknown}$: a fresh value of which nothing is stated, or a `SyntaxError`; a reviver is client code the host calls on every member, and is not admitted (`json-parse-reviver-refused.ts`) |
+| `JSON.stringify` | `stringify(value: any, replacer?: …, space?: string \| number): string` | stated as $(\mathit{value}:\mathsf{JsonValue})\Rightarrow\mathsf{string}$, below |
+| `new Set` | `new <T = any>(values?: readonly T[] \| null): Set<T>`, `new <T>(iterable?: Iterable<T> \| null): Set<T>` | stated as $\forall T.\ \mathsf{new}(\mathsf{readonly}\ T[\,]\mid\mathsf{undefined})\Rightarrow\mathsf{Set}\langle T\rangle$: a fresh set of the array's elements, read by the host's array iterator; another iterable's iterator is client code |
+| `new Map` | `new (): Map<any, any>`, `new <K, V>(entries?: readonly (readonly [K, V])[] \| null): Map<K, V>`, `new <K, V>(iterable?: Iterable<readonly [K, V]> \| null): Map<K, V>` | stated as $\forall K\,V.\ \mathsf{new}(\mathsf{readonly}\ (\mathsf{readonly}\ [K,V])[\,]\mid\mathsf{undefined})\Rightarrow\mathsf{Map}\langle K,V\rangle$: each pair read at its indices 0 and 1; an empty map is at every `K` and `V` |
+| `new Date` | `new (): Date`, `new (value: number \| string): Date` (ES5), `new (value: number \| string \| Date): Date` (ES2015), `new (year: number, monthIndex: number, date?: number, …): Date` | the first and last as declared; the one-argument forms stated at $\mathsf{number}\mid\mathsf{string}$: an object argument, which any value meeting the `Date` interface may be, is converted by its own `valueOf` or `toString` (`invalid-date-object-argument.ts`); an invalid date is a `Date` |
+| `Date.now` | `now(): number` | as declared |
 
 **Stated signatures and constructs.** Where the declaration states less
 than the host does (`any`) or more (a parameter at which the host
@@ -3427,17 +3483,69 @@ with at most those arguments, each in its parameter, returns a member of the
 result. Replacing a parameter by a subset of what the host accepts and the
 result by what the host is known to return keeps it true of the host.
 
+A method is read as its entry states it too, a generic statement as a
+scheme over its binders (a readonly member, as a generic interface method
+is), selected alone for its member:
+
+$$
+\frac{\mathit{lib}(x)\quad \omega\in\Omega\quad \omega=(x,\ m,\ \mathsf{text}(s),\ \mathsf{stated}\ \forall\vec X.\ (\vec P)\Rightarrow R)\quad
+      |\vec a|\le|\vec P|\ \text{for each}\ x.m(\vec a)\ \text{selecting}\ s}
+     {\llbracket s\rrbracket_\Omega=\forall\vec X.\ (\mathsf{this}:\mathsf{self},\ \vec P)\Rightarrow R}\ \textsc{library-stated}
+$$
+
+A statement may name a standard library interface, `Set<T>` for `new Set`,
+which then joins the graph as any reference does (read through its own
+overlay, [Library collections and dates](#library-collections-and-dates)),
+and a declaration no library has, which joins the document with the entry:
+`JsonValue`, in the module `skjs/json`,
+
+$$
+\mathsf{JsonValue}=\mathsf{null}\mid\mathsf{boolean}\mid\mathsf{number}\mid\mathsf{string}\mid\{\mathsf{readonly}\ [k:\mathsf{string}]:\mathsf{JsonValue}\}
+$$
+
+`JSON.stringify(v)` returns `undefined` for `undefined`, a symbol or a
+function, calls a callable `toJSON` it finds on `v` or on an object inside
+it, and throws on a bigint or a cycle. At a `JsonValue` it does none of the
+first two, and its throws are outcomes: a dictionary owns no `[[proto]]`
+and every string key it owns holds a `JsonValue` (`dictViewT`), so no key
+it owns is callable, and it inherits only what `Object.prototype` holds,
+which has no `toJSON`. Arrays are not `JsonValue`s: an array may own keys its
+type does not state ([Arrays may carry other own keys](#arrays-may-carry-other-own-keys)),
+a callable `toJSON` among them, which the host would call, and whose result
+may be `undefined` (`invalid-json-stringify-array.ts`); an interface's
+value may own one too (`invalid-json-stringify-record.ts`). A replacer and a
+`space` are not admitted.
+
 **Tests.** An entry may read a member as a test of the calculus instead of a
 value (`test`): its calls are lowered to the test, and the member joins no
-value. `Array.isArray` is the one such entry. Its call, with one argument and
+value. `Array.isArray` is one such entry. Its call, with one argument and
 no type arguments, where TypeScript binds `Array` to the standard library's
-global, is the test $\mathsf{isArray}$ of its argument:
+global, is the test $\mathsf{isArray}$ of its argument. An entry without a
+member, reviewed against the variable's declaration, reads the global as
+the right operand of `instanceof` as the same test:
 
 $$
 \frac{\mathit{lib}(\mathtt{Array})\quad \omega\in\Omega\quad
       \omega=(\mathtt{Array},\ \mathtt{isArray},\ \mathsf{text}(s),\ \mathsf{test}\ \mathsf{isArray})}
      {\llbracket\mathtt{Array.isArray}(e)\rrbracket=\mathsf{test}\ \mathsf{isArray}\ \llbracket e\rrbracket}\ \textsc{library-test}
+\qquad
+\frac{\mathit{lib}(\mathtt{Array})\quad \omega\in\Omega\quad
+      \omega=(\mathtt{Array},\ \cdot,\ \mathsf{text}(d),\ \mathsf{test}\ \mathsf{isArray})}
+     {\llbracket e\ \mathtt{instanceof}\ \mathtt{Array}\rrbracket=\mathsf{test}\ \mathsf{isArray}\ \llbracket e\rrbracket}\ \textsc{library-instanceof}
 $$
+
+with $d$ the declaration `Array: ArrayConstructor`. `Array` owns no
+`[Symbol.hasInstance]`, and `Function.prototype`'s is neither writable nor
+configurable, so `e instanceof Array` walks `e`'s prototype chain for the
+realm's `Array.prototype`. That finds it exactly for the arrays under two
+assumptions of the host ([What remains assumed](#what-remains-assumed)):
+every array a program receives is of its realm (an array from another realm
+passes `Array.isArray` and fails `instanceof`), and no object but an array
+inherits from `Array.prototype`. The fragment makes no such object: `class
+extends Array` and `Object.create` are refused, and it cannot name
+`Array.prototype`. Everything said below of `Array.isArray` holds of it
+(`array-instanceof.ts`, `invalid-instanceof-else.ts`); `instanceof` against
+any other right operand is not this rule.
 
 $\mathsf{isArray}$ holds of a plain object owning the array store key
 $\sigma$ ([SEMANTICS.md](SEMANTICS.md)). That is `Array.isArray`'s meaning:
@@ -3498,34 +3606,119 @@ each adopted; stated, it takes promises (`invalid-promise-all-values.ts`).
 Reading these members as intrinsics, not as generic members of the global,
 also keeps to the one statement of adoption the async rules make.
 
-**Refused, by decision.** `JSON.stringify` returns `undefined` for
-`undefined` and functions, which its declared `string` does not admit (its
-throws on bigints and cycles are outcomes, [Throws](#throws)); `JSON.parse`
-returns `any`, which says nothing true of the value (its throw on text that
-is not JSON is an outcome); the generic
-`values<T>(o: { [s: string]: T } | ArrayLike<T>): T[]` and its `entries`
-twin, which TypeScript selects for a record type written as a literal,
-promise `T` of keys the record type does not bound (their dictionary
-parameter is sound, but a reader of generic global methods and of a
-parameter restated without `ArrayLike` is not built). None is listed.
-`Promise.reject(r)`, and `new Promise(executor)`, whose executor may call
-its `reject`, make a promise that rejects, and awaiting it throws, which is
-now an outcome of the calculus ([Throws](#throws)); they are not listed yet
-(`promise-reject-refused.ts`), nor `JSON.parse` stated at `unknown` or
-`JSON.stringify` at a `Json` parameter. `new Set(xs)` and `new Map(es)` are not
-listed: their results, `Set<T>` and `Map<K, V>`, are library interfaces the
-declaration reader does not read (`add` returns `this`), and would need an
-overlay of their own, as `Array.prototype` has. `new Array(n)` and
-`new Array<T>(n)` make an array of length `n` with holes, which an array type
-here promises it has not ([The array prototype](#the-array-prototype), dense
-arrays), and `new Array(x)` with one argument is that whenever `x` is a
-number, so `new Array` is read without arguments only
-(`array-length-refused.ts`).
+`Promise.reject(r)` and `new Promise(executor)` are two more:
+
+$$
+\begin{aligned}
+\mathtt{\%PromiseReject\%}&:\forall T.\ (\mathit{reason}:\mathsf{unknown})\Rightarrow\mathsf{Promise}\langle T\rangle\\
+\mathtt{\%NewPromise\%}&:\forall T\le P.\ (\mathit{executor}:(\mathit{resolve}:(T)\Rightarrow\mathsf{void},\ \mathit{reject}:(\mathsf{unknown})\Rightarrow\mathsf{void})\Rightarrow\mathsf{void})\Rightarrow\mathsf{Promise}\langle T\rangle
+\end{aligned}
+$$
+
+with $P$ `%AsyncReturn%`'s bound. A rejected promise settles to no value:
+awaiting it throws its reason, an outcome ([Throws](#throws)), so it is a
+promise of every type (`library-promise-reject.ts`). `new Promise` calls the
+executor at once with the promise's resolving functions, and a throw out of
+it rejects the promise. The declared `resolve` takes `T | PromiseLike<T>`
+and adopts a thenable; stated at $T\le P$, it settles to its argument, as an
+async function's return does (`library-new-promise.ts`,
+`invalid-new-promise-object.ts`). A construct, `new x(…)`, is lowered to its
+intrinsic as a call is:
+
+$$
+\frac{\mathit{lib}(x)\quad \omega\in\Omega\quad
+      \omega=(x,\ \cdot,\ \mathsf{text}(s),\ \mathsf{intrinsic}\ \iota)\quad s\ \text{a construct signature}}
+     {\llbracket \mathsf{new}\ x(\vec e)\rrbracket=\iota(\llbracket\vec e\rrbracket)}\ \textsc{library-construct-intrinsic}
+$$
+
+Type arguments written at a call or construct read as an intrinsic are
+TypeScript's instance of the declaration: the intrinsic's instance is
+proposed from the actuals and the expected type, and Lean checks it.
+
+**Refused, by decision.** What remains unlisted, each for its reason:
+
+- `new Array(n)` and `new Array<T>(n)` make an array of length `n` with
+  holes, which an array type here promises it has not
+  ([The array prototype](#the-array-prototype), dense arrays), and
+  `new Array(x)` with one argument is that whenever `x` is a number, so
+  `new Array` is read without arguments only (`array-length-refused.ts`).
+- A `JSON.parse` reviver, and a `JSON.stringify` replacer, are client code
+  the host calls on every member, and whose results replace the members
+  (`json-parse-reviver-refused.ts`). `JSON.stringify` of an array, or of an
+  open record, may call a `toJSON` it owns (above).
+- `new Set(it)` and `new Map(it)` of an iterable that is not an array run
+  its iterator, client code; `new Date(d)` of an object runs its `valueOf`
+  (`invalid-date-object-argument.ts`).
+- A global both constructed and read through its members, `new Date()`
+  beside `Date.now()` in one module, is a class value with members, which
+  has no clause (`date-construct-and-now-refused.ts`); either alone is read.
+  A global both called and read through a method, `Symbol()` beside
+  `Symbol.for`, is a callable object with methods, likewise
+  (`library-global-call-and-method.ts`).
+- Any other signature of a library global is not reviewed and is refused as
+  such (`library-global-unreviewed.ts`, `Math.random`).
 
 **Trust.** Each entry is an assumption on the host's implementation, as
 `ArrayProto` is ([What remains assumed](#what-remains-assumed)): the
 selection enters the module as a global value, an input the result is
 relative to.
+
+### Library collections and dates
+
+**Principle.** `Set<T>`, `Map<K, V>` and `Date` are standard library
+interfaces whose declarations the reader cannot take as they stand: `add`
+and `set` return `this`, `Date` has overloads that take locales and hints,
+and every member is a native method of the realm's prototype. As for
+`Array.prototype` ([The array prototype](#the-array-prototype)), they are read
+through the one overlay mechanism ([`array-prototype.mts`](tools/array-prototype.mts),
+`interfaceOverlay`): a reference to one of them, from the client or from a
+statement of [Library globals](#library-globals), is the interface with only
+its listed members, each read from the one declaration among the merged
+parts whose text is the reviewed one.
+
+$$
+\frac{\mathit{lib}(I)\quad \Omega_I=[\omega_1,\ldots,\omega_n]\quad
+      m_j\ \text{the member of}\ I\ \text{with}\ \mathsf{text}(m_j)=\omega_j.\mathit{text}}
+     {\llbracket I\langle\vec X\rangle\rrbracket_\Omega=\{k_1:\llbracket m_1\rrbracket_{\omega_1};\ \ldots;\ k_n:\llbracket m_n\rrbracket_{\omega_n}\}}\ \textsc{library-interface}
+$$
+
+A member the project's library does not declare is left out, and so are
+every other member, overload and base: a supertype of the declared
+interface. A method is a host-relative member
+([Method members are host-relative](#method-members-are-host-relative)):
+invoked on the object it is read from, at run time its prototype's, it
+behaves as its signature states. $\llbracket m\rrbracket_\omega$ drops
+`thisArg`, reads a `this` result as the receiver $\mathsf{self}$, the
+interface at its own parameters (`add(value: T): this` returns the set it
+is called on), and `[Symbol.iterator]()`'s `SetIterator<T>` or
+`MapIterator<[K, V]>` as `Iterator<T>` or `Iterator<[K, V]>`, which they
+extend. A property is a readonly view: `size` is an accessor of the
+prototype, and reading it gives a number.
+
+**Members.** `Set<T>`: `add`, `clear`, `delete`, `forEach`, `has`, `size`,
+`[Symbol.iterator]`. `Map<K, V>`: `clear`, `delete`, `forEach`,
+`get(key: K): V | undefined` (TypeScript's own: a key the map lacks reads
+nothing), `has`, `set`, `size`, `[Symbol.iterator]`. `Date`: `valueOf`,
+`getTime` and the other getters, each a number (`NaN` of an invalid date),
+`setTime`, `toString`, `toISOString` (a `RangeError` of an invalid date, an
+outcome). The collections hold their elements in internal slots the model
+does not see: a member's contract is what it returns. `Set<T>` and
+`Map<K, V>` are invariant, since `add` and `set` take their parameters and
+`has`, `get` and `forEach` give them (`invalid-set-covariant.ts`, where
+TypeScript's bivariant methods admit the widening). Their constructors are
+stated in [Library globals](#library-globals) (`library-collections.ts`,
+`library-date.ts`).
+
+**Not listed.** `keys`, `values` and `entries`, whose `SetIterator` and
+`MapIterator` no rule reads yet; `[Symbol.toStringTag]`; `Date`'s
+`[Symbol.toPrimitive]`, whose overloads take hints, and its members taking
+locales; `ReadonlySet` and `ReadonlyMap`. A `for...of` over a `Set` or `Map`
+is refused: `%Iterate%` is stated for arrays
+([Loops over arrays](#loops-over-arrays), `set-for-of-refused.ts`).
+
+**Trust.** The realm's `Set.prototype`, `Map.prototype` and
+`Date.prototype` hold these natives, unmodified
+([What remains assumed](#what-remains-assumed)).
 
 ### Async functions and await
 
@@ -3564,8 +3757,9 @@ $$
 \end{aligned}
 $$
 
-The reviewed overlay reads `Promise.resolve` as the last two and
-`Promise.all` as a fourth, `%PromiseAll%`
+The reviewed overlay reads `Promise.resolve` as the last two,
+`Promise.all` as a fourth, `%PromiseAll%`, and `Promise.reject` and
+`new Promise` as `%PromiseReject%` and `%NewPromise%`
 ([Library globals](#library-globals), intrinsics).
 
 A generic intrinsic is instantiated at each call by the INSTANCES rule of
@@ -3661,9 +3855,15 @@ and steps it. Leaving early calls the iterator's `return` when it has one,
 and the array iterator has none, so an early exit runs nothing. `%Iterate%`
 states that behavior; see [What remains assumed](#what-remains-assumed).
 
-**Refused.** A loop over anything but an array (a string, a `Map`, any other
-iterable), a destructuring, `let` or `var` binding, `for await`, a loop at the
-top level of a module (as for `while`) or inside a closure.
+**Refused.** A loop over anything but an array (a string, a `Set`, a `Map`,
+any other iterable), a destructuring, `let` or `var` binding, `for await`, a
+loop at the top level of a module (as for `while`) or inside a closure. A
+client's iterable is refused for a reason of soundness: leaving its loop
+early calls its iterator's `return`, client code the lowering does not
+model. The host's `Set` and `Map` iterators have no `return`, so stating
+`%Iterate%` at them too would be sound; it is one intrinsic, generic in one
+element over one parameter type, and the loop's lowering names it alone
+(`set-for-of-refused.ts`).
 
 ### Patterns
 

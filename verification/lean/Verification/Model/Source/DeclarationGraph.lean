@@ -1044,18 +1044,21 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
       match isTopClaim part, claimAtoms part with
       | false, [atom] => some atom
       | _, _ => none
+    -- Construct signatures conjoin as call signatures do: an overloaded
+    -- constructor, `new Date()` and `new Date(v)`, meets each.
     let atoms := parts.toList.filterMap single
     let shape := atoms.head?.bind fun atom => (atom.getObjVal? "a").toOption
     if atoms.length == parts.size && !atoms.isEmpty &&
         atoms.all (fun atom => (atom.getObjVal? "a").toOption == shape) &&
-        (shape == some (.str "record") || shape == some (.str "function")) then
+        (shape == some (.str "record") || shape == some (.str "function") ||
+          shape == some (.str "constructor")) then
       return claimType [atoms.head!.setObjVal! "and" (toJson atoms.tail)]
     -- Operands that are ground once the binders an instantiation fixes are
     -- read, `T & DepSafe` at `T := Todo`, meet as graph rows: the one
     -- meaning every intersection has (`meetRow`).
     if parts.isEmpty then throw "empty intersection"
     if parts.any hasRigidParameter then
-      throw "an intersection of a type parameter with anything but records or functions is outside the fragment"
+      throw "an intersection of a type parameter with anything but records, functions or constructors is outside the fragment"
     return graphClaim (← meetRow (← parts.toList.mapM fun part =>
       (Fragment.translate part : SourceTypes.Lowering _)))
   | "array" =>

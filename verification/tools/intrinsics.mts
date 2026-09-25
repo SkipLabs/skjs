@@ -27,7 +27,11 @@
  * settled to `v`, `Promise.resolve()` is `%AsyncComplete%()`, and
  * `Promise.all(ps)` is `%PromiseAll%(ps)`: a promise of the array of what
  * the promises settle to, in order, settling once each has. The array is
- * fresh and owns no `then`, so it is not adopted. */
+ * fresh and owns no `then`, so it is not adopted. `Promise.reject(r)` is
+ * `%PromiseReject%(r)`, a promise rejected with `r`, whose await throws, and
+ * `new Promise(executor)` is `%NewPromise%(executor)`: the executor is
+ * called at once with the promise's resolving functions, and resolving
+ * settles the promise to a primitive, as `%AsyncReturn%` does. */
 import type { TypeTerm } from "./declaration-types.mts";
 
 export const intrinsicModule = "skjs/intrinsics";
@@ -37,6 +41,8 @@ export const asyncCompleteName = "%AsyncComplete%";
 export const iterateName = "%Iterate%";
 export const forInName = "%ForIn%";
 export const promiseAllName = "%PromiseAll%";
+export const promiseRejectName = "%PromiseReject%";
+export const newPromiseName = "%NewPromise%";
 
 type Signature = Extract<TypeTerm, { k: "function" }>;
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
@@ -68,6 +74,17 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm):
     { name: promiseAllName, typeParams: [{ name: "T", bound: null }],
       type: fn([{ k: "array", readonly: true, element: promise(binder), span }],
         promise({ k: "array", readonly: false, element: binder, span })) },
+    // A promise rejected with the reason: awaiting it throws, so it is a
+    // promise of every type, never settling to a value.
+    { name: promiseRejectName, typeParams: [{ name: "T", bound: null }],
+      type: fn([atom("unknown")], promise(binder)) },
+    // `new Promise(executor)`: the executor runs at once, given functions
+    // that settle the promise to their argument, or reject it; a throw out
+    // of the executor rejects it. The bound is `%AsyncReturn%`'s: resolving
+    // with a thenable would adopt it instead of settling to it.
+    { name: newPromiseName, typeParams: [{ name: "T", bound: primitive }],
+      type: fn([fn([fn([binder], atom("void")), fn([atom("unknown")], atom("void"))], atom("void"))],
+        promise(binder)) },
     { name: forInName, typeParams: [],
       type: fn([atom("unknown")], { k: "array", readonly: true, element: atom("string"), span }) },
   ];

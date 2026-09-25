@@ -211,6 +211,9 @@ let rec source_type ctx j =
     let callable = function
       | Atoms [Shape {fields=[];string_index=None;calls;elements=None}] when calls <> [] -> Some calls
       | _ -> None in
+    let constructible = function
+      | Atoms [Ctors signatures] -> Some signatures
+      | _ -> None in
     let rigid = List.find_opt (function Rigid _ -> true | _ -> false) parts in
     (match rigid,parts with
      | Some (Rigid r as rigid),_ when List.mem r ctx.positional ->
@@ -218,6 +221,10 @@ let rec source_type ctx j =
      | Some rigid,_ -> rigid
      | None,_ when List.for_all (fun part -> callable part <> None) parts ->
        Atoms [Shape {fields=[];string_index=None;calls=List.concat (List.filter_map callable parts);elements=None}]
+     (* Construct operands are one overloaded constructor, `new Date()` and
+        `new Date(v)`, as call operands are one overloaded callable. *)
+     | None,_::_ when List.for_all (fun part -> constructible part <> None) parts ->
+       Atoms [Ctors (List.concat (List.filter_map constructible parts))]
      | None,first::rest when ctx.owner <> None -> Meet (first,rest)
      | None,first::rest ->
        (match List.fold_left (fun acc part -> Option.bind acc (fun a -> meet_objects a part))

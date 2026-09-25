@@ -731,12 +731,17 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          when List.exists (fun (f:Semantic.field) -> f.optional) contract_fields -> Atoms [Exact fields]
        | _ -> record fields)
     | ArrayLiteral es ->
-      let contract = match expected with
-        | Some (Atoms [Shape {elements=Some s;_}]) -> Some s
-        | Some expected ->
+      (* One array arm of the expected type is the literal's contract: an
+         optional array parameter, `readonly T[] | undefined`, is its array. *)
+      let arrays = match expected with
+        | Some (Atoms atoms) -> List.filter_map (function Shape {elements=Some s;_} -> Some s | _ -> None) atoms
+        | _ -> [] in
+      let contract = match expected,arrays with
+        | _,[s] -> Some s
+        | Some expected,_ ->
           Option.map (fun t -> {required=[];optional_elements=[];rest=Some t;readonly=true})
             (iterated_hint declarations expected)
-        | None -> None in
+        | None,_ -> None in
       let types = List.mapi (fun i e ->
         let expected = Option.bind contract (fun s -> match List.nth_opt (s.required @ s.optional_elements) i with
           | Some t -> Some t | None -> s.rest) in expr ?expected env e) es in
