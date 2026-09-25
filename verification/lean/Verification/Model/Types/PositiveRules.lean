@@ -6,7 +6,9 @@ namespace Verification.Model.PositiveRules
 open PositiveNormalization PositiveGraphs ReferenceConjunctions Tower
 
 abbrev Table (ι : Type) := List (List ι × List ι)
-abbrev Rel (table : Table ι) (a b : List ι) : Prop := (a, b) ∈ table
+/-- A table's relation: its rows, and label inclusion, which needs no row: a
+type is within any type listing its labels. -/
+abbrev Rel (table : Table ι) (a b : List ι) : Prop := (a, b) ∈ table ∨ ∀ i ∈ a, i ∈ b
 
 /-- Fixed signatures `(receiver, parameters, result)`. -/
 abbrev Ops (ι : Type) := List (List ι × List (List ι) × List ι)
@@ -685,6 +687,18 @@ abbrev CoversMethods (G : NormalGraph ι) (R : List ι → List ι → Prop) (kn
     (∃ f ∈ fields, f.1 = q.key ∧ CoversByFunction G R self f.2 q) ∨
     CoversByProto G R known self fields bounds q
 
+/-- Index contracts met through an own-key bound: the object's own keys are
+among `K`, which lists no prototype key, so the object has no prototype; each
+key of `K` is a source field or view whose contract implies every target index
+view, and a source field whose contract agrees with every writable index. No
+other key exists, so a fresh literal, whose own keys are exactly its fields,
+is a dictionary of what its fields fit. -/
+abbrev CoversKeys (R : List ι → List ι → Prop) (fields views : List (PropKey × List ι))
+    (bounds : List (List PropKey)) (ix cx : List (List ι)) : Prop :=
+  ∃ K ∈ bounds, CallArguments.protoField ∉ K ∧ ∀ k ∈ K,
+    (∀ y ∈ ix, ∃ p ∈ fields ++ views, p.1 = k ∧ R p.2 y) ∧
+    ∀ y ∈ cx, ∃ p ∈ fields, p.1 = k ∧ R p.2 y ∧ R y p.2
+
 /-- Every target key bound has a source bound within it: the object's own
 keys are among the source's, hence among the target's. -/
 abbrev CoversBounds (source target : List (List PropKey)) : Prop :=
@@ -832,6 +846,13 @@ def CoversWith (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : 
   | .strLit a, .strLit b => a = b
   | .refs a bs vs os ms ks, .refs c ds ws ps ns ls => CoversFields R (a :: bs) (c :: ds) ∧
       CoversViews R (a :: bs) vs ws ∧ CoversOptional R (a :: bs) vs os ks ps ∧
+      CoversMethods G R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls
+  -- A record whose own keys are bounded meets a dictionary's index contracts
+  -- through the bound (`CoversKeys`), and its named members as a record's.
+  | .refs a bs vs os ms ks, .dict c ds ws iy ps ns ls cy =>
+      CoversKeys R (a :: bs).flatten vs ks iy cy ∧
+      CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws ∧
+      CoversOptional R (a :: bs) vs os ks ps ∧
       CoversMethods G R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls
   -- A target index view is within some source index view; a writable
   -- target index needs a writable source index of an equivalent contract, as
@@ -1124,6 +1145,61 @@ theorem fields_at {G : NormalGraph ι} {η : MixedAssignment ι} {a : List (Prop
     exact ⟨flds, l, c, he, hfl, hl, fun j hj U u hu => (hag j hj U u).mp hu⟩
   · exact viewT_at (mem_famsOf.mpr ⟨f.2, hf, rfl⟩) hw
 
+/-- A record's invariant field is at its location, whose contract agrees with
+the field's family. -/
+theorem fields_agree {G : NormalGraph ι} {η : MixedAssignment ι} {a : List (PropKey × List ι)}
+    {bs : List (List (PropKey × List ι))} {n : Nat} {W : WorldT n} {v : Val}
+    (hr : refsT (famsOf (mixedValues G η) a) (bs.map (famsOf (mixedValues G η))) n W v) :
+    ∀ f ∈ (a :: bs).flatten, ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr n),
+      v = .objAt flds .absent ∧ flds.lookup f.1 = some l ∧ lookup W l = some c ∧
+      ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u ↔ mixedValues G η f.2 j U u := by
+  intro f hf
+  obtain ⟨L, hL, hfL⟩ := List.mem_flatten.mp hf
+  have hrec : recT (famsOf (mixedValues G η) L) n W v := by
+    rcases List.mem_cons.mp hL with rfl | hL
+    · exact hr.1
+    · exact hr.2 _ (List.mem_map_of_mem hL)
+  exact recT_at (mem_famsOf.mpr ⟨f.2, hfL, rfl⟩) hrec
+
+/-- A present own key of an object whose own keys a bound lists is in it. -/
+private theorem ownKeysT_mem {K : List PropKey} {k : Nat} {W : WorldT k}
+    {flds : List (PropKey × Nat)} (h : ownKeysT K k W (.objAt flds .absent))
+    {f : PropKey} {l : Nat} (hl : flds.lookup f = some l) : f ∈ K := by
+  if hf : f ∈ K then exact hf else
+    rw [ownKeysT_lookup h hf] at hl
+    cases hl
+
+/-- **Index contracts through an own-key bound.** No prototype key is among
+the object's own keys, and every present string key is a source member whose
+location's contract implies, or for a writable index agrees with, the index. -/
+theorem covers_keys_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
+    {a : List (PropKey × List ι)} {bs : List (List (PropKey × List ι))} {vs : List (PropKey × List ι)}
+    {ks : List (List PropKey)} {iy cy : List (List ι)}
+    (hc : CoversKeys R (a :: bs).flatten vs ks iy cy) (n : Nat)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (W : WorldT n) (v : Val)
+    (hrefs : refsT (famsOf (mixedValues G η) a) (bs.map (famsOf (mixedValues G η))) n W v)
+    (hw : viewT (famsOf (mixedValues G η) vs) n W v) (hb : ∀ K ∈ ks, ownKeysT K n W v) :
+    (∀ y ∈ iy, dictViewT (mixedValues G η y) n W v) ∧
+      ∀ y ∈ cy, dictCellT (mixedValues G η y) n W v := by
+  obtain ⟨K, hK, hproto, hkeys⟩ := hc
+  obtain ⟨flds, rfl, -⟩ := hb K hK
+  have hown := hb K hK
+  have hnp := ownKeysT_lookup hown hproto
+  refine ⟨fun y hy => ⟨flds, rfl, hnp, fun f l hl => ?_⟩, fun y hy => ⟨flds, rfl, hnp, fun f l hl => ?_⟩⟩
+  · obtain ⟨p, hp, hpk, hpy⟩ := (hkeys _ (ownKeysT_mem hown hl)).1 y hy
+    obtain ⟨flds', l', c, he, hl', hc, hag⟩ := fields_at hrefs hw p hp
+    cases he
+    rw [hpk, hl] at hl'
+    cases hl'
+    exact ⟨c, hc, fun j hj W' u hu => hr j hj _ _ hpy W' u (hag j hj W' u hu)⟩
+  · obtain ⟨p, hp, hpk, hpy, hyp⟩ := (hkeys _ (ownKeysT_mem hown hl)).2 y hy
+    obtain ⟨flds', l', c, he, hl', hc, hag⟩ := fields_agree hrefs p hp
+    cases he
+    rw [hpk, hl] at hl'
+    cases hl'
+    exact ⟨c, hc, fun j hj W' u => ⟨fun hu => hr j hj _ _ hpy W' u ((hag j hj W' u).mp hu),
+      fun hu => (hag j hj W' u).mpr (hr j hj _ _ hyp W' u hu)⟩⟩
+
 /-- A record's field or view named by `viewOf` is at its location, whose
 contract implies the field's family. -/
 theorem viewOf_at {G : NormalGraph ι} {η : MixedAssignment ι} {P F : List ι} {k : PropKey}
@@ -1345,6 +1421,14 @@ theorem Covers.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R known sel
   all_goals try contradiction
   all_goals try exact absurd rfl hb
   case pack.pack => exact fun h => h.elim
+  case refs.dict a bs vs os ms ks c ds ws iy ps ns ls cy =>
+    intro hv
+    exact ⟨covers_fields_sound hc.2.1 n hr W v hv.1, covers_views_sound hc.2.2.1 n hr W v ⟨hv.1, hv.2.1⟩,
+      covers_keys_sound hc.1 n hr W v hv.1 hv.2.1 hv.2.2.2.2,
+      covers_optional_sound hc.2.2.2.1 n hr W v ⟨hv.1, hv.2.1, hv.2.2.1⟩ hv.2.2.2.2,
+      covers_methods_sound hc.2.2.2.2.1 hknown n hr hpa W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2
+        hv.2.2.2.1,
+      covers_bounds_sound hc.2.2.2.2.2 hv.2.2.2.2⟩
   case ctors.ctors L S M T =>
     rintro ⟨hv, hw⟩
     refine ⟨⟨hv.1, fun q hq => ?_⟩, ⟨hv.1, fun t ht => ?_⟩⟩
@@ -1531,6 +1615,17 @@ private theorem argument_clause {G : NormalGraph ι} {S : List ι}
   have hh := List.all_eq_true.mp hk c hm
   cases c <;> simp_all
 
+private theorem mixedMeaning_union (G : NormalGraph ι) (η : MixedAssignment ι)
+    (S : List ι) (n : Nat) (W : WorldT n) (x : Val ⊕ List Val) :
+    mixedMeaning G η S n W x ↔ ∃ i ∈ S, mixedMeaning G η [i] n W x := by
+  cases x <;> simp [mixedMeaning, mixedParameters, graphArguments, setSem]
+
+private theorem mixed_subset {G : NormalGraph ι} {η : MixedAssignment ι} {S T : List ι}
+    (h : ∀ i ∈ S, i ∈ T) : FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
+  intro n W x hx
+  obtain ⟨i, hi, hx⟩ := (mixedMeaning_union G η S n W x).mp hx
+  exact (mixedMeaning_union G η T n W x).mpr ⟨i, h i hi, hx⟩
+
 /-- Core's list component follows from current-level value inclusion. This
 uses the executable kind condition, so value top cannot discharge a list edge. -/
 theorem core_arguments_of_values {G : NormalGraph ι} {known : Known ι} {table : Table ι}
@@ -1540,6 +1635,8 @@ theorem core_arguments_of_values {G : NormalGraph ι} {known : Known ι} {table 
     ∀ A B, Rel table A B → ∀ (W : WorldT n) vs,
       mixedMeaning G η A n W (.inr vs) → mixedMeaning G η B n W (.inr vs) := by
   intro A B hab W vs ha
+  rcases hab with hab | hsub
+  case inr => exact mixed_subset hsub n W (.inr vs) ha
   have ⟨hsort, hopaque, hcover⟩ := hc (A,B) hab
   simp only [SameKind, Bool.or_eq_true, Bool.and_eq_true] at hsort
   rcases hsort with ⟨hav, _⟩ | ⟨_, hba⟩
@@ -1599,6 +1696,8 @@ theorem Core.mixed_sound {G : NormalGraph ι} {known : Known ι} {S T} (hc : Cor
     | ind n ih =>
       have hv : ∀ a b, Rel table a b → FamLeAt G η a b n := by
         intro A B hab W v hv
+        rcases hab with hab | hsub
+        case inr => exact mixed_subset hsub n W (.inl v) hv
         have hself : ∀ j (hj : j < n) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
             mixedValues G η A j U v := fun j hj U hU =>
           (setSem_adm (fun i => qDenoteWithArgs_adm G (mixedParameters G) (η, i)) A).transfer
@@ -1614,8 +1713,8 @@ theorem Core.mixed_sound {G : NormalGraph ι} {known : Known ι} {S T} (hc : Cor
       exact ⟨hv, core_arguments_of_values hc η n (fun A B h W v hv' => hv A B h W v hv')⟩
   intro n W x hx
   cases x with
-  | inl v => exact (hs n).1 S T hm W v hx
-  | inr vs => exact (hs n).2 S T hm W vs hx
+  | inl v => exact (hs n).1 S T (.inl hm) W v hx
+  | inr vs => exact (hs n).2 S T (.inl hm) W vs hx
 
 /-! ## Instances of a scheme row
 
@@ -2637,11 +2736,6 @@ theorem table_row_mixed_of_values [DecidableEq ι] {G : NormalGraph ι} {tbl : I
     simpa only [List.mem_singleton, exists_eq_left] using hv η θ e he hrel W v
   | inr vs => exact table_row_arguments hok n hv η θ e he hrel W vs
 
-private theorem mixedMeaning_union (G : NormalGraph ι) (η : MixedAssignment ι)
-    (S : List ι) (n : Nat) (W : WorldT n) (x : Val ⊕ List Val) :
-    mixedMeaning G η S n W x ↔ ∃ i ∈ S, mixedMeaning G η [i] n W x := by
-  cases x <;> simp [mixedMeaning, mixedParameters, graphArguments, setSem]
-
 private theorem tyImg_mixed_iff [DecidableEq ι] {G : NormalGraph ι}
     {tbl : InstTable ι} {κ : Ctx ι} {S T : List ι} (h : tyImg tbl κ S = some T)
     {η : MixedAssignment ι} {n : Nat} {W : WorldT n} {x : Val ⊕ List Val}
@@ -3209,12 +3303,6 @@ inductive Sub (G : NormalGraph ι) : List ι → List ι → Prop where
 /-- The graph whose parameter rows mean `η`. No check reads the assignment, so
 every derivation over `G` is one over each reassignment. -/
 def reassign (G : NormalGraph ι) (η : MixedAssignment ι) : NormalGraph ι := { G with env := η }
-
-private theorem mixed_subset {G : NormalGraph ι} {η : MixedAssignment ι} {S T : List ι}
-    (h : ∀ i ∈ S, i ∈ T) : FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
-  intro n W x hx
-  obtain ⟨i, hi, hx⟩ := (mixedMeaning_union G η S n W x).mp hx
-  exact (mixedMeaning_union G η T n W x).mpr ⟨i, h i hi, hx⟩
 
 /-- A scheme row admits no argument list. -/
 private theorem scheme_noArguments {G : NormalGraph ι} {η : MixedAssignment ι} {i : ι}

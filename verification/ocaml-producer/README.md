@@ -120,7 +120,13 @@ language. The boundaries are:
    first pass over the function finds the offers and a second states them. A
    literal is claimed at the offered signature. Offers are made at every call
    shape, and an overloaded callee's candidate matches a closure argument it
-   would offer to. Explicit type
+   would offer to. A class value expected at a construct signature whose
+   instance has a method taking more parameters than the class's own offers
+   its method's closure that longer signature, and the class value that
+   construct signature, the same way. A fresh object literal whose contract
+   has an index or an optional field is claimed at its exact record (`Exact`:
+   its fields and an own-key bound listing exactly their keys), which is how
+   it meets a dictionary or leaves an optional field out. Explicit type
    arguments fix a call's leading binders before the rest are inferred.
    Expected types guide fresh object/array construction, while the actual
    initializer claims remain separate obligations. Immutable branch refinements
@@ -527,7 +533,7 @@ at a time, the blockers behind it are:
 
 | Client part | First refusal when isolated | Later requirement |
 | --- | --- | --- |
-| whole file | `async function main` | `async`/`await`, `runService`'s readonly optional `externalServices?` (`sum-run-service.ts`); then a type argument at `EagerCollection`'s `V extends Json` bound, and the options literal leaving out the optional `no_cors`, which needs the literal's exact keys as an own-key bound |
+| whole file | `async function main` | `async`/`await`, `runService`'s readonly optional `externalServices?` (`sum-run-service.ts`); then a type argument at `EagerCollection`'s `V extends Json` bound (the options literal, leaving out the optional `no_cors`, meets its type by its exact keys) |
 
 | import graph | `InputDefinition` is a value import (a class) | classes as declarations and values |
 | `Plus`, `Minus`, `AddIndex`, `Add`, `Sub`, `Service` | class declaration | classes, `this`, parameter properties, field initializers, `new` |
@@ -979,9 +985,9 @@ first milestone, in order of how much each gates:
    effects and mutation.
 6. **Optional field presence** (done for mutable and readonly optional
    fields: see DESIGN.md's object milestone; `optional-field.ts` and
-   `optional-view.ts` verify). Remaining: `in` tests and presence narrowing,
-   and a fresh literal leaving out an optional field, which needs the
-   literal's exact keys as an own-key bound.
+   `optional-view.ts` verify; a fresh literal leaving out an optional field,
+   by its exact keys, `optional-literal.ts`). Remaining: `in` tests and
+   presence narrowing.
 
    `getUnique(_default?: { ifMany?: T })` needs only the done part.
 7. **Exceptions.** `getUnique` throws when a key has several values.
@@ -1201,10 +1207,9 @@ instruction to agents covers. The root-cause fix would be upstream
 string]: Json }` states exactly what the framework needs, every present key
 holding `Json`, and it is plain TypeScript. The model already lowers that
 intersection to one dictionary clause with named fields and an index (`meet`,
-`meet_sound`), and its subtyping to `Json` is dictionary coverage. Missing:
-establishing it from a literal. `alloc` builds a record and `allocDict` a pure
-dictionary; a literal at a record-and-index type needs one allocation rule
-proving both, as `recT_fresh_dict` does for fresh slots. Witnesses: a literal
+`meet_sound`), and its subtyping to `Json` is dictionary coverage. A literal
+establishes a record-and-index type by its exact keys (`CoversKeys`,
+`index-inheritance.ts`), not yet tried at `Serializable<T>`. Witnesses: a literal
 at `Serializable<T>`, passed as `Json`; a negative with a non-`Json` field;
 and the `deepFreeze` form above, with its explicit type argument, once
 `deepFreeze`'s declaration is in the fragment.

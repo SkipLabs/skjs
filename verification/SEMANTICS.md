@@ -141,13 +141,15 @@ a computed string key uses `indexAt`, which evaluates the receiver before the
 key and then reads the selected field (or `undefined` if it is absent). The
 proved `indexDict` rule checks the key at `string`. Both reads carry
 `undefined` in their result. This path reaches the same certified
-source acceptance theorem as other expressions. The `allocDict` rule checks
-every initializer at the index element contract and uses the exact fresh
-field map to establish a dictionary view; it cannot retype an existing open
-record. A mutable index signature lowers to a writable index contract
-`dictCellT A`, whose present fields' contracts agree with `A` rather than
-imply it; a fresh literal meets it as well (`recT_fresh_cell`), and covering
-keeps it invariant. Imported recursive declarations remain outside the source fragment.
+source acceptance theorem as other expressions. A fresh literal is a
+dictionary through its exact own keys: `alloc` bounds them by the literal's
+names (`ownKeysT_slots`), and a record so bounded, with no prototype key among
+them, meets an index view whose contract every field's is within, and a
+writable index equivalent to every field's (`covers_keys_sound`); an existing
+open record, which may hold further keys, meets neither. A mutable index
+signature lowers to a writable index contract `dictCellT A`, whose present
+fields' contracts agree with `A` rather than imply it, and covering keeps it
+invariant. Imported recursive declarations remain outside the source fragment.
 
 Term and descriptor equality use explicit structural comparisons, each returning
 a kernel-checked `Decidable` result and recurring only on strict subterms. This

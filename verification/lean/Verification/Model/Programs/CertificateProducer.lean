@@ -244,6 +244,15 @@ def reachablePool [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) : List (Ty
   let D := readsFrom G closureFuel (A ++ B)
   (A :: B :: D.map ([·]) ++ D.flatMap fun i => (G i).flatMap Clause.operands).eraseDups
 
+/-- The types two steps from `A` and `B`: their clauses' operands, and those
+operands' clauses' operands. A table over them relates a record to the
+contracts its fields and methods name, and those to theirs, without a table
+over the whole pool; label inclusion (`Rel`) relates what lies further. -/
+def nearPool [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) : List (Ty ι) :=
+  let step (T : Ty ι) : List (Ty ι) := T.flatMap fun i => (G i).flatMap Clause.operands
+  let one := step A ++ step B
+  (A :: B :: one ++ one.flatMap step).eraseDups
+
 /-- An instance of scheme row `s` whose signatures' images are the arrows
 `L`, `M`: find the binders' instances, then build the table under the context
 giving each binder its instance. Untrusted: `checkInstArrs` validates it. -/
@@ -348,7 +357,8 @@ def subtype [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
   let fuel := 64 + pool.length
   let ok p := PositiveCertificates.check G A B p
-  (subtypeBase G [] A B) <|> ((tableProof G fuel A B).filter ok) <|> (subtypeBase G pool A B) <|>
+  (subtypeBase G [] A B) <|> ((tableProof G fuel A B).filter ok) <|>
+    (subtypeBase G (nearPool G A B) A B) <|> (subtypeBase G pool A B) <|>
     (match protoInstances G ((A :: B :: pool).eraseDups) fuel with
       | [] => none
       | ks => subtypeWith G pool ks A B) <|> ((instProof G fuel A B).filter ok) <|>
@@ -568,10 +578,6 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           if B.map Prod.fst != ns || !ks.all (fun K => ns.all (K.contains ·)) then none else do
           let ps ← (inits.zip (B.map Prod.snd)).mapM fun (a,D) => recur Γ a D
           coerce G pool (.node ⟨Γ,t,R⟩ .alloc ps) A
-        | [.dict [] [] [] [E] [] [] [] cs] =>
-          if !cs.all (· == E) then none else do
-          let ps ← inits.mapM fun a => recur Γ a E
-          coerce G pool (.node ⟨Γ,t,R⟩ .allocDict ps) A
         | _ => none
     | .indexAt a key =>
       return (A :: pool).findSome? fun R => do

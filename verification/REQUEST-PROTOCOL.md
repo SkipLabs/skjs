@@ -216,7 +216,7 @@ The evidence file is an object with one field, `certificate`, a list of
 one subtype-evidence list per outgoing edge. A derivation node names the
 [typing rule](PROGRAM-TYPING.md#judgments-and-constructor-views) it applies:
 `var`, `nul`, `undef`, `tru`, `fls`, `truLit`, `flsLit`, `numLit`, `num`,
-`strLit`, `str`, `funE`, `app`, `letE`, `alloc`, `allocDict`,
+`strLit`, `str`, `funE`, `app`, `letE`, `alloc`,
 `read`, `readOptional`, `readDict`, `indexDict`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
 `unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `readProto`, `arith`, `test`,
 `arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, `funRest`, `makeCallableRest`,

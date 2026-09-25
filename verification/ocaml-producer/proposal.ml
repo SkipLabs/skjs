@@ -106,6 +106,9 @@ let rec field_type declarations seen t name = match t with
           | None -> (match shape.string_index with
             | Some index -> union index.value (Atoms [Undef])
             | None -> unsupported ("missing field " ^ name)))
+      | Exact fields -> (match List.find_opt (fun (f:Semantic.field) -> f.name=Name name) fields with
+          | Some f -> f.read
+          | None -> unsupported ("missing field " ^ name))
       | Named (id,args) ->
         if List.mem id seen then unsupported "unguarded field cycle";
         field_type declarations (id::seen) (definition declarations id args) name
@@ -166,6 +169,9 @@ let rec index_type declarations seen receiver key = match receiver with
               | Some index -> union index.value (Atoms [Undef])
               | None -> unsupported "dynamic string index requires a dictionary")
           | _ -> unsupported "record index requires a string key")
+      | Exact _ as atom -> (match key with
+          | Atoms [StrLit name] -> field_type declarations seen (Atoms [atom]) name
+          | _ -> unsupported "record index requires a string key")
       | Named (id,args) ->
         if List.mem id seen then unsupported "unguarded index cycle";
         index_type declarations (id::seen) (definition declarations id args) key
@@ -199,7 +205,7 @@ let restrict literal equal t = match t with
         | Nul,LNull | Undef,LUndefined | True,LBool true | False,LBool false -> Some true
         | NumLit a,LNumber b -> Some (Int64.float_of_bits a = float_of_string b)
         | StrLit a,LString b -> Some (a=b)
-        | (Top | Num | Str | Shape _ | Named _),_ -> None
+        | (Top | Num | Str | Shape _ | Exact _ | Named _),_ -> None
         | _,_ -> Some false in
       match known with Some result -> result=equal | None -> true) xs)
   | Rigid _ | Union _ -> t
@@ -216,6 +222,7 @@ let rec branch env cond truth = match cond.node with
       | True | False -> Some (shape="boolean") | Undef -> Some (shape="undefined")
       | Bigint -> Some (shape="bigint") | Symbol -> Some (shape="symbol")
       | Shape s -> Some (shape="function" && s.calls<>[])
+      | Exact _ -> Some false
       (* A class is a function to `typeof`. *)
       | Ctors _ -> Some (shape="function")
       | Nul -> Some false
@@ -255,8 +262,56 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
   (* Unannotated immutable locals bound to a closure without binders or a rest
      parameter: where the closure is created, and its parameters' types. *)
   let closures = ref [] and requests = ref [] in
+  (* Classes declared here: where the class value is created, its
+     constructor's parameters, its instance type, and its methods, each a key
+     and the named closure the instance holds under it. *)
+  let classes = ref [] in
   let named_closure n written (init:expr) = match written,init.node with
     | None,Lambda (_,[],ps,_,false,_,_) -> closures := (n,(init.pos,List.map snd ps)) :: !closures
+    | Some _,Ctor {node=Lambda (None,[],ps,[],false,Some instance,{node=Alloc fs;_});_} ->
+      let methods = List.filter_map (fun (key,(e:expr)) -> match e.node with
+        | Id m when List.mem_assoc m !closures -> Some (key,m)
+        | _ -> None) fs in
+      classes := (n,(init.pos,List.map snd ps,instance,methods)) :: !classes
+    | _ -> () in
+  (* A named closure offered a signature binding more parameters than it does
+     — a fixed signature taking more, or a variadic one whose fixed parameters
+     cover its own — whose leading positions its own parameters take, is
+     claimed at it beside its own, where it is created. The result is the
+     action stating the offer, when there is one. *)
+  let closure_offer n (offered:Semantic.signature) =
+    let pos,own = List.assoc n !closures in
+    let arity = List.length own in
+    if offered.quantified=[] && offered.rest_pack=None
+       && (match offered.variadic with
+           | None -> List.length offered.params > arity
+           | Some _ -> List.length offered.params >= arity)
+       && List.for_all2 plausible_subtype
+            (List.filteri (fun i _ -> i < arity) offered.params) own
+    then Some (fun () -> requests := (pos,offered) :: !requests) else None in
+  (* A class value expected at a construct signature whose instance has a
+     method taking more parameters than the class's own: the method's closure
+     is claimed at those parameters too, with its own receiver, the instance,
+     and the class value at a construct signature giving the expected
+     instance. Calls through the member discard the extra actuals; Lean checks
+     the method's body at each signature and the constructor's at each. *)
+  let offer_class (pos,params,instance,methods) expected =
+    match declared_head declarations [] expected with
+    | Atoms [Ctors signatures] ->
+      List.iter (fun (s:Semantic.signature) ->
+        let member key = match (try Some (declared_head declarations []
+            (field_type declarations [] s.result key)) with Json.Error _ -> None) with
+          | Some (Atoms [Shape {calls=[m];fields=[];string_index=None;elements=None}]) -> Some m
+          | _ -> None in
+        let widened = List.filter (fun (key,m) -> match member key with
+          | Some offered -> (match closure_offer m {offered with receiver=instance} with
+            | Some state -> state (); true
+            | None -> false)
+          | None -> false) methods in
+        if widened <> [] then
+          requests := (pos,{quantified=[];receiver=top;params;variadic=None;rest_pack=None;
+                            result=s.result}) :: !requests)
+        (List.filter (fun (s:Semantic.signature) -> s.quantified=[]) signatures)
     | _ -> () in
   (* A name no parameter or local binds is one of the file's functions. *)
   let resolve env n = match List.assoc_opt n env with
@@ -299,7 +354,10 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | [] -> Json.fail "empty source span" in
   let rec expr ?expected env e =
     let t = match e.node with
-    | Id n -> resolve env n
+    | Id n ->
+      Option.iter (fun expected -> Option.iter (fun c -> offer_class c expected)
+        (List.assoc_opt n !classes)) expected;
+      resolve env n
     | Literal l -> literal_type l
     | Not e -> ignore (expr env e); bool
     | TypeofTest (_,_,e) -> ignore (expr env e); bool
@@ -309,15 +367,28 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let contract = Option.bind expected (object_hint declarations []) in
       let fields = List.map (fun (name,e) ->
         let hint = Option.bind contract (fun s -> List.find_opt (fun (f:Semantic.field) -> f.name=Name name) s.fields) in
-        let expected = match contract with
-          | Some {string_index=Some index;_} -> Some index.value
-          | _ -> Option.map (fun (f:Semantic.field) -> f.read) hint in
+        (* A key the contract names is built at its member's type; any other
+           at the index. *)
+        let expected = match hint,contract with
+          | Some (f:Semantic.field),_ -> Some f.read
+          | None,Some {string_index=Some index;_} -> Some index.value
+          | None,_ -> None in
         let inferred=expr ?expected env e in
-        let t=Option.value expected ~default:(widen inferred) in
+        (* A method's closure offered further signatures is held at its own
+           claim: a construct signature offering them reads them there. *)
+        let widened = match e.node with
+          | Id m -> (match List.assoc_opt m !closures with
+            | Some (pos,_) -> List.mem_assoc pos offered | None -> false)
+          | _ -> false in
+        let t=if widened then inferred else Option.value expected ~default:(widen inferred) in
         {name=Name name;optional=false;read=t;write=Some t}) fs in
+      (* Where the contract is a dictionary, or has optional fields, the
+         literal is claimed with its exact keys: that own-key bound is what
+         lets it meet an index, or an optional field it leaves out. *)
       (match contract with
-       | Some {fields=[];string_index=Some index;calls=[];elements=None} ->
-         Atoms [Shape {fields=[];string_index=Some index;calls=[];elements=None}]
+       | Some {string_index=Some _;_} -> Atoms [Exact fields]
+       | Some {fields=contract_fields;_}
+         when List.exists (fun (f:Semantic.field) -> f.optional) contract_fields -> Atoms [Exact fields]
        | _ -> record fields)
     | ArrayLiteral es ->
       let contract = match expected with
@@ -347,7 +418,11 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          receiver it reads. The class value's type is its construct signature. *)
       let inner = List.fold_left (fun env (n,t) -> extend env n (Value t)) env ps in
       ignore (expr ~expected:result inner body);
-      Atoms [Ctors [{quantified=[];receiver=Semantic.top;params=List.map snd ps;variadic=None;rest_pack=None;result}]]
+      (* A class offered construct signatures giving other instances is
+         claimed at them too, beside its own; Lean checks the body at each. *)
+      let own = {quantified=[];receiver=Semantic.top;params=List.map snd ps;variadic=None;rest_pack=None;result} in
+      let extra = Option.value (List.assoc_opt e.pos offered) ~default:[] in
+      Atoms [Ctors (own :: List.filter (fun s -> s <> own) (List.sort_uniq compare extra))]
     | Ctor _ -> unsupported "a class value is a constructor lambda with plain parameters"
     | New (callee,types,args) ->
       (* `new` may omit trailing actuals, as a call may: the machine binds
@@ -525,11 +600,9 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           Option.map (fun (t,_) () -> instances := (arg.pos,t) :: !instances)
             (offered (List.length ps))
         | Id n when List.mem_assoc n !closures ->
-          let pos,own = List.assoc n !closures in
-          Option.bind (offered (List.length own)) (fun (_,(o:Semantic.signature)) ->
-            if List.for_all2 plausible_subtype
-                (List.filteri (fun i _ -> i < List.length own) o.params) own
-            then Some (fun () -> requests := (pos,o) :: !requests) else None)
+          (match param with
+           | Atoms [Shape {calls=[o];fields=[];string_index=None;elements=None}] -> closure_offer n o
+           | _ -> None)
         | _ -> None in
       let param_at (s:Semantic.signature) i = match List.nth_opt s.params i with
         | Some p -> Some p
@@ -776,6 +849,9 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let binding = match mutable_,written with
         | true,None -> unsupported "mutable binding requires an explicit fixed storage contract"
         | true,Some contract -> Storage contract
+        (* A class's annotation is its own construct signature, which the
+           parser writes; the class value's claim may offer more. *)
+        | false,Some _ when (match init.node with Ctor _ -> true | _ -> false) -> Value initial
         | false,Some contract -> Value contract
         | false,None -> Value initial in
       extend env n binding) env bs

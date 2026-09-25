@@ -995,16 +995,6 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks) →
       (∀ K ∈ ks, ∀ p ∈ parts, p.1 ∈ K) →
       HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
-  /-- A fresh literal establishes an index view, and a writable index at the
-  same contract if one is claimed, when every value is checked at the index
-  element contract. Its exact allocated fields are used;
-  this is not an open-record subtyping rule. It names no prototype, so the
-  dictionary has none. -/
-  | allocDict {parts : List (PropKey × Tm)} {Cs : List (Ty ι)} : (parts.map Prod.fst).Nodup →
-      CallArguments.protoField ∉ parts.map Prod.fst →
-      (∀ p ∈ parts, HasTy G Γ p.2 Elem) →
-      Represents G Dict (.dict [] [] [] [Elem] [] [] [] Cs) → (∀ C ∈ Cs, C = Elem) →
-      HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map Prod.snd)) Dict
   /-- A named field, of a record or of a dictionary, reads at its contract. -/
   | read : HasTy G Γ a Ref → Represents G Ref c → namedMembers c = some (fs, vs) →
       (f, A) ∈ fs → HasTy G Γ (.readAt f a) A
@@ -1442,48 +1432,6 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
     rw [hfam]
     exact hrec
-  | @allocDict Γ Elem Dict parts Cs hnd hproto hp hr hcs ih =>
-    intro n W h ρ he hw hh
-    simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
-    have hmap : (parts.map fun p => (meaning G Elem, instantiate 0 ρ p.2)).map Prod.snd
-        = parts.map fun p => instantiate 0 ρ p.2 := by simp [List.map_map, Function.comp_def]
-    rw [← hmap]
-    apply bind_list (parts.map fun p => (meaning G Elem, instantiate 0 ρ p.2))
-      (by intro A hA; obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hA; exact meaning_adm G Elem)
-      (fun args => .makeAt .absent (parts.map Prod.fst) args)
-      (fun hs => CallArguments.Step.makeArgs hs) hw hh
-      (by
-        intro q hq
-        obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
-        intro j hj U hx hu heap hok
-        exact ih p hp' j U heap ρ (he.transfer j hj U hx) hu hok)
-    intro j hj U hx hu heap args hok hargs
-    have hAs : (parts.map fun p => (meaning G Elem, instantiate 0 ρ p.2)).map Prod.fst
-        = List.replicate parts.length (meaning G Elem) := by
-      simpa only [List.map_map, Function.comp_def] using
-        (List.map_const' (l := parts) (b := meaning G Elem))
-    rw [hAs] at hargs
-    have hlen := ArgsT_length hargs
-    apply make_dict_rule (meaning_adm G Elem) j U heap _ args hnd hproto
-      (by simpa using hlen.symm)
-      (ArgsT_values (by intro A hA; simp at hA; simpa [hA.2] using meaning_valOnly G Elem) hargs)
-      hu hok (by
-        have hlen' : args.length = parts.length := by simpa using hlen
-        simpa [hlen'] using ArgsT_zip hargs)
-    intro k hk V hy hd hc
-    apply (represents_sem hr k V _).mpr
-    refine ⟨⟨⟨slots heap.length (parts.map Prod.fst), rfl, ?_⟩, by simp⟩,
-      by simp [viewT, ReferenceConjunctions.famsOf], ⟨?_, ?_⟩,
-      ⟨by simpa [ReferenceConjunctions.famsOf] using optT_nil, MethodMembers.methodT_nil _ _ _, by simp⟩⟩
-    · intro f T hm
-      simp [ReferenceConjunctions.famsOf] at hm
-    · intro A hA
-      simp only [List.mem_singleton] at hA
-      cases hA
-      exact hd
-    · intro C hC
-      cases hcs C hC
-      exact hc
   | @read Γ a Ref c fs vs f A ha hr hc hm ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)

@@ -495,18 +495,27 @@ not name is read through the index, with `undefined`. An optional named field
 dictionary does not name is still read through the index: `process.env` is a
 writable index beside the optional `TZ`. A write to an optional field,
 writable or readonly, is not typed, since the object's keys are fixed at
-allocation; a readonly one grants no write in any case. `allocDict`
-establishes a dictionary view for a fresh literal only
-after checking every initializer at $A$ and that the literal names no
-prototype key; each location it allocates holds exactly $A$, so it establishes
-a writable index at $A$ too. The literal may be empty, `{}`:
+allocation; a readonly one grants no write in any case.
+
+A fresh literal meets a dictionary, or a record whose optional fields it
+leaves out, with no rule of its own: `alloc` types it at the record whose own
+keys are bounded by exactly its names, and that record is below the target by
+coverage through the bound ([`CoversKeys`, `CoversOptional`](POSITIVE-TYPES.md#records)).
+No other key exists and the prototype key is not among them, so the object has
+no prototype, lacks every key it does not write, and each field's contract
+need only be within each index view, or equivalent to each writable index.
+The literal may be empty, `{}`, and may write members the dictionary names:
 
 $$
-\frac{\vec k\ \text{distinct}\quad\mathsf{proto}\notin\vec k\quad\Gamma\vdash_G e_i:A\quad
-      D\equiv_G\mathsf{Dict}(;;A;\overline{C})\quad\forall C\in\overline{C}.\;C=A}
+\frac{\vec k\ \text{distinct}\quad\Gamma\vdash_G e_i:A_i\quad
+      G\vdash\mathsf{Ref}(\overline{k_i{:}A_i};\{\vec k\})\le D}
      {\Gamma\vdash_G\{\overline{k_i{:}e_i}\}:D}
-$$ None of these rules grants a write
-capability to a readonly dictionary.
+$$
+
+which is `alloc` followed by subsumption; the producer states the bounded
+record as the literal's claim wherever its contract has an index or an
+optional field. None of these rules grants a write capability to a readonly
+dictionary.
 
 $$
 \frac{\Gamma\vdash_G t:A\quad\operatorname{check}(G,A,B,p)=\mathsf{true}}
@@ -1828,6 +1837,27 @@ signature's fixed ones: $L$ then holds that signature's fixed row
 any row. A `void` result is $\top$, so a closure returning a promise meets it.
 No subtyping widens an arrow's parameters: a value typed `() => undefined` is
 not a variadic callback, only a closure literal is created at one.
+
+A class is the same case reached from a construct signature. Its methods are
+closures with the instance as receiver, and its value is construct-only code
+allocating the instance from them. Where the class value is expected at
+$\mathsf{new}()\Rightarrow I$ whose instance $I$ has a member $m$ at
+$(\vec Q\,\vec U)\to D$ while the class's method $m$ takes $\vec Q$, the method's
+closure is claimed at $(C;\vec Q\,\vec U)\to B$ beside its own $(C;\vec Q)\to B$, with
+$C$ the class's instance type, and the class value at $\mathsf{new}()\Rightarrow I$
+beside $\mathsf{new}()\Rightarrow C$. The creation rule checks the method's
+body at both, and `ctorE` the constructor's at both, so the instance it
+allocates, holding the method as a field of the longer signature, meets $I$'s
+member by `CoversByFunction`:
+
+$$
+\frac{\Gamma\vdash_G \lambda\vec x.t:\bigl((C;\vec Q\to B)\land(C;\vec Q\,\vec U\to B)\bigr)
+      \quad\Gamma,m{:}F\vdash_G \{m{=}m\}:C\quad\Gamma,m{:}F\vdash_G \{m{=}m\}:I}
+     {\Gamma\vdash_G \mathsf{class}\{m(\vec x)\{t\}\}:\mathsf{new}()\Rightarrow C\land\mathsf{new}()\Rightarrow I}
+$$
+
+with $F$ the method's claimed type. Nothing here is a new rule: the premises
+are the creation rule, `alloc` and subsumption under each construct signature.
 
 ### Universal parameter initialization
 

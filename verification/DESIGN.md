@@ -662,7 +662,48 @@ reads use that. Consequences:
 
 An empty literal, `{}`, is admitted by the source gate. It has a type only
 through a contract: a dictionary, whose writable index a fresh literal meets
-(`recT_fresh_cell`), or a record with no required field.
+through its exact own keys ([Fresh literals have exact keys](#fresh-literals-have-exact-keys)),
+or a record with no required field.
+
+### Fresh literals have exact keys
+
+**Principle.** A fresh object literal's own keys are exactly the keys it
+writes, fixed at allocation, and it has no prototype. That, not its record
+type, is what makes it a dictionary (`{ input1: …, input2: … }` at sum.ts's
+`Inputs`, an interface extending `NamedInputDefinitions`' index signature) or
+a record lacking an optional field it leaves out (`runService`'s options
+without `no_cors`). An existing record type is open: a value of it may hold
+further keys at any type, so it meets neither, and TypeScript's acceptance of
+it (implicit index signatures, width subtyping into optional fields) is
+refused.
+
+**One mechanism.** `alloc` already types a literal at a record whose own-key
+bound lists exactly its names (`ownKeysT_slots`). Two coverage rules read the
+bound: an optional field, when the bound excludes its key and the prototype
+key (`CoversOptional`), and index contracts, when the prototype key is not in it
+and every key of it is a field or view within each index view and a field
+equivalent to each writable index (`CoversKeys`, `covers_keys_sound`). The
+dictionary allocation rule `allocDict`, which typed a literal at a pure
+dictionary by giving every location the index contract, is the special case
+of `alloc` then `CoversKeys`, and is removed; with it `make_dict_rule`,
+`recT_fresh_dict` and `recT_fresh_cell`.
+
+**Producer.** The OCaml producer claims a literal at its exact record (the
+semantic atom `Exact`, a refs clause with that one bound) where its contract
+has an index or an optional field; elsewhere at the open record as before, so
+no other claim changes. The literal's use is then an ordinary subsumption,
+checked where the literal flows, and a literal claimed at a dictionary is no
+longer accepted: a claim names the record allocation gives. Each key the
+contract names is built at its member's type, any other at the index.
+
+**Tables relate included labels.** Relating a record to an interface compares
+each field's contract with itself; a core table needed a row for each such
+pair and for everything it reaches, so the search built one over the whole
+pool. A table's relation now also holds, with no row, where every label of
+the source is one of the target's: the meaning of a label list is the union of
+its labels', so it is sound with no induction step (`Rel`, `mixed_subset`).
+The search tries a table over the types two operand steps from the pair
+(`nearPool`) before the whole pool. Neither adds trust.
 
 ## What is implemented and proved
 
@@ -2178,6 +2219,26 @@ a choice.
   member.
 - *Only a member named by a known key is a member call.* `o[k]()` with a
   dynamic `k` determines no member, so no member contract applies.
+- *A class method taking fewer parameters than an interface's is claimed at
+  the longer signature, not widened by subtyping.* `class Add { instantiate(cs)
+  … }` meets `Resource.instantiate(collections, context)` in sum.ts: a call
+  through the member passes a `context` the code ignores. A type-level rule
+  letting `(C) → R` stand for `(C, X) → R` would be unsound, since a value of
+  the class's instance type may hold a longer method (a subclass, or any
+  object of that shape) that reads the second actual. What is true is a fact
+  about this class's code, which the calculus already states: a closure's
+  claim may offer more parameters than its code takes (`offersArity`), the
+  extra actuals discarded at binding. So where a class value is expected at a
+  construct signature whose instance has such a method, the producer claims
+  the method's closure at the longer signature as well, with its own receiver,
+  and the class value at a construct signature giving that instance beside its
+  own (the construct rule checks the constructor's body at each). The instance
+  it allocates holds the method as a field whose signatures cover the
+  interface's member (`CoversByFunction`). This is the offer mechanism a named
+  closure passed where more parameters are offered uses, reached from a class
+  value instead of a call; there is no arrow-widening subtyping. A narrower
+  parameter is still refused (`invalid-class-fewer-parameters.ts`), as
+  TypeScript's bivariant method parameters admit it.
 
 **Representation and rules.** The `refs` and `dict` clauses have a method
 component (`MethodMembers.Sig`): members with receiver-free fixed and variadic
@@ -2541,8 +2602,8 @@ which here would let a write through the target retype what the source's
 readers rely on. It is also met by an own-key bound excluding both its key and
 the prototype key, which says the object lacks the key and has no prototype:
 the bound is how a fresh literal that leaves out an optional field, such as
-`runService`'s options without `no_cors`, would establish it, once literal
-types carry their exact keys. A class instance lacking the key does not cover
+`runService`'s options without `no_cors`, establishes it
+([Fresh literals have exact keys](#fresh-literals-have-exact-keys)). A class instance lacking the key does not cover
 it: it has a prototype, where the read would continue (TypeScript accepts
 this). The claim wire needs no new form: a readonly field's write capability
 is empty, and the lowering reads any field whose read and write differ as

@@ -129,7 +129,8 @@ theorem checked_boolean_split : FamLe
 -- consolidated public checker, rather than just its cyclic-table component.
 #guard checkSource G [0, 0] [1, 0] (.trans [0] .subset .subset)
 #guard !(checkSource G [1] [0] (.trans [0] .subset .subset))
-#guard !(checkCoreSource G [9] [10] ⟨[([9], [10])], splitCert.arrows⟩)
+-- Operands related by label inclusion need no rows of their own.
+#guard checkCoreSource G [9] [10] ⟨[([9], [10])], splitCert.arrows⟩
 #guard !(checkArrow (normalizeGraph G) [([0], [0]), ([1], [1])]
   [([0], [[0]], [0]), ([0], [[1]], [0])] [] [0] [[0, 1]] [0]
   (.union [] [0] [] [] (.source ([0], [[0]], [0])) .empty))

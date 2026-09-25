@@ -29,7 +29,7 @@ def namedAt (T : Tuple (Ty ι)) (b : UInt64) : Option (Ty ι) :=
 
 inductive Rule (ι : Type) where
   | var | nul | undef | tru | fls | truLit | flsLit | numLit | num | strLit | str
-  | funE | app | letE | alloc | allocDict | read | readView | write | arith | test
+  | funE | app | letE | alloc | read | readView | write | arith | test
   | readDict (element undef : Ty ι)
   | indexDict (element undef : Ty ι)
   | readOptional (element undef : Ty ι)
@@ -213,13 +213,6 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
       ns.Nodup ∧ ns.length = ps.length ∧ ps.map Sequent.term = inits ∧
       (∀ p ∈ ps, p.context = j.context) ∧ fs = ns.zip (ps.map Sequent.type) ∧
       (∀ K ∈ ks, ∀ n ∈ ns, n ∈ K)
-    | _ => False
-  | .allocDict, .makeAt .absent ns inits, ps =>
-    match expand G j.type with
-    | [.dict [] [] [] [E] [] [] [] cs] =>
-      ns.Nodup ∧ CallArguments.protoField ∉ ns ∧ ns.length = ps.length ∧
-      ps.map Sequent.term = inits ∧ (∀ p ∈ ps, p.context = j.context ∧ p.type = E) ∧
-      ∀ C ∈ cs, C = E
     | _ => False
   | .read, .readAt f a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧
@@ -614,35 +607,6 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
           exact hk K hK q.1 this)
       rw [hfst, hsnd] at this
       exact this
-    · contradiction
-  · rename_i ps _ _ _ ns inits
-    split at hl
-    · rename_i E cs he
-      obtain ⟨hnd, hproto, hlen, hterms, hctx, hcs⟩ := hl
-      have hfst : ((ns.zip ps).map fun r => (r.1, r.2.term)).map Prod.fst = ns := by
-        simp only [List.map_map, Function.comp_def]
-        exact List.map_fst_zip (by omega)
-      have hsnd : ((ns.zip ps).map fun r => (r.1, r.2.term)).map Prod.snd = inits := by
-        rw [← hterms]
-        calc
-          ((ns.zip ps).map fun r => (r.1, r.2.term)).map Prod.snd
-              = ((ns.zip ps).map Prod.snd).map Sequent.term := by
-                simp [List.map_map, Function.comp_def]
-          _ = ps.map Sequent.term := by rw [List.map_snd_zip (by omega)]
-      have ht := HasTy.allocDict (G := G) (Γ := Γ) (Dict := A) (Elem := E)
-        (parts := (ns.zip ps).map fun r => (r.1, r.2.term))
-        (by rw [hfst]; exact hnd) (by rw [hfst]; exact hproto)
-        (by
-          intro q hq
-          obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hq
-          have hmem : r.2 ∈ ps := (List.of_mem_zip (by simpa using hr)).2
-          have h := hp r.2 hmem
-          obtain ⟨hc, heq⟩ := hctx r.2 hmem
-          rw [hc, heq] at h
-          exact h)
-        he hcs
-      rw [hfst, hsnd] at ht
-      exact ht
     · contradiction
   · rename_i f a ja
     rcases hl with ⟨hΓ, ht, hr⟩
@@ -1399,18 +1363,6 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       · intro K hK n hn
         obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hn
         exact hk K hK p hp
-    · intro j hj
-      obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
-      exact ih p hp
-  | @allocDict Γ Elem Dict parts Cs hnd hproto hpart hr hcs ih =>
-    apply node_complete (G := G)
-      (j := ⟨Γ, .makeAt .absent (parts.map Prod.fst) (parts.map Prod.snd), Dict⟩)
-      (r := .allocDict) (js := parts.map fun p => ⟨Γ, p.2, Elem⟩)
-    · simp only [Local, show expand G Dict = [.dict [] [] [] [Elem] [] [] [] Cs] from hr]
-      refine ⟨hnd, hproto, by simp, by simp [List.map_map, Function.comp_def], ?_, hcs⟩
-      intro q hq
-      obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
-      exact ⟨rfl, rfl⟩
     · intro j hj
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
       exact ih p hp

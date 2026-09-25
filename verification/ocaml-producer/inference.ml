@@ -21,6 +21,9 @@ let rec substitute solution = function
   | Union types -> List.fold_left union (Atoms []) (List.map (substitute solution) types)
 and substitute_atom solution = function
   | Shape shape -> Shape (substitute_shape solution shape)
+  | Exact fields -> Exact (List.map (fun (field:Semantic.field) -> {field with
+      read=substitute solution field.read;
+      write=Option.map (substitute solution) field.write}) fields)
   | Named (id,args) -> Named (id,List.map (substitute solution) args)
   | Ctors signatures -> Ctors (List.map (substitute_signature solution) signatures)
   | (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
@@ -76,7 +79,8 @@ let meet_atom a b =
   | Num,NumLit _ -> Some [b] | NumLit _,Num -> Some [a]
   | Str,StrLit _ -> Some [b] | StrLit _,Str -> Some [a]
   | Ctors a,Ctors b -> Some [Ctors (a @ b)]
-  | Shape _,_ | _,Shape _ | Named _,_ | _,Named _ | Ctors _,_ | _,Ctors _ -> None
+  | Shape _,_ | _,Shape _ | Exact _,_ | _,Exact _ | Named _,_ | _,Named _
+  | Ctors _,_ | _,Ctors _ -> None
   | Bigint,Bigint -> Some [Bigint] | Symbol,Symbol -> Some [Symbol]
   | (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | Symbol),
     (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | Symbol) -> Some []

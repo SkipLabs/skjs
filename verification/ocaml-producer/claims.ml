@@ -56,6 +56,12 @@ let encode (proposal : Proposal.t) =
       [intern (Array [Object ["ctors",Object (("signatures",Array fixed) ::
         (if rests = [] then [] else ["variadic",Array rests]))]])]
     | Named (id,args) -> declaration_labels id args
+    | Exact fs ->
+      (* Invariant fields, and one own-key bound listing exactly their keys. *)
+      [intern (Array [Object ["refs",Object ["first",Array (List.map (fun (f:Semantic.field) ->
+          if f.optional || f.write <> Some f.read then unsupported "an exact record's fields are invariant";
+          Array [key_json f.name;labels f.read]) fs);"rest",Array [];"views",Array [];
+        "bounds",Array [Array (List.map (fun (f:Semantic.field) -> key_json f.name) fs)]]]])]
     | Shape shape ->
       (* An optional field constrains its key only where the object has it:
          a writable one under one invariant contract, a readonly one as a
@@ -176,6 +182,7 @@ let encode (proposal : Proposal.t) =
               contains_symbolic i.value || Option.fold ~none:false ~some:contains_symbolic i.writable) s.string_index
           || List.exists signature_contains_symbolic s.calls
           || Option.fold ~none:false ~some:sequence_contains_symbolic s.elements
+        | Exact fs -> List.exists (fun (f:Semantic.field) -> contains_symbolic f.read) fs
         | Ctors signatures -> List.exists signature_contains_symbolic signatures
         | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
         | Bigint | Symbol -> false) atoms

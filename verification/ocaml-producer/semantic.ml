@@ -9,6 +9,11 @@ and atom = Nul | Undef | True | False | Num | Str | NumLit of int64 | StrLit of 
             does. A signature's receiver is unused: `new` passes none. *)
          | Ctors of signature list
          | Shape of shape
+         (* A record whose own keys are exactly its fields' keys, as a fresh
+            object literal's are: no other key, so no prototype. The bound is
+            what lets it meet a dictionary, or a record whose optional fields
+            it leaves out. *)
+         | Exact of field list
          (* Declaration identity, with arguments retained for later generic
             instantiation. A recursive reference is never expanded into a
             finite approximation. *)

@@ -18,7 +18,9 @@ the end.
 **Notation.** A meaning is a family $X_n(W,v)$: at level $n$ and world $W$,
 value $v$ is a member. A lower level is a weaker observation; "below the
 level" means at every $j<n$. Throughout, $\Delta$ is a finite table of subtype
-obligations, and $\Delta(A,B)$ says the pair $(A,B)$ is in it. Each section
+obligations, and $\Delta(A,B)$ says the pair $(A,B)$ is in it or that every
+label of $A$ is a label of $B$: a type is within any type listing its labels,
+which needs no row (`Rel`). Each section
 ends with a "Lean:" line naming the definitions and theorems behind it.
 
 ## Types and clauses
@@ -405,7 +407,8 @@ union inclusion, transitivity and the scheme rules.
 $\Delta;S\vdash c\sqsubseteq d$ says clause $c$ of source type $S$ is covered
 by target clause $d$. Every clause is covered by `top`; identical primitives,
 and a singleton by its primitive, are covered trivially; different shapes are
-never covered. `refs` covers only `refs`, and `dict` only `dict`. Write
+never covered. `dict` covers only `dict`, and `refs` covers `refs`, and
+`dict` through an own-key bound (below). Write
 $\Delta^{\pm}(A,B)$ for $\Delta(A,B)\land\Delta(B,A)$.
 
 **Records.** With $\Phi=\varphi_0\cdots\varphi_m$ the source's invariant
@@ -453,6 +456,28 @@ $$
      {\Delta;S\vdash\mathsf{Dict}(\Phi;\psi;\overline{D};\overline{C};\omega;\mu;\beta)\sqsubseteq
       \mathsf{Dict}(\varphi';\psi';\overline{D'};\overline{C'};\omega';\mu';\beta')}
 $$
+
+A record covers a `dict` through an own-key bound (`CoversKeys`): its own keys
+are among some $K\in\beta$, which lists no prototype key, so the object has no
+prototype; and every key of $K$ is a source field or view within each target
+index view, and an invariant field equivalent to each writable index. No other
+key exists, so this is what a fresh literal, whose own keys are exactly its
+fields, needs to be a dictionary. The named members are compared as a
+record's:
+
+$$
+\frac{\begin{array}{c}
+\Delta;S\vdash\mathsf{Ref}(\Phi;\psi;\omega;\mu;\beta)\sqsubseteq\mathsf{Ref}(\varphi';\psi';\omega';\mu';\beta')\qquad
+K\in\beta\qquad\mathsf{proto}\notin K\\
+\forall\kappa\in K.\;\bigl(\forall D'\in\overline{D'}.\;\exists(\kappa{:}A)\in\Phi\,\psi.\;\Delta(A,D')\bigr)\land
+\bigl(\forall C'\in\overline{C'}.\;\exists(\kappa{:}A)\in\Phi.\;\Delta^{\pm}(A,C')\bigr)
+\end{array}}
+{\Delta;S\vdash\mathsf{Ref}(\Phi;\psi;\omega;\mu;\beta)\sqsubseteq
+      \mathsf{Dict}(\varphi';\psi';\overline{D'};\overline{C'};\omega';\mu';\beta')}
+$$
+
+A record without a bound, or whose bound admits a key it does not name, may
+hold further keys at any type, and covers no index.
 
 **Methods.** A target method $m$ is covered by a source method of the same
 key, by a function the source holds under that key whose receiver the source
@@ -523,7 +548,7 @@ $$
 So `[number, string]` is within `(number | string)[]` and `[number]` within
 `[number, string?]`, while `number[]` is within no bounded tuple.
 
-Lean: `CoversFields`, `CoversViews`, `optionalSources`, `CoversOptional`, `CoversMethods`, `CoversBounds`,
+Lean: `CoversFields`, `CoversViews`, `optionalSources`, `CoversOptional`, `CoversKeys`, `covers_keys_sound`, `CoversMethods`, `CoversBounds`,
 `CoversSig`, `CoversByFunction`, `CoversTuple`, `CoversPack`,
 `covers_arguments_sound`.
 
@@ -646,6 +671,12 @@ $\mathsf{bool}\le\mathsf{true}$ is not.
 Every cyclic premise occurs under an operand, so the table is sound by
 induction on the level; the induction also supplies the source-type premise a
 method covered by a function needs.
+
+A premise $\Delta(A,B)$ also holds, with no entry, when every label of $A$ is
+one of $B$'s: the meaning of a label list is the union of its labels', so the
+induction needs no step for it (`mixed_subset`). A record below an interface
+then needs no row relating each of its fields' contracts to itself, and no row
+for everything those contracts reach.
 
 `Core.mixed_sound` holds wherever the known rows do: each $(F,L,M)\in\kappa$
 with $F$'s values within $\mathsf{arrs}(L;M)$ at every level.

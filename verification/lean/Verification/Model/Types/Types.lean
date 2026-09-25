@@ -530,21 +530,6 @@ theorem dictViewT_no_proto {A : Fam} {k : Nat} {W : WorldT k}
   cases heq
   exact hp
 
-private theorem lookup_pair_mem {fs : List (PropKey × Nat)} {f : PropKey} {l : Nat}
-    (h : fs.lookup f = some l) : (f, l) ∈ fs := by
-  induction fs with
-  | nil => simp [List.lookup] at h
-  | cons p fs ih =>
-    obtain ⟨name, loc⟩ := p
-    rw [List.lookup_cons] at h
-    split at h
-    · rename_i he
-      have hn : f = name := by simpa using he
-      cases hn
-      cases h
-      simp
-    · exact List.mem_cons_of_mem _ (ih h)
-
 private theorem slots_names (base : Nat) (ns : List PropKey) :
     (slots base ns).map Prod.fst = ns := by
   induction ns generalizing base with
@@ -557,74 +542,6 @@ theorem ownKeysT_slots {K : List PropKey} {k : Nat} {W : WorldT k} {base : Nat}
   refine ⟨slots base ns, rfl, fun p hp => h _ ?_⟩
   have := List.mem_map_of_mem (f := Prod.fst) hp
   rwa [slots_names] at this
-
-private theorem zip_replicate_fields (ns : List PropKey) (A : Fam) :
-    ns.zip (List.replicate ns.length A) = ns.map (fun name => (name, A)) := by
-  induction ns with
-  | nil => simp
-  | cons name rest ih =>
-    simpa only [List.length_cons, List.replicate_succ, List.zip_cons_cons,
-      List.map_cons] using congrArg (List.cons (name, A)) ih
-
-/-- An exact fresh object whose every allocated location has contract `A`
-establishes a readonly dictionary view. The exact `slots` map matters:
-an open record with the same named fields may have additional fields. It
-names no prototype, so it has none. -/
-theorem recT_fresh_dict {A : Fam} {k : Nat} {W : WorldT k}
-    {base : Nat} {ns : List PropKey} (hp : CallArguments.protoField ∉ ns)
-    (h : recT (ns.zip (List.replicate ns.length A)) k W
-      (.objAt (slots base ns) .absent)) :
-    dictViewT A k W (.objAt (slots base ns) .absent) := by
-  obtain ⟨flds, heq, hf⟩ := h
-  cases heq
-  refine ⟨slots base ns, rfl, ?_, ?_⟩
-  · cases hl : (slots base ns).lookup CallArguments.protoField with
-    | none => rfl
-    | some l =>
-      have := List.mem_map_of_mem (f := Prod.fst) (lookup_pair_mem hl)
-      rw [slots_names] at this
-      exact absurd this hp
-  intro f l hl
-  have hp : ((f : PropKey), l) ∈ slots base ns := lookup_pair_mem hl
-  have hn : (f : PropKey) ∈ ns := by
-    rw [← slots_names base ns]
-    exact List.mem_map_of_mem hp
-  have hm : ((f : PropKey), A) ∈ ns.zip (List.replicate ns.length A) := by
-    rw [zip_replicate_fields]
-    exact List.mem_map_of_mem hn
-  obtain ⟨l', c, hl', hw, hc⟩ := hf f A hm
-  rw [hl] at hl'
-  cases hl'
-  exact ⟨c, hw, fun j hj V u hu => (hc j hj V u).mp hu⟩
-
-#print axioms recT_fresh_dict
-
-/-- The same fresh object meets the writable index too: each location it
-allocated has exactly the contract `A`. -/
-theorem recT_fresh_cell {A : Fam} {k : Nat} {W : WorldT k}
-    {base : Nat} {ns : List PropKey} (hp : CallArguments.protoField ∉ ns)
-    (h : recT (ns.zip (List.replicate ns.length A)) k W
-      (.objAt (slots base ns) .absent)) :
-    dictCellT A k W (.objAt (slots base ns) .absent) := by
-  have hproto : (slots base ns).lookup CallArguments.protoField = none := by
-    obtain ⟨fs, heq, hp', -⟩ := recT_fresh_dict hp h
-    cases heq
-    exact hp'
-  obtain ⟨flds, heq, hf⟩ := h
-  cases heq
-  refine ⟨slots base ns, rfl, hproto, ?_⟩
-  intro f l hl
-  have hp' : ((f : PropKey), l) ∈ slots base ns := lookup_pair_mem hl
-  have hn : (f : PropKey) ∈ ns := by
-    rw [← slots_names base ns]
-    exact List.mem_map_of_mem hp'
-  have hm : ((f : PropKey), A) ∈ ns.zip (List.replicate ns.length A) := by
-    rw [zip_replicate_fields]
-    exact List.mem_map_of_mem hn
-  obtain ⟨l', c, hl', hw, hc⟩ := hf f A hm
-  rw [hl] at hl'
-  cases hl'
-  exact ⟨c, hw, hc⟩
 
 /-- Even a Boolean dictionary admits an empty object. Its missing read is
 `undefined`, which is not Boolean; the indexed-read result must include it. -/

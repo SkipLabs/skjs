@@ -18,3 +18,9 @@ export function other(m: Match): number | undefined {
 export function scores(m: Match): Scores {
   return m;
 }
+
+// A fresh literal is one: its own keys are exactly the named members, each
+// within the index.
+export function fresh(): Match {
+  return { home: 1, away: 2 };
+}

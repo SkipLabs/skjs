@@ -1086,22 +1086,22 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
   | .alloc _ ns es => do
     if es.length != ns.length then throw "allocation initializer count mismatch"
     let ps ← es.mapM fun a => closureExpr fc scope Γ a
-    match PositiveRules.expand G A with
-    | [.refs B [] []] =>
-      if B.length != ns.length then throw "allocation claim names different fields"
-      let B ← (ns.map PropKey.str).mapM fun name => do
-        let some D := B.lookup name | throw "allocation claim names different fields"
-        pure (name,D)
-      let Ref ← lower (CellClaims.reference B)
-      -- The calculus evaluates these initializers from left to right.
-      let casts := (ps.zip (B.map Prod.snd)).map fun (p,D) => DirectProof.cast Γ D p
-      pure (DirectProof.node Γ (.makeAt .absent (ns.map .str) (ps.map (·.term))) [Ref] .alloc casts)
-    | [.dict [] [] [] [E] [] [] [] cs] =>
-      if ns.eraseDups.length != ns.length then throw "duplicate dictionary literal key"
-      if !cs.all (· == E) then throw "a writable index of a fresh dictionary is its view's contract"
-      let casts := ps.map fun p => DirectProof.cast Γ E p
-      pure (DirectProof.node Γ (.makeAt .absent (ns.map .str) (ps.map (·.term))) A .allocDict casts)
-    | _ => throw "allocation claim must name a record or dictionary contract"
+    -- A record naming exactly the literal's keys; a key bound, if claimed,
+    -- lists every one of them, as the fresh object's own keys are exactly
+    -- those. Such a bound is what lets the literal meet a dictionary or an
+    -- optional field it leaves out (`CoversKeys`, `CoversOptional`).
+    let [.refs B [] [] [] [] ks] := PositiveRules.expand G A
+      | throw "allocation claim must name a record contract"
+    if B.length != ns.length then throw "allocation claim names different fields"
+    if !ks.all (fun K => ns.all (fun n => K.contains (.str n))) then
+      throw "an allocation's key bound must list every key it allocates"
+    let B ← (ns.map PropKey.str).mapM fun name => do
+      let some D := B.lookup name | throw "allocation claim names different fields"
+      pure (name,D)
+    let Ref ← lower (SourceTypes.use (.refs B [] [] [] [] ks))
+    -- The calculus evaluates these initializers from left to right.
+    let casts := (ps.zip (B.map Prod.snd)).map fun (p,D) => DirectProof.cast Γ D p
+    pure (DirectProof.node Γ (.makeAt .absent (ns.map .str) (ps.map (·.term))) [Ref] .alloc casts)
   | .read _ fld a => do
     let receiver := a
     let a ← closureExpr fc scope Γ a
