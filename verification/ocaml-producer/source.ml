@@ -332,6 +332,9 @@ and expr_node =
      name the instantiation proposed for a generic class. *)
   | New of expr * ty list * expr list
   | Conditional of expr * expr * expr | Coalesce of expr * expr
+  (* An optional chain: the receiver once, `undefined` where it is nullish,
+     else the body, which reads the receiver as `chain_name`. *)
+  | Optional of expr * expr
   | ArrayLiteral of expr list | Index of expr * expr | IndexWrite of expr * expr * expr
   | Bind of expr * expr * expr list
   | WithFields of expr * expr * ty * ty
@@ -391,6 +394,11 @@ let rec pattern_defaults = function
   | PObject props -> List.concat_map (fun (_,t,d) -> Option.to_list d @ pattern_defaults t) props
   | PArray (elems,rest) -> List.concat_map (fun (_,t,d) -> Option.to_list d @ pattern_defaults t) elems
       @ (match rest with Some (_,_,t) -> pattern_defaults t | None -> [])
+
+(* The name an optional chain's body reads its saved receiver by; no source
+   identifier is spelled so. *)
+let chain_name = "?."
+
 (* The immediate subexpressions and nested statements of a form. *)
 let children e = match e.node with
   | Id _ | Literal _ | DoneBody -> []
@@ -400,7 +408,7 @@ let children e = match e.node with
   | Update (_,t,r,_) -> t :: Option.to_list r
   | LogicalAssign (_,a,b) | Comma (a,b) -> [a;b]
   | ArrayAssign (targets,_,rhs) -> rhs :: List.filter_map (fun (_,_,d) -> d) targets
-  | Arith (_,a,b) | Equality (_,a,b) | Write (a,_,b) | Coalesce (a,b) | Index (a,b) | Logical (_,a,b)
+  | Arith (_,a,b) | Equality (_,a,b) | Write (a,_,b) | Coalesce (a,b) | Optional (a,b) | Index (a,b) | Logical (_,a,b)
   | WithFields (a,b,_,_) | SequenceBody (a,b) | LetBody (_,_,a,b) -> [a;b]
   | DestructBody (t,a,b) -> a :: pattern_defaults t @ [b]
   | Conditional (a,b,c) | IndexWrite (a,b,c) | IfBody (_,a,b,c) -> [a;b;c]
@@ -519,6 +527,7 @@ let rec expr binders j =
   | "callWithReceiver" ->
     Call (sub "callee",Some (sub "receiver"),List.map (expr binders) (items "args" j),[],[])
   | "coalesce" -> Coalesce (sub "left",sub "right")
+  | "optional" -> Optional (sub "receiver",sub "body")
   | "arrayLit" -> ArrayLiteral (List.map (expr binders) (items "elems" j))
   | "index" -> Index (sub "e",sub "key")
   | "indexWrite" -> IndexWrite (sub "receiver",sub "key",sub "rhs")

@@ -829,6 +829,8 @@ private partial def exprSites : Fragment.Expr → Sites
     joinSites ([],[p],[]) (joinSites (exprSites f) (joinSites (exprSites receiver)
       ((list.map exprSites).getD ([],[],[]))))
   | .done _ => ([],[],[])
+  -- The saved receiver's read, spelled at the `?.` token, is a site of its own.
+  | .optional p _ r b => joinSites ([],[p],[]) (joinSites (exprSites r) (exprSites b))
   | .seqBody p a b | .letBody p _ _ a b => joinSites ([p.1],[],[]) (joinSites (exprSites a) (exprSites b))
   | .destructBody p t a b => t.defaults.foldl (fun acc e => joinSites acc (exprSites e))
       (joinSites ([p.1],restSpans t,[]) (joinSites (exprSites a) (exprSites b)))

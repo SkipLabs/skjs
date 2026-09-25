@@ -339,6 +339,7 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
     | _, _ => throw s!"unsupported source expression at [{p.1},{p.2}): equality requires a null, undefined or numeric singleton operand"
   | .logical p a l r => return .logical p a (← comparisonsExpr fc l) (← comparisonsExpr fc r)
   | .coalesce p l r => return .coalesce p (← comparisonsExpr fc l) (← comparisonsExpr fc r)
+  | .optional p m r b => return .optional p m (← comparisonsExpr fc r) (← comparisonsExpr fc b)
   | .nullishAssign p n np r => return .nullishAssign p n np (← comparisonsExpr fc r)
   | .assign p n np r => return .assign p n np (← comparisonsExpr fc r)
   | .shapeTest p t eq e => return .shapeTest p t eq (← comparisonsExpr fc e)
@@ -438,7 +439,7 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e
   | .throwBody _ e =>
     assignsExpr name e
-  | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b
+  | .equality _ _ a b | .logical _ _ a b | .coalesce _ a b | .optional _ _ a b
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .withValue _ a b _ _ | .index _ _ a b
   | .seqBody _ a b | .letBody _ _ _ a b => assignsExpr name a || assignsExpr name b
   | .destructBody _ t a b => assignsExpr name a || t.defaults.any (assignsExpr name) || assignsExpr name b
@@ -724,7 +725,7 @@ private partial def readOnly : Fragment.Expr → Bool
   | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e => readOnly e
   | .throwBody .. => false
   | .equality _ _ a b | .singletonTest _ _ _ _ a b | .logical _ _ a b | .coalesce _ a b
-  | .seqBody _ a b | .letBody _ _ _ a b | .index _ _ a b | .arith _ _ a b | .elemAt _ a b
+  | .optional _ _ a b | .seqBody _ a b | .letBody _ _ _ a b | .index _ _ a b | .arith _ _ a b | .elemAt _ a b
   | .comma _ a b => readOnly a && readOnly b
   | .ifBody _ _ c t e => readOnly c && readOnly t && readOnly e
   | .destructBody _ t a b => readOnly a && t.defaults.all readOnly && readOnly b
@@ -1303,6 +1304,15 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let H := (BranchRefinement.tagSlice G l.type .isNullish true) :: Γ
     let r ← closureExpr fc (savedOperandScope scope left) H right
     pure (DirectProof.letE Γ l (← selectPlan G K 0 A .isNullish r (DirectProof.var K 0 A)))
+  | .optional _ mark receiver body => do
+    -- `r?.b` is `let x = r in (x == null ? undefined : b)`, with `b` reading
+    -- the saved receiver `x` by `chainName`, where it is not nullish: the
+    -- shape `??` has with its arms exchanged.
+    let r ← closureExpr fc scope Γ receiver
+    let K := r.type :: Γ
+    let H := (BranchRefinement.tagSlice G r.type .isNullish false) :: Γ
+    let b ← closureExpr fc (held ⟨Fragment.chainName,some mark⟩ :: scope) H body
+    pure (DirectProof.letE Γ r (← selectPlan G K 0 A .isNullish (DirectProof.node K .undef [3] .undef) b))
   | .not _ a => do
     let a ← closureExpr fc scope Γ a
     if BranchRefinement.onlyBoolean G a.type then
@@ -2524,7 +2534,7 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let yes ← compileExpr fc scope (conditionContext G scope Γ cond true) thn next
     let no ← compileExpr fc scope (conditionContext G scope Γ cond false) els next
     compileCondition fc scope Γ cond yes no
-  | .bindWithReceiver .. | .withValue .. | .lambda .. | .ctor .. | .coalesce .. | .logical .. =>
+  | .bindWithReceiver .. | .withValue .. | .lambda .. | .ctor .. | .coalesce .. | .optional .. | .logical .. =>
     let t ← closureExpr fc scope Γ e
     emitAt e.span t.term (.bind next) Γ A (scope := scope)
   | .construct _ callee args _ =>

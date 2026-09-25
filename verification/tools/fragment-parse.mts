@@ -56,6 +56,7 @@ import type {
   ArrayElemAst,
   TypeofShape,
 } from "./fragment.mts";
+import { CHAIN } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { messageOf } from "./thrown.mts";
 import { collectDeclarations, DeclarationError, libraryTerm, tsconfigOf, type LibraryType, type SeenDiagnostic }
@@ -635,6 +636,14 @@ class Gate {
       // on the key. Nested parentheses widen again at each level.
       return { ...this.expr(node.expression), pos: this.span(node) };
 
+    // A link of an optional chain: the chain up to it is one `optional`.
+    if (
+      (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node) ||
+        ts.isCallExpression(node) || ts.isNonNullExpression(node)) &&
+      node.flags & ts.NodeFlags.OptionalChain
+    )
+      return this.optionalChain(node);
+
     if (ts.isConditionalExpression(node))
       return {
         k: "conditional",
@@ -1136,6 +1145,78 @@ class Gate {
       node,
       `expression outside the fragment (${ts.SyntaxKind[node.kind]})`,
     );
+  }
+
+  /** An optional chain: `r?.x` evaluates `r` once and is `undefined` where it
+   * is null or undefined, else the rest of the chain on its value, which the
+   * body reads as the variable `CHAIN` at the `?.` token. A link after the
+   * chain's `?.` (`.c` in `r?.b.c`) extends the body, so it is skipped with
+   * the rest; a second `?.` tests the chain so far, whose `undefined` it
+   * passes on, as JavaScript's short-circuit does. The body's nodes span from
+   * the `?.` token, so each has a claim site of its own. On a `null` or
+   * `undefined` literal the chain is that literal, then `undefined`: its
+   * body never runs. */
+  private optionalChain(
+    node: ts.PropertyAccessExpression | ts.ElementAccessExpression | ts.CallExpression | ts.NonNullExpression,
+  ): Expr {
+    const question = ts.isNonNullExpression(node) ? undefined : node.questionDotToken;
+    if (question) {
+      const at = this.span(question);
+      const receiver = this.expr(node.expression);
+      if (receiver.k === "lit" && (receiver.lit.a === "null" || receiver.lit.a === "undefined"))
+        return { k: "comma", pos: this.span(node), left: receiver, right: { k: "lit", pos: at, lit: { a: "undefined" } } };
+      const saved: Expr = { k: "id", pos: at, name: CHAIN };
+      return { k: "optional", pos: this.span(node), at, receiver, body: this.chainLink(node, saved, [at[0], node.end]) };
+    }
+    const chain = this.expr(node.expression);
+    if (chain.k === "comma") return { ...chain, pos: this.span(node) };
+    if (chain.k !== "optional") this.fail(node, "a link of an optional chain without its `?.`");
+    return { ...chain, pos: this.span(node), body: this.chainLink(node, chain.body, [chain.at[0], node.end]) };
+  }
+
+  /** One link of an optional chain applied to `object`, the chain so far. */
+  private chainLink(
+    node: ts.PropertyAccessExpression | ts.ElementAccessExpression | ts.CallExpression | ts.NonNullExpression,
+    object: Expr,
+    pos: Span,
+  ): Expr {
+    if (ts.isNonNullExpression(node)) return { k: "cast", pos, cast: "nonNull", annot: null, e: object };
+    if (ts.isPropertyAccessExpression(node)) {
+      if (this.staticReads.has(this.span(node.name).join(":")))
+        this.fail(node, "an optional read of a static member is outside the fragment");
+      return { k: "read", pos, field: node.name.text, e: object };
+    }
+    if (ts.isElementAccessExpression(node)) {
+      const [start, end] = this.span(node.argumentExpression);
+      const symbol = ts.isIdentifier(node.argumentExpression)
+        ? this.symbolKeys.get(`${start}:${end}`) : undefined;
+      if (symbol !== undefined) return { k: "read", pos, field: { symbol }, e: object };
+      return { k: "index", pos, e: object, key: this.expr(node.argumentExpression) };
+    }
+    let target: Expression = node.expression;
+    while (ts.isParenthesizedExpression(target)) target = target.expression;
+    // `o.m?.()` tests the method, but calls it with `o` as its receiver: the
+    // chain would have to save the object apart from the tested value.
+    if (node.questionDotToken && (ts.isPropertyAccessExpression(target) || ts.isElementAccessExpression(target)))
+      this.fail(node, "an optional call of a method is outside the fragment");
+    const spreads: number[] = [];
+    const args = node.arguments.map((arg, i) => {
+      if (!ts.isSpreadElement(arg)) return this.expr(arg);
+      spreads.push(i);
+      return this.expr(arg.expression);
+    });
+    const method = !node.questionDotToken && (object.k === "read" || object.k === "index");
+    const typeArgs = node.typeArguments?.map((t) => this.typeOf(t, node));
+    if (typeArgs?.length && !method)
+      this.fail(node, "explicit type arguments are admitted on a method call only");
+    return {
+      k: method ? "invoke" : "apply",
+      pos,
+      callee: object,
+      args,
+      ...(spreads.length ? { spreads } : {}),
+      ...(method && typeArgs?.length ? { typeArgs } : {}),
+    };
   }
 
   // A call signature alone does not establish the inherited .call intrinsic.

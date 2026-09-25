@@ -393,6 +393,11 @@ inductive Expr where
   | lit (pos : Span) (v : Claim.Val)
   | logical (pos : Span) (andOp : Bool) (left right : Expr)
   | coalesce (pos : Span) (left right : Expr)
+  /-- An optional chain, `r?.b`, `r?.[k]`, `r?.(a)` and what follows them in
+  the chain: the receiver once; `undefined` when it is null or undefined,
+  else `body`, in which the variable `chainName` (spelled at `mark`, the
+  `?.` token) is the receiver's value. -/
+  | optional (pos mark : Span) (receiver body : Expr)
   | shapeTest (pos : Span) (tag : Tag) (equal : Bool) (e : Expr)
   /-- Strict equality awaiting a checked singleton operand from source claims. -/
   | equality (pos : Span) (equal : Bool) (left right : Expr)
@@ -502,6 +507,10 @@ inductive Expr where
   hidden name. -/
   | destructBody (pos : Span) (target : Pattern Expr) (init body : Expr)
 
+/-- The name an optional chain's body reads its saved receiver by: no source
+identifier is spelled so. -/
+def chainName : String := "?."
+
 /-- Lexical dependencies, including deferred bodies. Exhaustive so a new
 executable source form cannot bypass parameter-initialization checks. -/
 partial def Expr.freeNames : Expr → List String
@@ -532,6 +541,7 @@ partial def Expr.freeNames : Expr → List String
   | .letBody _ n _ a b => a.freeNames ++ b.freeNames.filter (· != n)
   | .destructBody _ t a b => a.freeNames ++ t.defaults.flatMap Expr.freeNames ++
       b.freeNames.filter (!t.names.contains ·)
+  | .optional _ _ r b => r.freeNames ++ b.freeNames.filter (· != chainName)
 
 /-- Every direct call of a named function: the call's span, the callee read's
 span, the name, as `freeNames` binds names, and the explicit type arguments
@@ -565,6 +575,7 @@ partial def Expr.callees : Expr → List (Span × Span × String × List Json)
   | .letBody _ n _ a b => a.callees ++ b.callees.filter (·.2.2.1 != n)
   | .destructBody _ t a b => a.callees ++ t.defaults.flatMap Expr.callees ++
       b.callees.filter (!t.names.contains ·.2.2.1)
+  | .optional _ _ r b => r.callees ++ b.callees.filter (·.2.2.1 != chainName)
 
 /-- Closure conversion for acyclic forward captures. Only a literal closure's
 allocation can move; every potentially effectful initializer keeps source order.
@@ -607,7 +618,7 @@ def Expr.span : Expr → Span
   | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body | .destructBody _ _ _ body => body.span
   | .ifBody p _ _ _ _ | .done p | .throwBody p _ | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
-  | .comma p _ _ => p
+  | .comma p _ _ | .optional p _ _ _ => p
   | .arrayLit p _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ _ => p
   | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ | .construct p _ _ _ => p
 
@@ -849,6 +860,9 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     CellClaims.fieldsExactly j ["k","pos","e"]
     return .shapeTest p .isArray true (← decodeExpr (← jField j "e"))
   | "coalesce" => return .coalesce p (← decodeExpr (← jField j "left")) (← decodeExpr (← jField j "right"))
+  | "optional" => do
+    CellClaims.fieldsExactly j ["k","pos","at","receiver","body"]
+    return .optional p (← jSpan j "at") (← decodeExpr (← jField j "receiver")) (← decodeExpr (← jField j "body"))
   | "comma" => do
     CellClaims.fieldsExactly j ["k","pos","left","right"]
     return .comma p (← decodeExpr (← jField j "left")) (← decodeExpr (← jField j "right"))

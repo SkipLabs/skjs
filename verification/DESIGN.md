@@ -4099,6 +4099,32 @@ numeric operators, not a second mechanism: `binop` concatenates, and
   No calculus term or rule is added: the lowering binds `a` in an unread
   slot.
 
+### Optional chaining
+
+`r?.b`, `r?.[k]`, `r?.(a)` and `r?.m(a)` are one derived form, `optional`,
+the shape of `??` with the arms exchanged
+([PROGRAM-TYPING.md](PROGRAM-TYPING.md#derived-source-forms)):
+the receiver is evaluated once and saved; `undefined` where it is null or
+undefined; otherwise the rest of the chain runs on the saved value, read as
+the variable `?.`, a name no source identifier can have. The decisions:
+
+- **The chain is the unit, not the link.** Every link after a `?.` belongs to
+  its body, so `r?.a.b` never reads `.b` of `undefined`, as JavaScript's
+  short-circuit has it. A later `?.` tests the chain so far; nesting the two
+  forms gives the same value and the same effects, since the inner form's
+  `undefined` is what the outer one tests.
+- **Claims have sites of their own.** The saved receiver's read is spelled at
+  the `?.` token and each body node from that token to its end, so no body
+  node shares a span with the chain or the receiver, whose claims differ (the
+  chain adds `undefined`, the saved value drops null and undefined).
+- **A receiver that is only nullish.** `null?.f` is `null, undefined`: the
+  literal is the receiver's whole value, so the lowering is exact whatever the
+  claims, and the body, which would read a field of nothing, never exists.
+  Any other receiver keeps the body, which Lean checks at the present slice.
+- **`o.m?.()` is refused.** It tests `o.m` but calls it with `o` as its
+  receiver; the form saves only the tested value. Nothing in the corpus
+  writes it.
+
 ### Numeric operators and bigints
 
 Every binary operator the fragment has on primitive operands is one term,

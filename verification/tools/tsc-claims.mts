@@ -267,6 +267,13 @@ function walkExpr(e: Expr, out: Sites): void {
       walkExpr(e.l, out);
       walkExpr(e.r, out);
       return;
+    case "optional":
+      // The chain's value, and the saved receiver's read at the `?.` token,
+      // which is a site in the body.
+      addExpr(out, e.pos, e.k);
+      walkExpr(e.receiver, out);
+      walkExpr(e.body, out);
+      return;
     case "coalesce":
     case "comma":
       addExpr(out, e.pos, e.k);

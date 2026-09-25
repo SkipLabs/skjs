@@ -8,6 +8,9 @@ import type { Atom } from "./claim.mts";
 import type { DeclarationDocument, PropertyKey, TypeTerm } from "./declaration-types.mts";
 import type { Span } from "./span.mts";
 
+/** The name an optional chain's body reads its saved receiver by; no source
+ * identifier is spelled so (Fragment.lean's `chainName`). */
+export const CHAIN = "?.";
 /** The arithmetic a compound assignment may perform. */
 export type ArithOp = "add" | "sub" | "mul" | "div" | "pow" | "rem";
 /** Every binary operator on primitive operands: arithmetic, and the
@@ -72,6 +75,11 @@ export type Expr =
       post: boolean;
     }
   | { k: "coalesce"; pos: Span; left: Expr; right: Expr }
+  /* An optional chain, `r?.b`, `r?.[k]`, `r?.(a)`, with the links after it:
+     the receiver once, then `undefined` where it is null or undefined, else
+     `body`, which reads the receiver's value as the variable `CHAIN`, spelled
+     at `at`, the `?.` token. */
+  | { k: "optional"; pos: Span; at: Span; receiver: Expr; body: Expr }
   /* `left, right`: the left operand for its effects, then the right one's
      value. `void e` is `e, undefined`. */
   | { k: "comma"; pos: Span; left: Expr; right: Expr }

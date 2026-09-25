@@ -1962,6 +1962,29 @@ Null coalescing is likewise a derived form: a let saves the left value, and
 `unionVar` with known nullish-tag conditionals selects the fallback or saved value.
 No truthiness rule is involved; false remains a result of the left operand.
 
+An optional chain is the same derived form with the arms exchanged. The
+parser writes `r?.x` and every link after it in the chain (`.b`, `[k]`,
+`(a)`, `!`) as one `optional` node whose body applies those links to the
+variable $\mathsf{chain}$ (`chainName`, spelled `?.`, which no source
+identifier is), so a nullish receiver skips the rest of the chain, as
+JavaScript's short-circuit does; a second `?.` in a chain tests the chain so
+far, which is `undefined` where an earlier one skipped:
+
+$$
+r\,?.\,b\;\equiv\;\mathsf{let}\ \mathsf{chain}=r\ \mathsf{in}\ \mathsf{if}\ \mathsf{nullish}(\mathsf{chain})\ \mathsf{then}\ \mathsf{undefined}\ \mathsf{else}\ b,
+\qquad
+\frac{\Gamma\vdash r:A\quad T_{\mathsf{false}}(A)::\Gamma\vdash b:B}
+     {\Gamma\vdash r\,?.\,b:\{\mathsf{undefined}\mid T_{\mathsf{true}}(A)\neq\emptyset\}\cup B}
+$$
+
+with $T_q$ the nullish tag's slices. The body is checked where the saved
+receiver holds its present slice, so a method called through the chain
+(`o?.m()`) has the present `o` as its receiver. `o.m?.()` would test the
+method but call it with `o`, which the chain does not save apart from the
+tested value, and is refused. On a `null` or `undefined` literal receiver the
+chain is `r, undefined`: the literal is the receiver's whole value, and the
+body never runs.
+
 Logical AND and OR return an operand, as in JavaScript: the left one where its
 truthiness decides, the right one elsewhere. For a left operand that is not a
 Boolean they are the same derived form on the truthiness test:

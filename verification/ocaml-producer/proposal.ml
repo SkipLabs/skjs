@@ -1054,6 +1054,13 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let right = expr ?expected (branch env c false) b in union left right
     | Coalesce (a,b) -> let left=expr env a in let right=expr ?expected env b in
       union (without_nullish left) right
+    (* The body runs where the receiver is present, and reads it so; a
+       nullish receiver gives `undefined`. An inner chain's receiver hides
+       an outer one's. *)
+    | Optional (r,b) -> let receiver=expr env r in
+      let present=without_nullish receiver in
+      let body=expr ?expected (List.remove_assoc chain_name env @ [chain_name,Value present]) b in
+      if present = receiver then body else union (Atoms [Undef]) body
     (* The left operand's value where it decides, the right's elsewhere; the
        right operand runs where the left answered the other way. *)
     | Logical (conjunction,a,b) -> let left=expr env a in
