@@ -56,16 +56,17 @@ private def derivedTmFromJson : Json → Except String Tm := fromJson?
 instance (priority := high) : ToJson Tm := ⟨fun t => closureKinds false (derivedTmToJson t)⟩
 instance (priority := high) : FromJson Tm := ⟨fun j => derivedTmFromJson (closureKinds true j)⟩
 deriving instance ToJson, FromJson for PositiveNormalization.Tuple
+deriving instance ToJson, FromJson for MethodMembers.Sig
 deriving instance ToJson, FromJson for Clause
 
 /-- The clause fields that are left out of JSON when empty: a call clause's
-variadic signatures and a record's optional fields. Absence is the one
+variadic signatures and a record's optional fields and methods. Absence is the one
 spelling of none, so strict decoding, which re-encodes and compares, still
 refuses an explicit empty list, and a clause without them reads as it always
 has. -/
 private def omittedWhenEmpty : List (String × String) :=
   [("arrs", "variadic"), ("callable", "variadic"), ("ctors", "variadic"), ("refs", "optional"),
-   ("dict", "optional")]
+   ("dict", "optional"), ("refs", "methods"), ("dict", "methods")]
 
 private def withoutEmptyVariadic (j : Json) : Json :=
   omittedWhenEmpty.foldl (fun j (key, name) =>
@@ -219,10 +220,10 @@ def clauseTypes : Clause (Ty Nat) → List (Ty Nat)
   | .top => []
   | .list a bs => (a :: bs).flatMap fun t => t.required ++ t.optional ++ t.rest.toList
   | .pack a bs => (a :: bs).flatMap fun t => t.required ++ t.optional ++ t.rest.toList
-  | .refs A bs vs os => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd ++
-      os.map Prod.snd
-  | .dict A bs vs ds os => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd ++ ds ++
-      os.map Prod.snd
+  | .refs A bs vs os ms => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd ++
+      os.map Prod.snd ++ ms.flatMap MethodMembers.Sig.operands
+  | .dict A bs vs ds os ms => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd ++ ds ++
+      os.map Prod.snd ++ ms.flatMap MethodMembers.Sig.operands
   | .arrs L S => L.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++
       S.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2.1, p.2.2.2])
   | .callable A bs L S =>

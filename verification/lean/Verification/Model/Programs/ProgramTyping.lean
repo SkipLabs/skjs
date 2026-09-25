@@ -579,7 +579,7 @@ theorem restArray_safe {G : NormalGraph ι} {A P : Ty ι} (hr : RestArray G A P)
         intro k hk V hy hrec
         refine (represents_sem hA k V _).mpr ⟨⟨?_, by simp⟩,
           fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
-          by simpa [ReferenceConjunctions.famsOf] using optT_nil⟩
+          ⟨by simpa [ReferenceConjunctions.famsOf] using optT_nil, MethodMembers.methodT_nil _ _ _⟩⟩
         simpa [ReferenceConjunctions.famsOf] using hrec
     · exact hS.elim
   · exact hr.elim
@@ -1287,7 +1287,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       hu hok (ArgsT_zip hargs)
     intro k hk V hy hrec
     refine (represents_sem hr k V _).mpr ⟨⟨?_, by simp⟩, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
-      by simpa [ReferenceConjunctions.famsOf] using optT_nil⟩
+      ⟨by simpa [ReferenceConjunctions.famsOf] using optT_nil, MethodMembers.methodT_nil _ _ _⟩⟩
     have hfam : ReferenceConjunctions.famsOf (meaning G) (parts.map fun p => (p.1, p.2.1))
         = (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2.1) := by
       simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
@@ -1325,7 +1325,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     apply (represents_sem hr k V _).mpr
     refine ⟨⟨⟨slots heap.length (parts.map Prod.fst), rfl, ?_⟩, by simp⟩,
       by simp [viewT, ReferenceConjunctions.famsOf], ?_,
-      by simpa [ReferenceConjunctions.famsOf] using optT_nil⟩
+      ⟨by simpa [ReferenceConjunctions.famsOf] using optT_nil, MethodMembers.methodT_nil _ _ _⟩⟩
     · intro f T hm
       simp [ReferenceConjunctions.famsOf] at hm
     · intro A hA
@@ -1355,7 +1355,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     apply Safe_mono j (fun k _ X u hu => (meaning_append G A U k X u).mpr
       (hu.elim Or.inl (fun h => Or.inr ((represents_sem hUnd k X u).mpr h)))) V heap _
       (read_optional_rule (meaning_valOnly G A) j V heap hv hok
-        (fun l hl => optT_present (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) hs.2.2 hl))
+        (fun l hl => optT_present (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) hs.2.2.1 hl))
   | @readDict Γ a Ref fs vs ix os A U f ha hr hm hUnd ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt (.str f)) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)

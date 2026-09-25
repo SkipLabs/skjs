@@ -253,7 +253,7 @@ theorem reference_exact {T : Table} {fs : List (PropKey × Ty Nat)}
   rw [label_meaning hm]
   simp [clauseSem, PositiveNormalization.semWithArgs, ReferenceConjunctions.refsT, interpretation,
     ReferenceConjunctions.famsOf, viewT]
-  exact recT_optT_nil
+  exact fun h => ⟨recT_optT_nil h, MethodMembers.methodT_nil _ _ _⟩
 
 /-- Interning a reference yields a table holding its row and its label there. -/
 theorem reference_run {fs : List (PropKey × Ty Nat)} {T T' : Table} {l}

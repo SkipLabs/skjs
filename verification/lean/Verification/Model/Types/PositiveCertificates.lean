@@ -167,6 +167,11 @@ instance {R : List ι → List ι → Prop} [DecidableRel R]
     Decidable (RestCovers elem R p q) := by
   unfold RestCovers; infer_instance
 
+instance {R : List ι → List ι → Prop} [DecidableRel R]
+    {elem : List ι → Option (List ι)} [DecidableEq ι] (p q) :
+    Decidable (CoversSig elem R p q) := by
+  unfold CoversSig; infer_instance
+
 set_option synthInstance.maxSize 1024 in
 instance [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
     {arrows : Ops ι → List (List ι × List (List ι) × List ι × List ι) → Ops ι → Prop}

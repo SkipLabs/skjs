@@ -606,6 +606,23 @@ abbrev CoversOptional (R : List ι → List ι → Prop)
     (source : List (List (PropKey × List ι))) (optional target : List (PropKey × List ι)) : Prop :=
   ∀ q ∈ target, ∃ p ∈ source.flatten ++ optional, p.1 = q.1 ∧ R p.2 q.2 ∧ R q.2 p.2
 
+/-- A method signature covers another of the same key: each fixed target
+signature is covered by a fixed source one taking as many parameters, each at
+least as wide, with a result at most as wide; each variadic target signature
+by a variadic source one, its further fixed parameters taken into the source's
+rest, its rest within the source's and results covariant. The receiver is the
+host on both sides, so receivers are not compared. -/
+def CoversSig (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
+    (p q : MethodMembers.Sig (List ι)) : Prop :=
+  (∀ t ∈ q.calls, ∃ s ∈ p.calls, Domains R t.1 s.1 ∧ R s.2 t.2) ∧
+  (∀ t ∈ q.rests, ∃ s ∈ p.rests, Domains R (t.1.take s.1.length) s.1 ∧
+    IntoRest elem R (t.1.drop s.1.length) s.2.1 ∧ R t.2.1 s.2.1 ∧ R s.2.2 t.2.2)
+
+/-- Every target method is covered by a source method of the same key. -/
+abbrev CoversMethods (elem : List ι → Option (List ι)) (R : List ι → List ι → Prop)
+    (source target : List (MethodMembers.Sig (List ι))) : Prop :=
+  ∀ q ∈ target, ∃ p ∈ source, p.key = q.key ∧ CoversSig elem R p q
+
 /-- Two rest contracts agree: both absent, or both present and equivalent. -/
 def CoversRest (R : List ι → List ι → Prop) (readonly : Bool) : Option (List ι) → Option (List ι) → Prop
   | none, none => True
@@ -738,11 +755,13 @@ def CoversWith (G : NormalGraph ι) (R : List ι → List ι → Prop)
   | .str, .str => True
   | .strLit _, .str => True
   | .strLit a, .strLit b => a = b
-  | .refs a bs vs os, .refs c ds ws ps => CoversFields R (a :: bs) (c :: ds) ∧
-      CoversViews R (a :: bs) vs ws ∧ CoversOptional R (a :: bs) os ps
-  | .dict a bs vs ix os, .dict c ds ws iy ps =>
+  | .refs a bs vs os ms, .refs c ds ws ps ns => CoversFields R (a :: bs) (c :: ds) ∧
+      CoversViews R (a :: bs) vs ws ∧ CoversOptional R (a :: bs) os ps ∧
+      CoversMethods (restElem G) R ms ns
+  | .dict a bs vs ix os ms, .dict c ds ws iy ps ns =>
       CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws ∧
-      (∀ y ∈ iy, ∃ x ∈ ix, R x y) ∧ CoversOptional R (a :: bs) os ps
+      (∀ y ∈ iy, ∃ x ∈ ix, R x y) ∧ CoversOptional R (a :: bs) os ps ∧
+      CoversMethods (restElem G) R ms ns
   | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
       arrows L S M ∧
       ∀ t ∈ T, (∃ s ∈ S, RestCovers (restElem G) R s t) ∨ ∃ p ∈ L, FixedCallsPack G R p t
@@ -884,6 +903,52 @@ theorem covers_optional_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
     exact ⟨c0, hw, both c0 hag⟩
   · obtain ⟨c0, hw, hag⟩ := optT_present (mem_famsOf.mpr ⟨pl, hp, rfl⟩) hv.2 hl
     exact ⟨c0, hw, both c0 hag⟩
+
+/-- A covered method signature holds of the same value read from the same
+host: parameters contravariant, results covariant, the host on both sides. -/
+theorem covers_sig_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
+    {p q : MethodMembers.Sig (List ι)} (hc : CoversSig (restElem G) R p q) (n : Nat)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
+    (W : WorldT n) (v u : Val)
+    (h : MethodMembers.onHost v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) p) n W u) :
+    MethodMembers.onHost v (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η) q) n W u := by
+  obtain ⟨hcalls, hrests⟩ := hc
+  obtain ⟨⟨hinv, hL⟩, ⟨_, hS⟩⟩ := h
+  refine ⟨⟨hinv, fun x hx => ?_⟩, ⟨hinv, fun x hx => ?_⟩⟩
+  · obtain ⟨t', ht', rfl⟩ := List.mem_map.mp hx
+    obtain ⟨t, ht, rfl⟩ := List.mem_map.mp ht'
+    obtain ⟨s, hs, hd, hres⟩ := hcalls t ht
+    exact (hL _ (List.mem_map_of_mem (List.mem_map_of_mem hs))).weaken (fun _ _ _ r h => h)
+      (fun j hj U args ha => by simpa using Domains.short (hr j hj) hd (by simpa using ha))
+      (fun m hm U w hw => hr m hm _ _ hres U w hw)
+  · obtain ⟨t', ht', rfl⟩ := List.mem_map.mp hx
+    obtain ⟨t, ht, rfl⟩ := List.mem_map.mp ht'
+    obtain ⟨s, hs, hd, hin, he, hres⟩ := hrests t ht
+    exact (hS _ (List.mem_map_of_mem (List.mem_map_of_mem hs))).weaken (fun _ _ _ r h => h)
+      (fun j hj U args ha => by
+        simpa using rest_rest (hr j hj) (hpa j hj _ _ he) (by simpa using hd) (by simpa using hin)
+          (by simpa using ha))
+      (fun m hm U w hw => hr m hm _ _ hres U w hw)
+
+/-- Covered methods: each target member is read from the location a source
+member of its key names, whose contract implies the target's signatures on the
+same host. -/
+theorem covers_methods_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
+    {ms ns : List (MethodMembers.Sig (List ι))} (hc : CoversMethods (restElem G) R ms ns) (n : Nat)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
+    (W : WorldT n) (v : Val)
+    (hv : MethodMembers.methodT (ms.map (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η))) n W v) :
+    MethodMembers.methodT (ns.map (MethodMembers.Member.of (mixedValues G η) (mixedArgs G η))) n W v := by
+  show viewT _ n W v
+  intro f T hm
+  simp only [MethodMembers.hostViews, List.map_map, List.mem_map] at hm
+  obtain ⟨q, hq, he⟩ := hm
+  cases he
+  obtain ⟨p, hp, hkey, hpq⟩ := hc q hq
+  obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ := MethodMembers.methodT_at (List.mem_map_of_mem hp) hv
+  refine ⟨flds, l, c, rfl, by simpa [MethodMembers.Member.of, hkey] using hf, hl,
+    fun j hj W' u hu => covers_sig_sound hpq j (fun i hi => hr i (by omega))
+      (fun i hi => hpa i (by omega)) W' _ u (hag j hj W' u hu)⟩
 
 /-- The same argument for a callable object's property bag, which forgets the
 call slot but names the same locations. -/
@@ -1078,15 +1143,17 @@ theorem Covers.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R a b} (hc 
         · exact hfp.elim
   · exact id
   · exact id
-  · rename_i a bs vs os c ds ws ps
+  · rename_i a bs vs os ms c ds ws ps ns
     intro hv
     exact ⟨covers_fields_sound hc.1 n hr W v hv.1, covers_views_sound hc.2.1 n hr W v ⟨hv.1, hv.2.1⟩,
-      covers_optional_sound hc.2.2 n hr W v ⟨hv.1, hv.2.2⟩⟩
-  · rename_i a bs vs ix os c ds ws iy ps
+      covers_optional_sound hc.2.2.1 n hr W v ⟨hv.1, hv.2.2.1⟩,
+      covers_methods_sound hc.2.2.2 n hr hpa W v hv.2.2.2⟩
+  · rename_i a bs vs ix os ms c ds ws iy ps ns
     intro hv
     refine ⟨covers_fields_sound hc.1 n hr W v hv.1,
       covers_views_sound hc.2.1 n hr W v ⟨hv.1, hv.2.1⟩, ?_,
-      covers_optional_sound hc.2.2.2 n hr W v ⟨hv.1, hv.2.2.2⟩⟩
+      covers_optional_sound hc.2.2.2.1 n hr W v ⟨hv.1, hv.2.2.2.1⟩,
+      covers_methods_sound hc.2.2.2.2 n hr hpa W v hv.2.2.2.2⟩
     intro y hy
     obtain ⟨x, hx, hxy⟩ := hc.2.2.1 y hy
     obtain ⟨flds, he, hfs⟩ := hv.2.2.1 x hx
