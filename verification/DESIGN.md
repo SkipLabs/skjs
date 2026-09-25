@@ -1963,6 +1963,76 @@ rule. The controls `method-members.ts`, `invalid-method-extraction.ts`,
 `invalid-method-as-property.ts`, `invalid-method-bivariance.ts` and
 `invalid-method-result.ts` exercise each consequence.
 
+### The array prototype
+
+**Principle.** An array reaches `Array.prototype` through a hidden field, as
+in JavaScript: a property read on an object that lacks the key continues at
+the object's prototype. The prototype is a library object. Its members'
+contracts are trusted specifications, generic over the receiver
+(`map : ∀T U. (this: readonly T[], f: (x: T, i: number, a: readonly T[]) => U) => U[]`),
+and one type, `ArrayProto`, describes it for every array.
+
+**Calculus.** A reserved key `protoField`, like the store key, holds the
+prototype; no source property names it. One step delegates a read:
+
+$$
+\frac{\mathit{fs}(k)=\varnothing\quad\mathit{fs}(\mathsf{proto})=l\quad h(l)=p}
+     {h,\ \mathsf{readAt}\;k\;(\mathsf{obj}(\mathit{fs},c))\ \to\ h,\ \mathsf{readAt}\;k\;p}\ \textsc{readProto}
+$$
+
+and `readMissing` now requires $\mathit{fs}(\mathsf{proto})=\varnothing$. A
+computed string-key read delegates the same way (`indexProto`, and
+`indexMissing` requires no prototype). A chain is followed one step per link.
+
+Arrays get the prototype at allocation. A literal is
+`makeAt [store, proto] [arrLit es, P]`, where `P` is the ambient
+`Array.prototype`, a trusted import at `ArrayProto`. The calculus no longer
+builds the rest array: variadic invocation binds the rest *store* to slot 0,
+and the body wraps it with the prototype it captured, as a literal does. So
+every array is one store and one object, as in JavaScript.
+
+**Types.** Two additions make a delegated read typable:
+
+- *An own-key bound.* A record clause may bound its object's own keys:
+  $\mathsf{keys}(v)\subseteq K$. Record types are open, so without a bound
+  `xs.map` could find an own `map` and never reach the prototype. An array
+  type bounds its own keys to the store and the prototype, which is true of
+  every array the model allocates, since keys are fixed at allocation. Meet
+  intersects bounds, and a bounded target needs a bounded source within it.
+- *A prototype view.* An array type holds the prototype as a readonly view at
+  `ArrayProto`: `T[]` is
+  $\mathsf{Ref}(\{\mathsf{store}{:}S\};\{\mathsf{proto}{:}\mathsf{ArrayProto}\};K)$
+  with $K=\{\mathsf{store},\mathsf{proto}\}$, and `readonly T[]` holds the store
+  as a view too.
+
+$$
+\frac{\Gamma\vdash e:\mathsf{Ref}(\ldots;K)\quad k\notin K\quad
+      (\mathsf{proto}{:}P)\ \text{a field or view}\quad
+      (k{:}A)\ \text{a field or view of}\ P}
+     {\Gamma\vdash\mathsf{readAt}\;k\;e:A}\ \textsc{readProto}
+$$
+
+A method call `xs.map(f)` reads `map` through the prototype and invokes it
+with receiver `xs`. The member's receiver-quantified signature admits `xs`,
+so this needs no member contract of its own. Coverage of a host-relative
+target member by a prototype member (`T[] ≤ Iterable<T>`) instantiates the
+member's scheme at the source's element type. It is staged after the read
+rule.
+
+**Consequence.** Optional fields and index views read an absent key as
+`undefined`, which is true only without a prototype. So `optT` (with at least
+one field) and `dictViewT` require no prototype field, and no array is below a
+type with optional fields or an index signature.
+
+**Trust.** `ArrayProto` states what the library's members do. It is assumed,
+like an imported value's declared type, and each member's specification
+includes the receiver it admits.
+
+**Increments.** (1) Rest store binding. (2) The reserved key, the
+delegation steps and the guards. (3) The own-key bound and the prototype view,
+with the read rule. (4) Literals and rest arrays allocated with the prototype;
+`ArrayProto` as a trusted import. (5) Coverage through the prototype.
+
 ### Next object milestone
 
 Multi-field objects are finite maps from property keys to locations, fixed at
