@@ -14,18 +14,18 @@
   "rejected": 2
  },
  "accepted": 2676,
- "verified": 594,
+ "verified": 599,
  "byStatus": {
   "unsupported (source)": 1480,
-  "verified (check)": 594,
-  "unverified (search)": 351,
+  "verified (check)": 599,
+  "unverified (search)": 346,
   "unsupported (proposal)": 248,
   "error (proposal)": 3
  },
  "bySuite": {
   "expect-error": {
    "accepted": 2458,
-   "verified": 492
+   "verified": 497
   },
   "constprop": {
    "accepted": 66,
@@ -56,7 +56,7 @@
  "filesWithAccepted": 377,
  "functions": {
   "accepted": 2026,
-  "verified": 573
+  "verified": 578
  },
  "byGroup": {
   "bigint": {
@@ -89,17 +89,17 @@
    "dependency": 14,
    "files": 29
   },
+  "search: no derivation found (evidence search failed)": {
+   "units": 108,
+   "self": 105,
+   "dependency": 3,
+   "files": 48
+  },
   "classes: modifiers, inheritance, fields, parameter properties, receivers": {
    "units": 108,
    "self": 67,
    "dependency": 41,
    "files": 32
-  },
-  "search: no derivation found (evidence search failed)": {
-   "units": 105,
-   "self": 102,
-   "dependency": 3,
-   "files": 48
   },
   "destructuring and rest/default parameters": {
    "units": 105,
@@ -179,17 +179,17 @@
    "dependency": 18,
    "files": 8
   },
+  "equality against string/boolean literals": {
+   "units": 38,
+   "self": 38,
+   "dependency": 0,
+   "files": 6
+  },
   "object literal members (methods, accessors, spreads)": {
    "units": 34,
    "self": 32,
    "dependency": 2,
    "files": 14
-  },
-  "equality against string/boolean literals": {
-   "units": 29,
-   "self": 29,
-   "dependency": 0,
-   "files": 5
   },
   "void expression": {
    "units": 27,
@@ -214,12 +214,6 @@
    "self": 20,
    "dependency": 0,
    "files": 12
-  },
-  "search: producer claim differs from the annotation (literal-union parameters, cells)": {
-   "units": 17,
-   "self": 17,
-   "dependency": 0,
-   "files": 6
   },
   "discriminated-union narrowing (a field read after a tag test)": {
    "units": 14,
@@ -264,12 +258,12 @@
    "files": 3
   }
  },
- "reachedButRefused": 351,
+ "reachedButRefused": 346,
  "byKey": {
   "search: reject: no source functions to verify": 130,
   "source: expression outside the fragment (BigIntLiteral)": 129,
   "source: the global BigInt is not an annotated variable": 102,
-  "search: reject: source expression obligation at _: evidence search failed (unsupported or unjustified)": 91,
+  "search: reject: source expression obligation at _: evidence search failed (unsupported or unjustified)": 94,
   "source: top-level statement outside the fragment (EnumDeclaration)": 56,
   "source: a class member modifier outside the fragment in a declaration of the source": 54,
   "source: only the export and async modifiers are admitted on a source function": 53,
@@ -280,6 +274,7 @@
   "source: an ambient declaration other than `declare const k: unique symbol` is outside the fragment": 41,
   "source: unary operator outside the fragment": 40,
   "source: the global Array is not an annotated variable": 38,
+  "search: reject: unsupported source expression at _: equality requires a null, undefined or numeric singleton operand": 38,
   "source: binary operator outside the fragment (<)": 36,
   "proposal: mutable binding requires an explicit fixed storage contract": 35,
   "source: closure block must return on both terminal arms": 33,
@@ -287,7 +282,6 @@
   "source: `else if` and non-block branches are outside the fragment": 31,
   "source: the global Symbol is not an annotated variable": 30,
   "proposal: rigid type nested in a graph type": 29,
-  "search: reject: unsupported source expression at _: equality requires a null, undefined or numeric singleton operand": 29,
   "proposal: statement pattern": 29,
   "search: reject: source refusal at _: a union containing rigid types is outside a rigid claim": 29,
   "source: unsupported index signature in a declaration of the source": 28,
@@ -308,7 +302,6 @@
   "source: unknown type alias": 16,
   "proposal: operator &&": 15,
   "source: a rest parameter needs a tuple of required positions or a mutable array": 15,
-  "search: reject: claimed parameter type differs from the source annotation for '_'": 15,
   "proposal: missing field _": 14,
   "source: a `let` needs an initializer": 13,
   "source: statement outside the fragment (ForInStatement)": 13,
@@ -411,12 +404,10 @@
   "proposal: a spread into fixed parameters is the last argument": 1,
   "source: a spread argument to `new` is outside the fragment": 1,
   "source: type outside the fragment (TemplateLiteralType)": 1,
-  "search: reject: cell read and write types do not describe the same invariant": 1,
   "source: Object.assign requires a fresh arrow, an object literal and two explicit type arguments": 1,
   "source: a closure returning from a branch needs a result annotation": 1,
   "source: a `let` pattern is outside the fragment": 1,
   "source: intersection of array types is outside the fragment": 1,
-  "search: reject: source refusal at _: claimed return type differs from the source annotation": 1,
   "search: reject: shadowing is outside the fragment": 1,
   "source: type outside the fragment (ObjectKeyword) in a declaration of the source": 1,
   "source: statement outside the fragment (ThrowStatement)": 1,
@@ -1331,8 +1322,8 @@
 {"source":"tests/expect-error/equality.ts","name":"classUnionOverlap","kind":"function","line":33,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: unsupported source expression at _: equality requires a null, undefined or numeric singleton operand","group":"equality against string/boolean literals","where":"self","at":"x === y","detail":"reject: unsupported source expression at [183,190): equality requires a null, undefined or numeric singleton operand"},
 {"source":"tests/expect-error/equality.ts","name":"sameShapeClasses","kind":"function","line":37,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: unsupported source expression at _: equality requires a null, undefined or numeric singleton operand","group":"equality against string/boolean literals","where":"self","at":"x === y","detail":"reject: unsupported source expression at [136,143): equality requires a null, undefined or numeric singleton operand"},
 {"source":"tests/expect-error/equality.ts","name":"primDisjoint","kind":"function","line":41,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: unsupported source expression at _: equality requires a null, undefined or numeric singleton operand","group":"equality against string/boolean literals","where":"self","at":"x === y","detail":"reject: unsupported source expression at [163,170): equality requires a null, undefined or numeric singleton operand"},
-{"source":"tests/expect-error/equality.ts","name":"litDisjoint","kind":"function","line":46,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: claimed parameter type differs from the source annotation for '_'","group":"search: producer claim differs from the annotation (literal-union parameters, cells)","where":"self","detail":"reject: claimed parameter type differs from the source annotation for 'x'"},
-{"source":"tests/expect-error/equality.ts","name":"litOverlap","kind":"function","line":51,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: claimed parameter type differs from the source annotation for '_'","group":"search: producer claim differs from the annotation (literal-union parameters, cells)","where":"self","detail":"reject: claimed parameter type differs from the source annotation for 'x'"},
+{"source":"tests/expect-error/equality.ts","name":"litDisjoint","kind":"function","line":46,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: unsupported source expression at _: equality requires a null, undefined or numeric singleton operand","group":"equality against string/boolean literals","where":"self","at":"x === y","detail":"reject: unsupported source expression at [160,167): equality requires a null, undefined or numeric singleton operand"},
+{"source":"tests/expect-error/equality.ts","name":"litOverlap","kind":"function","line":51,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: unsupported source expression at _: equality requires a null, undefined or numeric singleton operand","group":"equality against string/boolean literals","where":"self","at":"x === y","detail":"reject: unsupported source expression at [60,67): equality requires a null, undefined or numeric singleton operand"},
 {"source":"tests/expect-error/equality.ts","name":"strLitDisjoint","kind":"function","line":55,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/equality.ts","name":"boolLitDisjoint","kind":"function","line":60,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: unsupported source expression at _: equality requires a null, undefined or numeric singleton operand","group":"equality against string/boolean literals","where":"self","at":"x === y","detail":"reject: unsupported source expression at [163,170): equality requires a null, undefined or numeric singleton operand"},
 {"source":"tests/expect-error/equality.ts","name":"objDisjoint","kind":"function","line":67,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: unsupported source expression at _: equality requires a null, undefined or numeric singleton operand","group":"equality against string/boolean literals","where":"self","at":"x === y","detail":"reject: unsupported source expression at [77,84): equality requires a null, undefined or numeric singleton operand"},
@@ -1362,11 +1353,11 @@
 {"source":"tests/expect-error/equality.ts","name":"unknownOperand","kind":"function","line":203,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: unsupported source expression at _: equality requires a null, undefined or numeric singleton operand","group":"equality against string/boolean literals","where":"self","at":"x === y","detail":"reject: unsupported source expression at [67,74): equality requires a null, undefined or numeric singleton operand"},
 {"source":"tests/expect-error/equality.ts","name":"numericNotation","kind":"function","line":208,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/equality.ts","name":"numberVsObjectKeyword","kind":"function","line":215,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: type outside the fragment (ObjectKeyword)","group":"type forms: literal types, keyof, indexed access, mapped, object, index signatures, intersections, method signatures","where":"self","at":"function numberVsObjectKeyword(n: number, o: object): boolean {","detail":"gate: type outside the fragment (ObjectKeyword) (line 1, col 46)"},
-{"source":"tests/expect-error/equality.ts","name":"strictInequalityDisjoint","kind":"function","line":219,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: claimed parameter type differs from the source annotation for '_'","group":"search: producer claim differs from the annotation (literal-union parameters, cells)","where":"self","detail":"reject: claimed parameter type differs from the source annotation for 'x'"},
+{"source":"tests/expect-error/equality.ts","name":"strictInequalityDisjoint","kind":"function","line":219,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/equality.ts","name":"alwaysTrueUndefined","kind":"function","line":226,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/equality.ts","name":"alwaysTrueNull","kind":"function","line":231,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/equality.ts","name":"alwaysTrueString","kind":"function","line":236,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
-{"source":"tests/expect-error/equality.ts","name":"alwaysTrueNumber","kind":"function","line":241,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: claimed parameter type differs from the source annotation for '_'","group":"search: producer claim differs from the annotation (literal-union parameters, cells)","where":"self","detail":"reject: claimed parameter type differs from the source annotation for 'x'"},
+{"source":"tests/expect-error/equality.ts","name":"alwaysTrueNumber","kind":"function","line":241,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/equality.ts","name":"alwaysTrueTrue","kind":"function","line":246,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: unsupported source expression at _: equality requires a null, undefined or numeric singleton operand","group":"equality against string/boolean literals","where":"self","at":"x === y","detail":"reject: unsupported source expression at [174,181): equality requires a null, undefined or numeric singleton operand"},
 {"source":"tests/expect-error/equality.ts","name":"alwaysFalseInequality","kind":"function","line":251,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/equality.ts","name":"exhaustiveNarrowedCheck","kind":"function","line":258,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `else if` and non-block branches are outside the fragment","group":"control-flow forms (else-if, bare return, early return in closures, dead code)","where":"self","at":"} else if (x === \"b\") {","detail":"gate: `else if` and non-block branches are outside the fragment (line 4, col 10)"},
@@ -1375,7 +1366,7 @@
 {"source":"tests/expect-error/equality.ts","name":"namedConstantRecheck","kind":"function","line":280,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: `else if` and non-block branches are outside the fragment","group":"control-flow forms (else-if, bare return, early return in closures, dead code)","where":"self","at":"} else if (x === B) {","detail":"gate: `else if` and non-block branches are outside the fragment (line 7, col 10)"},
 {"source":"tests/expect-error/equality.ts","name":"singletonVsOwnLiteral","kind":"function","line":291,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/equality.ts","name":"singletonVsWider","kind":"function","line":295,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
-{"source":"tests/expect-error/equality.ts","name":"sameUnionNotSingleton","kind":"function","line":299,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: claimed parameter type differs from the source annotation for '_'","group":"search: producer claim differs from the annotation (literal-union parameters, cells)","where":"self","detail":"reject: claimed parameter type differs from the source annotation for 'x'"},
+{"source":"tests/expect-error/equality.ts","name":"sameUnionNotSingleton","kind":"function","line":299,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: unsupported source expression at _: equality requires a null, undefined or numeric singleton operand","group":"equality against string/boolean literals","where":"self","at":"x === y","detail":"reject: unsupported source expression at [75,82): equality requires a null, undefined or numeric singleton operand"},
 {"source":"tests/expect-error/exponentiation.ts","name":"testExponentiationNumbers","kind":"variable","line":3,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: binary operator outside the fragment (**)","group":"relational operators (< <= > >=) and **","where":"self","at":"const testExponentiationNumbers: number = 2 ** 3;","detail":"gate: binary operator outside the fragment (**) (line 1, col 43)"},
 {"source":"tests/expect-error/exponentiation.ts","name":"testExponentiationBigInt","kind":"variable","line":5,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: binary operator outside the fragment (**)","group":"relational operators (< <= > >=) and **","where":"self","at":"const testExponentiationBigInt: bigint = 2n ** 3n;","detail":"gate: binary operator outside the fragment (**) (line 1, col 42)"},
 {"source":"tests/expect-error/exponentiation.ts","name":"testExponentiationAssignment","kind":"function","line":7,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: binary operator outside the fragment (**=)","group":"relational operators (< <= > >=) and **","where":"self","at":"x **= 3;","detail":"gate: binary operator outside the fragment (**=) (line 3, col 3)"},
@@ -1404,10 +1395,10 @@
 {"source":"tests/expect-error/field-refinement.ts","name":"testFieldUndefinedRefinement","kind":"function","line":184,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed (unsupported or unjustified)","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source expression obligation at [210,211): evidence search failed (unsupported or unjustified): Verification.Model.CertificateProducer.Failure.expression 1"},
 {"source":"tests/expect-error/field-refinement.ts","name":"testFieldUndefinedElimination","kind":"function","line":190,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed (unsupported or unjustified)","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source expression obligation at [205,206): evidence search failed (unsupported or unjustified): Verification.Model.CertificateProducer.Failure.expression 1"},
 {"source":"tests/expect-error/field-refinement.ts","name":"testBasicNonSingletonFilter","kind":"function","line":205,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: missing field _","group":"discriminated-union narrowing (a field read after a tag test)","where":"self","detail":"unsupported: missing field a"},
-{"source":"tests/expect-error/field-refinement.ts","name":"testFieldNarrowedToIntersection","kind":"function","line":215,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: claimed parameter type differs from the source annotation for '_'","group":"search: producer claim differs from the annotation (literal-union parameters, cells)","where":"self","detail":"reject: claimed parameter type differs from the source annotation for 'x'"},
+{"source":"tests/expect-error/field-refinement.ts","name":"testFieldNarrowedToIntersection","kind":"function","line":215,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: unsupported source expression at _: equality requires a null, undefined or numeric singleton operand","group":"equality against string/boolean literals","where":"self","at":"obj.field === x","detail":"reject: unsupported source expression at [130,145): equality requires a null, undefined or numeric singleton operand"},
 {"source":"tests/expect-error/field-refinement.ts","name":"testThreeBranchFilter","kind":"function","line":228,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/field-refinement.ts","name":"testStringNonSingletonFilter","kind":"function","line":239,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: missing field _","group":"discriminated-union narrowing (a field read after a tag test)","where":"self","detail":"unsupported: missing field x"},
-{"source":"tests/expect-error/field-refinement.ts","name":"testFieldNarrowedToComparisonType","kind":"function","line":249,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: claimed parameter type differs from the source annotation for '_'","group":"search: producer claim differs from the annotation (literal-union parameters, cells)","where":"self","detail":"reject: claimed parameter type differs from the source annotation for 'x'"},
+{"source":"tests/expect-error/field-refinement.ts","name":"testFieldNarrowedToComparisonType","kind":"function","line":249,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: unsupported source expression at _: equality requires a null, undefined or numeric singleton operand","group":"equality against string/boolean literals","where":"self","at":"obj.field === x","detail":"reject: unsupported source expression at [132,147): equality requires a null, undefined or numeric singleton operand"},
 {"source":"tests/expect-error/field-refinement.ts","name":"testAllBranchesOverlap","kind":"function","line":258,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/field-refinement.ts","name":"testFilteredBranchAccess","kind":"function","line":267,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/field-refinement.ts","name":"testNotEqualsNoRefine","kind":"function","line":275,"skjsMarker":"rejected-self"},
@@ -1431,7 +1422,7 @@
 {"source":"tests/expect-error/field-refinement.ts","name":"testBoolTernary2","kind":"function","line":439,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/field-refinement.ts","name":"testTrueLiteral","kind":"function","line":444,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source incoming edge obligation at _: evidence search failed (unsupported or unjustified)","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source incoming edge obligation at [108,109): evidence search failed (unsupported or unjustified): Verification.Model.CertificateProducer.Failure.edge 6 5 1"},
 {"source":"tests/expect-error/field-refinement.ts","name":"testFalseLiteral","kind":"function","line":453,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source incoming edge obligation at _: evidence search failed (unsupported or unjustified)","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source incoming edge obligation at [76,77): evidence search failed (unsupported or unjustified): Verification.Model.CertificateProducer.Failure.edge 6 2 0"},
-{"source":"tests/expect-error/field-refinement.ts","name":"inferredFieldComparison","kind":"function","line":462,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: claimed parameter type differs from the source annotation for '_'","group":"search: producer claim differs from the annotation (literal-union parameters, cells)","where":"self","detail":"reject: claimed parameter type differs from the source annotation for 'x'"},
+{"source":"tests/expect-error/field-refinement.ts","name":"inferredFieldComparison","kind":"function","line":462,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: unsupported source expression at _: equality requires a null, undefined or numeric singleton operand","group":"equality against string/boolean literals","where":"self","at":"x.value !== other.zero","detail":"reject: unsupported source expression at [114,136): equality requires a null, undefined or numeric singleton operand"},
 {"source":"tests/expect-error/field-type-annotations.ts","name":"FieldWithoutAnnotation","kind":"class","line":4,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/field-type-annotations.ts","name":"FieldWithInitializerNoAnnotation","kind":"class","line":11,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/field-type-annotations.ts","name":"FieldsWithAnnotations","kind":"class","line":17,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: an optional or definitely-assigned class field is outside the fragment in a declaration of the source","group":"classes: modifiers, inheritance, fields, parameter properties, receivers","where":"self","at":"class FieldsWithAnnotations {","detail":"gate: an optional or definitely-assigned class field is outside the fragment in source.ts#FieldsWithAnnotations (line 1, col 1)"},
@@ -2170,14 +2161,14 @@
 {"source":"tests/expect-error/local-vs-local-refinement.ts","name":"testNeqNoSingleton","kind":"function","line":51,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: unsupported source expression at _: equality requires a null, undefined or numeric singleton operand","group":"equality against string/boolean literals","where":"self","at":"x !== y","detail":"reject: unsupported source expression at [70,77): equality requires a null, undefined or numeric singleton operand"},
 {"source":"tests/expect-error/local-vs-local-refinement.ts","name":"testAndChain","kind":"function","line":63,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: operator &&","group":"value-level && / || (non-boolean operands)","where":"self","detail":"unsupported: operator &&"},
 {"source":"tests/expect-error/local-vs-local-refinement.ts","name":"testReversedOrder","kind":"function","line":73,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed (unsupported or unjustified)","group":"search: no derivation found (evidence search failed)","where":"self","at":"y","detail":"reject: source expression obligation at [99,100): evidence search failed (unsupported or unjustified): Verification.Model.CertificateProducer.Failure.expression 1"},
-{"source":"tests/expect-error/local-vs-local-refinement.ts","name":"testVarVsLiteral","kind":"function","line":83,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: claimed parameter type differs from the source annotation for '_'","group":"search: producer claim differs from the annotation (literal-union parameters, cells)","where":"self","detail":"reject: claimed parameter type differs from the source annotation for 'x'"},
+{"source":"tests/expect-error/local-vs-local-refinement.ts","name":"testVarVsLiteral","kind":"function","line":83,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/local-vs-local-refinement.ts","name":"testVarVsCall","kind":"function","line":91,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: only the export and async modifiers are admitted on a source function","group":"ambient declarations (declare function/const/class/namespace)","where":"dependency","at":"declare function getOneOrTwo(): 1 | 2;","detail":"gate: only the export and async modifiers are admitted on a source function (line 1, col 1)"},
 {"source":"tests/expect-error/local-vs-local-refinement.ts","name":"testVarVsGlobalField","kind":"function","line":99,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: an ambient declaration other than `declare const k: unique symbol` is outside the fragment","group":"ambient declarations (declare function/const/class/namespace)","where":"dependency","at":"declare const globalObj: { v: 1 | 2 };","detail":"gate: an ambient declaration other than `declare const k: unique symbol` is outside the fragment (line 1, col 15)"},
-{"source":"tests/expect-error/local-vs-local-refinement.ts","name":"testVarVsLocalFieldNarrowsVar","kind":"function","line":109,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: claimed parameter type differs from the source annotation for '_'","group":"search: producer claim differs from the annotation (literal-union parameters, cells)","where":"self","detail":"reject: claimed parameter type differs from the source annotation for 'x'"},
-{"source":"tests/expect-error/local-vs-local-refinement.ts","name":"testVarVsLocalFieldNarrowsField","kind":"function","line":115,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: claimed parameter type differs from the source annotation for '_'","group":"search: producer claim differs from the annotation (literal-union parameters, cells)","where":"self","detail":"reject: claimed parameter type differs from the source annotation for 'o'"},
-{"source":"tests/expect-error/local-vs-local-refinement.ts","name":"testFieldVsFieldNarrowsBoth","kind":"function","line":125,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: claimed parameter type differs from the source annotation for '_'","group":"search: producer claim differs from the annotation (literal-union parameters, cells)","where":"self","detail":"reject: claimed parameter type differs from the source annotation for 'o1'"},
+{"source":"tests/expect-error/local-vs-local-refinement.ts","name":"testVarVsLocalFieldNarrowsVar","kind":"function","line":109,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: unsupported source expression at _: equality requires a null, undefined or numeric singleton operand","group":"equality against string/boolean literals","where":"self","at":"x === o.v","detail":"reject: unsupported source expression at [84,93): equality requires a null, undefined or numeric singleton operand"},
+{"source":"tests/expect-error/local-vs-local-refinement.ts","name":"testVarVsLocalFieldNarrowsField","kind":"function","line":115,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed (unsupported or unjustified)","group":"search: no derivation found (evidence search failed)","where":"self","at":"o.v","detail":"reject: source expression obligation at [112,115): evidence search failed (unsupported or unjustified): Verification.Model.CertificateProducer.Failure.expression 1"},
+{"source":"tests/expect-error/local-vs-local-refinement.ts","name":"testFieldVsFieldNarrowsBoth","kind":"function","line":125,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: unsupported source expression at _: equality requires a null, undefined or numeric singleton operand","group":"equality against string/boolean literals","where":"self","at":"o1.a === o2.b","detail":"reject: unsupported source expression at [102,115): equality requires a null, undefined or numeric singleton operand"},
 {"source":"tests/expect-error/local-vs-local-refinement.ts","name":"inferredReadNamedNull","kind":"function","line":136,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed (unsupported or unjustified)","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source expression obligation at [172,173): evidence search failed (unsupported or unjustified): Verification.Model.CertificateProducer.Failure.expression 2"},
-{"source":"tests/expect-error/local-vs-local-refinement.ts","name":"inferredReadSingleton","kind":"function","line":145,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: claimed parameter type differs from the source annotation for '_'","group":"search: producer claim differs from the annotation (literal-union parameters, cells)","where":"self","detail":"reject: claimed parameter type differs from the source annotation for 'seed'"},
+{"source":"tests/expect-error/local-vs-local-refinement.ts","name":"inferredReadSingleton","kind":"function","line":145,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: unsupported source expression at _: equality requires a null, undefined or numeric singleton operand","group":"equality against string/boolean literals","where":"self","at":"x !== zero","detail":"reject: unsupported source expression at [163,173): equality requires a null, undefined or numeric singleton operand"},
 {"source":"tests/expect-error/local-vs-local-refinement.ts","name":"inferredReadNonSingleton","kind":"function","line":154,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/logical-compound-computed-key.ts","name":"computedFallback","kind":"function","line":1,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: expression logicalAssign","group":"compound and update assignments (x++, ||=, ??=, a[i] op=)","where":"self","detail":"unsupported: expression logicalAssign"},
 {"source":"tests/expect-error/logical-compound-computed-key.ts","name":"computedAnd","kind":"function","line":6,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: expression logicalAssign","group":"compound and update assignments (x++, ||=, ??=, a[i] op=)","where":"self","detail":"unsupported: expression logicalAssign"},
@@ -3851,7 +3842,7 @@
 {"source":"tests/expect-error/type-query-memo-stability.ts","name":"QueryCell","kind":"class","line":36,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a generic class is outside the fragment","group":"generic classes","where":"self","at":"class QueryCell<T> {","detail":"gate: a generic class is outside the fragment (line 1, col 1)"},
 {"source":"tests/expect-error/type-query-memo-stability.ts","name":"queryRepeatedReadonlyView","kind":"function","line":46,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: a generic class is outside the fragment","group":"generic classes","where":"dependency","at":"class QueryCell<T> {","detail":"gate: a generic class is outside the fragment (line 1, col 1)"},
 {"source":"tests/expect-error/type-query-memo-stability.ts","name":"queryLaterIncompatibleArgument","kind":"function","line":54,"skjsMarker":"rejected-self"},
-{"source":"tests/expect-error/type-query-memo-stability.ts","name":"queryCompoundIntersection","kind":"function","line":61,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: cell read and write types do not describe the same invariant","group":"search: producer claim differs from the annotation (literal-union parameters, cells)","where":"self","detail":"reject: cell read and write types do not describe the same invariant"},
+{"source":"tests/expect-error/type-query-memo-stability.ts","name":"queryCompoundIntersection","kind":"function","line":61,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/type-query-memo-stability.ts","name":"queryCompoundIntersectionMismatch","kind":"function","line":67,"skjsMarker":"rejected-self"},
 {"source":"tests/expect-error/type-query-memo-stability.ts","name":"queryInferenceStillWorks","kind":"function","line":78,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"source","key":"source: only the export and async modifiers are admitted on a source function","group":"ambient declarations (declare function/const/class/namespace)","where":"dependency","at":"declare function queryInfer<T>(value: T, same: (value: T) => T): T;","detail":"gate: only the export and async modifiers are admitted on a source function (line 1, col 1)"},
 {"source":"tests/expect-error/type-query-memo-stability.ts","name":"queryRecursiveArrayPositive","kind":"function","line":82,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
@@ -4114,7 +4105,7 @@
 {"source":"tests/expect-error/unit.ts","name":"x","kind":"variable","line":116,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: no source functions to verify","group":"top-level only: no function to verify","where":"self","detail":"reject: no source functions to verify"},
 {"source":"tests/expect-error/unit.ts","name":"check7","kind":"function","line":118,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/unit.ts","name":"n","kind":"variable","line":122,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: no source functions to verify","group":"top-level only: no function to verify","where":"self","detail":"reject: no source functions to verify"},
-{"source":"tests/expect-error/unit.ts","name":"check8","kind":"function","line":124,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source refusal at _: claimed return type differs from the source annotation","group":"search: producer claim differs from the annotation (literal-union parameters, cells)","where":"self","at":"check8","detail":"reject: source refusal at [26,32): claimed return type differs from the source annotation"},
+{"source":"tests/expect-error/unit.ts","name":"check8","kind":"function","line":124,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"},
 {"source":"tests/expect-error/unit.ts","name":"n2","kind":"variable","line":128,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: no source functions to verify","group":"top-level only: no function to verify","where":"self","detail":"reject: no source functions to verify"},
 {"source":"tests/expect-error/unit.ts","name":"check9","kind":"function","line":130,"skjsMarker":"accepted","skjs":"accepted","status":"unsupported","phase":"proposal","key":"proposal: module constant _ is read by a function, so it needs an annotation","group":"mutable bindings: unannotated let, uninitialized let, parameter assignment, module constants","where":"unknown","detail":"unsupported: module constant n2 is read by a function, so it needs an annotation"},
 {"source":"tests/expect-error/unit.ts","name":"s","kind":"variable","line":135,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: no source functions to verify","group":"top-level only: no function to verify","where":"self","detail":"reject: no source functions to verify"},
@@ -4608,7 +4599,7 @@
 {"source":"tests/projects/truthiness-safe/src/conditions.ts","name":"acceptString","kind":"function","line":20,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source incoming edge obligation at _: evidence search failed (unsupported or unjustified)","group":"search: no derivation found (evidence search failed)","where":"self","at":"break;","detail":"reject: source incoming edge obligation at [59,65): evidence search failed (unsupported or unjustified): Verification.Model.CertificateProducer.Failure.edge 4 2 0"},
 {"source":"tests/projects/truthiness-safe/src/conditions.ts","name":"acceptNotBigint","kind":"function","line":26,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed (unsupported or unjustified)","group":"search: no derivation found (evidence search failed)","where":"self","at":"!b","detail":"reject: source expression obligation at [56,58): evidence search failed (unsupported or unjustified): Verification.Model.CertificateProducer.Failure.expression 1"},
 {"source":"tests/projects/truthiness-safe/src/conditions.ts","name":"acceptTernary","kind":"function","line":30,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source incoming edge obligation at _: evidence search failed (unsupported or unjustified)","group":"search: no derivation found (evidence search failed)","where":"self","at":"o ? 1 : 2","detail":"reject: source incoming edge obligation at [67,76): evidence search failed (unsupported or unjustified): Verification.Model.CertificateProducer.Failure.edge 1 0 0"},
-{"source":"tests/projects/truthiness-safe/src/conditions.ts","name":"acceptLiteralUnion","kind":"function","line":35,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: claimed parameter type differs from the source annotation for '_'","group":"search: producer claim differs from the annotation (literal-union parameters, cells)","where":"self","detail":"reject: claimed parameter type differs from the source annotation for 'x'"},
+{"source":"tests/projects/truthiness-safe/src/conditions.ts","name":"acceptLiteralUnion","kind":"function","line":35,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed (unsupported or unjustified)","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source expression obligation at [76,77): evidence search failed (unsupported or unjustified): Verification.Model.CertificateProducer.Failure.expression 1"},
 {"source":"tests/projects/truthiness-safe/src/conditions.ts","name":"acceptField","kind":"function","line":44,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed (unsupported or unjustified)","group":"search: no derivation found (evidence search failed)","where":"self","at":"x.f","detail":"reject: source expression obligation at [103,106): evidence search failed (unsupported or unjustified): Verification.Model.CertificateProducer.Failure.expression 1"},
 {"source":"tests/projects/truthiness-safe/src/conditions.ts","name":"rejectNumber","kind":"function","line":52,"skjsMarker":"rejected-self"},
 {"source":"tests/projects/truthiness-safe/src/conditions.ts","name":"rejectStringUndefined","kind":"function","line":58,"skjsMarker":"rejected-self"},
@@ -4618,7 +4609,7 @@
 {"source":"tests/projects/truthiness-safe/src/conditions.ts","name":"rejectVoid","kind":"function","line":84,"skjsMarker":"rejected-self"},
 {"source":"tests/projects/truthiness-safe/src/conditions.ts","name":"rejectVoidUnion","kind":"function","line":92,"skjsMarker":"rejected-self"},
 {"source":"tests/projects/truthiness-safe/src/conditions.ts","name":"rejectVoidTypeVar","kind":"function","line":100,"skjsMarker":"rejected-self"},
-{"source":"tests/projects/truthiness-safe/src/conditions.ts","name":"acceptOctalZero","kind":"function","line":109,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: claimed parameter type differs from the source annotation for '_'","group":"search: producer claim differs from the annotation (literal-union parameters, cells)","where":"self","detail":"reject: claimed parameter type differs from the source annotation for 'x'"},
+{"source":"tests/projects/truthiness-safe/src/conditions.ts","name":"acceptOctalZero","kind":"function","line":109,"skjsMarker":"accepted","skjs":"accepted","status":"unverified","phase":"search","key":"search: reject: source expression obligation at _: evidence search failed (unsupported or unjustified)","group":"search: no derivation found (evidence search failed)","where":"self","at":"x","detail":"reject: source expression obligation at [73,74): evidence search failed (unsupported or unjustified): Verification.Model.CertificateProducer.Failure.expression 1"},
 {"source":"tests/projects/tsx-discovery/src/utils.ts","name":"add","kind":"function","line":1,"skjsMarker":"accepted","skjs":"accepted","status":"verified","phase":"check"}
 ]
 }
