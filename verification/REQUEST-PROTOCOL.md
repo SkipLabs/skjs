@@ -926,7 +926,14 @@ assignment `{"k":"indexWrite","pos":[start,end],"receiver":...,"key":...,"rhs":.
 the receiver is evaluated, then the key, then the right side. The key's claimed
 type must be one string singleton, which names the field; the key expression
 keeps its own obligation to that claim.
-Arithmetic uses `{"k":"arith","pos":[start,end],"op":"add"|"sub"|"mul"|"div","l":...,"r":...}`.
+Arithmetic uses `{"k":"arith","pos":[start,end],"op":"add"|"sub"|"mul"|"div","l":...,"r":...}`;
+`add` with a string operand concatenates. A template literal is written as the
+left-nested `add` of its parts, starting from the first string part, each
+partial concatenation at the span from the template's start to the end of its
+last part; one without substitutions is a string `lit`.
+The comma operator uses `{"k":"comma","pos":[start,end],"left":...,"right":...}`:
+the left operand, its value discarded, then the right one's value. `void e` is
+a `comma` whose right operand is the `undefined` literal at the keyword's span.
 A compound assignment or an increment uses
 `{"k":"update","pos":[start,end],"op":...,"target":...,"rhs":...|null,"post":bool}`:
 the target, a name, a field or an element, has its parts evaluated once and its

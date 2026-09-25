@@ -97,19 +97,35 @@ the calculus does not have:
 | two numbers | the IEEE-754 double operation; ${*}{*}$ is `Number::exponentiate` (C's `pow`, but NaN for a NaN exponent and for a base of magnitude 1 to an infinite power); $\hat{}$ is exclusive or after `ToInt32` on both | the IEEE order: false when either is NaN, the two zeros equal |
 | two bigints | the integer operation; $/$ truncates toward zero; none for $/$ by $0$ and ${*}{*}$ by a negative exponent (a `RangeError`) | the integer order |
 | a number and a bigint | none (a `TypeError`) | the exact order of the double's rational value and the integer; false when the number is NaN, an infinity beyond every integer |
-| two strings | none | lexicographic over UTF-16 code units, a proper prefix less |
+| two strings | $+$ concatenates; others none | lexicographic over UTF-16 code units, a proper prefix less |
+| a string and a number, bigint, Boolean, `null` or `undefined`, either order | $+$ concatenates the string with $\mathsf{str}$ of the other, in operand order; others none | none |
 | anything else | none | none |
 
-So the operation never computes on a value it would convert: a string with a
-number, a Boolean, an object (whose `valueOf` is code) all leave the term
-stuck, which the typing rule rules out. The unary operators are this one with a
+$\mathsf{str}(v)$ (`primString`) is JavaScript's `ToString` of a primitive
+other than a symbol, which runs no code: a string is itself, `true`, `false`,
+`null` and `undefined` their names, a bigint its decimal integer with a leading
+`-` when negative, and a number `Number::toString` in radix 10
+(`numberToString`): `NaN`, `Infinity` with its sign, `0` for both zeros, and
+otherwise the fewest decimal digits $s$ whose value $s\cdot10^{d}$ rounds to
+the double, the one closest to it where several have that length (the even one
+on a tie, as the specification's note recommends and engines do), written
+plainly up to 21 integer digits, as `0.` and up to six zeros below one, else
+in exponent form `d.ddde±x`. A symbol converts by throwing a `TypeError`, and
+an object through its own `toString`/`valueOf`, which is code: $+$ with either
+is stuck.
+
+So the operation never computes on a value it would convert through code or a
+coercion it does not define: a string compared with a number, a Boolean in
+arithmetic, an object (whose `valueOf` is code) and a symbol concatenated all
+leave the term stuck, which the typing rule rules out. The unary operators are this one with a
 constant right operand of the operand's family ([source
 forms](PROGRAM-TYPING.md#judgments-and-constructor-views)): $-x=x*(-1)$, $+x=x*1$
 and $\sim x=x\mathbin{\hat{}}(-1)$, exact on doubles (a sign flip, the identity,
 `ToInt32` complemented) and on integers alike. Lean: `binop`, `arithBits`,
-`bigintArith`, `doubleIntOrder`, `utf16Units` (`Semantics/Calculus.lean`); the
-values it gives are checked against node's for the edge cases in
-`Tests/SourceExtractionTests.lean`.
+`bigintArith`, `doubleIntOrder`, `utf16Units`, `primString`, `numberToString`
+(`Semantics/Calculus.lean`); the values it gives are checked against node's for
+the edge cases, and `numberToString` for 300 pseudo-random doubles and short
+decimals besides, in `Tests/SourceExtractionTests.lean`.
 
 `make_rule` proves heap and world extension once, with a result obligation for
 the fresh object's descriptor. `alloc_rule` and `attach_rule` specialize that

@@ -769,7 +769,7 @@ private partial def exprSites : Fragment.Expr → Sites
   | .withValue p a b _ _ | .write p _ a b | .singletonTest p _ _ _ a b | .equality p _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p],[]) (joinSites (exprSites a) (exprSites b))
   -- An assignment is an expression site, and the name it assigns is not one:
   -- the producer claims the value written, not the location.
-  | .index p _ a b | .arith p _ a b | .logicalAssign p _ a b | .elemAt p a b => joinSites ([],[p],[]) (joinSites (exprSites a) (exprSites b))
+  | .index p _ a b | .arith p _ a b | .logicalAssign p _ a b | .elemAt p a b | .comma p a b => joinSites ([],[p],[]) (joinSites (exprSites a) (exprSites b))
   | .arrayLit p es => es.foldl (fun acc a => joinSites acc (exprSites a)) ([],[p],[])
   | .arrayAssign p targets rhs => targets.foldl (fun acc q => match q.default_ with
       | some d => joinSites acc (exprSites d) | none => acc) (joinSites ([],[p],[]) (exprSites rhs))

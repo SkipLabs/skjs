@@ -246,7 +246,8 @@ function walkExpr(e: Expr, out: Sites): void {
       walkExpr(e.r, out);
       return;
     case "coalesce":
-      addExpr(out, e.pos, "coalesce");
+    case "comma":
+      addExpr(out, e.pos, e.k);
       walkExpr(e.left, out);
       walkExpr(e.right, out);
       return;

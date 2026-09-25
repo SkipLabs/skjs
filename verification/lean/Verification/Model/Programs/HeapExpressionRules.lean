@@ -463,7 +463,7 @@ theorem pure_step {h t h' t'} (hs : Step h t h' t') (hp : pureTerm t = true) :
   induction hs <;> simp_all [pureTerm,isVal]
   case testV => split <;> simp [pureTerm,isVal]
   case arithV hb =>
-    rcases (binop_result hb).2.2 with rfl | rfl | ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> rfl
+    rcases (binop_result hb).2.2 with rfl | rfl | ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> rfl
 
 theorem pure_instantiate {G : NormalGraph ι} {Γ t ρ n W}
     (hp : pureTerm t = true) (hc : checkScope Γ.length t = true)

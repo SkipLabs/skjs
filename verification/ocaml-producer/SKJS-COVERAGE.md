@@ -124,10 +124,10 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 5 | Control-flow forms (`else if`, non-block branches, bare `return`, block closures that fall off the end, dead code) | 72 | 62 | 9 | 21 | M | P L |
 | 6 | `switch` | 44 | 42 | 2 | 14 | M | P L |
 | 7 | Unary `-`/`+`/`~` | 39 | 21 | 18 | 7 | S | P L |
-| 8 | `void e` | 27 | 24 | 3 | 7 | S | P L |
-| 9 | Template literal expressions (and `"a" + s`, in search) | 68 (42 expr, 9 no-substitution, 17 types) | 42 | 26 | 14 | M | P L |
+| 8 | `void e` — done (task E) | 0 (was 27) | | | | S | P L |
+| 9 | Template literal expressions and string `+` — done (task E); template literal *types* remain (22) | 17 (types) | | | | M | P L |
 | 10 | Mutable bindings: unannotated `let`, `let x: T;`, parameter assignment, unannotated module constants read by functions | 52 | 42 | 0 | 22 | M | O L |
-| 11 | Compound / update assignment (`x++`, `+=`, `||=`, `??=`, `a[i] op=`) | 24 | 24 | 0 | 15 | S | O L |
+| 11 | Compound / update assignment (`x++`, `+=`, `||=`, `??=`) — done (task E); array destructuring assignment remains (12) | 5 | 5 | 0 | 4 | S | O L |
 | 12 | Destructuring, rest/default parameters | 96 | 90 | 5 | 22 | M | P O L |
 | 13 | Library globals as values — calls and the reviewed overlay done (task K); left: `Array.isArray` (23), `new X(…)` (`Error` 23, `Array`, `Set`, `Map`, `Date`, `Promise`), well-known symbols (8), `Promise`/`JSON`/`Object` statics | 86 | | | 25 | M | D L |
 | 14 | Reads on unions/primitives (field/index read on non-object, string keys) and value-level `&&`/`||` | 48 + 20 | 63 | 0 | 30 | M | O L |
@@ -238,14 +238,28 @@ dropped), examples, what the extension needs.
    validates `break`). Case narrowing on string tags depends on 15/16.
 7. **Unary operators.** `unary operator outside the fragment` (39; 18 of them
    negative bigint constants). `precedence-types.ts#testUnaryBinaryTypePositive`.
-8. **`void e`.** `expression outside the fragment (VoidExpression)` (27).
-   `call-effect-boundaries.ts#snapshotAcrossEffect`, `constprop/eval_forms.ts#voidValue`.
-   Evaluate, discard, type `undefined`.
-9. **Template literals.** `TemplateExpression` (42), `FirstTemplateToken` (9,
-   no-substitution), `TemplateLiteralType` (17). Expressions reduce to string
-   concatenation, which Lean does not yet derive either (`"Hello, " + name`
-   fails in search: `string.ts#const_plus_const`, `cfg/linear.ts#greet`), so
-   the concatenation rule comes first. Template literal *types* belong with 22.
+8. **`void e`.** *Done (task E): `void e` is the comma form `e, undefined`,
+   one new source form (`comma`, also the comma operator) lowered by binding
+   the left operand in an unread slot, no new calculus term or rule
+   ([DESIGN.md](../DESIGN.md#string-concatenation-templates-and-void)).* Was
+   `expression outside the fragment (VoidExpression)` (27). 13 verify; the
+   other 14 stop at their next blocker: field narrowing after an effect
+   (`call-effect-boundaries.ts`, the same without `void`), tuples as
+   `Iterable`, `typeof` (2), destructuring, rest and generic arrows, and 2
+   constant-only units ("no function").
+9. **Template literals and string `+`.** *Done (task E) for expressions: `+`
+   with a string operand is the operator rule's concatenation (`binop`
+   concatenates, `opResult` classifies a string), the other operand any
+   primitive but a symbol, converted by `ToString` exactly (`primString`;
+   `numberToString` is `Number::toString`, checked against node for 300
+   pseudo-random doubles); an object or symbol operand is refused. A template
+   is the parser's left-nested concatenation of its parts. 18 template units
+   and the 4 string-concatenation search failures of 18 verify.* Were
+   `TemplateExpression` (42), `FirstTemplateToken` (9), and search failures
+   on `"Hello, " + name` (`string.ts#const_plus_const`, `cfg/linear.ts#greet`).
+   Of the rest, 26 stop at a member read on a primitive (`n.toFixed(2)`,
+   `s.length`), 16 are constant-only units ("no function"), and 17 are
+   template literal *types* (22).
 10. **Mutable bindings.** `proposal: mutable binding requires an explicit fixed
     storage contract` (34: unannotated `let x = 0`), `source: a 'let' needs an
     initializer` (13), `module constant _ is read by a function, so it needs an
@@ -254,10 +268,15 @@ dropped), examples, what the extension needs.
     `gap-definite-assignment-union-undefined.ts`. Needs: the producer proposes
     the widened initializer type as the storage contract (as TypeScript
     does); parameters as mutable cells; definite assignment for `let x: T;`.
-11. **Compound/update assignments.** `proposal: expression update` (16),
-    `logicalAssign` (3), `arrayAssign` (3), `nullishAssign` (1),
-    `source: only field and local assignments are supported` (1).
-    `complex-expressions.ts#testPostfixWithMultipleOps`. Desugar to read-op-write.
+11. **Compound/update assignments.** *Done (task E): the producer proposes
+    `update`, `logicalAssign` and `nullishAssign`, which Lean already lowered
+    (target parts once, read at the storage contract, the operation, the
+    write back); `x += s` concatenates, and an increment is refused on a
+    non-numeric target (it converts to a number). 23 of 29 verify.* Were
+    `proposal: expression update` (16), `logicalAssign` (3), `nullishAssign`
+    (1). Left: `arrayAssign` (4, `[a, b] = [b, a]`: destructuring, 12),
+    `source: only field and local assignments are supported` (1, a pattern
+    default), and 2 moved on (`&&`, a loop edge).
 12. **Destructuring and parameters.** `proposal: statement pattern` (29),
     `statement arrayPattern` (10), `rest elements` (12), `default parameters`
     (10), `destructuring parameter` (10), `expected an ordinary closure
@@ -337,7 +356,7 @@ dropped), examples, what the extension needs.
       `object-type-readonly-fields.ts`, `readonly-inter-union.ts`) — 6;
     - inferred/evolving array literals (`array_literal_examples.ts` 4,
       `per-field-tvar-isolation.ts`, `literal-representation-lifetime.ts`) — 6;
-    - string concatenation 4, `for-of` over strings 3, `void`/`??` on `unknown`
+    - string concatenation 4 (done, task E), `for-of` over strings 3, `void`/`??` on `unknown`
       and `void` 3, generic inheritance and large tuples 4;
     - **SKJS unsound**: `obj-literal-indexes.ts` (6 of its 8) and
       `callability.ts#testInstanceTypeofFunction` — see below.
@@ -372,8 +391,7 @@ dropped), examples, what the extension needs.
     numeric literal type` (1). A new primitive in the calculus.
 33. **Enums.** `top-level statement outside the fragment (EnumDeclaration)` (56).
 
-**Dependencies.** 1 → 13 → 24 (`throw new Error`); 4 → 13; 2 → 23; 9 needs
-string concatenation (in 18); 15 → 16, 6's case narrowing, 17; 19 + 21 → 20;
+**Dependencies.** 1 → 13 → 24 (`throw new Error`); 4 → 13; 2 → 23; 15 → 16, 6's case narrowing, 17; 19 + 21 → 20;
 7 → 32 (negative bigint).
 
 ## Suspected SKJS unsoundnesses
@@ -522,7 +540,7 @@ split by function.
 | B. `Array<T>` and lib interfaces | `Array<T>`/`ReadonlyArray<T>` to array types; overloaded lib methods; `Function`, `Record<K,V>` | 78 / 19 | `declaration-graph.mts`, `declaration-types.mts`, `DeclarationGraph.lean` | — | C, K |
 | C. Ambient declarations (done) | `declare function` (with overloads), `declare const/class` as typed module assumptions; `declare let`/`var` refused as module storage | 94 / 35 reached, 22 / 12 verified | `fragment-parse.mts`, `fragment.mts`, `declaration-graph.mts`, `Source/Fragment.lean`, `SourceExtraction.lean` | — | B, K |
 | D. Numeric operators | `< <= > >=` (number, string), unary `-`/`+`/`~`, `**`, `**=` | 74 / 25 | `fragment-parse.mts`, `Fragment.lean`, `Calculus.lean`, `proposal.ml` | — | E, F (gate and expression lowering) |
-| E. Small expression forms | `void e`; string `+` then template literal expressions; compound and update assignments | ~100 / 30 | `fragment-parse.mts`, `SourceExtraction.lean`, `CertificateProducer.lean`, `proposal.ml` | — | D, F |
+| E. Small expression forms (done) | `void e` and the comma operator as one `comma` form; `+` with a string operand concatenating any primitive but a symbol by exact `ToString`; template literals as concatenations; the producer's `update`, `logicalAssign`, `nullishAssign` | 58 / 25 verified (703 -> 761 units, 672 -> 730 functions, 61 -> 72 whole files, none lost) | `fragment-parse.mts`, `annotate-source.mts`, `Fragment.lean`, `Calculus.lean`, `ProgramTyping.lean`, `SourceExtraction.lean`, `CertificateProducer.lean`, `source.ml`, `proposal.ml` | — | D, F |
 | F. Statement forms | `else if`/non-block branches, bare `return`, void block closures, dead code after `return`, `switch` (without literal narrowing), `for(;;)`, `for-in`, `try`/`catch`/`finally` | ~150 / 40 | `fragment-parse.mts`, `control-flow.mts`, `SourceExtraction.lean`, `ProgramTyping.lean` | D (for `<` in loops) | D, E, H |
 | G. Mutable bindings | Storage contract from a widened initializer, parameters as cells, `let x: T;` with definite assignment, module constants | 52 / 22 | `proposal.ml`, `environment.ml`, `ProgramTyping.lean` | — | I |
 | H. Destructuring and parameters | Object/array patterns, rest, holes, nested, parameter patterns, default and rest parameters | 96 / 22 | `fragment-parse.mts`, `proposal.ml`, `SourceExtraction.lean` | — | F |

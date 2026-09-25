@@ -222,11 +222,16 @@ private def arrayKeyTerm (K : Ty Nat) : Compiler Tm := do
   return .num b
 
 /-- The type a binary operator's value is claimed at before it meets the
-expression's claim: both Booleans for a comparison, else the numeric family
-of its operands. -/
-private def operatorResult (op : Arith) (A : Ty Nat) : Compiler (Ty Nat) := do
+expression's claim: both Booleans for a comparison, strings for `+` with a
+string operand, else the numeric family of its operands. -/
+private def operatorResult (op : Arith) (A B : Ty Nat) : Compiler (Ty Nat) := do
   if op.relational then return [1, 2]
-  let cs := PositiveRules.expand (SourceTypes.graph (← table)) A
+  let G := SourceTypes.graph (← table)
+  let strings := fun (T : Ty Nat) =>
+    let cs := PositiveRules.expand G T
+    !cs.isEmpty && cs.all ProgramTyping.stringClause
+  if op == .add && (strings A || strings B) then return [← lower (SourceTypes.use .str)]
+  let cs := PositiveRules.expand G A
   if !cs.isEmpty && cs.all ProgramTyping.bigintClause then return [← lower (SourceTypes.use .bigint)]
   return [← lower (SourceTypes.use .num)]
 
@@ -334,6 +339,7 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
   | .elemWrite p r key rhs =>
     return .elemWrite p (← comparisonsExpr fc r) (← comparisonsExpr fc key) (← comparisonsExpr fc rhs)
   | .arith p op l r => return .arith p op (← comparisonsExpr fc l) (← comparisonsExpr fc r)
+  | .comma p l r => return .comma p (← comparisonsExpr fc l) (← comparisonsExpr fc r)
   | .logicalAssign p op target rhs =>
     return .logicalAssign p op (← comparisonsExpr fc target) (← comparisonsExpr fc rhs)
   | .update p op target rhs post =>
@@ -404,7 +410,7 @@ private partial def assignsExpr (name : String) : Fragment.Expr → Bool
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .withValue _ a b _ _ | .index _ _ a b
   | .seqBody _ a b | .letBody _ _ _ a b => assignsExpr name a || assignsExpr name b
   | .indexWrite _ _ a b c | .elemWrite _ a b c => assignsExpr name a || assignsExpr name b || assignsExpr name c
-  | .arith _ _ a b | .elemAt _ a b => assignsExpr name a || assignsExpr name b
+  | .arith _ _ a b | .elemAt _ a b | .comma _ a b => assignsExpr name a || assignsExpr name b
   | .arrayLit _ es => es.any (assignsExpr name)
   | .arrayAssign _ targets rhs => targets.any (fun q => q.name == name ||
       (q.default_.map (assignsExpr name)).getD false) || assignsExpr name rhs
@@ -648,7 +654,8 @@ private def readOnly : Fragment.Expr → Bool
   | .var .. | .lit .. | .done .. => true
   | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .atEnv _ e => readOnly e
   | .equality _ _ a b | .singletonTest _ _ _ _ a b | .logical _ _ a b | .coalesce _ a b
-  | .seqBody _ a b | .letBody _ _ _ a b | .index _ _ a b | .arith _ _ a b | .elemAt _ a b => readOnly a && readOnly b
+  | .seqBody _ a b | .letBody _ _ _ a b | .index _ _ a b | .arith _ _ a b | .elemAt _ a b
+  | .comma _ a b => readOnly a && readOnly b
   | .ifBody _ _ c t e => readOnly c && readOnly t && readOnly e
   | .alloc .. | .write .. | .indexWrite .. | .update .. | .logicalAssign .. | .assign .. | .arrayLit .. | .elemWrite .. | .arrayAssign .. | .nullishAssign .. | .lambda .. | .withValue .. | .bindWithReceiver ..
   | .callWithReceiver .. | .applyWithReceiver .. | .call .. | .invoke .. | .ctor .. | .construct .. => false
@@ -1184,17 +1191,23 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let a ← closureExpr fc scope Γ l
     let b ← closureExpr fc (held ⟨"",some l.span⟩ :: scope) (a.type::Γ) r
     let H := a.type::Γ
-    let N ← operatorResult op a.type
+    let N ← operatorResult op a.type b.type
     pure (DirectProof.letE Γ a
       (DirectProof.node H (.arith op (.var 0) b.term) N .arith [DirectProof.var H 0 a.type, b]))
   | .unary pos op a => do
     let p ← closureExpr fc scope Γ a
     let (arith, c, C, rule) ← unaryOperation pos op p.type
     let H := p.type::Γ
-    let N ← operatorResult arith p.type
+    let N ← operatorResult arith p.type p.type
     pure (DirectProof.letE Γ p
       (DirectProof.node H (.arith arith (.var 0) c) N .arith
         [DirectProof.var H 0 p.type, DirectProof.node H c C rule]))
+  | .comma _ l r => do
+    -- The left operand is bound and never read; the claim at the comma
+    -- follows from the right operand's.
+    let a ← closureExpr fc scope Γ l
+    let b ← closureExpr fc (held ⟨"",some l.span⟩ :: scope) (a.type::Γ) r
+    pure (DirectProof.letE Γ a (DirectProof.cast (a.type::Γ) A b))
   | .update .. => throw "compound assignment inside a closed expression is outside the fragment"
   | .arrayLit _ elems => do
     -- The elements, in order, fill a fresh store, and the array object holds
@@ -2578,6 +2591,17 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let node ← emitAt e.span (.arith op (.var 1) (.var 0)) (.bind drop) (C::B::Γ) A (scope := temporaries)
     let right ← compileExpr fc (held ⟨"",some l.span⟩ :: scope) (B::Γ) r node
     compileExpr fc scope Γ l right
+  | .comma _ l r =>
+    -- The left operand, held and never read, then the right one, whose value
+    -- the comma's claim is proved from.
+    let B ← exprType fc l
+    let C ← exprType fc r
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else i+2))⟩
+    let temporaries := held ⟨"",some r.span⟩::held ⟨"",some l.span⟩ :: scope
+    let node ← emitAt e.span (.var 0) (.bind drop) (C::B::Γ) A "comma" (scope := temporaries)
+    let right ← compileExpr fc (held ⟨"",some l.span⟩ :: scope) (B::Γ) r node
+    compileExpr fc scope Γ l right
   | .unary pos op a =>
     -- The operand, then the constant of its family, then the operator.
     let B ← exprType fc a
@@ -2616,16 +2640,23 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let types ← parts.mapM (exprType fc)
     let heldParts := (parts.map fun p => held ⟨"",some p.span⟩).reverse
     let K := types.reverse ++ Γ
-    -- The operation's value is of the target contract's numeric family, and
-    -- an increment adds that family's one.
-    let N ← operatorResult op T
+    -- The operation's value is a string for `+` with a string operand, else
+    -- of the target contract's numeric family, and an increment adds that
+    -- family's one.
     let targetClauses := PositiveRules.expand (SourceTypes.graph (← table)) T
+    -- `x++` converts its operand to a number, where `x + 1` would
+    -- concatenate a string: an increment is this addition only on a target of
+    -- one numeric family.
+    if rhs.isNone && (targetClauses.isEmpty ||
+        !(targetClauses.all ProgramTyping.numberClause || targetClauses.all ProgramTyping.bigintClause)) then
+      throw s!"unsupported source expression at [{e.span.1},{e.span.2}): an increment needs a target of one numeric family, number or bigint"
     let (one, oneClause) : Tm × PositiveNormalization.Clause (List Nat) :=
       if !targetClauses.isEmpty && targetClauses.all ProgramTyping.bigintClause
       then (.bigint 1, .bigintLit 1) else (.num (1.0 : Float).toBits, .numLit (1.0 : Float).toBits)
     let C ← match rhs with
       | some r => exprType fc r
       | none => do pure [← lower (SourceTypes.use oneClause)]
+    let N ← operatorResult op T C
     let n := parts.length
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+n+3))⟩

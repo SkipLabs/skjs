@@ -688,12 +688,13 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
       return splitReceiver a
     | .arith op a b =>
       -- Each operand at a pool type of the operand clauses the operator
-      -- takes (numbers and bigints; strings too for a comparison), the right
-      -- one only where the pair classifies; the rule then checks every pair
-      -- and the result, at the requested type when it holds the result's
-      -- kind, else coerced.
+      -- takes (numbers and bigints; strings too for a comparison, and every
+      -- printable primitive for `+`), the right one only where the pair
+      -- classifies; the rule then checks every pair and the result, at the
+      -- requested type when it holds the result's kind, else coerced.
       let operands := pool.filter fun R => G.plainTy R && !(expand G R).isEmpty &&
         (expand G R).all fun c => numberClause c || bigintClause c || (op.relational && stringClause c)
+          || (op == .add && printableClause c)
       return operands.findSome? fun R => do
         let ea ← recur Γ a R
         (operands.filter fun S => (operandsResult G op R S).isSome).findSome? fun S => do

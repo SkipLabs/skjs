@@ -449,7 +449,7 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
     exact ⟨E,hx,hh',⟨ht.1.1,hs⟩,ht.2.1.mono hx,hn⟩
   | arithV hb =>
     intro D hh ht
-    rcases (binop_result hb).2.2 with rfl | rfl | ⟨_, rfl⟩ | ⟨_, rfl⟩ <;>
+    rcases (binop_result hb).2.2 with rfl | rfl | ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨_, rfl⟩ <;>
       exact ⟨D,.refl D,hh,trivial,trivial⟩
   | @arrArg inits i h h' a a' hg hb step ih =>
     intro D hh ht

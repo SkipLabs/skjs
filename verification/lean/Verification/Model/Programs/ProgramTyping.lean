@@ -415,12 +415,13 @@ One rule types every binary operator (`arith`): each pair of operand clauses
 must make the operator answer (`binop`) for every pair of their members, all
 with one kind of result. Arithmetic takes two numbers or two bigints, never one
 of each; a bigint divisor must exclude zero, and a bigint exponent be
-non-negative, since those throw. A relational operator takes two numeric
-operands, of either kind, or two strings. -/
+non-negative, since those throw. `+` also takes a string and a primitive other
+than a symbol, in either order, and concatenates. A relational operator takes
+two numeric operands, of either kind, or two strings. -/
 
 /-- The kind of value an operator yields. -/
 inductive OpResult where
-  | num | bigint | bool
+  | num | bigint | bool | str
   deriving DecidableEq, Repr
 
 def numberClause : Clause α → Bool
@@ -433,6 +434,13 @@ def bigintClause : Clause α → Bool
 
 def stringClause : Clause α → Bool
   | .str | .strLit _ => true
+  | _ => false
+
+/-- Primitives `ToString` converts without running code (`primString`):
+every primitive but a symbol. -/
+def printableClause : Clause α → Bool
+  | .str | .strLit _ | .num | .numLit _ | .bigint | .bigintLit _
+  | .bool | .boolLit _ | .nul | .undef => true
   | _ => false
 
 /-- Whether a bigint right operand of this clause keeps the operator from
@@ -450,6 +458,8 @@ def opResult (op : Arith) (c d : Clause α) : Option OpResult :=
   if op.relational then
     if (numberClause c || bigintClause c) && (numberClause d || bigintClause d)
       || stringClause c && stringClause d then some .bool else none
+  else if op == .add && (stringClause c && printableClause d || printableClause c && stringClause d)
+  then some .str
   else if numberClause c && numberClause d then some .num
   else if bigintClause c && bigintClause d && bigintRight op d then some .bigint
   else none
@@ -459,6 +469,7 @@ def OpResult.holds : OpResult → Val → Prop
   | .num, v => ∃ x, v = .num x
   | .bigint, v => ∃ i, v = .bigint i
   | .bool, v => v = .tru ∨ v = .fls
+  | .str, v => ∃ s, v = .str s
 
 theorem numberClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
     (hc : numberClause c = true) (hv : semWithArgs X P c n W v) : ∃ x, v = .num x := by
@@ -477,6 +488,22 @@ theorem stringClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α}
   cases c <;> simp [stringClause] at hc
   · exact hv
   · exact ⟨_, hv⟩
+
+/-- A member of a printable clause converts by `ToString`. -/
+theorem printableClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
+    (hc : printableClause c = true) (hv : semWithArgs X P c n W v) : ∃ t, primString v = some t := by
+  cases c <;> simp [printableClause] at hc <;> simp only [semWithArgs] at hv
+  all_goals first
+    | (rcases hv with rfl | rfl <;> exact ⟨_, rfl⟩)
+    | (obtain ⟨_, rfl⟩ := hv; exact ⟨_, rfl⟩)
+    | (subst hv; exact ⟨_, rfl⟩)
+    | (split at hv <;> subst hv <;> exact ⟨_, rfl⟩)
+
+/-- `+` of a string and a printable value, in either order, is a string. -/
+theorem add_string {s : String} {w : Tm} {t : String} (ht : primString w = some t) :
+    binop .add (.str s) w = some (.str (s ++ t)) ∧ binop .add w (.str s) = some (.str (t ++ s)) := by
+  cases w <;> simp [primString] at ht <;> subst ht <;> simp [binop, primString, Arith.relational]
+  all_goals rfl
 
 theorem boolVal_holds (q : Bool) : OpResult.holds .bool (boolVal q) := by
   cases q <;> simp [OpResult.holds, boolVal]
@@ -518,6 +545,18 @@ theorem opResult_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c d : 
     split at h
     · rename_i hops
       cases h
+      simp only [Bool.and_eq_true, Bool.or_eq_true] at hops
+      obtain ⟨hadd, (⟨hc, hd⟩ | ⟨hc, hd⟩)⟩ := hops <;>
+        obtain rfl : op = .add := by cases op <;> first | rfl | exact absurd hadd (by decide)
+      · obtain ⟨x, rfl⟩ := stringClause_member hc hv
+        obtain ⟨t, ht⟩ := printableClause_member hd hw
+        exact ⟨_, (add_string ht).1, _, rfl⟩
+      · obtain ⟨t, ht⟩ := printableClause_member hc hv
+        obtain ⟨y, rfl⟩ := stringClause_member hd hw
+        exact ⟨_, (add_string ht).2, _, rfl⟩
+    split at h
+    · rename_i hops
+      cases h
       rcases Bool.and_eq_true_iff.mp hops with ⟨hc, hd⟩
       obtain ⟨x, rfl⟩ := numberClause_member hc hv
       obtain ⟨y, rfl⟩ := numberClause_member hd hw
@@ -544,12 +583,13 @@ def Operands (G : NormalGraph ι) (op : Arith) (A B : Ty ι) (r : OpResult) : Pr
   G.plainTy A = true ∧ G.plainTy B = true ∧
     ∀ c ∈ expand G A, ∀ d ∈ expand G B, opResult op c d = some r
 
-/-- A result type holding every value of the kind: the number or bigint
-family, or both Booleans. -/
+/-- A result type holding every value of the kind: the number, bigint or
+string family, or both Booleans. -/
 def OpResult.covers (G : NormalGraph ι) (N : Ty ι) : OpResult → Prop
   | .num => Represents G N .num
   | .bigint => Represents G N .bigint
   | .bool => (.boolLit true) ∈ expand G N ∧ (.boolLit false) ∈ expand G N
+  | .str => Represents G N .str
 
 instance [DecidableEq ι] (G : NormalGraph ι) (op : Arith) (A B : Ty ι) (r : OpResult) :
     Decidable (Operands G op A B r) := by unfold Operands; infer_instance
@@ -1934,6 +1974,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     cases r with
     | num => obtain ⟨x, rfl⟩ := hr; exact (represents_sem hn m U _).mpr ⟨x, rfl⟩
     | bigint => obtain ⟨i, rfl⟩ := hr; exact (represents_sem hn m U _).mpr ⟨i, rfl⟩
+    | str => obtain ⟨s, rfl⟩ := hr; exact (represents_sem hn m U _).mpr ⟨s, rfl⟩
     | bool =>
       rcases hr with rfl | rfl
       · exact expand_sem_mpr ⟨_, expand_sub hn.1, rfl⟩

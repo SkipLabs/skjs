@@ -601,6 +601,24 @@ class Gate {
 
     if (ts.isAwaitExpression(node)) return this.awaitExpr(node);
 
+    // `void e` is `e, undefined`: the operand for its effects, then the value
+    // `undefined`, a literal at the keyword.
+    if (ts.isVoidExpression(node)) {
+      const start = node.getStart(this.file);
+      return {
+        k: "comma",
+        pos: this.span(node),
+        left: this.expr(node.expression),
+        right: { k: "lit", pos: [start, start + "void".length], lit: { a: "undefined" } },
+      };
+    }
+
+    // A template without substitutions is its string; `text` is the cooked
+    // value, as for a string literal.
+    if (ts.isNoSubstitutionTemplateLiteral(node))
+      return { k: "lit", pos: this.span(node), lit: { a: "stringlit", v: node.text } };
+    if (ts.isTemplateExpression(node)) return this.template(node);
+
     if (ts.isIdentifier(node)) {
       if (node.text === "undefined")
         return { k: "lit", pos: this.span(node), lit: { a: "undefined" } };
@@ -1209,7 +1227,32 @@ class Gate {
     };
   }
 
+  /** A template literal is the concatenation of its parts, in order:
+   * `` `h${a}m${b}t` `` is `(((("h" + a) + "m") + b) + "t")`, which converts
+   * each substitution by `ToString` where the template does, after the ones
+   * before it; the first part, a string, makes every `+` a concatenation.
+   * Each partial concatenation spans from the template's start to the end of
+   * its last part, so every node has a span of its own and the whole has the
+   * template's. */
+  private template(node: ts.TemplateExpression): Expr {
+    const start = node.getStart(this.file);
+    let acc: Expr = { k: "lit", pos: this.span(node.head), lit: { a: "stringlit", v: node.head.text } };
+    for (const part of node.templateSpans) {
+      acc = { k: "arith", pos: [start, part.expression.end], op: "add", l: acc, r: this.expr(part.expression) };
+      acc = {
+        k: "arith",
+        pos: [start, part.literal.end],
+        op: "add",
+        l: acc,
+        r: { k: "lit", pos: this.span(part.literal), lit: { a: "stringlit", v: part.literal.text } },
+      };
+    }
+    return acc;
+  }
+
   private binary(node: BinaryExpression): Expr {
+    if (node.operatorToken.kind === ts.SyntaxKind.CommaToken)
+      return { k: "comma", pos: this.span(node), left: this.expr(node.left), right: this.expr(node.right) };
     switch (node.operatorToken.kind) {
       case ts.SyntaxKind.PlusEqualsToken:
       case ts.SyntaxKind.MinusEqualsToken:

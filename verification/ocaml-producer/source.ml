@@ -269,6 +269,8 @@ let relational = function Lt | Le | Gt | Ge -> true | Add | Sub | Mul | Div | Po
 (* `-e`, `+e` and `~e`. *)
 type unary = Neg | Plus | BitNot
 type equality = StrictEqual | StrictUnequal | LooseEqual | LooseUnequal
+(* `??=`, `||=` and `&&=`. *)
+type logical = Nullish | OrElse | AndAlso
 
 (* This is a typed view of the shared Fragment, not a new source language.
    Unknown cases fail here; inference exhaustively matches implemented cases. *)
@@ -283,6 +285,19 @@ and expr_node =
      `unique symbol` constant. *)
   | Read of expr * key | Write of expr * string * expr
   | Assign of string * expr
+  (* `target op= rhs`, or an increment where the right side is absent: the
+     target (a local, a field or a named index) is read and written back. The
+     flag makes the old value the expression's. *)
+  | Update of arithmetic * expr * expr option * bool
+  (* `target ??= rhs`, `||=` or `&&=` on a field or named index, or a Boolean
+     local: the right side is evaluated and written only where the test on
+     the target's value asks for it. *)
+  | LogicalAssign of logical * expr * expr
+  (* `name ??= rhs` on a local: the name's read is claimed at its own position. *)
+  | NullishAssign of string * Json.t * expr
+  (* `left, right`: the left operand for its effects, then the right one's
+     value. `void e` is `e, undefined`. *)
+  | Comma of expr * expr
   (* A parameter's type is what the body reads. A defaulted one also admits
      `undefined` where the closure is called; the default replaces it. A rest
      parameter reads the tuple its arguments are collected into, and the
@@ -337,7 +352,9 @@ type program = { file: Json.t; digest: Json.t; declarations: declaration list;
 let children e = match e.node with
   | Id _ | Literal _ | DoneBody -> []
   | Not e | TypeofTest (_,_,e) | Read (e,_) | Ctor e | Cast (_,_,e) | ReturnBody e | Unary (_,e) -> [e]
-  | Assign (_,e) -> [e]
+  | Assign (_,e) | NullishAssign (_,_,e) -> [e]
+  | Update (_,t,r,_) -> t :: Option.to_list r
+  | LogicalAssign (_,a,b) | Comma (a,b) -> [a;b]
   | Arith (_,a,b) | Equality (_,a,b) | Write (a,_,b) | Coalesce (a,b) | Index (a,b)
   | WithFields (a,b,_,_) | SequenceBody (a,b) | LetBody (_,_,a,b) -> [a;b]
   | Conditional (a,b,c) | IndexWrite (a,b,c) | IfBody (_,a,b,c) -> [a;b;c]
@@ -352,7 +369,8 @@ let children e = match e.node with
    such a binding is a cell. Lean decides storage the same way, from the
    source (`assignsStmt`); this only proposes consistently with it. *)
 let rec assigns_expr name e = match e.node with
-  | Assign (n,_) when n = name -> true
+  | Assign (n,_) | NullishAssign (n,_,_) when n = name -> true
+  | Update (_,{node=Id n;_},_,_) | LogicalAssign (_,{node=Id n;_},_) when n = name -> true
   | _ -> List.exists (assigns_expr name) (children e)
 let rec assigns name s = match s.statement with
   | Declare (_,bs) -> List.exists (fun (_,_,e) -> assigns_expr name e) bs
@@ -360,6 +378,10 @@ let rec assigns name s = match s.statement with
   | If (c,a,b) -> assigns_expr name c || List.exists (assigns name) (a @ b)
   | While (c,body) | ForOf (_,_,c,body) -> assigns_expr name c || List.exists (assigns name) body
   | Break | Continue -> false
+let arithmetic = function
+  | "add" -> Add | "sub" -> Sub | "mul" -> Mul | "div" -> Div | "pow" -> Pow
+  | "lt" -> Lt | "le" -> Le | "gt" -> Gt | "ge" -> Ge
+  | k -> unsupported ("arithmetic " ^ k)
 let rec expr binders j =
   let sub k = expr binders (field k j) in
   let node = match text "k" j with
@@ -370,10 +392,14 @@ let rec expr binders j =
       | "neg" -> Neg | "plus" -> Plus | "bitNot" -> BitNot
       | k -> unsupported ("unary operator " ^ k)),sub "e")
   | "typeofTest" -> TypeofTest (text "shape" j,boolean (field "equal" j),sub "e")
-  | "arith" -> let op = match text "op" j with
-      | "add" -> Add | "sub" -> Sub | "mul" -> Mul | "div" -> Div | "pow" -> Pow
-      | "lt" -> Lt | "le" -> Le | "gt" -> Gt | "ge" -> Ge
-      | k -> unsupported ("arithmetic " ^ k) in Arith (op,sub "l",sub "r")
+  | "arith" -> Arith (arithmetic (text "op" j),sub "l",sub "r")
+  | "update" -> Update (arithmetic (text "op" j),sub "target",
+      (match field "rhs" j with Null -> None | r -> Some (expr binders r)),boolean (field "post" j))
+  | "logicalAssign" -> LogicalAssign ((match text "op" j with
+      | "nullish" -> Nullish | "or" -> OrElse | "and" -> AndAlso
+      | k -> unsupported ("logical assignment " ^ k)),sub "target",sub "rhs")
+  | "nullishAssign" -> NullishAssign (text "name" j,field "namePos" j,sub "rhs")
+  | "comma" -> Comma (sub "left",sub "right")
   | "bin" -> let op = match text "op" j with
       | "===" -> StrictEqual | "!==" -> StrictUnequal
       | "==" -> LooseEqual | "!=" -> LooseUnequal

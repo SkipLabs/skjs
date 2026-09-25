@@ -149,7 +149,9 @@ with a constant; a bigint is its integer, with literal singletons below
 `bigint` ([Numeric operators and bigints](DESIGN.md#numeric-operators-and-bigints)).
 Strings are otherwise admitted on the same terms as numbers: values with literal
 singletons below the `string` family, compared for equality with a literal,
-never concatenated or indexed. A numeric
+never indexed; `+` concatenates a string with any primitive but a symbol,
+converted by `ToString` exactly, and a template literal is that concatenation
+([String concatenation, templates and `void`](DESIGN.md#string-concatenation-templates-and-void)). A numeric
 literal is its own singleton and is below `number`; its identity is the double
 it denotes, so `1`, `1.0` and `1e0` are one literal. A number may be a
 parameter or result of a closure, and the storage contract of a mutable local,

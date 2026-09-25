@@ -600,15 +600,18 @@ Writes at a greater index, or at one no contract names, and reads by a
 non-literal index into a tuple, have no rule; a program appends with `push`.
 
 Every binary operator has one rule, `arith`, for arithmetic on numbers and on
-bigints and for relational comparison alike ([its
+bigints, for string concatenation and for relational comparison alike ([its
 meaning](SEMANTICS.md#operational-language), `binop`). A clause pair
 classifies the operation, $\operatorname{op}(op,c,d)$ (`opResult`), where
-$\mathsf{N}$ is `num` or `numLit`, $\mathsf{Z}$ is `bigint` or `bigintLit` and
-$\mathsf{S}$ is `str` or `strLit`:
+$\mathsf{N}$ is `num` or `numLit`, $\mathsf{Z}$ is `bigint` or `bigintLit`,
+$\mathsf{S}$ is `str` or `strLit`, and $\mathsf{P}$, the printable clauses
+(`printableClause`), is $\mathsf N\cup\mathsf Z\cup\mathsf S$ with `bool`,
+`boolLit`, `nul` and `undef`: every primitive but a symbol:
 
 $$
 \operatorname{op}(op,c,d)=\begin{cases}
 \mathsf{bool} & op\ \text{relational},\ c,d\in\mathsf N\cup\mathsf Z\ \text{or}\ c,d\in\mathsf S\\
+\mathsf{str} & op={+},\ c\in\mathsf S,\ d\in\mathsf P\ \text{or}\ c\in\mathsf P,\ d\in\mathsf S\\
 \mathsf{num} & op\ \text{arithmetic},\ c,d\in\mathsf N\\
 \mathsf{bigint} & op\ \text{arithmetic},\ c,d\in\mathsf Z,\ \operatorname{right}(op,d)\\
 \text{none} & \text{otherwise}
@@ -622,8 +625,8 @@ divisor that may be zero, or an exponent that may be negative, throws, and the
 calculus has no throw, so the rule refuses it. $\operatorname{Operands}_G(op,A,B,r)$
 requires both types of clause rows and every clause pair of $A$ and $B$ to
 classify as $r$, and the result type must hold every value of the kind
-($\operatorname{covers}$): the number or bigint family exactly, or both Boolean
-literals:
+($\operatorname{covers}$): the number, bigint or string family exactly, or both
+Boolean literals:
 
 $$
 \frac{\Gamma\vdash_G a:A\quad\Gamma\vdash_G b:B\quad
@@ -634,9 +637,14 @@ $$
 The result is never a singleton, since its value is not typed. `opResult_sound`
 proves the classification: on members of the two clauses $\mathsf{binop}$
 answers, with a value of the kind. So a number never meets a bigint in
-arithmetic (a `TypeError`), a string is compared only with a string, and a
-Boolean or object operand, which JavaScript would convert, has no rule, though
-TypeScript admits comparing two Booleans. The certificate premise
+arithmetic (a `TypeError`), a string is compared only with a string and
+concatenated only with a primitive whose `ToString` runs no code, and a
+Boolean or object operand of arithmetic or comparison, and an object or symbol
+concatenated, which JavaScript would convert through code or by throwing, has
+no rule, though TypeScript admits comparing two Booleans and concatenating an
+object. An operand whose clauses classify differently, a `string | number`
+added to a number, has none either: its result is a string or a number by the
+value. The certificate premise
 (`OperatorTypes`) reads $r$ off the first clause pair and checks the rest.
 
 The unary numeric operators are derived: the operand's claimed type fixes its
@@ -647,8 +655,22 @@ $\sim a\equiv a\mathbin{\hat{}}(-1)$, each exact on both families
 `TypeError`, and an operand of both families has no one constant: both are
 refused. The constant is its own node, typed by its literal rule; the operand's
 obligation establishes the family the lowering read. A compound assignment
-`x op= e` and an increment use the same rule at the target contract's family,
-an increment adding that family's one.
+`x op= e` and an increment use the same rule at the target contract's type,
+an increment adding that family's one; `x += e` concatenates where the
+contract or `e` is a string. An increment converts its operand to a number
+where `+ 1` would concatenate, so it is this addition only on a target of one
+numeric family, and is refused on any other.
+
+A template literal is the concatenation of its parts, in order, starting from
+its first string part: `` `h${a}m${b}t` `` is $(((h+a)+m)+b)+t$, one `arith`
+node per `+`, so a substitution is converted by $\mathsf{str}$ exactly where
+the template converts it, after the ones before it, and one of an object or a
+symbol has no rule. A template without substitutions is its string.
+
+The comma operator $a,b$ evaluates $a$, discards its value and yields $b$'s;
+`void e` is $e,\mathtt{undefined}$. The lowering binds $a$'s value in an
+unread slot, and the claim at the comma is proved from $b$'s value, as a
+cast's is from its operand's: no rule of its own.
 
 A tag test
 whose answer the operand's type does not settle is typed by `test` as a Boolean

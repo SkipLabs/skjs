@@ -387,8 +387,13 @@ inductive Expr where
   | elemAt (pos : Span) (e key : Expr)
   | elemWrite (pos : Span) (receiver key rhs : Expr)
   /-- A binary operator on primitive operands, left operand first:
-  arithmetic, `**`, or a relational comparison. -/
+  arithmetic, `**`, a relational comparison, or `+` concatenating strings. A
+  template literal is the concatenation of its parts, in order, starting from
+  its first string. -/
   | arith (pos : Span) (op : Arith) (l r : Expr)
+  /-- `left, right`: the left operand for its effects, its value discarded,
+  then the right operand's value. `void e` is `e, undefined`. -/
+  | comma (pos : Span) (left right : Expr)
   /-- A unary numeric operator on its operand's value. -/
   | unary (pos : Span) (op : UnaryOp) (e : Expr)
   /-- `target op= rhs`, or an increment when `rhs` is absent: the target's
@@ -460,7 +465,7 @@ partial def Expr.freeNames : Expr → List String
   | .alloc _ _ es | .arrayLit _ es => es.flatMap Expr.freeNames
   | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
-  | .elemAt _ a b | .arith _ _ a b | .logicalAssign _ _ a b
+  | .elemAt _ a b | .arith _ _ a b | .logicalAssign _ _ a b | .comma _ a b
   | .withValue _ a b _ _ | .seqBody _ a b => a.freeNames ++ b.freeNames
   | .indexWrite _ _ a b c | .elemWrite _ a b c | .ifBody _ _ a b c =>
     a.freeNames ++ b.freeNames ++ c.freeNames
@@ -487,7 +492,7 @@ partial def Expr.callees : Expr → List (Span × Span × String)
   | .alloc _ _ es | .arrayLit _ es => es.flatMap Expr.callees
   | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b
   | .singletonTest _ _ _ _ a b | .write _ _ a b | .index _ _ a b
-  | .elemAt _ a b | .arith _ _ a b | .logicalAssign _ _ a b
+  | .elemAt _ a b | .arith _ _ a b | .logicalAssign _ _ a b | .comma _ a b
   | .withValue _ a b _ _ | .seqBody _ a b => a.callees ++ b.callees
   | .indexWrite _ _ a b c | .elemWrite _ a b c | .ifBody _ _ a b c =>
     a.callees ++ b.callees ++ c.callees
@@ -544,6 +549,7 @@ def Expr.span : Expr → Span
   | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body => body.span
   | .ifBody p _ _ _ _ | .done p | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
+  | .comma p _ _ => p
   | .arrayLit p _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ => p
   | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ _ _ _ _ | .call p _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ | .construct p _ _ => p
 
@@ -693,6 +699,9 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       | other => throw s!"unsupported typeof test '{other}'"
     return .shapeTest p tag (← (← jField j "equal").getBool?) (← decodeExpr (← jField j "e"))
   | "coalesce" => return .coalesce p (← decodeExpr (← jField j "left")) (← decodeExpr (← jField j "right"))
+  | "comma" => do
+    CellClaims.fieldsExactly j ["k","pos","left","right"]
+    return .comma p (← decodeExpr (← jField j "left")) (← decodeExpr (← jField j "right"))
   | "not" => return .not p (← decodeExpr (← jField j "e"))
   | "unary" => do
     CellClaims.fieldsExactly j ["k","pos","op","e"]

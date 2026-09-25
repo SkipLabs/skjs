@@ -228,6 +228,19 @@ let numeric_family declarations t =
     Atoms [Bigint]
   | _ -> Atoms [Num]
 
+(* Whether every value of a type is a string. *)
+let string_like declarations t =
+  match declared_head declarations [] t with
+  | Atoms (_::_ as atoms) -> List.for_all (function Str | StrLit _ -> true | _ -> false) atoms
+  | _ -> false
+
+(* What an arithmetic operator yields: a string for `+` with a string
+   operand, which concatenates; else the numeric family of the left operand.
+   Lean checks the operands pair by pair. *)
+let operation_result declarations op left right =
+  if op = Add && (string_like declarations left || string_like declarations right) then Atoms [Str]
+  else numeric_family declarations left
+
 (* Branch restrictions only affect immutable values. Unknown/rigid predicates
    conservatively retain their type; proof checking validates each narrower cut. *)
 let restrict literal equal t = match t with
@@ -402,7 +415,17 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
   let entry env span = match Json.list span with
     | start::_ -> entries := {start;bindings=env} :: !entries
     | [] -> Json.fail "empty source span" in
-  let rec expr ?expected env e =
+  (* The contract an assignment target is read and written at: a local's
+     storage contract, or the type of the field or named index, whose read is
+     also the target's claim. *)
+  let rec target_contract env (target:expr) = match target.node with
+    | Id n ->
+      ignore (expr env target);
+      (match lookup env n with
+       | Storage (contract,_) -> contract
+       | Value _ -> unsupported "assignment to immutable binding")
+    | _ -> expr env target
+  and expr ?expected env e =
     let t = match e.node with
     | Id n ->
       Option.iter (fun expected -> Option.iter (fun c -> offer_class c expected)
@@ -411,12 +434,35 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Literal l -> literal_type l
     | Not e -> ignore (expr env e); bool
     | TypeofTest (_,_,e) -> ignore (expr env e); bool
-    (* A comparison is a Boolean; arithmetic is of its operands' numeric
-       family, bigint where the left one is all bigints, else number. Lean
-       checks the operands pair by pair. *)
+    (* A comparison is a Boolean; `+` with a string operand is a string;
+       other arithmetic is of its operands' numeric family, bigint where the
+       left one is all bigints, else number. *)
     | Arith (op,l,r) ->
-      let left = expr env l in ignore (expr env r);
-      if relational op then bool else numeric_family declarations left
+      let left = expr env l in let right = expr env r in
+      if relational op then bool else operation_result declarations op left right
+    | Comma (a,b) -> ignore (expr env a); expr ?expected env b
+    (* The target is read at its storage contract and written back: a local's
+       contract, or the field's type. An increment adds one of that family;
+       the old value is the contract's, the new one the operation's. *)
+    | Update (op,target,rhs,post) ->
+      let contract = target_contract env target in
+      let right = match rhs with Some r -> expr env r | None -> contract in
+      if post then contract else operation_result declarations op contract right
+    (* The kept value is the target's, where the test keeps it: present for
+       `??=`, `true` for `||=`, `false` for `&&=`; the other arm's is the right
+       side's, written at the contract. *)
+    | LogicalAssign (op,target,rhs) ->
+      let contract = target_contract env target in
+      let right = expr ~expected:contract env rhs in
+      union (match op with
+        | Nullish -> without_nullish contract | OrElse -> Atoms [True] | AndAlso -> Atoms [False]) right
+    | NullishAssign (n,name_pos,rhs) ->
+      let current = resolve env n in
+      expressions := {pos=name_pos;type_=current;instantiation=None} :: !expressions;
+      let contract = match lookup env n with
+        | Storage (contract,_) -> contract
+        | Value _ -> unsupported "assignment to immutable binding" in
+      union (without_nullish current) (expr ~expected:contract env rhs)
     | Unary (_,e) -> numeric_family declarations (expr env e)
     | Equality (_,l,r) -> ignore (expr env l); ignore (expr env r); bool
     | Alloc fs ->
@@ -917,14 +963,15 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
      cells are then known only by their contracts. Creating a closure runs
      nothing. *)
   let rec stirs (e:expr) = match e.node with
-    | Call _ | Invoke _ | New _ | Apply _ | Bind _ | Write _ | IndexWrite _ | Assign _ -> true
+    | Call _ | Invoke _ | New _ | Apply _ | Bind _ | Write _ | IndexWrite _ | Assign _
+    | Update _ | LogicalAssign _ | NullishAssign _ -> true
     | Lambda _ -> false
     | _ -> List.exists stirs (Source.children e) in
   let after e env = if stirs e then forget env else env in
   (* An assignment statement writes only the cell it names. *)
   let rec stirs_statement s = match s.statement with
     | Declare (_,bs) -> List.exists (fun (_,_,e) -> stirs e) bs
-    | Effect {node=Assign (_,rhs);_} -> stirs rhs
+    | Effect {node=Assign (_,rhs) | NullishAssign (_,_,rhs);_} -> stirs rhs
     | Return e | Effect e -> stirs e
     | If (c,a,b) -> stirs c || List.exists stirs_statement (a @ b)
     | While (c,body) -> stirs c || List.exists stirs_statement body
@@ -969,8 +1016,9 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         | false,None -> Value initial in
       extend (after init env) n binding) env bs
     | Return e -> ignore (expr ~expected:f.result env e); env
-    (* An assignment statement leaves the cell holding the value written. *)
-    | Effect ({node=Assign (n,rhs);_} as e) ->
+    (* An assignment statement leaves the cell holding the value written;
+       `n ??= rhs`, the value it yields. *)
+    | Effect ({node=Assign (n,rhs) | NullishAssign (n,_,rhs);_} as e) ->
       let t = expr env e in
       (match lookup env n with
        | Storage _ -> assign (after rhs env) n t

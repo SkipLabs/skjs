@@ -520,15 +520,20 @@ function render(
   function walk(n: ts.Node) {
     starts.add(n.getStart(sf));spans.add(`${n.getStart(sf)}:${n.end}`);
     if(ts.isFunctionDeclaration(n)&&n.name)functions.set(`${n.name.getStart(sf)}:${n.name.end}`,n);
+    // The parser writes a template as the concatenation of its parts, each
+    // partial concatenation spanning from the template's start to the end of
+    // its last part.
+    if(ts.isTemplateExpression(n))for(const p of n.templateSpans) {
+      spans.add(`${n.getStart(sf)}:${p.expression.end}`);spans.add(`${n.getStart(sf)}:${p.literal.end}`);
+    }
     n.forEachChild(walk);
   }
   walk(sf);
   // A claim may also sit at a token: the parser writes `await` and an async
   // body's returns as intrinsic calls read at their keywords (`intrinsics.mts`).
-  const tokenScanner=createScanner(true,undefined,source);
-  for(let k=tokenScanner.scan();k!==ts.SyntaxKind.EndOfFile;k=tokenScanner.scan()) {
-    starts.add(tokenScanner.getTokenStart());spans.add(`${tokenScanner.getTokenStart()}:${tokenScanner.getTokenEnd()}`);
-  }
+  scanTokens(source,(_,scanner)=>{
+    starts.add(scanner.getTokenStart());spans.add(`${scanner.getTokenStart()}:${scanner.getTokenEnd()}`);
+  });
   const insertions=new Map<number, string>(), seen=new Set<string>();
   function add(pos: number, data: Annotation){insertions.set(pos,(insertions.get(pos)||"")+comment(data));}
   // Ids are positional and deterministic, so the manifest and the annotations
@@ -601,10 +606,27 @@ function render(
   return text;
 }
 
-// Every token, comments and whitespace skipped, as kind and spelling.
+// Every token, comments and whitespace skipped, as the parser reads them: the
+// closing brace of a template substitution resumes the template, so the text
+// after it is template text, not tokens.
+function scanTokens(text: string, visit: (kind: ts.SyntaxKind, scanner: ReturnType<typeof createScanner>) => void) {
+  const scanner=createScanner(true,undefined,text);
+  // The brace depth inside each open template substitution.
+  const open: number[]=[];
+  for(let k=scanner.scan();k!==ts.SyntaxKind.EndOfFile;k=scanner.scan()) {
+    if(k===ts.SyntaxKind.CloseBraceToken && open.length && open[open.length-1]===0) {
+      k=scanner.reScanTemplateToken(false);
+      if(k===ts.SyntaxKind.TemplateTail)open.pop();
+    } else if(open.length && k===ts.SyntaxKind.OpenBraceToken)open[open.length-1]++;
+    else if(open.length && k===ts.SyntaxKind.CloseBraceToken)open[open.length-1]--;
+    if(k===ts.SyntaxKind.TemplateHead)open.push(0);
+    visit(k,scanner);
+  }
+}
+// Every token, as kind and spelling.
 function tokens(text: string) {
-  const scanner=createScanner(true,undefined,text), out=[];
-  for(let k=scanner.scan();k!==ts.SyntaxKind.EndOfFile;k=scanner.scan())out.push([k,scanner.getTokenText()]);
+  const out: [ts.SyntaxKind, string][]=[];
+  scanTokens(text,(k,scanner)=>{out.push([k,scanner.getTokenText()]);});
   return out;
 }
 const shape=(n: ts.Node): [number, unknown[]]=>{const kids: unknown[]=[];n.forEachChild(c=>{kids.push(shape(c));});return [n.kind,kids];};

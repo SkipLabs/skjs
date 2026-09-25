@@ -207,8 +207,11 @@ Annotations are marked `@verify-report`, not the proposed `@verify entry` or
 `@verify expr` input directives. Reusing an already annotated copy as the original
 source is rejected. Report comments are never consumed by the Lean checker.
 The renderer escapes comment delimiters and line terminators in producer text,
-and compares the original and annotated TypeScript ASTs, including token text.
-Expression annotations introduce no new line breaks, preserving `return` and
+and compares the original and annotated TypeScript ASTs, including token text
+(read as the parser reads it: a template substitution's closing brace resumes
+the template). An expression annotation sits at a node, a token, or a partial
+concatenation of a template, which the parser writes from the template's start
+to the end of one of its parts. Expression annotations introduce no new line breaks, preserving `return` and
 other automatic-semicolon behavior. This is a display transformation, not a
 proof of the separate source-to-calculus lowering.
 

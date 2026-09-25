@@ -123,8 +123,8 @@ inductive Tm where
   that denote it differently would be distinct singletons, which costs
   completeness and never soundness. -/
   | num (bits : UInt64)
-  /-- A string, carried as itself. Like a number it is opaque: bound, passed,
-  stored, shape-tested and compared for equality, never computed with. -/
+  /-- A string, carried as itself: bound, passed, stored, shape-tested,
+  compared, and concatenated by `+` (`binop`). -/
   | str (value : String)
   /-- A bigint, carried as the integer it is: its identity, as a number's bits
   are. `arith` computes with it; equal integers are the same bigint. -/
@@ -331,12 +331,100 @@ def relationHolds : Arith → Option Ordering → Bool
 
 def boolVal (b : Bool) : Tm := if b then .tru else .fls
 
+/-- `a * 2^e / 10^d` as a fraction of naturals, exactly. -/
+private def scaledFraction (a : Nat) (e d : Int) : Nat × Nat :=
+  (a * 2 ^ e.toNat * 10 ^ (-d).toNat, 2 ^ (-e).toNat * 10 ^ d.toNat)
+
+/-- The shortest decimal digits of a positive finite double `mant * 2^exp`,
+as `Number::toString` chooses them: the integer `s` and exponent `d` with
+`s * 10^d` rounding to the double, `s` of as few digits as possible, and among
+those the one closest to the double, the even one on a tie (the choice the
+specification's note recommends and engines make). Rounding to nearest even
+rounds exactly the reals strictly between the midpoints to the neighbouring
+doubles, and the midpoints too when `mant` is even; the midpoint below is
+nearer where `mant` is the first of a binade above the smallest. Measured in
+quarters of the double's unit, the double is `4 mant` and the midpoints
+`4 mant + 2` and `4 mant - 2` (or `- 1`). The largest `d` for which an integer
+fits between them gives the fewest digits; `fuel` counts the exponents
+tried, from above every finite double's. -/
+def shortestDigits (mant : Nat) (exp : Int) (lower : Bool) : Nat × Int :=
+  let e := exp - 2
+  let x := 4 * mant
+  let lo := if lower then x - 1 else x - 2
+  let hi := x + 2
+  let closed := mant % 2 == 0
+  let rec go : Nat → Int → Nat × Int
+    | 0, d => (mant, d)
+    | fuel + 1, d =>
+      let (ln, ld) := scaledFraction lo e d
+      let (hn, hd) := scaledFraction hi e d
+      -- The least integer at or above (above, when open) the lower midpoint,
+      -- and the greatest at or below (below) the upper one.
+      let least := if closed then (ln + ld - 1) / ld else ln / ld + 1
+      let most := if closed then hn / hd else (hn + hd - 1) / hd - 1
+      if least ≤ most then
+        let (xn, xd) := scaledFraction x e d
+        let below := xn / xd
+        let twice := 2 * (xn % xd)
+        let nearest := if twice < xd then below else if xd < twice then below + 1
+          else if below % 2 == 0 then below else below + 1
+        (min most (max least nearest), d)
+      else go fuel (d - 1)
+  go 700 309
+
+/-- `Number::toString` in radix 10, exactly: `NaN`, the infinities, `0` for
+both zeros, and otherwise the shortest digits `s` with `n` the position of
+the decimal point: plain up to 21 integer digits, `0.` and up to six leading
+zeros below one, else exponent form `d.ddde±x`. -/
+def numberToString (x : UInt64) : String :=
+  let e := ((x >>> 52) &&& 0x7ff).toNat
+  let m := (x &&& 0xfffffffffffff).toNat
+  let sign := if x >>> 63 == 1 then "-" else ""
+  if e == 0x7ff then (if m != 0 then "NaN" else sign ++ "Infinity")
+  else if e == 0 && m == 0 then "0"
+  else
+    let mant := if e == 0 then m else m + 2 ^ 52
+    let exp : Int := (if e == 0 then 1 else (e : Int)) - 1075
+    let (s, d) := shortestDigits mant exp (m == 0 && 1 < e)
+    let digits := toString s
+    let k : Int := digits.length
+    let n : Int := k + d
+    let zeros := fun (i : Int) => String.ofList (List.replicate i.toNat '0')
+    let body :=
+      if k ≤ n && n ≤ 21 then digits ++ zeros (n - k)
+      else if 0 < n && n ≤ 21 then
+        String.ofList (digits.toList.take n.toNat) ++ "." ++ String.ofList (digits.toList.drop n.toNat)
+      else if -6 < n && n ≤ 0 then "0." ++ zeros (-n) ++ digits
+      else
+        let x := n - 1
+        let exponent := "e" ++ (if 0 ≤ x then "+" else "-") ++ toString x.natAbs
+        match digits.toList with
+        | [c] => String.singleton c ++ exponent
+        | c :: rest => String.singleton c ++ "." ++ String.ofList rest ++ exponent
+        | [] => exponent
+    sign ++ body
+
+/-- `ToString` of a primitive other than a symbol, as JavaScript defines it:
+no user code runs. A symbol throws a `TypeError`, and an object's conversion
+calls its own methods, so neither has one here. -/
+def primString : Tm → Option String
+  | .str s => some s
+  | .num x => some (numberToString x)
+  | .bigint i => some (toString i)
+  | .tru => some "true"
+  | .fls => some "false"
+  | .nul => some "null"
+  | .undef => some "undefined"
+  | _ => none
+
 /-- **What a binary operator does on two values**, as JavaScript's does on
 them, where that is a value. Arithmetic combines two numbers or two bigints,
 never one of each (JavaScript throws a `TypeError`), and not a bigint division
 by zero or a negative bigint exponent (a `RangeError`). A relational operator
 compares two numeric values of either kind, exactly, or two strings by their
-UTF-16 code units. Every other pair converts its operands through code or
+UTF-16 code units. `+` with a string operand concatenates: the other operand,
+a primitive other than a symbol, converts by `ToString` (`primString`), which
+runs no code. Every other pair converts its operands through code or
 coercions not modelled here, and has no answer: the term is stuck. -/
 def binop (op : Arith) : Tm → Tm → Option Tm
   | .num x, .num y =>
@@ -351,7 +439,9 @@ def binop (op : Arith) : Tm → Tm → Option Tm
     else none
   | .str s, .str t =>
     if op.relational then some (boolVal (relationHolds op (some (unitsOrder (utf16Units s) (utf16Units t)))))
-    else none
+    else if op == .add then some (.str (s ++ t)) else none
+  | .str s, b => if op == .add then (primString b).map fun t => .str (s ++ t) else none
+  | a, .str t => if op == .add then (primString a).map fun s => .str (s ++ t) else none
   | _, _ => none
 
 /-- The array index a number denotes, when it is one: a finite integer in the
@@ -680,25 +770,29 @@ def isVal : Tm → Bool
   | _ => false
 
 /-- An operator answers only for two values, and answers a Boolean, a
-number or a bigint. -/
+number, a bigint or a string. -/
+theorem primString_val {a : Tm} {s : String} (h : primString a = some s) : isVal a = true := by
+  cases a <;> simp [primString] at h <;> rfl
+
 theorem binop_result {op : Arith} {a b v : Tm} (h : binop op a b = some v) :
     isVal a = true ∧ isVal b = true ∧
-      (v = .tru ∨ v = .fls ∨ (∃ x, v = .num x) ∨ ∃ i, v = .bigint i) := by
+      (v = .tru ∨ v = .fls ∨ (∃ x, v = .num x) ∨ (∃ i, v = .bigint i) ∨ ∃ s, v = .str s) := by
   have hb : ∀ q, boolVal q = .tru ∨ boolVal q = .fls := fun q => by cases q <;> simp [boolVal]
-  cases a <;> cases b <;> simp only [binop, reduceCtorEq] at h
-  all_goals refine ⟨rfl, rfl, ?_⟩
-  all_goals split at h
+  unfold binop at h
+  repeat' split at h
   all_goals first
-    | (obtain rfl := Option.some.inj h; rcases hb _ with h | h <;> rw [h] <;> simp)
-    | (obtain rfl := Option.some.inj h; simp)
-    | (obtain ⟨_, _, rfl⟩ := Option.map_eq_some_iff.mp h; simp)
-    | exact absurd h (by simp)
+    | (simp at h; done)
+    | (obtain rfl := Option.some.inj h; exact ⟨rfl, rfl, by rcases hb _ with h | h <;> rw [h] <;> simp⟩)
+    | (obtain rfl := Option.some.inj h; exact ⟨rfl, rfl, by simp⟩)
+    | (obtain ⟨_, _, rfl⟩ := Option.map_eq_some_iff.mp h; exact ⟨rfl, rfl, by simp⟩)
+    | (obtain ⟨_, ht, rfl⟩ := Option.map_eq_some_iff.mp h; exact ⟨rfl, primString_val ht, by simp⟩)
+    | (obtain ⟨_, ht, rfl⟩ := Option.map_eq_some_iff.mp h; exact ⟨primString_val ht, rfl, by simp⟩)
 
 theorem binop_values {op : Arith} {a b v : Tm} (h : binop op a b = some v) :
     isVal a = true ∧ isVal b = true ∧ isVal v = true := by
   obtain ⟨ha, hb, hv⟩ := binop_result h
   refine ⟨ha, hb, ?_⟩
-  rcases hv with rfl | rfl | ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> rfl
+  rcases hv with rfl | rfl | ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> rfl
 
 /-- ECMAScript Number::equal on IEEE-754 bits: NaN never equals, and the
 sign of zero is ignored. All other equal Numbers have the same encoding. -/

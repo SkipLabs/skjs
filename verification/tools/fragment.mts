@@ -68,6 +68,9 @@ export type Expr =
       post: boolean;
     }
   | { k: "coalesce"; pos: Span; left: Expr; right: Expr }
+  /* `left, right`: the left operand for its effects, then the right one's
+     value. `void e` is `e, undefined`. */
+  | { k: "comma"; pos: Span; left: Expr; right: Expr }
   | { k: "write"; pos: Span; field: string; receiver: Expr; rhs: Expr }
   /* `target ??= rhs`, `||=` or `&&=` on a field, an element or, for the
      Boolean forms, a name: the target's parts once, its value read, the test
