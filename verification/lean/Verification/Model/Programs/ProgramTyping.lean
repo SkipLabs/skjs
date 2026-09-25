@@ -362,6 +362,16 @@ def tagShape (tag : Tag) (s : Nat) : Option Bool :=
   -- store is truthy; a Boolean, number, string or bigint needs its singleton.
   | .truthy => if s == 0 || s == 4 then some false
       else if s == 1 || s == 5 || s == 6 || s == 9 || s == 12 then none else some true
+  -- Only a plain object may be an array: its clause decides (`arrayAnswer`).
+  | .isArray => if s == 2 then none else some false
+
+/-- `Array.isArray` on an object clause. A clause saying its object owns the
+store key is of arrays; one whose bound excludes the key is of other objects;
+an open record may be either, since an array may carry other keys. -/
+def arrayAnswer (c : Clause α) : Option Bool :=
+  if c.presentKeys.contains CallArguments.arrayStoreField then some true
+  else if c.keyBounds.any (fun K => !K.admits CallArguments.arrayStoreField) then some false
+  else none
 
 def tagClause (tag : Tag) (c : Clause α) : Option Bool :=
   match tag, c with
@@ -372,7 +382,29 @@ def tagClause (tag : Tag) (c : Clause α) : Option Bool :=
   | .truthy, .numLit value => some (numberTruthy value)
   | .truthy, .strLit t => some (t != "")
   | .truthy, .bigintLit i => some (i != 0)
+  | .isArray, .refs .. | .isArray, .dict .. => arrayAnswer c
   | _, _ => tagShape tag (shape c)
+
+/-- An object clause's `Array.isArray` answer is its members'. -/
+theorem arrayAnswer_sound {S : α → Fam} {P : α → ArgFam} {c : Clause α} {q n W v}
+    (hq : arrayAnswer c = some q) (hv : semWithArgs S P c n W v) : tagHolds .isArray v = q := by
+  unfold arrayAnswer at hq
+  by_cases hp : c.presentKeys.contains CallArguments.arrayStoreField = true
+  · simp only [hp, ↓reduceIte, Option.some.injEq] at hq
+    subst q
+    obtain ⟨flds, l, rfl, hl⟩ := semWithArgs_owns hv (List.contains_iff_mem.mp hp)
+    change flds.lookup arrayStoreKey = some l at hl
+    simp [tagHolds, hl]
+  · simp only [hp, Bool.false_eq_true, ↓reduceIte] at hq
+    by_cases hb : c.keyBounds.any (fun K => !K.admits CallArguments.arrayStoreField) = true
+    · simp only [hb, ↓reduceIte, Option.some.injEq] at hq
+      subst q
+      obtain ⟨K, hK, hadm⟩ := List.any_eq_true.mp hb
+      obtain ⟨flds, rfl, hk⟩ := semWithArgs_bounded hv hK
+      have hl : flds.lookup arrayStoreKey = none :=
+        ownKeysT_lookup (b := K) (k := n) (W := W) ⟨flds, rfl, hk⟩ (f := arrayStoreKey) (by simpa [CallArguments.arrayStoreField] using hadm)
+      simp [tagHolds, hl]
+    · simp [hb] at hq
 
 /-- A finite syntactic check; unknown numeric answers cannot establish either
 branch. It neither executes a term nor queries semantic membership. `A` must be
@@ -429,6 +461,20 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
       first
         | exact truthy_of_shape.1 (by omega)
         | exact truthy_of_shape.2 (by omega)
+  | isArray =>
+    by_cases hc : c = .top
+    · subst hc; simp [ht, tagClause] at hq
+    subst ht
+    cases c
+    case top => exact absurd rfl hc
+    case refs => exact arrayAnswer_sound (by simpa [tagClause] using hq) hv
+    case dict => exact arrayAnswer_sound (by simpa [tagClause] using hq) hv
+    all_goals
+      have hs := semWithArgs_shape (by simp) hv
+      simp [tagClause, tagShape, shape] at hq
+      subst q
+      cases v <;> simp_all [valueShape, tagHolds, shape]
+      all_goals try (rename_i code; cases code <;> simp_all [valueShape])
   | isNul | isBool | isRef | isFun | isUndef | isNullish | isNum | isStr | isBigint | isSymbol =>
     by_cases hc : c = .top
     · subst hc; simp [ht, tagClause] at hq

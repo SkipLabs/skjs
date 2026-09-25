@@ -59,6 +59,11 @@ abbreviate, so every rule and proof written before field names keeps its
 meaning. -/
 def valueField : PropKey := "value"
 
+/-- The key an array object holds its store under (`CallArguments.arrayStoreField`).
+No source property names it, so an object owns it exactly when it is an array:
+that is what `Array.isArray` tests (`Tag.isArray`). -/
+def arrayStoreKey : PropKey := "[]"
+
 /-- The shapes a value can have, and so the tests a program can make of one.
 Nullishness groups null and undefined for source coalescing; the other tests
 distinguish individual runtime shapes. `truthy` is JavaScript's `ToBoolean`:
@@ -70,6 +75,9 @@ inductive Tag where
   | strEq (value : String)
   | isBigint | isSymbol
   | truthy
+  /-- `Array.isArray`: a plain object owning the store key, which only an
+  array does. Keys are fixed at allocation, so the answer never changes. -/
+  | isArray
   deriving Repr, DecidableEq
 
 /-- The binary operators on primitive operands, JavaScript's own (`binop`
@@ -851,6 +859,7 @@ def tagHolds : Tag → Val → Bool
   | .truthy, .sym _ => true
   | .truthy, .objAt _ _ => true
   | .truthy, .arr _ => true
+  | .isArray, .objAt fs .absent => (fs.lookup arrayStoreKey).isSome
   | _, _ => false
 
 mutual
@@ -928,7 +937,7 @@ def bindParameters (arity : Nat) (args : List Tm) (recv : Tm) (body : Tm) : Tm :
   bindArgs 0 (recv :: parameters arity args) body
 
 /-- The field an array object keeps its store in: `SourceTypes.storeField`. -/
-def arrayStoreField : PropKey := "[]"
+def arrayStoreField : PropKey := arrayStoreKey
 
 /-- The field an object keeps its prototype in. No source property names it:
 a read of a key the object lacks continues there (`Step.readProto`). -/

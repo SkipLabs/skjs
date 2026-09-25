@@ -878,6 +878,11 @@ claims and lowers through the shape's test (`isNum`, `isStr`, `isBool`,
 `isUndef`, `isFun`, `isBigint`, `isSymbol`). Only an immutable identifier
 operand can refine a binding. `typeof e === "object"` (which includes null)
 and general string expressions remain outside the source fragment.
+`Array.isArray(e)`, where TypeScript binds `Array` to the standard library's
+global and the reviewed overlay lists `isArray` as a test
+([DESIGN.md](DESIGN.md#library-globals)), has shape
+`{"k":"arrayTest","pos":[start,end],"e":operand}` and lowers through the test
+`isArray`, as a `typeof` test through its shape's.
 
 Source arrows require parameter annotations. The result annotation may be
 left out: the lambda's `result` is then `null`, and the claim at the closure

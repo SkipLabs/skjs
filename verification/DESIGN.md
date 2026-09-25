@@ -969,6 +969,11 @@ modeling choices; they do not replace proof.
   `console.log` returns `undefined` without running client code. Nothing
   checks the native code; the selection enters every result as a premise, the
   global's input slot, as for an imported value's declared type.
+  `Array.isArray` is no premise but the calculus's test $\mathsf{isArray}$:
+  what is assumed is that the global `Array`'s `isArray` is the native one,
+  and that the objects owning the array store key are JavaScript's arrays,
+  which holds of every object the model allocates and is assumed of every
+  object a program receives.
 - In the SKJS test environment ([Global values](#modules-and-code-units),
   "The SKJS test environment"), SKJS's import stubs describe the modules a
   test imports, and `skjs-environment.d.ts` the host's `process`,
@@ -3279,12 +3284,51 @@ weaker signature, which is what is actually true.
 | `Symbol.for`, `Symbol.keyFor` | `for(key: string): symbol`, `keyFor(sym: symbol): string \| undefined` | as declared |
 | `String` | `(value?: any): string` | `value` at the primitives, `symbol` included: converting an object runs its `toString` or `valueOf`, which may throw or return an object, and then `String` throws |
 | `console.log` | `log(...data: any[]): void` (the DOM library's) | as declared, `any` as `unknown`: output, which the model does not observe; the host formats its arguments without running code the fragment can write |
+| `Array.isArray` | `isArray(arg: any): arg is any[]` | the test $\mathsf{isArray}$, below; the declared guard is not read |
+
+**Tests.** An entry may read a member as a test of the calculus instead of a
+value (`test`): its calls are lowered to the test, and the member joins no
+value. `Array.isArray` is the one such entry. Its call, with one argument and
+no type arguments, where TypeScript binds `Array` to the standard library's
+global, is the test $\mathsf{isArray}$ of its argument:
+
+$$
+\frac{\mathit{lib}(\mathtt{Array})\quad \omega\in\Omega\quad
+      \omega=(\mathtt{Array},\ \mathtt{isArray},\ \mathsf{text}(s),\ \mathsf{test}\ \mathsf{isArray})}
+     {\llbracket\mathtt{Array.isArray}(e)\rrbracket=\mathsf{test}\ \mathsf{isArray}\ \llbracket e\rrbracket}\ \textsc{library-test}
+$$
+
+$\mathsf{isArray}$ holds of a plain object owning the array store key
+$\sigma$ ([SEMANTICS.md](SEMANTICS.md)). That is `Array.isArray`'s meaning:
+the objects owning $\sigma$ are exactly the arrays, since literals and rest
+arrays are allocated with it, an array the library returns is one at its
+array type, no source property can name $\sigma$ (the gate refuses it as a
+literal's key and a declared member's), and the calculus adds no key to an
+existing object. A host object is
+represented with its own keys, $\sigma$ never among them; a JavaScript array
+from the host, at an array type, owns it. The branch rule is the tag rule,
+`tagSlice`, whose clause answers PROGRAM-TYPING.md states (`arrayAnswer`):
+where the test holds, the labels that are not all non-arrays remain; where it
+fails, the labels that are not all arrays. Nothing is added to the checker.
+
+What is not read is the declared guard. `arg is any[]` states `any`, which
+admits anything; TypeScript narrows `number[] | Foo` to `number[]` where it
+holds, dropping `Foo`, but an array may carry `Foo`'s keys
+([Arrays may carry other own keys](#arrays-may-carry-other-own-keys)), so the
+`Foo` part stays on that arm (`invalid-isarray-record.ts`). Nor is it
+`unknown[]`: a mutable array type is invariant, and `x.push("s")` on a
+`number[]` tested so would break its contract. Narrowing the `Foo` part to
+`readonly unknown[]`, as SKJS does, would be true of JavaScript, but not yet
+of the model: an object owning $\sigma$ holds a dense store and
+`Array.prototype` only when an invariant says so of every object a program
+receives, and the world contracts of an open record's other keys are
+unconstrained. That invariant is a change to the safety theorem's heap
+premise, left for later; until then, such a use is a located search failure,
+never a wrong verdict.
 
 **Refused, by decision.** `JSON.stringify` returns `undefined` for
 `undefined` and functions and throws on bigints and cycles; `JSON.parse`
-throws on text that is not JSON; `Array.isArray` is declared `arg is any[]`,
-a guard at `any`, and is a test of the array's exotic identity, which a
-shape test on a value cannot answer (the heap decides); `Object.keys` and
+throws on text that is not JSON; `Object.keys` and
 `Object.values` enumerate own keys, which open record types do not bound;
 `Promise.resolve` adopts thenables. None is listed. A construct signature
 (`new Array<T>()`, `new Set(xs)`, `new Error(m)`) is not read yet: the

@@ -299,6 +299,12 @@ let rec branch env cond truth = match cond.node with
     (* Keep the atoms of the tested shape on the arm where the test holds,
        and the others where it fails. *)
     let has = function
+      (* `Array.isArray`: an array owns its store; an open record may be an
+         array carrying other keys, and stays on both arms. *)
+      | Shape s when shape="array" ->
+        if s.elements<>None then Some true else if s.calls<>[] then Some false else None
+      | Top | Named _ when shape="array" -> None
+      | _ when shape="array" -> Some false
       | Num | NumLit _ -> Some (shape="number") | Str | StrLit _ -> Some (shape="string")
       | True | False -> Some (shape="boolean") | Undef -> Some (shape="undefined")
       | Bigint | BigintLit _ -> Some (shape="bigint") | Symbol -> Some (shape="symbol")

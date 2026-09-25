@@ -32,6 +32,10 @@ export type GlobalEntry = {
    * `literal` accepts (a number or string literal type TypeScript gives the
    * argument). */
   admit?: { parameter: string; safe: AtomName[]; literal: (value: string | number) => boolean };
+  /** The call is a test of the calculus, not a call of the member: the
+   * parser writes `Array.isArray(e)` as the test `isArray` of `e`, whose
+   * narrowing Lean proves, and the member joins no value. */
+  test?: "isArray";
 };
 
 /** `BigInt(v)` throws a RangeError for a number that is not an integer and a
@@ -64,6 +68,11 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `String(v)` converts a primitive, a symbol included, without running
   // client code; an object's conversion calls its `toString` or `valueOf`,
   // which may throw or return an object, and then `String` throws.
+  // A test of the array's identity, which the calculus makes itself
+  // (`Tag.isArray`): true of exactly the objects that own an array store,
+  // JavaScript's Array exotic objects. The declared guard, `arg is any[]`,
+  // is not read: Lean narrows by the clauses of the tested value's type.
+  { global: "Array", member: "isArray", signature: "isArray(arg: any): arg is any[];", test: "isArray" },
   { global: "String", signature: "(value?: any): string;",
     admit: { parameter: "value", safe: ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"],
       literal: () => false } },

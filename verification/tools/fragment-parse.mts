@@ -203,6 +203,9 @@ class Gate {
   /** `C.x` member names TypeScript binds to a static member of the file's
    * class `C`, by span: the class. */
   staticReads = new Map<string, string>();
+  /** Calls the reviewed overlay of library globals reads as a test of the
+   * calculus, `Array.isArray(e)`, by span. */
+  readonly globalTests = new Set<string>();
   // Mode of the ordinary function that bound `this`, or no binding. A strict
   // arrow captures its creator's already-converted receiver; it cannot rebind it.
   private receiverMode: "strict" | "sloppy" | null = null;
@@ -896,6 +899,11 @@ class Gate {
     if (ts.isBinaryExpression(node)) return this.binary(node);
 
     if (ts.isCallExpression(node)) {
+      // `Array.isArray(e)`, which the declaration graph found to be the
+      // standard library's, read through its reviewed overlay entry.
+      const [tested] = node.arguments;
+      if (this.globalTests.has(this.span(node).join(":")) && tested)
+        return { k: "arrayTest", pos: this.span(node), e: this.expr(tested) };
       if (
         ts.isPropertyAccessExpression(node.expression) &&
         ts.isIdentifier(node.expression.expression) &&
@@ -2606,6 +2614,7 @@ export function parseFile(file: string, carriesContext = false,
         staticReads: staticNodes.map(node => gate.span(node)),
         staticMember: ([start, end], cls) => gate.staticReads.set(`${start}:${end}`, cls),
         memberReceivers: receiverNodes.map(node => gate.span(node)),
+        globalTest: ([start, end]) => gate.globalTests.add(`${start}:${end}`),
         library: ([start, end], library) => {
           const node = globalNodes.find(n => n.getStart(source) === start && n.end === end);
           if (node) gate.libraryTypes.set(node.text, library);

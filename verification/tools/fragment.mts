@@ -98,6 +98,9 @@ export type Expr =
   /* `typeof e === "…"` (or `!==`, operands in either order): a test of the
      operand's shape. `"object"` is not one shape, since it includes null. */
   | { k: "typeofTest"; pos: Span; shape: TypeofShape; equal: boolean; e: Expr }
+  /* `Array.isArray(e)`, the standard library's through its reviewed overlay
+     entry: a test of whether the operand is an array. */
+  | { k: "arrayTest"; pos: Span; e: Expr }
   /* `spreads` are the indices of the arguments written with `...`: each
      stands for the elements of its operand, read where it is written. `await
      e` and an async body's returns are written as calls of intrinsics

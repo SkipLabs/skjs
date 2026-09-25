@@ -733,7 +733,24 @@ and $\mathsf{undefined}$ clauses and true on every object, function, class,
 symbol and store clause; on a Boolean, number, string or bigint singleton it
 answers the singleton's `ToBoolean`, and on the broad $\mathsf{bool}$,
 $\mathsf{num}$, $\mathsf{str}$ and $\mathsf{bigint}$ clauses it has no fixed
-answer. Shape
+answer. $\mathsf{isArray}$, `Array.isArray`, answers on an
+object clause by its keys (`arrayAnswer`): true where the clause says its
+object owns the store key $\sigma$, as every array type's does; false where a
+key bound excludes $\sigma$, as a fresh literal's does; and nothing on an open
+record, which an array carrying other keys may meet. Every other clause but
+$\mathsf{top}$ answers false:
+
+$$
+\operatorname{tag}(\mathsf{isArray},\gamma)=
+\begin{cases}
+\mathsf{true} & \sigma\in\operatorname{present}(\gamma)\\
+\mathsf{false} & \sigma\notin\operatorname{present}(\gamma),\ \exists K\in\operatorname{bounds}(\gamma).\ \neg K\ \text{admits}\ \sigma\\
+\text{none} & \text{otherwise, for an object clause}\\
+\mathsf{false} & \gamma\ \text{not an object clause},\ \gamma\neq\mathsf{top}
+\end{cases}
+$$
+
+Other shape
 tests have an answer determined by the clause's shape; numeric singleton
 equality also examines its bits. A broad number clause has no fixed answer
 to that equality, so it establishes neither outcome:

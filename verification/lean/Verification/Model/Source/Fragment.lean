@@ -713,6 +713,11 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       | "bigint" => pure .isBigint | "symbol" => pure .isSymbol
       | other => throw s!"unsupported typeof test '{other}'"
     return .shapeTest p tag (← (← jField j "equal").getBool?) (← decodeExpr (← jField j "e"))
+  | "arrayTest" => do
+    -- `Array.isArray(e)`, which the parser writes only for the standard
+    -- library's `Array` through its reviewed overlay entry.
+    CellClaims.fieldsExactly j ["k","pos","e"]
+    return .shapeTest p .isArray true (← decodeExpr (← jField j "e"))
   | "coalesce" => return .coalesce p (← decodeExpr (← jField j "left")) (← decodeExpr (← jField j "right"))
   | "comma" => do
     CellClaims.fieldsExactly j ["k","pos","left","right"]

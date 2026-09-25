@@ -151,6 +151,7 @@ function walkExpr(e: Expr, out: Sites): void {
       for (const f of e.fields) walkExpr(f.e, out);
       return;
     case "typeofTest":
+    case "arrayTest":
     case "not":
     case "unary":
     case "read":

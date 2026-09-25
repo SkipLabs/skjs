@@ -403,6 +403,8 @@ let rec expr binders j =
       | "neg" -> Neg | "plus" -> Plus | "bitNot" -> BitNot
       | k -> unsupported ("unary operator " ^ k)),sub "e")
   | "typeofTest" -> TypeofTest (text "shape" j,boolean (field "equal" j),sub "e")
+  (* `Array.isArray(e)`: a test of the operand's shape, the array one. *)
+  | "arrayTest" -> TypeofTest ("array",true,sub "e")
   | "arith" -> Arith (arithmetic (text "op" j),sub "l",sub "r")
   | "update" -> Update (arithmetic (text "op" j),sub "target",
       (match field "rhs" j with Null -> None | r -> Some (expr binders r)),boolean (field "post" j))

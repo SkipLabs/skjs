@@ -496,6 +496,40 @@ theorem semWithArgs_consistent {X : α → Fam} {P : α → ArgFam} {c : Clause 
   | dict a bs vs ds os ms ks cs => exact present a bs vs ks h.1 h.2.1 h.2.2.2.2.2
   | _ => simp [Clause.consistent, Clause.presentKeys]
 
+/-- A member of an object clause owns every key the clause says it owns. -/
+theorem semWithArgs_owns {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v} {k : PropKey}
+    (h : semWithArgs X P c n W v) (hk : k ∈ c.presentKeys) :
+    ∃ (flds : List (PropKey × Nat)) (l : Nat), v = .objAt flds .absent ∧ flds.lookup k = some l := by
+  have present : ∀ (a : List (PropKey × α)) (bs : List (List (PropKey × α)))
+      (vs : List (PropKey × α)),
+      ReferenceConjunctions.refsT (famsOf X a) (bs.map (famsOf X)) n W v →
+      viewT (famsOf X vs) n W v → k ∈ ((a :: bs).flatten ++ vs).map (·.1) →
+      ∃ (flds : List (PropKey × Nat)) (l : Nat), v = .objAt flds .absent ∧ flds.lookup k = some l := by
+    intro a bs vs hr hw hk
+    obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hk
+    rcases List.mem_append.mp hp with hp | hp
+    · obtain ⟨L, hL, hpL⟩ := List.mem_flatten.mp hp
+      have hrec : recT (famsOf X L) n W v := by
+        rcases List.mem_cons.mp hL with rfl | hL
+        · exact hr.1
+        · exact hr.2 _ (List.mem_map_of_mem hL)
+      obtain ⟨flds, l, -, he, hl, -⟩ := recT_at (mem_famsOf.mpr ⟨p.2, hpL, rfl⟩) hrec
+      exact ⟨flds, l, he, hl⟩
+    · obtain ⟨flds, l, -, he, hl, -⟩ := viewT_at (mem_famsOf.mpr ⟨p.2, hp, rfl⟩) hw
+      exact ⟨flds, l, he, hl⟩
+  cases c with
+  | refs a bs vs os ms ks => exact present a bs vs h.1 h.2.1 hk
+  | dict a bs vs ds os ms ks cs => exact present a bs vs h.1 h.2.1 hk
+  | _ => simp [Clause.presentKeys] at hk
+
+/-- A member of an object clause meets each of the clause's key bounds. -/
+theorem semWithArgs_bounded {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v} {K : KeyBound}
+    (h : semWithArgs X P c n W v) (hK : K ∈ c.keyBounds) : ownKeysT K n W v := by
+  cases c with
+  | refs a bs vs os ms ks => exact h.2.2.2.2 K hK
+  | dict a bs vs ds os ms ks cs => exact h.2.2.2.2.2 K hK
+  | _ => simp [Clause.keyBounds] at hK
+
 theorem meetLists_sound (X : α → Fam) (P : α → ArgFam) (A B : List (Clause α)) (n W v) :
     semList X P (meetLists A B) n W v ↔ interT (semList X P A) (semList X P B) n W v := by
   constructor

@@ -243,6 +243,9 @@ export function collectDeclarations(file: string, options: {
    * the members and call signatures those references select
    * (`selectGlobal`). The first reference locates it. */
   globalValues?: readonly Span[];
+  /** Told each call of a global that the reviewed overlay reads as a test
+   * of the calculus, such as `Array.isArray(e)`, by the call's span. */
+  globalTest?: (span: Span, test: NonNullable<GlobalEntry["test"]>) => void;
   /** The names the client's ambient declarations bind, `declare function f`,
    * `declare const x: T`, `declare class C`, one span per name (overloads
    * once): each joins its values at the type its declarations state. */
@@ -710,7 +713,8 @@ export function collectDeclarations(file: string, options: {
       const at: Span = [first.getStart(client), first.end];
       try {
         const selection = selectGlobal(checker, uses, { lookup, identityOf: idOf, clean, valueScope, partners,
-          overlay: globalsOverlay });
+          overlay: globalsOverlay, test: (span, test) => options.globalTest?.(span, test) });
+        if (!selection) continue;
         selections.push(selection);
         values.push({ binding: { local: first.text, imported: first.text, specifier: globalSpecifier, span: at },
           declaration: selection.declaration, construct: false, typeParams: [],
@@ -793,6 +797,8 @@ type SelectionContext = {
   partners: ReadonlyMap<TypeDeclaration, readonly TypeDeclaration[]>;
   /** The reviewed overlay a standard library global is read through. */
   overlay: readonly GlobalEntry[];
+  /** Told each call the overlay reads as a test of the calculus. */
+  test: (span: Span, test: NonNullable<GlobalEntry["test"]>) => void;
 };
 
 /**
@@ -823,7 +829,7 @@ type SelectionContext = {
  * parameter at which the host may throw is stated at what it accepts.
  */
 function selectGlobal(checker: Checker, uses: readonly Identifier[], context: SelectionContext):
-    TypeDefinition {
+    TypeDefinition | null {
   const [first] = uses;
   if (!first) throw Error("a global value without a reference");
   const name = first.text;
@@ -944,11 +950,25 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
         if (!overload) throw Error(`TypeScript resolves the call of ${what} to no overload it declares`);
         chosen.set(overload, [...chosen.get(overload) ?? [], call]);
       }
-      const selected = [...chosen].flatMap(([overload, calls]) =>
-        forms(overload, key, what, reviewed(key, overload, what), calls).map(form => {
+      const selected = [...chosen].flatMap(([overload, calls]) => {
+        const entry = reviewed(key, overload, what);
+        // A test of the calculus: each call is reported, and the member
+        // joins no value.
+        if (entry?.test) {
+          for (const call of calls) {
+            const [argument, ...more] = call.arguments;
+            if (!argument || more.length || ts.isSpreadElement(argument) || call.typeArguments?.length)
+              throw Error(`${what} is a test of one argument`);
+            context.test(spanOf(call), entry.test);
+          }
+          return [];
+        }
+        return forms(overload, key, what, entry, calls).map(form => {
           if (form.receiver) throw Error(`the method ${what} states its receiver`);
           return { ...form, receiver: { k: "self", span: form.span } satisfies TypeTerm };
-        }));
+        });
+      });
+      if (!selected.length) continue;
       const [only] = selected;
       const span = spanOf(accesses[0] ?? first);
       fields.push({ name: key, optional: false, readonly: false, span,
@@ -978,6 +998,8 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       if (form.receiver) throw Error(`${what} states its receiver`);
       return form;
     }));
+  // A global read only through tests is not a value.
+  if (!fields.length && !callForms.length) return null;
   const source = declaration.getSourceFile();
   return { declaration: { module: context.identityOf(source), name,
     span: [declaration.getStart(source), declaration.end] }, parameters: [], bases: [],
