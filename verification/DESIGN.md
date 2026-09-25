@@ -4977,6 +4977,18 @@ evaluated in order. What the parser admits, and why the rest is refused:
   where the keys are the base class's, known statically.
 - **Accessors are refused.** `get x() {…}` runs code on every read of `x`
   and `set` on every write; the heap model's properties are data only.
+- **A write never adds a key.** An object's keys are fixed at its
+  allocation (`alloc`); a write stores at an existing location. So a write
+  of a key no arm of a record's type has (`let o = {}; o.x = 5`, SKJS's
+  growth of a local object, which TypeScript refuses) and a write of a
+  writable optional field (`x.opt = 3`, which adds the key where the object
+  was allocated without it) are refused by the producer with that reason
+  (`object-growth-refused.ts`, `optional-write-refused.ts`) rather than
+  reaching search as an unexplained failure. A readonly optional field is
+  not refused there: it grants no write, and Lean refuses it as such.
+  Admitting growth needs a key-adding write in the calculus, whose typing
+  changes the object's own-key bound at a point where no other reference to
+  it exists; a write through an index signature is the same step.
 
 A type literal of construct signatures only, `{ new (x: number): T }`, is the
 constructor type it states, `new (x: number) => T`; several are overloads of

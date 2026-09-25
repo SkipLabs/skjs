@@ -191,6 +191,41 @@ let rec field_type declarations seen t name = match t with
   | Rigid r -> (match rigid_bound r with
     | Some b -> field_type declarations seen b name
     | None -> unsupported "field read on rigid parameter")
+(* Whether writing the key would add a property: the object is a record (not
+   an array, a dictionary or a declaration of either) none of whose arms has
+   it. An object's keys are fixed where it is allocated, in JavaScript's
+   meaning of a record type as in the model's, so such a write is refused by
+   name rather than left to fail in search (TypeScript refuses it too). *)
+let adds_key declarations t name =
+  match (try declared_head declarations [] t with Json.Error _ -> t) with
+  | Atoms (_::_ as atoms) -> List.for_all (function
+      | Shape {elements=None;indexes=[];calls=[];fields;_} ->
+        not (List.exists (fun (f:Semantic.field) -> f.name=name) fields)
+      | Exact fields -> not (List.exists (fun (f:Semantic.field) -> f.name=name) fields)
+      | _ -> false) atoms
+  | _ -> false
+(* Whether the key is a writable optional field of some arm and a required
+   or readonly one of none: writing it may add it, where the object was
+   allocated without it. (A readonly one grants no write, which Lean
+   refuses.) *)
+let may_add_key declarations t name =
+  match (try declared_head declarations [] t with Json.Error _ -> t) with
+  | Atoms (_::_ as atoms) ->
+    let field = function
+      | Shape {elements=None;calls=[];fields;_} | Exact fields ->
+        List.find_opt (fun (f:Semantic.field) -> f.name=name) fields
+      | _ -> None in
+    List.exists (fun a -> match field a with Some f -> f.optional | None -> false) atoms
+    && not (List.exists (fun a -> match field a with
+      | Some f -> not f.optional || f.write = None | None -> false) atoms)
+  | _ -> false
+let refuse_growth declarations t name =
+  if adds_key declarations t name then
+    unsupported ("a write adds the property '" ^ key_text name ^ "'"
+      ^ " to an object allocated without it: an object's keys are fixed at its allocation");
+  if may_add_key declarations t name then
+    unsupported ("a write to the optional property '" ^ key_text name ^ "'"
+      ^ " adds it where the object was allocated without it: an object's keys are fixed at its allocation")
 (* What a fresh array literal expected at an iterable type holds, found as
    TypeScript finds it: the expected type's member under the key
    `Array.prototype` iterates by (its one symbol key, `[Symbol.iterator]`),
@@ -327,7 +362,7 @@ let discriminated_record declarations expected (members:(string * expr) list) =
     List.for_all (fun (name,e) ->
       match List.find_opt (fun (f:field) -> f.name = Name name && not f.host) s.fields with
       | Some f -> literal_admitted declarations e f.read
-      | None -> s.string_index <> None) members
+      | None -> index_for s (Name name) <> None) members
     && List.for_all (fun (f:field) -> f.optional || f.host
       || (match f.name with Name n -> List.mem_assoc n members | Key _ -> false)) s.fields in
   match List.filter admits (record_arms declarations [] expected) with
@@ -867,8 +902,13 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       ignore (expr env o); binding_type (List.assoc (field_key name field) env)
     | Read (e,n) -> field_type declarations [] (expr env e) n
     | Index (e,key) -> let receiver=expr env e in let key=expr env key in index_type declarations [] receiver key
-    | IndexWrite (receiver,key,rhs) -> ignore (expr env receiver); ignore (expr env key); expr env rhs
-    | Write (receiver,_,rhs) -> ignore (expr env receiver); expr env rhs
+    | IndexWrite (receiver,key,rhs) ->
+      let t = expr env receiver in
+      (match expr env key with
+       | Atoms [StrLit k] -> refuse_growth declarations t (Name k)
+       | _ -> ());
+      expr env rhs
+    | Write (receiver,field,rhs) -> refuse_growth declarations (expr env receiver) (Name field); expr env rhs
     | Assign (n,rhs) ->
       if not (List.mem_assoc n env) && List.mem_assoc n module_functions then
         unsupported ("assignment to module function " ^ n);
@@ -959,7 +999,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let contextual = match written,expected with
         | None,Some t when quantified = [] ->
           (match (try declared_head declarations [] t with Json.Error _ -> t) with
-           | Atoms [Shape {calls=[s];fields=[];string_index=None;elements=None}]
+           | Atoms [Shape {calls=[s];fields=[];indexes=[];elements=None}]
              when s.quantified=[] && s.rest_pack=None && s.variadic=None
                   && List.length s.params >= List.length ps -> Some s.result
            | _ -> None)

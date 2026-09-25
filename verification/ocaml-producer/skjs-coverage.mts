@@ -484,6 +484,7 @@ const GROUPS: [string, RegExp][] = [
   ["exceptions (try/catch/throw)", /TryStatement|ThrowStatement/],
   ["void expression", /VoidExpression/],
   ["destructuring and rest/default parameters", /statement (arrayPattern|pattern)|destructuring parameter|rest elements|array pattern holes|nested patterns|`let` pattern|default parameters|rest parameter needs|ordinary closure parameter/],
+  ["object growth: a write adding a key (keys are fixed at allocation)", /a write adds the property|a write to the optional property/],
   ["object literal members (methods, accessors, spreads)", /expected a plain property|unsupported object member|a spread copies the own enumerable|a computed key in an object literal|an accessor runs code/],
   ["discriminated-union narrowing (a field read after a tag test)", /missing field _/],
   ["classes: modifiers, inheritance, fields, parameter properties, receivers", /class member|class inheritance|extending the standard library|inheritance needs|parameter property|constructor (statement|parameter|assigns)|a static (field|method|member|initializer)|method receiver|optional, generator or generic method/],

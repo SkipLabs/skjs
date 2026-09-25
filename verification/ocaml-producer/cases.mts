@@ -846,4 +846,8 @@ export const cases: Case[] = [
   positive("closure-contextual-result", "a closure literal without a result annotation, expected at one signature, is claimed at its result where the body fits it: a literal result, an async body's promise"),
   negative("invalid-closure-contextual-result", "a body returning \"world\" is not claimed at the contextual \"hello\"", /source expression obligation at \[201,222\)/),
   negative("invalid-closure-contextual-async", "an async body resolving a number is not a `Promise<string>`", /source expression obligation at \[128,149\)/),
+  gap("object-growth-refused", "a write adding a key to a record allocated without it: an object's keys are fixed at its allocation",
+    "unsupported", "proposal", /a write adds the property 'x' to an object allocated without it/),
+  gap("optional-write-refused", "a write to a writable optional field may add its key",
+    "unsupported", "proposal", /a write to the optional property 'opt' adds it/),
 ];
