@@ -150,7 +150,7 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 15 | ~~Equality against string/boolean literal singletons~~ done (task I); left: two objects without a field (no identity in the model) | 6 (was 46) | 6 | 0 | 2 | M | L |
 | 16 | ~~Discriminated-union narrowing~~ done (task I); left: a `let` holding a union object | 3 (was 28) | 3 | 0 | 1 | M | O L |
 | 17 | `in` / `instanceof` / `typeof` — `typeof` as a value and `"object"`, `in` with literal and literal-union keys done (task J); left: `instanceof` (no class identity in the model), `typeof` in types (task O), numeric and `string` `in` keys | 65 (was 127, marker corpus; 31 of them `typeof` in types) | 58 | 7 | 20 | L | P O L |
-| 18 | Search: no derivation found (mostly flow narrowing; see below) | 104 | 101 | 3 | 44 | L | L O |
+| 18 | Search: no derivation found — triaged (task S): 45 of 169 verify, 11 refused by name, the rest by cause below | 113 (was 169) | | | | L | L O |
 | 19 | Classes: member modifiers, optional/definite fields, parameter properties, inheritance, constructor statements, receivers | 104 | 65 | 39 | 31 | L | P O L |
 | 20 | Generic classes (records over a binder, below) | 47 | | | 21 | L | P O L |
 | 21 | Generics: ~~constraint forms, explicit type arguments on calls, unions with rigid types, `as const`, tuple bounds, `T & D`~~ done (task N); left: records, tuples and field reads over a binder | 58 | | | 21 | L | P O L |
@@ -452,32 +452,67 @@ dropped), examples, what the extension needs.
     types (31, done, task O), numeric `in` keys (3), `string` keys (2). Outside the
     group, presence narrowing after `in` on an optional field or a dictionary
     (4, search) and `x[s]` after `s in x` with a union key (3, producer).
-18. **Search found no derivation** — the pipeline reaches Lean and fails to
-    prove an obligation (`source expression obligation … evidence search
-    failed` 88, `closure expression claim` 9, `incoming edge obligation` 4).
-    By cause, from the obligations:
-    - flow narrowing Lean does not derive: field and local refinement by
-      equality and truthiness, narrowing after assignment, snapshots of refined
-      values (`field-refinement.ts` 17, `local-vs-local-refinement.ts` 5,
-      `truthiness-safe/src/conditions.ts` 5, `unsound-refinement.ts` 4,
-      `control-flow-refinement.ts` 2, others 1 each) — about 42;
-    - async results and `Promise` subtyping (`object-literal-function-field-widening.ts`
-      async fields 5, `promise-object.ts` 4) — 9;
-    - contextual object/tuple literals into union alternatives
-      (`spread-union-distribute.ts`, `typeof.ts#testMultipleTuples`,
-      `function-union.ts`, `delayed-literal-union-contract.ts`) — 8;
-    - function values into intersections, rest and `this: void` signatures
-      (`function-intersection.ts` 4, `function-subtyping.ts`,
-      `this-parameter-void-receiver.ts` 2) — 7;
-    - index signatures on unions, writes through index signatures and
-      optional fields (`index-signatures-ops.ts`, `local-objects.ts`,
-      `object-type-readonly-fields.ts`, `readonly-inter-union.ts`) — 6;
-    - inferred/evolving array literals (`array_literal_examples.ts` 4,
-      `per-field-tvar-isolation.ts`, `literal-representation-lifetime.ts`) — 6;
-    - string concatenation 4 (done, task E), `for-of` over strings 3, `void`/`??` on `unknown`
-      and `void` 3, generic inheritance and large tuples 4;
-    - **SKJS unsound**: `obj-literal-indexes.ts` (6 of its 8) and
-      `callability.ts#testInstanceTypeofFunction` — see below.
+18. **Search found no derivation.** *Task S: triaged obligation by
+    obligation, 169 units in 67 files at the start (the marker corpus at the
+    task-O commit; 158 in the unit itself, 11 through a dependency). The
+    message now names the failed obligation and why: the verifier's sentence
+    names its role (`… evidence search failed: no derivation of its
+    return-contract claim`, `… the edge from node N does not establish the
+    claims at this point`), and `check.mts` adds the reader's source-term
+    summary as an `obligation:` line (`The available claim for y is "a" | "b".
+    This return requires "a".`; for a term that is not a slot, its form and
+    the claims of the slots it reads), which the coverage rows carry. The
+    reader had been refusing every node and edge record since nodes gained a
+    handler field, so no search failure was explained before
+    ([OBLIGATION-DIAGNOSTICS.md](../OBLIGATION-DIAGNOSTICS.md)). Of the 169: 45
+    verify, 11 are refused by the producer with a named reason, and 113 stay,
+    by cause below.*
+
+    Fixed (45 units; kind (a) producer proposal unless marked):
+
+    | Cause | Units | Fix |
+    | --- | ---: | --- |
+    | A fresh object or tuple literal at a union of records or tuples was widened, so no arm admitted it (`algebraic-data-types-comprehensive.ts` 3, `function-union.ts` 2, `spread-union-distribute.ts` 2, `typeof.ts` 2, `stypes-diff.ts`, `delayed-literal-union-contract.ts`) | 11 | built at the arm its keys, length and literal members select ([DESIGN.md](../DESIGN.md#fresh-literals-have-exact-keys)) |
+    | Generic call inference: a binder in `A \| null` (2), a fresh literal at `T extends Json` (3), primitives and arrays of primitives below a declared bound (3: `tvar-widening-in-constraint-check.ts`, `constrainedArrayLiteralDirect` and its caller), a tuple at `readonly T[]` for `for...of` (1) | 9 | `Inference.infer` and the literal's construction at a dictionary bound |
+    | A closure literal claimed at its widened result where the context asks for a literal or an async body's promise (`object-literal-function-field-widening.ts`) | 6 | contextual return type where the body fits it |
+    | An unannotated constant's fresh array committed by its first use, as SKJS does (`array_literal_examples.ts` 3 and 3 callers) | 6 | built at the array type its first use expects |
+    | A closure used where a signature binding more parameters is expected, outside a call (`function-subtyping.ts` 3) | 3 | offered that signature wherever it flows |
+    | A loop head claiming every assigned cell at its contract (`loop-jump-edge.ts`, `jump-edge-definite-assignment.ts`, `for-in-for-of-invalid.ts#loopScopeRestoresOuter`) | 3 | the head found by running the body until stable; the update from the body's end and its `continue`s; the exit from the head and its `break`s |
+    | (b) A jump's slot map found a binding by name, so a parameter hiding a module constant gave the constant its narrowed slot (`deadcode/try_catch.ts` 3) | 3 | Lean's `leave` finds bindings by descriptor |
+    | `+1` typed `number` (`unary-as-const.ts`, `contextual-literal-args.ts`) | 2 | the parser reads a signed decimal literal as the literal, as it did `-1` |
+    | Equality with an enum member or an ambient constant's field did not narrow (`enums.ts#narrowByEquality`, `local-vs-local-refinement.ts#testVarVsGlobalField`) | 2 | the producer reads module values' fields |
+
+    Refused by name (11, kind (c)): a write adding a key to a record allocated
+    without it (9: `local-objects.ts` 7, SKJS's growth of a local `{}`, which
+    TypeScript refuses too; `test.ts#myObject`; `symbols.ts#testBracketAssignString`)
+    and a write to a writable optional field (2:
+    `object-type-readonly-fields.ts#assignNumberToOptional`,
+    `parameter-property-undefined.ts#writeUndefinedToTranslatedField`): an
+    object's keys are fixed at its allocation, and a write that adds one needs
+    a key-adding write in the calculus
+    ([DESIGN.md](../DESIGN.md#object-literals), "A write never adds a key").
+
+    Left (113), by cause:
+
+    | Cause | Units | Kind | Owner or reason |
+    | --- | ---: | --- | --- |
+    | Index signatures: `v[k]!` of a `for...in` key (`forin-exclamation.ts` 8), writes and numeric keys on a string index (`index-signatures.ts` 3, `local-objects.ts#testWithIndexSignature`), `Closed<T>` (read as `T`, an open record) into a dictionary or `Json` (`closed-type.ts` 5, `json-named-object-type.ts` 2) | 19 | (b)/(c) | key-restricted index signatures (parallel task) |
+    | Flow narrowing: a guard on an optional field (5: the key may be absent, and a heap fact names a field location), a test against several singletons, a call or another field (4), object identity (2: `x.child !== narrow`), fields of a union of records or a view of one (4, `unsound-refinement.ts`), a computed key assigning its own receiver (3), cells written in a `try` or across a condition that calls (3: the producer forgets every cell at a call, having no capture analysis), an assignment inside a conditional expression, `x === null && true`, and knowledge across nested loops with `continue` (1 each) | 24 | (b) | Lean's heap knowledge and the producer's cell tracking; none is an SKJS unsoundness (each read) |
+    | `for...of` and spreads over a non-array iterable: a string, `Set`, `Map`, an iterator (`symbols.ts` 4, `for_in_for_of_tests.ts` 2, `for-in-for-of-invalid.ts`, `iterator-effects.ts`, `callgraph/for-of-iterator.ts`) | 9 | (c) | `%Iterate%` is stated for arrays only ([DESIGN.md](../DESIGN.md#loops-over-arrays)); a string's and the host collections' iterators could be stated, a client's cannot (its `return`) |
+    | Generic call inference: a tuple literal at a bound with a tuple arm (2), `K extends 0 \| 1` through `Array<[K, number]>`, explicit type arguments with a `const`-bound array (which TypeScript refuses), nested instantiation (`per-field-tvar-isolation.ts`, `tvar-widening-ordinary-check.ts`), a spread into a generic, and `new Container()` instantiated from later pushes (2; TypeScript infers `unknown` and refuses) | 9 | (a) | producer inference |
+    | SKJS unsound (confirmed, [below](#suspected-skjs-unsoundnesses)): aliased views of an empty literal (`obj-literal-indexes.ts` 6), an inferred literal type that stays closed, `typeof c === "function"` on a class instance | 8 | (d) | reported |
+    | Guards: `Array.isArray` narrowing a union with a record (6), `typeof x === "function"` on `unknown`, `instanceof Array` at a readonly array | 8 | (b) | typeof/in/instanceof guards (parallel task) |
+    | `Promise<A>` below `Promise<B>` (`promise-object.ts` 6): `then` and `catch` are generic methods, and relating two instances needs subtyping of quantified signatures | 6 | (b) | the search relates schemes only by identity |
+    | A module function used where a longer signature (or an intersection with one) is expected (`function-intersection.ts` 4, `function-subtyping.ts#testMissingRestFails`) | 5 | (c) | its slot is its annotated signature, checked by its own unit; offering it more would make that slot a claim ([DESIGN.md](../DESIGN.md#method-members-are-host-relative)) |
+    | Classes: inheritance across a shadowed binder (`tparam_shadow.ts` 2), field annotations and a `#private` field in a class body, a method reattached through a `this` parameter | 5 | (b) | spreads and class inheritance (parallel task) |
+    | SKJS's own literal typing, where TypeScript differs and the pipeline follows TypeScript: `[1, "a"]` as a tuple (2), an evolving `[]` (2) | 4 | (c) | TypeScript types these as `(number \| string)[]` and `any[]` |
+    | An array's `length` as a record field (`{ readonly length: number }` view, a union with a record, an intersection with one) and an 11-tuple's `length` as the literal 11 | 4 | (b) | `length` is the calculus's `lenArr`, not a field; a mutable tuple's length is not fixed by its type |
+    | Computed types that follow TypeScript: `keyof typeof E` excluding reverse keys, `keyof ({ x: number } \| string)` (`never`), the meet of two tuple types | 3 | (c) | TypeScript's computed type |
+    | `aliased views without fields` (`obj-literal-indexes.ts#testAliasMutableOptionalThenOptional`, `#testAliasTwoReadonlyOptionals`): sound, refused | 2 | (b) | as the unsound family's search |
+    | `<` with an operand that may be `undefined` (`supertypePositionTest` and its caller) | 2 | (c) | the rule admits only operands compared in their primitive order ([DESIGN.md](../DESIGN.md#numeric-operators-and-bigints)) |
+    | A tuple as `Iterable<T>` (`tuple-iterable.ts` 2) | 2 | (b) | the search relates a tuple's store to `Array.prototype[Symbol.iterator]`'s element only for arrays |
+    | An optional parameter at a rest signature, a `this: undefined` function as a plain callback, a nested array literal at a generic class's constructor | 3 | (b) | search |
+
 19. **Classes.** `a class member modifier outside the fragment` (54:
     `private`/`protected`/`static`/`readonly`/`#x`), optional or
     definitely-assigned fields (17), parameter properties (9), inheritance
