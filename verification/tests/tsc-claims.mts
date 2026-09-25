@@ -10,7 +10,8 @@ const claimsFor = (d: SourceClaims, name: string) =>
 import type { Span } from "../tools/span.mts";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { pooled } from "../ocaml-producer/run-cases.mts";
 const __dirname = path.dirname(import.meta.filename);
 // What TypeScript's own checker believes, put through the verifier.
 //
@@ -30,7 +31,9 @@ process.chdir(root);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tsc-claims-"));
 
 // Why each file lands where it does. A verified file says tsc's claims are
-// derivable in the calculus; a failing one names what stops them.
+// derivable in the calculus; a failing one names what stops them. Files whose
+// own suites already verify tsc's claims (methods, apply, generic receivers,
+// call objects, bound arguments, records) are not repeated here.
 const expected = {
   "stateful-source/generic-identity": "verified",
   "stateful-source/generic-extends": "verified",
@@ -44,16 +47,6 @@ const expected = {
   "callables/guards": "verified",
   "callables/function-field": "verified",
   "callables/receiver-call": "verified",
-  "skjs-incomplete/bound-arguments": "verified",
-  "callables/call-objects": "verified",
-  // Receivers: property, parenthesized and copied calls, .call rebinding,
-  // saved callees, live receiver fields and receiver writes.
-  "callables/methods": "verified",
-  // `.apply`: the list's length and indices read after the receiver runs.
-  "callables/apply": "verified",
-  // A quantified method at two receivers: the scheme and each call's
-  // instantiation, read from the receiver the call passes.
-  "callables/generic-receivers": "verified",
   // Factories return closures that capture either private or shared cells.
   "callables/factories": "verified",
   // Compound absence guards preserve all facts established by their outcome.
@@ -62,7 +55,6 @@ const expected = {
   // hand repair at the loop exit or the negation.
   "stateful-source/basic": "verified",
   "stateful-source/cells": "verified",
-  "stateful-source/records": "verified",
   "stateful-source/captured-local-guards": "verified",
   "stateful-source/cell-conjunction": "verified",
   "stateful-source/closures": "verified",
@@ -96,16 +88,22 @@ const expected = {
   "stateful-source/cell-contracts": "out-of-fragment",
 };
 
-const run = (cmd: string, args: string[]) =>
-  spawnSync(cmd, args, { encoding: "utf8", timeout: 120000 });
-let failures = 0;
-for (const [name, want] of Object.entries(expected)) {
+type Ran = { status: number | null; stdout: string; stderr: string };
+const run = (cmd: string, args: string[]): Promise<Ran> =>
+  new Promise((done) =>
+    execFile(cmd, args, { encoding: "utf8", timeout: 120000, maxBuffer: 64 * 1024 * 1024 },
+      (error, stdout, stderr) =>
+        done({ status: error ? (typeof error.code === "number" ? error.code : null) : 0, stdout, stderr })));
+/** One file's verdict and the detail that explains it; each file has its own
+ * scratch directory so that files run at once. */
+async function verdict(name: string): Promise<{ got: string; detail: string }> {
   const file = `verification/tests/${name}.ts`;
-  const ast = path.join(tmp, "ast.json"),
-    claims = path.join(tmp, "claims.json"),
-    evidence = path.join(tmp, "evidence.json");
+  const dir = fs.mkdtempSync(path.join(tmp, "file-"));
+  const ast = path.join(dir, "ast.json"),
+    claims = path.join(dir, "claims.json"),
+    evidence = path.join(dir, "evidence.json");
   let got, detail = "";
-  const parsed = run(process.execPath, [
+  const parsed = await run(process.execPath, [
     "verification/tools/fragment-parse.mts",
     file,
   ]);
@@ -114,7 +112,7 @@ for (const [name, want] of Object.entries(expected)) {
     detail = (parsed.stderr || "").split("\n")[0];
   } else {
     fs.writeFileSync(ast, parsed.stdout);
-    const produced = run(process.execPath, [
+    const produced = await run(process.execPath, [
       "verification/tools/tsc-claims.mts",
       file,
       "--out",
@@ -222,7 +220,7 @@ for (const [name, want] of Object.entries(expected)) {
           assert(!labels.includes(0), "each callback's own guard removes null");
         }
       }
-      const checked = run(verifier, [
+      const checked = await run(verifier, [
         "--produce-source-claims",
         ast,
         claims,
@@ -232,7 +230,7 @@ for (const [name, want] of Object.entries(expected)) {
       ]);
       got = checked.status === 0 ? "verified" : "failed";
       if (got === "verified" && ["callables/thunks", "callables/cells", "callables/arguments", "callables/factories", "callables/unions", "stateful-source/null-guards", "stateful-source/primitive-callbacks", "skjs-incomplete/write-refined-read"].includes(name)) {
-        const consumed = run(verifier, ["--check-source-claims", ast, claims, file, evidence]);
+        const consumed = await run(verifier, ["--check-source-claims", ast, claims, file, evidence]);
         if (consumed.status !== 0) {
           got = "consumer-failed";
           detail = consumed.stderr;
@@ -244,7 +242,7 @@ for (const [name, want] of Object.entries(expected)) {
           fs.writeFileSync(claims,JSON.stringify(doc));
           return run(verifier,["--check-source-claims",ast,claims,file,evidence]);
         };
-        const certification = consume(original);
+        const certification = await consume(original);
         assert.equal(certification.status,0,certification.stdout + certification.stderr);
         fs.writeFileSync(claims,JSON.stringify(original));
       }
@@ -252,6 +250,14 @@ for (const [name, want] of Object.entries(expected)) {
         detail = (checked.stderr || "").split("\n")[0].replace(/^reject: /, "");
     }
   }
+  return { got, detail };
+}
+let failures = 0;
+const verdicts = await pooled(Object.keys(expected), verdict);
+for (const [i, [name, want]] of Object.entries(expected).entries()) {
+  const settled = verdicts[i];
+  if (settled.status === "rejected") throw settled.reason;
+  const { got, detail } = settled.value;
   if (got === want) {
     console.log(`  ${name}: ${got}${detail ? ` — ${detail.slice(0, 60)}` : ""}`);
   } else {
