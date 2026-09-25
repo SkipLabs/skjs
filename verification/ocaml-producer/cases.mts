@@ -862,6 +862,8 @@ export const cases: Case[] = [
   negative("invalid-array-first-use", "a first use at `number[]` commits the literal there, which is no pair", /source expression obligation at \[245,251\)/),
   positive("module-value-equality", "a comparison with a module value's field, an enum member or an ambient constant's, narrows the other operand"),
   negative("invalid-module-value-equality", "where `x === E.A` holds, `x` is 0", /source expression obligation at \[134,135\)/),
+  positive("for-of-tuple", "a tuple is an array: `for...of` over it yields the union of its positions"),
+  negative("invalid-for-of-tuple", "an element of `[string, number]` may be a string", /source expression obligation at \[198,202\)/),
   gap("object-growth-refused", "a write adding a key to a record allocated without it: an object's keys are fixed at its allocation",
     "unsupported", "proposal", /a write adds the property 'x' to an object allocated without it/),
   gap("optional-write-refused", "a write to a writable optional field may add its key",

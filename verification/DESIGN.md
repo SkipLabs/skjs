@@ -866,7 +866,12 @@ instance), the atoms the actual holds beside those, as TypeScript infers `A
 := string` from `string | null`; it proposed `unknown` before. The instance is
 a proposal: Lean checks the actual against the substituted parameter and the
 result where it is used (`nullable-binder-inference.ts`,
-`invalid-nullable-binder-inference.ts`).
+`invalid-nullable-binder-inference.ts`). A tuple at an array of any length
+gives the binder each of its positions (`[string, number]` at `readonly T[]`,
+as `%Iterate%`'s parameter is: `for...of` over a tuple yields the union of
+its positions, `for-of-tuple.ts`), and a join of primitives that only widens
+the literals an explicit bound names (`number` at `K extends 0 | 1`) is not
+proposed over the bound.
 Two more choices follow TypeScript's inference at a bounded binder. A fresh
 object literal at a binder whose bound has one dictionary arm, `T extends
 Json`, is built at that arm, so with its exact keys (TypeScript checks the

@@ -192,6 +192,13 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
       List.iter2 pair l.required r.required;
       List.iter2 pair l.optional_elements r.optional_elements;
       (match l.rest,r.rest with Some x,Some y -> pair x y | _ -> ())
+      (* A tuple at an array of any length: each of its positions is an
+         element (`[string, number]` at `readonly T[]` gives `T` both). *)
+      | Atoms [Shape {elements=Some l;fields=[];calls=[];string_index=None}],
+      Atoms [Shape {elements=Some ({required=[];optional_elements=[];rest=Some y;_} as r);
+                    fields=[];calls=[];string_index=None}] ->
+      List.iter (fun x -> constrain x y; if not r.readonly then constrain y x)
+        (l.required @ l.optional_elements @ Option.to_list l.rest)
       | _ -> ()) (* Unsupported structure contributes no guessed constraints;
                     Lean still checks the entire substituted signature. *) in
   List.iter2 (fun actual domain -> constrain actual domain) actuals domains;
@@ -265,6 +272,16 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
     let declared_upper = List.find_opt (function
       | Atoms [Named (_,[])] -> true | _ -> false) v.upper in
     let candidate = match join v.lower,declared_upper with
+      (* A join of primitives an explicit bound of literals does not admit
+         (`number` at `K extends 0 | 1`): the bound, as TypeScript keeps the
+         literals the constraint names. *)
+      | Some (Atoms xs),_ when xs <> [] && List.exists (function
+               | Atoms ys -> ys <> [] && List.for_all primitive ys
+                 && List.exists (fun x -> not (List.mem x ys)) xs
+                 && List.for_all (fun x -> List.mem x ys || List.exists (fun y -> match x,y with
+                     | Num,NumLit _ | Str,StrLit _ | Bigint,BigintLit _ -> true
+                     | _ -> false) ys) xs
+               | _ -> false) v.upper -> upper_candidate v.upper
       | Some t,_ when List.mem t v.upper -> Some t
       (* Primitives below a declared bound: the binder is what they are, as
          TypeScript infers it, not the bound (`Y extends boolean | string`
