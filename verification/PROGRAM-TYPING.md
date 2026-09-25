@@ -394,10 +394,19 @@ $$
 `read` and `write` name the field they act on and require it of the receiver's
 contract. A contract constrains only the fields it names, so a receiver may
 carry fields the rule never mentions — width subtyping is this openness, not a
-separate rule:
+separate rule. A read takes the field from the receiver's **named members**,
+the invariant fields $\varphi$ and readonly views $\psi$ of a clause with one
+record operand, a record's or a dictionary's, whose named members hold beside
+its index views (`namedMembers`):
 
 $$
-\frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Ref}(\varphi)\quad(f{:}A)\in\varphi}
+\mathsf{named}(\mathsf{Ref}(\varphi;\psi;\ldots))=(\varphi;\psi)
+\qquad
+\mathsf{named}(\mathsf{Dict}(\varphi;\psi;\overline{D};\ldots))=(\varphi;\psi)
+$$
+
+$$
+\frac{\Gamma\vdash_G a:R\quad R\equiv_G c\quad\mathsf{named}(c)=(\varphi;\psi)\quad(f{:}A)\in\varphi}
      {\Gamma\vdash_G a.f:A}
 \qquad
 \frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Ref}(\varphi)
@@ -431,7 +440,7 @@ invariant fields, readonly views and optional fields, and $\kappa$ a
 [property key](POSITIVE-TYPES.md#records):
 
 $$
-\frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Ref}(\varphi;\psi;\omega)\quad(\kappa{:}A)\in\psi}
+\frac{\Gamma\vdash_G a:R\quad R\equiv_G c\quad\mathsf{named}(c)=(\varphi;\psi)\quad(\kappa{:}A)\in\psi}
      {\Gamma\vdash_G a.\kappa:A}
 \qquad
 \frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Ref}(\varphi;\psi;\omega)\quad(\kappa{:}A)\in\omega
@@ -461,7 +470,10 @@ view is read one level down (`read_proto_rule`).
 
 These are `readView`, `readOptional`, `readProto` and `readDict`. The `read` and `write`
 rules above take $(\kappa{:}A)\in\varphi$ from the invariant fields alone,
-whatever the views and optional fields. A write to an optional field is not typed, since
+whatever the views and optional fields. A dictionary's named field or view is
+read at its own contract by `read` or `readView`, since `dictViewT` sits beside
+the named members' `recT` and `viewT` (`namedMembers_sem`); only a key it does
+not name is read through the index, with `undefined`. A write to an optional field is not typed, since
 the object's keys are fixed at allocation. `allocDict` establishes a dictionary view for a fresh literal only
 after checking every initializer at $A$ and that the literal names no
 prototype key. None of these rules grants a write

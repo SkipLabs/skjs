@@ -921,8 +921,12 @@ private def readCell (G : PositiveGraphs.NormalGraph Nat) (Γ : List (Ty Nat)) (
         pure (P, B)
       let some (P, B) := inherited | throw s!"read of a field '{fld}' the contract does not name"
       pure (DirectProof.node Γ (.readAt fld a.term) B (.readProto P) [a])
-  | [.dict _ [] _ (B :: _)] =>
-    pure (DirectProof.node Γ (.readAt fld a.term) (B ++ [3]) (.readDict B [3]) [a])
+  | [.dict fs [] vs (B :: _)] =>
+    -- A named field or view, else the index, which may miss.
+    match fs.lookup fld, vs.lookup fld with
+    | some B, _ => pure (DirectProof.node Γ (.readAt fld a.term) B .read [a])
+    | none, some B => pure (DirectProof.node Γ (.readAt fld a.term) B .readView [a])
+    | none, none => pure (DirectProof.node Γ (.readAt fld a.term) (B ++ [3]) (.readDict B [3]) [a])
   | [.dict _ [] _ []] => throw "indexed object has no string index contract"
   | [.callable fs _ _ _] =>
     let some B := fs.lookup fld | throw s!"read of a field '{fld}' the contract does not name"

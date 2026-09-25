@@ -21,8 +21,8 @@ HasTy  (Programs/ProgramTyping.lean)
   letE : HasTy G Γ a A → HasTy G (A :: Γ) b B → HasTy G Γ (.letE a b) B
   alloc {parts : List (PropKey × Ty ι × Tm)} {ks : List (List PropKey)} : (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks) → (∀ K ∈ ks, ∀ p ∈ parts, p.1 ∈ K) → HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
   allocDict {parts : List (PropKey × Tm)} : (parts.map Prod.fst).Nodup → CallArguments.protoField ∉ parts.map Prod.fst → (∀ p ∈ parts, HasTy G Γ p.2 Elem) → Represents G Dict (.dict [] [] [] [Elem]) → HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map Prod.snd)) Dict
-  read : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → (f, A) ∈ fs → HasTy G Γ (.readAt f a) A
-  readView : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → (f, A) ∈ vs → HasTy G Γ (.readAt f a) A
+  read : HasTy G Γ a Ref → Represents G Ref c → namedMembers c = some (fs, vs) → (f, A) ∈ fs → HasTy G Γ (.readAt f a) A
+  readView : HasTy G Γ a Ref → Represents G Ref c → namedMembers c = some (fs, vs) → (f, A) ∈ vs → HasTy G Γ (.readAt f a) A
   readProto {a : Tm} {Ref P : Ty ι} {fs vs os : List (PropKey × Ty ι)} {ms : List (MethodMembers.Sig (Ty ι))} {ks : List (List PropKey)} {K : List PropKey} {gs ws os' : List (PropKey × Ty ι)} {ms' : List (MethodMembers.Sig (Ty ι))} {ks' : List (List PropKey)} {f : PropKey} {A : Ty ι} : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → K ∈ ks → f ∉ K → (CallArguments.protoField, P) ∈ fs ++ vs → Represents G P (.refs gs [] ws os' ms' ks') → (f, A) ∈ gs ++ ws → HasTy G Γ (.readAt f a) A
   readOptional : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → (f, A) ∈ os → Represents G U .undef → HasTy G Γ (.readAt f a) (A ++ U)
   readDict {f : String} : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix os ms ks) → A ∈ ix → Represents G U .undef → HasTy G Γ (.readAt (.str f) a) (A ++ U)

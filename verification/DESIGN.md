@@ -832,11 +832,34 @@ still need application-indexed memo rows; this finite-ground path does not
 interpret them or prove a universally quantified imported declaration body.
 An interface's `extends` clauses are retained as source reference edges, each
 resolved by TypeScript like any other reference. Lean interprets the
-local and inherited contracts together. Disjoint plain record fields are
-canonicalized to one equivalent record row; other representable combinations
-use the graph's conjunction operation. OCaml's view of inherited fields is a
-candidate hint only, and overlapping fields or richer inherited contracts may
-still be refused there. The acceptance path never trusts an OCaml-flattened
+local and inherited contracts together (`inheritRows`). An own clause and an
+inherited one, each an object of one record operand (a record, or a
+dictionary with string index views $\overline D$), that name disjoint keys are
+canonicalized to one object of all their members; it is a dictionary when
+either side has an index:
+
+$$
+\frac{c_o=\mathsf{Obj}(\varphi_o;\psi_o;\overline{D_o};\omega_o;\mu_o;\beta_o)\quad
+      c_b=\mathsf{Obj}(\varphi_b;\psi_b;\overline{D_b};\omega_b;\mu_b;\beta_b)\quad
+      \mathrm{keys}(c_b)\cap\mathrm{keys}(c_o)=\emptyset}
+     {\mathsf{inherit}(c_o,c_b)=\mathsf{Obj}(\varphi_b\varphi_o;\psi_b\psi_o;
+      \overline{D_b}\,\overline{D_o};\omega_b\omega_o;\mu_b\mu_o;\beta_b\beta_o)}
+\qquad
+\frac{\text{otherwise}}{\mathsf{inherit}(c_o,c_b)=c_o\wedge c_b}
+$$
+
+with $\mathrm{keys}$ the named fields', views', optional fields' and methods'
+keys. The dictionary's index views constrain every present field, the named
+ones included, which is TypeScript's requirement that an interface's members
+meet an inherited index signature; `interface Collections extends
+NamedEagerCollections` is such a dictionary, whose named collections the read
+rules see. Other combinations keep the conjunction, which is the meaning of
+heritage too, only not a single operand the read rules take apart. TypeScript
+also gives a type literal an implicit index signature, so it accepts a record
+type where such an interface is expected; nothing here does, since a record's
+contract states nothing of its other keys (`invalid-sum-collections`). OCaml's
+view of inherited fields is a candidate hint only: it merges disjoint fields
+and at most one index signature, and refuses the rest. The acceptance path never trusts an OCaml-flattened
 interface equation.
 Supported interfaces and aliases declared in the checked file now enter that
 same source declaration graph as imported declarations. A local root names its

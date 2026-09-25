@@ -133,7 +133,10 @@ is not Boolean. An arbitrary indexed read therefore needs a result including
 `undefined`. The positive graph has a `dict` clause whose operands are guarded
 recursive labels, and the checked covering rule can compare dictionary views.
 The source parser and OCaml producer lower inline readonly string-index
-annotations into that clause. A named key read uses the proved `readDict` rule;
+annotations into that clause. A key the clause names as a field or view is read
+at that member's contract by `read` or `readView`, whose premise
+`namedMembers` accepts a dictionary's named members as a record's. Any other
+named key read uses the proved `readDict` rule;
 a computed string key uses `indexAt`, which evaluates the receiver before the
 key and then reads the selected field (or `undefined` if it is absent). The
 proved `indexDict` rule checks the key at `string`. Both reads carry

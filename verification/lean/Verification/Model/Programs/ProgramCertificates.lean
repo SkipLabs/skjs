@@ -223,12 +223,12 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   | .read, .readAt f a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧
     (match expand G ja.type with
-     | [.refs fs [] _ _ _ _] => (f, j.type) ∈ fs
+     | [c] => (f, j.type) ∈ ((namedMembers c).map Prod.fst).getD []
      | _ => False)
   | .readView, .readAt f a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧
     (match expand G ja.type with
-     | [.refs _ [] vs _ _ _] => (f, j.type) ∈ vs
+     | [c] => (f, j.type) ∈ ((namedMembers c).map Prod.snd).getD []
      | _ => False)
   -- A key outside a bound of the object is read from its prototype `P`, which
   -- the object holds under the reserved key; `P`'s field or view gives the type.
@@ -644,16 +644,20 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     have ha := hp ja (by simp)
     rw [hΓ, ht] at ha
     split at hr
-    · rename_i fs vs os he
-      exact .read ha he hr
+    · rename_i c he
+      cases hc : namedMembers c with
+      | none => simp [hc] at hr
+      | some m => simp only [hc, Option.map_some, Option.getD_some] at hr; exact .read ha he hc hr
     · contradiction
   · rename_i f a ja
     rcases hl with ⟨hΓ, ht, hr⟩
     have ha := hp ja (by simp)
     rw [hΓ, ht] at ha
     split at hr
-    · rename_i fs vs os he
-      exact .readView ha he hr
+    · rename_i c he
+      cases hc : namedMembers c with
+      | none => simp [hc] at hr
+      | some m => simp only [hc, Option.map_some, Option.getD_some] at hr; exact .readView ha he hc hr
     · contradiction
   · rename_i P f a ja
     rcases hl with ⟨hΓ, ht, hr⟩
@@ -1371,13 +1375,13 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     · intro j hj
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
       exact ih p hp
-  | @read Γ a Ref fs vs os ms ks f A ha hr hm ih =>
+  | @read Γ a Ref c fs vs f A ha hr hc hm ih =>
     apply node_complete (G := G) (j := ⟨Γ, .readAt f a, A⟩) (r := .read) (js := [⟨Γ,a,Ref⟩])
-      ⟨rfl,rfl,by simp only [show expand G Ref = [.refs fs [] vs os ms ks] from hr]; exact hm⟩
+      ⟨rfl,rfl,by simp only [show expand G Ref = [c] from hr, hc]; exact hm⟩
     simpa using ih
-  | @readView Γ a Ref fs vs os ms ks f A ha hr hm ih =>
+  | @readView Γ a Ref c fs vs f A ha hr hc hm ih =>
     apply node_complete (G := G) (j := ⟨Γ, .readAt f a, A⟩) (r := .readView) (js := [⟨Γ,a,Ref⟩])
-      ⟨rfl,rfl,by simp only [show expand G Ref = [.refs fs [] vs os ms ks] from hr]; exact hm⟩
+      ⟨rfl,rfl,by simp only [show expand G Ref = [c] from hr, hc]; exact hm⟩
     simpa using ih
   | @readProto Γ a Ref P fs vs os ms ks K gs ws os' ms' ks' f A ha hr hK hf hpr hP hm ih =>
     apply node_complete (G := G) (j := ⟨Γ, .readAt f a, A⟩) (r := .readProto P) (js := [⟨Γ,a,Ref⟩])

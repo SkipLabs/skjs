@@ -23,7 +23,7 @@ theorem dispatch_typed : HasTy G [[2]] dispatch [3] := by
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
   rcases hp with rfl | rfl
   · apply HasTy.ifTag (q := true) (by rfl) ⟨rfl, by intro c hc; simp [expand, clausesOf, G] at hc; subst c; rfl⟩
-    · intro _; exact .read (.var rfl) (by rfl) (by simp)
+    · intro _; exact .read (.var rfl) (by rfl) rfl (by simp)
     · intro h; cases h
   · apply HasTy.ifTag (q := false) (by rfl) ⟨rfl, by intro c hc; simp [expand, clausesOf, G] at hc; subst c; rfl⟩
     · intro h; cases h

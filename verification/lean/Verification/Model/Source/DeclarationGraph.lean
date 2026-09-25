@@ -85,21 +85,47 @@ private partial def mentionsSelf : Json → Bool
   | .arr values => values.any mentionsSelf
   | _ => false
 
-/-- For disjoint plain record fields, a source heritage intersection has the
-same contract as one record operand with those fields. Canonicalizing that
-case also gives the proposal and the source one graph row. Other combinations
-keep the general intersection representation. -/
+/-- An object clause of one record operand, as its parts: named fields,
+views, string index views, optional fields, methods and own-key bounds. -/
+private structure ObjectParts where
+  fields : List (PropKey × List Nat)
+  views : List (PropKey × List Nat)
+  indexes : List (List Nat)
+  optional : List (PropKey × List Nat)
+  methods : List (MethodMembers.Sig (List Nat))
+  bounds : List (List PropKey)
+
+private def objectParts : Clause (List Nat) → Option ObjectParts
+  | .refs fs [] vs os ms ks => some ⟨fs, vs, [], os, ms, ks⟩
+  | .dict fs [] vs ix os ms ks => some ⟨fs, vs, ix, os, ms, ks⟩
+  | _ => none
+
+private def ObjectParts.keys (o : ObjectParts) : List PropKey :=
+  (o.fields ++ o.views ++ o.optional).map Prod.fst ++ o.methods.map (·.key)
+
+/-- A source heritage intersection of objects naming disjoint keys has the same
+contract as one record operand with all their members, and the index views of
+both sides, which a dictionary applies to every present field, the named ones
+included (`interface C extends NamedEagerCollections`). Canonicalizing that
+case gives the proposal and the source one graph row, whose named members the
+read rules see. Other combinations keep the general intersection
+representation, a conjunction of the operands. -/
 private def inheritRows (own base : List (Clause (List Nat))) : Except String (List (Clause (List Nat))) := do
-  match own, base with
-  | [.refs writes [] views], [.refs inherited [] inheritedViews] =>
-    let names := (writes ++ views ++ inherited ++ inheritedViews).map Prod.fst
-    if names.eraseDups.length != names.length then
-      throw "overlapping inherited fields need compatibility checking"
-    return [.refs (inherited ++ writes) [] (inheritedViews ++ views)]
-  | _, _ =>
-    let rows := PositiveNormalization.meetLists own base
-    if rows.isEmpty then throw "inherited interface contracts have no representable intersection"
-    return rows
+  if let ([o], [b]) := (own, base) then
+    if let (some o, some b) := (objectParts o, objectParts b) then
+      let keys := b.keys ++ o.keys
+      if keys.eraseDups.length == keys.length then
+        let fs := b.fields ++ o.fields
+        let vs := b.views ++ o.views
+        let os := b.optional ++ o.optional
+        let ms := b.methods ++ o.methods
+        let ks := b.bounds ++ o.bounds
+        return [match b.indexes ++ o.indexes with
+          | [] => .refs fs [] vs os ms ks
+          | ix => .dict fs [] vs ix os ms ks]
+  let rows := PositiveNormalization.meetLists own base
+  if rows.isEmpty then throw "inherited interface contracts have no representable intersection"
+  return rows
 
 /-- Uses of one free method binder. A nested scheme with the same binder
 shadows it; a pack occurrence is the direct operand of a pack rest. -/

@@ -860,6 +860,25 @@ theorem zip_getElem_mem {α β : Type} {L : List α} {As : List β} {i : Nat} (h
   List.mem_of_getElem? (List.getElem?_zip_eq_some.mpr
     ⟨List.getElem?_eq_getElem hi, List.getElem?_eq_getElem hiA⟩)
 
+/-- The named fields and readonly views of an object of one record operand:
+a record's, or a dictionary's, whose named members hold beside its index. -/
+def namedMembers : Clause α → Option (List (PropKey × α) × List (PropKey × α))
+  | .refs fs [] vs _ _ _ => some (fs, vs)
+  | .dict fs [] vs _ _ _ _ => some (fs, vs)
+  | _ => none
+
+/-- A value of a type with named members holds each named field as a cell of
+its contract and each view as a location whose contents meet its bound. -/
+theorem namedMembers_sem {G : NormalGraph ι} {A : Ty ι} {c : Clause (Ty ι)}
+    {fs vs : List (PropKey × Ty ι)} (hr : Represents G A c)
+    (hc : namedMembers c = some (fs, vs)) {n W v} (h : meaning G A n W v) :
+    recT (ReferenceConjunctions.famsOf (meaning G) fs) n W v ∧
+      viewT (ReferenceConjunctions.famsOf (meaning G) vs) n W v := by
+  have hs := (represents_sem hr n W v).mp h
+  match c, hc with
+  | .refs _ [] _ _ _ _, rfl => exact ⟨hs.1.1, hs.2.1⟩
+  | .dict _ [] _ _ _ _ _, rfl => exact ⟨hs.1.1, hs.2.1⟩
+
 variable [DecidableEq ι]
 
 /-- Constructor views avoid any semantic normalization assumption. -/
@@ -951,11 +970,12 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       (∀ p ∈ parts, HasTy G Γ p.2 Elem) →
       Represents G Dict (.dict [] [] [] [Elem]) →
       HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map Prod.snd)) Dict
-  | read : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → (f, A) ∈ fs →
-      HasTy G Γ (.readAt f a) A
+  /-- A named field, of a record or of a dictionary, reads at its contract. -/
+  | read : HasTy G Γ a Ref → Represents G Ref c → namedMembers c = some (fs, vs) →
+      (f, A) ∈ fs → HasTy G Γ (.readAt f a) A
   /-- A view field reads at its bound: a capability, never a write permission. -/
-  | readView : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → (f, A) ∈ vs →
-      HasTy G Γ (.readAt f a) A
+  | readView : HasTy G Γ a Ref → Represents G Ref c → namedMembers c = some (fs, vs) →
+      (f, A) ∈ vs → HasTy G Γ (.readAt f a) A
   /-- **A read through the prototype.** A key outside one of the object's key
   bounds is not its own, so the read continues at the prototype, which the
   object holds under the reserved key at `P`; the prototype's field or view
@@ -1405,19 +1425,19 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       simp only [List.mem_singleton] at hA
       cases hA
       exact hd
-  | @read Γ a Ref fs vs os ms ks f A ha hr hm ih =>
+  | @read Γ a Ref c fs vs f A ha hr hc hm ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
     obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ :=
-      recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) ((represents_sem hr j U v).mp ha').1.1
+      recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) (namedMembers_sem hr hc ha').1
     exact read_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag
-  | @readView Γ a Ref fs vs os ms ks f A ha hr hm ih =>
+  | @readView Γ a Ref c fs vs f A ha hr hc hm ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
     obtain ⟨flds, l, c, rfl, hf, hl, hag⟩ :=
-      viewT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) ((represents_sem hr j U v).mp ha').2.1
+      viewT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) (namedMembers_sem hr hc ha').2
     exact read_view_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag
   | @readProto Γ a Ref P fs vs os ms ks K gs ws os' ms' ks' f A ha hr hK hf hpr hP hm ih =>
     intro n W h ρ he hw hh

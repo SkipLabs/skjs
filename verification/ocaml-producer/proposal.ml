@@ -36,16 +36,21 @@ let literal_type = function
 (* Read permissions do not imply write permissions. All candidates still pass
    through reconstructed obligations, including readonly view conversion. *)
 let definition declarations id args =
+  (* An interface and its base as one object: disjoint fields, and the one
+     index signature either states. A hint only: Lean's `inheritRows` gives
+     the declaration's meaning. *)
   let merge base own = match base,own with
     | Atoms [Shape inherited],Atoms [Shape local]
       when inherited.calls=[] && local.calls=[] &&
-           inherited.string_index=None && local.string_index=None &&
+           (inherited.string_index=None || local.string_index=None) &&
            inherited.elements=None && local.elements=None ->
       let names = List.map (fun (field:Semantic.field) -> field.name)
         (inherited.fields @ local.fields) in
       if List.length names <> List.length (List.sort_uniq compare names) then
         unsupported "overlapping inherited fields need compatibility checking";
-      Atoms [Shape {local with fields=inherited.fields @ local.fields}]
+      Atoms [Shape {local with fields=inherited.fields @ local.fields;
+        string_index=(match local.string_index with
+          | None -> inherited.string_index | own -> own)}]
     | _ -> unsupported "inheritance needs plain object contracts" in
   let rec instantiate seen id args =
   if List.mem id seen then unsupported "cyclic inheritance";

@@ -588,7 +588,9 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
                   | _ => none
               else none)
           | [.callable fs _ _ _] => (fs.lookup f).map (·,Rule.readCallable)
-          | [.dict _ [] _ (B :: _)] =>
+          -- A dictionary's named field or view, else its index, which may miss.
+          | [.dict fs [] vs (B :: _)] =>
+            (fs.lookup f).map (·,Rule.read) <|> (vs.lookup f).map (·,Rule.readView) <|>
             pool.findSome? fun U =>
               if expand G U == [.undef] then some (B ++ U, Rule.readDict B U) else none
           | _ => none
