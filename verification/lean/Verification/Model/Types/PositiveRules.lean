@@ -692,16 +692,18 @@ abbrev CoversMethods (G : NormalGraph ι) (R : List ι → List ι → Prop) (kn
 
 /-- Index contracts met through an own-key bound: the object's own keys are
 among `K`, which lists no prototype key, so the object has no prototype; each
-key of `K` is a source field or view whose contract implies every target index
-view, and a source field whose contract agrees with every writable index. No
-other key exists, so a fresh literal, whose own keys are exactly its fields,
-is a dictionary of what its fields fit. A bound excluding keys says nothing of
-the others, so it meets no index. -/
+key of `K` an index's class may admit (`IndexKeys.may`) is a source field or
+view whose contract implies that index view, and a source field whose contract
+agrees with that writable index. No other key exists, so a fresh literal, whose
+own keys are exactly its fields, is a dictionary of what its fields fit. A key
+a class provably does not admit, such as `name` for a number index, needs
+nothing of it. A bound excluding keys says nothing of the others, so it meets
+no index. -/
 abbrev CoversKeys (R : List ι → List ι → Prop) (fields views : List (PropKey × List ι))
-    (bounds : List KeyBound) (ix cx : List (List ι)) : Prop :=
+    (bounds : List KeyBound) (ix cx : List (IndexKeys × List ι)) : Prop :=
   ∃ K ∈ bounds, K.among = true ∧ CallArguments.protoField ∉ K.keys ∧ ∀ k ∈ K.keys,
-    (∀ y ∈ ix, ∃ p ∈ fields ++ views, p.1 = k ∧ R p.2 y) ∧
-    ∀ y ∈ cx, ∃ p ∈ fields, p.1 = k ∧ R p.2 y ∧ R y p.2
+    (∀ y ∈ ix, y.1.may k = true → ∃ p ∈ fields ++ views, p.1 = k ∧ R p.2 y.2) ∧
+    ∀ y ∈ cx, y.1.may k = true → ∃ p ∈ fields, p.1 = k ∧ R p.2 y.2 ∧ R y.2 p.2
 
 /-- A target key bound follows from the source's bounds: every key they let
 the object own, it admits. A target excluding keys needs each excluded by some
@@ -919,12 +921,20 @@ def CoversWith (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : 
       CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws ∧
       CoversOptional R (a :: bs) vs os ks ps ∧
       CoversMethods G R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls
-  -- A target index view is within some source index view; a writable
-  -- target index needs a writable source index of an equivalent contract, as
-  -- an invariant field does, so no location is retyped.
+  -- A target index view is within some source index view over as many keys
+  -- (`IndexKeys.within`); a writable target index needs a writable source
+  -- index over as many keys of an equivalent contract, as an invariant field
+  -- does, so no location is retyped. Code holding the target may add keys of
+  -- its class at its contract (the trust boundary of a writable index), so
+  -- every source index and optional field over such a key must admit the
+  -- contract: a mutable `{ [k: string]: S; [k: number]: N }` is not a mutable
+  -- `{ [k: string]: S }`, through which a numeric key could get an `S` value.
   | .dict a bs vs ix os ms ks cx, .dict c ds ws iy ps ns ls cy =>
       CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws ∧
-      ((∀ y ∈ iy, ∃ x ∈ ix, R x y) ∧ ∀ y ∈ cy, ∃ x ∈ cx, R x y ∧ R y x) ∧
+      ((∀ y ∈ iy, ∃ x ∈ ix, y.1.within x.1 = true ∧ R x.2 y.2) ∧
+        ∀ y ∈ cy, (∃ x ∈ cx, y.1.within x.1 = true ∧ R x.2 y.2 ∧ R y.2 x.2) ∧
+          (∀ z ∈ ix, y.1.overlaps z.1 = true → R y.2 z.2) ∧
+          ∀ o ∈ os, y.1.may o.key = true → R y.2 o.type) ∧
       CoversOptional R (a :: bs) vs os ks ps ∧
       CoversMethods G R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls
   | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
@@ -1233,29 +1243,33 @@ private theorem ownKeysT_mem {K : KeyBound} (ha : K.among = true) {k : Nat} {W :
   simpa [KeyBound.admits, ha] using ownKeysT_admits h hl
 
 /-- **Index contracts through an own-key bound.** No prototype key is among
-the object's own keys, and every present string key is a source member whose
-location's contract implies, or for a writable index agrees with, the index. -/
+the object's own keys, and every present key an index's class admits, which
+it may admit (`IndexKeys.may_of_admits`), is a source member whose location's
+contract implies, or for a writable index agrees with, the index. -/
 theorem covers_keys_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
     {a : List (PropKey × List ι)} {bs : List (List (PropKey × List ι))} {vs : List (PropKey × List ι)}
-    {ks : List KeyBound} {iy cy : List (List ι)}
+    {ks : List KeyBound} {iy cy : List (IndexKeys × List ι)}
     (hc : CoversKeys R (a :: bs).flatten vs ks iy cy) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (W : WorldT n) (v : Val)
     (hrefs : refsT (famsOf (mixedValues G η) a) (bs.map (famsOf (mixedValues G η))) n W v)
     (hw : viewT (famsOf (mixedValues G η) vs) n W v) (hb : ∀ K ∈ ks, ownKeysT K n W v) :
-    (∀ y ∈ iy, dictViewT (mixedValues G η y) n W v) ∧
-      ∀ y ∈ cy, dictCellT (mixedValues G η y) n W v := by
+    (∀ y ∈ iy, dictViewT y.1 (mixedValues G η y.2) n W v) ∧
+      ∀ y ∈ cy, dictCellT y.1 (mixedValues G η y.2) n W v := by
   obtain ⟨K, hK, ha, hproto, hkeys⟩ := hc
   obtain ⟨flds, rfl, -⟩ := hb K hK
   have hown := hb K hK
   have hnp := ownKeysT_lookup (f := CallArguments.protoField) hown (by simp [KeyBound.admits, ha, hproto])
-  refine ⟨fun y hy => ⟨flds, rfl, hnp, fun f l hl => ?_⟩, fun y hy => ⟨flds, rfl, hnp, fun f l hl => ?_⟩⟩
-  · obtain ⟨p, hp, hpk, hpy⟩ := (hkeys _ (ownKeysT_mem ha hown hl)).1 y hy
+  refine ⟨fun y hy => ⟨flds, rfl, hnp, fun f l hl hk => ?_⟩,
+    fun y hy => ⟨flds, rfl, hnp, fun f l hl hk => ?_⟩⟩
+  · obtain ⟨p, hp, hpk, hpy⟩ :=
+      (hkeys _ (ownKeysT_mem ha hown hl)).1 y hy (IndexKeys.may_of_admits hk)
     obtain ⟨flds', l', c, he, hl', hc, hag⟩ := fields_at hrefs hw p hp
     cases he
     rw [hpk, hl] at hl'
     cases hl'
     exact ⟨c, hc, fun j hj W' u hu => hr j hj _ _ hpy W' u (hag j hj W' u hu)⟩
-  · obtain ⟨p, hp, hpk, hpy, hyp⟩ := (hkeys _ (ownKeysT_mem ha hown hl)).2 y hy
+  · obtain ⟨p, hp, hpk, hpy, hyp⟩ :=
+      (hkeys _ (ownKeysT_mem ha hown hl)).2 y hy (IndexKeys.may_of_admits hk)
     obtain ⟨flds', l', c, he, hl', hc, hag⟩ := fields_agree hrefs p hp
     cases he
     rw [hpk, hl] at hl'
@@ -1664,20 +1678,20 @@ theorem Covers.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R known sel
         hv.2.2.2.2.1,
       covers_bounds_sound hc.2.2.2.2.2 (recT_obj hv.1.1) hv.2.2.2.2.2⟩
     · intro y hy
-      obtain ⟨x, hx, hxy⟩ := hc.2.2.1.1 y hy
-      obtain ⟨flds, he, hp, hfs⟩ := hv.2.2.1.1 x hx
+      obtain ⟨x, hx, hw, hxy⟩ := hc.2.2.1.1 y hy
+      obtain ⟨flds, he, hp, hfs⟩ := dictViewT_within hw (hv.2.2.1.1 x hx)
       refine ⟨flds, he, hp, ?_⟩
-      intro f l hl
-      obtain ⟨c, hw, hag⟩ := hfs f l hl
-      exact ⟨c, hw, fun j hj W' u hu => hr j hj x y hxy W' u (hag j hj W' u hu)⟩
+      intro f l hl hk
+      obtain ⟨c, hw, hag⟩ := hfs f l hl hk
+      exact ⟨c, hw, fun j hj W' u hu => hr j hj x.2 y.2 hxy W' u (hag j hj W' u hu)⟩
     · intro y hy
-      obtain ⟨x, hx, hxy, hyx⟩ := hc.2.2.1.2 y hy
-      obtain ⟨flds, he, hp, hfs⟩ := hv.2.2.1.2 x hx
+      obtain ⟨x, hx, hw, hxy, hyx⟩ := (hc.2.2.1.2 y hy).1
+      obtain ⟨flds, he, hp, hfs⟩ := dictCellT_within hw (hv.2.2.1.2 x hx)
       refine ⟨flds, he, hp, ?_⟩
-      intro f l hl
-      obtain ⟨c, hw, hag⟩ := hfs f l hl
-      exact ⟨c, hw, fun j hj W' u => ⟨fun hu => hr j hj x y hxy W' u ((hag j hj W' u).mp hu),
-        fun hu => (hag j hj W' u).mpr (hr j hj y x hyx W' u hu)⟩⟩
+      intro f l hl hk
+      obtain ⟨c, hw, hag⟩ := hfs f l hl hk
+      exact ⟨c, hw, fun j hj W' u => ⟨fun hu => hr j hj x.2 y.2 hxy W' u ((hag j hj W' u).mp hu),
+        fun hu => (hag j hj W' u).mpr (hr j hj y.2 x.2 hyx W' u hu)⟩⟩
   · intro hv
     refine ⟨⟨hv.1.1, fun p hp => ?_⟩, ⟨hv.1.1, fun t ht => ?_⟩⟩
     · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp

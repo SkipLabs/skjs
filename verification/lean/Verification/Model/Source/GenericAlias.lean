@@ -64,6 +64,8 @@ private def sourceAlias (root : Json) (definitions : List Json) : Except String 
   if paramAtZero body then return some ⟨name, param, paramType param⟩
   if (body.getObjVal? "k").toOption != some (Json.str "object") then return none
   if (body.getObjVal? "stringIndex").toOption != some Json.null then return none
+  if (body.getObjVal? "numberIndex").toOption.isSome || (body.getObjVal? "symbolIndex").toOption.isSome then
+    return none
   if !(← jArr body "calls").isEmpty then return none
   let [field] := (← jArr body "fields") | return none
   if (field.getObjVal? "name").toOption != some (Json.str "value") ||

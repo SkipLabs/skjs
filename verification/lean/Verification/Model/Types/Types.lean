@@ -327,40 +327,222 @@ def viewT (fs : Fields) : Fam := fun k W v =>
       flds.lookup f = some l ∧ lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → T j W' u
 
-/-- A readonly string index signature constrains every *present* own field.
-The map of locations is finite, while the signature ranges over all strings.
-An absent key has no location and is read as `undefined` by `Step.readMissing`,
-which needs the object to have no prototype: a dictionary has none.
-This is a read capability: the actual cell contract may be stricter than `A`.
-The plain-object restriction is the same one used by `recT` and `viewT`. -/
-def dictViewT (A : Fam) : Fam := fun k W v =>
+/-! ## Index keys -/
+
+/-- A **canonical numeric key**: a string some number's `ToString` spells.
+These are exactly the strings `s` with `ToString(ToNumber(s)) = s`, the keys
+TypeScript's number index signature constrains: "0", "1.5", "-1", "1e+21",
+"NaN", "Infinity", but not "01", "1.50" or "-0". They are the keys `o[n]`
+reaches for a number `n` (`propertyKey`). -/
+def NumericKey (s : String) : Prop := ∃ b : UInt64, numberToString b = s
+
+/-- **The keys an index signature constrains**: every string key (`[k:
+string]`), the canonical numeric ones (`[k: number]`), or every symbol key
+(`[k: symbol]`). An index over a union of key types is one index per member,
+each at the same value type, which together constrain the union's keys. -/
+inductive IndexKeys where
+  | strings
+  | numeric
+  | symbols
+  deriving Repr, DecidableEq
+
+/-- Whether a class admits a key. The string and symbol key spaces are
+disjoint, so no string index reaches a symbol-keyed property. -/
+def IndexKeys.Admits : IndexKeys → PropKey → Prop
+  | .strings, .str _ => True
+  | .numeric, .str s => NumericKey s
+  | .symbols, .sym _ => True
+  | _, _ => False
+
+/-- One class within another: itself, or the canonical numeric keys within
+the strings. -/
+def IndexKeys.within (a b : IndexKeys) : Bool :=
+  a == b || (a == .numeric && b == .strings)
+
+theorem IndexKeys.within_admits {a b : IndexKeys} (h : a.within b = true) {k : PropKey}
+    (hk : a.Admits k) : b.Admits k := by
+  unfold within at h
+  cases a <;> cases b <;> cases k <;> simp_all [Admits]
+
+/-- Two classes that share a key: one is within the other. -/
+def IndexKeys.overlaps (a b : IndexKeys) : Bool := a.within b || b.within a
+
+/-- The key `ToPropertyKey` of a number names is canonical numeric. -/
+theorem numeric_admits_number (b : UInt64) : IndexKeys.numeric.Admits (.str (numberToString b)) :=
+  ⟨b, rfl⟩
+
+/-- A string's spelling begins as a number's does: a digit, or `-` and a digit. -/
+def digitLead : List Char → Bool
+  | c :: rest => c.isDigit || (c == '-' && (rest.head?.map Char.isDigit).getD false)
+  | [] => false
+
+/-- Whether a spelling begins with a digit. -/
+def headDigit (l : List Char) : Bool := (l.head?.map Char.isDigit).getD false
+
+private theorem repr_lead (n : Nat) : headDigit (toString n).toList = true := by
+  have h : (toString n).toList = Nat.toDigits 10 n := by
+    simp [toString, Nat.repr]
+  rw [h]
+  cases hd : Nat.toDigits 10 n with
+  | nil => exact absurd hd Nat.toDigits_ne_nil
+  | cons c rest =>
+    have : c ∈ Nat.toDigits 10 n := by rw [hd]; exact List.mem_cons_self
+    simpa [headDigit] using Nat.isDigit_of_mem_toDigits (b := 10) (by decide) (by decide) this
+
+private theorem decimalBody_head {digits : String} (hd : headDigit digits.toList = true) (d : Int) :
+    headDigit (decimalBody digits d).toList = true := by
+  cases hl : digits.toList with
+  | nil => simp [hl, headDigit] at hd
+  | cons c rest =>
+  have hc : c.isDigit = true := by simpa [hl, headDigit] using hd
+  unfold decimalBody
+  simp only
+  split
+  · simp [headDigit, String.toList_append, hl, hc]
+  · split
+    · rename_i h
+      have hn : 0 < (↑digits.length + d).toNat := by
+        simp at h; omega
+      obtain ⟨k, hk⟩ : ∃ k, (↑digits.length + d).toNat = k + 1 := ⟨_, (Nat.succ_pred_eq_of_pos hn).symm⟩
+      simp [headDigit, String.toList_append, hl, hc, hk]
+    · split
+      · simp [headDigit, String.toList_append]
+      · split <;> simp_all [headDigit, String.toList_append]
+
+/-- Every number's spelling is `NaN`, an infinity, or begins as a number's
+spelling does. -/
+theorem numberToString_shape (x : UInt64) :
+    numberToString x = "NaN" ∨ numberToString x = "Infinity" ∨ numberToString x = "-Infinity" ∨
+      digitLead (numberToString x).toList = true := by
+  unfold numberToString
+  simp only
+  split
+  · split
+    · exact Or.inl rfl
+    · split <;> simp
+  · split
+    · right; right; right; simp [digitLead]
+    · right; right; right
+      generalize shortestDigits _ _ _ = p
+      obtain ⟨s, d⟩ := p
+      have hb := decimalBody_head (repr_lead s) d
+      generalize decimalBody (toString s) d = b at hb ⊢
+      cases hl : b.toList with
+      | nil => simp [hl, headDigit] at hb
+      | cons c rest =>
+        have hc : c.isDigit = true := by simpa [hl, headDigit] using hb
+        split <;> simp [String.toList_append, hl, digitLead, hc]
+
+/-- A key no number spells: not `NaN` nor an infinity, and not beginning as a
+number's spelling does. Every identifier-like key is one. -/
+def notNumericKey (s : String) : Bool :=
+  s != "NaN" && s != "Infinity" && s != "-Infinity" && !digitLead s.toList
+
+theorem notNumericKey_sound {s : String} (h : notNumericKey s = true) : ¬ NumericKey s := by
+  rintro ⟨b, rfl⟩
+  simp only [notNumericKey, Bool.and_eq_true, bne_iff_ne, ne_eq, Bool.not_eq_true'] at h
+  rcases numberToString_shape b with e | e | e | e
+  · exact h.1.1.1 e
+  · exact h.1.1.2 e
+  · exact h.1.2 e
+  · rw [e] at h; cases h.2
+
+/-- The number a key may spell, read as a JSON number; `NaN` and the
+infinities by name. A candidate only: `numericKey?` checks it spells the key. -/
+def numericKeyBits (s : String) : Option UInt64 :=
+  if s == "NaN" then some 0x7ff8000000000000
+  else if s == "Infinity" then some 0x7ff0000000000000
+  else if s == "-Infinity" then some 0xfff0000000000000
+  else match Lean.Json.parse s with
+    | .ok (.num n) => some n.toFloat.toBits
+    | _ => none
+
+/-- Whether a key is canonical numeric, decided by a number that spells it. -/
+def numericKey? (s : String) : Bool :=
+  match numericKeyBits s with
+  | some b => numberToString b == s
+  | none => false
+
+theorem numericKey?_sound {s : String} (h : numericKey? s = true) : NumericKey s := by
+  unfold numericKey? at h
+  split at h
+  · exact ⟨_, beq_iff_eq.mp h⟩
+  · cases h
+
+/-- Whether a class surely admits a key, decided: what a read of a named key
+through an index needs. -/
+def IndexKeys.surely : IndexKeys → PropKey → Bool
+  | .strings, .str _ => true
+  | .numeric, .str s => numericKey? s
+  | .symbols, .sym _ => true
+  | _, _ => false
+
+theorem IndexKeys.surely_admits {K : IndexKeys} {k : PropKey} (h : K.surely k = true) : K.Admits k := by
+  cases K <;> cases k <;> simp_all [surely, Admits, numericKey?_sound]
+
+/-- Whether a class may admit a key, decided: false only for a key it
+provably does not, which is what an object's field needs to leave an index
+unconstrained. -/
+def IndexKeys.may : IndexKeys → PropKey → Bool
+  | .numeric, .str s => !notNumericKey s
+  | K, k => K.surely k
+
+theorem IndexKeys.may_of_admits {K : IndexKeys} {k : PropKey} (h : K.Admits k) : K.may k = true := by
+  cases K <;> cases k <;> simp_all [may, surely, Admits]
+  rename_i s
+  cases hn : notNumericKey s
+  · rfl
+  · exact absurd h (notNumericKey_sound hn)
+
+/-- **An index view**: an index signature's read capability. The object has no
+prototype, and every *present* own field under a key the class `K` admits
+has a contract implying `A`. The map of locations is finite, while the
+signature ranges over every admitted key. An absent key has no location and
+is read as `undefined` by `Step.readMissing`, which needs the object to have
+no prototype: a dictionary has none. The actual cell contract may be stricter
+than `A`. The plain-object restriction is the same one used by `recT` and
+`viewT`. -/
+def dictViewT (K : IndexKeys) (A : Fam) : Fam := fun k W v =>
   ∃ flds : List (PropKey × Nat), v = .objAt flds .absent ∧
     flds.lookup CallArguments.protoField = none ∧
-    ∀ (f : String) (l : Nat), flds.lookup (.str f) = some l →
+    ∀ (f : PropKey) (l : Nat), flds.lookup f = some l → K.Admits f →
       ∃ c : Ctr k, lookup W l = some c ∧
         ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → A j W' u
 
-/-- A writable string index signature constrains every *present* own field as
-an invariant field is constrained: its location's contract agrees with `A`
-below the level, so a write of an `A` value to it keeps every alias's
-guarantee. Like the view, it has no prototype and says nothing of an absent
-key. The calculus adds no key to an existing object; that TypeScript lets
-code holding the dictionary add keys at `A` is the trust boundary
+/-- **A writable index** constrains every *present* own field under a key the
+class admits as an invariant field is constrained: its location's contract
+agrees with `A` below the level, so a write of an `A` value to it keeps every
+alias's guarantee. Like the view, it has no prototype and says nothing of an
+absent key. The calculus adds no key to an existing object; that TypeScript
+lets code holding the dictionary add keys at `A` is the trust boundary
 ([DESIGN.md](../../../../DESIGN.md#writable-string-index-signatures)). -/
-def dictCellT (A : Fam) : Fam := fun k W v =>
+def dictCellT (K : IndexKeys) (A : Fam) : Fam := fun k W v =>
   ∃ flds : List (PropKey × Nat), v = .objAt flds .absent ∧
     flds.lookup CallArguments.protoField = none ∧
-    ∀ (f : String) (l : Nat), flds.lookup (.str f) = some l →
+    ∀ (f : PropKey) (l : Nat), flds.lookup f = some l → K.Admits f →
       ∃ c : Ctr k, lookup W l = some c ∧
         ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ A j W' u
 
 /-- A writable index grants its read: an agreeing contract implies `A`. -/
-theorem dictCellT_view {A : Fam} {k : Nat} {W : WorldT k} {v : Val}
-    (h : dictCellT A k W v) : dictViewT A k W v := by
+theorem dictCellT_view {K : IndexKeys} {A : Fam} {k : Nat} {W : WorldT k} {v : Val}
+    (h : dictCellT K A k W v) : dictViewT K A k W v := by
   obtain ⟨flds, rfl, hp, hf⟩ := h
-  refine ⟨flds, rfl, hp, fun f l hl => ?_⟩
-  obtain ⟨c, hc, hag⟩ := hf f l hl
+  refine ⟨flds, rfl, hp, fun f l hl hk => ?_⟩
+  obtain ⟨c, hc, hag⟩ := hf f l hl hk
   exact ⟨c, hc, fun j hj W' u hu => (hag j hj W' u).mp hu⟩
+
+/-- An index view over a class gives one over any class within it. -/
+theorem dictViewT_within {K K' : IndexKeys} (hw : K'.within K = true) {A : Fam} {k : Nat}
+    {W : WorldT k} {v : Val} (h : dictViewT K A k W v) : dictViewT K' A k W v := by
+  obtain ⟨flds, rfl, hp, hf⟩ := h
+  exact ⟨flds, rfl, hp, fun f l hl hk => hf f l hl (IndexKeys.within_admits hw hk)⟩
+
+/-- So does a writable index. -/
+theorem dictCellT_within {K K' : IndexKeys} (hw : K'.within K = true) {A : Fam} {k : Nat}
+    {W : WorldT k} {v : Val} (h : dictCellT K A k W v) : dictCellT K' A k W v := by
+  obtain ⟨flds, rfl, hp, hf⟩ := h
+  exact ⟨flds, rfl, hp, fun f l hl hk => hf f l hl (IndexKeys.within_admits hw hk)⟩
+
 /-- A readable slot provides an upper bound. A writable slot additionally
 accepts every member of that bound, without changing the backing invariant. -/
 def SlotContract (readonly : Bool) (P Q : Prop) : Prop :=
@@ -513,41 +695,41 @@ theorem optT_append (A B : List (OptionalField Fam)) (k : Nat) (W : WorldT k) (v
 
 /-- A dictionary's read guarantee is guarded by the world level, including
 when its element type is a recursive graph label. -/
-theorem dictViewT_congr {A B : Fam} {k : Nat} (h : Agree A B k)
-    (W : WorldT k) (v : Val) : dictViewT A k W v ↔ dictViewT B k W v := by
+theorem dictViewT_congr {K : IndexKeys} {A B : Fam} {k : Nat} (h : Agree A B k)
+    (W : WorldT k) (v : Val) : dictViewT K A k W v ↔ dictViewT K B k W v := by
   constructor <;> rintro ⟨flds, rfl, hp, hf⟩ <;> refine ⟨flds, rfl, hp, ?_⟩
-  · intro f l hl
-    obtain ⟨c, hc, hA⟩ := hf f l hl
+  · intro f l hl hk
+    obtain ⟨c, hc, hA⟩ := hf f l hl hk
     exact ⟨c, hc, fun j hj W' u hu => (h j hj W' u).mp (hA j hj W' u hu)⟩
-  · intro f l hl
-    obtain ⟨c, hc, hB⟩ := hf f l hl
+  · intro f l hl hk
+    obtain ⟨c, hc, hB⟩ := hf f l hl hk
     exact ⟨c, hc, fun j hj W' u hu => (h j hj W' u).mpr (hB j hj W' u hu)⟩
 
 /-- A writable index's contract is guarded by the world level too. -/
-theorem dictCellT_congr {A B : Fam} {k : Nat} (h : Agree A B k)
-    (W : WorldT k) (v : Val) : dictCellT A k W v ↔ dictCellT B k W v := by
+theorem dictCellT_congr {K : IndexKeys} {A B : Fam} {k : Nat} (h : Agree A B k)
+    (W : WorldT k) (v : Val) : dictCellT K A k W v ↔ dictCellT K B k W v := by
   constructor <;> rintro ⟨flds, rfl, hp, hf⟩ <;> refine ⟨flds, rfl, hp, ?_⟩
-  · intro f l hl
-    obtain ⟨c, hc, hA⟩ := hf f l hl
+  · intro f l hl hk
+    obtain ⟨c, hc, hA⟩ := hf f l hl hk
     exact ⟨c, hc, fun j hj W' u => (hA j hj W' u).trans (h j hj W' u)⟩
-  · intro f l hl
-    obtain ⟨c, hc, hB⟩ := hf f l hl
+  · intro f l hl hk
+    obtain ⟨c, hc, hB⟩ := hf f l hl hk
     exact ⟨c, hc, fun j hj W' u => (hB j hj W' u).trans (h j hj W' u).symm⟩
 
 /-- A dictionary view supplies a contract for a key only when that key is
 present. Looking up an arbitrary string cannot use this witness alone. -/
-theorem dictViewT_present {A : Fam} {k : Nat} {W : WorldT k}
-    {fs : List (PropKey × Nat)} (hd : dictViewT A k W (.objAt fs .absent))
-    {f : String} {l : Nat} (hl : fs.lookup (.str f) = some l) :
+theorem dictViewT_present {K : IndexKeys} {A : Fam} {k : Nat} {W : WorldT k}
+    {fs : List (PropKey × Nat)} (hd : dictViewT K A k W (.objAt fs .absent))
+    {f : PropKey} (hk : K.Admits f) {l : Nat} (hl : fs.lookup f = some l) :
     ∃ c : Ctr k, lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → A j W' u := by
   obtain ⟨fs', heq, -, hf⟩ := hd
   cases heq
-  exact hf f l hl
+  exact hf f l hl hk
 
 /-- A dictionary has no prototype, so a key it lacks reads `undefined`. -/
-theorem dictViewT_no_proto {A : Fam} {k : Nat} {W : WorldT k}
-    {fs : List (PropKey × Nat)} (hd : dictViewT A k W (.objAt fs .absent)) :
+theorem dictViewT_no_proto {K : IndexKeys} {A : Fam} {k : Nat} {W : WorldT k}
+    {fs : List (PropKey × Nat)} (hd : dictViewT K A k W (.objAt fs .absent)) :
     fs.lookup CallArguments.protoField = none := by
   obtain ⟨fs', heq, hp, -⟩ := hd
   cases heq
@@ -570,7 +752,7 @@ theorem ownKeysT_slots {K : KeyBound} {k : Nat} {W : WorldT k} {base : Nat}
 /-- Even a Boolean dictionary admits an empty object. Its missing read is
 `undefined`, which is not Boolean; the indexed-read result must include it. -/
 theorem empty_bool_dict_missing {k : Nat} {W : WorldT k} {h : Heap} {f : String} :
-    dictViewT boolT k W (.objAt [] .absent) ∧
+    dictViewT .strings boolT k W (.objAt [] .absent) ∧
     Step h (.readAt f (.objAt [] .absent)) h .undef ∧
     ¬ boolT k W .undef := by
   refine ⟨⟨[], rfl, rfl, ?_⟩, .readMissing (by simp) (by simp), ?_⟩
@@ -584,8 +766,8 @@ theorem proto_read_delegates {h : Heap} {p : Val} (hp : h[0]? = some p) :
 
 /-- An object with a prototype is no dictionary: a key it lacks is not
 `undefined` but whatever the prototype holds. -/
-theorem proto_object_not_dict {A : Fam} {k : Nat} {W : WorldT k} {l : Nat} :
-    ¬ dictViewT A k W (.objAt [(CallArguments.protoField, l)] .absent) := by
+theorem proto_object_not_dict {K : IndexKeys} {A : Fam} {k : Nat} {W : WorldT k} {l : Nat} :
+    ¬ dictViewT K A k W (.objAt [(CallArguments.protoField, l)] .absent) := by
   rintro ⟨flds, he, hp, -⟩
   cases he
   simp [List.lookup] at hp
@@ -842,36 +1024,36 @@ theorem optT_adm (fs : List (OptionalField Fam)) : Adm (optT fs) := by
     obtain ⟨c, hc, hag⟩ := hf o hm l hl
     exact ⟨c, WExt_lookup hx hc, hag⟩
 
-theorem dictViewT_adm (A : Fam) : Adm (dictViewT A) := by
+theorem dictViewT_adm (K : IndexKeys) (A : Fam) : Adm (dictViewT K A) := by
   refine ⟨?_, ?_⟩
   · intro n W v h
     obtain ⟨flds, rfl, hp, hf⟩ := h
     refine ⟨flds, rfl, hp, ?_⟩
-    intro f l hl
-    obtain ⟨c, hc, hag⟩ := hf f l hl
+    intro f l hl hk
+    obtain ⟨c, hc, hag⟩ := hf f l hl hk
     exact ⟨_, lookup_trunc (Nat.le_succ n) W l c hc,
       fun j hj W' u hu => hag j (by omega) W' u hu⟩
   · intro n W W' hx v h
     obtain ⟨flds, rfl, hp, hf⟩ := h
     refine ⟨flds, rfl, hp, ?_⟩
-    intro f l hl
-    obtain ⟨c, hc, hag⟩ := hf f l hl
+    intro f l hl hk
+    obtain ⟨c, hc, hag⟩ := hf f l hl hk
     exact ⟨c, WExt_lookup hx hc, hag⟩
 
-theorem dictCellT_adm (A : Fam) : Adm (dictCellT A) := by
+theorem dictCellT_adm (K : IndexKeys) (A : Fam) : Adm (dictCellT K A) := by
   refine ⟨?_, ?_⟩
   · intro n W v h
     obtain ⟨flds, rfl, hp, hf⟩ := h
     refine ⟨flds, rfl, hp, ?_⟩
-    intro f l hl
-    obtain ⟨c, hc, hag⟩ := hf f l hl
+    intro f l hl hk
+    obtain ⟨c, hc, hag⟩ := hf f l hl hk
     exact ⟨_, lookup_trunc (Nat.le_succ n) W l c hc,
       fun j hj W' u => hag j (by omega) W' u⟩
   · intro n W W' hx v h
     obtain ⟨flds, rfl, hp, hf⟩ := h
     refine ⟨flds, rfl, hp, ?_⟩
-    intro f l hl
-    obtain ⟨c, hc, hag⟩ := hf f l hl
+    intro f l hl hk
+    obtain ⟨c, hc, hag⟩ := hf f l hl hk
     exact ⟨c, WExt_lookup hx hc, hag⟩
 
 theorem iter_adm (F : Fam → Fam) (hF : ∀ T, Adm T → Adm (F T)) : ∀ k, Adm (iter F k)

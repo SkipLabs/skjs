@@ -52,6 +52,8 @@ export function claimOfTerm(term: TypeTerm): ClaimType {
     case "pack":
       throw new Error("a pack parameter has no claim form");
     case "object":
+      if (term.numberIndex || term.symbolIndex)
+        throw new Error("a number or symbol index signature has no claim form: it is graph rows");
       return one({ a: "record",
         fields: term.fields.map(f => {
           const read = claimOfTerm(f.type);

@@ -75,7 +75,7 @@ let rec source_type ctx j =
     | "unknown" | "void" -> top
     (* `object`, every object: an ordinary one, constraining no key, or one
        with call or construct code. *)
-    | "object" -> Atoms [Shape {fields=[];string_index=None;calls=[];elements=None};Callable;Ctors []]
+    | "object" -> Atoms [Shape {fields=[];indexes=[];calls=[];elements=None};Callable;Ctors []]
     | "never" -> Atoms [] | name -> unsupported ("atom " ^ name))
   (* The standard library's `Function`: callable or constructible, with no
      signature, as Lean lowers it. *)
@@ -136,9 +136,9 @@ let rec source_type ctx j =
           | t -> Some (ValueArgument (source_type ctx t)))})
         identities binders in
       let calls = List.map (fun f -> match source_type inner f with
-        | Atoms [Shape {fields=[];string_index=None;calls=[s];elements=None}] -> {s with quantified}
+        | Atoms [Shape {fields=[];indexes=[];calls=[s];elements=None}] -> {s with quantified}
         | _ -> unsupported "generic method signature") signatures in
-      Atoms [Shape {fields=[];string_index=None;calls;elements=None}]
+      Atoms [Shape {fields=[];indexes=[];calls;elements=None}]
     end
   | "constructor" ->
     (* A construct signature's rest, if any, is one argument list: a pack
@@ -159,7 +159,7 @@ let rec source_type ctx j =
       params=List.map recur (items "params" j);
       variadic;rest_pack;
       result=recur (field "result" j)} in
-    Atoms [Shape {fields=[];string_index=None;calls=[signature];elements=None}]
+    Atoms [Shape {fields=[];indexes=[];calls=[signature];elements=None}]
   | "self" -> (match ctx.owner with
     | _ when not ctx.self_owner -> top
     | None -> fail "a method receiver outside a declaration"
@@ -190,14 +190,18 @@ let rec source_type ctx j =
        read=t;write=(if boolean (field "readonly" f) then None else Some t);
        host=not optional && method_syntax (field "type" f)})
       (items "fields" j) in
-    let string_index = match field "stringIndex" j with
-      | Null -> None
-      | index -> let t = recur (field "value" index) in
-        Some {value=t;writable=(if boolean (field "readonly" index) then None else Some t)} in
+    (* The string index, and the number and symbol indexes a term states only
+       when it has them. *)
+    let indexes = List.filter_map (fun (name,keys) ->
+      match List.assoc_opt name (Json.obj j) with
+      | None | Some Null -> None
+      | Some index -> let t = recur (field "value" index) in
+        Some {keys;value=t;writable=(if boolean (field "readonly" index) then None else Some t)})
+      ["stringIndex",Strings;"numberIndex",Numeric;"symbolIndex",Symbols] in
     let calls = List.map (fun c -> match recur c with
-      | Atoms [Shape {fields=[];string_index=None;calls=[signature];elements=None}] -> signature
+      | Atoms [Shape {fields=[];indexes=[];calls=[signature];elements=None}] -> signature
       | _ -> unsupported "call signature") (items "calls" j) in
-    Atoms [Shape {fields;string_index;calls;elements=None}]
+    Atoms [Shape {fields;indexes;calls;elements=None}]
   | "reference" ->
     let id = identity (field "target" (field "reference" j)) in
     let args = List.map recur (items "args" j) in
@@ -236,7 +240,7 @@ let rec source_type ctx j =
        fills with its own meet. *)
     let parts = List.map recur (items "parts" j) in
     let callable = function
-      | Atoms [Shape {fields=[];string_index=None;calls;elements=None}] when calls <> [] -> Some calls
+      | Atoms [Shape {fields=[];indexes=[];calls;elements=None}] when calls <> [] -> Some calls
       | _ -> None in
     let constructible = function
       | Atoms [Ctors signatures] -> Some signatures
@@ -247,7 +251,7 @@ let rec source_type ctx j =
        Meet (rigid,List.filter (fun part -> part <> rigid) parts)
      | Some rigid,_ -> rigid
      | None,_ when List.for_all (fun part -> callable part <> None) parts ->
-       Atoms [Shape {fields=[];string_index=None;calls=List.concat (List.filter_map callable parts);elements=None}]
+       Atoms [Shape {fields=[];indexes=[];calls=List.concat (List.filter_map callable parts);elements=None}]
      (* Construct operands are one overloaded constructor, `new Date()` and
         `new Date(v)`, as call operands are one overloaded callable. *)
      | None,_::_ when List.for_all (fun part -> constructible part <> None) parts ->
@@ -656,9 +660,9 @@ let decode ast =
     | [parameter],[None],[],(Rigid identity as body) when identity=parameter ->
       Some (d.id,(parameter,body))
     | [parameter],[None],[],(Atoms [Shape shape] as body) ->
-      (match shape.fields,shape.string_index,shape.calls,shape.elements with
+      (match shape.fields,shape.indexes,shape.calls,shape.elements with
       | [{name=Name "value";optional=false;read=Rigid identity;
-          write=Some (Rigid written);host=false}],None,[],None
+          write=Some (Rigid written);host=false}],[],[],None
           when identity=parameter && written=parameter ->
         Some (d.id,(parameter,body))
       | _ -> None)

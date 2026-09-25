@@ -148,8 +148,8 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
         if writable then some (name, A) else none
       let views := fields.filterMap fun (name, A, writable) =>
         if writable then none else some (name, A)
-      return [← SourceTypes.use (.dict invariant [] views [element] [] [] []
-        (if writable then [element] else []))]
+      return [← SourceTypes.use (.dict invariant [] views [(.strings, element)] [] [] []
+        (if writable then [(.strings, element)] else []))]
     else if (← jStr (← jField atom "a")) == "record" && hasOptional atom then
       return [← optionalRecord atom]
     else if (← jStr (← jField atom "a")) == "record" then

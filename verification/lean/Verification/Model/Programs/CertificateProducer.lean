@@ -641,17 +641,23 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           coerce G pool (.node ⟨Γ,t,R⟩ .alloc ps) A
         | _ => none
     | .indexAt a key =>
+      -- A key of a class within an index's reads through it: a string
+      -- through a string index, a number through a number or string index, a
+      -- symbol through a symbol index.
       return (A :: pool).findSome? fun R => do
-        let [.dict _ [] _ (E :: _) _ _ _ _] := expand G R | none
-        (A :: pool).findSome? fun K => do
-          if expand G K != [.str] then none else do
-          (A :: pool).findSome? fun U => do
-            if expand G U != [.undef] then none else do
-            let B := E ++ U
-            let _ ← subtype G pool B A
-            let ea ← recur Γ a R
-            let ek ← recur Γ key K
-            coerce G pool (.node ⟨Γ,t,B⟩ (.indexDict E U) [ea, ek]) A
+        let [.dict _ [] _ ix _ _ _ _] := expand G R | none
+        ix.findSome? fun (Kx, E) =>
+        [IndexKeys.strings, .numeric, .symbols].findSome? fun KK => do
+          if !KK.within Kx then none else do
+          (A :: pool).findSome? fun K => do
+            if expand G K != [keyClause KK] then none else do
+            (A :: pool).findSome? fun U => do
+              if expand G U != [.undef] then none else do
+              let B := E ++ U
+              let _ ← subtype G pool B A
+              let ea ← recur Γ a R
+              let ek ← recur Γ key K
+              coerce G pool (.node ⟨Γ,t,B⟩ (.indexDict Kx KK E U) [ea, ek]) A
     | .readAt f a =>
       let direct := pool.findSome? fun R => do
         -- An invariant field reads at its contract; a view field at its bound;
@@ -671,10 +677,11 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           | [.callable fs _ _ _] => (fs.lookup f).map (·,Rule.readCallable)
           -- A dictionary's named field or view, else its index, which may miss.
           -- The index holds of every present field, an optional one included.
-          | [.dict fs [] vs (B :: _) _ _ _ _] =>
+          | [.dict fs [] vs ix _ _ _ _] =>
             (fs.lookup f).map (·,Rule.read) <|> (vs.lookup f).map (·,Rule.readView) <|>
-            pool.findSome? fun U =>
-              if expand G U == [.undef] then some (B ++ U, Rule.readDict B U) else none
+            (numericFirst ix).findSome? fun (K, B) => if !K.surely f then none else
+              pool.findSome? fun U =>
+                if expand G U == [.undef] then some (B ++ U, Rule.readDict K B U) else none
           | _ => none
         let _ ← subtype G pool B A
         let ea ← recur Γ a R

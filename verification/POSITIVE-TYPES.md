@@ -52,7 +52,7 @@ The clauses, with what each denotes:
 | `bigint`, `bigintLit i` | any bigint; exactly the bigint $i\in\mathbb Z$ |
 | `symbol` | any symbol (an opaque identity) |
 | `refs` | a plain object under record contracts, readonly views, optional fields and methods ([Records](#records)) |
-| `dict` | a `refs` object whose present string keys also meet readonly and writable index contracts |
+| `dict` | a `refs` object whose present keys of each index's class (every string key, the canonical numeric ones, or every symbol key) also meet readonly and writable index contracts |
 | `list` | an array under one or more tuple contracts ([Arrays](#arrays)) |
 | `arrs` | a function meeting fixed and variadic call signatures ([Functions and classes](#functions-and-classes)) |
 | `callable` | a function that is also an object with record contracts |
@@ -175,30 +175,56 @@ $$
   ([DESIGN.md](DESIGN.md#the-array-prototype)). Keys are fixed at allocation,
   so a bound holds in every world.
 
-A `dict` clause adds readonly **index contracts** $\overline{D}$: the object
-has no prototype, and every present field under a string key, named or not,
-has a contract implying each $D$. The object may lack a key, so an arbitrary
-indexed read has type $D\mid\mathsf{undefined}$. It also adds **writable
-index contracts** $\overline{C}$, a mutable index signature's: every present
-string-keyed field's contract agrees with each $C$, as an invariant field's
-does. A writable index is also listed among the readonly ones, which is what
-reads use. With $\mathit{flds}(\mathsf{proto})=\varnothing$ in both,
+A `dict` clause adds readonly **index contracts** $\overline{\theta{:}D}$,
+each over a **key class** $\theta$ (`IndexKeys`): every string key
+($\mathsf{strings}$, `[k: string]`), the canonical numeric keys
+($\mathsf{numeric}$, `[k: number]`), or every symbol key ($\mathsf{symbols}$,
+`[k: symbol]`). A canonical numeric key is a string some number's `ToString`
+spells, the keys `o[n]` reaches for a number $n$
+([DESIGN](DESIGN.md#index-signatures)):
+
+$$
+\mathsf{str}(s)\in\mathsf{strings},\qquad
+\mathsf{str}(s)\in\mathsf{numeric}\iff\exists x.\;\mathsf{ToString}(x)=s,\qquad
+\mathsf{sym}(i)\in\mathsf{symbols},
+$$
+
+and nothing else: the string and symbol keys are disjoint. The object has no
+prototype, and every present field under a key of $\theta$, named or not, has a
+contract implying $D$. The object may lack a key, so an arbitrary indexed read
+has type $D\mid\mathsf{undefined}$. It also adds **writable index contracts**
+$\overline{\theta{:}C}$, a mutable index signature's: every present field
+under a key of $\theta$ has a contract agreeing with $C$, as an invariant
+field's does. A writable index is also listed among the readonly ones, which
+is what reads use. An index over a union of key types is one per member. With
+$\mathit{flds}(\mathsf{proto})=\varnothing$ in both,
 
 $$
 \begin{aligned}
-\mathsf{dictView}(D)_n(W,v)&\iff v=\ell\land\forall s,l.\;\mathit{flds}(\mathsf{str}(s))=l\Rightarrow
+\mathsf{dictView}(\theta,D)_n(W,v)&\iff v=\ell\land\forall k,l.\;\mathit{flds}(k)=l\land k\in\theta\Rightarrow
   \exists c.\;W(l)=c\land c_j\subseteq D_j,\\
-\mathsf{dictCell}(C)_n(W,v)&\iff v=\ell\land\forall s,l.\;\mathit{flds}(\mathsf{str}(s))=l\Rightarrow
+\mathsf{dictCell}(\theta,C)_n(W,v)&\iff v=\ell\land\forall k,l.\;\mathit{flds}(k)=l\land k\in\theta\Rightarrow
   \exists c.\;W(l)=c\land c_j\equiv C_j.
 \end{aligned}
 $$
+
+A class is **within** another when it is it or is $\mathsf{numeric}$ within
+$\mathsf{strings}$ (`IndexKeys.within`): then every key of the one is a key
+of the other, and a view or writable contract over the larger class is one
+over the smaller (`dictViewT_within`, `dictCellT_within`). Two classes
+**overlap** when one is within the other. Deciding a key's class uses two
+checked approximations of $\mathsf{numeric}$: a key *surely* in it is spelled
+by a number found for it (`numericKey?`), and a key *may* be in it unless no
+number spells it (`notNumericKey`, sound by `numberToString_shape`: every
+number's spelling is `NaN`, an infinity, or begins with a digit or with `-`
+and a digit).
 
 The calculus adds no key to an existing object; that TypeScript lets code
 holding a mutable dictionary add keys at $C$ is a trust assumption
 ([DESIGN.md](DESIGN.md#writable-string-index-signatures)). Index contracts are guarded through the world, so a
 recursive graph can contain `JsonObject = { readonly [key: string]: Json | null }`.
 
-Lean: `refsT`, `viewT`, `OptionalField`, `optT`, `SlotContract`, `dictViewT`, `dictCellT`, `KeyBound`, `ownKeysT` (`Types/Types.lean`), `methodT`,
+Lean: `refsT`, `viewT`, `OptionalField`, `optT`, `SlotContract`, `NumericKey`, `IndexKeys`, `dictViewT`, `dictCellT`, `KeyBound`, `ownKeysT` (`Types/Types.lean`), `methodT`,
 `memberT`, `holdsAt`, `onHost` (`Types/MethodMembers.lean`). The heap facts behind invariant
 operands (`adm`, `congr_below`, `operands_agree`, `read_all`, `write_first`,
 `cyclic_inhabited`) are in `Types/ReferenceConjunctions.lean`: a read meets
@@ -546,15 +572,23 @@ $$
 
 So a fresh array object, own keys among its store and prototype, is an array,
 own keys outside `ArrayProto`'s; and an array type is covered by another with
-the same exclusion. A `dict` target also needs each readonly index contract within some source one, and each writable index contract equivalent to a writable source one, so a mutable dictionary is invariant and a readonly one is never mutable:
+the same exclusion. A `dict` target also needs each readonly index contract within some source one over as many keys ($\theta'\sqsubseteq\theta$: `IndexKeys.within`), and each writable index contract equivalent to a writable source one over as many keys, so a mutable dictionary is invariant and a readonly one is never mutable. Code holding a writable index may add keys of its class at its contract (the trust boundary, [DESIGN](DESIGN.md#writable-string-index-signatures)), so a writable target's contract must also be within every source index and optional field over a key of its class ($\theta\between\theta'$: the classes overlap; $\theta'\ni_?\kappa$: the class may admit the key):
 
 $$
-\frac{\Delta;S\vdash\mathsf{Ref}(\Phi;\psi;\omega;\mu;\beta)\sqsubseteq\mathsf{Ref}(\varphi';\psi';\omega';\mu';\beta')\quad
-      \forall D'\in\overline{D'}.\;\exists D\in\overline{D}.\;\Delta(D,D')\quad
-      \forall C'\in\overline{C'}.\;\exists C\in\overline{C}.\;\Delta^{\pm}(C,C')}
+\frac{\begin{array}{c}
+\Delta;S\vdash\mathsf{Ref}(\Phi;\psi;\omega;\mu;\beta)\sqsubseteq\mathsf{Ref}(\varphi';\psi';\omega';\mu';\beta')\qquad
+      \forall(\theta'{:}D')\in\overline{D'}.\;\exists(\theta{:}D)\in\overline{D}.\;\theta'\sqsubseteq\theta\land\Delta(D,D')\\
+      \forall(\theta'{:}C')\in\overline{C'}.\;\bigl(\exists(\theta{:}C)\in\overline{C}.\;\theta'\sqsubseteq\theta\land\Delta^{\pm}(C,C')\bigr)\land
+      \bigl(\forall(\theta{:}D)\in\overline{D}.\;\theta\between\theta'\Rightarrow\Delta(C',D)\bigr)\land
+      \bigl(\forall(\kappa{:}^{r}A)\in\omega.\;\theta'\ni_?\kappa\Rightarrow\Delta(C',A)\bigr)
+\end{array}}
      {\Delta;S\vdash\mathsf{Dict}(\Phi;\psi;\overline{D};\overline{C};\omega;\mu;\beta)\sqsubseteq
       \mathsf{Dict}(\varphi';\psi';\overline{D'};\overline{C'};\omega';\mu';\beta')}
 $$
+
+So `{ [k: string]: number }` is `{ [k: number]: number }`, mutable as it is,
+while a mutable `{ [k: string]: S; [k: number]: N }` is not a mutable
+`{ [k: string]: S }` unless $S\subseteq N$.
 
 A dictionary is covered by a record whose members its own cover, as a
 record's are; the record states no index, so the dictionary's index contracts
@@ -569,18 +603,20 @@ $$
 
 A record covers a `dict` through an own-key bound (`CoversKeys`): its own keys
 are among some $\mathsf{among}\,K\in\beta$, where $K$ lists no prototype key, so the object has no
-prototype; and every key of $K$ is a source field or view within each target
-index view, and an invariant field equivalent to each writable index. No other
+prototype; and every key of $K$ that a target index's class may admit
+($\theta'\ni_?\kappa$, `IndexKeys.may`) is a source field or view within that
+index view, and an invariant field equivalent to that writable index. No other
 key exists, so this is what a fresh literal, whose own keys are exactly its
-fields, needs to be a dictionary. The named members are compared as a
+fields, needs to be a dictionary; a key no number spells, such as `name`, is
+not held to a number index. The named members are compared as a
 record's:
 
 $$
 \frac{\begin{array}{c}
 \Delta;S\vdash\mathsf{Ref}(\Phi;\psi;\omega;\mu;\beta)\sqsubseteq\mathsf{Ref}(\varphi';\psi';\omega';\mu';\beta')\qquad
 \mathsf{among}\,K\in\beta\qquad\mathsf{proto}\notin K\\
-\forall\kappa\in K.\;\bigl(\forall D'\in\overline{D'}.\;\exists(\kappa{:}A)\in\Phi\,\psi.\;\Delta(A,D')\bigr)\land
-\bigl(\forall C'\in\overline{C'}.\;\exists(\kappa{:}A)\in\Phi.\;\Delta^{\pm}(A,C')\bigr)
+\forall\kappa\in K.\;\bigl(\forall(\theta'{:}D')\in\overline{D'}.\;\theta'\ni_?\kappa\Rightarrow\exists(\kappa{:}A)\in\Phi\,\psi.\;\Delta(A,D')\bigr)\land
+\bigl(\forall(\theta'{:}C')\in\overline{C'}.\;\theta'\ni_?\kappa\Rightarrow\exists(\kappa{:}A)\in\Phi.\;\Delta^{\pm}(A,C')\bigr)
 \end{array}}
 {\Delta;S\vdash\mathsf{Ref}(\Phi;\psi;\omega;\mu;\beta)\sqsubseteq
       \mathsf{Dict}(\varphi';\psi';\overline{D'};\overline{C'};\omega';\mu';\beta')}

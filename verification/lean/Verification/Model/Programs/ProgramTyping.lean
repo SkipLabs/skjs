@@ -29,6 +29,16 @@ theorem represents_sem {G : NormalGraph ι} {A c} (hr : Represents G A c) (n W v
   rw [expand_sem G A hr.plain, show expand G A = [c] from hr]
   simp [semList, setSem]
 
+/-- A value of a class's key clause is a key the class admits, by the
+`ToPropertyKey` a computed key's step applies. -/
+theorem keyClause_admits {G : NormalGraph ι} {K : IndexKeys} {n W v}
+    (h : clauseSem G (keyClause K) n W v) :
+    ∃ f, propertyKey v = some f ∧ K.Admits f := by
+  cases K
+  · obtain ⟨s, rfl⟩ := h; exact ⟨_, rfl, trivial⟩
+  · obtain ⟨b, rfl⟩ := h; exact ⟨_, rfl, numeric_admits_number b⟩
+  · obtain ⟨i, rfl⟩ := h; exact ⟨_, rfl, trivial⟩
+
 theorem meaning_adm (G : NormalGraph ι) (A : Ty ι) : Adm (meaning G A) :=
   setSem_adm (normalDenote_adm G) A
 
@@ -1462,14 +1472,20 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → ⟨f, r, A⟩ ∈ os →
       Represents G U .undef → HasTy G Γ (.readAt f a) (A ++ U)
   /-- A dictionary read may miss even when every present value has type `A`.
-  A string index signature says nothing of a symbol-keyed field, so only a
-  string key is read through one. -/
-  | readDict {f : String} : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix os ms ks cs) →
-      A ∈ ix → Represents G U .undef →
-      HasTy G Γ (.readAt (.str f) a) (A ++ U)
-  | indexDict : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix os ms ks cs) →
-      HasTy G Γ key K → Represents G K .str →
-      A ∈ ix → Represents G U .undef →
+  An index says nothing of a key its class does not admit, so a key is read
+  through one only where its class surely admits it: any string key through
+  a string index, a canonical numeric one ("0", "1.5") through a number
+  index, a symbol key through a symbol index. -/
+  | readDict {f : PropKey} {K : IndexKeys} : HasTy G Γ a Ref →
+      Represents G Ref (.dict fs [] vs ix os ms ks cs) →
+      (K, A) ∈ ix → K.surely f = true → Represents G U .undef →
+      HasTy G Γ (.readAt f a) (A ++ U)
+  /-- A computed key of the key clause of a class within the index's reads
+  through it: a string through a string index, a number through a number
+  index or a string one, a symbol through a symbol index. -/
+  | indexDict {K KK : IndexKeys} : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix os ms ks cs) →
+      HasTy G Γ key Kt → Represents G Kt (keyClause KK) → KK.within K = true →
+      (K, A) ∈ ix → Represents G U .undef →
       HasTy G Γ (.indexAt a key) (A ++ U)
   | write : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → (f, A) ∈ fs →
       HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
@@ -1945,16 +1961,16 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
           obtain ⟨c, hc, hag⟩ := optT_present (List.mem_map_of_mem hm) hs.2.2.1 hl
           exact ⟨c, hc, fun i hi U u hu => (hag i hi U u).1 hu⟩))
 
-  | @readDict Γ a Ref fs vs ix os ms ks cs A U f ha hr hm hUnd ih =>
+  | @readDict Γ a Ref fs vs ix os ms ks cs A U f K ha hr hm hsure hUnd ih =>
     intro n W h ρ he hw hh
-    apply bind (Tm.readAt (.str f)) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj V hx hv heap v hok hval ha'
-    have hd := ((represents_sem hr j V v).mp ha').2.2.1.1 A hm
+    have hd := ((represents_sem hr j V v).mp ha').2.2.1.1 (K, A) hm
     obtain ⟨flds, rfl, _⟩ := ((represents_sem hr j V v).mp ha').1.1
     apply Safe_mono j (fun k _ X u hu => (meaning_append G A U k X u).mpr
       (hu.elim Or.inl (fun h => Or.inr ((represents_sem hUnd k X u).mpr h)))) V heap _
-      (read_dict_rule (meaning_valOnly G A) j V heap hv hok hd)
-  | @indexDict Γ a Ref fs vs ix os ms ks cs key K A U ha hr hk hStr hm hUnd iha ihk =>
+      (read_dict_rule (meaning_valOnly G A) j V heap hv hok (IndexKeys.surely_admits hsure) hd)
+  | @indexDict Γ a Ref fs vs ix os ms ks cs key Kt A U K KK ha hr hk hStr hwithin hm hUnd iha ihk =>
     intro n W h ρ he hw hh
     apply bind (fun v => .indexAt v (instantiate 0 ρ key)) Step.indexC1 Raises.indexC1 n W h _ hw hh
       (iha n W h ρ he hw hh)
@@ -1964,12 +1980,12 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     intro k hk X hy hX heap' kv hok' hkv hk'
     have ha'' := (meaning_adm G Ref).mono k _ X hy av
       ((meaning_adm G Ref).down_le j k hk V av ha')
-    obtain ⟨s, rfl⟩ := (represents_sem hStr k X kv).mp hk'
-    have hd := ((represents_sem hr k X av).mp ha'').2.2.1.1 A hm
+    obtain ⟨f, hkey, hadmits⟩ := keyClause_admits ((represents_sem hStr k X kv).mp hk')
+    have hd := dictViewT_within hwithin (((represents_sem hr k X av).mp ha'').2.2.1.1 (K, A) hm)
     obtain ⟨flds, rfl, _⟩ := ((represents_sem hr k X av).mp ha'').1.1
     apply Safe_mono k (fun i _ Y u hu => (meaning_append G A U i Y u).mpr
       (hu.elim Or.inl (fun h => Or.inr ((represents_sem hUnd i Y u).mpr h)))) X heap' _
-      (index_dict_rule (meaning_valOnly G A) k X heap' hX hok' hd)
+      (index_dict_rule (meaning_valOnly G A) k X heap' hX hok' hkey hadmits hd)
   | @arrLit Γ L T xs hr hreq hbound hpos hx ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]

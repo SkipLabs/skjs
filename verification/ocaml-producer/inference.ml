@@ -53,9 +53,9 @@ and substitute_shape ?meet solution shape = {
   fields=List.map (fun field -> {field with
     read=substitute ?meet solution field.read;
     write=Option.map (substitute ?meet solution) field.write}) shape.fields;
-  string_index=Option.map (fun (index:Semantic.index_signature) -> {
+  indexes=List.map (fun (index:Semantic.index_signature) -> {index with
     value=substitute ?meet solution index.value;
-    writable=Option.map (substitute ?meet solution) index.writable}) shape.string_index;
+    writable=Option.map (substitute ?meet solution) index.writable}) shape.indexes;
   calls=List.map (substitute_signature ?meet solution) shape.calls;
   elements=Option.map (substitute_sequence ?meet solution) shape.elements;
 }
@@ -158,8 +158,8 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
       List.iter (fun (f:field) -> match List.find_opt (fun (g:field) -> g.name=f.name) a.fields with
         | Some g -> constrain g.read f.read
         | None -> ()) e.fields
-      | Atoms [Shape {calls=(_::_ as calls);fields=[];string_index=None;elements=None}],
-      Atoms [Shape {calls=[e];fields=[];string_index=None;elements=None}]
+      | Atoms [Shape {calls=(_::_ as calls);fields=[];indexes=[];elements=None}],
+      Atoms [Shape {calls=[e];fields=[];indexes=[];elements=None}]
         when e.quantified=[] && List.exists (fun (a:signature) -> a.quantified=[]
           && List.length a.params<=List.length e.params) calls ->
       (* A callback may take fewer parameters than it is offered: the
@@ -172,8 +172,8 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
       constrain a.result e.result
       (* An array's elements: a readonly target reads them, so covariantly; a
          writable one also takes writes, so both ways. *)
-      | Atoms [Shape {elements=Some l;fields=[];calls=[];string_index=None}],
-      Atoms [Shape {elements=Some r;fields=[];calls=[];string_index=None}]
+      | Atoms [Shape {elements=Some l;fields=[];calls=[];indexes=[]}],
+      Atoms [Shape {elements=Some r;fields=[];calls=[];indexes=[]}]
         when List.length l.required=List.length r.required
           && List.length l.optional_elements=List.length r.optional_elements ->
       let pair x y = constrain x y; if not r.readonly then constrain y x in

@@ -125,7 +125,7 @@ let encode (proposal : Proposal.t) =
         | [] -> []
         | fs -> ["methods",Array (List.map (fun (f:Semantic.field) ->
             let signatures = match f.read with
-              | Atoms [Shape {fields=[];string_index=None;calls=(_::_ as calls);elements=None}] -> calls
+              | Atoms [Shape {fields=[];indexes=[];calls=(_::_ as calls);elements=None}] -> calls
               | _ -> unsupported "a method is one or more signatures" in
             List.iter (fun (s:Semantic.signature) ->
               if s.quantified <> [] then unsupported "quantified method claim encoding") signatures;
@@ -175,7 +175,7 @@ let encode (proposal : Proposal.t) =
       let calls = ("arrows",arrows) :: (if variadic = [] then [] else ["variadic",Array variadic]) in
       match shape.elements with
       | Some sequence ->
-        if shape.fields <> [] || shape.calls <> [] || shape.string_index <> None
+        if shape.fields <> [] || shape.calls <> [] || shape.indexes <> []
         then unsupported "array with additional fields, indexes or calls";
         (* The store's contract is the producer's; the array holding it, with
            its prototype, is a row Lean fills with the one array shape. *)
@@ -192,19 +192,23 @@ let encode (proposal : Proposal.t) =
            arrays := !arrays @ [((store,sequence.readonly),label)];
            [label])
       | None ->
-        let clause = match shape.fields,shape.string_index,shape.calls with
-        | _,Some index,[] ->
-          (* A mutable index is also a writable one, at its one contract. *)
-          let cells = match index.writable with
-            | None -> []
-            | Some w when w = index.value -> ["cells",Array [labels index.value]]
-            | Some _ -> unsupported "asymmetric string index signature" in
+        let clause = match shape.fields,shape.indexes,shape.calls with
+        | _,(_::_ as indexes),[] ->
+          (* Each index is over the keys its class admits; a mutable one is
+             also a writable one, at its one contract. *)
+          let entry (index:Semantic.index_signature) = Array [String (match index.keys with
+            | Strings -> "strings" | Numeric -> "numeric" | Symbols -> "symbols");labels index.value] in
+          let cells = List.filter_map (fun (index:Semantic.index_signature) -> match index.writable with
+            | None -> None
+            | Some w when w = index.value -> Some (entry index)
+            | Some _ -> unsupported "asymmetric index signature") indexes in
           Object ["dict",Object (["first",fields;"rest",Array [];"views",views;
-            "indexes",Array [labels index.value]] @ optional_list @ methods @ cells)]
-        | _,Some _,_ -> unsupported "callable with string index needs a combined clause"
-        | _,None,[] -> Object ["refs",Object (["first",fields;"rest",Array [];"views",views] @ optional_list @ methods)]
+            "indexes",Array (List.map entry indexes)] @ optional_list @ methods
+            @ (if cells = [] then [] else ["cells",Array cells]))]
+        | _,_::_,_ -> unsupported "callable with an index signature needs a combined clause"
+        | _,[],[] -> Object ["refs",Object (["first",fields;"rest",Array [];"views",views] @ optional_list @ methods)]
         | _ when methods <> [] -> unsupported "a callable object with methods needs a combined clause"
-        | [],None,_ -> Object ["arrs",Object calls]
+        | [],[],_ -> Object ["arrs",Object calls]
         | _,_,_ ->
           if optional <> [] then unsupported "callable with optional fields";
           if reads <> [] then unsupported "callable with readonly fields";
@@ -257,8 +261,8 @@ let encode (proposal : Proposal.t) =
         | Shape s ->
           List.exists (fun (f:Semantic.field) -> contains_symbolic f.read
             || Option.fold ~none:false ~some:contains_symbolic f.write) s.fields
-          || Option.fold ~none:false ~some:(fun (i:Semantic.index_signature) ->
-              contains_symbolic i.value || Option.fold ~none:false ~some:contains_symbolic i.writable) s.string_index
+          || List.exists (fun (i:Semantic.index_signature) ->
+              contains_symbolic i.value || Option.fold ~none:false ~some:contains_symbolic i.writable) s.indexes
           || List.exists signature_contains_symbolic s.calls
           || Option.fold ~none:false ~some:sequence_contains_symbolic s.elements
         | Exact fs -> List.exists (fun (f:Semantic.field) -> contains_symbolic f.read) fs
@@ -293,7 +297,7 @@ let encode (proposal : Proposal.t) =
             @ Option.fold ~none:[] ~some:named_in f.write) s.fields
           @ List.concat_map (fun (c:Semantic.signature) ->
               List.concat_map named_in (c.receiver :: c.result :: c.params @ Option.to_list c.variadic)) s.calls
-          @ Option.fold ~none:[] ~some:(fun (i:Semantic.index_signature) -> named_in i.value) s.string_index
+          @ List.concat_map (fun (i:Semantic.index_signature) -> named_in i.value) s.indexes
           @ Option.fold ~none:[] ~some:(fun (q:Semantic.sequence) ->
               List.concat_map named_in (q.required @ q.optional_elements @ Option.to_list q.rest)) s.elements
         | Exact fs -> List.concat_map (fun (f:Semantic.field) -> named_in f.read) fs
@@ -324,7 +328,7 @@ let encode (proposal : Proposal.t) =
   in
   let rec claim_type t = match expand_rigid t with
     | Rigid n -> Object ["param",String n.spelling]
-    | Atoms [Shape {fields=[];string_index=None;calls=[signature];elements=None}]
+    | Atoms [Shape {fields=[];indexes=[];calls=[signature];elements=None}]
         when signature.quantified <> [] || List.exists contains_symbolic
           (signature.receiver :: signature.result :: signature.params @ Option.to_list signature.variadic) ->
       if signature.rest_pack <> None then unsupported "a pack parameter in a scheme claim";
@@ -338,7 +342,7 @@ let encode (proposal : Proposal.t) =
         "params",Array (List.map claim_type signature.params);
         "rest",(match signature.variadic with None -> Null | Some t -> claim_type t);
         "result",claim_type signature.result]]
-    | Atoms [Shape {fields=[];string_index=None;calls=[];elements=Some
+    | Atoms [Shape {fields=[];indexes=[];calls=[];elements=Some
         {required=[];optional_elements=[];rest=Some element;readonly=false}}]
         when contains_symbolic element -> Object ["array",claim_type element]
     | Atoms (_::_::_ as atoms) when contains_symbolic (Atoms atoms) ->

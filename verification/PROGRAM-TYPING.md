@@ -451,20 +451,32 @@ conjunction of record contracts to such a view can be justified by subsumption;
 no direct multi-contract program rule is assumed, so a field supplied only by a
 second operand of an intersection needs such a view before these rules apply.
 
-A readonly string dictionary constrains every **present** string-keyed field at
-its element contract $A$; it says nothing of a symbol-keyed one. A computed index first evaluates the receiver, then its key.
-Because that key can be absent, the proved `indexDict` rule includes
-`undefined` in the result:
+An index view over a key class $\theta$ constrains every **present** field
+under a key of $\theta$ at its element contract $A$ (every string key, the
+canonical numeric ones, or every symbol key: [POSITIVE-TYPES](POSITIVE-TYPES.md#records));
+it says nothing of any other. A computed index first evaluates the receiver,
+then its key, which `ToPropertyKey` converts: a string is its key, a symbol
+its identity, a number the key its `ToString` spells. The key's type is the
+key clause of a class $\theta_k$ within the index's
+($\mathsf{key}(\mathsf{strings})=\mathsf{String}$,
+$\mathsf{key}(\mathsf{numeric})=\mathsf{Number}$,
+$\mathsf{key}(\mathsf{symbols})=\mathsf{Symbol}$; $\theta_k\sqsubseteq\theta$),
+so a number reads a number index or a string one. Because that key can be
+absent, the proved `indexDict` rule includes `undefined` in the result:
 
 $$
-\frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Dict}(A)\quad
-      \Gamma\vdash_G k:K\quad K\equiv_G\mathsf{String}\quad
+\frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Dict}(\theta{:}A)\quad
+      \Gamma\vdash_G k:K\quad K\equiv_G\mathsf{key}(\theta_k)\quad\theta_k\sqsubseteq\theta\quad
       U\equiv_G\mathsf{Undefined}}
      {\Gamma\vdash_G a[k]:A\cup U}
 $$
 
-The separate `readDict` rule covers a fixed string field name with the same
-result contract; a symbol key is never read through a dictionary. The `readOptional` rule reads an optional
+The separate `readDict` rule covers a fixed key $\kappa$ with the same result
+contract, through an index whose class surely admits it ($\theta\ni_!\kappa$,
+`IndexKeys.surely`: any string key for $\mathsf{strings}$, a key a number
+spells for $\mathsf{numeric}$, checked by that number, a symbol key for
+$\mathsf{symbols}$); a symbol key is never read through a string index, nor
+`"01"` through a number index. The `readOptional` rule reads an optional
 field of a record, writable or readonly, at its type or `undefined`: where the
 object has the key, its location's contract is that type, or implies it for a
 readonly field (`optT`), and where it does not, the read is `undefined`
@@ -482,9 +494,9 @@ $$
 $$
 
 $$
-\frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Dict}(\varphi;\psi;\overline{D};\omega)\quad A\in\overline{D}
-      \quad U\equiv_G\mathsf{Undefined}}
-     {\Gamma\vdash_G a.\mathsf{str}(s):A\cup U}
+\frac{\Gamma\vdash_G a:R\quad R\equiv_G\mathsf{Dict}(\varphi;\psi;\overline{D};\omega)\quad (\theta{:}A)\in\overline{D}
+      \quad\theta\ni_!\kappa\quad U\equiv_G\mathsf{Undefined}}
+     {\Gamma\vdash_G a.\kappa:A\cup U}
 $$
 
 A key one of the record's own-key bounds $b$ does not admit is not the

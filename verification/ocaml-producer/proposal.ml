@@ -48,10 +48,10 @@ let definition declarations id args =
       (* A base that holds every record, `{}` or `object`, adds nothing to
          the interface's own record: their meet is that record. *)
       | Atoms atoms,Atoms [Shape _] when List.mem Top atoms ||
-          List.mem (Shape {fields=[];string_index=None;calls=[];elements=None}) atoms -> own
+          List.mem (Shape {fields=[];indexes=[];calls=[];elements=None}) atoms -> own
       | Atoms [Shape inherited],Atoms [Shape local]
         when inherited.calls=[] && local.calls=[] && inherited.elements=None && local.elements=None
-             && (inherited.string_index=None || local.string_index=None) ->
+             && (inherited.indexes=[] || local.indexes=[]) ->
         unsupported "overlapping inherited fields need compatibility checking"
       | _ -> unsupported "inheritance needs plain object contracts") in
   let rec instantiate seen id args =
@@ -132,6 +132,35 @@ let primitive_prototype = function
    and Lean reads the binder as the meet of its row and the bound. *)
 let rigid_bounds : (Semantic.rigid * ty) list ref = ref []
 let rigid_bound r = List.assoc_opt r !rigid_bounds
+(* The property key a number spells (`ToString`), for integers below 1e21
+   and decimals `%g` writes as JavaScript does; none otherwise. *)
+let number_key bits =
+  let n = Int64.float_of_bits bits in
+  if Float.is_integer n && Float.abs n < 1e21 then Some (Printf.sprintf "%.0f" (Float.abs n) |> fun s ->
+    if n < 0. then "-" ^ s else s)
+  else if Float.is_finite n then
+    let rec shortest p = if p > 17 then None else
+      let s = Printf.sprintf "%.*g" p n in
+      if float_of_string s = n then (if String.contains s 'e' then None else Some s) else shortest (p+1) in
+    shortest 1
+  else None
+(* Whether a key is canonical numeric: the spelling of the number it reads
+   as, which is the key `o[n]` reaches for that number. *)
+let canonical_numeric s =
+  s = "NaN" || s = "Infinity" || s = "-Infinity" ||
+  (match float_of_string_opt s with
+   | Some n -> number_key (Int64.bits_of_float n) = Some s
+   | None -> false)
+(* The index of a shape whose class surely admits a key: the canonical
+   numeric keys' first, which is the narrowest, then every string key's; a
+   symbol key's. *)
+let index_for (shape:shape) name =
+  let find keys = List.find_opt (fun (i:Semantic.index_signature) -> i.keys=keys) shape.indexes in
+  match name with
+  | Name s ->
+    (match (if canonical_numeric s then find Numeric else None) with
+     | Some i -> Some i | None -> find Strings)
+  | Key _ -> find Symbols
 let rec field_type declarations seen t name = match t with
   | Atoms atoms -> combine (List.map (function
       | Shape {elements=Some _;_} when name=Name "length" -> Atoms [Num]
@@ -140,9 +169,9 @@ let rec field_type declarations seen t name = match t with
         field_type declarations seen (Atoms [Named (array_prototype,[])]) name
       | Shape shape -> (match List.find_opt (fun (f:Semantic.field) -> f.name=name) shape.fields with
           | Some f -> if f.optional then union f.read (Atoms [Undef]) else f.read
-          | None -> (match shape.string_index,name with
-            | Some index,Name _ -> union index.value (Atoms [Undef])
-            | _ -> unsupported ("missing field " ^ key_text name)))
+          | None -> (match index_for shape name with
+            | Some index -> union index.value (Atoms [Undef])
+            | None -> unsupported ("missing field " ^ key_text name)))
       | Exact fields -> (match List.find_opt (fun (f:Semantic.field) -> f.name=name) fields with
           | Some f -> f.read
           | None -> unsupported ("missing field " ^ key_text name))
@@ -196,18 +225,6 @@ let iterated_hint declarations expected =
       | _ -> member (Name "value") r) (parts [] results) with
   | [] -> None
   | values -> Some (combine values)
-(* The property key a number spells (`ToString`), for integers below 1e21
-   and decimals `%g` writes as JavaScript does; none otherwise. *)
-let number_key bits =
-  let n = Int64.float_of_bits bits in
-  if Float.is_integer n && Float.abs n < 1e21 then Some (Printf.sprintf "%.0f" (Float.abs n) |> fun s ->
-    if n < 0. then "-" ^ s else s)
-  else if Float.is_finite n then
-    let rec shortest p = if p > 17 then None else
-      let s = Printf.sprintf "%.*g" p n in
-      if float_of_string s = n then (if String.contains s 'e' then None else Some s) else shortest (p+1) in
-    shortest 1
-  else None
 let rec index_type declarations seen receiver key = match receiver with
   | Atoms atoms -> combine (List.map (function
       | Shape {elements=Some sequence;_} ->
@@ -229,9 +246,16 @@ let rec index_type declarations seen receiver key = match receiver with
               || (match a with NumLit b -> Int64.float_of_bits b = Int64.float_of_bits bits | _ -> false)) rest
               && Option.is_some (number_key bits) ->
             field_type declarations seen (Atoms [Shape shape]) (Name (Option.get (number_key bits)))
-          | Atoms [Str] -> (match shape.string_index with
+          (* A dynamic key reads through an index over its keys: a string
+             through a string index, a number through a number index or a
+             string one, a symbol through a symbol index. *)
+          | Atoms [(Str | Num | Symbol) as k] ->
+            let within = match k with
+              | Str -> [Strings] | Num -> [Numeric;Strings] | _ -> [Symbols] in
+            (match List.find_map (fun keys -> List.find_opt
+                (fun (i:Semantic.index_signature) -> i.keys=keys) shape.indexes) within with
               | Some index -> union index.value (Atoms [Undef])
-              | None -> unsupported "dynamic string index requires a dictionary")
+              | None -> unsupported "dynamic index requires a dictionary over its keys")
           | _ -> unsupported "record index requires a string key")
       | Exact _ as atom -> (match key with
           | Atoms [StrLit name] -> field_type declarations seen (Atoms [atom]) (Name name)
@@ -406,7 +430,7 @@ let key_slice key holds = function
    plain record that has the field, not optionally. *)
 let single_record declarations t field =
   match (try Some (declared_head declarations [] t) with Json.Error _ -> None) with
-  | Some (Atoms [Shape {fields;calls=[];elements=None;string_index=None}])
+  | Some (Atoms [Shape {fields;calls=[];elements=None;indexes=[]}])
   | Some (Atoms [Exact fields]) ->
     List.exists (fun (f:Semantic.field) -> f.name = Name field && not f.optional) fields
   | _ -> false
@@ -570,7 +594,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       List.iter (fun (s:Semantic.signature) ->
         let member key = match (try Some (declared_head declarations []
             (field_type declarations [] s.result (Name key))) with Json.Error _ -> None) with
-          | Some (Atoms [Shape {calls=[m];fields=[];string_index=None;elements=None}]) -> Some m
+          | Some (Atoms [Shape {calls=[m];fields=[];indexes=[];elements=None}]) -> Some m
           | _ -> None in
         let widened = List.filter (fun (key,m) -> match member key with
           | Some offered -> (match closure_offer m {offered with receiver=instance} with
@@ -749,7 +773,8 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
            at the index. *)
         let expected = match hint,contract with
           | Some (f:Semantic.field),_ -> Some f.read
-          | None,Some {string_index=Some index;_} -> Some index.value
+          | None,Some shape -> Option.map (fun (i:Semantic.index_signature) -> i.value)
+              (index_for shape (Name name))
           | None,_ -> None in
         let inferred=expr ?expected env e in
         (* A method's closure offered further signatures is held at its own
@@ -768,7 +793,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          literal is claimed with its exact keys: that own-key bound is what
          lets it meet an index, or an optional field it leaves out. *)
       (match contract with
-       | Some {string_index=Some _;_} -> Atoms [Exact fields]
+       | Some {indexes=_::_;_} -> Atoms [Exact fields]
        | Some {fields=contract_fields;_}
          when List.exists (fun (f:Semantic.field) -> f.optional) contract_fields -> Atoms [Exact fields]
        | _ -> record fields)
@@ -919,7 +944,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let implements (s:Semantic.signature) =
         s.quantified=[] && s.variadic=None && element=None && List.length s.params=List.length ps in
       (match expected with
-       | Some (Atoms [Shape {calls=(_::_::_ as calls);fields=[];string_index=None;elements=None}] as contract)
+       | Some (Atoms [Shape {calls=(_::_::_ as calls);fields=[];indexes=[];elements=None}] as contract)
          when quantified=[] && defaults=[] && List.for_all implements calls ->
          let row (s:Semantic.signature) =
            let saved = !expressions and saved_entries = !entries in
@@ -984,7 +1009,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
          the action stating the offer. *)
       let offer_to (arg:expr) param =
         let offered arity = match param with
-          | Atoms [Shape {calls=[offered];fields=[];string_index=None;elements=None}] as t
+          | Atoms [Shape {calls=[offered];fields=[];indexes=[];elements=None}] as t
               when offered.quantified=[] && offered.rest_pack=None
                 && (match offered.variadic with
                     | None -> List.length offered.params > arity
@@ -996,7 +1021,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
             (offered (List.length ps))
         | Id n when List.mem_assoc n !closures ->
           (match param with
-           | Atoms [Shape {calls=[o];fields=[];string_index=None;elements=None}] -> closure_offer n o
+           | Atoms [Shape {calls=[o];fields=[];indexes=[];elements=None}] -> closure_offer n o
            | _ -> None)
         (* A class value at a generic call's construct parameter, known only
            once the call's instance is: offered as where the parameter's type
@@ -1161,7 +1186,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           | Rigid r -> (match List.find_opt (fun (q:Semantic.quantifier) -> q.identity = r)
                           signature.quantified with
             | Some {bound=Some (ValueArgument (Atoms [Shape {elements=Some {rest=None;_};fields=[];
-                calls=[];string_index=None}] as t));_} -> Some t
+                calls=[];indexes=[]}] as t));_} -> Some t
             | _ -> None)
           | _ -> None in
         let actuals=List.mapi (fun i arg -> match param_at signature i,stated with

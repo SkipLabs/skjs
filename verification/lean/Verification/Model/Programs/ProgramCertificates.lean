@@ -31,8 +31,11 @@ inductive Rule (ι : Type) where
   | var | nul | undef | tru | fls | truLit | flsLit | numLit | num | strLit | str
   | bigintLit | bigint
   | funE | app | letE | alloc | read | readView | write | arith | test
-  | readDict (element undef : Ty ι)
-  | indexDict (element undef : Ty ι)
+  /-- A read through an index over `keys`. -/
+  | readDict (keys : IndexKeys) (element undef : Ty ι)
+  /-- A computed read through an index over `keys`, of a key of `keyKeys`'s
+  key clause. -/
+  | indexDict (keys keyKeys : IndexKeys) (element undef : Ty ι)
   | readOptional (element undef : Ty ι)
   /-- A read through the prototype: the prototype's type. -/
   | readProto (proto : Ty ι)
@@ -248,17 +251,19 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     (match expand G ja.type with
      | [.refs _ [] _ os _ _] => ∃ o ∈ os, o.key = f ∧ o.type = A
      | _ => False)
-  | .readDict A U, .readAt (.str _) a, [ja] =>
+  | .readDict K A U, .readAt f a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧ Represents G U .undef ∧ j.type = A ++ U ∧
+    K.surely f = true ∧
     (match expand G ja.type with
-     | [.dict _ [] _ ix _ _ _ _] => A ∈ ix
+     | [.dict _ [] _ ix _ _ _ _] => (K, A) ∈ ix
      | _ => False)
-  | .indexDict A U, .indexAt a key, [ja, jk] =>
+  | .indexDict K KK A U, .indexAt a key, [ja, jk] =>
     ja.context = j.context ∧ ja.term = a ∧
     jk.context = j.context ∧ jk.term = key ∧
-    Represents G jk.type .str ∧ Represents G U .undef ∧ j.type = A ++ U ∧
+    Represents G jk.type (keyClause KK) ∧ KK.within K = true ∧
+    Represents G U .undef ∧ j.type = A ++ U ∧
     (match expand G ja.type with
-     | [.dict _ [] _ ix _ _ _ _] => A ∈ ix
+     | [.dict _ [] _ ix _ _ _ _] => (K, A) ∈ ix
      | _ => False)
   | .write, .writeAt f a b, [ja, jb] =>
     ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
@@ -673,17 +678,17 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
       subst hf hA
       exact .readOptional ha he ho hUnd
     · contradiction
-  · rename_i A U f a ja
-    rcases hl with ⟨hΓ, ht, hUnd, eq, hr⟩
+  · rename_i K A U f a ja
+    rcases hl with ⟨hΓ, ht, hUnd, eq, hsure, hr⟩
     have ha := hp ja (by simp)
     rw [hΓ, ht] at ha
     split at hr
     · rename_i fs vs ix os he
       subst eq
-      exact .readDict ha he hr hUnd
+      exact .readDict ha he hr hsure hUnd
     · contradiction
-  · rename_i E U a key ja jk
-    rcases hl with ⟨hΓa, hta, hΓk, htk, hStr, hUnd, eq, hr⟩
+  · rename_i K KK E U a key ja jk
+    rcases hl with ⟨hΓa, hta, hΓk, htk, hStr, hwithin, hUnd, eq, hr⟩
     have ha := hp ja (by simp)
     have hk := hp jk (by simp)
     rw [hΓa, hta] at ha
@@ -691,7 +696,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     split at hr
     · rename_i fs vs ix os he
       subst eq
-      exact .indexDict ha he hk hStr hr hUnd
+      exact .indexDict ha he hk hStr hwithin hr hUnd
     · contradiction
   · rename_i f a b ja jb
     rcases hl with ⟨hΓa, hta, hΓb, htb, hn, hr⟩
@@ -1428,15 +1433,16 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
         simp only [show expand G Ref = [.refs fs [] vs os ms ks] from hr]; exact ⟨_, hm, rfl, rfl⟩⟩
 
     simpa using ih
-  | @readDict Γ a Ref fs vs ix os ms ks cs A U f ha hr hm hUnd ih =>
+  | @readDict Γ a Ref fs vs ix os ms ks cs A U f K ha hr hm hsure hUnd ih =>
     apply node_complete (G := G) (j := ⟨Γ, .readAt f a, A ++ U⟩)
-      (r := .readDict A U) (js := [⟨Γ,a,Ref⟩])
-      ⟨rfl,rfl,hUnd,rfl,by simp only [show expand G Ref = [.dict fs [] vs ix os ms ks cs] from hr]; exact hm⟩
+      (r := .readDict K A U) (js := [⟨Γ,a,Ref⟩])
+      ⟨rfl,rfl,hUnd,rfl,hsure,
+        by simp only [show expand G Ref = [.dict fs [] vs ix os ms ks cs] from hr]; exact hm⟩
     simpa using ih
-  | @indexDict Γ a Ref fs vs ix os ms ks cs key K A U ha hr hk hStr hm hUnd iha ihk =>
+  | @indexDict Γ a Ref fs vs ix os ms ks cs key Kt A U K KK ha hr hk hStr hwithin hm hUnd iha ihk =>
     apply node_complete (G := G) (j := ⟨Γ, .indexAt a key, A ++ U⟩)
-      (r := .indexDict A U) (js := [⟨Γ,a,Ref⟩, ⟨Γ,key,K⟩])
-      ⟨rfl,rfl,rfl,rfl,hStr,hUnd,rfl,
+      (r := .indexDict K KK A U) (js := [⟨Γ,a,Ref⟩, ⟨Γ,key,Kt⟩])
+      ⟨rfl,rfl,rfl,rfl,hStr,hwithin,hUnd,rfl,
         by simp only [show expand G Ref = [.dict fs [] vs ix os ms ks cs] from hr]; exact hm⟩
     intro p hp
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hp

@@ -76,8 +76,8 @@ Each type-graph node is a union of clauses:
 | Invariant reference with optional additional contract requirements, and readonly views: fields read at a sound upper bound, with no write permission through this contract | `{"refs":{"first":[["value",[1]]],"rest":[],"views":[["seen",[1]]]}}`                       |
 | Optional fields: a key constrained only where the object has it, where its location holds exactly the contract; left out when there are none (also on `dict`) | `{"refs":{"first":[],"rest":[],"views":[],"optional":[["field",[4]]]}}`                       |
 | Own-key bounds: each says the object's own keys are `among` its `keys`, or, with `among` false, none of them; a key one does not admit is not the object's own and a read of it continues at the prototype; left out when there are none (also on `dict`) | `{"refs":{"first":[["[]",[2]]],"rest":[],"views":[["[[proto]]",[5]]],"bounds":[{"among":false,"keys":["map"]}]}}` |
-| Plain object with named contracts and readonly string-index views; each index operand constrains every present own field | `{"dict":{"first":[],"rest":[],"views":[],"indexes":[[1,3]]}}` |
-| Writable string-index contracts, a mutable index signature's: every present own field holds exactly the operand; each is also listed in `indexes`; left out when there are none | `{"dict":{"first":[],"rest":[],"views":[],"indexes":[[1,3]],"cells":[[1,3]]}}` |
+| Plain object with named contracts and readonly index views, each `[class, operand]` with class `"strings"` (every string key), `"numeric"` (the canonical numeric keys) or `"symbols"` (every symbol key); each constrains every present own field under a key of its class | `{"dict":{"first":[],"rest":[],"views":[],"indexes":[["strings",[1,3]],["numeric",[1]]]}}` |
+| Writable index contracts, a mutable index signature's, `[class, operand]` as above: every present own field under a key of the class holds exactly the operand; each is also listed in `indexes`; left out when there are none | `{"dict":{"first":[],"rest":[],"views":[],"indexes":[["strings",[1,3]]],"cells":[["strings",[1,3]]]}}` |
 | Intersection of arrows `[receiver, [params, result]]`, with variadic signatures `[receiver, [params, [rest, result]]]` when there are any, `rest` an argument-list type (`pack`)  | `{"arrs":{"arrows":[[[5],[[[0]],[1]]],[[5],[[[1]],[0]]]]}}`                                 |
 | Array store: simultaneous tuple contracts, each with required, optional and rest positions; readonly contracts give element read capabilities                              | `{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],"readonly":false},"rest":[]}}` |
 | Callable with invariant bag requirements and overloads, fixed and variadic                                                                                                 | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[[[5],[[[0]],[1]]]]}}`             |
@@ -617,7 +617,9 @@ string index permission, unlike the synthetic `indexes` markers above. The
 source fragment and OCaml producer emit readonly signatures (`write: never`)
 and mutable ones (`write` equal to `read`); the SKJS bounded exporter still
 rejects real index signatures. An index lowers to a dictionary graph clause, a
-mutable one with its contract also in `cells`.
+mutable one with its contract also in `cells`. A number or symbol index has no
+claim atom: a type literal holding one is claimed as its graph rows
+(`{"a": "graph", ...}`), over the `"numeric"` or `"symbols"` class.
 
 Function claims retain the substitution snapshot taken after checking the body.
 Serialization follows only isolated, bound inference variables without

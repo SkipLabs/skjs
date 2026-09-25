@@ -39,6 +39,8 @@ function referencesIn(term: TypeTerm): Reference[] {
     case "object": return [
       ...term.fields.flatMap(field => referencesIn(field.type)),
       ...(term.stringIndex ? referencesIn(term.stringIndex.value) : []),
+      ...(term.numberIndex ? referencesIn(term.numberIndex.value) : []),
+      ...(term.symbolIndex ? referencesIn(term.symbolIndex.value) : []),
       ...term.calls.flatMap(referencesIn),
     ];
     case "function": return [

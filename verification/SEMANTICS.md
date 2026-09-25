@@ -239,9 +239,25 @@ that a term and heap have at most one successor.
 A read of a named property on an object with no such own field continues at
 the object's prototype, when it has one: the reserved key `protoField` holds
 it, no source name spells it, and one step turns the read into the same read
-of the prototype (`Step.readProto`, `Step.indexProto` for a computed string
-key). Without a prototype the read steps to `undefined` (`Step.readMissing`,
-`Step.indexMissing`); a present field still reads its heap location:
+of the prototype (`Step.readProto`, `Step.indexProto` for a computed key).
+Without a prototype the read steps to `undefined` (`Step.readMissing`,
+`Step.indexMissing`); a present field still reads its heap location. A computed
+key is converted by `ToPropertyKey` first, where it runs no code: a string is
+its own key, a symbol its identity, and a number the key its `ToString`
+spells, so `o[1]` reads `o["1"]` (`propertyKey`); `indexAt` on any other key
+is stuck:
+
+$$
+\mathsf{key}(\mathsf{str}\,s)=\mathsf{str}(s)\qquad
+\mathsf{key}(\mathsf{sym}\,i)=\mathsf{sym}(i)\qquad
+\mathsf{key}(\mathsf{num}\,x)=\mathsf{str}(\mathsf{ToString}(x))
+\qquad
+\frac{\mathsf{key}(v)=k\quad\mathit{fs}(k)=l\quad h(l)=u}
+     {h,\ \mathsf{indexAt}\;(\mathsf{obj}(\mathit{fs},c))\;v\ \to\ h,\ u}
+$$
+
+and `indexProto`, `indexMissing` as `readProto`, `readMissing` at
+$\mathsf{key}(v)$:
 
 $$
 \frac{\mathit{fs}(k)=\varnothing\quad\mathit{fs}(\mathsf{proto})=l\quad h(l)=p}
@@ -251,33 +267,36 @@ $$
      {h,\ \mathsf{readAt}\;k\;(\mathsf{obj}(\mathit{fs},c))\ \to\ h,\ \mathsf{undefined}}
 $$
 
-The semantic readonly string-dictionary view `dictViewT A` requires the object
-to have no prototype and every *present* field's stored contract to imply `A`
-at lower budgets. This is guarded
+The semantic index view `dictViewT K A` requires the object to have no
+prototype and every *present* field under a key the class `K` admits (every
+string key, the canonical numeric ones, or every symbol key: `IndexKeys`,
+[POSITIVE-TYPES](POSITIVE-TYPES.md#records)) to have a stored contract implying
+`A` at lower budgets. This is guarded
 and admissible even when `A` is recursive, and it grants no write permission.
 `empty_bool_dict_missing` witnesses the distinction: an empty object satisfies
 the Boolean dictionary view, while a read of any key yields `undefined`, which
 is not Boolean. An arbitrary indexed read therefore needs a result including
 `undefined`. The positive graph has a `dict` clause whose operands are guarded
 recursive labels, and the checked covering rule can compare dictionary views.
-The source parser and OCaml producer lower inline readonly string-index
-annotations into that clause. A key the clause names as a field or view is read
-at that member's contract by `read` or `readView`, whose premise
-`namedMembers` accepts a dictionary's named members as a record's. Any other
-named key read uses the proved `readDict` rule;
-a computed string key uses `indexAt`, which evaluates the receiver before the
-key and then reads the selected field (or `undefined` if it is absent). The
-proved `indexDict` rule checks the key at `string`. Both reads carry
-`undefined` in their result. This path reaches the same certified
+The source parser and OCaml producer lower inline index annotations into that
+clause. A key the clause names as a field or view is read at that member's
+contract by `read` or `readView`, whose premise `namedMembers` accepts a
+dictionary's named members as a record's. Any other named key read uses the
+proved `readDict` rule, through an index whose class surely admits the key; a
+computed key uses `indexAt`, which evaluates the receiver before the key and
+then reads the selected field (or `undefined` if it is absent). The proved
+`indexDict` rule checks the key at the key clause of a class within the
+index's (`string`, `number` or `symbol`; a number's key is canonical numeric,
+`numeric_admits_number`). Both reads carry `undefined` in their result. This path reaches the same certified
 source acceptance theorem as other expressions. A fresh literal is a
 dictionary through its exact own keys: `alloc` bounds them among the literal's
 names (`ownKeysT_slots`), and a record so bounded, with no prototype key among
 them, meets an index view whose contract every field's is within, and a
 writable index equivalent to every field's (`covers_keys_sound`); an existing
 open record, which may hold further keys, meets neither. A mutable index
-signature lowers to a writable index contract `dictCellT A`, whose present
-fields' contracts agree with `A` rather than imply it, and covering keeps it
-invariant. Imported recursive declarations remain outside the source fragment.
+signature lowers to a writable index contract `dictCellT K A`, whose present
+fields under keys of `K` have contracts agreeing with `A` rather than implying
+it, and covering keeps it invariant. Imported recursive declarations remain outside the source fragment.
 
 Term and descriptor equality use explicit structural comparisons, each returning
 a kernel-checked `Decidable` result and recurring only on strict subterms. This

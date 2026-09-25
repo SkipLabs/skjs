@@ -276,9 +276,10 @@ export function mapped(scope: TermScope, node: ts.MappedTypeNode): Mapped {
 
 /** A mapped type at a known key, as TypeScript expands it: over string and
  * number literals, one field per property they name; over `string`, a string
- * index, which `number` adds nothing to. Its value does not name the key, so
- * every field and the index have the one value type. `number` alone, `symbol`
- * and a type parameter are refused. */
+ * index, which `number` and every string literal add nothing to; over
+ * `number`, a number index, which number literals add nothing to; over
+ * `symbol`, a symbol index. Its value does not name the key, so every field
+ * and index has the one value type. A type parameter is refused. */
 export function expandMapped(m: Mapped, span: Span, fail: (message: string) => never): TypeTerm {
   const keys: TypeTerm[] = [];
   const flatten = (t: TypeTerm): void => {
@@ -287,23 +288,25 @@ export function expandMapped(m: Mapped, span: Span, fail: (message: string) => n
   };
   flatten(m.key);
   const atom = (name: string) => keys.some(k => k.k === "atom" && k.name === name);
-  if (atom("symbol"))
-    fail("a mapped type over symbol is a symbol index signature, which constrains every symbol key, and the " +
-      "model's index constrains string keys only");
-  if (atom("string")) {
-    // `string` absorbs every string and number key.
-    if (keys.some(k => !(k.k === "atom" && (k.name === "string" || k.name === "number")) &&
+  const index = { readonly: m.readonly, value: m.value, span };
+  const indexes = {
+    // `string` absorbs every string and number key, `number` every number
+    // literal.
+    stringIndex: atom("string") ? index : null,
+    ...(atom("number") && !atom("string") ? { numberIndex: index } : {}),
+    ...(atom("symbol") ? { symbolIndex: index } : {}),
+  };
+  if (atom("string") || atom("number") || atom("symbol")) {
+    if (keys.some(k => !(k.k === "atom" && (k.name === "string" || k.name === "number" || k.name === "symbol")) &&
         !(k.k === "literal" && (k.name === "string" || k.name === "number"))))
-      fail("a mapped type's keys must be strings, numbers or their literals");
-    if (m.optional) fail("an optional mapped type over string is outside the fragment");
-    return { k: "object", fields: [], stringIndex: { readonly: m.readonly, value: m.value, span }, calls: [],
-      span };
+      fail("a mapped type's keys must be strings, numbers, symbols or their literals");
+    if (m.optional) fail("an optional mapped type over an index signature's keys is outside the fragment");
   }
-  if (atom("number"))
-    fail("a mapped type over number is a number index signature, which constrains the canonical numeric keys " +
-      "apart from the other string keys, and the model's index constrains every string key alike");
   const names: string[] = [];
   for (const key of keys) {
+    if (key.k === "atom" && (key.name === "string" || key.name === "number" || key.name === "symbol")) continue;
+    // An index over every string or number key holds its literals.
+    if (atom("string") || (atom("number") && key.k === "literal" && key.name === "number")) continue;
     // A number literal key is the property its value names.
     const name = key.k === "literal" && key.name === "string" ? key.text
       : key.k === "literal" && key.name === "number" ? numericKey(key.text) : null;
@@ -311,9 +314,9 @@ export function expandMapped(m: Mapped, span: Span, fail: (message: string) => n
     if (!names.includes(name)) names.push(name);
   }
   // No key: an object type with no member, which is `{}`.
-  if (!names.length) return emptyObject(span);
+  if (!names.length && !atom("string") && !atom("number") && !atom("symbol")) return emptyObject(span);
   return { k: "object", fields: names.map(name => ({ name, optional: m.optional, readonly: m.readonly,
-    type: m.value, span })), stringIndex: null, calls: [], span };
+    type: m.value, span })), ...indexes, calls: [], span };
 }
 
 /** `term` with each of its declaration's parameters replaced by the term at
@@ -335,6 +338,8 @@ export function substitute(term: TypeTerm, args: readonly TypeTerm[]): TypeTerm 
       rest: term.rest && go(term.rest) };
     case "object": return { ...term, fields: term.fields.map(f => ({ ...f, type: go(f.type) })),
       stringIndex: term.stringIndex && { ...term.stringIndex, value: go(term.stringIndex.value) },
+      ...(term.numberIndex ? { numberIndex: { ...term.numberIndex, value: go(term.numberIndex.value) } } : {}),
+      ...(term.symbolIndex ? { symbolIndex: { ...term.symbolIndex, value: go(term.symbolIndex.value) } } : {}),
       calls: term.calls.map(fn) };
     case "function": return fn(term);
     case "constructor": return { ...term, params: term.params.map(go), rest: term.rest && go(term.rest),
@@ -502,8 +507,10 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
   const calls: FunctionTerm[] = [];
   const names = new Set<string>();
   // Number index signatures, each subsumed by a string index of the same
-  // contract or refused once every member is read.
-  const numberIndexes: { member: Node; index: NonNullable<Extract<TypeTerm, { k: "object" }>["stringIndex"]> }[] = [];
+  // contract or the object's number index once every member is read.
+  type Index = NonNullable<Extract<TypeTerm, { k: "object" }>["stringIndex"]>;
+  const numberIndexes: { member: Node; index: Index }[] = [];
+  let symbolIndex: Index | null = null;
   const constructs: TypeTerm[] = [];
   const readonlyOnly = (modifiers: readonly Node[] | undefined) =>
     !modifiers?.some(m => m.kind !== ts.SyntaxKind.ReadonlyKeyword);
@@ -552,9 +559,11 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
         stringIndex = index;
       }
       if (kinds.includes("number")) numberIndexes.push({ member, index });
-      if (kinds.includes("symbol"))
-        scope.fail(member, "a symbol index signature constrains every symbol key, and the model's index " +
-          "constrains string keys only");
+      if (kinds.includes("symbol")) {
+        if (symbolIndex && !sameIndex(symbolIndex, index))
+          scope.fail(member, "two symbol index signatures with different contracts");
+        symbolIndex = index;
+      }
     } else if (ts.isConstructSignatureDeclaration(member)) {
       // A construct signature, read as a type literal's are
       // (`constructorForms`): the object is a class value.
@@ -619,23 +628,26 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
   }
   // Every numeric key is a string key: a number index with the string
   // index's contract adds nothing. One with another contract constrains the
-  // canonical numeric keys apart from the others, which the model's index,
-  // constraining every string key alike, does not state.
-  for (const { member, index } of numberIndexes)
-    if (!stringIndex || !sameIndex(stringIndex, index))
-      scope.fail(member, "a number index signature constrains the canonical numeric keys apart from the other " +
-        "string keys, which the model's index, constraining every string key alike, does not state");
+  // canonical numeric keys apart from the others: the object's number index.
+  let numberIndex: Index | null = null;
+  for (const { member, index } of numberIndexes) {
+    if (stringIndex && sameIndex(stringIndex, index)) continue;
+    if (numberIndex && !sameIndex(numberIndex, index))
+      scope.fail(member, "two number index signatures with different contracts");
+    numberIndex = index;
+  }
   // An interface of construct signatures alone is a class value meeting
   // each, as such a type literal is. A class value's other members,
   // statics, are not members of its type here.
   if (constructs.length) {
-    if (fields.length || stringIndex || calls.length)
+    if (fields.length || stringIndex || numberIndex || symbolIndex || calls.length)
       scope.fail(at, "an object type with construct signatures and other members: a class value's statics " +
         "are not members of its type");
     const [only] = constructs;
     return constructs.length === 1 && only ? only : { k: "intersection", parts: constructs, span };
   }
-  return { k: "object", fields, stringIndex, calls, span };
+  return { k: "object", fields, stringIndex, ...(numberIndex ? { numberIndex } : {}),
+    ...(symbolIndex ? { symbolIndex } : {}), calls, span };
 }
 
 /** Whether two index signatures state the same contract. */

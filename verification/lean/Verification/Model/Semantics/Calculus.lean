@@ -447,6 +447,26 @@ def shortestDigits (mant : Nat) (exp : Int) (lower : Bool) : Nat × Int :=
       else go fuel (d - 1)
   go 700 309
 
+/-- The digits `digits` of a finite nonzero magnitude, with the decimal point
+`d` places after its last digit, spelled as `Number::toString` does: plain up
+to 21 integer digits, `0.` and up to six leading zeros below one, else
+exponent form `d.ddde±x`. -/
+def decimalBody (digits : String) (d : Int) : String :=
+  let k : Int := digits.length
+  let n : Int := k + d
+  let zeros := fun (i : Int) => String.ofList (List.replicate i.toNat '0')
+  if k ≤ n && n ≤ 21 then digits ++ zeros (n - k)
+  else if 0 < n && n ≤ 21 then
+    String.ofList (digits.toList.take n.toNat) ++ "." ++ String.ofList (digits.toList.drop n.toNat)
+  else if -6 < n && n ≤ 0 then "0." ++ zeros (-n) ++ digits
+  else
+    let x := n - 1
+    let exponent := "e" ++ (if 0 ≤ x then "+" else "-") ++ toString x.natAbs
+    match digits.toList with
+    | [c] => String.singleton c ++ exponent
+    | c :: rest => String.singleton c ++ "." ++ String.ofList rest ++ exponent
+    | [] => exponent
+
 /-- `Number::toString` in radix 10, exactly: `NaN`, the infinities, `0` for
 both zeros, and otherwise the shortest digits `s` with `n` the position of
 the decimal point: plain up to 21 integer digits, `0.` and up to six leading
@@ -461,23 +481,7 @@ def numberToString (x : UInt64) : String :=
     let mant := if e == 0 then m else m + 2 ^ 52
     let exp : Int := (if e == 0 then 1 else (e : Int)) - 1075
     let (s, d) := shortestDigits mant exp (m == 0 && 1 < e)
-    let digits := toString s
-    let k : Int := digits.length
-    let n : Int := k + d
-    let zeros := fun (i : Int) => String.ofList (List.replicate i.toNat '0')
-    let body :=
-      if k ≤ n && n ≤ 21 then digits ++ zeros (n - k)
-      else if 0 < n && n ≤ 21 then
-        String.ofList (digits.toList.take n.toNat) ++ "." ++ String.ofList (digits.toList.drop n.toNat)
-      else if -6 < n && n ≤ 0 then "0." ++ zeros (-n) ++ digits
-      else
-        let x := n - 1
-        let exponent := "e" ++ (if 0 ≤ x then "+" else "-") ++ toString x.natAbs
-        match digits.toList with
-        | [c] => String.singleton c ++ exponent
-        | c :: rest => String.singleton c ++ "." ++ String.ofList rest ++ exponent
-        | [] => exponent
-    sign ++ body
+    sign ++ decimalBody (toString s) d
 
 /-- `ToString` of a primitive other than a symbol, as JavaScript defines it:
 no user code runs. A symbol throws a `TypeError`, and an object's conversion
@@ -495,6 +499,20 @@ def primString : Tm → Option String
 def isVal : Tm → Bool
   | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ | .objAt .. | .arr _ => true
   | _ => false
+
+/-- `ToPropertyKey` on the primitives whose conversion runs no code and that
+a computed key reaches: a string is its own key, a symbol its identity, and a
+number the key its `ToString` spells (`numberToString`), so `o[1]` reads
+`o["1"]` and `o[0.5]` reads `o["0.5"]`. Any other value has no key here. -/
+def propertyKey : Tm → Option PropKey
+  | .str s => some (.str s)
+  | .sym i => some (.sym i)
+  | .num b => some (.str (numberToString b))
+  | _ => none
+
+/-- A key is a value. -/
+theorem propertyKey_val {t : Tm} {p : PropKey} (h : propertyKey t = some p) : isVal t = true := by
+  cases t <;> simp_all [propertyKey, isVal]
 
 /-- ECMAScript Number::equal on IEEE-754 bits: NaN never equals, and the
 sign of zero is ignored. All other equal Numbers have the same encoding. -/
@@ -1195,15 +1213,18 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | indexC1 : Step h a h' a' → Step h (.indexAt a key) h' (.indexAt a' key)
   | indexC2 : isVal a = true → Step h key h' key' →
       Step h (.indexAt a key) h' (.indexAt a key')
-  | indexField {f : String} {fs : List (PropKey × Nat)} {c : CallCode} {l : Nat}
-      {h : Heap} {v : Val} : fs.lookup (.str f) = some l → h[l]? = some v →
-      Step h (.indexAt (.objAt fs c) (.str f)) h v
-  | indexProto {f : String} {fs : List (PropKey × Nat)} {c : CallCode} {l : Nat}
-      {h : Heap} {p : Val} : fs.lookup (.str f) = none → fs.lookup CallArguments.protoField = some l →
-      h[l]? = some p → Step h (.indexAt (.objAt fs c) (.str f)) h (.indexAt p (.str f))
-  | indexMissing {f : String} {fs : List (PropKey × Nat)} {c : CallCode} {h : Heap} :
-      fs.lookup (.str f) = none → fs.lookup CallArguments.protoField = none →
-      Step h (.indexAt (.objAt fs c) (.str f)) h .undef
+  /-- A computed key is converted by `ToPropertyKey` (`propertyKey`): a
+  string, a symbol, or a number, which names the key its `ToString` spells. -/
+  | indexField {key : Tm} {f : PropKey} {fs : List (PropKey × Nat)} {c : CallCode} {l : Nat}
+      {h : Heap} {v : Val} : propertyKey key = some f → fs.lookup f = some l → h[l]? = some v →
+      Step h (.indexAt (.objAt fs c) key) h v
+  | indexProto {key : Tm} {f : PropKey} {fs : List (PropKey × Nat)} {c : CallCode} {l : Nat}
+      {h : Heap} {p : Val} : propertyKey key = some f → fs.lookup f = none →
+      fs.lookup CallArguments.protoField = some l →
+      h[l]? = some p → Step h (.indexAt (.objAt fs c) key) h (.indexAt p key)
+  | indexMissing {key : Tm} {f : PropKey} {fs : List (PropKey × Nat)} {c : CallCode} {h : Heap} :
+      propertyKey key = some f → fs.lookup f = none → fs.lookup CallArguments.protoField = none →
+      Step h (.indexAt (.objAt fs c) key) h .undef
   | writeC1 : Step h a h' a' → Step h (.writeAt f a b) h' (.writeAt f a' b)
   | writeC2 : isVal a = true → Step h b h' b' → Step h (.writeAt f a b) h' (.writeAt f a b')
   | writeField {f : PropKey} {fs : List (PropKey × Nat)} {c : CallCode} {l : Nat}
@@ -1625,42 +1646,51 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     cases s2 with
     | indexC1 s' => exact (ih s').imp id (congrArg (Tm.indexAt · _))
     | indexC2 hv _ => exact False.elim (value_no_step hv s)
-    | indexField _ _ => exact absurd s obj_no_step
-    | indexProto _ _ _ => exact absurd s obj_no_step
-    | indexMissing _ _ => exact absurd s obj_no_step
+    | indexField _ _ _ => exact absurd s obj_no_step
+    | indexProto _ _ _ _ => exact absurd s obj_no_step
+    | indexMissing _ _ _ => exact absurd s obj_no_step
   | indexC2 hv s ih =>
     cases s2 with
     | indexC1 s' => exact False.elim (value_no_step hv s')
     | indexC2 _ s' => exact (ih s').imp id (congrArg (Tm.indexAt _ ·))
-    | indexField _ _ => exact False.elim (value_no_step rfl s)
-    | indexProto _ _ _ => exact False.elim (value_no_step rfl s)
-    | indexMissing _ _ => exact False.elim (value_no_step rfl s)
-  | indexField hl he =>
+    | indexField hk _ _ => exact False.elim (value_no_step (propertyKey_val hk) s)
+    | indexProto hk _ _ _ => exact False.elim (value_no_step (propertyKey_val hk) s)
+    | indexMissing hk _ _ => exact False.elim (value_no_step (propertyKey_val hk) s)
+  | indexField hk hl he =>
     cases s2 with
     | indexC1 s' => exact absurd s' obj_no_step
-    | indexC2 _ s' => exact False.elim (value_no_step rfl s')
-    | indexField hl' he' =>
+    | indexC2 _ s' => exact False.elim (value_no_step (propertyKey_val hk) s')
+    | indexField hk' hl' he' =>
+      cases Option.some.inj (hk.symm.trans hk')
       cases Option.some.inj (hl.symm.trans hl')
       exact ⟨rfl, Option.some.inj (he.symm.trans he')⟩
-    | indexProto hm _ _ => simp [hl] at hm
-    | indexMissing hm _ => simp [hl] at hm
-  | indexProto hm hp he =>
+    | indexProto hk' hm _ _ =>
+      cases Option.some.inj (hk.symm.trans hk')
+      simp [hl] at hm
+    | indexMissing hk' hm _ =>
+      cases Option.some.inj (hk.symm.trans hk')
+      simp [hl] at hm
+  | indexProto hk hm hp he =>
     cases s2 with
     | indexC1 s' => exact absurd s' obj_no_step
-    | indexC2 _ s' => exact False.elim (value_no_step rfl s')
-    | indexField hl _ => simp [hm] at hl
-    | indexProto _ hp' he' =>
+    | indexC2 _ s' => exact False.elim (value_no_step (propertyKey_val hk) s')
+    | indexField hk' hl _ =>
+      cases Option.some.inj (hk.symm.trans hk')
+      simp [hm] at hl
+    | indexProto _ _ hp' he' =>
       cases Option.some.inj (hp.symm.trans hp')
       cases Option.some.inj (he.symm.trans he')
       exact ⟨rfl, rfl⟩
-    | indexMissing _ hn => simp [hp] at hn
-  | indexMissing hm hn =>
+    | indexMissing _ _ hn => simp [hp] at hn
+  | indexMissing hk hm hn =>
     cases s2 with
     | indexC1 s' => exact absurd s' obj_no_step
-    | indexC2 _ s' => exact False.elim (value_no_step rfl s')
-    | indexField hl _ => simp [hm] at hl
-    | indexProto _ hp _ => simp [hn] at hp
-    | indexMissing _ _ => exact ⟨rfl, rfl⟩
+    | indexC2 _ s' => exact False.elim (value_no_step (propertyKey_val hk) s')
+    | indexField hk' hl _ =>
+      cases Option.some.inj (hk.symm.trans hk')
+      simp [hm] at hl
+    | indexProto _ _ hp _ => simp [hn] at hp
+    | indexMissing _ _ _ => exact ⟨rfl, rfl⟩
   | writeC1 s ih =>
     cases s2 with
     | writeC1 s' => exact (ih s').imp id (congrArg (Tm.writeAt _ · _))
@@ -1991,9 +2021,9 @@ theorem raises_no_step {t v : Tm} (hr : Raises t v) : ∀ {h h' t'}, ¬ Step h t
     cases s with
     | indexC1 s => exact value_no_step hv s
     | indexC2 _ s => exact ih s
-    | indexField => cases hr
-    | indexProto => cases hr
-    | indexMissing => cases hr
+    | indexField hk => have := propertyKey_val hk; rw [raises_not_val hr] at this; contradiction
+    | indexProto hk => have := propertyKey_val hk; rw [raises_not_val hr] at this; contradiction
+    | indexMissing hk => have := propertyKey_val hk; rw [raises_not_val hr] at this; contradiction
   | writeC1 hr ih =>
     intro _ _ _ s
     cases s with

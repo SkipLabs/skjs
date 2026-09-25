@@ -785,9 +785,11 @@ reads use that. Consequences:
 - The calculus has no step that adds a key to an existing object; no program
   rule writes through an index. That code outside the unit (an import, a
   callback, the caller) adds keys at `T` to a dictionary it holds at a writable
-  index is assumed, not modelled. Every capability the checker grants on such
+  index, only keys the index's class admits ([Index signatures](#index-signatures)),
+  is assumed, not modelled. Every capability the checker grants on such
   an object is implied by the writable contract, so a key added at `T` keeps
-  them; this argument is informal.
+  them: covering a writable index requires every index and optional field of
+  the source over its keys to admit `T`. This argument is informal.
 
 An empty literal, `{}`, is admitted by the source gate. It has a type only
 through a contract: a dictionary, whose writable index a fresh literal meets
@@ -3500,11 +3502,11 @@ string key. The keys $\llbracket K\rrbracket$ are the union of literals and
 primitives TypeScript computes for $K$ where it has one (`TermScope.keys`,
 [Computed types](#computed-types)), so an alias of literals or a `keyof` is
 its literals, in a declaration and in an annotation alike
-(`record-alias-keys.ts`, `invalid-record-alias-keys.ts`). `number` alone is a
-number index signature and `symbol` a symbol index signature, which the model
-does not have ([Index signatures](#index-signatures)); both are refused with
-that reason, as is a type parameter or any other key
-(`record-numeric-key-refused.ts`). A library alias whose equation is a mapped
+(`record-alias-keys.ts`, `invalid-record-alias-keys.ts`). Likewise `number`
+without `string` is a number index, absorbing every number literal, and
+`symbol` a symbol index ([Index signatures](#index-signatures)), beside the
+fields of the remaining literals (`record-numeric-key.ts`); an optional one,
+a type parameter or any other key is refused. A library alias whose equation is a mapped
 type is that mapped type at the reference's arguments, which is how
 `Record<K, V> = { [P in K]: V }` reads:
 
@@ -3696,28 +3698,106 @@ a numeric key holds of no JavaScript array, and nothing is claimed for one.
 
 ### Index signatures
 
-An index signature's key is `string`, `number` or `symbol`, or a union of
-them. The model's index constrains every string key alike
-([Writable string index signatures](#writable-string-index-signatures)). Every
-numeric key is a string key, so a number index with the string index's
-contract adds nothing, and one over `string | number` is the string index
-(`index-signature-kinds.ts`):
+**Principle.** An index signature constrains the keys its key type names, and
+no other: `[k: string]` every string key, `[k: number]` the **canonical
+numeric keys**, and `[k: symbol]` every symbol key. One mechanism states all
+three: an index is a view (and, mutable, a writable contract) over a **key
+class** $\kappa\in\{\mathsf{strings},\mathsf{numeric},\mathsf{symbols}\}$
+(`IndexKeys`, [POSITIVE-TYPES](POSITIVE-TYPES.md#records)); every
+dictionary is one over $\mathsf{strings}$. A canonical numeric key is a string
+some number's `ToString` spells,
 
 $$
-\frac{}{\llbracket\{[k\colon\mathtt{string}\mid\mathtt{number}]^m\colon V\}\rrbracket=\llbracket\{[k\colon\mathtt{string}]^m\colon V\}\rrbracket}
+\mathsf{Numeric}(s)\iff\exists x.\ \mathsf{ToString}(x)=s
+$$
+
+exactly TypeScript's numeric property names ($s$ with
+`ToString(ToNumber(s)) = s`: "0", "1.5", "-1", "1e+21", "NaN", "Infinity";
+not "01", "1.50" or "-0"), and exactly the keys `o[n]` reaches for a number
+$n$: a computed key is converted by `ToPropertyKey`, which on a number is its
+`ToString` (`propertyKey`, [SEMANTICS](SEMANTICS.md)). An index over a union
+of key types is one index per member at the same contract, whose conjunction
+constrains the union's keys; one over `string | number`, or a number index at
+the string index's contract, is the string index alone, since every numeric
+key is a string key (`index-signature-kinds.ts`):
+
+$$
+\llbracket\{[k\colon\mathtt{number}]^m\colon V\}\rrbracket=\mathsf{Dict}(\mathsf{numeric}{:}V)
 \qquad
-\frac{}{\llbracket\{[k\colon\mathtt{string}]^m\colon V;\ [k\colon\mathtt{number}]^m\colon V\}\rrbracket=\llbracket\{[k\colon\mathtt{string}]^m\colon V\}\rrbracket}
+\llbracket\{[k\colon\mathtt{symbol}]^m\colon V\}\rrbracket=\mathsf{Dict}(\mathsf{symbols}{:}V)
+\qquad
+\llbracket\{[k\colon\mathtt{string}]^m\colon S;\ [k\colon\mathtt{number}]^m\colon N\}\rrbracket=
+  \mathsf{Dict}(\mathsf{strings}{:}S,\ \mathsf{numeric}{:}N)
 $$
 
-Refused, each with its reason: a number index with a contract of its own, or
-alone (`number-index-refused.ts`), constrains the canonical numeric keys
-("0", "1.5", "-1", "NaN", …) apart from the other string keys, which the
-model's index cannot state; reading it as the string index would claim what
-TypeScript's type does not, and dropping it would let a write break what
-another holder reads. A symbol index (`symbol-index-refused.ts`) constrains
-every symbol key, and the model's index constrains string keys only. Both
-need an index over a set of keys: a view and a writable contract restricted
-to the keys a predicate admits, which the calculus does not have yet.
+TypeScript requires $N\subseteq S$ of the last (TS2413); the model needs no
+such check, since the two views are a conjunction: a numeric key's value
+meets both. Consequences, each proved in Lean:
+
+- **Reads.** A named key reads through an index whose class surely admits
+  it (`IndexKeys.surely`: any string key for $\mathsf{strings}$; for
+  $\mathsf{numeric}$ a key a number spells, checked by that number,
+  `numericKey?`), at $V\mid\mathtt{undefined}$ (`readDict`); `x[0]`, whose
+  number names the key "0", and `x["1.5"]` read a number index. A computed
+  key of type `string`, `number` or `symbol` reads through an index over a
+  class containing its keys' (`keyClause`, `IndexKeys.within`): a number
+  through a number index or a string one, a symbol through a symbol index
+  (`indexDict`). Where both a number and a string index admit a key, the
+  number index's narrower contract is read.
+- **Subtyping.** A target index is covered by a source index over as many
+  keys ($\mathsf{numeric}\subseteq\mathsf{strings}$) with a contract within
+  it; a writable one by a writable one of an equivalent contract. So
+  `{[k: string]: number}` is `{[k: number]: number}`, mutable as it is, and a
+  number index is not a string index (TypeScript agrees). The class and the
+  contract are compared separately: a smaller class with a larger contract
+  is neither below nor above a larger class with a smaller one. Code holding
+  a writable index may add keys of its class at its contract (the trust
+  boundary of [Writable string index signatures](#writable-string-index-signatures)),
+  so a writable target also needs every source index and optional field over
+  such a key to admit its contract: a mutable
+  `{ [k: string]: S; [k: number]: N }` is not a mutable `{ [k: string]: S }`,
+  through which a numeric key could be given an $S$ value that a holder of the
+  number index reads as $N$ (`invalid-number-index-forget.ts`; TypeScript
+  accepts it). The optional-field half closes the same gap for string
+  indexes: a mutable `{ a?: 1; [k: string]: number }` is no longer a mutable
+  `{ [k: string]: number }`.
+- **Literals.** A fresh literal meets an index through its exact own keys
+  (`CoversKeys`): each key the class *may* admit must hold a field within the
+  index. For a number index a key is excused only when no number spells it
+  (`notNumericKey`: not `NaN` nor an infinity, and not beginning with a digit
+  or `-` and a digit, which every number's spelling does,
+  `numberToString_shape`), so `{ name: "n", 0: true }` is a
+  `{ name: string; [k: number]: boolean }`: `name` is no number's spelling.
+  A key the check cannot excuse, such as "1x", is held to the index:
+  incompleteness, never unsoundness.
+- **Writes.** As for string indexes, no computed write through an index is
+  typed ([Writable string index signatures](#writable-string-index-signatures)):
+  the calculus adds no key to an existing object. `x[99] = v` and `x[n] = v`
+  stay refused.
+- **Arrays** keep their own mechanism: a store of dense locations, not an
+  index. A value TypeScript types `{ [k: number]: T }` that is an array (its
+  prototype is `Array.prototype`) is not a dictionary here, which has no
+  prototype: passing an array where a number index is expected is refused, an
+  incompleteness.
+
+Where TypeScript is unsound here, the model refuses: a read at a key the
+object may lack is $V\mid\mathtt{undefined}$ (`invalid-number-index-read.ts`,
+`invalid-symbol-index-read.ts`); a mutable number index is invariant
+(`invalid-number-index-widen.ts`) and is not dropped from a mutable string
+index (`invalid-number-index-forget.ts`); and a record type has no implicit number
+index, since it states nothing of the keys it does not name
+(`invalid-number-index-implicit.ts`). Positive cases: `number-index.ts`,
+`symbol-index.ts`, `record-numeric-key.ts`.
+
+**Source forms.** The declaration reader states a number index with a
+contract of its own as the object term's `numberIndex`, a symbol index as its
+`symbolIndex`, each present only when the object has one (`type-term.mts`);
+Lean lowers them (`DeclarationGraph.lowerType`), and an annotation's type
+literal holding one is its graph rows, as one with methods is, since no claim
+atom spells an index over a class. The OCaml producer's shape carries its
+indexes with their classes (`Semantic.index_signature.keys`), proposes reads
+as above, and writes each dictionary index as `[class, labels]`
+([REQUEST-PROTOCOL](REQUEST-PROTOCOL.md)).
 
 ### Annotation intersections
 

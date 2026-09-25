@@ -440,13 +440,14 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
     intro D hh ht
     obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2,ht.2.2⟩
     exact ⟨E,hx,hh',⟨ht.1.1,hs⟩,ht.2.1.mono hx,hn⟩
-  | indexField hl hv =>
+  | indexField _ hl hv =>
     intro D hh ht
     exact ⟨D,.refl D,hh,(hh.lookup hv).2⟩
-  | indexProto _ _ hv =>
+  | indexProto _ _ _ hv =>
     intro D hh ht
-    exact ⟨D,.refl D,hh,by simpa [TermOk, Scoped, Names] using (hh.lookup hv).2⟩
-  | indexMissing _ _ =>
+    have hp := (hh.lookup hv).2
+    exact ⟨D,.refl D,hh,⟨hp.1,ht.1.2⟩,hp.2,ht.2.2⟩
+  | indexMissing _ _ _ =>
     intro D hh ht
     exact ⟨D,.refl D,hh,by simp [TermOk, Scoped, Names]⟩
   | writeC1 step ih =>

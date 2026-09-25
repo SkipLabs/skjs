@@ -19,14 +19,14 @@ private def checkCoreSource [DecidableEq ι] (G : PositiveGraphs.Graph ι) (S T 
 
 -- A dictionary constrains every present field. Normalization preserves its
 -- index obligation when meeting another dictionary or a named-field record.
-#guard normalize (Formula.inter (.atom (.dict [] [] [] [0]))
-  (.atom (.dict [] [] [] [1]))) = [.dict [] [] [] [0, 1]]
+#guard normalize (Formula.inter (.atom (.dict [] [] [] [(.strings, (0 : Nat))]))
+  (.atom (.dict [] [] [] [(.numeric, 1)]))) = [.dict [] [] [] [(.strings, 0), (.numeric, 1)]]
 #guard normalize (Formula.inter (.atom (.refs [("x", (0 : Nat))] [] []))
-  (.atom (.dict [] [] [] [1]))) = [.dict [("x", 0)] [] [] [1]]
+  (.atom (.dict [] [] [] [(.strings, 1)]))) = [.dict [("x", 0)] [] [] [(.strings, 1)]]
 
 private def jsonCycle : PositiveGraphs.Graph (Fin 2) := fun i =>
-  if i.val = 0 then .union (.atom .bool) (.atom (.dict [] [] [] [[1]]))
-  else .atom (.dict [] [] [] [[0]])
+  if i.val = 0 then .union (.atom .bool) (.atom (.dict [] [] [] [(.strings, [1])]))
+  else .atom (.dict [] [] [] [(.strings, [0])])
 
 example : Adm (normalDenote (normalizeGraph jsonCycle) 0) := normalDenote_adm _ _
 #guard checkCoreSource jsonCycle [1] [1]
@@ -64,9 +64,9 @@ def G : PositiveGraphs.Graph (Fin 12) := fun i => match i.val with
 -- states nothing of its other keys, so it is not below the dictionary.
 def MeetG : PositiveGraphs.Graph (Fin 3) := fun i => match i.val with
   | 0 => .atom .bool
-  | 1 => .inter (.atom (.refs [] [] [("a", [0])])) (.atom (.dict [] [] [] [[0]]))
+  | 1 => .inter (.atom (.refs [] [] [("a", [0])])) (.atom (.dict [] [] [] [(.strings, [0])]))
   | _ => .atom (.refs [] [] [("a", [0])])
-#guard normalizeGraph MeetG 1 = [.dict [] [] [("a", [0])] [[0]]]
+#guard normalizeGraph MeetG 1 = [.dict [] [] [("a", [0])] [(.strings, [0])]]
 #guard checkCoreSource MeetG [1] [2] ⟨[([1], [2]), ([0], [0])], []⟩
 #guard !(checkCoreSource MeetG [2] [1] ⟨[([2], [1]), ([0], [0])], []⟩)
 

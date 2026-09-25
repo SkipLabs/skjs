@@ -203,16 +203,17 @@ theorem read_proto_rule {code : CallCode} {flds : List (PropKey × Nat)} {f : Pr
 
 #print axioms read_proto_rule
 
-/-- A string dictionary covers every present field, while a missing name
-reads `undefined`. A lookup cannot discard that alternative. -/
-theorem read_dict_rule {flds : List (PropKey × Nat)} {f : String} {A : Fam}
+/-- An index view covers every present field under a key its class admits,
+while a missing key reads `undefined`. A lookup cannot discard that
+alternative. -/
+theorem read_dict_rule {flds : List (PropKey × Nat)} {f : PropKey} {K : IndexKeys} {A : Fam}
     (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap)
-    (hadm : WorldAdm W) (hok : HeapOk n W h)
-    (hd : dictViewT A n W (.objAt flds .absent)) :
+    (hadm : WorldAdm W) (hok : HeapOk n W h) (hk : K.Admits f)
+    (hd : dictViewT K A n W (.objAt flds .absent)) :
     Safe (unionT A undefT) n W h (.readAt f (.objAt flds .absent)) := by
-  cases hlook : flds.lookup (.str f) with
+  cases hlook : flds.lookup f with
   | some l =>
-    obtain ⟨c, hc, hag⟩ := dictViewT_present hd hlook
+    obtain ⟨c, hc, hag⟩ := dictViewT_present hd hk hlook
     apply Safe_mono n (fun _ _ _ _ ha => Or.inl ha) W h _
       (read_view_rule hA n W h l hadm hok hlook hc hag)
   | none =>
@@ -252,23 +253,24 @@ theorem read_optional_rule {flds : List (PropKey × Nat)} {f : PropKey} {A : Fam
       | zero => trivial
       | succ q => exact Or.inl (Or.inl ⟨rfl, Or.inr rfl⟩)
 
-/-- The same dictionary guarantee when the property name was evaluated at
-runtime. The caller must separately prove that the key is a string. -/
-theorem index_dict_rule {flds : List (PropKey × Nat)} {f : String} {A : Fam}
-    (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap)
-    (hadm : WorldAdm W) (hok : HeapOk n W h)
-    (hd : dictViewT A n W (.objAt flds .absent)) :
-    Safe (unionT A undefT) n W h (.indexAt (.objAt flds .absent) (.str f)) := by
-  cases hlook : flds.lookup (.str f) with
+/-- The same guarantee when the key was evaluated at runtime: a value whose
+`ToPropertyKey` (`propertyKey`) the index's class admits. The caller must
+separately prove the key's value is one. -/
+theorem index_dict_rule {flds : List (PropKey × Nat)} {key : Tm} {f : PropKey} {K : IndexKeys}
+    {A : Fam} (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap)
+    (hadm : WorldAdm W) (hok : HeapOk n W h) (hkey : propertyKey key = some f) (hk : K.Admits f)
+    (hd : dictViewT K A n W (.objAt flds .absent)) :
+    Safe (unionT A undefT) n W h (.indexAt (.objAt flds .absent) key) := by
+  cases hlook : flds.lookup f with
   | some l =>
-    obtain ⟨c, hc, hag⟩ := dictViewT_present hd hlook
+    obtain ⟨c, hc, hag⟩ := dictViewT_present hd hk hlook
     cases n with
     | zero => trivial
     | succ p =>
       obtain ⟨v, hv, hmem⟩ := hok.2 l c hc
       have hAv : A p (trunc p (Nat.le_succ p) W) v := hag p (by omega) _ v (hmem p (by omega))
       refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, v, WExt_refl _,
-        WorldAdm_trunc _ hadm, .indexField hlook hv, HeapOk_trunc p W h hok, ?_⟩
+        WorldAdm_trunc _ hadm, .indexField hkey hlook hv, HeapOk_trunc p W h hok, ?_⟩
       cases p with
       | zero => trivial
       | succ q => exact Or.inl (Or.inl ⟨hA _ _ _ hAv, Or.inl hAv⟩)
@@ -277,7 +279,7 @@ theorem index_dict_rule {flds : List (PropKey × Nat)} {f : String} {A : Fam}
     | zero => trivial
     | succ p =>
       refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, .undef, WExt_refl _,
-        WorldAdm_trunc _ hadm, .indexMissing hlook (dictViewT_no_proto hd), HeapOk_trunc p W h hok, ?_⟩
+        WorldAdm_trunc _ hadm, .indexMissing hkey hlook (dictViewT_no_proto hd), HeapOk_trunc p W h hok, ?_⟩
       cases p with
       | zero => trivial
       | succ q => exact Or.inl (Or.inl ⟨rfl, Or.inr rfl⟩)

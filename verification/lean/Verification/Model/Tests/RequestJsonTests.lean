@@ -66,9 +66,9 @@ def response : Json := match produceJson (toJson mappedRequest) 12 with
 -- Reject dangling labels even in unused type definitions.
 #guard !(ok (decodeRequest (toJson { mappedRequest with types := (mappedRequest.types ++ RequestJson.rows [[PositiveNormalization.Clause.refs [(valueField, [99])] [] []]]) })))
 #guard ok (decodeRequest (toJson { mappedRequest with types :=
-  mappedRequest.types ++ (RequestJson.rows [[PositiveNormalization.Clause.dict [] [] [] [[1]]]]) }))
+  mappedRequest.types ++ (RequestJson.rows [[PositiveNormalization.Clause.dict [] [] [] [(.strings, [1])]]]) }))
 #guard !(ok (decodeRequest (toJson { mappedRequest with types :=
-  mappedRequest.types ++ (RequestJson.rows [[PositiveNormalization.Clause.dict [] [] [] [[99]]]]) })))
+  mappedRequest.types ++ (RequestJson.rows [[PositiveNormalization.Clause.dict [] [] [] [(.strings, [99])]]]) })))
 #guard !(ok (decodeRequest (toJson { mappedRequest with result := [99] })))
 #guard !(ok (decodeRequest (toJson { mappedRequest with claims := [⟨[[99]],[1]⟩] })))
 #guard !(ok (produceJson (toJson mappedRequest) 0))

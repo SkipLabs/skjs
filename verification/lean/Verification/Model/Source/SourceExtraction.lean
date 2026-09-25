@@ -345,9 +345,11 @@ def typeofTerm (slot : Nat) : Tm :=
 
 /-- What a computed key names, by its claimed type: a field for a string
 singleton, a dictionary lookup for a broad string, or an element of the
-array's store for a number. On a receiver that is only records, a number
-singleton names the field its `ToString` spells (`ToPropertyKey`), as `o[0]`
-reads `o["0"]`; both zeros spell `0`. The key stays in
+array's store for a number. On a receiver that is only records and
+dictionaries, a number singleton names the field its `ToString` spells
+(`ToPropertyKey`), as `o[0]` reads `o["0"]`, both zeros spelling `0`; and a
+broad number or symbol is a dictionary lookup, through an index over its keys.
+The key stays in
 the program, evaluated after the receiver and before any right side, and its
 expression obligation must establish that claim. -/
 private inductive KeyKind where
@@ -355,18 +357,25 @@ private inductive KeyKind where
   | dynamic
   | element
 
-/-- Whether an expression is claimed only at records: no array store, no
-primitive, nothing else. Such an object's property named by a number is the
-field its `ToString` spells; an array's is its store's element. -/
+/-- Whether an expression is claimed only at records and dictionaries: no
+array store, no primitive, nothing else. Such an object's property named by a
+number is the field its `ToString` spells; an array's is its store's
+element. -/
 private def recordReceiver (fc : SourceClaims.Function) (e : Fragment.Expr) : Compiler Bool := do
   let G := SourceTypes.graph (← table)
   let R ← exprType fc e
   let cs := PositiveRules.expand G R
   return !cs.isEmpty && (storeOf G R).isNone && cs.all fun
-    | .refs .. => true | _ => false
+    | .refs .. | .dict .. => true | _ => false
+
+/-- Whether an expression is claimed only at dictionaries, whose indexes a
+broad key reads through. -/
+private def dictReceiver (fc : SourceClaims.Function) (e : Fragment.Expr) : Compiler Bool := do
+  let cs := PositiveRules.expand (SourceTypes.graph (← table)) (← exprType fc e)
+  return !cs.isEmpty && cs.all fun | .dict .. => true | _ => false
 
 private def keyField (fc : SourceClaims.Function) (key : Fragment.Expr)
-    (string : Bool := false) (record : Bool := false) : Compiler KeyKind := do
+    (string : Bool := false) (record : Bool := false) (dict : Bool := false) : Compiler KeyKind := do
   let K ← exprType fc key
   let G := SourceTypes.graph (← table)
   let spelled := fun (s : String) =>
@@ -375,6 +384,10 @@ private def keyField (fc : SourceClaims.Function) (key : Fragment.Expr)
   match PositiveRules.expand G K with
   | [.strLit s] => spelled s
   | [.str] => pure .dynamic
+  | [.num] | [.symbol] => if dict then pure .dynamic else
+    if string && decide (Answers G K .isNum true) then return .element else do
+      let _ ← arrayIndex G K
+      pure .element
   | .numLit b :: cs =>
     if record && cs.all (fun c => match c with
         | .numLit b' => numberToString b' == numberToString b | _ => false) then
@@ -457,7 +470,7 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
     let key ← comparisonsExpr fc key
     let e ← comparisonsExpr fc e
     let string := decide (Answers (SourceTypes.graph (← table)) (← exprType fc e) .isStr true)
-    match ← keyField fc key string (← recordReceiver fc e) with
+    match ← keyField fc key string (← recordReceiver fc e) (← dictReceiver fc e) with
     | .field s => return .index p (some s) e key
     | .dynamic => return .index p none e key
     | .element => return .elemAt p e key
@@ -480,9 +493,9 @@ private partial def comparisonsExpr (fc : SourceClaims.Function) (e : Fragment.E
     let key ← comparisonsExpr fc key
     let r ← comparisonsExpr fc r
     let rhs ← comparisonsExpr fc rhs
-    match ← keyField fc key (record := ← recordReceiver fc r) with
+    match ← keyField fc key (record := ← recordReceiver fc r) (dict := ← dictReceiver fc r) with
     | .field s => return .indexWrite p (some s) r key rhs
-    | .dynamic => throw "a dynamic string index write is outside the readonly dictionary fragment"
+    | .dynamic => throw "a dynamic index write is outside the dictionary fragment: it may add a key, and the calculus adds no key to an existing object"
     | .element => return .elemWrite p r key rhs
   | .withValue p f i ft bt => return .withValue p (← comparisonsExpr fc f) (← comparisonsExpr fc i) ft bt
   | .lambda p receiver tps ps defaults rest result b =>
@@ -1206,13 +1219,16 @@ private partial def readCell (G : PositiveGraphs.NormalGraph Nat) (Γ : List (Ty
         pure (P, B)
       let some (P, B) := inherited | throw s!"read of a field '{fld}' the contract does not name"
       pure (DirectProof.node Γ (.readAt fld a.term) B (.readProto P) [a])
-  | [.dict fs [] vs (B :: _) [] [] [] _] =>
-    -- A named field or view, else the index, which may miss.
+  | [.dict fs [] vs ix [] [] [] _] =>
+    -- A named field or view, else an index whose class surely admits the
+    -- key, which may miss.
     match fs.lookup fld, vs.lookup fld with
     | some B, _ => pure (DirectProof.node Γ (.readAt fld a.term) B .read [a])
     | none, some B => pure (DirectProof.node Γ (.readAt fld a.term) B .readView [a])
-    | none, none => pure (DirectProof.node Γ (.readAt fld a.term) (B ++ [3]) (.readDict B [3]) [a])
-  | [.dict _ [] _ [] [] [] [] _] => throw "indexed object has no string index contract"
+    | none, none =>
+      let some (K, B) := (PositiveNormalization.numericFirst ix).find? (fun (K, _) => K.surely fld)
+        | throw s!"read of a key '{fld}' no index of the object constrains"
+      pure (DirectProof.node Γ (.readAt fld a.term) (B ++ [3]) (.readDict K B [3]) [a])
   | [.callable fs _ _ _] =>
     let some B := fs.lookup fld | throw s!"read of a field '{fld}' the contract does not name"
     pure (DirectProof.node Γ (.readAt fld a.term) B .readCallable [a])
@@ -1515,13 +1531,20 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let r ← closureExpr fc scope Γ receiver
     let k ← closureExpr fc (held ⟨"",some receiver.span⟩ :: scope) (r.type::Γ) key
     let G := SourceTypes.graph (← table)
-    let [.dict _ [] _ (E :: _) [] [] [] _] := PositiveRules.expand G r.type
-      | throw "a dynamic string index requires a dictionary receiver"
-    let [.str] := PositiveRules.expand G k.type
-      | throw "a dynamic dictionary key must have string type"
+    let [.dict _ [] _ ix [] [] [] _] := PositiveRules.expand G r.type
+      | throw "a dynamic index requires a dictionary receiver"
+    -- The key's clause names the keys it reaches: a string any string key, a
+    -- number a canonical numeric one, a symbol a symbol key. An index over
+    -- as many keys reads it.
+    let [c] := PositiveRules.expand G k.type
+      | throw "a dynamic dictionary key must be a string, a number or a symbol"
+    let some KK := [IndexKeys.strings, .numeric, .symbols].find? (PositiveNormalization.keyClause · == c)
+      | throw "a dynamic dictionary key must be a string, a number or a symbol"
+    let some (K, E) := (ix.find? (·.1 == KK)).orElse fun _ => ix.find? (fun (K, _) => KK.within K)
+      | throw "no index of the dictionary constrains the dynamic key's keys"
     let H := k.type::r.type::Γ
     let read := DirectProof.node H (.indexAt (.var 1) (.var 0)) (E ++ [3])
-      (.indexDict E [3]) [DirectProof.var H 1 r.type, DirectProof.var H 0 k.type]
+      (.indexDict K KK E [3]) [DirectProof.var H 1 r.type, DirectProof.var H 0 k.type]
     pure (DirectProof.letE Γ r (DirectProof.letE (r.type::Γ) k read))
   | .indexWrite _ (some fld) receiver key rhs => do
     let B ← exprType fc receiver

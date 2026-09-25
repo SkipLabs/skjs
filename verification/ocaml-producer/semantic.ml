@@ -41,7 +41,11 @@ and key = Name of string | Key of int
    a member, not a field holding a function value, as Lean reads method
    syntax. *)
 and field = { name: key; optional: bool; read: ty; write: ty option; host: bool }
-and index_signature = { value: ty; writable: ty option }
+(* An index signature constrains the keys its class admits: every string key
+   (`[k: string]`), the canonical numeric ones (`[k: number]`), or every symbol
+   key (`[k: symbol]`); an index over a union of key types is one per member. *)
+and index_keys = Strings | Numeric | Symbols
+and index_signature = { keys: index_keys; value: ty; writable: ty option }
 (* Argument lists are not value types. A pack parameter and its instances
    travel through their own substitution projection, never through [ty]. *)
 and pack = PackParameter of rigid | Pack of sequence
@@ -55,8 +59,8 @@ and quantifier = { identity: rigid; bound: type_argument option }
 and signature = { quantified: quantifier list; receiver: ty; params: ty list;
                   variadic: ty option; rest_pack: pack option; result: ty }
 and sequence = { required: ty list; optional_elements: ty list; rest: ty option; readonly: bool }
-and shape = { fields: field list; string_index: index_signature option; calls: signature list; elements: sequence option }
-let record fields = Atoms [Shape {fields;string_index=None;calls=[];elements=None}]
+and shape = { fields: field list; indexes: index_signature list; calls: signature list; elements: sequence option }
+let record fields = Atoms [Shape {fields;indexes=[];calls=[];elements=None}]
 (* Two object contracts as the one object both describe: their named members,
    which must be disjoint, and the one string index either states. `None`
    where they are not both plain objects so combined: a hint only, as Lean's
@@ -71,8 +75,8 @@ let rec mentions_rigid = function
       | Shape s ->
         List.exists (fun (f:field) -> mentions_rigid f.read
           || Option.fold ~none:false ~some:mentions_rigid f.write) s.fields
-        || Option.fold ~none:false ~some:(fun (i:index_signature) -> mentions_rigid i.value
-          || Option.fold ~none:false ~some:mentions_rigid i.writable) s.string_index
+        || List.exists (fun (i:index_signature) -> mentions_rigid i.value
+          || Option.fold ~none:false ~some:mentions_rigid i.writable) s.indexes
         || List.exists signature_mentions_rigid s.calls
         || Option.fold ~none:false ~some:sequence_mentions_rigid s.elements
       | Exact fs -> List.exists (fun (f:field) -> mentions_rigid f.read) fs
@@ -87,19 +91,19 @@ and signature_mentions_rigid (s:signature) =
 let meet_objects a b = match a,b with
   | Atoms [Shape x],Atoms [Shape y]
     when x.calls=[] && y.calls=[] && x.elements=None && y.elements=None &&
-         (x.string_index=None || y.string_index=None) ->
+         (x.indexes=[] || y.indexes=[]) ->
     let names = List.map (fun (f:field) -> f.name) (x.fields @ y.fields) in
     if List.length names <> List.length (List.sort_uniq compare names) then None
     else Some (Atoms [Shape {x with fields=x.fields @ y.fields;
-      string_index=(match x.string_index with None -> y.string_index | own -> own)}])
+      indexes=(match x.indexes with [] -> y.indexes | own -> own)}])
   | _ -> None
 let top = Atoms [Top]
 let arrow params result =
-  Atoms [Shape {fields=[];string_index=None;calls=[{quantified=[];receiver=top;params;variadic=None;rest_pack=None;result}];elements=None}]
+  Atoms [Shape {fields=[];indexes=[];calls=[{quantified=[];receiver=top;params;variadic=None;rest_pack=None;result}];elements=None}]
 let quantified_arrow ?(receiver=top) quantified params result =
-  Atoms [Shape {fields=[];string_index=None;calls=[{quantified;receiver;params;variadic=None;rest_pack=None;result}];elements=None}]
+  Atoms [Shape {fields=[];indexes=[];calls=[{quantified;receiver;params;variadic=None;rest_pack=None;result}];elements=None}]
 let variadic_arrow ?(quantified=[]) ?(receiver=top) params element result =
-  Atoms [Shape {fields=[];string_index=None;calls=[{quantified;receiver;params;variadic=Some element;rest_pack=None;result}];elements=None}]
+  Atoms [Shape {fields=[];indexes=[];calls=[{quantified;receiver;params;variadic=Some element;rest_pack=None;result}];elements=None}]
 let ground xs = Atoms (List.sort_uniq compare xs)
 let bool = ground [True;False]
 let union a b = match a,b with
@@ -115,7 +119,7 @@ let rec widen = function
       | a -> [a]) xs)
   | Rigid _ as t -> t | Union ts -> List.fold_left union (Atoms []) (List.map widen ts)
   | Meet (t,ts) -> Meet (widen t,ts)
-let array elements = Atoms [Shape {fields=[];string_index=None;calls=[];elements=Some elements}]
+let array elements = Atoms [Shape {fields=[];indexes=[];calls=[];elements=Some elements}]
 (* A call may omit a trailing position exactly when its contract admits
    `undefined`: that is the value bound there. Optionality is a property of the
    declared type, not a separate arity record. *)
@@ -123,7 +127,7 @@ let array elements = Atoms [Shape {fields=[];string_index=None;calls=[];elements
    tuple its arguments are collected into. A contract with optional or
    unbounded positions is not a fixed number of further arguments. *)
 let tuple_positions ?(readonly=false) = function
-  | Atoms [Shape {fields=[];string_index=None;calls=[];elements=Some s}]
+  | Atoms [Shape {fields=[];indexes=[];calls=[];elements=Some s}]
     when s.optional_elements=[] && s.rest=None && (readonly || not s.readonly) -> Some s.required
   | _ -> None
 
@@ -132,7 +136,7 @@ let tuple_positions ?(readonly=false) = function
    collects is fresh, and a readonly view of it gives up only writes): it
    collects any number of them. *)
 let array_element ?(readonly=false) = function
-  | Atoms [Shape {fields=[];string_index=None;calls=[];elements=Some s}]
+  | Atoms [Shape {fields=[];indexes=[];calls=[];elements=Some s}]
     when s.required=[] && s.optional_elements=[] && (readonly || not s.readonly) -> s.rest
   | _ -> None
 

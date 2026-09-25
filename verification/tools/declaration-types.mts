@@ -49,6 +49,12 @@ export type TypeTerm =
       optional: TypeTerm[]; rest: TypeTerm | null; span: Span }
   | { k: "object"; fields: { name: PropertyKey; optional: boolean; readonly: boolean; type: TypeTerm; span: Span }[];
       stringIndex: { readonly: boolean; value: TypeTerm; span: Span } | null;
+      /** A number index, `[k: number]: V` with a contract of its own: it
+       * constrains the canonical numeric keys ("0", "1.5", "-1", "NaN"),
+       * present only when the object has one; likewise a symbol index, every
+       * symbol key. */
+      numberIndex?: { readonly: boolean; value: TypeTerm; span: Span };
+      symbolIndex?: { readonly: boolean; value: TypeTerm; span: Span };
       calls: Extract<TypeTerm, { k: "function" }>[]; span: Span }
   | { k: "function"; receiver: TypeTerm | null; params: TypeTerm[];
       rest: TypeTerm | null; result: TypeTerm; span: Span }

@@ -59,6 +59,7 @@ deriving instance ToJson, FromJson for PositiveNormalization.Tuple
 deriving instance ToJson, FromJson for MethodMembers.Sig
 deriving instance ToJson, FromJson for OptionalField
 deriving instance ToJson, FromJson for KeyBound
+deriving instance ToJson, FromJson for IndexKeys
 deriving instance ToJson, FromJson for Clause
 
 /-- The clause fields that are left out of JSON when empty: a call clause's
@@ -242,8 +243,8 @@ def clauseTypes : Clause (Ty Nat) → List (Ty Nat)
   | .pack a bs => (a :: bs).flatMap fun t => t.required ++ t.optional ++ t.rest.toList
   | .refs A bs vs os ms _ => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd ++
       os.map (·.type) ++ ms.flatMap MethodMembers.Sig.operands
-  | .dict A bs vs ds os ms _ cs => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd ++ ds ++
-      os.map (·.type) ++ ms.flatMap MethodMembers.Sig.operands ++ cs
+  | .dict A bs vs ds os ms _ cs => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd ++
+      ds.map Prod.snd ++ os.map (·.type) ++ ms.flatMap MethodMembers.Sig.operands ++ cs.map Prod.snd
 
   | .arrs L S => L.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++
       S.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2.1, p.2.2.2])

@@ -1362,6 +1362,8 @@ function mergeMembers(parts: TypeTerm[], fail: (at: Node, message: string) => ne
   if (!rest.length) return first;
   const fields = [...first.fields];
   let stringIndex = first.stringIndex;
+  let numberIndex = first.numberIndex;
+  let symbolIndex = first.symbolIndex;
   const calls = [...first.calls];
   const key = (name: PropertyKey) => typeof name === "string" ? name : `[symbol ${name.symbol}]`;
   for (const part of rest) {
@@ -1375,9 +1377,18 @@ function mergeMembers(parts: TypeTerm[], fail: (at: Node, message: string) => ne
       if (stringIndex) fail(at, "a merged interface declares two string index signatures");
       stringIndex = part.stringIndex;
     }
+    if (part.numberIndex) {
+      if (numberIndex) fail(at, "a merged interface declares two number index signatures");
+      numberIndex = part.numberIndex;
+    }
+    if (part.symbolIndex) {
+      if (symbolIndex) fail(at, "a merged interface declares two symbol index signatures");
+      symbolIndex = part.symbolIndex;
+    }
     calls.push(...part.calls);
   }
-  return { ...first, fields, stringIndex, calls };
+  return { ...first, fields, stringIndex, ...(numberIndex ? { numberIndex } : {}),
+    ...(symbolIndex ? { symbolIndex } : {}), calls };
 }
 
 /** A standard library interface through its overlay entries

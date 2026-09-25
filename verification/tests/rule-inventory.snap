@@ -26,8 +26,8 @@ HasTy  (Programs/ProgramTyping.lean)
   readView : HasTy G Γ a Ref → Represents G Ref c → namedMembers c = some (fs, vs) → (f, A) ∈ vs → HasTy G Γ (.readAt f a) A
   readProto {a : Tm} {Ref P : Ty ι} {fs vs : List (PropKey × Ty ι)} {os : List (OptionalField (Ty ι))} {ms : List (MethodMembers.Sig (Ty ι))} {ks : List KeyBound} {K : KeyBound} {gs ws : List (PropKey × Ty ι)} {os' : List (OptionalField (Ty ι))} {ms' : List (MethodMembers.Sig (Ty ι))} {ks' : List KeyBound} {f : PropKey} {A : Ty ι} : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → K ∈ ks → K.admits f = false → (CallArguments.protoField, P) ∈ fs ++ vs → Represents G P (.refs gs [] ws os' ms' ks') → (f, A) ∈ gs ++ ws → HasTy G Γ (.readAt f a) A
   readOptional {a : Tm} {Ref : Ty ι} {fs vs : List (PropKey × Ty ι)} {os : List (OptionalField (Ty ι))} {ms : List (MethodMembers.Sig (Ty ι))} {ks : List KeyBound} {f : PropKey} {r : Bool} {A U : Ty ι} : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → ⟨f, r, A⟩ ∈ os → Represents G U .undef → HasTy G Γ (.readAt f a) (A ++ U)
-  readDict {f : String} : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix os ms ks cs) → A ∈ ix → Represents G U .undef → HasTy G Γ (.readAt (.str f) a) (A ++ U)
-  indexDict : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix os ms ks cs) → HasTy G Γ key K → Represents G K .str → A ∈ ix → Represents G U .undef → HasTy G Γ (.indexAt a key) (A ++ U)
+  readDict {f : PropKey} {K : IndexKeys} : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix os ms ks cs) → (K, A) ∈ ix → K.surely f = true → Represents G U .undef → HasTy G Γ (.readAt f a) (A ++ U)
+  indexDict {K KK : IndexKeys} : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix os ms ks cs) → HasTy G Γ key Kt → Represents G Kt (keyClause KK) → KK.within K = true → (K, A) ∈ ix → Represents G U .undef → HasTy G Γ (.indexAt a key) (A ++ U)
   write : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → (f, A) ∈ fs → HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
   arith : HasTy G Γ a A → HasTy G Γ b B → OperatorTypes G op A B N → HasTy G Γ (.arith op a b) N
   arrLit {Γ : List (Ty ι)} {L : Ty ι} {T : Tuple (Ty ι)} {xs : List (Ty ι × Tm)} : Represents G L (.list T []) → T.required.length ≤ xs.length → (T.rest = none → xs.length ≤ T.required.length + T.optional.length) → (∀ p ∈ xs.zipIdx, positionTy T p.2 = some p.1.1) → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → HasTy G Γ (.arrLit (xs.map Prod.snd)) L
@@ -77,8 +77,8 @@ Rule  (Programs/ProgramCertificates.lean)
   write
   arith
   test
-  readDict (element undef : Ty ι)
-  indexDict (element undef : Ty ι)
+  readDict (keys : IndexKeys) (element undef : Ty ι)
+  indexDict (keys keyKeys : IndexKeys) (element undef : Ty ι)
   readOptional (element undef : Ty ι)
   readProto (proto : Ty ι)
   arrLit

@@ -26,6 +26,27 @@ private def str (j : Json) (name : String) : Except String String :=
 private def bool (j : Json) (name : String) : Except String Bool :=
   do (← field j name).getBool?
 
+/-- An object term's index signatures, by the keys each constrains: its
+`stringIndex`, and the `numberIndex` and `symbolIndex` a term states only when
+it has them. -/
+private def indexSignatures (term : Json) : List (String × IndexKeys × Json) :=
+  [("stringIndex", IndexKeys.strings, term.getObjVal? "stringIndex"),
+   ("numberIndex", .numeric, term.getObjVal? "numberIndex"),
+   ("symbolIndex", .symbols, term.getObjVal? "symbolIndex")].filterMap
+    fun (name, keys, index) => match index with
+      | .ok .null | .error _ => none
+      | .ok index => some (name, keys, index)
+
+/-- The members an object term has: the number and symbol indexes only when
+present. -/
+private def objectMembers (term : Json) : List String :=
+  ["k", "fields", "stringIndex", "calls", "span"] ++
+    ((indexSignatures term).map (·.1)).filter (· != "stringIndex")
+
+/-- Whether an object term has a number or symbol index. -/
+private def keyedIndexes (term : Json) : Bool :=
+  (indexSignatures term).any (·.1 != "stringIndex")
+
 private structure Definition where
   identity : Json
   parameters : Array Json
@@ -629,7 +650,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     return [calls, ctors].eraseDups.mergeSort (· ≤ ·)
   | "pack" => throw "a pack parameter outside a signature's rest"
   | "object" =>
-    CellClaims.fieldsExactly term ["k", "fields", "stringIndex", "calls", "span"]
+    CellClaims.fieldsExactly term (objectMembers term)
     -- A method, one signature or several with the declaration as receiver, is
     -- a host-relative member: its contract holds when it is invoked on the
     -- object it is read from, so it is neither a field nor a view. An
@@ -673,12 +694,16 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let names := fs.toList.map (·.1) ++ optional.map (·.key) ++ methods.map (·.key)
 
     if names.eraseDups.length != names.length then throw "duplicate declaration field"
-    -- A string index is a view; a mutable one is also a writable index at
-    -- the same contract, as a mutable field is an invariant one.
-    let index ← field term "stringIndex"
-    let (indexes, cells) ← if index == .null then pure (([] : List (List Nat)), ([] : List (List Nat))) else do
+    -- An index is a view over the keys it constrains; a mutable one is also
+    -- a writable index at the same contract, as a mutable field is an
+    -- invariant one.
+    let mut indexes : List (IndexKeys × List Nat) := []
+    let mut cells : List (IndexKeys × List Nat) := []
+    for (_, keys, index) in indexSignatures term do
+      CellClaims.fieldsExactly index ["readonly", "value", "span"]
       let value ← lowerType ds owner params seen (← field index "value")
-      pure ([value], if ← bool index "readonly" then [] else [value])
+      indexes := indexes ++ [(keys, value)]
+      if !(← bool index "readonly") then cells := cells ++ [(keys, value)]
     let writes := fs.toList.filterMap fun (name, value, readonly) =>
       if readonly then none else some (name, value)
     let views := fs.toList.filterMap fun (name, value, readonly) =>
@@ -989,8 +1014,8 @@ private partial def rigidClaim (ds : Array Definition) (owner : Nat) (env : Arra
     return claimType [Json.mkObj [("a", toJson "constructor"), ("params", toJson params),
       ("result", ← rigidClaim ds owner env seen (← field term "result"))]]
   | "object" =>
-    CellClaims.fieldsExactly term ["k", "fields", "stringIndex", "calls", "span"]
-    if (← field term "stringIndex") != .null || !(← arr term "calls").isEmpty then
+    CellClaims.fieldsExactly term (objectMembers term)
+    if (← field term "stringIndex") != .null || keyedIndexes term || !(← arr term "calls").isEmpty then
       throw "a declaration with call or index signatures applied to a type parameter is outside the fragment"
     let fields ← (← arr term "fields").mapM fun f => do
       let optional ← bool f "optional"
@@ -1132,11 +1157,16 @@ private partial def annotationClaim (ds : Array Definition) (term : Json)
     return claimType [Json.mkObj [("a", toJson "constructor"), ("params", toJson params),
       ("result", ← recur (← field term "result"))]]
   | "object" =>
-    CellClaims.fieldsExactly term ["k", "fields", "stringIndex", "calls", "span"]
+    CellClaims.fieldsExactly term (objectMembers term)
     if !(← arr term "calls").isEmpty then
       throw "a call signature in a source annotation is outside the fragment"
-    -- A method is a host-relative member, which no claim atom spells: the
-    -- record is its graph rows, lowered as a declaration's body is.
+    -- A method is a host-relative member, and a number or symbol index an
+    -- index over a class of keys, which no claim atom spells: the record is
+    -- its graph rows, lowered as a declaration's body is.
+    if keyedIndexes term then
+      if mentionsKind "binder" term then
+        throw "a number or symbol index of an annotation's type literal over a type parameter is outside the fragment"
+      return graphClaim (← lowerType ds ds.size #[] {} term)
     if (← arr term "fields").any (fun f => mentionsSelf ((f.getObjVal? "type").toOption.getD .null)) then
       if mentionsKind "binder" term then
         throw "a method of an annotation's type literal over a type parameter is outside the fragment"

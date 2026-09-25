@@ -50,9 +50,8 @@ def substClause [DecidableEq ι] (p : ι) (A : List ι) : Clause (List ι) → C
   | .refs a bs vs os ms ks => .refs (substFields p A a) (bs.map (substFields p A)) (substFields p A vs)
       (os.map (·.map (substTy p A))) (ms.map (MethodMembers.Sig.map (substTy p A))) ks
   | .dict a bs vs ds os ms ks cs => .dict (substFields p A a) (bs.map (substFields p A))
-      (substFields p A vs) (ds.map (substTy p A)) (os.map (·.map (substTy p A)))
-
-      (ms.map (MethodMembers.Sig.map (substTy p A))) ks (cs.map (substTy p A))
+      (substFields p A vs) (ds.map fun d => (d.1, substTy p A d.2)) (os.map (·.map (substTy p A)))
+      (ms.map (MethodMembers.Sig.map (substTy p A))) ks (cs.map fun d => (d.1, substTy p A d.2))
   | .arrs L S => .arrs (L.map fun q => (substTy p A q.1, q.2.1.map (substTy p A), substTy p A q.2.2))
       (S.map fun q => (substTy p A q.1, q.2.1.map (substTy p A), substTy p A q.2.2.1,
         substTy p A q.2.2.2))
