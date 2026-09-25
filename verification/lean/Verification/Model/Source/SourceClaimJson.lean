@@ -757,6 +757,15 @@ def decode (j : Json) : Except String Document := do
 
 private abbrev Sites := List Nat × List Span × List Span
 private def joinSites (a b : Sites) : Sites := (a.1 ++ b.1,a.2.1 ++ b.2.1,a.2.2 ++ b.2.2)
+/-- The spans of a pattern's array rests: each is a fresh array, claimed like
+an array literal. -/
+private partial def restSpans : Fragment.Pattern Fragment.Expr → List Span
+  | .name .. => []
+  | .object _ props => props.flatMap fun (_, t, _) => restSpans t
+  | .array _ elems rest => elems.flatMap (fun (_, t, _) => restSpans t) ++
+      match rest with
+      | some (_, q, t) => q :: restSpans t
+      | none => []
 private partial def exprSites : Fragment.Expr → Sites
   | .var p _ | .lit p _ => ([],[p],[])
   -- A defaulted parameter's expression is an ordinary source expression, so it
@@ -771,8 +780,9 @@ private partial def exprSites : Fragment.Expr → Sites
   -- the producer claims the value written, not the location.
   | .index p _ a b | .arith p _ a b | .logicalAssign p _ a b | .elemAt p a b | .comma p a b => joinSites ([],[p],[]) (joinSites (exprSites a) (exprSites b))
   | .arrayLit p es => es.foldl (fun acc a => joinSites acc (exprSites a)) ([],[p],[])
-  | .arrayAssign p targets rhs => targets.foldl (fun acc q => match q.default_ with
-      | some d => joinSites acc (exprSites d) | none => acc) (joinSites ([],[p],[]) (exprSites rhs))
+  | .arrayAssign p targets rest rhs => targets.foldl (fun acc q => match q.default_ with
+      | some d => joinSites acc (exprSites d) | none => acc)
+      (joinSites ([],p :: (rest.map (·.1)).toList,[]) (exprSites rhs))
   | .elemWrite p a b c => joinSites ([],[p],[]) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
   | .update p _ a none _ => joinSites ([],[p],[]) (exprSites a)
   | .update p _ a (some r) _ => joinSites ([],[p],[]) (joinSites (exprSites a) (exprSites r))
@@ -794,6 +804,8 @@ private partial def exprSites : Fragment.Expr → Sites
       ((list.map exprSites).getD ([],[],[]))))
   | .done _ => ([],[],[])
   | .seqBody p a b | .letBody p _ _ a b => joinSites ([p.1],[],[]) (joinSites (exprSites a) (exprSites b))
+  | .destructBody p t a b => t.defaults.foldl (fun acc e => joinSites acc (exprSites e))
+      (joinSites ([p.1],restSpans t,[]) (joinSites (exprSites a) (exprSites b)))
   | .ifBody p result a b c => joinSites (if result.isSome then ([p.1],[],[]) else ([],[p],[])) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
 private partial def stmtSites : Fragment.Stmt → Sites
   | .brk p _ | .cont p => ([p.1],[],[])
@@ -804,11 +816,11 @@ private partial def stmtSites : Fragment.Stmt → Sites
       (fun s st => joinSites s (stmtSites st)) ([p.1],[],[])
   -- One entry for the statement; every declarator's initializer is a site.
   | .constants p bs | .mutables p bs => bs.foldl (fun acc b => joinSites acc (exprSites b.init)) ([p.1],[],[])
-  -- The initializer and each default are sites; the pattern's reads are not.
-  | .pattern p props init => props.foldl (fun acc q => match q.default_ with
-      | some d => joinSites acc (exprSites d) | none => acc) (joinSites ([p.1],[],[]) (exprSites init))
-  | .arrayPattern p elems init => elems.foldl (fun acc q => match q.default_ with
-      | some d => joinSites acc (exprSites d) | none => acc) (joinSites ([p.1],[],[]) (exprSites init))
+  -- The initializer, each default and each array rest, a fresh array like a
+  -- literal, are sites; the pattern's reads are not.
+  | .destructure p target d init =>
+    (d.toList ++ target.defaults).foldl (fun acc e => joinSites acc (exprSites e))
+      (joinSites ([p.1],restSpans target,[]) (exprSites init))
   | .loop p c body update => joinSites ([p.1],[],[]) (joinSites (exprSites c)
       ((body ++ update).foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])))
   -- A block has no entry of its own.

@@ -67,7 +67,7 @@ import {
   type RestArrow,
   type Tuple,
 } from "./type-graph.mts";
-import type { Ast, Expr, FunctionAst, Stmt } from "./fragment.mts";
+import type { Ast, Expr, FunctionAst, PatternAst, Stmt } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { messageOf } from "./thrown.mts";
 
@@ -134,6 +134,26 @@ function addExpr(out: Sites, pos: Span, kind: string): void {
   if (!out.exprs.has(key)) out.exprs.set(key, { pos, kind });
 }
 
+/** A pattern's defaults and array rests (fresh arrays) are sites; its reads
+ * are not source expressions and carry no claim. */
+function walkPattern(t: PatternAst, out: Sites): void {
+  if (t.k === "object")
+    t.props.forEach((p) => {
+      if (p.default_) walkExpr(p.default_, out);
+      walkPattern(p.target, out);
+    });
+  else if (t.k === "array") {
+    t.elems.forEach((p) => {
+      if (p.default_) walkExpr(p.default_, out);
+      walkPattern(p.target, out);
+    });
+    if (t.rest) {
+      addExpr(out, t.rest.pos, "arrayRest");
+      walkPattern(t.rest.target, out);
+    }
+  }
+}
+
 function walkExpr(e: Expr, out: Sites): void {
   switch (e.k) {
     case "id":
@@ -188,9 +208,10 @@ function walkExpr(e: Expr, out: Sites): void {
       if (e.rhs) walkExpr(e.rhs, out);
       return;
     case "arrayAssign":
-      // The right side and each default are sites; the element reads and
-      // the local writes are not source expressions.
+      // The right side, each default and the rest's fresh array are sites;
+      // the element reads and the local writes are not source expressions.
       addExpr(out, e.pos, "arrayAssign");
+      if (e.rest) addExpr(out, e.rest.pos, "arrayRest");
       walkExpr(e.rhs, out);
       e.targets.forEach((p) => {
         if (p.default_) walkExpr(p.default_, out);
@@ -276,6 +297,12 @@ function walkExpr(e: Expr, out: Sites): void {
       out.entries.add(e.pos[0]);
       walkExpr(e.e, out);
       return;
+    case "destructBody":
+      out.entries.add(e.pos[0]);
+      walkExpr(e.init, out);
+      walkPattern(e.target, out);
+      walkExpr(e.body, out);
+      return;
     case "doneBody":
       // Administrative completion; no source expression claim.
       return;
@@ -301,20 +328,14 @@ function walkStmt(s: Stmt, out: Sites): void {
       // One entry for the statement; every declarator's initializer is a site.
       s.bindings.forEach((b) => walkExpr(b.init, out));
       return;
-    case "pattern":
-      // The initializer and each default are sites; the reads are not source
-      // expressions and carry no claim.
+    case "destructure": {
+      // The initializer, each default and each array rest (a fresh array) are
+      // sites; the reads are not source expressions and carry no claim.
       walkExpr(s.init, out);
-      s.props.forEach((p) => {
-        if (p.default_) walkExpr(p.default_, out);
-      });
+      if (s.default_) walkExpr(s.default_, out);
+      walkPattern(s.target, out);
       return;
-    case "arrayPattern":
-      walkExpr(s.init, out);
-      s.elems.forEach((p) => {
-        if (p.default_) walkExpr(p.default_, out);
-      });
-      return;
+    }
     case "while":
       // The loop head: the invariant candidate checked on entry and every
       // back edge.
@@ -1522,6 +1543,15 @@ function typeForExprSite(
   // value, and so its type, is the inner expression's.
   if (ts.isParenthesizedExpression(node))
     return typeForExprSite(kind, node.expression, checker, types, declCache, sf);
+  // An array rest is the fresh array its binding, or its assigned local,
+  // holds.
+  if (kind === "arrayRest")
+    return translateType(
+      must(checker.getTypeAtLocation(ts.isSpreadElement(node) ? node.expression
+        : asKind(node, ts.isBindingElement, kind)), "expression-type"),
+      checker,
+      types,
+    );
   if (kind === "read") {
     return readLabels(
       asKind(node, ts.isPropertyAccessExpression, kind),

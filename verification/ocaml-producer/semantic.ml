@@ -115,16 +115,18 @@ let array elements = Atoms [Shape {fields=[];string_index=None;calls=[];elements
 (* The positions a rest parameter stands for: the required elements of the
    tuple its arguments are collected into. A contract with optional or
    unbounded positions is not a fixed number of further arguments. *)
-let tuple_positions = function
+let tuple_positions ?(readonly=false) = function
   | Atoms [Shape {fields=[];string_index=None;calls=[];elements=Some s}]
-    when s.optional_elements=[] && s.rest=None && not s.readonly -> Some s.required
+    when s.optional_elements=[] && s.rest=None && (readonly || not s.readonly) -> Some s.required
   | _ -> None
 
 (* The contract of each further argument, where a rest parameter's contract is
-   a mutable `T[]`: it collects any number of them. *)
-let array_element = function
+   a mutable `T[]` (with [readonly], a `readonly T[]` too: the array a call
+   collects is fresh, and a readonly view of it gives up only writes): it
+   collects any number of them. *)
+let array_element ?(readonly=false) = function
   | Atoms [Shape {fields=[];string_index=None;calls=[];elements=Some s}]
-    when s.required=[] && s.optional_elements=[] && not s.readonly -> s.rest
+    when s.required=[] && s.optional_elements=[] && (readonly || not s.readonly) -> s.rest
   | _ -> None
 
 let rec admits_undefined = function

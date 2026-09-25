@@ -342,7 +342,7 @@ let module_type (g:Source.fn) =
   let tys = List.map snd g.params in
   match g.rest,List.rev tys with
   | true,last::before ->
-    (match Semantic.tuple_positions last,Semantic.array_element last with
+    (match Semantic.tuple_positions ~readonly:true last,Semantic.array_element ~readonly:true last with
      | Some positions,_ -> quantified_arrow g.quantified (List.rev before @ positions) g.result
      | None,Some element -> variadic_arrow ~quantified:g.quantified (List.rev before) element g.result
      | _ -> unsupported "rest parameter contract of a module function")
@@ -512,6 +512,44 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         | Value _ -> unsupported "assignment to immutable binding" in
       union (without_nullish current) (expr ~expected:contract env rhs)
     | Unary (_,e) -> numeric_family declarations (expr env e)
+    (* The right side is built at the tuple of the targets' contracts, as
+       TypeScript types it from the targets; each target takes its
+       position's read, or its default, at its storage contract. The value
+       is the right side's. *)
+    | ArrayAssign (targets,rest,rhs) ->
+      let contract n = match lookup env n with
+        | Storage (contract,_) -> contract
+        | Value _ -> unsupported "assignment to immutable binding" in
+      (* A literal's positions past the rest's index are the rest's: its
+         tuple's positions or its array's element. *)
+      let width = match rhs.node,rest with
+        | ArrayLiteral es,_ -> List.length es
+        | _,Some (i,_,_) -> i
+        | _,None -> 1 + List.fold_left (fun m (i,_,_) -> max m i) (-1) targets in
+      let required = List.init width (fun i -> match List.find_opt (fun (j,_,_) -> j=i) targets,rest with
+        | Some (_,n,Some _),_ -> union (contract n) (Atoms [Undef])
+        | Some (_,n,None),_ -> contract n
+        | None,Some (start,_,n) when i >= start ->
+          (match declared_head declarations [] (contract n) with
+           | Atoms [Shape {elements=Some s;_}] ->
+             (match List.nth_opt s.required (i-start) with
+              | Some t -> t | None -> Option.value s.rest ~default:Semantic.top)
+           | _ -> Semantic.top)
+        | None,_ -> Semantic.top) in
+      let actual = expr ~expected:(array {required;optional_elements=[];rest=None;readonly=false}) env rhs in
+      List.iter (fun (_,n,d) -> Option.iter (fun d -> ignore (expr ~expected:(contract n) env d)) d) targets;
+      (* The rest's fresh array is claimed at its local's contract where that
+         is an array, which a fresh array meets, else at the positions it
+         takes. *)
+      Option.iter (fun (start,span,n) ->
+        let claim = match Semantic.array_element (contract n),declared_head declarations [] actual with
+          | Some _,_ -> contract n
+          | None,Atoms [Shape {elements=Some s;_}] when s.optional_elements=[] && s.rest=None ->
+            array {required=List.filteri (fun i _ -> i >= start) s.required;
+                   optional_elements=[];rest=None;readonly=false}
+          | _ -> unsupported "an array rest needs one tuple of required positions: the rest of an array of unknown length is a slice" in
+        expressions := {pos=span;type_=claim;instantiation=None} :: !expressions) rest;
+      actual
     | Equality (_,l,r) -> ignore (expr env l); ignore (expr env r); bool
     | Alloc fs ->
       let contract = Option.bind expected (object_hint declarations []) in
@@ -657,10 +695,10 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let params,element = if not rest then params,None else
         match List.rev params with
         | last :: fixed ->
-          (match Semantic.tuple_positions last,Semantic.array_element last with
+          (match Semantic.tuple_positions ~readonly:true last,Semantic.array_element ~readonly:true last with
            | Some elements,_ -> List.rev fixed @ elements,None
            | None,Some element -> List.rev fixed,Some element
-           | _ -> unsupported "a rest parameter needs a tuple of required positions or a mutable array")
+           | _ -> unsupported "a rest parameter needs a tuple of required positions or an array")
         | [] -> unsupported "a rest parameter needs a parameter" in
       let own = match element with
         | Some element -> variadic_arrow ~quantified ~receiver params element result
@@ -995,6 +1033,9 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     (* A throw has every type: the empty union. *)
     | ThrowBody body -> ignore (expr env body); Atoms []
     | SequenceBody (init,body) -> entry env e.pos; ignore (expr env init); expr ?expected env body
+    | DestructBody (target,init,body) -> entry env e.pos;
+      let env = bind env target (expr env init) None in
+      expr ?expected env body
     | LetBody (name,written,init,body) -> entry env e.pos;
       let initial=expr ?expected:written env init in
       named_closure name written init;
@@ -1006,9 +1047,45 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       let right=expr ~expected:result (branch env c false) b in union left right in
     (* Block wrappers correspond to statement entries, not expression sites. *)
     (match e.node with
-      | DoneBody | ReturnBody _ | ThrowBody _ | SequenceBody _ | LetBody _ | IfBody _ -> ()
+      | DoneBody | ReturnBody _ | ThrowBody _ | SequenceBody _ | LetBody _ | IfBody _ | DestructBody _ -> ()
       | _ -> expressions := {pos=e.pos;type_=t;
           instantiation=List.assoc_opt e.pos !instantiations} :: !expressions); t
+  (* A pattern binding [target] to a value of [t], in pattern order: a
+     property at its field's read, an element at its position's, a rest at the
+     tuple of the positions from its index on, claimed at its span; a
+     default, which sees the earlier bindings, replaces the read's undefined
+     slice. *)
+  and bind env target t default =
+    (* The read's defined slice, through the declarations naming it. *)
+    let rec present t = match t with
+      | Union ts -> combine (List.map present ts)
+      | Atoms xs -> combine (List.map (fun a -> match a,expand_named declarations (Atoms [a]) with
+          | Named _,Some e when e <> Atoms [a] -> present e
+          | _ -> restrict LUndefined false (Atoms [a])) xs)
+      | t -> t in
+    let t = match default with
+      | None -> t
+      | Some d ->
+        let kept = present t in
+        let expected = match kept with Atoms [] -> None | t -> Some t in
+        union kept (expr ?expected env d) in
+    match target with
+    | PName (n,_) -> extend env n (Value t)
+    | PObject props -> List.fold_left (fun env (f,target,d) ->
+        bind env target (field_type declarations [] t (Name f)) d) env props
+    | PArray (elems,rest) ->
+      let env = List.fold_left (fun env (i,target,d) ->
+        bind env target (index_type declarations [] t (number_literal (string_of_int i))) d) env elems in
+      (match rest with
+       | None -> env
+       | Some (start,span,target) ->
+         let remaining = match declared_head declarations [] t with
+           | Atoms [Shape {elements=Some s;_}] when s.optional_elements=[] && s.rest=None ->
+             List.filteri (fun i _ -> i >= start) s.required
+           | _ -> unsupported "an array rest needs one tuple of required positions: the rest of an array of unknown length is a slice" in
+         let rest_t = array {required=remaining;optional_elements=[];rest=None;readonly=false} in
+         expressions := {pos=span;type_=rest_t;instantiation=None} :: !expressions;
+         bind env target rest_t None)
   in
   (* Whether a list never completes normally: it ends in a jump, or in an
      `if` whose arms both do. *)
@@ -1026,13 +1103,14 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
      nothing. *)
   let rec stirs (e:expr) = match e.node with
     | Call _ | Invoke _ | New _ | Apply _ | Bind _ | Write _ | IndexWrite _ | Assign _
-    | Update _ | LogicalAssign _ | NullishAssign _ -> true
+    | Update _ | LogicalAssign _ | NullishAssign _ | ArrayAssign _ -> true
     | Lambda _ -> false
     | _ -> List.exists stirs (Source.children e) in
   let after e env = if stirs e then forget env else env in
   (* An assignment statement writes only the cell it names. *)
   let rec stirs_statement s = match s.statement with
     | Declare (_,bs) -> List.exists (fun (_,_,e) -> stirs e) bs
+    | Destructure (target,d,init) -> List.exists stirs (init :: Option.to_list d @ pattern_defaults target)
     | Effect {node=Assign (_,rhs) | NullishAssign (_,_,rhs);_} -> stirs rhs
     | Return e | Effect e -> stirs e
     | If (c,a,b) -> stirs c || List.exists stirs_statement (a @ b)
@@ -1084,6 +1162,13 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         | false,Some contract -> Value contract
         | false,None -> Value initial in
       extend (after init env) n binding) env bs
+    (* The initializer, then each binding in pattern order: a property at its
+       field's read, an element at its position's, a rest at the tuple of the
+       positions from its index on, claimed at its span; a default, which
+       sees the earlier bindings, replaces the read's undefined slice. *)
+    | Destructure (target,default,init) ->
+      let env = bind env target (expr env init) default in
+      if stirs_statement s then forget env else env
     | Return e -> ignore (expr ~expected:f.result env e); env
     (* An assignment statement leaves the cell holding the value written;
        `n ??= rhs`, the value it yields. *)

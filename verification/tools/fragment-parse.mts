@@ -45,6 +45,8 @@ import type {
   BindingAst,
   Expr,
   FunctionAst,
+  PatternAst,
+  PatternElemAst,
   PatternPropAst,
   Stmt,
   TypeParamAst,
@@ -65,6 +67,32 @@ import { asyncCompleteName, asyncReturnName, awaitName, forInName } from "./intr
 /** The binding a class's static member is: a name no source binding can
  * spell, apart from the instance methods' `C.m`. */
 const staticName = (cls: string, member: string): string => `static ${cls}.${member}`;
+
+/** The hidden name a parameter written as a pattern or with a default
+ * binds: a name no source binding can spell. The body's first statements
+ * bind the source's names from it, in parameter order (`functionAst`). */
+const parameterName = (index: number): string => `parameter ${index}`;
+
+/** The names an expression reads, closures' included: a superset of what
+ * it may read when it runs. */
+function namesRead(e: unknown, out: Set<string> = new Set()): Set<string> {
+  if (Array.isArray(e)) for (const x of e) namesRead(x, out);
+  else if (e !== null && typeof e === "object") {
+    if ("k" in e && e.k === "id" && "name" in e && typeof e.name === "string") out.add(e.name);
+    for (const v of Object.values(e)) namesRead(v, out);
+  }
+  return out;
+}
+
+/** The names a pattern binds, in the order it binds them. */
+function patternNames(t: PatternAst): string[] {
+  switch (t.k) {
+    case "name": return [t.name];
+    case "object": return t.props.flatMap((q) => patternNames(q.target));
+    case "array": return [...t.elems.flatMap((q) => patternNames(q.target)),
+      ...(t.rest ? patternNames(t.rest.target) : [])];
+  }
+}
 
 /** The label of the block a `switch` is lowered to: a name no source can
  * spell. */
@@ -188,6 +216,10 @@ class Gate {
   private readonly typeParamScopes: Set<string>[] = [];
   /** Local spelling to the arity and identity of its declaration root. A
    * reference names the declaration TypeScript resolved the spelling to. */
+  /** The equations of the declared aliases without parameters that name an
+   * array, a tuple or another alias: what a rest parameter typed by one
+   * collects into (`restType`). */
+  private readonly arrayEquations = new Map<string, TypeTerm>();
   private readonly declaredTypes = new Map<string,
     { required: number; total: number; declaration: DeclarationIdentity }>();
   /** Global spellings TypeScript binds to a standard library type read at
@@ -488,10 +520,12 @@ class Gate {
   }
 
   registerDeclaredType(name: string, required: number, total: number,
-      declaration: DeclarationIdentity, node: Node): void {
+      declaration: DeclarationIdentity, node: Node, expression: TypeTerm): void {
     if (this.declaredTypes.has(name))
       this.fail(node, "duplicate type name");
     this.declaredTypes.set(name, { required, total, declaration });
+    if (total === 0 && (expression.k === "array" || expression.k === "tuple" || expression.k === "reference"))
+      this.arrayEquations.set(name, expression);
   }
 
   fail(node: Node | null, message: string): never {
@@ -594,9 +628,13 @@ class Gate {
   }
 
   /** A rest parameter's contract: its tuple of required positions or its
-   * mutable array. */
+   * array, the collected array viewed at it. A declared alias is read
+   * through its equation, as TypeScript reads one: the parameter's type is
+   * that equation. */
   restType(p: ParameterDeclaration): TypeTerm {
-    const type = this.typeOf(p.type, p);
+    let type = this.typeOf(p.type, p);
+    for (let seen = 0; type.k === "reference" && type.args.length === 0 && seen < 16; seen++)
+      type = this.arrayEquations.get(type.reference.name) ?? type;
     if (!restPositions(type)) this.fail(p, REST_CONTRACT);
     return type;
   }
@@ -1363,10 +1401,27 @@ class Gate {
       node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
       ts.isArrayLiteralExpression(node.left)
     ) {
-      // `[a, b = d] = rhs`: each element names a mutable local, with a
-      // default written as an assignment inside the literal.
+      // `[a, b = d, ...r] = rhs`: each element names a mutable local, with a
+      // default written as an assignment inside the literal; a hole names
+      // none, and a rest, last, takes the positions after the others.
       const names = new Set<string>();
-      const targets: ArrayElemAst[] = node.left.elements.map((el, index) => {
+      const named = (target: Node): Identifier => {
+        if (!ts.isIdentifier(target))
+          this.fail(target, "only field and local assignments are supported");
+        if (target.text === "undefined")
+          this.fail(target, "shadowing undefined is outside the fragment");
+        if (names.has(target.text)) this.fail(target, "duplicate pattern binding");
+        names.add(target.text);
+        return target;
+      };
+      let rest: Extract<Expr, { k: "arrayAssign" }>["rest"] = null;
+      const targets: ArrayElemAst[] = node.left.elements.flatMap((el, index): ArrayElemAst[] => {
+        if (ts.isOmittedExpression(el)) return [];
+        if (ts.isSpreadElement(el)) {
+          const target = named(el.expression);
+          rest = { index, pos: this.span(el), name: target.text, namePos: this.span(target) };
+          return [];
+        }
         const target =
           ts.isBinaryExpression(el) &&
           el.operatorToken.kind === ts.SyntaxKind.EqualsToken
@@ -1377,25 +1432,20 @@ class Gate {
           el.operatorToken.kind === ts.SyntaxKind.EqualsToken
             ? el.right
             : null;
-        if (ts.isSpreadElement(el) || ts.isOmittedExpression(el))
-          this.fail(el, "rest elements are outside the fragment");
-        if (!ts.isIdentifier(target))
-          this.fail(el, "only field and local assignments are supported");
-        if (target.text === "undefined")
-          this.fail(el, "shadowing undefined is outside the fragment");
-        if (names.has(target.text)) this.fail(el, "duplicate pattern binding");
-        names.add(target.text);
-        return {
+        const name = named(target);
+        return [{
           index,
-          name: target.text,
-          namePos: this.span(target),
+          name: name.text,
+          namePos: this.span(name),
           default_: dflt ? this.expr(dflt) : null,
-        };
+        }];
       });
+      if (targets.length === 0 && !rest) this.fail(node.left, "an empty pattern binds nothing");
       return {
         k: "arrayAssign",
         pos: this.span(node),
         targets,
+        rest,
         rhs: this.expr(node.right),
       };
     }
@@ -1596,9 +1646,18 @@ class Gate {
           };
       // Each name is taken where its parameter has just been checked: a
       // narrowing does not survive into the second pass over the same list.
-      const names = parameters.map((p) => {
-        if (!ts.isIdentifier(p.name) || p.name.text === "this")
+      // A parameter written as a pattern binds a hidden name; the body
+      // starts with a `destructBody` over it, in parameter order.
+      const bound = new Set<string>();
+      const patterns: (PatternAst | null)[] = parameters.map((p) =>
+        ts.isIdentifier(p.name) ? null : this.pattern(p.name, bound));
+      const names = parameters.map((p, i) => {
+        if (ts.isIdentifier(p.name) && p.name.text === "this")
           this.fail(p, "expected an ordinary closure parameter");
+        if (!ts.isIdentifier(p.name)) {
+          if (p.dotDotDotToken) this.fail(p, "a rest parameter pattern is outside the fragment");
+          return parameterName(i);
+        }
         if (p.questionToken && p.initializer)
           this.fail(p, "a parameter cannot be both optional and defaulted");
         if (p.dotDotDotToken) {
@@ -1606,7 +1665,6 @@ class Gate {
             this.fail(p, "a rest parameter is neither optional nor defaulted");
           if (p !== parameters[parameters.length - 1])
             this.fail(p, "a rest parameter must be the last one");
-          this.restType(p);
         }
         if (
           !p.questionToken &&
@@ -1636,11 +1694,22 @@ class Gate {
       };
       const arrow = ts.isArrowFunction(node) ? this.span(node.equalsGreaterThanToken) : null;
       const keyword = modifiers[0];
-      const lowered = ts.isBlock(body)
+      const inner = ts.isBlock(body)
         ? this.closureBlock(body, statements(body), result)
         : isAsync && arrow && keyword
           ? this.intrinsic(asyncReturnName, arrow, this.span(keyword), [this.expr(body)])
           : this.expr(body);
+      const defaults = parameters.map((p) => p.initializer ? this.expr(p.initializer) : null);
+      // A parameter default's own schedule is Lean's (`parameterOrder`); a
+      // pattern's defaults run where the pattern binds, after every
+      // parameter is initialized, so none may read a later pattern's name.
+      this.initializedBefore(node, parameters.map((p, i): [PatternAst, Expr | null] =>
+        [patterns[i] ?? { k: "name", name: names[i], pos: this.span(p.name) }, null]));
+      const lowered = parameters.reduceRight((body: Expr, p, i): Expr => {
+        const target = patterns[i];
+        return target ? { k: "destructBody", pos: this.span(p), target,
+          init: { k: "id", pos: this.span(p.name), name: names[i] }, body } : body;
+      }, inner);
       return {
         k: "lambda",
         pos: this.span(node),
@@ -1651,10 +1720,10 @@ class Gate {
           // A defaulted parameter's type is what the body reads; the default
           // itself is the expression that replaces an omitted argument. A rest
           // parameter's type is the tuple its arguments are collected into.
-          type: p.questionToken
+          type: p.dotDotDotToken ? this.restType(p) : p.questionToken
             ? this.optionalTypeOf(p.type, p)
             : this.typeOf(p.type, p),
-          ...(p.initializer ? { default: this.expr(p.initializer) } : {}),
+          ...(defaults[i] ? { default: defaults[i] } : {}),
           ...(p.dotDotDotToken ? { rest: true as const } : {}),
         })),
         result: declaredResult,
@@ -1743,8 +1812,9 @@ class Gate {
               at,
               "closure branch needs one returning arm and one return-free arm",
             );
-        } else if (st.k === "pattern") {
-          this.fail(at, "a pattern in a closure body is outside the fragment");
+        } else if (st.k === "destructure") {
+          // One entry, like a `const`: the initializer, then the bindings.
+          tail = { k: "destructBody", pos: st.pos, target: st.target, init: st.init, body: tail };
         } else if (st.k === "const" || st.k === "effect") {
           // A lowered binding is an entry of its own, and a producer states
           // one entry per statement: a list of declarators has no entry for
@@ -1765,9 +1835,7 @@ class Gate {
             at,
             st.k === "let"
               ? "a mutable local in a closure body is outside the fragment"
-              : st.k === "arrayPattern"
-                ? "a pattern in a closure body is outside the fragment"
-                : "statements after an unconditional return are outside the fragment",
+              : "statements after an unconditional return are outside the fragment",
           );
       }
       return tail;
@@ -1804,82 +1872,96 @@ class Gate {
 
   /* -------------------------------------------------------- statements -- */
 
-  /* `const { field: name = default, … } = init;`. One declarator, identifier
-     keys and names, no rest, no nesting: what the lowering states. */
+  /* `const pattern = init;`. One declarator; object and array patterns,
+     nested, with identifier keys, defaults, holes and an array rest: what the
+     lowering states. */
   private patternStmt(list: ts.VariableDeclarationList, node: Node, mutable: boolean): Stmt {
     if (mutable) this.fail(node, "a `let` pattern is outside the fragment");
     if (list.declarations.length !== 1)
       this.fail(node, "a pattern declares alone in the fragment");
     const d = list.declarations[0];
-    const pattern = d.name;
-    if (ts.isArrayBindingPattern(pattern)) {
-      if (d.type) this.fail(d, "an annotated pattern is outside the fragment");
-      if (!d.initializer) this.fail(d, "a `const` needs an initializer");
-      if (pattern.elements.length === 0)
-        this.fail(pattern, "an empty pattern binds nothing");
-      const names = new Set<string>();
-      const elems: ArrayElemAst[] = pattern.elements.map((el, index) => {
-        // A hole is an omitted expression, or a binding element without a name.
-        if (ts.isOmittedExpression(el) || !el.name)
-          this.fail(el, "array pattern holes are outside the fragment");
-        if (el.dotDotDotToken)
-          this.fail(el, "rest elements are outside the fragment");
-        const name = el.name;
-        if (!ts.isIdentifier(name))
-          this.fail(el, "nested patterns are outside the fragment");
-        if (name.text === "undefined")
-          this.fail(el, "shadowing undefined is outside the fragment");
-        if (names.has(name.text)) this.fail(el, "duplicate pattern binding");
-        names.add(name.text);
-        return {
-          index,
-          name: name.text,
-          namePos: this.span(name),
-          default_: el.initializer ? this.expr(el.initializer) : null,
-        };
-      });
-      return {
-        k: "arrayPattern",
-        pos: this.span(node),
-        elems,
-        init: this.expr(d.initializer),
-      };
-    }
-    if (!ts.isObjectBindingPattern(pattern))
-      this.fail(d, "destructuring is outside the fragment");
     if (d.type) this.fail(d, "an annotated pattern is outside the fragment");
     if (!d.initializer) this.fail(d, "a `const` needs an initializer");
-    if (pattern.elements.length === 0)
-      this.fail(pattern, "an empty pattern binds nothing");
-    const names = new Set<string>();
-    const props: PatternPropAst[] = pattern.elements.map((el) => {
+    const target = this.pattern(d.name, new Set());
+    this.initializedBefore(d, [[target, null]]);
+    return {
+      k: "destructure",
+      pos: this.span(node),
+      target,
+      default_: null,
+      init: this.expr(d.initializer),
+    };
+  }
+
+  /* Each default of a declaration's patterns, in binding order, reads none
+     of the declaration's own names not yet initialized: JavaScript throws
+     there (the temporal dead zone), where the lowering would read whatever
+     outer binding has the name. */
+  private initializedBefore(at: Node, targets: [PatternAst, Expr | null][]): void {
+    const own = new Set(targets.flatMap(([t]) => patternNames(t)));
+    const bound = new Set<string>();
+    const check = (d: Expr | null): void => {
+      if (d && [...namesRead(d)].some((n) => own.has(n) && !bound.has(n)))
+        this.fail(at, "a default reads a binding of its own declaration before it is initialized");
+    };
+    const visit = (t: PatternAst, d: Expr | null): void => {
+      check(d);
+      if (t.k === "name") bound.add(t.name);
+      else if (t.k === "object") for (const q of t.props) visit(q.target, q.default_);
+      else {
+        for (const q of t.elems) visit(q.target, q.default_);
+        if (t.rest) visit(t.rest.target, null);
+      }
+    };
+    for (const [t, d] of targets) visit(t, d);
+  }
+
+  /* What a binding name or pattern binds. An object pattern reads identifier
+     keys; an object rest is refused: it copies every remaining own
+     enumerable key, which a record contract does not bound, and an object's
+     keys are fixed where it is allocated, so the copy's keys are not the
+     contract's. An array pattern's hole is a position no element names. */
+  private pattern(node: ts.BindingName, names: Set<string>): PatternAst {
+    if (ts.isIdentifier(node)) {
+      if (node.text === "undefined")
+        this.fail(node, "shadowing undefined is outside the fragment");
+      if (names.has(node.text)) this.fail(node, "duplicate pattern binding");
+      names.add(node.text);
+      return { k: "name", name: node.text, pos: this.span(node) };
+    }
+    if (node.elements.length === 0)
+      this.fail(node, "an empty pattern binds nothing");
+    if (ts.isArrayBindingPattern(node)) {
+      const elems: PatternElemAst[] = [];
+      let rest: Extract<PatternAst, { k: "array" }>["rest"] = null;
+      node.elements.forEach((el, index) => {
+        // A hole is an omitted expression, or a binding element without a name.
+        if (ts.isOmittedExpression(el) || !el.name) return;
+        if (el.dotDotDotToken)
+          rest = { index, pos: this.span(el), target: this.pattern(el.name, names) };
+        else
+          elems.push({
+            index,
+            target: this.pattern(el.name, names),
+            default_: el.initializer ? this.expr(el.initializer) : null,
+          });
+      });
+      return { k: "array", pos: this.span(node), elems, rest };
+    }
+    const props: PatternPropAst[] = node.elements.map((el) => {
+      if (!el.name) this.fail(el, "a pattern element needs a name");
       if (el.dotDotDotToken)
-        this.fail(el, "rest elements are outside the fragment");
-      if (!el.name || !ts.isIdentifier(el.name))
-        this.fail(el, "nested patterns are outside the fragment");
+        this.fail(el, "an object rest copies the source's remaining own enumerable keys, which a record contract does not bound");
       const key = el.propertyName ?? el.name;
       if (!ts.isIdentifier(key))
-        this.fail(
-          el,
-          "computed or string pattern keys are outside the fragment",
-        );
-      if (el.name.text === "undefined")
-        this.fail(el, "shadowing undefined is outside the fragment");
-      if (names.has(el.name.text)) this.fail(el, "duplicate pattern binding");
-      names.add(el.name.text);
+        this.fail(el, "computed or string pattern keys are outside the fragment");
       return {
         field: key.text,
-        name: el.name.text,
-        namePos: this.span(el.name),
+        target: this.pattern(el.name, names),
         default_: el.initializer ? this.expr(el.initializer) : null,
       };
     });
-    return {
-      k: "pattern",
-      pos: this.span(node),
-      props,
-      init: this.expr(d.initializer),
-    };
+    return { k: "object", pos: this.span(node), props };
   }
 
   /* A branch or loop body. TypeScript allows a single statement where a block
@@ -2337,7 +2419,7 @@ class Gate {
     const prologue = this.useStrict(node.body.statements);
     if (
       prologue.strict &&
-      node.parameters.some((p) => p.initializer || p.dotDotDotToken)
+      node.parameters.some((p) => p.initializer || p.dotDotDotToken || !ts.isIdentifier(p.name))
     )
       this.fail(node, '"use strict" beside non-simple parameters');
     const outerStrict = this.strict;
@@ -2363,13 +2445,19 @@ class Gate {
     const typeParams = this.enterTypeParams(node.typeParameters);
     try {
       this.asyncBody = isAsync;
-      const params = node.parameters.map((p) => {
-        if (p.name.kind !== ts.SyntaxKind.Identifier)
-          this.fail(p, "destructuring parameter");
-        if (p.name.text === "undefined")
+      // A parameter written as a pattern or with a default binds a hidden
+      // name, which the caller's argument initializes; a `destructure` over
+      // it, first in the body in parameter order, binds the source's names,
+      // the default replacing an undefined argument. JavaScript evaluates
+      // them there too, in order, before the body.
+      const names = new Set<string>();
+      const bindings: Stmt[] = [];
+      const params = node.parameters.map((p, i) => {
+        if (ts.isIdentifier(p.name) && p.name.text === "undefined")
           this.fail(p, "shadowing undefined is outside the fragment");
         if (
           !p.questionToken &&
+          !p.initializer &&
           !p.dotDotDotToken &&
           node.parameters.indexOf(p) > firstOptional(node.parameters)
         )
@@ -2378,20 +2466,44 @@ class Gate {
           if (p.questionToken) this.fail(p, "a rest parameter is not optional");
           if (p !== node.parameters[node.parameters.length - 1])
             this.fail(p, "a rest parameter must be the last one");
-          this.restType(p);
+          if (!ts.isIdentifier(p.name))
+            this.fail(p, "a rest parameter pattern is outside the fragment");
         }
-        if (p.initializer)
-          this.fail(p, "default parameters are outside the fragment");
+        if (ts.isIdentifier(p.name) && !p.initializer) {
+          names.add(p.name.text);
+          return {
+            name: p.name.text,
+            pos: this.span(p.name),
+            type: p.dotDotDotToken ? this.restType(p) : p.questionToken
+              ? this.optionalTypeOf(p.type, p)
+              : this.typeOf(p.type, p),
+            ...(p.dotDotDotToken ? { rest: true as const } : {}),
+          };
+        }
+        const hidden = parameterName(i);
+        const at = this.span(p.name);
+        bindings.push({
+          k: "destructure",
+          pos: this.span(p),
+          target: this.pattern(p.name, names),
+          default_: p.initializer ? this.expr(p.initializer) : null,
+          init: { k: "id", pos: at, name: hidden },
+        });
         return {
-          name: p.name.text,
-          pos: this.span(p.name),
-          type: p.questionToken
+          name: hidden,
+          pos: at,
+          // A caller may pass `undefined` where there is a default.
+          type: p.questionToken || p.initializer
             ? this.optionalTypeOf(p.type, p)
             : this.typeOf(p.type, p),
-          ...(p.dotDotDotToken ? { rest: true as const } : {}),
         };
       });
-      const body = this.statements(node.body.statements.filter((s) => !prologue.skip.has(s)));
+      this.initializedBefore(node, params.map((p): [PatternAst, Expr | null] => {
+        const b = bindings.find((st) => st.k === "destructure" && st.init.k === "id" && st.init.name === p.name);
+        return b?.k === "destructure" ? [b.target, b.default_] : [{ k: "name", name: p.name, pos: p.pos }, null];
+      }));
+      const body = [...bindings,
+        ...this.statements(node.body.statements.filter((s) => !prologue.skip.has(s)))];
       return {
         name: node.name.text,
         namePos: this.span(node.name),
@@ -2688,7 +2800,7 @@ export function parseFile(file: string, carriesContext = false,
         n.getStart(source) === root.binding.span[0]) ?? first;
       gate.registerDeclaredType(root.binding.local,
         definition.parameters.filter(p => p.default === null).length,
-        definition.parameters.length, identity, node);
+        definition.parameters.length, identity, node, definition.expression);
     }
   }
   // Carried context skips aliases its old fragment could not state. Every

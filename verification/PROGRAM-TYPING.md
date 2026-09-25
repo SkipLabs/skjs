@@ -158,6 +158,9 @@ parameter list is a zero-argument call, not an absent one. A tuple rest
 parameter and a tuple spread are a fixed number of positions each, so they need
 no rule of their own here: the signature carries the positions, and the array a
 rest parameter binds is allocated by the ordinary store and allocation rules.
+That array is fresh, so a rest parameter's contract may also be `readonly`
+(`readonly T[]`, a readonly tuple) or name one through a declared alias: the
+body sees the fresh array through that view, which gives up only writes.
 
 A function type is a promise about the actual lists a caller may write, not
 about the callee's code. A fixed signature $\vec A\to B$ admits the prefixes of
@@ -2086,6 +2089,91 @@ $\Delta$. `passed_refinement_paths` checks two surviving paths into one
 or the wrong slot. Passing this one refined value is established; translating
 arbitrary supplied entry environments into continuation parameters is not yet
 implemented.
+
+### Patterns
+
+A pattern binds names from one value, in pattern order, and has no rule of its
+own: it is reads, a tag dispatch and lets. Write
+$\Gamma\vdash p\Leftarrow(t{:}R)\dashv\Delta$ when binding pattern $p$ to the
+value term $t$ reads at $R$ under $\Gamma$ extends the scope by $\Delta$
+(`bindTarget` in the graph lowering, `closureBind` in a closure body). A name
+binds the read; a nested pattern holds it in an anonymous slot and binds its
+own elements over it:
+
+$$
+\frac{\Gamma\vdash t:R}{\Gamma\vdash x\Leftarrow(t{:}R)\dashv x{:}R}
+\qquad
+\frac{\Gamma\vdash t:A\quad
+      \Gamma,\_{:}A,\Delta_{<i}\vdash p_i\Leftarrow(\mathsf{read}_{f_i}(\_){:}R_i)\dashv\Delta_i\ \ (i\le n)}
+     {\Gamma\vdash\{f_1{:}p_1,\ldots,f_n{:}p_n\}\Leftarrow(t{:}A)\dashv\Delta_1,\ldots,\Delta_n}
+$$
+
+where $R_i$ is the type the ordinary read rules give $f_i$ of $A$ (`readCell`:
+an invariant field at its contract, a view at its bound, an optional field at
+its type or $\mathsf{Undef}$, an inherited member at the prototype's, a union
+alternative by alternative); a method is refused, since read off its object
+it is no function value. An array pattern is the same with
+$\mathsf{elem}(\mathsf{read}_{[\,]}(\_),i)$ at the type of position $i$
+(`positionRead`: a required position at its type, an optional or rest one at
+its type or $\mathsf{Undef}$), a hole being a position no element names. The
+array's own iterator, which JavaScript steps, reads the current length and the
+next index at each step, so reading position $i$ where its element is bound,
+after any default before it ran, is that step: the trust `%Iterate%` states
+([DESIGN.md](DESIGN.md#patterns)). A pattern over a value that is not an array
+is refused.
+
+A default replaces a read that is `undefined`, and only then runs. With
+$R'$ the read's labels told apart clause by clause (`byClause`: a label that
+is a union row, such as a declared alias, is replaced by one label per
+clause, the same values) and $T_q$ the tag slice:
+
+$$
+\frac{\Gamma\vdash t:R'\quad \Gamma,\_{:}R'\vdash d:D\quad
+      \Gamma,\_{:}R'\vdash p\Leftarrow(\mathsf{if}\ \mathsf{isUndef}(\_)\ \mathsf{then}\ d\ \mathsf{else}\ \_\ {:}\ T_{\mathsf{false}}(R')\cup D)\dashv\Delta}
+     {\Gamma\vdash (p=d)\Leftarrow(t{:}R)\dashv\Delta}
+$$
+
+(`tagBind` in a graph, `selectPlan` in a closure). The default is checked
+where the earlier bindings are in scope and the later ones are not; a default
+that names a later binding of its own declaration is refused by the parser,
+since JavaScript throws there (the temporal dead zone) where the lowering
+would read an outer binding of that name.
+
+An array rest $\ldots p$ at index $s$ over $A$ whose store is one tuple of
+$n$ required positions, whose length is exact (`listT`), is the fresh array of
+the positions from $s$ on, claimed at the rest's span $C$ like an array
+literal:
+
+$$
+\frac{\operatorname{Store}(A)=[A_0,\ldots,A_{n-1}]\quad
+      \Gamma\vdash\mathsf{alloc}\{[\,]{:}\mathsf{arr}(\mathsf{elem}(\_,s),\ldots,\mathsf{elem}(\_,n{-}1))\}:C\quad
+      \Gamma\vdash p\Leftarrow(\cdot{:}C)\dashv\Delta}
+     {\Gamma\vdash[\ldots,\ldots p]\Leftarrow(\_{:}A)\dashv\ldots,\Delta}
+$$
+
+The rest of an array whose contract does not fix its length is a slice whose
+length only the run knows: no list of reads, and the calculus has no slice
+term, so it is refused. An object rest is refused too: it copies every
+remaining own enumerable key of its source, which a record contract does not
+bound, and an object's keys are fixed where it is allocated, so a copy of the
+named fields would be another object than JavaScript's.
+
+A statement `const p = e` holds $e$ in an anonymous slot for its one entry,
+binds $p$ over it, and drops the slot before the next entry, which states
+$\Delta$. An array assignment `[x_1, …, ...r] = e` is the same with each read
+written to its mutable local at the local's storage contract. A parameter
+written as a pattern or with a default binds a hidden name $h$, which the
+caller's argument initializes, and the body starts with the pattern over it,
+in parameter order:
+
+$$
+\mathsf{function}\ f(\ldots,p_i=d_i,\ldots)\,\{S\}\;\equiv\;
+\mathsf{function}\ f(\ldots,h_i,\ldots)\,\{\ldots;\ \mathsf{const}\ p_i=h_i\ (\mathsf{default}\ d_i);\ \ldots;\ S\}
+$$
+
+where $h_i$'s type admits $\mathsf{Undef}$ when there is a default, so a
+caller may omit it. A closure parameter's default stays the closure's own
+(`parameterOrder`), and its pattern is a `destructBody` first in the body.
 
 ### Mutable bindings and module constants
 

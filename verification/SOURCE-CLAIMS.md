@@ -357,9 +357,10 @@ array objects lift back to the array spelling. The `readonly` flag on a native
 
 Source numeric element operations require a valid array-index singleton.
 Arbitrary numbers can name ordinary properties (negative, fractional, NaN,
-or out of range), which this store does not represent. Destructuring requires
-a fresh literal and the fragment's unmodified standard array iterator;
-external array parameters may have custom iterators and are refused.
+or out of range), which this store does not represent. Destructuring reads
+positions of an array, under the trust the array iterator's `%Iterate%`
+states; an array pattern's rest is a fresh array, a site claimed like an array
+literal at the rest's span (`...r`), and the pattern's reads are not sites.
 
 ## Current-content assertions
 

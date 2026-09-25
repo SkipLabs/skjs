@@ -90,9 +90,10 @@ parameters, initialized `const` bindings, nested branches (`else if`, unbraced a
 blocks and returns** ([statement forms](DESIGN.md#statement-forms)), **`throw`
 and `try`/`catch`/`finally`** ([throws](DESIGN.md#throws): a throw is an
 outcome, as a value is), where a `const` or `let` statement may declare several bindings,
-bound left to right under the statement's one entry, and a `const` may bind an
-object pattern of identifier properties with optional defaults over a local
-record, over local cells and bounded expression closures and calls. Cell
+bound left to right under the statement's one entry, and a `const`, an array
+assignment or a parameter may bind a pattern (object and array patterns,
+nested, with defaults, holes and a tuple's rest; [patterns](DESIGN.md#patterns)),
+over local cells and bounded expression closures and calls. Cell
 fields, arrow arguments and arrow results admit primitive and recursively
 callable contracts; nested record operands remain excluded. Annotations may union the supported primitive, cell and
 function types with ordered required parameters. Creating and invoking closures

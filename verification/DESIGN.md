@@ -1380,9 +1380,10 @@ the other, and both join at a node typed by their union, which each incoming
 edge must establish. A property without a default binds its read. The
 producers claim the initializer and the defaults, not the reads; the entry
 after the statement states every binding, and the anonymous slot is dropped
-before it. Nested and rest elements, `let` patterns, patterns beside other
-declarators and patterns in closure bodies stay gated. Local annotations are separate obligations; bindings
-retain the initializer's claimed precision.
+before it. Patterns nest, take holes and an array rest, and bind parameters;
+[Patterns](#patterns) states the whole form. `let` patterns and patterns beside
+other declarators stay gated. Local annotations are separate obligations;
+bindings retain the initializer's claimed precision.
 
 Arrays and tuples use an object with an internal store of element locations.
 Writable tuple positions require the backing invariant exactly. Readonly tuple
@@ -1396,10 +1397,11 @@ A source numeric key must be proved to be one valid array-index singleton.
 An arbitrary number could name an ordinary property, which the current store
 model omits. Known indices support reads, writes, growth and shared alias
 identity. The internal store field cannot be accessed through a source key.
-Array destructuring of external values is refused: an array type does not
-establish a standard iterator or its effects. Direct fresh literals support
-patterns and assignment patterns under the existing unmodified-intrinsics
-boundary. Wider support needs iterator contracts, not replacement by indexing.
+Array destructuring reads positions of any array value: the array's own
+iterator is `Array.prototype`'s, the trust `%Iterate%` states for `for...of`,
+and each of its steps reads the current length and the next index, which is
+the read of that position where its element is bound ([Patterns](#patterns)).
+A non-array iterable is refused.
 Required, optional and rest positions have distinct store contracts; a missing
 optional/rest position reads undefined. Source arrays in this slice are plain
 data arrays, without inherited indexed properties or accessors; supporting
@@ -3578,6 +3580,62 @@ states that behavior; see [What remains assumed](#what-remains-assumed).
 **Refused.** A loop over anything but an array (a string, a `Map`, any other
 iterable), a destructuring, `let` or `var` binding, `for await`, a loop at the
 top level of a module (as for `while`) or inside a closure.
+
+### Patterns
+
+**Decision.** A pattern is lowered to the forms the graph compiler and the
+closure checker already have: the value once, held in an anonymous slot; each
+property or position read in pattern order by the ordinary read rules; a
+default only where that read is `undefined` (a tag dispatch, the default's
+claimed value on one arm and the defined slice on the other); a nested
+pattern over the read, held in its own slot. One Fragment form, `destructure`
+(a statement) and `destructBody` (a closure body), over one recursive
+`Pattern`, carries object and array patterns, nesting, holes and an array
+rest ([PROGRAM-TYPING.md](PROGRAM-TYPING.md#patterns) states the rules).
+
+- *Array patterns read positions.* JavaScript steps the array's iterator,
+  which is `Array.prototype`'s (an array owns none of its keys) and reads the
+  current length and the next index at each step; a default between two steps
+  runs where it does here. This is the trust `%Iterate%` already states
+  ([Loops over arrays](#loops-over-arrays)); it replaces the earlier
+  fresh-literal-only rule, which that decision superseded. An iterable that
+  is not an array (a string, a `Set`) is refused.
+- *An array rest* over one tuple of required positions is a fresh array of
+  reads of the positions after the elements, allocated like an array literal
+  and claimed at the rest's span, so a producer may claim `[string, boolean]`
+  or, for an assigned rest, the local's `T[]`. A tuple's length is exact
+  (`listT`), so the reads are the rest. Over an array of unknown length the
+  rest is a slice whose length only the run knows; the calculus has no such
+  term, and the rest is refused rather than approximated.
+- *An object rest* `{a, ...r}` is refused: it copies every remaining own
+  enumerable key of its source, which a record contract does not bound (a
+  value of `{a: string; b: number}` may own `c`), and an object's keys are
+  fixed where it is allocated, so allocating the named fields would give an
+  object whose keys the model bounds and JavaScript's does not.
+- *Defaults and the temporal dead zone.* A default sees the bindings before
+  it. One that names a binding of its own declaration not yet initialized is
+  refused by the parser: JavaScript throws there, and the lowering would read
+  an outer binding of that name instead.
+- *A declared alias* read with a default is told apart clause by clause
+  (`byClause`): `type Maybe = number | undefined` is one label whose tag
+  answers are mixed, and its clauses are the same values.
+- *Parameters.* A function's parameter written as a pattern or with a
+  default binds a hidden name (`parameter i`, which no source can spell), at
+  its annotation or, with a default, its annotation or `undefined`, so a
+  caller may omit it; the body starts with a `destructure` over it, in
+  parameter order, which is where JavaScript initializes it. A closure keeps
+  its own default schedule (`parameterOrder`) and starts its body with a
+  `destructBody` for a pattern.
+- *A method* is not read by a pattern: read off its object it is no function
+  value (`MethodMembers`), as for `c.m` as a value.
+- *Rest parameters* may be `readonly T[]`, a readonly tuple, or a declared
+  alias of an array or tuple, read through its equation: the array a call
+  collects is fresh, and viewing it readonly gives up only writes.
+
+Not lowered: `let` patterns (their bindings would be cells with storage
+contracts a producer states per name), assignment targets other than a
+mutable local (a field or index inside `[o.f] = …`), and a rest parameter
+written as a pattern.
 
 ### Statement forms
 

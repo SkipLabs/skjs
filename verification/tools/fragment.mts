@@ -43,10 +43,13 @@ export type Expr =
   | { k: "index"; pos: Span; e: Expr; key: Expr }
   /* An array literal: one element per initializer, in source order. */
   | { k: "arrayLit"; pos: Span; elems: Expr[] }
-  /* `[a, b = d] = rhs`: the right side once, then each mutable local takes
-     its position of the store, or its default when that read is undefined.
-     The expression's value is the right side. */
-  | { k: "arrayAssign"; pos: Span; targets: ArrayElemAst[]; rhs: Expr }
+  /* `[a, b = d, ...r] = rhs`: the right side once, then each mutable local
+     takes its position of the store, or its default when that read is
+     undefined, and the rest's local the fresh array of the positions from its
+     index on, claimed at the rest's span. The expression's value is the right
+     side. */
+  | { k: "arrayAssign"; pos: Span; targets: ArrayElemAst[];
+      rest: { index: number; pos: Span; name: string; namePos: Span } | null; rhs: Expr }
   | { k: "indexWrite"; pos: Span; receiver: Expr; key: Expr; rhs: Expr }
   | { k: "bin"; pos: Span; op: string; l: Expr; r: Expr }
   /* A binary operator on primitive operands: `l`, then `r`, then the
@@ -168,6 +171,10 @@ export type Expr =
   | { k: "returnBody"; pos: Span; e: Expr }
   /* A closure body's `throw e`: it ends the body, as a return does. */
   | { k: "throwBody"; pos: Span; e: Expr }
+  /* A pattern in a closure body, `const target = init; body`, one entry: the
+     initializer once, then the target binds it. A closure parameter written
+     as a pattern is one over its hidden name, first in the body. */
+  | { k: "destructBody"; pos: Span; target: PatternAst; init: Expr; body: Expr }
   | { k: "seqBody"; pos: Span; init: Expr; body: Expr }
   | {
       k: "letBody";
@@ -228,26 +235,43 @@ export type Stmt =
      adapter checks it; an initializer's type is what the binding happens to
      hold first, not what it may hold, so it is never taken for the contract. */
   | { k: "let"; pos: Span; bindings: BindingAst[] }
-  /* An object pattern on a `const`. The initializer is evaluated once; each
-     property is then read in pattern order, and a default is evaluated only
-     when that read is undefined. Every binding is an immutable local. */
-  | { k: "pattern"; pos: Span; props: PatternPropAst[]; init: Expr }
-  /* An array pattern `const [a, b = d] = init`: each element reads its
-     position of the array's store, with a default when the read is
-     undefined. */
-  | { k: "arrayPattern"; pos: Span; elems: ArrayElemAst[]; init: Expr };
+  /* A pattern on a `const`, `const target = init`: the initializer once,
+     then the target binds it, `default_` (a parameter's) replacing it where
+     it is undefined. A parameter pattern or default is one over the
+     parameter's hidden name (`parameterName`), first in the body. Every
+     binding is an immutable local. */
+  | { k: "destructure"; pos: Span; target: PatternAst; default_: Expr | null; init: Expr };
 
-/** One element of an array pattern: position `index` binds `name`. */
-export interface ArrayElemAst {
-  index: number;
-  name: string;
-  namePos: Span;
+/** What a pattern binds at one place: a name, or a nested pattern over the
+ * value found there. An object pattern reads its fields in order; an array
+ * pattern reads its positions in order (a hole is a position no element
+ * names), and its rest, at the position after its elements, collects the
+ * positions from there on into a fresh array, claimed at the rest's span like
+ * an array literal. An element's default replaces a read that is undefined. */
+export type PatternAst =
+  | { k: "name"; name: string; pos: Span }
+  | { k: "object"; pos: Span; props: PatternPropAst[] }
+  | { k: "array"; pos: Span; elems: PatternElemAst[];
+      rest: { index: number; pos: Span; target: PatternAst } | null };
+
+/** One property of an object pattern: `field: target = default_`. */
+export interface PatternPropAst {
+  field: string;
+  target: PatternAst;
   default_: Expr | null;
 }
 
-/** One property of an object pattern: `field: name = default_`. */
-export interface PatternPropAst {
-  field: string;
+/** One element of an array pattern: position `index` binds `target`. */
+export interface PatternElemAst {
+  index: number;
+  target: PatternAst;
+  default_: Expr | null;
+}
+
+/** One element of an array assignment: position `index` assigns the mutable
+ * local `name`. */
+export interface ArrayElemAst {
+  index: number;
   name: string;
   namePos: Span;
   default_: Expr | null;

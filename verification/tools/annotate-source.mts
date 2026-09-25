@@ -431,7 +431,8 @@ function fromSourceClaims(
   // `switch` or `for` has entries of its own (DESIGN.md, "Statement forms"):
   // a label's test and jump, `default`'s and the clauses' `{` jumps, the
   // bound discriminant; a `for`'s initializer, its loop at the `;` after the
-  // initializer, and its update.
+  // initializer, and its update. A parameter pattern's or default's is at the
+  // parameter.
   const semicolons: number[]=[];
   const scanner=createScanner(true,undefined,source);
   for(let k=scanner.scan();k!==ts.SyntaxKind.EndOfFile;k=scanner.scan())
@@ -450,6 +451,9 @@ function fromSourceClaims(
       if(loop!==undefined)at(loop,n.end);
     }
     if(ts.isForStatement(n)&&n.incrementor)at(n.incrementor.getStart(sf),n.incrementor.end);
+    // A parameter written as a pattern or with a default is bound by a
+    // statement of its own at the parameter (DESIGN.md, "Patterns").
+    if(ts.isParameterDeclaration(n)&&(n.initializer||!ts.isIdentifier(n.name)))at(n.getStart(sf),n.end);
     const p=n.parent;
     if(ts.isBlock(n)&&p&&(ts.isFunctionDeclaration(p)||ts.isFunctionExpression(p)||ts.isArrowFunction(p)||
         ts.isMethodDeclaration(p)||ts.isConstructorDeclaration(p)||ts.isGetAccessorDeclaration(p)||

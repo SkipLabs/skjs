@@ -301,6 +301,12 @@ and expr_node =
   (* `left, right`: the left operand for its effects, then the right one's
      value. `void e` is `e, undefined`. *)
   | Comma of expr * expr
+  (* `[a, b = d, ...r] = rhs`: the right side once, then each mutable local,
+     at its position, takes its read, or its default where the read is
+     undefined, and the rest's, the fresh array of the positions from its
+     index on, claimed at its span. The expression's value is the right
+     side's. *)
+  | ArrayAssign of (int * string * expr option) list * (int * Json.t * string) option * expr
   (* A parameter's type is what the body reads. A defaulted one also admits
      `undefined` where the closure is called; the default replaces it. A rest
      parameter reads the tuple its arguments are collected into, and the
@@ -333,10 +339,24 @@ and expr_node =
   (* A closure body's `throw e`: it ends the body, as a return does. *)
   | ThrowBody of expr
   | LetBody of string * ty option * expr * expr
+  (* A pattern in a closure body, one entry: `const target = init; body`. *)
+  | DestructBody of pattern * expr * expr
   | IfBody of ty * expr * expr * expr
 and stmt = { span: Json.t; statement: stmt_node }
+(* What a pattern binds at one place: a name, at its span, or a nested
+   pattern over the value found there. An object pattern's properties read
+   their fields; an array pattern's elements read their positions, and its
+   rest, claimed at its span, collects the positions from its index on. Each
+   element's default replaces a read that is undefined. *)
+and pattern =
+  | PName of string * Json.t
+  | PObject of (string * pattern * expr option) list
+  | PArray of (int * pattern * expr option) list * (int * Json.t * pattern) option
 and stmt_node =
   | Declare of bool * (string * ty option * expr) list
+  (* `const target = init`, the default (a parameter's) replacing an
+     undefined initializer. *)
+  | Destructure of pattern * expr option * expr
   | Return of expr | Effect of expr | If of expr * stmt list * stmt list
   (* The condition, the body, and the update the body's end and every
      `continue` run: a `for`'s, none for a `while`. *)
@@ -364,6 +384,12 @@ type declaration = { id: string; parameters: rigid list;
 type program = { file: Json.t; digest: Json.t; declarations: declaration list;
                  functions: fn list; init: stmt list; values: (string * ty) list }
 
+(* A pattern's defaults, in evaluation order. *)
+let rec pattern_defaults = function
+  | PName _ -> []
+  | PObject props -> List.concat_map (fun (_,t,d) -> Option.to_list d @ pattern_defaults t) props
+  | PArray (elems,rest) -> List.concat_map (fun (_,t,d) -> Option.to_list d @ pattern_defaults t) elems
+      @ (match rest with Some (_,_,t) -> pattern_defaults t | None -> [])
 (* The immediate subexpressions and nested statements of a form. *)
 let children e = match e.node with
   | Id _ | Literal _ | DoneBody -> []
@@ -372,8 +398,10 @@ let children e = match e.node with
   | Assign (_,e) | NullishAssign (_,_,e) -> [e]
   | Update (_,t,r,_) -> t :: Option.to_list r
   | LogicalAssign (_,a,b) | Comma (a,b) -> [a;b]
+  | ArrayAssign (targets,_,rhs) -> rhs :: List.filter_map (fun (_,_,d) -> d) targets
   | Arith (_,a,b) | Equality (_,a,b) | Write (a,_,b) | Coalesce (a,b) | Index (a,b) | Logical (_,a,b)
   | WithFields (a,b,_,_) | SequenceBody (a,b) | LetBody (_,_,a,b) -> [a;b]
+  | DestructBody (t,a,b) -> a :: pattern_defaults t @ [b]
   | Conditional (a,b,c) | IndexWrite (a,b,c) | IfBody (_,a,b,c) -> [a;b;c]
   | Alloc fs -> List.map snd fs
   | ArrayLiteral es -> es
@@ -388,9 +416,13 @@ let children e = match e.node with
 let rec assigns_expr name e = match e.node with
   | Assign (n,_) | NullishAssign (n,_,_) when n = name -> true
   | Update (_,{node=Id n;_},_,_) | LogicalAssign (_,{node=Id n;_},_) when n = name -> true
+  | ArrayAssign (targets,rest,_) when List.exists (fun (_,n,_) -> n = name) targets
+      || (match rest with Some (_,_,n) -> n = name | None -> false) -> true
   | _ -> List.exists (assigns_expr name) (children e)
 let rec assigns name s = match s.statement with
   | Declare (_,bs) -> List.exists (fun (_,_,e) -> assigns_expr name e) bs
+  | Destructure (target,d,init) ->
+    List.exists (assigns_expr name) (init :: Option.to_list d @ pattern_defaults target)
   | Return e | Effect e -> assigns_expr name e
   | If (c,a,b) -> assigns_expr name c || List.exists (assigns name) (a @ b)
   | While (c,body,update) -> assigns_expr name c || List.exists (assigns name) (body @ update)
@@ -424,6 +456,13 @@ let rec expr binders j =
       | k -> unsupported ("logical assignment " ^ k)),sub "target",sub "rhs")
   | "nullishAssign" -> NullishAssign (text "name" j,field "namePos" j,sub "rhs")
   | "comma" -> Comma (sub "left",sub "right")
+  | "arrayAssign" ->
+    let index q = int_of_string (match field "index" q with
+      | Json.Number n -> n | _ -> Json.fail "an index is a number") in
+    ArrayAssign (List.map (fun q -> index q,text "name" q,
+      (match field "default_" q with Null -> None | d -> Some (expr binders d))) (items "targets" j),
+      (match field "rest" j with Null -> None | r -> Some (index r,field "pos" r,text "name" r)),
+      sub "rhs")
   | "bin" when text "op" j = "&&" || text "op" j = "||" ->
     Logical (text "op" j = "&&",sub "l",sub "r")
   | "bin" -> let op = match text "op" j with
@@ -486,12 +525,27 @@ let rec expr binders j =
   | "doneBody" -> DoneBody | "returnBody" -> ReturnBody (sub "e")
   | "throwBody" -> ThrowBody (sub "e")
   | "seqBody" -> SequenceBody (sub "init",sub "body")
+  | "destructBody" -> DestructBody (pattern binders (field "target" j),sub "init",sub "body")
   | "letBody" -> LetBody (text "name" j,(match field "annot" j with Null -> None | a -> Some (source_type binders a)),sub "init",sub "body")
   | "ifBody" -> IfBody (source_type binders (field "result" j),sub "cond",sub "then",sub "else_")
   | "conditional" -> Conditional (sub "cond",sub "then",sub "else_")
   | k -> unsupported ("expression " ^ k) in {pos=field "pos" j;node}
+and pattern binders j =
+  let target q = pattern binders (field "target" q) and default q = match field "default_" q with
+    | Null -> None | d -> Some (expr binders d) in
+  let index q = int_of_string (match field "index" q with
+    | Json.Number n -> n | _ -> Json.fail "an index is a number") in
+  match text "k" j with
+  | "name" -> PName (text "name" j,field "pos" j)
+  | "object" -> PObject (List.map (fun q -> text "field" q,target q,default q) (items "props" j))
+  | "array" -> PArray (List.map (fun q -> index q,target q,default q) (items "elems" j),
+      match field "rest" j with Null -> None | r -> Some (index r,field "pos" r,target r))
+  | k -> unsupported ("pattern " ^ k)
 let rec stmt binders j =
   let statement = match text "k" j with
+  | "destructure" -> Destructure (pattern binders (field "target" j),
+      (match field "default_" j with Null -> None | d -> Some (expr binders d)),
+      expr binders (field "init" j))
   | "const" | "let" -> Declare (text "k" j="let",List.map (fun b ->
       text "name" b,optional_type binders (field "annot" b),expr binders (field "init" b)) (items "bindings" j))
   | "return" -> Return (expr binders (field "e" j)) | "effect" -> Effect (expr binders (field "e" j))

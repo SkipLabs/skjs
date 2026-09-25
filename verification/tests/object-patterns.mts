@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import vm from "node:vm";
 import { spawnSync } from "node:child_process";
-import type { Ast } from "../tools/fragment.mts";
+import type { Ast, Stmt } from "../tools/fragment.mts";
 import type { ClaimType } from "../tools/claim.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import { fileOf, functionOf, type SkjsClaims } from "../tools/skjs-claims.mts";
@@ -60,6 +60,12 @@ const skjsFor = (c: SkjsClaims, name: string): SkjsClaims => [
   { ...clone(fileOf(c, fileKey)), functions: [clone(functionOf(c, fileKey, name))] },
 ];
 const numberLit = (v: string): ClaimType => ({ top: false, atoms: [{ a: "numberlit", v }] });
+/** The properties of an object pattern statement. */
+const propsOf = (s: Stmt | undefined) => {
+  const target = stmt(s, "destructure").target;
+  assert(target.k === "object", "an object pattern");
+  return target.props;
+};
 /** Where a statement's text starts within the named function. */
 const startOf = (name: string, text: string): number => {
   const start = source.indexOf(text, source.indexOf(`function ${name}(`));
@@ -84,7 +90,7 @@ try {
   // Without the default the binding admits undefined, which the producer's
   // entry claim for a number does not.
   const undefaulted = only(ast, "defaultedField");
-  must(stmt(at(undefaulted.functions[0].body, 1), "pattern").props[0], "the property").default_ = null;
+  must(propsOf(at(undefaulted.functions[0].body, 1))[0], "the property").default_ = null;
   expect(
     "the default is what removes undefined from the binding",
     run("stateful-source", undefaulted, skjsFor(claims, "defaultedField")),
@@ -93,12 +99,12 @@ try {
 
   // A read the record contract does not name has no location.
   const unnamed = only(ast, "plainField");
-  must(stmt(at(unnamed.functions[0].body, 1), "pattern").props[0], "the property").field = "other";
+  must(propsOf(at(unnamed.functions[0].body, 1))[0], "the property").field = "other";
   expect(
     "a pattern reads only fields the contract names",
     run("stateful-source", unnamed, skjsFor(claims, "plainField")),
     false,
-    "pattern reads a field 'other' the contract does not name",
+    "read of a field 'other' the contract does not name",
   );
 
   // The binding is a copy: a claim that the later write reached it is refused.
@@ -114,8 +120,7 @@ try {
   for (const [name, text, message] of [
     ["mutable pattern", "let { value } = box; return value;", "a `let` pattern is outside the fragment"],
     ["pattern beside a declarator", "const { value } = box, other = 1; return value;", "a pattern declares alone"],
-    ["nested pattern", "const { value: { inner } } = box; return inner;", "nested patterns are outside the fragment"],
-    ["rest element", "const { ...rest } = box; return rest.value;", "rest elements are outside the fragment"],
+    ["object rest", "const { ...rest } = box; return rest.value;", "an object rest copies the source's remaining own enumerable keys"],
     ["empty pattern", "const {} = box; return 0;", "an empty pattern binds nothing"],
     [
       "pattern in a closure body",

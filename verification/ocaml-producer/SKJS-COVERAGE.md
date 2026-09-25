@@ -143,8 +143,8 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 8 | `void e` — done (task E) | 0 (was 27) | | | | S | P L |
 | 9 | Template literal expressions and string `+` — done (task E); template literal *types* remain (22) | 17 (types) | | | | M | P L |
 | 10 | Mutable bindings: unannotated `let`, `let x: T;`, parameter assignment, unannotated module constants read by functions | 52 | 42 | 0 | 22 | M | O L |
-| 11 | Compound / update assignment (`x++`, `+=`, `||=`, `??=`) — done (task E); array destructuring assignment remains (12) | 5 | 5 | 0 | 4 | S | O L |
-| 12 | Destructuring, rest/default parameters | 96 | 90 | 5 | 22 | M | P O L |
+| 11 | Compound / update assignment (`x++`, `+=`, `||=`, `??=`) — done (task E); array destructuring assignment done (task H) | 5 | 5 | 0 | 4 | S | O L |
+| 12 | ~~Destructuring, rest/default parameters~~ done (task H); left: slices, object rests, `let` patterns, generic alias rests | 15 (was 111) | 10 | 5 | 9 | M | P O L |
 | 13 | Library globals as values — calls and the reviewed overlay done (task K); left: `Array.isArray` (23), `new X(…)` (`Error` 23, `Array`, `Set`, `Map`, `Date`, `Promise`), well-known symbols (8), `Promise`/`JSON`/`Object` statics | 86 | | | 25 | M | D L |
 | 14 | ~~Reads on primitives and unions, value-level `&&`/`||`~~ done (task L); left: dynamic string index writes, numeric keys on string indexes | 4 (was 48 + 20) | | | | M | O L |
 | 15 | Equality against string/boolean literal singletons (Lean refuses the source form) | 37 | 37 | 0 | 5 | M | L |
@@ -292,10 +292,33 @@ dropped), examples, what the extension needs.
     write back); `x += s` concatenates, and an increment is refused on a
     non-numeric target (it converts to a number). 23 of 29 verify.* Were
     `proposal: expression update` (16), `logicalAssign` (3), `nullishAssign`
-    (1). Left: `arrayAssign` (4, `[a, b] = [b, a]`: destructuring, 12),
+    (1). Left: `arrayAssign` (4, `[a, b] = [b, a]`: destructuring, 12; done, task H),
     `source: only field and local assignments are supported` (1, a pattern
     default), and 2 moved on (`&&`, a loop edge).
-12. **Destructuring and parameters.** `proposal: statement pattern` (29),
+12. **Destructuring and parameters.** *Done (task H): one recursive
+    `Pattern` (Fragment `destructure` statement, `destructBody` in a closure
+    body) for object and array patterns, nesting, holes, a tuple's rest, and
+    defaults (a tag dispatch on `undefined`, a declared alias told apart
+    clause by clause); array patterns read positions of any array under the
+    `%Iterate%` trust, replacing the fresh-literal-only rule; parameter
+    patterns and defaults of functions bind a hidden name and start the body
+    with the pattern; closure parameter patterns likewise; array assignment
+    with a rest; rest parameters `readonly T[]`, readonly tuples and aliases
+    of either (DESIGN.md, "Patterns"). 911 → 993 units (+82), 860 → 942
+    functions, 96 → 101 whole files, none lost (marker corpus). The 15 left
+    in the group: a rest over an array of unknown length is a slice (4:
+    `restFromArray`, `restTargetOfArrayAccepted`, and unions of tuples of
+    different lengths `declaredRest`, `emptyRemainder`; no slice term),
+    object rests (3: the copy's keys are the source's, which a record does
+    not bound), `let` patterns (2), rest parameters typed by a generic alias
+    application or an intersection over a binder (task N), and `...x: number`
+    (not an array). Units that moved on stop at field narrowing after a guard
+    (`earlierPatternRead`, `checkedNestedPattern`,
+    `unsound-refinement.ts#checkedDeclarationDefault`), a local shadowing a
+    module constant, a pattern reading a method (`compatibleDestructuring`,
+    refused as `c.m` is), and a fixed arrow into a variadic signature
+    (`observedOptionalSourceForArrayRest`); none is an SKJS unsoundness.*
+    Were: `proposal: statement pattern` (29),
     `statement arrayPattern` (10), `rest elements` (12), `default parameters`
     (10), `destructuring parameter` (10), `expected an ordinary closure
     parameter` (8), `array pattern holes` (6), `a rest parameter needs a tuple
@@ -617,7 +640,7 @@ split by function.
 | E. Small expression forms (done) | `void e` and the comma operator as one `comma` form; `+` with a string operand concatenating any primitive but a symbol by exact `ToString`; template literals as concatenations; the producer's `update`, `logicalAssign`, `nullishAssign` | 58 / 25 verified (703 -> 761 units, 672 -> 730 functions, 61 -> 72 whole files, none lost) | `fragment-parse.mts`, `annotate-source.mts`, `Fragment.lean`, `Calculus.lean`, `ProgramTyping.lean`, `SourceExtraction.lean`, `CertificateProducer.lean`, `source.ml`, `proposal.ml` | — | D, F |
 | F. Statement forms (done) | `else if`/unbraced arms, nested blocks, `;`, bare `return`, block closures falling off the end, dead code after a jump, `switch` as labeled blocks (exact fall-through, no case narrowing), `for(;;)` as a `while` with an update, `for-in` over the trusted `%ForIn%`; `try`/`catch`/`finally`/`throw` moved to the calculus's throw outcome | 181 / 56 reached, 63 / 29 verified (+65 units, +60 functions, +11 files entirely; 703 → 768 on the marker corpus) | `fragment-parse.mts`, `fragment.mts`, `intrinsics.mts`, `annotate-source.mts`, `Fragment.lean`, `SourceExtraction.lean`, `SourceClaimJson.lean`, `source.ml`, `proposal.ml` | D (for `<` in loops) | D, E, H |
 | G. Mutable bindings | Storage contract from a widened initializer, parameters as cells, `let x: T;` with definite assignment, module constants | 52 / 22 | `proposal.ml`, `environment.ml`, `ProgramTyping.lean` | — | I |
-| H. Destructuring and parameters | Object/array patterns, rest, holes, nested, parameter patterns, default and rest parameters | 96 / 22 | `fragment-parse.mts`, `proposal.ml`, `SourceExtraction.lean` | — | F |
+| H. Destructuring and parameters (done) | Object/array patterns (nested, holes, defaults, a tuple's rest) on `const`, in closure bodies and as parameters of functions and closures; function defaults; array assignment with a rest; readonly and alias rest parameters; refused with reasons: array rests of unknown length (slices), object rests, `let` patterns | 111 / 28 reached, 96 left the group; 82 units verified (911 → 993 units, 860 → 942 functions, 96 → 101 whole files, none lost, marker corpus) | `fragment-parse.mts`, `fragment.mts`, `type-term.mts`, `tsc-claims.mts`, `annotate-source.mts`, `Fragment.lean`, `SourceExtraction.lean`, `SourceClaimJson.lean`, `source.ml`, `proposal.ml`, `semantic.ml` | — | F |
 | I. Literal equality and tag narrowing | Lean equality with string/boolean singletons; discriminated-union narrowing; `switch` case narrowing | 42+ / 10 (plus much of the 42 narrowing failures) | `SourceExtraction.lean`, `ProgramTyping.lean`, `CertificateProducer.lean`, `proposal.ml` | F for `switch` | G, J |
 | J. Guards | `typeof`, `in`, `instanceof`, `Array.isArray`; `typeof` in type position | 88 / 16 | `fragment-parse.mts`, `proposal.ml`, Lean narrowing rules | I, K (`Array`) | I |
 | K. Library globals (done, first part) | Global values read at the call signatures a module calls (`BigInt(v)`, `Symbol()`, `String(v)`) as well as members; a standard library global only through a reviewed overlay (`library-globals.mts`) that states a parameter at what the host accepts without throwing | all 102 `BigInt` units and the `Symbol()`/`String()` calls pass the reader; 6 units / 2 files newly verified (703 → 709 units, 61 → 62 whole files); `Array.isArray`, `new X(…)`, well-known symbols, `Promise`/`JSON`/`Object` statics left | `declaration-graph.mts`, `library-globals.mts` | B, C | B, C |

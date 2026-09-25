@@ -20,7 +20,7 @@ export function bigintText(literal: string, negative: boolean): string {
 }
 
 export const REST_CONTRACT =
-  "a rest parameter needs a tuple of required positions or a mutable array";
+  "a rest parameter needs a tuple of required positions or an array";
 
 export type TermScope = {
   source: SourceFile;
@@ -53,11 +53,14 @@ export function optionalTerm(type: TypeTerm, span: Span): TypeTerm {
 }
 
 /** The rest parameter's contract as positions of the signature: a tuple of
- * required positions is a fixed number of further arguments, a mutable array
- * any number of them. Anything else has no reading as a signature. */
+ * required positions is a fixed number of further arguments, an array, mutable
+ * or readonly, any number of them. Anything else has no reading as a
+ * signature. */
 export function restPositions(type: TypeTerm): { positions: TypeTerm[] } | { element: TypeTerm } | null {
-  if (type.k === "array" && !type.readonly) return { element: type.element };
-  if (type.k === "tuple" && !type.readonly && !type.optional.length && type.rest === null)
+  // The array a call collects is fresh: it is an array of its element, and
+  // viewing it as `readonly` gives up only writes.
+  if (type.k === "array") return { element: type.element };
+  if (type.k === "tuple" && !type.optional.length && type.rest === null)
     return { positions: type.required };
   return null;
 }

@@ -42,20 +42,21 @@ def tupleRequired (j : Json) : Except String (List Json) := do
     CellClaims.fieldsExactly atom ["a","required","optional","rest","readonly"]
     if (← jStr (← jField atom "a")) != "array" then
       throw "a rest parameter needs a tuple contract of required positions"
-    if ← (← jField atom "readonly").getBool? then
-      throw "a rest parameter collects into a fresh array, never a readonly view"
     if !(← jArr atom "optional").isEmpty || (← jField atom "rest") != Json.null then
       throw "a rest parameter needs a tuple contract of required positions"
     jArr atom "required"
   | _ => throw "a rest parameter needs a tuple contract of required positions"
 
-/-- The contract of each further argument a rest parameter collects, where its
-contract is a mutable `T[]`; none for any other contract. -/
-def arrayElement (j : Json) : Option Json := do
+/-- The element of an array contract `T[]`, and with `readonly` of a
+`readonly T[]` too; none for any other contract. A rest parameter's contract
+may be either: the array a call collects is fresh, a `T[]`, and viewing it as
+`readonly T[]` gives up only writes. -/
+def arrayElement (j : Json) (readonly : Bool := false) : Option Json := do
   let .ok false := (← (j.getObjVal? "top").toOption).getBool? | none
   let .ok [atom] := (← (j.getObjVal? "atoms").toOption).getArr?.map (·.toList) | none
   let .ok "array" := (← (atom.getObjVal? "a").toOption).getStr? | none
-  let .ok false := (← (atom.getObjVal? "readonly").toOption).getBool? | none
+  let .ok r := (← (atom.getObjVal? "readonly").toOption).getBool? | none
+  if r && !readonly then none
   let .ok [] := (← (atom.getObjVal? "required").toOption).getArr?.map (·.toList) | none
   let .ok [] := (← (atom.getObjVal? "optional").toOption).getArr?.map (·.toList) | none
   let rest ← (atom.getObjVal? "rest").toOption
@@ -338,6 +339,42 @@ structure ArrayElem (Expr : Type) where
   namePos : Span
   default_ : Option Expr
 
+/-- What a pattern binds at one place: a name, or a nested pattern over the
+value found there. An object pattern reads its fields in order; an array
+pattern reads its positions in order, a hole being a position no element
+names, and its rest, at the position after its elements, collects the
+positions from there on into a fresh array. An element's default replaces a
+read that is `undefined`. -/
+inductive Pattern (Expr : Type) where
+  | name (name : String) (namePos : Span)
+  | object (pos : Span) (props : List (String × Pattern Expr × Option Expr))
+  | array (pos : Span) (elems : List (Nat × Pattern Expr × Option Expr))
+      (rest : Option (Nat × Span × Pattern Expr))
+
+/-- The names a pattern binds, in the order it binds them. -/
+partial def Pattern.names {Expr : Type} : Pattern Expr → List String
+  | .name n _ => [n]
+  | .object _ props => props.flatMap fun (_, t, _) => t.names
+  | .array _ elems rest => elems.flatMap (fun (_, t, _) => t.names) ++
+      ((rest.map fun (_, _, t) => t.names).getD [])
+
+/-- A pattern's defaults, in evaluation order. -/
+partial def Pattern.defaults {Expr : Type} : Pattern Expr → List Expr
+  | .name .. => []
+  | .object _ props => props.flatMap fun (_, t, d) => d.toList ++ t.defaults
+  | .array _ elems rest => elems.flatMap (fun (_, t, d) => d.toList ++ t.defaults) ++
+      ((rest.map fun (_, _, t) => t.defaults).getD [])
+
+/-- The pattern with each default rewritten. -/
+partial def Pattern.mapDefaultsM {Expr : Type} {m : Type → Type} [Monad m] (f : Expr → m Expr) :
+    Pattern Expr → m (Pattern Expr)
+  | .name n p => pure (.name n p)
+  | .object p props => return .object p (← props.mapM fun (k, t, d) => do
+      return (k, ← t.mapDefaultsM f, ← d.mapM f))
+  | .array p elems rest => return .array p (← elems.mapM fun (i, t, d) => do
+      return (i, ← t.mapDefaultsM f, ← d.mapM f)) (← rest.mapM fun (i, p, t) => do
+      return (i, p, ← t.mapDefaultsM f))
+
 /-- A lexically scoped rigid binder. Bounds may mention outer or preceding
 binders; the source decoder that consumes the expression checks that scope. -/
 structure TypeParam where
@@ -378,10 +415,12 @@ inductive Expr where
   | indexWrite (pos : Span) (field : Option String) (receiver key rhs : Expr)
   /-- An array literal: one element per initializer, in source order. -/
   | arrayLit (pos : Span) (elems : List Expr)
-  /-- `[a, b = d] = rhs`: the right side once, then each mutable local takes
-  its position of the store, or its default when that read is undefined; the
-  value is the right side. -/
-  | arrayAssign (pos : Span) (targets : List (ArrayElem Expr)) (rhs : Expr)
+  /-- `[a, b = d, ...r] = rhs`: the right side once, then each mutable local
+  takes its position of the store, or its default when that read is
+  undefined, and the rest's local the fresh array of the positions after
+  them, claimed at the rest's span; the value is the right side. -/
+  | arrayAssign (pos : Span) (targets : List (ArrayElem Expr)) (rest : Option (Span × ArrayElem Expr))
+      (rhs : Expr)
   /-- `e[key]` with a numeric key: an element read of the array's store, and
   its assignment; resolved from `index` and `indexWrite` by the key's claim. -/
   | elemAt (pos : Span) (e key : Expr)
@@ -453,6 +492,11 @@ inductive Expr where
   /-- A closure body's `throw e`: it ends the body, as a return does, and has
   every type. -/
   | throwBody (pos : Span) (e : Expr)
+  /-- A pattern in a closure body, `const target = init; body`, one entry
+  like `letBody`: the initializer once, then the target binds it. The parser
+  also writes a closure parameter pattern as one, over the parameter's
+  hidden name. -/
+  | destructBody (pos : Span) (target : Pattern Expr) (init body : Expr)
 
 /-- Lexical dependencies, including deferred bodies. Exhaustive so a new
 executable source form cannot bypass parameter-initialization checks. -/
@@ -475,13 +519,15 @@ partial def Expr.freeNames : Expr → List String
     a.freeNames ++ b.freeNames ++ c.freeNames
   | .update _ _ a b _ => a.freeNames ++ (b.map Expr.freeNames).getD []
   | .assign _ n _ e | .nullishAssign _ n _ e => n :: e.freeNames
-  | .arrayAssign _ targets rhs => rhs.freeNames ++ targets.flatMap
-      (fun q => q.name :: (q.default_.map Expr.freeNames).getD [])
+  | .arrayAssign _ targets rest rhs => rhs.freeNames ++ targets.flatMap
+      (fun q => q.name :: (q.default_.map Expr.freeNames).getD []) ++ (rest.map (·.2.name)).toList
   | .bindWithReceiver _ f r args | .callWithReceiver _ f r args =>
     f.freeNames ++ r.freeNames ++ args.flatMap Expr.freeNames
   | .applyWithReceiver _ f r list => f.freeNames ++ r.freeNames ++ (list.map Expr.freeNames).getD []
   | .call _ f args _ | .invoke _ f args _ _ => f.freeNames ++ args.flatMap Expr.freeNames
   | .letBody _ n _ a b => a.freeNames ++ b.freeNames.filter (· != n)
+  | .destructBody _ t a b => a.freeNames ++ t.defaults.flatMap Expr.freeNames ++
+      b.freeNames.filter (!t.names.contains ·)
 
 /-- Every direct call of a named function: the call's span, the callee read's
 span, and the name, as `freeNames` binds names. -/
@@ -503,7 +549,7 @@ partial def Expr.callees : Expr → List (Span × Span × String)
     a.callees ++ b.callees ++ c.callees
   | .update _ _ a b _ => a.callees ++ (b.map Expr.callees).getD []
   | .assign _ _ _ e | .nullishAssign _ _ _ e => e.callees
-  | .arrayAssign _ targets rhs => rhs.callees ++ targets.flatMap
+  | .arrayAssign _ targets _ rhs => rhs.callees ++ targets.flatMap
       (fun q => (q.default_.map Expr.callees).getD [])
   | .bindWithReceiver _ f r args | .callWithReceiver _ f r args =>
     f.callees ++ r.callees ++ args.flatMap Expr.callees
@@ -512,6 +558,8 @@ partial def Expr.callees : Expr → List (Span × Span × String)
     (match f with | .var q n => [(p, q, n)] | _ => []) ++ f.callees ++ args.flatMap Expr.callees
   | .invoke _ f args _ _ => f.callees ++ args.flatMap Expr.callees
   | .letBody _ n _ a b => a.callees ++ b.callees.filter (·.2.2 != n)
+  | .destructBody _ t a b => a.callees ++ t.defaults.flatMap Expr.callees ++
+      b.callees.filter (!t.names.contains ·.2.2)
 
 /-- Closure conversion for acyclic forward captures. Only a literal closure's
 allocation can move; every potentially effectful initializer keeps source order.
@@ -551,11 +599,11 @@ abbrev Expr.lam (p : Span) (name : String) (arg result : Json) (body : Expr) : E
 abbrev Expr.app (p : Span) (callee arg : Expr) : Expr := .call p callee [arg] []
 
 def Expr.span : Expr → Span
-  | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body => body.span
+  | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body | .destructBody _ _ _ body => body.span
   | .ifBody p _ _ _ _ | .done p | .throwBody p _ | .equality p _ _ _ | .singletonTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
   | .comma p _ _ => p
-  | .arrayLit p _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ => p
+  | .arrayLit p _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ _ => p
   | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ _ _ _ _ | .call p _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ | .construct p _ _ => p
 
 /-- One declarator of a `const` or `let`. -/
@@ -564,13 +612,6 @@ structure Binding where
   namePos : Span
   annot : Option Json
   init : Expr
-
-/-- One property of an object pattern: `field: name = default_`. -/
-structure PatternProp where
-  field : String
-  name : String
-  namePos : Span
-  default_ : Option Expr
 
 inductive Stmt where
   | ret (pos : Span) (e : Expr)
@@ -582,12 +623,11 @@ inductive Stmt where
   supplies one. What the initializer happens to produce is not what the
   binding may later hold. -/
   | mutables (pos : Span) (bindings : List Binding)
-  /-- An object pattern on a `const`: the initializer once, then each property
-  read in order, a default evaluated only when its read is undefined. -/
-  | pattern (pos : Span) (props : List PatternProp) (init : Expr)
-  /-- An array pattern: each element reads its position of the initializer's
-  store, with a default when the read is undefined. -/
-  | arrayPattern (pos : Span) (elems : List (ArrayElem Expr)) (init : Expr)
+  /-- A pattern on a `const`, `const target = init`: the initializer once,
+  then the target binds it, its default (a parameter's) replacing it where it
+  is `undefined`. The parser also writes a parameter pattern or default as
+  one, over the parameter's hidden name. -/
+  | destructure (pos : Span) (target : Pattern Expr) (default_ : Option Expr) (init : Expr)
   | ite (pos : Span) (cond : Expr) (thn : List Stmt) (els : Option (List Stmt))
   /-- `break`: to the end of the nearest enclosing loop, or with a label, of
   the enclosing block of that label. -/
@@ -636,7 +676,7 @@ def decodeArrayElem (decodeExpr : Json → Except String Expr) (q : Json) :
 
 /-- A statement's own span. -/
 def Stmt.pos : Stmt → Span
-  | .ret p _ | .constants p _ | .mutables p _ | .pattern p _ _ | .arrayPattern p _ _
+  | .ret p _ | .constants p _ | .mutables p _ | .destructure p _ _ _
   | .ite p _ _ _ | .loop p _ _ _ | .forOf p _ _ _ _ | .brk p _ | .cont p | .effect p _
   | .block p _ _ | .throw p _ | .tryStmt p _ _ _ => p
 
@@ -646,10 +686,8 @@ partial def Stmt.callees : Stmt → List (Span × Span × String)
   | .tryStmt _ b h f => b.flatMap Stmt.callees ++ ((h.map (·.2)).getD []).flatMap Stmt.callees ++
     (f.getD []).flatMap Stmt.callees
   | .constants _ bs | .mutables _ bs => bs.flatMap fun b => b.init.callees
-  | .pattern _ props init => init.callees ++
-    props.flatMap fun q => (q.default_.map Expr.callees).getD []
-  | .arrayPattern _ elems init => init.callees ++
-    elems.flatMap fun q => (q.default_.map Expr.callees).getD []
+  | .destructure _ target d init => init.callees ++
+    (d.toList ++ target.defaults).flatMap Expr.callees
   | .ite _ c t e => c.callees ++ t.flatMap Stmt.callees ++ (e.getD []).flatMap Stmt.callees
   | .loop _ c b u => c.callees ++ b.flatMap Stmt.callees ++ u.flatMap Stmt.callees
   | .block _ _ b => b.flatMap Stmt.callees
@@ -697,6 +735,45 @@ private def decodeArith (j : Json) : Except String Arith := do
   | "gt" => pure .gt
   | "ge" => pure .ge
   | op => throw s!"unknown binary operator '{op}'"
+
+/-- A pattern: a name, or a nonempty object or array pattern whose positions
+increase, holes between them, and whose rest comes after them. -/
+partial def decodePattern (decodeExpr : Json → Except String Expr) (j : Json) :
+    Except String (Pattern Expr) := do
+  let target (q : Json) : Except String (Pattern Expr × Option Expr) := do
+    let d ← jField q "default_"
+    let dflt ← if d == .null then pure none else some <$> decodeExpr d
+    return (← decodePattern decodeExpr (← jField q "target"), dflt)
+  match ← jStr (← jField j "k") with
+  | "name" =>
+    CellClaims.fieldsExactly j ["k","name","pos"]
+    return .name (← jStr (← jField j "name")) (← jSpan j "pos")
+  | "object" =>
+    CellClaims.fieldsExactly j ["k","pos","props"]
+    let props ← (← jArr j "props").mapM fun q => do
+      CellClaims.fieldsExactly q ["field","target","default_"]
+      let (t, d) ← target q
+      return (← jStr (← jField q "field"), t, d)
+    if props.isEmpty then throw "an empty pattern binds nothing"
+    return .object (← jSpan j "pos") props
+  | "array" =>
+    CellClaims.fieldsExactly j ["k","pos","elems","rest"]
+    let elems ← (← jArr j "elems").mapM fun q => do
+      CellClaims.fieldsExactly q ["index","target","default_"]
+      let (t, d) ← target q
+      return (← (← jField q "index").getNat?, t, d)
+    let rest ← match ← jField j "rest" with
+      | .null => pure none
+      | r => do
+        CellClaims.fieldsExactly r ["index","pos","target"]
+        pure (some (← (← jField r "index").getNat?, ← jSpan r "pos",
+          ← decodePattern decodeExpr (← jField r "target")))
+    let indices := elems.map (·.1) ++ (rest.map (·.1)).toList
+    if indices.isEmpty then throw "an empty pattern binds nothing"
+    if !(indices.zip (indices.drop 1)).all (fun (a, b) => a < b) then
+      throw "array pattern positions must increase"
+    return .array (← jSpan j "pos") elems rest
+  | k => throw s!"unknown pattern kind {k}"
 
 partial def decodeExpr (j : Json) : Except String Expr := do
   let p ← jSpan j "pos"
@@ -774,10 +851,19 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     CellClaims.fieldsExactly j ["k","pos","elems"]
     return .arrayLit p (← (← jArr j "elems").mapM decodeExpr)
   | "arrayAssign" => do
-    CellClaims.fieldsExactly j ["k","pos","targets","rhs"]
+    CellClaims.fieldsExactly j ["k","pos","targets","rest","rhs"]
     let targets ← (← jArr j "targets").mapM (decodeArrayElem decodeExpr)
-    if targets.isEmpty then throw "an empty pattern binds nothing"
-    return .arrayAssign p targets (← decodeExpr (← jField j "rhs"))
+    let rest ← match ← jField j "rest" with
+      | .null => pure none
+      | r => do
+        CellClaims.fieldsExactly r ["index","pos","name","namePos"]
+        pure (some (← jSpan r "pos",
+          (⟨← (← jField r "index").getNat?, ← jStr (← jField r "name"), ← jSpan r "namePos", none⟩ : ArrayElem Expr)))
+    let indices := targets.map (·.index) ++ (rest.map (·.2.index)).toList
+    if indices.isEmpty then throw "an empty pattern binds nothing"
+    if !(indices.zip (indices.drop 1)).all (fun (a, b) => a < b) then
+      throw "array pattern positions must increase"
+    return .arrayAssign p targets rest (← decodeExpr (← jField j "rhs"))
   | "index" => do
     CellClaims.fieldsExactly j ["k","pos","e","key"]
     return .index p none (← decodeExpr (← jField j "e")) (← decodeExpr (← jField j "key"))
@@ -887,6 +973,10 @@ partial def decodeExpr (j : Json) : Except String Expr := do
   | "throwBody" => do
     CellClaims.fieldsExactly j ["k","pos","e"]
     return .throwBody p (← decodeExpr (← jField j "e"))
+  | "destructBody" =>
+    CellClaims.fieldsExactly j ["k","pos","target","init","body"]
+    return .destructBody p (← decodePattern decodeExpr (← jField j "target"))
+      (← decodeExpr (← jField j "init")) (← decodeExpr (← jField j "body"))
   | "apply" => do
     let args ← (← jArr j "args").mapM decodeExpr
     let spreads ← match (j.getObjVal? "spreads").toOption with
@@ -978,20 +1068,12 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
   | "effect" => return .effect p (← decodeExpr (← jField j "e"))
   | "const" => return .constants p (← decodeBindings j)
   | "let" => return .mutables p (← decodeBindings j)
-  | "arrayPattern" =>
-    CellClaims.fieldsExactly j ["k","pos","elems","init"]
-    let elems ← (← jArr j "elems").mapM (decodeArrayElem decodeExpr)
-    if elems.isEmpty then throw "an empty pattern binds nothing"
-    return .arrayPattern p elems (← decodeExpr (← jField j "init"))
-  | "pattern" =>
-    CellClaims.fieldsExactly j ["k","pos","props","init"]
-    let props ← (← jArr j "props").mapM fun q => do
-      CellClaims.fieldsExactly q ["field","name","namePos","default_"]
-      let d ← jField q "default_"
-      let dflt ← if d == .null then pure none else some <$> decodeExpr d
-      return (⟨← jStr (← jField q "field"), ← jStr (← jField q "name"), ← jSpan q "namePos", dflt⟩ : PatternProp)
-    if props.isEmpty then throw "an empty pattern binds nothing"
-    return .pattern p props (← decodeExpr (← jField j "init"))
+  | "destructure" =>
+    CellClaims.fieldsExactly j ["k","pos","target","default_","init"]
+    let d ← jField j "default_"
+    let dflt ← if d == .null then pure none else some <$> decodeExpr d
+    return .destructure p (← decodePattern decodeExpr (← jField j "target")) dflt
+      (← decodeExpr (← jField j "init"))
   | "break" =>
     CellClaims.fieldsExactly j ["k","pos","label"]
     return .brk p (← decodeLabel j)
