@@ -54,6 +54,8 @@ inductive Rule (ι : Type) where
   | bindE
   /-- A bound variadic function, likewise. -/
   | bindRestE
+  /-- A member read from a slot's object and bound to that same object. -/
+  | bindMember
   /-- A class value: the `undefined` type its bodies' receiver has. -/
   | ctorE (undef : Ty ι)
   /-- `new`: the constructor, then the actuals in order. -/
@@ -161,35 +163,35 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   | .read, .readAt f a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧
     (match expand G ja.type with
-     | [.refs fs [] _ _] => (f, j.type) ∈ fs
+     | [.refs fs [] _ _ _] => (f, j.type) ∈ fs
      | _ => False)
   | .readView, .readAt f a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧
     (match expand G ja.type with
-     | [.refs _ [] vs _] => (f, j.type) ∈ vs
+     | [.refs _ [] vs _ _] => (f, j.type) ∈ vs
      | _ => False)
   | .readOptional A U, .readAt f a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧ Represents G U .undef ∧ j.type = A ++ U ∧
     (match expand G ja.type with
-     | [.refs _ [] _ os] => (f, A) ∈ os
+     | [.refs _ [] _ os _] => (f, A) ∈ os
      | _ => False)
   | .readDict A U, .readAt (.str _) a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧ Represents G U .undef ∧ j.type = A ++ U ∧
     (match expand G ja.type with
-     | [.dict _ [] _ ix _] => A ∈ ix
+     | [.dict _ [] _ ix _ _] => A ∈ ix
      | _ => False)
   | .indexDict A U, .indexAt a key, [ja, jk] =>
     ja.context = j.context ∧ ja.term = a ∧
     jk.context = j.context ∧ jk.term = key ∧
     Represents G jk.type .str ∧ Represents G U .undef ∧ j.type = A ++ U ∧
     (match expand G ja.type with
-     | [.dict _ [] _ ix _] => A ∈ ix
+     | [.dict _ [] _ ix _ _] => A ∈ ix
      | _ => False)
   | .write, .writeAt f a b, [ja, jb] =>
     ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
     Represents G j.type .nul ∧
     (match expand G ja.type with
-     | [.refs fs [] _ _] => (f, jb.type) ∈ fs
+     | [.refs fs [] _ _ _] => (f, jb.type) ∈ fs
      | _ => False)
   | .arith, .arith _ a b, [ja, jb] =>
     ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
@@ -349,6 +351,14 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
         saved.filterMap (j.context[·]?) =
           s.2.1.take saved.length ++ List.replicate (saved.length - s.2.1.length) El
     | _, _, _, _ => False
+  -- A member read from a slot's object and bound to that same object, with no
+  -- premises: the result's signatures are the member's, at any receiver.
+  | .bindMember, .letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var r) pre) ns inits), [] =>
+    r = i + 1 ∧ pre = [] ∧ ns = [] ∧ inits = [] ∧
+    match j.context[i]?, expand G j.type with
+    | some O, [.arrs L S] => ∃ m ∈ (memberOf G O k).toList,
+        (∀ q ∈ L, (q.2.1, q.2.2) ∈ m.calls) ∧ (∀ s ∈ S, (s.2.1, s.2.2.1, s.2.2.2) ∈ m.rests)
+    | _, _ => False
   -- A class value: a function's allocation with construct-only code.
   | .ctorE U, .makeAt (.closure arity b .construct) ns inits, ps =>
     ns = [valueField] ∧ inits = [Tm.nul] ∧ Represents G U .undef ∧
@@ -956,6 +966,12 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
       rw [varSlots_eq hsaved]
       exact HasTy.bindRestE hT hmem (by simpa using hEl) hRt hmap h5 hF
     · contradiction
+  · obtain ⟨rfl, rfl, rfl, rfl, hl⟩ := hl
+    split at hl
+    · rename_i O L S hO hF
+      obtain ⟨m, hm, hL, hS⟩ := hl
+      exact HasTy.bindMember hO (by simpa using hm) hF hL hS
+    · contradiction
   · rename_i ps U arity b ns inits
     obtain ⟨rfl, rfl, hU, hl⟩ := hl
     unfold ctorEPremises at hl
@@ -1252,29 +1268,29 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     · intro j hj
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
       exact ih p hp
-  | @read Γ a Ref fs vs os f A ha hr hm ih =>
+  | @read Γ a Ref fs vs os ms f A ha hr hm ih =>
     apply node_complete (G := G) (j := ⟨Γ, .readAt f a, A⟩) (r := .read) (js := [⟨Γ,a,Ref⟩])
-      ⟨rfl,rfl,by simp only [show expand G Ref = [.refs fs [] vs os] from hr]; exact hm⟩
+      ⟨rfl,rfl,by simp only [show expand G Ref = [.refs fs [] vs os ms] from hr]; exact hm⟩
     simpa using ih
-  | @readView Γ a Ref fs vs os f A ha hr hm ih =>
+  | @readView Γ a Ref fs vs os ms f A ha hr hm ih =>
     apply node_complete (G := G) (j := ⟨Γ, .readAt f a, A⟩) (r := .readView) (js := [⟨Γ,a,Ref⟩])
-      ⟨rfl,rfl,by simp only [show expand G Ref = [.refs fs [] vs os] from hr]; exact hm⟩
+      ⟨rfl,rfl,by simp only [show expand G Ref = [.refs fs [] vs os ms] from hr]; exact hm⟩
     simpa using ih
-  | @readOptional Γ a Ref fs vs os f A U ha hr hm hUnd ih =>
+  | @readOptional Γ a Ref fs vs os ms f A U ha hr hm hUnd ih =>
     apply node_complete (G := G) (j := ⟨Γ, .readAt f a, A ++ U⟩)
       (r := .readOptional A U) (js := [⟨Γ,a,Ref⟩])
-      ⟨rfl,rfl,hUnd,rfl,by simp only [show expand G Ref = [.refs fs [] vs os] from hr]; exact hm⟩
+      ⟨rfl,rfl,hUnd,rfl,by simp only [show expand G Ref = [.refs fs [] vs os ms] from hr]; exact hm⟩
     simpa using ih
-  | @readDict Γ a Ref fs vs ix os A U f ha hr hm hUnd ih =>
+  | @readDict Γ a Ref fs vs ix os ms A U f ha hr hm hUnd ih =>
     apply node_complete (G := G) (j := ⟨Γ, .readAt f a, A ++ U⟩)
       (r := .readDict A U) (js := [⟨Γ,a,Ref⟩])
-      ⟨rfl,rfl,hUnd,rfl,by simp only [show expand G Ref = [.dict fs [] vs ix os] from hr]; exact hm⟩
+      ⟨rfl,rfl,hUnd,rfl,by simp only [show expand G Ref = [.dict fs [] vs ix os ms] from hr]; exact hm⟩
     simpa using ih
-  | @indexDict Γ a Ref fs vs ix os key K A U ha hr hk hStr hm hUnd iha ihk =>
+  | @indexDict Γ a Ref fs vs ix os ms key K A U ha hr hk hStr hm hUnd iha ihk =>
     apply node_complete (G := G) (j := ⟨Γ, .indexAt a key, A ++ U⟩)
       (r := .indexDict A U) (js := [⟨Γ,a,Ref⟩, ⟨Γ,key,K⟩])
       ⟨rfl,rfl,rfl,rfl,hStr,hUnd,rfl,
-        by simp only [show expand G Ref = [.dict fs [] vs ix os] from hr]; exact hm⟩
+        by simp only [show expand G Ref = [.dict fs [] vs ix os ms] from hr]; exact hm⟩
     intro p hp
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
     rcases hp with rfl | rfl
@@ -1349,10 +1365,10 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     rcases hj with rfl | rfl
     · exact iha
     · exact ihb
-  | @write Γ a Ref fs vs os f A b N ha hr hm hb hn iha ihb =>
+  | @write Γ a Ref fs vs os ms f A b N ha hr hm hb hn iha ihb =>
     apply node_complete (G := G) (j := ⟨Γ, .writeAt f a b, N⟩) (r := .write)
       (js := [⟨Γ,a,Ref⟩, ⟨Γ,b,A⟩])
-      ⟨rfl,rfl,rfl,rfl,hn,by simp only [show expand G Ref = [.refs fs [] vs os] from hr]; exact hm⟩
+      ⟨rfl,rfl,rfl,rfl,hn,by simp only [show expand G Ref = [.refs fs [] vs os ms] from hr]; exact hm⟩
     intro j hj
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
     rcases hj with rfl | rfl
@@ -1479,6 +1495,16 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       simp only
       rw [filterMap_of_map hmap]
       exact ⟨hmap, hsig⟩
+    · simp
+  | @bindMember Γ F O i k m L S hi hmo hF hL hS =>
+    apply node_complete (r := .bindMember) (js := [])
+    · refine ⟨rfl, rfl, rfl, rfl, ?_⟩
+      show (match Γ[i]?, expand G F with
+        | some O, [.arrs L S] => ∃ m ∈ (memberOf G O k).toList,
+            (∀ q ∈ L, (q.2.1, q.2.2) ∈ m.calls) ∧ (∀ s ∈ S, (s.2.1, s.2.2.1, s.2.2.2) ∈ m.rests)
+        | _, _ => False)
+      rw [hi, show expand G F = [.arrs L S] from hF]
+      exact ⟨m, by simp [hmo], hL, hS⟩
     · simp
   | @bindRestE Γ F T Rt E El R Rc t r saved Ps Qs ht hsig hel hr hmap hQs hF =>
     apply node_complete (r := .bindRestE) (js := [])

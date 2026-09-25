@@ -21,12 +21,12 @@ HasTy  (Programs/ProgramTyping.lean)
   letE : HasTy G Γ a A → HasTy G (A :: Γ) b B → HasTy G Γ (.letE a b) B
   alloc {parts : List (PropKey × Ty ι × Tm)} : (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) [] []) → HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
   allocDict {parts : List (PropKey × Tm)} : (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2 Elem) → Represents G Dict (.dict [] [] [] [Elem]) → HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map Prod.snd)) Dict
-  read : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os) → (f, A) ∈ fs → HasTy G Γ (.readAt f a) A
-  readView : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os) → (f, A) ∈ vs → HasTy G Γ (.readAt f a) A
-  readOptional : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os) → (f, A) ∈ os → Represents G U .undef → HasTy G Γ (.readAt f a) (A ++ U)
-  readDict {f : String} : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix os) → A ∈ ix → Represents G U .undef → HasTy G Γ (.readAt (.str f) a) (A ++ U)
-  indexDict : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix os) → HasTy G Γ key K → Represents G K .str → A ∈ ix → Represents G U .undef → HasTy G Γ (.indexAt a key) (A ++ U)
-  write : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os) → (f, A) ∈ fs → HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
+  read : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms) → (f, A) ∈ fs → HasTy G Γ (.readAt f a) A
+  readView : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms) → (f, A) ∈ vs → HasTy G Γ (.readAt f a) A
+  readOptional : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms) → (f, A) ∈ os → Represents G U .undef → HasTy G Γ (.readAt f a) (A ++ U)
+  readDict {f : String} : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix os ms) → A ∈ ix → Represents G U .undef → HasTy G Γ (.readAt (.str f) a) (A ++ U)
+  indexDict : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix os ms) → HasTy G Γ key K → Represents G K .str → A ∈ ix → Represents G U .undef → HasTy G Γ (.indexAt a key) (A ++ U)
+  write : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms) → (f, A) ∈ fs → HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
   arith : HasTy G Γ a A → Answers G A .isNum true → HasTy G Γ b B → Answers G B .isNum true → Represents G N .num → HasTy G Γ (.arith op a b) N
   arrLit {Γ : List (Ty ι)} {L : Ty ι} {T : Tuple (Ty ι)} {xs : List (Ty ι × Tm)} : Represents G L (.list T []) → T.required.length ≤ xs.length → (T.rest = none → xs.length ≤ T.required.length + T.optional.length) → (∀ p ∈ xs.zipIdx, positionTy T p.2 = some p.1.1) → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → HasTy G Γ (.arrLit (xs.map Prod.snd)) L
   elem {Γ : List (Ty ι)} {a i : Tm} {L I A : Ty ι} {T : Tuple (Ty ι)} {b : UInt64} {k : Nat} : HasTy G Γ a L → Represents G L (.list T []) → HasTy G Γ i I → Represents G I (.numLit b) → indexOfBits b = some k → T.required[k]? = some A → HasTy G Γ (.elemAt a i) A
@@ -46,6 +46,7 @@ HasTy  (Programs/ProgramTyping.lean)
   callRest {Γ : List (Ty ι)} {f r : Tm} {F Rt : Ty ι} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} {P B : Ty ι} {parts : List (Bool × Ty ι × Tm)} : HasTy G Γ f F → (Rt, xs.map Prod.fst ++ Us, P, B) ∈ restSigs G F → HasTy G Γ r Rt → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → (∀ A ∈ Us, HasTy G Γ .undef A) → (Us = [] ∨ parts = []) → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → RestParts G P (parts.map fun p => (p.1, p.2.1)) → HasTy G Γ (.invoke f r (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2))) B
   bindE {Γ : List (Ty ι)} {F T Rt R Rc : Ty ι} {t r : Nat} {slots : List Nat} {Ps Ds : List (Ty ι)} : Γ[t]? = some T → (Rt, Ps ++ Ds, R) ∈ callSigs G T → Γ[r]? = some Rt → slots.map (Γ[·]?) = Ps.map some → Represents G F (.arrs [(Rc, Ds, R)] []) → HasTy G Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
   bindRestE {Γ : List (Ty ι)} {F T Rt E El R Rc : Ty ι} {t r : Nat} {slots : List Nat} {Ps Qs : List (Ty ι)} : Γ[t]? = some T → (Rt, Ps, E, R) ∈ restSigs G T → restElem G E = some El → Γ[r]? = some Rt → slots.map (Γ[·]?) = Qs.map some → Qs = Ps.take slots.length ++ List.replicate (slots.length - Ps.length) El → Represents G F (.arrs [] [(Rc, Ps.drop slots.length, E, R)]) → HasTy G Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
+  bindMember {Γ : List (Ty ι)} {F O : Ty ι} {i : Nat} {k : PropKey} {m : MethodMembers.Sig (Ty ι)} {L : List (Ty ι × List (Ty ι) × Ty ι)} {S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} : Γ[i]? = some O → memberOf G O k = some m → Represents G F (.arrs L S) → (∀ q ∈ L, (q.2.1, q.2.2) ∈ m.calls) → (∀ s ∈ S, (s.2.1, s.2.2.1, s.2.2.2) ∈ m.rests) → HasTy G Γ (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) F
   sub : HasTy G Γ t A → PositiveCertificates.check G A B cert = true → HasTy G Γ t B
 
 Rule  (Programs/ProgramCertificates.lean)
@@ -95,6 +96,7 @@ Rule  (Programs/ProgramCertificates.lean)
   callRest (fixed omitted : Nat) (spreads : List Bool) (rest : Ty ι)
   bindE
   bindRestE
+  bindMember
   ctorE (undef : Ty ι)
   construct
   sub (proof : PositiveCertificates.Proof ι)

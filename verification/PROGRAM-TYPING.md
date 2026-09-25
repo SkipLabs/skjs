@@ -293,6 +293,26 @@ $$
      {\Gamma\vdash_G\mathsf{bound}(f,r,\vec p):(Q;\vec D\to B)}
 $$
 
+A method member is host-relative: its contract holds when it is invoked on
+the object it is read from ([DESIGN.md](DESIGN.md#method-members-are-host-relative)).
+A member bound to its host (`bindMember`) is read from the object in slot $i$
+and bound to that same object in one term, so the member is read before any
+actual runs, as JavaScript reads it, and the bound function meets the member's
+signatures at any receiver. With $\operatorname{member}_G(O,k)=m$ the method
+of key $k$ in $O$'s one object clause (`memberOf`):
+
+$$
+\frac{\Gamma(i)=O\quad\operatorname{member}_G(O,k)=m
+      \quad\forall(Q,\vec D,B)\in L.\;(\vec D,B)\in m.\mathsf{calls}
+      \quad\forall(Q,\vec D,P,B)\in S.\;(\vec D,P,B)\in m.\mathsf{rests}}
+     {\Gamma\vdash_G\mathsf{let}\ f=i.k\ \mathsf{in}\ \mathsf{bound}(f,i,[]):\mathsf{arrs}(L;S)}
+$$
+
+The member read from $v=\rho(i)$ meets $m$'s signatures with receiver $\{v\}$
+(`memberOf_at`, `MethodMembers.onHost`), and the bound descriptor, which has
+no fields and allocates nothing, forwards any call to it with receiver $v$
+(`callsT_bound`, `restsT_bound`).
+
 A variadic target with an element rest (`bindRestE`, `restsT_bound`) gives
 its first fixed positions to the prefix and, past them, its element $E$; the
 result keeps the positions left and the rest $P$, which admits the prefix's

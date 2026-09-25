@@ -218,7 +218,7 @@ one subtype-evidence list per outgoing edge. A derivation node names the
 `read`, `readOptional`, `readDict`, `indexDict`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
 `unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, `readView`, `arith`, `test`,
 `arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, `funRest`, `makeCallableRest`,
-`callRest`, `arrCopy`, `bindE`, `bindRestE`, `ctorE`, `construct`, or `sub`.
+`callRest`, `arrCopy`, `bindE`, `bindRestE`, `bindMember`, `ctorE`, `construct`, or `sub`.
 The array rules act on a store, the value an array object holds in its store
 field: `arrLit` allocates one location per element under the positions of a
 tuple contract; `elem` reads a required position named by a literal index at
@@ -313,6 +313,12 @@ receiver's and the prefix's from the context. One fixed signature of the
 target must be the receiver slot's type, the prefix slots' types followed by
 the result's parameters, and the result's result; the result is one signature
 at any receiver.
+`bindMember` has no premises either: its term is
+`letE (readAt k (var i)) (makeAt (bound (var 0) (var (i + 1)) []) [] [])`,
+which reads the member `k` from the object in slot `i` and binds it to that
+same object. The object's type must have one object clause with a method of
+key `k`; each fixed signature of the result must be one of the method's, at
+any receiver, and each variadic one likewise.
 `funRest` creates variadic code: one body premise per variadic signature of
 its type, each with that signature's rest-array type, named by the rule, in
 slot 0, above the receiver and the fixed parameters; `makeCallableRest` adds a field bag's
