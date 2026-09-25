@@ -422,7 +422,8 @@ export function collectDeclarations(file: string, options: {
     }
     if (options.arrays) {
       try {
-        definitions.push(arrayPrototype(checker, client, options.arrayOverlay ?? overlay));
+        // First, so its row follows the four fixed ones in every table.
+        definitions.unshift(arrayPrototype(checker, client, options.arrayOverlay ?? overlay));
       } catch (error) {
         throw new DeclarationError(options.arrays, error instanceof Error ? error.message : String(error));
       }

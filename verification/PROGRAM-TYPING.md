@@ -362,11 +362,15 @@ An object is a finite map from field names to heap locations, fixed at
 allocation. Let $\varphi$ range over field maps $\overline{f{:}A}$ with distinct
 names, and write $\mathsf{Ref}(\varphi)$ for the record clause carrying those
 invariants. `alloc` allocates one fresh location per named field, and the names
-being distinct is what makes the result a map from them:
+being distinct is what makes the result a map from them. The object's own keys
+are exactly those names, so its type may also bound them: each own-key bound
+$K$ the type states must hold every name. An array is allocated this way, its
+store and prototype as the two fields, then read as an array by subsumption:
 
 $$
-\frac{\overline{f}\ \text{distinct}\qquad\forall i.\;\Gamma\vdash_G a_i:A_i}
-     {\Gamma\vdash_G\{\overline{f=a}\}:\mathsf{Ref}(\overline{f{:}A})}
+\frac{\overline{f}\ \text{distinct}\qquad\forall i.\;\Gamma\vdash_G a_i:A_i
+      \qquad\forall K\in\beta.\;\overline{f}\subseteq K}
+     {\Gamma\vdash_G\{\overline{f=a}\}:\mathsf{Ref}(\overline{f{:}A};\beta)}
 $$
 
 `read` and `write` name the field they act on and require it of the receiver's

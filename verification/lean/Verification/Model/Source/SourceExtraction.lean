@@ -165,6 +165,28 @@ private def arrayIndex (G : PositiveGraphs.NormalGraph Nat) (K : Ty Nat) : Excep
     throw "a numeric array key needs one array index"
   return k
 
+def arrayPrototypeName : String := SourceTypes.arrayPrototypeName
+
+/-- A fresh array object's type: its store and prototype as fields, and its own
+keys bounded to them, the type `alloc` gives before it is read as an array. -/
+private def arrayObject (S : Ty Nat) : Compiler (Ty Nat) := do
+  let label ← lower (SourceTypes.use (.refs [(SourceTypes.storeField, S),
+    (SourceTypes.protoField, [SourceTypes.arrayProtoLabel])] [] [] [] []
+    [[SourceTypes.storeField, SourceTypes.protoField]]))
+  modify fun s => {s with hints := label :: s.hints}
+  return [label]
+
+/-- The slot holding `Array.prototype` in a scope. -/
+private def prototypeSlot (scope : List ScopeBinding) : Except String Nat :=
+  match resolve scope arrayPrototypeName with
+  | some (i, .value) => pure i
+  | _ => throw "an array needs Array.prototype, which this unit does not see"
+
+/-- Allocate the array object holding the store in slot 0, with the prototype
+from slot `proto`. -/
+private def arrayTerm (proto : Nat) : Tm :=
+  .makeAt .absent [SourceTypes.storeField, SourceTypes.protoField] [.var 0, .var proto]
+
 /-- The literal index of one position, interned like any other number the
 program mentions. -/
 private def indexTerm (j : Nat) : Compiler Tm := do
@@ -1451,12 +1473,13 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
           -- The frame: the collected store, the receiver, which an arrow
           -- never reads, then the fixed parameters.
           let frame := S :: Rt :: fixed ++ Γ
-          let wrap := DirectProof.node frame
-            (.makeAt .absent [SourceTypes.storeField] [.var 0]) restTy .alloc
-            [DirectProof.var frame 0 S]
-          let mut ds := held ⟨if defaults.isEmpty then restName else "", some pos⟩ ::
-            held ⟨"", some pos⟩ :: held ⟨receiverName, some pos⟩ ::
+          let frameScope := held ⟨"", some pos⟩ :: held ⟨receiverName, some pos⟩ ::
             (fixedParams.map fun (name,_) => held ⟨if defaults.isEmpty then name else "", some pos⟩) ++ scope
+          let proto ← prototypeSlot frameScope
+          let O ← arrayObject S
+          let wrap := DirectProof.cast frame restTy (DirectProof.node frame (arrayTerm proto) O .alloc
+            [DirectProof.var frame 0 S, DirectProof.var frame proto [SourceTypes.arrayProtoLabel]])
+          let mut ds := held ⟨if defaults.isEmpty then restName else "", some pos⟩ :: frameScope
           let mut H := restTy :: frame
           let mut prologue : List (List (Ty Nat) × DirectProof.Plan) := [(frame, wrap)]
           let order ← match Fragment.parameterOrder params defaults with
@@ -1607,9 +1630,10 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         prologue := prologue ++ [(ctx,store)]
         ctx := S :: ctx
         ds := held ⟨"",some pos⟩ :: ds
-        let object := DirectProof.node ctx
-          (.makeAt .absent [SourceTypes.storeField] [.var 0]) restTy .alloc
-          [DirectProof.var ctx 0 S]
+        let proto ← prototypeSlot ds
+        let O ← arrayObject S
+        let object := DirectProof.cast ctx restTy (DirectProof.node ctx (arrayTerm proto) O .alloc
+          [DirectProof.var ctx 0 S, DirectProof.var ctx proto [SourceTypes.arrayProtoLabel]])
         prologue := prologue ++ [(ctx,object)]
         ctx := restTy :: ctx
         ds := held ⟨restName,some pos⟩ :: ds
@@ -2288,8 +2312,11 @@ private partial def compileExpr (fc : SourceClaims.Function) (scope : List Scope
     let temporaries := (elems.map fun a => held ⟨"",some a.span⟩).reverse
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+n+1))⟩
-    let make ← emitAt e.span (.makeAt .absent [SourceTypes.storeField] [.var 0]) (.bind drop)
-      (S :: As.reverse ++ Γ) A (scope := held ⟨"",some e.span⟩ :: temporaries ++ scope)
+    let makeScope := held ⟨"",some e.span⟩ :: temporaries ++ scope
+    let proto ← prototypeSlot makeScope
+    let _ ← arrayObject S
+    let make ← emitAt e.span (arrayTerm proto) (.bind drop)
+      (S :: As.reverse ++ Γ) A (scope := makeScope)
     let store ← emitAt e.span (.arrLit ((List.range n).map fun i => .var (n-1-i))) (.bind make)
       (As.reverse ++ Γ) S (scope := temporaries ++ scope)
     elems.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) =>
@@ -2852,7 +2879,7 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
   -- The module functions this body mentions, outermost: a parameter or local
   -- of the same name shadows one, as in JavaScript.
   let mentioned := f.body.flatMap stmtNames
-  let siblings := module.filter fun g => mentioned.contains g.1
+  let siblings := module.filter fun g => mentioned.contains g.1 || g.1 == arrayPrototypeName
   if f.name == "undefined" || (names scope).contains "undefined" then
     throw "shadowing undefined is outside the fragment"
   if !distinct (names scope) then throw "duplicate source parameter name"
@@ -2956,7 +2983,9 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : Fragment.Fn) (fc : SourceCl
       -- functions after it follow the collected positions.
       let bodyMapping := (List.range slotTypes.length).map fun j =>
         if j == fixed then 0 else if j < fixed then j + 2 else j + 1 + restElements.length
-      let object ← emitAt f.namePos (.makeAt .absent [SourceTypes.storeField] [.var 0])
+      let proto ← prototypeSlot (anonymous :: restScope)
+      let _ ← arrayObject S
+      let object ← emitAt f.namePos (arrayTerm proto)
         (.bind ⟨first.label, some bodyMapping⟩) (S :: inputs) restTy "rest-allocation"
         (scope := anonymous :: restScope)
       let store ← emitAt f.namePos

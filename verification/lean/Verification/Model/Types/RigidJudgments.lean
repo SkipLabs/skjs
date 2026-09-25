@@ -127,7 +127,7 @@ theorem Sub.sound {G : NormalGraph Nat} {η : String → Fam} {ps : List Paramet
     | ground _ => exact ProgramTyping.meaning_value hv
     | arrow _ _ _ | variadic _ _ _ _ => exact ⟨hv.1.val, hv.1.scoped⟩
     | array _ =>
-      obtain ⟨fields, rfl, _⟩ := hv
+      obtain ⟨fields, rfl, _⟩ := hv.1.1
       exact ⟨rfl, trivial⟩
 
 /-! ## Every accepted comparison is derivable -/

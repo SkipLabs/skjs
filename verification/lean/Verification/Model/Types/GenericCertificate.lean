@@ -20,7 +20,7 @@ inductive Slot where
   | cell (contract : Ty)
   /-- A raw actual for a defaulted parameter. Only initialization may read it. -/
   | argument (contract : Ty)
-  deriving Repr, BEq
+  deriving Repr, BEq, DecidableEq
 
 def Slot.denote (G : NormalGraph Nat) (eta : String → Fam) : Slot → Fam
   | .value A => A.denote G eta
@@ -578,10 +578,12 @@ theorem Certificate.check_safe {G : NormalGraph Nat} (hG : Primitives G) {c : Ce
 #print axioms Proof.check_safe
 #print axioms Certificate.check_safe
 
-/-- A variadic body's first step: wrap the rest store in slot 0 into an array,
-which the checked body then finds in slot 0, above the store. -/
-def wrapStore (t : Tm) : Tm :=
-  .letE (.makeAt .absent [CallArguments.arrayStoreField] [.var 0]) t
+/-- A variadic body's first step: wrap the rest store in slot 0 into an array
+holding the prototype in slot `proto`, which the checked body then finds in
+slot 0, above the store. -/
+def wrapStore (proto : Nat) (t : Tm) : Tm :=
+  .letE (.makeAt .absent [CallArguments.arrayStoreField, CallArguments.protoField]
+    [.var 0, .var proto]) t
 
 /-- The writable store family of a rigid element contract. -/
 def storeFam (G : NormalGraph Nat) (eta : String → Fam) (E : Ty) : Fam :=
@@ -606,25 +608,53 @@ theorem store_collect_safe {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta)
       cases hA
       exact he v (List.mem_of_getElem? hv)⟩ hvals
 
-/-- Wrapping a store into an array object meets the rigid array type. -/
+/-- Wrapping a store with the prototype into an array object meets the rigid
+array type: the array shape over the store and `ArrayProto`. -/
 theorem array_wrap_safe {G : NormalGraph Nat} {eta} (E : Ty) {n : Nat} {W : WorldT n}
-    {h : Heap} {a : Tm} (hw : WorldAdm W) (hh : HeapOk n W h) (ha : storeFam G eta E n W a) :
+    {h : Heap} {a pv : Tm} (hw : WorldAdm W) (hh : HeapOk n W h) (ha : storeFam G eta E n W a)
+    (hp : meaning G [SourceTypes.arrayProtoLabel] n W pv) :
     Safe ((Ty.array E).denote G eta) n W h
-      (.makeAt .absent [CallArguments.arrayStoreField] [a]) := by
+      (.makeAt .absent [CallArguments.arrayStoreField, CallArguments.protoField] [a, pv]) := by
   have hval : isVal a = true := by obtain ⟨ls, rfl, _⟩ := ha; rfl
-  apply make_fields_rule (As := [storeFam G eta E]) (by simp [storeFam, listT_adm]) n W h .absent
-    [CallArguments.arrayStoreField] [a] (by simp) rfl rfl (by simpa using hval) hw hh
-    (by simpa using ha)
+  have hpval := ((meaning_valueFam G [SourceTypes.arrayProtoLabel]).2 n W pv hp).1
+  apply make_fields_rule (As := [storeFam G eta E, meaning G [SourceTypes.arrayProtoLabel]])
+    (by
+      intro A hA
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hA
+      rcases hA with rfl | rfl
+      · exact listT_adm _
+      · exact (meaning_valueFam G _).1)
+    n W h .absent [CallArguments.arrayStoreField, CallArguments.protoField] [a, pv]
+    (by decide) rfl rfl (by simp [hval, hpval]) hw hh (by simp [ha, hp])
   intro k hk V hy hrec
-  exact hrec
+  obtain ⟨flds, he, hf⟩ := hrec
+  have hS := hf CallArguments.arrayStoreField (storeFam G eta E) (by simp)
+  have hP := hf CallArguments.protoField (meaning G [SourceTypes.arrayProtoLabel]) (by simp)
+  simp only [Ty.denote, PositiveNormalization.semWithArgs, PositiveNormalization.arrayClauseOf,
+    Bool.false_eq_true, ite_false, List.nil_append]
+  refine ⟨⟨⟨flds, he, fun f T hm => ?_⟩, by simp⟩, fun f T hm => ?_,
+    by rw [he]; simpa [ReferenceConjunctions.famsOf] using optT_nil,
+    by rw [he]; exact MethodMembers.methodT_nil _ _ _, fun K hK => ?_⟩
+  · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hm
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj (List.mem_singleton.mp hi)
+    exact hS
+  · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hm
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj (List.mem_singleton.mp hi)
+    obtain ⟨l, c, hl, hc, hag⟩ := hP
+    exact ⟨flds, l, c, he, hl, hc, fun j hj U u hu => (hag j hj U u).mp hu⟩
+  · simp only [List.mem_singleton] at hK
+    subst hK
+    exact ownKeysT_slots fun n hn => hn
 
 /-- The universal body premise becomes a variadic code contract: invocation
 allocates the rest store in slot zero, the body's first step wraps it into an
 array, and the fixed arguments follow the store. Captures keep their one
 environment across every interpretation of the quantified element type. -/
 theorem rest_invocation_of_inputs {G : NormalGraph Nat} {eta Gamma term n W rho}
-    {receiver : Ty} {inputs : List Input} {element result : Ty}
+    {receiver : Ty} {inputs : List Input} {element result : Ty} {proto : Nat}
     (hC : ClosedAssign eta) (he : EnvOk G eta Gamma rho n W)
+    (hproto : (.value .top :: .value receiver :: inputs.map Input.slot ++ Gamma)[proto]? =
+      some (.value (.ground [SourceTypes.arrayProtoLabel])))
     (safe : ∀ j U heap env,
       EnvOk G eta (.value (.array element) :: .value .top :: .value receiver ::
         inputs.map Input.slot ++ Gamma) env j U →
@@ -632,7 +662,7 @@ theorem rest_invocation_of_inputs {G : NormalGraph Nat} {eta Gamma term n W rho}
       Safe (result.denote G eta) j U heap (instantiate 0 env term)) :
     RestCalls.RestSpec inputs.length (receiver.denote G eta) (inputs.map (Input.denote G eta))
       (ArgumentContracts.All (element.denote G eta)) (result.denote G eta) n W
-      (instantiate (inputs.length + 2) rho (wrapStore term)) := by
+      (instantiate (inputs.length + 2) rho (wrapStore proto term)) := by
   apply RestCalls.restSpec_of_body (instantiate_scoped rho he.1 _ (inputs.length + 2))
     (by simp) (Ty.denote_adm hC receiver) (by
       intro A hA
@@ -662,7 +692,7 @@ theorem rest_invocation_of_inputs {G : NormalGraph Nat} {eta Gamma term n W rho}
         · exact ih args h.2 v hv
   have hsc := argsScoped _ _ hall
   have hl : args.length = inputs.length := by simpa using ArgsT_length ha
-  have hbeta := instantiate_beta _ (prependArgs_scoped hsc he.1) a (wrapStore term) 0
+  have hbeta := instantiate_beta _ (prependArgs_scoped hsc he.1) a (wrapStore proto term) 0
   rw [Nat.zero_add] at hbeta
   rw [show inputs.length + 2 = 1 + (r :: args).length by simp; omega,
     instantiate_args rho he.1 hsc _ 1, hbeta]
@@ -672,11 +702,13 @@ theorem rest_invocation_of_inputs {G : NormalGraph Nat} {eta Gamma term n W rho}
     exact ⟨rfl, trivial⟩
   have hstore := (he'.push_value (A := .top) hC htop)
   let env := push a (prependArgs (r :: args) rho)
-  show Safe (result.denote G eta) j U heap (instantiate 0 env (wrapStore term))
+  show Safe (result.denote G eta) j U heap (instantiate 0 env (wrapStore proto term))
   simp only [wrapStore, instantiate, instantiateArgs_eq_map, List.map, Nat.lt_irrefl,
-    if_false, Nat.sub_self]
+    ite_false, Nat.sub_self, Nat.not_lt_zero, Nat.sub_zero]
+  -- The prototype is the captured slot the certificate names.
+  have hp : meaning G [SourceTypes.arrayProtoLabel] j U (env proto) := hstore.2 proto _ hproto
   apply RestCalls.ctx_bind (.letE · _) .letC j U heap _ hu hh
-    (array_wrap_safe element hu hh (by simpa [env, push] using harr))
+    (array_wrap_safe element hu hh (by simpa [env, push] using harr) hp)
   intro i hi V hy hv h' o hh' hval harr'
   cases i with
   | zero => trivial
@@ -702,7 +734,15 @@ structure ClosureCertificate where
   /-- The receiver the code binds before its parameters; a closure indifferent
   to it states top. -/
   receiver : Ty := .top
+  /-- With a rest, the slot of `restFrame` holding `Array.prototype`, which
+  the rest array is allocated with. -/
+  prototype : Nat := 0
   deriving Repr, BEq
+
+/-- A rest body's slots before the array is wrapped: the store, the receiver,
+the inputs, then the captures. -/
+def ClosureCertificate.restFrame (c : ClosureCertificate) : List Slot :=
+  .value .top :: .value c.receiver :: c.inputs.map Input.slot ++ c.captures
 
 def ClosureCertificate.body (c : ClosureCertificate) : Certificate :=
   ⟨c.parameters, (match c.rest with
@@ -716,7 +756,10 @@ the rest store when it has a rest. -/
 def ClosureCertificate.check (c : ClosureCertificate) : Option Tm :=
   match c.rest with
   | none => c.body.check
-  | some _ => c.body.check.map wrapStore
+  | some _ =>
+    if c.restFrame[c.prototype]? = some (.value (.ground [SourceTypes.arrayProtoLabel])) then
+      c.body.check.map (wrapStore c.prototype)
+    else none
 
 /-- Universal code safety in one captured environment and world. This is the
 invocation premise of scheme introduction, not a list of observed instances. -/
@@ -748,12 +791,17 @@ theorem ClosureCertificate.check_safe {G : NormalGraph Nat} (hG : Primitives G)
     subst body
     exact invocation_of_inputs hC he (by simpa [ClosureCertificate.body, hr] using safe eta hC hs)
   | some E =>
-    obtain ⟨inner, hc', rfl⟩ : ∃ inner, c.body.check = some inner ∧ wrapStore inner = term := by
-      simpa [ClosureCertificate.check, hr] using hc
+    have hframe : c.restFrame[c.prototype]? = some (.value (.ground [SourceTypes.arrayProtoLabel])) := by
+      by_cases hn : c.restFrame[c.prototype]? = some (.value (.ground [SourceTypes.arrayProtoLabel]))
+      · exact hn
+      · simp [ClosureCertificate.check, hr, hn] at hc
+    obtain ⟨inner, hc', rfl⟩ : ∃ inner, c.body.check = some inner ∧
+        wrapStore c.prototype inner = term := by
+      simpa [ClosureCertificate.check, hr, hframe] using hc
     obtain ⟨body, hb, safe⟩ := Certificate.check_safe (G := G) hG hc'
     have eq : body = inner := Option.some.inj (hb.symm.trans hc')
     subst body
-    exact rest_invocation_of_inputs hC he
+    exact rest_invocation_of_inputs hC he (by simpa [ClosureCertificate.restFrame] using hframe)
       (by simpa [ClosureCertificate.body, hr] using safe eta hC hs)
 
 #print axioms invocation_of_inputs

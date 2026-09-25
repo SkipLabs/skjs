@@ -888,10 +888,13 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       HasTy G Γ (.invoke f r (xs.map Prod.snd)) B
   | letE : HasTy G Γ a A → HasTy G (A :: Γ) b B → HasTy G Γ (.letE a b) B
   /-- **Allocation.** One object, one fresh location per named field. The field
-  names are distinct, which is what makes the object a map from them. -/
-  | alloc {parts : List (PropKey × Ty ι × Tm)} : (parts.map Prod.fst).Nodup →
+  names are distinct, which is what makes the object a map from them. Its own
+  keys are exactly those names, so any bound holding them holds of it. -/
+  | alloc {parts : List (PropKey × Ty ι × Tm)} {ks : List (List PropKey)} :
+      (parts.map Prod.fst).Nodup →
       (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) →
-      Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) [] []) →
+      Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks) →
+      (∀ K ∈ ks, ∀ p ∈ parts, p.1 ∈ K) →
       HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
   /-- A fresh literal establishes a readonly index view when every value is
   checked at the index element contract. Its exact allocated fields are used;
@@ -1273,7 +1276,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       have he' := ((he.transfer (k+1) hj U hx).push ha').transfer k (Nat.le_succ k)
         (trunc k (Nat.le_succ k) U) (WExt_refl _)
       exact ihb k _ heap (push av ρ) he' (WorldAdm_trunc _ hu) (HeapOk_trunc k U heap hok)
-  | @alloc Γ Ref parts hnd hp hr ih =>
+  | @alloc Γ Ref parts ks hnd hp hr hbound ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     have hmap : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.snd
@@ -1304,7 +1307,10 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       hu hok (ArgsT_zip hargs)
     intro k hk V hy hrec
     refine (represents_sem hr k V _).mpr ⟨⟨?_, by simp⟩, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
-      ⟨by simpa [ReferenceConjunctions.famsOf] using optT_nil, MethodMembers.methodT_nil _ _ _, by simp⟩⟩
+      ⟨by simpa [ReferenceConjunctions.famsOf] using optT_nil, MethodMembers.methodT_nil _ _ _,
+        fun K hK => ownKeysT_slots fun n hn => by
+          obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hn
+          exact hbound K hK p hp⟩⟩
     have hfam : ReferenceConjunctions.famsOf (meaning G) (parts.map fun p => (p.1, p.2.1))
         = (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2.1) := by
       simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']

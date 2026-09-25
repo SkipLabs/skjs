@@ -208,6 +208,13 @@ Lean fills each such row from the declaration's source terms, in row order,
 exactly as it fills a nullary declaration's reserved row, so every declaration
 has one lowering, Lean's, whatever producer names it.
 
+Array types are reserved the same way, in `"arrays"`:
+`[{"row": r, "store": s, "readonly": b}]`, left out when there are none. Row
+`r` is an empty row the producer reserved and `s` the row of the store's tuple
+contract, which the producer states. Lean fills the row with the one array
+shape (`PositiveNormalization.arrayClauseOf`): the store, `Array.prototype` as
+a view at `ArrayProto`, and the own-key bound. No producer spells that shape.
+
 Function identity is its name and name span. Parameter names and order must match
 the source signature. Entry claims use statement start offsets, and expression
 claims use complete spans. Sites must occur in the named function's decoded

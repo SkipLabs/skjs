@@ -178,8 +178,7 @@ partial def arrayType (atom : Json) : SourceTypes.Lowering Nat := do
   let readonly ← (← jField atom "readonly").getBool?
   let store ← SourceTypes.use (.list ⟨required, optional, rest, readonly⟩ [])
   if (← jStr (← jField atom "a")) == "store" then pure store
-  else if readonly then SourceTypes.use (.refs [] [] [(SourceTypes.storeField, [store])])
-  else SourceTypes.use (.refs [(SourceTypes.storeField, [store])] [] [])
+  else SourceTypes.use (SourceTypes.arrayClause store readonly)
 
 /-- A record with optional fields: each field, required or optional, under
 the one contract its read and write agree on. An optional field constrains its

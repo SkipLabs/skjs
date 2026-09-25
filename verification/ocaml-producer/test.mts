@@ -167,7 +167,10 @@ for (const [file, expected] of [
   // Without the project that configures the package, the import has no meaning.
   assert.throws(() => parseFile(jsonPath), /gate:/);
   const importedAst = parseFile(jsonPath, false, upstreamConfig);
-  assert.deepEqual(importedAst.declarations, pinnedDeclarationDocument);
+  // The client uses arrays, so the parser also lists `ArrayProto`, first.
+  const [arrayProto, ...parsedDefinitions] = importedAst.declarations.definitions;
+  assert.equal(arrayProto?.declaration.module, "skjs/array-prototype");
+  assert.deepEqual({ ...importedAst.declarations, definitions: parsedDefinitions }, pinnedDeclarationDocument);
   const exported = join(mkdtempSync(join(tmpdir(), "skjs-export-")), "client.ts");
   writeFileSync(exported, "export function own(this: undefined): undefined { return this; }\n");
   assert.equal(parseFile(exported).functions[0]?.body[0]?.k, "return");

@@ -99,4 +99,7 @@ export interface SourceClaims {
   /** Generic applications the producer reserved empty rows for, which Lean
    * fills from the declarations: row, declaration position, argument rows. */
   applications?: { row: number; declaration: number; args: number[][] }[];
+  /** Array types the producer reserved empty rows for, which Lean fills with
+   * the array shape over the store row; absent when none. */
+  arrays?: { row: number; store: number; readonly: boolean }[];
 }

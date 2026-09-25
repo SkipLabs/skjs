@@ -2001,6 +2001,14 @@ builds the rest array: variadic invocation binds the rest *store* to slot 0,
 and the body wraps it with the prototype it captured, as a literal does. So
 every array is one store and one object, as in JavaScript.
 
+**One array shape.** `PositiveNormalization.arrayClauseOf` is the only
+definition of an array type, generic in its store and prototype operands. The
+graph's array types (`SourceTypes.arrayClause`, at row `arrayProtoLabel`, where
+`ArrayProto`, listed first, always lands), the generic layer's `Ty.array` and
+the rows producers reserve all read it. A producer states only the store's
+tuple contract and reserves the array's row (`"arrays"` in the claims); it
+never spells the store or prototype keys, the bound or `ArrayProto`'s row.
+
 **Types.** Two additions make a delegated read typable:
 
 - *An own-key bound.* A record clause may bound its object's own keys:

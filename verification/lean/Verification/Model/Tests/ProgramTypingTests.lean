@@ -79,7 +79,7 @@ def program : Tm :=
 
 theorem program_typed : HasTy G [] program [0, 1] := by
   apply HasTy.letE (A := [2]) (.alloc (parts := [(valueField, [1], .tru)]) (by simp)
-    (by intro p hp; cases List.mem_singleton.mp hp; exact .tru (by rfl)) (by rfl))
+    (by intro p hp; cases List.mem_singleton.mp hp; exact .tru (by rfl)) (by rfl) (by simp))
   apply HasTy.letE (A := [3]) dispatch_typed
   apply HasTy.letE (A := [2]) (.var rfl)
   apply HasTy.letE (A := [0]) (.write (A := [1]) (.var rfl) (by rfl) (by simp) (.fls (by rfl)) (by rfl))

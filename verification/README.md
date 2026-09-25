@@ -38,6 +38,11 @@ make build-in-docker
 make verify
 ```
 
+Tests favour end-to-end pipeline cases, source files through the parser, the
+OCaml producer and Lean, over unit tests of intermediate steps; tests written
+while researching a feature retire once a pipeline case covers it
+([AGENTS.md](AGENTS.md#which-tests-to-keep)).
+
 The commands separate regression testing from inspecting example outcomes:
 
 - `make verify-test` builds Lean and runs named pipeline suites: source integration,

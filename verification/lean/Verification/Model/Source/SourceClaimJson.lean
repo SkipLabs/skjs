@@ -178,6 +178,15 @@ structure Application where
   args : List (List Nat)
   deriving ToJson, FromJson, Repr
 
+/-- An array type the producer reserved an empty row for: the row, the row of
+its store's tuple contract, and whether it is readonly. Lean fills the row
+with the array shape (`SourceTypes.arrayClause`), so no producer spells it. -/
+structure ArrayRow where
+  row : Nat
+  store : Nat
+  readonly : Bool
+  deriving ToJson, FromJson, Repr
+
 structure Document where
   file : String
   sourceSha256 : String
@@ -187,6 +196,8 @@ structure Document where
   init : Option InitClaims := none
   /-- Generic applications the producer reserved rows for; absent when none. -/
   applications : Option (List Application) := none
+  /-- Array types the producer reserved rows for; absent when none. -/
+  arrays : Option (List ArrayRow) := none
   deriving FromJson
 
 /-- Absence asserts nothing: a source with no initialization code has no
@@ -199,7 +210,10 @@ instance : ToJson Document where
      | some i => [("init", toJson i)]) ++
     (match d.applications with
      | none | some [] => []
-     | some a => [("applications", toJson a)]))
+     | some a => [("applications", toJson a)]) ++
+    (match d.arrays with
+     | none | some [] => []
+     | some a => [("arrays", toJson a)]))
 
 
 def Function.normalized (f : Function) : SourceClaims.Function :=
@@ -348,7 +362,7 @@ private partial def groundIn (T : SourceTypes.Table) :
       let (T, E) ← groundIn T e
       let store := PositiveNormalization.Clause.list ⟨[], [], some E, false⟩ []
       let T := SourceTypes.intern T store
-      let array := PositiveNormalization.Clause.refs [(CallArguments.arrayStoreField, [SourceTypes.label T store])] [] []
+      let array := SourceTypes.arrayClause (SourceTypes.label T store) false
       let T := SourceTypes.intern T array
       pure (T, [SourceTypes.label T array])
   | .scheme [] rc ps rest r => do
@@ -906,8 +920,16 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
   if (← jStr (← jField ast "sourceSha256")) != d.sourceSha256 then throw "source claim fingerprint mismatch"
   -- Every declaration application in the source becomes a graph row, or, over
   -- a rigid binder, the claim type of its expanded source equation.
+  -- A source with arrays lists `ArrayProto`: its units see `Array.prototype`.
+  let arrays := match (ast.getObjVal? "declarations").toOption.bind
+      (fun doc => (doc.getObjVal? "definitions").toOption) with
+    | some (.arr ds) => ds.any fun d =>
+        ((d.getObjVal? "declaration").toOption.bind fun i => (i.getObjVal? "module").toOption) ==
+          some (Json.str "skjs/array-prototype")
+    | _ => false
   let (ast, types, imported, generics) ← DeclarationGraph.prepare ast d.types
     ((d.applications.getD []).map fun a => (a.row, a.declaration, a.args))
+    ((d.arrays.getD []).map fun a => (a.row, a.store, a.readonly))
   let d := { d with types }
   if !validTable d.types then throw "declaration graph has an invalid type reference"
   let all ← Fragment.decodeAstWithParams ast
@@ -921,7 +943,10 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
   -- Imported values join them at the types their declarations state.
   let moduleFunctions : List SourceExtraction.ModuleValue :=
     (all.filterMap fun (g, tps) => if tps.isEmpty then some (g.name, g.namePos, moduleArrow g) else none) ++
-    imported.map fun (name, span, ty) => (name, span, .ok ty)
+    (imported.map fun (name, span, ty) => (name, span, .ok ty)) ++
+    (if arrays then [(SourceExtraction.arrayPrototypeName, (0, 0),
+      Except.ok (Json.mkObj [("top", toJson false), ("atoms", toJson [Json.mkObj
+        [("a", toJson "graph"), ("label", toJson SourceTypes.arrayProtoLabel)]])]))] else [])
   let moduleConstants : List SourceExtraction.ModuleValue := init.flatMap fun
     | .constants _ bs => bs.map fun b => (b.name, b.namePos, match b.annot with
         | some ty => .ok ty

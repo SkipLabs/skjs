@@ -27,6 +27,9 @@ let encode (proposal : Proposal.t) =
      methods: their receiver is that application, so it needs its label
      before its equation is expanded, as Lean reserves it. *)
   let applications = ref [] in
+  (* Array types, each an empty row Lean fills with the array shape over the
+     store row: the producer states the store's contract, never the shape. *)
+  let arrays = ref [] in
   let intern row =
     let rec find n = function [] -> rows := !rows @ [row]; n
       | r::rs -> if r=row then n else find (n+1) rs in find 0 !rows
@@ -86,31 +89,39 @@ let encode (proposal : Proposal.t) =
         Option.map (fun rest -> Array [labels a.receiver;Array [Array (List.map labels a.params);
           Array [rest;labels a.result]]]) rest) shape.calls in
       let calls = ("arrows",arrows) :: (if variadic = [] then [] else ["variadic",Array variadic]) in
-      let clause = match shape.elements with
-        | Some sequence ->
-          if shape.fields <> [] || shape.calls <> [] || shape.string_index <> None
-          then unsupported "array with additional fields, indexes or calls";
-          let store = intern (Array [Object ["list",Object ["first",Object [
-            "required",Array (List.map labels sequence.required);
-            "optional",Array (List.map labels sequence.optional_elements);
-            "rest",(match sequence.rest with None -> Null | Some t -> labels t);
-            "readonly",Bool sequence.readonly];"rest",Array []]]]) in
-          let storage = Array [Array [String "[]";Array [int store]]] in
-          Object ["refs",Object ["first",(if sequence.readonly then Array [] else storage);
-            "rest",Array [];"views",(if sequence.readonly then storage else Array [])]]
-        | None -> match shape.fields,shape.string_index,shape.calls with
-          | _,Some index,[] ->
-            if index.writable <> None then unsupported "mutable string index signature";
-            Object ["dict",Object (["first",fields;"rest",Array [];"views",views;
-              "indexes",Array [labels index.value]] @ optional_list)]
-          | _,Some _,_ -> unsupported "callable with string index needs a combined clause"
-          | _,None,[] -> Object ["refs",Object (["first",fields;"rest",Array [];"views",views] @ optional_list)]
-          | [],None,_ -> Object ["arrs",Object calls]
-          | _,_,_ ->
-            if optional <> [] then unsupported "callable with optional fields";
-            if reads <> [] then unsupported "callable with readonly fields";
-            Object ["callable",Object (["first",fields;"rest",Array []] @ calls)] in
-      [intern (Array [clause])]
+      match shape.elements with
+      | Some sequence ->
+        if shape.fields <> [] || shape.calls <> [] || shape.string_index <> None
+        then unsupported "array with additional fields, indexes or calls";
+        (* The store's contract is the producer's; the array holding it, with
+           its prototype, is a row Lean fills with the one array shape. *)
+        let store = intern (Array [Object ["list",Object ["first",Object [
+          "required",Array (List.map labels sequence.required);
+          "optional",Array (List.map labels sequence.optional_elements);
+          "rest",(match sequence.rest with None -> Null | Some t -> labels t);
+          "readonly",Bool sequence.readonly];"rest",Array []]]]) in
+        (match List.assoc_opt (store,sequence.readonly) !arrays with
+         | Some label -> [label]
+         | None ->
+           let label = List.length !rows in
+           rows := !rows @ [Array []];
+           arrays := !arrays @ [((store,sequence.readonly),label)];
+           [label])
+      | None ->
+        let clause = match shape.fields,shape.string_index,shape.calls with
+        | _,Some index,[] ->
+          if index.writable <> None then unsupported "mutable string index signature";
+          Object ["dict",Object (["first",fields;"rest",Array [];"views",views;
+            "indexes",Array [labels index.value]] @ optional_list)]
+        | _,Some _,_ -> unsupported "callable with string index needs a combined clause"
+        | _,None,[] -> Object ["refs",Object (["first",fields;"rest",Array [];"views",views] @ optional_list)]
+        | [],None,_ -> Object ["arrs",Object calls]
+        | _,_,_ ->
+          if optional <> [] then unsupported "callable with optional fields";
+          if reads <> [] then unsupported "callable with readonly fields";
+          Object ["callable",Object (["first",fields;"rest",Array []] @ calls)] in
+        [intern (Array [clause])]
+
   and pack_labels = function
     | PackParameter _ -> unsupported "rigid pack nested in a graph type"
     | Pack sequence -> Array [int (intern (Array [Object ["pack",Object ["first",Object [
@@ -268,4 +279,6 @@ let encode (proposal : Proposal.t) =
     | Some f -> ["init",Object (interior f)] in
   Object (["file",proposal.program.file; "sourceSha256",proposal.program.digest;
     "types",Array !rows; "functions",Array functions] @ init @
-    (if !reserved = [] then [] else ["applications",Array !reserved]))
+    (if !reserved = [] then [] else ["applications",Array !reserved]) @
+    (if !arrays = [] then [] else ["arrays",Array (List.map (fun ((store,readonly),row) ->
+      Object ["row",int row;"store",int store;"readonly",Bool readonly]) !arrays)]))

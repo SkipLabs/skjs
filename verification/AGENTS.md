@@ -75,6 +75,28 @@ verification/lean/.lake/build/bin/verifier --check-skjs-operations claims.json
 `skjs.sh` runs SKJS in the `skiplabs/skip` container; inside a devcontainer it
 runs the binary directly. Never invoke `target/host/dev/skjs` yourself.
 
+## Which tests to keep
+
+The end-to-end pipeline cases are the primary signal: a source file through
+the parser, the OCaml producer and Lean (`ocaml-producer/cases.mts`, run by
+`run-cases.mts`). They exercise the unproved parts together (parser,
+extraction, producer, wire), and what Lean proves needs no test.
+
+- **Prefer a pipeline case.** A new feature's test is a source file with its
+  expected outcome, positive and negative, not a unit test of an
+  intermediate step.
+- **Research tests are temporary.** Tests written while working a feature out
+  (a Lean `#guard` on a hand-built graph, a probe of one tool) are useful
+  while researching it. Once a pipeline case covers the behaviour, retire
+  them in the same or the next commit.
+- **Keep a test only for what the pipeline cannot show:** a refusal no source
+  can reach (forged evidence, a tampered declaration), a boundary of a
+  trusted input (the `ArrayProto` overlay), or a speed-critical check.
+- **Remove what adds no signal.** A test a proof already covers, or one that
+  repeats another's inputs through the same path, goes. Before removing a
+  forged-claim test, check it does not test extraction: which program point a
+  claim is attached to is unproved.
+
 ## The suite's shape, and the rules that keep it
 
 `run.sh` keeps the suites fast through four decisions. Each is a rule for

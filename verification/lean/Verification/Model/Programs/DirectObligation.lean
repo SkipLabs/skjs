@@ -160,8 +160,11 @@ mutual
   def Ty.denote (G : NormalGraph Nat) (η : String → Fam) : Ty → Fam
     | .variadic rc ps e r =>
         restsT [(rc.denote G η, Ty.denoteList G η ps, ArgumentContracts.All (e.denote G η), r.denote G η)]
-    | .array element => recT [(CallArguments.arrayStoreField,
-        listT ⟨[], [], some (Ty.denote G η element), false⟩)]
+    -- The one array shape, over a writable store of the element and
+    -- `ArrayProto`'s meaning in the graph.
+    | .array element => PositiveNormalization.semWithArgs id (fun _ _ _ _ => False)
+        (PositiveNormalization.arrayClauseOf (listT ⟨[], [], some (Ty.denote G η element), false⟩)
+          (meaning G [SourceTypes.arrayProtoLabel]) false)
     | .rigid name => η name
     | .top => PositiveNormalization.topT
     | .ground labels => meaning G labels
@@ -189,7 +192,7 @@ theorem Ty.denote_adm {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta) :
   | .ground labels => (meaning_valueFam G labels).1
   | .top => ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | .arrow _ _ _ => callsT_adm _
-  | .array _ => recT_adm _
+  | .array _ => PositiveNormalization.semWithArgs_adm _ _ _
   | .variadic .. => restsT_adm _
 
 theorem Ty.denote_value {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta)
@@ -202,7 +205,7 @@ theorem Ty.denote_value {G : NormalGraph Nat} {eta} (hC : ClosedAssign eta)
   | variadic _ _ _ _ | arrow _ params result =>
     exact ⟨h.1.val, h.1.scoped⟩
   | array element =>
-    obtain ⟨fields, rfl, _⟩ := h
+    obtain ⟨fields, rfl, _⟩ := h.1.1
     exact ⟨rfl, trivial⟩
 
 /-- Every declared upper bound is true of the rigid family assigned to its
@@ -429,7 +432,7 @@ theorem Ty.leUnderFuel_sound {G : NormalGraph Nat} {η parameters fuel a b}
       | rigid _ | ground _ | arrow _ _ _ | variadic _ _ _ _ => simp [Ty.leUnderFuel] at h
       | top =>
         intro _ _ _ hv
-        obtain ⟨fields, rfl, _⟩ := hv
+        obtain ⟨fields, rfl, _⟩ := hv.1.1
         exact ⟨rfl, trivial⟩
       | array f =>
         have heq : e = f := by simpa [Ty.leUnderFuel] using h

@@ -16,13 +16,29 @@ rows generic methods need. -/
 abbrev Table := List RequestJson.Row
 
 /-- The field an array object holds its store in. No source name spells it. -/
-def storeField : PropKey := "[]"
+def storeField : PropKey := CallArguments.arrayStoreField
 
 /-- The field an object holds its prototype in. No source name spells it. -/
 def protoField : PropKey := CallArguments.protoField
 
 /-- A key the model keeps for itself: the array store and the prototype. -/
 def reservedKey (k : PropKey) : Bool := k == storeField || k == protoField
+
+/-- The module value holding `Array.prototype`: a name no source identifier
+spells, at `ArrayProto`. Every array a unit allocates takes its prototype from
+it, as JavaScript takes the realm's. -/
+def arrayPrototypeName : String := "[[Array.prototype]]"
+
+/-- The row of `ArrayProto`, `Array.prototype`'s contract: the declaration
+document of a source with arrays lists it first, so its row follows the four
+fixed ones (`DeclarationGraph.prepare` checks this). -/
+def arrayProtoLabel : Nat := 4
+
+/-- An array type: its store at `store`, invariant or, for a readonly array, a
+view; the prototype as a view at `ArrayProto`; and its own keys bounded to
+those two, so a read of any other key continues at the prototype. -/
+def arrayClause (store : Nat) (readonly : Bool) : Clause (List Nat) :=
+  PositiveNormalization.arrayClauseOf [store] [arrayProtoLabel] readonly
 
 /-- Labels 0 to 3: null, true, false, undefined. -/
 def initial : Table := [.clauses [.nul], .clauses [.boolLit true], .clauses [.boolLit false],

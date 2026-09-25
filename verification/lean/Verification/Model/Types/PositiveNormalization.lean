@@ -183,6 +183,16 @@ def meet : Clause α → Clause α → List (Clause α)
   | .arrs L S, .callable a bs M T => [.callable a bs (M ++ L) (T ++ S)]
   | _, _ => []
 
+/-- **The array shape**, the one definition every layer reads arrays from: an
+object holding its store under the store key, invariantly or, readonly, as a
+view; holding `Array.prototype` as a view under the prototype key; and whose
+own keys are those two, so any other key is read from the prototype. -/
+def arrayClauseOf (store proto : α) (readonly : Bool) : Clause α :=
+  .refs (if readonly then [] else [(CallArguments.arrayStoreField, store)]) []
+    ((if readonly then [(CallArguments.arrayStoreField, store)] else []) ++
+      [(CallArguments.protoField, proto)])
+    [] [] [[CallArguments.arrayStoreField, CallArguments.protoField]]
+
 def meetLists (A B : List (Clause α)) : List (Clause α) :=
   A.flatMap fun a => B.flatMap fun b => meet a b
 

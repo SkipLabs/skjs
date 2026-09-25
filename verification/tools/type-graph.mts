@@ -11,6 +11,13 @@ export type Arrow = [receiver: Labels, [domains: Labels[], result: Labels]];
 /** An object contract: one label list per named field, in the order the
  * producer wrote them. Fields a contract does not name are unconstrained. */
 export type Fields = [name: PropertyKey, labels: Labels][];
+/** A host-relative method member: its key, its fixed signatures
+ * `[params, result]` and its variadic ones `[params, [rest, result]]`. */
+export type MethodSig = {
+  key: string;
+  calls: [params: Labels[], result: Labels][];
+  rests: [params: Labels[], [rest: Labels, result: Labels]][];
+};
 export type Tuple = {
   required: Labels[];
   optional: Labels[];
@@ -35,9 +42,11 @@ export type Clause =
   | "symbol"
   /** `views` are read capabilities: a field read at a sound upper bound on
    * its contents, with no write permission through this contract. `optional`
-   * fields constrain their key only where the object has it; the field is
-   * left out when there are none. */
-  | { refs: { first: Fields; rest: Fields[]; views: Fields; optional?: Fields } }
+   * fields constrain their key only where the object has it; `methods` are
+   * host-relative members; each of `bounds` lists keys the object's own keys
+   * are among. Each is left out when there are none. */
+  | { refs: { first: Fields; rest: Fields[]; views: Fields; optional?: Fields;
+      methods?: MethodSig[]; bounds?: string[][] } }
   /** Readonly string index views apply to every present own field. */
   | {
       dict: {
@@ -46,6 +55,8 @@ export type Clause =
         views: Fields;
         indexes: Labels[];
         optional?: Fields;
+        methods?: MethodSig[];
+        bounds?: string[][];
       };
     }
   /** A tuple contract on an array store: required positions, optional
@@ -80,8 +91,17 @@ export type RestArrow = [
   receiver: Labels,
   [domains: Labels[], [rest: Labels, result: Labels]],
 ];
+/** A producer's row: a union of clauses. */
 export type Row = Clause[];
-export type TypeGraph = Row[];
+/** A verifier graph's row also may be a parameter, a binder a scheme
+ * quantifies or a graph's assignment gives a family, or a scheme, one
+ * callable meeting its signatures at every instance of its binders
+ * (`POSITIVE-TYPES.md`, "Parameter and scheme rows"). */
+export type ParamRow = { kind: "value" | "arguments"; name: string; param: number };
+export type SchemeRow = { scheme: { binders: number[]; signatures: Arrow[];
+  bounds?: [binder: number, bound: Labels][]; variadic?: RestArrow[] } };
+export type GraphRow = Row | ParamRow | SchemeRow;
+export type TypeGraph = GraphRow[];
 
 /** The clause kinds, split so that every consumer can be made to cover them.
  * `keyof` over a union intersects, so the key extraction distributes. */
@@ -201,6 +221,31 @@ export function decodeGraph(value: unknown): TypeGraph {
       labels(pair[1]);
     });
   };
+  const methods = (v: unknown) =>
+    array(v).forEach((m) => {
+      const r = obj(m, ["key", "calls", "rests"]);
+      if (typeof r.key !== "string") throw Error("expected a method key");
+      array(r.calls).forEach((c) => {
+        const pair = array(c);
+        if (pair.length !== 2) throw Error("expected a method signature");
+        array(pair[0]).forEach(labels);
+        labels(pair[1]);
+      });
+      array(r.rests).forEach((c) => {
+        const pair = array(c);
+        if (pair.length !== 2) throw Error("expected a variadic method signature");
+        array(pair[0]).forEach(labels);
+        const tail = array(pair[1]);
+        if (tail.length !== 2) throw Error("expected a rest and a result");
+        labels(tail[0]);
+        labels(tail[1]);
+      });
+    });
+  const bounds = (v: unknown) =>
+    array(v).forEach((b) =>
+      array(b).forEach((k) => {
+        if (typeof k !== "string") throw Error("expected a key in a bound");
+      }));
   const tuple = (v: unknown) => {
     const t = obj(v, ["required", "optional", "rest", "readonly"]);
     if (typeof t.readonly !== "boolean")
@@ -235,19 +280,23 @@ export function decodeGraph(value: unknown): TypeGraph {
         throw Error("invalid string literal");
     },
     refs: (b) => {
-      const r = objOptional(b, ["first", "rest", "views"], ["optional"]);
+      const r = objOptional(b, ["first", "rest", "views"], ["optional", "methods", "bounds"]);
       fields(r.first);
       array(r.rest).forEach(fields);
       fields(r.views);
       if ("optional" in r) fields(r.optional);
+      if ("methods" in r) methods(r.methods);
+      if ("bounds" in r) bounds(r.bounds);
     },
     dict: (b) => {
-      const r = objOptional(b, ["first", "rest", "views", "indexes"], ["optional"]);
+      const r = objOptional(b, ["first", "rest", "views", "indexes"], ["optional", "methods", "bounds"]);
       fields(r.first);
       array(r.rest).forEach(fields);
       fields(r.views);
       array(r.indexes).forEach(labels);
       if ("optional" in r) fields(r.optional);
+      if ("methods" in r) methods(r.methods);
+      if ("bounds" in r) bounds(r.bounds);
     },
     ctors: (b) => {
       const r = objOptional(b, ["signatures"], ["variadic"]);
@@ -297,7 +346,29 @@ export function decodeGraph(value: unknown): TypeGraph {
     },
   };
 
-  rows.forEach((row) =>
+  rows.forEach((row, index) => {
+    if (isRecord(row) && "param" in row) {
+      const r = obj(row, ["kind", "name", "param"]);
+      if ((r.kind !== "value" && r.kind !== "arguments") || typeof r.name !== "string" ||
+          r.param !== index)
+        throw Error("invalid parameter row");
+      return;
+    }
+    if (isRecord(row) && "scheme" in row) {
+      const r = objOptional(obj(row, ["scheme"]).scheme, ["binders", "signatures"],
+        ["bounds", "variadic"]);
+      array(r.binders).forEach((b) => labels([b]));
+      arrows(r.signatures);
+      if ("bounds" in r)
+        array(r.bounds).forEach((b) => {
+          const pair = array(b);
+          if (pair.length !== 2) throw Error("expected a binder and its bound");
+          labels([pair[0]]);
+          labels(pair[1]);
+        });
+      if ("variadic" in r) variadic(r.variadic);
+      return;
+    }
     array(row).forEach((c) => {
       if (typeof c === "string") {
         if (!(c in STRING_CLAUSE_TEXT)) throw Error("unknown graph clause");
@@ -308,8 +379,8 @@ export function decodeGraph(value: unknown): TypeGraph {
       const validate = check[key];
       if (!validate) throw Error("unknown graph clause");
       validate(obj(c, [key])[key]);
-    }),
-  );
+    });
+  });
   // Checked field by field above: this is where that becomes a type.
   return value as TypeGraph;
 }
@@ -353,6 +424,8 @@ function clauseText(c: Clause): string {
       [c.refs.first, ...c.refs.rest].map(printFields).join(" & "),
       ...(c.refs.views.length ? [`readonly ${printFields(c.refs.views)}`] : []),
       ...(c.refs.optional?.length ? [`optional ${printFields(c.refs.optional)}`] : []),
+      ...(c.refs.methods?.length ? [`methods ${c.refs.methods.map((m) => m.key).join(", ")}`] : []),
+      ...(c.refs.bounds ?? []).map((b) => `own keys ${b.map((k) => JSON.stringify(k)).join(" | ")}`),
     ].join(" & ");
   if ("dict" in c)
     return [
@@ -362,6 +435,8 @@ function clauseText(c: Clause): string {
         (index) => `readonly {[key: string]: ${printLabels(index)}}`,
       ),
       ...(c.dict.optional?.length ? [`optional ${printFields(c.dict.optional)}`] : []),
+      ...(c.dict.methods?.length ? [`methods ${c.dict.methods.map((m) => m.key).join(", ")}`] : []),
+      ...(c.dict.bounds ?? []).map((b) => `own keys ${b.map((k) => JSON.stringify(k)).join(" | ")}`),
     ].join(" & ");
   const calls = (arrows: Arrow[], variadic: RestArrow[] = []) =>
     `calls[${[...arrows.map(arrowText), ...variadic.map(restArrowText)].join("; ")}]`;
@@ -388,5 +463,13 @@ export interface GraphDefinition {
 export const graphDefinitions = (graph: TypeGraph): GraphDefinition[] =>
   graph.map((row, i) => ({
     label: `#${i}`,
-    definition: row.length ? row.map(clauseText).join(" | ") : "never",
+    definition: rowText(row),
   }));
+export function rowText(row: GraphRow): string {
+  if ("param" in row) return `binder ${row.name}`;
+  if ("scheme" in row)
+    return `∀ ${row.scheme.binders.map((b) => `#${b}`).join(", ")}. calls[${[
+      ...row.scheme.signatures.map(arrowText),
+      ...(row.scheme.variadic ?? []).map(restArrowText)].join("; ")}]`;
+  return row.length ? row.map(clauseText).join(" | ") : "never";
+}

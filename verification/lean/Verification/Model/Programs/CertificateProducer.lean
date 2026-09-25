@@ -480,8 +480,8 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         if !(decide ns.Nodup) then none else do
         if inits.length != ns.length then none else do
         match expand G R with
-        | [.refs B [] []] =>
-          if B.map Prod.fst != ns then none else do
+        | [.refs B [] [] [] [] ks] =>
+          if B.map Prod.fst != ns || !ks.all (fun K => ns.all (K.contains ·)) then none else do
           let ps ← (inits.zip (B.map Prod.snd)).mapM fun (a,D) => recur Γ a D
           coerce G pool (.node ⟨Γ,t,R⟩ .alloc ps) A
         | [.dict [] [] [] [E]] =>

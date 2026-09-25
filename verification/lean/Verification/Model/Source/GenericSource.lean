@@ -676,9 +676,13 @@ def closureCertificate (c : Ctx) (env : List (String × DirectObligation.Ty))
         initializers := initializers ++ [.defaultE (initializers.length + offset + i) proof]
         slots := (name, .value A) :: slots
   let some proof ← closureProof c slots body | return none
-  return some ⟨c.parameters, inputs, captures.map Prod.snd, result,
+  -- A rest array is allocated with `Array.prototype`, which the closure
+  -- captures last, under a name no source identifier spells.
+  let captured := captures.map Prod.snd ++
+    (if rest then [.value (.ground [SourceTypes.arrayProtoLabel])] else [])
+  return some ⟨c.parameters, inputs, captured, result,
     initializers.foldr GenericCertificate.Proof.letE (.widen result proof), restBinding.map Prod.snd,
-    R⟩
+    R, 2 + inputs.length + captures.length⟩
 
 /-- Both production and independent consumption reconstruct these obligations.
 Every source entry and expression must occur exactly once; no supplied point is
@@ -717,9 +721,11 @@ def check (f : Fragment.Fn) (typeParams : List Fragment.TypeParam) (claims : Cla
     | _ => throw (.refusal f.namePos .genericValidation "a quantified rest requires a mutable array contract")
     else pure (("", .top) :: env, env, none)
   let proof ← proofBody c bodyEnv result f.namePos f.body
+  -- A rest array is allocated with `Array.prototype`, the one capture.
   let certificate : GenericCertificate.ClosureCertificate :=
-    ⟨parameters, fixed.map (fun p => GenericCertificate.Input.value p.2), [], result, proof, rest,
-      .top⟩
+    ⟨parameters, fixed.map (fun p => GenericCertificate.Input.value p.2),
+      (if rest.isSome then [.value (.ground [SourceTypes.arrayProtoLabel])] else []), result, proof, rest,
+      .top, 2 + fixed.length⟩
   if certificate.check.isNone then
     throw (.refusal f.namePos .genericValidation "generated generic certificate is invalid")
   return certificate

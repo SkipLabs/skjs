@@ -378,9 +378,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let element ← lowerType ds owner params seen (← field term "element")
     let readonly ← bool term "readonly"
     let store ← use (.list ⟨[], [], some element, readonly⟩ [])
-    let row ← if readonly then use (.refs [] [] [(SourceTypes.storeField, [store])])
-      else use (.refs [(SourceTypes.storeField, [store])] [] [])
-    return [row]
+    return [← use (SourceTypes.arrayClause store readonly)]
   | "tuple" =>
     CellClaims.fieldsExactly term ["k", "readonly", "required", "optional", "rest", "span"]
     let required ← (← arr term "required").mapM (lowerType ds owner params seen)
@@ -390,9 +388,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       some <$> lowerType ds owner params seen restTerm
     let readonly ← bool term "readonly"
     let store ← use (.list ⟨required.toList, optional.toList, rest, readonly⟩ [])
-    let row ← if readonly then use (.refs [] [] [(SourceTypes.storeField, [store])])
-      else use (.refs [(SourceTypes.storeField, [store])] [] [])
-    return [row]
+    return [← use (SourceTypes.arrayClause store readonly)]
   | "function" =>
     CellClaims.fieldsExactly term ["k", "receiver", "params", "rest", "result", "span"]
     let recv ← field term "receiver"
@@ -583,7 +579,8 @@ end
 each generic application's `(row, declaration position, argument types)`, with
 Lean's own lowering, so there is one lowering of every declaration. -/
 private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
-    (applications : List (Nat × Nat × List (List Nat)) := []) :
+    (applications : List (Nat × Nat × List (List Nat)) := [])
+    (arrays : List (Nat × Nat × Bool) := []) :
     Except String SourceTypes.Table := do
   if candidate.length < 4 + nullaryCount ds then throw "declaration graph rows are missing"
   for i in [:ds.size] do
@@ -594,6 +591,12 @@ private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
     if ds[i]!.parameters.isEmpty then
       let (row, expanded) ← (lowerDefinitionRows ds i #[] ⟨[i], [], []⟩).run table
       table := expanded.set (rowIndex ds i) row
+  -- An array row is the array shape over the store row the producer stated.
+  for (row, store, readonly) in arrays do
+    if row < 4 + nullaryCount ds || row ≥ table.length || table[row]! != RequestJson.Row.clauses [] then
+      throw "an array's reserved row is not an empty producer row"
+    if store ≥ table.length then throw "an array's store names no row"
+    table := table.set row (.clauses [SourceTypes.arrayClause store readonly])
   -- Applications in row order: an argument names only earlier rows.
   for (row, declaration, args) in applications.mergeSort (fun x y => x.1 ≤ y.1) do
     if row < 4 + nullaryCount ds || row ≥ table.length || table[row]! != RequestJson.Row.clauses [] then
@@ -906,7 +909,8 @@ structure Instantiable where
 from source declarations. The AST copy contains internal graph atoms only after
 the original source tree has been checked for them. -/
 def prepare (ast : Json) (candidate : SourceTypes.Table)
-    (applications : List (Nat × Nat × List (List Nat)) := []) :
+    (applications : List (Nat × Nat × List (List Nat)) := [])
+    (arrays : List (Nat × Nat × Bool) := []) :
     Except String (Json × SourceTypes.Table × List (String × Span × Json) × List Instantiable) := do
   let document ← field ast "declarations"
   CellClaims.fieldsExactly document ["roots", "definitions", "values", "symbols"]
@@ -916,13 +920,19 @@ def prepare (ast : Json) (candidate : SourceTypes.Table)
   if symbols.toList.eraseDups.length != symbols.size then
     throw "a unique symbol declaration is listed twice"
   let ds ← definitions document
+  -- `ArrayProto`, when the source has arrays, is the first definition, so its
+  -- row is `SourceTypes.arrayProtoLabel`, the one array types name.
+  let arrayProto := Json.mkObj [("module", "skjs/array-prototype"), ("name", "ArrayProto"),
+    ("span", toJson [0, 0])]
+  if let some i := (List.range ds.size).find? (fun i => ds[i]!.identity == arrayProto) then
+    if i != 0 || !ds[i]!.parameters.isEmpty then throw "ArrayProto must be the first declaration"
   let roots ← (← arr document "roots").mapM fun root => do
     let name ← str (← field root "binding") "local"
     let i ← findDefinition ds (← field root "declaration")
     return (name, i)
   if (roots.toList.map (·.1)).eraseDups.length != roots.size then
     throw "duplicate declaration root name"
-  let types ← fillRows ds candidate applications
+  let types ← fillRows ds candidate applications arrays
   -- Generic module functions, read from their source terms before the tree is
   -- converted.
   let callable (params : List Json) (rest : Option Json) (result : Json) (bound : List (String × Json)) :

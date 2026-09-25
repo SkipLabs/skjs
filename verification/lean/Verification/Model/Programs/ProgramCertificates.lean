@@ -162,9 +162,10 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     ja.context = j.context ∧ ja.term = a ∧ jb = ⟨ja.type :: j.context, b, j.type⟩
   | .alloc, .makeAt .absent ns inits, ps =>
     match expand G j.type with
-    | [.refs fs [] []] =>
+    | [.refs fs [] [] [] [] ks] =>
       ns.Nodup ∧ ns.length = ps.length ∧ ps.map Sequent.term = inits ∧
-      (∀ p ∈ ps, p.context = j.context) ∧ fs = ns.zip (ps.map Sequent.type)
+      (∀ p ∈ ps, p.context = j.context) ∧ fs = ns.zip (ps.map Sequent.type) ∧
+      (∀ K ∈ ks, ∀ n ∈ ns, n ∈ K)
     | _ => False
   | .allocDict, .makeAt .absent ns inits, ps =>
     match expand G j.type with
@@ -517,8 +518,8 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     exact .letE ha (hp ⟨ja.type :: Γ, b, A⟩ (by simp))
   · rename_i ps _ _ _ ns inits
     split at hl
-    · rename_i fs he
-      obtain ⟨hnd, hlen, hterms, hctx, rfl⟩ := hl
+    · rename_i fs ks he
+      obtain ⟨hnd, hlen, hterms, hctx, rfl, hk⟩ := hl
       have hzl : (ns.zip ps).length = ns.length := by simp [hlen]
       have hfst : ((ns.zip ps).map fun r => (r.1, r.2.type, r.2.term)).map Prod.fst = ns := by
         simp only [List.map_map, Function.comp_def]
@@ -549,6 +550,12 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
           rw [hctx r.2 hmem] at h
           exact h)
         (by rw [htyp]; exact he)
+        (by
+          intro K hK q hq
+          have : q.1 ∈ ((ns.zip ps).map fun r => (r.1, r.2.type, r.2.term)).map Prod.fst :=
+            List.mem_map_of_mem hq
+          rw [hfst] at this
+          exact hk K hK q.1 this)
       rw [hfst, hsnd] at this
       exact this
     · contradiction
@@ -1278,15 +1285,18 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       rcases hj with rfl | rfl
       · exact iha
       · exact ihb
-  | @alloc Γ Ref parts hnd hpart hr ih =>
+  | @alloc Γ Ref parts ks hnd hpart hr hk ih =>
     apply node_complete (G := G)
       (j := ⟨Γ, .makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2), Ref⟩)
       (r := .alloc) (js := parts.map fun p => ⟨Γ, p.2.2, p.2.1⟩)
-    · simp only [Local, show expand G Ref = [.refs (parts.map fun p => (p.1, p.2.1)) [] []] from hr]
+    · simp only [Local, show expand G Ref = [.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks] from hr]
       refine ⟨hnd, by simp, by simp [List.map_map, Function.comp_def], by
-        intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; rfl, ?_⟩
-      simp only [List.map_map, Function.comp_def]
-      rw [List.zip_map']
+        intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; rfl, ?_, ?_⟩
+      · simp only [List.map_map, Function.comp_def]
+        rw [List.zip_map']
+      · intro K hK n hn
+        obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hn
+        exact hk K hK p hp
     · intro j hj
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
       exact ih p hp

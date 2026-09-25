@@ -19,7 +19,7 @@ HasTy  (Programs/ProgramTyping.lean)
   writeCallable : HasTy G Γ a F → Represents G F (.callable P Ps L S) → (f, A) ∈ P → HasTy G Γ b A → Represents G N .nul → HasTy G Γ (.writeAt f a b) N
   app {Γ : List (Ty ι)} {f r : Tm} {F Rt B : Ty ι} {L : List (Ty ι × List (Ty ι) × Ty ι)} {S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} : HasTy G Γ f F → Represents G F (.arrs L S) → (Rt, xs.map Prod.fst ++ Us, B) ∈ L → HasTy G Γ r Rt → (∀ p ∈ xs, HasTy G Γ p.2 p.1) → (∀ A ∈ Us, HasTy G Γ .undef A) → HasTy G Γ (.invoke f r (xs.map Prod.snd)) B
   letE : HasTy G Γ a A → HasTy G (A :: Γ) b B → HasTy G Γ (.letE a b) B
-  alloc {parts : List (PropKey × Ty ι × Tm)} : (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) [] []) → HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
+  alloc {parts : List (PropKey × Ty ι × Tm)} {ks : List (List PropKey)} : (parts.map Prod.fst).Nodup → (∀ p ∈ parts, HasTy G Γ p.2.2 p.2.1) → Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks) → (∀ K ∈ ks, ∀ p ∈ parts, p.1 ∈ K) → HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
   allocDict {parts : List (PropKey × Tm)} : (parts.map Prod.fst).Nodup → CallArguments.protoField ∉ parts.map Prod.fst → (∀ p ∈ parts, HasTy G Γ p.2 Elem) → Represents G Dict (.dict [] [] [] [Elem]) → HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map Prod.snd)) Dict
   read : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → (f, A) ∈ fs → HasTy G Γ (.readAt f a) A
   readView : HasTy G Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → (f, A) ∈ vs → HasTy G Γ (.readAt f a) A

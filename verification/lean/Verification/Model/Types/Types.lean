@@ -487,6 +487,13 @@ private theorem slots_names (base : Nat) (ns : List PropKey) :
   | nil => simp [slots]
   | cons name rest ih => simp [slots, ih]
 
+/-- A fresh object's own keys are exactly the names it allocated. -/
+theorem ownKeysT_slots {K : List PropKey} {k : Nat} {W : WorldT k} {base : Nat}
+    {ns : List PropKey} (h : ∀ n ∈ ns, n ∈ K) : ownKeysT K k W (.objAt (slots base ns) .absent) := by
+  refine ⟨slots base ns, rfl, fun p hp => h _ ?_⟩
+  have := List.mem_map_of_mem (f := Prod.fst) hp
+  rwa [slots_names] at this
+
 private theorem zip_replicate_fields (ns : List PropKey) (A : Fam) :
     ns.zip (List.replicate ns.length A) = ns.map (fun name => (name, A)) := by
   induction ns with

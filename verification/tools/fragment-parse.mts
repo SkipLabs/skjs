@@ -1837,8 +1837,21 @@ export function parseFile(file: string, carriesContext = false,
     node.forEachChild(findGlobals);
   };
   if (!carriesContext) findGlobals(source);
-  if (importNodes.length || localNodes.length || globalNodes.length) {
-    const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0];
+  // An array reaches `Array.prototype`, whose contract then joins the graph;
+  // the first array the file writes stands for it.
+  let firstArray: Node | undefined;
+  const findArray = (node: Node): void => {
+    if (firstArray) return;
+    if (ts.isArrayTypeNode(node) || ts.isTupleTypeNode(node) || ts.isArrayLiteralExpression(node) ||
+        (ts.isParameterDeclaration(node) && !!node.dotDotDotToken)) {
+      firstArray = node;
+      return;
+    }
+    node.forEachChild(findArray);
+  };
+  findArray(source);
+  if (importNodes.length || localNodes.length || globalNodes.length || firstArray) {
+    const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? firstArray;
     if (!first) throw Error("missing declaration root");
     // Named imports only. A type import joins the declaration graph; a value
     // import is an assumption at the type its declaration states.
@@ -1853,10 +1866,11 @@ export function parseFile(file: string, carriesContext = false,
     try {
       declarations = collectDeclarations(resolutionFile, { tsconfigPath, client: source,
         locals: localNodes.map(node => gate.span(node)),
-        globals: globalNodes.map(node => gate.span(node)) });
+        globals: globalNodes.map(node => gate.span(node)),
+        ...(firstArray ? { arrays: gate.span(firstArray) } : {}) });
     } catch (error) {
       const at = error instanceof DeclarationError
-        ? [...importNodes, ...localNodes, ...globalNodes].find(node =>
+        ? [...importNodes, ...localNodes, ...globalNodes, ...(firstArray ? [firstArray] : [])].find(node =>
             node.getStart(source) === error.at[0]) ?? first
         : first;
       gate.fail(at, messageOf(error));
