@@ -502,7 +502,15 @@ def produceJson (request : Json) (fuel : Nat)
           | some o => s!"source incoming edge obligation at [{o.pos.1},{o.pos.2}): "
           | none => ""
         | _ => ""
-      throw (withDiagnostic s!"{location}evidence search failed (unsupported or unjustified): {reprStr e}"
+      -- Name what could not be established; the structured record below says
+      -- with which claims, and the reader phrases it in source terms.
+      let what := match e with
+        | .expression label => match (sourceMap[label]?).bind id with
+          | some o => s!"no derivation of its {o.role} claim"
+          | none => s!"no derivation of the claim of node {label}"
+        | .edge source _ _ => s!"the edge from node {source} does not establish the claims at this point"
+        | _ => reprStr e
+      throw (withDiagnostic s!"{location}evidence search failed: {what}"
         (failureDiagnostic r fuel sourceMap e requirements))
   let response := toJson (Response.mk C)
   verifyJson request response

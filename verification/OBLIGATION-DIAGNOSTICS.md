@@ -13,6 +13,16 @@ then one line on stderr:
 obligation-diagnostic: {"phase":"proof-search","outcome":"not-established",...}
 ```
 
+The human sentence of a failed graph search names the obligation: `source
+expression obligation at [s,e): evidence search failed: no derivation of its
+<role> claim` for a node, `source incoming edge obligation at [s,e): … the
+edge from node N does not establish the claims at this point` for an edge.
+`check.mts` then adds one line, `obligation: <summary>`, the reader's
+source-term account of the record below (which claim was available and what
+was required, or, for a term that is not a slot, its form and the claims of
+the slots it reads), so a refusal read in a log or a coverage row says why
+without opening the record.
+
 `verification/tools/diagnostic.mts` reads the record without parsing the
 human sentence. A record it cannot decode field by field, and a duplicate
 record, are not interpreted: the reader requires the fields below and refuses

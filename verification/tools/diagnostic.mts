@@ -399,7 +399,7 @@ function diagnosticNode(v: unknown, size: number) {
     c.context.forEach(t => decodeLabels(t,size)); decodeLabels(c.type,size);
   }
   if (n.node !== null) {
-    const node = record(n.node,["expression","continuation"]); decodeTerm(node.expression);
+    decodeNode(n.node);
   }
 }
 

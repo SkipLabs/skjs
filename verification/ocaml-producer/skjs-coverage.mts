@@ -456,8 +456,13 @@ function locate(detail: string, u: Unit): { where: Row["where"]; at?: string } {
 
 /** A blocker's first line, without the snapshot's temporary path. */
 function brief(detail: string): string {
-  return (detail.split("\n")[0] ?? "").replace(/\/\S*\/ocaml-producer-\w+\/source\.ts/g, "source.ts")
-    .replace(/(\.\.\/)+\S*?\/import-stubs\//g, "import-stubs/").slice(0, 300);
+  // A failed search's `obligation:` line (check.mts) says what was not
+  // established, in source terms: it follows the first line.
+  const lines = detail.split("\n");
+  const obligation = lines.find((l) => l.startsWith("obligation: "));
+  return ((lines[0] ?? "").replace(/\/\S*\/ocaml-producer-\w+\/source\.ts/g, "source.ts")
+    .replace(/(\.\.\/)+\S*?\/import-stubs\//g, "import-stubs/").slice(0, 300)) +
+    (obligation ? " — " + obligation.slice("obligation: ".length, 400) : "");
 }
 
 /* Feature groups: [group, pattern over the phase-prefixed reason]. First match

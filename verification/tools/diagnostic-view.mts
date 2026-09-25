@@ -506,6 +506,26 @@ export function presentObligation(ob: ObligationDiagnostic, source: string): Obl
         requiredLabel:isReturn ? "Required return type" : "Required type"};
       view.summary = `The available claim for ${row.binding} is ${row.have}. ${isReturn ? "This return" : "This obligation"} requires ${required}.`;
       view.namedConclusion = `${row.binding}: ${required}`;
+    } else if (typeof q.term === "object") {
+      // Not a slot: name the term's form and the claims of the slots it
+      // reads directly, which are what the rule for that form would use.
+      const [form, node] = Object.entries(q.term)[0] ?? ["term", undefined];
+      const op = typeof node === "object" && node !== null && "op" in node ? ` ${String(node.op)}` : "";
+      const slots = new Set<number>();
+      const visit = (v: unknown, depth: number): void => {
+        if (typeof v !== "object" || v === null || depth > 3) return;
+        if ("var" in v && typeof v.var === "object" && v.var !== null && "i" in v.var && typeof v.var.i === "number") {
+          slots.add(v.var.i); return;
+        }
+        for (const x of Object.values(v)) visit(x, depth + 1);
+      };
+      visit(node, 0);
+      const operands = [...slots].flatMap((s) => {
+        const r = view.rows.find((r) => r.slot === s);
+        return r ? [`${r.binding}: ${r.have}`] : [];
+      });
+      view.summary = `No rule derives this ${form}${op} at ${typeText(ob.types,q.type)}` +
+        (operands.length ? ` from ${operands.join(", ")}.` : ".");
     }
     assumptions = context(q.context);
     conclusion = `${printTerm(q.term)} : ${printLabels(q.type)}`;

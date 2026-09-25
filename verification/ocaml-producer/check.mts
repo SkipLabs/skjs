@@ -5,6 +5,8 @@ import { basename, resolve, join } from "node:path";
 import { createHash } from "node:crypto";
 import { parseFile } from "../tools/fragment-parse.mts";
 import { tsconfigOf, type SeenDiagnostic } from "../tools/declaration-graph.mts";
+import { readDiagnostic } from "../tools/diagnostic.mts";
+import { presentObligation } from "../tools/diagnostic-view.mts";
 
 const here = import.meta.dirname;
 const repo = resolve(here, "../..");
@@ -59,6 +61,17 @@ function run(command: string, args: string[]) {
     out: p.stdout,
     detail: p.stderr.trim() || p.stdout.trim(),
   };
+}
+/** A failed search names the obligation it could not establish and why, in
+ * source terms: the reader's summary of the verifier's structured record, as
+ * the line `obligation: …` after the verifier's own first line. Display only;
+ * a record the reader refuses adds nothing. */
+function namingTheObligation(detail: string, source: string): string {
+  const record = readDiagnostic(detail);
+  const summary = record && presentObligation(record, source).summary;
+  if (!summary) return detail;
+  const [first, ...rest] = detail.split("\n");
+  return [first, `obligation: ${summary}`, ...rest].join("\n");
 }
 /** Acceptance is deliberately private to this module. An OCaml proposal alone
  * cannot construct the public verified outcome: both Lean phases must succeed. */
@@ -172,7 +185,7 @@ export function check(source: string, tsconfigPath?: string): Outcome {
         status: "unverified",
         artifacts,
         phase,
-        detail: produced.detail,
+        detail: namingTheObligation(produced.detail, bytes.toString("utf8")),
       };
     phase = "check";
     const checked = run(verifier, [
