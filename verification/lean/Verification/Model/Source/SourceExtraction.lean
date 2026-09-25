@@ -117,18 +117,12 @@ private def lower (m : SourceTypes.Lowering α) : Compiler α := do
 
 /-- Whether a claimed type is within a source annotation's: its rows among the
 annotation's, up to rows with identical clauses, or else its inclusion proved
-by a certificate the proved checker accepts. The proof is what identifies two
-rows reserved separately for the same recursive application, whose clauses
-differ only in which of them they name, as a producer's `Values<number>` and
-the one a method annotation lowers to. -/
+by a certificate the proved checker accepts. A generic application with
+methods is one row for the module, the producer's `Values<number>` and the one
+a method annotation names alike, so the first rule relates them; the proof is
+for a claim narrower than its annotation. -/
 private def within (T : SourceTypes.Table) (C A : List Nat) : Bool :=
   (SourceTypes.canonical T C).all (SourceTypes.canonical T A).contains ||
-    -- Two lowerings of one declaration differ in the rows they reserve and the
-    -- binder rows their schemes use: a renaming table relates them cheaply.
-    (let G := SourceTypes.graph T
-     match CertificateProducer.tableProof G 64 C A with
-       | some p => PositiveCertificates.check G C A p
-       | none => false) ||
     (let G := SourceTypes.graph T
      let pool := CertificateProducer.vocabulary G
        (CertificateProducer.readsFrom G CertificateProducer.closureFuel (C ++ A)) [] [C, A]

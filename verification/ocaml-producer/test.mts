@@ -269,7 +269,7 @@ for (const [file, expected] of [
   assert(index.value.parts.some(p => p.k === "atom" && p.name === "null"));
   // A fixture project: packages mapped by `paths`, a barrel, a global
   // declaration file. Every client below is resolved by TypeScript in it.
-  const a = "import type { B } from './b.js'; export type A<T> = { next: B<T> }; export type Bound<T extends B<number>> = T;";
+  const a = "import type { B } from './b.js'; export type A<T> = { next: B<T> }; export type Bound<T extends B<number>> = T; export type Grow<T> = { next: Grow<[T]> };";
   const b = "import type { A } from './a.js'; export type B<T> = { prev: A<T> };";
   const pairDir = mkdtempSync(join(tmpdir(), "skjs-generic-import-"));
   writeFileSync(join(pairDir, "a.ts"), a);
@@ -360,13 +360,19 @@ for (const [file, expected] of [
   const genericParam = genericAst.functions[0]?.params[0]?.type;
   assert(genericParam?.k === "reference" && genericParam.reference.name === "A" &&
     genericParam.args[0]?.k === "atom" && genericParam.args[0].name === "boolean");
-  // Declarations have one lowering, Lean's, which refuses mutually recursive
-  // applications as it refuses its other declaration gaps.
+  // Declarations have one lowering, Lean's. A mutually recursive application
+  // the producer reserves a row for is that row, which its equation names
+  // again: a finite graph.
   const recursiveGeneric = check(genericClient, pairConfig);
-  assert.equal(recursiveGeneric.status, "unverified", JSON.stringify(recursiveGeneric));
-  assert.equal(recursiveGeneric.phase, "search");
-  assert.match(recursiveGeneric.detail,
-    /recursive generic application needs memoized rows/);
+  assert.equal(recursiveGeneric.status, "verified", JSON.stringify(recursiveGeneric));
+  // One expanded inline at arguments that grow at each unfolding is refused.
+  writeFileSync(genericClient,
+    'import type { Grow } from "@fixture/a";\n' +
+    'export function keepGrow(value: Grow<boolean>): Grow<boolean> { return value; }\n');
+  const growing = check(genericClient, pairConfig);
+  assert.equal(growing.status, "unverified", JSON.stringify(growing));
+  assert.equal(growing.phase, "search");
+  assert.match(growing.detail, /recursive generic application needs memoized rows/);
   // A name imported through a barrel is the declaration the barrel reexports.
   writeFileSync(genericClient,
     'import type { A } from "@fixture/barrel";\n' +

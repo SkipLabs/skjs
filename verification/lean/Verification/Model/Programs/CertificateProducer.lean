@@ -153,7 +153,7 @@ def matchRow [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap �
               | some U => if U = T then some st else none
               | none => some { st with found := (p, T) :: st.found }
             else if T = [p] then some (add st p T) else none
-        else if T = [p] && (fv V p).all (fun q => (κ.lookup q).isNone) then some (add st p T)
+        else if T = [p] && fixedBy G κ V p then some (add st p T)
         else match G.schemes p, T with
           | some s, [j] =>
             match G.schemes j with
@@ -162,7 +162,7 @@ def matchRow [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap �
                   s2.signatures.length = s.signatures.length ∧
                   s2.variadic.length = s.variadic.length ∧
                   s2.bounds.length = s.bounds.length then
-                let κ' := enter κ s.binders s2.binders
+                let κ' := enter V p κ s.binders s2.binders
                 -- Bounds are read outside the binders, so under `κ`.
                 ((s.bounds.zip s2.bounds).foldlM (fun st pq =>
                   matchRow G bs V fuel st κ pq.1.2 pq.2.2) (add st p [j])).bind fun st =>
@@ -188,7 +188,7 @@ def matchRow [DecidableEq ι] (G : NormalGraph ι) (bs : List ι) (V : FreeMap �
       -- and its one other label takes the rest (`undefined | T` against
       -- `boolean | undefined`).
       let fixed := S.filter fun p => T.contains p && !G.params p &&
-        (fv V p).all (fun q => (κ.lookup q).isNone)
+        fixedBy G κ V p
       let bySet := match S.filter (!fixed.contains ·) with
         | [p] => matchRow G bs V fuel (fixed.foldl (fun st q => add st q [q]) st) κ [p]
             (T.filter (!fixed.contains ·))

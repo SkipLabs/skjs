@@ -735,15 +735,28 @@ $\kappa(A)$ for the image of a type, each entry is one of:
 
 - $i$ a parameter row and $T=\kappa(i)$, or $T=\{i\}$ when $\kappa$ does not
   name $i$, with $T$ of $i$'s declared kind;
-- **rigid**: $T=\{i\}$ and $\kappa$ names no row of $V(i)$;
+- **fixed**: $T=\{i\}$ and $\kappa$ fixes $i$: it names no row of $V(i)$
+  but parameter rows it maps to themselves, $\kappa(p)\in\{\bot,\{p\}\}$ for
+  $p\in V(i)$, with $\kappa(p)=\{p\}$ only for a parameter row $p$ (inside a
+  scheme matched against itself its binders stand for themselves; `fixedBy`);
 - $i$ a clause row, $T=\{j\}$, $j$ a clause row, and $G(j)\doteq G(i)[\kappa]$:
   the same clauses, each operand with the same members as its image;
 - $i$ the scheme row $(\vec q;\Sigma';\beta';\Sigma'_\ldots)$, $T=\{j\}$, $j$
   the scheme row $(\vec r;\Sigma'[\kappa'];\beta'[\kappa];\Sigma'_\ldots[\kappa'])$
   with $|\vec r|=|\vec q|$, $\vec r$ distinct parameter rows of matching kinds
-  and $\kappa'=\kappa[\vec q\mapsto\vec r]$, provided no free row of $i$
-  outside $\kappa$'s domain, and no row free in an image $\kappa(p)$ for
-  $p\in V(i)$, is in $\vec r$ (no capture).
+  and $\kappa'=(\vec q\mapsto\vec r)\cdot\kappa|_{V(i)\setminus\vec q}$, the
+  binders then $\kappa$ on $i$'s free rows only, in $V(i)$'s order
+  (`enter`), provided no free row of $i$ outside $\kappa$'s domain, and no
+  row free in an image $\kappa(p)$ for $p\in V(i)$, is in $\vec r$ (no
+  capture).
+
+Entering a scheme keeps only what its free rows read, and nothing inside it
+reads more (a signature's free rows are $i$'s or its binders), so the entry's
+meaning is the same as under all of $\kappa$. Keeping less is what makes a
+table for recursive types finite: relating `EagerCollection<K2ᵃ, V2ᵃ>` to
+`EagerCollection<K2ᵇ, V2ᵇ>` enters `map`, then `reduce`, then `map` again,
+without end, and a context carrying every scheme entered would never recur,
+while one restricted to free rows alternates between two.
 
 The table is checked when its rows lie in a domain with a free-variable
 certificate and every entry is one of these. The producer (`matchRow`, not
@@ -779,9 +792,10 @@ means the union of its labels, so their order does not matter
 premises other than $T\equiv_G\mathsf{arrs}(L;M)$ are $G\vdash\{i\}\le_{\mathsf{inst}}\mathsf{arrs}(L;M)$
 (`InstArrs`).
 
-The same tables relate two lowerings of one type that differ only in which
-binder rows their schemes use, as a producer's copy of `Promise<number>` and
-the annotation's may. With the empty context each row means its image:
+The same tables relate two rows of one type that differ only in which binder
+rows their schemes use. Lowering gives one row per generic application
+([DESIGN.md](DESIGN.md#one-row-per-application)), so this is for graphs that
+hold copies anyway. With the empty context each row means its image:
 
 $$
 \frac{\text{a checked table}\quad

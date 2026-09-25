@@ -603,6 +603,11 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           (match param with
            | Atoms [Shape {calls=[o];fields=[];string_index=None;elements=None}] -> closure_offer n o
            | _ -> None)
+        (* A class value at a generic call's construct parameter, known only
+           once the call's instance is: offered as where the parameter's type
+           is expected. *)
+        | Id n when List.mem_assoc n !classes ->
+          Some (fun () -> offer_class (List.assoc n !classes) param)
         | _ -> None in
       let param_at (s:Semantic.signature) i = match List.nth_opt s.params i with
         | Some p -> Some p
@@ -660,6 +665,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
                (List.filteri (fun i _ -> i < fixed) actuals) in
              solution @ inferred.substitution,inferred.result in
          instance_of ~declared:callee target substitution;
+         offer ~substitute:(Inference.substitute substitution) signature;
          if not (method_read target) then
            instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
              substitution) :: !instantiations;

@@ -2064,9 +2064,17 @@ def restMatch [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι)
       sameLabels q'.2.2.1 q.2.2.1 && sameLabels q'.2.2.2 q.2.2.2
   | none => false
 
-/-- Entering a scheme mapped to another: its binders stand for the other's. -/
-def enter [DecidableEq ι] (κ : Ctx ι) (src tgt : List ι) : Ctx ι :=
-  src.zip (tgt.map ([·])) ++ κ.filter fun e => !src.contains e.1
+/-- The context `κ` on the rows `ps` outside `src`, in the order of `ps`. -/
+def keep [DecidableEq ι] (κ : Ctx ι) (src ps : List ι) : Ctx ι :=
+  ps.filterMap fun p => if src.contains p then none else (κ.lookup p).map (p, ·)
+
+/-- Entering scheme row `i` mapped to another: its binders stand for the
+other's, and of the outer context only the free rows of `i` are kept, in the
+order `V` lists them. Nothing inside reads another, and the contexts met while
+relating recursive types, whose schemes nest without end, are then finitely
+many, so their entries recur. -/
+def enter [DecidableEq ι] (V : FreeMap ι) (i : ι) (κ : Ctx ι) (src tgt : List ι) : Ctx ι :=
+  src.zip (tgt.map ([·])) ++ keep κ src (fv V i)
 
 /-- A clause with every operand replaced by its image. -/
 def clauseImg [DecidableEq ι] (tbl : InstTable ι) (κ : Ctx ι) (c : Clause (List ι)) :
@@ -2236,8 +2244,16 @@ def substitutionKind (G : NormalGraph ι) (b : ι) (U : List ι) : Bool :=
 def instKinds (G : NormalGraph ι) (bs : List ι) (θs : List (List ι)) : Bool :=
   (bs.zip θs).all fun (b, U) => substitutionKind G b U
 
+/-- The context fixes row `i`: it gives each free row of `i` nothing, or that
+parameter row itself (inside a scheme matched against itself, its binders
+stand for themselves). -/
+def fixedBy [DecidableEq ι] (G : NormalGraph ι) (κ : Ctx ι) (V : FreeMap ι) (i : ι) : Bool :=
+  (fv V i).all fun p => match κ.lookup p with
+    | none => true
+    | some U => U == [p] && G.params p
+
 /-- One entry. A parameter row's image is what the context gives it, or itself.
-A row with no free row in the context's domain may be its own image. A clause
+A row the context fixes may be its own image. A clause
 row's image is a clause row holding its clauses mapped. A scheme row's image is
 a scheme row with as many binders, distinct parameter rows, whose signatures
 are its own mapped with its binders standing for them, provided no free row of
@@ -2246,7 +2262,7 @@ def entryOk [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (V : Free
     (e : ι × Ctx ι × List ι) : Bool :=
   if G.params e.1 then
     e.2.2 == (e.2.1.lookup e.1).getD [e.1] && substitutionKind G e.1 e.2.2
-  else if e.2.2 == [e.1] && (fv V e.1).all (fun p => (e.2.1.lookup p).isNone) then true
+  else if e.2.2 == [e.1] && fixedBy G e.2.1 V e.1 then true
   else match G.schemes e.1, e.2.2 with
     | some s, [j] =>
       match G.schemes j with
@@ -2257,9 +2273,9 @@ def entryOk [DecidableEq ι] (G : NormalGraph ι) (tbl : InstTable ι) (V : Free
           (fv V e.1).all (fun p => match e.2.1.lookup p with
             | some U => U.all fun l => (fv V l).all fun q => !s2.binders.contains q
             | none => !s2.binders.contains p) &&
-          s.signatures.mapM (sigImg tbl (enter e.2.1 s.binders s2.binders)) == some s2.signatures &&
+          s.signatures.mapM (sigImg tbl (enter V e.1 e.2.1 s.binders s2.binders)) == some s2.signatures &&
           s.bounds.mapM (boundImg tbl e.2.1 s.binders s2.binders) == some s2.bounds &&
-          s.variadic.mapM (restImg tbl (enter e.2.1 s.binders s2.binders)) == some s2.variadic
+          s.variadic.mapM (restImg tbl (enter V e.1 e.2.1 s.binders s2.binders)) == some s2.variadic
       | none => false
     | none, [j] =>
       G.plain e.1 && G.plain j &&
@@ -2384,24 +2400,43 @@ theorem lookup_append_none [DecidableEq ι] {xs ys : List (ι × β)} {p : ι}
       simp only [List.cons_append, List.lookup_cons]
       rw [beq_false_of_ne ha]; exact ih h
 
-theorem lookup_filter_nmem [DecidableEq ι] {κ : List (ι × β)} {src : List ι} {p : ι} (hp : p ∉ src) :
-    (κ.filter fun e => !src.contains e.1).lookup p = κ.lookup p := by
-  induction κ with
-  | nil => rfl
-  | cons e κ ih =>
-    obtain ⟨a, b⟩ := e
-    by_cases ha : a ∈ src
-    · have hpa : p ≠ a := fun e => hp (e ▸ ha)
-      rw [List.filter_cons_of_neg (by simp [ha]), ih]
-      simp only [List.lookup_cons, beq_false_of_ne hpa]
-    · rw [List.filter_cons_of_pos (by simp [ha])]
-      cases hpa : p == a <;> simp [List.lookup_cons, hpa] <;> simpa using ih
+theorem keep_cons [DecidableEq ι] (κ : Ctx ι) (src : List ι) (q : ι) (ps : List ι) :
+    keep κ src (q :: ps) = if q ∈ src then keep κ src ps else
+      match κ.lookup q with
+      | none => keep κ src ps
+      | some U => (q, U) :: keep κ src ps := by
+  by_cases hq : q ∈ src
+  · simp [keep, List.filterMap_cons, hq]
+  · cases hk : κ.lookup q <;> simp [keep, List.filterMap_cons, hq, hk]
 
-/-- Outside the binders, entering changes nothing. -/
-theorem enter_nmem [DecidableEq ι] (κ : Ctx ι) {src tgt : List ι} {p : ι} (hp : p ∉ src) :
-    (enter κ src tgt).lookup p = κ.lookup p := by
+theorem lookup_keep [DecidableEq ι] (κ : Ctx ι) {src : List ι} {p : ι} (hp : p ∉ src) :
+    ∀ ps : List ι, (keep κ src ps).lookup p = if p ∈ ps then κ.lookup p else none
+  | [] => by simp [keep]
+  | q :: ps => by
+    rw [keep_cons]
+    by_cases hq : q ∈ src
+    · have hpq : p ≠ q := fun e => hp (e ▸ hq)
+      rw [if_pos hq, lookup_keep κ hp ps]
+      simp [hpq]
+    · rw [if_neg hq]
+      by_cases hpq : p = q
+      · subst hpq
+        cases hk : κ.lookup p with
+        | none => simp only; rw [lookup_keep κ hp ps]; simp [hk]
+        | some U => simp [List.lookup_cons]
+      · cases hk : κ.lookup q with
+        | none => simp only; rw [lookup_keep κ hp ps]; simp [hpq]
+        | some U =>
+          simp only [List.lookup_cons, beq_false_of_ne hpq]
+          rw [lookup_keep κ hp ps]; simp [hpq]
+
+/-- Outside the binders, entering changes nothing a free row of the scheme
+reads. -/
+theorem enter_nmem [DecidableEq ι] (V : FreeMap ι) (i : ι) (κ : Ctx ι) {src tgt : List ι} {p : ι}
+    (hp : p ∉ src) (hi : p ∈ fv V i) :
+    (enter V i κ src tgt).lookup p = κ.lookup p := by
   unfold enter
-  rw [lookup_append_none (lookup_zip_none hp), lookup_filter_nmem hp]
+  rw [lookup_append_none (lookup_zip_none hp), lookup_keep κ hp, if_pos hi]
 
 /-- A binder entered stands for the binder at its position, and both sides are
 given the same family there. -/
@@ -2481,10 +2516,10 @@ theorem lookup_append_some [DecidableEq ι] {xs ys : List (ι × β)} {p : ι} {
 
 /-- A binder entered stands for a target binder, given the same family on both
 sides. -/
-theorem enter_rel [DecidableEq ι] (κ : Ctx ι) (ηL ηR : ParameterAssignment k ι) {src tgt : List ι}
+theorem enter_rel [DecidableEq ι] (V : FreeMap ι) (i : ι) (κ : Ctx ι) (ηL ηR : ParameterAssignment k ι) {src tgt : List ι}
     {As : List (ParameterFamily k)} {p : ι} (hp : p ∈ src) (hnd : tgt.Nodup)
     (h1 : src.length = As.length) (h2 : tgt.length = As.length) :
-    ∃ q ∈ tgt, (enter κ src tgt).lookup p = some [q] ∧
+    ∃ q ∈ tgt, (enter V i κ src tgt).lookup p = some [q] ∧
       (assign ηL src As).1 p = (assign ηR tgt As).1 q := by
   obtain ⟨U, hU⟩ := lookup_zip_isSome (ys := tgt.map ([·])) hp (by simp [h1, h2])
   obtain ⟨q, rfl, he⟩ := enter_binder ηL ηR hnd h1 h2 hU
@@ -2496,12 +2531,12 @@ theorem enter_rel [DecidableEq ι] (κ : Ctx ι) (ηL ηR : ParameterAssignment 
 /-- Renaming a bound parameter assigns the same family to both binders, but
 the correspondence compares only their common kind. Arbitrary unused
 components remain unrestricted, including under nested universal schemes. -/
-theorem mixed_enter_binder [DecidableEq ι] (G : NormalGraph ι) (κ : Ctx ι)
+theorem mixed_enter_binder [DecidableEq ι] (G : NormalGraph ι) (V : FreeMap ι) (i : ι) (κ : Ctx ι)
     (η θ : MixedAssignment ι) {src tgt : List ι} {As : List MixedFamily} {p : ι}
     (hp : p ∈ src) (hnd : tgt.Nodup) (hs : src.length = As.length) (ht : tgt.length = As.length)
     (hk : ∀ p q, (src.zip (tgt.map ([·]))).lookup p = some [q] →
       ∃ kind, G.parameterKinds p = some kind ∧ G.parameterKinds q = some kind) :
-    ∃ q ∈ tgt, (enter κ src tgt).lookup p = some [q] ∧
+    ∃ q ∈ tgt, (enter V i κ src tgt).lookup p = some [q] ∧
       (mixedParameters G).parameter p ((assign η src As).1 p) =
         mixedMeaning G (assign θ tgt As) [q] := by
   obtain ⟨U, hU⟩ := lookup_zip_isSome (ys := tgt.map ([·])) hp (by simp [hs, ht])
@@ -2608,6 +2643,29 @@ theorem restImg_some [DecidableEq ι] {tbl : InstTable ι} {κ : Ctx ι}
           simp [h1, h2, h3, h4] at h
           subst h; exact ⟨rfl, rfl, rfl, rfl⟩
 
+/-- A context fixing a row relates the two assignments on its free rows as
+equal parameters. -/
+theorem fixedBy_rel [DecidableEq ι] {G : NormalGraph ι} {κ : Ctx ι} {V : FreeMap ι} {i : ι}
+    {ηL ηR : MixedAssignment ι} (hfix : fixedBy G κ V i = true)
+    (hrel : RelKWith G (mixedParameters G) κ (fv V i) ηL ηR) :
+    ∀ p ∈ fv V i, (mixedParameters G).parameter p (ηL.1 p) =
+      (mixedParameters G).parameter p (ηR.1 p) := by
+  intro p hp
+  have hr := hrel p hp
+  have hf := List.all_eq_true.mp hfix p hp
+  cases hk : κ.lookup p with
+  | none => rw [hk] at hr; exact hr
+  | some U =>
+    rw [hk] at hr hf
+    simp only [Bool.and_eq_true, beq_iff_eq] at hf
+    obtain ⟨rfl, hpar⟩ := hf
+    obtain ⟨kind, hkind⟩ : ∃ kind, G.parameterKinds p = some kind := by
+      simpa [NormalGraph.params, Option.isSome_iff_exists] using hpar
+    change selectParameter (G.parameterKinds p) (ηL.1 p) = mixedMeaning G ηR [p] at hr
+    rw [mixedMeaning_parameter G ηR p kind hkind] at hr
+    change selectParameter (G.parameterKinds p) (ηL.1 p) = selectParameter (G.parameterKinds p) (ηR.1 p)
+    rw [hkind]; rw [hkind] at hr; exact hr
+
 /-- The argument half of table transport uses the value half at exactly the
 same level. It covers every checked entry, including parameters, unchanged
 rows and schemes; it does not assume the table contains only tuple rows. -/
@@ -2632,20 +2690,17 @@ theorem table_row_arguments [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTab
   simp only [entryOk] at hrow
   cases hp : G.params i
   · simp only [hp, Bool.false_eq_true, if_false] at hrow
-    by_cases hrig : (T == [i] && (fv V i).all (fun p => (κ.lookup p).isNone)) = true
-    · simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true,
-        Option.isNone_iff_eq_none] at hrig
-      obtain ⟨rfl, hfree⟩ := hrig
+    by_cases hrig : (T == [i] && fixedBy G κ V i) = true
+    · simp only [Bool.and_eq_true, beq_iff_eq] at hrig
+      obtain ⟨rfl, hfix⟩ := hrig
       have h := graphArguments_free hF _
         (agree_freeWith hF (mixedParameters G) (mixed_respectsFree hF)) η θ [i]
         (fun l hl => by cases List.mem_singleton.mp hl; exact hiD)
         (fun l hl p hp' => by
           cases List.mem_singleton.mp hl
-          have hr := hrel p hp'
-          rw [hfree p hp'] at hr
-          exact hr)
+          exact fixedBy_rel hfix hrel p hp')
       exact iff_of_eq (congrFun (congrFun (congrFun h n) W) vs)
-    · have hrigF : (T == [i] && (fv V i).all (fun p => (κ.lookup p).isNone)) = false := by
+    · have hrigF : (T == [i] && fixedBy G κ V i) = false := by
         simpa using hrig
       simp only [hrigF, Bool.false_eq_true, if_false] at hrow
       cases hs : G.schemes i with
@@ -2804,15 +2859,14 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
   simp only [entryOk] at hrow
   cases hpar : G.params i
   · simp only [hpar, Bool.false_eq_true, if_false] at hrow
-    by_cases hrig : (T == [i] && (fv V i).all (fun p => (κ.lookup p).isNone)) = true
-    · -- its own image, with no free row in the context's domain
-      simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true,
-        Option.isNone_iff_eq_none] at hrig
-      obtain ⟨rfl, hfree⟩ := hrig
+    by_cases hrig : (T == [i] && fixedBy G κ V i) = true
+    · -- its own image, the context fixing its free rows
+      simp only [Bool.and_eq_true, beq_iff_eq] at hrig
+      obtain ⟨rfl, hfix⟩ := hrig
       rw [singleton]
-      rw [agree_freeWith hF (mixedParameters G) (mixed_respectsFree hF) ηL ηR i hiD (fun p hp => by
-        have := hrel p hp; rw [hfree p hp] at this; exact this)]
-    · have hrigF : (T == [i] && (fv V i).all (fun p => (κ.lookup p).isNone)) = false := by
+      rw [agree_freeWith hF (mixedParameters G) (mixed_respectsFree hF) ηL ηR i hiD
+        (fixedBy_rel hfix hrel)]
+    · have hrigF : (T == [i] && fixedBy G κ V i) = false := by
         simpa using hrig
       simp only [hrigF, Bool.false_eq_true, if_false] at hrow
       cases hsch : G.schemes i with
@@ -2870,7 +2924,7 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
                   (fun l hl p hp => hrel p (hbounds l (hbr l hl).2 p hp)) j hj U u
               · simp at hbi
             -- Inside, the relation holds on each signature row's free rows.
-            have hrel' : ∀ l ∈ reads G i, RelKWith G (mixedParameters G) (enter κ s.binders s2.binders) (fv V l)
+            have hrel' : ∀ l ∈ reads G i, RelKWith G (mixedParameters G) (enter V i κ s.binders s2.binders) (fv V l)
                 (assign ηL s.binders As) (assign ηR s2.binders As) := by
               intro l hl p hp
               by_cases hb : p ∈ s.binders
@@ -2888,14 +2942,14 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
                   obtain ⟨kind, hkind⟩ : ∃ kind, G.parameterKinds q = some kind := by
                     simpa [NormalGraph.params, Option.isSome_iff_exists] using hqp
                   exact ⟨kind, heq.trans hkind, hkind⟩
-                obtain ⟨q, hq, hk, he⟩ := mixed_enter_binder G κ ηL ηR hb hnd hlA.symm
+                obtain ⟨q, hq, hk, he⟩ := mixed_enter_binder G V i κ ηL ηR hb hnd hlA.symm
                   (hlen.trans hlA.symm) hkindRel
                 rw [hk]; exact he
-              · rw [enter_nmem κ hb, assign_nmem ηL s.binders As hb]
-                have hpi : p ∈ fv V i := by
+              · have hpi : p ∈ fv V i := by
                   rcases (hreads l hl).2 p hp with h1 | ⟨s', hs', h2⟩
                   · exact h1
                   · rw [hsch] at hs'; cases hs'; exact absurd h2 hb
+                rw [enter_nmem V i κ hb hpi, assign_nmem ηL s.binders As hb]
                 have hr := hrel p hpi
                 have hc := hcap p hpi
                 cases hk : κ.lookup p with
@@ -2924,14 +2978,14 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
                 simp only [reads, hsch]
                 exact List.mem_append_left _
                   (List.mem_append_left _ (List.mem_flatMap.mpr ⟨p, hps, hl⟩))
-              obtain ⟨q, hq⟩ : ∃ q, sigImg tbl (enter κ s.binders s2.binders) p = some q := by
+              obtain ⟨q, hq⟩ : ∃ q, sigImg tbl (enter V i κ s.binders s2.binders) p = some q := by
                 obtain ⟨_, hsome⟩ := mapM_some hsigs
                 exact Option.isSome_iff_exists.mp (hsome p hps)
               obtain ⟨h1, h2, h3⟩ := sigImg_some hq
               simp only [Function.comp, hq, Option.getD_some]
               refine ⟨hty _ _ _ _ _ h1 fun l hl => hrel' l (hin l (by simp [hl])), ?_,
                 hty _ _ _ _ _ h3 fun l hl => hrel' l (hin l (by simp [hl]))⟩
-              have hargs : ∀ (Ss Ts : List (List ι)), Ss.mapM (tyImg tbl (enter κ s.binders s2.binders)) = some Ts →
+              have hargs : ∀ (Ss Ts : List (List ι)), Ss.mapM (tyImg tbl (enter V i κ s.binders s2.binders)) = some Ts →
                   (∀ S ∈ Ss, ∀ l ∈ S, l ∈ reads G i) →
                   ArgsAgree n (Ss.map (setSem fun l => qDenoteWithArgs G (mixedParameters G) (assign ηL s.binders As, l)))
                     (Ts.map (mixedValues G (assign ηR s2.binders As))) := by
@@ -2940,10 +2994,10 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
                 | nil => intro Ts h _; simp at h; subst h; exact .nil
                 | cons S Ss ihs =>
                   intro Ts h hSs
-                  cases hS : tyImg tbl (enter κ s.binders s2.binders) S with
+                  cases hS : tyImg tbl (enter V i κ s.binders s2.binders) S with
                   | none => simp [List.mapM_cons, hS] at h
                   | some S' =>
-                    cases hr : Ss.mapM (tyImg tbl (enter κ s.binders s2.binders)) with
+                    cases hr : Ss.mapM (tyImg tbl (enter V i κ s.binders s2.binders)) with
                     | none => simp [List.mapM_cons, hS, hr] at h
                     | some Ts' =>
                       have : Ts = S' :: Ts' := by simp [List.mapM_cons, hS, hr] at h; exact h.symm
@@ -2963,7 +3017,7 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
                 fun l hl => by
                   simp only [reads, hsch]
                   exact List.mem_append_right _ (List.mem_flatMap.mpr ⟨p, hps, hl⟩)
-              obtain ⟨q, hq⟩ : ∃ q, restImg tbl (enter κ s.binders s2.binders) p = some q := by
+              obtain ⟨q, hq⟩ : ∃ q, restImg tbl (enter V i κ s.binders s2.binders) p = some q := by
                 obtain ⟨_, hsome⟩ := mapM_some hrests
                 exact Option.isSome_iff_exists.mp (hsome p hps)
               obtain ⟨h1, h2, h3, h4⟩ := restImg_some hq
@@ -2971,7 +3025,7 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
               refine ⟨hty _ _ _ _ _ h1 fun l hl => hrel' l (hin l (by simp [hl])), ?_,
                 hpack _ _ _ _ _ h3 fun l hl => hrel' l (hin l (by simp [hl])),
                 hty _ _ _ _ _ h4 fun l hl => hrel' l (hin l (by simp [hl]))⟩
-              have hargs : ∀ (Ss Ts : List (List ι)), Ss.mapM (tyImg tbl (enter κ s.binders s2.binders)) = some Ts →
+              have hargs : ∀ (Ss Ts : List (List ι)), Ss.mapM (tyImg tbl (enter V i κ s.binders s2.binders)) = some Ts →
                   (∀ S ∈ Ss, ∀ l ∈ S, l ∈ reads G i) →
                   ArgsAgree n (Ss.map (setSem fun l => qDenoteWithArgs G (mixedParameters G) (assign ηL s.binders As, l)))
                     (Ts.map (mixedValues G (assign ηR s2.binders As))) := by
@@ -2980,10 +3034,10 @@ theorem table_row_mixed [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable �
                 | nil => intro Ts h _; simp at h; subst h; exact .nil
                 | cons S Ss ihs =>
                   intro Ts h hSs
-                  cases hS : tyImg tbl (enter κ s.binders s2.binders) S with
+                  cases hS : tyImg tbl (enter V i κ s.binders s2.binders) S with
                   | none => simp [List.mapM_cons, hS] at h
                   | some S' =>
-                    cases hr : Ss.mapM (tyImg tbl (enter κ s.binders s2.binders)) with
+                    cases hr : Ss.mapM (tyImg tbl (enter V i κ s.binders s2.binders)) with
                     | none => simp [List.mapM_cons, hS, hr] at h
                     | some Ts' =>
                       have : Ts = S' :: Ts' := by simp [List.mapM_cons, hS, hr] at h; exact h.symm

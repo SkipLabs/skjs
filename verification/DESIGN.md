@@ -915,9 +915,11 @@ arguments in declaration order, substitutes earlier arguments into later
 defaults and bounds, and checks each resulting inclusion with a
 `PositiveCertificates` proof before deriving the instantiated graph clause
 from the source equation. The OCaml producer may propose a matching row, but
-cannot supply the equation or waive a bound. Recursive generic applications
-still need application-indexed memo rows; this finite-ground path does not
-interpret them or prove a universally quantified imported declaration body.
+cannot supply the equation or waive a bound. A generic application with
+methods, which recursion goes through, is one row per declaration and
+arguments for the module ([one row per application](#one-row-per-application)),
+so a recursive family of applications is a finite graph; this finite-ground
+path does not prove a universally quantified imported declaration body.
 An interface's `extends` clauses are retained as source reference edges, each
 resolved by TypeScript like any other reference. Lean interprets the
 local and inherited contracts together (`inheritRows`). An own clause and an
@@ -1625,16 +1627,13 @@ global declaration. Reading them needs the forms those files use:
   assumed to be anything, and what it accepts at it may be anything.
   TypeScript's `any` also converts to every type, and nothing here inherits
   that; the checked module's own annotations may not write `any`.
-- A generic application inside its own declaration at the same arguments,
-  such as `finally(): Promise<T>` in `Promise<T>`, is the row reserved for it.
-  A producer may reserve its own row for the same application, and the two
-  rows differ only in which of them they name. A claimed parameter or result
-  type is therefore compared by meaning: identical rows, or inclusion in
-  both directions by certificates the proved checker accepts. Lowering one
-  annotation twice gives such copies too: `Values<number>` in a method's
-  annotation, in its class's declared instance type and in the producer's
-  claim are three rows whose clauses name different reserved rows for the
-  `Iterator` its `[Symbol.iterator]` returns.
+- A generic application with methods is one row for the module, whatever
+  names it: `finally(): Promise<T>` in `Promise<T>`, a producer's reserved
+  row, a method's annotation and its class's declared instance type
+  ([one row per application](#one-row-per-application)). A claimed parameter
+  or result type is still compared by meaning, identical rows or inclusion in
+  both directions by certificates the proved checker accepts, since a claim
+  may name another row with the same clauses, or a narrower type.
 
 A claimed type $C$ is within the annotation's $A$ (`within`) when
 
@@ -1663,21 +1662,68 @@ makes the claim sound; it keeps a producer from advertising a signature the
 source does not state. Comparing by meaning rather than by label is what lets
 a claim name the producer's own row for a declared application.
 
-**One row per reserved application.** Lean fills each row a producer reserved
-for a generic application $D\langle\vec U\rangle$ (`"applications"`) with its
-own lowering of $D$'s equation at $\vec U$, and afterwards that row is the
-application wherever a source annotation, an imported value's declared type or
-a generic value's instance names it at the same arguments:
+#### One row per application
+
+A generic application with methods, $D\langle\vec U\rangle$ where $D$'s
+equation mentions its receiver, is one row for the whole module: the memo
+$\rho$ (`Memo.applications`) maps a declaration and its arguments' key to the
+row. Rows with identical clauses denote the same type, so arguments are
+compared by $\mathsf{key}$, each label its row's clauses, except an
+application's row or an empty row, reserved and not yet filled, which is its
+label:
 
 $$
-\frac{\rho(D,\vec U)=r}{\llbracket D\langle\vec U\rangle\rrbracket=[r]}\ \textsc{reserved},
+\mathsf{key}(\vec U)=\bigl(\{\,k(l)\mid l\in U_i\,\}\bigr)_i,\qquad
+k(l)=\begin{cases}l & l\ \text{an application's row, or empty}\\ G(l) & \text{otherwise.}\end{cases}
 $$
 
-with $\rho$ the reserved rows (`fillRows`, then `Visit.reserved` in
-`annotationClaim`). Both are Lean's lowering of one equation at one argument
-list, so they denote the same type. Lowering the application again would add
-another copy of the equation, a thousand rows for `Promise`, which every
-comparison above would then relate by certificate.
+A producer's reserved row for $D\langle\vec U\rangle$ (`"applications"`) is
+in $\rho$ from the start, so the declarations' own equations name it too. That
+holds for a reserved application without methods as well: a recursive alias
+the module names (`type A<T> = { next: B<T> }` with `type B<T> = { prev: A<T> }`)
+closes at its row, where before it was refused.
+Otherwise the first lowering to meet the application gives it a fresh row
+$r$, records it, and lowers $D$'s equation at $\vec U$ with $r$ for the
+receiver, **from an empty visit**: no enclosing declaration and no enclosing
+method's binders (`groundApplication`):
+
+$$
+\frac{\rho(D,\mathsf{key}(\vec U))=r}{\llbracket D\langle\vec U\rangle\rrbracket=[r]}\ \textsc{app}
+\qquad
+\frac{\rho(D,\mathsf{key}(\vec U))\ \text{undefined}\quad
+      |\mathsf{reach}(\vec U)|\le 32\quad r\ \text{fresh}}
+     {\rho(D,\mathsf{key}(\vec U)):=r\quad G(r):=\mathsf{lower}_\emptyset(\mathit{eq}_D[\vec U,\mathsf{self}:=r])}\ \textsc{app-new}
+$$
+
+Every row of $D\langle\vec U\rangle$ is the lowering of one equation at one
+argument list, so every mention denotes the same type. Lowering from an empty
+visit makes that lowering a function of the application and the memo, never
+of the path that met it first: a recursive family of applications
+(`EagerCollection<K2ᵃ, V2ᵃ>`'s `map` returning `EagerCollection<K2ᵇ, V2ᵇ>`, and
+back) closes into a finite graph where each application has its whole
+equation, and two applications that differ by a renaming of binder rows are
+related by an instance table ([instances of a scheme row](POSITIVE-TYPES.md#instances-of-a-scheme-row)),
+which closes because its contexts are finitely many. Before this, lowering
+unfolded a declaration at most three times along a path, so the scheme's
+result and the type it was compared with were cut at different depths and
+could not be matched.
+
+The unfolding terminates. Binder rows are finitely many (colours, below), and
+$\mathsf{reach}(\vec U)$ is the rows the arguments reach, an application's
+row reaching its arguments rather than its equation, a declaration's,
+primitive's or binder's row nothing further (`reach`): a function of the
+arguments. Arguments that keep growing (`Pair<T>`'s `m<U>(): Pair<[T, U]>`)
+pass the bound, and the application is refused; the method that named it
+stays opaque. A declaration without methods is expanded inline, and a
+recursion through such declarations is refused after three expansions within
+one application's equation (`applicationDepth`).
+
+A declaration's row is a name, not a representative for its clauses: the row
+for a type is the first row with exactly its clauses that is not a
+declaration's (`useRow`), so `number` is the producer's `number` row wherever
+it is lowered, whether `type int = number` has been filled yet or not. A
+source annotation's ground type arguments are lowered as declarations' terms
+are, so an annotation names the application its declaration names.
 
 **Global values.** A value name the module neither imports nor binds is a
 global when TypeScript binds it to a global variable, such as Node's
@@ -1760,17 +1806,47 @@ and binder $k$ of $m$ at colour $c$ is one row, whoever lowers it.
 application memo finds `Promise<R1ᵃ>` again. A binder never takes a colour free
 in what its signatures mention from outside, so no binder captures one of
 another scope; the instance tables of `Sub.inst` tell the scopes that share a
-binder row apart. A declaration is applied at most three times along one
-lowering path at different arguments. Past that, as for arguments that keep
-growing (`catch<R>` returns `Promise<T | R>`), and for an F-bounded binder,
-the method stays an opaque member: sound, and what it was before. A rest typed
+binder row apart. Past the colour budget, at arguments that keep growing
+([one row per application](#one-row-per-application)), and for an F-bounded
+binder, the method stays an opaque member: sound, and what it was before. A rest typed
 by one of the method's binders makes it a pack parameter (`...params:
 Params`), which a construct type's rest may share (`new (...params: Params) =>
 M`): the scheme row's variadic signature has the binder for its rest, the
 binder's `Params extends E[]` bound is the element pack, and a call's
-instance is the tuple of its further actuals. Two lowerings of one type that differ only in rows they reserve or
-binder rows their schemes use are one type up to renaming (`Sub.table`), which
-is how a producer's claimed type is compared with the annotation's.
+instance is the tuple of its further actuals. Two rows of one type that
+differ only in the binder rows their schemes use are one type up to renaming
+(`Sub.table`).
+
+**Binders as type arguments.** A method's value binder $p$ may be an argument
+of a declaration with a bounded parameter (`map<K2 extends Json, …>` returns
+`EagerCollection<K2, V2>`, whose `K extends Json`). Its instances lie within its
+own declared bound $B_p$, so it establishes the parameter's bound $B$ through
+that one, as TypeScript's constraint does; a declared bound that is ground,
+naming no parameter or binder, is the same for every scheme sharing $p$'s row:
+
+$$
+\frac{p\ \text{a value binder}\quad B_p\ \text{ground}\quad G\vdash_c B_p\le B}
+     {p\ \text{establishes}\ B}\ \textsc{binder-bound}
+$$
+
+**Binders met with ground types.** A value binder the method's signatures
+intersect with ground operands, directly or through a declaration's parameter
+it is an argument of (`V & DepSafe` in `EagerCollection<K, V>`, reached from
+`map`'s result `EagerCollection<K2, V2>`), has them as conjuncts of its scheme
+bound, $\beta(p)=B_p\wedge\bigwedge M_p$ (`meetsOf`), and the intersection of
+$p$ with operands among its conjuncts is $p$:
+
+$$
+\frac{\vec D\subseteq M_p}{\llbracket p\mathbin{\&}\vec D\rrbracket=\llbracket p\rrbracket}\ \textsc{binder-meet}
+$$
+
+The rule is exact where it is read: $p$ is in scope only within its scheme,
+whose instances lie within $\beta(p)$, so below every $D\in M_p$. The graph has
+no intersection of a parameter row with a type; bounding the binder is the
+sound way to keep such a method rather than make it opaque. It is a
+strengthening TypeScript does not make: `map` is not instantiated at a value
+type outside `DepSafe`, such as a plain JSON object, which TypeScript accepts
+(`invalid-sum-map-object.ts`, a refusal of a safe program).
 
 **Explicit type arguments.** A method call may state its instance,
 `o.m<A₁,…,Aₖ>(…)`. The arguments are an annotation, so a requirement: the
@@ -2238,7 +2314,14 @@ a choice.
   closure passed where more parameters are offered uses, reached from a class
   value instead of a call; there is no arrow-widening subtyping. A narrower
   parameter is still refused (`invalid-class-fewer-parameters.ts`), as
-  TypeScript's bivariant method parameters admit it.
+  TypeScript's bivariant method parameters admit it. At a generic call the
+  expected construct signature is known only at the call's instance
+  (`cs.input1.map(Plus)`, where `map`'s parameter is
+  `new (...params: P) => Mapper<K, V, K2, V2>`): the class value is offered
+  the parameter at the inferred instance, and inference reads the class's own
+  construct signature, its first, since the ones it is offered give the
+  interface's instance and fix no binder (`sum-resource.ts`,
+  `invalid-sum-resource-mapper.ts`).
 
 **Representation and rules.** The `refs` and `dict` clauses have a method
 component (`MethodMembers.Sig`): members with receiver-free fixed and variadic

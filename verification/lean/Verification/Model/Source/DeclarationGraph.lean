@@ -5,9 +5,10 @@ import Verification.Model.Programs.CertificateProducer
 by a producer.
 The producer reserves one empty row per nullary declaration and may refer to
 those labels in its candidate rows. This module fills them from source
-equations. Finite ground applications of generic declarations are interned
-from their substituted equations; recursive generic applications are refused
-until they have application-indexed memo rows. Function annotations are written
+equations. Ground applications of generic declarations are lowered from their
+substituted equations; one with methods, which is how a declaration recurs, is
+one row per declaration and arguments for the module (`Memo`), so a recursive
+family of applications is a finite graph. Function annotations are written
 in the same source terms, and `prepare` converts each to the claim form the
 source readers take. -/
 namespace Verification.Model.DeclarationGraph
@@ -56,7 +57,65 @@ private def referenceIndex (ds : Array Definition) (term : Json) : Except String
   let reference ← field term "reference"
   findDefinition ds (← field reference "target")
 
-private abbrev Lowering := StateT SourceTypes.Table (Except String)
+/-- A generic application given a row: its declaration, its arguments, and
+their key (`Memo.key`). -/
+private structure Given where
+  declaration : Nat
+  args : Array (List Nat)
+  key : Array (List (Nat ⊕ RequestJson.Row))
+  row : Nat
+
+/-- What lowering keeps beside the table, for every lowering of the module. -/
+private structure Memo where
+  /-- The generic applications given rows. An application with methods gets
+  its row when first lowered; a producer's reserved row is its application's
+  from the start. -/
+  applications : List Given := []
+  /-- The value binder rows of generic methods: `(row, declared bound, meets)`,
+  the declared bound when it is ground, and the ground operands the method's
+  signatures intersect the binder with. Both are facts of the binder row: its
+  name fixes the method and position, and ground terms lower alike wherever
+  they are lowered. -/
+  binders : List (Nat × List Nat × List (List Nat)) := []
+  /-- The rows below it are the primitives' and the nullary declarations'. -/
+  floor : Nat := 4
+
+private abbrev Lowering := StateT Memo SourceTypes.Lowering
+
+/-- A type up to rows with identical clauses, which denote the same type
+(`SourceTypes.canonical`): each label is its row, a producer's row for
+`number` and a declaration's `type int = number` alike. An application's row
+is only its label, as is an empty row, reserved and not yet filled. -/
+private def Memo.key (m : Memo) (T : SourceTypes.Table) (A : List Nat) : List (Nat ⊕ RequestJson.Row) :=
+  (A.map fun l => match T[l]? with
+    | some (RequestJson.Row.clauses []) | none => .inl l
+    | some r => if m.applications.any (·.row == l) then .inl l else .inr r).eraseDups
+
+private def sameKey (a b : List (Nat ⊕ RequestJson.Row)) : Bool :=
+  a.all (b.contains ·) && b.all (a.contains ·)
+
+/-- The row given to declaration `i` at arguments `values`, if any. -/
+private def Memo.row (m : Memo) (T : SourceTypes.Table) (i : Nat) (values : Array (List Nat)) :
+    Option Nat :=
+  let k := values.map (m.key T)
+  (m.applications.find? fun g => g.declaration == i && g.key.size == k.size &&
+    (g.key.zip k).all fun (a, b) => sameKey a b).map (·.row)
+
+/-- Give declaration `i` at arguments `values` the row `row`. -/
+private def Memo.give (m : Memo) (T : SourceTypes.Table) (i : Nat) (values : Array (List Nat))
+    (row : Nat) : Memo :=
+  { m with applications := ⟨i, values, values.map (m.key T), row⟩ :: m.applications }
+
+/-- The keys again, once rows they name have been filled. -/
+private def Memo.rekey (m : Memo) (T : SourceTypes.Table) : Memo :=
+  { m with applications := m.applications.map fun g => { g with key := g.args.map (m.key T) } }
+
+/-- Keep the table and the memo as they were when a lowering fails, so a
+rejected candidate leaves no rows, and names no rows, behind. -/
+private def attempt (m : Lowering α) : Lowering (Except String α) := fun memo T =>
+  match (m.run memo).run T with
+  | .ok ((a, memo'), T') => .ok ((.ok a, memo'), T')
+  | .error e => .ok ((.error e, memo), T)
 
 /-- A literal type as the claim atom of its value. -/
 private def literalAtom (term : Json) : Except String Json := do
@@ -68,7 +127,19 @@ private def literalAtom (term : Json) : Except String Json := do
   | "string" => return Json.mkObj [("a", toJson "stringlit"), ("v", ← field term "text")]
   | _ => throw "unsupported source literal"
 
-private def use (clause : Clause (List Nat)) : Lowering Nat := SourceTypes.use clause
+/-- The row of a union of clauses: the first row with exactly those clauses
+that is not a declaration's, or a new one. A declaration's row is its name
+(`type int = number`): a type lowered from source is the same row wherever
+it is lowered, whether that declaration's row was filled yet or not, and
+the row a producer interned for it. -/
+private def useRow (row : List (Clause (List Nat))) : Lowering Nat := do
+  let floor := (← get).floor
+  modifyGetThe SourceTypes.Table fun T =>
+    match (List.range T.length).find? fun k => (k < 4 || floor ≤ k) && T[k]? == some (.clauses row) with
+    | some k => (k, T)
+    | none => (T.length, T ++ [.clauses row])
+
+private def use (clause : Clause (List Nat)) : Lowering Nat := useRow [clause]
 
 private partial def hasRigidParameter : Json → Bool
   | .obj fields =>
@@ -77,13 +148,21 @@ private partial def hasRigidParameter : Json → Bool
   | .arr values => values.any hasRigidParameter
   | _ => false
 
+/-- Whether a source term has a subterm of kind `k`. -/
+private partial def mentionsKind (k : String) : Json → Bool
+  | .obj fields => fields.toList.lookup "k" == some (.str k) ||
+      fields.toList.any (fun p => mentionsKind k p.2)
+  | .arr values => values.any (mentionsKind k)
+  | _ => false
+
 /-- Whether a declaration's equation has methods, whose receiver is the
 declaration itself. -/
-private partial def mentionsSelf : Json → Bool
-  | .obj fields => fields.toList.lookup "k" == some (.str "self") ||
-      fields.toList.any (fun p => mentionsSelf p.2)
-  | .arr values => values.any mentionsSelf
-  | _ => false
+private def mentionsSelf : Json → Bool := mentionsKind "self"
+
+/-- A term that names no type parameter, method binder or receiver: it lowers
+to the same labels wherever it is lowered. -/
+private def groundTerm (t : Json) : Bool :=
+  !mentionsKind "parameter" t && !mentionsKind "binder" t && !mentionsKind "self" t
 
 /-- An object clause of one record operand, as its parts: named fields,
 views, string index views, optional fields, methods, own-key bounds and
@@ -160,6 +239,46 @@ partial def binderUse (name : String) : Json → BinderUse
   | .arr terms => terms.foldl (fun acc term => acc.merge (binderUse name term)) {}
   | .null | .bool _ | .num _ | .str _ => {}
 
+/-- An occurrence of a type parameter: a generic method's binder, by name, or a
+declaration's parameter, by position. -/
+private inductive Occurrence where
+  | binder (name : String)
+  | parameter (index : Nat)
+
+private def Occurrence.is : Occurrence → Json → Bool
+  | .binder n, t => (t.getObjValAs? String "k").toOption == some "binder" &&
+      (t.getObjValAs? String "name").toOption == some n
+  | .parameter i, t => (t.getObjValAs? String "k").toOption == some "parameter" &&
+      (t.getObjValAs? Nat "index").toOption == some i
+
+/-- The ground operands an occurrence is intersected with (`V & DepSafe`): in
+`term`, and in the equation and bases of each declaration it is an argument
+of, each declaration position visited once. -/
+private partial def meetsOf (ds : Array Definition) (o : Occurrence) (term : Json) :
+    StateM (List (Nat × Nat)) (List Json) := do
+  match term with
+  | .arr ts => return (← ts.toList.mapM (meetsOf ds o)).flatten
+  | .obj fields =>
+    let kind := (term.getObjValAs? String "k").toOption
+    -- A nested scheme binding the same name shadows a method's binder.
+    if let .binder n := o then
+      if kind == some "scheme" && ((term.getObjValAs? (Array Json) "binders").toOption.getD #[]).any
+          (fun b => (b.getObjValAs? String "name").toOption == some n) then return []
+    let mut own : List Json := []
+    if kind == some "intersection" then
+      let parts := (term.getObjValAs? (Array Json) "parts").toOption.getD #[]
+      if parts.any o.is then own := parts.toList.filter fun p => !o.is p && groundTerm p
+    if kind == some "reference" then
+      let target := ((term.getObjVal? "reference").bind (·.getObjVal? "target")).toOption
+      if let some i := target.bind fun t => (findDefinition ds t).toOption then
+        let args := (term.getObjValAs? (Array Json) "args").toOption.getD #[]
+        for (arg, j) in args.toList.zipIdx do
+          if o.is arg && !(← get).contains (i, j) then
+            modify ((i, j) :: ·)
+            own := own ++ (← meetsOf ds (.parameter j) (.arr (ds[i]!.bases.push ds[i]!.expression)))
+    return own ++ (← fields.toList.mapM fun p => meetsOf ds o p.2).flatten
+  | _ => return []
+
 /-- The source role stays with a binder until its rows are emitted. A value
 occurrence cannot accidentally retrieve the row of an argument-list binder. -/
 private inductive BinderBinding where
@@ -169,11 +288,10 @@ private inductive BinderBinding where
 private def BinderBinding.row : BinderBinding → Nat
   | .value row | .pack row => row
 
-/-- The declarations being lowered, innermost first, and the ground
-applications whose rows are reserved while their equations are lowered. -/
+/-- The declarations being expanded inline since the innermost application
+row, innermost first. -/
 private structure Visit where
   declarations : List Nat := []
-  rows : List (Nat × Array (List Nat) × Nat) := []
   /-- The binders of the generic methods being lowered, innermost first. -/
   binders : List (String × BinderBinding) := []
 
@@ -182,11 +300,6 @@ methods' binders, as type parameters are lexically scoped. -/
 private def Visit.enter (v : Visit) (i : Nat) : Visit :=
   { v with declarations := i :: v.declarations, binders := [] }
 private def Visit.contains (v : Visit) (i : Nat) : Bool := v.declarations.contains i
-private def Visit.reserve (v : Visit) (i : Nat) (values : Array (List Nat)) (row : Nat) : Visit :=
-  { v with rows := (i, values, row) :: v.rows }
-/-- The row reserved for declaration `i` applied to exactly `values`. -/
-private def Visit.reserved (v : Visit) (i : Nat) (values : Array (List Nat)) : Option Nat :=
-  (v.rows.find? fun (j, args, _) => j == i && args == values).map (·.2.2)
 
 /-! ### Generic methods
 
@@ -199,16 +312,53 @@ application it belongs to, and a binder row is keyed by the method, the
 binder's position and its colour. `Promise<R1ᵃ>`'s `then` then binds `R1ᵇ`,
 `Promise<R1ᵇ>`'s binds `R1ᵃ`, and the application memo finds `Promise<R1ᵃ>`
 again. The colours never capture: a binder never takes a colour free in what
-its signatures mention from outside. Past the colour budget, as for arguments
-that keep growing (`Pair<[T, U]>`), the method stays an opaque member. -/
+its signatures mention from outside.
+
+An application with methods is one row per declaration and arguments, for the
+whole module (`Memo.applications`), and its equation is lowered from that row
+alone: what it becomes depends on the application, never on the path that
+reached it first. So a recursive family of applications closes into a finite
+graph in which every application has its whole equation. Past the colour
+budget, and at arguments that keep growing (`Pair<[T, U]>`, refused by the
+argument budget), the method stays an opaque member. -/
 
 /-- How many colours generic methods' binders may take. -/
 private def colourBudget : Nat := 4
 
-/-- How many times one declaration may be applied along a lowering path at
-different arguments: a generic method's cycle of colours closes within it
-(`Promise<number>`, `Promise<R1ᵇ>`, `Promise<R1ᵃ>`, then the memo). -/
+/-- How many times a declaration without methods may be expanded inline within
+one application row's equation at different arguments. -/
 private def applicationDepth : Nat := 3
+
+/-- How many rows the arguments of an application with methods may reach, an
+application among them counting its own arguments. Arguments that keep growing
+(`Pair<[T, U]>`'s `m<V>(): Pair<[[T, U], V]>`) pass it; a finite family of
+applications stays below it. -/
+private def argumentBudget : Nat := 32
+
+/-- The rows the types `A` reach, until more than `limit` are found: an
+application row reaches its arguments, not its equation, which may still be
+being lowered; a declaration's row (below `floor`), a primitive's and a
+binder's reach nothing further. A function of the types, not of the path
+lowering them. -/
+private def reach (m : Memo) (T : SourceTypes.Table) (floor limit : Nat) (A : List Nat) : List Nat :=
+  let next (l : Nat) : List Nat :=
+    match m.applications.find? (·.row == l) with
+    | some g => g.args.toList.flatten
+    | none =>
+      if l < floor then [] else match T[l]? with
+        | some (.clauses cs) => cs.flatMap fun c => c.operands.flatten
+        | some (.scheme _ sigs bounds rests) =>
+          sigs.flatMap (fun (r, ps, res) => r ++ ps.flatten ++ res) ++ bounds.flatMap (·.2) ++
+            rests.flatMap (fun (r, ps, p, res) => r ++ ps.flatten ++ p ++ res)
+        | _ => []
+  let rec go : Nat → List Nat → List Nat → List Nat
+    | 0, seen, _ => seen
+    | _, seen, [] => seen
+    | fuel + 1, seen, l :: todo =>
+      if seen.length > limit then seen
+      else if seen.contains l then go fuel seen todo
+      else go fuel (seen ++ [l]) (todo ++ next l)
+  go CertificateProducer.closureFuel [] A
 
 /-- A binder row's colour, from its name `…^c`. -/
 private def colourOf (name : String) : Option Nat :=
@@ -216,17 +366,16 @@ private def colourOf (name : String) : Option Nat :=
   | [_, c] => c.toNat?
   | _ => none
 
-/-- The colours of the binder rows free in `labels`. -/
-private def freeColours (T : SourceTypes.Table) (labels : List Nat) : List Nat :=
-  let G := SourceTypes.graph T
-  let D := CertificateProducer.readsFrom G CertificateProducer.closureFuel labels
-  let V := CertificateProducer.freeMapOf G D CertificateProducer.closureFuel []
-  (labels.flatMap (fv V)).filterMap fun p => match T[p]? with
+/-- The colours of the binder rows `labels` reach. A binder a nested scheme
+binds counts too: the colours taken are over-approximated, never missed. -/
+private def freeColours (m : Memo) (T : SourceTypes.Table) (floor : Nat) (labels : List Nat) : List Nat :=
+  (reach m T floor CertificateProducer.closureFuel labels).filterMap fun p => match T[p]? with
     | some (RequestJson.Row.param _ n _) => colourOf n
     | _ => none
 
 /-- The one row of the binder named `name`, shared by every lowering. -/
-private def paramRow (name : String) (kind : PositiveGraphs.ParameterKind) : Lowering Nat := modifyGet fun T =>
+private def paramRow (name : String) (kind : PositiveGraphs.ParameterKind) : Lowering Nat :=
+  modifyGetThe SourceTypes.Table fun T =>
   match T.findIdx? (fun r => match r with | RequestJson.Row.param _ n k => n == name && k == kind | _ => false) with
   | some i => (i, T)
   | none => (T.length, T ++ [.param T.length name kind])
@@ -235,11 +384,21 @@ private def paramRow (name : String) (kind : PositiveGraphs.ParameterKind) : Low
 private def schemeRow (bs : List Nat) (sigs : List (List Nat × List (List Nat) × List Nat))
     (bounds : List (Nat × List Nat))
     (rests : List (List Nat × List (List Nat) × List Nat × List Nat) := []) :
-    Lowering Nat := modifyGet fun T =>
+    Lowering Nat := modifyGetThe SourceTypes.Table fun T =>
   let r := RequestJson.Row.scheme bs sigs bounds rests
   match T.idxOf? r with
   | some i => (i, T)
   | none => (T.length, T ++ [r])
+
+/-- The positive meet of operands' clauses: record operands on one object,
+function operands as one overloaded callable. -/
+private def meetRow (parts : List (List Nat)) : Lowering (List Nat) := do
+  let table ← getThe SourceTypes.Table
+  let rows := parts.map (·.flatMap (SourceTypes.graph table))
+  let some first := rows.head? | throw "empty declaration intersection"
+  let meet := rows.drop 1 |>.foldl PositiveNormalization.meetLists first
+  if meet.isEmpty then throw "declaration intersection has no representable clause"
+  return [← useRow meet]
 
 mutual
 /-- A rest's type: a pack parameter's row, or the pack of any number of
@@ -295,7 +454,8 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let uses := names.map fun n => (n, binderUse n (.arr sigTerms))
     if uses.any (fun (_, use) => use.pack && use.value) then return ← opaqueMember
     let packs := (uses.filter fun (_, use) => use.pack).map Prod.fst
-    let taken := freeColours (← get) (params.toList.flatten ++ seen.binders.map (fun p => p.2.row))
+    let taken := freeColours (← get) (← getThe SourceTypes.Table) (4 + nullaryCount ds)
+      (params.toList.flatten ++ seen.binders.map (fun p => p.2.row))
     match (List.range colourBudget).find? (fun c => !taken.contains c) with
     | none => opaqueMember
     | some c =>
@@ -304,9 +464,11 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
         paramRow s!"{n}#{k}@{spanKey}^{c}" (if packs.contains n then .arguments else .value)
       -- Bounds are read where the method is declared, outside its binders. A
       -- pack parameter's bound is an array or a tuple of required positions,
-      -- read as the argument lists it admits.
-      let bounded ← (bs.toList.zip rows).filterM fun (p : Json × Nat) => do
-        return (← field p.1 "bound") != Json.null
+      -- read as the argument lists it admits. A value binder the signatures
+      -- intersect with ground operands, directly or in a declaration it is an
+      -- argument of (`V & DepSafe` in `EagerCollection<K2, V2>`), is bounded
+      -- by them too: the method's instances stay below them, and the binder's
+      -- intersection with them is the binder.
       let packBound (b : Json) : Lowering (Option (List Nat)) := do
         match (b.getObjValAs? String "k").toOption with
         | some "array" =>
@@ -317,11 +479,22 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
           let required ← (← arr b "required").mapM (lowerType ds owner params seen)
           return some [← use (.pack ⟨required.toList, [], none, false⟩ [])]
         | _ => return none
-      let bounds? ← bounded.mapM fun (p : Json × Nat) => do
-        let b ← field p.1 "bound"
-        if packs.contains (← str p.1 "name") then
-          return (← packBound b).map (p.2, ·)
-        return some (p.2, ← lowerType ds owner params seen b)
+      let bounds? ← attempt ((bs.toList.zip (rows.zip names)).filterMapM fun (b, row, n) => do
+        let bound ← field b "bound"
+        if packs.contains n then
+          if bound == .null then return none
+          return some ((← packBound bound).map (row, ·))
+        let declared ← if bound == .null then pure [] else lowerType ds owner params seen bound
+        let meets := ((meetsOf ds (.binder n) (.arr sigTerms)).run' []).run
+        let meets ← (meets.mapM (lowerType ds owner params seen)).map (·.eraseDups)
+        let parts := (if bound == .null then [] else [declared]) ++ meets
+        if parts.isEmpty then return none
+        let ground := bound != .null && groundTerm bound
+        if ground || !meets.isEmpty then
+          let entry := (row, if ground then declared else [], meets)
+          modify fun m => { m with binders := entry :: m.binders.filter (·.1 != row) }
+        return some (some (row, ← if let [one] := parts then pure one else meetRow parts)))
+      let .ok bounds? := bounds? | return ← opaqueMember
       let some bounds := bounds?.mapM id | return ← opaqueMember
       let bindings := (names.zip rows).map fun (name, row) =>
         (name, if packs.contains name then BinderBinding.pack row else .value row)
@@ -329,7 +502,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       -- A method whose signatures cannot be lowered, as one whose unfolding
       -- keeps growing (`Promise<T>`'s `catch<R>` returns `Promise<T | R>`),
       -- stays opaque; the attempt leaves no rows behind.
-      let lowered ← SourceTypes.attempt (sigTerms.toList.mapM fun f => do
+      let lowered ← attempt (sigTerms.toList.mapM fun f => do
         CellClaims.fieldsExactly f ["k", "receiver", "params", "rest", "result", "span"]
         let recv ← lowerType ds owner params inner (← field f "receiver")
         let ps ← (← arr f "params").toList.mapM (lowerType ds owner params inner)
@@ -357,17 +530,16 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let arms ← parts.mapM (lowerType ds owner params seen)
     return arms.toList.flatten.eraseDups.mergeSort (· ≤ ·)
   | "intersection" =>
-    -- The positive meet of the operands' clauses: record operands on one
-    -- object, function operands as one overloaded callable.
-    let parts ← arr term "parts"
-    let rows ← parts.mapM fun part => do
-      let labels ← lowerType ds owner params seen part
-      let table ← get
-      return labels.flatMap (SourceTypes.graph table)
-    let some first := rows[0]? | throw "empty declaration intersection"
-    let meet := rows.toList.drop 1 |>.foldl PositiveNormalization.meetLists first
-    if meet.isEmpty then throw "declaration intersection has no representable clause"
-    return [← SourceTypes.useRow meet]
+    let parts := (← (← arr term "parts").mapM (lowerType ds owner params seen)).toList
+    -- A binder whose scheme bound has every other operand among its
+    -- conjuncts is below each of them, so the intersection is the binder.
+    let binders := (← get).binders
+    let within := parts.findSome? fun p => match p with
+      | [x] => (binders.find? (·.1 == x)).bind fun (_, _, meets) =>
+          if parts.all (fun q => q == [x] || meets.contains q) then some x else none
+      | _ => none
+    if let some x := within then return [x]
+    meetRow parts
   | "parameter" =>
     CellClaims.fieldsExactly term ["k", "index", "span"]
     let i ← (← field term "index").getNat?
@@ -393,13 +565,11 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
       else return [rowIndex ds i]
     let values ← args.mapM (lowerType ds owner params seen)
     let values ← lowerApplication ds i values seen
-    -- A recursive application at the same arguments is the row reserved for
-    -- it. At other arguments it is lowered again, as a generic method's
-    -- application at its own binders is (`Promise<R1ᵃ>` inside
-    -- `Promise<number>`), and the colours close the cycle; arguments that keep
-    -- growing would unfold without end, which the depth bound refuses.
-    if let some row := seen.reserved i values then return [row]
-    if (seen.declarations.filter (· == i)).length ≥ applicationDepth then
+    -- An application with methods is its row (`groundApplication`). Any
+    -- other is expanded inline, which a recursive declaration would do
+    -- without end: the depth bound refuses it.
+    if !mentionsSelf ds[i]!.expression &&
+        (seen.declarations.filter (· == i)).length ≥ applicationDepth then
       throw "recursive generic application needs memoized rows"
     groundApplication ds i values seen
   | "array" =>
@@ -539,9 +709,16 @@ private partial def lowerApplication (ds : Array Definition) (i : Nat)
     CellClaims.fieldsExactly p ["name", "span", "bound", "default"]
     let bound ← field p "bound"
     if bound != .null then
-      let actual := values[index]!
+      -- A binder of a generic method stands for an instance within its own
+      -- ground declared bound, so it establishes a parameter's bound through
+      -- that one (`K2 extends Json` in `Mapper<K, V, K2, V2>`).
+      let binders := (← get).binders
+      let actual := values[index]!.flatMap fun l =>
+        match binders.find? (·.1 == l) with
+        | some (_, declared@(_ :: _), _) => declared
+        | _ => [l]
       let upper ← lowerType ds i (values.toList.take index).toArray (seen.enter i) bound
-      let table ← get
+      let table ← getThe SourceTypes.Table
       let graph := SourceTypes.graph table
       let pool := CertificateProducer.reachablePool graph actual upper
       let name ← str p "name"
@@ -554,16 +731,24 @@ private partial def lowerApplication (ds : Array Definition) (i : Nat)
       | none => throw refusal
   return values
 
-/-- A ground application of a generic declaration. One whose equation has
-methods reserves its own row first, since the methods' receiver is that
-application, and fills it with the equation lowered at those arguments. Any
-other is its equation's labels, so `Id<boolean>` is exactly `[1, 2]`. -/
+/-- A ground application of a generic declaration. One given a row, as every
+application with methods is, is that row (`Memo.applications`). An application
+with methods not yet given one gets it before its equation is lowered, since
+the methods' receiver is that application, and the equation is lowered from
+that row afresh, whatever path reached it. Its arguments must stay within the
+argument budget. Any other application is its equation's labels, so
+`Id<boolean>` is exactly `[1, 2]`. -/
 private partial def groundApplication (ds : Array Definition) (i : Nat)
     (values : Array (List Nat)) (seen : Visit) : Lowering (List Nat) := do
+  let T ← getThe SourceTypes.Table
+  if let some row := (← get).row T i values then return [row]
   if mentionsSelf ds[i]!.expression then
-    let row ← modifyGet fun T => (T.length, T ++ RequestJson.rows [[]])
-    let rows ← lowerDefinitionRows ds i (values.push [row]) ((seen.enter i).reserve i values row)
-    modify fun T => T.set row rows
+    if (reach (← get) T (4 + nullaryCount ds) argumentBudget values.toList.flatten).length > argumentBudget then
+      throw "a recursive generic application whose arguments keep growing"
+    let row ← modifyGetThe SourceTypes.Table fun T => (T.length, T ++ RequestJson.rows [[]])
+    modify fun m => m.give T i values row
+    let rows ← lowerDefinitionRows ds i (values.push [row]) (Visit.enter {} i)
+    modifyThe SourceTypes.Table fun T => T.set row rows
     return [row]
   if ds[i]!.bases.isEmpty then
     lowerType ds i values (seen.enter i) ds[i]!.expression
@@ -586,12 +771,12 @@ private partial def lowerHead (ds : Array Definition) (owner : Nat)
     let values ← lowerApplication ds i values seen
     if mentionsSelf ds[i]!.expression then
       let labels ← groundApplication ds i values seen
-      let table ← get
+      let table ← getThe SourceTypes.Table
       return labels.flatMap (SourceTypes.graph table)
     lowerDefinitionRows ds i values (seen.enter i)
   | _ =>
     let labels ← lowerType ds owner params seen term
-    let table ← get
+    let table ← getThe SourceTypes.Table
     return labels.flatMap (SourceTypes.graph table)
 
 private partial def lowerDefinitionRows (ds : Array Definition) (i : Nat)
@@ -606,56 +791,75 @@ end
 
 /-- Fill the producer's empty reserved rows: each nullary declaration's, and
 each generic application's `(row, declaration position, argument types)`, with
-Lean's own lowering, so there is one lowering of every declaration. The filled
-applications are returned as reserved rows: a source annotation, or an
-instance, naming the same application at the same arguments is that row, not
-another copy of its equation. -/
+Lean's own lowering, so there is one lowering of every declaration. A reserved
+row is its application's from the start (`Memo.applications`): every lowering
+naming the application at the same arguments, a declaration's, a source
+annotation's or an instance's, is that row, not another copy of its
+equation. -/
 private def fillRows (ds : Array Definition) (candidate : SourceTypes.Table)
     (applications : List (Nat × Nat × List (List Nat)) := [])
     (arrays : List (Nat × Nat × Bool) := []) :
-    Except String (SourceTypes.Table × Visit) := do
+    Except String (SourceTypes.Table × Memo) := do
   if candidate.length < 4 + nullaryCount ds then throw "declaration graph rows are missing"
   for i in [:ds.size] do
     if ds[i]!.parameters.isEmpty && candidate[rowIndex ds i]! != RequestJson.Row.clauses [] then
       throw "producer supplied a declaration equation"
-  let mut table := candidate
-  for i in [:ds.size] do
-    if ds[i]!.parameters.isEmpty then
-      let (row, expanded) ← (lowerDefinitionRows ds i #[] ⟨[i], [], []⟩).run table
-      table := expanded.set (rowIndex ds i) row
-  -- An array row is the array shape over the store row the producer stated.
-  for (row, store, readonly) in arrays do
-    if row < 4 + nullaryCount ds || row ≥ table.length || table[row]! != RequestJson.Row.clauses [] then
-      throw "an array's reserved row is not an empty producer row"
-    if store ≥ table.length then throw "an array's store names no row"
-    table := table.set row (.clauses [SourceTypes.arrayClause store readonly])
-  -- Applications in row order: an argument names only earlier rows.
-  let mut known : Visit := {}
-  for (row, declaration, args) in applications.mergeSort (fun x y => x.1 ≤ y.1) do
-    if row < 4 + nullaryCount ds || row ≥ table.length || table[row]! != RequestJson.Row.clauses [] then
-      throw "an application's reserved row is not an empty producer row"
+  let reserved (row : Nat) : Bool :=
+    row ≥ 4 + nullaryCount ds && row < candidate.length && candidate[row]! == RequestJson.Row.clauses []
+  let applications := applications.mergeSort (fun x y => x.1 ≤ y.1)
+  for (row, declaration, args) in applications do
+    if !reserved row then throw "an application's reserved row is not an empty producer row"
     if declaration ≥ ds.size || ds[declaration]!.parameters.isEmpty then
       throw "an application names no generic declaration"
     if args.any (fun A => A.any (· ≥ row)) then
       throw "an application's arguments name a later row"
-    let i := declaration
-    let fill : Lowering (List (Clause (List Nat)) × Array (List Nat)) := do
-      let values ← lowerApplication ds i args.toArray ⟨[], [], []⟩
+  if (applications.map (·.1)).eraseDups.length != applications.length then
+    throw "a row is reserved for two applications"
+  let mut table := candidate
+  -- An array row is the array shape over the store row the producer stated.
+  for (row, store, readonly) in arrays do
+    if !reserved row || applications.any (·.1 == row) || table[row]! != RequestJson.Row.clauses [] then
+      throw "an array's reserved row is not an empty producer row"
+    if store ≥ table.length then throw "an array's store names no row"
+    table := table.set row (.clauses [SourceTypes.arrayClause store readonly])
+  -- A reserved application at all its arguments is that row from the start,
+  -- for the declarations' equations too.
+  let mut memo : Memo := { floor := 4 + nullaryCount ds }
+  for (row, i, args) in applications do
+    if args.length == ds[i]!.parameters.size && (memo.row table i args.toArray).isNone then
+      memo := memo.give table i args.toArray row
+  for i in [:ds.size] do
+    if ds[i]!.parameters.isEmpty then
+      let ((row, grown), expanded) ← ((lowerDefinitionRows ds i #[] { declarations := [i] }).run memo).run table
+      memo := grown
+      table := expanded.set (rowIndex ds i) row
+  -- Arguments are compared by the rows they name once those are filled.
+  memo := memo.rekey table
+  -- Applications in row order: an argument names only earlier rows.
+  for (row, i, args) in applications do
+    let fill : Lowering (List (Clause (List Nat))) := do
+      let values ← lowerApplication ds i args.toArray {}
+      let T ← getThe SourceTypes.Table
+      -- An application given another row, one whose omitted arguments are
+      -- defaults, is that row's clauses, if it has them.
+      let earlier := ((← get).row T i values).filter (· != row)
+      if let some (RequestJson.Row.clauses cs@(_ :: _)) := earlier.bind (T[·]?) then return cs
       if mentionsSelf ds[i]!.expression then
-        return (← lowerDefinitionRows ds i (values.push [row])
-          ((Visit.enter ⟨[], [], []⟩ i).reserve i values row), values)
+        if earlier.isNone && !(← get).applications.any (·.row == row) then
+          modify fun m => m.give T i values row
+        lowerDefinitionRows ds i (values.push [row]) (Visit.enter {} i)
       else
         let labels ← if ds[i]!.bases.isEmpty then
-            lowerType ds i values (Visit.enter ⟨[], [], []⟩ i) ds[i]!.expression
-          else (← lowerDefinitionRows ds i values (Visit.enter ⟨[], [], []⟩ i)).mapM use
-        let T : SourceTypes.Table ← get
-        return (← labels.flatMapM fun l => match T[l]? with
+            lowerType ds i values (Visit.enter {} i) ds[i]!.expression
+          else (← lowerDefinitionRows ds i values (Visit.enter {} i)).mapM use
+        let T ← getThe SourceTypes.Table
+        labels.flatMapM fun l => match T[l]? with
           | some (RequestJson.Row.clauses cs) => pure cs
-          | _ => throw "an application lowers to a row without clauses", values)
-    let ((filled, values), expanded) ← fill.run table
+          | _ => throw "an application lowers to a row without clauses"
+    let ((filled, grown), expanded) ← (fill.run memo).run table
+    memo := grown
     table := expanded.set row filled
-    known := known.reserve i values row
-  return (table, known)
+  return (table, memo)
 
 private def claimType (atoms : List Json) : Json :=
   Json.mkObj [("top", toJson false), ("atoms", toJson atoms)]
@@ -690,7 +894,7 @@ This is the one path for every declaration applied to a rigid argument. -/
 private partial def rigidClaim (ds : Array Definition) (owner : Nat) (env : Array Json)
     (seen : List Nat) (term : Json) : Lowering Json := do
   if !mentionsParameter term then
-    return graphClaim (← lowerType ds owner #[] ⟨seen, [], []⟩ term)
+    return graphClaim (← lowerType ds owner #[] { declarations := seen } term)
   match ← str term "k" with
   | "scheme" =>
     CellClaims.fieldsExactly term ["k", "binders", "signatures", "span"]
@@ -798,9 +1002,9 @@ private def sourceObject (j : Json) : Except String Unit := do
 are the ones declaration bodies use; a reference resolves to the declaration
 TypeScript named, by identity. A ground application is its graph labels, and
 one over an enclosing function's binder is its expanded equation. -/
-private partial def annotationClaim (ds : Array Definition) (known : Visit) (term : Json)
+private partial def annotationClaim (ds : Array Definition) (term : Json)
     (bound : List (String × Json) := []) : Lowering Json := do
-  let recur := fun t => annotationClaim ds known t bound
+  let recur := fun t => annotationClaim ds t bound
   sourceObject term
   match ← str term "k" with
   | "scheme" =>
@@ -895,7 +1099,8 @@ private partial def annotationClaim (ds : Array Definition) (known : Visit) (ter
     | none => return claimType [Json.mkObj [("a", toJson "param"), ("name", ← field term "name")]]
   | "reference" =>
     let index ← referenceIndex ds term
-    let args ← (← arr term "args").mapM recur
+    let terms ← arr term "args"
+    let args ← terms.mapM recur
     -- An application over a rigid binder is its expanded equation; a ground
     -- one is its graph labels, so `Id<boolean>` is exactly `[1, 2]`, the
     -- type a producer claims, not a new row with the same meaning.
@@ -903,12 +1108,16 @@ private partial def annotationClaim (ds : Array Definition) (known : Visit) (ter
     if ds[index]!.parameters.isEmpty then
       if !args.isEmpty then throw "type application has wrong arity"
       return graphClaim [rowIndex ds index]
-    let values ← args.mapM Fragment.translate
-    let values ← lowerApplication ds index values known
-    -- An application a producer reserved a row for is that row, which Lean
-    -- filled from the same equation at the same arguments.
-    if let some row := known.reserved index values then return graphClaim [row]
-    let labels ← groundApplication ds index values known
+    -- A ground argument is lowered as a declaration's own terms are, so the
+    -- application is the one they name; an argument an instantiation fixes
+    -- is read from its claim.
+    let values ← (terms.zip args).mapM fun (t, a) =>
+      if mentionsKind "binder" t then (Fragment.translate a : SourceTypes.Lowering _)
+      else lowerType ds ds.size #[] {} t
+    let values ← lowerApplication ds index values {}
+    -- An application given a row, a producer's reserved one among them, is
+    -- that row, which Lean filled from the same equation at the same arguments.
+    let labels ← groundApplication ds index values {}
     if labels.isEmpty then throw "generic application has no inhabited graph clause"
     return graphClaim labels
   | k => throw s!"declaration syntax '{k}' in a source annotation"
@@ -918,19 +1127,19 @@ private def annotationFields : List String :=
   ["annot", "functionType", "bagType", "type", "result", "bound", "retType"]
 
 /-- Every annotation of the function tree in claim form. -/
-private partial def rewrite (ds : Array Definition) (known : Visit) (j : Json) : Lowering Json := do
+private partial def rewrite (ds : Array Definition) (j : Json) : Lowering Json := do
   match j with
-  | .arr values => return .arr (← values.mapM (rewrite ds known))
+  | .arr values => return .arr (← values.mapM (rewrite ds))
   | .obj fields =>
     sourceObject j
     let pairs ← fields.toArray.mapM fun (name, value) => do
       if annotationFields.contains name && value != .null then
-        return (name, ← annotationClaim ds known value)
+        return (name, ← annotationClaim ds value)
       -- A method call's explicit type arguments: a list of annotations.
       if name == "typeArgs" then
         let .arr values := value | throw "type arguments are a list"
-        return (name, .arr (← values.mapM (annotationClaim ds known)))
-      return (name, ← rewrite ds known value)
+        return (name, .arr (← values.mapM (annotationClaim ds)))
+      return (name, ← rewrite ds value)
     return Json.mkObj pairs.toList
   | _ => return j
 
@@ -972,18 +1181,18 @@ def prepare (ast : Json) (candidate : SourceTypes.Table)
     return (name, i)
   if (roots.toList.map (·.1)).eraseDups.length != roots.size then
     throw "duplicate declaration root name"
-  let (types, known) ← fillRows ds candidate applications arrays
+  let (types, memo) ← fillRows ds candidate applications arrays
   -- Generic module functions, read from their source terms before the tree is
   -- converted.
   let callable (params : List Json) (rest : Option Json) (result : Json) (bound : List (String × Json)) :
       Lowering Json := do
     let top := Json.mkObj [("top", toJson true), ("atoms", toJson ([] : List Json))]
     return claimType [Json.mkObj ([("a", toJson "function"), ("this", top),
-      ("params", toJson (← params.mapM (annotationClaim ds known · bound)))] ++
+      ("params", toJson (← params.mapM (annotationClaim ds · bound)))] ++
       (← match rest with
-        | some e => do pure [("rest", ← annotationClaim ds known e bound)]
+        | some e => do pure [("rest", ← annotationClaim ds e bound)]
         | none => pure []) ++
-      [("result", ← annotationClaim ds known result bound),
+      [("result", ← annotationClaim ds result bound),
        ("construct", toJson "unknown"), ("array", toJson "unknown")])]
   let genericFunctions ← (← arr ast "functions").toList.filterMapM fun f => do
     let tps ← arr f "typeParams"
@@ -1005,17 +1214,18 @@ def prepare (ast : Json) (candidate : SourceTypes.Table)
     let instantiate (σ : List (String × Json)) : Lowering (Json × List (String × Option Json)) := do
       let c ← callable fixed rest result σ
       let bounds ← binders.mapM fun (n, b) => do
-        return (n, ← if b == .null then pure none else some <$> annotationClaim ds known b σ)
+        return (n, ← if b == .null then pure none else some <$> annotationClaim ds b σ)
       return (c, bounds)
-    return some (Instantiable.mk name pos (binders.map Prod.fst) instantiate)
-  let (functions, types) ← (rewrite ds known (← field ast "functions")).run types
-  let (init, types) ← (rewrite ds known (← field ast "init")).run types
+    return some (name, pos, binders.map Prod.fst, instantiate)
+  let ((functions, memo), types) ← ((rewrite ds (← field ast "functions")).run memo).run types
+  let ((init, memo), types) ← ((rewrite ds (← field ast "init")).run memo).run types
   -- An imported value, at the type its declaration states: an assumption,
   -- read in claim form like an annotation. A generic one is instantiated at
   -- each call instead.
   let mut values : List (String × Span × Json) := []
   let mut generics := genericFunctions
   let mut types := types
+  let mut memo := memo
   for v in ← arr document "values" do
     CellClaims.fieldsExactly v ["binding", "declaration", "construct", "typeParams", "type"]
     let binding ← field v "binding"
@@ -1028,20 +1238,24 @@ def prepare (ast : Json) (candidate : SourceTypes.Table)
       CellClaims.fieldsExactly p ["name", "bound"]
       return (← str p "name", ← field p "bound")
     if binders.isEmpty then
-      let (claim, grown) ← (annotationClaim ds known ty).run types
+      let ((claim, remembered), grown) ← ((annotationClaim ds ty).run memo).run types
+      memo := remembered
       types := grown
       values := values ++ [(name, span, claim)]
     else
       let instantiate (σ : List (String × Json)) : Lowering (Json × List (String × Option Json)) := do
-        let c ← annotationClaim ds known ty σ
+        let c ← annotationClaim ds ty σ
         let bounds ← binders.mapM fun (n, b) => do
-          return (n, ← if b == .null then pure none else some <$> annotationClaim ds known b σ)
+          return (n, ← if b == .null then pure none else some <$> annotationClaim ds b σ)
         return (c, bounds)
-      generics := generics ++ [Instantiable.mk name span (binders.map Prod.fst) instantiate]
+      generics := generics ++ [(name, span, binders.map Prod.fst, instantiate)]
   let empty := Json.mkObj [("roots", toJson ([] : List Json)),
     ("definitions", toJson ([] : List Json)), ("values", toJson ([] : List Json)),
     ("symbols", toJson ([] : List Json))]
   let ast := ast.setObjVal! "declarations" empty
-  return ((ast.setObjVal! "functions" functions).setObjVal! "init" init, types, values, generics)
+  -- An instance is lowered later, against the memo as the module left it.
+  let instances := generics.map fun (name, pos, binders, instantiate) =>
+    Instantiable.mk name pos binders fun σ => (instantiate σ).run' memo
+  return ((ast.setObjVal! "functions" functions).setObjVal! "init" init, types, values, instances)
 
 end Verification.Model.DeclarationGraph

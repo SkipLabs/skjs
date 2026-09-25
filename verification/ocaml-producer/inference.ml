@@ -138,8 +138,10 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
       (match open_ left,open_ right with
        | Some l,Some r when l<>left || r<>right -> constrain l r
        | _ -> ())
-      (* A construct signature: parameters contravariant, instance covariant. *)
-      | Atoms [Ctors [a]],Atoms [Ctors [e]] when a.quantified=[] && e.quantified=[] ->
+      (* A construct signature: parameters contravariant, instance covariant.
+         A class's own signature is its first; the others it is offered give
+         an interface's instance, which fixes no binder the own one does not. *)
+      | Atoms [Ctors (a::_)],Atoms [Ctors [e]] when a.quantified=[] && e.quantified=[] ->
       List.iteri (fun i p -> match List.nth_opt e.params i with
         | Some q -> constrain q p | None -> ()) a.params;
       constrain a.result e.result
