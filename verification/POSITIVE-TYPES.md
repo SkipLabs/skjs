@@ -520,11 +520,28 @@ equal lengths (`Domains`). Receivers of two members are not compared: both
 are the host. Variadic member signatures are covered likewise, the target's
 extra fixed parameters taken into the source's rest.
 
-**Arrays and packs.** A `list` target contract is covered by a source
-contract with as many required and optional positions, each position within
-the target's, and equivalent to it when the target is writable; a writable
-target needs a writable source, so no location is retyped. Mutable arrays are
-therefore invariant.
+**Arrays and packs.** A writable `list` target contract is covered by a
+writable source contract with as many required and optional positions, each
+position equivalent to the target's (`CoversShape`): no location is retyped,
+so mutable arrays are invariant. A readonly target only reads each element
+present at its position's type, so it is covered as a pack is, below
+(`CoversTuple`): an element's location has the contract of its source
+position, which reads within the target position's type, and the list's
+length lies within the target's bounds:
+
+$$
+\frac{\tau'\ \text{writable}\quad\tau\ \text{writable}\quad|\vec R|=|\vec R'|\quad|\vec O|=|\vec O'|\quad
+      \forall i.\;\Delta^{\pm}(\mathsf{pos}_\tau(i),\mathsf{pos}_{\tau'}(i))}
+     {\Delta\vdash\tau\sqsubseteq_{\mathsf{list}}\tau'}
+\qquad
+\frac{\tau'\ \text{readonly}\quad\Delta\vdash\tau\sqsubseteq_{\mathsf{pack}}\tau'}
+     {\Delta\vdash\tau\sqsubseteq_{\mathsf{list}}\tau'}
+$$
+
+So `[number, number]` is a `readonly (Json | null)[]`, and meets `Json`
+(`sum-tuple-value.ts`, `tuple-readonly-array.ts`), while it is not a
+`number[]`, which TypeScript accepts though a write through it could append
+past the tuple (`invalid-tuple-array.ts`).
 
 A pack contract $\tau$ is covered by $\tau'$ when $\tau'$ admits every list
 $\tau$ admits: the target requires no more positions; a target without a rest bounds the source's length;
@@ -549,8 +566,8 @@ So `[number, string]` is within `(number | string)[]` and `[number]` within
 `[number, string?]`, while `number[]` is within no bounded tuple.
 
 Lean: `CoversFields`, `CoversViews`, `optionalSources`, `CoversOptional`, `CoversKeys`, `covers_keys_sound`, `CoversMethods`, `CoversBounds`,
-`CoversSig`, `CoversByFunction`, `CoversTuple`, `CoversPack`,
-`covers_arguments_sound`.
+`CoversSig`, `CoversByFunction`, `CoversShape`, `CoversTuple`, `CoversPack`,
+`covers_readonly_sound`, `covers_tuple_sound`, `covers_arguments_sound`.
 
 ### Function and class coverage
 

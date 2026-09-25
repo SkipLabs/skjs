@@ -721,7 +721,7 @@ def CoversRest (R : List ι → List ι → Prop) (readonly : Bool) : Option (Li
 /-- Same-shape tuple contracts compare element read types covariantly for a
 readonly target. A writable target needs a writable source and equivalent
 element contracts; no location is retyped. -/
-def CoversTuple (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Prop :=
+def CoversShape (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Prop :=
   p.required.length = q.required.length ∧ p.optional.length = q.optional.length ∧
   (∀ x ∈ p.required.zip q.required, R x.1 x.2 ∧ (q.readonly = false → R x.2 x.1)) ∧
   (∀ x ∈ p.optional.zip q.optional, R x.1 x.2 ∧ (q.readonly = false → R x.2 x.1)) ∧
@@ -824,6 +824,15 @@ def CoversPack (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Prop
   ∀ i ∈ List.range (max (p.required.length + p.optional.length)
       (q.required.length + q.optional.length) + 1),
     PositionCovers R (p.position i) (q.position i)
+
+/-- A tuple contract within another. A writable target needs a writable source
+of the same shape with equivalent element contracts (`CoversShape`): no
+location is retyped. A readonly target only reads the elements present, each
+at its position, so, as for an argument pack, the source's length bounds lie
+within the target's and each position's operand is within the target's
+(`CoversPack`): `[number, number]` is a `readonly (number | null)[]`. -/
+def CoversTuple (R : List ι → List ι → Prop) (p q : Tuple (List ι)) : Prop :=
+  if q.readonly then CoversPack R p q else CoversShape R p q
 
 /-- Coverage has one definition for both derivations and certificate checking.
 Only fixed-arrow coverage needs evidence; the remaining conditions are finite
@@ -1290,10 +1299,10 @@ theorem covers_bags_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : Li
     obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hB
     exact ⟨flds, code, rfl, hval, key b (List.mem_cons_of_mem c hb)⟩⟩
 
-/-- A covered tuple contract holds of the same store: every position's location
-carries a contract both families identify. -/
-theorem covers_tuple_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
-    {p q : Tuple (List ι)} (hc : CoversTuple R p q) (n : Nat)
+/-- A same-shape covered tuple contract holds of the same store: every
+position's location carries a contract both families identify. -/
+theorem covers_shape_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
+    {p q : Tuple (List ι)} (hc : CoversShape R p q) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j)
     (W : WorldT n) (v : Val) (hv : listT (tupleFams (mixedValues G η) p) n W v) :
     listT (tupleFams (mixedValues G η) q) n W v := by
@@ -1331,6 +1340,107 @@ theorem covers_tuple_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : L
       have hx : R e y ∧ (q.readonly = false → R y e) := by simpa [he, hq, CoversRest] using hrestR
       exact ⟨mixedValues G η y, c, ⟨y, rfl, rfl⟩, hw,
         fun j hj W' u => (hag j hj W' u).weaken hmode (hr j hj _ _ hx.1 W' u) (fun hro => hr j hj _ _ (hx.2 hro) W' u)⟩
+
+/-- A readonly tuple contract covered position by position holds of the same
+store: each element present is at a position of the source, whose contract
+reads within the target's position, and the target only reads. -/
+theorem covers_readonly_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
+    {p q : Tuple (List ι)} (hro : q.readonly = true) (hc : CoversPack R p q) (n : Nat)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j)
+    (W : WorldT n) (v : Val) (hv : listT (tupleFams (mixedValues G η) p) n W v) :
+    listT (tupleFams (mixedValues G η) q) n W v := by
+  obtain ⟨hreqLen, hrestB, hpos⟩ := hc
+  obtain ⟨ls, rfl, hd, hlen, hbound, hreq, hopt, hrest⟩ := hv
+  simp only [listT, tupleFams, List.length_map, List.getElem?_map, Option.map_eq_none_iff,
+    Option.map_eq_some_iff] at hlen hbound hreq hopt hrest ⊢
+  -- Each element present has a location whose contract its source position
+  -- identifies.
+  have src : ∀ i l, ls[i]? = some (some l) → ∃ a c, p.position i = some a ∧ lookup W l = some c ∧
+      ∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val),
+        SlotContract p.readonly (c j hj W' u) (mixedValues G η a j W' u) := by
+    intro i l hl
+    by_cases h1 : i < p.required.length
+    · obtain ⟨x, hx⟩ : ∃ x, p.required[i]? = some x := ⟨_, List.getElem?_eq_getElem h1⟩
+      obtain ⟨l', c, hl', hw, hag⟩ := hreq i _ ⟨x, hx, rfl⟩
+      rw [hl] at hl'
+      cases hl'
+      exact ⟨x, c, by simp [Tuple.position, hx], hw, hag⟩
+    · by_cases h2 : i < p.required.length + p.optional.length
+      · obtain ⟨x, hx⟩ : ∃ x, p.optional[i - p.required.length]? = some x :=
+          ⟨_, List.getElem?_eq_getElem (by omega)⟩
+        obtain ⟨c, hw, hag⟩ := hopt (i - p.required.length) _ l ⟨x, hx, rfl⟩
+          (by rw [show p.required.length + (i - p.required.length) = i by omega]; exact hl)
+        refine ⟨x, c, ?_, hw, hag⟩
+        simp [Tuple.position, List.getElem?_eq_none (show p.required.length ≤ i by omega), hx]
+      · obtain ⟨E, c, ⟨e, he, rfl⟩, hw, hag⟩ := hrest i l (by omega) hl
+        exact ⟨e, c, by rw [Tuple.position_beyond (by omega), he], hw, hag⟩
+  -- Each source position is within the target's at that index.
+  have cov : ∀ i a, p.position i = some a → ∃ b, q.position i = some b ∧ R a b := by
+    intro i a ha
+    have hcov : PositionCovers R (p.position i) (q.position i) := by
+      by_cases hiN : i ≤ max (p.required.length + p.optional.length)
+          (q.required.length + q.optional.length)
+      · exact hpos i (List.mem_range.mpr (by omega))
+      · have h := hpos _ (List.mem_range.mpr (Nat.lt_succ_self _))
+        have e1 : p.position i = p.position (max (p.required.length + p.optional.length)
+            (q.required.length + q.optional.length)) := by
+          rw [Tuple.position_beyond (by omega), Tuple.position_beyond (by omega)]
+        have e2 : q.position i = q.position (max (p.required.length + p.optional.length)
+            (q.required.length + q.optional.length)) := by
+          rw [Tuple.position_beyond (by omega), Tuple.position_beyond (by omega)]
+        rwa [e1, e2]
+    rw [ha] at hcov
+    cases hq : q.position i with
+    | none => rw [hq] at hcov; exact hcov.elim
+    | some b => rw [hq] at hcov; exact ⟨b, rfl, hcov⟩
+  -- A readonly target's contract only reads.
+  have slot : ∀ {c : Ctr n} {a b : List ι}, R a b →
+      (∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val),
+        SlotContract p.readonly (c j hj W' u) (mixedValues G η a j W' u)) →
+      ∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val),
+        SlotContract q.readonly (c j hj W' u) (mixedValues G η b j W' u) := by
+    intro c a b hab hag j hj W' u
+    exact (hag j hj W' u).weaken (fun h => by simp [hro] at h) (hr j hj _ _ hab W' u)
+      (fun h => by simp [hro] at h)
+  refine ⟨ls, rfl, hd, by omega, ?_, ?_, ?_, ?_⟩
+  · intro hn
+    obtain ⟨hp, hle⟩ := hrestB hn
+    have := hbound hp
+    omega
+  · rintro i A ⟨y, hy, rfl⟩
+    have hi : i < q.required.length := (List.getElem?_eq_some_iff.mp hy).1
+    obtain ⟨x, hx⟩ : ∃ x, p.required[i]? = some x := ⟨_, List.getElem?_eq_getElem (by omega)⟩
+    obtain ⟨l, -, hl, -, -⟩ := hreq i _ ⟨x, hx, rfl⟩
+    obtain ⟨a, c, ha, hw, hag⟩ := src i l hl
+    obtain ⟨b, hb, hab⟩ := cov i a ha
+    have hy' : q.position i = some y := by simp [Tuple.position, hy]
+    rw [hy'] at hb
+    cases hb
+    exact ⟨l, c, hl, hw, slot hab hag⟩
+  · rintro i A l ⟨y, hy, rfl⟩ hl
+    obtain ⟨a, c, ha, hw, hag⟩ := src _ l hl
+    obtain ⟨b, hb, hab⟩ := cov _ a ha
+    have hy' : q.position (q.required.length + i) = some y := by
+      simp [Tuple.position, List.getElem?_eq_none (show q.required.length ≤ q.required.length + i by omega), hy]
+    rw [hy'] at hb
+    cases hb
+    exact ⟨c, hw, slot hab hag⟩
+  · intro i l hi hl
+    obtain ⟨a, c, ha, hw, hag⟩ := src i l hl
+    obtain ⟨b, hb, hab⟩ := cov i a ha
+    rw [Tuple.position_beyond (by omega)] at hb
+    exact ⟨mixedValues G η b, c, ⟨b, hb, rfl⟩, hw, slot hab hag⟩
+
+/-- A covered tuple contract holds of the same store. -/
+theorem covers_tuple_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
+    {p q : Tuple (List ι)} (hc : CoversTuple R p q) (n : Nat)
+    (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j)
+    (W : WorldT n) (v : Val) (hv : listT (tupleFams (mixedValues G η) p) n W v) :
+    listT (tupleFams (mixedValues G η) q) n W v := by
+  unfold CoversTuple at hc
+  cases hq : q.readonly with
+  | true => rw [hq] at hc; exact covers_readonly_sound hq hc n hr W v hv
+  | false => rw [hq] at hc; exact covers_shape_sound hc n hr W v hv
 
 theorem covers_lists_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
     {a c : Tuple (List ι)} {bs ds : List (Tuple (List ι))}

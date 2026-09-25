@@ -132,12 +132,16 @@ instance {R : List ι → List ι → Prop} [DecidableRel R] (a b : Option (List
   cases a <;> cases b <;> simp only [CoversRest] <;> infer_instance
 
 instance {R : List ι → List ι → Prop} [DecidableRel R] (p q : Tuple (List ι)) :
-    Decidable (CoversTuple R p q) := by
-  unfold CoversTuple; infer_instance
+    Decidable (CoversShape R p q) := by
+  unfold CoversShape; infer_instance
 
 instance {R : List ι → List ι → Prop} [DecidableRel R] (p q : Tuple (List ι)) :
     Decidable (CoversPack R p q) := by
   unfold CoversPack; infer_instance
+
+instance {R : List ι → List ι → Prop} [DecidableRel R] (p q : Tuple (List ι)) :
+    Decidable (CoversTuple R p q) := by
+  unfold CoversTuple; infer_instance
 
 instance {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
     (p : List (List ι) × List ι) (t : List (List ι) × List ι × List ι) :

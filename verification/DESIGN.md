@@ -1845,8 +1845,13 @@ whose instances lie within $\beta(p)$, so below every $D\in M_p$. The graph has
 no intersection of a parameter row with a type; bounding the binder is the
 sound way to keep such a method rather than make it opaque. It is a
 strengthening TypeScript does not make: `map` is not instantiated at a value
-type outside `DepSafe`, such as a plain JSON object, which TypeScript accepts
-(`invalid-sum-map-object.ts`, a refusal of a safe program).
+type outside `DepSafe`, such as a plain JSON array, which TypeScript accepts
+(`invalid-sum-map-object.ts`, a refusal of a safe program). sum.ts's
+`AddIndex` maps to `[number, number]`, not `DepSafe` either, so the full
+example stops at `.map(AddIndex, 0)`. Its exact reading needs the meet of a
+binder with a ground type in the graph: a scheme binder defined as
+$p\sqcap D$, instantiated at the meet of $p$'s instance with $D$ and checked
+so at `Sub.inst`, which neither a parameter row nor a clause can state today.
 
 **Explicit type arguments.** A method call may state its instance,
 `o.m<A₁,…,Aₖ>(…)`. The arguments are an annotation, so a requirement: the
@@ -2289,7 +2294,10 @@ a choice.
   where its trusted specification says so; no member is assumed to be.
 - *Mutable arrays are invariant.* `Dog[]` is not an `Animal[]`; the accepted
   language asks for `readonly Animal[]` where only reads happen. This follows
-  from the store semantics and is not relaxed by inference.
+  from the store semantics and is not relaxed by inference. A readonly target
+  only reads, so it takes any list whose elements present are within its
+  positions: a tuple `[number, number]` is a `readonly (Json | null)[]`, as
+  sum.ts's `AddIndex` needs for `V2 extends Json`, but not a `number[]`.
 - *An explicit `this` parameter* in a member (`m(this: Window)`) is
   receiver-quantified over its declared type, which implies the host-relative
   member.
