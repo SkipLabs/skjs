@@ -1638,6 +1638,71 @@ list, so they denote the same type. Lowering the application again would add
 another copy of the equation, a thousand rows for `Promise`, which every
 comparison above would then relate by certificate.
 
+**Global values.** A value name the module neither imports nor binds is a
+global when TypeScript binds it to a global variable, such as Node's
+`declare var process: NodeJS.Process`. A name the module binds anywhere, as a
+parameter, variable, function or class, is not looked up, so a shadowed
+global stays unbound. Its contract is the project's own type
+packages, as the program's build has them: the upstream fixture names
+`types: ["node"]`, as Skip's shared tsconfig does, and installs `@types/node`
+at the version Skip's lock pins (`upstream/package.json`; `test.mts` pins the
+two files `process` is read from). No overlay restates them. Like an import, a
+global joins the module's scope as an assumption the result is relative to,
+and the declaration document lists it among the values, with the specifier
+`global`.
+
+A runtime's global interface is large, and most of it reaches declarations
+the fragment cannot state (`NodeJS.Process` has about a hundred members), so a
+global is read only at the members the module's references select
+(`selectGlobal` in `declaration-graph.mts`):
+
+- Every reference reads a member by name, `process.m`. Any other use, such as
+  `const p = process`, is refused at the source gate.
+- TypeScript resolves each name on the interface the variable is annotated
+  with, through its merged declarations and its heritage, a namespace-qualified
+  annotation included.
+- A method is the overloads TypeScript resolves the module's calls to, and its
+  reference must be called: methods are host-relative. A `this` result is the
+  selection itself. A generic, optional or modified method is refused.
+- A property is its signature as declared, read as any declaration's is
+  (`process.env` is `ProcessEnv`: a writable string index from `Dict<string>`
+  beside the optional field `TZ`).
+- A member declared in a generic base interface is refused, since reading it
+  would bind that base's parameters.
+
+The selection is a definition of its own, keyed by the variable's first
+declaration, and the global's type is a reference to it. With $I$ the
+annotated interface, $M$ the names the module's references read and $O_m$ the
+overloads TypeScript resolves the calls of method $m$ to:
+
+$$
+\frac{x\ \text{a global variable annotated}\ I\qquad
+      M=\{m\mid x.m\ \text{occurs}\}\qquad
+      \text{every occurrence of}\ x\ \text{is some}\ x.m\qquad
+      O_m\subseteq\mathsf{overloads}_I(m)}
+     {\Gamma(x)=\llbracket\mathsf{sel}_{M,O}(I)\rrbracket}\ \textsc{global}
+\qquad
+\llbracket I\rrbracket\subseteq\llbracket\mathsf{sel}_{M,O}(I)\rrbracket .
+$$
+
+The inclusion is why the rule assumes no more than the declaration does: a
+record says nothing of the keys it does not name; a method member meeting every
+overload of $I$ meets the overloads in $O_m$; a method's receiver is its host
+([Method members are host-relative](#method-members-are-host-relative)), so
+leaving members out narrows no receiver; and a `this` result is the host, which
+is in $\llbracket I\rrbracket$. Which overloads TypeScript picks decides only
+how weak the assumption is: Lean checks each call against the selected
+overloads, with the declarations' `any` read as `unknown`. So
+`on(event: string | symbol, listener: (...args: any[]) => void): this`, the
+overload a `string` event resolves to, calls its listener with unknown
+arguments, and a `(code: number) => undefined` listener, which TypeScript
+accepts through `any`, is refused (`invalid-sum-process-listener.ts`). A
+literal event such as `"SIGHUP"` resolves to `on(event: Signals, listener:
+SignalsListener): this`, whose listener takes the signal's name
+(`sum-process.ts`). The project's type packages and TypeScript's member and
+overload resolution join the trusted front end; the selection itself adds no
+meaning Lean does not check.
+
 **Generic methods.** A declaration's generic method `m<U>(...)` lowers to a
 scheme row whose binders are parameter rows. Its signatures mention the
 declaration's applications at its own binders (`Promise<T>`'s `then<R1>`

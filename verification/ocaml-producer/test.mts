@@ -154,6 +154,18 @@ for (const [file, expected] of [
   const jsonModuleSha = upstreamSha("skiplang/skjson/ts/binding/src/index.ts");
   assert.equal(jsonModuleSha,
     "3cdd38bb4b6d394133ee922bccb6eff50839740b204c259edb17c19060bf9021");
+  // Node's declarations, as Skip's build has them: `@types/node` at the
+  // version Skip's lock pins at the snapshot's commit (`upstream/package.json`,
+  // installed by `npm ci --prefix verification/ocaml-producer/upstream`).
+  // `process` and the members sum.ts reads are declared in these two files.
+  const nodeTypes: unknown = JSON.parse(readFileSync(resolve(here,
+    "upstream/node_modules/@types/node/package.json"), "utf8"));
+  assert.ok(nodeTypes && typeof nodeTypes === "object" && "version" in nodeTypes &&
+    nodeTypes.version === "22.10.7", "run `npm ci --prefix verification/ocaml-producer/upstream`");
+  assert.equal(upstreamSha("node_modules/@types/node/globals.d.ts"),
+    "ba97261afafe85aafe76d988e65e531da8e8cf791c49caf0531f5dd1689bd91b");
+  assert.equal(upstreamSha("node_modules/@types/node/process.d.ts"),
+    "42aaa94addeed66a04b61e433c14e829c43d1efd653cf2fda480c5fb3d722ed8");
   // Json reaches the client through the core package's `paths` entry, its
   // reexports and the workspace symlink; TypeScript follows all three.
   const jsonPath = resolve(here, "examples/recursive-json.ts");

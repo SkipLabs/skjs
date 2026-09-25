@@ -10,7 +10,7 @@ import { API, DiagnosticCategory, SymbolFlags, type Checker, type Program } from
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
-import { classInstance, members, optionalTerm, signature, typeTerm, type TermScope } from "./type-term.mts";
+import { classInstance, members, optionalTerm, signature, signatures, typeTerm, type TermScope } from "./type-term.mts";
 import { arrayPrototype, overlay, type OverlayEntry } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule } from "./intrinsics.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
@@ -53,6 +53,10 @@ function withProject<T>(file: string, tsconfigPath: string | undefined,
       throw new DeclarationError([0, 0], `TypeScript did not load a strict tsconfig for ${file}`);
     const client = project.program.getSourceFile(file);
     if (!client) throw new DeclarationError([0, 0], `TypeScript did not load ${file}`);
+    // The project itself must load: a type package it names, such as
+    // `types: ["node"]`, that is not installed leaves its globals undeclared.
+    const broken = project.program.getProgramDiagnostics().find(d => d.category === DiagnosticCategory.Error);
+    if (broken) throw new DeclarationError([0, 0], `TypeScript reports an error in the project: ${broken.text}`);
     return use(project.checker, client, dirname(project.configFileName), project.program);
   } finally {
     api.close();
@@ -170,6 +174,11 @@ export function collectDeclarations(file: string, options: {
    * stand for them (`intrinsics.mts`) join its values, located at the first
    * such construct. */
   intrinsics?: Span;
+  /** The client's value references to names it neither imports nor binds:
+   * each that TypeScript binds to a global variable, such as Node's
+   * `process`, joins its values, read at the members those references
+   * select (`selectGlobal`). The first reference locates it. */
+  globalValues?: readonly Span[];
 } = {}): DeclarationDocument {
   const clientFile = resolve(file);
   return withProject(clientFile, options.tsconfigPath, (checker, client, root, program) => {
@@ -451,6 +460,40 @@ export function collectDeclarations(file: string, options: {
         throw new DeclarationError(at, error instanceof Error ? error.message : String(error));
       }
     }
+    // Global variables the client reads, such as Node's `process` (DESIGN.md,
+    // "Global values"): each joins the values like an import, at a definition
+    // of its own, keyed by the variable's declaration, that holds only the
+    // members the client's references select.
+    const selections: TypeDefinition[] = [];
+    const groups = new Map<number, Identifier[]>();
+    for (const span of options.globalValues ?? []) {
+      const identifier = identifierAt(client, span);
+      if (!identifier) throw new DeclarationError(span, "TypeScript global value reference missing");
+      const symbol = checker.getSymbolAtLocation(identifier);
+      if (!symbol || symbol.flags & SymbolFlags.Alias || checker.isUnknownSymbol(symbol) ||
+          checker.isUndefinedSymbol(symbol) || !symbol.declarations.length) continue;
+      const nodes = symbol.declarations.map(d => d.resolve());
+      if (nodes.some(n => !n || n.getSourceFile().fileName === client.fileName)) continue;
+      const group = groups.get(symbol.id);
+      if (group) group.push(identifier);
+      else groups.set(symbol.id, [identifier]);
+    }
+    for (const uses of groups.values()) {
+      const [first] = uses;
+      if (!first) continue;
+      const at: Span = [first.getStart(client), first.end];
+      try {
+        const selection = selectGlobal(checker, uses, { lookup, identityOf: idOf, clean, valueScope, partners });
+        selections.push(selection);
+        values.push({ binding: { local: first.text, imported: first.text, specifier: globalSpecifier, span: at },
+          declaration: selection.declaration, construct: false, typeParams: [],
+          type: { k: "reference", reference: { name: first.text, span: at, arguments: [],
+            target: selection.declaration }, args: [], span: at } });
+      } catch (error) {
+        if (error instanceof DeclarationError) throw error;
+        throw new DeclarationError(at, error instanceof Error ? error.message : String(error));
+      }
+    }
     const seen = new Set<string>();
     const definitions: TypeDefinition[] = [];
     for (const { root, node: start } of roots) {
@@ -469,10 +512,131 @@ export function collectDeclarations(file: string, options: {
           error instanceof Error ? error.message : String(error));
       }
     }
+    definitions.push(...selections);
     // First, so its row follows the four fixed ones in every table.
     if (arrayProto) definitions.unshift(arrayProto);
     return { roots: roots.map(r => r.root), definitions, values, symbols };
   });
+}
+
+/** The specifier of a global value's binding: no import names it. */
+export const globalSpecifier = "global";
+
+type SelectionContext = {
+  lookup: (identifier: Identifier, what: string) => TypeDeclaration;
+  identityOf: (file: SourceFile) => string;
+  clean: (node: Node, what: string) => void;
+  valueScope: (node: Node, what: string) => TermScope;
+  partners: ReadonlyMap<TypeDeclaration, readonly TypeDeclaration[]>;
+};
+
+/**
+ * A global variable, such as Node's `process`, read at the members the
+ * client's references `uses` select (DESIGN.md, "Global values"). Every
+ * reference must read a member by name, `process.m`; TypeScript resolves the
+ * member on the interface the variable is annotated with, through its
+ * heritage and merged declarations. The definition, keyed by the variable's
+ * first declaration, is an object with one member per name read:
+ *
+ * - a method is the overloads TypeScript resolves the client's calls to,
+ *   each a host-relative member (so its reference must be called), and a
+ *   `this` result is the definition itself, the host;
+ * - a property is its signature as declared, read like any declaration's.
+ *
+ * Leaving the other members and overloads out gives a supertype of the
+ * declared type, since methods are host-relative; nothing else about the
+ * members read changes. A member inherited from a generic interface, and a
+ * generic, optional or `this`-typed method, are refused.
+ */
+function selectGlobal(checker: Checker, uses: readonly Identifier[], context: SelectionContext):
+    TypeDefinition {
+  const [first] = uses;
+  if (!first) throw Error("a global value without a reference");
+  const name = first.text;
+  const declarations = (checker.getSymbolAtLocation(first)?.declarations ?? []).map(d => d.resolve());
+  const variables = declarations.filter((d): d is ts.VariableDeclaration =>
+    !!d && ts.isVariableDeclaration(d) && !!d.type && ts.isIdentifier(d.name));
+  const [declaration] = variables;
+  if (!declaration || variables.length !== declarations.length)
+    throw Error(`the global ${name} is not an annotated variable`);
+  const where = (node: Node, key: string) => `${context.identityOf(node.getSourceFile())}#${key}`;
+  for (const variable of variables) context.clean(variable, where(variable, name));
+  const spanOf = (node: Node): Span => [node.getStart(node.getSourceFile()), node.end];
+  // The interface the variable is annotated with, a plain or qualified name.
+  const annotation = declaration.type;
+  const written = annotation && ts.isTypeReferenceNode(annotation)
+    ? ts.isQualifiedName(annotation.typeName) ? annotation.typeName.right : annotation.typeName : null;
+  const holder = written && ts.isIdentifier(written) ? context.lookup(written, where(declaration, written.text)) : null;
+  if (!holder || !ts.isInterfaceDeclaration(holder) || holder.typeParameters?.length)
+    throw Error(`the global ${name} is not annotated with a non-generic interface`);
+  const parts = context.partners.get(holder) ?? [holder];
+  // A member's declaration is read in its own interface: the variable's, or
+  // a base TypeScript found it in, which must bind no type parameters.
+  const scopeOf = (member: Node, what: string): TermScope => {
+    const owner = member.parent;
+    if (!ts.isInterfaceDeclaration(owner)) throw Error(`${what} is not an interface member`);
+    if (!parts.includes(owner) && owner.typeParameters?.length)
+      throw Error(`${what} is inherited from a generic interface`);
+    return context.valueScope(member, what);
+  };
+  const type = checker.getTypeAtLocation(first);
+  if (!type) throw Error(`TypeScript gives ${name} no type`);
+  const keys = new Map<string, ts.PropertyAccessExpression[]>();
+  for (const use of uses) {
+    const access = use.parent;
+    if (!ts.isPropertyAccessExpression(access) || access.expression !== use || access.questionDotToken ||
+        !ts.isIdentifier(access.name))
+      throw Error(`${name} is read only through its members, each by name`);
+    keys.set(access.name.text, [...keys.get(access.name.text) ?? [], access]);
+  }
+  const fields: Extract<TypeTerm, { k: "object" }>["fields"] = [];
+  for (const [key, accesses] of keys) {
+    const what = `${name}.${key}`;
+    const nodes = (checker.getPropertyOfType(type, key)?.declarations ?? []).map(d => d.resolve());
+    const methods = nodes.filter((d): d is ts.MethodSignatureDeclaration => !!d && ts.isMethodSignatureDeclaration(d));
+    const [property] = nodes;
+    if (methods.length && methods.length === nodes.length) {
+      const chosen: ts.MethodSignatureDeclaration[] = [];
+      for (const access of accesses) {
+        const call = access.parent;
+        if (!ts.isCallExpression(call) || call.expression !== access || call.questionDotToken)
+          throw Error(`the method ${what} is only called, on its host`);
+        const resolved = checker.getResolvedSignature(call)?.declaration?.resolve();
+        const overload = methods.find(m => resolved && m.pos === resolved.pos && m.end === resolved.end &&
+          m.getSourceFile().fileName === resolved.getSourceFile().fileName);
+        if (!overload) throw Error(`TypeScript resolves the call of ${what} to no overload it declares`);
+        if (!chosen.includes(overload)) chosen.push(overload);
+      }
+      const forms = chosen.flatMap(overload => {
+        if (overload.typeParameters?.length || overload.postfixToken || overload.modifiers?.length)
+          throw Error(`the method ${what} is generic, optional or modified`);
+        context.clean(overload, where(overload, key));
+        const at = spanOf(overload);
+        // `this` as the result is the host: the variable, at this definition.
+        const self: TypeTerm = { k: "self", span: at };
+        const given = overload.type?.kind === ts.SyntaxKind.ThisType ? self : undefined;
+        return signatures(scopeOf(overload, what), overload.parameters, overload.type, overload, at, false, given)
+          .map(form => {
+            if (form.receiver) throw Error(`the method ${what} states its receiver`);
+            return { ...form, receiver: self };
+          });
+      });
+      const [only] = forms;
+      const span = spanOf(accesses[0] ?? first);
+      fields.push({ name: key, optional: false, readonly: false, span,
+        type: forms.length === 1 && only ? only : { k: "intersection", parts: forms, span } });
+    } else if (nodes.length === 1 && property && ts.isPropertySignatureDeclaration(property) && property.type &&
+        !property.modifiers?.some(m => m.kind !== ts.SyntaxKind.ReadonlyKeyword)) {
+      context.clean(property, where(property, key));
+      fields.push({ name: key, optional: property.postfixToken?.kind === ts.SyntaxKind.QuestionToken,
+        readonly: property.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true,
+        type: typeTerm(scopeOf(property, what), property.type, property), span: spanOf(property) });
+    } else throw Error(`${what} is not one property signature or method signatures`);
+  }
+  const source = declaration.getSourceFile();
+  return { declaration: { module: context.identityOf(source), name,
+    span: [declaration.getStart(source), declaration.end] }, parameters: [], bases: [],
+    expression: { k: "object", fields, stringIndex: null, calls: [], span: spanOf(first) } };
 }
 
 /** Where each named import of `file` resolves, whatever kind of declaration

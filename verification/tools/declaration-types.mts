@@ -82,7 +82,10 @@ export type TypeDefinition = {
 /** A value the client imports: the declaration TypeScript resolves it to, and
  * the type that declaration states. A function is its annotated signature, a
  * constant its annotation, and a class its constructor, which only `new`
- * calls. Nothing here checks the imported code: each is an assumption the
+ * calls. A global variable the client reads, such as `process`, is listed
+ * the same way, with the specifier `global`, at a definition keyed by its
+ * declaration that holds the members the client selects (DESIGN.md, "Global
+ * values"). Nothing here checks the imported code: each is an assumption the
  * client's result is relative to. */
 export type ValueRoot = {
   binding: { local: string; imported: string; specifier: string; span: Span };

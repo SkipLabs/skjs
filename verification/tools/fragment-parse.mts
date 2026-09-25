@@ -1948,6 +1948,39 @@ export function parseFile(file: string, carriesContext = false,
     node.forEachChild(findGlobals);
   };
   if (!carriesContext) findGlobals(source);
+  // A value name the file neither imports nor binds may be a global variable,
+  // such as Node's `process`: TypeScript decides, and a global variable joins
+  // the values, read at the members its references select. Every reference
+  // in a value position is listed. A computed key names a symbol, which the
+  // declaration graph reads itself, and `Object` in `Object.assign` is the
+  // intrinsic form above, not a read of the global. A name the file binds
+  // anywhere is not listed, so only a file that reads a free name asks
+  // TypeScript; a shadowed global stays unbound.
+  const bound = new Set<string>(rooted);
+  const findBound = (node: Node): void => {
+    const name = (node as Node & { name?: Node }).name;
+    if ((ts.isParameterDeclaration(node) || ts.isVariableDeclaration(node) || ts.isFunctionDeclaration(node) ||
+         ts.isFunctionExpression(node) || ts.isClassDeclaration(node) || ts.isClassExpression(node) ||
+         ts.isBindingElement(node)) && name && ts.isIdentifier(name))
+      bound.add(name.text);
+    node.forEachChild(findBound);
+  };
+  findBound(source);
+  const globalValueNodes: Identifier[] = [];
+  const findGlobalValues = (node: Node): void => {
+    if (ts.isTypeNode(node) || ts.isComputedPropertyName(node) || ts.isImportDeclaration(node) ||
+        ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node) || ts.isHeritageClause(node))
+      return;
+    if (ts.isIdentifier(node) && !bound.has(node.text) && node.text !== "undefined") {
+      const parent = node.parent as Node & { name?: Node; propertyName?: Node; label?: Node };
+      const intrinsic = node.text === "Object" && ts.isPropertyAccessExpression(parent) &&
+        parent.expression === node && parent.name.text === "assign";
+      if (parent.name !== node && parent.propertyName !== node && parent.label !== node && !intrinsic)
+        globalValueNodes.push(node);
+    }
+    node.forEachChild(findGlobalValues);
+  };
+  if (!carriesContext) findGlobalValues(source);
   // An array reaches `Array.prototype`, whose contract then joins the graph;
   // the first array the file writes stands for it.
   let firstArray: Node | undefined;
@@ -1974,8 +2007,10 @@ export function parseFile(file: string, carriesContext = false,
     node.forEachChild(findAsync);
   };
   if (!carriesContext) findAsync(source);
-  if (importNodes.length || localNodes.length || globalNodes.length || firstArray || firstAsync) {
-    const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? firstArray ?? firstAsync;
+  if (importNodes.length || localNodes.length || globalNodes.length || globalValueNodes.length ||
+      firstArray || firstAsync) {
+    const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
+      firstAsync;
     if (!first) throw Error("missing declaration root");
     // Named imports only. A type import joins the declaration graph; a value
     // import is an assumption at the type its declaration states.
@@ -1991,11 +2026,12 @@ export function parseFile(file: string, carriesContext = false,
       declarations = collectDeclarations(resolutionFile, { tsconfigPath, client: source,
         locals: localNodes.map(node => gate.span(node)),
         globals: globalNodes.map(node => gate.span(node)),
+        globalValues: globalValueNodes.map(node => gate.span(node)),
         ...(firstArray ? { arrays: gate.span(firstArray) } : {}),
         ...(firstAsync ? { intrinsics: gate.span(firstAsync) } : {}) });
     } catch (error) {
       const at = error instanceof DeclarationError
-        ? [...importNodes, ...localNodes, ...globalNodes, ...(firstArray ? [firstArray] : []),
+        ? [...importNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...(firstArray ? [firstArray] : []),
             ...(firstAsync ? [firstAsync] : [])].find(node =>
             node.getStart(source) === error.at[0]) ?? first
         : first;

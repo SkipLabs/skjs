@@ -12,6 +12,7 @@ From the repository root, with OCaml 5 and Dune 3 installed:
 
 ```sh
 npm ci --prefix verification/tools
+npm ci --prefix verification/ocaml-producer/upstream
 lake -d verification/lean build verifier
 dune build --root verification/ocaml-producer
 node verification/ocaml-producer/check.mts verification/ocaml-producer/examples/callbacks.ts
@@ -497,7 +498,8 @@ accepts it only by its unsound implicit index rule). It stays as provenance,
 with its first parser refusal recorded. The target is
 [`reactive-sum-sound.ts`](examples/reactive-sum-sound.ts), the same program
 corrected as a client, which SKJS accepts with no errors and TypeScript accepts
-against the pinned API (the fixture project has no Node types for `process`).
+against the pinned API and Node's declarations (`@types/node` at the version
+Skip's lock pins, which the fixture project installs as Skip's build does).
 It changes only what soundness or SKJS requires: `===`; `interface Collections
 extends NamedEagerCollections`; parameter annotations in `Plus` and an
 explicit `reduce<number | null>` in `Minus`; the service as a `Service` class
@@ -514,19 +516,20 @@ construct signature. Its first refusal is `async function main`. So **zero of
 its callables are checked** yet; no producer proposal, Lean lowering or certificate is
 reached. Module constants and top-level statements are in the fragment (see
 [Modules and code units](../DESIGN.md#modules-and-code-units)); the
-`platform` initializer before that class is admitted syntax, though its
-`process.env` read still needs the `process` contract. Measured one construct
+`platform` initializer before that class is admitted syntax, and its
+`process.env` read is a [global value](../DESIGN.md#modules-and-code-units)
+read at the members used (`sum-process.ts`). Measured one construct
 at a time, the blockers behind it are:
 
 | Client part | First refusal when isolated | Later requirement |
 | --- | --- | --- |
-| whole file | `async function main` | `async`/`await`; then the `process` global |
+| whole file | `async function main` | `async`/`await`; then `runService`'s readonly optional `externalServices?` |
 | import graph | `InputDefinition` is a value import (a class) | classes as declarations and values |
 | `Plus`, `Minus`, `AddIndex`, `Add`, `Sub`, `Service` | class declaration | classes, `this`, parameter properties, field initializers, `new` |
 | `AddIndex.mapEntry` reading `Values` | `bigint` in `DepSafe` | `Values` contract, `getUnique` and its exception |
 | `Plus`/`Minus` bodies | library array methods | `reduce`, `sort` and `Iterable` contracts |
 | `main` | value imports | `async`/`await`, `Promise`, `runService` contract |
-| signal registration | `process` global | `process` global contract (`Promise` is read from the standard library) |
+| signal registration | `process.on(sig, shutdown)`: `shutdown` is claimed at `() => Promise<void>`, not at the listener's `(...args: unknown[]) => void` | the closure claimed at the listener's wider signature |
 
 The configured TypeScript project includes both files. TypeScript resolves
 upstream `sum.ts`'s type imports from `@skipruntime/core` (`EagerCollection`,
@@ -723,7 +726,8 @@ becoming a second implementation of the imported type's meaning.
 The declaration document contains the collected declaration equations. Resolution
 is TypeScript's, under the snapshot's dedicated
 [`upstream/tsconfig.json`](upstream/tsconfig.json), which includes the
-imported-`Json` clients and mirrors upstream's strict Node16 resolution;
+imported-`Json` clients and mirrors upstream's strict Node16 resolution and
+its `types: ["node"]`;
 `--project` names it explicitly, leaving the other OCaml examples' TypeScript
 project unchanged. Because the snapshot
 contains neither built `dist`
@@ -912,10 +916,11 @@ first milestone, in order of how much each gates:
    at their annotations, top-level expression statements, and an
    initialization unit with its order check, and value imports of
    non-generic functions, annotated constants and classes, assumed at their
-   declared types and listed in the declaration document. Remaining: generic
-   value imports (`InputDefinition<K, V>`, `runService`), globals (`process`)
-   as external contracts, top-level `await`, module-level `let`, and the Lean
-   theorem composing the units into a module result.
+   declared types and listed in the declaration document, and global
+   variables (`process`) read at the members the module uses. Remaining:
+   generic value imports (`InputDefinition<K, V>`, `runService`), top-level
+   `await`, module-level `let`, and the Lean theorem composing the units into
+   a module result.
 2. **Classes.** Done for top-level classes without inheritance or generics:
    a class declares its instance type in the declaration graph (fields at
    their annotations, methods as readonly fields whose receiver is the
@@ -978,9 +983,10 @@ Required for the second milestone in addition:
 8. **Generic calls taking classes.** `.map(Plus)` and `.map(AddIndex, 0)`
    infer constructor and tuple-pack arguments, chained across `merge` and
    `map`.
-9. **Asynchronous startup.** `async`/`await`, the library `Promise`, and the
-   `runService` and `process.on` contracts, kept visible as out-of-scope
-   effects until they are modeled.
+9. **Asynchronous startup.** `async`/`await`, the library `Promise` and
+   `process.on` are read as trusted steps and declared contracts; the
+   `runService` contract, and the effects of all of them, stay out of scope
+   until they are modeled.
 
 **Branded types (planned, not yet implemented).** TypeScript brands types two
 ways: a `private` or `protected` member makes a class nominal, and a field

@@ -34,6 +34,7 @@ Prerequisites: Node, the pinned [Lean toolchain](lean/lean-toolchain), and Docke
 
 ```sh
 (cd verification/tools && npm install)
+npm ci --prefix verification/ocaml-producer/upstream   # the fixture's @types/node
 make build-in-docker
 make verify
 ```

@@ -574,7 +574,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         | _ => none
     | .indexAt a key =>
       return (A :: pool).findSome? fun R => do
-        let [.dict _ [] _ (E :: _) [] [] [] _] := expand G R | none
+        let [.dict _ [] _ (E :: _) _ _ _ _] := expand G R | none
         (A :: pool).findSome? fun K => do
           if expand G K != [.str] then none else do
           (A :: pool).findSome? fun U => do
@@ -602,7 +602,8 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
               else none)
           | [.callable fs _ _ _] => (fs.lookup f).map (·,Rule.readCallable)
           -- A dictionary's named field or view, else its index, which may miss.
-          | [.dict fs [] vs (B :: _) [] [] [] _] =>
+          -- The index holds of every present field, an optional one included.
+          | [.dict fs [] vs (B :: _) _ _ _ _] =>
             (fs.lookup f).map (·,Rule.read) <|> (vs.lookup f).map (·,Rule.readView) <|>
             pool.findSome? fun U =>
               if expand G U == [.undef] then some (B ++ U, Rule.readDict B U) else none

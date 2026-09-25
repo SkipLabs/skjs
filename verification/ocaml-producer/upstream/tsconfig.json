@@ -17,6 +17,12 @@
     "target": "ES2021",
     "verbatimModuleSyntax": true,
     "noEmit": true,
+    // As Skip's shared tsconfig: Node's declarations, from @types/node at the
+    // version Skip's lock pins (package.json here; `npm ci` installs it).
+    "types": ["node"],
+    // Where they are installed, stated so that a probe project extending
+    // this one finds them too.
+    "typeRoots": ["./node_modules/@types"],
     "paths": {
       // The source snapshot has neither built dist/ declarations nor npm's
       // workspace node_modules links. Map only those two package entries to

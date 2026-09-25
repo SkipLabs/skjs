@@ -481,7 +481,10 @@ rules above take $(\kappa{:}A)\in\varphi$ from the invariant fields alone,
 whatever the views and optional fields. A dictionary's named field or view is
 read at its own contract by `read` or `readView`, since `dictViewT` sits beside
 the named members' `recT` and `viewT` (`namedMembers_sem`); only a key it does
-not name is read through the index, with `undefined`. A write to an optional field is not typed, since
+not name is read through the index, with `undefined`. An optional named field
+($\omega$ above) holds beside the index as a named field does, so a key the
+dictionary does not name is still read through the index: `process.env` is a
+writable index beside the optional `TZ`. A write to an optional field is not typed, since
 the object's keys are fixed at allocation. `allocDict` establishes a dictionary view for a fresh literal only
 after checking every initializer at $A$ and that the literal names no
 prototype key; each location it allocates holds exactly $A$, so it establishes
