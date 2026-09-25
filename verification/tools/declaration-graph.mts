@@ -12,7 +12,7 @@ import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration
 import type { Span } from "./span.mts";
 import { classInstance, members, optionalTerm, signature, typeTerm, type TermScope } from "./type-term.mts";
 import { arrayPrototype, overlay, type OverlayEntry } from "./array-prototype.mts";
-import { asyncIntrinsics, intrinsicModule } from "./intrinsics.mts";
+import { intrinsics, intrinsicModule } from "./intrinsics.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
 export type { DeclarationIdentity, DeclarationDocument, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
 
@@ -166,8 +166,9 @@ export function collectDeclarations(file: string, options: {
   arrays?: Span;
   /** The overlay `Array.prototype` is read through; tests vary it. */
   arrayOverlay?: readonly OverlayEntry[];
-  /** The client uses `async` or `await`: the intrinsics that stand for them
-   * (`intrinsics.mts`) join its values, located at the first such construct. */
+  /** The client uses `async`, `await` or `for...of`: the intrinsics that
+   * stand for them (`intrinsics.mts`) join its values, located at the first
+   * such construct. */
   intrinsics?: Span;
 } = {}): DeclarationDocument {
   const clientFile = resolve(file);
@@ -424,9 +425,9 @@ export function collectDeclarations(file: string, options: {
         throw new DeclarationError(options.arrays, error instanceof Error ? error.message : String(error));
       }
     }
-    // `async` and `await`, as the intrinsics the parser writes them with
-    // (`intrinsics.mts`): trusted steps at signatures over the standard
-    // library's `Promise`, listed as values like an import's.
+    // `async`, `await` and `for...of`, as the intrinsics that stand for them
+    // (`intrinsics.mts`): trusted steps at their signatures, listed as values
+    // like an import's.
     if (options.intrinsics) {
       const at = options.intrinsics;
       try {
@@ -439,7 +440,7 @@ export function collectDeclarations(file: string, options: {
         partners.set(promise, parts);
         valueStarts.push(promise);
         const target = identityOf(promise);
-        for (const intrinsic of asyncIntrinsics(argument => ({ k: "reference",
+        for (const intrinsic of intrinsics(argument => ({ k: "reference",
           reference: { name: "Promise", span: [0, 0], arguments: [[0, 0]], target },
           args: [argument], span: [0, 0] })))
           values.push({ binding: { local: intrinsic.name, imported: intrinsic.name,

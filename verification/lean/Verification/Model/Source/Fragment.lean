@@ -552,7 +552,15 @@ inductive Stmt where
   | brk (pos : Span)
   | cont (pos : Span)
   | loop (pos : Span) (cond : Expr) (body : List Stmt)
+  /-- `for (const name of iterable) body` over an array: the iterable once,
+  then the intrinsic `%Iterate%` steps its iterator, binding each element to
+  `name` for one run of the body. -/
+  | forOf (pos : Span) (name : String) (namePos : Span) (iterable : Expr) (body : List Stmt)
   | effect (pos : Span) (e : Expr)
+
+/-- The intrinsic a `for...of` over an array steps (`intrinsics.mts`):
+`<T>(xs: readonly T[]) => () => { readonly value: T } | null`, trusted. -/
+def iterateName : String := "%Iterate%"
 
 /-- One element of an array pattern, decoded with the given expression
 decoder, since the structure is shared by statements and expressions. -/
@@ -566,7 +574,7 @@ def decodeArrayElem (decodeExpr : Json → Except String Expr) (q : Json) :
 /-- A statement's own span. -/
 def Stmt.pos : Stmt → Span
   | .ret p _ | .constants p _ | .mutables p _ | .pattern p _ _ | .arrayPattern p _ _
-  | .ite p _ _ _ | .loop p _ _ | .brk p | .cont p | .effect p _ => p
+  | .ite p _ _ _ | .loop p _ _ | .forOf p _ _ _ _ | .brk p | .cont p | .effect p _ => p
 
 /-- Every direct call of a named function in a statement. -/
 partial def Stmt.callees : Stmt → List (Span × Span × String)
@@ -578,6 +586,10 @@ partial def Stmt.callees : Stmt → List (Span × Span × String)
     elems.flatMap fun q => (q.default_.map Expr.callees).getD []
   | .ite _ c t e => c.callees ++ t.flatMap Stmt.callees ++ (e.getD []).flatMap Stmt.callees
   | .loop _ c b => c.callees ++ b.flatMap Stmt.callees
+  -- The loop calls `%Iterate%` at its own span, reading it at the `for`
+  -- keyword, which is no expression and has no claim.
+  | .forOf p name _ i b => (p, (p.1, p.1 + "for".length), iterateName) :: i.callees ++
+    (b.flatMap Stmt.callees).filter (·.2.2 != name)
   | .brk .. | .cont .. => []
 
 /-- Singleton notation for small source-adapter fixtures. -/
@@ -879,6 +891,10 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
   | "break" => return .brk p
   | "continue" => return .cont p
   | "while" => return .loop p (← decodeExpr (← jField j "cond")) (← (← jArr j "body").mapM decodeStmt)
+  | "forOf" =>
+    CellClaims.fieldsExactly j ["k","pos","name","namePos","iterable","body"]
+    return .forOf p (← jStr (← jField j "name")) (← jSpan j "namePos")
+      (← decodeExpr (← jField j "iterable")) (← (← jArr j "body").mapM decodeStmt)
   | "if" =>
     let thn ← (← jArr j "then").mapM decodeStmt
     let els ← match ← jField j "else_" with

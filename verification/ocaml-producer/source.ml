@@ -289,6 +289,9 @@ and stmt_node =
   | Declare of bool * (string * ty option * expr) list
   | Return of expr | Effect of expr | If of expr * stmt list * stmt list
   | While of expr * stmt list | Break | Continue
+  (* `for (const name of iterable) body`: the name's position, the iterable
+     and the body. *)
+  | ForOf of string * Json.t * expr * stmt list
 and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: (string * ty) list;
            rest: bool; result: ty; body: stmt list }
 type declaration = { id: string; parameters: rigid list;
@@ -376,6 +379,8 @@ let rec stmt binders j =
       text "name" b,optional_type binders (field "annot" b),expr binders (field "init" b)) (items "bindings" j))
   | "return" -> Return (expr binders (field "e" j)) | "effect" -> Effect (expr binders (field "e" j))
   | "while" -> While (expr binders (field "cond" j),List.map (stmt binders) (items "body" j))
+  | "forOf" -> ForOf (text "name" j,field "namePos" j,expr binders (field "iterable" j),
+      List.map (stmt binders) (items "body" j))
   | "break" -> Break | "continue" -> Continue
   | "if" -> If (expr binders (field "cond" j),List.map (stmt binders) (items "then" j),
       match field "else_" j with Null -> [] | xs -> List.map (stmt binders) (list xs))

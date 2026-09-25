@@ -777,6 +777,10 @@ modeling choices; they do not replace proof.
   input slots `%Await%`, `%AsyncReturn%` and `%AsyncComplete%` at their
   declared signatures, and the safety theorem holds for every environment
   meeting them, as for an imported value's declared type.
+- A `for...of` loop over an array steps the array's iterator
+  ([Loops over arrays](#loops-over-arrays)): `%Iterate%` at its declared
+  signature is an input slot of every unit with such a loop, yielding each
+  element below the array's current length in turn, then `null`.
 - Lean's kernel, compilation infrastructure and the executed checker are correct.
 
 For the stateful in-memory interface, `accept` checks the exact requested entry
@@ -1310,7 +1314,9 @@ No invariant inference, type join, semantic rule or certificate format is added.
 
 Nested loops, empty bodies and early returns are supported in top-level function
 bodies. Unlabeled `break` and `continue` now have explicit checked transfers.
-Labels, other loop forms, non-block bodies and loops inside closures remain gated. Even a syntactically always-true loop currently needs an
+Labels, other loop forms, non-block bodies and loops inside closures remain
+gated; `for...of` over an array reuses this head, its step a trusted intrinsic
+([Loops over arrays](#loops-over-arrays)). Even a syntactically always-true loop currently needs an
 explicit continuation for its false edge. Acceptance is safety, not termination:
 a well-typed loop may run forever.
 
@@ -2328,6 +2334,64 @@ was checked when it was passed.
 returning an object, a void async function returning a value, a promise
 returned for adoption (`return p` in an async function), async class methods,
 async generators and `for await`.
+
+### Loops over arrays
+
+**Decision.** `for (const x of e) S` is admitted where `e` is an array, and
+its step is a trusted intrinsic, stated in `intrinsics.mts` like the async
+ones:
+
+$$
+\mathtt{\%Iterate\%}:\forall T.\ (\mathit{xs}:\mathsf{readonly}\ T[\,])\Rightarrow
+(()\Rightarrow\{\mathsf{readonly}\ \mathit{value}:T\}\mid\mathsf{null})
+$$
+
+It is the array's iterator, stepped: each call reads the array's current
+length and yields the element at the next index, or `null` past the end.
+Two other readings need no new trust but more than the calculus has. The
+iterator protocol through `Array.prototype[Symbol.iterator]`, which
+`ArrayProto` already trusts, yields an `IteratorResult<T>`, a union told apart
+by its `done` field, and narrowing a record by a test on one of its fields has
+no rule here. Indexing `xs[i]` while `i < xs.length` needs a comparison of
+numbers and a range fact, and there are neither. The intrinsic is the smallest
+statement that yields the element type, and it is what the array iterator
+does.
+
+**Compilation.** Lean compiles the loop itself (`SourceExtraction.body`), with
+no source expression for its internal steps:
+
+$$
+\llbracket\mathsf{for}\ (\mathsf{const}\ x\ \mathsf{of}\ e)\ S\rrbracket=
+n\leftarrow\mathtt{\%Iterate\%}(\llbracket e\rrbracket);\
+\mathit{head}:\ r\leftarrow n();\
+\mathsf{if}\ r\ \mathsf{is\ null}\ \mathsf{then}\ \mathit{exit}\
+\mathsf{else}\ x\leftarrow r.\mathit{value};\ \llbracket S\rrbracket;\ \mathsf{goto}\ \mathit{head}
+$$
+
+`n` is a slot of its own, at the claimed type of the call (the producer's
+claim at the loop's span, with its instance), `continue` and the body's end go
+to the head, which is a cut stated by the loop's entry claims, and `break` to
+the exit. The tag dispatch refines `r` on each arm (`tagBind isNul`), so the
+read is of a record. The rule it derives is
+
+$$
+\frac{\Gamma\vdash e:A\quad A\le\mathsf{readonly}\ T[\,]\quad
+      \Gamma_{\mathit{head}},x:T\vdash S\quad \Gamma_{\mathit{head}}\ \text{the loop's entry claims}}
+     {\Gamma\vdash\mathsf{for}\ (\mathsf{const}\ x\ \mathsf{of}\ e)\ S}\ \textsc{for-of}
+$$
+
+with $T$ the call's instance. Arrays are dense (`listT`), so the iterator
+yields a `T` at every index below the length.
+
+**Trust.** JavaScript's loop calls `xs[Symbol.iterator]()`, which reaches
+`Array.prototype`'s, since an array's own keys are its store and prototype,
+and steps it. Leaving early calls the iterator's `return` when it has one,
+and the array iterator has none, so an early exit runs nothing. `%Iterate%`
+states that behavior; see [What remains assumed](#what-remains-assumed).
+
+**Refused.** A loop over anything but an array (a string, a `Map`, any other
+iterable), a destructuring, `let` or `var` binding, `for await`, a loop at the
+top level of a module (as for `while`) or inside a closure.
 
 ### Next object milestone
 

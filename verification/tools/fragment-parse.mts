@@ -1438,7 +1438,7 @@ class Gate {
     const prefix = (stmts: Stmt[], tail: Expr, allowReturn = false): Expr => {
       for (let i = stmts.length - 1; i >= 0; --i) {
         const st = stmts[i];
-        if (st.k === "while" || st.k === "break" || st.k === "continue")
+        if (st.k === "while" || st.k === "forOf" || st.k === "break" || st.k === "continue")
           this.fail(
             at,
             "loops inside closures require a graph-backed call/body interface",
@@ -1694,10 +1694,11 @@ class Gate {
       while (
         parent &&
         !ts.isFunctionLikeDeclaration(parent) &&
-        !ts.isWhileStatement(parent)
+        !ts.isWhileStatement(parent) &&
+        !ts.isForOfStatement(parent)
       )
         parent = parent.parent;
-      if (!parent || !ts.isWhileStatement(parent))
+      if (!parent || !(ts.isWhileStatement(parent) || ts.isForOfStatement(parent)))
         this.fail(node, "break or continue outside a supported loop");
       return {
         k: ts.isBreakStatement(node) ? "break" : "continue",
@@ -1712,6 +1713,33 @@ class Gate {
         cond: this.expr(node.expression),
         body: this.block(node.statement),
       };
+
+    // `for (const x of e) body`: one immutable binding per iteration. The
+    // loop is over an array, which Lean checks: the iterable is the argument
+    // of the intrinsic that steps its iterator (`intrinsics.mts`).
+    if (ts.isForOfStatement(node)) {
+      if (node.awaitModifier)
+        this.fail(node, "`for await` is outside the fragment");
+      const list = node.initializer;
+      if (!ts.isVariableDeclarationList(list) || !(list.flags & ts.NodeFlags.Const) ||
+          list.declarations.length !== 1)
+        this.fail(node, "a `for...of` loop declares one `const` binding");
+      const d = list.declarations[0];
+      if (!ts.isIdentifier(d.name))
+        this.fail(d, "destructuring is outside the fragment");
+      if (d.type || d.initializer)
+        this.fail(d, "a `for...of` binding takes the element's type");
+      if (d.name.text === "undefined")
+        this.fail(d, "shadowing undefined is outside the fragment");
+      return {
+        k: "forOf",
+        pos: this.span(node),
+        name: d.name.text,
+        namePos: this.span(d.name),
+        iterable: this.expr(node.expression),
+        body: this.block(node.statement),
+      };
+    }
 
     if (ts.isIfStatement(node)) {
       if (node.elseStatement && node.elseStatement.kind !== ts.SyntaxKind.Block)
@@ -1925,19 +1953,19 @@ export function parseFile(file: string, carriesContext = false,
   const findArray = (node: Node): void => {
     if (firstArray) return;
     if (ts.isArrayTypeNode(node) || ts.isTupleTypeNode(node) || ts.isArrayLiteralExpression(node) ||
-        (ts.isParameterDeclaration(node) && !!node.dotDotDotToken)) {
+        ts.isForOfStatement(node) || (ts.isParameterDeclaration(node) && !!node.dotDotDotToken)) {
       firstArray = node;
       return;
     }
     node.forEachChild(findArray);
   };
   findArray(source);
-  // `async` and `await` are written with intrinsics over `Promise`, which then
-  // join the declarations; the first such construct stands for them.
+  // `async`, `await` and `for...of` are calls of intrinsics, which then join
+  // the declarations; the first such construct stands for them.
   let firstAsync: Node | undefined;
   const findAsync = (node: Node): void => {
     if (firstAsync) return;
-    if (ts.isAwaitExpression(node) || (ts.isFunctionLikeDeclaration(node) &&
+    if (ts.isAwaitExpression(node) || ts.isForOfStatement(node) || (ts.isFunctionLikeDeclaration(node) &&
         !!node.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword))) {
       firstAsync = node;
       return;

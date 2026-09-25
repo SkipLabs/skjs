@@ -357,6 +357,7 @@ private partial def comparisonsStmt (fc : SourceClaims.Function) (s : Fragment.S
     return .ite p (← comparisonsExpr fc c) (← t.mapM (comparisonsStmt fc))
       (← e.mapM (fun ss => ss.mapM (comparisonsStmt fc)))
   | .loop p c b => return .loop p (← comparisonsExpr fc c) (← b.mapM (comparisonsStmt fc))
+  | .forOf p n np i b => return .forOf p n np (← comparisonsExpr fc i) (← b.mapM (comparisonsStmt fc))
   | .brk .. | .cont .. => pure s
 
 /-- Storage is selected from source assignments, including writes in nested
@@ -404,6 +405,7 @@ private partial def assignsStmt (name : String) : Fragment.Stmt → Bool
   | .ite _ c t e => assignsExpr name c || t.any (assignsStmt name) ||
     (e.getD []).any (assignsStmt name)
   | .loop _ c b => assignsExpr name c || b.any (assignsStmt name)
+  | .forOf _ _ _ i b => assignsExpr name i || b.any (assignsStmt name)
   | .brk .. | .cont .. => false
 
 /-- Every name a statement's expressions mention, bound or not: a superset of
@@ -417,6 +419,7 @@ partial def stmtNames : Fragment.Stmt → List String
     elems.flatMap fun q => (q.default_.map Fragment.Expr.freeNames).getD []
   | .ite _ c t e => c.freeNames ++ t.flatMap stmtNames ++ (e.getD []).flatMap stmtNames
   | .loop _ c b => c.freeNames ++ b.flatMap stmtNames
+  | .forOf _ _ _ i b => Fragment.iterateName :: i.freeNames ++ b.flatMap stmtNames
   | .brk .. | .cont .. => []
 
 /-- A module function's value as its callers see it: an ordinary function
@@ -2742,7 +2745,7 @@ private structure LoopTargets where
 /-- Where a statement begins: the entry the producer states for it. -/
 private def stmtStart : Fragment.Stmt → Nat
   | .brk p | .cont p | .ret p _ | .constants p _ | .mutables p _ | .pattern p _ _ | .arrayPattern p _ _
-  | .effect p _ | .loop p _ _ | .ite p _ _ _ => p.1
+  | .effect p _ | .loop p _ _ | .forOf p _ _ _ _ | .ite p _ _ _ => p.1
 
 /-- The bindings an object pattern yields, left to right, over the object held
 at slot `obj`: each binds its read at the contract's field type. `after`
@@ -2902,6 +2905,63 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
           sourceMap := s.sourceMap.set head.label (some ⟨pos,"heap-observation",some pos.1,sources scope⟩) }
       modify fun s => { s with cuts := head.label :: s.cuts }
       pure head
+    | .forOf pos name namePos iterable loopBody :: rest =>
+      -- The iterable once, then `%Iterate%` on it: the step closure, held in a
+      -- slot of its own at the claimed type the call's typing checks. At the
+      -- head the step yields `{ value }` or `null`; null leaves the loop, and a
+      -- record's value binds `name` for one run of the body, whose end and
+      -- `continue` return to the head.
+      let Γ ← env fc pos.1 scope
+      let some (iterate, _) := resolve scope Fragment.iterateName
+        | throw "internal extraction error: a for...of loop without its intrinsic"
+      let A ← exprType fc iterable
+      let N ← exprType fc (.var pos Fragment.iterateName)
+      let T ← exprType fc (.var namePos name)
+      let G := SourceTypes.graph (← table)
+      let [.arrs [(_, [], S)] _] := PositiveRules.expand G N
+        | throw (locatedRefusal (← table) pos .bindingAnnotation
+            "a for...of step is one call of no parameters")
+      let present := BranchRefinement.tagSlice G S .isNul false
+      let stepper := { source := ⟨s!"%next@{pos.1}%", some pos⟩, fixed := some N : ScopeBinding }
+      let loopScope := stepper :: scope
+      let ΓH := N :: Γ
+      let head ← emitAt pos .nul .ret ΓH [0] (scope := loopScope)
+      let continuation ← if rest.isEmpty then pure tail else do
+        let next ← body fuel fc R scope rest tail loopTargets
+        pure (some (next,scope))
+      let elemScope := held ⟨name, some namePos⟩ :: loopScope
+      let first ← body fuel fc R elemScope loopBody (some (head,loopScope))
+        (some ⟨(head,loopScope),continuation⟩)
+      let exit ← leave fc.namePos R loopScope continuation
+      -- `name` takes the value read; the record it was read from is dropped.
+      let bindElement := ⟨first.label, some ((first.mapping.getD (List.range elemScope.length)).map
+        (fun j => if j == 0 then 0 else j+1))⟩
+      let element ← emitAt namePos (.readAt (.str "value") (.var 0)) (.bind bindElement)
+        (present::ΓH) T "for-of-element" (scope := held ⟨"",some pos⟩ :: loopScope)
+      -- The dispatch binds a refined copy of the step's result; both arms
+      -- discard the older one, and leaving discards both.
+      let toElement : Target := ⟨element.label, some ((List.range (ΓH.length+1)).map
+        (fun j => if j == 0 then 0 else j+1))⟩
+      let toExit : Target := ⟨exit.label, some ((exit.mapping.getD (List.range ΓH.length)).map (·+2))⟩
+      let stepped := held ⟨"",some pos⟩ :: loopScope
+      let dispatch ← emitAt pos (.var 0) (.tagBind .isNul toExit toElement) (S::ΓH) S
+        "for-of-dispatch" (scope := stepped)
+      let step ← emitAt pos (Tm.call (.var 0) []) (.bind dispatch) ΓH S "for-of-step"
+        (scope := loopScope)
+      modify fun s => { s with program := s.program.set head.label ⟨.nul,.effect step⟩ }
+      let facts ← entryFacts fc pos.1 scope
+      let links := distinctLinks (SourceTypes.graph (← table)) loopScope ΓH
+      if !facts.isEmpty || !links.isEmpty then
+        modify fun s => { s with
+          assertions := s.assertions ++ [(head.label,⟨facts,[],links⟩)]
+          sourceMap := s.sourceMap.set head.label (some ⟨pos,"heap-observation",some pos.1,sources loopScope⟩) }
+      modify fun s => { s with cuts := head.label :: s.cuts }
+      -- Before the loop: the iterable, then the call making the step closure,
+      -- which the head holds in place of the iterable.
+      let toHead : Target := ⟨head.label, some (0 :: (List.range Γ.length).map (·+2))⟩
+      let start ← emitAt pos (Tm.call (.var (iterate+1)) [.var 0]) (.bind toHead) (A::Γ) N
+        "for-of-iterator" (scope := held ⟨"",some iterable.span⟩ :: scope)
+      compileExpr fc scope Γ iterable start
     | .mutables pos bindings :: rest =>
       let Γ ← env fc pos.1 scope
       mutables fc pos (rest.head?.map stmtStart)
@@ -2934,7 +2994,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
     | [] | .loop .. :: _ => return target
     | st :: _ =>
       let pos := match st with
-        | .brk p | .cont p | .ret p _ | .constants p _ | .mutables p _ | .pattern p _ _ | .arrayPattern p _ _ | .effect p _ | .loop p _ _ | .ite p _ _ _ => p
+        | .brk p | .cont p | .ret p _ | .constants p _ | .mutables p _ | .pattern p _ _ | .arrayPattern p _ _ | .effect p _ | .loop p _ _ | .forOf p _ _ _ _ | .ite p _ _ _ => p
       let facts ← entryFacts fc pos.1 scope
       let entry ← checkpoint pos (← env fc pos.1 scope) facts target (some pos.1) scope
       modify fun s => { s with cuts := entry.label :: s.cuts }
@@ -2943,7 +3003,8 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List ScopeBindin
 private def traversalBudget : List Fragment.Stmt → Nat
   | [] => 1
   | .brk .. :: rest | .cont .. :: rest | .ret .. :: rest | .constants .. :: rest | .mutables .. :: rest | .pattern .. :: rest | .arrayPattern .. :: rest | .effect .. :: rest => 1 + traversalBudget rest
-  | .loop _ _ loopBody :: rest => 1 + traversalBudget loopBody + traversalBudget rest
+  | .loop _ _ loopBody :: rest | .forOf _ _ _ _ loopBody :: rest =>
+      1 + traversalBudget loopBody + traversalBudget rest
   | .ite _ _ thn none :: rest => 2 + traversalBudget thn + traversalBudget rest
   | .ite _ _ thn (some els) :: rest =>
       1 + traversalBudget thn + traversalBudget els + traversalBudget rest

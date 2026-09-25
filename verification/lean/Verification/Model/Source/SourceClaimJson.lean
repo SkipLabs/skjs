@@ -795,6 +795,10 @@ private partial def stmtSites : Fragment.Stmt → Sites
   | .ite p c a b =>
     joinSites ([p.1],[],[]) (joinSites (exprSites c)
       ((a ++ b.getD []).foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])))
+  -- The loop's span is the `%Iterate%` call's, and the element is claimed at
+  -- the name it binds.
+  | .forOf p _ np i body => joinSites ([p.1],[p, np],[]) (joinSites (exprSites i)
+      (body.foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])))
 
 private def allFunctionSites (f : Fragment.Fn) : Sites :=
   f.body.foldl (fun s st => joinSites s (stmtSites st)) ([],[],[])

@@ -169,6 +169,9 @@ export type Stmt =
   | { k: "return"; pos: Span; e: Expr }
   | { k: "break" | "continue"; pos: Span }
   | { k: "while"; pos: Span; cond: Expr; body: Stmt[] }
+  /* `for (const name of iterable) body`, over an array: the iterable once,
+     then one run of the body per element, bound to `name`. */
+  | { k: "forOf"; pos: Span; name: string; namePos: Span; iterable: Expr; body: Stmt[] }
   | { k: "if"; pos: Span; cond: Expr; then: Stmt[]; else_: Stmt[] | null }
   /* A declaration statement binds one or more names, left to right, each
      initializer seeing the earlier bindings. The statement is the entry; the

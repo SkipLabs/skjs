@@ -765,6 +765,22 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
        | _ -> env)
     | While (c,body) -> ignore (expr env c);
       ignore (statements (branch env c true) body); env
+    | ForOf (name,name_pos,iterable,body) ->
+      (* The loop is the call of `%Iterate%` on the iterable, claimed at the
+         statement with its instance; the element, at the name it binds. *)
+      let actual = expr env iterable in
+      let signature = match declared_head declarations [] (resolve env "%Iterate%") with
+        | Atoms [Shape {calls=[signature];_}] when signature.quantified<>[] -> signature
+        | _ -> unsupported "a for...of loop needs the %Iterate% intrinsic" in
+      let inferred = Inference.infer ~receiver:(Atoms [Undef]) signature [actual] in
+      let element = match inferred.substitution with
+        | [_,ValueArgument t] -> t
+        | _ -> unsupported "%Iterate% has one value binder" in
+      expressions := {pos=s.span;type_=inferred.result;
+        instantiation=Some (List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
+          inferred.substitution)} :: !expressions;
+      expressions := {pos=name_pos;type_=element;instantiation=None} :: !expressions;
+      ignore (statements (extend env name (Value element)) body); env
     | Break | Continue -> env) env ss in
   ignore (statements env0 f.body);
   let expressions = List.map (fun (x:expression) -> match List.assoc_opt x.pos !instances with
