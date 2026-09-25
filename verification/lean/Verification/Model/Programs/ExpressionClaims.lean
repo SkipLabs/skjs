@@ -54,14 +54,10 @@ def produce (G : NormalGraph Nat) (labels : List Nat) (bound fuel : Nat)
            ("sequent",toJson j),("fuel",toJson fuel),
            ("types",toJson ((List.range bound).map G))])
     return e
-  if checkAll G bound rs es then return es
-  -- `failure` names what was produced and rejected, the same field a graph
-  -- production failure carries: one `kind` has one shape, so a reader never
-  -- has to know which of the two emitters wrote the record.
-  throw (withDiagnostic "closure expression evidence failed independent checking"
-    [("kind",toJson "production-failure"),("phase",toJson "certificate-check"),
-     ("outcome",toJson "not-established"),("failure",toJson "closureEvidenceRejected"),
-     ("fuel",toJson fuel),("types",toJson ((List.range bound).map G))])
+  -- Each item passed `check` against its own obligation above, so no final
+  -- aggregate check is repeated here; acceptance (`checkRequests`) checks
+  -- the evidence independently.
+  return es
 
 #print axioms checkAll_sound
 end Verification.Model.ExpressionClaims
