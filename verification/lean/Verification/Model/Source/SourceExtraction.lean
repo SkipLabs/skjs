@@ -1225,7 +1225,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let ri := saved.length - 1
     let M ← exprType fc callee
     let method ← if (ProgramTyping.memberOf G r.type fld).isSome then
-        pure (DirectProof.node K (memberHead G r.type fld (.var ri)) M .bindMember [])
+        pure (DirectProof.node K (memberHead G r.type fld (.var ri)) M (.bindMember []) [])
       else DirectProof.cast K M <$> readCell G K fld (DirectProof.var K ri r.type)
     obligation callee.span method.goal (some method) "expression-claim" ds
     let H := M :: K

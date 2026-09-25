@@ -309,12 +309,18 @@ the object it is read from ([DESIGN.md](DESIGN.md#method-members-are-host-relati
 A member bound to its host (`bindMember`) is read from the object in slot $i$
 and bound to that same object in one term, so the member is read before any
 actual runs, as JavaScript reads it, and the bound function meets the member's
-signatures at any receiver. With $\operatorname{member}_G(O,k)=m$ the method
-of key $k$ in $O$'s one object clause (`memberOf`):
+signatures at any receiver, and every fixed signature one of them covers:
+each claimed parameter within the member's, and the member's result within
+the claimed one, by checked subtyping proofs the certificate carries
+(`CoveredCall`, `CallProofs`). A claim may so name another row for the same
+type, as a producer's own row for a declared `[number, number]`. With
+$\operatorname{member}_G(O,k)=m$ the method of key $k$ in $O$'s one object
+clause (`memberOf`):
 
 $$
 \frac{\Gamma(i)=O\quad\operatorname{member}_G(O,k)=m
-      \quad\forall(Q,\vec D,B)\in L.\;(\vec D,B)\in m.\mathsf{calls}
+      \quad\forall(Q,\vec D,B)\in L.\;\exists(\vec C,B')\in m.\mathsf{calls}.\;
+        G\vdash\vec D\le\vec C\land G\vdash B'\le B
       \quad\forall(Q,\vec D,P,B)\in S.\;(\vec D,P,B)\in m.\mathsf{rests}}
      {\Gamma\vdash_G\mathsf{let}\ f=i.k\ \mathsf{in}\ \mathsf{bound}(f,i,[]):\mathsf{arrs}(L;S)}
 $$

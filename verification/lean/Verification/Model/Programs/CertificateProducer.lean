@@ -343,6 +343,19 @@ def subtype [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
       | [] => none
       | ks => subtypeWith G pool ks A B) <|> ((instProof G fuel A B).filter ok) <|>
     ((genProof G pool fuel A B).filter ok) <|> ((tableProof G fuel A B).filter ok)
+/-- Proofs that the member of key `k` on `O` covers each fixed signature of
+`F`: for each, a member signature of as many parameters, each claimed
+parameter within the member's and the member's result within the claimed. -/
+def memberProofs [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) (O : Ty ι) (k : PropKey)
+    (F : Ty ι) : Option (List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι)) := do
+  let m ← ProgramTyping.memberOf G O k
+  let [.arrs L _] := expand G F | none
+  L.mapM fun q => m.calls.findSome? fun c => do
+    if q.2.1.length != c.1.length then none
+    let ps ← (q.2.1.zip c.1).mapM fun (D, C) => subtype G pool D C
+    let pr ← subtype G pool c.2 q.2.2
+    pure (ps, pr)
+
 def coerce [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     (e : ProgramCertificates.Evidence ι) (A : Ty ι) : Option (ProgramCertificates.Evidence ι) := do
   if (claim e).type = A then return e
@@ -466,9 +479,11 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         else none
     -- A member bound to its host: a leaf whose checker reads the object's type
     -- from the context; the claimed type, or a pool type, is its result.
-    | .letE (.readAt _ (.var _)) (.makeAt (.bound (.var 0) (.var _) []) [] []) =>
-      return (A :: pool).findSome? fun F =>
-        if checkTree G (leaf F .bindMember) then coerce G pool (leaf F .bindMember) A else none
+    | .letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var _) []) [] []) =>
+      return (A :: pool).findSome? fun F => do
+        let ps ← memberProofs G pool (← Γ[i]?) k F
+        if checkTree G (leaf F (.bindMember ps)) then coerce G pool (leaf F (.bindMember ps)) A
+        else none
     | .letE a b =>
       let exactTypes := suggestions.reverse.filterMap fun j =>
         if j.context == Γ && j.term == a then some j.type else none

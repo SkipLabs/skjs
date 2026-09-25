@@ -415,6 +415,29 @@ def memberOf (G : NormalGraph ι) (O : Ty ι) (k : PropKey) : Option (MethodMemb
   | [.refs _ _ _ _ ms _] | [.dict _ _ _ _ _ ms _] => ms.find? (·.key == k)
   | _ => none
 
+/-- A fixed signature covered by one of a member's: each claimed parameter
+within the member's, and the member's result within the claimed one, by
+checked proofs. The claimed types may be other rows for the same types, such as
+a producer's copy of a declared array type. -/
+def CoveredCall [DecidableEq ι] (G : NormalGraph ι) (q : Ty ι × List (Ty ι) × Ty ι)
+    (c : List (Ty ι) × Ty ι) : Prop :=
+  q.2.1.length = c.1.length ∧
+    (∀ x ∈ q.2.1.zip c.1, ∃ p, PositiveCertificates.check G x.1 x.2 p = true) ∧
+    ∃ p, PositiveCertificates.check G c.2 q.2.2 p = true
+
+/-- Parameters each within the member's, as families. -/
+theorem CoveredCall.params [DecidableEq ι] {G : NormalGraph ι} :
+    ∀ {Ds Cs : List (Ty ι)}, Ds.length = Cs.length →
+      (∀ x ∈ Ds.zip Cs, ∃ p, PositiveCertificates.check G x.1 x.2 p = true) →
+      ArgsLe (Ds.map (meaning G)) (Cs.map (meaning G))
+  | [], [], _, _ => .nil
+  | D :: Ds, C :: Cs, hl, h => by
+    obtain ⟨p, hp⟩ := h (D, C) (by simp)
+    exact .cons (PositiveCertificates.accepted hp)
+      (CoveredCall.params (by simpa using hl) fun x hx => h x (by simp [hx]))
+  | [], _ :: _, hl, _ => by simp at hl
+  | _ :: _, [], hl, _ => by simp at hl
+
 /-- A member of a host's type is found by the member's key on the host, whose
 contract implies the member's signatures invoked on that host. -/
 theorem memberOf_at {G : NormalGraph ι} {O : Ty ι} {k : PropKey} {m : MethodMembers.Sig (Ty ι)}
@@ -1081,14 +1104,16 @@ and the receiver. -/
       HasTy G Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
   /-- **A member bound to its host.** The member is read from the object in a
   slot, before anything else runs, and bound to that same object: the bound
-  function meets the member's signatures whatever receiver it is later given.
-  This is how a method call `o.m(args)` keeps JavaScript's order, reading the
-  member before the actuals, while the member's contract stays host-relative. -/
+  function meets the member's signatures whatever receiver it is later given,
+  and each fixed signature one of them covers. This is how a method call
+  `o.m(args)` keeps JavaScript's order, reading the member before the actuals,
+  while the member's contract stays host-relative. -/
   | bindMember {Γ : List (Ty ι)} {F O : Ty ι} {i : Nat} {k : PropKey}
       {m : MethodMembers.Sig (Ty ι)} {L : List (Ty ι × List (Ty ι) × Ty ι)}
       {S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} :
       Γ[i]? = some O → memberOf G O k = some m → Represents G F (.arrs L S) →
-      (∀ q ∈ L, (q.2.1, q.2.2) ∈ m.calls) → (∀ s ∈ S, (s.2.1, s.2.2.1, s.2.2.2) ∈ m.rests) →
+      (∀ q ∈ L, ∃ c ∈ m.calls, CoveredCall G q c) →
+      (∀ s ∈ S, (s.2.1, s.2.2.1, s.2.2.2) ∈ m.rests) →
       HasTy G Γ (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) F
   | sub : HasTy G Γ t A → PositiveCertificates.check G A B cert = true → HasTy G Γ t B
 
@@ -2087,7 +2112,16 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
             (q + 2) U (.objAt [] (.bound u (ρ i) [])) := by
           refine callsT_of_signatures hinv fun x hx => ?_
           obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
-          have ht := callsT_select hon.1 (List.mem_map_of_mem (List.mem_map_of_mem (hL y hy)))
+          obtain ⟨c, hc, hlen, hps, pr, hpr⟩ := hL y hy
+          have hc' := callsT_select hon.1 (List.mem_map_of_mem (List.mem_map_of_mem hc))
+          have hle := CoveredCall.params hlen hps
+          have ht : callsT [(MethodMembers.hostT (ρ i), y.2.1.map (meaning G), meaning G y.2.2)]
+              (q + 2) U u :=
+            ⟨hc'.1, fun p hp => by
+              cases List.mem_singleton.mp hp
+              exact (hc'.2 _ (List.mem_singleton_self _)).weaken (fun _ _ _ r h => h)
+                (fun _ _ _ args ha => ArgsShort_mono hle ha)
+                (fun m _ V w hw => PositiveCertificates.accepted hpr m V w hw)⟩
           exact callsT_bound (Ps := []) (MethodMembers.hostT_adm _) (by simp)
             (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G b)
             ht hvalρ hscope rfl trivial (by simp [CallArguments.Values]) (by simp)

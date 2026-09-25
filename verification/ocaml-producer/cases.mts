@@ -412,8 +412,8 @@ export const cases: Case[] = [
   negative("invalid-class-constructor-type", "a class does not accept a parameter its constructor does not"),
   gap("class-field-reassigned", "a constructor reassigning an initialized field", "unsupported", "source",
     /a constructor assigns each uninitialized field once/),
-  gap("class-array-method", "a method call whose declared result is a copy of the claimed array type",
-    "unverified", "search", /source expression obligation at \[\d+,\d+\): evidence search failed/),
+  positive("class-array-method", "a method building an array, called where its result is claimed as another row for the same type"),
+  negative("invalid-class-array-method", "a method's array result keeps its element types"),
   gap(
     "module-constant-unannotated",
     "a module constant read by a function without an annotation",

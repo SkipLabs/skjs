@@ -56,8 +56,10 @@ inductive Rule (ι : Type) where
   | bindE
   /-- A bound variadic function, likewise. -/
   | bindRestE
-  /-- A member read from a slot's object and bound to that same object. -/
-  | bindMember
+  /-- A member read from a slot's object and bound to that same object: for
+  each fixed signature of the result, proofs that a member signature covers it,
+  one per parameter, then the result. -/
+  | bindMember (proofs : List (List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι))
   /-- A class value: the `undefined` type its bodies' receiver has. -/
   | ctorE (undef : Ty ι)
   /-- `new`: the constructor, then the actuals in order. -/
@@ -133,6 +135,46 @@ def ProtoMember (G : NormalGraph ι) (P : Ty ι) (f : PropKey) (A : Ty ι) : Pro
 instance [DecidableEq ι] (G : NormalGraph ι) (P : Ty ι) (f : PropKey) (A : Ty ι) :
     Decidable (ProtoMember G P f A) := by
   unfold ProtoMember; split <;> infer_instance
+
+/-- Proofs that the member signature `c` covers the claimed `q`: each claimed
+parameter within the member's, then the member's result within the claimed. -/
+def CallProofs [DecidableEq ι] (G : NormalGraph ι) (q : Ty ι × List (Ty ι) × Ty ι)
+    (c : List (Ty ι) × Ty ι)
+    (ps : List (PositiveCertificates.Proof ι) × PositiveCertificates.Proof ι) : Prop :=
+  q.2.1.length = c.1.length ∧ ps.1.length = c.1.length ∧
+    (∀ x ∈ (q.2.1.zip c.1).zip ps.1, PositiveCertificates.check G x.1.1 x.1.2 x.2 = true) ∧
+    PositiveCertificates.check G c.2 q.2.2 ps.2 = true
+
+instance [DecidableEq ι] (G : NormalGraph ι) (q c ps) : Decidable (CallProofs G q c ps) := by
+  unfold CallProofs; infer_instance
+
+theorem CallProofs.covered [DecidableEq ι] {G : NormalGraph ι} {q c ps}
+    (h : CallProofs G q c ps) : CoveredCall G q c := by
+  obtain ⟨hl, hp, hall, hr⟩ := h
+  refine ⟨hl, fun x hx => ?_, ⟨_, hr⟩⟩
+  obtain ⟨p, hxp⟩ := PositiveCertificates.exists_mem_zip (xs := q.2.1.zip c.1) (ys := ps.1)
+    (by rw [List.length_zip, hl, Nat.min_self, hp]) x hx
+  exact ⟨p, hall _ hxp⟩
+
+/-- A choice for each member of a list, as a list alongside it. -/
+theorem choose_list {α β : Type} {P : α → β → Prop} :
+    ∀ xs : List α, (∀ x ∈ xs, ∃ y, P x y) →
+      ∃ ys : List β, ys.length = xs.length ∧ ∀ xy ∈ xs.zip ys, P xy.1 xy.2
+  | [], _ => ⟨[], rfl, by simp⟩
+  | x :: xs, h => by
+    obtain ⟨y, hy⟩ := h x List.mem_cons_self
+    obtain ⟨ys, hl, hall⟩ := choose_list xs fun x hx => h x (List.mem_cons_of_mem _ hx)
+    refine ⟨y :: ys, by simp [hl], fun xy hxy => ?_⟩
+    rcases List.mem_cons.mp hxy with rfl | hxy
+    · exact hy
+    · exact hall xy hxy
+
+theorem CoveredCall.proofs [DecidableEq ι] {G : NormalGraph ι} {q c}
+    (h : CoveredCall G q c) : ∃ ps, CallProofs G q c ps := by
+  obtain ⟨hl, hall, pr, hr⟩ := h
+  obtain ⟨ps, hpl, hps⟩ := choose_list (P := fun (x : Ty ι × Ty ι) p =>
+    PositiveCertificates.check G x.1 x.2 p = true) _ hall
+  exact ⟨(ps, pr), hl, by simpa [List.length_zip, hl] using hpl, hps, hr⟩
 
 /-- Only finite, syntactic premises of one rule. -/
 def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι)) : Prop :=
@@ -382,11 +424,13 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     | _, _, _, _ => False
   -- A member read from a slot's object and bound to that same object, with no
   -- premises: the result's signatures are the member's, at any receiver.
-  | .bindMember, .letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var r) pre) ns inits), [] =>
+  | .bindMember proofs, .letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var r) pre) ns inits),
+      [] =>
     r = i + 1 ∧ pre = [] ∧ ns = [] ∧ inits = [] ∧
     match j.context[i]?, expand G j.type with
     | some O, [.arrs L S] => ∃ m ∈ (memberOf G O k).toList,
-        (∀ q ∈ L, (q.2.1, q.2.2) ∈ m.calls) ∧ (∀ s ∈ S, (s.2.1, s.2.2.1, s.2.2.2) ∈ m.rests)
+        proofs.length = L.length ∧ (∀ qp ∈ L.zip proofs, ∃ c ∈ m.calls, CallProofs G qp.1 c qp.2) ∧
+        (∀ s ∈ S, (s.2.1, s.2.2.1, s.2.2.2) ∈ m.rests)
     | _, _ => False
   -- A class value: a function's allocation with construct-only code.
   | .ctorE U, .makeAt (.closure arity b .construct) ns inits, ps =>
@@ -1018,8 +1062,11 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
   · obtain ⟨rfl, rfl, rfl, rfl, hl⟩ := hl
     split at hl
     · rename_i O L S hO hF
-      obtain ⟨m, hm, hL, hS⟩ := hl
-      exact HasTy.bindMember hO (by simpa using hm) hF hL hS
+      obtain ⟨m, hm, hlen, hL, hS⟩ := hl
+      exact HasTy.bindMember hO (by simpa using hm) hF (fun q hq => by
+        obtain ⟨pp, hpp⟩ := PositiveCertificates.exists_mem_zip hlen q hq
+        obtain ⟨c, hc, hcp⟩ := hL _ hpp
+        exact ⟨c, hc, hcp.covered⟩) hS
     · contradiction
   · rename_i ps U arity b ns inits
     obtain ⟨rfl, rfl, hU, hl⟩ := hl
@@ -1560,14 +1607,20 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       exact ⟨hmap, hsig⟩
     · simp
   | @bindMember Γ F O i k m L S hi hmo hF hL hS =>
-    apply node_complete (r := .bindMember) (js := [])
+    obtain ⟨proofs, hlen, hps⟩ := choose_list
+      (P := fun q ps => ∃ c ∈ m.calls, CallProofs G q c ps) L (fun q hq => by
+        obtain ⟨c, hc, hcov⟩ := hL q hq
+        obtain ⟨ps, hps⟩ := CoveredCall.proofs hcov
+        exact ⟨ps, c, hc, hps⟩)
+    apply node_complete (r := .bindMember proofs) (js := [])
     · refine ⟨rfl, rfl, rfl, rfl, ?_⟩
       show (match Γ[i]?, expand G F with
         | some O, [.arrs L S] => ∃ m ∈ (memberOf G O k).toList,
-            (∀ q ∈ L, (q.2.1, q.2.2) ∈ m.calls) ∧ (∀ s ∈ S, (s.2.1, s.2.2.1, s.2.2.2) ∈ m.rests)
+            proofs.length = L.length ∧ (∀ qp ∈ L.zip proofs, ∃ c ∈ m.calls, CallProofs G qp.1 c qp.2) ∧
+            (∀ s ∈ S, (s.2.1, s.2.2.1, s.2.2.2) ∈ m.rests)
         | _, _ => False)
       rw [hi, show expand G F = [.arrs L S] from hF]
-      exact ⟨m, by simp [hmo], hL, hS⟩
+      exact ⟨m, by simp [hmo], hlen, hps, hS⟩
     · simp
   | @bindRestE Γ F T Rt E El R Rc t r saved Ps Qs ht hsig hel hr hmap hQs hF =>
     apply node_complete (r := .bindRestE) (js := [])

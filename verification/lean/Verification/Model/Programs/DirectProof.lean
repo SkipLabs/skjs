@@ -99,6 +99,10 @@ def renderAt (G : NormalGraph Nat) (pool : List (Ty Nat)) :
         let es ← (L.zip bs).attach.mapM fun q =>
           renderAt G pool depth (ProgramTyping.bodyFrame arity q.val.1 Γ) q.val.2
         pure (.node ⟨Γ,j.term,j.type⟩ .makeCallable (eas ++ es))
+    -- The member's covering proofs are searched in the actual context.
+    | .bindMember _, .letE (.readAt k (.var i)) _, [] =>
+      let ps ← memberProofs G pool (← Γ[i]?) k j.type
+      pure (.node ⟨Γ,j.term,j.type⟩ (.bindMember ps) [])
     | .ifBoolVar T F, .ite (.var i) _ _, [t,e] =>
       let pt ← renderAt G pool depth (Γ.set i T) t
       let pe ← renderAt G pool depth (Γ.set i F) e

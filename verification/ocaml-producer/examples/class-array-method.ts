@@ -1,6 +1,6 @@
-// The method's body verifies; the call does not yet: its declared result and
-// the claimed one are two rows for `[number, number]`, and a bound member
-// meets exactly its own signatures.
+// A method building an array, and a call to it: the claimed result is the
+// producer's own row for `[number, number]`, which the member's declared
+// result covers.
 class Pair {
   constructor(private first: number) {}
   pair(second: number): [number, number] {

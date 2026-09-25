@@ -298,6 +298,8 @@ def validEvidence (bound : Nat) : ProgramCertificates.Evidence Nat → Bool
     (j.type :: j.context).all (validTy bound) &&
     (match r with
       | .sub p => (proofTypes p).all (validTy bound)
+      | .bindMember ps => ps.all fun p =>
+          (p.1.flatMap proofTypes ++ proofTypes p.2).all (validTy bound)
       | .ifBoolVar T F => validTy bound T && validTy bound F
       | .funRest As | .makeCallableRest As => As.all (validTy bound)
       | .callRest _ _ _ E => validTy bound E
