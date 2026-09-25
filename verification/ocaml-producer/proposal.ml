@@ -173,20 +173,21 @@ let rec index_type declarations seen receiver key = match receiver with
   | Union ts -> combine (List.map (fun t -> index_type declarations seen t key) ts)
   | Rigid _ -> unsupported "indexed read on rigid parameter"
 
-(* A fresh literal may establish the dictionary arm of a recursive expected
-   type. This is a construction hint only: every field still has a source
-   obligation against the declared index contract. Existing objects never
-   gain a dictionary guarantee by this lookup. *)
-let rec dictionary_hint declarations seen = function
+(* A fresh literal is built at the one object contract its expected type
+   names: a record or dictionary shape, possibly behind a declaration (a class
+   instance, or the dictionary arm of a recursive type). This is a construction
+   hint only: every field still has a source obligation against the contract.
+   Existing objects never gain a dictionary guarantee by this lookup. *)
+let rec object_hint declarations seen = function
   | Atoms atoms ->
     let choices = List.filter_map (function
-      | Shape ({string_index=Some _;_} as shape) -> Some shape
+      | Shape ({elements=None;_} as shape) -> Some shape
       | Named (id,args) when not (List.mem id seen) ->
-        dictionary_hint declarations (id::seen) (definition declarations id args)
+        object_hint declarations (id::seen) (definition declarations id args)
       | _ -> None) atoms in
     (match choices with [shape] -> Some shape | _ -> None)
   | Union parts ->
-    (match List.filter_map (dictionary_hint declarations seen) parts with
+    (match List.filter_map (object_hint declarations seen) parts with
     | [shape] -> Some shape | _ -> None)
   | Rigid _ -> None
 
@@ -305,10 +306,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
     | Arith (_,l,r) -> ignore (expr env l); ignore (expr env r); Atoms [Num]
     | Equality (_,l,r) -> ignore (expr env l); ignore (expr env r); bool
     | Alloc fs ->
-      let contract = match expected with
-        | Some (Atoms [Shape s]) when s.elements=None -> Some s
-        | Some expected -> dictionary_hint declarations [] expected
-        | None -> None in
+      let contract = Option.bind expected (object_hint declarations []) in
       let fields = List.map (fun (name,e) ->
         let hint = Option.bind contract (fun s -> List.find_opt (fun (f:Semantic.field) -> f.name=Name name) s.fields) in
         let expected = match contract with
@@ -318,8 +316,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         let t=Option.value expected ~default:(widen inferred) in
         {name=Name name;optional=false;read=t;write=Some t}) fs in
       (match contract with
-       | Some {fields=[];string_index=Some index;calls=[];elements=None}
-           when index.writable=None ->
+       | Some {fields=[];string_index=Some index;calls=[];elements=None} ->
          Atoms [Shape {fields=[];string_index=Some index;calls=[];elements=None}]
        | _ -> record fields)
     | ArrayLiteral es ->
@@ -352,25 +349,45 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
       ignore (expr ~expected:result inner body);
       Atoms [Ctors [{quantified=[];receiver=Semantic.top;params=List.map snd ps;variadic=None;rest_pack=None;result}]]
     | Ctor _ -> unsupported "a class value is a constructor lambda with plain parameters"
-    | New (callee,args) ->
+    | New (callee,types,args) ->
+      (* `new` may omit trailing actuals, as a call may: the machine binds
+         `undefined` there, and Lean checks each omitted position admits it. *)
+      let written (s:Semantic.signature) = List.filteri (fun i _ -> i < List.length args) s.params in
       (match declared_head declarations [] (expr env callee) with
        | Atoms [Ctors [signature]] when signature.quantified <> [] ->
-         (* A generic class: its instance is inferred from the actuals, as a
-            generic call's is. *)
-         if List.length signature.params <> List.length args then
+         (* A generic class: its instance is the one the explicit type
+            arguments name, or is inferred from the actuals, as a generic
+            call's is. *)
+         if List.length args > List.length signature.params then
            unsupported "no construct signature takes this many arguments";
-         let inferred = Inference.infer ~expand:(expand_named declarations) ~receiver:Semantic.top signature (List.map (expr env) args) in
-         instance_of callee inferred.substitution;
+         let substitution,result =
+           if types <> [] then begin
+             if List.length types <> List.length signature.quantified then
+               unsupported "explicit type arguments must name every class type parameter";
+             let substitution = List.map2 (fun (q:Semantic.quantifier) t -> q.identity,ValueArgument t)
+               signature.quantified types in
+             let instance = Inference.substitute_signature substitution {signature with quantified=[]} in
+             List.iter2 (fun p a -> ignore (expr ~expected:p env a)) (written instance) args;
+             substitution,instance.result
+           end else
+             let missing = List.length signature.params - List.length args in
+             let inferred = Inference.infer ~expand:(expand_named declarations) ~receiver:Semantic.top signature
+               (List.map (expr env) args @ List.init missing (fun _ -> Atoms [Undef])) in
+             inferred.substitution,inferred.result in
+         instance_of callee substitution;
          instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
-           inferred.substitution) :: !instantiations;
-         inferred.result
+           substitution) :: !instantiations;
+         result
        | Atoms [Ctors signatures] ->
-         (match List.find_opt (fun (s:Semantic.signature) ->
-             s.quantified = [] && List.length s.params = List.length args) signatures with
-          | Some s ->
-            List.iter2 (fun p a -> ignore (expr ~expected:p env a)) s.params args;
+         if types <> [] then unsupported "explicit type arguments to a class that takes none";
+         let exact,short = List.partition (fun (s:Semantic.signature) ->
+           List.length s.params = List.length args) (List.filter (fun (s:Semantic.signature) ->
+             s.quantified = [] && List.length s.params >= List.length args) signatures) in
+         (match exact @ short with
+          | s :: _ ->
+            List.iter2 (fun p a -> ignore (expr ~expected:p env a)) (written s) args;
             s.result
-          | None -> unsupported "no construct signature takes this many arguments")
+          | [] -> unsupported "no construct signature takes this many arguments")
        | _ -> unsupported "`new` needs a value with construct signatures")
     | Lambda (receiver,quantified,ps,defaults,rest,written,body) ->
       (* An ordinary function binds its own `this`, replacing an enclosing

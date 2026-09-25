@@ -365,12 +365,18 @@ $$
       U,\vec x{:}\vec A,\Gamma\vdash_G b:B\ \text{for each signature}}
      {\Gamma\vdash_G \mathsf{class}(\vec x).b : L}
 \qquad
-\frac{\Gamma\vdash_G f:L\quad L\equiv_G\mathsf{Ctors}(\ldots,(\vec A,B),\ldots)\quad
-      \Gamma\vdash_G a_i:A_i}
+\frac{\Gamma\vdash_G f:L\quad L\equiv_G\mathsf{Ctors}(\ldots,(\vec A\,\vec U,B),\ldots)\quad
+      \Gamma\vdash_G a_i:A_i\quad\Gamma\vdash_G\mathsf{undefined}:U_j}
      {\Gamma\vdash_G \mathsf{new}\ f(\vec a):B}
 $$
 
-These are `ctorE` and `construct`. No arrow meets a construct signature and no
+These are `ctorE` and `construct`. As a call may, `new` may omit trailing
+positions $\vec U$ whose contracts admit `undefined`: the construct step binds
+`undefined` there, so the body entered is the one the padded list enters
+(`bindParameters_pad`), and the source term keeps the actuals it writes. A
+`new` with explicit type arguments, `new C<T>()`, names the instance of a
+generic class it constructs: the producer proposes that instantiation, and it
+is checked as an inferred one is ([DESIGN.md](DESIGN.md#modules-and-code-units)). No arrow meets a construct signature and no
 class a call signature, so `new` on an arrow and a plain call of a class are
 refused, as JavaScript throws. A construct signature is covered by one taking
 as many parameters, each at least as wide, with a result at most as wide:
@@ -468,7 +474,9 @@ $$
 The delegation is one step (`Step.readProto`), and the prototype's field or
 view is read one level down (`read_proto_rule`).
 
-These are `readView`, `readOptional`, `readProto` and `readDict`. The `read` and `write`
+These are `readView`, `readOptional`, `readProto` and `readDict`; the
+dictionary reads apply whatever writable index contracts the clause also
+carries. The `read` and `write`
 rules above take $(\kappa{:}A)\in\varphi$ from the invariant fields alone,
 whatever the views and optional fields. A dictionary's named field or view is
 read at its own contract by `read` or `readView`, since `dictViewT` sits beside
@@ -476,7 +484,14 @@ the named members' `recT` and `viewT` (`namedMembers_sem`); only a key it does
 not name is read through the index, with `undefined`. A write to an optional field is not typed, since
 the object's keys are fixed at allocation. `allocDict` establishes a dictionary view for a fresh literal only
 after checking every initializer at $A$ and that the literal names no
-prototype key. None of these rules grants a write
+prototype key; each location it allocates holds exactly $A$, so it establishes
+a writable index at $A$ too. The literal may be empty, `{}`:
+
+$$
+\frac{\vec k\ \text{distinct}\quad\mathsf{proto}\notin\vec k\quad\Gamma\vdash_G e_i:A\quad
+      D\equiv_G\mathsf{Dict}(;;A;\overline{C})\quad\forall C\in\overline{C}.\;C=A}
+     {\Gamma\vdash_G\{\overline{k_i{:}e_i}\}:D}
+$$ None of these rules grants a write
 capability to a readonly dictionary.
 
 $$

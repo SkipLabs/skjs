@@ -226,12 +226,16 @@ theorem adm_transfer2 {A : Fam} (hA : Adm A) {j i k : Nat} {U : WorldT j} {X : W
 
 /-- `new f(args)`: the constructor runs first, then the actuals left to right;
 the construct step then enters the class's body, which the constructor's
-signature makes safe one level down. -/
-theorem construct_safe {B : Fam} (xs : List (Fam × Tm))
+signature makes safe one level down. The signature may declare trailing
+positions `Us` the source omits: each admits `undefined`, which is what the
+step binds there, so the body entered is the one the padded list enters. -/
+theorem construct_safe {B : Fam} (xs : List (Fam × Tm)) (Us : List Fam)
     (hA : ∀ p ∈ xs, Adm p.1) (hAv : ∀ p ∈ xs, ValOnly p.1)
+    (hUA : ∀ A ∈ Us, Adm A)
     {n W heap f} (hw : WorldAdm W) (hh : HeapOk n W heap)
-    (hf : Safe (ctorsT [(xs.map Prod.fst, B)]) n W heap f)
-    (ha : ∀ p ∈ xs, FutureSafe p.1 n W p.2) :
+    (hf : Safe (ctorsT [(xs.map Prod.fst ++ Us, B)]) n W heap f)
+    (ha : ∀ p ∈ xs, FutureSafe p.1 n W p.2)
+    (hu : ∀ A ∈ Us, FutureSafe A n W .undef) :
     Safe B n W heap (.construct f (xs.map Prod.snd)) := by
   apply bind (fun f => .construct f (xs.map Prod.snd)) Step.constructL n W heap f hw hh hf
   intro j hj U hx hw' heap' v hok hv hctor
@@ -243,15 +247,32 @@ theorem construct_safe {B : Fam} (xs : List (Fam × Tm))
   | succ k =>
     have hc := adm_transfer2 (ctorsT_adm _) hctor (Nat.le_refl j)
       (by rw [trunc_id]; exact WExt_refl _) hk hz
-    have hAm : ∀ A ∈ xs.map Prod.fst, Adm A := by
-      intro A hA'; obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hA'; exact hA p hp
+    have hAm : ∀ A ∈ xs.map Prod.fst ++ Us, Adm A := by
+      intro A hA'
+      rcases List.mem_append.mp hA' with hA' | hA'
+      · obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hA'; exact hA p hp
+      · exact hUA A hA'
     have hAvm : ∀ A ∈ xs.map Prod.fst, ValOnly A := by
       intro A hA'; obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hA'; exact hAv p hp
     have hvals : CallArguments.Values args := ArgsT_values hAvm hargs
+    have hundef : ∀ A ∈ Us, A (k+1) V .undef := by
+      intro A hA'
+      exact safe_value_mem rfl
+        ((((hu A hA').transfer hj hx)).transfer hk hz (k+1) (Nat.le_refl _) V
+          (by rw [trunc_id]; exact WExt_refl _) hv' heap3 hok3)
+    have hpad : ∀ a ∈ List.replicate Us.length Tm.undef, a = .undef :=
+      fun _ h => List.eq_of_mem_replicate h
+    have hall := ArgsT_append hargs (ArgsT_undef hundef)
+    have hpvals : CallArguments.Values (args ++ List.replicate Us.length .undef) := by
+      intro a h
+      rcases List.mem_append.mp h with h | h
+      · exact hvals a h
+      · rw [hpad a h]; rfl
     obtain ⟨result, ⟨fs, arity, b, rfl, rfl⟩, hsafe⟩ :=
       hc.2 _ (List.mem_singleton_self _) k (Nat.lt_succ_self k) (trunc k (Nat.le_succ k) V)
-        (WExt_refl _) (WorldAdm_trunc _ hv') heap3 (HeapOk_trunc k V heap3 hok3) args hvals
-        (ArgsT_transfer hAm hargs k (Nat.le_succ k) _ (WExt_refl _))
+        (WExt_refl _) (WorldAdm_trunc _ hv') heap3 (HeapOk_trunc k V heap3 hok3) _ hpvals
+        (ArgsT_transfer hAm hall k (Nat.le_succ k) _ (WExt_refl _))
+    rw [CallArguments.bindParameters_pad _ _ _ _ _ hpad] at hsafe
     exact Or.inr ⟨trunc k (Nat.le_succ k) V, heap3, _, WExt_refl _, WorldAdm_trunc _ hv',
       .constructV hvals, HeapOk_trunc k V heap3 hok3, hsafe⟩
 
@@ -412,7 +433,7 @@ theorem restsT_of_restSigs {G : NormalGraph ι} {F : Ty ι} {s} (hs : s ∈ rest
 method, whose contract holds when it is invoked on the object it is read from. -/
 def memberOf (G : NormalGraph ι) (O : Ty ι) (k : PropKey) : Option (MethodMembers.Sig (Ty ι)) :=
   match expand G O with
-  | [.refs _ _ _ _ ms _] | [.dict _ _ _ _ _ ms _] => ms.find? (·.key == k)
+  | [.refs _ _ _ _ ms _] | [.dict _ _ _ _ _ ms _ _] => ms.find? (·.key == k)
   | _ => none
 
 /-- A fixed signature covered by one of a member's: each claimed parameter
@@ -864,7 +885,7 @@ theorem zip_getElem_mem {α β : Type} {L : List α} {As : List β} {i : Nat} (h
 a record's, or a dictionary's, whose named members hold beside its index. -/
 def namedMembers : Clause α → Option (List (PropKey × α) × List (PropKey × α))
   | .refs fs [] vs _ _ _ => some (fs, vs)
-  | .dict fs [] vs _ _ _ _ => some (fs, vs)
+  | .dict fs [] vs _ _ _ _ _ => some (fs, vs)
   | _ => none
 
 /-- A value of a type with named members holds each named field as a cell of
@@ -877,7 +898,7 @@ theorem namedMembers_sem {G : NormalGraph ι} {A : Ty ι} {c : Clause (Ty ι)}
   have hs := (represents_sem hr n W v).mp h
   match c, hc with
   | .refs _ [] _ _ _ _, rfl => exact ⟨hs.1.1, hs.2.1⟩
-  | .dict _ [] _ _ _ _ _, rfl => exact ⟨hs.1.1, hs.2.1⟩
+  | .dict _ [] _ _ _ _ _ _, rfl => exact ⟨hs.1.1, hs.2.1⟩
 
 variable [DecidableEq ι]
 
@@ -912,11 +933,13 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       Represents G F (.ctors L) → Represents G U .undef → (∀ p ∈ L, arity ≤ p.1.length) →
       (∀ p ∈ L, HasTy G (U :: p.1.take arity ++ Γ) b p.2) →
       HasTy G Γ (.make (.closure arity b .construct) .nul) F
-  /-- `new f(args)`: `f` at a construct signature, each actual at its parameter. -/
+  /-- `new f(args)`: `f` at a construct signature, each actual at its
+  parameter. As a call may, `new` may omit trailing positions whose contracts
+  admit `undefined`, the value the machine binds there. -/
   | construct {Γ : List (Ty ι)} {f : Tm} {F B : Ty ι} {L : List (List (Ty ι) × Ty ι)}
-      {xs : List (Ty ι × Tm)} :
-      HasTy G Γ f F → Represents G F (.ctors L) → (xs.map Prod.fst, B) ∈ L →
-      (∀ p ∈ xs, HasTy G Γ p.2 p.1) →
+      {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} :
+      HasTy G Γ f F → Represents G F (.ctors L) → (xs.map Prod.fst ++ Us, B) ∈ L →
+      (∀ p ∈ xs, HasTy G Γ p.2 p.1) → (∀ A ∈ Us, HasTy G Γ .undef A) →
       HasTy G Γ (.construct f (xs.map Prod.snd)) B
   /-- A callable object: the same allocation as a record, with invocation code
   attached. Its bag is a record like any other, so its fields are named by the
@@ -961,14 +984,15 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks) →
       (∀ K ∈ ks, ∀ p ∈ parts, p.1 ∈ K) →
       HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
-  /-- A fresh literal establishes a readonly index view when every value is
-  checked at the index element contract. Its exact allocated fields are used;
+  /-- A fresh literal establishes an index view, and a writable index at the
+  same contract if one is claimed, when every value is checked at the index
+  element contract. Its exact allocated fields are used;
   this is not an open-record subtyping rule. It names no prototype, so the
   dictionary has none. -/
-  | allocDict {parts : List (PropKey × Tm)} : (parts.map Prod.fst).Nodup →
+  | allocDict {parts : List (PropKey × Tm)} {Cs : List (Ty ι)} : (parts.map Prod.fst).Nodup →
       CallArguments.protoField ∉ parts.map Prod.fst →
       (∀ p ∈ parts, HasTy G Γ p.2 Elem) →
-      Represents G Dict (.dict [] [] [] [Elem]) →
+      Represents G Dict (.dict [] [] [] [Elem] [] [] [] Cs) → (∀ C ∈ Cs, C = Elem) →
       HasTy G Γ (.makeAt .absent (parts.map Prod.fst) (parts.map Prod.snd)) Dict
   /-- A named field, of a record or of a dictionary, reads at its contract. -/
   | read : HasTy G Γ a Ref → Represents G Ref c → namedMembers c = some (fs, vs) →
@@ -994,10 +1018,10 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   /-- A dictionary read may miss even when every present value has type `A`.
   A string index signature says nothing of a symbol-keyed field, so only a
   string key is read through one. -/
-  | readDict {f : String} : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix os ms ks) →
+  | readDict {f : String} : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix os ms ks cs) →
       A ∈ ix → Represents G U .undef →
       HasTy G Γ (.readAt (.str f) a) (A ++ U)
-  | indexDict : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix os ms ks) →
+  | indexDict : HasTy G Γ a Ref → Represents G Ref (.dict fs [] vs ix os ms ks cs) →
       HasTy G Γ key K → Represents G K .str →
       A ∈ ix → Represents G U .undef →
       HasTy G Γ (.indexAt a key) (A ++ U)
@@ -1195,24 +1219,30 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
         i (by omega) V' hWV hu' heap hok .undef ((represents_sem hu i V' _).mpr rfl) args
         (by simpa using ha)
     · exact ⟨_, _, _, rfl, by simpa [Scoped, Nat.add_comm] using hcode.1⟩
-  | @construct Γ f F B L xs hf hr hp hx ihf ihx =>
+  | @construct Γ f F B L xs Us hf hr hp hx hu ihf ihx ihu =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     have hs := construct_safe (B := meaning G B)
-      (xs.map fun p => (meaning G p.1, instantiate 0 ρ p.2))
+      (xs.map fun p => (meaning G p.1, instantiate 0 ρ p.2)) (Us.map (meaning G))
       (by intro p hp; obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp; exact meaning_adm G q.1)
       (by intro p hp; obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp; exact meaning_valOnly G q.1)
-      hw hh (f := instantiate 0 ρ f) ?_ ?_
+      (by intro A hA; obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
+      hw hh (f := instantiate 0 ρ f) ?_ ?_ ?_
     · simpa only [List.map_map, Function.comp_def] using hs
     · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
       intro k hk U v hv
-      simpa only [List.map_map, Function.comp_def] using
+      simpa only [List.map_map, Function.comp_def, List.map_append] using
         ctorsT_select ((represents_sem hr k U v).mp hv).1
-          (List.mem_map.mpr ⟨(xs.map Prod.fst, B), hp, by simp [List.map_map, Function.comp_def]⟩)
+          (List.mem_map.mpr ⟨(xs.map Prod.fst ++ Us, B), hp,
+            by simp [List.map_append, List.map_map, Function.comp_def]⟩)
     · intro p hp'
       obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp'
       intro j hj U hx hu' heap hok
       exact ihx q hq j U heap ρ (he.transfer j hj U hx) hu' hok
+    · intro A hA
+      obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hA
+      intro j hj U hx hu' heap hok
+      exact ihu q hq j U heap ρ (he.transfer j hj U hx) hu' hok
   | @makeCallable Γ F L arity b parts hr hnd hp hlen hb ih ihb =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def, Nat.zero_add]
@@ -1386,7 +1416,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
     rw [hfam]
     exact hrec
-  | @allocDict Γ Elem Dict parts hnd hproto hp hr ih =>
+  | @allocDict Γ Elem Dict parts Cs hnd hproto hp hr hcs ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     have hmap : (parts.map fun p => (meaning G Elem, instantiate 0 ρ p.2)).map Prod.snd
@@ -1414,10 +1444,10 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       hu hok (by
         have hlen' : args.length = parts.length := by simpa using hlen
         simpa [hlen'] using ArgsT_zip hargs)
-    intro k hk V hy hd
+    intro k hk V hy hd hc
     apply (represents_sem hr k V _).mpr
     refine ⟨⟨⟨slots heap.length (parts.map Prod.fst), rfl, ?_⟩, by simp⟩,
-      by simp [viewT, ReferenceConjunctions.famsOf], ?_,
+      by simp [viewT, ReferenceConjunctions.famsOf], ⟨?_, ?_⟩,
       ⟨by simpa [ReferenceConjunctions.famsOf] using optT_nil, MethodMembers.methodT_nil _ _ _, by simp⟩⟩
     · intro f T hm
       simp [ReferenceConjunctions.famsOf] at hm
@@ -1425,6 +1455,9 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       simp only [List.mem_singleton] at hA
       cases hA
       exact hd
+    · intro C hC
+      cases hcs C hC
+      exact hc
   | @read Γ a Ref c fs vs f A ha hr hc hm ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
@@ -1475,16 +1508,16 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       (read_optional_rule (meaning_valOnly G A) j V heap hv hok
         (optT_no_proto (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) hs.2.2.1)
         (fun l hl => optT_present (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) hs.2.2.1 hl))
-  | @readDict Γ a Ref fs vs ix os ms ks A U f ha hr hm hUnd ih =>
+  | @readDict Γ a Ref fs vs ix os ms ks cs A U f ha hr hm hUnd ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt (.str f)) Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj V hx hv heap v hok hval ha'
-    have hd := ((represents_sem hr j V v).mp ha').2.2.1 A hm
+    have hd := ((represents_sem hr j V v).mp ha').2.2.1.1 A hm
     obtain ⟨flds, rfl, _⟩ := ((represents_sem hr j V v).mp ha').1.1
     apply Safe_mono j (fun k _ X u hu => (meaning_append G A U k X u).mpr
       (hu.elim Or.inl (fun h => Or.inr ((represents_sem hUnd k X u).mpr h)))) V heap _
       (read_dict_rule (meaning_valOnly G A) j V heap hv hok hd)
-  | @indexDict Γ a Ref fs vs ix os ms ks key K A U ha hr hk hStr hm hUnd iha ihk =>
+  | @indexDict Γ a Ref fs vs ix os ms ks cs key K A U ha hr hk hStr hm hUnd iha ihk =>
     intro n W h ρ he hw hh
     apply bind (fun v => .indexAt v (instantiate 0 ρ key)) Step.indexC1 n W h _ hw hh
       (iha n W h ρ he hw hh)
@@ -1495,7 +1528,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     have ha'' := (meaning_adm G Ref).mono k _ X hy av
       ((meaning_adm G Ref).down_le j k hk V av ha')
     obtain ⟨s, rfl⟩ := (represents_sem hStr k X kv).mp hk'
-    have hd := ((represents_sem hr k X av).mp ha'').2.2.1 A hm
+    have hd := ((represents_sem hr k X av).mp ha'').2.2.1.1 A hm
     obtain ⟨flds, rfl, _⟩ := ((represents_sem hr k X av).mp ha'').1.1
     apply Safe_mono k (fun i _ Y u hu => (meaning_append G A U i Y u).mpr
       (hu.elim Or.inl (fun h => Or.inr ((represents_sem hUnd i Y u).mpr h)))) X heap' _

@@ -49,7 +49,7 @@ The clauses, with what each denotes:
 | `str`, `strLit s` | any string; exactly $s$ |
 | `bigint`, `symbol` | any bigint; any symbol (opaque identities) |
 | `refs` | a plain object under record contracts, readonly views, optional fields and methods ([Records](#records)) |
-| `dict` | a `refs` object whose present string keys also meet readonly index contracts |
+| `dict` | a `refs` object whose present string keys also meet readonly and writable index contracts |
 | `list` | an array under one or more tuple contracts ([Arrays](#arrays)) |
 | `arrs` | a function meeting fixed and variadic call signatures ([Functions and classes](#functions-and-classes)) |
 | `callable` | a function that is also an object with record contracts |
@@ -154,10 +154,27 @@ $$
 A `dict` clause adds readonly **index contracts** $\overline{D}$: the object
 has no prototype, and every present field under a string key, named or not,
 has a contract implying each $D$. The object may lack a key, so an arbitrary
-indexed read has type $D\mid\mathsf{undefined}$. Index contracts are guarded through the world, so a
+indexed read has type $D\mid\mathsf{undefined}$. It also adds **writable
+index contracts** $\overline{C}$, a mutable index signature's: every present
+string-keyed field's contract agrees with each $C$, as an invariant field's
+does. A writable index is also listed among the readonly ones, which is what
+reads use. With $\mathit{flds}(\mathsf{proto})=\varnothing$ in both,
+
+$$
+\begin{aligned}
+\mathsf{dictView}(D)_n(W,v)&\iff v=\ell\land\forall s,l.\;\mathit{flds}(\mathsf{str}(s))=l\Rightarrow
+  \exists c.\;W(l)=c\land c_j\subseteq D_j,\\
+\mathsf{dictCell}(C)_n(W,v)&\iff v=\ell\land\forall s,l.\;\mathit{flds}(\mathsf{str}(s))=l\Rightarrow
+  \exists c.\;W(l)=c\land c_j\equiv C_j.
+\end{aligned}
+$$
+
+The calculus adds no key to an existing object; that TypeScript lets code
+holding a mutable dictionary add keys at $C$ is a trust assumption
+([DESIGN.md](DESIGN.md#writable-string-index-signatures)). Index contracts are guarded through the world, so a
 recursive graph can contain `JsonObject = { readonly [key: string]: Json | null }`.
 
-Lean: `refsT`, `viewT`, `optT`, `dictViewT`, `ownKeysT` (`Types/Types.lean`), `methodT`,
+Lean: `refsT`, `viewT`, `optT`, `dictViewT`, `dictCellT`, `ownKeysT` (`Types/Types.lean`), `methodT`,
 `memberT`, `holdsAt`, `onHost` (`Types/MethodMembers.lean`). The heap facts behind invariant
 operands (`adm`, `congr_below`, `operands_agree`, `read_all`, `write_first`,
 `cyclic_inhabited`) are in `Types/ReferenceConjunctions.lean`: a read meets
@@ -403,8 +420,15 @@ field whose type is within it. An optional field is met by a required or
 optional field of the same key with an equivalent type; a required field is
 never met by a view or an optional field, since neither says the key is
 present. Fields the target does not name are not compared: records are open.
-A bounded target needs a source bound within it (`CoversBounds`). A `dict`
-target also needs each index contract within some source index contract.
+A bounded target needs a source bound within it (`CoversBounds`). A `dict` target also needs each readonly index contract within some source one, and each writable index contract equivalent to a writable source one, so a mutable dictionary is invariant and a readonly one is never mutable:
+
+$$
+\frac{\Delta;S\vdash\mathsf{Ref}(\Phi;\psi;\omega;\mu;\beta)\sqsubseteq\mathsf{Ref}(\varphi';\psi';\omega';\mu';\beta')\quad
+      \forall D'\in\overline{D'}.\;\exists D\in\overline{D}.\;\Delta(D,D')\quad
+      \forall C'\in\overline{C'}.\;\exists C\in\overline{C}.\;\Delta^{\pm}(C,C')}
+     {\Delta;S\vdash\mathsf{Dict}(\Phi;\psi;\overline{D};\overline{C};\omega;\mu;\beta)\sqsubseteq
+      \mathsf{Dict}(\varphi';\psi';\overline{D'};\overline{C'};\omega';\mu';\beta')}
+$$
 
 **Methods.** A target method $m$ is covered by a source method of the same
 key, by a function the source holds under that key whose receiver the source
@@ -545,7 +569,15 @@ $$
 
 **Classes.** A construct signature $\vec C\Rightarrow D$ is covered by a
 source one $\vec A\Rightarrow B$ with $\Delta(\vec C,\vec A)$ and
-$\Delta(B,D)$. A variadic one is covered by a variadic source one with as many fixed
+$\Delta(B,D)$. One with a `never` parameter admits no actual list, so its
+promise is vacuous and any class meets it; the results are still compared,
+as TypeScript compares them. This is how `ResourceClass<C, never>` holds a
+class whatever its constructor takes (`ArgsT_mem`):
+
+$$
+\frac{(\vec A\Rightarrow B)\in L\quad\Delta(\vec C,\vec A)\ \lor\ \bot\in\vec C\quad\Delta(B,D)}
+     {\Delta\vdash\mathsf{Ctors}(L)\sqsubseteq(\vec C\Rightarrow D)}
+$$ A variadic one is covered by a variadic source one with as many fixed
 parameters, each at least as wide, a rest at least as wide and a result at most as
 wide, or, when its rest is an exact tuple, by a fixed one as above. So a class
 taking a number meets `new (...params: [number]) => M`.

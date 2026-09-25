@@ -110,9 +110,13 @@ let encode (proposal : Proposal.t) =
       | None ->
         let clause = match shape.fields,shape.string_index,shape.calls with
         | _,Some index,[] ->
-          if index.writable <> None then unsupported "mutable string index signature";
+          (* A mutable index is also a writable one, at its one contract. *)
+          let cells = match index.writable with
+            | None -> []
+            | Some w when w = index.value -> ["cells",Array [labels index.value]]
+            | Some _ -> unsupported "asymmetric string index signature" in
           Object ["dict",Object (["first",fields;"rest",Array [];"views",views;
-            "indexes",Array [labels index.value]] @ optional_list)]
+            "indexes",Array [labels index.value]] @ optional_list @ cells)]
         | _,Some _,_ -> unsupported "callable with string index needs a combined clause"
         | _,None,[] -> Object ["refs",Object (["first",fields;"rest",Array [];"views",views] @ optional_list)]
         | [],None,_ -> Object ["arrs",Object calls]

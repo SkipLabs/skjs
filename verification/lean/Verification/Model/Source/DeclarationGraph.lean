@@ -86,7 +86,8 @@ private partial def mentionsSelf : Json → Bool
   | _ => false
 
 /-- An object clause of one record operand, as its parts: named fields,
-views, string index views, optional fields, methods and own-key bounds. -/
+views, string index views, optional fields, methods, own-key bounds and
+writable string indexes. -/
 private structure ObjectParts where
   fields : List (PropKey × List Nat)
   views : List (PropKey × List Nat)
@@ -94,10 +95,11 @@ private structure ObjectParts where
   optional : List (PropKey × List Nat)
   methods : List (MethodMembers.Sig (List Nat))
   bounds : List (List PropKey)
+  cells : List (List Nat)
 
 private def objectParts : Clause (List Nat) → Option ObjectParts
-  | .refs fs [] vs os ms ks => some ⟨fs, vs, [], os, ms, ks⟩
-  | .dict fs [] vs ix os ms ks => some ⟨fs, vs, ix, os, ms, ks⟩
+  | .refs fs [] vs os ms ks => some ⟨fs, vs, [], os, ms, ks, []⟩
+  | .dict fs [] vs ix os ms ks cs => some ⟨fs, vs, ix, os, ms, ks, cs⟩
   | _ => none
 
 private def ObjectParts.keys (o : ObjectParts) : List PropKey :=
@@ -122,7 +124,7 @@ private def inheritRows (own base : List (Clause (List Nat))) : Except String (L
         let ks := b.bounds ++ o.bounds
         return [match b.indexes ++ o.indexes with
           | [] => .refs fs [] vs os ms ks
-          | ix => .dict fs [] vs ix os ms ks]
+          | ix => .dict fs [] vs ix os ms ks (b.cells ++ o.cells)]
   let rows := PositiveNormalization.meetLists own base
   if rows.isEmpty then throw "inherited interface contracts have no representable intersection"
   return rows
@@ -483,11 +485,12 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
     let optional := all.toList.filterMap fun (n, v, _, o) => if o then some (n, v) else none
     let names := fs.toList.map (·.1) ++ optional.map (·.1) ++ methods.map (·.key)
     if names.eraseDups.length != names.length then throw "duplicate declaration field"
+    -- A string index is a view; a mutable one is also a writable index at
+    -- the same contract, as a mutable field is an invariant one.
     let index ← field term "stringIndex"
-    let indexes ← if index == .null then pure ([] : List (List Nat)) else do
-      if !(← bool index "readonly") then throw "mutable declaration index needs a fixed contract"
+    let (indexes, cells) ← if index == .null then pure (([] : List (List Nat)), ([] : List (List Nat))) else do
       let value ← lowerType ds owner params seen (← field index "value")
-      pure ([value] : List (List Nat))
+      pure ([value], if ← bool index "readonly" then [] else [value])
     let writes := fs.toList.filterMap fun (name, value, readonly) =>
       if readonly then none else some (name, value)
     let views := fs.toList.filterMap fun (name, value, readonly) =>
@@ -509,7 +512,7 @@ private partial def lowerType (ds : Array Definition) (owner : Nat)
           ← lowerRest ds owner params seen rest, result)]
     let row ← if fixed.isEmpty && variadic.isEmpty then
         if indexes.isEmpty then use (.refs writes [] views optional methods)
-        else use (.dict writes [] views indexes optional methods)
+        else use (.dict writes [] views indexes optional methods [] cells)
       else if !methods.isEmpty then
         throw "a callable object with methods needs a combined clause"
       else if !optional.isEmpty then
@@ -879,9 +882,10 @@ private partial def annotationClaim (ds : Array Definition) (known : Visit) (ter
     if fields.isEmpty && index == .null then throw "a record with no field has no location"
     let signature ← if index == .null then pure [] else do
       CellClaims.fieldsExactly index ["readonly", "value", "span"]
-      if !(← bool index "readonly") then throw "expected a readonly string index signature"
-      pure [("indexSignature", Json.mkObj [("read", ← recur (← field index "value")),
-        ("write", claimType [])])]
+      -- A mutable index writes at its read contract.
+      let value ← recur (← field index "value")
+      pure [("indexSignature", Json.mkObj [("read", value),
+        ("write", if ← bool index "readonly" then claimType [] else value)])]
     return claimType [Json.mkObj ([("a", toJson "record"), ("fields", toJson fields),
       ("indexes", Json.mkObj [("string", toJson "absent"), ("number", toJson "absent"),
         ("symbol", toJson "absent")])] ++ signature ++

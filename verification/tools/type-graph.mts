@@ -47,7 +47,9 @@ export type Clause =
    * are among. Each is left out when there are none. */
   | { refs: { first: Fields; rest: Fields[]; views: Fields; optional?: Fields;
       methods?: MethodSig[]; bounds?: string[][] } }
-  /** Readonly string index views apply to every present own field. */
+  /** Readonly string index views apply to every present own field; each of
+   * `cells`, a mutable index signature's, is also one every present own field
+   * holds exactly. Left out when there are none. */
   | {
       dict: {
         first: Fields;
@@ -57,6 +59,7 @@ export type Clause =
         optional?: Fields;
         methods?: MethodSig[];
         bounds?: string[][];
+        cells?: Labels[];
       };
     }
   /** A tuple contract on an array store: required positions, optional
@@ -298,11 +301,12 @@ export function decodeGraph(value: unknown): TypeGraph {
       if ("bounds" in r) bounds(r.bounds);
     },
     dict: (b) => {
-      const r = objOptional(b, ["first", "rest", "views", "indexes"], ["optional", "methods", "bounds"]);
+      const r = objOptional(b, ["first", "rest", "views", "indexes"], ["optional", "methods", "bounds", "cells"]);
       fields(r.first);
       array(r.rest).forEach(fields);
       fields(r.views);
       array(r.indexes).forEach(labels);
+      if ("cells" in r) array(r.cells).forEach(labels);
       if ("optional" in r) fields(r.optional);
       if ("methods" in r) methods(r.methods);
       if ("bounds" in r) bounds(r.bounds);
@@ -443,6 +447,7 @@ function clauseText(c: Clause): string {
       ...c.dict.indexes.map(
         (index) => `readonly {[key: string]: ${printLabels(index)}}`,
       ),
+      ...(c.dict.cells ?? []).map((index) => `{[key: string]: ${printLabels(index)}}`),
       ...(c.dict.optional?.length ? [`optional ${printFields(c.dict.optional)}`] : []),
       ...(c.dict.methods?.length ? [`methods ${c.dict.methods.map((m) => keyText(m.key)).join(", ")}`] : []),
       ...(c.dict.bounds ?? []).map((b) => `own keys ${b.map((k) => JSON.stringify(k)).join(" | ")}`),

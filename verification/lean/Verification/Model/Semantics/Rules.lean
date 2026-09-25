@@ -395,8 +395,9 @@ theorem make_fields_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A)
       simp [List.getElem?_map, List.getElem?_eq_getElem (show i < As.length by omega)]
 
 /-- Fresh dictionary construction chooses the index element contract for
-every location it creates. The rule does not coerce an open record: its
-premises type *all* initializers at the index contract. -/
+every location it creates, so the object meets the index as a view and as a
+writable contract. The rule does not coerce an open record: its premises type
+*all* initializers at the index contract. -/
 theorem make_dict_rule {Q A : Fam} (hA : Adm A)
     (n : Nat) (W : WorldT n) (h : Heap) (ns : List PropKey) (vs : List Val)
     (hnd : ns.Nodup) (hproto : CallArguments.protoField ∉ ns) (hlen : ns.length = vs.length)
@@ -406,6 +407,7 @@ theorem make_dict_rule {Q A : Fam} (hA : Adm A)
     (result : ∀ j (hj : j < n) (U : WorldT j),
       WExt (trunc j (Nat.le_of_lt hj) W) U →
       dictViewT A j U (.objAt (slots h.length ns) .absent) →
+      dictCellT A j U (.objAt (slots h.length ns) .absent) →
       Q j U (.objAt (slots h.length ns) .absent)) :
     Safe Q n W h (.makeAt .absent ns vs) := by
   apply make_fields_rule (As := List.replicate vs.length A)
@@ -413,10 +415,9 @@ theorem make_dict_rule {Q A : Fam} (hA : Adm A)
     n W h .absent ns vs hnd hlen (by simp) hvals hadm hok
   · exact hv
   · intro j hj U he hrec
-    apply result j hj U he
     have hrec' : recT (ns.zip (List.replicate ns.length A)) j U
         (.objAt (slots h.length ns) .absent) := by simpa [hlen] using hrec
-    exact recT_fresh_dict hproto hrec'
+    exact result j hj U he (recT_fresh_dict hproto hrec') (recT_fresh_cell hproto hrec')
 
 #print axioms make_dict_rule
 

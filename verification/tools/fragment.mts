@@ -89,8 +89,10 @@ export type Expr =
      (`intrinsics.mts`), whose names no source identifier spells. */
   | { k: "apply"; pos: Span; callee: Expr; args: Expr[]; spreads?: number[] }
   /* `new callee(args)`: the callee, then the arguments left to right, then
-     the callee's construct-only code runs. A plain function cannot be one. */
-  | { k: "new"; pos: Span; callee: Expr; args: Expr[] }
+     the callee's construct-only code runs. A plain function cannot be one.
+     `typeArgs`, when written, are the explicit type arguments: the
+     instantiation the producer proposes, which Lean checks as any other. */
+  | { k: "new"; pos: Span; callee: Expr; args: Expr[]; typeArgs?: TypeTerm[] }
   /* A class value: its constructor lambda as construct-only code, which only
      `new` runs. */
   | { k: "ctor"; pos: Span; lambda: Expr }

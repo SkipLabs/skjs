@@ -490,9 +490,9 @@ class Gate {
     }
 
     if (ts.isNewExpression(node)) {
-      // Explicit type arguments only constrain TypeScript: the instantiation a
-      // producer claims is validated like any other. The callee is any value;
-      // its type decides whether it has construct-only code.
+      // Explicit type arguments name the instantiation the producer proposes;
+      // Lean validates that instantiation like any other. The callee is any
+      // value; its type decides whether it has construct-only code.
       return {
         k: "new",
         pos: this.span(node),
@@ -501,6 +501,9 @@ class Gate {
           if (ts.isSpreadElement(arg)) this.fail(arg, "a spread argument to `new` is outside the fragment");
           return this.expr(arg);
         }),
+        ...(node.typeArguments?.length
+          ? { typeArgs: node.typeArguments.map((t) => this.typeOf(t, t)) }
+          : {}),
       };
     }
 
@@ -568,8 +571,6 @@ class Gate {
       return this.lambda(node);
 
     if (ts.isObjectLiteralExpression(node)) {
-      if (!node.properties.length)
-        this.fail(node, "a record with no field has no location");
       const seen = new Set<string>();
       const fields = node.properties.map((f) => {
         // A method is an ordinary function expression in a field: it has no

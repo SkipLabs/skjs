@@ -127,9 +127,11 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
         throw "duplicate named field in an indexed object"
       let index ← jField atom "indexSignature"
       CellClaims.fieldsExactly index ["read", "write"]
+      -- A writable index has one fixed contract, as a mutable field has.
       let write ← jField index "write"
-      if write != Json.mkObj [("top", toJson false), ("atoms", toJson ([] : List Json))] then
-        throw "only readonly string index signatures are in the source fragment"
+      let writable := write != Json.mkObj [("top", toJson false), ("atoms", toJson ([] : List Json))]
+      if writable && write != (← jField index "read") then
+        throw "a mutable string index signature needs one fixed read/write contract"
       for key in ["call", "construct", "array"] do
         let mode ← jStr (← jField atom key)
         if mode != "unknown" && mode != "absent" then
@@ -145,7 +147,8 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
         if writable then some (name, A) else none
       let views := fields.filterMap fun (name, A, writable) =>
         if writable then none else some (name, A)
-      return [← SourceTypes.use (.dict invariant [] views [element])]
+      return [← SourceTypes.use (.dict invariant [] views [element] [] [] []
+        (if writable then [element] else []))]
     else if (← jStr (← jField atom "a")) == "record" && hasOptional atom then
       return [← optionalRecord atom]
     else if (← jStr (← jField atom "a")) == "record" then
@@ -723,7 +726,14 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       | throw "a class value is a constructor lambda with plain parameters"
     return .ctor p lam
   | "new" => do
-    CellClaims.fieldsExactly j ["k","pos","callee","args"]
+    -- Explicit type arguments only name the instantiation the producer
+    -- proposes; the instantiation is checked like any other, so the term
+    -- does not carry them.
+    match (j.getObjVal? "typeArgs").toOption with
+    | none => CellClaims.fieldsExactly j ["k","pos","callee","args"]
+    | some written =>
+      CellClaims.fieldsExactly j ["k","pos","callee","args","typeArgs"]
+      if (← written.getArr?).isEmpty then throw "an empty type argument list is written by omitting it"
     return .construct p (← decodeExpr (← jField j "callee")) (← (← jArr j "args").mapM decodeExpr)
   | "lambda" => do
     -- Two proof fixtures embed parser snapshots from before quantified lambdas.

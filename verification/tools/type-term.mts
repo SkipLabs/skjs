@@ -330,11 +330,12 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
         type: typeTerm(scope, member.type, member), span: memberSpan });
     } else if (ts.isIndexSignatureDeclaration(member)) {
       const parameter = member.parameters[0];
-      const message = scope.annotation ? "expected a readonly string index signature" : "unsupported index signature";
+      // A mutable index is a writable one at its read contract; Lean keeps
+      // it invariant, as a mutable field is.
+      const message = scope.annotation ? "expected a string index signature" : "unsupported index signature";
       if (stringIndex) scope.fail(member, message);
       if (member.parameters.length !== 1 || parameter?.type?.kind !== ts.SyntaxKind.StringKeyword ||
-          !member.type || !readonlyOnly(member.modifiers) ||
-          (scope.annotation && !isReadonly(member.modifiers)))
+          !member.type || !readonlyOnly(member.modifiers))
         scope.fail(member, message);
       stringIndex = { readonly: isReadonly(member.modifiers),
         value: typeTerm(scope, member.type, member), span: memberSpan };

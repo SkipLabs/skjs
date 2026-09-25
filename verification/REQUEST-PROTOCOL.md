@@ -77,6 +77,7 @@ Each type-graph node is a union of clauses:
 | Optional fields: a key constrained only where the object has it, where its location holds exactly the contract; left out when there are none (also on `dict`) | `{"refs":{"first":[],"rest":[],"views":[],"optional":[["field",[4]]]}}`                       |
 | Own-key bounds: each list bounds the object's own keys, so a key outside one is not the object's own and a read of it continues at the prototype; left out when there are none (also on `dict`) | `{"refs":{"first":[["[]",[2]]],"rest":[],"views":[["[[proto]]",[5]]],"bounds":[["[]","[[proto]]"]]}}` |
 | Plain object with named contracts and readonly string-index views; each index operand constrains every present own field | `{"dict":{"first":[],"rest":[],"views":[],"indexes":[[1,3]]}}` |
+| Writable string-index contracts, a mutable index signature's: every present own field holds exactly the operand; each is also listed in `indexes`; left out when there are none | `{"dict":{"first":[],"rest":[],"views":[],"indexes":[[1,3]],"cells":[[1,3]]}}` |
 | Intersection of arrows `[receiver, [params, result]]`, with variadic signatures `[receiver, [params, [rest, result]]]` when there are any, `rest` an argument-list type (`pack`)  | `{"arrs":{"arrows":[[[5],[[[0]],[1]]],[[5],[[[1]],[0]]]]}}`                                 |
 | Array store: simultaneous tuple contracts, each with required, optional and rest positions; readonly contracts give element read capabilities                              | `{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],"readonly":false},"rest":[]}}` |
 | Callable with invariant bag requirements and overloads, fixed and variadic                                                                                                 | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[[[5],[[[0]],[1]]]]}}`             |
@@ -589,9 +590,10 @@ exports, though both are compatible with the future plain-cell interpretation.
 The shared source claim format also has an optional `indexSignature` on a
 record atom, with separate `read` and `write` types. It describes an actual
 string index permission, unlike the synthetic `indexes` markers above. The
-current source fragment and OCaml producer emit only readonly signatures
-(`write: never`); the SKJS bounded exporter still rejects real index
-signatures. A pure readonly index lowers to a dictionary graph clause.
+source fragment and OCaml producer emit readonly signatures (`write: never`)
+and mutable ones (`write` equal to `read`); the SKJS bounded exporter still
+rejects real index signatures. An index lowers to a dictionary graph clause, a
+mutable one with its contract also in `cells`.
 
 Function claims retain the substitution snapshot taken after checking the body.
 Serialization follows only isolated, bound inference variables without

@@ -43,13 +43,16 @@ inductive Clause (α : Type) where
   | refs (first : List (PropKey × α)) (rest : List (List (PropKey × α)))
       (views : List (PropKey × α)) (optional : List (PropKey × α) := [])
       (methods : List (MethodMembers.Sig α) := []) (bounds : List (List PropKey) := [])
-  /-- A plain object with invariant named fields, readonly named views, and
-  readonly string-index views. The index operands apply to every present own
-  field, including named ones. A first record operand fixes the object shape;
-  it may be empty for a pure dictionary. -/
+  /-- A plain object with invariant named fields, readonly named views,
+  readonly string-index views (`dictViewT`) and writable string-index
+  contracts (`dictCellT`). The index operands apply to every present own
+  field, including named ones. A writable index is also listed among the
+  views, which is what reads use. A first record operand fixes the object
+  shape; it may be empty for a pure dictionary. -/
   | dict (first : List (PropKey × α)) (rest : List (List (PropKey × α)))
       (views : List (PropKey × α)) (indexes : List α) (optional : List (PropKey × α) := [])
       (methods : List (MethodMembers.Sig α) := []) (bounds : List (List PropKey) := [])
+      (cells : List α := [])
   /-- A callable value meeting every fixed signature, `(receiver, parameters,
   result)`, and every variadic one, `(receiver, fixed parameters, element,
   result)`: the receiver a call may pass, the contract of each actual, and
@@ -110,9 +113,10 @@ def semWithArgs (X : α → Fam) (P : α → ArgFam) : Clause α → Fam
       refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧ viewT (famsOf X vs) n W v ∧
         optT (famsOf X os) n W v ∧ methodT (ms.map (Member.of X P)) n W v ∧
         ∀ K ∈ ks, ownKeysT K n W v
-  | .dict a bs vs ds os ms ks => fun n W v =>
+  | .dict a bs vs ds os ms ks cs => fun n W v =>
       refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧
-      viewT (famsOf X vs) n W v ∧ (∀ d ∈ ds, dictViewT (X d) n W v) ∧
+      viewT (famsOf X vs) n W v ∧
+        ((∀ d ∈ ds, dictViewT (X d) n W v) ∧ ∀ d ∈ cs, dictCellT (X d) n W v) ∧
         optT (famsOf X os) n W v ∧ methodT (ms.map (Member.of X P)) n W v ∧
         ∀ K ∈ ks, ownKeysT K n W v
   | .arrs L S => interT (callsT (L.map fun p => (X p.1, p.2.1.map X, X p.2.2)))
@@ -169,12 +173,12 @@ def meet : Clause α → Clause α → List (Clause α)
   | .symbol, .symbol => [.symbol]
   | .refs a bs vs os ms ks, .refs c ds ws ps ns ls =>
       [.refs a (bs ++ c :: ds) (vs ++ ws) (os ++ ps) (ms ++ ns) (ks ++ ls)]
-  | .refs a bs vs os ms ks, .dict c ds ws ix ps ns ls =>
-      [.dict a (bs ++ c :: ds) (vs ++ ws) ix (os ++ ps) (ms ++ ns) (ks ++ ls)]
-  | .dict a bs vs ix os ms ks, .refs c ds ws ps ns ls =>
-      [.dict a (bs ++ c :: ds) (vs ++ ws) ix (os ++ ps) (ms ++ ns) (ks ++ ls)]
-  | .dict a bs vs ix os ms ks, .dict c ds ws iy ps ns ls =>
-      [.dict a (bs ++ c :: ds) (vs ++ ws) (ix ++ iy) (os ++ ps) (ms ++ ns) (ks ++ ls)]
+  | .refs a bs vs os ms ks, .dict c ds ws ix ps ns ls cy =>
+      [.dict a (bs ++ c :: ds) (vs ++ ws) ix (os ++ ps) (ms ++ ns) (ks ++ ls) cy]
+  | .dict a bs vs ix os ms ks cx, .refs c ds ws ps ns ls =>
+      [.dict a (bs ++ c :: ds) (vs ++ ws) ix (os ++ ps) (ms ++ ns) (ks ++ ls) cx]
+  | .dict a bs vs ix os ms ks cx, .dict c ds ws iy ps ns ls cy =>
+      [.dict a (bs ++ c :: ds) (vs ++ ws) (ix ++ iy) (os ++ ps) (ms ++ ns) (ks ++ ls) (cx ++ cy)]
   | .arrs L S, .arrs M T => [.arrs (L ++ M) (S ++ T)]
   | .ctors L S, .ctors M T => [.ctors (L ++ M) (S ++ T)]
   | .pack a bs, .pack c ds => [.pack a (bs ++ c :: ds)]
@@ -237,7 +241,7 @@ theorem semWithArgs_value {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | num => obtain ⟨b, rfl⟩ := h; exact ⟨rfl, trivial⟩
   | numLit b => subst v; exact ⟨rfl, trivial⟩
   | refs a rest => obtain ⟨flds, rfl, _⟩ := h.1.1; exact ⟨rfl, trivial⟩
-  | dict a rest vs ds => obtain ⟨flds, rfl, _⟩ := h.1.1; exact ⟨rfl, trivial⟩
+  | dict a rest vs ds os ms ks cs => obtain ⟨flds, rfl, _⟩ := h.1.1; exact ⟨rfl, trivial⟩
   | arrs L S => exact ⟨h.1.1.val, h.1.1.scoped⟩
   | callable a bs L S => exact ⟨h.1.2.1.val, h.1.2.1.scoped⟩
   | undef => subst v; exact ⟨rfl, trivial⟩
@@ -261,7 +265,7 @@ theorem semWithArgs_shape {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | num => obtain ⟨b, rfl⟩ := h; rfl
   | numLit b => cases h; rfl
   | refs a bs => obtain ⟨flds, rfl, _⟩ := h.1.1; rfl
-  | dict a bs vs ds => obtain ⟨flds, rfl, _⟩ := h.1.1; rfl
+  | dict a bs vs ds os ms ks cs => obtain ⟨flds, rfl, _⟩ := h.1.1; rfl
   | arrs L S =>
     obtain ⟨fs, code, rfl, hc, -⟩ := h.1.1
     cases code <;> try (rename_i kind; cases kind)
@@ -329,10 +333,10 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
         List.mem_append, or_imp, forall_and]
       rw [merge _ _ _ _ n W v]
       simp only [famsOf_append, viewT_append, optT_append, methodT_append, interT]
-      exact ⟨fun ⟨⟨r1, r2⟩, ⟨v1, v2⟩, ⟨d1, d2⟩, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩ =>
-          ⟨⟨r1, v1, d1, o1, m1, k1⟩, ⟨r2, v2, d2, o2, m2, k2⟩⟩,
-        fun ⟨⟨r1, v1, d1, o1, m1, k1⟩, ⟨r2, v2, d2, o2, m2, k2⟩⟩ =>
-          ⟨⟨r1, r2⟩, ⟨v1, v2⟩, ⟨d1, d2⟩, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩⟩
+      exact ⟨fun ⟨⟨r1, r2⟩, ⟨v1, v2⟩, ⟨⟨d1, d2⟩, ⟨c1, c2⟩⟩, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩ =>
+          ⟨⟨r1, v1, ⟨d1, c1⟩, o1, m1, k1⟩, ⟨r2, v2, ⟨d2, c2⟩, o2, m2, k2⟩⟩,
+        fun ⟨⟨r1, v1, ⟨d1, c1⟩, o1, m1, k1⟩, ⟨r2, v2, ⟨d2, c2⟩, o2, m2, k2⟩⟩ =>
+          ⟨⟨r1, r2⟩, ⟨v1, v2⟩, ⟨⟨d1, d2⟩, ⟨c1, c2⟩⟩, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩⟩
     · -- arrs ∩ arrs
       simp only [meet, singleton_sem, semWithArgs, List.map_append]
       rw [interT, TypeAlgebra.calls_append, TypeAlgebra.rests_append]
@@ -454,16 +458,18 @@ theorem semWithArgs_adm (X : α → Fam) (P : α → ArgFam) (c : Clause α) : A
       fun n W U hx v h => ⟨(adm _ _).mono n W U hx v h.1, (viewT_adm _).mono n W U hx v h.2.1,
         (optT_adm _).mono n W U hx v h.2.2.1, (methodT_adm _).mono n W U hx v h.2.2.2.1,
         fun K hK => (ownKeysT_adm K).mono n W U hx v (h.2.2.2.2 K hK)⟩⟩
-  | dict a bs vs ds os ms ks =>
+  | dict a bs vs ds os ms ks cs =>
     refine ⟨?_, ?_⟩
     · intro n W v h
       exact ⟨(adm _ _).down n W v h.1, (viewT_adm _).down n W v h.2.1,
-        fun d hd => (dictViewT_adm _).down n W v (h.2.2.1 d hd), (optT_adm _).down n W v h.2.2.2.1,
+        ⟨fun d hd => (dictViewT_adm _).down n W v (h.2.2.1.1 d hd),
+          fun d hd => (dictCellT_adm _).down n W v (h.2.2.1.2 d hd)⟩, (optT_adm _).down n W v h.2.2.2.1,
         (methodT_adm _).down n W v h.2.2.2.2.1,
         fun K hK => (ownKeysT_adm K).down n W v (h.2.2.2.2.2 K hK)⟩
     · intro n W U hx v h
       exact ⟨(adm _ _).mono n W U hx v h.1, (viewT_adm _).mono n W U hx v h.2.1,
-        fun d hd => (dictViewT_adm _).mono n W U hx v (h.2.2.1 d hd), (optT_adm _).mono n W U hx v h.2.2.2.1,
+        ⟨fun d hd => (dictViewT_adm _).mono n W U hx v (h.2.2.1.1 d hd),
+          fun d hd => (dictCellT_adm _).mono n W U hx v (h.2.2.1.2 d hd)⟩, (optT_adm _).mono n W U hx v h.2.2.2.1,
         (methodT_adm _).mono n W U hx v h.2.2.2.2.1,
         fun K hK => (ownKeysT_adm K).mono n W U hx v (h.2.2.2.2.2 K hK)⟩
   | arrs L S => exact interT_adm _ _ (callsT_adm _) (restsT_adm _)
@@ -576,10 +582,11 @@ theorem semWithArgs_congr (X Y : α → Fam) (P Q : α → ArgFam) (n : Nat) (h 
       (and_congr (view_congr_below X Y vs n h W v)
         (and_congr (opt_congr_below X Y os n h W v)
           (and_congr (methodT_congr X Y P Q n h hP ms W v) Iff.rfl)))
-  | dict a bs vs ds os ms ks =>
+  | dict a bs vs ds os ms ks cs =>
     exact and_congr (congr_below X Y a bs n h W v)
       (and_congr (view_congr_below X Y vs n h W v)
-        (and_congr (forall_congr' fun d => forall_congr' fun _ => dictViewT_congr (h d) W v)
+        (and_congr (and_congr (forall_congr' fun d => forall_congr' fun _ => dictViewT_congr (h d) W v)
+            (forall_congr' fun d => forall_congr' fun _ => dictCellT_congr (h d) W v))
           (and_congr (opt_congr_below X Y os n h W v)
             (and_congr (methodT_congr X Y P Q n h hP ms W v) Iff.rfl))))
   | arrs L S =>
@@ -634,8 +641,8 @@ def Clause.map (f : α → β) : Clause α → Clause β
   | .list a bs => .list (a.map f) (bs.map (·.map f))
   | .refs a bs vs os ms ks => .refs (mapFields f a) (bs.map (mapFields f)) (mapFields f vs)
       (mapFields f os) (ms.map (Sig.map f)) ks
-  | .dict a bs vs ds os ms ks => .dict (mapFields f a) (bs.map (mapFields f)) (mapFields f vs)
-      (ds.map f) (mapFields f os) (ms.map (Sig.map f)) ks
+  | .dict a bs vs ds os ms ks cs => .dict (mapFields f a) (bs.map (mapFields f)) (mapFields f vs)
+      (ds.map f) (mapFields f os) (ms.map (Sig.map f)) ks (cs.map f)
   | .arrs L S => .arrs (L.map fun q => (f q.1, q.2.1.map f, f q.2.2))
       (S.map fun q => (f q.1, q.2.1.map f, f q.2.2.1, f q.2.2.2))
   | .callable a bs L S => .callable (mapFields f a) (bs.map (mapFields f))
@@ -649,7 +656,8 @@ def Clause.map (f : α → β) : Clause α → Clause β
 def Clause.operands : Clause α → List α
   | .list a bs => a.operands ++ bs.flatMap Tuple.operands
   | .refs a bs vs os ms _ => (a ++ bs.flatten ++ vs ++ os).map (·.2) ++ ms.flatMap Sig.operands
-  | .dict a bs vs ds os ms _ => (a ++ bs.flatten ++ vs ++ os).map (·.2) ++ ds ++ ms.flatMap Sig.operands
+  | .dict a bs vs ds os ms _ cs => (a ++ bs.flatten ++ vs ++ os).map (·.2) ++ ds ++
+      ms.flatMap Sig.operands ++ cs
   | .arrs L S => L.flatMap (fun q => q.1 :: q.2.1 ++ [q.2.2]) ++
       S.flatMap (fun q => q.1 :: q.2.1 ++ [q.2.2.1, q.2.2.2])
   | .callable a bs L S => (a ++ bs.flatten).map (·.2) ++
@@ -745,15 +753,16 @@ theorem map_of_operands {c : Clause α} {f : α → α} (h : ∀ a ∈ c.operand
     simp only [List.mem_map, List.mem_flatten] at hx ⊢
     obtain ⟨q, hq, rfl⟩ := hx
     exact ⟨q, ⟨fs, hfs, hq⟩, rfl⟩
-  | dict a bs vs ds os ms ks =>
+  | dict a bs vs ds os ms ks cs =>
     simp only [Clause.operands, List.map_append, List.mem_append] at h
-    simp only [Clause.map, Clause.dict.injEq, and_true]
-    refine ⟨mapFields_self fun x hx => h x (.inl (.inl (.inl (.inl (.inl hx))))),
-      map_self fun fs hfs => mapFields_self fun x hx => h x (.inl (.inl (.inl (.inl (.inr ?_))))),
+    simp only [Clause.map, Clause.dict.injEq]
+    refine ⟨mapFields_self fun x hx => h x (.inl (.inl (.inl (.inl (.inl (.inl hx)))))),
+      map_self fun fs hfs => mapFields_self fun x hx => h x (.inl (.inl (.inl (.inl (.inl (.inr ?_)))))),
+      mapFields_self fun x hx => h x (.inl (.inl (.inl (.inl (.inr hx))))),
+      map_self fun x hx => h x (.inl (.inl (.inr hx))),
       mapFields_self fun x hx => h x (.inl (.inl (.inl (.inr hx)))),
-      map_self fun x hx => h x (.inl (.inr hx)),
-      mapFields_self fun x hx => h x (.inl (.inl (.inr hx))),
-      map_self fun m hm => sig_self fun x hx => h x (.inr (List.mem_flatMap.mpr ⟨m, hm, hx⟩))⟩
+      map_self fun m hm => sig_self fun x hx => h x (.inl (.inr (List.mem_flatMap.mpr ⟨m, hm, hx⟩))),
+      trivial, map_self fun x hx => h x (.inr hx)⟩
     simp only [List.mem_map, List.mem_flatten] at hx ⊢
     obtain ⟨q, hq, rfl⟩ := hx
     exact ⟨q, ⟨fs, hfs, hq⟩, rfl⟩

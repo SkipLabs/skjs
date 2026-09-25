@@ -216,9 +216,10 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     | _ => False
   | .allocDict, .makeAt .absent ns inits, ps =>
     match expand G j.type with
-    | [.dict [] [] [] [E]] =>
+    | [.dict [] [] [] [E] [] [] [] cs] =>
       ns.Nodup ∧ CallArguments.protoField ∉ ns ∧ ns.length = ps.length ∧
-      ps.map Sequent.term = inits ∧ (∀ p ∈ ps, p.context = j.context ∧ p.type = E)
+      ps.map Sequent.term = inits ∧ (∀ p ∈ ps, p.context = j.context ∧ p.type = E) ∧
+      ∀ C ∈ cs, C = E
     | _ => False
   | .read, .readAt f a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧
@@ -247,14 +248,14 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   | .readDict A U, .readAt (.str _) a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧ Represents G U .undef ∧ j.type = A ++ U ∧
     (match expand G ja.type with
-     | [.dict _ [] _ ix _ _ _] => A ∈ ix
+     | [.dict _ [] _ ix _ _ _ _] => A ∈ ix
      | _ => False)
   | .indexDict A U, .indexAt a key, [ja, jk] =>
     ja.context = j.context ∧ ja.term = a ∧
     jk.context = j.context ∧ jk.term = key ∧
     Represents G jk.type .str ∧ Represents G U .undef ∧ j.type = A ++ U ∧
     (match expand G ja.type with
-     | [.dict _ [] _ ix _ _ _] => A ∈ ix
+     | [.dict _ [] _ ix _ _ _ _] => A ∈ ix
      | _ => False)
   | .write, .writeAt f a b, [ja, jb] =>
     ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
@@ -436,8 +437,12 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   | .ctorE U, .makeAt (.closure arity b .construct) ns inits, ps =>
     ns = [valueField] ∧ inits = [Tm.nul] ∧ Represents G U .undef ∧
       ctorEPremises G j.context j.type U arity b ps
+  -- The constructor, the actual premises in order, then one premise per
+  -- position the signature declares and `new` omits, proving `undefined`
+  -- there, as for `.app`.
   | .construct, .construct f args, jf :: jas =>
-    jf.context = j.context ∧ jf.term = f ∧ jas.map Sequent.term = args ∧
+    jf.context = j.context ∧ jf.term = f ∧ (jas.take args.length).map Sequent.term = args ∧
+    (∀ ja ∈ jas.drop args.length, ja.term = .undef) ∧
     (∀ ja ∈ jas, ja.context = j.context) ∧
     match expand G jf.type with
     | [.ctors L] => (jas.map Sequent.type, j.type) ∈ L
@@ -612,8 +617,8 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     · contradiction
   · rename_i ps _ _ _ ns inits
     split at hl
-    · rename_i E he
-      obtain ⟨hnd, hproto, hlen, hterms, hctx⟩ := hl
+    · rename_i E cs he
+      obtain ⟨hnd, hproto, hlen, hterms, hctx, hcs⟩ := hl
       have hfst : ((ns.zip ps).map fun r => (r.1, r.2.term)).map Prod.fst = ns := by
         simp only [List.map_map, Function.comp_def]
         exact List.map_fst_zip (by omega)
@@ -635,7 +640,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
           obtain ⟨hc, heq⟩ := hctx r.2 hmem
           rw [hc, heq] at h
           exact h)
-        he
+        he hcs
       rw [hfst, hsnd] at ht
       exact ht
     · contradiction
@@ -1084,21 +1089,32 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
       exact List.mem_map.mpr ⟨(U, p.1, p.2), List.mem_map_of_mem hmem, rfl⟩
     · contradiction
   · rename_i f args jf jas
-    rcases hl with ⟨hΓf, htf, hterms, hctx, hL⟩
+    rcases hl with ⟨hΓf, htf, hterms, hundef, hctx, hL⟩
     have hf := hp jf (by simp)
     rw [hΓf, htf] at hf
     split at hL
     · rename_i L he
-      have hxs : ∀ p ∈ jas.map (fun ja => (ja.type, ja.term)), HasTy G Γ p.2 p.1 := by
+      have hxs : ∀ p ∈ (jas.take args.length).map (fun ja => (ja.type, ja.term)),
+          HasTy G Γ p.2 p.1 := by
         intro p hp'
         obtain ⟨ja, hja, rfl⟩ := List.mem_map.mp hp'
-        have h := hp ja (by simp [hja])
-        rw [hctx ja hja] at h
+        have h := hp ja (List.mem_cons_of_mem _ (List.mem_of_mem_take hja))
+        rw [hctx ja (List.mem_of_mem_take hja)] at h
         exact h
-      have hc := HasTy.construct (xs := jas.map fun ja => (ja.type, ja.term)) hf he
-        (by simpa [List.map_map, Function.comp_def] using hL) hxs
-      rw [← hterms]
-      simpa [List.map_map, Function.comp_def] using hc
+      have hu : ∀ A ∈ (jas.drop args.length).map Sequent.type, HasTy G Γ .undef A := by
+        intro A hm
+        obtain ⟨ja, hja, rfl⟩ := List.mem_map.mp hm
+        have h := hp ja (List.mem_cons_of_mem _ (List.mem_of_mem_drop hja))
+        rw [hctx ja (List.mem_of_mem_drop hja), hundef ja hja] at h
+        exact h
+      have hsplit : ((jas.take args.length).map (fun ja => (ja.type, ja.term))).map Prod.fst
+          ++ (jas.drop args.length).map Sequent.type = jas.map Sequent.type := by
+        simp only [List.map_map, Function.comp_def]
+        rw [← List.map_append, List.take_append_drop]
+      have hc := HasTy.construct (xs := (jas.take args.length).map fun ja => (ja.type, ja.term))
+        (Us := (jas.drop args.length).map Sequent.type) hf he
+        (by rw [hsplit]; exact hL) hxs hu
+      simpa only [List.map_map, Function.comp_def, hterms] using hc
     · contradiction
   · rename_i proof t jt
     rcases hl with ⟨hΓ, ht, hc⟩
@@ -1291,20 +1307,39 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     · intro j hj
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
       exact ih p hp
-  | @construct Γ f F B L xs hf hr hp hx ihf ihx =>
+  | @construct Γ f F B L xs Us hf hr hp hx hu ihf ihx ihu =>
     apply node_complete (r := .construct)
-      (js := ⟨Γ,f,F⟩ :: xs.map (fun p => ⟨Γ,p.2,p.1⟩))
-    · refine ⟨rfl, rfl, by simp [List.map_map, Function.comp_def], ?_, ?_⟩
-      · intro ja hj
-        obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
+      (js := ⟨Γ,f,F⟩ :: (xs.map (fun p => ⟨Γ,p.2,p.1⟩) ++ Us.map (fun A => ⟨Γ,.undef,A⟩)))
+    · have hlenx : (xs.map (fun p => (⟨Γ,p.2,p.1⟩ : Sequent ι))).length
+          = (xs.map Prod.snd).length := by simp
+      refine ⟨rfl, rfl, ?_, ?_, ?_, ?_⟩
+      · rw [List.take_left' hlenx]
+        simp only [List.map_map, Function.comp_def]
+      · rw [List.drop_left' hlenx]
+        intro ja hj
+        obtain ⟨A, hA, rfl⟩ := List.mem_map.mp hj
         rfl
-      · simp only [show expand G F = [.ctors L] from hr]
-        simpa [List.map_map, Function.comp_def] using hp
+      · intro ja hj
+        rcases List.mem_append.mp hj with hj | hj
+        · obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
+          rfl
+        · obtain ⟨A, hA, rfl⟩ := List.mem_map.mp hj
+          rfl
+      · have heq : ((xs.map (fun p => (⟨Γ,p.2,p.1⟩ : Sequent ι))
+            ++ Us.map (fun A => (⟨Γ,.undef,A⟩ : Sequent ι))).map Sequent.type)
+            = xs.map Prod.fst ++ Us := by
+          rw [List.map_append, List.map_map, List.map_map]
+          simp [Function.comp_def]
+        rw [show expand G F = [.ctors L] from hr, heq]
+        exact hp
     · intro j hj
       rcases List.mem_cons.mp hj with rfl | hj
       · exact ihf
-      · obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
-        exact ihx p hp
+      · rcases List.mem_append.mp hj with hj | hj
+        · obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
+          exact ihx p hp
+        · obtain ⟨A, hA, rfl⟩ := List.mem_map.mp hj
+          exact ihu A hA
   | @app Γ f r F Rt B L S xs Us hf hr hp hrt ha hu ihf ihrt iha ihu =>
     apply node_complete (r := .app)
       (js := ⟨Γ,f,F⟩ :: ⟨Γ,r,Rt⟩ :: (xs.map (fun p => ⟨Γ,p.2,p.1⟩) ++ Us.map (fun A => ⟨Γ,.undef,A⟩)))
@@ -1363,12 +1398,12 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     · intro j hj
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
       exact ih p hp
-  | @allocDict Γ Elem Dict parts hnd hproto hpart hr ih =>
+  | @allocDict Γ Elem Dict parts Cs hnd hproto hpart hr hcs ih =>
     apply node_complete (G := G)
       (j := ⟨Γ, .makeAt .absent (parts.map Prod.fst) (parts.map Prod.snd), Dict⟩)
       (r := .allocDict) (js := parts.map fun p => ⟨Γ, p.2, Elem⟩)
-    · simp only [Local, show expand G Dict = [.dict [] [] [] [Elem]] from hr]
-      refine ⟨hnd, hproto, by simp, by simp [List.map_map, Function.comp_def], ?_⟩
+    · simp only [Local, show expand G Dict = [.dict [] [] [] [Elem] [] [] [] Cs] from hr]
+      refine ⟨hnd, hproto, by simp, by simp [List.map_map, Function.comp_def], ?_, hcs⟩
       intro q hq
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
       exact ⟨rfl, rfl⟩
@@ -1395,16 +1430,16 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       (r := .readOptional A U) (js := [⟨Γ,a,Ref⟩])
       ⟨rfl,rfl,hUnd,rfl,by simp only [show expand G Ref = [.refs fs [] vs os ms ks] from hr]; exact hm⟩
     simpa using ih
-  | @readDict Γ a Ref fs vs ix os ms ks A U f ha hr hm hUnd ih =>
+  | @readDict Γ a Ref fs vs ix os ms ks cs A U f ha hr hm hUnd ih =>
     apply node_complete (G := G) (j := ⟨Γ, .readAt f a, A ++ U⟩)
       (r := .readDict A U) (js := [⟨Γ,a,Ref⟩])
-      ⟨rfl,rfl,hUnd,rfl,by simp only [show expand G Ref = [.dict fs [] vs ix os ms ks] from hr]; exact hm⟩
+      ⟨rfl,rfl,hUnd,rfl,by simp only [show expand G Ref = [.dict fs [] vs ix os ms ks cs] from hr]; exact hm⟩
     simpa using ih
-  | @indexDict Γ a Ref fs vs ix os ms ks key K A U ha hr hk hStr hm hUnd iha ihk =>
+  | @indexDict Γ a Ref fs vs ix os ms ks cs key K A U ha hr hk hStr hm hUnd iha ihk =>
     apply node_complete (G := G) (j := ⟨Γ, .indexAt a key, A ++ U⟩)
       (r := .indexDict A U) (js := [⟨Γ,a,Ref⟩, ⟨Γ,key,K⟩])
       ⟨rfl,rfl,rfl,rfl,hStr,hUnd,rfl,
-        by simp only [show expand G Ref = [.dict fs [] vs ix os ms ks] from hr]; exact hm⟩
+        by simp only [show expand G Ref = [.dict fs [] vs ix os ms ks cs] from hr]; exact hm⟩
     intro p hp
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
     rcases hp with rfl | rfl

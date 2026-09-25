@@ -817,9 +817,13 @@ def CoversWith (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : 
   | .refs a bs vs os ms ks, .refs c ds ws ps ns ls => CoversFields R (a :: bs) (c :: ds) ∧
       CoversViews R (a :: bs) vs ws ∧ CoversOptional R (a :: bs) os ps ∧
       CoversMethods G R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls
-  | .dict a bs vs ix os ms ks, .dict c ds ws iy ps ns ls =>
+  -- A target index view is within some source index view; a writable
+  -- target index needs a writable source index of an equivalent contract, as
+  -- an invariant field does, so no location is retyped.
+  | .dict a bs vs ix os ms ks cx, .dict c ds ws iy ps ns ls cy =>
       CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws ∧
-      (∀ y ∈ iy, ∃ x ∈ ix, R x y) ∧ CoversOptional R (a :: bs) os ps ∧
+      ((∀ y ∈ iy, ∃ x ∈ ix, R x y) ∧ ∀ y ∈ cy, ∃ x ∈ cx, R x y ∧ R y x) ∧
+      CoversOptional R (a :: bs) os ps ∧
       CoversMethods G R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls
   | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
       arrows L S M ∧
@@ -829,8 +833,10 @@ def CoversWith (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : 
       arrows L S M ∧
       ∀ t ∈ T, (∃ s ∈ S, RestCovers (restElem G) R s t) ∨ ∃ p ∈ L, FixedCallsPack G R p t
   -- A construct signature is covered by one taking as many parameters, each
-  -- at least as wide, with a result at most as wide.
-  | .ctors L S, .ctors M T => (∀ q ∈ M, ∃ p ∈ L, Domains R q.1 p.1 ∧ R p.2 q.2) ∧
+  -- at least as wide, with a result at most as wide. One with a `never`
+  -- parameter admits no actual list, so any class value meets it; the
+  -- results are still compared, as TypeScript compares them.
+  | .ctors L S, .ctors M T => (∀ q ∈ M, ∃ p ∈ L, (Domains R q.1 p.1 ∨ [] ∈ q.1) ∧ R p.2 q.2) ∧
       -- A variadic one by one taking as many fixed parameters, each at least as
       -- wide, a rest at least as wide and a result at most as wide; or by a
       -- fixed one, when its rest is an exact tuple.
@@ -1318,9 +1324,13 @@ theorem Covers.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R known sel
     · obtain ⟨q0, hq0, rfl⟩ := List.mem_map.mp hq
       obtain ⟨p, hp, hd, hres⟩ := hc.1 q0 hq0
       intro j hj U hx hu heap hh args hvals ha
-      obtain ⟨result, hcon, hsafe⟩ := hv.2 _ (List.mem_map_of_mem hp) j hj U hx hu heap hh args hvals
-        (Domains.sound hd (fun a b hab => hr j hj a b hab) ha)
-      exact ⟨result, hcon, Safe_mono j (fun m hm V u hu => hr m (by omega) _ _ hres V u hu) U heap _ hsafe⟩
+      rcases hd with hd | hnever
+      · obtain ⟨result, hcon, hsafe⟩ := hv.2 _ (List.mem_map_of_mem hp) j hj U hx hu heap hh args hvals
+          (Domains.sound hd (fun a b hab => hr j hj a b hab) ha)
+        exact ⟨result, hcon, Safe_mono j (fun m hm V u hu => hr m (by omega) _ _ hres V u hu) U heap _ hsafe⟩
+      · -- No actual meets `never`: the promise is vacuous.
+        obtain ⟨a, ha'⟩ := ArgsT_mem ha (List.mem_map_of_mem hnever)
+        exact absurd ha' (by simp [mixedValues, setSem])
     · obtain ⟨t0, ht0, rfl⟩ := List.mem_map.mp ht
       rcases hc.2 t0 ht0 with ⟨s, hs, hd, hrest, hres⟩ | ⟨p, hp, hfp⟩
       · intro j hj U hx hu heap hh args hvals ha
@@ -1361,21 +1371,29 @@ theorem Covers.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R known sel
       covers_methods_sound hc.2.2.2.1 hknown n hr hpa W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2
         hv.2.2.2.1,
       covers_bounds_sound hc.2.2.2.2 hv.2.2.2.2⟩
-  · rename_i a bs vs ix os ms ks c ds ws iy ps ns ls
+  · rename_i a bs vs ix os ms ks cx c ds ws iy ps ns ls cy
     intro hv
     refine ⟨covers_fields_sound hc.1 n hr W v hv.1,
-      covers_views_sound hc.2.1 n hr W v ⟨hv.1, hv.2.1⟩, ?_,
+      covers_views_sound hc.2.1 n hr W v ⟨hv.1, hv.2.1⟩, ⟨?_, ?_⟩,
       covers_optional_sound hc.2.2.2.1 n hr W v ⟨hv.1, hv.2.2.2.1⟩,
       covers_methods_sound hc.2.2.2.2.1 hknown n hr hpa W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2.2
         hv.2.2.2.2.1,
       covers_bounds_sound hc.2.2.2.2.2 hv.2.2.2.2.2⟩
-    intro y hy
-    obtain ⟨x, hx, hxy⟩ := hc.2.2.1 y hy
-    obtain ⟨flds, he, hp, hfs⟩ := hv.2.2.1 x hx
-    refine ⟨flds, he, hp, ?_⟩
-    intro f l hl
-    obtain ⟨c, hw, hag⟩ := hfs f l hl
-    exact ⟨c, hw, fun j hj W' u hu => hr j hj x y hxy W' u (hag j hj W' u hu)⟩
+    · intro y hy
+      obtain ⟨x, hx, hxy⟩ := hc.2.2.1.1 y hy
+      obtain ⟨flds, he, hp, hfs⟩ := hv.2.2.1.1 x hx
+      refine ⟨flds, he, hp, ?_⟩
+      intro f l hl
+      obtain ⟨c, hw, hag⟩ := hfs f l hl
+      exact ⟨c, hw, fun j hj W' u hu => hr j hj x y hxy W' u (hag j hj W' u hu)⟩
+    · intro y hy
+      obtain ⟨x, hx, hxy, hyx⟩ := hc.2.2.1.2 y hy
+      obtain ⟨flds, he, hp, hfs⟩ := hv.2.2.1.2 x hx
+      refine ⟨flds, he, hp, ?_⟩
+      intro f l hl
+      obtain ⟨c, hw, hag⟩ := hfs f l hl
+      exact ⟨c, hw, fun j hj W' u => ⟨fun hu => hr j hj x y hxy W' u ((hag j hj W' u).mp hu),
+        fun hu => (hag j hj W' u).mpr (hr j hj y x hyx W' u hu)⟩⟩
   · intro hv
     refine ⟨⟨hv.1.1, fun p hp => ?_⟩, ⟨hv.1.1, fun t ht => ?_⟩⟩
     · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp

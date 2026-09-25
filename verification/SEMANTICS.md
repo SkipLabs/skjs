@@ -144,7 +144,10 @@ proved `indexDict` rule checks the key at `string`. Both reads carry
 source acceptance theorem as other expressions. The `allocDict` rule checks
 every initializer at the index element contract and uses the exact fresh
 field map to establish a dictionary view; it cannot retype an existing open
-record. Imported recursive declarations remain outside the source fragment.
+record. A mutable index signature lowers to a writable index contract
+`dictCellT A`, whose present fields' contracts agree with `A` rather than
+imply it; a fresh literal meets it as well (`recT_fresh_cell`), and covering
+keeps it invariant. Imported recursive declarations remain outside the source fragment.
 
 Term and descriptor equality use explicit structural comparisons, each returning
 a kernel-checked `Decidable` result and recurring only on strict subterms. This

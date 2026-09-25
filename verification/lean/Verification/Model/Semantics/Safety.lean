@@ -264,6 +264,17 @@ theorem ArgsT_singleton (A : Fam) (k : Nat) (W : WorldT k) (args : List Tm) :
   | cons a args =>
     cases args <;> simp [ArgsT]
 
+/-- Every position of an admitted list holds an actual: a list with an empty
+position admits no list. -/
+theorem ArgsT_mem : ∀ {As : List Fam} {k : Nat} {W : WorldT k} {args : List Tm} {A : Fam},
+    ArgsT As k W args → A ∈ As → ∃ a, A k W a
+  | [], _, _, _, _, _, hA => by simp at hA
+  | _ :: _, _, _, [], _, h, _ => h.elim
+  | B :: As, k, W, a :: args, A, h, hA => by
+    rcases List.mem_cons.mp hA with rfl | hA
+    · exact ⟨a, h.1⟩
+    · exact ArgsT_mem h.2 hA
+
 theorem ArgsT_length {As k W args} (h : ArgsT As k W args) :
     args.length = As.length := by
   induction As generalizing args with

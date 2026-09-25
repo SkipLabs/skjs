@@ -924,13 +924,13 @@ private def readCell (G : PositiveGraphs.NormalGraph Nat) (Γ : List (Ty Nat)) (
         pure (P, B)
       let some (P, B) := inherited | throw s!"read of a field '{fld}' the contract does not name"
       pure (DirectProof.node Γ (.readAt fld a.term) B (.readProto P) [a])
-  | [.dict fs [] vs (B :: _)] =>
+  | [.dict fs [] vs (B :: _) [] [] [] _] =>
     -- A named field or view, else the index, which may miss.
     match fs.lookup fld, vs.lookup fld with
     | some B, _ => pure (DirectProof.node Γ (.readAt fld a.term) B .read [a])
     | none, some B => pure (DirectProof.node Γ (.readAt fld a.term) B .readView [a])
     | none, none => pure (DirectProof.node Γ (.readAt fld a.term) (B ++ [3]) (.readDict B [3]) [a])
-  | [.dict _ [] _ []] => throw "indexed object has no string index contract"
+  | [.dict _ [] _ [] [] [] [] _] => throw "indexed object has no string index contract"
   | [.callable fs _ _ _] =>
     let some B := fs.lookup fld | throw s!"read of a field '{fld}' the contract does not name"
     pure (DirectProof.node Γ (.readAt fld a.term) B .readCallable [a])
@@ -1096,11 +1096,12 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
       -- The calculus evaluates these initializers from left to right.
       let casts := (ps.zip (B.map Prod.snd)).map fun (p,D) => DirectProof.cast Γ D p
       pure (DirectProof.node Γ (.makeAt .absent (ns.map .str) (ps.map (·.term))) [Ref] .alloc casts)
-    | [.dict [] [] [] [E]] =>
+    | [.dict [] [] [] [E] [] [] [] cs] =>
       if ns.eraseDups.length != ns.length then throw "duplicate dictionary literal key"
+      if !cs.all (· == E) then throw "a writable index of a fresh dictionary is its view's contract"
       let casts := ps.map fun p => DirectProof.cast Γ E p
       pure (DirectProof.node Γ (.makeAt .absent (ns.map .str) (ps.map (·.term))) A .allocDict casts)
-    | _ => throw "allocation claim must name a record or readonly dictionary contract"
+    | _ => throw "allocation claim must name a record or dictionary contract"
   | .read _ fld a => do
     let receiver := a
     let a ← closureExpr fc scope Γ a
@@ -1123,7 +1124,7 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let r ← closureExpr fc scope Γ receiver
     let k ← closureExpr fc (held ⟨"",some receiver.span⟩ :: scope) (r.type::Γ) key
     let G := SourceTypes.graph (← table)
-    let [.dict _ [] _ (E :: _)] := PositiveRules.expand G r.type
+    let [.dict _ [] _ (E :: _) [] [] [] _] := PositiveRules.expand G r.type
       | throw "a dynamic string index requires a dictionary receiver"
     let [.str] := PositiveRules.expand G k.type
       | throw "a dynamic dictionary key must have string type"
@@ -1565,10 +1566,12 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     let [.ctors L] := PositiveRules.expand G callee.type
       | throw "`new` needs a value with construct signatures"
     let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr fc scope Γ a
-    let some (Ds, R) := L.find? (·.1.length == actuals.length)
-      | throw "no construct signature takes this many arguments"
+    -- As for a call: a signature declaring exactly the actuals written, or a
+    -- longer one whose remaining positions admit `undefined`.
+    let (_, Ds, R) ← selectSignature G (L.map fun (Ds, R) => ([3], Ds, R)) (actuals.map (·.type))
     pure (DirectProof.node Γ (.construct callee.term (actuals.map (·.term))) R .construct
-      (callee :: (actuals.zip Ds).map fun (a,D) => DirectProof.cast Γ D a))
+      (callee :: ((actuals.zip Ds).map fun (a,D) => DirectProof.cast Γ D a)
+        ++ omittedPremises Γ Ds actuals.length))
   | .lambda pos receiverAnnot typeParams params defaults rest ret body => do
     let paramNames := params.map Prod.fst
     -- An ordinary function names its receiver slot `this`: its body and any

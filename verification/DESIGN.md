@@ -634,6 +634,36 @@ chosen design:
 These constrain rules we might otherwise add. They do not require retaining
 separator searches, alternative models or a semantic-completeness project.
 
+### Writable string index signatures
+
+A mutable index signature, `{ [key: string]: T }`, lets TypeScript code holding
+the dictionary add keys and overwrite values at `T`. TypeScript also treats it
+covariantly and lets a readonly one pass as a mutable one. Lowering it to the
+readonly view would be unsound in practice: an external writer handed a
+dictionary of `true` at `{ [key: string]: boolean }` could store `false` where
+the program still reads `true`. So it lowers to a **writable index contract**
+(`dictCellT`, [POSITIVE-TYPES.md](POSITIVE-TYPES.md#records)): every present
+string-keyed field's location holds exactly `T`, as an invariant field's does,
+and covering keeps it invariant. A writable index is also a readonly one, and
+reads use that. Consequences:
+
+- A mutable dictionary of `true` is not one of `boolean`, and a readonly
+  dictionary is not a mutable one: both are refused, as mutable arrays and
+  fields already are (the choice follows the one for arrays: soundness over
+  TypeScript's covariance).
+- A write through an existing key at `T` is a calculus step that keeps every
+  alias's guarantee, because the location's contract is `T`.
+- The calculus has no step that adds a key to an existing object; no program
+  rule writes through an index. That code outside the unit (an import, a
+  callback, the caller) adds keys at `T` to a dictionary it holds at a writable
+  index is assumed, not modelled. Every capability the checker grants on such
+  an object is implied by the writable contract, so a key added at `T` keeps
+  them; this argument is informal.
+
+An empty literal, `{}`, is admitted by the source gate. It has a type only
+through a contract: a dictionary, whose writable index a fresh literal meets
+(`recT_fresh_cell`), or a record with no required field.
+
 ## What is implemented and proved
 
 | Layer                      | Current status                                                                                                                                                                                                                     |
@@ -781,6 +811,9 @@ modeling choices; they do not replace proof.
   ([Loops over arrays](#loops-over-arrays)): `%Iterate%` at its declared
   signature is an input slot of every unit with such a loop, yielding each
   element below the array's current length in turn, then `null`.
+- Code outside a unit adds keys to a dictionary it holds at a mutable index
+  signature only at that signature's contract; the calculus has no step that
+  adds a key ([Writable string index signatures](#writable-string-index-signatures)).
 - Lean's kernel, compilation infrastructure and the executed checker are correct.
 
 For the stateful in-memory interface, `accept` checks the exact requested entry
@@ -1489,7 +1522,11 @@ binders; the signature and bounds are then read from the source terms with the
 binders fixed to those arguments, so a declaration applied to a binder is an
 ordinary ground application, and each bound must hold by the graph's certified
 subtyping. The slot holds the instances as one callable with several
-signatures. Each instance holds of the value, so their conjunction does.
+signatures. Each instance holds of the value, so their conjunction does. A
+`new` with explicit type arguments, `new InputDefinition<string, number>()`,
+names its instance: the parser records the arguments, the producer proposes
+the instantiation they name, and it is checked as any other; Lean's term does
+not carry them.
 
 As rules over the unit's context, with $\llbracket T\rrbracket$ the graph type a
 declared term lowers to and $T[\vec p:=\vec U]$ the term with its binders fixed

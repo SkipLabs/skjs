@@ -1,5 +1,6 @@
 // sum.ts, Service: field initializers, an empty record, an index-signature
-// field holding class values, and `new` with type arguments.
+// field holding class values, and `new` with type arguments. The resource
+// classes come first, as in sum.ts: a class is not hoisted.
 import type {
   Context,
   EagerCollection,
@@ -21,6 +22,16 @@ interface Inputs extends NamedInputDefinitions {
   readonly input2: InputDefinition<string, number>;
 }
 
+class Add implements Resource<Collections> {
+  instantiate(cs: Collections): EagerCollection<string, number> {
+    return cs.input1;
+  }
+}
+class Sub implements Resource<Collections> {
+  instantiate(cs: Collections): EagerCollection<string, number> {
+    return cs.input2;
+  }
+}
 class Service implements SkipService<Inputs, Collections, Collections> {
   readonly inputs: Inputs = {
     input1: new InputDefinition<string, number>(),
@@ -36,16 +47,6 @@ class Service implements SkipService<Inputs, Collections, Collections> {
   }
 }
 
-class Add implements Resource<Collections> {
-  instantiate(cs: Collections): EagerCollection<string, number> {
-    return cs.input1;
-  }
-}
-class Sub implements Resource<Collections> {
-  instantiate(cs: Collections): EagerCollection<string, number> {
-    return cs.input2;
-  }
-}
 export function make(): Service {
   return new Service();
 }

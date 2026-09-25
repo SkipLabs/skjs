@@ -339,6 +339,28 @@ def dictViewT (A : Fam) : Fam := fun k W v =>
       ∃ c : Ctr k, lookup W l = some c ∧
         ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → A j W' u
 
+/-- A writable string index signature constrains every *present* own field as
+an invariant field is constrained: its location's contract agrees with `A`
+below the level, so a write of an `A` value to it keeps every alias's
+guarantee. Like the view, it has no prototype and says nothing of an absent
+key. The calculus adds no key to an existing object; that TypeScript lets
+code holding the dictionary add keys at `A` is the trust boundary
+([DESIGN.md](../../../../DESIGN.md#writable-string-index-signatures)). -/
+def dictCellT (A : Fam) : Fam := fun k W v =>
+  ∃ flds : List (PropKey × Nat), v = .objAt flds .absent ∧
+    flds.lookup CallArguments.protoField = none ∧
+    ∀ (f : String) (l : Nat), flds.lookup (.str f) = some l →
+      ∃ c : Ctr k, lookup W l = some c ∧
+        ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ A j W' u
+
+/-- A writable index grants its read: an agreeing contract implies `A`. -/
+theorem dictCellT_view {A : Fam} {k : Nat} {W : WorldT k} {v : Val}
+    (h : dictCellT A k W v) : dictViewT A k W v := by
+  obtain ⟨flds, rfl, hp, hf⟩ := h
+  refine ⟨flds, rfl, hp, fun f l hl => ?_⟩
+  obtain ⟨c, hc, hag⟩ := hf f l hl
+  exact ⟨c, hc, fun j hj W' u hu => (hag j hj W' u).mp hu⟩
+
 /-- **Optional fields.** Each named key, when the object has it, stands for a
 location under exactly the stated contract, as a required field's does; an
 absent key is not constrained, and `Step.readMissing` reads it as `undefined`,
@@ -447,6 +469,17 @@ theorem dictViewT_congr {A B : Fam} {k : Nat} (h : Agree A B k)
     obtain ⟨c, hc, hB⟩ := hf f l hl
     exact ⟨c, hc, fun j hj W' u hu => (h j hj W' u).mpr (hB j hj W' u hu)⟩
 
+/-- A writable index's contract is guarded by the world level too. -/
+theorem dictCellT_congr {A B : Fam} {k : Nat} (h : Agree A B k)
+    (W : WorldT k) (v : Val) : dictCellT A k W v ↔ dictCellT B k W v := by
+  constructor <;> rintro ⟨flds, rfl, hp, hf⟩ <;> refine ⟨flds, rfl, hp, ?_⟩
+  · intro f l hl
+    obtain ⟨c, hc, hA⟩ := hf f l hl
+    exact ⟨c, hc, fun j hj W' u => (hA j hj W' u).trans (h j hj W' u)⟩
+  · intro f l hl
+    obtain ⟨c, hc, hB⟩ := hf f l hl
+    exact ⟨c, hc, fun j hj W' u => (hB j hj W' u).trans (h j hj W' u).symm⟩
+
 /-- A dictionary view supplies a contract for a key only when that key is
 present. Looking up an arbitrary string cannot use this witness alone. -/
 theorem dictViewT_present {A : Fam} {k : Nat} {W : WorldT k}
@@ -534,6 +567,33 @@ theorem recT_fresh_dict {A : Fam} {k : Nat} {W : WorldT k}
   exact ⟨c, hw, fun j hj V u hu => (hc j hj V u).mp hu⟩
 
 #print axioms recT_fresh_dict
+
+/-- The same fresh object meets the writable index too: each location it
+allocated has exactly the contract `A`. -/
+theorem recT_fresh_cell {A : Fam} {k : Nat} {W : WorldT k}
+    {base : Nat} {ns : List PropKey} (hp : CallArguments.protoField ∉ ns)
+    (h : recT (ns.zip (List.replicate ns.length A)) k W
+      (.objAt (slots base ns) .absent)) :
+    dictCellT A k W (.objAt (slots base ns) .absent) := by
+  have hproto : (slots base ns).lookup CallArguments.protoField = none := by
+    obtain ⟨fs, heq, hp', -⟩ := recT_fresh_dict hp h
+    cases heq
+    exact hp'
+  obtain ⟨flds, heq, hf⟩ := h
+  cases heq
+  refine ⟨slots base ns, rfl, hproto, ?_⟩
+  intro f l hl
+  have hp' : ((f : PropKey), l) ∈ slots base ns := lookup_pair_mem hl
+  have hn : (f : PropKey) ∈ ns := by
+    rw [← slots_names base ns]
+    exact List.mem_map_of_mem hp'
+  have hm : ((f : PropKey), A) ∈ ns.zip (List.replicate ns.length A) := by
+    rw [zip_replicate_fields]
+    exact List.mem_map_of_mem hn
+  obtain ⟨l', c, hl', hw, hc⟩ := hf f A hm
+  rw [hl] at hl'
+  cases hl'
+  exact ⟨c, hw, hc⟩
 
 /-- Even a Boolean dictionary admits an empty object. Its missing read is
 `undefined`, which is not Boolean; the indexed-read result must include it. -/
@@ -836,6 +896,22 @@ theorem dictViewT_adm (A : Fam) : Adm (dictViewT A) := by
     obtain ⟨c, hc, hag⟩ := hf f l hl
     exact ⟨_, lookup_trunc (Nat.le_succ n) W l c hc,
       fun j hj W' u hu => hag j (by omega) W' u hu⟩
+  · intro n W W' hx v h
+    obtain ⟨flds, rfl, hp, hf⟩ := h
+    refine ⟨flds, rfl, hp, ?_⟩
+    intro f l hl
+    obtain ⟨c, hc, hag⟩ := hf f l hl
+    exact ⟨c, WExt_lookup hx hc, hag⟩
+
+theorem dictCellT_adm (A : Fam) : Adm (dictCellT A) := by
+  refine ⟨?_, ?_⟩
+  · intro n W v h
+    obtain ⟨flds, rfl, hp, hf⟩ := h
+    refine ⟨flds, rfl, hp, ?_⟩
+    intro f l hl
+    obtain ⟨c, hc, hag⟩ := hf f l hl
+    exact ⟨_, lookup_trunc (Nat.le_succ n) W l c hc,
+      fun j hj W' u => hag j (by omega) W' u⟩
   · intro n W W' hx v h
     obtain ⟨flds, rfl, hp, hf⟩ := h
     refine ⟨flds, rfl, hp, ?_⟩

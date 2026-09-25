@@ -236,11 +236,13 @@ def freeMapOf [DecidableEq ι] (G : NormalGraph ι) (D : List ι) : Nat → Free
 /-- How far to follow a graph's rows. -/
 def closureFuel : Nat := 4096
 
-/-- The types a proof of `A ≤ B` may relate: the two, and every row they
-reach. A certificate's table relates operands of their clauses, which these
-are, so a pool of the whole table adds nothing but search. -/
+/-- The types a proof of `A ≤ B` may relate: the two, every row they reach,
+and every operand of those rows' clauses, a union such as an index contract
+`A | B` included. A certificate's table relates operands of their clauses,
+which these are, so a pool of the whole table adds nothing but search. -/
 def reachablePool [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) : List (Ty ι) :=
-  (A :: B :: (readsFrom G closureFuel (A ++ B)).map ([·])).eraseDups
+  let D := readsFrom G closureFuel (A ++ B)
+  (A :: B :: D.map ([·]) ++ D.flatMap fun i => (G i).flatMap Clause.operands).eraseDups
 
 /-- An instance of scheme row `s` whose signatures' images are the arrows
 `L`, `M`: find the binders' instances, then build the table under the context
@@ -293,7 +295,7 @@ receiver. -/
 def protoInstances [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) (fuel : Nat) :
     KnownInstances ι :=
   let methods := pool.flatMap fun B => (expand G B).flatMap fun c => match c with
-    | .refs _ _ _ _ ns _ | .dict _ _ _ _ _ ns _ => ns
+    | .refs _ _ _ _ ns _ | .dict _ _ _ _ _ ns _ _ => ns
     | _ => []
   pool.flatMap fun A => (expand G A).flatMap fun c => match c with
     | .refs a bs vs _ _ _ =>
@@ -337,16 +339,20 @@ def genProof [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) (fuel :
   | _ => none
 
 /-- A proof of `A ≤ B`: structural, by instantiating a scheme row, or by
-generalizing to one. Every proposal is checked. -/
+generalizing to one. Every proposal is checked. A core table over the two
+types alone, then a renaming table, are tried before one over the whole pool,
+whose size the search pays for squared: a row interned twice (`string` in a
+type argument and in a bound) and two lowerings of one generic instance are
+related without it. -/
 def subtype [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
   let fuel := 64 + pool.length
   let ok p := PositiveCertificates.check G A B p
-  (subtypeBase G pool A B) <|>
+  (subtypeBase G [] A B) <|> ((tableProof G fuel A B).filter ok) <|> (subtypeBase G pool A B) <|>
     (match protoInstances G ((A :: B :: pool).eraseDups) fuel with
       | [] => none
       | ks => subtypeWith G pool ks A B) <|> ((instProof G fuel A B).filter ok) <|>
-    ((genProof G pool fuel A B).filter ok) <|> ((tableProof G fuel A B).filter ok)
+    ((genProof G pool fuel A B).filter ok)
 /-- Proofs that the member of key `k` on `O` covers each fixed signature of
 `F`: for each, a member signature of as many parameters, each claimed
 parameter within the member's and the member's result within the claimed. -/
@@ -435,17 +441,19 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         if !offersArity arity L then none else do
         let ps ← L.mapM fun p => recur (bodyFrame arity p Γ) b p.2.2
         coerce G pool (.node ⟨Γ,t,F⟩ (.ctorE U) ps) A
-    -- `new f(args)`: a construct signature of the constructor's type taking as
-    -- many parameters as there are actuals.
+    -- `new f(args)`: a construct signature of the constructor's type taking at
+    -- least as many parameters as there are actuals; each omitted position
+    -- proves `undefined`, as a call's does.
     | .construct f args =>
       return pool.findSome? fun F => do
         let [.ctors L] := expand G F | none
         L.findSome? fun p => do
-          if args.length != p.1.length then none else do
+          if args.length > p.1.length then none else do
           let _ ← subtype G pool p.2 A
           let ef ← recur Γ f F
           let eas ← (args.zip p.1).mapM fun (a,D) => recur Γ a D
-          coerce G pool (.node ⟨Γ,t,p.2⟩ .construct (ef :: eas)) A
+          let eus ← (p.1.drop args.length).mapM fun D => recur Γ .undef D
+          coerce G pool (.node ⟨Γ,t,p.2⟩ .construct (ef :: eas ++ eus)) A
     -- A variadic closure: one body premise per signature, the body's slot 0
     -- at a pool type that is that signature's rest store.
     | .make (.variadic arity b) .nul =>
@@ -559,13 +567,14 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           if B.map Prod.fst != ns || !ks.all (fun K => ns.all (K.contains ·)) then none else do
           let ps ← (inits.zip (B.map Prod.snd)).mapM fun (a,D) => recur Γ a D
           coerce G pool (.node ⟨Γ,t,R⟩ .alloc ps) A
-        | [.dict [] [] [] [E]] =>
+        | [.dict [] [] [] [E] [] [] [] cs] =>
+          if !cs.all (· == E) then none else do
           let ps ← inits.mapM fun a => recur Γ a E
           coerce G pool (.node ⟨Γ,t,R⟩ .allocDict ps) A
         | _ => none
     | .indexAt a key =>
       return (A :: pool).findSome? fun R => do
-        let [.dict _ [] _ (E :: _)] := expand G R | none
+        let [.dict _ [] _ (E :: _) [] [] [] _] := expand G R | none
         (A :: pool).findSome? fun K => do
           if expand G K != [.str] then none else do
           (A :: pool).findSome? fun U => do
@@ -593,7 +602,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
               else none)
           | [.callable fs _ _ _] => (fs.lookup f).map (·,Rule.readCallable)
           -- A dictionary's named field or view, else its index, which may miss.
-          | [.dict fs [] vs (B :: _)] =>
+          | [.dict fs [] vs (B :: _) [] [] [] _] =>
             (fs.lookup f).map (·,Rule.read) <|> (vs.lookup f).map (·,Rule.readView) <|>
             pool.findSome? fun U =>
               if expand G U == [.undef] then some (B ++ U, Rule.readDict B U) else none
@@ -744,22 +753,14 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
 def expression [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) :=
   expressionWith G pool []
 
-/-- Gather graph labels, recursive operands and supplied union types. Hints may
-add intermediate types; they cannot change claims or bypass evidence checking. -/
+/-- Gather graph labels, every operand of their clauses and supplied union
+types. Hints may add intermediate types; they cannot change claims or bypass
+evidence checking. -/
 def vocabulary [DecidableEq ι] (G : NormalGraph ι) (labels : List ι)
     (claims : List (PointClaim ι)) (hints : List (Ty ι)) : List (Ty ι) :=
   ([] :: (labels.map fun i => [i]) ++ hints ++
     claims.flatMap (fun c => c.type :: c.context) ++
-    labels.flatMap (fun i => (G i).flatMap fun c => match c with
-      | .refs A bs vs _ ms => A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ vs.map Prod.snd ++
-          ms.flatMap MethodMembers.Sig.operands
-      | .list a bs => (a :: bs).flatMap fun t => t.required ++ t.optional ++ t.rest.toList
-      | .arrs L S => L.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++
-          S.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2.1, p.2.2.2])
-      | .callable A bs L S =>
-          A.map Prod.snd ++ bs.flatMap (·.map Prod.snd) ++ L.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2]) ++
-            S.flatMap (fun p => p.1 :: p.2.1 ++ [p.2.2.1, p.2.2.2])
-      | _ => [])).eraseDups
+    labels.flatMap (fun i => (G i).flatMap Clause.operands)).eraseDups
 
 inductive Failure where
   | claimCount

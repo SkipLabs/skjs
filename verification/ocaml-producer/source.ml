@@ -274,8 +274,9 @@ and expr_node =
   | Apply of expr * expr * expr option
   (* A class value: its constructor lambda as construct-only code. *)
   | Ctor of expr
-  (* `new callee(args)`. *)
-  | New of expr * expr list
+  (* `new callee<types>(args)`: the explicit type arguments, if written,
+     name the instantiation proposed for a generic class. *)
+  | New of expr * ty list * expr list
   | Conditional of expr * expr * expr | Coalesce of expr * expr
   | ArrayLiteral of expr list | Index of expr * expr | IndexWrite of expr * expr * expr
   | Bind of expr * expr * expr list
@@ -343,7 +344,10 @@ let rec expr binders j =
         optional_type inner (field "result" j),
         expr inner (field "body" j))
   | "ctor" -> Ctor (sub "lambda")
-  | "new" -> New (sub "callee",List.map (expr binders) (items "args" j))
+  | "new" ->
+    let types = match List.assoc_opt "typeArgs" (obj j) with
+      | None -> [] | Some ts -> List.map (source_type binders) (list ts) in
+    New (sub "callee",types,List.map (expr binders) (items "args" j))
   | "apply" ->
     let spreads = match List.assoc_opt "spreads" (obj j) with
       | None -> [] | Some s -> List.map (fun n -> int_of_string (match n with
