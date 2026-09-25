@@ -227,6 +227,16 @@ for (const [file, expected] of [
     "TypeScript must have checked the imported-Json clients");
   assert.doesNotMatch(typeScriptOutput, /invalid-recursive-json-alias-write\.ts/,
     "TypeScript should accept the covariant array assignment that the model refuses");
+  // A plain record is not Json: TypeScript accepts both by its implicit index
+  // rule. At a declaration's `V extends Json` bound the refusal is the
+  // request's, as every application bound's is, so it is checked here rather
+  // than as a located control; the Json return is a located one (cases.mts).
+  for (const file of ["invalid-sum-record-json", "invalid-sum-record-collection"])
+    assert.doesNotMatch(typeScriptOutput, new RegExp(`${file}\\.ts`),
+      `TypeScript should accept ${file}, which the model refuses`);
+  const recordCollection = check(join(here, "examples/invalid-sum-record-collection.ts"), upstreamConfig);
+  assert.equal(recordCollection.status, "unverified", JSON.stringify(recordCollection));
+  assert.match(recordCollection.detail, /type argument does not establish its declared bound for V/);
   const cli = spawnSync(process.execPath, [join(here, "check.mts"), jsonPath,
     "--project", join(here, "upstream")], { encoding: "utf8", timeout: 30_000 });
   assert.ifError(cli.error);
@@ -490,13 +500,17 @@ for (const [file, expected] of [
     "export function badFlag(f: Flag): false { return f; }\n");
   assert.equal(wrongLiteral.status, "unverified", JSON.stringify(wrongLiteral));
   assert.equal(wrongLiteral.phase, "search");
-  // A record intersection needs graph conjunction the producer lacks.
-  const recordMeet = parity("record-meet",
-    "type Both = { readonly a: boolean } & { readonly b: number };\n",
-    'import type { Both } from "@fixture/box";\n',
+  // A record intersection is the one record its operands describe, read at
+  // each operand's fields.
+  const bothLocal = "type Both = { readonly a: boolean } & { readonly b: number };\n";
+  const bothImported = 'import type { Both } from "@fixture/box";\n';
+  const recordMeet = parity("record-meet", bothLocal, bothImported,
     "export function readBoth(x: Both): number { return x.b; }\n");
-  assert.equal(recordMeet.status, "unsupported", JSON.stringify(recordMeet));
-  assert.match(recordMeet.detail, /intersection needs source graph conjunction/);
+  assert.equal(recordMeet.status, "verified", JSON.stringify(recordMeet));
+  const wrongMeet = parity("wrong-record-meet", bothLocal, bothImported,
+    "export function readWrong(x: Both): boolean { return x.b; }\n");
+  assert.equal(wrongMeet.status, "unverified", JSON.stringify(wrongMeet));
+  assert.equal(wrongMeet.phase, "search");
   const badInheritedClient = join(pairDir, "bad-inherited-client.ts");
   writeFileSync(badInheritedClient,
     'import type { GenericDerived } from "@fixture/box";\n' +

@@ -1159,7 +1159,7 @@ used as an array value must keep its array interpretation too; an argument
 list is not an array, and such a method stays opaque. Rerun the original client
 independently: its array-library and asynchronous-startup gaps are separate.
 
-**Record values as `Json` (to do).**
+**Record values as `Json` (done for ground instances).**
 
 *The problem.* A record type is open: its value may carry keys the type does
 not name, of any type. So `{ readonly n: number }` is not a subtype of
@@ -1203,16 +1203,83 @@ freeze a value that already has the type, or pass the type argument, which an
 instruction to agents covers. The root-cause fix would be upstream
 (`deepFreeze`'s result `T & Managed` for an object `T`).
 
-*Plan.* No closed-object notion: `Serializable<T> = T & { readonly [k:
-string]: Json }` states exactly what the framework needs, every present key
-holding `Json`, and it is plain TypeScript. The model already lowers that
-intersection to one dictionary clause with named fields and an index (`meet`,
-`meet_sound`), and its subtyping to `Json` is dictionary coverage. A literal
-establishes a record-and-index type by its exact keys (`CoversKeys`,
-`index-inheritance.ts`), not yet tried at `Serializable<T>`. Witnesses: a literal
-at `Serializable<T>`, passed as `Json`; a negative with a non-`Json` field;
-and the `deepFreeze` form above, with its explicit type argument, once
-`deepFreeze`'s declaration is in the fragment.
+*Decision.* `Serializable<T> = T & { readonly [k: string]: Json }`, and no
+closed-object notion. The alternatives, by the same principles:
+
+- TypeScript's implicit index rule, a record type as a `Json` object: unsound,
+  as above; refused (`invalid-sum-record-json`, which `tsc` accepts).
+- A closed-object type, `Closed<T>` (skipper #1242, SKJS's rule 28b): sound,
+  but a new notion. It means nothing under `tsc` (it is the identity there),
+  so the program `tsc` checks is not the one verified, and the model would
+  need a second way for a declared type to bound its own keys beside the one
+  a fresh literal has (`Exact`, `CoversKeys`).
+- A comment tag re-expanded for the checker only (skipper #1239): the same
+  divergence between the two checked programs, spelled in a comment.
+- The intersection: plain TypeScript that `tsc` checks the same way (a
+  literal's every field must meet the index there too, so
+  `invalid-sum-serializable` is refused by both), stating exactly what the
+  framework needs, and read by one existing mechanism, the meet. Its costs are
+  a type name users write and `deepFreeze`'s inference, above.
+
+*Mechanism.* Nothing new is represented; three existing pieces were
+completed.
+- Lean's meet of two object clauses joins their first invariant operands into
+  one record (`PositiveNormalization.meet`; `ReferenceConjunctions.flatten`
+  from `recT_append`: one value has one own-field map, so one operand naming
+  the fields of two says what the two say; `meet_sound` is unchanged). The
+  read rules read a named field from the first operand, so `Serializable<Todo>`
+  is one `dict` whose named views are readable. Interface heritage is that
+  meet, own members first (`inheritRows` is `meetLists own base`; its separate
+  disjoint-key canonicalization is gone), and so are source intersections
+  (`meetRow`), so there is one.
+- Coverage: a `dict` is below a `refs` whose members its own cover, its index
+  forgotten (`CoversWith`, case `dict.refs` of `Covers.sound`;
+  [POSITIVE-TYPES.md](../POSITIVE-TYPES.md#clause-coverage)). So a
+  `Serializable<Todo>` is a `Todo`, and it is a `Json` by dictionary
+  coverage, as before.
+- OCaml keeps an intersection in a declaration's equation that names one of
+  its parameters or another declaration (`Semantic.Meet`), and resolves it
+  where the declaration is applied (`Proposal.definition`): record operands,
+  named ones read through their equations, are one object (`meet_objects`,
+  which heritage uses too), anything else the parameter's instance as before.
+  So a fresh literal expected at `Serializable<Todo>` sees the index and is
+  claimed at its exact record, which meets the index by its keys
+  (`CoversKeys`). Outside a declaration, record operands of an intersection
+  merge the same way. A `Meet` never leaves a declaration's expansion.
+
+*Witnesses.* `sum-serializable` (a literal at `Serializable<{ … }>`, passed as
+`Json`, read at its named fields, and passed as the plain record);
+`invalid-sum-serializable` (`undefined` in a field); `sum-serializable-collection`
+(a `Mapper<string, string, string, Serializable<Todo>>` whose `mapEntry` builds
+the literal inside the returned array, and `EagerCollection<string,
+Serializable<Todo>>.getUnique(key).title`, through `V extends Json` and
+`V & DepSafe`); `invalid-sum-record-collection`, the plain `Todo` at
+`EagerCollection`'s bound, which `tsc` accepts and the application's bound
+check refuses — that refusal is the request's, not located at the annotation,
+as every application bound's is, so `test.mts` checks it rather than the
+reader's controls; and `test.mts`'s `record-meet` parity pair, which now
+verifies, local and imported alike, with a wrong read refused.
+
+*Left.*
+- `sum-serializable-map`: `c.map(ToTodo)` stops at `map`'s read, since `V2` is
+  still bounded by the `DepSafe` its values are intersected with (the stopgap
+  `invalid-sum-map-object` describes). The exact meet of a type parameter
+  with a ground type replaces it; with it, `V2 = Serializable<Todo>` is
+  within `Json`, and `V2 & DepSafe` is that dictionary meeting `Managed`.
+- `sum-serializable-freeze`: `deepFreeze`'s declaration is read (it is a
+  generic value import), but `deepFreeze<Todo>(…)` needs explicit type
+  arguments on a plain call, which the parser admits on method calls only.
+  Behind that, measured with `deepFreeze(t)` for `t: Todo`, its result
+  `T & DepSafe` over its own binder is refused at the call's scheme
+  elimination ("an intersection of anything but records or functions"): the
+  same exact meet, in the rigid checker.
+- Generic `Serializable<T>`, `T` a type parameter, is `T & {index}`, a binder
+  met with a ground type: that same work. OCaml still proposes the binder for
+  it (a `Meet` whose principal stays rigid resolves to it), and refuses a
+  `Meet` in a claim; once the meet is exact, the claim form needs the
+  intersection, not the binder.
+- Application bounds refused at the request, not at the annotation naming the
+  application, are a located-diagnostics gap independent of this row.
 
 Generic interface variance is not on this list: the type-safe API does not
 ask for `EagerCollection<K, V> ≤ EagerCollection<Json, Json>`, and the

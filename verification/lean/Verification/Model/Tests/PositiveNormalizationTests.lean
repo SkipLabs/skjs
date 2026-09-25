@@ -7,11 +7,12 @@ open PositiveNormalization PositiveGraphs PositiveCertificates ReferenceConjunct
 private def checkCoreSource [DecidableEq ι] (G : PositiveGraphs.Graph ι) (S T : List ι)
     (cert : Certificate ι) : Bool := checkSource G S T (.core cert)
 
--- Distribution retains conjunctions of reference contracts instead of treating
--- them as an invariant of intersected contents or as bottom.
+-- Distribution retains conjunctions of reference contracts, as one record
+-- naming both, instead of treating them as an invariant of intersected
+-- contents or as bottom.
 #guard normalize (Formula.inter (.atom (.refs [("value", (0 : Nat))] [] []))
   (.union (.atom (.refs [("value", 1)] [] [])) (.atom .nul)))
-    = [.refs [("value", 0)] [[("value", 1)]] []]
+    = [.refs [("value", 0), ("value", 1)] [] []]
 #guard normalize (Formula.inter (.atom (.arrs [((2 : Nat), [(0 : Nat)], 1)] []))
   (.atom (.arrs [(2, [1], 0)] []))) = [.arrs [(2, [0], 1), (2, [1], 0)] []]
 #guard normalize (Formula.inter (.atom (.refs [("value", (0 : Nat))] [] [])) (.atom .bool)) = []
@@ -19,9 +20,9 @@ private def checkCoreSource [DecidableEq ι] (G : PositiveGraphs.Graph ι) (S T 
 -- A dictionary constrains every present field. Normalization preserves its
 -- index obligation when meeting another dictionary or a named-field record.
 #guard normalize (Formula.inter (.atom (.dict [] [] [] [0]))
-  (.atom (.dict [] [] [] [1]))) = [.dict [] [[]] [] [0, 1]]
+  (.atom (.dict [] [] [] [1]))) = [.dict [] [] [] [0, 1]]
 #guard normalize (Formula.inter (.atom (.refs [("x", (0 : Nat))] [] []))
-  (.atom (.dict [] [] [] [1]))) = [.dict [("x", 0)] [[]] [] [1]]
+  (.atom (.dict [] [] [] [1]))) = [.dict [("x", 0)] [] [] [1]]
 
 private def jsonCycle : PositiveGraphs.Graph (Fin 2) := fun i =>
   if i.val = 0 then .union (.atom .bool) (.atom (.dict [] [] [] [[1]]))
@@ -51,12 +52,23 @@ def G : PositiveGraphs.Graph (Fin 12) := fun i => match i.val with
 -- The opposite direction would invent a constraint.
 #guard !(checkCoreSource G [3] [2] ⟨[([3], [2]), ([0], [0])], []⟩)
 -- The incompatible reference conjunction is not dropped as bottom.
-#guard normalizeGraph G 2 = [.refs [(valueField, [0])] [[(valueField, [1])]] []]
+#guard normalizeGraph G 2 = [.refs [(valueField, [0]), (valueField, [1])] [] []]
 #guard !(checkCoreSource G [2] [] ⟨[([2], [])], []⟩)
 -- Disjoint atoms really do normalize to bottom.
 #guard checkCoreSource G [11] [] ⟨[([11], [])], []⟩
 -- Recursive normalization and checking, with no unfolding of cycles.
 #guard checkCoreSource G [4] [5] ⟨[([4], [5]), ([5], [4])], []⟩
+
+-- A record met with a dictionary (`Serializable<T>`) is one dictionary of
+-- the record's members, below the record, which forgets the index; the record
+-- states nothing of its other keys, so it is not below the dictionary.
+def MeetG : PositiveGraphs.Graph (Fin 3) := fun i => match i.val with
+  | 0 => .atom .bool
+  | 1 => .inter (.atom (.refs [] [] [("a", [0])])) (.atom (.dict [] [] [] [[0]]))
+  | _ => .atom (.refs [] [] [("a", [0])])
+#guard normalizeGraph MeetG 1 = [.dict [] [] [("a", [0])] [[0]]]
+#guard checkCoreSource MeetG [1] [2] ⟨[([1], [2]), ([0], [0])], []⟩
+#guard !(checkCoreSource MeetG [2] [1] ⟨[([2], [1]), ([0], [0])], []⟩)
 
 -- Previously supported domain splitting survives the representation extension.
 def splitCert : Certificate (Fin 12) :=

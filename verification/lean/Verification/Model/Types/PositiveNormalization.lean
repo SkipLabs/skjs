@@ -171,14 +171,16 @@ def meet : Clause α → Clause α → List (Clause α)
   | .strLit a, .strLit b => if a == b then [.strLit a] else []
   | .bigint, .bigint => [.bigint]
   | .symbol, .symbol => [.symbol]
+  -- Object contracts meet on one object: their first operands are one record
+  -- (`ReferenceConjunctions.flatten`), whose named fields the read rules find.
   | .refs a bs vs os ms ks, .refs c ds ws ps ns ls =>
-      [.refs a (bs ++ c :: ds) (vs ++ ws) (os ++ ps) (ms ++ ns) (ks ++ ls)]
+      [.refs (a ++ c) (bs ++ ds) (vs ++ ws) (os ++ ps) (ms ++ ns) (ks ++ ls)]
   | .refs a bs vs os ms ks, .dict c ds ws ix ps ns ls cy =>
-      [.dict a (bs ++ c :: ds) (vs ++ ws) ix (os ++ ps) (ms ++ ns) (ks ++ ls) cy]
+      [.dict (a ++ c) (bs ++ ds) (vs ++ ws) ix (os ++ ps) (ms ++ ns) (ks ++ ls) cy]
   | .dict a bs vs ix os ms ks cx, .refs c ds ws ps ns ls =>
-      [.dict a (bs ++ c :: ds) (vs ++ ws) ix (os ++ ps) (ms ++ ns) (ks ++ ls) cx]
+      [.dict (a ++ c) (bs ++ ds) (vs ++ ws) ix (os ++ ps) (ms ++ ns) (ks ++ ls) cx]
   | .dict a bs vs ix os ms ks cx, .dict c ds ws iy ps ns ls cy =>
-      [.dict a (bs ++ c :: ds) (vs ++ ws) (ix ++ iy) (os ++ ps) (ms ++ ns) (ks ++ ls) (cx ++ cy)]
+      [.dict (a ++ c) (bs ++ ds) (vs ++ ws) (ix ++ iy) (os ++ ps) (ms ++ ns) (ks ++ ls) (cx ++ cy)]
   | .arrs L S, .arrs M T => [.arrs (L ++ M) (S ++ T)]
   | .ctors L S, .ctors M T => [.ctors (L ++ M) (S ++ T)]
   | .pack a bs, .pack c ds => [.pack a (bs ++ c :: ds)]
@@ -302,8 +304,8 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
     · rename_i b
       cases b <;> simp [meet, singleton_sem, semWithArgs, interT, boolT]
       all_goals intro hv; subst v; simp
-    · simp only [meet, singleton_sem, semWithArgs, List.map_append, List.map_cons]
-      rw [merge _ _ _ _ n W v]
+    · simp only [meet, singleton_sem, semWithArgs, List.map_append]
+      rw [famsOf_append, flatten _ _ _ _ n W v]
       simp only [famsOf_append, viewT_append, optT_append, methodT_append, interT,
         List.mem_append, or_imp, forall_and]
       exact ⟨fun ⟨⟨r1, r2⟩, ⟨v1, v2⟩, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩ =>
@@ -311,8 +313,8 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
         fun ⟨⟨r1, v1, o1, m1, k1⟩, ⟨r2, v2, o2, m2, k2⟩⟩ =>
           ⟨⟨r1, r2⟩, ⟨v1, v2⟩, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩⟩
     · -- refs ∩ dictionary
-      simp only [meet, singleton_sem, semWithArgs, List.map_append, List.map_cons]
-      rw [merge _ _ _ _ n W v]
+      simp only [meet, singleton_sem, semWithArgs, List.map_append]
+      rw [famsOf_append, flatten _ _ _ _ n W v]
       simp only [famsOf_append, viewT_append, optT_append, methodT_append, interT,
         List.mem_append, or_imp, forall_and]
       exact ⟨fun ⟨⟨r1, r2⟩, ⟨v1, v2⟩, d2, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩ =>
@@ -320,8 +322,8 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
         fun ⟨⟨r1, v1, o1, m1, k1⟩, ⟨r2, v2, d2, o2, m2, k2⟩⟩ =>
           ⟨⟨r1, r2⟩, ⟨v1, v2⟩, d2, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩⟩
     · -- dictionary ∩ refs
-      simp only [meet, singleton_sem, semWithArgs, List.map_append, List.map_cons]
-      rw [merge _ _ _ _ n W v]
+      simp only [meet, singleton_sem, semWithArgs, List.map_append]
+      rw [famsOf_append, flatten _ _ _ _ n W v]
       simp only [famsOf_append, viewT_append, optT_append, methodT_append, interT,
         List.mem_append, or_imp, forall_and]
       exact ⟨fun ⟨⟨r1, r2⟩, ⟨v1, v2⟩, d1, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩ =>
@@ -329,9 +331,9 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
         fun ⟨⟨r1, v1, d1, o1, m1, k1⟩, ⟨r2, v2, o2, m2, k2⟩⟩ =>
           ⟨⟨r1, r2⟩, ⟨v1, v2⟩, d1, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩⟩
     · -- dictionary ∩ dictionary
-      simp only [meet, singleton_sem, semWithArgs, List.map_append, List.map_cons,
+      simp only [meet, singleton_sem, semWithArgs, List.map_append,
         List.mem_append, or_imp, forall_and]
-      rw [merge _ _ _ _ n W v]
+      rw [famsOf_append, flatten _ _ _ _ n W v]
       simp only [famsOf_append, viewT_append, optT_append, methodT_append, interT]
       exact ⟨fun ⟨⟨r1, r2⟩, ⟨v1, v2⟩, ⟨⟨d1, d2⟩, ⟨c1, c2⟩⟩, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩ =>
           ⟨⟨r1, v1, ⟨d1, c1⟩, o1, m1, k1⟩, ⟨r2, v2, ⟨d2, c2⟩, o2, m2, k2⟩⟩,

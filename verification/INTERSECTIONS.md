@@ -107,7 +107,9 @@ leaves the heap model alone.
   of field maps rather than of whole-cell contracts. `CoversFields` and
   `covers_recs` compare them field by field, so two operands naming disjoint
   fields constrain different locations and the conjunction is the composed
-  record rather than the empty type.
+  record rather than the empty type. The meet writes that composed record as
+  one operand: an object has one field map, so `recT (fs ++ gs)` is
+  `recT fs ∩ recT gs` (`recT_append`), and the read rules find each field.
 - Width subtyping is sound for the same reason: every named field keeps its
   exact contract, and an unnamed one is not constrained.
 

@@ -347,8 +347,8 @@ So everything reduces to the conjunction of two clauses:
 
 $$
 \begin{aligned}
-\mathsf{Ref}(\vec\varphi;\psi;\omega;\mu;\beta)\land\mathsf{Ref}(\vec\varphi';\psi';\omega';\mu';\beta')
- &=\mathsf{Ref}(\vec\varphi\,\vec\varphi';\psi\psi';\omega\omega';\mu\mu';\beta\beta'),\\
+\mathsf{Ref}(\varphi_0\,\vec\varphi;\psi;\omega;\mu;\beta)\land\mathsf{Ref}(\varphi'_0\,\vec\varphi';\psi';\omega';\mu';\beta')
+ &=\mathsf{Ref}((\varphi_0\varphi'_0)\,\vec\varphi\,\vec\varphi';\psi\psi';\omega\omega';\mu\mu';\beta\beta'),\\
 \mathsf{arrs}(L;S)\land\mathsf{arrs}(M;T)&=\mathsf{arrs}(LM;ST),\qquad
 \mathsf{Ctors}\,L\land\mathsf{Ctors}\,M=\mathsf{Ctors}\,(LM),\\
 \mathsf{List}\,\vec\tau\land\mathsf{List}\,\vec\tau'&=\mathsf{List}\,(\vec\tau\,\vec\tau'),\qquad
@@ -356,6 +356,12 @@ $$
 \end{aligned}
 $$
 
+  The two first invariant operands are joined into one. A value has one
+  own-field map, so one operand naming the fields of two says exactly what
+  the two say, $\mathsf{rec}(\varphi\varphi')=\mathsf{rec}\,\varphi\cap
+  \mathsf{rec}\,\varphi'$ (`recT_append`, `flatten`); and the read rules find
+  a named field in the first operand, so a meet's fields are read as a
+  record's (`{ readonly a: boolean } & { readonly b: number }` reads `b`).
   `refs` with `dict` gives a `dict` holding both; two `dict` clauses also
   concatenate their index contracts. `callable` with `callable` concatenates
   record operands and signatures; `callable` with `arrs` adds the signatures
@@ -407,8 +413,9 @@ union inclusion, transitivity and the scheme rules.
 $\Delta;S\vdash c\sqsubseteq d$ says clause $c$ of source type $S$ is covered
 by target clause $d$. Every clause is covered by `top`; identical primitives,
 and a singleton by its primitive, are covered trivially; different shapes are
-never covered. `dict` covers only `dict`, and `refs` covers `refs`, and
-`dict` through an own-key bound (below). Write
+never covered. `dict` is covered by `dict`, and by `refs`, forgetting its
+index contracts (below); `refs` covers `refs`, and `dict` through an own-key
+bound (below). Write
 $\Delta^{\pm}(A,B)$ for $\Delta(A,B)\land\Delta(B,A)$.
 
 **Records.** With $\Phi=\varphi_0\cdots\varphi_m$ the source's invariant
@@ -455,6 +462,17 @@ $$
       \forall C'\in\overline{C'}.\;\exists C\in\overline{C}.\;\Delta^{\pm}(C,C')}
      {\Delta;S\vdash\mathsf{Dict}(\Phi;\psi;\overline{D};\overline{C};\omega;\mu;\beta)\sqsubseteq
       \mathsf{Dict}(\varphi';\psi';\overline{D'};\overline{C'};\omega';\mu';\beta')}
+$$
+
+A dictionary is covered by a record whose members its own cover, as a
+record's are; the record states no index, so the dictionary's index contracts
+are forgotten. So `Serializable<Todo>`, a `Todo` whose every key holds `Json`,
+is a `Todo`:
+
+$$
+\frac{\Delta;S\vdash\mathsf{Ref}(\Phi;\psi;\omega;\mu;\beta)\sqsubseteq\mathsf{Ref}(\varphi';\psi';\omega';\mu';\beta')}
+     {\Delta;S\vdash\mathsf{Dict}(\Phi;\psi;\overline{D};\overline{C};\omega;\mu;\beta)\sqsubseteq
+      \mathsf{Ref}(\varphi';\psi';\omega';\mu';\beta')}
 $$
 
 A record covers a `dict` through an own-key bound (`CoversKeys`): its own keys

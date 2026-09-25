@@ -34,7 +34,7 @@ let encode (proposal : Proposal.t) =
     let rec find n = function [] -> rows := !rows @ [row]; n
       | r::rs -> if r=row then n else find (n+1) rs in find 0 !rows
   in
-  let rec labels = function Rigid _ | Union _ -> unsupported "rigid type nested in a graph type"
+  let rec labels = function Rigid _ | Union _ | Meet _ -> unsupported "rigid type nested in a graph type"
     | Atoms atoms -> Array (List.map int (List.sort_uniq compare (List.concat_map atom_labels atoms)))
   and atom_labels = function
     | Nul -> [0] | True -> [1] | False -> [2] | Undef -> [3]
@@ -171,7 +171,7 @@ let encode (proposal : Proposal.t) =
      it is exported in the scheme form, with its own binders (possibly none),
      so a returned closure can retain an outer binder in its result. *)
   let rec contains_symbolic = function
-    | Rigid _ -> true
+    | Rigid _ | Meet _ -> true
     | Union ts -> List.exists contains_symbolic ts
     | Atoms atoms -> List.exists (function
         | Named (_,args) -> List.exists contains_symbolic args
@@ -240,6 +240,7 @@ let encode (proposal : Proposal.t) =
       let rigid, ground = List.partition contains_symbolic ts in
       Object ["union", Array (List.map claim_type (rigid @ ground))]
     | (Atoms _ | Union _) as t -> labels t
+    | Meet _ -> unsupported "a type parameter's intersection in a claim"
   in
   (* The substitution is exported so Lean re-checks the elimination it names,
      rather than re-inferring one of its own. A site that calls no quantified

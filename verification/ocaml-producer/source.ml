@@ -195,16 +195,29 @@ let rec source_type ctx j =
     (* Function operands are one overloaded callable. A type parameter's
        intersection with another type, `V & DepSafe`, is proposed as the
        parameter: its instances are what the declarations call it at, and Lean
-       lowers and checks the whole intersection. Other operands need the source
-       graph's conjunction, which the proposal does not model. *)
+       lowers and checks the whole intersection. In a declaration's equation,
+       a parameter of the declaration or a named operand is read once it is
+       known, at the application (`Meet`); elsewhere, record operands are the
+       one object they describe. Other operands need the source graph's
+       conjunction, which the proposal does not model. *)
     let parts = List.map recur (items "parts" j) in
-    (match List.find_opt (function Rigid _ -> true | _ -> false) parts with
-     | Some rigid -> rigid
-     | None ->
-       let calls = List.concat_map (function
-         | Atoms [Shape {fields=[];string_index=None;calls;elements=None}] when calls <> [] -> calls
-         | _ -> unsupported "intersection needs source graph conjunction") parts in
-       Atoms [Shape {fields=[];string_index=None;calls;elements=None}])
+    let callable = function
+      | Atoms [Shape {fields=[];string_index=None;calls;elements=None}] when calls <> [] -> Some calls
+      | _ -> None in
+    let rigid = List.find_opt (function Rigid _ -> true | _ -> false) parts in
+    (match rigid,parts with
+     | Some (Rigid r as rigid),_ when List.mem r ctx.positional ->
+       Meet (rigid,List.filter (fun part -> part <> rigid) parts)
+     | Some rigid,_ -> rigid
+     | None,_ when List.for_all (fun part -> callable part <> None) parts ->
+       Atoms [Shape {fields=[];string_index=None;calls=List.concat (List.filter_map callable parts);elements=None}]
+     | None,first::rest when ctx.owner <> None -> Meet (first,rest)
+     | None,first::rest ->
+       (match List.fold_left (fun acc part -> Option.bind acc (fun a -> meet_objects a part))
+                (Some first) rest with
+        | Some merged -> merged
+        | None -> unsupported "intersection needs source graph conjunction")
+     | None,[] -> fail "empty intersection")
   | k -> unsupported ("type term " ^ k)
 and source_pack ctx j =
   if text "k" j <> "binder" then unsupported "a pack rest must name a type parameter";

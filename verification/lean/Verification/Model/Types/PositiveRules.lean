@@ -863,6 +863,12 @@ def CoversWith (G : NormalGraph ι) (R : List ι → List ι → Prop) (known : 
       CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws ∧
       CoversOptional R (a :: bs) vs os ks ps ∧
       CoversMethods G R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls
+  -- A dictionary meets a record's members as a record does; the record has
+  -- no index, so the dictionary's index contracts are forgotten.
+  | .dict a bs vs _ os ms ks _, .refs c ds ws ps ns ls =>
+      CoversFields R (a :: bs) (c :: ds) ∧ CoversViews R (a :: bs) vs ws ∧
+      CoversOptional R (a :: bs) vs os ks ps ∧
+      CoversMethods G R known self ((a :: bs).flatten ++ vs) ks ms ns ∧ CoversBounds ks ls
   -- A target index view is within some source index view; a writable
   -- target index needs a writable source index of an equivalent contract, as
   -- an invariant field does, so no location is retyped.
@@ -1539,6 +1545,13 @@ theorem Covers.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R known sel
       covers_methods_sound hc.2.2.2.2.1 hknown n hr hpa W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2
         hv.2.2.2.1,
       covers_bounds_sound hc.2.2.2.2.2 hv.2.2.2.2⟩
+  case dict.refs a bs vs ix os ms ks cx c ds ws ps ns ls =>
+    intro hv
+    exact ⟨covers_fields_sound hc.1 n hr W v hv.1, covers_views_sound hc.2.1 n hr W v ⟨hv.1, hv.2.1⟩,
+      covers_optional_sound hc.2.2.1 n hr W v ⟨hv.1, hv.2.1, hv.2.2.2.1⟩ hv.2.2.2.2.2,
+      covers_methods_sound hc.2.2.2.1 hknown n hr hpa W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2.2
+        hv.2.2.2.2.1,
+      covers_bounds_sound hc.2.2.2.2 hv.2.2.2.2.2⟩
   case ctors.ctors L S M T =>
     rintro ⟨hv, hw⟩
     refine ⟨⟨hv.1, fun q hq => ?_⟩, ⟨hv.1, fun t ht => ?_⟩⟩

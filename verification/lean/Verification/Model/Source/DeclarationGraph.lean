@@ -164,46 +164,14 @@ to the same labels wherever it is lowered. -/
 private def groundTerm (t : Json) : Bool :=
   !mentionsKind "parameter" t && !mentionsKind "binder" t && !mentionsKind "self" t
 
-/-- An object clause of one record operand, as its parts: named fields,
-views, string index views, optional fields, methods, own-key bounds and
-writable string indexes. -/
-private structure ObjectParts where
-  fields : List (PropKey × List Nat)
-  views : List (PropKey × List Nat)
-  indexes : List (List Nat)
-  optional : List (OptionalField (List Nat))
-  methods : List (MethodMembers.Sig (List Nat))
-  bounds : List (List PropKey)
-  cells : List (List Nat)
-
-private def objectParts : Clause (List Nat) → Option ObjectParts
-  | .refs fs [] vs os ms ks => some ⟨fs, vs, [], os, ms, ks, []⟩
-  | .dict fs [] vs ix os ms ks cs => some ⟨fs, vs, ix, os, ms, ks, cs⟩
-  | _ => none
-
-private def ObjectParts.keys (o : ObjectParts) : List PropKey :=
-  (o.fields ++ o.views).map Prod.fst ++ o.optional.map (·.key) ++ o.methods.map (·.key)
-
-/-- A source heritage intersection of objects naming disjoint keys has the same
-contract as one record operand with all their members, and the index views of
-both sides, which a dictionary applies to every present field, the named ones
-included (`interface C extends NamedEagerCollections`). Canonicalizing that
-case gives the proposal and the source one graph row, whose named members the
-read rules see. Other combinations keep the general intersection
-representation, a conjunction of the operands. -/
+/-- An interface's contract is the meet of its own members with each base's:
+record operands on one object, whose named fields and index views are one
+record (`meet`, `ReferenceConjunctions.flatten`), so a dictionary's index
+applies to every present field, the named ones included (`interface C extends
+NamedEagerCollections`), and the read rules see the named members. The
+interface's own members come first, so where one overrides a base's member of
+the same key, the read rules find the interface's. -/
 private def inheritRows (own base : List (Clause (List Nat))) : Except String (List (Clause (List Nat))) := do
-  if let ([o], [b]) := (own, base) then
-    if let (some o, some b) := (objectParts o, objectParts b) then
-      let keys := b.keys ++ o.keys
-      if keys.eraseDups.length == keys.length then
-        let fs := b.fields ++ o.fields
-        let vs := b.views ++ o.views
-        let os := b.optional ++ o.optional
-        let ms := b.methods ++ o.methods
-        let ks := b.bounds ++ o.bounds
-        return [match b.indexes ++ o.indexes with
-          | [] => .refs fs [] vs os ms ks
-          | ix => .dict fs [] vs ix os ms ks (b.cells ++ o.cells)]
   let rows := PositiveNormalization.meetLists own base
   if rows.isEmpty then throw "inherited interface contracts have no representable intersection"
   return rows

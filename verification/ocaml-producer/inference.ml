@@ -11,60 +11,66 @@ type instantiation = {
 
 let unsupported s = Json.fail ("unsupported: " ^ s)
 
-let rec substitute solution = function
+(* [meet] rebuilds an intersection of a declaration's equation (`Meet`) once
+   its operands are substituted: by default it stays one, for the
+   declaration's expansion to resolve (`Proposal.definition`). *)
+let rec substitute ?meet solution = function
   | Rigid identity as original ->
     (match List.assoc_opt identity solution with
     | None -> original
     | Some (ValueArgument t) -> t
     | Some (PackArgument _) -> unsupported ("pack substitution used as a value type: " ^ identity.spelling))
-  | Atoms atoms -> Atoms (List.map (substitute_atom solution) atoms)
-  | Union types -> List.fold_left union (Atoms []) (List.map (substitute solution) types)
-and substitute_atom solution = function
-  | Shape shape -> Shape (substitute_shape solution shape)
+  | Atoms atoms -> Atoms (List.map (substitute_atom ?meet solution) atoms)
+  | Union types -> List.fold_left union (Atoms []) (List.map (substitute ?meet solution) types)
+  | Meet (t,ts) ->
+    let t = substitute ?meet solution t and ts = List.map (substitute ?meet solution) ts in
+    (match meet with Some meet -> meet t ts | None -> Meet (t,ts))
+and substitute_atom ?meet solution = function
+  | Shape shape -> Shape (substitute_shape ?meet solution shape)
   | Exact fields -> Exact (List.map (fun (field:Semantic.field) -> {field with
-      read=substitute solution field.read;
-      write=Option.map (substitute solution) field.write}) fields)
-  | Named (id,args) -> Named (id,List.map (substitute solution) args)
-  | Ctors signatures -> Ctors (List.map (substitute_signature solution) signatures)
+      read=substitute ?meet solution field.read;
+      write=Option.map (substitute ?meet solution) field.write}) fields)
+  | Named (id,args) -> Named (id,List.map (substitute ?meet solution) args)
+  | Ctors signatures -> Ctors (List.map (substitute_signature ?meet solution) signatures)
   | (Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Top
     | Bigint | Symbol) as atom -> atom
-and substitute_pack solution = function
+and substitute_pack ?meet solution = function
   | PackParameter identity as original ->
     (match List.assoc_opt identity solution with
     | None -> original
     | Some (PackArgument p) -> p
     | Some (ValueArgument _) -> unsupported ("value substitution used as an argument pack: " ^ identity.spelling))
-  | Pack sequence -> Pack (substitute_sequence solution sequence)
-and substitute_sequence solution sequence = {
+  | Pack sequence -> Pack (substitute_sequence ?meet solution sequence)
+and substitute_sequence ?meet solution sequence = {
   sequence with
-  required=List.map (substitute solution) sequence.required;
-  optional_elements=List.map (substitute solution) sequence.optional_elements;
-  rest=Option.map (substitute solution) sequence.rest}
-and substitute_argument solution = function
-  | ValueArgument t -> ValueArgument (substitute solution t)
-  | PackArgument p -> PackArgument (substitute_pack solution p)
-and substitute_shape solution shape = {
+  required=List.map (substitute ?meet solution) sequence.required;
+  optional_elements=List.map (substitute ?meet solution) sequence.optional_elements;
+  rest=Option.map (substitute ?meet solution) sequence.rest}
+and substitute_argument ?meet solution = function
+  | ValueArgument t -> ValueArgument (substitute ?meet solution t)
+  | PackArgument p -> PackArgument (substitute_pack ?meet solution p)
+and substitute_shape ?meet solution shape = {
   fields=List.map (fun field -> {field with
-    read=substitute solution field.read;
-    write=Option.map (substitute solution) field.write}) shape.fields;
+    read=substitute ?meet solution field.read;
+    write=Option.map (substitute ?meet solution) field.write}) shape.fields;
   string_index=Option.map (fun (index:Semantic.index_signature) -> {
-    value=substitute solution index.value;
-    writable=Option.map (substitute solution) index.writable}) shape.string_index;
-  calls=List.map (substitute_signature solution) shape.calls;
-  elements=Option.map (substitute_sequence solution) shape.elements;
+    value=substitute ?meet solution index.value;
+    writable=Option.map (substitute ?meet solution) index.writable}) shape.string_index;
+  calls=List.map (substitute_signature ?meet solution) shape.calls;
+  elements=Option.map (substitute_sequence ?meet solution) shape.elements;
 }
-and substitute_signature solution signature =
+and substitute_signature ?meet solution signature =
   (* A nested quantifier shadows only its own identities. Outer solutions still
      pass through the nested scheme's bounds and body. *)
   let local = List.map (fun q -> q.identity) signature.quantified in
   let solution = List.filter (fun (identity,_) -> not (List.mem identity local)) solution in
-  { quantified=List.map (fun q -> {q with bound=Option.map (substitute_argument solution) q.bound})
+  { quantified=List.map (fun q -> {q with bound=Option.map (substitute_argument ?meet solution) q.bound})
       signature.quantified;
-    receiver=substitute solution signature.receiver;
-    params=List.map (substitute solution) signature.params;
-    variadic=Option.map (substitute solution) signature.variadic;
-    rest_pack=Option.map (substitute_pack solution) signature.rest_pack;
-    result=substitute solution signature.result }
+    receiver=substitute ?meet solution signature.receiver;
+    params=List.map (substitute ?meet solution) signature.params;
+    variadic=Option.map (substitute ?meet solution) signature.variadic;
+    rest_pack=Option.map (substitute_pack ?meet solution) signature.rest_pack;
+    result=substitute ?meet solution signature.result }
 
 (* These are proposal constraints, not semantic type nodes or acceptance facts.
    Edges retain dependencies until all concrete bounds have propagated. *)
@@ -116,7 +122,7 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) (signature:signature) ac
   let variables = List.map (fun (q:quantifier) ->
     {identity=q.identity;lower=[];upper=[]}) signature.quantified in
   let find identity = List.find_opt (fun (v:variable) -> v.identity=identity) variables in
-  let local = function Rigid identity -> find identity | Atoms _ | Union _ -> None in
+  let local = function Rigid identity -> find identity | Atoms _ | Union _ | Meet _ -> None in
   let edges = ref [] in
   let add xs t = List.sort_uniq compare (t::xs) in
   (* constrain left right records left <= right. Callback parameters reverse

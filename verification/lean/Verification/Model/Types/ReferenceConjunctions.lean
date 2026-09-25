@@ -21,14 +21,31 @@ theorem singleton (A : Fields) (n : Nat) (W : WorldT n) (v : Val) :
 theorem cell (A : Fam) (n : Nat) (W : WorldT n) (v : Val) :
     refsT [(valueField, A)] [] n W v ↔ refT A n W v := by simp [refsT, refT]
 
-theorem merge (A C : Fields) (Bs Ds : List Fields) (n : Nat) (W : WorldT n) (v : Val) :
-    refsT A (Bs ++ C :: Ds) n W v ↔ interT (refsT A Bs) (refsT C Ds) n W v := by
-  simp only [refsT, List.mem_append, List.mem_cons,
-    or_imp, forall_and, interT]
-  simp only [forall_eq]
+/-- One operand naming the fields of two: a value has one own-field map, so
+the two operands' fields are fields of that one map, and one operand listing
+both says exactly what the two say. -/
+theorem recT_append (A C : Fields) (n : Nat) (W : WorldT n) (v : Val) :
+    recT (A ++ C) n W v ↔ interT (recT A) (recT C) n W v := by
   constructor
-  · rintro ⟨ha, hb, hc, hd⟩; exact ⟨⟨ha, hb⟩, hc, hd⟩
-  · rintro ⟨⟨ha, hb⟩, hc, hd⟩; exact ⟨ha, hb, hc, hd⟩
+  · rintro ⟨flds, rfl, h⟩
+    exact ⟨⟨flds, rfl, fun f T hm => h f T (List.mem_append_left _ hm)⟩,
+      ⟨flds, rfl, fun f T hm => h f T (List.mem_append_right _ hm)⟩⟩
+  · rintro ⟨⟨flds, rfl, ha⟩, ⟨flds', he, hc⟩⟩
+    cases he
+    refine ⟨flds, rfl, fun f T hm => ?_⟩
+    rcases List.mem_append.mp hm with h | h
+    · exact ha f T h
+    · exact hc f T h
+
+/-- The conjunction of two conjunctions, with their first operands joined
+into one: the record the meet of two object contracts is, whose named fields
+the read rules find in its first operand. -/
+theorem flatten (A C : Fields) (Bs Ds : List Fields) (n : Nat) (W : WorldT n) (v : Val) :
+    refsT (A ++ C) (Bs ++ Ds) n W v ↔ interT (refsT A Bs) (refsT C Ds) n W v := by
+  simp only [refsT, recT_append, interT, List.mem_append, or_imp, forall_and]
+  constructor
+  · rintro ⟨⟨ha, hc⟩, hb, hd⟩; exact ⟨⟨ha, hb⟩, hc, hd⟩
+  · rintro ⟨⟨ha, hb⟩, hc, hd⟩; exact ⟨⟨ha, hc⟩, hb, hd⟩
 
 theorem adm (A : Fields) (Bs : List Fields) : Adm (refsT A Bs) := by
   constructor

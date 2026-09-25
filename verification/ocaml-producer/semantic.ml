@@ -1,6 +1,16 @@
 (* Semantic types contain no solver state. More precise proposals do not mutate them.
    A rigid parameter remains distinct from any future inference/existential IDs. *)
 type ty = Atoms of atom list | Rigid of rigid | Union of ty list
+         (* An intersection in a declaration's equation whose operands are
+            known only where it is applied: one is a parameter of the
+            declaration, `T & { readonly [k: string]: Json }`, or another
+            declaration. It is kept, its principal operand first, until the
+            application: there it is the one object its operands describe
+            where they are records (`Proposal.definition`), and otherwise its
+            principal, the parameter's instance, a proposal Lean checks
+            against the whole intersection. It never leaves a declaration's
+            expansion. *)
+         | Meet of ty * ty list
 and rigid = { scope: int; index: int; spelling: string }
 and atom = Nul | Undef | True | False | Num | Str | NumLit of int64 | StrLit of string | Top
          (* Opaque values: every bigint, every symbol. *)
@@ -38,6 +48,19 @@ and signature = { quantified: quantifier list; receiver: ty; params: ty list;
 and sequence = { required: ty list; optional_elements: ty list; rest: ty option; readonly: bool }
 and shape = { fields: field list; string_index: index_signature option; calls: signature list; elements: sequence option }
 let record fields = Atoms [Shape {fields;string_index=None;calls=[];elements=None}]
+(* Two object contracts as the one object both describe: their named members,
+   which must be disjoint, and the one string index either states. `None`
+   where they are not both plain objects so combined: a hint only, as Lean's
+   meet gives the intersection its meaning. *)
+let meet_objects a b = match a,b with
+  | Atoms [Shape x],Atoms [Shape y]
+    when x.calls=[] && y.calls=[] && x.elements=None && y.elements=None &&
+         (x.string_index=None || y.string_index=None) ->
+    let names = List.map (fun (f:field) -> f.name) (x.fields @ y.fields) in
+    if List.length names <> List.length (List.sort_uniq compare names) then None
+    else Some (Atoms [Shape {x with fields=x.fields @ y.fields;
+      string_index=(match x.string_index with None -> y.string_index | own -> own)}])
+  | _ -> None
 let top = Atoms [Top]
 let arrow params result =
   Atoms [Shape {fields=[];string_index=None;calls=[{quantified=[];receiver=top;params;variadic=None;rest_pack=None;result}];elements=None}]
@@ -58,6 +81,7 @@ let rec widen = function
       | True | False -> [True;False] | NumLit _ -> [Num] | StrLit _ -> [Str]
       | a -> [a]) xs)
   | Rigid _ as t -> t | Union ts -> List.fold_left union (Atoms []) (List.map widen ts)
+  | Meet (t,ts) -> Meet (widen t,ts)
 let array elements = Atoms [Shape {fields=[];string_index=None;calls=[];elements=Some elements}]
 (* A call may omit a trailing position exactly when its contract admits
    `undefined`: that is the value bound there. Optionality is a property of the
@@ -81,8 +105,10 @@ let rec admits_undefined = function
   | Atoms xs -> List.exists (function Undef | Top -> true | _ -> false) xs
   | Rigid _ -> false
   | Union ts -> List.exists admits_undefined ts
+  | Meet (t,ts) -> List.for_all admits_undefined (t::ts)
 
 let rec without_nullish = function
   | Atoms xs -> ground (List.filter (function Nul | Undef -> false | _ -> true) xs)
   | Rigid _ as t -> t | Union ts -> List.fold_left union (Atoms []) (List.map without_nullish ts)
+  | Meet (t,ts) -> Meet (without_nullish t,ts)
 let number_literal spelling = Atoms [NumLit (Int64.bits_of_float (float_of_string spelling))]

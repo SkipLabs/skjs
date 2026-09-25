@@ -27,7 +27,7 @@ let rec plausible_subtype actual expected =
       | _ -> false) ys) xs
   | Union parts,_ -> List.for_all (fun part -> plausible_subtype part expected) parts
   | _,Union parts -> List.exists (plausible_subtype actual) parts
-  | Rigid _,_ | _,Rigid _ -> false
+  | (Rigid _ | Meet _),_ | _,(Rigid _ | Meet _) -> false
 let literal_type = function
   | LNull -> Atoms [Nul] | LUndefined -> Atoms [Undef]
   | LBool true -> Atoms [True] | LBool false -> Atoms [False]
@@ -39,19 +39,14 @@ let definition declarations id args =
   (* An interface and its base as one object: disjoint fields, and the one
      index signature either states. A hint only: Lean's `inheritRows` gives
      the declaration's meaning. *)
-  let merge base own = match base,own with
-    | Atoms [Shape inherited],Atoms [Shape local]
-      when inherited.calls=[] && local.calls=[] &&
-           (inherited.string_index=None || local.string_index=None) &&
-           inherited.elements=None && local.elements=None ->
-      let names = List.map (fun (field:Semantic.field) -> field.name)
-        (inherited.fields @ local.fields) in
-      if List.length names <> List.length (List.sort_uniq compare names) then
-        unsupported "overlapping inherited fields need compatibility checking";
-      Atoms [Shape {local with fields=inherited.fields @ local.fields;
-        string_index=(match local.string_index with
-          | None -> inherited.string_index | own -> own)}]
-    | _ -> unsupported "inheritance needs plain object contracts" in
+  let merge base own = match meet_objects base own with
+    | Some t -> t
+    | None -> (match base,own with
+      | Atoms [Shape inherited],Atoms [Shape local]
+        when inherited.calls=[] && local.calls=[] && inherited.elements=None && local.elements=None
+             && (inherited.string_index=None || local.string_index=None) ->
+        unsupported "overlapping inherited fields need compatibility checking"
+      | _ -> unsupported "inheritance needs plain object contracts") in
   let rec instantiate seen id args =
   if List.mem id seen then unsupported "cyclic inheritance";
   match List.find_opt (fun (d:Source.declaration) -> d.id=id) declarations with
@@ -71,9 +66,23 @@ let definition declarations id args =
         complete ((parameter,ValueArgument value)::previous) supplied rest other
       | _ -> unsupported "declaration parameter/default length mismatch" in
     let solution = complete [] args d.parameters d.defaults in
-    let body = Inference.substitute solution d.expression in
+    (* An intersection of the equation, its arguments substituted, is the one
+       object its operands describe where they are records, a declared one
+       read through its equation (`Serializable<Todo>`); otherwise it is its
+       principal operand, the argument, as a type parameter's intersection is
+       proposed. *)
+    let meet t ts =
+      let expand t = match t with
+        | Atoms [Named (named,named_args)] when not (List.mem named (id::seen)) ->
+          (try instantiate (id::seen) named named_args with Json.Error _ -> t)
+        | t -> t in
+      match List.fold_left (fun acc part -> Option.bind acc (fun a -> meet_objects a (expand part)))
+              (Some (expand t)) ts with
+      | Some merged -> merged
+      | None -> t in
+    let body = Inference.substitute ~meet solution d.expression in
     List.fold_left (fun own base ->
-      match Inference.substitute solution base with
+      match Inference.substitute ~meet solution base with
       | Atoms [Named (baseId,baseArgs)] ->
         merge (instantiate (id::seen) baseId baseArgs) own
       | _ -> unsupported "heritage is not a named base")
@@ -114,7 +123,7 @@ let rec field_type declarations seen t name = match t with
         field_type declarations (id::seen) (definition declarations id args) name
       | _ -> unsupported "field read on non-object") atoms)
   | Union ts -> combine (List.map (fun t -> field_type declarations seen t name) ts)
-  | Rigid _ -> unsupported "field read on rigid parameter"
+  | Rigid _ | Meet _ -> unsupported "field read on rigid parameter"
 (* What a fresh array literal expected at an iterable type holds, found as
    TypeScript finds it: the expected type's member under the key
    `Array.prototype` iterates by (its one symbol key, `[Symbol.iterator]`),
@@ -177,7 +186,7 @@ let rec index_type declarations seen receiver key = match receiver with
         index_type declarations (id::seen) (definition declarations id args) key
       | _ -> unsupported "indexed read on non-object") atoms)
   | Union ts -> combine (List.map (fun t -> index_type declarations seen t key) ts)
-  | Rigid _ -> unsupported "indexed read on rigid parameter"
+  | Rigid _ | Meet _ -> unsupported "indexed read on rigid parameter"
 
 (* A fresh literal is built at the one object contract its expected type
    names: a record or dictionary shape, possibly behind a declaration (a class
@@ -195,7 +204,7 @@ let rec object_hint declarations seen = function
   | Union parts ->
     (match List.filter_map (object_hint declarations seen) parts with
     | [shape] -> Some shape | _ -> None)
-  | Rigid _ -> None
+  | Rigid _ | Meet _ -> None
 
 (* Branch restrictions only affect immutable values. Unknown/rigid predicates
    conservatively retain their type; proof checking validates each narrower cut. *)
@@ -208,7 +217,7 @@ let restrict literal equal t = match t with
         | (Top | Num | Str | Shape _ | Exact _ | Named _),_ -> None
         | _,_ -> Some false in
       match known with Some result -> result=equal | None -> true) xs)
-  | Rigid _ | Union _ -> t
+  | Rigid _ | Union _ | Meet _ -> t
 let rec branch env cond truth = match cond.node with
   | Not e -> branch env e (not truth)
   | Id name -> refine_value env name (function
