@@ -493,11 +493,12 @@ for (const [file, expected] of [
     "export function wrongRigid<T>(f: GenericCallable<T>, x: T): boolean { return f(x); }\n");
   assert.equal(wrongRigidCall.status, "unverified", JSON.stringify(wrongRigidCall));
   assert.match(wrongRigidCall.detail, /cannot establish T ≤ boolean/);
-  // A record over a rigid binder is outside the generic checker for both.
+  // A record over a rigid binder is a graph type over its parameter row, for
+  // both.
   const rigidRecord = parity("rigid-record", "type GenericBox<T> = { readonly value: T };\n",
     'import type { GenericBox } from "@fixture/box";\n',
     "export function unboxRigid<T>(value: GenericBox<T>): T { return value.value; }\n");
-  assert.equal(rigidRecord.status, "unsupported", JSON.stringify(rigidRecord));
+  assert.equal(rigidRecord.status, "verified", JSON.stringify(rigidRecord));
   // Ground applications agree as well.
   const groundCall = parity("ground-call", callableLocal, callableImported,
     "export function applyGround(f: GenericCallable<boolean>): boolean { return f(true); }\n");

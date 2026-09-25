@@ -566,6 +566,73 @@ calculus safety for every graph request, semantic safety for every direct
 generic certificate, and universal invocation safety for every admitted scheme.
 The graph evidence for a scheme never replaces its universal certificate.
 
+### Generic bodies are graph requests over parameter rows
+
+A generic function's body is checked by the graph checker, the one every other
+body goes through, with each binder read as a **parameter row**: a row that
+means whatever the graph's assignment gives it. The unit is then an ordinary
+graph request, and its evidence is certified at every assignment of those rows.
+Records, tuples, arrays and field reads and writes over a binder, literals,
+`??`, `if`, `let`, `typeof`, calls of other generic functions at a binder:
+everything the graph mechanism checks for ground types, it checks over a
+binder, with no rule of its own. A second typing mechanism (records and heap
+operations in the direct checker) was the alternative, and was not taken.
+
+**Parametricity.** The graph's assignment is semantic only; no check reads it.
+`Parametricity.accept_reassign` proves this for the whole checker:
+
+$$
+\mathsf{accept}(G[\mathit{env}:=\eta],R,P,\mathit{claims},C,s,\vec I)
+=\mathsf{accept}(G,R,P,\mathit{claims},C,s,\vec I)
+\qquad\text{for every }\eta .
+$$
+
+Most checkers are definitionally independent of the assignment; the lemmas are
+for the recursive ones (arrow, clause and subtype certificates, edges,
+evidence trees), whose unfolding the kernel does not do on its own, and the
+checkers built on them. Safety of accepted evidence is proved for every graph,
+so it holds at every reassignment (`Parametricity.accepted_at`,
+`RequestJson.verify_safe_at`). `checkJson_safe` now concludes, for every graph
+request,
+
+$$
+\forall\eta.\;\mathsf{EnvOk}_{G[\eta]}(\vec I,\rho)\Rightarrow
+\mathsf{SafeGraph}\bigl(P,\llbracket R\rrbracket^{\eta}\bigr),
+$$
+
+which at a request without parameter rows is the old statement, and at a
+generic body is safety at every instantiation of its binders: the inputs and
+the result are read at the same $\eta$. A new checker is covered by adding its
+`_reassign` lemma next to its callers'; a checker that read the assignment
+could not be given one.
+
+**Extraction.** The OCaml producer names each binder's row in the claim table,
+`{"param": l, "name": "T", "kind": "value"}`, one per spelling, wherever a
+claim mentions the binder inside a graph type (`Box<T>`, `{ value: T }`,
+`T[]`). Lean reads a generic unit's binders as those rows (`binderRows`: the
+table's one value parameter row of that name that no scheme binds, or a new
+one), substitutes them for the binders in the unit's claims and in its source
+annotations (`Function.atRows`, `annotationAtRows`), and extracts the unit as
+any other. A call of a generic module function at a binder names the instance
+at the binder's row, which that function's own certificate, at every
+assignment, covers.
+
+**Bounds.** A bounded binder is read as its parameter row alone. The body is
+then certified at every assignment, including those outside the bound: a
+stronger statement than TypeScript's, still true, and a body that uses the
+bound (`x.length` for `T extends { length: number }`) finds no derivation.
+Reading a bounded binder as the meet of its row and its bound, and letting the
+subtyping rules read a meet row's clauses, is the next step.
+
+**The direct checker.** A generic unit goes to the direct rigid checker
+(`GenericSource`) first, for the variable-copy bodies and dependent bounds it
+states located obligations for; a failed obligation stands. A body outside its
+forms, a refusal, goes to the graph checker. The direct checker is kept only
+because it still covers bounded binders; once meets carry bounds it is
+retired. Nested generic closures (a closure with binders of its own inside a
+generic body) are refused on the graph path: their binders need scheme
+introduction in the program typing, which the graph does not yet have.
+
 This is independent of the mutation and loop source-fragment targets above.
 Those remain the next programs to cover with the existing stateful
 foundation; they are not a prerequisite for exporting and checking SKJS
@@ -2604,7 +2671,7 @@ assumptions and historical coverage counts are not an implementation plan.
 | Mutable structural objects             | Specify field presence, width, aliasing and allowed mutation; extend beyond the current invariant cells and export their types.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | More primitives and operators          | Numbers are admitted as opaque values with singleton literal types, in closure signatures and as the storage contract of a mutable local; finite singleton comparisons are supported, and a comparison on the broad family branches both ways; arithmetic on numbers is the IEEE-754 double operation yielding the number family, and on bigints the integer operation yielding the bigint family (a division by zero and a negative exponent throw), relational comparison of numbers, bigints and strings yields a Boolean, and `-`, `+` and `~` are the binary operators with a constant ([Numeric operators and bigints](#numeric-operators-and-bigints)), with compound assignments, increments and logical assignments to fields and elements evaluating their target once, the Boolean logical forms needing a Boolean target; strings are admitted on the same terms, with literal singletons and equality against a literal, and `+` concatenates a string with any primitive but a symbol, converting it by `ToString` exactly, template literals included ([String concatenation, templates and `void`](#string-concatenation-templates-and-void)); truthiness is JavaScript's `ToBoolean` ([Truthiness](#truthiness)); general equality is not, and needs its runtime behavior defined and agreement validated. Numeric current-content predicates now cover both singletons and the number family, with checked transfer across graph edges.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Graph-backed closure bodies            | Extend the call/body interface if source functions require graph control flow internally; surrounding graph loops are insufficient.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Generics and bounds                    | The rigid model slice is in [TypeParams.lean](lean/Verification/Model/Types/TypeParams.lean). Source extraction of identity, `T extends boolean`, annotated and inferred immutable copies, and extra `T` parameters is in [GenericSource.lean](lean/Verification/Model/Source/GenericSource.lean). Declaration applications over rigid binders are expanded from their source equations in [DeclarationGraph.lean](lean/Verification/Model/Source/DeclarationGraph.lean); [GenericAlias.lean](lean/Verification/Model/Source/GenericAlias.lean) now only expands alias atoms in SKJS's exported claims. Distinct parameters and dependent upper-bound chains in variable-copy bodies are checked using [GenericBounds.lean](lean/Verification/Model/Types/GenericBounds.lean). [TypeSchemes.lean](lean/Verification/Model/Types/TypeSchemes.lean) gives quantified callable semantics; source extraction connects the narrow unbounded local-closure slice described above, checks introduction universally, and compiles checked ground eliminations to graph arrows. Remaining: calls to generic declarations, generic callbacks, bounded or nested local schemes, general quantified closure bodies, conditional types, higher-rank polymorphism and parameter-changing recursion. Generic parameters, inference variables and hidden object type arguments are not interchangeable. Observing several calls is not universal certification; the separate introduction check is. |
+| Generics and bounds                    | The rigid model slice is in [TypeParams.lean](lean/Verification/Model/Types/TypeParams.lean). Source extraction of identity, `T extends boolean`, annotated and inferred immutable copies, and extra `T` parameters is in [GenericSource.lean](lean/Verification/Model/Source/GenericSource.lean). Declaration applications over rigid binders are expanded from their source equations in [DeclarationGraph.lean](lean/Verification/Model/Source/DeclarationGraph.lean); [GenericAlias.lean](lean/Verification/Model/Source/GenericAlias.lean) now only expands alias atoms in SKJS's exported claims. Distinct parameters and dependent upper-bound chains in variable-copy bodies are checked using [GenericBounds.lean](lean/Verification/Model/Types/GenericBounds.lean). Every other generic body is a graph request over its binders' parameter rows, certified at every assignment of them ([Generic bodies are graph requests over parameter rows](#generic-bodies-are-graph-requests-over-parameter-rows)). [TypeSchemes.lean](lean/Verification/Model/Types/TypeSchemes.lean) gives quantified callable semantics; source extraction connects the narrow unbounded local-closure slice described above, checks introduction universally, and compiles checked ground eliminations to graph arrows. Remaining: calls to generic declarations, generic callbacks, bounded or nested local schemes, general quantified closure bodies, conditional types, higher-rank polymorphism and parameter-changing recursion. Generic parameters, inference variables and hidden object type arguments are not interchangeable. Observing several calls is not universal certification; the separate introduction check is. |
 | Difference and negation                | Supply sound rules or approximations: pointwise complement need not preserve admissibility. They do not follow from positive normalization.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Exceptions                             | A throw is an outcome of the calculus and of graphs, with handler edges and `finally` compiled on each way out ([Throws](#throws)). Remaining: a `break`/`continue` through a `finally`, `try` inside a closure body, a generic closure that throws, `new Error(…)` and the `Error` hierarchy, `JSON`, `Promise.*` overlay entries.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 

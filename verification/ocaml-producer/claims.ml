@@ -37,19 +37,35 @@ let encode (proposal : Proposal.t) =
     let rec find n = function [] -> rows := !rows @ [row]; n
       | r::rs -> if r=row then n else find (n+1) rs in find 0 !rows
   in
-  let rec labels = function
-    | Rigid _ | Union _ -> unsupported "rigid type nested in a graph type"
+  (* A generic body's binder is a value parameter row, one per spelling,
+     which names its own label. Lean reads the unit's binders as these rows
+     and certifies the body at every assignment of them; a claim over a
+     binder, however nested, is then an ordinary graph type. *)
+  let parameters = ref [] in
+  let parameter_label (r:Semantic.rigid) =
+    match List.assoc_opt r.spelling !parameters with
+    | Some label -> label
+    | None ->
+      let label = List.length !rows in
+      rows := !rows @ [Object ["param",int label;"name",String r.spelling;"kind",String "value"]];
+      parameters := (r.spelling,label) :: !parameters;
+      label
+  in
+  let rec labels t = Array (List.map int (label_list t))
+  and label_list = function
+    | Rigid r -> [parameter_label r]
+    | Union ts -> List.sort_uniq compare (List.concat_map label_list ts)
     | Meet (t,ts) as m ->
       if Semantic.mentions_rigid m then unsupported "rigid type nested in a graph type";
       let parts = Array (List.map labels (t::ts)) in
       (match List.assoc_opt parts !meets with
-       | Some label -> Array [int label]
+       | Some label -> [label]
        | None ->
          let label = List.length !rows in
          rows := !rows @ [Array []];
          meets := !meets @ [(parts,label)];
-         Array [int label])
-    | Atoms atoms -> Array (List.map int (List.sort_uniq compare (List.concat_map atom_labels atoms)))
+         [label])
+    | Atoms atoms -> List.sort_uniq compare (List.concat_map atom_labels atoms)
   and atom_labels = function
     | Nul -> [0] | True -> [1] | False -> [2] | Undef -> [3]
     | Num -> [intern (Array [String "num"])] | Str -> [intern (Array [String "str"])]

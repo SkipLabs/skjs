@@ -712,7 +712,47 @@ def moduleInstances (T : SourceTypes.Table) (g : DeclarationGraph.Instantiable)
   return (T, Json.mkObj [("top", toJson false), ("atoms", toJson [callable])],
     calls.map (·.2.1), calls.map (·.1))
 
+/-- A claim with a generic unit's binders read as their parameter rows, in
+ground form. A claim that does not ground keeps the reason at its site, as
+`ground` does, so only a site the extraction reads refuses. -/
+private def atRows (σ : List (String × ClaimType)) (t : ClaimType) :
+    StateM SourceTypes.Table ClaimType := modifyGet fun T =>
+  match groundIn T (subst σ t) with
+  | .ok (T, A) => (.labels A, T)
+  | .error reason => (.unavailable reason, T)
+
 end Scheme
+
+/-- A generic unit's claims with each binder read as its parameter row
+(`rows`): the unit is then an ordinary graph request over those rows, which
+the graph checker certifies at every assignment of them
+(`Parametricity.accepted_at`). The instantiations its calls state are read
+the same way, so a call of a generic module function at a binder names the
+instance at that binder's row. -/
+def Function.atRows (c : Function) (T : SourceTypes.Table) (rows : List (String × Nat)) :
+    SourceTypes.Table × Function :=
+  let σ := rows.map fun (n, l) => (n, ClaimType.labels [l])
+  let go := Scheme.atRows σ
+  let entry (e : Entry) : StateM SourceTypes.Table Entry := do
+    return { e with bindings := ← e.bindings.mapM fun b => do return { b with type := ← go b.type } }
+  let run : StateM SourceTypes.Table Function := do
+    let params ← c.params.mapM fun b => do return { b with type := ← go b.type }
+    let result ← go c.result
+    let entries ← c.entries.mapM entry
+    let expressions ← c.expressions.mapM fun e => do
+      let type ← go e.type
+      let instantiate ← e.instantiate.mapM (·.mapM fun i => do return { i with type := ← go i.type })
+      return { e with type, instantiate }
+    let arrows ← c.arrows.mapM (·.mapM fun a => do
+      let rows ← a.rows.mapM fun r => do
+        let expressions ← r.expressions.mapM fun e => do return { e with type := ← go e.type }
+        let entries ← r.entries.mapM entry
+        return { r with expressions, entries }
+      return { a with rows })
+    return { c with params, result, entries, expressions, arrows }
+  let (c, T) := run.run T
+  (T, c)
+
 
 
 /-- The table starts with the primitives and refers only to its own labels. -/
@@ -981,6 +1021,52 @@ private def checkInitializationOrder (T : SourceTypes.Table)
         s!"a module function this step reaches reads '{c}' before its declaration runs")
     if let .constants _ bs := s then ready := ready ++ bs.map (·.name)
 
+/-- The parameter row that stands for each of a generic unit's binders: the one
+value parameter row of the table the producer named after it, or a new one.
+A scheme's binder is its scheme's, never a unit's. The row carries no meaning
+of its own: the unit is certified at every assignment of it. -/
+private def binderRows (T : SourceTypes.Table) (tps : List Fragment.TypeParam) :
+    Except String (SourceTypes.Table × List (String × Nat)) := do
+  let schemeBinders := T.flatMap fun
+    | .scheme bs .. => bs
+    | _ => []
+  let mut T := T
+  let mut rows : List (String × Nat) := []
+  for tp in tps do
+    let named := (List.range T.length).filter fun i => match (T[i]? : Option RequestJson.Row) with
+      | some (.param l n .value) => l == i && n == tp.name && !schemeBinders.contains i
+      | _ => false
+    match named with
+    | [l] => rows := rows ++ [(tp.name, l)]
+    | [] =>
+      rows := rows ++ [(tp.name, T.length)]
+      T := T ++ [.param T.length tp.name .value]
+    | _ => throw s!"two parameter rows stand for the binder '{tp.name}'"
+  return (T, rows)
+
+/-- A source annotation in claim form with a unit's binders read as their
+parameter rows: each binder atom becomes the graph atom of its row. -/
+private partial def annotationAtRows (rows : List (String × Nat)) : Json → Json
+  | .arr xs => .arr (xs.map (annotationAtRows rows))
+  | .obj kvs =>
+    let j := Json.obj kvs
+    match (j.getObjValAs? String "a").toOption, (j.getObjValAs? String "name").toOption with
+    | some "param", some name =>
+      match rows.lookup name with
+      | some l => if kvs.size == 2 then
+          Json.mkObj [("a", toJson "graph"), ("label", toJson l)] else j
+      | none => j
+    | _, _ => Json.mkObj (kvs.toList.map fun (k, v) => (k, annotationAtRows rows v))
+  | j => j
+
+/-- Whether a source function's tree declares type parameters below its own:
+a generic closure, whose binders the unit's rows do not stand for. -/
+private partial def nestedBinders : Json → Bool
+  | .arr xs => xs.any nestedBinders
+  | .obj kvs => kvs.toList.any fun (k, v) =>
+      (k == "typeParams" && v != Json.arr #[]) || nestedBinders v
+  | _ => false
+
 /-- `only` selects one function of the file, named with its position: the
 others remain its module, reachable at their signatures, and need no claims. -/
 def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String × Span) := none) :
@@ -1003,6 +1089,7 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
     ((d.meets.getD []).map fun m => (m.row, m.parts))
   let d := { d with types }
   if !validTable d.types then throw "declaration graph has an invalid type reference"
+  let functionJsons := ((ast.getObjVal? "functions").toOption.bind (·.getArr?.toOption)).getD #[]
   let all ← Fragment.decodeAstWithParams ast
   let fs := all.map Prod.fst
   if (fs.map (fun f => (f.name,f.namePos))).eraseDups.length != fs.length then throw "duplicate source function identities"
@@ -1064,28 +1151,9 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
       | none => match d.functions.find? (fun c => c.name == f.name && c.namePos == f.namePos) with
         | some c => pure c
         | none => throw s!"missing claims for '{f.name}'"
-    -- A generic module function this unit calls: its slot holds the instances
-    -- the calls name, and those reads and calls are claimed at them.
     let mut module := module
     let mut d := d
-    if tps.isEmpty then
-      for g in generics do
-        if (f.body.flatMap Fragment.Stmt.callees).any (·.2.2.1 == g.name) then
-          match Scheme.moduleInstances d.types g f.body c with
-          | .ok (T, slot, reads, calls) =>
-            d := { d with types := T }
-            -- The callee reads are claimed at the slot's type, which the
-            -- source fixes; the producer's reading of them is not needed.
-            let (A, T) ← match (Fragment.translate slot).run d.types with
-              | .ok r => pure r
-              | .error reason => throw (sourceRefusal d.types g.pos .schemeElimination reason)
-            d := { d with types := T }
-            module := module ++ [(g.name, g.pos, .ok (.written slot))]
-            c := { c with expressions := c.expressions.map fun e =>
-              if reads.contains e.pos then { e with type := .labels A }
-              else if calls.contains e.pos then { e with instantiate := none } else e }
-          | .error (.obligation failure, T) => throw (directFailure T failure)
-          | .error (.refusal pos role reason, _) => throw (sourceRefusal d.types pos role reason)
+    let mut f := f
     let sites := functionSites f
     if !c.entries.all (fun e => sites.1.contains e.start) ||
         !c.expressions.all (fun e => sites.2.contains e.pos) then
@@ -1098,35 +1166,91 @@ def extractPlans (ast claims : Json) (fileKey : String) (only : Option (String �
             !row.expressions.all (fun e => sites.2.contains e.pos && a.pos != e.pos &&
               a.pos.1 ≤ e.pos.1 && e.pos.2 ≤ a.pos.2) then
           throw "per-arrow claim site is outside its source closure"
-    if (!tps.isEmpty || c.hasScheme) && !(c.arrows.getD []).isEmpty then
+    if c.hasScheme && tps.isEmpty && !(c.arrows.getD []).isEmpty then
       throw "per-arrow source claims are for ground closures, not quantified schemes"
     if !tps.isEmpty then
-      let direct ← match c.directClaims d.types with
-        | .ok claims => pure claims
-        | .error reason =>
-          throw (sourceRefusal d.types f.namePos .genericValidation reason)
-      match (GenericSource.check f tps direct).run d.types with
-      | .ok (certificate, types) => return .generic f.name f.namePos types certificate
-      | .error (.obligation failure) => throw (directFailure d.types failure)
-      | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)
-    if c.hasScheme then
-      let (closure, T) ← match (Scheme.find f).run d.types with
-        | .ok (some closure, T) => pure (closure, T)
-        | .ok (none, _) => throw (sourceRefusal d.types f.namePos .schemeIntroduction
-            "a scheme claim has no quantified closure in its source")
-        | .error reason =>
-          throw (sourceRefusal d.types f.namePos .schemeIntroduction reason)
-      let (T, certificate) ← match Scheme.introduce T f closure c with
+      -- The direct checker first, for the variable-copy bodies it states
+      -- obligations for; a failed obligation stands. A body outside its
+      -- forms is the graph checker's: each binder is read as its parameter
+      -- row, and the unit is an ordinary graph request, certified at every
+      -- assignment of those rows (`Parametricity.accepted_at`).
+      let direct : Except (Bool × String) FunctionPlan := do
+        if !(c.arrows.getD []).isEmpty then
+          throw (true, "per-arrow source claims are for ground closures, not quantified schemes")
+        let direct ← match c.directClaims d.types with
+          | .ok claims => pure claims
+          | .error reason => throw (true, sourceRefusal d.types f.namePos .genericValidation reason)
+        match (GenericSource.check f tps direct).run d.types with
+        | .ok (certificate, types) => pure (.generic f.name f.namePos types certificate)
+        | .error (.obligation failure) => throw (false, directFailure d.types failure)
+        | .error (.refusal pos role reason) => throw (true, sourceRefusal d.types pos role reason)
+      match direct with
+      | .ok plan => return plan
+      | .error (false, failure) => throw failure
+      | .error (true, _) =>
+        let some source := functionJsons.find? fun j =>
+            (j.getObjValAs? String "name").toOption == some f.name &&
+              (j.getObjValAs? Span "namePos").toOption == some f.namePos
+          | throw "a generic unit's source function is missing"
+        if nestedBinders ((source.getObjVal? "body").toOption.getD .null) then
+          throw (sourceRefusal d.types f.namePos .genericValidation
+            "a generic closure inside a generic body has binders of its own")
+        let (T, rows) ← match binderRows d.types tps with
+          | .ok r => pure r
+          | .error reason => throw (sourceRefusal d.types f.namePos .genericValidation reason)
+        let (T, atRows) := c.atRows T rows
+        d := { d with types := T }
+        c := atRows
+        f := (← Fragment.decodeFn (annotationAtRows rows source)).1
+    let finish (d : Document) (module : List SourceExtraction.ModuleValue) (c : Function)
+        (f : Fragment.Fn) : Except String FunctionPlan := do
+      let mut d := d
+      let mut module := module
+      let mut c := c
+      -- A generic module function this unit calls: its slot holds the instances
+      -- the calls name, and those reads and calls are claimed at them.
+      if !c.hasScheme then
+        for g in generics do
+          if (f.body.flatMap Fragment.Stmt.callees).any (·.2.2.1 == g.name) then
+            match Scheme.moduleInstances d.types g f.body c with
+            | .ok (T, slot, reads, calls) =>
+              d := { d with types := T }
+              -- The callee reads are claimed at the slot's type, which the
+              -- source fixes; the producer's reading of them is not needed.
+              let (A, T) ← match (Fragment.translate slot).run d.types with
+                | .ok r => pure r
+                | .error reason => throw (sourceRefusal d.types g.pos .schemeElimination reason)
+              d := { d with types := T }
+              module := module ++ [(g.name, g.pos, .ok (.written slot))]
+              c := { c with expressions := c.expressions.map fun e =>
+                if reads.contains e.pos then { e with type := .labels A }
+                else if calls.contains e.pos then { e with instantiate := none } else e }
+            | .error (.obligation failure, T) => throw (directFailure T failure)
+            | .error (.refusal pos role reason, _) => throw (sourceRefusal d.types pos role reason)
+      if c.hasScheme then
+        let (closure, T) ← match (Scheme.find f).run d.types with
+          | .ok (some closure, T) => pure (closure, T)
+          | .ok (none, _) => throw (sourceRefusal d.types f.namePos .schemeIntroduction
+              "a scheme claim has no quantified closure in its source")
+          | .error reason =>
+            throw (sourceRefusal d.types f.namePos .schemeIntroduction reason)
+        let (T, certificate) ← match Scheme.introduce T f closure c with
+          | .error (.obligation failure) => throw (directFailure d.types failure)
+          | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)
+          | .ok result => pure result
+        match Scheme.compile T f c with
+        | .ok (T, compiled, overlays) =>
+          return .scheme f.name f.namePos
+            (← extractNormalizedFn T f { compiled.normalized with arrowClaims := overlays } module) T certificate
         | .error (.obligation failure) => throw (directFailure d.types failure)
         | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)
-        | .ok result => pure result
-      match Scheme.compile T f c with
-      | .ok (T, compiled, overlays) =>
-        return .scheme f.name f.namePos
-          (← extractNormalizedFn T f { compiled.normalized with arrowClaims := overlays } module) T certificate
-      | .error (.obligation failure) => throw (directFailure d.types failure)
-      | .error (.refusal pos role reason) => throw (sourceRefusal d.types pos role reason)
-    return .graph f.name f.namePos (← extractNormalizedFn d.types f c.normalized module)
+      return .graph f.name f.namePos (← extractNormalizedFn d.types f c.normalized module)
+    -- A generic unit's graph extraction reports where it stops as a
+    -- located refusal at the function, as the direct checker's do.
+    if tps.isEmpty then finish d module c f
+    else tryCatch (finish d module c f) fun e =>
+      throw (if (e.splitOn "obligation-diagnostic: ").length > 1 then e
+        else sourceRefusal d.types f.namePos .genericValidation e)
 
 /-- Graph-only projection for proof fixtures that inspect extracted programs. -/
 def extractGraphRequests (ast claims : Json) (fileKey : String) : Except String (List SourceRequest) := do
@@ -1169,9 +1293,9 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
       decodeStrict evidence = .ok b ∧
       checkRequests (CertifiedPlan.requests certified) b = true ∧
       (∀ r c, (r,c) ∈ (CertifiedPlan.requests certified).zip b.functions →
-        ∀ n W heap ρ, EnvOk (RequestJson.graph r.toRequest) r.inputs ρ n W →
+        ∀ η n W heap ρ, EnvOk (reassign (RequestJson.graph r.toRequest) η) r.inputs ρ n W →
           WorldAdm W → HeapOk n W heap →
-          SafeGraph r.program (meaning (RequestJson.graph r.toRequest) r.result)
+          SafeGraph r.program (meaning (reassign (RequestJson.graph r.toRequest) η) r.result)
             n W heap (.at r.start ρ)) ∧
       ∀ plan ∈ certified, plan.UniversalSafety := by
   unfold checkJson at h
@@ -1196,8 +1320,8 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
         rw [hb] at h
         by_cases hx : checkRequests (CertifiedPlan.requests certified) b = true
         · refine ⟨plans,certified,b,rfl,hc,rfl,hx,?_,?_⟩
-          intro r c hm n W heap ρ he hw hh
-          exact checkRequests_safe hx hm n W heap ρ he hw hh
+          intro r c hm η n W heap ρ he hw hh
+          exact checkRequests_safe_at hx hm η n W heap ρ he hw hh
           intro plan _
           cases plan with
           | graph => trivial

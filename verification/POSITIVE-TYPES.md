@@ -360,7 +360,10 @@ admissibility. The type meanings are read at the graph's assignment:
 $\llbracket A\rrbracket_G=\llbracket A\rrbracket^{G.\mathit{env}}$ for values
 (`meaning`) and its list component for argument lists (`argMeaning`). No check
 reads `env`, so every theorem proved for all graphs holds at every
-reassignment. A member of a scheme row meets each instance's signatures
+reassignment; for the whole graph checker this is a theorem,
+`Parametricity.accept_reassign`, and a generic body checked with its binders
+as parameter rows is safe at every assignment of them
+([PROGRAM-TYPING.md](PROGRAM-TYPING.md#overloads-polymorphism-and-binding)). A member of a scheme row meets each instance's signatures
 (`scheme_elim`), and a function meeting them at every instantiation is a
 member (`scheme_intro`). Without scheme rows, meet rows and pack binders this
 is the parametric semantics `denoteP` (`qDenote_no_schemes`).

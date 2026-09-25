@@ -3843,6 +3843,29 @@ eliminations become fixed or variadic graph signatures. Introduction requires th
 independently reconstructed rigid-body certificate described above; it is not
 yet serialized as a first-class scheme node in the graph evidence.
 
+**Generic bodies.** A generic function's body is a graph request whose
+binders are parameter rows $\vec p$: rows the graph's assignment interprets,
+which no rule reads (a type holding one has no expansion). Acceptance does not
+read the assignment (`Parametricity.accept_reassign`), so the rule
+**Generic-Body** is the ordinary safety theorem at every reassignment:
+
+$$
+\frac{
+\mathsf{accept}(G,R,P,\mathit{claims},C,s,\vec I)=\mathsf{true}
+\qquad
+\mathsf{EnvOk}_{G[\mathit{env}:=\eta]}(\vec I,\rho,n,W)
+\qquad \mathsf{WorldAdm}(W)\qquad \mathsf{HeapOk}(n,W,h)
+}{
+\mathsf{SafeGraph}\bigl(P,\llbracket R\rrbracket^{\eta},n,W,h,\mathsf{at}(s,\rho)\bigr)
+}
+\quad\text{for every }\eta .
+$$
+
+One derivation, checked once, covers every instantiation of the binders: the
+inputs and the result are read at the same $\eta$. Lean:
+`Parametricity.accepted_at`, `RequestJson.verify_safe_at`,
+`SourceExtraction.checkRequests_safe_at`.
+
 **Bound functions.** The internal bound-call descriptor has the rule
 **Bound-Code**:
 

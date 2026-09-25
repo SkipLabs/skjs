@@ -4199,6 +4199,19 @@ theorem checkRequests_safe {rs : List SourceRequest} {b : Bundle}
   simp only [checkRequests, Bool.and_eq_true, List.all_eq_true] at h
   exact verify_safe (h.1.2 _ hm).1 n W heap ρ he hw hh
 
+/-- The same guarantee at every assignment of the request graph's parameter
+rows: a generic body, its binders read as parameter rows, is safe at every
+instantiation of them. -/
+theorem checkRequests_safe_at {rs : List SourceRequest} {b : Bundle}
+    (h : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions)
+    (η : PositiveGraphs.MixedAssignment Nat) (n W heap ρ)
+    (he : EnvOk (reassign (RequestJson.graph r.toRequest) η) r.inputs ρ n W) (hw : WorldAdm W)
+    (hh : HeapOk n W heap) :
+    SafeGraph r.program (meaning (reassign (RequestJson.graph r.toRequest) η) r.result) n W heap
+      (.at r.start ρ) := by
+  simp only [checkRequests, Bool.and_eq_true, List.all_eq_true] at h
+  exact verify_safe_at (h.1.2 _ hm).1 η n W heap ρ he hw hh
+
 /-- Every supplemental claim is a derivable sequent in the same calculus. -/
 theorem checkRequests_obligations {rs : List SourceRequest} {b : Bundle}
     (h : checkRequests rs b = true) {r es} (hm : (r,es) ∈ rs.zip b.obligations)
@@ -4212,4 +4225,5 @@ theorem checkRequests_obligations {rs : List SourceRequest} {b : Bundle}
 #print axioms checkAssertions_sound
 #print axioms checkRequests_obligations
 #print axioms checkRequests_safe
+#print axioms checkRequests_safe_at
 end Verification.Model.SourceExtraction

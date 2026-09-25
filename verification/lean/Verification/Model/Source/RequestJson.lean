@@ -1,5 +1,5 @@
 import Lean.Data.Json
-import Verification.Model.Programs.CertificateProducer
+import Verification.Model.Programs.Parametricity
 
 /-! In-memory JSON boundary for the stateful consumer. A request and its
 evidence are separate inputs. This is a calculus protocol, not a decoder for
@@ -513,6 +513,18 @@ theorem verify_safe {r : Request} {c : Response} (hc : verify r c = true) (n W h
   simp only [verify, Bool.and_eq_true] at hc
   exact CertificateProducer.accepted_from_inputs hc.2 n W h ρ he hw hh
 
+/-- Accepted evidence is safe at every assignment of the request graph's
+parameter rows (`Parametricity.accepted_at`): a request whose inputs and
+result mention a generic body's binders, read as parameter rows, is safe at
+every instantiation of them. At the graph's own assignment this is
+`verify_safe`. -/
+theorem verify_safe_at {r : Request} {c : Response} (hc : verify r c = true)
+    (η : MixedAssignment Nat) (n W h ρ)
+    (he : EnvOk (reassign (graph r) η) r.inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafeGraph r.program (meaning (reassign (graph r) η) r.result) n W h (.at r.start ρ) := by
+  simp only [verify, Bool.and_eq_true] at hc
+  exact Parametricity.accepted_at hc.2 η n W h ρ he hw hh
+
 /-- Empty input contracts retain the closed-invocation corollary. -/
 theorem verify_closed_safe {r : Request} {c : Response}
     (hc : verify r c = true) (hi : r.inputs = []) (n : Nat) :
@@ -542,5 +554,6 @@ theorem verifyJson_safe {request evidence : Json}
 #print axioms verifyJson_checked
 #print axioms verify_closed_safe
 #print axioms verify_safe
+#print axioms verify_safe_at
 #print axioms verify_claims
 end Verification.Model.RequestJson
