@@ -723,6 +723,22 @@ the whole pool for pairs no table can relate. Three changes, none to a rule:
   Search output is unchanged; on every case the evidence is byte-for-byte what
   it was.
 
+On `reactive-sum-sound`, the whole module, the search took about 41 s, 38 s of
+it in 146 inclusions of 26 distinct pairs, nearly all spent building
+prototype instances (`protoInstances`) for every array of the pool against
+every method the pool names, about 0.2 s a call, 1.7 s where the pool holds
+an iterable. Two orderings of the untrusted search, no rule:
+
+- Instantiating a scheme row (`instProof`), which applies only when the
+  source is one, is tried before prototype instances. Most of those calls were
+  a generic method's scheme below the arrows of its read, which failed the
+  prototype step first.
+- Prototype instances are sought over the types near the pair (`nearPool`)
+  before the whole pool, as core tables are.
+
+The search now takes about 6 s of CPU on the module; the other `sum` cases
+are unchanged or faster.
+
 Each external step of a case (parser, producer, search, check) keeps a
 wall-clock limit (`stepTimeoutMs` in `check.mts`); a step that exceeds it is
 reported as `timeout: <step> did not finish within <limit>`, an error, never a
@@ -1916,12 +1932,43 @@ DepSafe is not empty, since an object type names only the keys it constrains
 (`sum-values-record.ts`).
 
 With it, sum.ts's `.map(AddIndex, 0)` is typed (`sum-add-index.ts`), and so is
-`map` to Serializable records (`sum-serializable-map.ts`). The whole
-`reactive-sum-sound.ts` module's search takes about 40 s, past the check's
-30 s budget, and then stops at `runService(new Service(), …)`: the service
-class is not shown to be an `AnySkipService`, which holds of its own too
-(`make(): AnySkipService` over `sum-service.ts`'s `Service` is refused, as it
-was before meet rows).
+`map` to Serializable records (`sum-serializable-map.ts`). Every class of
+`reactive-sum-sound.ts` and its `main` over an `AnySkipService` verify; the
+module stops at `runService(new Service(), …)`, where sum.ts's `Service` is
+not an `AnySkipService` (the service boundary, next).
+
+**The service boundary.** `runService` takes an `AnySkipService`, the
+runtime's `SkipService` at the erased collections: `createGraph` over any
+`NamedEagerCollections`, resources instantiated at any `SharedCollections`.
+sum.ts's `Service` is a `SkipService<Inputs, Collections, Collections>`: its
+`createGraph` takes `Collections`, which require `input1` and `input2`, and
+its resources' `instantiate` reads `cs.input1`. Method parameters are
+contravariant ([Method members are host-relative](#method-members-are-host-relative)),
+and `NamedEagerCollections` is not `Collections`, so the class is not an
+`AnySkipService` at either member; TypeScript accepts it through its
+bivariant method parameters. Each point is refused on its own
+(`invalid-sum-any-service-graph.ts`, `invalid-sum-any-service-resource.ts`),
+and a class whose members take what the erased type passes is one
+(`sum-any-service.ts`): the class-instance coverage (methods as fields,
+`CoversByFunction`, a dictionary of construct signatures, a writable
+dictionary at the readonly optional `externalServices`) needs nothing more.
+
+The refusal is right at the type level: a value of the erased type may be
+handed any named collections. What makes sum.ts safe is a fact about the
+runtime, not the type: it calls `createGraph` with one eager collection for
+each key of the service's own `inputs`, and instantiates resources with what
+`createGraph` returned. The generic reading SKJS's stubs give `runService`
+(`runService<I, C, R>(service: SkipService<I, C, R>)`) is not that fact:
+it links neither `C` to `I`, so a service whose `inputs` is `{}` and whose
+`createGraph` reads `c.input1` would be accepted and fail at run time. A
+sound trusted contract relates the inputs' keys and `InputDefinition<K, V>`
+types to `createGraph`'s parameter, a type-level map (`{ [k in keyof I]: … }`)
+the calculus does not state. Until one is decided, `runService(new Service())`
+over sum.ts's `Service` stays refused, the next blocker of
+`reactive-sum-sound.ts`. The trusted `ResourceClass<R, never>` is related:
+the runtime constructs a resource with the request's `Json` parameters, while
+`never` promises it never does; a class whose constructor needs more than
+`Json` would be admitted.
 
 A producer names an intersection it meets without computing it: its reserved
 row, in the claims' `"meets"`, is filled by Lean with `meetRow` of the

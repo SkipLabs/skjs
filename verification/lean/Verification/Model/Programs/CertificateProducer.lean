@@ -390,16 +390,20 @@ generalizing to one. Every proposal is checked. A core table over the two
 types alone, then a renaming table, are tried before one over the whole pool,
 whose size the search pays for squared: a row interned twice (`string` in a
 type argument and in a bound) and two lowerings of one generic instance are
-related without it. -/
+related without it. Instantiating a scheme row, which applies only when `A`
+is one, comes before prototype instances, which are sought for every array
+of the table against every method the table names: first over the types
+near the pair, then over the whole pool. -/
 def subtype [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     (A B : Ty ι) : Option (PositiveCertificates.Proof ι) :=
   let fuel := 64 + pool.length
   let ok p := PositiveCertificates.check G A B p
+  let proto (P : List (Ty ι)) := match protoInstances G ((A :: B :: P).eraseDups) fuel with
+    | [] => none
+    | ks => subtypeWith G P ks A B
   (subtypeBase G [] A B) <|> ((tableProof G fuel A B).filter ok) <|>
     (subtypeBase G (nearPool G A B) A B) <|> (subtypeBase G pool A B) <|>
-    (match protoInstances G ((A :: B :: pool).eraseDups) fuel with
-      | [] => none
-      | ks => subtypeWith G pool ks A B) <|> ((instProof G fuel A B).filter ok) <|>
+    ((instProof G fuel A B).filter ok) <|> proto (nearPool G A B) <|> proto pool <|>
     ((genProof G pool fuel A B).filter ok)
 /-- Proofs that the member of key `k` on `O` covers each fixed signature of
 `F`: for each, a member signature of as many parameters, each claimed

@@ -526,25 +526,16 @@ APIs it uses, `Values.getUnique` and `process.on`
 
 Its whole declaration graph is read: the runtime API, the standard
 library's `Promise`, `Iterable` and `Iterator`, and `ResourceClass` as a
-construct signature. Its first refusal is `async function main`. So **zero of
-its callables are checked** yet; no producer proposal, Lean lowering or certificate is
-reached. Module constants and top-level statements are in the fragment (see
-[Modules and code units](../DESIGN.md#modules-and-code-units)); the
-`platform` initializer before that class is admitted syntax, and its
-`process.env` read is a [global value](../DESIGN.md#modules-and-code-units)
-read at the members used (`sum-process.ts`). Measured one construct
-at a time, the blockers behind it are:
-
-| Client part | First refusal when isolated | Later requirement |
-| --- | --- | --- |
-| whole file | `async function main` | `async`/`await`, `runService`'s readonly optional `externalServices?` (`sum-run-service.ts`); then a type argument at `EagerCollection`'s `V extends Json` bound (the options literal, leaving out the optional `no_cors`, meets its type by its exact keys) |
-
-| import graph | `InputDefinition` is a value import (a class) | classes as declarations and values |
-| `Plus`, `Minus`, `AddIndex`, `Add`, `Sub`, `Service` | class declaration | classes, `this`, parameter properties, field initializers, `new` |
-| `AddIndex.mapEntry` reading `Values` | `bigint` in `DepSafe` | `Values` contract, `getUnique` and its exception |
-| `Plus`/`Minus` bodies | library array methods | `reduce`, `sort` and `Iterable` contracts |
-| `main` | value imports | `async`/`await`, `Promise`, `runService` contract |
-| signal registration | `process.on(sig, shutdown)`: `shutdown` is claimed at `() => Promise<void>`, not at the listener's `(...args: unknown[]) => void` | the closure claimed at the listener's wider signature |
+construct signature. Every class (`AddIndex`, `Plus`, `Minus`, `Add`, `Sub`,
+`Service`) and `main`, given an `AnySkipService`, verify; each construct they
+need has its own `sum-*` case in [`cases.mts`](cases.mts). The module stops at
+its one remaining refusal, `runService(new Service(), …)`: sum.ts's `Service`
+takes the named `Collections` in `createGraph` and in its resources'
+`instantiate`, so it is not an `AnySkipService`, which TypeScript admits only
+through bivariant method parameters. What would make the call safe is the
+runtime's link from a service's `inputs` to the collections `createGraph`
+receives, which no trusted contract states yet
+([The service boundary](../DESIGN.md#modules-and-code-units)).
 
 The configured TypeScript project includes both files. TypeScript resolves
 upstream `sum.ts`'s type imports from `@skipruntime/core` (`EagerCollection`,
