@@ -83,9 +83,14 @@ let rec declared_head declarations seen = function
     if List.mem id seen then unsupported "unguarded callable alias cycle";
     declared_head declarations (id::seen) (definition declarations id args)
   | t -> t
+(* `ArrayProto`, the declaration of `Array.prototype`'s members, by identity. *)
+let array_prototype = "skjs/array-prototype#0:0"
 let rec field_type declarations seen t name = match t with
   | Atoms atoms -> combine (List.map (function
       | Shape {elements=Some _;_} when name="length" -> Atoms [Num]
+      (* Any other key of an array is read from its prototype. *)
+      | Shape {elements=Some _;_} ->
+        field_type declarations seen (Atoms [Named (array_prototype,[])]) name
       | Shape shape -> (match List.find_opt (fun (f:Semantic.field) -> f.name=Name name) shape.fields with
           | Some f -> if f.optional then union f.read (Atoms [Undef]) else f.read
           | None -> (match shape.string_index with

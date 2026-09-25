@@ -744,6 +744,15 @@ modeling choices; they do not replace proof.
   by checking that two slots have compatible types.
 - Decoding represents the submitted program, requirements and claims faithfully.
 - The calculus's execution model agrees with the supported JavaScript behavior.
+- `Array.prototype` meets `ArrayProto`: the engine's native array methods,
+  invoked on an array, behave as TypeScript's declarations of `ReadonlyArray`
+  and `Array` state them, as filtered by the overlay
+  ([`array-prototype.mts`](tools/array-prototype.mts)): only its members, at
+  its receivers, without its dropped parameters and overloads. Nothing checks
+  the native code. The assumption enters every result as a premise: a unit
+  that allocates arrays has an input slot `[[Array.prototype]]` at `ArrayProto`,
+  and the safety theorem holds for every environment meeting its inputs, as
+  for an imported value's declared type.
 - Lean's kernel, compilation infrastructure and the executed checker are correct.
 
 For the stateful in-memory interface, `accept` checks the exact requested entry
@@ -2047,7 +2056,11 @@ source property or declared member may use them.
 
 **Trust.** `ArrayProto` states what the library's members do. It is assumed,
 like an imported value's declared type, and each member's specification
-includes the receiver it admits.
+includes the receiver it admits. It enters as the unit's input slot
+`[[Array.prototype]]`, which literals and rest arrays read their prototype
+from and generic closures capture; the safety theorem is relative to that slot
+holding a member of `ArrayProto` (see
+[What remains assumed](#what-remains-assumed)).
 
 **Where `ArrayProto` comes from.** TypeScript's own declarations are the
 source: `ReadonlyArray<T>` and `Array<T>` from the standard library files the

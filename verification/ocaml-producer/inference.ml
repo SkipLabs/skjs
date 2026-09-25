@@ -123,10 +123,22 @@ let infer ?receiver (signature:signature) actuals =
       | Atoms [Shape {calls=[a];fields=[];string_index=None;elements=None}],
       Atoms [Shape {calls=[e];fields=[];string_index=None;elements=None}]
         when a.quantified=[] && e.quantified=[]
-          && List.length a.params=List.length e.params ->
+          && List.length a.params<=List.length e.params ->
+      (* A callback may take fewer parameters than it is offered: the
+         positions it has are compared, the rest it ignores. *)
       constrain e.receiver a.receiver;
-      List.iter2 constrain e.params a.params;
+      List.iteri (fun i p -> constrain (List.nth e.params i) p) a.params;
       constrain a.result e.result
+      (* An array's elements: a readonly target reads them, so covariantly; a
+         writable one also takes writes, so both ways. *)
+      | Atoms [Shape {elements=Some l;fields=[];calls=[];string_index=None}],
+      Atoms [Shape {elements=Some r;fields=[];calls=[];string_index=None}]
+        when List.length l.required=List.length r.required
+          && List.length l.optional_elements=List.length r.optional_elements ->
+      let pair x y = constrain x y; if not r.readonly then constrain y x in
+      List.iter2 pair l.required r.required;
+      List.iter2 pair l.optional_elements r.optional_elements;
+      (match l.rest,r.rest with Some x,Some y -> pair x y | _ -> ())
       | _ -> ()) (* Unsupported structure contributes no guessed constraints;
                     Lean still checks the entire substituted signature. *) in
   List.iter2 constrain actuals domains;

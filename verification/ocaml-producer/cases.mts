@@ -73,6 +73,8 @@ export const cases: Case[] = [
   negative("invalid-method-as-property", "A method is not a function property valid for any receiver"),
   negative("invalid-method-bivariance", "Method parameters are contravariant, not bivariant"),
   negative("invalid-method-result", "A method result does not narrow"),
+  positive("array-reduce", "Array.prototype.reduce read through the array's prototype and called on the array"),
+  negative("invalid-array-reduce-result", "reduce returns its accumulator's type, not a narrower one"),
   positive("object-callable-operands", "Nested objects and optional receivers share one callable contract decoder"),
   negative("invalid-object-callable-operands", "A readonly object cannot supply a callback's write capability"),
   { ...positive("object-constructor-value-import", "An imported constructor takes an object and returns a nested object field"),
