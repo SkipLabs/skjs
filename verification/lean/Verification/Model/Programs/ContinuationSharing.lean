@@ -16,9 +16,9 @@ theorem share_typed {ι : Type} [DecidableEq ι] {G : PositiveGraphs.NormalGraph
     {Γ Rc N R C k body} (hc : Represents G C (.arrs [(Rc,[N],R)] []))
     (hk : HasTy G (Rc::N::Γ) k R) (hb : HasTy G (C::Γ) body R) :
     HasTy G Γ (share k body) R := by
-  apply HasTy.letE (HasTy.funE hc (by simp) ?_) hb
+  apply HasTy.letE (HasTy.funE hc (by simp [offerRows]) ?_) hb
   intro p hp
-  simp only [List.mem_singleton] at hp
+  simp only [offerRows, List.map_nil, List.append_nil, List.mem_singleton] at hp
   subst p
   exact hk
 

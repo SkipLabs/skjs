@@ -98,6 +98,14 @@ receiver, then the parameters the code takes, then the captures. -/
 abbrev bodyFrame (arity : Nat) (p : Ty ι × List (Ty ι) × Ty ι) (Γ : List (Ty ι)) : List (Ty ι) :=
   p.1 :: p.2.1.take arity ++ Γ
 
+/-- The rows a closure's code is checked at: its fixed signatures, then each
+variadic signature's receiver, fixed parameters and result. Code of fixed
+arity meets a variadic signature whose fixed parameters cover its arity:
+binding discards the actuals past them (`restsT_of_invocationSpec`). -/
+def offerRows (L : List (Ty ι × List (Ty ι) × Ty ι)) (S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)) :
+    List (Ty ι × List (Ty ι) × Ty ι) :=
+  L ++ S.map fun s => (s.1, s.2.1, s.2.2.2)
+
 /-- Each signature offers at least the code's arity: the check every
 code-creating rule, certificate and search makes. -/
 def offersArity (arity : Nat) (L : List (Ty ι × List (Ty ι) × Ty ι)) : Bool :=
@@ -921,10 +929,13 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   body with its receiver, then its parameters, before the captures. A signature
   may offer more parameters than the code takes: the body is checked at the
   first `arity`, and actuals past them are discarded at binding, as JavaScript
-  discards them. -/
-  | funE {Γ : List (Ty ι)} {F : Ty ι} {L : List (Ty ι × List (Ty ι) × Ty ι)} {arity : Nat}
-      {b : Tm} : Represents G F (.arrs L []) → (∀ p ∈ L, arity ≤ p.2.1.length) →
-      (∀ p ∈ L, HasTy G (bodyFrame arity p Γ) b p.2.2) →
+  discards them. So the code also meets a variadic signature whose fixed
+  parameters cover its arity, checked at that signature's fixed row
+  (`offerRows`): the actuals past them, however many, are discarded. -/
+  | funE {Γ : List (Ty ι)} {F : Ty ι} {L : List (Ty ι × List (Ty ι) × Ty ι)}
+      {S : List (Ty ι × List (Ty ι) × Ty ι × Ty ι)} {arity : Nat}
+      {b : Tm} : Represents G F (.arrs L S) → (∀ p ∈ offerRows L S, arity ≤ p.2.1.length) →
+      (∀ p ∈ offerRows L S, HasTy G (bodyFrame arity p Γ) b p.2.2) →
       HasTy G Γ (.make (.closure arity b) .nul) F
   /-- A class value: construct-only code, its body typed at each construct
   signature with `undefined` for the receiver `new` passes. -/
@@ -1198,13 +1209,24 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
   | @str _ _ s hr =>
     intro n W h ρ he hw hh
     exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr ⟨s, rfl⟩)
-  | @funE Γ F L arity b hr hlen hb ih =>
+  | @funE Γ F L S arity b hr hlen hb ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, Nat.zero_add]
     have hcode := invocation_of_body he hlen (fun p hp => ih p hp)
-    have hs := make_callable_rule nulT_adm arity n W h _ .nul hcode rfl hw hh rfl
+    have hs := make_closure_rule nulT_adm arity n W h _ .nul hcode
+      (S := S.map fun s => (meaning G s.1, s.2.1.map (meaning G),
+        argMeaning G s.2.2.1, meaning G s.2.2.2))
+      (by
+        intro s hs
+        obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hs
+        have hrow : (q.1, q.2.1, q.2.2.2) ∈ offerRows L S :=
+          List.mem_append_right _ (List.mem_map.mpr ⟨q, hq, rfl⟩)
+        exact ⟨by simpa using hlen _ hrow, List.mem_map.mpr ⟨_, hrow, rfl⟩⟩)
+      rfl hw hh rfl
     exact Safe_mono n (fun k _ U v hv => (represents_sem hr k U v).mpr
-      ⟨hv.2, hv.2.1, by simp⟩) W h _ hs
+      ⟨⟨hv.2.1.1, fun p hp => hv.2.1.2 p (by
+        obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+        exact List.mem_map.mpr ⟨q, List.mem_append_left _ hq, rfl⟩)⟩, hv.2.2⟩) W h _ hs
   | @ctorE Γ F U L arity b hr hu hlen hb ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, Nat.zero_add]

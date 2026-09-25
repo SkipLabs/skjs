@@ -1796,7 +1796,10 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
         throw "quantified closure checking requires the scheme evidence path"
       if !defaults.isEmpty && (params.map Prod.snd ++ ret.toList).any GenericSource.mentionsParam then
         throw "a defaulted parameter under a scheme binder is outside the fragment"
-      let [.arrs L []] := PositiveRules.expand G A | throw "closure claim must name a source arrow"
+      -- A variadic signature is checked at its fixed row: calls through it
+      -- pass further actuals, which the code discards (`offerRows`).
+      let [.arrs L S] := PositiveRules.expand G A | throw "closure claim must name a source arrow"
+      let L := ProgramTyping.offerRows L S
       -- A closure annotated with an enclosing scheme's binder has no ground
       -- annotation to lower. Scheme introduction required its claim to be
       -- exactly that annotation, and the compiled overlay is the claim under

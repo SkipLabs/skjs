@@ -301,6 +301,10 @@ statement, the producer derives checked facts along administrative paths. The
 source consumer additionally enforces the exact entry interfaces described below.
 See the [assertion rules](PROGRAM-TYPING.md#checked-expression-postconditions).
 
+`funE` has one body premise per row of its type's `offerRows`: each fixed
+signature, then each variadic signature's receiver, fixed parameters and
+result, in that order; each row offers at least the code's arity.
+
 The callable expression rules use the existing term syntax. `makeCallable`
 checks one initializer premise followed by one body premise per advertised
 overload, each body under its argument binder. Its result has a single initial

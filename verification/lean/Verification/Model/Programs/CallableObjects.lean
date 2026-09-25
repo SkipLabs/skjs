@@ -86,17 +86,33 @@ theorem bag_write {fs : Fields} {f : PropKey} {P : Fam} (hP : Adm P)
   cases he
   exact write_rule (code := code) hP n W h l a hval hw hh hf hl hc ha
 
-/-- Native creation preserves every list signature across allocation. -/
-theorem make_callable_rule {P : Fam} {L : List (Fam × List Fam × Fam)} (hA : Adm P)
+/-- Native creation preserves every list signature across allocation, and
+every variadic one whose fixed parameters cover the code's arity and whose
+fixed part is among the list signatures (`restsT_of_invocationSpec`). -/
+theorem make_closure_rule {P : Fam} {L : List (Fam × List Fam × Fam)}
+    {S : List (Fam × List Fam × ArgFam × Fam)} (hA : Adm P)
     (arity n : Nat) (W : WorldT n) (h : Heap) (b v : Tm)
-    (hf : InvocationSpec arity L n W b) (hval : isVal v = true)
+    (hf : InvocationSpec arity L n W b)
+    (hS : ∀ s ∈ S, arity ≤ s.2.1.length ∧ (s.1, s.2.1, s.2.2.2) ∈ L) (hval : isVal v = true)
     (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : P n W v) :
-    Safe (interT (bagT [(valueField, P)]) (callsT L)) n W h (.make (.closure arity b) v) := by
+    Safe (interT (bagT [(valueField, P)]) (interT (callsT L) (restsT S))) n W h
+      (.make (.closure arity b) v) := by
   apply make_rule hA n W h (.closure arity b) v hval hadm hok hv
   intro j hj U hx hr
   have hf' := (callsT_adm L).mono j _ U hx _ ((callsT_adm L).down_le n j
     (Nat.le_of_lt hj) W _ (callsT_of_invocationSpec [(valueField, h.length)] hf))
-  exact ⟨⟨_, .closure arity b, rfl, rfl, hr⟩, hf'⟩
+  have hs' := (restsT_adm S).mono j _ U hx _ ((restsT_adm S).down_le n j
+    (Nat.le_of_lt hj) W _ (restsT_of_invocationSpec [(valueField, h.length)] hf hS))
+  exact ⟨⟨_, .closure arity b, rfl, rfl, hr⟩, hf', hs'⟩
+
+/-- The list signatures alone. -/
+theorem make_callable_rule {P : Fam} {L : List (Fam × List Fam × Fam)} (hA : Adm P)
+    (arity n : Nat) (W : WorldT n) (h : Heap) (b v : Tm)
+    (hf : InvocationSpec arity L n W b) (hval : isVal v = true)
+    (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : P n W v) :
+    Safe (interT (bagT [(valueField, P)]) (callsT L)) n W h (.make (.closure arity b) v) :=
+  Safe_mono n (fun _ _ _ _ hv => ⟨hv.1, hv.2.1⟩) W h _
+    (make_closure_rule (S := []) hA arity n W h b v hf (by simp) hval hadm hok hv)
 
 /-- The same, for a bag with any named fields. The call contracts survive the
 extended world exactly as they do for one field; nothing here depends on the
@@ -135,6 +151,7 @@ theorem attach_rule {P : Fam} {L : List (Fam × Fam)} (hA : Adm P)
 #print axioms callableT_append
 #print axioms bag_read
 #print axioms bag_write
+#print axioms make_closure_rule
 #print axioms make_callable_rule
 #print axioms attach_rule
 

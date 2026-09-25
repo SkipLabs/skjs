@@ -420,7 +420,8 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     | .make (.closure arity b) .nul =>
       return (A :: pool).findSome? fun F => do
         match expand G F with
-        | [.arrs L []] =>
+        | [.arrs L S] =>
+          let L := offerRows L S
           if !offersArity arity L then none else do
           let ps ← L.mapM fun p => recur (bodyFrame arity p Γ) b p.2.2
           coerce G pool (.node ⟨Γ,t,F⟩ .funE ps) A

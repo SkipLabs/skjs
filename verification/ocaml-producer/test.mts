@@ -749,6 +749,7 @@ let genericModule = "";
 let sumMapper = "";
 let sumConstructor = "";
 let localClosure = "";
+let variadicOffer = "";
 let verifiedFunctions = 0;
 const outcomes = await pooled(cases, runCase);
 for (const [i, test] of cases.entries()) {
@@ -781,6 +782,7 @@ for (const [i, test] of cases.entries()) {
   if (test.file === "sum-mapper-signature") sumMapper = result.artifacts;
   if (test.file === "sum-constructor-field") sumConstructor = result.artifacts;
   if (test.file === "sum-local-closure") localClosure = result.artifacts;
+  if (test.file === "variadic-offer") variadicOffer = result.artifacts;
 }
 process.stdout.write(
   `${verifiedFunctions} functions verified; ${cases.filter((c) => c.kind === "negative").length} negative controls; ${cases.filter((c) => c.kind === "gap").length} named gaps\n`,
@@ -998,6 +1000,24 @@ for (const [artifacts, arity, refusal] of [
     `closure expression claim at [${body},`), searched.stdout + searched.stderr);
   assert.match(invoke(forged, evidence, localClosure), /does not justify/);
   process.stdout.write("an unannotated closure's result claim its body does not meet: refused\n");
+}
+
+// A closure is created at a variadic signature only when the signature's
+// fixed parameters cover the ones its code binds: `named` binds one, so a
+// claim offering it `(...rest: unknown[]) => void` is refused where it is
+// created, not taken from the producer on trust.
+{
+  const claims: SourceClaims = JSON.parse(readFileSync(join(variadicOffer, "claims.json"), "utf8"));
+  const offered = must(claims.types.flatMap((row) => row.flatMap((clause) =>
+    typeof clause === "object" && "arrs" in clause && clause.arrs.arrows.length > 0
+      ? clause.arrs.variadic ?? [] : []))
+    .find(([, [fixed]]) => fixed.length === 1), "the variadic signature `named` is offered");
+  offered[1][0] = [];
+  const forged = join(variadicOffer, "forged-variadic-offer.json");
+  writeFileSync(forged, JSON.stringify(claims));
+  assert.match(invoke(forged, join(variadicOffer, "evidence.json"), variadicOffer),
+    /closure signature claim is outside the source annotation/);
+  process.stdout.write("a closure claimed at a variadic signature binding into its rest: refused\n");
 }
 
 // A graph certificate for the checked Boolean instance cannot validate a

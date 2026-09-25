@@ -83,7 +83,7 @@ abbrev BodyPremises (arity : Nat) (b : Tm) (Γ : List (Ty ι))
 abbrev funEPremises [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (A : Ty ι)
     (arity : Nat) (b : Tm) (ps : List (Sequent ι)) : Prop :=
   match expand G A with
-  | [.arrs L []] => BodyPremises arity b Γ L ps
+  | [.arrs L S] => BodyPremises arity b Γ (offerRows L S) ps
   | _ => False
 
 /-- The premises a class-value node owes: its construct signatures, whose
@@ -1188,11 +1188,12 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
   | num hr => exact node_complete (r := .num) (js := []) hr (by simp)
   | strLit hr => exact node_complete (r := .strLit) (js := []) hr (by simp)
   | str hr => exact node_complete (r := .str) (js := []) hr (by simp)
-  | @funE Γ F L arity b hr hlen hb ih =>
-    apply node_complete (r := .funE) (js := L.map (fun p => ⟨bodyFrame arity p Γ, b, p.2.2⟩))
+  | @funE Γ F L S arity b hr hlen hb ih =>
+    apply node_complete (r := .funE)
+      (js := (offerRows L S).map (fun p => ⟨bodyFrame arity p Γ, b, p.2.2⟩))
     · refine ⟨rfl, rfl, ?_⟩
       show funEPremises G Γ F arity b _
-      simp only [funEPremises, show expand G F = [.arrs L []] from hr]
+      simp only [funEPremises, show expand G F = [.arrs L S] from hr]
       exact ⟨hlen, rfl⟩
     · intro j hj
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj

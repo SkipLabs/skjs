@@ -114,9 +114,13 @@ language. The boundaries are:
    argument and substituted bound is still validated by Lean. It conservatively joins branches and infers local
    values, object shapes, callback results and calls from explicit signatures.
    A closure without a result annotation is proposed at its body's widened
-   type. A named closure passed where more parameters are offered is claimed,
-   where it is created, at that signature beside its own; a first pass over
-   the function finds the offers and a second states them. Explicit type
+   type. A named closure passed where more parameters are offered — a fixed
+   signature taking more, or a variadic one whose fixed parameters cover its
+   own — is claimed, where it is created, at that signature beside its own; a
+   first pass over the function finds the offers and a second states them. A
+   literal is claimed at the offered signature. Offers are made at every call
+   shape, and an overloaded callee's candidate matches a closure argument it
+   would offer to. Explicit type
    arguments fix a call's leading binders before the rest are inferred.
    Expected types guide fresh object/array construction, while the actual
    initializer claims remain separate obligations. Immutable branch refinements

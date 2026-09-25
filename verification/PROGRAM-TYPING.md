@@ -98,13 +98,21 @@ share one context (`bodyFrame`) and one check (`offersArity`). Variadic code
 keeps exact fixed parameters: its extra actuals go to the rest, not away.
 This holds of the code, not of any value at a shorter signature: a variadic
 function collects extra actuals and a bound one forwards them, so no subtyping
-rule widens an arrow's parameters. A call passes its receiver $r$ and types
-it at the selected signature's receiver:
+rule widens an arrow's parameters. For the same reason the ordinary closure
+also meets a variadic signature $(R;\vec A,\ldots E\to B)$ whose fixed
+parameters cover its arity: a call through it writes any number of actuals,
+the code binds its first $\mathit{arity}$, all at fixed positions, and
+discards the rest (`restsT_of_invocationSpec`). Its body is checked at that
+signature's fixed row $(R,\vec A,B)$, with the fixed signatures
+(`offerRows`); a closure binding a position of the rest, which a call may
+leave unwritten, is not created at it. A call passes its receiver $r$ and
+types it at the selected signature's receiver:
 
 $$
-\frac{\forall(R,\vec A,B)\in L.\;\mathit{arity}\le|\vec A|
-      \quad\forall(R,\vec A,B)\in L.\;\Gamma,\mathit{this}{:}R,\vec x{:}\vec A_{<\mathit{arity}}\vdash_G t:B}
-     {\Gamma\vdash_G \lambda\vec x.t:\bigwedge_{(R,\vec A,B)\in L}(R;\vec A\to B)}
+\frac{\forall(R,\vec A,B)\in L\cup S^\flat.\;\mathit{arity}\le|\vec A|
+      \quad\forall(R,\vec A,B)\in L\cup S^\flat.\;\Gamma,\mathit{this}{:}R,\vec x{:}\vec A_{<\mathit{arity}}\vdash_G t:B}
+     {\Gamma\vdash_G \lambda\vec x.t:\bigwedge_{(R,\vec A,B)\in L}(R;\vec A\to B)
+       \land\bigwedge_{(R,\vec A,E,B)\in S}(R;\vec A,\ldots E\to B)}
 \qquad
 \frac{\Gamma\vdash_G f:\bigwedge_{(Q,\vec C,D)\in L}(Q;\vec C\to D)
       \quad(R,\vec A\,\vec U,B)\in L\quad\Gamma\vdash_G r:R\quad\forall i.\;\Gamma\vdash_G a_i:A_i
@@ -112,7 +120,7 @@ $$
      {\Gamma\vdash_G \mathsf{invoke}(f,r,\vec a):B}
 $$
 
-A plain call $f(\vec a)$ is $\mathsf{invoke}(f,\mathsf{undefined},\vec a)$. In
+with $S^\flat=\{(R,\vec A,B)\mid(R,\vec A,E,B)\in S\}$. A plain call $f(\vec a)$ is $\mathsf{invoke}(f,\mathsf{undefined},\vec a)$. In
 de Bruijn form the receiver's slot precedes the parameters, $\mathit{this}$
 then $\vec x$, before the captures; an arrow's code has that slot too and
 never reads it, and a source `this` in an arrow resolves to an enclosing
@@ -1812,8 +1820,14 @@ for an arrow). The premise over $L$ is the creation rule's, so leaving the
 result out drops a requirement and no check: the result is the claim's, like
 any expression's. A named closure passed where a callback is offered more
 parameters, `xs.reduce(acc, null)`, is claimed where it is created at that
-signature beside its own; its body is checked at each (`offersArity`). No
-subtyping widens an arrow's parameters.
+signature beside its own; its body is checked at each (`offersArity`). So is
+one passed where a variadic callback is offered, `process.on(sig, shutdown)`
+at `(...args: unknown[]) => void`, when its parameters are among the
+signature's fixed ones: $L$ then holds that signature's fixed row
+(`offerRows`), and each claimed parameter is within the annotation's as for
+any row. A `void` result is $\top$, so a closure returning a promise meets it.
+No subtyping widens an arrow's parameters: a value typed `() => undefined` is
+not a variadic callback, only a closure literal is created at one.
 
 ### Universal parameter initialization
 

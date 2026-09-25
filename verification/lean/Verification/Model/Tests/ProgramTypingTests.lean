@@ -20,7 +20,7 @@ def dispatch : Tm := .funE (.ite (.test .isNul (.var 1)) (.read (.var 2)) .nul)
 theorem dispatch_typed : HasTy G [[2]] dispatch [3] := by
   apply HasTy.funE (by rfl) (by decide)
   intro p hp
-  simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
+  simp only [offerRows, List.map_nil, List.append_nil, List.mem_cons, List.not_mem_nil, or_false] at hp
   rcases hp with rfl | rfl
   · apply HasTy.ifTag (q := true) (by rfl) ⟨rfl, by intro c hc; simp [expand, clausesOf, G] at hc; subst c; rfl⟩
     · intro _; exact .read (.var rfl) (by rfl) rfl (by simp)
@@ -45,7 +45,7 @@ theorem dispatch_widened : HasTy G [[2]] dispatch [4] :=
 theorem higher_order_typed : HasTy G [] (.funE (.app (.var 1) .nul)) [5] := by
   apply HasTy.funE (by rfl) (by decide)
   intro p hp
-  simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
+  simp only [offerRows, List.map_nil, List.append_nil, List.mem_cons, List.not_mem_nil, or_false] at hp
   subst p
   exact .app (Rt := [6]) (xs := [([0],.nul)]) (Us := []) (.var rfl) (by rfl) (by simp) (.undef (by rfl))
     (by intro p hp; cases List.mem_singleton.mp hp; exact .nul (by rfl)) (by simp)

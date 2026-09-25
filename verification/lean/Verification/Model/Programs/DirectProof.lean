@@ -55,7 +55,8 @@ def renderAt (G : NormalGraph Nat) (pool : List (Ty Nat)) :
       pure (.node ⟨Γ,j.term,j.type⟩ .letE [ea,eb])
     | .funE, .make (.closure arity _) .nul, bs =>
       -- One body plan per signature, in the signature order the checker expects.
-      let [.arrs L []] := expand G j.type | none
+      let [.arrs L S] := expand G j.type | none
+      let L := ProgramTyping.offerRows L S
       if L.length != bs.length || !ProgramTyping.offersArity arity L then none else do
         let es ← (L.zip bs).attach.mapM fun q =>
           renderAt G pool depth (ProgramTyping.bodyFrame arity q.val.1 Γ) q.val.2

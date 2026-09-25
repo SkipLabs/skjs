@@ -1148,6 +1148,25 @@ theorem callsT_of_invocationSpec {arity L k W b} (fs : List (PropKey × Nat))
     (fun a hm => List.eq_of_mem_replicate hm)] at hsafe
   exact ⟨_, .closure hrv hvals, hsafe⟩
 
+/-- **Closure code at a variadic signature.** Code of fixed arity meets a
+variadic signature `(receiver, fixed, element, result)` whose fixed parameters
+cover its arity, when it meets the fixed signature `(receiver, fixed, result)`:
+binding reads the first `arity` actuals, all among the fixed ones, and discards
+the rest, however many there are. This holds of the code, not of any value at
+the fixed signature: variadic code would collect the further actuals. -/
+theorem restsT_of_invocationSpec {arity L k W b} {S : List (Fam × List Fam × ArgFam × Fam)}
+    (fs : List (PropKey × Nat)) (hs : InvocationSpec arity L k W b)
+    (hS : ∀ s ∈ S, arity ≤ s.2.1.length ∧ (s.1, s.2.1, s.2.2.2) ∈ L) :
+    restsT S k W (.objAt fs (.closure arity b)) := by
+  refine ⟨⟨fs, _, rfl, rfl, by simpa [Scoped, Nat.add_comm] using hs.1⟩, ?_⟩
+  intro s hsm j hj U hx hu heap hh r hrv hr args hvals ha
+  obtain ⟨hle, hmem⟩ := hS s hsm
+  have hsafe := hs.2 _ hmem j hj U hx hu heap hh r hr _ (ArgsShort_pad ha.1)
+  rw [CallArguments.bindParameters_pad arity _ _ r b
+    (fun a hm => List.eq_of_mem_replicate hm), ← CallArguments.bindParameters_take,
+    List.take_take, Nat.min_eq_left hle, CallArguments.bindParameters_take] at hsafe
+  exact ⟨_, .closure hrv hvals, hsafe⟩
+
 /-- A callable signature is contravariant in its receiver and ordered
 arguments and covariant in its result. -/
 theorem callsT_single_mono {Rc Qc : Fam} {Ps Qs : List Fam} {R T : Fam}

@@ -503,9 +503,44 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
            | Some x -> x.type_
            | None -> Atoms [Undef])
         | None, _ -> Atoms [Undef] in
+      (* A closure passed where a callback is offered more parameters than it
+         binds — a fixed signature taking more, or a variadic one whose fixed
+         parameters cover them — is claimed at the offered signature: calls
+         through it discard the actuals past its parameters, and Lean checks
+         its body at the offered receiver, parameters and result. A literal is
+         claimed there; a named closure, where it is created, beside its own
+         signature, and only at a signature whose positions its parameters
+         take: another is not one its body could be checked at. The result is
+         the action stating the offer. *)
+      let offer_to (arg:expr) param =
+        let offered arity = match param with
+          | Atoms [Shape {calls=[offered];fields=[];string_index=None;elements=None}] as t
+              when offered.quantified=[] && offered.rest_pack=None
+                && (match offered.variadic with
+                    | None -> List.length offered.params > arity
+                    | Some _ -> List.length offered.params >= arity) -> Some (t,offered)
+          | _ -> None in
+        match arg.node with
+        | Lambda (_,[],ps,_,false,_,_) ->
+          Option.map (fun (t,_) () -> instances := (arg.pos,t) :: !instances)
+            (offered (List.length ps))
+        | Id n when List.mem_assoc n !closures ->
+          let pos,own = List.assoc n !closures in
+          Option.bind (offered (List.length own)) (fun (_,(o:Semantic.signature)) ->
+            if List.for_all2 plausible_subtype
+                (List.filteri (fun i _ -> i < List.length own) o.params) own
+            then Some (fun () -> requests := (pos,o) :: !requests) else None)
+        | _ -> None in
+      let param_at (s:Semantic.signature) i = match List.nth_opt s.params i with
+        | Some p -> Some p
+        | None -> s.variadic in
+      let offer ?(substitute=Fun.id) (s:Semantic.signature) =
+        List.iteri (fun i arg -> Option.iter (fun p ->
+          Option.iter (fun state -> state ()) (offer_to arg (substitute p))) (param_at s i)) args in
       (match callee with
-       | Atoms [Shape {calls=[{quantified=[];variadic=Some element;params;result;_}];_}] ->
+       | Atoms [Shape {calls=[{quantified=[];variadic=Some element;params;result;_} as signature];_}] ->
          no_type_arguments ();
+         offer signature;
          (* A variadic callee: the fixed actuals at its parameters, every
             further actual at its element type, and a spread at its own array
             contract, whose elements Lean checks against the element type. *)
@@ -630,6 +665,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
               | Some t -> t
               | None -> unsupported "call has too many arguments") in
             ignore (expr ~expected env e)) args;
+        offer signature;
         signature.result
       | Atoms [Shape {calls=[signature];_}]
           when signature.quantified<>[] && callable signature ->
@@ -639,31 +675,7 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
           List.init (max 0 (List.length signature.params - List.length args)) (fun _ -> Atoms [Undef]) in
         let substitution,result = infer_explicit ~receiver:receiver_type ?expected signature actuals in
         instance_of ~declared:callee target substitution;
-        (* A function literal taking fewer parameters than it is offered is
-           claimed at the offered signature: the extra actuals are discarded
-           when it is called, and Lean checks its body at its own. A named
-           closure is claimed, where it is created, at the offered signature
-           beside its own. *)
-        let offered_to arity param =
-          match Inference.substitute substitution param with
-          | Atoms [Shape {calls=[offered];fields=[];string_index=None;elements=None}] as t
-              when offered.quantified=[] && offered.variadic=None
-                && List.length offered.params > arity -> Some (t,offered)
-          | _ -> None in
-        List.iteri (fun i (arg:expr) -> match arg.node,List.nth_opt signature.params i with
-          | Lambda (_,[],ps,_,false,_,_),Some param ->
-            Option.iter (fun (t,_) -> instances := (arg.pos,t) :: !instances)
-              (offered_to (List.length ps) param)
-          | Id n,Some param when List.mem_assoc n !closures ->
-            (* Only a signature whose positions the closure's parameters take:
-               another is not one its body could be checked at. *)
-            let pos,own = List.assoc n !closures in
-            Option.iter (fun (_,(offered:Semantic.signature)) ->
-              if List.for_all2 plausible_subtype
-                  (List.filteri (fun i _ -> i < List.length own) offered.params) own
-              then requests := (pos,offered) :: !requests)
-              (offered_to (List.length own) param)
-          | _ -> ()) args;
+        offer ~substitute:(Inference.substitute substitution) signature;
         if not (method_read target) then
         instantiations := (e.pos,List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t)
           substitution) :: !instantiations;
@@ -677,16 +689,13 @@ let infer_pass offered declarations module_functions (f:Source.fn) =
         no_type_arguments ();
         let actuals = List.map (expr env) args in
         let usable = List.filter callable calls in
+        (* A closure an offer would claim at the parameter matches it. *)
         let matching = List.filter (fun (s:Semantic.signature) ->
-          let declared = List.filteri (fun i _ -> i < List.length actuals) s.params in
-          let further = List.filteri (fun i _ -> i >= List.length s.params) actuals in
-          List.for_all2 plausible_subtype
-            (List.filteri (fun i _ -> i < List.length s.params) actuals) declared
-          && (match s.variadic with
-              | Some element -> List.for_all (fun t -> plausible_subtype t element) further
-              | None -> further = [])) usable in
+          List.for_all Fun.id (List.mapi (fun i (arg,t) -> match param_at s i with
+            | Some p -> plausible_subtype t p || offer_to arg p <> None
+            | None -> false) (List.combine args actuals))) usable in
         (match matching,usable with
-         | s :: _,_ -> s.result
+         | s :: _,_ -> offer s; s.result
          | [],(first :: rest) when List.for_all (fun (s:Semantic.signature) ->
              s.result = first.result) rest -> first.result
          | _ -> unsupported "overloaded call needs a signature its arguments match")
