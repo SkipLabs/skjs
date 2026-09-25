@@ -1064,7 +1064,42 @@ private partial def closureExpr (fc : SourceClaims.Function) (scope : List Scope
     pure (DirectProof.letE Γ a
       (DirectProof.node H (.arith op (.var 0) b.term) N .arith [DirectProof.var H 0 a.type, b]))
   | .update .. => throw "compound assignment inside a closed expression is outside the fragment"
-  | .arrayLit .. | .elemAt .. | .elemWrite .. | .arrayAssign .. => throw "array operations inside a closed expression are outside the fragment"
+  | .arrayLit _ elems => do
+    -- The elements, in order, fill a fresh store, and the array object holds
+    -- it with the prototype from its slot, then reads as the claimed array.
+    let some S := storeOf G A | throw "an array literal needs an array claim"
+    let [.list T []] := PositiveRules.expand G S | throw "an array literal needs one tuple contract"
+    let proto ← prototypeSlot scope
+    let some P := Γ[proto]? | throw "internal prototype slot mismatch"
+    let ps ← elems.mapM fun a => closureExpr fc scope Γ a
+    let casts ← ps.zipIdx.mapM fun (p, i) => do
+      let some D := ProgramTyping.positionTy T i | throw "an array literal has more elements than its claim"
+      pure (DirectProof.cast Γ D p)
+    let store := DirectProof.node Γ (.arrLit (ps.map (·.term))) S .arrLit casts
+    let O ← arrayObject S
+    let object := DirectProof.node Γ (.makeAt .absent [SourceTypes.storeField, SourceTypes.protoField]
+      [store.term, .var proto]) O .alloc [store, DirectProof.var Γ proto P]
+    pure (DirectProof.cast Γ A object)
+  | .elemAt _ receiver key => do
+    -- The receiver, then the key, both saved; the element is read from the
+    -- receiver's store at the key's one index.
+    let r ← closureExpr fc scope Γ receiver
+    let k ← closureExpr fc (held ⟨"",some receiver.span⟩ :: scope) (r.type::Γ) key
+    let H := k.type::r.type::Γ
+    let index ← arrayKeyTerm k.type
+    let .num b := index | throw "internal array index term"
+    let I : Ty Nat := [← lower (SourceTypes.use (.numLit b))]
+    let store ← readCell G H SourceTypes.storeField (DirectProof.var H 1 r.type)
+    let [.list T []] := PositiveRules.expand G store.type | throw "an element read needs an array"
+    let U : Ty Nat := [3]
+    let (E, rule) ← match ProgramCertificates.requiredAt T b, ProgramCertificates.optionalAt T b U with
+      | some E, _ => pure (E, ProgramCertificates.Rule.elem)
+      | none, some E => pure (E, .elemOpt U)
+      | none, none => throw "an element read at an index no contract names"
+    let read := DirectProof.node H (.elemAt store.term index) E rule
+      [store, DirectProof.node H index I .numLit]
+    pure (DirectProof.letE Γ r (DirectProof.letE (r.type::Γ) k (DirectProof.cast H A read)))
+  | .elemWrite .. | .arrayAssign .. => throw "array writes inside a closed expression are outside the fragment"
   | .logicalAssign pos .nullish (.var np name) rhs =>
     closureExpr fc scope Γ (.nullishAssign pos name np rhs)
   | .logicalAssign .. => throw "logical assignment inside a closed expression is outside the fragment"

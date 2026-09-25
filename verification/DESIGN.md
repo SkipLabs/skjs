@@ -2063,6 +2063,11 @@ proves the literal below the expected type. A mutable array meets `Iterable`
 only through a `readonly` form of its type, which the graph must hold; a
 literal needs none.
 
+Inside a closure body, extracted as a direct proof rather than a graph, an
+array literal and an element read use the same rules (`arrLit`, `alloc` with
+the captured prototype, `elem`, `elemOpt`). Element writes and destructuring
+there are not yet extracted.
+
 **Consequence.** Optional fields and index views read an absent key as
 `undefined`, which is true only without a prototype. So `optT` requires no
 prototype field of an object lacking one of its optional keys, and `dictViewT`
