@@ -511,21 +511,26 @@ partial def stmtNames : Fragment.Stmt → List String
   | .block _ _ b => b.flatMap stmtNames
   | .brk .. | .cont .. => []
 
-/-- A module function's value as its callers see it: an ordinary function
-whose receiver is irrelevant, at exactly its annotated parameters and result.
-A rest parameter contributes its tuple's positions or its array's element. -/
+/-- A module function's value as its callers see it: an ordinary function at
+exactly its annotated parameters and result. A leading `this: T` parameter
+is its receiver, which every call passes (a plain call `undefined`), and no
+position; without one the receiver is irrelevant. A rest parameter
+contributes its tuple's positions or its array's element. -/
 def moduleArrow (g : Fragment.Fn) : Except String Json := do
-  let fixed := if g.params.getLast?.any (·.rest) then g.params.dropLast else g.params
-  let (positions, rest) ← match g.params.getLast? with
+  let top := Json.mkObj [("top", toJson true), ("atoms", toJson ([] : List Json))]
+  let (receiver, params) := match g.params with
+    | p :: ps => if p.name == "this" then (p.ty, ps) else (top, g.params)
+    | [] => (top, [])
+  let fixed := if params.getLast?.any (·.rest) then params.dropLast else params
+  let (positions, rest) ← match params.getLast? with
     | some p =>
       if !p.rest then pure (fixed.map (·.ty), [])
       else match Fragment.arrayElement p.ty (readonly := true) with
         | some e => pure (fixed.map (·.ty), [("rest", e)])
         | none => pure (fixed.map (·.ty) ++ (← Fragment.tupleRequired p.ty), [])
     | none => pure ([], [])
-  let top := Json.mkObj [("top", toJson true), ("atoms", toJson ([] : List Json))]
   return Json.mkObj [("top", toJson false), ("atoms", toJson [Json.mkObj
-    ([("a", toJson "function"), ("this", top), ("params", toJson positions)] ++ rest ++
+    ([("a", toJson "function"), ("this", receiver), ("params", toJson positions)] ++ rest ++
       [("result", g.ret), ("construct", toJson "unknown"), ("array", toJson "unknown")])])]
 
 /-- The same values with each label that is a union row, a declaration such as

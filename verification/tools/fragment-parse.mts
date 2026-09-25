@@ -902,53 +902,8 @@ class Gate {
     if (ts.isArrowFunction(node) || ts.isFunctionExpression(node))
       return this.lambda(node);
 
-    if (ts.isObjectLiteralExpression(node)) {
-      const seen = new Set<string>();
-      const fields = node.properties.map((f) => {
-        // A method is an ordinary function expression in a field: it has no
-        // `super` or construction here, which is all that tells them apart.
-        if (ts.isMethodDeclaration(f) && ts.isIdentifier(f.name)) {
-          const name = f.name.text;
-          if (seen.has(name)) this.fail(f, "duplicate field name in a record");
-          if (name === "__proto__")
-            this.fail(f, "prototype initializers are outside the fragment");
-          seen.add(name);
-          return { name, e: this.lambda(f) };
-        }
-        // `{ x }` is `{ x: x }`: the name is read where it is written.
-        if (ts.isShorthandPropertyAssignment(f) && !f.objectAssignmentInitializer &&
-            ts.isIdentifier(f.name)) {
-          const name = f.name.text;
-          if (seen.has(name)) this.fail(f, "duplicate field name in a record");
-          if (name === "__proto__")
-            this.fail(f, "a `__proto__` field is outside the fragment");
-          seen.add(name);
-          return { name, e: this.expr(f.name) };
-        }
-        if (!ts.isPropertyAssignment(f) || !ts.isIdentifier(f.name))
-          this.fail(
-            f,
-            "expected a plain property; no accessors, methods or spreads",
-          );
-        const name =
-          ts.isPropertyAssignment(f) && ts.isIdentifier(f.name)
-            ? f.name.text
-            : this.fail(f, "expected a plain property");
-        if (seen.has(name)) this.fail(f, "duplicate field name in a record");
-        if (name === "__proto__")
-          this.fail(f, "prototype initializers are outside the fragment");
-        seen.add(name);
-        return {
-          name,
-          e: this.expr(
-            ts.isPropertyAssignment(f)
-              ? f.initializer
-              : this.fail(f, "expected a plain property"),
-          ),
-        };
-      });
-      return { k: "alloc", pos: this.span(node), fields };
-    }
+    if (ts.isObjectLiteralExpression(node))
+      return { k: "alloc", pos: this.span(node), fields: this.objectFields(node, new Set<string>()) };
 
     if (ts.isPropertyAccessExpression(node)) {
       if (node.questionDotToken)
@@ -1171,6 +1126,20 @@ class Gate {
             ".apply requires a known local function, an explicit receiver and at most one argument list",
           );
         const list = node.arguments[1];
+        // A fresh array literal as the list is its elements: its allocation
+        // is unobservable, and `apply` reads back exactly the values it was
+        // built from, in order, so the call is the `.call` with them.
+        let written: Expression | undefined = list;
+        while (written && ts.isParenthesizedExpression(written)) written = written.expression;
+        if (written && ts.isArrayLiteralExpression(written) &&
+            !written.elements.some((e) => ts.isSpreadElement(e) || ts.isOmittedExpression(e)))
+          return {
+            k: "callWithReceiver",
+            pos: this.span(node),
+            callee: this.expr(node.expression.expression),
+            receiver: this.expr(node.arguments[0]),
+            args: written.elements.map((e) => this.expr(e)),
+          };
         return {
           k: "applyWithReceiver",
           pos: this.span(node),
@@ -1267,6 +1236,41 @@ class Gate {
       node,
       `expression outside the fragment (${ts.SyntaxKind[node.kind]})`,
     );
+  }
+
+  /** An object literal's fields, in order: each property's key and value.
+   * A key is its identifier, its string, or its number's `ToString`
+   * (`{0: x}` owns `"0"`). A method is an ordinary function expression in a
+   * field: it has no `super` or construction here, which is all that tells
+   * them apart. `{ x }` is `{ x: x }`, the name read where it is written. A
+   * spread of an object literal is its fields, in place: evaluated where
+   * written, owning exactly those keys (DESIGN.md, "Object literals"). */
+  private objectFields(node: ts.ObjectLiteralExpression, seen: Set<string>): { name: string; e: Expr }[] {
+    const key = (f: Node, name: Node): string => {
+      const text = ts.isIdentifier(name) || ts.isStringLiteral(name) ? name.text
+        : ts.isNumericLiteral(name) ? String(Number(name.text.replace(/_/g, "")))
+        : ts.isComputedPropertyName(name) ? this.fail(f, "a computed key in an object literal is outside the fragment")
+        : this.fail(f, "expected a plain property name");
+      if (seen.has(text)) this.fail(f, "duplicate field name in a record");
+      if (text === "__proto__") this.fail(f, "prototype initializers are outside the fragment");
+      seen.add(text);
+      return text;
+    };
+    return node.properties.flatMap((f) => {
+      if (ts.isMethodDeclaration(f)) return [{ name: key(f, f.name), e: this.lambda(f) }];
+      if (ts.isShorthandPropertyAssignment(f) && !f.objectAssignmentInitializer && ts.isIdentifier(f.name))
+        return [{ name: key(f, f.name), e: this.expr(f.name) }];
+      if (ts.isPropertyAssignment(f)) return [{ name: key(f, f.name), e: this.expr(f.initializer) }];
+      if (ts.isSpreadAssignment(f)) {
+        let operand: Expression = f.expression;
+        while (ts.isParenthesizedExpression(operand)) operand = operand.expression;
+        if (ts.isObjectLiteralExpression(operand)) return this.objectFields(operand, seen);
+        return this.fail(f, "a spread copies its operand's own enumerable properties, which the heap model does not tell from its prototype members; only an object literal's are known");
+      }
+      if (ts.isGetAccessorDeclaration(f) || ts.isSetAccessorDeclaration(f))
+        return this.fail(f, "an accessor runs code where its property is read or written; the heap model has data properties only");
+      return this.fail(f, "expected a plain property; no accessors, methods or spreads");
+    });
   }
 
   /** An optional chain: `r?.x` evaluates `r` once and is `undefined` where it
@@ -1393,7 +1397,32 @@ class Gate {
       return this.localArrow(node.expression.expression, seen);
     if (!ts.isIdentifier(node)) return false;
     const init = this.constInitializer(node, seen);
-    return !!init && this.localArrow(init, seen);
+    if (init) return this.localArrow(init, seen);
+    return this.moduleFunction(node);
+  }
+
+  /** Whether this identifier names one of the file's function declarations
+   * with a body: nothing between it and the module binds the name, and no
+   * write in the file can replace the `call`, `apply` or `bind` its object
+   * inherits (an assignment to the declaration's binding is refused where it
+   * is written). */
+  private moduleFunction(node: Identifier): boolean {
+    const name = node.text;
+    for (let scope: Node | undefined = node.parent; scope && !ts.isSourceFile(scope); scope = scope.parent) {
+      if (ts.isBlock(scope) && scope.statements.some((s) =>
+          (ts.isVariableStatement(s) && s.declarationList.declarations.some((d) =>
+            !ts.isIdentifier(d.name) || d.name.text === name)) ||
+          (ts.isFunctionDeclaration(s) && s.name?.text === name) ||
+          (ts.isClassDeclaration(s) && s.name?.text === name)))
+        return false;
+      if (ts.isFunctionLikeDeclaration(scope) &&
+          scope.parameters?.some((p) => !ts.isIdentifier(p.name) || p.name.text === name))
+        return false;
+    }
+    const declared = this.file.statements.filter((s) => ts.isFunctionDeclaration(s) && s.name?.text === name);
+    return declared.length > 0 && declared.every((s) => ts.isFunctionDeclaration(s) && !!s.body &&
+        !s.modifiers?.some((m) => m.kind === ts.SyntaxKind.DeclareKeyword)) &&
+      !["call", "apply", "bind"].some((member) => this.memberMayBeWritten(member));
   }
 
   /** Whether any assignment in the file may replace a member of this name: a

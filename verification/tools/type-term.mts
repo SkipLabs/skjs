@@ -392,6 +392,9 @@ export function oneTerm(terms: FunctionTerm[], span: Span): TypeTerm {
 function propertyKey(scope: TermScope, name: Node | undefined): PropertyKey | null {
   if (!name) return null;
   if (ts.isIdentifier(name) || (!scope.annotation && ts.isStringLiteral(name))) return name.text;
+  // A numeric name is the property its number's `ToString` spells, as
+  // `ToPropertyKey` has it: `0` is `"0"`, `1e3` is `"1000"`.
+  if (ts.isNumericLiteral(name)) return String(Number(name.text.replace(/_/g, "")));
   if (ts.isComputedPropertyName(name) && scope.symbol &&
       (ts.isIdentifier(name.expression) || ts.isPropertyAccessExpression(name.expression)))
     return { symbol: scope.symbol(name.expression) };

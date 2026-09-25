@@ -4160,6 +4160,39 @@ folded constant expression or an earlier member):
   declaration reader does not read enums) and `keyof typeof E` (`keyof` is
   a type form outside the fragment).
 
+### Object literals
+
+An object literal allocates one object owning exactly the properties it
+writes (`alloc`), each a data property at the value its initializer gives,
+evaluated in order. What the parser admits, and why the rest is refused:
+
+- **Keys.** An identifier, a string, or a number, whose property is the one
+  its `ToString` spells (`{0: x}` owns `"0"`, `{1e3: x}` owns `"1000"`), as
+  `ToPropertyKey` has it; a type literal's numeric name is read the same way.
+  `__proto__` sets the prototype and is refused. A computed key `[k]` is
+  refused: its property is known only by evaluating `k`.
+- **Methods and shorthand.** `m() {…}` is an ordinary function expression in
+  a field and `{ x }` is `{ x: x }` (unchanged).
+- **A spread of an object literal is its fields.** `{ a, ...{ b: e } }` is
+  `{ a, b: e }`: the inner object is fresh, so it owns exactly its written
+  keys, its allocation is unobservable, and copying reads back the values it
+  was built from, in the order they were evaluated. A key written twice is
+  refused, as in a literal.
+- **Any other spread is refused.** `{ ...o }` copies `o`'s own enumerable
+  properties, which the heap model does not know: a class instance's methods
+  are fields of the instance here ([Modules and code units](#modules-and-code-units), "Classes"), where JavaScript
+  keeps them on the prototype and a spread skips them, and an array's
+  elements live in its store. Copying the model's fields would give the copy
+  properties JavaScript's does not have, so the lowering would not be
+  faithful. What admitting it needs is own-key provenance in the heap: an
+  allocation from parts, `alloc [field k e | copy e]`, whose `copy` takes
+  exactly the source's own enumerable keys. That is also the form class
+  inheritance needs (the base constructor's fresh instance copied into the
+  derived allocation), where the keys are the base class's, known
+  statically.
+- **Accessors are refused.** `get x() {…}` runs code on every read of `x`
+  and `set` on every write; the heap model's properties are data only.
+
 ### Optional chaining
 
 `r?.b`, `r?.[k]`, `r?.(a)` and `r?.m(a)` are one derived form, `optional`,
@@ -4415,8 +4448,12 @@ assignment remain separate milestones; receiver-dependent functions are
 
 The source gate recognizes `.call`, `.bind` and `.apply` only on fresh arrows
 and function expressions, the restricted callable field initializer, function
-members of a `const` object literal that no write in the file can replace, and
-immutable lexical aliases of those values, including captures. It checks lexical bindings rather than relying on a type's call
+members of a `const` object literal that no write in the file can replace,
+immutable lexical aliases of those values, including captures, and the file's
+function declarations with a body, where nothing between the use and the
+module rebinds the name and no write in the file can replace a `call`,
+`apply` or `bind` property (an assignment to the declaration's binding is
+refused where it is written). It checks lexical bindings rather than relying on a type's call
 signature: an arbitrary function parameter or call result could have its own
 `call` property. The supported source fragment cannot write that property or
 mutate the standard function prototype. As with `Object.assign`, identification
@@ -4451,7 +4488,14 @@ saves the object, then the method read from it, then the actuals, then invokes;
 `methods.ts` shows the saved callee, the live receiver fields, `.call`
 rebinding, and a copied method whose plain call fails its `method-receiver`
 obligation. `.apply` reads a tuple list's length and indices in order after its
-receiver runs (`apply.ts`). `generic-receivers.ts` introduces one quantified
+receiver runs (`apply.ts`); a fresh array literal as the list is its elements,
+since its allocation is unobservable and `apply` reads back the values it was
+built from, in order: `f.apply(r, [a, b])` is `f.call(r, a, b)`. A module
+function declared with a leading `this: T` parameter has `T` as its
+receiver, not as a position (`moduleArrow`): its unit assumes `this` at `T`
+as it assumes every parameter, and its value's signature states the receiver
+every call passes, so a plain call, which passes `undefined`, is admitted
+only at `this: void` (`receiver-functions.ts`, `invalid-receiver-call.ts`). `generic-receivers.ts` introduces one quantified
 function whose receiver is its binder and eliminates it at two receiver
 contracts, with a captured cell keeping its one contract.
 
