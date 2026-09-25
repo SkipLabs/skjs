@@ -4,8 +4,8 @@ How much of what SKJS accepts in its own test suite the pipeline
 (`check.mts`: parser → OCaml producer → Lean search and check) verifies, what
 stops the rest, and where the two disagree because SKJS is wrong.
 
-**1,361 of 2,676 SKJS-accepted units verify (50.9%); 880 of 2,026 accepted
-functions (43.4%).** 136 of the 377 files with an accepted unit verify entirely.
+**1,420 of 2,676 SKJS-accepted units verify (53.1%); 917 of 2,026 accepted
+functions (45.3%).** 141 of the 377 files with an accepted unit verify entirely.
 Three families of SKJS-accepted functions that the pipeline reaches and refuses
 are real SKJS unsoundnesses, each with a runtime witness that SKJS accepts and
 node crashes on ([below](#suspected-skjs-unsoundnesses)).
@@ -30,14 +30,14 @@ is not part of `verification/run.sh`.
 
 | Suite | Harness verdict | Files | Units | Accepted | Verified | Accepted functions | Verified functions |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,885 | 2,458 | 1,186 | 1,863 | 751 |
+| `tests/expect-error` | `@ts-expect-error` / `@skjs-expect-error` name the next non-annotation line (`tests/Helpers.sk` `findExpectErrors`); `@skjs-expect-warning` is not an error | 399 (374 with units) | 3,885 | 2,458 | 1,230 | 1,863 | 777 |
 | `tests/callgraph` | no error allowed | 25 | 59 | 59 | 48 | 51 | 40 |
-| `tests/constprop` | no error allowed | 14 | 66 | 66 | 56 | 49 | 42 |
-| `tests/deadcode` | no error allowed | 7 | 27 | 27 | 17 | 16 | 10 |
-| `tests/cfg` | no error allowed | 7 | 22 | 22 | 14 | 21 | 13 |
+| `tests/constprop` | no error allowed | 14 | 66 | 66 | 59 | 49 | 44 |
+| `tests/deadcode` | no error allowed | 7 | 27 | 27 | 24 | 16 | 14 |
+| `tests/cfg` | no error allowed | 7 | 22 | 22 | 19 | 21 | 18 |
 | `tests/projects` | expect-error markers, under the project's tsconfig | 24 of 68 | 44 | 34 | 33 | 23 | 22 |
 | `tests/ts-conformance/cases` | lines listed in `reference/*.errors.txt` | 4 | 11 | 10 | 7 | 3 | 2 |
-| **total** | | **480** | **4,114** | **2,676** | **1,361** | **2,026** | **880** |
+| **total** | | **480** | **4,114** | **2,676** | **1,420** | **2,026** | **917** |
 
 Excluded (79 files, listed in the JSON with reasons): `ts-conformance/not-supported`
 (31) and `callgraph-unsupported` (4) assert only that SKJS reports errors;
@@ -95,10 +95,10 @@ is.
 
 | Phase of first blocker | Units |
 | --- | ---: |
-| verified | 1,361 |
-| source (gate) | 786 |
-| proposal (producer) | 173 |
-| search (Lean) | 356 |
+| verified | 1,420 |
+| source (gate) | 718 |
+| proposal (producer) | 179 |
+| search (Lean) | 359 |
 
 **Caveats on the method.**
 
@@ -156,7 +156,7 @@ Ordered by value for cost (units per effort, files as a tiebreak):
 | 21 | Generics: constraints, explicit type arguments on calls, unions with rigid types, rigid types in graph types, `as const` (6 of 9 "unknown type parameter") | 130 | 109 | 21 | 35 | L | P O L |
 | 22 | Type forms: index-signature forms, numeric field names, literal types, `keyof`, indexed access, mapped, `object`, `{}`, method signatures, intersections | 168 | 99 | 69 | 41 | L | P D L |
 | 23 | Loops: ~~`for(;;)`, `for-in`~~ done (task F); `for-of` with `let` | 1 (was 24) | 1 | 0 | 1 | S | P L |
-| 24 | Exceptions: `try`/`catch`/`finally`, `throw` | 11 | 10 | 1 | 6 | M | P L |
+| 24 | Exceptions: ~~`try`/`catch`/`finally`, `throw`~~ done (throw outcome) | 0 (was 11) | 0 | 0 | 0 | M | P L |
 | 25 | Calls: overloads, `.call`, spread arguments, `Object.assign`, arrow callee | 12 | 5 | 0 | 7 | M | P O |
 | 26 | `await` of non-promises and unions | 12 | 12 | 0 | 2 | M | L |
 | 27 | Object-literal methods, accessors, spreads | 33 | 31 | 2 | 13 | M | P O L |
@@ -423,9 +423,14 @@ dropped), examples, what the extension needs.
     through a string key (14), `for` updates at a `continue` after a write
     (`jump-edge-definite-assignment.ts#assignedBeforeTheJump`) at the
     producer's head knowledge; `for (let … of …)` stays refused.
-24. **Exceptions.** `TryStatement` (10), `ThrowStatement` (1); `throw new
-    Error(…)` also needs 13. Moved out of task F to the calculus's throw
-    outcome.
+24. **Exceptions** (done). A throw is an outcome of the calculus
+    ([DESIGN.md](../DESIGN.md#throws)); `throw`, `try`/`catch`/`finally` and
+    `throw new Error(…)` are lowered. What still stops such units is
+    elsewhere: a handler that needs the precise state at a raise point
+    (`catch-entry-writes.ts#absorbedInnerTryDoesNotEscape`,
+    `#separateTryDoesNotLeak`, `jump-through-finally.ts#jumpBeforeTheTryIsUntouched`:
+    the handler and the finalizer know each cell by its contract), and a
+    `break`/`continue` through a `finally` (refused).
 25–31. See the table; each is a handful of gate or producer forms.
 32. **bigint.** `BigIntLiteral` (129), the `BigInt` global (102, read since task K), `non-decimal
     numeric literal type` (1). A new primitive in the calculus.
@@ -622,6 +627,7 @@ split by function.
 | O. Type forms | Index-signature forms, numeric field names, negative-literal types, `{}`, `object`, method signatures, `keyof`, indexed access, mapped types, intersections | 168 / 41 | `fragment-parse.mts` (types), `declaration-types.mts`, `Types/*` | — | N |
 | P. Search narrowing and async | Flow narrowing after assignment and refinement snapshots, `Promise`/async results and `await`, contextual literals into unions, function values into intersections | ~80 / 30 | `CertificateProducer.lean`, `ProgramTyping.lean`, `proposal.ml` | I | I, J |
 | Q. Module initialization and run setup (done) | A module with no function checked through its initialization unit; verdicts attributed only to units whose own code was checked; SKJS's test environment (stub imports through a per-unit `--project`, `__SKJS_show`, `process`, `StringRecord`, `Closed<T>` as `T`) | 450 / 98 verified (911 → 1,361 units, 860 → 880 functions, 96 → 136 whole files, none lost) | `SourceClaimJson.lean`, `check.mts`, `skjs-coverage.mts`, `skjs-environment/` | — | — |
+| S. Throws (done) | A throw is an outcome: `throw`, `try`/`catch`/`finally` (handler edges, the `finally` compiled on each way out, returns included), `typeof` narrowing `unknown`; bigint division and exponent, `BigInt` of any number or string, and primitive radix/digit arguments read as declared | 59 units newly verified over the committed run (1,361 → 1,420, 880 → 917 functions, 136 → 141 whole files, none lost), of which about 38 in exception or bigint units and the rest from overlay work the committed run predated | `Calculus.lean`, `Safety.lean`, `ControlFlow.lean`, `ProgramTyping.lean`, `SourceExtraction.lean`, `fragment-parse.mts`, `library-globals.mts`, `array-prototype.mts`, `proposal.ml` | — | — |
 | R. Leftovers | Object-literal methods/accessors/spread, optional chaining, `.call`/spread calls/`Object.assign`, bigint, enums | 33 + 8 + 12 + 232 + 56 | various | D (bigint), O (enums) | — |
 
 Suggested order: A, B, D in parallel (disjoint files except D's gate
